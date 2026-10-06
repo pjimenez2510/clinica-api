@@ -184,6 +184,37 @@ export class CertificateRestPeriodInvalidError extends ValidationError {
 }
 
 /**
+ * CER-056 (D-133.3). The dates of a rest that can only be a typo: more than
+ * 365 days, or a start more than a year from the attention. Not a limit —
+ * those warn (CER-055) — but a sanity check: «3 000 días», «2062». Named on
+ * the field to correct. `medical_certificate_issue_rules` refuses the same.
+ */
+export type ImplausibleRestField = 'restFrom' | 'restTo';
+
+const IMPLAUSIBLE_REST_MESSAGE: Readonly<Record<ImplausibleRestField, string>> =
+  {
+    restFrom:
+      'El reposo no puede empezar a más de un año de la atención: compruebe la fecha de inicio',
+    restTo: 'Un reposo no puede pasar de 365 días: compruebe la fecha de fin',
+  };
+
+export class CertificateRestImplausibleError extends ValidationError {
+  readonly code = 'CERTIFICATE_REST_IMPLAUSIBLE';
+  override readonly userTitle =
+    'Compruebe las fechas del reposo: parecen mal escritas';
+  override readonly fieldErrors: readonly DomainFieldError[];
+
+  constructor(fields: readonly ImplausibleRestField[]) {
+    super(`Rest dates are implausible: ${fields.join(', ')}`);
+    this.fieldErrors = fields.map((field) => ({
+      field,
+      code: 'CERTIFICATE_REST_IMPLAUSIBLE',
+      message: IMPLAUSIBLE_REST_MESSAGE[field],
+    }));
+  }
+}
+
+/**
  * CER-008. The doctor asked for the diagnosis on the certificate and the
  * attention has none. The diagnosis is not typed into the certificate: it is
  * read from `encounter_diagnosis`, like the prescription's (PR-026).

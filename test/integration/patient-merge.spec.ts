@@ -324,6 +324,53 @@ describe('fusión de duplicados: lo que garantiza la base', () => {
     ).rejects.toThrow(/patient_merge_reason_not_blank/);
   });
 
+  it('PA-064 acepta una fusión y un deshacer SIN motivo, y sigue rechazando uno en blanco', async () => {
+    const prisma = db();
+    const author = await createAuthor(prisma, '064');
+    const source = await createPatient(prisma);
+    const target = await createPatient(prisma);
+
+    // D-126: el motivo es opcional, de una lista en la pantalla. Lo que no
+    // hay se guarda como NULL, que es la verdad («no se dijo»).
+    const merge = await prisma.patientMerge.create({
+      data: {
+        event: 'MERGE',
+        sourcePatientId: source.id,
+        targetPatientId: target.id,
+        performedBy: author.id,
+        reason: null,
+        sourceSnapshot: {},
+      },
+    });
+    expect(merge.reason).toBeNull();
+
+    const undo = await prisma.patientMerge.create({
+      data: {
+        event: 'UNDO',
+        undoesMergeId: merge.id,
+        sourcePatientId: source.id,
+        targetPatientId: target.id,
+        performedBy: author.id,
+        reason: null,
+      },
+    });
+    expect(undo.reason).toBeNull();
+
+    // Si lo hay, no en blanco: el mismo nombre de siempre.
+    await expect(
+      prisma.patientMerge.create({
+        data: {
+          event: 'MERGE',
+          sourcePatientId: target.id,
+          targetPatientId: source.id,
+          performedBy: author.id,
+          reason: ' ',
+          sourceSnapshot: {},
+        },
+      }),
+    ).rejects.toThrow(/patient_merge_reason_not_blank/);
+  });
+
   it('PA-044 RECHAZA una fusión sin instantánea de la ficha absorbida', async () => {
     const prisma = db();
     const author = await createAuthor(prisma, '006');
@@ -1289,44 +1336,45 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
     expect(audit[0]?.userId).toBe(admisionUserId);
   });
 
-  it('PA-044 exige el motivo EN EL SERVICIO y no sólo en el DTO', async () => {
-    /**
-     * ═══════════════════════════════════════════════════════════════════════
-     * LA PRUEBA QUE JUSTIFICA QUE `MERGE_REASON_REQUIRED` EXISTA
-     * ═══════════════════════════════════════════════════════════════════════
-     *
-     * Por lo mismo que `CANCELLATION_REASON_REQUIRED` en la agenda: un `DEBERÁ`
-     * que sólo hace cumplir la capa de transporte deja de cumplirse el día que
-     * otro caso de uso llame POR DENTRO. Así que se llama por dentro — sin DTO,
-     * sin zod y sin ruta— y el motivo se sigue exigiendo.
-     *
-     * Y `'   '` y no `''`: `NOT NULL` impide la ausencia, no la cadena de
-     * espacios, que es un clic con más teclas.
-     */
+  it('PA-064 fusiona sin motivo, por la ruta y por dentro, y guarda el blanco como ninguno', async () => {
     const prismaClient = db();
     const source = await createPatient(prismaClient);
     const target = await createPatient(prismaClient);
 
-    await expect(
-      merges.merge(
-        {
-          sourcePatientId: source.id,
-          targetPatientId: target.id,
-          reason: '   ',
-        },
-        { userId: admisionUserId },
-      ),
-    ).rejects.toMatchObject({ code: 'MERGE_REASON_REQUIRED' });
-
-    const untouched = await prismaClient.patient.findUniqueOrThrow({
-      where: { id: source.id },
+    // Por la ruta, sin el campo: la pantalla lo deja opcional (D-126).
+    await mergeRequest(source.id, admision)
+      .send({ targetPatientId: target.id })
+      .expect(200);
+    const trail = await prismaClient.patientMerge.findFirstOrThrow({
+      where: { sourcePatientId: source.id },
     });
-    expect(untouched.mergedIntoId).toBeNull();
-    expect(
-      await prismaClient.patientMerge.count({
-        where: { sourcePatientId: source.id },
-      }),
-    ).toBe(0);
+    expect(trail.reason).toBeNull();
+
+    // Por dentro, con espacios: se guarda como ninguno, no se rechaza.
+    const other = await createPatient(prismaClient);
+    const survivor = await createPatient(prismaClient);
+    await merges.merge(
+      {
+        sourcePatientId: other.id,
+        targetPatientId: survivor.id,
+        reason: '   ',
+      },
+      { userId: admisionUserId },
+    );
+    const second = await prismaClient.patientMerge.findFirstOrThrow({
+      where: { sourcePatientId: other.id },
+    });
+    expect(second.reason).toBeNull();
+
+    // Control positivo: el motivo elegido de la lista se guarda tal cual.
+    const third = await createPatient(prismaClient);
+    await mergeRequest(third.id, admision)
+      .send({ targetPatientId: survivor.id, reason: 'Duplicado en admisión' })
+      .expect(200);
+    const listed = await prismaClient.patientMerge.findFirstOrThrow({
+      where: { sourcePatientId: third.id },
+    });
+    expect(listed.reason).toBe('Duplicado en admisión');
   });
 
   it('PA-044 con dos fusiones idénticas simultáneas gana la primera y el rastro tiene UNA sola fila', async () => {
@@ -1399,24 +1447,28 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
     expect(merged.mergedAt).not.toBeNull();
   });
 
-  it('PA-047 exige el motivo también al deshacer, y por dentro', async () => {
+  it('PA-064 deshace sin motivo, por la ruta y por dentro', async () => {
     const prismaClient = db();
     const source = await createPatient(prismaClient);
     const target = await createPatient(prismaClient);
     await mergeCharts(source, target);
 
-    await expect(
-      merges.undo(
-        { sourcePatientId: source.id, reason: ' \n ' },
-        { userId: admisionUserId },
-      ),
-    ).rejects.toMatchObject({ code: 'MERGE_REASON_REQUIRED' });
+    await undoRequest(source.id, admision).send({}).expect(200);
+    const undo = await prismaClient.patientMerge.findFirstOrThrow({
+      where: { sourcePatientId: source.id, event: 'UNDO' },
+    });
+    expect(undo.reason).toBeNull();
 
-    // Sigue fusionada: el motivo se exige ANTES de tocar nada.
-    const still = await prismaClient.patient.findUniqueOrThrow({
+    // Por dentro, en blanco: tampoco se rechaza.
+    await mergeCharts(source, target);
+    await merges.undo(
+      { sourcePatientId: source.id, reason: ' \n ' },
+      { userId: admisionUserId },
+    );
+    const whole = await prismaClient.patient.findUniqueOrThrow({
       where: { id: source.id },
     });
-    expect(still.mergedIntoId).toBe(target.id);
+    expect(whole.mergedIntoId).toBeNull();
   });
 
   it('PA-015 el documento que llega mientras se fusiona NO aterriza en la ficha absorbida', async () => {
@@ -1760,10 +1812,16 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
           origin: 'SELF_DECLARED',
         }),
       request(server)
+        .post(
+          `/api/v1/patients/${source.id}/priority-groups/${groupRecord.id}/close`,
+        )
+        .send({ endsOn: '2026-09-01' }), // fecha-fija: se rechaza antes de leerla
+      // PA-066. Editarla tampoco: la ficha absorbida no se toca.
+      request(server)
         .patch(
           `/api/v1/patients/${source.id}/priority-groups/${groupRecord.id}`,
         )
-        .send({ endsOn: '2026-09-01' }),
+        .send({ origin: 'SELF_DECLARED' }),
     ];
 
     const answered = await Promise.all(
@@ -1776,6 +1834,7 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
     );
 
     expect(answered).toEqual([
+      '409 PATIENT_MERGED',
       '409 PATIENT_MERGED',
       '409 PATIENT_MERGED',
       '409 PATIENT_MERGED',
@@ -2697,7 +2756,7 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
     await mergeCharts(source, target);
 
     await request(app.getHttpServer())
-      .patch(`/api/v1/patients/${target.id}/priority-groups/${recordId}`)
+      .post(`/api/v1/patients/${target.id}/priority-groups/${recordId}/close`)
       .set('Authorization', `Bearer ${admision}`)
       .send({ endsOn: dayOffset(-1) })
       .expect(200);

@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Req,
 } from '@nestjs/common';
@@ -25,12 +26,15 @@ import type { Permission } from '../../shared/authorisation/permission.catalogue
 import { PatientHistoryService } from './application/patient-history.service';
 import type { Requester } from './application/encounter.service';
 import {
+  EditHistoryDto,
   HistoryDto,
   HistoryListDto,
+  HistoryVersionListDto,
   RecordHistoryDto,
   RefuteHistoryDto,
   type HistoryListResponse,
   type HistoryResponse,
+  type HistoryVersionListResponse,
 } from './dto/patient-history.dto';
 import { toHistoryResponse } from './dto/patient-history.mapper';
 
@@ -110,6 +114,85 @@ export class PatientHistoryController {
       this.requester(req, 'record:write'),
     );
     return toHistoryResponse(refuted);
+  }
+
+  /**
+   * EN-225. Edits what the entry says, in its row; the version it replaces is
+   * kept. `record:write`, like refuting: correcting a finding is the same
+   * clinical judgement as ruling it out (EN-164).
+   */
+  @Patch('history/:historyId')
+  @RequirePermission('record:write', 'global')
+  @ApiOperation({ summary: 'Corregir un antecedente del paciente' })
+  @ApiOkResponse({ type: HistoryDto })
+  async edit(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Param('historyId', ParseUUIDPipe) historyId: string,
+    @Body() dto: EditHistoryDto,
+    @Req() req: Request,
+  ): Promise<HistoryResponse> {
+    const edited = await this.history.edit(
+      {
+        patientId,
+        historyId,
+        changes: {
+          ...(dto.kind === undefined ? {} : { kind: dto.kind }),
+          ...(dto.description === undefined
+            ? {}
+            : { description: dto.description }),
+          ...(dto.relative === undefined ? {} : { relative: dto.relative }),
+        },
+      },
+      this.requester(req, 'record:write'),
+    );
+    return toHistoryResponse(edited);
+  }
+
+  /**
+   * EN-224. Brings back an entry ruled out by mistake. `background:write`,
+   * like recording one.
+   */
+  @Post('history/:historyId/reactivate')
+  @RequirePermission('background:write', 'global')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reactivar un antecedente descartado por error' })
+  @ApiOkResponse({ type: HistoryDto })
+  async reactivate(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Param('historyId', ParseUUIDPipe) historyId: string,
+    @Req() req: Request,
+  ): Promise<HistoryResponse> {
+    const reactivated = await this.history.reactivate(
+      patientId,
+      historyId,
+      this.requester(req, 'background:write'),
+    );
+    return toHistoryResponse(reactivated);
+  }
+
+  /** EN-225. The versions the changes replaced; `record:read`, audited. */
+  @Get('history/:historyId/versions')
+  @RequirePermission('record:read', 'global')
+  @ApiOperation({ summary: 'Versiones anteriores de un antecedente' })
+  @ApiOkResponse({ type: HistoryVersionListDto })
+  async versions(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Param('historyId', ParseUUIDPipe) historyId: string,
+    @Req() req: Request,
+  ): Promise<HistoryVersionListResponse> {
+    const versions = await this.history.versionsOf(
+      patientId,
+      historyId,
+      this.requester(req, 'record:read'),
+    );
+    return {
+      items: versions.map((version) => ({
+        version: version.version,
+        replacedBy: version.replacedBy,
+        replacedAt: version.replacedAt.toISOString(),
+        entry: toHistoryResponse(version.entry),
+      })),
+    };
   }
 
   /** Who is asking, for the access trail. Global routes: the scope is `all`. */

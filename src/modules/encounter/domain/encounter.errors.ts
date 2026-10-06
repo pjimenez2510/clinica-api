@@ -988,7 +988,7 @@ export class PatientAllergyNotFoundError extends NotFoundError {
 export class AllergyAlreadyRefutedError extends ConflictError {
   readonly code = 'ALLERGY_ALREADY_REFUTED';
   override readonly userTitle =
-    'Esa alergia ya estaba descartada, con su fecha y su motivo. Si hay algo nuevo que decir, regístrela otra vez';
+    'Esa alergia ya está descartada. Si se descartó por error, reactívela';
 
   constructor() {
     super('Allergy has already been refuted');
@@ -996,43 +996,46 @@ export class AllergyAlreadyRefutedError extends ConflictError {
 }
 
 /**
- * EN-082. An allergy was ruled out without saying why.
+ * EN-224, D-140.1. An allergy of HIGH criticality was ruled out without a
+ * reason. Back from its retirement with a narrower rule: any other allergy is
+ * ruled out without one (D-126.2), but this one is the anaphylaxis, and a
+ * refutation nobody can weigh is the risk to the patient D-126.4 excepts.
  *
- * DEMANDED IN THE SERVICE AND NOT ONLY IN THE DTO, for the same reason
- * `AMENDMENT_REASON_REQUIRED` is: the DTO guards ONE door. An import, a
- * console and a use case somebody writes in two years all reach the service,
- * and a refutation with no reason is a row that says an allergy was ruled out
- * by nobody knows what evidence — which is exactly the row a future doctor has
- * to decide whether to trust.
- *
- * 422 with the field named: the request is wrong and the way out is to write
- * the reason.
+ * RAISED BY THE ADAPTER UNDER THE ROW LOCK, where the criticality is the one
+ * that stands: a colleague may have just raised it from «baja» to «alta».
+ * 422 with the field named: the way out is to choose a reason.
  */
 export class RefutationReasonRequiredError extends ValidationError {
   readonly code = 'REFUTATION_REASON_REQUIRED';
-  override readonly userTitle: string;
-  override readonly fieldErrors: {
-    field: string;
-    code: string;
-    message: string;
-  }[];
+  override readonly userTitle =
+    'Elija por qué se descarta: es una alergia de criticidad alta';
+  override readonly fieldErrors = [
+    {
+      field: 'notes',
+      code: 'REFUTATION_REASON_REQUIRED',
+      message: 'Elija un motivo para descartar una alergia de criticidad alta',
+    },
+  ];
 
-  /**
-   * The same rule for an allergy and for a history entry (EN-085), so ONE
-   * code; the sentence names which of the two, because «descarta la alergia»
-   * read over a family history is a screen that does not know what it holds.
-   */
-  constructor(subject: 'la alergia' | 'el antecedente' = 'la alergia') {
-    super('Refuting requires a written reason');
-    const noun = subject === 'la alergia' ? 'esta alergia' : 'este antecedente';
-    this.userTitle = `Escriba por qué se descarta ${subject}: quien lo lea dentro de dos años necesita saberlo`;
-    this.fieldErrors = [
-      {
-        field: 'notes',
-        code: 'REFUTATION_REASON_REQUIRED',
-        message: `Indique por qué se descarta ${noun}`,
-      },
-    ];
+  constructor() {
+    super('Refuting a high-criticality allergy requires a reason');
+  }
+}
+
+/**
+ * EN-226, D-140.3. «Descartar estas y afirmar» named an allergy of HIGH
+ * criticality. Those are ruled out one by one, each with its reason
+ * (`REFUTATION_REASON_REQUIRED`), never as the side effect of asserting
+ * «sin alergias conocidas». 409: the request is well formed and what refuses
+ * it is what the chart holds; nothing is ruled out.
+ */
+export class AllergyRefutedAloneError extends ConflictError {
+  readonly code = 'ALLERGY_REFUTED_ALONE';
+  override readonly userTitle =
+    'Las alergias de criticidad alta se descartan una a una, con su motivo. Descártelas antes de afirmar';
+
+  constructor() {
+    super('A high-criticality allergy cannot be refuted in bulk');
   }
 }
 
@@ -1059,10 +1062,51 @@ export class PatientHistoryNotFoundError extends NotFoundError {
 export class HistoryAlreadyRefutedError extends ConflictError {
   readonly code = 'HISTORY_ALREADY_REFUTED';
   override readonly userTitle =
-    'Ese antecedente ya estaba descartado, con su fecha y su motivo. Si hay algo nuevo que decir, regístrelo otra vez';
+    'Ese antecedente ya está descartado. Si se descartó por error, reactívelo';
 
   constructor() {
     super('History entry has already been refuted');
+  }
+}
+
+/**
+ * EN-224. «Reactivar» an allergy that is not ruled out. 409: the allergy
+ * exists and the request is well formed; what refuses it is its state, which
+ * a colleague may have changed a moment ago.
+ */
+export class AllergyNotRefutedError extends ConflictError {
+  readonly code = 'ALLERGY_NOT_REFUTED';
+  override readonly userTitle =
+    'Esa alergia no está descartada: sigue activa. Actualice la lista';
+
+  constructor() {
+    super('Allergy is not refuted');
+  }
+}
+
+/** EN-224. The same as `ALLERGY_NOT_REFUTED`, for a history entry. */
+export class HistoryNotRefutedError extends ConflictError {
+  readonly code = 'HISTORY_NOT_REFUTED';
+  override readonly userTitle =
+    'Ese antecedente no está descartado: sigue activo. Actualice la lista';
+
+  constructor() {
+    super('History entry is not refuted');
+  }
+}
+
+/**
+ * EN-226. «Retirar» a «sin alergias conocidas» when the chart has none
+ * standing: somebody retracted it a moment ago, or an allergy recorded since
+ * already made it stop counting. 409, and the way out is to reload.
+ */
+export class NoKnownAllergiesNotStandingError extends ConflictError {
+  readonly code = 'NO_KNOWN_ALLERGIES_NOT_STANDING';
+  override readonly userTitle =
+    'Esta ficha ya no tiene «Sin alergias conocidas» vigente. Actualice la ficha';
+
+  constructor() {
+    super('The chart has no standing no-known-allergies assertion');
   }
 }
 
@@ -1072,9 +1116,9 @@ export class HistoryAlreadyRefutedError extends ConflictError {
  * ⚠️ REFUSED AND NOT MERGED INTO A WARNING. The two statements cannot both be
  * on one chart: whoever reads «sin alergias conocidas» stops reading the list,
  * which is the whole reason the band says it at all. What the caller has to do
- * is refute the allergies that are no longer valid ONE BY ONE, each with its
- * reason (EN-082) — and that is a clinical judgement per allergy, never a side
- * effect of ticking a box.
+ * is refute the allergies that are no longer valid — since EN-226 in the same
+ * step, naming each one (`…/none-known/refuting-active`): the list on the
+ * screen is the clinical judgement, never a side effect of ticking a box.
  *
  * 409 AND NOT 422: the request is well formed and the chart exists. What
  * refuses it is what is already written on the record.
@@ -1088,7 +1132,7 @@ export class HistoryAlreadyRefutedError extends ConflictError {
 export class ChartHasAllergiesError extends ConflictError {
   readonly code = 'CHART_HAS_ALLERGIES';
   override readonly userTitle =
-    'Esta ficha tiene alergias registradas. Descarte primero las que ya no sean válidas, con su motivo, antes de afirmar que no hay ninguna';
+    'Esta ficha tiene alergias activas. Descártelas antes de afirmar que no hay ninguna';
 
   constructor() {
     super('Cannot assert no known allergies on a chart with active allergies');
@@ -1224,6 +1268,24 @@ export class DiagnosisCorrectionRequiresSignatureError extends ForbiddenError {
 
   constructor() {
     super('Correcting the coding after the discharge requires record:sign');
+  }
+}
+
+/**
+ * EN-228, D-134.3. After the discharge the taking is corrected by whoever may
+ * sign the history at the attention's site (`record:sign`): the 002 is signed
+ * and carries those figures, as the coding of block K does (D-117.13). Before
+ * it, `vitals:write` is enough. A 403: the caller is what is wrong.
+ */
+export class VitalsCorrectionRequiresSignatureError extends ForbiddenError {
+  readonly code = 'VITALS_CORRECTION_REQUIRES_SIGNATURE';
+  override readonly userTitle =
+    'La atención ya tiene el alta: corrige sus signos vitales quien firma historia clínica en esta sede';
+
+  constructor() {
+    super(
+      'Correcting the vital signs after the discharge requires record:sign',
+    );
   }
 }
 

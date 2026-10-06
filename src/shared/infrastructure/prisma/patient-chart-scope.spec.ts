@@ -219,6 +219,11 @@ const CHART_LINKS: Record<
  * thing the stale-table check does for `HISTORY_TABLES` and `NOT_HISTORY`.
  */
 const EXEMPT: Record<string, string> = {
+  'src/modules/privacy/infrastructure/prisma-consent.repository.ts#currentVersionConsents':
+    'PD-045. Cuenta las fichas de TODA la clínica con un consentimiento ' +
+    'vigente sobre el texto vigente, para decir la consecuencia de publicar ' +
+    'otro. No lee la historia de nadie: no hay ficha de la que partir, y ' +
+    'una ficha y su absorbida cuentan como lo que son, dos filas.',
   'src/modules/documents/infrastructure/prisma-document-source.reader.ts#findEncounterSummary':
     'DOC-111. `certificates` se lee desde la ATENCIÓN, no desde la ficha: son ' +
     'los certificados emitidos en esa visita (`medical_certificate.encounter_id`), ' +

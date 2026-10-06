@@ -58,3 +58,21 @@ export function isConsentTextRace(error: unknown): boolean {
     (typeof message === 'string' && message.includes(expected))
   );
 }
+
+/**
+ * PD-044. PostgreSQL refusing a second correction of the same consent
+ * (`patient_consent_corrected_once`, 23505): the net under the row lock.
+ */
+export function isConsentCorrectionRace(error: unknown): boolean {
+  if (!isPrismaError(error)) return false;
+  const cause = error.meta?.driverAdapterError?.cause;
+  const sqlState = cause?.code ?? cause?.originalCode;
+  if (sqlState !== '23505') return false;
+  const index = cause?.constraint?.index;
+  const message = cause?.originalMessage;
+  return (
+    index === 'patient_consent_corrected_once' ||
+    (typeof message === 'string' &&
+      message.includes('patient_consent_corrected_once'))
+  );
+}

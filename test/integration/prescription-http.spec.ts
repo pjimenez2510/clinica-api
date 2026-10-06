@@ -911,13 +911,17 @@ describe('la receta por HTTP', () => {
     expect(insisted.status).not.toBe(201);
     expect(await prisma.prescription.count({ where: { status: 'ACTIVE' } })).toBe(0); // prettier-ignore
 
-    // Control positivo: refutada la alergia, el mismo borrador se emite.
+    // Control positivo: refutada la alergia, el mismo borrador se emite. Con
+    // sello: desde EN-224 refutar también deja su versión.
+    const refuter = (await createUser(prisma)).id;
     await prisma.patientAllergy.update({
       where: { id: allergy.id },
       data: {
         refutedAt: new Date(),
-        refutedById: (await createUser(prisma)).id,
+        refutedById: refuter,
         refutedNotes: 'Tolerada en tratamiento previo',
+        changedById: refuter,
+        changedAt: new Date(),
       },
     });
     await post(

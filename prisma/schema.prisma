@@ -119,6 +119,7 @@ model User {
   /// as much as the recording does.
   priorityGroupsRecorded PatientPriorityGroup[] @relation("PriorityGroupRecorder")
   priorityGroupsClosed   PatientPriorityGroup[] @relation("PriorityGroupCloser")
+  priorityGroupsChanged  PatientPriorityGroup[] @relation("PriorityGroupChanger")
   patientCorrections     PatientChangeHistory[] @relation("PatientChangeAuthor")
 
   /// PA-044. Merges and undos this person performed. `performed_by` is NOT
@@ -134,15 +135,20 @@ model User {
 
   /// EN-086, EN-143, EN-085. Who wrote each nursing and background datum:
   /// D-048 puts the authorship IN the datum, not in the form that carries it.
-  allergiesRecorded  PatientAllergy[]               @relation("AllergyRecorder")
-  allergiesRefuted   PatientAllergy[]               @relation("AllergyRefuter")
-  diagnosesRetracted EncounterDiagnosisRetraction[] @relation("DiagnosisRetractor")
+  allergiesRecorded        PatientAllergy[]               @relation("AllergyRecorder")
+  allergiesRefuted         PatientAllergy[]               @relation("AllergyRefuter")
+  diagnosesRetracted       EncounterDiagnosisRetraction[] @relation("DiagnosisRetractor")
   /// EN-213. The removed diagnoses this account brought back («Deshacer»).
-  diagnosesRestored  EncounterDiagnosisRetraction[] @relation("DiagnosisRestorer")
-  vitalsRecorded     EncounterVitals[]              @relation("VitalsRecorder")
-  vitalsCorrected    EncounterVitals[]              @relation("VitalsCorrector")
-  historyRecorded    PatientHistory[]               @relation("HistoryRecorder")
-  historyRefuted     PatientHistory[]               @relation("HistoryRefuter")
+  diagnosesRestored        EncounterDiagnosisRetraction[] @relation("DiagnosisRestorer")
+  vitalsRecorded           EncounterVitals[]              @relation("VitalsRecorder")
+  vitalsCorrected          EncounterVitals[]              @relation("VitalsCorrector")
+  historyRecorded          PatientHistory[]               @relation("HistoryRecorder")
+  historyRefuted           PatientHistory[]               @relation("HistoryRefuter")
+  /// EN-224 to EN-226. Who last changed an allergy or a history entry, and
+  /// who withdrew a «sin alergias conocidas».
+  allergiesChanged         PatientAllergy[]               @relation("AllergyChanger")
+  historyChanged           PatientHistory[]               @relation("HistoryChanger")
+  allergyAbsencesRetracted PatientAllergyAbsence[]        @relation("AllergyAbsenceRetractor")
 
   /// AG-064. The waiting-list calls this person made. `RESTRICT` on the way
   /// back: the trail names whoever called, and an account is deactivated, never
@@ -1854,8 +1860,10 @@ enum PriorityGroupOrigin {
 model PatientPriorityGroup {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
+  /// PA-037. RESTRICT: a chart is not deleted from under its records, and
+  /// `trg_patient_priority_group_never_deleted` refuses DELETE and TRUNCATE.
   patientId String  @map("patient_id") @db.Uuid
-  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
   /// One of the RECORDABLE codes of `priority-groups.ts`. A `varchar` with a
   /// CHECK and not a native enum: the enumeration of TEN lives in the domain —
@@ -1885,6 +1893,13 @@ model PatientPriorityGroup {
   closedById String?   @map("closed_by") @db.Uuid
   closedBy   User?     @relation("PriorityGroupCloser", fields: [closedById], references: [id], onDelete: Restrict)
   closedAt   DateTime? @map("closed_at") @db.Timestamptz(6)
+
+  /// PA-066. Who last edited the record and when — the stamp every UPDATE
+  /// carries, closing included, so `record_version` archives the row it
+  /// replaces. Both NULL or both set.
+  changedById String?   @map("changed_by") @db.Uuid
+  changedBy   User?     @relation("PriorityGroupChanger", fields: [changedById], references: [id], onDelete: Restrict)
+  changedAt   DateTime? @map("changed_at") @db.Timestamptz(6)
 
   @@index([patientId, startsOn])
   @@map("patient_priority_group")
@@ -1987,6 +2002,13 @@ model PatientAllergy {
   refutedById  String?   @map("refuted_by") @db.Uuid
   refutedBy    User?     @relation("AllergyRefuter", fields: [refutedById], references: [id], onDelete: Restrict)
 
+  /// EN-224, EN-225, D-127. Who changed it last —an edit, a refutation or a
+  /// reactivation— and when: the stamp `record_version_archive` demands on
+  /// every UPDATE. The earlier row is in `record_version`.
+  changedById String?   @map("changed_by") @db.Uuid
+  changedBy   User?     @relation("AllergyChanger", fields: [changedById], references: [id], onDelete: Restrict)
+  changedAt   DateTime? @map("changed_at") @db.Timestamptz(6)
+
   @@index([patientId, refutedAt])
   @@map("patient_allergy")
 }
@@ -1998,9 +2020,11 @@ model PatientAllergy {
 /// would not show in April unless somebody re-read March. Sister of
 /// `patient_allergy`, with the same regime: refuted, never deleted.
 ///
-/// The guarantees live in `20260930160703_patient_preparation`:
+/// The guarantees live in `20260930160703_patient_preparation` and
+/// `20261006073817_patient_background_edit_in_place`:
 /// `trg_patient_history_append_only` refuses DELETE, TRUNCATE and any UPDATE
-/// other than refuting a live row once.
+/// other than ONE of editing a live row, refuting it once or reactivating it
+/// (EN-224, EN-225) — each stamped, the earlier row in `record_version`.
 model PatientHistory {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
@@ -2017,11 +2041,18 @@ model PatientHistory {
   recordedBy   User     @relation("HistoryRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
   recordedAt   DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
 
-  /// All three or none (`patient_history_refutation_is_whole`).
+  /// When and who together; the reason is optional since EN-224
+  /// (`patient_history_refutation_is_whole`).
   refutedAt    DateTime? @map("refuted_at") @db.Timestamptz(6)
   refutedNotes String?   @map("refuted_notes") @db.Text
   refutedById  String?   @map("refuted_by") @db.Uuid
   refutedBy    User?     @relation("HistoryRefuter", fields: [refutedById], references: [id], onDelete: Restrict)
+
+  /// EN-224, EN-225, D-127. The stamp of the last change, as on
+  /// `patient_allergy`; the earlier row is in `record_version`.
+  changedById String?   @map("changed_by") @db.Uuid
+  changedBy   User?     @relation("HistoryChanger", fields: [changedById], references: [id], onDelete: Restrict)
+  changedAt   DateTime? @map("changed_at") @db.Timestamptz(6)
 
   @@index([patientId, refutedAt])
   @@map("patient_history")
@@ -2037,10 +2068,12 @@ model PatientHistory {
 /// conocidas (Dra. Villacís, 14-03-2026)» and «alergias: no registradas» are
 /// two different things to read mid-consultation.
 ///
-/// The guarantees live in `20260820171859_patient_allergy_absence` and NOT in
-/// this file, which cannot describe them: the trigger that refuses UPDATE,
-/// DELETE and TRUNCATE, and the one that refuses an assertion over a chart —
-/// or a chart it absorbed — that still has an unrefuted allergy.
+/// The guarantees live in `20260820171859_patient_allergy_absence` (and
+/// `20261006073817_patient_background_edit_in_place`) and NOT in this file,
+/// which cannot describe them: the trigger that refuses DELETE, TRUNCATE and
+/// every UPDATE but retracting it once (EN-226), and the one that refuses an
+/// assertion over a chart — or a chart it absorbed — that still has an
+/// unrefuted allergy.
 model PatientAllergyAbsence {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
@@ -2055,6 +2088,12 @@ model PatientAllergyAbsence {
   assertedBy   User   @relation("AllergyAbsenceAsserter", fields: [assertedById], references: [id], onDelete: Restrict)
 
   assertedAt DateTime @default(now()) @map("asserted_at") @db.Timestamptz(6)
+
+  /// EN-226. Withdrawn because it was asserted by mistake: who and when, once.
+  /// The row stays, and its earlier state is in `record_version`.
+  retractedById String?   @map("retracted_by") @db.Uuid
+  retractedBy   User?     @relation("AllergyAbsenceRetractor", fields: [retractedById], references: [id], onDelete: Restrict)
+  retractedAt   DateTime? @map("retracted_at") @db.Timestamptz(6)
 
   @@index([patientId, assertedAt(sort: Desc)], map: "patient_allergy_absence_by_chart")
   @@map("patient_allergy_absence")
@@ -2107,9 +2146,10 @@ model PatientMerge {
 
   performedAt DateTime @default(now()) @map("performed_at") @db.Timestamptz(6)
 
-  /// PA-044, PA-047. Mandatory on BOTH events, and a CHECK refuses it blank:
-  /// a mandatory reason is what tells this apart from a click.
-  reason String @db.Text
+  /// PA-064 (D-126). Optional on both events, from a short list on screen;
+  /// a CHECK refuses it blank when present. Who, when and the snapshot are
+  /// the trail, and those stay mandatory.
+  reason String? @db.Text
 
   /// Snapshot of the source row and its children at merge time. Present on the
   /// MERGE row and absent on the UNDO one, tied to `event` by a CHECK: there is
@@ -4700,6 +4740,13 @@ model PatientConsent {
   grantedBy     DataSubjectParty   @map("granted_by")
   recordedAt    DateTime           @default(now()) @map("recorded_at") @db.Timestamptz(6)
   recordedBy    String             @map("recorded_by") @db.Uuid
+  /// PD-044. The consent this one corrects (medium or grantor recorded
+  /// wrong). The original stays untouched; the one nobody supersedes is the
+  /// one that stands. UNIQUE: an original is superseded once
+  /// (`patient_consent_corrected_once`).
+  supersedesId  String?            @unique(map: "patient_consent_corrected_once") @map("supersedes_id") @db.Uuid
+  supersedes    PatientConsent?    @relation("ConsentCorrection", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy  PatientConsent?    @relation("ConsentCorrection")
 
   @@index([patientId, recordedAt(sort: Desc)], map: "patient_consent_by_patient")
   @@map("patient_consent")
@@ -4723,9 +4770,33 @@ model DataSubjectRequest {
   response     String?             @db.Text
   answeredAt   DateTime?           @map("answered_at") @db.Timestamptz(6)
   answeredBy   String?             @map("answered_by") @db.Uuid
+  /// PD-046. Who last edited it (or answered it) and when: the stamp every
+  /// UPDATE carries so `record_version` archives the row it replaces.
+  changedBy    String?             @map("changed_by") @db.Uuid
+  changedAt    DateTime?           @map("changed_at") @db.Timestamptz(6)
+
+  answerCorrections DataSubjectAnswerCorrection[]
 
   @@index([patientId, receivedAt(sort: Desc)], map: "data_subject_request_by_patient")
   @@map("data_subject_request")
+}
+
+/// PD-047. A rectified answer to a data subject request, linked to the one it
+/// replaces (`correctsId`; NULL = the original answer on the request). Insert
+/// only: the original answer and every rectification stay.
+model DataSubjectAnswerCorrection {
+  id          String                       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  requestId   String                       @map("request_id") @db.Uuid
+  request     DataSubjectRequest           @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  correctsId  String?                      @unique(map: "data_subject_answer_correction_chain_once") @map("corrects_id") @db.Uuid
+  corrects    DataSubjectAnswerCorrection? @relation("AnswerCorrectionChain", fields: [correctsId], references: [id], onDelete: Restrict)
+  correctedBy DataSubjectAnswerCorrection? @relation("AnswerCorrectionChain")
+  outcome     DataRequestOutcome
+  response    String                       @db.Text
+  answeredAt  DateTime                     @map("answered_at") @db.Timestamptz(6)
+  answeredBy  String                       @map("answered_by") @db.Uuid
+
+  @@map("data_subject_answer_correction")
 }
 
 /// EN-210, D-127. The PREVIOUS state of an edited row, written by the

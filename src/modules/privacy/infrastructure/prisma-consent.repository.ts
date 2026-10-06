@@ -6,15 +6,20 @@ import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.serv
 import { ConsentTextVersionConflictError } from '../domain/privacy.errors';
 import type {
   ChartLookup,
+  ConsentCorrection,
   ConsentRepository,
   ConsentTextView,
+  CorrectConsentResult,
   NewConsent,
   PatientConsentView,
   RecordConsentResult,
   Requester,
 } from '../domain/privacy.repository';
 
-import { isConsentTextRace } from './privacy-database-errors';
+import {
+  isConsentCorrectionRace,
+  isConsentTextRace,
+} from './privacy-database-errors';
 import {
   CONSENT_TEXT_SELECT,
   chartLookup,
@@ -54,6 +59,8 @@ const CONSENT_SELECT = {
   grantedBy: true,
   recordedAt: true,
   recordedBy: true,
+  supersedesId: true,
+  supersededBy: { select: { id: true } },
   textVersion: { select: CONSENT_TEXT_SELECT },
 } satisfies Prisma.PatientConsentSelect;
 
@@ -88,6 +95,79 @@ export class PrismaConsentRepository implements ConsentRepository {
       rows.map((row) => row.publishedBy),
     );
     return rows.map((row) => toTextView(row, names));
+  }
+
+  async currentVersionConsents(): Promise<number> {
+    const [row] = await this.prisma.$queryRaw<{ charts: bigint }[]>`
+      SELECT count(DISTINCT c.patient_id) AS charts
+        FROM patient_consent c
+       WHERE c.text_version_id = (
+               SELECT id FROM consent_text_version ORDER BY version DESC LIMIT 1)
+         AND NOT EXISTS (
+               SELECT 1 FROM patient_consent s WHERE s.supersedes_id = c.id)`;
+    return Number(row?.charts ?? 0);
+  }
+
+  async correct(
+    correction: ConsentCorrection,
+    requester: Requester,
+  ): Promise<CorrectConsentResult> {
+    try {
+      const outcome = await this.prisma.$transaction(async (tx) => {
+        const original = await tx.patientConsent.findFirst({
+          where: {
+            id: correction.consentId,
+            ...chartScope(correction.patientId),
+          },
+          select: { id: true, patientId: true, textVersionId: true },
+        });
+        if (!original) return { status: 'missing' as const };
+
+        // The original's row lock orders two corrections: the second one
+        // waits here and then finds the first.
+        await tx.$executeRaw`
+          SELECT id FROM patient_consent WHERE id = ${original.id}::uuid FOR UPDATE`;
+        const corrected = await tx.patientConsent.count({
+          where: { supersedesId: original.id },
+        });
+        if (corrected > 0) return { status: 'already-corrected' as const };
+
+        const row = await tx.patientConsent.create({
+          data: {
+            // The original's patient and text: what is corrected is how it
+            // was recorded, not what was consented nor by whom
+            // (`patient_consent_correction_matches`).
+            patientId: original.patientId,
+            textVersionId: original.textVersionId,
+            medium: correction.medium,
+            grantedBy: correction.grantedBy,
+            recordedBy: requester.userId,
+            supersedesId: original.id,
+          },
+          select: CONSENT_SELECT,
+        });
+        await writeTrail(
+          tx,
+          {
+            resourceType: 'patient_consent',
+            resourceId: row.id,
+            action: 'CREATE',
+          },
+          requester,
+        );
+        return { status: 'corrected' as const, row };
+      });
+
+      if (outcome.status !== 'corrected') return outcome;
+      const [consent] = await this.views([outcome.row]);
+      return { status: 'corrected', consent: consent! };
+    } catch (error) {
+      // The net under the lock: `patient_consent_corrected_once`.
+      if (isConsentCorrectionRace(error)) {
+        return { status: 'already-corrected' };
+      }
+      throw error;
+    }
   }
 
   async publish(body: string, requester: Requester): Promise<ConsentTextView> {
@@ -186,18 +266,64 @@ export class PrismaConsentRepository implements ConsentRepository {
   }
 
   private async views(rows: ConsentRow[]): Promise<PatientConsentView[]> {
+    const roots = await this.originalsOf(rows);
     const names = await staffNames(
       this.prisma,
-      rows.flatMap((row) => [row.recordedBy, row.textVersion.publishedBy]),
+      rows.flatMap((row) => [
+        row.recordedBy,
+        row.textVersion.publishedBy,
+        roots.get(row.id)?.recordedBy ?? row.recordedBy,
+      ]),
     );
-    return rows.map((row) => ({
-      id: row.id,
-      patientId: row.patientId,
-      textVersion: toTextView(row.textVersion, names),
-      medium: row.medium,
-      grantedBy: row.grantedBy,
-      recordedAt: row.recordedAt,
-      recordedBy: nameOf(names, row.recordedBy),
-    }));
+    return rows.map((row) => {
+      const taken = roots.get(row.id) ?? row;
+      return {
+        id: row.id,
+        patientId: row.patientId,
+        textVersion: toTextView(row.textVersion, names),
+        medium: row.medium,
+        grantedBy: row.grantedBy,
+        recordedAt: row.recordedAt,
+        recordedBy: nameOf(names, row.recordedBy),
+        supersedesId: row.supersedesId,
+        isSuperseded: row.supersededBy !== null,
+        takenAt: taken.recordedAt,
+        takenBy: nameOf(names, taken.recordedBy),
+      };
+    });
+  }
+
+  /**
+   * PD-044. For every correction, the FIRST consent of its chain —who took it
+   * from the person and when—, walking `supersedes_id` back in one statement.
+   * Originals are not in the map: they are their own.
+   */
+  private async originalsOf(
+    rows: readonly ConsentRow[],
+  ): Promise<Map<string, { recordedAt: Date; recordedBy: string }>> {
+    const corrections = rows
+      .filter((row) => row.supersedesId !== null)
+      .map((row) => row.id);
+    if (corrections.length === 0) return new Map();
+    const found = await this.prisma.$queryRaw<
+      { id: string; recorded_at: Date; recorded_by: string }[]
+    >`
+      WITH RECURSIVE chain (start_id, id, supersedes_id) AS (
+        SELECT id, id, supersedes_id FROM patient_consent
+         WHERE id = ANY(${corrections}::uuid[])
+        UNION ALL
+        SELECT chain.start_id, c.id, c.supersedes_id
+          FROM chain JOIN patient_consent c ON c.id = chain.supersedes_id
+      )
+      SELECT chain.start_id::text AS id, c.recorded_at,
+             c.recorded_by::text AS recorded_by
+        FROM chain JOIN patient_consent c ON c.id = chain.id
+       WHERE chain.supersedes_id IS NULL`;
+    return new Map(
+      found.map((row) => [
+        row.id,
+        { recordedAt: row.recorded_at, recordedBy: row.recorded_by },
+      ]),
+    );
   }
 }

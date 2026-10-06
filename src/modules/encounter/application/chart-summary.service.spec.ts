@@ -229,6 +229,7 @@ const anEntry = (overrides: Partial<HistoryView> = {}): HistoryView => ({
   refutedAt: null,
   refutedNotes: null,
   refutedBy: null,
+  changedAt: null,
   ...overrides,
 });
 

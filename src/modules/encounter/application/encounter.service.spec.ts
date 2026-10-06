@@ -10,6 +10,7 @@ import {
   EncounterNotFoundError,
   PatientChartNotOpenError,
   PractitionerProfileRequiredError,
+  VitalsCorrectionRequiresSignatureError,
 } from '../domain/encounter.errors';
 import type {
   ChartHistoryQuery,
@@ -26,7 +27,11 @@ import type {
 } from '../domain/encounter.repository';
 import type { ClosurePlan } from '../domain/encounter-closure';
 import type { VitalSigns } from '../domain/vital-signs';
-import { EncounterService, type Requester } from './encounter.service';
+import {
+  EncounterService,
+  type Requester,
+  type VitalsRequester,
+} from './encounter.service';
 
 /**
  * The attention's use cases, against an in-memory port.
@@ -50,6 +55,9 @@ const requester: Requester = {
   ip: '10.0.0.9',
   userAgent: 'vitest',
 };
+
+/** EN-228. Nursing: writes the signs, signs no history anywhere. */
+const nurse: VitalsRequester = { ...requester, signSites: [] };
 
 const anEncounter = (
   overrides: Partial<EncounterView> = {},
@@ -87,6 +95,10 @@ class FakeEncounters implements EncounterRepository {
   opened: NewEncounter[] = [];
   savedVitals: VitalSigns[] = [];
   vitalsAuthors: string[] = [];
+  /** EN-228. What the service told the adapter to allow under the lock. */
+  correctionAuthority: boolean[] = [];
+  /** EN-217. The taking already on the attention, if any. */
+  taken: VitalSignsView | null = null;
   stamps: SubjectStatusStamp[] = [];
 
   findPatientChart(): Promise<PatientChartStatus | null> {
@@ -148,9 +160,11 @@ class FakeEncounters implements EncounterRepository {
     _query: EncounterQuery,
     vitals: VitalSigns,
     recordedById: string,
+    mayCorrectAfterDischarge: boolean,
   ): Promise<VitalSignsView> {
     this.savedVitals.push(vitals);
     this.vitalsAuthors.push(recordedById);
+    this.correctionAuthority.push(mayCorrectAfterDischarge);
     return Promise.resolve({
       ...vitals,
       encounterId: this.stored.id,
@@ -163,7 +177,7 @@ class FakeEncounters implements EncounterRepository {
   }
 
   findVitals(): Promise<VitalSignsView | null> {
-    return Promise.resolve(null);
+    return Promise.resolve(this.taken);
   }
 
   /** EN-217. What the database would say is missing; proven against it. */
@@ -422,7 +436,7 @@ describe('los casos de uso de la atención', () => {
   });
 
   it('EN-136 pone al paciente LISTO al guardar los signos, sin pedir un botón más', async () => {
-    await service.recordVitals('encounter-1', { weightKg: 68.4 }, requester);
+    await service.recordVitals('encounter-1', { weightKg: 68.4 }, nurse);
 
     expect(repository.stamps.map((stamp) => stamp.fact)).toEqual([
       'VITALS_RECORDED',
@@ -440,7 +454,7 @@ describe('los casos de uso de la atención', () => {
     const saved = await service.recordVitals(
       'encounter-1',
       { weightKg: 6.2 },
-      requester,
+      nurse,
     );
     expect(repository.savedVitals).toHaveLength(1);
     expect(saved.anthropometryPending).toEqual([
@@ -458,7 +472,7 @@ describe('los casos de uso de la atención', () => {
     const vitals = await service.recordVitals(
       'encounter-1',
       { weightKg: 68.4, heightCm: 165 },
-      requester,
+      nurse,
     );
 
     expect(vitals.weightKg).toBe(68.4);
@@ -472,7 +486,7 @@ describe('los casos de uso de la atención', () => {
      * propio, porque la fila sólo guarda al autor de la toma VIGENTE y la de
      * antes se corrigió encima.
      */
-    await service.recordVitals('encounter-1', { weightKg: 68.4 }, requester);
+    await service.recordVitals('encounter-1', { weightKg: 68.4 }, nurse);
 
     expect(repository.vitalsAuthors).toEqual([USER]);
 
@@ -494,7 +508,7 @@ describe('los casos de uso de la atención', () => {
     });
 
     const refusal = await service
-      .recordVitals('encounter-1', { weightKg: 68.4 }, requester)
+      .recordVitals('encounter-1', { weightKg: 68.4 }, nurse)
       .catch((error: unknown) => error);
 
     expect(refusal).toBeInstanceOf(EncounterAlreadyClosedError);
@@ -503,13 +517,79 @@ describe('los casos de uso de la atención', () => {
     );
   });
 
+  describe('EN-228 corregir los signos tras el alta exige record:sign en la sede de la atención', () => {
+    const taking = (): VitalSignsView => ({
+      encounterId: 'encounter-1',
+      weightKg: 68.4,
+      bmi: null,
+      measuredAt: repository.stored.startedAt,
+      recordedBy: { id: USER, name: 'Carmen Salazar' },
+      correctedBy: null,
+      correctedAt: null,
+    });
+    const discharge = () => {
+      repository.stored = anEncounter({
+        status: 'DISCHARGED',
+        endedAt: repository.stored.startedAt,
+        dischargeCondition: 'ALIVE',
+      });
+      repository.taken = taking();
+    };
+
+    it('EN-228 rechaza con 403 a enfermería tras el alta, sin escribir nada', async () => {
+      discharge();
+
+      await expect(
+        service.recordVitals('encounter-1', { weightKg: 68.1 }, nurse),
+      ).rejects.toBeInstanceOf(VitalsCorrectionRequiresSignatureError);
+      expect(repository.savedVitals).toEqual([]);
+      expect(audit.entries).toEqual([]);
+    });
+
+    it('EN-228 rechaza también a quien firma historia solo en OTRA sede', async () => {
+      discharge();
+
+      await expect(
+        service.recordVitals(
+          'encounter-1',
+          { weightKg: 68.1 },
+          { ...nurse, signSites: ['site-2'] },
+        ),
+      ).rejects.toBeInstanceOf(VitalsCorrectionRequiresSignatureError);
+    });
+
+    it('EN-228 deja corregir a quien firma historia en la sede, y se lo dice al adaptador para que lo vuelva a preguntar bajo el candado', async () => {
+      discharge();
+
+      await service.recordVitals(
+        'encounter-1',
+        { weightKg: 68.1 },
+        { ...nurse, signSites: [SITE] },
+      );
+      await service.recordVitals(
+        'encounter-1',
+        { weightKg: 68.2 },
+        { ...nurse, signSites: 'all' },
+      );
+      expect(repository.correctionAuthority).toEqual([true, true]);
+    });
+
+    it('EN-228 antes del alta basta vitals:write (control positivo), y el adaptador sabe que esa cuenta no corrige tras el alta', async () => {
+      repository.taken = taking();
+
+      await service.recordVitals('encounter-1', { weightKg: 68.1 }, nurse);
+      expect(repository.savedVitals).toHaveLength(1);
+      expect(repository.correctionAuthority).toEqual([false]);
+    });
+  });
+
   it('EN-060 conserva el instante de la TOMA, que no es el del tecleo', () => {
     // Nursing weighs at 08:10 and the network returns at 08:40: a record that
     // says 08:40 has quietly moved a fact.
     const measuredAt = new Date('2026-09-14T13:10:00Z');
 
     return service
-      .recordVitals('encounter-1', { weightKg: 68.4, measuredAt }, requester)
+      .recordVitals('encounter-1', { weightKg: 68.4, measuredAt }, nurse)
       .then(() => {
         expect(repository.savedVitals[0]?.measuredAt).toEqual(measuredAt);
       });

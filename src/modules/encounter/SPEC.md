@@ -386,7 +386,9 @@ afirmación de una persona y no como casilla vacía— y **EN-159 a EN-161** —
 historia a la vista durante la consulta—, **EN-164** —enfermería registra
 alergias y antecedentes sin `record:write`—, y **EN-085 y EN-086**, que
 estuvieron bloqueadas por esquema hasta `feat/f03-preparacion`: la tabla de
-antecedentes y el autor de la alergia.
+antecedentes y el autor de la alergia. Desde D-127, **EN-224 a EN-226** (§24):
+descartar sin motivo, reactivar, editar en la fila con versiones, y «sin
+alergias conocidas» en un paso y retirable.
 
 **Solo servidor:** EN-082. Que refutar **no borre** sólo se ve contando filas.
 **EN-087** lo es por lo mismo: la inmutabilidad de la afirmación y el rechazo
@@ -1674,6 +1676,11 @@ requisitos que cambian.
   > propio»*. El paciente al que le dijeron que era alérgico a la penicilina y
   > resultó no serlo necesita que eso conste, o dentro de dos años alguien vuelve a
   > escribirlo y vuelve a no darle el antibiótico correcto.
+  >
+  > **Enmendado por EN-224 (D-126.2, 06-10-2026): la nota de por qué es
+  > opcional**, de una lista en la pantalla. La fecha y quién la descartó
+  > siguen en la fila; lo descartado por error se reactiva (EN-224) y una
+  > alergia mal escrita se edita (EN-225), siempre sin borrar.
 - **EN-083** — El sistema DEBERÁ registrar la **criticidad** de cada alergia
   —baja, alta o no evaluable— y NO DEBERÁ asignar un valor por defecto que afirme
   algo que nadie evaluó.
@@ -1714,6 +1721,14 @@ requisitos que cambian.
   >
   > **La instantánea en la nota al firmarla** es EN-206
   > (`fix/nota-alergias-cita-cerrada`).
+  >
+  > **Enmendado por EN-224 y EN-225 (D-126, D-127, 06-10-2026).** Refutar ya
+  > no exige motivo: `patient_history_refutation_is_whole` pasa a «instante y
+  > autor juntos; el motivo, si lo hay, no en blanco». Y la tabla deja de ser
+  > de solo-refutar: `trg_patient_history_append_only` admite **editar** lo
+  > que el antecedente dice, **refutar** una vez y **reactivar**, cada uno con
+  > sello nuevo y la versión anterior en `record_version`. Sigue rechazando
+  > `DELETE`, `TRUNCATE` y cambiar el paciente o quién lo registró.
 - **EN-086** — Toda mutación de una alergia o de un antecedente DEBERÁ conservar
   quién la hizo y cuándo.
   > Es dato clínico que decide si un paciente recibe un antibiótico: la pregunta
@@ -1729,6 +1744,13 @@ requisitos que cambian.
   > `patient_allergy_refutation_names_its_author` exige quién la descartó. Las
   > filas anteriores no se inventan autor; para ellas la bitácora sigue siendo
   > la única respuesta.
+  >
+  > **Enmendado por EN-224 y EN-225 (D-127, 06-10-2026).** «Quién y cuándo» de
+  > cada cambio posterior al registro es el sello `changed_by` / `changed_at`
+  > de la alergia y del antecedente —editar, refutar o reactivar—, y la fila
+  > anterior entera queda en `record_version` (EN-210). `trg_patient_allergy_guard`
+  > admite esos tres actos, de uno en uno, y nunca cambiar el paciente ni
+  > quién ni cuándo la registró.
 - **EN-087** — CUANDO un clínico afirme que el paciente **no tiene alergias
   conocidas**, el sistema DEBERÁ registrar esa afirmación **con su autor y su
   instante**, y DEBERÁ servirla junto a la lista de alergias. El sistema NO
@@ -1788,6 +1810,14 @@ requisitos que cambian.
   >
   > La afirmación lleva su autor desde que existe; `patient_allergy` lo lleva
   > desde `feat/f03-preparacion` (EN-086).
+  >
+  > **Enmendado por EN-226 (D-126, D-127, 06-10-2026).** El freno sigue, pero
+  > la salida es un paso: la pantalla lista las activas y ofrece «Descartar
+  > estas y afirmar» (`…/none-known/refuting-active`), sin motivo. Y la
+  > afirmación ya no es solo-inserción: se **retira** cuando fue un error, una
+  > vez, con quién y cuándo, sin borrarla. Deja de servirse además en cuanto
+  > hay una alergia **activa** en la ficha aunque se registrara antes —una
+  > reactivada después de afirmar, o la de una ficha absorbida después—.
 - **EN-164** — Registrar una alergia, afirmar «sin alergias conocidas» y
   registrar un antecedente DEBERÁN exigir el permiso `background:write`, que
   DEBERÁN llevar `MEDICO` y `ENFERMERIA`; **refutar** una alergia o un
@@ -3418,6 +3448,12 @@ falta de una medida; y salir de la atención pide lo justo._
   > «Corregir la toma» sigue a la vista tras el alta para quien tiene
   > `vitals:write`; y tras la firma el aviso de lo pendiente ya no dice «para
   > firmar la nota».
+  >
+  > **Enmendado por EN-228 (D-134.3, resuelta el 06-10-2026):** tras el alta
+  > corrige la toma quien tiene `record:sign` en la sede de la atención, además
+  > de `vitals:write`; «Corregir la toma» tras el alta solo se ofrece a quien
+  > la puede corregir. Antes del alta sigue bastando `vitals:write`. La regla
+  > de que ninguna corrección deja pendiente el peso o la talla se queda.
 - **EN-218** — CUANDO se anule una atención (EN-166), el sistema NO DEBERÁ
   exigir motivo —el que se envíe DEBERÁ guardarse— y DEBERÁ guardar quién la
   anuló y cuándo; DEBERÁ descartar en la misma transacción, con quién y
@@ -3509,6 +3545,157 @@ verifica, que es de la atención, y dónde se ofrece._
 
 ---
 
+## 24. Corregir es editar: alergias, antecedentes y «sin alergias conocidas» (D-126, D-127)
+
+_Inventario de `fix/menos-preguntas`, filas PA-1 a PA-7 (rama
+`fix/menos-preguntas-pacientes`). Descartar pide una confirmación y no un
+texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
+
+- **EN-224** — CUANDO se descarte (refute) una alergia o un antecedente, el
+  sistema NO DEBERÁ exigir motivo —el que se envíe, de hasta 2000 caracteres,
+  DEBERÁ guardarse— y DEBERÁ guardar quién y cuándo; SI la alergia es de
+  criticidad `HIGH` y no llega motivo, ENTONCES DEBERÁ rechazarlo con
+  `REFUTATION_REASON_REQUIRED` (422, campo `notes`) sin descartarla; y
+  CUANDO se **reactive**
+  una alergia o un antecedente descartado, el sistema DEBERÁ devolverlo a
+  activo y DEBERÁ conservar la refutación —quién, cuándo y por qué— como
+  versión anterior, sin borrar nada; y SI lo que se reactiva no está
+  descartado, ENTONCES DEBERÁ rechazarlo con `ALLERGY_NOT_REFUTED` o
+  `HISTORY_NOT_REFUTED`.
+  > **D-126.2, PA-1, PA-2 y PA-5 del inventario.** La pantalla pide **una**
+  > confirmación —«Dejará de contar al recetar» para la alergia— con un
+  > motivo **opcional** de lista: «Prueba negativa», «Registrada por error»,
+  > «Tolera la sustancia», «Otro» (antecedente: «Registrado por error», «Se
+  > descartó», «Otro»). La API recibe el texto en `notes`, opcional; un texto
+  > en blanco se guarda como ninguno.
+  >
+  > **D-140.1 (construido así mientras el autor decide).** La de criticidad
+  > alta es la anafilaxia: descartarla sin motivo deja una fila que nadie
+  > puede sopesar, el riesgo para el paciente que D-126.4 exceptúa. Vale para
+  > toda refutación, no solo desde la receta, y lo decide el adaptador **bajo
+  > el candado de la fila**, con la criticidad vigente. El código es el de
+  > antes de D-126.2, con la regla estrechada.
+  >
+  > Reactivar (`POST …/reactivate`) pide `background:write`, como registrar:
+  > hace que la alergia vuelva a contar, la dirección segura. Una alergia
+  > reactivada deja de servir el «sin alergias conocidas» afirmado mientras
+  > estaba descartada (EN-087).
+  >
+  > **Garantía de la base**: `patient_history_refutation_is_whole` exige
+  > instante y autor juntos y un motivo, si lo hay, no en blanco;
+  > `patient_allergy_refutation_is_coherent` lo mismo para la alergia (sin
+  > motivo ni autor mientras no esté descartada). Refutar y reactivar son
+  > UPDATE sellados (`changed_by`, `changed_at`), y `record_version_archive`
+  > guarda la fila anterior en la misma sentencia.
+- **EN-225** — CUANDO se edite una alergia —sustancia, principio activo del
+  CNMB, reacción, criticidad— o un antecedente —descripción, tipo,
+  parentesco—, el sistema DEBERÁ cambiarlo en su fila y DEBERÁ guardar la
+  versión anterior entera, con quién la sustituyó y cuándo, en la misma
+  operación; DEBERÁ exponer esas versiones, de la más reciente a la más
+  antigua, a quien puede leer la alergia o el antecedente; la comprobación de
+  alergias al recetar (EN-084) DEBERÁ leer la versión vigente; y SI lo que se
+  edita está descartado, ENTONCES DEBERÁ rechazarlo con
+  `ALLERGY_ALREADY_REFUTED` o `HISTORY_ALREADY_REFUTED` (se reactiva antes).
+  > **D-127, PA-3 y PA-4.** Ya no se refuta y se registra otra. `PATCH
+/patients/:id/allergies/:allergyId` y `PATCH …/history/:historyId`, con
+  > `record:write` como refutar: cambiar la sustancia cambia lo que se
+  > comprueba al recetar, que es el mismo juicio clínico que descartar
+  > (EN-164). Un campo que la ruta no edita se rechaza (`UNKNOWN_FIELD`). La
+  > sustancia es una: un principio activo viaja con su texto, y un texto
+  > nuevo sin principio activo es texto libre —el concepto anterior no se
+  > queda detrás de un nombre que ya no es el suyo—. Pasar a familiar exige
+  > parentesco; pasar a personal lo vacía. Versiones en `GET …/versions`, con
+  > `record:read` y en la bitácora; la respuesta lleva `changedAt` (no nulo
+  > si hay versiones) y `changedBy` (quién hizo ese último cambio).
+  >
+  > **Revisión de la rama (06-10-2026): el principio activo se conserva.**
+  > Un `substanceConceptId` que no llega en el `PATCH` deja el que había,
+  > aunque cambie el texto; sólo un `null` explícito lo vacía. Corregir una
+  > errata del nombre no puede apagar en silencio la comprobación al recetar
+  > (EN-084); la pantalla pide confirmación antes de cambiar o quitar el
+  > concepto. Sustituye a la regla anterior («un texto nuevo sin principio
+  > activo es texto libre»).
+  >
+  > **Garantía de la base**: `trg_patient_allergy_guard` y
+  > `trg_patient_history_append_only` admiten un UPDATE que sea **uno** de tres
+  > actos —editar lo que dice una fila vigente, refutarla una vez, o
+  > reactivarla— y nunca cambiar el paciente ni quién ni cuándo la registró;
+  > `DELETE` y `TRUNCATE` siguen rechazados. `record_version_archive` exige
+  > sello nuevo (`EDIT_NOT_STAMPED`) y archiva la fila anterior. Dos ediciones
+  > a la vez se aplican las dos, una tras otra: el adaptador bloquea la fila.
+  > **Lo que la base no garantiza**: que el autor del sello sea quien ejecuta
+  > el UPDATE (el mismo hueco de EN-210).
+- **EN-226** — CUANDO un clínico afirme «sin alergias conocidas» nombrando
+  las alergias activas de la ficha, el sistema DEBERÁ descartarlas con el
+  motivo «Descartada al afirmar sin alergias conocidas», registrar la
+  afirmación en una sola transacción y devolver las que ese paso descartó
+  (`refutedAllergyIds`, sin las que otro ya había descartado, que tampoco
+  entran en la bitácora); y SI queda alguna alergia activa sin nombrar,
+  ENTONCES DEBERÁ rechazarlo con `CHART_HAS_ALLERGIES` sin descartar ninguna;
+  y SI alguna alergia activa es de criticidad `HIGH`, ENTONCES DEBERÁ
+  rechazarlo con `ALLERGY_REFUTED_ALONE` sin descartar ninguna; y CUANDO se
+  **retire** una
+  afirmación «sin alergias conocidas» hecha por error, el sistema DEBERÁ
+  dejar de servirla, DEBERÁ guardar quién la retiró y cuándo y la versión
+  anterior, y NO DEBERÁ borrarla; y SI la ficha no tiene una afirmación
+  vigente, ENTONCES DEBERÁ rechazarlo con `NO_KNOWN_ALLERGIES_NOT_STANDING`.
+  > **PA-6 y PA-7.** El freno de EN-087 se queda, en un paso: el diálogo de
+  > «Sin alergias conocidas» lista las activas y ofrece «Descartar estas y
+  > afirmar» (`POST …/allergies/none-known/refuting-active`, `record:write`
+  > porque descarta). Retirar (`POST …/allergies/none-known/retract`,
+  > `background:write` como afirmar, 204) devuelve la ficha a «no se
+  > preguntó»: la afirmación retirada era la última palabra y una anterior no
+  > vuelve detrás de ella.
+  >
+  > **D-140.3 (construido así mientras el autor decide).** Las de criticidad
+  > alta no entran en el descarte en bloque: se descartan una a una, con su
+  > motivo (EN-224). El adaptador bloquea las alergias **en orden de id**, así
+  > dos pasos simultáneos sobre la misma ficha no se interbloquean: el
+  > primero las descarta y el segundo no descarta ninguna. «Deshacer» del
+  > aviso reactiva las de `refutedAllergyIds` y retira la afirmación.
+  >
+  > **Garantía de la base**: `trg_patient_allergy_absence_empty_chart` ve las
+  > refutaciones de la misma transacción y decide si quedó alguna activa;
+  > `trg_patient_allergy_absence_immutable` admite sólo retirar, una vez, sin
+  > tocar quién ni cuándo se afirmó (`patient_allergy_absence_retraction_is_whole`),
+  > y rechaza `DELETE` y `TRUNCATE`; `record_version_archive` guarda la versión.
+
+---
+
+## 25. El diagnóstico en su fila, y quién corrige los signos tras el alta (D-134.3)
+
+- **EN-227** — CUANDO quien puede corregir la codificación pulse «Editar»
+  sobre un diagnóstico (EN-212), la pantalla DEBERÁ volver editable **esa
+  fila en su sitio**, sin abrir una ventana —el buscador CIE-10, la
+  condición, la ocurrencia y el principal, cargados con lo registrado—, con
+  los mismos rechazos, confirmación y motivo de lista de EN-212, EN-213 y
+  EN-214 dichos en la fila; y NO DEBERÁ enseñar textos sobre lo que el
+  sistema aún no hace (la marca de notificación obligatoria, EN-049).
+  > **Solo interfaz** (`clinica-web`, encargo del autor en
+  > `fix/menos-preguntas-pacientes`): como el editor de receta en su
+  > pestaña. Registrar uno nuevo sigue en su diálogo. La API no cambia:
+  > `PATCH …/diagnoses/:id` (EN-212).
+
+- **EN-228** — MIENTRAS la atención tenga el alta (`DISCHARGED` o
+  `COMPLETED`), CUANDO se corrija su toma de signos vitales (EN-217), el
+  sistema DEBERÁ exigir `record:sign` en la sede de la atención, además de
+  `vitals:write`, y SI quien corrige no lo tiene, ENTONCES DEBERÁ rechazarlo
+  con `VITALS_CORRECTION_REQUIRES_SIGNATURE` sin cambiar la toma; y la
+  pantalla NO DEBERÁ ofrecer «Corregir la toma» tras el alta a quien no lo
+  tiene en esa sede. Antes del alta DEBERÁ bastar `vitals:write`.
+  > **D-134.3**, como el bloque K (D-117.13, EN-212): la 002 ya está firmada
+  > con esas cifras. Enfermería sigue tomando y corrigiendo los signos hasta
+  > el alta. No se exige registro ACESS vigente: la decisión pide `record:sign`
+  > y nada más.
+  >
+  > El servicio lo decide con la sesión (`record:sign` en la sede de la
+  > atención) y lo pasa al adaptador, que vuelve a mirar el alta **bajo el
+  > bloqueo de la atención**: un alta que llega entre la lectura y la
+  > escritura se rechaza igual. **Lo que no garantiza la base**: quién
+  > corrige; la base no conoce los permisos de la sesión.
+
+---
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -3535,6 +3722,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `VITALS_OUT_OF_RANGE` | 422 | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges_*`, una por medida (D-058). **Por campo**, señalando cuál y diciendo el rango | EN-062 |
 | `VITALS_REQUIRED` | — | **Retirado por EN-217 (D-132 B)**: la toma ya no se rechaza por la antropometría | EN-063 |
 | `ANTHROPOMETRY_PENDING` | 422 | Se firma la 002 (da el alta) sin la antropometría obligatoria del menor de 5 años o de la embarazada, o una corrección de la toma tras el alta la dejaría pendiente (D-134.3); nombra cada campo | EN-217 |
+| `VITALS_CORRECTION_REQUIRES_SIGNATURE` | 403 | Corregir la toma de una atención con el alta sin `record:sign` en su sede (D-134.3) | EN-228 |
 | `NOTE_CONTENT_INCOMPLETE` | 422 | Firmar sin una sección obligatoria, o la 002 sin ningún diagnóstico en la atención (`diagnoses`). Nombra lo que falta, nunca su contenido | EN-020 |
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
 | `VIOLENCE_SCREENING_RESTRICTED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite | EN-072 |
@@ -3557,12 +3745,16 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `TRIAGE_NOT_ENABLED` | 404 | Se llamó a una ruta de triaje en una sede sin la capacidad habilitada. **404 y no 403**: en esa instalación la ruta no existe, y un 403 diría que existe y está cerrada | EN-148, EN-149 |
 | `RETENTION_PERIOD_TOO_SHORT` | 422 | Configurar el plazo de conservación por debajo de quince años | EN-157 |
 | `PATIENT_ALLERGY_NOT_FOUND` | 404 | Se refutó una alergia que no existe en esa ficha ni en las que absorbió. **El mismo para «no existe» y «es de otra ficha»**, por lo mismo que `ENCOUNTER_NOT_FOUND` | EN-082 |
-| `ALLERGY_ALREADY_REFUTED` | 409 | Se refutó una alergia ya refutada. **No es idempotencia**: la segunda refutación reescribiría la fecha y el motivo de la primera, y quién la descartó y por qué es información clínica por derecho propio | EN-082 |
-| `REFUTATION_REASON_REQUIRED` | 422 | Refutar sin escribir por qué. Se exige **en el servicio** además del DTO, por lo mismo que `AMENDMENT_REASON_REQUIRED` | EN-082 |
+| `ALLERGY_ALREADY_REFUTED` | 409 | Se refutó una alergia ya refutada. **No es idempotencia**: la segunda refutación reescribiría la fecha y el motivo de la primera, y quién la descartó y por qué es información clínica por derecho propio. También al **editar** una descartada: primero se reactiva (EN-225) | EN-082, EN-225 |
+| `REFUTATION_REASON_REQUIRED` | 422 | Retirado por EN-224 (D-126.2) para toda refutación **salvo** la de una alergia de criticidad alta, que lo vuelve a exigir (D-140.1). Campo `notes` | EN-082, EN-224 |
+| `ALLERGY_REFUTED_ALONE` | 409 | «Descartar estas y afirmar» sobre una ficha con una alergia activa de criticidad alta: se descarta una a una (D-140.3) | EN-226 |
+| `ALLERGY_NOT_REFUTED` | 409 | «Reactivar» una alergia que sigue activa | EN-224 |
+| `HISTORY_NOT_REFUTED` | 409 | «Reactivar» un antecedente que sigue activo | EN-224 |
+| `NO_KNOWN_ALLERGIES_NOT_STANDING` | 409 | «Retirar» un «sin alergias conocidas» cuando la ficha no tiene uno vigente: otro lo retiró, o una alergia registrada después ya lo dejó sin efecto | EN-226 |
 | `PATIENT_HISTORY_NOT_FOUND` | 404 | Se refutó un antecedente que no existe en esa ficha ni en las que absorbió. El mismo para las dos, por lo mismo que `PATIENT_ALLERGY_NOT_FOUND` | EN-085 |
-| `HISTORY_ALREADY_REFUTED` | 409 | Se refutó un antecedente ya refutado. Lo arbitra además `trg_patient_history_append_only` | EN-085 |
+| `HISTORY_ALREADY_REFUTED` | 409 | Se refutó un antecedente ya refutado, o se editó uno descartado. Lo arbitra además `trg_patient_history_append_only` | EN-085, EN-225 |
 | `VITALS_HEIGHT_POSITION_REQUIRED` | 422 | Talla sin posición, o posición sin talla. Del mapeo de constraints (`encounter_vitals_height_needs_position`), señala `heightPosition` | EN-064 |
-| `CHART_HAS_ALLERGIES` | 409 | Se afirmó «sin alergias conocidas» sobre una ficha con alergias sin descartar. Las dos no pueden ser ciertas a la vez, y quien lee la primera deja de mirar la lista. La salida es refutarlas **una a una con su motivo**, que es un juicio clínico por alergia y no el efecto colateral de marcar una casilla. Lo arbitra además `trg_patient_allergy_absence_empty_chart` | EN-087 |
+| `CHART_HAS_ALLERGIES` | 409 | Se afirmó «sin alergias conocidas» sobre una ficha con alergias sin descartar. Las dos no pueden ser ciertas a la vez, y quien lee la primera deja de mirar la lista. La salida es descartarlas —desde EN-226 en el mismo paso, nombrando cada una—, que es un juicio clínico por alergia y no el efecto colateral de marcar una casilla. Lo arbitra además `trg_patient_allergy_absence_empty_chart` | EN-087, EN-226 |
 | `DIAGNOSIS_NOT_FOUND` | 404 | El diagnóstico no es de esa atención, o ya se quitó. **El mismo para ambas**, por lo de `ENCOUNTER_NOT_FOUND` | EN-180, EN-183 |
 | `DIAGNOSIS_RETRACTION_REASON_REQUIRED` | 422 | Quitar un diagnóstico sin motivo cuando un certificado, una receta o una orden emitidos imprimieron su código. Se exige **en el servicio** y en la base. Desde EN-213, la nota firmada y el alta ya no lo piden | EN-189, EN-214 |
 | `EDIT_NOT_STAMPED` | 422 | Una edición de algo versionado que no dice quién ni cuándo, o repite el sello anterior. La API siempre lo pone; solo lo ve un acceso directo a la base | EN-210 |
@@ -3717,10 +3909,18 @@ que es global: una atención ocurre en un sitio.
 | `GET` | `/patients/:id/allergies` | `record:read` | EN-080 a EN-083, **EN-087** |
 | `POST` | `/patients/:id/allergies` | `background:write` | EN-080, EN-086, **EN-164** |
 | `POST` | `/patients/:id/allergies/none-known` | `background:write` | EN-087, **EN-164** |
-| `POST` | `/patients/:id/allergies/:allergyId/refute` | `record:write` | EN-082, EN-086 |
+| `POST` | `/patients/:id/allergies/:allergyId/refute` | `record:write` | EN-082, EN-086, **EN-224** |
+| `POST` | `/patients/:id/allergies/:allergyId/reactivate` | `background:write` | **EN-224** |
+| `PATCH` | `/patients/:id/allergies/:allergyId` | `record:write` | **EN-225** |
+| `GET` | `/patients/:id/allergies/:allergyId/versions` | `record:read` | **EN-225** |
+| `POST` | `/patients/:id/allergies/none-known/refuting-active` | `record:write` | **EN-226** |
+| `POST` | `/patients/:id/allergies/none-known/retract` | `background:write` | **EN-226** |
 | `GET` | `/patients/:id/history` | `record:read` | **EN-085** |
 | `POST` | `/patients/:id/history` | `background:write` | **EN-085**, EN-164 |
-| `POST` | `/patients/:id/history/:historyId/refute` | `record:write` | **EN-085**, EN-164 |
+| `POST` | `/patients/:id/history/:historyId/refute` | `record:write` | **EN-085**, EN-164, **EN-224** |
+| `POST` | `/patients/:id/history/:historyId/reactivate` | `background:write` | **EN-224** |
+| `PATCH` | `/patients/:id/history/:historyId` | `record:write` | **EN-225** |
+| `GET` | `/patients/:id/history/:historyId/versions` | `record:read` | **EN-225** |
 | `GET` | `/encounters/:id/chart-summary` | `record:read` | EN-159 a EN-161 |
 | `PUT` | `/encounters/:id/obstetric` | `record:write` | EN-090, EN-091 |
 | `PUT` | `/encounters/:id/nutrition` | `nursing:write` | EN-092, EN-096 |
@@ -3810,6 +4010,7 @@ prueba o el CI falla**.
 | EN-213, EN-214 | **Integración contra PostgreSQL real**, con control positivo: con nota firmada y con el alta se quita sin motivo; con una receta emitida —vigente o anulada— que imprimió el código, sin motivo no y con otra receta sí; el último obstétrico de un reposo de maternidad no anulado no, y anulado sí; reportada no; el archivo se marca recuperado una vez, hacia ese diagnóstico, y nada más de él cambia. HTTP: deshacer devuelve el diagnóstico y deja de figurar entre los quitados, dos veces no, un principal ocupado lo deja detrás, sólo en la atención viva; `printedOnPrescription`; `record:sign` tras el alta |
 | EN-212 | **Integración contra PostgreSQL real**, con control positivo: sin sello no se edita y con sello sí, y la fila anterior está en `record_version`; el código editado es el de su concepto y regía ese día; tras el alta el principal cambia; con un certificado o una receta que imprimieron el código, sin motivo no y con motivo sí, y la condición sin motivo; reportada no; el reposo de maternidad no anulado no deja sacar del capítulo y sí dentro de él, y anulado sí. HTTP: la edición, las versiones con su motivo, `record:sign` y la licencia tras el alta, y los cuatro códigos |
 | EN-217 | **Integración contra PostgreSQL real**, con control positivo: la toma sin la antropometría se guarda y la firma de la 002 con alta no; tras el alta, corregir la temperatura conservando las medidas entra y dejar sin peso se rechaza, en el adaptador (`ANTHROPOMETRY_PENDING` por campo) y en la base (`trg_encounter_vitals_anthropometry_after_discharge`), con la toma intacta. HTTP: el 422 con su título de corrección |
+| EN-224, EN-225, EN-226 | **Integración contra PostgreSQL real**, con control positivo: refutar sin motivo entra y a medias o en blanco no; reactivar deja la refutación en `record_version`; editar con sello entra y sin sello, cambiando el paciente o el autor, o borrando, no; la comprobación al recetar lee la versión vigente; dos ediciones a la vez se aplican las dos con dos versiones; «descartar estas y afirmar» es todo o nada; retirar una vez, sin borrar. Por su nombre y con el camino que sólo para ese objeto: `patient_allergy_guard` (editar una descartada, descartar y editar a la vez, reescribir el descarte), `patient_allergy_refutation_is_coherent` y `patient_allergy_absence_retraction_is_whole`. D-140: la de criticidad alta sin motivo no se descarta y no entra en el bloque; editar sin concepto lo conserva; dos pasos en bloque simultáneos con las alergias en orden inverso terminan los dos sin interbloqueo y el segundo no descarta ninguna. HTTP: los permisos con sesión real, los 409 nuevos, `UNKNOWN_FIELD`, el parentesco y las versiones |
 | EN-184, EN-185 | Integración contra la base con fichas fusionadas y una atención anulada, con el reloj inyectado: la categoría cuenta, la anulada no, la absorbida sí; y **una** fila de bitácora por propuesta |
 | EN-063, EN-090, EN-092, EN-096, EN-097 | Unitario de dominio **con la edad congelada de la atención**, no con la de hoy: los cuatro son condiciones por población y todos caducan si se evalúan contra la fecha actual. Es el mismo razonamiento que PA-005 dejó escrito |
 | EN-072, EN-073, EN-095, EN-098 | **Seguridad dirigida, con sesión real.** Sin la llave el dato **se omite** y no hay 403; con ella se ve y deja **una** fila de bitácora; y no viaja en ningún listado bajo ninguna combinación de permisos, afirmado sobre la respuesta. Con sesión de verdad y no con un doble con los permisos puestos a mano — el defecto de AG-111 fue exactamente eso |

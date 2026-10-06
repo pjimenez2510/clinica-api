@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Req,
   Res,
@@ -32,6 +33,7 @@ import {
 import type {
   ConsentTextView,
   DataExportDocument,
+  DataRequestAnswer,
   Requester,
 } from './domain/privacy.repository';
 import {
@@ -39,9 +41,11 @@ import {
   AnswerDataRequestDto,
   ConsentTextDto,
   ConsentTextListDto,
+  CorrectConsentDto,
   CurrentConsentTextDto,
   DataRequestDto,
   DataRequestListDto,
+  EditDataRequestDto,
   PatientConsentDto,
   PatientConsentListDto,
   PublishConsentTextDto,
@@ -91,8 +95,15 @@ export class PrivacyController {
   @RequirePermission('patient:consent-text', 'global')
   @ApiOperation({ summary: 'Versiones del texto de consentimiento' })
   @ApiOkResponse({ type: ConsentTextListDto })
-  async texts(): Promise<{ items: ConsentTextResponse[] }> {
-    return { items: (await this.consent.texts()).map(textResponse) };
+  async texts(): Promise<{
+    items: ConsentTextResponse[];
+    currentVersionConsents: number;
+  }> {
+    return {
+      items: (await this.consent.texts()).map(textResponse),
+      // PD-045. What the screen says before publishing.
+      currentVersionConsents: await this.consent.currentVersionConsents(),
+    };
   }
 
   /** PD-002 to PD-006. */
@@ -148,6 +159,34 @@ export class PrivacyController {
   }
 
   // --- D3 ----------------------------------------------------------------------
+
+  /**
+   * PD-044. «Corregir» a consent recorded with the wrong medium or grantor:
+   * a new consent that supersedes it, in one step. Same permission as
+   * recording one.
+   */
+  @Post('patients/:patientId/consents/:consentId/correction')
+  @RequirePermission('patient:write', 'global')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Corregir un consentimiento mal registrado' })
+  @ApiCreatedResponse({ type: PatientConsentDto })
+  async correctConsent(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Param('consentId', ParseUUIDPipe) consentId: string,
+    @Body() dto: CorrectConsentDto,
+    @Req() req: Request,
+  ): Promise<PatientConsentResponse> {
+    const corrected = await this.consent.correct(
+      {
+        patientId,
+        consentId,
+        medium: dto.medium,
+        grantedBy: dto.grantedBy,
+      },
+      this.requester(req),
+    );
+    return consentResponse(corrected);
+  }
 
   /** PD-036. */
   @Get('patients/:patientId/requests')
@@ -205,8 +244,50 @@ export class PrivacyController {
         ...requestResponse(entry),
         description: null,
         answer: null,
+        previousAnswers: [],
       })),
     };
+  }
+
+  /** PD-046. Edits an unanswered request; the due date follows. */
+  @Patch('requests/:requestId')
+  @RequirePermission('patient:data-requests', 'global')
+  @ApiOperation({ summary: 'Corregir una solicitud sin responder' })
+  @ApiOkResponse({ type: DataRequestDto })
+  async edit(
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Body() dto: EditDataRequestDto,
+    @Req() req: Request,
+  ): Promise<DataRequestResponse> {
+    const edited = await this.requests.edit(
+      requestId,
+      {
+        right: dto.right,
+        description: dto.description,
+        receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : undefined,
+      },
+      this.requester(req),
+    );
+    return requestResponse(edited);
+  }
+
+  /** PD-047. «Corregir respuesta»: a rectified answer, linked. */
+  @Post('requests/:requestId/response/correction')
+  @RequirePermission('patient:data-requests', 'global')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Rectificar la respuesta de una solicitud' })
+  @ApiOkResponse({ type: DataRequestDto })
+  async correctAnswer(
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Body() dto: AnswerDataRequestDto,
+    @Req() req: Request,
+  ): Promise<DataRequestResponse> {
+    const corrected = await this.requests.correctAnswer(
+      requestId,
+      { outcome: dto.outcome, response: dto.response },
+      this.requester(req),
+    );
+    return requestResponse(corrected);
   }
 
   /** PD-033, PD-034, PD-037, PD-038. */
@@ -270,17 +351,21 @@ function consentResponse(entry: PatientConsentEntry): PatientConsentResponse {
     ...entry,
     textVersion: textResponse(entry.textVersion),
     recordedAt: entry.recordedAt.toISOString(),
+    takenAt: entry.takenAt.toISOString(),
   };
 }
 
 function requestResponse(entry: DataRequestEntry): DataRequestResponse {
+  const answer = (given: DataRequestAnswer) => ({
+    ...given,
+    answeredAt: given.answeredAt.toISOString(),
+  });
   return {
     ...entry,
     receivedAt: entry.receivedAt.toISOString(),
     registeredAt: entry.registeredAt.toISOString(),
-    answer: entry.answer && {
-      ...entry.answer,
-      answeredAt: entry.answer.answeredAt.toISOString(),
-    },
+    answer: entry.answer && answer(entry.answer),
+    previousAnswers: entry.previousAnswers.map(answer),
+    changedAt: entry.changedAt?.toISOString() ?? null,
   };
 }

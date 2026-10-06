@@ -198,11 +198,8 @@ export const DOMAIN_ERROR_CODES = [
   // Son cinco y no uno porque lo que hay que hacer es distinto en cada caso, y
   // quien lo lee está en admisión con dos fichas de la misma persona delante:
   //
-  //   * `MERGE_REASON_REQUIRED` (422) — falta el motivo, al fusionar o al
-  //     deshacer. Viaja POR CAMPO. Se exige EN EL SERVICIO y no sólo en el
-  //     DTO, por lo mismo que `CANCELLATION_REASON_REQUIRED`: un `DEBERÁ` que
-  //     sólo hace cumplir la capa de transporte deja de cumplirse el día que
-  //     otro caso de uso llame por dentro (PA-044, PA-047).
+  //   * Fusionar y deshacer ya no exigen motivo (PA-064, D-126):
+  //     `MERGE_REASON_REQUIRED` se retiró.
   //   * `MERGE_INTO_SELF` (422) — origen y destino son la misma ficha
   //     (PA-046). Una ficha fusionada consigo misma rechazaría toda operación
   //     remitiendo a sí misma: nadie podría abrirla ni deshacerla.
@@ -228,7 +225,6 @@ export const DOMAIN_ERROR_CODES = [
   //     `AGENDA_ENTRY_NOT_FOUND`: lo que no existe es el SUCESO, no la persona.
   'MERGE_INTO_SELF',
   'MERGE_NOT_FOUND',
-  'MERGE_REASON_REQUIRED',
   'MERGE_UNDO_CONFLICT',
   'PATIENT_ALREADY_MERGED',
   // PA-027, 17-08-2026. La ficha declara nacionalidad o pueblo indígena sin
@@ -250,11 +246,9 @@ export const DOMAIN_ERROR_CODES = [
   //     la columna 14 «aplica únicamente para la nacionalidad indígena
   //     "Kichwa"». Es el hermano de `NATIONALITY_REQUIRES_INDIGENOUS_ETHNICITY`
   //     un escalón más abajo de la misma cadena.
-  //   * `ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY` → `ethnicityConceptId`. La
-  //     columna 12 «aplica para nacionalidad Ecuatoriana». Es el escalón de
-  //     ARRIBA de esa misma cadena, y el único de los tres que se teclea por
-  //     accidente: el país y la etnia están en dos pantallas del mismo
-  //     formulario.
+  //   * `ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY` se retiró con PA-065
+  //     (D-128): la columna 12 sigue aplicando sólo a ecuatorianos, pero la
+  //     API vacía la etnia de una ficha extranjera en vez de rechazarla.
   //   * `SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE` → `sexualOrientationConceptId`.
   //     La columna 7 «aplica a usuarios a partir de los 10 años de edad», y la
   //     edad se DERIVA de la fecha de nacimiento en `America/Guayaquil`.
@@ -264,7 +258,6 @@ export const DOMAIN_ERROR_CODES = [
   // ficha, y lo que hay que hacer es distinto. Y ninguno puede ser un `CHECK`:
   // los dos primeros dependen de qué fila de otro catálogo es «Kichwa» o
   // «Ecuador», y el tercero de una edad que se mueve sola con el calendario.
-  'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY',
   'PEOPLE_REQUIRES_KICHWA_NATIONALITY',
   'SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE',
   // Grupos prioritarios del paciente (P3: PA-033..PA-042, D-026, D-027).
@@ -774,6 +767,9 @@ export const DOMAIN_ERROR_CODES = [
   //   * `DIAGNOSIS_NOT_RESTORABLE` (409) — EN-213. «Deshacer» lo que ya se
   //     recuperó, o cuyo código volvió a registrarse.
   'DIAGNOSIS_NOT_RESTORABLE',
+  //   * `VITALS_CORRECTION_REQUIRES_SIGNATURE` (403) — EN-228 (D-134.3). Tras
+  //     el alta corrige la toma quien tiene `record:sign` en la sede.
+  'VITALS_CORRECTION_REQUIRES_SIGNATURE',
   // ── H6: alergias visibles durante la consulta ──────────────────────────
   //   * `PATIENT_ALLERGY_NOT_FOUND` (404) — EN-082. La alergia no está en esa
   //     ficha ni en ninguna que esa ficha absorbiera. **Uno solo para «no
@@ -785,20 +781,33 @@ export const DOMAIN_ERROR_CODES = [
   //     y el motivo de la primera, y saber quién descartó una alergia y por qué
   //     es «información clínica por derecho propio». Aceptarla en silencio es
   //     borrar el dato a cámara lenta, que es justo lo que el requisito impide.
-  //   * `REFUTATION_REASON_REQUIRED` (422) — EN-082. Descartar sin escribir por
-  //     qué. Se exige **en el servicio** además del DTO, por lo mismo que
-  //     `AMENDMENT_REASON_REQUIRED`: el DTO guarda una sola puerta.
+  //     Editar una alergia descartada también lo responde: primero se
+  //     reactiva (EN-225).
+  //   * `REFUTATION_REASON_REQUIRED` (422) — EN-224, D-140.1. Descartar ya
+  //     no exige motivo (D-126.2), SALVO una alergia de criticidad alta: es
+  //     la anafilaxia, y un descarte que nadie puede sopesar es el riesgo
+  //     para el paciente que D-126.4 exceptúa. El mismo código de antes, con
+  //     la regla estrechada.
+  //   * `ALLERGY_REFUTED_ALONE` (409) — EN-226, D-140.3. «Descartar estas y
+  //     afirmar» nombró una de criticidad alta: se descartan una a una.
+  //   * `ALLERGY_NOT_REFUTED` (409) — EN-224. «Reactivar» una alergia que
+  //     sigue activa.
+  //   * `NO_KNOWN_ALLERGIES_NOT_STANDING` (409) — EN-226. «Retirar» un «sin
+  //     alergias conocidas» que ya no está vigente.
   //   * `CHART_HAS_ALLERGIES` (409) — EN-087. Se afirmó «sin alergias
   //     conocidas» sobre una ficha que tiene alergias sin descartar. Las dos
   //     cosas no pueden ser ciertas a la vez, y quien lee la primera deja de
-  //     mirar la lista. La salida es refutarlas **una a una con su motivo**
-  //     (EN-082), que es un juicio clínico por alergia y no el efecto colateral
-  //     de marcar una casilla. Lo arbitra además
+  //     mirar la lista. La salida es descartarlas —desde EN-226 en el mismo
+  //     paso, nombrando cada una—, que es un juicio clínico por alergia y no el
+  //     efecto colateral de marcar una casilla. Lo arbitra además
   //     `trg_patient_allergy_absence_empty_chart`: el servicio no puede ver las
   //     dos peticiones simultáneas que registran una alergia y afirman que no
   //     hay ninguna.
   'ALLERGY_ALREADY_REFUTED',
+  'ALLERGY_NOT_REFUTED',
+  'ALLERGY_REFUTED_ALONE',
   'CHART_HAS_ALLERGIES',
+  'NO_KNOWN_ALLERGIES_NOT_STANDING',
   'PATIENT_ALLERGY_NOT_FOUND',
   'REFUTATION_REASON_REQUIRED',
   // ── H6: antecedentes (EN-085), con el régimen de las alergias ───────────
@@ -807,7 +816,10 @@ export const DOMAIN_ERROR_CODES = [
   //   * `HISTORY_ALREADY_REFUTED` (409) — no es idempotente: reescribiría
   //     quién lo descartó y por qué. Lo arbitra además
   //     `trg_patient_history_append_only`.
+  //   * `HISTORY_NOT_REFUTED` (409) — EN-224. «Reactivar» uno que sigue
+  //     activo.
   'HISTORY_ALREADY_REFUTED',
+  'HISTORY_NOT_REFUTED',
   'PATIENT_HISTORY_NOT_FOUND',
   // ── Receta médica (módulo `prescription`, PR-001 a PR-094) ──────────────
   //
@@ -954,6 +966,10 @@ export const DOMAIN_ERROR_CODES = [
   'CERTIFICATE_MATERNITY_BIRTH_MISMATCH',
   'CERTIFICATE_MATERNITY_DIAGNOSIS_REQUIRED',
   'CERTIFICATE_REST_OVERLAPS',
+  //   * `CERTIFICATE_REST_IMPLAUSIBLE` (422) — CER-056 (D-133.3). Más de 365
+  //     días, o un inicio a más de un año de la atención: un error de tecleo.
+  //     Por campo (`restFrom`, `restTo`). La base lo rechaza también.
+  'CERTIFICATE_REST_IMPLAUSIBLE',
   'CERTIFICATE_REVOKE_FORBIDDEN',
   'CERTIFICATE_ENCOUNTER_NOT_FOUND',
   'CERTIFICATE_ENCOUNTER_NOT_OPEN',
@@ -1218,13 +1234,24 @@ export const DOMAIN_ERROR_CODES = [
   //   * `CONSENT_TEXT_VERSION_CONFLICT` (409) — dos publicaciones a la vez; la
   //     base deja pasar una (PD-005).
   //   * `DATA_REQUEST_ALREADY_ANSWERED` (409) — una respuesta es una sola
-  //     (PD-033); la base tampoco admite otra (PD-038).
+  //     (PD-033); la base tampoco admite otra (PD-038). Editar una respondida
+  //     también lo responde (PD-046): su respuesta se rectifica (PD-047).
+  //   * `CONSENT_NOT_FOUND` (404) — PD-044. Se corrige un consentimiento que
+  //     no existe o no es de esa ficha (ni de sus absorbidas).
+  //   * `CONSENT_ALREADY_CORRECTED` (409) — PD-044. Ese consentimiento ya
+  //     tiene una corrección: se corrige la vigente. Lo arbitra
+  //     `patient_consent_corrected_once`.
+  //   * `DATA_REQUEST_NOT_ANSWERED` (409) — PD-047. Se rectifica la respuesta
+  //     de una solicitud que todavía no tiene ninguna: se responde.
+  'CONSENT_ALREADY_CORRECTED',
+  'CONSENT_NOT_FOUND',
   'CONSENT_TEXT_INVALID',
   'CONSENT_TEXT_NOT_PUBLISHED',
   'CONSENT_TEXT_OUTDATED',
   'CONSENT_TEXT_VERSION_CONFLICT',
   'DATA_EXPORT_NOT_APPLICABLE',
   'DATA_REQUEST_ALREADY_ANSWERED',
+  'DATA_REQUEST_NOT_ANSWERED',
   'DATA_REQUEST_NOT_FOUND',
   'DATA_REQUEST_RECEIVED_IN_FUTURE',
   'DATA_SUBJECT_NOT_FOUND',

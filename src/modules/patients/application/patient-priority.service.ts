@@ -11,6 +11,7 @@ import {
   PatientNotFoundError,
   PriorityGroupAlreadyClosedError,
   PriorityGroupNotFoundError,
+  PriorityGroupPeriodInvalidError,
   RestrictedPriorityGroupError,
 } from '../domain/patient.errors';
 import {
@@ -232,6 +233,7 @@ export class PatientPriorityService {
       recordId: input.recordId,
       endsOn: input.endsOn,
       closedById: requester.userId,
+      now,
     });
     if (!closed) throw new PriorityGroupNotFoundError();
 
@@ -248,6 +250,106 @@ export class PatientPriorityService {
     // Closing «hoy» leaves it in force TODAY: the period is inclusive at both
     // ends, so a disability closed on the 15th still counted on the 15th.
     return assess(closed, clinicalDateToday(now));
+  }
+
+  /**
+   * PA-066 (D-127). Edits the record in its row: group, start, end, origin and
+   * accrediting document. The previous row is kept by `record_version`, with
+   * who and when; nothing is deleted, and the closure — who and when — is not
+   * rewritten (`patient_priority_group_closure_once`).
+   *
+   * THE RESULTING RECORD IS JUDGED, NOT THE BODY: the same rules as recording
+   * (PA-035 to PA-038), so an accredited record cannot lose its document and a
+   * pregnancy cannot lose its end in two edits instead of one. A closed record
+   * keeps an end: it is not reopened by emptying it.
+   *
+   * PA-034 IN BOTH DIRECTIONS. A restricted record the caller may not see
+   * answers `PRIORITY_GROUP_NOT_FOUND`, like closing; and moving a record INTO
+   * a restricted group needs the second key, like recording one.
+   */
+  async edit(
+    input: {
+      patientId: string;
+      recordId: string;
+      changes: {
+        group?: string;
+        startsOn?: ClinicalDate;
+        endsOn?: ClinicalDate | null;
+        origin?: PriorityGroupOrigin;
+        evidenceDocument?: string | null;
+      };
+    },
+    requester: Requester,
+    principal: Principal,
+    now: Date = new Date(),
+  ): Promise<AssessedPriorityGroup> {
+    await this.assertLiveChart(input.patientId);
+
+    const existing = (
+      await this.patients.listPriorityGroups(input.patientId)
+    ).find((record) => record.id === input.recordId);
+    if (!existing || !this.mayHandle(existing.group, principal)) {
+      throw new PriorityGroupNotFoundError();
+    }
+
+    // A document emptied to blanks is no document.
+    const changes = {
+      ...input.changes,
+      ...(typeof input.changes.evidenceDocument === 'string' &&
+        input.changes.evidenceDocument.trim() === '' && {
+          evidenceDocument: null,
+        }),
+    };
+    const resulting = {
+      group: changes.group ?? existing.group,
+      startsOn: changes.startsOn ?? existing.startsOn,
+      endsOn: changes.endsOn === undefined ? existing.endsOn : changes.endsOn,
+      origin: changes.origin ?? existing.origin,
+      evidenceDocument:
+        changes.evidenceDocument === undefined
+          ? existing.evidenceDocument
+          : changes.evidenceDocument,
+    };
+    const group = assertRecordablePriorityGroup(resulting);
+    if (existing.closedAt !== null && resulting.endsOn === null) {
+      throw new PriorityGroupPeriodInvalidError(
+        'endsOn',
+        'Un registro cerrado conserva su fecha de fin: corríjala, no la borre',
+      );
+    }
+    if (
+      group !== existing.group &&
+      isRestrictedPriorityGroup(group) &&
+      !this.mayHandle(group, principal)
+    ) {
+      throw new RestrictedPriorityGroupError(group);
+    }
+
+    const edited = await this.patients.editPriorityGroup({
+      patientId: input.patientId,
+      recordId: input.recordId,
+      changes: {
+        ...(changes.group !== undefined && { group }),
+        ...(changes.startsOn !== undefined && { startsOn: changes.startsOn }),
+        ...(changes.endsOn !== undefined && { endsOn: changes.endsOn }),
+        ...(changes.origin !== undefined && { origin: changes.origin }),
+        ...(changes.evidenceDocument !== undefined && {
+          evidenceDocument: changes.evidenceDocument,
+        }),
+      },
+      // PA-039, PA-066: who edited it is who is signed in.
+      editedById: requester.userId,
+      now,
+    });
+    if (!edited) throw new PriorityGroupNotFoundError();
+
+    await this.recordChartAccess(
+      [input.patientId, edited.chartId],
+      'UPDATE',
+      requester,
+    );
+
+    return assess(edited, clinicalDateToday(now));
   }
 
   /**

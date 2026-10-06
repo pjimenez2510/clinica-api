@@ -35,11 +35,18 @@ import type { AllergyCriticality } from '../../../shared/clinical/patient-allerg
 export interface AllergyView extends ActiveAllergy {
   /** EN-082. `null` while the allergy still counts. Never a deletion. */
   refutedAt: Date | null;
-  /** EN-082. Why it was ruled out. Mandatory when `refutedAt` is present. */
+  /** EN-082, EN-224. Why it was ruled out, when somebody said; optional. */
   refutedNotes: string | null;
   /** EN-086. `null` only for rows older than the column: nobody invents one. */
   recordedBy: AllergyAuthor | null;
   refutedBy: AllergyAuthor | null;
+  /**
+   * EN-225. When it was last changed —edited, refuted or reactivated—, or
+   * `null` if never: a date means there are earlier versions to read.
+   */
+  changedAt: Date | null;
+  /** EN-225. Who made that last change; `null` exactly when `changedAt` is. */
+  changedBy: AllergyAuthor | null;
 }
 
 /** EN-086. Who stands behind an allergy, or ruled it out. */
@@ -118,12 +125,94 @@ export interface RefuteAllergy {
    */
   patientId: string;
   allergyId: string;
-  /** EN-082. Why it was ruled out. The service refuses an empty one. */
-  notes: string;
+  /** EN-224. Why it was ruled out, from the screen's list; optional. */
+  notes: string | null;
   /** Taken once by the caller: the domain owns no clock. */
   now: Date;
   /** EN-086. The session's account. */
   refutedById: string;
+}
+
+/**
+ * EN-225. What an edit may change: what the allergy SAYS. Never the chart,
+ * never who recorded it or when (`patient_allergy_guard`). A key that is
+ * absent is left as it is; `null` clears an optional column.
+ */
+export interface AllergyChanges {
+  /**
+   * The CNMB concept. ABSENT KEEPS IT, even when the text changes: a typo
+   * fixed in the name must not silently stop the prescription check
+   * (EN-084). Only an explicit `null` clears it, and the screen asks first.
+   */
+  substanceConceptId?: string | null;
+  substanceText?: string;
+  reaction?: string | null;
+  criticality?: AllergyCriticality;
+}
+
+/** EN-225. Editing one allergy in place. */
+export interface EditAllergy {
+  /** The chart the caller is looking at, and the charts it absorbed. */
+  patientId: string;
+  allergyId: string;
+  changes: AllergyChanges;
+  /** EN-086. The session's account, the stamp's «quién». */
+  editedById: string;
+  /** Taken once by the caller: the domain owns no clock. */
+  now: Date;
+}
+
+/** EN-224. Bringing back an allergy refuted by mistake. */
+export interface ReactivateAllergy {
+  patientId: string;
+  allergyId: string;
+  reactivatedById: string;
+  now: Date;
+}
+
+/**
+ * EN-225. One earlier version: the allergy as it was, read with the same
+ * mapping as the current one, and who replaced it and when.
+ */
+export interface AllergyVersionView {
+  version: number;
+  replacedBy: AllergyAuthor;
+  replacedAt: Date;
+  allergy: AllergyView;
+}
+
+/**
+ * EN-226. «Descartar estas y afirmar»: the allergies the screen listed are
+ * refuted, with the bulk step's reason, and the assertion written, in one
+ * transaction.
+ */
+export interface RefuteAndAssertNoKnownAllergies {
+  patientId: string;
+  allergyIds: readonly string[];
+  /** D-140.3. `BULK_REFUTATION_NOTE`: where the refutation came from. */
+  notes: string;
+  /** Who refutes and who asserts: the same person, in the same act. */
+  actorId: string;
+  now: Date;
+}
+
+/**
+ * EN-226. What the bulk step left: the assertion, and the allergies IT ruled
+ * out — not the ones a colleague had ruled out already, which it skipped. It
+ * is what «Deshacer» brings back, and what the trail records.
+ */
+export interface RefutedAndAsserted {
+  assertion: AllergyAbsenceAssertion;
+  refutedAllergyIds: string[];
+}
+
+/** EN-226. Withdrawing one assertion made by mistake. */
+export interface RetractNoKnownAllergies {
+  assertionId: string;
+  /** The chart the caller is looking at, and the charts it absorbed. */
+  patientId: string;
+  retractedById: string;
+  now: Date;
 }
 
 /**
@@ -150,6 +239,9 @@ export interface PatientAllergyRepository {
    * the service turns that into `PATIENT_ALLERGY_NOT_FOUND`, one answer for
    * «no existe» and for «es de otra ficha», the line `ENCOUNTER_NOT_FOUND`
    * already took.
+   *
+   * ⚠️ AN ALLERGY OF HIGH CRITICALITY NEEDS A REASON (D-140.1), decided
+   * under the row lock: `REFUTATION_REASON_REQUIRED`.
    *
    * ⚠️ IT REFUSES A SECOND REFUTATION, and that is not pedantry: the second
    * one would overwrite the instant and the reason of the first, and «quién la
@@ -208,6 +300,48 @@ export interface PatientAllergyRepository {
    * question: the assertion and the allergies that supersede it.
    */
   standingAbsenceFor(chartId: string): Promise<AllergyAbsenceAssertion | null>;
+
+  /**
+   * EN-225. Edits what one ACTIVE allergy says, under a row lock, with a new
+   * stamp; the database archives the row it replaces. `null` when it is not
+   * on this chart or one it absorbed; `ALLERGY_ALREADY_REFUTED` when it is
+   * ruled out (it is reactivated first). Nothing to change is not an edit.
+   */
+  edit(edit: EditAllergy): Promise<AllergyView | null>;
+
+  /**
+   * EN-224. Brings a refuted allergy back to active, as one more version: the
+   * refutation —who, when, why— stays in the version it leaves behind.
+   * `null` when not found; `ALLERGY_NOT_REFUTED` when it is active.
+   */
+  reactivate(reactivation: ReactivateAllergy): Promise<AllergyView | null>;
+
+  /**
+   * EN-225. The versions the changes replaced, newest first; `null` when the
+   * allergy is not on this chart or one it absorbed.
+   */
+  versionsOf(
+    chartId: string,
+    allergyId: string,
+  ): Promise<AllergyVersionView[] | null>;
+
+  /**
+   * EN-226. Refutes the named allergies and asserts «sin alergias
+   * conocidas», all or nothing, locking them IN ID ORDER so two steps over
+   * the same chart cannot deadlock. `PATIENT_ALLERGY_NOT_FOUND` when one is
+   * not on this chart; `ALLERGY_REFUTED_ALONE` when an active one is of HIGH
+   * criticality (D-140.3); `CHART_HAS_ALLERGIES` when an active one was not
+   * named (the database's `trg_patient_allergy_absence_empty_chart` decides).
+   */
+  refuteAndAssertNoKnownAllergies(
+    request: RefuteAndAssertNoKnownAllergies,
+  ): Promise<RefutedAndAsserted>;
+
+  /**
+   * EN-226. Withdraws one assertion, once. `false` when it is not on this
+   * chart or was already withdrawn.
+   */
+  retractNoKnownAllergies(request: RetractNoKnownAllergies): Promise<boolean>;
 }
 
 /** Injection token. The application never names the adapter. */

@@ -26,6 +26,7 @@ import { EncounterExitController } from './encounter-exit.controller';
 import { EncounterExitService } from './application/encounter-exit.service';
 import { EncounterService } from './application/encounter.service';
 import { PatientAllergyController } from './patient-allergy.controller';
+import { NoKnownAllergiesService } from './application/no-known-allergies.service';
 import { PatientAllergyService } from './application/patient-allergy.service';
 import { PatientHistoryController } from './patient-history.controller';
 import { PatientHistoryService } from './application/patient-history.service';
@@ -96,6 +97,7 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
     ClinicalNoteService,
     ClinicalCodingService,
     PatientAllergyService,
+    NoKnownAllergiesService,
     PatientHistoryService,
     ChartSummaryService,
     NoteTemplateService,

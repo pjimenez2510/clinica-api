@@ -605,24 +605,20 @@ describe('las columnas del instructivo del RDACAA, contra la base', () => {
   // PA-059 · la etnia sólo aplica a nacionalidad ecuatoriana
   // =========================================================================
 
-  it('PA-059 rechaza la etnia de una ficha cuyo país de nacionalidad no es Ecuador', async () => {
-    const refused = await register({
-      familyName: 'Guaman',
-      givenName: 'Maria',
-      sex: 'FEMALE',
-      birthDate: '1990-03-15',
+  it('PA-065 vacía la etnia de una ficha cuyo país de nacionalidad no es Ecuador, en vez de rechazarla', async () => {
+    // La regla se queda (columna 12: «Aplica para nacionalidad Ecuatoriana»),
+    // pero la API la aplica vaciando lo que no aplica (D-128, PA-13).
+    const created = await registerPatient({
       ethnicityConceptId: mestizoId,
       countryOfNationalityCode: 'VEN',
-    }).expect(422);
+    });
 
-    const problem = refused.body as Problem;
-    expect(problem.code).toBe('ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY');
-    expect(problem.errors?.[0]).toMatchObject({ field: 'ethnicityConceptId' });
-    // ⚠️ EL MENSAJE DICE QUÉ HACER Y OFRECE LAS DOS SALIDAS: es la combinación
-    // que se teclea por accidente, porque el país y la etnia están en dos
-    // pantallas del mismo formulario.
-    expect(problem.errors?.[0]?.message).toContain('Ecuador');
-    expect(await prisma.patient.count()).toBe(0);
+    expect(created.countryOfNationality).toMatchObject({ code: 'VEN' });
+    expect(created.ethnicity).toBeNull();
+    const row = await prisma.patient.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(row.ethnicityConceptId).toBeNull();
   });
 
   it('PA-059 admite la etnia con país `ECU` y también sin país registrado', async () => {
@@ -639,21 +635,50 @@ describe('las columnas del instructivo del RDACAA, contra la base', () => {
     expect(unstated.ethnicity?.display).toBe('Mestizo/a');
   });
 
-  it('PA-059 rechaza cambiar el país de una ficha que ya declara etnia, y no deja rastro', async () => {
+  it('PA-065 al cambiar el país de una ficha con etnia, la vacía y deja las dos en el histórico', async () => {
     const chart = await registerPatient({ ethnicityConceptId: mestizoId });
 
-    const refused = await correct(chart.id, {
+    const corrected = await correct(chart.id, {
       countryOfNationalityCode: 'VEN',
-    }).expect(422);
+    }).expect(200);
 
-    expect((refused.body as Problem).code).toBe(
-      'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY',
+    const body = corrected.body as PatientBody;
+    expect(body.ethnicity).toBeNull();
+    expect(body.countryOfNationality).toMatchObject({ code: 'VEN' });
+    // No se pierde nada: la etnia que había queda en las versiones de la ficha.
+    const trail = await prisma.patientChangeHistory.findMany({
+      where: { patientId: chart.id },
+      select: { field: true, valueBefore: true, valueAfter: true },
+      orderBy: { field: 'asc' },
+    });
+    expect(trail).toEqual([
+      {
+        field: 'countryOfNationalityCode',
+        valueBefore: null,
+        valueAfter: 'VEN',
+      },
+      { field: 'ethnicityConceptId', valueBefore: mestizoId, valueAfter: null },
+    ]);
+  });
+
+  it('PA-065 las versiones de la ficha NO sirven la orientación sexual, que tiene su propia puerta', async () => {
+    const chart = await registerPatient({
+      sexualOrientationConceptId: heterosexualId,
+    });
+    await correct(chart.id, { sexualOrientationConceptId: null }).expect(200);
+    await correct(chart.id, { familyName: 'Guamán' }).expect(200);
+
+    const versions = await request(app.getHttpServer())
+      .get(`/api/v1/patients/${chart.id}/change-history`)
+      .set('Authorization', `Bearer ${recepcion}`)
+      .expect(200);
+
+    const fields = (versions.body as { items: { field: string }[] }).items.map(
+      (item) => item.field,
     );
-    expect(
-      await prisma.patientChangeHistory.count({
-        where: { patientId: chart.id },
-      }),
-    ).toBe(0);
+    // Control positivo: la corrección del apellido sí sale.
+    expect(fields).toEqual(['familyName']);
+    expect(JSON.stringify(versions.body)).not.toContain(heterosexualId);
   });
 
   it('PA-059 acepta el país y la etnia vaciada en la MISMA petición', async () => {

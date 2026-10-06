@@ -478,6 +478,7 @@ describe('las alergias del paciente contra PostgreSQL', () => {
         measuredAt: new Date('2026-05-11T14:05:00Z'),
       },
       practitioner.userId,
+      false,
     );
 
     const [previous] = await summariesOf(prisma).previousEncounters({
@@ -806,10 +807,16 @@ describe('las alergias del paciente contra PostgreSQL', () => {
         },
       }),
     ).rejects.toThrow(/must name its author/);
+    // Con sello (EN-225) para que lo que salte sea el CHECK y no el sello.
     await expect(
       prisma.patientAllergy.update({
         where: { id: allergy.id },
-        data: { refutedAt: new Date(), refutedNotes: 'No era alergia' },
+        data: {
+          refutedAt: new Date(),
+          refutedNotes: 'No era alergia',
+          changedById: author.id,
+          changedAt: new Date(),
+        },
       }),
     ).rejects.toThrow(/patient_allergy_refutation_names_its_author/);
   });
@@ -843,7 +850,7 @@ describe('las alergias del paciente contra PostgreSQL', () => {
     expect(refuted?.refutedBy?.id).toBe(doctor.id);
   });
 
-  it('EN-082 la base rechaza borrar, truncar y reescribir una alergia', async () => {
+  it('EN-082 EN-225 la base rechaza borrar, truncar y reescribir una alergia sin sello', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const recorded = await allergiesOf(prisma).record({
@@ -852,21 +859,23 @@ describe('las alergias del paciente contra PostgreSQL', () => {
       criticality: 'HIGH',
     });
 
+    // Desde EN-225 se edita, pero sólo con sello nuevo: lo que había queda en
+    // `record_version`.
     await expect(
       prisma.$executeRawUnsafe(
         `UPDATE patient_allergy SET criticality = 'LOW' WHERE id = $1::uuid`,
         recorded.id,
       ),
-    ).rejects.toThrow(/append-only/);
+    ).rejects.toThrow(/record_version_change_is_stamped/);
     await expect(
       prisma.$executeRawUnsafe(
         `DELETE FROM patient_allergy WHERE id = $1::uuid`,
         recorded.id,
       ),
-    ).rejects.toThrow(/append-only/);
+    ).rejects.toThrow(/never deleted/);
     await expect(
       prisma.$executeRawUnsafe(`TRUNCATE patient_allergy CASCADE`),
-    ).rejects.toThrow(/append-only/);
+    ).rejects.toThrow(/never deleted/);
     await expect(prisma.patientAllergy.count()).resolves.toBe(1);
   });
 });

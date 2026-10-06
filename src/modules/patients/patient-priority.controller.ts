@@ -29,6 +29,7 @@ import {
 import type { Requester } from './application/patients.service';
 import {
   ClosePriorityGroupDto,
+  EditPriorityGroupDto,
   PriorityGroupDto,
   PriorityGroupListDto,
   RecordPriorityGroupDto,
@@ -112,12 +113,17 @@ export class PatientPriorityController {
   /**
    * Closes an assessment: sets the day it stopped applying.
    *
-   * `PATCH` and not `DELETE`, and that is PA-037 in the verb: closing a state
-   * must not remove the row, or «¿por qué esta persona tuvo prioridad en
-   * marzo?» loses its answer. There is no route that deletes one.
+   * A `POST` on `…/close` and not `DELETE`, and that is PA-037 in the verb:
+   * closing a state must not remove the row, or «¿por qué esta persona tuvo
+   * prioridad en marzo?» loses its answer. There is no route that deletes one.
+   * Closing is its own act —who closed it and when are kept and never
+   * rewritten— and not an edit: since PA-066 `PATCH` edits what the record
+   * says, and a pregnancy's expected date is corrected there without closing
+   * it.
    */
-  @Patch(':recordId')
+  @Post(':recordId/close')
   @RequirePermission('patient:priority', 'global')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Close a priority group assessment' })
   @ApiOkResponse({ type: PriorityGroupDto })
   async close(
@@ -133,6 +139,40 @@ export class PatientPriorityController {
     );
 
     return toResponse(closed);
+  }
+
+  /**
+   * PA-066 (D-127). Edits what the assessment says, in its row: group, start,
+   * end, origin and accrediting document. The previous row is kept as a
+   * version; the closure, if any, is not rewritten.
+   */
+  @Patch(':recordId')
+  @RequirePermission('patient:priority', 'global')
+  @ApiOperation({ summary: 'Edit a priority group assessment' })
+  @ApiOkResponse({ type: PriorityGroupDto })
+  async edit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('recordId', ParseUUIDPipe) recordId: string,
+    @Body() dto: EditPriorityGroupDto,
+    @Req() req: Request,
+  ): Promise<PriorityGroupResponse> {
+    const edited = await this.priority.edit(
+      {
+        patientId: id,
+        recordId,
+        changes: {
+          group: dto.group,
+          startsOn: dto.startsOn as ClinicalDate | undefined,
+          endsOn: dto.endsOn as ClinicalDate | null | undefined,
+          origin: dto.origin,
+          evidenceDocument: dto.evidenceDocument,
+        },
+      },
+      this.requester(req),
+      this.currentUser.requirePrincipal(),
+    );
+
+    return toResponse(edited);
   }
 
   /** Who is asking, for the access trail. See `PatientsController`. */
@@ -165,5 +205,7 @@ function toResponse(record: AssessedPriorityGroup): PriorityGroupResponse {
     recordedAt: record.recordedAt.toISOString(),
     closedById: record.closedById,
     closedAt: record.closedAt?.toISOString() ?? null,
+    changedById: record.changedById,
+    changedAt: record.changedAt?.toISOString() ?? null,
   };
 }

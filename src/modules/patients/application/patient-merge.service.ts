@@ -9,7 +9,6 @@ import {
 import {
   MergeIntoSelfError,
   MergeNotFoundError,
-  MergeReasonRequiredError,
   MergeUndoConflictError,
   PatientAlreadyMergedError,
   PatientMergedError,
@@ -47,17 +46,16 @@ import type { Requester } from './patients.service';
  * simultaneous merges cannot build one between them; a chart merged with
  * itself is refused by `patient_merged_into_not_self`; a merge undone twice is
  * refused by `patient_merge_undone_once`; a blank reason by
- * `patient_merge_reason_not_blank`. Repeating any of them in TypeScript would
+ * `patient_merge_reason_not_blank` (the service stores blank as none). Repeating any of them in TypeScript would
  * be a second rule to keep in step with the first, and the copy always wins
  * the argument at the wrong moment.
  *
  * What lives here is what the database cannot decide:
  *
- *   - the REASON as a `DEBERÁ` of the domain and not of the transport (PA-044,
- *     PA-047). Same argument as `CANCELLATION_REASON_REQUIRED`: a rule that
- *     only the DTO enforces stops being enforced the day another use case
- *     calls from inside. The CHECK still refuses `'   '` coming through an
- *     import — this is the message that lands on the field.
+ *   - the REASON, optional since PA-064 (D-126): a confirmation with the
+ *     summary is what tells this apart from a click, and the reason, when
+ *     given, comes from a short list. Blank is stored as none, so the CHECK
+ *     never sees padding from this path.
  *   - PA-045 for the SOURCE, which no constraint covers: merging a chart that
  *     is already merged INTO THE SAME TARGET changes no column, so the trigger
  *     sees nothing and a second `MERGE` row would appear for one merge.
@@ -95,11 +93,12 @@ export class PatientMergeService {
     input: {
       sourcePatientId: string;
       targetPatientId: string;
-      reason: string;
+      /** PA-064. Optional; blank is stored as none. */
+      reason?: string | null;
     },
     requester: Requester,
   ): Promise<PatientMergeResult> {
-    const reason = requireReason(input.reason);
+    const reason = optionalReason(input.reason);
 
     /**
      * PA-046, first clause. Refused here and not left to the CHECK because
@@ -187,10 +186,10 @@ export class PatientMergeService {
    * guessed from dates.
    */
   async undo(
-    input: { sourcePatientId: string; reason: string },
+    input: { sourcePatientId: string; reason?: string | null },
     requester: Requester,
   ): Promise<PatientMergeEvent> {
-    const reason = requireReason(input.reason);
+    const reason = optionalReason(input.reason);
 
     const source = await this.patients.findMergeState(input.sourcePatientId);
     if (!source) throw new PatientNotFoundError();
@@ -303,15 +302,11 @@ export class PatientMergeService {
 }
 
 /**
- * PA-044, PA-047. A reason, or the operation does not happen.
- *
- * TRIMMED, because `'   '` satisfies a `NOT NULL` and explains nothing — «un
- * motivo obligatorio es lo que distingue esto de un clic, y una cadena de
- * espacios es un clic con más teclas». The trimmed value is what gets stored,
- * so the trail never holds padding either.
+ * PA-064 (D-126). The reason is optional, and the one given is TRIMMED: blank
+ * is stored as none, which is the truth («no se dijo»), and the trail never
+ * holds padding.
  */
-function requireReason(reason: string): string {
-  const trimmed = reason.trim();
-  if (trimmed.length === 0) throw new MergeReasonRequiredError();
-  return trimmed;
+function optionalReason(reason: string | null | undefined): string | null {
+  const trimmed = reason?.trim() ?? '';
+  return trimmed.length === 0 ? null : trimmed;
 }

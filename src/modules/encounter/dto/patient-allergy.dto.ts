@@ -86,20 +86,82 @@ export class RecordAllergyDto extends createZodDto(recordAllergySchema) {}
  */
 export const refuteAllergySchema = z.object({
   /**
-   * EN-082. Why it was ruled out, and it is mandatory.
-   *
-   * The service demands it again, exactly as it does with the amendment's
-   * reason: the DTO guards one door, and a refutation with no reason is a row
-   * a future doctor cannot decide whether to trust.
+   * EN-224 (D-126.2). Optional: the screen offers «Prueba negativa»,
+   * «Registrada por error», «Tolera la sustancia» or «Otro» with text, and
+   * sends nothing when nobody chose. 2000, the same bound the screen keeps.
    */
   notes: z
     .string()
     .trim()
-    .min(1, 'Escriba por qué se descarta la alergia')
-    .max(2000, 'El motivo no puede superar 2000 caracteres'),
+    .max(2000, 'El motivo no puede superar 2000 caracteres')
+    .optional(),
 });
-/** Body of POST /patients/:patientId/allergies/:allergyId/refute. */
 export class RefuteAllergyDto extends createZodDto(refuteAllergySchema) {}
+
+/**
+ * EN-225. Editing an allergy in its row: any of what it SAYS, nothing else.
+ * `.strict()`: a field this route does not edit —the chart, the author— is
+ * refused as `UNKNOWN_FIELD` rather than ignored while the caller believes
+ * it changed.
+ *
+ * THE CONCEPT IS KEPT UNLESS SAID OTHERWISE (EN-225, EN-084). Absent from
+ * the body, the CNMB concept stays: fixing a typo in the name must not stop
+ * the prescription check in silence. A new concept travels with its text;
+ * `null` clears it, and the screen asks for that first.
+ */
+export const editAllergySchema = z
+  .object({
+    // EN-225, EN-084. Absent keeps the concept; `null` clears it.
+    substanceConceptId: z
+      .uuid('Seleccione el principio activo en el catálogo CNMB')
+      .nullable()
+      .optional(),
+    substanceText: z
+      .string()
+      .trim()
+      .min(1, 'Escriba a qué es alérgico el paciente')
+      .max(240, 'El nombre de la sustancia no puede superar 240 caracteres')
+      .optional(),
+    reaction: z
+      .string()
+      .trim()
+      .max(512, 'La descripción de la reacción no puede superar 512 caracteres')
+      .nullable()
+      .optional()
+      .transform((value) => (value === '' ? null : value)),
+    criticality: ALLERGY_CRITICALITY.optional(),
+  })
+  .strict()
+  .superRefine((body, context) => {
+    // A concept travels with the text it names; clearing one (`null`) does
+    // not need it.
+    if (
+      body.substanceConceptId !== undefined &&
+      body.substanceConceptId !== null &&
+      body.substanceText === undefined
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['substanceText'],
+        message: 'Escriba la sustancia junto con el principio activo elegido',
+      });
+    }
+  });
+export class EditAllergyDto extends createZodDto(editAllergySchema) {}
+
+/**
+ * EN-226. «Descartar estas y afirmar»: the allergies the screen listed. Every
+ * active one has to be here, or the brake stays (`CHART_HAS_ALLERGIES`).
+ */
+export const assertRefutingSchema = z
+  .object({
+    allergyIds: z
+      .array(z.uuid())
+      .min(1, 'Indique las alergias que se descartan')
+      .max(100),
+  })
+  .strict();
+export class AssertRefutingDto extends createZodDto(assertRefutingSchema) {}
 
 /**
  * EN-081, EN-084. One allergy that has NOT been ruled out.
@@ -135,9 +197,31 @@ export const allergySchema = activeAllergySchema.extend({
   /** EN-086. Who recorded it and who ruled it out; `null` for older rows. */
   recordedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
   refutedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  /**
+   * EN-225. The last change —an edit, a refutation, a reactivation— or
+   * `null`: a date means `…/versions` has something to show.
+   */
+  changedAt: z.iso.datetime().nullable(),
+  /** EN-225. Who made that last change; `null` exactly when `changedAt` is. */
+  changedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
 });
-/** Response of recording and of refuting an allergy. */
+/** Response of recording, editing, refuting and reactivating an allergy. */
 export class AllergyDto extends createZodDto(allergySchema) {}
+
+/** EN-225. The versions the changes replaced, newest first. */
+export const allergyVersionListSchema = z.object({
+  items: z.array(
+    z.object({
+      version: z.number().int(),
+      replacedBy: z.object({ id: z.uuid(), name: z.string() }),
+      replacedAt: z.iso.datetime(),
+      allergy: allergySchema,
+    }),
+  ),
+});
+export class AllergyVersionListDto extends createZodDto(
+  allergyVersionListSchema,
+) {}
 
 /**
  * EN-087. «Sin alergias conocidas», afirmado por un clínico.
@@ -206,8 +290,26 @@ export const allergyListSchema = z.object({
 /** Response of GET /patients/:patientId/allergies. */
 export class AllergyListDto extends createZodDto(allergyListSchema) {}
 
+/**
+ * EN-226. «Descartar estas y afirmar»: the assertion, and the allergies the
+ * step itself ruled out — what «Deshacer» reactivates. One a colleague had
+ * ruled out already is not among them.
+ */
+export const assertRefutingResponseSchema = noKnownAllergiesSchema.extend({
+  refutedAllergyIds: z.array(z.uuid()),
+});
+export class AssertRefutingResponseDto extends createZodDto(
+  assertRefutingResponseSchema,
+) {}
+
 /** Response types inferred from the schemas; `ActiveAllergyResponse` is what `active-allergy.mapper.ts` returns. */
 export type ActiveAllergyResponse = z.infer<typeof activeAllergySchema>;
 export type NoKnownAllergiesResponse = z.infer<typeof noKnownAllergiesSchema>;
+export type AssertRefutingResponse = z.infer<
+  typeof assertRefutingResponseSchema
+>;
 export type AllergyResponse = z.infer<typeof allergySchema>;
 export type AllergyListResponse = z.infer<typeof allergyListSchema>;
+export type AllergyVersionListResponse = z.infer<
+  typeof allergyVersionListSchema
+>;

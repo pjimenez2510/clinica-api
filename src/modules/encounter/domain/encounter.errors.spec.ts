@@ -43,9 +43,15 @@ import {
   PatientAllergyNotFoundError,
   PatientChartNotOpenError,
   PractitionerNotLicensedError,
-  RefutationReasonRequiredError,
   PatientHistoryNotFoundError,
   HistoryAlreadyRefutedError,
+  AllergyNotRefutedError,
+  HistoryNotRefutedError,
+  NoKnownAllergiesNotStandingError,
+  RefutationReasonRequiredError,
+  AllergyRefutedAloneError,
+  VitalsCorrectionRequiresSignatureError,
+  ChartHasAllergiesError,
   PractitionerProfileRequiredError,
   SubstituteClosureReasonRequiredError,
   UnknownClinicalFormError,
@@ -103,11 +109,19 @@ const EVERY_ERROR: readonly DomainError[] = [
   new ConceptWrongCatalogueError('CNMB'),
   new PatientAllergyNotFoundError(),
   new AllergyAlreadyRefutedError(),
-  new RefutationReasonRequiredError(),
   // EN-085. Los antecedentes, con el régimen de las alergias.
-  new RefutationReasonRequiredError('el antecedente'),
   new PatientHistoryNotFoundError(),
   new HistoryAlreadyRefutedError(),
+  // EN-224, EN-226. Reactivar lo vigente y retirar lo que ya no está.
+  new AllergyNotRefutedError(),
+  new HistoryNotRefutedError(),
+  new NoKnownAllergiesNotStandingError(),
+  // D-140.1 y D-140.3. La de criticidad alta se descarta con motivo, y una a una.
+  new RefutationReasonRequiredError(),
+  new AllergyRefutedAloneError(),
+  // EN-228. Tras el alta corrige la toma quien firma historia en la sede.
+  new VitalsCorrectionRequiresSignatureError(),
+  new ChartHasAllergiesError(),
 ];
 
 describe('el contrato de errores de la atención', () => {
@@ -175,6 +189,64 @@ describe('el contrato de errores de la atención', () => {
     expect(last.code).toBe('DIAGNOSIS_LAST_AFTER_DISCHARGE');
     expect(last).toBeInstanceOf(ConflictError);
     expect(last.userTitle).toContain('único diagnóstico');
+  });
+
+  it('EN-224 EN-225 lo descartado se reactiva antes de editarlo, y reactivar lo vigente responde 409', () => {
+    const refuted = new AllergyAlreadyRefutedError();
+    expect(refuted.code).toBe('ALLERGY_ALREADY_REFUTED');
+    expect(refuted).toBeInstanceOf(ConflictError);
+    expect(refuted.userTitle).toContain('reactívela');
+    expect(new HistoryAlreadyRefutedError().userTitle).toContain('reactívelo');
+
+    for (const [error, code] of [
+      [new AllergyNotRefutedError(), 'ALLERGY_NOT_REFUTED'],
+      [new HistoryNotRefutedError(), 'HISTORY_NOT_REFUTED'],
+    ] as const) {
+      expect(error.code).toBe(code);
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error.userTitle).toContain('Actualice la lista');
+    }
+  });
+
+  it('EN-224 descartar una alergia de criticidad alta sin motivo responde 422 con el campo notes (D-140.1)', () => {
+    const error = new RefutationReasonRequiredError();
+    expect(error.code).toBe('REFUTATION_REASON_REQUIRED');
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.userTitle).toContain('criticidad alta');
+    expect(error.fieldErrors).toEqual([
+      expect.objectContaining({
+        field: 'notes',
+        code: 'REFUTATION_REASON_REQUIRED',
+      }),
+    ]);
+  });
+
+  it('EN-226 una alergia de criticidad alta no entra en el descarte en bloque: 409 que dice que se descarta sola (D-140.3)', () => {
+    const error = new AllergyRefutedAloneError();
+    expect(error.code).toBe('ALLERGY_REFUTED_ALONE');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toContain('una a una');
+  });
+
+  it('EN-226 retirar lo que ya no está vigente responde 409, y afirmar con alergias activas sigue frenado', () => {
+    const notStanding = new NoKnownAllergiesNotStandingError();
+    expect(notStanding.code).toBe('NO_KNOWN_ALLERGIES_NOT_STANDING');
+    expect(notStanding).toBeInstanceOf(ConflictError);
+    expect(notStanding.userTitle).toContain('Actualice la ficha');
+
+    const active = new ChartHasAllergiesError();
+    expect(active.code).toBe('CHART_HAS_ALLERGIES');
+    expect(active).toBeInstanceOf(ConflictError);
+    expect(active.userTitle).toContain('Descártelas');
+  });
+
+  it('EN-228 corregir los signos tras el alta sin record:sign en la sede responde 403 que dice quién corrige', () => {
+    const error = new VitalsCorrectionRequiresSignatureError();
+    expect(error.code).toBe('VITALS_CORRECTION_REQUIRES_SIGNATURE');
+    expect(error).toBeInstanceOf(ForbiddenError); // 403
+    expect(error.userTitle).toBe(
+      'La atención ya tiene el alta: corrige sus signos vitales quien firma historia clínica en esta sede',
+    );
   });
 
   it('EN-213 «Deshacer» lo que ya se deshizo, o lo que ya volvió a registrarse: 409 que manda a actualizar', () => {

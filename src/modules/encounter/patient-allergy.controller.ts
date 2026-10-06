@@ -6,11 +6,13 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Req,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -22,6 +24,7 @@ import { ALL_SITES } from '../../shared/authorisation/principal';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 import type { Permission } from '../../shared/authorisation/permission.catalogue';
 
+import { NoKnownAllergiesService } from './application/no-known-allergies.service';
 import { PatientAllergyService } from './application/patient-allergy.service';
 import type { Requester } from './application/encounter.service';
 import type { AllergyView } from './domain/patient-allergy.repository';
@@ -29,11 +32,17 @@ import { toNoKnownAllergiesResponse } from './dto/active-allergy.mapper';
 import {
   AllergyDto,
   AllergyListDto,
+  AllergyVersionListDto,
+  AssertRefutingDto,
+  AssertRefutingResponseDto,
+  EditAllergyDto,
   NoKnownAllergiesDto,
   RecordAllergyDto,
   RefuteAllergyDto,
   type AllergyListResponse,
   type AllergyResponse,
+  type AllergyVersionListResponse,
+  type AssertRefutingResponse,
   type NoKnownAllergiesResponse,
 } from './dto/patient-allergy.dto';
 
@@ -74,7 +83,8 @@ import {
  *
  * ⚠️ AND THERE IS NO `DELETE` ROUTE, WHICH IS EN-082 AS A TABLE OF ROUTES. The
  * only way an allergy stops counting is `…/refute`, which writes an instant
- * and a reason. A route that removed the row would make «se descartó» and «se
+ * and who; an edit (EN-225) or a reactivation (EN-224) keeps what it replaced
+ * as a version. A route that removed the row would make «se descartó» and «se
  * escribió por error» the same event, and they are not: one is a clinical
  * finding and the other is a typo.
  */
@@ -83,6 +93,7 @@ import {
 export class PatientAllergyController {
   constructor(
     private readonly allergies: PatientAllergyService,
+    private readonly noKnownAllergies: NoKnownAllergiesService,
     private readonly currentUser: CurrentUserService,
   ) {}
 
@@ -193,11 +204,10 @@ export class PatientAllergyController {
    * a patient has no known allergies drives what may be prescribed, and it is
    * the same clinical judgement seen from the other side.
    *
-   * ⚠️ THERE IS NO ROUTE TO UNDO IT AND NONE TO EDIT IT, and the table refuses
-   * both anyway. What ends an assertion is recording an allergy — the ordinary
-   * course of events: it was asked, there was none, and in October one
-   * appeared. Nothing about that makes the March assertion false; it makes it
-   * no longer the last word, which is a question the read answers.
+   * IT IS NOT EDITED. What ends an assertion is recording an allergy — the
+   * ordinary course of events: it was asked, there was none, and in October
+   * one appeared — or, since EN-226, withdrawing it when it was a mistake
+   * (`…/none-known/retract`), which keeps the row and says who and when.
    *
    * 201, because what it leaves behind is a row that did not exist.
    */
@@ -212,7 +222,7 @@ export class PatientAllergyController {
     @Param('patientId', ParseUUIDPipe) patientId: string,
     @Req() req: Request,
   ): Promise<NoKnownAllergiesResponse> {
-    const assertion = await this.allergies.assertNoKnownAllergies(
+    const assertion = await this.noKnownAllergies.assertNoKnownAllergies(
       patientId,
       // The author is the SESSION and never a field in the body: a caller who
       // could name the clinician could put somebody else's name behind an
@@ -224,13 +234,13 @@ export class PatientAllergyController {
   }
 
   /**
-   * EN-082. Rules one out: the instant and the reason, never a deletion.
+   * EN-082, EN-224. Rules one out: the instant, who, and a reason if one was
+   * chosen — never a deletion.
    *
    * A ROUTE OF ITS OWN AND NOT A `PATCH` OF `refutedAt`, for the same reason
-   * `…/notes/:id/retract` and `…/merge/undo` are: it is an ACT with an author,
-   * an instant and a mandatory reason of its own, not the edit of a field. A
-   * `PATCH` would also make «descartada» something a client could set back to
-   * `null`, and un-refuting is not an operation this system has.
+   * `…/notes/:id/retract` and `…/merge/undo` are: it is an ACT with an author
+   * and an instant, not the edit of a field. Undoing it is its own act too
+   * (`…/reactivate`), which keeps the refutation as a version.
    *
    * 200 WITH THE ALLERGY and not 204: the screen repaints it as ruled out
    * without a second call.
@@ -251,6 +261,144 @@ export class PatientAllergyController {
       this.requester(req, 'record:write'),
     );
     return toAllergyResponse(refuted);
+  }
+
+  /**
+   * EN-225. Edits what the allergy says, in its row; the version it replaces
+   * is kept. `record:write` like refuting: changing the substance changes
+   * what the prescription check reads, which is the same clinical judgement
+   * as ruling one out (EN-164).
+   */
+  @Patch('allergies/:allergyId')
+  @RequirePermission('record:write', 'global')
+  @ApiOperation({ summary: 'Corregir una alergia del paciente' })
+  @ApiOkResponse({ type: AllergyDto })
+  async edit(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Param('allergyId', ParseUUIDPipe) allergyId: string,
+    @Body() dto: EditAllergyDto,
+    @Req() req: Request,
+  ): Promise<AllergyResponse> {
+    const edited = await this.allergies.edit(
+      {
+        patientId,
+        allergyId,
+        changes: {
+          // EN-225, EN-084. Each key only when it came: an absent concept is
+          // KEPT, and only an explicit `null` clears it.
+          ...(dto.substanceText === undefined
+            ? {}
+            : { substanceText: dto.substanceText }),
+          ...(dto.substanceConceptId === undefined
+            ? {}
+            : { substanceConceptId: dto.substanceConceptId }),
+          ...(dto.reaction === undefined ? {} : { reaction: dto.reaction }),
+          ...(dto.criticality === undefined
+            ? {}
+            : { criticality: dto.criticality }),
+        },
+      },
+      this.requester(req, 'record:write'),
+    );
+    return toAllergyResponse(edited);
+  }
+
+  /**
+   * EN-224. Brings back an allergy refuted by mistake. `background:write`,
+   * like recording one: it makes the allergy count again, the safe direction,
+   * and nursing could record it anew anyway.
+   */
+  @Post('allergies/:allergyId/reactivate')
+  @RequirePermission('background:write', 'global')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reactivar una alergia descartada por error' })
+  @ApiOkResponse({ type: AllergyDto })
+  async reactivate(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Param('allergyId', ParseUUIDPipe) allergyId: string,
+    @Req() req: Request,
+  ): Promise<AllergyResponse> {
+    const reactivated = await this.allergies.reactivate(
+      patientId,
+      allergyId,
+      this.requester(req, 'background:write'),
+    );
+    return toAllergyResponse(reactivated);
+  }
+
+  /** EN-225. The versions the changes replaced; `record:read`, audited. */
+  @Get('allergies/:allergyId/versions')
+  @RequirePermission('record:read', 'global')
+  @ApiOperation({ summary: 'Versiones anteriores de una alergia' })
+  @ApiOkResponse({ type: AllergyVersionListDto })
+  async versions(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Param('allergyId', ParseUUIDPipe) allergyId: string,
+    @Req() req: Request,
+  ): Promise<AllergyVersionListResponse> {
+    const versions = await this.allergies.versionsOf(
+      patientId,
+      allergyId,
+      this.requester(req, 'record:read'),
+    );
+    return {
+      items: versions.map((version) => ({
+        version: version.version,
+        replacedBy: version.replacedBy,
+        replacedAt: version.replacedAt.toISOString(),
+        allergy: toAllergyResponse(version.allergy),
+      })),
+    };
+  }
+
+  /**
+   * EN-226. «Descartar estas y afirmar»: the active allergies the screen
+   * listed are ruled out, with «Descartada al afirmar sin alergias
+   * conocidas», and «sin alergias conocidas» is asserted, in one step.
+   * `record:write`, because ruling out is. One of HIGH criticality refuses
+   * it (`ALLERGY_REFUTED_ALONE`, D-140.3). The response names what this step
+   * ruled out, which is what «Deshacer» reactivates.
+   */
+  @Post('allergies/none-known/refuting-active')
+  @RequirePermission('record:write', 'global')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Descartar las alergias activas y afirmar que no hay ninguna',
+  })
+  @ApiCreatedResponse({ type: AssertRefutingResponseDto })
+  async assertRefuting(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Body() dto: AssertRefutingDto,
+    @Req() req: Request,
+  ): Promise<AssertRefutingResponse> {
+    const { assertion, refutedAllergyIds } =
+      await this.noKnownAllergies.assertRefuting(
+        patientId,
+        dto.allergyIds,
+        this.requester(req, 'record:write'),
+      );
+    return { ...toNoKnownAllergiesResponse(assertion), refutedAllergyIds };
+  }
+
+  /**
+   * EN-226. Withdraws the standing «sin alergias conocidas» asserted by
+   * mistake. `background:write`, like asserting it: it moves the chart back
+   * to «no se preguntó», never towards fewer allergies. 204: there is
+   * nothing standing left to return.
+   */
+  @Post('allergies/none-known/retract')
+  @RequirePermission('background:write', 'global')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Retirar «Sin alergias conocidas»' })
+  @ApiNoContentResponse()
+  async retractNoKnownAllergies(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.noKnownAllergies.retract(
+      patientId,
+      this.requester(req, 'background:write'),
+    );
   }
 
   /**
@@ -291,5 +439,7 @@ function toAllergyResponse(allergy: AllergyView): AllergyResponse {
     // EN-086. `null` only for rows older than the column.
     recordedBy: allergy.recordedBy,
     refutedBy: allergy.refutedBy,
+    changedAt: allergy.changedAt?.toISOString() ?? null,
+    changedBy: allergy.changedBy,
   };
 }

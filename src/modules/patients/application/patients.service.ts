@@ -13,14 +13,13 @@ import {
   type ClinicalDate,
   parseClinicalDate,
 } from '../../../shared/domain/clinic-time';
-import { ethnicityContradictsCountry } from '../domain/ecuadorian-ethnicity';
+import { fieldsForeignNationalityClears } from '../domain/ecuadorian-ethnicity';
 import { nationalityContradictsEthnicity } from '../domain/indigenous-nationality';
 import { peopleContradictsNationality } from '../domain/indigenous-people';
 import { sexualOrientationBelowMinimumAge } from '../domain/sexual-orientation';
 import {
   AccessContextNotFoundError,
   DuplicateIdentifierError,
-  EthnicityRequiresEcuadorianNationalityError,
   NationalityRequiresIndigenousEthnicityError,
   PatientMergedError,
   PatientNotFoundError,
@@ -32,6 +31,7 @@ import {
   type CatalogReference,
   type NewPatient,
   PATIENT_REPOSITORY,
+  type PatientChangeEntry,
   type PatientDetail,
   type PatientIdentifier,
   type PatientPage,
@@ -239,6 +239,45 @@ export class PatientsService {
   }
 
   /**
+   * PA-065. The versions of the chart: every correction, newest first, with
+   * who changed what from what (PA-031, D-032).
+   *
+   * AUDITED AS OPENING THE CHART (REQ-110): the previous values are chart
+   * contents, so reading them is a `READ` of `patient`, like `getById`. A
+   * missing chart answers 404 and a merged one 409, both before the trail,
+   * because nothing was disclosed.
+   *
+   * ⚠️ THE SEXUAL ORIENTATION IS LEFT OUT, values and row (PA-058): it never
+   * travels with `patient:read`, and «that it was corrected» says it is
+   * recorded. Its own door is `GET /patients/:id/sexual-orientation`.
+   */
+  async changeHistory(
+    id: string,
+    requester: Requester,
+  ): Promise<PatientChangeEntry[]> {
+    const state = await this.patients.findMergeState(id);
+    if (!state) throw new PatientNotFoundError();
+    if (state.mergedIntoMrn !== null) {
+      throw new PatientMergedError(state.mergedIntoMrn);
+    }
+
+    const entries = await this.patients.listChangeHistory(id, [
+      'sexualOrientationConceptId',
+    ]);
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'patient',
+      resourceId: id,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    return entries;
+  }
+
+  /**
    * AG-073. The appointment must exist, be THIS patient's and sit at a site
    * where the caller reads the agenda — and the three failures answer alike,
    * so the route does not tell «es de otra persona» from «no existe» (AG-071).
@@ -325,10 +364,26 @@ export class PatientsService {
    * violation the receptionist cannot read.
    */
   async create(
-    input: NewPatient,
+    registration: NewPatient,
     requester: Requester,
     now: Date = new Date(),
   ): Promise<PatientDetail> {
+    /**
+     * PA-065 (D-128). A foreign chart does not carry columns 12 to 14: they
+     * are emptied here instead of refused, so whoever registers is not sent
+     * back to clear three fields by hand.
+     */
+    const input: NewPatient = { ...registration };
+    for (const field of fieldsForeignNationalityClears({
+      countryOfNationalityCode: registration.countryOfNationalityCode ?? null,
+      ethnicityConceptId: registration.ethnicityConceptId ?? null,
+      nationalityConceptId: registration.nationalityConceptId ?? null,
+      peopleConceptId: registration.peopleConceptId ?? null,
+    })) {
+      // Registration leaves an unrecorded field absent, not null.
+      input[field] = undefined;
+    }
+
     await this.assertReferences(input, clinicalDateToday(now));
     await this.assertCountry(
       input.countryOfNationalityCode,
@@ -408,7 +463,7 @@ export class PatientsService {
    */
   async correct(
     id: string,
-    requested: PatientCorrectionRequest,
+    asked: PatientCorrectionRequest,
     requester: Requester,
     now: Date = new Date(),
   ): Promise<PatientDetail> {
@@ -433,6 +488,23 @@ export class PatientsService {
      */
     if (state.mergedIntoMrn !== null) {
       throw new PatientMergedError(state.mergedIntoMrn);
+    }
+
+    /**
+     * PA-065 (D-128). Decided on the RESULTING chart, like the rules below:
+     * correcting only the country of a chart that declares an ethnicity
+     * empties the ethnicity —and the nationality and people hanging from it—
+     * in the same correction. Nothing is lost: each emptied field leaves its
+     * row in `patient_change_history` with the value it had.
+     */
+    const requested: PatientCorrectionRequest = { ...asked };
+    for (const field of fieldsForeignNationalityClears({
+      countryOfNationalityCode: resultingValue(state.values.countryOfNationalityCode, asked.countryOfNationalityCode), // prettier-ignore
+      ethnicityConceptId: resultingValue(state.values.ethnicityConceptId, asked.ethnicityConceptId), // prettier-ignore
+      nationalityConceptId: resultingValue(state.values.nationalityConceptId, asked.nationalityConceptId), // prettier-ignore
+      peopleConceptId: resultingValue(state.values.peopleConceptId, asked.peopleConceptId), // prettier-ignore
+    })) {
+      requested[field] = null;
     }
 
     await this.assertReferences(requested, clinicalDateToday(now));
@@ -690,10 +762,9 @@ export class PatientsService {
     chart: ConditionalChart,
     today: ClinicalDate,
   ): Promise<void> {
-    // PA-059, column 12: «Aplica para nacionalidad Ecuatoriana».
-    if (ethnicityContradictsCountry(chart)) {
-      throw new EthnicityRequiresEcuadorianNationalityError();
-    }
+    // PA-059, column 12: «Aplica para nacionalidad Ecuatoriana». Since
+    // PA-065 the callers empty what does not apply before reaching here, so
+    // a foreign chart never arrives with an ethnicity.
 
     // PA-027, column 13: «Aplica únicamente para la autoidentificación
     // "indígena"».

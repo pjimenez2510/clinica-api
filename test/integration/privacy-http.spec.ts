@@ -53,19 +53,41 @@ interface ConsentBody {
   patientId: string;
   textVersion: TextBody;
   isCurrentVersion: boolean;
+  /** PD-044. The consent this one corrects, and whether another corrects it. */
+  supersedesId: string | null;
+  isSuperseded: boolean;
   medium: string;
   grantedBy: string;
   recordedAt: string;
   recordedBy: { id: string; fullName: string };
+  /** PD-044. Who TOOK the consent and when: the original's, on a correction. */
+  takenAt: string;
+  takenBy: { id: string; fullName: string };
+}
+
+interface AnswerBody {
+  outcome: string;
+  response: string;
+  answeredAt: string;
+  answeredBy: { id: string; fullName: string };
+  /** PD-047. Whether this answer rectifies an earlier one. */
+  isCorrection: boolean;
 }
 
 interface RequestBody {
   id: string;
   patientId: string;
   right: string;
+  description: string | null;
+  receivedAt: string;
   dueOn: string;
   isOverdue: boolean;
-  answer: { outcome: string; response: string } | null;
+  answer: AnswerBody | null;
+  /** PD-047. The answers a rectification replaced, newest first. */
+  previousAnswers: AnswerBody[];
+  /** PD-046. Who last edited the request and when. */
+  changedBy: { id: string; fullName: string } | null;
+  changedAt: string | null;
 }
 
 /**
@@ -190,6 +212,24 @@ describe('privacy por HTTP', () => {
       .post(`${base}${path}`)
       .set('Authorization', `Bearer ${auth}`)
       .send(body);
+
+  const patch = (path: string, body: object, auth = officerToken) =>
+    request(app.getHttpServer())
+      .patch(`${base}${path}`)
+      .set('Authorization', `Bearer ${auth}`)
+      .send(body);
+
+  /** Waits until `count` sessions are blocked on a row lock. */
+  async function waitForLockWaiters(count: number): Promise<void> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+        SELECT count(*) AS waiting FROM pg_stat_activity
+         WHERE wait_event_type = 'Lock' AND datname = current_database()`;
+      if (Number(row?.waiting ?? 0) >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error('the edits never reached the lock');
+  }
 
   async function publish(body: string): Promise<TextBody> {
     const response = await post('/consent-texts', { body }).expect(201);
@@ -536,6 +576,42 @@ describe('privacy por HTTP', () => {
       expect(await prisma.consentTextVersion.count()).toBe(1);
     });
 
+    it('PD-045 la lista de textos dice cuántas fichas consintieron la versión vigente, que es la consecuencia de publicar otra', async () => {
+      const first = await publish('Texto uno');
+      const [a, b] = [await createPatient(prisma), await createPatient(prisma)];
+      for (const patient of [a, b]) {
+        await post(
+          `/patients/${patient.id}/consents`,
+          { textVersionId: first.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
+          deskToken,
+        ).expect(201);
+      }
+      // Una corrección no es otro paciente: sigue siendo uno.
+      const [ofA] = (
+        (await get(`/patients/${a.id}/consents`, deskToken).expect(200))
+          .body as { items: ConsentBody[] }
+      ).items;
+      await post(
+        `/patients/${a.id}/consents/${ofA!.id}/correction`,
+        { medium: 'SIGNED_PAPER', grantedBy: 'HOLDER' },
+        deskToken,
+      ).expect(201);
+
+      const before = await get('/consent-texts').expect(200);
+      expect(
+        (before.body as { currentVersionConsents: number })
+          .currentVersionConsents,
+      ).toBe(2);
+
+      // Tras publicar, ninguno está sobre la vigente.
+      await publish('Texto dos');
+      const after = await get('/consent-texts').expect(200);
+      expect(
+        (after.body as { currentVersionConsents: number })
+          .currentVersionConsents,
+      ).toBe(0);
+    });
+
     it('PD-002 recepción no administra el texto: cerrado por defecto', async () => {
       await get('/consent-texts', deskToken).expect(403);
       await post('/consent-texts', { body: 'Intento' }, deskToken).expect(403);
@@ -672,6 +748,158 @@ describe('privacy por HTTP', () => {
       ).expect(200);
       const items = (list.body as { items: ConsentBody[] }).items;
       expect(items.map((c) => c.patientId)).toEqual([absorbed.id]);
+    });
+
+    it('PD-044 «Corregir» registra en un paso un consentimiento que sustituye al equivocado, sin motivo; el original queda y la lista dice cuál vale', async () => {
+      const text = await publish('Texto uno');
+      const patient = await createPatient(prisma);
+      const original = (
+        await post(
+          `/patients/${patient.id}/consents`,
+          { textVersionId: text.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
+          deskToken,
+        ).expect(201)
+      ).body as ConsentBody;
+      // Una versión nueva entre medias no impide corregir: la corrección es
+      // sobre el texto que se consintió, no sobre el vigente.
+      await publish('Texto dos');
+
+      const corrected = await post(
+        `/patients/${patient.id}/consents/${original.id}/correction`,
+        { medium: 'SIGNED_PAPER', grantedBy: 'REPRESENTATIVE' },
+        deskToken,
+      ).expect(201);
+      const correction = corrected.body as ConsentBody;
+      expect(correction).toMatchObject({
+        supersedesId: original.id,
+        isSuperseded: false,
+        medium: 'SIGNED_PAPER',
+        grantedBy: 'REPRESENTATIVE',
+        recordedBy: { id: deskId },
+        textVersion: { version: 1, body: 'Texto uno' },
+      });
+
+      const list = await get(
+        `/patients/${patient.id}/consents`,
+        deskToken,
+      ).expect(200);
+      const items = (list.body as { items: ConsentBody[] }).items;
+      expect(items.map((c) => [c.id, c.isSuperseded])).toEqual([
+        [correction.id, false],
+        [original.id, true],
+      ]);
+      // El original, intacto.
+      expect(items[1]).toMatchObject({
+        medium: 'ON_SCREEN',
+        grantedBy: 'HOLDER',
+      });
+      expect(
+        await trail('patient_consent', correction.id, 'CREATE'),
+      ).toHaveLength(1);
+    });
+
+    it('PD-044 la corrección conserva quién tomó el consentimiento y cuándo, del original; quién la registró es quien corrige', async () => {
+      const text = await publish('Texto uno');
+      const patient = await createPatient(prisma);
+      const original = (
+        await post(
+          `/patients/${patient.id}/consents`,
+          { textVersionId: text.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
+          deskToken,
+        ).expect(201)
+      ).body as ConsentBody;
+      // Control: en el original, quien lo tomó es quien lo registró.
+      expect(original.takenBy).toMatchObject({ id: deskId });
+      expect(original.takenAt).toBe(original.recordedAt);
+
+      const first = (
+        await post(
+          `/patients/${patient.id}/consents/${original.id}/correction`,
+          { medium: 'SIGNED_PAPER', grantedBy: 'HOLDER' },
+        ).expect(201)
+      ).body as ConsentBody;
+      // Y una corrección de la corrección sigue llevando al original.
+      const second = (
+        await post(`/patients/${patient.id}/consents/${first.id}/correction`, {
+          medium: 'SIGNED_PAPER',
+          grantedBy: 'REPRESENTATIVE',
+        }).expect(201)
+      ).body as ConsentBody;
+
+      for (const correction of [first, second]) {
+        expect(correction.recordedBy).toMatchObject({ id: officerId });
+        expect(correction.takenBy).toMatchObject({ id: deskId });
+        expect(correction.takenAt).toBe(original.recordedAt);
+      }
+    });
+
+    it('PD-044 un consentimiento ya corregido no se corrige otra vez, y uno que no es de la ficha no existe', async () => {
+      const text = await publish('Texto uno');
+      const patient = await createPatient(prisma);
+      const other = await createPatient(prisma);
+      const original = (
+        await post(
+          `/patients/${patient.id}/consents`,
+          { textVersionId: text.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
+          deskToken,
+        ).expect(201)
+      ).body as ConsentBody;
+      const body = { medium: 'SIGNED_PAPER', grantedBy: 'HOLDER' };
+
+      const elsewhere = await post(
+        `/patients/${other.id}/consents/${original.id}/correction`,
+        body,
+        deskToken,
+      ).expect(404);
+      expect((elsewhere.body as Problem).code).toBe('CONSENT_NOT_FOUND');
+
+      // Control positivo: la primera corrección entra.
+      await post(
+        `/patients/${patient.id}/consents/${original.id}/correction`,
+        body,
+        deskToken,
+      ).expect(201);
+      const again = await post(
+        `/patients/${patient.id}/consents/${original.id}/correction`,
+        body,
+        deskToken,
+      ).expect(409);
+      expect((again.body as Problem).code).toBe('CONSENT_ALREADY_CORRECTED');
+      expect(await prisma.patientConsent.count()).toBe(2);
+    });
+
+    it('PD-044 dos correcciones del mismo consentimiento a la vez: gana una, y es la que quedó en la base', async () => {
+      const text = await publish('Texto uno');
+      const patient = await createPatient(prisma);
+      const original = (
+        await post(
+          `/patients/${patient.id}/consents`,
+          { textVersionId: text.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
+          deskToken,
+        ).expect(201)
+      ).body as ConsentBody;
+      const path = `/patients/${patient.id}/consents/${original.id}/correction`;
+
+      const [paper, representative] = await Promise.all([
+        post(path, { medium: 'SIGNED_PAPER', grantedBy: 'HOLDER' }, deskToken),
+        post(
+          path,
+          { medium: 'ON_SCREEN', grantedBy: 'REPRESENTATIVE' },
+          deskToken,
+        ),
+      ]);
+      const statuses = [paper.status, representative.status].sort();
+      expect(statuses).toEqual([201, 409]);
+      const winner = paper.status === 201 ? paper : representative;
+      const loser = paper.status === 201 ? representative : paper;
+      expect((loser.body as Problem).code).toBe('CONSENT_ALREADY_CORRECTED');
+
+      const stored = await prisma.patientConsent.findMany({
+        where: { supersedesId: original.id },
+      });
+      expect(stored.map((row) => row.id)).toEqual([
+        (winner.body as ConsentBody).id,
+      ]);
     });
 
     it('PD-017 el consentimiento deja su fila en la bitácora, y sin bitácora no se registra', async () => {
@@ -943,6 +1171,179 @@ describe('privacy por HTTP', () => {
       expect(after).toEqual(before);
     });
 
+    it('PD-046 una solicitud sin responder se edita —derecho, texto y recepción— y el vencimiento se recalcula, con versión', async () => {
+      const patient = await createPatient(prisma);
+      const created = (
+        await register(patient.id, { right: 'ACCESS' }).expect(201)
+      ).body as RequestBody;
+      const earlier = new Date(Date.now() - 3 * DAY_MS);
+
+      const edited = await patch(`/requests/${created.id}`, {
+        right: 'PORTABILITY',
+        description: 'Mis datos en un archivo para otra clínica',
+        receivedAt: earlier.toISOString(),
+      }).expect(200);
+      const body = edited.body as RequestBody;
+      expect(body).toMatchObject({
+        right: 'PORTABILITY',
+        description: 'Mis datos en un archivo para otra clínica',
+        receivedAt: earlier.toISOString(),
+        dueOn: legalDueDate('PORTABILITY', clinicalDateOf(earlier), new Set()),
+        changedBy: { id: officerId },
+      });
+      // Control: la fecha nueva es la que lo movió.
+      expect(body.dueOn).not.toBe(created.dueOn);
+
+      const versions = await prisma.recordVersion.findMany({
+        where: { resourceType: 'data_subject_request', resourceId: created.id },
+      });
+      expect(versions).toHaveLength(1);
+      expect(versions[0]?.data).toMatchObject({ right: 'ACCESS' });
+      expect(
+        await trail('data_subject_request', created.id, 'UPDATE'),
+      ).toHaveLength(1);
+    });
+
+    it('PD-046 dos ediciones a la vez —una cambia el derecho, otra la recepción— se aplican las dos y el vencimiento sale de lo que quedó', async () => {
+      const patient = await createPatient(prisma);
+      const created = (
+        await register(patient.id, { right: 'ACCESS' }).expect(201)
+      ).body as RequestBody;
+      const earlier = new Date(Date.now() - 3 * DAY_MS);
+
+      // Un tercero sostiene el candado de la fila: las dos ediciones leen la
+      // solicitud como estaba y esperan, las dos, a escribir.
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => (release = resolve));
+      const holder = prisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`
+            SELECT id FROM data_subject_request
+             WHERE id = ${created.id}::uuid FOR UPDATE`;
+          await released;
+        },
+        { timeout: 20_000 },
+      );
+      const toSuspension = patch(`/requests/${created.id}`, {
+        right: 'SUSPENSION',
+      }).then((response) => response);
+      const toEarlier = patch(`/requests/${created.id}`, {
+        receivedAt: earlier.toISOString(),
+      }).then((response) => response);
+      await waitForLockWaiters(2);
+      release();
+      await holder;
+      const responses = await Promise.all([toSuspension, toEarlier]);
+
+      // Las dos ganan, una detrás de otra.
+      expect(responses.map((response) => response.status)).toEqual([200, 200]);
+      const stored = await prisma.dataSubjectRequest.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      expect(stored.right).toBe('SUSPENSION');
+      expect(stored.receivedAt.toISOString()).toBe(earlier.toISOString());
+      // Y el vencimiento es el del derecho y la recepción que quedaron, no el
+      // que cada una calculó con lo que leyó antes del candado.
+      const listed = (await get(`/patients/${patient.id}/requests`).expect(200))
+        .body as RequestBody[] | { items: RequestBody[] };
+      const final = (Array.isArray(listed) ? listed : listed.items).find(
+        (entry) => entry.id === created.id,
+      );
+      expect(final?.dueOn).toBe(
+        legalDueDate('SUSPENSION', clinicalDateOf(earlier), new Set()),
+      );
+    });
+
+    it('PD-046 cambiar sólo lo que pide no mueve el vencimiento', async () => {
+      const patient = await createPatient(prisma);
+      const created = (
+        await register(patient.id, { right: 'ACCESS' }).expect(201)
+      ).body as RequestBody;
+
+      const edited = await patch(`/requests/${created.id}`, {
+        description: 'Copia de mis datos y de mis consentimientos',
+      }).expect(200);
+      expect((edited.body as RequestBody).dueOn).toBe(created.dueOn);
+    });
+
+    it('PD-046 la respondida no se edita, ni una recepción futura entra', async () => {
+      const patient = await createPatient(prisma);
+      const created = (
+        await register(patient.id, { right: 'ACCESS' }).expect(201)
+      ).body as RequestBody;
+
+      const future = await patch(`/requests/${created.id}`, {
+        receivedAt: new Date(Date.now() + DAY_MS).toISOString(),
+      }).expect(422);
+      expect((future.body as Problem).code).toBe(
+        'DATA_REQUEST_RECEIVED_IN_FUTURE',
+      );
+
+      await post(`/requests/${created.id}/response`, {
+        outcome: 'GRANTED',
+        response: 'Entregada',
+      }).expect(200);
+      const answered = await patch(`/requests/${created.id}`, {
+        description: 'Otra cosa',
+      }).expect(409);
+      expect((answered.body as Problem).code).toBe(
+        'DATA_REQUEST_ALREADY_ANSWERED',
+      );
+      const stored = await prisma.dataSubjectRequest.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      expect(stored.description).toBe('Copia de mis datos');
+    });
+
+    it('PD-047 «Corregir respuesta» emite una rectificada enlazada; la original sigue en la historia de la solicitud', async () => {
+      const patient = await createPatient(prisma);
+      const created = (
+        await register(patient.id, { right: 'ERASURE' }).expect(201)
+      ).body as RequestBody;
+
+      const notYet = await post(`/requests/${created.id}/response/correction`, {
+        outcome: 'DENIED',
+        response: 'No procede',
+      }).expect(409);
+      expect((notYet.body as Problem).code).toBe('DATA_REQUEST_NOT_ANSWERED');
+
+      await post(`/requests/${created.id}/response`, {
+        outcome: 'DENIED',
+        response: 'No procede',
+      }).expect(200);
+      const first = await post(`/requests/${created.id}/response/correction`, {
+        outcome: 'PARTIALLY_GRANTED',
+        response:
+          'Se deniega suprimir la historia clínica (LOPDP art. 18.2) y se cesan los recordatorios',
+      }).expect(200);
+      expect((first.body as RequestBody).answer).toMatchObject({
+        outcome: 'PARTIALLY_GRANTED',
+        isCorrection: true,
+        answeredBy: { id: officerId },
+      });
+      expect(
+        (first.body as RequestBody).previousAnswers.map((a) => a.response),
+      ).toEqual(['No procede']);
+
+      // Se rectifica la vigente, en cadena.
+      const second = await post(`/requests/${created.id}/response/correction`, {
+        outcome: 'PARTIALLY_GRANTED',
+        response: 'Texto final',
+      }).expect(200);
+      expect(
+        (second.body as RequestBody).previousAnswers.map((a) => a.outcome),
+      ).toEqual(['PARTIALLY_GRANTED', 'DENIED']);
+
+      // Nada se borró: la respuesta original sigue en su fila.
+      const stored = await prisma.dataSubjectRequest.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      expect(stored.response).toBe('No procede');
+      expect(
+        await trail('data_subject_request', created.id, 'UPDATE'),
+      ).toHaveLength(3);
+    });
+
     it('PD-035 las abiertas de toda la clínica, por vencimiento, con las vencidas marcadas y sin las respondidas', async () => {
       const [a, b, c] = await Promise.all([
         createPatient(prisma),
@@ -1096,6 +1497,108 @@ describe('privacy por HTTP', () => {
       expect(
         await trail('data_subject_request', access.id, 'EXPORT'),
       ).toHaveLength(1);
+    });
+
+    it('PD-048 la exportación incluye las versiones guardadas de la ficha y de sus absorbidas, con quién y cuándo; rectificar no borra ninguna', async () => {
+      const { survivor, absorbed } = await mergedPair();
+      const nurse = await createUser(prisma);
+      const allergy = await prisma.patientAllergy.create({
+        data: {
+          patientId: absorbed.id,
+          substanceText: 'Penicilina',
+          recordedById: nurse.id,
+        },
+      });
+      // Dos correcciones de la alergia: dos versiones (D-127). La segunda es
+      // la «rectificación» del titular, que no borra la primera.
+      const firstEdit = new Date(Date.now() - 2000);
+      await prisma.patientAllergy.update({
+        where: { id: allergy.id },
+        data: {
+          substanceText: 'Amoxicilina',
+          changedById: nurse.id,
+          changedAt: firstEdit,
+        },
+      });
+      await prisma.patientAllergy.update({
+        where: { id: allergy.id },
+        data: {
+          substanceText: 'Amoxicilina con clavulánico',
+          changedById: officerId,
+          changedAt: new Date(firstEdit.getTime() + 1000),
+        },
+      });
+      // Un grupo prioritario editado: su versión NO sale (PA-042, D-083 §3).
+      const group = await prisma.patientPriorityGroup.create({
+        data: {
+          patientId: survivor.id,
+          groupCode: 'DISABILITY',
+          startsOn: new Date(),
+          origin: 'SELF_DECLARED',
+          recordedById: nurse.id,
+        },
+      });
+      await prisma.patientPriorityGroup.update({
+        where: { id: group.id },
+        data: {
+          origin: 'ACCREDITED',
+          evidenceDocument: 'Carné',
+          changedById: nurse.id,
+          changedAt: new Date(),
+        },
+      });
+      // Y la de otra persona, tampoco.
+      const stranger = await createPatient(prisma);
+      const foreign = await prisma.patientAllergy.create({
+        data: {
+          patientId: stranger.id,
+          substanceText: 'Látex',
+          recordedById: nurse.id,
+        },
+      });
+      await prisma.patientAllergy.update({
+        where: { id: foreign.id },
+        data: {
+          substanceText: 'Látex natural',
+          changedById: nurse.id,
+          changedAt: new Date(),
+        },
+      });
+      await merge(absorbed.id, survivor.id);
+      const access = await requestFor(survivor.id, 'ACCESS');
+
+      const response = await get(`/requests/${access.id}/export`).expect(200);
+      const document = response.body as {
+        versions: {
+          table: string;
+          resourceId: string;
+          version: number;
+          changedAt: string;
+          changedBy: { id: string; fullName: string };
+          data: Record<string, unknown>;
+        }[];
+        omitted: { section: string; reason: string }[];
+      };
+
+      expect(
+        document.versions.map((v) => [v.table, v.resourceId, v.version]),
+      ).toEqual([
+        ['patient_allergy', allergy.id, 1],
+        ['patient_allergy', allergy.id, 2],
+      ]);
+      expect(document.versions[0]).toMatchObject({
+        changedBy: { id: nurse.id },
+        changedAt: firstEdit.toISOString(),
+        data: { substance_text: 'Penicilina' },
+      });
+      expect(document.versions[1]).toMatchObject({
+        changedBy: { id: officerId },
+        data: { substance_text: 'Amoxicilina' },
+      });
+      expect(JSON.stringify(document.versions)).not.toContain('Látex');
+      expect(document.omitted.map((o) => o.section)).toContain(
+        'priority_groups',
+      );
     });
 
     it('PD-042 una solicitud que no es de acceso ni portabilidad no se exporta, ni deja rastro', async () => {

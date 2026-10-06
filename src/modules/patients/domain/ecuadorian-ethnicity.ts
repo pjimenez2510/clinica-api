@@ -78,15 +78,36 @@ export function ethnicityApplies(
   return countryOfNationalityCode === ECUADOR_COUNTRY_CODE;
 }
 
+/** The RDACAA columns 12 to 14 of a chart, as the clearing below reads them. */
+export interface ForeignNationalityChart extends EthnicityDeclaration {
+  nationalityConceptId: string | null;
+  peopleConceptId: string | null;
+}
+
+/** The three columns the ministry asks to leave blank for a non-Ecuadorian. */
+export type ForeignNationalityClearedField =
+  'ethnicityConceptId' | 'nationalityConceptId' | 'peopleConceptId';
+
 /**
- * Whether the chart may NOT hold the ethnicity it declares (PA-059).
+ * PA-065 (D-128, PA-13). The fields that stop applying to THIS chart and are
+ * emptied instead of refused: columns 12, 13 and 14, which the instructivo
+ * tells to leave blank «si el usuario NO es ecuatoriano».
  *
- * No ethnicity, no rule: registering a foreign patient with no ethnicity is
- * exactly what the ministry asks for.
+ * The rule of PA-059 stays —a foreign chart never holds an ethnicity— and what
+ * changes is how it is applied: whoever registers or corrects (a person or the
+ * assistant) is not sent back to empty three fields by hand. Only the ones that
+ * hold something are returned, so a correction that changes nothing writes no
+ * history row. Nationality and people go with the ethnicity because each hangs
+ * from the previous one (PA-027, PA-056).
  */
-export function ethnicityContradictsCountry(
-  chart: EthnicityDeclaration,
-): boolean {
-  if (chart.ethnicityConceptId === null) return false;
-  return !ethnicityApplies(chart.countryOfNationalityCode);
+export function fieldsForeignNationalityClears(
+  chart: ForeignNationalityChart,
+): ForeignNationalityClearedField[] {
+  if (ethnicityApplies(chart.countryOfNationalityCode)) return [];
+  const held: [ForeignNationalityClearedField, string | null][] = [
+    ['ethnicityConceptId', chart.ethnicityConceptId],
+    ['nationalityConceptId', chart.nationalityConceptId],
+    ['peopleConceptId', chart.peopleConceptId],
+  ];
+  return held.filter(([, value]) => value !== null).map(([field]) => field);
 }

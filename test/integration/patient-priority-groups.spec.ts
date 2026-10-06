@@ -83,6 +83,9 @@ interface PriorityGroupBody {
   recordedAt: string;
   closedById: string | null;
   closedAt: string | null;
+  /** PA-066. Who last edited it and when; `null` until somebody does. */
+  changedById: string | null;
+  changedAt: string | null;
 }
 
 describe('los grupos prioritarios por HTTP', () => {
@@ -270,6 +273,17 @@ describe('los grupos prioritarios por HTTP', () => {
     token = medico,
   ) =>
     request(app.getHttpServer())
+      .post(`/api/v1/patients/${patientId}/priority-groups/${recordId}/close`)
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+
+  /** PA-066. Edits what the record says, in its row. */
+  const editGroup = (
+    recordId: string,
+    body: Record<string, unknown>,
+    token = medico,
+  ) =>
+    request(app.getHttpServer())
       .patch(`/api/v1/patients/${patientId}/priority-groups/${recordId}`)
       .set('Authorization', `Bearer ${token}`)
       .send(body);
@@ -430,7 +444,8 @@ describe('los grupos prioritarios por HTTP', () => {
     await expect(
       prisma.$executeRaw`
         UPDATE patient_priority_group
-        SET ends_on = current_date, closed_at = now(), closed_by = NULL
+        SET ends_on = current_date, closed_at = now(), closed_by = NULL,
+            changed_by = ${medicoUserId}::uuid, changed_at = now()
         WHERE id = ${recordId}::uuid
       `,
     ).rejects.toThrow(/patient_priority_group_closure_complete/);
@@ -438,16 +453,19 @@ describe('los grupos prioritarios por HTTP', () => {
     await expect(
       prisma.$executeRaw`
         UPDATE patient_priority_group
-        SET ends_on = current_date, closed_at = NULL, closed_by = ${medicoUserId}::uuid
+        SET ends_on = current_date, closed_at = NULL, closed_by = ${medicoUserId}::uuid,
+            changed_by = ${medicoUserId}::uuid, changed_at = now()
         WHERE id = ${recordId}::uuid
       `,
     ).rejects.toThrow(/patient_priority_group_closure_complete/);
 
-    // Las dos juntas sí: es el cierre que la ruta escribe.
+    // Las dos juntas sí: es el cierre que la ruta escribe, con su sello de
+    // versión (PA-066).
     await expect(
       prisma.$executeRaw`
         UPDATE patient_priority_group
-        SET ends_on = current_date, closed_at = now(), closed_by = ${medicoUserId}::uuid
+        SET ends_on = current_date, closed_at = now(), closed_by = ${medicoUserId}::uuid,
+            changed_by = ${medicoUserId}::uuid, changed_at = now()
         WHERE id = ${recordId}::uuid
       `,
     ).resolves.toBe(1);
@@ -624,6 +642,49 @@ describe('los grupos prioritarios por HTTP', () => {
     );
   });
 
+  it('PA-037 the database refuses deleting a priority group record, row by row and by TRUNCATE', async () => {
+    const created = await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-30),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+
+    await expect(
+      prisma.$executeRaw`
+        DELETE FROM patient_priority_group WHERE id = ${recordId}::uuid`,
+    ).rejects.toThrow(/patient_priority_group_never_deleted/);
+    await expect(
+      prisma.$executeRawUnsafe(`TRUNCATE patient_priority_group`),
+    ).rejects.toThrow(/patient_priority_group_never_deleted/);
+
+    // Control positivo: el mismo registro se cierra por el camino de siempre,
+    // y sigue ahí.
+    await closeGroup(recordId, { endsOn: daysFromToday(-1) }).expect(200);
+    expect(
+      await prisma.patientPriorityGroup.count({ where: { id: recordId } }),
+    ).toBe(1);
+  });
+
+  it('PA-037 a chart with priority group records is not deleted from under them (ON DELETE RESTRICT)', async () => {
+    await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-30),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    // Control positivo: una ficha sin registros sí se borra por el mismo
+    // camino, así que lo que para la otra es su registro.
+    const bare = await createPatient(prisma);
+    await prisma.$executeRaw`DELETE FROM patient WHERE id = ${bare.id}::uuid`;
+
+    await expect(
+      prisma.$executeRaw`DELETE FROM patient WHERE id = ${patientId}::uuid`,
+    ).rejects.toThrow(/patient_priority_group_patient_id_fkey/);
+    expect(
+      await prisma.patientPriorityGroup.count({ where: { patientId } }),
+    ).toBe(1);
+  });
+
   it('PA-037 refuses a second closure with PRIORITY_GROUP_ALREADY_CLOSED and keeps the first one', async () => {
     const created = await recordGroup({
       group: 'DISABILITY',
@@ -707,10 +768,12 @@ describe('los grupos prioritarios por HTTP', () => {
     }).expect(201);
     const recordId = (created.body as PriorityGroupBody).id;
 
-    // Control positivo: cerrar una fila abierta, por SQL, la base lo admite.
+    // Control positivo: cerrar una fila abierta, por SQL y con el sello de
+    // versión (PA-066), la base lo admite.
     await prisma.$executeRaw`
       UPDATE patient_priority_group
-         SET ends_on = ${daysFromToday(-2)}::date, closed_at = now(), closed_by = ${medicoUserId}::uuid
+         SET ends_on = ${daysFromToday(-2)}::date, closed_at = now(), closed_by = ${medicoUserId}::uuid,
+             changed_by = ${medicoUserId}::uuid, changed_at = now()
        WHERE id = ${recordId}::uuid`;
 
     for (const rewrite of [
@@ -722,6 +785,238 @@ describe('los grupos prioritarios por HTTP', () => {
          WHERE id = ${recordId}::uuid`,
       prisma.$executeRaw`
         UPDATE patient_priority_group SET closed_at = NULL, closed_by = NULL
+         WHERE id = ${recordId}::uuid`,
+    ]) {
+      await expect(rewrite).rejects.toThrow(
+        /patient_priority_group_closure_once/,
+      );
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // PA-066 · corregir es editar (D-127): el registro se edita en su fila
+  // -------------------------------------------------------------------------
+
+  it('PA-066 edits group, start, origin and document in its row and keeps the previous version with who and when', async () => {
+    const created = await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-30),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+    expect((created.body as PriorityGroupBody).changedAt).toBeNull();
+
+    const edited = await editGroup(recordId, {
+      group: 'CATASTROPHIC_ILLNESS',
+      startsOn: daysFromToday(-40),
+      origin: 'ACCREDITED',
+      evidenceDocument: 'Carné CONADIS 17-0001',
+    }).expect(200);
+
+    const body = edited.body as PriorityGroupBody;
+    expect(body).toMatchObject({
+      id: recordId,
+      group: 'CATASTROPHIC_ILLNESS',
+      startsOn: daysFromToday(-40),
+      origin: 'ACCREDITED',
+      evidenceDocument: 'Carné CONADIS 17-0001',
+      // Quién lo registró no cambia; quién lo editó, sí.
+      recordedById: medicoUserId,
+      changedById: medicoUserId,
+      closedAt: null,
+    });
+    expect(body.changedAt).not.toBeNull();
+
+    // La versión anterior, ENTERA, en `record_version`, y una sola fila.
+    const versions = await prisma.recordVersion.findMany({
+      where: { resourceType: 'patient_priority_group', resourceId: recordId },
+    });
+    expect(versions).toHaveLength(1);
+    expect(versions[0]).toMatchObject({
+      version: 1,
+      changedById: medicoUserId,
+    });
+    expect(versions[0]?.data).toMatchObject({
+      group_code: 'DISABILITY',
+      origin: 'SELF_DECLARED',
+      evidence_document: null,
+    });
+
+    // Y la bitácora dice que se modificó la valoración de esta ficha.
+    const trail = await prisma.accessAudit.findMany({
+      where: { resourceType: 'patient_priority_group', action: 'UPDATE' },
+    });
+    expect(trail.map((row) => row.resourceId)).toEqual([patientId]);
+  });
+
+  it('PA-066 sending what is already there writes no version', async () => {
+    const created = await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-30),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+
+    await editGroup(recordId, { origin: 'SELF_DECLARED' }).expect(200);
+
+    expect(
+      await prisma.recordVersion.count({ where: { resourceId: recordId } }),
+    ).toBe(0);
+  });
+
+  it('PA-066 corrects the end date of a closed record without rewriting who closed it and when', async () => {
+    const created = await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-200),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+    await closeGroup(recordId, { endsOn: daysFromToday(-2) }).expect(200);
+    const closed = await prisma.patientPriorityGroup.findUniqueOrThrow({
+      where: { id: recordId },
+    });
+
+    const edited = await editGroup(recordId, {
+      endsOn: daysFromToday(-10),
+    }).expect(200);
+    expect((edited.body as PriorityGroupBody).endsOn).toBe(daysFromToday(-10));
+
+    const after = await prisma.patientPriorityGroup.findUniqueOrThrow({
+      where: { id: recordId },
+    });
+    expect(after.closedAt).toEqual(closed.closedAt);
+    expect(after.closedById).toBe(closed.closedById);
+    // El cierre equivocado queda como versión: no se borra nada.
+    const versions = await prisma.recordVersion.findMany({
+      where: { resourceType: 'patient_priority_group', resourceId: recordId },
+      orderBy: { version: 'asc' },
+    });
+    expect(versions.at(-1)?.data).toMatchObject({
+      ends_on: daysFromToday(-2),
+    });
+
+    // Un cerrado sigue teniendo fin: no se reabre vaciándolo.
+    const refused = await editGroup(recordId, { endsOn: null }).expect(422);
+    expect((refused.body as Problem).code).toBe(
+      'PRIORITY_GROUP_PERIOD_INVALID',
+    );
+  });
+
+  it('PA-066 refuses an accredited edit without its document, and a pregnancy without its end', async () => {
+    const created = await recordGroup({
+      group: 'PREGNANT',
+      startsOn: daysFromToday(-30),
+      endsOn: daysFromToday(200),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+
+    const noDocument = await editGroup(recordId, {
+      origin: 'ACCREDITED',
+    }).expect(422);
+    expect((noDocument.body as Problem).code).toBe(
+      'PRIORITY_GROUP_EVIDENCE_REQUIRED',
+    );
+
+    const noEnd = await editGroup(recordId, { endsOn: null }).expect(422);
+    expect((noEnd.body as Problem).code).toBe('PRIORITY_GROUP_PERIOD_INVALID');
+
+    // Control positivo: con su documento, sí.
+    await editGroup(recordId, {
+      origin: 'ACCREDITED',
+      evidenceDocument: 'Certificado del control prenatal',
+    }).expect(200);
+  });
+
+  it('PA-066 refuses moving a record into a restricted group without the second key, and hides a restricted one', async () => {
+    const created = await recordGroup(
+      {
+        group: 'DISABILITY',
+        startsOn: daysFromToday(-5),
+        origin: 'SELF_DECLARED',
+      },
+      sinLlave,
+    ).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+
+    const refused = await editGroup(
+      recordId,
+      { group: 'AT_RISK' },
+      sinLlave,
+    ).expect(403);
+    expect((refused.body as Problem).code).toBe('PRIORITY_GROUP_RESTRICTED');
+
+    // Con la llave, sí; y desde entonces quien no la tiene no la ve ni la edita.
+    await editGroup(recordId, { group: 'AT_RISK' }, trabajoSocial).expect(200);
+    const hidden = await editGroup(
+      recordId,
+      { startsOn: daysFromToday(-6) },
+      sinLlave,
+    ).expect(404);
+    expect((hidden.body as Problem).code).toBe('PRIORITY_GROUP_NOT_FOUND');
+  });
+
+  it('PA-066 the database refuses an edit without a new stamp, and archives the one that has it', async () => {
+    const created = await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-30),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+
+    await expect(
+      prisma.$executeRaw`
+        UPDATE patient_priority_group SET starts_on = ${daysFromToday(-31)}::date
+         WHERE id = ${recordId}::uuid`,
+    ).rejects.toThrow(/record_version_change_is_stamped/);
+
+    // Control positivo: con quién y cuándo, la base lo admite y archiva.
+    await prisma.$executeRaw`
+      UPDATE patient_priority_group
+         SET starts_on = ${daysFromToday(-31)}::date,
+             changed_by = ${medicoUserId}::uuid, changed_at = now()
+       WHERE id = ${recordId}::uuid`;
+    expect(
+      await prisma.recordVersion.count({ where: { resourceId: recordId } }),
+    ).toBe(1);
+
+    // Ni el paciente ni quién lo registró cambian, con sello o sin él.
+    const other = await createPatient(prisma);
+    await expect(
+      prisma.$executeRaw`
+        UPDATE patient_priority_group
+           SET patient_id = ${other.id}::uuid,
+               changed_by = ${medicoUserId}::uuid, changed_at = now() + interval '1 second'
+         WHERE id = ${recordId}::uuid`,
+    ).rejects.toThrow(/patient_priority_group_closure_once/);
+  });
+
+  it('PA-066 the database admits correcting the end of a closed record with a new stamp, never its closure', async () => {
+    const created = await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-200),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+    await closeGroup(recordId, { endsOn: daysFromToday(-2) }).expect(200);
+
+    // Control positivo: el fin, con sello nuevo.
+    await prisma.$executeRaw`
+      UPDATE patient_priority_group
+         SET ends_on = ${daysFromToday(-3)}::date,
+             changed_by = ${medicoUserId}::uuid, changed_at = now() + interval '1 second'
+       WHERE id = ${recordId}::uuid`;
+
+    for (const rewrite of [
+      prisma.$executeRaw`
+        UPDATE patient_priority_group
+           SET closed_at = now() + interval '1 hour',
+               changed_by = ${medicoUserId}::uuid, changed_at = now() + interval '2 second'
+         WHERE id = ${recordId}::uuid`,
+      prisma.$executeRaw`
+        UPDATE patient_priority_group
+           SET ends_on = NULL,
+               changed_by = ${medicoUserId}::uuid, changed_at = now() + interval '3 second'
          WHERE id = ${recordId}::uuid`,
     ]) {
       await expect(rewrite).rejects.toThrow(

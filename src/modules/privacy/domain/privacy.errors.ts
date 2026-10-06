@@ -125,3 +125,39 @@ export class DataExportNotApplicableError extends ValidationError {
     super('Export requested for a right other than access or portability');
   }
 }
+
+/** PD-044. The consent to correct does not exist, or is not this chart's. */
+export class ConsentNotFoundError extends NotFoundError {
+  readonly code = 'CONSENT_NOT_FOUND';
+  override readonly userTitle =
+    'No se encontró ese consentimiento en la ficha. Actualice la lista';
+
+  constructor() {
+    super('Patient consent not found');
+  }
+}
+
+/**
+ * PD-044. The consent was already corrected: what stands is the correction,
+ * and that is the one to correct. The original is never rewritten.
+ */
+export class ConsentAlreadyCorrectedError extends ConflictError {
+  readonly code = 'CONSENT_ALREADY_CORRECTED';
+  override readonly userTitle =
+    'Ese consentimiento ya se corrigió. Actualice la lista y corrija el vigente';
+
+  constructor() {
+    super('Patient consent already superseded by a correction');
+  }
+}
+
+/** PD-047. There is no answer to rectify yet: the request is answered first. */
+export class DataRequestNotAnsweredError extends ConflictError {
+  readonly code = 'DATA_REQUEST_NOT_ANSWERED';
+  override readonly userTitle =
+    'Esta solicitud todavía no tiene respuesta: respóndala en lugar de corregirla';
+
+  constructor() {
+    super('Data subject request has no answer to rectify');
+  }
+}

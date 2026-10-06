@@ -10,6 +10,7 @@ import {
   EncounterAppointmentMismatchError,
   EncounterNotFoundError,
   InvalidEncounterTransitionError,
+  VitalsCorrectionRequiresSignatureError,
 } from '../domain/encounter.errors';
 import { subjectStatusAfter } from '../domain/patient-flow';
 import type { ClosurePlan } from '../domain/encounter-closure';
@@ -492,6 +493,7 @@ export class PrismaEncounterRepository implements EncounterRepository {
     query: EncounterQuery,
     vitals: VitalSigns,
     authorId: string,
+    mayCorrectAfterDischarge: boolean,
   ): Promise<VitalSignsView> {
     const measurements = {
       weightKg: vitals.weightKg,
@@ -525,6 +527,11 @@ export class PrismaEncounterRepository implements EncounterRepository {
          WHERE id = ${query.encounterId}::uuid
            FOR UPDATE`;
       if (attention?.reported) throw new EncounterAlreadyReportedError();
+      // EN-228, D-134.3. After the discharge only whoever signs history at the
+      // site corrects the taking — asked here too, under the lock.
+      if (attention?.discharged && !mayCorrectAfterDischarge) {
+        throw new VitalsCorrectionRequiresSignatureError();
+      }
 
       /**
        * EN-210. `record_version_archive` refuses an edit whose stamp did not

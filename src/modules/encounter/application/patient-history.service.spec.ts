@@ -9,12 +9,14 @@ import type { EncounterRepository } from '../domain/encounter.repository';
 import {
   PatientChartNotOpenError,
   PatientHistoryNotFoundError,
-  RefutationReasonRequiredError,
 } from '../domain/encounter.errors';
 import type {
+  EditHistory,
+  HistoryVersionView,
   HistoryView,
   NewHistory,
   PatientHistoryRepository,
+  ReactivateHistory,
   RefuteHistory,
 } from '../domain/patient-history.repository';
 
@@ -42,6 +44,7 @@ const anEntry = (overrides: Partial<HistoryView> = {}): HistoryView => ({
   refutedAt: null,
   refutedNotes: null,
   refutedBy: null,
+  changedAt: null,
   ...overrides,
 });
 
@@ -66,6 +69,28 @@ class FakeHistory implements PatientHistoryRepository {
 
   activeFor(): Promise<HistoryView[]> {
     return Promise.resolve([anEntry()]);
+  }
+
+  edits: EditHistory[] = [];
+  editAnswer: HistoryView | null = anEntry({ description: 'Diabetes' });
+
+  edit(edit: EditHistory): Promise<HistoryView | null> {
+    this.edits.push(edit);
+    return Promise.resolve(this.editAnswer);
+  }
+
+  reactivations: ReactivateHistory[] = [];
+  reactivateAnswer: HistoryView | null = anEntry();
+
+  reactivate(reactivation: ReactivateHistory): Promise<HistoryView | null> {
+    this.reactivations.push(reactivation);
+    return Promise.resolve(this.reactivateAnswer);
+  }
+
+  versions: HistoryVersionView[] | null = [];
+
+  versionsOf(): Promise<HistoryVersionView[] | null> {
+    return Promise.resolve(this.versions);
   }
 }
 
@@ -130,19 +155,22 @@ describe('los antecedentes del paciente', () => {
     expect(history.written).toEqual([]);
   });
 
-  it('EN-085 exige el motivo al descartar, y lo dice del antecedente y no de una alergia', async () => {
-    const refusal = await service
-      .refute(
-        { patientId: PATIENT, historyId: 'history-1', notes: '   ' },
-        requester,
-      )
-      .catch((error: unknown) => error);
-
-    expect(refusal).toBeInstanceOf(RefutationReasonRequiredError);
-    expect((refusal as RefutationReasonRequiredError).userTitle).toContain(
-      'el antecedente',
+  it('EN-224 descarta el antecedente sin motivo, y un motivo en blanco viaja como ninguno', async () => {
+    await service.refute({ patientId: PATIENT, historyId: 'history-1' }, requester); // prettier-ignore
+    await service.refute(
+      { patientId: PATIENT, historyId: 'history-1', notes: '  ' },
+      requester,
     );
-    expect(history.refutations).toEqual([]);
+    await service.refute(
+      { patientId: PATIENT, historyId: 'history-1', notes: 'Se descartó' },
+      requester,
+    );
+
+    expect(history.refutations.map((r) => r.notes)).toEqual([
+      null,
+      null,
+      'Se descartó',
+    ]);
   });
 
   it('EN-085 responde el mismo 404 para el antecedente que no esta en la ficha', async () => {
@@ -167,5 +195,55 @@ describe('los antecedentes del paciente', () => {
     );
 
     expect(history.refutations[0]).toMatchObject({ refutedById: USER });
+  });
+
+  it('EN-225 edita el antecedente con el autor de la sesion y lo deja en la bitacora', async () => {
+    await service.edit(
+      {
+        patientId: PATIENT,
+        historyId: 'history-1',
+        changes: { description: 'Diabetes' },
+      },
+      requester,
+    );
+
+    expect(history.edits[0]).toMatchObject({
+      historyId: 'history-1',
+      changes: { description: 'Diabetes' },
+      editedById: USER,
+    });
+    expect(entries.map((e) => e.action)).toEqual(['UPDATE']);
+  });
+
+  it('EN-224 EN-225 reactivar, editar y leer versiones de uno que no esta en la ficha responde el mismo 404', async () => {
+    history.editAnswer = null;
+    history.reactivateAnswer = null;
+    history.versions = null;
+
+    await expect(
+      service.edit(
+        {
+          patientId: PATIENT,
+          historyId: 'ajeno',
+          changes: { kind: 'PERSONAL' },
+        },
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(PatientHistoryNotFoundError);
+    await expect(
+      service.reactivate(PATIENT, 'ajeno', requester),
+    ).rejects.toBeInstanceOf(PatientHistoryNotFoundError);
+    await expect(
+      service.versionsOf(PATIENT, 'ajeno', requester),
+    ).rejects.toBeInstanceOf(PatientHistoryNotFoundError);
+    expect(entries).toEqual([]);
+  });
+
+  it('EN-224 reactiva con quien esta en la sesion, y las versiones dejan lectura en la bitacora', async () => {
+    await service.reactivate(PATIENT, 'history-1', requester);
+    await service.versionsOf(PATIENT, 'history-1', requester);
+
+    expect(history.reactivations[0]).toMatchObject({ reactivatedById: USER });
+    expect(entries.map((e) => e.action)).toEqual(['UPDATE', 'READ']);
   });
 });

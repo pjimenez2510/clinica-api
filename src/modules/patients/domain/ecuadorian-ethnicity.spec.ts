@@ -3,32 +3,37 @@ import { describe, expect, it } from 'vitest';
 import {
   ECUADOR_COUNTRY_CODE,
   ethnicityApplies,
-  ethnicityContradictsCountry,
+  fieldsForeignNationalityClears,
 } from './ecuadorian-ethnicity';
 
 /** Mestizo/a, `6` of column 12. Any of the nine would do: the rule ignores which. */
 const MESTIZO = '00000000-0000-4000-8000-000000000006';
 
-describe('PA-059 · cuándo se puede declarar autoidentificación étnica', () => {
-  it('PA-059 admits an ethnicity when the country of nationality is Ecuador', () => {
-    expect(
-      ethnicityContradictsCountry({
-        countryOfNationalityCode: ECUADOR_COUNTRY_CODE,
-        ethnicityConceptId: MESTIZO,
-      }),
-    ).toBe(false);
+/**
+ * PA-059 as the code applies it since PA-065: what a chart of this country
+ * would have emptied, with only the ethnicity declared.
+ */
+const clearedFor = (
+  countryOfNationalityCode: string | null,
+  ethnicityConceptId: string | null,
+) =>
+  fieldsForeignNationalityClears({
+    countryOfNationalityCode,
+    ethnicityConceptId,
+    nationalityConceptId: null,
+    peopleConceptId: null,
   });
 
-  it('PA-059 refuses an ethnicity when the country of nationality is another one', () => {
+describe('PA-059 · cuándo se puede declarar autoidentificación étnica', () => {
+  it('PA-059 admits an ethnicity when the country of nationality is Ecuador', () => {
+    expect(clearedFor(ECUADOR_COUNTRY_CODE, MESTIZO)).toEqual([]);
+  });
+
+  it('PA-059 does not keep an ethnicity when the country of nationality is another one', () => {
     // The instructivo says it twice: «Aplica para nacionalidad Ecuatoriana»
     // over column 12, and «si el usuario NO es ecuatoriano, pase a la columna
     // 15 dejando los espacios en blanco» over column 11.
-    expect(
-      ethnicityContradictsCountry({
-        countryOfNationalityCode: 'VEN',
-        ethnicityConceptId: MESTIZO,
-      }),
-    ).toBe(true);
+    expect(clearedFor('VEN', MESTIZO)).toEqual(['ethnicityConceptId']);
   });
 
   it('PA-059 admits an ethnicity when no country has been recorded', () => {
@@ -42,12 +47,7 @@ describe('PA-059 · cuándo se puede declarar autoidentificación étnica', () =
      * round: there the conditional field is refused while the question is
      * unanswered, here the field is the QUESTION and it is allowed.
      */
-    expect(
-      ethnicityContradictsCountry({
-        countryOfNationalityCode: null,
-        ethnicityConceptId: MESTIZO,
-      }),
-    ).toBe(false);
+    expect(clearedFor(null, MESTIZO)).toEqual([]);
   });
 
   it('PA-059 admits any country, and none, when there is no ethnicity', () => {
@@ -57,12 +57,9 @@ describe('PA-059 · cuándo se puede declarar autoidentificación étnica', () =
       null,
     ]) {
       expect(
-        ethnicityContradictsCountry({
-          countryOfNationalityCode,
-          ethnicityConceptId: null,
-        }),
+        clearedFor(countryOfNationalityCode, null),
         `country ${countryOfNationalityCode ?? 'ausente'}`,
-      ).toBe(false);
+      ).toEqual([]);
     }
   });
 
@@ -76,5 +73,48 @@ describe('PA-059 · cuándo se puede declarar autoidentificación étnica', () =
     expect(ethnicityApplies('Ecuador')).toBe(false);
     expect(ethnicityApplies('ecu')).toBe(false);
     expect(ethnicityApplies('EC')).toBe(false);
+  });
+});
+
+describe('PA-065 · lo que una nacionalidad extranjera vacía', () => {
+  const declared = {
+    ethnicityConceptId: 'ethnicity',
+    nationalityConceptId: 'nationality',
+    peopleConceptId: 'people',
+  };
+
+  it('PA-065 empties ethnicity, nationality and people of a foreign chart', () => {
+    expect(
+      fieldsForeignNationalityClears({
+        countryOfNationalityCode: 'VEN',
+        ...declared,
+      }),
+    ).toEqual([
+      'ethnicityConceptId',
+      'nationalityConceptId',
+      'peopleConceptId',
+    ]);
+  });
+
+  it('PA-065 names only the fields that hold something', () => {
+    expect(
+      fieldsForeignNationalityClears({
+        countryOfNationalityCode: 'COL',
+        ethnicityConceptId: 'ethnicity',
+        nationalityConceptId: null,
+        peopleConceptId: null,
+      }),
+    ).toEqual(['ethnicityConceptId']);
+  });
+
+  it('PA-065 empties nothing on an Ecuadorian chart or one with no country', () => {
+    for (const country of [ECUADOR_COUNTRY_CODE, null]) {
+      expect(
+        fieldsForeignNationalityClears({
+          countryOfNationalityCode: country,
+          ...declared,
+        }),
+      ).toEqual([]);
+    }
   });
 });

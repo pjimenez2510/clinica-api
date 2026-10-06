@@ -697,6 +697,38 @@ export interface PriorityGroupRecord {
   recordedAt: Date;
   closedById: string | null;
   closedAt: Date | null;
+  /** PA-066. Who last edited it and when; `null` until somebody does. */
+  changedById: string | null;
+  changedAt: Date | null;
+}
+
+/**
+ * PA-066. What an edit asks to change; ABSENT means «lo que ya había». The
+ * service has already decided the resulting record is valid (PA-035 to PA-038)
+ * and that the caller may hold its group (PA-034).
+ */
+export interface PriorityGroupChanges {
+  group?: PriorityGroup;
+  startsOn?: ClinicalDate;
+  endsOn?: ClinicalDate | null;
+  origin?: PriorityGroupOrigin;
+  evidenceDocument?: string | null;
+}
+
+/**
+ * PA-065. One field of one correction of the chart, as the versions of the
+ * chart show it: the stored text on both sides (PA-031) and, for what is a
+ * reference —a catalogue concept, a country code, the mother's chart— the
+ * wording a person reads. `null` means «sin valor».
+ */
+export interface PatientChangeEntry {
+  field: string;
+  valueBefore: string | null;
+  valueAfter: string | null;
+  displayBefore: string | null;
+  displayAfter: string | null;
+  changedAt: Date;
+  changedBy: { id: string; fullName: string };
 }
 
 /** A priority group being recorded; `recordedById` is the session's user, set by the service. */
@@ -762,6 +794,31 @@ export interface PatientRepository {
     recordId: string;
     endsOn: ClinicalDate;
     closedById: string;
+    /** The application's clock: the closure and the version stamp. */
+    now?: Date;
+  }): Promise<PriorityGroupRecord | null>;
+  /**
+   * PA-066. Edits the record in its row, under its lock, with the stamp that
+   * makes `record_version` archive the row it replaces. Nothing to change is
+   * not an edit and writes no version. `null` when the record does not exist
+   * or is outside the chart's scope, like closing.
+   */
+  /**
+   * PA-065. The corrections of THIS chart, newest first and by field within
+   * one correction. Not by the chart's scope (PA-055): the history is a trail
+   * about the record, not care received. The fields in `withheld` are left
+   * out, values included.
+   */
+  listChangeHistory(
+    patientId: string,
+    withheld: readonly string[],
+  ): Promise<PatientChangeEntry[]>;
+  editPriorityGroup(input: {
+    patientId: string;
+    recordId: string;
+    changes: PriorityGroupChanges;
+    editedById: string;
+    now: Date;
   }): Promise<PriorityGroupRecord | null>;
   /**
    * A stored catalogue concept, with the system it belongs to.
@@ -903,7 +960,8 @@ export interface PatientRepository {
   merge(input: {
     sourcePatientId: string;
     targetPatientId: string;
-    reason: string;
+    /** PA-064. `null` when none was given. */
+    reason: string | null;
     performedById: string;
   }): Promise<MergeOutcome>;
   /**
@@ -926,7 +984,8 @@ export interface PatientRepository {
   undoMerge(input: {
     sourcePatientId: string;
     mergeId: string;
-    reason: string;
+    /** PA-064. `null` when none was given. */
+    reason: string | null;
     performedById: string;
   }): Promise<UndoMergeOutcome>;
 }

@@ -10,6 +10,7 @@ import {
   EncounterNotFoundError,
   PatientChartNotOpenError,
   PractitionerProfileRequiredError,
+  VitalsCorrectionRequiresSignatureError,
 } from '../domain/encounter.errors';
 import {
   ENCOUNTER_REPOSITORY,
@@ -70,6 +71,15 @@ export interface Requester {
   sites: SiteScopeFilter;
   ip?: string;
   userAgent?: string;
+}
+
+/**
+ * EN-228, D-134.3. Who records block D, with where they may sign the history:
+ * after the discharge that is what lets them correct the taking. Resolved by
+ * the controller from the session.
+ */
+export interface VitalsRequester extends Requester {
+  signSites: SiteScopeFilter;
 }
 
 /** EN-003 to EN-008. What opening an attention needs to be told. */
@@ -444,10 +454,18 @@ export class EncounterService {
   async recordVitals(
     encounterId: string,
     vitals: VitalSigns,
-    requester: Requester,
+    requester: VitalsRequester,
   ): Promise<VitalsReading> {
     const encounter = await this.requireEncounter(encounterId, requester);
     const query = { encounterId: encounter.id, sites: requester.sites };
+    /**
+     * EN-228, D-134.3. Decided whatever the state read here and handed to the
+     * adapter, which asks the attention again under its lock: a discharge
+     * that lands between this read and the write is refused there too.
+     */
+    const mayCorrectAfterDischarge =
+      requester.signSites === 'all' ||
+      requester.signSites.includes(encounter.siteId);
 
     /**
      * EN-217. After the discharge the taking is still CORRECTED — versioned
@@ -459,6 +477,8 @@ export class EncounterService {
       this.assertAcceptsContent(encounter);
     } else if ((await this.encounters.findVitals(query)) === null) {
       throw new EncounterAlreadyClosedError(encounter.status);
+    } else if (!mayCorrectAfterDischarge) {
+      throw new VitalsCorrectionRequiresSignatureError();
     }
 
     /**
@@ -473,6 +493,7 @@ export class EncounterService {
       query,
       vitals,
       requester.userId,
+      mayCorrectAfterDischarge,
     );
 
     // EN-136. The board moves because the signs were SAVED — the fact proves

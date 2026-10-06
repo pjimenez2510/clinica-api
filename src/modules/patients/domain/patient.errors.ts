@@ -69,7 +69,7 @@ export { PatientMergedError } from '../../../shared/domain/errors/patient-merged
  * identify as «Indígena».
  *
  * ENFORCED IN THE SERVICE AND NOT ONLY IN THE DTO, for the same reason
- * `CANCELLATION_REASON_REQUIRED` and `MERGE_REASON_REQUIRED` are: a `DEBERÁ`
+ * `CANCELLATION_REASON_REQUIRED` is: a `DEBERÁ`
  * enforced only by the transport layer stops being enforced the day another use
  * case calls from inside. The database CANNOT repeat it as a `CHECK` — which
  * ethnicity is «Indígena» lives in another table — so this is the whole
@@ -149,46 +149,6 @@ export class PeopleRequiresKichwaNationalityError extends ValidationError {
 }
 
 /**
- * PA-059. The chart declares an ethnic self-identification and a country of
- * nationality other than Ecuador.
- *
- * ⚠️ THE ONE OF THE THREE THAT GETS TYPED BY ACCIDENT, AND THAT IS WHY THE
- * MESSAGE MATTERS MORE HERE. PA-027's contradiction is unreachable from a
- * well-built form — choosing «Mestizo/a» switches the nationality selector off
- * in front of the person typing. This one is not: the country is chosen among
- * the identity fields and the ethnicity among the RDACAA ones, half a form
- * apart, so the desk reaches it without noticing. The text therefore says WHAT
- * TO DO and offers BOTH ways out, rather than describing what failed.
- *
- * Enforced in the service and not only in the DTO, for the same reason as its
- * two siblings. Not a `CHECK` either, and there the reason differs — see
- * `ecuadorian-ethnicity.ts`.
- */
-export class EthnicityRequiresEcuadorianNationalityError extends ValidationError {
-  readonly code = 'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY';
-  override readonly userTitle =
-    'La autoidentificación étnica sólo se registra si la nacionalidad es ecuatoriana';
-  /**
-   * IT POINTS AT `ethnicityConceptId` AND NOT AT THE COUNTRY.
-   *
-   * The ethnicity is the conditional one — the instructivo says to leave
-   * columns 12 to 14 blank for a foreign patient, never to change the country —
-   * so it is its value that has to give way. The message still names the other
-   * way out, because on this pairing the country is quite often the field that
-   * is actually wrong.
-   */
-  constructor() {
-    super('An ethnic self-identification requires Ecuadorian nationality', {}, [
-      {
-        field: 'ethnicityConceptId',
-        code: 'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY',
-        message: 'Deje vacía la autoidentificación étnica, o corrija el país de nacionalidad a Ecuador', // prettier-ignore
-      },
-    ]);
-  }
-}
-
-/**
  * PA-057. The chart declares a sexual orientation and the patient is under the
  * age from which the ministry's form asks the question.
  *
@@ -238,33 +198,6 @@ export class DuplicateIdentifierError extends ConflictError {
 // ---------------------------------------------------------------------------
 // Duplicate resolution (P4: PA-043 to PA-049, REQ-010)
 // ---------------------------------------------------------------------------
-
-/**
- * PA-044, PA-047. Merging and undoing a merge both demand a reason.
- *
- * ENFORCED IN THE SERVICE AND NOT ONLY IN THE DTO, for the same reason
- * `CANCELLATION_REASON_REQUIRED` is: a `DEBERÁ` enforced only by the transport
- * layer stops being enforced the day another use case calls from inside. The
- * database repeats it as `patient_merge_reason_not_blank`, which is what also
- * stops an import — but that CHECK answers with a generic 422, and this is the
- * message that lands on the field somebody has to fill in.
- *
- * BLANK IS NOT A REASON. `NOT NULL` refuses the absence, never `'   '`, and a
- * mandatory reason is the whole of what tells this apart from a click.
- */
-export class MergeReasonRequiredError extends ValidationError {
-  readonly code = 'MERGE_REASON_REQUIRED';
-  override readonly userTitle = 'Escriba por qué se unen las dos historias';
-  constructor() {
-    super('A merge and an undo both require a non-blank reason', {}, [
-      {
-        field: 'reason',
-        code: 'MERGE_REASON_REQUIRED',
-        message: 'Explique por qué: quedará en el rastro de la fusión', // prettier-ignore
-      },
-    ]);
-  }
-}
 
 /**
  * PA-046. The chart being absorbed and the surviving one are the same.

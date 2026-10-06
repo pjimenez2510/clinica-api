@@ -15,5 +15,6 @@ export function toHistoryResponse(entry: HistoryView): HistoryResponse {
     refutedAt: entry.refutedAt?.toISOString() ?? null,
     refutedNotes: entry.refutedNotes,
     refutedBy: entry.refutedBy,
+    changedAt: entry.changedAt?.toISOString() ?? null,
   };
 }

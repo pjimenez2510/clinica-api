@@ -4,7 +4,11 @@ import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
-import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
+import {
+  addDays,
+  clinicalDateOf,
+  type ClinicalDate,
+} from '../../../shared/domain/clinic-time';
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import { EXPORT_OMISSIONS, EXPORTABLE_RIGHTS } from '../domain/data-export';
 import {
@@ -15,6 +19,7 @@ import {
 import {
   DataExportNotApplicableError,
   DataRequestAlreadyAnsweredError,
+  DataRequestNotAnsweredError,
   DataRequestNotFoundError,
   DataRequestReceivedInFutureError,
   DataSubjectNotFoundError,
@@ -70,12 +75,7 @@ export class DataSubjectRequestsService {
     }
     await this.assertActiveChart(input.patientId);
 
-    const receivedOn = clinicalDateOf(input.receivedAt ?? now);
-    const holidays = await this.requests.clinicWideHolidays(
-      receivedOn,
-      addDays(receivedOn, DUE_DATE_HORIZON_DAYS),
-    );
-    const dueOn = legalDueDate(input.right, receivedOn, holidays);
+    const dueOn = await this.dueOn(input.right, input.receivedAt ?? now);
 
     const created = await this.requests.register(
       { ...input, dueOn },
@@ -91,13 +91,91 @@ export class DataSubjectRequestsService {
     requester: Requester,
     now: Date = new Date(),
   ): Promise<DataRequestEntry> {
-    const result = await this.requests.answer(requestId, answer, requester);
+    const result = await this.requests.answer(
+      requestId,
+      answer,
+      requester,
+      now,
+    );
     switch (result.status) {
       case 'missing':
         throw new DataRequestNotFoundError();
       case 'already-answered':
         throw new DataRequestAlreadyAnsweredError();
       case 'answered':
+        return this.entry(result.request, now);
+    }
+  }
+
+  /**
+   * PD-046 (D-127, D-128.9). Edits what was asked while it is unanswered: the
+   * right, what it asks and when it was received. The due date is a function
+   * of the right and the receipt (PD-032), so it is RECOMPUTED when either
+   * changes —with today's rule and holidays— and only then; the previous row
+   * is kept by `record_version`.
+   *
+   * ⚠️ THE REPOSITORY RECOMPUTES IT, UNDER THE ROW LOCK. Computed here, from
+   * the row read before the lock, two simultaneous edits —one of the right,
+   * one of the receipt— each left the due date of a combination that never
+   * existed.
+   */
+  async edit(
+    requestId: string,
+    changes: {
+      right?: DataSubjectRight;
+      description?: string;
+      receivedAt?: Date;
+    },
+    requester: Requester,
+    now: Date = new Date(),
+  ): Promise<DataRequestEntry> {
+    const current = await this.requests.find(requestId);
+    if (!current) throw new DataRequestNotFoundError();
+    if (current.answer !== null) throw new DataRequestAlreadyAnsweredError();
+    // PD-031. Not after now, and not after it was registered: the base
+    // repeats the second (`data_subject_request_received_not_future`).
+    if (
+      changes.receivedAt &&
+      (changes.receivedAt.getTime() > now.getTime() ||
+        changes.receivedAt.getTime() > current.registeredAt.getTime())
+    ) {
+      throw new DataRequestReceivedInFutureError();
+    }
+
+    const result = await this.requests.edit(requestId, changes, requester, now);
+    switch (result.status) {
+      case 'missing':
+        throw new DataRequestNotFoundError();
+      case 'already-answered':
+        throw new DataRequestAlreadyAnsweredError();
+      case 'edited':
+        return this.entry(result.request, now);
+    }
+  }
+
+  /**
+   * PD-047 (D-128.9). «Corregir respuesta»: a rectified answer linked to the
+   * one that stands. The original stays on the request and every
+   * rectification stays too; the answer is content, so it is required.
+   */
+  async correctAnswer(
+    requestId: string,
+    answer: { outcome: DataRequestOutcome; response: string },
+    requester: Requester,
+    now: Date = new Date(),
+  ): Promise<DataRequestEntry> {
+    const result = await this.requests.correctAnswer(
+      requestId,
+      answer,
+      requester,
+      now,
+    );
+    switch (result.status) {
+      case 'missing':
+        throw new DataRequestNotFoundError();
+      case 'not-answered':
+        throw new DataRequestNotAnsweredError();
+      case 'corrected':
         return this.entry(result.request, now);
     }
   }
@@ -152,6 +230,19 @@ export class DataSubjectRequestsService {
       requester,
       now,
     );
+  }
+
+  /** PD-032. The legal due date of a right received at an instant. */
+  private async dueOn(
+    right: DataSubjectRight,
+    receivedAt: Date,
+  ): Promise<ClinicalDate> {
+    const receivedOn = clinicalDateOf(receivedAt);
+    const holidays = await this.requests.clinicWideHolidays(
+      receivedOn,
+      addDays(receivedOn, DUE_DATE_HORIZON_DAYS),
+    );
+    return legalDueDate(right, receivedOn, holidays);
   }
 
   private entry(row: DataRequestView, now: Date): DataRequestEntry {

@@ -11,6 +11,7 @@ import type {
 } from '../../../shared/documents/annulled-document.port';
 import {
   addDays,
+  addMonths,
   atWallClock,
   clinicalDateOf,
   WallClockTime,
@@ -25,6 +26,7 @@ import {
 import {
   CertificateAlreadyRevokedError,
   CertificateEncounterNotFoundError,
+  CertificateRestImplausibleError,
 } from '../domain/certificate.errors';
 import type { Form117Source } from '../../../shared/domain/form-117/form-117';
 import type {
@@ -663,6 +665,34 @@ describe('el servicio de certificados', () => {
     expect(
       (await service.issue(rest(30), requester)).restNotices,
     ).not.toContain(REST_LIMIT_NOTICE.tooLong(30));
+  });
+
+  it('CER-056 un reposo de 366 días, o que empieza a más de un año de la atención, no se emite ni se corrige; 365 días sí, con su aviso', async () => {
+    await expect(service.issue(rest(366), requester)).rejects.toBeInstanceOf(
+      CertificateRestImplausibleError,
+    );
+    const farStart = addDays(addMonths(today, 12), 1);
+    await expect(
+      service.issue(
+        rest(2, { restFrom: farStart, restTo: addDays(farStart, 1) }),
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(CertificateRestImplausibleError);
+    await expect(
+      service.correct(
+        'certificate-1',
+        { ...fieldsOf(rest(366)), reason: 'Error en las fechas' },
+        requester,
+        [],
+      ),
+    ).rejects.toBeInstanceOf(CertificateRestImplausibleError);
+    expect(repository.issued).toHaveLength(0);
+    expect(repository.corrected).toHaveLength(0);
+
+    // Positive control: below the sanity limits CER-055 still only warns.
+    const year = await service.issue(rest(365), requester);
+    expect(repository.issued).toHaveLength(1);
+    expect(year.restNotices).toContain(REST_LIMIT_NOTICE.tooLong(365));
   });
 
   it('CER-032 la respuesta lleva un solo aviso cuando el reposo supera el umbral de la especialidad del emisor', async () => {

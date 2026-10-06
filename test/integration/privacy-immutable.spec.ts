@@ -148,39 +148,50 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
     const prisma = db();
     const { clerk, request } = await openRequest(prisma);
 
-    // Changing what was registered, even while open, is refused.
+    // Changing what was asked, while open, needs who and when (PD-046).
     await expect(
       prisma.dataSubjectRequest.update({
         where: { id: request.id },
         data: { description: 'Otra cosa' },
       }),
-    ).rejects.toThrow(/admits only its answer/);
-    // Half an answer is refused by the CHECK.
+    ).rejects.toThrow(/record_version_change_is_stamped/);
+    // Half an answer is refused by the CHECK, stamp or no stamp.
     await expect(
       prisma.dataSubjectRequest.update({
         where: { id: request.id },
-        data: { outcome: 'GRANTED' },
+        data: {
+          outcome: 'GRANTED',
+          changedBy: clerk.id,
+          changedAt: new Date(Date.now() - 1000),
+        },
       }),
     ).rejects.toThrow(/data_subject_request_answer_complete/);
 
-    // Positive control: the whole answer, once, is accepted.
+    // Positive control: the whole answer, once, with its stamp, is accepted.
+    const answeredAt = new Date();
     await expect(
       prisma.dataSubjectRequest.update({
         where: { id: request.id },
         data: {
           outcome: 'GRANTED',
           response: 'Se entregó la exportación',
-          answeredAt: new Date(),
+          answeredAt,
           answeredBy: clerk.id,
+          changedBy: clerk.id,
+          changedAt: answeredAt,
         },
       }),
     ).resolves.toBeTruthy();
 
-    // And after that, nothing.
+    // And after that, nothing — not even with a new stamp (PD-046, PD-047).
     await expect(
       prisma.dataSubjectRequest.update({
         where: { id: request.id },
-        data: { response: 'Respuesta cambiada' },
+        data: {
+          response: 'Respuesta cambiada',
+          changedBy: clerk.id,
+          changedAt: new Date(answeredAt.getTime() + 1000),
+        },
       }),
     ).rejects.toThrow(/already answered/);
     await expect(
@@ -219,11 +230,14 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
   it('PD-038 PD-032 responder no puede mover el vencimiento ni lo registrado, ni siquiera con la respuesta completa', async () => {
     const prisma = db();
     const { clerk, request } = await openRequest(prisma);
+    const answeredAt = new Date();
     const answer = {
       outcome: 'GRANTED' as const,
       response: 'Atendida',
-      answeredAt: new Date(),
+      answeredAt,
       answeredBy: clerk.id,
+      changedBy: clerk.id,
+      changedAt: answeredAt,
     };
     const later = new Date(request.dueOn.getTime() + 7 * 24 * 60 * 60 * 1000);
 
@@ -319,10 +333,243 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
     await expect(
       prisma.$executeRawUnsafe('TRUNCATE patient_consent'),
     ).rejects.toThrow(/append-only/);
+    // Refused before the trigger even runs since PD-047: the rectified
+    // answers point at it, and PostgreSQL does not truncate a referenced
+    // table. Either way, nothing goes.
     await expect(
       prisma.$executeRawUnsafe('TRUNCATE data_subject_request'),
-    ).rejects.toThrow(/append-only/);
+    ).rejects.toThrow(/append-only|referenced in a foreign key constraint/);
     expect(await prisma.patientConsent.count()).toBe(1);
     expect(await prisma.dataSubjectRequest.count()).toBe(1);
+  });
+
+  // --- D-127: corregir sin borrar (PD-044, PD-046, PD-047) --------------------
+
+  it('PD-044 corregir un consentimiento es una fila nueva que sustituye al original, que queda intacto; una sola vez', async () => {
+    const prisma = db();
+    const text = await publish(prisma, 1, 'Texto uno');
+    const original = await consentOn(prisma, text.id);
+    const clerk = await createUser(prisma);
+
+    // Control positivo: la corrección entra, enlazada al original.
+    const correction = await prisma.patientConsent.create({
+      data: {
+        patientId: original.patientId,
+        textVersionId: text.id,
+        medium: 'SIGNED_PAPER',
+        grantedBy: 'REPRESENTATIVE',
+        recordedBy: clerk.id,
+        supersedesId: original.id,
+      },
+    });
+    expect(correction.supersedesId).toBe(original.id);
+    // El original no se toca (PD-014 sigue).
+    const untouched = await prisma.patientConsent.findUniqueOrThrow({
+      where: { id: original.id },
+    });
+    expect(untouched).toMatchObject({
+      medium: 'ON_SCREEN',
+      grantedBy: 'HOLDER',
+    });
+    await expect(
+      prisma.patientConsent.update({
+        where: { id: original.id },
+        data: { medium: 'SIGNED_PAPER' },
+      }),
+    ).rejects.toThrow(/append-only/);
+
+    // Un original se corrige una vez: lo vigente es lo que nadie sustituye.
+    await expect(
+      prisma.patientConsent.create({
+        data: {
+          patientId: original.patientId,
+          textVersionId: text.id,
+          medium: 'ON_SCREEN',
+          grantedBy: 'HOLDER',
+          recordedBy: clerk.id,
+          supersedesId: original.id,
+        },
+      }),
+    ).rejects.toThrow(
+      /Unique constraint failed on the fields: \(`supersedes_id`\)/,
+    );
+  });
+
+  it('PD-044 la corrección es del mismo paciente y sobre el mismo texto que el original', async () => {
+    const prisma = db();
+    const first = await publish(prisma, 1, 'Texto uno');
+    const second = await publish(prisma, 2, 'Texto dos');
+    const original = await consentOn(prisma, first.id);
+    const [other, clerk] = await Promise.all([
+      createPatient(prisma),
+      createUser(prisma),
+    ]);
+    const correct = (patientId: string, textVersionId: string) =>
+      prisma.patientConsent.create({
+        data: {
+          patientId,
+          textVersionId,
+          medium: 'SIGNED_PAPER',
+          grantedBy: 'HOLDER',
+          recordedBy: clerk.id,
+          supersedesId: original.id,
+        },
+      });
+
+    await expect(correct(other.id, first.id)).rejects.toThrow(
+      /patient_consent_correction_matches/,
+    );
+    await expect(correct(original.patientId, second.id)).rejects.toThrow(
+      /patient_consent_correction_matches/,
+    );
+    // Control positivo.
+    await expect(correct(original.patientId, first.id)).resolves.toBeTruthy();
+  });
+
+  it('PD-046 una solicitud sin responder se edita con sello y deja su versión; ni el paciente ni quién la registró cambian', async () => {
+    const prisma = db();
+    const { clerk, request } = await openRequest(prisma);
+    const editedAt = new Date();
+
+    // Control positivo: derecho, texto, recepción y vencimiento, con sello.
+    await prisma.dataSubjectRequest.update({
+      where: { id: request.id },
+      data: {
+        right: 'RECTIFICATION',
+        description: 'Corregir el apellido',
+        receivedAt: new Date(request.receivedAt.getTime() - 60_000),
+        dueOn: request.dueOn,
+        changedBy: clerk.id,
+        changedAt: editedAt,
+      },
+    });
+    const versions = await prisma.recordVersion.findMany({
+      where: { resourceType: 'data_subject_request', resourceId: request.id },
+    });
+    expect(versions).toHaveLength(1);
+    expect(versions[0]?.data).toMatchObject({
+      right: 'ACCESS',
+      description: 'Copia de mis datos',
+    });
+
+    const other = await createPatient(prisma);
+    for (const change of [
+      { patientId: other.id },
+      { registeredBy: (await createUser(prisma)).id },
+      { requestedBy: 'REPRESENTATIVE' as const },
+    ]) {
+      await expect(
+        prisma.dataSubjectRequest.update({
+          where: { id: request.id },
+          data: {
+            ...change,
+            changedBy: clerk.id,
+            changedAt: new Date(editedAt.getTime() + 1000),
+          },
+        }),
+      ).rejects.toThrow(/data_subject_request_only_answered_once/);
+    }
+  });
+
+  it('PD-047 la respuesta se rectifica con una fila nueva enlazada, y la original no cambia ni se borra', async () => {
+    const prisma = db();
+    const { clerk, request } = await openRequest(prisma);
+    const correctAnswer = (correctsId: string | null) =>
+      prisma.dataSubjectAnswerCorrection.create({
+        data: {
+          requestId: request.id,
+          correctsId,
+          outcome: 'PARTIALLY_GRANTED',
+          response: 'Se entregó todo salvo la historia clínica',
+          answeredAt: new Date(),
+          answeredBy: clerk.id,
+        },
+      });
+
+    // Sin respuesta no hay nada que rectificar.
+    await expect(correctAnswer(null)).rejects.toThrow(
+      /data_subject_answer_correction_follows/,
+    );
+
+    const answeredAt = new Date();
+    await prisma.dataSubjectRequest.update({
+      where: { id: request.id },
+      data: {
+        outcome: 'DENIED',
+        response: 'No procede',
+        answeredAt,
+        answeredBy: clerk.id,
+        changedBy: clerk.id,
+        changedAt: answeredAt,
+      },
+    });
+
+    // Control positivo: la primera rectificación sustituye a la original.
+    const first = await correctAnswer(null);
+    // Una segunda «primera» no: se rectifica la vigente, en cadena.
+    await expect(correctAnswer(null)).rejects.toThrow(
+      /Unique constraint failed|data_subject_answer_correction_first_once/,
+    );
+    const second = await correctAnswer(first.id);
+    await expect(correctAnswer(first.id)).rejects.toThrow(
+      /Unique constraint failed on the fields: \(`corrects_id`\)/,
+    );
+
+    // Nada se reescribe: ni la respuesta original ni las rectificaciones.
+    const stored = await prisma.dataSubjectRequest.findUniqueOrThrow({
+      where: { id: request.id },
+    });
+    expect(stored).toMatchObject({ outcome: 'DENIED', response: 'No procede' });
+    await expect(
+      prisma.dataSubjectAnswerCorrection.update({
+        where: { id: second.id },
+        data: { response: 'Otra' },
+      }),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      prisma.dataSubjectAnswerCorrection.delete({ where: { id: first.id } }),
+    ).rejects.toThrow(/append-only/);
+  });
+
+  it('PD-047 una rectificación nombra la de su misma solicitud', async () => {
+    const prisma = db();
+    const a = await openRequest(prisma);
+    const b = await openRequest(prisma);
+    for (const { clerk, request } of [a, b]) {
+      const at = new Date();
+      await prisma.dataSubjectRequest.update({
+        where: { id: request.id },
+        data: {
+          outcome: 'GRANTED',
+          response: 'Atendida',
+          answeredAt: at,
+          answeredBy: clerk.id,
+          changedBy: clerk.id,
+          changedAt: at,
+        },
+      });
+    }
+    const ofA = await prisma.dataSubjectAnswerCorrection.create({
+      data: {
+        requestId: a.request.id,
+        outcome: 'DENIED',
+        response: 'Rectificada',
+        answeredAt: new Date(),
+        answeredBy: a.clerk.id,
+      },
+    });
+
+    await expect(
+      prisma.dataSubjectAnswerCorrection.create({
+        data: {
+          requestId: b.request.id,
+          correctsId: ofA.id,
+          outcome: 'DENIED',
+          response: 'Cruzada',
+          answeredAt: new Date(),
+          answeredBy: b.clerk.id,
+        },
+      }),
+    ).rejects.toThrow(/data_subject_answer_correction_follows/);
   });
 });

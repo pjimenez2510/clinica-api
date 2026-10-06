@@ -10,6 +10,9 @@ import {
   type ClinicalDate,
 } from '../../src/shared/domain/clinic-time';
 
+import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
+import '../../src/modules/certificates/infrastructure/certificate.constraints';
+
 import { useDatabase } from './setup/database';
 import {
   createEncounter,
@@ -823,5 +826,86 @@ describe('D-109 y D-110 lo que acota el reposo de maternidad, garantizado por la
     );
     const rows = await prisma.medicalCertificate.count({ where: { patientId: scene.patientId } }); // prettier-ignore
     expect(rows).toBe(1);
+  });
+});
+
+/**
+ * CER-056 (D-133.3). The sanity limits are the database's too: an import or a
+ * `psql` does not store a rest of 3 000 days either. Only these refuse; every
+ * limit below them warns (CER-055).
+ */
+describe('CER-056 la base rechaza el reposo absurdo y deja pasar lo largo', () => {
+  it('CER-056 365 días se guardan; 366 los rechaza medical_certificate_rest_at_most_365_days', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+
+    await expect(
+      insert(prisma, scene, {
+        rest: { from: scene.day, to: addDays(scene.day, 364) },
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, {
+        rest: { from: scene.day, to: addDays(scene.day, 365) },
+      }),
+    ).rejects.toThrow(/medical_certificate_rest_at_most_365_days/);
+  });
+
+  it('CER-056 el inicio a un año justo de la atención se guarda, antes o después; un día más allá lo rechaza medical_certificate_rest_starts_within_a_year', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const after = addMonths(scene.day, 12);
+    const before = addMonths(scene.day, -12);
+    const reason = { backdatingReason: 'Hospitalizado desde hace un año' };
+
+    await expect(
+      insert(prisma, scene, { rest: { from: after, to: after } }),
+    ).resolves.toBe(1);
+    await expect(
+      insert(prisma, scene, { rest: { from: before, to: before }, ...reason }),
+    ).resolves.toBe(1);
+
+    const tooLate = addDays(after, 1);
+    const tooEarly = addDays(before, -1);
+    await expect(
+      insert(prisma, scene, { rest: { from: tooLate, to: tooLate } }),
+    ).rejects.toThrow(/medical_certificate_rest_starts_within_a_year/);
+    await expect(
+      insert(prisma, scene, {
+        rest: { from: tooEarly, to: tooEarly },
+        ...reason,
+      }),
+    ).rejects.toThrow(/medical_certificate_rest_starts_within_a_year/);
+  });
+
+  it('CER-056 lo que la base rechaza llega como CERTIFICATE_REST_IMPLAUSIBLE en su campo', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const problemOf = async (operation: Promise<unknown>) => {
+      try {
+        await operation;
+      } catch (error) {
+        return extractDatabaseProblem(error);
+      }
+      throw new Error('the insert should have failed');
+    };
+
+    const long = await problemOf(
+      insert(prisma, scene, {
+        rest: { from: scene.day, to: addDays(scene.day, 400) },
+      }),
+    );
+    expect(long).toMatchObject({
+      code: 'CERTIFICATE_REST_IMPLAUSIBLE',
+      errors: [expect.objectContaining({ field: 'restTo' })],
+    });
+    const far = addDays(addMonths(scene.day, 12), 1);
+    const start = await problemOf(
+      insert(prisma, scene, { rest: { from: far, to: far } }),
+    );
+    expect(start).toMatchObject({
+      code: 'CERTIFICATE_REST_IMPLAUSIBLE',
+      errors: [expect.objectContaining({ field: 'restFrom' })],
+    });
   });
 });

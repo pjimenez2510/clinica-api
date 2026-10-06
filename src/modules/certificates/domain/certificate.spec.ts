@@ -20,6 +20,7 @@ import {
   backdatingReasonOf,
   assertMaternityCoherent,
   assertRestDoesNotOverlapMaternity,
+  assertRestPlausible,
   isObstetricCie10,
   lateIssueDayOf,
   issuerReasonOf,
@@ -40,6 +41,7 @@ import {
   CertificateMaternityBirthMismatchError,
   CertificateMaternityDiagnosisRequiredError,
   CertificateRestOverlapsError,
+  CertificateRestImplausibleError,
   CertificateRestPeriodInvalidError,
   CertificateTypeNotSupportedError,
 } from './certificate.errors';
@@ -251,6 +253,96 @@ describe('CER-055 los límites del reposo avisan y no frenan (D-128.7)', () => {
     expect(REST_LIMIT_NOTICE.startsAfterTomorrow(tomorrow)).toContain(
       label(tomorrow),
     );
+  });
+});
+
+/** CER-056. What the sanity limits refuse, field by field, or nothing. */
+const implausibleFields = (
+  period: { from: ClinicalDate; to: ClinicalDate },
+  attentionDate: ClinicalDate = today,
+): string[] => {
+  try {
+    assertRestPlausible(period, attentionDate);
+    return [];
+  } catch (error) {
+    expect(error).toBeInstanceOf(CertificateRestImplausibleError);
+    return (error as CertificateRestImplausibleError).fieldErrors.map(
+      (field) => field.field,
+    );
+  }
+};
+
+describe('CER-056 lo absurdo del reposo se rechaza; lo largo sigue avisando (D-133.3)', () => {
+  it('CER-056 365 días se emiten (con el aviso de CER-055); 366 se rechazan en la fecha de fin', () => {
+    const year = { from: today, to: addDays(today, 364) };
+    expect(clinicalDaySpan(year.from, year.to)).toBe(365);
+    expect(implausibleFields(year)).toEqual([]);
+    expect(limitsOf(year)).toEqual([REST_LIMIT_NOTICE.tooLong(365)]);
+
+    expect(implausibleFields({ from: today, to: addDays(today, 365) })).toEqual(
+      ['restTo'],
+    );
+    // A typo of 3 000 days, the case of D-133.3.
+    expect(
+      implausibleFields({ from: today, to: addDays(today, 2999) }),
+    ).toEqual(['restTo']);
+  });
+
+  it('CER-056 el inicio a un año justo de la atención, antes o después, se emite; un día más allá se rechaza en la fecha de inicio', () => {
+    const before = addMonths(today, -12);
+    const after = addMonths(today, 12);
+    expect(implausibleFields({ from: before, to: addDays(before, 1) })).toEqual(
+      [],
+    );
+    expect(implausibleFields({ from: after, to: addDays(after, 1) })).toEqual(
+      [],
+    );
+
+    const tooEarly = addDays(before, -1);
+    const tooLate = addDays(after, 1);
+    expect(
+      implausibleFields({ from: tooEarly, to: addDays(tooEarly, 1) }),
+    ).toEqual(['restFrom']);
+    expect(
+      implausibleFields({ from: tooLate, to: addDays(tooLate, 1) }),
+    ).toEqual(['restFrom']);
+  });
+
+  it('CER-056 el año se cuenta en el calendario, como la base: desde un 29 de febrero, el 28 del año siguiente', () => {
+    const leapDay = '2028-02-29' as ClinicalDate; // fecha-fija: bisiesto
+    expect(
+      implausibleFields({ from: '2029-02-28' as ClinicalDate, to: '2029-02-28' as ClinicalDate }, leapDay), // fecha-fija: bisiesto
+    ).toEqual([]); // prettier-ignore
+    expect(
+      implausibleFields({ from: '2029-03-01' as ClinicalDate, to: '2029-03-01' as ClinicalDate }, leapDay), // fecha-fija: bisiesto
+    ).toEqual(['restFrom']); // prettier-ignore
+  });
+
+  it('CER-056 las dos cosas a la vez se dicen las dos, cada una en su campo y con su frase', () => {
+    const far = addDays(addMonths(today, 12), 10);
+    const error = (() => {
+      try {
+        assertRestPlausible({ from: far, to: addDays(far, 400) }, today);
+      } catch (thrown) {
+        return thrown as CertificateRestImplausibleError;
+      }
+      throw new Error('expected a refusal');
+    })();
+
+    expect(error.fieldErrors).toEqual([
+      {
+        field: 'restFrom',
+        code: 'CERTIFICATE_REST_IMPLAUSIBLE',
+        message:
+          'El reposo no puede empezar a más de un año de la atención: compruebe la fecha de inicio',
+      },
+      {
+        field: 'restTo',
+        code: 'CERTIFICATE_REST_IMPLAUSIBLE',
+        message:
+          'Un reposo no puede pasar de 365 días: compruebe la fecha de fin',
+      },
+    ]);
   });
 });
 
