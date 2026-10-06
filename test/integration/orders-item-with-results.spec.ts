@@ -11,6 +11,9 @@ import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.po
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { aScene, placeIssued } from './orders-fixtures';
+import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
+import '../../src/modules/orders/infrastructure/orders.constraints';
+
 import { useDatabase } from './setup/database';
 import { createUser } from './setup/fixtures';
 
@@ -101,6 +104,28 @@ describe('ORD-131 un examen con algún resultado no se anula', () => {
     ).resolves.toBe(1);
   });
 
+  it('ORD-131 lo que rechaza la base sale con el código y la frase de la aplicación', async () => {
+    const prisma = db();
+    const { bh, userId } = await aPartialBloodCount(prisma);
+
+    const rejection = await prisma.serviceOrderItem
+      .update({
+        where: { id: bh.id },
+        data: {
+          status: 'CANCELLED',
+          completedAt: new Date(),
+          cancelledById: userId,
+        },
+      }) // prettier-ignore
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(extractDatabaseProblem(rejection)?.code).toBe(
+      'ORDER_ITEM_HAS_RESULTS',
+    );
+  });
+
   it('ORD-131 anular la línea con un resultado parcial se rechaza y no cambia nada', async () => {
     const prisma = db();
     const { orders, order, bh, glucose, userId } = await aPartialBloodCount(prisma); // prettier-ignore
@@ -142,5 +167,67 @@ describe('ORD-131 un examen con algún resultado no se anula', () => {
     ).rejects.toBeInstanceOf(OrderItemHasResultsError);
     expect(await statusOf(prisma, bh.id)).toBe('REQUESTED');
     expect(await prisma.serviceOrder.count({ where: { encounterId: order.encounterId, status: 'DRAFT' } })).toBe(0); // prettier-ignore
+  });
+});
+
+describe('ORD-131 corregir mientras llega un informe, contra PostgreSQL', () => {
+  /** Waits until some session is waiting on a lock: the race is set. */
+  async function untilSomeoneWaits(prisma: PrismaClient): Promise<void> {
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+        SELECT count(*) AS "waiting" FROM pg_locks WHERE NOT granted`;
+      if (Number(row?.waiting ?? 0) > 0) return;
+      if (Date.now() > deadline) throw new Error('Nadie quedó esperando el bloqueo'); // prettier-ignore
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+
+  it('ORD-131 un resultado confirmado mientras «Corregir» espera deja esa línea como estaba, sin error', async () => {
+    const prisma = db();
+    // Una orden con un resultado de la biometría, del que se copia la fila.
+    const source = await aPartialBloodCount(prisma);
+    const [result] = await prisma.observationResult.findMany({ where: { orderItemId: source.bh.id }, select: { id: true } }); // prettier-ignore
+    // La orden que se corrige, aún sin resultados, en la misma atención.
+    const target = await placeIssued(source.orders, {
+      encounterId: source.order.encounterId,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: (await prisma.examDefinition.findUniqueOrThrow({ where: { code: 'EX-BH' } })).id }, { examDefinitionId: (await prisma.examDefinition.findUniqueOrThrow({ where: { code: 'EX-GLUCOSA-AYUNAS' } })).id }], // prettier-ignore
+      sites: 'all',
+    });
+    const bh = target.items.find((i) => i.testCode === 'EX-BH')!;
+    const glucose = target.items.find((i) => i.testCode === 'EX-GLUCOSA-AYUNAS')!; // prettier-ignore
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+
+    // Otra sesión registra un valor de la biometría y retiene el bloqueo, como el informe (ORD-124).
+    const reporting = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM "service_order_item" WHERE "service_order_id" = ${target.id}::uuid FOR UPDATE`;
+        await tx.$executeRaw`INSERT INTO "observation_result" ("report_id", "order_item_id", "analyte_display", "value_numeric", "unit", "observed_at")
+          SELECT "report_id", ${bh.id}::uuid, "analyte_display", "value_numeric", "unit", "observed_at" FROM "observation_result" WHERE "id" = ${result!.id}`;
+        await held;
+      },
+      { timeout: 20_000 },
+    );
+    const correcting = source.orders
+      .correct({
+        orderId: target.id,
+        sites: 'all',
+        cancelledById: source.userId,
+      })
+      .then(
+        (value) => value,
+        (error: unknown) => error,
+      );
+    await untilSomeoneWaits(prisma);
+    release();
+    await reporting;
+
+    const corrected = await correcting;
+    expect(corrected).not.toBeInstanceOf(Error);
+    expect(await statusOf(prisma, bh.id)).toBe('REQUESTED');
+    expect(await statusOf(prisma, glucose.id)).toBe('CANCELLED');
   });
 });

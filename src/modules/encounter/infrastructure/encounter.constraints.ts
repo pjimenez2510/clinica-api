@@ -170,6 +170,14 @@ registerConstraintMeanings({
 });
 
 registerConstraintMeanings({
+  // EN-229 (D-139.5). Only reached past the adapter, which counts under the
+  // attention's lock: the same code and sentence it gives.
+  clinical_note_one_002_chain_per_encounter: {
+    code: 'CLINICAL_NOTE_ALREADY_OPEN',
+    field: 'formCode',
+    message:
+      'Esta atención ya tiene su nota de consulta. Ábrala para seguir escribiendo o enmendarla',
+  },
   /**
    * EN-126. The column and the instant cannot disagree, in either direction.
    *

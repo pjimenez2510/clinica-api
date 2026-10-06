@@ -14,6 +14,9 @@ import {
 } from '../../src/modules/encounter/domain/encounter.errors';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
+import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
+import '../../src/modules/encounter/infrastructure/encounter.constraints';
+
 import { useDatabase } from './setup/database';
 import {
   createDiagnosis,
@@ -466,6 +469,13 @@ describe('la nota clínica firmada', () => {
     await failsWith(
       rawVersionOne('002'),
       'clinical_note_one_002_chain_per_encounter',
+    );
+    const rejection = await rawVersionOne('002').then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(extractDatabaseProblem(rejection)?.code).toBe(
+      'CLINICAL_NOTE_ALREADY_OPEN',
     );
     expect(await prisma.clinicalNote.count({ where: { encounterId: encounter.id, formCode: '002' } })).toBe(1); // prettier-ignore
 

@@ -296,9 +296,6 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
 
       await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM "service_order" WHERE id = ${query.orderId}::uuid FOR UPDATE`;
-      // ORD-131. The lines too, before their results are read: a report
-      // writing under them waits, or is waited for (ORD-124).
-      await tx.$queryRaw`SELECT id FROM "service_order_item" WHERE "service_order_id" = ${query.orderId}::uuid ORDER BY id FOR UPDATE`;
 
       const current = await tx.serviceOrder.findUniqueOrThrow({
         where: { id: query.orderId },
@@ -349,6 +346,13 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
       if (!found) throw new OrderNotFoundError();
 
       await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
+      /**
+       * ORD-131. The lines BEFORE the order, the order a report takes them
+       * (lines `FOR UPDATE`, then the order through the `pending_items`
+       * trigger): their results are read under this lock, so a report writing
+       * under them has committed or waits, and the two cannot deadlock.
+       */
+      await tx.$queryRaw`SELECT id FROM "service_order_item" WHERE "service_order_id" = ${query.orderId}::uuid ORDER BY id FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM "service_order" WHERE id = ${query.orderId}::uuid FOR UPDATE`;
 
       const current = await tx.serviceOrder.findUniqueOrThrow({

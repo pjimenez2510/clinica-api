@@ -43,13 +43,15 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
   IF OLD.status = 'COMPLETED' AND NEW.status = 'CANCELLED' THEN
-    RAISE EXCEPTION 'Un examen con su resultado no se anula (ORD-008)'
+    -- El prefijo `<nombre>: ` es lo que lee database-problem.ts: el adaptador
+    -- no copia CONSTRAINT para un 23514.
+    RAISE EXCEPTION 'service_order_item_completed_is_not_cancelled: Un examen con su resultado no se anula (ORD-008)'
       USING ERRCODE = 'check_violation',
             CONSTRAINT = 'service_order_item_completed_is_not_cancelled';
   END IF;
   IF NEW.status = 'CANCELLED' AND OLD.status IS DISTINCT FROM 'CANCELLED'
      AND EXISTS (SELECT 1 FROM observation_result WHERE order_item_id = NEW.id) THEN
-    RAISE EXCEPTION 'Un examen con algún resultado no se anula (ORD-131)'
+    RAISE EXCEPTION 'service_order_item_with_result_is_not_cancelled: Un examen con algún resultado no se anula (ORD-131)'
       USING ERRCODE = 'check_violation',
             CONSTRAINT = 'service_order_item_with_result_is_not_cancelled';
   END IF;

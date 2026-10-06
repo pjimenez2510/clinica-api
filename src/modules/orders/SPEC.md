@@ -1844,6 +1844,7 @@ contrato —`code`, estado y mensaje—.
 | `ORDER_NOT_DISCARDED` | 409 | Se intentó recuperar una orden que no está descartada: ya se recuperó, o nunca se descartó | ORD-116 |
 | `ORDER_NOT_ISSUED` | 409 | Se intentó registrar un informe, emparejar un resultado, anular una línea o corregir una orden que no se ha emitido | ORD-100, ORD-118 |
 | `ORDER_OF_ANOTHER_PRACTITIONER` | 403 | Corregir una orden emitida que firma otro profesional: el borrador nuevo saldría a nombre de quien corrige. **Distinto de `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER`** porque la salida difiere: aquí se pueden anular sus exámenes (ORD-007) y pedirlos en una orden propia | ORD-118 |
+| `EXAM_FASTING_HOURS_INVALID` | 422 | Horas de ayuno sin «Pide ayuno», o fuera de 1 a 24. Lo arbitran `exam_definition_fasting_hours_needs_fasting` y `exam_definition_fasting_hours_range`; el campo es `fastingHours` | ORD-129 |
 | `ORDER_ITEM_HAS_RESULTS` | 409 | Se intentó anular un examen que ya tiene algún resultado, o corregir una orden cuyos exámenes pendientes tienen todos alguno: se edita el informe o se pide de nuevo | ORD-131 |
 | `EXAM_DEFINITION_NOT_FOUND` | 404 | El examen no existe | ORD-103 |
 | `EXAM_CODE_DUPLICATE` | 409 | Otro examen ya lleva ese código. Lo arbitra `exam_definition_code_unique` | ORD-103 |

@@ -890,6 +890,12 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
         { code: 'EX-LIP', display: 'Perfil lipídico', specimen: 'Suero', preparation: 'Venir sin desayunar.', fasting: { hours: null }, section: null, status: 'REQUESTED' }, // prettier-ignore
       ]),
     ).toMatchObject({ text: 'Venga en ayunas (Perfil lipídico).' });
+    // Una sola hora, en singular.
+    expect(
+      fastingLine([
+        { code: 'EX-1H', display: 'Examen breve', specimen: null, preparation: null, fasting: { hours: 1 }, section: null, status: 'REQUESTED' }, // prettier-ignore
+      ]),
+    ).toMatchObject({ text: 'Venga con 1 hora de ayuno como mínimo (Examen breve).' }); // prettier-ignore
     // Control positivo: un texto que empieza por «Ayuno» sin el dato ya no da línea.
     expect(
       fastingLine([

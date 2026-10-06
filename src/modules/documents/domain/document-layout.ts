@@ -568,9 +568,9 @@ function fastingLine(
   const hours = fasts
     .map((item) => item.fasting?.hours ?? null)
     .filter((value): value is number => value !== null);
-  return hours.length === 0
-    ? `Venga en ayunas (${names}).`
-    : `Venga con ${Math.max(...hours)} horas de ayuno como mínimo (${names}).`;
+  if (hours.length === 0) return `Venga en ayunas (${names}).`;
+  const most = Math.max(...hours);
+  return `Venga con ${most} ${most === 1 ? 'hora' : 'horas'} de ayuno como mínimo (${names}).`;
 }
 
 /**
