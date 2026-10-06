@@ -493,6 +493,7 @@ misma fila, con su versión anterior en `record_version`.
 **Cubre:** AG-035, AG-044, AG-050 a AG-052, AG-064, AG-115, AG-117, AG-132,
 AG-162 a AG-168.
 **Solo servidor:** AG-051, AG-052.
+**Solo interfaz:** AG-166, AG-167.
 
 ## Criterios de éxito
 
