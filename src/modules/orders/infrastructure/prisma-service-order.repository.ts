@@ -578,16 +578,18 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         orderedBy: { userId: query.userId },
         OR: [
           { encounter: { status: { notIn: ['OPEN', 'ON_HOLD'] } } },
-          // D-130.3. Still open, but forgotten: more than a day old.
+          // D-130.3, ORD-128. Still open, but forgotten: not touched for more
+          // than a day. From the LAST EDIT (`updated_at`, the application's
+          // clock through Prisma), not from its creation.
           {
-            createdAt: {
+            updatedAt: {
               lt: new Date(query.now.getTime() - STALE_DRAFT_AFTER_MS),
             },
           },
         ],
         ...siteFilter(query.sites),
       },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
       // A ceiling, not a page: one practitioner's forgotten drafts, oldest
       // first — the ones most worth issuing or discarding.
       take: STALE_DRAFTS_LIMIT,
@@ -595,7 +597,7 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         id: true,
         encounterId: true,
         category: true,
-        createdAt: true,
+        updatedAt: true,
         encounter: {
           select: {
             status: true,
@@ -635,7 +637,8 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
           .join(' '),
         category: order.category,
         items: order.items,
-        savedAt: order.createdAt,
+        // ORD-128. «Guardado» is the last edit.
+        savedAt: order.updatedAt,
         canIssue: admitsNewOrders(order.encounter.status),
       };
     });

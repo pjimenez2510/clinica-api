@@ -1383,7 +1383,7 @@ desde la pantalla.
   descartarlos (ORD-099) (D-123.6, resuelta por el autor).
 
   Las 24 horas se cuentan desde que se guardó el borrador y con el reloj de la
-  aplicación. Sin ellas, una atención que se queda `OPEN` u `ON_HOLD` días
+  aplicación (**enmendado por ORD-128**: desde la última edición). Sin ellas, una atención que se queda `OPEN` u `ON_HOLD` días
   esconde su borrador en una pestaña que nadie vuelve a abrir. En una atención
   abierta o en espera el borrador se emite (ORD-005).
 
