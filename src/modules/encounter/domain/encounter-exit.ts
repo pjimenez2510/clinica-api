@@ -17,13 +17,18 @@ import type { Closer } from './encounter-closure';
 import {
   EncounterCloserNotAuthorError,
   InvalidEncounterTransitionError,
-  SubstituteClosureReasonRequiredError,
 } from './encounter.errors';
 import type { EncounterStatus } from './encounter';
 
 /**
  * EN-144, EN-147 applied to the exits. Returns the substitute's reason, or
- * `null` when the actor IS the attending practitioner.
+ * `null` when the actor IS the attending practitioner or gave none.
+ *
+ * EN-218 (AT-23, D-126.2): acting on behalf of the attending practitioner
+ * asks for `record:sign` at the attention's site and ONE confirmation on the
+ * screen — «Lo hará en nombre de Dr. X» —, no longer a reason: who acted is
+ * already on the row (`entered_in_error_by_id`, `discontinued_by_id`). A
+ * reason given is kept. The CLOSURE keeps its reason (EN-147).
  */
 export function planExitActor(
   attendingPractitionerId: string,
@@ -34,8 +39,7 @@ export function planExitActor(
   if (!actor.canSignRecords) throw new EncounterCloserNotAuthorError();
 
   const reason = actor.substituteReason?.trim() ?? '';
-  if (reason === '') throw new SubstituteClosureReasonRequiredError();
-  return reason;
+  return reason === '' ? null : reason;
 }
 
 /**

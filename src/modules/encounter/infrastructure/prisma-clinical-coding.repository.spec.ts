@@ -92,6 +92,11 @@ function prismaDouble(options: {
         record('encounter.lock', { sql, values });
         return Promise.resolve([{ status: options.status ?? 'OPEN' }]);
       }
+      // D-117.16: asked under the lock; never reported in these doubles.
+      if (sql.includes('encounter_is_reported')) {
+        record('encounter.reported', { sql, values });
+        return Promise.resolve([{ reported: false }]);
+      }
       record('$queryRaw', { sql, values });
       return Promise.resolve(options.concept ?? [conceptRow()]);
     },
@@ -150,6 +155,7 @@ const aDiagnosis = (overrides: Record<string, unknown> = {}) => ({
   certainty: 'DEFINITIVE' as const,
   occurrence: 'FIRST_TIME' as const,
   sites: [SITE],
+  mayCorrectAfterDischarge: false,
   ...overrides,
 });
 

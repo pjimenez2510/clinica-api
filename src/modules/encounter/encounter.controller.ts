@@ -27,6 +27,7 @@ import type { Permission } from '../../shared/authorisation/permission.catalogue
 
 import {
   EncounterService,
+  type VitalsReading,
   type Requester,
 } from './application/encounter.service';
 import { PatientAllergyService } from './application/patient-allergy.service';
@@ -51,6 +52,7 @@ import {
   type EncounterPageResponse,
   type EncounterResponse,
   type VitalSignsResponse,
+  type VitalsReadingResponse,
   type VitalsVersionListResponse,
 } from './dto/encounter.dto';
 
@@ -386,7 +388,7 @@ export class EncounterController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RecordVitalsDto,
     @Req() req: Request,
-  ): Promise<VitalSignsResponse> {
+  ): Promise<VitalsReadingResponse> {
     /**
      * EN-061. Refused and NOT dropped. The schema lets an unknown key through
      * on purpose so this refusal can carry the code the requirement names:
@@ -419,7 +421,7 @@ export class EncounterController {
       this.requester(req, 'vitals:write'),
     );
 
-    return toVitalsResponse(vitals);
+    return toVitalsReadingResponse(vitals);
   }
 
   /**
@@ -438,12 +440,12 @@ export class EncounterController {
   async vitals(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request,
-  ): Promise<VitalSignsResponse | null> {
+  ): Promise<VitalsReadingResponse | null> {
     const vitals = await this.encounters.vitalsOf(
       id,
       this.requester(req, 'record:read'),
     );
-    return vitals === null ? null : toVitalsResponse(vitals);
+    return vitals === null ? null : toVitalsReadingResponse(vitals);
   }
 
   /**
@@ -535,6 +537,14 @@ export function toEncounterResponse(
 }
 
 /** `undefined` becomes `null`: an absent measurement is an answer, not a gap. */
+/** EN-217. The taking with what is still missing of it. */
+function toVitalsReadingResponse(vitals: VitalsReading): VitalsReadingResponse {
+  return {
+    ...toVitalsResponse(vitals),
+    anthropometryPending: vitals.anthropometryPending,
+  };
+}
+
 function toVitalsResponse(vitals: VitalSignsView): VitalSignsResponse {
   return {
     encounterId: vitals.encounterId,

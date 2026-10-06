@@ -711,9 +711,11 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
    * two facts at once. What happened stays in `access_audit`: the discard and
    * its undo are two `UPDATE` rows of the trail.
    *
-   * ⚠️ THE ATTENTION'S STATE IS NOT JUDGED HERE, as it is not on the discard:
-   * undoing returns the draft exactly where it was a moment ago, and what can
-   * be done with it afterwards (rewrite, issue) is judged by those acts.
+   * ⚠️ THE ATTENTION HAS TO BE LIVE (PR-002), judged on the locked row:
+   * annulling an attention discards its drafts (EN-218), and undoing that
+   * discard afterwards would put a draft back into an attention that says it
+   * never existed. A draft is new content of a live attention, as composing
+   * it is (revisión del 06-10-2026, M2).
    */
   async restore(request: DraftRestore): Promise<PrescriptionView> {
     const row = await this.prisma.$transaction(async (tx) => {
@@ -728,7 +730,11 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
 
       const current = await tx.prescription.findUniqueOrThrow({
         where: { id: found.id },
-        select: { status: true, prescriberId: true },
+        select: {
+          status: true,
+          prescriberId: true,
+          encounter: { select: { status: true } },
+        },
       });
       // PR-107. Only what was discarded comes back, and the answer names the
       // state it is in.
@@ -738,6 +744,10 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
       // PR-100. The draft is its prescriber's, discarded or not.
       if (current.prescriberId !== request.prescriberId) {
         throw new PrescriptionDraftOfAnotherPrescriberError();
+      }
+      // PR-002, PR-107. Back only into a live attention, on the locked row.
+      if (!admitsPrescribing(current.encounter.status)) {
+        throw new PrescriptionEncounterNotOpenError(current.encounter.status);
       }
 
       return tx.prescription.update({

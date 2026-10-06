@@ -285,6 +285,7 @@ function toNoteResponse(note: NoteWithTemplate): ClinicalNoteResponse {
     content: note.content,
     authorId: note.authorId,
     signedById: note.signedById,
+    signedByName: note.signedByName,
     signedAt: note.signedAt?.toISOString() ?? null,
     // EN-027. Published so the digest can be verified from outside the
     // database, which is what SC-012 counts.

@@ -31,8 +31,7 @@ import type {
 } from './encounter';
 import type { StateChange } from './encounter-state';
 import type { ClosurePlan } from './encounter-closure';
-import type { ClinicalDate } from '../../../shared/domain/clinic-time';
-import type { VitalSigns } from './vital-signs';
+import type { AnthropometryField, VitalSigns } from './vital-signs';
 import type { TriggeringFact } from './patient-flow';
 
 /**
@@ -71,7 +70,8 @@ export interface EncounterView {
   closedAt: Date | null;
   closedBySubstituteReason: string | null;
   /** EN-166. Why and when it was annulled; `null` unless `ENTERED_IN_ERROR`. */
-  annulment: { reason: string; at: Date } | null;
+  /** EN-166, EN-218. Who and when always; the reason only if one was given. */
+  annulment: { reason: string | null; at: Date } | null;
   /** EN-167. Why, from where and when it was interrupted; `null` unless `DISCONTINUED`. */
   interruption: { reason: string; origin: DiscontinuedOrigin; at: Date } | null;
 }
@@ -372,15 +372,13 @@ export interface EncounterRepository {
   findVitals(query: EncounterQuery): Promise<VitalSignsView | null>;
 
   /**
-   * EN-063. Whether the chart had a PREGNANT record (PA-034) in force on that
-   * clinical date — its own rows and those of every chart it absorbed
-   * (PA-055). The period is inclusive at both ends, like PA-036's.
-   *
-   * THE CHART AND NOT `encounter_priority_group`, which has no catalogue yet
-   * (EN-099). The dated record is what was true that day, which is the reason
-   * EN-063 named the attention in the first place.
+   * EN-063, EN-217. The mandatory anthropometry still missing on the
+   * attention, by API field name — `encounter_anthropometry_pending`, the
+   * same function the signature and its deferred trigger ask: the frozen age,
+   * and the chart's PREGNANT record (PA-034, absorbed charts included) in
+   * force on the clinical date.
    */
-  isPregnantOn(patientId: string, on: ClinicalDate): Promise<boolean>;
+  anthropometryPending(encounterId: string): Promise<AnthropometryField[]>;
 
   /**
    * EN-211. The takings corrections replaced, newest first; empty when the

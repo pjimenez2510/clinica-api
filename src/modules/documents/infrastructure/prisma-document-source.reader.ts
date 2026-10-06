@@ -604,12 +604,14 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         category: true,
         priority: true,
         clinicalNoteText: true,
+        // ORD-121. What the order said when it was issued: it is only printed
+        // issued (ORD-100), so the copy is always there.
+        diagnoses: true,
         encounter: {
           select: {
             ageYears: true,
             ageMonths: true,
             patient: { select: PATIENT_SELECT },
-            diagnoses: { select: DIAGNOSIS_SELECT, orderBy: { rank: 'asc' } },
           },
         },
         orderedBy: { select: PRACTITIONER_SELECT },
@@ -657,10 +659,9 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           row.encounter.ageYears,
           row.encounter.ageMonths,
         ),
-        diagnoses: row.encounter.diagnoses.map((diagnosis) => ({
-          code: diagnosis.cie10Code,
-          display: diagnosis.cie10Display,
-        })),
+        // ORD-121, D-117.5. Frozen at the issue: correcting the attention
+        // afterwards does not change the paper the laboratory holds.
+        diagnoses: frozenDiagnoses(row.diagnoses) ?? [],
         orderedBy: toPractitioner(row.orderedBy),
         items: row.items.map((item) => ({
           code: item.testCode,
@@ -878,8 +879,9 @@ function nameOf(site: {
 }
 
 /**
- * PR-026, EN-182. The receta's frozen `[{code, display}]`, or `null` while it
- * is a draft. Read defensively: a JSON column is only as typed as its CHECK.
+ * PR-026, ORD-121. The frozen `[{code, display}]` of a receta or an order, or
+ * `null` while it is a draft. Read defensively: a JSON column is only as typed
+ * as its CHECK.
  */
 function frozenDiagnoses(
   value: Prisma.JsonValue | null,

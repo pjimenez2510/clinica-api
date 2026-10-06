@@ -758,4 +758,106 @@ describe('los signos vitales de la atención', () => {
       }),
     ).toEqual([]);
   });
+  /**
+   * EN-217, D-134.3. A discharged attention signed its 002 with the mandatory
+   * anthropometry (EN-063); a later correction of the taking cannot take it
+   * away again. The adapter refuses it under the attention's lock, and the
+   * database refuses whatever walks past the adapter.
+   */
+  describe('EN-217 D-134.3 corregir la toma tras el alta no deja pendiente la antropometría obligatoria', () => {
+    async function aDischargedUnderFive(prisma: PrismaClient) {
+      const site = await createSite(prisma);
+      const practitioner = await createPractitioner(prisma);
+      const startedAt = new Date(Date.now() - 2 * 3_600_000);
+      const patient = await createPatient(prisma, {
+        // Two years before the attention: under five on its clinical date.
+        birthDate: new Date(
+          Date.UTC(startedAt.getUTCFullYear() - 2, startedAt.getUTCMonth(), 1),
+        ),
+      });
+      const encounter = await repositoryOf(prisma).open({
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        patientId: patient.id,
+        startedAt,
+        careModality: 'MORBIDITY',
+        careSetting: 'INTRAMURAL',
+        visitSequence: 'FIRST_TIME',
+      });
+      const query = { encounterId: encounter.id, sites: [site.id] };
+      const { save } = recordedBy(prisma, practitioner.userId);
+      await save(query, {
+        weightKg: 12.1,
+        heightCm: 86,
+        headCircumferenceCm: 48,
+        temperatureC: 37.8,
+      });
+      await prisma.encounter.update({
+        where: { id: encounter.id },
+        data: {
+          status: 'DISCHARGED',
+          endedAt: new Date(),
+          dischargeCondition: 'ALIVE',
+        },
+      });
+      return { encounter, query, practitioner, save };
+    }
+
+    it('EN-217 D-134.3 el adaptador corrige la temperatura conservando peso y talla, y rechaza dejar sin peso con ANTHROPOMETRY_PENDING', async () => {
+      const prisma = db();
+      const { encounter, query, save } = await aDischargedUnderFive(prisma);
+
+      // Positive control: the same path, the measures kept.
+      const corrected = await save(query, {
+        weightKg: 12.1,
+        heightCm: 86,
+        headCircumferenceCm: 48,
+        temperatureC: 37.1,
+      });
+      expect(corrected.temperatureC).toBe(37.1);
+
+      await expect(
+        save(query, {
+          heightCm: 86,
+          headCircumferenceCm: 48,
+          temperatureC: 37,
+        }),
+      ).rejects.toMatchObject({
+        code: 'ANTHROPOMETRY_PENDING',
+        fieldErrors: [expect.objectContaining({ field: 'weightKg' })],
+      });
+      const stored = await prisma.encounterVitals.findUniqueOrThrow({
+        where: { encounterId: encounter.id },
+      });
+      expect(Number(stored.weightKg)).toBe(12.1);
+      expect(Number(stored.temperatureC)).toBe(37.1);
+    });
+
+    it('EN-217 D-134.3 la BASE rechaza la corrección que deja sin peso a una atención con alta, y no la que conserva las medidas', async () => {
+      const prisma = db();
+      const { encounter, practitioner } = await aDischargedUnderFive(prisma);
+      const correct = (column: 'temperature_c' | 'weight_kg', value: number | null, at: Date) =>
+        prisma.$executeRawUnsafe(
+          `UPDATE encounter_vitals
+              SET ${column} = $2, corrected_by = $3::uuid, corrected_at = $4
+            WHERE encounter_id = $1::uuid`,
+          encounter.id,
+          value,
+          practitioner.userId,
+          at,
+        ); // prettier-ignore
+
+      // Positive control: a stamped correction that keeps the measures.
+      await correct('temperature_c', 36.9, new Date(Date.now() + 60_000));
+
+      const problem = await problemFrom(
+        correct('weight_kg', null, new Date(Date.now() + 120_000)),
+      );
+      expect(problem).toMatchObject({ code: 'ANTHROPOMETRY_PENDING' });
+      const stored = await prisma.encounterVitals.findUniqueOrThrow({
+        where: { encounterId: encounter.id },
+      });
+      expect(Number(stored.weightKg)).toBe(12.1);
+    });
+  });
 });

@@ -167,6 +167,8 @@ export const clinicalNoteSchema = z.object({
    * database — which is what SC-012 counts.
    */
   signedById: z.uuid().nullable(),
+  /** EN-216. The signer by name, so the screen can say who amended it. */
+  signedByName: z.string().nullable(),
   signedAt: z.iso.datetime().nullable(),
   contentHash: z.string().nullable(),
   /**

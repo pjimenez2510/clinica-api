@@ -15,6 +15,8 @@ import { z } from 'zod';
 const DIAGNOSIS_CERTAINTY = z.enum(['PRESUMPTIVE', 'DEFINITIVE']);
 const DIAGNOSIS_OCCURRENCE = z.enum(['FIRST_TIME', 'SUBSEQUENT']);
 const CARE_MODALITY = z.enum(['MORBIDITY', 'PREVENTION']);
+/** EN-007. First-time or subsequent, at this establishment. */
+const VISIT_SEQUENCE = z.enum(['FIRST_TIME', 'SUBSEQUENT']);
 
 /**
  * An instant, with its offset stated — the same rule as everywhere else in
@@ -131,9 +133,10 @@ export const recordProcedureSchema = z.object({
 export class RecordProcedureDto extends createZodDto(recordProcedureSchema) {}
 
 /**
- * EN-180, EN-181. Removing a diagnosis. The reason is optional here and
- * required by the service once the consultation note is signed: the transport
- * cannot see the note.
+ * EN-180, EN-213, EN-214. Removing a diagnosis. The reason is optional here
+ * and required by the service when an issued certificate or receta printed
+ * the code: the transport cannot see the papers. On the screen it is chosen
+ * from a list (D-126.3).
  */
 export const retractDiagnosisSchema = z.object({
   reason: z
@@ -145,12 +148,73 @@ export const retractDiagnosisSchema = z.object({
 /** Body of POST /encounters/:encounterId/diagnoses/:diagnosisId/retract. */
 export class RetractDiagnosisDto extends createZodDto(retractDiagnosisSchema) {}
 
-/** EN-187. Correcting what the attention says the patient came for. */
-export const careModalitySchema = z.object({
+/**
+ * EN-212 (D-127). Editing a diagnosis in place. Only what is present changes;
+ * at least one thing has to.
+ *
+ * ⚠️ THE CODE CHANGES THROUGH `conceptId`, as on registering (EN-040): a typed
+ * code is how `E119` and `E11.9` become two diseases.
+ *
+ * `reason` is optional here and owed by the service when the code changes and
+ * a paper in a third party's hands printed the old one: the transport cannot
+ * see the paper. On the screen it is chosen from a list (D-126.3).
+ */
+export const editDiagnosisSchema = z
+  .object({
+    conceptId: z
+      .uuid('Seleccione el diagnóstico en el catálogo CIE-10')
+      .optional(),
+    certainty: DIAGNOSIS_CERTAINTY.optional(),
+    occurrence: DIAGNOSIS_OCCURRENCE.optional(),
+    /** `true` makes it the principal; `false` takes the principal off it. */
+    primary: z.boolean().optional(),
+    reason: z
+      .string()
+      .trim()
+      .max(500, 'El motivo no puede superar 500 caracteres')
+      .optional(),
+  })
+  // A typed `cie10Code` or a `rank` would be dropped in silence and the
+  // caller would believe it changed: refused as UNKNOWN_FIELD instead.
+  .strict()
+  .refine(
+    (edit) =>
+      edit.conceptId !== undefined ||
+      edit.certainty !== undefined ||
+      edit.occurrence !== undefined ||
+      edit.primary !== undefined,
+    { message: 'Indique qué cambia del diagnóstico' },
+  );
+/** Body of PATCH /encounters/:encounterId/diagnoses/:diagnosisId. */
+export class EditDiagnosisDto extends createZodDto(editDiagnosisSchema) {}
+
+/**
+ * EN-187, EN-215. Correcting the attention's own coding: what the patient
+ * came for and whether it is first-time or subsequent. Only what travels
+ * changes.
+ */
+export const correctEncounterCodingSchema = z
+  .object({
+    careModality: CARE_MODALITY.optional(),
+    visitSequence: VISIT_SEQUENCE.optional(),
+  })
+  .refine(
+    (body) =>
+      body.careModality !== undefined || body.visitSequence !== undefined,
+    { message: 'Indique qué corrige de la atención' },
+  );
+/** Body of PATCH /encounters/:encounterId. */
+export class CorrectEncounterCodingDto extends createZodDto(
+  correctEncounterCodingSchema,
+) {}
+
+/** EN-187, EN-215. The attention's coding after the correction. */
+export const encounterCodingSchema = z.object({
   careModality: CARE_MODALITY,
+  visitSequence: VISIT_SEQUENCE,
 });
-/** Body and response of PUT /encounters/:encounterId/care-modality. */
-export class CareModalityDto extends createZodDto(careModalitySchema) {}
+/** Response of PATCH /encounters/:encounterId. */
+export class EncounterCodingDto extends createZodDto(encounterCodingSchema) {}
 
 /** One diagnosis as a client reads it. */
 export const diagnosisSchema = z.object({
@@ -177,6 +241,8 @@ export const diagnosisSchema = z.object({
   notifiable: z.boolean(),
   note: z.string().nullable(),
   recordedAt: z.iso.datetime(),
+  /** EN-212. When it was last edited; `null` if never. */
+  editedAt: z.iso.datetime().nullable(),
 });
 /** Response of recording a diagnosis. */
 export class DiagnosisDto extends createZodDto(diagnosisSchema) {}
@@ -197,12 +263,41 @@ export const diagnosisListSchema = z.object({
    * EN-189. With whether an issued certificate printed the code, so removing
    * it asks for the reason before sending.
    */
-  items: z.array(diagnosisSchema.extend({ printedOnCertificate: z.boolean() })),
+  items: z.array(
+    diagnosisSchema.extend({
+      printedOnCertificate: z.boolean(),
+      /** EN-214 (D-117.14). An issued receta printed the code. */
+      printedOnPrescription: z.boolean(),
+      /** ORD-121. An issued order printed the code. */
+      printedOnOrder: z.boolean(),
+    }),
+  ),
   /** EN-180. What was removed, so the trace is in front of whoever reads. */
   retracted: z.array(retractedDiagnosisSchema),
 });
 /** Response of GET /encounters/:encounterId/diagnoses. */
 export class DiagnosisListDto extends createZodDto(diagnosisListSchema) {}
+
+/**
+ * EN-212. The versions an edit replaced, most recent first: each as it was,
+ * with who replaced it, when and — if the code changed while a paper printed
+ * it — why.
+ */
+export const diagnosisVersionListSchema = z.object({
+  items: z.array(
+    z.object({
+      version: z.number().int(),
+      replacedBy: z.object({ id: z.uuid(), name: z.string() }),
+      replacedAt: z.iso.datetime(),
+      reason: z.string().nullable(),
+      diagnosis: diagnosisSchema,
+    }),
+  ),
+});
+/** Response of GET /encounters/:encounterId/diagnoses/:diagnosisId/versions. */
+export class DiagnosisVersionListDto extends createZodDto(
+  diagnosisVersionListSchema,
+) {}
 
 /** One procedure as a client reads it. NO AMOUNT (EN-051). */
 export const procedureSchema = z.object({
@@ -228,5 +323,8 @@ export class ProcedureListDto extends createZodDto(procedureListSchema) {}
 /** Response types the controller returns, inferred from the schemas Swagger publishes. */
 export type DiagnosisResponse = z.infer<typeof diagnosisSchema>;
 export type DiagnosisListResponse = z.infer<typeof diagnosisListSchema>;
+export type DiagnosisVersionListResponse = z.infer<
+  typeof diagnosisVersionListSchema
+>;
 export type ProcedureResponse = z.infer<typeof procedureSchema>;
 export type ProcedureListResponse = z.infer<typeof procedureListSchema>;

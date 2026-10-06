@@ -15,7 +15,6 @@
 
 import {
   DischargeConditionRequiredError,
-  EncounterAnnulmentReasonRequiredError,
   EncounterInterruptionReasonRequiredError,
   InvalidEncounterTransitionError,
 } from './encounter.errors';
@@ -207,7 +206,7 @@ export function hasDischarge(status: EncounterStatus): boolean {
 
 /**
  * EN-166 (D-077, D-080). Annulling an attention: «this should never have
- * existed», with its reason, author and instant.
+ * existed», with its author and instant, and a reason if one is given (EN-218).
  *
  * The state machine admits it from any NON-terminal state (EN-018), and the
  * exit narrows it to `OPEN`/`ON_HOLD` (`assertAnnullable`, D-085 §1): a signed
@@ -226,8 +225,8 @@ export function planAnnulment(input: {
   now: Date;
 }): AnnulmentPlan {
   assertEncounterTransition(input.from, 'ENTERED_IN_ERROR');
-  const reason = input.reason?.trim();
-  if (!reason) throw new EncounterAnnulmentReasonRequiredError();
+  // EN-218 (D-126.2): optional; a blank one is no reason at all.
+  const reason = input.reason?.trim() || null;
 
   return {
     to: 'ENTERED_IN_ERROR',
@@ -241,7 +240,7 @@ export function planAnnulment(input: {
 export interface AnnulmentPlan {
   to: 'ENTERED_IN_ERROR';
   endedAt: Date;
-  reason: string;
+  reason: string | null;
   at: Date;
 }
 

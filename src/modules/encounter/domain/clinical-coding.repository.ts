@@ -32,6 +32,7 @@ import type {
   CareModality,
   DiagnosisCertainty,
   DiagnosisOccurrence,
+  VisitSequence,
 } from './encounter';
 import type { SiteScopeFilter } from './encounter.repository';
 
@@ -78,6 +79,24 @@ export interface DiagnosisView {
   notifiable: boolean;
   note: string | null;
   recordedAt: Date;
+  /**
+   * EN-212. When it was last edited, or `null` if never: the previous
+   * versions are in `record_version` (EN-212, D-127.2).
+   */
+  editedAt: Date | null;
+}
+
+/**
+ * EN-212. One version of a diagnosis that an edit replaced, read with the
+ * SAME mapping as the current one, with who replaced it, when and — if the
+ * code changed while a paper printed it — why.
+ */
+export interface DiagnosisVersionView {
+  version: number;
+  replacedBy: { id: string; name: string };
+  replacedAt: Date;
+  reason: string | null;
+  diagnosis: DiagnosisView;
 }
 
 /**
@@ -149,6 +168,30 @@ export interface NewDiagnosis {
   note?: string;
   /** EN-121. The caller's own resolved scope, never a site they named. */
   sites: SiteScopeFilter;
+  /**
+   * EN-215 (D-117.12, D-117.13). After the discharge a new diagnosis is a
+   * correction of the coding: asked again under the attention's lock.
+   * Absent is «no»: closed by default.
+   */
+  mayCorrectAfterDischarge?: boolean;
+  afterDischargeRefusal?: AfterDischargeRefusal;
+}
+
+/**
+ * EN-187, EN-215. The attention's own coding, corrected in place: only what is
+ * present changes, and the previous attention is the database's version.
+ */
+export interface EncounterCodingCorrection extends CorrectionAuthority {
+  encounterId: string;
+  careModality?: CareModality;
+  visitSequence?: VisitSequence;
+  sites: SiteScopeFilter;
+}
+
+/** EN-187, EN-215. The attention's coding as it stands after a correction. */
+export interface EncounterCodingView {
+  careModality: CareModality;
+  visitSequence: VisitSequence;
 }
 
 /** EN-050. What registering a procedure needs to be told. */
@@ -177,19 +220,78 @@ export interface RetractedDiagnosisView {
   reason: string | null;
 }
 
-/** EN-180 to EN-182. What removing a diagnosis needs to be told. */
+/** EN-180, EN-213, EN-214. What removing a diagnosis needs to be told. */
 export interface DiagnosisRetraction {
   encounterId: string;
   diagnosisId: string;
-  /** EN-181. Required once the consultation note is signed. */
+  /** EN-214. Owed when an issued certificate or receta printed the code. */
   reason: string | null;
   /** The account that removes it. Never a cedula (REQ-110). */
   retractedById: string;
+  /** EN-213, D-117.13. Whether it may still be done after the discharge. */
+  mayCorrectAfterDischarge: boolean;
+  afterDischargeRefusal?: AfterDischargeRefusal;
   sites: SiteScopeFilter;
 }
 
-/** EN-183. Which diagnosis becomes the principal. */
-export interface PrimaryChange {
+/** EN-213. «Deshacer»: which removed diagnosis comes back, and who asks. */
+export interface DiagnosisRestoration {
+  encounterId: string;
+  /** The id the diagnosis had, which is the id of its archive row. */
+  retractionId: string;
+  restoredById: string;
+  sites: SiteScopeFilter;
+}
+
+/**
+ * EN-212, D-117.13. Whether the caller may correct the coding once the
+ * attention has its discharge: `record:sign` at its site and an ACESS
+ * registration in force. Decided by the service, and asked again by the
+ * adapter UNDER THE ATTENTION'S LOCK — the discharge can land between the two.
+ */
+export interface CorrectionAuthority {
+  editedById: string;
+  mayCorrectAfterDischarge: boolean;
+  /**
+   * D-117.13. Why not, when it may not — the refusal the adapter raises if
+   * it finds the discharge under the lock: not signing at the site, no
+   * practitioner profile, or the ACESS registration not in force. Decided
+   * whatever the state the service read, because the discharge can land
+   * between that read and the lock.
+   */
+  afterDischargeRefusal?: AfterDischargeRefusal;
+}
+
+/** D-117.13. What stops somebody from correcting the coding after the discharge. */
+export type AfterDischargeRefusal =
+  'NOT_SIGNER' | 'NO_PRACTITIONER_PROFILE' | 'NOT_LICENSED';
+
+/** EN-183, EN-212. Which diagnosis becomes the principal. */
+export interface PrimaryChange extends CorrectionAuthority {
+  encounterId: string;
+  diagnosisId: string;
+  sites: SiteScopeFilter;
+}
+
+/**
+ * EN-212. An edit in place: only what is present changes. The code changes
+ * through the CONCEPT (EN-040), never a typed code.
+ */
+export interface DiagnosisEdit extends CorrectionAuthority {
+  encounterId: string;
+  diagnosisId: string;
+  conceptId?: string;
+  certainty?: DiagnosisCertainty;
+  occurrence?: DiagnosisOccurrence;
+  /** `true` makes it the principal; `false` takes the principal off it. */
+  primary?: boolean;
+  /** EN-212. Owed when the code changes and a paper printed the old one. */
+  reason: string | null;
+  sites: SiteScopeFilter;
+}
+
+/** EN-212. The versions of one diagnosis of one attention. */
+export interface DiagnosisQuery {
   encounterId: string;
   diagnosisId: string;
   sites: SiteScopeFilter;
@@ -238,6 +340,18 @@ export interface ClinicalCodingRepository {
   codesPrintedOnCertificates(query: CodingQuery): Promise<string[]>;
 
   /**
+   * EN-214 (D-117.14). The CIE-10 codes an issued receta of the attention
+   * printed —in force or annulled—, as `prescription.diagnoses` froze them.
+   */
+  codesPrintedOnPrescriptions(query: CodingQuery): Promise<string[]>;
+
+  /**
+   * ORD-121 (D-117.5). The CIE-10 codes an issued order of the attention
+   * printed, as `service_order.diagnoses` froze them.
+   */
+  codesPrintedOnOrders(query: CodingQuery): Promise<string[]>;
+
+  /**
    * EN-180 to EN-182. Archives the diagnosis and takes it off the attention,
    * in one transaction under the attention's lock: whether the note is signed
    * and whether a document cites the diagnoses can both change between a read
@@ -253,17 +367,46 @@ export interface ClinicalCodingRepository {
    */
   makePrimary(change: PrimaryChange): Promise<DiagnosisView[]>;
 
-  /** EN-180. What was removed from one attention, oldest first. */
+  /**
+   * EN-213. Brings a removed diagnosis back as a NEW row, under the
+   * attention's lock, and marks its archive restored once. Refuses with
+   * `DIAGNOSIS_NOT_RESTORABLE` an archive already restored or a code that is
+   * live again; a principal comes back behind if another took its place.
+   */
+  restoreDiagnosis(restoration: DiagnosisRestoration): Promise<DiagnosisView>;
+
+  /**
+   * EN-212. Edits a diagnosis in place under the attention's lock, stamping
+   * every row it touches with an instant after its previous stamp: the
+   * previous version goes to `record_version` in the same statement
+   * (`trg_encounter_diagnosis_record_version`). The refusals the triggers
+   * also make — a paper that printed the code, a maternity rest, a report
+   * already sent — are asked first, so they are sentences.
+   */
+  editDiagnosis(edit: DiagnosisEdit): Promise<DiagnosisView>;
+
+  /**
+   * EN-212. The versions an edit replaced, most recent first. Refuses with
+   * `DIAGNOSIS_NOT_FOUND` a diagnosis that never was on the attention.
+   */
+  diagnosisVersions(query: DiagnosisQuery): Promise<DiagnosisVersionView[]>;
+
+  /**
+   * EN-180, EN-213. What was removed from one attention and not brought back,
+   * oldest first.
+   */
   retractedDiagnosesOf(query: CodingQuery): Promise<RetractedDiagnosisView[]>;
 
   /**
-   * EN-187. Corrects what the attention says the patient came for, under the
-   * attention's lock and only while it admits new clinical content.
+   * EN-187, EN-215. Corrects what the attention says the patient came for
+   * and whether it is first-time or subsequent, under the attention's lock:
+   * while it is live, or after the discharge by whoever may correct then
+   * (D-117.13), and never once reported (D-117.16). Stamped, so the database
+   * keeps the previous attention in `record_version`.
    */
-  setCareModality(
-    query: CodingQuery,
-    careModality: CareModality,
-  ): Promise<CareModality>;
+  correctEncounterCoding(
+    correction: EncounterCodingCorrection,
+  ): Promise<EncounterCodingView>;
 
   /**
    * EN-050. Writes one procedure with its quantity.

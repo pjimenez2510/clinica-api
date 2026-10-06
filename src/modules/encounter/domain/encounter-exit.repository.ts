@@ -35,6 +35,16 @@ export interface InterruptionOutcome {
   unsignedEmptyNoteIds: string[];
 }
 
+/**
+ * EN-218, D-085 §2. Who annuls: the account stamped on what moves, and the
+ * practitioner whose OWN drafts the annulment discards. A draft of another
+ * prescriber or signer refuses it, as it refuses an interruption.
+ */
+export interface AnnulmentActor {
+  userId: string;
+  practitionerId: string;
+}
+
 /** EN-147 applied to the exits: the substitute's reason, or `null` for the author. */
 export type Substitution = { substituteReason: string | null };
 
@@ -51,7 +61,7 @@ export interface EncounterExitRepository {
   annul(
     query: EncounterQuery,
     decide: (encounter: EncounterView) => AnnulmentPlan & Substitution,
-    changedById: string,
+    actor: AnnulmentActor,
   ): Promise<EncounterView>;
 
   /**

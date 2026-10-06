@@ -34,8 +34,8 @@ export async function attemptWhileAnnulled<T>(
   const holder = prisma.$transaction(
     async (tx) => {
       await tx.$queryRaw`SELECT id FROM encounter WHERE id = ${encounterId}::uuid FOR UPDATE`;
-      // EN-166: an annulment states why, who and when, or the database
-      // refuses it (`encounter_entered_in_error_states_who_why_when`). Who:
+      // EN-166, EN-218: an annulment states who and when, or the database
+      // refuses it (`encounter_entered_in_error_states_who_when`). Who:
       // the attention's own practitioner, as the author would annul it.
       await tx.$executeRaw`
         UPDATE encounter

@@ -142,7 +142,8 @@ export const annulEncounterSchema = z.object({
     .optional(),
   /**
    * EN-147 applied to the exits (D-085 §2): why somebody other than the
-   * attending practitioner does it. Required by the service exactly then.
+   * attending practitioner does it. Optional since EN-218 (AT-23): the
+   * screen confirms «en nombre de»; who acted is stored on the row.
    */
   substituteReason: z
     .string()
@@ -163,7 +164,8 @@ export const discontinueEncounterSchema = z.object({
   origin: z.enum(['PATIENT', 'ESTABLISHMENT']).optional(),
   /**
    * EN-147 applied to the exits (D-085 §2): why somebody other than the
-   * attending practitioner does it. Required by the service exactly then.
+   * attending practitioner does it. Optional since EN-218 (AT-23): the
+   * screen confirms «en nombre de»; who acted is stored on the row.
    */
   substituteReason: z
     .string()
@@ -334,7 +336,10 @@ export const encounterSchema = z.object({
   closedAt: z.iso.datetime().nullable(),
   closedBySubstituteReason: z.string().nullable(),
   /** EN-166. Why and when it was annulled; `null` unless `ENTERED_IN_ERROR`. */
-  annulment: z.object({ reason: z.string(), at: z.iso.datetime() }).nullable(),
+  /** EN-166, EN-218. The reason is optional since D-126.2. */
+  annulment: z
+    .object({ reason: z.string().nullable(), at: z.iso.datetime() })
+    .nullable(),
   /** EN-167. Why, from where and when it was interrupted; `null` unless `DISCONTINUED`. */
   interruption: z
     .object({
@@ -461,8 +466,19 @@ export const vitalSignsSchema = z.object({
   correctedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
   correctedAt: z.iso.datetime().nullable(),
 });
+/**
+ * EN-217 (D-132 B). Block D as reading and recording it answer: the taking,
+ * and the mandatory anthropometry still missing — the screen warns, and the
+ * signature of the 002 demands it. Not on a version: what was pending then is
+ * not a fact of the taking.
+ */
+export const vitalsReadingSchema = vitalSignsSchema.extend({
+  anthropometryPending: z.array(
+    z.enum(['weightKg', 'heightCm', 'headCircumferenceCm']),
+  ),
+});
 /** Response of reading and recording block D. */
-export class VitalSignsDto extends createZodDto(vitalSignsSchema) {}
+export class VitalSignsDto extends createZodDto(vitalsReadingSchema) {}
 
 /**
  * EN-211, D-127. The takings corrections replaced, newest first. Each one is
@@ -489,4 +505,5 @@ export type EncounterDetailResponse = z.infer<typeof encounterDetailSchema>;
 export type EncounterListResponse = z.infer<typeof encounterListSchema>;
 export type EncounterPageResponse = z.infer<typeof encounterPageSchema>;
 export type VitalSignsResponse = z.infer<typeof vitalSignsSchema>;
+export type VitalsReadingResponse = z.infer<typeof vitalsReadingSchema>;
 export type VitalsVersionListResponse = z.infer<typeof vitalsVersionListSchema>;

@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { BmiIsDerivedError, VitalsRequiredError } from './encounter.errors';
-import {
-  assertBmiNotSupplied,
-  assertMandatoryAnthropometry,
-  isUnderFive,
-} from './vital-signs';
+import { BmiIsDerivedError } from './encounter.errors';
+import { assertBmiNotSupplied } from './vital-signs';
 
 /**
  * Block D — form **020** — as far as pure code can take it.
@@ -18,10 +14,12 @@ import {
  * exception for convenience.
  */
 
-const NEWBORN = { years: 0, months: 0, days: 12 };
-const TODDLER = { years: 4, months: 11, days: 29 };
-const SCHOOLCHILD = { years: 5, months: 0, days: 0 };
-const ADULT = { years: 36, months: 2, days: 4 };
+/*
+ * EN-063, EN-217: which anthropometry is still missing is answered by
+ * `encounter_anthropometry_pending` in the database (one statement for the
+ * taking, the signature and its trigger), and is tested against PostgreSQL in
+ * `test/integration/encounter-http.spec.ts`.
+ */
 
 describe('los signos vitales', () => {
   it('EN-061 rechaza el IMC enviado en la petición en lugar de descartarlo', () => {
@@ -52,94 +50,5 @@ describe('los signos vitales', () => {
 
   it('EN-061 deja pasar un cuerpo que no nombra el IMC', () => {
     expect(() => assertBmiNotSupplied({})).not.toThrow();
-  });
-
-  it('EN-063 evalúa la obligatoriedad con la edad CONGELADA de la atención', () => {
-    // EN-008: what was true THAT DAY. A child of 4 attended in March stays 4
-    // in March's row for ever, and evaluating against today would make a
-    // report reprocessed next year refuse rows it accepted (PA-005).
-    expect(isUnderFive(NEWBORN)).toBe(true);
-    expect(isUnderFive(TODDLER)).toBe(true);
-    expect(isUnderFive(SCHOOLCHILD)).toBe(false);
-    expect(isUnderFive(ADULT)).toBe(false);
-  });
-
-  it('EN-063 exige peso, talla y perímetro cefálico en un menor de 5 años', () => {
-    try {
-      assertMandatoryAnthropometry({ weightKg: 3.4 }, NEWBORN, false);
-      expect.unreachable('la antropometría obligatoria debía exigirse');
-    } catch (error) {
-      expect(error).toBeInstanceOf(VitalsRequiredError);
-      const refusal = error as VitalsRequiredError;
-      expect(refusal.code).toBe('VITALS_REQUIRED');
-      // ALL the missing fields at once: a nurse correcting a form one refusal
-      // at a time is a nurse who stops reading them.
-      expect(refusal.fieldErrors?.map((field) => field.field)).toEqual([
-        'heightCm',
-        'headCircumferenceCm',
-      ]);
-    }
-  });
-
-  it('EN-063 acepta un menor de 5 años con las tres medidas', () => {
-    expect(() =>
-      assertMandatoryAnthropometry(
-        { weightKg: 3.4, heightCm: 50, headCircumferenceCm: 34.5 },
-        NEWBORN,
-        false,
-      ),
-    ).not.toThrow();
-  });
-
-  it('EN-063 deja opcional la antropometría para el resto de pacientes', () => {
-    // Literal from the instructivo (p. 44): «para el resto de usuarios el
-    // registro es opcional». A required field here would refuse the ordinary
-    // adult consultation.
-    expect(() => assertMandatoryAnthropometry({}, ADULT, false)).not.toThrow();
-    expect(() =>
-      assertMandatoryAnthropometry({}, SCHOOLCHILD, false),
-    ).not.toThrow();
-  });
-
-  it('EN-063 no exige nada cuando la atención no tiene edad congelada', () => {
-    // Cannot happen on a stored row — `trg_encounter_freeze_age` is
-    // `BEFORE INSERT` and fills all three — and the honest failure of an
-    // unknown age is to demand nothing rather than everything.
-    expect(() =>
-      assertMandatoryAnthropometry(
-        {},
-        { years: null, months: null, days: null },
-        false,
-      ),
-    ).not.toThrow();
-  });
-
-  it('EN-063 exige peso y talla a la embarazada, y no el perímetro cefálico (D-129)', () => {
-    try {
-      assertMandatoryAnthropometry({ hemoglobinGDl: 11.5 }, ADULT, true);
-      expect.unreachable('la antropometría de la embarazada debía exigirse');
-    } catch (error) {
-      expect(error).toBeInstanceOf(VitalsRequiredError);
-      expect(
-        (error as VitalsRequiredError).fieldErrors?.map((field) => field.field),
-      ).toEqual(['weightKg', 'heightCm']);
-    }
-    expect(() =>
-      assertMandatoryAnthropometry(
-        { weightKg: 61, heightCm: 158 },
-        ADULT,
-        true,
-      ),
-    ).not.toThrow();
-  });
-
-  it('EN-063 sigue exigiendo las tres medidas a una menor de 5 años, embarazada o no', () => {
-    expect(() =>
-      assertMandatoryAnthropometry(
-        { weightKg: 12, heightCm: 86 },
-        TODDLER,
-        true,
-      ),
-    ).toThrow(VitalsRequiredError);
   });
 });

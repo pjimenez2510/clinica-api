@@ -7,8 +7,12 @@ import {
 } from '../../../shared/audit/access-audit.port';
 import {
   CLINICAL_CODING_REPOSITORY,
+  type AfterDischargeRefusal,
   type ClinicalCodingRepository,
+  type CorrectionAuthority,
+  type DiagnosisVersionView,
   type DiagnosisView,
+  type EncounterCodingView,
   type ProcedureView,
   type RetractedDiagnosisView,
 } from '../domain/clinical-coding.repository';
@@ -18,17 +22,24 @@ import {
   type EncounterView,
 } from '../domain/encounter.repository';
 import {
+  DiagnosisCorrectionRequiresSignatureError,
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
+  PractitionerNotLicensedError,
+  PractitionerProfileRequiredError,
 } from '../domain/encounter.errors';
 import {
   acceptsDiagnosisCorrection,
   acceptsNewClinicalContent,
+  hasDischarge,
 } from '../domain/encounter-state';
+import type { SiteScopeFilter } from '../domain/encounter.repository';
+import { assertLicensedOn } from '../domain/practitioner-licence';
 import type {
   CareModality,
   DiagnosisCertainty,
   DiagnosisOccurrence,
+  VisitSequence,
 } from '../domain/encounter';
 import type { Requester } from './encounter.service';
 
@@ -62,18 +73,48 @@ export interface RecordDiagnosisRequest {
   note?: string;
 }
 
-/** EN-180 to EN-182. What removing a diagnosis needs to be told. */
+/** EN-180, EN-213, EN-214. What removing a diagnosis needs to be told. */
 export interface RetractDiagnosisRequest {
   encounterId: string;
   diagnosisId: string;
-  /** EN-181. Required once the consultation note is signed. */
+  /** EN-214. Owed when an issued certificate or receta printed the code. */
+  reason?: string;
+}
+
+/**
+ * EN-212, D-117.13. Who is correcting, with where they may sign the history:
+ * after the discharge the coding is corrected with `record:sign` at the
+ * attention's site. Resolved by the controller from the session.
+ */
+export interface CodingRequester extends Requester {
+  signSites: SiteScopeFilter;
+}
+
+/** EN-212. An edit in place: only what is present changes. */
+export interface EditDiagnosisRequest {
+  encounterId: string;
+  diagnosisId: string;
+  /** EN-040. A new concept of the catalogue, never a typed code. */
+  conceptId?: string;
+  certainty?: DiagnosisCertainty;
+  occurrence?: DiagnosisOccurrence;
+  primary?: boolean;
+  /** EN-212. Owed when the code changes and a paper printed the old one. */
   reason?: string;
 }
 
 /** EN-047, EN-180. The diagnoses that count, and the trace of those removed. */
 export interface DiagnosisSheet {
-  /** EN-189. Each with whether an issued certificate printed its code. */
-  items: (DiagnosisView & { printedOnCertificate: boolean })[];
+  /**
+   * EN-189, EN-214. Each with whether an issued certificate or receta printed
+   * its code: the screen asks for the reason before sending.
+   */
+  items: (DiagnosisView & {
+    printedOnCertificate: boolean;
+    printedOnPrescription: boolean;
+    /** ORD-121. An issued order printed it: the laboratory holds the paper. */
+    printedOnOrder: boolean;
+  })[];
   retracted: RetractedDiagnosisView[];
 }
 
@@ -140,25 +181,31 @@ export class ClinicalCodingService {
   }
 
   /**
-   * EN-040 to EN-049. Registers one diagnosis.
+   * EN-040 to EN-049, EN-215. Registers one diagnosis.
    *
    * WHAT IS CHECKED HERE is the pair no constraint can see: that the attention
    * exists inside the caller's scope, and that it still admits new clinical
-   * content. Everything else — the catalogue, the validity on the clinical
+   * content or — after the discharge — a correction by whoever signs. Everything else — the catalogue, the validity on the clinical
    * date, the rank still free — is arbitrated INSIDE the write, because every
    * one of them is a race and a read taken first can be stale by the time the
    * row lands.
    */
   async recordDiagnosis(
     request: RecordDiagnosisRequest,
-    requester: Requester,
+    requester: CodingRequester,
   ): Promise<DiagnosisView> {
-    const encounter = await this.requireLiveEncounter(
+    // EN-215 (D-117.12). After the discharge the right code is still added:
+    // the report reads the attention's diagnoses, not the note. It is a
+    // correction of the coding, so D-117.13 and D-117.16 apply.
+    const encounter = await this.requireCorrectableEncounter(
       request.encounterId,
       requester,
     );
+    const authority = await this.correctionAuthority(encounter, requester);
 
     const diagnosis = await this.coding.addDiagnosis({
+      mayCorrectAfterDischarge: authority.mayCorrectAfterDischarge,
+      afterDischargeRefusal: authority.afterDischargeRefusal,
       encounterId: encounter.id,
       conceptId: request.conceptId,
       certainty: request.certainty,
@@ -216,16 +263,21 @@ export class ClinicalCodingService {
     const encounter = await this.requireEncounter(encounterId, requester);
 
     const query = { encounterId: encounter.id, sites: requester.sites };
-    const [diagnoses, retracted, printed] = await Promise.all([
-      this.coding.diagnosesOf(query),
-      // EN-180. The trace travels with the list: one read, one audit row.
-      this.coding.retractedDiagnosesOf(query),
-      // EN-189. So the screen asks for the reason before sending, not after.
-      this.coding.codesPrintedOnCertificates(query),
-    ]);
+    const [diagnoses, retracted, printed, prescribed, ordered] =
+      await Promise.all([
+        this.coding.diagnosesOf(query),
+        // EN-180. The trace travels with the list: one read, one audit row.
+        this.coding.retractedDiagnosesOf(query),
+        // EN-189, EN-214. So the screen asks for the reason before sending.
+        this.coding.codesPrintedOnCertificates(query),
+        this.coding.codesPrintedOnPrescriptions(query),
+        this.coding.codesPrintedOnOrders(query),
+      ]);
     const items = diagnoses.map((diagnosis) => ({
       ...diagnosis,
       printedOnCertificate: printed.includes(diagnosis.cie10Code),
+      printedOnPrescription: prescribed.includes(diagnosis.cie10Code),
+      printedOnOrder: ordered.includes(diagnosis.cie10Code),
     }));
 
     await this.audit.record({
@@ -241,22 +293,24 @@ export class ClinicalCodingService {
   }
 
   /**
-   * EN-180 to EN-182, EN-188, EN-189. Takes a diagnosis off a live or
-   * discharged attention, archived with who removed it and, once something
-   * was signed or printed with it, why.
+   * EN-180, EN-188, EN-213, EN-214. Takes a diagnosis off a live or
+   * discharged attention, archived with who removed it and — when a paper in
+   * a third party's hands printed it — why.
    *
-   * Whether a reason is owed and whether a document cites the diagnoses are
-   * judged by the adapter under the attention's lock, because both can change
-   * between a read here and the write.
+   * No confirmation is asked here (D-126.2): the screen confirms once a note
+   * is signed or the attention discharged. Whether a reason is owed and the
+   * refusals are judged by the adapter under the attention's lock, because
+   * they can change between a read here and the write.
    */
   async retractDiagnosis(
     request: RetractDiagnosisRequest,
-    requester: Requester,
+    requester: CodingRequester,
   ): Promise<void> {
     const encounter = await this.requireCorrectableEncounter(
       request.encounterId,
       requester,
     );
+    const authority = await this.correctionAuthority(encounter, requester);
     const reason = request.reason?.trim();
 
     await this.coding.retractDiagnosis({
@@ -264,6 +318,8 @@ export class ClinicalCodingService {
       diagnosisId: request.diagnosisId,
       reason: reason === undefined || reason === '' ? null : reason,
       retractedById: requester.userId,
+      mayCorrectAfterDischarge: authority.mayCorrectAfterDischarge,
+      afterDischargeRefusal: authority.afterDischargeRefusal,
       sites: requester.sites,
     });
 
@@ -286,21 +342,74 @@ export class ClinicalCodingService {
   }
 
   /**
-   * EN-187. Corrects what the attention says the patient came for. Not the
-   * report's classification — that is per diagnosis and derived (EN-046) —
-   * so it is audited as the attention's own change.
+   * EN-213. «Deshacer» a removal: the diagnosis comes back as it was, behind
+   * the principal if another took its place. Only while the attention admits
+   * new clinical content (EN-009): bringing a diagnosis back is recording it.
    */
-  async correctCareModality(
+  async restoreDiagnosis(
     encounterId: string,
-    careModality: CareModality,
+    diagnosisId: string,
     requester: Requester,
-  ): Promise<CareModality> {
+  ): Promise<DiagnosisView> {
     const encounter = await this.requireLiveEncounter(encounterId, requester);
 
-    const corrected = await this.coding.setCareModality(
-      { encounterId: encounter.id, sites: requester.sites },
-      careModality,
+    const diagnosis = await this.coding.restoreDiagnosis({
+      encounterId: encounter.id,
+      retractionId: diagnosisId,
+      restoredById: requester.userId,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: DIAGNOSIS_RESOURCE_TYPE,
+      resourceId: diagnosis.id,
+      action: 'CREATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    this.logger.info(
+      { site_id: encounter.siteId, action: 'DIAGNOSIS_RESTORED' },
+      'diagnosis restored',
     );
+
+    return diagnosis;
+  }
+
+  /**
+   * EN-187, EN-215. Corrects what the attention says the patient came for
+   * and whether it is first-time or subsequent — also after the discharge
+   * (D-127), by whoever may correct the coding then (D-117.13). Not the
+   * report's per-diagnosis classification — that is derived (EN-046) — so it
+   * is audited as the attention's own change. The previous attention is the
+   * database's version (`record_version`).
+   *
+   * ⚠️ IT DOES NOT REPRICE THE CONSULTATION (BI-158). The charge is
+   * `billing`'s, proposed when caja sends the attention; a proposal already
+   * raised keeps the consultation it was raised with.
+   */
+  async correctEncounterCoding(
+    request: {
+      encounterId: string;
+      careModality?: CareModality;
+      visitSequence?: VisitSequence;
+    },
+    requester: CodingRequester,
+  ): Promise<EncounterCodingView> {
+    const encounter = await this.requireCorrectableEncounter(
+      request.encounterId,
+      requester,
+    );
+    const authority = await this.correctionAuthority(encounter, requester);
+
+    const corrected = await this.coding.correctEncounterCoding({
+      encounterId: encounter.id,
+      careModality: request.careModality,
+      visitSequence: request.visitSequence,
+      sites: requester.sites,
+      ...authority,
+    });
 
     await this.audit.record({
       userId: requester.userId,
@@ -314,21 +423,26 @@ export class ClinicalCodingService {
     return corrected;
   }
 
-  /** EN-183, EN-188. Makes a diagnosis the principal of its attention. */
+  /**
+   * EN-183, EN-212. Makes a diagnosis the principal of its attention, also
+   * after the discharge (D-127): the previous rank is a version.
+   */
   async makePrimary(
     encounterId: string,
     diagnosisId: string,
-    requester: Requester,
+    requester: CodingRequester,
   ): Promise<DiagnosisView[]> {
     const encounter = await this.requireCorrectableEncounter(
       encounterId,
       requester,
     );
+    const authority = await this.correctionAuthority(encounter, requester);
 
     const diagnoses = await this.coding.makePrimary({
       encounterId: encounter.id,
       diagnosisId,
       sites: requester.sites,
+      ...authority,
     });
 
     await this.audit.record({
@@ -341,6 +455,86 @@ export class ClinicalCodingService {
     });
 
     return diagnoses;
+  }
+
+  /**
+   * EN-212 (D-127). Edits a diagnosis in place: its code, its certainty, its
+   * occurrence and whether it is the principal. The previous version is kept
+   * by the database (`record_version`); nothing is removed and recorded again.
+   *
+   * No confirmation is asked here, and none is owed (D-126): the screen
+   * confirms once the note is signed or the attention discharged. What the
+   * API demands is the reason when a paper in a third party's hands printed
+   * the old code, and — after the discharge — `record:sign` and a registration
+   * in force (D-117.13).
+   */
+  async editDiagnosis(
+    request: EditDiagnosisRequest,
+    requester: CodingRequester,
+  ): Promise<DiagnosisView> {
+    const encounter = await this.requireCorrectableEncounter(
+      request.encounterId,
+      requester,
+    );
+    const authority = await this.correctionAuthority(encounter, requester);
+    const reason = request.reason?.trim();
+
+    const diagnosis = await this.coding.editDiagnosis({
+      encounterId: encounter.id,
+      diagnosisId: request.diagnosisId,
+      conceptId: request.conceptId,
+      certainty: request.certainty,
+      occurrence: request.occurrence,
+      primary: request.primary,
+      reason: reason === undefined || reason === '' ? null : reason,
+      sites: requester.sites,
+      ...authority,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: DIAGNOSIS_RESOURCE_TYPE,
+      resourceId: diagnosis.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    this.logger.info(
+      { site_id: encounter.siteId, action: 'DIAGNOSIS_EDITED' },
+      'diagnosis edited',
+    );
+
+    return diagnosis;
+  }
+
+  /**
+   * EN-212. The versions an edit replaced, most recent first. The same
+   * content as the diagnosis, only earlier: `record:read` and one audit row.
+   */
+  async diagnosisVersions(
+    encounterId: string,
+    diagnosisId: string,
+    requester: Requester,
+  ): Promise<DiagnosisVersionView[]> {
+    const encounter = await this.requireEncounter(encounterId, requester);
+
+    const versions = await this.coding.diagnosisVersions({
+      encounterId: encounter.id,
+      diagnosisId,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: DIAGNOSIS_RESOURCE_TYPE,
+      resourceId: diagnosisId,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    return versions;
   }
 
   /**
@@ -438,10 +632,10 @@ export class ClinicalCodingService {
    * EN-009, EN-130. New clinical content goes into an attention that is still
    * live.
    *
-   * A DIAGNOSIS IS NEW CONTENT AND NOT AN AMENDMENT, so `DISCHARGED` refuses
-   * it: the doctor signed, the act is over, and coding a disease afterwards
-   * would change what the consultation said without a single trace of a
-   * correction. The way to add one is to amend the note that discharged it.
+   * A PROCEDURE, and bringing back a removed diagnosis (EN-213), are new
+   * content: `DISCHARGED` refuses them. A NEW DIAGNOSIS after the discharge
+   * is not refused here since EN-215 (D-117.12): it is a correction of the
+   * coding the report reads, with its own rules (`correctionAuthority`).
    */
   private async requireLiveEncounter(
     encounterId: string,
@@ -452,6 +646,59 @@ export class ClinicalCodingService {
       throw new EncounterAlreadyClosedError(encounter.status);
     }
     return encounter;
+  }
+
+  /**
+   * EN-212, D-117.13. After the discharge the coding is corrected by whoever
+   * may sign the history at the attention's site, with an ACESS registration
+   * in force — the rule of the amendment (EN-025). Before it, by whoever codes.
+   *
+   * THE ANSWER IS DECIDED WHATEVER THE STATE READ HERE — signing at the site
+   * AND the licence in force — and travels to the adapter, which asks again
+   * under the attention's lock: a discharge that lands between this read and
+   * the write is refused there with the same sentence it would get here.
+   */
+  private async correctionAuthority(
+    encounter: EncounterView,
+    requester: CodingRequester,
+  ): Promise<CorrectionAuthority> {
+    const signsHere =
+      requester.signSites === 'all' ||
+      requester.signSites.includes(encounter.siteId);
+    const refusal = signsHere
+      ? await this.licenceRefusal(requester.userId)
+      : 'NOT_SIGNER';
+
+    if (hasDischarge(encounter.status)) {
+      if (refusal === 'NOT_SIGNER') {
+        throw new DiagnosisCorrectionRequiresSignatureError();
+      }
+      if (refusal === 'NO_PRACTITIONER_PROFILE') {
+        throw new PractitionerProfileRequiredError();
+      }
+      if (refusal === 'NOT_LICENSED') throw new PractitionerNotLicensedError();
+    }
+
+    return {
+      editedById: requester.userId,
+      mayCorrectAfterDischarge: refusal === undefined,
+      ...(refusal === undefined ? {} : { afterDischargeRefusal: refusal }),
+    };
+  }
+
+  /** D-117.13. The practitioner behind the account, and their licence today. */
+  private async licenceRefusal(
+    userId: string,
+  ): Promise<AfterDischargeRefusal | undefined> {
+    const identity = await this.encounters.findPractitionerByUser(userId);
+    if (!identity) return 'NO_PRACTITIONER_PROFILE';
+    try {
+      assertLicensedOn(identity.acessExpiresOn, new Date());
+    } catch (error) {
+      if (error instanceof PractitionerNotLicensedError) return 'NOT_LICENSED';
+      throw error;
+    }
+    return undefined;
   }
 
   /**

@@ -17,15 +17,20 @@ import {
   BmiIsDerivedError,
   ClinicalNoteNotFoundError,
   ConceptWrongCatalogueError,
-  DiagnosisCitedByIssuedDocumentError,
   DiagnosisLastAfterDischargeError,
-  DiagnosisPrimaryAfterDischargeError,
+  DiagnosisPrimaryRequiredAfterDischargeError,
+  DiagnosisCorrectionRequiresSignatureError,
+  DiagnosisEditReasonRequiredError,
+  DiagnosisSupportsMaternityRestError,
   DiagnosisConceptNotInForceError,
   DiagnosisNotFoundError,
+  DiagnosisNotRestorableError,
   DiagnosisPrimaryTakenError,
   DiagnosisRetractionReasonRequiredError,
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
+  EncounterHasOthersDraftsError,
+  EncounterAlreadyReportedError,
   EncounterAppointmentMismatchError,
   EncounterCloserNotAuthorError,
   EncounterNotFoundError,
@@ -44,7 +49,7 @@ import {
   PractitionerProfileRequiredError,
   SubstituteClosureReasonRequiredError,
   UnknownClinicalFormError,
-  VitalsRequiredError,
+  AnthropometryPendingError,
   EncounterHasLiveActsError,
 } from './encounter.errors';
 
@@ -72,7 +77,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new PractitionerProfileRequiredError(),
   new PractitionerNotLicensedError(),
   new BmiIsDerivedError(),
-  new VitalsRequiredError(['heightCm']),
+  new AnthropometryPendingError(['heightCm']),
   new ClinicalNoteNotFoundError(),
   new UnknownClinicalFormError(['002@1']),
   new NoteContentIncompleteError(['motivoConsulta']),
@@ -85,7 +90,11 @@ const EVERY_ERROR: readonly DomainError[] = [
   new DiagnosisPrimaryTakenError(),
   new DiagnosisNotFoundError(),
   new DiagnosisRetractionReasonRequiredError(),
-  new DiagnosisCitedByIssuedDocumentError(),
+  new DiagnosisEditReasonRequiredError(),
+  new DiagnosisCorrectionRequiresSignatureError(),
+  new DiagnosisSupportsMaternityRestError(),
+  new EncounterAlreadyReportedError(),
+  new DiagnosisNotRestorableError(),
   // EN-080. La tercera cara de la misma negativa: el concepto es del CNMB o
   // no lo es, y la frase tiene que nombrar la lista que hay que abrir. Con un
   // ternario, «todo lo que no es CIE-10» decía «el tarifario», y una alergia
@@ -161,19 +170,46 @@ describe('el contrato de errores de la atención', () => {
     );
   });
 
-  it('EN-188 tras el alta no se quita el último diagnóstico ni se reordena el principal: 409 que dice la salida', () => {
+  it('EN-188 tras el alta no se quita el último diagnóstico: 409 que dice por qué', () => {
     const last = new DiagnosisLastAfterDischargeError();
     expect(last.code).toBe('DIAGNOSIS_LAST_AFTER_DISCHARGE');
     expect(last).toBeInstanceOf(ConflictError);
     expect(last.userTitle).toContain('único diagnóstico');
-
-    const primary = new DiagnosisPrimaryAfterDischargeError();
-    expect(primary.code).toBe('DIAGNOSIS_PRIMARY_AFTER_DISCHARGE');
-    expect(primary).toBeInstanceOf(ConflictError);
-    expect(primary.userTitle).toContain('quite el principal');
   });
 
-  it('EN-180 EN-181 EN-182 quitar un diagnóstico: 404 sin distinguir, 422 que pide el motivo, 409 que manda a anular el documento', () => {
+  it('EN-213 «Deshacer» lo que ya se deshizo, o lo que ya volvió a registrarse: 409 que manda a actualizar', () => {
+    const error = new DiagnosisNotRestorableError();
+    expect(error.code).toBe('DIAGNOSIS_NOT_RESTORABLE');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toContain('Actualice la lista');
+  });
+
+  it('EN-212 editar un diagnóstico: 422 que pide el motivo por campo, 403 a quien no firma tras el alta, 409 por el reposo o el reporte', () => {
+    const reason = new DiagnosisEditReasonRequiredError();
+    expect(reason.code).toBe('DIAGNOSIS_EDIT_REASON_REQUIRED');
+    expect(reason).toBeInstanceOf(ValidationError);
+    expect(reason.fieldErrors?.[0]?.field).toBe('reason');
+    expect(reason.userTitle).toBe(
+      'Indique por qué cambia el código: un certificado, una receta o una orden ya entregados lo imprimieron',
+    );
+
+    const signature = new DiagnosisCorrectionRequiresSignatureError();
+    expect(signature.code).toBe('DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE');
+    expect(signature).toBeInstanceOf(ForbiddenError);
+    expect(signature.userTitle).toContain('quien firma historia clínica');
+
+    const maternity = new DiagnosisSupportsMaternityRestError();
+    expect(maternity.code).toBe('DIAGNOSIS_SUPPORTS_MATERNITY_REST');
+    expect(maternity).toBeInstanceOf(ConflictError);
+    expect(maternity.userTitle).toContain('anule primero el reposo');
+
+    const reported = new EncounterAlreadyReportedError();
+    expect(reported.code).toBe('ENCOUNTER_ALREADY_REPORTED');
+    expect(reported).toBeInstanceOf(ConflictError);
+    expect(reported.userTitle).toContain('RDACAA');
+  });
+
+  it('EN-180 EN-181 EN-214 quitar un diagnóstico: 404 sin distinguir, y 422 que pide el motivo cuando un papel entregado lo imprimió', () => {
     const missing = new DiagnosisNotFoundError();
     expect(missing.code).toBe('DIAGNOSIS_NOT_FOUND');
     expect(missing).toBeInstanceOf(NotFoundError);
@@ -182,29 +218,69 @@ describe('el contrato de errores de la atención', () => {
     expect(reason.code).toBe('DIAGNOSIS_RETRACTION_REASON_REQUIRED');
     expect(reason).toBeInstanceOf(ValidationError);
     expect(reason.fieldErrors?.[0]?.field).toBe('reason');
-    // EN-188, EN-189: el motivo se debe también con el alta o un certificado
-    // que lo imprimió, así que el título no puede hablar sólo de la nota.
+    // EN-214: sólo un papel en manos de un tercero lo debe ya (D-126.3).
     expect(reason.userTitle).toBe(
-      'Indique por qué quita el diagnóstico: ya consta en lo firmado o impreso de esta atención',
+      'Indique por qué quita el diagnóstico: un certificado, una receta o una orden ya entregados lo imprimieron',
     );
-
-    const cited = new DiagnosisCitedByIssuedDocumentError();
-    expect(cited.code).toBe('DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT');
-    expect(cited).toBeInstanceOf(ConflictError);
-    expect(cited.userTitle).toContain('Anule primero los exámenes');
   });
 
-  it('EN-063 nombra cada medida que falta, porque la pantalla une los mensajes en una línea', () => {
-    const error = new VitalsRequiredError(['weightKg', 'heightCm']);
+  it('EN-217 al firmar nombra cada medida que falta, porque la pantalla une los mensajes en una línea', () => {
+    const error = new AnthropometryPendingError(['weightKg', 'heightCm']);
 
-    expect(error.code).toBe('VITALS_REQUIRED');
+    expect(error.code).toBe('ANTHROPOMETRY_PENDING');
+    expect(error).toBeInstanceOf(ValidationError); // 422
     expect(error.userTitle).toBe(
-      'Faltan medidas obligatorias en menores de 5 años y embarazadas',
+      'Falta peso/talla: obligatorio para firmar la nota',
     );
     expect(error.fieldErrors?.map((field) => field.message)).toEqual([
-      'Peso: obligatorio en menores de 5 años y embarazadas',
-      'Talla: obligatorio en menores de 5 años y embarazadas',
+      'Peso: obligatorio para firmar la nota',
+      'Talla: obligatorio para firmar la nota',
     ]);
+  });
+
+  it('EN-217 D-134.3 tras el alta dice que la corrección no puede quitar la medida, no que falta para firmar', () => {
+    const error = new AnthropometryPendingError(
+      ['weightKg'],
+      'correctionAfterDischarge',
+    );
+
+    expect(error.code).toBe('ANTHROPOMETRY_PENDING');
+    expect(error).toBeInstanceOf(ValidationError); // 422
+    expect(error.userTitle).toBe(
+      'La atención ya tiene el alta: la corrección no puede dejar sin peso/talla obligatorios',
+    );
+    expect(error.fieldErrors).toEqual([
+      {
+        field: 'weightKg',
+        code: 'ANTHROPOMETRY_PENDING',
+        message: 'Peso: obligatorio tras el alta, no se puede quitar',
+      },
+    ]);
+  });
+
+  it('EN-167 EN-218 un borrador ajeno responde 409 con la frase de cada acto: interrumpir y anular', () => {
+    const interruption = new EncounterHasOthersDraftsError();
+    const annulment = new EncounterHasOthersDraftsError('annulment');
+
+    expect(interruption.code).toBe('ENCOUNTER_HAS_OTHERS_DRAFTS');
+    expect(annulment.code).toBe('ENCOUNTER_HAS_OTHERS_DRAFTS');
+    expect(annulment).toBeInstanceOf(ConflictError); // 409
+    expect(interruption.userTitle).toBe(
+      'La atención tiene una nota en borrador de otra persona. Que la firme o la descarte antes de interrumpir',
+    );
+    expect(annulment.userTitle).toBe(
+      'La atención tiene una receta u orden en borrador de otro profesional. Que la emita o la descarte antes de anular',
+    );
+  });
+
+  it('EN-183 EN-188 tras el alta, desmarcar o quitar el principal responde 409 y manda a marcar otro', () => {
+    const error = new DiagnosisPrimaryRequiredAfterDischargeError();
+
+    expect(error.code).toBe('DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toBe(
+      'La atención ya tiene el alta y necesita un diagnóstico principal: marque otro como principal antes de quitar o desmarcar éste',
+    );
   });
 
   it('EN-001 responde 409 y manda a registrar la ficha, no a corregir un campo', () => {
@@ -300,10 +376,10 @@ describe('el contrato de errores de la atención', () => {
     expect(error.fieldErrors?.[0]?.field).toBe('bmi');
   });
 
-  it('EN-063 responde 422 nombrando cada medida que falta', () => {
-    const error = new VitalsRequiredError(['weightKg', 'heightCm']);
+  it('EN-217 responde 422 nombrando cada medida que falta', () => {
+    const error = new AnthropometryPendingError(['weightKg', 'heightCm']);
 
-    expect(error.code).toBe('VITALS_REQUIRED');
+    expect(error.code).toBe('ANTHROPOMETRY_PENDING');
     expect(error.fieldErrors?.map((field) => field.field)).toEqual([
       'weightKg',
       'heightCm',
@@ -447,19 +523,25 @@ describe('el contrato de errores de la atención', () => {
 });
 
 describe('EN-166 la atención con actos vivos no se anula', () => {
-  it('EN-166 nombra el certificado con la palabra de su pantalla, «sin anular», y es un 409', () => {
-    const error = new EncounterHasLiveActsError({
-      prescriptions: 0,
-      orders: 0,
-      signedNotes: 0,
-      certificates: 1,
-      referrals: 0,
-      interconsultations: 0,
-    });
+  it('EN-166 EN-218 nombra cada papel emitido con su número y lo que hay que hacer, y es un 409', () => {
+    const error = new EncounterHasLiveActsError([
+      { kind: 'certificates', id: 'c-1', number: 7 },
+      { kind: 'prescriptions', id: 'p-1', number: 12 },
+      { kind: 'signedNotes', id: 'n-1', number: null },
+    ]);
 
     expect(error.code).toBe('ENCOUNTER_HAS_LIVE_ACTS');
     expect(error).toBeInstanceOf(ConflictError);
-    expect(error.userTitle).toContain('1 certificado(s) sin anular');
+    expect(error.userTitle).toContain('el certificado N.º 7');
+    expect(error.userTitle).toContain('la receta N.º 12');
     expect(error.userTitle).not.toContain('revocar');
+    // Each paper travels by itself, so the screen offers its own «Anular».
+    expect(error.fieldErrors).toEqual([
+      { field: 'acts.certificates.c-1', code: 'ENCOUNTER_HAS_LIVE_ACTS', message: 'Certificado N.º 7 sin anular' }, // prettier-ignore
+      { field: 'acts.prescriptions.p-1', code: 'ENCOUNTER_HAS_LIVE_ACTS', message: 'Receta N.º 12 emitida' }, // prettier-ignore
+      { field: 'acts.signedNotes.n-1', code: 'ENCOUNTER_HAS_LIVE_ACTS', message: 'Nota firmada' }, // prettier-ignore
+    ]);
+    // Counts only in the params: no patient, no drug reaches a log.
+    expect(error.params).toMatchObject({ certificates: 1, prescriptions: 1 });
   });
 });

@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   EncounterCloserNotAuthorError,
   InvalidEncounterTransitionError,
-  SubstituteClosureReasonRequiredError,
 } from './encounter.errors';
 import {
   assertAnnullable,
@@ -24,11 +23,15 @@ describe('quién saca una atención por una puerta que no es el alta (D-085)', (
     ).toThrow(EncounterCloserNotAuthorError);
   });
 
-  it('EN-166 EN-167 otro con `record:sign` puede, dejando el motivo recortado', () => {
+  it('EN-166 EN-167 EN-218 otro con `record:sign` puede sin motivo, y si lo da queda recortado', () => {
+    // AT-23: una confirmación en la pantalla, no un motivo; quién lo hizo ya
+    // se guarda en la propia fila.
     expect(
-      () =>
+      planExitActor('p-1', { practitionerId: 'p-2', canSignRecords: true }),
+    ).toBeNull();
+    expect(
       planExitActor('p-1', { practitionerId: 'p-2', canSignRecords: true, substituteReason: '  ' }), // prettier-ignore
-    ).toThrow(SubstituteClosureReasonRequiredError);
+    ).toBeNull();
     expect(
       planExitActor('p-1', { practitionerId: 'p-2', canSignRecords: true, substituteReason: ' Guardia ' }), // prettier-ignore
     ).toBe('Guardia');

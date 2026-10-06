@@ -685,7 +685,7 @@ describe('la atención por HTTP', () => {
       expect(body.recordedBy.id).toBe(nurse.id);
     });
 
-    it('EN-063 exige por HTTP el perimetro cefalico a un menor de 5 años, con la edad que congela la base, y no a un adulto', async () => {
+    it('EN-063 EN-217 al menor de 5 años sin perimetro cefalico se le GUARDA la toma y queda pendiente, con la edad que congela la base; a un adulto no', async () => {
       /**
        * The F-03 walk now books its own adult patient, so it no longer meets
        * this rule by chance. This is where the whole chain is shown: the age
@@ -711,41 +711,52 @@ describe('la atención por HTTP', () => {
       const childEncounter = await openEncounter(nurseToken, {
         patientId: child.id,
       });
-      const refused = await put(
+      // D-132 B: the taking is saved, and what is missing is said.
+      const saved = await put(
         `/encounters/${childEncounter}/vitals`,
         nurseToken,
         taking,
-      ).expect(422);
-      const problem = refused.body as Problem;
-      expect(problem.code).toBe('VITALS_REQUIRED');
-      expect(problem.errors?.map((error) => error.field)).toEqual([
-        'headCircumferenceCm',
-      ]);
+      ).expect(200);
+      expect(
+        (saved.body as { anthropometryPending: string[] }).anthropometryPending,
+      ).toEqual(['headCircumferenceCm']);
       await expect(
         prisma.encounterVitals.count({
           where: { encounterId: childEncounter },
         }),
-      ).resolves.toBe(0);
+      ).resolves.toBe(1);
+      const read = await get(`/encounters/${childEncounter}/vitals`, nurseToken).expect(200); // prettier-ignore
+      expect(
+        (read.body as { anthropometryPending: string[] }).anthropometryPending,
+      ).toEqual(['headCircumferenceCm']);
 
-      // Positive control, same child: with the head circumference it saves.
-      await put(`/encounters/${childEncounter}/vitals`, nurseToken, {
+      // Same child, with the head circumference: nothing pending.
+      const complete = await put(`/encounters/${childEncounter}/vitals`, nurseToken, {
         ...taking,
         headCircumferenceCm: 48,
-      }).expect(200);
+      }).expect(200); // prettier-ignore
+      expect(
+        (complete.body as { anthropometryPending: string[] })
+          .anthropometryPending,
+      ).toEqual([]);
 
       // And an adult is not asked for it.
       const adult = await createPatient(prisma, { birthDate: yearsBefore(40) });
       const adultEncounter = await openEncounter(nurseToken, {
         patientId: adult.id,
       });
-      await put(
+      const adultTaking = await put(
         `/encounters/${adultEncounter}/vitals`,
         nurseToken,
         taking,
       ).expect(200);
+      expect(
+        (adultTaking.body as { anthropometryPending: string[] })
+          .anthropometryPending,
+      ).toEqual([]);
     });
 
-    it('EN-063 exige peso y talla a la embarazada con el embarazo vigente el dia de la atencion, y no el perimetro cefalico', async () => {
+    it('EN-063 EN-217 a la embarazada sin peso se le guarda la presion arterial, y la 002 no se firma hasta tener peso y talla', async () => {
       /**
        * The pregnancy is the chart's dated PREGNANT record (PA-034) read on
        * the attention's clinical date, while `encounter_priority_group` has no
@@ -780,51 +791,76 @@ describe('la atención por HTTP', () => {
         });
         return openEncounter(nurseToken, { patientId: patient.id });
       };
-      const noAnthropometry = { hemoglobinGDl: 11.5 };
+      const noAnthropometry = { systolicBp: 150, diastolicBp: 95 };
+      const pendingOf = (body: unknown) =>
+        (body as { anthropometryPending: string[] }).anthropometryPending;
 
       const pregnant = await pregnantWith(daysFrom(-90), daysFrom(150));
-      const refused = await put(
+      // D-132 B: the blood pressure is in the history even without a weight.
+      const saved = await put(
         `/encounters/${pregnant}/vitals`,
         nurseToken,
         noAnthropometry,
+      ).expect(200);
+      expect(pendingOf(saved.body)).toEqual(['weightKg', 'heightCm']);
+      const stored = await prisma.encounterVitals.findUniqueOrThrow({ where: { encounterId: pregnant } }); // prettier-ignore
+      expect(stored.systolicBp).toBe(150);
+
+      // The 002 is not signed while it is pending.
+      const draft = await post(`/encounters/${pregnant}/notes`, doctorToken, {
+        formCode: '002',
+        content: COMPLETE_002,
+      }).expect(201);
+      const noteId = (draft.body as NoteBody).id;
+      await createDiagnosis(prisma, pregnant, 'Z340'); // EN-020
+      const refused = await post(
+        `/encounters/${pregnant}/notes/${noteId}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
       ).expect(422);
       const problem = refused.body as Problem;
-      expect(problem.code).toBe('VITALS_REQUIRED');
+      expect(problem.code).toBe('ANTHROPOMETRY_PENDING');
       expect(problem.errors?.map((error) => error.field)).toEqual([
         'weightKg',
         'heightCm',
       ]);
-      await expect(
-        prisma.encounterVitals.count({ where: { encounterId: pregnant } }),
-      ).resolves.toBe(0);
+      const unsigned = await prisma.clinicalNote.findUniqueOrThrow({ where: { id: noteId } }); // prettier-ignore
+      expect(unsigned.status).toBe('DRAFT');
 
-      // Positive control, same patient: weight and height, no head circumference.
-      await put(`/encounters/${pregnant}/vitals`, nurseToken, {
+      // Positive control, same patient: weight and height, no head
+      // circumference (D-129), and then it signs.
+      const completed = await put(`/encounters/${pregnant}/vitals`, nurseToken, {
         ...noAnthropometry,
         weightKg: 64.2,
         heightCm: 158,
         heightPosition: 'STANDING',
+      }).expect(200); // prettier-ignore
+      expect(pendingOf(completed.body)).toEqual([]);
+      await post(`/encounters/${pregnant}/notes/${noteId}/sign`, doctorToken, {
+        dischargeCondition: 'ALIVE',
       }).expect(200);
 
       // A pregnancy that ended before the attention does not count.
       const ended = await pregnantWith(daysFrom(-300), daysFrom(-10));
-      await put(
+      const endedTaking = await put(
         `/encounters/${ended}/vitals`,
         nurseToken,
         noAnthropometry,
       ).expect(200);
+      expect(pendingOf(endedTaking.body)).toEqual([]);
 
       // Nor does an adult with no record at all.
       const other = await createPatient(prisma);
       const plain = await openEncounter(nurseToken, { patientId: other.id });
-      await put(
+      const plainTaking = await put(
         `/encounters/${plain}/vitals`,
         nurseToken,
         noAnthropometry,
       ).expect(200);
+      expect(pendingOf(plainTaking.body)).toEqual([]);
     });
 
-    it('EN-063 lee el embarazo en la fecha de la atencion, con los extremos incluidos y la ficha absorbida', async () => {
+    it('EN-063 EN-217 lee el embarazo en la fecha de la atencion, con los extremos incluidos y la ficha absorbida', async () => {
       const nurse = await prisma.user.findUniqueOrThrow({
         where: { email: 'enfermeria@clinica.ec' },
       });
@@ -848,20 +884,25 @@ describe('la atención por HTTP', () => {
             recordedById: nurse.id,
           },
         });
-      const vitalsOf = async (patientId: string, status: number) => {
+      const PENDING = ['weightKg', 'heightCm'];
+      const vitalsOf = async (patientId: string, pending: string[]) => {
         const encounterId = await openEncounter(nurseToken, { patientId });
-        await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        const saved = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
           hemoglobinGDl: 11.5,
-        }).expect(status);
+        }).expect(200); // prettier-ignore
+        expect(
+          (saved.body as { anthropometryPending: string[] })
+            .anthropometryPending,
+        ).toEqual(pending);
       };
 
       // In force from the attention's own day, and until its own day.
       const startsThatDay = await createPatient(prisma);
       await pregnancy(startsThatDay.id, daysFrom(0), daysFrom(200));
-      await vitalsOf(startsThatDay.id, 422);
+      await vitalsOf(startsThatDay.id, PENDING);
       const endsThatDay = await createPatient(prisma);
       await pregnancy(endsThatDay.id, daysFrom(-200), daysFrom(0));
-      await vitalsOf(endsThatDay.id, 422);
+      await vitalsOf(endsThatDay.id, PENDING);
 
       // On the chart it absorbed (PA-055).
       const survivor = await createPatient(prisma);
@@ -871,13 +912,13 @@ describe('la atención por HTTP', () => {
         where: { id: absorbed.id },
         data: { mergedIntoId: survivor.id, mergedAt: new Date() },
       });
-      await vitalsOf(survivor.id, 422);
+      await vitalsOf(survivor.id, PENDING);
 
       // Positive control on the date: a pregnancy that began AFTER the
       // attention — in force today, not that day — demands nothing.
       const later = await createPatient(prisma);
       await pregnancy(later.id, daysFrom(1), daysFrom(400));
-      await vitalsOf(later.id, 200);
+      await vitalsOf(later.id, []);
     });
 
     it('EN-064 rechaza por HTTP una talla sin posicion, senalando la casilla', async () => {
@@ -1575,6 +1616,193 @@ describe('la atención por HTTP', () => {
       ).resolves.toHaveLength(2);
     });
 
+    it('EN-217 hace que la base rechace la 002 firmada con alta de un menor de 5 años sin peso, talla ni perimetro, y no la interrumpida', async () => {
+      const { id: signerId } = await prisma.practitioner.findFirstOrThrow({
+        where: { user: { email: 'medico@clinica.ec' } },
+        select: { id: true },
+      });
+      const { id: doctorUserId } = await prisma.user.findUniqueOrThrow({
+        where: { email: 'medico@clinica.ec' },
+      });
+      const opened = new Date(openBody().startedAt);
+      const child = await createPatient(prisma, {
+        birthDate: new Date(
+          Date.UTC(opened.getUTCFullYear() - 2, opened.getUTCMonth(), opened.getUTCDate()),
+        ),
+      }); // prettier-ignore
+      const draft002 = async () => {
+        const encounterId = await openEncounter(doctorToken, { patientId: child.id }); // prettier-ignore
+        await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
+        const note = await post(`/encounters/${encounterId}/notes`, doctorToken, {
+          formCode: '002',
+          content: COMPLETE_002,
+        }).expect(201); // prettier-ignore
+        return { encounterId, noteId: (note.body as NoteBody).id };
+      };
+      const signAndEnd = (
+        ids: { encounterId: string; noteId: string },
+        ending: 'DISCHARGED' | 'DISCONTINUED',
+      ) =>
+        prisma.$transaction(async (tx) => [
+          await tx.$executeRaw`
+            UPDATE clinical_note
+               SET status = 'SIGNED', signed_at = now(),
+                   signed_by_id = ${signerId}::uuid, content_hash = repeat('a', 64)
+             WHERE id = ${ids.noteId}::uuid`,
+          ending === 'DISCHARGED'
+            ? await tx.encounter.update({
+                where: { id: ids.encounterId },
+                data: { status: 'DISCHARGED', endedAt: new Date(), dischargeCondition: 'ALIVE' }, // prettier-ignore
+              })
+            : await tx.encounter.update({
+                where: { id: ids.encounterId },
+                data: {
+                  status: 'DISCONTINUED',
+                  endedAt: new Date(),
+                  discontinuedReason: 'El paciente se retiró',
+                  discontinuedOrigin: 'PATIENT',
+                  discontinuedById: doctorUserId,
+                  discontinuedAt: new Date(),
+                },
+              }),
+        ]);
+
+      const refused = await draft002();
+      // The taking exists, with the blood pressure and no anthropometry.
+      await put(`/encounters/${refused.encounterId}/vitals`, nurseToken, {
+        systolicBp: 100,
+        diastolicBp: 60,
+      }).expect(200);
+      const error: unknown = await signAndEnd(refused, 'DISCHARGED').catch(
+        (thrown: unknown) => thrown,
+      );
+      expect(extractDatabaseProblem(error)).toMatchObject({
+        code: 'ANTHROPOMETRY_PENDING',
+      });
+      await expect(
+        prisma.clinicalNote.findUniqueOrThrow({
+          where: { id: refused.noteId },
+        }),
+      ).resolves.toMatchObject({ status: 'DRAFT' });
+
+      // Positive control: with the three measures the same statements commit.
+      const measured = await draft002();
+      await put(`/encounters/${measured.encounterId}/vitals`, nurseToken, {
+        weightKg: 12.1,
+        heightCm: 86,
+        heightPosition: 'STANDING',
+        headCircumferenceCm: 48,
+      }).expect(200);
+      await expect(signAndEnd(measured, 'DISCHARGED')).resolves.toHaveLength(2);
+
+      // And an interruption signs the 002 without them (EN-167).
+      const interrupted = await draft002();
+      await expect(
+        signAndEnd(interrupted, 'DISCONTINUED'),
+      ).resolves.toHaveLength(2);
+    });
+
+    it('EN-217 la toma se corrige tras el alta y guarda la anterior; una atención reportada al RDACAA, no', async () => {
+      const encounterId = await openEncounter();
+      await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        systolicBp: 120,
+        diastolicBp: 80,
+      }).expect(200);
+      const draft = await post(`/encounters/${encounterId}/notes`, doctorToken, {
+        formCode: '002',
+        content: COMPLETE_002,
+      }).expect(201); // prettier-ignore
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
+      await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
+
+      const corrected = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        systolicBp: 130,
+        diastolicBp: 85,
+      }).expect(200); // prettier-ignore
+      expect(corrected.body).toMatchObject({ systolicBp: 130 });
+      const versions = await get(`/encounters/${encounterId}/vitals/versions`, doctorToken).expect(200); // prettier-ignore
+      expect(
+        (versions.body as { items: { taking: { systolicBp: number } }[] }).items.map(
+          (version) => version.taking.systolicBp,
+        ),
+      ).toEqual([120]); // prettier-ignore
+      // The correction does not move the board back: the patient was seen.
+      const after = await get(`/encounters/${encounterId}`, doctorToken).expect(200); // prettier-ignore
+      expect(after.body).toMatchObject({ status: 'DISCHARGED' });
+
+      await prisma.encounter.update({ where: { id: encounterId }, data: { reportedAt: new Date() } }); // prettier-ignore
+      const reported = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        systolicBp: 140,
+        diastolicBp: 90,
+      }).expect(409); // prettier-ignore
+      expect((reported.body as Problem).code).toBe(
+        'ENCOUNTER_ALREADY_REPORTED',
+      );
+    });
+
+    it('EN-217 D-134.3 tras el alta la toma de un menor de 5 años se corrige conservando las medidas, y quitar el peso responde 422 ANTHROPOMETRY_PENDING', async () => {
+      const opened = new Date(openBody().startedAt);
+      const child = await createPatient(prisma, {
+        birthDate: new Date(
+          Date.UTC(opened.getUTCFullYear() - 2, opened.getUTCMonth(), opened.getUTCDate()),
+        ),
+      }); // prettier-ignore
+      const encounterId = await openEncounter(doctorToken, { patientId: child.id }); // prettier-ignore
+      const measures = {
+        weightKg: 12.1,
+        heightCm: 86,
+        heightPosition: 'STANDING',
+        headCircumferenceCm: 48,
+      };
+      await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        ...measures,
+        temperatureC: 38.2,
+      }).expect(200);
+      const draft = await post(`/encounters/${encounterId}/notes`, doctorToken, {
+        formCode: '002',
+        content: COMPLETE_002,
+      }).expect(201); // prettier-ignore
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
+      await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
+
+      // Positive control: the temperature is corrected, the measures kept.
+      const corrected = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        ...measures,
+        temperatureC: 37.4,
+      }).expect(200); // prettier-ignore
+      expect(corrected.body).toMatchObject({
+        temperatureC: 37.4,
+        anthropometryPending: [],
+      });
+
+      const refused = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        heightCm: measures.heightCm,
+        heightPosition: measures.heightPosition,
+        headCircumferenceCm: measures.headCircumferenceCm,
+        temperatureC: 37,
+      }).expect(422); // prettier-ignore
+      const problem = refused.body as Problem;
+      expect(problem.code).toBe('ANTHROPOMETRY_PENDING');
+      expect(problem.title).toBe(
+        'La atención ya tiene el alta: la corrección no puede dejar sin peso/talla obligatorios',
+      );
+      expect(problem.errors?.map((error) => error.field)).toEqual(['weightKg']);
+      expect(problem.errors?.[0]?.message).toBe(
+        'Peso: obligatorio tras el alta, no se puede quitar',
+      );
+      const stored = await prisma.encounterVitals.findUniqueOrThrow({ where: { encounterId } }); // prettier-ignore
+      expect(Number(stored.weightKg)).toBe(12.1);
+      expect(Number(stored.temperatureC)).toBe(37.4);
+    });
+
     it('EN-021 rechaza un formulario que esta instalación no sabe validar', async () => {
       const encounterId = await openEncounter();
 
@@ -1661,6 +1889,44 @@ describe('la atención por HTTP', () => {
         'SUPERSEDED',
         'SIGNED',
       ]);
+    });
+
+    it('EN-216 la nota vigente dice quién firmó la enmienda, además del motivo y cuándo, para que la pantalla lo muestre', async () => {
+      const encounterId = await openEncounter();
+      const draft = await post(`/encounters/${encounterId}/notes`, doctorToken, {
+        formCode: '002',
+        content: COMPLETE_002,
+      }).expect(201); // prettier-ignore
+      const noteId = (draft.body as NoteBody).id;
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
+      // Positive control: the signed version names its signer too.
+      const signed = await post(`/encounters/${encounterId}/notes/${noteId}/sign`, doctorToken, { dischargeCondition: 'ALIVE' }).expect(200); // prettier-ignore
+      expect(signed.body).toMatchObject({ signedByName: 'Ana Villacís' });
+
+      await post(`/encounters/${encounterId}/notes/${noteId}/amend`, doctorToken, {
+        content: { ...COMPLETE_002, planTratamiento: 'Dieta blanda y control en 48 horas' },
+        amendmentReason: 'Dato omitido',
+      }).expect(201); // prettier-ignore
+
+      const listed = await get(`/encounters/${encounterId}/notes`, doctorToken).expect(200); // prettier-ignore
+      const current = (
+        listed.body as {
+          items: (NoteBody & {
+            amendmentReason: string | null;
+            signedAt: string | null;
+            signedByName: string | null;
+          })[];
+        }
+      ).items.find((note) => note.status === 'SIGNED');
+      expect(current).toMatchObject({
+        amendmentReason: 'Dato omitido',
+        signedByName: 'Ana Villacís',
+        signedAt: expect.any(String),
+      });
+      // A draft has nobody's name on it.
+      const other = await openEncounter();
+      const unsigned = await post(`/encounters/${other}/notes`, doctorToken, { formCode: '002', content: COMPLETE_002 }).expect(201); // prettier-ignore
+      expect(unsigned.body).toMatchObject({ signedByName: null });
     });
 
     it('EN-025 rechaza enmendar sin motivo, señalando el campo', async () => {
@@ -1774,19 +2040,22 @@ describe('la atención por HTTP', () => {
       expect(await auditRows('encounter')).toBe(before + 1);
     });
 
-    it('EN-166 sin motivo responde 422 por campo y no anula', async () => {
+    it('EN-166 EN-218 sin motivo anula: el motivo es opcional, y quién y cuándo quedan', async () => {
       const encounterId = await openEncounter();
 
-      const refused = await post(
+      const annulled = await post(
         `/encounters/${encounterId}/enter-in-error`,
         doctorToken,
         {},
-      ).expect(422);
+      ).expect(200);
 
-      expect((refused.body as Problem).code).toBe(
-        'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
-      );
-      expect((refused.body as Problem).errors?.[0]?.field).toBe('reason');
+      expect(annulled.body).toMatchObject({
+        status: 'ENTERED_IN_ERROR',
+        annulment: { reason: null },
+      });
+      const stored = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
+      expect(stored.enteredInErrorById).not.toBeNull();
+      expect(stored.enteredInErrorAt).not.toBeNull();
     });
 
     it('EN-166 EN-167 recepción no anula ni interrumpe: no tiene `record:write` ni `record:sign` (D-080 §2)', async () => {
