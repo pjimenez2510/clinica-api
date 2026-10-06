@@ -75,6 +75,8 @@ const ITEM_SELECT = {
   status: true,
   completedAt: true,
   createdAt: true,
+  // ORD-131. Whether any result hangs from it: such a line is not cancelled.
+  _count: { select: { results: true } },
 } satisfies Prisma.ServiceOrderItemSelect;
 
 /** An order with its lines in the order they were created. */
@@ -966,6 +968,7 @@ function toOrderView(row: OrderRow): ServiceOrderView {
       status: item.status,
       completedAt: item.completedAt,
       createdAt: item.createdAt,
+      hasResults: item._count.results > 0,
     })),
   };
 }

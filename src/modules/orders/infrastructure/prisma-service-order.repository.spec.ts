@@ -65,6 +65,7 @@ const anItemRow = (overrides: Record<string, unknown> = {}) => ({
   status: 'REQUESTED',
   completedAt: null,
   createdAt: new Date('2026-09-15T13:00:00Z'),
+  _count: { results: 0 },
   ...overrides,
 });
 

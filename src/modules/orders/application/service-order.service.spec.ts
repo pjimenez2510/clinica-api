@@ -191,6 +191,7 @@ const anOrder = (lines: number): ServiceOrderView => ({
     status: 'REQUESTED' as const,
     completedAt: null,
     createdAt: new Date('2026-09-15T13:00:00Z'),
+    hasResults: false,
   })),
 });
 

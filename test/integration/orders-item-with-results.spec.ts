@@ -109,6 +109,9 @@ describe('ORD-131 un examen con algún resultado no se anula', () => {
       orders.cancelItem({ orderId: order.id, itemId: bh.id, sites: 'all', cancelledById: userId }), // prettier-ignore
     ).rejects.toBeInstanceOf(OrderItemHasResultsError);
     expect(await statusOf(prisma, bh.id)).toBe('REQUESTED');
+    // La orden lo publica, para que la pantalla no ofrezca «Anular».
+    const view = await orders.byId({ orderId: order.id, sites: 'all' });
+    expect(view?.items.map((item) => [item.testCode, item.hasResults])).toEqual([['EX-BH', true], ['EX-GLUCOSA-AYUNAS', false]]); // prettier-ignore
     // Control positivo: la glucosa, sin resultados, sí se anula.
     await orders.cancelItem({ orderId: order.id, itemId: glucose.id, sites: 'all', cancelledById: userId }); // prettier-ignore
     expect(await statusOf(prisma, glucose.id)).toBe('CANCELLED');
