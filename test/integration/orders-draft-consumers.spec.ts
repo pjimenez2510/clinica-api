@@ -373,9 +373,9 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
         dischargeCondition: 'ALIVE',
       },
     });
-  /** When the draft was saved, as the row says: the 24 hours run from it. */
+  /** When the draft was last saved, as the row says: the 24 hours run from it (ORD-128). */
   const savedAt = async (prisma: PrismaClient, orderId: string) =>
-    (await prisma.serviceOrder.findUniqueOrThrow({ where: { id: orderId } })).createdAt; // prettier-ignore
+    (await prisma.serviceOrder.findUniqueOrThrow({ where: { id: orderId } })).updatedAt; // prettier-ignore
   const signerOf = async (prisma: PrismaClient, practitionerId: string) =>
     (await prisma.practitioner.findUniqueOrThrow({ where: { id: practitionerId } })).userId; // prettier-ignore
 
@@ -456,6 +456,35 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
       // Recién guardado en una atención abierta: no cuelga.
       const userId = await signerOf(prisma, scene.practitioner.id);
       expect(await adapters(prisma).orders.staleDrafts({ userId, sites: 'all', now: new Date() })).toEqual([]); // prettier-ignore
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ORD-128 D-138.5 las 24 horas cuentan desde la última edición del borrador, y la lista dice esa fecha', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const userId = await signerOf(prisma, scene.practitioner.id);
+    const created = new Date();
+    const edited = new Date(created.getTime() + DAY_MS + HOUR_MS);
+    const stale = (now: Date) => adapters(prisma).orders.staleDrafts({ userId, sites: 'all', now }); // prettier-ignore
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(created);
+      const draft = await adapters(prisma).orders.compose({ encounterId: scene.encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ examDefinitionId: scene.bh.id }], sites: 'all' }); // prettier-ignore
+      // Control positivo: sin editarlo, pasadas 25 horas cuelga.
+      expect(await stale(edited)).toHaveLength(1);
+
+      // Editado a las 25 horas de crearlo.
+      vi.setSystemTime(edited);
+      await adapters(prisma).orders.rewrite({ orderId: draft.id, category: 'LABORATORY', priority: 'URGENT', lines: [{ examDefinitionId: scene.bh.id }], sites: 'all' }); // prettier-ignore
+
+      // Cinco minutos después de editarlo, no cuelga.
+      expect(await stale(new Date(edited.getTime() + 5 * MINUTE_MS))).toEqual([]); // prettier-ignore
+      // Un día y un minuto después de la edición, sí, con la fecha de la edición.
+      const [entry] = await stale(new Date(edited.getTime() + DAY_MS + MINUTE_MS)); // prettier-ignore
+      expect(entry?.orderId).toBe(draft.id);
+      expect(entry?.savedAt.getTime()).toBe(edited.getTime());
     } finally {
       vi.useRealTimers();
     }

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
@@ -22,6 +22,7 @@ import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
 import {
+  createDiagnosis,
   createIssuedPrescription,
   createPatient,
   createSite,
@@ -362,7 +363,7 @@ describe('los documentos por HTTP', () => {
       }).expect(403);
     });
 
-    it('DOC-039 publica la versión siguiente de las cuatro clases a la vez', async () => {
+    it('DOC-039 DOC-113 publica la versión siguiente de las cinco clases a la vez', async () => {
       await publishTemplate('PRESCRIPTION');
 
       const response = await post(
@@ -375,20 +376,21 @@ describe('los documentos por HTTP', () => {
       expect(
         published.map((one) => `${one.kind}:${one.version}`).sort(),
       ).toEqual([
+        'ENCOUNTER_SUMMARY:1',
         'INVOICE_RIDE:1',
         'MEDICAL_CERTIFICATE:1',
         'PRESCRIPTION:2',
         'SERVICE_ORDER:1',
       ]);
-      await expect(prisma.documentTemplate.count()).resolves.toBe(5);
+      await expect(prisma.documentTemplate.count()).resolves.toBe(6);
     });
 
     it('DOC-039 si una inserción falla EN LA BASE, no queda publicada ninguna', async () => {
-      // Positive control: the same request publishes four.
+      // Positive control: the same request publishes five.
       await post('/documents/templates/all-kinds', adminToken, slots).expect(
         201,
       );
-      await expect(prisma.documentTemplate.count()).resolves.toBe(4);
+      await expect(prisma.documentTemplate.count()).resolves.toBe(5);
 
       // The THIRD insert fails inside PostgreSQL, after the first two went
       // through: only a real transaction leaves none of the three behind.
@@ -406,7 +408,7 @@ describe('los documentos por HTTP', () => {
           { ...slots, accentColour: '#003366' },
         );
         expect(refused.status).toBeGreaterThanOrEqual(400);
-        await expect(prisma.documentTemplate.count()).resolves.toBe(4);
+        await expect(prisma.documentTemplate.count()).resolves.toBe(5);
       } finally {
         await prisma.$executeRawUnsafe(
           'DROP TRIGGER test_refuse_certificate ON document_template',
@@ -775,6 +777,86 @@ describe('los documentos por HTTP', () => {
       expect((withData.body as RenderBody).byteSize).not.toBe(
         (withoutData.body as RenderBody).byteSize,
       );
+    });
+
+    /** The text a reader sees in a PDF served by the API. */
+    async function pdfText(path: string, body?: object): Promise<string> {
+      const call =
+        body === undefined ? get(path, doctorToken) : post(path, doctorToken, body); // prettier-ignore
+      const response = await call
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      const proxy = await getDocumentProxy(
+        new Uint8Array(response.body as Buffer),
+      );
+      return (await extractText(proxy, { mergePages: true })).text;
+    }
+
+    it('ORD-125 ORD-126 el PDF real de la orden agrupa por sección del 010A, lleva el sexo y nombra el examen de cada indicación', async () => {
+      await publishTemplate('SERVICE_ORDER');
+      const encounter = await prisma.encounter.findFirstOrThrow({
+        select: { id: true, siteId: true, patient: { select: { sex: true } } },
+      });
+      const system = await prisma.catalogSystem.create({
+        data: { code: 'EXAMENES-ORD126', name: 'Exámenes de la prueba' },
+      });
+      const exams = [
+        { code: 'EX-GLU-126', name: 'Glucosa en ayunas', section: 'BIOQUÍMICA', preparation: 'Ayuno de 8 a 12 horas. Puede beber agua.' }, // prettier-ignore
+        { code: 'EX-BH-126', name: 'Biometría hemática completa', section: 'HEMATOLOGÍA', preparation: 'No requiere ayuno.' }, // prettier-ignore
+      ];
+      const items = [];
+      for (const exam of exams) {
+        await prisma.examDefinition.create({
+          data: {
+            code: exam.code,
+            name: exam.name,
+            form010Section: exam.section,
+            patientPreparation: exam.preparation,
+          },
+        });
+        const concept = await prisma.catalogConcept.create({
+          data: {
+            systemId: system.id,
+            code: exam.code,
+            display: exam.name,
+            validFrom: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          },
+          select: { id: true },
+        });
+        items.push({ conceptId: concept.id, testCode: exam.code, testDisplay: exam.name }); // prettier-ignore
+      }
+      const order = await prisma.serviceOrder.create({
+        data: {
+          encounterId: encounter.id,
+          siteId: encounter.siteId,
+          orderedById: practitionerId,
+          category: 'LABORATORY',
+          items: { create: items },
+        },
+        select: { id: true },
+      });
+      await prisma.serviceOrder.update({
+        where: { id: order.id },
+        data: { status: 'ISSUED' },
+      });
+
+      const text = await pdfText('/documents/drafts', {
+        kind: 'SERVICE_ORDER',
+        subjectId: order.id,
+      });
+
+      expect(text).toContain('BIOQUÍMICA');
+      expect(text).toContain('HEMATOLOGÍA');
+      expect(text.indexOf('BIOQUÍMICA')).toBeLessThan(text.indexOf('HEMATOLOGÍA')); // prettier-ignore
+      expect(text).toContain('Sexo');
+      expect(text).toContain('Venga en ayunas: ayuno de 8 a 12 horas (Glucosa en ayunas).'); // prettier-ignore
+      expect(text).not.toContain('No requiere ayuno');
+      expect(text).not.toContain('Preparación');
     });
 
     /** The text a reader sees in the draft of this test's receta. */
@@ -1559,6 +1641,343 @@ describe('los documentos por HTTP', () => {
         kind: 'PRESCRIPTION',
         subjectId: prescriptionId,
       }).expect(403);
+    });
+  });
+
+  describe('DOC-111 a DOC-113 el resumen de la atención', () => {
+    const summaryOf = (encounterId: string, token = doctorToken) =>
+      get(`/documents/encounters/${encounterId}/summary`, token);
+
+    /** The seeded attention, with its receta, a diagnosis and a signed 002. */
+    async function aSignedAttention(): Promise<string> {
+      const { encounterId } = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+        select: { encounterId: true },
+      });
+      await createDiagnosis(prisma, encounterId, 'J02.9', 'Faringitis aguda, no especificada'); // prettier-ignore
+      const chainId = randomUUID();
+      await prisma.clinicalNote.create({
+        data: {
+          id: chainId,
+          chainId,
+          encounterId,
+          formCode: '002',
+          formVersion: '1',
+          status: 'SIGNED',
+          content: {
+            motivoConsulta: 'Dolor de garganta de dos días',
+            antecedentes: 'Sin antecedentes de importancia',
+            enfermedadActual: 'Odinofagia y fiebre',
+            revisionOrganosSistemas: 'Sin otros síntomas',
+            examenFisico: 'Faringe eritematosa',
+            planTratamiento: 'Hidratación y control en 72 horas',
+          },
+          authorId: practitionerId,
+          signedById: practitionerId,
+          signedAt: new Date(),
+          contentHash: 'a'.repeat(64),
+        },
+      });
+      return encounterId;
+    }
+
+    async function summaryText(encounterId: string): Promise<string> {
+      const response = await summaryOf(encounterId)
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      expect(response.headers['content-type']).toContain('application/pdf');
+      const proxy = await getDocumentProxy(
+        new Uint8Array(response.body as Buffer),
+      );
+      return (await extractText(proxy, { mergePages: true })).text;
+    }
+
+    it('DOC-111 compone al momento el resumen con la nota firmada, el diagnóstico y la receta, y no lo archiva', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const encounterId = await aSignedAttention();
+
+      const text = await summaryText(encounterId);
+
+      expect(text.replace(/\s+/g, ' ')).toContain('RESUMEN DE LA ATENCIÓN');
+      expect(text).toContain('Motivo de consulta');
+      expect(text).toContain('Dolor de garganta de dos días');
+      expect(text).toContain('J02.9');
+      expect(text).toContain('Amoxicilina');
+      expect(text).toContain('/verificar/');
+      await expect(prisma.documentRender.count()).resolves.toBe(0);
+    });
+
+    it('DOC-111 cada resumen deja su fila en la bitácora de accesos, con quién y sobre qué atención', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const encounterId = await aSignedAttention();
+
+      await summaryOf(encounterId).expect(200);
+      await summaryOf(encounterId).expect(200);
+
+      const trail = await prisma.accessAudit.findMany({
+        where: { resourceType: 'encounter_summary' },
+        select: { resourceId: true, action: true, userId: true },
+      });
+      expect(trail).toHaveLength(2);
+      expect(trail.every((row) => row.resourceId === encounterId)).toBe(true);
+      expect(trail.every((row) => row.action === 'PRINT')).toBe(true);
+      const { userId: doctorUserId } = await prisma.practitioner.findUniqueOrThrow({ where: { id: practitionerId }, select: { userId: true } }); // prettier-ignore
+      expect(trail.every((row) => row.userId === doctorUserId)).toBe(true);
+    });
+
+    it('DOC-111 sin nota 002 firmada no hay resumen; con ella sí (control positivo)', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { encounterId } = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+        select: { encounterId: true },
+      });
+
+      const refused = await summaryOf(encounterId).expect(409);
+      expect((refused.body as Problem).code).toBe(
+        'ENCOUNTER_SUMMARY_NOT_AVAILABLE',
+      );
+      await expect(
+        prisma.accessAudit.count({
+          where: { resourceType: 'encounter_summary' },
+        }),
+      ).resolves.toBe(0);
+
+      // EN-220. La lista de atenciones de la ficha dice cuándo se ofrece.
+      const { patientId } = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounterId },
+        select: { patientId: true },
+      });
+      const offered = async () =>
+        (
+          (
+            await get(`/encounters?patientId=${patientId}`, doctorToken).expect(
+              200,
+            )
+          ).body as { items: { id: string; summaryAvailable: boolean }[] }
+        ).items.find((item) => item.id === encounterId)?.summaryAvailable;
+      expect(await offered()).toBe(false);
+
+      await aSignedAttention();
+      await summaryOf(encounterId).expect(200);
+      expect(await offered()).toBe(true);
+    });
+
+    it('DOC-111 sale sólo lo vigente: la nota enmendada, sin la receta anulada ni el examen anulado (con lo vigente como control)', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const encounterId = await aSignedAttention();
+      const now = new Date();
+      // La nota se enmienda: la vigente es la versión 2.
+      const first = await prisma.clinicalNote.findFirstOrThrow({
+        where: { encounterId, formCode: '002' },
+        select: { id: true, chainId: true },
+      });
+      await prisma.clinicalNote.update({ where: { id: first.id }, data: { status: 'SUPERSEDED' } }); // prettier-ignore
+      await prisma.clinicalNote.create({
+        data: {
+          chainId: first.chainId,
+          version: 2,
+          encounterId,
+          formCode: '002',
+          formVersion: '1',
+          status: 'SIGNED',
+          content: { motivoConsulta: 'Tos seca de una semana' },
+          authorId: practitionerId,
+          signedById: practitionerId,
+          signedAt: now,
+          contentHash: 'c'.repeat(64),
+          supersedesId: first.id,
+          amendmentReason: 'Se corrige el motivo',
+        },
+      });
+      // Una receta anulada en la misma atención.
+      const seeded = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId }, select: { siteId: true } }); // prettier-ignore
+      await createIssuedPrescription(prisma, {
+        encounterId,
+        siteId: seeded.siteId,
+        prescriberId: practitionerId,
+        status: 'CANCELLED',
+        items: {
+          create: [
+            { genericName: 'Ibuprofeno', presentation: 'Tableta', concentration: '400 mg', routeCode: 'ORAL', quantity: 10, doseText: '1 tableta', frequencyText: 'Cada 8 horas', durationDays: 3, offFormularyJustification: 'Fuera del CNMB para esta prueba' }, // prettier-ignore
+          ],
+        },
+      });
+      // Una orden con un examen vivo y otro anulado.
+      const system = await prisma.catalogSystem.create({ data: { code: 'EXAMENES-DOC111', name: 'Exámenes de la prueba' } }); // prettier-ignore
+      const concept = await prisma.catalogConcept.create({
+        data: { systemId: system.id, code: 'X', display: 'X', validFrom: new Date(now.getTime() - 24 * 60 * 60 * 1000) }, // prettier-ignore
+        select: { id: true },
+      });
+      const order = await prisma.serviceOrder.create({
+        data: {
+          encounterId,
+          siteId: seeded.siteId,
+          orderedById: practitionerId,
+          category: 'LABORATORY',
+          items: {
+            create: [
+              { conceptId: concept.id, testCode: 'VIVO', testDisplay: 'Proteína C reactiva' }, // prettier-ignore
+              { conceptId: concept.id, testCode: 'ANULADO', testDisplay: 'Velocidad de eritrosedimentación' }, // prettier-ignore
+            ],
+          },
+        },
+        select: { id: true },
+      });
+      await prisma.serviceOrder.update({ where: { id: order.id }, data: { status: 'ISSUED' } }); // prettier-ignore
+      await prisma.serviceOrderItem.updateMany({
+        where: { serviceOrderId: order.id, testCode: 'ANULADO' },
+        data: { status: 'CANCELLED', completedAt: now, cancelledById: (await createUser(prisma)).id }, // prettier-ignore
+      });
+
+      const text = (await summaryText(encounterId)).replace(/\s+/g, ' ');
+
+      expect(text).toContain('Nota enmendada el');
+      expect(text).toContain('Tos seca de una semana');
+      expect(text).not.toContain('Dolor de garganta de dos días');
+      expect(text).toContain('Amoxicilina');
+      expect(text).not.toContain('Ibuprofeno');
+      expect(text).toContain('Proteína C reactiva');
+      expect(text).not.toContain('Velocidad de eritrosedimentación');
+    });
+
+    it('DOC-111 una atención anulada no tiene resumen, y una de otra sede responde como inexistente', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const encounterId = await aSignedAttention();
+      const seeded = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounterId },
+        select: { patientId: true, practitionerId: true },
+      });
+      const now = new Date();
+      await prisma.encounter.update({
+        where: { id: encounterId },
+        data: { status: 'ENTERED_IN_ERROR', endedAt: now, enteredInErrorById: (await createUser(prisma)).id, enteredInErrorAt: now }, // prettier-ignore
+      });
+      const annulled = await summaryOf(encounterId).expect(409);
+      expect((annulled.body as Problem).code).toBe(
+        'ENCOUNTER_SUMMARY_NOT_AVAILABLE',
+      );
+
+      const elsewhere = await createSite(prisma, 'Sede Norte');
+      const foreign = await prisma.encounter.create({
+        data: { ...seeded, siteId: elsewhere.id, startedAt: now, careModality: 'MORBIDITY', visitSequence: 'SUBSEQUENT' }, // prettier-ignore
+        select: { id: true },
+      });
+      const missing = await summaryOf(foreign.id).expect(404);
+      expect((missing.body as Problem).code).toBe('DOCUMENT_SUBJECT_NOT_FOUND');
+    });
+
+    it('DOC-090 DOC-111 el resumen exige record:read: caja no lo descarga', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const encounterId = await aSignedAttention();
+
+      await summaryOf(encounterId, cashierToken).expect(403);
+    });
+
+    it('DOC-113 sin plantilla publicada para el resumen, lo dice y no inventa una', async () => {
+      const encounterId = await aSignedAttention();
+
+      const refused = await summaryOf(encounterId).expect(422);
+      expect((refused.body as Problem).code).toBe(
+        'DOCUMENT_TEMPLATE_NOT_PUBLISHED',
+      );
+    });
+
+    it('DOC-112 el código de una atención sin 002 firmada responde como inexistente; con la nota retirada, anulado', async () => {
+      const { encounterId } = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+        select: { encounterId: true },
+      });
+      const { verificationCode } = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounterId },
+        select: { verificationCode: true },
+      });
+      const verifyIt = () =>
+        request(app.getHttpServer()).get(`/api/v1/documents/verify/${verificationCode}`); // prettier-ignore
+
+      const unknown = await verifyIt().expect(404);
+      expect((unknown.body as Problem).code).toBe(
+        'DOCUMENT_VERIFICATION_NOT_FOUND',
+      );
+
+      await aSignedAttention();
+      expect(((await verifyIt().expect(200)).body as { status: string }).status).toBe('VALID'); // prettier-ignore
+
+      // La nota se retira (EN-026): el papel que salió ya no vale.
+      await prisma.clinicalNote.updateMany({
+        where: { encounterId, formCode: '002' },
+        data: { status: 'ENTERED_IN_ERROR' },
+      });
+      expect(((await verifyIt().expect(200)).body as { status: string }).status).toBe('ANNULLED'); // prettier-ignore
+    });
+
+    it('DOC-112 el código del resumen verifica la atención sin ningún dato del paciente, y la anulada se dice anulada', async () => {
+      const encounterId = await aSignedAttention();
+      const { verificationCode } = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounterId },
+        select: { verificationCode: true },
+      });
+
+      const valid = await request(app.getHttpServer())
+        .get(`/api/v1/documents/verify/${verificationCode}`)
+        .expect(200);
+      expect(valid.body).toMatchObject({
+        kind: 'ENCOUNTER_SUMMARY',
+        status: 'VALID',
+      });
+      const body = JSON.stringify(valid.body);
+      expect(body).not.toContain('J02.9');
+      expect(body).not.toContain('1710034065');
+
+      const seeded = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounterId },
+        select: { siteId: true, patientId: true, practitionerId: true },
+      });
+      const now = new Date();
+      // Una atención con su 002 firmada, anulada después: el papel que salió
+      // de ella tiene que decir que ya no vale.
+      const annulled = await prisma.encounter.create({
+        data: {
+          ...seeded,
+          startedAt: new Date(now.getTime() - 60 * 60 * 1000),
+          careModality: 'MORBIDITY',
+          visitSequence: 'SUBSEQUENT',
+        },
+        select: { id: true, verificationCode: true },
+      });
+      const noteId = randomUUID();
+      await prisma.clinicalNote.create({
+        data: {
+          id: noteId,
+          chainId: noteId,
+          encounterId: annulled.id,
+          formCode: '002',
+          formVersion: '1',
+          status: 'SIGNED',
+          content: { motivoConsulta: 'Registrada por error' },
+          authorId: practitionerId,
+          signedById: practitionerId,
+          signedAt: now,
+          contentHash: 'b'.repeat(64),
+        },
+      });
+      await prisma.encounter.update({
+        where: { id: annulled.id },
+        data: {
+          status: 'ENTERED_IN_ERROR',
+          endedAt: now,
+          enteredInErrorById: (await createUser(prisma)).id,
+          enteredInErrorAt: now,
+        },
+      });
+      const voided = await request(app.getHttpServer())
+        .get(`/api/v1/documents/verify/${annulled.verificationCode}`)
+        .expect(200);
+      expect((voided.body as { status: string }).status).toBe('ANNULLED');
     });
   });
 

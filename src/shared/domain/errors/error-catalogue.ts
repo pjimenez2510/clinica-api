@@ -1208,6 +1208,9 @@ export const DOMAIN_ERROR_CODES = [
   //     ese código, o un código sin forma de código. **El mismo cuerpo para
   //     todos**: distinguirlos dejaría mapear qué códigos existen.
   'DOCUMENT_VERIFICATION_NOT_FOUND',
+  //   * `ENCOUNTER_SUMMARY_NOT_AVAILABLE` (409) — DOC-111. La atención no tiene
+  //     nota 002 firmada, o está anulada: no hay nada que resumir.
+  'ENCOUNTER_SUMMARY_NOT_AVAILABLE',
   // Protección de datos (`privacy`, PD-001..PD-043).
   //   * `DATA_SUBJECT_NOT_FOUND` (404) — la ficha no existe. Propio y no
   //     `PATIENT_NOT_FOUND`, que es de `patients`: un código lo declara una sola

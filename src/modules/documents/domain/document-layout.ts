@@ -22,6 +22,7 @@ import type {
   CertificatePrintData,
   DocumentContext,
   DocumentSubject,
+  EncounterSummaryPrintData,
   InvoicePrintData,
   PatientIdentity,
   PractitionerIdentity,
@@ -390,16 +391,6 @@ export function composeServiceOrderLayout(
   const live = data.items.filter((item) => item.status !== 'CANCELLED');
   const annulled = live.length === 0;
 
-  // What the patient has to do before the extraction, once per distinct
-  // instruction: an unstated fast is a second puncture (ORD-010).
-  const preparations = [
-    ...new Set(
-      live
-        .map((item) => item.preparation)
-        .filter((text): text is string => text !== null && text.trim() !== ''),
-    ),
-  ];
-
   const blocks: Block[] = [
     ...(annulled
       ? ([
@@ -432,6 +423,8 @@ export function composeServiceOrderLayout(
     },
     { kind: 'heading', text: 'Paciente' },
     patientBlock(data.patient, [
+      // ORD-126. Form 010A's header carries it.
+      { label: 'Sexo', value: SEX_LABEL[data.patientSex] ?? '—' },
       {
         label: 'Diagnóstico presuntivo',
         value:
@@ -449,33 +442,9 @@ export function composeServiceOrderLayout(
           ]),
     ]),
     { kind: 'heading', text: 'Exámenes solicitados' },
-    {
-      kind: 'table',
-      columns: [
-        { header: 'Código', width: 0.28 },
-        { header: 'Examen', width: 0.44 },
-        { header: 'Muestra', width: 0.28 },
-      ],
-      rows: live.map((item) => [item.code, item.display, item.specimen ?? '—']),
-    },
+    ...examsBySection(live),
     // The template's framed note: what the patient has to do before going.
-    {
-      kind: 'box',
-      light: true,
-      blocks: [
-        { kind: 'caption', text: 'Indicaciones al paciente' },
-        preparations.length === 0
-          ? { kind: 'paragraph', text: 'No requiere preparación previa.' }
-          : {
-              kind: 'fields',
-              columns: 1,
-              entries: preparations.map((text) => ({
-                label: 'Preparación',
-                value: text,
-              })),
-            },
-      ],
-    },
+    { kind: 'box', light: true, blocks: instructionsFor(live) },
     { kind: 'heading', text: 'Médico solicitante' },
     prescriberBlock(data.orderedBy),
     {
@@ -500,6 +469,108 @@ export function composeServiceOrderLayout(
     blocks,
     tearOff: null,
   };
+}
+
+/** ORD-126. How the 010A header says the sex; «—» for what nobody declared. */
+const SEX_LABEL: Readonly<Record<string, string>> = {
+  MALE: 'Hombre',
+  FEMALE: 'Mujer',
+  INTERSEX: 'Intersexual',
+};
+
+type OrderItem = ServiceOrderPrintData['items'][number];
+
+/**
+ * ORD-126, D-136 A. The live exams under their section of form 010A, each
+ * section in the order it first appears in the order, and those without one
+ * last, under «OTROS EXÁMENES»: it reads as the 010A and still fits each
+ * clinic's own catalogue.
+ */
+function examsBySection(live: readonly OrderItem[]): Block[] {
+  const OTHERS = 'OTROS EXÁMENES';
+  const groups = new Map<string, OrderItem[]>();
+  for (const item of live) {
+    const section = item.section?.trim() || OTHERS;
+    groups.set(section, [...(groups.get(section) ?? []), item]);
+  }
+  const ordered = [
+    ...[...groups.keys()].filter((section) => section !== OTHERS),
+    ...(groups.has(OTHERS) ? [OTHERS] : []),
+  ];
+  return ordered.flatMap((section): Block[] => [
+    { kind: 'caption', text: section },
+    {
+      kind: 'table',
+      columns: [
+        { header: 'Código', width: 0.28 },
+        { header: 'Examen', width: 0.44 },
+        { header: 'Muestra', width: 0.28 },
+      ],
+      rows: (groups.get(section) ?? []).map((item) => [
+        item.code,
+        item.display,
+        item.specimen ?? '—',
+      ]),
+    },
+  ]);
+}
+
+/**
+ * ORD-125. What the patient has to do before going, each with the name of its
+ * exam; an exam with nothing to do takes no line. A fast is said ON TOP, once
+ * for the whole sampling, naming who asks for it: an unstated fast is a second
+ * puncture (ORD-010).
+ *
+ * ⚠️ BY THE TEXT, for want of a field (D-137): a preparation that BEGINS with
+ * «Ayuno» is a fast; one that is only «No requiere …» asks for nothing.
+ */
+function instructionsFor(live: readonly OrderItem[]): Block[] {
+  const asked = live
+    .map((item) => ({
+      exam: item.display,
+      text: item.preparation?.trim() ?? '',
+    })) // prettier-ignore
+    .filter(({ text }) => text !== '' && !nothingToDo(text));
+  const fasts = asked.filter(({ text }) => /^ayuno/i.test(text));
+
+  const caption: Block = { kind: 'caption', text: 'Indicaciones al paciente' };
+  if (asked.length === 0) {
+    return [caption, { kind: 'paragraph', text: 'No requiere preparación previa.' }]; // prettier-ignore
+  }
+  return [
+    caption,
+    ...(fasts.length === 0
+      ? []
+      : ([
+          {
+            kind: 'paragraph',
+            text: `Venga en ayunas: ${fasts
+              .map(({ exam, text }) => `${firstSentence(text)} (${exam})`)
+              .join('; ')}.`,
+            emphasis: true,
+          },
+        ] as Block[])),
+    {
+      kind: 'fields',
+      columns: 1,
+      entries: asked.map(({ exam, text }) => ({ label: exam, value: text })),
+    },
+  ];
+}
+
+/**
+ * ORD-125. «No requiere ayuno.» says there is nothing to do; «No requiere
+ * ayuno. Recoja la primera orina de la mañana.» does not, and is printed whole.
+ * Only a text that is ONE sentence beginning with «No requiere» is left out.
+ */
+function nothingToDo(text: string): boolean {
+  return /^no requiere[^.]*\.?$/i.test(text.trim());
+}
+
+/** «Ayuno de 8 a 12 horas. Puede…» → «ayuno de 8 a 12 horas». */
+function firstSentence(text: string): string {
+  const first = text.split(/\.\s/)[0]?.replace(/\.$/, '') ?? text;
+  return first.charAt(0).toLowerCase() + first.slice(1);
 }
 
 /** How a date of form 117 prints: «21/05/2026 — veintiuno de mayo de …». */
@@ -1166,6 +1237,169 @@ function invoiceSubtotals(data: InvoicePrintData): {
   };
 }
 
+/** DOC-111. How a diagnosis's condition prints (block J of form 002). */
+const CERTAINTY_LABEL: Readonly<Record<string, string>> = {
+  PRESUMPTIVE: 'Presuntivo',
+  DEFINITIVE: 'Definitivo',
+};
+
+/**
+ * DOC-111. The summary of an attention: one PDF for the patient and for the
+ * doctor who receives it. No MSP form fixes it (searched: ESPECIFICACION and
+ * Annex 1 of A.M. 00115-2021); it follows the approved frame (D-095) and the
+ * order of the blocks of form 002. A block with nothing in it is not printed.
+ *
+ * Composed on demand and never archived: what it says is the attention as it
+ * stands, and its code verifies the ATTENTION (DOC-112), not this file.
+ */
+export function composeEncounterSummaryLayout(
+  data: EncounterSummaryPrintData,
+  context: DocumentContext,
+  template: DocumentTemplate,
+): DocumentLayout {
+  const section = (title: string, blocks: readonly Block[]): Block[] =>
+    blocks.length === 0 ? [] : [{ kind: 'heading', text: title }, ...blocks];
+
+  const blocks: Block[] = [
+    {
+      kind: 'strip',
+      entries: [
+        { label: 'Fecha de la atención', value: ecuadorianDateAndMinute(data.startedAt) }, // prettier-ignore
+        { label: 'Sede', value: context.siteName },
+        // D-078. The chart number on every printed document.
+        { label: 'Historia clínica', value: data.patient.mrn },
+      ],
+    },
+    { kind: 'heading', text: 'Paciente' },
+    patientBlock(data.patient, [
+      { label: 'Sexo', value: SEX_LABEL[data.patientSex] ?? '—' },
+    ]),
+    { kind: 'heading', text: 'Atendido por' },
+    prescriberBlock(data.practitioner),
+    ...section(
+      'Signos vitales y antropometría',
+      data.vitals.length === 0
+        ? []
+        : [{ kind: 'fields', columns: 4, entries: data.vitals }],
+    ),
+    ...section('Nota de consulta externa', [
+      ...(data.note?.amendedAt == null
+        ? []
+        : ([
+            {
+              kind: 'paragraph',
+              text: `Nota enmendada el ${ecuadorianDate(data.note.amendedAt)}. Esta es la versión vigente.`,
+              emphasis: true,
+            },
+          ] as Block[])),
+      ...(data.note === null || data.note.sections.length === 0
+        ? []
+        : ([
+            {
+              kind: 'fields',
+              columns: 1,
+              entries: data.note.sections.map((s) => ({
+                label: s.title,
+                value: s.text,
+              })),
+            },
+          ] as Block[])),
+    ]),
+    ...section(
+      'Diagnósticos',
+      data.diagnoses.length === 0
+        ? []
+        : [
+            {
+              kind: 'table',
+              columns: [
+                { header: 'CIE-10', width: 0.16 },
+                { header: 'Diagnóstico', width: 0.62 },
+                { header: 'Condición', width: 0.22 },
+              ],
+              rows: data.diagnoses.map((d) => [
+                d.code,
+                d.principal ? `${d.display} (principal)` : d.display,
+                CERTAINTY_LABEL[d.certainty] ?? '—',
+              ]),
+            },
+          ],
+    ),
+    ...section(
+      'Receta',
+      data.prescriptions
+        .filter((p) => p.lines.length > 0)
+        .map((p): Block => ({
+          kind: 'fields',
+          columns: 1,
+          entries: p.lines.map((line, index) => ({
+            label:
+              index === 0 && p.sequenceNumber !== null
+                ? `Receta N.º ${p.sequenceNumber}`
+                : 'Medicamento',
+            value: indicationsText(line),
+          })),
+        })),
+    ),
+    ...section(
+      'Exámenes pedidos',
+      data.exams.length === 0
+        ? []
+        : [
+            {
+              kind: 'table',
+              columns: [
+                { header: 'Orden', width: 0.2 },
+                { header: 'Examen', width: 0.8 },
+              ],
+              rows: data.exams.map((exam) => [
+                exam.orderNumber === null ? '—' : `N.º ${exam.orderNumber}`,
+                exam.display,
+              ]),
+            },
+          ],
+    ),
+    ...section(
+      'Certificados',
+      data.certificates.length === 0
+        ? []
+        : [
+            {
+              kind: 'fields',
+              columns: 1,
+              entries: data.certificates.map((c) => ({
+                label: `Certificado N.º ${c.number}`,
+                value: [
+                  CERTIFICATE_TYPE_LABEL[c.type] ?? '—',
+                  c.restFrom === null || c.restTo === null
+                    ? null
+                    : `del ${calendarDate(c.restFrom)} al ${calendarDate(c.restTo)}`,
+                ]
+                  .filter(Boolean)
+                  .join(', '),
+              })),
+            },
+          ],
+    ),
+    {
+      kind: 'signature',
+      caption: 'Firma y sello del profesional',
+      image: data.practitioner.seal !== null ? 'seal' : null,
+    },
+  ];
+
+  return {
+    frame: composeFrame(context, template, {
+      kind: 'ENCOUNTER_SUMMARY',
+      reference: `Atención del ${ecuadorianDate(data.startedAt)}`,
+      confidential: data.diagnoses.length > 0,
+      verificationCode: data.verificationCode,
+    }),
+    blocks,
+    tearOff: null,
+  };
+}
+
 /** The one entry point: a subject and a template in, a layout out. */
 export function composeLayout(
   subject: DocumentSubject,
@@ -1181,5 +1415,7 @@ export function composeLayout(
       return composeCertificateLayout(subject.data, context, template);
     case 'INVOICE_RIDE':
       return composeInvoiceLayout(subject.data, context, template);
+    case 'ENCOUNTER_SUMMARY':
+      return composeEncounterSummaryLayout(subject.data, context, template);
   }
 }

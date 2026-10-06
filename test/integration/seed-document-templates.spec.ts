@@ -21,9 +21,10 @@ describe('la semilla de plantillas de documentos', () => {
     publisherId = (await createUser(prisma)).id;
   });
 
-  it('DOC-030 publica la versión 1 de las cuatro clases, y dos pasadas no duplican nada', async () => {
+  it('DOC-030 DOC-113 publica la versión 1 de las cinco clases, y dos pasadas no duplican nada', async () => {
     const first = await seedDocumentTemplates(prisma, publisherId);
     expect(first.published.sort()).toEqual([
+      'ENCOUNTER_SUMMARY',
       'INVOICE_RIDE',
       'MEDICAL_CERTIFICATE',
       'PRESCRIPTION',
@@ -36,7 +37,7 @@ describe('la semilla de plantillas de documentos', () => {
     const rows = await prisma.documentTemplate.findMany({
       select: { kind: true, version: true, accentColour: true },
     });
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
     expect(rows.every((row) => row.version === 1)).toBe(true);
     expect(rows.every((row) => row.accentColour === '#0f6b5c')).toBe(true);
   });

@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { NotFoundError } from '../../../shared/domain/errors/domain-error';
+import {
+  ConflictError,
+  NotFoundError,
+} from '../../../shared/domain/errors/domain-error';
 import {
   DocumentImageNotFoundError,
   DocumentVerificationNotFoundError,
+  EncounterSummaryNotAvailableError,
 } from './document.errors';
 
 /**
@@ -24,6 +28,15 @@ describe('los errores nuevos de documents', () => {
     expect(error).toBeInstanceOf(NotFoundError);
     expect(error.userTitle).toBe(
       'No hay ningún documento con ese código de verificación',
+    );
+  });
+
+  it('DOC-111 ENCOUNTER_SUMMARY_NOT_AVAILABLE es un 409 que dice qué falta, sin datos del paciente', () => {
+    const error = new EncounterSummaryNotAvailableError('OPEN');
+    expect(error.code).toBe('ENCOUNTER_SUMMARY_NOT_AVAILABLE');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toBe(
+      'Esta atención todavía no tiene la nota firmada, o fue anulada: no hay resumen que descargar',
     );
   });
 });

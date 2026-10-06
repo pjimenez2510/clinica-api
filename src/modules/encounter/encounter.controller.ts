@@ -524,6 +524,7 @@ export function toEncounterResponse(
     closedById: encounter.closedById,
     closedAt: encounter.closedAt?.toISOString() ?? null,
     closedBySubstituteReason: encounter.closedBySubstituteReason,
+    summaryAvailable: encounter.summaryAvailable ?? false,
     annulment: encounter.annulment && {
       reason: encounter.annulment.reason,
       at: encounter.annulment.at.toISOString(),

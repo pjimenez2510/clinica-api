@@ -145,17 +145,21 @@ export interface ServiceOrderPrintData {
   priority: string;
   clinicalNoteText: string | null;
   patient: PatientIdentity;
+  /** ORD-126. The header of form 010A carries it: `MALE`, `FEMALE`, … */
+  patientSex: string;
   diagnoses: readonly { code: string; display: string }[];
   orderedBy: PractitionerIdentity;
   /**
-   * DOC-072. Each exam with its frozen code and name, and the specimen and the
-   * patient's preparation as the catalogue holds them today.
+   * DOC-072. Each exam with its frozen code and name, and the specimen, the
+   * patient's preparation and its section of form 010A (ORD-126) as the
+   * catalogue holds them today.
    */
   items: readonly {
     code: string;
     display: string;
     specimen: string | null;
     preparation: string | null;
+    section: string | null;
     status: string;
   }[];
 }
@@ -248,11 +252,61 @@ export interface DocumentContext {
  * document is a compile error everywhere it has to be handled rather than a
  * silent gap.
  */
+/**
+ * DOC-111. Everything the summary of an attention prints, as it stands when it
+ * is asked for: it is composed on demand and never archived, so «as it stands»
+ * is the honest answer. Only what was issued and not annulled: a receta in
+ * draft or annulled, a cancelled exam, a revoked certificate are not part of
+ * what the patient takes away.
+ */
+export interface EncounterSummaryPrintData {
+  subjectId: string;
+  siteId: string;
+  /** EN-219. The attention's code, printed at the foot (DOC-112). */
+  verificationCode: string;
+  /** `ENTERED_IN_ERROR` is refused; any other is printed. */
+  status: string;
+  startedAt: Date;
+  patient: PatientIdentity;
+  patientSex: string;
+  practitioner: PractitionerIdentity;
+  /** The current vital signs, already labelled; empty when none were taken. */
+  vitals: readonly { label: string; value: string }[];
+  /**
+   * The CURRENT 002 of the chain —the last signed—, its sections under the
+   * titles of its template. `null` when none is signed: DOC-111 refuses it.
+   */
+  note: {
+    signedAt: Date;
+    /** When it is an amendment: the instant the current version was signed. */
+    amendedAt: Date | null;
+    sections: readonly { title: string; text: string }[];
+  } | null;
+  diagnoses: readonly {
+    code: string;
+    display: string;
+    principal: boolean;
+    certainty: string;
+  }[];
+  prescriptions: readonly {
+    sequenceNumber: number | null;
+    lines: readonly PrescriptionLine[];
+  }[];
+  exams: readonly { orderNumber: number | null; display: string }[];
+  certificates: readonly {
+    number: number;
+    type: string;
+    restFrom: Date | null;
+    restTo: Date | null;
+  }[];
+}
+
 export type DocumentSubject =
   | { kind: 'PRESCRIPTION'; data: PrescriptionPrintData }
   | { kind: 'SERVICE_ORDER'; data: ServiceOrderPrintData }
   | { kind: 'MEDICAL_CERTIFICATE'; data: CertificatePrintData }
-  | { kind: 'INVOICE_RIDE'; data: InvoicePrintData };
+  | { kind: 'INVOICE_RIDE'; data: InvoicePrintData }
+  | { kind: 'ENCOUNTER_SUMMARY'; data: EncounterSummaryPrintData };
 
 /** One subject, looked up within the caller's own site scope (DOC-012). */
 export interface SubjectQuery {

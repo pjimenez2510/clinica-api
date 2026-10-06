@@ -9,7 +9,9 @@ import {
   DocumentSubjectNotFoundError,
   DocumentSubjectNotIssuableError,
   DocumentTemplateNotPublishedError,
+  EncounterSummaryNotAvailableError,
 } from '../domain/document.errors';
+import { sampleSubject } from '../domain/document-samples';
 import { CLINICAL_DOCUMENT_KINDS } from '../domain/document-kind';
 import type { DocumentKind } from '../domain/document-kind';
 import type { StoredImage, StoredImageSummary } from '../domain/document-image';
@@ -833,13 +835,14 @@ describe('DOC-038 la vista previa la pinta el mismo generador, y no guarda nada'
 });
 
 describe('DOC-039 una sola identidad para las cuatro clases', () => {
-  it('DOC-039 publica la versión siguiente de cada clase', async () => {
+  it('DOC-039 DOC-113 publica la versión siguiente de cada clase, el resumen incluido', async () => {
     const published = await service.publishTemplateForAllKinds(
       slots,
       requester,
     );
 
     expect(published.map((one) => one.kind).sort()).toEqual([
+      'ENCOUNTER_SUMMARY',
       'INVOICE_RIDE',
       'MEDICAL_CERTIFICATE',
       'PRESCRIPTION',
@@ -937,5 +940,51 @@ describe('DOC-109 al anular se archiva el PDF que sustituye al vigente', () => {
       requester,
     );
     expect(archived?.supersedeReason).toBe('Corrección de la receta N.º 1');
+  });
+});
+
+describe('DOC-111 el resumen de la atención', () => {
+  const summary = (
+    data: Partial<
+      Extract<DocumentSubject, { kind: 'ENCOUNTER_SUMMARY' }>['data']
+    > = {},
+  ): DocumentSubject => {
+    const base = sampleSubject('ENCOUNTER_SUMMARY', new Date());
+    if (base.kind !== 'ENCOUNTER_SUMMARY') throw new Error('sample');
+    return { kind: 'ENCOUNTER_SUMMARY', data: { ...base.data, ...data } };
+  };
+
+  beforeEach(() => {
+    repository.templates = [
+      ...repository.templates,
+      { ...template, id: 'template-summary', kind: 'ENCOUNTER_SUMMARY' },
+    ];
+  });
+
+  it('DOC-111 compone el PDF, no archiva nada y deja la fila de acceso sobre la atención', async () => {
+    sources.subject = summary();
+    const rendered = await service.encounterSummary('encounter-1', requester);
+
+    expect(rendered.mimeType).toBe('application/pdf');
+    expect(repository.renders).toHaveLength(0);
+    expect(repository.disclosures).toEqual([
+      { userId: 'user-1', resourceId: 'encounter-1', action: 'PRINT', resourceType: 'encounter_summary' }, // prettier-ignore
+    ]);
+  });
+
+  it('DOC-111 sin nota firmada, o con la atención anulada, no hay resumen ni fila', async () => {
+    sources.subject = summary({ note: null });
+    await expect(service.encounterSummary('encounter-1', requester)).rejects.toBeInstanceOf(EncounterSummaryNotAvailableError); // prettier-ignore
+    sources.subject = summary({ status: 'ENTERED_IN_ERROR' });
+    await expect(service.encounterSummary('encounter-1', requester)).rejects.toBeInstanceOf(EncounterSummaryNotAvailableError); // prettier-ignore
+    expect(repository.disclosures).toEqual([]);
+  });
+
+  it('DOC-111 si la fila de acceso no se puede escribir, el resumen no se sirve', async () => {
+    sources.subject = summary();
+    repository.recordDisclosure = () =>
+      Promise.reject(new Error('bitácora caída'));
+
+    await expect(service.encounterSummary('encounter-1', requester)).rejects.toThrow('bitácora caída'); // prettier-ignore
   });
 });

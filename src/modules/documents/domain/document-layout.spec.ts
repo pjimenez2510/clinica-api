@@ -660,6 +660,7 @@ describe('DOC-072 la orden de examen', () => {
           priority: 'ROUTINE',
           clinicalNoteText: 'Paciente en ayunas',
           patient,
+          patientSex: 'MALE',
           diagnoses: [{ code: 'E11', display: 'Diabetes mellitus tipo 2' }],
           orderedBy: prescriber,
           verificationCode: 'OR-1A2B',
@@ -669,6 +670,7 @@ describe('DOC-072 la orden de examen', () => {
               display: 'Hemoglobina glicosilada',
               specimen: 'Sangre total',
               preparation: null,
+              section: 'BIOQUÍMICA',
               status: 'REQUESTED',
             },
           ],
@@ -705,6 +707,7 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
       priority: 'URGENT',
       clinicalNoteText: 'Paciente en tratamiento con metformina',
       patient,
+      patientSex: 'FEMALE',
       diagnoses: [{ code: 'E11', display: 'Diabetes mellitus tipo 2' }],
       orderedBy: prescriber,
       items: [
@@ -712,14 +715,16 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
           code: 'EX-GLUCOSA-AYUNAS',
           display: 'Glucosa en ayunas',
           specimen: 'Suero',
-          preparation: 'Ayuno de 8 a 12 horas.',
+          preparation: 'Ayuno de 8 a 12 horas. Puede beber agua.',
+          section: 'BIOQUÍMICA',
           status: 'REQUESTED',
         },
         {
           code: 'EX-BH',
           display: 'Biometría hemática completa',
           specimen: 'Sangre total con EDTA',
-          preparation: null,
+          preparation: 'No requiere ayuno.',
+          section: 'HEMATOLOGÍA',
           status: 'REQUESTED',
         },
       ],
@@ -745,8 +750,8 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
     const withOneCancelled = composeLayout(
       order({
         items: [
-          { code: 'EX-GLUCOSA-AYUNAS', display: 'Glucosa en ayunas', specimen: 'Suero', preparation: 'Ayuno de 8 a 12 horas.', status: 'CANCELLED' }, // prettier-ignore
-          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-GLUCOSA-AYUNAS', display: 'Glucosa en ayunas', specimen: 'Suero', preparation: 'Ayuno de 8 a 12 horas.', section: null, status: 'CANCELLED' }, // prettier-ignore
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, section: null, status: 'REQUESTED' }, // prettier-ignore
         ],
       }),
       context,
@@ -762,7 +767,7 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
     const allCancelled = composeLayout(
       order({
         items: [
-          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, status: 'CANCELLED' }, // prettier-ignore
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, section: null, status: 'CANCELLED' }, // prettier-ignore
         ],
       }),
       context,
@@ -803,6 +808,102 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
     expect(text).toContain('Ayuno de 8 a 12 horas.');
   });
 
+  it('ORD-126 los exámenes salen bajo su sección del 010A, en el orden de la orden, y los sin sección al final', () => {
+    const layout = composeLayout(
+      order({
+        items: [
+          { code: 'EX-X', display: 'Examen sin sección', specimen: null, preparation: null, section: null, status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-GLUCOSA-AYUNAS', display: 'Glucosa en ayunas', specimen: 'Suero', preparation: null, section: 'BIOQUÍMICA', status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, section: 'HEMATOLOGÍA', status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-CREA', display: 'Creatinina', specimen: 'Suero', preparation: null, section: 'BIOQUÍMICA', status: 'REQUESTED' }, // prettier-ignore
+        ],
+      }),
+      context,
+      template,
+    );
+    const sections = layout.blocks
+      .filter((block) => block.kind === 'caption')
+      .map((block) => (block.kind === 'caption' ? block.text : ''));
+    expect(sections).toEqual(['BIOQUÍMICA', 'HEMATOLOGÍA', 'OTROS EXÁMENES']);
+    const tables = layout.blocks.filter((block) => block.kind === 'table');
+    expect(
+      tables.map((t) => (t.kind === 'table' ? t.rows.map((r) => r[1]) : [])),
+    ).toEqual([
+      ['Glucosa en ayunas', 'Creatinina'],
+      ['Biometría hemática completa'],
+      ['Examen sin sección'],
+    ]);
+  });
+
+  it('ORD-126 la cabecera lleva el sexo del paciente, además de lo que ya imprimía', () => {
+    const text = wholeText(composeLayout(order(), context, template));
+
+    expect(text).toContain('Sexo');
+    expect(text).toContain('Mujer');
+    // Lo que ya imprimía se conserva.
+    expect(text).toContain('HC0000000801');
+    expect(text).toContain('E11 · Diabetes mellitus tipo 2');
+    expect(text).toContain('ACESS-99887');
+  });
+
+  it('ORD-125 cada indicación nombra su examen, la que no pide preparación no ocupa línea, y el ayuno va arriba', () => {
+    const layout = composeLayout(order(), context, template);
+    const box = layout.blocks.find((block) => block.kind === 'box');
+    if (box?.kind !== 'box') throw new Error('no box');
+    const inBox = wholeText({ ...layout, blocks: box.blocks });
+
+    expect(inBox).toContain('Glucosa en ayunas');
+    expect(inBox).toContain('Ayuno de 8 a 12 horas. Puede beber agua.');
+    expect(inBox).not.toContain('Biometría hemática completa');
+    expect(inBox).not.toContain('No requiere ayuno');
+    expect(inBox).not.toContain('Preparación');
+
+    const fasting = box.blocks[1];
+    expect(fasting).toEqual({
+      kind: 'paragraph',
+      text: 'Venga en ayunas: ayuno de 8 a 12 horas (Glucosa en ayunas).',
+      emphasis: true,
+    });
+  });
+
+  it('ORD-125 «No requiere» sólo calla cuando es toda la indicación: lo que sigue se imprime', () => {
+    const layout = composeLayout(
+      order({
+        items: [
+          { code: 'EX-EMO', display: 'Elemental y microscópico de orina (EMO)', specimen: 'Orina', preparation: 'No requiere ayuno. Recoja la primera orina de la mañana.', section: 'ORINA', status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: 'No requiere ayuno.', section: 'HEMATOLOGÍA', status: 'REQUESTED' }, // prettier-ignore
+        ],
+      }),
+      context,
+      template,
+    );
+    const box = layout.blocks.find((block) => block.kind === 'box');
+    if (box?.kind !== 'box') throw new Error('no box');
+    const inBox = wholeText({ ...layout, blocks: box.blocks });
+
+    expect(inBox).toContain('Recoja la primera orina de la mañana.');
+    expect(inBox).not.toContain('Biometría hemática completa');
+  });
+
+  it('ORD-125 sin ayuno no hay línea destacada, y una preparación que no es ayuno sale con su examen', () => {
+    const layout = composeLayout(
+      order({
+        items: [
+          { code: 'EX-EMO', display: 'Elemental y microscópico de orina (EMO)', specimen: 'Orina', preparation: 'Aseo genital previo.', section: 'ORINA', status: 'REQUESTED' }, // prettier-ignore
+        ],
+      }),
+      context,
+      template,
+    );
+    const box = layout.blocks.find((block) => block.kind === 'box');
+    if (box?.kind !== 'box') throw new Error('no box');
+
+    expect(box.blocks.some((b) => b.kind === 'paragraph' && b.emphasis)).toBe(false); // prettier-ignore
+    const inBox = wholeText({ ...layout, blocks: box.blocks });
+    expect(inBox).toContain('Elemental y microscópico de orina (EMO)');
+    expect(inBox).toContain('Aseo genital previo.');
+  });
+
   it('DOC-072 los datos clínicos van para el laboratorio, con su nombre', () => {
     const text = wholeText(composeLayout(order(), context, template));
 
@@ -815,7 +916,7 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
       composeLayout(
         order({
           items: [
-            { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, status: 'REQUESTED' }, // prettier-ignore
+            { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, section: null, status: 'REQUESTED' }, // prettier-ignore
           ],
         }),
         context,
@@ -1567,7 +1668,11 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
    * table cell, every heading and caption. A new page shape may move them; it
    * may not drop one.
    */
-  const BEFORE: Record<DocumentSubject['kind'], string[]> = {
+  const BEFORE: Record<
+    Exclude<DocumentSubject['kind'], 'ENCOUNTER_SUMMARY'>,
+    string[]
+  > = {
+    // prettier-ignore
     PRESCRIPTION: [
       'Ciudad=Quito',
       'Fecha=20/08/2026',
@@ -1699,7 +1804,7 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
    * repeat it. Old → what the paper says now.
    */
   const CHANGED: Record<
-    DocumentSubject['kind'],
+    keyof typeof BEFORE,
     Record<string, readonly string[]>
   > = {
     // D-095: the hour of issue, in Ecuador, beside the date. The tear-off
@@ -1710,6 +1815,8 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
     // D-095: the hour of the request.
     SERVICE_ORDER: {
       'Fecha=20/08/2026': ['Fecha de solicitud=20/08/2026 · 20:00'],
+      // ORD-125: each instruction under the name of its exam.
+      'Preparación=Ayuno de 8 horas.': ['Creatinina sérica=Ayuno de 8 horas.'],
     },
     // DOC-107: the subtitle the template drops; its four data are in block B.
     MEDICAL_CERTIFICATE: { 'Datos laborales del paciente': [] },
@@ -1780,7 +1887,7 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
       }
     });
 
-  it.each(Object.keys(BEFORE) as DocumentSubject['kind'][])(
+  it.each(Object.keys(BEFORE) as (keyof typeof BEFORE)[])(
     'DOC-107 %s imprime todo lo que imprimía, salvo lo anotado',
     (kind) => {
       const at = new Date('2026-08-21T01:00:00Z'); // fecha-fija: the instant BEFORE was captured with
@@ -1806,4 +1913,116 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
       expect(missing).toEqual([]);
     },
   );
+});
+
+describe('DOC-111 el resumen de la atención', () => {
+  const startedAt = new Date();
+  const summary = (
+    overrides: Partial<
+      Extract<DocumentSubject, { kind: 'ENCOUNTER_SUMMARY' }>['data']
+    > = {},
+  ): DocumentSubject => ({
+    kind: 'ENCOUNTER_SUMMARY',
+    data: {
+      subjectId: 'encounter-1',
+      siteId: 'site-1',
+      verificationCode: 'ABCDEF0123456789',
+      status: 'COMPLETED',
+      startedAt,
+      patient,
+      patientSex: 'FEMALE',
+      practitioner: prescriber,
+      vitals: [{ label: 'Temperatura', value: '37,8 °C' }],
+      note: {
+        signedAt: startedAt,
+        amendedAt: null,
+        sections: [
+          { title: 'Motivo de consulta', text: 'Dolor de garganta' },
+          { title: 'Plan de tratamiento', text: 'Hidratación' },
+        ],
+      },
+      diagnoses: [
+        { code: 'J02.9', display: 'Faringitis aguda', principal: true, certainty: 'DEFINITIVE' }, // prettier-ignore
+        { code: 'R50.9', display: 'Fiebre', principal: false, certainty: 'PRESUMPTIVE' }, // prettier-ignore
+      ],
+      prescriptions: [
+        {
+          sequenceNumber: 12,
+          lines: [
+            {
+              genericName: 'Paracetamol',
+              presentation: 'Tableta',
+              concentration: '500 mg',
+              routeCode: 'ORAL',
+              quantity: 10,
+              doseText: '1 tableta',
+              frequencyText: 'Cada 8 horas',
+              durationDays: 3,
+              instructions: null,
+              offFormulary: false,
+              offFormularyJustification: null,
+            },
+          ],
+        },
+      ],
+      exams: [{ orderNumber: 41, display: 'Biometría hemática completa' }],
+      certificates: [
+        { number: 7, type: 'MEDICAL_REST', restFrom: startedAt, restTo: startedAt }, // prettier-ignore
+      ],
+      ...overrides,
+    },
+  });
+
+  it('DOC-111 lleva la atención, los signos, la nota, los diagnósticos, la receta, los exámenes y los certificados, en ese orden', () => {
+    const layout = composeLayout(summary(), context, template);
+    const text = wholeText(layout);
+
+    expect(layout.frame.title).toBe('RESUMEN DE LA ATENCIÓN');
+    const order = [
+      'Fecha de la atención',
+      'Temperatura',
+      'Dolor de garganta',
+      'J02.9',
+      'Paracetamol 500 mg: 1 tableta, cada 8 horas, por vía oral, durante 3 días',
+      'Biometría hemática completa',
+      'Reposo médico',
+    ].map((needle) => text.indexOf(needle));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(text).toContain('Definitivo');
+    expect(text).toContain('Presuntivo');
+    expect(text).toContain('Sexo=Mujer');
+  });
+
+  it('DOC-111 DOC-112 el pie lleva el código de la atención y la cabecera dice CONFIDENCIAL con diagnóstico', () => {
+    const { frame } = composeLayout(summary(), context, template);
+
+    expect(frame.footer.verification?.code).toBe('ABCDEF0123456789');
+    expect(frame.confidential).toBe(true);
+  });
+
+  it('DOC-111 una enmienda lo dice, y un bloque vacío no se imprime', () => {
+    const amended = composeLayout(
+      summary({
+        note: {
+          signedAt: startedAt,
+          amendedAt: startedAt,
+          sections: [{ title: 'Motivo de consulta', text: 'Dolor' }],
+        },
+        vitals: [],
+        prescriptions: [],
+        exams: [],
+        certificates: [],
+      }),
+      context,
+      template,
+    );
+    const text = wholeText(amended);
+
+    expect(text).toContain('Nota enmendada el');
+    expect(text).not.toContain('Signos vitales');
+    expect(text).not.toContain('Receta');
+    expect(text).not.toContain('Exámenes pedidos');
+    expect(text).not.toContain('Certificados');
+  });
 });

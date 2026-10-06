@@ -675,4 +675,24 @@ describe('DOC-050 a DOC-058 la imagen guardada', () => {
     // THE OLD ROW IS STILL THERE. Nothing in this module deletes.
     await expect(context.prisma.documentImage.count()).resolves.toBe(2);
   });
+  it('DOC-111 la base no deja archivar un resumen de atención; una receta sí entra (control positivo)', async () => {
+    await emit();
+    const error = await rejectionOf(
+      context.prisma.documentRender.create({
+        data: {
+          kind: 'ENCOUNTER_SUMMARY',
+          templateId: context.templateId,
+          templateVersion: 1,
+          prescriptionId: context.otherPrescriptionId,
+          siteId: context.siteId,
+          content: new Uint8Array(PDF),
+          byteSize: PDF.byteLength,
+          sha256: sha256Of(PDF),
+          issuedById: context.userId,
+        },
+      }),
+    );
+    expect(String(error)).toMatch(/document_render_kind_matches_subject/);
+    expect(await context.prisma.documentRender.count()).toBe(1);
+  });
 });
