@@ -60,6 +60,14 @@ export interface PatientConsentView {
   supersedesId: string | null;
   /** PD-044. Another consent corrects this one: it no longer stands. */
   isSuperseded: boolean;
+  /**
+   * PD-044. Who TOOK the consent from the person and when: on an original,
+   * its own `recordedAt`/`recordedBy`; on a correction, the FIRST consent of
+   * the chain's. A correction fixes how it was written down, not who was at
+   * the desk that day.
+   */
+  takenAt: Date;
+  takenBy: StaffName;
 }
 
 export interface NewConsent {
@@ -180,8 +188,6 @@ export interface DataRequestChanges {
   right?: DataSubjectRight;
   description?: string;
   receivedAt?: Date;
-  /** Recomputed by the service when the right or the receipt changed. */
-  dueOn?: ClinicalDate;
 }
 
 export type EditRequestResult =
@@ -253,7 +259,10 @@ export interface DataSubjectRequestRepository {
   /**
    * PD-046. The edit, under the row's lock and with a new stamp, so the row it
    * replaces goes to `record_version`; and its trail row. An answered request
-   * is not edited.
+   * is not edited. When the right or the receipt moves, the due date is
+   * recomputed HERE, from the values that result under the lock (PD-032):
+   * computed by the caller before the lock, a concurrent edit of the other
+   * field would leave a due date the law does not say.
    */
   edit(
     requestId: string,

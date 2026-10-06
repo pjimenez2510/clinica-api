@@ -351,6 +351,7 @@ function consentResponse(entry: PatientConsentEntry): PatientConsentResponse {
     ...entry,
     textVersion: textResponse(entry.textVersion),
     recordedAt: entry.recordedAt.toISOString(),
+    takenAt: entry.takenAt.toISOString(),
   };
 }
 

@@ -266,20 +266,64 @@ export class PrismaConsentRepository implements ConsentRepository {
   }
 
   private async views(rows: ConsentRow[]): Promise<PatientConsentView[]> {
+    const roots = await this.originalsOf(rows);
     const names = await staffNames(
       this.prisma,
-      rows.flatMap((row) => [row.recordedBy, row.textVersion.publishedBy]),
+      rows.flatMap((row) => [
+        row.recordedBy,
+        row.textVersion.publishedBy,
+        roots.get(row.id)?.recordedBy ?? row.recordedBy,
+      ]),
     );
-    return rows.map((row) => ({
-      id: row.id,
-      patientId: row.patientId,
-      textVersion: toTextView(row.textVersion, names),
-      medium: row.medium,
-      grantedBy: row.grantedBy,
-      recordedAt: row.recordedAt,
-      recordedBy: nameOf(names, row.recordedBy),
-      supersedesId: row.supersedesId,
-      isSuperseded: row.supersededBy !== null,
-    }));
+    return rows.map((row) => {
+      const taken = roots.get(row.id) ?? row;
+      return {
+        id: row.id,
+        patientId: row.patientId,
+        textVersion: toTextView(row.textVersion, names),
+        medium: row.medium,
+        grantedBy: row.grantedBy,
+        recordedAt: row.recordedAt,
+        recordedBy: nameOf(names, row.recordedBy),
+        supersedesId: row.supersedesId,
+        isSuperseded: row.supersededBy !== null,
+        takenAt: taken.recordedAt,
+        takenBy: nameOf(names, taken.recordedBy),
+      };
+    });
+  }
+
+  /**
+   * PD-044. For every correction, the FIRST consent of its chain —who took it
+   * from the person and when—, walking `supersedes_id` back in one statement.
+   * Originals are not in the map: they are their own.
+   */
+  private async originalsOf(
+    rows: readonly ConsentRow[],
+  ): Promise<Map<string, { recordedAt: Date; recordedBy: string }>> {
+    const corrections = rows
+      .filter((row) => row.supersedesId !== null)
+      .map((row) => row.id);
+    if (corrections.length === 0) return new Map();
+    const found = await this.prisma.$queryRaw<
+      { id: string; recorded_at: Date; recorded_by: string }[]
+    >`
+      WITH RECURSIVE chain (start_id, id, supersedes_id) AS (
+        SELECT id, id, supersedes_id FROM patient_consent
+         WHERE id = ANY(${corrections}::uuid[])
+        UNION ALL
+        SELECT chain.start_id, c.id, c.supersedes_id
+          FROM chain JOIN patient_consent c ON c.id = chain.supersedes_id
+      )
+      SELECT chain.start_id::text AS id, c.recorded_at,
+             c.recorded_by::text AS recorded_by
+        FROM chain JOIN patient_consent c ON c.id = chain.id
+       WHERE chain.supersedes_id IS NULL`;
+    return new Map(
+      found.map((row) => [
+        row.id,
+        { recordedAt: row.recorded_at, recordedBy: row.recorded_by },
+      ]),
+    );
   }
 }

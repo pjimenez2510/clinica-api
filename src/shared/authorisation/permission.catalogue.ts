@@ -524,7 +524,8 @@ export const PERMISSION_CATALOGUE = [
   // de fábrica trae `ADMIN` (D-083 §4). Registrar el consentimiento NO tiene
   // permiso propio: es parte del alta en el mostrador y va con `patient:write`.
   //
-  // ⚠️ `patient:data-requests` INCLUYE EXPORTAR LA FICHA ENTERA en JSON (PD-040),
+  // ⚠️ `patient:data-requests` INCLUYE EXPORTAR LA FICHA ENTERA en JSON (PD-040)
+  // —con las versiones corregidas de la historia clínica (PD-048, D-140.2)—,
   // y la descripción lo dice para que nadie lo conceda sin saberlo.
   {
     code: 'patient:consent-text',
@@ -536,7 +537,7 @@ export const PERMISSION_CATALOGUE = [
     code: 'patient:data-requests',
     resource: 'patient',
     description:
-      'Registrar y responder las solicitudes de los pacientes sobre sus datos (acceso, rectificación, eliminación, oposición, portabilidad, suspensión), y exportar la ficha completa del paciente',
+      'Registrar y responder las solicitudes de los pacientes sobre sus datos (acceso, rectificación, eliminación, oposición, portabilidad, suspensión), y exportar la ficha completa del paciente, que incluye las versiones corregidas de su historia clínica',
   },
 ] as const satisfies readonly CatalogueEntry[];
 

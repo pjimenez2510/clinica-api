@@ -164,6 +164,12 @@ export const patientConsentSchema = z.object({
   supersedesId: z.uuid().nullable(),
   /** PD-044. Another consent corrects this one: it no longer stands. */
   isSuperseded: z.boolean(),
+  /**
+   * PD-044. Who took it and when: the original's on a correction, whose
+   * `recordedBy`/`recordedAt` say who corrected it and when.
+   */
+  takenAt: z.iso.datetime(),
+  takenBy: staffNameSchema,
 });
 export class PatientConsentDto extends createZodDto(patientConsentSchema) {}
 export type PatientConsentResponse = z.infer<typeof patientConsentSchema>;

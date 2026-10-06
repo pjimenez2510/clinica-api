@@ -315,8 +315,11 @@ con los disparadores de la base.
   consentimiento nuevo con el medio y el otorgante enviados, el **mismo**
   paciente y la **misma** versión del texto que el original, que lo nombre
   (`supersedesId`), con el instante y el autor de PD-011 y su fila `CREATE` en
-  la bitácora (PD-017); el original NO DEBERÁ cambiar, y la lista de PD-016
-  DEBERÁ decir de cada uno si otro lo sustituye. SI el consentimiento no existe
+  la bitácora (PD-017); el original NO DEBERÁ cambiar, la lista de PD-016
+  DEBERÁ decir de cada uno si otro lo sustituye, y cada consentimiento DEBERÁ
+  decir quién lo **tomó** y cuándo (`takenBy`, `takenAt`): en una corrección,
+  los del primero de la cadena, y no los de quien corrige, que van en
+  `recordedBy`/`recordedAt`. SI el consentimiento no existe
   o no es de la ficha, ENTONCES DEBERÁ responder `CONSENT_NOT_FOUND`; SI ya
   tiene una corrección, ENTONCES `CONSENT_ALREADY_CORRECTED` (se corrige el
   vigente).
@@ -358,6 +361,14 @@ con los disparadores de la base.
   > **El vencimiento también se mueve si cambia sólo el derecho**: es función
   > del derecho y de la recepción, y dejar el del derecho anterior sería un
   > plazo que la ley no dice.
+  >
+  > **Se calcula bajo el candado de la fila** (revisión de la rama,
+  > 06-10-2026): con el derecho y la recepción que **resultan** tras leerla
+  > bloqueada. Calculado antes, dos ediciones simultáneas —una del derecho,
+  > otra de la recepción— dejaban el vencimiento de una combinación que nunca
+  > existió. La prueba sostiene el candado, deja que las dos lean la fila
+  > vieja y comprueba que se aplican las dos y el vencimiento es el de lo que
+  > quedó.
 - **PD-047** — CUANDO alguien con `patient:data-requests` corrija la respuesta
   de una solicitud respondida, el sistema DEBERÁ registrar una respuesta
   rectificada —resultado y texto obligatorio, como PD-033— enlazada a la que
@@ -394,6 +405,16 @@ con los disparadores de la base.
   > ALTA:** la historia clínica vigente sigue fuera (PD-041) mientras sus
   > versiones anteriores salen; es lo que pide D-131.1 y queda para cuando la
   > historia clínica se exporte entera (D-083 §3).
+  >
+  > **D-140.2 (construido así mientras el autor decide).** NO DEBERÁN salir
+  > las versiones de una atención anulada (`ENTERED_IN_ERROR`, el «paciente
+  > equivocado»: son datos de otra persona) ni las de lo que cuelga de ella
+  > —signos, diagnósticos y avisos de crítico—; y de las versiones de
+  > `critical_result_notice` DEBERÁN omitirse `recipient_name` y `note`, que
+  > nombran a otra persona (la tabla no tiene una columna de contacto aparte).
+  > La descripción de `patient:data-requests` dice que la exportación incluye
+  > las versiones de la historia clínica. Pendiente del autor: si esa parte la
+  > prepara alguien con `record:read`.
 
 ---
 

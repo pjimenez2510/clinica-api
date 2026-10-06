@@ -113,6 +113,11 @@ export class DataSubjectRequestsService {
    * of the right and the receipt (PD-032), so it is RECOMPUTED when either
    * changes —with today's rule and holidays— and only then; the previous row
    * is kept by `record_version`.
+   *
+   * ⚠️ THE REPOSITORY RECOMPUTES IT, UNDER THE ROW LOCK. Computed here, from
+   * the row read before the lock, two simultaneous edits —one of the right,
+   * one of the receipt— each left the due date of a combination that never
+   * existed.
    */
   async edit(
     requestId: string,
@@ -137,19 +142,7 @@ export class DataSubjectRequestsService {
       throw new DataRequestReceivedInFutureError();
     }
 
-    const right = changes.right ?? current.right;
-    const receivedAt = changes.receivedAt ?? current.receivedAt;
-    const moves =
-      right !== current.right ||
-      receivedAt.getTime() !== current.receivedAt.getTime();
-    const dueOn = moves ? await this.dueOn(right, receivedAt) : undefined;
-
-    const result = await this.requests.edit(
-      requestId,
-      { ...changes, dueOn },
-      requester,
-      now,
-    );
+    const result = await this.requests.edit(requestId, changes, requester, now);
     switch (result.status) {
       case 'missing':
         throw new DataRequestNotFoundError();

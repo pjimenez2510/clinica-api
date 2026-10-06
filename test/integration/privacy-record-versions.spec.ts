@@ -77,6 +77,84 @@ describe('privacy: las versiones guardadas llegan a su titular', () => {
   });
 });
 
+describe('privacy: lo que no sale de las versiones (D-140.2)', () => {
+  const db = useDatabase();
+
+  it('PD-048 las versiones de una atención anulada y de lo que cuelga de ella no salen; las de la ficha sí', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const mine = await everyVersionedRowOf(prisma, scene);
+    const hanging = [
+      'encounter',
+      'encounter_vitals',
+      'encounter_diagnosis',
+      'critical_result_notice',
+    ];
+
+    // Control positivo: con la atención viva, sus versiones salen.
+    const before = await recordVersionsOfChart(prisma, mine.patientId);
+    for (const table of hanging) {
+      expect(before.map((version) => version.table)).toContain(table);
+    }
+
+    // «Paciente equivocado»: la atención se anula.
+    const annuller = await createUser(prisma);
+    const endedAt = new Date(scene.encounter.startedAt.getTime() + 20 * 60_000);
+    await prisma.encounter.update({
+      where: { id: scene.encounter.id },
+      data: {
+        status: 'ENTERED_IN_ERROR',
+        endedAt,
+        enteredInErrorById: annuller.id,
+        enteredInErrorAt: endedAt,
+      },
+    });
+
+    const after = await recordVersionsOfChart(prisma, mine.patientId);
+    const tables = after.map((version) => version.table);
+    for (const table of hanging) expect(tables).not.toContain(table);
+    // Lo que es de la persona y no de esa atención sigue saliendo.
+    expect(tables).toContain('patient_allergy');
+    expect(tables).toContain('patient_history');
+  });
+
+  it('PD-048 las versiones de un aviso de crítico salen sin el nombre del destinatario ni la nota', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const author = await createUser(prisma);
+    const notice = await aCriticalNotice(prisma, scene, author.id);
+    await prisma.recordVersion.create({
+      data: {
+        resourceType: 'critical_result_notice',
+        resourceId: notice.id,
+        version: 1,
+        data: {
+          id: notice.id,
+          recipient_kind: 'FAMILY',
+          recipient_name: 'Rosa, la hermana',
+          note: 'Llamar al 0991234567 si no contesta',
+          channel: 'PHONE',
+          outcome: 'NOTIFIED',
+        },
+        changedById: author.id,
+        changedAt: new Date(),
+      },
+    });
+
+    const [version] = await recordVersionsOfChart(prisma, scene.patient.id);
+
+    expect(version?.table).toBe('critical_result_notice');
+    // Control positivo: lo demás de la versión sí sale.
+    expect(version?.data).toMatchObject({
+      recipient_kind: 'FAMILY',
+      channel: 'PHONE',
+      outcome: 'NOTIFIED',
+    });
+    expect(version?.data).not.toHaveProperty('recipient_name');
+    expect(version?.data).not.toHaveProperty('note');
+  });
+});
+
 /**
  * One row of every versioned table for a fresh patient, and one archived
  * version of each. The version is inserted as the archive trigger would —

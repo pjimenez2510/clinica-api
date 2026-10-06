@@ -355,7 +355,7 @@ describe('corregir en privacidad (D-127)', () => {
     }
   });
 
-  it('PD-046 recalcula el vencimiento cuando cambia la recepción, y no cuando sólo cambia lo que pide', async () => {
+  it('PD-046 no calcula el vencimiento con lo leído antes del candado: pasa sólo lo que cambia y lo recalcula el repositorio', async () => {
     const received = new Date(NOW.getTime() - 2 * 86_400_000);
     const edit = vi.fn().mockResolvedValue({
       status: 'edited',
@@ -372,16 +372,11 @@ describe('corregir en privacidad (D-127)', () => {
     );
 
     await service.edit('r-1', { receivedAt: received }, WHO, NOW);
-    expect(edit.mock.calls[0]?.[1]).toMatchObject({
-      receivedAt: received,
-      dueOn: legalDueDate('ACCESS', clinicalDateOf(received), new Set()),
-    });
+    // Exactamente lo pedido: ni un `dueOn` calculado con la fila de antes.
+    expect(edit.mock.calls[0]?.[1]).toEqual({ receivedAt: received });
 
     await service.edit('r-1', { description: 'Otra cosa' }, WHO, NOW);
-    expect(edit.mock.calls[1]?.[1]).toEqual({
-      description: 'Otra cosa',
-      dueOn: undefined,
-    });
+    expect(edit.mock.calls[1]?.[1]).toEqual({ description: 'Otra cosa' });
   });
 
   it('PD-046 rechaza editar una respondida o con recepción futura, sin llegar a escribir', async () => {

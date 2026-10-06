@@ -60,6 +60,9 @@ interface ConsentBody {
   grantedBy: string;
   recordedAt: string;
   recordedBy: { id: string; fullName: string };
+  /** PD-044. Who TOOK the consent and when: the original's, on a correction. */
+  takenAt: string;
+  takenBy: { id: string; fullName: string };
 }
 
 interface AnswerBody {
@@ -215,6 +218,18 @@ describe('privacy por HTTP', () => {
       .patch(`${base}${path}`)
       .set('Authorization', `Bearer ${auth}`)
       .send(body);
+
+  /** Waits until `count` sessions are blocked on a row lock. */
+  async function waitForLockWaiters(count: number): Promise<void> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+        SELECT count(*) AS waiting FROM pg_stat_activity
+         WHERE wait_event_type = 'Lock' AND datname = current_database()`;
+      if (Number(row?.waiting ?? 0) >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error('the edits never reached the lock');
+  }
 
   async function publish(body: string): Promise<TextBody> {
     const response = await post('/consent-texts', { body }).expect(201);
@@ -783,6 +798,41 @@ describe('privacy por HTTP', () => {
       ).toHaveLength(1);
     });
 
+    it('PD-044 la corrección conserva quién tomó el consentimiento y cuándo, del original; quién la registró es quien corrige', async () => {
+      const text = await publish('Texto uno');
+      const patient = await createPatient(prisma);
+      const original = (
+        await post(
+          `/patients/${patient.id}/consents`,
+          { textVersionId: text.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
+          deskToken,
+        ).expect(201)
+      ).body as ConsentBody;
+      // Control: en el original, quien lo tomó es quien lo registró.
+      expect(original.takenBy).toMatchObject({ id: deskId });
+      expect(original.takenAt).toBe(original.recordedAt);
+
+      const first = (
+        await post(
+          `/patients/${patient.id}/consents/${original.id}/correction`,
+          { medium: 'SIGNED_PAPER', grantedBy: 'HOLDER' },
+        ).expect(201)
+      ).body as ConsentBody;
+      // Y una corrección de la corrección sigue llevando al original.
+      const second = (
+        await post(`/patients/${patient.id}/consents/${first.id}/correction`, {
+          medium: 'SIGNED_PAPER',
+          grantedBy: 'REPRESENTATIVE',
+        }).expect(201)
+      ).body as ConsentBody;
+
+      for (const correction of [first, second]) {
+        expect(correction.recordedBy).toMatchObject({ id: officerId });
+        expect(correction.takenBy).toMatchObject({ id: deskId });
+        expect(correction.takenAt).toBe(original.recordedAt);
+      }
+    });
+
     it('PD-044 un consentimiento ya corregido no se corrige otra vez, y uno que no es de la ficha no existe', async () => {
       const text = await publish('Texto uno');
       const patient = await createPatient(prisma);
@@ -1152,6 +1202,56 @@ describe('privacy por HTTP', () => {
       expect(
         await trail('data_subject_request', created.id, 'UPDATE'),
       ).toHaveLength(1);
+    });
+
+    it('PD-046 dos ediciones a la vez —una cambia el derecho, otra la recepción— se aplican las dos y el vencimiento sale de lo que quedó', async () => {
+      const patient = await createPatient(prisma);
+      const created = (
+        await register(patient.id, { right: 'ACCESS' }).expect(201)
+      ).body as RequestBody;
+      const earlier = new Date(Date.now() - 3 * DAY_MS);
+
+      // Un tercero sostiene el candado de la fila: las dos ediciones leen la
+      // solicitud como estaba y esperan, las dos, a escribir.
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => (release = resolve));
+      const holder = prisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`
+            SELECT id FROM data_subject_request
+             WHERE id = ${created.id}::uuid FOR UPDATE`;
+          await released;
+        },
+        { timeout: 20_000 },
+      );
+      const toSuspension = patch(`/requests/${created.id}`, {
+        right: 'SUSPENSION',
+      }).then((response) => response);
+      const toEarlier = patch(`/requests/${created.id}`, {
+        receivedAt: earlier.toISOString(),
+      }).then((response) => response);
+      await waitForLockWaiters(2);
+      release();
+      await holder;
+      const responses = await Promise.all([toSuspension, toEarlier]);
+
+      // Las dos ganan, una detrás de otra.
+      expect(responses.map((response) => response.status)).toEqual([200, 200]);
+      const stored = await prisma.dataSubjectRequest.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      expect(stored.right).toBe('SUSPENSION');
+      expect(stored.receivedAt.toISOString()).toBe(earlier.toISOString());
+      // Y el vencimiento es el del derecho y la recepción que quedaron, no el
+      // que cada una calculó con lo que leyó antes del candado.
+      const listed = (await get(`/patients/${patient.id}/requests`).expect(200))
+        .body as RequestBody[] | { items: RequestBody[] };
+      const final = (Array.isArray(listed) ? listed : listed.items).find(
+        (entry) => entry.id === created.id,
+      );
+      expect(final?.dueOn).toBe(
+        legalDueDate('SUSPENSION', clinicalDateOf(earlier), new Set()),
+      );
     });
 
     it('PD-046 cambiar sólo lo que pide no mueve el vencimiento', async () => {

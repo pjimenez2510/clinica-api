@@ -116,6 +116,17 @@ describe('the permission catalogue', () => {
   });
 });
 
+describe('lo que dice un permiso que exporta historia clínica', () => {
+  it('PD-048 la descripción de patient:data-requests dice que la exportación incluye versiones de la historia clínica (D-140.2)', () => {
+    const entry = PERMISSION_CATALOGUE.find(
+      (definition) => definition.code === 'patient:data-requests',
+    );
+    // Control: el permiso existe y se lee.
+    expect(entry).toBeDefined();
+    expect(entry?.description).toMatch(/historia clínica/);
+  });
+});
+
 describe('Principal', () => {
   const SITE_NORTE = 'site-norte';
   const SITE_SUR = 'site-sur';

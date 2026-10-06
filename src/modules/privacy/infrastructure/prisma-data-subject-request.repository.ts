@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
-import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  addDays,
+  clinicalDateOf,
+  type ClinicalDate,
+} from '../../../shared/domain/clinic-time';
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type {
@@ -33,6 +37,8 @@ import {
   writeTrail,
   type Db,
 } from './privacy-reads';
+import { DUE_DATE_HORIZON_DAYS, legalDueDate } from '../domain/legal-due-date';
+
 import { recordVersionsOfChart } from './record-version-subjects';
 
 type RequestRow = Prisma.DataSubjectRequestGetPayload<object>;
@@ -45,18 +51,11 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
     return chartLookup(this.prisma, patientId);
   }
 
-  async clinicWideHolidays(
+  clinicWideHolidays(
     from: ClinicalDate,
     to: ClinicalDate,
   ): Promise<Set<string>> {
-    const rows = await this.prisma.holiday.findMany({
-      where: {
-        siteId: null,
-        date: { gte: fromClinicalDate(from), lte: fromClinicalDate(to) },
-      },
-      select: { date: true },
-    });
-    return new Set(rows.map((row) => toClinicalDate(row.date)));
+    return clinicWideHolidaysIn(this.prisma, from, to);
   }
 
   async register(
@@ -166,11 +165,23 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
       ) {
         data.receivedAt = changes.receivedAt;
       }
-      if (
-        changes.dueOn !== undefined &&
-        changes.dueOn !== toClinicalDate(current.due_on)
-      ) {
-        data.dueOn = fromClinicalDate(changes.dueOn);
+      // PD-046, PD-032. The due date follows the right and the receipt THAT
+      // RESULT, read under the lock: a colleague's edit committed while this
+      // one waited is part of what this one computes from. Recomputed only
+      // when either moved, with today's rule and holidays.
+      const right = changes.right ?? current.right;
+      const receivedAt = changes.receivedAt ?? current.received_at;
+      if (data.right !== undefined || data.receivedAt !== undefined) {
+        const receivedOn = clinicalDateOf(receivedAt);
+        const holidays = await clinicWideHolidaysIn(
+          tx,
+          receivedOn,
+          addDays(receivedOn, DUE_DATE_HORIZON_DAYS),
+        );
+        const dueOn = legalDueDate(right, receivedOn, holidays);
+        if (dueOn !== toClinicalDate(current.due_on)) {
+          data.dueOn = fromClinicalDate(dueOn);
+        }
       }
       // Nothing to change is not an edit: no version of an identical row.
       if (Object.keys(data).length === 0) return { status: 'edited' } as const;
@@ -490,6 +501,22 @@ function answerChain(
 }
 
 /** The request under its row lock, with what the edit and the answer compare. */
+/** PD-032. The clinic-wide holidays between two dates, on any client. */
+async function clinicWideHolidaysIn(
+  db: Prisma.TransactionClient | PrismaService,
+  from: ClinicalDate,
+  to: ClinicalDate,
+): Promise<Set<string>> {
+  const rows = await db.holiday.findMany({
+    where: {
+      siteId: null,
+      date: { gte: fromClinicalDate(from), lte: fromClinicalDate(to) },
+    },
+    select: { date: true },
+  });
+  return new Set(rows.map((row) => toClinicalDate(row.date)));
+}
+
 async function lockRequest(
   tx: Prisma.TransactionClient,
   requestId: string,

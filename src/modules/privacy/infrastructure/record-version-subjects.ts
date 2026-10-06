@@ -37,6 +37,11 @@ export interface VersionedTablePath {
   resourceIdsOf(chartId: string): Prisma.Sql;
   /** `null`: exported. Otherwise, why its versions do not leave. */
   omittedBecause: string | null;
+  /**
+   * D-140.2. Columns taken out of every version before it leaves: data about
+   * SOMEBODY ELSE that the row happens to hold.
+   */
+  redactedColumns?: readonly string[];
 }
 
 const byPatientId =
@@ -44,34 +49,45 @@ const byPatientId =
   (chartId) =>
     Prisma.sql`SELECT id FROM ${Prisma.raw(`"${table}"`)} WHERE patient_id IN ${chartScopeIds(chartId)}`;
 
+/**
+ * D-140.2. The attentions of the chart that STAND: one annulled as entered in
+ * error —«paciente equivocado»— holds another person's data, and neither its
+ * versions nor those of what hangs from it leave with this person's export.
+ */
+const standingEncountersOf = (chartId: string) => Prisma.sql`
+  SELECT id FROM encounter
+   WHERE patient_id IN ${chartScopeIds(chartId)}
+     AND status <> 'ENTERED_IN_ERROR'`;
+
 export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
   // The attention itself (modality and first/subsequent, EN-212).
   encounter: {
-    resourceIdsOf: byPatientId('encounter'),
+    resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
   },
   // One row per attention, archived by `encounter_id` (EN-210).
   encounter_vitals: {
-    resourceIdsOf: byPatientId('encounter'),
+    resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
   },
   encounter_diagnosis: {
     resourceIdsOf: (chartId) => Prisma.sql`
       SELECT d.id FROM encounter_diagnosis d
-        JOIN encounter e ON e.id = d.encounter_id
-       WHERE e.patient_id IN ${chartScopeIds(chartId)}`,
+       WHERE d.encounter_id IN (${standingEncountersOf(chartId)})`,
     omittedBecause: null,
   },
-  // Notice → result → report → order → attention.
+  // Notice → result → report → order → attention. Who was told, and the note
+  // about them (often a relative's name or number), are another person's
+  // data: they do not leave (D-140.2).
   critical_result_notice: {
     resourceIdsOf: (chartId) => Prisma.sql`
       SELECT n.id FROM critical_result_notice n
         JOIN observation_result o ON o.id = n.observation_result_id
         JOIN diagnostic_report r ON r.id = o.report_id
         JOIN service_order s ON s.id = r.service_order_id
-        JOIN encounter e ON e.id = s.encounter_id
-       WHERE e.patient_id IN ${chartScopeIds(chartId)}`,
+       WHERE s.encounter_id IN (${standingEncountersOf(chartId)})`,
     omittedBecause: null,
+    redactedColumns: ['recipient_name', 'note'],
   },
   patient_allergy: {
     resourceIdsOf: byPatientId('patient_allergy'),
@@ -139,6 +155,22 @@ export async function recordVersionsOfChart(
     version: row.version,
     changedAt: row.changed_at.toISOString(),
     changedBy: nameOf(names, row.changed_by),
-    data: row.data,
+    data: redact(
+      row.data,
+      VERSIONED_TABLES[row.resource_type]?.redactedColumns,
+    ),
   }));
+}
+
+/** D-140.2. The version without the columns about somebody else. */
+function redact(
+  data: unknown,
+  columns: readonly string[] | undefined,
+): unknown {
+  if (!columns || data === null || typeof data !== 'object') return data;
+  return Object.fromEntries(
+    Object.entries(data as Record<string, unknown>).filter(
+      ([column]) => !columns.includes(column),
+    ),
+  );
 }
