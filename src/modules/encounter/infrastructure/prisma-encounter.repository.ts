@@ -74,6 +74,12 @@ export const ENCOUNTER_SELECT = {
   discontinuedReason: true,
   discontinuedOrigin: true,
   discontinuedAt: true,
+  // EN-220. Whether its 002 stands signed: the summary is offered only then.
+  notes: {
+    where: { formCode: '002', status: 'SIGNED' },
+    select: { id: true },
+    take: 1,
+  },
 } satisfies Prisma.EncounterSelect;
 
 /** The row `ENCOUNTER_SELECT` yields, derived from it so the two cannot drift. */
@@ -785,6 +791,8 @@ export function toEncounterView(row: EncounterRow): EncounterView {
     closedById: row.closedById,
     closedAt: row.closedAt,
     closedBySubstituteReason: row.closedBySubstituteReason,
+    // EN-220, DOC-111. The same two conditions the summary's route checks.
+    summaryAvailable: row.notes.length > 0 && row.status !== 'ENTERED_IN_ERROR',
     // The CHECKs of `encounter_annulment_and_interruption` make each group
     // all-or-nothing, so one column standing for the group is enough.
     // EN-218: the reason is optional; the instant stands for the group.

@@ -1745,8 +1745,24 @@ describe('los documentos por HTTP', () => {
         }),
       ).resolves.toBe(0);
 
+      // EN-220. La lista de atenciones de la ficha dice cuándo se ofrece.
+      const { patientId } = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounterId },
+        select: { patientId: true },
+      });
+      const offered = async () =>
+        (
+          (
+            await get(`/encounters?patientId=${patientId}`, doctorToken).expect(
+              200,
+            )
+          ).body as { items: { id: string; summaryAvailable: boolean }[] }
+        ).items.find((item) => item.id === encounterId)?.summaryAvailable;
+      expect(await offered()).toBe(false);
+
       await aSignedAttention();
       await summaryOf(encounterId).expect(200);
+      expect(await offered()).toBe(true);
     });
 
     it('DOC-090 DOC-111 el resumen exige record:read: caja no lo descarga', async () => {
