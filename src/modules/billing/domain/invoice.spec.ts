@@ -187,15 +187,17 @@ describe('BI-081 «Consumidor Final» es una excepción explícita', () => {
     );
   });
 
-  it('BI-081 rechaza la confirmación ausente y el motivo ausente por separado', () => {
+  it('BI-081 rechaza «Consumidor Final» sin la confirmación explícita, aunque traiga motivo', () => {
     expect(
       () =>
       resolveReceiver({ finalConsumer: { reason: 'El paciente no la quiere' } }, context()), // prettier-ignore
     ).toThrow(FinalConsumerNotConfirmedError);
+  });
 
-    expect(() =>
+  it('BI-201 emite a Consumidor Final con la confirmación y sin motivo', () => {
+    expect(
       resolveReceiver({ finalConsumer: { confirmed: true } }, context()),
-    ).toThrow(FinalConsumerNotConfirmedError);
+    ).toMatchObject({ isFinalConsumer: true });
   });
 
   it('BI-081 rechaza colar el tipo `07` por el camino ordinario', () => {

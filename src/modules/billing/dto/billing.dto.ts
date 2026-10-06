@@ -223,7 +223,10 @@ export class OpenAccountDto extends createZodDto(openAccountSchema) {}
 export const changePayerSchema = z.object({
   payerId: z.uuid('Indique quién paga'),
 });
-/** Body of PATCH /billing/sites/:siteId/accounts/:accountId: refused once the account has a charge (BI-033). */
+/**
+ * Body of PATCH /billing/sites/:siteId/accounts/:accountId. The open charges
+ * are repriced with the new payer; a billed one refuses it (BI-198).
+ */
 export class ChangePayerDto extends createZodDto(changePayerSchema) {}
 
 export const addChargeSchema = z.object({
@@ -269,21 +272,65 @@ export const checkoutSchema = z.object({
 export class CheckoutDto extends createZodDto(checkoutSchema) {}
 
 /**
- * BI-055. Quitar un cargo EXIGE UN MOTIVO, y el motivo se guarda.
- *
- * Texto libre y no un desplegable: un desplegable se rellena en piloto
- * automático y a los seis meses el 90 % de las anulaciones dicen «Otro». Lo
- * mismo que hace `amendment_reason` en la nota clínica.
+ * BI-055, BI-195. Quitar un cargo NO exige motivo (D-126.1): todavía no salió
+ * de caja. Si llega, se guarda. Vacío es lo mismo que ausente.
  */
 export const voidChargeSchema = z.object({
   reason: z
-    .string({ error: 'Indique por qué no se cobra este cargo' })
+    .string()
     .trim()
-    .min(3, 'Explique por qué no se cobra este cargo')
-    .max(500),
+    .max(500, 'El motivo admite hasta 500 caracteres')
+    .transform((value) => (value === '' ? undefined : value))
+    .optional(),
 });
-/** Body of POST …/charges/:chargeId/void. */
+/** Body of POST …/charges/:chargeId/void; it may be empty. */
 export class VoidChargeDto extends createZodDto(voidChargeSchema) {}
+
+/**
+ * BI-197. Lo que se corrige de un cargo sin facturar; lo que no viene se queda
+ * como está. Ni el precio ni el estado: el precio sale de la lista en la fecha
+ * de servicio, y editar no confirma.
+ */
+export const editChargeSchema = z
+  .object({
+    billableServiceId: z.uuid('Seleccione la prestación').optional(),
+    serviceDate: clinicalDateField('Indique la fecha del servicio en formato AAAA-MM-DD').optional(), // prettier-ignore
+    quantity: z
+      .string()
+      .regex(QUANTITY_PATTERN, 'La cantidad admite hasta tres decimales')
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (body) =>
+      body.billableServiceId !== undefined ||
+      body.serviceDate !== undefined ||
+      body.quantity !== undefined,
+    { message: 'Indique qué cambia del cargo' },
+  );
+/** Body of PATCH …/accounts/:accountId/charges/:chargeId. */
+export class EditChargeDto extends createZodDto(editChargeSchema) {}
+
+/** BI-198. Query of GET …/accounts/:accountId/repricing. */
+export const repricingQuerySchema = z.object({
+  payerId: z.uuid('Indique quién paga'),
+});
+export class RepricingQueryDto extends createZodDto(repricingQuerySchema) {}
+
+/**
+ * BI-198. Lo que la confirmación del cambio de pagador muestra. `newTotal` es
+ * `null` cuando a alguna línea le falta precio con el pagador nuevo: el cambio
+ * se rechazaría con `PRICE_NOT_FOUND`.
+ */
+const repricingResponseSchema = z.object({
+  currentTotal: z.string(),
+  newTotal: z.string().nullable(),
+  lines: z.array(
+    z.object({ chargeId: z.uuid(), unitAmount: z.string().nullable() }),
+  ),
+});
+export class RepricingDto extends createZodDto(repricingResponseSchema) {}
+export type RepricingResponse = z.infer<typeof repricingResponseSchema>;
 
 export const accountQuerySchema = z.object({
   patientId: z.uuid().optional(),
@@ -321,6 +368,7 @@ export const receiverSchema = z.object({
   finalConsumer: z
     .object({
       confirmed: z.boolean().optional(),
+      /** BI-201: admitted for older clients and ignored; never demanded. */
       reason: z.string().trim().max(300).optional(),
     })
     .optional(),

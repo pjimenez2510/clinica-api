@@ -18,7 +18,6 @@ import {
 } from '../domain/billing.repository';
 import {
   AccountClosedError,
-  AccountHasChargesError,
   AccountHasOpenChargesError,
   AccountNotFoundError,
   BillableServiceInactiveError,
@@ -207,30 +206,27 @@ export class PatientAccountService {
   }
 
   /**
-   * BI-033. The payer changes only while the account is empty.
-   *
-   * Changing it changes the price list, and the charges already froze the
-   * PREVIOUS payer's prices (BI-050). Letting it through would leave an
-   * account whose lines came out of two different tariffs with nothing saying
-   * so. The correct way out is to void the charges and raise them again, which
-   * leaves a trail — and that is the conservative half of an open question:
-   * whether the clinic wants the change to drag and reprice is a business
-   * decision, recorded as such.
+   * BI-033, BI-198. The payer changes, and the OPEN lines are repriced with
+   * it in the same transaction (D-127): the cashier no longer voids and
+   * re-adds each line. A billed line refuses it — changing what an issued
+   * invoice charged is correcting that invoice (CA-8). The previous prices are
+   * the database's versions (`record_version`).
    */
   async changePayer(command: {
     accountId: string;
     siteId: string;
     payerId: string;
+    changedById: string;
   }): Promise<AccountView> {
     const account = await this.requireOpenAccount(command);
 
-    const charges = await this.accounts.listCharges(account.id);
-    if (charges.length > 0) throw new AccountHasChargesError();
-
     const priceListId = await this.resolvePriceList(command.payerId);
-    return this.accounts.changeAccountPayer(account.id, {
+    return this.accounts.changeAccountPayer({
+      accountId: account.id,
       payerId: command.payerId,
       priceListId,
+      changedById: command.changedById,
+      now: new Date(),
     });
   }
 
@@ -340,27 +336,24 @@ export class PatientAccountService {
   }
 
   /**
-   * BI-055, BI-056, BI-059. «Esto no se cobra»: the line is voided WITH ITS
-   * REASON, and the row is kept.
+   * BI-055, BI-056, BI-195. «Quitar»: the line is removed and the row kept,
+   * with no reason demanded (D-126.1: it has not left the cashier yet) and
+   * the reason kept when one is given.
    *
    * ⚠️ AND IT TOUCHES NOTHING CLINICAL (BI-004). The procedure was performed,
-   * the test was ordered, and both stay recorded exactly as they were. What
-   * this says is that the clinic is not charging for it — which is a decision
-   * about money, taken by a person, with a reason that is stored and not
-   * merely demanded.
+   * the test was ordered, and both stay recorded exactly as they were.
    *
    * Two refusals, and each names the way out:
    *
    *   · Already on an issued invoice → the correction is a credit note, and
    *     the error says so (BI-056). There is no «editar factura» to look for.
-   *   · Already voided → it does not come back (BI-059). What comes back is a
-   *     NEW charge, born with its own date and its own author.
+   *   · Already removed → «Deshacer» puts it back (BI-195).
    */
   async voidCharge(command: {
     accountId: string;
     siteId: string;
     chargeId: string;
-    reason: string;
+    reason: string | null;
     voidedById: string;
   }): Promise<ChargeView> {
     const charge = await this.requireOpenCharge(command);
@@ -369,6 +362,7 @@ export class PatientAccountService {
       chargeId: charge.id,
       voidedById: command.voidedById,
       reason: command.reason,
+      now: new Date(),
     });
   }
 
@@ -386,7 +380,9 @@ export class PatientAccountService {
     });
     if (charge === null) throw new ChargeNotFoundError();
     if (charge.status === 'BILLED') throw new ChargeAlreadyInvoicedError();
-    if (charge.status === 'CANCELLED') throw new ChargeAlreadyVoidedError();
+    if (charge.status === 'CANCELLED' || charge.status === 'NOT_BILLABLE') {
+      throw new ChargeAlreadyVoidedError();
+    }
 
     return charge;
   }

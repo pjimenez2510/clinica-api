@@ -23,6 +23,10 @@ import type { Request } from 'express';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
+import {
+  ChargeCorrectionService,
+  type PayerChangePreview,
+} from './application/charge-correction.service';
 import { EncounterCheckoutService } from './application/encounter-checkout.service';
 import {
   InvoicingService,
@@ -48,12 +52,15 @@ import {
   ChargeDto,
   CheckoutDto,
   CheckoutResponseDto,
+  EditChargeDto,
   InvoiceDto,
   InvoiceListDto,
   InvoiceQueryDto,
   IssueInvoiceDto,
   OpenAccountDto,
   ReceiverProposalDto,
+  RepricingDto,
+  RepricingQueryDto,
   VoidChargeDto,
   type AccountResponse,
   AwaitingCheckoutListDto,
@@ -65,6 +72,7 @@ import {
   type CheckoutResponse,
   type InvoiceResponse,
   type ReceiverProposalResponse,
+  type RepricingResponse,
 } from './dto/billing.dto';
 
 /**
@@ -97,6 +105,7 @@ export class BillingController {
     private readonly accounts: PatientAccountService,
     private readonly invoicing: InvoicingService,
     private readonly checkout: EncounterCheckoutService,
+    private readonly corrections: ChargeCorrectionService,
     private readonly currentUser: CurrentUserService,
   ) {}
 
@@ -238,10 +247,10 @@ export class BillingController {
     );
   }
 
-  /** BI-033. */
+  /** BI-033, BI-198. Los cargos sin facturar se re-tarifan con el nuevo. */
   @Patch('accounts/:accountId')
   @RequirePermission('billing:write', 'param:siteId')
-  @ApiOperation({ summary: 'Cambiar el pagador de una cuenta sin cargos' })
+  @ApiOperation({ summary: 'Cambiar el pagador y re-tarifar los cargos sin facturar' }) // prettier-ignore
   @ApiOkResponse({ type: AccountDto })
   async changePayer(
     @Param('siteId', ParseUUIDPipe) siteId: string,
@@ -253,6 +262,29 @@ export class BillingController {
         accountId,
         siteId,
         payerId: dto.payerId,
+        changedById: this.currentUser.requireUserId(),
+      }),
+    );
+  }
+
+  /**
+   * BI-198. Cuánto quedaría la cuenta con otro pagador, SIN escribir: la
+   * confirmación del cambio dice el total nuevo antes de aceptarlo.
+   */
+  @Get('accounts/:accountId/repricing')
+  @RequirePermission('billing:read', 'param:siteId')
+  @ApiOperation({ summary: 'Total de la cuenta con otro pagador, sin cambiarlo' }) // prettier-ignore
+  @ApiOkResponse({ type: RepricingDto })
+  async previewRepricing(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Query() query: RepricingQueryDto,
+  ): Promise<RepricingResponse> {
+    return toRepricingResponse(
+      await this.corrections.previewPayerChange({
+        accountId,
+        siteId,
+        payerId: query.payerId,
       }),
     );
   }
@@ -337,12 +369,11 @@ export class BillingController {
   }
 
   /**
-   * BI-055, BI-056, BI-059. «Esto no se cobra»: se anula CON MOTIVO.
+   * BI-055, BI-056, BI-195. «Quitar»: sin motivo (D-126.1), y si llega uno se
+   * guarda. Se deshace con `…/restore`.
    *
    * ⚠️ Y NO TOCA NADA CLÍNICO (BI-004). El procedimiento se hizo y el examen se
-   * pidió; los dos siguen registrados exactamente igual. Lo que esta ruta dice
-   * es que la clínica no lo cobra — una decisión sobre dinero, de una persona,
-   * con un motivo que se guarda y no sólo se exige.
+   * pidió; los dos siguen registrados exactamente igual.
    *
    * NO ES «BORRAR». La fila se conserva anulada, que es lo que permite
    * explicar por qué bajó el total de una cuenta. Y sobre un cargo ya
@@ -351,7 +382,7 @@ export class BillingController {
   @Post('accounts/:accountId/charges/:chargeId/void')
   @RequirePermission('billing:write', 'param:siteId')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Quitar un cargo de la cuenta indicando el motivo' })
+  @ApiOperation({ summary: 'Quitar un cargo de la cuenta' })
   @ApiOkResponse({ type: ChargeDto })
   async voidCharge(
     @Param('siteId', ParseUUIDPipe) siteId: string,
@@ -364,8 +395,79 @@ export class BillingController {
         accountId,
         siteId,
         chargeId,
-        reason: dto.reason,
+        reason: dto.reason ?? null,
         voidedById: this.currentUser.requireUserId(),
+      }),
+    );
+  }
+
+  /** BI-195, BI-196. «Deshacer» quitar o «No se cobra». */
+  @Post('accounts/:accountId/charges/:chargeId/restore')
+  @RequirePermission('billing:write', 'param:siteId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Devolver a la cuenta un cargo quitado' })
+  @ApiOkResponse({ type: ChargeDto })
+  async restoreCharge(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('chargeId', ParseUUIDPipe) chargeId: string,
+  ): Promise<ChargeResponse> {
+    return toChargeResponse(
+      await this.corrections.restoreCharge({
+        accountId,
+        siteId,
+        chargeId,
+        changedById: this.currentUser.requireUserId(),
+      }),
+    );
+  }
+
+  /** BI-196. «No se cobra» un cargo de $0, sin motivo. */
+  @Post('accounts/:accountId/charges/:chargeId/not-billable')
+  @RequirePermission('billing:write', 'param:siteId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Marcar «No se cobra» un cargo de $0' })
+  @ApiOkResponse({ type: ChargeDto })
+  async markNotBillable(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('chargeId', ParseUUIDPipe) chargeId: string,
+  ): Promise<ChargeResponse> {
+    return toChargeResponse(
+      await this.corrections.markNotBillable({
+        accountId,
+        siteId,
+        chargeId,
+        changedById: this.currentUser.requireUserId(),
+      }),
+    );
+  }
+
+  /**
+   * BI-197. Editar en el sitio un cargo sin facturar: cantidad, fecha o
+   * prestación. El precio se vuelve a resolver; la versión anterior la guarda
+   * la base.
+   */
+  @Patch('accounts/:accountId/charges/:chargeId')
+  @RequirePermission('billing:write', 'param:siteId')
+  @ApiOperation({ summary: 'Corregir un cargo sin facturar' })
+  @ApiOkResponse({ type: ChargeDto })
+  async editCharge(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('chargeId', ParseUUIDPipe) chargeId: string,
+    @Body() dto: EditChargeDto,
+  ): Promise<ChargeResponse> {
+    return toChargeResponse(
+      await this.corrections.editCharge({
+        accountId,
+        siteId,
+        chargeId,
+        changedById: this.currentUser.requireUserId(),
+        billableServiceId: dto.billableServiceId,
+        serviceDate: dto.serviceDate,
+        quantity:
+          dto.quantity === undefined ? undefined : Quantity.parse(dto.quantity),
       }),
     );
   }
@@ -583,6 +685,18 @@ function toChargeResponse(charge: ChargeView): ChargeResponse {
     // never has to do decimal arithmetic in JavaScript to show a line.
     lineTotal: lineBase(line).toString(),
     lineTax: lineTax(line).toString(),
+  };
+}
+
+/** BI-198. Amounts as strings (BI-001). */
+function toRepricingResponse(preview: PayerChangePreview): RepricingResponse {
+  return {
+    currentTotal: preview.currentTotal.toString(),
+    newTotal: preview.newTotal?.toString() ?? null,
+    lines: preview.lines.map((line) => ({
+      chargeId: line.chargeId,
+      unitAmount: line.unitAmount?.toString() ?? null,
+    })),
   };
 }
 

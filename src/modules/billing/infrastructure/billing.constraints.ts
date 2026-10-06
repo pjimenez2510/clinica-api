@@ -136,15 +136,25 @@ registerConstraintMeanings({
     field: 'origin',
     message: 'Un cargo derivado tiene que señalar el acto del que nació, y uno tecleado no puede señalar ninguno', // prettier-ignore
   },
-  charge_item_void_states_who_when_and_why: {
-    code: 'VOID_REASON_REQUIRED',
-    field: 'reason',
-    message: 'Una anulación sin autor, instante y motivo no es una anulación: indique por qué no se cobra', // prettier-ignore
+  charge_item_void_states_who_and_when: {
+    code: 'CHARGE_VOID_INCOHERENT',
+    field: 'status',
+    message: 'Un cargo quitado dice quién y cuándo lo quitó, y uno vivo no lleva motivo de anulación', // prettier-ignore
   },
   charge_item_void_matches_status: {
     code: 'CHARGE_VOID_INCOHERENT',
     field: 'status',
     message: 'Un cargo anulado tiene que decir cuándo se anuló, y uno vivo no puede decirlo', // prettier-ignore
+  },
+  charge_item_billed_is_frozen: {
+    code: 'CHARGE_ITEM_ALREADY_INVOICED',
+    field: 'status',
+    message: 'Un cargo ya facturado no se corrige: para corregirlo se emite una nota de crédito', // prettier-ignore
+  },
+  charge_item_change_stamped: {
+    code: 'EDIT_NOT_STAMPED',
+    field: 'changedAt',
+    message: 'Toda corrección de un cargo dice quién y cuándo',
   },
   charge_item_billed_is_not_voided: {
     code: 'CHARGE_ITEM_ALREADY_INVOICED',
@@ -155,11 +165,6 @@ registerConstraintMeanings({
     code: 'INVALID_CHARGE_QUANTITY',
     field: 'quantity',
     message: 'La cantidad del cargo tiene que ser mayor que cero',
-  },
-  charge_item_discount_states_a_reason: {
-    code: 'DISCOUNT_REASON_REQUIRED',
-    field: 'discountReason',
-    message: 'Un descuento sin motivo es un descuento que nadie puede explicar: indique por qué se concede', // prettier-ignore
   },
   charge_item_discount_within_line: {
     code: 'DISCOUNT_EXCEEDS_LINE_AMOUNT',

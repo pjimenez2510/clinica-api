@@ -1,12 +1,14 @@
 import './infrastructure/billing.constraints';
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 
 import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
+import { CONSULTATION_REPRICER } from '../../shared/billing/consultation-repricer.port';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 
 import { BillingCatalogueController } from './billing-catalogue.controller';
 import { BillingController } from './billing.controller';
+import { ChargeCorrectionService } from './application/charge-correction.service';
 import { EncounterCheckoutService } from './application/encounter-checkout.service';
 import { InvoicingService } from './application/invoicing.service';
 import { PatientAccountService } from './application/patient-account.service';
@@ -56,9 +58,18 @@ import { PrismaBillingCatalogueRepository } from './infrastructure/prisma-billin
  * matter under the day's cashier listing is the most effective way to make the
  * trail useless.
  */
+@Global()
 @Module({
   controllers: [BillingCatalogueController, BillingController],
   providers: [
+    ChargeCorrectionService,
+    /**
+     * BI-203 (D-134.2). `@Global` FOR THIS ONE TOKEN, as `sri` does for its
+     * two: `encounter` announces a corrected visit sequence without importing
+     * this module. The token is declared in `shared/billing`; nothing else of
+     * this module is exported.
+     */
+    { provide: CONSULTATION_REPRICER, useExisting: ChargeCorrectionService },
     ServiceCatalogueService,
     PricingService,
     PatientAccountService,
@@ -86,5 +97,6 @@ import { PrismaBillingCatalogueRepository } from './infrastructure/prisma-billin
       useClass: PrismaClinicalActsRepository,
     },
   ],
+  exports: [CONSULTATION_REPRICER],
 })
 export class BillingModule {}

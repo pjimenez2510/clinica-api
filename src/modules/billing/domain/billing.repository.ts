@@ -487,6 +487,27 @@ export interface InvoiceView {
 }
 
 /** Everything an invoice needs, with the receiver ALREADY resolved (BI-080). */
+/** BI-195 to BI-198. Who corrects and the app's instant (D-127.2). */
+export interface ChargeStamp {
+  chargeId: string;
+  changedById: string;
+  now: Date;
+}
+
+/** BI-197. What an in-place edit may change; absent keys stay as they are. */
+export interface ChargeEdit extends ChargeStamp {
+  quantity?: Quantity;
+  serviceDate?: ClinicalDate;
+  billableServiceId?: string;
+}
+
+/** BI-198. An open line and what it would cost under another list. */
+export interface RepricedLine {
+  chargeId: string;
+  /** `null`: that list has no price for the line's service on its date. */
+  unitAmount: Money | null;
+}
+
 export interface InvoiceIssuance {
   accountId: string;
   siteId: string;
@@ -520,10 +541,19 @@ export interface BillingAccountRepository {
     status?: AccountStatus;
   }): Promise<AccountView[]>;
   /** BI-033. Refused by the caller when the account already holds charges. */
-  changeAccountPayer(
-    accountId: string,
-    payer: { payerId: string; priceListId: string },
-  ): Promise<AccountView>;
+  /**
+   * BI-198. The payer and its list change, and every OPEN line is repriced
+   * from the new list on its service date, in ONE transaction: a billed line
+   * refuses it (`ACCOUNT_HAS_BILLED_CHARGES`), a missing price too
+   * (`PRICE_NOT_FOUND`), and either way nothing changes.
+   */
+  changeAccountPayer(command: {
+    accountId: string;
+    payerId: string;
+    priceListId: string;
+    changedById: string;
+    now: Date;
+  }): Promise<AccountView>;
   closeAccount(accountId: string): Promise<AccountView>;
 
   /** BI-074. Derived, never a column. */
@@ -581,18 +611,52 @@ export interface BillingAccountRepository {
   confirmCharge(chargeId: string): Promise<ChargeView>;
 
   /**
-   * BI-055, BI-059. Voids a charge, KEEPING THE ROW.
+   * BI-055, BI-195. Removes a charge, KEEPING THE ROW.
    *
-   * The three void columns travel together —
-   * `charge_item_void_states_who_when_and_why` refuses one without the others
-   * — and `charge_item_void_matches_status` keeps the status and the instant
-   * from disagreeing. Nothing here touches a clinical row: BI-004.
+   * Who and when travel together (`charge_item_void_states_who_and_when`);
+   * the reason is optional (D-126.1) and kept when given. The previous row is
+   * archived by the database (`record_version`), which is what lets
+   * `restoreCharge` put it back. Nothing here touches a clinical row: BI-004.
    */
   voidCharge(command: {
     chargeId: string;
     voidedById: string;
-    reason: string;
+    reason: string | null;
+    now: Date;
   }): Promise<ChargeView>;
+
+  /**
+   * BI-203. The visit's consultation line, whatever its status — there is
+   * at most one (`charge_item_one_consultation_per_encounter`).
+   */
+  findConsultationCharge(encounterId: string): Promise<ChargeView | null>;
+
+  /** BI-196. An open line of $0 becomes `NOT_BILLABLE`, with its version. */
+  markNotBillable(command: ChargeStamp): Promise<ChargeView>;
+
+  /**
+   * BI-195, BI-196. «Deshacer»: a removed or not-billable line goes back to
+   * the status it had, repriced from the account's CURRENT list on its
+   * service date. Refuses with `CHARGE_NOT_REMOVED` a line that is neither.
+   */
+  restoreCharge(command: ChargeStamp): Promise<ChargeView>;
+
+  /**
+   * BI-197. Edits an open line in place. A new service or date re-resolves
+   * the frozen block from the account's list; quantity alone does not. A line
+   * that is no longer open is refused with `CHARGE_ITEM_ALREADY_INVOICED` or
+   * `CHARGE_ALREADY_VOIDED`.
+   */
+  editCharge(command: ChargeEdit): Promise<ChargeView>;
+
+  /**
+   * BI-198. What each OPEN line would cost in `priceListId`, without writing:
+   * `null` where that list has no price on the line's service date.
+   */
+  previewRepricing(query: {
+    accountId: string;
+    priceListId: string;
+  }): Promise<RepricedLine[]>;
 
   /** BI-082. */
   findAccountPatient(accountId: string): Promise<AccountPatientIdentification | null>; // prettier-ignore

@@ -210,23 +210,20 @@ function checkIdentificationShape(
 }
 
 /**
- * BI-081. The final-consumer receiver, only with `confirmed === true` AND a
- * non-blank reason; each missing half is refused naming its own field.
+ * BI-081, BI-201. The final-consumer receiver, only with `confirmed === true`.
  *
- * The receiver block is fixed to the SRI placeholder and carries no email. The
- * reason is demanded here and is not part of the returned block.
+ * The reason is no longer demanded (D-126, CA-7): it was never stored, so
+ * asking for it was a trail that did not exist. The explicit confirmation is
+ * what stays, and it stays on the SERVER. The receiver block is fixed to the
+ * SRI placeholder and carries no email.
  */
 function resolveFinalConsumer(exception: {
   confirmed?: boolean;
-  reason?: string;
 }): InvoiceReceiver {
   if (exception.confirmed !== true) {
     throw new FinalConsumerNotConfirmedError(
       'receiver.finalConsumer.confirmed',
     );
-  }
-  if (exception.reason === undefined || exception.reason.trim() === '') {
-    throw new FinalConsumerNotConfirmedError('receiver.finalConsumer.reason');
   }
 
   return {
