@@ -22,6 +22,7 @@ import {
   createPractitioner,
   createScheduleRule,
   createSite,
+  createUser,
   linkPractitionerToSite,
 } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
@@ -1027,6 +1028,33 @@ describe('la lista de espera por HTTP', () => {
         where: { id: entry.id },
       });
       expect(stored.status).toBe('CONTACTED');
+    });
+
+    it('AG-064 only who made the call corrects it', async () => {
+      const entry = await enrol();
+      await request(app.getHttpServer())
+        .post(`${BASE}/${siteId}/waitlist/${entry.id}/contact-attempts`)
+        .set('Authorization', auth())
+        .send({ outcome: 'NO_ANSWER' })
+        .expect(200);
+      // The call is reassigned to somebody else, as if she had made it.
+      const other = await createUser(prisma);
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE waitlist_contact_attempt DISABLE TRIGGER trg_waitlist_contact_attempt_keeps_its_origin`,
+      );
+      await prisma.$executeRaw`UPDATE waitlist_contact_attempt SET recorded_by = ${other.id}::uuid, edited_by_id = ${other.id}::uuid, edited_at = now() WHERE waitlist_entry_id = ${entry.id}::uuid`;
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE waitlist_contact_attempt ENABLE TRIGGER trg_waitlist_contact_attempt_keeps_its_origin`,
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch(`${BASE}/${siteId}/waitlist/${entry.id}/contact-attempts/last`)
+        .set('Authorization', auth())
+        .send({ outcome: 'ACCEPTED' })
+        .expect(403);
+      expect((response.body as { code: string }).code).toBe(
+        'WAITLIST_CONTACT_OF_ANOTHER',
+      );
     });
 
     it('AG-064 refuses to correct an entry nobody called', async () => {

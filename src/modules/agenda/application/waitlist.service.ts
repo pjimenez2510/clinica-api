@@ -457,6 +457,7 @@ export class WaitlistService {
       editedById: requester.userId,
       at: now,
       status,
+      expectedAttempts: entry.contactAttempts,
     });
 
     this.logger.info(

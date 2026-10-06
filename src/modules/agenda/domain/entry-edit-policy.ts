@@ -17,6 +17,7 @@ import {
   AgendaEntryHasEncounterError,
   AgendaEntryNotEditableError,
   AgendaEntryNotFoundError,
+  AppointmentFromWaitlistError,
 } from './agenda.errors';
 import type { AgendaEntryStatus } from './agenda-entry';
 import type { EditRead, EntryEdit } from './agenda.repository';
@@ -37,6 +38,12 @@ const ANNOTATABLE: readonly AgendaEntryStatus[] = [
   'IN_PROGRESS',
 ];
 
+/** AG-132. Where the emergency call can still be corrected. */
+const EMERGENCY_CORRECTABLE: readonly AgendaEntryStatus[] = [
+  'CHECKED_IN',
+  'IN_PROGRESS',
+];
+
 /** The fields of an appointment edit that move it or change whose it is. */
 const MOVING_FIELDS = [
   'startsAt',
@@ -50,6 +57,21 @@ const MOVING_FIELDS = [
 /** Whether the edit moves the appointment or changes its patient. */
 export function editMoves(edit: EntryEdit): boolean {
   return MOVING_FIELDS.some((field) => edit[field] !== undefined);
+}
+
+/**
+ * AG-162 (review, P1). Whether the edit puts the appointment at ANOTHER hour
+ * or with ANOTHER practitioner — the only edits a booking's window, lead time
+ * and schedule judge. Correcting the patient, the channel or the type of an
+ * appointment that keeps its hour is not a new booking: refusing it because
+ * the hour already started would leave the attention on the wrong chart.
+ */
+export function editRelocates(edit: EntryEdit): boolean {
+  return (
+    edit.startsAt !== undefined ||
+    edit.endsAt !== undefined ||
+    edit.practitionerId !== undefined
+  );
 }
 
 /**
@@ -72,6 +94,13 @@ export function planEntryEdit(entry: EditRead, edit: EntryEdit): EntryEdit {
   // AG-045. A documented attention outweighs the agenda: moving it would
   // deny a record that already exists.
   if (moves && entry.hasEncounter) throw new AgendaEntryHasEncounterError();
+
+  // AG-063 (review, P1). The slot was given to the patient who waited for it;
+  // handing it to somebody else would leave her holding nothing. The base
+  // says it again (`trg_agenda_entry_waitlist_patient_fixed`).
+  if (edit.patientId !== undefined && entry.fromWaitlist) {
+    throw new AppointmentFromWaitlistError();
+  }
 
   return edit;
 }
@@ -103,26 +132,33 @@ export interface EmergencyCorrection {
 }
 
 /**
- * AG-132, D-128.4. Corrects the emergency call already made: the corrector
- * makes the call again, now; the original stays in `record_version`.
+ * AG-132, D-128.4. Corrects the outcome of the emergency call already made.
  *
- * ONLY A CALL THAT EXISTS IS CORRECTED. Making the first one is the arrival
- * (AG-128), and a correction route that could make it would be a second way
- * of registering an arrival without its history row.
+ * THE CALL AT THE ARRIVAL STAYS ON THE ROW: `emergency_assessed_at` and its
+ * author are the art. 10 record of the arrival and do not move. Who corrected
+ * and when is the edit stamp (`edited_by_id`, `edited_at`), and the previous
+ * outcome is the version.
+ *
+ * ONLY A CALL THAT EXISTS, AND WHILE THE PATIENT IS IN THE BUILDING
+ * (`CHECKED_IN`, `IN_PROGRESS`). After that, D-141.5.
  */
 export function planEmergencyCorrection(
   entry: EditRead,
   correction: EmergencyCorrection,
 ): EntryEdit {
   if (entry.kind !== 'APPOINTMENT') throw new AgendaEntryNotFoundError();
-  if (entry.emergencyAssessedAt === null) {
+  if (
+    entry.emergencyAssessedAt === null ||
+    entry.emergencyAssessedById === null ||
+    !EMERGENCY_CORRECTABLE.includes(entry.status)
+  ) {
     throw new AgendaEntryNotEditableError(entry.status);
   }
   const note = correction.note?.trim() || null;
   return {
     emergency: {
-      assessedAt: correction.now,
-      assessedById: correction.correctedById,
+      assessedAt: entry.emergencyAssessedAt,
+      assessedById: entry.emergencyAssessedById,
       flaggedAt: correction.emergency ? correction.now : null,
       flaggedById: correction.emergency ? correction.correctedById : null,
       note: correction.emergency ? note : null,

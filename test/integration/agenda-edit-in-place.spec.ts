@@ -391,6 +391,89 @@ describe('editar en el sitio la cita y el bloqueo (D-127)', () => {
       await edit(entryId, { reason: 'Dolor de cabeza' }).expect(200);
     });
 
+    it('AG-162 corrige el paciente de una cita cuya hora ya pasó, con la sede cerrada al pasado', async () => {
+      const entryId = await bookedEntry({
+        reason: 'Dato del paciente anterior',
+      });
+      // La sede de fábrica no reserva en el pasado (D-001): corregir el
+      // paciente no es reservar, y se admite igual.
+      await prisma.siteParameter.update({
+        where: { siteId },
+        data: { allowPastBooking: false },
+      });
+
+      await edit(entryId, { patientId: otherPatientId }).expect(200);
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.patientId).toBe(otherPatientId);
+      // El motivo era del paciente anterior: no viaja al nuevo.
+      expect(stored.reason).toBeNull();
+
+      // Control positivo: MOVERLA sí es reservar, y el pasado sigue cerrado.
+      const moved = await edit(entryId, NEW_SLOT).expect(422);
+      expect((moved.body as Problem).code).toBe('BOOKING_IN_THE_PAST');
+    });
+
+    it('AG-162 un sobrecupo que no cambia de hora conserva su excepción', async () => {
+      await bookedEntry();
+      const over = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          siteId,
+          practitionerId,
+          patientId: otherPatientId,
+          startsAt: ORIGINAL_SLOT.startsAt,
+          endsAt: ORIGINAL_SLOT.endsAt,
+          bookingChannel: 'PHONE',
+          blocksCalendar: false,
+          overbookingAuthorisedById: userId,
+          createdById: userId,
+        },
+      });
+
+      await edit(over.id, { bookingChannel: 'WALK_IN' }).expect(200);
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: over.id },
+      });
+      expect(stored.blocksCalendar).toBe(false);
+      expect(stored.overbookingAuthorisedById).toBe(userId);
+    });
+
+    it('AG-063 una cita que salió de la lista de espera no cambia de paciente, ni por HTTP ni en la base', async () => {
+      const entryId = await bookedEntry();
+      const waiting = await prisma.waitlistEntry.create({
+        data: {
+          patientId,
+          siteId,
+          preferredFrom: new Date(ORIGINAL_SLOT.startsAt),
+          preferredTo: new Date(ORIGINAL_SLOT.startsAt),
+        },
+      });
+      await prisma.waitlistContactAttempt.create({
+        data: {
+          waitlistEntryId: waiting.id,
+          recordedById: userId,
+          outcome: 'ACCEPTED',
+        },
+      });
+      await prisma.waitlistEntry.update({
+        where: { id: waiting.id },
+        data: { status: 'SCHEDULED', convertedEntryId: entryId },
+      });
+
+      const refused = await edit(entryId, { patientId: otherPatientId }).expect(
+        409,
+      );
+      expect((refused.body as Problem).code).toBe('APPOINTMENT_FROM_WAITLIST');
+      await expect(
+        prisma.$executeRaw`UPDATE agenda_entry SET patient_id = ${otherPatientId}::uuid, edited_by_id = ${userId}::uuid, edited_at = now() WHERE id = ${entryId}::uuid`,
+      ).rejects.toThrow(/agenda_entry_waitlist_patient_fixed/);
+
+      // Control positivo: lo demás se sigue corrigiendo.
+      await edit(entryId, { bookingChannel: 'WALK_IN' }).expect(200);
+    });
+
     it('AG-045 no mueve una cita con atención', async () => {
       const entryId = await bookedEntry();
       await createEncounter(prisma, {
@@ -624,7 +707,18 @@ describe('editar en el sitio la cita y el bloqueo (D-127)', () => {
       }).expect(200);
 
       expect((response.body as EntryBody).emergencyFlaggedAt).not.toBeNull();
-      const [version] = await versionsOf(entryId);
+      // La calificación del arribo se queda en la fila (Ley 77 art. 10).
+      const before = await versionsOf(entryId);
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.emergencyAssessedAt?.toISOString()).toBe(
+        new Date(
+          (before[0]?.data as { emergency_assessed_at: string })
+            .emergency_assessed_at,
+        ).toISOString(),
+      );
+      const [version] = before;
       expect(
         (version?.data as { emergency_flagged_at: string | null })
           .emergency_flagged_at,
@@ -640,6 +734,15 @@ describe('editar en el sitio la cita y el bloqueo (D-127)', () => {
       await expect(
         prisma.$executeRaw`UPDATE agenda_entry SET emergency_assessed_at = NULL, emergency_assessed_by_id = NULL, edited_by_id = ${userId}::uuid, edited_at = now() WHERE id = ${entryId}::uuid`,
       ).rejects.toThrow(/agenda_entry_emergency_call_is_immutable/);
+    });
+
+    it('AG-132 no la corrige cuando el paciente ya no está en la clínica', async () => {
+      const entryId = await bookedEntry();
+      await transition(entryId, { to: 'CHECKED_IN', emergency: false }).expect(200); // prettier-ignore
+      await transition(entryId, { to: 'LEFT_WITHOUT_BEING_SEEN' }).expect(200);
+
+      const response = await correct(entryId, { emergency: true }).expect(409);
+      expect((response.body as Problem).code).toBe('AGENDA_ENTRY_NOT_EDITABLE');
     });
 
     it('AG-132 no corrige una calificación que no se hizo', async () => {

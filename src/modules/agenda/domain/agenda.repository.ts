@@ -609,7 +609,10 @@ export interface EditRead {
   status: AgendaEntryStatus;
   releasedAt: Date | null;
   emergencyAssessedAt: Date | null;
+  emergencyAssessedById: string | null;
   hasEncounter: boolean;
+  /** AG-063. Whether a waiting-list entry was converted into this one. */
+  fromWaitlist: boolean;
 }
 
 export interface EditCommand {

@@ -111,12 +111,23 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
     omittedBecause: null,
   },
   // AG-051, AG-162. The appointment moved or corrected in place. A version
-  // from before the patient was corrected names the patient booked BY
-  // MISTAKE: that identifier is somebody else's and does not leave.
+  // from before the patient was corrected belongs to the patient booked BY
+  // MISTAKE: neither that identifier nor the free texts written for that
+  // visit leave (review, M-2; D-141.4). What remains — hours, practitioner,
+  // channel — is what the export owes about the appointment.
   agenda_entry: {
     resourceIdsOf: byPatientId('agenda_entry'),
     omittedBecause: null,
-    redactedColumns: ['patient_id'],
+    redactedColumns: [
+      'patient_id',
+      'reason',
+      'cancellation_note',
+      'emergency_note',
+      'board_note',
+      'coverage_check_skipped_reason',
+      'left_without_being_seen_reason',
+      'entered_in_error_reason',
+    ],
   },
   // AG-064. The outcome of a call about this patient's waiting-list entry.
   waitlist_contact_attempt: {

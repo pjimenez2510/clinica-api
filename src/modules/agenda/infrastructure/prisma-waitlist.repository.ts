@@ -12,6 +12,8 @@ import {
 } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import {
   WaitlistAcceptanceRequiredError,
+  WaitlistContactChangedError,
+  WaitlistContactOfAnotherError,
   WaitlistEntryClosedError,
   WaitlistPatientMismatchError,
   WaitlistSlotAlreadyClaimedError,
@@ -297,11 +299,24 @@ export class PrismaWaitlistRepository implements WaitlistRepository {
   ): Promise<WaitlistEntryView> {
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Locks the entry, so two corrections or a correction and a new call
+        // are judged one after the other on the same trail.
+        await tx.$queryRaw`SELECT 1 FROM waitlist_entry WHERE id = ${edit.entryId}::uuid FOR UPDATE`;
+        const attempts = await tx.waitlistContactAttempt.count({
+          where: { waitlistEntryId: edit.entryId },
+        });
+        if (attempts !== edit.expectedAttempts) {
+          throw new WaitlistContactChangedError();
+        }
         const last = await tx.waitlistContactAttempt.findFirstOrThrow({
           where: { waitlistEntryId: edit.entryId },
           orderBy: [{ attemptedAt: 'desc' }, { id: 'desc' }],
-          select: { id: true },
+          select: { id: true, recordedById: true },
         });
+        // AG-064 (review, P1). Only who called corrects the answer.
+        if (last.recordedById !== edit.editedById) {
+          throw new WaitlistContactOfAnotherError();
+        }
         await tx.waitlistContactAttempt.update({
           where: { id: last.id },
           data: {

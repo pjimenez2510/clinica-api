@@ -634,6 +634,7 @@ describe('WaitlistService', () => {
         outcome: 'DECLINED',
         editedById: RECEPTIONIST,
         status: 'CONTACTED',
+        expectedAttempts: 1,
       });
     });
 

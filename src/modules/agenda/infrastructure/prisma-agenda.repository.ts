@@ -1238,12 +1238,19 @@ export class PrismaAgendaRepository implements AgendaRepository {
           status: true,
           releasedAt: true,
           emergencyAssessedAt: true,
+          emergencyAssessedById: true,
+          _count: { select: { waitlistOrigin: true } },
         },
       });
       if (!row) throw new AgendaEntryNotFoundError();
 
       const attention = await lockLiveAttention(tx, command.entryId);
-      const edit = decide({ ...row, hasEncounter: attention !== null });
+      const { _count, ...read } = row;
+      const edit = decide({
+        ...read,
+        hasEncounter: attention !== null,
+        fromWaitlist: _count.waitlistOrigin > 0,
+      });
 
       const updated = await tx.agendaEntry.updateMany({
         where: {

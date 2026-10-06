@@ -51,6 +51,7 @@ import {
   AgendaEntryNotFoundError,
   BlockOverlapsAppointmentsError,
   AgendaEntryNotEditableError,
+  AppointmentFromWaitlistError,
   EmergencyAssessmentRequiredError,
   InvalidAgendaTransitionError,
   NoShowUndoExpiredError,
@@ -91,6 +92,8 @@ const SERVICE_TYPE = '00000000-0000-4000-8000-000000000007';
 const DOCTOR_USER = '00000000-0000-4000-8000-000000000008';
 /** AG-115: the practitioner an appointment can be MOVED TO. */
 const OTHER_PRACTITIONER = '00000000-0000-4000-8000-000000000009';
+/** AG-162: the patient an appointment is corrected TO. */
+const OTHER_PATIENT = '00000000-0000-4000-8000-00000000000b';
 
 const REQUESTER: Requester = { userId: USER };
 
@@ -236,7 +239,9 @@ function anEditRead(overrides: Partial<EditRead> = {}): EditRead {
     status: 'BOOKED',
     releasedAt: null,
     emergencyAssessedAt: null,
+    emergencyAssessedById: null,
     hasEncounter: false,
+    fromWaitlist: false,
     ...overrides,
   };
 }
@@ -1774,6 +1779,52 @@ describe('editing an appointment in place (D-127)', () => {
     expect(recorded.edits[0]?.edit.roomId).toBe(ROOM);
   });
 
+  it('AG-162 corrects the patient of an appointment whose hour already started, without judging it as a booking', async () => {
+    // The site refuses bookings in the past by default: if the correction were
+    // judged like one, the attention would go to the wrong chart.
+    const { service, recorded } = serviceWith({
+      siteParameters: null,
+      entry: anEntry({ startsAt: new Date(Date.now() - 10 * 60_000) }),
+    });
+
+    await service.editEntry(
+      { siteId: SITE, entryId: 'entry-1', patientId: OTHER_PATIENT },
+      REQUESTER,
+    );
+
+    expect(recorded.context).toEqual([]);
+    expect(recorded.edits[0]?.edit.patientId).toBe(OTHER_PATIENT);
+    // The motive was the previous patient's (review, M-2).
+    expect(recorded.edits[0]?.edit.reason).toBeNull();
+  });
+
+  it('AG-162 an overbooking that keeps its hour keeps its exception', async () => {
+    const { service, recorded } = serviceWith({
+      entry: anEntry({ blocksCalendar: false }),
+    });
+
+    await service.editEntry(
+      { siteId: SITE, entryId: 'entry-1', bookingChannel: 'WALK_IN' },
+      REQUESTER,
+    );
+
+    expect(recorded.edits[0]?.edit.clearOverbooking).toBeUndefined();
+  });
+
+  it('AG-063 refuses to change the patient of an appointment given from the waiting list', async () => {
+    const { service, recorded } = serviceWith({
+      editRead: anEditRead({ fromWaitlist: true }),
+    });
+
+    await expect(
+      service.editEntry(
+        { siteId: SITE, entryId: 'entry-1', patientId: OTHER_PATIENT },
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(AppointmentFromWaitlistError);
+    expect(recorded.edits).toEqual([]);
+  });
+
   it('AG-162 a moved overbooking becomes an ordinary appointment', async () => {
     const { service, recorded } = serviceWith({
       entry: anEntry({ blocksCalendar: false }),
@@ -1885,11 +1936,12 @@ describe('undoing a no-show (AG-163)', () => {
 });
 
 describe('correcting the emergency call (AG-132)', () => {
-  it('AG-132 the corrector makes the call again, now', async () => {
+  it('AG-132 the correction keeps the call of the arrival and flags it now', async () => {
     const { service, recorded } = serviceWith({
       editRead: anEditRead({
         status: 'CHECKED_IN',
         emergencyAssessedAt: EIGHT,
+        emergencyAssessedById: DOCTOR_USER,
       }),
     });
 
@@ -1899,9 +1951,28 @@ describe('correcting the emergency call (AG-132)', () => {
     );
 
     const emergency = recorded.edits[0]?.edit.emergency;
-    expect(emergency?.assessedById).toBe(USER);
+    // The art. 10 record of the arrival does not move.
+    expect(emergency?.assessedAt).toEqual(EIGHT);
+    expect(emergency?.assessedById).toBe(DOCTOR_USER);
     expect(emergency?.flaggedById).toBe(USER);
     expect(emergency?.note).toBe('Dolor torácico');
+  });
+
+  it('AG-132 corrects only while the patient is in the building', async () => {
+    const { service } = serviceWith({
+      editRead: anEditRead({
+        status: 'FULFILLED',
+        emergencyAssessedAt: EIGHT,
+        emergencyAssessedById: DOCTOR_USER,
+      }),
+    });
+
+    await expect(
+      service.correctEmergency(
+        { siteId: SITE, entryId: 'entry-1', emergency: true },
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(AgendaEntryNotEditableError);
   });
 
   it('AG-132 corrects only a call that was made', async () => {

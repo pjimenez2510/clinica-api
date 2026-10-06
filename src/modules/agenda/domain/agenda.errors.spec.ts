@@ -23,6 +23,9 @@ import {
   InvalidBookingChannelError,
   InvalidSlotDurationError,
   NoShowUndoExpiredError,
+  AppointmentFromWaitlistError,
+  WaitlistContactChangedError,
+  WaitlistContactOfAnotherError,
   WaitlistNoContactAttemptError,
   NoShowBeforeStartError,
   OutsideScheduleRuleError,
@@ -250,6 +253,24 @@ describe('the transition errors (E2)', () => {
       'Esa inscripción todavía no tiene ninguna llamada registrada que corregir',
     );
     expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AG-063 answers APPOINTMENT_FROM_WAITLIST and AG-064 the two correction refusals', () => {
+    const fromWaitlist = new AppointmentFromWaitlistError();
+    expect(fromWaitlist.code).toBe('APPOINTMENT_FROM_WAITLIST');
+    expect(fromWaitlist).toBeInstanceOf(ConflictError);
+
+    const ofAnother = new WaitlistContactOfAnotherError();
+    expect(ofAnother.code).toBe('WAITLIST_CONTACT_OF_ANOTHER');
+    expect(ofAnother).toBeInstanceOf(ForbiddenError);
+
+    const changed = new WaitlistContactChangedError();
+    expect(changed.code).toBe('WAITLIST_CONTACT_CHANGED');
+    expect(changed).toBeInstanceOf(ConflictError);
+
+    for (const error of [fromWaitlist, ofAnother, changed]) {
+      expect(DOMAIN_ERROR_CODES).toContain(error.code);
+    }
   });
 
   it('AG-040 registers the four transition codes in the frozen public catalogue', () => {

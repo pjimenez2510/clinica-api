@@ -1774,6 +1774,11 @@ reclame, esa fila es la diferencia entre un incidente y una imputación penal.
   > que se calificó es que la original queda, y queda en la versión. La ruta es
   > `PATCH …/entries/{entryId}/emergency`, con el permiso del registro de
   > llegada (AG-130).
+  >
+  > **La calificación del arribo se queda en la fila** (`emergency_assessed_at`
+  > y su autor no se mueven); quién corrigió y cuándo es el sello de edición, y
+  > el resultado anterior, la versión. **Sólo mientras el paciente está en la
+  > clínica** (`CHECKED_IN`, `IN_PROGRESS`); después, D-141.5.
   > Es la garantía de AG-005 aplicada a la fila que puede acabar delante de un
   > juez. Una calificación que se pueda reescribir después del incidente no
   > prueba lo que el art. 10 pide que se pruebe: la prueba es que la fila no ha
@@ -2442,12 +2447,20 @@ Convertirlo en configuración sería regalar la garantía.
   en otro estado, ENTONCES DEBERÁ rechazar esos cambios con
   `AGENDA_ENTRY_NOT_EDITABLE` (409); el motivo de consulta y el consultorio se
   admiten también en `CHECKED_IN` e `IN_PROGRESS`.
-  > Fila AG-6 del inventario. Lo que cambia el intervalo, el profesional o el
-  > paciente pasa por las mismas comprobaciones que una reserva (AG-115):
-  > ventana, ficha fusionada, consultorio de la sede, horario, y el solape lo
-  > arbitran los `EXCLUDE`. Un sobrecupo que se mueve pasa a cita ordinaria y
-  > debe caber en el horario, como hacía la reprogramación; su autorización
-  > queda en la versión anterior.
+  > Fila AG-6 del inventario. **Sólo lo que cambia la hora o el profesional**
+  > pasa por las comprobaciones de una reserva (AG-115): ventana, antelación y
+  > horario. Corregir el paciente, el canal o el tipo de una cita que conserva
+  > su hora no es reservar —también se admite cuando la hora ya empezó—, y
+  > basta la ficha fusionada (AG-027) y los `EXCLUDE` (revisión, P1). Un
+  > sobrecupo que cambia de hora o de profesional pasa a cita ordinaria y debe
+  > caber en el horario; uno que conserva su hora conserva su excepción.
+  >
+  > **Al cambiar el paciente se vacía el motivo de consulta**, salvo que se
+  > escriba uno nuevo: era del paciente anterior (revisión, M-2). **Y una cita
+  > que salió de la lista de espera no cambia de paciente**
+  > (`APPOINTMENT_FROM_WAITLIST`; en la base,
+  > `trg_agenda_entry_waitlist_patient_fixed`): el cupo era de quien esperaba
+  > (AG-063).
 - **AG-163** — CUANDO se marque «No asistió», la pantalla DEBERÁ pedir una
   confirmación que diga «cuenta como inasistencia»; y CUANDO se deshaga el
   mismo día de Ecuador en que se marcó, el sistema DEBERÁ devolver la cita al
@@ -2468,7 +2481,14 @@ Convertirlo en configuración sería regalar la garantía.
   reabrirla a `CONTACTED`, con la versión de la entrada guardada.
   > Fila AG-12, la segunda mitad. Una entrada caducada por un «no contestó»
   > pulsado por error vuelve a competir con su antigüedad, que es lo justo:
-  > el error fue de quien llamó.
+  > el error fue de quien llamó. **El rastro de la reapertura es la versión del
+  > intento corregido** (`record_version` de `waitlist_contact_attempt`), no
+  > una versión de la entrada: lo que cambió es lo que se contestó, y el estado
+  > de la entrada se deriva de ahí. **Sólo quien registró la llamada la
+  > corrige** (`WAITLIST_CONTACT_OF_ANOTHER`), como el aviso de crítico
+  > (D-133.1): una corrección ajena firmaría un consentimiento que nadie oyó.
+  > Y se decide dentro de la transacción, con la entrada bloqueada: si
+  > entretanto hubo otra llamada, `WAITLIST_CONTACT_CHANGED`.
 - **AG-166** — La pantalla DEBERÁ ofrecer como lista de un toque, y opcional,
   el motivo de «Se fue sin ser atendido» (AG-116) y el de omitir la
   verificación de cobertura (AG-131).
@@ -2498,13 +2518,16 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `BLOCK_OVERLAPS_APPOINTMENTS`          | 409    | AG-038, AG-152, AG-164 |
 | `AGENDA_ENTRY_NOT_EDITABLE`            | 409    | AG-162         |
 | `NO_SHOW_UNDO_EXPIRED`                 | 409    | AG-163         |
+| `APPOINTMENT_FROM_WAITLIST`            | 409    | AG-063, AG-162 |
+| `WAITLIST_NO_CONTACT_ATTEMPT`          | 409    | AG-064         |
+| `WAITLIST_CONTACT_OF_ANOTHER`          | 403    | AG-064         |
+| `WAITLIST_CONTACT_CHANGED`             | 409    | AG-064         |
 | `BOOKING_IN_THE_PAST`                  | 422    | AG-031         |
 | `BOOKING_TOO_SOON`                     | 422    | AG-032         |
 | `BOOKING_TOO_FAR`                      | 422    | AG-033         |
 | `INVALID_BOOKING_CHANNEL`              | 422    | AG-034         |
 | `INVALID_SLOT_DURATION`                | 422    | AG-012         |
 | `OVERBOOKING_NOT_ALLOWED`              | 422    | AG-039         |
-| `OVERBOOKING_REASON_REQUIRED`          | 422    | AG-035         |
 | `OVERBOOKING_LIMIT_REACHED`            | 409    | AG-100         |
 | `OVERBOOKING_NOT_AUTHORISED`           | 403    | AG-101         |
 | `SELF_AUTHORISATION_DENIED`            | 403    | AG-103         |
@@ -2512,7 +2535,6 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `ROOM_NOT_IN_SITE`                     | 422    | AG-105         |
 | `BOOKING_RETRY_EXHAUSTED`              | 503    | AG-026         |
 | `NO_SHOW_BEFORE_START`                 | 422    | AG-043         |
-| `CANCELLATION_REASON_REQUIRED`         | 422    | AG-044         |
 | `AGENDA_ENTRY_NOT_FOUND`               | 404    | AG-071         |
 | `ACCESS_CONTEXT_NOT_FOUND`             | 404    | AG-073         |
 | `WAITLIST_ENTRY_NOT_FOUND`             | 404    | AG-071         |
@@ -2522,7 +2544,6 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `WAITLIST_SLOT_ALREADY_CLAIMED`        | 409    | AG-063         |
 | `SLOT_NOT_RELEASED`                    | 422    | AG-061         |
 | `RELEASED_SLOT_IN_THE_PAST`            | 422    | AG-061         |
-| `ENTERED_IN_ERROR_REASON_REQUIRED`     | 422    | AG-117         |
 | `LATE_ARRIVAL_NOT_AUTHORISED`          | 403    | AG-120         |
 | `EMERGENCY_QUALIFICATION_REQUIRED`     | 422    | AG-128         |
 | `COVERAGE_SKIP_REASON_REQUIRED`        | 422    | AG-131         |
@@ -2705,7 +2726,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | ----------------------------------------------- | ---------------------------------------------------------- |
 | AG-021 a AG-026, AG-030                         | Integración contra PostgreSQL real                         |
 | AG-040 a AG-046, AG-050 a AG-052                | Unitario de dominio + integración                          |
-| AG-115                                          | Unitario con doble de repositorio + integración contra PostgreSQL real: la entrada nueva nace con el profesional pedido, el original queda liberado, y un destino ocupado no libera nada (AG-052) |
+| AG-115                                          | Unitario con doble de repositorio + integración contra PostgreSQL real: la MISMA cita pasa al profesional pedido, con las comprobaciones de una reserva sobre él, y su versión anterior queda en `record_version` |
 | AG-070 a AG-074                                 | Seguridad dirigida                                         |
 | AG-023, AG-024, AG-027, AG-028, AG-030, AG-040  | Contrato HTTP (código, estado, mensaje)                    |
 | AG-031 a AG-034, AG-039, AG-100, AG-101, AG-103 | Contrato HTTP + unitario de dominio                        |

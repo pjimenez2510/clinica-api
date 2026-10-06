@@ -437,6 +437,48 @@ export class AgendaEntryNotEditableError extends ConflictError {
 }
 
 /**
+ * AG-063, AG-162. The appointment came from the waiting list of ITS patient,
+ * and changing the patient would take the slot from her.
+ */
+export class AppointmentFromWaitlistError extends ConflictError {
+  readonly code = 'APPOINTMENT_FROM_WAITLIST';
+  override readonly userTitle =
+    'Esta cita se le dio a su paciente desde la lista de espera y no cambia de paciente. Anúlela y reserve una nueva si hace falta';
+
+  constructor() {
+    super('Appointment converted from a waiting-list entry keeps its patient');
+  }
+}
+
+/**
+ * AG-064 (review). Only who made the call corrects what was answered: a
+ * correction by somebody else would sign a consent nobody heard.
+ */
+export class WaitlistContactOfAnotherError extends ForbiddenError {
+  readonly code = 'WAITLIST_CONTACT_OF_ANOTHER';
+  override readonly userTitle =
+    'Esa llamada la registró otra persona: solo ella puede corregirla. Si vuelve a llamar, registre la llamada nueva';
+
+  constructor() {
+    super('Contact attempt recorded by another user');
+  }
+}
+
+/**
+ * AG-064 (review). Somebody recorded another call between reading the entry
+ * and correcting the last one.
+ */
+export class WaitlistContactChangedError extends ConflictError {
+  readonly code = 'WAITLIST_CONTACT_CHANGED';
+  override readonly userTitle =
+    'Alguien registró otra llamada entretanto. Actualice la lista y vuelva a mirar';
+
+  constructor() {
+    super('Contact attempts changed while correcting the last one');
+  }
+}
+
+/**
  * AG-163. «Deshacer» a no-show on a later day than the one it was marked.
  * The same day is the window of a mistaken click; after that the figure of
  * AG-080 has already been read by somebody.

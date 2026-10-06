@@ -114,6 +114,12 @@ export interface ContactAttemptEdit {
   at: Date;
   /** What the entry becomes, decided by `statusAfterContact`. */
   status: Extract<WaitlistStatus, 'CONTACTED' | 'EXPIRED'>;
+  /**
+   * How many attempts the decision was taken on. The adapter refuses the
+   * edit if another call was recorded in between (`WAITLIST_CONTACT_CHANGED`),
+   * and refuses it if the last call is somebody else's.
+   */
+  expectedAttempts: number;
 }
 
 /** AG-063. The link that closes an entry, and the appointment it closes on. */

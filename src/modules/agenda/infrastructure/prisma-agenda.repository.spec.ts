@@ -59,6 +59,8 @@ function entryRow(overrides: Record<string, unknown> = {}) {
     // only alternative to a single element.
     rescheduledFromId: null,
     rescheduledTo: [],
+    // AG-063: what the edit reads of the waiting list that gave this slot.
+    _count: { waitlistOrigin: 0 },
     ...overrides,
   };
 }

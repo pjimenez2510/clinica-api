@@ -26,7 +26,7 @@ import {
   overbookingReasonOf,
 } from '../domain/overbooking-policy';
 import {
-  editMoves,
+  editRelocates,
   planBlockEdit,
   planEmergencyCorrection,
   planEntryEdit,
@@ -1088,8 +1088,15 @@ export class AgendaService {
       patientId: request.patientId,
     };
 
-    const moves = editMoves(edit);
-    if (!moves && request.roomId) {
+    /**
+     * AG-162 (review, P1). Only a NEW HOUR or a NEW PRACTITIONER is judged
+     * like a booking — window, lead time, schedule. Correcting the patient,
+     * the channel or the type of an appointment that keeps its hour is not a
+     * booking made now: it is fixing the one that exists, also once its hour
+     * started. The merged chart and the `EXCLUDE` constraints still apply.
+     */
+    const relocates = editRelocates(edit);
+    if (!relocates && request.roomId) {
       // AG-105 only: a room change of an appointment that is not moving is
       // not a booking, and the window of AG-031 does not apply to it.
       checkRoomBelongsToSite(
@@ -1097,7 +1104,25 @@ export class AgendaService {
         request.siteId,
       );
     }
-    if (moves) {
+    if (!relocates && request.patientId !== undefined) {
+      // AG-027, the one booking check a patient change needs on its own.
+      const patient = await this.agenda.findPatientForBooking(
+        request.patientId,
+      );
+      if (patient?.mergedIntoMrn) {
+        throw new PatientMergedError(patient.mergedIntoMrn);
+      }
+    }
+    // AG-162 (review, M-2). The motive of the visit was the previous
+    // patient's: it does not travel to the new one unless written again.
+    if (
+      request.patientId !== undefined &&
+      request.patientId !== current.patientId &&
+      edit.reason === undefined
+    ) {
+      edit.reason = null;
+    }
+    if (relocates) {
       await this.checkIntervalIsBookable({
         siteId: request.siteId,
         practitionerId: request.practitionerId ?? current.practitionerId,
@@ -1109,9 +1134,10 @@ export class AgendaService {
         now,
       });
     }
-    // AG-162. A moved overbooking is now an ordinary appointment that fits
-    // the grid (checked above); its authorisation stays in the version.
-    if (moves && !current.blocksCalendar) edit.clearOverbooking = true;
+    // AG-162. A RELOCATED overbooking is now an ordinary appointment that
+    // fits the grid (checked above); its authorisation stays in the version.
+    // One that keeps its hour keeps its exception (review, M-1).
+    if (relocates && !current.blocksCalendar) edit.clearOverbooking = true;
 
     const entry = await this.agenda.editEntry(
       {

@@ -40,6 +40,8 @@ export const DOMAIN_ERROR_CODES = [
   // admite, y la inasistencia se deshace el mismo día.
   'AGENDA_ENTRY_NOT_EDITABLE',
   'NO_SHOW_UNDO_EXPIRED',
+  // AG-063: la cita que salió de la lista de espera no cambia de paciente.
+  'APPOINTMENT_FROM_WAITLIST',
   'INVALID_AGENDA_TRANSITION',
   'NO_SHOW_BEFORE_START',
   // Agenda, E8 (AG-116, AG-117, AG-122, AG-125, AG-127, AG-128). Los
@@ -148,6 +150,9 @@ export const DOMAIN_ERROR_CODES = [
   'WAITLIST_ENTRY_CLOSED',
   // AG-064 (D-127): corregir el último intento de una entrada sin llamadas.
   'WAITLIST_NO_CONTACT_ATTEMPT',
+  // AG-064: solo quien llamó corrige su llamada, y no si entretanto hubo otra.
+  'WAITLIST_CONTACT_OF_ANOTHER',
+  'WAITLIST_CONTACT_CHANGED',
   'WAITLIST_ENTRY_NOT_FOUND',
   'WAITLIST_PATIENT_MISMATCH',
   'WAITLIST_SLOT_ALREADY_CLAIMED',
