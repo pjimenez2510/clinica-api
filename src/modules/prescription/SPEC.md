@@ -1226,6 +1226,41 @@ está o no en el cuadro. Una clínica privada no tiene que justificarlo._
   > faltaba era el borrador antiguo reabierto, que traía la duración oculta y la
   > devolvía al cambiar de frecuencia.
 
+## 12. Descartar la alergia desde la receta, y confirmar la presentación (RX-5, D-133.2)
+
+_Rama `fix/menos-preguntas-pacientes`. Las dos son solo interfaz: la API ya
+expone lo que hace falta._
+
+- **PR-112** — CUANDO la emisión se rechace con `ALLERGY_CONTRAINDICATION`
+  (PR-060) y quien emite pueda descartar alergias (`record:write`, EN-164) en
+  una atención viva, la pantalla DEBERÁ ofrecer, en el propio rechazo,
+  **«Descartar esta alergia»** con la confirmación de EN-224 —motivo opcional
+  de lista—, sin salir de la receta, y una vez descartada DEBERÁ volver a
+  emitir la misma receta. SI quien emite no puede descartarla, ENTONCES DEBERÁ
+  quedar el enlace a la ficha (PR-061).
+  > **RX-5 del inventario.** El servidor nombra las líneas
+  > (`items.<n>.conceptId`) y no la alergia; como la coincidencia de PR-060 es
+  > el mismo concepto CNMB, la pantalla ofrece la alergia activa de la ficha
+  > con el concepto de esa línea. Elegir qué ofrecer no decide nada: la nueva
+  > emisión la vuelve a juzgar el servidor. Con varias, un botón por alergia
+  > con su sustancia. El diálogo y la ruta son los de refutar
+  > (`POST /patients/:id/allergies/:allergyId/refute`); «Deshacer» del aviso
+  > reactiva la alergia y no vuelve a emitir. PR-061 sigue: no hay «emitir de
+  > todas formas».
+
+- **PR-113** — CUANDO se emita una receta con alguna línea del CNMB en una
+  presentación que el cuadro no trae (PR-104: con concepto y `offFormulary`),
+  la pantalla DEBERÁ pedir **una** confirmación, sin motivo, que diga «Esta
+  presentación no está en el cuadro: compruebe la concentración» y nombre cada
+  línea (número, medicamento, concentración y forma), y NO DEBERÁ emitir hasta
+  que se confirme. Una línea sin concepto (PR-009) o en una presentación
+  declarada NO DEBERÁ pedirla.
+  > **D-133.2, resuelta el 05-10-2026.** Sin justificación (PR-110) quedaba
+  > solo la marca, y la justificación frenaba de paso una concentración mal
+  > tecleada («Enalapril 500 mg»). Es la excepción de D-126.4: un riesgo para
+  > el paciente. La marca la decide el servidor al guardar (PR-110); el editor
+  > guarda, mira la respuesta y pregunta antes de emitir.
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -1391,6 +1426,8 @@ prueba o el CI falla**.
 | PR-106 | Interfaz: la línea nueva arranca sin vía y emitir sin elegirla se señala en el campo |
 | PR-110 | **Integración contra PostgreSQL real**: la base admite la línea sin concepto marcada y sin justificación y rechaza la que no lleva la marca, con control positivo; una línea anterior a la marca, con justificación, se lee marcada. HTTP: sin concepto y con una presentación no declarada se compone 201 con `offFormulary: true`; la declarada, `false`. Unitaria del DTO, del contenido, del documento y del papel (DOC-072) |
 | PR-111 | Interfaz: elegir «Dosis única» vacía y oculta la duración; un borrador antiguo reabierto con «Dosis única» no la trae |
+| PR-112 | Interfaz (`clinica-web`): el rechazo por alergia ofrece «Descartar esta alergia» a quien tiene `record:write`, y al descartarla se vuelve a emitir; sin el permiso queda el enlace. El diálogo avisa del descarte y no del «Deshacer» |
+| PR-113 | Interfaz (`clinica-web`): emitir con una línea del CNMB marcada pide la confirmación que nombra la línea y no emite hasta confirmarla; sin concepto o en una presentación declarada se emite sin preguntar |
 | PR-100, PR-104 | **Integración contra PostgreSQL real**, con control positivo: reescribir un borrador conserva su id y sustituye las líneas; las de una emitida no se tocan ni desde la base; otra presentación de un concepto que declara las suyas se compone sin justificación y sale marcada (PR-110) |
 | PR-062 | **Integración contra PostgreSQL real, con una fusión de fichas de por medio.** Es el único nivel que puede demostrarlo: depende de que el enlace se recorra en la base, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo recorriendo el AST |
 | PR-050 | **Unitario con el huso alterado**, como `clinical-date-timezone.spec.ts`: la misma emisión bajo `UTC` y bajo `Asia/Tokyo` da la misma fecha límite. Es el defecto real que originó REQ-160 |
