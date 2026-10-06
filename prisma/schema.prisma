@@ -3211,6 +3211,13 @@ model ObservationResult {
   referenceHigh Decimal? @map("reference_high") @db.Decimal(18, 6)
   referenceText String?  @map("reference_text") @db.VarChar(160)
 
+  /// ORD-122. The critical bounds the flag was computed with, side by side;
+  /// NULL on a side with no critical. A correction compares with these
+  /// (ORD-114). `observation_result_flag_agrees_with_critical_bounds` refuses
+  /// a flag they do not explain.
+  criticalLow  Decimal? @map("critical_low") @db.Decimal(18, 6)
+  criticalHigh Decimal? @map("critical_high") @db.Decimal(18, 6)
+
   abnormalFlag AbnormalFlag? @map("abnormal_flag")
 
   observedAt DateTime @default(now()) @map("observed_at") @db.Timestamptz(6)

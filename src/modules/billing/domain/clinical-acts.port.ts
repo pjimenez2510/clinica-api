@@ -124,6 +124,12 @@ export interface AwaitingCheckout {
   patient: PatientIdentity;
   /** The visit's open account, or `null` when it never went to caja. */
   account: { id: string; status: 'OPEN' } | null;
+  /**
+   * BI-194. Exams issued after the last settled account of this visit was
+   * opened, chargeable and not charged anywhere: why a settled visit is
+   * listed again. `0` when the visit has no settled account.
+   */
+  unchargedExams: number;
 }
 
 /**

@@ -119,6 +119,14 @@ describe('la transcripción de una determinación', () => {
     });
   });
 
+  it('ORD-122 clasifica el valor redondeado a la escala en que se guarda, para que la base y la bandera digan lo mismo', () => {
+    // `value_numeric` es DECIMAL(18,6): 400,0000004 se guarda 400. Marcado
+    // crítico en JS, la fila contradecía su límite y el informe no entraba.
+    expect(resolveResult(GLUCOSE, { valueNumeric: 400.0000004 }, woman)).toMatchObject({ valueNumeric: 400, abnormalFlag: 'HIGH' }); // prettier-ignore
+    // Control positivo: lo que sigue por encima tras redondear es crítico.
+    expect(resolveResult(GLUCOSE, { valueNumeric: 400.000001 }, woman)).toMatchObject({ abnormalFlag: 'CRITICAL_HIGH' }); // prettier-ignore
+  });
+
   it('ORD-033 admite cualquier valor cuando el catálogo no declara la lista', () => {
     // Un analito codificado cuya lista nadie ha llenado todavía tiene que
     // seguir siendo transcribible: lo que falta es una fila de catálogo, no un

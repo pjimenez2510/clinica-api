@@ -236,7 +236,8 @@ queda con `order_item_id` nulo y sale en la cola de sin orden. Y el aviso de la
 glucosa queda registrado con a quién, quién, cuándo y por qué medio: desde ese
 momento sale de la cola, y la constancia se edita en el sitio sin perder la
 versión anterior (ORD-120).
-**Cubre:** ORD-040 a ORD-043, ORD-046, ORD-060 a ORD-068, **ORD-120**.
+**Cubre:** ORD-040 a ORD-043, ORD-046, ORD-060 a ORD-068, **ORD-120**, y
+**ORD-122**: el valor crítico dice con qué umbral se marcó.
 
 **Solo servidor:** ORD-061, ORD-064. Que la cola se construya sobre los umbrales
 propios y que la constancia no se pueda borrar ni cambiar de origen son
@@ -645,7 +646,8 @@ cuando la gráfica exista.
   (`reference_low`, `reference_high`, `reference_text`).
 
   Es la columna `VALOR DE REFERENCIA` del 010B, y congelarla es lo que hace que
-  un informe de hace tres años se lea con los rangos de hace tres años.
+  un informe de hace tres años se lea con los rangos de hace tres años. Los
+  límites **críticos** aplicados se congelan aparte (ORD-122).
 
 - **ORD-038** — SI ningún rango es aplicable al paciente, ENTONCES la bandera
   DEBERÁ quedar **vacía**, y el sistema NO DEBERÁ marcarla como `NORMAL`.
@@ -1321,11 +1323,15 @@ desde la pantalla.
   con su vigencia y quién la cambió está en `access_audit` (ORD-111)— para
   reconstruir qué umbral regía en una fecha.
 
-  Y SI una corrección trae un valor igual de extremo o más que uno que ya era
-  crítico de ese lado, ENTONCES el sistema DEBERÁ conservarlo crítico aunque
-  los rangos de hoy no lo marquen: un umbral subido después no saca de la cola
-  un crítico que nadie avisó (revisión clínica; D-130 decide qué umbral usa una
-  corrección, y recomienda congelar en el resultado los límites críticos).
+  Y CUANDO se corrige un informe, cada determinación que ya estaba en la
+  versión que se corrige DEBERÁ clasificarse, de cada lado, con el límite
+  crítico **más protector** entre el **congelado en esa versión** (ORD-122) y
+  el vigente —el bajo más alto y el alto más bajo; si uno falta, el otro—, y
+  la fila nueva DEBERÁ congelar el límite que la decidió; la referencia sí es
+  la vigente. Una determinación que la corrección trae por primera vez usa los
+  vigentes (D-130.1, resuelta por el autor: C; D-135, resuelta por el autor).
+  Así un umbral subido después no saca de la cola un crítico que nadie avisó,
+  y uno bajado después sí alcanza al valor corregido.
 
   Una fila cerrada que siguiera contando pisaría a la nueva (ORD-107) y la
   bandera dependería del orden de las filas. Y lo vigente se lee por «sin
@@ -1334,15 +1340,44 @@ desde la pantalla.
 
 - **ORD-115** — El sistema DEBERÁ ofrecer a cada profesional la lista de **sus
   borradores de orden colgados** —los que firma él, en `DRAFT`, de atenciones
-  que ya no están abiertas ni en espera—, con el paciente, la fecha de la
-  atención y los exámenes, y desde ella emitirlos (ORD-098) o descartarlos
-  (ORD-099) (D-123.6, resuelta por el autor).
+  que ya no están abiertas ni en espera, **y los guardados hace más de 24
+  horas en una atención abierta o en espera** (D-130.3)—, con el paciente, la
+  fecha de la atención y los exámenes, y desde ella emitirlos (ORD-098) o
+  descartarlos (ORD-099) (D-123.6, resuelta por el autor).
+
+  Las 24 horas se cuentan desde que se guardó el borrador y con el reloj de la
+  aplicación. Sin ellas, una atención que se queda `OPEN` u `ON_HOLD` días
+  esconde su borrador en una pestaña que nadie vuelve a abrir. En una atención
+  abierta o en espera el borrador se emite (ORD-005).
 
   Emitir sigue sujeto a ORD-005: con el alta dada (`DISCHARGED`) se emite; en
   una atención terminada (`COMPLETED`, `DISCONTINUED`) sólo se descarta, y la
   pantalla lo dice en vez de ofrecer un botón que sólo puede fallar. La lista
   no deja fila de bitácora por entrada (ORD-092): lleva el nombre del paciente
   y qué se pidió, nada del diagnóstico.
+
+- **ORD-122** — Cada resultado numérico DEBERÁ congelar en su fila los
+  **límites críticos que se le aplicaron** (`critical_low`, `critical_high`;
+  vacíos si ese lado no tenía crítico), resueltos lado a lado como su bandera
+  (ORD-036), igual que congela la referencia (ORD-037) (D-130.1, resuelta por
+  el autor: C). Y la **base** DEBERÁ rechazar una fila cuya bandera contradiga
+  sus límites congelados: `CRITICAL_LOW` sin un `critical_low` por encima del
+  valor, `CRITICAL_HIGH` sin un `critical_high` por debajo, una bandera no
+  crítica con el valor fuera de sus límites, o límites en un resultado que no
+  es numérico. Y la base DEBERÁ impedir reescribir o borrar un resultado: lo
+  único que cambia en la fila es su línea, una vez, al emparejar el que llegó
+  sin orden (ORD-043). El valor se clasifica redondeado a la escala en que se
+  guarda.
+
+  > «¿Qué umbral regía para este paciente?» se lee en la fila, sin reconstruir
+  > la vigencia de ORD-113. Los resultados ya registrados se rellenan con el
+  > umbral que regía al registrarse el informe (`diagnostic_report.created_at`)
+  > según esa vigencia, con la misma edad y sexo que usó su clasificación. Una
+  > corrección rellenada congela, en este orden, el que explique su bandera: el
+  > más protector entre el de la versión que corrige y el de su día (lo que
+  > hoy haría ORD-114), el de la versión que corrige, o el de su día. Ninguna
+  > bandera guardada cambia; las correcciones que la regla de hoy habría
+  > marcado distinto se anuncian por su id al migrar (D-138).
 
 ---
 
@@ -1680,6 +1715,7 @@ columnas donde registrar quién lo decidió y por qué.
 | Requisitos | Nivel | Por qué |
 | --- | --- | --- |
 | ORD-036, ORD-112 | Unitario e integración | La resolución lado a lado y la banda crítica son puras; que la bandera que **aterriza en la fila** sale de ellas, con los rangos vigentes y nunca de una fila cerrada (ORD-114), se prueba registrando informes contra PostgreSQL, con control positivo. |
+| ORD-114, ORD-122 | Unitario e integración | Que la corrección clasifique con los límites congelados es una regla pura; que la fila los guarde y que la base rechace una bandera que los contradiga se prueba contra PostgreSQL, con control positivo. El relleno se prueba sobre una copia de la base del autor y sobre resultados registrados con el código anterior. |
 | ORD-113 | Integración | Que una fila de rango no se borra ni se reescribe lo garantiza un disparador: se prueba contra la base, con control positivo (cerrar la vigencia entra; borrar y reescribir no). |
 | ORD-036, ORD-038, ORD-039 | Unitario | Son políticas puras: rango aplicable, bandera y completitud. Se prueban sin base, con los rangos reales de la siembra. |
 | ORD-021, ORD-022 | Unitario | El envejecimiento es aritmética de fechas clínicas; el huso se prueba fijando la zona de la sesión. |

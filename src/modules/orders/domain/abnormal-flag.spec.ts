@@ -4,12 +4,11 @@ import {
   applicableRange,
   classifyNumeric,
   criticalBounds,
-  keepStandingCritical,
   classifyQualitative,
   isCritical,
 } from './abnormal-flag';
 import { GLUCOSE, HAEMOGLOBIN, NITRITES } from './analyte.fixtures';
-import type { AbnormalFlag, PatientProfile, ReferenceRange } from './analyte';
+import type { PatientProfile, ReferenceRange } from './analyte';
 
 /**
  * The flag: the number that decides whether somebody phones the patient
@@ -130,6 +129,8 @@ describe('la bandera de anormalidad', () => {
       referenceLow: null,
       referenceHigh: null,
       referenceText: 'Negativo',
+      criticalLow: null,
+      criticalHigh: null,
     });
   });
 
@@ -244,23 +245,39 @@ describe('la bandera de anormalidad', () => {
     expect(checked).toBeGreaterThan(1_000);
   });
 
-  it('ORD-054 ORD-114 una corrección no baja de crítico un valor igual o más extremo que el que ya era crítico', () => {
-    // El 420 fue crítico con el umbral de 400; hoy rige 500 y daría HIGH.
-    const was = { analyteDisplay: 'Glucosa', valueNumeric: 420, abnormalFlag: 'CRITICAL_HIGH' as const }; // prettier-ignore
-    const now = (valueNumeric: number, abnormalFlag: AbnormalFlag | null) => ({ analyteDisplay: 'Glucosa', valueNumeric, abnormalFlag }); // prettier-ignore
+  it('ORD-122 congela los límites críticos que aplicó, lado a lado, y nada si no hay crítico', () => {
+    const ranges: ReferenceRange[] = [
+      ...GLUCOSE.ranges,
+      { rangeKind: 'CRITICAL', sex: 'MALE', ageMinDays: null, ageMaxDays: null, low: null, high: 450, text: null }, // prettier-ignore
+    ];
+    expect(classifyNumeric(420, { ranges }, man)).toMatchObject({ flag: 'HIGH', criticalLow: 40, criticalHigh: 450 }); // prettier-ignore
+    expect(classifyNumeric(420, { ranges }, woman)).toMatchObject({ flag: 'CRITICAL_HIGH', criticalLow: 40, criticalHigh: 400 }); // prettier-ignore
+    // Control positivo: sin crítico, los dos lados vacíos.
+    expect(classifyNumeric(12.5, HAEMOGLOBIN, woman)).toMatchObject({ criticalLow: null, criticalHigh: null }); // prettier-ignore
+    expect(classifyQualitative(NITRITES, woman)).toMatchObject({ criticalLow: null, criticalHigh: null }); // prettier-ignore
+  });
 
-    expect(keepStandingCritical(now(420, 'HIGH'), [was]).abnormalFlag).toBe('CRITICAL_HIGH'); // prettier-ignore
-    expect(keepStandingCritical(now(450, 'HIGH'), [was]).abnormalFlag).toBe('CRITICAL_HIGH'); // prettier-ignore
-    // Control positivo: el laboratorio lo corrigió a menos extremo, rige el umbral de hoy.
-    expect(keepStandingCritical(now(410, 'HIGH'), [was]).abnormalFlag).toBe('HIGH'); // prettier-ignore
-    // Y por abajo, igual.
-    const low = { analyteDisplay: 'Glucosa', valueNumeric: 35, abnormalFlag: 'CRITICAL_LOW' as const }; // prettier-ignore
-    expect(keepStandingCritical(now(30, 'LOW'), [low]).abnormalFlag).toBe('CRITICAL_LOW'); // prettier-ignore
-    expect(keepStandingCritical(now(50, 'LOW'), [low]).abnormalFlag).toBe(
-      'LOW',
-    );
-    // Otra determinación no se mezcla.
-    expect(keepStandingCritical({ ...now(420, 'HIGH'), analyteDisplay: 'Urea' }, [was]).abnormalFlag).toBe('HIGH'); // prettier-ignore
+  it('ORD-114 ORD-122 una corrección se clasifica con el límite más protector entre el que se aplicó y el de hoy', () => {
+    // El original se clasificó con 40–400; hoy rige 40–500.
+    const today: ReferenceRange[] = [
+      { rangeKind: 'REFERENCE', sex: null, ageMinDays: null, ageMaxDays: null, low: 70, high: 100, text: null }, // prettier-ignore
+      { rangeKind: 'CRITICAL', sex: null, ageMinDays: null, ageMaxDays: null, low: 40, high: 500, text: null }, // prettier-ignore
+    ];
+    const applied = { low: 40, high: 400 };
+
+    expect(classifyNumeric(410, { ranges: today }, woman, applied)).toMatchObject({ flag: 'CRITICAL_HIGH', criticalLow: 40, criticalHigh: 400 }); // prettier-ignore
+    expect(classifyNumeric(450, { ranges: today }, woman, applied).flag).toBe('CRITICAL_HIGH'); // prettier-ignore
+    // Control positivo: sin límites congelados rigen los de hoy.
+    expect(classifyNumeric(410, { ranges: today }, woman)).toMatchObject({ flag: 'HIGH', criticalHigh: 500 }); // prettier-ignore
+    // Corregido por debajo del umbral aplicado, deja de ser crítico; la referencia es la de hoy.
+    expect(classifyNumeric(390, { ranges: today }, woman, applied)).toMatchObject({ flag: 'HIGH', referenceHigh: 100 }); // prettier-ignore
+    // Un lado sin crítico congelado toma el de hoy (D-135).
+    expect(classifyNumeric(20, { ranges: today }, woman, { low: null, high: 400 })).toMatchObject({ flag: 'CRITICAL_LOW', criticalLow: 40 }); // prettier-ignore
+    // D-135: el umbral BAJADO después también la alcanza. Aplicado 400, hoy 350.
+    const lowered: ReferenceRange[] = [today[0]!, { ...today[1]!, high: 350 }];
+    expect(classifyNumeric(390, { ranges: lowered }, woman, applied)).toMatchObject({ flag: 'CRITICAL_HIGH', criticalHigh: 350 }); // prettier-ignore
+    // Y por abajo: el bajo más alto de los dos.
+    expect(classifyNumeric(45, { ranges: today }, woman, { low: 50, high: 400 })).toMatchObject({ flag: 'CRITICAL_LOW', criticalLow: 50 }); // prettier-ignore
   });
 
   it('ORD-060 reconoce las dos banderas que tienen que llegar hoy a una persona', () => {
