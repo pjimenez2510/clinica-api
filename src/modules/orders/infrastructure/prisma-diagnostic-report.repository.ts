@@ -6,6 +6,7 @@ import {
   CriticalNoticeEditedConcurrentlyError,
   CriticalNoticeNotFoundError,
   OrderItemNotMatchableError,
+  OrderItemNotPendingError,
   OrderNotFoundError,
   OrderNotIssuedError,
   ResultAlreadyMatchedError,
@@ -166,6 +167,20 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       // And since reports only land on issued orders, so do their results and
       // every match against them (ORD-043).
       if (order.status !== 'ISSUED') throw new OrderNotIssuedError();
+
+      /**
+       * ORD-124. Nothing comes back for an order whose every exam was
+       * withdrawn. `FOR SHARE` on its lines conflicts with the `UPDATE` that
+       * cancels one (ORD-007), so a cancellation at the same instant either
+       * waits for this report or makes it wait and then read «anulado».
+       */
+      const lines = await tx.$queryRaw<{ status: string }[]>`
+        SELECT "status"::text AS "status" FROM "service_order_item"
+         WHERE "service_order_id" = ${report.serviceOrderId}::uuid
+           FOR SHARE`;
+      if (lines.every((line) => line.status === 'CANCELLED')) {
+        throw new OrderItemNotPendingError();
+      }
 
       /**
        * ORD-062 (tercera revisión). A correction LOCKS the report it replaces

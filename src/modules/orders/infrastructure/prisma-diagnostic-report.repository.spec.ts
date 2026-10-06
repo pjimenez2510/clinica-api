@@ -58,8 +58,12 @@ function prismaDouble(
 
   const tx = {
     $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => {
-      record('$queryRaw', { sql: strings.join('?'), values });
-      return Promise.resolve([]);
+      const sql = strings.join('?');
+      record('$queryRaw', { sql, values });
+      // ORD-124. The order's lines, locked: one live line by default.
+      return Promise.resolve(
+        sql.includes('service_order_item') ? [{ status: 'REQUESTED' }] : [],
+      );
     },
     serviceOrder: {
       findFirst: (args: unknown) => {
@@ -357,14 +361,24 @@ describe('el adaptador del informe', () => {
       promises,
     );
     const order = correction.calls.map((call) => call.method);
-    const lock = correction.calls.find((call) => call.method === '$queryRaw');
+    const lock = correction.calls.find(
+      (call) =>
+        call.method === '$queryRaw' &&
+        (call.args as { sql: string }).sql.includes('diagnostic_report'),
+    );
     expect((lock?.args as { sql: string }).sql).toContain('FOR NO KEY UPDATE');
     expect((lock?.args as { values: unknown[] }).values).toEqual(['report-0']);
-    expect(order.indexOf('$queryRaw')).toBeLessThan(order.indexOf('diagnosticReport.create')); // prettier-ignore
+    expect(correction.calls.indexOf(lock!)).toBeLessThan(order.indexOf('diagnosticReport.create')); // prettier-ignore
 
     // Control: un informe que no sustituye a nada no bloquea ninguno.
     const plain = prismaDouble();
     await plain.repository.register(aReport(), promises);
-    expect(plain.calls.some((call) => call.method === '$queryRaw')).toBe(false);
+    expect(
+      plain.calls.some((call) =>
+        ((call.args as { sql?: string }).sql ?? '').includes(
+          'FOR NO KEY UPDATE',
+        ),
+      ),
+    ).toBe(false);
   });
 });

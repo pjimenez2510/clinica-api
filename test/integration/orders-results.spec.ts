@@ -11,7 +11,8 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { placeIssued, aScene } from './orders-fixtures';
 import { useDatabase } from './setup/database';
-import { createSite } from './setup/fixtures';
+import { createSite, createUser } from './setup/fixtures';
+import { OrderItemNotPendingError } from '../../src/modules/orders/domain/orders.errors';
 
 /**
  * The result against a real PostgreSQL.
@@ -930,5 +931,90 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       select: { pendingItems: true },
     });
     expect(stored.pendingItems).toBe(1);
+  });
+  it('ORD-124 rechaza el informe de una orden con todos sus exámenes anulados y no escribe nada', async () => {
+    const prisma = db();
+    const scene = await anOrderedBloodCount(prisma);
+    const { reports, orders } = serviceOf(prisma);
+    const canceller = await createUser(prisma);
+    await orders.cancelItem({
+      orderId: scene.order.id,
+      itemId: scene.order.items[0]!.id,
+      sites: 'all',
+      cancelledById: canceller.id,
+    });
+
+    const now = new Date();
+    await expect(
+      reports.register(
+        {
+          orderId: scene.order.id,
+          performedById: null,
+          issuedAt: new Date(now.getTime() - 60 * 60 * 1000),
+          results: [{ analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 }],
+        },
+        requester,
+        now,
+      ),
+    ).rejects.toBeInstanceOf(OrderItemNotPendingError);
+
+    expect(
+      await prisma.diagnosticReport.count({ where: { serviceOrderId: scene.order.id } }), // prettier-ignore
+    ).toBe(0);
+  });
+
+  it('ORD-124 con un examen vivo y otro anulado el informe entra, y ningún valor queda bajo el anulado', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const { reports, orders } = serviceOf(prisma);
+    const order = await placeIssued(orders, {
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [
+        { examDefinitionId: scene.bh.id },
+        { examDefinitionId: scene.glucose.id },
+      ],
+      sites: 'all',
+    });
+    const glucoseLine = order.items.find((i) => i.testCode === 'EX-GLUCOSA-AYUNAS')!; // prettier-ignore
+    const canceller = await createUser(prisma);
+    await orders.cancelItem({
+      orderId: order.id,
+      itemId: glucoseLine.id,
+      sites: 'all',
+      cancelledById: canceller.id,
+    });
+
+    const now = new Date();
+    const report = await reports.register(
+      {
+        orderId: order.id,
+        performedById: null,
+        issuedAt: new Date(now.getTime() - 60 * 60 * 1000),
+        results: [
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 },
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+        ],
+      },
+      requester,
+      now,
+    );
+
+    // Control positivo: el informe entra y la biometría cierra su línea.
+    expect(report.status).toBe('FINAL');
+    const rows = await prisma.observationResult.findMany({
+      where: { reportId: report.id },
+      select: { analyteDisplay: true, orderItemId: true },
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows.some((r) => r.orderItemId === glucoseLine.id)).toBe(false);
+    // La glucosa que llegó queda sin línea, en su cola (ORD-040).
+    expect(rows.find((r) => r.analyteDisplay === 'Glucosa en ayunas')?.orderItemId).toBeNull(); // prettier-ignore
+    const stored = await prisma.serviceOrderItem.findUniqueOrThrow({
+      where: { id: glucoseLine.id },
+      select: { status: true },
+    });
+    expect(stored.status).toBe('CANCELLED');
   });
 });
