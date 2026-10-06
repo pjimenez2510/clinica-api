@@ -323,9 +323,11 @@ describe('las alergias y la historia de la consulta por HTTP', () => {
     });
 
     it('EN-082 EN-224 descarta una alergia con el motivo en blanco y lo guarda como ninguno', async () => {
+      // No es de criticidad alta: ésa sí exige motivo (D-140.1), y lo prueba
+      // `patient-background-edit-http.spec.ts`.
       const created = await recordAllergy({
-        substanceText: 'Penicilina',
-        criticality: 'HIGH',
+        substanceText: 'Látex',
+        criticality: 'LOW',
       }).expect(201);
       const id = (created.body as AllergyBody).id;
 
