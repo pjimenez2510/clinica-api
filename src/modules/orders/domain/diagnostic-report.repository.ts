@@ -66,6 +66,9 @@ export interface ObservationView {
   referenceLow: number | null;
   referenceHigh: number | null;
   referenceText: string | null;
+  /** ORD-122. The critical bounds the flag was computed with. */
+  criticalLow: number | null;
+  criticalHigh: number | null;
   /** ORD-038. `null` means «nothing to compare against», never «normal». */
   abnormalFlag: AbnormalFlag | null;
   observedAt: Date;
@@ -268,6 +271,9 @@ export interface FlaggedResultEntry {
   valueNumeric: number | null;
   valueCode: string | null;
   unit: string | null;
+  /** ORD-122. The critical bounds the flag was computed with. */
+  criticalLow: number | null;
+  criticalHigh: number | null;
   abnormalFlag: AbnormalFlag | null;
   observedAt: Date;
   /**
@@ -443,9 +449,12 @@ export interface DiagnosticReportRepository {
   /**
    * ORD-036. Who the order is for, and how old they were that day.
    *
-   * ⚠️ READ FROM THE ATTENTION AND NOT FROM THE CHART. `encounter.age_days` is
-   * frozen; `patient.birth_date` is not, and deriving the age at transcription
-   * time would classify a two-year-old result against today's ranges.
+   * ⚠️ THE AGE ON THE DAY OF THE ATTENTION, in whole days, from the birth
+   * date and the attention's clinical date — never at transcription time,
+   * which would classify a two-year-old result against today's age. Not
+   * `encounter.age_days`, which is only the days left after years and months.
+   * `null` when the birth date falls after the attention (data to correct):
+   * no age-qualified range then applies (ORD-036).
    */
   patientOfOrder(
     orderId: string,

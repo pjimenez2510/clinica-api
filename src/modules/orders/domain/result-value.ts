@@ -1,4 +1,8 @@
-import { classifyNumeric, classifyQualitative } from './abnormal-flag';
+import {
+  classifyNumeric,
+  classifyQualitative,
+  type CriticalLimits,
+} from './abnormal-flag';
 import {
   ResultValueNotAllowedError,
   ResultValueTypeMismatchError,
@@ -31,6 +35,9 @@ import type {
  * the same haemoglobin arriving once in `g/dL` and once in `g/L`.
  */
 
+/** The scale of `observation_result.value_numeric`. */
+const STORED_DECIMALS = 6;
+
 /** What a transcriber sends for one determination. Exactly one is populated. */
 export interface SubmittedValue {
   valueNumeric?: number | null;
@@ -52,6 +59,9 @@ export interface ResolvedResult {
   referenceLow: number | null;
   referenceHigh: number | null;
   referenceText: string | null;
+  /** ORD-122. The critical bounds the flag was computed with, frozen. */
+  criticalLow: number | null;
+  criticalHigh: number | null;
   /** ORD-035, ORD-038. Computed here; `null` means «nothing to compare against». */
   abnormalFlag: AbnormalFlag | null;
 }
@@ -68,19 +78,36 @@ export function resolveResult(
   analyte: AnalyteDefinition,
   submitted: SubmittedValue,
   patient: PatientProfile,
+  /** ORD-114, ORD-122. What the corrected version applied to this value. */
+  applied?: CriticalLimits,
 ): ResolvedResult {
   const frozen = { analyteId: analyte.id, analyteDisplay: analyte.name };
 
   if (analyte.valueType === 'NUMERIC') {
-    const value = submitted.valueNumeric;
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
+    const submittedValue = submitted.valueNumeric;
+    if (
+      typeof submittedValue !== 'number' ||
+      !Number.isFinite(submittedValue)
+    ) {
       throw new ResultValueTypeMismatchError(analyte.code, 'NUMERIC');
     }
+    /**
+     * ORD-122. Classified as it will be STORED: `value_numeric` is
+     * DECIMAL(18,6). Classifying the unrounded number, 400.0000004 against a
+     * critical of 400 was flagged critical, stored as 400, and refused by
+     * `observation_result_flag_agrees_with_critical_bounds`.
+     */
+    const value = Number(submittedValue.toFixed(STORED_DECIMALS));
     if (submitted.valueCode != null || submitted.valueText != null) {
       throw new ResultValueTypeMismatchError(analyte.code, 'NUMERIC');
     }
 
-    const { flag, ...range } = classifyNumeric(value, analyte, patient);
+    const { flag, ...range } = classifyNumeric(
+      value,
+      analyte,
+      patient,
+      applied,
+    );
     return {
       ...frozen,
       valueNumeric: value,
@@ -162,11 +189,20 @@ export function resolveResult(
 function qualitativeRange(
   analyte: AnalyteDefinition,
   patient: PatientProfile,
-): Pick<ResolvedResult, 'referenceLow' | 'referenceHigh' | 'referenceText'> {
+): Pick<
+  ResolvedResult,
+  | 'referenceLow'
+  | 'referenceHigh'
+  | 'referenceText'
+  | 'criticalLow'
+  | 'criticalHigh'
+> {
   const classified = classifyQualitative(analyte, patient);
   return {
     referenceLow: classified.referenceLow,
     referenceHigh: classified.referenceHigh,
     referenceText: classified.referenceText,
+    criticalLow: classified.criticalLow,
+    criticalHigh: classified.criticalHigh,
   };
 }

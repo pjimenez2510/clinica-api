@@ -260,6 +260,9 @@ export const observationSchema = z.object({
   referenceLow: z.number().nullable(),
   referenceHigh: z.number().nullable(),
   referenceText: z.string().nullable(),
+  /** ORD-122. The critical bounds this value was flagged with; `null` on a side without. */
+  criticalLow: z.number().nullable(),
+  criticalHigh: z.number().nullable(),
   /** ORD-038. `null` is «no había con qué compararlo», NEVER «normal». */
   abnormalFlag: ABNORMAL_FLAG.nullable(),
   observedAt: z.iso.datetime(),
@@ -310,6 +313,9 @@ export const flaggedResultSchema = z.object({
   valueNumeric: z.number().nullable(),
   valueCode: z.string().nullable(),
   unit: z.string().nullable(),
+  /** ORD-122. The critical bounds this value was flagged with. */
+  criticalLow: z.number().nullable(),
+  criticalHigh: z.number().nullable(),
   abnormalFlag: ABNORMAL_FLAG.nullable(),
   observedAt: z.iso.datetime(),
 });

@@ -179,8 +179,11 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
     // BI-190. Which ones, decided in SQL: the never-charged test is per row
     // and the older ones have no ceiling, so it cannot be a filter in memory
     // after a `take`.
-    const listed = await this.prisma.$queryRaw<{ id: string }[]>`
-      SELECT e.id
+    const listed = await this.prisma.$queryRaw<
+      { id: string; uncharged_exams: number }[]
+    >`
+      SELECT e.id,
+             ${unchargedExamCount(Prisma.sql`e.id`)} AS uncharged_exams
         FROM encounter e
        WHERE ${awaitingCheckout(query.siteId)}
          AND e.ended_at >= ${query.endedFrom}
@@ -210,6 +213,7 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
     // In sequence and not all at once: each interrupted visit costs eight
     // small questions, and firing them for every row together would take the
     // pool from everybody else at the counter.
+    const uncharged = new Map(listed.map((row) => [row.id, row.uncharged_exams])); // prettier-ignore
     const visits: AwaitingCheckout[] = [];
     for (const row of rows) {
       const status = row.status as EndedEncounterStatus;
@@ -224,6 +228,7 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
           (await hasClinicalAct(this.prisma, row.id)),
         patient: toPatientIdentity(row.patient),
         account: open ? { id: open.id, status: 'OPEN' } : null,
+        unchargedExams: uncharged.get(row.id) ?? 0,
       });
     }
     return visits;
@@ -277,13 +282,68 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
   }
 }
 
-/** BI-181. Ended at the site, and no account of THIS visit settled. */
+/**
+ * BI-181, BI-194. Ended at the site, and either no account of THIS visit
+ * settled, or — settled — still something to charge: an account open again,
+ * or an exam issued after the close that nothing charged (D-130.4).
+ */
 function awaitingCheckout(siteId: string): Prisma.Sql {
   return Prisma.sql`
     e.site_id = ${siteId}::uuid
     AND e.status::text IN (${Prisma.join([...ENDED_ENCOUNTER_STATUSES])})
-    AND NOT EXISTS (SELECT 1 FROM patient_account a
-                     WHERE a.encounter_id = e.id AND a.status = 'SETTLED')`;
+    AND (
+      NOT EXISTS (SELECT 1 FROM patient_account a
+                   WHERE a.encounter_id = e.id AND a.status = 'SETTLED')
+      OR EXISTS (SELECT 1 FROM patient_account a
+                  WHERE a.encounter_id = e.id AND a.status = 'OPEN')
+      OR EXISTS (SELECT 1 ${examsIssuedAfterSettlement(Prisma.sql`e.id`)})
+    )`;
+}
+
+/** BI-194. How many exams issued after the last settlement nothing charged. */
+function unchargedExamCount(encounterId: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`(SELECT count(*)::int ${examsIssuedAfterSettlement(encounterId)})`;
+}
+
+/**
+ * BI-194. The FROM/WHERE of the visit's exams caja could still charge after
+ * an account of it was settled:
+ *
+ *   · ISSUED after the last settled account was OPENED (`requested_at` is the
+ *     issue instant, ORD-098). What was issued before, caja had in front of it
+ *     when it passed the visit — and if it was not raised, it was decided: no
+ *     price for the day and charged by hand (BI-155), say. Without this the
+ *     visit came back for ever.
+ *   · An ISSUED order (ORD-100), a line not cancelled, and an ACTIVE billable
+ *     service in the catalogue: the same rule `proposeCharges` follows, or
+ *     the visit would come back with nothing «Pasar a caja» could raise.
+ *   · No charge naming it, in ANY status (a cancelled one is a decision, as in
+ *     `listChargedActs`, BI-151) — NOR a manual charge of that same service
+ *     in an account of the visit: the cashier may have charged it by hand
+ *     while it was still a draft (BI-192), and proposing it again would
+ *     charge it twice (revisión clínica de fix/criticos-d130, I-1; D-138).
+ */
+function examsIssuedAfterSettlement(encounterId: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`
+      FROM service_order o
+      JOIN service_order_item i ON i.service_order_id = o.id
+      JOIN exam_definition d ON d.code = i.test_code
+      JOIN billable_service s ON s.id = d.billable_service_id AND s.active
+     WHERE o.encounter_id = ${encounterId}
+       AND o.status = 'ISSUED'
+       AND i.status <> 'CANCELLED'
+       AND o.requested_at > (SELECT max(a.opened_at) FROM patient_account a
+                              WHERE a.encounter_id = ${encounterId}
+                                AND a.status = 'SETTLED')
+       AND NOT EXISTS (SELECT 1 FROM charge_item c
+                        WHERE c.service_order_item_id = i.id)
+       AND NOT EXISTS (SELECT 1
+                         FROM charge_item c
+                         JOIN patient_account a ON a.id = c.account_id
+                        WHERE a.encounter_id = ${encounterId}
+                          AND c.origin = 'MANUAL'
+                          AND c.status <> 'CANCELLED'
+                          AND c.billable_service_id = s.id)`;
 }
 
 /**

@@ -562,6 +562,8 @@ const awaitingCheckoutSchema = z.object({
   patient: patientIdentitySchema,
   /** The open account it already has, or `null` if it never went to caja. */
   account: z.object({ id: z.uuid(), status: z.literal('OPEN') }).nullable(),
+  /** BI-194. Exámenes emitidos sin cargo tras liquidar una cuenta; `0` si no tiene liquidada. */
+  unchargedExams: z.number().int().nonnegative(),
 });
 /** Response of GET /billing/sites/:siteId/encounters/awaiting-checkout. */
 export class AwaitingCheckoutListDto extends createZodDto(

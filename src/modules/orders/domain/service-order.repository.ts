@@ -307,11 +307,14 @@ export interface ServiceOrderRepository {
 
   /**
    * ORD-115. The caller's drafts left behind: still `DRAFT`, signed by them,
-   * in attentions that are neither open nor on hold, oldest first.
+   * in attentions that are neither open nor on hold — or saved more than
+   * `STALE_DRAFT_AFTER_MS` before `now` in one that still is (D-130.3) —
+   * oldest first.
    */
   staleDrafts(query: {
     userId: string;
     sites: SiteScopeFilter;
+    now: Date;
   }): Promise<StaleDraftEntry[]>;
 }
 

@@ -3,6 +3,11 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
+  type ClinicalDate,
+  clinicalDateOf,
+  clinicalDaySpan,
+} from '../../../shared/domain/clinic-time';
+import {
   CriticalNoticeEditedConcurrentlyError,
   CriticalNoticeNotFoundError,
   OrderItemNotMatchableError,
@@ -105,6 +110,8 @@ const RESULT_SELECT = {
   referenceLow: true,
   referenceHigh: true,
   referenceText: true,
+  criticalLow: true,
+  criticalHigh: true,
   abnormalFlag: true,
   observedAt: true,
   notices: {
@@ -229,6 +236,8 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
               referenceLow: result.referenceLow,
               referenceHigh: result.referenceHigh,
               referenceText: result.referenceText,
+              criticalLow: result.criticalLow,
+              criticalHigh: result.criticalHigh,
               abnormalFlag: result.abnormalFlag,
               observedAt: report.issuedAt,
             })),
@@ -276,12 +285,10 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
   /**
    * ORD-036. Who the order is for, and how old they were THAT DAY.
    *
-   * ⚠️ `age_days` COMES FROM THE ATTENTION AND THE SEX FROM THE CHART, and the
-   * asymmetry is deliberate. The age is frozen by `trg_encounter_freeze_age`
-   * and never recomputed, so a report transcribed two years later still
-   * classifies against the age the patient HAD; deriving it from
-   * `birth_date` at transcription time would silently reclassify neonatal
-   * results as adult ones.
+   * The age is counted to the ATTENTION's clinical date, so a report
+   * transcribed two years later still classifies against the age the patient
+   * HAD. It follows the chart's birth date: a corrected birth date applies to
+   * a later correction too (D-138 asks whether to freeze it instead).
    */
   async patientOfOrder(
     orderId: string,
@@ -294,19 +301,27 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         encounter: {
           select: {
             patientId: true,
-            ageDays: true,
-            patient: { select: { sex: true } },
+            startedAt: true,
+            patient: { select: { sex: true, birthDate: true } },
           },
         },
       },
     });
     if (!row) return undefined;
 
+    const { patient } = row.encounter;
     return {
       patientId: row.encounter.patientId,
       siteId: row.siteId,
-      sex: row.encounter.patient.sex,
-      ageDays: row.encounter.ageDays,
+      sex: patient.sex,
+      /**
+       * ORD-036. The WHOLE age in days on the clinical date of the encounter.
+       * ⚠️ NOT `encounter.age_days`: `trg_encounter_freeze_age` stores there
+       * only the days left over after years and months (0–30), which is what
+       * the 010 and the prescription print. Read as an age, it gave a woman of
+       * 32 the ranges of a ten-day-old.
+       */
+      ageDays: ageInDaysOn(patient.birthDate, row.encounter.startedAt),
     };
   }
 
@@ -989,6 +1004,8 @@ const WORKLIST_SELECT = {
   valueNumeric: true,
   valueCode: true,
   unit: true,
+  criticalLow: true,
+  criticalHigh: true,
   abnormalFlag: true,
   observedAt: true,
   report: {
@@ -1105,6 +1122,8 @@ function toObservationView(row: ResultRow): ObservationView {
     referenceLow: toNumber(row.referenceLow),
     referenceHigh: toNumber(row.referenceHigh),
     referenceText: row.referenceText,
+    criticalLow: toNumber(row.criticalLow),
+    criticalHigh: toNumber(row.criticalHigh),
     abnormalFlag: row.abnormalFlag,
     observedAt: row.observedAt,
     notices: row.notices.map(toNoticeView),
@@ -1149,6 +1168,8 @@ function toWorklistEntry(row: WorklistRow): FlaggedResultEntry {
     valueNumeric: toNumber(row.valueNumeric),
     valueCode: row.valueCode,
     unit: row.unit,
+    criticalLow: toNumber(row.criticalLow),
+    criticalHigh: toNumber(row.criticalHigh),
     abnormalFlag: row.abnormalFlag,
     observedAt: row.observedAt,
     orderedBy: {
@@ -1174,4 +1195,15 @@ function toNumber(value: Prisma.Decimal | null): number | null {
 function toResultId(value: string): bigint | undefined {
   if (!/^\d{1,19}$/.test(value)) return undefined;
   return BigInt(value);
+}
+
+/**
+ * ORD-036. Whole days from birth to the attention's clinical date in Ecuador;
+ * `null` when the birth date is after it — an age that cannot be is unknown,
+ * not «−1», which would have matched a range with only an upper bound.
+ */
+function ageInDaysOn(birthDate: Date, startedAt: Date): number | null {
+  const born = birthDate.toISOString().slice(0, 10) as ClinicalDate;
+  const span = clinicalDaySpan(born, clinicalDateOf(startedAt));
+  return span === 0 ? null : span - 1;
 }

@@ -112,7 +112,8 @@ export class ServiceOrderController {
   }
 
   /**
-   * ORD-115. The caller's own drafts left in attentions no longer open.
+   * ORD-115. The caller's own drafts left in attentions no longer open, or
+   * older than a day in one still open (D-130.3).
    * Before `:orderId` for the same reason as `pending`; not audited per entry
    * (ORD-092).
    */
@@ -123,6 +124,7 @@ export class ServiceOrderController {
   async staleDrafts(@Req() req: Request): Promise<StaleDraftListResponse> {
     const items = await this.orders.staleDrafts(
       this.requester(req, 'record:read'),
+      new Date(),
     );
     return {
       items: items.map((entry) => ({

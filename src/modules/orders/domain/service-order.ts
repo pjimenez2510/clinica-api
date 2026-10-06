@@ -79,6 +79,13 @@ export function admitsNewOrders(status: EncounterStatus): boolean {
 }
 
 /**
+ * ORD-115, D-130.3. How long a draft may sit in an attention still open or on
+ * hold before it counts as left behind. An attention can stay `OPEN` for
+ * days, and its draft would otherwise only show in a tab nobody reopens.
+ */
+export const STALE_DRAFT_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
  * ORD-008. Whether a line is still waiting for its result.
  *
  * The DATABASE says the same thing with `completed_at IS NULL`, which is what

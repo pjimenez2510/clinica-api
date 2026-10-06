@@ -58,7 +58,10 @@ import {
   supersedingStatus,
 } from '../domain/service-order';
 import { resolveResult } from '../domain/result-value';
-import { keepStandingCritical } from '../domain/abnormal-flag';
+import {
+  appliedCriticalLimits,
+  type CriticalLimits,
+} from '../domain/abnormal-flag';
 import {
   criticalNoticeTarget,
   criticalWait,
@@ -296,7 +299,9 @@ export class DiagnosticReportService {
       throw new ReportNotCorrectableError(previous.status);
     }
 
-    const prepared = await this.prepare(previous.serviceOrderId, request.results, requester); // prettier-ignore
+    // ORD-114, ORD-122, D-130.1. Each value is compared with the critical
+    // bounds the corrected version applied to it, not with today's.
+    const prepared = await this.prepare(previous.serviceOrderId, request.results, requester, appliedCriticalLimits(previous.results)); // prettier-ignore
 
     /**
      * ORD-055 (tercera revisión clínica, grave). Superseding a report retracts
@@ -310,11 +315,7 @@ export class DiagnosticReportService {
       .filter((display) => !brought.has(display));
     if (missing.length > 0) throw new ReportCorrectionIncompleteError(missing);
 
-    // ORD-054, ORD-114, D-130. Today's ranges never lower by themselves a
-    // value that was already critical (`keepStandingCritical`).
-    const results = prepared.results.map((result) =>
-      keepStandingCritical(result, previous.results),
-    );
+    const { results } = prepared;
 
     const report = await this.reports.register(
       {
@@ -797,6 +798,8 @@ export class DiagnosticReportService {
     orderId: string,
     submitted: readonly SubmittedResult[],
     requester: Requester,
+    /** ORD-114, ORD-122. A correction's inherited critical bounds, by name. */
+    applied?: ReadonlyMap<string, CriticalLimits>,
   ): Promise<{
     status: DiagnosticReportStatus;
     results: ReportedResult[];
@@ -850,7 +853,7 @@ export class DiagnosticReportService {
       if (!analyte) throw new ResultAnalyteUnknownError();
 
       return {
-        ...resolveResult(analyte, result, patient),
+        ...resolveResult(analyte, result, patient, applied?.get(analyte.name)),
         // ORD-040. `null` when the order asked for nothing that yields this
         // analyte: stored, never discarded, never matched automatically.
         orderItemId: lineOfAnalyte.get(analyte.id) ?? null,

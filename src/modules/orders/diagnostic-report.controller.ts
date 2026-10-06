@@ -409,6 +409,8 @@ type FlaggedResultResponse = Pick<
   | 'valueNumeric'
   | 'valueCode'
   | 'unit'
+  | 'criticalLow'
+  | 'criticalHigh'
   | 'abnormalFlag'
   | 'observedAt'
 >;
@@ -438,6 +440,8 @@ function toReportResponse(
       referenceLow: result.referenceLow,
       referenceHigh: result.referenceHigh,
       referenceText: result.referenceText,
+      criticalLow: result.criticalLow,
+      criticalHigh: result.criticalHigh,
       abnormalFlag: result.abnormalFlag,
       observedAt: result.observedAt.toISOString(),
       notices: result.notices.map(toNoticeResponse),
@@ -477,6 +481,8 @@ function toFlaggedResponse(entry: FlaggedResultEntry): FlaggedResultResponse {
     valueNumeric: entry.valueNumeric,
     valueCode: entry.valueCode,
     unit: entry.unit,
+    criticalLow: entry.criticalLow,
+    criticalHigh: entry.criticalHigh,
     abnormalFlag: entry.abnormalFlag,
     observedAt: entry.observedAt.toISOString(),
   };
