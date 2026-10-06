@@ -2001,6 +2001,23 @@ describe('DOC-111 el resumen de la atención', () => {
     expect(frame.confidential).toBe(true);
   });
 
+  it('DOC-114 dice CONFIDENCIAL también sin diagnóstico: lleva la nota entera', () => {
+    const { frame } = composeLayout(summary({ diagnoses: [] }), context, template); // prettier-ignore
+
+    expect(frame.confidential).toBe(true);
+  });
+
+  it('DOC-115 no lleva firma ni sello, y sí «Atendido por» con el profesional', () => {
+    const layout = composeLayout(summary(), context, template);
+
+    expect(layout.blocks.some((block) => block.kind === 'signature')).toBe(
+      false,
+    );
+    const text = wholeText(layout);
+    expect(text).toContain('Atendido por');
+    expect(text).not.toContain('Firma y sello');
+  });
+
   it('DOC-111 una enmienda lo dice, y un bloque vacío no se imprime', () => {
     const amended = composeLayout(
       summary({

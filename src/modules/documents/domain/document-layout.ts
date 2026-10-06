@@ -1381,18 +1381,18 @@ export function composeEncounterSummaryLayout(
             },
           ],
     ),
-    {
-      kind: 'signature',
-      caption: 'Firma y sello del profesional',
-      image: data.practitioner.seal !== null ? 'seal' : null,
-    },
+    // DOC-115 (D-139.4). No signature nor seal: nobody signs a summary composed
+    // when someone downloads it; «Atendido por» names the professional and
+    // the attention's code proves it (DOC-112).
   ];
 
   return {
     frame: composeFrame(context, template, {
       kind: 'ENCOUNTER_SUMMARY',
       reference: `Atención del ${ecuadorianDate(data.startedAt)}`,
-      confidential: data.diagnoses.length > 0,
+      // DOC-114 (D-139.3). Always: it carries the whole 002 note, health
+      // information with or without a coded diagnosis.
+      confidential: true,
       verificationCode: data.verificationCode,
     }),
     blocks,
