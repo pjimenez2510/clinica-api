@@ -980,7 +980,7 @@ describe('DOC-111 el resumen de la atención', () => {
     expect(repository.disclosures).toEqual([]);
   });
 
-  it('DOC-111 REQ-110 si la fila de acceso no se puede escribir, el resumen no se sirve', async () => {
+  it('DOC-111 si la fila de acceso no se puede escribir, el resumen no se sirve', async () => {
     sources.subject = summary();
     repository.recordDisclosure = () =>
       Promise.reject(new Error('bitácora caída'));

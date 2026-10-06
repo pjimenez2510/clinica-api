@@ -1712,7 +1712,7 @@ describe('los documentos por HTTP', () => {
       await expect(prisma.documentRender.count()).resolves.toBe(0);
     });
 
-    it('DOC-111 REQ-110 cada resumen deja su fila en la bitácora de accesos, con quién y sobre qué atención', async () => {
+    it('DOC-111 cada resumen deja su fila en la bitácora de accesos, con quién y sobre qué atención', async () => {
       await publishTemplate('ENCOUNTER_SUMMARY');
       const encounterId = await aSignedAttention();
 
