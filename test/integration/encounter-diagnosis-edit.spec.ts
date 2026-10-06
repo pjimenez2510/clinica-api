@@ -1,7 +1,9 @@
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
+import { PrismaClinicalCodingRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-coding.repository';
 import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
+import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
 import {
@@ -393,5 +395,43 @@ describe('editar un diagnóstico en el sitio (EN-212)', () => {
     expect(
       await prisma.encounterDiagnosis.count({ where: { encounterId: encounter.id } }),
     ).toBe(2); // prettier-ignore
+  });
+
+  it('EN-212 D-117.13 bajo el bloqueo, el adaptador rechaza corregir tras el alta a quien firma en la sede con la licencia vencida: PRACTITIONER_NOT_LICENSED', async () => {
+    const prisma = db();
+    const { encounter, diagnoses, editor } =
+      await anEncounterWithDiagnoses(prisma);
+    const [, second] = diagnoses;
+    const coding = new PrismaClinicalCodingRepository(
+      prisma as unknown as PrismaService,
+    );
+    // What the service decided while the attention was still live: signs
+    // here, the ACESS registration expired (D-117.13).
+    const edit = {
+      encounterId: encounter.id,
+      diagnosisId: second!.id,
+      certainty: 'PRESUMPTIVE' as const,
+      reason: null,
+      sites: [encounter.siteId],
+      editedById: editor.id,
+      mayCorrectAfterDischarge: false,
+      afterDischargeRefusal: 'NOT_LICENSED' as const,
+    };
+
+    // Positive control: before the discharge the same edit goes in.
+    await coding.editDiagnosis(edit);
+
+    // The discharge lands before the lock.
+    await discharge(prisma, encounter);
+    await expect(
+      coding.editDiagnosis({ ...edit, certainty: 'DEFINITIVE' }),
+    ).rejects.toMatchObject({ code: 'PRACTITIONER_NOT_LICENSED' });
+    await expect(
+      coding.editDiagnosis({ ...edit, afterDischargeRefusal: 'NOT_SIGNER' }),
+    ).rejects.toMatchObject({
+      code: 'DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE',
+    });
+    const stored = await prisma.encounterDiagnosis.findUniqueOrThrow({ where: { id: second!.id } }); // prettier-ignore
+    expect(stored.certainty).toBe('PRESUMPTIVE');
   });
 });

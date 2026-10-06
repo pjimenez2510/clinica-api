@@ -476,6 +476,43 @@ describe('los casos de uso del bloque K', () => {
     expect(coding.edits).toHaveLength(1);
   });
 
+  it('EN-212 D-117.13 con la atención viva, la licencia vencida viaja al adaptador como «no corrige tras el alta», por si el alta llega antes del bloqueo', async () => {
+    const edit = {
+      encounterId: ENCOUNTER,
+      diagnosisId: 'diagnosis-1',
+      certainty: 'PRESUMPTIVE' as const,
+    };
+    await service.recordDiagnosis(aDiagnosis(), requester);
+    encounters.identity = {
+      practitionerId: 'practitioner-1',
+      acessExpiresOn: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+    };
+
+    // Live: the edit goes through, and the adapter is told why it may not
+    // once it finds the discharge under the lock.
+    await service.editDiagnosis(edit, requester);
+    expect(coding.edits[0]).toMatchObject({
+      mayCorrectAfterDischarge: false,
+      afterDischargeRefusal: 'NOT_LICENSED',
+    });
+
+    // Positive control: in force, it may.
+    encounters.identity = { practitionerId: 'practitioner-1', acessExpiresOn: null }; // prettier-ignore
+    await service.editDiagnosis(edit, requester);
+    expect(coding.edits[1]).toMatchObject({ mayCorrectAfterDischarge: true });
+    expect(coding.edits[1]?.afterDischargeRefusal).toBeUndefined();
+
+    // Signing elsewhere only.
+    await service.editDiagnosis(edit, {
+      ...requester,
+      signSites: [OTHER_SITE],
+    });
+    expect(coding.edits[2]).toMatchObject({
+      mayCorrectAfterDischarge: false,
+      afterDischargeRefusal: 'NOT_SIGNER',
+    });
+  });
+
   it('EN-189 sirve con cada diagnóstico si un certificado emitido imprimió su código', async () => {
     await service.recordDiagnosis(aDiagnosis(), requester);
     coding.certificateCodes = ['J020'];

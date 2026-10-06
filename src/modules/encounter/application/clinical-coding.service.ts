@@ -7,6 +7,7 @@ import {
 } from '../../../shared/audit/access-audit.port';
 import {
   CLINICAL_CODING_REPOSITORY,
+  type AfterDischargeRefusal,
   type ClinicalCodingRepository,
   type CorrectionAuthority,
   type DiagnosisVersionView,
@@ -24,6 +25,7 @@ import {
   DiagnosisCorrectionRequiresSignatureError,
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
+  PractitionerNotLicensedError,
   PractitionerProfileRequiredError,
 } from '../domain/encounter.errors';
 import {
@@ -203,6 +205,7 @@ export class ClinicalCodingService {
 
     const diagnosis = await this.coding.addDiagnosis({
       mayCorrectAfterDischarge: authority.mayCorrectAfterDischarge,
+      afterDischargeRefusal: authority.afterDischargeRefusal,
       encounterId: encounter.id,
       conceptId: request.conceptId,
       certainty: request.certainty,
@@ -316,6 +319,7 @@ export class ClinicalCodingService {
       reason: reason === undefined || reason === '' ? null : reason,
       retractedById: requester.userId,
       mayCorrectAfterDischarge: authority.mayCorrectAfterDischarge,
+      afterDischargeRefusal: authority.afterDischargeRefusal,
       sites: requester.sites,
     });
 
@@ -649,9 +653,10 @@ export class ClinicalCodingService {
    * may sign the history at the attention's site, with an ACESS registration
    * in force — the rule of the amendment (EN-025). Before it, by whoever codes.
    *
-   * The answer travels to the adapter, which asks again under the attention's
-   * lock: a discharge that lands between this read and the write is refused
-   * there for a caller who does not sign.
+   * THE ANSWER IS DECIDED WHATEVER THE STATE READ HERE — signing at the site
+   * AND the licence in force — and travels to the adapter, which asks again
+   * under the attention's lock: a discharge that lands between this read and
+   * the write is refused there with the same sentence it would get here.
    */
   private async correctionAuthority(
     encounter: EncounterView,
@@ -660,20 +665,40 @@ export class ClinicalCodingService {
     const signsHere =
       requester.signSites === 'all' ||
       requester.signSites.includes(encounter.siteId);
+    const refusal = signsHere
+      ? await this.licenceRefusal(requester.userId)
+      : 'NOT_SIGNER';
 
     if (hasDischarge(encounter.status)) {
-      if (!signsHere) throw new DiagnosisCorrectionRequiresSignatureError();
-      const identity = await this.encounters.findPractitionerByUser(
-        requester.userId,
-      );
-      if (!identity) throw new PractitionerProfileRequiredError();
-      assertLicensedOn(identity.acessExpiresOn, new Date());
+      if (refusal === 'NOT_SIGNER') {
+        throw new DiagnosisCorrectionRequiresSignatureError();
+      }
+      if (refusal === 'NO_PRACTITIONER_PROFILE') {
+        throw new PractitionerProfileRequiredError();
+      }
+      if (refusal === 'NOT_LICENSED') throw new PractitionerNotLicensedError();
     }
 
     return {
       editedById: requester.userId,
-      mayCorrectAfterDischarge: signsHere,
+      mayCorrectAfterDischarge: refusal === undefined,
+      ...(refusal === undefined ? {} : { afterDischargeRefusal: refusal }),
     };
+  }
+
+  /** D-117.13. The practitioner behind the account, and their licence today. */
+  private async licenceRefusal(
+    userId: string,
+  ): Promise<AfterDischargeRefusal | undefined> {
+    const identity = await this.encounters.findPractitionerByUser(userId);
+    if (!identity) return 'NO_PRACTITIONER_PROFILE';
+    try {
+      assertLicensedOn(identity.acessExpiresOn, new Date());
+    } catch (error) {
+      if (error instanceof PractitionerNotLicensedError) return 'NOT_LICENSED';
+      throw error;
+    }
+    return undefined;
   }
 
   /**

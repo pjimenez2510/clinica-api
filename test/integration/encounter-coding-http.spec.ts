@@ -1196,6 +1196,50 @@ describe('el bloque K por HTTP', () => {
       expect((lapsed.body as Problem).code).toBe('PRACTITIONER_NOT_LICENSED');
     });
 
+    it('EN-212 D-117.13 `record:sign` sólo en otra sede no corrige tras el alta: 403; en la sede de la atención, sí', async () => {
+      const encounterId = await openEncounter();
+      const diagnosis = await record(encounterId, 'J020');
+      const path = `/encounters/${encounterId}/diagnoses/${diagnosis.id}`;
+      const writer = await prisma.role.create({
+        data: {
+          code: 'RESIDENTE_PRUEBA',
+          name: 'Residente',
+          permissions: { create: [{ permissionCode: 'record:read' }, { permissionCode: 'record:write' }] }, // prettier-ignore
+        },
+      });
+      const signer = await prisma.role.create({
+        data: {
+          code: 'FIRMA_PRUEBA',
+          name: 'Firma',
+          permissions: { create: [{ permissionCode: 'record:sign' }] },
+        },
+      });
+      registry.invalidate();
+      const email = 'firma-otra-sede@clinica.ec';
+      await signIn(writer.code, email, '0102030418');
+      const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+      await prisma.userRoleGrant.create({
+        data: { userId: user.id, roleId: signer.id, siteId: otherSiteId },
+      });
+      const login = async () =>
+        (
+          (await request(app.getHttpServer()).post('/api/v1/auth/login').send({ email, password: PASSWORD }).expect(200)) // prettier-ignore
+          .body as { accessToken: string }
+        ).accessToken;
+      await dischargeOf(encounterId);
+
+      const elsewhere = await patch(path, await login(), { certainty: 'PRESUMPTIVE' }).expect(403); // prettier-ignore
+      expect((elsewhere.body as Problem).code).toBe(
+        'DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE',
+      );
+
+      // Positive control: the same account, signing at the attention's site.
+      await prisma.userRoleGrant.create({
+        data: { userId: user.id, roleId: signer.id, siteId },
+      });
+      await patch(path, await login(), { certainty: 'PRESUMPTIVE' }).expect(200); // prettier-ignore
+    });
+
     it('EN-212 D-117.16 una atención ya reportada al RDACAA no se corrige', async () => {
       const encounterId = await openEncounter();
       const diagnosis = await record(encounterId, 'J020');

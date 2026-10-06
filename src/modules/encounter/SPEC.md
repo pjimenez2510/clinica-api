@@ -3240,6 +3240,14 @@ con un papel en manos de un tercero, un motivo de lista._
   > motivo sea de esta edición y no uno que quedó de la anterior (la API lo
   > escribe siempre), ni `record:sign` (la base no conoce la sesión).
   >
+  > **D-117.13 bajo el bloqueo, también la licencia** (revisión del
+  > 06-10-2026, M6): el servicio decide, sea cual sea el estado que leyó, si
+  > quien corrige firma en la sede **y** tiene el registro vigente, y el
+  > adaptador vuelve a preguntar el estado bajo el bloqueo de la atención: un
+  > alta que llega entre las dos lecturas se rechaza allí con la misma frase
+  > (`DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE`, `PRACTITIONER_NOT_LICENSED` o
+  > `PRACTITIONER_PROFILE_REQUIRED`). `record:sign` sólo en otra sede no basta.
+  >
   > **D-117.15, «vigente» es «no anulado»**, la lectura de CER-048: el reposo
   > se sostiene sobre el diagnóstico de la atención (CER-049) mientras no se
   > anule, aunque su período haya pasado. Se aplica antes y después del alta.

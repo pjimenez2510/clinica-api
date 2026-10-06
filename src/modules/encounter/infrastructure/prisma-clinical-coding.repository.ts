@@ -17,6 +17,8 @@ import {
   EncounterAlreadyClosedError,
   EncounterAlreadyReportedError,
   EncounterNotFoundError,
+  PractitionerNotLicensedError,
+  PractitionerProfileRequiredError,
 } from '../domain/encounter.errors';
 import type { EncounterStatus } from '../domain/encounter';
 import {
@@ -30,6 +32,7 @@ import {
   nextRankAfter,
 } from '../domain/diagnosis';
 import type {
+  AfterDischargeRefusal,
   ClinicalCodingRepository,
   CodingQuery,
   CorrectionAuthority,
@@ -976,9 +979,19 @@ async function refuseCorrection(
   tx: Prisma.TransactionClient,
   encounterId: string,
   status: EncounterStatus,
-  authority: { mayCorrectAfterDischarge?: boolean },
+  authority: {
+    mayCorrectAfterDischarge?: boolean;
+    afterDischargeRefusal?: AfterDischargeRefusal;
+  },
 ): Promise<void> {
+  // D-117.13: the same sentence the service gives when it saw the discharge.
   if (hasDischarge(status) && !authority.mayCorrectAfterDischarge) {
+    if (authority.afterDischargeRefusal === 'NOT_LICENSED') {
+      throw new PractitionerNotLicensedError();
+    }
+    if (authority.afterDischargeRefusal === 'NO_PRACTITIONER_PROFILE') {
+      throw new PractitionerProfileRequiredError();
+    }
     throw new DiagnosisCorrectionRequiresSignatureError();
   }
   const [row] = await tx.$queryRaw<{ reported: boolean }[]>`

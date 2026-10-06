@@ -174,6 +174,7 @@ export interface NewDiagnosis {
    * Absent is «no»: closed by default.
    */
   mayCorrectAfterDischarge?: boolean;
+  afterDischargeRefusal?: AfterDischargeRefusal;
 }
 
 /**
@@ -229,6 +230,7 @@ export interface DiagnosisRetraction {
   retractedById: string;
   /** EN-213, D-117.13. Whether it may still be done after the discharge. */
   mayCorrectAfterDischarge: boolean;
+  afterDischargeRefusal?: AfterDischargeRefusal;
   sites: SiteScopeFilter;
 }
 
@@ -250,7 +252,19 @@ export interface DiagnosisRestoration {
 export interface CorrectionAuthority {
   editedById: string;
   mayCorrectAfterDischarge: boolean;
+  /**
+   * D-117.13. Why not, when it may not — the refusal the adapter raises if
+   * it finds the discharge under the lock: not signing at the site, no
+   * practitioner profile, or the ACESS registration not in force. Decided
+   * whatever the state the service read, because the discharge can land
+   * between that read and the lock.
+   */
+  afterDischargeRefusal?: AfterDischargeRefusal;
 }
+
+/** D-117.13. What stops somebody from correcting the coding after the discharge. */
+export type AfterDischargeRefusal =
+  'NOT_SIGNER' | 'NO_PRACTITIONER_PROFILE' | 'NOT_LICENSED';
 
 /** EN-183, EN-212. Which diagnosis becomes the principal. */
 export interface PrimaryChange extends CorrectionAuthority {
