@@ -105,6 +105,11 @@ export interface DisclosureRecord {
   resourceId: string;
   /** `PRINT` when a file leaves; `CREATE` when the archive gains a row. */
   action: 'PRINT' | 'CREATE';
+  /**
+   * DOC-111. `encounter_summary` when what left is the summary of an
+   * attention, whose id is `resourceId`; a document otherwise.
+   */
+  resourceType?: 'document' | 'encounter_summary';
   ip?: string;
   userAgent?: string;
 }

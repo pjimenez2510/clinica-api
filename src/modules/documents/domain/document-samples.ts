@@ -192,6 +192,41 @@ export function sampleSubject(
           issuedBy: practitioner,
         },
       };
+    case 'ENCOUNTER_SUMMARY':
+      // DOC-113. The preview of the summary's template, on invented data.
+      return {
+        kind,
+        data: {
+          subjectId: 'sample',
+          siteId: 'sample',
+          verificationCode: SAMPLE_CODE,
+          status: 'COMPLETED',
+          startedAt: issuedAt,
+          patient,
+          patientSex: 'FEMALE',
+          practitioner,
+          vitals: [
+            { label: 'Presión arterial', value: '120/80 mmHg' },
+            { label: 'Temperatura', value: '36,8 °C' },
+          ],
+          note: {
+            signedAt: issuedAt,
+            amendedAt: null,
+            sections: [
+              { title: 'Motivo de consulta', text: SAMPLE_MARK },
+              { title: 'Plan de tratamiento', text: 'Control en un mes.' },
+            ],
+          },
+          diagnoses: diagnoses.map((d, index) => ({
+            ...d,
+            principal: index === 0,
+            certainty: 'DEFINITIVE',
+          })),
+          prescriptions: [],
+          exams: [{ orderNumber: 1, display: 'Creatinina sérica' }],
+          certificates: [],
+        },
+      };
     case 'INVOICE_RIDE':
       return {
         kind,

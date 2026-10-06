@@ -11,6 +11,7 @@ import {
   chartScopeRows,
   chartScopeSelect,
 } from '../../../shared/infrastructure/prisma/patient-chart-scope';
+import { FORM_002_BUILT_IN_SECTIONS } from '../../../shared/clinical/form-002';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type { SiteScopeFilter } from '../domain/document-kind';
 import type {
@@ -215,6 +216,110 @@ const DIAGNOSIS_SELECT = {
 } satisfies Prisma.EncounterDiagnosisSelect;
 
 /**
+ * DOC-111. The vital signs of the current take, labelled and with their unit,
+ * in the order of block G of form 002. A value nobody took is not printed.
+ */
+function vitalsOf(vitals: {
+  temperatureC: Prisma.Decimal | null;
+  systolicBp: number | null;
+  diastolicBp: number | null;
+  heartRate: number | null;
+  respiratoryRate: number | null;
+  oxygenSaturation: number | null;
+  weightKg: Prisma.Decimal | null;
+  heightCm: Prisma.Decimal | null;
+  bmi: Prisma.Decimal | null;
+  abdominalCircumferenceCm: Prisma.Decimal | null;
+  headCircumferenceCm: Prisma.Decimal | null;
+}): { label: string; value: string }[] {
+  const number = (value: Prisma.Decimal | number | null) =>
+    value === null ? null : Number(value).toLocaleString('es-EC');
+  const entries: [string, string | null][] = [
+    ['Temperatura', number(vitals.temperatureC) && `${number(vitals.temperatureC)} °C`], // prettier-ignore
+    [
+      'Presión arterial',
+      vitals.systolicBp === null || vitals.diastolicBp === null
+        ? null
+        : `${vitals.systolicBp}/${vitals.diastolicBp} mmHg`,
+    ],
+    ['Pulso', vitals.heartRate === null ? null : `${vitals.heartRate} /min`],
+    ['Frecuencia respiratoria', vitals.respiratoryRate === null ? null : `${vitals.respiratoryRate} /min`], // prettier-ignore
+    ['Saturación de oxígeno', vitals.oxygenSaturation === null ? null : `${vitals.oxygenSaturation} %`], // prettier-ignore
+    ['Peso', number(vitals.weightKg) && `${number(vitals.weightKg)} kg`],
+    ['Talla', number(vitals.heightCm) && `${number(vitals.heightCm)} cm`],
+    ['IMC', number(vitals.bmi) && `${number(vitals.bmi)} kg/m²`],
+    ['Perímetro abdominal', number(vitals.abdominalCircumferenceCm) && `${number(vitals.abdominalCircumferenceCm)} cm`], // prettier-ignore
+    ['Perímetro cefálico', number(vitals.headCircumferenceCm) && `${number(vitals.headCircumferenceCm)} cm`], // prettier-ignore
+  ];
+  return entries
+    .filter((entry): entry is [string, string] => entry[1] !== null)
+    .map(([label, value]) => ({ label, value }));
+}
+
+/**
+ * DOC-111. The sections of a signed 002, in its template's order and under
+ * its titles —the built-in six when it was signed without a published
+ * template—, each with what was written; a section left blank is not printed.
+ *
+ * The «antecedentes» section also carries what the signature froze from the
+ * chart (EN-206, EN-207): allergies and personal and family history. Read
+ * defensively, as JSON: its shape is `encounter`'s, and this module does not
+ * import it.
+ */
+function noteSectionsOf(
+  content: Prisma.JsonValue,
+  templateSections: Prisma.JsonValue | null,
+): { title: string; text: string }[] {
+  const record = isRecord(content) ? content : {};
+  const declared = Array.isArray(templateSections)
+    ? templateSections
+        .filter((section): section is Prisma.JsonObject => isRecord(section))
+        .filter(
+          (section): section is { key: string; title: string } =>
+            typeof section.key === 'string' &&
+            typeof section.title === 'string',
+        )
+        .map(({ key, title }) => ({ key, title }))
+    : FORM_002_BUILT_IN_SECTIONS;
+
+  return declared
+    .map(({ key, title }) => {
+      const written = typeof record[key] === 'string' ? record[key].trim() : '';
+      const extra = key === 'antecedentes' ? backgroundLines(record) : [];
+      return { title, text: [written, ...extra].filter(Boolean).join('\n') };
+    })
+    .filter((section) => section.text !== '');
+}
+
+/** EN-206, EN-207. What the signature froze of the chart, in plain lines. */
+function backgroundLines(content: Record<string, unknown>): string[] {
+  const snapshot = content.backgroundSnapshot;
+  if (!isRecord(snapshot)) return [];
+  const listOf = (value: unknown) =>
+    Array.isArray(value) ? value.filter(isRecord) : [];
+
+  const allergies = listOf(snapshot.allergies).map((a) => String(a.substance));
+  const personal = listOf(snapshot.personalHistory).map((h) => String(h.description)); // prettier-ignore
+  const family = listOf(snapshot.familyHistory).map(
+    (h) => `${String(h.description)} (${String(h.relative)})`,
+  );
+  return [
+    allergies.length > 0
+      ? `Alergias: ${allergies.join(', ')}.`
+      : isRecord(snapshot.noKnownAllergies)
+        ? 'Sin alergias conocidas.'
+        : '',
+    personal.length > 0 ? `Personales: ${personal.join('; ')}.` : '',
+    family.length > 0 ? `Familiares: ${family.join('; ')}.` : '',
+    snapshot.historyDenied === true ? 'Niega antecedentes.' : '',
+  ].filter(Boolean);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
  * The `DocumentSourceReader` adapter: one read method per document kind, each
  * scoped by site in its `where`.
  */
@@ -240,6 +345,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         return this.findCertificate(query.subjectId, query.sites);
       case 'INVOICE_RIDE':
         return this.findInvoice(query.subjectId, query.sites);
+      case 'ENCOUNTER_SUMMARY':
+        return this.findEncounterSummary(query.subjectId, query.sites);
     }
   }
 
@@ -398,6 +505,34 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       };
     }
 
+    // DOC-112. The attention behind a printed summary. Only one that HAD a
+    // signed 002 —the only kind a summary is printed of—; any other answers
+    // what an unknown code answers.
+    const encounter = await this.prisma.encounter.findFirst({
+      where: {
+        verificationCode: exact,
+        notes: { some: { formCode: '002', signedAt: { not: null } } },
+      },
+      select: {
+        startedAt: true,
+        status: true,
+        enteredInErrorAt: true,
+        practitioner: signer,
+        site: place,
+      },
+    });
+    if (encounter !== null) {
+      return {
+        kind: 'ENCOUNTER_SUMMARY',
+        issuedAt: encounter.startedAt,
+        annulled: encounter.status === 'ENTERED_IN_ERROR',
+        annulledAt: encounter.enteredInErrorAt,
+        establishmentName: nameOf(encounter.site),
+        siteName: encounter.site.name,
+        practitionerName: `${encounter.practitioner.user.lastName} ${encounter.practitioner.user.firstName}`,
+      };
+    }
+
     // ORD-006, D-095. The order prints its code too, and the laboratory that
     // scans it must get an answer, not «no document has this code».
     const order = await this.prisma.serviceOrder.findFirst({
@@ -424,6 +559,141 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       establishmentName: nameOf(order.site),
       siteName: order.site.name,
       practitionerName: `${order.orderedBy.user.lastName} ${order.orderedBy.user.firstName}`,
+    };
+  }
+
+  // ── encounter summary ────────────────────────────────────────────────────
+
+  /**
+   * DOC-111. The attention as it stands, scoped by its site: the current 002,
+   * the current vitals and diagnoses, and only what was issued and not
+   * annulled. `note` is `null` when no 002 is signed; the service refuses it.
+   */
+  private async findEncounterSummary(
+    subjectId: string,
+    sites: SiteScopeFilter,
+  ): Promise<DocumentSubject | null> {
+    const row = await this.prisma.encounter.findFirst({
+      where: {
+        id: subjectId,
+        ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
+      },
+      select: {
+        id: true,
+        siteId: true,
+        verificationCode: true,
+        status: true,
+        startedAt: true,
+        ageYears: true,
+        ageMonths: true,
+        patient: { select: { ...PATIENT_SELECT, sex: true } },
+        practitioner: { select: PRACTITIONER_SELECT },
+        vitals: true,
+        // The current 002: one SIGNED per chain (an amendment supersedes the
+        // previous one), the newest if a clinic ever had two chains.
+        notes: {
+          where: { formCode: '002', status: 'SIGNED' },
+          orderBy: { signedAt: 'desc' },
+          take: 1,
+          select: {
+            content: true,
+            signedAt: true,
+            supersedesId: true,
+            template: { select: { sections: true } },
+          },
+        },
+        diagnoses: {
+          orderBy: { rank: 'asc' },
+          select: { ...DIAGNOSIS_SELECT, certainty: true },
+        },
+        prescriptions: {
+          where: { status: { in: ['ACTIVE', 'COMPLETED'] } },
+          orderBy: { issuedAt: 'asc' },
+          select: {
+            sequenceNumber: true,
+            items: {
+              select: {
+                genericName: true,
+                presentation: true,
+                concentration: true,
+                routeCode: true,
+                quantity: true,
+                doseText: true,
+                frequencyText: true,
+                durationDays: true,
+                instructions: true,
+                offFormulary: true,
+                offFormularyJustification: true,
+              },
+            },
+          },
+        },
+        serviceOrders: {
+          where: { status: 'ISSUED' },
+          orderBy: { requestedAt: 'asc' },
+          select: {
+            number: true,
+            items: {
+              where: { status: { not: 'CANCELLED' } },
+              orderBy: { createdAt: 'asc' },
+              select: { testDisplay: true },
+            },
+          },
+        },
+        certificates: {
+          where: { revokedAt: null },
+          orderBy: { issuedAt: 'asc' },
+          select: { number: true, type: true, restFrom: true, restTo: true },
+        },
+      },
+    });
+    if (row === null) return null;
+
+    const note = row.notes[0];
+    return {
+      kind: 'ENCOUNTER_SUMMARY',
+      data: {
+        subjectId: row.id,
+        siteId: row.siteId,
+        verificationCode: row.verificationCode,
+        status: row.status,
+        startedAt: row.startedAt,
+        patient: toPatient(row.patient, row.ageYears, row.ageMonths),
+        patientSex: row.patient.sex,
+        practitioner: toPractitioner(row.practitioner),
+        vitals: row.vitals === null ? [] : vitalsOf(row.vitals),
+        note:
+          note?.signedAt == null
+            ? null
+            : {
+                signedAt: note.signedAt,
+                amendedAt: note.supersedesId === null ? null : note.signedAt,
+                sections: noteSectionsOf(
+                  note.content,
+                  note.template?.sections ?? null,
+                ),
+              },
+        diagnoses: row.diagnoses.map((diagnosis) => ({
+          code: diagnosis.cie10Code,
+          display: diagnosis.cie10Display,
+          principal: diagnosis.rank === 1,
+          certainty: diagnosis.certainty,
+        })),
+        prescriptions: row.prescriptions.map((prescription) => ({
+          sequenceNumber: prescription.sequenceNumber,
+          lines: prescription.items.map((item) => ({
+            ...item,
+            quantity: item.quantity === null ? null : Number(item.quantity),
+          })),
+        })),
+        exams: row.serviceOrders.flatMap((order) =>
+          order.items.map((item) => ({
+            orderNumber: order.number,
+            display: item.testDisplay,
+          })),
+        ),
+        certificates: row.certificates,
+      },
     };
   }
 

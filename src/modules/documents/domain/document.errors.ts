@@ -81,6 +81,21 @@ export class DocumentSubjectNotIssuableError extends ConflictError {
 }
 
 /**
+ * DOC-111. The attention has no signed 002, or it was annulled
+ * (`ENTERED_IN_ERROR`): there is nothing to summarise. 409: the attention
+ * exists and is in scope; what is missing is its signed note.
+ */
+export class EncounterSummaryNotAvailableError extends ConflictError {
+  readonly code = 'ENCOUNTER_SUMMARY_NOT_AVAILABLE';
+  override readonly userTitle =
+    'Esta atención todavía no tiene la nota firmada, o fue anulada: no hay resumen que descargar';
+
+  constructor(state: string) {
+    super(`Encounter summary not available in state ${state}`, { state });
+  }
+}
+
+/**
  * DOC-037. No template version has been published for this class of document.
  *
  * 422 AND NOT 500: nothing is broken, a datum of the installation is missing,

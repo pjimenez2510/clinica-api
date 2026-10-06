@@ -20,7 +20,11 @@ import { OUTPATIENT_VALIDITY_DAYS } from './prescription-wording';
 
 /** The classes that carry a verification code today. */
 export type VerifiableKind =
-  'PRESCRIPTION' | 'MEDICAL_CERTIFICATE' | 'SERVICE_ORDER';
+  | 'PRESCRIPTION'
+  | 'MEDICAL_CERTIFICATE'
+  | 'SERVICE_ORDER'
+  // DOC-112. The attention behind a printed summary.
+  | 'ENCOUNTER_SUMMARY';
 
 /** What the reader finds behind a code. Nothing about the patient. */
 export interface VerificationFacts {

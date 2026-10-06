@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
@@ -22,6 +22,7 @@ import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
 import {
+  createDiagnosis,
   createIssuedPrescription,
   createPatient,
   createSite,
@@ -362,7 +363,7 @@ describe('los documentos por HTTP', () => {
       }).expect(403);
     });
 
-    it('DOC-039 publica la versión siguiente de las cuatro clases a la vez', async () => {
+    it('DOC-039 DOC-113 publica la versión siguiente de las cinco clases a la vez', async () => {
       await publishTemplate('PRESCRIPTION');
 
       const response = await post(
@@ -375,20 +376,21 @@ describe('los documentos por HTTP', () => {
       expect(
         published.map((one) => `${one.kind}:${one.version}`).sort(),
       ).toEqual([
+        'ENCOUNTER_SUMMARY:1',
         'INVOICE_RIDE:1',
         'MEDICAL_CERTIFICATE:1',
         'PRESCRIPTION:2',
         'SERVICE_ORDER:1',
       ]);
-      await expect(prisma.documentTemplate.count()).resolves.toBe(5);
+      await expect(prisma.documentTemplate.count()).resolves.toBe(6);
     });
 
     it('DOC-039 si una inserción falla EN LA BASE, no queda publicada ninguna', async () => {
-      // Positive control: the same request publishes four.
+      // Positive control: the same request publishes five.
       await post('/documents/templates/all-kinds', adminToken, slots).expect(
         201,
       );
-      await expect(prisma.documentTemplate.count()).resolves.toBe(4);
+      await expect(prisma.documentTemplate.count()).resolves.toBe(5);
 
       // The THIRD insert fails inside PostgreSQL, after the first two went
       // through: only a real transaction leaves none of the three behind.
@@ -406,7 +408,7 @@ describe('los documentos por HTTP', () => {
           { ...slots, accentColour: '#003366' },
         );
         expect(refused.status).toBeGreaterThanOrEqual(400);
-        await expect(prisma.documentTemplate.count()).resolves.toBe(4);
+        await expect(prisma.documentTemplate.count()).resolves.toBe(5);
       } finally {
         await prisma.$executeRawUnsafe(
           'DROP TRIGGER test_refuse_certificate ON document_template',
@@ -1639,6 +1641,193 @@ describe('los documentos por HTTP', () => {
         kind: 'PRESCRIPTION',
         subjectId: prescriptionId,
       }).expect(403);
+    });
+  });
+
+  describe('DOC-111 a DOC-113 el resumen de la atención', () => {
+    const summaryOf = (encounterId: string, token = doctorToken) =>
+      get(`/documents/encounters/${encounterId}/summary`, token);
+
+    /** The seeded attention, with its receta, a diagnosis and a signed 002. */
+    async function aSignedAttention(): Promise<string> {
+      const { encounterId } = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+        select: { encounterId: true },
+      });
+      await createDiagnosis(prisma, encounterId, 'J02.9', 'Faringitis aguda, no especificada'); // prettier-ignore
+      const chainId = randomUUID();
+      await prisma.clinicalNote.create({
+        data: {
+          id: chainId,
+          chainId,
+          encounterId,
+          formCode: '002',
+          formVersion: '1',
+          status: 'SIGNED',
+          content: {
+            motivoConsulta: 'Dolor de garganta de dos días',
+            antecedentes: 'Sin antecedentes de importancia',
+            enfermedadActual: 'Odinofagia y fiebre',
+            revisionOrganosSistemas: 'Sin otros síntomas',
+            examenFisico: 'Faringe eritematosa',
+            planTratamiento: 'Hidratación y control en 72 horas',
+          },
+          authorId: practitionerId,
+          signedById: practitionerId,
+          signedAt: new Date(),
+          contentHash: 'a'.repeat(64),
+        },
+      });
+      return encounterId;
+    }
+
+    async function summaryText(encounterId: string): Promise<string> {
+      const response = await summaryOf(encounterId)
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      expect(response.headers['content-type']).toContain('application/pdf');
+      const proxy = await getDocumentProxy(
+        new Uint8Array(response.body as Buffer),
+      );
+      return (await extractText(proxy, { mergePages: true })).text;
+    }
+
+    it('DOC-111 compone al momento el resumen con la nota firmada, el diagnóstico y la receta, y no lo archiva', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const encounterId = await aSignedAttention();
+
+      const text = await summaryText(encounterId);
+
+      expect(text.replace(/\s+/g, ' ')).toContain('RESUMEN DE LA ATENCIÓN');
+      expect(text).toContain('Motivo de consulta');
+      expect(text).toContain('Dolor de garganta de dos días');
+      expect(text).toContain('J02.9');
+      expect(text).toContain('Amoxicilina');
+      expect(text).toContain('/verificar/');
+      await expect(prisma.documentRender.count()).resolves.toBe(0);
+    });
+
+    it('DOC-111 REQ-110 cada resumen deja su fila en la bitácora de accesos, con quién y sobre qué atención', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const encounterId = await aSignedAttention();
+
+      await summaryOf(encounterId).expect(200);
+      await summaryOf(encounterId).expect(200);
+
+      const trail = await prisma.accessAudit.findMany({
+        where: { resourceType: 'encounter_summary' },
+        select: { resourceId: true, action: true, userId: true },
+      });
+      expect(trail).toHaveLength(2);
+      expect(trail.every((row) => row.resourceId === encounterId)).toBe(true);
+      expect(trail.every((row) => row.action === 'PRINT')).toBe(true);
+    });
+
+    it('DOC-111 sin nota 002 firmada no hay resumen; con ella sí (control positivo)', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { encounterId } = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+        select: { encounterId: true },
+      });
+
+      const refused = await summaryOf(encounterId).expect(409);
+      expect((refused.body as Problem).code).toBe(
+        'ENCOUNTER_SUMMARY_NOT_AVAILABLE',
+      );
+      await expect(
+        prisma.accessAudit.count({
+          where: { resourceType: 'encounter_summary' },
+        }),
+      ).resolves.toBe(0);
+
+      await aSignedAttention();
+      await summaryOf(encounterId).expect(200);
+    });
+
+    it('DOC-090 DOC-111 el resumen exige record:read: caja no lo descarga', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const encounterId = await aSignedAttention();
+
+      await summaryOf(encounterId, cashierToken).expect(403);
+    });
+
+    it('DOC-113 sin plantilla publicada para el resumen, lo dice y no inventa una', async () => {
+      const encounterId = await aSignedAttention();
+
+      const refused = await summaryOf(encounterId).expect(422);
+      expect((refused.body as Problem).code).toBe(
+        'DOCUMENT_TEMPLATE_NOT_PUBLISHED',
+      );
+    });
+
+    it('DOC-112 el código del resumen verifica la atención sin ningún dato del paciente, y la anulada se dice anulada', async () => {
+      const encounterId = await aSignedAttention();
+      const { verificationCode } = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounterId },
+        select: { verificationCode: true },
+      });
+
+      const valid = await request(app.getHttpServer())
+        .get(`/api/v1/documents/verify/${verificationCode}`)
+        .expect(200);
+      expect(valid.body).toMatchObject({
+        kind: 'ENCOUNTER_SUMMARY',
+        status: 'VALID',
+      });
+      const body = JSON.stringify(valid.body);
+      expect(body).not.toContain('J02.9');
+      expect(body).not.toContain('1710034065');
+
+      const seeded = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounterId },
+        select: { siteId: true, patientId: true, practitionerId: true },
+      });
+      const now = new Date();
+      // Una atención con su 002 firmada, anulada después: el papel que salió
+      // de ella tiene que decir que ya no vale.
+      const annulled = await prisma.encounter.create({
+        data: {
+          ...seeded,
+          startedAt: new Date(now.getTime() - 60 * 60 * 1000),
+          careModality: 'MORBIDITY',
+          visitSequence: 'SUBSEQUENT',
+        },
+        select: { id: true, verificationCode: true },
+      });
+      const noteId = randomUUID();
+      await prisma.clinicalNote.create({
+        data: {
+          id: noteId,
+          chainId: noteId,
+          encounterId: annulled.id,
+          formCode: '002',
+          formVersion: '1',
+          status: 'SIGNED',
+          content: { motivoConsulta: 'Registrada por error' },
+          authorId: practitionerId,
+          signedById: practitionerId,
+          signedAt: now,
+          contentHash: 'b'.repeat(64),
+        },
+      });
+      await prisma.encounter.update({
+        where: { id: annulled.id },
+        data: {
+          status: 'ENTERED_IN_ERROR',
+          endedAt: now,
+          enteredInErrorById: (await createUser(prisma)).id,
+          enteredInErrorAt: now,
+        },
+      });
+      const voided = await request(app.getHttpServer())
+        .get(`/api/v1/documents/verify/${annulled.verificationCode}`)
+        .expect(200);
+      expect((voided.body as { status: string }).status).toBe('ANNULLED');
     });
   });
 

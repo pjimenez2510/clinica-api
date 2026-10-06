@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
 
+import { clinicalDateOf } from '../../../shared/domain/clinic-time';
+
 import { composeLayout } from '../domain/document-layout';
 import {
   DOCUMENT_RENDERER,
@@ -24,6 +26,7 @@ import {
   DocumentRenderNotFoundError,
   DocumentSubjectNotFoundError,
   DocumentSubjectNotIssuableError,
+  EncounterSummaryNotAvailableError,
   DocumentTemplateNotPublishedError,
 } from '../domain/document.errors';
 import { assertSlotsAreValid } from '../domain/document-template';
@@ -170,6 +173,51 @@ export class DocumentService {
       mimeType: 'application/pdf',
       sha256: sha256Of(content),
       fileName: fileNameFor(request.kind, template.version, 'borrador'),
+    };
+  }
+
+  /**
+   * DOC-111. The summary of an attention: composed now, served, never
+   * archived. Like a draft, what leaves is the chart of an identifiable
+   * person, so the access is recorded FIRST and nothing is served if it
+   * cannot be.
+   */
+  async encounterSummary(
+    encounterId: string,
+    requester: Requester,
+  ): Promise<RenderedDocument> {
+    const { subject, images, layout } = await this.prepare(
+      { kind: 'ENCOUNTER_SUMMARY', subjectId: encounterId },
+      requester.sites,
+    );
+    if (subject.kind !== 'ENCOUNTER_SUMMARY') {
+      throw new DocumentSubjectNotFoundError();
+    }
+    if (
+      subject.data.note === null ||
+      subject.data.status === 'ENTERED_IN_ERROR'
+    ) {
+      throw new EncounterSummaryNotAvailableError(subject.data.status);
+    }
+
+    const content = await this.renderer.render(layout, images, {
+      title: layout.frame.title,
+      author: layout.frame.establishmentName,
+      // Composed on demand: the clock is the instant it was produced.
+      createdAt: new Date(),
+    });
+
+    // REQ-110. Recorded before it is served, and it throws if it cannot be.
+    await this.documents.recordDisclosure({
+      ...disclosureOf(requester, encounterId, 'PRINT'),
+      resourceType: 'encounter_summary',
+    });
+
+    return {
+      content,
+      mimeType: 'application/pdf',
+      sha256: sha256Of(content),
+      fileName: `resumen-atencion-${clinicalDateOf(subject.data.startedAt)}.pdf`,
     };
   }
 
@@ -516,6 +564,8 @@ function signerOf(subject: DocumentSubject) {
       return subject.data.orderedBy;
     case 'MEDICAL_CERTIFICATE':
       return subject.data.issuedBy;
+    case 'ENCOUNTER_SUMMARY':
+      return subject.data.practitioner;
     case 'INVOICE_RIDE':
       // A tax document is not signed by a practitioner. Returning `null` rather
       // than reaching for «somebody» is what keeps a doctor's seal off an

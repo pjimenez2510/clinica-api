@@ -14,6 +14,8 @@ export const DOCUMENT_KINDS = [
   'SERVICE_ORDER',
   'MEDICAL_CERTIFICATE',
   'INVOICE_RIDE',
+  // DOC-111, DOC-113. Composed on demand and NEVER archived.
+  'ENCOUNTER_SUMMARY',
 ] as const;
 
 /** One of `DOCUMENT_KINDS`, as `document_render.kind` stores it. */
@@ -51,6 +53,7 @@ export const DOCUMENT_TITLE: Readonly<Record<DocumentKind, string>> = {
   SERVICE_ORDER: 'ORDEN DE EXÁMENES',
   MEDICAL_CERTIFICATE: 'CERTIFICADO MÉDICO',
   INVOICE_RIDE: 'FACTURA',
+  ENCOUNTER_SUMMARY: 'RESUMEN DE LA ATENCIÓN',
 };
 
 /**

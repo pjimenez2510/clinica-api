@@ -1649,7 +1649,11 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
    * table cell, every heading and caption. A new page shape may move them; it
    * may not drop one.
    */
-  const BEFORE: Record<DocumentSubject['kind'], string[]> = {
+  const BEFORE: Record<
+    Exclude<DocumentSubject['kind'], 'ENCOUNTER_SUMMARY'>,
+    string[]
+  > = {
+    // prettier-ignore
     PRESCRIPTION: [
       'Ciudad=Quito',
       'Fecha=20/08/2026',
@@ -1781,7 +1785,7 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
    * repeat it. Old → what the paper says now.
    */
   const CHANGED: Record<
-    DocumentSubject['kind'],
+    keyof typeof BEFORE,
     Record<string, readonly string[]>
   > = {
     // D-095: the hour of issue, in Ecuador, beside the date. The tear-off
@@ -1864,7 +1868,7 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
       }
     });
 
-  it.each(Object.keys(BEFORE) as DocumentSubject['kind'][])(
+  it.each(Object.keys(BEFORE) as (keyof typeof BEFORE)[])(
     'DOC-107 %s imprime todo lo que imprimía, salvo lo anotado',
     (kind) => {
       const at = new Date('2026-08-21T01:00:00Z'); // fecha-fija: the instant BEFORE was captured with
@@ -1890,4 +1894,116 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
       expect(missing).toEqual([]);
     },
   );
+});
+
+describe('DOC-111 el resumen de la atención', () => {
+  const startedAt = new Date();
+  const summary = (
+    overrides: Partial<
+      Extract<DocumentSubject, { kind: 'ENCOUNTER_SUMMARY' }>['data']
+    > = {},
+  ): DocumentSubject => ({
+    kind: 'ENCOUNTER_SUMMARY',
+    data: {
+      subjectId: 'encounter-1',
+      siteId: 'site-1',
+      verificationCode: 'ABCDEF0123456789',
+      status: 'COMPLETED',
+      startedAt,
+      patient,
+      patientSex: 'FEMALE',
+      practitioner: prescriber,
+      vitals: [{ label: 'Temperatura', value: '37,8 °C' }],
+      note: {
+        signedAt: startedAt,
+        amendedAt: null,
+        sections: [
+          { title: 'Motivo de consulta', text: 'Dolor de garganta' },
+          { title: 'Plan de tratamiento', text: 'Hidratación' },
+        ],
+      },
+      diagnoses: [
+        { code: 'J02.9', display: 'Faringitis aguda', principal: true, certainty: 'DEFINITIVE' }, // prettier-ignore
+        { code: 'R50.9', display: 'Fiebre', principal: false, certainty: 'PRESUMPTIVE' }, // prettier-ignore
+      ],
+      prescriptions: [
+        {
+          sequenceNumber: 12,
+          lines: [
+            {
+              genericName: 'Paracetamol',
+              presentation: 'Tableta',
+              concentration: '500 mg',
+              routeCode: 'ORAL',
+              quantity: 10,
+              doseText: '1 tableta',
+              frequencyText: 'Cada 8 horas',
+              durationDays: 3,
+              instructions: null,
+              offFormulary: false,
+              offFormularyJustification: null,
+            },
+          ],
+        },
+      ],
+      exams: [{ orderNumber: 41, display: 'Biometría hemática completa' }],
+      certificates: [
+        { number: 7, type: 'MEDICAL_REST', restFrom: startedAt, restTo: startedAt }, // prettier-ignore
+      ],
+      ...overrides,
+    },
+  });
+
+  it('DOC-111 lleva la atención, los signos, la nota, los diagnósticos, la receta, los exámenes y los certificados, en ese orden', () => {
+    const layout = composeLayout(summary(), context, template);
+    const text = wholeText(layout);
+
+    expect(layout.frame.title).toBe('RESUMEN DE LA ATENCIÓN');
+    const order = [
+      'Fecha de la atención',
+      'Temperatura',
+      'Dolor de garganta',
+      'J02.9',
+      'Paracetamol 500 mg: 1 tableta, cada 8 horas, por vía oral, durante 3 días',
+      'Biometría hemática completa',
+      'Reposo médico',
+    ].map((needle) => text.indexOf(needle));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(text).toContain('Definitivo');
+    expect(text).toContain('Presuntivo');
+    expect(text).toContain('Sexo=Mujer');
+  });
+
+  it('DOC-111 DOC-112 el pie lleva el código de la atención y la cabecera dice CONFIDENCIAL con diagnóstico', () => {
+    const { frame } = composeLayout(summary(), context, template);
+
+    expect(frame.footer.verification?.code).toBe('ABCDEF0123456789');
+    expect(frame.confidential).toBe(true);
+  });
+
+  it('DOC-111 una enmienda lo dice, y un bloque vacío no se imprime', () => {
+    const amended = composeLayout(
+      summary({
+        note: {
+          signedAt: startedAt,
+          amendedAt: startedAt,
+          sections: [{ title: 'Motivo de consulta', text: 'Dolor' }],
+        },
+        vitals: [],
+        prescriptions: [],
+        exams: [],
+        certificates: [],
+      }),
+      context,
+      template,
+    );
+    const text = wholeText(amended);
+
+    expect(text).toContain('Nota enmendada el');
+    expect(text).not.toContain('Signos vitales');
+    expect(text).not.toContain('Receta');
+    expect(text).not.toContain('Exámenes pedidos');
+    expect(text).not.toContain('Certificados');
+  });
 });

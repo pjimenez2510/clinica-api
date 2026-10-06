@@ -159,6 +159,26 @@ export class DocumentsController {
    * everybody to ignore the trail, which is where what does reveal something
    * lives.
    */
+  /**
+   * DOC-111. The summary of an attention, composed now and never archived.
+   * The same route for the screen and for the assistant.
+   */
+  @Get('encounters/:encounterId/summary')
+  @RequirePermission('record:read', 'query')
+  @ApiOperation({ summary: 'Descargar el resumen de la atención (se genera al momento y no se archiva)' }) // prettier-ignore
+  @ApiProduces('application/pdf')
+  async encounterSummary(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const rendered = await this.documents.encounterSummary(
+      encounterId,
+      this.requester(req, 'record:read'),
+    );
+    sendPdf(res, rendered);
+  }
+
   @Get('renders/:renderId')
   @RequirePermission('record:read', 'query')
   @ApiOperation({ summary: 'Consultar los datos del documento archivado' })

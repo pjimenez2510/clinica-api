@@ -833,13 +833,14 @@ describe('DOC-038 la vista previa la pinta el mismo generador, y no guarda nada'
 });
 
 describe('DOC-039 una sola identidad para las cuatro clases', () => {
-  it('DOC-039 publica la versión siguiente de cada clase', async () => {
+  it('DOC-039 DOC-113 publica la versión siguiente de cada clase, el resumen incluido', async () => {
     const published = await service.publishTemplateForAllKinds(
       slots,
       requester,
     );
 
     expect(published.map((one) => one.kind).sort()).toEqual([
+      'ENCOUNTER_SUMMARY',
       'INVOICE_RIDE',
       'MEDICAL_CERTIFICATE',
       'PRESCRIPTION',
