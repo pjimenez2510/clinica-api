@@ -48,6 +48,10 @@ const NOTE_SELECT = {
   content: true,
   authorId: true,
   signedById: true,
+  // EN-216. Who signed it, by name: the screen says «Enmendada: … · quién».
+  signedBy: {
+    select: { user: { select: { firstName: true, lastName: true } } },
+  },
   signedAt: true,
   contentHash: true,
   supersedesId: true,
@@ -601,6 +605,9 @@ function toNoteView(row: NoteRow): ClinicalNoteView {
     content: (row.content ?? {}) as NoteContent,
     authorId: row.authorId,
     signedById: row.signedById,
+    signedByName: row.signedBy
+      ? `${row.signedBy.user.firstName} ${row.signedBy.user.lastName}`
+      : null,
     signedAt: row.signedAt,
     contentHash: row.contentHash,
     supersedesId: row.supersedesId,

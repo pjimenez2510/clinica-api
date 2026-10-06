@@ -46,6 +46,8 @@ export interface ClinicalNoteView {
   authorId: string;
   /** EN-027. The three that `clinical_note_signature_coherence` ties together. */
   signedById: string | null;
+  /** EN-216. The signer by name, for the screen: «Enmendada: … · quién». */
+  signedByName: string | null;
   signedAt: Date | null;
   contentHash: string | null;
   /** EN-025. The version this one replaced, and why. */

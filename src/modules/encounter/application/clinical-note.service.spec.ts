@@ -112,6 +112,7 @@ const aNote = (
   content: COMPLETE_002,
   authorId: PRACTITIONER,
   signedById: null,
+  signedByName: null,
   signedAt: null,
   contentHash: null,
   supersedesId: null,

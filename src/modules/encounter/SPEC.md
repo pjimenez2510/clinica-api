@@ -3352,8 +3352,19 @@ falta de una medida; y salir de la atención pide lo justo._
   firmada vigente, la pantalla DEBERÁ abrir la **enmienda** (EN-025) en el
   mismo panel de la nota, con lo escrito en la versión firmada ya cargado, y
   DEBERÁ pedir el motivo de una lista —«Error de transcripción», «Dato
-  omitido», «Paciente equivocado», «Otro» con texto— que viaja como
-  `amendmentReason`; y la versión firmada NO DEBERÁ cambiar.
+  omitido», «Otro» con texto— que viaja como `amendmentReason`; y la versión
+  firmada NO DEBERÁ cambiar; y la nota enmendada DEBERÁ mostrar el motivo de
+  la enmienda vigente, con quién y cuándo («Enmendada: Dato omitido · quién ·
+  cuándo»).
+  > **D-134.1, construido así mientras el autor decide: «Paciente equivocado»
+  > no es un motivo de enmienda.** Enmendar reescribe la nota en la MISMA
+  > historia: el texto del otro paciente seguiría legible como versión
+  > sustituida, la atención y su RDACAA seguirían a nombre de éste, y el
+  > paciente correcto nunca recibiría la nota. Un paciente equivocado no se
+  > enmienda: se retira la nota y se escribe en la historia correcta (AT-16,
+  > aún sin construir). Queda al asesor si el texto ajeno que ya está en una
+  > historia es una brecha (D-131.2). «Paciente equivocado» sigue siendo un
+  > motivo de ANULAR la atención (EN-218), que es otra cosa.
   > **D-127.3 y D-128.1.** Para el médico es «Editar»; para la historia, una
   > versión nueva. El original sigue siendo la fila firmada que
   > `trg_clinical_note_immutable` no deja tocar, y se lee entre las versiones
@@ -3399,6 +3410,13 @@ falta de una medida; y salir de la atención pide lo justo._
   > peso/talla obligatorios». **Garantía de la base**:
   > `trg_encounter_vitals_anthropometry_after_discharge`, diferido, con
   > `encounter_has_discharge` y la misma función.
+  >
+  > **En la pantalla** (revisión del 06-10-2026, M7 y P2-1): el diálogo de
+  > firmar la 002 avisa ANTES de firmar qué medida falta
+  > (`anthropometryPending`) y no deja firmar, como con el diagnóstico (EN-020);
+  > «Corregir la toma» sigue a la vista tras el alta para quien tiene
+  > `vitals:write`; y tras la firma el aviso de lo pendiente ya no dice «para
+  > firmar la nota».
 - **EN-218** — CUANDO se anule una atención (EN-166), el sistema NO DEBERÁ
   exigir motivo —el que se envíe DEBERÁ guardarse— y DEBERÁ guardar quién la
   anuló y cuándo; DEBERÁ descartar en la misma transacción, con quién y

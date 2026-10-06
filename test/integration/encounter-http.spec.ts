@@ -1891,6 +1891,44 @@ describe('la atención por HTTP', () => {
       ]);
     });
 
+    it('EN-216 la nota vigente dice quién firmó la enmienda, además del motivo y cuándo, para que la pantalla lo muestre', async () => {
+      const encounterId = await openEncounter();
+      const draft = await post(`/encounters/${encounterId}/notes`, doctorToken, {
+        formCode: '002',
+        content: COMPLETE_002,
+      }).expect(201); // prettier-ignore
+      const noteId = (draft.body as NoteBody).id;
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
+      // Positive control: the signed version names its signer too.
+      const signed = await post(`/encounters/${encounterId}/notes/${noteId}/sign`, doctorToken, { dischargeCondition: 'ALIVE' }).expect(200); // prettier-ignore
+      expect(signed.body).toMatchObject({ signedByName: 'Ana Villacís' });
+
+      await post(`/encounters/${encounterId}/notes/${noteId}/amend`, doctorToken, {
+        content: { ...COMPLETE_002, planTratamiento: 'Dieta blanda y control en 48 horas' },
+        amendmentReason: 'Dato omitido',
+      }).expect(201); // prettier-ignore
+
+      const listed = await get(`/encounters/${encounterId}/notes`, doctorToken).expect(200); // prettier-ignore
+      const current = (
+        listed.body as {
+          items: (NoteBody & {
+            amendmentReason: string | null;
+            signedAt: string | null;
+            signedByName: string | null;
+          })[];
+        }
+      ).items.find((note) => note.status === 'SIGNED');
+      expect(current).toMatchObject({
+        amendmentReason: 'Dato omitido',
+        signedByName: 'Ana Villacís',
+        signedAt: expect.any(String),
+      });
+      // A draft has nobody's name on it.
+      const other = await openEncounter();
+      const unsigned = await post(`/encounters/${other}/notes`, doctorToken, { formCode: '002', content: COMPLETE_002 }).expect(201); // prettier-ignore
+      expect(unsigned.body).toMatchObject({ signedByName: null });
+    });
+
     it('EN-025 rechaza enmendar sin motivo, señalando el campo', async () => {
       const encounterId = await openEncounter();
       const draft = await post(
