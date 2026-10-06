@@ -52,6 +52,7 @@ import type {
   MergeOutcome,
   NewPatient,
   NewPriorityGroup,
+  PatientChangeEntry,
   PriorityGroupChanges,
   ParishReference,
   PatientCorrectionState,
@@ -1402,6 +1403,66 @@ export class PrismaPatientRepository implements PatientRepository {
     return records.find((row) => row.id === input.recordId) ?? null;
   }
 
+  async listChangeHistory(
+    patientId: string,
+    withheld: readonly string[],
+  ): Promise<PatientChangeEntry[]> {
+    const rows = await this.prisma.patientChangeHistory.findMany({
+      where: { patientId, field: { notIn: [...withheld] } },
+      orderBy: [{ changedAt: 'desc' }, { field: 'asc' }],
+      select: {
+        field: true,
+        valueBefore: true,
+        valueAfter: true,
+        changedAt: true,
+        changedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    // The wording of every reference, read once for the whole list.
+    const values = (field: string) =>
+      rows
+        .filter((row) => row.field === field)
+        .flatMap((row) => [row.valueBefore, row.valueAfter])
+        .filter((value): value is string => value !== null);
+    const conceptIds = CONCEPT_FIELDS.flatMap(values);
+    const concepts = await this.prisma.catalogConcept.findMany({
+      where: { id: { in: conceptIds } },
+      select: { id: true, display: true },
+    });
+    const countries = await this.prisma.catalogConcept.findMany({
+      where: {
+        system: { code: 'COUNTRY' },
+        code: { in: values('countryOfNationalityCode') },
+      },
+      select: { code: true, display: true },
+    });
+    const mothers = await this.prisma.patient.findMany({
+      where: { id: { in: values('motherPatientId') } },
+      select: { id: true, mrn: true },
+    });
+    const wording = new Map<string, string>([
+      ...concepts.map((row): [string, string] => [row.id, row.display]),
+      ...countries.map((row): [string, string] => [row.code, row.display]),
+      ...mothers.map((row): [string, string] => [row.id, `HC ${row.mrn}`]),
+    ]);
+    const shown = (value: string | null) =>
+      value === null ? null : (wording.get(value) ?? value);
+
+    return rows.map((row) => ({
+      field: row.field,
+      valueBefore: row.valueBefore,
+      valueAfter: row.valueAfter,
+      displayBefore: shown(row.valueBefore),
+      displayAfter: shown(row.valueAfter),
+      changedAt: row.changedAt,
+      changedBy: {
+        id: row.changedBy.id,
+        fullName: `${row.changedBy.firstName} ${row.changedBy.lastName}`,
+      },
+    }));
+  }
+
   /**
    * PA-066. The edit, under the row's lock and with a new stamp: the row it
    * replaces goes to `record_version` in the same statement. The closure is
@@ -2739,3 +2800,13 @@ async function lockPriorityGroup(
 function stampAfter(previous: Date | null, now: Date): Date {
   return previous && previous >= now ? new Date(previous.getTime() + 1) : now;
 }
+
+/** PA-065. The correctable fields that hold a catalogue concept id. */
+const CONCEPT_FIELDS = [
+  'ethnicityConceptId',
+  'nationalityConceptId',
+  'peopleConceptId',
+  'sexualOrientationConceptId',
+  'residenceParishConceptId',
+  'genderIdentityConceptId',
+] as const;

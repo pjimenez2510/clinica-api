@@ -149,46 +149,6 @@ export class PeopleRequiresKichwaNationalityError extends ValidationError {
 }
 
 /**
- * PA-059. The chart declares an ethnic self-identification and a country of
- * nationality other than Ecuador.
- *
- * ⚠️ THE ONE OF THE THREE THAT GETS TYPED BY ACCIDENT, AND THAT IS WHY THE
- * MESSAGE MATTERS MORE HERE. PA-027's contradiction is unreachable from a
- * well-built form — choosing «Mestizo/a» switches the nationality selector off
- * in front of the person typing. This one is not: the country is chosen among
- * the identity fields and the ethnicity among the RDACAA ones, half a form
- * apart, so the desk reaches it without noticing. The text therefore says WHAT
- * TO DO and offers BOTH ways out, rather than describing what failed.
- *
- * Enforced in the service and not only in the DTO, for the same reason as its
- * two siblings. Not a `CHECK` either, and there the reason differs — see
- * `ecuadorian-ethnicity.ts`.
- */
-export class EthnicityRequiresEcuadorianNationalityError extends ValidationError {
-  readonly code = 'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY';
-  override readonly userTitle =
-    'La autoidentificación étnica sólo se registra si la nacionalidad es ecuatoriana';
-  /**
-   * IT POINTS AT `ethnicityConceptId` AND NOT AT THE COUNTRY.
-   *
-   * The ethnicity is the conditional one — the instructivo says to leave
-   * columns 12 to 14 blank for a foreign patient, never to change the country —
-   * so it is its value that has to give way. The message still names the other
-   * way out, because on this pairing the country is quite often the field that
-   * is actually wrong.
-   */
-  constructor() {
-    super('An ethnic self-identification requires Ecuadorian nationality', {}, [
-      {
-        field: 'ethnicityConceptId',
-        code: 'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY',
-        message: 'Deje vacía la autoidentificación étnica, o corrija el país de nacionalidad a Ecuador', // prettier-ignore
-      },
-    ]);
-  }
-}
-
-/**
  * PA-057. The chart declares a sexual orientation and the patient is under the
  * age from which the ministry's form asks the question.
  *

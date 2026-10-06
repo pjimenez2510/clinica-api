@@ -613,26 +613,28 @@ describe('choosing the RDACAA references from a catalogue', () => {
     expect(recorded.corrections).toEqual([]);
   });
 
-  it('PA-059 refuses an ethnicity on a chart whose country of nationality is not Ecuador', async () => {
+  it('PA-065 clears the ethnicity of a new chart whose country of nationality is not Ecuador, instead of refusing it', async () => {
+    // D-128 (PA-13): the rule stays —column 12 only applies to Ecuadorians—
+    // but the API applies it by emptying what does not apply, so whoever
+    // registers (a person or the assistant) is not sent back.
     const { service, recorded } = serviceWith({
       concepts: { [ETHNICITY]: aConcept({ code: '6', display: 'Mestizo/a' }) },
       countries: { VEN: aCountry() },
     });
 
-    await expect(
-      service.create(
-        aNewPatient({
-          ethnicityConceptId: ETHNICITY,
-          countryOfNationalityCode: 'VEN',
-        }),
-        REQUESTER,
-        NOW,
-      ),
-    ).rejects.toMatchObject({
-      code: 'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY',
-      fieldErrors: [expect.objectContaining({ field: 'ethnicityConceptId' })],
-    });
-    expect(recorded.created).toEqual([]);
+    await service.create(
+      aNewPatient({
+        ethnicityConceptId: ETHNICITY,
+        countryOfNationalityCode: 'VEN',
+      }),
+      REQUESTER,
+      NOW,
+    );
+
+    expect(recorded.created[0]?.countryOfNationalityCode).toBe('VEN');
+    expect(recorded.created[0]?.ethnicityConceptId).toBeUndefined();
+    expect(recorded.created[0]?.nationalityConceptId).toBeUndefined();
+    expect(recorded.created[0]?.peopleConceptId).toBeUndefined();
   });
 
   it('PA-059 stores an ethnicity when the country of nationality is Ecuador', async () => {
@@ -658,12 +660,12 @@ describe('choosing the RDACAA references from a catalogue', () => {
     expect(recorded.created[0]?.ethnicityConceptId).toBe(ETHNICITY);
   });
 
-  it('PA-059 refuses to change the country of a chart that already declares an ethnicity', async () => {
+  it('PA-065 changing the country of a chart that declares an ethnicity empties the ethnicity in the same correction', async () => {
     /**
-     * ⚠️ THE CASE THAT GETS TYPED BY ACCIDENT, and the reason PA-059 insists on
-     * the resulting chart: the country lives among the identity fields and the
-     * ethnicity among the RDACAA ones, half a form apart, so nobody sees the
-     * two together.
+     * The case that gets typed by accident: the country lives among the
+     * identity fields and the ethnicity among the RDACAA ones. The resulting
+     * chart is still what is judged; what changes is the answer — the fields
+     * that stop applying are emptied, and the chart history keeps them.
      */
     const { service, recorded } = serviceWith({
       correctionState: {
@@ -674,18 +676,17 @@ describe('choosing the RDACAA references from a catalogue', () => {
       countries: { VEN: aCountry() },
     });
 
-    await expect(
-      service.correct(
-        PATIENT,
-        { countryOfNationalityCode: 'VEN' },
-        REQUESTER,
-        NOW,
-      ),
-    ).rejects.toMatchObject({
-      code: 'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY',
-      fieldErrors: [expect.objectContaining({ field: 'ethnicityConceptId' })],
+    await service.correct(
+      PATIENT,
+      { countryOfNationalityCode: 'VEN' },
+      REQUESTER,
+      NOW,
+    );
+
+    expect(recorded.corrections[0]?.requested).toEqual({
+      countryOfNationalityCode: 'VEN',
+      ethnicityConceptId: null,
     });
-    expect(recorded.corrections).toEqual([]);
   });
 
   it('PA-059 accepts the country and the ethnicity cleared in the SAME correction', async () => {

@@ -36,9 +36,11 @@ import {
   CorrectPatientDto,
   CreatePatientDto,
   OpenPatientDto,
+  PatientChangeHistoryDto,
   PatientDetailDto,
   PatientPageDto,
   SearchPatientsDto,
+  type PatientChangeHistoryResponse,
   type PatientDetailResponse,
 } from './dto/patient.dto';
 
@@ -124,6 +126,27 @@ export class PatientsController {
       agendaEntryId === undefined ? undefined : this.fromAgenda(agendaEntryId),
     );
     return toDetailResponse(patient);
+  }
+
+  /**
+   * PA-065. The versions of the chart, newest first. AUDITED as opening it:
+   * the previous values are chart contents (REQ-110).
+   */
+  @Get(':id/change-history')
+  @RequirePermission('patient:read', 'global')
+  @ApiOperation({ summary: 'Versiones de la ficha (sus correcciones)' })
+  @ApiOkResponse({ type: PatientChangeHistoryDto })
+  async changeHistory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ): Promise<PatientChangeHistoryResponse> {
+    const entries = await this.patients.changeHistory(id, this.requester(req));
+    return {
+      items: entries.map((entry) => ({
+        ...entry,
+        changedAt: entry.changedAt.toISOString(),
+      })),
+    };
   }
 
   @Post()

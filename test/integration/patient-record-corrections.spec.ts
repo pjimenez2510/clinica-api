@@ -1412,6 +1412,77 @@ describe('la ficha del RDACAA y su corrección, contra la base', () => {
     ).rejects.toThrow(/patient_change_history_field_known/);
   });
 
+  it('PA-065 serves the chart versions newest first, naming who changed what from what, and audits it as reading the chart', async () => {
+    const patient = await registerPatient({ countryOfNationalityCode: 'VEN' });
+    await correct(patient.id, { familyName: 'Guamán' }).expect(200);
+    await correct(patient.id, {
+      countryOfNationalityCode: 'ECU',
+      ethnicityConceptId: ethnicityId,
+    }).expect(200);
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/v1/patients/${patient.id}/change-history`)
+      .set('Authorization', `Bearer ${recepcion}`)
+      .expect(200);
+
+    const items = (
+      response.body as {
+        items: {
+          field: string;
+          valueBefore: string | null;
+          valueAfter: string | null;
+          displayBefore: string | null;
+          displayAfter: string | null;
+          changedAt: string;
+          changedBy: { id: string; fullName: string };
+        }[];
+      }
+    ).items;
+    // La corrección más reciente primero; dentro de ella, por campo.
+    expect(items.map((item) => item.field)).toEqual([
+      'countryOfNationalityCode',
+      'ethnicityConceptId',
+      'familyName',
+    ]);
+    expect(items[2]).toMatchObject({
+      valueBefore: 'Guaman',
+      valueAfter: 'Guamán',
+      displayBefore: 'Guaman',
+      displayAfter: 'Guamán',
+      changedBy: { id: recepcionUserId, fullName: 'Gabriela Mera' },
+    });
+    // Los catálogos se leen con su nombre, no con un identificador.
+    expect(items[1]).toMatchObject({
+      valueBefore: null,
+      valueAfter: ethnicityId,
+      displayAfter: 'Indígena',
+    });
+    expect(items[0]).toMatchObject({ valueBefore: 'VEN', valueAfter: 'ECU' });
+
+    // Leer las versiones es leer la ficha (REQ-110): una fila READ de
+    // `patient`, como abrirla.
+    const reads = await prisma.accessAudit.findMany({
+      where: {
+        resourceType: 'patient',
+        resourceId: patient.id,
+        action: 'READ',
+      },
+    });
+    expect(reads).toHaveLength(1);
+  });
+
+  it('PA-065 answers the versions of a chart that does not exist with PATIENT_NOT_FOUND and writes no trail', async () => {
+    const missing = '0190a3c4-0000-7000-8000-000000000000';
+    const refused = await request(app.getHttpServer())
+      .get(`/api/v1/patients/${missing}/change-history`)
+      .set('Authorization', `Bearer ${recepcion}`)
+      .expect(404);
+    expect((refused.body as Problem).code).toBe('PATIENT_NOT_FOUND');
+    expect(
+      await prisma.accessAudit.count({ where: { resourceId: missing } }),
+    ).toBe(0);
+  });
+
   it('PA-053 gives back the code when the catalogue cannot name the country', async () => {
     // Una edición anterior del catálogo, o un país que se dividió. El nombre
     // viaja `null` y el CÓDIGO SIGUE VIAJANDO — un nombre que falta es una

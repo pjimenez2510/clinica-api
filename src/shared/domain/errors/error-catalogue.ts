@@ -246,11 +246,9 @@ export const DOMAIN_ERROR_CODES = [
   //     la columna 14 «aplica únicamente para la nacionalidad indígena
   //     "Kichwa"». Es el hermano de `NATIONALITY_REQUIRES_INDIGENOUS_ETHNICITY`
   //     un escalón más abajo de la misma cadena.
-  //   * `ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY` → `ethnicityConceptId`. La
-  //     columna 12 «aplica para nacionalidad Ecuatoriana». Es el escalón de
-  //     ARRIBA de esa misma cadena, y el único de los tres que se teclea por
-  //     accidente: el país y la etnia están en dos pantallas del mismo
-  //     formulario.
+  //   * `ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY` se retiró con PA-065
+  //     (D-128): la columna 12 sigue aplicando sólo a ecuatorianos, pero la
+  //     API vacía la etnia de una ficha extranjera en vez de rechazarla.
   //   * `SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE` → `sexualOrientationConceptId`.
   //     La columna 7 «aplica a usuarios a partir de los 10 años de edad», y la
   //     edad se DERIVA de la fecha de nacimiento en `America/Guayaquil`.
@@ -260,7 +258,6 @@ export const DOMAIN_ERROR_CODES = [
   // ficha, y lo que hay que hacer es distinto. Y ninguno puede ser un `CHECK`:
   // los dos primeros dependen de qué fila de otro catálogo es «Kichwa» o
   // «Ecuador», y el tercero de una edad que se mueve sola con el calendario.
-  'ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY',
   'PEOPLE_REQUIRES_KICHWA_NATIONALITY',
   'SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE',
   // Grupos prioritarios del paciente (P3: PA-033..PA-042, D-026, D-027).

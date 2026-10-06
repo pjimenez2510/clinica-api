@@ -676,6 +676,31 @@ export const patientPageSchema = z.object({
 /** Response of GET /patients: one page of summaries and the total to paginate over. */
 export class PatientPageDto extends createZodDto(patientPageSchema) {}
 
+/**
+ * PA-065. Una fila de las versiones de la ficha: un campo de una corrección,
+ * con el texto guardado a los dos lados y, para lo que es una referencia
+ * (catálogo, país, ficha de la madre), cómo se lee. `null` es «sin valor».
+ */
+export const patientChangeEntrySchema = z.object({
+  field: z.string(),
+  valueBefore: z.string().nullable(),
+  valueAfter: z.string().nullable(),
+  displayBefore: z.string().nullable(),
+  displayAfter: z.string().nullable(),
+  changedAt: z.iso.datetime(),
+  changedBy: z.object({ id: z.uuid(), fullName: z.string() }),
+});
+export const patientChangeHistorySchema = z.object({
+  items: z.array(patientChangeEntrySchema).readonly(),
+});
+/** Response of GET /patients/:id/change-history (PA-065). */
+export class PatientChangeHistoryDto extends createZodDto(
+  patientChangeHistorySchema,
+) {}
+export type PatientChangeHistoryResponse = z.infer<
+  typeof patientChangeHistorySchema
+>;
+
 // ---------------------------------------------------------------------------
 // Duplicate resolution (P4: PA-043 to PA-049, REQ-010)
 // ---------------------------------------------------------------------------

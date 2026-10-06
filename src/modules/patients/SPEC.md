@@ -231,7 +231,7 @@ arreglo y una unificación exige escribir un motivo que nadie lee.
 **Prueba independiente:** editar el origen de un grupo y encontrar la fila
 anterior en `record_version`; fusionar sin motivo y encontrar el rastro con
 autor, instante e instantánea.
-**Cubre:** PA-064, PA-066.
+**Cubre:** PA-064 a PA-066.
 
 ## Criterios de éxito
 
@@ -1038,12 +1038,17 @@ requisitos que cambian.
   > categoría especial.
 - **PA-059** — **SI** la ficha que resultaría del alta o de la corrección
   declara una autoidentificación étnica **y** un país de nacionalidad distinto
-  de Ecuador, **ENTONCES** el sistema DEBERÁ rechazar la operación con
-  `ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY` señalando el campo
-  `ethnicityConceptId`, y NO DEBERÁ escribir nada. **MIENTRAS** el país de
+  de Ecuador, **ENTONCES** el sistema NO DEBERÁ guardarla con la etnia: desde
+  PA-065 la vacía, con la nacionalidad indígena y el pueblo, en la misma
+  operación. **MIENTRAS** el país de
   nacionalidad de una ficha esté registrado y no sea Ecuador, el sistema NO
   DEBERÁ contar `ethnicityConceptId` ni `nationalityConceptId` entre los datos
   que a esa ficha le faltan (PA-032).
+  > **Enmendado por PA-065 (D-128, PA-13 del inventario, 06-10-2026).** La
+  > regla se queda; la forma de aplicarla cambia: en vez de rechazar con
+  > `ETHNICITY_REQUIRES_ECUADORIAN_NATIONALITY` (retirado), la API vacía lo
+  > que no aplica. Lo de abajo sobre el rechazo y el mensaje es historia.
+  >
   > **LA CONDICIÓN ES DEL FORMULARIO DEL MINISTERIO Y ESTÁ ESCRITA DOS VECES.**
   > El instructivo la anota sobre la columna 12 —*«Aplica para nacionalidad
   > Ecuatoriana»*— y la repite sobre la columna 11 —*«Si el usuario NO es
@@ -1901,6 +1906,31 @@ Ningún requisito de esta sección lo altera._
   > `patient_merge_reason_not_blank` pasa a «si lo hay, no en blanco», con el
   > mismo nombre (`20261006082415_patient_merge_reason_optional`). Ninguna
   > fila guardada cambia.
+- **PA-065** — CUANDO alguien con `patient:read` pida las **versiones de la
+  ficha**, el sistema DEBERÁ devolver sus correcciones de la más reciente a la
+  más antigua —campo, valor anterior y nuevo, cómo se lee cada uno, quién y
+  cuándo— y DEBERÁ dejar en la bitácora la misma fila `READ` de `patient` que
+  abrir la ficha; NO DEBERÁ devolver la orientación sexual (PA-058). Y CUANDO
+  el alta o la corrección dejen una ficha con país de nacionalidad distinto de
+  Ecuador, el sistema DEBERÁ vaciar la etnia, la nacionalidad indígena y el
+  pueblo que tenga, en la misma operación y con su fila en el histórico, en
+  lugar de rechazarla.
+  > **D-127, PA-10, PA-11 y PA-13 del inventario.** `GET
+  > /patients/:id/change-history` lee `patient_change_history` (PA-031), que
+  > hasta hoy se escribía y no se leía. Sólo de esta ficha: el histórico es un
+  > rastro sobre el registro, no atención recibida (PA-055). Las referencias se
+  > leen con su nombre: un concepto por su `display`, el país por el catálogo
+  > `COUNTRY`, la madre por su número de historia. Ficha inexistente: 404 sin
+  > fila; absorbida: `PATIENT_MERGED`.
+  >
+  > El lápiz por campo del panel RDACAA (PA-11) es **sólo interfaz**: corrige
+  > el campo en su sitio con el mismo `PATCH /patients/:id` (PA-031), y
+  > sustituye la decisión de interfaz del 16-08-2026 (D-128.13).
+  >
+  > La etnia de una ficha extranjera se vacía **sola** para que quien
+  > registra —una persona o el asistente (D-127.5)— no tenga que volver a
+  > vaciar tres campos a mano. La web ya lo hacía (`fieldsToClear`); ahora lo
+  > hace la API, y no se pierde nada: lo vaciado queda en las versiones.
 - **PA-066** — CUANDO se edite un registro de grupo prioritario —grupo,
   inicio, fin, origen o documento acreditativo—, el sistema DEBERÁ cambiarlo
   en su fila y DEBERÁ guardar la versión anterior entera, con quién la
@@ -2097,7 +2127,8 @@ Todas bajo `/api/v1/patients`, alcance `global` (PA-051):
 | `GET`   | `/patients`                               | `patient:read`     | PA-016 a PA-021, PA-023                         |
 | `GET`   | `/patients/:id`                           | `patient:read`     | PA-022, PA-024, PA-054                          |
 | `POST`  | `/patients`                               | `patient:write`    | PA-001 a PA-014, PA-026 a PA-029, PA-053        |
-| `PATCH` | `/patients/:id`                           | `patient:write`    | PA-008, PA-009, PA-026 a PA-029, PA-031, PA-053 |
+| `PATCH` | `/patients/:id`                           | `patient:write`    | PA-008, PA-009, PA-026 a PA-029, PA-031, PA-053, PA-065 |
+| `GET`   | `/patients/:id/change-history`            | `patient:read`     | PA-065                                          |
 | `POST`  | `/patients/:id/identifiers`               | `patient:write`    | PA-015                                          |
 | `GET`   | `/patients/:id/priority-groups`           | `patient:priority` | PA-033 a PA-040                                 |
 | `POST`  | `/patients/:id/priority-groups`           | `patient:priority` | PA-033 a PA-039                                 |

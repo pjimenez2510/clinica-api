@@ -715,6 +715,22 @@ export interface PriorityGroupChanges {
   evidenceDocument?: string | null;
 }
 
+/**
+ * PA-065. One field of one correction of the chart, as the versions of the
+ * chart show it: the stored text on both sides (PA-031) and, for what is a
+ * reference —a catalogue concept, a country code, the mother's chart— the
+ * wording a person reads. `null` means «sin valor».
+ */
+export interface PatientChangeEntry {
+  field: string;
+  valueBefore: string | null;
+  valueAfter: string | null;
+  displayBefore: string | null;
+  displayAfter: string | null;
+  changedAt: Date;
+  changedBy: { id: string; fullName: string };
+}
+
 /** A priority group being recorded; `recordedById` is the session's user, set by the service. */
 export interface NewPriorityGroup {
   patientId: string;
@@ -787,6 +803,16 @@ export interface PatientRepository {
    * not an edit and writes no version. `null` when the record does not exist
    * or is outside the chart's scope, like closing.
    */
+  /**
+   * PA-065. The corrections of THIS chart, newest first and by field within
+   * one correction. Not by the chart's scope (PA-055): the history is a trail
+   * about the record, not care received. The fields in `withheld` are left
+   * out, values included.
+   */
+  listChangeHistory(
+    patientId: string,
+    withheld: readonly string[],
+  ): Promise<PatientChangeEntry[]>;
   editPriorityGroup(input: {
     patientId: string;
     recordId: string;
