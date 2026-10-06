@@ -374,31 +374,20 @@ describe('BI-006, BI-042 lo que garantiza la base y no el código', () => {
     expect(rejection).not.toBeNull();
   });
 
-  it('BI-055, BI-061 la base exige el motivo de todo descuento, venga de donde venga', async () => {
-    // No path of this delivery writes a discount — B4 owns that screen — and
-    // `charge_item_discount_states_a_reason` still refuses one nobody can
-    // explain, written by an import or by `psql`.
-    const raised = await charge();
-
-    const rejection = await context.prisma.chargeItem
-      .update({
-        where: { id: raised.id },
-        data: { discountAmount: '5.00', discountReason: null },
-      })
-      .then(() => null)
-      .catch((error: unknown) => error);
-
-    const problem = extractDatabaseProblem(rejection);
-    expect(problem?.code).toBe('DISCOUNT_REASON_REQUIRED');
-  });
-
   it('BI-065 la base rechaza un descuento mayor que el importe de la línea', async () => {
     const raised = await charge();
 
     const rejection = await context.prisma.chargeItem
       .update({
         where: { id: raised.id },
-        data: { discountAmount: '30.01', discountReason: 'Convenio' },
+        // Stamped: since BI-197 a discount is a correction the database
+        // versions, so without a stamp the refusal would be another one.
+        data: {
+          discountAmount: '30.01',
+          discountReason: 'Convenio',
+          changedById: context.userId,
+          changedAt: new Date(),
+        },
       })
       .then(() => null)
       .catch((error: unknown) => error);

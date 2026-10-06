@@ -540,12 +540,12 @@ export const DOMAIN_ERROR_CODES = [
   // La cuenta y el cargo (BI-033, BI-057, BI-071, BI-072, BI-135).
   // `ACCOUNT_NOT_FOUND` no distingue «no existe» de «es de otra sede», por lo
   // mismo que `AGENDA_ENTRY_NOT_FOUND`: una cuenta confirma que un paciente
-  // estuvo. `ACCOUNT_HAS_CHARGES` (409) es el cambio de pagador con cargos ya
-  // congelados a la tarifa anterior, y `ACCOUNT_HAS_OPEN_CHARGES` (409)
+  // estuvo. `ACCOUNT_HAS_BILLED_CHARGES` (409) es el cambio de pagador con un
+  // cargo ya facturado (BI-198), y `ACCOUNT_HAS_OPEN_CHARGES` (409)
   // ENUMERA los cargos que impiden cerrar, con identificadores y sin nombres
   // de prestación (BI-007).
   'ACCOUNT_CLOSED',
-  'ACCOUNT_HAS_CHARGES',
+  'ACCOUNT_HAS_BILLED_CHARGES',
   'ACCOUNT_HAS_OPEN_CHARGES',
   'ACCOUNT_NOT_FOUND',
   'INVALID_CHARGE_QUANTITY',
@@ -563,16 +563,21 @@ export const DOMAIN_ERROR_CODES = [
   //   * `CHARGE_NOT_FOUND` (404) — mismo silencio que `ACCOUNT_NOT_FOUND`.
   //   * `CHARGE_ITEM_ALREADY_INVOICED` (409) — BI-056, y el texto NOMBRA LA
   //     SALIDA: no hay botón de editar factura que buscar, hay nota de crédito.
-  //   * `CHARGE_ALREADY_VOIDED` (409) — BI-059, un cargo anulado no se
-  //     reactiva; se registra uno nuevo, con su fecha y su autor.
+  //   * `CHARGE_ALREADY_VOIDED` (409) — BI-059, un cargo quitado no se quita
+  //     otra vez; vuelve con «Deshacer» (BI-195).
+  //   * `CHARGE_NOT_REMOVED` (409) — BI-195, deshacer un cargo que no está
+  //     quitado. `CHARGE_HAS_AMOUNT` (409) — BI-196, «No se cobra» es del
+  //     cargo de $0; uno con importe se quita.
   //   * `ACT_ALREADY_CHARGED` (409) — lo levanta uno de los tres índices únicos
   //     parciales de `charge_item`, no una comprobación previa: es lo que hace
   //     cierto «pulsar dos veces no duplica» con dos cajeras a la vez.
   'ACT_ALREADY_CHARGED',
   'BILLING_ENCOUNTER_NOT_FOUND',
   'CHARGE_ALREADY_VOIDED',
+  'CHARGE_HAS_AMOUNT',
   'CHARGE_ITEM_ALREADY_INVOICED',
   'CHARGE_NOT_FOUND',
+  'CHARGE_NOT_REMOVED',
   'PAYER_REQUIRED_TO_OPEN_ACCOUNT',
   // La factura (BI-080 a BI-090). Los cuatro primeros son del RECEPTOR, que
   // es la mitad que le cuesta dinero real al paciente:

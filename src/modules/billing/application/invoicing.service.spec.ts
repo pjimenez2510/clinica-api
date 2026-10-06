@@ -153,7 +153,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
     );
   });
 
-  it('BI-081 rechaza «Consumidor Final» sin confirmación y sin motivo', async () => {
+  it('BI-081 rechaza «Consumidor Final» sin confirmación', async () => {
     const { service: invoicing, mocks } = build();
 
     await expect(
@@ -163,7 +163,7 @@ describe('BI-080 a BI-089 emitir la factura', () => {
           siteId: SITE,
           emissionPointId: EMISSION_POINT,
           paymentMethod: '01',
-          receiver: { finalConsumer: { confirmed: true } },
+          receiver: { finalConsumer: { confirmed: false } },
         },
         requester,
       ),

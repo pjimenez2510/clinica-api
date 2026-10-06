@@ -52,7 +52,9 @@ const EXPECTED: readonly [
   [errors.PriceNegativeAmountError, 'PRICE_NEGATIVE_AMOUNT', ValidationError],
   [errors.AccountNotFoundError, 'ACCOUNT_NOT_FOUND', NotFoundError],
   [errors.AccountClosedError, 'ACCOUNT_CLOSED', ConflictError],
-  [errors.AccountHasChargesError, 'ACCOUNT_HAS_CHARGES', ConflictError],
+  [errors.AccountHasBilledChargesError, 'ACCOUNT_HAS_BILLED_CHARGES', ConflictError], // prettier-ignore
+  [errors.ChargeNotRemovedError, 'CHARGE_NOT_REMOVED', ConflictError],
+  [errors.ChargeHasAmountError, 'CHARGE_HAS_AMOUNT', ConflictError],
   [errors.InvalidChargeQuantityError, 'INVALID_CHARGE_QUANTITY', ValidationError], // prettier-ignore
   [errors.InvoiceNotFoundError, 'INVOICE_NOT_FOUND', NotFoundError],
   [

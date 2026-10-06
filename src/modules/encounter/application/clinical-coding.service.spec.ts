@@ -1,5 +1,7 @@
 import { PinoLogger } from 'nestjs-pino';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+
+import type { ConsultationRepricer } from '../../../shared/billing/consultation-repricer.port';
 
 import type {
   AccessAuditEntry,
@@ -240,6 +242,9 @@ describe('los casos de uso del bloque K', () => {
   let coding: FakeCoding;
   let audit: AccessAuditRecorder & { entries: AccessAuditEntry[] };
   let service: ClinicalCodingService;
+  let repricer: {
+    repriceConsultation: Mock<ConsultationRepricer['repriceConsultation']>;
+  };
 
   beforeEach(() => {
     encounters = new FakeEncounters();
@@ -259,11 +264,18 @@ describe('los casos de uso del bloque K', () => {
       error: vi.fn(),
     } as unknown as PinoLogger;
 
+    repricer = {
+      repriceConsultation: vi
+        .fn<ConsultationRepricer['repriceConsultation']>()
+        .mockResolvedValue(undefined),
+    };
+
     service = new ClinicalCodingService(
       coding,
       encounters as unknown as EncounterRepository,
       audit,
       logger,
+      repricer,
     );
   });
 
@@ -598,6 +610,24 @@ describe('los casos de uso del bloque K', () => {
     expect(coding.written).toHaveLength(0);
   });
 
+  it('BI-203 corregir primera vez o subsecuente avisa a caja para re-tarifar la consulta; la modalidad sola no', async () => {
+    await service.correctEncounterCoding(
+      { encounterId: ENCOUNTER, careModality: 'PREVENTION' },
+      requester,
+    );
+    expect(repricer.repriceConsultation).not.toHaveBeenCalled();
+
+    await service.correctEncounterCoding(
+      { encounterId: ENCOUNTER, visitSequence: 'FIRST_TIME' },
+      requester,
+    );
+    expect(repricer.repriceConsultation).toHaveBeenCalledWith({
+      encounterId: ENCOUNTER,
+      siteId: encounters.stored.siteId,
+      changedById: requester.userId,
+    });
+  });
+
   it('EN-121 responde «no existe» a un diagnóstico de una atención de otra sede', async () => {
     encounters.stored = anEncounter({ siteId: OTHER_SITE });
 
@@ -642,6 +672,7 @@ describe('los casos de uso del bloque K', () => {
       encounters as unknown as EncounterRepository,
       audit,
       logger,
+      { repriceConsultation: vi.fn() },
     );
 
     await watched.recordDiagnosis(aDiagnosis(), requester);

@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { parseClinicalDate } from '../../../shared/domain/clinic-time';
 import {
   AccountClosedError,
-  AccountHasChargesError,
   AccountHasOpenChargesError,
   AccountNotFoundError,
   BillableServiceInactiveError,
@@ -151,6 +150,14 @@ function build(
     }),
     record: vi.fn().mockResolvedValue(undefined),
     draftOrdersOf: vi.fn().mockResolvedValue([]),
+    findEncounterActs: vi.fn().mockResolvedValue({
+      specialtyId: 'specialty-1',
+      visitSequence: 'SUBSEQUENT',
+    }),
+    findConsultationService: vi.fn().mockResolvedValue({
+      billableServiceId: 'service-subsequent',
+      active: true,
+    }),
     ...options.accounts,
     ...options.catalogue,
   };
@@ -160,7 +167,10 @@ function build(
       mocks as unknown as BillingAccountRepository,
       mocks as unknown as BillingCatalogueRepository,
       { record: mocks.record },
-      { draftOrdersOf: mocks.draftOrdersOf },
+      {
+        draftOrdersOf: mocks.draftOrdersOf,
+        findEncounterActs: mocks.findEncounterActs,
+      },
     ),
     mocks,
   };
@@ -232,33 +242,25 @@ describe('BI-070 abrir la cuenta con su pagador decidido al llegar', () => {
   });
 });
 
-describe('BI-033 cambiar el pagador', () => {
-  it('BI-033 lo permite mientras la cuenta no tenga ningún cargo', async () => {
+describe('BI-198 cambiar el pagador con cargos', () => {
+  it('BI-198 cambia el pagador y su lista, y deja al adaptador re-tarifar con quién y cuándo', async () => {
     const { service: accounts, mocks } = build();
 
     await accounts.changePayer({
       accountId: ACCOUNT,
       siteId: SITE,
       payerId: 'payer-particular',
+      changedById: 'cashier-1',
     });
 
-    expect(mocks.changeAccountPayer).toHaveBeenCalled();
-  });
-
-  it('BI-033 lo rechaza en cuanto hay un cargo con el precio anterior congelado', async () => {
-    // Letting it through would leave an account whose lines came out of two
-    // different tariffs with nothing saying so.
-    const { service: accounts } = build({
-      accounts: {
-        listCharges: vi
-          .fn()
-          .mockResolvedValue([charge('charge-1', 'BILLABLE')]),
-      },
-    });
-
-    await expect(
-      accounts.changePayer({ accountId: ACCOUNT, siteId: SITE, payerId: 'payer-iess' }), // prettier-ignore
-    ).rejects.toBeInstanceOf(AccountHasChargesError);
+    expect(mocks.changeAccountPayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: ACCOUNT,
+        payerId: 'payer-particular',
+        changedById: 'cashier-1',
+        now: expect.any(Date),
+      }),
+    );
   });
 });
 
@@ -510,7 +512,48 @@ describe('BI-055, BI-056, BI-059, BI-152 caja revisa lo propuesto', () => {
       chargeId: 'charge-1',
       voidedById: 'user-2',
       reason: 'La paciente no se realizó el examen',
+      now: expect.any(Date),
     });
+  });
+
+  it('BI-195 quita el cargo sin motivo', async () => {
+    const { service: accounts, mocks } = build({
+      accounts: {
+        findCharge: vi.fn().mockResolvedValue(charge('charge-1', 'BILLABLE')),
+      },
+    });
+
+    await accounts.voidCharge({
+      accountId: ACCOUNT,
+      siteId: SITE,
+      chargeId: 'charge-1',
+      reason: null,
+      voidedById: 'user-2',
+    });
+
+    expect(mocks.voidCharge).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: null }),
+    );
+  });
+
+  it('BI-195 no quita otra vez un cargo marcado «No se cobra»', async () => {
+    const { service: accounts } = build({
+      accounts: {
+        findCharge: vi
+          .fn()
+          .mockResolvedValue(charge('charge-1', 'NOT_BILLABLE')),
+      },
+    });
+
+    await expect(
+      accounts.voidCharge({
+        accountId: ACCOUNT,
+        siteId: SITE,
+        chargeId: 'charge-1',
+        reason: null,
+        voidedById: 'user-2',
+      }),
+    ).rejects.toMatchObject({ code: 'CHARGE_ALREADY_VOIDED' });
   });
 
   it('BI-056 rechaza tocar un cargo ya facturado NOMBRANDO la salida', async () => {
@@ -536,7 +579,7 @@ describe('BI-055, BI-056, BI-059, BI-152 caja revisa lo propuesto', () => {
     });
   });
 
-  it('BI-059 no admite que un cargo anulado vuelva', async () => {
+  it('BI-059 no confirma un cargo quitado', async () => {
     const { service: accounts } = build({
       accounts: {
         findCharge: vi.fn().mockResolvedValue(charge('charge-1', 'CANCELLED')),
@@ -596,6 +639,8 @@ describe('BI-003, BI-120 el cobro no bloquea la atención', () => {
       // se cobra, y por esto». Both are decisions about MONEY taken by a
       // person, and neither is something a clinical flow calls or waits for.
       'confirmCharge',
+      // BI-203. A read of the statement, not something care waits for.
+      'consultationOutdated',
       'listAccounts',
       'openAccount',
       'openStatement',
@@ -652,5 +697,60 @@ describe('BI-192 la cuenta avisa del borrador de orden sin emitir', () => {
 
     expect(statement.draftOrders).toEqual([]);
     expect(mocks.draftOrdersOf).not.toHaveBeenCalled();
+  });
+});
+
+describe('BI-203 el extracto dice la consulta que ya no corresponde a la atención', () => {
+  const consultation = (status: ChargeStatus, billableServiceId: string) =>
+    charge('charge-consultation', status, {
+      origin: 'CONSULTATION',
+      billableServiceId,
+    });
+
+  it('BI-203 la señala cuando la atención pasó a subsecuente y el cargo sigue en primera vez', async () => {
+    const { service: accounts } = build({
+      accounts: {
+        findAccount: vi.fn().mockResolvedValue(account({ encounterId: 'encounter-1' })), // prettier-ignore
+        listCharges: vi.fn().mockResolvedValue([consultation('PLANNED', 'service-first-time')]), // prettier-ignore
+      },
+    });
+
+    const statement = await accounts.statement({ accountId: ACCOUNT, siteId: SITE }); // prettier-ignore
+
+    expect(statement.consultationOutdated).toEqual({
+      chargeId: 'charge-consultation',
+      billed: false,
+    });
+  });
+
+  it('BI-203 la señala también facturada, para corregir la factura', async () => {
+    const { service: accounts } = build({
+      accounts: {
+        findAccount: vi.fn().mockResolvedValue(account({ encounterId: 'encounter-1' })), // prettier-ignore
+        listCharges: vi.fn().mockResolvedValue([consultation('BILLED', 'service-first-time')]), // prettier-ignore
+      },
+    });
+
+    const statement = await accounts.statement({ accountId: ACCOUNT, siteId: SITE }); // prettier-ignore
+
+    expect(statement.consultationOutdated?.billed).toBe(true);
+  });
+
+  it('BI-203 calla cuando la consulta ya es la que corresponde, o está quitada', async () => {
+    for (const line of [
+      consultation('PLANNED', 'service-subsequent'),
+      consultation('CANCELLED', 'service-first-time'),
+    ]) {
+      const { service: accounts } = build({
+        accounts: {
+          findAccount: vi.fn().mockResolvedValue(account({ encounterId: 'encounter-1' })), // prettier-ignore
+          listCharges: vi.fn().mockResolvedValue([line]),
+        },
+      });
+
+      const statement = await accounts.statement({ accountId: ACCOUNT, siteId: SITE }); // prettier-ignore
+
+      expect(statement.consultationOutdated).toBeNull();
+    }
   });
 });
