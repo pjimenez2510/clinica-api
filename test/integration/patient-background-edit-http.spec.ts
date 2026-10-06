@@ -19,7 +19,7 @@ import { createPatient, createSite } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
- * EN-219, EN-220 and EN-221 as the browser (and, D-127.5, an assistant)
+ * EN-224, EN-225 and EN-226 as the browser (and, D-127.5, an assistant)
  * reaches them: the routes, their permissions with a REAL session, and the
  * exact `code` of every refusal under RFC 9457.
  */
@@ -157,7 +157,7 @@ describe('alergias y antecedentes editables por HTTP', () => {
     return (response.body as { id: string }).id;
   }
 
-  it('EN-219 descarta una alergia y un antecedente sin motivo, y guarda el de la lista cuando se envía', async () => {
+  it('EN-224 descarta una alergia y un antecedente sin motivo, y guarda el de la lista cuando se envía', async () => {
     const allergyId = await anAllergy();
     const otherId = await anAllergy('Látex');
     const historyId = await aHistoryEntry();
@@ -183,7 +183,7 @@ describe('alergias y antecedentes editables por HTTP', () => {
     expect((history.body as { refutedNotes: string | null }).refutedNotes).toBeNull(); // prettier-ignore
   });
 
-  it('EN-219 el motivo admite hasta 2000 caracteres, y uno más se rechaza por campo', async () => {
+  it('EN-224 el motivo admite hasta 2000 caracteres, y uno más se rechaza por campo', async () => {
     const allergyId = await anAllergy();
     const otherId = await anAllergy('Látex');
 
@@ -202,7 +202,7 @@ describe('alergias y antecedentes editables por HTTP', () => {
     ).expect(200);
   });
 
-  it('EN-219 reactiva lo descartado por error, y reactivar lo vigente responde 409', async () => {
+  it('EN-224 reactiva lo descartado por error, y reactivar lo vigente responde 409', async () => {
     const allergyId = await anAllergy();
     const historyId = await aHistoryEntry();
 
@@ -243,7 +243,7 @@ describe('alergias y antecedentes editables por HTTP', () => {
     expect(items[0]?.allergy.refutedAt).not.toBeNull();
   });
 
-  it('EN-220 edita una alergia en su fila y sirve la versión anterior', async () => {
+  it('EN-225 edita una alergia en su fila y sirve la versión anterior', async () => {
     const allergyId = await anAllergy();
 
     // Editar cambia lo que se comprueba al recetar: es juicio clínico, como
@@ -284,7 +284,7 @@ describe('alergias y antecedentes editables por HTTP', () => {
     });
   });
 
-  it('EN-220 rechaza editar una alergia descartada, un campo que no existe y el concepto sin su nombre', async () => {
+  it('EN-225 rechaza editar una alergia descartada, un campo que no existe y el concepto sin su nombre', async () => {
     const allergyId = await anAllergy();
 
     const unknown = await patch(
@@ -310,7 +310,7 @@ describe('alergias y antecedentes editables por HTTP', () => {
     expect((refuted.body as Problem).title).toContain('reactívela');
   });
 
-  it('EN-220 edita un antecedente en su fila, y el familiar sigue pidiendo parentesco', async () => {
+  it('EN-225 edita un antecedente en su fila, y el familiar sigue pidiendo parentesco', async () => {
     const historyId = await aHistoryEntry();
 
     const orphan = await patch(
@@ -341,7 +341,7 @@ describe('alergias y antecedentes editables por HTTP', () => {
     });
   });
 
-  it('EN-221 descarta las activas y afirma en un paso; sin descartarlas todas sigue el freno', async () => {
+  it('EN-226 descarta las activas y afirma en un paso; sin descartarlas todas sigue el freno', async () => {
     const allergyId = await anAllergy();
     const otherId = await anAllergy('Látex');
 
@@ -382,7 +382,7 @@ describe('alergias y antecedentes editables por HTTP', () => {
     expect(list.noKnownAllergies).not.toBeNull();
   });
 
-  it('EN-221 retira la afirmación hecha por error, y una segunda vez no hay nada que retirar', async () => {
+  it('EN-226 retira la afirmación hecha por error, y una segunda vez no hay nada que retirar', async () => {
     await post(`/patients/${patientId}/allergies/none-known`, nurseToken).expect(201); // prettier-ignore
 
     await post(

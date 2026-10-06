@@ -155,7 +155,7 @@ describe('los antecedentes del paciente', () => {
     expect(history.written).toEqual([]);
   });
 
-  it('EN-219 descarta el antecedente sin motivo, y un motivo en blanco viaja como ninguno', async () => {
+  it('EN-224 descarta el antecedente sin motivo, y un motivo en blanco viaja como ninguno', async () => {
     await service.refute({ patientId: PATIENT, historyId: 'history-1' }, requester); // prettier-ignore
     await service.refute(
       { patientId: PATIENT, historyId: 'history-1', notes: '  ' },
@@ -197,7 +197,7 @@ describe('los antecedentes del paciente', () => {
     expect(history.refutations[0]).toMatchObject({ refutedById: USER });
   });
 
-  it('EN-220 edita el antecedente con el autor de la sesion y lo deja en la bitacora', async () => {
+  it('EN-225 edita el antecedente con el autor de la sesion y lo deja en la bitacora', async () => {
     await service.edit(
       {
         patientId: PATIENT,
@@ -215,7 +215,7 @@ describe('los antecedentes del paciente', () => {
     expect(entries.map((e) => e.action)).toEqual(['UPDATE']);
   });
 
-  it('EN-219 EN-220 reactivar, editar y leer versiones de uno que no esta en la ficha responde el mismo 404', async () => {
+  it('EN-224 EN-225 reactivar, editar y leer versiones de uno que no esta en la ficha responde el mismo 404', async () => {
     history.editAnswer = null;
     history.reactivateAnswer = null;
     history.versions = null;
@@ -239,7 +239,7 @@ describe('los antecedentes del paciente', () => {
     expect(entries).toEqual([]);
   });
 
-  it('EN-219 reactiva con quien esta en la sesion, y las versiones dejan lectura en la bitacora', async () => {
+  it('EN-224 reactiva con quien esta en la sesion, y las versiones dejan lectura en la bitacora', async () => {
     await service.reactivate(PATIENT, 'history-1', requester);
     await service.versionsOf(PATIENT, 'history-1', requester);
 

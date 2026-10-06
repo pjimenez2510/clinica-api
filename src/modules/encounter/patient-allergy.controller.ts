@@ -81,7 +81,7 @@ import {
  *
  * ⚠️ AND THERE IS NO `DELETE` ROUTE, WHICH IS EN-082 AS A TABLE OF ROUTES. The
  * only way an allergy stops counting is `…/refute`, which writes an instant
- * and who; an edit (EN-220) or a reactivation (EN-219) keeps what it replaced
+ * and who; an edit (EN-225) or a reactivation (EN-224) keeps what it replaced
  * as a version. A route that removed the row would make «se descartó» and «se
  * escribió por error» the same event, and they are not: one is a clinical
  * finding and the other is a typo.
@@ -204,7 +204,7 @@ export class PatientAllergyController {
    *
    * IT IS NOT EDITED. What ends an assertion is recording an allergy — the
    * ordinary course of events: it was asked, there was none, and in October
-   * one appeared — or, since EN-221, withdrawing it when it was a mistake
+   * one appeared — or, since EN-226, withdrawing it when it was a mistake
    * (`…/none-known/retract`), which keeps the row and says who and when.
    *
    * 201, because what it leaves behind is a row that did not exist.
@@ -232,7 +232,7 @@ export class PatientAllergyController {
   }
 
   /**
-   * EN-082, EN-219. Rules one out: the instant, who, and a reason if one was
+   * EN-082, EN-224. Rules one out: the instant, who, and a reason if one was
    * chosen — never a deletion.
    *
    * A ROUTE OF ITS OWN AND NOT A `PATCH` OF `refutedAt`, for the same reason
@@ -262,7 +262,7 @@ export class PatientAllergyController {
   }
 
   /**
-   * EN-220. Edits what the allergy says, in its row; the version it replaces
+   * EN-225. Edits what the allergy says, in its row; the version it replaces
    * is kept. `record:write` like refuting: changing the substance changes
    * what the prescription check reads, which is the same clinical judgement
    * as ruling one out (EN-164).
@@ -300,7 +300,7 @@ export class PatientAllergyController {
   }
 
   /**
-   * EN-219. Brings back an allergy refuted by mistake. `background:write`,
+   * EN-224. Brings back an allergy refuted by mistake. `background:write`,
    * like recording one: it makes the allergy count again, the safe direction,
    * and nursing could record it anew anyway.
    */
@@ -322,7 +322,7 @@ export class PatientAllergyController {
     return toAllergyResponse(reactivated);
   }
 
-  /** EN-220. The versions the changes replaced; `record:read`, audited. */
+  /** EN-225. The versions the changes replaced; `record:read`, audited. */
   @Get('allergies/:allergyId/versions')
   @RequirePermission('record:read', 'global')
   @ApiOperation({ summary: 'Versiones anteriores de una alergia' })
@@ -348,7 +348,7 @@ export class PatientAllergyController {
   }
 
   /**
-   * EN-221. «Descartar estas y afirmar»: the active allergies the screen
+   * EN-226. «Descartar estas y afirmar»: the active allergies the screen
    * listed are ruled out, without a reason, and «sin alergias conocidas» is
    * asserted, in one step. `record:write`, because ruling out is.
    */
@@ -373,7 +373,7 @@ export class PatientAllergyController {
   }
 
   /**
-   * EN-221. Withdraws the standing «sin alergias conocidas» asserted by
+   * EN-226. Withdraws the standing «sin alergias conocidas» asserted by
    * mistake. `background:write`, like asserting it: it moves the chart back
    * to «no se preguntó», never towards fewer allergies. 204: there is
    * nothing standing left to return.

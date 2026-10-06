@@ -82,14 +82,14 @@ export interface AllergyChart {
   noKnownAllergies: AllergyAbsenceAssertion | null;
 }
 
-/** EN-082, EN-219. What ruling one out needs to be told; the reason is optional. */
+/** EN-082, EN-224. What ruling one out needs to be told; the reason is optional. */
 export interface RefuteAllergyRequest {
   patientId: string;
   allergyId: string;
   notes?: string;
 }
 
-/** EN-220. Editing one allergy in its row. */
+/** EN-225. Editing one allergy in its row. */
 export interface EditAllergyRequest {
   patientId: string;
   allergyId: string;
@@ -199,7 +199,7 @@ export class PatientAllergyService {
   }
 
   /**
-   * EN-082, EN-219. Rules one out. NEVER deletes it.
+   * EN-082, EN-224. Rules one out. NEVER deletes it.
    *
    * THE REASON IS OPTIONAL (D-126.2): the screen asks for one confirmation
    * and offers a short list. Who ruled it out and when is kept by the row and
@@ -298,7 +298,7 @@ export class PatientAllergyService {
   }
 
   /**
-   * EN-220. Edits what an allergy says —substance, reaction, criticality— in
+   * EN-225. Edits what an allergy says —substance, reaction, criticality— in
    * its row. The allergy as it was is kept by `record_version`, with who and
    * when, in the same statement; nobody refutes and records again.
    *
@@ -326,7 +326,7 @@ export class PatientAllergyService {
   }
 
   /**
-   * EN-219. «Reactivar» an allergy refuted by mistake. It counts again from
+   * EN-224. «Reactivar» an allergy refuted by mistake. It counts again from
    * this instant — at the next prescription check — and the refutation, with
    * who, when and why, stays in the version this change leaves behind.
    */
@@ -349,7 +349,7 @@ export class PatientAllergyService {
   }
 
   /**
-   * EN-220. The versions the changes replaced, newest first. Audited as a
+   * EN-225. The versions the changes replaced, newest first. Audited as a
    * read of clinical content, like the list.
    */
   async versionsOf(

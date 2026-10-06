@@ -322,7 +322,7 @@ describe('las alergias y la historia de la consulta por HTTP', () => {
       expect(await prisma.patientAllergy.count()).toBe(0);
     });
 
-    it('EN-082 EN-219 descarta una alergia con el motivo en blanco y lo guarda como ninguno', async () => {
+    it('EN-082 EN-224 descarta una alergia con el motivo en blanco y lo guarda como ninguno', async () => {
       const created = await recordAllergy({
         substanceText: 'Penicilina',
         criticality: 'HIGH',

@@ -32,7 +32,7 @@ import type { Requester } from './encounter.service';
 const RESOURCE_TYPE = 'patient_allergy';
 
 /**
- * EN-087, EN-221. «Sin alergias conocidas»: asserting it, asserting it after
+ * EN-087, EN-226. «Sin alergias conocidas»: asserting it, asserting it after
  * ruling out the allergies the screen listed, and withdrawing one made by
  * mistake.
  *
@@ -82,7 +82,7 @@ export class NoKnownAllergiesService {
    * walks away with the wrong one.
    *
    * ⚠️ IT REFUSES A CHART THAT HAS ALLERGIES, and the way out is to refute
-   * them —since EN-221 in the same step, `assertRefuting`, naming each one: the
+   * them —since EN-226 in the same step, `assertRefuting`, naming each one: the
    * list the screen showed is the clinical judgement, never the side effect of
    * ticking a box. The read here is the SHARED one, so
    * the question asked is the same «¿a qué es alérgica esta persona?» a
@@ -123,7 +123,7 @@ export class NoKnownAllergiesService {
   }
 
   /**
-   * EN-221. «Descartar estas y afirmar»: the screen lists the active
+   * EN-226. «Descartar estas y afirmar»: the screen lists the active
    * allergies and the person rules them out and asserts, in ONE step and one
    * transaction, without a reason.
    *
@@ -174,7 +174,7 @@ export class NoKnownAllergiesService {
   }
 
   /**
-   * EN-221. Withdraws the chart's STANDING «sin alergias conocidas», asserted
+   * EN-226. Withdraws the chart's STANDING «sin alergias conocidas», asserted
    * by mistake. The row stays —who asserted it and when never change— with
    * who withdrew it and when, and the chart goes back to «no se preguntó».
    * Nothing standing to withdraw is `NO_KNOWN_ALLERGIES_NOT_STANDING`: a

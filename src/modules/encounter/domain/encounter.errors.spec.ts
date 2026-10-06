@@ -109,7 +109,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   // EN-085. Los antecedentes, con el régimen de las alergias.
   new PatientHistoryNotFoundError(),
   new HistoryAlreadyRefutedError(),
-  // EN-219, EN-221. Reactivar lo vigente y retirar lo que ya no está.
+  // EN-224, EN-226. Reactivar lo vigente y retirar lo que ya no está.
   new AllergyNotRefutedError(),
   new HistoryNotRefutedError(),
   new NoKnownAllergiesNotStandingError(),
@@ -183,7 +183,7 @@ describe('el contrato de errores de la atención', () => {
     expect(last.userTitle).toContain('único diagnóstico');
   });
 
-  it('EN-219 EN-220 lo descartado se reactiva antes de editarlo, y reactivar lo vigente responde 409', () => {
+  it('EN-224 EN-225 lo descartado se reactiva antes de editarlo, y reactivar lo vigente responde 409', () => {
     const refuted = new AllergyAlreadyRefutedError();
     expect(refuted.code).toBe('ALLERGY_ALREADY_REFUTED');
     expect(refuted).toBeInstanceOf(ConflictError);
@@ -200,7 +200,7 @@ describe('el contrato de errores de la atención', () => {
     }
   });
 
-  it('EN-221 retirar lo que ya no está vigente responde 409, y afirmar con alergias activas sigue frenado', () => {
+  it('EN-226 retirar lo que ya no está vigente responde 409, y afirmar con alergias activas sigue frenado', () => {
     const notStanding = new NoKnownAllergiesNotStandingError();
     expect(notStanding.code).toBe('NO_KNOWN_ALLERGIES_NOT_STANDING');
     expect(notStanding).toBeInstanceOf(ConflictError);

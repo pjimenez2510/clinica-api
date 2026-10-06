@@ -779,17 +779,17 @@ export const DOMAIN_ERROR_CODES = [
   //     es «información clínica por derecho propio». Aceptarla en silencio es
   //     borrar el dato a cámara lenta, que es justo lo que el requisito impide.
   //     Editar una alergia descartada también lo responde: primero se
-  //     reactiva (EN-220).
-  //   * Descartar ya no exige motivo (EN-219, D-126.2):
+  //     reactiva (EN-225).
+  //   * Descartar ya no exige motivo (EN-224, D-126.2):
   //     `REFUTATION_REASON_REQUIRED` se retiró.
-  //   * `ALLERGY_NOT_REFUTED` (409) — EN-219. «Reactivar» una alergia que
+  //   * `ALLERGY_NOT_REFUTED` (409) — EN-224. «Reactivar» una alergia que
   //     sigue activa.
-  //   * `NO_KNOWN_ALLERGIES_NOT_STANDING` (409) — EN-221. «Retirar» un «sin
+  //   * `NO_KNOWN_ALLERGIES_NOT_STANDING` (409) — EN-226. «Retirar» un «sin
   //     alergias conocidas» que ya no está vigente.
   //   * `CHART_HAS_ALLERGIES` (409) — EN-087. Se afirmó «sin alergias
   //     conocidas» sobre una ficha que tiene alergias sin descartar. Las dos
   //     cosas no pueden ser ciertas a la vez, y quien lee la primera deja de
-  //     mirar la lista. La salida es descartarlas —desde EN-221 en el mismo
+  //     mirar la lista. La salida es descartarlas —desde EN-226 en el mismo
   //     paso, nombrando cada una—, que es un juicio clínico por alergia y no el
   //     efecto colateral de marcar una casilla. Lo arbitra además
   //     `trg_patient_allergy_absence_empty_chart`: el servicio no puede ver las
@@ -806,7 +806,7 @@ export const DOMAIN_ERROR_CODES = [
   //   * `HISTORY_ALREADY_REFUTED` (409) — no es idempotente: reescribiría
   //     quién lo descartó y por qué. Lo arbitra además
   //     `trg_patient_history_append_only`.
-  //   * `HISTORY_NOT_REFUTED` (409) — EN-219. «Reactivar» uno que sigue
+  //   * `HISTORY_NOT_REFUTED` (409) — EN-224. «Reactivar» uno que sigue
   //     activo.
   'HISTORY_ALREADY_REFUTED',
   'HISTORY_NOT_REFUTED',

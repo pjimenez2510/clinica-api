@@ -6,7 +6,7 @@
 -- schema.prisma no puede describirlos. Ver scripts/new-migration.mts.
 --
 -- ═══════════════════════════════════════════════════════════════════════════
--- EN-219, EN-220, EN-221 (D-126, D-127): ALERGIAS, ANTECEDENTES Y «SIN
+-- EN-224, EN-225, EN-226 (D-126, D-127): ALERGIAS, ANTECEDENTES Y «SIN
 -- ALERGIAS CONOCIDAS» SE CORRIGEN EN EL SITIO
 -- ═══════════════════════════════════════════════════════════════════════════
 --
@@ -15,15 +15,15 @@
 -- y un «sin alergias conocidas» afirmado por error sólo caía registrando una
 -- alergia. D-127 lo sustituye:
 --
---   · EN-220: la sustancia, la reacción y la criticidad de una alergia, y la
+--   · EN-225: la sustancia, la reacción y la criticidad de una alergia, y la
 --     descripción, el tipo y el parentesco de un antecedente, se EDITAN. La
 --     fila anterior la guarda `record_version` en la misma sentencia
 --     (`record_version_archive`, EN-210), con el sello nuevo `changed_by` /
 --     `changed_at`.
---   · EN-219: refutar ya no exige motivo (D-126.2), y lo refutado se
+--   · EN-224: refutar ya no exige motivo (D-126.2), y lo refutado se
 --     REACTIVA. Refutar y reactivar son también UPDATE sellados: la fila
 --     refutada —con quién, cuándo y por qué— queda como versión.
---   · EN-221: «sin alergias conocidas» se RETIRA, con quién y cuándo
+--   · EN-226: «sin alergias conocidas» se RETIRA, con quién y cuándo
 --     (`retracted_by`, `retracted_at`), y también queda su versión.
 --
 -- LO QUE SIGUE IGUAL, Y LO GARANTIZA LA BASE:
@@ -61,7 +61,7 @@ ALTER TABLE "patient_allergy"
     ("changed_by" IS NULL) = ("changed_at" IS NULL)
   ),
 
-  -- EN-219. El motivo es opcional, pero sólo existe en una alergia refutada,
+  -- EN-224. El motivo es opcional, pero sólo existe en una alergia refutada,
   -- y uno en blanco no es un motivo. Quién la refutó lo sigue exigiendo
   -- `patient_allergy_refutation_names_its_author` (NOT VALID: las refutadas
   -- antes de la columna no tienen a quién nombrar).
@@ -70,7 +70,7 @@ ALTER TABLE "patient_allergy"
     AND ("refuted_notes" IS NULL OR btrim("refuted_notes") <> '')
   );
 
--- EN-086, EN-219, EN-220. El autor se exige al nacer, como antes. Después,
+-- EN-086, EN-224, EN-225. El autor se exige al nacer, como antes. Después,
 -- cada UPDATE es UNO de tres actos, nunca dos a la vez:
 --   · refutar una vigente, sin tocar lo que la alergia dice;
 --   · reactivar una refutada, vaciando la refutación, sin tocar lo que dice;
@@ -129,7 +129,7 @@ BEGIN
 
     RAISE EXCEPTION 'patient_allergy cannot be modified this way: an allergy is edited while active, refuted once or reactivated, and never changes its patient or who recorded it'
       USING ERRCODE = 'insufficient_privilege',
-            HINT = 'EN-219, EN-220. La versión anterior la guarda record_version.';
+            HINT = 'EN-224, EN-225. La versión anterior la guarda record_version.';
   END IF;
 
   RAISE EXCEPTION 'patient_allergy is never deleted: operation % is forbidden', TG_OP
@@ -160,7 +160,7 @@ ALTER TABLE "patient_history"
     ("changed_by" IS NULL) = ("changed_at" IS NULL)
   );
 
--- EN-219 (D-126.2). Refutar sigue siendo un acto con cuándo y quién, juntos;
+-- EN-224 (D-126.2). Refutar sigue siendo un acto con cuándo y quién, juntos;
 -- el motivo pasa a opcional, sólo en un antecedente refutado y nunca en
 -- blanco. El MISMO nombre: es el que el contrato ya conoce.
 ALTER TABLE "patient_history"
@@ -214,7 +214,7 @@ BEGIN
 
     RAISE EXCEPTION 'patient_history cannot be modified this way: an entry is edited while active, refuted once or reactivated, and never changes its patient or who recorded it'
       USING ERRCODE = 'insufficient_privilege',
-            HINT = 'EN-219, EN-220. La versión anterior la guarda record_version.';
+            HINT = 'EN-224, EN-225. La versión anterior la guarda record_version.';
   END IF;
 
   RAISE EXCEPTION 'patient_history is never deleted: operation % is forbidden', TG_OP
@@ -233,7 +233,7 @@ CREATE TRIGGER "trg_patient_history_record_version"
 -- 3. patient_allergy_absence
 -- ═══════════════════════════════════════════════════════════════════════════
 --
--- EN-221. «Sin alergias conocidas» afirmado por error se RETIRA: la fila se
+-- EN-226. «Sin alergias conocidas» afirmado por error se RETIRA: la fila se
 -- queda —quién lo afirmó y cuándo no cambian nunca— y gana quién lo retiró y
 -- cuándo. Una vez. La lectura deja de servirla (la última afirmación de la
 -- ficha, si está retirada, no dice nada: la ficha vuelve a «no se preguntó»).
@@ -269,7 +269,7 @@ BEGIN
 
     RAISE EXCEPTION 'patient_allergy_absence cannot be modified: an assertion is only retracted, once'
       USING ERRCODE = 'insufficient_privilege',
-            HINT = 'EN-221. Quién lo afirmó y cuándo no cambian; se retira, una vez.';
+            HINT = 'EN-226. Quién lo afirmó y cuándo no cambian; se retira, una vez.';
   END IF;
 
   RAISE EXCEPTION

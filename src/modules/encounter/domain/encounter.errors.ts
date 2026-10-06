@@ -1026,7 +1026,7 @@ export class HistoryAlreadyRefutedError extends ConflictError {
 }
 
 /**
- * EN-219. «Reactivar» an allergy that is not ruled out. 409: the allergy
+ * EN-224. «Reactivar» an allergy that is not ruled out. 409: the allergy
  * exists and the request is well formed; what refuses it is its state, which
  * a colleague may have changed a moment ago.
  */
@@ -1040,7 +1040,7 @@ export class AllergyNotRefutedError extends ConflictError {
   }
 }
 
-/** EN-219. The same as `ALLERGY_NOT_REFUTED`, for a history entry. */
+/** EN-224. The same as `ALLERGY_NOT_REFUTED`, for a history entry. */
 export class HistoryNotRefutedError extends ConflictError {
   readonly code = 'HISTORY_NOT_REFUTED';
   override readonly userTitle =
@@ -1052,7 +1052,7 @@ export class HistoryNotRefutedError extends ConflictError {
 }
 
 /**
- * EN-221. «Retirar» a «sin alergias conocidas» when the chart has none
+ * EN-226. «Retirar» a «sin alergias conocidas» when the chart has none
  * standing: somebody retracted it a moment ago, or an allergy recorded since
  * already made it stop counting. 409, and the way out is to reload.
  */
@@ -1072,7 +1072,7 @@ export class NoKnownAllergiesNotStandingError extends ConflictError {
  * ⚠️ REFUSED AND NOT MERGED INTO A WARNING. The two statements cannot both be
  * on one chart: whoever reads «sin alergias conocidas» stops reading the list,
  * which is the whole reason the band says it at all. What the caller has to do
- * is refute the allergies that are no longer valid — since EN-221 in the same
+ * is refute the allergies that are no longer valid — since EN-226 in the same
  * step, naming each one (`…/none-known/refuting-active`): the list on the
  * screen is the clinical judgement, never a side effect of ticking a box.
  *

@@ -114,7 +114,7 @@ describe('los antecedentes del paciente contra PostgreSQL', () => {
     );
   });
 
-  it('EN-085 EN-220 la base rechaza borrar, truncar y reescribir un antecedente sin sello', async () => {
+  it('EN-085 EN-225 la base rechaza borrar, truncar y reescribir un antecedente sin sello', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const { entry } = await aFamilyEntry(prisma, patient.id);
@@ -173,7 +173,7 @@ describe('los antecedentes del paciente contra PostgreSQL', () => {
     ).rejects.toThrow(/patient_history_family_names_relative/);
   });
 
-  it('EN-085 EN-219 la base rechaza la descripcion en blanco, la refutacion a medias y refutar dos veces', async () => {
+  it('EN-085 EN-224 la base rechaza la descripcion en blanco, la refutacion a medias y refutar dos veces', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const author = await createUser(prisma);
@@ -191,7 +191,7 @@ describe('los antecedentes del paciente contra PostgreSQL', () => {
     ).rejects.toThrow(/patient_history_description_not_blank/);
 
     // Sin quién: refutar es cuándo y quién, juntos (el motivo es opcional
-    // desde EN-219).
+    // desde EN-224).
     await expect(
       prisma.$executeRawUnsafe(
         `UPDATE patient_history

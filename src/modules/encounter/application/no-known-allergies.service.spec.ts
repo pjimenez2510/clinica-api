@@ -29,7 +29,7 @@ import type { Requester } from './encounter.service';
 import { NoKnownAllergiesService } from './no-known-allergies.service';
 
 /**
- * EN-087 and EN-221 against in-memory ports: the rules a double CAN show —
+ * EN-087 and EN-226 against in-memory ports: the rules a double CAN show —
  * whose name goes on the assertion, that the brake holds when an active
  * allergy was not named, what reaches the trail. That the refutations and the
  * assertion are one transaction, and that the database refuses the rest, is in
@@ -203,7 +203,7 @@ describe('«sin alergias conocidas»', () => {
     expect(absences.composite).toHaveLength(0);
   });
 
-  it('EN-221 descarta las alergias nombradas y afirma en un paso, con quien está en la sesión', async () => {
+  it('EN-226 descarta las alergias nombradas y afirma en un paso, con quien está en la sesión', async () => {
     reader.rows = [anActiveAllergy('allergy-1'), anActiveAllergy('allergy-2')];
 
     await service.assertRefuting(
@@ -227,7 +227,7 @@ describe('«sin alergias conocidas»', () => {
     ]);
   });
 
-  it('EN-221 el freno sigue: una alergia activa que no se nombró no se descarta y no se afirma nada', async () => {
+  it('EN-226 el freno sigue: una alergia activa que no se nombró no se descarta y no se afirma nada', async () => {
     // La de un colega registrada hace un momento no estaba en la pantalla.
     reader.rows = [anActiveAllergy('allergy-1'), anActiveAllergy('nueva')];
 
@@ -239,7 +239,7 @@ describe('«sin alergias conocidas»', () => {
     expect(audit.entries).toHaveLength(0);
   });
 
-  it('EN-221 retira la afirmación vigente con quien está en la sesión', async () => {
+  it('EN-226 retira la afirmación vigente con quien está en la sesión', async () => {
     await service.retract(PATIENT, requester);
 
     expect(absences.retractions).toEqual([
@@ -254,7 +254,7 @@ describe('«sin alergias conocidas»', () => {
     ]);
   });
 
-  it('EN-221 sin afirmación vigente, o si otro la retiró a la vez, responde que no hay nada que retirar', async () => {
+  it('EN-226 sin afirmación vigente, o si otro la retiró a la vez, responde que no hay nada que retirar', async () => {
     absences.standing = null;
     await expect(service.retract(PATIENT, requester)).rejects.toBeInstanceOf(
       NoKnownAllergiesNotStandingError,

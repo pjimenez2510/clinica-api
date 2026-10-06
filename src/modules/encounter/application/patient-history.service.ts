@@ -37,11 +37,11 @@ export interface RecordHistoryRequest {
 export interface RefuteHistoryRequest {
   patientId: string;
   historyId: string;
-  /** EN-219. Optional, from the screen's list. */
+  /** EN-224. Optional, from the screen's list. */
   notes?: string;
 }
 
-/** EN-220. Editing one entry in its row. */
+/** EN-225. Editing one entry in its row. */
 export interface EditHistoryRequest {
   patientId: string;
   historyId: string;
@@ -103,7 +103,7 @@ export class PatientHistoryService {
   }
 
   /**
-   * EN-085, EN-219. Rules one out, never deletes it. The reason is optional
+   * EN-085, EN-224. Rules one out, never deletes it. The reason is optional
    * (D-126.2), as with the allergy; blank is none. No open-chart check,
    * for the allergy's reason: a wrong entry on an absorbed chart must still be
    * correctable from the survivor.
@@ -156,7 +156,7 @@ export class PatientHistoryService {
 
   /** The chart must exist and not be absorbed (PA-055): read the survivor. */
   /**
-   * EN-220. Edits what an entry says —description, kind, relative— in its
+   * EN-225. Edits what an entry says —description, kind, relative— in its
    * row; the entry as it was stays in `record_version`. No open-chart check,
    * like `refute`. A ruled-out entry is reactivated first.
    */
@@ -178,7 +178,7 @@ export class PatientHistoryService {
     return edited;
   }
 
-  /** EN-219. «Reactivar» an entry ruled out by mistake, as one more version. */
+  /** EN-224. «Reactivar» an entry ruled out by mistake, as one more version. */
   async reactivate(
     patientId: string,
     historyId: string,
@@ -197,7 +197,7 @@ export class PatientHistoryService {
     return reactivated;
   }
 
-  /** EN-220. The versions the changes replaced, newest first; audited. */
+  /** EN-225. The versions the changes replaced, newest first; audited. */
   async versionsOf(
     patientId: string,
     historyId: string,

@@ -806,7 +806,7 @@ describe('las alergias del paciente contra PostgreSQL', () => {
         },
       }),
     ).rejects.toThrow(/must name its author/);
-    // Con sello (EN-220) para que lo que salte sea el CHECK y no el sello.
+    // Con sello (EN-225) para que lo que salte sea el CHECK y no el sello.
     await expect(
       prisma.patientAllergy.update({
         where: { id: allergy.id },
@@ -849,7 +849,7 @@ describe('las alergias del paciente contra PostgreSQL', () => {
     expect(refuted?.refutedBy?.id).toBe(doctor.id);
   });
 
-  it('EN-082 EN-220 la base rechaza borrar, truncar y reescribir una alergia sin sello', async () => {
+  it('EN-082 EN-225 la base rechaza borrar, truncar y reescribir una alergia sin sello', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const recorded = await allergiesOf(prisma).record({
@@ -858,7 +858,7 @@ describe('las alergias del paciente contra PostgreSQL', () => {
       criticality: 'HIGH',
     });
 
-    // Desde EN-220 se edita, pero sólo con sello nuevo: lo que había queda en
+    // Desde EN-225 se edita, pero sólo con sello nuevo: lo que había queda en
     // `record_version`.
     await expect(
       prisma.$executeRawUnsafe(

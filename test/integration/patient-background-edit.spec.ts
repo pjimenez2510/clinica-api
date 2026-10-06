@@ -21,7 +21,7 @@ import {
 } from './setup/fixtures';
 
 /**
- * EN-219, EN-220 and EN-221 (D-126, D-127) against a real PostgreSQL.
+ * EN-224, EN-225 and EN-226 (D-126, D-127) against a real PostgreSQL.
  *
  * An allergy and a history entry are now EDITED in place, refuted without a
  * written reason and reactivated when the refutation was a mistake; a «sin
@@ -88,8 +88,8 @@ async function aHistoryEntry(prisma: PrismaClient, patientId: string) {
   return { author, entry };
 }
 
-describe('EN-219 descartar sin motivo y reactivar lo descartado por error', () => {
-  it('EN-219 descarta una alergia sin motivo, y guarda el de la lista cuando se da', async () => {
+describe('EN-224 descartar sin motivo y reactivar lo descartado por error', () => {
+  it('EN-224 descarta una alergia sin motivo, y guarda el de la lista cuando se da', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const doctor = await createUser(prisma);
@@ -123,7 +123,7 @@ describe('EN-219 descartar sin motivo y reactivar lo descartado por error', () =
     expect(await activeOf(prisma).activeFor(patient.id)).toHaveLength(0);
   });
 
-  it('EN-219 la base admite el antecedente descartado sin motivo, y sigue exigiendo quién y cuándo juntos', async () => {
+  it('EN-224 la base admite el antecedente descartado sin motivo, y sigue exigiendo quién y cuándo juntos', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const doctor = await createUser(prisma);
@@ -170,7 +170,7 @@ describe('EN-219 descartar sin motivo y reactivar lo descartado por error', () =
     expect(stored.refutedById).toBe(doctor.id);
   });
 
-  it('EN-219 reactivar la alergia descartada por error la devuelve a activa, y la refutación queda en la versión', async () => {
+  it('EN-224 reactivar la alergia descartada por error la devuelve a activa, y la refutación queda en la versión', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const doctor = await createUser(prisma);
@@ -218,7 +218,7 @@ describe('EN-219 descartar sin motivo y reactivar lo descartado por error', () =
     });
   });
 
-  it('EN-219 reactivar una alergia o un antecedente que siguen activos se rechaza', async () => {
+  it('EN-224 reactivar una alergia o un antecedente que siguen activos se rechaza', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const doctor = await createUser(prisma);
@@ -260,7 +260,7 @@ describe('EN-219 descartar sin motivo y reactivar lo descartado por error', () =
     expect((await historyOf(prisma).activeFor(patient.id)).map((h) => h.id)).toEqual([entry.id]); // prettier-ignore
   });
 
-  it('EN-219 EN-087 la alergia reactivada deja de servir el «sin alergias conocidas» afirmado mientras estaba descartada', async () => {
+  it('EN-224 EN-087 la alergia reactivada deja de servir el «sin alergias conocidas» afirmado mientras estaba descartada', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const practitioner = await createPractitioner(prisma);
@@ -295,8 +295,8 @@ describe('EN-219 descartar sin motivo y reactivar lo descartado por error', () =
   });
 });
 
-describe('EN-220 editar en su fila, con la versión anterior guardada', () => {
-  it('EN-220 edita la sustancia, la reacción y la criticidad de una alergia y guarda la versión anterior con quién y cuándo', async () => {
+describe('EN-225 editar en su fila, con la versión anterior guardada', () => {
+  it('EN-225 edita la sustancia, la reacción y la criticidad de una alergia y guarda la versión anterior con quién y cuándo', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const doctor = await createUser(prisma);
@@ -341,7 +341,7 @@ describe('EN-220 editar en su fila, con la versión anterior guardada', () => {
     expect(versions?.[0]?.replacedAt.getTime()).toBe(at.getTime());
   });
 
-  it('EN-220 EN-084 la comprobación al recetar lee la versión vigente de la alergia', async () => {
+  it('EN-225 EN-084 la comprobación al recetar lee la versión vigente de la alergia', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const doctor = await createUser(prisma);
@@ -373,7 +373,7 @@ describe('EN-220 editar en su fila, con la versión anterior guardada', () => {
     });
   });
 
-  it('EN-220 edita la descripción, el tipo y el parentesco de un antecedente con su versión', async () => {
+  it('EN-225 edita la descripción, el tipo y el parentesco de un antecedente con su versión', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const doctor = await createUser(prisma);
@@ -401,7 +401,7 @@ describe('EN-220 editar en su fila, con la versión anterior guardada', () => {
     });
   });
 
-  it('EN-220 no edita una alergia descartada: primero se reactiva', async () => {
+  it('EN-225 no edita una alergia descartada: primero se reactiva', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const doctor = await createUser(prisma);
@@ -425,7 +425,7 @@ describe('EN-220 editar en su fila, con la versión anterior guardada', () => {
     ).rejects.toBeInstanceOf(AllergyAlreadyRefutedError);
   });
 
-  it('EN-220 la base rechaza la edición sin sello, cambiar el paciente o el autor original, y borrar', async () => {
+  it('EN-225 la base rechaza la edición sin sello, cambiar el paciente o el autor original, y borrar', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const stranger = await createPatient(prisma);
@@ -492,7 +492,7 @@ describe('EN-220 editar en su fila, con la versión anterior guardada', () => {
     expect(await prisma.recordVersion.count()).toBe(2);
   });
 
-  it('EN-220 dos ediciones simultáneas de la misma alergia se aplican las dos, y ninguna versión se pierde', async () => {
+  it('EN-225 dos ediciones simultáneas de la misma alergia se aplican las dos, y ninguna versión se pierde', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const first = await createUser(prisma);
@@ -532,8 +532,8 @@ describe('EN-220 editar en su fila, con la versión anterior guardada', () => {
   });
 });
 
-describe('EN-221 «sin alergias conocidas» en un paso, y retirarlo', () => {
-  it('EN-221 descarta las alergias indicadas y afirma «sin alergias conocidas» en una sola transacción', async () => {
+describe('EN-226 «sin alergias conocidas» en un paso, y retirarlo', () => {
+  it('EN-226 descarta las alergias indicadas y afirma «sin alergias conocidas» en una sola transacción', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const practitioner = await createPractitioner(prisma);
@@ -562,7 +562,7 @@ describe('EN-221 «sin alergias conocidas» en un paso, y retirarlo', () => {
     );
   });
 
-  it('EN-221 si queda una activa sin indicar, la base no afirma y no descarta ninguna', async () => {
+  it('EN-226 si queda una activa sin indicar, la base no afirma y no descarta ninguna', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const practitioner = await createPractitioner(prisma);
@@ -583,7 +583,7 @@ describe('EN-221 «sin alergias conocidas» en un paso, y retirarlo', () => {
     expect(await prisma.patientAllergyAbsence.count()).toBe(0);
   });
 
-  it('EN-221 no descarta una alergia de otra ficha al afirmar', async () => {
+  it('EN-226 no descarta una alergia de otra ficha al afirmar', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const stranger = await createPatient(prisma);
@@ -601,7 +601,7 @@ describe('EN-221 «sin alergias conocidas» en un paso, y retirarlo', () => {
     expect(await activeOf(prisma).activeFor(stranger.id)).toHaveLength(1);
   });
 
-  it('EN-221 retirar la afirmación la deja de servir sin borrarla, y guarda su versión', async () => {
+  it('EN-226 retirar la afirmación la deja de servir sin borrarla, y guarda su versión', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const practitioner = await createPractitioner(prisma);
@@ -644,7 +644,7 @@ describe('EN-221 «sin alergias conocidas» en un paso, y retirarlo', () => {
     ).resolves.toBe(false);
   });
 
-  it('EN-221 la base admite retirar la afirmación con quién y cuándo, y rechaza reescribirla o borrarla', async () => {
+  it('EN-226 la base admite retirar la afirmación con quién y cuándo, y rechaza reescribirla o borrarla', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);
     const practitioner = await createPractitioner(prisma);

@@ -117,7 +117,7 @@ export class PatientHistoryController {
   }
 
   /**
-   * EN-220. Edits what the entry says, in its row; the version it replaces is
+   * EN-225. Edits what the entry says, in its row; the version it replaces is
    * kept. `record:write`, like refuting: correcting a finding is the same
    * clinical judgement as ruling it out (EN-164).
    */
@@ -149,7 +149,7 @@ export class PatientHistoryController {
   }
 
   /**
-   * EN-219. Brings back an entry ruled out by mistake. `background:write`,
+   * EN-224. Brings back an entry ruled out by mistake. `background:write`,
    * like recording one.
    */
   @Post('history/:historyId/reactivate')
@@ -170,7 +170,7 @@ export class PatientHistoryController {
     return toHistoryResponse(reactivated);
   }
 
-  /** EN-220. The versions the changes replaced; `record:read`, audited. */
+  /** EN-225. The versions the changes replaced; `record:read`, audited. */
   @Get('history/:historyId/versions')
   @RequirePermission('record:read', 'global')
   @ApiOperation({ summary: 'Versiones anteriores de un antecedente' })

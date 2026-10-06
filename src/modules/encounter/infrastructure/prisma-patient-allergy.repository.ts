@@ -150,7 +150,7 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
    * THE ROW IS LOCKED FIRST (`lockAllergy`), so two people refuting the same
    * allergy in the same second cannot both succeed: the second waits, finds
    * it refuted and gets `ALLERGY_ALREADY_REFUTED` instead of overwriting who
-   * ruled it out. Since EN-219 the refutation is a stamped change, so the
+   * ruled it out. Since EN-224 the refutation is a stamped change, so the
    * allergy as it was while it counted stays in `record_version`.
    *
    * «No existe en esta ficha» (`null`) and «ya estaba refutada» are two
@@ -174,7 +174,7 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
           refutedAt: refutation.now,
           refutedNotes: refutation.notes,
           refutedById: refutation.refutedById,
-          // EN-219. Refuting is a stamped change too: the allergy as it was
+          // EN-224. Refuting is a stamped change too: the allergy as it was
           // while it counted is the version it leaves behind.
           changedById: refutation.refutedById,
           changedAt: stampAfter(current.changed_at, refutation.now),
@@ -186,7 +186,7 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
   }
 
   /**
-   * EN-220. Edits what one active allergy says. The row is LOCKED first, so
+   * EN-225. Edits what one active allergy says. The row is LOCKED first, so
    * two edits in the same instant run one after the other and neither is
    * lost; the second's stamp moves past the first's (`stampAfter`).
    */
@@ -245,7 +245,7 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
   }
 
   /**
-   * EN-219. Back to active. The refutation is emptied on the row and kept
+   * EN-224. Back to active. The refutation is emptied on the row and kept
    * whole in the version the database archives in the same statement.
    */
   async reactivate(
@@ -276,7 +276,7 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
   }
 
   /**
-   * EN-220. The versions `record_version_archive` kept, newest first, read
+   * EN-225. The versions `record_version_archive` kept, newest first, read
    * through the SAME mapping as the current allergy so the two cannot be
    * painted differently.
    */
@@ -320,7 +320,7 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
   }
 
   /**
-   * EN-221. «Descartar estas y afirmar», in ONE transaction: the named
+   * EN-226. «Descartar estas y afirmar», in ONE transaction: the named
    * allergies are refuted without a reason and the assertion is written.
    * Whether any active allergy was left out is decided by
    * `trg_patient_allergy_absence_empty_chart` on the INSERT, which sees this
@@ -361,7 +361,7 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
   }
 
   /**
-   * EN-221. Withdraws one assertion, once: the row stays, with who withdrew
+   * EN-226. Withdraws one assertion, once: the row stays, with who withdrew
    * it and when, and its earlier state goes to `record_version`. The
    * `retracted_at IS NULL` in the same statement arbitrates two people
    * withdrawing it at once: exactly one UPDATE matches.
@@ -482,11 +482,11 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
       select: { ...ABSENCE_SELECT, retractedAt: true },
       orderBy: [{ assertedAt: 'desc' }, { id: 'desc' }],
     });
-    // EN-221. The chart's last word was withdrawn: «no se preguntó», and an
+    // EN-226. The chart's last word was withdrawn: «no se preguntó», and an
     // older assertion does not come back behind it.
     if (assertion === null || assertion.retractedAt !== null) return null;
 
-    // EN-219. An allergy recorded after it supersedes it — and so does one
+    // EN-224. An allergy recorded after it supersedes it — and so does one
     // that is ACTIVE now although recorded before: one reactivated after the
     // assertion, or one that came with a chart merged in later.
     const supersedingAllergies = await this.prisma.patientAllergy.count({
@@ -645,7 +645,7 @@ function stampAfter(previous: Date | null, now: Date): Date {
 }
 
 /**
- * EN-221. The refusal of `trg_patient_allergy_absence_empty_chart`: SQLSTATE
+ * EN-226. The refusal of `trg_patient_allergy_absence_empty_chart`: SQLSTATE
  * 23000 with the trigger's own sentence. Read off Prisma's error shape
  * without importing the HTTP mapping, which lives in another layer.
  */

@@ -912,7 +912,7 @@ describe('la receta por HTTP', () => {
     expect(await prisma.prescription.count({ where: { status: 'ACTIVE' } })).toBe(0); // prettier-ignore
 
     // Control positivo: refutada la alergia, el mismo borrador se emite. Con
-    // sello: desde EN-219 refutar también deja su versión.
+    // sello: desde EN-224 refutar también deja su versión.
     const refuter = (await createUser(prisma)).id;
     await prisma.patientAllergy.update({
       where: { id: allergy.id },

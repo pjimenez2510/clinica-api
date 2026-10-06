@@ -35,13 +35,13 @@ import type { AllergyCriticality } from '../../../shared/clinical/patient-allerg
 export interface AllergyView extends ActiveAllergy {
   /** EN-082. `null` while the allergy still counts. Never a deletion. */
   refutedAt: Date | null;
-  /** EN-082, EN-219. Why it was ruled out, when somebody said; optional. */
+  /** EN-082, EN-224. Why it was ruled out, when somebody said; optional. */
   refutedNotes: string | null;
   /** EN-086. `null` only for rows older than the column: nobody invents one. */
   recordedBy: AllergyAuthor | null;
   refutedBy: AllergyAuthor | null;
   /**
-   * EN-220. When it was last changed —edited, refuted or reactivated—, or
+   * EN-225. When it was last changed —edited, refuted or reactivated—, or
    * `null` if never: a date means there are earlier versions to read.
    */
   changedAt: Date | null;
@@ -123,7 +123,7 @@ export interface RefuteAllergy {
    */
   patientId: string;
   allergyId: string;
-  /** EN-219. Why it was ruled out, from the screen's list; optional. */
+  /** EN-224. Why it was ruled out, from the screen's list; optional. */
   notes: string | null;
   /** Taken once by the caller: the domain owns no clock. */
   now: Date;
@@ -132,7 +132,7 @@ export interface RefuteAllergy {
 }
 
 /**
- * EN-220. What an edit may change: what the allergy SAYS. Never the chart,
+ * EN-225. What an edit may change: what the allergy SAYS. Never the chart,
  * never who recorded it or when (`patient_allergy_guard`). A key that is
  * absent is left as it is; `null` clears an optional column.
  */
@@ -147,7 +147,7 @@ export interface AllergyChanges {
   criticality?: AllergyCriticality;
 }
 
-/** EN-220. Editing one allergy in place. */
+/** EN-225. Editing one allergy in place. */
 export interface EditAllergy {
   /** The chart the caller is looking at, and the charts it absorbed. */
   patientId: string;
@@ -159,7 +159,7 @@ export interface EditAllergy {
   now: Date;
 }
 
-/** EN-219. Bringing back an allergy refuted by mistake. */
+/** EN-224. Bringing back an allergy refuted by mistake. */
 export interface ReactivateAllergy {
   patientId: string;
   allergyId: string;
@@ -168,7 +168,7 @@ export interface ReactivateAllergy {
 }
 
 /**
- * EN-220. One earlier version: the allergy as it was, read with the same
+ * EN-225. One earlier version: the allergy as it was, read with the same
  * mapping as the current one, and who replaced it and when.
  */
 export interface AllergyVersionView {
@@ -179,7 +179,7 @@ export interface AllergyVersionView {
 }
 
 /**
- * EN-221. «Descartar estas y afirmar»: the allergies the screen listed are
+ * EN-226. «Descartar estas y afirmar»: the allergies the screen listed are
  * refuted, without a reason, and the assertion written, in one transaction.
  */
 export interface RefuteAndAssertNoKnownAllergies {
@@ -190,7 +190,7 @@ export interface RefuteAndAssertNoKnownAllergies {
   now: Date;
 }
 
-/** EN-221. Withdrawing one assertion made by mistake. */
+/** EN-226. Withdrawing one assertion made by mistake. */
 export interface RetractNoKnownAllergies {
   assertionId: string;
   /** The chart the caller is looking at, and the charts it absorbed. */
@@ -283,7 +283,7 @@ export interface PatientAllergyRepository {
   standingAbsenceFor(chartId: string): Promise<AllergyAbsenceAssertion | null>;
 
   /**
-   * EN-220. Edits what one ACTIVE allergy says, under a row lock, with a new
+   * EN-225. Edits what one ACTIVE allergy says, under a row lock, with a new
    * stamp; the database archives the row it replaces. `null` when it is not
    * on this chart or one it absorbed; `ALLERGY_ALREADY_REFUTED` when it is
    * ruled out (it is reactivated first). Nothing to change is not an edit.
@@ -291,14 +291,14 @@ export interface PatientAllergyRepository {
   edit(edit: EditAllergy): Promise<AllergyView | null>;
 
   /**
-   * EN-219. Brings a refuted allergy back to active, as one more version: the
+   * EN-224. Brings a refuted allergy back to active, as one more version: the
    * refutation —who, when, why— stays in the version it leaves behind.
    * `null` when not found; `ALLERGY_NOT_REFUTED` when it is active.
    */
   reactivate(reactivation: ReactivateAllergy): Promise<AllergyView | null>;
 
   /**
-   * EN-220. The versions the changes replaced, newest first; `null` when the
+   * EN-225. The versions the changes replaced, newest first; `null` when the
    * allergy is not on this chart or one it absorbed.
    */
   versionsOf(
@@ -307,7 +307,7 @@ export interface PatientAllergyRepository {
   ): Promise<AllergyVersionView[] | null>;
 
   /**
-   * EN-221. Refutes the named allergies and asserts «sin alergias
+   * EN-226. Refutes the named allergies and asserts «sin alergias
    * conocidas», all or nothing. `PATIENT_ALLERGY_NOT_FOUND` when one is not
    * on this chart; `CHART_HAS_ALLERGIES` when an active one was not named
    * (the database's `trg_patient_allergy_absence_empty_chart` decides).
@@ -317,7 +317,7 @@ export interface PatientAllergyRepository {
   ): Promise<AllergyAbsenceAssertion>;
 
   /**
-   * EN-221. Withdraws one assertion, once. `false` when it is not on this
+   * EN-226. Withdraws one assertion, once. `false` when it is not on this
    * chart or was already withdrawn.
    */
   retractNoKnownAllergies(request: RetractNoKnownAllergies): Promise<boolean>;

@@ -86,7 +86,7 @@ export class RecordAllergyDto extends createZodDto(recordAllergySchema) {}
  */
 export const refuteAllergySchema = z.object({
   /**
-   * EN-219 (D-126.2). Optional: the screen offers «Prueba negativa»,
+   * EN-224 (D-126.2). Optional: the screen offers «Prueba negativa»,
    * «Registrada por error», «Tolera la sustancia» or «Otro» with text, and
    * sends nothing when nobody chose. 2000, the same bound the screen keeps.
    */
@@ -99,7 +99,7 @@ export const refuteAllergySchema = z.object({
 export class RefuteAllergyDto extends createZodDto(refuteAllergySchema) {}
 
 /**
- * EN-220. Editing an allergy in its row: any of what it SAYS, nothing else.
+ * EN-225. Editing an allergy in its row: any of what it SAYS, nothing else.
  * `.strict()`: a field this route does not edit —the chart, the author— is
  * refused as `UNKNOWN_FIELD` rather than ignored while the caller believes
  * it changed.
@@ -144,7 +144,7 @@ export const editAllergySchema = z
 export class EditAllergyDto extends createZodDto(editAllergySchema) {}
 
 /**
- * EN-221. «Descartar estas y afirmar»: the allergies the screen listed. Every
+ * EN-226. «Descartar estas y afirmar»: the allergies the screen listed. Every
  * active one has to be here, or the brake stays (`CHART_HAS_ALLERGIES`).
  */
 export const assertRefutingSchema = z
@@ -192,7 +192,7 @@ export const allergySchema = activeAllergySchema.extend({
   recordedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
   refutedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
   /**
-   * EN-220. The last change —an edit, a refutation, a reactivation— or
+   * EN-225. The last change —an edit, a refutation, a reactivation— or
    * `null`: a date means `…/versions` has something to show.
    */
   changedAt: z.iso.datetime().nullable(),
@@ -200,7 +200,7 @@ export const allergySchema = activeAllergySchema.extend({
 /** Response of recording, editing, refuting and reactivating an allergy. */
 export class AllergyDto extends createZodDto(allergySchema) {}
 
-/** EN-220. The versions the changes replaced, newest first. */
+/** EN-225. The versions the changes replaced, newest first. */
 export const allergyVersionListSchema = z.object({
   items: z.array(
     z.object({

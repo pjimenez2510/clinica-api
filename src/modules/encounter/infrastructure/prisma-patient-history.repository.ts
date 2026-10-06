@@ -68,7 +68,7 @@ export class PrismaPatientHistoryRepository implements PatientHistoryRepository 
   }
 
   /**
-   * EN-085, EN-219. Refutes a LIVE entry, once, under the row lock: a second
+   * EN-085, EN-224. Refutes a LIVE entry, once, under the row lock: a second
    * refutation is an answer rather than an overwrite, and the trigger refuses
    * it anyway for any writer that did not come through here. The reason is
    * optional; the live entry stays as the version.
@@ -89,7 +89,7 @@ export class PrismaPatientHistoryRepository implements PatientHistoryRepository 
           refutedAt: refutation.now,
           refutedNotes: refutation.notes,
           refutedById: refutation.refutedById,
-          // EN-219. A stamped change: the live entry is the version kept.
+          // EN-224. A stamped change: the live entry is the version kept.
           changedById: refutation.refutedById,
           changedAt: stampAfter(current.changed_at, refutation.now),
         },
@@ -100,7 +100,7 @@ export class PrismaPatientHistoryRepository implements PatientHistoryRepository 
   }
 
   /**
-   * EN-220. Edits what a live entry says, under the row lock, with a new
+   * EN-225. Edits what a live entry says, under the row lock, with a new
    * stamp; `record_version_archive` keeps the row it replaces. A personal
    * entry has no relative, so moving to `PERSONAL` clears it; the database
    * still demands one for `FAMILY` (`patient_history_family_names_relative`).
@@ -153,7 +153,7 @@ export class PrismaPatientHistoryRepository implements PatientHistoryRepository 
     });
   }
 
-  /** EN-219. Back to live; the refutation stays in the version left behind. */
+  /** EN-224. Back to live; the refutation stays in the version left behind. */
   async reactivate(
     reactivation: ReactivateHistory,
   ): Promise<HistoryView | null> {
@@ -182,7 +182,7 @@ export class PrismaPatientHistoryRepository implements PatientHistoryRepository 
   }
 
   /**
-   * EN-220. The versions the changes replaced, newest first, through the
+   * EN-225. The versions the changes replaced, newest first, through the
    * SAME mapping as the live entry.
    */
   async versionsOf(

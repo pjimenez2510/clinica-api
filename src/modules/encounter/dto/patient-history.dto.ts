@@ -46,7 +46,7 @@ export const recordHistorySchema = z
 export class RecordHistoryDto extends createZodDto(recordHistorySchema) {}
 
 export const refuteHistorySchema = z.object({
-  /** EN-219. Optional: «Registrado por error», «Se descartó» or «Otro». */
+  /** EN-224. Optional: «Registrado por error», «Se descartó» or «Otro». */
   notes: z
     .string()
     .trim()
@@ -56,7 +56,7 @@ export const refuteHistorySchema = z.object({
 export class RefuteHistoryDto extends createZodDto(refuteHistorySchema) {}
 
 /**
- * EN-220. Editing an entry in its row. The relative follows the kind, as when
+ * EN-225. Editing an entry in its row. The relative follows the kind, as when
  * recording one: a change to `FAMILY` brings the relative, one to `PERSONAL`
  * brings none (and the adapter clears the old one). `.strict()`: unknown
  * fields are refused.
@@ -112,13 +112,13 @@ export const historySchema = z.object({
   refutedAt: z.iso.datetime().nullable(),
   refutedNotes: z.string().nullable(),
   refutedBy: AUTHOR.nullable(),
-  /** EN-220. The last change, or `null`: a date means earlier versions. */
+  /** EN-225. The last change, or `null`: a date means earlier versions. */
   changedAt: z.iso.datetime().nullable(),
 });
 /** Response of recording, editing, refuting and reactivating an entry. */
 export class HistoryDto extends createZodDto(historySchema) {}
 
-/** EN-220. The versions the changes replaced, newest first. */
+/** EN-225. The versions the changes replaced, newest first. */
 export const historyVersionListSchema = z.object({
   items: z.array(
     z.object({

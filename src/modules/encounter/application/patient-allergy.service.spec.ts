@@ -141,7 +141,7 @@ class FakeAllergies implements PatientAllergyRepository {
     return Promise.resolve(this.standing);
   }
 
-  /** EN-220. What was asked to change; `null` reproduces «no está». */
+  /** EN-225. What was asked to change; `null` reproduces «no está». */
   edits: EditAllergy[] = [];
   editAnswer: AllergyView | null = anAllergy({ criticality: 'LOW' });
 
@@ -150,7 +150,7 @@ class FakeAllergies implements PatientAllergyRepository {
     return Promise.resolve(this.editAnswer);
   }
 
-  /** EN-219. Who reactivated; `null` reproduces «no está». */
+  /** EN-224. Who reactivated; `null` reproduces «no está». */
   reactivations: ReactivateAllergy[] = [];
   reactivateAnswer: AllergyView | null = anAllergy();
 
@@ -333,7 +333,7 @@ describe('las alergias del paciente', () => {
     expect(Object.keys(allergies)).not.toContain('deleted');
   });
 
-  it('EN-219 descarta sin motivo, y un motivo en blanco viaja como ninguno', async () => {
+  it('EN-224 descarta sin motivo, y un motivo en blanco viaja como ninguno', async () => {
     // D-126.2: una confirmación y un motivo opcional de lista. Quién y cuándo
     // los guarda la fila; lo que había, la versión.
     await service.refute({ patientId: PATIENT, allergyId: 'allergy-1' }, requester); // prettier-ignore
@@ -466,7 +466,7 @@ describe('las alergias del paciente', () => {
     expect(audit.entries).toHaveLength(1);
   });
 
-  it('EN-220 edita la alergia con el autor de la SESIÓN y deja la bitácora como actualización', async () => {
+  it('EN-225 edita la alergia con el autor de la SESIÓN y deja la bitácora como actualización', async () => {
     const edited = await service.edit(
       {
         patientId: PATIENT,
@@ -495,7 +495,7 @@ describe('las alergias del paciente', () => {
     ]);
   });
 
-  it('EN-220 responde una sola negativa al editar o reactivar una alergia que no está en esa ficha', async () => {
+  it('EN-225 responde una sola negativa al editar o reactivar una alergia que no está en esa ficha', async () => {
     allergies.editAnswer = null;
     allergies.reactivateAnswer = null;
     allergies.versions = null;
@@ -515,7 +515,7 @@ describe('las alergias del paciente', () => {
     expect(audit.entries).toHaveLength(0);
   });
 
-  it('EN-219 reactiva con quien está en la sesión, sin exigir una ficha abierta', async () => {
+  it('EN-224 reactiva con quien está en la sesión, sin exigir una ficha abierta', async () => {
     // Corrige algo que ya está en la ficha: alcanzable desde la superviviente.
     encounters.chart = null;
 
@@ -530,7 +530,7 @@ describe('las alergias del paciente', () => {
     expect(audit.entries[0]?.action).toBe('UPDATE');
   });
 
-  it('EN-220 sirve las versiones y deja la lectura en la bitácora', async () => {
+  it('EN-225 sirve las versiones y deja la lectura en la bitácora', async () => {
     allergies.versions = [
       {
         version: 1,
