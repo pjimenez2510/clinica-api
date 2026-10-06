@@ -183,10 +183,7 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
       { id: string; uncharged_exams: number }[]
     >`
       SELECT e.id,
-             CASE WHEN EXISTS (SELECT 1 FROM patient_account a
-                                WHERE a.encounter_id = e.id AND a.status = 'SETTLED')
-                  THEN ${unchargedExamCount(Prisma.sql`e.id`)}
-                  ELSE 0 END AS uncharged_exams
+             ${unchargedExamCount(Prisma.sql`e.id`)} AS uncharged_exams
         FROM encounter e
        WHERE ${awaitingCheckout(query.siteId)}
          AND e.ended_at >= ${query.endedFrom}
@@ -299,30 +296,54 @@ function awaitingCheckout(siteId: string): Prisma.Sql {
                    WHERE a.encounter_id = e.id AND a.status = 'SETTLED')
       OR EXISTS (SELECT 1 FROM patient_account a
                   WHERE a.encounter_id = e.id AND a.status = 'OPEN')
-      OR ${unchargedExamCount(Prisma.sql`e.id`)} > 0
+      OR EXISTS (SELECT 1 ${examsIssuedAfterSettlement(Prisma.sql`e.id`)})
     )`;
 }
 
-/**
- * BI-194. The visit's exams caja could charge and nothing charged: an ISSUED
- * order (ORD-100), a line not cancelled, a billable service in the catalogue
- * — without one the visit would never leave the list — and no charge naming
- * it in ANY status: a cancelled charge is a decision already taken, as
- * `listChargedActs` reads it when proposing (BI-151).
- */
+/** BI-194. How many exams issued after the last settlement nothing charged. */
 function unchargedExamCount(encounterId: Prisma.Sql): Prisma.Sql {
-  return Prisma.sql`(
-    SELECT count(*)::int
+  return Prisma.sql`(SELECT count(*)::int ${examsIssuedAfterSettlement(encounterId)})`;
+}
+
+/**
+ * BI-194. The FROM/WHERE of the visit's exams caja could still charge after
+ * an account of it was settled:
+ *
+ *   · ISSUED after the last settled account was OPENED (`requested_at` is the
+ *     issue instant, ORD-098). What was issued before, caja had in front of it
+ *     when it passed the visit — and if it was not raised, it was decided: no
+ *     price for the day and charged by hand (BI-155), say. Without this the
+ *     visit came back for ever.
+ *   · An ISSUED order (ORD-100), a line not cancelled, and an ACTIVE billable
+ *     service in the catalogue: the same rule `proposeCharges` follows, or
+ *     the visit would come back with nothing «Pasar a caja» could raise.
+ *   · No charge naming it, in ANY status (a cancelled one is a decision, as in
+ *     `listChargedActs`, BI-151) — NOR a manual charge of that same service
+ *     in an account of the visit: the cashier may have charged it by hand
+ *     while it was still a draft (BI-192), and proposing it again would
+ *     charge it twice (revisión clínica de fix/criticos-d130, I-1; D-136).
+ */
+function examsIssuedAfterSettlement(encounterId: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`
       FROM service_order o
       JOIN service_order_item i ON i.service_order_id = o.id
       JOIN exam_definition d ON d.code = i.test_code
+      JOIN billable_service s ON s.id = d.billable_service_id AND s.active
      WHERE o.encounter_id = ${encounterId}
        AND o.status = 'ISSUED'
        AND i.status <> 'CANCELLED'
-       AND d.billable_service_id IS NOT NULL
+       AND o.requested_at > (SELECT max(a.opened_at) FROM patient_account a
+                              WHERE a.encounter_id = ${encounterId}
+                                AND a.status = 'SETTLED')
        AND NOT EXISTS (SELECT 1 FROM charge_item c
                         WHERE c.service_order_item_id = i.id)
-  )`;
+       AND NOT EXISTS (SELECT 1
+                         FROM charge_item c
+                         JOIN patient_account a ON a.id = c.account_id
+                        WHERE a.encounter_id = ${encounterId}
+                          AND c.origin = 'MANUAL'
+                          AND c.status <> 'CANCELLED'
+                          AND c.billable_service_id = s.id)`;
 }
 
 /**
