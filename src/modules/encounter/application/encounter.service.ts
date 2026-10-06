@@ -430,7 +430,9 @@ export class EncounterService {
    * WHAT *IS* CHECKED is what a constraint cannot see: that the attention
    * still admits content — or, after the discharge, that there is a taking to
    * correct (EN-217). The mandatory anthropometry is SAID, not refused
-   * (D-132 B): the signature of the 002 demands it.
+   * (D-132 B): the signature of the 002 demands it. After the discharge a
+   * correction cannot take it away (D-134.3): the adapter refuses that under
+   * the attention's lock, and the database again at COMMIT.
    *
    * ⚠️ AND IT DOES NOT NEED `record:write` (EN-066). The route asks for
    * `vitals:write`, which `ENFERMERIA` holds and which authorises nothing

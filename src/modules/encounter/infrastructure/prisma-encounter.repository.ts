@@ -5,6 +5,7 @@ import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   AppointmentNotAttendableError,
+  AnthropometryPendingError,
   EncounterAlreadyReportedError,
   EncounterAppointmentMismatchError,
   EncounterNotFoundError,
@@ -509,8 +510,12 @@ export class PrismaEncounterRepository implements EncounterRepository {
        * D-117.16, EN-217. Block D travels to the RDACAA too: an attention
        * already reported is not corrected, asked under the attention's lock.
        */
-      const [attention] = await tx.$queryRaw<{ reported: boolean }[]>`
-        SELECT reported_at IS NOT NULL AS reported FROM encounter
+      const [attention] = await tx.$queryRaw<
+        { reported: boolean; discharged: boolean }[]
+      >`
+        SELECT reported_at IS NOT NULL AS reported,
+               status IN ('DISCHARGED', 'COMPLETED') AS discharged
+          FROM encounter
          WHERE id = ${query.encounterId}::uuid
            FOR UPDATE`;
       if (attention?.reported) throw new EncounterAlreadyReportedError();
@@ -572,6 +577,25 @@ export class PrismaEncounterRepository implements EncounterRepository {
         },
         select: VITALS_SELECT,
       });
+
+      /**
+       * EN-217, D-134.3. The 002 was signed with the mandatory anthropometry
+       * (EN-063); a correction after the discharge cannot take it away. Asked
+       * of the written row, under the attention's lock, with the function the
+       * signature asks — and refused naming each measure before the deferred
+       * `trg_encounter_vitals_anthropometry_after_discharge` would at COMMIT.
+       */
+      if (attention?.discharged) {
+        const [pending] = await tx.$queryRaw<{ fields: string[] | null }[]>`
+          SELECT encounter_anthropometry_pending(${query.encounterId}::uuid) AS fields`;
+        const missing = pending?.fields ?? [];
+        if (missing.length > 0) {
+          throw new AnthropometryPendingError(
+            missing,
+            'correctionAfterDischarge',
+          );
+        }
+      }
 
       return toVitalsView(row);
     });

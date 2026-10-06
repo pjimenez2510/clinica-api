@@ -268,6 +268,17 @@ registerConstraintMeanings({
     field: 'weightKg',
     message: 'Falta peso/talla: obligatorio para firmar la nota',
   },
+  /**
+   * EN-217, D-134.3. A correction of the taking of a discharged attention
+   * left the mandatory anthropometry missing. The adapter refuses it first,
+   * under the attention's lock, naming each measure; this is the sentence for
+   * whatever reaches the table another way.
+   */
+  encounter_vitals_anthropometry_after_discharge: {
+    code: 'ANTHROPOMETRY_PENDING',
+    field: 'weightKg',
+    message: 'La atención ya tiene el alta: la corrección no puede dejar sin peso/talla obligatorios', // prettier-ignore
+  },
   /** EN-024. `clinical_note_chain_version_unique`: versions never repeat. */
   clinical_note_chain_version_unique: {
     code: 'NOTE_VERSION_TAKEN',

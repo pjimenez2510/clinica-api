@@ -412,26 +412,38 @@ const ANTHROPOMETRY_LABELS: Readonly<Record<string, string>> = {
  * blood pressure of a pregnant woman who could not be weighed — the figure
  * that warns of pre-eclampsia — or made somebody type an invented weight.
  *
+ * AND AFTER THE DISCHARGE (D-134.3), a correction of the taking that would
+ * leave one missing: the signature demanded it, and the correction cannot
+ * take it away again. Same code — the screen does the same thing, fill the
+ * box — and a sentence of its own, because «para firmar la nota» says nothing
+ * to somebody correcting a taking whose note is already signed.
+ *
  * THE MISSING FIELDS ARE NAMED ONE BY ONE: «faltan datos» sends somebody round
  * a form where three boxes could be the one.
  */
 export class AnthropometryPendingError extends ValidationError {
   readonly code = 'ANTHROPOMETRY_PENDING';
-  override readonly userTitle =
-    'Falta peso/talla: obligatorio para firmar la nota';
+  override readonly userTitle: string;
 
-  constructor(missing: readonly string[]) {
+  constructor(
+    missing: readonly string[],
+    moment: 'signature' | 'correctionAfterDischarge' = 'signature',
+  ) {
+    const afterDischarge = moment === 'correctionAfterDischarge';
     super(
-      `Mandatory anthropometry missing at signature: ${missing.join(', ')}`,
+      `Mandatory anthropometry missing ${afterDischarge ? 'after a correction of a discharged attention' : 'at signature'}: ${missing.join(', ')}`,
       { missing: missing.join(',') },
       missing.map((field) => ({
         field,
         code: 'ANTHROPOMETRY_PENDING',
         // Named, because the screen joins the messages of several fields into
         // one line, and three identical sentences say nothing.
-        message: `${ANTHROPOMETRY_LABELS[field] ?? field}: obligatorio para firmar la nota`,
+        message: `${ANTHROPOMETRY_LABELS[field] ?? field}: ${afterDischarge ? 'obligatorio tras el alta, no se puede quitar' : 'obligatorio para firmar la nota'}`,
       })),
     );
+    this.userTitle = afterDischarge
+      ? 'La atención ya tiene el alta: la corrección no puede dejar sin peso/talla obligatorios'
+      : 'Falta peso/talla: obligatorio para firmar la nota';
   }
 }
 

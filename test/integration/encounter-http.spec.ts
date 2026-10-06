@@ -1744,6 +1744,65 @@ describe('la atención por HTTP', () => {
       );
     });
 
+    it('EN-217 D-134.3 tras el alta la toma de un menor de 5 años se corrige conservando las medidas, y quitar el peso responde 422 ANTHROPOMETRY_PENDING', async () => {
+      const opened = new Date(openBody().startedAt);
+      const child = await createPatient(prisma, {
+        birthDate: new Date(
+          Date.UTC(opened.getUTCFullYear() - 2, opened.getUTCMonth(), opened.getUTCDate()),
+        ),
+      }); // prettier-ignore
+      const encounterId = await openEncounter(doctorToken, { patientId: child.id }); // prettier-ignore
+      const measures = {
+        weightKg: 12.1,
+        heightCm: 86,
+        heightPosition: 'STANDING',
+        headCircumferenceCm: 48,
+      };
+      await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        ...measures,
+        temperatureC: 38.2,
+      }).expect(200);
+      const draft = await post(`/encounters/${encounterId}/notes`, doctorToken, {
+        formCode: '002',
+        content: COMPLETE_002,
+      }).expect(201); // prettier-ignore
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
+      await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
+
+      // Positive control: the temperature is corrected, the measures kept.
+      const corrected = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        ...measures,
+        temperatureC: 37.4,
+      }).expect(200); // prettier-ignore
+      expect(corrected.body).toMatchObject({
+        temperatureC: 37.4,
+        anthropometryPending: [],
+      });
+
+      const refused = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        heightCm: measures.heightCm,
+        heightPosition: measures.heightPosition,
+        headCircumferenceCm: measures.headCircumferenceCm,
+        temperatureC: 37,
+      }).expect(422); // prettier-ignore
+      const problem = refused.body as Problem;
+      expect(problem.code).toBe('ANTHROPOMETRY_PENDING');
+      expect(problem.title).toBe(
+        'La atención ya tiene el alta: la corrección no puede dejar sin peso/talla obligatorios',
+      );
+      expect(problem.errors?.map((error) => error.field)).toEqual(['weightKg']);
+      expect(problem.errors?.[0]?.message).toBe(
+        'Peso: obligatorio tras el alta, no se puede quitar',
+      );
+      const stored = await prisma.encounterVitals.findUniqueOrThrow({ where: { encounterId } }); // prettier-ignore
+      expect(Number(stored.weightKg)).toBe(12.1);
+      expect(Number(stored.temperatureC)).toBe(37.4);
+    });
+
     it('EN-021 rechaza un formulario que esta instalación no sabe validar', async () => {
       const encounterId = await openEncounter();
 

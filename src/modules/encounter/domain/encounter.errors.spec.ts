@@ -236,6 +236,26 @@ describe('el contrato de errores de la atención', () => {
     ]);
   });
 
+  it('EN-217 D-134.3 tras el alta dice que la corrección no puede quitar la medida, no que falta para firmar', () => {
+    const error = new AnthropometryPendingError(
+      ['weightKg'],
+      'correctionAfterDischarge',
+    );
+
+    expect(error.code).toBe('ANTHROPOMETRY_PENDING');
+    expect(error).toBeInstanceOf(ValidationError); // 422
+    expect(error.userTitle).toBe(
+      'La atención ya tiene el alta: la corrección no puede dejar sin peso/talla obligatorios',
+    );
+    expect(error.fieldErrors).toEqual([
+      {
+        field: 'weightKg',
+        code: 'ANTHROPOMETRY_PENDING',
+        message: 'Peso: obligatorio tras el alta, no se puede quitar',
+      },
+    ]);
+  });
+
   it('EN-001 responde 409 y manda a registrar la ficha, no a corregir un campo', () => {
     const error = new PatientChartNotOpenError();
 

@@ -3335,7 +3335,9 @@ falta de una medida; y salir de la atención pide lo justo._
   `ANTHROPOMETRY_PENDING`, nombrando cada medida; y MIENTRAS la atención tenga
   el alta, DEBERÁ admitir **corregir** la toma ya registrada —con su versión
   (EN-210)—, y SI la atención ya se reportó al RDACAA, ENTONCES DEBERÁ
-  rechazarlo con `ENCOUNTER_ALREADY_REPORTED`.
+  rechazarlo con `ENCOUNTER_ALREADY_REPORTED`; y SI la corrección tras el alta
+  dejaría pendiente alguna medida obligatoria, ENTONCES DEBERÁ rechazarla con
+  `ANTHROPOMETRY_PENDING`, nombrando cada medida, sin cambiar la toma (D-134.3).
   > **D-132 B.** Rechazar la toma entera perdía la presión arterial de la
   > gestante que no se podía pesar —la cifra que alerta de preeclampsia— o
   > hacía teclear un peso inventado que llegaba falso al RDACAA. Interrumpir
@@ -3350,6 +3352,18 @@ falta de una medida; y salir de la atención pide lo justo._
   > `trg_clinical_note_sign_needs_anthropometry`, diferido como el de EN-020.
   > **Lo que no garantiza la base**: que la corrección de una atención
   > reportada se rechace; lo hace el adaptador bajo el bloqueo.
+  >
+  > **D-134.3, construido así mientras el autor decide quién corrige tras el
+  > alta** (hoy `vitals:write`, sin `record:sign`): ninguna corrección deja
+  > pendiente el peso o la talla que la firma exigió. Lectura literal: tras la
+  > corrección no puede faltar nada obligatorio, aunque faltara antes (un
+  > embarazo registrado después); la salida es completar la medida en la misma
+  > corrección. El adaptador lo pregunta a `encounter_anthropometry_pending`
+  > bajo el bloqueo de la atención, después de escribir y antes del COMMIT, y
+  > responde «La atención ya tiene el alta: la corrección no puede dejar sin
+  > peso/talla obligatorios». **Garantía de la base**:
+  > `trg_encounter_vitals_anthropometry_after_discharge`, diferido, con
+  > `encounter_has_discharge` y la misma función.
 - **EN-218** — CUANDO se anule una atención (EN-166), el sistema NO DEBERÁ
   exigir motivo —el que se envíe DEBERÁ guardarse— y DEBERÁ guardar quién la
   anuló y cuándo; DEBERÁ descartar en la misma transacción, con quién y
@@ -3419,7 +3433,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `DIAGNOSIS_CONCEPT_NOT_IN_FORCE` | 422 | El código CIE-10 no estaba vigente en la fecha de la atención. **Lo emite el adaptador**, no el mapeo de constraints: `trg_diagnosis_concept_in_force` levanta `integrity_constraint_violation` desde PL/pgSQL, así que el nombre del disparador nunca viaja al cliente | EN-042 |
 | `VITALS_OUT_OF_RANGE` | 422 | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges_*`, una por medida (D-058). **Por campo**, señalando cuál y diciendo el rango | EN-062 |
 | `VITALS_REQUIRED` | — | **Retirado por EN-217 (D-132 B)**: la toma ya no se rechaza por la antropometría | EN-063 |
-| `ANTHROPOMETRY_PENDING` | 422 | Se firma la 002 (da el alta) sin la antropometría obligatoria del menor de 5 años o de la embarazada; nombra cada campo | EN-217 |
+| `ANTHROPOMETRY_PENDING` | 422 | Se firma la 002 (da el alta) sin la antropometría obligatoria del menor de 5 años o de la embarazada, o una corrección de la toma tras el alta la dejaría pendiente (D-134.3); nombra cada campo | EN-217 |
 | `NOTE_CONTENT_INCOMPLETE` | 422 | Firmar sin una sección obligatoria, o la 002 sin ningún diagnóstico en la atención (`diagnoses`). Nombra lo que falta, nunca su contenido | EN-020 |
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
 | `VIOLENCE_SCREENING_RESTRICTED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite | EN-072 |
@@ -3693,6 +3707,7 @@ prueba o el CI falla**.
 | EN-183 | Integración: el principal cambia y el anterior pasa a un rango libre en una transacción; `encounter_diagnosis_one_primary` sigue sin admitir dos |
 | EN-213, EN-214 | **Integración contra PostgreSQL real**, con control positivo: con nota firmada y con el alta se quita sin motivo; con una receta emitida —vigente o anulada— que imprimió el código, sin motivo no y con otra receta sí; el último obstétrico de un reposo de maternidad no anulado no, y anulado sí; reportada no; el archivo se marca recuperado una vez, hacia ese diagnóstico, y nada más de él cambia. HTTP: deshacer devuelve el diagnóstico y deja de figurar entre los quitados, dos veces no, un principal ocupado lo deja detrás, sólo en la atención viva; `printedOnPrescription`; `record:sign` tras el alta |
 | EN-212 | **Integración contra PostgreSQL real**, con control positivo: sin sello no se edita y con sello sí, y la fila anterior está en `record_version`; el código editado es el de su concepto y regía ese día; tras el alta el principal cambia; con un certificado o una receta que imprimieron el código, sin motivo no y con motivo sí, y la condición sin motivo; reportada no; el reposo de maternidad no anulado no deja sacar del capítulo y sí dentro de él, y anulado sí. HTTP: la edición, las versiones con su motivo, `record:sign` y la licencia tras el alta, y los cuatro códigos |
+| EN-217 | **Integración contra PostgreSQL real**, con control positivo: la toma sin la antropometría se guarda y la firma de la 002 con alta no; tras el alta, corregir la temperatura conservando las medidas entra y dejar sin peso se rechaza, en el adaptador (`ANTHROPOMETRY_PENDING` por campo) y en la base (`trg_encounter_vitals_anthropometry_after_discharge`), con la toma intacta. HTTP: el 422 con su título de corrección |
 | EN-184, EN-185 | Integración contra la base con fichas fusionadas y una atención anulada, con el reloj inyectado: la categoría cuenta, la anulada no, la absorbida sí; y **una** fila de bitácora por propuesta |
 | EN-063, EN-090, EN-092, EN-096, EN-097 | Unitario de dominio **con la edad congelada de la atención**, no con la de hoy: los cuatro son condiciones por población y todos caducan si se evalúan contra la fecha actual. Es el mismo razonamiento que PA-005 dejó escrito |
 | EN-072, EN-073, EN-095, EN-098 | **Seguridad dirigida, con sesión real.** Sin la llave el dato **se omite** y no hay 403; con ella se ve y deja **una** fila de bitácora; y no viaja en ningún listado bajo ninguna combinación de permisos, afirmado sobre la respuesta. Con sesión de verdad y no con un doble con los permisos puestos a mano — el defecto de AG-111 fue exactamente eso |
