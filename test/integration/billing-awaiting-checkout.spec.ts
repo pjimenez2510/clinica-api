@@ -477,7 +477,7 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       expect(await rowOf(encounterId)).toBeUndefined();
     });
 
-    it('BI-194 D-136 no la trae de vuelta si caja ya cobró a mano esa prestación en una cuenta de la atención', async () => {
+    it('BI-194 D-138 no la trae de vuelta si caja ya cobró a mano esa prestación en una cuenta de la atención', async () => {
       const patient = await patientWithCedula();
       const encounterId = await visit({ patientId: patient.id, status: 'DISCHARGED', endedAt: new Date(now.getTime() - HOUR_MS), written: true }); // prettier-ignore
       // Con el borrador aún sin emitir, caja cobró la glucosa a mano: un cargo

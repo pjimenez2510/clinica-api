@@ -321,7 +321,7 @@ function unchargedExamCount(encounterId: Prisma.Sql): Prisma.Sql {
  *     `listChargedActs`, BI-151) — NOR a manual charge of that same service
  *     in an account of the visit: the cashier may have charged it by hand
  *     while it was still a draft (BI-192), and proposing it again would
- *     charge it twice (revisión clínica de fix/criticos-d130, I-1; D-136).
+ *     charge it twice (revisión clínica de fix/criticos-d130, I-1; D-138).
  */
 function examsIssuedAfterSettlement(encounterId: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`

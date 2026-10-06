@@ -1377,7 +1377,7 @@ desde la pantalla.
   > más protector entre el de la versión que corrige y el de su día (lo que
   > hoy haría ORD-114), el de la versión que corrige, o el de su día. Ninguna
   > bandera guardada cambia; las correcciones que la regla de hoy habría
-  > marcado distinto se anuncian por su id al migrar (D-136).
+  > marcado distinto se anuncian por su id al migrar (D-138).
 
 ---
 

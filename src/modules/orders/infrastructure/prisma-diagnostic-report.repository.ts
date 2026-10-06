@@ -273,7 +273,7 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
    * The age is counted to the ATTENTION's clinical date, so a report
    * transcribed two years later still classifies against the age the patient
    * HAD. It follows the chart's birth date: a corrected birth date applies to
-   * a later correction too (D-136 asks whether to freeze it instead).
+   * a later correction too (D-138 asks whether to freeze it instead).
    */
   async patientOfOrder(
     orderId: string,

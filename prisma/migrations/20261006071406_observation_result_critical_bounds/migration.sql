@@ -124,7 +124,7 @@ UPDATE observation_result r
 --
 -- Los casos 2 y 3 son correcciones que con la regla de hoy se habrían marcado
 -- distinto —un crítico que entonces no se marcó—. No se reescriben: se
--- anuncian por su id para que alguien las mire (D-136).
+-- anuncian por su id para que alguien las mire (D-138).
 -- ═════════════════════════════════════════════════════════════════════════════
 
 CREATE OR REPLACE FUNCTION pg_temp.d130_flag_agrees(
@@ -180,7 +180,7 @@ BEGIN
   END LOOP;
 
   IF cardinality(v_differ) > 0 THEN
-    RAISE NOTICE 'ORD-122, D-136: % correcciones se habrían marcado distinto con la regla de hoy (observation_result.id: %). Su bandera no se cambia.',
+    RAISE NOTICE 'ORD-122, D-138: % correcciones se habrían marcado distinto con la regla de hoy (observation_result.id: %). Su bandera no se cambia.',
       cardinality(v_differ), v_differ;
   END IF;
 END;

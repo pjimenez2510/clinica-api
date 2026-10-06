@@ -1676,7 +1676,7 @@ dos registros distintos.**
   orden `ISSUED`, sin anular, con prestación activa en el catálogo, sin ningún
   cargo que lo nombre y sin un cargo manual vigente de esa misma prestación en
   una cuenta de la atención—, y DEBERÁ decir cuántos exámenes sin cargo tiene
-  (D-130.4, resuelta por el autor; D-136).
+  (D-130.4, resuelta por el autor; D-138).
   > El médico puede emitir el borrador después de que caja cerró la cuenta
   > (la atención sigue con el alta dada, ORD-115). Ese examen no propone cargo
   > solo: hay que volver a pasar la atención a caja (BI-150), que abre una
