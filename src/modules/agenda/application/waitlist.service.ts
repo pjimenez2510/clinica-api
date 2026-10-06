@@ -13,6 +13,7 @@ import {
   SlotNotReleasedError,
   WaitlistEntryClosedError,
   WaitlistEntryNotFoundError,
+  WaitlistNoContactAttemptError,
 } from '../domain/agenda.errors';
 import {
   AGENDA_REPOSITORY,
@@ -24,6 +25,7 @@ import {
   type RankedCandidate,
   type WaitlistContactOutcome,
   entriesToExpire,
+  hasLapsed,
   hasSlotPassed,
   isOpenWaitlistStatus,
   rankCandidates,
@@ -335,7 +337,11 @@ export class WaitlistService {
       // AG-064: who called comes from the session, never from the body. A
       // trail whose author a client picks proves nothing.
       recordedById: requester.userId,
-      status: statusAfterContact(entry.contactAttempts + 1, parameters),
+      status: statusAfterContact(
+        entry.contactAttempts + 1,
+        parameters,
+        request.outcome,
+      ),
     });
 
     // AG-074. The site, the fact and the outcome — never the chart or who
@@ -413,6 +419,58 @@ export class WaitlistService {
    * SCOPED TO THE SITE, like every route of this module (AG-071), which is
    * also what keeps it cheap: a site's open waiting list is counted in tens.
    */
+  /**
+   * AG-064, AG-165 (D-127, D-141). Corrects the outcome of the LAST attempt:
+   * the previous one stays in `record_version`. An entry the corrected
+   * outcome no longer exhausts goes back to `CONTACTED` — but never one whose
+   * preferred range already lapsed, nor one that was scheduled or cancelled.
+   */
+  async editLastContact(
+    request: ContactRequest,
+    requester: Requester,
+  ): Promise<WaitlistEntryView> {
+    const now = this.now();
+    const entry = await this.requireEntry(request.siteId, request.entryId);
+
+    if (entry.status === 'SCHEDULED' || entry.status === 'CANCELLED') {
+      throw new WaitlistEntryClosedError();
+    }
+    if (entry.contactAttempts === 0) throw new WaitlistNoContactAttemptError();
+
+    const parameters = resolveWaitlistParameters(
+      await this.waitlist.waitlistParametersFor(request.siteId),
+    );
+    let status = statusAfterContact(
+      entry.contactAttempts,
+      parameters,
+      request.outcome,
+    );
+    // A lapsed range stays closed whatever the call said (AG-065).
+    if (entry.status === 'EXPIRED' && hasLapsed(entry, this.todayIn(now))) {
+      if (status === 'CONTACTED') throw new WaitlistEntryClosedError();
+      status = 'EXPIRED';
+    }
+
+    const updated = await this.waitlist.editLastWaitlistContact({
+      entryId: entry.id,
+      outcome: request.outcome,
+      editedById: requester.userId,
+      at: now,
+      status,
+    });
+
+    this.logger.info(
+      {
+        site_id: request.siteId,
+        action: 'WAITLIST_CONTACT_EDITED',
+        outcome: request.outcome,
+      },
+      'waiting list contact attempt edited',
+    );
+
+    return updated;
+  }
+
   private async sweep(siteId: string, today: ClinicalDate): Promise<void> {
     const [open, stored] = await Promise.all([
       this.waitlist.openWaitlistEntriesFor(siteId),

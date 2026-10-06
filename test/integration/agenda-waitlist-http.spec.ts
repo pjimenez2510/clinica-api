@@ -992,6 +992,57 @@ describe('la lista de espera por HTTP', () => {
     });
   });
 
+  describe('AG-064, AG-165 · corregir el último intento (D-127)', () => {
+    it('AG-165 corrects a «no contestó» that expired the entry into an acceptance, reopens it and lets it convert', async () => {
+      await prisma.siteParameter.update({
+        where: { siteId },
+        data: { waitlistMaxContactAttempts: 1 },
+      });
+      const entry = await enrol();
+      const expired = await request(app.getHttpServer())
+        .post(`${BASE}/${siteId}/waitlist/${entry.id}/contact-attempts`)
+        .set('Authorization', auth())
+        .send({ outcome: 'NO_ANSWER' })
+        .expect(200);
+      expect((expired.body as WaitlistEntryBody).status).toBe('EXPIRED');
+
+      const corrected = await request(app.getHttpServer())
+        .patch(`${BASE}/${siteId}/waitlist/${entry.id}/contact-attempts/last`)
+        .set('Authorization', auth())
+        .send({ outcome: 'ACCEPTED' })
+        .expect(200);
+      expect((corrected.body as WaitlistEntryBody).status).toBe('CONTACTED');
+
+      // The previous outcome stays in the version, and the sweep of the next
+      // read does not expire an entry whose last call was a yes.
+      const versions = await prisma.recordVersion.findMany({
+        where: { resourceType: 'waitlist_contact_attempt' },
+      });
+      expect(versions).toHaveLength(1);
+      await request(app.getHttpServer())
+        .get(`${BASE}/${siteId}/waitlist`)
+        .set('Authorization', auth())
+        .expect(200);
+      const stored = await prisma.waitlistEntry.findUniqueOrThrow({
+        where: { id: entry.id },
+      });
+      expect(stored.status).toBe('CONTACTED');
+    });
+
+    it('AG-064 refuses to correct an entry nobody called', async () => {
+      const entry = await enrol();
+
+      const response = await request(app.getHttpServer())
+        .patch(`${BASE}/${siteId}/waitlist/${entry.id}/contact-attempts/last`)
+        .set('Authorization', auth())
+        .send({ outcome: 'ACCEPTED' })
+        .expect(409);
+      expect((response.body as { code: string }).code).toBe(
+        'WAITLIST_NO_CONTACT_ATTEMPT',
+      );
+    });
+  });
+
   describe('AG-067 · una entrada cerrada no se propone ni se toca', () => {
     it('AG-067 leaves a converted entry out of the candidates for the next slot', async () => {
       const converted = await enrol();

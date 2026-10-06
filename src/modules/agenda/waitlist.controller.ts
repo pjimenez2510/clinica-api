@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
 } from '@nestjs/common';
 import {
@@ -197,6 +198,27 @@ export class WaitlistController {
     @Body() dto: RecordContactAttemptDto,
   ): Promise<WaitlistEntryResponse> {
     const entry = await this.waitlist.recordContact(
+      { siteId, entryId, outcome: dto.outcome },
+      { userId: this.currentUser.requireUserId() },
+    );
+
+    return toEntryResponse(entry);
+  }
+
+  /**
+   * AG-064, AG-165 (D-127). Corrects the outcome of the LAST attempt; the
+   * previous one stays in the version. May reopen an expired entry.
+   */
+  @Patch(':entryId/contact-attempts/last')
+  @RequirePermission('agenda:write', 'param:siteId')
+  @ApiOperation({ summary: 'Corregir el resultado de la última llamada' })
+  @ApiOkResponse({ type: WaitlistEntryDto })
+  async editLastContact(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('entryId', ParseUUIDPipe) entryId: string,
+    @Body() dto: RecordContactAttemptDto,
+  ): Promise<WaitlistEntryResponse> {
+    const entry = await this.waitlist.editLastContact(
       { siteId, entryId, outcome: dto.outcome },
       { userId: this.currentUser.requireUserId() },
     );
