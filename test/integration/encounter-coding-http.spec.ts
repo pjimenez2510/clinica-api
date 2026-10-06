@@ -1059,6 +1059,20 @@ describe('el bloque K por HTTP', () => {
       expect((await sheetOf(encounterId)).retracted).toEqual([]);
     });
 
+    it('EN-212 un campo que la edición no conoce (un código tecleado, un rango) responde 422 UNKNOWN_FIELD y no cambia nada', async () => {
+      const encounterId = await openEncounter();
+      const diagnosis = await record(encounterId, 'J020');
+      const path = `/encounters/${encounterId}/diagnoses/${diagnosis.id}`;
+
+      const typed = await patch(path, doctorToken, { cie10Code: 'J06', certainty: 'PRESUMPTIVE' }).expect(422); // prettier-ignore
+      expect((typed.body as Problem).errors?.map((error) => error.code)).toContain('UNKNOWN_FIELD'); // prettier-ignore
+      await patch(path, doctorToken, { rank: 3, certainty: 'PRESUMPTIVE' }).expect(422); // prettier-ignore
+      expect((await sheetOf(encounterId)).items[0]).toMatchObject({ cie10Code: 'J020', certainty: diagnosis.certainty }); // prettier-ignore
+
+      // Positive control: what it knows goes through.
+      await patch(path, doctorToken, { certainty: 'PRESUMPTIVE' }).expect(200);
+    });
+
     it('EN-212 «principal» de un clic: el anterior pasa detrás, también con el alta', async () => {
       const encounterId = await openEncounter();
       const first = await record(encounterId, 'J020');

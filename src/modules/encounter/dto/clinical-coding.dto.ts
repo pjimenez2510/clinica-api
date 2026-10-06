@@ -174,6 +174,9 @@ export const editDiagnosisSchema = z
       .max(500, 'El motivo no puede superar 500 caracteres')
       .optional(),
   })
+  // A typed `cie10Code` or a `rank` would be dropped in silence and the
+  // caller would believe it changed: refused as UNKNOWN_FIELD instead.
+  .strict()
   .refine(
     (edit) =>
       edit.conceptId !== undefined ||
