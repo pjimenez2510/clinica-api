@@ -248,6 +248,37 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
 
 **Cubre:** DOC-094 a DOC-097.
 
+### H8 — El resumen de la atención en un PDF _(P1)_
+
+Desde la atención firmada y desde la lista de atenciones de la ficha, «Descargar
+resumen» da un PDF con todo lo de la consulta: datos, signos, la nota 002
+vigente, diagnósticos, receta, exámenes y certificados, con el código que
+verifica la atención. Se genera cada vez y queda en la bitácora de accesos. La
+API lo sirve igual, para el asistente.
+
+**Prueba independiente:** firmar la nota de una atención con receta y orden,
+descargar el resumen y comprobar en el texto extraído la nota, el diagnóstico
+principal, el medicamento y el examen; que `document_render` no ganó fila y
+`access_audit` ganó una; pedirlo de una atención sin nota firmada y ver
+`ENCOUNTER_SUMMARY_NOT_AVAILABLE`; verificar su código sin sesión.
+
+**Cubre:** DOC-111 a DOC-113, EN-219, EN-220.
+
+**Solo servidor:** DOC-113 (la plantilla se publica con las demás; la pantalla
+de Identidad no cambia de forma).
+
+### H9 — «Volver a generar», dicho en simple _(P1)_
+
+La tarjeta del PDF dice lo que hace, y por qué hay un PDF nuevo, sin hablar de
+huellas ni de motivos.
+
+**Prueba independiente:** en una orden con un PDF, «Volver a generar» abre un
+diálogo con una sola frase y un botón; anular un examen y ver «Se volvió a
+generar al anular un examen.» en el nuevo.
+
+**Cubre:** DOC-110.
+
+
 ---
 
 ## Criterios de éxito
@@ -973,6 +1004,94 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
 
 ---
 
+## 5 bis. Volver a generar, y el resumen de la atención (revisión del 06-10-2026)
+
+_Revisión del autor del 06-10-2026, con capturas: «Corregir» el PDF se
+confundía con corregir la receta o la orden, y su diálogo hablaba de huellas y
+de quién pone el motivo. Y el autor decidió el resumen de la atención en un
+solo PDF, completo, generado al momento._
+
+> **Sin formato oficial del MSP para el resumen.** Se buscó en
+> `ESPECIFICACION-SISTEMA-CLINICA-ECUADOR.md` y en el Anexo 1 del
+> A.M. 00115-2021 (los 55 formularios de la historia clínica única, pp. 1-3 del
+> PDF del repositorio): no hay formulario de resumen de consulta externa ni de
+> copia de la historia al paciente. El 053 (referencia y contrarreferencia) y el
+> 006 (epicrisis) son otros actos. El resumen sigue el marco aprobado (D-095) y
+> el orden de los bloques del 002 que ya imprime la pantalla.
+
+- **DOC-110** — La tarjeta «Documento PDF» DEBERÁ llamar **«Volver a generar»**
+  a la acción que compone y archiva un PDF nuevo con los datos actuales
+  (DOC-108), y su diálogo DEBERÁ decir sólo «Se genera un PDF nuevo con los
+  datos actuales. El anterior queda guardado.», con un único botón que lo hace;
+  **NO DEBERÁ** nombrar la huella, el motivo ni quién lo pone. El PDF que
+  sustituye a otro DEBERÁ decir por qué en palabras de quien lo usa —«Se volvió
+  a generar al anular un examen.», «… al anular la receta.», «… al anular el
+  certificado.», «… con los datos actuales.», «… al corregir la orden N.º 12.»—,
+  y la tarjeta **NO DEBERÁ** enseñar la huella ni el perfil PDF.
+  > **Solo interfaz:** el servidor sigue como DOC-108 y DOC-109; sólo cambia lo
+  > que se lee. «Corregir» queda para la receta, la orden y el certificado, que
+  > anulan y rehacen (PR-109, ORD-118, CER-053). La huella sigue en la fila y en
+  > la API (DOC-002): es para quien audita, no para quien imprime.
+
+- **DOC-111** — CUANDO quien tenga `record:read` pida el **resumen de una
+  atención** de su alcance de sedes cuya nota 002 esté **firmada**, el sistema
+  DEBERÁ componer **al momento** un PDF/A con el marco común (DOC-080 a
+  DOC-085) y la plantilla vigente de su clase (DOC-113), que lleve, en este
+  orden: los datos de la atención —paciente con documento, historia clínica,
+  edad de la atención y sexo; fecha y hora de inicio en `America/Guayaquil`,
+  sede y profesional—; los signos vitales y la antropometría de la toma
+  vigente, si los hay; la nota 002 **vigente** de la cadena —la última firmada—
+  con cada sección bajo el título de su plantilla y, SI es una enmienda, la
+  línea «Nota enmendada el <fecha>.»; los diagnósticos CIE-10 vigentes, el
+  principal primero, con su condición (presuntivo o definitivo); la receta
+  emitida y no anulada, con sus medicamentos e indicaciones; los exámenes
+  pedidos en órdenes emitidas, sin los anulados; los certificados emitidos y no
+  anulados; y el pie con el código de verificación de la atención (DOC-112). Un
+  bloque sin contenido **NO DEBERÁ** imprimirse. El sistema **NO DEBERÁ**
+  guardar el PDF, y DEBERÁ dejar **antes de servirlo** una fila en la bitácora
+  de accesos —quién, cuándo, desde qué IP, sobre qué atención— y SI no se
+  puede escribir, ENTONCES **NO DEBERÁ** servirlo. SI la atención no tiene nota
+  002 firmada, o está anulada (`ENTERED_IN_ERROR`), ENTONCES DEBERÁ rechazarlo
+  con `ENCOUNTER_SUMMARY_NOT_AVAILABLE`; y SI no existe o está fuera del
+  alcance, con `DOCUMENT_SUBJECT_NOT_FOUND`. La ruta es
+  `GET /v1/documents/encounters/<id>/summary`, la misma para la pantalla y para
+  el asistente.
+  > **Decidido por el autor el 06-10-2026:** una versión completa, que sirve al
+  > paciente y al médico que lo reciba; sólo con la nota firmada; generado cada
+  > vez, sin archivarlo, y cada generación es un acceso a la historia (REQ-110).
+  >
+  > **Garantía de la base:** que no se archive lo garantiza
+  > `document_render_kind_matches_subject`, que no admite la clase
+  > `ENCOUNTER_SUMMARY` en ninguna fila (no tiene columna de sujeto). Se prueba
+  > con un `INSERT` directo, con control positivo (una orden sí entra).
+  >
+  > Lleva CONFIDENCIAL (DOC-082) cuando imprime un diagnóstico, y el sello del
+  > profesional de la atención si lo tiene (DOC-060).
+
+- **DOC-112** — El resumen DEBERÁ imprimir en el pie el código de
+  verificación **de la atención** (EN-219) con su QR (DOC-083); y CUANDO
+  cualquiera pida `GET /v1/documents/verify/<código>` con ese código, el sistema
+  DEBERÁ responder como DOC-094, con la clase «Resumen de la atención», la
+  referencia «Atención del <fecha>», la fecha de inicio, el establecimiento, la
+  sede, el profesional y el estado: vigente, o **anulado** si la atención está
+  `ENTERED_IN_ERROR`; sin ningún dato del paciente (DOC-095).
+  > El código es de la atención y no del PDF, que no se guarda: dos resúmenes
+  > de la misma atención llevan el mismo código, y el código dice que la
+  > atención existe y quién la firmó, no qué decía un fichero.
+
+- **DOC-113** — El resumen DEBERÁ ser una clase de documento clínica propia
+  (`ENCOUNTER_SUMMARY`) con su plantilla versionada (DOC-030 a DOC-039): se
+  publica junto con las demás clases clínicas desde Administración → Identidad,
+  y la vista previa la enseña con datos de ejemplo. SI no hay plantilla
+  publicada para ella, ENTONCES DEBERÁ rechazarlo con
+  `DOCUMENT_TEMPLATE_NOT_PUBLISHED` (DOC-037).
+  > La migración publica la versión 1 de la clase copiando las ranuras de la
+  > plantilla vigente del **certificado** —la identidad es una sola
+  > (D-095.3)—, y sólo si hay una; sin plantilla publicada no inventa ninguna.
+  > La semilla la publica como a las otras.
+
+---
+
 ## 6. Con qué se genera, y la trampa que hay que resolver
 
 **PDFKit `0.19.1`** (verificado en npm el 20-08-2026; última modificación
@@ -1094,6 +1213,7 @@ Por qué no se construye hoy:
 | `DOCUMENT_RENDER_FAILED` | 500 | La composición del PDF falló. Es lo único de este módulo que es un fallo nuestro |
 | `DOCUMENT_IMAGE_NOT_FOUND` | 404 | DOC-061. No hay logo, sello o firma puestos |
 | `DOCUMENT_VERIFICATION_NOT_FOUND` | 404 | DOC-096. Ningún documento con ese código. **El mismo cuerpo** para todos |
+| `ENCOUNTER_SUMMARY_NOT_AVAILABLE` | 409 | DOC-111. La atención no tiene nota 002 firmada, o está anulada: no hay nada que resumir |
 
 ## 9. Niveles de prueba
 

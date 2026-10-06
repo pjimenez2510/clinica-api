@@ -273,9 +273,10 @@ versión anterior **sigue siendo legible** y que sólo una está vigente; y que 
 `DELETE` y un `TRUNCATE` sobre la tabla fallan los dos.
 **Cubre:** EN-020 a EN-034, **EN-155 y EN-156** —la firma electrónica
 certificada y su parámetro por sede— y **EN-157 y EN-158**, el plazo de
-conservación.
+conservación. Y **EN-219 y EN-220**, el resumen de la atención (su PDF
+es DOC-111, en `documents`).
 
-**Solo servidor:** EN-023, EN-024, EN-030, EN-031. Las tres primeras son
+**Solo servidor:** EN-023, EN-024, EN-030, EN-031, EN-219. Las tres primeras son
 negativas que sólo se demuestran contra PostgreSQL —que el `UPDATE` falle, que el
 índice parcial rechace la segunda vigente, que `TRUNCATE` no pase—; la cuarta es
 que corregir la ficha del paciente **no** toque una nota ya firmada.
@@ -3465,6 +3466,32 @@ falta de una medida; y salir de la atención pide lo justo._
   > (antes `…_who_why_when`): quién y cuándo, y un motivo, si lo hay, no en
   > blanco. Los descartes los garantizan `prescription_discard_states_who_and_when`
   > y `service_order_discard_states_who_and_when`.
+
+## 23. El resumen de la atención (decisión del autor, 06-10-2026)
+
+_El PDF lo compone `documents` (DOC-111 a DOC-113). Aquí van el código que lo
+verifica, que es de la atención, y dónde se ofrece._
+
+- **EN-219** — Toda atención DEBERÁ llevar un **código de verificación**
+  aleatorio de 16 caracteres, único, que pone la base al crearla
+  (`encounter.verification_code`, como el de la orden), y **NO DEBERÁ**
+  cambiar después.
+  > **Garantía de la base:** el valor por defecto lo genera PostgreSQL, el
+  > `UNIQUE` impide dos iguales y la migración da a cada atención existente el
+  > suyo al añadir la columna (un valor por defecto volátil se evalúa fila a
+  > fila al reescribir la tabla). La prueba de integración lo comprueba contra
+  > la base: dos atenciones, dos códigos distintos con la forma esperada.
+  > No es el número de nada: un número consecutivo se adivina.
+
+- **EN-220** — MIENTRAS la nota 002 de una atención esté firmada y la atención
+  no esté anulada, la pantalla DEBERÁ ofrecer **«Descargar resumen»** en la
+  cabecera de la atención y en su fila de la lista de atenciones de la ficha
+  del paciente, sin confirmación, y DEBERÁ descargar el PDF de DOC-111; y
+  MIENTRAS no lo esté, **NO DEBERÁ** ofrecerlo.
+  > Sin confirmación porque no tiene efecto: no cambia nada y no se archiva.
+  > La bitácora la escribe el servidor (DOC-111). En la lista, la acción va
+  > fuera del enlace de la fila: un botón dentro de un enlace no se puede
+  > pulsar con el teclado ni lo anuncia el lector de pantalla.
 
 ---
 
