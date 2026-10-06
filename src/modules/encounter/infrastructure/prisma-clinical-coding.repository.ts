@@ -361,14 +361,19 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         if (row?.needs) throw new DiagnosisRetractionReasonRequiredError();
       }
 
+      // EN-212. The last edit goes with it — who, when and why — or the
+      // reason for recoding what a paper printed is lost with the live row
+      // (`encounter_diagnosis_retraction_matches` demands it).
       await tx.$executeRaw`
         INSERT INTO "encounter_diagnosis_retraction"
           ("id", "encounter_id", "concept_id", "cie10_code", "cie10_display",
            "certainty", "occurrence", "rank", "notifiable", "note",
-           "recorded_at", "retracted_by_id", "reason")
+           "recorded_at", "retracted_by_id", "reason",
+           "edited_by_id", "edited_at", "edit_reason")
         SELECT "id", "encounter_id", "concept_id", "cie10_code", "cie10_display",
                "certainty", "occurrence", "rank", "notifiable", "note",
-               "recorded_at", ${retraction.retractedById}::uuid, ${retraction.reason}
+               "recorded_at", ${retraction.retractedById}::uuid, ${retraction.reason},
+               "edited_by_id", "edited_at", "edit_reason"
           FROM "encounter_diagnosis"
          WHERE "id" = ${retraction.diagnosisId}::uuid
       `;
@@ -528,7 +533,14 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
   /**
    * EN-212. The versions `record_version_archive` kept, read through the SAME
    * mapping as the current diagnosis. The reason of each replacement is on
-   * the row that replaced it: the next version, or the current one.
+   * the row that replaced it: the next version, or the current one — the
+   * live row, or its archive once it was removed (the archive keeps the last
+   * edit, `encounter_diagnosis_retraction_matches`).
+   *
+   * EN-213. «Deshacer» brings a diagnosis back as a NEW row (`restored_as_id`
+   * on the archive of the old one): the versions of the earlier rows follow,
+   * newest first, so undoing a removal does not hide what was corrected
+   * before it. Each keeps the `version` number of its own row.
    */
   async diagnosisVersions(
     query: DiagnosisQuery,
@@ -543,45 +555,69 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         where,
         select: { editReason: true },
       }),
-      this.prisma.encounterDiagnosisRetraction.count({ where }),
+      this.prisma.encounterDiagnosisRetraction.findFirst({
+        where,
+        select: { editReason: true },
+      }),
     ]);
-    if (live === null && archived === 0) throw new DiagnosisNotFoundError();
+    if (live === null && archived === null) throw new DiagnosisNotFoundError();
 
-    const versions = await this.prisma.recordVersion.findMany({
-      where: {
-        resourceType: 'encounter_diagnosis',
-        resourceId: query.diagnosisId,
+    // The rows this one was restored from, each found by the archive that
+    // names it as what it came back as. Bounded: a cycle is impossible (each
+    // restoration is a new id) and a lineage this long is not a real one.
+    const lineage = [
+      {
+        id: query.diagnosisId,
+        headReason: live?.editReason ?? archived?.editReason ?? null,
       },
-      orderBy: { version: 'desc' },
-      select: {
-        version: true,
-        data: true,
-        changedAt: true,
-        changedBy: { select: { id: true, firstName: true, lastName: true } },
-      },
-    });
-
-    return versions.map((version, index) => {
-      const replacing =
-        index === 0
-          ? (live?.editReason ?? null)
-          : (versions[index - 1]!.data as unknown as DiagnosisSnapshot)
-              .edit_reason;
-      return {
-        version: version.version,
-        replacedBy: {
-          id: version.changedBy.id,
-          name: `${version.changedBy.firstName} ${version.changedBy.lastName}`,
+    ];
+    for (let depth = 0; depth < 50; depth += 1) {
+      const earlier = await this.prisma.encounterDiagnosisRetraction.findFirst({
+        where: {
+          restoredAsId: lineage[lineage.length - 1]!.id,
+          encounterId: query.encounterId,
         },
-        replacedAt: version.changedAt,
-        reason: replacing ?? null,
-        diagnosis: toDiagnosisView(
-          diagnosisRowFromSnapshot(
-            version.data as unknown as DiagnosisSnapshot,
+        select: { id: true, editReason: true },
+      });
+      if (earlier === null) break;
+      lineage.push({ id: earlier.id, headReason: earlier.editReason });
+    }
+
+    const views: DiagnosisVersionView[] = [];
+    for (const row of lineage) {
+      const versions = await this.prisma.recordVersion.findMany({
+        where: { resourceType: 'encounter_diagnosis', resourceId: row.id },
+        orderBy: { version: 'desc' },
+        select: {
+          version: true,
+          data: true,
+          changedAt: true,
+          changedBy: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+      versions.forEach((version, index) => {
+        const replacing =
+          index === 0
+            ? row.headReason
+            : (versions[index - 1]!.data as unknown as DiagnosisSnapshot)
+                .edit_reason;
+        views.push({
+          version: version.version,
+          replacedBy: {
+            id: version.changedBy.id,
+            name: `${version.changedBy.firstName} ${version.changedBy.lastName}`,
+          },
+          replacedAt: version.changedAt,
+          reason: replacing ?? null,
+          diagnosis: toDiagnosisView(
+            diagnosisRowFromSnapshot(
+              version.data as unknown as DiagnosisSnapshot,
+            ),
           ),
-        ),
-      };
-    });
+        });
+      });
+    }
+    return views;
   }
 
   /**

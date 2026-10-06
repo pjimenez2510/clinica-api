@@ -54,9 +54,11 @@ function archive(
   return prisma.$executeRaw`
     INSERT INTO encounter_diagnosis_retraction
       (id, encounter_id, concept_id, cie10_code, cie10_display, certainty,
-       occurrence, rank, notifiable, note, recorded_at, retracted_by_id, reason)
+       occurrence, rank, notifiable, note, recorded_at, retracted_by_id, reason,
+       edited_by_id, edited_at, edit_reason)
     SELECT id, encounter_id, concept_id, cie10_code, cie10_display, certainty,
-           occurrence, rank, notifiable, note, recorded_at, ${removerId}::uuid, ${reason}
+           occurrence, rank, notifiable, note, recorded_at, ${removerId}::uuid, ${reason},
+           edited_by_id, edited_at, edit_reason
       FROM encounter_diagnosis WHERE id = ${diagnosisId}::uuid`;
 }
 
@@ -133,6 +135,38 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
                occurrence, rank, notifiable, note, recorded_at, ${remover.id}::uuid
           FROM encounter_diagnosis WHERE id = ${first!.id}::uuid`,
     ).rejects.toThrow(/encounter_diagnosis_retraction_matches/);
+  });
+
+  it('EN-212 EN-180 la BASE exige que el archivo guarde también quién editó el diagnóstico, cuándo y por qué', async () => {
+    const prisma = db();
+    const { diagnoses, remover } = await anEncounterWithDiagnoses(prisma);
+    const [, second] = diagnoses;
+    const editor = await createUser(prisma);
+    await prisma.$executeRaw`
+      UPDATE encounter_diagnosis
+         SET note = 'corregida', edit_reason = 'Código mal elegido',
+             edited_by_id = ${editor.id}::uuid, edited_at = ${new Date()}
+       WHERE id = ${second!.id}::uuid`;
+
+    // The archive that drops the edit stamp is not the row being removed.
+    await expect(
+      prisma.$executeRaw`
+        INSERT INTO encounter_diagnosis_retraction
+          (id, encounter_id, concept_id, cie10_code, cie10_display, certainty,
+           occurrence, rank, notifiable, note, recorded_at, retracted_by_id)
+        SELECT id, encounter_id, concept_id, cie10_code, cie10_display, certainty,
+               occurrence, rank, notifiable, note, recorded_at, ${remover.id}::uuid
+          FROM encounter_diagnosis WHERE id = ${second!.id}::uuid`,
+    ).rejects.toThrow(/encounter_diagnosis_retraction_matches/);
+
+    // Positive control: with the stamp and the reason it goes in, kept.
+    await archive(prisma, second!.id, remover.id);
+    await remove(prisma, second!.id);
+    const archived = await prisma.encounterDiagnosisRetraction.findUniqueOrThrow({ where: { id: second!.id } }); // prettier-ignore
+    expect(archived).toMatchObject({
+      editReason: 'Código mal elegido',
+      editedById: editor.id,
+    });
   });
 
   it('EN-180 el archivo no se edita, no se borra y no se vacía', async () => {

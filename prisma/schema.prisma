@@ -188,7 +188,8 @@ model User {
   criticalNoticesEdited CriticalResultNotice[] @relation("CriticalNoticeEditor")
 
   /// EN-212, D-127. The diagnoses this account edited last.
-  diagnosesEdited EncounterDiagnosis[] @relation("DiagnosisEditor")
+  diagnosesEdited            EncounterDiagnosis[]           @relation("DiagnosisEditor")
+  diagnosesEditedThenRemoved EncounterDiagnosisRetraction[] @relation("DiagnosisRetractionEditor")
 
   /// EN-210, D-127. The versions this account replaced by editing.
   recordVersionsChanged RecordVersion[] @relation("RecordVersionChanger")
@@ -2750,6 +2751,14 @@ model EncounterDiagnosisRetraction {
   restoredById String?   @map("restored_by_id") @db.Uuid
   restoredBy   User?     @relation("DiagnosisRestorer", fields: [restoredById], references: [id], onDelete: Restrict)
   restoredAsId String?   @map("restored_as_id") @db.Uuid
+
+  /// EN-212. The last edit of the row as it was removed — who, when and, when a
+  /// paper printed the code it replaced, why. Compared with the live row by
+  /// `encounter_diagnosis_retraction_matches`, so the reason is not lost with it.
+  editedById String?   @map("edited_by_id") @db.Uuid
+  editedBy   User?     @relation("DiagnosisRetractionEditor", fields: [editedById], references: [id], onDelete: Restrict)
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+  editReason String?   @map("edit_reason") @db.VarChar(500)
 
   @@index([encounterId])
   @@map("encounter_diagnosis_retraction")

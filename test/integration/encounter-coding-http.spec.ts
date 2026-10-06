@@ -1109,6 +1109,46 @@ describe('el bloque K por HTTP', () => {
       expect(versions.items[0]).toMatchObject({ reason: 'Código mal elegido' });
     });
 
+    it('EN-212 EN-213 el motivo de editar un código impreso sigue consultable después de quitar el diagnóstico', async () => {
+      const encounterId = await openEncounter();
+      const printed = await record(encounterId, 'J00');
+      await record(encounterId, 'R509');
+      const encounter = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
+      await prisma.$executeRaw`
+        INSERT INTO medical_certificate
+          (encounter_id, patient_id, issued_by_id, type, verification_code,
+           include_diagnosis, diagnoses)
+        VALUES (${encounterId}::uuid, ${encounter.patientId}::uuid,
+                ${doctorPractitionerId}::uuid, 'ATTENDANCE',
+                ${`EN213-${encounterId.slice(0, 12)}`}, true,
+                ${JSON.stringify([{ code: 'J00', display: 'Dx J00', certainty: 'DEFINITIVE' }])}::jsonb)`;
+      const j06 = await aConcept('CIE10', { code: 'J06', display: 'Dx J06' });
+      const path = `/encounters/${encounterId}/diagnoses/${printed.id}`;
+
+      await patch(path, doctorToken, { conceptId: j06, reason: 'Código mal elegido' }).expect(200); // prettier-ignore
+      // Positive control: while it is live, the reason is read.
+      const live = (await get(`${path}/versions`, doctorToken).expect(200)).body as VersionsBody; // prettier-ignore
+      expect(live.items[0]).toMatchObject({ reason: 'Código mal elegido' });
+
+      // J06 printed nothing: removing it needs no reason.
+      await post(`${path}/retract`, doctorToken).expect(204);
+
+      const archived = await prisma.encounterDiagnosisRetraction.findUniqueOrThrow({ where: { id: printed.id } }); // prettier-ignore
+      expect(archived).toMatchObject({
+        cie10Code: 'J06',
+        editReason: 'Código mal elegido',
+        editedAt: expect.any(Date),
+        editedById: expect.any(String),
+      });
+      const after = (await get(`${path}/versions`, doctorToken).expect(200)).body as VersionsBody; // prettier-ignore
+      expect(after.items).toEqual([
+        expect.objectContaining({
+          reason: 'Código mal elegido',
+          diagnosis: expect.objectContaining({ cie10Code: 'J00' }),
+        }),
+      ]);
+    });
+
     it('EN-212 D-117.13 tras el alta corrige quien firma historia, con su registro ACESS vigente; antes del alta, cualquiera que diagnostica', async () => {
       const encounterId = await openEncounter();
       const diagnosis = await record(encounterId, 'J020');
@@ -1236,6 +1276,30 @@ describe('el bloque K por HTTP', () => {
       expect((again.body as Problem).code).toBe('DIAGNOSIS_NOT_RESTORABLE');
       // And the one brought back can be removed again.
       await post(`/encounters/${encounterId}/diagnoses/${(restored.body as DiagnosisBody).id}/retract`, doctorToken).expect(204); // prettier-ignore
+    });
+
+    it('EN-213 el diagnóstico recuperado con «Deshacer» es una fila nueva, y sus versiones siguen las de la fila quitada', async () => {
+      const encounterId = await openEncounter();
+      await record(encounterId, 'J020');
+      const edited = await record(encounterId, 'R509');
+      const path = `/encounters/${encounterId}/diagnoses/${edited.id}`;
+      await patch(path, doctorToken, { certainty: 'PRESUMPTIVE' }).expect(200);
+      await post(`${path}/retract`, doctorToken).expect(204);
+
+      const restored = (await post(`${path}/restore`, doctorToken).expect(200)).body as DiagnosisBody; // prettier-ignore
+      expect(restored.id).not.toBe(edited.id);
+
+      // Positive control: the removed row has its version.
+      const before = (await get(`${path}/versions`, doctorToken).expect(200)).body as VersionsBody; // prettier-ignore
+      expect(before.items.map((v) => v.diagnosis.certainty)).toEqual(['DEFINITIVE']); // prettier-ignore
+
+      const after = (await get(`/encounters/${encounterId}/diagnoses/${restored.id}/versions`, doctorToken).expect(200)).body as VersionsBody; // prettier-ignore
+      expect(after.items).toEqual([
+        expect.objectContaining({
+          version: 1,
+          diagnosis: expect.objectContaining({ cie10Code: 'R509', certainty: 'DEFINITIVE' }), // prettier-ignore
+        }),
+      ]);
     });
 
     it('EN-213 si mientras tanto otro quedó como principal, el principal quitado vuelve como secundario', async () => {

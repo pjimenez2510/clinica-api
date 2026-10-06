@@ -3210,6 +3210,14 @@ con un papel en manos de un tercero, un motivo de lista._
   > se debe al cambiar el **código**: la condición y la ocurrencia no las
   > imprime ningún papel.
   >
+  > **Y sobrevive a quitar el diagnóstico** (revisión del 06-10-2026): el
+  > archivo de los quitados guarda también `edit_reason`, `edited_by_id` y
+  > `edited_at` de la fila viva, y `encounter_diagnosis_retraction_matches` los
+  > compara, así que el motivo de recodificar lo que un certificado imprimió
+  > (J00 → J06) se sigue leyendo en las versiones del diagnóstico quitado. Los
+  > archivos anteriores a `20261006062930` los tienen vacíos: ese estado no
+  > está en ninguna otra parte y no se inventa.
+  >
   > **Garantía de la base**, en `trg_encounter_diagnosis_edit_admits`: el
   > motivo (`encounter_diagnosis_code_on_paper`, la función que también usa el
   > servicio), el reposo de maternidad y el reporte; el código del concepto y
@@ -3244,7 +3252,13 @@ con un papel en manos de un tercero, un motivo de lista._
   >
   > **Fila nueva, no la misma**: el identificador del archivo es el de la fila
   > quitada, y un segundo «quitar» del recuperado lo necesitaría. Recuperar es
-  > registrar (EN-009): por eso sólo en la atención viva.
+  > registrar (EN-009): por eso sólo en la atención viva. **«Deshacer» crea un
+  > identificador nuevo** (revisión del 06-10-2026, m2): quien guardara el
+  > anterior lo encuentra en el archivo, y el archivo dice como qué fila volvió
+  > (`restored_as_id`). La lectura de versiones del recuperado sigue ese enlace
+  > hacia atrás y devuelve, después de las suyas, las de la fila quitada —cada
+  > una con el `version` de su fila—, para que deshacer no esconda lo que se
+  > corrigió antes.
   >
   > **Garantía de la base**: `encounter_diagnosis_retraction_frozen`
   > (`encounter_diagnosis_retraction_guard`) admite como única escritura del
