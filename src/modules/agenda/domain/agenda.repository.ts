@@ -317,8 +317,8 @@ export interface NewBooking {
 
 /** AG-035, AG-036: what makes an overbooking an exception ON the record. */
 export interface OverbookingRecord {
-  /** Already trimmed and known non-empty (`requireOverbookingReason`). */
-  reason: string;
+  /** Trimmed, or `null` when none was picked (`overbookingReasonOf`). */
+  reason: string | null;
   /** The account that authorised it, never the one that booked it (AG-103). */
   authorisedById: string;
 }
@@ -396,6 +396,13 @@ export interface TransitionRead {
   status: AgendaEntryStatus;
   startsAt: Date;
   releasedAt: Date | null;
+  /** AG-163. When the no-show was marked, to judge «el mismo día». */
+  noShowAt: Date | null;
+  /**
+   * AG-163. The status the appointment had before it became `NO_SHOW`, read
+   * from its history; `null` when it is not a no-show.
+   */
+  statusBeforeNoShow: AgendaEntryStatus | null;
   /**
    * AG-045: whether a LIVE encounter (not `ENTERED_IN_ERROR`) hangs off this
    * entry. An annulled one does not count (EN-168).
@@ -437,8 +444,8 @@ export interface AttentionInterruption {
 export interface TransitionEffects {
   /** AG-041. The real instant of arrival. */
   checkedInAt?: Date;
-  /** AG-042. */
-  noShowAt?: Date;
+  /** AG-042. `null` only when AG-163 undoes the no-show. */
+  noShowAt?: Date | null;
   /** AG-044. `null` only when AG-154 undoes a block's release. */
   cancelledAt?: Date | null;
   /**
@@ -566,51 +573,70 @@ export interface TransitionCommand {
 }
 
 /**
- * AG-050, AG-115. Everything the new appointment is allowed to decide.
- *
- * WHY THERE IS NO PATIENT, ROOM OR REASON HERE, and it is the load-bearing
- * half. Those three are copied from the stored row INSIDE the transaction by
- * the adapter, and no caller can name them: a body that could change the
- * patient would let «reprogramar» hand one person's hour to another with one
- * field, and `reason` is the free text where the motive for the visit lands,
- * which this module never reads back (AG-072, AG-074).
- *
- * WHY THE PRACTITIONER AND THE TYPE *ARE* HERE (AG-115). They are columns of a
- * row that is being BORN — AG-050 already creates one — so choosing them is
- * not a mutation of the appointment that exists. Forbidding it would not stop
- * receptionists who picked the wrong doctor; it would only make them annul and
- * book again, losing the link AG-051 builds and reporting an annulment to
- * AG-080 that never was one. They are RESOLVED BY THE SERVICE, never optional
- * here: the adapter must not have to decide what «absent» means.
- *
- * THE CHANNEL IS ASKED FOR AND NOT COPIED, on purpose: AG-080 reports
- * inasistencia BY CHANNEL, and the reschedule was requested however it was
- * requested — inheriting «WEB» for a call that came in by telephone would
- * report a lie about a booking that did happen.
+ * AG-050, AG-162, AG-164, AG-132. What an edit writes. Every field is
+ * optional: absent means «as it is». The adapter adds the stamp
+ * (`editedById`, `editedAt`) that `trg_agenda_entry_record_version` demands.
  */
-export interface RescheduledBooking {
-  startsAt: Date;
-  endsAt: Date;
-  /** AG-029, AG-034. Validated by the domain before it gets here. */
-  bookingChannel: BookingChannel;
-  /** AG-115. The one who will attend: asked for, or the original's. */
-  practitionerId: string;
-  /** AG-115, SP-028. The type of attention, or `null` when there is none. */
-  serviceTypeId: string | null;
+export interface EntryEdit {
+  startsAt?: Date;
+  endsAt?: Date;
+  practitionerId?: string;
+  serviceTypeId?: string | null;
+  roomId?: string | null;
+  reason?: string | null;
+  bookingChannel?: BookingChannel;
+  patientId?: string;
+  /**
+   * AG-162. A moved overbooking becomes an ordinary appointment that has to
+   * fit the grid, as the reschedule did; its authorisation stays in the
+   * previous version.
+   */
+  clearOverbooking?: boolean;
+  /** AG-132. The corrected emergency call, by whoever corrects it. */
+  emergency?: {
+    assessedAt: Date;
+    assessedById: string;
+    flaggedAt: Date | null;
+    flaggedById: string | null;
+    note: string | null;
+  };
 }
 
-/**
- * AG-050, AG-051. What one reschedule leaves behind: two entries that name
- * each other.
- *
- * BOTH TRAVEL BACK, and it is not convenience. The screen that asked has to
- * repaint the annulled row and the new one, and a caller that only got the new
- * one would have to re-read the day to find out what happened to the old — a
- * second question whose answer could already have changed.
- */
-export interface RescheduleOutcome {
-  original: AgendaEntryView;
-  created: AgendaEntryView;
+/** AG-162. The row as the edit policy judges it, inside the transaction. */
+export interface EditRead {
+  id: string;
+  kind: AgendaEntryKind;
+  status: AgendaEntryStatus;
+  releasedAt: Date | null;
+  emergencyAssessedAt: Date | null;
+  emergencyAssessedById: string | null;
+  hasEncounter: boolean;
+  /** AG-063. Whether a waiting-list entry was converted into this one. */
+  fromWaitlist: boolean;
+}
+
+export interface EditCommand {
+  siteId: string;
+  entryId: string;
+  editedById: string;
+  /** The stamp; from the application's clock, never PostgreSQL's. */
+  at: Date;
+}
+
+/** AG-168. One replaced version of an entry, without the motive (AG-072). */
+export interface AgendaEntryVersion {
+  version: number;
+  replacedAt: Date;
+  replacedBy: { id: string; name: string };
+  startsAt: Date;
+  endsAt: Date;
+  practitionerId: string;
+  roomId: string | null;
+  serviceTypeId: string | null;
+  bookingChannel: BookingChannel | null;
+  patientId: string | null;
+  blocksCalendar: boolean;
+  emergencyFlagged: boolean | null;
 }
 
 /** One entry, by id and site. `null` covers both «no existe» and «es de otra sede». */
@@ -912,27 +938,17 @@ export interface AgendaRepository {
    */
   findEntry(query: EntryQuery): Promise<AgendaEntryView | null>;
   /**
-   * AG-050, AG-051, AG-052: rescheduling, as ONE transaction.
-   *
-   * AG-052 IS WHY THIS IS A SINGLE PORT METHOD. «Liberar el cupo original» and
-   * «crear una entrada nueva» could be `transition` followed by `book`, and
-   * that composition is exactly what the requirement forbids: the day the
-   * second call is refused — the destination slot is taken, the patient is
-   * already booked there, the site's booking window says no — the first has
-   * already committed and the patient is left with NO appointment at all. So
-   * the two happen in one transaction or neither happens, and no caller can
-   * assemble a version of this that does not.
-   *
-   * `decide` is `planReschedule`, handed down so the rules judge the row as it
-   * is INSIDE the transaction (the same shape `transition` uses, for the same
-   * reason). It throws to refuse, the transaction aborts, and the original is
-   * still occupying the calendar.
+   * AG-050 to AG-052, AG-162, AG-164, AG-132. Edits the SAME row: read,
+   * decide, write conditioned on the status that was read, with the stamp.
+   * The `EXCLUDE` constraints arbitrate a moved interval, and their refusal
+   * leaves the row as it was (AG-052).
    */
-  reschedule(
-    command: TransitionCommand,
-    booking: RescheduledBooking,
-    decide: (entry: TransitionRead) => StatusChange,
-  ): Promise<RescheduleOutcome>;
+  editEntry(
+    command: EditCommand,
+    decide: (entry: EditRead) => EntryEdit,
+  ): Promise<AgendaEntryView>;
+  /** AG-168. The versions an edit replaced, newest first. */
+  entryVersions(query: EntryQuery): Promise<AgendaEntryVersion[]>;
   /**
    * AG-122 to AG-127. Moves the PATIENT axis from a documented fact.
    *

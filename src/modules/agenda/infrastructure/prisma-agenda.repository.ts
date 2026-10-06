@@ -10,14 +10,19 @@ import {
 } from '../../../shared/infrastructure/prisma/serialisation-retry';
 import {
   AgendaEntryHasEncounterError,
+  AgendaEntryNotEditableError,
   AgendaEntryNotFoundError,
   BookingRetryExhaustedError,
   InvalidAgendaTransitionError,
   SubjectStatusNotDerivableError,
 } from '../domain/agenda.errors';
 import type {
+  AgendaEntryVersion,
   AgendaEntryView,
   AgendaRepository,
+  EditCommand,
+  EditRead,
+  EntryEdit,
   AgendaServiceType,
   AgendaSite,
   AuthoriserPermissionsQuery,
@@ -39,8 +44,6 @@ import type {
   PresenceQuery,
   PatientBookingStatus,
   PatientSubjectStatus,
-  RescheduleOutcome,
-  RescheduledBooking,
   ScheduleContext,
   ScheduleContextQuery,
   StatusChange,
@@ -1211,121 +1214,136 @@ export class PrismaAgendaRepository implements AgendaRepository {
   }
 
   /**
-   * AG-050, AG-051, AG-052. Rescheduling: one transaction, two entries.
+   * AG-050 to AG-052, AG-162, AG-164, AG-132. One edit of the SAME row.
    *
-   * AG-052 IS THE WHOLE SHAPE OF THIS METHOD. The release of the original and
-   * the creation of its replacement are one atomic unit, so a destination slot
-   * that is already taken (`23P01`), a patient who is already booked then, or
-   * any other rejection the database issues, aborts BOTH: the original comes
-   * out of this still occupying the calendar, which is exactly what the
-   * requirement demands. There is no ordering of two separate writes that
-   * gives that — checking first and then committing is the race AG-025 already
-   * taught this module not to run.
+   * READ, DECIDE, WRITE CONDITIONALLY, as `transition`: the policy judges the
+   * row inside the transaction, and the `updateMany` is conditioned on the
+   * status and the release that were read, so a concurrent transition makes
+   * the edit lose honestly. The stamp is what `trg_agenda_entry_record_version`
+   * demands; it archives the previous row in the same statement.
    *
-   * AG-050: the existing row is never moved. It is annulled and released by
-   * `applyStatusChange`, and the new interval belongs to a NEW row that points
-   * back at it through `rescheduled_from_id` (AG-051).
-   *
-   * THE RETRY IS AG-026 APPLIED TO THIS PATH, and it is safe precisely because
-   * the transaction is all-or-nothing: a `40001` or a `40P01` killed it before
-   * it could decide anything, so re-running re-reads, re-decides and writes
-   * once. A constraint rejection is NOT retried — that answer is final and the
-   * receptionist can act on it.
+   * AG-052 IS THE STATEMENT. A moved interval that a constraint refuses
+   * (`23P01`) aborts the one `UPDATE`, and the appointment stays where it was.
    */
-  async reschedule(
-    command: TransitionCommand,
-    booking: RescheduledBooking,
-    decide: (entry: TransitionRead) => StatusChange,
-  ): Promise<RescheduleOutcome> {
-    try {
-      return await withSerialisationRetry(
-        () =>
-          this.prisma.$transaction(async (tx) => {
-            await applyStatusChange(tx, command, decide);
-
-            /**
-             * WHAT THE NEW ENTRY INHERITS, AND IT IS EXACTLY WHAT NOBODY MAY
-             * CHOOSE (AG-115). The patient, the room and the motive of the
-             * visit are read from the stored row here, inside the transaction:
-             * there is no field for them anywhere above, so a reschedule can
-             * never be a way of handing one person's hour to another.
-             *
-             * `reason` TRAVELS THROUGH HERE AND NOWHERE ELSE. It is the free
-             * text where the motive for the visit lands — health data this
-             * module never serves back (AG-072, AG-074) — and losing it on a
-             * reschedule would quietly empty the field a receptionist typed.
-             * It is read inside the transaction, written straight back, and
-             * never returned by this method nor logged.
-             */
-            const source = await tx.agendaEntry.findUniqueOrThrow({
-              where: { id: command.entryId },
-              select: {
-                patientId: true,
-                roomId: true,
-                reason: true,
-              },
-            });
-
-            const created = await tx.agendaEntry.create({
-              data: {
-                kind: 'APPOINTMENT',
-                siteId: command.siteId,
-                // AG-115. Already resolved by the service: either the one the
-                // request named or the original's. Nothing is decided here.
-                practitionerId: booking.practitionerId,
-                patientId: source.patientId,
-                roomId: source.roomId,
-                startsAt: booking.startsAt,
-                endsAt: booking.endsAt,
-                bookingChannel: booking.bookingChannel,
-                serviceTypeId: booking.serviceTypeId,
-                reason: source.reason,
-                // AG-029: whoever moved the appointment is who created this
-                // one. The original keeps its own author untouched.
-                createdById: command.changedById,
-                // AG-051, the stored half of the link. The forward direction
-                // is this same column read through
-                // `agenda_entry_one_reschedule_per_entry`.
-                rescheduledFromId: command.entryId,
-              },
-              select: ENTRY_SELECT,
-            });
-
-            /**
-             * READ AFTER THE INSERT, and the order is the requirement: before
-             * it, `rescheduledTo` would still be empty and the original would
-             * come back claiming to point at nothing (AG-051).
-             */
-            const original = await tx.agendaEntry.findUniqueOrThrow({
-              where: { id: command.entryId },
-              select: ENTRY_SELECT,
-            });
-
-            return {
-              original: toEntryView(original),
-              created: toEntryView(created),
-            };
-          }),
-        {
-          attempts: BOOKING_ATTEMPTS,
-          onRetry: (attempt) =>
-            this.logger.warn(
-              { retries: attempt, error_code: 'SERIALISATION_RETRY' },
-              'reschedule retried after a serialisation failure',
-            ),
+  async editEntry(
+    command: EditCommand,
+    decide: (entry: EditRead) => EntryEdit,
+  ): Promise<AgendaEntryView> {
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.agendaEntry.findFirst({
+        where: { id: command.entryId, siteId: command.siteId },
+        select: {
+          id: true,
+          kind: true,
+          status: true,
+          releasedAt: true,
+          emergencyAssessedAt: true,
+          emergencyAssessedById: true,
+          _count: { select: { waitlistOrigin: true } },
         },
-      );
-    } catch (error) {
-      if (!isSerialisationFailure(error)) throw error;
+      });
+      if (!row) throw new AgendaEntryNotFoundError();
 
-      // AG-026, at `error` level like the booking path: a conflict is the
-      // system working, three aborted transactions in a row is not.
-      this.logger.error(
-        { error_code: 'BOOKING_RETRY_EXHAUSTED', retries: BOOKING_ATTEMPTS },
-        'reschedule abandoned after exhausting serialisation retries',
-      );
-      throw new BookingRetryExhaustedError(BOOKING_ATTEMPTS);
-    }
+      const attention = await lockLiveAttention(tx, command.entryId);
+      const { _count, ...read } = row;
+      const edit = decide({
+        ...read,
+        hasEncounter: attention !== null,
+        fromWaitlist: _count.waitlistOrigin > 0,
+      });
+
+      const updated = await tx.agendaEntry.updateMany({
+        where: {
+          id: command.entryId,
+          siteId: command.siteId,
+          status: row.status,
+          releasedAt: row.releasedAt,
+        },
+        data: {
+          startsAt: edit.startsAt,
+          endsAt: edit.endsAt,
+          practitionerId: edit.practitionerId,
+          serviceTypeId: edit.serviceTypeId,
+          roomId: edit.roomId,
+          reason: edit.reason,
+          bookingChannel: edit.bookingChannel,
+          patientId: edit.patientId,
+          ...(edit.clearOverbooking
+            ? {
+                blocksCalendar: true,
+                overbookingAuthorisedById: null,
+                overbookingReason: null,
+              }
+            : {}),
+          ...(edit.emergency
+            ? {
+                emergencyAssessedAt: edit.emergency.assessedAt,
+                emergencyAssessedById: edit.emergency.assessedById,
+                emergencyFlaggedAt: edit.emergency.flaggedAt,
+                emergencyFlaggedById: edit.emergency.flaggedById,
+                emergencyNote: edit.emergency.note,
+              }
+            : {}),
+          editedById: command.editedById,
+          editedAt: command.at,
+        },
+      });
+      if (updated.count === 0) {
+        // Somebody changed its status between our read and our write: the
+        // refusal names what IS there now.
+        const current = await tx.agendaEntry.findUniqueOrThrow({
+          where: { id: command.entryId },
+          select: { status: true },
+        });
+        throw new AgendaEntryNotEditableError(current.status);
+      }
+
+      const entry = await tx.agendaEntry.findUniqueOrThrow({
+        where: { id: command.entryId },
+        select: ENTRY_SELECT,
+      });
+      return toEntryView(entry);
+    });
+  }
+
+  /**
+   * AG-168. The replaced versions, newest first. The motive of the visit and
+   * the notes are in the archived row and are NOT served (AG-072, AG-074).
+   */
+  async entryVersions(query: EntryQuery): Promise<AgendaEntryVersion[]> {
+    const versions = await this.prisma.recordVersion.findMany({
+      where: { resourceType: 'agenda_entry', resourceId: query.entryId },
+      orderBy: { version: 'desc' },
+      select: {
+        version: true,
+        data: true,
+        changedAt: true,
+        changedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+    return versions.map((version) => {
+      const data = version.data as unknown as ArchivedEntry;
+      return {
+        version: version.version,
+        replacedAt: version.changedAt,
+        replacedBy: {
+          id: version.changedBy.id,
+          name: `${version.changedBy.firstName} ${version.changedBy.lastName}`,
+        },
+        startsAt: new Date(data.starts_at),
+        endsAt: new Date(data.ends_at),
+        practitionerId: data.practitioner_id,
+        roomId: data.room_id,
+        serviceTypeId: data.service_type_id,
+        bookingChannel: data.booking_channel,
+        patientId: data.patient_id,
+        blocksCalendar: data.blocks_calendar,
+        emergencyFlagged:
+          data.emergency_assessed_at === null
+            ? null
+            : data.emergency_flagged_at !== null,
+      };
+    });
   }
 }
 
@@ -1365,11 +1383,23 @@ async function applyStatusChange(
       status: true,
       startsAt: true,
       releasedAt: true,
+      noShowAt: true,
     },
   });
   if (!row) throw new AgendaEntryNotFoundError();
 
   const attention = await lockLiveAttention(tx, command.entryId);
+
+  // AG-163. Where a no-show goes back to: the status its history says it
+  // left. Read only for a no-show; nothing else needs it.
+  const noShowRow =
+    row.status === 'NO_SHOW'
+      ? await tx.agendaStatusHistory.findFirst({
+          where: { agendaEntryId: command.entryId, toStatus: 'NO_SHOW' },
+          orderBy: [{ changedAt: 'desc' }, { id: 'desc' }],
+          select: { fromStatus: true },
+        })
+      : null;
 
   const fromStatus = row.status;
   const change = decide({
@@ -1378,6 +1408,8 @@ async function applyStatusChange(
     status: fromStatus,
     startsAt: row.startsAt,
     releasedAt: row.releasedAt,
+    noShowAt: row.noShowAt,
+    statusBeforeNoShow: noShowRow?.fromStatus ?? null,
     hasEncounter: attention !== null,
     encounterHasClinicalAct: attention?.hasClinicalAct ?? false,
     encounterInProgress: attention?.inProgress ?? false,
@@ -1519,6 +1551,20 @@ async function lockLiveAttention(
     hasClinicalAct: await hasClinicalAct(tx, row.id),
     inProgress: row.status === 'OPEN' || row.status === 'ON_HOLD',
   };
+}
+
+/** AG-168. The columns of an archived `agenda_entry` row this module reads. */
+interface ArchivedEntry {
+  starts_at: string;
+  ends_at: string;
+  practitioner_id: string;
+  room_id: string | null;
+  service_type_id: string | null;
+  booking_channel: AgendaEntryVersion['bookingChannel'];
+  patient_id: string | null;
+  blocks_calendar: boolean;
+  emergency_assessed_at: string | null;
+  emergency_flagged_at: string | null;
 }
 
 /** `YYYY-MM-DD` as the instant PostgreSQL stores for that calendar day. */

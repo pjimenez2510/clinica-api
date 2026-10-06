@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AgendaEntryHasEncounterError,
+  AgendaEntryNotEditableError,
   AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
   SubjectStatusNotDerivableError,
@@ -26,9 +27,6 @@ const ENTRY_ID = '00000000-0000-4000-8000-00000000000a';
 const CREATED_ID = '00000000-0000-4000-8000-00000000000b';
 const SITE = '00000000-0000-4000-8000-000000000001';
 const USER = '00000000-0000-4000-8000-000000000004';
-
-/** AG-115: the practitioner the appointment is being moved TO. */
-const NEW_PRACTITIONER = '00000000-0000-4000-8000-000000000009';
 
 const NOW = new Date('2026-01-05T13:30:00Z');
 
@@ -61,6 +59,8 @@ function entryRow(overrides: Record<string, unknown> = {}) {
     // only alternative to a single element.
     rescheduledFromId: null,
     rescheduledTo: [],
+    // AG-063: what the edit reads of the waiting list that gave this slot.
+    _count: { waitlistOrigin: 0 },
     ...overrides,
   };
 }
@@ -107,6 +107,11 @@ function prismaDouble(options: {
       },
     },
     agendaStatusHistory: {
+      // AG-163: the status a no-show left, read from its history.
+      findFirst: (args: Record<string, unknown>) => {
+        calls.push({ method: 'history.findFirst', args });
+        return Promise.resolve({ fromStatus: 'CONFIRMED' });
+      },
       create: (args: Record<string, unknown>) => {
         calls.push({ method: 'history.create', args });
         return Promise.resolve({});
@@ -374,163 +379,75 @@ describe('the transition transaction', () => {
   });
 });
 
-/**
- * The reschedule transaction, against the same double.
- *
- * WHAT ONLY THIS FILE CAN PIN: the SHAPE — that the release and the insert are
- * issued inside ONE `$transaction`, in that order, and that the original is
- * re-read only after the insert so its forward link exists. Whether PostgreSQL
- * really rolls the release back when the insert is refused is not a claim a
- * double may make, and `test/integration/agenda-reschedule.spec.ts` makes it
- * against a real database.
- */
-const NEW_SLOT = {
-  startsAt: new Date('2026-01-05T14:00:00Z'),
-  endsAt: new Date('2026-01-05T14:20:00Z'),
-  bookingChannel: 'PHONE' as const,
-  // AG-115. Already resolved by the service — the adapter never decides what
-  // «absent» means, it writes what it is handed.
-  practitionerId: NEW_PRACTITIONER,
-  serviceTypeId: null,
-};
+describe('the edit transaction (D-127)', () => {
+  const EDIT_COMMAND = {
+    siteId: SITE,
+    entryId: ENTRY_ID,
+    editedById: USER,
+    at: NOW,
+  };
+  // An hour after the stored slot of `entryRow`.
+  const stored = entryRow();
+  const moved = {
+    startsAt: new Date(stored.startsAt.getTime() + 60 * 60_000),
+    endsAt: new Date(stored.endsAt.getTime() + 60 * 60_000),
+  };
 
-const annul = (): StatusChange => ({
-  to: 'CANCELLED',
-  effects: { cancelledAt: NOW, releasedAt: NOW },
-  cancellationNote: 'Paciente pide otra hora',
-  historyNote: 'Paciente pide otra hora',
-});
-
-describe('the reschedule transaction', () => {
-  it('AG-050 releases the existing row and INSERTS the new interval instead of updating it', async () => {
+  it('AG-051 updates the SAME row with the stamp, conditioned on what it read', async () => {
     const { repository, calls } = prismaDouble({
-      reads: [entryRow(), entryRow(), entryRow({ status: 'CANCELLED' })],
+      reads: [entryRow(), entryRow(moved)],
     });
 
-    await repository.reschedule(COMMAND, NEW_SLOT, annul);
+    await repository.editEntry(EDIT_COMMAND, () => moved);
 
-    expect(calls.map((call) => call.method)).toEqual([
-      'entry.findFirst',
-      'entry.updateMany',
-      'history.create',
-      // The columns the new row copies from the old one, read inside the
-      // transaction so nothing about the appointment can change under it.
-      'entry.findUniqueOrThrow',
-      'entry.create',
-      // Re-read AFTER the insert: before it, the original would come back
-      // pointing at nothing (AG-051).
-      'entry.findUniqueOrThrow',
-    ]);
-
-    // AG-050 in the one place it could be broken: the UPDATE stamps the
-    // annulment and NEVER the new interval.
-    expect(calls[1]?.args).toMatchObject({
+    expect(calls.some((call) => call.method === 'entry.create')).toBe(false);
+    const update = calls.find((call) => call.method === 'entry.updateMany');
+    expect(update?.args).toMatchObject({
       where: { id: ENTRY_ID, siteId: SITE, status: 'BOOKED', releasedAt: null },
-      data: { status: 'CANCELLED', releasedAt: NOW },
+      data: { ...moved, editedById: USER, editedAt: NOW },
     });
-    const updateData = (calls[1]?.args as { data: Record<string, unknown> })
-      .data;
-    expect(updateData).not.toHaveProperty('startsAt');
-    expect(updateData).not.toHaveProperty('endsAt');
+    // An edit is not a transition: it writes no history row (AG-004 is the
+    // status's; the version is `record_version`'s, written by the base).
+    expect(calls.some((call) => call.method === 'history.create')).toBe(false);
   });
 
-  it('AG-051 stamps the new entry with the entry it came from', async () => {
-    const { repository, calls } = prismaDouble({
-      reads: [entryRow(), entryRow(), entryRow({ status: 'CANCELLED' })],
+  it('AG-162 refuses a lost race with the status the winner left', async () => {
+    const { repository } = prismaDouble({
+      reads: [entryRow(), entryRow({ status: 'CHECKED_IN' })],
+      updatedCount: 0,
     });
-
-    await repository.reschedule(COMMAND, NEW_SLOT, annul);
-
-    const created = calls.find((call) => call.method === 'entry.create');
-    expect(created?.args).toMatchObject({
-      data: {
-        kind: 'APPOINTMENT',
-        siteId: SITE,
-        startsAt: NEW_SLOT.startsAt,
-        endsAt: NEW_SLOT.endsAt,
-        bookingChannel: 'PHONE',
-        createdById: USER,
-        rescheduledFromId: ENTRY_ID,
-      },
-    });
-  });
-
-  it('AG-115 writes the practitioner and the type it was handed, and reads the patient off the stored row', async () => {
-    const { repository, calls } = prismaDouble({
-      reads: [entryRow(), entryRow(), entryRow({ status: 'CANCELLED' })],
-    });
-
-    await repository.reschedule(
-      COMMAND,
-      { ...NEW_SLOT, serviceTypeId: 'service-type-1' },
-      annul,
-    );
-
-    const created = calls.find((call) => call.method === 'entry.create');
-    expect(created?.args).toMatchObject({
-      data: {
-        practitionerId: NEW_PRACTITIONER,
-        serviceTypeId: 'service-type-1',
-        // AG-115's other half: the patient is NOT among the things a caller
-        // can hand over. It comes off the row that is being moved.
-        patientId: '00000000-0000-4000-8000-000000000003',
-      },
-    });
-
-    // And the read INSIDE the transaction asks for exactly the three columns
-    // nobody may choose: a `practitionerId` back in this select would mean the
-    // adapter still had a say in AG-115 and could silently win over the caller.
-    const source = calls.filter(
-      (call) => call.method === 'entry.findUniqueOrThrow',
-    )[0];
-    expect(
-      (source?.args as { select: Record<string, unknown> }).select,
-    ).toEqual({ patientId: true, roomId: true, reason: true });
-  });
-
-  it('AG-052 lets the refusal of the new entry escape, so the transaction takes the release with it', async () => {
-    const slotTaken = new Error('exclusion violation');
-    const { repository, calls } = prismaDouble({
-      reads: [entryRow(), entryRow()],
-      createFails: slotTaken,
-    });
-
-    await expect(repository.reschedule(COMMAND, NEW_SLOT, annul)).rejects.toBe(
-      slotTaken,
-    );
-
-    // NOTHING is swallowed and nothing is compensated by hand: the adapter
-    // does not catch this, so `$transaction` rolls the release back. A version
-    // that answered "created: null" would leave the original annulled.
-    expect(calls.map((call) => call.method)).toEqual([
-      'entry.findFirst',
-      'entry.updateMany',
-      'history.create',
-      'entry.findUniqueOrThrow',
-      'entry.create',
-    ]);
-  });
-
-  it('AG-052 writes nothing at all when the policy refuses the annulment', async () => {
-    const { repository, calls } = prismaDouble({ reads: [entryRow()] });
 
     await expect(
-      repository.reschedule(COMMAND, NEW_SLOT, () => {
-        throw new InvalidAgendaTransitionError('CANCELLED', 'CANCELLED');
-      }),
-    ).rejects.toBeInstanceOf(InvalidAgendaTransitionError);
-
-    expect(calls.map((call) => call.method)).toEqual(['entry.findFirst']);
+      repository.editEntry(EDIT_COMMAND, () => moved),
+    ).rejects.toBeInstanceOf(AgendaEntryNotEditableError);
   });
 
   it('AG-071 answers not-found for an entry of another site without writing', async () => {
     const { repository, calls } = prismaDouble({ reads: [null] });
 
     await expect(
-      repository.reschedule(COMMAND, NEW_SLOT, annul),
+      repository.editEntry(EDIT_COMMAND, () => moved),
     ).rejects.toBeInstanceOf(AgendaEntryNotFoundError);
+    expect(calls.some((call) => call.method === 'entry.updateMany')).toBe(
+      false,
+    );
+  });
 
-    expect(calls.map((call) => call.method)).toEqual(['entry.findFirst']);
+  it('AG-163 reads where a no-show goes back to from its history', async () => {
+    const { repository } = prismaDouble({
+      reads: [
+        entryRow({ status: 'NO_SHOW', noShowAt: NOW, releasedAt: NOW }),
+        entryRow(),
+      ],
+    });
+    let seen: unknown;
+
+    await repository.transition(COMMAND, (read) => {
+      seen = read.statusBeforeNoShow;
+      return { to: 'CONFIRMED', effects: { noShowAt: null, releasedAt: null } };
+    });
+
+    expect(seen).toBe('CONFIRMED');
   });
 });
 

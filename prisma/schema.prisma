@@ -109,6 +109,7 @@ model User {
   /// booked — `agenda_entry.created_by_id` carries no relation, and keeping
   /// the two apart is the control itself (AG-103).
   overbookingsAuthorised AgendaEntry[] @relation("OverbookingAuthoriser")
+  agendaEntriesEdited    AgendaEntry[] @relation("AgendaEntryEditor")
   encountersAnnulled     Encounter[]   @relation("EncounterAnnuller")
   encountersDiscontinued Encounter[]   @relation("EncounterDiscontinuer")
   encountersCorrected    Encounter[]   @relation("EncounterCorrector")
@@ -153,7 +154,8 @@ model User {
   /// AG-064. The waiting-list calls this person made. `RESTRICT` on the way
   /// back: the trail names whoever called, and an account is deactivated, never
   /// deleted (AU-024).
-  waitlistContacts WaitlistContactAttempt[] @relation("WaitlistContactRecorder")
+  waitlistContacts       WaitlistContactAttempt[] @relation("WaitlistContactRecorder")
+  waitlistContactsEdited WaitlistContactAttempt[] @relation("WaitlistContactEditor")
 
   /// Ley 77 art. 10. Who made the emergency call on arrival. Named, because
   /// art. 13 turns «nobody assessed them» into a criminal matter.
@@ -2328,6 +2330,14 @@ model AgendaEntry {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  /// AG-051, AG-162 (D-127). The stamp of the last EDIT — not of a status
+  /// change, which `agenda_status_history` records. Moving or editing the
+  /// appointment demands a new one, and `trg_agenda_entry_record_version`
+  /// archives the previous row in `record_version` in the same statement.
+  editedById String?   @map("edited_by_id") @db.Uuid
+  editedBy   User?     @relation("AgendaEntryEditor", fields: [editedById], references: [id], onDelete: Restrict)
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+
   statusHistory  AgendaStatusHistory[]
   /// EN-168. DECLARADA 1:N Y GARANTIZADA «UNA VIVA» POR LA BASE: el índice
   /// único `encounter_one_live_per_agenda_entry` es parcial
@@ -2463,6 +2473,12 @@ model WaitlistContactAttempt {
   recordedBy   User   @relation("WaitlistContactRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
 
   outcome WaitlistContactOutcome
+
+  /// AG-064 (D-127). Who corrected the outcome of the LAST attempt, and when.
+  /// `trg_waitlist_contact_attempt_record_version` archives the previous one.
+  editedById String?   @map("edited_by_id") @db.Uuid
+  editedBy   User?     @relation("WaitlistContactEditor", fields: [editedById], references: [id], onDelete: Restrict)
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
 
   @@index([waitlistEntryId, attemptedAt(sort: Desc)], map: "waitlist_contact_attempt_by_entry")
   @@map("waitlist_contact_attempt")

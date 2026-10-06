@@ -5,18 +5,17 @@ import { PatientMergedError } from '../../../shared/domain/errors/patient-merged
 import {
   AGENDA_REPOSITORY,
   type AgendaEntryStatus,
+  type AgendaEntryVersion,
   type AgendaEntryView,
   type AgendaRepository,
+  type EntryEdit,
   type OverbookingRecord,
   type SiteScopeFilter,
 } from '../domain/agenda.repository';
 import {
   AgendaEntryNotFoundError,
   BlockOverlapsAppointmentsError,
-  CancellationReasonRequiredError,
   EmergencyAssessmentRequiredError,
-  EnteredInErrorReasonRequiredError,
-  InvalidAgendaTransitionError,
 } from '../domain/agenda.errors';
 import { checkBookingChannel, checkBookingFitsSchedule, checkBookingWindow, checkRoomBelongsToSite, resolveBookingParameters, ruleGoverningStart, type BookingChannel, type SiteBookingParameters } from '../domain/booking-policy'; // prettier-ignore
 import {
@@ -24,9 +23,14 @@ import {
   checkOverbookingAuthoriser,
   checkOverbookingCap,
   checkPractitionerIsThere,
-  requireOverbookingReason,
+  overbookingReasonOf,
 } from '../domain/overbooking-policy';
-import { planReschedule } from '../domain/reschedule-policy';
+import {
+  editRelocates,
+  planBlockEdit,
+  planEmergencyCorrection,
+  planEntryEdit,
+} from '../domain/entry-edit-policy';
 import { ServiceTypeNotFoundError } from '../../../shared/domain/errors/master-data.errors';
 import { resolveDuration } from '../../../shared/domain/duration-resolution';
 import {
@@ -37,6 +41,7 @@ import {
   planAttentionEffect,
   planBlockRelease,
   planBlockRestore,
+  planNoShowUndo,
 } from '../domain/status-machine';
 import {
   type ClinicalDate,
@@ -156,7 +161,7 @@ export interface BookAppointmentRequest {
 
 /** AG-035, AG-101, AG-103: what the caller declares when breaking the grid. */
 export interface DeclaredOverbooking {
-  /** AG-035. Refused when empty; stored trimmed. */
+  /** AG-035. Optional, from a short list; stored trimmed or `null`. */
   reason?: string;
   /**
    * AG-101, AG-103. The account that authorises it — never the one booking,
@@ -231,49 +236,51 @@ export interface BookedAppointment {
 }
 
 /**
- * AG-050, AG-115. Moving one appointment to another moment — and, if it was
- * the doctor that was wrong, to another agenda.
- *
- * WHAT IS NOT HERE IS THE POINT: no patient, no room. The new entry is the old
- * one moved, so those are copied from the stored row and neither is a decision
- * this request may take — a body that could change the patient would let
- * «reprogramar» quietly hand somebody else's hour to another person.
+ * AG-050, AG-162 (D-127). An edit of an appointment in place. Every field is
+ * optional and absent means «as it is». `null` clears the room or the motive.
  */
-export interface RescheduleRequest {
+export interface EditEntryRequest {
   siteId: string;
   entryId: string;
-  startsAt: Date;
-  endsAt: Date;
-  /** Unvalidated: `checkBookingChannel` decides (AG-034). */
-  bookingChannel: string;
-  /**
-   * AG-115. Who will attend it now. ABSENT MEANS THE SAME ONE, which is the
-   * behaviour that existed before this requirement and that it must not break.
-   */
+  /** AG-050. Both or neither: the DTO refuses one without the other. */
+  startsAt?: Date;
+  endsAt?: Date;
+  /** AG-115. Who will attend it now. */
   practitionerId?: string;
-  /** AG-115, SP-028. The type of attention. Absent means the stored one. */
+  /** AG-115, SP-028. */
   serviceTypeId?: string;
-  /**
-   * AG-044. Why the original is annulled. Required, because rescheduling IS an
-   * annulment for the entry that already exists, and «anular con rastro» is
-   * worth nothing if the rastro can be empty.
-   */
+  roomId?: string | null;
+  /** The motive of the visit. Written, never served back (AG-072). */
+  reason?: string | null;
+  /** Unvalidated: `checkBookingChannel` decides (AG-034). */
+  bookingChannel?: string;
+  /** AG-162. Only before the arrival. */
+  patientId?: string;
+}
+
+/** AG-050, AG-162. The edited entry and what is worth saying about it. */
+export interface EditedAppointment {
+  entry: AgendaEntryView;
+  /** AG-110, exactly as booking answers it. Empty is the ordinary case. */
+  warnings: readonly string[];
+}
+
+/** AG-164. An edit of a block. */
+export interface EditBlockRequest {
+  siteId: string;
+  entryId: string;
+  startsAt?: Date;
+  endsAt?: Date;
+  roomId?: string | null;
   reason?: string;
 }
 
-/**
- * AG-050, AG-051. The two entries a reschedule leaves, and what is worth
- * saying about the new one.
- *
- * `original` comes back ANNULLED AND RELEASED, never moved: its interval is
- * the one it always had, which is what makes the history answer «¿a qué hora
- * era antes?».
- */
-export interface RescheduledAppointment {
-  original: AgendaEntryView;
-  created: AgendaEntryView;
-  /** AG-110, exactly as booking answers it. Empty is the ordinary case. */
-  warnings: readonly string[];
+/** AG-132. The correction of the emergency call. */
+export interface EmergencyCorrectionRequest {
+  siteId: string;
+  entryId: string;
+  emergency: boolean;
+  emergencyNote?: string;
 }
 
 /**
@@ -715,10 +722,10 @@ export class AgendaService {
      * Both are pure and the parameters are already in hand, so a refusal here
      * costs no round trip at all.
      */
-    let reason: string | undefined;
+    let reason: string | null = null;
     if (input.overbooking !== undefined) {
       assertOverbookingAdmitted(parameters);
-      reason = requireOverbookingReason(input.overbooking.reason);
+      reason = overbookingReasonOf(input.overbooking.reason);
     }
 
     /**
@@ -789,7 +796,7 @@ export class AgendaService {
       overbookingDeclared: input.overbooking !== undefined,
     });
 
-    if (input.overbooking === undefined || reason === undefined) return undefined; // prettier-ignore
+    if (input.overbooking === undefined) return undefined;
 
     /**
      * AG-151 (D-069). The overbooking squeezes somebody into the consultation
@@ -845,7 +852,7 @@ export class AgendaService {
     startsAt: Date;
     authorisedById: string;
     requesterId?: string;
-    reason: string;
+    reason: string | null;
     parameters: SiteBookingParameters;
   }): Promise<OverbookingRecord> {
     /**
@@ -1039,136 +1046,258 @@ export class AgendaService {
   }
 
   /**
-   * AG-050, AG-051, AG-052. Moves one appointment to another moment.
+   * AG-050 to AG-052, AG-115, AG-162 (D-127). Edits the SAME appointment:
+   * moves it, changes who attends it, its type, its room, its motive, its
+   * channel or, before the arrival, its patient. The previous row is archived
+   * by the base (`trg_agenda_entry_record_version`).
    *
-   * ONE PORT CALL, AND THAT IS THE REQUIREMENT. This method could annul
-   * through `transition` and then book through `book`, and AG-052 exists to
-   * forbid exactly that: the second call is refused every time the destination
-   * is taken, and by then the first has committed and the patient has no
-   * appointment at all. So the release and the creation travel together to
-   * `reschedule`, which does both in one transaction or neither.
-   *
-   * WHAT IS CHECKED BEFORE THE TRANSACTION and what is not. The new interval
-   * is judged by the same checks a fresh booking gets — the site's window, the
-   * merged chart, the room, the schedule — because it IS a fresh booking. The
-   * overlap is never checked: the three `EXCLUDE` constraints arbitrate it,
-   * and their rejection is what AG-052 turns into "nothing was released".
+   * WHAT IS CHECKED BEFORE THE TRANSACTION. A change of interval, practitioner,
+   * type, channel or patient is judged by the same checks a fresh booking gets
+   * (AG-115), against the values the appointment will HAVE. The overlap is
+   * never checked here: the `EXCLUDE` constraints arbitrate it, and their
+   * refusal leaves the row as it was (AG-052).
    */
-  async reschedule(
-    request: RescheduleRequest,
+  async editEntry(
+    request: EditEntryRequest,
     requester: Requester,
-  ): Promise<RescheduledAppointment> {
-    // Taken ONCE, like `book` and `transition`: the same instant stamps the
-    // annulment of the original and judges the window of the new interval.
+  ): Promise<EditedAppointment> {
+    // Taken ONCE: the same instant stamps the edit and judges the window.
     const now = new Date();
 
-    const bookingChannel = checkBookingChannel(request.bookingChannel);
-
-    // AG-044 before any read, exactly as `transition` does: a refusal that
-    // costs a round trip is a worse refusal. The policy demands it again
-    // inside the transaction, where no caller can walk around it.
-    if (!request.reason?.trim()) throw new CancellationReasonRequiredError();
-
-    const original = await this.agenda.findEntry({
+    const current = await this.agenda.findEntry({
       siteId: request.siteId,
       entryId: request.entryId,
     });
-    // AG-071: one answer for "does not exist" and for "belongs to another
-    // site". Telling them apart confirms foreign entries one guess at a time.
-    if (original === null) throw new AgendaEntryNotFoundError();
-
-    /**
-     * AG-040, AG-046 early, and AUTHORITATIVELY LATER. A block has no patient
-     * to move and a terminal appointment has nothing left to move; refusing
-     * here saves reading a schedule for a request that cannot succeed. The
-     * decision that counts is the same rule re-run inside the transaction,
-     * over the row as it is there.
-     */
-    assertTransition(original.kind, original.status, 'CANCELLED');
-    if (original.patientId === null) {
-      // Unreachable while `agenda_entry_patient_coherence` holds — an
-      // APPOINTMENT has a patient — and stated rather than asserted away: a
-      // row that broke the CHECK must be refused, not rescheduled onto nobody.
-      throw new InvalidAgendaTransitionError(original.status, 'CANCELLED');
+    // AG-071: one answer for "does not exist", "another site" and "a block".
+    if (current === null || current.kind !== 'APPOINTMENT') {
+      throw new AgendaEntryNotFoundError();
     }
 
-    /**
-     * AG-115. What the NEW entry will be, resolved once and used twice.
-     *
-     * THE FALLBACK IS THE REQUIREMENT'S «opcionales»: absent means the one it
-     * already had, so a reschedule that only moves the hour behaves exactly as
-     * it did before AG-115 existed. The patient is NOT in this list and has no
-     * fallback to write: it is copied by the adapter and no caller can name it.
-     */
-    const practitionerId = request.practitionerId ?? original.practitionerId;
-    const serviceTypeId = request.serviceTypeId ?? original.serviceTypeId;
-
-    /**
-     * AG-115's second half: «las mismas comprobaciones que a una reserva», and
-     * against the practitioner who will ATTEND. Judging the schedule of the
-     * doctor being left would place an appointment on a grid the booking route
-     * refuses — the exact reason these checks are shared with `book` instead of
-     * copied (see `checkIntervalIsBookable`).
-     */
-    await this.checkIntervalIsBookable({
-      siteId: request.siteId,
-      practitionerId,
-      patientId: original.patientId,
-      // The new entry keeps the room of the old one, so it is the room whose
-      // site has to be checked (AG-105) — even though nobody chose it now.
-      roomId: original.roomId ?? undefined,
+    const bookingChannel =
+      request.bookingChannel === undefined
+        ? undefined
+        : checkBookingChannel(request.bookingChannel);
+    const edit: EntryEdit = {
       startsAt: request.startsAt,
       endsAt: request.endsAt,
-      channel: bookingChannel,
-      now,
-    });
+      practitionerId: request.practitionerId,
+      serviceTypeId: request.serviceTypeId,
+      roomId: request.roomId,
+      reason: request.reason === undefined ? undefined : request.reason?.trim() || null, // prettier-ignore
+      bookingChannel,
+      patientId: request.patientId,
+    };
 
-    const outcome = await this.agenda.reschedule(
+    /**
+     * AG-162 (review, P1). Only a NEW HOUR or a NEW PRACTITIONER is judged
+     * like a booking — window, lead time, schedule. Correcting the patient,
+     * the channel or the type of an appointment that keeps its hour is not a
+     * booking made now: it is fixing the one that exists, also once its hour
+     * started. The merged chart and the `EXCLUDE` constraints still apply.
+     */
+    const relocates = editRelocates(edit);
+    if (!relocates && request.roomId) {
+      // AG-105 only: a room change of an appointment that is not moving is
+      // not a booking, and the window of AG-031 does not apply to it.
+      checkRoomBelongsToSite(
+        await this.agenda.roomSiteOf(request.roomId),
+        request.siteId,
+      );
+    }
+    if (!relocates && request.patientId !== undefined) {
+      // AG-027, the one booking check a patient change needs on its own.
+      const patient = await this.agenda.findPatientForBooking(
+        request.patientId,
+      );
+      if (patient?.mergedIntoMrn) {
+        throw new PatientMergedError(patient.mergedIntoMrn);
+      }
+    }
+    // AG-162 (review, M-2). The motive of the visit was the previous
+    // patient's: it does not travel to the new one unless written again.
+    if (
+      request.patientId !== undefined &&
+      request.patientId !== current.patientId &&
+      edit.reason === undefined
+    ) {
+      edit.reason = null;
+    }
+    if (relocates) {
+      await this.checkIntervalIsBookable({
+        siteId: request.siteId,
+        practitionerId: request.practitionerId ?? current.practitionerId,
+        patientId: request.patientId ?? current.patientId ?? '',
+        roomId: (request.roomId === undefined ? current.roomId : request.roomId) ?? undefined, // prettier-ignore
+        startsAt: request.startsAt ?? current.startsAt,
+        endsAt: request.endsAt ?? current.endsAt,
+        channel: bookingChannel ?? current.bookingChannel ?? 'PHONE',
+        now,
+      });
+    }
+    // AG-162. A RELOCATED overbooking is now an ordinary appointment that
+    // fits the grid (checked above); its authorisation stays in the version.
+    // One that keeps its hour keeps its exception (review, M-1).
+    if (relocates && !current.blocksCalendar) edit.clearOverbooking = true;
+
+    const entry = await this.agenda.editEntry(
       {
         siteId: request.siteId,
         entryId: request.entryId,
-        // AG-004, AG-029: whoever moved it authors both the history row and
-        // the new entry. From the session, never from the body.
+        // AG-051: who edited comes from the session, never from the body.
+        editedById: requester.userId,
+        at: now,
+      },
+      (read) => planEntryEdit(read, edit),
+    );
+
+    // AG-074. The site and the fact; nothing interpolated.
+    this.logger.info(
+      { site_id: entry.siteId, action: 'AGENDA_ENTRY_EDITED' },
+      'appointment edited',
+    );
+
+    // AG-110, read about the entry THAT EXISTS, exactly as booking does.
+    const bookedDate = clinicalDateOf(entry.startsAt);
+    const warnings =
+      request.startsAt === undefined
+        ? []
+        : bookingWarningsFor(
+            await this.agenda.holidaysFor({
+              siteId: entry.siteId,
+              date: bookedDate,
+            }),
+            bookedDate,
+            entry.siteId,
+          );
+
+    return { entry, warnings };
+  }
+
+  /**
+   * AG-164. Edits the same block: its hour, its room or its reason, with
+   * version. Refused over appointments, with the list (AG-038).
+   */
+  async editBlock(
+    request: EditBlockRequest,
+    requester: Requester,
+  ): Promise<AgendaEntryView> {
+    const now = new Date();
+
+    const block = await this.agenda.findEntry(request);
+    if (block === null || block.kind !== 'BLOCK') {
+      throw new AgendaEntryNotFoundError();
+    }
+
+    const roomId = request.roomId === undefined ? block.roomId : request.roomId;
+    if (roomId !== null) {
+      checkRoomBelongsToSite(
+        await this.agenda.roomSiteOf(roomId),
+        block.siteId,
+      );
+    }
+
+    const startsAt = request.startsAt ?? block.startsAt;
+    const endsAt = request.endsAt ?? block.endsAt;
+    const blocking = await this.agenda.blockingAppointments({
+      siteId: block.siteId,
+      practitionerId: block.practitionerId,
+      startsAt,
+      endsAt,
+    });
+    if (blocking.length > 0) throw new BlockOverlapsAppointmentsError(blocking);
+
+    const entry = await this.agenda.editEntry(
+      {
+        siteId: request.siteId,
+        entryId: request.entryId,
+        editedById: requester.userId,
+        at: now,
+      },
+      (read) =>
+        planBlockEdit(read, {
+          startsAt: request.startsAt,
+          endsAt: request.endsAt,
+          roomId: request.roomId,
+          reason: request.reason?.trim(),
+        }),
+    );
+
+    this.logger.info(
+      { site_id: entry.siteId, action: 'AGENDA_BLOCK_EDITED' },
+      'agenda block edited',
+    );
+
+    return entry;
+  }
+
+  /**
+   * AG-163. Undoes a no-show marked by mistake, the same day, through the
+   * transition port: the history row says who undid it and when.
+   */
+  async undoNoShow(
+    request: { siteId: string; entryId: string },
+    requester: Requester,
+  ): Promise<AgendaEntryView> {
+    const now = new Date();
+    const entry = await this.agenda.transition(
+      {
+        siteId: request.siteId,
+        entryId: request.entryId,
         changedById: requester.userId,
       },
-      {
-        startsAt: request.startsAt,
-        endsAt: request.endsAt,
-        bookingChannel,
-        practitionerId,
-        serviceTypeId,
-      },
-      (read) => planReschedule({ entry: read, reason: request.reason, now }),
+      (read) => planNoShowUndo(read, now),
     );
 
-    /**
-     * AG-074. The site and the fact. No patient, no practitioner, no hour:
-     * "una cita se movió en esta sede" is operational, who moved to when is
-     * not. Nothing is interpolated — the logger prunes by allowlist.
-     */
     this.logger.info(
-      { site_id: outcome.created.siteId, action: 'AGENDA_ENTRY_RESCHEDULED' },
-      'appointment rescheduled',
+      { site_id: entry.siteId, action: 'AGENDA_NO_SHOW_UNDONE' },
+      'no-show undone',
     );
 
-    /**
-     * AG-110, read about the entry THAT EXISTS and on the date it was STORED
-     * on, exactly as booking does. Rescheduling onto a closed day is the same
-     * legitimate act as booking onto one, and answering it differently here
-     * would be the second answer to "¿está cerrado ese día?" that AG-110 was
-     * written to prevent.
-     */
-    const bookedDate = clinicalDateOf(outcome.created.startsAt);
-    const warnings = bookingWarningsFor(
-      await this.agenda.holidaysFor({
-        siteId: outcome.created.siteId,
-        date: bookedDate,
-      }),
-      bookedDate,
-      outcome.created.siteId,
+    return entry;
+  }
+
+  /**
+   * AG-132, D-128.4. Corrects the emergency call of the arrival. The
+   * corrector makes the call again; the original stays in the version.
+   */
+  async correctEmergency(
+    request: EmergencyCorrectionRequest,
+    requester: Requester,
+  ): Promise<AgendaEntryView> {
+    const now = new Date();
+    const entry = await this.agenda.editEntry(
+      {
+        siteId: request.siteId,
+        entryId: request.entryId,
+        editedById: requester.userId,
+        at: now,
+      },
+      (read) =>
+        planEmergencyCorrection(read, {
+          emergency: request.emergency,
+          note: request.emergencyNote,
+          correctedById: requester.userId,
+          now,
+        }),
     );
 
-    return { ...outcome, warnings };
+    // AG-074. Never the outcome of the call in a log line.
+    this.logger.info(
+      { site_id: entry.siteId, action: 'AGENDA_EMERGENCY_CORRECTED' },
+      'emergency call corrected',
+    );
+
+    return entry;
+  }
+
+  /** AG-168. The versions an edit replaced, newest first. */
+  async entryVersions(request: {
+    siteId: string;
+    entryId: string;
+  }): Promise<AgendaEntryVersion[]> {
+    const entry = await this.agenda.findEntry(request);
+    if (entry === null) throw new AgendaEntryNotFoundError();
+    return this.agenda.entryVersions(request);
   }
 
   /**
@@ -1193,23 +1322,11 @@ export class AgendaService {
     let from: AgendaEntryStatus | undefined;
 
     /**
-     * THE THREE REFUSALS THAT COST NOTHING GO FIRST, before any read: a
-     * refusal that spends a transaction is a worse refusal. All three live
-     * HERE and not only in the DTO (adversarial review of E2, P2-3) — E3
-     * cancels the original entry from inside this service, and a DEBERÁ that
-     * only the HTTP boundary enforces stops being enforced the day another
-     * use case calls in.
+     * THE REFUSAL THAT COSTS NOTHING GOES FIRST, before any read: a refusal
+     * that spends a transaction is a worse refusal. It lives HERE and not only
+     * in the DTO (adversarial review of E2, P2-3). Annulling and retracting no
+     * longer demand a reason (AG-044, AG-117 enmendados, D-126).
      */
-    // AG-044: an annulment is a decision about an appointment that existed,
-    // and the patient is owed the explanation.
-    if (request.to === 'CANCELLED' && !request.reason?.trim()) {
-      throw new CancellationReasonRequiredError();
-    }
-    // AG-117: and a retraction says the recorded fact never happened, which
-    // without a reason is a door for making appointments disappear.
-    if (request.to === 'ENTERED_IN_ERROR' && !request.reason?.trim()) {
-      throw new EnteredInErrorReasonRequiredError();
-    }
     /**
      * AG-128, Ley 77 art. 10. No arrival is recorded without the emergency
      * call having been made, affirmatively or negatively, by somebody.

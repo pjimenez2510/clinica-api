@@ -12,12 +12,15 @@ import {
 } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import {
   WaitlistAcceptanceRequiredError,
+  WaitlistContactChangedError,
+  WaitlistContactOfAnotherError,
   WaitlistEntryClosedError,
   WaitlistPatientMismatchError,
   WaitlistSlotAlreadyClaimedError,
 } from '../domain/agenda.errors';
 import { OPEN_WAITLIST_STATUSES, type WaitlistCandidate } from '../domain/waitlist'; // prettier-ignore
 import type {
+  ContactAttemptEdit,
   NewContactAttempt,
   NewWaitlistEntry,
   StoredWaitlistParameters,
@@ -108,8 +111,8 @@ const CANDIDATE_PATIENT_SELECT = {
 const CONTACT_TRAIL_SELECT = {
   _count: { select: { contactAttempts: true } },
   contactAttempts: {
-    select: { attemptedAt: true },
-    orderBy: { attemptedAt: 'desc' },
+    select: { attemptedAt: true, outcome: true },
+    orderBy: [{ attemptedAt: 'desc' }, { id: 'desc' }],
     take: 1,
   },
 } satisfies Prisma.WaitlistEntrySelect;
@@ -286,6 +289,56 @@ export class PrismaWaitlistRepository implements WaitlistRepository {
   }
 
   /**
+   * AG-064, AG-165. The last attempt edited with its stamp, and the status it
+   * produces, in one transaction. `trg_waitlist_contact_attempt_keeps_its_origin`
+   * refuses an attempt that is not the last; `trg_waitlist_entry_closure_final`
+   * admits only `EXPIRED → CONTACTED` out of a closed entry.
+   */
+  async editLastWaitlistContact(
+    edit: ContactAttemptEdit,
+  ): Promise<WaitlistEntryView> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Locks the entry, so two corrections or a correction and a new call
+        // are judged one after the other on the same trail.
+        await tx.$queryRaw`SELECT 1 FROM waitlist_entry WHERE id = ${edit.entryId}::uuid FOR UPDATE`;
+        const attempts = await tx.waitlistContactAttempt.count({
+          where: { waitlistEntryId: edit.entryId },
+        });
+        if (attempts !== edit.expectedAttempts) {
+          throw new WaitlistContactChangedError();
+        }
+        const last = await tx.waitlistContactAttempt.findFirstOrThrow({
+          where: { waitlistEntryId: edit.entryId },
+          orderBy: [{ attemptedAt: 'desc' }, { id: 'desc' }],
+          select: { id: true, recordedById: true },
+        });
+        // AG-064 (review, P1). Only who called corrects the answer.
+        if (last.recordedById !== edit.editedById) {
+          throw new WaitlistContactOfAnotherError();
+        }
+        await tx.waitlistContactAttempt.update({
+          where: { id: last.id },
+          data: {
+            outcome: edit.outcome,
+            editedById: edit.editedById,
+            editedAt: edit.at,
+          },
+        });
+
+        const row = await tx.waitlistEntry.update({
+          where: { id: edit.entryId },
+          data: { status: edit.status },
+          select: ENTRY_SELECT,
+        });
+        return toEntryView(row);
+      });
+    } catch (error) {
+      throw translateWaitlistRejection(error);
+    }
+  }
+
+  /**
    * AG-063. `SCHEDULED` and the link, in one statement because they are one
    * fact — `waitlist_entry_conversion_complete` is a biconditional and refuses
    * either half alone.
@@ -408,7 +461,10 @@ function toEntryView(row: {
   convertedEntryId: string | null;
   createdAt: Date;
   _count: { contactAttempts: number };
-  contactAttempts: { attemptedAt: Date }[];
+  contactAttempts: {
+    attemptedAt: Date;
+    outcome: WaitlistEntryView['lastOutcome'] & string;
+  }[];
 }): WaitlistEntryView {
   return {
     id: row.id,
@@ -422,6 +478,7 @@ function toEntryView(row: {
     convertedEntryId: row.convertedEntryId,
     contactAttempts: row._count.contactAttempts,
     lastContactedAt: row.contactAttempts[0]?.attemptedAt ?? null,
+    lastOutcome: row.contactAttempts[0]?.outcome ?? null,
     createdAt: row.createdAt,
   };
 }

@@ -421,6 +421,79 @@ export class AgendaEntryHasEncounterError extends ConflictError {
 }
 
 /**
+ * AG-162. An edit the status of the appointment no longer admits: the hour,
+ * the practitioner, the type or the patient once the patient arrived, or
+ * anything at all once the appointment closed.
+ */
+export class AgendaEntryNotEditableError extends ConflictError {
+  readonly code = 'AGENDA_ENTRY_NOT_EDITABLE';
+  override readonly userTitle: string;
+
+  constructor(status: AgendaEntryStatus) {
+    // The status code only: no patient, practitioner or hour reaches a log.
+    super(`Agenda entry in ${status} does not admit this edit`, { status });
+    this.userTitle = `La cita está en estado «${STATUS_LABEL[status]}» y ya no admite ese cambio. Actualice la agenda`;
+  }
+}
+
+/**
+ * AG-063, AG-162. The appointment came from the waiting list of ITS patient,
+ * and changing the patient would take the slot from her.
+ */
+export class AppointmentFromWaitlistError extends ConflictError {
+  readonly code = 'APPOINTMENT_FROM_WAITLIST';
+  override readonly userTitle =
+    'Esta cita se le dio a su paciente desde la lista de espera y no cambia de paciente. Anúlela y reserve una nueva si hace falta';
+
+  constructor() {
+    super('Appointment converted from a waiting-list entry keeps its patient');
+  }
+}
+
+/**
+ * AG-064 (review). Only who made the call corrects what was answered: a
+ * correction by somebody else would sign a consent nobody heard.
+ */
+export class WaitlistContactOfAnotherError extends ForbiddenError {
+  readonly code = 'WAITLIST_CONTACT_OF_ANOTHER';
+  override readonly userTitle =
+    'Esa llamada la registró otra persona: solo ella puede corregirla. Si vuelve a llamar, registre la llamada nueva';
+
+  constructor() {
+    super('Contact attempt recorded by another user');
+  }
+}
+
+/**
+ * AG-064 (review). Somebody recorded another call between reading the entry
+ * and correcting the last one.
+ */
+export class WaitlistContactChangedError extends ConflictError {
+  readonly code = 'WAITLIST_CONTACT_CHANGED';
+  override readonly userTitle =
+    'Alguien registró otra llamada entretanto. Actualice la lista y vuelva a mirar';
+
+  constructor() {
+    super('Contact attempts changed while correcting the last one');
+  }
+}
+
+/**
+ * AG-163. «Deshacer» a no-show on a later day than the one it was marked.
+ * The same day is the window of a mistaken click; after that the figure of
+ * AG-080 has already been read by somebody.
+ */
+export class NoShowUndoExpiredError extends ConflictError {
+  readonly code = 'NO_SHOW_UNDO_EXPIRED';
+  override readonly userTitle =
+    'La inasistencia solo se puede deshacer el mismo día en que se marcó';
+
+  constructor() {
+    super('No-show undo requested after the day it was marked');
+  }
+}
+
+/**
  * AG-043. A no-show declared before the appointment even starts.
  *
  * THE CODE IS A DECISION THIS DELIVERY MADE, like `BOOKING_RETRY_EXHAUSTED`
@@ -436,64 +509,6 @@ export class NoShowBeforeStartError extends BusinessRuleViolation {
     // No instants in the message: the start of an appointment says when
     // somebody is expected somewhere, and this text reaches the logs.
     super('NO_SHOW requested before the appointment start');
-  }
-}
-
-/**
- * AG-044. A cancellation with no reason, refused where it cannot be walked
- * around.
- *
- * The DTO already refuses this per-field over HTTP; this error exists for the
- * INTERNAL callers — E3's reschedule cancels the original entry from inside
- * the service, and a DEBERÁ that only the transport enforces is not a
- * guarantee (adversarial review of E2, P2-3).
- */
-export class CancellationReasonRequiredError extends ValidationError {
-  readonly code = 'CANCELLATION_REASON_REQUIRED';
-  override readonly userTitle =
-    'Indique el motivo de la anulación. Queda registrado en el historial de la cita';
-  override readonly fieldErrors = [
-    {
-      field: 'reason',
-      code: 'CANCELLATION_REASON_REQUIRED',
-      message: 'Indique el motivo de la anulación',
-    },
-  ];
-
-  constructor() {
-    super('CANCELLED requested without a reason');
-  }
-}
-
-/**
- * AG-117. A retraction with no reason, refused where it cannot be walked
- * around.
- *
- * REQUIRED, AND FOR THE OPPOSITE REASON TO AG-116's optional one. Whoever
- * mistyped knows what they mistyped, so the reason can ALWAYS be written; and
- * without it «entrada por error» is a door for making inconvenient
- * appointments disappear with no record of why. The history row is append-only
- * (AG-005), so the trail survives whatever happens next.
- *
- * A CODE OF ITS OWN AND NOT `CANCELLATION_REASON_REQUIRED`, because the two
- * acts are what this status came to separate: a client that branched on the
- * shared code would be told to ask for «el motivo de la anulación» about an
- * appointment nobody is annulling.
- */
-export class EnteredInErrorReasonRequiredError extends ValidationError {
-  readonly code = 'ENTERED_IN_ERROR_REASON_REQUIRED';
-  override readonly userTitle =
-    'Indique por qué la cita se registró por error. Queda en el historial de la cita';
-  override readonly fieldErrors = [
-    {
-      field: 'reason',
-      code: 'ENTERED_IN_ERROR_REASON_REQUIRED',
-      message: 'Indique por qué la cita se registró por error',
-    },
-  ];
-
-  constructor() {
-    super('ENTERED_IN_ERROR requested without a reason');
   }
 }
 
@@ -610,6 +625,19 @@ export class WaitlistEntryClosedError extends ConflictError {
 
   constructor() {
     super('Waitlist entry is closed and cannot be acted upon');
+  }
+}
+
+/**
+ * AG-064 (D-127). «Corregir el último intento» on an entry nobody called yet.
+ */
+export class WaitlistNoContactAttemptError extends ConflictError {
+  readonly code = 'WAITLIST_NO_CONTACT_ATTEMPT';
+  override readonly userTitle =
+    'Esa inscripción todavía no tiene ninguna llamada registrada que corregir';
+
+  constructor() {
+    super('Waitlist entry has no contact attempt to edit');
   }
 }
 
@@ -762,33 +790,6 @@ export class OverbookingNotAllowedError extends BusinessRuleViolation {
 
   constructor() {
     super('The site does not admit overbookings');
-  }
-}
-
-/**
- * AG-035. An overbooking with no reason.
- *
- * IT LIVES IN THE SERVICE AND NOT ONLY IN THE DTO, for the same reason
- * `CancellationReasonRequiredError` does (adversarial review of E2, P2-3): a
- * DEBERÁ that only the transport enforces stops being true the first time an
- * internal caller books one. The base says it a third time
- * (`agenda_entry_overbooking_coherence`), because an overbooking with no
- * constancia is exactly the record D-005 exists to avoid.
- */
-export class OverbookingReasonRequiredError extends ValidationError {
-  readonly code = 'OVERBOOKING_REASON_REQUIRED';
-  override readonly userTitle =
-    'Indique por qué se agenda este sobrecupo. Queda registrado en la cita';
-  override readonly fieldErrors = [
-    {
-      field: 'overbookingReason',
-      code: 'OVERBOOKING_REASON_REQUIRED',
-      message: 'Indique el motivo del sobrecupo',
-    },
-  ];
-
-  constructor() {
-    super('Overbooking requested without a reason');
   }
 }
 

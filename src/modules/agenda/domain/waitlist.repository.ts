@@ -76,6 +76,8 @@ export interface WaitlistEntryView {
   convertedEntryId: string | null;
   contactAttempts: number;
   lastContactedAt: Date | null;
+  /** AG-165. The outcome of the last attempt, or `null` with none. */
+  lastOutcome: WaitlistContactOutcome | null;
   /** AG-061. Seniority of enrolment, the tie-breaker. */
   createdAt: Date;
 }
@@ -101,6 +103,23 @@ export interface NewContactAttempt {
    * which D-040 may still change — in a place no unit test can reach.
    */
   status: Extract<WaitlistStatus, 'CONTACTED' | 'EXPIRED'>;
+}
+
+/** AG-064, AG-165. The correction of the outcome of the LAST attempt. */
+export interface ContactAttemptEdit {
+  entryId: string;
+  outcome: WaitlistContactOutcome;
+  editedById: string;
+  /** The stamp; from the application's clock. */
+  at: Date;
+  /** What the entry becomes, decided by `statusAfterContact`. */
+  status: Extract<WaitlistStatus, 'CONTACTED' | 'EXPIRED'>;
+  /**
+   * How many attempts the decision was taken on. The adapter refuses the
+   * edit if another call was recorded in between (`WAITLIST_CONTACT_CHANGED`),
+   * and refuses it if the last call is somebody else's.
+   */
+  expectedAttempts: number;
 }
 
 /** AG-063. The link that closes an entry, and the appointment it closes on. */
@@ -164,6 +183,12 @@ export interface WaitlistRepository {
    * taken back.
    */
   recordWaitlistContact(attempt: NewContactAttempt): Promise<WaitlistEntryView>;
+  /**
+   * AG-064, AG-165. Edits the outcome of the last attempt with its stamp
+   * (`trg_waitlist_contact_attempt_record_version` keeps the previous) and
+   * applies the status it produces, in one transaction.
+   */
+  editLastWaitlistContact(edit: ContactAttemptEdit): Promise<WaitlistEntryView>;
   /**
    * AG-063. Marks the entry `SCHEDULED` and links it to the appointment, in
    * one statement because they are one fact —

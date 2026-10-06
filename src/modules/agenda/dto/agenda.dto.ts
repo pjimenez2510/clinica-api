@@ -177,18 +177,11 @@ export const bookAppointmentSchema = z
       .optional(),
   })
   .superRefine((value, ctx) => {
-    // AG-035. Both halves of the constancia are demanded PER FIELD so the form
-    // highlights the box that is missing. The service demands them again — a
-    // DEBERÁ that only the transport enforces is not a guarantee — and the
-    // base a third time (`agenda_entry_overbooking_coherence`).
+    // AG-035. The authoriser is demanded PER FIELD so the form highlights
+    // the box that is missing; the base says it again
+    // (`agenda_entry_overbooking_coherence`). The reason is optional since
+    // D-126: a pick from a short list.
     if (value.overbooking === true) {
-      if (!value.overbookingReason) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['overbookingReason'],
-          message: 'Indique el motivo del sobrecupo',
-        });
-      }
       if (!value.overbookingAuthorisedById) {
         ctx.addIssue({
           code: 'custom',
@@ -331,31 +324,8 @@ export const transitionStatusSchema = z
       .optional(),
   })
   .superRefine((value, ctx) => {
-    // AG-044: an annulment without a reason is refused PER FIELD, so the
-    // form knows exactly which box to highlight.
-    if (value.to === 'CANCELLED' && !value.reason) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['reason'],
-        message: 'Indique el motivo de la anulación',
-      });
-    }
-    /**
-     * AG-117, and per field for the same reason.
-     *
-     * AG-116 IS NOT HERE, AND ITS ABSENCE IS DELIBERATE: the reason for
-     * leaving without being seen is OPTIONAL. Whoever walked out does not
-     * always say why — that is precisely the case — and a mandatory box
-     * nobody can fill truthfully gets filled with anything. The constancy
-     * that matters is the history row: who marked it and when (AG-004).
-     */
-    if (value.to === 'ENTERED_IN_ERROR' && !value.reason) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['reason'],
-        message: 'Indique por qué la cita se registró por error',
-      });
-    }
+    // AG-044, AG-116, AG-117: the reason of an annulment, a departure or a
+    // retraction is optional (D-126). The history row says who and when.
     /**
      * AG-128. The arrival carries the call or it is not recorded.
      *
@@ -536,87 +506,129 @@ export class TransitionOutcomeDto extends createZodDto(
 ) {}
 
 /**
- * AG-050, AG-115. What moving one appointment needs to be told.
- *
- * THE PATIENT AND THE ROOM ARE NOT HERE, and that is not an omission: they are
- * copied from the stored row, so no body can turn «reprogramar» into a way of
- * handing one person's hour to another with one field.
- *
- * THE PROFESSIONAL AND THE TYPE OF ATTENTION *ARE* HERE SINCE AG-115, and both
- * are OPTIONAL: absent means the one the appointment already had, which is how
- * this endpoint behaved before and still behaves for the nine reschedules out
- * of ten that only move the hour. They may be chosen because AG-050 creates a
- * NEW row — they are columns of something being born, not an edit of the
- * appointment that exists. Refusing them would not stop the case: recepción
- * would annul and book again, and that loses the link AG-051 builds and reports
- * an annulment to AG-080 that never was one.
- *
- * THE CHANNEL IS ASKED FOR because the reschedule was requested however it was
- * requested — by telephone, at the counter — and AG-080 reports by channel.
- * Inheriting the original's would report a call that never happened.
+ * AG-050, AG-115, AG-162 (D-127). Body of
+ * PATCH /agenda/sites/:siteId/entries/:entryId — an edit of the SAME
+ * appointment. Every field is optional and absent means «as it is»; `null`
+ * clears the room or the motive. The hour travels as a pair.
  */
-export const rescheduleAppointmentSchema = z.object({
-  startsAt: instant('La nueva hora de inicio'),
-  endsAt: instant('La nueva hora de fin'),
-  /** AG-029, AG-034: a string, so the domain answers `INVALID_BOOKING_CHANNEL`. */
-  bookingChannel: z.string({ error: 'Indique cómo se solicitó el cambio' }),
-  /**
-   * AG-115. Who will attend it now. The same checks a booking gets are then
-   * run against HIM (AG-028, AG-031 to AG-033, and the three `EXCLUDE`).
-   */
-  practitionerId: z.uuid('Seleccione un profesional válido').optional(),
-  /** AG-115, SP-028. The type of attention of the new appointment. */
-  serviceTypeId: z.uuid('Seleccione un tipo de atención válido').optional(),
-  /**
-   * AG-115. THE PATIENT IS REFUSED OUT LOUD, not stripped in silence.
-   *
-   * «Una cita de otra persona no es una reprogramación»: the field exists here
-   * only so that a client that sends one is told, per field and in Spanish,
-   * instead of watching the appointment move with the patient it always had —
-   * which reads on screen exactly like a change that worked.
-   */
-  patientId: z
-    .never({
-      error:
-        'La reprogramación no cambia de paciente. Reserve una cita nueva a su nombre',
-    })
-    .optional(),
-  /**
-   * AG-044. REQUIRED, unlike the reason of a booking: the entry that exists is
-   * annulled by this operation, and «anular con rastro» is worth nothing if
-   * the rastro can be empty. Refused per field, so the form knows which box to
-   * highlight before the domain says the same thing.
-   */
-  reason: z
-    .string()
-    .trim()
-    .min(1, 'Indique el motivo de la reprogramación')
-    .max(512, 'El motivo no puede superar 512 caracteres'),
-});
-/** Body of POST /agenda/sites/:siteId/entries/:entryId/reschedule. */
-export class RescheduleAppointmentDto extends createZodDto(
-  rescheduleAppointmentSchema,
-) {}
+export const editEntrySchema = z
+  .object({
+    startsAt: instant('La nueva hora de inicio').optional(),
+    endsAt: instant('La nueva hora de fin').optional(),
+    practitionerId: z.uuid('Seleccione un profesional válido').optional(),
+    serviceTypeId: z.uuid('Seleccione un tipo de atención válido').optional(),
+    roomId: z
+      .uuid('Seleccione un consultorio de la lista')
+      .nullable()
+      .optional(),
+    /** The motive of the visit: stored, never logged nor served (AG-074). */
+    reason: z
+      .string()
+      .trim()
+      .max(512, 'El motivo no puede superar 512 caracteres')
+      .nullable()
+      .optional(),
+    /** AG-029, AG-034: a string, so the domain answers `INVALID_BOOKING_CHANNEL`. */
+    bookingChannel: z.string().optional(),
+    /** AG-162. Only before the arrival; the policy refuses it after. */
+    patientId: z.uuid('Seleccione un paciente válido').optional(),
+  })
+  .superRefine((value, ctx) => {
+    if ((value.startsAt === undefined) !== (value.endsAt === undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [value.startsAt === undefined ? 'startsAt' : 'endsAt'],
+        message: 'Indique la hora de inicio y la de fin',
+      });
+    } else if (
+      value.startsAt !== undefined &&
+      value.endsAt !== undefined &&
+      new Date(value.endsAt) <= new Date(value.startsAt)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['endsAt'],
+        message: 'La hora de fin debe ser posterior a la de inicio',
+      });
+    }
+  });
+export class EditEntryDto extends createZodDto(editEntrySchema) {}
 
-/**
- * AG-050, AG-051. The pair one reschedule leaves behind.
- *
- * BOTH ENTRIES TRAVEL BACK, and that is what makes AG-051 visible to a client
- * instead of only true in the database: `original` comes back annulled and
- * released with `rescheduledToId` pointing at the new one, and `created` comes
- * back with `rescheduledFromId` pointing back. Neither has to be looked up.
- *
- * `warnings` is AG-110, exactly as the booking response carries it: present,
- * usually empty, and never a refusal — the entry already exists by then.
- */
-export const rescheduledAppointmentSchema = z.object({
-  original: agendaEntrySchema,
-  created: agendaEntrySchema,
+/** AG-050, AG-162. The edited entry and the AG-110 warnings. */
+export const editedAppointmentSchema = agendaEntrySchema.extend({
   warnings: z.array(z.string()).readonly(),
 });
-/** Response of the reschedule route. */
-export class RescheduledAppointmentDto extends createZodDto(
-  rescheduledAppointmentSchema,
+export class EditedAppointmentDto extends createZodDto(
+  editedAppointmentSchema,
+) {}
+
+/** AG-164. Body of PATCH /agenda/sites/:siteId/blocks/:entryId. */
+export const editBlockSchema = z
+  .object({
+    startsAt: instant('La hora de inicio').optional(),
+    endsAt: instant('La hora de fin').optional(),
+    roomId: z
+      .uuid('Seleccione un consultorio de la lista')
+      .nullable()
+      .optional(),
+    reason: z
+      .string()
+      .trim()
+      .max(512, 'El motivo no puede superar 512 caracteres')
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    if ((value.startsAt === undefined) !== (value.endsAt === undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [value.startsAt === undefined ? 'startsAt' : 'endsAt'],
+        message: 'Indique la hora de inicio y la de fin',
+      });
+    } else if (
+      value.startsAt !== undefined &&
+      value.endsAt !== undefined &&
+      new Date(value.endsAt) <= new Date(value.startsAt)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['endsAt'],
+        message: 'La hora de fin debe ser posterior a la de inicio',
+      });
+    }
+  });
+export class EditBlockDto extends createZodDto(editBlockSchema) {}
+
+/** AG-132. Body of PATCH /agenda/sites/:siteId/entries/:entryId/emergency. */
+export const correctEmergencySchema = z.object({
+  emergency: z.boolean({ error: 'Indique sí o no' }),
+  emergencyNote: z
+    .string()
+    .trim()
+    .max(500, 'La nota no puede superar 500 caracteres')
+    .optional(),
+});
+export class CorrectEmergencyDto extends createZodDto(correctEmergencySchema) {}
+
+/** AG-168. The versions an edit replaced, newest first; never the motive. */
+export const agendaEntryVersionSchema = z.object({
+  version: z.number().int(),
+  replacedAt: z.iso.datetime(),
+  replacedBy: z.object({ id: z.uuid(), name: z.string() }),
+  startsAt: z.iso.datetime(),
+  endsAt: z.iso.datetime(),
+  practitionerId: z.uuid(),
+  roomId: z.uuid().nullable(),
+  serviceTypeId: z.uuid().nullable(),
+  bookingChannel: BOOKING_CHANNEL.nullable(),
+  patientId: z.uuid().nullable(),
+  blocksCalendar: z.boolean(),
+  emergencyFlagged: z.boolean().nullable(),
+});
+export const agendaEntryVersionsSchema = z.object({
+  items: z.array(agendaEntryVersionSchema),
+});
+export class AgendaEntryVersionsDto extends createZodDto(
+  agendaEntryVersionsSchema,
 ) {}
 
 /**
@@ -829,8 +841,9 @@ export type AvailabilityResponse = z.infer<typeof availabilitySchema>;
 export type AgendaEntryResponse = z.infer<typeof agendaEntrySchema>;
 export type BookedAppointmentResponse = z.infer<typeof bookedAppointmentSchema>;
 export type TransitionOutcomeResponse = z.infer<typeof transitionOutcomeSchema>;
-export type RescheduledAppointmentResponse = z.infer<
-  typeof rescheduledAppointmentSchema
+export type EditedAppointmentResponse = z.infer<typeof editedAppointmentSchema>;
+export type AgendaEntryVersionsResponse = z.infer<
+  typeof agendaEntryVersionsSchema
 >;
 
 /** AG-107. A site the caller may schedule in. */

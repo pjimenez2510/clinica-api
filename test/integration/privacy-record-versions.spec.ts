@@ -11,6 +11,7 @@ import {
 } from '../../src/modules/privacy/infrastructure/record-version-subjects';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
+import { seedBilling } from '../../prisma/seed-billing.mts';
 import { aScene, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import {
@@ -205,6 +206,71 @@ async function everyVersionedRowOf(
     },
   });
 
+  // AG-051, AG-064: an appointment and a waiting-list call of this patient.
+  // One hour per call, so two scenes on the same practitioner never overlap.
+  const hour = (await prisma.agendaEntry.count()) * 3_600_000;
+  const appointment = await prisma.agendaEntry.create({
+    data: {
+      kind: 'APPOINTMENT',
+      siteId: scene.site.id,
+      practitionerId: scene.practitioner.id,
+      patientId,
+      startsAt: new Date(
+        scene.encounter.startedAt.getTime() - 3_600_000 - hour,
+      ),
+      endsAt: new Date(scene.encounter.startedAt.getTime() - 3_000_000 - hour),
+      bookingChannel: 'PHONE',
+      createdById: author.id,
+    },
+  });
+  const waiting = await prisma.waitlistEntry.create({
+    data: {
+      patientId,
+      siteId: scene.site.id,
+      preferredFrom: new Date(),
+      preferredTo: new Date(),
+    },
+  });
+  const call = await prisma.waitlistContactAttempt.create({
+    data: {
+      waitlistEntryId: waiting.id,
+      recordedById: author.id,
+      outcome: 'NO_ANSWER',
+    },
+  });
+
+  // BI-195: a charge on this patient's account.
+  await seedBilling(prisma);
+  const payer = await prisma.payer.findUniqueOrThrow({
+    where: { code: 'PARTICULAR' },
+  });
+  const account = await prisma.patientAccount.create({
+    data: {
+      patientId,
+      siteId: scene.site.id,
+      payerId: payer.id,
+      priceListId: (
+        await prisma.priceList.findFirstOrThrow({
+          where: { payerId: payer.id },
+        })
+      ).id,
+    },
+  });
+  const service = await prisma.billableService.findUniqueOrThrow({
+    where: { code: 'CONS-MG-PV' },
+  });
+  const charge = await prisma.chargeItem.create({
+    data: {
+      accountId: account.id,
+      billableServiceId: service.id,
+      serviceDate: new Date(scene.encounter.startedAt),
+      unitAmount: 25,
+      serviceDisplay: service.name,
+      taxSriCode: '0',
+      createdById: author.id,
+    },
+  });
+
   const versioned: Record<string, string> = {
     encounter: encounterId,
     // Vitals are one row per attention, archived by `encounter_id`.
@@ -215,6 +281,9 @@ async function everyVersionedRowOf(
     patient_history: history.id,
     patient_priority_group: group.id,
     data_subject_request: request.id,
+    agenda_entry: appointment.id,
+    charge_item: charge.id,
+    waitlist_contact_attempt: call.id,
   };
   for (const [table, resourceId] of Object.entries(versioned)) {
     await prisma.recordVersion.create({

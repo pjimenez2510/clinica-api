@@ -53,6 +53,7 @@ function waiting(
     serviceTypeId: null,
     contactAttempts: 0,
     lastContactedAt: null,
+    lastOutcome: null,
     patient: { birthDate: ADULT, periods: [], chartMergedAway: false },
     ...overrides,
   };

@@ -420,13 +420,21 @@ describe('waitlist entry invariants (migration 20260819125906)', () => {
       expect(rejection.message).toMatch(/recorded_by/);
     });
 
-    it('AG-064 no deja reescribir ni borrar un intento ya registrado', async () => {
+    it('AG-064 edita el último intento solo con sello y guarda el anterior; no lo borra ni reescribe su origen', async () => {
       const { prisma, site, patient, receptionist } = await waitingContext();
       const entry = await inscribe(prisma, {
         patientId: patient.id,
         siteId: site.id,
       });
-      const attempt = await prisma.waitlistContactAttempt.create({
+      const first = await prisma.waitlistContactAttempt.create({
+        data: {
+          waitlistEntryId: entry.id,
+          recordedById: receptionist.id,
+          outcome: 'NO_ANSWER',
+          attemptedAt: new Date(Date.now() - 60_000),
+        },
+      });
+      const last = await prisma.waitlistContactAttempt.create({
         data: {
           waitlistEntryId: entry.id,
           recordedById: receptionist.id,
@@ -434,31 +442,98 @@ describe('waitlist entry invariants (migration 20260819125906)', () => {
         },
       });
 
-      // Reescribir «no contestó» por «rechazó» DESPUÉS de dar el cupo a otra
-      // persona es exactamente lo que un rastro editable no puede impedir.
-      const rewritten = await rejectionOf(
+      // Sin sello: rechazado (D-127, `record_version_archive`).
+      const unstamped = await rejectionOf(
         prisma.waitlistContactAttempt.update({
-          where: { id: attempt.id },
+          where: { id: last.id },
           data: { outcome: 'DECLINED' },
         }),
       );
-      expect(rewritten.message).toMatch(/append-only/);
+      expect(unstamped.message).toMatch(/record_version_change_is_stamped/);
+
+      // Un intento que ya superó otro no se edita, ni con sello.
+      const earlier = await rejectionOf(
+        prisma.waitlistContactAttempt.update({
+          where: { id: first.id },
+          data: {
+            outcome: 'DECLINED',
+            editedById: receptionist.id,
+            editedAt: new Date(),
+          },
+        }),
+      );
+      expect(earlier.message).toMatch(/only the last attempt/);
+
+      // Ni se cambia quién llamó.
+      const origin = await rejectionOf(
+        prisma.waitlistContactAttempt.update({
+          where: { id: last.id },
+          data: {
+            recordedById: patient.id,
+            editedById: receptionist.id,
+            editedAt: new Date(),
+          },
+        }),
+      );
+      expect(origin.message).toMatch(/cannot be modified in its origin/);
+
+      // Control positivo: el último, con sello, se edita y deja su versión.
+      await prisma.waitlistContactAttempt.update({
+        where: { id: last.id },
+        data: {
+          outcome: 'ACCEPTED',
+          editedById: receptionist.id,
+          editedAt: new Date(),
+        },
+      });
+      const versions = await prisma.recordVersion.findMany({
+        where: {
+          resourceType: 'waitlist_contact_attempt',
+          resourceId: last.id,
+        },
+      });
+      expect(versions).toHaveLength(1);
+      expect((versions[0]?.data as { outcome: string }).outcome).toBe(
+        'NO_ANSWER',
+      );
 
       const deleted = await rejectionOf(
-        prisma.waitlistContactAttempt.delete({ where: { id: attempt.id } }),
+        prisma.waitlistContactAttempt.delete({ where: { id: last.id } }),
       );
       expect(deleted.message).toMatch(/append-only/);
 
-      // Y la sentencia que se lleva el rastro de la clínica entera de una vez:
       // TRUNCATE no dispara los disparadores de fila y necesita el suyo.
       const truncated = await rejectionOf(
         prisma.$executeRawUnsafe('TRUNCATE TABLE waitlist_contact_attempt'),
       );
       expect(truncated.message).toMatch(/append-only/);
+      expect(await prisma.waitlistContactAttempt.count()).toBe(2);
+    });
 
-      const survivors = await prisma.waitlistContactAttempt.findMany();
-      expect(survivors).toHaveLength(1);
-      expect(survivors[0]?.outcome).toBe('NO_ANSWER');
+    it('AG-165 una entrada caducada vuelve a CONTACTED y a ningún otro estado', async () => {
+      const { prisma, site, patient } = await waitingContext();
+      const entry = await inscribe(prisma, {
+        patientId: patient.id,
+        siteId: site.id,
+      });
+      await prisma.waitlistEntry.update({
+        where: { id: entry.id },
+        data: { status: 'EXPIRED' },
+      });
+
+      const toWaiting = await rejectionOf(
+        prisma.waitlistEntry.update({
+          where: { id: entry.id },
+          data: { status: 'WAITING' },
+        }),
+      );
+      expect(toWaiting.message).toMatch(/cannot be reopened/);
+
+      // Control positivo.
+      await prisma.waitlistEntry.update({
+        where: { id: entry.id },
+        data: { status: 'CONTACTED' },
+      });
     });
 
     it('AG-064 no deja borrar la entrada de la que cuelga un intento', async () => {

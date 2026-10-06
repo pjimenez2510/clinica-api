@@ -11,24 +11,27 @@ import {
 
 import {
   AgendaEntryHasEncounterError,
+  AgendaEntryNotEditableError,
   AgendaEntryNotFoundError,
   BlockOverlapsAppointmentsError,
   BookingInThePastError,
   BookingRetryExhaustedError,
   BookingTooFarError,
   BookingTooSoonError,
-  CancellationReasonRequiredError,
   EmergencyAssessmentRequiredError,
-  EnteredInErrorReasonRequiredError,
   InvalidAgendaTransitionError,
   InvalidBookingChannelError,
   InvalidSlotDurationError,
+  NoShowUndoExpiredError,
+  AppointmentFromWaitlistError,
+  WaitlistContactChangedError,
+  WaitlistContactOfAnotherError,
+  WaitlistNoContactAttemptError,
   NoShowBeforeStartError,
   OutsideScheduleRuleError,
   OverbookingLimitReachedError,
   OverbookingNotAllowedError,
   OverbookingNotAuthorisedError,
-  OverbookingReasonRequiredError,
   ReleasedSlotInThePastError,
   SelfAuthorisationDeniedError,
   SlotNotAlignedError,
@@ -221,6 +224,55 @@ describe('the transition errors (E2)', () => {
     );
   });
 
+  it('AG-162 answers AGENDA_ENTRY_NOT_EDITABLE as a 409 naming the status in Spanish', () => {
+    const error = new AgendaEntryNotEditableError('CHECKED_IN');
+
+    expect(error.code).toBe('AGENDA_ENTRY_NOT_EDITABLE');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toContain('ya no admite ese cambio');
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AG-163 answers NO_SHOW_UNDO_EXPIRED as a 409 saying the window', () => {
+    const error = new NoShowUndoExpiredError();
+
+    expect(error.code).toBe('NO_SHOW_UNDO_EXPIRED');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toBe(
+      'La inasistencia solo se puede deshacer el mismo día en que se marcó',
+    );
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AG-064 answers WAITLIST_NO_CONTACT_ATTEMPT as a 409 saying there is nothing to correct', () => {
+    const error = new WaitlistNoContactAttemptError();
+
+    expect(error.code).toBe('WAITLIST_NO_CONTACT_ATTEMPT');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toBe(
+      'Esa inscripción todavía no tiene ninguna llamada registrada que corregir',
+    );
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AG-063 answers APPOINTMENT_FROM_WAITLIST and AG-064 the two correction refusals', () => {
+    const fromWaitlist = new AppointmentFromWaitlistError();
+    expect(fromWaitlist.code).toBe('APPOINTMENT_FROM_WAITLIST');
+    expect(fromWaitlist).toBeInstanceOf(ConflictError);
+
+    const ofAnother = new WaitlistContactOfAnotherError();
+    expect(ofAnother.code).toBe('WAITLIST_CONTACT_OF_ANOTHER');
+    expect(ofAnother).toBeInstanceOf(ForbiddenError);
+
+    const changed = new WaitlistContactChangedError();
+    expect(changed.code).toBe('WAITLIST_CONTACT_CHANGED');
+    expect(changed).toBeInstanceOf(ConflictError);
+
+    for (const error of [fromWaitlist, ofAnother, changed]) {
+      expect(DOMAIN_ERROR_CODES).toContain(error.code);
+    }
+  });
+
   it('AG-040 registers the four transition codes in the frozen public catalogue', () => {
     for (const code of [
       'INVALID_AGENDA_TRANSITION',
@@ -368,17 +420,6 @@ describe('the booking window errors (AG-031 to AG-033)', () => {
     expect(error.fieldErrors).toBeUndefined();
   });
 
-  it('AG-035 answers OVERBOOKING_REASON_REQUIRED on the field that is missing', () => {
-    const error = new OverbookingReasonRequiredError();
-
-    expect(error.code).toBe('OVERBOOKING_REASON_REQUIRED');
-    expect(error).toBeInstanceOf(ValidationError); // 422
-    expect(error.fieldErrors?.[0]?.field).toBe('overbookingReason');
-    expect(error.fieldErrors?.[0]?.message).toBe(
-      'Indique el motivo del sobrecupo',
-    );
-  });
-
   it('AG-103 answers SELF_AUTHORISATION_DENIED telling whom to ask', () => {
     const error = new SelfAuthorisationDeniedError();
 
@@ -458,10 +499,9 @@ describe('the booking window errors (AG-031 to AG-033)', () => {
     );
   });
 
-  it('AG-035, AG-038 register the six E4 codes in the frozen public catalogue', () => {
+  it('AG-035, AG-038 register the five E4 codes in the frozen public catalogue', () => {
     for (const code of [
       'OVERBOOKING_NOT_ALLOWED',
-      'OVERBOOKING_REASON_REQUIRED',
       'OVERBOOKING_LIMIT_REACHED',
       'OVERBOOKING_NOT_AUTHORISED',
       'SELF_AUTHORISATION_DENIED',
@@ -582,23 +622,6 @@ describe('the booking window errors (AG-031 to AG-033)', () => {
  * del art. 10 (AG-116, AG-117, AG-122, AG-128).
  */
 describe('the arrival and outcome errors (E8)', () => {
-  it('AG-117 answers ENTERED_IN_ERROR_REASON_REQUIRED per field, apart from an annulment', () => {
-    const retraction = new EnteredInErrorReasonRequiredError();
-    const annulment = new CancellationReasonRequiredError();
-
-    expect(retraction.code).toBe('ENTERED_IN_ERROR_REASON_REQUIRED');
-    expect(retraction).toBeInstanceOf(ValidationError); // 422
-    expect(retraction.fieldErrors?.[0]?.field).toBe('reason');
-    /**
-     * DOS CÓDIGOS Y NO UNO, y es justo lo que el estado viene a separar:
-     * anular una cita real y retirar una que nunca debió existir son actos
-     * distintos, y un cliente que ramificara por el código común pediría «el
-     * motivo de la anulación» de una cita que nadie anula.
-     */
-    expect(retraction.code).not.toBe(annulment.code);
-    expect(retraction.userTitle).not.toBe(annulment.userTitle);
-  });
-
   it('AG-128 answers EMERGENCY_ASSESSMENT_REQUIRED per field, naming the box that is missing', () => {
     const error = new EmergencyAssessmentRequiredError();
 
@@ -624,9 +647,8 @@ describe('the arrival and outcome errors (E8)', () => {
     expect(error.params).toEqual({ current: 'DEPARTED' });
   });
 
-  it('AG-116, AG-117, AG-128 register the E8 codes in the frozen public catalogue', () => {
+  it('AG-116, AG-128 register the E8 codes in the frozen public catalogue', () => {
     for (const code of [
-      'ENTERED_IN_ERROR_REASON_REQUIRED',
       'EMERGENCY_ASSESSMENT_REQUIRED',
       'SUBJECT_STATUS_NOT_DERIVABLE',
     ]) {

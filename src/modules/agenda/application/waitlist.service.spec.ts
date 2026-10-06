@@ -15,6 +15,7 @@ import {
   SlotNotReleasedError,
   WaitlistEntryClosedError,
   WaitlistEntryNotFoundError,
+  WaitlistNoContactAttemptError,
 } from '../domain/agenda.errors';
 import type {
   AgendaEntryView,
@@ -24,6 +25,7 @@ import type {
 } from '../domain/agenda.repository';
 import type { WaitlistCandidate, WaitlistStatus } from '../domain/waitlist';
 import type {
+  ContactAttemptEdit,
   NewContactAttempt,
   NewWaitlistEntry,
   StoredWaitlistParameters,
@@ -56,6 +58,8 @@ const RECEPTIONIST = 'user-recepcion';
 const MINUTE_MS = 60_000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 const NOW = new Date();
+// AG-165: the clinical date of the real clock, as the service reads it.
+const TODAY = clinicalDateOf(NOW, CLINIC_TIME_ZONE);
 const inMinutes = (count: number) =>
   new Date(NOW.getTime() + count * MINUTE_MS);
 const inDays = (count: number) => new Date(NOW.getTime() + count * DAY_MS);
@@ -81,6 +85,7 @@ interface Recorded {
   enrolled: NewWaitlistEntry[];
   expired: string[][];
   attempts: NewContactAttempt[];
+  edits: ContactAttemptEdit[];
   conversions: WaitlistConversion[];
   entryQueries: EntryQuery[];
 }
@@ -100,6 +105,7 @@ function candidate(
     serviceTypeId: null,
     contactAttempts: 0,
     lastContactedAt: null,
+    lastOutcome: null,
     patient: {
       birthDate: d('1990-03-15'),
       periods: [],
@@ -124,6 +130,7 @@ function entryView(
     convertedEntryId: null,
     contactAttempts: 0,
     lastContactedAt: null,
+    lastOutcome: null,
     createdAt: inDays(-30),
     ...overrides,
   };
@@ -178,6 +185,7 @@ function build(
     enrolled: [],
     expired: [],
     attempts: [],
+    edits: [],
     conversions: [],
     entryQueries: [],
   };
@@ -214,6 +222,10 @@ function build(
     recordWaitlistContact: (attempt: NewContactAttempt) => {
       recorded.attempts.push(attempt);
       return Promise.resolve(entryView({ status: attempt.status }));
+    },
+    editLastWaitlistContact: (edit: ContactAttemptEdit) => {
+      recorded.edits.push(edit);
+      return Promise.resolve(entryView({ status: edit.status }));
     },
     convertWaitlistEntry: (conversion: WaitlistConversion) => {
       recorded.conversions.push(conversion);
@@ -603,6 +615,98 @@ describe('WaitlistService', () => {
           { userId: RECEPTIONIST },
         ),
       ).rejects.toBeInstanceOf(WaitlistEntryNotFoundError);
+    });
+  });
+
+  describe('AG-064 y AG-165 · corregir el último intento (D-127)', () => {
+    it('AG-064 edits the outcome of the last attempt with the author from the session', async () => {
+      const { service, recorded } = build({
+        entry: entryView({ status: 'CONTACTED', contactAttempts: 1 }),
+      });
+
+      await service.editLastContact(
+        { siteId: SITE, entryId: 'entry-001', outcome: 'DECLINED' },
+        { userId: RECEPTIONIST },
+      );
+
+      expect(recorded.edits[0]).toMatchObject({
+        entryId: 'entry-001',
+        outcome: 'DECLINED',
+        editedById: RECEPTIONIST,
+        status: 'CONTACTED',
+        expectedAttempts: 1,
+      });
+    });
+
+    it('AG-165 reopens an entry expired by a «no contestó» that was really a yes', async () => {
+      const { service, recorded } = build({
+        entry: entryView({
+          status: 'EXPIRED',
+          contactAttempts: 3,
+          preferredTo: addDays(TODAY, 5),
+        }),
+        parameters: { maxContactAttempts: 3 },
+      });
+
+      await service.editLastContact(
+        { siteId: SITE, entryId: 'entry-001', outcome: 'ACCEPTED' },
+        { userId: RECEPTIONIST },
+      );
+
+      expect(recorded.edits[0]?.status).toBe('CONTACTED');
+    });
+
+    it('AG-165 never reopens an entry whose preferred range lapsed', async () => {
+      const { service, recorded } = build({
+        entry: entryView({
+          status: 'EXPIRED',
+          contactAttempts: 3,
+          preferredTo: addDays(TODAY, -1),
+        }),
+        parameters: { maxContactAttempts: 3 },
+      });
+
+      await expect(
+        service.editLastContact(
+          { siteId: SITE, entryId: 'entry-001', outcome: 'ACCEPTED' },
+          { userId: RECEPTIONIST },
+        ),
+      ).rejects.toBeInstanceOf(WaitlistEntryClosedError);
+      expect(recorded.edits).toEqual([]);
+    });
+
+    it('AG-064 refuses to correct an entry nobody called, or one already scheduled', async () => {
+      const uncalled = build({ entry: entryView({ contactAttempts: 0 }) });
+      await expect(
+        uncalled.service.editLastContact(
+          { siteId: SITE, entryId: 'entry-001', outcome: 'ACCEPTED' },
+          { userId: RECEPTIONIST },
+        ),
+      ).rejects.toBeInstanceOf(WaitlistNoContactAttemptError);
+
+      const scheduled = build({
+        entry: entryView({ status: 'SCHEDULED', contactAttempts: 1 }),
+      });
+      await expect(
+        scheduled.service.editLastContact(
+          { siteId: SITE, entryId: 'entry-001', outcome: 'NO_ANSWER' },
+          { userId: RECEPTIONIST },
+        ),
+      ).rejects.toBeInstanceOf(WaitlistEntryClosedError);
+    });
+
+    it('AG-165 an acceptance on the last allowed call does not expire the entry', async () => {
+      const { service, recorded } = build({
+        entry: entryView({ contactAttempts: 2 }),
+        parameters: { maxContactAttempts: 3 },
+      });
+
+      await service.recordContact(
+        { siteId: SITE, entryId: 'entry-001', outcome: 'ACCEPTED' },
+        { userId: RECEPTIONIST },
+      );
+
+      expect(recorded.attempts[0]?.status).toBe('CONTACTED');
     });
   });
 

@@ -22,6 +22,7 @@ import {
   createPractitioner,
   createScheduleRule,
   createSite,
+  createUser,
   linkPractitionerToSite,
 } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
@@ -989,6 +990,84 @@ describe('la lista de espera por HTTP', () => {
         where: { id: entry.id },
       });
       expect(stored.status).toBe('CONTACTED');
+    });
+  });
+
+  describe('AG-064, AG-165 · corregir el último intento (D-127)', () => {
+    it('AG-165 corrects a «no contestó» that expired the entry into an acceptance, reopens it and lets it convert', async () => {
+      await prisma.siteParameter.update({
+        where: { siteId },
+        data: { waitlistMaxContactAttempts: 1 },
+      });
+      const entry = await enrol();
+      const expired = await request(app.getHttpServer())
+        .post(`${BASE}/${siteId}/waitlist/${entry.id}/contact-attempts`)
+        .set('Authorization', auth())
+        .send({ outcome: 'NO_ANSWER' })
+        .expect(200);
+      expect((expired.body as WaitlistEntryBody).status).toBe('EXPIRED');
+
+      const corrected = await request(app.getHttpServer())
+        .patch(`${BASE}/${siteId}/waitlist/${entry.id}/contact-attempts/last`)
+        .set('Authorization', auth())
+        .send({ outcome: 'ACCEPTED' })
+        .expect(200);
+      expect((corrected.body as WaitlistEntryBody).status).toBe('CONTACTED');
+
+      // The previous outcome stays in the version, and the sweep of the next
+      // read does not expire an entry whose last call was a yes.
+      const versions = await prisma.recordVersion.findMany({
+        where: { resourceType: 'waitlist_contact_attempt' },
+      });
+      expect(versions).toHaveLength(1);
+      await request(app.getHttpServer())
+        .get(`${BASE}/${siteId}/waitlist`)
+        .set('Authorization', auth())
+        .expect(200);
+      const stored = await prisma.waitlistEntry.findUniqueOrThrow({
+        where: { id: entry.id },
+      });
+      expect(stored.status).toBe('CONTACTED');
+    });
+
+    it('AG-064 only who made the call corrects it', async () => {
+      const entry = await enrol();
+      await request(app.getHttpServer())
+        .post(`${BASE}/${siteId}/waitlist/${entry.id}/contact-attempts`)
+        .set('Authorization', auth())
+        .send({ outcome: 'NO_ANSWER' })
+        .expect(200);
+      // The call is reassigned to somebody else, as if she had made it.
+      const other = await createUser(prisma);
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE waitlist_contact_attempt DISABLE TRIGGER trg_waitlist_contact_attempt_keeps_its_origin`,
+      );
+      await prisma.$executeRaw`UPDATE waitlist_contact_attempt SET recorded_by = ${other.id}::uuid, edited_by_id = ${other.id}::uuid, edited_at = now() WHERE waitlist_entry_id = ${entry.id}::uuid`;
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE waitlist_contact_attempt ENABLE TRIGGER trg_waitlist_contact_attempt_keeps_its_origin`,
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch(`${BASE}/${siteId}/waitlist/${entry.id}/contact-attempts/last`)
+        .set('Authorization', auth())
+        .send({ outcome: 'ACCEPTED' })
+        .expect(403);
+      expect((response.body as { code: string }).code).toBe(
+        'WAITLIST_CONTACT_OF_ANOTHER',
+      );
+    });
+
+    it('AG-064 refuses to correct an entry nobody called', async () => {
+      const entry = await enrol();
+
+      const response = await request(app.getHttpServer())
+        .patch(`${BASE}/${siteId}/waitlist/${entry.id}/contact-attempts/last`)
+        .set('Authorization', auth())
+        .send({ outcome: 'ACCEPTED' })
+        .expect(409);
+      expect((response.body as { code: string }).code).toBe(
+        'WAITLIST_NO_CONTACT_ATTEMPT',
+      );
     });
   });
 

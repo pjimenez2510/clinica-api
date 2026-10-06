@@ -110,6 +110,44 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
     resourceIdsOf: byPatientId('data_subject_request'),
     omittedBecause: null,
   },
+  // AG-051, AG-162. The appointment moved or corrected in place. A version
+  // from before the patient was corrected belongs to the patient booked BY
+  // MISTAKE: neither that identifier nor the free texts written for that
+  // visit leave (review, M-2; D-141.4). What remains — hours, practitioner,
+  // channel — is what the export owes about the appointment.
+  agenda_entry: {
+    resourceIdsOf: byPatientId('agenda_entry'),
+    omittedBecause: null,
+    redactedColumns: [
+      'patient_id',
+      'reason',
+      'cancellation_note',
+      'emergency_note',
+      'board_note',
+      'coverage_check_skipped_reason',
+      'left_without_being_seen_reason',
+      'entered_in_error_reason',
+    ],
+  },
+  // BI-195 (fix/menos-preguntas-caja). A charge corrected before it was
+  // invoiced: charge → patient account → patient. It is the patient's own
+  // record of what was charged and is exported like the rest (LOPDP art. 13,
+  // right of access); nothing in the row is about somebody else.
+  charge_item: {
+    resourceIdsOf: (chartId) => Prisma.sql`
+      SELECT c.id FROM charge_item c
+        JOIN patient_account a ON a.id = c.account_id
+       WHERE a.patient_id IN ${chartScopeIds(chartId)}`,
+    omittedBecause: null,
+  },
+  // AG-064. The outcome of a call about this patient's waiting-list entry.
+  waitlist_contact_attempt: {
+    resourceIdsOf: (chartId) => Prisma.sql`
+      SELECT a.id FROM waitlist_contact_attempt a
+        JOIN waitlist_entry w ON w.id = a.waitlist_entry_id
+       WHERE w.patient_id IN ${chartScopeIds(chartId)}`,
+    omittedBecause: null,
+  },
 };
 
 /**

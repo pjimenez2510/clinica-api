@@ -323,25 +323,19 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       await book().expect(201);
     });
 
-    it('AG-044 exige motivo al anular como error por campo', async () => {
+    it('AG-044 anula sin motivo (D-126) y deja la fila de historial', async () => {
       const entryId = await bookedEntry();
 
-      const response = await transition(entryId, { to: 'CANCELLED' }).expect(
-        422,
-      );
+      await transition(entryId, { to: 'CANCELLED' }).expect(200);
 
-      const problem = response.body as Problem;
-      expect(problem.code).toBe('VALIDATION_FAILED');
-      expect(problem.errors?.[0]).toMatchObject({
-        field: 'reason',
-        message: 'Indique el motivo de la anulación',
-      });
-      // Y nada cambió: ni estado ni historial.
       const stored = await prisma.agendaEntry.findUniqueOrThrow({
         where: { id: entryId },
       });
-      expect(stored.status).toBe('BOOKED');
-      await expect(historyOf(entryId)).resolves.toEqual([]);
+      expect(stored.status).toBe('CANCELLED');
+      expect(stored.cancellationNote).toBeNull();
+      const history = await historyOf(entryId);
+      expect(history).toHaveLength(1);
+      expect(history[0]?.note).toBeNull();
     });
 
     it('AG-044 con motivo fija cancelled_at, libera el cupo y guarda la nota', async () => {
@@ -816,31 +810,16 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       expect((response.body as Problem).code).toBe('INVALID_AGENDA_TRANSITION');
     });
 
-    it('AG-117 exige motivo por campo para retractar una cita', async () => {
+    it('AG-117 retracta una cita sin motivo (D-126)', async () => {
       const entryId = await bookedEntry();
 
-      const response = await transition(entryId, {
-        to: 'ENTERED_IN_ERROR',
-      }).expect(422);
+      await transition(entryId, { to: 'ENTERED_IN_ERROR' }).expect(200);
 
-      /**
-       * POR CAMPO, y el `code` es el genérico del transporte a propósito: el
-       * DTO rechaza esto antes de que el servicio corra, exactamente como
-       * hace AG-044 con la anulación, así que sobre HTTP el contrato es el
-       * 422 por campo con su frase. `ENTERED_IN_ERROR_REASON_REQUIRED` —el
-       * código estable del catálogo— es el que ve un LLAMANTE INTERNO, y su
-       * contrato lo fija `agenda.service.spec.ts`.
-       */
-      const problem = response.body as Problem;
-      expect(problem.errors?.[0]?.field).toBe('reason');
-      expect(problem.errors?.[0]?.message).toBe(
-        'Indique por qué la cita se registró por error',
-      );
-      // Y no se retractó nada.
       const stored = await prisma.agendaEntry.findUniqueOrThrow({
         where: { id: entryId },
       });
-      expect(stored.status).toBe('BOOKED');
+      expect(stored.status).toBe('ENTERED_IN_ERROR');
+      expect(stored.enteredInErrorReason).toBeNull();
     });
 
     it('AG-117 libera el cupo sin escribir nada de una anulación', async () => {

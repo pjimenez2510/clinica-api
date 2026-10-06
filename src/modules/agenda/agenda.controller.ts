@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -35,8 +36,11 @@ import {
   DailyAgendaQueryDto,
   DurationProposalDto,
   DurationProposalQueryDto,
-  RescheduleAppointmentDto,
-  RescheduledAppointmentDto,
+  AgendaEntryVersionsDto,
+  CorrectEmergencyDto,
+  EditBlockDto,
+  EditedAppointmentDto,
+  EditEntryDto,
   TransitionOutcomeDto,
   TransitionStatusDto,
   type AgendaEntryResponse,
@@ -45,7 +49,8 @@ import {
   type TransitionOutcomeResponse,
   type DailyAgendaResponse,
   type DurationProposalResponse,
-  type RescheduledAppointmentResponse,
+  type AgendaEntryVersionsResponse,
+  type EditedAppointmentResponse,
 } from './dto/agenda.dto';
 
 /**
@@ -387,53 +392,135 @@ export class AgendaController {
   }
 
   /**
-   * AG-050, AG-051, AG-052. Moves one appointment to another moment.
-   *
-   * 201 AND NOT 200, because what this leaves behind is a NEW entry: the
-   * original is not edited, it is annulled and released (AG-050), and the
-   * appointment the patient will turn up for is a row that did not exist
-   * before. Answering 200 would say "the appointment you know about changed",
-   * which is exactly what the requirement forbids happening.
-   *
-   * A SUB-RESOURCE OF THE ENTRY (`…/entries/:entryId/reschedule`) and not a
-   * POST to `entries` with an extra field: the site scope is settled by the
-   * guard from `param:siteId` like every route here (AG-071), and the entry
-   * being moved is part of the address rather than of the payload.
+   * AG-050 to AG-052, AG-115, AG-162 (D-127). Edits the SAME appointment:
+   * moves it, or corrects who attends it, its type, room, motive, channel or,
+   * before the arrival, its patient. The previous row stays in
+   * `record_version`. What the screen's «Editar» and the drag call, and what
+   * an assistant calls to correct the same mistake (D-127.5).
    */
-  @Post('entries/:entryId/reschedule')
+  @Patch('entries/:entryId')
   @RequirePermission('agenda:write', 'param:siteId')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Reprogramar una cita a otro horario' })
-  @ApiCreatedResponse({ type: RescheduledAppointmentDto })
-  async reschedule(
+  @ApiOperation({ summary: 'Editar o mover una cita' })
+  @ApiOkResponse({ type: EditedAppointmentDto })
+  async editEntry(
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Param('entryId', ParseUUIDPipe) entryId: string,
-    @Body() dto: RescheduleAppointmentDto,
-  ): Promise<RescheduledAppointmentResponse> {
-    const moved = await this.agenda.reschedule(
+    @Body() dto: EditEntryDto,
+  ): Promise<EditedAppointmentResponse> {
+    const edited = await this.agenda.editEntry(
       {
         siteId,
         entryId,
-        // Both instants carry their offset — the schema refuses one that does
-        // not — so `Date` reads them without guessing a zone.
-        startsAt: new Date(dto.startsAt),
-        endsAt: new Date(dto.endsAt),
-        bookingChannel: dto.bookingChannel,
-        // AG-115. Absent means «el mismo», and the service is where that
-        // fallback lives: the transport does not invent the stored value.
+        startsAt:
+          dto.startsAt === undefined ? undefined : new Date(dto.startsAt),
+        endsAt: dto.endsAt === undefined ? undefined : new Date(dto.endsAt),
         practitionerId: dto.practitionerId,
         serviceTypeId: dto.serviceTypeId,
+        roomId: dto.roomId,
         reason: dto.reason,
+        bookingChannel: dto.bookingChannel,
+        patientId: dto.patientId,
       },
-      // AG-004, AG-029: the author comes from the session, never from the body.
+      // AG-051: who edited comes from the session, never from the body.
       { userId: this.currentUser.requireUserId() },
     );
 
+    return { ...toEntryResponse(edited.entry), warnings: [...edited.warnings] };
+  }
+
+  /** AG-168. The versions an edit replaced, newest first. */
+  @Get('entries/:entryId/versions')
+  @RequirePermission('agenda:read', 'param:siteId')
+  @ApiOperation({ summary: 'Versiones anteriores de una cita' })
+  @ApiOkResponse({ type: AgendaEntryVersionsDto })
+  async entryVersions(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('entryId', ParseUUIDPipe) entryId: string,
+  ): Promise<AgendaEntryVersionsResponse> {
+    const versions = await this.agenda.entryVersions({ siteId, entryId });
     return {
-      original: toEntryResponse(moved.original),
-      created: toEntryResponse(moved.created),
-      warnings: [...moved.warnings],
+      items: versions.map((version) => ({
+        version: version.version,
+        replacedAt: version.replacedAt.toISOString(),
+        replacedBy: version.replacedBy,
+        startsAt: version.startsAt.toISOString(),
+        endsAt: version.endsAt.toISOString(),
+        practitionerId: version.practitionerId,
+        roomId: version.roomId,
+        serviceTypeId: version.serviceTypeId,
+        bookingChannel: version.bookingChannel,
+        patientId: version.patientId,
+        blocksCalendar: version.blocksCalendar,
+        emergencyFlagged: version.emergencyFlagged,
+      })),
     };
+  }
+
+  /** AG-163. «Deshacer» a no-show, the same day it was marked. */
+  @Post('entries/:entryId/no-show/undo')
+  @RequirePermission('agenda:write', 'param:siteId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Deshacer una inasistencia marcada por error' })
+  @ApiOkResponse({ type: AgendaEntryDto })
+  async undoNoShow(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('entryId', ParseUUIDPipe) entryId: string,
+  ): Promise<AgendaEntryResponse> {
+    const entry = await this.agenda.undoNoShow(
+      { siteId, entryId },
+      { userId: this.currentUser.requireUserId() },
+    );
+    return toEntryResponse(entry);
+  }
+
+  /**
+   * AG-132, D-128.4. Corrects the emergency call of the arrival, with
+   * version. The permission of the arrival (AG-130), and no other.
+   */
+  @Patch('entries/:entryId/emergency')
+  @RequirePermission('agenda:write', 'param:siteId')
+  @ApiOperation({ summary: 'Corregir la calificación de emergencia' })
+  @ApiOkResponse({ type: AgendaEntryDto })
+  async correctEmergency(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('entryId', ParseUUIDPipe) entryId: string,
+    @Body() dto: CorrectEmergencyDto,
+  ): Promise<AgendaEntryResponse> {
+    const entry = await this.agenda.correctEmergency(
+      {
+        siteId,
+        entryId,
+        emergency: dto.emergency,
+        emergencyNote: dto.emergencyNote,
+      },
+      { userId: this.currentUser.requireUserId() },
+    );
+    return toEntryResponse(entry);
+  }
+
+  /** AG-164. Edits the same block, with version. */
+  @Patch('blocks/:entryId')
+  @RequirePermission('agenda:write', 'param:siteId')
+  @ApiOperation({ summary: 'Editar un bloqueo' })
+  @ApiOkResponse({ type: AgendaEntryDto })
+  async editBlock(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('entryId', ParseUUIDPipe) entryId: string,
+    @Body() dto: EditBlockDto,
+  ): Promise<AgendaEntryResponse> {
+    const entry = await this.agenda.editBlock(
+      {
+        siteId,
+        entryId,
+        startsAt:
+          dto.startsAt === undefined ? undefined : new Date(dto.startsAt),
+        endsAt: dto.endsAt === undefined ? undefined : new Date(dto.endsAt),
+        roomId: dto.roomId,
+        reason: dto.reason,
+      },
+      { userId: this.currentUser.requireUserId() },
+    );
+    return toEntryResponse(entry);
   }
 }
 
