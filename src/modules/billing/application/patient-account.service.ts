@@ -35,6 +35,7 @@ import {
   OPEN_CHARGE_STATUSES,
   totalsOf,
 } from '../domain/charge';
+import { consultationKeyOf } from '../domain/charge-proposal';
 import type { Quantity } from '../domain/money';
 import {
   CLINICAL_ACTS_REPOSITORY,
@@ -70,6 +71,13 @@ export interface AccountStatement {
    * the cashier is told before closing — never stopped (D-123.6).
    */
   draftOrders: DraftOrderNotice[];
+  /**
+   * BI-203. The visit's consultation line no longer matches the visit: its
+   * sequence was corrected and the line could not be repriced on its own
+   * (no price, inactive service, or already billed). Derived on read, so it
+   * says the truth whatever happened to the announcement.
+   */
+  consultationOutdated: { chargeId: string; billed: boolean } | null;
 }
 
 /**
@@ -102,7 +110,10 @@ export class PatientAccountService {
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
     @Inject(CLINICAL_ACTS_REPOSITORY)
-    private readonly acts: Pick<ClinicalActsRepository, 'draftOrdersOf'>,
+    private readonly acts: Pick<
+      ClinicalActsRepository,
+      'draftOrdersOf' | 'findEncounterActs'
+    >,
   ) {}
 
   /**
@@ -202,6 +213,7 @@ export class PatientAccountService {
         charges.filter((charge) => charge.status === 'BILLABLE').map(toLine),
       ),
       draftOrders,
+      consultationOutdated: await this.consultationOutdated(account, charges),
     };
   }
 
@@ -385,6 +397,37 @@ export class PatientAccountService {
     }
 
     return charge;
+  }
+
+  /**
+   * BI-203. Compares the live consultation line with the consultation the
+   * catalogue maps for the visit as it is NOW (BI-158). Removed and «No se
+   * cobra» lines are not live; a visit without a key or a mapping says
+   * nothing, as the proposal would not have raised one either.
+   */
+  private async consultationOutdated(
+    account: AccountView,
+    charges: readonly ChargeView[],
+  ): Promise<AccountStatement['consultationOutdated']> {
+    const line = charges.find(
+      (charge) =>
+        charge.origin === 'CONSULTATION' &&
+        charge.status !== 'CANCELLED' &&
+        charge.status !== 'NOT_BILLABLE',
+    );
+    if (!line || !account.encounterId) return null;
+
+    const acts = await this.acts.findEncounterActs({
+      encounterId: account.encounterId,
+      siteId: account.siteId,
+    });
+    const key = acts === null ? null : consultationKeyOf(acts);
+    if (key === null) return null;
+    const service = await this.catalogue.findConsultationService(key);
+    if (!service || service.billableServiceId === line.billableServiceId) {
+      return null;
+    }
+    return { chargeId: line.id, billed: line.status === 'BILLED' };
   }
 
   /** BI-135. Missing and «belongs to another site» answer identically. */

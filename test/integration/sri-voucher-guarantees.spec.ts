@@ -170,7 +170,11 @@ describe('BI-169, SRI-012 cada línea sabe de qué factura es', () => {
         context.prisma.$executeRaw`
           UPDATE "charge_item" SET "invoice_id" = NULL WHERE "id" = ${loose}::uuid`,
       ),
-    ).toMatch(/charge_item_billed_carries_its_invoice/);
+      // Since BI-197 the BEFORE trigger `charge_item_billed_is_frozen` stops
+      // this first; the CHECK stays underneath for any path past it.
+    ).toMatch(
+      /charge_item_billed_is_frozen|charge_item_billed_carries_its_invoice/,
+    );
 
     const other = await charge(accountId);
     expect(

@@ -160,7 +160,7 @@ function build(options: { ports?: Record<string, unknown> } = {}) {
       actsPort,
       accounts,
       catalogue,
-      new PatientAccountService(accounts, catalogue, { record: vi.fn() }, { draftOrdersOf: () => Promise.resolve([]) }), // prettier-ignore
+      new PatientAccountService(accounts, catalogue, { record: vi.fn() }, { draftOrdersOf: () => Promise.resolve([]), findEncounterActs: () => Promise.resolve(null) }), // prettier-ignore
     ),
     mocks,
   };

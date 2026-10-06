@@ -1600,7 +1600,8 @@ dos registros distintos.**
   > El total de la cuenta sigue contando lo ya facturado (BI-074); por eso el
   > extracto sirve aparte `invoiceableTotals`, lo que llevaría una factura
   > emitida ahora. Sin él, la segunda factura se anunciaba por el importe de
-  > las dos. Y la emisión lleva los cargos que caja vio (`chargeIds`): si otra
+  > las dos. Y la emisión lleva los cargos que caja vio (`chargeIds`) y su
+  > total (`expectedTotal`, desde BI-197: un cargo editado conserva su id): si otra
   > caja confirmó uno entretanto, la factura —que no se edita— no sale por un
   > importe que nadie vio. La cuenta se bloquea durante la emisión, así que dos
   > emisiones simultáneas no se reparten las mismas líneas. Un cargo a $0 no
@@ -1726,16 +1727,19 @@ dos registros distintos.**
   `record_version` la versión anterior con quién y cuándo, y DEBERÁ permitir
   deshacerlo con `POST …/charges/{id}/restore`, que lo devuelve al estado que
   tenía con el precio de la lista vigente de la cuenta en su fecha de servicio.
-  SI se pide deshacer un cargo que no está quitado ni marcado «No se cobra»,
-  ENTONCES el sistema DEBERÁ rechazarlo con `CHARGE_NOT_REMOVED`; y SI la
-  cuenta está cerrada, con `ACCOUNT_CLOSED`.
+  SI se pide deshacer un cargo que no está quitado ni marcado «No se cobra»
+  con versión —uno anulado antes de esta entrega no la tiene—, ENTONCES el
+  sistema DEBERÁ rechazarlo con `CHARGE_NOT_REMOVED`; y SI la cuenta está
+  cerrada, con `ACCOUNT_CLOSED`.
   > Inventario CA-1. La pantalla quita en un clic y ofrece «Deshacer»
   > (`notifyUndoable`). El motivo sigue admitido y se guarda si llega; el
   > `CHECK` `charge_item_void_states_who_when_and_why` deja de exigirlo.
   > Deshacer re-tarifa porque el pagador pudo cambiar entretanto (BI-198): un
   > cargo que vuelve con el precio de otro pagador es una cuenta con dos
   > tarifarios. El índice único de su acto (BI-154) ya lo ocupaba la fila
-  > quitada, así que deshacer no puede duplicar el cargo.
+  > quitada, así que deshacer no puede duplicar el cargo. Lo anulado antes
+  > (BI-059) no se devuelve: se corrigió anulando y añadiendo otro, y
+  > devolverlo cobraría dos veces (revisión clínica).
 - **BI-196** — CUANDO caja marque «No se cobra» un cargo sin facturar de
   importe $0, el sistema DEBERÁ pasarlo a `NOT_BILLABLE` sin pedir motivo ni
   confirmación, con su versión, y DEBERÁ contarlo como resuelto para cerrar la
@@ -1759,8 +1763,9 @@ dos registros distintos.**
   > deshacer—; confirmar y facturar siguen sin sello, como hasta hoy.
 - **BI-198** — CUANDO caja cambie el pagador de una cuenta abierta, el sistema
   DEBERÁ re-tarifar con la lista del pagador nuevo, en su fecha de servicio,
-  cada cargo propuesto o confirmado sin facturar, con su versión y en la misma
-  transacción; SI la cuenta tiene un cargo facturado, ENTONCES DEBERÁ
+  cada cargo propuesto o confirmado sin facturar y cada «No se cobra» —que
+  vuelve a propuesto si ahora cuesta algo—, con su versión y en la misma
+  transacción, con la cuenta y sus cargos bloqueados; SI la cuenta tiene un cargo facturado, ENTONCES DEBERÁ
   rechazarlo con `ACCOUNT_HAS_BILLED_CHARGES`; y SI la lista nueva no tiene
   precio para alguno, con `PRICE_NOT_FOUND`, sin cambiar nada. Antes de
   cambiarlo, `GET …/repricing?payerId=` DEBERÁ servir el total actual y el que
@@ -1799,8 +1804,10 @@ dos registros distintos.**
   una cuenta abierta, el sistema DEBERÁ volver a resolver qué prestación es la
   consulta (BI-158) y su precio en la fecha de servicio, con su versión y el
   sello de quien corrigió; SI no hay prestación o precio para la combinación
-  nueva, ENTONCES DEBERÁ dejar el cargo como estaba y registrarlo en el log,
-  sin deshacer la corrección clínica.
+  nueva, ENTONCES DEBERÁ dejar el cargo como estaba sin deshacer la corrección
+  clínica, y el extracto de la cuenta DEBERÁ señalar
+  (`consultationOutdated`) la consulta que ya no corresponde a la atención,
+  también si ya está facturada.
   > D-134.2. Sin esto el paciente paga una primera vez mientras la historia
   > dice subsecuente. `encounter` no importa `billing`: lo avisa por el puerto
   > `CONSULTATION_REPRICER` de `shared/billing`, después de su transacción,

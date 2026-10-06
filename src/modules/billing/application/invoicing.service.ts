@@ -38,6 +38,7 @@ import type { Requester } from './service-catalogue.service';
 
 const INVOICE_RESOURCE_TYPE = 'invoice';
 
+import type { Money } from '../domain/money';
 /**
  * SRI-060. The invoice with its electronic voucher's state beside it, read
  * through the shared port: `billing` does not know how the SRI is spoken to.
@@ -113,6 +114,8 @@ export class InvoicingService {
       paymentMethod: PaymentMethod;
       /** BI-184. The pending charges the cashier saw. */
       expectedChargeIds?: readonly string[];
+      /** BI-184, BI-197. The total the cashier was shown. */
+      expectedTotal?: Money;
     },
     requester: Requester,
   ): Promise<InvoiceWithVoucher> {
@@ -140,6 +143,7 @@ export class InvoicingService {
       paymentMethod: command.paymentMethod,
       issuedById: requester.userId,
       expectedChargeIds: command.expectedChargeIds,
+      expectedTotal: command.expectedTotal,
     });
 
     /**

@@ -139,9 +139,9 @@ export class ChargeCorrectionService implements ConsultationRepricer {
     const account = await this.requireOpenAccount(query);
     const priceListId = await this.resolvePriceList(query.payerId);
 
-    const charges = (await this.accounts.listCharges(account.id)).filter(
-      (charge) => OPEN_CHARGE_STATUSES.includes(charge.status),
-    );
+    const all = await this.accounts.listCharges(account.id);
+    const isOpenCharge = (charge: ChargeView) =>
+      OPEN_CHARGE_STATUSES.includes(charge.status);
     const lines = await this.accounts.previewRepricing({
       accountId: account.id,
       priceListId,
@@ -149,13 +149,21 @@ export class ChargeCorrectionService implements ConsultationRepricer {
     const newPrice = new Map(
       lines.map((line) => [line.chargeId, line.unitAmount]),
     );
+    // A «No se cobra» line counts after the change only if it gets a price:
+    // the change reopens it as proposed (BI-198).
+    const after = all.filter(
+      (charge) =>
+        isOpenCharge(charge) ||
+        (charge.status === 'NOT_BILLABLE' &&
+          !(newPrice.get(charge.id) ?? Money.ZERO).equals(Money.ZERO)),
+    );
 
     const complete = lines.every((line) => line.unitAmount !== null);
     return {
-      currentTotal: totalsOf(charges.map(toLine)).total,
+      currentTotal: totalsOf(all.filter(isOpenCharge).map(toLine)).total,
       newTotal: complete
         ? totalsOf(
-            charges.map((charge) => ({
+            after.map((charge) => ({
               ...toLine(charge),
               unitAmount: newPrice.get(charge.id) ?? charge.unitAmount,
             })),

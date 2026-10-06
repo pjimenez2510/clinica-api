@@ -492,7 +492,7 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       expect(await rowOf(encounterId)).toBeUndefined();
 
       // Control positivo: con el cargo manual anulado, sí vuelve.
-      await prisma.chargeItem.updateMany({ where: { encounterId, origin: 'MANUAL' }, data: { status: 'CANCELLED', voidedAt: now, voidedById: authorId, voidReason: 'Error' } }); // prettier-ignore
+      await prisma.chargeItem.updateMany({ where: { encounterId, origin: 'MANUAL' }, data: { status: 'CANCELLED', voidedAt: now, voidedById: authorId, voidReason: 'Error', changedById: authorId, changedAt: now } }); // prettier-ignore
       expect(await rowOf(encounterId)).toMatchObject({ unchargedExams: 1 });
     });
 
@@ -504,7 +504,7 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       const decided = await visit(ended(1));
       await anIssuedExam(decided);
       await toCashier(decided);
-      await prisma.chargeItem.updateMany({ where: { encounterId: decided, origin: 'EXAM' }, data: { status: 'CANCELLED', voidedAt: now, voidedById: authorId, voidReason: 'Cortesía' } }); // prettier-ignore
+      await prisma.chargeItem.updateMany({ where: { encounterId: decided, origin: 'EXAM' }, data: { status: 'CANCELLED', voidedAt: now, voidedById: authorId, voidReason: 'Cortesía', changedById: authorId, changedAt: now } }); // prettier-ignore
       await settle(decided);
 
       // La línea del examen anulada.

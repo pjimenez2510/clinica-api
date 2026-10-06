@@ -6,7 +6,7 @@ import '../../src/modules/billing/infrastructure/billing.constraints';
 import '../../src/shared/http/record-version.constraints';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { asDateColumn } from '../../src/modules/billing/infrastructure/prisma-billing-catalogue.repository';
-import { Quantity } from '../../src/modules/billing/domain/money';
+import { Money, Quantity } from '../../src/modules/billing/domain/money';
 import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -425,6 +425,94 @@ describe('BI-198 el pagador cambia con cargos y los re-tarifa', () => {
     const [unchanged] = await context.accounts.listCharges(context.accountId);
     expect(unchanged?.unitAmount.toString()).toBe('30.00');
     expect(await versionsOf(raised.id)).toHaveLength(0);
+  });
+});
+
+describe('BI-195, BI-198, BI-184 lo que la revisión encontró', () => {
+  it('BI-195 no devuelve un cargo anulado antes de esta entrega: no tiene versión y ya se registró otro', async () => {
+    const raised = await charge();
+    // As BI-059 left them: voided by hand, no stamp, no version.
+    await context.prisma.$executeRaw`
+      ALTER TABLE "charge_item" DISABLE TRIGGER "trg_charge_item_record_version"`;
+    await context.prisma.chargeItem.update({
+      where: { id: raised.id },
+      data: { status: 'CANCELLED', voidedAt: new Date(), voidedById: context.userId, voidReason: 'Error' }, // prettier-ignore
+    });
+    await context.prisma.$executeRaw`
+      ALTER TABLE "charge_item" ENABLE TRIGGER "trg_charge_item_record_version"`;
+
+    const rejection = await rejectionOf(
+      context.accounts.restoreCharge({
+        chargeId: raised.id,
+        changedById: context.userId,
+        now: new Date(),
+      }),
+    );
+
+    expect((rejection as { code?: string }).code).toBe('CHARGE_NOT_REMOVED');
+  });
+
+  it('BI-198 una línea «No se cobra» que con el pagador nuevo cuesta algo vuelve a propuesta', async () => {
+    const zero = await charge();
+    await context.prisma.chargeItem.update({
+      where: { id: zero.id },
+      data: { unitAmount: '0.00', changedById: context.userId, changedAt: new Date() }, // prettier-ignore
+    });
+    await context.accounts.markNotBillable({
+      chargeId: zero.id,
+      changedById: context.userId,
+      now: new Date(),
+    });
+    await priceForInsurer(context.generalId, '22.00');
+
+    await context.accounts.changeAccountPayer({
+      accountId: context.accountId,
+      payerId: context.insurerId,
+      priceListId: context.insurerListId,
+      changedById: context.userId,
+      now: new Date(),
+    });
+
+    const [after] = await context.accounts.listCharges(context.accountId);
+    expect(after?.status).toBe('PLANNED');
+    expect(after?.unitAmount.toString()).toBe('22.00');
+  });
+
+  it('BI-184 no emite si el total que caja vio ya no es el de los cargos, aunque sean los mismos', async () => {
+    const raised = await charge();
+    const emissionPoint = await context.prisma.emissionPoint.create({
+      data: { siteId: context.siteId, code: '001', description: 'Caja' },
+    });
+    const issue = (expectedTotal: string) =>
+      context.accounts.issueInvoice({
+        accountId: context.accountId,
+        siteId: context.siteId,
+        emissionPointId: emissionPoint.id,
+        paymentMethod: '01',
+        receiver: {
+          buyerIdentificationType: '05',
+          buyerIdentification: '1710034065',
+          buyerName: 'Guamán Andrade, María José',
+          buyerEmail: null,
+          isFinalConsumer: false,
+        },
+        issuedById: context.userId,
+        expectedChargeIds: [raised.id],
+        expectedTotal: Money.parse(expectedTotal),
+      });
+
+    // Another cashier edits the line in place: same id, another amount.
+    await context.accounts.editCharge({
+      chargeId: raised.id,
+      changedById: context.userId,
+      now: new Date(),
+      quantity: Quantity.parse('2'),
+    });
+
+    const stale = await rejectionOf(issue('30.00'));
+    expect((stale as { code?: string }).code).toBe('INVOICE_CHARGES_CHANGED');
+    // Positive control: with the total that is on the account now, it issues.
+    await expect(issue('60.00')).resolves.toMatchObject({ status: expect.any(String) }); // prettier-ignore
   });
 });
 

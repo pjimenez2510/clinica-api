@@ -175,6 +175,15 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
    * either. Removed lines keep their price: «Deshacer» reprices them
    * (BI-195). A line whose price row would not change is not touched, so no
    * correction is stamped that corrected nothing.
+   *
+   * «No se cobra» lines are repriced too: they meant «this costs $0», and a
+   * line that costs something under the new payer goes back to PROPOSED, for
+   * the cashier to review — never left at $0 without anyone deciding it.
+   *
+   * ⚠️ THE CHARGES ARE LOCKED HERE, after the account and before reading
+   * them. An edit or a restore locks its line and then reads the account's
+   * list; without this lock a concurrent edit could get the old service's
+   * price written over its new service, or a restore the old payer's price.
    */
   async changeAccountPayer(command: {
     accountId: string;
@@ -188,6 +197,11 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         SELECT "id" FROM "patient_account"
          WHERE "id" = ${command.accountId}::uuid
            FOR UPDATE`;
+      await tx.$queryRaw`
+        SELECT "id" FROM "charge_item"
+         WHERE "account_id" = ${command.accountId}::uuid
+         ORDER BY "id"
+           FOR UPDATE`;
 
       const charges = await tx.chargeItem.findMany({
         where: { accountId: command.accountId },
@@ -197,20 +211,23 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       }
 
       for (const charge of charges) {
-        if (!isOpen(charge.status)) continue;
+        if (!isRepriced(charge.status)) continue;
         const price = await findPriceOn(tx, {
           priceListId: command.priceListId,
           payerId: command.payerId,
           billableServiceId: charge.billableServiceId,
           serviceDate: charge.serviceDate,
         });
-        if (price.id === charge.resolvedPriceId) continue;
+        const reopens =
+          charge.status === 'NOT_BILLABLE' && !price.amount.isZero();
+        if (price.id === charge.resolvedPriceId && !reopens) continue;
 
         await tx.chargeItem.update({
           where: { id: charge.id },
           data: {
             unitAmount: price.amount.toFixed(2),
             resolvedPriceId: price.id,
+            ...(reopens ? { status: 'PLANNED' } : {}),
             changedById: command.changedById,
             changedAt: stampAfter(charge.changedAt, command.now),
           },
@@ -234,7 +251,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     const charges = await this.prisma.chargeItem.findMany({
       where: {
         accountId: query.accountId,
-        status: { in: [...OPEN_CHARGE_STATUSES] },
+        status: { in: [...REPRICED_STATUSES] },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -523,9 +540,11 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
    * BI-195, BI-196. «Deshacer».
    *
    * The status it goes back to is the one the database archived before the
-   * removal (`record_version`). A line removed before this delivery has no
-   * version, and falls back to what it was born as (BI-152): proposed if the
-   * system derived it, billable if a person typed it.
+   * removal (`record_version`).
+   *
+   * ⚠️ ONLY A REMOVAL WITH A VERSION IS UNDONE. A line voided before this
+   * delivery was corrected the old way —void it and add another (BI-059)—,
+   * so reviving it would charge the same service twice.
    *
    * ⚠️ IT IS REPRICED from the account's list as it is NOW. The payer may
    * have changed while the line was out (BI-198), and a line that came back
@@ -546,9 +565,8 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
            AND "data" ->> 'status' IN ('PLANNED', 'BILLABLE')
          ORDER BY "version" DESC
          LIMIT 1`;
-      const status =
-        archived[0]?.status ??
-        (current.origin === 'MANUAL' ? 'BILLABLE' : 'PLANNED');
+      const status = archived[0]?.status;
+      if (status === undefined) throw new ChargeNotRemovedError();
 
       const account = await tx.patientAccount.findUniqueOrThrow({
         where: { id: current.accountId },
@@ -821,6 +839,16 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
           }),
         );
 
+        // BI-184, BI-197. Since a pending line can be EDITED in place, the
+        // same ids no longer mean the same amount: the total the cashier was
+        // shown has to match too.
+        if (
+          issuance.expectedTotal !== undefined &&
+          !totals.total.equals(issuance.expectedTotal)
+        ) {
+          throw new InvoiceChargesChangedError();
+        }
+
         const [last] = await tx.$queryRaw<{ sequential: string | null }[]>`
           SELECT max("sequential") AS "sequential"
             FROM "invoice"
@@ -1035,6 +1063,13 @@ async function lockCharge(
 
 function isOpen(status: string): boolean {
   return (OPEN_CHARGE_STATUSES as readonly string[]).includes(status);
+}
+
+/** BI-198. What a payer change reprices: the open lines and the $0 ones. */
+const REPRICED_STATUSES = [...OPEN_CHARGE_STATUSES, 'NOT_BILLABLE'] as const;
+
+function isRepriced(status: string): boolean {
+  return (REPRICED_STATUSES as readonly string[]).includes(status);
 }
 
 /** BI-056, BI-059. What a correction of a line that left review says. */

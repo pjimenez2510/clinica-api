@@ -587,6 +587,38 @@ describe('BI-203 corregir primera vez o subsecuente re-tarifa la consulta sin fa
     ).toBe(1);
   });
 
+  it('BI-203 sin precio para la subsecuente deja el cargo, y el extracto lo señala', async () => {
+    await press();
+    // The subsequent dermatology consultation loses its self-pay price.
+    const subsequent = await context.prisma.billableService.findUniqueOrThrow({
+      where: { code: 'CONS-DER-SUB' },
+    });
+    await context.prisma.price.deleteMany({
+      where: { billableServiceId: subsequent.id },
+    });
+
+    await correctToSubsequent();
+    await repricer().repriceConsultation({
+      encounterId: context.encounterId,
+      siteId: context.siteId,
+      changedById: context.userId,
+    });
+
+    const line = await consultation();
+    expect(line.billableService.code).toBe(CONSULTATION_CODE);
+    const asService = context.prisma as unknown as PrismaService;
+    const statement = await new PatientAccountService(
+      new PrismaBillingAccountRepository(asService),
+      new PrismaBillingCatalogueRepository(asService),
+      { record: () => Promise.resolve() },
+      new PrismaClinicalActsRepository(asService),
+    ).statement({ accountId: line.accountId, siteId: context.siteId });
+    expect(statement.consultationOutdated).toEqual({
+      chargeId: line.id,
+      billed: false,
+    });
+  });
+
   it('BI-203 la consulta quitada no se toca', async () => {
     await press();
     const before = await consultation();

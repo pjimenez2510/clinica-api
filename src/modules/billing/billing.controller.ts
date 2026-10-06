@@ -40,7 +40,7 @@ import {
 import type { AccountView, ChargeView } from './domain/billing.repository';
 import type { AwaitingCheckout } from './domain/clinical-acts.port';
 import { lineBase, lineTax } from './domain/charge';
-import { Quantity } from './domain/money';
+import { Money, Quantity } from './domain/money';
 import type { PatientIdentity } from './domain/patient-identity';
 import {
   AccountDto,
@@ -543,6 +543,10 @@ export class BillingController {
         receiver: dto.receiver,
         paymentMethod: dto.paymentMethod,
         expectedChargeIds: dto.chargeIds,
+        expectedTotal:
+          dto.expectedTotal === undefined
+            ? undefined
+            : Money.parse(dto.expectedTotal),
       },
       { userId: this.currentUser.requireUserId() },
     );
@@ -633,6 +637,7 @@ function toStatementResponse(
       ...draft,
       savedAt: draft.savedAt.toISOString(),
     })),
+    consultationOutdated: statement.consultationOutdated,
   };
 }
 

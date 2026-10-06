@@ -521,6 +521,11 @@ export interface InvoiceIssuance {
    * is refused unless they are exactly the ones still pending.
    */
   expectedChargeIds?: readonly string[];
+  /**
+   * BI-184, BI-197. The total the cashier was shown. A line edited in place
+   * keeps its id, so the ids alone no longer prove the amount.
+   */
+  expectedTotal?: Money;
 }
 
 /**

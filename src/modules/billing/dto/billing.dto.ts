@@ -387,6 +387,12 @@ export const issueInvoiceSchema = z.object({
    * caja los cambió entretanto, `INVOICE_CHARGES_CHANGED` y no se emite.
    */
   chargeIds: z.array(z.uuid()).optional(),
+  /**
+   * BI-184, BI-197. El total que caja vio. Un cargo editado en el sitio
+   * conserva su id: sin el total, la factura saldría por un importe que nadie
+   * vio. Si no coincide, `INVOICE_CHARGES_CHANGED`.
+   */
+  expectedTotal: money('El total').optional(),
 });
 /** Body of POST /billing/sites/:siteId/invoices. */
 export class IssueInvoiceDto extends createZodDto(issueInvoiceSchema) {}
@@ -694,6 +700,14 @@ const statementSchema = z.object({
       savedAt: z.iso.datetime(),
     }),
   ),
+  /**
+   * BI-203. La consulta que ya no corresponde a la atención: se corrigió
+   * primera vez/subsecuente y el cargo no se pudo re-tarifar solo (sin precio,
+   * o ya facturado). `null` cuando no hay nada que decir.
+   */
+  consultationOutdated: z
+    .object({ chargeId: z.uuid(), billed: z.boolean() })
+    .nullable(),
 });
 /** Response of GET /billing/sites/:siteId/accounts/:accountId (BI-074). The inferred type below is what the controller returns. */
 export class AccountStatementDto extends createZodDto(statementSchema) {}
