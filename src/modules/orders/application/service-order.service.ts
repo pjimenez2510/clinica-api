@@ -364,10 +364,11 @@ export class ServiceOrderService {
   }
 
   /** ORD-115. The caller's drafts left behind, within their scope. */
-  staleDrafts(requester: Requester): Promise<StaleDraftEntry[]> {
+  staleDrafts(requester: Requester, now: Date): Promise<StaleDraftEntry[]> {
     return this.orders.staleDrafts({
       userId: requester.userId,
       sites: requester.sites,
+      now,
     });
   }
 

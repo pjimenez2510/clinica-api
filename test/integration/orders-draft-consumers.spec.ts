@@ -26,6 +26,10 @@ import { useDatabase } from './setup/database';
  * consumidor contra la base, con el mismo borrador y —como control positivo—
  * la misma orden ya emitida por el mismo camino.
  */
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
 const db = useDatabase();
 
 const requester: Requester = { userId: 'user-1', sites: 'all' };
@@ -361,6 +365,9 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
         dischargeCondition: 'ALIVE',
       },
     });
+  /** When the draft was saved, as the row says: the 24 hours run from it. */
+  const savedAt = async (prisma: PrismaClient, orderId: string) =>
+    (await prisma.serviceOrder.findUniqueOrThrow({ where: { id: orderId } })).createdAt; // prettier-ignore
   const signerOf = async (prisma: PrismaClient, practitionerId: string) =>
     (await prisma.practitioner.findUniqueOrThrow({ where: { id: practitionerId } })).userId; // prettier-ignore
 
@@ -368,9 +375,11 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
     const prisma = db();
     const { scene, draft } = await aDraft(prisma);
     const userId = await signerOf(prisma, scene.practitioner.id);
-    const stale = () => adapters(prisma).orders.staleDrafts({ userId, sites: 'all' }); // prettier-ignore
+    // Una hora después de guardarlo: reciente.
+    const now = new Date((await savedAt(prisma, draft.id)).getTime() + HOUR_MS);
+    const stale = () => adapters(prisma).orders.staleDrafts({ userId, sites: 'all', now }); // prettier-ignore
 
-    // Con la atención abierta no está colgado: se emite desde la pestaña.
+    // Con la atención abierta y reciente no está colgado: se emite desde la pestaña.
     expect(await stale()).toEqual([]);
 
     await endEncounter(prisma, scene, 'DISCHARGED');
@@ -389,9 +398,9 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
     expect((await stale())[0]).toMatchObject({ canIssue: false });
 
     // De otro profesional, no es suyo.
-    expect(await adapters(prisma).orders.staleDrafts({ userId: '00000000-0000-4000-8000-000000000002', sites: 'all' })).toEqual([]); // prettier-ignore
+    expect(await adapters(prisma).orders.staleDrafts({ userId: '00000000-0000-4000-8000-000000000002', sites: 'all', now })).toEqual([]); // prettier-ignore
     // Fuera de su alcance de sedes, tampoco.
-    expect(await adapters(prisma).orders.staleDrafts({ userId, sites: [] })).toEqual([]); // prettier-ignore
+    expect(await adapters(prisma).orders.staleDrafts({ userId, sites: [], now })).toEqual([]); // prettier-ignore
   });
 
   it('ORD-115 lo emitido y lo descartado ya no cuelgan', async () => {
@@ -399,11 +408,40 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
     const { scene, draft } = await aDraft(prisma);
     const userId = await signerOf(prisma, scene.practitioner.id);
     await endEncounter(prisma, scene, 'DISCHARGED');
-    const stale = () => adapters(prisma).orders.staleDrafts({ userId, sites: 'all' }); // prettier-ignore
+    const now = new Date((await savedAt(prisma, draft.id)).getTime() + HOUR_MS);
+    const stale = () => adapters(prisma).orders.staleDrafts({ userId, sites: 'all', now }); // prettier-ignore
     expect(await stale()).toHaveLength(1);
 
     await issue(prisma, draft.id);
     expect(await stale()).toEqual([]);
+  });
+
+  it('ORD-115 D-130.3 el borrador de más de 24 horas en una atención abierta o en espera también cuelga, y se puede emitir', async () => {
+    const prisma = db();
+    const { scene, draft } = await aDraft(prisma);
+    const userId = await signerOf(prisma, scene.practitioner.id);
+    const saved = (await savedAt(prisma, draft.id)).getTime();
+    const at = (ms: number) => adapters(prisma).orders.staleDrafts({ userId, sites: 'all', now: new Date(saved + ms) }); // prettier-ignore
+
+    // Control positivo: a las 24 horas justas, todavía no.
+    expect(await at(DAY_MS)).toEqual([]);
+    const [open] = await at(DAY_MS + 1);
+    expect(open).toMatchObject({ orderId: draft.id, encounterStatus: 'OPEN', canIssue: true }); // prettier-ignore
+
+    await prisma.encounter.update({ where: { id: scene.encounter.id }, data: { status: 'ON_HOLD' } }); // prettier-ignore
+    expect(await at(DAY_MS - MINUTE_MS)).toEqual([]);
+    expect((await at(DAY_MS + MINUTE_MS))[0]).toMatchObject({ orderId: draft.id, encounterStatus: 'ON_HOLD' }); // prettier-ignore
+  });
+
+  it('BI-192 D-130.3 la cuenta de una atención aún abierta ve también su borrador viejo', async () => {
+    const prisma = db();
+    const { scene, draft } = await aDraft(prisma);
+    await prisma.encounter.update({ where: { id: scene.encounter.id }, data: { status: 'ON_HOLD' } }); // prettier-ignore
+    // Guardado hace dos días: el extracto no mira la edad del borrador.
+    await prisma.$executeRaw`UPDATE service_order SET created_at = created_at - interval '2 days' WHERE id = ${draft.id}::uuid`; // prettier-ignore
+
+    const notices = await adapters(prisma).acts.draftOrdersOf({ encounterId: scene.encounter.id, siteId: scene.site.id }); // prettier-ignore
+    expect(notices.map((notice) => notice.orderId)).toEqual([draft.id]);
   });
 
   it('BI-192 la cuenta de la atención ve el borrador con quién lo escribió; emitido, ya no', async () => {
