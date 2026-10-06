@@ -3632,7 +3632,19 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
 
 ---
 
-## 25. Quién corrige los signos tras el alta (D-134.3)
+## 25. El diagnóstico en su fila, y quién corrige los signos tras el alta (D-134.3)
+
+- **EN-227** — CUANDO quien puede corregir la codificación pulse «Editar»
+  sobre un diagnóstico (EN-212), la pantalla DEBERÁ volver editable **esa
+  fila en su sitio**, sin abrir una ventana —el buscador CIE-10, la
+  condición, la ocurrencia y el principal, cargados con lo registrado—, con
+  los mismos rechazos, confirmación y motivo de lista de EN-212, EN-213 y
+  EN-214 dichos en la fila; y NO DEBERÁ enseñar textos sobre lo que el
+  sistema aún no hace (la marca de notificación obligatoria, EN-049).
+  > **Solo interfaz** (`clinica-web`, encargo del autor en
+  > `fix/menos-preguntas-pacientes`): como el editor de receta en su
+  > pestaña. Registrar uno nuevo sigue en su diálogo. La API no cambia:
+  > `PATCH …/diagnoses/:id` (EN-212).
 
 - **EN-228** — MIENTRAS la atención tenga el alta (`DISCHARGED` o
   `COMPLETED`), CUANDO se corrija su toma de signos vitales (EN-217), el
