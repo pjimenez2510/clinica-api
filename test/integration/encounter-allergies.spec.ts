@@ -478,6 +478,7 @@ describe('las alergias del paciente contra PostgreSQL', () => {
         measuredAt: new Date('2026-05-11T14:05:00Z'),
       },
       practitioner.userId,
+      false,
     );
 
     const [previous] = await summariesOf(prisma).previousEncounters({

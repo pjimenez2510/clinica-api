@@ -1719,7 +1719,8 @@ describe('la atención por HTTP', () => {
         { dischargeCondition: 'ALIVE' },
       ).expect(200);
 
-      const corrected = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+      // EN-228. After the discharge whoever signs history corrects it.
+      const corrected = await put(`/encounters/${encounterId}/vitals`, doctorToken, {
         systolicBp: 130,
         diastolicBp: 85,
       }).expect(200); // prettier-ignore
@@ -1735,13 +1736,54 @@ describe('la atención por HTTP', () => {
       expect(after.body).toMatchObject({ status: 'DISCHARGED' });
 
       await prisma.encounter.update({ where: { id: encounterId }, data: { reportedAt: new Date() } }); // prettier-ignore
-      const reported = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+      const reported = await put(`/encounters/${encounterId}/vitals`, doctorToken, {
         systolicBp: 140,
         diastolicBp: 90,
       }).expect(409); // prettier-ignore
       expect((reported.body as Problem).code).toBe(
         'ENCOUNTER_ALREADY_REPORTED',
       );
+    });
+
+    it('EN-228 tras el alta enfermería (vitals:write sin record:sign) recibe 403 y la toma no cambia; el médico que firma en la sede la corrige con 200', async () => {
+      const encounterId = await openEncounter();
+      // Positive control before the discharge: vitals:write is enough.
+      await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        systolicBp: 120,
+        diastolicBp: 80,
+      }).expect(200);
+      await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        systolicBp: 122,
+        diastolicBp: 80,
+      }).expect(200);
+      const draft = await post(`/encounters/${encounterId}/notes`, doctorToken, {
+        formCode: '002',
+        content: COMPLETE_002,
+      }).expect(201); // prettier-ignore
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
+      await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
+
+      const refused = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        systolicBp: 130,
+        diastolicBp: 85,
+      }).expect(403); // prettier-ignore
+      const problem = refused.body as Problem;
+      expect(problem.code).toBe('VITALS_CORRECTION_REQUIRES_SIGNATURE');
+      expect(problem.title).toBe(
+        'La atención ya tiene el alta: corrige sus signos vitales quien firma historia clínica en esta sede',
+      );
+      const untouched = await prisma.encounterVitals.findUniqueOrThrow({ where: { encounterId } }); // prettier-ignore
+      expect(untouched.systolicBp).toBe(122);
+
+      const corrected = await put(`/encounters/${encounterId}/vitals`, doctorToken, {
+        systolicBp: 130,
+        diastolicBp: 85,
+      }).expect(200); // prettier-ignore
+      expect(corrected.body).toMatchObject({ systolicBp: 130 });
     });
 
     it('EN-217 D-134.3 tras el alta la toma de un menor de 5 años se corrige conservando las medidas, y quitar el peso responde 422 ANTHROPOMETRY_PENDING', async () => {
@@ -1774,7 +1816,7 @@ describe('la atención por HTTP', () => {
       ).expect(200);
 
       // Positive control: the temperature is corrected, the measures kept.
-      const corrected = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+      const corrected = await put(`/encounters/${encounterId}/vitals`, doctorToken, {
         ...measures,
         temperatureC: 37.4,
       }).expect(200); // prettier-ignore
@@ -1783,7 +1825,7 @@ describe('la atención por HTTP', () => {
         anthropometryPending: [],
       });
 
-      const refused = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+      const refused = await put(`/encounters/${encounterId}/vitals`, doctorToken, {
         heightCm: measures.heightCm,
         heightPosition: measures.heightPosition,
         headCircumferenceCm: measures.headCircumferenceCm,

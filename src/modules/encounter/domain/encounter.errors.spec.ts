@@ -48,6 +48,7 @@ import {
   AllergyNotRefutedError,
   HistoryNotRefutedError,
   NoKnownAllergiesNotStandingError,
+  VitalsCorrectionRequiresSignatureError,
   ChartHasAllergiesError,
   PractitionerProfileRequiredError,
   SubstituteClosureReasonRequiredError,
@@ -113,6 +114,8 @@ const EVERY_ERROR: readonly DomainError[] = [
   new AllergyNotRefutedError(),
   new HistoryNotRefutedError(),
   new NoKnownAllergiesNotStandingError(),
+  // EN-228. Tras el alta corrige la toma quien firma historia en la sede.
+  new VitalsCorrectionRequiresSignatureError(),
   new ChartHasAllergiesError(),
 ];
 
@@ -210,6 +213,15 @@ describe('el contrato de errores de la atención', () => {
     expect(active.code).toBe('CHART_HAS_ALLERGIES');
     expect(active).toBeInstanceOf(ConflictError);
     expect(active.userTitle).toContain('Descártelas');
+  });
+
+  it('EN-228 corregir los signos tras el alta sin record:sign en la sede responde 403 que dice quién corrige', () => {
+    const error = new VitalsCorrectionRequiresSignatureError();
+    expect(error.code).toBe('VITALS_CORRECTION_REQUIRES_SIGNATURE');
+    expect(error).toBeInstanceOf(ForbiddenError); // 403
+    expect(error.userTitle).toBe(
+      'La atención ya tiene el alta: corrige sus signos vitales quien firma historia clínica en esta sede',
+    );
   });
 
   it('EN-213 «Deshacer» lo que ya se deshizo, o lo que ya volvió a registrarse: 409 que manda a actualizar', () => {

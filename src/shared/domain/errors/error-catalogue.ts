@@ -767,6 +767,9 @@ export const DOMAIN_ERROR_CODES = [
   //   * `DIAGNOSIS_NOT_RESTORABLE` (409) — EN-213. «Deshacer» lo que ya se
   //     recuperó, o cuyo código volvió a registrarse.
   'DIAGNOSIS_NOT_RESTORABLE',
+  //   * `VITALS_CORRECTION_REQUIRES_SIGNATURE` (403) — EN-228 (D-134.3). Tras
+  //     el alta corrige la toma quien tiene `record:sign` en la sede.
+  'VITALS_CORRECTION_REQUIRES_SIGNATURE',
   // ── H6: alergias visibles durante la consulta ──────────────────────────
   //   * `PATIENT_ALLERGY_NOT_FOUND` (404) — EN-082. La alergia no está en esa
   //     ficha ni en ninguna que esa ficha absorbiera. **Uno solo para «no

@@ -29,6 +29,7 @@ import {
   EncounterService,
   type VitalsReading,
   type Requester,
+  type VitalsRequester,
 } from './application/encounter.service';
 import { PatientAllergyService } from './application/patient-allergy.service';
 import { toActiveAllergyResponse } from './dto/active-allergy.mapper';
@@ -418,7 +419,7 @@ export class EncounterController {
         measuredAt:
           dto.measuredAt === undefined ? undefined : new Date(dto.measuredAt),
       },
-      this.requester(req, 'vitals:write'),
+      this.vitalsRequester(req),
     );
 
     return toVitalsReadingResponse(vitals);
@@ -488,6 +489,20 @@ export class EncounterController {
    * can hold `record:read` at two sites and `record:write` at one, and reading
    * the wrong one would either widen a write or narrow a read.
    */
+  /**
+   * EN-228, D-134.3. Who records block D, with where they may sign the
+   * history: after the discharge that is what lets them correct the taking.
+   */
+  private vitalsRequester(req: Request): VitalsRequester {
+    const signScope = this.currentUser
+      .requirePrincipal()
+      .sitesFor('record:sign');
+    return {
+      ...this.requester(req, 'vitals:write'),
+      signSites: signScope === ALL_SITES ? 'all' : signScope,
+    };
+  }
+
   private requester(req: Request, permission: Permission): Requester {
     const scope = this.currentUser.requirePrincipal().sitesFor(permission);
 

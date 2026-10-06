@@ -3448,6 +3448,12 @@ falta de una medida; y salir de la atención pide lo justo._
   > «Corregir la toma» sigue a la vista tras el alta para quien tiene
   > `vitals:write`; y tras la firma el aviso de lo pendiente ya no dice «para
   > firmar la nota».
+  >
+  > **Enmendado por EN-228 (D-134.3, resuelta el 06-10-2026):** tras el alta
+  > corrige la toma quien tiene `record:sign` en la sede de la atención, además
+  > de `vitals:write`; «Corregir la toma» tras el alta solo se ofrece a quien
+  > la puede corregir. Antes del alta sigue bastando `vitals:write`. La regla
+  > de que ninguna corrección deja pendiente el peso o la talla se queda.
 - **EN-218** — CUANDO se anule una atención (EN-166), el sistema NO DEBERÁ
   exigir motivo —el que se envíe DEBERÁ guardarse— y DEBERÁ guardar quién la
   anuló y cuándo; DEBERÁ descartar en la misma transacción, con quién y
@@ -3626,6 +3632,28 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
 
 ---
 
+## 25. Quién corrige los signos tras el alta (D-134.3)
+
+- **EN-228** — MIENTRAS la atención tenga el alta (`DISCHARGED` o
+  `COMPLETED`), CUANDO se corrija su toma de signos vitales (EN-217), el
+  sistema DEBERÁ exigir `record:sign` en la sede de la atención, además de
+  `vitals:write`, y SI quien corrige no lo tiene, ENTONCES DEBERÁ rechazarlo
+  con `VITALS_CORRECTION_REQUIRES_SIGNATURE` sin cambiar la toma; y la
+  pantalla NO DEBERÁ ofrecer «Corregir la toma» tras el alta a quien no lo
+  tiene en esa sede. Antes del alta DEBERÁ bastar `vitals:write`.
+  > **D-134.3**, como el bloque K (D-117.13, EN-212): la 002 ya está firmada
+  > con esas cifras. Enfermería sigue tomando y corrigiendo los signos hasta
+  > el alta. No se exige registro ACESS vigente: la decisión pide `record:sign`
+  > y nada más.
+  >
+  > El servicio lo decide con la sesión (`record:sign` en la sede de la
+  > atención) y lo pasa al adaptador, que vuelve a mirar el alta **bajo el
+  > bloqueo de la atención**: un alta que llega entre la lectura y la
+  > escritura se rechaza igual. **Lo que no garantiza la base**: quién
+  > corrige; la base no conoce los permisos de la sesión.
+
+---
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -3652,6 +3680,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `VITALS_OUT_OF_RANGE` | 422 | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges_*`, una por medida (D-058). **Por campo**, señalando cuál y diciendo el rango | EN-062 |
 | `VITALS_REQUIRED` | — | **Retirado por EN-217 (D-132 B)**: la toma ya no se rechaza por la antropometría | EN-063 |
 | `ANTHROPOMETRY_PENDING` | 422 | Se firma la 002 (da el alta) sin la antropometría obligatoria del menor de 5 años o de la embarazada, o una corrección de la toma tras el alta la dejaría pendiente (D-134.3); nombra cada campo | EN-217 |
+| `VITALS_CORRECTION_REQUIRES_SIGNATURE` | 403 | Corregir la toma de una atención con el alta sin `record:sign` en su sede (D-134.3) | EN-228 |
 | `NOTE_CONTENT_INCOMPLETE` | 422 | Firmar sin una sección obligatoria, o la 002 sin ningún diagnóstico en la atención (`diagnoses`). Nombra lo que falta, nunca su contenido | EN-020 |
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
 | `VIOLENCE_SCREENING_RESTRICTED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite | EN-072 |

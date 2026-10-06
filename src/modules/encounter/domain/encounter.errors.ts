@@ -1228,6 +1228,24 @@ export class DiagnosisCorrectionRequiresSignatureError extends ForbiddenError {
 }
 
 /**
+ * EN-228, D-134.3. After the discharge the taking is corrected by whoever may
+ * sign the history at the attention's site (`record:sign`): the 002 is signed
+ * and carries those figures, as the coding of block K does (D-117.13). Before
+ * it, `vitals:write` is enough. A 403: the caller is what is wrong.
+ */
+export class VitalsCorrectionRequiresSignatureError extends ForbiddenError {
+  readonly code = 'VITALS_CORRECTION_REQUIRES_SIGNATURE';
+  override readonly userTitle =
+    'La atención ya tiene el alta: corrige sus signos vitales quien firma historia clínica en esta sede';
+
+  constructor() {
+    super(
+      'Correcting the vital signs after the discharge requires record:sign',
+    );
+  }
+}
+
+/**
  * EN-212, EN-213, D-117.15. A maternity rest of the attention that is not
  * annulled stands on an obstetric diagnosis (CER-049): taking the last one
  * away — or recoding it outside the chapter — would leave an IESS paper with

@@ -371,6 +371,12 @@ export interface EncounterRepository {
     query: EncounterQuery,
     vitals: VitalSigns,
     authorId: string,
+    /**
+     * EN-228, D-134.3. Whether the author signs history at the attention's
+     * site. Asked again under the attention's lock: a discharged attention is
+     * corrected only when this is `true`.
+     */
+    mayCorrectAfterDischarge: boolean,
   ): Promise<VitalSignsView>;
 
   /** EN-068. The vital signs of one attention, or `null` when none were taken. */
