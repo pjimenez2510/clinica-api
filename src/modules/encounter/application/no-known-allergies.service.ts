@@ -14,6 +14,11 @@ import {
   type EncounterRepository,
 } from '../domain/encounter.repository';
 import {
+  BULK_REFUTATION_NOTE,
+  refutedOnlyAlone,
+} from '../domain/allergy-refutation';
+import {
+  AllergyRefutedAloneError,
   ChartHasAllergiesError,
   NoKnownAllergiesNotStandingError,
   PatientChartNotOpenError,
@@ -22,6 +27,7 @@ import {
   PATIENT_ALLERGY_REPOSITORY,
   type AllergyAbsenceAssertion,
   type PatientAllergyRepository,
+  type RefutedAndAsserted,
 } from '../domain/patient-allergy.repository';
 import type { Requester } from './encounter.service';
 
@@ -125,7 +131,17 @@ export class NoKnownAllergiesService {
   /**
    * EN-226. «Descartar estas y afirmar»: the screen lists the active
    * allergies and the person rules them out and asserts, in ONE step and one
-   * transaction, without a reason.
+   * transaction. Each refutation says where it came from
+   * (`BULK_REFUTATION_NOTE`, D-140.3).
+   *
+   * ⚠️ HIGH CRITICALITY STAYS OUT (D-140.3): an anaphylaxis is ruled out one
+   * by one, with its reason, never as the side effect of this step. An active
+   * one — named or not — refuses it with `ALLERGY_REFUTED_ALONE`; the adapter
+   * decides it again under the lock.
+   *
+   * ONLY WHAT THIS STEP RULED OUT is audited and returned: an allergy a
+   * colleague ruled out a moment ago is skipped, and it is neither this
+   * person's act nor something «Deshacer» may bring back.
    *
    * ⚠️ THE BRAKE STAYS. Every active allergy has to be NAMED: one that was not
    * on the screen —recorded by a colleague a moment ago— is not ruled out by
@@ -138,23 +154,28 @@ export class NoKnownAllergiesService {
     patientId: string,
     allergyIds: readonly string[],
     requester: Requester,
-  ): Promise<AllergyAbsenceAssertion> {
+  ): Promise<RefutedAndAsserted> {
     await this.requireOpenChart(patientId);
 
     const named = new Set(allergyIds);
     const active = await this.activeAllergies.activeFor(patientId);
+    if (active.some((allergy) => refutedOnlyAlone(allergy.criticality))) {
+      throw new AllergyRefutedAloneError();
+    }
     if (active.some((allergy) => !named.has(allergy.id))) {
       throw new ChartHasAllergiesError();
     }
 
-    const assertion = await this.allergies.refuteAndAssertNoKnownAllergies({
+    const result = await this.allergies.refuteAndAssertNoKnownAllergies({
       patientId,
       allergyIds: [...named],
+      notes: BULK_REFUTATION_NOTE,
       actorId: requester.userId,
       now: new Date(),
     });
+    const { assertion } = result;
 
-    for (const allergyId of named) {
+    for (const allergyId of result.refutedAllergyIds) {
       await this.audit.record({
         userId: requester.userId,
         resourceType: RESOURCE_TYPE,
@@ -170,7 +191,7 @@ export class NoKnownAllergiesService {
       'no known allergies asserted after refuting the active ones',
     );
 
-    return assertion;
+    return result;
   }
 
   /**

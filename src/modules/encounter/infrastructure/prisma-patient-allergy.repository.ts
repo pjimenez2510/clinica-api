@@ -7,11 +7,17 @@ import {
 } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
+  refutationNeedsReason,
+  refutedOnlyAlone,
+} from '../domain/allergy-refutation';
+import {
   AllergyAlreadyRefutedError,
   AllergyNotRefutedError,
+  AllergyRefutedAloneError,
   ChartHasAllergiesError,
   ConceptWrongCatalogueError,
   PatientAllergyNotFoundError,
+  RefutationReasonRequiredError,
 } from '../domain/encounter.errors';
 import type {
   AllergyAbsenceAssertion,
@@ -24,6 +30,7 @@ import type {
   ReactivateAllergy,
   RefuteAllergy,
   RefuteAndAssertNoKnownAllergies,
+  RefutedAndAsserted,
   RetractNoKnownAllergies,
 } from '../domain/patient-allergy.repository';
 
@@ -62,6 +69,7 @@ const ALLERGY_SELECT = {
   changedAt: true,
   recordedBy: { select: { id: true, firstName: true, lastName: true } },
   refutedBy: { select: { id: true, firstName: true, lastName: true } },
+  changedBy: { select: { id: true, firstName: true, lastName: true } },
 } satisfies Prisma.PatientAllergySelect;
 
 /** The row `ALLERGY_SELECT` yields, derived from it so the two cannot drift. */
@@ -167,6 +175,14 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
       // into the one 404 that covers «no existe» and «es de otra ficha».
       if (current === null) return null;
       if (current.refuted_at !== null) throw new AllergyAlreadyRefutedError();
+      // D-140.1. Under the lock: the criticality that stands, not the one the
+      // screen showed a moment ago.
+      if (
+        refutation.notes === null &&
+        refutationNeedsReason(current.criticality)
+      ) {
+        throw new RefutationReasonRequiredError();
+      }
 
       const row = await tx.patientAllergy.update({
         where: { id: current.id },
@@ -198,13 +214,18 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
 
       const { changes } = edit;
       const data: Prisma.PatientAllergyUncheckedUpdateInput = {};
-      if (changes.substanceText !== undefined) {
-        const conceptId = changes.substanceConceptId ?? null;
+      if (
+        changes.substanceText !== undefined &&
+        changes.substanceText !== current.substance_text
+      ) {
+        data.substanceText = changes.substanceText;
+      }
+      // EN-225, EN-084. Absent keeps the concept: only an explicit `null`
+      // clears it. A typo fixed in the name never stops the check silently.
+      if (changes.substanceConceptId !== undefined) {
+        const conceptId = changes.substanceConceptId;
         // EN-080. The same catalogue check as recording one.
         if (conceptId !== null) await assertCnmbConcept(tx, conceptId);
-        if (changes.substanceText !== current.substance_text) {
-          data.substanceText = changes.substanceText;
-        }
         if (conceptId !== current.substance_concept_id) {
           data.substanceConceptId = conceptId;
         }
@@ -306,6 +327,7 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
       snapshots.flatMap((snapshot) => [
         snapshot.recorded_by,
         snapshot.refuted_by,
+        snapshot.changed_by ?? null,
       ]),
     );
 
@@ -321,39 +343,59 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
 
   /**
    * EN-226. «Descartar estas y afirmar», in ONE transaction: the named
-   * allergies are refuted without a reason and the assertion is written.
-   * Whether any active allergy was left out is decided by
+   * allergies are refuted with the step's reason and the assertion is
+   * written. Whether any active allergy was left out is decided by
    * `trg_patient_allergy_absence_empty_chart` on the INSERT, which sees this
    * transaction's refutations — and a refusal there rolls them all back.
+   *
+   * THE LOCKS ARE TAKEN IN ID ORDER. Two steps over the same chart that named
+   * the allergies in a different order would otherwise each hold one and wait
+   * for the other's, and PostgreSQL would kill one of them as a deadlock.
+   *
+   * D-140.3. An active allergy of HIGH criticality refuses the whole step
+   * (`ALLERGY_REFUTED_ALONE`), decided under its lock.
    */
   async refuteAndAssertNoKnownAllergies(
     request: RefuteAndAssertNoKnownAllergies,
-  ): Promise<AllergyAbsenceAssertion> {
+  ): Promise<RefutedAndAsserted> {
+    const ordered = [...new Set(request.allergyIds)].sort();
     try {
-      const row = await this.prisma.$transaction(async (tx) => {
-        for (const allergyId of request.allergyIds) {
-          const current = await lockAllergy(tx, request.patientId, allergyId);
-          if (current === null) throw new PatientAllergyNotFoundError();
-          // Already ruled out by somebody else: what the step wants is done.
-          if (current.refuted_at !== null) continue;
-          await tx.patientAllergy.update({
-            where: { id: current.id },
-            data: {
-              refutedAt: request.now,
-              refutedNotes: null,
-              refutedById: request.actorId,
-              changedById: request.actorId,
-              changedAt: stampAfter(current.changed_at, request.now),
-            },
-          });
-        }
+      const { row, refutedAllergyIds } = await this.prisma.$transaction(
+        async (tx) => {
+          const refuted: string[] = [];
+          for (const allergyId of ordered) {
+            const current = await lockAllergy(tx, request.patientId, allergyId);
+            if (current === null) throw new PatientAllergyNotFoundError();
+            // Already ruled out by somebody else: what the step wants is
+            // done, and it is not this step's refutation to report.
+            if (current.refuted_at !== null) continue;
+            if (refutedOnlyAlone(current.criticality)) {
+              throw new AllergyRefutedAloneError();
+            }
+            await tx.patientAllergy.update({
+              where: { id: current.id },
+              data: {
+                refutedAt: request.now,
+                refutedNotes: request.notes,
+                refutedById: request.actorId,
+                changedById: request.actorId,
+                changedAt: stampAfter(current.changed_at, request.now),
+              },
+            });
+            refuted.push(current.id);
+          }
 
-        return tx.patientAllergyAbsence.create({
-          data: { patientId: request.patientId, assertedById: request.actorId },
-          select: ABSENCE_SELECT,
-        });
-      });
-      return toAbsenceAssertion(row);
+          const created = await tx.patientAllergyAbsence.create({
+            data: {
+              patientId: request.patientId,
+              assertedById: request.actorId,
+            },
+            select: ABSENCE_SELECT,
+          });
+          return { row: created, refutedAllergyIds: refuted };
+        },
+      );
+      return { assertion: toAbsenceAssertion(row), refutedAllergyIds };
     } catch (error) {
       if (isActiveAllergiesRefusal(error)) throw new ChartHasAllergiesError();
       throw error;
@@ -557,6 +599,7 @@ function toAllergyView(row: AllergyRow): AllergyView {
     changedAt: row.changedAt,
     recordedBy: authorOf(row.recordedBy),
     refutedBy: authorOf(row.refutedBy),
+    changedBy: authorOf(row.changedBy),
   };
 }
 
@@ -576,6 +619,7 @@ interface AllergySnapshot {
   refuted_at: string | null;
   refuted_notes: string | null;
   refuted_by: string | null;
+  changed_by: string | null;
   changed_at: string | null;
 }
 
@@ -601,6 +645,7 @@ function allergyRowFromSnapshot(
       snapshot.changed_at === null ? null : new Date(snapshot.changed_at),
     recordedBy: author(snapshot.recorded_by),
     refutedBy: author(snapshot.refuted_by),
+    changedBy: author(snapshot.changed_by ?? null),
   };
 }
 

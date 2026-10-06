@@ -1247,6 +1247,15 @@ expone lo que hace falta._
   > (`POST /patients/:id/allergies/:allergyId/refute`); «Deshacer» del aviso
   > reactiva la alergia y no vuelve a emitir. PR-061 sigue: no hay «emitir de
   > todas formas».
+  >
+  > **Enmendado por D-140.1 (construido así mientras el autor decide).** Una
+  > vez descartada, la receta **no se vuelve a emitir sola**: el médico pulsa
+  > «Emitir». En este contexto el aviso **no** ofrece «Deshacer». El diálogo
+  > muestra la criticidad y la reacción de la alergia; con criticidad alta el
+  > motivo de lista es obligatorio (la API también lo exige, EN-224), y el
+  > motivo que se guarda dice además «Descartada al emitir una receta». La
+  > alternativa que el autor valora —«emitir de todas formas» dejando
+  > constancia sin descartar— queda en D-140.1.
 
 - **PR-113** — CUANDO se emita una receta con alguna línea del CNMB en una
   presentación que el cuadro no trae (PR-104: con concepto y `offFormulary`),
@@ -1426,7 +1435,7 @@ prueba o el CI falla**.
 | PR-106 | Interfaz: la línea nueva arranca sin vía y emitir sin elegirla se señala en el campo |
 | PR-110 | **Integración contra PostgreSQL real**: la base admite la línea sin concepto marcada y sin justificación y rechaza la que no lleva la marca, con control positivo; una línea anterior a la marca, con justificación, se lee marcada. HTTP: sin concepto y con una presentación no declarada se compone 201 con `offFormulary: true`; la declarada, `false`. Unitaria del DTO, del contenido, del documento y del papel (DOC-072) |
 | PR-111 | Interfaz: elegir «Dosis única» vacía y oculta la duración; un borrador antiguo reabierto con «Dosis única» no la trae |
-| PR-112 | Interfaz (`clinica-web`): el rechazo por alergia ofrece «Descartar esta alergia» a quien tiene `record:write`, y al descartarla se vuelve a emitir; sin el permiso queda el enlace. El diálogo avisa del descarte y no del «Deshacer» |
+| PR-112 | Interfaz (`clinica-web`): el rechazo por alergia ofrece «Descartar esta alergia» a quien tiene `record:write`; al descartarla **no** se vuelve a emitir y el aviso no trae «Deshacer»; el diálogo muestra criticidad y reacción, exige motivo con criticidad alta y guarda «Descartada al emitir una receta». Sin el permiso queda el enlace. La exigencia de motivo de la API, en la integración de EN-224 |
 | PR-113 | Interfaz (`clinica-web`): emitir con una línea del CNMB marcada pide la confirmación que nombra la línea y no emite hasta confirmarla; sin concepto o en una presentación declarada se emite sin preguntar |
 | PR-100, PR-104 | **Integración contra PostgreSQL real**, con control positivo: reescribir un borrador conserva su id y sustituye las líneas; las de una emitida no se tocan ni desde la base; otra presentación de un concepto que declara las suyas se compone sin justificación y sale marcada (PR-110) |
 | PR-062 | **Integración contra PostgreSQL real, con una fusión de fichas de por medio.** Es el único nivel que puede demostrarlo: depende de que el enlace se recorra en la base, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo recorriendo el AST |

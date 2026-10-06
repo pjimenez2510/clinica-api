@@ -34,12 +34,14 @@ interface Problem {
 
 interface AllergyBody {
   id: string;
+  substanceConceptId: string | null;
   substanceText: string;
   reaction: string | null;
   criticality: string;
   refutedAt: string | null;
   refutedNotes: string | null;
   changedAt: string | null;
+  changedBy: { id: string; name: string } | null;
 }
 
 describe('alergias y antecedentes editables por HTTP', () => {
@@ -137,14 +139,15 @@ describe('alergias y antecedentes editables por HTTP', () => {
       .get(`/api/v1${path}`)
       .set('Authorization', `Bearer ${token}`);
 
-  async function anAllergy(substanceText = 'Penisilina'): Promise<string> {
+  async function anAllergy(
+    substanceText = 'Penisilina',
+    criticality: 'LOW' | 'HIGH' | 'UNABLE_TO_ASSESS' = 'LOW',
+    substanceConceptId?: string,
+  ): Promise<string> {
     const response = await post(
       `/patients/${patientId}/allergies`,
       nurseToken,
-      {
-        substanceText,
-        criticality: 'HIGH',
-      },
+      { substanceText, criticality, substanceConceptId },
     ).expect(201);
     return (response.body as { id: string }).id;
   }
@@ -244,7 +247,7 @@ describe('alergias y antecedentes editables por HTTP', () => {
   });
 
   it('EN-225 edita una alergia en su fila y sirve la versión anterior', async () => {
-    const allergyId = await anAllergy();
+    const allergyId = await anAllergy('Penisilina', 'HIGH');
 
     // Editar cambia lo que se comprueba al recetar: es juicio clínico, como
     // descartar (`record:write`). Control positivo: el médico sí.
@@ -378,7 +381,13 @@ describe('alergias y antecedentes editables por HTTP', () => {
       noKnownAllergies: object | null;
     };
     expect(list.items.every((a) => a.refutedAt !== null)).toBe(true);
-    expect(list.items.map((a) => a.refutedNotes)).toEqual([null, null]);
+    expect(list.items.map((a) => a.refutedNotes)).toEqual([
+      'Descartada al afirmar sin alergias conocidas',
+      'Descartada al afirmar sin alergias conocidas',
+    ]);
+    expect(
+      new Set((asserted.body as { refutedAllergyIds: string[] }).refutedAllergyIds), // prettier-ignore
+    ).toEqual(new Set([allergyId, otherId]));
     expect(list.noKnownAllergies).not.toBeNull();
   });
 
@@ -400,5 +409,109 @@ describe('alergias y antecedentes editables por HTTP', () => {
       'NO_KNOWN_ALLERGIES_NOT_STANDING',
     );
     expect(await prisma.patientAllergyAbsence.count()).toBe(1);
+  });
+  it('EN-224 una alergia de criticidad alta sin motivo responde 422 REFUTATION_REASON_REQUIRED en notes, y con motivo se descarta (D-140.1)', async () => {
+    const allergyId = await anAllergy('Penicilina', 'HIGH');
+
+    const refused = await post(
+      `/patients/${patientId}/allergies/${allergyId}/refute`,
+      doctorToken,
+      { notes: '   ' },
+    ).expect(422);
+    expect((refused.body as Problem).code).toBe('REFUTATION_REASON_REQUIRED');
+    expect((refused.body as Problem).errors?.[0]).toMatchObject({
+      field: 'notes',
+      code: 'REFUTATION_REASON_REQUIRED',
+    });
+
+    // Control positivo: el mismo camino, con motivo.
+    const refuted = await post(
+      `/patients/${patientId}/allergies/${allergyId}/refute`,
+      doctorToken,
+      { notes: 'Descartada al emitir una receta: Prueba negativa' },
+    ).expect(200);
+    expect((refuted.body as AllergyBody).refutedNotes).toBe(
+      'Descartada al emitir una receta: Prueba negativa',
+    );
+  });
+
+  it('EN-225 EN-084 un PATCH sin substanceConceptId conserva el principio activo; un null explícito lo vacía', async () => {
+    const system = await prisma.catalogSystem.upsert({
+      where: { code: 'CNMB' },
+      create: { code: 'CNMB', name: 'Catálogo CNMB' },
+      update: {},
+    });
+    const concept = await prisma.catalogConcept.create({
+      data: {
+        systemId: system.id,
+        code: 'J01CA04',
+        display: 'Amoxicilina',
+        validFrom: new Date(Date.now() - 365 * 86_400_000),
+      },
+    });
+    const allergyId = await anAllergy('Amoxicilna', 'LOW', concept.id);
+
+    const retyped = await patch(
+      `/patients/${patientId}/allergies/${allergyId}`,
+      doctorToken,
+      { substanceText: 'Amoxicilina' },
+    ).expect(200);
+    expect(retyped.body).toMatchObject({
+      substanceText: 'Amoxicilina',
+      substanceConceptId: concept.id,
+    });
+
+    // Control: el null explícito sí lo vacía.
+    const cleared = await patch(
+      `/patients/${patientId}/allergies/${allergyId}`,
+      doctorToken,
+      { substanceConceptId: null },
+    ).expect(200);
+    expect((cleared.body as AllergyBody).substanceConceptId).toBeNull();
+  });
+
+  it('EN-225 la respuesta dice quién corrigió la alergia y cuándo', async () => {
+    const allergyId = await anAllergy();
+    const listed = await get(`/patients/${patientId}/allergies`, doctorToken).expect(200); // prettier-ignore
+    expect((listed.body as { items: AllergyBody[] }).items[0]?.changedBy).toBeNull(); // prettier-ignore
+
+    const edited = await patch(
+      `/patients/${patientId}/allergies/${allergyId}`,
+      doctorToken,
+      { reaction: 'Rash' },
+    ).expect(200);
+    expect((edited.body as AllergyBody).changedBy).toMatchObject({
+      name: 'Ana Villacís',
+    });
+    expect((edited.body as AllergyBody).changedAt).not.toBeNull();
+  });
+
+  it('EN-226 una alergia de criticidad alta no entra en «descartar estas y afirmar»: 409 ALLERGY_REFUTED_ALONE y no se descarta ninguna (D-140.3)', async () => {
+    const lowId = await anAllergy('Látex');
+    const highId = await anAllergy('Penicilina', 'HIGH');
+
+    const refused = await post(
+      `/patients/${patientId}/allergies/none-known/refuting-active`,
+      doctorToken,
+      { allergyIds: [lowId, highId] },
+    ).expect(409);
+    expect((refused.body as Problem).code).toBe('ALLERGY_REFUTED_ALONE');
+    const listed = await get(`/patients/${patientId}/allergies`, doctorToken).expect(200); // prettier-ignore
+    expect(
+      (listed.body as { items: AllergyBody[] }).items.every((a) => a.refutedAt === null), // prettier-ignore
+    ).toBe(true);
+
+    // Control positivo: descartada la alta una a una, con motivo, el paso entra.
+    await post(
+      `/patients/${patientId}/allergies/${highId}/refute`,
+      doctorToken,
+      { notes: 'Prueba negativa' },
+    ).expect(200);
+    const asserted = await post(
+      `/patients/${patientId}/allergies/none-known/refuting-active`,
+      doctorToken,
+      { allergyIds: [lowId] },
+    ).expect(201);
+    expect((asserted.body as { refutedAllergyIds: string[] }).refutedAllergyIds).toEqual([lowId]); // prettier-ignore
   });
 });

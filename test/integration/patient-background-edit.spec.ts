@@ -1,12 +1,15 @@
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
+import { BULK_REFUTATION_NOTE } from '../../src/modules/encounter/domain/allergy-refutation';
 import {
   AllergyAlreadyRefutedError,
   AllergyNotRefutedError,
+  AllergyRefutedAloneError,
   ChartHasAllergiesError,
   HistoryNotRefutedError,
   PatientAllergyNotFoundError,
+  RefutationReasonRequiredError,
 } from '../../src/modules/encounter/domain/encounter.errors';
 import { PrismaPatientAllergyRepository } from '../../src/modules/encounter/infrastructure/prisma-patient-allergy.repository';
 import { PrismaPatientHistoryRepository } from '../../src/modules/encounter/infrastructure/prisma-patient-history.repository';
@@ -540,19 +543,25 @@ describe('EN-226 «sin alergias conocidas» en un paso, y retirarlo', () => {
     const { allergy } = await anAllergy(prisma, patient.id);
     const { allergy: other } = await anAllergy(prisma, patient.id);
 
-    const assertion = await allergiesOf(prisma).refuteAndAssertNoKnownAllergies(
-      {
-        patientId: patient.id,
-        allergyIds: [allergy.id, other.id],
-        actorId: practitioner.userId,
-        now: minutesFromNow(0),
-      },
-    );
+    const { assertion, refutedAllergyIds } = await allergiesOf(
+      prisma,
+    ).refuteAndAssertNoKnownAllergies({
+      patientId: patient.id,
+      allergyIds: [allergy.id, other.id],
+      notes: BULK_REFUTATION_NOTE,
+      actorId: practitioner.userId,
+      now: minutesFromNow(0),
+    });
 
     expect(assertion.assertedById).toBe(practitioner.userId);
+    expect(new Set(refutedAllergyIds)).toEqual(new Set([allergy.id, other.id]));
     expect(await activeOf(prisma).activeFor(patient.id)).toHaveLength(0);
     const refuted = await prisma.patientAllergy.findMany();
-    expect(refuted.map((a) => a.refutedNotes)).toEqual([null, null]);
+    // D-140.3. Quien lo lea sabe de dónde salió el descarte.
+    expect(refuted.map((a) => a.refutedNotes)).toEqual([
+      'Descartada al afirmar sin alergias conocidas',
+      'Descartada al afirmar sin alergias conocidas',
+    ]);
     expect(refuted.map((a) => a.refutedById)).toEqual([
       practitioner.userId,
       practitioner.userId,
@@ -573,6 +582,7 @@ describe('EN-226 «sin alergias conocidas» en un paso, y retirarlo', () => {
       allergiesOf(prisma).refuteAndAssertNoKnownAllergies({
         patientId: patient.id,
         allergyIds: [allergy.id],
+        notes: BULK_REFUTATION_NOTE,
         actorId: practitioner.userId,
         now: minutesFromNow(0),
       }),
@@ -594,6 +604,7 @@ describe('EN-226 «sin alergias conocidas» en un paso, y retirarlo', () => {
       allergiesOf(prisma).refuteAndAssertNoKnownAllergies({
         patientId: patient.id,
         allergyIds: [allergy.id],
+        notes: BULK_REFUTATION_NOTE,
         actorId: practitioner.userId,
         now: minutesFromNow(0),
       }),
@@ -695,6 +706,383 @@ describe('EN-226 «sin alergias conocidas» en un paso, y retirarlo', () => {
     await expect(
       prisma.patientAllergyAbsence.delete({ where: { id: assertion.id } }),
     ).rejects.toThrow();
+    expect(await prisma.patientAllergyAbsence.count()).toBe(1);
+  });
+});
+
+/**
+ * D-140 (revisión de la rama): lo que la revisión clínica pidió a la base y al
+ * adaptador. Cada prueba lleva su control positivo por el mismo camino.
+ */
+describe('D-140 lo que una alergia de criticidad alta exige, y la sustancia que no se pierde', () => {
+  it('EN-224 una alergia de criticidad alta no se descarta sin motivo; con motivo sí, y la que no es alta sin motivo también (D-140.1)', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const doctor = await createUser(prisma);
+    const high = await allergiesOf(prisma).record({
+      patientId: patient.id,
+      substanceText: 'Penicilina',
+      reaction: 'Anafilaxia',
+      criticality: 'HIGH',
+      recordedById: doctor.id,
+    });
+    const { allergy: unassessed } = await anAllergy(prisma, patient.id);
+
+    await expect(
+      allergiesOf(prisma).refute({
+        patientId: patient.id,
+        allergyId: high.id,
+        notes: null,
+        now: minutesFromNow(0),
+        refutedById: doctor.id,
+      }),
+    ).rejects.toBeInstanceOf(RefutationReasonRequiredError);
+    expect(await activeOf(prisma).activeFor(patient.id)).toHaveLength(2);
+
+    // Control positivo: la misma alergia, con motivo, se descarta.
+    const reasoned = await allergiesOf(prisma).refute({
+      patientId: patient.id,
+      allergyId: high.id,
+      notes: 'Prueba negativa',
+      now: minutesFromNow(0),
+      refutedById: doctor.id,
+    });
+    expect(reasoned?.refutedNotes).toBe('Prueba negativa');
+    // Y la que no es alta sigue sin exigirlo (EN-224).
+    const silent = await allergiesOf(prisma).refute({
+      patientId: patient.id,
+      allergyId: unassessed.id,
+      notes: null,
+      now: minutesFromNow(0),
+      refutedById: doctor.id,
+    });
+    expect(silent?.refutedAt).not.toBeNull();
+  });
+
+  it('EN-225 EN-084 editar el texto sin enviar el principio activo lo conserva; sólo un null explícito lo vacía', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const doctor = await createUser(prisma);
+    const amoxicillin = await aCnmbConcept(prisma, 'J01CA04', 'Amoxicilina');
+    const allergy = await allergiesOf(prisma).record({
+      patientId: patient.id,
+      substanceConceptId: amoxicillin.id,
+      substanceText: 'Amoxicilna',
+      criticality: 'LOW',
+      recordedById: doctor.id,
+    });
+
+    const retyped = await allergiesOf(prisma).edit({
+      patientId: patient.id,
+      allergyId: allergy.id,
+      changes: { substanceText: 'Amoxicilina' },
+      editedById: doctor.id,
+      now: minutesFromNow(0),
+    });
+    expect(retyped).toMatchObject({
+      substanceText: 'Amoxicilina',
+      substanceConceptId: amoxicillin.id,
+    });
+    const [active] = await activeOf(prisma).activeFor(patient.id);
+    expect(active?.substanceConceptId).toBe(amoxicillin.id);
+
+    // Control: un null explícito sí lo vacía.
+    const cleared = await allergiesOf(prisma).edit({
+      patientId: patient.id,
+      allergyId: allergy.id,
+      changes: { substanceConceptId: null },
+      editedById: doctor.id,
+      now: minutesFromNow(1),
+    });
+    expect(cleared).toMatchObject({
+      substanceText: 'Amoxicilina',
+      substanceConceptId: null,
+    });
+  });
+
+  it('EN-225 la alergia corregida dice quién la corrigió y cuándo', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const doctor = await createUser(prisma);
+    const { allergy } = await anAllergy(prisma, patient.id);
+    expect(allergy.changedBy).toBeNull();
+    const at = minutesFromNow(0);
+
+    await allergiesOf(prisma).edit({
+      patientId: patient.id,
+      allergyId: allergy.id,
+      changes: { reaction: 'Rash' },
+      editedById: doctor.id,
+      now: at,
+    });
+
+    const [listed] = await allergiesOf(prisma).listFor(patient.id);
+    expect(listed?.changedBy).toEqual({
+      id: doctor.id,
+      name: 'Carmen Salazar',
+    });
+    expect(listed?.changedAt?.getTime()).toBe(at.getTime());
+  });
+
+  it('EN-226 una alergia de criticidad alta en la lista se rechaza bajo candado y no se descarta ninguna (D-140.3)', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const practitioner = await createPractitioner(prisma);
+    const { allergy } = await anAllergy(prisma, patient.id);
+    const high = await allergiesOf(prisma).record({
+      patientId: patient.id,
+      substanceText: 'Penicilina',
+      criticality: 'HIGH',
+      recordedById: practitioner.userId,
+    });
+
+    await expect(
+      allergiesOf(prisma).refuteAndAssertNoKnownAllergies({
+        patientId: patient.id,
+        allergyIds: [allergy.id, high.id],
+        notes: BULK_REFUTATION_NOTE,
+        actorId: practitioner.userId,
+        now: minutesFromNow(0),
+      }),
+    ).rejects.toBeInstanceOf(AllergyRefutedAloneError);
+    expect(await activeOf(prisma).activeFor(patient.id)).toHaveLength(2);
+    expect(await prisma.patientAllergyAbsence.count()).toBe(0);
+
+    // Control positivo: descartada antes la alta, una a una, el paso entra.
+    await allergiesOf(prisma).refute({
+      patientId: patient.id,
+      allergyId: high.id,
+      notes: 'Prueba negativa',
+      now: minutesFromNow(0),
+      refutedById: practitioner.userId,
+    });
+    const { refutedAllergyIds } = await allergiesOf(
+      prisma,
+    ).refuteAndAssertNoKnownAllergies({
+      patientId: patient.id,
+      allergyIds: [allergy.id, high.id],
+      notes: BULK_REFUTATION_NOTE,
+      actorId: practitioner.userId,
+      now: minutesFromNow(1),
+    });
+    // La ya descartada se salta: ni se reescribe ni se cuenta.
+    expect(refutedAllergyIds).toEqual([allergy.id]);
+    const stored = await prisma.patientAllergy.findUniqueOrThrow({
+      where: { id: high.id },
+    });
+    expect(stored.refutedNotes).toBe('Prueba negativa');
+  });
+
+  it('EN-226 dos «descartar estas y afirmar» a la vez con las alergias en orden inverso no se interbloquean: los dos terminan y cada alergia se descarta una vez', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const first = await createPractitioner(prisma);
+    const second = await createPractitioner(prisma);
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      ids.push((await anAllergy(prisma, patient.id)).allergy.id);
+    }
+    const at = minutesFromNow(0);
+
+    const results = await Promise.allSettled([
+      allergiesOf(prisma).refuteAndAssertNoKnownAllergies({
+        patientId: patient.id,
+        allergyIds: ids,
+        notes: BULK_REFUTATION_NOTE,
+        actorId: first.userId,
+        now: at,
+      }),
+      allergiesOf(prisma).refuteAndAssertNoKnownAllergies({
+        patientId: patient.id,
+        allergyIds: [...ids].reverse(),
+        notes: BULK_REFUTATION_NOTE,
+        actorId: second.userId,
+        now: at,
+      }),
+    ]);
+
+    // Ninguno muere por interbloqueo: los dos afirman.
+    expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled']);
+    const refuted = results.flatMap((r) =>
+      r.status === 'fulfilled' ? r.value.refutedAllergyIds : [],
+    );
+    // Cada alergia la descartó exactamente uno de los dos: el que llegó antes
+    // se las lleva todas, y el segundo no descarta nada.
+    expect([...refuted].sort()).toEqual([...ids].sort());
+    const counts = results.map((r) =>
+      r.status === 'fulfilled' ? r.value.refutedAllergyIds.length : -1,
+    );
+    expect([...counts].sort()).toEqual([0, 6]);
+    expect(await prisma.recordVersion.count()).toBe(6);
+  });
+});
+
+describe('las garantías de la base de la alergia, cada una por su nombre', () => {
+  async function stampedUpdate(
+    prisma: PrismaClient,
+    set: string,
+    id: string,
+    by: string,
+    minutes: number,
+  ) {
+    return prisma.$executeRawUnsafe(
+      `UPDATE patient_allergy SET ${set}, changed_by = $2::uuid, changed_at = $3
+        WHERE id = $1::uuid`,
+      id,
+      by,
+      minutesFromNow(minutes),
+    );
+  }
+
+  it('EN-224 EN-225 patient_allergy_guard rechaza editar una descartada, descartar y editar en el mismo UPDATE y reescribir el descarte', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const doctor = await createUser(prisma);
+    const { allergy } = await anAllergy(prisma, patient.id);
+    const { allergy: other } = await anAllergy(prisma, patient.id);
+
+    // Descartar y editar en la misma sentencia: no.
+    await expect(
+      stampedUpdate(
+        prisma,
+        `refuted_at = now(), refuted_by = '${doctor.id}', reaction = 'Otra'`,
+        allergy.id,
+        doctor.id,
+        0,
+      ),
+    ).rejects.toThrow(/patient_allergy cannot be modified this way/);
+    // Control positivo: descartar sola, sí.
+    await stampedUpdate(
+      prisma,
+      `refuted_at = now(), refuted_by = '${doctor.id}', refuted_notes = 'Prueba negativa'`,
+      allergy.id,
+      doctor.id,
+      0,
+    );
+    // Editar lo que dice una descartada: no.
+    await expect(
+      stampedUpdate(prisma, `reaction = 'Otra'`, allergy.id, doctor.id, 1),
+    ).rejects.toThrow(/patient_allergy cannot be modified this way/);
+    // Reescribir el descarte (otro motivo, otra fecha): no.
+    await expect(
+      stampedUpdate(
+        prisma,
+        `refuted_notes = 'Registrada por error'`,
+        allergy.id,
+        doctor.id,
+        1,
+      ),
+    ).rejects.toThrow(/patient_allergy cannot be modified this way/);
+    await expect(
+      stampedUpdate(
+        prisma,
+        `refuted_at = refuted_at + interval '1 minute'`,
+        allergy.id,
+        doctor.id,
+        1,
+      ),
+    ).rejects.toThrow(/patient_allergy cannot be modified this way/);
+    // Control positivo: editar una vigente, sí.
+    await stampedUpdate(prisma, `reaction = 'Otra'`, other.id, doctor.id, 0);
+
+    const stored = await prisma.patientAllergy.findUniqueOrThrow({
+      where: { id: allergy.id },
+    });
+    expect(stored).toMatchObject({
+      reaction: 'Urticaria',
+      refutedNotes: 'Prueba negativa',
+    });
+  });
+
+  it('EN-224 patient_allergy_refutation_is_coherent rechaza un motivo sin descarte y un motivo en blanco', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const doctor = await createUser(prisma);
+    const { allergy } = await anAllergy(prisma, patient.id);
+
+    // Un motivo en una alergia que no está descartada: lo para el CHECK, en el
+    // INSERT, por donde el disparador no se interpone.
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO patient_allergy
+           (patient_id, substance_text, criticality, recorded_by, refuted_notes)
+         VALUES ($1::uuid, 'Látex', 'LOW', $2::uuid, 'Prueba negativa')`,
+        patient.id,
+        doctor.id,
+      ),
+    ).rejects.toThrow(/patient_allergy_refutation_is_coherent/);
+    // Un descarte con el motivo en blanco: el disparador lo admite como
+    // descarte y lo para el CHECK.
+    await expect(
+      stampedUpdate(
+        prisma,
+        `refuted_at = now(), refuted_by = '${doctor.id}', refuted_notes = '   '`,
+        allergy.id,
+        doctor.id,
+        0,
+      ),
+    ).rejects.toThrow(/patient_allergy_refutation_is_coherent/);
+
+    // Control positivo: por los mismos dos caminos, con un motivo de verdad.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO patient_allergy
+         (patient_id, substance_text, criticality, recorded_by,
+          refuted_at, refuted_by, refuted_notes)
+       VALUES ($1::uuid, 'Látex', 'LOW', $2::uuid, now(), $2::uuid, 'Prueba negativa')`,
+      patient.id,
+      doctor.id,
+    );
+    await stampedUpdate(
+      prisma,
+      `refuted_at = now(), refuted_by = '${doctor.id}', refuted_notes = 'Prueba negativa'`,
+      allergy.id,
+      doctor.id,
+      0,
+    );
+    expect(
+      await prisma.patientAllergy.count({
+        where: { refutedAt: { not: null } },
+      }),
+    ).toBe(2);
+  });
+
+  it('EN-226 patient_allergy_absence_retraction_is_whole rechaza quién retiró sin cuándo, y cuándo sin quién', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const practitioner = await createPractitioner(prisma);
+    const doctor = await createUser(prisma);
+
+    // Por el INSERT: el disparador de la tabla sólo mira UPDATE y DELETE, y
+    // el de versiones sólo UPDATE, así que lo que para esto es el CHECK.
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO patient_allergy_absence
+           (patient_id, asserted_by, retracted_by, retracted_at)
+         VALUES ($1::uuid, $3::uuid, $2::uuid, NULL)`,
+        patient.id,
+        doctor.id,
+        practitioner.userId,
+      ),
+    ).rejects.toThrow(/patient_allergy_absence_retraction_is_whole/);
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO patient_allergy_absence
+           (patient_id, asserted_by, retracted_by, retracted_at)
+         VALUES ($1::uuid, $2::uuid, NULL, now())`,
+        patient.id,
+        practitioner.userId,
+      ),
+    ).rejects.toThrow(/patient_allergy_absence_retraction_is_whole/);
+
+    // Control positivo: los dos juntos entran.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO patient_allergy_absence
+         (patient_id, asserted_by, retracted_by, retracted_at)
+       VALUES ($1::uuid, $3::uuid, $2::uuid, now())`,
+      patient.id,
+      doctor.id,
+      practitioner.userId,
+    );
     expect(await prisma.patientAllergyAbsence.count()).toBe(1);
   });
 });

@@ -10,6 +10,7 @@ import type {
   ActiveAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import {
+  AllergyRefutedAloneError,
   ChartHasAllergiesError,
   NoKnownAllergiesNotStandingError,
   PatientChartNotOpenError,
@@ -18,11 +19,13 @@ import type {
   EncounterRepository,
   PatientChartStatus,
 } from '../domain/encounter.repository';
+import { BULK_REFUTATION_NOTE } from '../domain/allergy-refutation';
 import type {
   AllergyAbsenceAssertion,
   NewAllergyAbsence,
   PatientAllergyRepository,
   RefuteAndAssertNoKnownAllergies,
+  RefutedAndAsserted,
   RetractNoKnownAllergies,
 } from '../domain/patient-allergy.repository';
 import type { Requester } from './encounter.service';
@@ -46,13 +49,16 @@ const requester: Requester = {
   userAgent: 'vitest',
 };
 
-const anActiveAllergy = (id: string): ActiveAllergy => ({
+const anActiveAllergy = (
+  id: string,
+  criticality: ActiveAllergy['criticality'] = 'LOW',
+): ActiveAllergy => ({
   id,
   patientId: PATIENT,
   substanceConceptId: null,
   substanceText: 'Penicilina',
   reaction: null,
-  criticality: 'HIGH',
+  criticality,
   recordedAt: new Date(),
 });
 
@@ -81,6 +87,8 @@ class FakeAbsences {
   retractions: RetractNoKnownAllergies[] = [];
   standing: AllergyAbsenceAssertion | null = anAssertion();
   retractAnswer = true;
+  /** The ones the step really refuted; `null` answers «all it was given». */
+  refutedAnswer: string[] | null = null;
 
   assertNoKnownAllergies(
     assertion: NewAllergyAbsence,
@@ -91,9 +99,12 @@ class FakeAbsences {
 
   refuteAndAssertNoKnownAllergies(
     request: RefuteAndAssertNoKnownAllergies,
-  ): Promise<AllergyAbsenceAssertion> {
+  ): Promise<RefutedAndAsserted> {
     this.composite.push(request);
-    return Promise.resolve(anAssertion());
+    return Promise.resolve({
+      assertion: anAssertion(),
+      refutedAllergyIds: this.refutedAnswer ?? [...request.allergyIds],
+    });
   }
 
   standingAbsenceFor(): Promise<AllergyAbsenceAssertion | null> {
@@ -225,6 +236,46 @@ describe('«sin alergias conocidas»', () => {
       ['allergy-1', 'UPDATE'],
       ['absence-1', 'CREATE'],
     ]);
+  });
+
+  it('EN-226 descarta con el motivo «Descartada al afirmar sin alergias conocidas» y audita sólo las que descartó de verdad', async () => {
+    reader.rows = [anActiveAllergy('allergy-1'), anActiveAllergy('allergy-2')];
+    // Un colega descartó allergy-1 a la vez: el paso se la salta.
+    absences.refutedAnswer = ['allergy-2'];
+
+    const result = await service.assertRefuting(
+      PATIENT,
+      ['allergy-1', 'allergy-2'],
+      requester,
+    );
+
+    expect(BULK_REFUTATION_NOTE).toBe(
+      'Descartada al afirmar sin alergias conocidas',
+    );
+    expect(absences.composite[0]?.notes).toBe(BULK_REFUTATION_NOTE);
+    expect(result.refutedAllergyIds).toEqual(['allergy-2']);
+    expect(audit.entries.map((e) => [e.resourceId, e.action])).toEqual([
+      ['allergy-2', 'UPDATE'],
+      ['absence-1', 'CREATE'],
+    ]);
+  });
+
+  it('EN-226 una alergia de criticidad alta no entra en el descarte en bloque: se rechaza sin descartar ninguna (D-140.3)', async () => {
+    reader.rows = [
+      anActiveAllergy('allergy-1'),
+      anActiveAllergy('anafilaxia', 'HIGH'),
+    ];
+
+    await expect(
+      service.assertRefuting(PATIENT, ['allergy-1', 'anafilaxia'], requester),
+    ).rejects.toBeInstanceOf(AllergyRefutedAloneError);
+    expect(absences.composite).toHaveLength(0);
+    expect(audit.entries).toHaveLength(0);
+
+    // Control positivo: sin la de criticidad alta en la ficha, el paso entra.
+    reader.rows = [anActiveAllergy('allergy-1')];
+    await service.assertRefuting(PATIENT, ['allergy-1'], requester);
+    expect(absences.composite).toHaveLength(1);
   });
 
   it('EN-226 el freno sigue: una alergia activa que no se nombró no se descarta y no se afirma nada', async () => {

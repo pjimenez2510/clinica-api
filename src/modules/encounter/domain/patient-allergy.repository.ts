@@ -45,6 +45,8 @@ export interface AllergyView extends ActiveAllergy {
    * `null` if never: a date means there are earlier versions to read.
    */
   changedAt: Date | null;
+  /** EN-225. Who made that last change; `null` exactly when `changedAt` is. */
+  changedBy: AllergyAuthor | null;
 }
 
 /** EN-086. Who stands behind an allergy, or ruled it out. */
@@ -138,8 +140,9 @@ export interface RefuteAllergy {
  */
 export interface AllergyChanges {
   /**
-   * Changes with `substanceText`, as one substance: a new text with no
-   * concept is free text, and the old concept does not stay behind it.
+   * The CNMB concept. ABSENT KEEPS IT, even when the text changes: a typo
+   * fixed in the name must not silently stop the prescription check
+   * (EN-084). Only an explicit `null` clears it, and the screen asks first.
    */
   substanceConceptId?: string | null;
   substanceText?: string;
@@ -180,14 +183,27 @@ export interface AllergyVersionView {
 
 /**
  * EN-226. «Descartar estas y afirmar»: the allergies the screen listed are
- * refuted, without a reason, and the assertion written, in one transaction.
+ * refuted, with the bulk step's reason, and the assertion written, in one
+ * transaction.
  */
 export interface RefuteAndAssertNoKnownAllergies {
   patientId: string;
   allergyIds: readonly string[];
+  /** D-140.3. `BULK_REFUTATION_NOTE`: where the refutation came from. */
+  notes: string;
   /** Who refutes and who asserts: the same person, in the same act. */
   actorId: string;
   now: Date;
+}
+
+/**
+ * EN-226. What the bulk step left: the assertion, and the allergies IT ruled
+ * out — not the ones a colleague had ruled out already, which it skipped. It
+ * is what «Deshacer» brings back, and what the trail records.
+ */
+export interface RefutedAndAsserted {
+  assertion: AllergyAbsenceAssertion;
+  refutedAllergyIds: string[];
 }
 
 /** EN-226. Withdrawing one assertion made by mistake. */
@@ -223,6 +239,9 @@ export interface PatientAllergyRepository {
    * the service turns that into `PATIENT_ALLERGY_NOT_FOUND`, one answer for
    * «no existe» and for «es de otra ficha», the line `ENCOUNTER_NOT_FOUND`
    * already took.
+   *
+   * ⚠️ AN ALLERGY OF HIGH CRITICALITY NEEDS A REASON (D-140.1), decided
+   * under the row lock: `REFUTATION_REASON_REQUIRED`.
    *
    * ⚠️ IT REFUSES A SECOND REFUTATION, and that is not pedantry: the second
    * one would overwrite the instant and the reason of the first, and «quién la
@@ -308,13 +327,15 @@ export interface PatientAllergyRepository {
 
   /**
    * EN-226. Refutes the named allergies and asserts «sin alergias
-   * conocidas», all or nothing. `PATIENT_ALLERGY_NOT_FOUND` when one is not
-   * on this chart; `CHART_HAS_ALLERGIES` when an active one was not named
-   * (the database's `trg_patient_allergy_absence_empty_chart` decides).
+   * conocidas», all or nothing, locking them IN ID ORDER so two steps over
+   * the same chart cannot deadlock. `PATIENT_ALLERGY_NOT_FOUND` when one is
+   * not on this chart; `ALLERGY_REFUTED_ALONE` when an active one is of HIGH
+   * criticality (D-140.3); `CHART_HAS_ALLERGIES` when an active one was not
+   * named (the database's `trg_patient_allergy_absence_empty_chart` decides).
    */
   refuteAndAssertNoKnownAllergies(
     request: RefuteAndAssertNoKnownAllergies,
-  ): Promise<AllergyAbsenceAssertion>;
+  ): Promise<RefutedAndAsserted>;
 
   /**
    * EN-226. Withdraws one assertion, once. `false` when it is not on this

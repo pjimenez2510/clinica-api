@@ -996,6 +996,50 @@ export class AllergyAlreadyRefutedError extends ConflictError {
 }
 
 /**
+ * EN-224, D-140.1. An allergy of HIGH criticality was ruled out without a
+ * reason. Back from its retirement with a narrower rule: any other allergy is
+ * ruled out without one (D-126.2), but this one is the anaphylaxis, and a
+ * refutation nobody can weigh is the risk to the patient D-126.4 excepts.
+ *
+ * RAISED BY THE ADAPTER UNDER THE ROW LOCK, where the criticality is the one
+ * that stands: a colleague may have just raised it from «baja» to «alta».
+ * 422 with the field named: the way out is to choose a reason.
+ */
+export class RefutationReasonRequiredError extends ValidationError {
+  readonly code = 'REFUTATION_REASON_REQUIRED';
+  override readonly userTitle =
+    'Elija por qué se descarta: es una alergia de criticidad alta';
+  override readonly fieldErrors = [
+    {
+      field: 'notes',
+      code: 'REFUTATION_REASON_REQUIRED',
+      message: 'Elija un motivo para descartar una alergia de criticidad alta',
+    },
+  ];
+
+  constructor() {
+    super('Refuting a high-criticality allergy requires a reason');
+  }
+}
+
+/**
+ * EN-226, D-140.3. «Descartar estas y afirmar» named an allergy of HIGH
+ * criticality. Those are ruled out one by one, each with its reason
+ * (`REFUTATION_REASON_REQUIRED`), never as the side effect of asserting
+ * «sin alergias conocidas». 409: the request is well formed and what refuses
+ * it is what the chart holds; nothing is ruled out.
+ */
+export class AllergyRefutedAloneError extends ConflictError {
+  readonly code = 'ALLERGY_REFUTED_ALONE';
+  override readonly userTitle =
+    'Las alergias de criticidad alta se descartan una a una, con su motivo. Descártelas antes de afirmar';
+
+  constructor() {
+    super('A high-criticality allergy cannot be refuted in bulk');
+  }
+}
+
+/**
  * EN-085. The history entry is on neither this chart nor one it absorbed.
  * One answer for «no existe» and «es de otra ficha», the line
  * `PATIENT_ALLERGY_NOT_FOUND` already took.

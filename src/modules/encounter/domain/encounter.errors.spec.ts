@@ -48,6 +48,8 @@ import {
   AllergyNotRefutedError,
   HistoryNotRefutedError,
   NoKnownAllergiesNotStandingError,
+  RefutationReasonRequiredError,
+  AllergyRefutedAloneError,
   VitalsCorrectionRequiresSignatureError,
   ChartHasAllergiesError,
   PractitionerProfileRequiredError,
@@ -114,6 +116,9 @@ const EVERY_ERROR: readonly DomainError[] = [
   new AllergyNotRefutedError(),
   new HistoryNotRefutedError(),
   new NoKnownAllergiesNotStandingError(),
+  // D-140.1 y D-140.3. La de criticidad alta se descarta con motivo, y una a una.
+  new RefutationReasonRequiredError(),
+  new AllergyRefutedAloneError(),
   // EN-228. Tras el alta corrige la toma quien firma historia en la sede.
   new VitalsCorrectionRequiresSignatureError(),
   new ChartHasAllergiesError(),
@@ -201,6 +206,26 @@ describe('el contrato de errores de la atención', () => {
       expect(error).toBeInstanceOf(ConflictError);
       expect(error.userTitle).toContain('Actualice la lista');
     }
+  });
+
+  it('EN-224 descartar una alergia de criticidad alta sin motivo responde 422 con el campo notes (D-140.1)', () => {
+    const error = new RefutationReasonRequiredError();
+    expect(error.code).toBe('REFUTATION_REASON_REQUIRED');
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.userTitle).toContain('criticidad alta');
+    expect(error.fieldErrors).toEqual([
+      expect.objectContaining({
+        field: 'notes',
+        code: 'REFUTATION_REASON_REQUIRED',
+      }),
+    ]);
+  });
+
+  it('EN-226 una alergia de criticidad alta no entra en el descarte en bloque: 409 que dice que se descarta sola (D-140.3)', () => {
+    const error = new AllergyRefutedAloneError();
+    expect(error.code).toBe('ALLERGY_REFUTED_ALONE');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toContain('una a una');
   });
 
   it('EN-226 retirar lo que ya no está vigente responde 409, y afirmar con alergias activas sigue frenado', () => {

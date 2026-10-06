@@ -783,8 +783,13 @@ export const DOMAIN_ERROR_CODES = [
   //     borrar el dato a cámara lenta, que es justo lo que el requisito impide.
   //     Editar una alergia descartada también lo responde: primero se
   //     reactiva (EN-225).
-  //   * Descartar ya no exige motivo (EN-224, D-126.2):
-  //     `REFUTATION_REASON_REQUIRED` se retiró.
+  //   * `REFUTATION_REASON_REQUIRED` (422) — EN-224, D-140.1. Descartar ya
+  //     no exige motivo (D-126.2), SALVO una alergia de criticidad alta: es
+  //     la anafilaxia, y un descarte que nadie puede sopesar es el riesgo
+  //     para el paciente que D-126.4 exceptúa. El mismo código de antes, con
+  //     la regla estrechada.
+  //   * `ALLERGY_REFUTED_ALONE` (409) — EN-226, D-140.3. «Descartar estas y
+  //     afirmar» nombró una de criticidad alta: se descartan una a una.
   //   * `ALLERGY_NOT_REFUTED` (409) — EN-224. «Reactivar» una alergia que
   //     sigue activa.
   //   * `NO_KNOWN_ALLERGIES_NOT_STANDING` (409) — EN-226. «Retirar» un «sin
@@ -800,9 +805,11 @@ export const DOMAIN_ERROR_CODES = [
   //     hay ninguna.
   'ALLERGY_ALREADY_REFUTED',
   'ALLERGY_NOT_REFUTED',
+  'ALLERGY_REFUTED_ALONE',
   'CHART_HAS_ALLERGIES',
   'NO_KNOWN_ALLERGIES_NOT_STANDING',
   'PATIENT_ALLERGY_NOT_FOUND',
+  'REFUTATION_REASON_REQUIRED',
   // ── H6: antecedentes (EN-085), con el régimen de las alergias ───────────
   //   * `PATIENT_HISTORY_NOT_FOUND` (404) — el mismo para «no existe» y «es
   //     de otra ficha», por lo mismo que `PATIENT_ALLERGY_NOT_FOUND`.

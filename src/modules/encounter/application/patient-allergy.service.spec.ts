@@ -23,6 +23,7 @@ import type {
   PatientAllergyRepository,
   ReactivateAllergy,
   RefuteAllergy,
+  RefutedAndAsserted,
 } from '../domain/patient-allergy.repository';
 import type {
   EncounterRepository,
@@ -71,6 +72,7 @@ const anAllergy = (overrides: Partial<AllergyView> = {}): AllergyView => ({
   recordedBy: null,
   refutedBy: null,
   changedAt: null,
+  changedBy: null,
   ...overrides,
 });
 
@@ -165,7 +167,7 @@ class FakeAllergies implements PatientAllergyRepository {
     return Promise.resolve(this.versions);
   }
 
-  refuteAndAssertNoKnownAllergies(): Promise<AllergyAbsenceAssertion> {
+  refuteAndAssertNoKnownAllergies(): Promise<RefutedAndAsserted> {
     return Promise.reject(new Error('not used by this service'));
   }
 

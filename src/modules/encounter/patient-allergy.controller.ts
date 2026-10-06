@@ -34,6 +34,7 @@ import {
   AllergyListDto,
   AllergyVersionListDto,
   AssertRefutingDto,
+  AssertRefutingResponseDto,
   EditAllergyDto,
   NoKnownAllergiesDto,
   RecordAllergyDto,
@@ -41,6 +42,7 @@ import {
   type AllergyListResponse,
   type AllergyResponse,
   type AllergyVersionListResponse,
+  type AssertRefutingResponse,
   type NoKnownAllergiesResponse,
 } from './dto/patient-allergy.dto';
 
@@ -282,12 +284,14 @@ export class PatientAllergyController {
         patientId,
         allergyId,
         changes: {
+          // EN-225, EN-084. Each key only when it came: an absent concept is
+          // KEPT, and only an explicit `null` clears it.
           ...(dto.substanceText === undefined
             ? {}
-            : {
-                substanceText: dto.substanceText,
-                substanceConceptId: dto.substanceConceptId ?? null,
-              }),
+            : { substanceText: dto.substanceText }),
+          ...(dto.substanceConceptId === undefined
+            ? {}
+            : { substanceConceptId: dto.substanceConceptId }),
           ...(dto.reaction === undefined ? {} : { reaction: dto.reaction }),
           ...(dto.criticality === undefined
             ? {}
@@ -349,8 +353,11 @@ export class PatientAllergyController {
 
   /**
    * EN-226. «Descartar estas y afirmar»: the active allergies the screen
-   * listed are ruled out, without a reason, and «sin alergias conocidas» is
-   * asserted, in one step. `record:write`, because ruling out is.
+   * listed are ruled out, with «Descartada al afirmar sin alergias
+   * conocidas», and «sin alergias conocidas» is asserted, in one step.
+   * `record:write`, because ruling out is. One of HIGH criticality refuses
+   * it (`ALLERGY_REFUTED_ALONE`, D-140.3). The response names what this step
+   * ruled out, which is what «Deshacer» reactivates.
    */
   @Post('allergies/none-known/refuting-active')
   @RequirePermission('record:write', 'global')
@@ -358,18 +365,19 @@ export class PatientAllergyController {
   @ApiOperation({
     summary: 'Descartar las alergias activas y afirmar que no hay ninguna',
   })
-  @ApiCreatedResponse({ type: NoKnownAllergiesDto })
+  @ApiCreatedResponse({ type: AssertRefutingResponseDto })
   async assertRefuting(
     @Param('patientId', ParseUUIDPipe) patientId: string,
     @Body() dto: AssertRefutingDto,
     @Req() req: Request,
-  ): Promise<NoKnownAllergiesResponse> {
-    const assertion = await this.noKnownAllergies.assertRefuting(
-      patientId,
-      dto.allergyIds,
-      this.requester(req, 'record:write'),
-    );
-    return toNoKnownAllergiesResponse(assertion);
+  ): Promise<AssertRefutingResponse> {
+    const { assertion, refutedAllergyIds } =
+      await this.noKnownAllergies.assertRefuting(
+        patientId,
+        dto.allergyIds,
+        this.requester(req, 'record:write'),
+      );
+    return { ...toNoKnownAllergiesResponse(assertion), refutedAllergyIds };
   }
 
   /**
@@ -432,5 +440,6 @@ function toAllergyResponse(allergy: AllergyView): AllergyResponse {
     recordedBy: allergy.recordedBy,
     refutedBy: allergy.refutedBy,
     changedAt: allergy.changedAt?.toISOString() ?? null,
+    changedBy: allergy.changedBy,
   };
 }
