@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { DiagnosticReportService } from '../../src/modules/orders/application/diagnostic-report.service';
 import type { Requester } from '../../src/modules/orders/application/service-order.service';
@@ -439,6 +439,26 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
     await prisma.encounter.update({ where: { id: scene.encounter.id }, data: { status: 'ON_HOLD' } }); // prettier-ignore
     expect(await at(DAY_MS - MINUTE_MS)).toEqual([]);
     expect((await at(DAY_MS + MINUTE_MS))[0]).toMatchObject({ orderId: draft.id, encounterStatus: 'ON_HOLD' }); // prettier-ignore
+  });
+
+  it('ORD-115 D-130.3 el borrador guarda cuándo se guardó con el reloj de la aplicación, no con el de la base', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    // La aplicación va dos días por delante de PostgreSQL, como en los recorridos.
+    const appNow = new Date(Date.now() + 2 * DAY_MS);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(appNow);
+    try {
+      const draft = await adapters(prisma).orders.compose({ encounterId: scene.encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ examDefinitionId: scene.bh.id }], sites: 'all' }); // prettier-ignore
+      expect((await savedAt(prisma, draft.id)).getTime()).toBe(
+        appNow.getTime(),
+      );
+      // Recién guardado en una atención abierta: no cuelga.
+      const userId = await signerOf(prisma, scene.practitioner.id);
+      expect(await adapters(prisma).orders.staleDrafts({ userId, sites: 'all', now: new Date() })).toEqual([]); // prettier-ignore
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('BI-192 D-130.3 la cuenta de una atención aún abierta ve también su borrador viejo', async () => {
