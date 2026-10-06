@@ -3370,6 +3370,11 @@ con un papel en manos de un tercero, un motivo de lista._
   > sin facturar se queda con la consulta con que nació. Recalcularlo desde
   > aquí cruzaría al módulo `billing` (la resolución del precio vive en su
   > adaptador): queda para caja.
+  >
+  > **Resuelto por BI-203 (D-134.2, 06-10-2026):** tras la corrección, este
+  > módulo avisa a `billing` por el puerto `CONSULTATION_REPRICER` de
+  > `shared/billing`, y `billing` re-tarifa el cargo de la consulta que siga
+  > sin facturar. El aviso nunca falla hacia la atención.
 
 ---
 

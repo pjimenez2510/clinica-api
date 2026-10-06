@@ -174,6 +174,7 @@ model User {
   /// and authorising a discount above the role's ceiling are two acts by two
   /// people — the second pair of eyes only counts if it is a different pair.
   chargeItemsCreated  ChargeItem[] @relation("ChargeItemAuthor")
+  chargeItemsChanged  ChargeItem[] @relation("ChargeItemChanger")
   discountsAuthorised ChargeItem[] @relation("ChargeItemDiscountAuthoriser")
   invoicesIssued      Invoice[]    @relation("InvoiceIssuer")
   creditNotesIssued   CreditNote[] @relation("CreditNoteIssuer")
@@ -3880,9 +3881,8 @@ model ChargeItem {
   taxPercentage Decimal? @map("tax_percentage") @db.Decimal(5, 2)
 
   /// The money taken off, NEVER a percentage: a percentage re-derived at print
-  /// time drifts by rounding. `charge_item_discount_states_a_reason` refuses a
-  /// discount nobody can explain, and
-  /// `charge_item_discount_within_line` refuses one larger than the line.
+  /// time drifts by rounding. `charge_item_discount_within_line` refuses one
+  /// larger than the line; the reason is optional since BI-200 (D-126).
   discountAmount Decimal @default(0) @map("discount_amount") @db.Decimal(12, 2)
   discountReason String? @map("discount_reason") @db.VarChar(300)
 
@@ -3904,12 +3904,9 @@ model ChargeItem {
   invoiceId String?  @map("invoice_id") @db.Uuid
   invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_invoice_fk")
 
-  /// VOIDING A CHARGE, with the reason actually kept.
-  ///
-  /// The three travel together — `charge_item_void_states_who_when_and_why`
-  /// refuses one without the others — because demanding a reason the system
-  /// then throws away is worse than not asking: it looks like an audit trail
-  /// and is not one.
+  /// VOIDING A CHARGE. Who and when travel together
+  /// (`charge_item_void_states_who_and_when`); the reason is optional since
+  /// BI-195 (D-126.1) and kept when given.
   ///
   /// And this is NOT an invoice being edited. A charge is voided BEFORE it
   /// reaches an invoice; once billed the only correction is a credit note, and
@@ -3921,6 +3918,14 @@ model ChargeItem {
 
   createdById String   @map("created_by_id") @db.Uuid
   createdBy   User     @relation("ChargeItemAuthor", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_created_by_fk")
+
+  /// BI-195 a BI-198 (D-127). The STAMP of the last correction: who and when
+  /// edited, removed, marked «No se cobra» or restored the line. Required by
+  /// `trg_charge_item_record_version`, which archives the previous row into
+  /// `record_version`; confirming and invoicing do not stamp.
+  changedById String?   @map("changed_by") @db.Uuid
+  changedBy   User?     @relation("ChargeItemChanger", fields: [changedById], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "charge_item_changed_by_fkey")
+  changedAt   DateTime? @map("changed_at") @db.Timestamptz(6)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

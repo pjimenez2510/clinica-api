@@ -15,14 +15,21 @@ import type {
   AccountView,
   BillingAccountRepository,
   ChargedActs,
+  ChargeEdit,
+  ChargeStamp,
   ChargeView,
   InvoiceIssuance,
   InvoiceView,
   NewAccount,
   NewCharge,
+  RepricedLine,
 } from '../domain/billing.repository';
 import {
+  AccountHasBilledChargesError,
   ActAlreadyChargedError,
+  ChargeAlreadyInvoicedError,
+  ChargeAlreadyVoidedError,
+  ChargeNotRemovedError,
   InvoiceChargesChangedError,
   InvoiceHasNoItemsError,
   InvoiceImmutableError,
@@ -38,6 +45,7 @@ import type { ChargeOrigin } from '../domain/charge-proposal';
 import {
   type ChargeStatus,
   type DocumentTotals,
+  OPEN_CHARGE_STATUSES,
   totalsOf,
 } from '../domain/charge';
 import {
@@ -158,19 +166,111 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   }
 
   /**
-   * BI-033. Writes the payer and its list together; the service has already
-   * refused an account that holds charges.
+   * BI-198. The payer, its list and every OPEN line's price, together.
+   *
+   * The account row is locked first, so an issuance (which locks it too)
+   * either sees the old prices or the new ones, never a mix. A BILLED line
+   * refuses the change; a line the new list cannot price throws
+   * `PRICE_NOT_FOUND` from inside the transaction, so the payer does not move
+   * either. Removed lines keep their price: «Deshacer» reprices them
+   * (BI-195). A line whose price row would not change is not touched, so no
+   * correction is stamped that corrected nothing.
+   *
+   * «No se cobra» lines are repriced too: they meant «this costs $0», and a
+   * line that costs something under the new payer goes back to PROPOSED, for
+   * the cashier to review — never left at $0 without anyone deciding it.
+   *
+   * ⚠️ THE CHARGES ARE LOCKED HERE, after the account and before reading
+   * them. An edit or a restore locks its line and then reads the account's
+   * list; without this lock a concurrent edit could get the old service's
+   * price written over its new service, or a restore the old payer's price.
    */
-  async changeAccountPayer(
-    accountId: string,
-    payer: { payerId: string; priceListId: string },
-  ): Promise<AccountView> {
-    const row = await this.prisma.patientAccount.update({
-      where: { id: accountId },
-      data: payer,
-      include: ACCOUNT_INCLUDE,
+  async changeAccountPayer(command: {
+    accountId: string;
+    payerId: string;
+    priceListId: string;
+    changedById: string;
+    now: Date;
+  }): Promise<AccountView> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT "id" FROM "patient_account"
+         WHERE "id" = ${command.accountId}::uuid
+           FOR UPDATE`;
+      await tx.$queryRaw`
+        SELECT "id" FROM "charge_item"
+         WHERE "account_id" = ${command.accountId}::uuid
+         ORDER BY "id"
+           FOR UPDATE`;
+
+      const charges = await tx.chargeItem.findMany({
+        where: { accountId: command.accountId },
+      });
+      if (charges.some((charge) => charge.status === 'BILLED')) {
+        throw new AccountHasBilledChargesError();
+      }
+
+      for (const charge of charges) {
+        if (!isRepriced(charge.status)) continue;
+        const price = await findPriceOn(tx, {
+          priceListId: command.priceListId,
+          payerId: command.payerId,
+          billableServiceId: charge.billableServiceId,
+          serviceDate: charge.serviceDate,
+        });
+        const reopens =
+          charge.status === 'NOT_BILLABLE' && !price.amount.isZero();
+        if (price.id === charge.resolvedPriceId && !reopens) continue;
+
+        await tx.chargeItem.update({
+          where: { id: charge.id },
+          data: {
+            unitAmount: price.amount.toFixed(2),
+            resolvedPriceId: price.id,
+            ...(reopens ? { status: 'PLANNED' } : {}),
+            changedById: command.changedById,
+            changedAt: stampAfter(charge.changedAt, command.now),
+          },
+        });
+      }
+
+      return tx.patientAccount.update({
+        where: { id: command.accountId },
+        data: { payerId: command.payerId, priceListId: command.priceListId },
+        include: ACCOUNT_INCLUDE,
+      });
     });
     return toAccountView(row);
+  }
+
+  /** BI-198. The same resolution as above, read-only, for the confirmation. */
+  async previewRepricing(query: {
+    accountId: string;
+    priceListId: string;
+  }): Promise<RepricedLine[]> {
+    const charges = await this.prisma.chargeItem.findMany({
+      where: {
+        accountId: query.accountId,
+        status: { in: [...REPRICED_STATUSES] },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return Promise.all(
+      charges.map(async (charge) => {
+        const price = await this.prisma.price.findFirst({
+          where: priceOn(
+            query.priceListId,
+            charge.billableServiceId,
+            charge.serviceDate,
+          ),
+        });
+        return {
+          chargeId: charge.id,
+          unitAmount: price === null ? null : Money.parse(price.amount),
+        };
+      }),
+    );
   }
 
   /**
@@ -373,13 +473,12 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   }
 
   /**
-   * BI-055. The void, WITH ITS REASON KEPT.
+   * BI-055, BI-195. The removal, with who and when, and the reason if given.
    *
-   * The four columns move together because the database demands it:
-   * `charge_item_void_states_who_when_and_why` refuses one without the others,
-   * and `charge_item_void_matches_status` refuses a `CANCELLED` row with no
-   * instant — and a voided row that is not `CANCELLED`. Demanding a reason the
-   * system then throws away looks like an audit trail and is not one.
+   * `charge_item_void_states_who_and_when` ties the instant and the author,
+   * and `charge_item_void_matches_status` the instant and the status. The
+   * stamp is what `trg_charge_item_record_version` demands to archive the
+   * previous row — the row «Deshacer» puts back.
    *
    * ⚠️ AND IT IS AN UPDATE, NEVER A DELETE. The row stays, which is what lets
    * an account explain why its total went down.
@@ -387,18 +486,188 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   async voidCharge(command: {
     chargeId: string;
     voidedById: string;
-    reason: string;
+    reason: string | null;
+    now: Date;
   }): Promise<ChargeView> {
-    const row = await this.prisma.chargeItem.update({
-      where: { id: command.chargeId, status: { in: ['PLANNED', 'BILLABLE'] } },
-      data: {
-        status: 'CANCELLED',
-        voidedAt: new Date(),
-        voidedById: command.voidedById,
-        voidReason: command.reason,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const current = await lockCharge(tx, command.chargeId);
+      requireOpen(current.status);
+
+      const row = await tx.chargeItem.update({
+        where: { id: command.chargeId },
+        data: {
+          status: 'CANCELLED',
+          voidedAt: command.now,
+          voidedById: command.voidedById,
+          voidReason: command.reason,
+          changedById: command.voidedById,
+          changedAt: stampAfter(current.changedAt, command.now),
+        },
+      });
+      return toChargeView(row);
     });
-    return toChargeView(row);
+  }
+
+  /** BI-203. One row at most, by `charge_item_one_consultation_per_encounter`. */
+  async findConsultationCharge(
+    encounterId: string,
+  ): Promise<ChargeView | null> {
+    const row = await this.prisma.chargeItem.findFirst({
+      where: { encounterId, origin: 'CONSULTATION' },
+    });
+    return row === null ? null : toChargeView(row);
+  }
+
+  /** BI-196. The amount was checked by the service: this only moves status. */
+  async markNotBillable(command: ChargeStamp): Promise<ChargeView> {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await lockCharge(tx, command.chargeId);
+      requireOpen(current.status);
+
+      const row = await tx.chargeItem.update({
+        where: { id: command.chargeId },
+        data: {
+          status: 'NOT_BILLABLE',
+          changedById: command.changedById,
+          changedAt: stampAfter(current.changedAt, command.now),
+        },
+      });
+      return toChargeView(row);
+    });
+  }
+
+  /**
+   * BI-195, BI-196. «Deshacer».
+   *
+   * The status it goes back to is the one the database archived before the
+   * removal (`record_version`).
+   *
+   * ⚠️ ONLY A REMOVAL WITH A VERSION IS UNDONE. A line voided before this
+   * delivery was corrected the old way —void it and add another (BI-059)—,
+   * so reviving it would charge the same service twice.
+   *
+   * ⚠️ IT IS REPRICED from the account's list as it is NOW. The payer may
+   * have changed while the line was out (BI-198), and a line that came back
+   * at the old payer's price would leave an account with two tariffs.
+   */
+  async restoreCharge(command: ChargeStamp): Promise<ChargeView> {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await lockCharge(tx, command.chargeId);
+      if (current.status !== 'CANCELLED' && current.status !== 'NOT_BILLABLE') {
+        throw new ChargeNotRemovedError();
+      }
+
+      const archived = await tx.$queryRaw<{ status: string }[]>`
+        SELECT "data" ->> 'status' AS "status"
+          FROM "record_version"
+         WHERE "resource_type" = 'charge_item'
+           AND "resource_id" = ${command.chargeId}::uuid
+           AND "data" ->> 'status' IN ('PLANNED', 'BILLABLE')
+         ORDER BY "version" DESC
+         LIMIT 1`;
+      const status = archived[0]?.status;
+      if (status === undefined) throw new ChargeNotRemovedError();
+
+      const account = await tx.patientAccount.findUniqueOrThrow({
+        where: { id: current.accountId },
+        select: { priceListId: true, payerId: true },
+      });
+      const price = await findPriceOn(tx, {
+        ...account,
+        billableServiceId: current.billableServiceId,
+        serviceDate: current.serviceDate,
+      });
+
+      const row = await tx.chargeItem.update({
+        where: { id: command.chargeId },
+        data: {
+          status,
+          voidedAt: null,
+          voidedById: null,
+          voidReason: null,
+          unitAmount: price.amount.toFixed(2),
+          resolvedPriceId: price.id,
+          changedById: command.changedById,
+          changedAt: stampAfter(current.changedAt, command.now),
+        },
+      });
+      return toChargeView(row);
+    });
+  }
+
+  /**
+   * BI-197. In place, while the line is open.
+   *
+   * A new service or date is a new resolution: price, tax and name are
+   * frozen again from the account's list on the (new) service date, in this
+   * transaction — the same block `insertCharge` writes. A new quantity alone
+   * moves no price. The status is NOT touched: editing a proposal does not
+   * confirm it.
+   */
+  async editCharge(command: ChargeEdit): Promise<ChargeView> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const current = await lockCharge(tx, command.chargeId);
+        requireOpen(current.status);
+
+        const billableServiceId =
+          command.billableServiceId ?? current.billableServiceId;
+        const serviceDate =
+          command.serviceDate === undefined
+            ? current.serviceDate
+            : asDateColumn(command.serviceDate);
+        const reresolve =
+          billableServiceId !== current.billableServiceId ||
+          serviceDate.getTime() !== current.serviceDate.getTime();
+        const quantity = command.quantity?.toString();
+
+        if (
+          !reresolve &&
+          (quantity === undefined || current.quantity.equals(quantity))
+        ) {
+          return toChargeView(current);
+        }
+
+        const data: Prisma.ChargeItemUncheckedUpdateInput = {
+          ...(quantity === undefined ? {} : { quantity }),
+          changedById: command.changedById,
+          changedAt: stampAfter(current.changedAt, command.now),
+        };
+
+        if (reresolve) {
+          const account = await tx.patientAccount.findUniqueOrThrow({
+            where: { id: current.accountId },
+            select: { priceListId: true, payerId: true },
+          });
+          const service = await tx.billableService.findUniqueOrThrow({
+            where: { id: billableServiceId },
+            include: { taxRate: true },
+          });
+          const price = await findPriceOn(tx, {
+            ...account,
+            billableServiceId,
+            serviceDate,
+          });
+          Object.assign(data, {
+            billableServiceId,
+            serviceDate,
+            unitAmount: price.amount.toFixed(2),
+            resolvedPriceId: price.id,
+            serviceDisplay: service.name,
+            taxSriCode: service.taxRate.sriCode,
+            taxPercentage: service.taxRate.percentage?.toFixed(2) ?? null,
+          });
+        }
+
+        const row = await tx.chargeItem.update({
+          where: { id: command.chargeId },
+          data,
+        });
+        return toChargeView(row);
+      });
+    } catch (error) {
+      throw translateChargeRejection(error);
+    }
   }
 
   /**
@@ -569,6 +838,16 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
             };
           }),
         );
+
+        // BI-184, BI-197. Since a pending line can be EDITED in place, the
+        // same ids no longer mean the same amount: the total the cashier was
+        // shown has to match too.
+        if (
+          issuance.expectedTotal !== undefined &&
+          !totals.total.equals(issuance.expectedTotal)
+        ) {
+          throw new InvoiceChargesChangedError();
+        }
 
         const [last] = await tx.$queryRaw<{ sequential: string | null }[]>`
           SELECT max("sequential") AS "sequential"
@@ -764,6 +1043,90 @@ function toAccountView(row: AccountRow): AccountView {
  * casts lean on `charge_item_status_is_known` and
  * `charge_item_origin_is_known`.
  */
+type Transaction = Prisma.TransactionClient;
+
+/**
+ * BI-195 to BI-198. The row, locked: two cashiers correcting the same line
+ * queue here instead of both reading the same stamp — the second would carry
+ * an equal instant and `record_version_change_is_stamped` would refuse it.
+ */
+async function lockCharge(
+  tx: Transaction,
+  chargeId: string,
+): Promise<ChargeItemRow> {
+  await tx.$queryRaw`
+    SELECT "id" FROM "charge_item"
+     WHERE "id" = ${chargeId}::uuid
+       FOR UPDATE`;
+  return tx.chargeItem.findUniqueOrThrow({ where: { id: chargeId } });
+}
+
+function isOpen(status: string): boolean {
+  return (OPEN_CHARGE_STATUSES as readonly string[]).includes(status);
+}
+
+/** BI-198. What a payer change reprices: the open lines and the $0 ones. */
+const REPRICED_STATUSES = [...OPEN_CHARGE_STATUSES, 'NOT_BILLABLE'] as const;
+
+function isRepriced(status: string): boolean {
+  return (REPRICED_STATUSES as readonly string[]).includes(status);
+}
+
+/** BI-056, BI-059. What a correction of a line that left review says. */
+function requireOpen(status: string): void {
+  if (status === 'BILLED') throw new ChargeAlreadyInvoicedError();
+  if (!isOpen(status)) throw new ChargeAlreadyVoidedError();
+}
+
+/** BI-047. The half-open validity, spelled out as in `insertCharge`. */
+function priceOn(
+  priceListId: string,
+  billableServiceId: string,
+  on: Date,
+): Prisma.PriceWhereInput {
+  return {
+    priceListId,
+    billableServiceId,
+    validFrom: { lte: on },
+    OR: [{ validTo: null }, { validTo: { gt: on } }],
+  };
+}
+
+async function findPriceOn(
+  tx: Transaction,
+  query: {
+    priceListId: string;
+    payerId: string;
+    billableServiceId: string;
+    serviceDate: Date;
+  },
+) {
+  const price = await tx.price.findFirst({
+    where: priceOn(
+      query.priceListId,
+      query.billableServiceId,
+      query.serviceDate,
+    ),
+  });
+  if (price === null) {
+    throw new PriceNotFoundError(
+      query.billableServiceId,
+      query.payerId,
+      toClinicalDate(query.serviceDate),
+    );
+  }
+  return price;
+}
+
+/**
+ * D-127.2. The stamp has to MOVE for `record_version_archive` to accept it:
+ * two corrections within the same millisecond would otherwise carry the same
+ * instant. Copied per repository, as in `encounter` and `patients`.
+ */
+function stampAfter(previous: Date | null, now: Date): Date {
+  return previous && previous >= now ? new Date(previous.getTime() + 1) : now;
+}
+
 function toChargeView(row: ChargeItemRow): ChargeView {
   return {
     id: row.id,

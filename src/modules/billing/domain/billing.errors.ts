@@ -366,20 +366,17 @@ export class AccountClosedError extends ConflictError {
 }
 
 /**
- * BI-033. Changing the payer changes the price list, and the charges already
- * froze the previous payer's prices (BI-050).
- *
- * Allowing it would leave an account whose lines came out of two different
- * tariffs with nothing saying so. The correct way out is to void the charges
- * and raise them again, which leaves a trail.
+ * BI-198 (replaces BI-033's `ACCOUNT_HAS_CHARGES`). The open lines are
+ * repriced with the new payer; a BILLED one cannot be — changing what an
+ * issued invoice charged is correcting that invoice (CA-8), not this route.
  */
-export class AccountHasChargesError extends ConflictError {
-  readonly code = 'ACCOUNT_HAS_CHARGES';
+export class AccountHasBilledChargesError extends ConflictError {
+  readonly code = 'ACCOUNT_HAS_BILLED_CHARGES';
   override readonly userTitle =
-    'La cuenta ya tiene cargos con el precio del pagador anterior: anúlelos antes de cambiarlo';
+    'La cuenta ya tiene cargos facturados con el pagador actual: el pagador no se cambia';
 
   constructor() {
-    super('Account already holds charges frozen at the previous payer prices');
+    super('Account already holds billed charges');
   }
 }
 
@@ -530,10 +527,35 @@ export class ChargeAlreadyInvoicedError extends ConflictError {
 export class ChargeAlreadyVoidedError extends ConflictError {
   readonly code = 'CHARGE_ALREADY_VOIDED';
   override readonly userTitle =
-    'Ese cargo ya se anuló y no se reactiva: registre uno nuevo si hay que cobrarlo';
+    'Ese cargo ya se quitó: use «Deshacer» si hay que cobrarlo';
 
   constructor() {
-    super('A voided charge is never reactivated');
+    super('The charge was already removed');
+  }
+}
+
+/** BI-195. «Deshacer» only puts back a line that was removed. */
+export class ChargeNotRemovedError extends ConflictError {
+  readonly code = 'CHARGE_NOT_REMOVED';
+  override readonly userTitle =
+    'Ese cargo no está quitado ni marcado «No se cobra»: no hay nada que deshacer';
+
+  constructor() {
+    super('Only a removed or not-billable charge is restored');
+  }
+}
+
+/**
+ * BI-196. «No se cobra» is for the $0 line (D-120). A line with an amount
+ * that is not charged is REMOVED (BI-195), which says so in the account.
+ */
+export class ChargeHasAmountError extends ConflictError {
+  readonly code = 'CHARGE_HAS_AMOUNT';
+  override readonly userTitle =
+    'Solo un cargo de $0 se marca «No se cobra»: si este no se cobra, quítelo';
+
+  constructor() {
+    super('Only a zero-amount charge is marked not billable');
   }
 }
 
@@ -583,22 +605,18 @@ export class InvoiceReceiverRequiredError extends ValidationError {
 export class FinalConsumerNotConfirmedError extends ValidationError {
   readonly code = 'FINAL_CONSUMER_NOT_CONFIRMED';
   override readonly userTitle =
-    'Emitir a Consumidor Final quita al paciente la rebaja de gastos personales y no se podrá anular: confírmelo y diga por qué';
+    'Emitir a Consumidor Final quita al paciente la rebaja de gastos personales: confírmelo';
 
   constructor(field: string) {
-    super(
-      'Final-consumer issuance needs an explicit confirmation and a reason',
-      { field },
-      [
-        // prettier-ignore
-        {
+    super('Final-consumer issuance needs an explicit confirmation', { field }, [
+      // prettier-ignore
+      {
         field,
         code: 'FINAL_CONSUMER_NOT_CONFIRMED',
         message:
-          'Confirme expresamente la emisión a Consumidor Final e indique el motivo',
+          'Confirme expresamente la emisión a Consumidor Final',
       },
-      ],
-    );
+    ]);
   }
 }
 

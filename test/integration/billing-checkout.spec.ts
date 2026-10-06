@@ -1,8 +1,10 @@
 import { PrismaClient } from '@prisma/client';
+import type { PinoLogger } from 'nestjs-pino';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
 import '../../src/modules/billing/infrastructure/billing.constraints';
+import { ChargeCorrectionService } from '../../src/modules/billing/application/charge-correction.service';
 import { EncounterCheckoutService } from '../../src/modules/billing/application/encounter-checkout.service';
 import { PatientAccountService } from '../../src/modules/billing/application/patient-account.service';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
@@ -403,6 +405,7 @@ describe('BI-157 lo que caja quitó no vuelve solo', () => {
       chargeId: exam!.id,
       voidedById: context.userId,
       reason: 'La paciente no se realizó el examen',
+      now: new Date(),
     });
 
     const second = await press();
@@ -429,6 +432,7 @@ describe('BI-157 lo que caja quitó no vuelve solo', () => {
       chargeId: exam!.id,
       voidedById: context.userId,
       reason: 'Cortesía institucional',
+      now: new Date(),
     });
 
     expect(
@@ -527,5 +531,111 @@ describe('BI-158 qué prestación es «la consulta» es un dato, no una regla', 
         reason: 'NO_BILLABLE_SERVICE',
       }),
     ]);
+  });
+});
+
+describe('BI-203 corregir primera vez o subsecuente re-tarifa la consulta sin facturar', () => {
+  function repricer(): ChargeCorrectionService {
+    const asService = context.prisma as unknown as PrismaService;
+    return new ChargeCorrectionService(
+      new PrismaBillingAccountRepository(asService),
+      new PrismaBillingCatalogueRepository(asService),
+      new PrismaClinicalActsRepository(asService),
+      { setContext: () => undefined, warn: () => undefined } as unknown as PinoLogger, // prettier-ignore
+    );
+  }
+
+  async function correctToSubsequent(): Promise<void> {
+    // As EN-215 writes it: stamped, so the encounter keeps its own version.
+    await context.prisma.encounter.update({
+      where: { id: context.encounterId },
+      data: {
+        visitSequence: 'SUBSEQUENT',
+        correctedById: context.userId,
+        correctedAt: new Date(),
+      },
+    });
+  }
+
+  async function consultation() {
+    return context.prisma.chargeItem.findFirstOrThrow({
+      where: { encounterId: context.encounterId, origin: 'CONSULTATION' },
+      include: { billableService: { select: { code: true } } },
+    });
+  }
+
+  it('BI-203 la consulta propuesta pasa a la subsecuente con su precio y deja la versión', async () => {
+    await press();
+    // Positive control: before the correction the line is the first visit.
+    expect((await consultation()).billableService.code).toBe(CONSULTATION_CODE);
+
+    await correctToSubsequent();
+    await repricer().repriceConsultation({
+      encounterId: context.encounterId,
+      siteId: context.siteId,
+      changedById: context.userId,
+    });
+
+    const after = await consultation();
+    expect(after.billableService.code).toBe('CONS-DER-SUB');
+    expect(after.unitAmount.toFixed(2)).toBe('35.00');
+    expect(after.status).toBe('PLANNED');
+    expect(
+      await context.prisma.recordVersion.count({
+        where: { resourceType: 'charge_item', resourceId: after.id },
+      }),
+    ).toBe(1);
+  });
+
+  it('BI-203 sin precio para la subsecuente deja el cargo, y el extracto lo señala', async () => {
+    await press();
+    // The subsequent dermatology consultation loses its self-pay price.
+    const subsequent = await context.prisma.billableService.findUniqueOrThrow({
+      where: { code: 'CONS-DER-SUB' },
+    });
+    await context.prisma.price.deleteMany({
+      where: { billableServiceId: subsequent.id },
+    });
+
+    await correctToSubsequent();
+    await repricer().repriceConsultation({
+      encounterId: context.encounterId,
+      siteId: context.siteId,
+      changedById: context.userId,
+    });
+
+    const line = await consultation();
+    expect(line.billableService.code).toBe(CONSULTATION_CODE);
+    const asService = context.prisma as unknown as PrismaService;
+    const statement = await new PatientAccountService(
+      new PrismaBillingAccountRepository(asService),
+      new PrismaBillingCatalogueRepository(asService),
+      { record: () => Promise.resolve() },
+      new PrismaClinicalActsRepository(asService),
+    ).statement({ accountId: line.accountId, siteId: context.siteId });
+    expect(statement.consultationOutdated).toEqual({
+      chargeId: line.id,
+      billed: false,
+    });
+  });
+
+  it('BI-203 la consulta quitada no se toca', async () => {
+    await press();
+    const before = await consultation();
+    await context.accounts.voidCharge({
+      chargeId: before.id,
+      voidedById: context.userId,
+      reason: null,
+      now: new Date(),
+    });
+
+    await correctToSubsequent();
+    await repricer().repriceConsultation({
+      encounterId: context.encounterId,
+      siteId: context.siteId,
+      changedById: context.userId,
+    });
+
+    expect((await consultation()).billableService.code).toBe(CONSULTATION_CODE);
   });
 });

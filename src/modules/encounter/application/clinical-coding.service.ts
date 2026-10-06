@@ -2,6 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
 import {
+  CONSULTATION_REPRICER,
+  type ConsultationRepricer,
+} from '../../../shared/billing/consultation-repricer.port';
+
+import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
@@ -176,6 +181,8 @@ export class ClinicalCodingService {
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
     private readonly logger: PinoLogger,
+    @Inject(CONSULTATION_REPRICER)
+    private readonly consultationRepricer: ConsultationRepricer,
   ) {
     this.logger.setContext(ClinicalCodingService.name);
   }
@@ -385,9 +392,10 @@ export class ClinicalCodingService {
    * is audited as the attention's own change. The previous attention is the
    * database's version (`record_version`).
    *
-   * ⚠️ IT DOES NOT REPRICE THE CONSULTATION (BI-158). The charge is
-   * `billing`'s, proposed when caja sends the attention; a proposal already
-   * raised keeps the consultation it was raised with.
+   * BI-203 (D-134.2). A corrected sequence changes which consultation is
+   * charged (BI-158). The charge is `billing`'s, so it is told through the
+   * shared port AFTER this transaction, and it reprices the line that is
+   * still unbilled. The port never throws: the clinical correction stands.
    */
   async correctEncounterCoding(
     request: {
@@ -419,6 +427,14 @@ export class ClinicalCodingService {
       ip: requester.ip,
       userAgent: requester.userAgent,
     });
+
+    if (request.visitSequence !== undefined) {
+      await this.consultationRepricer.repriceConsultation({
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        changedById: requester.userId,
+      });
+    }
 
     return corrected;
   }

@@ -347,21 +347,51 @@ describe('la facturación por HTTP', () => {
       );
     });
 
-    it('BI-055 exige el motivo para quitar un cargo, y lo guarda', async () => {
+    it('BI-195 quita un cargo sin motivo y «Deshacer» lo devuelve como estaba', async () => {
+      const encounterId = await anEncounter();
+      const opened = await checkout(encounterId).expect(200);
+      const { statement } = opened.body as {
+        statement: {
+          account: { id: string };
+          charges: { id: string; status: string }[];
+        };
+      };
+      const line = statement.charges[0]!;
+      const charge = `/api/v1/billing/sites/${siteId}/accounts/${statement.account.id}/charges/${line.id}`; // prettier-ignore
+
+      // Positive control of the restore route: nothing removed, nothing to undo.
+      const notRemoved = await api()
+        .post(`${charge}/restore`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(409);
+      expect((notRemoved.body as Problem).code).toBe('CHARGE_NOT_REMOVED');
+
+      const voided = await api()
+        .post(`${charge}/void`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({})
+        .expect(200);
+      expect(voided.body).toMatchObject({
+        status: 'CANCELLED',
+        voidReason: null,
+      });
+
+      const restored = await api()
+        .post(`${charge}/restore`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      expect(restored.body).toMatchObject({
+        status: line.status,
+        voidedAt: null,
+      });
+    });
+
+    it('BI-055 guarda el motivo de quitar cuando se da', async () => {
       const encounterId = await anEncounter();
       const opened = await checkout(encounterId).expect(200);
       const { statement } = opened.body as {
         statement: { account: { id: string }; charges: { id: string }[] };
       };
-
-      const withoutReason = await api()
-        .post(
-          `/api/v1/billing/sites/${siteId}/accounts/${statement.account.id}/charges/${statement.charges[0]!.id}/void`,
-        ) // prettier-ignore
-        .set('Authorization', `Bearer ${cashierToken}`)
-        .send({})
-        .expect(422);
-      expect((withoutReason.body as Problem).errors?.[0]?.field).toBe('reason');
 
       const voided = await api()
         .post(
@@ -377,7 +407,36 @@ describe('la facturación por HTTP', () => {
       });
     });
 
-    it('BI-059 no admite que un cargo anulado vuelva', async () => {
+    it('BI-196, BI-197 «No se cobra» rechaza un cargo con importe, y la cantidad se edita en el sitio', async () => {
+      const encounterId = await anEncounter();
+      const opened = await checkout(encounterId).expect(200);
+      const { statement } = opened.body as {
+        statement: { account: { id: string }; charges: { id: string }[] };
+      };
+      const charge = `/api/v1/billing/sites/${siteId}/accounts/${statement.account.id}/charges/${statement.charges[0]!.id}`; // prettier-ignore
+
+      const priced = await api()
+        .post(`${charge}/not-billable`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(409);
+      expect((priced.body as Problem).code).toBe('CHARGE_HAS_AMOUNT');
+
+      const edited = await api()
+        .patch(charge)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ quantity: '2' })
+        .expect(200);
+      expect(edited.body).toMatchObject({ quantity: '2.000' });
+
+      const empty = await api()
+        .patch(charge)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({})
+        .expect(422);
+      expect((empty.body as Problem).code).toBeDefined();
+    });
+
+    it('BI-059 no confirma un cargo quitado', async () => {
       const encounterId = await anEncounter();
       const opened = await checkout(encounterId).expect(200);
       const { statement } = opened.body as {
@@ -577,7 +636,8 @@ describe('la facturación por HTTP', () => {
         await other.query(
           `UPDATE "charge_item"
               SET "status" = 'CANCELLED', "voided_at" = now(),
-                  "voided_by_id" = $1, "void_reason" = 'No se hizo'
+                  "voided_by_id" = $1, "void_reason" = 'No se hizo',
+                  "changed_by" = $1, "changed_at" = now()
             WHERE "id" = $2`,
           [voider.id, ids[1]],
         );
@@ -836,27 +896,30 @@ describe('la facturación por HTTP', () => {
       expect(problem.errors?.[0]?.field).toBe('receiver.identificationType');
     });
 
-    it('BI-081 no admite «Consumidor Final» sin confirmación explícita y motivo', async () => {
+    it('BI-081, BI-201 no admite «Consumidor Final» sin confirmación explícita, y con ella no pide motivo', async () => {
       // The confirmation is the SERVER'S, not a dialog's: a warning that lives
       // on a screen disappears the moment somebody calls this route from a
       // cashier shortcut — and this is that route.
       const accountId = await openAccount();
       await addCharge(accountId);
+      const issue = (finalConsumer: { confirmed: boolean }) =>
+        api()
+          .post(`/api/v1/billing/sites/${siteId}/invoices`)
+          .set('Authorization', `Bearer ${cashierToken}`)
+          .send({
+            accountId,
+            emissionPointId,
+            paymentMethod: '01',
+            receiver: { finalConsumer },
+          });
 
-      const response = await api()
-        .post(`/api/v1/billing/sites/${siteId}/invoices`)
-        .set('Authorization', `Bearer ${cashierToken}`)
-        .send({
-          accountId,
-          emissionPointId,
-          paymentMethod: '01',
-          receiver: { finalConsumer: { confirmed: true } },
-        })
-        .expect(422);
-
-      expect((response.body as Problem).code).toBe(
+      const unconfirmed = await issue({ confirmed: false }).expect(422);
+      expect((unconfirmed.body as Problem).code).toBe(
         'FINAL_CONSUMER_NOT_CONFIRMED',
       );
+
+      const issued = await issue({ confirmed: true }).expect(201);
+      expect(issued.body).toMatchObject({ isFinalConsumer: true });
     });
 
     it('BI-082 propone la identificación del paciente sin aplicarla por su cuenta', async () => {
@@ -1037,17 +1100,27 @@ describe('la facturación por HTTP', () => {
   });
 
   describe('BI-033, BI-071, BI-072 el ciclo de la cuenta', () => {
-    it('BI-033 rechaza cambiar el pagador cuando la cuenta ya tiene cargos', async () => {
+    it('BI-198 cambia el pagador aunque la cuenta tenga cargos, tras ver el total que quedaría', async () => {
       const accountId = await openAccount();
       await addCharge(accountId);
 
-      const response = await api()
+      const preview = await api()
+        .get(
+          `/api/v1/billing/sites/${siteId}/accounts/${accountId}/repricing?payerId=${payerId}`,
+        ) // prettier-ignore
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      const { currentTotal, newTotal } = preview.body as {
+        currentTotal: string;
+        newTotal: string | null;
+      };
+      expect(newTotal).toBe(currentTotal);
+
+      await api()
         .patch(`/api/v1/billing/sites/${siteId}/accounts/${accountId}`)
         .set('Authorization', `Bearer ${cashierToken}`)
         .send({ payerId })
-        .expect(409);
-
-      expect((response.body as Problem).code).toBe('ACCOUNT_HAS_CHARGES');
+        .expect(200);
     });
 
     it('BI-072 rechaza cerrar una cuenta con cargos sin facturar', async () => {
