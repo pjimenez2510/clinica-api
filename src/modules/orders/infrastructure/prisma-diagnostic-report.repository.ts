@@ -989,6 +989,8 @@ const WORKLIST_SELECT = {
   valueNumeric: true,
   valueCode: true,
   unit: true,
+  criticalLow: true,
+  criticalHigh: true,
   abnormalFlag: true,
   observedAt: true,
   report: {
@@ -1151,6 +1153,8 @@ function toWorklistEntry(row: WorklistRow): FlaggedResultEntry {
     valueNumeric: toNumber(row.valueNumeric),
     valueCode: row.valueCode,
     unit: row.unit,
+    criticalLow: toNumber(row.criticalLow),
+    criticalHigh: toNumber(row.criticalHigh),
     abnormalFlag: row.abnormalFlag,
     observedAt: row.observedAt,
     orderedBy: {

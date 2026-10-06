@@ -409,6 +409,8 @@ type FlaggedResultResponse = Pick<
   | 'valueNumeric'
   | 'valueCode'
   | 'unit'
+  | 'criticalLow'
+  | 'criticalHigh'
   | 'abnormalFlag'
   | 'observedAt'
 >;
@@ -479,6 +481,8 @@ function toFlaggedResponse(entry: FlaggedResultEntry): FlaggedResultResponse {
     valueNumeric: entry.valueNumeric,
     valueCode: entry.valueCode,
     unit: entry.unit,
+    criticalLow: entry.criticalLow,
+    criticalHigh: entry.criticalHigh,
     abnormalFlag: entry.abnormalFlag,
     observedAt: entry.observedAt.toISOString(),
   };

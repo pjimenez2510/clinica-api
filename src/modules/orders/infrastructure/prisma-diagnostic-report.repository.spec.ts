@@ -332,6 +332,8 @@ describe('el adaptador del informe', () => {
           valueNumeric: null,
           valueCode: null,
           unit: 'mg/dL',
+          criticalLow: null,
+          criticalHigh: null,
           abnormalFlag: 'CRITICAL_LOW',
           observedAt: new Date('2026-09-16T13:00:00Z'),
           _count: { notices: 0 },

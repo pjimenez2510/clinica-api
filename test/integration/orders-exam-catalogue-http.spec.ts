@@ -680,7 +680,8 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       // Congela el límite que la marcó.
       expect(Number(row.criticalHigh)).toBe(350);
       const queue = await reports.critical(requester, new Date());
-      expect(queue.map((entry) => entry.reportId)).toContain(corrected.id);
+      // Y la cola de críticos lo dice junto al valor.
+      expect(queue.find((entry) => entry.reportId === corrected.id)).toMatchObject({ criticalHigh: 350 }); // prettier-ignore
     });
 
     it('ORD-114 un rango cerrado no cuenta: el resultado nuevo usa el que rige al registrarlo', async () => {

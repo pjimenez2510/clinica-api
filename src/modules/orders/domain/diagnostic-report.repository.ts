@@ -271,6 +271,9 @@ export interface FlaggedResultEntry {
   valueNumeric: number | null;
   valueCode: string | null;
   unit: string | null;
+  /** ORD-122. The critical bounds the flag was computed with. */
+  criticalLow: number | null;
+  criticalHigh: number | null;
   abnormalFlag: AbnormalFlag | null;
   observedAt: Date;
   /**
