@@ -257,7 +257,7 @@ describe('la bandera de anormalidad', () => {
     expect(classifyQualitative(NITRITES, woman)).toMatchObject({ criticalLow: null, criticalHigh: null }); // prettier-ignore
   });
 
-  it('ORD-114 ORD-122 una corrección se clasifica con los límites críticos que se aplicaron, no con los de hoy', () => {
+  it('ORD-114 ORD-122 una corrección se clasifica con el límite más protector entre el que se aplicó y el de hoy', () => {
     // El original se clasificó con 40–400; hoy rige 40–500.
     const today: ReferenceRange[] = [
       { rangeKind: 'REFERENCE', sex: null, ageMinDays: null, ageMaxDays: null, low: 70, high: 100, text: null }, // prettier-ignore
@@ -271,8 +271,13 @@ describe('la bandera de anormalidad', () => {
     expect(classifyNumeric(410, { ranges: today }, woman)).toMatchObject({ flag: 'HIGH', criticalHigh: 500 }); // prettier-ignore
     // Corregido por debajo del umbral aplicado, deja de ser crítico; la referencia es la de hoy.
     expect(classifyNumeric(390, { ranges: today }, woman, applied)).toMatchObject({ flag: 'HIGH', referenceHigh: 100 }); // prettier-ignore
-    // Un lado sin crítico congelado no alerta de ese lado, aunque hoy lo haya.
-    expect(classifyNumeric(20, { ranges: today }, woman, { low: null, high: 400 }).flag).toBe('LOW'); // prettier-ignore
+    // Un lado sin crítico congelado toma el de hoy (D-135).
+    expect(classifyNumeric(20, { ranges: today }, woman, { low: null, high: 400 })).toMatchObject({ flag: 'CRITICAL_LOW', criticalLow: 40 }); // prettier-ignore
+    // D-135: el umbral BAJADO después también la alcanza. Aplicado 400, hoy 350.
+    const lowered: ReferenceRange[] = [today[0]!, { ...today[1]!, high: 350 }];
+    expect(classifyNumeric(390, { ranges: lowered }, woman, applied)).toMatchObject({ flag: 'CRITICAL_HIGH', criticalHigh: 350 }); // prettier-ignore
+    // Y por abajo: el bajo más alto de los dos.
+    expect(classifyNumeric(45, { ranges: today }, woman, { low: 50, high: 400 })).toMatchObject({ flag: 'CRITICAL_LOW', criticalLow: 50 }); // prettier-ignore
   });
 
   it('ORD-060 reconoce las dos banderas que tienen que llegar hoy a una persona', () => {

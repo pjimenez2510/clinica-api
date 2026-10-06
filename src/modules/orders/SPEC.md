@@ -1318,13 +1318,14 @@ desde la pantalla.
   reconstruir qué umbral regía en una fecha.
 
   Y CUANDO se corrige un informe, cada determinación que ya estaba en la
-  versión que se corrige DEBERÁ clasificarse como crítica con los **límites
-  críticos congelados en esa versión** (ORD-122), no con los de hoy, y la fila
-  nueva DEBERÁ congelar esos mismos límites; la referencia sí es la vigente.
-  Una determinación que la corrección trae por primera vez usa los vigentes
-  (D-130.1, resuelta por el autor: C). Así un umbral subido después no saca de
-  la cola un crítico que nadie avisó, y la corrección compara con lo que se
-  aplicó, sin reconstruir nada.
+  versión que se corrige DEBERÁ clasificarse, de cada lado, con el límite
+  crítico **más protector** entre el **congelado en esa versión** (ORD-122) y
+  el vigente —el bajo más alto y el alto más bajo; si uno falta, el otro—, y
+  la fila nueva DEBERÁ congelar el límite que la decidió; la referencia sí es
+  la vigente. Una determinación que la corrección trae por primera vez usa los
+  vigentes (D-130.1, resuelta por el autor: C; D-135, resuelta por el autor).
+  Así un umbral subido después no saca de la cola un crítico que nadie avisó,
+  y uno bajado después sí alcanza al valor corregido.
 
   Una fila cerrada que siguiera contando pisaría a la nueva (ORD-107) y la
   bandera dependería del orden de las filas. Y lo vigente se lee por «sin

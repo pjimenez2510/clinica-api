@@ -195,8 +195,10 @@ const UNCLASSIFIED: Classification = {
  * frozen in their own columns (ORD-122).
  *
  * `applied`: the critical bounds a correction inherits from the version it
- * corrects (ORD-114, D-130.1). Given, they replace the catalogue's WHOLE, both
- * sides: the correction compares with what was applied, not with a mix. The
+ * corrects (ORD-114, D-130.1). Given, each side takes the MORE PROTECTIVE of
+ * the applied bound and today's (D-135): a threshold raised after the report
+ * cannot take a critical off the worklist, and one lowered after it still
+ * catches the corrected value. What is frozen is the bound that decided. The
  * reference is still today's.
  */
 export function classifyNumeric(
@@ -206,7 +208,8 @@ export function classifyNumeric(
   applied?: CriticalLimits,
 ): Classification {
   const reference = applicableRange(analyte.ranges, 'REFERENCE', patient);
-  const critical = applied ?? criticalLimitsOf(analyte.ranges, patient);
+  const today = criticalLimitsOf(analyte.ranges, patient);
+  const critical = applied ? mostProtective(applied, today) : today;
   const frozen = {
     referenceLow: reference?.low ?? null,
     referenceHigh: reference?.high ?? null,
@@ -250,6 +253,25 @@ export function classifyQualitative(
 ): Classification {
   const reference = applicableRange(analyte.ranges, 'REFERENCE', patient);
   return { ...UNCLASSIFIED, referenceText: reference?.text ?? null };
+}
+
+/**
+ * D-135 (resuelta por el autor). Side by side, the bound that alerts sooner:
+ * the higher low and the lower high. A side either set lacks is the other's.
+ */
+function mostProtective(
+  applied: CriticalLimits,
+  today: CriticalLimits,
+): CriticalLimits {
+  const pick = (
+    a: number | null,
+    b: number | null,
+    by: (x: number, y: number) => number,
+  ) => (a === null ? b : b === null ? a : by(a, b));
+  return {
+    low: pick(applied.low, today.low, Math.max),
+    high: pick(applied.high, today.high, Math.min),
+  };
 }
 
 /** ORD-036, ORD-122. The critical band that applies today, as bare numbers. */
