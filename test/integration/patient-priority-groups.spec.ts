@@ -642,6 +642,49 @@ describe('los grupos prioritarios por HTTP', () => {
     );
   });
 
+  it('PA-037 the database refuses deleting a priority group record, row by row and by TRUNCATE', async () => {
+    const created = await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-30),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    const recordId = (created.body as PriorityGroupBody).id;
+
+    await expect(
+      prisma.$executeRaw`
+        DELETE FROM patient_priority_group WHERE id = ${recordId}::uuid`,
+    ).rejects.toThrow(/patient_priority_group_never_deleted/);
+    await expect(
+      prisma.$executeRawUnsafe(`TRUNCATE patient_priority_group`),
+    ).rejects.toThrow(/patient_priority_group_never_deleted/);
+
+    // Control positivo: el mismo registro se cierra por el camino de siempre,
+    // y sigue ahí.
+    await closeGroup(recordId, { endsOn: daysFromToday(-1) }).expect(200);
+    expect(
+      await prisma.patientPriorityGroup.count({ where: { id: recordId } }),
+    ).toBe(1);
+  });
+
+  it('PA-037 a chart with priority group records is not deleted from under them (ON DELETE RESTRICT)', async () => {
+    await recordGroup({
+      group: 'DISABILITY',
+      startsOn: daysFromToday(-30),
+      origin: 'SELF_DECLARED',
+    }).expect(201);
+    // Control positivo: una ficha sin registros sí se borra por el mismo
+    // camino, así que lo que para la otra es su registro.
+    const bare = await createPatient(prisma);
+    await prisma.$executeRaw`DELETE FROM patient WHERE id = ${bare.id}::uuid`;
+
+    await expect(
+      prisma.$executeRaw`DELETE FROM patient WHERE id = ${patientId}::uuid`,
+    ).rejects.toThrow(/patient_priority_group_patient_id_fkey/);
+    expect(
+      await prisma.patientPriorityGroup.count({ where: { patientId } }),
+    ).toBe(1);
+  });
+
   it('PA-037 refuses a second closure with PRIORITY_GROUP_ALREADY_CLOSED and keeps the first one', async () => {
     const created = await recordGroup({
       group: 'DISABILITY',

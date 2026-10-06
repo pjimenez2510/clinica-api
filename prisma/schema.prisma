@@ -1860,8 +1860,10 @@ enum PriorityGroupOrigin {
 model PatientPriorityGroup {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
+  /// PA-037. RESTRICT: a chart is not deleted from under its records, and
+  /// `trg_patient_priority_group_never_deleted` refuses DELETE and TRUNCATE.
   patientId String  @map("patient_id") @db.Uuid
-  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
   /// One of the RECORDABLE codes of `priority-groups.ts`. A `varchar` with a
   /// CHECK and not a native enum: the enumeration of TEN lives in the domain —

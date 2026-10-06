@@ -1219,6 +1219,21 @@ Ningún requisito de esta sección lo altera._
   > …/priority-groups/:recordId/close`, y `PATCH` edita. Quién y cuándo cerró
   > siguen sin cambiar nunca; la fecha de fin de un cerrado se corrige con
   > versión, nunca se vacía.
+  >
+  > **⚠️ Cambio de contrato.** Hasta PA-066, `PATCH
+  > …/priority-groups/:recordId` con `{ endsOn }` CERRABA el registro. Desde
+  > PA-066 ese mismo cuerpo **edita** el fin sin cerrar: un cliente que no se
+  > actualizó deja de cerrar sin error alguno. La web se cambió en la misma
+  > rama (`fix/menos-preguntas-pacientes`); un asistente o integración que
+  > cierre grupos debe usar `POST …/close`.
+  >
+  > **Garantía de la base** (`20261006110332_patient_priority_group_never_deleted`):
+  > `trg_patient_priority_group_never_deleted` rechaza `DELETE` y `TRUNCATE`
+  > con el nombre `patient_priority_group_never_deleted`, como las demás
+  > tablas que se corrigen con versión, y
+  > `patient_priority_group_patient_id_fkey` pasa de `CASCADE` a `RESTRICT`:
+  > borrar la ficha no se lleva sus registros. La prueba de integración
+  > borra una ficha sin registros como control positivo.
 - **PA-038** — Todo registro DEBERÁ constar como **declarado por el paciente** o
   como **acreditado**, y SI es acreditado, ENTONCES DEBERÁ constar con qué
   documento.
@@ -1944,7 +1959,8 @@ Ningún requisito de esta sección lo altera._
   > /patients/:id/priority-groups/:recordId`, con `patient:priority` como
   > registrar, y cerrar pasa a `POST …/:recordId/close` (PA-037): con un solo
   > verbo, corregir la fecha probable de parto de un embarazo abierto lo
-  > habría cerrado. Lo idéntico no es una edición y no deja versión. Un
+  > habría cerrado (es un cambio de contrato: ver la nota de PA-037). Lo
+  > idéntico no es una edición y no deja versión. Un
   > restringido que quien edita no ve responde `PRIORITY_GROUP_NOT_FOUND`,
   > como cerrarlo. La respuesta lleva `changedById` y `changedAt`.
   >

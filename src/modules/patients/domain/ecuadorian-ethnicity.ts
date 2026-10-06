@@ -78,19 +78,6 @@ export function ethnicityApplies(
   return countryOfNationalityCode === ECUADOR_COUNTRY_CODE;
 }
 
-/**
- * Whether the chart may NOT hold the ethnicity it declares (PA-059).
- *
- * No ethnicity, no rule: registering a foreign patient with no ethnicity is
- * exactly what the ministry asks for.
- */
-export function ethnicityContradictsCountry(
-  chart: EthnicityDeclaration,
-): boolean {
-  if (chart.ethnicityConceptId === null) return false;
-  return !ethnicityApplies(chart.countryOfNationalityCode);
-}
-
 /** The RDACAA columns 12 to 14 of a chart, as the clearing below reads them. */
 export interface ForeignNationalityChart extends EthnicityDeclaration {
   nationalityConceptId: string | null;
