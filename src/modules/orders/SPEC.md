@@ -1125,7 +1125,9 @@ marcar Imagen y pedir un hemograma.
   sin número— limpiando quién y cuándo se descartó. SI la orden no está en
   `DISCARDED`, ENTONCES DEBERÁ rechazarlo con `ORDER_NOT_DISCARDED`; SI quien
   la recupera no es quien la firma, ENTONCES DEBERÁ rechazarlo con
-  `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER` (D-123.1).
+  `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER` (D-123.1); y SI la atención ya no
+  admite órdenes (ORD-005), ENTONCES DEBERÁ rechazarlo con
+  `ORDER_ENCOUNTER_NOT_OPEN`, sin tocarla.
 
   > **Garantía de la base:** `service_order_guard_status` admite
   > `DISCARDED → DRAFT` y ninguna otra vuelta atrás —lo emitido no regresa—,
@@ -1135,8 +1137,12 @@ marcar Imagen y pedir un hemograma.
   > `service_order_discard_states_who_and_when` obliga a limpiar quién y
   > cuándo. Se prueba contra la base con control positivo.
   >
-  > **La atención cerrada no lo impide**, igual que no impide descartar: se
-  > devuelve el borrador adonde estaba, y emitirlo sigue sujeto a ORD-005.
+  > **La atención cerrada sí lo impide** (revisión del 06-10-2026, M2; antes
+  > no se miraba): anular la atención descarta sus borradores (EN-218), y
+  > deshacer ese descarte devolvía un borrador a una atención que dice que no
+  > debió existir. Se juzga bajo el bloqueo de la atención, como emitir.
+  > Descartar sigue admitiéndose con la atención cerrada (ORD-099): no añade
+  > nada.
 
 - **ORD-100** — Una orden que no esté en `ISSUED` NO DEBERÁ aparecer en la cola de
   pendientes, ni proponer cargo en caja, ni contar como acto clínico de la

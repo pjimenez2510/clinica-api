@@ -1088,7 +1088,9 @@ y el error se arregla con «Deshacer», no con un diálogo antes._
   dejar fila de bitácora (PR-093). SI la receta no está en `DISCARDED`,
   ENTONCES DEBERÁ rechazarlo con `PRESCRIPTION_NOT_EDITABLE` nombrando el
   estado; SI quien la recupera **no es su prescriptor**, ENTONCES DEBERÁ
-  rechazarlo con `PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER` (PR-100).
+  rechazarlo con `PRESCRIPTION_DRAFT_OF_ANOTHER_PRESCRIBER` (PR-100); y SI la
+  atención ya no admite recetas (PR-002), ENTONCES DEBERÁ rechazarlo con
+  `PRESCRIPTION_ENCOUNTER_NOT_OPEN`, sin tocarla.
   > **Garantía de la base:** `prescription_discard_states_who_and_when` exige
   > quién y cuándo en todo `DISCARDED`; `prescription_discard_only_from_draft`
   > impide un `DRAFT` que arrastre el instante del descarte, así que volver
@@ -1104,10 +1106,11 @@ y el error se arregla con «Deshacer», no con un diálogo antes._
   > recuperarlo (PR-100)—. El estado se juzga antes que el dueño: una receta
   > emitida sigue respondiendo `PRESCRIPTION_NOT_EDITABLE`.
   >
-  > **El estado de la atención no se mira**, como no se mira al descartar:
-  > deshacer devuelve el borrador adonde estaba hace un momento, y lo que
-  > después se puede hacer con él (reescribirlo, emitirlo) lo juzgan esos
-  > actos (PR-002).
+  > **El estado de la atención sí se mira al recuperar** (revisión del
+  > 06-10-2026, M2; antes no): anular la atención descarta sus borradores
+  > (EN-218), y deshacer ese descarte devolvía un borrador a una atención que
+  > dice que no debió existir. Se juzga bajo el bloqueo de la atención, como
+  > reescribir y emitir. Descartar no lo mira: no añade nada.
 
 ## 10. Anular con su registro, y corregir de un paso (D-126, D-127)
 
