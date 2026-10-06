@@ -895,6 +895,83 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     ).toMatchObject({ status: 'DISCARDED', discardedById: requester.userId });
   });
 
+  it('EN-166 EN-218 anular descarta sólo los borradores propios: uno de otro prescriptor lo impide con ENCOUNTER_HAS_OTHERS_DRAFTS, sin descartar nada (D-085 §2)', async () => {
+    const prisma = db();
+    const { encounter, requester, ids } = await inAttentionWithNote(prisma);
+    const colleague = await createPractitioner(prisma);
+    const annul = () =>
+      serviceOf(prisma).annul(
+        { encounterId: encounter.id, ...asAuthor },
+        requester,
+      );
+    const own = await prisma.prescription.create({
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        prescriberId: ids.practitionerId,
+      },
+    });
+    const othersPrescription = await prisma.prescription.create({
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        prescriberId: colleague.id,
+      },
+    });
+    const othersOrder = await prisma.serviceOrder.create({
+      data: {
+        encounterId: encounter.id,
+        siteId: encounter.siteId,
+        orderedById: colleague.id,
+        category: 'LABORATORY',
+      },
+    });
+    const statusOf = async () => [
+      (await prisma.prescription.findUniqueOrThrow({ where: { id: own.id } })).status,
+      (await prisma.prescription.findUniqueOrThrow({ where: { id: othersPrescription.id } })).status,
+      (await prisma.serviceOrder.findUniqueOrThrow({ where: { id: othersOrder.id } })).status,
+      (await prisma.encounter.findUniqueOrThrow({ where: { id: encounter.id } })).status,
+    ]; // prettier-ignore
+
+    const refused: unknown = await annul().catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(EncounterHasOthersDraftsError);
+    expect(refused).toMatchObject({
+      code: 'ENCOUNTER_HAS_OTHERS_DRAFTS',
+      userTitle:
+        'La atención tiene una receta u orden en borrador de otro profesional. Que la emita o la descarte antes de anular',
+    });
+    expect(await statusOf()).toEqual([
+      'DRAFT',
+      'DRAFT',
+      'DRAFT',
+      encounter.status,
+    ]);
+
+    // The order alone still refuses it.
+    await prisma.prescription.update({
+      where: { id: othersPrescription.id },
+      data: { status: 'DISCARDED', discardedAt: new Date(), discardedById: colleague.userId },
+    }); // prettier-ignore
+    await expect(annul()).rejects.toBeInstanceOf(EncounterHasOthersDraftsError);
+
+    // Positive control: once the colleague discards theirs, the annulment
+    // discards the annuller's own draft in the same transaction.
+    await prisma.serviceOrder.update({
+      where: { id: othersOrder.id },
+      data: { status: 'DISCARDED', discardedAt: new Date(), discardedById: colleague.userId },
+    }); // prettier-ignore
+    await annul();
+    expect(await statusOf()).toEqual([
+      'DISCARDED',
+      'DISCARDED',
+      'DISCARDED',
+      'ENTERED_IN_ERROR',
+    ]);
+    expect(
+      await prisma.prescription.findUniqueOrThrow({ where: { id: own.id } }),
+    ).toMatchObject({ discardedById: requester.userId });
+  });
+
   it('EN-166 un certificado no revocado, una referencia emitida o atendida y una interconsulta pedida o contestada impiden anular; revocado, rechazada y cancelada, se anula (D-099 §1, D-103)', async () => {
     const prisma = db();
     const { encounter, requester, ids } = await inAttentionWithNote(prisma);

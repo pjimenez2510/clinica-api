@@ -3381,7 +3381,9 @@ falta de una medida; y salir de la atención pide lo justo._
 - **EN-218** — CUANDO se anule una atención (EN-166), el sistema NO DEBERÁ
   exigir motivo —el que se envíe DEBERÁ guardarse— y DEBERÁ guardar quién la
   anuló y cuándo; DEBERÁ descartar en la misma transacción, con quién y
-  cuándo, las recetas y las órdenes que sigan en borrador; y SI queda algún
+  cuándo, las recetas y las órdenes que sigan en borrador **de quien anula**, y
+  SI queda alguna en borrador de otro prescriptor o firmante, ENTONCES DEBERÁ
+  rechazarlo con `ENCOUNTER_HAS_OTHERS_DRAFTS` sin descartar nada; y SI queda algún
   papel emitido —receta, orden con exámenes pendientes, nota firmada,
   certificado sin anular, referencia o interconsulta (D-099, D-103)—,
   ENTONCES DEBERÁ rechazarlo con `ENCOUNTER_HAS_LIVE_ACTS` nombrando cada
@@ -3402,11 +3404,16 @@ falta de una medida; y salir de la atención pide lo justo._
   > se envíe se sigue guardando en `exit_substitute_reason`. El cierre (EN-147)
   > conserva su motivo.
   >
-  > **Los borradores se descartan solos** (D-126.1): nunca salieron de la
-  > consulta. Lo de otro prescriptor también, a nombre de quien anula: anular
-  > dice que la atención entera no debió existir. Lo emitido no se toca: cada
-  > papel se anula por su puerta (D-127.4), y la pantalla ofrece la suya junto
-  > a cada uno.
+  > **Los borradores propios se descartan solos** (D-126.1): nunca salieron
+  > de la consulta. **Los de otro prescriptor o firmante, no** (revisión del
+  > 06-10-2026, M3, que sustituye la lectura anterior —«también, a nombre de
+  > quien anula»—): son suyos para emitir o descartar (PR-100, D-123.1), y un
+  > clic de un colega no se los quita. Anular se rechaza entonces con
+  > `ENCOUNTER_HAS_OTHERS_DRAFTS`, como interrumpir (D-085 §2), sin descartar
+  > nada, y la pantalla lo dice: «La atención tiene una receta u orden en
+  > borrador de otro profesional. Que la emita o la descarte antes de anular».
+  > Lo emitido no se toca: cada papel se anula por su puerta (D-127.4), y la
+  > pantalla ofrece la suya junto a cada uno.
   >
   > **Interrumpir con la cita sin llegada registrada**
   > (`APPOINTMENT_ARRIVAL_NOT_RECORDED`, D-099 §2) **sigue rechazándose en la
@@ -3460,7 +3467,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_STATE_TRANSITION_INVALID` | 409 | Transición de estado que la tabla de EN-132 no admite: reabrir una cerrada, saltarse el alta clínica, suspender una ya dada de alta. **Un solo código para todas**: el mensaje dice en qué estado está y qué se puede hacer desde ahí | EN-132 |
 | `ENCOUNTER_HAS_LIVE_ACTS` | 409 | Anular una atención en curso que ya tiene receta emitida, orden con exámenes pendientes, nota firmada, certificado sin anular, referencia o interconsulta (D-103): cada papel se anula antes por su puerta, y `errors[]` los nombra uno a uno (`acts.<tipo>.<id>`, EN-218). Los borradores ya no lo impiden: se descartan con la anulación | EN-166, EN-218 |
 | `APPOINTMENT_ARRIVAL_NOT_RECORDED`       | 409  | Interrumpir la atención de una cita sin llegada registrada (D-099 §2)                                                                                                                                                                                                                                                                                                                                                       | EN-167                 |
-| `ENCOUNTER_HAS_OTHERS_DRAFTS`            | 409  | Interrumpir una atención con un borrador de otra persona, que quedaría sin firma para siempre (D-085 §2)                                                                                                                                                                                                                                                                                                                    | EN-167                 |
+| `ENCOUNTER_HAS_OTHERS_DRAFTS` | 409 | Interrumpir una atención con un borrador de nota de otra persona, que quedaría sin firma para siempre (D-085 §2); o anularla con una receta u orden en borrador de otro prescriptor o firmante, que es suya para emitir o descartar (M3). Un título por acto | EN-167, EN-218 |
 | `ENCOUNTER_ANNULMENT_REASON_REQUIRED` | — | **Retirado por EN-218 (D-126.2)**: anular ya no exige motivo | EN-166 |
 | `ENCOUNTER_INTERRUPTION_REASON_REQUIRED` | 422  | Interrumpir una atención sin motivo escrito o sin origen (D-082: sin condición de egreso, que no se exige). Se exige **en el servicio** además del DTO, por lo mismo que `AMENDMENT_REASON_REQUIRED`                                                                                                                                                                                                                        | EN-129                 |
 | `ENCOUNTER_CLOSER_NOT_AUTHOR` | 403 | Cierra alguien que no la abrió y no lleva `record:sign`. Con `record:sign` **no falla**: cierra dejando constancia de la sustitución | EN-144, EN-147 |

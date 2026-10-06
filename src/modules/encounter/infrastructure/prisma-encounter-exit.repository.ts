@@ -16,6 +16,7 @@ import type {
   InterruptionPlan,
 } from '../domain/encounter-state';
 import type {
+  AnnulmentActor,
   DraftSigning,
   EncounterExitRepository,
   InterruptionOutcome,
@@ -58,20 +59,33 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
   async annul(
     query: EncounterQuery,
     decide: (encounter: EncounterView) => AnnulmentPlan & Substitution,
-    changedById: string,
+    actor: AnnulmentActor,
   ): Promise<EncounterView> {
+    const changedById = actor.userId;
     return this.prisma.$transaction(async (tx) => {
       const current = await lockAndRead(tx, query);
       const plan = decide(current);
 
       /**
-       * EN-218 (AT-22). The drafts never left the consultation (D-126.1): a
-       * prescription or an order still in draft is discarded by the
-       * annulment itself, in this transaction, with who and when —the same
-       * columns their own «Descartar» writes (PR-107, ORD-099)—. If anything
-       * below refuses, the transaction rolls back and they are drafts again.
+       * D-085 §2, as for the interruption. A draft of ANOTHER prescriber or
+       * signer is theirs to issue or discard (PR-100, D-123.1): discarding it
+       * in somebody else's name would make one click of a colleague take away
+       * a prescription its author was still writing. The annulment is refused
+       * and says why; nothing is discarded.
        */
-      await discardDrafts(tx, current.id, changedById, plan.at);
+      if (await hasOthersDrafts(tx, current.id, actor.practitionerId)) {
+        throw new EncounterHasOthersDraftsError('annulment');
+      }
+
+      /**
+       * EN-218 (AT-22). The drafts never left the consultation (D-126.1): the
+       * annuller's own prescription or order still in draft is discarded by
+       * the annulment itself, in this transaction, with who and when —the
+       * same columns their own «Descartar» writes (PR-107, ORD-099)—. If
+       * anything below refuses, the transaction rolls back and they are
+       * drafts again.
+       */
+      await discardDrafts(tx, current.id, actor, plan.at);
 
       /**
        * D-099 §1. What the attention already left in the chart is retracted
@@ -147,7 +161,8 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
           authorId: { not: drafts.authorId },
         },
       });
-      if (othersDrafts > 0) throw new EncounterHasOthersDraftsError();
+      if (othersDrafts > 0)
+        throw new EncounterHasOthersDraftsError('interruption');
 
       // D-085 §3: attended means any clinical act, asked BEFORE the state
       // changes and under the lock.
@@ -351,28 +366,49 @@ async function livePapersOf(
 }
 
 /**
- * EN-218 (AT-22). The drafts of the attention, discarded with the annulment.
- * The prescription keeps a fixed reason so its list reads why it went; the
- * order's discard has no reason column.
+ * EN-218, D-085 §2. Whether a prescription or an order of the attention is
+ * still a draft of somebody other than whoever annuls.
+ */
+async function hasOthersDrafts(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+  practitionerId: string,
+): Promise<boolean> {
+  const [prescriptions, orders] = await Promise.all([
+    tx.prescription.count({
+      where: { encounterId, status: 'DRAFT', prescriberId: { not: practitionerId } }, // prettier-ignore
+    }),
+    tx.serviceOrder.count({
+      where: { encounterId, status: 'DRAFT', orderedById: { not: practitionerId } }, // prettier-ignore
+    }),
+  ]);
+  return prescriptions + orders > 0;
+}
+
+/**
+ * EN-218 (AT-22). The annuller's own drafts, discarded with the annulment —
+ * `hasOthersDrafts` already refused anybody else's. The prescription keeps a
+ * fixed reason so its list reads why it went; the order's discard has no
+ * reason column.
  */
 async function discardDrafts(
   tx: Prisma.TransactionClient,
   encounterId: string,
-  discardedById: string,
+  actor: AnnulmentActor,
   at: Date,
 ): Promise<void> {
   await tx.prescription.updateMany({
-    where: { encounterId, status: 'DRAFT' },
+    where: { encounterId, status: 'DRAFT', prescriberId: actor.practitionerId },
     data: {
       status: 'DISCARDED',
       discardedAt: at,
-      discardedById,
+      discardedById: actor.userId,
       discardReason: 'Atención anulada',
     },
   });
   await tx.serviceOrder.updateMany({
-    where: { encounterId, status: 'DRAFT' },
-    data: { status: 'DISCARDED', discardedAt: at, discardedById },
+    where: { encounterId, status: 'DRAFT', orderedById: actor.practitionerId },
+    data: { status: 'DISCARDED', discardedAt: at, discardedById: actor.userId },
   });
 }
 

@@ -28,6 +28,7 @@ import {
   DiagnosisRetractionReasonRequiredError,
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
+  EncounterHasOthersDraftsError,
   EncounterAlreadyReportedError,
   EncounterAppointmentMismatchError,
   EncounterCloserNotAuthorError,
@@ -254,6 +255,21 @@ describe('el contrato de errores de la atención', () => {
         message: 'Peso: obligatorio tras el alta, no se puede quitar',
       },
     ]);
+  });
+
+  it('EN-167 EN-218 un borrador ajeno responde 409 con la frase de cada acto: interrumpir y anular', () => {
+    const interruption = new EncounterHasOthersDraftsError();
+    const annulment = new EncounterHasOthersDraftsError('annulment');
+
+    expect(interruption.code).toBe('ENCOUNTER_HAS_OTHERS_DRAFTS');
+    expect(annulment.code).toBe('ENCOUNTER_HAS_OTHERS_DRAFTS');
+    expect(annulment).toBeInstanceOf(ConflictError); // 409
+    expect(interruption.userTitle).toBe(
+      'La atención tiene una nota en borrador de otra persona. Que la firme o la descarte antes de interrumpir',
+    );
+    expect(annulment.userTitle).toBe(
+      'La atención tiene una receta u orden en borrador de otro profesional. Que la emita o la descarte antes de anular',
+    );
   });
 
   it('EN-001 responde 409 y manda a registrar la ficha, no a corregir un campo', () => {

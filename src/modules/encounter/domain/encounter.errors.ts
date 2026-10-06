@@ -717,14 +717,26 @@ export class AppointmentArrivalNotRecordedError extends ConflictError {
  * ELSE. Interrupting signs the drafts of whoever interrupts (D-082); a draft of
  * another author would stay unsigned inside a terminal attention, where nobody
  * could sign it any more — the «texto sin responsable» D-082 rejected.
+ *
+ * EN-218. And annulling discards the drafts of whoever annuls: a prescription
+ * or an order still in draft of ANOTHER prescriber or signer is theirs to
+ * issue or discard (PR-100, D-123.1). Same code — the way out is the same,
+ * the other person acts first — and a sentence for each act.
  */
 export class EncounterHasOthersDraftsError extends ConflictError {
   readonly code = 'ENCOUNTER_HAS_OTHERS_DRAFTS';
-  override readonly userTitle =
-    'La atención tiene una nota en borrador de otra persona. Que la firme o la descarte antes de interrumpir';
+  override readonly userTitle: string;
 
-  constructor() {
-    super('Encounter holds a draft note of another author');
+  constructor(act: 'interruption' | 'annulment' = 'interruption') {
+    super(
+      act === 'annulment'
+        ? 'Encounter holds a draft prescription or order of another practitioner'
+        : 'Encounter holds a draft note of another author',
+    );
+    this.userTitle =
+      act === 'annulment'
+        ? 'La atención tiene una receta u orden en borrador de otro profesional. Que la emita o la descarte antes de anular'
+        : 'La atención tiene una nota en borrador de otra persona. Que la firme o la descarte antes de interrumpir';
   }
 }
 
