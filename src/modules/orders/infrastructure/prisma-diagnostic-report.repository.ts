@@ -3,6 +3,11 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
+  type ClinicalDate,
+  clinicalDateOf,
+  clinicalDaySpan,
+} from '../../../shared/domain/clinic-time';
+import {
   CriticalNoticeEditedConcurrentlyError,
   CriticalNoticeNotFoundError,
   OrderItemNotMatchableError,
@@ -279,19 +284,31 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         encounter: {
           select: {
             patientId: true,
-            ageDays: true,
-            patient: { select: { sex: true } },
+            startedAt: true,
+            patient: { select: { sex: true, birthDate: true } },
           },
         },
       },
     });
     if (!row) return undefined;
 
+    const { patient } = row.encounter;
     return {
       patientId: row.encounter.patientId,
       siteId: row.siteId,
-      sex: row.encounter.patient.sex,
-      ageDays: row.encounter.ageDays,
+      sex: patient.sex,
+      /**
+       * ORD-036. The WHOLE age in days on the clinical date of the encounter.
+       * ⚠️ NOT `encounter.age_days`: `trg_encounter_freeze_age` stores there
+       * only the days left over after years and months (0–30), which is what
+       * the 010 and the prescription print. Read as an age, it gave a woman of
+       * 32 the ranges of a ten-day-old.
+       */
+      ageDays:
+        clinicalDaySpan(
+          patient.birthDate.toISOString().slice(0, 10) as ClinicalDate,
+          clinicalDateOf(row.encounter.startedAt),
+        ) - 1,
     };
   }
 

@@ -20,6 +20,7 @@ import { PrismaDiagnosticReportRepository } from '../../src/modules/orders/infra
 import { PrismaExamCatalogueRepository } from '../../src/modules/orders/infrastructure/prisma-exam-catalogue.repository';
 import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastructure/prisma-service-order.repository';
 
+import { addDays, addMonths, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { aTariffConcept, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import {
@@ -487,12 +488,25 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       const exam = await examCoded(examCode);
       const analyte = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: analyteCode } }); // prettier-ignore
 
-      return async (sex: 'MALE' | 'FEMALE', valueNumeric: number) => {
-        const patient = await createPatient(prisma, { sex });
+      return async (
+        sex: 'MALE' | 'FEMALE',
+        valueNumeric: number,
+        /** Born this long before the encounter, as a clinical date. */
+        bornBefore?: { months: number; days: number },
+      ) => {
+        const startedAt = new Date();
+        const born = bornBefore
+          ? addDays(addMonths(clinicalDateOf(startedAt), -bornBefore.months), -bornBefore.days) // prettier-ignore
+          : undefined;
+        const patient = await createPatient(prisma, {
+          sex,
+          ...(born ? { birthDate: new Date(`${born}T00:00:00Z`) } : {}),
+        });
         const encounter = await createEncounter(prisma, {
           siteId: site.id,
           practitionerId: practitioner.id,
           patientId: patient.id,
+          startedAt,
         });
         const order = await placeIssued(orders, {
           encounterId: encounter.id,
@@ -535,6 +549,24 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       expect(await flag('FEMALE', 65)).toBe('LOW');
       expect(await flag('FEMALE', 150)).toBe('HIGH');
       expect(await flag('FEMALE', 88)).toBe('NORMAL');
+    });
+
+    it('ORD-036 la edad que decide un rango es la edad en días, no el resto de días de la edad', async () => {
+      const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
+      await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
+        ranges: [
+          range({ low: 70, high: 100 }),
+          range({ rangeKind: 'CRITICAL', low: 40, high: 400 }),
+          range({ rangeKind: 'CRITICAL', ageMinDays: 0, ageMaxDays: 28, low: 30 }),
+        ],
+      }).expect(200); // prettier-ignore
+      const flag = await flagsOf('EX-GLUCOSA-AYUNAS', 'GLU');
+
+      // 32 años y 10 días: el resto de días de su edad es 10, y el rango
+      // neonatal no es suyo. Con 35 queda por debajo del crítico de adulto.
+      expect(await flag('FEMALE', 35, { months: 32 * 12, days: 10 })).toBe('CRITICAL_LOW'); // prettier-ignore
+      // Control positivo: el recién nacido de 10 días sí recibe el neonatal.
+      expect(await flag('FEMALE', 35, { months: 0, days: 10 })).toBe('LOW');
     });
 
     it('ORD-038 sin rango para su sexo la bandera queda vacía, no normal', async () => {

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { PrismaDiagnosticReportRepository } from './prisma-diagnostic-report.repository';
 import type { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type { NewReport } from '../domain/diagnostic-report.repository';
+import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 
 /**
  * The report's write transaction, against a double of the Prisma client.
@@ -23,6 +24,8 @@ import type { NewReport } from '../domain/diagnostic-report.repository';
  */
 
 const ORDER = '00000000-0000-4000-8000-00000000000a';
+/** When the fixture encounter began: today, so the age is derived, not typed. */
+const STARTED_AT = new Date();
 const ITEM = '00000000-0000-4000-8000-00000000000b';
 
 interface Call {
@@ -116,8 +119,13 @@ function prismaDouble(
                 siteId: 'site-1',
                 encounter: {
                   patientId: 'chart-1',
-                  ageDays: 12_000,
-                  patient: { sex: 'FEMALE' },
+                  startedAt: STARTED_AT,
+                  // 32 años y 10 días: el resto de días de la edad es 10.
+                  ageDays: 10,
+                  patient: {
+                    sex: 'FEMALE',
+                    birthDate: new Date(`${addDays(clinicalDateOf(STARTED_AT), -12_000)}T00:00:00Z`), // prettier-ignore
+                  },
                 },
               }
             : options.orderRow,
@@ -270,9 +278,10 @@ describe('el adaptador del informe', () => {
     expect(report?.supersededAt).toEqual(new Date('2026-09-19T13:00:00Z'));
   });
 
-  it('ORD-036 lee la edad de la ATENCIÓN y el sexo de la ficha', async () => {
-    // `encounter.age_days` está congelado por disparador; derivar la edad de
-    // `birth_date` al transcribir reclasificaría un resultado de hace dos años.
+  it('ORD-036 lee la edad en días el día de la ATENCIÓN y el sexo de la ficha', async () => {
+    // La edad entera en días el día de la atención, no la de hoy: un
+    // resultado de hace dos años no se reclasifica. Y no `encounter.age_days`,
+    // que es sólo el resto de días tras años y meses (lo que imprime el 010).
     const { repository } = prismaDouble();
 
     expect(await repository.patientOfOrder(ORDER, 'all')).toEqual({
