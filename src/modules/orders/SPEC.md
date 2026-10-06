@@ -1518,8 +1518,17 @@ se anula y se pide de nuevo, y la pantalla lo hace en un paso (D-127.4)._
   > sea quien emite; `service_order_diagnoses_frozen_when_issued` exige que la
   > emitida la tenga y la que no lo es no; y `service_order_guard_status` no
   > deja reescribirla. Las emitidas antes de esta regla se rellenaron con los
-  > diagnósticos que tenía la atención al migrar: mientras regía EN-182, nada
-  > pudo cambiarlos con exámenes vivos.
+  > diagnósticos que tenía la atención al migrar
+  > (`20261005070200_service_order_frozen_diagnoses`): mientras regía EN-182,
+  > nada pudo cambiarlos **con exámenes vivos**.
+  >
+  > ⚠️ **Matiz del relleno (revisión del 06-10-2026, m3).** EN-182 sólo
+  > frenaba con algún examen sin anular. En una orden emitida con **todos** sus
+  > exámenes anulados antes de migrar, los diagnósticos de la atención sí
+  > pudieron cambiar después de emitirla, y la copia rellenada dice los del
+  > momento de migrar, no necesariamente los que imprimió el papel. No se
+  > corrige: lo que imprimió no está en ninguna otra parte, y esas órdenes ya
+  > no piden nada al laboratorio. No se tocan datos.
 
 ## Códigos de error nuevos
 

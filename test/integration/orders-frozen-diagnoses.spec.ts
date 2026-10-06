@@ -156,4 +156,22 @@ describe('ORD-121 la orden congela sus diagnósticos al emitirse', () => {
       { code: 'R51', display: 'Cefalea' },
     ]);
   });
+
+  it('ORD-121 la BASE sólo admite diagnósticos congelados en la orden emitida, y como lista (service_order_diagnoses_frozen_when_issued)', async () => {
+    const prisma = db();
+    const { draft } = await aDraftOrder(prisma);
+
+    // A draft printed nothing: it carries no copy.
+    await expect(
+      prisma.$executeRaw`UPDATE service_order SET diagnoses = '[]'::jsonb WHERE id = ${draft.id}::uuid`,
+    ).rejects.toThrow(/service_order_diagnoses_frozen_when_issued/);
+    await expect(
+      prisma.$executeRaw`UPDATE service_order SET diagnoses = '{"code":"J02"}'::jsonb WHERE id = ${draft.id}::uuid`,
+    ).rejects.toThrow(/service_order_diagnoses_frozen_when_issued/);
+    expect(await frozenOf(prisma, draft.id)).toBeNull();
+
+    // Positive control: issued, the copy is there and is a list.
+    await adapters(prisma).orders.issue({ orderId: draft.id, sites: 'all' });
+    expect(await frozenOf(prisma, draft.id)).toEqual(FROZEN);
+  });
 });

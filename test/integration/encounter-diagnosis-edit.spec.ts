@@ -333,4 +333,61 @@ describe('editar un diagnóstico en el sitio (EN-212)', () => {
        WHERE id = ${rest!.id}::uuid`;
     await recode(prisma, obstetric!.id, 'J02', editor.id, 'Código mal elegido');
   });
+
+  it('EN-212 la BASE no deja mover un diagnóstico a otra atención, ni siquiera con sello (encounter_diagnosis_stays_on_its_encounter)', async () => {
+    const prisma = db();
+    const { encounter, diagnoses, editor } =
+      await anEncounterWithDiagnoses(prisma);
+    const [, second] = diagnoses;
+    const other = await createEncounter(prisma, {
+      siteId: encounter.siteId,
+      practitionerId: encounter.practitionerId,
+      patientId: encounter.patientId,
+    });
+
+    // Positive control: the same stamped statement, on its own attention.
+    await prisma.$executeRaw`
+      UPDATE encounter_diagnosis
+         SET certainty = 'PRESUMPTIVE',
+             edited_by_id = ${editor.id}::uuid, edited_at = ${nextStamp()}
+       WHERE id = ${second!.id}::uuid`;
+
+    await expect(
+      prisma.$executeRaw`
+        UPDATE encounter_diagnosis
+           SET encounter_id = ${other.id}::uuid,
+               edited_by_id = ${editor.id}::uuid, edited_at = ${nextStamp()}
+         WHERE id = ${second!.id}::uuid`,
+    ).rejects.toThrow(/encounter_diagnosis_stays_on_its_encounter/);
+    const kept = await prisma.encounterDiagnosis.findUniqueOrThrow({ where: { id: second!.id } }); // prettier-ignore
+    expect(kept.encounterId).toBe(encounter.id);
+  });
+
+  it('EN-212 la BASE exige quién y cuándo juntos en la edición de un diagnóstico (encounter_diagnosis_edit_stamped)', async () => {
+    const prisma = db();
+    const { encounter, editor } = await anEncounterWithDiagnoses(prisma, [
+      'J02',
+    ]);
+    const concept = await aCIE10Concept(prisma, 'R50');
+    const insert = (editedById: string | null, editedAt: Date | null) =>
+      prisma.$executeRaw`
+        INSERT INTO encounter_diagnosis
+          (encounter_id, concept_id, cie10_code, certainty, occurrence, rank,
+           edited_by_id, edited_at)
+        VALUES (${encounter.id}::uuid, ${concept.id}::uuid, 'R50',
+                'DEFINITIVE', 'FIRST_TIME', 2,
+                ${editedById}::uuid, ${editedAt})`;
+
+    await expect(insert(editor.id, null)).rejects.toThrow(
+      /encounter_diagnosis_edit_stamped/,
+    );
+    await expect(insert(null, nextStamp())).rejects.toThrow(
+      /encounter_diagnosis_edit_stamped/,
+    );
+    // Positive control: both, or neither.
+    await insert(editor.id, nextStamp());
+    expect(
+      await prisma.encounterDiagnosis.count({ where: { encounterId: encounter.id } }),
+    ).toBe(2); // prettier-ignore
+  });
 });

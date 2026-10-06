@@ -119,4 +119,25 @@ describe('la codificación de la atención tras el alta (EN-215)', () => {
       correct(prisma, encounter.id, editor.id, nextStamp(), 'FIRST_TIME'),
     ).rejects.toThrow(/encounter_reported/);
   });
+
+  it('EN-215 la BASE exige quién y cuándo juntos en la corrección de la atención (encounter_correction_stamped)', async () => {
+    const prisma = db();
+    const { encounter, editor } = await aDischargedEncounter(prisma);
+    const stamp = (correctedById: string | null, correctedAt: Date | null) =>
+      prisma.$executeRaw`
+        UPDATE encounter
+           SET corrected_by_id = ${correctedById}::uuid, corrected_at = ${correctedAt}
+         WHERE id = ${encounter.id}::uuid`;
+
+    await expect(stamp(editor.id, null)).rejects.toThrow(
+      /encounter_correction_stamped/,
+    );
+    await expect(stamp(null, nextStamp())).rejects.toThrow(
+      /encounter_correction_stamped/,
+    );
+    // Positive control: the same statement with both.
+    await stamp(editor.id, nextStamp());
+    const corrected = await prisma.encounter.findUniqueOrThrow({ where: { id: encounter.id } }); // prettier-ignore
+    expect(corrected.correctedById).toBe(editor.id);
+  });
 });
