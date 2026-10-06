@@ -13,6 +13,7 @@ import {
   ExamNotOrderableError,
   OrderEncounterNotFoundError,
   OrderEncounterNotOpenError,
+  OrderItemHasResultsError,
   OrderItemNotPendingError,
   OrderNotDiscardedError,
   OrderNotDraftError,
@@ -293,6 +294,9 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
 
       await tx.$queryRaw`SELECT id FROM "encounter" WHERE id = ${found.encounterId}::uuid FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM "service_order" WHERE id = ${query.orderId}::uuid FOR UPDATE`;
+      // ORD-131. The lines too, before their results are read: a report
+      // writing under them waits, or is waited for (ORD-124).
+      await tx.$queryRaw`SELECT id FROM "service_order_item" WHERE "service_order_id" = ${query.orderId}::uuid ORDER BY id FOR UPDATE`;
 
       const current = await tx.serviceOrder.findUniqueOrThrow({
         where: { id: query.orderId },
@@ -325,7 +329,8 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
    *
    * ⚠️ ONLY THE LIVE LINES. A line with its result in (`COMPLETED`) is not
    * cancelled, as ORD-008 refuses, and is not asked for again: it was
-   * answered. A cancelled one stays as it was.
+   * answered. Nor one with SOME result (ORD-131): its report is edited. A
+   * cancelled one stays as it was.
    *
    * ⚠️ THE LINES ARE COPIED AS THEY WERE FROZEN —code, name and tariff
    * concept— and not resolved again against the catalogue: what is corrected
@@ -371,8 +376,13 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
       if (!admitsNewOrders(current.encounter.status)) {
         throw new OrderEncounterNotOpenError(current.encounter.status);
       }
-      const live = current.items.filter((item) => isPending(item.status));
-      if (live.length === 0) throw new OrderItemNotPendingError();
+      const pending = current.items.filter((item) => isPending(item.status));
+      if (pending.length === 0) throw new OrderItemNotPendingError();
+      // ORD-131 (D-139.1). A pending line with some result stays as it was,
+      // like a completed one: its report is edited, not asked for again.
+      const answered = await linesWithResults(tx, pending.map((item) => item.id)); // prettier-ignore
+      const live = pending.filter((item) => !answered.has(item.id));
+      if (live.length === 0) throw new OrderItemHasResultsError();
 
       // ORD-007. The three columns, as `cancelItem` writes them.
       await tx.serviceOrderItem.updateMany({
@@ -675,6 +685,11 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
       if (item.serviceOrder.status !== 'ISSUED')
         throw new OrderNotIssuedError();
       if (!isPending(item.status)) throw new OrderItemNotPendingError();
+      // ORD-131 (D-139.1). Read under the line's lock, so a report writing
+      // under it at this instant has either committed or waits.
+      if ((await linesWithResults(tx, [item.id])).size > 0) {
+        throw new OrderItemHasResultsError();
+      }
 
       /**
        * ORD-007. BOTH COLUMNS, and neither alone is enough: the status is what
@@ -953,4 +968,19 @@ function toOrderView(row: OrderRow): ServiceOrderView {
       createdAt: item.createdAt,
     })),
   };
+}
+
+/** ORD-131. Which of these lines already have some result hanging from them. */
+async function linesWithResults(
+  tx: Prisma.TransactionClient,
+  itemIds: readonly string[],
+): Promise<Set<string>> {
+  const rows = await tx.observationResult.findMany({
+    where: { orderItemId: { in: [...itemIds] } },
+    select: { orderItemId: true },
+    distinct: ['orderItemId'],
+  });
+  return new Set(
+    rows.flatMap((row) => (row.orderItemId ? [row.orderItemId] : [])),
+  );
 }

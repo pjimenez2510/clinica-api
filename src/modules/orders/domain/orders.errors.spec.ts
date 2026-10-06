@@ -26,6 +26,7 @@ import {
   OrderOfAnotherPractitionerError,
   OrderEncounterNotOpenError,
   OrderItemNotMatchableError,
+  OrderItemHasResultsError,
   OrderItemNotPendingError,
   OrderNotFoundError,
   ReportAlreadyCorrectedError,
@@ -59,6 +60,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new ExamNotOrderableError(),
   new OrderEncounterNotOpenError('COMPLETED'),
   new OrderItemNotPendingError(),
+  new OrderItemHasResultsError(),
   new OrderNotDraftError(),
   new OrderNotDiscardedError(),
   new OrderNotIssuedError(),
@@ -156,6 +158,15 @@ describe('el contrato de errores de las órdenes', () => {
     expect(DOMAIN_ERROR_CODES).toContain('ORDER_OF_ANOTHER_PRACTITIONER');
     expect(error.userTitle).toBe(
       'Esta orden la firma otro profesional y sólo él puede corregirla. Puede anular sus exámenes y pedirlos en una orden suya',
+    );
+  });
+
+  it('ORD-131 anular un examen con resultados es un 409 con la salida dicha', () => {
+    const error = new OrderItemHasResultsError();
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.code).toBe('ORDER_ITEM_HAS_RESULTS');
+    expect(error.userTitle).toBe(
+      'Este examen ya tiene resultados y no se anula. Edite el informe o pídalo de nuevo',
     );
   });
 

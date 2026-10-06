@@ -3266,6 +3266,9 @@ model ObservationResult {
   notices CriticalResultNotice[]
 
   @@index([reportId])
+  /// ORD-131. What `service_order_item_completed_is_not_cancelled` asks on
+  /// every cancellation: does any result hang from this line?
+  @@index([orderItemId])
   @@index([analyteConceptId, observedAt(sort: Desc)])
   @@map("observation_result")
 }

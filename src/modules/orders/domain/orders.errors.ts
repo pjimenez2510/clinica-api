@@ -150,6 +150,22 @@ export class OrderItemNotPendingError extends ConflictError {
 }
 
 /**
+ * ORD-131 (D-139.1). The exam already has some result, even if it still waits
+ * for others: cancelling it would leave its values under a cancelled line and
+ * out of the attention's summary. The report is edited (ORD-119) or the exam
+ * is asked for again.
+ */
+export class OrderItemHasResultsError extends ConflictError {
+  readonly code = 'ORDER_ITEM_HAS_RESULTS';
+  override readonly userTitle =
+    'Este examen ya tiene resultados y no se anula. Edite el informe o pídalo de nuevo';
+
+  constructor() {
+    super('The order item already has results');
+  }
+}
+
+/**
  * ORD-096, ORD-098, ORD-099. The order is no longer a draft.
  *
  * 409: nothing sent is wrong. Somebody issued or discarded it — in another tab,
