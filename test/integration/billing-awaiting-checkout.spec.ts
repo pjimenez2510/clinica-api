@@ -66,6 +66,7 @@ interface AwaitingRow {
   clinicallyAttended: boolean;
   patient: Identity;
   account: { id: string; status: string } | null;
+  unchargedExams: number;
 }
 
 const HOUR_MS = 3_600_000;
@@ -428,6 +429,84 @@ describe('caja: lo pendiente de cobro (B10)', () => {
     for (const absent of [settled, voided, ongoing, elsewhere]) {
       expect(ids).not.toContain(absent);
     }
+  });
+
+  describe('BI-194 el examen emitido después de cerrar la cuenta (D-130.4)', () => {
+    /** An exam order of the visit, issued, with one line of `testCode`. */
+    async function anIssuedExam(encounterId: string, testCode = 'EX-BH') {
+      const system = await prisma.catalogSystem.upsert({ where: { code: 'EXAMENES' }, create: { code: 'EXAMENES', name: 'Exámenes' }, update: {} }); // prettier-ignore
+      const concept = await prisma.catalogConcept.create({ data: { systemId: system.id, code: `${testCode}-${randomUUID().slice(0, 8)}`, display: testCode, validFrom: windowStart } }); // prettier-ignore
+      const order = await prisma.serviceOrder.create({
+        data: { encounterId, siteId, orderedById: practitionerId, category: 'LABORATORY', requestedAt: now, items: { create: { conceptId: concept.id, testCode, testDisplay: testCode } } }, // prettier-ignore
+        include: { items: true },
+      });
+      await prisma.serviceOrder.update({ where: { id: order.id }, data: { status: 'ISSUED' } }); // prettier-ignore
+      return order.items[0]!.id;
+    }
+    const toCashier = (encounterId: string) =>
+      request(app.getHttpServer())
+        .post(
+          `/api/v1/billing/sites/${siteId}/encounters/${encounterId}/checkout`,
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .send({ payerId })
+        .expect(200);
+    const settle = (encounterId: string) =>
+      prisma.patientAccount.updateMany({ where: { encounterId, status: 'OPEN' }, data: { status: 'SETTLED', closedAt: now } }); // prettier-ignore
+    const rowOf = async (encounterId: string) =>
+      (await awaiting()).find((row) => row.encounterId === encounterId);
+
+    it('BI-194 vuelve a listar la atención liquidada con un examen emitido sin cargo, y la sigue listando con la cuenta nueva abierta', async () => {
+      const patient = await patientWithCedula();
+      const encounterId = await visit({ patientId: patient.id, status: 'DISCHARGED', endedAt: new Date(now.getTime() - HOUR_MS), written: true }); // prettier-ignore
+      await anIssuedExam(encounterId);
+      await toCashier(encounterId);
+      await settle(encounterId);
+      // Control positivo: todo cobrado y liquidada, no está.
+      expect(await rowOf(encounterId)).toBeUndefined();
+
+      // El médico emite el borrador después del cierre.
+      await anIssuedExam(encounterId);
+      expect(await rowOf(encounterId)).toMatchObject({ account: null, unchargedExams: 1 }); // prettier-ignore
+
+      // Caja la pasa otra vez: cuenta nueva abierta, examen propuesto.
+      await toCashier(encounterId);
+      expect(await rowOf(encounterId)).toMatchObject({ account: { status: 'OPEN' }, unchargedExams: 0 }); // prettier-ignore
+      await settle(encounterId);
+      expect(await rowOf(encounterId)).toBeUndefined();
+    });
+
+    it('BI-194 no la trae de vuelta un examen ya decidido, anulado o sin prestación', async () => {
+      const patient = await patientWithCedula();
+      const ended = (hours: number) => ({ patientId: patient.id, status: 'DISCHARGED' as const, endedAt: new Date(now.getTime() - hours * HOUR_MS), written: true }); // prettier-ignore
+
+      // Con el cargo anulado: caja ya lo decidió (BI-151).
+      const decided = await visit(ended(1));
+      await anIssuedExam(decided);
+      await toCashier(decided);
+      await prisma.chargeItem.updateMany({ where: { encounterId: decided, origin: 'EXAM' }, data: { status: 'CANCELLED', voidedAt: now, voidedById: authorId, voidReason: 'Cortesía' } }); // prettier-ignore
+      await settle(decided);
+
+      // La línea del examen anulada.
+      const cancelled = await visit(ended(2));
+      await account(cancelled, patient.id, 'SETTLED');
+      const line = await anIssuedExam(cancelled);
+      await prisma.serviceOrderItem.update({ where: { id: line }, data: { status: 'CANCELLED', completedAt: now, cancelledById: authorId } }); // prettier-ignore
+
+      // Un examen que el catálogo no sabe cobrar.
+      const unpriced = await visit(ended(3));
+      await account(unpriced, patient.id, 'SETTLED');
+      await anIssuedExam(unpriced, 'EX-SIN-PRESTACION');
+
+      // Control positivo: el mismo camino con un examen cobrable sí la trae.
+      const owed = await visit(ended(4));
+      await account(owed, patient.id, 'SETTLED');
+      await anIssuedExam(owed);
+
+      const ids = (await awaiting()).map((row) => row.encounterId);
+      expect(ids).toContain(owed);
+      for (const absent of [decided, cancelled, unpriced]) expect(ids).not.toContain(absent); // prettier-ignore
+    });
   });
 
   it('BI-181 lo más reciente primero', async () => {

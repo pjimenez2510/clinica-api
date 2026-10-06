@@ -179,8 +179,14 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
     // BI-190. Which ones, decided in SQL: the never-charged test is per row
     // and the older ones have no ceiling, so it cannot be a filter in memory
     // after a `take`.
-    const listed = await this.prisma.$queryRaw<{ id: string }[]>`
-      SELECT e.id
+    const listed = await this.prisma.$queryRaw<
+      { id: string; uncharged_exams: number }[]
+    >`
+      SELECT e.id,
+             CASE WHEN EXISTS (SELECT 1 FROM patient_account a
+                                WHERE a.encounter_id = e.id AND a.status = 'SETTLED')
+                  THEN ${unchargedExamCount(Prisma.sql`e.id`)}
+                  ELSE 0 END AS uncharged_exams
         FROM encounter e
        WHERE ${awaitingCheckout(query.siteId)}
          AND e.ended_at >= ${query.endedFrom}
@@ -210,6 +216,7 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
     // In sequence and not all at once: each interrupted visit costs eight
     // small questions, and firing them for every row together would take the
     // pool from everybody else at the counter.
+    const uncharged = new Map(listed.map((row) => [row.id, row.uncharged_exams])); // prettier-ignore
     const visits: AwaitingCheckout[] = [];
     for (const row of rows) {
       const status = row.status as EndedEncounterStatus;
@@ -224,6 +231,7 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
           (await hasClinicalAct(this.prisma, row.id)),
         patient: toPatientIdentity(row.patient),
         account: open ? { id: open.id, status: 'OPEN' } : null,
+        unchargedExams: uncharged.get(row.id) ?? 0,
       });
     }
     return visits;
@@ -277,13 +285,44 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
   }
 }
 
-/** BI-181. Ended at the site, and no account of THIS visit settled. */
+/**
+ * BI-181, BI-194. Ended at the site, and either no account of THIS visit
+ * settled, or — settled — still something to charge: an account open again,
+ * or an exam issued after the close that nothing charged (D-130.4).
+ */
 function awaitingCheckout(siteId: string): Prisma.Sql {
   return Prisma.sql`
     e.site_id = ${siteId}::uuid
     AND e.status::text IN (${Prisma.join([...ENDED_ENCOUNTER_STATUSES])})
-    AND NOT EXISTS (SELECT 1 FROM patient_account a
-                     WHERE a.encounter_id = e.id AND a.status = 'SETTLED')`;
+    AND (
+      NOT EXISTS (SELECT 1 FROM patient_account a
+                   WHERE a.encounter_id = e.id AND a.status = 'SETTLED')
+      OR EXISTS (SELECT 1 FROM patient_account a
+                  WHERE a.encounter_id = e.id AND a.status = 'OPEN')
+      OR ${unchargedExamCount(Prisma.sql`e.id`)} > 0
+    )`;
+}
+
+/**
+ * BI-194. The visit's exams caja could charge and nothing charged: an ISSUED
+ * order (ORD-100), a line not cancelled, a billable service in the catalogue
+ * — without one the visit would never leave the list — and no charge naming
+ * it in ANY status: a cancelled charge is a decision already taken, as
+ * `listChargedActs` reads it when proposing (BI-151).
+ */
+function unchargedExamCount(encounterId: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`(
+    SELECT count(*)::int
+      FROM service_order o
+      JOIN service_order_item i ON i.service_order_id = o.id
+      JOIN exam_definition d ON d.code = i.test_code
+     WHERE o.encounter_id = ${encounterId}
+       AND o.status = 'ISSUED'
+       AND i.status <> 'CANCELLED'
+       AND d.billable_service_id IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM charge_item c
+                        WHERE c.service_order_item_id = i.id)
+  )`;
 }
 
 /**
