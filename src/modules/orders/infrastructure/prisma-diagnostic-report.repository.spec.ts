@@ -297,6 +297,17 @@ describe('el adaptador del informe', () => {
     expect(await missing.repository.patientOfOrder(ORDER, 'all')).toBeUndefined(); // prettier-ignore
   });
 
+  it('ORD-036 una fecha de nacimiento posterior a la atención da edad desconocida, no negativa', async () => {
+    const born = (days: number) => new Date(`${addDays(clinicalDateOf(STARTED_AT), days)}T00:00:00Z`); // prettier-ignore
+    const row = (birthDate: Date) => ({ siteId: 'site-1', encounter: { patientId: 'chart-1', startedAt: STARTED_AT, patient: { sex: 'FEMALE', birthDate } } }); // prettier-ignore
+
+    const later = prismaDouble({ orderRow: row(born(1)) });
+    expect((await later.repository.patientOfOrder(ORDER, 'all'))?.ageDays).toBeNull(); // prettier-ignore
+    // Control positivo: nacido el mismo día tiene 0 días.
+    const sameDay = prismaDouble({ orderRow: row(born(0)) });
+    expect((await sameDay.repository.patientOfOrder(ORDER, 'all'))?.ageDays).toBe(0); // prettier-ignore
+  });
+
   it('ORD-040 pide a la base exactamente los resultados sin línea, dentro del alcance', async () => {
     const { repository, callTo } = prismaDouble();
 

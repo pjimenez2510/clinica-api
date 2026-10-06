@@ -434,10 +434,35 @@ describe('el registro y la corrección de un resultado', () => {
       requester,
     );
 
-    const [corrected, added] = reports.written[0]?.report.results ?? [];
+    const [corrected] = reports.written[0]?.report.results ?? [];
     expect(corrected).toMatchObject({ abnormalFlag: 'CRITICAL_HIGH', criticalLow: 40, criticalHigh: 350 }); // prettier-ignore
-    // Control positivo: lo que la corrección trae por primera vez usa el catálogo de hoy.
-    expect(added).toMatchObject({ analyteDisplay: HAEMOGLOBIN.name, criticalLow: null, criticalHigh: null }); // prettier-ignore
+  });
+
+  it('ORD-114 ORD-122 lo que la corrección trae por primera vez se clasifica con el catálogo de hoy', async () => {
+    catalogue.byCodes = () =>
+      Promise.resolve([
+        { ...examBh, analytes: [{ analyte: HAEMOGLOBIN, position: 1, isReflex: false }, { analyte: GLUCOSE, position: 2, isReflex: false }] }, // prettier-ignore
+      ]);
+    // El original sólo traía la hemoglobina, sin crítico.
+    const haemoglobin = { id: '1', orderItemId: ITEM_BH, analyteConceptId: null, analyteDisplay: HAEMOGLOBIN.name, valueNumeric: 13, valueText: null, valueCode: null, unit: 'g/dL', referenceLow: 12, referenceHigh: 15.5, referenceText: null, criticalLow: null, criticalHigh: null, abnormalFlag: 'NORMAL' as const, observedAt: new Date(), notices: [] }; // prettier-ignore
+    reports.existing.set('report-0', { ...aReport(), results: [haemoglobin] });
+
+    await service.correct(
+      {
+        reportId: 'report-0',
+        performedById: null,
+        issuedAt: new Date(),
+        results: [
+          { analyteDefinitionId: HAEMOGLOBIN.id, valueNumeric: 13 },
+          { analyteDefinitionId: GLUCOSE.id, valueNumeric: 420 },
+        ],
+      },
+      requester,
+    );
+
+    const [, glucose] = reports.written[0]?.report.results ?? [];
+    // Los críticos de hoy de la glucosa (40–400): no hay nada congelado que heredar.
+    expect(glucose).toMatchObject({ abnormalFlag: 'CRITICAL_HIGH', criticalLow: 40, criticalHigh: 400 }); // prettier-ignore
   });
 
   it('ORD-052 rechaza una segunda corrección del mismo informe', async () => {

@@ -270,12 +270,10 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
   /**
    * ORD-036. Who the order is for, and how old they were THAT DAY.
    *
-   * ⚠️ `age_days` COMES FROM THE ATTENTION AND THE SEX FROM THE CHART, and the
-   * asymmetry is deliberate. The age is frozen by `trg_encounter_freeze_age`
-   * and never recomputed, so a report transcribed two years later still
-   * classifies against the age the patient HAD; deriving it from
-   * `birth_date` at transcription time would silently reclassify neonatal
-   * results as adult ones.
+   * The age is counted to the ATTENTION's clinical date, so a report
+   * transcribed two years later still classifies against the age the patient
+   * HAD. It follows the chart's birth date: a corrected birth date applies to
+   * a later correction too (D-136 asks whether to freeze it instead).
    */
   async patientOfOrder(
     orderId: string,
@@ -308,11 +306,7 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
        * the 010 and the prescription print. Read as an age, it gave a woman of
        * 32 the ranges of a ten-day-old.
        */
-      ageDays:
-        clinicalDaySpan(
-          patient.birthDate.toISOString().slice(0, 10) as ClinicalDate,
-          clinicalDateOf(row.encounter.startedAt),
-        ) - 1,
+      ageDays: ageInDaysOn(patient.birthDate, row.encounter.startedAt),
     };
   }
 
@@ -1182,4 +1176,15 @@ function toNumber(value: Prisma.Decimal | null): number | null {
 function toResultId(value: string): bigint | undefined {
   if (!/^\d{1,19}$/.test(value)) return undefined;
   return BigInt(value);
+}
+
+/**
+ * ORD-036. Whole days from birth to the attention's clinical date in Ecuador;
+ * `null` when the birth date is after it — an age that cannot be is unknown,
+ * not «−1», which would have matched a range with only an upper bound.
+ */
+function ageInDaysOn(birthDate: Date, startedAt: Date): number | null {
+  const born = birthDate.toISOString().slice(0, 10) as ClinicalDate;
+  const span = clinicalDaySpan(born, clinicalDateOf(startedAt));
+  return span === 0 ? null : span - 1;
 }

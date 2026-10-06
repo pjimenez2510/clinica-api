@@ -446,9 +446,12 @@ export interface DiagnosticReportRepository {
   /**
    * ORD-036. Who the order is for, and how old they were that day.
    *
-   * ⚠️ READ FROM THE ATTENTION AND NOT FROM THE CHART. `encounter.age_days` is
-   * frozen; `patient.birth_date` is not, and deriving the age at transcription
-   * time would classify a two-year-old result against today's ranges.
+   * ⚠️ THE AGE ON THE DAY OF THE ATTENTION, in whole days, from the birth
+   * date and the attention's clinical date — never at transcription time,
+   * which would classify a two-year-old result against today's age. Not
+   * `encounter.age_days`, which is only the days left after years and months.
+   * `null` when the birth date falls after the attention (data to correct):
+   * no age-qualified range then applies (ORD-036).
    */
   patientOfOrder(
     orderId: string,

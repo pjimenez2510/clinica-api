@@ -187,6 +187,9 @@ export async function createEncounter(
 ) {
   return prisma.encounter.create({
     data: {
+      // fecha-fija: an instant in the past, whatever today is; the age it
+      // freezes (ORD-036) follows from `createPatient`'s fixed birth date.
+      // Pass `startedAt` when the test is about the age.
       startedAt: new Date('2026-09-14T14:00:00Z'),
       ...ids,
       // Both are required, and on purpose: the RDACAA report demands them for

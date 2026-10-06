@@ -35,6 +35,9 @@ import type {
  * the same haemoglobin arriving once in `g/dL` and once in `g/L`.
  */
 
+/** The scale of `observation_result.value_numeric`. */
+const STORED_DECIMALS = 6;
+
 /** What a transcriber sends for one determination. Exactly one is populated. */
 export interface SubmittedValue {
   valueNumeric?: number | null;
@@ -81,10 +84,20 @@ export function resolveResult(
   const frozen = { analyteId: analyte.id, analyteDisplay: analyte.name };
 
   if (analyte.valueType === 'NUMERIC') {
-    const value = submitted.valueNumeric;
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
+    const submittedValue = submitted.valueNumeric;
+    if (
+      typeof submittedValue !== 'number' ||
+      !Number.isFinite(submittedValue)
+    ) {
       throw new ResultValueTypeMismatchError(analyte.code, 'NUMERIC');
     }
+    /**
+     * ORD-122. Classified as it will be STORED: `value_numeric` is
+     * DECIMAL(18,6). Classifying the unrounded number, 400.0000004 against a
+     * critical of 400 was flagged critical, stored as 400, and refused by
+     * `observation_result_flag_agrees_with_critical_bounds`.
+     */
+    const value = Number(submittedValue.toFixed(STORED_DECIMALS));
     if (submitted.valueCode != null || submitted.valueText != null) {
       throw new ResultValueTypeMismatchError(analyte.code, 'NUMERIC');
     }
