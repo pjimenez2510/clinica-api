@@ -335,6 +335,12 @@ con los disparadores de la base.
   > **PA-16 del inventario.** La pantalla pide **una** confirmación al
   > publicar que dice la consecuencia con ese número. Una ficha con su
   > corrección cuenta una vez.
+  >
+  > **La consecuencia es la de D-083 §6:** lo consentido sigue valiendo con
+  > la versión que se aceptó (PD-013) y no hace falta volver a pedirlo con
+  > cada versión, salvo que el texto nuevo añada una finalidad (LOPDP art.
+  > 8). La pantalla lo dice así, con el número, y no «habrá que volver a
+  > tomarlos».
 - **PD-046** — CUANDO alguien con `patient:data-requests` edite una solicitud
   sin responder —derecho, qué pide o fecha de recepción—, el sistema DEBERÁ
   cambiarla en su fila, guardar la versión anterior con quién y cuándo
