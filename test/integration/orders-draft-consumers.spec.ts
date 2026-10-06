@@ -230,11 +230,25 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
     expect(discarded.number).toBeNull();
   });
 
-  it('ORD-116 deshacer el descarte devuelve el mismo borrador con sus líneas, aun con la atención cerrada', async () => {
+  it('ORD-116 deshacer el descarte devuelve el mismo borrador con sus líneas, y con la atención cerrada responde ORDER_ENCOUNTER_NOT_OPEN', async () => {
     const prisma = db();
     const { scene, draft } = await aDraft(prisma);
     const userId = (await prisma.practitioner.findUniqueOrThrow({ where: { id: scene.practitioner.id } })).userId; // prettier-ignore
     const { orders } = adapters(prisma);
+    await orders.discard({ orderId: draft.id, sites: 'all', userId });
+
+    // Positive control: with the attention live it comes back as it was.
+    const restored = await orders.restore({ orderId: draft.id, sites: 'all' });
+    expect(restored).toMatchObject({
+      id: draft.id,
+      status: 'DRAFT',
+      discardedAt: null,
+      number: null,
+    });
+    expect(restored.items.map((item) => item.id)).toEqual(
+      draft.items.map((item) => item.id),
+    );
+
     await orders.discard({ orderId: draft.id, sites: 'all', userId });
     await prisma.encounter.update({
       where: { id: scene.encounter.id },
@@ -245,17 +259,11 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
       },
     });
 
-    const restored = await orders.restore({ orderId: draft.id, sites: 'all' });
-
-    expect(restored).toMatchObject({
-      id: draft.id,
-      status: 'DRAFT',
-      discardedAt: null,
-      number: null,
-    });
-    expect(restored.items.map((item) => item.id)).toEqual(
-      draft.items.map((item) => item.id),
-    );
+    await expect(
+      orders.restore({ orderId: draft.id, sites: 'all' }),
+    ).rejects.toMatchObject({ code: 'ORDER_ENCOUNTER_NOT_OPEN' });
+    const stored = await prisma.serviceOrder.findUniqueOrThrow({ where: { id: draft.id } }); // prettier-ignore
+    expect(stored.status).toBe('DISCARDED');
   });
 
   it('ORD-116 sólo se restaura lo descartado: un borrador vivo o una emitida responden ORDER_NOT_DISCARDED', async () => {

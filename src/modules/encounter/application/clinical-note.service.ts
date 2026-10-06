@@ -41,6 +41,7 @@ import {
   type EncounterRepository,
 } from '../domain/encounter.repository';
 import {
+  AnthropometryPendingError,
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
@@ -338,6 +339,19 @@ export class ClinicalNoteService {
          */
         if (form.dischargesTheEncounter && !request.dischargeCondition) {
           throw new DischargeConditionRequiredError();
+        }
+
+        /**
+         * EN-217 (D-132 B). The taking was saved without the anthropometry
+         * the instructivo makes obligatory; the discharge is where it is
+         * demanded. Interrupting signs the 002 and does not discharge, so it
+         * does not ask (`trg_clinical_note_sign_needs_anthropometry` neither).
+         */
+        if (
+          form.dischargesTheEncounter &&
+          encounter.anthropometryPending.length > 0
+        ) {
+          throw new AnthropometryPendingError(encounter.anthropometryPending);
         }
 
         return {

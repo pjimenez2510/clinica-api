@@ -395,7 +395,7 @@ export class BmiIsDerivedError extends ValidationError {
   }
 }
 
-/** EN-063. How each measurement is named in a refusal. */
+/** EN-063, EN-217. How each measurement is named in a refusal. */
 const ANTHROPOMETRY_LABELS: Readonly<Record<string, string>> = {
   weightKg: 'Peso',
   heightCm: 'Talla',
@@ -403,36 +403,47 @@ const ANTHROPOMETRY_LABELS: Readonly<Record<string, string>> = {
 };
 
 /**
- * EN-063. Anthropometry that the instructivo makes obligatory is missing.
+ * EN-217 (D-132 B). Signing the consultation note — which discharges the
+ * attention — with the anthropometry the instructivo makes obligatory still
+ * missing (EN-063): weight, height and head circumference of an under-five,
+ * weight and height of a pregnant woman.
  *
- * Literal from the note to block D (instructivo, p. 44): *«los datos
- * antropométricos con \* es obligatorio para usuarios menores de 5 años o que
- * corresponda al grupo prioritario "Embarazadas"»*.
+ * AT THE SIGNATURE AND NOT AT THE TAKING. Refusing the whole taking lost the
+ * blood pressure of a pregnant woman who could not be weighed — the figure
+ * that warns of pre-eclampsia — or made somebody type an invented weight.
  *
- * ONE SENTENCE FOR BOTH CONDITIONS. Which one applied is not said: the
- * nurse already has the patient in front of her, and the fields named are
- * what she has to fill.
+ * AND AFTER THE DISCHARGE (D-134.3), a correction of the taking that would
+ * leave one missing: the signature demanded it, and the correction cannot
+ * take it away again. Same code — the screen does the same thing, fill the
+ * box — and a sentence of its own, because «para firmar la nota» says nothing
+ * to somebody correcting a taking whose note is already signed.
  *
- * THE MISSING FIELDS ARE NAMED ONE BY ONE: «faltan datos» sends a nurse round
+ * THE MISSING FIELDS ARE NAMED ONE BY ONE: «faltan datos» sends somebody round
  * a form where three boxes could be the one.
  */
-export class VitalsRequiredError extends ValidationError {
-  readonly code = 'VITALS_REQUIRED';
-  override readonly userTitle =
-    'Faltan medidas obligatorias en menores de 5 años y embarazadas';
+export class AnthropometryPendingError extends ValidationError {
+  readonly code = 'ANTHROPOMETRY_PENDING';
+  override readonly userTitle: string;
 
-  constructor(missing: readonly string[]) {
+  constructor(
+    missing: readonly string[],
+    moment: 'signature' | 'correctionAfterDischarge' = 'signature',
+  ) {
+    const afterDischarge = moment === 'correctionAfterDischarge';
     super(
-      `Mandatory anthropometry missing: ${missing.join(', ')}`,
+      `Mandatory anthropometry missing ${afterDischarge ? 'after a correction of a discharged attention' : 'at signature'}: ${missing.join(', ')}`,
       { missing: missing.join(',') },
       missing.map((field) => ({
         field,
-        code: 'VITALS_REQUIRED',
+        code: 'ANTHROPOMETRY_PENDING',
         // Named, because the screen joins the messages of several fields into
         // one line, and three identical sentences say nothing.
-        message: `${ANTHROPOMETRY_LABELS[field] ?? field}: obligatorio en menores de 5 años y embarazadas`,
+        message: `${ANTHROPOMETRY_LABELS[field] ?? field}: ${afterDischarge ? 'obligatorio tras el alta, no se puede quitar' : 'obligatorio para firmar la nota'}`,
       })),
     );
+    this.userTitle = afterDischarge
+      ? 'La atención ya tiene el alta: la corrección no puede dejar sin peso/talla obligatorios'
+      : 'Falta peso/talla: obligatorio para firmar la nota';
   }
 }
 
@@ -610,71 +621,80 @@ export class AmendmentReasonRequiredError extends ValidationError {
 }
 
 /**
- * EN-166 (D-077). An attention annulled without a written reason.
- *
- * Demanded in the service and not only in the DTO: «esta atención no debió
- * existir» without a reason is a door for making a consultation disappear,
- * and the database refuses it a third time
- * (`encounter_entered_in_error_states_who_why_when`).
+ * EN-166, EN-218. What still stands in the attention, one paper at a time:
+ * each is retracted by its own door before the attention can say it never
+ * existed. Drafts are not here: the annulment discards them in the same act.
  */
-export class EncounterAnnulmentReasonRequiredError extends ValidationError {
-  readonly code = 'ENCOUNTER_ANNULMENT_REASON_REQUIRED';
-  override readonly userTitle =
-    'Indique por qué anula la atención. Queda escrito con su nombre y la hora, y lo escrito en ella no se borra';
-  override readonly fieldErrors = [
-    {
-      field: 'reason',
-      code: 'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
-      message: 'Indique el motivo de la anulación',
-    },
-  ];
-
-  constructor() {
-    super('Encounter annulment requested without a reason');
-  }
+export interface LivePaper {
+  kind:
+    | 'prescriptions'
+    | 'orders'
+    | 'signedNotes'
+    | 'certificates'
+    | 'referrals'
+    | 'interconsultations';
+  id: string;
+  /** The paper's own number, when it has one: how the user finds it. */
+  number: number | null;
 }
 
-/** EN-166, D-099 §1. How many of each act still stands in the attention. */
-export interface LiveActs {
-  prescriptions: number;
-  orders: number;
-  signedNotes: number;
-  certificates: number;
-  referrals: number;
-  interconsultations: number;
+/** How each paper is named, with what still makes it stand. */
+const LIVE_PAPER_LABELS: Readonly<
+  Record<LivePaper['kind'], { article: string; noun: string; state: string }>
+> = {
+  prescriptions: { article: 'la', noun: 'receta', state: 'emitida' },
+  orders: { article: 'la', noun: 'orden de exámenes', state: 'con exámenes pendientes' }, // prettier-ignore
+  signedNotes: { article: 'la', noun: 'nota', state: 'firmada' },
+  certificates: { article: 'el', noun: 'certificado', state: 'sin anular' },
+  referrals: { article: 'la', noun: 'referencia', state: 'emitida' },
+  interconsultations: { article: 'la', noun: 'interconsulta', state: 'pedida' },
+};
+
+function paperName(paper: LivePaper): string {
+  const label = LIVE_PAPER_LABELS[paper.kind];
+  return paper.number === null
+    ? label.noun
+    : `${label.noun} N.º ${paper.number}`;
 }
 
 /**
- * EN-166, D-099 §1. The attention already left something in the chart —a
- * prescription active or in draft, an order still pending, a signed note, a
+ * EN-166, D-099 §1, EN-218. The attention already left something in the chart
+ * —a prescription issued, an order with exams pending, a signed note, a
  * certificate not revoked, a referral or an interconsultation (D-103)— and it
  * is retracted by its own door before the attention is annulled.
+ *
+ * EACH PAPER BY NAME (AT-22): the sentence says which, with its number, and
+ * `errors[]` carries one entry per paper (`acts.<kind>.<id>`) so the screen
+ * offers its own «Anular» or «Corregir» beside it. Numbers and kinds only: no
+ * patient, no drug, no exam.
  */
 export class EncounterHasLiveActsError extends ConflictError {
   readonly code = 'ENCOUNTER_HAS_LIVE_ACTS';
   override readonly userTitle: string;
 
-  constructor(acts: LiveActs) {
-    // Counts only: no patient, no drug, no exam reaches a log.
-    super('Encounter holds acts that have to be retracted first', { ...acts });
-    const parts = [
-      acts.prescriptions > 0
-        ? `${acts.prescriptions} receta(s) activa(s) o en borrador`
-        : null,
-      acts.orders > 0 ? `${acts.orders} orden(es) pendiente(s)` : null,
-      acts.signedNotes > 0 ? `${acts.signedNotes} nota(s) firmada(s)` : null,
-      acts.certificates > 0
-        ? `${acts.certificates} certificado(s) sin anular`
-        : null,
-      acts.referrals > 0 ? `${acts.referrals} referencia(s)` : null,
-      acts.interconsultations > 0
-        ? `${acts.interconsultations} interconsulta(s)`
-        : null,
-    ].filter(Boolean);
+  constructor(papers: readonly LivePaper[]) {
+    const counts: Record<string, number> = {};
+    for (const paper of papers) counts[paper.kind] = (counts[paper.kind] ?? 0) + 1; // prettier-ignore
+    super(
+      'Encounter holds acts that have to be retracted first',
+      counts,
+      papers.map((paper) => {
+        const label = LIVE_PAPER_LABELS[paper.kind];
+        const name = paperName(paper);
+        return {
+          field: `acts.${paper.kind}.${paper.id}`,
+          code: 'ENCOUNTER_HAS_LIVE_ACTS',
+          message: `${name[0]!.toUpperCase()}${name.slice(1)} ${label.state}`,
+        };
+      }),
+    );
+    const named = papers.map(
+      (paper) => `${LIVE_PAPER_LABELS[paper.kind].article} ${paperName(paper)}`,
+    );
     // A referral already seen elsewhere or an answered interconsultation has
     // no way back (D-103): the sentence says so instead of sending the user
     // to a door that does not exist (4.ª revisión, m3).
-    this.userTitle = `La atención tiene ${parts.join(', ')}. Retire primero lo que se pueda retirar; si algo ya no se puede, esta atención no se anula`;
+    this.userTitle = `Antes de anular la atención, anule ${named.join(', ')}; si alguno ya no se puede anular, esta atención no se anula`;
   }
 }
 
@@ -697,14 +717,26 @@ export class AppointmentArrivalNotRecordedError extends ConflictError {
  * ELSE. Interrupting signs the drafts of whoever interrupts (D-082); a draft of
  * another author would stay unsigned inside a terminal attention, where nobody
  * could sign it any more — the «texto sin responsable» D-082 rejected.
+ *
+ * EN-218. And annulling discards the drafts of whoever annuls: a prescription
+ * or an order still in draft of ANOTHER prescriber or signer is theirs to
+ * issue or discard (PR-100, D-123.1). Same code — the way out is the same,
+ * the other person acts first — and a sentence for each act.
  */
 export class EncounterHasOthersDraftsError extends ConflictError {
   readonly code = 'ENCOUNTER_HAS_OTHERS_DRAFTS';
-  override readonly userTitle =
-    'La atención tiene una nota en borrador de otra persona. Que la firme o la descarte antes de interrumpir';
+  override readonly userTitle: string;
 
-  constructor() {
-    super('Encounter holds a draft note of another author');
+  constructor(act: 'interruption' | 'annulment' = 'interruption') {
+    super(
+      act === 'annulment'
+        ? 'Encounter holds a draft prescription or order of another practitioner'
+        : 'Encounter holds a draft note of another author',
+    );
+    this.userTitle =
+      act === 'annulment'
+        ? 'La atención tiene una receta u orden en borrador de otro profesional. Que la emita o la descarte antes de anular'
+        : 'La atención tiene una nota en borrador de otra persona. Que la firme o la descarte antes de interrumpir';
   }
 }
 
@@ -1078,15 +1110,18 @@ export class DiagnosisNotFoundError extends NotFoundError {
 }
 
 /**
- * EN-181. Removing a diagnosis once the consultation note is signed states
- * why: what was signed already said something with it in front, and whoever
- * reads the chart has to know why it is gone. Demanded in the service, and by
- * `trg_encounter_diagnosis_retraction_admits` a second time.
+ * EN-214 (D-126.3, D-117.9, D-117.14). Removing a diagnosis whose code a paper
+ * in a third party's hands printed — an issued certificate or receta, in force
+ * or annulled — states why: the paper does not change, and the history has to
+ * explain why it says something else. Chosen from a list on the screen.
+ * Demanded in the service, and by `trg_encounter_diagnosis_retraction_admits`
+ * a second time. A signed note or the discharge no longer owe it (EN-213):
+ * the screen confirms once.
  */
 export class DiagnosisRetractionReasonRequiredError extends ValidationError {
   readonly code = 'DIAGNOSIS_RETRACTION_REASON_REQUIRED';
   override readonly userTitle =
-    'Indique por qué quita el diagnóstico: ya consta en lo firmado o impreso de esta atención';
+    'Indique por qué quita el diagnóstico: un certificado, una receta o una orden ya entregados lo imprimieron';
   override readonly fieldErrors = [
     {
       field: 'reason',
@@ -1097,25 +1132,8 @@ export class DiagnosisRetractionReasonRequiredError extends ValidationError {
 
   constructor() {
     super(
-      'Diagnosis retraction without a reason after a signature, the discharge or a printed certificate',
+      'Diagnosis retraction without a reason while an issued paper printed it',
     );
-  }
-}
-
-/**
- * EN-182. An order with exams still alive reads the attention's diagnoses when
- * it is shown, so removing one — or changing which is the principal — would
- * change a paper the lab already holds. The way out is real: cancel the exams
- * (ORD-007). A receta is no longer the reason: it froze its diagnoses when it
- * was issued (PR-026).
- */
-export class DiagnosisCitedByIssuedDocumentError extends ConflictError {
-  readonly code = 'DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT';
-  override readonly userTitle =
-    'Esta atención tiene exámenes pedidos con estos diagnósticos. Anule primero los exámenes en «Exámenes» y después corrija el diagnóstico';
-
-  constructor() {
-    super('A live service order of the encounter cites its diagnoses');
   }
 }
 
@@ -1136,18 +1154,108 @@ export class DiagnosisLastAfterDischargeError extends ConflictError {
 }
 
 /**
- * EN-188 (revisión clínica G2). After the discharge the principal changes only
- * by removing the wrong one WITH ITS REASON — the archive keeps it with rank 1
- * — and then naming another where there is none. Reordering would change what
- * is reported without either.
+ * EN-183, EN-188. After the discharge the attention keeps a principal: the
+ * RDACAA reads the cause of the consultation from it, and nobody fixes it at
+ * the signature any more. The way out is EN-183's: mark another one as
+ * principal — the old one moves behind — and then unmark or remove this one.
+ * Nothing is promoted on its own: which diagnosis is the cause is the
+ * doctor's to say.
  */
-export class DiagnosisPrimaryAfterDischargeError extends ConflictError {
-  readonly code = 'DIAGNOSIS_PRIMARY_AFTER_DISCHARGE';
+export class DiagnosisPrimaryRequiredAfterDischargeError extends ConflictError {
+  readonly code = 'DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE';
   override readonly userTitle =
-    'La atención ya tiene el alta: para cambiar el principal, quite el principal con su motivo y después marque el que corresponde';
+    'La atención ya tiene el alta y necesita un diagnóstico principal: marque otro como principal antes de quitar o desmarcar éste';
 
   constructor() {
-    super('The principal of a discharged encounter is not reordered');
+    super('A discharged encounter keeps a principal diagnosis');
+  }
+}
+
+/**
+ * EN-213. «Deshacer» a removal that was already undone, or whose code was
+ * recorded again meanwhile: bringing it back would leave the same diagnosis
+ * twice. The list on screen is stale.
+ */
+export class DiagnosisNotRestorableError extends ConflictError {
+  readonly code = 'DIAGNOSIS_NOT_RESTORABLE';
+  override readonly userTitle =
+    'Ese diagnóstico ya se recuperó o se volvió a registrar. Actualice la lista';
+
+  constructor() {
+    super('The removed diagnosis was already restored or recorded again');
+  }
+}
+
+/**
+ * EN-212 (D-127, D-117.14). Changing the CODE of a diagnosis that a paper in
+ * a third party's hands printed — an issued certificate (EN-189) or an issued
+ * receta (PR-026), in force or annulled — states why: the paper does not
+ * change, and the history has to explain why it says something else. Chosen
+ * from a list on the screen (D-126.3); demanded here and by
+ * `trg_encounter_diagnosis_edit_admits`.
+ */
+export class DiagnosisEditReasonRequiredError extends ValidationError {
+  readonly code = 'DIAGNOSIS_EDIT_REASON_REQUIRED';
+  override readonly userTitle =
+    'Indique por qué cambia el código: un certificado, una receta o una orden ya entregados lo imprimieron';
+  override readonly fieldErrors = [
+    {
+      field: 'reason',
+      code: 'DIAGNOSIS_EDIT_REASON_REQUIRED',
+      message: 'Elija por qué cambia el código',
+    },
+  ];
+
+  constructor() {
+    super('Diagnosis code change without a reason while a paper printed it');
+  }
+}
+
+/**
+ * EN-212, D-117.13. After the discharge the coding that goes to the RDACAA is
+ * corrected by whoever may sign the history at the attention's site
+ * (`record:sign`), as the amendment of the note is. Before it, whoever codes.
+ * A 403 and not a 422: nothing in the request is wrong, the caller is.
+ */
+export class DiagnosisCorrectionRequiresSignatureError extends ForbiddenError {
+  readonly code = 'DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE';
+  override readonly userTitle =
+    'La atención ya tiene el alta: corrige sus diagnósticos quien firma historia clínica en esta sede';
+
+  constructor() {
+    super('Correcting the coding after the discharge requires record:sign');
+  }
+}
+
+/**
+ * EN-212, EN-213, D-117.15. A maternity rest of the attention that is not
+ * annulled stands on an obstetric diagnosis (CER-049): taking the last one
+ * away — or recoding it outside the chapter — would leave an IESS paper with
+ * nothing under it. The way out is to annul the rest.
+ */
+export class DiagnosisSupportsMaternityRestError extends ConflictError {
+  readonly code = 'DIAGNOSIS_SUPPORTS_MATERNITY_REST';
+  override readonly userTitle =
+    'Este diagnóstico sostiene el reposo de maternidad emitido en la atención: anule primero el reposo y después corrija';
+
+  constructor() {
+    super('The obstetric diagnosis supports a maternity rest in force');
+  }
+}
+
+/**
+ * EN-212, EN-213, D-117.16. The attention was already reported to the RDACAA
+ * (`reported_at`, EN-111), and nothing resends it: a correction would leave
+ * the ministry with the old coding and the chart with another. Refused until
+ * the resend exists.
+ */
+export class EncounterAlreadyReportedError extends ConflictError {
+  readonly code = 'ENCOUNTER_ALREADY_REPORTED';
+  override readonly userTitle =
+    'Esta atención ya se reportó al RDACAA y la corrección no llegaría al Ministerio. Pida a administración que gestione la corrección del envío';
+
+  constructor() {
+    super('The encounter was already reported to the RDACAA');
   }
 }
 

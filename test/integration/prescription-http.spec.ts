@@ -696,6 +696,32 @@ describe('la receta por HTTP', () => {
     await post(`/prescriptions/${id}/issue`, doctorToken).expect(200);
   });
 
+  it('PR-107 deshacer el descarte exige la atención viva: con la atención anulada o cerrada responde 409 PRESCRIPTION_ENCOUNTER_NOT_OPEN', async () => {
+    const composed = await composeAsDoctor();
+    const id = composed.prescription.id;
+    // Positive control: with the attention live, the same door gives it back.
+    await post(`/prescriptions/${id}/discard`, doctorToken).expect(200);
+    await post(`/prescriptions/${id}/restore`, doctorToken).expect(200);
+    await post(`/prescriptions/${id}/discard`, doctorToken).expect(200);
+
+    const encounter = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
+    await prisma.encounter.update({
+      where: { id: encounterId },
+      data: {
+        status: 'COMPLETED',
+        endedAt: new Date(encounter.startedAt.getTime() + 3_600_000),
+        dischargeCondition: 'ALIVE',
+      },
+    });
+
+    const refused = await post(`/prescriptions/${id}/restore`, doctorToken).expect(409); // prettier-ignore
+    expect((refused.body as Problem).code).toBe(
+      'PRESCRIPTION_ENCOUNTER_NOT_OPEN',
+    );
+    const stored = await prisma.prescription.findUniqueOrThrow({ where: { id } }); // prettier-ignore
+    expect(stored.status).toBe('DISCARDED');
+  });
+
   it('PR-107 sólo se restaura lo descartado: un borrador vivo o una receta emitida responden 409', async () => {
     const composed = await composeAsDoctor();
     const id = composed.prescription.id;
@@ -1074,12 +1100,13 @@ describe('la receta por HTTP', () => {
     await post(path, doctorToken, { items: [aLine()] }).expect(201);
   });
 
-  it('PR-026 EN-182 el documento de una receta emitida dice los diagnósticos de su emisión, aunque después se corrijan', async () => {
+  it('PR-026 EN-182 EN-214 el documento de una receta emitida dice los diagnósticos de su emisión, aunque después se corrijan', async () => {
     const composed = await composeAsDoctor();
     await post(`/prescriptions/${composed.prescription.id}/issue`, doctorToken).expect(200); // prettier-ignore
     const [diagnosis] = await prisma.encounterDiagnosis.findMany({ where: { encounterId } }); // prettier-ignore
 
-    await post(`/encounters/${encounterId}/diagnoses/${diagnosis!.id}/retract`, doctorToken).expect(204); // prettier-ignore
+    // EN-214: the pharmacy holds a paper that printed it, so it states why.
+    await post(`/encounters/${encounterId}/diagnoses/${diagnosis!.id}/retract`, doctorToken, { reason: 'Código mal elegido' }).expect(204); // prettier-ignore
 
     const document = await get(`/prescriptions/${composed.prescription.id}`, doctorToken).expect(200); // prettier-ignore
     expect(

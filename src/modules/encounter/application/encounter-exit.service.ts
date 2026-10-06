@@ -131,7 +131,7 @@ export class EncounterExitService {
           substituteReason,
         };
       },
-      requester.userId,
+      { userId: requester.userId, practitionerId: identity.practitionerId },
     );
 
     await this.audit.record({

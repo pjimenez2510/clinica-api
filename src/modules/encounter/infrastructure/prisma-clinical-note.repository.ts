@@ -16,10 +16,12 @@ import type {
   ClinicalNoteView,
   NewClinicalNote,
   NoteEncounterRead,
+  SigningEncounterRead,
   NoteQuery,
   NotesOfEncounterQuery,
   SignaturePlan,
 } from '../domain/clinical-note.repository';
+import type { AnthropometryField } from '../domain/vital-signs';
 import type { DischargeCondition, EncounterStatus } from '../domain/encounter';
 import type { SiteScopeFilter } from '../domain/encounter.repository';
 
@@ -46,6 +48,10 @@ const NOTE_SELECT = {
   content: true,
   authorId: true,
   signedById: true,
+  // EN-216. Who signed it, by name: the screen says «Enmendada: … · quién».
+  signedBy: {
+    select: { user: { select: { firstName: true, lastName: true } } },
+  },
   signedAt: true,
   contentHash: true,
   supersedesId: true,
@@ -261,7 +267,7 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
     query: NoteQuery,
     decide: (
       note: ClinicalNoteView,
-      encounter: NoteEncounterRead,
+      encounter: SigningEncounterRead,
     ) => SignaturePlan,
   ): Promise<ClinicalNoteView> {
     return this.prisma.$transaction(async (tx) => {
@@ -272,13 +278,17 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
       await tx.$queryRaw`
         SELECT 1 FROM "encounter" WHERE "id" = ${note.encounterId}::uuid FOR UPDATE
       `;
-      const encounter = await requireEncounter(
-        tx,
-        query.encounterId,
-        query.sites,
-      );
+      const row = await requireEncounter(tx, query.encounterId, query.sites);
+      // EN-217. The same function `trg_clinical_note_sign_needs_anthropometry`
+      // asks at commit, so the refusal is a sentence and not a class code.
+      const [pending] = await tx.$queryRaw<{ fields: string[] | null }[]>`
+        SELECT encounter_anthropometry_pending(${row.id}::uuid) AS fields`;
+      const encounter: SigningEncounterRead = {
+        ...toEncounterRead(row),
+        anthropometryPending: (pending?.fields ?? []) as AnthropometryField[],
+      };
 
-      const plan = decide(note, toEncounterRead(encounter));
+      const plan = decide(note, encounter);
 
       const signed = await tx.clinicalNote.updateMany({
         where: { id: note.id, status: 'DRAFT' },
@@ -293,7 +303,7 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
       if (signed.count === 0) {
         // Signed by somebody else between the read and the write: re-read and
         // let the policy answer about the row as it now is.
-        decide(await requireNote(tx, query), toEncounterRead(encounter));
+        decide(await requireNote(tx, query), encounter);
       }
 
       if (plan.dischargesTheEncounter) {
@@ -313,7 +323,7 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
           },
         });
 
-        await stampSubjectStatus(tx, encounter.agendaEntryId, 'NOTE_SIGNED');
+        await stampSubjectStatus(tx, row.agendaEntryId, 'NOTE_SIGNED');
       }
 
       return toNoteView(
@@ -595,6 +605,9 @@ function toNoteView(row: NoteRow): ClinicalNoteView {
     content: (row.content ?? {}) as NoteContent,
     authorId: row.authorId,
     signedById: row.signedById,
+    signedByName: row.signedBy
+      ? `${row.signedBy.user.firstName} ${row.signedBy.user.lastName}`
+      : null,
     signedAt: row.signedAt,
     contentHash: row.contentHash,
     supersedesId: row.supersedesId,

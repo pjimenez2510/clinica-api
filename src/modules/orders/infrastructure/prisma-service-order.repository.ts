@@ -277,8 +277,11 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
    * says it was discarded, and `service_order_guard_status` lets this one
    * transition through and nothing else with it.
    *
-   * ⚠️ THE ATTENTION'S STATE IS NOT JUDGED, as it is not on the discard: the
-   * draft returns where it was, and issuing it is still judged by ORD-005.
+   * ⚠️ THE ATTENTION HAS TO ADMIT ORDERS (ORD-005), judged on the locked
+   * row: annulling an attention discards its drafts (EN-218), and undoing
+   * that afterwards would put a draft back into an attention that says it
+   * never existed (revisión del 06-10-2026, M2). Discarding is still allowed
+   * in a closed attention (ORD-099): it adds nothing.
    */
   async restore(query: OrderQuery): Promise<ServiceOrderView> {
     const row = await this.prisma.$transaction(async (tx) => {
@@ -293,9 +296,12 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
 
       const current = await tx.serviceOrder.findUniqueOrThrow({
         where: { id: query.orderId },
-        select: { status: true },
+        select: { status: true, encounter: { select: { status: true } } },
       });
       if (current.status !== 'DISCARDED') throw new OrderNotDiscardedError();
+      if (!admitsNewOrders(current.encounter.status)) {
+        throw new OrderEncounterNotOpenError(current.encounter.status);
+      }
 
       return tx.serviceOrder.update({
         where: { id: query.orderId },

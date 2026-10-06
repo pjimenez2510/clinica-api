@@ -668,9 +668,10 @@ export const DOMAIN_ERROR_CODES = [
   //     `trg_encounter_vitals_bmi` lo sobrescribe, así que descartarlo en
   //     silencio dejaría a quien lo tecleó creyendo que su número es el que
   //     está en el expediente.
-  //   * `VITALS_REQUIRED` (422) — falta la antropometría que el instructivo
-  //     hace obligatoria en menores de 5 años, evaluada con la EDAD CONGELADA
-  //     de la atención y no con la de hoy.
+  //   * `ANTHROPOMETRY_PENDING` (422) — EN-217 (D-132 B). Se firma la 002
+  //     sin la antropometría que el instructivo hace obligatoria en menores
+  //     de 5 años y embarazadas. La toma ya no se rechaza (`VITALS_REQUIRED`
+  //     se retiró): se guarda, y la firma lo exige; la base también.
   //   * `CLINICAL_NOTE_NOT_FOUND` (404), `UNKNOWN_CLINICAL_FORM` (422) y
   //     `NOTE_CONTENT_INCOMPLETE` (422) — la nota no existe en esa atención,
   //     el formulario no está configurado, o falta una de las secciones que el
@@ -684,18 +685,19 @@ export const DOMAIN_ERROR_CODES = [
   //     enmienda sin motivo, y la enmienda de un borrador, de una versión ya
   //     sustituida o de una retractada. El motivo se exige en el DTO, en el
   //     servicio y en la base, por lo mismo que `CANCELLATION_REASON_REQUIRED`.
-  // EN-166, EN-167 (D-077, D-080, D-082). Anular e interrumpir una atención
-  // exigen motivo escrito —e interrumpir, además, el origen—. 422 por campo:
+  // EN-166, EN-167 (D-077, D-080, D-082). Interrumpir una atención exige
+  // motivo y origen; anularla ya no exige motivo (EN-218, D-126.2:
+  // `ENCOUNTER_ANNULMENT_REASON_REQUIRED` se retiró). 422 por campo:
   // es el formulario el que se corrige. Y 409 cuando hay un borrador de otra
   // persona que la interrupción dejaría sin firmar (D-085 §2); 409 si la
   // atención tiene actos vivos que retractar antes de anularla (D-099 §1), y
   // 409 si la cita no tiene registrada la llegada (D-099 §2).
-  'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
   'ENCOUNTER_HAS_LIVE_ACTS',
   'ENCOUNTER_HAS_OTHERS_DRAFTS',
   'APPOINTMENT_ARRIVAL_NOT_RECORDED',
   'ENCOUNTER_INTERRUPTION_REASON_REQUIRED',
   'AMENDMENT_REASON_REQUIRED',
+  'ANTHROPOMETRY_PENDING',
   'APPOINTMENT_NOT_ATTENDABLE',
   'BMI_IS_DERIVED',
   'CLINICAL_NOTE_NOT_FOUND',
@@ -715,7 +717,6 @@ export const DOMAIN_ERROR_CODES = [
   'PRACTITIONER_PROFILE_REQUIRED',
   'SUBSTITUTE_CLOSURE_REASON_REQUIRED',
   'UNKNOWN_CLINICAL_FORM',
-  'VITALS_REQUIRED',
   // ── H3: el bloque K del RDACAA — diagnósticos y procedimientos ──────────
   //   * `CONCEPT_WRONG_CATALOGUE` (422) — el concepto existe y es de otro
   //     catálogo. La clave foránea apunta a `catalog_concept`, que guarda
@@ -739,20 +740,40 @@ export const DOMAIN_ERROR_CODES = [
   'DIAGNOSIS_PRIMARY_TAKEN',
   //   * `DIAGNOSIS_NOT_FOUND` (404) — EN-180, EN-183. No es de esa atención o ya
   //     se quitó: el mismo para las dos, como `ENCOUNTER_NOT_FOUND`.
-  //   * `DIAGNOSIS_RETRACTION_REASON_REQUIRED` (422) — EN-181, EN-188, EN-189.
-  //     Con una nota firmada, el alta o un certificado que imprimió el código,
-  //     quitar un diagnóstico dice por qué; la base lo exige también.
-  //   * `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` (409) — EN-182. Una orden con
-  //     exámenes vivos lee los diagnósticos al mostrarse: primero se anulan.
+  //   * `DIAGNOSIS_RETRACTION_REASON_REQUIRED` (422) — EN-214, EN-189.
+  //     Con un certificado, una receta o una orden emitidos que imprimieron el código,
+  //     quitar un diagnóstico dice por qué; la base lo exige también. Desde
+  //     EN-213 la nota firmada y el alta ya no lo piden (D-126.2).
+  //   * `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` se retiró con ORD-121 (D-117.5):
+  //     la orden congela sus diagnósticos al emitirse y ya ningún papel lee los
+  //     de la atención; quitar lo que imprimió pide el motivo (EN-214).
   'DIAGNOSIS_NOT_FOUND',
   'DIAGNOSIS_RETRACTION_REASON_REQUIRED',
-  'DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT',
-  //   * `DIAGNOSIS_LAST_AFTER_DISCHARGE` (409) y
-  //     `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` (409) — EN-188. Tras el alta no se
-  //     deja la atención sin diagnóstico, y el principal cambia quitándolo con
-  //     su motivo, no reordenando. La base lo exige también.
+  //   * `DIAGNOSIS_LAST_AFTER_DISCHARGE` (409) — EN-188. Tras el alta no se
+  //     deja la atención sin diagnóstico. La base lo exige también.
+  //   * `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` se retiró con EN-212 (D-127): tras
+  //     el alta el principal cambia de un clic, con su versión.
   'DIAGNOSIS_LAST_AFTER_DISCHARGE',
-  'DIAGNOSIS_PRIMARY_AFTER_DISCHARGE',
+  //   * `DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE` (409) — EN-183, EN-188
+  //     (revisión del 06-10-2026). Tras el alta no se desmarca ni se quita el
+  //     principal sin que otro quede principal: la salida es marcar otro
+  //     (EN-183). Código nuevo y no el retirado de G2, que decía otra cosa.
+  'DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE',
+  //   * `DIAGNOSIS_EDIT_REASON_REQUIRED` (422) — EN-212 (D-117.14). Cambiar el
+  //     código que imprimió un certificado, una receta o una orden emitidos dice por qué.
+  //   * `DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE` (403) — EN-212 (D-117.13).
+  //     Tras el alta corrige la codificación quien tiene `record:sign`.
+  //   * `DIAGNOSIS_SUPPORTS_MATERNITY_REST` (409) — EN-212 (D-117.15). El
+  //     diagnóstico obstétrico de un reposo de maternidad no anulado.
+  //   * `ENCOUNTER_ALREADY_REPORTED` (409) — EN-212 (D-117.16). La atención ya
+  //     se reportó al RDACAA y nada la reenvía.
+  'DIAGNOSIS_EDIT_REASON_REQUIRED',
+  'DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE',
+  'DIAGNOSIS_SUPPORTS_MATERNITY_REST',
+  'ENCOUNTER_ALREADY_REPORTED',
+  //   * `DIAGNOSIS_NOT_RESTORABLE` (409) — EN-213. «Deshacer» lo que ya se
+  //     recuperó, o cuyo código volvió a registrarse.
+  'DIAGNOSIS_NOT_RESTORABLE',
   // ── H6: alergias visibles durante la consulta ──────────────────────────
   //   * `PATIENT_ALLERGY_NOT_FOUND` (404) — EN-082. La alergia no está en esa
   //     ficha ni en ninguna que esa ficha absorbiera. **Uno solo para «no

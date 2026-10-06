@@ -111,6 +111,7 @@ model User {
   overbookingsAuthorised AgendaEntry[] @relation("OverbookingAuthoriser")
   encountersAnnulled     Encounter[]   @relation("EncounterAnnuller")
   encountersDiscontinued Encounter[]   @relation("EncounterDiscontinuer")
+  encountersCorrected    Encounter[]   @relation("EncounterCorrector")
 
   /// PA-039: the priority group records this person wrote, and the ones they
   /// closed. Two relations because they are two acts by two people at two
@@ -136,6 +137,8 @@ model User {
   allergiesRecorded  PatientAllergy[]               @relation("AllergyRecorder")
   allergiesRefuted   PatientAllergy[]               @relation("AllergyRefuter")
   diagnosesRetracted EncounterDiagnosisRetraction[] @relation("DiagnosisRetractor")
+  /// EN-213. The removed diagnoses this account brought back («Deshacer»).
+  diagnosesRestored  EncounterDiagnosisRetraction[] @relation("DiagnosisRestorer")
   vitalsRecorded     EncounterVitals[]              @relation("VitalsRecorder")
   vitalsCorrected    EncounterVitals[]              @relation("VitalsCorrector")
   historyRecorded    PatientHistory[]               @relation("HistoryRecorder")
@@ -183,6 +186,10 @@ model User {
   /// ORD-062. The critical-value notices this account recorded having given.
   criticalNoticesGiven  CriticalResultNotice[] @relation("CriticalNoticeGiver")
   criticalNoticesEdited CriticalResultNotice[] @relation("CriticalNoticeEditor")
+
+  /// EN-212, D-127. The diagnoses this account edited last.
+  diagnosesEdited            EncounterDiagnosis[]           @relation("DiagnosisEditor")
+  diagnosesEditedThenRemoved EncounterDiagnosisRetraction[] @relation("DiagnosisRetractionEditor")
 
   /// EN-210, D-127. The versions this account replaced by editing.
   recordVersionsChanged RecordVersion[] @relation("RecordVersionChanger")
@@ -2518,6 +2525,14 @@ model Encounter {
   /// (`encounter_exit_substitute_reason_belongs_to_an_exit`).
   exitSubstituteReason String? @map("exit_substitute_reason") @db.VarChar(500)
 
+  /// EN-215 (D-127). Who last corrected the modality or the first-time /
+  /// subsequent mark, and when: the stamp `trg_encounter_record_version`
+  /// demands of that correction, which keeps the previous attention in
+  /// `record_version`. Both or neither (`encounter_correction_stamped`).
+  correctedById String?   @map("corrected_by_id") @db.Uuid
+  correctedBy   User?     @relation("EncounterCorrector", fields: [correctedById], references: [id], onDelete: Restrict)
+  correctedAt   DateTime? @map("corrected_at") @db.Timestamptz(6)
+
   /// When this encounter was included in an RDACAA/PRAS submission. NULL means
   /// not yet reported, and drives the pending-report partial index.
   reportedAt DateTime? @map("reported_at") @db.Timestamptz(6)
@@ -2682,6 +2697,17 @@ model EncounterDiagnosis {
 
   recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
 
+  /// EN-212, D-127. Who edited it last, and when: the stamp
+  /// `record_version_archive` demands on every edit. The earlier version is in
+  /// `record_version`.
+  editedById String?   @map("edited_by_id") @db.Uuid
+  editedBy   User?     @relation("DiagnosisEditor", fields: [editedById], references: [id], onDelete: Restrict)
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+
+  /// EN-212. Why the CODE changed, when a paper in a third party's hands
+  /// printed the previous one (`encounter_diagnosis_edit_admits`).
+  editReason String? @map("edit_reason") @db.VarChar(500)
+
   @@index([encounterId])
   @@index([cie10Code, recordedAt])
   @@map("encounter_diagnosis")
@@ -2717,6 +2743,22 @@ model EncounterDiagnosisRetraction {
   retractedBy   User     @relation("DiagnosisRetractor", fields: [retractedById], references: [id], onDelete: Restrict)
   /// Required by the archive trigger when the encounter has a signed note.
   reason        String?  @db.VarChar(500)
+
+  /// EN-213. «Deshacer»: who brought it back, when, and as which new row of
+  /// `encounter_diagnosis`. Written once (`encounter_diagnosis_retraction_frozen`);
+  /// not a foreign key, because the restored row can be removed again.
+  restoredAt   DateTime? @map("restored_at") @db.Timestamptz(6)
+  restoredById String?   @map("restored_by_id") @db.Uuid
+  restoredBy   User?     @relation("DiagnosisRestorer", fields: [restoredById], references: [id], onDelete: Restrict)
+  restoredAsId String?   @map("restored_as_id") @db.Uuid
+
+  /// EN-212. The last edit of the row as it was removed — who, when and, when a
+  /// paper printed the code it replaced, why. Compared with the live row by
+  /// `encounter_diagnosis_retraction_matches`, so the reason is not lost with it.
+  editedById String?   @map("edited_by_id") @db.Uuid
+  editedBy   User?     @relation("DiagnosisRetractionEditor", fields: [editedById], references: [id], onDelete: Restrict)
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+  editReason String?   @map("edit_reason") @db.VarChar(500)
 
   @@index([encounterId])
   @@map("encounter_diagnosis_retraction")
@@ -3018,6 +3060,13 @@ model ServiceOrder {
   priority ServiceOrderPriority @default(ROUTINE)
 
   clinicalNoteText String? @map("clinical_note_text") @db.Text
+
+  /// ORD-121 (D-117.5). The diagnoses the order printed, `[{code, display}]`,
+  /// frozen by the DATABASE when it is issued (`a_service_order_freeze_diagnoses`)
+  /// and never rewritten; NULL while it is a draft
+  /// (`service_order_diagnoses_frozen_when_issued`). The attention's own can
+  /// be corrected afterwards without changing what the laboratory holds.
+  diagnoses Json?
 
   /// Denormalised count maintained by trigger. It exists only so the "pending
   /// results" worklist can be a partial index: index predicates cannot contain

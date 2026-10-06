@@ -10,7 +10,6 @@ import {
   EncounterNotFoundError,
   PatientChartNotOpenError,
   PractitionerProfileRequiredError,
-  VitalsRequiredError,
 } from '../domain/encounter.errors';
 import type {
   ChartHistoryQuery,
@@ -167,9 +166,12 @@ class FakeEncounters implements EncounterRepository {
     return Promise.resolve(null);
   }
 
-  /** EN-063. The pregnancy half is proven against the database. */
-  isPregnantOn(): Promise<boolean> {
-    return Promise.resolve(false);
+  /** EN-217. What the database would say is missing; proven against it. */
+  pending: ('weightKg' | 'heightCm' | 'headCircumferenceCm')[] = [];
+  anthropometryPending(): Promise<
+    ('weightKg' | 'heightCm' | 'headCircumferenceCm')[]
+  > {
+    return Promise.resolve(this.pending);
   }
 
   findVitalsVersions(): Promise<VitalsVersionView[]> {
@@ -427,18 +429,24 @@ describe('los casos de uso de la atención', () => {
     ]);
   });
 
-  it('EN-063 exige la antropometría del menor de 5 años con la edad CONGELADA', async () => {
+  it('EN-217 guarda la toma aunque falte la antropometría obligatoria, y dice qué falta', async () => {
     /**
-     * EN-008: what was true THAT DAY. Judged against today's date instead, a
-     * report reprocessed next year would refuse rows it accepted — the
-     * reasoning PA-005 wrote down for «intersexual en menores de un año».
+     * EN-008: what was true THAT DAY. D-132 B: the taking is saved and the
+     * missing anthropometry is said; it is demanded when the note is signed.
      */
     repository.stored = anEncounter({ ageYears: 0, ageMonths: 3, ageDays: 2 });
+    repository.pending = ['heightCm', 'headCircumferenceCm'];
 
-    await expect(
-      service.recordVitals('encounter-1', { weightKg: 6.2 }, requester),
-    ).rejects.toBeInstanceOf(VitalsRequiredError);
-    expect(repository.savedVitals).toEqual([]);
+    const saved = await service.recordVitals(
+      'encounter-1',
+      { weightKg: 6.2 },
+      requester,
+    );
+    expect(repository.savedVitals).toHaveLength(1);
+    expect(saved.anthropometryPending).toEqual([
+      'heightCm',
+      'headCircumferenceCm',
+    ]);
   });
 
   it('EN-066 registra los signos sin que exista ninguna nota clínica', async () => {

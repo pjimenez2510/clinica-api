@@ -4,17 +4,23 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   ConceptWrongCatalogueError,
-  DiagnosisCitedByIssuedDocumentError,
   DiagnosisConceptNotInForceError,
   DiagnosisNotFoundError,
   DiagnosisPrimaryTakenError,
   DiagnosisRetractionReasonRequiredError,
   DiagnosisLastAfterDischargeError,
-  DiagnosisPrimaryAfterDischargeError,
+  DiagnosisPrimaryRequiredAfterDischargeError,
+  DiagnosisCorrectionRequiresSignatureError,
+  DiagnosisNotRestorableError,
+  DiagnosisEditReasonRequiredError,
+  DiagnosisSupportsMaternityRestError,
   EncounterAlreadyClosedError,
+  EncounterAlreadyReportedError,
   EncounterNotFoundError,
+  PractitionerNotLicensedError,
+  PractitionerProfileRequiredError,
 } from '../domain/encounter.errors';
-import type { CareModality, EncounterStatus } from '../domain/encounter';
+import type { EncounterStatus } from '../domain/encounter';
 import {
   acceptsDiagnosisCorrection,
   acceptsNewClinicalContent,
@@ -26,10 +32,18 @@ import {
   nextRankAfter,
 } from '../domain/diagnosis';
 import type {
+  AfterDischargeRefusal,
   ClinicalCodingRepository,
   CodingQuery,
+  CorrectionAuthority,
+  DiagnosisEdit,
+  DiagnosisQuery,
+  DiagnosisRestoration,
   DiagnosisRetraction,
+  DiagnosisVersionView,
   DiagnosisView,
+  EncounterCodingCorrection,
+  EncounterCodingView,
   NewDiagnosis,
   PrimaryChange,
   RetractedDiagnosisView,
@@ -93,6 +107,7 @@ const DIAGNOSIS_SELECT = {
   notifiable: true,
   note: true,
   recordedAt: true,
+  editedAt: true,
 } satisfies Prisma.EncounterDiagnosisSelect;
 
 /** The row `DIAGNOSIS_SELECT` yields, derived from it so the two cannot drift. */
@@ -140,7 +155,15 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
   /** EN-040 to EN-049. Writes one diagnosis. */
   async addDiagnosis(diagnosis: NewDiagnosis): Promise<DiagnosisView> {
     const row = await this.prisma.$transaction(async (tx) => {
-      await requireEncounterInScope(tx, diagnosis.encounterId, diagnosis.sites);
+      // EN-215 (D-117.12). After the discharge too: the right code is added,
+      // by whoever may correct then (D-117.13), never once reported (D-117.16).
+      const status = await requireEncounterInScope(
+        tx,
+        diagnosis.encounterId,
+        diagnosis.sites,
+        acceptsDiagnosisCorrection,
+      );
+      await refuseCorrection(tx, diagnosis.encounterId, status, diagnosis);
 
       const concept = await conceptForEncounter(
         tx,
@@ -256,29 +279,45 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       },
       select: { diagnoses: true },
     });
-    return [
-      ...new Set(
-        rows.flatMap((row) =>
-          Array.isArray(row.diagnoses)
-            ? row.diagnoses.flatMap((printed) =>
-                typeof printed === 'object' &&
-                printed !== null &&
-                'code' in printed &&
-                typeof printed.code === 'string'
-                  ? [printed.code]
-                  : [],
-              )
-            : [],
-        ),
-      ),
-    ];
+    return [...new Set(rows.flatMap((row) => printedCodes(row.diagnoses)))];
   }
 
   /**
-   * EN-180 to EN-182, EN-188, EN-189. Archive, then delete — the order the
+   * EN-214 (D-117.14). What the issued recetas froze (PR-026), annulled ones
+   * included: the pharmacy may hold the paper.
+   */
+  async codesPrintedOnPrescriptions(query: CodingQuery): Promise<string[]> {
+    const rows = await this.prisma.prescription.findMany({
+      where: {
+        encounterId: query.encounterId,
+        issuedAt: { not: null },
+        encounter: siteFilter(query.sites),
+      },
+      select: { diagnoses: true },
+    });
+    return [...new Set(rows.flatMap((row) => printedCodes(row.diagnoses)))];
+  }
+
+  /**
+   * ORD-121. What the issued orders froze: the laboratory holds the paper.
+   */
+  async codesPrintedOnOrders(query: CodingQuery): Promise<string[]> {
+    const rows = await this.prisma.serviceOrder.findMany({
+      where: {
+        encounterId: query.encounterId,
+        status: 'ISSUED',
+        encounter: siteFilter(query.sites),
+      },
+      select: { diagnoses: true },
+    });
+    return [...new Set(rows.flatMap((row) => printedCodes(row.diagnoses)))];
+  }
+
+  /**
+   * EN-180, EN-188, EN-213, EN-214. Archive, then delete — the order the
    * database demands.
    *
-   * The two refusals are asked here, under the attention's lock, so they are
+   * The refusals are asked here, under the attention's lock, so they are
    * sentences: the triggers raise a class code whose name never travels.
    */
   async retractDiagnosis(retraction: DiagnosisRetraction): Promise<void> {
@@ -289,12 +328,22 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         retraction.sites,
         acceptsDiagnosisCorrection,
       );
-      await requireDiagnosisOf(
+      await refuseCorrection(tx, retraction.encounterId, status, retraction);
+      const target = await requireDiagnosisOf(
         tx,
         retraction.encounterId,
         retraction.diagnosisId,
       );
-      await refuseWhenCitedByIssuedDocument(tx, retraction.encounterId);
+
+      // D-117.15. No reason makes it acceptable: the rest is annulled first.
+      const [maternity] = await tx.$queryRaw<{ refused: boolean }[]>`
+        SELECT (cie10_is_obstetric(d.cie10_code)
+                AND encounter_diagnosis_supports_maternity_rest(
+                      d.encounter_id, d.id)) AS refused
+          FROM encounter_diagnosis d
+         WHERE d.id = ${retraction.diagnosisId}::uuid
+      `;
+      if (maternity?.refused) throw new DiagnosisSupportsMaternityRestError();
 
       // EN-188. A discharged attention keeps one: nothing new can be coded.
       if (hasDischarge(status)) {
@@ -302,11 +351,15 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           where: { encounterId: retraction.encounterId },
         });
         if (left <= 1) throw new DiagnosisLastAfterDischargeError();
+        // EN-183, EN-188. Nor without a principal: another is marked first.
+        if (isPrimary(target.rank)) {
+          throw new DiagnosisPrimaryRequiredAfterDischargeError();
+        }
       }
 
       if (retraction.reason === null) {
-        // The same function the archive's trigger calls: a signed note, the
-        // discharge, or a certificate that printed the code.
+        // The same function the archive's trigger calls: an issued
+        // certificate or receta that printed the code (EN-214).
         const [row] = await tx.$queryRaw<{ needs: boolean }[]>`
           SELECT encounter_diagnosis_retraction_needs_reason(
                    d.encounter_id, d.cie10_code) AS needs
@@ -316,14 +369,19 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         if (row?.needs) throw new DiagnosisRetractionReasonRequiredError();
       }
 
+      // EN-212. The last edit goes with it — who, when and why — or the
+      // reason for recoding what a paper printed is lost with the live row
+      // (`encounter_diagnosis_retraction_matches` demands it).
       await tx.$executeRaw`
         INSERT INTO "encounter_diagnosis_retraction"
           ("id", "encounter_id", "concept_id", "cie10_code", "cie10_display",
            "certainty", "occurrence", "rank", "notifiable", "note",
-           "recorded_at", "retracted_by_id", "reason")
+           "recorded_at", "retracted_by_id", "reason",
+           "edited_by_id", "edited_at", "edit_reason")
         SELECT "id", "encounter_id", "concept_id", "cie10_code", "cie10_display",
                "certainty", "occurrence", "rank", "notifiable", "note",
-               "recorded_at", ${retraction.retractedById}::uuid, ${retraction.reason}
+               "recorded_at", ${retraction.retractedById}::uuid, ${retraction.reason},
+               "edited_by_id", "edited_at", "edit_reason"
           FROM "encounter_diagnosis"
          WHERE "id" = ${retraction.diagnosisId}::uuid
       `;
@@ -334,11 +392,14 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
   }
 
   /**
-   * EN-183. The previous principal moves first: with
+   * EN-183, EN-212. The previous principal moves first: with
    * `encounter_diagnosis_one_primary` there can never be two, not even for
-   * the length of one statement.
+   * the length of one statement. Both moves are edits, stamped, so both
+   * previous ranks are versions (D-127). After the discharge too: the
+   * principal changes in one click (EN-212 retired EN-188's G2).
    */
   async makePrimary(change: PrimaryChange): Promise<DiagnosisView[]> {
+    const now = new Date();
     await this.prisma.$transaction(async (tx) => {
       const status = await requireEncounterInScope(
         tx,
@@ -346,34 +407,14 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         change.sites,
         acceptsDiagnosisCorrection,
       );
+      await refuseCorrection(tx, change.encounterId, status, change);
       const target = await requireDiagnosisOf(
         tx,
         change.encounterId,
         change.diagnosisId,
       );
       if (isPrimary(target.rank)) return;
-      await refuseWhenCitedByIssuedDocument(tx, change.encounterId);
-
-      const inUse = await tx.encounterDiagnosis.findMany({
-        where: { encounterId: change.encounterId },
-        select: { id: true, rank: true },
-      });
-      const previous = inUse.find((row) => isPrimary(row.rank));
-      // EN-188. After the discharge only an EMPTY principal is filled: the
-      // wrong one leaves through the archive, with its reason.
-      if (previous && hasDischarge(status)) {
-        throw new DiagnosisPrimaryAfterDischargeError();
-      }
-      if (previous) {
-        await tx.encounterDiagnosis.update({
-          where: { id: previous.id },
-          data: { rank: nextRankAfter(inUse.map((row) => row.rank)) },
-        });
-      }
-      await tx.encounterDiagnosis.update({
-        where: { id: target.id },
-        data: { rank: 1 },
-      });
+      await promote(tx, change.encounterId, target, change, now);
     });
 
     return this.diagnosesOf({
@@ -382,13 +423,299 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
     });
   }
 
-  /** EN-180. The archive of one attention, narrowed through the attention. */
+  /**
+   * EN-212. Edits in place under the attention's lock. The refusals the
+   * triggers also make are asked here first, in the order a doctor can act
+   * on them, so each is a sentence: `trg_encounter_diagnosis_edit_admits`
+   * raises a class code whose name a client cannot branch on.
+   */
+  async editDiagnosis(edit: DiagnosisEdit): Promise<DiagnosisView> {
+    const now = new Date();
+    const row = await this.prisma.$transaction(async (tx) => {
+      const status = await requireEncounterInScope(
+        tx,
+        edit.encounterId,
+        edit.sites,
+        acceptsDiagnosisCorrection,
+      );
+      await refuseCorrection(tx, edit.encounterId, status, edit);
+      const current = await tx.encounterDiagnosis.findFirst({
+        where: { id: edit.diagnosisId, encounterId: edit.encounterId },
+        select: { ...DIAGNOSIS_SELECT },
+      });
+      if (!current) throw new DiagnosisNotFoundError();
+
+      let identity: Prisma.EncounterDiagnosisUncheckedUpdateInput = {};
+      if (
+        edit.conceptId !== undefined &&
+        edit.conceptId !== current.conceptId
+      ) {
+        const concept = await conceptForEncounter(
+          tx,
+          edit.encounterId,
+          edit.conceptId,
+        );
+        // EN-040, EN-042: the same two refusals as registering one.
+        if (concept === undefined || concept.system_code !== CIE10) {
+          throw new ConceptWrongCatalogueError(CIE10);
+        }
+        if (!concept.in_force) throw new DiagnosisConceptNotInForceError();
+
+        if (concept.concept_code !== current.cie10Code) {
+          const [paper] = await tx.$queryRaw<
+            { printed: boolean; maternity: boolean }[]
+          >`
+            SELECT encounter_diagnosis_code_on_paper(
+                     ${edit.encounterId}::uuid, ${current.cie10Code}) AS printed,
+                   (cie10_is_obstetric(${current.cie10Code})
+                    AND NOT cie10_is_obstetric(${concept.concept_code})
+                    AND encounter_diagnosis_supports_maternity_rest(
+                          ${edit.encounterId}::uuid, ${current.id}::uuid)) AS maternity
+          `;
+          // D-117.15 first: no reason makes it acceptable.
+          if (paper?.maternity) throw new DiagnosisSupportsMaternityRestError();
+          if (paper?.printed && edit.reason === null) {
+            throw new DiagnosisEditReasonRequiredError();
+          }
+        }
+        identity = {
+          conceptId: edit.conceptId,
+          // EN-041. Copied from the concept read in THIS transaction; the
+          // display is the database's on an UPDATE in any case.
+          cie10Code: concept.concept_code,
+          cie10Display: concept.concept_display,
+        };
+      }
+
+      let rank: number | undefined;
+      if (edit.primary === true && !isPrimary(current.rank)) {
+        await promote(tx, edit.encounterId, current, edit, now);
+        // `promote` already wrote the rank, stamped; the rest goes below.
+      } else if (edit.primary === false && isPrimary(current.rank)) {
+        // EN-183, EN-188. After the discharge the attention keeps one: the
+        // way out is marking another, which moves this one behind.
+        if (hasDischarge(status)) {
+          throw new DiagnosisPrimaryRequiredAfterDischargeError();
+        }
+        const inUse = await tx.encounterDiagnosis.findMany({
+          where: { encounterId: edit.encounterId },
+          select: { rank: true },
+        });
+        rank = nextRankAfter(inUse.map((r) => r.rank));
+      }
+
+      const changes: Prisma.EncounterDiagnosisUncheckedUpdateInput = {
+        ...identity,
+        ...(edit.certainty !== undefined && edit.certainty !== current.certainty
+          ? { certainty: edit.certainty }
+          : {}),
+        ...(edit.occurrence !== undefined &&
+        edit.occurrence !== current.occurrence
+          ? { occurrence: edit.occurrence }
+          : {}),
+        ...(rank === undefined ? {} : { rank }),
+      };
+      // Nothing to change is not an edit: no version of an identical row.
+      if (Object.keys(changes).length === 0) {
+        return tx.encounterDiagnosis.findUniqueOrThrow({
+          where: { id: current.id },
+          select: DIAGNOSIS_SELECT,
+        });
+      }
+
+      const [stamped] = await tx.$queryRaw<{ edited_at: Date | null }[]>`
+        SELECT edited_at FROM encounter_diagnosis
+         WHERE id = ${current.id}::uuid
+         FOR UPDATE`;
+      return tx.encounterDiagnosis.update({
+        where: { id: current.id },
+        data: {
+          ...changes,
+          // The reason belongs to THIS edit: never carried over.
+          editReason: 'cie10Code' in identity ? edit.reason : null,
+          editedById: edit.editedById,
+          editedAt: stampAfter(stamped?.edited_at ?? null, now),
+        },
+        select: DIAGNOSIS_SELECT,
+      });
+    });
+
+    return toDiagnosisView(row);
+  }
+
+  /**
+   * EN-212. The versions `record_version_archive` kept, read through the SAME
+   * mapping as the current diagnosis. The reason of each replacement is on
+   * the row that replaced it: the next version, or the current one — the
+   * live row, or its archive once it was removed (the archive keeps the last
+   * edit, `encounter_diagnosis_retraction_matches`).
+   *
+   * EN-213. «Deshacer» brings a diagnosis back as a NEW row (`restored_as_id`
+   * on the archive of the old one): the versions of the earlier rows follow,
+   * newest first, so undoing a removal does not hide what was corrected
+   * before it. Each keeps the `version` number of its own row.
+   */
+  async diagnosisVersions(
+    query: DiagnosisQuery,
+  ): Promise<DiagnosisVersionView[]> {
+    const where = {
+      id: query.diagnosisId,
+      encounterId: query.encounterId,
+      encounter: siteFilter(query.sites),
+    };
+    const [live, archived] = await Promise.all([
+      this.prisma.encounterDiagnosis.findFirst({
+        where,
+        select: { editReason: true },
+      }),
+      this.prisma.encounterDiagnosisRetraction.findFirst({
+        where,
+        select: { editReason: true },
+      }),
+    ]);
+    if (live === null && archived === null) throw new DiagnosisNotFoundError();
+
+    // The rows this one was restored from, each found by the archive that
+    // names it as what it came back as. Bounded: a cycle is impossible (each
+    // restoration is a new id) and a lineage this long is not a real one.
+    const lineage = [
+      {
+        id: query.diagnosisId,
+        headReason: live?.editReason ?? archived?.editReason ?? null,
+      },
+    ];
+    for (let depth = 0; depth < 50; depth += 1) {
+      const earlier = await this.prisma.encounterDiagnosisRetraction.findFirst({
+        where: {
+          restoredAsId: lineage[lineage.length - 1]!.id,
+          encounterId: query.encounterId,
+        },
+        select: { id: true, editReason: true },
+      });
+      if (earlier === null) break;
+      lineage.push({ id: earlier.id, headReason: earlier.editReason });
+    }
+
+    const views: DiagnosisVersionView[] = [];
+    for (const row of lineage) {
+      const versions = await this.prisma.recordVersion.findMany({
+        where: { resourceType: 'encounter_diagnosis', resourceId: row.id },
+        orderBy: { version: 'desc' },
+        select: {
+          version: true,
+          data: true,
+          changedAt: true,
+          changedBy: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+      versions.forEach((version, index) => {
+        const replacing =
+          index === 0
+            ? row.headReason
+            : (versions[index - 1]!.data as unknown as DiagnosisSnapshot)
+                .edit_reason;
+        views.push({
+          version: version.version,
+          replacedBy: {
+            id: version.changedBy.id,
+            name: `${version.changedBy.firstName} ${version.changedBy.lastName}`,
+          },
+          replacedAt: version.changedAt,
+          reason: replacing ?? null,
+          diagnosis: toDiagnosisView(
+            diagnosisRowFromSnapshot(
+              version.data as unknown as DiagnosisSnapshot,
+            ),
+          ),
+        });
+      });
+    }
+    return views;
+  }
+
+  /**
+   * EN-213. «Deshacer». The diagnosis comes back as a NEW row: the archive's
+   * id is the old row's, and a second removal will need it. Everything else
+   * as it was, including when it was recorded; the rank, coherent with what
+   * happened meanwhile.
+   */
+  async restoreDiagnosis(
+    restoration: DiagnosisRestoration,
+  ): Promise<DiagnosisView> {
+    const now = new Date();
+    const row = await this.prisma.$transaction(async (tx) => {
+      await requireEncounterInScope(
+        tx,
+        restoration.encounterId,
+        restoration.sites,
+      );
+      const archived = await tx.encounterDiagnosisRetraction.findFirst({
+        where: {
+          id: restoration.retractionId,
+          encounterId: restoration.encounterId,
+        },
+      });
+      if (!archived) throw new DiagnosisNotFoundError();
+      if (archived.restoredAt !== null) throw new DiagnosisNotRestorableError();
+
+      const live = await tx.encounterDiagnosis.findMany({
+        where: { encounterId: restoration.encounterId },
+        select: { rank: true, cie10Code: true },
+      });
+      // Recorded again meanwhile: it would be there twice.
+      if (live.some((d) => d.cie10Code === archived.cie10Code)) {
+        throw new DiagnosisNotRestorableError();
+      }
+      const ranks = live.map((d) => d.rank);
+      // A principal comes back as principal only if the place is still free.
+      const rank =
+        isPrimary(archived.rank) && ranks.some(isPrimary)
+          ? nextRankAfter(ranks)
+          : archived.rank;
+
+      const restored = await tx.encounterDiagnosis.create({
+        data: {
+          encounterId: archived.encounterId,
+          conceptId: archived.conceptId,
+          cie10Code: archived.cie10Code,
+          cie10Display: archived.cie10Display,
+          certainty: archived.certainty,
+          occurrence: archived.occurrence,
+          rank,
+          notifiable: archived.notifiable,
+          note: archived.note,
+          recordedAt: archived.recordedAt,
+        },
+        select: DIAGNOSIS_SELECT,
+      });
+      // `encounter_diagnosis_retraction_frozen` admits this once, and only
+      // towards that very diagnosis back on its attention.
+      await tx.encounterDiagnosisRetraction.update({
+        where: { id: archived.id },
+        data: {
+          restoredAt: now,
+          restoredById: restoration.restoredById,
+          restoredAsId: restored.id,
+        },
+      });
+      return restored;
+    });
+
+    return toDiagnosisView(row);
+  }
+
+  /**
+   * EN-180, EN-213. The archive of one attention, narrowed through the
+   * attention, without what was brought back: «Deshacer» means it was not
+   * removed after all (the archive keeps saying it was, and who undid it).
+   */
   async retractedDiagnosesOf(
     query: CodingQuery,
   ): Promise<RetractedDiagnosisView[]> {
     const rows = await this.prisma.encounterDiagnosisRetraction.findMany({
       where: {
         encounterId: query.encounterId,
+        restoredAt: null,
         encounter: siteFilter(query.sites),
       },
       orderBy: [{ retractedAt: 'asc' }, { id: 'asc' }],
@@ -416,19 +743,53 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
     }));
   }
 
-  /** EN-187. The modality of a live attention, corrected under its lock. */
-  async setCareModality(
-    query: CodingQuery,
-    careModality: CareModality,
-  ): Promise<CareModality> {
+  /** EN-187, EN-215. The attention's coding, corrected under its lock. */
+  async correctEncounterCoding(
+    correction: EncounterCodingCorrection,
+  ): Promise<EncounterCodingView> {
+    const now = new Date();
     return this.prisma.$transaction(async (tx) => {
-      await requireEncounterInScope(tx, query.encounterId, query.sites);
-      const updated = await tx.encounter.update({
-        where: { id: query.encounterId },
-        data: { careModality },
-        select: { careModality: true },
+      const status = await requireEncounterInScope(
+        tx,
+        correction.encounterId,
+        correction.sites,
+        acceptsDiagnosisCorrection,
+      );
+      await refuseCorrection(tx, correction.encounterId, status, correction);
+
+      const current = await tx.encounter.findUniqueOrThrow({
+        where: { id: correction.encounterId },
+        select: { careModality: true, visitSequence: true, correctedAt: true },
       });
-      return updated.careModality;
+      const changes = {
+        ...(correction.careModality !== undefined &&
+        correction.careModality !== current.careModality
+          ? { careModality: correction.careModality }
+          : {}),
+        ...(correction.visitSequence !== undefined &&
+        correction.visitSequence !== current.visitSequence
+          ? { visitSequence: correction.visitSequence }
+          : {}),
+      };
+      // Nothing to change is not an edit: no version of an identical row.
+      if (Object.keys(changes).length === 0) {
+        return {
+          careModality: current.careModality,
+          visitSequence: current.visitSequence,
+        };
+      }
+
+      // EN-210. `trg_encounter_record_version` keeps the previous attention
+      // and refuses a correction whose stamp did not move.
+      return tx.encounter.update({
+        where: { id: correction.encounterId },
+        data: {
+          ...changes,
+          correctedById: correction.editedById,
+          correctedAt: stampAfter(current.correctedAt, now),
+        },
+        select: { careModality: true, visitSequence: true },
+      });
     });
   }
 
@@ -557,17 +918,86 @@ async function requireDiagnosisOf(
 }
 
 /**
- * EN-182. The same function the triggers call, so the sentence and the
- * guarantee cannot disagree about which papers read the diagnoses.
+ * EN-183, EN-212. Makes `target` the principal: the previous principal, if
+ * any, moves behind the last rank in use FIRST (never two principals), and
+ * both rows are stamped edits.
  */
-async function refuseWhenCitedByIssuedDocument(
+async function promote(
   tx: Prisma.TransactionClient,
   encounterId: string,
+  target: { id: string },
+  authority: CorrectionAuthority,
+  now: Date,
 ): Promise<void> {
-  const [row] = await tx.$queryRaw<{ cited: boolean }[]>`
-    SELECT encounter_has_document_citing_diagnoses(${encounterId}::uuid) AS cited
+  const inUse = await tx.$queryRaw<
+    { id: string; rank: number; edited_at: Date | null }[]
+  >`
+    SELECT id::text AS id, rank, edited_at FROM encounter_diagnosis
+     WHERE encounter_id = ${encounterId}::uuid
+     FOR UPDATE`;
+  const previous = inUse.find((row) => isPrimary(row.rank));
+  const stampOf = (id: string) =>
+    stampAfter(inUse.find((row) => row.id === id)?.edited_at ?? null, now);
+  if (previous) {
+    await tx.encounterDiagnosis.update({
+      where: { id: previous.id },
+      data: {
+        rank: nextRankAfter(inUse.map((row) => row.rank)),
+        editReason: null,
+        editedById: authority.editedById,
+        editedAt: stampOf(previous.id),
+      },
+    });
+  }
+  await tx.encounterDiagnosis.update({
+    where: { id: target.id },
+    data: {
+      rank: 1,
+      editReason: null,
+      editedById: authority.editedById,
+      editedAt: stampOf(target.id),
+    },
+  });
+}
+
+/**
+ * EN-210's rule for every versioned row: `record_version_archive` refuses an
+ * edit whose stamp did not change, so a second edit in the same millisecond
+ * moves past the first instead of failing as «sin sello». The row is locked
+ * by the caller.
+ */
+function stampAfter(previous: Date | null, now: Date): Date {
+  return previous && previous >= now ? new Date(previous.getTime() + 1) : now;
+}
+
+/**
+ * EN-212, D-117.13, D-117.16. Asked under the attention's lock: a discharge
+ * that landed after the service's read is refused here to a caller who does
+ * not sign, and a report already sent is never corrected.
+ */
+async function refuseCorrection(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+  status: EncounterStatus,
+  authority: {
+    mayCorrectAfterDischarge?: boolean;
+    afterDischargeRefusal?: AfterDischargeRefusal;
+  },
+): Promise<void> {
+  // D-117.13: the same sentence the service gives when it saw the discharge.
+  if (hasDischarge(status) && !authority.mayCorrectAfterDischarge) {
+    if (authority.afterDischargeRefusal === 'NOT_LICENSED') {
+      throw new PractitionerNotLicensedError();
+    }
+    if (authority.afterDischargeRefusal === 'NO_PRACTITIONER_PROFILE') {
+      throw new PractitionerProfileRequiredError();
+    }
+    throw new DiagnosisCorrectionRequiresSignatureError();
+  }
+  const [row] = await tx.$queryRaw<{ reported: boolean }[]>`
+    SELECT encounter_is_reported(${encounterId}::uuid) AS reported
   `;
-  if (row?.cited) throw new DiagnosisCitedByIssuedDocumentError();
+  if (row?.reported) throw new EncounterAlreadyReportedError();
 }
 
 /**
@@ -621,6 +1051,61 @@ function siteFilter(sites: SiteScopeFilter): Prisma.EncounterWhereInput {
   return sites === 'all' ? {} : { siteId: { in: [...sites] } };
 }
 
+/**
+ * EN-189, EN-214. The codes a frozen `[{code, …}]` printed. Read defensively:
+ * a JSON column is only as typed as its CHECK.
+ */
+function printedCodes(value: Prisma.JsonValue | null): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((printed) =>
+    typeof printed === 'object' &&
+    printed !== null &&
+    'code' in printed &&
+    typeof printed.code === 'string'
+      ? [printed.code]
+      : [],
+  );
+}
+
+/**
+ * EN-212. A diagnosis as `record_version` keeps it: `to_jsonb` of the row,
+ * with the DATABASE's column names and instants as ISO strings.
+ */
+interface DiagnosisSnapshot {
+  id: string;
+  encounter_id: string;
+  concept_id: string;
+  cie10_code: string;
+  cie10_display: string;
+  certainty: DiagnosisRow['certainty'];
+  occurrence: DiagnosisRow['occurrence'];
+  rank: number;
+  notifiable: boolean;
+  note: string | null;
+  recorded_at: string;
+  edited_at: string | null;
+  edit_reason: string | null;
+}
+
+/** A kept version back into the shape of a live row, for one mapping. */
+function diagnosisRowFromSnapshot(snapshot: DiagnosisSnapshot): DiagnosisRow {
+  return {
+    id: snapshot.id,
+    encounterId: snapshot.encounter_id,
+    conceptId: snapshot.concept_id,
+    cie10Code: snapshot.cie10_code,
+    cie10Display: snapshot.cie10_display,
+    certainty: snapshot.certainty,
+    occurrence: snapshot.occurrence,
+    rank: snapshot.rank,
+    notifiable: snapshot.notifiable,
+    note: snapshot.note,
+    recordedAt: new Date(snapshot.recorded_at),
+    // A snapshot taken before EN-212 has no such key.
+    editedAt: snapshot.edited_at ? new Date(snapshot.edited_at) : null,
+  };
+}
+
 /** An `encounter_diagnosis` row as the domain reads it. */
 function toDiagnosisView(row: DiagnosisRow): DiagnosisView {
   return {
@@ -647,6 +1132,7 @@ function toDiagnosisView(row: DiagnosisRow): DiagnosisView {
     notifiable: row.notifiable,
     note: row.note,
     recordedAt: row.recordedAt,
+    editedAt: row.editedAt,
   };
 }
 

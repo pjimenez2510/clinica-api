@@ -16,6 +16,7 @@ import {
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
   NoteAlreadySignedError,
+  AnthropometryPendingError,
   NoteContentIncompleteError,
   NoteNotAmendableError,
   PractitionerNotLicensedError,
@@ -29,6 +30,7 @@ import type {
   ClinicalNoteView,
   NewClinicalNote,
   NoteEncounterRead,
+  SigningEncounterRead,
   NoteQuery,
   SignaturePlan,
 } from '../domain/clinical-note.repository';
@@ -110,6 +112,7 @@ const aNote = (
   content: COMPLETE_002,
   authorId: PRACTITIONER,
   signedById: null,
+  signedByName: null,
   signedAt: null,
   contentHash: null,
   supersedesId: null,
@@ -119,20 +122,21 @@ const aNote = (
 });
 
 const anEncounterRead = (
-  overrides: Partial<NoteEncounterRead> = {},
-): NoteEncounterRead => ({
+  overrides: Partial<SigningEncounterRead> = {},
+): SigningEncounterRead => ({
   id: ENCOUNTER,
   status: 'OPEN',
   practitionerId: PRACTITIONER,
   endedAt: null,
   dischargeCondition: null,
   diagnosisCount: 1,
+  anthropometryPending: [],
   ...overrides,
 });
 
 class FakeNotes implements ClinicalNoteRepository {
   stored: ClinicalNoteView = aNote();
-  encounter: NoteEncounterRead = anEncounterRead();
+  encounter: SigningEncounterRead = anEncounterRead();
   drafted: NewClinicalNote[] = [];
   signature?: SignaturePlan;
   amendment?: AmendmentDraft;
@@ -164,7 +168,7 @@ class FakeNotes implements ClinicalNoteRepository {
     _query: NoteQuery,
     decide: (
       note: ClinicalNoteView,
-      encounter: NoteEncounterRead,
+      encounter: SigningEncounterRead,
     ) => SignaturePlan,
   ): Promise<ClinicalNoteView> {
     this.signature = decide(this.stored, this.encounter);
@@ -373,6 +377,25 @@ describe('los casos de uso de la nota clínica', () => {
     expect(
       (refusal as NoteContentIncompleteError).fieldErrors?.map((e) => e.field),
     ).toEqual(['content.planTratamiento', 'diagnoses']);
+  });
+
+  it('EN-217 rechaza firmar la 002 mientras falte la antropometría obligatoria, nombrando cada medida', async () => {
+    notes.encounter = anEncounterRead({
+      anthropometryPending: ['weightKg', 'heightCm'],
+    });
+
+    const refusal = await service
+      .sign(
+        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+        requester,
+      )
+      .catch((error: unknown) => error);
+
+    expect(refusal).toBeInstanceOf(AnthropometryPendingError);
+    expect(
+      (refusal as AnthropometryPendingError).fieldErrors?.map((e) => e.field),
+    ).toEqual(['weightKg', 'heightCm']);
+    expect(notes.stored.status).toBe('DRAFT');
   });
 
   it('EN-027 firma registrando quién, cuándo y el resumen del contenido', async () => {

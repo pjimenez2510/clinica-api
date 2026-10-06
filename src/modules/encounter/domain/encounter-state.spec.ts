@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DischargeConditionRequiredError,
-  EncounterAnnulmentReasonRequiredError,
   EncounterInterruptionReasonRequiredError,
   InvalidEncounterTransitionError,
 } from './encounter.errors';
@@ -257,10 +256,18 @@ describe('anular la atención (EN-166)', () => {
     },
   );
 
-  it('EN-166 exige motivo escrito', () => {
-    expect(() =>
-      planAnnulment({ from: 'OPEN', endedAt: null, reason: '   ', now }),
-    ).toThrow(EncounterAnnulmentReasonRequiredError);
+  it('EN-166 EN-218 el motivo es opcional: en blanco no se guarda', () => {
+    expect(
+      planAnnulment({ from: 'OPEN', endedAt: null, reason: '   ', now }).reason,
+    ).toBeNull();
+    expect(
+      planAnnulment({ from: 'OPEN', endedAt: null, reason: undefined, now })
+        .reason,
+    ).toBeNull();
+    expect(
+      planAnnulment({ from: 'OPEN', endedAt: null, reason: ' Duplicada ', now })
+        .reason,
+    ).toBe('Duplicada');
   });
 
   it.each(['DISCONTINUED', 'COMPLETED', 'ENTERED_IN_ERROR'] as const)(

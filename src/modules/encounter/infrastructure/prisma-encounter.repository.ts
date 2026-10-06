@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   AppointmentNotAttendableError,
+  AnthropometryPendingError,
+  EncounterAlreadyReportedError,
   EncounterAppointmentMismatchError,
   EncounterNotFoundError,
   InvalidEncounterTransitionError,
@@ -27,7 +28,7 @@ import type {
   VitalSignsView,
   VitalsVersionView,
 } from '../domain/encounter.repository';
-import type { VitalSigns } from '../domain/vital-signs';
+import type { AnthropometryField, VitalSigns } from '../domain/vital-signs';
 
 /**
  * Rows in, domain shapes out.
@@ -506,6 +507,20 @@ export class PrismaEncounterRepository implements EncounterRepository {
 
     return this.prisma.$transaction(async (tx) => {
       /**
+       * D-117.16, EN-217. Block D travels to the RDACAA too: an attention
+       * already reported is not corrected, asked under the attention's lock.
+       */
+      const [attention] = await tx.$queryRaw<
+        { reported: boolean; discharged: boolean }[]
+      >`
+        SELECT reported_at IS NOT NULL AS reported,
+               status IN ('DISCHARGED', 'COMPLETED') AS discharged
+          FROM encounter
+         WHERE id = ${query.encounterId}::uuid
+           FOR UPDATE`;
+      if (attention?.reported) throw new EncounterAlreadyReportedError();
+
+      /**
        * EN-210. `record_version_archive` refuses an edit whose stamp did not
        * change, so a second correction in the same millisecond as the first —
        * a double submit, two people at once — would fail as «sin sello». The
@@ -563,25 +578,40 @@ export class PrismaEncounterRepository implements EncounterRepository {
         select: VITALS_SELECT,
       });
 
+      /**
+       * EN-217, D-134.3. The 002 was signed with the mandatory anthropometry
+       * (EN-063); a correction after the discharge cannot take it away. Asked
+       * of the written row, under the attention's lock, with the function the
+       * signature asks — and refused naming each measure before the deferred
+       * `trg_encounter_vitals_anthropometry_after_discharge` would at COMMIT.
+       */
+      if (attention?.discharged) {
+        const [pending] = await tx.$queryRaw<{ fields: string[] | null }[]>`
+          SELECT encounter_anthropometry_pending(${query.encounterId}::uuid) AS fields`;
+        const missing = pending?.fields ?? [];
+        if (missing.length > 0) {
+          throw new AnthropometryPendingError(
+            missing,
+            'correctionAfterDischarge',
+          );
+        }
+      }
+
       return toVitalsView(row);
     });
   }
 
-  /** EN-063. A PREGNANT record of the chart, in force on that clinical date. */
-  async isPregnantOn(patientId: string, on: ClinicalDate): Promise<boolean> {
-    const day = new Date(`${on}T00:00:00Z`);
-    const found = await this.prisma.patientPriorityGroup.findFirst({
-      where: {
-        ...chartScope(patientId),
-        groupCode: 'PREGNANT',
-        startsOn: { lte: day },
-        // PA-036 makes the pregnancy's end mandatory; `null` is admitted all
-        // the same, as «not ended», for the persistent groups' shape.
-        OR: [{ endsOn: null }, { endsOn: { gte: day } }],
-      },
-      select: { id: true },
-    });
-    return found !== null;
+  /**
+   * EN-063, EN-217. What `encounter_anthropometry_pending` says is missing:
+   * the function the signature's deferred trigger asks too, so the screen's
+   * warning and the refusal cannot disagree.
+   */
+  async anthropometryPending(
+    encounterId: string,
+  ): Promise<AnthropometryField[]> {
+    const [row] = await this.prisma.$queryRaw<{ pending: string[] | null }[]>`
+      SELECT encounter_anthropometry_pending(${encounterId}::uuid) AS pending`;
+    return (row?.pending ?? []) as AnthropometryField[];
   }
 
   /**
@@ -757,8 +787,9 @@ export function toEncounterView(row: EncounterRow): EncounterView {
     closedBySubstituteReason: row.closedBySubstituteReason,
     // The CHECKs of `encounter_annulment_and_interruption` make each group
     // all-or-nothing, so one column standing for the group is enough.
+    // EN-218: the reason is optional; the instant stands for the group.
     annulment:
-      row.enteredInErrorReason !== null && row.enteredInErrorAt !== null
+      row.enteredInErrorAt !== null
         ? { reason: row.enteredInErrorReason, at: row.enteredInErrorAt }
         : null,
     interruption:

@@ -200,14 +200,15 @@ registerConstraintMeanings({
     message: 'Indique por qué cierra esta atención otra persona: queda registrado junto a la atención', // prettier-ignore
   },
   /**
-   * EN-166. An annulled attention states why, who and when — and a live one
-   * states none of the three. The service refuses the missing reason first,
-   * with this same code; this is the rule for a writer that went around it.
+   * EN-166, EN-218. An annulled attention states who and when —the reason is
+   * optional, and not blank if given— and a live one states none of them.
+   * The service always writes both; this answers a writer that went around
+   * it.
    */
-  encounter_entered_in_error_states_who_why_when: {
-    code: 'ENCOUNTER_ANNULMENT_REASON_REQUIRED',
+  encounter_entered_in_error_states_who_when: {
+    code: 'ENCOUNTER_ANNULMENT_INCOMPLETE',
     field: 'reason',
-    message: 'Indique por qué anula la atención: queda escrito con su nombre y la hora', // prettier-ignore
+    message: 'Una atención anulada dice quién la anuló y cuándo, y un motivo escrito no puede quedar en blanco', // prettier-ignore
   },
   /** EN-167. The same for an interruption, with its origin. */
   encounter_discontinued_states_who_why_when: {
@@ -255,6 +256,38 @@ registerConstraintMeanings({
     code: 'NOTE_CONTENT_INCOMPLETE',
     field: 'diagnoses',
     message: 'Registre al menos un diagnóstico antes de firmar',
+  },
+  /**
+   * EN-217 (D-132 B). The deferred trigger: the consultation note signed and
+   * the attention discharged with the mandatory anthropometry missing. The
+   * service refuses it first naming each measure; this is the sentence for
+   * whatever reaches the commit anyway.
+   */
+  clinical_note_sign_needs_anthropometry: {
+    code: 'ANTHROPOMETRY_PENDING',
+    field: 'weightKg',
+    message: 'Falta peso/talla: obligatorio para firmar la nota',
+  },
+  /**
+   * EN-217, D-134.3. A correction of the taking of a discharged attention
+   * left the mandatory anthropometry missing. The adapter refuses it first,
+   * under the attention's lock, naming each measure; this is the sentence for
+   * whatever reaches the table another way.
+   */
+  encounter_vitals_anthropometry_after_discharge: {
+    code: 'ANTHROPOMETRY_PENDING',
+    field: 'weightKg',
+    message: 'La atención ya tiene el alta: la corrección no puede dejar sin peso/talla obligatorios', // prettier-ignore
+  },
+  /**
+   * EN-183, EN-188. The deferred trigger: a discharged attention lost its
+   * principal at COMMIT. The adapter refuses it first, under the attention's
+   * lock; this is the sentence for whatever reaches the table another way.
+   */
+  encounter_diagnosis_primary_after_discharge: {
+    code: 'DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE',
+    field: 'rank',
+    message: 'La atención ya tiene el alta y necesita un diagnóstico principal: marque otro como principal antes de quitar o desmarcar éste', // prettier-ignore
   },
   /** EN-024. `clinical_note_chain_version_unique`: versions never repeat. */
   clinical_note_chain_version_unique: {

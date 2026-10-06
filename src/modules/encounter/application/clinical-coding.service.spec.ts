@@ -6,12 +6,17 @@ import type {
   AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import {
+  DiagnosisCorrectionRequiresSignatureError,
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
+  PractitionerNotLicensedError,
 } from '../domain/encounter.errors';
 import type {
   ClinicalCodingRepository,
+  DiagnosisEdit,
+  DiagnosisRestoration,
   DiagnosisRetraction,
+  DiagnosisVersionView,
   DiagnosisView,
   NewDiagnosis,
   NewProcedure,
@@ -22,9 +27,12 @@ import type {
   EncounterQuery,
   EncounterRepository,
   EncounterView,
+  PractitionerIdentity,
 } from '../domain/encounter.repository';
-import { ClinicalCodingService } from './clinical-coding.service';
-import type { Requester } from './encounter.service';
+import {
+  ClinicalCodingService,
+  type CodingRequester,
+} from './clinical-coding.service';
 
 /**
  * Block K's use cases, against an in-memory port.
@@ -48,9 +56,11 @@ const ENCOUNTER = 'encounter-1';
 const USER = 'user-1';
 const CONCEPT = 'concept-1';
 
-const requester: Requester = {
+const requester: CodingRequester = {
   userId: USER,
   sites: [SITE],
+  // EN-212, D-117.13. Signs the history where it writes it, like a doctor.
+  signSites: [SITE],
   ip: '10.0.0.9',
   userAgent: 'vitest',
 };
@@ -89,6 +99,14 @@ const anEncounter = (
  */
 class FakeEncounters {
   stored: EncounterView = anEncounter();
+  identity: PractitionerIdentity | null = {
+    practitionerId: 'practitioner-1',
+    acessExpiresOn: null,
+  };
+
+  findPractitionerByUser(): Promise<PractitionerIdentity | null> {
+    return Promise.resolve(this.identity);
+  }
 
   findById(query: EncounterQuery): Promise<EncounterView | null> {
     const inScope =
@@ -120,6 +138,7 @@ class FakeCoding implements ClinicalCodingRepository {
       notifiable: diagnosis.notifiable ?? false,
       note: diagnosis.note ?? null,
       recordedAt: new Date('2026-09-14T14:20:00Z'),
+      editedAt: null,
     };
     this.diagnoses.push(view);
     return Promise.resolve(view);
@@ -163,7 +182,36 @@ class FakeCoding implements ClinicalCodingRepository {
     return Promise.resolve(this.diagnoses);
   }
 
+  edits: DiagnosisEdit[] = [];
+
+  editDiagnosis(edit: DiagnosisEdit): Promise<DiagnosisView> {
+    this.edits.push(edit);
+    return Promise.resolve(this.diagnoses[0]!);
+  }
+
+  diagnosisVersions(): Promise<DiagnosisVersionView[]> {
+    return Promise.resolve([]);
+  }
+
   certificateCodes: string[] = [];
+  prescriptionCodes: string[] = [];
+
+  codesPrintedOnPrescriptions(): Promise<string[]> {
+    return Promise.resolve(this.prescriptionCodes);
+  }
+
+  orderCodes: string[] = [];
+
+  codesPrintedOnOrders(): Promise<string[]> {
+    return Promise.resolve(this.orderCodes);
+  }
+
+  restored: DiagnosisRestoration[] = [];
+
+  restoreDiagnosis(restoration: DiagnosisRestoration): Promise<DiagnosisView> {
+    this.restored.push(restoration);
+    return Promise.resolve({ ...this.diagnoses[0]!, id: 'diagnosis-restored' });
+  }
 
   codesPrintedOnCertificates(): Promise<string[]> {
     return Promise.resolve(this.certificateCodes);
@@ -173,11 +221,17 @@ class FakeCoding implements ClinicalCodingRepository {
     return Promise.resolve([]);
   }
 
-  setCareModality(
-    _query: unknown,
-    careModality: 'MORBIDITY' | 'PREVENTION',
-  ): Promise<'MORBIDITY' | 'PREVENTION'> {
-    return Promise.resolve(careModality);
+  correctEncounterCoding(correction: {
+    careModality?: 'MORBIDITY' | 'PREVENTION';
+    visitSequence?: 'FIRST_TIME' | 'SUBSEQUENT';
+  }): Promise<{
+    careModality: 'MORBIDITY' | 'PREVENTION';
+    visitSequence: 'FIRST_TIME' | 'SUBSEQUENT';
+  }> {
+    return Promise.resolve({
+      careModality: correction.careModality ?? 'MORBIDITY',
+      visitSequence: correction.visitSequence ?? 'FIRST_TIME',
+    });
   }
 }
 
@@ -354,6 +408,111 @@ describe('los casos de uso del bloque K', () => {
     },
   );
 
+  it('EN-212 edita como acto de quien edita, deja una fila de bitácora, y un motivo en blanco no es motivo', async () => {
+    await service.recordDiagnosis(aDiagnosis(), requester);
+    audit.entries.length = 0;
+
+    await service.editDiagnosis(
+      {
+        encounterId: ENCOUNTER,
+        diagnosisId: 'diagnosis-1',
+        certainty: 'PRESUMPTIVE',
+        reason: '   ',
+      },
+      requester,
+    );
+
+    expect(coding.edits).toEqual([
+      expect.objectContaining({
+        diagnosisId: 'diagnosis-1',
+        certainty: 'PRESUMPTIVE',
+        reason: null,
+        editedById: USER,
+        mayCorrectAfterDischarge: true,
+      }),
+    ]);
+    expect(audit.entries.map((entry) => entry.action)).toEqual(['UPDATE']);
+  });
+
+  it('EN-212 D-117.13 tras el alta corrige sólo quien firma historia en la sede y con registro vigente; nada se escribe si no', async () => {
+    encounters.stored = anEncounter({
+      status: 'DISCHARGED',
+      endedAt: new Date('2026-09-14T15:00:00Z'), // fecha-fija: la de la atención de prueba
+      dischargeCondition: 'ALIVE',
+    });
+    const edit = {
+      encounterId: ENCOUNTER,
+      diagnosisId: 'diagnosis-1',
+      certainty: 'PRESUMPTIVE' as const,
+    };
+
+    // Signs at another site only: not here.
+    await expect(
+      service.editDiagnosis(edit, { ...requester, signSites: [OTHER_SITE] }),
+    ).rejects.toBeInstanceOf(DiagnosisCorrectionRequiresSignatureError);
+    await expect(
+      service.makePrimary(ENCOUNTER, 'diagnosis-1', {
+        ...requester,
+        signSites: [],
+      }),
+    ).rejects.toBeInstanceOf(DiagnosisCorrectionRequiresSignatureError);
+
+    encounters.identity = {
+      practitionerId: 'practitioner-1',
+      acessExpiresOn: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+    };
+    await expect(service.editDiagnosis(edit, requester)).rejects.toBeInstanceOf(
+      PractitionerNotLicensedError,
+    );
+    expect(coding.edits).toHaveLength(0);
+    expect(audit.entries).toHaveLength(0);
+
+    // Positive control: in force, and signing here.
+    encounters.identity = { practitionerId: 'practitioner-1', acessExpiresOn: null }; // prettier-ignore
+    encounters.stored = { ...encounters.stored, status: 'OPEN' };
+    await service.recordDiagnosis(aDiagnosis(), requester);
+    encounters.stored = { ...encounters.stored, status: 'DISCHARGED' };
+    await service.editDiagnosis(edit, { ...requester, signSites: 'all' });
+    expect(coding.edits).toHaveLength(1);
+  });
+
+  it('EN-212 D-117.13 con la atención viva, la licencia vencida viaja al adaptador como «no corrige tras el alta», por si el alta llega antes del bloqueo', async () => {
+    const edit = {
+      encounterId: ENCOUNTER,
+      diagnosisId: 'diagnosis-1',
+      certainty: 'PRESUMPTIVE' as const,
+    };
+    await service.recordDiagnosis(aDiagnosis(), requester);
+    encounters.identity = {
+      practitionerId: 'practitioner-1',
+      acessExpiresOn: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+    };
+
+    // Live: the edit goes through, and the adapter is told why it may not
+    // once it finds the discharge under the lock.
+    await service.editDiagnosis(edit, requester);
+    expect(coding.edits[0]).toMatchObject({
+      mayCorrectAfterDischarge: false,
+      afterDischargeRefusal: 'NOT_LICENSED',
+    });
+
+    // Positive control: in force, it may.
+    encounters.identity = { practitionerId: 'practitioner-1', acessExpiresOn: null }; // prettier-ignore
+    await service.editDiagnosis(edit, requester);
+    expect(coding.edits[1]).toMatchObject({ mayCorrectAfterDischarge: true });
+    expect(coding.edits[1]?.afterDischargeRefusal).toBeUndefined();
+
+    // Signing elsewhere only.
+    await service.editDiagnosis(edit, {
+      ...requester,
+      signSites: [OTHER_SITE],
+    });
+    expect(coding.edits[2]).toMatchObject({
+      mayCorrectAfterDischarge: false,
+      afterDischargeRefusal: 'NOT_SIGNER',
+    });
+  });
+
   it('EN-189 sirve con cada diagnóstico si un certificado emitido imprimió su código', async () => {
     await service.recordDiagnosis(aDiagnosis(), requester);
     coding.certificateCodes = ['J020'];
@@ -368,18 +527,71 @@ describe('los casos de uso del bloque K', () => {
     ]);
   });
 
-  it('EN-009 rechaza diagnosticar en una atención con alta clínica', async () => {
+  it('EN-214 sirve con cada diagnóstico si una receta emitida imprimió su código', async () => {
+    await service.recordDiagnosis(aDiagnosis(), requester);
+    coding.prescriptionCodes = ['J020'];
+
+    const { items } = await service.diagnosesOf(ENCOUNTER, requester);
+    expect(items.map((item) => item.printedOnPrescription)).toEqual([true]);
+  });
+
+  it('ORD-121 sirve con cada diagnóstico si una orden emitida imprimió su código', async () => {
+    await service.recordDiagnosis(aDiagnosis(), requester);
+    coding.orderCodes = ['J020'];
+
+    const { items } = await service.diagnosesOf(ENCOUNTER, requester);
+    expect(items.map((item) => item.printedOnOrder)).toEqual([true]);
+  });
+
+  it('EN-213 «Deshacer» es un acto de quien deshace, sólo en la atención viva, y deja una fila de bitácora', async () => {
+    await service.recordDiagnosis(aDiagnosis(), requester);
+    audit.entries.length = 0;
+
+    const back = await service.restoreDiagnosis(
+      ENCOUNTER,
+      'diagnosis-1',
+      requester,
+    );
+    expect(back.id).toBe('diagnosis-restored');
+    expect(coding.restored).toEqual([
+      expect.objectContaining({
+        retractionId: 'diagnosis-1',
+        restoredById: USER,
+      }),
+    ]);
+    expect(
+      audit.entries.map((entry) => [entry.action, entry.resourceId]),
+    ).toEqual([['CREATE', 'diagnosis-restored']]);
+
+    encounters.stored = anEncounter({
+      status: 'DISCHARGED',
+      endedAt: new Date('2026-09-14T15:00:00Z'), // fecha-fija: la de la atención de prueba
+      dischargeCondition: 'ALIVE',
+    });
+    await expect(
+      service.restoreDiagnosis(ENCOUNTER, 'diagnosis-1', requester),
+    ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
+    expect(coding.restored).toHaveLength(1);
+  });
+
+  it('EN-215 tras el alta sólo registra un diagnóstico quien firma historia en la sede; interrumpida, nadie', async () => {
     /**
-     * Un diagnóstico es contenido NUEVO, no una enmienda: el médico firmó, el
-     * acto terminó, y codificar una enfermedad después cambiaría lo que dijo
-     * la consulta sin rastro de corrección. Lo que queda es enmendar la nota.
+     * D-117.12: tras el alta el código correcto se añade, porque el RDACAA lee
+     * los diagnósticos de la atención y no la nota. Es corregir la
+     * codificación, así que D-117.13 pide `record:sign`.
      */
     encounters.stored = anEncounter({
       status: 'DISCHARGED',
-      endedAt: new Date('2026-09-14T15:00:00Z'),
+      endedAt: new Date('2026-09-14T15:00:00Z'), // fecha-fija: la del doble
       dischargeCondition: 'ALIVE',
     });
 
+    await expect(
+      service.recordDiagnosis(aDiagnosis(), { ...requester, signSites: [] }),
+    ).rejects.toBeInstanceOf(DiagnosisCorrectionRequiresSignatureError);
+    expect(coding.written).toHaveLength(0);
+
+    encounters.stored = anEncounter({ status: 'DISCONTINUED' });
     await expect(
       service.recordDiagnosis(aDiagnosis(), requester),
     ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
