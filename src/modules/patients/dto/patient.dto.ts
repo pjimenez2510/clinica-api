@@ -681,23 +681,20 @@ export class PatientPageDto extends createZodDto(patientPageSchema) {}
 // ---------------------------------------------------------------------------
 
 /**
- * Por qué se unen —o se separan— dos historias (PA-044, PA-047).
+ * Por qué se unen —o se separan— dos historias (PA-064, D-126).
  *
- * OBLIGATORIO Y NO EN BLANCO. `NOT NULL` impide la ausencia, no `'   '`, y un
- * motivo obligatorio es lo único que distingue esto de un clic. El esquema lo
- * exige aquí, `patient_merge_reason_not_blank` en la base —una importación no
- * pasa por el DTO— y `PatientMergeService` en medio, porque un `DEBERÁ` que
- * sólo hace cumplir el transporte deja de cumplirse el día que otro caso de uso
- * llame por dentro.
+ * OPCIONAL: la pantalla pide una confirmación con el resumen de quién absorbe
+ * a quién, y el motivo, si se da, sale de una lista corta («Duplicado en
+ * admisión», «Recién nacido registrado dos veces», «Otro»). Un texto en blanco
+ * se guarda como ninguno (`PatientMergeService`).
  *
  * El tope de 500 no lo pide la columna, que es `text`: lo pide que este texto
  * viaja al rastro de auditoría y se lee en una pantalla, no en un informe.
  */
 const MERGE_REASON = z
   .string()
-  .trim()
-  .min(1, 'Explique por qué se unen las dos historias')
-  .max(500, 'El motivo no puede pasar de 500 caracteres');
+  .max(500, 'El motivo no puede pasar de 500 caracteres')
+  .nullish();
 
 export const mergePatientSchema = z.object({
   /**
@@ -711,7 +708,7 @@ export const mergePatientSchema = z.object({
 export class MergePatientDto extends createZodDto(mergePatientSchema) {}
 
 export const undoPatientMergeSchema = z.object({ reason: MERGE_REASON });
-/** Body of POST /patients/:id/merge/undo: only the reason, which PA-047 makes mandatory as well. */
+/** Body of POST /patients/:id/merge/undo: only the reason, optional since PA-064. */
 export class UndoPatientMergeDto extends createZodDto(undoPatientMergeSchema) {}
 
 /**
@@ -822,9 +819,26 @@ export class RecordPriorityGroupDto extends createZodDto(
 export const closePriorityGroupSchema = z.object({
   endsOn: z.iso.date('Ingrese la fecha en la que dejó de aplicar'),
 });
-/** Body of PATCH /patients/:id/priority-groups/:recordId: a record is closed with an end date, never deleted (PA-037). */
+/** Body of POST /patients/:id/priority-groups/:recordId/close: a record is closed with an end date, never deleted (PA-037). */
 export class ClosePriorityGroupDto extends createZodDto(
   closePriorityGroupSchema,
+) {}
+
+/**
+ * PA-066. Lo que se corrige de una valoración, en su fila. Todo opcional: lo
+ * ausente es «lo que ya había», y `null` vacía el fin o el documento. Estricto,
+ * para que un `closedAt` enviado se diga y no se ignore: el cierre no se edita.
+ */
+export const editPriorityGroupSchema = z.strictObject({
+  group: RECORDABLE_GROUP.optional(),
+  startsOn: z.iso.date('Ingrese una fecha de inicio válida').optional(),
+  endsOn: z.iso.date('Ingrese una fecha de fin válida').nullish(),
+  origin: ORIGIN.optional(),
+  evidenceDocument: z.string().trim().max(160).nullish(),
+});
+/** Body of PATCH /patients/:id/priority-groups/:recordId. */
+export class EditPriorityGroupDto extends createZodDto(
+  editPriorityGroupSchema,
 ) {}
 
 export const priorityGroupSchema = z.object({
@@ -847,8 +861,11 @@ export const priorityGroupSchema = z.object({
   recordedAt: z.iso.datetime(),
   closedById: z.uuid().nullable(),
   closedAt: z.iso.datetime().nullable(),
+  /** PA-066: quién la editó por última vez y cuándo; `null` si nadie. */
+  changedById: z.uuid().nullable(),
+  changedAt: z.iso.datetime().nullable(),
 });
-/** Response of recording and closing a priority group. */
+/** Response of recording, editing and closing a priority group. */
 export class PriorityGroupDto extends createZodDto(priorityGroupSchema) {}
 
 export const priorityGroupListSchema = z.object({

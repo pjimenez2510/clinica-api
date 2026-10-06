@@ -221,6 +221,18 @@ permisos puestos a mano. El segundo es que la etnia y la nacionalidad **dejen
 de contar** en la ficha extranjera, que tampoco es algo que una pantalla pueda
 enseñar.
 
+### P6 — Corregir es editar: la ficha, la unificación y el grupo prioritario _(P1)_
+
+D-126 y D-127 sobre la ficha: unificar y deshacer piden una confirmación y no
+un motivo escrito; el grupo prioritario se edita en su fila con versión.
+
+**Por qué es P1:** sin esto, un grupo prioritario mal tecleado no tiene
+arreglo y una unificación exige escribir un motivo que nadie lee.
+**Prueba independiente:** editar el origen de un grupo y encontrar la fila
+anterior en `record_version`; fusionar sin motivo y encontrar el rastro con
+autor, instante e instantánea.
+**Cubre:** PA-064, PA-066.
+
 ## Criterios de éxito
 
 Medibles y sin nombrar tecnología. **No empiezan en `SC-001` a propósito**: los
@@ -1197,6 +1209,11 @@ Ningún requisito de esta sección lo altera._
   > `trg_patient_priority_group_closure_once` rechaza cambiar esas tres columnas
   > de una fila ya cerrada. Corregir un cierre equivocado será la edición con
   > versión de D-127 (`fix/menos-preguntas`), no un segundo cierre.
+  >
+  > **Enmendado por PA-066 (06-10-2026).** Cerrar pasa a `POST
+  > …/priority-groups/:recordId/close`, y `PATCH` edita. Quién y cuándo cerró
+  > siguen sin cambiar nunca; la fecha de fin de un cerrado se corrige con
+  > versión, nunca se vacía.
 - **PA-038** — Todo registro DEBERÁ constar como **declarado por el paciente** o
   como **acreditado**, y SI es acreditado, ENTONCES DEBERÁ constar con qué
   documento.
@@ -1316,8 +1333,12 @@ Ningún requisito de esta sección lo altera._
   > cédula seguía siendo **aceptada**: el defecto sobrevivía a su propia
   > corrección y SC-008 dejaba de ser cierto.
 - **PA-044** — Toda fusión DEBERÁ dejar una fila **append-only** con ficha
-  origen, ficha destino, autor, instante, **motivo obligatorio** y una
+  origen, ficha destino, autor, instante, el motivo si se dio (PA-064) y una
   instantánea de la ficha absorbida.
+  > **Enmendado por PA-064 (D-126, 06-10-2026): el motivo deja de ser
+  > obligatorio.** Lo que distingue la fusión de un clic es la confirmación
+  > con el resumen, y el rastro —quién, cuándo, la instantánea— lo pone el
+  > sistema. Lo que sigue abajo sobre el motivo obligatorio es historia.
   > La instantánea es lo que permite explicar la operación y deshacerla; el
   > motivo obligatorio es lo que la distingue de un clic. Sin los dos, «rastro
   > auditable y reversible» de REQ-010 es una frase.
@@ -1364,7 +1385,8 @@ Ningún requisito de esta sección lo altera._
   > Una cadena A→B→C obliga a todo lector a recorrerla, y el primero que no lo
   > haga enseñará la ficha equivocada. Se resuelve prohibiéndola, no siguiéndola.
 - **PA-047** — El sistema DEBERÁ permitir **deshacer** una fusión, dejando de
-  ella el mismo rastro que de la fusión: quién, cuándo y por qué (REQ-010).
+  ella el mismo rastro que de la fusión: quién, cuándo y, si se dio, por qué
+  (REQ-010, PA-064).
   > **Esquema resuelto el 17-08-2026** (`20260817204801_patient_merge_events`):
   > `patient_merge` es un registro de **sucesos**. Deshacer es una **fila
   > nueva** con `event = 'UNDO'` que apunta a la fusión que deshace, y no una
@@ -1863,6 +1885,49 @@ Ningún requisito de esta sección lo altera._
   > sus roles desde `SEEDABLE_PERMISSIONS` y no desde el catálogo entero, así
   > que ninguna puede repartirlo ni por descuido ni en un entorno de pruebas.
 
+## 9. Corregir es editar (D-126, D-127)
+
+- **PA-064** — CUANDO se fusionen dos fichas o se deshaga una fusión, el
+  sistema NO DEBERÁ exigir motivo —el que se envíe, de hasta 500 caracteres,
+  DEBERÁ guardarse, y uno en blanco DEBERÁ guardarse como ninguno— y DEBERÁ
+  seguir dejando el rastro de PA-044 y PA-047: autor, instante y, al fusionar,
+  la instantánea.
+  > **D-126, PA-8 y PA-9 del inventario.** La pantalla pide **una**
+  > confirmación con el resumen de quién absorbe a quién y un motivo
+  > **opcional** de lista: «Duplicado en admisión», «Recién nacido registrado
+  > dos veces», «Otro». Se retira `MERGE_REASON_REQUIRED`.
+  >
+  > **Garantía de la base:** `patient_merge.reason` admite NULL y
+  > `patient_merge_reason_not_blank` pasa a «si lo hay, no en blanco», con el
+  > mismo nombre (`20261006082415_patient_merge_reason_optional`). Ninguna
+  > fila guardada cambia.
+- **PA-066** — CUANDO se edite un registro de grupo prioritario —grupo,
+  inicio, fin, origen o documento acreditativo—, el sistema DEBERÁ cambiarlo
+  en su fila y DEBERÁ guardar la versión anterior entera, con quién la
+  sustituyó y cuándo, en la misma operación; DEBERÁ juzgar el registro
+  **resultante** con las reglas de registrarlo (PA-035, PA-036, PA-038) y la
+  segunda llave de PA-034 para pasar a un grupo restringido; NO DEBERÁ
+  cambiar quién lo registró, ni quién lo cerró ni cuándo; y SI el registro
+  está cerrado y se envía su fin vacío, ENTONCES DEBERÁ rechazarlo con
+  `PRIORITY_GROUP_PERIOD_INVALID`.
+  > **D-127, PA-14 del inventario.** `PATCH
+  > /patients/:id/priority-groups/:recordId`, con `patient:priority` como
+  > registrar, y cerrar pasa a `POST …/:recordId/close` (PA-037): con un solo
+  > verbo, corregir la fecha probable de parto de un embarazo abierto lo
+  > habría cerrado. Lo idéntico no es una edición y no deja versión. Un
+  > restringido que quien edita no ve responde `PRIORITY_GROUP_NOT_FOUND`,
+  > como cerrarlo. La respuesta lleva `changedById` y `changedAt`.
+  >
+  > **Garantía de la base** (`20261006082829_patient_priority_group_edit_in_place`):
+  > todo UPDATE —el cierre incluido— lleva el sello `changed_by` /
+  > `changed_at` y `record_version_archive` guarda la fila anterior.
+  > `trg_patient_priority_group_closure_once` conserva su nombre y su
+  > traducción (`PRIORITY_GROUP_ALREADY_CLOSED`), se dispara en todo UPDATE y
+  > además de lo que ya hacía admite corregir el fin de un cerrado **sólo con
+  > sello nuevo** y nunca a NULL, y rechaza cambiar el paciente o quién y
+  > cuándo lo registró. Es lo que anticipaba la nota de su plan
+  > (`fix/fallos-inventario`).
+
 ---
 
 ## Códigos de error
@@ -1892,11 +1957,11 @@ mismo que el dígito verificador de la cédula: una importación o un `INSERT` p
 que es su propia madre son datos que no deben poder existir, no datos que haya
 que recordar comprobar.
 
-Los de la fusión **ya existen** desde el 17-08-2026, y son **cinco y no cuatro**:
+Los de la fusión **ya existen** desde el 17-08-2026. Eran **cinco y no
+cuatro**; desde PA-064 (D-126) son cuatro: `MERGE_REASON_REQUIRED` se retiró.
 
 | Código                   | HTTP | Cuándo                                                                                                                                        | Requisito      |
 | ------------------------ | ---- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| `MERGE_REASON_REQUIRED`  | 422  | Falta el motivo, al fusionar o al deshacer. Por campo                                                                                         | PA-044, PA-047 |
 | `MERGE_INTO_SELF`        | 422  | Origen y destino son la misma ficha                                                                                                           | PA-046         |
 | `PATIENT_ALREADY_MERGED` | 409  | La fusión encadenaría: el **destino** ya está fusionado, o el **origen** ya absorbió otras fichas                                             | PA-046         |
 | `MERGE_UNDO_CONFLICT`    | 409  | Al deshacer, otra ficha activa reclamó el documento. Nombra la **clase** de documento y el MRN que lo tiene                                   | PA-048         |
@@ -1944,16 +2009,14 @@ no dos porque lo que hay que hacer es distinto en cada caso:
 | Código                             | HTTP | Cuándo                                                                  | Requisito |
 | ---------------------------------- | ---- | ----------------------------------------------------------------------- | --------- |
 | `PRIORITY_GROUP_NOT_RECORDABLE`    | 422  | Se intentó guardar un grupo que se deduce de la edad                    | PA-035    |
-| `PRIORITY_GROUP_PERIOD_INVALID`    | 422  | El periodo termina antes de empezar, o el embarazo no tiene fin         | PA-036    |
+| `PRIORITY_GROUP_PERIOD_INVALID`    | 422  | El periodo termina antes de empezar, el embarazo no tiene fin, o se vacía el fin de un cerrado | PA-036, PA-066 |
 | `PRIORITY_GROUP_EVIDENCE_REQUIRED` | 422  | Se marcó «acreditado» sin decir con qué documento                       | PA-038    |
 | `PRIORITY_GROUP_RESTRICTED`        | 403  | Se intentó **registrar** un grupo de la segunda frase sin la llave      | PA-034    |
 | `PRIORITY_GROUP_NOT_FOUND`         | 404  | La fila no existe, es de otro paciente, o quien pregunta no puede verla | PA-037    |
 | `PRIORITY_GROUP_ALREADY_CLOSED`    | 409  | Se intentó cerrar un registro que ya estaba cerrado; el primer cierre queda | PA-037    |
 
-**El motivo de la fusión se exige en el servicio y no sólo en el DTO**, por lo
-mismo que `CANCELLATION_REASON_REQUIRED` en la agenda: un `DEBERÁ` que sólo hace
-cumplir la capa de transporte deja de cumplirse el día que otro caso de uso
-llame por dentro.
+**El motivo de la fusión ya no se exige** (PA-064, D-126): el servicio guarda
+el que llegue, y uno en blanco como ninguno.
 
 Las referencias a catálogo —etnia, nacionalidad, parroquia, identidad de género,
 grupo— **no traen códigos nuevos**: `CATALOG_CONCEPT_NOT_FOUND`,
@@ -2038,9 +2101,10 @@ Todas bajo `/api/v1/patients`, alcance `global` (PA-051):
 | `POST`  | `/patients/:id/identifiers`               | `patient:write`    | PA-015                                          |
 | `GET`   | `/patients/:id/priority-groups`           | `patient:priority` | PA-033 a PA-040                                 |
 | `POST`  | `/patients/:id/priority-groups`           | `patient:priority` | PA-033 a PA-039                                 |
-| `PATCH` | `/patients/:id/priority-groups/:recordId` | `patient:priority` | PA-037, PA-039                                  |
-| `POST`  | `/patients/:id/merge`                     | `patient:merge`    | PA-043 a PA-046, PA-049, PA-052                 |
-| `POST`  | `/patients/:id/merge/undo`                | `patient:merge`    | PA-047, PA-048, PA-052                          |
+| `PATCH` | `/patients/:id/priority-groups/:recordId` | `patient:priority` | PA-066, PA-039                                  |
+| `POST`  | `/patients/:id/priority-groups/:recordId/close` | `patient:priority` | PA-037, PA-039                            |
+| `POST`  | `/patients/:id/merge`                     | `patient:merge`    | PA-043 a PA-046, PA-049, PA-052, PA-064         |
+| `POST`  | `/patients/:id/merge/undo`                | `patient:merge`    | PA-047, PA-048, PA-052, PA-064                  |
 
 La **prioridad calculada** (PA-041) no tiene ruta propia: viaja como el campo
 `priority` de toda respuesta que ya lleva un paciente —el listado y la ficha—,

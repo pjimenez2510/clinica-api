@@ -52,6 +52,7 @@ import type {
   MergeOutcome,
   NewPatient,
   NewPriorityGroup,
+  PriorityGroupChanges,
   ParishReference,
   PatientCorrectionState,
   PatientSortField,
@@ -1366,28 +1367,108 @@ export class PrismaPatientRepository implements PatientRepository {
     recordId: string;
     endsOn: ClinicalDate;
     closedById: string;
+    now?: Date;
   }): Promise<PriorityGroupRecord | null> {
-    const { count } = await this.prisma.patientPriorityGroup.updateMany({
-      // `closedAt: null`: of two closures that read the row open, only the
-      // first writes (PA-037), and the second is told so below.
-      where: {
-        id: input.recordId,
-        closedAt: null,
-        ...chartScope(input.patientId),
-      },
-      data: {
-        endsOn: fromClinicalDate(input.endsOn),
-        closedById: input.closedById,
-        closedAt: new Date(),
-      },
+    const now = input.now ?? new Date();
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      const current = await lockPriorityGroup(
+        tx,
+        input.patientId,
+        input.recordId,
+      );
+      if (current === null) return 'missing' as const;
+      // Of two closures that read the row open, only the first writes
+      // (PA-037); the second waited on the lock and is told so.
+      if (current.closed_at !== null) return 'closed' as const;
+
+      // PA-066: closing is an UPDATE like any other, stamped with who closed
+      // it, so the open assessment stays as a version.
+      await tx.patientPriorityGroup.update({
+        where: { id: current.id },
+        data: {
+          endsOn: fromClinicalDate(input.endsOn),
+          closedById: input.closedById,
+          closedAt: now,
+          changedById: input.closedById,
+          changedAt: stampAfter(current.changed_at, now),
+        },
+      });
+      return 'closed-now' as const;
     });
 
+    if (outcome === 'missing') return null;
+    if (outcome === 'closed') throw new PriorityGroupAlreadyClosedError();
     const records = await this.listPriorityGroups(input.patientId);
-    const record = records.find((row) => row.id === input.recordId) ?? null;
-    if (count === 0 && record !== null) {
-      throw new PriorityGroupAlreadyClosedError();
-    }
-    return count === 0 ? null : record;
+    return records.find((row) => row.id === input.recordId) ?? null;
+  }
+
+  /**
+   * PA-066. The edit, under the row's lock and with a new stamp: the row it
+   * replaces goes to `record_version` in the same statement. The closure is
+   * not touched here — `trg_patient_priority_group_closure_once` refuses it —
+   * and the end of a closed record is corrected only with that stamp.
+   */
+  async editPriorityGroup(input: {
+    patientId: string;
+    recordId: string;
+    changes: PriorityGroupChanges;
+    editedById: string;
+    now: Date;
+  }): Promise<PriorityGroupRecord | null> {
+    const changed = await this.prisma.$transaction(async (tx) => {
+      const current = await lockPriorityGroup(
+        tx,
+        input.patientId,
+        input.recordId,
+      );
+      if (current === null) return null;
+
+      const { changes } = input;
+      const data: Prisma.PatientPriorityGroupUncheckedUpdateInput = {};
+      if (changes.group !== undefined && changes.group !== current.group_code) {
+        data.groupCode = changes.group;
+      }
+      if (
+        changes.startsOn !== undefined &&
+        changes.startsOn !== toClinicalDate(current.starts_on)
+      ) {
+        data.startsOn = fromClinicalDate(changes.startsOn);
+      }
+      if (changes.endsOn !== undefined) {
+        const before =
+          current.ends_on === null ? null : toClinicalDate(current.ends_on);
+        if (changes.endsOn !== before) {
+          data.endsOn =
+            changes.endsOn === null ? null : fromClinicalDate(changes.endsOn);
+        }
+      }
+      if (changes.origin !== undefined && changes.origin !== current.origin) {
+        data.origin = changes.origin;
+      }
+      if (
+        changes.evidenceDocument !== undefined &&
+        changes.evidenceDocument !== current.evidence_document
+      ) {
+        data.evidenceDocument = changes.evidenceDocument;
+      }
+
+      // Nothing to change is not an edit: no version of an identical row.
+      if (Object.keys(data).length === 0) return true;
+
+      await tx.patientPriorityGroup.update({
+        where: { id: current.id },
+        data: {
+          ...data,
+          changedById: input.editedById,
+          changedAt: stampAfter(current.changed_at, input.now),
+        },
+      });
+      return true;
+    });
+
+    if (changed === null) return null;
+    const records = await this.listPriorityGroups(input.patientId);
+    return records.find((row) => row.id === input.recordId) ?? null;
   }
 
   // -------------------------------------------------------------------------
@@ -1427,7 +1508,8 @@ export class PrismaPatientRepository implements PatientRepository {
   async merge(input: {
     sourcePatientId: string;
     targetPatientId: string;
-    reason: string;
+    /** PA-064. `null` when none was given. */
+    reason: string | null;
     performedById: string;
   }): Promise<MergeOutcome> {
     let mergeId: bigint | 'SOURCE_MERGED';
@@ -1705,7 +1787,8 @@ export class PrismaPatientRepository implements PatientRepository {
   async undoMerge(input: {
     sourcePatientId: string;
     mergeId: string;
-    reason: string;
+    /** PA-064. `null` when none was given. */
+    reason: string | null;
     performedById: string;
   }): Promise<UndoMergeOutcome> {
     let undoId: bigint | 'ALREADY_UNDONE';
@@ -2294,6 +2377,8 @@ function toPriorityGroupRecord(row: {
   recordedAt: Date;
   closedById: string | null;
   closedAt: Date | null;
+  changedById: string | null;
+  changedAt: Date | null;
 }): PriorityGroupRecord {
   return {
     id: row.id,
@@ -2308,6 +2393,8 @@ function toPriorityGroupRecord(row: {
     recordedAt: row.recordedAt,
     closedById: row.closedById,
     closedAt: row.closedAt,
+    changedById: row.changedById,
+    changedAt: row.changedAt,
   };
 }
 
@@ -2600,4 +2687,55 @@ function isMergeAlreadyUndone(error: unknown): boolean {
  */
 function hitsActiveIdentifierIndex(error: unknown): boolean {
   return /patient_identifier_active_unique/.test(databaseMessageOf(error));
+}
+
+/**
+ * PA-066. The priority record under its row lock, if it is inside the chart's
+ * scope (PA-055): the same visibility as the read, so a motive seen from the
+ * surviving chart can be closed and edited from it.
+ */
+async function lockPriorityGroup(
+  tx: Prisma.TransactionClient,
+  patientId: string,
+  recordId: string,
+): Promise<{
+  id: string;
+  group_code: string;
+  starts_on: Date;
+  ends_on: Date | null;
+  origin: PriorityGroupOrigin;
+  evidence_document: string | null;
+  closed_at: Date | null;
+  changed_at: Date | null;
+} | null> {
+  const visible = await tx.patientPriorityGroup.count({
+    where: { id: recordId, ...chartScope(patientId) },
+  });
+  if (visible === 0) return null;
+  const [row] = await tx.$queryRaw<
+    {
+      id: string;
+      group_code: string;
+      starts_on: Date;
+      ends_on: Date | null;
+      origin: PriorityGroupOrigin;
+      evidence_document: string | null;
+      closed_at: Date | null;
+      changed_at: Date | null;
+    }[]
+  >`
+    SELECT id, group_code, starts_on, ends_on, origin, evidence_document,
+           closed_at, changed_at
+      FROM patient_priority_group
+     WHERE id = ${recordId}::uuid
+       FOR UPDATE`;
+  return row ?? null;
+}
+
+/**
+ * EN-210. A stamp the archive trigger accepts: later than the previous one,
+ * even if two edits land within the same millisecond of the app's clock.
+ */
+function stampAfter(previous: Date | null, now: Date): Date {
+  return previous && previous >= now ? new Date(previous.getTime() + 1) : now;
 }

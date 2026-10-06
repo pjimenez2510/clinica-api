@@ -11,7 +11,6 @@ import {
   AccessContextNotFoundError,
   MergeIntoSelfError,
   MergeNotFoundError,
-  MergeReasonRequiredError,
   MergeUndoConflictError,
   PatientAlreadyMergedError,
   PriorityGroupAlreadyClosedError,
@@ -28,23 +27,6 @@ import {
  * identificador nacional — el mismo criterio que `PATIENT_MERGED`.
  */
 describe('los errores de la fusión de duplicados', () => {
-  it('PA-044 answers MERGE_REASON_REQUIRED as an unprocessable field', () => {
-    const error = new MergeReasonRequiredError();
-
-    expect(error.code).toBe('MERGE_REASON_REQUIRED');
-    expect(error).toBeInstanceOf(ValidationError); // 422
-    expect(error.userTitle).toBe('Escriba por qué se unen las dos historias');
-    // Por campo: es un input del formulario, y el mensaje tiene que aterrizar
-    // en él y no en la cabecera de la pantalla.
-    expect(error.fieldErrors).toEqual([
-      {
-        field: 'reason',
-        code: 'MERGE_REASON_REQUIRED',
-        message: 'Explique por qué: quedará en el rastro de la fusión',
-      },
-    ]);
-  });
-
   it('PA-046 answers MERGE_INTO_SELF pointing at the chart selector', () => {
     const error = new MergeIntoSelfError();
 
@@ -153,18 +135,21 @@ describe('los errores de la fusión de duplicados', () => {
     expect(error.identifierType).toBe('CEDULA');
   });
 
-  it('PA-044 registers the five new codes in the frozen catalogue', () => {
+  it('PA-044 registers the merge codes in the frozen catalogue', () => {
     // El `code` es contrato público: renombrarlo rompe clientes, y por eso el
     // catálogo se mantiene a mano y esta prueba existe.
     for (const code of [
       'MERGE_INTO_SELF',
       'MERGE_NOT_FOUND',
-      'MERGE_REASON_REQUIRED',
       'MERGE_UNDO_CONFLICT',
       'PATIENT_ALREADY_MERGED',
     ]) {
       expect(DOMAIN_ERROR_CODES).toContain(code);
     }
+  });
+
+  it('PA-064 retires MERGE_REASON_REQUIRED: merging and undoing ask no reason', () => {
+    expect(DOMAIN_ERROR_CODES).not.toContain('MERGE_REASON_REQUIRED');
   });
 });
 

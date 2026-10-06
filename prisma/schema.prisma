@@ -119,6 +119,7 @@ model User {
   /// as much as the recording does.
   priorityGroupsRecorded PatientPriorityGroup[] @relation("PriorityGroupRecorder")
   priorityGroupsClosed   PatientPriorityGroup[] @relation("PriorityGroupCloser")
+  priorityGroupsChanged  PatientPriorityGroup[] @relation("PriorityGroupChanger")
   patientCorrections     PatientChangeHistory[] @relation("PatientChangeAuthor")
 
   /// PA-044. Merges and undos this person performed. `performed_by` is NOT
@@ -1891,6 +1892,13 @@ model PatientPriorityGroup {
   closedBy   User?     @relation("PriorityGroupCloser", fields: [closedById], references: [id], onDelete: Restrict)
   closedAt   DateTime? @map("closed_at") @db.Timestamptz(6)
 
+  /// PA-066. Who last edited the record and when — the stamp every UPDATE
+  /// carries, closing included, so `record_version` archives the row it
+  /// replaces. Both NULL or both set.
+  changedById String?   @map("changed_by") @db.Uuid
+  changedBy   User?     @relation("PriorityGroupChanger", fields: [changedById], references: [id], onDelete: Restrict)
+  changedAt   DateTime? @map("changed_at") @db.Timestamptz(6)
+
   @@index([patientId, startsOn])
   @@map("patient_priority_group")
 }
@@ -2136,9 +2144,10 @@ model PatientMerge {
 
   performedAt DateTime @default(now()) @map("performed_at") @db.Timestamptz(6)
 
-  /// PA-044, PA-047. Mandatory on BOTH events, and a CHECK refuses it blank:
-  /// a mandatory reason is what tells this apart from a click.
-  reason String @db.Text
+  /// PA-064 (D-126). Optional on both events, from a short list on screen;
+  /// a CHECK refuses it blank when present. Who, when and the snapshot are
+  /// the trail, and those stay mandatory.
+  reason String? @db.Text
 
   /// Snapshot of the source row and its children at merge time. Present on the
   /// MERGE row and absent on the UNDO one, tied to `event` by a CHECK: there is

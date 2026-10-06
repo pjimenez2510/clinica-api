@@ -198,11 +198,8 @@ export const DOMAIN_ERROR_CODES = [
   // Son cinco y no uno porque lo que hay que hacer es distinto en cada caso, y
   // quien lo lee está en admisión con dos fichas de la misma persona delante:
   //
-  //   * `MERGE_REASON_REQUIRED` (422) — falta el motivo, al fusionar o al
-  //     deshacer. Viaja POR CAMPO. Se exige EN EL SERVICIO y no sólo en el
-  //     DTO, por lo mismo que `CANCELLATION_REASON_REQUIRED`: un `DEBERÁ` que
-  //     sólo hace cumplir la capa de transporte deja de cumplirse el día que
-  //     otro caso de uso llame por dentro (PA-044, PA-047).
+  //   * Fusionar y deshacer ya no exigen motivo (PA-064, D-126):
+  //     `MERGE_REASON_REQUIRED` se retiró.
   //   * `MERGE_INTO_SELF` (422) — origen y destino son la misma ficha
   //     (PA-046). Una ficha fusionada consigo misma rechazaría toda operación
   //     remitiendo a sí misma: nadie podría abrirla ni deshacerla.
@@ -228,7 +225,6 @@ export const DOMAIN_ERROR_CODES = [
   //     `AGENDA_ENTRY_NOT_FOUND`: lo que no existe es el SUCESO, no la persona.
   'MERGE_INTO_SELF',
   'MERGE_NOT_FOUND',
-  'MERGE_REASON_REQUIRED',
   'MERGE_UNDO_CONFLICT',
   'PATIENT_ALREADY_MERGED',
   // PA-027, 17-08-2026. La ficha declara nacionalidad o pueblo indígena sin

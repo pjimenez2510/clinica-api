@@ -69,7 +69,7 @@ export { PatientMergedError } from '../../../shared/domain/errors/patient-merged
  * identify as «Indígena».
  *
  * ENFORCED IN THE SERVICE AND NOT ONLY IN THE DTO, for the same reason
- * `CANCELLATION_REASON_REQUIRED` and `MERGE_REASON_REQUIRED` are: a `DEBERÁ`
+ * `CANCELLATION_REASON_REQUIRED` is: a `DEBERÁ`
  * enforced only by the transport layer stops being enforced the day another use
  * case calls from inside. The database CANNOT repeat it as a `CHECK` — which
  * ethnicity is «Indígena» lives in another table — so this is the whole
@@ -238,33 +238,6 @@ export class DuplicateIdentifierError extends ConflictError {
 // ---------------------------------------------------------------------------
 // Duplicate resolution (P4: PA-043 to PA-049, REQ-010)
 // ---------------------------------------------------------------------------
-
-/**
- * PA-044, PA-047. Merging and undoing a merge both demand a reason.
- *
- * ENFORCED IN THE SERVICE AND NOT ONLY IN THE DTO, for the same reason
- * `CANCELLATION_REASON_REQUIRED` is: a `DEBERÁ` enforced only by the transport
- * layer stops being enforced the day another use case calls from inside. The
- * database repeats it as `patient_merge_reason_not_blank`, which is what also
- * stops an import — but that CHECK answers with a generic 422, and this is the
- * message that lands on the field somebody has to fill in.
- *
- * BLANK IS NOT A REASON. `NOT NULL` refuses the absence, never `'   '`, and a
- * mandatory reason is the whole of what tells this apart from a click.
- */
-export class MergeReasonRequiredError extends ValidationError {
-  readonly code = 'MERGE_REASON_REQUIRED';
-  override readonly userTitle = 'Escriba por qué se unen las dos historias';
-  constructor() {
-    super('A merge and an undo both require a non-blank reason', {}, [
-      {
-        field: 'reason',
-        code: 'MERGE_REASON_REQUIRED',
-        message: 'Explique por qué: quedará en el rastro de la fusión', // prettier-ignore
-      },
-    ]);
-  }
-}
 
 /**
  * PA-046. The chart being absorbed and the surviving one are the same.
