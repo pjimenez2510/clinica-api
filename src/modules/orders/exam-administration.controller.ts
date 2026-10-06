@@ -225,6 +225,8 @@ function toExamResponse(exam: AdminExamView): AdminExamResponse {
     specimenType: exam.specimenType,
     patientPreparation: exam.patientPreparation,
     turnaroundHours: exam.turnaroundHours,
+    requiresFasting: exam.requiresFasting,
+    fastingHours: exam.fastingHours,
     performedExternally: exam.performedExternally,
     externalLabName: exam.externalLabName,
     externalLabCode: exam.externalLabCode,

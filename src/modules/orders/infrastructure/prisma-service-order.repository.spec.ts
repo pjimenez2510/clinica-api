@@ -84,6 +84,13 @@ function prismaDouble(
     calls.push({ method, args });
 
   const tx = {
+    // ORD-131. No line has results unless a test says so.
+    observationResult: {
+      findMany: (args: unknown) => {
+        record('observationResult.findMany', args);
+        return Promise.resolve([]);
+      },
+    },
     encounter: {
       findFirst: (args: unknown) => {
         record('encounter.findFirst', args);

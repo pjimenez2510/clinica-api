@@ -981,6 +981,8 @@ interface SeedExam {
   form010Section: string;
   specimenType: string;
   patientPreparation: string;
+  /** ORD-129 (D-137). Las horas mínimas de ayuno, o `null` si no lo pide. */
+  fastingHours: number | null;
   turnaroundHours: number;
   /** Código de la prestación que se cobra por este examen. */
   billableServiceCode: string;
@@ -1010,6 +1012,7 @@ const EXAMS: SeedExam[] = [
     specimenType: 'Sangre total con EDTA',
     patientPreparation: 'No requiere ayuno.',
     turnaroundHours: 4,
+    fastingHours: null,
     billableServiceCode: 'LAB-BH',
     analyteCodes: ['HB', 'HCT', 'WBC', 'PLT', 'NEUT-PCT', 'LYMPH-PCT'],
   },
@@ -1022,6 +1025,7 @@ const EXAMS: SeedExam[] = [
     patientPreparation:
       'Ayuno de 8 a 12 horas. Puede beber agua. No suspenda su medicación sin indicación médica.',
     turnaroundHours: 4,
+    fastingHours: 8,
     billableServiceCode: 'LAB-GLUCOSA-AYUNAS',
     analyteCodes: ['GLU'],
   },
@@ -1034,6 +1038,7 @@ const EXAMS: SeedExam[] = [
     patientPreparation:
       'Aseo genital previo. Recoja el chorro medio en frasco estéril y entréguelo dentro de las 2 horas siguientes.',
     turnaroundHours: 4,
+    fastingHours: null,
     billableServiceCode: 'LAB-EMO',
     analyteCodes: [
       'EMO-COLOR',
@@ -1060,6 +1065,7 @@ const EXAMS: SeedExam[] = [
     specimenType: '',
     patientPreparation: 'Retire objetos metálicos del tórax.',
     turnaroundHours: 24,
+    fastingHours: null,
     billableServiceCode: 'IMG-RX-SIMPLE',
     analyteCodes: ['INFORME'],
   },
@@ -1072,6 +1078,7 @@ const EXAMS: SeedExam[] = [
     patientPreparation:
       'Ayuno de 6 horas. Vejiga llena: beba 1 litro de agua una hora antes.',
     turnaroundHours: 24,
+    fastingHours: 6,
     billableServiceCode: 'IMG-ECO-ABDOMINAL',
     analyteCodes: ['INFORME'],
   },
@@ -1083,6 +1090,7 @@ const EXAMS: SeedExam[] = [
     specimenType: '',
     patientPreparation: 'No requiere preparación.',
     turnaroundHours: 2,
+    fastingHours: null,
     billableServiceCode: 'PROC-ECG',
     analyteCodes: ['INFORME'],
   },
@@ -1345,10 +1353,12 @@ async function ensureExam(
   const rows = await tx.$queryRaw<{ id: string }[]>`
     INSERT INTO "exam_definition"
       ("code", "name", "category", "form_010_section", "specimen_type", "patient_preparation",
+       "requires_fasting", "fasting_hours",
        "turnaround_hours", "billable_service_id", "tariff_code", "updated_at")
     VALUES (${exam.code}, ${exam.name}, ${exam.category}::service_order_category,
             ${exam.form010Section}, NULLIF(${exam.specimenType}, ''),
-            ${exam.patientPreparation}, ${exam.turnaroundHours}, ${billableServiceId}::uuid,
+            ${exam.patientPreparation}, ${exam.fastingHours !== null}, ${exam.fastingHours}::smallint,
+            ${exam.turnaroundHours}, ${billableServiceId}::uuid,
             ${exam.code}, CURRENT_TIMESTAMP)
     ON CONFLICT ("code") DO UPDATE
       SET "billable_service_id" = COALESCE("exam_definition"."billable_service_id",

@@ -53,6 +53,9 @@ export interface ExamWrite {
   specimenType: string | null;
   patientPreparation: string | null;
   turnaroundHours: number | null;
+  /** ORD-129. «Pide ayuno» and its minimum hours. */
+  requiresFasting: boolean;
+  fastingHours: number | null;
   performedExternally: boolean;
   externalLabName: string | null;
   externalLabCode: string | null;

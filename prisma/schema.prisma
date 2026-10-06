@@ -4196,6 +4196,13 @@ model ExamDefinition {
   patientPreparation String? @map("patient_preparation") @db.VarChar(500)
   turnaroundHours    Int?    @map("turnaround_hours") @db.SmallInt
 
+  /// ORD-129 (D-137). Whether the exam asks for a fast, and its MINIMUM hours
+  /// (1–24, optional): the order's highlighted line comes from here, not from
+  /// how the preparation is worded. Hours only with a fast
+  /// (`exam_definition_fasting_hours_needs_fasting`).
+  requiresFasting Boolean @default(false) @map("requires_fasting")
+  fastingHours    Int?    @map("fasting_hours") @db.SmallInt
+
   /// Which lab performs it. External is the realistic case (D-A-012), so it is
   /// the default rather than the exception.
   performedExternally Boolean @default(true) @map("performed_externally")

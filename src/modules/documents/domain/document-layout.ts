@@ -516,13 +516,14 @@ function examsBySection(live: readonly OrderItem[]): Block[] {
 }
 
 /**
- * ORD-125. What the patient has to do before going, each with the name of its
- * exam; an exam with nothing to do takes no line. A fast is said ON TOP, once
- * for the whole sampling, naming who asks for it: an unstated fast is a second
- * puncture (ORD-010).
+ * ORD-125, ORD-129. What the patient has to do before going, each with the
+ * name of its exam; an exam with nothing to do takes no line. A fast is said
+ * ON TOP, once for the whole sampling, naming who asks for it: an unstated
+ * fast is a second puncture (ORD-010).
  *
- * ⚠️ BY THE TEXT, for want of a field (D-137): a preparation that BEGINS with
- * «Ayuno» is a fast; one that is only «No requiere …» asks for nothing.
+ * The fast comes from the exam's «Pide ayuno» (D-137), not from how its
+ * preparation is worded; the hours are the LONGEST minimum among the exams
+ * that ask, which satisfies them all.
  */
 function instructionsFor(live: readonly OrderItem[]): Block[] {
   const asked = live
@@ -531,31 +532,45 @@ function instructionsFor(live: readonly OrderItem[]): Block[] {
       text: item.preparation?.trim() ?? '',
     })) // prettier-ignore
     .filter(({ text }) => text !== '' && !nothingToDo(text));
-  const fasts = asked.filter(({ text }) => /^ayuno/i.test(text));
+  const fasting = fastingLine(live);
 
   const caption: Block = { kind: 'caption', text: 'Indicaciones al paciente' };
-  if (asked.length === 0) {
+  if (asked.length === 0 && fasting === null) {
     return [caption, { kind: 'paragraph', text: 'No requiere preparación previa.' }]; // prettier-ignore
   }
   return [
     caption,
-    ...(fasts.length === 0
+    ...(fasting === null
+      ? []
+      : ([{ kind: 'paragraph', text: fasting, emphasis: true }] as Block[])),
+    ...(asked.length === 0
       ? []
       : ([
           {
-            kind: 'paragraph',
-            text: `Venga en ayunas: ${fasts
-              .map(({ exam, text }) => `${firstSentence(text)} (${exam})`)
-              .join('; ')}.`,
-            emphasis: true,
+            kind: 'fields',
+            columns: 1,
+            entries: asked.map(({ exam, text }) => ({ label: exam, value: text })), // prettier-ignore
           },
         ] as Block[])),
-    {
-      kind: 'fields',
-      columns: 1,
-      entries: asked.map(({ exam, text }) => ({ label: exam, value: text })),
-    },
   ];
+}
+
+/**
+ * ORD-129. «Venga con 8 horas de ayuno como mínimo (Glucosa en ayunas).», or
+ * «Venga en ayunas (…).» when no exam says how long; `null` without a fast.
+ */
+function fastingLine(
+  live: readonly Pick<OrderItem, 'display' | 'fasting'>[],
+): string | null {
+  const fasts = live.filter((item) => item.fasting !== null);
+  if (fasts.length === 0) return null;
+  const names = fasts.map((item) => item.display).join(', ');
+  const hours = fasts
+    .map((item) => item.fasting?.hours ?? null)
+    .filter((value): value is number => value !== null);
+  return hours.length === 0
+    ? `Venga en ayunas (${names}).`
+    : `Venga con ${Math.max(...hours)} horas de ayuno como mínimo (${names}).`;
 }
 
 /**
@@ -565,12 +580,6 @@ function instructionsFor(live: readonly OrderItem[]): Block[] {
  */
 function nothingToDo(text: string): boolean {
   return /^no requiere[^.]*\.?$/i.test(text.trim());
-}
-
-/** «Ayuno de 8 a 12 horas. Puede…» → «ayuno de 8 a 12 horas». */
-function firstSentence(text: string): string {
-  const first = text.split(/\.\s/)[0]?.replace(/\.$/, '') ?? text;
-  return first.charAt(0).toLowerCase() + first.slice(1);
 }
 
 /** How a date of form 117 prints: «21/05/2026 — veintiuno de mayo de …». */

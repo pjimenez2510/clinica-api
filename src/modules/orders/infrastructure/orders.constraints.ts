@@ -22,6 +22,19 @@ registerConstraintMeanings({
     field: 'name',
     message: 'Ya hay una determinación activa con ese nombre',
   },
+  // ORD-129 (D-137). Hours of fast only on an exam that asks for one; the
+  // range is also checked by the DTO, this answers whatever bypasses it.
+  exam_definition_fasting_hours_needs_fasting: {
+    code: 'EXAM_FASTING_HOURS_INVALID',
+    field: 'fastingHours',
+    message:
+      'Marque «Pide ayuno» para indicar las horas, o deje las horas vacías',
+  },
+  exam_definition_fasting_hours_range: {
+    code: 'EXAM_FASTING_HOURS_INVALID',
+    field: 'fastingHours',
+    message: 'El ayuno es de 1 a 24 horas',
+  },
   analyte_definition_code_unique: {
     code: 'ANALYTE_CODE_DUPLICATE',
     field: 'code',

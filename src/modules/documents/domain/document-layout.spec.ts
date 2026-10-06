@@ -15,6 +15,7 @@ import type {
   DocumentSubject,
   PatientIdentity,
   PractitionerIdentity,
+  ServiceOrderPrintData,
 } from './document-source';
 import type { Block, DocumentHeader, DocumentLayout } from './page-layout';
 
@@ -670,6 +671,7 @@ describe('DOC-072 la orden de examen', () => {
               display: 'Hemoglobina glicosilada',
               specimen: 'Sangre total',
               preparation: null,
+              fasting: null,
               section: 'BIOQUÍMICA',
               status: 'REQUESTED',
             },
@@ -716,6 +718,7 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
           display: 'Glucosa en ayunas',
           specimen: 'Suero',
           preparation: 'Ayuno de 8 a 12 horas. Puede beber agua.',
+          fasting: { hours: 8 },
           section: 'BIOQUÍMICA',
           status: 'REQUESTED',
         },
@@ -724,6 +727,7 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
           display: 'Biometría hemática completa',
           specimen: 'Sangre total con EDTA',
           preparation: 'No requiere ayuno.',
+          fasting: null,
           section: 'HEMATOLOGÍA',
           status: 'REQUESTED',
         },
@@ -750,8 +754,8 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
     const withOneCancelled = composeLayout(
       order({
         items: [
-          { code: 'EX-GLUCOSA-AYUNAS', display: 'Glucosa en ayunas', specimen: 'Suero', preparation: 'Ayuno de 8 a 12 horas.', section: null, status: 'CANCELLED' }, // prettier-ignore
-          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, section: null, status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-GLUCOSA-AYUNAS', display: 'Glucosa en ayunas', specimen: 'Suero', preparation: 'Ayuno de 8 a 12 horas.', fasting: null, section: null, status: 'CANCELLED' }, // prettier-ignore
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, fasting: null, section: null, status: 'REQUESTED' }, // prettier-ignore
         ],
       }),
       context,
@@ -767,7 +771,7 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
     const allCancelled = composeLayout(
       order({
         items: [
-          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, section: null, status: 'CANCELLED' }, // prettier-ignore
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, fasting: null, section: null, status: 'CANCELLED' }, // prettier-ignore
         ],
       }),
       context,
@@ -812,10 +816,10 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
     const layout = composeLayout(
       order({
         items: [
-          { code: 'EX-X', display: 'Examen sin sección', specimen: null, preparation: null, section: null, status: 'REQUESTED' }, // prettier-ignore
-          { code: 'EX-GLUCOSA-AYUNAS', display: 'Glucosa en ayunas', specimen: 'Suero', preparation: null, section: 'BIOQUÍMICA', status: 'REQUESTED' }, // prettier-ignore
-          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, section: 'HEMATOLOGÍA', status: 'REQUESTED' }, // prettier-ignore
-          { code: 'EX-CREA', display: 'Creatinina', specimen: 'Suero', preparation: null, section: 'BIOQUÍMICA', status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-X', display: 'Examen sin sección', specimen: null, preparation: null, fasting: null, section: null, status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-GLUCOSA-AYUNAS', display: 'Glucosa en ayunas', specimen: 'Suero', preparation: null, fasting: null, section: 'BIOQUÍMICA', status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, fasting: null, section: 'HEMATOLOGÍA', status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-CREA', display: 'Creatinina', specimen: 'Suero', preparation: null, fasting: null, section: 'BIOQUÍMICA', status: 'REQUESTED' }, // prettier-ignore
         ],
       }),
       context,
@@ -861,17 +865,52 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
     const fasting = box.blocks[1];
     expect(fasting).toEqual({
       kind: 'paragraph',
-      text: 'Venga en ayunas: ayuno de 8 a 12 horas (Glucosa en ayunas).',
+      text: 'Venga con 8 horas de ayuno como mínimo (Glucosa en ayunas).',
       emphasis: true,
     });
+  });
+
+  it('ORD-129 el ayuno sale del dato del examen: las horas mayores, todos los que lo piden, y «en ayunas» si nadie dice cuántas', () => {
+    const fastingLine = (items: ServiceOrderPrintData['items']) => {
+      const layout = composeLayout(order({ items }), context, template);
+      const box = layout.blocks.find((block) => block.kind === 'box');
+      if (box?.kind !== 'box') throw new Error('no box');
+      return box.blocks.find((b) => b.kind === 'paragraph' && b.emphasis);
+    };
+
+    expect(
+      fastingLine([
+        { code: 'EX-ECO', display: 'Ecografía abdominal', specimen: null, preparation: 'Ayuno de 6 horas.', fasting: { hours: 6 }, section: null, status: 'REQUESTED' }, // prettier-ignore
+        { code: 'EX-GLU', display: 'Glucosa en ayunas', specimen: 'Suero', preparation: null, fasting: { hours: 8 }, section: null, status: 'REQUESTED' }, // prettier-ignore
+      ]),
+    ).toMatchObject({ text: 'Venga con 8 horas de ayuno como mínimo (Ecografía abdominal, Glucosa en ayunas).' }); // prettier-ignore
+    // Redactado de otro modo: el dato manda, no el texto.
+    expect(
+      fastingLine([
+        { code: 'EX-LIP', display: 'Perfil lipídico', specimen: 'Suero', preparation: 'Venir sin desayunar.', fasting: { hours: null }, section: null, status: 'REQUESTED' }, // prettier-ignore
+      ]),
+    ).toMatchObject({ text: 'Venga en ayunas (Perfil lipídico).' });
+    // Control positivo: un texto que empieza por «Ayuno» sin el dato ya no da línea.
+    expect(
+      fastingLine([
+        { code: 'EX-X', display: 'Examen X', specimen: null, preparation: 'Ayuno de 4 horas.', fasting: null, section: null, status: 'REQUESTED' }, // prettier-ignore
+      ]),
+    ).toBeUndefined();
+    // Un examen anulado no pide nada.
+    expect(
+      fastingLine([
+        { code: 'EX-GLU', display: 'Glucosa en ayunas', specimen: 'Suero', preparation: null, fasting: { hours: 8 }, section: null, status: 'CANCELLED' }, // prettier-ignore
+        { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, fasting: null, section: null, status: 'REQUESTED' }, // prettier-ignore
+      ]),
+    ).toBeUndefined();
   });
 
   it('ORD-125 «No requiere» sólo calla cuando es toda la indicación: lo que sigue se imprime', () => {
     const layout = composeLayout(
       order({
         items: [
-          { code: 'EX-EMO', display: 'Elemental y microscópico de orina (EMO)', specimen: 'Orina', preparation: 'No requiere ayuno. Recoja la primera orina de la mañana.', section: 'ORINA', status: 'REQUESTED' }, // prettier-ignore
-          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: 'No requiere ayuno.', section: 'HEMATOLOGÍA', status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-EMO', display: 'Elemental y microscópico de orina (EMO)', specimen: 'Orina', preparation: 'No requiere ayuno. Recoja la primera orina de la mañana.', fasting: null, section: 'ORINA', status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: 'No requiere ayuno.', fasting: null, section: 'HEMATOLOGÍA', status: 'REQUESTED' }, // prettier-ignore
         ],
       }),
       context,
@@ -889,7 +928,7 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
     const layout = composeLayout(
       order({
         items: [
-          { code: 'EX-EMO', display: 'Elemental y microscópico de orina (EMO)', specimen: 'Orina', preparation: 'Aseo genital previo.', section: 'ORINA', status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-EMO', display: 'Elemental y microscópico de orina (EMO)', specimen: 'Orina', preparation: 'Aseo genital previo.', fasting: null, section: 'ORINA', status: 'REQUESTED' }, // prettier-ignore
         ],
       }),
       context,
@@ -916,7 +955,7 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
       composeLayout(
         order({
           items: [
-            { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, section: null, status: 'REQUESTED' }, // prettier-ignore
+            { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: null, fasting: null, section: null, status: 'REQUESTED' }, // prettier-ignore
           ],
         }),
         context,

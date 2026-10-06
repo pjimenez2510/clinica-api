@@ -42,6 +42,8 @@ export const examDefinitionSchema = z.object({
   /** ORD-010. Printed on the order: an unstated fast is a second extraction. */
   patientPreparation: z.string().nullable(),
   turnaroundHours: z.number().int().nullable(),
+  requiresFasting: z.boolean(),
+  fastingHours: z.number().int().nullable(),
   /**
    * ORD-004. The tariff service the exam is invoiced under; `null` means it
    * cannot be ordered yet. The server resolves the version in force — a client

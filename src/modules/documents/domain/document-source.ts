@@ -159,6 +159,11 @@ export interface ServiceOrderPrintData {
     display: string;
     specimen: string | null;
     preparation: string | null;
+    /**
+     * ORD-129 (D-137). The exam asks for a fast, with its minimum hours if the
+     * catalogue says them; `null` when it asks for none.
+     */
+    fasting: { hours: number | null } | null;
     section: string | null;
     status: string;
   }[];

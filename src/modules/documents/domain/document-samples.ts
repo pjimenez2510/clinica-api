@@ -120,6 +120,7 @@ export function sampleSubject(
               display: 'Creatinina sérica',
               specimen: 'Sangre',
               preparation: 'Ayuno de 8 horas.',
+              fasting: { hours: 8 },
               section: 'QUÍMICA SANGUÍNEA',
               status: 'REQUESTED',
             },
