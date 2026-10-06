@@ -647,6 +647,17 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
   /** ORD-007, ORD-008. Cancels one line, leaving the row where it is. */
   async cancelItem(request: CancelOrderItem): Promise<ServiceOrderView> {
     const row = await this.prisma.$transaction(async (tx) => {
+      /**
+       * ORD-008, ORD-124. The line is LOCKED before its status is read: a
+       * report closing it at the same instant holds the same lock, and this
+       * waits and then reads «COMPLETED» instead of writing «CANCELLED» over a
+       * line with its results.
+       */
+      await tx.$queryRaw`
+        SELECT 1 FROM "service_order_item"
+         WHERE "id" = ${request.itemId}::uuid
+           AND "service_order_id" = ${request.orderId}::uuid
+           FOR UPDATE`;
       const item = await tx.serviceOrderItem.findFirst({
         where: {
           id: request.itemId,

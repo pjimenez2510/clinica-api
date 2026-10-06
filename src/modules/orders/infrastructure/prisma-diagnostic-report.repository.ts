@@ -172,15 +172,32 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
 
       /**
        * ORD-124. Nothing comes back for an order whose every exam was
-       * withdrawn. `FOR SHARE` on its lines conflicts with the `UPDATE` that
-       * cancels one (ORD-007), so a cancellation at the same instant either
-       * waits for this report or makes it wait and then read «anulado».
+       * withdrawn, and no value lands under a line that is. The lines are
+       * LOCKED (`FOR UPDATE`) and judged here, at the write: the service
+       * matched analytes to lines before this transaction, and a line
+       * cancelled since then must refuse the report rather than receive it.
+       * `FOR UPDATE` and not `FOR SHARE`: two reports of the same order at
+       * once (a double click) both closing lines would deadlock on a shared
+       * lock; this way the second waits. A cancellation waits too (ORD-007
+       * locks the line the same way) and then reads the line as this left it.
+       * `trg_observation_result_not_on_cancelled_line` holds it in the base.
        */
-      const lines = await tx.$queryRaw<{ status: string }[]>`
-        SELECT "status"::text AS "status" FROM "service_order_item"
+      const lines = await tx.$queryRaw<{ id: string; status: string }[]>`
+        SELECT "id"::text AS "id", "status"::text AS "status"
+          FROM "service_order_item"
          WHERE "service_order_id" = ${report.serviceOrderId}::uuid
-           FOR SHARE`;
-      if (lines.every((line) => line.status === 'CANCELLED')) {
+           FOR UPDATE`;
+      const cancelled = new Set(
+        lines.filter((line) => line.status === 'CANCELLED').map((l) => l.id),
+      );
+      if (
+        cancelled.size === lines.length ||
+        report.results.some(
+          (result) =>
+            result.orderItemId !== null && cancelled.has(result.orderItemId),
+        ) ||
+        expected.some((line) => cancelled.has(line.orderItemId))
+      ) {
         throw new OrderItemNotPendingError();
       }
 
