@@ -940,8 +940,9 @@ describe('el bloque K por HTTP', () => {
       });
       const path = `/encounters/${encounterId}/diagnoses/${first.id}/retract`;
 
-      await post(path, doctorToken).expect(204);
+      // EN-183: another is marked principal first, then the old one goes.
       await post(`/encounters/${encounterId}/diagnoses/${second.id}/primary`, doctorToken).expect(200); // prettier-ignore
+      await post(path, doctorToken).expect(204);
 
       const sheet = await sheetOf(encounterId);
       expect(sheet.items).toEqual([
@@ -1399,6 +1400,37 @@ describe('el bloque K por HTTP', () => {
       expect((reported.body as Problem).code).toBe(
         'ENCOUNTER_ALREADY_REPORTED',
       );
+    });
+
+    it('EN-183 EN-188 con el alta no se desmarca ni se quita el principal sin que otro quede principal: 409 DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE', async () => {
+      const encounterId = await openEncounter();
+      const principal = await record(encounterId, 'J020');
+      const second = await record(encounterId, 'R509');
+      await dischargeOf(encounterId);
+      const path = `/encounters/${encounterId}/diagnoses/${principal.id}`;
+
+      const unmarked = await patch(path, doctorToken, { primary: false }).expect(409); // prettier-ignore
+      expect(unmarked.body).toMatchObject({
+        code: 'DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE',
+        title:
+          'La atención ya tiene el alta y necesita un diagnóstico principal: marque otro como principal antes de quitar o desmarcar éste',
+      });
+      const removed = await post(`${path}/retract`, doctorToken).expect(409);
+      expect((removed.body as Problem).code).toBe(
+        'DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE',
+      );
+      expect((await sheetOf(encounterId)).items.map((d) => [d.cie10Code, d.rank])).toEqual([
+        ['J020', 1],
+        ['R509', 2],
+      ]); // prettier-ignore
+
+      // Positive control (EN-183): another becomes principal, then the old
+      // one goes.
+      await patch(`/encounters/${encounterId}/diagnoses/${second.id}`, doctorToken, { primary: true }).expect(200); // prettier-ignore
+      await post(`${path}/retract`, doctorToken).expect(204);
+      expect((await sheetOf(encounterId)).items.map((d) => [d.cie10Code, d.rank])).toEqual([
+        ['R509', 1],
+      ]); // prettier-ignore
     });
 
     it('EN-213 D-117.15 no se quita el diagnóstico obstétrico de un reposo de maternidad vigente', async () => {

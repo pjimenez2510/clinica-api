@@ -279,6 +279,16 @@ registerConstraintMeanings({
     field: 'weightKg',
     message: 'La atención ya tiene el alta: la corrección no puede dejar sin peso/talla obligatorios', // prettier-ignore
   },
+  /**
+   * EN-183, EN-188. The deferred trigger: a discharged attention lost its
+   * principal at COMMIT. The adapter refuses it first, under the attention's
+   * lock; this is the sentence for whatever reaches the table another way.
+   */
+  encounter_diagnosis_primary_after_discharge: {
+    code: 'DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE',
+    field: 'rank',
+    message: 'La atención ya tiene el alta y necesita un diagnóstico principal: marque otro como principal antes de quitar o desmarcar éste', // prettier-ignore
+  },
   /** EN-024. `clinical_note_chain_version_unique`: versions never repeat. */
   clinical_note_chain_version_unique: {
     code: 'NOTE_VERSION_TAKEN',

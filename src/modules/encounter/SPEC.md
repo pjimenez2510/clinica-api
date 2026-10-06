@@ -2929,6 +2929,19 @@ D-117._
   > **Desde EN-212 (D-127)** los dos cambios de rango son ediciones con sello,
   > así que el rango anterior de cada uno queda como versión; y tras el alta
   > también se hace de un clic.
+  >
+  > **Tras el alta, nunca sin principal** (revisión del 06-10-2026, M5): SI la
+  > atención tiene el alta y se pide desmarcar el principal o quitarlo,
+  > ENTONCES el sistema DEBERÁ rechazarlo con
+  > `DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE`. La salida es esta misma
+  > regla —marcar otro, que pasa el anterior detrás— y después quitar o dejar
+  > el anterior. **No se promueve ninguno solo**: ningún camino lo hacía, y
+  > cuál es la causa de la consulta lo dice el médico. Antes del alta sigue
+  > admitiéndose quedarse sin principal un momento. **Garantía de la base**:
+  > `trg_encounter_diagnosis_primary_after_discharge_update` y `…_delete`,
+  > diferidos, con `encounter_has_discharge`: al COMMIT una atención con el
+  > alta que perdió su principal tiene otro; sólo miran la fila que lo era,
+  > así que una atención antigua sin principal no queda bloqueada.
 - **EN-188** — MIENTRAS la atención tenga el alta (`DISCHARGED` o
   `COMPLETED`), el médico DEBERÁ poder quitar un diagnóstico (EN-180) y marcar
   otro como principal (EN-183). Siguen valiendo EN-180 (archivo con
@@ -3491,6 +3504,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE` | 403 | Corregir los diagnósticos de una atención con el alta sin `record:sign` en su sede | EN-212 |
 | `DIAGNOSIS_SUPPORTS_MATERNITY_REST` | 409 | Cambiar de capítulo el último diagnóstico obstétrico de una atención con un reposo de maternidad no anulado. Se anula primero el reposo | EN-212 |
 | `ENCOUNTER_ALREADY_REPORTED` | 409 | Corregir los diagnósticos de una atención ya reportada al RDACAA | EN-212, EN-213 |
+| `DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE` | 409 | Desmarcar o quitar el principal de una atención con el alta sin que otro quede principal. Se marca otro antes (EN-183). Lo exigen el servicio y la base | EN-183, EN-188 |
 | `DIAGNOSIS_NOT_RESTORABLE` | 409 | Deshacer el quitar de un diagnóstico ya recuperado, o cuyo código volvió a registrarse | EN-213 |
 
 `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` (EN-188, G2) se retiró con EN-212, y
@@ -3725,7 +3739,7 @@ prueba o el CI falla**.
 | EN-046, EN-048 | Unitario de dominio: la clasificación prevención/morbilidad se deriva del rango `Z00`–`Z99` y **no** de lo que teclee nadie, con los códigos adaptados de cinco caracteres entre los casos |
 | EN-180, EN-181, EN-182 | **Integración contra PostgreSQL real**, con control positivo: el `DELETE` sin archivo se rechaza y con archivo pasa; el archivo no admite `UPDATE` ni `DELETE`; un motivo en blanco no es motivo; con una receta o una orden emitidas (exámenes vivos incluidos) se reordena y se quita —con el motivo de lo que imprimieron— y el papel sigue diciendo lo que emitió. Y **contar filas**: quitar no borra nada de la historia |
 | EN-188, EN-189 | **Integración contra PostgreSQL real**, con control positivo: con el alta se quita sin motivo y el último no; con un certificado emitido —vigente o anulado— que imprimió el código, sin motivo se rechaza y con un certificado que imprimió otro código pasa. HTTP: quitar y cambiar el principal con el alta responden; interrumpida responde `ENCOUNTER_ALREADY_CLOSED` |
-| EN-183 | Integración: el principal cambia y el anterior pasa a un rango libre en una transacción; `encounter_diagnosis_one_primary` sigue sin admitir dos |
+| EN-183 | Integración: el principal cambia y el anterior pasa a un rango libre en una transacción; `encounter_diagnosis_one_primary` sigue sin admitir dos; con el alta la base no deja sin principal —ni rango ni `DELETE`— y sí el cambio de los dos rangos en una transacción. HTTP: desmarcar y quitar el principal tras el alta responden 409, y marcar otro primero deja quitarlo |
 | EN-213, EN-214 | **Integración contra PostgreSQL real**, con control positivo: con nota firmada y con el alta se quita sin motivo; con una receta emitida —vigente o anulada— que imprimió el código, sin motivo no y con otra receta sí; el último obstétrico de un reposo de maternidad no anulado no, y anulado sí; reportada no; el archivo se marca recuperado una vez, hacia ese diagnóstico, y nada más de él cambia. HTTP: deshacer devuelve el diagnóstico y deja de figurar entre los quitados, dos veces no, un principal ocupado lo deja detrás, sólo en la atención viva; `printedOnPrescription`; `record:sign` tras el alta |
 | EN-212 | **Integración contra PostgreSQL real**, con control positivo: sin sello no se edita y con sello sí, y la fila anterior está en `record_version`; el código editado es el de su concepto y regía ese día; tras el alta el principal cambia; con un certificado o una receta que imprimieron el código, sin motivo no y con motivo sí, y la condición sin motivo; reportada no; el reposo de maternidad no anulado no deja sacar del capítulo y sí dentro de él, y anulado sí. HTTP: la edición, las versiones con su motivo, `record:sign` y la licencia tras el alta, y los cuatro códigos |
 | EN-217 | **Integración contra PostgreSQL real**, con control positivo: la toma sin la antropometría se guarda y la firma de la 002 con alta no; tras el alta, corregir la temperatura conservando las medidas entra y dejar sin peso se rechaza, en el adaptador (`ANTHROPOMETRY_PENDING` por campo) y en la base (`trg_encounter_vitals_anthropometry_after_discharge`), con la toma intacta. HTTP: el 422 con su título de corrección |

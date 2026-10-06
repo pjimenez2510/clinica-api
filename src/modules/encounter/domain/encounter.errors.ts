@@ -1154,6 +1154,24 @@ export class DiagnosisLastAfterDischargeError extends ConflictError {
 }
 
 /**
+ * EN-183, EN-188. After the discharge the attention keeps a principal: the
+ * RDACAA reads the cause of the consultation from it, and nobody fixes it at
+ * the signature any more. The way out is EN-183's: mark another one as
+ * principal — the old one moves behind — and then unmark or remove this one.
+ * Nothing is promoted on its own: which diagnosis is the cause is the
+ * doctor's to say.
+ */
+export class DiagnosisPrimaryRequiredAfterDischargeError extends ConflictError {
+  readonly code = 'DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE';
+  override readonly userTitle =
+    'La atención ya tiene el alta y necesita un diagnóstico principal: marque otro como principal antes de quitar o desmarcar éste';
+
+  constructor() {
+    super('A discharged encounter keeps a principal diagnosis');
+  }
+}
+
+/**
  * EN-213. «Deshacer» a removal that was already undone, or whose code was
  * recorded again meanwhile: bringing it back would leave the same diagnosis
  * twice. The list on screen is stale.

@@ -18,6 +18,7 @@ import {
   ClinicalNoteNotFoundError,
   ConceptWrongCatalogueError,
   DiagnosisLastAfterDischargeError,
+  DiagnosisPrimaryRequiredAfterDischargeError,
   DiagnosisCorrectionRequiresSignatureError,
   DiagnosisEditReasonRequiredError,
   DiagnosisSupportsMaternityRestError,
@@ -269,6 +270,16 @@ describe('el contrato de errores de la atención', () => {
     );
     expect(annulment.userTitle).toBe(
       'La atención tiene una receta u orden en borrador de otro profesional. Que la emita o la descarte antes de anular',
+    );
+  });
+
+  it('EN-183 EN-188 tras el alta, desmarcar o quitar el principal responde 409 y manda a marcar otro', () => {
+    const error = new DiagnosisPrimaryRequiredAfterDischargeError();
+
+    expect(error.code).toBe('DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toBe(
+      'La atención ya tiene el alta y necesita un diagnóstico principal: marque otro como principal antes de quitar o desmarcar éste',
     );
   });
 

@@ -238,6 +238,54 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     expect(await prisma.encounterDiagnosis.count({ where: { encounterId: encounter.id } })).toBe(1); // prettier-ignore
   });
 
+  it('EN-183 EN-188 con el alta la BASE no deja la atención sin principal: ni quitándolo ni desmarcándolo, salvo que otro quede principal en la misma transacción', async () => {
+    const prisma = db();
+    const { encounter, diagnoses, remover } = await anEncounterWithDiagnoses(
+      prisma,
+      ['J02', 'R50', 'R51'],
+    );
+    const [principal, second, third] = diagnoses;
+    await discharge(prisma, encounter);
+
+    // Positive control: a secondary is removed, and the rank of another moves.
+    await archive(prisma, third!.id, remover.id);
+    await remove(prisma, third!.id);
+    await moveRank(prisma, second!.id, 7);
+
+    await expect(moveRank(prisma, principal!.id, 9)).rejects.toThrow(
+      /encounter_diagnosis_primary_after_discharge/,
+    );
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await archive(tx as unknown as PrismaClient, principal!.id, remover.id);
+        await remove(tx as unknown as PrismaClient, principal!.id);
+      }),
+    ).rejects.toThrow(/encounter_diagnosis_primary_after_discharge/);
+    expect(
+      (await prisma.encounterDiagnosis.findUniqueOrThrow({ where: { id: principal!.id } })).rank,
+    ).toBe(1); // prettier-ignore
+
+    // Positive control: the principal moves when another takes its place in
+    // the same transaction (EN-183), and then it can be removed.
+    const editor = await createUser(prisma);
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        UPDATE encounter_diagnosis SET rank = 9, edited_by_id = ${editor.id}::uuid, edited_at = ${new Date(Date.now() + 1000)}
+         WHERE id = ${principal!.id}::uuid`;
+      await tx.$executeRaw`
+        UPDATE encounter_diagnosis SET rank = 1, edited_by_id = ${editor.id}::uuid, edited_at = ${new Date(Date.now() + 2000)}
+         WHERE id = ${second!.id}::uuid`;
+    }); // prettier-ignore
+    await archive(prisma, principal!.id, remover.id);
+    await remove(prisma, principal!.id);
+    expect(
+      await prisma.encounterDiagnosis.findMany({
+        where: { encounterId: encounter.id },
+        select: { id: true, rank: true },
+      }),
+    ).toEqual([{ id: second!.id, rank: 1 }]);
+  });
+
   it('EN-189 un certificado emitido —vigente o anulado— que imprimió el código hace que la BASE exija el motivo; uno que imprimió otro, no', async () => {
     const prisma = db();
     const { practitioner, encounter, diagnoses, remover } =

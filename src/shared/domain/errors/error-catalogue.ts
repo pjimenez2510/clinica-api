@@ -754,6 +754,11 @@ export const DOMAIN_ERROR_CODES = [
   //   * `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` se retiró con EN-212 (D-127): tras
   //     el alta el principal cambia de un clic, con su versión.
   'DIAGNOSIS_LAST_AFTER_DISCHARGE',
+  //   * `DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE` (409) — EN-183, EN-188
+  //     (revisión del 06-10-2026). Tras el alta no se desmarca ni se quita el
+  //     principal sin que otro quede principal: la salida es marcar otro
+  //     (EN-183). Código nuevo y no el retirado de G2, que decía otra cosa.
+  'DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE',
   //   * `DIAGNOSIS_EDIT_REASON_REQUIRED` (422) — EN-212 (D-117.14). Cambiar el
   //     código que imprimió un certificado, una receta o una orden emitidos dice por qué.
   //   * `DIAGNOSIS_CORRECTION_REQUIRES_SIGNATURE` (403) — EN-212 (D-117.13).

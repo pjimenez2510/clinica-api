@@ -9,6 +9,7 @@ import {
   DiagnosisPrimaryTakenError,
   DiagnosisRetractionReasonRequiredError,
   DiagnosisLastAfterDischargeError,
+  DiagnosisPrimaryRequiredAfterDischargeError,
   DiagnosisCorrectionRequiresSignatureError,
   DiagnosisNotRestorableError,
   DiagnosisEditReasonRequiredError,
@@ -325,7 +326,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         acceptsDiagnosisCorrection,
       );
       await refuseCorrection(tx, retraction.encounterId, status, retraction);
-      await requireDiagnosisOf(
+      const target = await requireDiagnosisOf(
         tx,
         retraction.encounterId,
         retraction.diagnosisId,
@@ -347,6 +348,10 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           where: { encounterId: retraction.encounterId },
         });
         if (left <= 1) throw new DiagnosisLastAfterDischargeError();
+        // EN-183, EN-188. Nor without a principal: another is marked first.
+        if (isPrimary(target.rank)) {
+          throw new DiagnosisPrimaryRequiredAfterDischargeError();
+        }
       }
 
       if (retraction.reason === null) {
@@ -484,6 +489,11 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         await promote(tx, edit.encounterId, current, edit, now);
         // `promote` already wrote the rank, stamped; the rest goes below.
       } else if (edit.primary === false && isPrimary(current.rank)) {
+        // EN-183, EN-188. After the discharge the attention keeps one: the
+        // way out is marking another, which moves this one behind.
+        if (hasDischarge(status)) {
+          throw new DiagnosisPrimaryRequiredAfterDischargeError();
+        }
         const inUse = await tx.encounterDiagnosis.findMany({
           where: { encounterId: edit.encounterId },
           select: { rank: true },

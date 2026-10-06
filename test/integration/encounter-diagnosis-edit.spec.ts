@@ -220,8 +220,12 @@ describe('editar un diagnóstico en el sitio (EN-212)', () => {
     const [principal, second] = diagnoses;
     await discharge(prisma, encounter);
 
-    await rank(prisma, principal!.id, 3, editor.id);
-    await rank(prisma, second!.id, 1, editor.id);
+    // One transaction, as EN-183 moves them: at no COMMIT is the discharged
+    // attention without a principal (encounter_diagnosis_primary_after_discharge).
+    await prisma.$transaction(async (tx) => {
+      await rank(tx as unknown as PrismaClient, principal!.id, 3, editor.id);
+      await rank(tx as unknown as PrismaClient, second!.id, 1, editor.id);
+    });
 
     expect(
       (
