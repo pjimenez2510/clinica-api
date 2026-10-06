@@ -237,7 +237,7 @@ glucosa queda registrado con a quién, quién, cuándo y por qué medio: desde e
 momento sale de la cola, y la constancia se edita en el sitio sin perder la
 versión anterior (ORD-120).
 **Cubre:** ORD-040 a ORD-043, ORD-046, ORD-060 a ORD-068, **ORD-120**, y
-**ORD-121**: el valor crítico dice con qué umbral se marcó.
+**ORD-122**: el valor crítico dice con qué umbral se marcó.
 
 **Solo servidor:** ORD-061, ORD-064. Que la cola se construya sobre los umbrales
 propios y que la constancia no se pueda borrar ni cambiar de origen son
@@ -647,7 +647,7 @@ cuando la gráfica exista.
 
   Es la columna `VALOR DE REFERENCIA` del 010B, y congelarla es lo que hace que
   un informe de hace tres años se lea con los rangos de hace tres años. Los
-  límites **críticos** aplicados se congelan aparte (ORD-121).
+  límites **críticos** aplicados se congelan aparte (ORD-122).
 
 - **ORD-038** — SI ningún rango es aplicable al paciente, ENTONCES la bandera
   DEBERÁ quedar **vacía**, y el sistema NO DEBERÁ marcarla como `NORMAL`.
@@ -1319,7 +1319,7 @@ desde la pantalla.
 
   Y CUANDO se corrige un informe, cada determinación que ya estaba en la
   versión que se corrige DEBERÁ clasificarse como crítica con los **límites
-  críticos congelados en esa versión** (ORD-121), no con los de hoy, y la fila
+  críticos congelados en esa versión** (ORD-122), no con los de hoy, y la fila
   nueva DEBERÁ congelar esos mismos límites; la referencia sí es la vigente.
   Una determinación que la corrección trae por primera vez usa los vigentes
   (D-130.1, resuelta por el autor: C). Así un umbral subido después no saca de
@@ -1349,7 +1349,7 @@ desde la pantalla.
   no deja fila de bitácora por entrada (ORD-092): lleva el nombre del paciente
   y qué se pidió, nada del diagnóstico.
 
-- **ORD-121** — Cada resultado numérico DEBERÁ congelar en su fila los
+- **ORD-122** — Cada resultado numérico DEBERÁ congelar en su fila los
   **límites críticos que se le aplicaron** (`critical_low`, `critical_high`;
   vacíos si ese lado no tenía crítico), resueltos lado a lado como su bandera
   (ORD-036), igual que congela la referencia (ORD-037) (D-130.1, resuelta por
@@ -1666,7 +1666,7 @@ columnas donde registrar quién lo decidió y por qué.
 | Requisitos | Nivel | Por qué |
 | --- | --- | --- |
 | ORD-036, ORD-112 | Unitario e integración | La resolución lado a lado y la banda crítica son puras; que la bandera que **aterriza en la fila** sale de ellas, con los rangos vigentes y nunca de una fila cerrada (ORD-114), se prueba registrando informes contra PostgreSQL, con control positivo. |
-| ORD-114, ORD-121 | Unitario e integración | Que la corrección clasifique con los límites congelados es una regla pura; que la fila los guarde y que la base rechace una bandera que los contradiga se prueba contra PostgreSQL, con control positivo. El relleno se prueba sobre una copia de la base del autor y sobre resultados registrados con el código anterior. |
+| ORD-114, ORD-122 | Unitario e integración | Que la corrección clasifique con los límites congelados es una regla pura; que la fila los guarde y que la base rechace una bandera que los contradiga se prueba contra PostgreSQL, con control positivo. El relleno se prueba sobre una copia de la base del autor y sobre resultados registrados con el código anterior. |
 | ORD-113 | Integración | Que una fila de rango no se borra ni se reescribe lo garantiza un disparador: se prueba contra la base, con control positivo (cerrar la vigencia entra; borrar y reescribir no). |
 | ORD-036, ORD-038, ORD-039 | Unitario | Son políticas puras: rango aplicable, bandera y completitud. Se prueban sin base, con los rangos reales de la siembra. |
 | ORD-021, ORD-022 | Unitario | El envejecimiento es aritmética de fechas clínicas; el huso se prueba fijando la zona de la sesión. |
