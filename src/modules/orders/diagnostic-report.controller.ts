@@ -438,6 +438,8 @@ function toReportResponse(
       referenceLow: result.referenceLow,
       referenceHigh: result.referenceHigh,
       referenceText: result.referenceText,
+      criticalLow: result.criticalLow,
+      criticalHigh: result.criticalHigh,
       abnormalFlag: result.abnormalFlag,
       observedAt: result.observedAt.toISOString(),
       notices: result.notices.map(toNoticeResponse),

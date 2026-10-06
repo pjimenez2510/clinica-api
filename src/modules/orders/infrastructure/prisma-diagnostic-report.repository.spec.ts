@@ -166,6 +166,8 @@ const aReport = (overrides: Partial<NewReport> = {}): NewReport => ({
       referenceLow: 12,
       referenceHigh: 15.5,
       referenceText: null,
+      criticalLow: null,
+      criticalHigh: null,
       abnormalFlag: 'NORMAL',
       orderItemId: ITEM,
     },

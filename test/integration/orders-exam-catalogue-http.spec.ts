@@ -20,7 +20,11 @@ import { PrismaDiagnosticReportRepository } from '../../src/modules/orders/infra
 import { PrismaExamCatalogueRepository } from '../../src/modules/orders/infrastructure/prisma-exam-catalogue.repository';
 import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastructure/prisma-service-order.repository';
 
-import { addDays, addMonths, clinicalDateOf } from '../../src/shared/domain/clinic-time';
+import {
+  addDays,
+  addMonths,
+  clinicalDateOf,
+} from '../../src/shared/domain/clinic-time';
 import { aTariffConcept, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import {
@@ -581,7 +585,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       expect(await flag('MALE', 14)).toBe('NORMAL');
     });
 
-    it('ORD-054 ORD-114 una corrección después de subir el umbral no saca de la cola un crítico que sigue igual', async () => {
+    it('ORD-054 ORD-114 ORD-122 una corrección después de subir el umbral compara con el que se aplicó al original', async () => {
       const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
       const client = prisma as unknown as PrismaService;
       const orders = new PrismaServiceOrderRepository(client);
@@ -611,6 +615,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
 
       const same = await correctedAfterRaise(420, 420);
       const lessExtreme = await correctedAfterRaise(420, 410);
+      const belowApplied = await correctedAfterRaise(420, 390);
       await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
         ranges: [range({ low: 70, high: 100 }), range({ rangeKind: 'CRITICAL', low: 40, high: 500 })],
       }).expect(200); // prettier-ignore
@@ -618,14 +623,23 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       const kept = await same.correct();
       const row = await prisma.observationResult.findFirstOrThrow({ where: { reportId: kept.id } }); // prettier-ignore
       expect(row.abnormalFlag).toBe('CRITICAL_HIGH');
+      // La fila nueva congela el umbral del original, no el de hoy.
+      expect(Number(row.criticalHigh)).toBe(400);
       // Y sigue en la cola de críticos, ahora por el informe corregido.
       const queue = await reports.critical(requester, new Date());
       expect(queue.map((entry) => entry.reportId)).toContain(kept.id);
 
-      // Control positivo: corregido a un valor menos extremo, rige el umbral de hoy.
+      // Menos extremo pero por encima del 400 aplicado: sigue crítico. Con los
+      // rangos de hoy (500) habría salido HIGH y de la cola.
       const lowered = await lessExtreme.correct();
       const loweredRow = await prisma.observationResult.findFirstOrThrow({ where: { reportId: lowered.id } }); // prettier-ignore
-      expect(loweredRow.abnormalFlag).toBe('HIGH');
+      expect(loweredRow.abnormalFlag).toBe('CRITICAL_HIGH');
+
+      // Control positivo: por debajo del umbral aplicado deja de ser crítico.
+      const below = await belowApplied.correct();
+      const belowRow = await prisma.observationResult.findFirstOrThrow({ where: { reportId: below.id } }); // prettier-ignore
+      expect(belowRow.abnormalFlag).toBe('HIGH');
+      expect(Number(belowRow.criticalHigh)).toBe(400);
     });
 
     it('ORD-114 un rango cerrado no cuenta: el resultado nuevo usa el que rige al registrarlo', async () => {

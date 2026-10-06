@@ -1,4 +1,8 @@
-import { classifyNumeric, classifyQualitative } from './abnormal-flag';
+import {
+  classifyNumeric,
+  classifyQualitative,
+  type CriticalLimits,
+} from './abnormal-flag';
 import {
   ResultValueNotAllowedError,
   ResultValueTypeMismatchError,
@@ -52,6 +56,9 @@ export interface ResolvedResult {
   referenceLow: number | null;
   referenceHigh: number | null;
   referenceText: string | null;
+  /** ORD-122. The critical bounds the flag was computed with, frozen. */
+  criticalLow: number | null;
+  criticalHigh: number | null;
   /** ORD-035, ORD-038. Computed here; `null` means «nothing to compare against». */
   abnormalFlag: AbnormalFlag | null;
 }
@@ -68,6 +75,8 @@ export function resolveResult(
   analyte: AnalyteDefinition,
   submitted: SubmittedValue,
   patient: PatientProfile,
+  /** ORD-114, ORD-122. What the corrected version applied to this value. */
+  applied?: CriticalLimits,
 ): ResolvedResult {
   const frozen = { analyteId: analyte.id, analyteDisplay: analyte.name };
 
@@ -80,7 +89,12 @@ export function resolveResult(
       throw new ResultValueTypeMismatchError(analyte.code, 'NUMERIC');
     }
 
-    const { flag, ...range } = classifyNumeric(value, analyte, patient);
+    const { flag, ...range } = classifyNumeric(
+      value,
+      analyte,
+      patient,
+      applied,
+    );
     return {
       ...frozen,
       valueNumeric: value,
@@ -162,11 +176,20 @@ export function resolveResult(
 function qualitativeRange(
   analyte: AnalyteDefinition,
   patient: PatientProfile,
-): Pick<ResolvedResult, 'referenceLow' | 'referenceHigh' | 'referenceText'> {
+): Pick<
+  ResolvedResult,
+  | 'referenceLow'
+  | 'referenceHigh'
+  | 'referenceText'
+  | 'criticalLow'
+  | 'criticalHigh'
+> {
   const classified = classifyQualitative(analyte, patient);
   return {
     referenceLow: classified.referenceLow,
     referenceHigh: classified.referenceHigh,
     referenceText: classified.referenceText,
+    criticalLow: classified.criticalLow,
+    criticalHigh: classified.criticalHigh,
   };
 }

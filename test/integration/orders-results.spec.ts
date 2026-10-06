@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
 import { PrismaDiagnosticReportRepository } from '../../src/modules/orders/infrastructure/prisma-diagnostic-report.repository';
@@ -760,6 +760,48 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
         VALUES (${scene.order.id}::uuid, 'CORRECTED', ${original.id}::uuid,
                 CURRENT_TIMESTAMP)`,
     ).rejects.toThrow();
+  });
+
+  it('ORD-122 congela los límites críticos aplicados, y la base rechaza una bandera que no explican', async () => {
+    const prisma = db();
+    const scene = await anOrderedBloodCount(prisma);
+    const { reports } = serviceOf(prisma);
+    const report = await reports.register(
+      {
+        orderId: scene.order.id,
+        performedById: null,
+        issuedAt: new Date(Date.now() - 3_600_000),
+        results: [
+          { analyteDefinitionId: scene.glu.id, valueNumeric: 92 },
+          { analyteDefinitionId: scene.hb.id, valueNumeric: 13.4 },
+        ],
+      },
+      requester,
+    );
+    const glucose = await prisma.observationResult.findFirstOrThrow({ where: { reportId: report.id, analyteDisplay: scene.glu.name } }); // prettier-ignore
+    expect(glucose).toMatchObject({ abnormalFlag: 'NORMAL' });
+    expect([Number(glucose.criticalLow), Number(glucose.criticalHigh)]).toEqual([40, 400]); // prettier-ignore
+    const hb = await prisma.observationResult.findFirstOrThrow({ where: { reportId: report.id, analyteDisplay: scene.hb.name } }); // prettier-ignore
+    // Sin crítico definido, ningún lado.
+    expect([hb.criticalLow, hb.criticalHigh]).toEqual([null, null]);
+
+    const set = (sql: Prisma.Sql) =>
+      prisma.$executeRaw`UPDATE "observation_result" SET ${sql} WHERE "id" = ${glucose.id}`;
+    const refused = expect.objectContaining({ message: expect.stringContaining('observation_result_flag_agrees_with_critical_bounds') }); // prettier-ignore
+
+    // Control positivo: una fila que sus límites explican entra.
+    await expect(set(Prisma.sql`"value_numeric" = 450, "abnormal_flag" = 'CRITICAL_HIGH'`)).resolves.toBe(1); // prettier-ignore
+    await expect(set(Prisma.sql`"value_numeric" = 30, "abnormal_flag" = 'CRITICAL_LOW'`)).resolves.toBe(1); // prettier-ignore
+    // Crítica sin el límite que la hace crítica.
+    await expect(set(Prisma.sql`"value_numeric" = 300, "abnormal_flag" = 'CRITICAL_HIGH'`)).rejects.toEqual(refused); // prettier-ignore
+    await expect(set(Prisma.sql`"value_numeric" = 30, "abnormal_flag" = 'CRITICAL_LOW', "critical_low" = NULL`)).rejects.toEqual(refused); // prettier-ignore
+    // Fuera de sus límites y marcada como no crítica: el caso que saca de la cola.
+    await expect(set(Prisma.sql`"value_numeric" = 450, "abnormal_flag" = 'HIGH'`)).rejects.toEqual(refused); // prettier-ignore
+    await expect(set(Prisma.sql`"value_numeric" = 450, "abnormal_flag" = NULL`)).rejects.toEqual(refused); // prettier-ignore
+    // Límites en una determinación que no es numérica.
+    await expect(set(Prisma.sql`"value_numeric" = NULL, "value_text" = 'Hemolizada', "abnormal_flag" = NULL`)).rejects.toEqual(refused); // prettier-ignore
+    // Control positivo: sin límites, la textual entra.
+    await expect(set(Prisma.sql`"value_numeric" = NULL, "value_text" = 'Hemolizada', "abnormal_flag" = NULL, "critical_low" = NULL, "critical_high" = NULL`)).resolves.toBe(1); // prettier-ignore
   });
 
   it('ORD-090 no deja leer un informe de una sede fuera del alcance', async () => {

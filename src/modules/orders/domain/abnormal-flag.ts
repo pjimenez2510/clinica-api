@@ -153,6 +153,20 @@ export interface Classification {
   referenceLow: number | null;
   referenceHigh: number | null;
   referenceText: string | null;
+  /**
+   * ORD-122. The critical bounds APPLIED, side by side, frozen beside the
+   * reference: «which threshold applied to this patient?» is read on the row,
+   * and a correction compares with it (ORD-114). `null` on a side that had no
+   * critical bound.
+   */
+  criticalLow: number | null;
+  criticalHigh: number | null;
+}
+
+/** ORD-122. The critical bounds one value was, or is to be, compared with. */
+export interface CriticalLimits {
+  low: number | null;
+  high: number | null;
 }
 
 /** Nothing to compare against: no flag and no frozen range. */
@@ -161,6 +175,8 @@ const UNCLASSIFIED: Classification = {
   referenceLow: null,
   referenceHigh: null,
   referenceText: null,
+  criticalLow: null,
+  criticalHigh: null,
 };
 
 /**
@@ -172,28 +188,37 @@ const UNCLASSIFIED: Classification = {
  * `LOW`/`HIGH`; a value outside the critical band is `CRITICAL_LOW`/
  * `CRITICAL_HIGH` even if no reference range exists at all.
  *
- * THE FROZEN RANGE IS ALWAYS THE REFERENCE ONE, even when the flag came from
- * the critical band. `VALOR DE REFERENCIA` is a column of form 010B and means
- * «lo normal»; printing the critical bounds there would tell a patient that
- * anything under 400 mg/dL of glucose is fine.
+ * THE FROZEN REFERENCE IS ALWAYS THE REFERENCE ONE, even when the flag came
+ * from the critical band. `VALOR DE REFERENCIA` is a column of form 010B and
+ * means «lo normal»; printing the critical bounds there would tell a patient
+ * that anything under 400 mg/dL of glucose is fine. The critical bounds are
+ * frozen in their own columns (ORD-122).
+ *
+ * `applied`: the critical bounds a correction inherits from the version it
+ * corrects (ORD-114, D-130.1). Given, they replace the catalogue's WHOLE, both
+ * sides: the correction compares with what was applied, not with a mix. The
+ * reference is still today's.
  */
 export function classifyNumeric(
   value: number,
   analyte: Pick<AnalyteDefinition, 'ranges'>,
   patient: PatientProfile,
+  applied?: CriticalLimits,
 ): Classification {
   const reference = applicableRange(analyte.ranges, 'REFERENCE', patient);
+  const critical = applied ?? criticalLimitsOf(analyte.ranges, patient);
   const frozen = {
     referenceLow: reference?.low ?? null,
     referenceHigh: reference?.high ?? null,
     referenceText: reference?.text ?? null,
+    criticalLow: critical.low,
+    criticalHigh: critical.high,
   };
 
-  const critical = criticalBounds(analyte.ranges, patient);
-  if (critical.low && value < critical.low.value) {
+  if (critical.low !== null && value < critical.low) {
     return { flag: 'CRITICAL_LOW', ...frozen };
   }
-  if (critical.high && value > critical.high.value) {
+  if (critical.high !== null && value > critical.high) {
     return { flag: 'CRITICAL_HIGH', ...frozen };
   }
 
@@ -224,12 +249,16 @@ export function classifyQualitative(
   patient: PatientProfile,
 ): Classification {
   const reference = applicableRange(analyte.ranges, 'REFERENCE', patient);
-  return {
-    flag: null,
-    referenceLow: null,
-    referenceHigh: null,
-    referenceText: reference?.text ?? null,
-  };
+  return { ...UNCLASSIFIED, referenceText: reference?.text ?? null };
+}
+
+/** ORD-036, ORD-122. The critical band that applies today, as bare numbers. */
+function criticalLimitsOf(
+  ranges: readonly ReferenceRange[],
+  patient: PatientProfile,
+): CriticalLimits {
+  const { low, high } = criticalBounds(ranges, patient);
+  return { low: low?.value ?? null, high: high?.value ?? null };
 }
 
 /** ORD-060. Whether a flag is one of the two that have to reach a human today. */
@@ -237,48 +266,35 @@ export function isCritical(flag: AbnormalFlag | null): boolean {
   return flag === 'CRITICAL_LOW' || flag === 'CRITICAL_HIGH';
 }
 
-/** What a correction compares: one value, its determination and its flag. */
-interface FlaggedValue {
+/** What a correction inherits: one value of the version it corrects. */
+interface AppliedValue {
   analyteDisplay: string;
   valueNumeric: number | null;
-  abnormalFlag: AbnormalFlag | null;
+  criticalLow: number | null;
+  criticalHigh: number | null;
 }
 
 /**
- * ORD-054, ORD-114. A CORRECTION NEVER LOWERS A STANDING CRITICAL BY ITSELF.
+ * ORD-114, ORD-122 (D-130.1, resuelta por el autor: C). The critical bounds
+ * each determination of the corrected version was classified with, by the
+ * name the correction is matched on (ORD-055).
  *
- * A correction is classified with the ranges in force today (ORD-114), and
- * ORD-055 makes the laboratory resend every value, the unchanged ones
- * included. So a glucose of 420 that was critical under a threshold of 400
- * would come back `HIGH` the day after the clinic raised it to 500 — and
- * leave the critical worklist without anybody having been called.
- *
- * The rule kept here is the monotone one: a corrected value AS EXTREME OR
- * MORE than one that was already critical on that side stays critical. A
- * value the laboratory corrected to something less extreme is classified
- * with today's ranges, as anything new is.
- *
- * ⚠️ INTERIM, AND IT IS A CLINICAL DECISION (D-130): which threshold a
- * correction uses. The recommendation is to freeze the critical bounds on
- * the result, as ORD-037 already freezes the reference ones.
+ * A correction compares with WHAT WAS APPLIED, not with today's catalogue: a
+ * threshold raised after the report cannot take off the worklist a critical
+ * nobody called about, and «which threshold applied?» needs no
+ * reconstruction. Only numeric values carry bounds; a determination the
+ * correction brings for the first time is classified with today's (absent
+ * from the map).
  */
-export function keepStandingCritical<T extends FlaggedValue>(
-  corrected: T,
-  previous: readonly FlaggedValue[],
-): T {
-  if (isCritical(corrected.abnormalFlag) || corrected.valueNumeric === null) {
-    return corrected;
-  }
-  const value = corrected.valueNumeric;
-  const was = previous.find(
-    (result) => result.analyteDisplay === corrected.analyteDisplay,
+export function appliedCriticalLimits(
+  previous: readonly AppliedValue[],
+): Map<string, CriticalLimits> {
+  return new Map(
+    previous
+      .filter((result) => result.valueNumeric !== null)
+      .map((result) => [
+        result.analyteDisplay,
+        { low: result.criticalLow, high: result.criticalHigh },
+      ]),
   );
-  if (!was || was.valueNumeric === null) return corrected;
-  if (was.abnormalFlag === 'CRITICAL_HIGH' && value >= was.valueNumeric) {
-    return { ...corrected, abnormalFlag: 'CRITICAL_HIGH' };
-  }
-  if (was.abnormalFlag === 'CRITICAL_LOW' && value <= was.valueNumeric) {
-    return { ...corrected, abnormalFlag: 'CRITICAL_LOW' };
-  }
-  return corrected;
 }

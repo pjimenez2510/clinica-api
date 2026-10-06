@@ -66,6 +66,9 @@ export interface ObservationView {
   referenceLow: number | null;
   referenceHigh: number | null;
   referenceText: string | null;
+  /** ORD-122. The critical bounds the flag was computed with. */
+  criticalLow: number | null;
+  criticalHigh: number | null;
   /** ORD-038. `null` means «nothing to compare against», never «normal». */
   abnormalFlag: AbnormalFlag | null;
   observedAt: Date;
