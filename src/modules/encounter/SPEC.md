@@ -474,6 +474,15 @@ comprobar que la nota firmada la sigue mostrando y su hash sigue cuadrando.
 disparador), EN-204 (que publicar no toque una nota ya escrita sólo se ve
 comparando filas).
 
+### H11 — Una sola nota de consulta por atención _(P1)_
+
+**Prueba independiente:** abrir la 002 de una atención y volver a pedir abrirla
+por la API: `CLINICAL_NOTE_ALREADY_OPEN`, y la atención sigue con una.
+
+**Cubre:** EN-229.
+
+**Solo servidor:** EN-229 (la pantalla ya no abre una segunda).
+
 ### Fuera de las nueve
 
 **EN-148 a EN-150** —el triaje— tampoco pertenecen a ninguna entrega, y por otro
@@ -3701,6 +3710,25 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
 
 ---
 
+## 26. Una sola nota de consulta por atención (D-139.5)
+
+- **EN-229** — Una atención DEBERÁ tener **una sola cadena de nota 002**: SI
+  se pide abrir la 002 de una atención que ya tiene una —en borrador, firmada,
+  enmendada o retirada—, ENTONCES el sistema DEBERÁ rechazarlo con
+  `CLINICAL_NOTE_ALREADY_OPEN` sin escribir nada. Lo que cambia se enmienda
+  (EN-025).
+  > **D-139.5, resuelta por el autor.** El resumen imprime sólo la última
+  > firmada (DOC-111): una segunda cadena dejaba la primera fuera del papel.
+  > La pantalla no abre una segunda —sólo ofrece «Abrir nota» si no hay
+  > ninguna en curso, y no ofrece retirar—; lo de aquí cierra la puerta a dos
+  > pestañas o dos clics.
+  >
+  > **Garantía de la base:** `clinical_note_one_002_chain_per_encounter`,
+  > índice único parcial sobre `encounter_id` de las versiones 1 de la 002.
+  > La migración se probó sobre una copia de la base del autor (0
+  > atenciones con dos cadenas). Se prueba contra la base con control
+  > positivo (otra atención sí abre la suya; otro formulario no choca).
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de
@@ -3728,6 +3756,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `VITALS_REQUIRED` | — | **Retirado por EN-217 (D-132 B)**: la toma ya no se rechaza por la antropometría | EN-063 |
 | `ANTHROPOMETRY_PENDING` | 422 | Se firma la 002 (da el alta) sin la antropometría obligatoria del menor de 5 años o de la embarazada, o una corrección de la toma tras el alta la dejaría pendiente (D-134.3); nombra cada campo | EN-217 |
 | `VITALS_CORRECTION_REQUIRES_SIGNATURE` | 403 | Corregir la toma de una atención con el alta sin `record:sign` en su sede (D-134.3) | EN-228 |
+| `CLINICAL_NOTE_ALREADY_OPEN` | 409 | Abrir la nota 002 de una atención que ya tiene una (D-139.5) | EN-229 |
 | `NOTE_CONTENT_INCOMPLETE` | 422 | Firmar sin una sección obligatoria, o la 002 sin ningún diagnóstico en la atención (`diagnoses`). Nombra lo que falta, nunca su contenido | EN-020 |
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
 | `VIOLENCE_SCREENING_RESTRICTED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite | EN-072 |

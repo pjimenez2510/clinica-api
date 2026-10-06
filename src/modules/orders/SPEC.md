@@ -346,6 +346,23 @@ pantalla de la orden no enseña «Transcribir informe», y `POST
 **Solo servidor:** ORD-124 (la parte del analito que solo respondía a una línea
 anulada, que queda sin línea): es la forma de lo que se guarda.
 
+### E13 — Lo que el autor decidió sobre la orden y los críticos _(P1)_
+
+El ayuno es un dato del examen, la orden en pantalla nombra el examen de cada
+indicación, un examen con resultados no se anula, y una edad estimada no deja
+a un recién nacido sin alerta.
+
+**Por qué es P1:** decisiones del autor del 06-10-2026 (D-137, D-139.1,
+D-139.2) sobre lo que llega al paciente y al laboratorio.
+**Prueba independiente:** marcar «Pide ayuno» con 8 horas en un examen cuya
+preparación no empieza por «Ayuno», pedirlo y emitir: la orden en pantalla y
+el PDF dicen «Venga con 8 horas de ayuno como mínimo (…)». Registrar un
+informe parcial y ver que la línea ya no ofrece «Anular».
+**Cubre:** ORD-129 a ORD-132.
+
+**Solo servidor:** ORD-132 (el umbral elegido no se ve en pantalla). ORD-130
+es solo de interfaz.
+
 ### Fuera de las ocho
 
 **Transcripción masiva y gráficas de evolución.** Se transcribe **solo lo que se
@@ -1410,6 +1427,9 @@ desde la pantalla.
   > atención (EN-221); la prueba de integración corrige la fecha de la ficha
   > y comprueba que la bandera sigue con la edad congelada, con control
   > positivo.
+  >
+  > **Enmendado por ORD-132 (D-139.2, 06-10-2026):** para los críticos, con
+  > fecha estimada, el más protector de los que cubran la edad ± 6 meses.
 
 - **ORD-128** — Las 24 horas de ORD-115 DEBERÁN contarse desde la **última
   edición** del borrador (`service_order.updated_at`, con el reloj de la
@@ -1478,6 +1498,9 @@ se anula y se pide de nuevo, y la pantalla lo hace en un paso (D-127.4)._
   > ya rechaza anular una línea `COMPLETED`, y pedirla otra vez repetiría un
   > examen que ya volvió. Queda como estaba en la orden original. La pantalla
   > lo dice en la confirmación.
+  >
+  > **Enmendado por ORD-131 (D-139.1, 06-10-2026):** tampoco la que tiene
+  > algún resultado aunque siga pendiente.
   >
   > **Por qué se copian las líneas y no se resuelven otra vez contra el
   > catálogo:** se corrige lo que decía el papel. Lo que tenga que ser cierto
@@ -1679,7 +1702,7 @@ como el 010A._
   >
   > ⚠️ Una línea con **resultado parcial** sigue `REQUESTED` y se puede
   > anular (ORD-008 sólo protege la completada): sus valores quedan bajo una
-  > línea anulada. Es D-139.
+  > línea anulada. Es D-139. **Resuelto por ORD-131:** ya no se anula.
   >
   > **Garantía de la base:** `trg_observation_result_not_on_cancelled_line`
   > (ningún resultado nuevo bajo una línea anulada) y
@@ -1702,6 +1725,9 @@ como el 010A._
   > del catálogo sembrado; un ayuno escrito de otro modo sale como una
   > indicación más, con su examen, sin la línea destacada. Un campo propio es
   > D-137.
+  >
+  > **Enmendado por ORD-129 (D-137, 06-10-2026):** la línea destacada sale de
+  > «Pide ayuno» y sus horas, no del comienzo del texto.
 
 - **ORD-126** — El PDF de la orden DEBERÁ imprimir los exámenes vivos
   **agrupados por su sección del 010A** (`exam_definition.form_010_section`),
@@ -1715,6 +1741,71 @@ como el 010A._
   > se lee del catálogo **al imprimir**, como la muestra y la preparación
   > (DOC-072): la línea congela código y nombre, no la sección. Lo que la
   > orden ya imprimía se conserva.
+
+## 13. Lo que el autor decidió el 06-10-2026 (D-137, D-139.1, D-139.2)
+
+- **ORD-129** — El examen del catálogo DEBERÁ llevar **«Pide ayuno»**
+  (`exam_definition.requires_fasting`, sí o no) y, si lo pide, **sus horas**
+  como mínimo (`fasting_hours`, de 1 a 24, opcional), editables en
+  Administración → Exámenes junto a la preparación, en su sitio; y la línea
+  destacada de la orden (ORD-125) DEBERÁ salir de ese dato, no del texto de la
+  preparación: «Venga con 8 horas de ayuno como mínimo (Glucosa en ayunas,
+  Ecografía abdominal).», con las horas **mayores** de los exámenes vivos que
+  lo piden, o «Venga en ayunas (…).» si ninguno dice cuántas. SI unas horas
+  vienen sin «Pide ayuno», ENTONCES DEBERÁ rechazarlo con un mensaje en el
+  campo. La migración DEBERÁ marcar «Pide ayuno» en cada examen cuya
+  preparación **empieza por «Ayuno»** y tomar como horas el primer número de
+  esa frase (8 en «Ayuno de 8 a 12 horas»), sin tocar el texto.
+  > **D-137 A, resuelta por el autor.** Con el texto, «Venir sin desayunar»
+  > no daba línea destacada. Las horas son un mínimo porque es lo que el
+  > paciente tiene que cumplir: con dos exámenes de 6 y 8 horas, las 8 bastan
+  > para los dos. La preparación sigue impresa entera bajo el nombre de su
+  > examen.
+  >
+  > **Garantía de la base:** `exam_definition_fasting_hours_needs_fasting`
+  > (horas sólo con «Pide ayuno») y `exam_definition_fasting_hours_range`
+  > (1 a 24), probadas con control positivo. El relleno se probó sobre una
+  > copia de la base del autor.
+
+- **ORD-130** — La orden emitida en pantalla DEBERÁ decir sus indicaciones
+  como el PDF (ORD-125, ORD-129): la línea del ayuno arriba, cada indicación
+  con **el nombre de su examen** y sin la de un examen que no pide nada; y SI
+  ninguno pide preparación, ENTONCES DEBERÁ decir «No requiere preparación
+  previa.».
+  > **Solo interfaz.** Antes decía «No requiere ayuno.» sin decir de cuál, y
+  > juntaba dos preparaciones iguales de exámenes distintos en una.
+
+- **ORD-131** — CUANDO se pida anular una línea emitida (ORD-007) que ya tenga
+  **algún resultado** —aunque falten otros y siga pendiente—, el sistema
+  **NO DEBERÁ** anularla y DEBERÁ rechazarlo con `ORDER_ITEM_HAS_RESULTS`; y
+  CUANDO se corrija la orden (ORD-118), **NO DEBERÁ** anular ni volver a pedir
+  esas líneas, que DEBERÁN quedar como estaban, como la completada; SI todas
+  las vivas tienen algún resultado, ENTONCES DEBERÁ rechazar la corrección con
+  `ORDER_ITEM_HAS_RESULTS` sin cambiar nada. La pantalla **NO DEBERÁ**
+  ofrecer «Anular» en una línea con resultados, y DEBERÁ decir que se edita el
+  informe o se pide de nuevo.
+  > **D-139.1, resuelta por el autor.** Antes se podía: los valores quedaban
+  > bajo una línea anulada y el resumen de la atención ya no listaba el
+  > examen. Lo que sigue: editar el informe (ORD-119) o pedirlo otra vez.
+  >
+  > **Garantía de la base:** `trg_service_order_item_completed_is_not_cancelled`
+  > rechaza también pasar a `CANCELLED` una línea de la que cuelgue algún
+  > resultado (`service_order_item_with_result_is_not_cancelled`). El
+  > disparador de los resultados bloquea la línea `FOR SHARE` (ORD-124), así
+  > que un informe y una anulación a la vez se esperan y el segundo ve lo del
+  > primero. Se prueba contra la base, con control positivo (la línea sin
+  > resultados sí se anula).
+
+- **ORD-132** — MIENTRAS la fecha de nacimiento de la atención sea
+  **estimada** (EN-221), el umbral crítico de cada lado (ORD-036) DEBERÁ ser
+  el **más protector** —el bajo más alto y el alto más bajo— de todos los
+  rangos críticos de su sexo o sin sexo cuya ventana de edad se cruce con la
+  edad congelada **± 6 meses** (183 días), o que no tengan ventana. El rango de
+  referencia DEBERÁ seguir ORD-127.
+  > **D-139.2, resuelta por el autor.** Con ORD-127 a secas, un recién nacido
+  > con fecha estimada y un potasio crítico definido sólo para 0–30 días se
+  > quedaba sin alerta. El error de la edad estimada lleva a avisar de más,
+  > nunca de menos.
 
 ## Códigos de error nuevos
 
@@ -1753,6 +1844,7 @@ contrato —`code`, estado y mensaje—.
 | `ORDER_NOT_DISCARDED` | 409 | Se intentó recuperar una orden que no está descartada: ya se recuperó, o nunca se descartó | ORD-116 |
 | `ORDER_NOT_ISSUED` | 409 | Se intentó registrar un informe, emparejar un resultado, anular una línea o corregir una orden que no se ha emitido | ORD-100, ORD-118 |
 | `ORDER_OF_ANOTHER_PRACTITIONER` | 403 | Corregir una orden emitida que firma otro profesional: el borrador nuevo saldría a nombre de quien corrige. **Distinto de `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER`** porque la salida difiere: aquí se pueden anular sus exámenes (ORD-007) y pedirlos en una orden propia | ORD-118 |
+| `ORDER_ITEM_HAS_RESULTS` | 409 | Se intentó anular un examen que ya tiene algún resultado, o corregir una orden cuyos exámenes pendientes tienen todos alguno: se edita el informe o se pide de nuevo | ORD-131 |
 | `EXAM_DEFINITION_NOT_FOUND` | 404 | El examen no existe | ORD-103 |
 | `EXAM_CODE_DUPLICATE` | 409 | Otro examen ya lleva ese código. Lo arbitra `exam_definition_code_unique` | ORD-103 |
 | `ANALYTE_NOT_FOUND` | 404 | El analito no existe o está desactivado | ORD-105, ORD-106 |
@@ -1880,6 +1972,9 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-117 | Interfaz | Anular una línea abre una confirmación con la consecuencia; cancelar no llama al servidor, confirmar sí. |
 | ORD-118 | Integración y unitario | Contra la base: corregir anula las líneas vivas con quién las anuló y deja las dos filas de bitácora, deja la resultada como estaba y abre el borrador con los mismos exámenes, tipo, prioridad e indicación; **un fallo forzado al escribir el borrador deja todas las líneas vivas**, con control positivo; atención cerrada, borrador y orden sin líneas vivas no corrigen. Que sólo quien firma corrige, con el servicio. |
 | ORD-119 | Integración y unitario | Contra la base: editar un parcial añadiendo lo que faltaba deja la versión nueva `FINAL`, el parcial legible y sustituido, y la línea `COMPLETED`, con control positivo (antes de editar, `PARTIAL` y la línea pendiente); cambiar un valor que ya decía la deja `CORRECTED`; un parcial editado que sigue incompleto queda `PARTIAL` con el anterior sustituido, y completarlo cambiando la conclusión lo deja `CORRECTED`, con control positivo. Unitario del estado de la versión (valor, unidad, bandera, conclusión, incompleto) y de la lista cerrada de `isCorrectable`. |
+| ORD-129 | Integración y unitario | Las dos restricciones de las horas, contra la base con control positivo; la línea destacada, unitaria sobre el compositor del PDF. |
+| ORD-131 | Integración | Que una línea con resultados no pase a anulada lo garantiza un disparador: se prueba contra la base con control positivo, y por el servicio la anulación y la corrección. |
+| ORD-132 | Unitario | La elección del umbral es pura: se prueba con los rangos de un recién nacido y una edad estimada. |
 | Todos los códigos de error | Unitario | Contrato: `code`, categoría y mensaje. |
 
 ---
