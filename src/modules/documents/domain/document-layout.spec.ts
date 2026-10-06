@@ -866,6 +866,25 @@ describe('ORD-006 DOC-072 la orden impresa, como la plantilla aprobada (D-095)',
     });
   });
 
+  it('ORD-125 «No requiere» sólo calla cuando es toda la indicación: lo que sigue se imprime', () => {
+    const layout = composeLayout(
+      order({
+        items: [
+          { code: 'EX-EMO', display: 'Elemental y microscópico de orina (EMO)', specimen: 'Orina', preparation: 'No requiere ayuno. Recoja la primera orina de la mañana.', section: 'ORINA', status: 'REQUESTED' }, // prettier-ignore
+          { code: 'EX-BH', display: 'Biometría hemática completa', specimen: null, preparation: 'No requiere ayuno.', section: 'HEMATOLOGÍA', status: 'REQUESTED' }, // prettier-ignore
+        ],
+      }),
+      context,
+      template,
+    );
+    const box = layout.blocks.find((block) => block.kind === 'box');
+    if (box?.kind !== 'box') throw new Error('no box');
+    const inBox = wholeText({ ...layout, blocks: box.blocks });
+
+    expect(inBox).toContain('Recoja la primera orina de la mañana.');
+    expect(inBox).not.toContain('Biometría hemática completa');
+  });
+
   it('ORD-125 sin ayuno no hay línea destacada, y una preparación que no es ayuno sale con su examen', () => {
     const layout = composeLayout(
       order({

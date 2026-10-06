@@ -152,14 +152,6 @@ export class DocumentsController {
   }
 
   /**
-   * DOC-092. The metadata. DELIBERATELY NOT AUDITED.
-   *
-   * What comes back is a class, a size, a hash, an instant and an author —
-   * nothing about a person's health. Auditing what reveals nothing trains
-   * everybody to ignore the trail, which is where what does reveal something
-   * lives.
-   */
-  /**
    * DOC-111. The summary of an attention, composed now and never archived.
    * The same route for the screen and for the assistant.
    */
@@ -179,6 +171,14 @@ export class DocumentsController {
     sendPdf(res, rendered);
   }
 
+  /**
+   * DOC-092. The metadata. DELIBERATELY NOT AUDITED.
+   *
+   * What comes back is a class, a size, a hash, an instant and an author —
+   * nothing about a person's health. Auditing what reveals nothing trains
+   * everybody to ignore the trail, which is where what does reveal something
+   * lives.
+   */
   @Get('renders/:renderId')
   @RequirePermission('record:read', 'query')
   @ApiOperation({ summary: 'Consultar los datos del documento archivado' })

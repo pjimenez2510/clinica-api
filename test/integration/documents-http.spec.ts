@@ -1726,6 +1726,8 @@ describe('los documentos por HTTP', () => {
       expect(trail).toHaveLength(2);
       expect(trail.every((row) => row.resourceId === encounterId)).toBe(true);
       expect(trail.every((row) => row.action === 'PRINT')).toBe(true);
+      const { userId: doctorUserId } = await prisma.practitioner.findUniqueOrThrow({ where: { id: practitionerId }, select: { userId: true } }); // prettier-ignore
+      expect(trail.every((row) => row.userId === doctorUserId)).toBe(true);
     });
 
     it('DOC-111 sin nota 002 firmada no hay resumen; con ella sí (control positivo)', async () => {
@@ -1765,6 +1767,110 @@ describe('los documentos por HTTP', () => {
       expect(await offered()).toBe(true);
     });
 
+    it('DOC-111 sale sólo lo vigente: la nota enmendada, sin la receta anulada ni el examen anulado (con lo vigente como control)', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const encounterId = await aSignedAttention();
+      const now = new Date();
+      // La nota se enmienda: la vigente es la versión 2.
+      const first = await prisma.clinicalNote.findFirstOrThrow({
+        where: { encounterId, formCode: '002' },
+        select: { id: true, chainId: true },
+      });
+      await prisma.clinicalNote.update({ where: { id: first.id }, data: { status: 'SUPERSEDED' } }); // prettier-ignore
+      await prisma.clinicalNote.create({
+        data: {
+          chainId: first.chainId,
+          version: 2,
+          encounterId,
+          formCode: '002',
+          formVersion: '1',
+          status: 'SIGNED',
+          content: { motivoConsulta: 'Tos seca de una semana' },
+          authorId: practitionerId,
+          signedById: practitionerId,
+          signedAt: now,
+          contentHash: 'c'.repeat(64),
+          supersedesId: first.id,
+          amendmentReason: 'Se corrige el motivo',
+        },
+      });
+      // Una receta anulada en la misma atención.
+      const seeded = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId }, select: { siteId: true } }); // prettier-ignore
+      await createIssuedPrescription(prisma, {
+        encounterId,
+        siteId: seeded.siteId,
+        prescriberId: practitionerId,
+        status: 'CANCELLED',
+        items: {
+          create: [
+            { genericName: 'Ibuprofeno', presentation: 'Tableta', concentration: '400 mg', routeCode: 'ORAL', quantity: 10, doseText: '1 tableta', frequencyText: 'Cada 8 horas', durationDays: 3, offFormularyJustification: 'Fuera del CNMB para esta prueba' }, // prettier-ignore
+          ],
+        },
+      });
+      // Una orden con un examen vivo y otro anulado.
+      const system = await prisma.catalogSystem.create({ data: { code: 'EXAMENES-DOC111', name: 'Exámenes de la prueba' } }); // prettier-ignore
+      const concept = await prisma.catalogConcept.create({
+        data: { systemId: system.id, code: 'X', display: 'X', validFrom: new Date(now.getTime() - 24 * 60 * 60 * 1000) }, // prettier-ignore
+        select: { id: true },
+      });
+      const order = await prisma.serviceOrder.create({
+        data: {
+          encounterId,
+          siteId: seeded.siteId,
+          orderedById: practitionerId,
+          category: 'LABORATORY',
+          items: {
+            create: [
+              { conceptId: concept.id, testCode: 'VIVO', testDisplay: 'Proteína C reactiva' }, // prettier-ignore
+              { conceptId: concept.id, testCode: 'ANULADO', testDisplay: 'Velocidad de eritrosedimentación' }, // prettier-ignore
+            ],
+          },
+        },
+        select: { id: true },
+      });
+      await prisma.serviceOrder.update({ where: { id: order.id }, data: { status: 'ISSUED' } }); // prettier-ignore
+      await prisma.serviceOrderItem.updateMany({
+        where: { serviceOrderId: order.id, testCode: 'ANULADO' },
+        data: { status: 'CANCELLED', completedAt: now, cancelledById: (await createUser(prisma)).id }, // prettier-ignore
+      });
+
+      const text = (await summaryText(encounterId)).replace(/\s+/g, ' ');
+
+      expect(text).toContain('Nota enmendada el');
+      expect(text).toContain('Tos seca de una semana');
+      expect(text).not.toContain('Dolor de garganta de dos días');
+      expect(text).toContain('Amoxicilina');
+      expect(text).not.toContain('Ibuprofeno');
+      expect(text).toContain('Proteína C reactiva');
+      expect(text).not.toContain('Velocidad de eritrosedimentación');
+    });
+
+    it('DOC-111 una atención anulada no tiene resumen, y una de otra sede responde como inexistente', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const encounterId = await aSignedAttention();
+      const seeded = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounterId },
+        select: { patientId: true, practitionerId: true },
+      });
+      const now = new Date();
+      await prisma.encounter.update({
+        where: { id: encounterId },
+        data: { status: 'ENTERED_IN_ERROR', endedAt: now, enteredInErrorById: (await createUser(prisma)).id, enteredInErrorAt: now }, // prettier-ignore
+      });
+      const annulled = await summaryOf(encounterId).expect(409);
+      expect((annulled.body as Problem).code).toBe(
+        'ENCOUNTER_SUMMARY_NOT_AVAILABLE',
+      );
+
+      const elsewhere = await createSite(prisma, 'Sede Norte');
+      const foreign = await prisma.encounter.create({
+        data: { ...seeded, siteId: elsewhere.id, startedAt: now, careModality: 'MORBIDITY', visitSequence: 'SUBSEQUENT' }, // prettier-ignore
+        select: { id: true },
+      });
+      const missing = await summaryOf(foreign.id).expect(404);
+      expect((missing.body as Problem).code).toBe('DOCUMENT_SUBJECT_NOT_FOUND');
+    });
+
     it('DOC-090 DOC-111 el resumen exige record:read: caja no lo descarga', async () => {
       await publishTemplate('ENCOUNTER_SUMMARY');
       const encounterId = await aSignedAttention();
@@ -1779,6 +1885,34 @@ describe('los documentos por HTTP', () => {
       expect((refused.body as Problem).code).toBe(
         'DOCUMENT_TEMPLATE_NOT_PUBLISHED',
       );
+    });
+
+    it('DOC-112 el código de una atención sin 002 firmada responde como inexistente; con la nota retirada, anulado', async () => {
+      const { encounterId } = await prisma.prescription.findUniqueOrThrow({
+        where: { id: prescriptionId },
+        select: { encounterId: true },
+      });
+      const { verificationCode } = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounterId },
+        select: { verificationCode: true },
+      });
+      const verifyIt = () =>
+        request(app.getHttpServer()).get(`/api/v1/documents/verify/${verificationCode}`); // prettier-ignore
+
+      const unknown = await verifyIt().expect(404);
+      expect((unknown.body as Problem).code).toBe(
+        'DOCUMENT_VERIFICATION_NOT_FOUND',
+      );
+
+      await aSignedAttention();
+      expect(((await verifyIt().expect(200)).body as { status: string }).status).toBe('VALID'); // prettier-ignore
+
+      // La nota se retira (EN-026): el papel que salió ya no vale.
+      await prisma.clinicalNote.updateMany({
+        where: { encounterId, formCode: '002' },
+        data: { status: 'ENTERED_IN_ERROR' },
+      });
+      expect(((await verifyIt().expect(200)).body as { status: string }).status).toBe('ANNULLED'); // prettier-ignore
     });
 
     it('DOC-112 el código del resumen verifica la atención sin ningún dato del paciente, y la anulada se dice anulada', async () => {

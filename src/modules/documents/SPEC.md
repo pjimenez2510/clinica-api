@@ -1073,8 +1073,11 @@ solo PDF, completo, generado al momento._
   cualquiera pida `GET /v1/documents/verify/<código>` con ese código, el sistema
   DEBERÁ responder como DOC-094, con la clase `ENCOUNTER_SUMMARY`, la fecha de
   la atención, el establecimiento, la sede, el profesional y el estado:
-  vigente, o **anulado** —con su fecha— si la atención está
-  `ENTERED_IN_ERROR`; sin ningún dato del paciente (DOC-095). SI la atención
+  vigente, o **anulado** si la atención está `ENTERED_IN_ERROR` (con su
+  fecha) o si ya no le queda ninguna 002 firmada en pie —la nota se retiró,
+  EN-026—; sin ningún dato del paciente (DOC-095). La página pública lo
+  rotula «Resumen de la atención» y dice que el código verifica la atención,
+  no el contenido del papel. SI la atención
   nunca tuvo la 002 firmada, ENTONCES DEBERÁ responder como a un código
   inexistente (DOC-096): de ella no salió ningún resumen.
   > El código es de la atención y no del PDF, que no se guarda: dos resúmenes

@@ -1667,17 +1667,30 @@ como el 010A._
   anular, la pantalla **NO DEBERÁ** ofrecer «Transcribir informe» ni «Editar».
   > Antes sólo el emparejamiento (ORD-043) rechazaba una línea anulada: el
   > registro buscaba la línea de cada analito entre **todas**, y un valor podía
-  > quedar bajo un examen retirado. Una línea con su resultado no se anula
-  > (ORD-008), así que «ningún examen sin anular» es exactamente «todos
-  > anulados».
+  > quedar bajo un examen retirado.
   >
-  > **Garantía de la base:** el `FOR SHARE` choca con el `UPDATE` de ORD-007.
-  > La prueba de integración anula la línea y registra, contra la base, con
-  > control positivo: la misma orden con un examen vivo sí admite el informe.
+  > **Revisión de la rama:** las líneas se bloquean `FOR UPDATE` (no
+  > `FOR SHARE`: dos informes a la vez de la misma orden se interbloqueaban),
+  > y SI algún resultado o alguna línea esperada del informe está anulada
+  > bajo el bloqueo, ENTONCES el informe entero se rechaza con
+  > `ORDER_ITEM_NOT_PENDING`. La anulación (ORD-007) bloquea la línea antes
+  > de leer su estado, así que una anulación que espera a un informe que
+  > completa la línea la lee completada y se rechaza (ORD-008).
+  >
+  > ⚠️ Una línea con **resultado parcial** sigue `REQUESTED` y se puede
+  > anular (ORD-008 sólo protege la completada): sus valores quedan bajo una
+  > línea anulada. Es D-139.
+  >
+  > **Garantía de la base:** `trg_observation_result_not_on_cancelled_line`
+  > (ningún resultado nuevo bajo una línea anulada) y
+  > `trg_service_order_item_completed_is_not_cancelled` (una completada no se
+  > anula), cada una probada contra la base con control positivo, y las dos
+  > carreras reproducidas reteniendo el bloqueo en otra sesión.
 
 - **ORD-125** — El PDF de la orden DEBERÁ imprimir cada indicación al paciente
   con **el nombre de su examen**, y **NO DEBERÁ** imprimir la de un examen sin
-  preparación —vacía o que empiece por «No requiere»—. SI algún examen vivo
+  preparación —vacía, o una sola frase que empiece por «No requiere»: «No
+  requiere ayuno. Recoja la primera orina de la mañana.» se imprime entera—. SI algún examen vivo
   pide ayuno —su preparación empieza por «Ayuno»—, ENTONCES DEBERÁ imprimir
   **arriba** del recuadro una línea destacada que lo diga para toda la toma y
   nombre los exámenes que lo piden: «Venga en ayunas: ayuno de 8 a 12 horas

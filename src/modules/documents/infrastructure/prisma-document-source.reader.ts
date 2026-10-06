@@ -300,9 +300,12 @@ function backgroundLines(content: Record<string, unknown>): string[] {
 
   const allergies = listOf(snapshot.allergies).map((a) => String(a.substance));
   const personal = listOf(snapshot.personalHistory).map((h) => String(h.description)); // prettier-ignore
-  const family = listOf(snapshot.familyHistory).map(
-    (h) => `${String(h.description)} (${String(h.relative)})`,
-  );
+  const family = listOf(snapshot.familyHistory).map((h) => {
+    const relative = typeof h.relative === 'string' ? h.relative.trim() : '';
+    return relative === ''
+      ? String(h.description)
+      : `${String(h.description)} (${relative})`;
+  });
   return [
     allergies.length > 0
       ? `Alergias: ${allergies.join(', ')}.`
@@ -519,13 +522,22 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         enteredInErrorAt: true,
         practitioner: signer,
         site: place,
+        // A 002 still standing: a retracted one (EN-026, «la historia del
+        // paciente equivocado») leaves the printed summary without validity.
+        notes: {
+          where: { formCode: '002', status: 'SIGNED' },
+          select: { id: true },
+          take: 1,
+        },
       },
     });
     if (encounter !== null) {
       return {
         kind: 'ENCOUNTER_SUMMARY',
         issuedAt: encounter.startedAt,
-        annulled: encounter.status === 'ENTERED_IN_ERROR',
+        annulled:
+          encounter.status === 'ENTERED_IN_ERROR' ||
+          encounter.notes.length === 0,
         annulledAt: encounter.enteredInErrorAt,
         establishmentName: nameOf(encounter.site),
         siteName: encounter.site.name,

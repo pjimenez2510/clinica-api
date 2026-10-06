@@ -522,7 +522,7 @@ function examsBySection(live: readonly OrderItem[]): Block[] {
  * puncture (ORD-010).
  *
  * ⚠️ BY THE TEXT, for want of a field (D-137): a preparation that BEGINS with
- * «Ayuno» is a fast, one that begins with «No requiere» is none.
+ * «Ayuno» is a fast; one that is only «No requiere …» asks for nothing.
  */
 function instructionsFor(live: readonly OrderItem[]): Block[] {
   const asked = live
@@ -530,7 +530,7 @@ function instructionsFor(live: readonly OrderItem[]): Block[] {
       exam: item.display,
       text: item.preparation?.trim() ?? '',
     })) // prettier-ignore
-    .filter(({ text }) => text !== '' && !/^no requiere/i.test(text));
+    .filter(({ text }) => text !== '' && !nothingToDo(text));
   const fasts = asked.filter(({ text }) => /^ayuno/i.test(text));
 
   const caption: Block = { kind: 'caption', text: 'Indicaciones al paciente' };
@@ -556,6 +556,15 @@ function instructionsFor(live: readonly OrderItem[]): Block[] {
       entries: asked.map(({ exam, text }) => ({ label: exam, value: text })),
     },
   ];
+}
+
+/**
+ * ORD-125. «No requiere ayuno.» says there is nothing to do; «No requiere
+ * ayuno. Recoja la primera orina de la mañana.» does not, and is printed whole.
+ * Only a text that is ONE sentence beginning with «No requiere» is left out.
+ */
+function nothingToDo(text: string): boolean {
+  return /^no requiere[^.]*\.?$/i.test(text.trim());
 }
 
 /** «Ayuno de 8 a 12 horas. Puede…» → «ayuno de 8 a 12 horas». */
