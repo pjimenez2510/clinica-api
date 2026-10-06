@@ -11,6 +11,7 @@ import {
 } from '../../src/modules/privacy/infrastructure/record-version-subjects';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
+import { seedBilling } from '../../prisma/seed-billing.mts';
 import { aScene, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import {
@@ -238,6 +239,38 @@ async function everyVersionedRowOf(
     },
   });
 
+  // BI-195: a charge on this patient's account.
+  await seedBilling(prisma);
+  const payer = await prisma.payer.findUniqueOrThrow({
+    where: { code: 'PARTICULAR' },
+  });
+  const account = await prisma.patientAccount.create({
+    data: {
+      patientId,
+      siteId: scene.site.id,
+      payerId: payer.id,
+      priceListId: (
+        await prisma.priceList.findFirstOrThrow({
+          where: { payerId: payer.id },
+        })
+      ).id,
+    },
+  });
+  const service = await prisma.billableService.findUniqueOrThrow({
+    where: { code: 'CONS-MG-PV' },
+  });
+  const charge = await prisma.chargeItem.create({
+    data: {
+      accountId: account.id,
+      billableServiceId: service.id,
+      serviceDate: new Date(scene.encounter.startedAt),
+      unitAmount: 25,
+      serviceDisplay: service.name,
+      taxSriCode: '0',
+      createdById: author.id,
+    },
+  });
+
   const versioned: Record<string, string> = {
     encounter: encounterId,
     // Vitals are one row per attention, archived by `encounter_id`.
@@ -249,6 +282,7 @@ async function everyVersionedRowOf(
     patient_priority_group: group.id,
     data_subject_request: request.id,
     agenda_entry: appointment.id,
+    charge_item: charge.id,
     waitlist_contact_attempt: call.id,
   };
   for (const [table, resourceId] of Object.entries(versioned)) {

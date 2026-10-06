@@ -129,6 +129,17 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
       'entered_in_error_reason',
     ],
   },
+  // BI-195 (fix/menos-preguntas-caja). A charge corrected before it was
+  // invoiced: charge → patient account → patient. It is the patient's own
+  // record of what was charged and is exported like the rest (LOPDP art. 13,
+  // right of access); nothing in the row is about somebody else.
+  charge_item: {
+    resourceIdsOf: (chartId) => Prisma.sql`
+      SELECT c.id FROM charge_item c
+        JOIN patient_account a ON a.id = c.account_id
+       WHERE a.patient_id IN ${chartScopeIds(chartId)}`,
+    omittedBecause: null,
+  },
   // AG-064. The outcome of a call about this patient's waiting-list entry.
   waitlist_contact_attempt: {
     resourceIdsOf: (chartId) => Prisma.sql`
