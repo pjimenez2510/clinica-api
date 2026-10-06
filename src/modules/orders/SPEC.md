@@ -1364,14 +1364,20 @@ desde la pantalla.
   sus límites congelados: `CRITICAL_LOW` sin un `critical_low` por encima del
   valor, `CRITICAL_HIGH` sin un `critical_high` por debajo, una bandera no
   crítica con el valor fuera de sus límites, o límites en un resultado que no
-  es numérico.
+  es numérico. Y la base DEBERÁ impedir reescribir o borrar un resultado: lo
+  único que cambia en la fila es su línea, una vez, al emparejar el que llegó
+  sin orden (ORD-043). El valor se clasifica redondeado a la escala en que se
+  guarda.
 
   > «¿Qué umbral regía para este paciente?» se lee en la fila, sin reconstruir
   > la vigencia de ORD-113. Los resultados ya registrados se rellenan con el
   > umbral que regía al registrarse el informe (`diagnostic_report.created_at`)
-  > según esa vigencia, para el sexo del paciente y la edad congelada en la
-  > atención; una corrección hereda los de la versión que corrige (ORD-114).
-  > Ninguna bandera guardada cambia, y la restricción lo comprueba fila a fila.
+  > según esa vigencia, con la misma edad y sexo que usó su clasificación. Una
+  > corrección rellenada congela, en este orden, el que explique su bandera: el
+  > más protector entre el de la versión que corrige y el de su día (lo que
+  > hoy haría ORD-114), el de la versión que corrige, o el de su día. Ninguna
+  > bandera guardada cambia; las correcciones que la regla de hoy habría
+  > marcado distinto se anuncian por su id al migrar (D-136).
 
 ---
 
