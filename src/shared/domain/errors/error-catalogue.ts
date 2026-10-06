@@ -1217,13 +1217,24 @@ export const DOMAIN_ERROR_CODES = [
   //   * `CONSENT_TEXT_VERSION_CONFLICT` (409) — dos publicaciones a la vez; la
   //     base deja pasar una (PD-005).
   //   * `DATA_REQUEST_ALREADY_ANSWERED` (409) — una respuesta es una sola
-  //     (PD-033); la base tampoco admite otra (PD-038).
+  //     (PD-033); la base tampoco admite otra (PD-038). Editar una respondida
+  //     también lo responde (PD-046): su respuesta se rectifica (PD-047).
+  //   * `CONSENT_NOT_FOUND` (404) — PD-044. Se corrige un consentimiento que
+  //     no existe o no es de esa ficha (ni de sus absorbidas).
+  //   * `CONSENT_ALREADY_CORRECTED` (409) — PD-044. Ese consentimiento ya
+  //     tiene una corrección: se corrige la vigente. Lo arbitra
+  //     `patient_consent_corrected_once`.
+  //   * `DATA_REQUEST_NOT_ANSWERED` (409) — PD-047. Se rectifica la respuesta
+  //     de una solicitud que todavía no tiene ninguna: se responde.
+  'CONSENT_ALREADY_CORRECTED',
+  'CONSENT_NOT_FOUND',
   'CONSENT_TEXT_INVALID',
   'CONSENT_TEXT_NOT_PUBLISHED',
   'CONSENT_TEXT_OUTDATED',
   'CONSENT_TEXT_VERSION_CONFLICT',
   'DATA_EXPORT_NOT_APPLICABLE',
   'DATA_REQUEST_ALREADY_ANSWERED',
+  'DATA_REQUEST_NOT_ANSWERED',
   'DATA_REQUEST_NOT_FOUND',
   'DATA_REQUEST_RECEIVED_IN_FUTURE',
   'DATA_SUBJECT_NOT_FOUND',

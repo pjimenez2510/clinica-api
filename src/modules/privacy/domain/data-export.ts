@@ -13,7 +13,7 @@ export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
   {
     section: 'clinical_record',
     reason:
-      'La historia clínica (atenciones, diagnósticos, notas, signos vitales, alergias, antecedentes, recetas, órdenes, resultados, certificados y referencias) se entrega por otra vía mientras se decide su formato (D-083 §3).',
+      'La historia clínica (atenciones, diagnósticos, notas, signos vitales, alergias, antecedentes, recetas, órdenes, resultados, certificados y referencias) se entrega por otra vía mientras se decide su formato (D-083 §3). Las versiones guardadas de lo que se corrigió sí van en `versions` (D-131.1).',
   },
   {
     section: 'sexual_orientation',

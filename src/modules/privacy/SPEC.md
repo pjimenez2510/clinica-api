@@ -65,7 +65,10 @@ clínica para contar días hábiles. Nadie depende de este módulo.
 | **Derecho**            | `ACCESS`, `RECTIFICATION`, `ERASURE`, `OBJECTION`, `PORTABILITY`, `SUSPENSION` (LOPDP arts. 13-17 y 19)              |
 | **Vencimiento**        | Fecha clínica en que vence la respuesta. Se fija al registrar y se guarda                                            |
 | **Día hábil**          | Lunes a viernes que no es feriado de **toda** la clínica (`holiday.site_id IS NULL`), en `America/Guayaquil`         |
-| **Respondida**         | La solicitud tiene resultado, texto, instante y autor. Ya no cambia                                                  |
+| **Respondida**         | La solicitud tiene resultado, texto, instante y autor. Ya no cambia; su respuesta se rectifica (PD-047)              |
+| **Corrección**         | Consentimiento nuevo que sustituye a uno mal registrado (`supersedes_id`); el **vigente** es el que nadie sustituye  |
+| **Rectificada**        | Respuesta nueva enlazada a la que corrige (`data_subject_answer_correction`); la original queda                    |
+| **Versión**            | Fila anterior de una tabla versionada, en `record_version`, con quién la sustituyó y cuándo (EN-210)                 |
 | **Vencida**            | Sin responder y con su vencimiento anterior a la fecha clínica de hoy                                                |
 | **Ficha y absorbidas** | La ficha pedida y las que se fusionaron en ella (PA-055): lo que leen PD-016, PD-036 y PD-040                        |
 
@@ -132,6 +135,23 @@ que si esa fila no se puede escribir no sale nada.
 **Cubre:** PD-040 a PD-043.
 
 **Solo servidor:** PD-043.
+
+### D5 — Corregir sin borrar (D-127, D-128.8, D-128.9, D-131.1) _(P1)_
+
+Un consentimiento mal registrado se corrige, la solicitud se edita mientras no
+se responde, una respuesta dada se rectifica y la exportación lleva las
+versiones guardadas.
+
+**Por qué es P1:** sin esto, lo mal registrado se arrastra o se tapa con otro
+registro que nadie enlaza; y las versiones de D-127 quedaban fuera del derecho
+de acceso.
+**Prueba independiente:** corregir un consentimiento y ver los dos, el vigente
+marcado; editar la fecha de recepción y ver el vencimiento nuevo; exportar y
+encontrar la versión anterior de una alergia corregida.
+**Cubre:** PD-044 a PD-048.
+
+**Solo servidor:** PD-048, la comparación del registro de tablas versionadas
+con los disparadores de la base.
 
 ## Criterios de éxito
 
@@ -201,6 +221,7 @@ que si esa fila no se puede escribir no sale nada.
   registrados NO DEBERÁN cambiar: siguen ligados a su versión y a su texto.
 - **PD-014** — Un consentimiento registrado NO DEBERÁ poder modificarse ni
   borrarse, tampoco desde SQL.
+  > Sigue así con PD-044: corregir es una fila **nueva**, no un UPDATE.
 - **PD-015** — SI la ficha no existe, ENTONCES el sistema DEBERÁ responder
   `DATA_SUBJECT_NOT_FOUND` (404); SI fue absorbida en una fusión, ENTONCES
   `PATIENT_MERGED` (409) nombrando la superviviente, sin escribir nada.
@@ -224,6 +245,9 @@ que si esa fila no se puede escribir no sale nada.
 - **PD-032** — CUANDO se registre una solicitud, el sistema DEBERÁ fijar su
   vencimiento y guardarlo en la fila; un cambio posterior de la regla o de los
   feriados NO DEBERÁ mover vencimientos ya fijados.
+  > **Salvo al editarla (PD-046):** si cambian el derecho o la recepción de una
+  > solicitud sin responder, el vencimiento se recalcula con la regla y los
+  > feriados de ese momento (D-128.9).
 
   > **Regla decidida por el autor el 30-09-2026 (D-083 §1, opción A)**, a
   > ratificar por el asesor legal antes de producción: acceso, rectificación,
@@ -257,9 +281,9 @@ que si esa fila no se puede escribir no sale nada.
 - **PD-037** — Todo registro y toda respuesta DEBERÁN dejar una fila (`CREATE`
   y `UPDATE`) de `data_subject_request` en la bitácora en la misma transacción.
 - **PD-038** — Una solicitud NO DEBERÁ poder borrarse, y una respondida NO
-  DEBERÁ poder modificarse, tampoco desde SQL; la única modificación que la base
-  admite es pasar de sin responder a respondida, con los cuatro datos de la
-  respuesta a la vez.
+  DEBERÁ poder modificarse, tampoco desde SQL; la base admite pasar de sin
+  responder a respondida, con los cuatro datos de la respuesta a la vez, y
+  —desde PD-046— editar una sin responder con sello y versión.
 
 ## 4. La exportación (REQ-113)
 
@@ -283,6 +307,88 @@ que si esa fila no se puede escribir no sale nada.
   la solicitud que la justificó; SI no se pueden escribir, ENTONCES el sistema
   NO DEBERÁ entregar nada.
 
+## 5. Corregir sin borrar (D-126, D-127)
+
+- **PD-044** — CUANDO alguien con `patient:write` corrija un consentimiento de
+  la ficha —o de sus absorbidas— registrado con el medio o el otorgante
+  equivocados, el sistema DEBERÁ registrar, en un paso y sin motivo, un
+  consentimiento nuevo con el medio y el otorgante enviados, el **mismo**
+  paciente y la **misma** versión del texto que el original, que lo nombre
+  (`supersedesId`), con el instante y el autor de PD-011 y su fila `CREATE` en
+  la bitácora (PD-017); el original NO DEBERÁ cambiar, y la lista de PD-016
+  DEBERÁ decir de cada uno si otro lo sustituye. SI el consentimiento no existe
+  o no es de la ficha, ENTONCES DEBERÁ responder `CONSENT_NOT_FOUND`; SI ya
+  tiene una corrección, ENTONCES `CONSENT_ALREADY_CORRECTED` (se corrige el
+  vigente).
+  > **D-128.8, PA-15 del inventario.** `POST
+  > /privacy/patients/:patientId/consents/:consentId/correction`. La versión
+  > del texto es la del original aunque haya otra vigente: se corrige cómo se
+  > registró, no qué se consintió. Ficha absorbida: `PATIENT_MERGED` (PD-015).
+  > **Garantía de la base:** `patient_consent_corrected_once` (único sobre
+  > `supersedes_id`) y `trg_patient_consent_correction_matches` (mismo paciente
+  > y texto); `trg_patient_consent_immutable` sigue. A confirmar por el asesor
+  > legal (D-128.8).
+- **PD-045** — CUANDO alguien con `patient:consent-text` pida las versiones
+  del texto, el sistema DEBERÁ decir cuántas fichas tienen un consentimiento
+  vigente sobre la versión vigente (`currentVersionConsents`): las que una
+  publicación nueva deja sobre una versión anterior.
+  > **PA-16 del inventario.** La pantalla pide **una** confirmación al
+  > publicar que dice la consecuencia con ese número. Una ficha con su
+  > corrección cuenta una vez.
+- **PD-046** — CUANDO alguien con `patient:data-requests` edite una solicitud
+  sin responder —derecho, qué pide o fecha de recepción—, el sistema DEBERÁ
+  cambiarla en su fila, guardar la versión anterior con quién y cuándo
+  (`record_version`), dejar la fila `UPDATE` en la bitácora y, si cambian el
+  derecho o la recepción, recalcular el vencimiento (PD-032). SI está
+  respondida, ENTONCES DEBERÁ responder `DATA_REQUEST_ALREADY_ANSWERED` sin
+  cambiar nada; SI la recepción es posterior a este momento o al registro,
+  ENTONCES `DATA_REQUEST_RECEIVED_IN_FUTURE`.
+  > **D-128.9, PA-17 del inventario.** `PATCH /privacy/requests/:requestId`.
+  > Quién la presenta y quién la registró no se editan. **Garantía de la
+  > base:** `data_subject_request_only_answered_once` conserva el nombre y
+  > admite la edición sólo sin respuesta; todo UPDATE —responder incluido—
+  > lleva el sello `changed_by`/`changed_at`.
+  >
+  > **El vencimiento también se mueve si cambia sólo el derecho**: es función
+  > del derecho y de la recepción, y dejar el del derecho anterior sería un
+  > plazo que la ley no dice.
+- **PD-047** — CUANDO alguien con `patient:data-requests` corrija la respuesta
+  de una solicitud respondida, el sistema DEBERÁ registrar una respuesta
+  rectificada —resultado y texto obligatorio, como PD-033— enlazada a la que
+  estaba vigente, con instante y autor, y su fila `UPDATE` en la bitácora; la
+  respuesta original y las rectificaciones anteriores NO DEBERÁN cambiar ni
+  borrarse, y la solicitud DEBERÁ devolver la vigente y las anteriores, de la
+  más reciente a la más antigua. SI no tiene respuesta, ENTONCES DEBERÁ
+  responder `DATA_REQUEST_NOT_ANSWERED`.
+  > **D-128.9, PA-18 del inventario.** `POST
+  > /privacy/requests/:requestId/response/correction`. **Garantía de la
+  > base:** `data_subject_answer_correction` es de solo inserción; una cadena,
+  > no un árbol (`data_subject_answer_correction_chain_once`,
+  > `data_subject_answer_correction_first_once`); y sólo se rectifica una
+  > respondida y dentro de la misma solicitud
+  > (`trg_data_subject_answer_correction_follows`).
+- **PD-048** — La exportación de PD-040 DEBERÁ incluir en `versions` las
+  versiones guardadas (`record_version`) de las filas de la ficha y de sus
+  absorbidas, cada una con su tabla, su fila, su número, la fila como era, y
+  quién la sustituyó y cuándo; cada tabla con disparador
+  `record_version_archive` DEBERÁ declarar cómo se llega a su paciente, y una
+  tabla versionada sin declarar DEBERÁ hacer fallar la prueba. Rectificar un
+  dato NO DEBERÁ borrar ninguna versión: la rectificación es una versión más.
+  > **D-131.1, opción A, resuelta por el autor el 05-10-2026.** El registro es
+  > `VERSIONED_TABLES` (`record-version-subjects.ts`): la atención, los signos
+  > (por la atención), el diagnóstico (por la atención), el aviso de crítico
+  > (resultado → informe → orden → atención), alergia, antecedente, «sin
+  > alergias conocidas», grupo prioritario y la propia solicitud (por
+  > `patient_id`), con el alcance compartido de PA-055.
+  > `privacy-record-versions.spec.ts` lo compara con los disparadores de la
+  > base.
+  >
+  > **El grupo prioritario se declara y NO sale**, por la misma razón que su
+  > fila vigente (PD-041, PA-042, D-083 §3). **Y LA TENSIÓN, DICHA EN VOZ
+  > ALTA:** la historia clínica vigente sigue fuera (PD-041) mientras sus
+  > versiones anteriores salen; es lo que pide D-131.1 y queda para cuando la
+  > historia clínica se exporte entera (D-083 §3).
+
 ---
 
 ## Códigos de error
@@ -298,6 +404,9 @@ que si esa fila no se puede escribir no sale nada.
 | `DATA_REQUEST_RECEIVED_IN_FUTURE` | 422  | Recepción futura (PD-031)                                              |
 | `DATA_REQUEST_ALREADY_ANSWERED`   | 409  | Segunda respuesta (PD-033)                                             |
 | `DATA_EXPORT_NOT_APPLICABLE`      | 422  | Exportar una solicitud que no es de acceso ni de portabilidad (PD-042) |
+| `CONSENT_NOT_FOUND`               | 404  | Se corrige un consentimiento que no existe o no es de la ficha (PD-044) |
+| `CONSENT_ALREADY_CORRECTED`       | 409  | Ese consentimiento ya tiene corrección (PD-044)                        |
+| `DATA_REQUEST_NOT_ANSWERED`       | 409  | Se rectifica la respuesta de una solicitud sin responder (PD-047)      |
 
 `PATIENT_MERGED` es compartido (`shared/domain/errors`) y se reutiliza.
 `DATA_SUBJECT_NOT_FOUND` es propio y no `PATIENT_NOT_FOUND`: ese código lo
@@ -309,8 +418,10 @@ puede verla»).
 
 - Las tres tablas llevan disparadores que rechazan `DELETE` y `TRUNCATE`;
   `consent_text_version` y `patient_consent` también `UPDATE`;
-  `data_subject_request` admite un único `UPDATE`, de sin responder a
-  respondida (PD-038).
+  `data_subject_request` admite pasar de sin responder a respondida (PD-038) y,
+  sin responder, editarse con sello (PD-046). `data_subject_answer_correction`
+  es de solo inserción (PD-047). Todo en
+  `20261006084539_privacy_corrections`, sin tocar filas guardadas.
 - `consent_text_version.version` es `UNIQUE`: es lo que arbitra PD-005.
 - La respuesta son cuatro columnas que van **todas o ninguna**
   (`data_subject_request_answer_complete`).
@@ -323,7 +434,7 @@ puede verla»).
 | Método | Ruta                                    | Permiso                 | Requisitos                     |
 | ------ | --------------------------------------- | ----------------------- | ------------------------------ |
 | `GET`  | `/privacy/consent-texts/current`        | `patient:read`          | PD-001                         |
-| `GET`  | `/privacy/consent-texts`                | `patient:consent-text`  | PD-001                         |
+| `GET`  | `/privacy/consent-texts`                | `patient:consent-text`  | PD-001, PD-045                 |
 | `POST` | `/privacy/consent-texts`                | `patient:consent-text`  | PD-002 a PD-006                |
 | `GET`  | `/privacy/patients/:patientId/consents` | `patient:read`          | PD-016                         |
 | `POST` | `/privacy/patients/:patientId/consents` | `patient:write`         | PD-010 a PD-015, PD-017        |
@@ -331,7 +442,10 @@ puede verla»).
 | `POST` | `/privacy/patients/:patientId/requests` | `patient:data-requests` | PD-030 a PD-032, PD-037        |
 | `GET`  | `/privacy/requests`                     | `patient:data-requests` | PD-035                         |
 | `POST` | `/privacy/requests/:requestId/response` | `patient:data-requests` | PD-033, PD-034, PD-037, PD-038 |
-| `GET`  | `/privacy/requests/:requestId/export`   | `patient:data-requests` | PD-040 a PD-043                |
+| `GET`  | `/privacy/requests/:requestId/export`   | `patient:data-requests` | PD-040 a PD-043, PD-048        |
+| `POST` | `/privacy/patients/:patientId/consents/:consentId/correction` | `patient:write` | PD-044            |
+| `PATCH` | `/privacy/requests/:requestId`         | `patient:data-requests` | PD-046                         |
+| `POST` | `/privacy/requests/:requestId/response/correction` | `patient:data-requests` | PD-047             |
 
 Todas con alcance `global`: una ficha es una en todo el sistema (PA-051).
 
@@ -341,6 +455,7 @@ Todas con alcance `global`: una ficha es una en todo el sistema (PA-051).
 | -------------------------------------- | --------------------------------------------------------------------------------------- |
 | PD-032 (regla de vencimiento)          | Unitaria, sobre la función pura con feriados de entrada; integración para que se guarde |
 | PD-003, PD-005, PD-013, PD-014, PD-038 | Integración contra PostgreSQL, con control positivo                                     |
+| PD-044, PD-046, PD-047, PD-048         | Integración contra PostgreSQL con control positivo, y HTTP                              |
 | PD-006, PD-017, PD-037, PD-043         | Integración: la fila de bitácora existe, y sin ella no se escribe ni se entrega nada    |
 | El resto                               | Integración HTTP con sesión real; y en pantalla, F-01 y F-08                            |
 

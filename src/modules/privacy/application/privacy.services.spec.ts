@@ -40,6 +40,8 @@ function consentRepository(
     chartOf: vi.fn().mockResolvedValue({ status: 'active' }),
     currentText: vi.fn().mockResolvedValue(null),
     texts: vi.fn().mockResolvedValue([]),
+    currentVersionConsents: vi.fn().mockResolvedValue(0),
+    correct: vi.fn(),
     publish: vi.fn(),
     record: vi.fn(),
     consentsOf: vi.fn().mockResolvedValue([]),
@@ -62,6 +64,9 @@ function requestView(
     registeredAt: NOW,
     registeredBy: { id: 'u-1', fullName: 'Gabriela Mera' },
     answer: null,
+    previousAnswers: [],
+    changedBy: null,
+    changedAt: null,
     ...overrides,
   };
 }
@@ -78,6 +83,8 @@ function requestRepository(
       ),
     ),
     answer: vi.fn(),
+    edit: vi.fn(),
+    correctAnswer: vi.fn(),
     find: vi.fn().mockResolvedValue(null),
     requestsOf: vi.fn().mockResolvedValue([]),
     open: vi.fn().mockResolvedValue([]),
@@ -262,6 +269,7 @@ describe('DataSubjectRequestsService', () => {
               response: 'x',
               answeredAt: NOW,
               answeredBy: { id: 'u-1', fullName: 'Gabriela Mera' },
+              isCorrection: false,
             },
           }),
         ]),
@@ -313,5 +321,114 @@ describe('DataSubjectRequestsService', () => {
     await expect(service.export('r-1', WHO, NOW)).rejects.toBeInstanceOf(
       DataRequestNotFoundError,
     );
+  });
+});
+
+describe('corregir en privacidad (D-127)', () => {
+  const answered = {
+    outcome: 'GRANTED' as const,
+    response: 'Entregada',
+    answeredAt: NOW,
+    answeredBy: { id: 'u-1', fullName: 'Gabriela Mera' },
+    isCorrection: false,
+  };
+
+  it('PD-044 traduce «no existe» y «ya corregido» a sus códigos', async () => {
+    for (const [status, code] of [
+      ['missing', 'CONSENT_NOT_FOUND'],
+      ['already-corrected', 'CONSENT_ALREADY_CORRECTED'],
+    ] as const) {
+      const service = new ConsentService(
+        consentRepository({ correct: vi.fn().mockResolvedValue({ status }) }),
+      );
+      await expect(
+        service.correct(
+          {
+            patientId: 'p-1',
+            consentId: 'c-1',
+            medium: 'SIGNED_PAPER',
+            grantedBy: 'HOLDER',
+          },
+          WHO,
+        ),
+      ).rejects.toMatchObject({ code });
+    }
+  });
+
+  it('PD-046 recalcula el vencimiento cuando cambia la recepción, y no cuando sólo cambia lo que pide', async () => {
+    const received = new Date(NOW.getTime() - 2 * 86_400_000);
+    const edit = vi.fn().mockResolvedValue({
+      status: 'edited',
+      request: requestView(),
+    });
+    const service = new DataSubjectRequestsService(
+      requestRepository({
+        find: vi
+          .fn()
+          .mockResolvedValue(requestView({ receivedAt: NOW, right: 'ACCESS' })),
+        edit,
+      }),
+      { record: vi.fn() },
+    );
+
+    await service.edit('r-1', { receivedAt: received }, WHO, NOW);
+    expect(edit.mock.calls[0]?.[1]).toMatchObject({
+      receivedAt: received,
+      dueOn: legalDueDate('ACCESS', clinicalDateOf(received), new Set()),
+    });
+
+    await service.edit('r-1', { description: 'Otra cosa' }, WHO, NOW);
+    expect(edit.mock.calls[1]?.[1]).toEqual({
+      description: 'Otra cosa',
+      dueOn: undefined,
+    });
+  });
+
+  it('PD-046 rechaza editar una respondida o con recepción futura, sin llegar a escribir', async () => {
+    const edit = vi.fn();
+    const answeredService = new DataSubjectRequestsService(
+      requestRepository({
+        find: vi.fn().mockResolvedValue(requestView({ answer: answered })),
+        edit,
+      }),
+      { record: vi.fn() },
+    );
+    await expect(
+      answeredService.edit('r-1', { description: 'x' }, WHO, NOW),
+    ).rejects.toMatchObject({ code: 'DATA_REQUEST_ALREADY_ANSWERED' });
+
+    const openService = new DataSubjectRequestsService(
+      requestRepository({
+        find: vi.fn().mockResolvedValue(requestView()),
+        edit,
+      }),
+      { record: vi.fn() },
+    );
+    await expect(
+      openService.edit(
+        'r-1',
+        { receivedAt: new Date(NOW.getTime() + 60_000) },
+        WHO,
+        NOW,
+      ),
+    ).rejects.toMatchObject({ code: 'DATA_REQUEST_RECEIVED_IN_FUTURE' });
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  it('PD-047 rectificar una solicitud sin respuesta es DATA_REQUEST_NOT_ANSWERED', async () => {
+    const service = new DataSubjectRequestsService(
+      requestRepository({
+        correctAnswer: vi.fn().mockResolvedValue({ status: 'not-answered' }),
+      }),
+      { record: vi.fn() },
+    );
+    await expect(
+      service.correctAnswer(
+        'r-1',
+        { outcome: 'DENIED', response: 'No procede' },
+        WHO,
+        NOW,
+      ),
+    ).rejects.toMatchObject({ code: 'DATA_REQUEST_NOT_ANSWERED' });
   });
 });

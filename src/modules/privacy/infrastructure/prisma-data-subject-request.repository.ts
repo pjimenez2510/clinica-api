@@ -7,13 +7,18 @@ import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.serv
 import type {
   AnswerResult,
   ChartLookup,
+  CorrectAnswerResult,
   DataExportDocument,
+  DataRequestAnswer,
+  DataRequestChanges,
   DataRequestOutcome,
   DataRequestView,
   DataSubjectRequestRepository,
+  EditRequestResult,
   ExportOmission,
   NewDataRequest,
   Requester,
+  StaffName,
 } from '../domain/privacy.repository';
 
 import {
@@ -28,6 +33,7 @@ import {
   writeTrail,
   type Db,
 } from './privacy-reads';
+import { recordVersionsOfChart } from './record-version-subjects';
 
 type RequestRow = Prisma.DataSubjectRequestGetPayload<object>;
 
@@ -91,28 +97,29 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
     requestId: string,
     answer: { outcome: DataRequestOutcome; response: string },
     requester: Requester,
+    now: Date,
   ): Promise<AnswerResult> {
     const outcome = await this.prisma.$transaction(async (tx) => {
-      // The `outcome IS NULL` in the WHERE is what makes a second answer lose
-      // cleanly: it waits on the row lock, then matches nothing.
-      const { count } = await tx.dataSubjectRequest.updateMany({
-        where: { id: requestId, outcome: null },
+      // The row lock is what makes a second answer lose cleanly: it waits
+      // here, then finds the first one.
+      const current = await lockRequest(tx, requestId);
+      if (!current) return { status: 'missing' } as const;
+      if (current.outcome !== null) {
+        return { status: 'already-answered' } as const;
+      }
+      await tx.dataSubjectRequest.update({
+        where: { id: requestId },
         data: {
           outcome: answer.outcome,
           response: answer.response,
-          answeredAt: new Date(),
+          answeredAt: now,
           answeredBy: requester.userId,
+          // PD-046: answering is an UPDATE like any other, stamped, so the
+          // unanswered request stays as a version.
+          changedBy: requester.userId,
+          changedAt: stampAfter(current.changed_at, now),
         },
       });
-      if (count === 0) {
-        const exists = await tx.dataSubjectRequest.findUnique({
-          where: { id: requestId },
-          select: { id: true },
-        });
-        return exists
-          ? ({ status: 'already-answered' } as const)
-          : ({ status: 'missing' } as const);
-      }
       await writeTrail(
         tx,
         {
@@ -128,6 +135,114 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
     if (outcome.status !== 'answered') return outcome;
     const request = await this.find(requestId);
     return { status: 'answered', request: request! };
+  }
+
+  async edit(
+    requestId: string,
+    changes: DataRequestChanges,
+    requester: Requester,
+    now: Date,
+  ): Promise<EditRequestResult> {
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      const current = await lockRequest(tx, requestId);
+      if (!current) return { status: 'missing' } as const;
+      if (current.outcome !== null) {
+        return { status: 'already-answered' } as const;
+      }
+
+      const data: Prisma.DataSubjectRequestUncheckedUpdateInput = {};
+      if (changes.right !== undefined && changes.right !== current.right) {
+        data.right = changes.right;
+      }
+      if (
+        changes.description !== undefined &&
+        changes.description !== current.description
+      ) {
+        data.description = changes.description;
+      }
+      if (
+        changes.receivedAt !== undefined &&
+        changes.receivedAt.getTime() !== current.received_at.getTime()
+      ) {
+        data.receivedAt = changes.receivedAt;
+      }
+      if (
+        changes.dueOn !== undefined &&
+        changes.dueOn !== toClinicalDate(current.due_on)
+      ) {
+        data.dueOn = fromClinicalDate(changes.dueOn);
+      }
+      // Nothing to change is not an edit: no version of an identical row.
+      if (Object.keys(data).length === 0) return { status: 'edited' } as const;
+
+      await tx.dataSubjectRequest.update({
+        where: { id: requestId },
+        data: {
+          ...data,
+          changedBy: requester.userId,
+          changedAt: stampAfter(current.changed_at, now),
+        },
+      });
+      await writeTrail(
+        tx,
+        {
+          resourceType: 'data_subject_request',
+          resourceId: requestId,
+          action: 'UPDATE',
+        },
+        requester,
+      );
+      return { status: 'edited' } as const;
+    });
+
+    if (outcome.status !== 'edited') return outcome;
+    const request = await this.find(requestId);
+    return { status: 'edited', request: request! };
+  }
+
+  async correctAnswer(
+    requestId: string,
+    answer: { outcome: DataRequestOutcome; response: string },
+    requester: Requester,
+    now: Date,
+  ): Promise<CorrectAnswerResult> {
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      // The request's lock orders two rectifications: each corrects the one
+      // that stands when it gets the lock, so the chain never forks.
+      const current = await lockRequest(tx, requestId);
+      if (!current) return { status: 'missing' } as const;
+      if (current.outcome === null) {
+        return { status: 'not-answered' } as const;
+      }
+      const standing = await tx.dataSubjectAnswerCorrection.findFirst({
+        where: { requestId, correctedBy: null },
+        select: { id: true },
+      });
+      await tx.dataSubjectAnswerCorrection.create({
+        data: {
+          requestId,
+          correctsId: standing?.id ?? null,
+          outcome: answer.outcome,
+          response: answer.response,
+          answeredAt: now,
+          answeredBy: requester.userId,
+        },
+      });
+      await writeTrail(
+        tx,
+        {
+          resourceType: 'data_subject_request',
+          resourceId: requestId,
+          action: 'UPDATE',
+        },
+        requester,
+      );
+      return { status: 'corrected' } as const;
+    });
+
+    if (outcome.status !== 'corrected') return outcome;
+    const request = await this.find(requestId);
+    return { status: 'corrected', request: request! };
   }
 
   async find(requestId: string): Promise<DataRequestView | null> {
@@ -186,12 +301,18 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
       const consents = await tx.patientConsent.findMany({
         where: chartScope(rootId),
         orderBy: { recordedAt: 'asc' },
-        include: { textVersion: { select: CONSENT_TEXT_SELECT } },
+        include: {
+          textVersion: { select: CONSENT_TEXT_SELECT },
+          supersededBy: { select: { id: true } },
+        },
       });
-      const requests = await tx.dataSubjectRequest.findMany({
+      const requestRows = await tx.dataSubjectRequest.findMany({
         where: chartScope(rootId),
         orderBy: { receivedAt: 'asc' },
       });
+      const requests = await this.views(tx, requestRows);
+      // PD-048 (D-131.1). The saved versions of the subject's rows.
+      const versions = await recordVersionsOfChart(tx, rootId);
       const concepts = await conceptsOf(tx, charts);
       const mrnOf = new Map(charts.map((chart) => [chart.id, chart.mrn]));
       const main = charts.find((chart) => chart.id === rootId)!;
@@ -247,6 +368,10 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           grantedBy: row.grantedBy,
           textVersion: row.textVersion.version,
           text: row.textVersion.body,
+          // PD-044. A correction says it is one, and the corrected one says
+          // it no longer stands; both leave, nothing is hidden.
+          isCorrection: row.supersedesId !== null,
+          isSuperseded: row.supersededBy !== null,
         })),
         requests: requests.map((row) => ({
           chart: mrnOf.get(row.patientId),
@@ -254,49 +379,151 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           requestedBy: row.requestedBy,
           description: row.description,
           receivedAt: row.receivedAt.toISOString(),
-          dueOn: toClinicalDate(row.dueOn),
-          outcome: row.outcome,
-          response: row.response,
-          answeredAt: row.answeredAt?.toISOString() ?? null,
+          dueOn: row.dueOn,
+          // PD-047. The answer that stands, and the ones it rectified.
+          outcome: row.answer?.outcome ?? null,
+          response: row.answer?.response ?? null,
+          answeredAt: row.answer?.answeredAt.toISOString() ?? null,
+          previousAnswers: row.previousAnswers.map((previous) => ({
+            outcome: previous.outcome,
+            response: previous.response,
+            answeredAt: previous.answeredAt.toISOString(),
+          })),
         })),
+        versions,
         omitted,
       };
     });
   }
 
   private async views(db: Db, rows: RequestRow[]): Promise<DataRequestView[]> {
+    // PD-047. The rectified answers, read once for the whole list.
+    const corrections =
+      rows.length === 0
+        ? []
+        : await db.dataSubjectAnswerCorrection.findMany({
+            where: { requestId: { in: rows.map((row) => row.id) } },
+          });
     const [staff, patients] = await Promise.all([
-      staffNames(
-        db,
-        rows.flatMap((row) => [row.registeredBy, row.answeredBy]),
-      ),
+      staffNames(db, [
+        ...rows.flatMap((row) => [
+          row.registeredBy,
+          row.answeredBy,
+          row.changedBy,
+        ]),
+        ...corrections.map((row) => row.answeredBy),
+      ]),
       patientNames(
         db,
         rows.map((row) => row.patientId),
       ),
     ]);
-    return rows.map((row) => ({
-      id: row.id,
-      patientId: row.patientId,
-      patient: patients.get(row.patientId) ?? { mrn: '—', fullName: '—' },
-      right: row.right,
-      requestedBy: row.requestedBy,
-      description: row.description,
-      receivedAt: row.receivedAt,
-      dueOn: toClinicalDate(row.dueOn),
-      registeredAt: row.registeredAt,
-      registeredBy: nameOf(staff, row.registeredBy),
-      answer:
-        row.outcome && row.response && row.answeredAt && row.answeredBy
-          ? {
-              outcome: row.outcome,
-              response: row.response,
-              answeredAt: row.answeredAt,
-              answeredBy: nameOf(staff, row.answeredBy),
-            }
-          : null,
-    }));
+    return rows.map((row) => {
+      const answers = answerChain(
+        row,
+        corrections.filter((correction) => correction.requestId === row.id),
+        staff,
+      );
+      return {
+        id: row.id,
+        patientId: row.patientId,
+        patient: patients.get(row.patientId) ?? { mrn: '—', fullName: '—' },
+        right: row.right,
+        requestedBy: row.requestedBy,
+        description: row.description,
+        receivedAt: row.receivedAt,
+        dueOn: toClinicalDate(row.dueOn),
+        registeredAt: row.registeredAt,
+        registeredBy: nameOf(staff, row.registeredBy),
+        answer: answers.at(-1) ?? null,
+        previousAnswers: answers.slice(0, -1).reverse(),
+        changedBy: row.changedBy ? nameOf(staff, row.changedBy) : null,
+        changedAt: row.changedAt,
+      };
+    });
   }
+}
+
+/**
+ * PD-047. The answers of one request, oldest first: the original on the row,
+ * then each rectification after the one it corrects. The last one stands.
+ */
+function answerChain(
+  row: RequestRow,
+  corrections: {
+    id: string;
+    correctsId: string | null;
+    outcome: DataRequestOutcome;
+    response: string;
+    answeredAt: Date;
+    answeredBy: string;
+  }[],
+  staff: Map<string, StaffName>,
+): DataRequestAnswer[] {
+  if (!(row.outcome && row.response && row.answeredAt && row.answeredBy)) {
+    return [];
+  }
+  const chain: DataRequestAnswer[] = [
+    {
+      outcome: row.outcome,
+      response: row.response,
+      answeredAt: row.answeredAt,
+      answeredBy: nameOf(staff, row.answeredBy),
+      isCorrection: false,
+    },
+  ];
+  const next = new Map(corrections.map((c) => [c.correctsId, c]));
+  for (
+    let correction = next.get(null);
+    correction !== undefined;
+    correction = next.get(correction.id)
+  ) {
+    chain.push({
+      outcome: correction.outcome,
+      response: correction.response,
+      answeredAt: correction.answeredAt,
+      answeredBy: nameOf(staff, correction.answeredBy),
+      isCorrection: true,
+    });
+  }
+  return chain;
+}
+
+/** The request under its row lock, with what the edit and the answer compare. */
+async function lockRequest(
+  tx: Prisma.TransactionClient,
+  requestId: string,
+): Promise<{
+  right: DataRequestView['right'];
+  description: string;
+  received_at: Date;
+  due_on: Date;
+  outcome: DataRequestOutcome | null;
+  changed_at: Date | null;
+} | null> {
+  const [row] = await tx.$queryRaw<
+    {
+      right: DataRequestView['right'];
+      description: string;
+      received_at: Date;
+      due_on: Date;
+      outcome: DataRequestOutcome | null;
+      changed_at: Date | null;
+    }[]
+  >`
+    SELECT "right", description, received_at, due_on, outcome, changed_at
+      FROM data_subject_request
+     WHERE id = ${requestId}::uuid
+       FOR UPDATE`;
+  return row ?? null;
+}
+
+/**
+ * EN-210. A stamp the archive trigger accepts: later than the previous one,
+ * even within the same millisecond of the app's clock.
+ */
+function stampAfter(previous: Date | null, now: Date): Date {
+  return previous && previous >= now ? new Date(previous.getTime() + 1) : now;
 }
 
 /**

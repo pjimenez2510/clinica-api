@@ -56,6 +56,10 @@ export interface PatientConsentView {
   grantedBy: DataSubjectParty;
   recordedAt: Date;
   recordedBy: StaffName;
+  /** PD-044. The consent this one corrects, if it is a correction. */
+  supersedesId: string | null;
+  /** PD-044. Another consent corrects this one: it no longer stands. */
+  isSuperseded: boolean;
 }
 
 export interface NewConsent {
@@ -74,10 +78,41 @@ export type RecordConsentResult =
   | { status: 'outdated'; currentVersion: number }
   | { status: 'unknown-version' };
 
+/**
+ * PD-044. A consent recorded with the wrong medium or grantor, corrected: the
+ * chart in the URL (its scope reaches the absorbed charts, PA-055) and what
+ * the correction says. The text and the patient are the original's.
+ */
+export interface ConsentCorrection {
+  patientId: string;
+  consentId: string;
+  medium: ConsentMedium;
+  grantedBy: DataSubjectParty;
+}
+
+export type CorrectConsentResult =
+  | { status: 'corrected'; consent: PatientConsentView }
+  | { status: 'missing' }
+  | { status: 'already-corrected' };
+
 export interface ConsentRepository {
   chartOf(patientId: string): Promise<ChartLookup>;
   currentText(): Promise<ConsentTextView | null>;
   texts(): Promise<ConsentTextView[]>;
+  /**
+   * PD-045. How many charts have a standing consent (not superseded) on the
+   * current version: the ones a new publication leaves on an older text.
+   */
+  currentVersionConsents(): Promise<number>;
+  /**
+   * PD-044, PD-017. The correction and its trail row in one transaction,
+   * under the original's row lock: of two corrections, the second finds it
+   * already corrected.
+   */
+  correct(
+    correction: ConsentCorrection,
+    requester: Requester,
+  ): Promise<CorrectConsentResult>;
   /**
    * PD-002, PD-005, PD-006. The next version and its trail row, in one
    * transaction. Throws `ConsentTextVersionConflictError` on the race.
@@ -101,6 +136,8 @@ export interface DataRequestAnswer {
   response: string;
   answeredAt: Date;
   answeredBy: StaffName;
+  /** PD-047. Whether this answer rectifies an earlier one. */
+  isCorrection: boolean;
 }
 
 export interface DataRequestView {
@@ -114,7 +151,13 @@ export interface DataRequestView {
   dueOn: ClinicalDate;
   registeredAt: Date;
   registeredBy: StaffName;
+  /** PD-047. The answer that stands: the last rectification, or the original. */
   answer: DataRequestAnswer | null;
+  /** PD-047. The answers a rectification replaced, newest first. */
+  previousAnswers: DataRequestAnswer[];
+  /** PD-046. Who last edited or answered it, and when. */
+  changedBy: StaffName | null;
+  changedAt: Date | null;
 }
 
 export interface NewDataRequest {
@@ -132,6 +175,39 @@ export type AnswerResult =
   | { status: 'missing' }
   | { status: 'already-answered' };
 
+/** PD-046. What an edit changes; absent is «lo que ya había». */
+export interface DataRequestChanges {
+  right?: DataSubjectRight;
+  description?: string;
+  receivedAt?: Date;
+  /** Recomputed by the service when the right or the receipt changed. */
+  dueOn?: ClinicalDate;
+}
+
+export type EditRequestResult =
+  | { status: 'edited'; request: DataRequestView }
+  | { status: 'missing' }
+  | { status: 'already-answered' };
+
+export type CorrectAnswerResult =
+  | { status: 'corrected'; request: DataRequestView }
+  | { status: 'missing' }
+  | { status: 'not-answered' };
+
+/**
+ * PD-048. One saved version of a row of the data subject's, as the export
+ * hands it over: which table, which row, which version, the row as it was,
+ * and who replaced it and when.
+ */
+export interface ExportedVersion {
+  table: string;
+  resourceId: string;
+  version: number;
+  changedAt: string;
+  changedBy: StaffName;
+  data: unknown;
+}
+
 /**
  * PD-040. The document handed to the data subject. Its shape is a published
  * format (`format`), so a field added later is a new version of it, not a
@@ -145,6 +221,8 @@ export interface DataExportDocument {
   identifiers: readonly Readonly<Record<string, unknown>>[];
   consents: readonly Readonly<Record<string, unknown>>[];
   requests: readonly Readonly<Record<string, unknown>>[];
+  /** PD-048 (D-131.1). The saved versions of the subject's rows. */
+  versions: readonly ExportedVersion[];
   omitted: readonly ExportOmission[];
 }
 
@@ -165,12 +243,34 @@ export interface DataSubjectRequestRepository {
     request: NewDataRequest,
     requester: Requester,
   ): Promise<DataRequestView>;
-  /** PD-033, PD-037, PD-038. Answer and trail row in one transaction. */
+  /** PD-033, PD-037, PD-038. Answer, stamp and trail row in one transaction. */
   answer(
     requestId: string,
     answer: { outcome: DataRequestOutcome; response: string },
     requester: Requester,
+    now: Date,
   ): Promise<AnswerResult>;
+  /**
+   * PD-046. The edit, under the row's lock and with a new stamp, so the row it
+   * replaces goes to `record_version`; and its trail row. An answered request
+   * is not edited.
+   */
+  edit(
+    requestId: string,
+    changes: DataRequestChanges,
+    requester: Requester,
+    now: Date,
+  ): Promise<EditRequestResult>;
+  /**
+   * PD-047. A rectified answer, linked to the one that stands, under the
+   * request's lock; and its trail row. The original is never touched.
+   */
+  correctAnswer(
+    requestId: string,
+    answer: { outcome: DataRequestOutcome; response: string },
+    requester: Requester,
+    now: Date,
+  ): Promise<CorrectAnswerResult>;
   find(requestId: string): Promise<DataRequestView | null>;
   /** PD-036. */
   requestsOf(patientId: string): Promise<DataRequestView[]>;

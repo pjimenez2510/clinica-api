@@ -4724,6 +4724,13 @@ model PatientConsent {
   grantedBy     DataSubjectParty   @map("granted_by")
   recordedAt    DateTime           @default(now()) @map("recorded_at") @db.Timestamptz(6)
   recordedBy    String             @map("recorded_by") @db.Uuid
+  /// PD-044. The consent this one corrects (medium or grantor recorded
+  /// wrong). The original stays untouched; the one nobody supersedes is the
+  /// one that stands. UNIQUE: an original is superseded once
+  /// (`patient_consent_corrected_once`).
+  supersedesId  String?            @unique(map: "patient_consent_corrected_once") @map("supersedes_id") @db.Uuid
+  supersedes    PatientConsent?    @relation("ConsentCorrection", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy  PatientConsent?    @relation("ConsentCorrection")
 
   @@index([patientId, recordedAt(sort: Desc)], map: "patient_consent_by_patient")
   @@map("patient_consent")
@@ -4747,9 +4754,33 @@ model DataSubjectRequest {
   response     String?             @db.Text
   answeredAt   DateTime?           @map("answered_at") @db.Timestamptz(6)
   answeredBy   String?             @map("answered_by") @db.Uuid
+  /// PD-046. Who last edited it (or answered it) and when: the stamp every
+  /// UPDATE carries so `record_version` archives the row it replaces.
+  changedBy    String?             @map("changed_by") @db.Uuid
+  changedAt    DateTime?           @map("changed_at") @db.Timestamptz(6)
+
+  answerCorrections DataSubjectAnswerCorrection[]
 
   @@index([patientId, receivedAt(sort: Desc)], map: "data_subject_request_by_patient")
   @@map("data_subject_request")
+}
+
+/// PD-047. A rectified answer to a data subject request, linked to the one it
+/// replaces (`correctsId`; NULL = the original answer on the request). Insert
+/// only: the original answer and every rectification stay.
+model DataSubjectAnswerCorrection {
+  id          String                       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  requestId   String                       @map("request_id") @db.Uuid
+  request     DataSubjectRequest           @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  correctsId  String?                      @unique(map: "data_subject_answer_correction_chain_once") @map("corrects_id") @db.Uuid
+  corrects    DataSubjectAnswerCorrection? @relation("AnswerCorrectionChain", fields: [correctsId], references: [id], onDelete: Restrict)
+  correctedBy DataSubjectAnswerCorrection? @relation("AnswerCorrectionChain")
+  outcome     DataRequestOutcome
+  response    String                       @db.Text
+  answeredAt  DateTime                     @map("answered_at") @db.Timestamptz(6)
+  answeredBy  String                       @map("answered_by") @db.Uuid
+
+  @@map("data_subject_answer_correction")
 }
 
 /// EN-210, D-127. The PREVIOUS state of an edited row, written by the
