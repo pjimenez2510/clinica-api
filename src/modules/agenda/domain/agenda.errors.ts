@@ -513,6 +513,25 @@ export class NoShowBeforeStartError extends BusinessRuleViolation {
 }
 
 /**
+ * AG-173 (D-153.6). The arrival of an appointment of another clinical day.
+ *
+ * A CONFLICT (409): the body is fine and the same request is right on the
+ * appointment's day. What refuses it is the calendar — an arrival recorded on
+ * the wrong row writes the art. 10 call on a day nobody came, and leaves the
+ * day somebody did come without one. The text says what to do instead.
+ */
+export class ArrivalNotOnAppointmentDayError extends ConflictError {
+  readonly code = 'ARRIVAL_NOT_ON_APPOINTMENT_DAY';
+  override readonly userTitle =
+    'Esta cita no es de hoy. Si el paciente está aquí, mueva la cita a hoy o regístrelo sin cita';
+
+  constructor() {
+    // No dates in the message: when somebody is expected is the patient's.
+    super('Arrival requested outside the clinical day of the appointment');
+  }
+}
+
+/**
  * AG-128, Ley 77 art. 10. An arrival registered without the emergency call
  * having been made.
  *

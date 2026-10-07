@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  WallClockTime,
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+} from '../../../shared/domain/clinic-time';
+import {
   AgendaEntryHasEncounterError,
+  ArrivalNotOnAppointmentDayError,
   AttentionStillInProgressError,
   AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
@@ -10,6 +17,7 @@ import {
 import type { AgendaEntryStatus, TransitionRead } from './agenda.repository';
 import {
   type AgendaTransitionTarget,
+  assertArrivalOnAppointmentDay,
   assertNoShowNotBeforeStart,
   assertTransition,
   effectsOf,
@@ -173,6 +181,35 @@ describe('the no-show clock rule', () => {
     expect(() =>
       assertNoShowNotBeforeStart(startsAt, new Date('2026-09-14T13:20:00Z')),
     ).not.toThrow();
+  });
+});
+
+/**
+ * AG-173 (D-153.6). The day is the clinic's, derived from today's clock and
+ * never typed: the case that matters is the evening, when Guayaquil is still
+ * on the appointment's day and UTC already moved to the next.
+ */
+describe('AG-173 the arrival belongs to the appointment day', () => {
+  const today = clinicalDateOf(new Date());
+  const at = (date: typeof today, hhmm: string) =>
+    atWallClock(date, WallClockTime.parse(hhmm));
+
+  it('AG-173 admits the arrival on the appointment day, also at 19:30 in Guayaquil (already tomorrow in UTC)', () => {
+    const startsAt = at(today, '19:00');
+    const now = at(today, '19:30');
+    // Control: the two instants really do straddle the UTC midnight.
+    expect(now.toISOString().slice(0, 10)).not.toBe(today);
+    expect(() => assertArrivalOnAppointmentDay(startsAt, now)).not.toThrow();
+  });
+
+  it('AG-173 refuses the arrival on an appointment of another day, before or after', () => {
+    const now = at(today, '10:00');
+    expect(() =>
+      assertArrivalOnAppointmentDay(at(addDays(today, 1), '08:00'), now),
+    ).toThrow(ArrivalNotOnAppointmentDayError);
+    expect(() =>
+      assertArrivalOnAppointmentDay(at(addDays(today, -1), '18:00'), now),
+    ).toThrow(ArrivalNotOnAppointmentDayError);
   });
 });
 

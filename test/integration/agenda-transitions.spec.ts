@@ -4,7 +4,15 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import request from 'supertest';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { AppModule } from '../../src/app.module';
@@ -65,7 +73,21 @@ interface EntryBody {
   releasedAt: string | null;
 }
 
+/**
+ * AG-173 (D-153.6). An arrival is recorded only on the appointment's own day,
+ * so this file's clock stands on that Monday, at 12:30 in Guayaquil: after
+ * every slot of the 08:00–12:00 rule (a no-show still needs its start to have
+ * passed), and the same day as all of them. Derived from the slot, never typed.
+ */
+const ON_THE_DAY = new Date(Date.parse(PAST_SLOT.startsAt) + 270 * 60_000);
+
 describe('las transiciones de estado de la cita por HTTP', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: ON_THE_DAY });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   const db = useDatabase();
   let app: NestExpressApplication;
   let prisma: PrismaClient;
@@ -1144,6 +1166,8 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         practitionerId,
         patientId,
         agendaEntryId: entryId,
+        // On the file's clock (AG-173): opened just now, after the arrival.
+        startedAt: new Date(),
       });
       return { entryId, encounter };
     }

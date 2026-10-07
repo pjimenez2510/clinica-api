@@ -4,7 +4,15 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import request from 'supertest';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import {
@@ -96,6 +104,17 @@ interface EntryBody {
 }
 
 describe('editar en el sitio la cita y el bloqueo (D-127)', () => {
+  /**
+   * AG-173 (D-153.6). An arrival is recorded only on the appointment's own
+   * day, so the clock of this file stands on MONDAY at 12:30, after every slot
+   * it books and on the same day.
+   */
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: at('12:30') });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   const db = useDatabase();
   let app: NestExpressApplication;
   let prisma: PrismaClient;

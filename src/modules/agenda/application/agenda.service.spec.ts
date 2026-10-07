@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import { ServiceTypeNotFoundError } from '../../../shared/domain/errors/master-data.errors';
@@ -9,6 +9,7 @@ import {
   OutsideScheduleRuleError,
   RoomNotInSiteError,
   SlotNotAlignedError,
+  ArrivalNotOnAppointmentDayError,
 } from '../domain/agenda.errors';
 import {
   WallClockTime,
@@ -1060,7 +1061,20 @@ describe('transitioning an appointment', () => {
    */
   const STARTED = aTransitionRead({
     status: 'CONFIRMED',
-    startsAt: new Date('2026-01-05T13:00:00Z'),
+    startsAt: EIGHT,
+  });
+
+  /**
+   * AG-173. The clock of this block is forty minutes after `EIGHT`, the
+   * fixture's appointment: an arrival is only recorded on its own day, so the
+   * check-ins below happen on it, and STARTED has begun.
+   */
+  const AT_THE_COUNTER = new Date(EIGHT.getTime() + 40 * 60_000);
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: AT_THE_COUNTER });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   /** AG-116: arrived, and the patient axis says so (AG-127). */
@@ -1123,6 +1137,37 @@ describe('transitioning an appointment', () => {
     ).rejects.toBeInstanceOf(NoShowBeforeStartError);
 
     expect(recorded.transitions).toEqual([]);
+  });
+
+  it('AG-173 refuses the arrival of an appointment of another day and writes nothing', async () => {
+    const DAY = 24 * 60 * 60_000;
+    for (const startsAt of [
+      new Date(EIGHT.getTime() + DAY),
+      new Date(EIGHT.getTime() - DAY),
+    ]) {
+      const { service, recorded } = serviceWith({
+        transitionRead: aTransitionRead({ status: 'CONFIRMED', startsAt }),
+      });
+
+      await expect(
+        service.transition(
+          { ...aTransition(), to: 'CHECKED_IN', emergency: false },
+          REQUESTER,
+        ),
+      ).rejects.toBeInstanceOf(ArrivalNotOnAppointmentDayError);
+      expect(recorded.transitions).toEqual([]);
+    }
+  });
+
+  it("AG-173 still records the arrival of TODAY's appointment (control)", async () => {
+    const { service, recorded } = serviceWith({ transitionRead: STARTED });
+
+    await service.transition(
+      { ...aTransition(), to: 'CHECKED_IN', emergency: false },
+      REQUESTER,
+    );
+
+    expect(recorded.transitions[0]?.change.to).toBe('CHECKED_IN');
   });
 
   it('AG-044 sends the reason to the cancellation note and to the history', async () => {
@@ -1405,7 +1450,8 @@ describe('transitioning an appointment', () => {
     // at the counter and in the median of AG-141.
     const { service } = serviceWith({
       transitionRead: aTransitionRead({
-        startsAt: new Date('2100-01-01T13:00:00Z'),
+        // Twenty minutes before its hour, the same day.
+        startsAt: new Date(AT_THE_COUNTER.getTime() + 20 * 60_000),
       }),
     });
 
@@ -1414,7 +1460,7 @@ describe('transitioning an appointment', () => {
       REQUESTER,
     );
 
-    expect(outcome.arrivalDelayMinutes).toBeLessThan(0);
+    expect(outcome.arrivalDelayMinutes).toBe(-20);
   });
 
   it('AG-119 warns about a late arrival and records it anyway', async () => {

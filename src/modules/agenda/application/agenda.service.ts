@@ -35,6 +35,7 @@ import { ServiceTypeNotFoundError } from '../../../shared/domain/errors/master-d
 import { resolveDuration } from '../../../shared/domain/duration-resolution';
 import {
   type AgendaTransitionTarget,
+  assertArrivalOnAppointmentDay,
   assertNoShowNotBeforeStart,
   assertTransition,
   effectsOf,
@@ -1356,6 +1357,10 @@ export class AgendaService {
         // AG-043: nobody is a no-show before the appointment starts.
         if (request.to === 'NO_SHOW') {
           assertNoShowNotBeforeStart(read.startsAt, now);
+        }
+        // AG-173 (D-153.6): the arrival lands on the appointment's own day.
+        if (request.to === 'CHECKED_IN') {
+          assertArrivalOnAppointmentDay(read.startsAt, now);
         }
         /**
          * AG-045, AG-148: a documented attention outweighs the agenda. A live

@@ -36,6 +36,8 @@ export const DOMAIN_ERROR_CODES = [
   // AG-153 (D-099 §3): «Marcar atendida» con la atención aún en curso.
   'ATTENTION_STILL_IN_PROGRESS',
   'AGENDA_ENTRY_NOT_FOUND',
+  // AG-173 (D-153.6): la llegada de una cita de otro día clínico (409).
+  'ARRIVAL_NOT_ON_APPOINTMENT_DAY',
   // AG-162, AG-163 (D-127): la cita se edita en el sitio mientras su estado lo
   // admite, y la inasistencia se deshace el mismo día.
   'AGENDA_ENTRY_NOT_EDITABLE',
