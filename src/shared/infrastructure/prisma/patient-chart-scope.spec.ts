@@ -60,6 +60,7 @@ import { describe, expect, it } from 'vitest';
 import {
   chartScope,
   chartScopeIds,
+  chartScopeOfSurvivor,
   chartScopeRows,
   chartScopeSelect,
 } from './patient-chart-scope';
@@ -1074,6 +1075,22 @@ describe('PA-055 las tres formas del mismo alcance', () => {
   it('PA-055 el filtro del ORM pregunta por la ficha O por las que apuntan a ella', () => {
     expect(chartScope(CHART)).toEqual({
       patient: { OR: [{ id: CHART }, { mergedIntoId: CHART }] },
+    });
+  });
+
+  it('PR-118 desde cualquier ficha sube a la superviviente y baja a todas sus absorbidas', () => {
+    // Las dos ramas de `chartScope` y las dos que suben: la que absorbió a
+    // esta, y las demás que esa misma absorbió. Que case lo que la base guarda
+    // se prueba contra PostgreSQL en `prescription-issue.spec.ts` (PR-118).
+    expect(chartScopeOfSurvivor(CHART)).toEqual({
+      patient: {
+        OR: [
+          { id: CHART },
+          { mergedIntoId: CHART },
+          { mergedFrom: { some: { id: CHART } } },
+          { mergedInto: { mergedFrom: { some: { id: CHART } } } },
+        ],
+      },
     });
   });
 

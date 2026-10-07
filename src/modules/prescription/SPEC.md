@@ -218,7 +218,9 @@ cruzada, que se declaran y no se simulan.
 ficha en otra, recetar ese mismo concepto **desde la superviviente** y comprobar
 que la emisión se rechaza.
 
-**Cubre:** PR-060 a PR-067.
+**Cubre:** PR-060 a PR-067, PR-118.
+
+**Solo servidor:** PR-118. El rechazo y la alerta son los de PR-060 y PR-067, que la pantalla ya pinta.
 
 ### H5 — Controlados: el documento que NO emitimos _(P3)_
 
@@ -860,6 +862,30 @@ Hay tres niveles de comprobación y **sólo el primero se construye**:
   > así que su sentencia correría **fuera** de esa transacción —una lectura que
   > la escritura no ve, que es exactamente la carrera que la emisión cierra—.
   > Corre sobre `tx` con el mismo predicado: `chartScope` más `refutedAt: null`.
+
+- **PR-118** — SI la ficha de la atención ha sido **absorbida** por otra,
+  ENTONCES el sistema DEBERÁ leer las alergias de la receta —al componer y al
+  reescribir el borrador (PR-067), en su documento (PR-027) y al emitir
+  (PR-060)— por el alcance de la ficha **superviviente**: ella y todas las que
+  haya absorbido, incluida la de la atención.
+
+  > ═════════════════════════════════════════════════════════════════════════
+  > **PR-062 LEE HACIA ABAJO; ESTO ES LA MITAD QUE SUBE (D-169.2)**
+  > ═════════════════════════════════════════════════════════════════════════
+  >
+  > `chartScope` va de la ficha a las que absorbió y nunca a la que la absorbió.
+  > La fusión no mira las atenciones, así que una duplicada con su atención
+  > abierta puede fusionarse en la real, y la receta compuesta después en esa
+  > atención leía sólo la duplicada: la Penicilina de la superviviente no se
+  > avisaba ni bloqueaba, y la receta quedaba `ACTIVE`. Se lee con
+  > `chartScopeOfSurvivor` (`patient-chart-scope.ts`), un único filtro de
+  > relación que sube un nivel y baja a todas las absorbidas — un nivel basta
+  > porque `trg_patient_merge_not_chained` prohíbe la cadena (PA-046).
+  >
+  > Sólo la receta. La banda de la atención y el resto de `encounter` siguen
+  > leyendo con `chartScope`; si la fusión debe rechazar una duplicada con
+  > atenciones abiertas, o la atención de una ficha absorbida dejar de admitir
+  > contenido, lo decide el autor (D-169.2).
 
 - **PR-063** — Una alergia **refutada** NO DEBERÁ interrumpir la emisión.
 
@@ -1543,7 +1569,7 @@ prueba o el CI falla**.
 | PR-113 | Interfaz (`clinica-web`): emitir con una línea del CNMB marcada pide la confirmación que nombra la línea y no emite hasta confirmarla; sin concepto o en una presentación declarada se emite sin preguntar |
 | PR-117 | Unitaria de la frase (las tres ramas, la fecha en `America/Guayaquil` a las 21:00) y del documento; **integración contra PostgreSQL real** del documento por el servicio: sin nada, la afirmación hecha sobre una ficha absorbida (control positivo), superada por una alergia registrada después aunque se refute, y otra retirada. La receta de una ficha que después se absorbió, en la de DOC-116. Interfaz: la pantalla pinta `allergyHistory` tal cual |
 | PR-100, PR-104 | **Integración contra PostgreSQL real**, con control positivo: reescribir un borrador conserva su id y sustituye las líneas; las de una emitida no se tocan ni desde la base; otra presentación de un concepto que declara las suyas se compone sin justificación y sale marcada (PR-110) |
-| PR-062 | **Integración contra PostgreSQL real, con una fusión de fichas de por medio.** Es el único nivel que puede demostrarlo: depende de que el enlace se recorra en la base, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo recorriendo el AST |
+| PR-062, PR-118 | **Integración contra PostgreSQL real, con una fusión de fichas de por medio** (PR-118: la fusión real de `patients` con la atención abierta en la absorbida, y control positivo sin fusión). Es el único nivel que puede demostrarlo: depende de que el enlace se recorra en la base, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo recorriendo el AST |
 | PR-050 | **Unitario con el huso alterado**, como `clinical-date-timezone.spec.ts`: la misma emisión bajo `UTC` y bajo `Asia/Tokyo` da la misma fecha límite. Es el defecto real que originó REQ-160 |
 | PR-025, PR-030 | **Unitario de dominio exhaustivo.** La edad en años y meses y el número en letras son funciones puras con casos límite densos —cero meses, un mes, cuatro años once meses, cinco años justos; uno, dieciséis, veintiuno, cien, ciento uno, doscientos, quinientos, mil, veintiún mil— y enumerar sólo los que uno recuerda es cómo se cuela «veinte y uno» |
 | PR-007, PR-034, PR-060 | **Integración**: el concepto de otro catálogo, el registro ACESS vencido **ayer** sin que nadie haya tocado la fila, y la alergia exacta. Los tres se responden con una consulta dentro de la transacción que escribe |

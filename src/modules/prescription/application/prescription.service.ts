@@ -14,8 +14,8 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import {
-  ACTIVE_ALLERGY_READER,
-  type ActiveAllergyReader,
+  SURVIVING_CHART_ALLERGY_READER,
+  type SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import {
   ALLERGY_ABSENCE_READER,
@@ -159,9 +159,13 @@ export class PrescriptionService {
      * link, and the half it would drop is the penicillin allergy of the
      * absorbed chart — `patient-chart-scope.ts` opens with that scene, and this
      * module is the one where it ends in a prescription.
+     *
+     * PR-118 (D-169.2). AND FROM THE SURVIVING CHART: the attention may have
+     * been opened on a duplicate that admissions merged afterwards, so the
+     * prescription asks from the chart that absorbed it, not only downwards.
      */
-    @Inject(ACTIVE_ALLERGY_READER)
-    private readonly allergies: ActiveAllergyReader,
+    @Inject(SURVIVING_CHART_ALLERGY_READER)
+    private readonly allergies: SurvivingChartAllergyReader,
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
     private readonly logger: PinoLogger,
@@ -209,12 +213,14 @@ export class PrescriptionService {
     });
 
     /**
-     * PR-062, PR-067. The chart's allergies AND those of every chart it
-     * absorbed, informative at this point. Read AFTER the write on purpose: the
+     * PR-062, PR-067, PR-118. The allergies of the attention's surviving chart
+     * AND of every chart it absorbed, informative at this point. Read AFTER the write on purpose: the
      * draft exists either way, and the alert is about what was actually
      * written, with the DCI frozen from the concept the adapter resolved.
      */
-    const allergies = await this.allergies.activeFor(encounter.patientId);
+    const allergies = await this.allergies.activeForSurvivorOf(
+      encounter.patientId,
+    );
     const allergyAlerts = await this.allergyAlertsOf(prescription, allergies);
 
     await this.audit.record({
@@ -293,7 +299,9 @@ export class PrescriptionService {
       prescription.encounterId,
       requester,
     );
-    const allergies = await this.allergies.activeFor(encounter.patientId);
+    const allergies = await this.allergies.activeForSurvivorOf(
+      encounter.patientId,
+    );
     const allergyAlerts = await this.allergyAlertsOf(prescription, allergies);
 
     await this.audit.record({
@@ -713,12 +721,13 @@ export class PrescriptionService {
     });
 
     /**
-     * PR-027, PR-062. The allergies of the chart AND of the charts it absorbed,
-     * from the shared reader — the same statement the doctor's screen reads, so
-     * the printed prescription and the consultation cannot disagree about what
-     * the person reacts to.
+     * PR-027, PR-062, PR-118. The allergies of the surviving chart AND of the
+     * charts it absorbed, from the shared reader — the same adapter the
+     * doctor's screen reads. ⚠️ Over an attention of an ABSORBED chart the band
+     * (`chartScope`, downwards only) can list fewer than this document: the
+     * receta errs towards the allergy, and the band is D-169.2.
      */
-    const allergies = await this.allergies.activeFor(source.chartId);
+    const allergies = await this.allergies.activeForSurvivorOf(source.chartId);
     // PR-117. Asked only over an empty chart: with an allergy it is not said.
     const noKnownAllergies =
       allergies.length === 0

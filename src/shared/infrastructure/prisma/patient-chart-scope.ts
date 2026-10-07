@@ -121,6 +121,47 @@ export function chartScope(chartId: string): ChartScopeFilter {
 }
 
 /**
+ * PR-118 (D-169.2). The PERSON's whole scope, from ANY of her charts: up to
+ * the chart that absorbed this one, if any, and down to every chart that one
+ * absorbed — this one included.
+ *
+ * `chartScope` reads DOWN and never UP, which is right for a screen opened on
+ * the surviving chart and wrong for an attention that was opened on the
+ * duplicate before admissions merged it: the merge does not look at
+ * attentions, so that attention is still open, and from it `chartScope` sees
+ * only the duplicate. The surviving chart's penicillin allergy is invisible
+ * there — and that is where a prescription gets issued.
+ *
+ * FOUR BRANCHES, ONE RELATION FILTER, NO ROUND TRIP — the same reasons as
+ * `chartScope`: a survivor id resolved in a first statement is a stale id the
+ * moment a merge or an undo lands between the two.
+ *
+ *   - the chart itself;
+ *   - the charts it absorbed (it is the survivor);
+ *   - the chart that absorbed it (it is absorbed);
+ *   - every chart absorbed by that same survivor.
+ *
+ * ONE LEVEL UP IS ALL THERE IS: `trg_patient_merge_not_chained` refuses A→B→C
+ * (PA-046), so the survivor of an absorbed chart is never itself absorbed.
+ *
+ * ⚠️ NOT A REPLACEMENT FOR `chartScope` EVERYWHERE. Only the prescription
+ * reads through it today (PR-118); whether every read from an attention
+ * should, or whether such an attention should exist at all, is D-169.2.
+ */
+export function chartScopeOfSurvivor(chartId: string): ChartScopeFilter {
+  return {
+    patient: {
+      OR: [
+        { id: chartId },
+        { mergedIntoId: chartId },
+        { mergedFrom: { some: { id: chartId } } },
+        { mergedInto: { mergedFrom: { some: { id: chartId } } } },
+      ],
+    },
+  };
+}
+
+/**
  * The same scope when reading DOWN from a patient row that is already being
  * selected — one statement, no extra query.
  *
