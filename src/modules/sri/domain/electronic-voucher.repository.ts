@@ -96,7 +96,9 @@ export interface VoucherRecord {
   deliveryStatus: DeliveryStatus | null;
 }
 
-export type DeliveryStatus = 'PENDING' | 'SENT' | 'NO_EMAIL' | 'FAILED';
+/** SRI-091. `UNDELIVERABLE`: still failing 72 h after the authorisation; never retried. */
+export type DeliveryStatus =
+  'PENDING' | 'SENT' | 'NO_EMAIL' | 'FAILED' | 'UNDELIVERABLE';
 
 export interface NewVoucher {
   document: VoucherDocument;

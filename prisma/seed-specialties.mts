@@ -23,7 +23,10 @@ import { PrismaClient } from '@prisma/client';
  * `seed-staff.mts` now, together with the `duration_exception` of ST-009 that
  * nobody was writing at all.
  *
- * Chain: run AFTER `pnpm db:seed` (users). Then `pnpm db:seed:staff` if you
+ * Chain: run AFTER `pnpm db:seed` (users). The `db:seed:specialties` script
+ * runs the billing seed right after this one, so every specialty's
+ * consultation gets linked (BI-232) whatever the order; this file does not
+ * write billing's tables itself. Then `pnpm db:seed:staff` if you
  * want the seeded practitioners to have a specialty and a duration exception.
  */
 

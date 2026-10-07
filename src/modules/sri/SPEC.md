@@ -171,13 +171,15 @@ RIDE en PDF y el XML autorizado.
 autorización y encontrar en Mailpit el correo con dos adjuntos, un PDF y un XML
 cuyo `numeroAutorizacion` es la clave.
 
-**Cubre:** SRI-070 a SRI-076.
+**Cubre:** SRI-070 a SRI-076, SRI-091.
 **Solo servidor:** SRI-070, SRI-073 a SRI-076. SRI-070 es lo que el RIDE
 imprime, que compone `documents` y la pantalla entrega sin tocar (DOC-002,
 DOC-006), como DOC-076: una prueba de interfaz que lo citara no probaría nada.
 Se comprueba sobre el RIDE que caja descarga en el recorrido de F-06. SRI-074 y
 SRI-076 sí asoman en la fila de la factura («Correo no enviado; se reintenta»,
 «Sin correo»), y su prueba de interfaz cita SRI-072, del que son el detalle.
+SRI-091 —el correo que tres días después sigue fallando— se dice en la misma
+fila («No se pudo enviar el correo») y su prueba de interfaz lo cita.
 
 ### S6 — Cargar el certificado desde la administración _(P2)_
 
@@ -626,6 +628,19 @@ reenviado lleva el receptor nuevo y la misma clave.
   > 01-10-2026).
 - **SRI-076** — DONDE la factura no tenga correo del receptor, el sistema NO
   DEBERÁ intentar la entrega y DEBERÁ exponerlo como «sin correo».
+- **SRI-091** — SI el correo de un comprobante sigue fallando setenta y dos
+  horas o más después de su autorización, ENTONCES el sistema DEBERÁ dejar de
+  reintentarlo, DEBERÁ anotarlo como «no se pudo enviar» (`UNDELIVERABLE`) y NO
+  DEBERÁ volver a intentarlo ni desde la cola ni desde el barrido; tampoco
+  DEBERÁ cambiar el estado del comprobante ni el de la factura.
+  > D-158.3, resuelta por el autor el 07-10-2026. Una dirección que el servidor
+  > de correo rechaza siempre se reintentaba sin tope, cada seis horas, y cada
+  > intento emite un RIDE (SRI-074). Tres días bastan para cubrir un servidor
+  > de correo caído un fin de semana; lo que sigue fallando después es la
+  > dirección, y la fila de caja dice que se entregue el impreso.
+  >
+  > «Correo enviado» significa que el servidor de correo lo aceptó, no que
+  > llegó: un rebote posterior no se ve, ni antes ni ahora.
 
 ## 7. El certificado desde la administración
 
@@ -745,7 +760,7 @@ el autor quiera hacerlo:
 | SRI-022 a SRI-026, SRI-028 a SRI-030, SRI-033          | Unitarias del servicio con puertos falsos e integración del repositorio                                   |
 | SRI-040 a SRI-059                                      | Integración: pg-boss real, PostgreSQL real y el doble del SRI por HTTP                                    |
 | SRI-060 a SRI-069, SRI-080 a SRI-084                   | Integración por HTTP (permiso, alcance, contrato) y e2e de la interfaz                                    |
-| SRI-070 a SRI-076                                      | Unitarias sobre los bytes del RIDE; integración con un `Mailer` falso y e2e con Mailpit                   |
+| SRI-070 a SRI-076, SRI-091                             | Unitarias sobre los bytes del RIDE; integración con un `Mailer` falso y e2e con Mailpit                   |
 | SRI-085 a SRI-090                                      | Unitarias del XML contra el XSD oficial y de la firma; integración contra PostgreSQL (SRI-086 por SQL directo) y el doble del SRI; e2e del recorrido de caja |
 
 ## 11. Preguntas abiertas

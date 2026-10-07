@@ -59,7 +59,7 @@ export interface ElectronicVoucherSummary {
   blockedReason: string | null;
   accessKey: string;
   authorisedAt: Date | null;
-  /** `PENDING`, `SENT`, `NO_EMAIL` or `FAILED`, once authorised. */
+  /** `PENDING`, `SENT`, `NO_EMAIL`, `FAILED` or `UNDELIVERABLE` (SRI-091), once authorised. */
   deliveryStatus: string | null;
   /** The SRI's last message, for the screen. */
   lastMessage: { identifier: string; message: string } | null;
