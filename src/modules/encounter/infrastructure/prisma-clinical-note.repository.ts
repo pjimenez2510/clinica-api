@@ -10,6 +10,7 @@ import {
 } from '../domain/encounter.errors';
 import { TERMINAL_STATUSES } from '../domain/encounter-state';
 import { subjectStatusAfter } from '../domain/patient-flow';
+import { cie10UseOf, mayBePrincipal } from '../domain/diagnosis';
 import type { NoteContent } from '../domain/clinical-note';
 import type {
   AmendmentDraft,
@@ -73,7 +74,15 @@ const ENCOUNTER_FOR_NOTE = {
   agendaEntryId: true,
   _count: { select: { diagnoses: true } },
   // EN-236. The principal, if any: one row at most (`encounter_diagnosis_one_primary`).
-  diagnoses: { where: { rank: 1 }, select: { id: true }, take: 1 },
+  // With its concept's use, because an asterisk or an external cause that is
+  // rank 1 —written before EN-235, or reclassified by a catalogue reimport—
+  // is not the principal the discharge needs. Same predicate as
+  // `clinical_note_sign_needs_diagnosis()`.
+  diagnoses: {
+    where: { rank: 1 },
+    select: { concept: { select: { attributes: true } } },
+    take: 1,
+  },
 } satisfies Prisma.EncounterSelect;
 
 /**
@@ -510,7 +519,9 @@ function toEncounterRead(
     endedAt: row.endedAt,
     dischargeCondition: row.dischargeCondition,
     diagnosisCount: row._count.diagnoses,
-    hasPrincipalDiagnosis: row.diagnoses.length > 0,
+    hasPrincipalDiagnosis: row.diagnoses.some((d) =>
+      mayBePrincipal(cie10UseOf(d.concept.attributes)),
+    ),
   };
 }
 

@@ -1756,6 +1756,34 @@ describe('la atención por HTTP', () => {
       await expect(prisma.clinicalNote.findFirstOrThrow({ where: { encounterId: interrupted } })).resolves.toMatchObject({ status: 'SIGNED' }); // prettier-ignore
     });
 
+    it('EN-236 con EN-235 firmar el alta cuyo principal es hoy una causa externa responde 422 en principalDiagnosis sin firmar; vuelto a enfermedad, firma', async () => {
+      const encounterId = await openEncounter();
+      // Rank 1 before the catalogue said what it is (no `use` yet): EN-235
+      // let it in, as it let in every principal written before it.
+      await createDiagnosis(prisma, encounterId, 'K80.2');
+      const reclassify = (use: string) => prisma.$executeRaw`
+        UPDATE catalog_concept
+           SET attributes = jsonb_build_object('use', ${use}::text)
+         WHERE code = 'K80.2'`;
+      await reclassify('EXTERNAL_CAUSE');
+      const draft = await post(`/encounters/${encounterId}/notes`, doctorToken, { formCode: '002', content: COMPLETE_002 }).expect(201); // prettier-ignore
+      const noteId = (draft.body as NoteBody).id;
+      const sign = () => post(`/encounters/${encounterId}/notes/${noteId}/sign`, doctorToken, { dischargeCondition: 'ALIVE' }); // prettier-ignore
+
+      const refused = await sign().expect(422);
+      expect(refused.body).toMatchObject({
+        code: 'NOTE_CONTENT_INCOMPLETE',
+        errors: [
+          { field: 'principalDiagnosis', code: 'NOTE_CONTENT_INCOMPLETE' },
+        ],
+      });
+      await expect(prisma.clinicalNote.findUniqueOrThrow({ where: { id: noteId } })).resolves.toMatchObject({ status: 'DRAFT' }); // prettier-ignore
+
+      // Positive control, same note and same row: a disease again, it signs.
+      await reclassify('PRINCIPAL');
+      await sign().expect(200);
+    });
+
     it('EN-217 hace que la base rechace la 002 firmada con alta de un menor de 5 años sin peso, talla ni perimetro, y no la interrumpida', async () => {
       const { id: signerId } = await prisma.practitioner.findFirstOrThrow({
         where: { user: { email: 'medico@clinica.ec' } },

@@ -3920,8 +3920,9 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
   > como están mientras no se toque su rango ni su código.
 
 - **EN-236** — CUANDO se firme la nota **002** que da el alta, el sistema
-  DEBERÁ exigir que la atención tenga un **diagnóstico principal** (rango 1),
-  y SI no lo tiene, ENTONCES DEBERÁ rechazar la firma con
+  DEBERÁ exigir que la atención tenga un **diagnóstico principal** (rango 1)
+  cuyo código no sea asterisco ni causa externa según el catálogo **en el
+  momento de firmar** (EN-235), y SI no lo tiene, ENTONCES DEBERÁ rechazar la firma con
   `NOTE_CONTENT_INCOMPLETE` nombrando `principalDiagnosis` y el mensaje
   «Registre la enfermedad o la lesión como diagnóstico principal antes de
   firmar», sin firmar. Una atención sin ningún diagnóstico sigue nombrando
@@ -3932,7 +3933,11 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
   >
   > **Garantía de la base:** `trg_clinical_note_sign_needs_diagnosis`,
   > diferido, levanta además `clinical_note_sign_needs_principal_diagnosis`
-  > cuando la firma deja el alta sin ninguna fila de rango 1. Como EN-020,
+  > cuando la firma deja el alta sin ninguna fila de rango 1 cuyo concepto
+  > cumpla `COALESCE(attributes->>'use','') NOT IN ('ASTERISK','EXTERNAL_CAUSE')`:
+  > un principal anterior a EN-235, o reclasificado por una reimportación del
+  > catálogo, no da el alta (revisión clínica, I1). Un concepto sin `use` no se
+  > juzga, como en EN-235. Como EN-020,
   > sólo con el alta: firmar los borradores de una interrupción (EN-167) no lo
   > exige.
 
@@ -4283,7 +4288,7 @@ prueba o el CI falla**.
 | EN-144, EN-145, EN-147 | Integración y **observación**: cierra quien abrió; otro con `record:sign` cierra dejando la constancia de sustitución; otro sin él falla; y una atención abierta hace cuarenta días **sigue abierta**, porque no existe ningún proceso que la cierre |
 | EN-148, EN-149 | Contrato HTTP con la capacidad **apagada** —que es el defecto—: la ruta de triaje responde `TRIAGE_NOT_ENABLED` y **ninguna respuesta del módulo lleva nivel de triaje**, afirmado sobre el cuerpo. Con la capacidad encendida, el nivel se registra con su autor |
 | EN-235 | **Integración contra PostgreSQL real, con control positivo**: un asterisco y una causa externa no entran como rango 1 ni por `INSERT` ni por `UPDATE` de rango o de concepto, y como rango 2 sí; un código `PRINCIPAL` sí; un concepto sin `use` sí. HTTP: registrar, editar el código y marcar principal responden `DIAGNOSIS_PRINCIPAL_USE_INVALID` con la frase, y deshacer devuelve el asterisco detrás |
-| EN-236 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza firmar la 002 que da el alta con diagnósticos y ninguno de rango 1, y la firma con el principal; firmar los borradores de una interrupción no lo exige. HTTP: `NOTE_CONTENT_INCOMPLETE` en `principalDiagnosis`, sin firmar |
+| EN-236 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza firmar la 002 que da el alta con diagnósticos y ninguno de rango 1, y la firma con el principal; también con un rango 1 que el catálogo reclasificó como asterisco o causa externa, y la firma vuelto a `PRINCIPAL`; firmar los borradores de una interrupción no lo exige. HTTP: `NOTE_CONTENT_INCOMPLETE` en `principalDiagnosis`, sin firmar |
 | EN-052 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza el CEO-D a los 11 años y a los 6 meses, `extraídos` en el CPO-D, `perdidos` en el CEO-D y una cuenta por encima de los dientes que hay, y acepta las dos buenas; corregir deja la anterior en `record_version`. HTTP: fuera de odontología `DENTAL_INDEX_NOT_APPLICABLE` |
 | EN-151, EN-152, EN-153, EN-154 | Contrato HTTP: un procedimiento de riesgo mínimo se registra **sin consentimiento alguno**; uno de riesgo mayor sin 024 se rechaza; la negativa **no cierra** la atención; y revocar deja el consentimiento anterior legible (contar filas) |
 | EN-155, EN-156 | Integración con el parámetro en sus dos posiciones: encendido, firmar sin certificado vigente falla; apagado, la nota se firma **y la constancia de que no lleva certificado viaja en la nota**, no en la pantalla |
