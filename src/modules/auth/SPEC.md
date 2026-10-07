@@ -134,7 +134,8 @@ tiene efecto pide una confirmación, y lo mal tecleado se corrige en el sitio.
 confirmación que dice que se cierran sus sesiones; retirar un rol y confirmar;
 cambiar la sede de un rol concedido desde su fila; corregir el correo de una
 cuenta que aún no entró y comprobar que la invitación viva se anuló y salió
-otra al correo nuevo; y leer en la bitácora el correo anterior.
+otra al correo nuevo, y que el de una cuenta que ya entró no se cambia; y leer
+en la bitácora el correo anterior.
 **Cubre:** AU-048 a AU-052.
 
 **Solo interfaz:** AU-048, AU-049. **Solo servidor:** AU-052 (la bitácora no
@@ -941,17 +942,22 @@ enlace que no sirve y con un correo que no sale.
   > AD-2 y la mitad de AD-8. Antes, cambiar de «Sede Norte» a «Todas las
   > sedes» era retirar y volver a conceder: dos gestos y un instante en que la
   > persona no tenía el rol.
-- **AU-050** — El sistema DEBERÁ permitir corregir el **correo** de una cuenta
+- **AU-050** — MIENTRAS una cuenta tenga la primera credencial pendiente
+  (nunca ha entrado), el sistema DEBERÁ permitir corregir su **correo**
   (`PATCH /auth/users/{id}` con `email`), con la misma validación y unicidad que
-  al crearla (`EMAIL_ALREADY_REGISTERED`). MIENTRAS la cuenta tenga la primera
-  credencial pendiente, ENTONCES el sistema DEBERÁ anular la invitación viva y
-  enviar una nueva al correo corregido (AU-027). Corregir el correo NO DEBERÁ
-  cerrar las sesiones de la cuenta.
+  al crearla (`EMAIL_ALREADY_REGISTERED`), anular la invitación viva y enviar
+  una nueva al correo corregido (AU-027), y decir en la respuesta si salió
+  (`invitationSent`). SI la cuenta ya entró, ENTONCES DEBERÁ rechazar el cambio
+  de correo con `ACCOUNT_EMAIL_FIXED`.
   > AD-8. El caso que lo hace urgente es el correo mal tecleado al dar de alta:
-  > la invitación está en el buzón de un desconocido, y la única salida era
-  > otra cuenta. La versión anterior la guarda la bitácora (AU-052), no
-  > `record_version`: esa tabla archiva la fila entera, y la fila de la cuenta
-  > lleva la contraseña y el secreto del segundo factor (AU-025).
+  > la invitación está en el buzón de un desconocido. **Sólo antes del primer
+  > acceso** (revisión del 06-10-2026): la invitación se puede reemitir a una
+  > cuenta con contraseña, así que un correo que el administrador pudiera
+  > cambiar sería un camino para quedarse con la cuenta de un médico y firmar
+  > por él. Cómo cambiar el correo de quien ya entró queda en D-150.3. La
+  > versión anterior la guarda la bitácora (AU-052), no `record_version`: esa
+  > tabla archiva la fila entera, y la de la cuenta lleva la contraseña y el
+  > secreto del segundo factor (AU-025).
 - **AU-051** — El sistema DEBERÁ permitir corregir el **código** de un rol
   propio (`PATCH /auth/roles/{id}` con `code`), con la unicidad de
   `ROLE_CODE_DUPLICATE`; el de un rol del sistema NO DEBERÁ cambiar

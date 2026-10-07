@@ -738,6 +738,26 @@ describe('la administración de cuentas y roles por HTTP', () => {
         orderBy: { occurredAt: 'desc' },
       });
       expect(audit?.before).toMatchObject({ email: 'mal.tecleado@clinica.ec' });
+      expect(
+        (response.body as { invitationSent?: boolean }).invitationSent,
+      ).toBe(true);
+      // AU-052: what reached the never-purged trail has no secret in it.
+      const stored = JSON.stringify([audit?.before, audit?.after]);
+      expect(stored).not.toMatch(/password|hash|secret|mfa|totp|token|backup/i);
+    });
+
+    it('AU-050 el correo de una cuenta que ya entró no se cambia: ACCOUNT_EMAIL_FIXED, y nadie recibe invitación', async () => {
+      mailer.reset();
+      const refused = await patch(`/users/${adminUserId}`, {
+        email: 'otra.direccion@clinica.ec',
+      }).expect(409);
+
+      expect((refused.body as Problem).code).toBe('ACCOUNT_EMAIL_FIXED');
+      expect(mailer.sent).toHaveLength(0);
+      const stored = await prisma.user.findUniqueOrThrow({
+        where: { id: adminUserId },
+      });
+      expect(stored.email).toBe(ADMIN_EMAIL);
     });
 
     it('AU-050 un correo que ya tiene otra cuenta se rechaza con EMAIL_ALREADY_REGISTERED', async () => {

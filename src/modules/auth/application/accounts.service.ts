@@ -8,6 +8,7 @@ import {
   CannotGrantToSelfError,
   RoleNotFoundError,
   UserNotFoundError,
+  AccountEmailFixedError,
 } from '../domain/auth.errors';
 import { UNUSABLE_PASSWORD_HASH } from '../domain/password-hashing';
 
@@ -176,21 +177,29 @@ export class AccountsService {
   }
 
   /**
-   * AU-025, AU-050. The email is correctable; see the DTO for why that
-   * rewrites nothing about who did what.
+   * AU-025, AU-050. The email is correctable ONLY while the account has never
+   * signed in: that is the mistyped address of a new hire. Afterwards it is
+   * fixed — the invitation can be re-issued to an account with a password, so
+   * an address an administrator could change would be an address an
+   * administrator could take the account through (D-150.3).
    */
   async update(
     id: string,
     command: UpdateAccountCommand,
     requester: Requester,
-  ): Promise<AccountView> {
+  ): Promise<AccountView & { invitationSent?: boolean }> {
     // AU-052. The account as it stood, so the trail can say what was replaced.
     const before = await this.accounts.findById(id);
     if (!before) throw new UserNotFoundError();
 
-    const email = command.email?.trim().toLowerCase();
+    const typed = command.email?.trim().toLowerCase();
+    const email = typed === before.email ? undefined : typed;
+    if (email !== undefined && !before.credentialPending) {
+      throw new AccountEmailFixedError();
+    }
+
     const updated = await this.accounts.update(id, {
-      email: email === before.email ? undefined : email,
+      email,
       firstName: command.firstName,
       lastName: command.lastName,
       // `undefined` leaves it alone, `null` clears it; collapsing the two
@@ -210,8 +219,9 @@ export class AccountsService {
 
     // AU-050. The invitation that went to the old address is annulled and a
     // new one goes to the corrected one (AU-027 does both in one call).
-    if (updated.email !== before.email && updated.credentialPending) {
-      await this.invitations.issue(updated.id, requester);
+    if (email !== undefined) {
+      const invitation = await this.invitations.issue(updated.id, requester);
+      return { ...updated, invitationSent: invitation.sent };
     }
     return updated;
   }

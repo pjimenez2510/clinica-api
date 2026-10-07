@@ -124,6 +124,11 @@ export const accountSchema = z.object({
    * account is not usable yet.
    */
   credentialPending: z.boolean(),
+  /**
+   * AU-050. Only on the answer to an email correction: whether the new
+   * invitation left for the corrected address (AU-029).
+   */
+  invitationSent: z.boolean().optional(),
 });
 /**
  * ═══════════════════════════════════════════════════════════════════════════

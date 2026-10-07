@@ -9,6 +9,7 @@ import {
   CannotGrantToSelfError,
   RoleNotFoundError,
   UserNotFoundError,
+  AccountEmailFixedError,
 } from '../domain/auth.errors';
 import { UNUSABLE_PASSWORD_HASH } from '../domain/password-hashing';
 
@@ -633,24 +634,26 @@ describe('la administración de cuentas', () => {
       expect(invitations.issuedFor).toEqual(['user-1']);
     });
 
-    it('AU-050 una cuenta que ya entró conserva sus sesiones y no recibe invitación', async () => {
+    it('AU-050 el correo de una cuenta que ya entró no se cambia: ACCOUNT_EMAIL_FIXED, sin escribir ni invitar', async () => {
       accounts.findAnswer = { ...ACCOUNT, credentialPending: false };
-      accounts.updateAnswer = {
-        ...ACCOUNT,
-        credentialPending: false,
-        email: 'ana.villacis@clinica.ec',
-      };
+
+      await expect(
+        service.update('user-1', { email: 'otra@clinica.ec' }, REQUESTER),
+      ).rejects.toBeInstanceOf(AccountEmailFixedError);
+      expect(accounts.calls.map((call) => call.method)).not.toContain('update');
+      expect(invitations.issuedFor).toEqual([]);
+    });
+
+    it('AU-050 una cuenta que ya entró sí corrige su nombre mientras manda el mismo correo', async () => {
+      accounts.findAnswer = { ...ACCOUNT, credentialPending: false };
 
       await service.update(
         'user-1',
-        { email: 'ana.villacis@clinica.ec' },
+        { email: ' NUEVA@clinica.ec ', firstName: 'Ana María' },
         REQUESTER,
       );
 
       expect(invitations.issuedFor).toEqual([]);
-      expect(accounts.calls.map((call) => call.method)).not.toContain(
-        'setActive',
-      );
     });
 
     it('AU-050 enviar el mismo correo no lo reescribe ni reenvía nada', async () => {
