@@ -111,6 +111,14 @@ export const serviceOrderSchema = z.object({
   category: CATEGORY,
   priority: PRIORITY,
   clinicalNoteText: z.string().nullable(),
+  /**
+   * ORD-158, ORD-159. The chart's sex as it was when the order was issued,
+   * frozen by the database: the header of the order says this one, on screen
+   * and on the PDF, however the chart is corrected afterwards. `null` while a
+   * draft or discarded. The PDF —readable with the same permission— already
+   * prints it.
+   */
+  patientSex: z.enum(['MALE', 'FEMALE', 'INTERSEX', 'UNKNOWN']).nullable(),
   /** Maintained by `trg_service_order_item_pending`; never written by a client. */
   pendingItems: z.number().int(),
   /** The issue instant once issued; while a draft, when it was composed. */
