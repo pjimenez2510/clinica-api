@@ -4,18 +4,22 @@ import { Prisma } from '@prisma/client';
 import { invoiceDocumentNumber } from '../../../shared/billing/document-number';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type { SriEnvironment } from '../domain/access-key';
-import type {
-  AttemptEffect,
-  AttemptRecord,
-  DeliveryStatus,
-  ElectronicVoucherRepository,
-  LastTransportFailure,
-  MonitorRow,
-  NewVoucher,
-  PreparationSource,
-  TransportFailureDetail,
-  VoucherRecord,
-  VoucherStatusView,
+import {
+  documentTypeOf,
+  type AttemptEffect,
+  type AttemptRecord,
+  type CreditNotePreparationSource,
+  type DeliveryContext,
+  type DeliveryStatus,
+  type ElectronicVoucherRepository,
+  type LastTransportFailure,
+  type MonitorRow,
+  type NewVoucher,
+  type PreparationSource,
+  type TransportFailureDetail,
+  type VoucherRecord,
+  type VoucherDocument,
+  type VoucherStatusView,
 } from '../domain/electronic-voucher.repository';
 import {
   CERTIFICATE_REASONS,
@@ -29,6 +33,7 @@ import { summaryOf } from '../domain/kept-text';
 const VOUCHER_SELECT = {
   id: true,
   invoiceId: true,
+  creditNoteId: true,
   siteId: true,
   accessKey: true,
   numericCode: true,
@@ -49,9 +54,35 @@ type VoucherRow = Prisma.ElectronicVoucherGetPayload<{
   select: typeof VOUCHER_SELECT;
 }>;
 
+/**
+ * The invoice a voucher belongs to, on the paths that only concern invoices.
+ * The database guarantees a `01` voucher carries its invoice
+ * (`electronic_voucher_type_matches_its_document`).
+ */
+function invoiceIdOf(row: { id: string; invoiceId: string | null }): string {
+  if (row.invoiceId === null) {
+    throw new Error(`Voucher ${row.id} is not an invoice's voucher`);
+  }
+  return row.invoiceId;
+}
+
+/** SRI-086. The database guarantees exactly one of the two. */
+function documentOf(row: {
+  id: string;
+  invoiceId: string | null;
+  creditNoteId: string | null;
+}): VoucherDocument {
+  if (row.creditNoteId !== null) {
+    return { kind: 'CREDIT_NOTE', creditNoteId: row.creditNoteId };
+  }
+  return { kind: 'INVOICE', invoiceId: invoiceIdOf(row) };
+}
+
 function toRecord(row: VoucherRow): VoucherRecord {
+  const { invoiceId, creditNoteId, ...rest } = row;
   return {
-    ...row,
+    ...rest,
+    document: documentOf({ id: row.id, invoiceId, creditNoteId }),
     environment: row.environment as SriEnvironment,
     status: row.status as VoucherStatus,
     blockedReason: row.blockedReason as BlockedReason | null,
@@ -65,6 +96,124 @@ function messagesOf(value: Prisma.JsonValue): SriMessage[] {
 
 const asJson = (messages: SriMessage[]): Prisma.InputJsonValue =>
   messages as unknown as Prisma.InputJsonValue;
+
+/** What a voucher reads of the site and its establishment (SRI-018). */
+const ISSUER_SITE_SELECT = {
+  ruc: true,
+  addressLine: true,
+  sriEstablishmentCode: true,
+  establishment: {
+    select: {
+      legalName: true,
+      ruc: true,
+      headOfficeAddress: true,
+      keepsAccounting: true,
+      specialTaxpayerResolution: true,
+      withholdingAgentResolution: true,
+      rimpeRegime: true,
+      fiscalProfileDeclaredAt: true,
+    },
+  },
+} satisfies Prisma.SiteSelect;
+
+function issuerOf(
+  site: Prisma.SiteGetPayload<{ select: typeof ISSUER_SITE_SELECT }>,
+): PreparationSource['issuer'] {
+  const { establishment } = site;
+  return {
+    // The same precedence the RIDE prints (DOC-077): the site's own RUC,
+    // else the establishment's; the legal name is the establishment's.
+    // OR-032: every site has its establishment.
+    ruc: site.ruc ?? establishment.ruc,
+    legalName: establishment.legalName,
+    headOfficeAddress: establishment.headOfficeAddress,
+    establishmentAddress: site.addressLine,
+    keepsAccounting: establishment.keepsAccounting,
+    specialTaxpayerResolution: establishment.specialTaxpayerResolution,
+    withholdingAgentResolution: establishment.withholdingAgentResolution,
+    rimpeRegime: establishment.rimpeRegime,
+    fiscalProfileDeclared: establishment.fiscalProfileDeclaredAt !== null,
+  };
+}
+
+const amount = (value: Prisma.Decimal) => value.toFixed(2);
+
+function totalsOf(row: {
+  subtotalTaxed: Prisma.Decimal;
+  subtotalUntaxed: Prisma.Decimal;
+  discountTotal: Prisma.Decimal;
+  taxTotal: Prisma.Decimal;
+  amount: Prisma.Decimal;
+}): PreparationSource['totals'] {
+  return {
+    subtotalTaxed: amount(row.subtotalTaxed),
+    subtotalUntaxed: amount(row.subtotalUntaxed),
+    discountTotal: amount(row.discountTotal),
+    taxTotal: amount(row.taxTotal),
+    total: amount(row.amount),
+  };
+}
+
+/** SRI-060, SRI-088. What `billing` shows beside each document. */
+const STATUS_SELECT = {
+  id: true,
+  invoiceId: true,
+  creditNoteId: true,
+  status: true,
+  blockedReason: true,
+  accessKey: true,
+  authorisedAt: true,
+  deliveryStatus: true,
+  lastMessages: true,
+} satisfies Prisma.ElectronicVoucherSelect;
+
+function toStatusView(
+  row: Prisma.ElectronicVoucherGetPayload<{ select: typeof STATUS_SELECT }>,
+  documentId: string,
+): VoucherStatusView {
+  return {
+    documentId,
+    voucherId: row.id,
+    status: row.status as VoucherStatus,
+    blockedReason: row.blockedReason as BlockedReason | null,
+    accessKey: row.accessKey,
+    authorisedAt: row.authorisedAt,
+    deliveryStatus: row.deliveryStatus as DeliveryStatus | null,
+    lastMessages: messagesOf(row.lastMessages),
+  };
+}
+
+/** SRI-061. What the monitor reads of an emission point. */
+const MONITOR_POINT_SELECT = {
+  code: true,
+  site: { select: { sriEstablishmentCode: true } },
+} satisfies Prisma.EmissionPointSelect;
+
+/** SRI-061, SRI-062. What the monitor reads of a voucher. */
+const MONITOR_VOUCHER_SELECT = {
+  id: true,
+  status: true,
+  blockedReason: true,
+  accessKey: true,
+  lastMessages: true,
+  attemptCount: true,
+  nextAttemptAt: true,
+  // SRI-062. When the SRI last took it in: a day without an answer is
+  // counted from here, not from the issuance.
+  attempts: {
+    where: {
+      operation: 'RECEPTION',
+      outcome: { in: ['RECIBIDA', 'DEVUELTA'] },
+    },
+    orderBy: { startedAt: 'desc' },
+    take: 1,
+    select: { startedAt: true },
+  },
+} satisfies Prisma.ElectronicVoucherSelect;
+
+type MonitorVoucherRow = Prisma.ElectronicVoucherGetPayload<{
+  select: typeof MONITOR_VOUCHER_SELECT;
+}>;
 
 /** SRI-084. How often the sweep retries what only a certificate fixes. */
 const CERTIFICATE_RETRY_MS = 3600 * 1000;
@@ -115,25 +264,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         taxTotal: true,
         total: true,
         emissionPoint: { select: { code: true } },
-        site: {
-          select: {
-            ruc: true,
-            addressLine: true,
-            sriEstablishmentCode: true,
-            establishment: {
-              select: {
-                legalName: true,
-                ruc: true,
-                headOfficeAddress: true,
-                keepsAccounting: true,
-                specialTaxpayerResolution: true,
-                withholdingAgentResolution: true,
-                rimpeRegime: true,
-                fiscalProfileDeclaredAt: true,
-              },
-            },
-          },
-        },
+        site: { select: ISSUER_SITE_SELECT },
         // BI-169, SRI-012. THIS invoice's charges, with what was frozen on them.
         chargeItems: {
           orderBy: { createdAt: 'asc' },
@@ -151,8 +282,6 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
     });
     if (!row || !row.issuedAt) return null;
 
-    const establishment = row.site.establishment;
-    const money = (value: Prisma.Decimal) => value.toFixed(2);
     return {
       invoiceId: row.id,
       siteId: row.siteId,
@@ -161,20 +290,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       sequential: row.sequential,
       emissionPointCode: row.emissionPoint.code,
       establishmentCode: row.site.sriEstablishmentCode,
-      issuer: {
-        // The same precedence the RIDE prints (DOC-077): the site's own RUC,
-        // else the establishment's; the legal name is the establishment's.
-        // OR-032: every site has its establishment.
-        ruc: row.site.ruc ?? establishment.ruc,
-        legalName: establishment.legalName,
-        headOfficeAddress: establishment.headOfficeAddress,
-        establishmentAddress: row.site.addressLine,
-        keepsAccounting: establishment.keepsAccounting,
-        specialTaxpayerResolution: establishment.specialTaxpayerResolution,
-        withholdingAgentResolution: establishment.withholdingAgentResolution,
-        rimpeRegime: establishment.rimpeRegime,
-        fiscalProfileDeclared: establishment.fiscalProfileDeclaredAt !== null,
-      },
+      issuer: issuerOf(row.site),
       buyer: {
         identificationType: row.buyerIdentificationType,
         identification: row.buyerIdentification,
@@ -185,29 +301,100 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         code: charge.billableService.code,
         description: charge.serviceDisplay,
         quantity: charge.quantity.toFixed(3),
-        unitPrice: money(charge.unitAmount),
-        discount: money(charge.discountAmount),
+        unitPrice: amount(charge.unitAmount),
+        discount: amount(charge.discountAmount),
         taxSriCode: charge.taxSriCode,
         // «No objeto» and «exento» carry no rate: the SRI's `tarifa` is 0.
         taxPercentage: charge.taxPercentage?.toFixed(2) ?? '0.00',
       })),
-      totals: {
-        subtotalTaxed: money(row.subtotalTaxed),
-        subtotalUntaxed: money(row.subtotalUntaxed),
-        discountTotal: money(row.discountTotal),
-        taxTotal: money(row.taxTotal),
-        total: money(row.total),
-      },
+      totals: totalsOf({ ...row, amount: row.total }),
       paymentMethod: row.paymentMethod,
+    };
+  }
+
+  async creditNotePreparationSource(
+    creditNoteId: string,
+  ): Promise<CreditNotePreparationSource | null> {
+    const row = await this.prisma.creditNote.findUnique({
+      where: { id: creditNoteId },
+      select: {
+        id: true,
+        siteId: true,
+        status: true,
+        issuedAt: true,
+        sequential: true,
+        reason: true,
+        buyerIdentificationType: true,
+        buyerIdentification: true,
+        buyerName: true,
+        buyerEmail: true,
+        subtotalTaxed: true,
+        subtotalUntaxed: true,
+        discountTotal: true,
+        taxTotal: true,
+        amount: true,
+        emissionPoint: { select: { code: true } },
+        site: { select: ISSUER_SITE_SELECT },
+        invoice: { select: { accessKey: true } },
+        // BI-210, SRI-085. The credited lines, as they were copied.
+        lines: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            serviceCode: true,
+            description: true,
+            quantity: true,
+            unitAmount: true,
+            discountAmount: true,
+            taxSriCode: true,
+            taxPercentage: true,
+          },
+        },
+      },
+    });
+    // An authorised invoice always carries its key (BI-208,
+    // `invoice_authorised_carries_its_key`).
+    if (!row || !row.issuedAt || !row.invoice.accessKey) return null;
+
+    return {
+      creditNoteId: row.id,
+      siteId: row.siteId,
+      creditNoteStatus: row.status,
+      issuedAt: row.issuedAt,
+      sequential: row.sequential,
+      emissionPointCode: row.emissionPoint.code,
+      establishmentCode: row.site.sriEstablishmentCode,
+      issuer: issuerOf(row.site),
+      buyer: {
+        identificationType: row.buyerIdentificationType,
+        identification: row.buyerIdentification,
+        name: row.buyerName,
+        email: row.buyerEmail,
+      },
+      lines: row.lines.map((line) => ({
+        code: line.serviceCode,
+        description: line.description,
+        quantity: line.quantity.toFixed(3),
+        unitPrice: amount(line.unitAmount),
+        discount: amount(line.discountAmount),
+        taxSriCode: line.taxSriCode,
+        taxPercentage: line.taxPercentage?.toFixed(2) ?? '0.00',
+      })),
+      totals: totalsOf(row),
+      reason: row.reason,
+      modifiedInvoiceKey: row.invoice.accessKey,
     };
   }
 
   async create(voucher: NewVoucher): Promise<VoucherRecord> {
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const { document } = voucher;
         const created = await tx.electronicVoucher.create({
           data: {
-            invoiceId: voucher.invoiceId,
+            ...(document.kind === 'INVOICE'
+              ? { invoiceId: document.invoiceId }
+              : { creditNoteId: document.creditNoteId }),
+            documentType: documentTypeOf(document),
             siteId: voucher.siteId,
             accessKey: voucher.accessKey,
             numericCode: voucher.numericCode,
@@ -218,12 +405,19 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
           },
           select: VOUCHER_SELECT,
         });
-        // SRI-007. The key on the invoice, in the same breath, so the RIDE
-        // handed over now already carries it (SRI-071).
-        await tx.invoice.update({
-          where: { id: voucher.invoiceId },
-          data: { accessKey: voucher.accessKey },
-        });
+        // SRI-007, SRI-086. The key on its document, in the same breath, so
+        // the RIDE handed over now already carries it (SRI-071).
+        if (document.kind === 'INVOICE') {
+          await tx.invoice.update({
+            where: { id: document.invoiceId },
+            data: { accessKey: voucher.accessKey },
+          });
+        } else {
+          await tx.creditNote.update({
+            where: { id: document.creditNoteId },
+            data: { accessKey: voucher.accessKey },
+          });
+        }
         return toRecord(created);
       });
     } catch (error) {
@@ -233,7 +427,10 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        const existing = await this.findByInvoice(voucher.invoiceId);
+        const existing =
+          voucher.document.kind === 'INVOICE'
+            ? await this.findByInvoice(voucher.document.invoiceId)
+            : await this.findByCreditNote(voucher.document.creditNoteId);
         if (existing) return existing;
       }
       throw error;
@@ -251,6 +448,14 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
   async findByInvoice(invoiceId: string): Promise<VoucherRecord | null> {
     const row = await this.prisma.electronicVoucher.findUnique({
       where: { invoiceId },
+      select: VOUCHER_SELECT,
+    });
+    return row ? toRecord(row) : null;
+  }
+
+  async findByCreditNote(creditNoteId: string): Promise<VoucherRecord | null> {
+    const row = await this.prisma.electronicVoucher.findUnique({
+      where: { creditNoteId },
       select: VOUCHER_SELECT,
     });
     return row ? toRecord(row) : null;
@@ -318,13 +523,21 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       if (voucher.count === 0) return false;
       const row = await tx.electronicVoucher.findUniqueOrThrow({
         where: { id },
-        select: { invoiceId: true },
+        select: { id: true, invoiceId: true, creditNoteId: true },
       });
       // SRI-058. Back to ISSUED: it is not rejected while it is being re-sent.
-      await tx.invoice.updateMany({
-        where: { id: row.invoiceId, status: 'REJECTED' },
-        data: { status: 'ISSUED' },
-      });
+      const document = documentOf(row);
+      if (document.kind === 'INVOICE') {
+        await tx.invoice.updateMany({
+          where: { id: document.invoiceId, status: 'REJECTED' },
+          data: { status: 'ISSUED' },
+        });
+      } else {
+        await tx.creditNote.updateMany({
+          where: { id: document.creditNoteId, status: 'REJECTED' },
+          data: { status: 'ISSUED' },
+        });
+      }
       return true;
     });
   }
@@ -338,9 +551,14 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       // SRI-057. The row lock serialises two jobs of the same voucher; the
       // status check makes the second one a no-op.
       const [locked] = await tx.$queryRaw<
-        { status: string; access_key: string; invoice_id: string }[]
+        {
+          status: string;
+          access_key: string;
+          invoice_id: string | null;
+          credit_note_id: string | null;
+        }[]
       >`
-        SELECT "status", "access_key", "invoice_id"
+        SELECT "status", "access_key", "invoice_id", "credit_note_id"
           FROM "electronic_voucher"
          WHERE "id" = ${id}::uuid
            FOR UPDATE`;
@@ -385,7 +603,16 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         },
       });
 
-      if (effect.invoiceStatus !== null) {
+      if (effect.documentStatus !== null && locked.credit_note_id !== null) {
+        // SRI-087. The credit note follows its voucher the same way.
+        await tx.creditNote.updateMany({
+          where: {
+            id: locked.credit_note_id,
+            status: { in: ['ISSUED', 'REJECTED'] },
+          },
+          data: { status: effect.documentStatus },
+        });
+      } else if (effect.documentStatus !== null && locked.invoice_id !== null) {
         // Only an invoice still in the SRI's hands: a voided one (billing B3)
         // keeps its status whatever answer arrives late.
         await tx.invoice.updateMany({
@@ -394,7 +621,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
             status: { in: ['ISSUED', 'REJECTED'] },
           },
           data: {
-            status: effect.invoiceStatus,
+            status: effect.documentStatus,
             ...(effect.authorisation
               ? { authorisedAt: effect.authorisation.authorisedAt }
               : {}),
@@ -439,80 +666,97 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
 
   async pendingWork(limit: number, now: Date, environment: SriEnvironment) {
     const anHourAgo = new Date(now.getTime() - CERTIFICATE_RETRY_MS);
-    const [withoutVoucher, unsigned, inFlight, undelivered] = await Promise.all(
-      [
-        // SRI-008. An invoice whose site or establishment still lacks the
-        // data is shown by the monitor; here it would only take a place that
-        // a recoverable one —a notice lost to a database hiccup— needs.
-        this.prisma.invoice.findMany({
-          where: {
-            status: 'ISSUED',
-            electronicVoucher: null,
-            site: {
-              sriEstablishmentCode: { not: null },
-              establishment: {
-                is: {
-                  headOfficeAddress: { not: null },
-                  fiscalProfileDeclaredAt: { not: null },
-                },
-              },
+    const issuerReady = {
+      sriEstablishmentCode: { not: null },
+      establishment: {
+        is: {
+          headOfficeAddress: { not: null },
+          fiscalProfileDeclaredAt: { not: null },
+        },
+      },
+    } satisfies Prisma.SiteWhereInput;
+    const [
+      withoutVoucher,
+      creditNotesWithoutVoucher,
+      unsigned,
+      inFlight,
+      undelivered,
+    ] = await Promise.all([
+      // SRI-008. An invoice whose site or establishment still lacks the
+      // data is shown by the monitor; here it would only take a place that
+      // a recoverable one —a notice lost to a database hiccup— needs.
+      this.prisma.invoice.findMany({
+        where: {
+          status: 'ISSUED',
+          electronicVoucher: null,
+          site: issuerReady,
+        },
+        orderBy: { issuedAt: 'asc' },
+        take: limit,
+        select: { id: true },
+      }),
+      // SRI-087. The same for the credit notes.
+      this.prisma.creditNote.findMany({
+        where: {
+          status: 'ISSUED',
+          electronicVoucher: null,
+          site: issuerReady,
+        },
+        orderBy: { issuedAt: 'asc' },
+        take: limit,
+        select: { id: true },
+      }),
+      this.prisma.electronicVoucher.findMany({
+        where: {
+          status: 'PREPARED',
+          OR: [
+            { blockedReason: null },
+            { blockedReason: { in: [...SWEPT_REASONS] } },
+            // SRI-084. What only a certificate fixes is retried hourly as
+            // well: a certificate that became valid, a signature that failed
+            // for a defect since deployed, an upload that raced the block.
+            {
+              blockedReason: { in: [...CERTIFICATE_REASONS] },
+              updatedAt: { lte: anHourAgo },
             },
-          },
-          orderBy: { issuedAt: 'asc' },
-          take: limit,
-          select: { id: true },
-        }),
-        this.prisma.electronicVoucher.findMany({
-          where: {
-            status: 'PREPARED',
-            OR: [
-              { blockedReason: null },
-              { blockedReason: { in: [...SWEPT_REASONS] } },
-              // SRI-084. What only a certificate fixes is retried hourly as
-              // well: a certificate that became valid, a signature that failed
-              // for a defect since deployed, an upload that raced the block.
-              {
-                blockedReason: { in: [...CERTIFICATE_REASONS] },
-                updatedAt: { lte: anHourAgo },
-              },
-            ],
-          },
-          // What nobody blocked first: a broken site cannot hold the places.
-          orderBy: [
-            { blockedReason: { sort: 'asc', nulls: 'first' } },
-            { createdAt: 'asc' },
           ],
-          take: limit,
-          select: VOUCHER_SELECT,
-        }),
-        this.prisma.electronicVoucher.findMany({
-          where: {
-            status: { in: IN_FLIGHT },
-            // SRI-055. A voucher of the other environment is not sent; it
-            // waits in the monitor for a person (D-102).
-            environment,
-            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
-          },
-          orderBy: { createdAt: 'asc' },
-          take: limit,
-          select: VOUCHER_SELECT,
-        }),
-        this.prisma.electronicVoucher.findMany({
-          where: {
-            status: 'AUTHORISED',
-            OR: [
-              { deliveryStatus: null },
-              { deliveryStatus: { in: ['PENDING', 'FAILED'] } },
-            ],
-          },
-          orderBy: { createdAt: 'asc' },
-          take: limit,
-          select: VOUCHER_SELECT,
-        }),
-      ],
-    );
+        },
+        // What nobody blocked first: a broken site cannot hold the places.
+        orderBy: [
+          { blockedReason: { sort: 'asc', nulls: 'first' } },
+          { createdAt: 'asc' },
+        ],
+        take: limit,
+        select: VOUCHER_SELECT,
+      }),
+      this.prisma.electronicVoucher.findMany({
+        where: {
+          status: { in: IN_FLIGHT },
+          // SRI-055. A voucher of the other environment is not sent; it
+          // waits in the monitor for a person (D-102).
+          environment,
+          OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+        },
+        orderBy: { createdAt: 'asc' },
+        take: limit,
+        select: VOUCHER_SELECT,
+      }),
+      this.prisma.electronicVoucher.findMany({
+        where: {
+          status: 'AUTHORISED',
+          OR: [
+            { deliveryStatus: null },
+            { deliveryStatus: { in: ['PENDING', 'FAILED'] } },
+          ],
+        },
+        orderBy: { createdAt: 'asc' },
+        take: limit,
+        select: VOUCHER_SELECT,
+      }),
+    ] as const);
     return {
       invoicesWithoutVoucher: withoutVoucher.map((row) => row.id),
+      creditNotesWithoutVoucher: creditNotesWithoutVoucher.map((row) => row.id),
       unsigned: unsigned.map(toRecord),
       inFlight: inFlight.map(toRecord),
       undelivered: undelivered.map(toRecord),
@@ -527,70 +771,105 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
    * SRI-067. The select names no clinical column: an invoice, a buyer, a key.
    */
   async monitor(sites: readonly string[] | 'all'): Promise<MonitorRow[]> {
-    const rows = await this.prisma.invoice.findMany({
-      where: {
-        ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
-        status: { in: ['ISSUED', 'REJECTED'] },
-        OR: [
-          { electronicVoucher: null },
-          { electronicVoucher: { status: { not: 'AUTHORISED' } } },
-        ],
-      },
-      orderBy: { issuedAt: 'desc' },
-      take: 500,
-      select: {
-        id: true,
-        siteId: true,
-        sequential: true,
-        buyerName: true,
-        buyerIdentification: true,
-        issuedAt: true,
-        total: true,
-        emissionPoint: {
-          select: {
-            code: true,
-            site: { select: { sriEstablishmentCode: true } },
-          },
+    const inSites = sites === 'all' ? {} : { siteId: { in: [...sites] } };
+    const notAuthorised = {
+      OR: [
+        { electronicVoucher: null },
+        { electronicVoucher: { status: { not: 'AUTHORISED' } } },
+      ],
+    };
+    const [invoices, creditNotes] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where: {
+          ...inSites,
+          status: { in: ['ISSUED', 'REJECTED'] },
+          ...notAuthorised,
         },
-        electronicVoucher: {
-          select: {
-            id: true,
-            status: true,
-            blockedReason: true,
-            accessKey: true,
-            lastMessages: true,
-            attemptCount: true,
-            nextAttemptAt: true,
-            // SRI-062. When the SRI last took it in: a day without an answer
-            // is counted from here, not from the issuance.
-            attempts: {
-              where: {
-                operation: 'RECEPTION',
-                outcome: { in: ['RECIBIDA', 'DEVUELTA'] },
-              },
-              orderBy: { startedAt: 'desc' },
-              take: 1,
-              select: { startedAt: true },
+        orderBy: { issuedAt: 'desc' },
+        take: 500,
+        select: {
+          id: true,
+          siteId: true,
+          sequential: true,
+          buyerName: true,
+          buyerIdentification: true,
+          issuedAt: true,
+          total: true,
+          emissionPoint: { select: MONITOR_POINT_SELECT },
+          electronicVoucher: { select: MONITOR_VOUCHER_SELECT },
+        },
+      }),
+      // SRI-088. The credit notes the SRI has not authorised, the same way.
+      this.prisma.creditNote.findMany({
+        where: {
+          ...inSites,
+          status: { in: ['ISSUED', 'REJECTED'] },
+          ...notAuthorised,
+        },
+        orderBy: { issuedAt: 'desc' },
+        take: 500,
+        select: {
+          id: true,
+          siteId: true,
+          sequential: true,
+          buyerName: true,
+          buyerIdentification: true,
+          issuedAt: true,
+          amount: true,
+          emissionPoint: { select: MONITOR_POINT_SELECT },
+          electronicVoucher: { select: MONITOR_VOUCHER_SELECT },
+          invoice: {
+            select: {
+              id: true,
+              accessKey: true,
+              sequential: true,
+              emissionPoint: { select: MONITOR_POINT_SELECT },
             },
           },
         },
-      },
-    });
+      }),
+    ]);
 
     const failures = await this.lastTransportFailures(
-      rows.flatMap((row) =>
+      [...invoices, ...creditNotes].flatMap((row) =>
         row.electronicVoucher ? [row.electronicVoucher.id] : [],
       ),
     );
 
-    return rows.map((row) => {
-      const voucher = row.electronicVoucher;
-      return {
+    const voucherPart = (
+      voucher: MonitorVoucherRow | null,
+    ): Pick<
+      MonitorRow,
+      | 'voucherId'
+      | 'status'
+      | 'blockedReason'
+      | 'accessKey'
+      | 'lastMessages'
+      | 'attemptCount'
+      | 'nextAttemptAt'
+      | 'receivedAt'
+      | 'lastTransportFailure'
+    > => ({
+      voucherId: voucher?.id ?? null,
+      status: (voucher?.status ?? 'NO_VOUCHER') as MonitorRow['status'],
+      blockedReason: (voucher?.blockedReason ?? null) as BlockedReason | null,
+      accessKey: voucher?.accessKey ?? null,
+      lastMessages: voucher ? messagesOf(voucher.lastMessages) : [],
+      attemptCount: voucher?.attemptCount ?? 0,
+      nextAttemptAt: voucher?.nextAttemptAt ?? null,
+      receivedAt: voucher?.attempts[0]?.startedAt ?? null,
+      lastTransportFailure: (voucher && failures.get(voucher.id)) ?? null,
+    });
+
+    return [
+      ...invoices.map((row): MonitorRow => ({
+        document: 'INVOICE',
         invoiceId: row.id,
-        voucherId: voucher?.id ?? null,
+        creditNoteId: null,
+        modifiedDocumentNumber: null,
         siteId: row.siteId,
         documentNumber: invoiceDocumentNumber({
-          accessKey: voucher?.accessKey ?? null,
+          accessKey: row.electronicVoucher?.accessKey ?? null,
           establishmentCode: row.emissionPoint.site.sriEstablishmentCode,
           emissionPointCode: row.emissionPoint.code,
           sequential: row.sequential,
@@ -599,16 +878,33 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         buyerIdentification: row.buyerIdentification,
         issuedAt: row.issuedAt ?? new Date(0),
         total: row.total.toFixed(2),
-        status: (voucher?.status ?? 'NO_VOUCHER') as MonitorRow['status'],
-        blockedReason: (voucher?.blockedReason ?? null) as BlockedReason | null,
-        accessKey: voucher?.accessKey ?? null,
-        lastMessages: voucher ? messagesOf(voucher.lastMessages) : [],
-        attemptCount: voucher?.attemptCount ?? 0,
-        nextAttemptAt: voucher?.nextAttemptAt ?? null,
-        receivedAt: voucher?.attempts[0]?.startedAt ?? null,
-        lastTransportFailure: (voucher && failures.get(voucher.id)) ?? null,
-      };
-    });
+        ...voucherPart(row.electronicVoucher),
+      })),
+      ...creditNotes.map((row): MonitorRow => ({
+        document: 'CREDIT_NOTE',
+        invoiceId: row.invoice.id,
+        creditNoteId: row.id,
+        modifiedDocumentNumber: invoiceDocumentNumber({
+          accessKey: row.invoice.accessKey,
+          establishmentCode:
+            row.invoice.emissionPoint.site.sriEstablishmentCode,
+          emissionPointCode: row.invoice.emissionPoint.code,
+          sequential: row.invoice.sequential,
+        }),
+        siteId: row.siteId,
+        documentNumber: invoiceDocumentNumber({
+          accessKey: row.electronicVoucher?.accessKey ?? null,
+          establishmentCode: row.emissionPoint.site.sriEstablishmentCode,
+          emissionPointCode: row.emissionPoint.code,
+          sequential: row.sequential,
+        }),
+        buyerName: row.buyerName,
+        buyerIdentification: row.buyerIdentification,
+        issuedAt: row.issuedAt ?? new Date(0),
+        total: row.amount.toFixed(2),
+        ...voucherPart(row.electronicVoucher),
+      })),
+    ];
   }
 
   /**
@@ -709,30 +1005,34 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
     if (invoiceIds.length === 0) return [];
     const rows = await this.prisma.electronicVoucher.findMany({
       where: { invoiceId: { in: [...invoiceIds] } },
-      select: {
-        id: true,
-        invoiceId: true,
-        status: true,
-        blockedReason: true,
-        accessKey: true,
-        authorisedAt: true,
-        deliveryStatus: true,
-        lastMessages: true,
-      },
+      select: STATUS_SELECT,
     });
-    return rows.map((row) => ({
-      invoiceId: row.invoiceId,
-      voucherId: row.id,
-      status: row.status as VoucherStatus,
-      blockedReason: row.blockedReason as BlockedReason | null,
-      accessKey: row.accessKey,
-      authorisedAt: row.authorisedAt,
-      deliveryStatus: row.deliveryStatus as DeliveryStatus | null,
-      lastMessages: messagesOf(row.lastMessages),
-    }));
+    return rows.map((row) => toStatusView(row, invoiceIdOf(row)));
   }
 
-  async deliveryContext(id: string) {
+  async statusOfCreditNotes(
+    creditNoteIds: readonly string[],
+  ): Promise<VoucherStatusView[]> {
+    if (creditNoteIds.length === 0) return [];
+    const rows = await this.prisma.electronicVoucher.findMany({
+      where: { creditNoteId: { in: [...creditNoteIds] } },
+      select: STATUS_SELECT,
+    });
+    return rows.map((row) => toStatusView(row, row.creditNoteId!));
+  }
+
+  async deliveryContext(id: string): Promise<DeliveryContext | null> {
+    const site = {
+      select: {
+        code: true,
+        site: {
+          select: {
+            sriEstablishmentCode: true,
+            establishment: { select: { legalName: true } },
+          },
+        },
+      },
+    } as const;
     const row = await this.prisma.electronicVoucher.findUnique({
       where: { id },
       select: {
@@ -744,37 +1044,41 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
             buyerEmail: true,
             buyerName: true,
             sequential: true,
-            emissionPoint: {
-              select: {
-                code: true,
-                site: {
-                  select: {
-                    name: true,
-                    sriEstablishmentCode: true,
-                    establishment: { select: { legalName: true } },
-                  },
-                },
-              },
-            },
+            emissionPoint: site,
+          },
+        },
+        // SRI-089. A credit note's voucher is delivered like an invoice's.
+        creditNote: {
+          select: {
+            id: true,
+            issuedById: true,
+            accessKey: true,
+            buyerEmail: true,
+            buyerName: true,
+            sequential: true,
+            emissionPoint: site,
           },
         },
       },
     });
-    if (!row) return null;
-    const { invoice } = row;
-    const site = invoice.emissionPoint.site;
-    return {
-      invoiceId: invoice.id,
-      issuedById: invoice.issuedById,
-      buyerEmail: invoice.buyerEmail,
-      buyerName: invoice.buyerName,
+    const document = row?.invoice ?? row?.creditNote;
+    if (!row || !document) return null;
+    const { emissionPoint } = document;
+    const common = {
+      issuedById: document.issuedById,
+      buyerEmail: document.buyerEmail,
+      buyerName: document.buyerName,
+      // The document's OWN number: a credit note's comes from its own key.
       documentNumber: invoiceDocumentNumber({
-        accessKey: invoice.accessKey,
-        establishmentCode: site.sriEstablishmentCode,
-        emissionPointCode: invoice.emissionPoint.code,
-        sequential: invoice.sequential,
+        accessKey: document.accessKey,
+        establishmentCode: emissionPoint.site.sriEstablishmentCode,
+        emissionPointCode: emissionPoint.code,
+        sequential: document.sequential,
       }),
-      establishmentName: site.establishment.legalName,
+      establishmentName: emissionPoint.site.establishment.legalName,
     };
+    return row.invoice
+      ? { ...common, document: 'INVOICE', invoiceId: row.invoice.id }
+      : { ...common, document: 'CREDIT_NOTE', creditNoteId: document.id };
   }
 }

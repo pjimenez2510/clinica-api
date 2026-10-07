@@ -350,6 +350,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         return this.findInvoice(query.subjectId, query.sites);
       case 'ENCOUNTER_SUMMARY':
         return this.findEncounterSummary(query.subjectId, query.sites);
+      case 'CREDIT_NOTE_RIDE':
+        return this.findCreditNote(query.subjectId, query.sites);
     }
   }
 
@@ -1160,6 +1162,136 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         discountTotal: money(row.discountTotal),
         taxTotal: money(row.taxTotal),
         total: money(row.total),
+      },
+    };
+  }
+
+  // ── credit note (RIDE) ───────────────────────────────────────────────────
+
+  /**
+   * SRI-089. The credit note's RIDE, scoped by ITS site. Everything printed
+   * is what the credit note FROZE —receiver, reason, lines, totals—; from the
+   * invoice only its number and its date of issue, which never change once
+   * it is authorised, and only an authorised invoice is credited.
+   */
+  private async findCreditNote(
+    subjectId: string,
+    sites: SiteScopeFilter,
+  ): Promise<DocumentSubject | null> {
+    const row = await this.prisma.creditNote.findFirst({
+      where: {
+        id: subjectId,
+        ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
+      },
+      select: {
+        id: true,
+        siteId: true,
+        sequential: true,
+        accessKey: true,
+        status: true,
+        issuedAt: true,
+        reason: true,
+        buyerIdentificationType: true,
+        buyerIdentification: true,
+        buyerName: true,
+        buyerEmail: true,
+        subtotalTaxed: true,
+        subtotalUntaxed: true,
+        discountTotal: true,
+        taxTotal: true,
+        amount: true,
+        emissionPoint: {
+          select: {
+            code: true,
+            site: { select: { sriEstablishmentCode: true } },
+          },
+        },
+        // SRI-071. The instant the SRI authorised it, from its voucher.
+        electronicVoucher: { select: { authorisedAt: true } },
+        invoice: {
+          select: {
+            accessKey: true,
+            sequential: true,
+            issuedAt: true,
+            emissionPoint: {
+              select: {
+                code: true,
+                site: { select: { sriEstablishmentCode: true } },
+              },
+            },
+          },
+        },
+        lines: {
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: {
+            serviceCode: true,
+            description: true,
+            quantity: true,
+            unitAmount: true,
+            discountAmount: true,
+            taxSriCode: true,
+            taxPercentage: true,
+            netAmount: true,
+            // DOC-076. The MSP tariff code, as the invoice RIDE reads it.
+            chargeItem: {
+              select: { billableService: { select: { tariffCode: true } } },
+            },
+          },
+        },
+      },
+    });
+    if (row === null) return null;
+
+    const money = (value: Prisma.Decimal): string => value.toFixed(2);
+    const { invoice } = row;
+
+    return {
+      kind: 'CREDIT_NOTE_RIDE',
+      data: {
+        subjectId: row.id,
+        siteId: row.siteId,
+        // SRI-070. Its own series and sequential, from its key once there is
+        // one: the same rule as the invoice's number, over a key of type 04.
+        documentNumber: invoiceDocumentNumber({
+          accessKey: row.accessKey,
+          establishmentCode: row.emissionPoint.site.sriEstablishmentCode,
+          emissionPointCode: row.emissionPoint.code,
+          sequential: row.sequential,
+        }),
+        accessKey: row.accessKey,
+        status: row.status,
+        issuedAt: row.issuedAt,
+        authorisedAt: row.electronicVoucher?.authorisedAt ?? null,
+        buyerIdentificationType: row.buyerIdentificationType,
+        buyerIdentification: row.buyerIdentification,
+        buyerName: row.buyerName,
+        buyerEmail: row.buyerEmail,
+        reason: row.reason,
+        modifiedDocument: {
+          number: invoiceDocumentNumber({
+            accessKey: invoice.accessKey,
+            establishmentCode: invoice.emissionPoint.site.sriEstablishmentCode,
+            emissionPointCode: invoice.emissionPoint.code,
+            sequential: invoice.sequential,
+          }),
+          issuedAt: invoice.issuedAt,
+        },
+        lines: row.lines.map((line) => ({
+          code: line.serviceCode,
+          auxiliaryCode: line.chargeItem.billableService.tariffCode,
+          description: line.description,
+          quantity: line.quantity.toFixed(2),
+          unitPrice: money(line.unitAmount),
+          discount: money(line.discountAmount),
+          total: money(line.netAmount),
+          taxSriCode: line.taxSriCode,
+          taxPercentage: line.taxPercentage?.toFixed(2) ?? null,
+        })),
+        subtotalTaxed: money(row.subtotalTaxed),
+        subtotalUntaxed: money(row.subtotalUntaxed),
+        discountTotal: money(row.discountTotal),
+        taxTotal: money(row.taxTotal),
+        total: money(row.amount),
       },
     };
   }

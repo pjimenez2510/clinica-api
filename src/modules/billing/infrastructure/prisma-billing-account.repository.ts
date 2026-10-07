@@ -25,6 +25,9 @@ import type {
   RepricedLine,
 } from '../domain/billing.repository';
 import {
+  AccountClosedError,
+  AccountHasOpenChargesError,
+  CorrectionAwaitsCreditNoteError,
   AccountHasBilledChargesError,
   ActAlreadyChargedError,
   ChargeAlreadyInvoicedError,
@@ -50,6 +53,7 @@ import {
 } from '../domain/charge';
 import {
   type BuyerIdentificationType,
+  type InvoiceReceiver,
   type InvoiceStatus,
   type PaymentMethod,
   nextSequential,
@@ -193,8 +197,8 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     now: Date;
   }): Promise<AccountView> {
     const row = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`
-        SELECT "id" FROM "patient_account"
+      const [locked] = await tx.$queryRaw<{ changed_at: Date | null }[]>`
+        SELECT "changed_at" FROM "patient_account"
          WHERE "id" = ${command.accountId}::uuid
            FOR UPDATE`;
       await tx.$queryRaw`
@@ -236,7 +240,13 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
 
       return tx.patientAccount.update({
         where: { id: command.accountId },
-        data: { payerId: command.payerId, priceListId: command.priceListId },
+        data: {
+          payerId: command.payerId,
+          priceListId: command.priceListId,
+          // BI-215: the previous payer is archived by the database.
+          changedById: command.changedById,
+          changedAt: stampAfter(locked?.changed_at ?? null, command.now),
+        },
         include: ACCOUNT_INCLUDE,
       });
     });
@@ -278,11 +288,42 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
    * the instant in both directions, so the two are written together or the
    * row is refused.
    */
-  async closeAccount(accountId: string): Promise<AccountView> {
-    const row = await this.prisma.patientAccount.update({
-      where: { id: accountId },
-      data: { status: 'SETTLED', closedAt: new Date() },
-      include: ACCOUNT_INCLUDE,
+  async closeAccount(command: {
+    accountId: string;
+    closedById: string;
+    now: Date;
+  }): Promise<AccountView> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      // Locked and counted again here: a credit note may have sent charges
+      // back between the service's check and this write (review, M-1/I5).
+      const [current] = await tx.$queryRaw<
+        { status: string; changed_at: Date | null }[]
+      >`
+        SELECT "status", "changed_at" FROM "patient_account"
+         WHERE "id" = ${command.accountId}::uuid
+           FOR UPDATE`;
+      if (!current || current.status !== 'OPEN') throw new AccountClosedError();
+      const open = await tx.chargeItem.findMany({
+        where: {
+          accountId: command.accountId,
+          status: { in: [...OPEN_CHARGE_STATUSES] },
+        },
+        select: { id: true },
+      });
+      if (open.length > 0) {
+        throw new AccountHasOpenChargesError(open.map((charge) => charge.id));
+      }
+      // BI-215: closing is a change of the account, stamped and versioned.
+      return tx.patientAccount.update({
+        where: { id: command.accountId },
+        data: {
+          status: 'SETTLED',
+          closedAt: command.now,
+          changedById: command.closedById,
+          changedAt: stampAfter(current.changed_at, command.now),
+        },
+        include: ACCOUNT_INCLUDE,
+      });
     });
     return toAccountView(row);
   }
@@ -917,6 +958,45 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     return row === null ? null : toInvoiceView(row);
   }
 
+  async correctRejectedInvoice(correction: {
+    invoiceId: string;
+    siteId: string;
+    receiver: InvoiceReceiver;
+    paymentMethod: PaymentMethod;
+    changedById: string;
+    now: Date;
+  }): Promise<InvoiceView | null> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const [locked] = await tx.$queryRaw<{ changed_at: Date | null }[]>`
+          SELECT "changed_at" FROM "invoice"
+           WHERE "id" = ${correction.invoiceId}::uuid
+             AND "site_id" = ${correction.siteId}::uuid
+             AND "status" = 'REJECTED'
+             FOR UPDATE`;
+        if (!locked) return null;
+        const row = await tx.invoice.update({
+          where: { id: correction.invoiceId },
+          data: {
+            buyerIdentificationType:
+              correction.receiver.buyerIdentificationType,
+            buyerIdentification: correction.receiver.buyerIdentification,
+            buyerName: correction.receiver.buyerName,
+            buyerEmail: correction.receiver.buyerEmail,
+            isFinalConsumer: correction.receiver.isFinalConsumer,
+            paymentMethod: correction.paymentMethod,
+            // BI-217: the previous receiver is archived by the database.
+            changedById: correction.changedById,
+            changedAt: stampAfter(locked.changed_at, correction.now),
+          },
+        });
+        return toInvoiceView(row);
+      });
+    } catch (error) {
+      throw translateInvoiceRejection(error);
+    }
+  }
+
   async listInvoices(query: {
     siteId: string;
     accountId?: string;
@@ -981,6 +1061,10 @@ export function translateInvoiceRejection(error: unknown): unknown {
   if (/invoice_voided_is_final/.test(message)) {
     return new InvoiceImmutableError('A voided invoice does not come back');
   }
+  // C1 (D-152.7): what a credit note credited waits for its authorisation.
+  if (/charge_item_correction_awaits_credit_note/.test(message)) {
+    return new CorrectionAwaitsCreditNoteError();
+  }
   if (/invoice_is_never_deleted/.test(message)) {
     return new InvoiceImmutableError('An invoice is never deleted');
   }
@@ -994,7 +1078,7 @@ export function translateInvoiceRejection(error: unknown): unknown {
  * buyer's identification is, and it is personal data that must not reach a log
  * (BI-007) — the same warning `database-problem.ts` carries at its head.
  */
-function databaseMessageOf(error: unknown): string {
+export function databaseMessageOf(error: unknown): string {
   if (typeof error !== 'object' || error === null) return '';
 
   const candidate = error as {
@@ -1151,6 +1235,8 @@ function toChargeView(row: ChargeItemRow): ChargeView {
     serviceOrderItemId: row.serviceOrderItemId,
     voidedAt: row.voidedAt,
     voidReason: row.voidReason,
+    invoiceId: row.invoiceId,
+    correctsChargeItemId: row.correctsChargeItemId,
   };
 }
 

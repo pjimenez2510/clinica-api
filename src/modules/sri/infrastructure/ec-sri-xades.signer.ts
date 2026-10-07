@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  signCreditNoteXml,
   signInvoiceXml,
   UnsupportedDocumentTypeError,
   UnsupportedXmlFeatureError,
@@ -24,9 +25,18 @@ import type { XadesSigner } from '../domain/signing';
  * reference to `#comprobante` and signs happily without the attribute; the SRI
  * then answers 39 without saying why. So this adapter checks first (SRI-015).
  *
+ * SRI-087. The library inserts the signature as the last child of the root
+ * it is told to expect, so the function is chosen by the document's root:
+ * `signInvoiceXml` on a `<notaCredito>` signs nothing the SRI accepts.
+ *
  * If the library dies, this file is rewritten over `xml-crypto` and
  * `node-forge` and nothing above the `XadesSigner` port changes.
  */
+/** The voucher's root element, after the XML declaration. */
+function isCreditNote(xml: string): boolean {
+  return /^(<\?xml[^>]*\?>)?\s*<notaCredito[\s>]/.test(xml);
+}
+
 @Injectable()
 export class EcSriXadesSigner implements XadesSigner {
   sign(xml: string, pkcs12: Buffer, password: string): string {
@@ -36,7 +46,8 @@ export class EcSriXadesSigner implements XadesSigner {
       );
     }
     try {
-      return signInvoiceXml(xml, pkcs12, { pkcs12Password: password });
+      const sign = isCreditNote(xml) ? signCreditNoteXml : signInvoiceXml;
+      return sign(xml, pkcs12, { pkcs12Password: password });
     } catch (error) {
       // An XML the library refuses is OUR defect and keeps its own error.
       if (

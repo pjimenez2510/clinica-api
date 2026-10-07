@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import type { ConfigService } from '@nestjs/config';
@@ -15,6 +16,9 @@ import {
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
 import { Quantity } from '../../src/modules/billing/domain/money';
+import { DocumentService } from '../../src/modules/documents/application/document.service';
+import { PdfKitDocumentRenderer } from '../../src/modules/documents/infrastructure/pdfkit-document.renderer';
+import { PrismaDocumentRepository } from '../../src/modules/documents/infrastructure/prisma-document.repository';
 import { PrismaDocumentSourceReader } from '../../src/modules/documents/infrastructure/prisma-document-source.reader';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { SigningCertificateService } from '../../src/modules/sri/application/signing-certificate.service';
@@ -148,6 +152,11 @@ beforeEach(async () => {
         Promise.resolve({
           content: Buffer.from('%PDF-1.4 RIDE de prueba'),
           fileName: `RIDE-${invoiceId}.pdf`,
+        }),
+      issueCreditNoteRide: (creditNoteId) =>
+        Promise.resolve({
+          content: Buffer.from('%PDF-1.4 RIDE de nota de crédito de prueba'),
+          fileName: `RIDE-NC-${creditNoteId}.pdf`,
         }),
     },
     mailer,
@@ -294,11 +303,11 @@ describe('SRI-001, SRI-041 preparar al emitir, sin bloquear nunca la factura', (
   it('SRI-017 una factura sin forma de pago (anterior a BI-170) no se firma, y lo dice', async () => {
     await loadCertificate();
     const invoice = await issueInvoice();
-    // As an invoice issued before the column existed: lifting the permanence
-    // trigger for the one statement that empties it.
-    await prisma.$executeRaw`ALTER TABLE "invoice" DISABLE TRIGGER trg_invoice_payment_method_permanent`;
+    // As an invoice issued before the column existed: lifting the table's
+    // triggers for the one statement that empties it.
+    await prisma.$executeRaw`ALTER TABLE "invoice" DISABLE TRIGGER USER`;
     await prisma.$executeRaw`UPDATE "invoice" SET "payment_method" = NULL WHERE "id" = ${invoice.id}::uuid`;
-    await prisma.$executeRaw`ALTER TABLE "invoice" ENABLE TRIGGER trg_invoice_payment_method_permanent`;
+    await prisma.$executeRaw`ALTER TABLE "invoice" ENABLE TRIGGER USER`;
     await preparation.prepare(invoice.id);
     expect(await voucherOf(invoice.id)).toMatchObject({
       status: 'PREPARED',
@@ -907,4 +916,320 @@ describe('SRI-040, SRI-057 la cola persistente', () => {
     await (await connection.instance()).offWork(QUEUE_NAMES.AUTHORISE);
     await (await connection.instance()).offWork(QUEUE_NAMES.DELIVER);
   }, 40_000);
+});
+
+/**
+ * sri/S7. The credit note takes the invoice's road: key with type 04, XML
+ * `notaCredito` against the official XSD, signature on its own root, the same
+ * queue and the same answers. It is written here by raw SQL from an invoice
+ * the double authorised —billing's issuance has its own test—, as the
+ * credit-note service will leave it.
+ */
+describe('SRI-085, SRI-087 la nota de crédito por el camino de la factura', () => {
+  async function anAuthorisedInvoice() {
+    const { invoice, voucher } = await aSignedVoucher();
+    await dispatch.run('SEND', voucher.id);
+    await dispatch.run('AUTHORISE', voucher.id);
+    expect((await invoiceRow(invoice.id)).status).toBe('AUTHORISED');
+    return invoice;
+  }
+
+  async function aCreditNoteOf(invoiceId: string): Promise<string> {
+    const [charge] = await prisma.chargeItem.findMany({ where: { invoiceId } });
+    return prisma.$transaction(async (tx) => {
+      const [row] = await tx.$queryRaw<{ id: string }[]>`
+        INSERT INTO "credit_note"
+          ("invoice_id", "site_id", "emission_point_id", "sequential",
+           "reason_code", "reason",
+           "buyer_identification_type", "buyer_identification", "buyer_name",
+           "buyer_email",
+           "subtotal_taxed", "subtotal_untaxed", "discount_total", "tax_total",
+           "amount", "status", "issued_by_id", "issued_at", "updated_at")
+        VALUES (${invoiceId}::uuid, ${siteId}::uuid, ${emissionPointId}::uuid,
+                '000000001', 'RECEIVER_DATA', 'Error en los datos del receptor',
+                '05', '1710034065', 'Guamán Andrade, María José',
+                'maria@example.com', 0, ${charge!.unitAmount}, 0, 0,
+                ${charge!.unitAmount}, 'ISSUED', ${userId}::uuid,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING "id"`;
+      await tx.$executeRaw`
+        INSERT INTO "credit_note_line"
+          ("credit_note_id", "charge_item_id", "service_code", "description",
+           "quantity", "unit_amount", "discount_amount", "tax_sri_code",
+           "tax_percentage", "net_amount", "tax_amount")
+        VALUES (${row!.id}::uuid, ${charge!.id}::uuid, 'CONS-MG-PV',
+                ${charge!.serviceDisplay}, 1, ${charge!.unitAmount}, 0,
+                ${charge!.taxSriCode}, ${charge!.taxPercentage},
+                ${charge!.unitAmount}, 0)`;
+      return row!.id;
+    });
+  }
+
+  const NOTE_XSD_DIR = 'src/modules/sri/infrastructure/xsd';
+
+  it('SRI-085 SRI-087 la nota de crédito toma su clave 04, su XML válido y firmado, y el SRI la autoriza', async () => {
+    const invoice = await anAuthorisedInvoice();
+    const creditNoteId = await aCreditNoteOf(invoice.id);
+
+    const voucher = await preparation.prepareCreditNoteVoucher(creditNoteId);
+    expect(voucher?.status).toBe('SIGNED');
+    expect(voucher!.document).toEqual({ kind: 'CREDIT_NOTE', creditNoteId });
+
+    const stored = await prisma.electronicVoucher.findUniqueOrThrow({
+      where: { creditNoteId },
+    });
+    expect(stored.documentType).toBe('04');
+    expect(stored.accessKey.slice(8, 10)).toBe('04');
+    // Its own series and sequential: the credit note's, not the invoice's.
+    expect(stored.accessKey.slice(30, 39)).toBe('000000001');
+    expect(
+      (
+        await prisma.creditNote.findUniqueOrThrow({
+          where: { id: creditNoteId },
+        })
+      ).accessKey,
+    ).toBe(stored.accessKey);
+
+    // The XML names the invoice by ITS key, and passes the official XSD.
+    const invoiceKey = (await invoiceRow(invoice.id)).accessKey!;
+    expect(stored.unsignedXml).toContain(
+      `<numDocModificado>001-001-${invoiceKey.slice(30, 39)}</numDocModificado>`,
+    );
+    const { validateXML } = await import('xmllint-wasm');
+    const result = await validateXML({
+      xml: [{ fileName: 'nc.xml', contents: stored.signedXml! }],
+      schema: [
+        {
+          fileName: 'NotaCredito_V1.1.0.xsd',
+          contents: readFileSync(
+            `${NOTE_XSD_DIR}/NotaCredito_V1.1.0.xsd`,
+            'utf8',
+          ),
+        },
+      ],
+      preload: [
+        {
+          fileName: 'xmldsig-core-schema.xsd',
+          contents: readFileSync(
+            `${NOTE_XSD_DIR}/xmldsig-core-schema.xsd`,
+            'utf8',
+          ),
+        },
+      ],
+    });
+    expect(result.errors).toEqual([]);
+
+    await dispatch.run('SEND', stored.id);
+    await dispatch.run('AUTHORISE', stored.id);
+
+    const note = await prisma.creditNote.findUniqueOrThrow({
+      where: { id: creditNoteId },
+    });
+    expect(note.status).toBe('AUTHORISED');
+    // The invoice it modifies is not touched: it stays authorised (BI-096).
+    expect((await invoiceRow(invoice.id)).status).toBe('AUTHORISED');
+  });
+
+  it('SRI-087 SRI-058 una nota de crédito devuelta queda REJECTED, y al reenviarla vuelve a ISSUED con la misma clave', async () => {
+    const invoice = await anAuthorisedInvoice();
+    const creditNoteId = await aCreditNoteOf(invoice.id);
+    const voucher = (await preparation.prepareCreditNoteVoucher(creditNoteId))!;
+
+    double.setScenario(voucher.accessKey, 'RETURNED_35');
+    await dispatch.run('SEND', voucher.id);
+    expect(
+      (
+        await prisma.creditNote.findUniqueOrThrow({
+          where: { id: creditNoteId },
+        })
+      ).status,
+    ).toBe('REJECTED');
+
+    const unsignedXml = await preparation.recompose(voucher);
+    expect(unsignedXml).toContain('<notaCredito id="comprobante"');
+    await new PrismaElectronicVoucherRepository(
+      prisma as unknown as PrismaService,
+    ).reopen(voucher.id, unsignedXml!);
+
+    const reopened = await prisma.creditNote.findUniqueOrThrow({
+      where: { id: creditNoteId },
+    });
+    expect(reopened.status).toBe('ISSUED');
+    expect(reopened.accessKey).toBe(voucher.accessKey);
+  });
+
+  /** The credit note of an authorised invoice, itself authorised by the double. */
+  async function anAuthorisedCreditNote() {
+    const invoice = await anAuthorisedInvoice();
+    const creditNoteId = await aCreditNoteOf(invoice.id);
+    const voucher = (await preparation.prepareCreditNoteVoucher(creditNoteId))!;
+    await dispatch.run('SEND', voucher.id);
+    await dispatch.run('AUTHORISE', voucher.id);
+    return { invoice, creditNoteId, voucher };
+  }
+
+  it('SRI-089 autorizada, el receptor recibe una vez el RIDE de la nota de crédito y su XML autorizado', async () => {
+    const { creditNoteId, voucher } = await anAuthorisedCreditNote();
+    const before = mailer.sent.length;
+
+    await dispatch.run('DELIVER', voucher.id);
+
+    expect(mailer.sent).toHaveLength(before + 1);
+    const message = mailer.last()!;
+    expect(message.to).toBe('maria@example.com');
+    expect(message.subject).toMatch(
+      /^Nota de crédito electrónica 001-001-000000001 — /,
+    );
+    expect(message.text).toContain('la nota de crédito electrónica');
+    expect(
+      message.attachments?.map((a) => [a.fileName, a.contentType]),
+    ).toEqual([
+      [`RIDE-NC-${creditNoteId}.pdf`, 'application/pdf'],
+      [`${voucher.accessKey}.xml`, 'application/xml'],
+    ]);
+    const xml = message.attachments![1]!.content.toString('utf8');
+    expect(xml).toContain(
+      `<numeroAutorizacion>${voucher.accessKey}</numeroAutorizacion>`,
+    );
+    expect(xml).toContain('<notaCredito');
+    expect(
+      (
+        await prisma.electronicVoucher.findUniqueOrThrow({
+          where: { creditNoteId },
+        })
+      ).deliveryStatus,
+    ).toBe('SENT');
+
+    // SRI-075. A second job does not send it again, and the sweep no longer
+    // has it as undelivered.
+    await dispatch.run('DELIVER', voucher.id);
+    expect(mailer.sent).toHaveLength(before + 1);
+    const work = await new PrismaElectronicVoucherRepository(
+      prisma as unknown as PrismaService,
+    ).pendingWork(200, NOW(), settings.environment);
+    expect(work.undelivered.map((one) => one.id)).not.toContain(voucher.id);
+  });
+
+  it('SRI-089 SRI-071 el RIDE archivado de la nota de crédito: su número, la factura que modifica, el motivo y su autorización', async () => {
+    const { invoice, creditNoteId, voucher } = await anAuthorisedCreditNote();
+    const service = prisma as unknown as PrismaService;
+    const reader = new PrismaDocumentSourceReader(
+      service,
+      'https://clinica.example/verificar',
+    );
+    const subject = await reader.findSubject({
+      kind: 'CREDIT_NOTE_RIDE',
+      subjectId: creditNoteId,
+      sites: [siteId],
+    });
+    if (subject?.kind !== 'CREDIT_NOTE_RIDE') throw new Error('no subject');
+    const invoiceKey = (await invoiceRow(invoice.id)).accessKey!;
+    expect(subject.data).toMatchObject({
+      documentNumber: '001-001-000000001',
+      accessKey: voucher.accessKey,
+      status: 'AUTHORISED',
+      reason: 'Error en los datos del receptor',
+      modifiedDocument: {
+        number: `001-001-${invoiceKey.slice(30, 39)}`,
+        issuedAt: (await invoiceRow(invoice.id)).issuedAt,
+      },
+    });
+    expect(subject.data.authorisedAt).not.toBeNull();
+    expect(subject.data.lines).toHaveLength(1);
+
+    // DOC-012. Out of the caller's sites, it does not exist.
+    await expect(
+      reader.findSubject({
+        kind: 'CREDIT_NOTE_RIDE',
+        subjectId: creditNoteId,
+        sites: [(await createSite(prisma)).id],
+      }),
+    ).resolves.toBeNull();
+
+    // Filed on the INVOICE RIDE's template: there is no other.
+    const documents = new PrismaDocumentRepository(service);
+    const template = await documents.publishTemplate({
+      kind: 'INVOICE_RIDE',
+      accentColour: '#0f6b5c',
+      footerText: null,
+      headerFields: [],
+      showEstablishmentRuc: true,
+      showEstablishmentAddress: true,
+      showEstablishmentPhone: true,
+      publishedById: userId,
+    });
+    const stored = await new DocumentService(
+      documents,
+      reader,
+      new PdfKitDocumentRenderer(),
+    ).emit(
+      { kind: 'CREDIT_NOTE_RIDE', subjectId: creditNoteId },
+      { userId, sites: [siteId] },
+    );
+    const row = await prisma.documentRender.findUniqueOrThrow({
+      where: { id: stored.id },
+    });
+    expect(row).toMatchObject({
+      kind: 'CREDIT_NOTE_RIDE',
+      creditNoteId,
+      invoiceId: null,
+      templateId: template.id,
+    });
+    expect(Buffer.from(row.content).subarray(0, 5).toString('latin1')).toBe(
+      '%PDF-',
+    );
+  });
+
+  it('SRI-089 DOC-003 la base admite el RIDE de la nota de crédito con su nota de crédito, y lo rechaza con la factura', async () => {
+    const invoice = await anAuthorisedInvoice();
+    const creditNoteId = await aCreditNoteOf(invoice.id);
+    const template = await new PrismaDocumentRepository(
+      prisma as unknown as PrismaService,
+    ).publishTemplate({
+      kind: 'INVOICE_RIDE',
+      accentColour: '#0f6b5c',
+      footerText: null,
+      headerFields: [],
+      showEstablishmentRuc: true,
+      showEstablishmentAddress: true,
+      showEstablishmentPhone: true,
+      publishedById: userId,
+    });
+    const pdf = Buffer.from('%PDF-1.4 prueba');
+    const sha = createHash('sha256').update(pdf).digest('hex');
+    const insert = (column: 'credit_note_id' | 'invoice_id', id: string) =>
+      prisma.$executeRawUnsafe(
+        `INSERT INTO "document_render"
+           ("kind", "template_id", "template_version", "${column}",
+            "site_id", "content", "byte_size", "sha256", "issued_by_id")
+         VALUES ('CREDIT_NOTE_RIDE', $1::uuid, 1, $2::uuid, $3::uuid,
+                 $4::bytea, $5, $6, $7::uuid)`,
+        template.id,
+        id,
+        siteId,
+        pdf,
+        pdf.byteLength,
+        sha,
+        userId,
+      );
+
+    // Positive control: the same statement, with its own subject, is stored.
+    await expect(insert('credit_note_id', creditNoteId)).resolves.toBe(1);
+
+    await expect(insert('invoice_id', invoice.id)).rejects.toThrow(
+      /document_render_kind_matches_subject/,
+    );
+  });
+
+  it('SRI-087 el barrido prepara la nota de crédito que nadie preparó', async () => {
+    const invoice = await anAuthorisedInvoice();
+    const creditNoteId = await aCreditNoteOf(invoice.id);
+
+    await dispatch.sweep();
+
+    const stored = await prisma.electronicVoucher.findUniqueOrThrow({
+      where: { creditNoteId },
+    });
+    expect(stored.status).toBe('SIGNED');
+  });
 });

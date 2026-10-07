@@ -102,29 +102,45 @@ import { SharpImageNormaliser } from './infrastructure/sharp-image.normaliser';
     { provide: DOCUMENT_RENDERER, useClass: PdfKitDocumentRenderer },
     { provide: IMAGE_NORMALISER, useClass: SharpImageNormaliser },
     /**
-     * SRI-072. The RIDE `sri` attaches to the e-mail of an authorised voucher:
-     * emitted and FILED here like any other (DOC-002), in the name of whoever
-     * issued the invoice, and read back as the stored bytes. `@Global` exports
+     * SRI-072, SRI-089. The RIDE `sri` attaches to the e-mail of an
+     * authorised voucher —an invoice's or a credit note's—: emitted and FILED
+     * here like any other (DOC-002), in the name of whoever issued the
+     * document, and read back as the stored bytes. `@Global` exports
      * this token and `ANNULLED_DOCUMENT_ARCHIVER`, nothing else of the module.
      */
     {
       provide: RIDE_ISSUER,
       inject: [DocumentService],
-      useFactory: (documents: DocumentService): RideIssuer => ({
-        async issueRide(invoiceId, issuedById) {
+      useFactory: (documents: DocumentService): RideIssuer => {
+        // Emitted and read back as the stored bytes, in the name of whoever
+        // issued the voucher's document: an automatic delivery has nobody
+        // else behind it.
+        const issue = async (
+          kind: 'INVOICE_RIDE' | 'CREDIT_NOTE_RIDE',
+          subjectId: string,
+          issuedById: string,
+        ) => {
           const requester = { userId: issuedById, sites: 'all' as const };
-          const summary = await documents.emit(
-            { kind: 'INVOICE_RIDE', subjectId: invoiceId },
-            requester,
-          );
-          const stored = await documents.content(
-            summary.id,
-            ['INVOICE_RIDE'],
-            requester,
-          );
-          return { content: stored.content, fileName: `RIDE-${invoiceId}.pdf` };
-        },
-      }),
+          const summary = await documents.emit({ kind, subjectId }, requester);
+          const stored = await documents.content(summary.id, [kind], requester);
+          return stored.content;
+        };
+        return {
+          async issueRide(invoiceId, issuedById) {
+            const content = await issue('INVOICE_RIDE', invoiceId, issuedById);
+            return { content, fileName: `RIDE-${invoiceId}.pdf` };
+          },
+          // SRI-089. The credit note's, on the same template.
+          async issueCreditNoteRide(creditNoteId, issuedById) {
+            const content = await issue(
+              'CREDIT_NOTE_RIDE',
+              creditNoteId,
+              issuedById,
+            );
+            return { content, fileName: `RIDE-NC-${creditNoteId}.pdf` };
+          },
+        };
+      },
     },
     /**
      * DOC-109. The PDF that replaces the archived one after a receta, an exam

@@ -370,6 +370,32 @@ vigente de una prestación y verlo en su historial con el importe anterior;
 comprobar que un cargo ya registrado con el importe viejo no cambió.
 **Cubre:** BI-230, BI-231. **Solo servidor:** BI-231.
 
+### B15 — Corregir una factura: nota de crédito y reenvío de la devuelta _(P1)_
+
+Inventario CA-8 y CA-9 (`planes/fix-menos-preguntas.md`). En una factura
+**autorizada**, un solo «Corregir» emite la nota de crédito electrónica por las
+líneas elegidas, con el motivo de una lista, y deja la cuenta lista para
+facturar otra vez lo acreditado. En una factura **devuelta o no autorizada**,
+«Editar» el receptor o la forma de pago y reenviarla con la misma clave.
+
+**Por qué es P1:** sin esto, una factura autorizada con un error no se corrige
+dentro del sistema, y hace falta para un piloto real. Es la mitad de B3 que la
+norma deja hacer al sistema: la anulación se hace en el portal del SRI (D-151.1).
+
+**Prueba independiente:** como caja, corregir una factura autorizada eligiendo
+«Error en los datos del receptor»; ver la nota de crédito autorizada por el
+doble del SRI con su RIDE, y la cuenta reabierta con las mismas líneas por
+facturar; emitir la factura nueva al receptor correcto. Hacer que el doble
+devuelva otra factura, editar su receptor y verla autorizada con la misma
+clave. Y contra PostgreSQL: que una nota de crédito no cambia, que una línea no
+se acredita dos veces y que una factura autorizada no cambia de receptor.
+
+**Cubre:** BI-091, BI-094, BI-095, BI-096, BI-097, BI-208 a BI-218. **Solo
+servidor:** BI-095, BI-211, BI-212, BI-215, BI-217 (garantías de la base y una
+versión que ninguna pantalla enseña todavía).
+
+> **Lo que B15 no hace:** anular (BI-092, BI-093). Lo explica D-151.1.
+
 ### B11 — Prestaciones con estructura _(P2)_
 
 La categoría de una prestación deja de ser texto libre y pasa a un catálogo
@@ -1238,6 +1264,10 @@ es falsa, hay requisitos que cambian.
   fecha de emisión, el sistema DEBERÁ permitir anular la factura; CUANDO ese
   plazo haya vencido, DEBERÁ rechazar la anulación con `VOID_WINDOW_EXPIRED` y
   DEBERÁ indicar que la corrección es una nota de crédito.
+  > **D-151 (06-10-2026):** la Res. NAC-DGERCGC25-00000014 hace la anulación
+  > en el portal del SRI (art. 2), no por servicio web, y la Res. 17 habría
+  > bajado el plazo al día 7. No se construye; «Corregir» es la nota de
+  > crédito (BI-208). Lo confirma el contador.
   > El plazo se resuelve en `America/Guayaquil` (BI-002): una factura emitida el
   > 31 a las 22:00 pertenece al mes que dice el reloj de Guayaquil, y en otro
   > huso pertenecería al siguiente y ganaría un mes de plazo que no tiene.
@@ -1889,6 +1919,118 @@ dos registros distintos.**
   > alertas de información no me agradan» (autor). Lo que importa se ve en la
   > fila, en un botón deshabilitado que dice por qué o bajo el campo.
 
+## 22. Corregir una factura
+
+> Inventario CA-8 y CA-9, D-151 y D-152. **Fuentes:** Res. NAC-DGERCGC25-00000014
+> del SRI (arts. 2, 3 y 5); Ficha Técnica v2.34, formato XML de la nota de
+> crédito (pp. 55-57 y 71) y Notas 1 y 2 de la tabla de errores (pp. 37-38);
+> XSD oficial `NotaCredito_V1.1.0.xsd`. Lo que es del SRI —clave, XML, firma,
+> envío, RIDE— está en `sri/SPEC.md` SRI-085 a SRI-090.
+
+- **BI-208** — CUANDO quien tenga `billing:credit-note` corrija una factura
+  `AUTHORISED`, el sistema DEBERÁ emitir una nota de crédito por las líneas
+  elegidas —todas si no se elige ninguna— con el motivo de BI-209, en una sola
+  operación, y SI la factura no está `AUTHORISED` ENTONCES DEBERÁ rechazarlo
+  con `CREDIT_NOTE_INVOICE_NOT_AUTHORISED`.
+  > Un solo «Corregir» (CA-8). La factura pendiente de respuesta espera, y la
+  > devuelta se edita (BI-216). La anulación no se ofrece: la hace el portal
+  > del SRI (D-151.1).
+- **BI-209** — El sistema DEBERÁ tomar el motivo de una lista —«Error en los
+  datos del receptor», «Error en el importe», «Servicio no prestado» y «Otro»—,
+  DEBERÁ exigir con «Otro» un texto de 1 a 300 caracteres, y SI falta el motivo
+  o el texto de «Otro» ENTONCES DEBERÁ rechazarla con
+  `CREDIT_NOTE_REASON_REQUIRED`; la base DEBERÁ rechazar un motivo vacío o de
+  más de 300 caracteres (`credit_note_reason_fits_the_voucher`).
+  > El `<motivo>` es obligatorio y de 1 a 300 en el XSD. La lista es D-128.2;
+  > el XML lleva la etiqueta, o el texto si es «Otro» (D-151.5).
+- **BI-210** — CUANDO se emita una nota de crédito, el sistema DEBERÁ copiar a
+  ella el receptor de la factura, su serie y número y su fecha de emisión, y a
+  cada línea los valores ya congelados del cargo acreditado —descripción,
+  cantidad, precio, descuento, tarifa e IVA—; DEBERÁ tomar el secuencial propio
+  de las notas de crédito del punto de emisión de la factura, bajo el bloqueo
+  de ese punto; y su importe DEBERÁ ser la suma de sus líneas con su IVA
+  (`credit_note_total_is_consistent`).
+  > La tarifa de IVA es la del documento de sustento (ficha, nota del formato
+  > de la nota de crédito), que es la congelada en el cargo (BI-086). El
+  > receptor es el de la factura aunque fuese el error (D-152.2): el SRI la
+  > valida contra el documento que modifica.
+- **BI-211** — La base DEBERÁ rechazar que una línea de nota de crédito acredite
+  un cargo que no pertenece a la factura de esa nota de crédito, y que un mismo
+  cargo se acredite dos veces (`credit_note_line_one_per_charge`); el sistema
+  DEBERÁ traducirlo a `CREDIT_NOTE_LINE_NOT_IN_INVOICE` y
+  `CREDIT_NOTE_LINE_ALREADY_CREDITED`.
+  > Con la línea entera y una sola vez (D-152.6), BI-095 se cumple por
+  > construcción: lo acreditado nunca suma más que la factura. Se comprueba
+  > igual, por SQL directo.
+- **BI-212** — El sistema NO DEBERÁ actualizar ni borrar una nota de crédito ni
+  sus líneas, y la base DEBERÁ rechazarlo venga de donde venga, salvo lo que
+  escribe `sri`: la clave de acceso, una vez, y el paso a `AUTHORISED` o
+  `REJECTED` y de vuelta a `ISSUED` al reenviar (`trg_credit_note_immutable`).
+  > Es el disparador que la nota «Falta esquema» de §10 dejaba para B3.
+- **BI-213** — SI la factura se emitió a «Consumidor Final» —por la marca o
+  por la identificación `9999999999999`— ENTONCES el sistema
+  DEBERÁ rechazar su nota de crédito con `CREDIT_NOTE_FINAL_CONSUMER`, la base
+  DEBERÁ rechazarla por su cuenta, y la pantalla NO DEBERÁ ofrecer «Corregir»
+  en esa factura y DEBERÁ decir junto a la fila «Consumidor Final: no admite
+  nota de crédito».
+  > Res. NAC-DGERCGC25-00000014, art. 3, tercer inciso: «no procede la emisión
+  > de notas de crédito». Lo confirma el contador (D-151.3).
+- **BI-214** — CUANDO se emita una nota de crédito con un motivo distinto de
+  «Servicio no prestado», el sistema DEBERÁ añadir a la cuenta de la factura,
+  en la misma transacción, un cargo por facturar por cada línea acreditada, con
+  los mismos valores congelados y que diga qué cargo corrige; DEBERÁ reabrir la
+  cuenta si estaba liquidada; y la base DEBERÁ rechazar un segundo cargo que
+  corrija el mismo cargo (`charge_item_one_correction_per_charge`) y uno que
+  corrija un cargo no acreditado o acreditado con «Servicio no prestado»; y
+  SI se intenta facturar ese cargo mientras la nota de crédito que acreditó el
+  original no esté `AUTHORISED` ENTONCES el sistema DEBERÁ rechazarlo con
+  `CORRECTION_AWAITS_CREDIT_NOTE`, y la base DEBERÁ rechazarlo por su cuenta
+  (`charge_item_correction_awaits_credit_note`).
+  > **Revisión clínica, C1 (D-152.7):** sin la espera, una nota que el SRI no
+  > autorizara dejaría el servicio en dos facturas válidas.
+  > «Deja la cuenta lista para facturar de nuevo con lo corregido ya cargado»
+  > (CA-8, D-152.3). El cargo original sigue facturado (BI-096): la copia es
+  > otro cargo, con origen `CORRECTION`, que se edita en el sitio como
+  > cualquiera (BI-197) antes de facturarlo. Si la atención ya tiene otra
+  > cuenta abierta, la copia va a esa.
+- **BI-215** — CUANDO cambie una cuenta —su pagador, su lista de precios, su
+  estado—, la base DEBERÁ guardar la fila anterior entera en `record_version`
+  con quién y cuándo, y DEBERÁ rechazar el cambio sin ese sello.
+  > D-142.2: el pagador anterior queda con versión. Lo pide también BI-214,
+  > que reabre la cuenta.
+- **BI-216** — MIENTRAS una factura esté `REJECTED` —su comprobante devuelto o
+  no autorizado por el SRI—, el sistema DEBERÁ permitir a quien tenga
+  `billing:write` corregir su receptor (tipo y número de identificación,
+  nombre y correo) y su forma de pago, con las mismas reglas que al emitir
+  (BI-080, BI-081, BI-159, BI-170), y reenviarla en el mismo acto con la misma
+  clave y el mismo secuencial (SRI-090); y SI la factura está en cualquier
+  otro estado ENTONCES DEBERÁ rechazarlo con `INVOICE_NOT_EDITABLE`.
+  > CA-9 y D-093 B: la ficha permite reenviar «una vez corregido el error» sin
+  > nueva clave (Nota 1, pp. 37-38). **Enmienda BI-090** solo para el
+  > comprobante que el SRI no aceptó: lo autorizado sigue sin editarse. Las
+  > líneas y los importes no se editan (D-152.1).
+- **BI-217** — La base DEBERÁ rechazar el cambio del receptor o de la forma de
+  pago de una factura que no esté `REJECTED` con su comprobante `RETURNED` o
+  `NOT_AUTHORISED`, DEBERÁ rechazar que una factura `AUTHORISED` pase a otro
+  estado que no sea `VOIDED`, y CUANDO el receptor o la forma de pago cambien
+  en una devuelta, DEBERÁ guardar la fila anterior en `record_version` con
+  quién y cuándo.
+  > **Revisión clínica, C2:** `trg_invoice_immutable` congelaba las columnas
+  > de la autorizada pero no su estado, y dos sentencias la editaban.
+  > Hasta ahora `trg_invoice_immutable` solo congelaba lo autorizado o anulado,
+  > y la forma de pago no cambiaba nunca (`trg_invoice_payment_method_permanent`).
+- **BI-218** — En la lista de facturas, la fila de una factura `AUTHORISED`
+  DEBERÁ ofrecer «Corregir», que abre un diálogo con sus líneas —todas
+  marcadas—, el motivo de lista y el importe que se acredita; al emitir,
+  DEBERÁ llevar a la cuenta con la emisión de la factura abierta y el receptor
+  de la factura corregida propuesto, salvo con «Servicio no prestado». La fila
+  de una factura `REJECTED` DEBERÁ ofrecer «Editar» con el receptor y la forma
+  de pago en el sitio, y SI no se pudo reenviar DEBERÁ decirlo. La página de
+  notas de crédito DEBERÁ listarlas paginadas en el servidor, con su factura,
+  su motivo, su estado ante el SRI y su RIDE.
+  > Lo de pantalla de BI-208, BI-213 y BI-216, con los botones de
+  > `ESTANDAR-UI.md` §9 ter. Sustituye al marcador vacío de `notas-credito.vue`.
+
 ---
 
 ## Códigos de error nuevos
@@ -1947,6 +2089,12 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `CREDIT_NOTE_WINDOW_EXPIRED` | 409 | BI-094 |
 | `CREDIT_NOTE_EXCEEDS_INVOICE` | 422 | BI-095 |
 | `CREDIT_NOTE_INVOICE_VOIDED` | 409 | BI-097 |
+| `CREDIT_NOTE_INVOICE_NOT_AUTHORISED` | 409 | BI-208 |
+| `CREDIT_NOTE_LINE_NOT_IN_INVOICE` | 422 | BI-211 |
+| `CREDIT_NOTE_LINE_ALREADY_CREDITED` | 409 | BI-211 |
+| `CREDIT_NOTE_FINAL_CONSUMER` | 409 | BI-213 |
+| `INVOICE_NOT_EDITABLE` | 409 | BI-216 |
+| `CORRECTION_AWAITS_CREDIT_NOTE` | 409 | BI-214 |
 | `PAYMENT_METHOD_NOT_FOUND` | 404 | BI-100 |
 | `PAYMENT_EXCEEDS_BALANCE` | 422 | BI-101 |
 | `PAYMENT_REVERSAL_REASON_REQUIRED` | 422 | BI-102 |
@@ -2104,7 +2252,9 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `GET` | `/billing/sites/{siteId}/invoices/{invoiceId}` | `billing:read` | `param:siteId` | BI-135 |
 | `POST` | `/billing/sites/{siteId}/invoices` | `billing:write` | `param:siteId` | BI-080 a BI-089 |
 | `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/void` | `invoice:void` | `param:siteId` | BI-092, BI-093, BI-096 |
-| `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/credit-notes` | `billing:credit-note` | `param:siteId` | BI-091, BI-094 a BI-097 |
+| `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/credit-notes` | `billing:credit-note` | `param:siteId` | BI-091, BI-094 a BI-097, BI-208 a BI-214 |
+| `GET` | `/billing/sites/{siteId}/credit-notes` | `billing:read` | `param:siteId` | BI-218 |
+| `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/resubmission` | `billing:write` | `param:siteId` | BI-216, BI-217 |
 | `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/payments` | `billing:write` | `param:siteId` | BI-100 a BI-103 |
 | `POST` | `/billing/sites/{siteId}/payments/{paymentId}/reversal` | `billing:write` | `param:siteId` | BI-102 |
 | `POST` | `/billing/sites/{siteId}/cash-sessions/close` | `billing:write` | `param:siteId` | BI-104, BI-105 |
@@ -2122,6 +2272,10 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 > sobre `payment` (BI-102). `billing-http.spec.ts` lo comprueba pidiendo
 > `PATCH`, `PUT` y `DELETE` sobre una factura emitida y esperando 404 del
 > enrutador — no un 403, que significaría que la ruta existe.
+>
+> **`/resubmission` no la contradice** (BI-216): es la acción «corregir y
+> reenviar» sobre lo que el SRI **no aceptó**, y la base la rechaza en
+> cualquier otro estado (BI-217). `PATCH`, `PUT` y `DELETE` siguen sin existir.
 
 > **Qué de esta tabla está construido, a 20-08-2026.** Las diez rutas de
 > catálogo, pagadores y precios; las de cuentas, cargos y facturas de arriba; y

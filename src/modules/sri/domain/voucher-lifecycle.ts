@@ -130,8 +130,11 @@ const IN_PROCESS_CODE = '70';
 /** What an answer changes, for the repository to apply in one transaction. */
 export interface VoucherTransition {
   status: VoucherStatus;
-  /** The invoice follows the voucher only where the SRI decided something. */
-  invoiceStatus: 'AUTHORISED' | 'REJECTED' | null;
+  /**
+   * The invoice or credit note follows the voucher only where the SRI decided
+   * something (SRI-047, SRI-048, SRI-087).
+   */
+  documentStatus: 'AUTHORISED' | 'REJECTED' | null;
   /** Kept on the voucher for the monitor; `null` leaves them as they were. */
   lastMessages: SriMessage[] | null;
   /** The next job, or none when a person has to act. */
@@ -160,7 +163,7 @@ export function afterReception(
     case 'RECIBIDA':
       return {
         status: 'RECEIVED',
-        invoiceStatus: null,
+        documentStatus: null,
         lastMessages: answer.messages,
         next: {
           step: 'AUTHORISE',
@@ -183,7 +186,7 @@ export function afterReception(
         // SRI is still working, so give it time.
         return {
           status: 'RECEIVED',
-          invoiceStatus: null,
+          documentStatus: null,
           lastMessages: answer.messages,
           next: {
             step: 'AUTHORISE',
@@ -196,7 +199,7 @@ export function afterReception(
       // SRI-046. Nothing that repeating fixes.
       return {
         status: 'RETURNED',
-        invoiceStatus: 'REJECTED',
+        documentStatus: 'REJECTED',
         lastMessages: answer.messages,
         next: null,
       };
@@ -205,7 +208,7 @@ export function afterReception(
       // SRI-050. The status stays; same key, same bytes, later.
       return {
         status: current,
-        invoiceStatus: null,
+        documentStatus: null,
         lastMessages: null,
         next: { step: 'SEND', delaySeconds: retryDelaySeconds(attempt) },
       };
@@ -236,14 +239,14 @@ export function afterAuthorisation(
     case 'AUTORIZADO':
       return {
         status: 'AUTHORISED',
-        invoiceStatus: 'AUTHORISED',
+        documentStatus: 'AUTHORISED',
         lastMessages: answer.messages,
         next: { step: 'DELIVER', delaySeconds: 0 },
       };
     case 'NO AUTORIZADO':
       return {
         status: 'NOT_AUTHORISED',
-        invoiceStatus: 'REJECTED',
+        documentStatus: 'REJECTED',
         lastMessages: answer.messages,
         next: null,
       };
@@ -253,7 +256,7 @@ export function afterAuthorisation(
       // RECEIVED voucher is one the SRI has.
       return {
         status: 'RECEIVED',
-        invoiceStatus: null,
+        documentStatus: null,
         lastMessages: null,
         next: { step: 'AUTHORISE', delaySeconds: retryDelaySeconds(attempt) },
       };

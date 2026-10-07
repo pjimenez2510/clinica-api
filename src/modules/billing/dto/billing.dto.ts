@@ -404,6 +404,20 @@ export const issueInvoiceSchema = z.object({
 /** Body of POST /billing/sites/:siteId/invoices. */
 export class IssueInvoiceDto extends createZodDto(issueInvoiceSchema) {}
 
+/**
+ * BI-216, SRI-090. «Editar» on an invoice the SRI returned or did not
+ * authorise: the receiver and the payment method, under the same rules as the
+ * issuance — and nothing else of it.
+ */
+export const resubmitInvoiceSchema = z.object({
+  receiver: receiverSchema,
+  paymentMethod: z.enum(PAYMENT_METHODS, {
+    error: 'Indique la forma de pago',
+  }),
+});
+/** Body of POST /billing/sites/:siteId/invoices/:invoiceId/resubmission. */
+export class ResubmitInvoiceDto extends createZodDto(resubmitInvoiceSchema) {}
+
 export const invoiceQuerySchema = z.object({
   accountId: z.uuid().optional(),
 });
@@ -679,6 +693,10 @@ const chargeResponseSchema = z.object({
   /** BI-055. Por qué NO se cobra, cuando alguien lo quitó. */
   voidedAt: z.iso.datetime().nullable(),
   voidReason: z.string().nullable(),
+  /** BI-169, BI-218. The invoice that billed it; `null` until it is billed. */
+  invoiceId: z.uuid().nullable(),
+  /** BI-214. «Corrección»: the credited charge this line bills again. */
+  correctsChargeItemId: z.uuid().nullable(),
   /** BI-058. Derived from the four frozen values above, never stored. */
   lineTotal: z.string(),
   lineTax: z.string(),
@@ -687,7 +705,7 @@ const chargeResponseSchema = z.object({
 export class ChargeDto extends createZodDto(chargeResponseSchema) {}
 export type ChargeResponse = z.infer<typeof chargeResponseSchema>;
 
-const totalsSchema = z.object({
+export const totalsSchema = z.object({
   subtotalTaxed: z.string(),
   subtotalUntaxed: z.string(),
   discountTotal: z.string(),
@@ -757,6 +775,26 @@ const checkoutResponseSchema = z.object({
 export class CheckoutResponseDto extends createZodDto(checkoutResponseSchema) {}
 export type CheckoutResponse = z.infer<typeof checkoutResponseSchema>;
 
+/** SRI-060, SRI-088. A document's electronic voucher before the SRI. */
+export const electronicStateSchema = z.object({
+  voucherId: z.uuid(),
+  state: z.enum([
+    'PREPARED',
+    'SIGNED',
+    'RECEIVED',
+    'AUTHORISED',
+    'RETURNED',
+    'NOT_AUTHORISED',
+  ]),
+  blockedReason: z.string().nullable(),
+  accessKey: z.string(),
+  authorisedAt: z.iso.datetime().nullable(),
+  deliveryStatus: z.string().nullable(),
+  lastMessage: z
+    .object({ identifier: z.string(), message: z.string() })
+    .nullable(),
+});
+
 const invoiceResponseSchema = z.object({
   id: z.uuid(),
   accountId: z.uuid(),
@@ -779,26 +817,7 @@ const invoiceResponseSchema = z.object({
    * SRI-060. Its electronic voucher before the SRI; `null` while there is none
    * (the installation lacks a datum, SRI-008, or the sweep has not run yet).
    */
-  electronic: z
-    .object({
-      voucherId: z.uuid(),
-      state: z.enum([
-        'PREPARED',
-        'SIGNED',
-        'RECEIVED',
-        'AUTHORISED',
-        'RETURNED',
-        'NOT_AUTHORISED',
-      ]),
-      blockedReason: z.string().nullable(),
-      accessKey: z.string(),
-      authorisedAt: z.iso.datetime().nullable(),
-      deliveryStatus: z.string().nullable(),
-      lastMessage: z
-        .object({ identifier: z.string(), message: z.string() })
-        .nullable(),
-    })
-    .nullable(),
+  electronic: electronicStateSchema.nullable(),
 });
 /** One invoice, and the list of GET /billing/sites/:siteId/invoices. */
 export class InvoiceDto extends createZodDto(invoiceResponseSchema) {}

@@ -11,6 +11,7 @@ import { createTestPkcs12 } from '../../../../test/support/test-pkcs12';
 import type { Env } from '../../../shared/config/env.schema';
 import { parseClinicalDate } from '../../../shared/domain/clinic-time';
 import { composeAccessKey } from '../domain/access-key';
+import { composeCreditNoteXml } from '../domain/credit-note-xml';
 import { composeInvoiceXml } from '../domain/invoice-xml';
 import {
   SigningCertificateInvalidError,
@@ -78,6 +79,65 @@ function anInvoiceXml(): string {
       total: '30.00',
     },
     paymentMethod: '01',
+    softwareProviderRuc: null,
+  });
+}
+
+const CREDIT_NOTE_ON = parseClinicalDate('2026-10-06'); // fecha-fija: dato de entrada de una función pura, sin reloj
+
+function aCreditNoteXml(): string {
+  return composeCreditNoteXml({
+    environment: '1',
+    accessKey: composeAccessKey({
+      issuedOn: CREDIT_NOTE_ON,
+      documentType: '04',
+      ruc: '1790001563001',
+      environment: '1',
+      establishmentCode: '001',
+      emissionPointCode: '001',
+      sequential: '000000001',
+      numericCode: '00000002',
+    }),
+    issuer: {
+      ruc: '1790001563001',
+      legalName: 'Clínica de Desarrollo S.A.',
+      headOfficeAddress: 'Av. Amazonas y Naciones Unidas, Quito',
+      establishmentAddress: null,
+      keepsAccounting: false,
+      specialTaxpayerResolution: null,
+      withholdingAgentResolution: null,
+      rimpeRegime: 'NONE',
+    },
+    establishmentCode: '001',
+    emissionPointCode: '001',
+    sequential: '000000001',
+    issuedOn: CREDIT_NOTE_ON,
+    buyer: {
+      identificationType: '05',
+      identification: '1710034065',
+      name: 'Guamán Andrade, María José',
+      email: null,
+    },
+    modifiedDocument: { number: '001-001-000000001', issuedOn: ISSUED_ON },
+    reason: 'Error en los datos del receptor',
+    lines: [
+      {
+        code: 'CONS-MG-PV',
+        description: 'Consulta',
+        quantity: '1',
+        unitPrice: '30.00',
+        discount: '0.00',
+        taxSriCode: '0',
+        taxPercentage: '0.00',
+      },
+    ],
+    totals: {
+      subtotalTaxed: '0.00',
+      subtotalUntaxed: '30.00',
+      discountTotal: '0.00',
+      taxTotal: '0.00',
+      total: '30.00',
+    },
     softwareProviderRuc: null,
   });
 }
@@ -163,6 +223,28 @@ describe('SRI-020, SRI-021 la firma XAdES-BES', () => {
     const tampered = signed.replace(
       '<importeTotal>30.00</importeTotal>',
       '<importeTotal>3.00</importeTotal>',
+    );
+    expect(tampered).not.toBe(signed);
+    expect(verify(tampered, certificate.certificatePem).valid).toBe(false);
+  });
+
+  it('SRI-087 firma la nota de crédito sobre su raíz notaCredito, y la firma se verifica', () => {
+    const signed = signer.sign(
+      aCreditNoteXml(),
+      certificate.pkcs12,
+      certificate.password,
+    );
+    const result = verify(signed, certificate.certificatePem);
+
+    expect(result.valid).toBe(true);
+    expect(result.references).toContain('#comprobante');
+    // The signature is the last child of the credit note's own root.
+    expect(signed).toMatch(/<\/ds:Signature><\/notaCredito>$/);
+
+    // Control: altered after signing, it no longer verifies.
+    const tampered = signed.replace(
+      '<valorModificacion>30.00</valorModificacion>',
+      '<valorModificacion>3.00</valorModificacion>',
     );
     expect(tampered).not.toBe(signed);
     expect(verify(tampered, certificate.certificatePem).valid).toBe(false);

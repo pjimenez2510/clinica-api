@@ -43,12 +43,19 @@ export const CHARGE_ORIGINS = [
   'CONSULTATION',
   'PROCEDURE',
   'EXAM',
+  // BI-214. A credited line billed again: it names the charge it corrects
+  // (`corrects_charge_item_id`), not the clinical act — that one stays with
+  // the original, which is still billed.
+  'CORRECTION',
 ] as const;
 /** One of `CHARGE_ORIGINS`, as `charge_item.origin` stores it. */
 export type ChargeOrigin = (typeof CHARGE_ORIGINS)[number];
 
-/** The three a proposal can produce. `MANUAL` is what a person types. */
-export type DerivedOrigin = Exclude<ChargeOrigin, 'MANUAL'>;
+/**
+ * The three a proposal can produce. `MANUAL` is what a person types and
+ * `CORRECTION` what a credit note returns to the account (BI-214).
+ */
+export type DerivedOrigin = Exclude<ChargeOrigin, 'MANUAL' | 'CORRECTION'>;
 
 /**
  * Why an act produced no proposed line.

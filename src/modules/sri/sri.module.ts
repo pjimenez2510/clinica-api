@@ -5,6 +5,7 @@ import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import {
   ELECTRONIC_VOUCHER_PREPARER,
+  ELECTRONIC_VOUCHER_RESENDER,
   ELECTRONIC_VOUCHER_STATUS,
 } from '../../shared/billing/electronic-voucher.port';
 import type { Env } from '../../shared/config/env.schema';
@@ -73,6 +74,11 @@ import {
       useExisting: VoucherPreparationService,
     },
     { provide: ELECTRONIC_VOUCHER_STATUS, useExisting: VoucherMonitorService },
+    // SRI-090. Re-sending a corrected invoice is «Reenviar»: the monitor's.
+    {
+      provide: ELECTRONIC_VOUCHER_RESENDER,
+      useExisting: VoucherMonitorService,
+    },
     {
       provide: ELECTRONIC_VOUCHER_REPOSITORY,
       useClass: PrismaElectronicVoucherRepository,
@@ -101,6 +107,10 @@ import {
       }),
     },
   ],
-  exports: [ELECTRONIC_VOUCHER_PREPARER, ELECTRONIC_VOUCHER_STATUS],
+  exports: [
+    ELECTRONIC_VOUCHER_PREPARER,
+    ELECTRONIC_VOUCHER_STATUS,
+    ELECTRONIC_VOUCHER_RESENDER,
+  ],
 })
 export class SriModule {}

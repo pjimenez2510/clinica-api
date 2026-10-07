@@ -24,6 +24,7 @@ import { PatientAccountService } from './patient-account.service';
 
 const SITE = 'site-1';
 const ACCOUNT = 'account-1';
+const USER = 'user-1';
 const SERVICE_DATE = parseClinicalDate('2026-05-11');
 
 const account = (overrides: Partial<AccountView> = {}): AccountView => ({
@@ -74,6 +75,8 @@ const charge = (
   serviceOrderItemId: null,
   voidedAt: null,
   voidReason: null,
+  invoiceId: null,
+  correctsChargeItemId: null,
   ...overrides,
 });
 
@@ -279,7 +282,7 @@ describe('BI-071, BI-072 cerrar la cuenta', () => {
     });
 
     const thrown = await accounts
-      .closeAccount({ accountId: ACCOUNT, siteId: SITE })
+      .closeAccount({ accountId: ACCOUNT, siteId: SITE, closedById: USER })
       .catch((error: unknown) => error);
 
     expect(thrown).toBeInstanceOf(AccountHasOpenChargesError);
@@ -299,8 +302,11 @@ describe('BI-071, BI-072 cerrar la cuenta', () => {
       },
     });
 
-    await accounts.closeAccount({ accountId: ACCOUNT, siteId: SITE });
-    expect(mocks.closeAccount).toHaveBeenCalledWith(ACCOUNT);
+    await accounts.closeAccount({ accountId: ACCOUNT, siteId: SITE, closedById: USER }); // prettier-ignore
+    // BI-215: closing is stamped with who closed it.
+    expect(mocks.closeAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: ACCOUNT, closedById: USER }),
+    );
   });
 
   it('BI-071 rechaza todo cambio sobre una cuenta ya cerrada', async () => {

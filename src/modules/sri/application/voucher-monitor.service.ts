@@ -5,6 +5,7 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import type {
+  ElectronicVoucherResender,
   ElectronicVoucherStatusReader,
   ElectronicVoucherSummary,
 } from '../../../shared/billing/electronic-voucher.port';
@@ -13,6 +14,8 @@ import {
   type ElectronicVoucherRepository,
   type MonitorRow,
   type TransportFailureDetail,
+  type VoucherRecord,
+  type VoucherStatusView,
 } from '../domain/electronic-voucher.repository';
 import {
   ElectronicVoucherNotFoundError,
@@ -67,7 +70,9 @@ export interface MonitorView {
  * it has: re-sending what the SRI returned.
  */
 @Injectable()
-export class VoucherMonitorService implements ElectronicVoucherStatusReader {
+export class VoucherMonitorService
+  implements ElectronicVoucherStatusReader, ElectronicVoucherResender
+{
   constructor(
     @Inject(ELECTRONIC_VOUCHER_REPOSITORY)
     private readonly vouchers: ElectronicVoucherRepository,
@@ -96,9 +101,7 @@ export class VoucherMonitorService implements ElectronicVoucherStatusReader {
             needsAPerson(row.status, row.receivedAt ?? row.issuedAt, now),
           // SRI-008. An invoice without a voucher says which datum it lacks.
           missingData:
-            row.status === 'NO_VOUCHER'
-              ? await this.missingDataOf(row.invoiceId)
-              : [],
+            row.status === 'NO_VOUCHER' ? await this.missingDataOf(row) : [],
         };
       }),
     );
@@ -116,8 +119,11 @@ export class VoucherMonitorService implements ElectronicVoucherStatusReader {
     };
   }
 
-  private async missingDataOf(invoiceId: string): Promise<string[]> {
-    const source = await this.vouchers.preparationSource(invoiceId);
+  private async missingDataOf(row: MonitorRow): Promise<string[]> {
+    const source =
+      row.creditNoteId === null
+        ? await this.vouchers.preparationSource(row.invoiceId)
+        : await this.vouchers.creditNotePreparationSource(row.creditNoteId);
     return source ? missingIssuerData(source) : [];
   }
 
@@ -147,6 +153,29 @@ export class VoucherMonitorService implements ElectronicVoucherStatusReader {
       userAgent: requester.userAgent,
     });
 
+    await this.signReopened(voucher, unsignedXml);
+  }
+
+  /**
+   * SRI-090. The port `billing` calls after correcting a returned invoice:
+   * the same as «Reenviar», with the data the correction just wrote. Who
+   * corrected it is in `billing`'s trail (the invoice's `UPDATE`).
+   */
+  async resendInvoice(invoiceId: string): Promise<boolean> {
+    const voucher = await this.vouchers.findByInvoice(invoiceId);
+    if (!voucher || !isRetriableByAPerson(voucher.status)) return false;
+    const unsignedXml = await this.preparation.recompose(voucher);
+    if (unsignedXml === null) return false;
+    if (!(await this.vouchers.reopen(voucher.id, unsignedXml))) return false;
+    await this.signReopened(voucher, unsignedXml);
+    return true;
+  }
+
+  /** SRI-058. The reopened voucher, signed with its recomposed XML and queued. */
+  private async signReopened(
+    voucher: VoucherRecord,
+    unsignedXml: string,
+  ): Promise<void> {
     await this.preparation.sign({
       ...voucher,
       status: 'PREPARED',
@@ -189,25 +218,37 @@ export class VoucherMonitorService implements ElectronicVoucherStatusReader {
   async summariesOf(
     invoiceIds: readonly string[],
   ): Promise<Map<string, ElectronicVoucherSummary>> {
-    const views = await this.vouchers.statusOfInvoices(invoiceIds);
-    return new Map(
-      views.map((view) => {
-        const last = view.lastMessages.at(-1) ?? null;
-        return [
-          view.invoiceId,
-          {
-            voucherId: view.voucherId,
-            state: view.status,
-            blockedReason: view.blockedReason,
-            accessKey: view.accessKey,
-            authorisedAt: view.authorisedAt,
-            deliveryStatus: view.deliveryStatus,
-            lastMessage: last
-              ? { identifier: last.identifier, message: last.message }
-              : null,
-          },
-        ];
-      }),
-    );
+    return summaries(await this.vouchers.statusOfInvoices(invoiceIds));
   }
+
+  /** SRI-088. The same beside each credit note. */
+  async summariesOfCreditNotes(
+    creditNoteIds: readonly string[],
+  ): Promise<Map<string, ElectronicVoucherSummary>> {
+    return summaries(await this.vouchers.statusOfCreditNotes(creditNoteIds));
+  }
+}
+
+function summaries(
+  views: readonly VoucherStatusView[],
+): Map<string, ElectronicVoucherSummary> {
+  return new Map(
+    views.map((view) => {
+      const last = view.lastMessages.at(-1) ?? null;
+      return [
+        view.documentId,
+        {
+          voucherId: view.voucherId,
+          state: view.status,
+          blockedReason: view.blockedReason,
+          accessKey: view.accessKey,
+          authorisedAt: view.authorisedAt,
+          deliveryStatus: view.deliveryStatus,
+          lastMessage: last
+            ? { identifier: last.identifier, message: last.message }
+            : null,
+        },
+      ];
+    }),
+  );
 }

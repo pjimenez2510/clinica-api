@@ -5,6 +5,7 @@ import {
   AccountNotFoundError,
   EmissionPointInactiveError,
   FinalConsumerNotConfirmedError,
+  InvoiceNotEditableError,
   InvoiceNotFoundError,
 } from '../domain/billing.errors';
 import type {
@@ -106,7 +107,11 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     findPayer: vi.fn().mockResolvedValue(payer()),
     record: vi.fn().mockResolvedValue(undefined),
     prepare: vi.fn().mockResolvedValue(undefined),
+    prepareCreditNote: vi.fn().mockResolvedValue(undefined),
     summariesOf: vi.fn().mockResolvedValue(new Map()),
+    summariesOfCreditNotes: vi.fn().mockResolvedValue(new Map()),
+    resendInvoice: vi.fn().mockResolvedValue(true),
+    correctRejectedInvoice: vi.fn(),
     logError: vi.fn(),
     ...options.accounts,
   };
@@ -115,6 +120,7 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     service: new InvoicingService(
       mocks as unknown as BillingAccountRepository,
       mocks as unknown as BillingCatalogueRepository,
+      mocks,
       mocks,
       mocks,
       mocks,
@@ -237,15 +243,18 @@ describe('BI-080 a BI-089 emitir la factura', () => {
     });
   });
 
-  it('BI-090 no expone ninguna operación que modifique una factura emitida', () => {
+  it('BI-090 BI-216 no expone ninguna operación que modifique una factura emitida, salvo corregir la que el SRI devolvió', () => {
     // The absence IS the requirement (D-A-007). A route that existed without a
     // screen would be used anyway, so what is asserted is the whole public
-    // surface of the service that owns invoices.
+    // surface of the service that owns invoices. The one exception is
+    // `correctAndResend`, which BI-216 limits to REJECTED and the database
+    // enforces (BI-217); its own tests below prove it refuses the rest.
     const surface = Object.getOwnPropertyNames(InvoicingService.prototype)
       .filter((name) => name !== 'constructor')
       .sort();
 
     expect(surface).toEqual([
+      'correctAndResend',
       'findInvoice',
       'issueInvoice',
       'listInvoices',
@@ -378,5 +387,92 @@ describe('BI-082, BI-087 el receptor propuesto', () => {
     await expect(
       invoicing.proposedReceiver({ accountId: ACCOUNT, siteId: SITE }),
     ).resolves.toEqual({});
+  });
+});
+
+describe('BI-216 SRI-090 corregir y reenviar la factura devuelta', () => {
+  const rejected: InvoiceView = { ...invoice, status: 'REJECTED' };
+  const corrected = {
+    identificationType: '05' as const,
+    identification: '0919176818',
+    name: 'Andrade Guamán, José María',
+  };
+
+  it('BI-216 corrige el receptor y la forma de pago con las reglas de la emisión, y reenvía con la misma clave', async () => {
+    const { service, mocks } = build({
+      accounts: {
+        findInvoice: vi.fn().mockResolvedValue(rejected),
+        correctRejectedInvoice: vi.fn().mockResolvedValue(rejected),
+      },
+    });
+
+    await service.correctAndResend(
+      { invoiceId: 'invoice-1', siteId: SITE, receiver: corrected, paymentMethod: '19' }, // prettier-ignore
+      requester,
+    );
+
+    expect(mocks.correctRejectedInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoiceId: 'invoice-1',
+        paymentMethod: '19',
+        changedById: 'user-1',
+        receiver: expect.objectContaining({
+          buyerIdentification: '0919176818',
+          buyerName: 'Andrade Guamán, José María',
+        }) as unknown,
+      }),
+    );
+    expect(mocks.resendInvoice).toHaveBeenCalledWith('invoice-1');
+    expect(mocks.record).toHaveBeenCalledWith(
+      expect.objectContaining({ resourceId: 'invoice-1', action: 'UPDATE' }),
+    );
+  });
+
+  it('BI-216 una factura que no está devuelta no se edita, y no se toca nada', async () => {
+    for (const status of ['ISSUED', 'AUTHORISED'] as const) {
+      const { service, mocks } = build({
+        accounts: {
+          findInvoice: vi.fn().mockResolvedValue({ ...invoice, status }),
+        },
+      });
+      await expect(
+        service.correctAndResend(
+          { invoiceId: 'invoice-1', siteId: SITE, receiver: corrected, paymentMethod: '01' }, // prettier-ignore
+          requester,
+        ),
+      ).rejects.toBeInstanceOf(InvoiceNotEditableError);
+      expect(mocks.correctRejectedInvoice).not.toHaveBeenCalled();
+      expect(mocks.resendInvoice).not.toHaveBeenCalled();
+    }
+  });
+
+  it('BI-216 BI-159 una cédula que no supera el módulo 10 se rechaza antes de escribir', async () => {
+    const { service, mocks } = build({
+      accounts: { findInvoice: vi.fn().mockResolvedValue(rejected) },
+    });
+    await expect(
+      service.correctAndResend(
+        { invoiceId: 'invoice-1', siteId: SITE, receiver: { ...corrected, identification: '0919176819' }, paymentMethod: '01' }, // prettier-ignore
+        requester,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_CEDULA' });
+    expect(mocks.correctRejectedInvoice).not.toHaveBeenCalled();
+  });
+
+  it('SRI-090 si el reenvío falla, la corrección queda y la respuesta no es un error', async () => {
+    const { service, mocks } = build({
+      accounts: {
+        findInvoice: vi.fn().mockResolvedValue(rejected),
+        correctRejectedInvoice: vi.fn().mockResolvedValue(rejected),
+        resendInvoice: vi.fn().mockRejectedValue(new Error('db hiccup')),
+      },
+    });
+    await expect(
+      service.correctAndResend(
+        { invoiceId: 'invoice-1', siteId: SITE, receiver: corrected, paymentMethod: '01' }, // prettier-ignore
+        requester,
+      ),
+    ).resolves.toMatchObject({ id: 'invoice-1' });
+    expect(mocks.logError).toHaveBeenCalled();
   });
 });

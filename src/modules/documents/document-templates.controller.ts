@@ -30,7 +30,7 @@ import {
   PublishTemplateDto,
   type DocumentTemplateResponse,
 } from './dto/documents.dto';
-import type { DocumentKind } from './domain/document-kind';
+import type { TemplateKind } from './domain/document-kind';
 
 /**
  * The versioned template: what exists, and publishing the next one.
@@ -88,7 +88,7 @@ export class DocumentTemplatesController {
     @Req() req: Request,
   ): Promise<DocumentTemplateResponse> {
     const published = await this.documents.publishTemplate(
-      body.kind as DocumentKind,
+      body.kind as TemplateKind,
       {
         accentColour: body.accentColour,
         footerText: body.footerText,
@@ -159,7 +159,7 @@ export class DocumentTemplatesController {
     @Res() res: Response,
   ): Promise<void> {
     const rendered = await this.documents.previewTemplate(
-      body.kind as DocumentKind,
+      body.kind as TemplateKind,
       {
         accentColour: body.accentColour,
         footerText: body.footerText,

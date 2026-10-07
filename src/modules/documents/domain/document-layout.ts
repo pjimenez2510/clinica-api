@@ -20,9 +20,11 @@ import {
 import type { DocumentTemplate } from './document-template';
 import type {
   CertificatePrintData,
+  CreditNotePrintData,
   DocumentContext,
   DocumentSubject,
   EncounterSummaryPrintData,
+  InvoiceLine,
   InvoicePrintData,
   PatientIdentity,
   PractitionerIdentity,
@@ -888,32 +890,14 @@ function environmentOf(accessKey: string | null): string {
 }
 
 /**
- * DOC-076 to DOC-078. The RIDE, following the SRI's Ficha Técnica, Anexo 2.
- *
- * ⚠️ NO QR (DOC-078). «QR» does not appear ONCE in the 142 pages of the Ficha
- * Técnica; it is what somebody would add from memory after seeing other RIDEs,
- * and an invented element on a tax document is exactly what a review looks at.
- *
- * The barcode the Ficha does allow (§9.20–9.21, Anexo 2) is the access key in
- * Code 128 subset C, without a GS1 application identifier (D-095 §5): the
- * `barcode` block, right under the key in text in the voucher's box.
+ * DOC-076, DOC-106. The issuer's box of the approved page «Factura» (D-095):
+ * legal name, trade name, head office and establishment addresses, and the
+ * fiscal legends that apply. The logo, when there is one, sits above it in
+ * the same column. SRI-089: the credit note's RIDE prints the same box.
  */
-export function composeInvoiceLayout(
-  data: InvoicePrintData,
-  context: DocumentContext,
-  template: DocumentTemplate,
-): DocumentLayout {
-  // SRI-071. Pending only while it can still be authorised: a returned or
-  // refused invoice must not promise an authorisation that will not come.
-  const unauthorised =
-    data.status === 'REJECTED' ? NOT_AUTHORISED : PENDING_AUTHORISATION;
+function rideIssuerBox(context: DocumentContext): Block[] {
   const { establishment } = context;
-
-  // DOC-076, DOC-106. The issuer's box of the approved page «Factura»
-  // (D-095): legal name, trade name, head office and establishment
-  // addresses, and the fiscal legends that apply. The logo, when there is
-  // one, sits above it in the same column.
-  const issuerBox: Block[] = [
+  return [
     { kind: 'name', text: establishment.name },
     ...(establishment.tradeName === null ||
     establishment.tradeName === establishment.name
@@ -945,16 +929,39 @@ export function composeInvoiceLayout(
       ],
     },
   ];
+}
 
-  const voucherBox: Block[] = [
+/** What the voucher's box needs to know about the voucher it describes. */
+interface RideVoucher {
+  documentNumber: string;
+  accessKey: string | null;
+  status: string;
+  authorisedAt: Date | null;
+}
+
+/**
+ * DOC-076, DOC-106, SRI-070, SRI-071. The voucher's box: RUC, the voucher's
+ * own name as a title (`FACTURA`, `NOTA DE CRÉDITO`), its number, the
+ * authorisation or what stands in for it, the environment and the key.
+ */
+function rideVoucherBox(
+  title: string,
+  data: RideVoucher,
+  context: DocumentContext,
+): Block[] {
+  // SRI-071. Pending only while it can still be authorised: a returned or
+  // refused voucher must not promise an authorisation that will not come.
+  const unauthorised =
+    data.status === 'REJECTED' ? NOT_AUTHORISED : PENDING_AUTHORISATION;
+  return [
     {
       kind: 'fields',
       columns: 1,
       inline: true,
-      entries: [{ label: 'R.U.C.', value: establishment.ruc ?? '—' }],
+      entries: [{ label: 'R.U.C.', value: context.establishment.ruc ?? '—' }],
     },
     // DOC-106. The voucher's own name, large and in the accent.
-    { kind: 'title', text: 'FACTURA' },
+    { kind: 'title', text: title },
     {
       kind: 'fields',
       columns: 1,
@@ -1017,7 +1024,109 @@ export function composeInvoiceLayout(
           { kind: 'barcode', value: data.accessKey },
         ] as Block[])),
   ];
+}
 
+/** DOC-106. The two boxes that head a RIDE; they finish level. */
+function rideHead(
+  context: DocumentContext,
+  issuerBox: Block[],
+  voucherBox: Block[],
+): Block {
+  return {
+    kind: 'boxes',
+    left: [
+      // DOC-059. Only with a logo: the decision is the composer's.
+      ...(context.establishment.logo === null
+        ? []
+        : [{ kind: 'logo' } as const]),
+      { kind: 'box', rounded: true, blocks: issuerBox },
+    ],
+    right: [{ kind: 'box', rounded: true, blocks: voucherBox }],
+  };
+}
+
+/** DOC-076. The detail table of a RIDE, one row per frozen line. */
+function rideDetailTable(lines: readonly InvoiceLine[]): Block {
+  return {
+    kind: 'table',
+    framed: 'grid',
+    columns: [
+      { header: 'Cód. principal', width: 0.13 },
+      { header: 'Cód. auxiliar', width: 0.1 },
+      { header: 'Cant.', width: 0.07, align: 'right' },
+      { header: 'Descripción', width: 0.34 },
+      { header: 'Precio unitario', width: 0.12, align: 'right' },
+      { header: 'Descuento', width: 0.11, align: 'right' },
+      { header: 'Precio total', width: 0.13, align: 'right' },
+    ],
+    rows: lines.map((line) => [
+      line.code,
+      line.auxiliaryCode ?? '—',
+      line.quantity,
+      line.description,
+      line.unitPrice,
+      line.discount,
+      line.total,
+    ]),
+  };
+}
+
+/**
+ * The subtotals the Anexo 2 lists, every one, aligned to the right, with no
+ * header of their own and the total in bold on grey. `tip` is the invoice's
+ * «PROPINA» line, which the credit note's RIDE does not carry (SRI-089).
+ */
+function rideTotalsTable(
+  data: {
+    lines: readonly InvoiceLine[];
+    discountTotal: string;
+    taxTotal: string;
+    total: string;
+  },
+  tip: boolean,
+): Block {
+  const sums = rideSubtotals(data.lines);
+  return {
+    kind: 'table',
+    dense: true,
+    framed: 'box',
+    headless: true,
+    emphasiseLast: true,
+    columns: [
+      { header: 'Subtotales', width: 0.68 },
+      { header: 'Valor', width: 0.32, align: 'right' },
+    ],
+    rows: [
+      [`SUBTOTAL ${sums.rateLabel}%`, sums.taxed],
+      ['SUBTOTAL 0%', sums.zero],
+      ['SUBTOTAL NO OBJETO DE IVA', sums.notSubject],
+      ['SUBTOTAL EXENTO DE IVA', sums.exempt],
+      ['SUBTOTAL SIN IMPUESTOS', sums.withoutTaxes],
+      ['TOTAL DESCUENTO', data.discountTotal],
+      ['ICE', '0.00'],
+      [`IVA ${sums.rateLabel}%`, data.taxTotal],
+      ...(tip ? [['PROPINA', '0.00']] : []),
+      ['VALOR TOTAL', data.total],
+    ],
+  };
+}
+
+/**
+ * DOC-076 to DOC-078. The RIDE, following the SRI's Ficha Técnica, Anexo 2.
+ *
+ * ⚠️ NO QR (DOC-078). «QR» does not appear ONCE in the 142 pages of the Ficha
+ * Técnica; it is what somebody would add from memory after seeing other RIDEs,
+ * and an invented element on a tax document is exactly what a review looks at.
+ *
+ * The barcode the Ficha does allow (§9.20–9.21, Anexo 2) is the access key in
+ * Code 128 subset C, without a GS1 application identifier (D-095 §5): the
+ * `barcode` block, right under the key in text in the voucher's box.
+ */
+export function composeInvoiceLayout(
+  data: InvoicePrintData,
+  context: DocumentContext,
+  template: DocumentTemplate,
+): DocumentLayout {
   // DOC-076 «Información adicional»: what the voucher's own fields do not say.
   const additional: LabelledValue[] = [
     ...(data.buyerEmail === null
@@ -1045,8 +1154,6 @@ export function composeInvoiceLayout(
         ]),
   ];
 
-  const sums = invoiceSubtotals(data);
-
   return {
     frame: composeFrame(context, template, {
       kind: 'INVOICE_RIDE',
@@ -1055,16 +1162,11 @@ export function composeInvoiceLayout(
       verificationCode: null,
     }),
     blocks: [
-      // DOC-106. The two boxes finish level: the issuer's is stretched.
-      {
-        kind: 'boxes',
-        left: [
-          // DOC-059. Only with a logo: the decision is the composer's.
-          ...(establishment.logo === null ? [] : [{ kind: 'logo' } as const]),
-          { kind: 'box', rounded: true, blocks: issuerBox },
-        ],
-        right: [{ kind: 'box', rounded: true, blocks: voucherBox }],
-      },
+      rideHead(
+        context,
+        rideIssuerBox(context),
+        rideVoucherBox('FACTURA', data, context),
+      ),
       {
         kind: 'box',
         rounded: true,
@@ -1091,49 +1193,13 @@ export function composeInvoiceLayout(
           },
         ],
       },
-      {
-        kind: 'table',
-        framed: 'grid',
-        columns: [
-          { header: 'Cód. principal', width: 0.13 },
-          { header: 'Cód. auxiliar', width: 0.1 },
-          { header: 'Cant.', width: 0.07, align: 'right' },
-          { header: 'Descripción', width: 0.34 },
-          { header: 'Precio unitario', width: 0.12, align: 'right' },
-          { header: 'Descuento', width: 0.11, align: 'right' },
-          { header: 'Precio total', width: 0.13, align: 'right' },
-        ],
-        rows: data.lines.map((line) => [
-          line.code,
-          line.auxiliaryCode ?? '—',
-          line.quantity,
-          line.description,
-          line.unitPrice,
-          line.discount,
-          line.total,
-        ]),
-      },
+      rideDetailTable(data.lines),
       {
         kind: 'boxes',
         // The template's 1.15fr · 1fr.
         leftShare: 0.535,
         left: [
-          ...(additional.length === 0
-            ? []
-            : ([
-                {
-                  kind: 'box',
-                  title: 'Información adicional',
-                  blocks: [
-                    {
-                      kind: 'fields',
-                      columns: 1,
-                      inline: true,
-                      entries: additional,
-                    },
-                  ],
-                },
-              ] as Block[])),
+          ...additionalInformation(additional),
           // BI-170. The way it was paid, with its SRI table 24 code.
           {
             kind: 'table',
@@ -1152,33 +1218,96 @@ export function composeInvoiceLayout(
             ],
           },
         ],
-        // The subtotals the Anexo 2 lists, every one, aligned to the right,
-        // with no header of their own and the total in bold on grey.
-        right: [
+        right: [rideTotalsTable(data, true)],
+      },
+    ],
+    tearOff: null,
+  };
+}
+
+/** DOC-076 «Información adicional», boxed under its title bar; none if empty. */
+function additionalInformation(entries: LabelledValue[]): Block[] {
+  return entries.length === 0
+    ? []
+    : [
+        {
+          kind: 'box',
+          title: 'Información adicional',
+          blocks: [{ kind: 'fields', columns: 1, inline: true, entries }],
+        },
+      ];
+}
+
+/**
+ * SRI-089. The RIDE of a credit note: the invoice's page (Ficha Técnica,
+ * Anexo 2) with «NOTA DE CRÉDITO» in the voucher's box, the invoice it
+ * modifies with its date and the reason beside the receiver, its lines, and
+ * the subtotals of the credit note — no «PROPINA» and no way of paying: a
+ * credit note is not paid.
+ */
+export function composeCreditNoteLayout(
+  data: CreditNotePrintData,
+  context: DocumentContext,
+  template: DocumentTemplate,
+): DocumentLayout {
+  return {
+    frame: composeFrame(context, template, {
+      kind: 'CREDIT_NOTE_RIDE',
+      reference: data.documentNumber,
+      confidential: false,
+      verificationCode: null,
+    }),
+    blocks: [
+      rideHead(
+        context,
+        rideIssuerBox(context),
+        rideVoucherBox('NOTA DE CRÉDITO', data, context),
+      ),
+      {
+        kind: 'box',
+        rounded: true,
+        blocks: [
           {
-            kind: 'table',
-            dense: true,
-            framed: 'box',
-            headless: true,
-            emphasiseLast: true,
-            columns: [
-              { header: 'Subtotales', width: 0.68 },
-              { header: 'Valor', width: 0.32, align: 'right' },
-            ],
-            rows: [
-              [`SUBTOTAL ${sums.rateLabel}%`, sums.taxed],
-              ['SUBTOTAL 0%', sums.zero],
-              ['SUBTOTAL NO OBJETO DE IVA', sums.notSubject],
-              ['SUBTOTAL EXENTO DE IVA', sums.exempt],
-              ['SUBTOTAL SIN IMPUESTOS', sums.withoutTaxes],
-              ['TOTAL DESCUENTO', data.discountTotal],
-              ['ICE', '0.00'],
-              [`IVA ${sums.rateLabel}%`, data.taxTotal],
-              ['PROPINA', '0.00'],
-              ['VALOR TOTAL', data.total],
+            kind: 'fields',
+            columns: 2,
+            inline: true,
+            entries: [
+              {
+                label: 'Razón social / Apellidos y nombres',
+                value: data.buyerName,
+              },
+              { label: 'Identificación', value: data.buyerIdentification },
+              {
+                label: 'Fecha de emisión',
+                value:
+                  data.issuedAt === null ? '—' : ecuadorianDate(data.issuedAt),
+              },
+              {
+                label: 'Comprobante que se modifica',
+                value: `FACTURA ${data.modifiedDocument.number}`,
+              },
+              {
+                label: 'Fecha de emisión (comprobante a modificar)',
+                value:
+                  data.modifiedDocument.issuedAt === null
+                    ? '—'
+                    : ecuadorianDate(data.modifiedDocument.issuedAt),
+              },
+              { label: 'Razón de modificación', value: data.reason, span: 2 },
             ],
           },
         ],
+      },
+      rideDetailTable(data.lines),
+      {
+        kind: 'boxes',
+        leftShare: 0.535,
+        left: additionalInformation(
+          data.buyerEmail === null
+            ? []
+            : [{ label: 'Correo', value: data.buyerEmail }],
+        ),
+        right: [rideTotalsTable(data, false)],
       },
     ],
     tearOff: null,
@@ -1208,7 +1337,7 @@ const GENERAL_RATE = '15';
  * DOC-076. The Anexo 2 subtotals, from the frozen lines (each line's net and
  * its table 17 code), in cents so nothing rounds through a float.
  */
-function invoiceSubtotals(data: InvoicePrintData): {
+function rideSubtotals(lines: readonly InvoiceLine[]): {
   rateLabel: string;
   taxed: string;
   zero: string;
@@ -1223,7 +1352,7 @@ function invoiceSubtotals(data: InvoicePrintData): {
   let notSubject = 0;
   let exempt = 0;
   const rates = new Set<string>();
-  for (const line of data.lines) {
+  for (const line of lines) {
     const net = cents(line.total);
     if (line.taxSriCode === NOT_SUBJECT_CODE) notSubject += net;
     else if (line.taxSriCode === EXEMPT_CODE) exempt += net;
@@ -1426,5 +1555,7 @@ export function composeLayout(
       return composeInvoiceLayout(subject.data, context, template);
     case 'ENCOUNTER_SUMMARY':
       return composeEncounterSummaryLayout(subject.data, context, template);
+    case 'CREDIT_NOTE_RIDE':
+      return composeCreditNoteLayout(subject.data, context, template);
   }
 }

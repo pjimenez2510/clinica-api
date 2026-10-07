@@ -98,6 +98,8 @@ const charge = (overrides: Partial<ChargeView> = {}): ChargeView => ({
   serviceOrderItemId: null,
   voidedAt: null,
   voidReason: null,
+  invoiceId: null,
+  correctsChargeItemId: null,
   ...overrides,
 });
 

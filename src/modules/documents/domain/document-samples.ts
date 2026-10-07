@@ -268,5 +268,44 @@ export function sampleSubject(
           total: '0.00',
         },
       };
+    case 'CREDIT_NOTE_RIDE':
+      // SRI-089. Never previewed on its own —it borrows the invoice RIDE's
+      // template—, but a sample of every kind keeps this exhaustive.
+      return {
+        kind,
+        data: {
+          subjectId: 'sample',
+          siteId: 'sample',
+          documentNumber: '000-000-000000000',
+          accessKey: null,
+          status: 'ISSUED',
+          issuedAt,
+          authorisedAt: null,
+          buyerIdentificationType: '05',
+          buyerIdentification: '9999999999',
+          buyerName: SAMPLE_MARK,
+          buyerEmail: null,
+          reason: SAMPLE_MARK,
+          modifiedDocument: { number: '000-000-000000000', issuedAt },
+          lines: [
+            {
+              code: 'MUESTRA',
+              auxiliaryCode: null,
+              description: 'Consulta de medicina general',
+              quantity: '1',
+              unitPrice: '0.00',
+              discount: '0.00',
+              total: '0.00',
+              taxSriCode: '0',
+              taxPercentage: '0.00',
+            },
+          ],
+          subtotalTaxed: '0.00',
+          subtotalUntaxed: '0.00',
+          discountTotal: '0.00',
+          taxTotal: '0.00',
+          total: '0.00',
+        },
+      };
   }
 }

@@ -770,3 +770,134 @@ export class InvoiceReceiverIsPayerError extends BusinessRuleViolation {
     ]);
   }
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Correcting an invoice (BI-091 to BI-097, BI-208 to BI-218)
+// ───────────────────────────────────────────────────────────────────────────
+
+/** BI-091, BI-209. «Otro» without a text, or one that does not fit. */
+export class CreditNoteReasonRequiredError extends ValidationError {
+  readonly code = 'CREDIT_NOTE_REASON_REQUIRED';
+  override readonly userTitle = 'Diga el motivo de la nota de crédito';
+
+  constructor() {
+    super('A credit note states its reason', {}, [
+      {
+        field: 'reasonText',
+        code: 'CREDIT_NOTE_REASON_REQUIRED',
+        message: 'Escriba el motivo, de hasta 300 caracteres',
+      },
+    ]);
+  }
+}
+
+/**
+ * BI-094 (Res. NAC-DGERCGC25-00000014, art. 5). Twelve months from the
+ * invoice's date of issue, in Guayaquil; whether the 2025 reform removed the
+ * limit is D-151.4, with the accountant.
+ */
+export class CreditNoteWindowExpiredError extends ConflictError {
+  readonly code = 'CREDIT_NOTE_WINDOW_EXPIRED';
+  override readonly userTitle =
+    'Pasaron más de doce meses desde la emisión de la factura: ya no admite nota de crédito';
+
+  constructor(readonly deadline: ClinicalDate) {
+    super('The credit note window of this invoice is over', { deadline });
+  }
+}
+
+/** BI-095. What was credited plus this one exceeds the invoice. */
+export class CreditNoteExceedsInvoiceError extends BusinessRuleViolation {
+  readonly code = 'CREDIT_NOTE_EXCEEDS_INVOICE';
+  override readonly userTitle =
+    'Lo acreditado no puede superar el total de la factura';
+
+  constructor() {
+    super('The credit notes of this invoice would exceed its total');
+  }
+}
+
+/** BI-097. */
+export class CreditNoteInvoiceVoidedError extends ConflictError {
+  readonly code = 'CREDIT_NOTE_INVOICE_VOIDED';
+  override readonly userTitle = 'Una factura anulada no admite nota de crédito';
+
+  constructor() {
+    super('The invoice is voided');
+  }
+}
+
+/**
+ * BI-208 (D-152.4). Only what the SRI authorised is corrected with a credit
+ * note: a pending one waits, and a returned one is edited (BI-216).
+ */
+export class CreditNoteInvoiceNotAuthorisedError extends ConflictError {
+  readonly code = 'CREDIT_NOTE_INVOICE_NOT_AUTHORISED';
+  override readonly userTitle =
+    'Solo una factura autorizada por el SRI se corrige con nota de crédito';
+
+  constructor() {
+    super('The invoice is not authorised by the SRI');
+  }
+}
+
+/** BI-211. */
+export class CreditNoteLineNotInInvoiceError extends BusinessRuleViolation {
+  readonly code = 'CREDIT_NOTE_LINE_NOT_IN_INVOICE';
+  override readonly userTitle = 'Esa línea no es de la factura que se corrige';
+
+  constructor() {
+    super('A credited charge is not a line of this invoice');
+  }
+}
+
+/** BI-211. A line is credited whole and once (D-152.6). */
+export class CreditNoteLineAlreadyCreditedError extends ConflictError {
+  readonly code = 'CREDIT_NOTE_LINE_ALREADY_CREDITED';
+  override readonly userTitle =
+    'Esa línea ya se acreditó con otra nota de crédito';
+
+  constructor() {
+    super('A charge of this invoice was already credited');
+  }
+}
+
+/**
+ * BI-213. Res. NAC-DGERCGC25-00000014, art. 3: an invoice to «consumidor
+ * final» admits no credit note (D-151.3, with the accountant).
+ */
+export class CreditNoteFinalConsumerError extends ConflictError {
+  readonly code = 'CREDIT_NOTE_FINAL_CONSUMER';
+  override readonly userTitle = 'Consumidor Final: no admite nota de crédito';
+
+  constructor() {
+    super('An invoice to the final consumer admits no credit note');
+  }
+}
+
+/** BI-216. Only an invoice the SRI did not accept is corrected and resent. */
+export class InvoiceNotEditableError extends ConflictError {
+  readonly code = 'INVOICE_NOT_EDITABLE';
+  override readonly userTitle =
+    'Solo se corrige y se reenvía una factura que el SRI devolvió o no autorizó';
+
+  constructor() {
+    super('Only a returned or not authorised invoice is corrected');
+  }
+}
+
+/**
+ * C1 of the clinical review (D-152.7). What a credit note credited comes back
+ * to the account at once, but it is billed again only once the SRI has
+ * authorised the credit note: until then the service would sit on two valid
+ * invoices. Usually a matter of seconds (the queue sends it on its own).
+ */
+export class CorrectionAwaitsCreditNoteError extends ConflictError {
+  readonly code = 'CORRECTION_AWAITS_CREDIT_NOTE';
+  override readonly userTitle =
+    'Lo corregido se factura cuando el SRI autorice la nota de crédito: vuelva a intentarlo en unos segundos';
+
+  constructor() {
+    super('A corrected charge is billed once its credit note is authorised');
+  }
+}

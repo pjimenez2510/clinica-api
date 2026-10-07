@@ -135,8 +135,9 @@ export class VoucherDispatchService {
   }
 
   /**
-   * SRI-072 to SRI-076. The RIDE and the authorised XML to the buyer. Only the
-   * delivery columns move: the authorisation is a fact an e-mail cannot undo.
+   * SRI-072 to SRI-076, SRI-089. The RIDE and the authorised XML to the
+   * buyer, of an invoice or of a credit note. Only the delivery columns move:
+   * the authorisation is a fact an e-mail cannot undo.
    */
   async deliver(voucherId: string): Promise<void> {
     const voucher = await this.vouchers.findById(voucherId);
@@ -158,17 +159,28 @@ export class VoucherDispatchService {
       return;
     }
 
+    // SRI-089. The credit note's e-mail is the invoice's, naming itself.
+    const named =
+      context.document === 'INVOICE'
+        ? { title: 'Factura electrónica', noun: 'la factura electrónica' }
+        : {
+            title: 'Nota de crédito electrónica',
+            noun: 'la nota de crédito electrónica',
+          };
     try {
-      const ride = await this.rides.issueRide(
-        context.invoiceId,
-        context.issuedById,
-      );
+      const ride =
+        context.document === 'INVOICE'
+          ? await this.rides.issueRide(context.invoiceId, context.issuedById)
+          : await this.rides.issueCreditNoteRide(
+              context.creditNoteId,
+              context.issuedById,
+            );
       await this.mailer.send({
         to: context.buyerEmail,
-        subject: `Factura electrónica ${context.documentNumber} — ${context.establishmentName}`,
+        subject: `${named.title} ${context.documentNumber} — ${context.establishmentName}`,
         text:
           `Estimado(a) ${context.buyerName}:\n\n` +
-          `Adjuntamos la factura electrónica ${context.documentNumber}, autorizada por el SRI, ` +
+          `Adjuntamos ${named.noun} ${context.documentNumber}, autorizada por el SRI, ` +
           `en PDF (RIDE) y en XML.\n\nClave de acceso: ${voucher.accessKey}\n\n` +
           `${context.establishmentName}`,
         attachments: [
@@ -221,6 +233,9 @@ export class VoucherDispatchService {
     );
     for (const invoiceId of work.invoicesWithoutVoucher) {
       await this.preparation.prepare(invoiceId);
+    }
+    for (const creditNoteId of work.creditNotesWithoutVoucher) {
+      await this.preparation.prepareCreditNote(creditNoteId);
     }
     // SC-084. One voucher that throws —a figure that does not add up, an
     // opening that cannot be written— is logged and skipped: it must not
@@ -281,7 +296,7 @@ export class VoucherDispatchService {
     const applied = await this.vouchers.recordAttempt(voucher.id, attempt, {
       expectedStatus: voucher.status,
       status: transition.status,
-      invoiceStatus: transition.invoiceStatus,
+      documentStatus: transition.documentStatus,
       lastMessages: transition.lastMessages,
       nextAttemptAt: transition.next?.step === 'DELIVER' ? null : nextAttemptAt,
       authorisation,

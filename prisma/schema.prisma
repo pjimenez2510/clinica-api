@@ -173,12 +173,14 @@ model User {
   /// Money. Two lists over `charge_item` and not one, because raising a charge
   /// and authorising a discount above the role's ceiling are two acts by two
   /// people — the second pair of eyes only counts if it is a different pair.
-  chargeItemsCreated  ChargeItem[] @relation("ChargeItemAuthor")
-  chargeItemsChanged  ChargeItem[] @relation("ChargeItemChanger")
-  pricesChanged       Price[]      @relation("PriceChanger")
-  discountsAuthorised ChargeItem[] @relation("ChargeItemDiscountAuthoriser")
-  invoicesIssued      Invoice[]    @relation("InvoiceIssuer")
-  creditNotesIssued   CreditNote[] @relation("CreditNoteIssuer")
+  chargeItemsCreated  ChargeItem[]     @relation("ChargeItemAuthor")
+  chargeItemsChanged  ChargeItem[]     @relation("ChargeItemChanger")
+  pricesChanged       Price[]          @relation("PriceChanger")
+  discountsAuthorised ChargeItem[]     @relation("ChargeItemDiscountAuthoriser")
+  invoicesIssued      Invoice[]        @relation("InvoiceIssuer")
+  creditNotesIssued   CreditNote[]     @relation("CreditNoteIssuer")
+  accountsChanged     PatientAccount[] @relation("PatientAccountChanger")
+  invoicesChanged     Invoice[]        @relation("InvoiceChanger")
 
   /// REQ-090. Who loaded each issuer certificate (SRI-082).
   signingCertificatesUploaded SigningCertificate[] @relation("SigningCertificateUploader")
@@ -1163,6 +1165,9 @@ model Site {
   documentCounters   DocumentCounter[]
   prescriptions      Prescription[]
   certificates       MedicalCertificate[]
+
+  /// BI-218. Its credit notes, listed by site.
+  creditNotes CreditNote[]
 
   @@map("site")
 }
@@ -3814,6 +3819,14 @@ model PatientAccount {
   openedAt DateTime  @default(now()) @map("opened_at") @db.Timestamptz(6)
   closedAt DateTime? @map("closed_at") @db.Timestamptz(6)
 
+  /// BI-215 (D-142.2). The STAMP of the last change of payer, price list or
+  /// status — closing it, and reopening it after a credit note.
+  /// `trg_patient_account_record_version` archives the previous row into
+  /// `record_version` and refuses the change without it.
+  changedById String?   @map("changed_by") @db.Uuid
+  changedBy   User?     @relation("PatientAccountChanger", fields: [changedById], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "patient_account_changed_by_fkey")
+  changedAt   DateTime? @map("changed_at") @db.Timestamptz(6)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -3931,8 +3944,8 @@ model ChargeItem {
   voidedBy   User?     @relation("ChargeVoider", fields: [voidedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_voided_by_fk")
   voidReason String?   @map("void_reason") @db.VarChar(500)
 
-  createdById String   @map("created_by_id") @db.Uuid
-  createdBy   User     @relation("ChargeItemAuthor", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_created_by_fk")
+  createdById String @map("created_by_id") @db.Uuid
+  createdBy   User   @relation("ChargeItemAuthor", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_created_by_fk")
 
   /// BI-195 a BI-198 (D-127). The STAMP of the last correction: who and when
   /// edited, removed, marked «No se cobra» or restored the line. Required by
@@ -3941,8 +3954,19 @@ model ChargeItem {
   changedById String?   @map("changed_by") @db.Uuid
   changedBy   User?     @relation("ChargeItemChanger", fields: [changedById], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "charge_item_changed_by_fkey")
   changedAt   DateTime? @map("changed_at") @db.Timestamptz(6)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// BI-214. On a CORRECTION line, the credited charge it bills again — once
+  /// (`charge_item_one_correction_per_charge`, partial, in the migration) and
+  /// only if a credit note credited it
+  /// (`trg_charge_item_corrects_a_credited_charge`).
+  correctsChargeItemId String?      @map("corrects_charge_item_id") @db.Uuid
+  correctsChargeItem   ChargeItem?  @relation("ChargeItemCorrection", fields: [correctsChargeItemId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_corrects_fk")
+  correctedBy          ChargeItem[] @relation("ChargeItemCorrection")
+
+  /// BI-211. The credit note line that credited it, if any.
+  creditNoteLine CreditNoteLine?
 
   /// `charge_item_by_encounter` is not here: it is partial
   /// (`WHERE encounter_id IS NOT NULL`), which is what keeps it from indexing
@@ -4028,10 +4052,19 @@ model Invoice {
   issuedAt     DateTime? @map("issued_at") @db.Timestamptz(6)
   authorisedAt DateTime? @map("authorised_at") @db.Timestamptz(6)
 
-  issuedById String   @map("issued_by_id") @db.Uuid
-  issuedBy   User     @relation("InvoiceIssuer", fields: [issuedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_issued_by_fk")
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  issuedById String @map("issued_by_id") @db.Uuid
+  issuedBy   User   @relation("InvoiceIssuer", fields: [issuedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_issued_by_fk")
+
+  /// BI-216, BI-217. The STAMP of a correction of the receiver or the payment
+  /// method, which only an invoice the SRI did not accept (REJECTED) admits
+  /// (`trg_invoice_receiver_editable_only_when_rejected`); the previous row
+  /// goes to `record_version`.
+  changedById String?   @map("changed_by") @db.Uuid
+  changedBy   User?     @relation("InvoiceChanger", fields: [changedById], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "invoice_changed_by_fkey")
+  changedAt   DateTime? @map("changed_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   creditNotes CreditNote[]
 
@@ -4050,28 +4083,56 @@ model Invoice {
   @@map("invoice")
 }
 
-/// The one legal way to correct an authorised invoice.
+/// The one legal way to correct an authorised invoice (BI-208 a BI-213).
+///
+/// Everything it says is COPIED when it is issued — the invoice's receiver,
+/// the credited charges' frozen values, the totals — because it is what the
+/// XML says, and `trg_credit_note_immutable` keeps it so: once issued only
+/// `sri` moves it (the key, once; the status before the SRI). It cannot exist
+/// for an invoice that is not authorised or that went to «Consumidor Final»
+/// (`trg_credit_note_credits_an_authorised_invoice`), nor credit more than the
+/// invoice (`trg_credit_note_within_its_invoice`, deferred). None of that is
+/// expressible here — see `20261007033700_credit_note_and_corrections`.
 model CreditNote {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
   invoiceId String  @map("invoice_id") @db.Uuid
   invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "credit_note_invoice_fk")
 
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "credit_note_site_fk")
+
+  /// Its own sequence, per emission point: the invoice's point.
   emissionPointId String        @map("emission_point_id") @db.Uuid
   emissionPoint   EmissionPoint @relation(fields: [emissionPointId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "credit_note_emission_point_fk")
   sequential      String        @db.VarChar(9)
+  /// SRI-086. Only the key of ITS voucher
+  /// (`credit_note_access_key_is_its_vouchers`, in the migration).
   accessKey       String?       @map("access_key") @db.VarChar(49)
 
-  /// NEVER optional. A correction with no stated motive is indistinguishable
-  /// from an error being buried.
-  reason String @db.VarChar(500)
+  /// BI-209. RECEIVER_DATA, AMOUNT, SERVICE_NOT_PROVIDED or OTHER, and the
+  /// text that goes in `<motivo>`: the label, or what was written for OTHER.
+  /// 1 to 300 characters (`credit_note_reason_fits_the_voucher`).
+  reasonCode String @map("reason_code") @db.VarChar(24)
+  reason     String @db.VarChar(500)
 
-  amount Decimal @db.Decimal(12, 2)
+  /// BI-210. The invoice's receiver, even when it was the error (D-152.2).
+  buyerIdentificationType String  @map("buyer_identification_type") @db.VarChar(2)
+  buyerIdentification     String  @map("buyer_identification") @db.VarChar(20)
+  buyerName               String  @map("buyer_name") @db.VarChar(300)
+  buyerEmail              String? @map("buyer_email") @db.VarChar(320)
 
-  /// DRAFT, ISSUED, AUTHORISED or REJECTED (`credit_note_status_is_known`).
-  /// There is no VOIDED: a credit note that was wrong is corrected by the
-  /// documents that follow it, never by unwinding this one.
-  status String @default("DRAFT") @db.VarChar(24)
+  /// `credit_note_total_is_consistent`: `amount` is the total, as in `invoice`.
+  subtotalTaxed   Decimal @map("subtotal_taxed") @db.Decimal(12, 2)
+  subtotalUntaxed Decimal @map("subtotal_untaxed") @db.Decimal(12, 2)
+  discountTotal   Decimal @map("discount_total") @db.Decimal(12, 2)
+  taxTotal        Decimal @map("tax_total") @db.Decimal(12, 2)
+  amount          Decimal @db.Decimal(12, 2)
+
+  /// ISSUED, AUTHORISED or REJECTED (DRAFT is never written). There is no
+  /// VOIDED: a credit note that was wrong is corrected by the documents that
+  /// follow it, never by unwinding this one.
+  status String @default("ISSUED") @db.VarChar(24)
 
   issuedById String    @map("issued_by_id") @db.Uuid
   issuedBy   User      @relation("CreditNoteIssuer", fields: [issuedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "credit_note_issued_by_fk")
@@ -4079,8 +4140,44 @@ model CreditNote {
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  lines             CreditNoteLine[]
+  /// SRI-086. Its electronic voucher, one for ever, once prepared.
+  electronicVoucher ElectronicVoucher?
+  /// SRI-089. Its archived RIDEs.
+  documentRenders   DocumentRender[]
+
   @@unique([emissionPointId, sequential], map: "credit_note_sequential_unique")
+  @@index([invoiceId], map: "credit_note_by_invoice")
+  @@index([siteId, issuedAt(sort: Desc)], map: "credit_note_by_site")
   @@map("credit_note")
+}
+
+/// BI-210, BI-211. One credited charge, whole, with its values frozen again.
+/// Never changes (`trg_credit_note_line_permanent`), and only a line of the
+/// credited invoice fits (`trg_credit_note_line_belongs_to_its_invoice`).
+model CreditNoteLine {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  creditNoteId String     @map("credit_note_id") @db.Uuid
+  creditNote   CreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "credit_note_line_credit_note_fk")
+
+  chargeItemId String     @unique(map: "credit_note_line_one_per_charge") @map("charge_item_id") @db.Uuid
+  chargeItem   ChargeItem @relation(fields: [chargeItemId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "credit_note_line_charge_fk")
+
+  serviceCode    String   @map("service_code") @db.VarChar(25)
+  description    String   @db.VarChar(300)
+  quantity       Decimal  @db.Decimal(10, 3)
+  unitAmount     Decimal  @map("unit_amount") @db.Decimal(12, 2)
+  discountAmount Decimal  @map("discount_amount") @db.Decimal(12, 2)
+  taxSriCode     String   @map("tax_sri_code") @db.VarChar(4)
+  taxPercentage  Decimal? @map("tax_percentage") @db.Decimal(5, 2)
+  netAmount      Decimal  @map("net_amount") @db.Decimal(12, 2)
+  taxAmount      Decimal  @map("tax_amount") @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([creditNoteId], map: "credit_note_line_by_credit_note")
+  @@map("credit_note_line")
 }
 
 // ---------------------------------------------------------------------------
@@ -4342,6 +4439,9 @@ enum DocumentKind {
   /// DOC-111, DOC-113. Composed on demand and never archived: no
   /// `document_render` row can be of this kind (it has no subject column).
   ENCOUNTER_SUMMARY
+  /// SRI-089. The RIDE of a credit note, on the INVOICE_RIDE template: no
+  /// `document_template` row is of this kind.
+  CREDIT_NOTE_RIDE
 
   @@map("document_kind")
 }
@@ -4508,10 +4608,10 @@ model DocumentRender {
   /// prescription freezing the DCI while holding `concept_id`.
   templateVersion Int @map("template_version")
 
-  /// DOC-003. EXACTLY ONE of the four (`document_render_one_subject`), and it
+  /// DOC-003. EXACTLY ONE of the five (`document_render_one_subject`), and it
   /// has to match `kind` (`document_render_kind_matches_subject`).
   ///
-  /// FOUR COLUMNS AND NOT A `(type, id)` PAIR: with real columns there are real
+  /// REAL COLUMNS AND NOT A `(type, id)` PAIR: with real columns there are real
   /// foreign keys, so the archive can never point at a prescription that does
   /// not exist. A polymorphic pair has none, and the day a row is removed the
   /// archive points at nothing and nothing complains.
@@ -4526,6 +4626,10 @@ model DocumentRender {
 
   invoiceId String?  @map("invoice_id") @db.Uuid
   invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_render_invoice_fk")
+
+  /// SRI-089. The fifth subject: the RIDE of a credit note.
+  creditNoteId String?     @map("credit_note_id") @db.Uuid
+  creditNote   CreditNote? @relation(fields: [creditNoteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_render_credit_note_fk")
 
   /// DOC-012. The site the subject belongs to, copied so the scope filter does
   /// not have to join four tables to answer «is this one of mine?».
@@ -4558,6 +4662,7 @@ model DocumentRender {
 
   @@index([prescriptionId], map: "document_render_by_prescription")
   @@index([invoiceId], map: "document_render_by_invoice")
+  @@index([creditNoteId], map: "document_render_by_credit_note")
   @@index([siteId, issuedAt(sort: Desc)], map: "document_render_by_site")
   @@map("document_render")
 }
@@ -4590,10 +4695,15 @@ model DocumentCounter {
 model ElectronicVoucher {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
-  invoiceId String  @unique(map: "electronic_voucher_one_per_invoice") @map("invoice_id") @db.Uuid
-  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_invoice_fk")
-  siteId    String  @map("site_id") @db.Uuid
-  site      Site    @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_site_fk")
+  /// SRI-086. Of an invoice OR of a credit note, exactly one
+  /// (`electronic_voucher_one_document`), with its type: `01` the invoice,
+  /// `04` the credit note (`electronic_voucher_type_matches_its_document`).
+  invoiceId    String?     @unique(map: "electronic_voucher_one_per_invoice") @map("invoice_id") @db.Uuid
+  invoice      Invoice?    @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_invoice_fk")
+  creditNoteId String?     @unique(map: "electronic_voucher_one_per_credit_note") @map("credit_note_id") @db.Uuid
+  creditNote   CreditNote? @relation(fields: [creditNoteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_credit_note_fk")
+  siteId       String      @map("site_id") @db.Uuid
+  site         Site        @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_site_fk")
 
   documentType  String @default("01") @map("document_type") @db.Char(2)
   /// SRI-005. Never regenerated — not on a retry, not on 43, not on 70.
@@ -4631,6 +4741,7 @@ model ElectronicVoucher {
   openings SigningCertificateOpening[]
 
   @@unique([invoiceId, accessKey], map: "electronic_voucher_invoice_key_pair")
+  @@unique([creditNoteId, accessKey], map: "electronic_voucher_credit_note_key_pair")
   @@unique([id, accessKey], map: "electronic_voucher_id_key_pair")
   @@index([siteId, status], map: "electronic_voucher_by_site_status")
   @@map("electronic_voucher")

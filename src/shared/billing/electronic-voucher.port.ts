@@ -19,8 +19,25 @@
  */
 export interface ElectronicVoucherPreparer {
   prepare(invoiceId: string): Promise<void>;
+  /** SRI-085, SRI-087. The same for an issued credit note; never throws. */
+  prepareCreditNote(creditNoteId: string): Promise<void>;
 }
 export const ELECTRONIC_VOUCHER_PREPARER = Symbol('ElectronicVoucherPreparer');
+
+/**
+ * SRI-090 (D-093 B). After `billing` corrects the receiver or the payment
+ * method of an invoice the SRI returned or did not authorise, `sri`
+ * recomposes its XML with the new data AND THE SAME KEY, signs it and sends
+ * it — what «Reenviar» does (SRI-058), called from the correction.
+ *
+ * Unlike `prepare`, it says whether it could: the correction is already
+ * committed and versioned, and if the voucher could not be re-sent now the
+ * invoice stays returned on the screen, with «Reenviar» at hand.
+ */
+export interface ElectronicVoucherResender {
+  resendInvoice(invoiceId: string): Promise<boolean>;
+}
+export const ELECTRONIC_VOUCHER_RESENDER = Symbol('ElectronicVoucherResender');
 
 /**
  * SRI-060. The electronic state of each invoice, as `billing` shows it.
@@ -52,6 +69,10 @@ export interface ElectronicVoucherStatusReader {
   /** Invoices with no voucher are simply absent from the map. */
   summariesOf(
     invoiceIds: readonly string[],
+  ): Promise<Map<string, ElectronicVoucherSummary>>;
+  /** SRI-088. Credit notes with no voucher are absent from the map. */
+  summariesOfCreditNotes(
+    creditNoteIds: readonly string[],
   ): Promise<Map<string, ElectronicVoucherSummary>>;
 }
 export const ELECTRONIC_VOUCHER_STATUS = Symbol(

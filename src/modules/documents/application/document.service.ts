@@ -36,13 +36,15 @@ import {
 } from '../domain/document-supersession';
 import { SAMPLE_MARK, sampleSubject } from '../domain/document-samples';
 import {
-  DOCUMENT_KINDS,
+  TEMPLATE_KINDS,
   isClinicalDocumentKind,
+  templateKindOf,
 } from '../domain/document-kind';
 import type {
   ClinicalDocumentKind,
   DocumentKind,
   SiteScopeFilter,
+  TemplateKind,
 } from '../domain/document-kind';
 import type { DocumentTemplate, TemplateSlots } from '../domain/document-template'; // prettier-ignore
 
@@ -58,7 +60,7 @@ export interface Requester {
 
 /**
  * Which document of which subject: one kind and the id of its prescription,
- * order, certificate or invoice (DOC-003).
+ * order, certificate, invoice or credit note (DOC-003).
  */
 export interface RenderRequest {
   kind: DocumentKind;
@@ -401,7 +403,7 @@ export class DocumentService {
 
   /** DOC-030, DOC-034 to DOC-036. Publishes the next version of a kind. */
   async publishTemplate(
-    kind: DocumentKind,
+    kind: TemplateKind,
     slots: TemplateSlots,
     requester: Requester,
   ): Promise<DocumentTemplate> {
@@ -416,7 +418,8 @@ export class DocumentService {
   /**
    * DOC-039. One identity for the four classes (D-095.3): the next version of
    * each, in one transaction, so no receta goes out with the new colour while
-   * the certificate still carries the old one.
+   * the certificate still carries the old one. Every kind that HAS a template:
+   * the credit note's RIDE borrows the invoice's (SRI-089).
    */
   async publishTemplateForAllKinds(
     slots: TemplateSlots,
@@ -424,7 +427,7 @@ export class DocumentService {
   ): Promise<DocumentTemplate[]> {
     assertSlotsAreValid(slots);
     return this.documents.publishTemplates(
-      DOCUMENT_KINDS.map((kind) => ({
+      TEMPLATE_KINDS.map((kind) => ({
         ...slots,
         kind,
         publishedById: requester.userId,
@@ -438,7 +441,7 @@ export class DocumentService {
    * and nothing is audited — no person's data leaves in it.
    */
   async previewTemplate(
-    kind: DocumentKind,
+    kind: TemplateKind,
     slots: TemplateSlots,
   ): Promise<RenderedDocument> {
     assertSlotsAreValid(slots);
@@ -504,9 +507,15 @@ export class DocumentService {
     const context = await this.sources.contextForSite(siteId);
     if (context === null) throw new DocumentSubjectNotFoundError();
 
-    const template = await this.documents.findCurrentTemplate(request.kind);
+    // SRI-089. The credit note's RIDE is composed with the INVOICE RIDE's
+    // current template: one visual identity (D-095.3), and no second template
+    // the administration would have to keep in step with the first. The row
+    // it files still says CREDIT_NOTE_RIDE and points at the credit note;
+    // only the letterhead is borrowed, and its id and version are recorded.
+    const templateKind = templateKindOf(request.kind);
+    const template = await this.documents.findCurrentTemplate(templateKind);
     if (template === null) {
-      throw new DocumentTemplateNotPublishedError(request.kind);
+      throw new DocumentTemplateNotPublishedError(templateKind);
     }
 
     const images: LayoutImages = {
@@ -568,6 +577,7 @@ function signerOf(subject: DocumentSubject) {
       // DOC-115 (D-139.4). Nobody signs the summary: no seal travels with it.
       return null;
     case 'INVOICE_RIDE':
+    case 'CREDIT_NOTE_RIDE':
       // A tax document is not signed by a practitioner. Returning `null` rather
       // than reaching for «somebody» is what keeps a doctor's seal off an
       // invoice.
@@ -596,6 +606,14 @@ function assertIssuable(subject: DocumentSubject): void {
       // The RIDE of a `DRAFT` invoice has no sequential and no access key: it
       // is not a voucher, it is a quotation with the wrong title.
       if (subject.data.status === 'DRAFT') {
+        throw new DocumentSubjectNotIssuableError(subject.data.status);
+      }
+      return;
+    case 'CREDIT_NOTE_RIDE':
+      // SRI-089, SRI-071. A credit note is written already issued, with its
+      // number: issued, authorised or refused, its RIDE says which. Any other
+      // state is one nobody thought about yet.
+      if (!['ISSUED', 'AUTHORISED', 'REJECTED'].includes(subject.data.status)) {
         throw new DocumentSubjectNotIssuableError(subject.data.status);
       }
       return;

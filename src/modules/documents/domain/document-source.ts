@@ -236,6 +236,38 @@ export interface InvoicePrintData {
   total: string;
 }
 
+/**
+ * SRI-089. Everything the RIDE of a credit note prints: the values FROZEN in
+ * the credit note, never the invoice's current ones.
+ */
+export interface CreditNotePrintData {
+  subjectId: string;
+  siteId: string;
+  /** Its own series and sequential, from its access key once there is one. */
+  documentNumber: string;
+  accessKey: string | null;
+  /** `ISSUED`, `AUTHORISED` or `REJECTED`: a credit note is never a draft. */
+  status: string;
+  issuedAt: Date | null;
+  /** Its voucher's `authorised_at`; `null` until the SRI authorises it. */
+  authorisedAt: Date | null;
+  buyerIdentificationType: string;
+  buyerIdentification: string;
+  buyerName: string;
+  buyerEmail: string | null;
+  /** The text of `<motivo>`, as the voucher carries it. */
+  reason: string;
+  /** The invoice it modifies: its printed number and its date of issue. */
+  modifiedDocument: { number: string; issuedAt: Date | null };
+  lines: readonly InvoiceLine[];
+  subtotalTaxed: string;
+  subtotalUntaxed: string;
+  discountTotal: string;
+  taxTotal: string;
+  /** The credit note's `amount`: its total, `valorModificacion`. */
+  total: string;
+}
+
 /** What every document needs before it can be composed. */
 export interface DocumentContext {
   establishment: EstablishmentIdentity;
@@ -311,7 +343,8 @@ export type DocumentSubject =
   | { kind: 'SERVICE_ORDER'; data: ServiceOrderPrintData }
   | { kind: 'MEDICAL_CERTIFICATE'; data: CertificatePrintData }
   | { kind: 'INVOICE_RIDE'; data: InvoicePrintData }
-  | { kind: 'ENCOUNTER_SUMMARY'; data: EncounterSummaryPrintData };
+  | { kind: 'ENCOUNTER_SUMMARY'; data: EncounterSummaryPrintData }
+  | { kind: 'CREDIT_NOTE_RIDE'; data: CreditNotePrintData };
 
 /** One subject, looked up within the caller's own site scope (DOC-012). */
 export interface SubjectQuery {

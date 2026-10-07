@@ -144,6 +144,31 @@ const rideSubject = (): DocumentSubject => ({
   },
 });
 
+const creditNoteSubject = (status = 'ISSUED'): DocumentSubject => ({
+  kind: 'CREDIT_NOTE_RIDE',
+  data: {
+    subjectId: 'credit-note-1',
+    siteId: 'site-1',
+    documentNumber: '001-001-000000002',
+    accessKey: null,
+    status,
+    issuedAt: new Date(),
+    authorisedAt: null,
+    buyerIdentificationType: '05',
+    buyerIdentification: '1710034065',
+    buyerName: 'Guamán Andrade María José',
+    buyerEmail: null,
+    reason: 'Error en los datos del receptor',
+    modifiedDocument: { number: '001-001-000000001', issuedAt: new Date() },
+    lines: [],
+    subtotalTaxed: '0.00',
+    subtotalUntaxed: '0.00',
+    discountTotal: '0.00',
+    taxTotal: '0.00',
+    total: '0.00',
+  },
+});
+
 class FakeRepository implements DocumentRepository {
   readonly renders: (DocumentRenderSummary & { content: Buffer })[] = [];
   readonly disclosures: DisclosureRecord[] = [];
@@ -613,6 +638,94 @@ describe('DOC-006 reimprimir es servir los bytes guardados', () => {
       requester,
     );
     expect(history).toHaveLength(2);
+  });
+});
+
+describe('SRI-089 el RIDE de la nota de crédito', () => {
+  const invoiceTemplate: DocumentTemplate = {
+    ...template,
+    kind: 'INVOICE_RIDE',
+    id: 'template-ride',
+    version: 4,
+  };
+
+  it('SRI-089 se emite y archiva con la plantilla vigente del RIDE de la factura', async () => {
+    sources.subject = creditNoteSubject();
+    repository.templates = [invoiceTemplate];
+
+    const stored = await service.emit(
+      { kind: 'CREDIT_NOTE_RIDE', subjectId: 'credit-note-1' },
+      requester,
+    );
+
+    expect(stored).toMatchObject({
+      kind: 'CREDIT_NOTE_RIDE',
+      subjectId: 'credit-note-1',
+      siteId: 'site-1',
+      templateVersion: 4,
+    });
+    expect(renderer.calls[0]?.layout.frame.title).toBe('NOTA DE CRÉDITO');
+    // A tax document: no row in the clinical access trail (DOC-091).
+    expect(repository.disclosures).toHaveLength(0);
+  });
+
+  it('SRI-089 DOC-037 sin plantilla del RIDE de la factura no se inventa una', async () => {
+    sources.subject = creditNoteSubject();
+    repository.templates = [template];
+
+    await expect(
+      service.emit(
+        { kind: 'CREDIT_NOTE_RIDE', subjectId: 'credit-note-1' },
+        requester,
+      ),
+    ).rejects.toThrow(DocumentTemplateNotPublishedError);
+    expect(repository.renders).toHaveLength(0);
+  });
+
+  it('SRI-089 DOC-014 archiva la emitida, la autorizada y la no autorizada, y nada más', async () => {
+    repository.templates = [invoiceTemplate];
+    for (const status of ['ISSUED', 'AUTHORISED', 'REJECTED']) {
+      sources.subject = creditNoteSubject(status);
+      await expect(
+        service.emit(
+          { kind: 'CREDIT_NOTE_RIDE', subjectId: 'credit-note-1' },
+          requester,
+        ),
+      ).resolves.toMatchObject({ kind: 'CREDIT_NOTE_RIDE' });
+    }
+
+    sources.subject = creditNoteSubject('DRAFT');
+    await expect(
+      service.emit(
+        { kind: 'CREDIT_NOTE_RIDE', subjectId: 'credit-note-1' },
+        requester,
+      ),
+    ).rejects.toThrow(DocumentSubjectNotIssuableError);
+  });
+
+  it('SRI-089 DOC-090 no se sirve por la puerta clínica, sí por la del RIDE', async () => {
+    sources.subject = creditNoteSubject();
+    repository.templates = [invoiceTemplate];
+    const ride = await service.emit(
+      { kind: 'CREDIT_NOTE_RIDE', subjectId: 'credit-note-1' },
+      requester,
+    );
+
+    await expect(
+      service.content(ride.id, CLINICAL_DOCUMENT_KINDS, requester),
+    ).rejects.toThrow(DocumentRenderNotFoundError);
+    await expect(
+      service.content(ride.id, ['INVOICE_RIDE', 'CREDIT_NOTE_RIDE'], requester),
+    ).resolves.toMatchObject({ kind: 'CREDIT_NOTE_RIDE' });
+  });
+
+  it('SRI-089 DOC-039 publicar la identidad no crea una plantilla de la nota de crédito', async () => {
+    const published = await service.publishTemplateForAllKinds(
+      slots,
+      requester,
+    );
+    expect(published.map((one) => one.kind)).not.toContain('CREDIT_NOTE_RIDE');
+    expect(published.map((one) => one.kind)).toContain('INVOICE_RIDE');
   });
 });
 

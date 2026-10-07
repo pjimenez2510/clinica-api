@@ -8,7 +8,9 @@ import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/pri
 
 import { BillingCatalogueController } from './billing-catalogue.controller';
 import { BillingController } from './billing.controller';
+import { CreditNoteController } from './credit-note.controller';
 import { ChargeCorrectionService } from './application/charge-correction.service';
+import { CreditNoteService } from './application/credit-note.service';
 import { EncounterCheckoutService } from './application/encounter-checkout.service';
 import { InvoicingService } from './application/invoicing.service';
 import { PatientAccountService } from './application/patient-account.service';
@@ -19,8 +21,10 @@ import {
   BILLING_CATALOGUE_REPOSITORY,
 } from './domain/billing.repository';
 import { CLINICAL_ACTS_REPOSITORY } from './domain/clinical-acts.port';
+import { CREDIT_NOTE_REPOSITORY } from './domain/credit-note.repository';
 import { PrismaBillingAccountRepository } from './infrastructure/prisma-billing-account.repository';
 import { PrismaClinicalActsRepository } from './infrastructure/prisma-clinical-acts.repository';
+import { PrismaCreditNoteRepository } from './infrastructure/prisma-credit-note.repository';
 import { PrismaBillingCatalogueRepository } from './infrastructure/prisma-billing-catalogue.repository';
 
 /**
@@ -60,7 +64,11 @@ import { PrismaBillingCatalogueRepository } from './infrastructure/prisma-billin
  */
 @Global()
 @Module({
-  controllers: [BillingCatalogueController, BillingController],
+  controllers: [
+    BillingCatalogueController,
+    BillingController,
+    CreditNoteController,
+  ],
   providers: [
     ChargeCorrectionService,
     /**
@@ -74,6 +82,9 @@ import { PrismaBillingCatalogueRepository } from './infrastructure/prisma-billin
     PricingService,
     PatientAccountService,
     InvoicingService,
+    // BI-208 to BI-214. Undoing a document is another act, with its own
+    // permission (BI-091): a sixth service, not more methods of the fifth.
+    CreditNoteService,
     EncounterCheckoutService,
     CurrentUserService,
     { provide: ACCESS_AUDIT_RECORDER, useClass: PrismaAccessAuditRecorder },
@@ -92,6 +103,7 @@ import { PrismaBillingCatalogueRepository } from './infrastructure/prisma-billin
      * module imports another, and the port this satisfies has no write method,
      * so «what was done» can never be edited from the money side (BI-004).
      */
+    { provide: CREDIT_NOTE_REPOSITORY, useClass: PrismaCreditNoteRepository },
     {
       provide: CLINICAL_ACTS_REPOSITORY,
       useClass: PrismaClinicalActsRepository,
