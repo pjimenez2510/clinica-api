@@ -123,16 +123,51 @@ export function exactAllergyMatches(
  */
 export type SubstanceKeys = ReadonlyMap<string, readonly string[]>;
 
-/** PR-114. `[code, ...attributes.replaces]`, without blanks or repeats. */
-export function substanceKeysOf(code: string, attributes: unknown): string[] {
-  const replaces =
-    typeof attributes === 'object' && attributes !== null
-      ? (attributes as { replaces?: unknown }).replaces
-      : undefined;
-  const others = Array.isArray(replaces)
-    ? replaces.filter(
-        (value): value is string => typeof value === 'string' && value !== '',
-      )
-    : [];
-  return [...new Set([code, ...others])];
+/**
+ * PR-114. The key of an active substance: its DCI without accents, case or
+ * extra spaces. The CNMB files one substance under several codes (acetylsalicylic
+ * acid is `B01AC06` at 100 mg and `N02BA01` at 500 mg; metronidazole three
+ * times), and an allergy to it is an allergy to all of them. The importer
+ * writes the same key in `attributes.substances` (`catalogs/import/cnmb.ts`).
+ */
+export function substanceKeyOf(dci: string): string {
+  const plain = dci
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+  return `dci:${plain}`;
+}
+
+/**
+ * PR-114. The keys of one CNMB concept: its code, the codes it replaces and
+ * the active substances it declares — or, when it declares none (the
+ * development cuadro), the substance its name is. No blanks, no repeats.
+ */
+export function substanceKeysOf(concept: {
+  code: string;
+  display: string;
+  attributes: unknown;
+}): string[] {
+  const attributes =
+    typeof concept.attributes === 'object' && concept.attributes !== null
+      ? (concept.attributes as { replaces?: unknown; substances?: unknown })
+      : {};
+  const strings = (value: unknown) =>
+    Array.isArray(value)
+      ? value.filter(
+          (item): item is string => typeof item === 'string' && item !== '',
+        )
+      : [];
+  const substances = strings(attributes.substances);
+  return [
+    ...new Set([
+      concept.code,
+      ...strings(attributes.replaces),
+      ...(substances.length > 0
+        ? substances
+        : [substanceKeyOf(concept.display)]),
+    ]),
+  ];
 }

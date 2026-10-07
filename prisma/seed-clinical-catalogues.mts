@@ -132,6 +132,7 @@ export async function importCnmb(
             // Plain JSON: the interface has no index signature Prisma can see.
             presentations:
               medicine.presentations as unknown as Prisma.InputJsonArray,
+            substances: medicine.substances,
             ...(medicine.controlled ? { controlled: true } : {}),
             ...(medicine.replaces.length > 0
               ? { replaces: medicine.replaces }

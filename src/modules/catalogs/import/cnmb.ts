@@ -39,6 +39,12 @@ export interface CnmbMedicine {
   controlled: boolean;
   /** PR-114. Codes of earlier cuadros that named this medicine. */
   replaces: string[];
+  /**
+   * PR-114. The active substances of its rows, as allergy keys: the same DCI
+   * under another code (acetylsalicylic acid, `B01AC06` and `N02BA01`) is the
+   * same substance. Written like `substanceKeyOf` in `prescription`.
+   */
+  substances: string[];
 }
 
 const HEADER = [
@@ -130,6 +136,11 @@ export const DEVELOPMENT_CODES: Readonly<Record<string, string>> = {
 /** Lower case, no accents: «Sólido» and «solido» are one form. */
 const plain = (value: string) =>
   value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+/** PR-114. `dci:` and the DCI without accents, case or extra spaces. */
+export function substanceKey(dci: string): string {
+  return `dci:${plain(dci).replace(/\s+/g, ' ').trim()}`;
+}
 
 /**
  * PR-115. The forms of the prescription vocabulary a form of the cuadro
@@ -254,6 +265,7 @@ export function readCnmb(sheet: Sheet): CnmbMedicine[] {
       atcClass: first!.row[2]!,
       presentations,
       controlled: CONTROLLED_CODES.has(code),
+      substances: [...new Set(entries.map((entry) => substanceKey(entry.dci)))],
       replaces: Object.entries(DEVELOPMENT_CODES)
         .filter(([, successor]) => successor === code)
         .map(([development]) => development),

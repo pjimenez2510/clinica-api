@@ -104,4 +104,18 @@ describe('the CNMB 2026 (PR-114 to PR-116)', () => {
       readCnmb({ name: 'Medicamentos', rows: [['Codigo ATC', 'DCI']] }),
     ).toThrow(/Codigo medicamento/);
   });
+
+  it('PR-114: the same active substance under two codes carries the same key', () => {
+    const byCode = new Map(cuadro().map((m) => [m.code, m]));
+
+    expect(byCode.get('B01AC06')?.substances).toEqual(['dci:acido acetilsalicilico']); // prettier-ignore
+    expect(byCode.get('N02BA01')?.substances).toEqual(['dci:acido acetilsalicilico']); // prettier-ignore
+    for (const code of ['G01AF01', 'J01XD01', 'P01AB01'])
+      expect(byCode.get(code)?.substances).toEqual(['dci:metronidazol']);
+    // Two products under one code keep both.
+    expect(byCode.get('N05AD01')?.substances).toEqual([
+      'dci:haloperidol',
+      'dci:haloperidol decanoato',
+    ]);
+  });
 });

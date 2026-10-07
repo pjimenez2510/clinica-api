@@ -1221,12 +1221,9 @@ async function substanceKeysIn(
   if (conceptIds.length === 0) return new Map();
   const concepts = await client.catalogConcept.findMany({
     where: { id: { in: [...new Set(conceptIds)] }, system: { code: CNMB } },
-    select: { id: true, code: true, attributes: true },
+    select: { id: true, code: true, display: true, attributes: true },
   });
   return new Map(
-    concepts.map((concept) => [
-      concept.id,
-      substanceKeysOf(concept.code, concept.attributes),
-    ]),
+    concepts.map((concept) => [concept.id, substanceKeysOf(concept)]),
   );
 }

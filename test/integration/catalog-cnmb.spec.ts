@@ -295,6 +295,69 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
     expect(development.losartan.id).not.toBe((await official(prisma, 'C09CA01')).id); // prettier-ignore
   });
 
+  it('PR-114: the same substance under another code of the cuadro refuses the issue: metronidazole and acetylsalicylic acid', async () => {
+    const prisma = db();
+    const system = await prisma.catalogSystem.create({
+      data: { code: 'CNMB', name: 'CNMB' },
+    });
+    const aspirinDev = await prisma.catalogConcept.create({
+      data: {
+        systemId: system.id,
+        code: 'ACIDO-ACETILSALICILICO',
+        display: 'Ácido acetilsalicílico',
+        validFrom: new Date(Date.UTC(CUTOVER.getUTCFullYear(), 0, 1)),
+      },
+    });
+    await importCnmb(prisma, { now: new Date(), effectiveFrom: CUTOVER });
+    const { patient, encounter, who } = await anAttention(prisma);
+    const allergyTo = async (conceptId: string, text: string) =>
+      prisma.patientAllergy.create({
+        data: {
+          recordedById: (await createUser(prisma)).id,
+          patientId: patient.id,
+          substanceConceptId: conceptId,
+          substanceText: text,
+          criticality: 'HIGH',
+        },
+      });
+    // Recorded against the parenteral metronidazole, and against the
+    // acetylsalicylic acid of the development cuadro (successor B01AC06).
+    await allergyTo((await official(prisma, 'J01XD01')).id, 'Metronidazol');
+    await allergyTo(aspirinDev.id, 'Ácido acetilsalicílico');
+    const service = serviceOf(prisma);
+
+    for (const [code, concentration] of [
+      ['P01AB01', '500 mg'],
+      ['N02BA01', '500 mg'],
+    ] as const) {
+      const composed = await service.compose(
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine((await official(prisma, code)).id, 'TABLET', concentration)], // prettier-ignore
+        },
+        who,
+      );
+      expect(composed.allergyAlerts, code).toHaveLength(1);
+      await expect(
+        service.issue(composed.prescription.id, who),
+      ).rejects.toMatchObject({ code: 'ALLERGY_CONTRAINDICATION' });
+    }
+
+    // Positive control: paracetamol, by the same path, issues.
+    const other = await service.compose(
+      {
+        encounterId: encounter.id,
+        ...INDICATIONS,
+        items: [aLine((await official(prisma, 'N02BE01')).id, 'TABLET', '500 mg')], // prettier-ignore
+      },
+      who,
+    );
+    await expect(
+      service.issue(other.prescription.id, who),
+    ).resolves.toMatchObject({ status: 'ACTIVE' });
+  });
+
   it('PR-116: the official morphine is not composed: it goes on the ACESS pad', async () => {
     const prisma = db();
     await importCnmb(prisma, { now: new Date(), effectiveFrom: CUTOVER });

@@ -1285,14 +1285,23 @@ expone lo que hace falta._
 ## 13. El CNMB oficial (REQ-054, D-084)
 
 - **PR-114** — El sistema DEBERÁ comparar una línea con las alergias del
-  paciente (PR-060) por el **código** del medicamento en el CNMB y por los
-  códigos a los que ese medicamento **sustituye** (`attributes.replaces`), y no
-  por el id del concepto.
+  paciente (PR-060) por el **código** del medicamento en el CNMB, por los
+  códigos a los que ese medicamento **sustituye** (`attributes.replaces`) y por
+  su **principio activo** (la DCI sin tildes ni mayúsculas,
+  `attributes.substances`; el nombre, si el concepto no las declara), y no por
+  el id del concepto.
   > Cada edición del cuadro crea conceptos nuevos (el catálogo es versionado):
   > una alergia registrada contra la versión anterior de la amoxicilina tiene
   > que saltar al recetar la nueva. Comparando ids, la primera carga del CNMB
   > oficial habría apagado todas las alergias registradas. `replaces` lleva
   > los códigos del cuadro de desarrollo (`ENALAPRIL` → `C09AA02`).
+  >
+  > El principio activo, porque el cuadro reparte una misma sustancia en
+  > varios códigos —el ácido acetilsalicílico es `B01AC06` (100 mg) y
+  > `N02BA01` (500 mg); el metronidazol, tres—: con el cuadro de desarrollo
+  > eran un concepto y la alerta saltaba. Una sal o un éster distinto
+  > («Hidrocortisona» frente a «Hidrocortisona, succinato sódico») y los
+  > componentes de una combinación no casan: es D-147 bis en D-148.
 
 - **PR-115** — Una presentación del CNMB DEBERÁ declarar las **formas del
   vocabulario de la receta** que admite (`forms`) y el nombre de su forma en

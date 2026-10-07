@@ -126,9 +126,9 @@ describe('la comprobación de alergia', () => {
     const OLD = 'concept-enalapril-dev';
     const NEW = 'concept-enalapril-2026';
     const keys = new Map([
-      [OLD, substanceKeysOf('ENALAPRIL', null)],
-      [NEW, substanceKeysOf('C09AA02', { replaces: ['ENALAPRIL'] })],
-      [IBUPROFEN, substanceKeysOf('M01AE01', null)],
+      [OLD, substanceKeysOf({ code: 'ENALAPRIL', display: 'Enalapril', attributes: null })], // prettier-ignore
+      [NEW, substanceKeysOf({ code: 'C09AA02', display: 'Enalapril', attributes: { replaces: ['ENALAPRIL'], substances: ['dci:enalapril'] } })], // prettier-ignore
+      [IBUPROFEN, substanceKeysOf({ code: 'M01AE01', display: 'Ibuprofeno', attributes: null })], // prettier-ignore
     ]);
 
     it('PR-114 avisa al recetar la edición nueva de un medicamento cuya alergia se registró contra la anterior', () => {
@@ -161,13 +161,38 @@ describe('la comprobación de alergia', () => {
       ).toEqual([]);
     });
 
-    it('PR-114 las claves son el código y los que sustituye, sin repetir ni vacíos', () => {
+    it('PR-114 las claves son el código, los que sustituye y sus principios activos, sin repetir ni vacíos', () => {
       expect(
-        substanceKeysOf('C09AA02', { replaces: ['ENALAPRIL', '', 7] }),
-      ).toEqual(['C09AA02', 'ENALAPRIL']);
-      expect(substanceKeysOf('M01AE01', { presentations: [] })).toEqual([
-        'M01AE01',
+        substanceKeysOf({
+          code: 'C09AA02',
+          display: 'Enalapril',
+          attributes: {
+            replaces: ['ENALAPRIL', '', 7],
+            substances: ['dci:enalapril', 3],
+          },
+        }),
+      ).toEqual(['C09AA02', 'ENALAPRIL', 'dci:enalapril']);
+      // Sin principios activos declarados (el cuadro de desarrollo), el nombre.
+      expect(
+        substanceKeysOf({ code: 'ACIDO-ACETILSALICILICO', display: 'Ácido  Acetilsalicílico', attributes: null }), // prettier-ignore
+      ).toEqual(['ACIDO-ACETILSALICILICO', 'dci:acido acetilsalicilico']);
+    });
+
+    it('PR-114 el mismo principio activo bajo dos códigos del cuadro es la misma sustancia', () => {
+      // El cuadro reparte el ácido acetilsalicílico en B01AC06 (100 mg) y
+      // N02BA01 (500 mg): la alergia a uno salta con el otro.
+      const aspirin = new Map([
+        ['b01ac06', substanceKeysOf({ code: 'B01AC06', display: 'Ácido acetilsalicílico', attributes: { substances: ['dci:acido acetilsalicilico'] } })], // prettier-ignore
+        ['n02ba01', substanceKeysOf({ code: 'N02BA01', display: 'Ácido acetilsalicílico', attributes: { substances: ['dci:acido acetilsalicilico'] } })], // prettier-ignore
+        ['dev', substanceKeysOf({ code: 'ACIDO-ACETILSALICILICO', display: 'Ácido acetilsalicílico', attributes: null })], // prettier-ignore
       ]);
+
+      expect(
+        exactAllergyMatches([{ line: 1, conceptId: 'n02ba01' }], [allergyTo('b01ac06')], aspirin), // prettier-ignore
+      ).toHaveLength(1);
+      expect(
+        exactAllergyMatches([{ line: 1, conceptId: 'n02ba01' }], [allergyTo('dev')], aspirin), // prettier-ignore
+      ).toHaveLength(1);
     });
   });
 });
