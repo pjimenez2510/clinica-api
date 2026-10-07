@@ -818,7 +818,9 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     // DOC-116 (D-157.2). Asked only over an empty chart, through THE
     // statement the attention's band and the receta's screen read: a second
     // copy of «sigue en pie» is how the paper would say «sin alergias
-    // conocidas» where the band says «no registradas».
+    // conocidas» where the band says «no registradas». An ABSORBED chart
+    // answers `null` there (PR-118, D-169.2): «no registradas», never the
+    // survivor's assertion printed over the duplicate's attention.
     const standing =
       allergies.length === 0
         ? await findStandingAllergyAbsence(this.prisma, row.encounter.patientId)

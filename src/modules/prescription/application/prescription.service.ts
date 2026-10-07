@@ -214,9 +214,10 @@ export class PrescriptionService {
 
     /**
      * PR-062, PR-067, PR-118. The allergies of the attention's surviving chart
-     * AND of every chart it absorbed, informative at this point. Read AFTER the write on purpose: the
-     * draft exists either way, and the alert is about what was actually
-     * written, with the DCI frozen from the concept the adapter resolved.
+     * AND of every chart it absorbed, informative at this point. Read AFTER
+     * the write on purpose: the draft exists either way, and the alert is
+     * about what was actually written, with the DCI frozen from the concept
+     * the adapter resolved.
      */
     const allergies = await this.allergies.activeForSurvivorOf(
       encounter.patientId,
@@ -729,6 +730,10 @@ export class PrescriptionService {
      */
     const allergies = await this.allergies.activeForSurvivorOf(source.chartId);
     // PR-117. Asked only over an empty chart: with an allergy it is not said.
+    // Asked of the attention's chart and not the survivor's on purpose: an
+    // ABSORBED chart answers `null` («no registradas», the safe side; see
+    // `findStandingAllergyAbsence`), and the survivor's assertion was never
+    // made about the duplicate's attention (D-169.2).
     const noKnownAllergies =
       allergies.length === 0
         ? await this.absences.standingAbsenceFor(source.chartId)

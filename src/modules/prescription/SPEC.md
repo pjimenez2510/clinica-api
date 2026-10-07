@@ -867,7 +867,8 @@ Hay tres niveles de comprobación y **sólo el primero se construye**:
   > la transacción de la emisión. El lector compartido usa el cliente del pool,
   > así que su sentencia correría **fuera** de esa transacción —una lectura que
   > la escritura no ve, que es exactamente la carrera que la emisión cierra—.
-  > Corre sobre `tx` con el mismo predicado: `chartScope` más `refutedAt: null`.
+  > Corre sobre `tx` con el mismo predicado que el puerto de la receta:
+  > `chartScopeOfSurvivor` (PR-118) más `refutedAt: null`.
 
 - **PR-118** — SI la ficha de la atención ha sido **absorbida** por otra,
   ENTONCES el sistema DEBERÁ leer las alergias de la receta —al componer y al
@@ -1515,7 +1516,9 @@ Ninguna es una migración correctiva: la base está en fase `development`
   lleva `MEDICO` en `default-roles.ts`. No hay que crearlo.
 - **`ActiveAllergyReader` ya existe** en `shared/clinical/patient-allergy.port.ts`
   con su adaptador `PrismaActiveAllergyReader`, resuelto con `chartScope` y
-  ordenado por criticidad. Este módulo lo **cablea**, no lo reescribe: dos
+  ordenado por criticidad. Este módulo cablea **ese mismo adaptador** bajo su
+  propio puerto, `SurvivingChartAllergyReader` (`activeForSurvivorOf`, con
+  `chartScopeOfSurvivor`, PR-118), y no lo reescribe: dos
   redacciones del mismo predicado son dos oportunidades de olvidar el enlace de
   la fusión.
 
