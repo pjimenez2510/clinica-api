@@ -119,9 +119,9 @@ export interface PrescriptionPrintData {
   verificationCode: string | null;
   /** PR-020, art. 5.a.i. Consecutive per site; `null` on a draft. */
   sequenceNumber: number | null;
-  /** PR-038, art. 5.e.iv — signos de alarma. */
+  /** PR-038, art. 5.e.iii — signos de alarma. */
   warningSigns: string | null;
-  /** PR-039, art. 5.e.v — recomendaciones no farmacológicas. */
+  /** PR-039, art. 5.e.iii — recomendaciones no farmacológicas. */
   nonPharmacologicalAdvice: string | null;
   patient: PatientIdentity;
   /** Art. 5.b.iii — the CIE of the attention, principal first. */
