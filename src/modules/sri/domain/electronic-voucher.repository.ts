@@ -45,10 +45,39 @@ export interface PreparationSource {
   paymentMethod: string | null;
 }
 
+/**
+ * The document a voucher is of (SRI-086): exactly one, and the database says
+ * so (`electronic_voucher_one_document`).
+ */
+export type VoucherDocument =
+  | { kind: 'INVOICE'; invoiceId: string }
+  | { kind: 'CREDIT_NOTE'; creditNoteId: string };
+
+/** SRI table 3, by the document. */
+export function documentTypeOf(document: VoucherDocument): '01' | '04' {
+  return document.kind === 'INVOICE' ? '01' : '04';
+}
+
+/**
+ * Everything an issued credit note offers to become a voucher (SRI-085): what
+ * was copied onto it when it was issued, the invoice it modifies as ITS key
+ * says, and the issuer as the installation says now — like the invoice's.
+ */
+export interface CreditNotePreparationSource extends Omit<
+  PreparationSource,
+  'invoiceId' | 'invoiceStatus' | 'paymentMethod'
+> {
+  creditNoteId: string;
+  creditNoteStatus: string;
+  reason: string;
+  /** The invoice's key: its series, sequential and date are read from it. */
+  modifiedInvoiceKey: string;
+}
+
 /** A voucher as the application handles it. */
 export interface VoucherRecord {
   id: string;
-  invoiceId: string;
+  document: VoucherDocument;
   siteId: string;
   accessKey: string;
   numericCode: string;
@@ -70,7 +99,7 @@ export interface VoucherRecord {
 export type DeliveryStatus = 'PENDING' | 'SENT' | 'NO_EMAIL' | 'FAILED';
 
 export interface NewVoucher {
-  invoiceId: string;
+  document: VoucherDocument;
   siteId: string;
   accessKey: string;
   numericCode: string;
@@ -103,7 +132,7 @@ export interface AttemptEffect {
   /** SRI-057. Applied only if the voucher is still in this status. */
   expectedStatus: VoucherStatus;
   status: VoucherStatus;
-  invoiceStatus: 'AUTHORISED' | 'REJECTED' | null;
+  documentStatus: 'AUTHORISED' | 'REJECTED' | null;
   lastMessages: SriMessage[] | null;
   nextAttemptAt: Date | null;
   authorisation: {
@@ -176,17 +205,23 @@ export interface VoucherStatusView {
 
 export interface ElectronicVoucherRepository {
   preparationSource(invoiceId: string): Promise<PreparationSource | null>;
+  /** SRI-085. `null` when the credit note does not exist. */
+  creditNotePreparationSource(
+    creditNoteId: string,
+  ): Promise<CreditNotePreparationSource | null>;
 
   /**
-   * SRI-001, SRI-005, SRI-007. Inserts the voucher AND writes its key on the
-   * invoice in one transaction. If another process prepared the same invoice
-   * first (`electronic_voucher_one_per_invoice`), returns THAT voucher: the
-   * key is never computed twice for one invoice.
+   * SRI-001, SRI-005, SRI-007, SRI-086. Inserts the voucher AND writes its
+   * key on its invoice or credit note in one transaction. If another process
+   * prepared the same document first (`electronic_voucher_one_per_invoice`,
+   * `…_one_per_credit_note`), returns THAT voucher: the key is never computed
+   * twice for one document.
    */
   create(voucher: NewVoucher): Promise<VoucherRecord>;
 
   findById(id: string): Promise<VoucherRecord | null>;
   findByInvoice(invoiceId: string): Promise<VoucherRecord | null>;
+  findByCreditNote(creditNoteId: string): Promise<VoucherRecord | null>;
   findByIdInSites(
     id: string,
     sites: readonly string[] | 'all',
@@ -207,8 +242,8 @@ export interface ElectronicVoucherRepository {
   ): Promise<void>;
 
   /**
-   * SRI-058. RETURNED / NOT_AUTHORISED → PREPARED with a recomposed XML, the
-   * invoice back to ISSUED. The key does not move (the database refuses).
+   * SRI-058. RETURNED / NOT_AUTHORISED → PREPARED with a recomposed XML, its
+   * invoice or credit note back to ISSUED. The key does not move (the database refuses).
    */
   reopen(id: string, unsignedXml: string): Promise<boolean>;
 
@@ -239,6 +274,8 @@ export interface ElectronicVoucherRepository {
     environment: SriEnvironment,
   ): Promise<{
     invoicesWithoutVoucher: string[];
+    /** SRI-087. The same, for credit notes. */
+    creditNotesWithoutVoucher: string[];
     unsigned: VoucherRecord[];
     inFlight: VoucherRecord[];
     undelivered: VoucherRecord[];

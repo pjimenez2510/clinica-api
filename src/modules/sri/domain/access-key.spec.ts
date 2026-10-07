@@ -134,6 +134,14 @@ describe('SRI-001 composición de la clave de acceso', () => {
     expect(key).toBe('2110201104179214673900110020010000000011234567812');
   });
 
+  it('SRI-085 lee de la clave de una nota de crédito su tipo y sus partes', () => {
+    const key = composeAccessKey({ ...PARTS, documentType: '04' });
+    expect(accessKeyParts(key)).toMatchObject({
+      documentType: '04',
+      sequential: PARTS.sequential,
+    });
+  });
+
   it('SRI-085 rechaza un tipo de comprobante que no se construye', () => {
     expect(() =>
       composeAccessKey({ ...PARTS, documentType: '05' as '04' }),

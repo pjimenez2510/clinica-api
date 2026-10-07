@@ -222,6 +222,9 @@ export class VoucherDispatchService {
     for (const invoiceId of work.invoicesWithoutVoucher) {
       await this.preparation.prepare(invoiceId);
     }
+    for (const creditNoteId of work.creditNotesWithoutVoucher) {
+      await this.preparation.prepareCreditNote(creditNoteId);
+    }
     // SC-084. One voucher that throws —a figure that does not add up, an
     // opening that cannot be written— is logged and skipped: it must not
     // stop the sweep from reaching the rest, every minute, for ever.
@@ -281,7 +284,7 @@ export class VoucherDispatchService {
     const applied = await this.vouchers.recordAttempt(voucher.id, attempt, {
       expectedStatus: voucher.status,
       status: transition.status,
-      invoiceStatus: transition.invoiceStatus,
+      documentStatus: transition.documentStatus,
       lastMessages: transition.lastMessages,
       nextAttemptAt: transition.next?.step === 'DELIVER' ? null : nextAttemptAt,
       authorisation,

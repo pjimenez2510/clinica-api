@@ -14,12 +14,19 @@ import {
   ELECTRONIC_VOUCHER_REPOSITORY,
   SIGNING_CERTIFICATE_REPOSITORY,
   VOUCHER_QUEUE,
+  type CreditNotePreparationSource,
   type ElectronicVoucherRepository,
   type PreparationSource,
   type SigningCertificateRepository,
   type VoucherQueue,
   type VoucherRecord,
 } from '../domain/electronic-voucher.repository';
+import {
+  composeCreditNoteXml,
+  CREDIT_NOTE_SCHEMA_VERSION,
+  documentNumber,
+  type CreditNoteVoucherSource,
+} from '../domain/credit-note-xml';
 import {
   composeInvoiceXml,
   INVOICE_SCHEMA_VERSION,
@@ -90,6 +97,17 @@ export function missingIssuerData(
  * certificate, a payment method or a head-office address must be signed with
  * what the installation says NOW. Once SIGNED, the bytes never change (SRI-031).
  */
+/**
+ * What a voucher of either document needs to be signed, read NOW: the
+ * installation's data to check (SRI-008) and the composer of its XML.
+ */
+interface Composable {
+  issuerCheck: Pick<PreparationSource, 'issuer' | 'establishmentCode'>;
+  /** SRI-017, BI-170. Only the invoice declares a payment method. */
+  missingPaymentMethod: boolean;
+  compose(accessKey: string): string;
+}
+
 /** SRI-019. What a voucher reads from its own key, not from the site. */
 const KEYED_DATA: readonly MissingIssuerDatum[] = [
   'ISSUER_RUC',
@@ -163,13 +181,75 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
     });
 
     const voucher = await this.vouchers.create({
-      invoiceId: source.invoiceId,
+      document: { kind: 'INVOICE', invoiceId: source.invoiceId },
       siteId: source.siteId,
       accessKey,
       numericCode,
       environment: this.settings.environment,
       schemaVersion: INVOICE_SCHEMA_VERSION,
       unsignedXml: composeInvoiceXml(this.voucherSource(source, accessKey)),
+      blockedReason: null,
+    });
+
+    return this.sign(voucher);
+  }
+
+  /** SRI-085. The port's credit-note half; never throws, like `prepare`. */
+  async prepareCreditNote(creditNoteId: string): Promise<void> {
+    try {
+      await this.prepareCreditNoteVoucher(creditNoteId);
+    } catch (error) {
+      this.logger.error(
+        {
+          err: error,
+          credit_note_id: creditNoteId,
+          error_code: 'SRI_PREPARATION_FAILED',
+        },
+        'the electronic voucher could not be prepared; the sweep will retry',
+      );
+    }
+  }
+
+  /**
+   * SRI-085. Creates the credit note's voucher —key with type `04`, its own
+   * series and sequential, the date of its issuance— and signs it if it can.
+   */
+  async prepareCreditNoteVoucher(
+    creditNoteId: string,
+  ): Promise<VoucherRecord | null> {
+    const existing = await this.vouchers.findByCreditNote(creditNoteId);
+    if (existing) {
+      if (existing.status === 'PREPARED') return this.sign(existing);
+      return existing;
+    }
+
+    const source =
+      await this.vouchers.creditNotePreparationSource(creditNoteId);
+    if (!source || source.creditNoteStatus !== 'ISSUED') return null;
+    if (missingIssuerData(source).length > 0) return null;
+
+    const numericCode = numericCodeFrom((max) => randomInt(max));
+    const accessKey = composeAccessKey({
+      issuedOn: clinicalDateOf(source.issuedAt),
+      documentType: '04',
+      ruc: source.issuer.ruc!,
+      environment: this.settings.environment,
+      establishmentCode: source.establishmentCode!,
+      emissionPointCode: source.emissionPointCode,
+      sequential: source.sequential,
+      numericCode,
+    });
+
+    const voucher = await this.vouchers.create({
+      document: { kind: 'CREDIT_NOTE', creditNoteId: source.creditNoteId },
+      siteId: source.siteId,
+      accessKey,
+      numericCode,
+      environment: this.settings.environment,
+      schemaVersion: CREDIT_NOTE_SCHEMA_VERSION,
+      unsignedXml: composeCreditNoteXml(
+        this.creditNoteSource(source, accessKey),
+      ),
       blockedReason: null,
     });
 
@@ -183,7 +263,7 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
   async sign(voucher: VoucherRecord): Promise<VoucherRecord> {
     if (voucher.status !== 'PREPARED') return voucher;
 
-    const source = await this.vouchers.preparationSource(voucher.invoiceId);
+    const source = await this.composableOf(voucher);
     if (!source) return voucher;
 
     // SRI-008, SRI-019. A datum of the issuer removed after the voucher was
@@ -191,14 +271,16 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
     // Only what does NOT come from the key: the RUC and the SRI code are in
     // it, and emptying the site's code must not block what is already keyed.
     if (
-      missingIssuerData(source).some((datum) => !KEYED_DATA.includes(datum))
+      missingIssuerData(source.issuerCheck).some(
+        (datum) => !KEYED_DATA.includes(datum),
+      )
     ) {
       return this.blocked(voucher, 'MISSING_ISSUER_DATA');
     }
 
     // SRI-017, BI-170. The cashier declares it; an older invoice without it
     // is not signed, and nothing here invents one.
-    if (source.paymentMethod === null) {
+    if (source.missingPaymentMethod) {
       return this.blocked(voucher, 'NO_PAYMENT_METHOD');
     }
 
@@ -208,9 +290,7 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
       return this.blocked(voucher, 'CERTIFICATE_NOT_VALID');
     }
 
-    const unsignedXml = composeInvoiceXml(
-      this.voucherSource(source, voucher.accessKey),
-    );
+    const unsignedXml = source.compose(voucher.accessKey);
 
     // SRI-024. Without the passphrase nothing opens: said, and with no
     // opening recorded for a decryption that never happened.
@@ -280,16 +360,44 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
     };
   }
 
-  /** SRI-058. The XML of a voucher, recomposed with its own key. */
+  /** SRI-058, SRI-090. The XML of a voucher, recomposed with its own key. */
   async recompose(voucher: VoucherRecord): Promise<string | null> {
-    const source = await this.vouchers.preparationSource(voucher.invoiceId);
+    const source = await this.composableOf(voucher);
     if (
       !source ||
-      missingIssuerData(source).some((datum) => !KEYED_DATA.includes(datum))
+      missingIssuerData(source.issuerCheck).some(
+        (datum) => !KEYED_DATA.includes(datum),
+      )
     ) {
       return null;
     }
-    return composeInvoiceXml(this.voucherSource(source, voucher.accessKey));
+    return source.compose(voucher.accessKey);
+  }
+
+  private async composableOf(
+    voucher: VoucherRecord,
+  ): Promise<Composable | null> {
+    const { document } = voucher;
+    if (document.kind === 'INVOICE') {
+      const source = await this.vouchers.preparationSource(document.invoiceId);
+      if (!source) return null;
+      return {
+        issuerCheck: source,
+        missingPaymentMethod: source.paymentMethod === null,
+        compose: (accessKey) =>
+          composeInvoiceXml(this.voucherSource(source, accessKey)),
+      };
+    }
+    const source = await this.vouchers.creditNotePreparationSource(
+      document.creditNoteId,
+    );
+    if (!source) return null;
+    return {
+      issuerCheck: source,
+      missingPaymentMethod: false,
+      compose: (accessKey) =>
+        composeCreditNoteXml(this.creditNoteSource(source, accessKey)),
+    };
   }
 
   private async blocked(
@@ -334,6 +442,46 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
       lines: source.lines,
       totals: source.totals,
       paymentMethod: source.paymentMethod,
+      softwareProviderRuc: this.settings.softwareProviderRuc,
+    };
+  }
+
+  /**
+   * SRI-019, SRI-085. Like `voucherSource`: what the credit note says about
+   * itself comes from its key, and the invoice it modifies is named as ITS key
+   * says — series, sequential and date — never as the site is today.
+   */
+  private creditNoteSource(
+    source: CreditNotePreparationSource,
+    accessKey: string,
+  ): CreditNoteVoucherSource {
+    const key = accessKeyParts(accessKey);
+    const modified = accessKeyParts(source.modifiedInvoiceKey);
+    return {
+      environment: key.environment,
+      accessKey,
+      issuer: {
+        ruc: key.ruc,
+        legalName: source.issuer.legalName!,
+        headOfficeAddress: source.issuer.headOfficeAddress!,
+        establishmentAddress: source.issuer.establishmentAddress,
+        keepsAccounting: source.issuer.keepsAccounting,
+        specialTaxpayerResolution: source.issuer.specialTaxpayerResolution,
+        withholdingAgentResolution: source.issuer.withholdingAgentResolution,
+        rimpeRegime: source.issuer.rimpeRegime,
+      },
+      establishmentCode: key.establishmentCode,
+      emissionPointCode: key.emissionPointCode,
+      sequential: key.sequential,
+      issuedOn: key.issuedOn,
+      buyer: source.buyer,
+      modifiedDocument: {
+        number: documentNumber(modified),
+        issuedOn: modified.issuedOn,
+      },
+      reason: source.reason,
+      lines: source.lines,
+      totals: source.totals,
       softwareProviderRuc: this.settings.softwareProviderRuc,
     };
   }

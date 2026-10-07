@@ -19,6 +19,8 @@
  */
 export interface ElectronicVoucherPreparer {
   prepare(invoiceId: string): Promise<void>;
+  /** SRI-085, SRI-087. The same for an issued credit note; never throws. */
+  prepareCreditNote(creditNoteId: string): Promise<void>;
 }
 export const ELECTRONIC_VOUCHER_PREPARER = Symbol('ElectronicVoucherPreparer');
 

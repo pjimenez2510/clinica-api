@@ -135,7 +135,7 @@ export function accessKeyParts(key: string): AccessKeyParts {
   }
   const documentType = key.slice(8, 10);
   const environment = key.slice(23, 24);
-  if (documentType !== '01')
+  if (documentType !== '01' && documentType !== '04')
     throw new InvalidAccessKeyPartError('documentType');
   if (environment !== '1' && environment !== '2') {
     throw new InvalidAccessKeyPartError('environment');

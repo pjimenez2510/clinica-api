@@ -24,7 +24,7 @@ describe('SRI-043 a SRI-046, SRI-050 lo que hace cada respuesta de recepción', 
       afterReception('SIGNED', { kind: 'RECIBIDA', messages: [] }, 1),
     ).toEqual({
       status: 'RECEIVED',
-      invoiceStatus: null,
+      documentStatus: null,
       lastMessages: [],
       next: { step: 'AUTHORISE', delaySeconds: 3 },
     });
@@ -37,7 +37,7 @@ describe('SRI-043 a SRI-046, SRI-050 lo que hace cada respuesta de recepción', 
       1,
     );
     expect(transition.status).toBe('RECEIVED');
-    expect(transition.invoiceStatus).toBeNull();
+    expect(transition.documentStatus).toBeNull();
     expect(transition.next?.step).toBe('AUTHORISE');
   });
 
@@ -51,7 +51,7 @@ describe('SRI-043 a SRI-046, SRI-050 lo que hace cada respuesta de recepción', 
       1,
     );
     expect(transition.status).toBe('RECEIVED');
-    expect(transition.invoiceStatus).toBeNull();
+    expect(transition.documentStatus).toBeNull();
   });
 
   it('SRI-045 DEVUELTA con 70 consulta con espera creciente y nunca reenvía', () => {
@@ -70,7 +70,7 @@ describe('SRI-043 a SRI-046, SRI-050 lo que hace cada respuesta de recepción', 
     expect(afterReception('SIGNED', { kind: 'DEVUELTA', messages }, 1)).toEqual(
       {
         status: 'RETURNED',
-        invoiceStatus: 'REJECTED',
+        documentStatus: 'REJECTED',
         lastMessages: messages,
         next: null,
       },
@@ -92,7 +92,7 @@ describe('SRI-043 a SRI-046, SRI-050 lo que hace cada respuesta de recepción', 
       ),
     ).toEqual({
       status: 'SIGNED',
-      invoiceStatus: null,
+      documentStatus: null,
       lastMessages: null,
       next: { step: 'SEND', delaySeconds: 60 },
     });
@@ -115,7 +115,7 @@ describe('SRI-047 a SRI-050 lo que hace cada respuesta de autorización', () => 
     );
     expect(transition).toMatchObject({
       status: 'AUTHORISED',
-      invoiceStatus: 'AUTHORISED',
+      documentStatus: 'AUTHORISED',
       next: { step: 'DELIVER', delaySeconds: 0 },
     });
   });
@@ -133,7 +133,7 @@ describe('SRI-047 a SRI-050 lo que hace cada respuesta de autorización', () => 
       ),
     ).toMatchObject({
       status: 'NOT_AUTHORISED',
-      invoiceStatus: 'REJECTED',
+      documentStatus: 'REJECTED',
       next: null,
     });
   });
@@ -158,7 +158,7 @@ describe('SRI-047 a SRI-050 lo que hace cada respuesta de autorización', () => 
     );
     expect(transition).toMatchObject({
       status: 'RECEIVED',
-      invoiceStatus: null,
+      documentStatus: null,
       next: { step: 'AUTHORISE', delaySeconds: 30 },
     });
 

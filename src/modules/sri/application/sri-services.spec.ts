@@ -106,7 +106,7 @@ const KEY = composeAccessKey({
 function voucher(overrides: Partial<VoucherRecord> = {}): VoucherRecord {
   return {
     id: 'voucher-1',
-    invoiceId: 'invoice-1',
+    document: { kind: 'INVOICE', invoiceId: 'invoice-1' },
     siteId: 'site-1',
     accessKey: KEY,
     numericCode: '00000001',
@@ -149,6 +149,8 @@ function fakes() {
   const vouchers = {
     preparationSource: vi.fn().mockResolvedValue(source()),
     findByInvoice: vi.fn().mockResolvedValue(null),
+    creditNotePreparationSource: vi.fn().mockResolvedValue(null),
+    findByCreditNote: vi.fn().mockResolvedValue(null),
     create: vi
       .fn()
       .mockImplementation((v: { accessKey: string }) =>
@@ -165,6 +167,7 @@ function fakes() {
     unblockForCertificate: vi.fn().mockResolvedValue(0),
     pendingWork: vi.fn().mockResolvedValue({
       invoicesWithoutVoucher: [],
+      creditNotesWithoutVoucher: [],
       unsigned: [],
       inFlight: [],
       undelivered: [],
@@ -559,6 +562,7 @@ describe('SRI-057 el despacho es idempotente', () => {
     const f = fakes();
     f.vouchers.pendingWork.mockResolvedValue({
       invoicesWithoutVoucher: [],
+      creditNotesWithoutVoucher: [],
       unsigned: [],
       inFlight: [
         voucher({
@@ -612,6 +616,7 @@ describe('SRI-057 el despacho es idempotente', () => {
     const f = fakes();
     f.vouchers.pendingWork.mockResolvedValue({
       invoicesWithoutVoucher: [],
+      creditNotesWithoutVoucher: [],
       unsigned: [voucher({ id: 'broken' })],
       inFlight: [voucher({ id: 'due', status: 'RECEIVED' })],
       undelivered: [],
