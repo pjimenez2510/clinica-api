@@ -17,6 +17,7 @@
  * is precisely the race those constraints exist to close.
  */
 
+import type { LateArrivalRow } from './late-arrival-metric';
 import type { BookingChannel, StoredSiteParameters } from './booking-policy';
 import type { Holiday } from './holiday-calendar';
 import type { NoShowCountRow } from './no-show-metric';
@@ -823,6 +824,12 @@ export interface AgendaRepository {
    * why it is the one filter this method is allowed to hold.
    */
   noShowCounts(query: NoShowCountsQuery): Promise<readonly NoShowCountRow[]>;
+  /**
+   * AG-141. The arrivals of appointments whose start falls in the window,
+   * with their site's current threshold — WALK_IN excluded: who came without
+   * an appointment had no hour to be late for.
+   */
+  lateArrivalRows(query: NoShowCountsQuery): Promise<LateArrivalRow[]>;
   /** AG-017, AG-018. Ordered by start instant. */
   dailyAgenda(query: DailyAgendaQuery): Promise<AgendaEntryView[]>;
   /** AG-027. `null` when no such chart exists — the insert then fails on the FK. */

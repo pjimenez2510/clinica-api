@@ -1,3 +1,5 @@
+import type { LateArrivalRow } from '../domain/late-arrival-metric';
+import { DEFAULT_LATE_ARRIVAL_GRACE_MINUTES } from '../domain/late-arrival';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
@@ -395,6 +397,55 @@ export class PrismaAgendaRepository implements AgendaRepository {
       bookingChannel: checkBookingChannel(cell.bookingChannel),
       status: cell.status,
       count: cell._count._all,
+    }));
+  }
+
+  /**
+   * AG-141. One row per arrival, read by the index on `starts_at`. The site's
+   * threshold comes with it: the CURRENT one, which is the question asked
+   * («¿cuántos llegarían tarde con la política de hoy?»).
+   */
+  async lateArrivalRows(query: NoShowCountsQuery): Promise<LateArrivalRow[]> {
+    if (query.untilExclusive.getTime() <= query.from.getTime()) return [];
+
+    const rows = await this.prisma.agendaEntry.findMany({
+      where: {
+        kind: 'APPOINTMENT',
+        startsAt: { gte: query.from, lt: query.untilExclusive },
+        checkedInAt: { not: null },
+        // Who came without an appointment had no hour to be late for: their
+        // «delay» is how long reception took to type it.
+        bookingChannel: { not: 'WALK_IN' },
+        ...(query.sites === 'all' ? {} : { siteId: { in: [...query.sites] } }),
+      },
+      select: {
+        siteId: true,
+        practitionerId: true,
+        startsAt: true,
+        checkedInAt: true,
+        site: {
+          select: {
+            name: true,
+            parameters: { select: { lateArrivalGraceMinutes: true } },
+          },
+        },
+        // The display name and nothing else of the account (AG-108).
+        practitioner: { select: { user: { select: { firstName: true, lastName: true } } } }, // prettier-ignore
+      },
+    });
+
+    return rows.map((row) => ({
+      siteId: row.siteId,
+      siteName: row.site.name,
+      practitionerId: row.practitionerId,
+      practitionerName:
+        `${row.practitioner.user.firstName} ${row.practitioner.user.lastName}`.trim(),
+      startsAt: row.startsAt,
+      // The `where` above is what makes this non-null.
+      checkedInAt: row.checkedInAt!,
+      graceMinutes:
+        row.site.parameters?.lateArrivalGraceMinutes ??
+        DEFAULT_LATE_ARRIVAL_GRACE_MINUTES,
     }));
   }
 

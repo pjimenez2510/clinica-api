@@ -22,6 +22,7 @@ import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/ro
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaClinicalNoteRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-note.repository';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
 import {
@@ -1157,6 +1158,90 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         where: { id: entryId },
       });
       expect(stored.status).toBe('IN_PROGRESS');
+    });
+  });
+
+  /**
+   * AG-141. Late arrival over a range, from rows written directly: two
+   * timestamps and the site's threshold, nothing typed.
+   */
+  describe('la llegada tardía de un periodo (AG-141)', () => {
+    async function arrivalAt(
+      startOffsetMinutes: number,
+      delayMinutes: number | null,
+      overrides: { bookingChannel?: 'PHONE' | 'WALK_IN'; site?: string } = {},
+    ): Promise<void> {
+      const startsAt = new Date(
+        Date.parse(PAST_SLOT.startsAt) + startOffsetMinutes * 60_000,
+      );
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          siteId: overrides.site ?? siteId,
+          practitionerId,
+          patientId,
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + 20 * 60_000),
+          bookingChannel: overrides.bookingChannel ?? 'PHONE',
+          createdById: userId,
+          ...(delayMinutes === null
+            ? {}
+            : {
+                status: 'CHECKED_IN',
+                checkedInAt: new Date(
+                  startsAt.getTime() + delayMinutes * 60_000,
+                ),
+                emergencyAssessedAt: new Date(
+                  startsAt.getTime() + delayMinutes * 60_000,
+                ),
+                emergencyAssessedById: userId,
+              }),
+        },
+      });
+    }
+
+    it('AG-141 sirve la mediana, las que pasan el umbral de la sede y su denominador, sin las sin cita', async () => {
+      await arrivalAt(0, -10);
+      await arrivalAt(20, 5);
+      await arrivalAt(40, 40);
+      // Control: an arrival WITHOUT an appointment does not count, nor one
+      // that nobody recorded, nor another site's for a receptionist of this one.
+      await arrivalAt(60, 90, { bookingChannel: 'WALK_IN' });
+      await arrivalAt(80, null);
+      await linkPractitionerToSite(prisma, practitionerId, otherSiteId);
+      await arrivalAt(100, 120, { site: otherSiteId });
+
+      const day = clinicalDateOf(new Date(PAST_SLOT.startsAt));
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/agenda/metrics/late-arrival?from=${day}&to=${day}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = response.body as {
+        overall: { arrivals: number; late: number; medianDelayMinutes: number };
+        bySite: { siteId: string }[];
+        byPractitioner: { practitionerId: string; arrivals: number }[];
+      };
+      expect(body.overall).toEqual({
+        arrivals: 3,
+        late: 1,
+        medianDelayMinutes: 5,
+      });
+      expect(body.bySite.map((site) => site.siteId)).toEqual([siteId]);
+      expect(body.byPractitioner).toEqual([
+        expect.objectContaining({ practitionerId, arrivals: 3 }),
+      ]);
+
+      // The threshold is the site's: at 45 minutes, nobody was late.
+      await prisma.siteParameter.update({
+        where: { siteId },
+        data: { lateArrivalGraceMinutes: 45 },
+      });
+      const wider = await request(app.getHttpServer())
+        .get(`/api/v1/agenda/metrics/late-arrival?from=${day}&to=${day}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect((wider.body as typeof body).overall.late).toBe(0);
     });
   });
 

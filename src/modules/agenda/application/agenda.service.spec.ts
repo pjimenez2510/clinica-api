@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { LateArrivalRow } from '../domain/late-arrival-metric';
+
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import { ServiceTypeNotFoundError } from '../../../shared/domain/errors/master-data.errors';
 import {
@@ -178,6 +180,7 @@ interface Recorded {
   daily: DailyAgendaQuery[];
   /** AG-080, AG-081: the scope and the window the metric asked storage for. */
   noShowQueries: NoShowCountsQuery[];
+  lateArrivalQueries: NoShowCountsQuery[];
   context: ScheduleContextQuery[];
   availability: AvailabilityContextQuery[];
   rooms: string[];
@@ -290,6 +293,8 @@ function repositoryDouble(
     editRead?: EditRead;
     /** AG-168: the versions storage answers. */
     versions?: AgendaEntryVersion[];
+    /** AG-141: the arrivals storage answers. */
+    lateArrivalRows?: LateArrivalRow[];
     /** AG-094, AG-095: what the site has stored, `null` when it has no row. */
     siteParameters?: StoredSiteParameters | null;
     /** AG-110: the rows of `holiday` the booked date could be closed by. */
@@ -315,6 +320,7 @@ function repositoryDouble(
   const recorded: Recorded = {
     daily: [],
     noShowQueries: [],
+    lateArrivalQueries: [],
     context: [],
     availability: [],
     rooms: [],
@@ -339,6 +345,10 @@ function repositoryDouble(
     noShowCounts: (query) => {
       recorded.noShowQueries.push(query);
       return Promise.resolve(overrides.noShowCounts ?? []);
+    },
+    lateArrivalRows: (query) => {
+      recorded.lateArrivalQueries.push(query);
+      return Promise.resolve(overrides.lateArrivalRows ?? []);
     },
     dailyAgenda: (query) => {
       recorded.daily.push(query);
@@ -2913,5 +2923,42 @@ describe('AG-080 la tasa de inasistencia', () => {
     expect(report.overall).toMatchObject({ noShow: 2, total: 10, rate: 0.2 });
     expect(report.bySite).toHaveLength(1);
     expect(report.byChannel).toHaveLength(1);
+  });
+});
+
+describe('AG-141 the late arrival of a range', () => {
+  it('AG-141 bounds the range as inclusive Ecuadorian days and does not close it at «now»', async () => {
+    const { service, recorded } = serviceWith({
+      lateArrivalRows: [
+        {
+          siteId: SITE,
+          siteName: 'Norte',
+          practitionerId: PRACTITIONER,
+          practitionerName: 'Ana Villacís',
+          startsAt: EIGHT,
+          checkedInAt: new Date(EIGHT.getTime() + 40 * 60_000),
+          graceMinutes: 15,
+        },
+      ],
+    });
+
+    const report = await service.lateArrival({
+      sites: [SITE],
+      from: DATE,
+      to: DATE,
+    });
+
+    const window = recorded.lateArrivalQueries[0];
+    expect(window?.sites).toEqual([SITE]);
+    // [00:00, 24:00) in Guayaquil: 05:00Z to 05:00Z.
+    expect(window?.from.toISOString().slice(11)).toBe('05:00:00.000Z');
+    expect(
+      (window!.untilExclusive.getTime() - window!.from.getTime()) / 3_600_000,
+    ).toBe(24);
+    expect(report.overall).toEqual({
+      arrivals: 1,
+      late: 1,
+      medianDelayMinutes: 40,
+    });
   });
 });

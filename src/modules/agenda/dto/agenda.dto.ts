@@ -1283,3 +1283,40 @@ export class EmergencyAlertAcknowledgementDto extends createZodDto(
 export type EmergencyAlertAcknowledgementResponse = z.infer<
   typeof emergencyAlertAcknowledgementSchema
 >;
+
+/**
+ * AG-141. Late arrival figures: the denominator always travels, and the
+ * median is `null`, never 0, when nobody arrived.
+ */
+const lateArrivalFiguresFields = {
+  /** Arrivals counted (appointments with arrival, WALK_IN excluded). */
+  arrivals: z.number().int().nonnegative(),
+  /** Of them, past their site's threshold. */
+  late: z.number().int().nonnegative(),
+  /** Whole minutes, signed: negative is early. */
+  medianDelayMinutes: z.number().int().nullable(),
+};
+export const lateArrivalMetricSchema = z.object({
+  from: z.iso.date(),
+  to: z.iso.date(),
+  overall: z.object(lateArrivalFiguresFields),
+  bySite: z.array(
+    z.object({
+      siteId: z.uuid(),
+      siteName: z.string(),
+      ...lateArrivalFiguresFields,
+    }),
+  ),
+  byPractitioner: z.array(
+    z.object({
+      practitionerId: z.uuid(),
+      practitionerName: z.string(),
+      ...lateArrivalFiguresFields,
+    }),
+  ),
+});
+/** Response of GET /agenda/metrics/late-arrival. */
+export class LateArrivalMetricDto extends createZodDto(
+  lateArrivalMetricSchema,
+) {}
+export type LateArrivalMetricResponse = z.infer<typeof lateArrivalMetricSchema>;

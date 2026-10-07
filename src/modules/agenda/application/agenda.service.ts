@@ -46,9 +46,14 @@ import {
 } from '../domain/status-machine';
 import {
   type ClinicalDate,
+  addDays,
   clinicalDateOf,
   clinicalDayBounds,
 } from '../../../shared/domain/clinic-time';
+import {
+  type LateArrivalReport,
+  summariseLateArrival,
+} from '../domain/late-arrival-metric';
 import {
   type AvailabilityView,
   deriveAvailability,
@@ -1667,6 +1672,22 @@ export class AgendaService {
     });
 
     return { ...summariseNoShow(rows), countedUntil: window.untilExclusive };
+  }
+
+  /**
+   * AG-141. Late arrival over a range, by site and practitioner.
+   *
+   * THE WINDOW IS NOT CLOSED AT «NOW», unlike the no-show rate (AG-081): an
+   * arrival that has not happened is simply not a row, so there is nothing
+   * the future could inflate. Same scope argument as `noShowRate`.
+   */
+  async lateArrival(request: NoShowRateRequest): Promise<LateArrivalReport> {
+    const rows = await this.agenda.lateArrivalRows({
+      sites: request.sites,
+      from: clinicalDayBounds(request.from).startsAt,
+      untilExclusive: clinicalDayBounds(addDays(request.to, 1)).startsAt,
+    });
+    return summariseLateArrival(rows);
   }
 
   /**
