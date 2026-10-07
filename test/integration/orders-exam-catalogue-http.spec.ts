@@ -868,6 +868,13 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     const untouched = await prisma.analyteDefinition.findUniqueOrThrow({ where: { id: created.id } }); // prettier-ignore
     expect(untouched.unit).toBe('mg/dL');
 
+    // Los mismos límites de antes con la unidad nueva: el crítico se apagaría.
+    const carried = await send('patch', `/exam-catalogue/analytes/${created.id}`, {
+      unit: 'mmol/L', decimals: 1,
+      ranges: [range({ rangeKind: 'CRITICAL', low: 40, high: 400 })],
+    }).expect(409); // prettier-ignore
+    expect((carried.body as Problem).code).toBe('ANALYTE_UNIT_WITH_RANGES');
+
     // Control positivo: con rangos válidos en la unidad nueva, entran los dos.
     const saved = (await send('patch', `/exam-catalogue/analytes/${created.id}`, {
       unit: 'mmol/L', decimals: 1,

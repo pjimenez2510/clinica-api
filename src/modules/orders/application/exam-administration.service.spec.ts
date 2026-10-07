@@ -273,6 +273,16 @@ describe('ExamAdministrationService · corregir en el sitio (ORD-140, ORD-141)',
     );
   });
 
+  it('ORD-141 rangos con los mismos límites de la unidad anterior se rechazan: el crítico se apagaría', async () => {
+    const setRanges = vi.fn();
+    const { service } = build({ setRanges });
+
+    await expect(
+      service.updateAnalyte('analyte-glu', { unit: 'mmol/L' }, EDITOR, [RANGE]),
+    ).rejects.toBeInstanceOf(AnalyteUnitWithRangesError);
+    expect(setRanges).not.toHaveBeenCalled();
+  });
+
   it('ORD-141 sin rangos en la petición, cambiar la unidad de un analito con rangos sigue rechazándose', async () => {
     const { service } = build();
 

@@ -1833,7 +1833,11 @@ renombrarlo rompe la completitud (ORD-039) y la corrección (ORD-055).
 - **ORD-141** — El sistema DEBERÁ admitir en un solo `PATCH` del analito la
   unidad **y** sus rangos nuevos, y aplicarlos en una transacción: o cambian
   los dos o ninguno. Sin rangos en la petición, cambiar la unidad de un analito
-  con rangos con límites sigue rechazándose con `ANALYTE_UNIT_WITH_RANGES`.
+  con rangos con límites sigue rechazándose con `ANALYTE_UNIT_WITH_RANGES`; y
+  SI algún rango con límites enviado con la unidad nueva conserva los mismos
+  límites de uno escrito en la anterior, ENTONCES DEBERÁ rechazarlo igual.
+  > Revisión del 06-10-2026: la pantalla precargaba los rangos, y un clic en
+  > «Guardar» dejaba «crítico 40–400» leído en mmol/L.
   > AD-6. Antes había que borrar los rangos, cambiar la unidad y volver a
   > escribirlos: entre el segundo y el tercer paso, un crítico apagado. Los
   > rangos sustituidos se cierran con su vigencia (ORD-113). Enmienda ORD-110.

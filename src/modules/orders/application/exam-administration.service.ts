@@ -5,7 +5,7 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 
-import type { ReferenceRange } from '../domain/analyte';
+import { type ReferenceRange, boundsCarriedOver } from '../domain/analyte';
 import {
   assertAnalyteFitsItsType,
   assertRangesHold,
@@ -233,6 +233,10 @@ export class ExamAdministrationService {
     // ORD-141. With the new ranges in the same save, the unit and its ranges
     // change together in one transaction, or neither does.
     if (ranges !== undefined) {
+      // ORD-141. Ranges sent with a new unit must be written IN it.
+      if (reunited && boundsCarriedOver(current.ranges, ranges)) {
+        throw new AnalyteUnitWithRangesError();
+      }
       assertRangesHold(next.valueType, ranges);
       const updated = await this.catalogue.setRanges(
         id,
