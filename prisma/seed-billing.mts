@@ -322,11 +322,15 @@ interface SeedService {
   category: (typeof CATEGORIES)[number]['name'];
   /** Código SRI de la tarifa por defecto. REVISABLE — ver D-A-006 arriba. */
   taxSriCode: string;
-  /** Precio de arranque de la lista PARTICULAR, en USD. Cadena, no `number`. */
-  selfPayAmount: string;
+  /**
+   * Precio de arranque de la lista PARTICULAR, en USD. Cadena, no `number`.
+   * Sin él, la prestación nace SIN PRECIO (BI-232): el precio es de la
+   * clínica, y caja ve «No hay precio vigente» hasta que administración lo fije.
+   */
+  selfPayAmount?: string;
   /**
    * BI-158. Qué prestación es **la consulta** de una especialidad, y de qué
-   * tipo. Sólo lo llevan las diez consultas; una gasa no es la consulta de
+   * tipo. Sólo lo llevan las consultas; una gasa no es la consulta de
    * nadie.
    *
    * Es lo que permite que al terminar una atención el cargo de la consulta
@@ -355,6 +359,98 @@ interface SeedService {
  * códigos inventados sería peor que no poner ninguno: se llenaría de datos que
  * parecen oficiales. Se completan cuando la clínica facture a la red pública.
  */
+/**
+ * BI-232 (D-161, resuelta por el autor el 07-10-2026). Las especialidades de
+ * `seed-specialties.mts` que no tienen consulta con precio de arranque, con su
+ * abreviatura para el código y su nombre en minúscula para la prestación.
+ *
+ * SIN PRECIO, y es a propósito: una atención de cardiología llegaba a caja con
+ * «No hay prestación que lo cobre» (hay que crearla y atarla); con la
+ * prestación sembrada llega con «No hay precio vigente para ese día» (se fija
+ * en un minuto). Inventar la tarifa de una especialidad no es de la semilla.
+ *
+ * El código cabe en los 25 caracteres del SRI (BI-171): `CONS-` + abreviatura
+ * + `-SUB`. La correspondencia la ata `linkConsultation`, sólo si la
+ * especialidad existe y está libre, como las cinco de arriba.
+ */
+const OTHER_SPECIALTY_CONSULTATIONS: readonly {
+  specialtyCode: string;
+  abbreviation: string;
+  name: string;
+}[] = [
+  {
+    specialtyCode: 'medicina-familiar',
+    abbreviation: 'MF',
+    name: 'medicina familiar y comunitaria',
+  },
+  {
+    specialtyCode: 'medicina-interna',
+    abbreviation: 'MI',
+    name: 'medicina interna',
+  },
+  {
+    specialtyCode: 'cirugia-general',
+    abbreviation: 'CG',
+    name: 'cirugía general',
+  },
+  { specialtyCode: 'cardiologia', abbreviation: 'CAR', name: 'cardiología' },
+  { specialtyCode: 'psiquiatria', abbreviation: 'PSQ', name: 'psiquiatría' },
+  { specialtyCode: 'oftalmologia', abbreviation: 'OFT', name: 'oftalmología' },
+  {
+    specialtyCode: 'otorrinolaringologia',
+    abbreviation: 'ORL',
+    name: 'otorrinolaringología',
+  },
+  { specialtyCode: 'urologia', abbreviation: 'URO', name: 'urología' },
+  { specialtyCode: 'neurologia', abbreviation: 'NEU', name: 'neurología' },
+  {
+    specialtyCode: 'endocrinologia',
+    abbreviation: 'END',
+    name: 'endocrinología',
+  },
+  {
+    specialtyCode: 'gastroenterologia',
+    abbreviation: 'GAS',
+    name: 'gastroenterología',
+  },
+  { specialtyCode: 'neumologia', abbreviation: 'NML', name: 'neumología' },
+  { specialtyCode: 'nefrologia', abbreviation: 'NEF', name: 'nefrología' },
+  { specialtyCode: 'reumatologia', abbreviation: 'REU', name: 'reumatología' },
+  {
+    specialtyCode: 'anestesiologia',
+    abbreviation: 'ANE',
+    name: 'anestesiología',
+  },
+  {
+    specialtyCode: 'medicina-emergencias',
+    abbreviation: 'EME',
+    name: 'medicina de emergencias y desastres',
+  },
+  { specialtyCode: 'odontologia', abbreviation: 'ODO', name: 'odontología' },
+];
+
+const UNPRICED_CONSULTATIONS: SeedService[] =
+  OTHER_SPECIALTY_CONSULTATIONS.flatMap(
+    ({ specialtyCode, abbreviation, name }) => [
+      {
+        code: `CONS-${abbreviation}-PV`,
+        name: `Consulta de ${name}, primera vez`,
+        category: 'Consultas',
+        taxSriCode: HEALTH_ZERO,
+        specialtyCode,
+        visitSequence: 'FIRST_TIME' as const,
+      },
+      {
+        code: `CONS-${abbreviation}-SUB`,
+        name: `Consulta de ${name}, subsecuente`,
+        category: 'Consultas',
+        taxSriCode: HEALTH_ZERO,
+        specialtyCode,
+        visitSequence: 'SUBSEQUENT' as const,
+      },
+    ],
+  );
+
 const SERVICES: SeedService[] = [
   // ── Consultas ────────────────────────────────────────────────────────────
   // Todas a 0%: prestación de salud, LRTI art. 56.2.
@@ -448,6 +544,9 @@ const SERVICES: SeedService[] = [
     specialtyCode: 'traumatologia-ortopedia',
     visitSequence: 'SUBSEQUENT',
   },
+
+  // BI-232 (D-161): la consulta de las demás especialidades del catálogo.
+  ...UNPRICED_CONSULTATIONS,
 
   // ── Procedimientos ───────────────────────────────────────────────────────
   {
@@ -1488,8 +1587,16 @@ export async function seedBilling(prisma: PrismaClient): Promise<void> {
         serviceIdByCode.set(service.code, serviceId);
         counts.services += 1;
 
-        await ensurePrice(tx, selfPayListId, serviceId, service.selfPayAmount);
-        counts.prices += 1;
+        // BI-232. Sin precio de arranque, sin precio: lo fija la clínica.
+        if (service.selfPayAmount !== undefined) {
+          await ensurePrice(
+            tx,
+            selfPayListId,
+            serviceId,
+            service.selfPayAmount,
+          );
+          counts.prices += 1;
+        }
       }
 
       // 6. Analitos, rangos, exámenes y su composición.
