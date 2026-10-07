@@ -119,6 +119,12 @@ const aPrevious = (
 
 class FakeEncounters {
   stored: EncounterView | null = anEncounter();
+  /** EN-237. The chart that absorbed the attention's own, when one did. */
+  survivor: { id: string; mrn: string } | null = null;
+
+  findSurvivingChart(): Promise<{ id: string; mrn: string } | null> {
+    return Promise.resolve(this.survivor);
+  }
 
   findById(query: EncounterQuery): Promise<EncounterView | null> {
     if (this.stored === null) return Promise.resolve(null);
@@ -385,6 +391,21 @@ describe('la historia a la vista durante la consulta', () => {
 
     expect(reader.asked).toEqual([PATIENT]);
     expect(summaries.queries.every((q) => q.patientId === PATIENT)).toBe(true);
+  });
+
+  it('EN-237 lee desde la ficha superviviente cuando la de la atención se unificó, y audita la que divulgó', async () => {
+    encounters.survivor = { id: 'surviving', mrn: 'HC0000000002' };
+
+    await service.forEncounter(ENCOUNTER, requester);
+
+    expect(reader.asked).toEqual(['surviving']);
+    expect(allergyRecords.asked).toEqual(['surviving']);
+    expect(summaries.queries.every((q) => q.patientId === 'surviving')).toBe(
+      true,
+    );
+    expect(audit.entries.map((entry) => entry.resourceId)).toEqual([
+      'surviving',
+    ]);
   });
 
   it('EN-159 excluye la atención en curso de «las anteriores»', async () => {

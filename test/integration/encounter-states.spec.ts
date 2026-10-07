@@ -41,6 +41,7 @@ const backgroundOf = (prisma: PrismaClient) => {
     new PrismaActiveAllergyReader(service),
     new PrismaPatientAllergyRepository(service),
     new PrismaPatientHistoryRepository(service),
+    new PrismaEncounterRepository(service),
   );
 };
 import {

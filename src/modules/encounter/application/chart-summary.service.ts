@@ -37,6 +37,7 @@ import {
   type PatientHistoryRepository,
 } from '../domain/patient-history.repository';
 
+import { chartOfRecord } from './chart-of-record';
 import type { Requester } from './encounter.service';
 
 /**
@@ -228,8 +229,11 @@ export class ChartSummaryService {
     });
     if (!encounter) throw new EncounterNotFoundError();
 
+    // EN-237. The surviving chart when this attention's own was merged while
+    // it was open: the history of the PERSON, which the merge says it is.
+    const chartId = await chartOfRecord(this.encounters, encounter.patientId);
     const query = {
-      patientId: encounter.patientId,
+      patientId: chartId,
       sites: requester.sites,
       excludeEncounterId: encounter.id,
       limit: PREVIOUS_ENCOUNTERS,
@@ -248,17 +252,18 @@ export class ChartSummaryService {
       previousEncounters,
       totalEncounters,
     ] = await Promise.all([
-      this.allergies.activeFor(encounter.patientId),
-      this.allergyRecords.standingAbsenceFor(encounter.patientId),
-      this.historyRecords.activeFor(encounter.patientId),
+      this.allergies.activeFor(chartId),
+      this.allergyRecords.standingAbsenceFor(chartId),
+      this.historyRecords.activeFor(chartId),
       this.summaries.previousEncounters(query),
       this.summaries.countEncounters(query),
     ]);
 
+    // The chart whose history was disclosed: the survivor's, when it is.
     await this.audit.record({
       userId: requester.userId,
       resourceType: RESOURCE_TYPE,
-      resourceId: encounter.patientId,
+      resourceId: chartId,
       action: 'READ',
       ip: requester.ip,
       userAgent: requester.userAgent,
@@ -298,8 +303,10 @@ export class ChartSummaryService {
     const code = await this.summaries.cie10CodeOf(conceptId);
     if (code === null) throw new ConceptWrongCatalogueError('CIE10');
 
+    // EN-237. A category diagnosed on the surviving chart counts too.
+    const chartId = await chartOfRecord(this.encounters, encounter.patientId);
     const basis = await this.summaries.priorDiagnosisInCategory({
-      patientId: encounter.patientId,
+      patientId: chartId,
       sites: requester.sites,
       encounterId: encounter.id,
       before: encounter.startedAt,
@@ -309,7 +316,7 @@ export class ChartSummaryService {
     await this.audit.record({
       userId: requester.userId,
       resourceType: RESOURCE_TYPE,
-      resourceId: encounter.patientId,
+      resourceId: chartId,
       action: 'READ',
       ip: requester.ip,
       userAgent: requester.userAgent,

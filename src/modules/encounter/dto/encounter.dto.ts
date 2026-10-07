@@ -439,6 +439,13 @@ export const encounterDetailSchema = encounterSchema.extend({
   anthropometryRequired: z.array(
     z.enum(['weightKg', 'heightCm', 'headCircumferenceCm']),
   ),
+  /**
+   * EN-237 (D-169.2). The chart that absorbed this attention's own while it
+   * was open, or `null`. The allergies above are already read from it; the
+   * screen says so and links to it (EN-238). The number and the id, never a
+   * name: the attention already says whose it is.
+   */
+  mergedInto: z.object({ patientId: z.uuid(), mrn: z.string() }).nullable(),
 });
 /** Response of GET /encounters/:id. */
 export class EncounterDetailDto extends createZodDto(encounterDetailSchema) {}

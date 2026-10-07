@@ -17,6 +17,7 @@ import {
   type EncounterRepository,
   type EncounterView,
   type SiteScopeFilter,
+  type SurvivingChart,
   type VitalSignsView,
   type VitalsVersionView,
 } from '../domain/encounter.repository';
@@ -284,6 +285,16 @@ export class EncounterService {
     encounter: EncounterView,
   ): Promise<AnthropometryField[]> {
     return this.encounters.anthropometryRequired(encounter.id);
+  }
+
+  /**
+   * EN-237 (D-169.2). The chart that absorbed this attention's own while it
+   * was open, or `null`. Asked for an attention ALREADY resolved within the
+   * caller's scope, like the anthropometry: it travels inside the opening,
+   * which is the audited read (EN-122).
+   */
+  mergedIntoOf(encounter: EncounterView): Promise<SurvivingChart | null> {
+    return this.encounters.findSurvivingChart(encounter.patientId);
   }
 
   /**

@@ -308,6 +308,10 @@ describe('los casos de uso de la nota clínica', () => {
         background,
         background as unknown as PatientAllergyRepository,
         new FakeHistory(background) as unknown as PatientHistoryRepository,
+        // EN-237: no chart here was merged.
+        {
+          findSurvivingChart: () => Promise.resolve(null),
+        } as unknown as EncounterRepository,
       ),
       templates as unknown as NoteTemplateRepository,
       logger,
