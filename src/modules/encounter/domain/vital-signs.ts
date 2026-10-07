@@ -84,9 +84,11 @@ export interface VitalSigns {
  * EN-063, EN-217. The anthropometry the instructivo makes obligatory for
  * under-fives and for pregnant women, by the field name the API uses.
  *
- * WHICH ONES ARE MISSING IS NOT DECIDED HERE: `encounter_anthropometry_pending`
- * in the database answers it for the taking's response, for the signature
- * and for the deferred trigger that guards the signature (D-132 B). The rule
+ * WHICH ONES ARE DEMANDED OR MISSING IS NOT DECIDED HERE:
+ * `encounter_anthropometry_required` in the database states the rule, and
+ * `encounter_anthropometry_pending`, built on it, answers what is missing for
+ * the taking's response, for the signature and for the deferred trigger that
+ * guards the signature (D-132 B); the opening serves the first (EN-063). The rule
  * reads the frozen age, the chart's dated pregnancy on the clinical date and
  * the absorbed charts; one statement of it is what keeps the three answers
  * the same.

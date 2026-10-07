@@ -3482,6 +3482,9 @@ falta de una medida; y salir de la atención pide lo justo._
   > una absorbida vigente en la fecha clínica, extremos incluidos— y la usan
   > la respuesta de la toma, la firma (bajo el bloqueo de la atención) y
   > `trg_clinical_note_sign_needs_anthropometry`, diferido como el de EN-020.
+  > Desde la enmienda de EN-063 (07-10-2026) la condición vive en
+  > `encounter_anthropometry_required` y `pending` es «lo exigido que falta»
+  > encima de ella: sigue siendo una sola regla, con dos preguntas.
   > **Lo que no garantiza la base**: que la corrección de una atención
   > reportada se rechace; lo hace el adaptador bajo el bloqueo.
   >

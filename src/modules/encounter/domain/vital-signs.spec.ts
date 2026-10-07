@@ -15,9 +15,10 @@ import { assertBmiNotSupplied } from './vital-signs';
  */
 
 /*
- * EN-063, EN-217: which anthropometry is still missing is answered by
+ * EN-063, EN-217: which anthropometry is demanded and which is still missing
+ * is answered by `encounter_anthropometry_required` and
  * `encounter_anthropometry_pending` in the database (one statement for the
- * taking, the signature and its trigger), and is tested against PostgreSQL in
+ * opening, the taking, the signature and its trigger), and is tested against PostgreSQL in
  * `test/integration/encounter-http.spec.ts`.
  */
 

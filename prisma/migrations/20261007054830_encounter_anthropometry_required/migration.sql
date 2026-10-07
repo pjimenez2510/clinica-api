@@ -24,7 +24,11 @@
 --
 -- `pending` conserva firma, tipo y orden del resultado (weightKg, heightCm,
 -- headCircumferenceCm): CREATE OR REPLACE no toca los disparadores que la
--- llaman.
+-- llaman. Única diferencia: para una atención inexistente devuelve '{}' en
+-- lugar de NULL, que los disparadores (`cardinality(...) > 0`) y el adaptador
+-- (`?? []`) ya leían igual.
+--
+-- Después: pnpm migrations:check && pnpm db:deploy
 
 CREATE FUNCTION encounter_anthropometry_required(p_encounter_id uuid)
 RETURNS text[]
