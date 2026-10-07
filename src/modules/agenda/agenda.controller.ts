@@ -19,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import type { Permission } from '../../shared/authorisation/permission.catalogue';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { AgendaService } from './application/agenda.service';
@@ -381,6 +382,14 @@ export class AgendaController {
         emergency: dto.emergency,
         emergencyNote: dto.emergencyNote,
         coverageCheckSkippedReason: dto.coverageCheckSkippedReason,
+        /**
+         * AG-120. The permission is data the site stores, so the service asks
+         * with the code it reads; the answer is the session's, at this site.
+         */
+        holds: (permission) =>
+          this.currentUser
+            .requirePrincipal()
+            .canAtSite(permission as Permission, siteId),
       },
       // AG-004: the author comes from the session, never from the body. That
       // is also who art. 10 records as having made the call.
@@ -492,6 +501,10 @@ export class AgendaController {
         entryId,
         emergency: dto.emergency,
         emergencyNote: dto.emergencyNote,
+        // AG-174 (D-141.5): after the stay it is a clinical correction.
+        mayWriteRecord: this.currentUser
+          .requirePrincipal()
+          .canAtSite('record:write', siteId),
       },
       { userId: this.currentUser.requireUserId() },
     );
@@ -602,5 +615,18 @@ function toEntryResponse(entry: AgendaEntryView) {
     rescheduledToId: entry.rescheduledToId,
     // AG-150: the state of its live attention, never its identifier.
     attention: entry.attention,
+    // AG-120: who let it in past the threshold.
+    lateAdmission: entry.lateAdmission
+      ? {
+          byName: entry.lateAdmission.byName,
+          at: entry.lateAdmission.at.toISOString(),
+        }
+      : null,
+    // AG-129: whom the emergency call notified.
+    emergencyAlerts: entry.emergencyAlerts.map((alert) => ({
+      recipientName: alert.recipientName,
+      alertedAt: alert.alertedAt.toISOString(),
+      acknowledgedAt: alert.acknowledgedAt?.toISOString() ?? null,
+    })),
   };
 }

@@ -43,6 +43,8 @@ const CURRENT: SiteParameterView = {
   overbookingEnabled: true,
   overbookingPermission: 'agenda:overbook',
   waitlistMaxContactAttempts: 3,
+  lateArrivalGraceMinutes: 15,
+  lateArrivalOverridePermission: 'agenda:overbook',
   cancelledRetention: 'NEVER',
   criticalNoticeWithinMinutes: 60,
   criticalEscalationRoleId: null,
@@ -282,6 +284,59 @@ describe('los parámetros de operación de una sede', () => {
     });
   });
 
+  it('AG-142 guarda el umbral de llegada tardía y el permiso que lo salta, sin tocar los demás', async () => {
+    await service.update(
+      'site-1',
+      {
+        lateArrivalGraceMinutes: 20,
+        lateArrivalOverridePermission: 'settings:manage',
+      },
+      REQUESTER,
+    );
+
+    const write = repository.calls.find((call) => call.method === 'update');
+    expect(write?.args[1]).toEqual({
+      lateArrivalGraceMinutes: 20,
+      lateArrivalOverridePermission: 'settings:manage',
+    });
+  });
+
+  it('AG-142 el permiso de la llegada tardía se comprueba como el del sobrecupo, nombrando su campo', async () => {
+    const unknown = await service
+      .update(
+        'site-1',
+        { lateArrivalOverridePermission: 'agenda:overbok' },
+        REQUESTER,
+      )
+      .catch((error: unknown) => error);
+    expect(unknown).toBeInstanceOf(UnknownPermissionError);
+    expect((unknown as UnknownPermissionError).fieldErrors?.[0]?.field).toBe(
+      'lateArrivalOverridePermission',
+    );
+
+    repository.installedAnswer = [];
+    const missing = await service
+      .update(
+        'site-1',
+        { lateArrivalOverridePermission: 'agenda:overbook:self' },
+        REQUESTER,
+      )
+      .catch((error: unknown) => error);
+    expect(missing).toBeInstanceOf(PermissionNotInstalledError);
+    expect(repository.calls.some((call) => call.method === 'update')).toBe(
+      false,
+    );
+  });
+
+  it('AG-142 el umbral va de 0 a 240 minutos, el cero incluido', async () => {
+    await expect(
+      service.update('site-1', { lateArrivalGraceMinutes: 241 }, REQUESTER),
+    ).rejects.toBeInstanceOf(ParameterOutOfRangeError);
+    await expect(
+      service.update('site-1', { lateArrivalGraceMinutes: 0 }, REQUESTER),
+    ).resolves.toBeDefined();
+  });
+
   it('ORD-063 y ORD-046 guardan la política de las colas de resultados, y `null` devuelve a quien pidió el examen', async () => {
     repository.findAnswer = {
       ...CURRENT,
@@ -355,6 +410,8 @@ describe('los parámetros de operación de una sede', () => {
       overbookingEnabled: true,
       overbookingPermission: 'agenda:overbook',
       waitlistMaxContactAttempts: 3,
+      lateArrivalGraceMinutes: 15,
+      lateArrivalOverridePermission: 'agenda:overbook',
       cancelledRetention: 'NEVER',
       criticalNoticeWithinMinutes: 60,
       criticalEscalationRoleId: null,

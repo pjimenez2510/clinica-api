@@ -93,17 +93,19 @@ export class SiteParametersService {
      * rolled back whole, never half-written. Same window `RolesService`
      * documents, and just as unreachable: the sync never deletes.
      */
-    if (patch.overbookingPermission !== undefined) {
-      assertPermissionIsDeclared(patch.overbookingPermission, PERMISSIONS);
+    // AG-142: the late-arrival override is a permission code too, and is
+    // checked the same two ways.
+    for (const field of [
+      'overbookingPermission',
+      'lateArrivalOverridePermission',
+    ] as const) {
+      const code = patch[field];
+      if (code === undefined) continue;
+      assertPermissionIsDeclared(code, PERMISSIONS, field);
 
-      const installed = await this.repository.installedPermissions([
-        patch.overbookingPermission,
-      ]);
-      if (!installed.includes(patch.overbookingPermission)) {
-        throw new PermissionNotInstalledError(
-          [patch.overbookingPermission],
-          'overbookingPermission',
-        );
+      const installed = await this.repository.installedPermissions([code]);
+      if (!installed.includes(code)) {
+        throw new PermissionNotInstalledError([code], field);
       }
     }
 
@@ -161,6 +163,11 @@ export class SiteParametersService {
         patch.overbookingPermission ?? current.overbookingPermission,
       waitlistMaxContactAttempts:
         patch.waitlistMaxContactAttempts ?? current.waitlistMaxContactAttempts,
+      lateArrivalGraceMinutes:
+        patch.lateArrivalGraceMinutes ?? current.lateArrivalGraceMinutes,
+      lateArrivalOverridePermission:
+        patch.lateArrivalOverridePermission ??
+        current.lateArrivalOverridePermission,
       cancelledRetention:
         patch.cancelledRetention ?? current.cancelledRetention,
       // `!== undefined` and not `??`: for the roles `null` is «quien pidió»,

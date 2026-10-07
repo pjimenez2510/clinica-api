@@ -258,6 +258,9 @@ export class ConfigurationController {
         // AG-066, AG-094 (E5): el octavo parámetro que AG-094 enumera y que
         // `site_parameter` no tuvo hasta que se abrió la lista de espera.
         waitlistMaxContactAttempts: dto.waitlistMaxContactAttempts,
+        // AG-142 (E8): el umbral de llegada tardía y quién lo salta.
+        lateArrivalGraceMinutes: dto.lateArrivalGraceMinutes,
+        lateArrivalOverridePermission: dto.lateArrivalOverridePermission,
         cancelledRetention: dto.cancelledRetention,
         // ORD-046, ORD-063, ORD-065: la política de las colas de resultados
         // (D-050 §2 y §4). En los roles, `null` es un valor: quien pidió.

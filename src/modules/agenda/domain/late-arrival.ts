@@ -1,3 +1,8 @@
+import {
+  DEFAULT_LATE_ARRIVAL_GRACE_MINUTES,
+  arrivedPastThreshold,
+} from '../../../shared/domain/late-arrival-rule';
+import { LateArrivalNotAuthorisedError } from './agenda.errors';
 /**
  * AG-118, AG-119, AG-142. The arrival delay: a subtraction, never a status.
  *
@@ -30,7 +35,7 @@
  * which point the policy has stopped existing. A default is what makes the
  * system start, not evidence that somebody chose it.
  */
-export const DEFAULT_LATE_ARRIVAL_GRACE_MINUTES = 15;
+export { DEFAULT_LATE_ARRIVAL_GRACE_MINUTES };
 
 const MILLISECONDS_PER_MINUTE = 60_000;
 
@@ -91,4 +96,43 @@ export function lateArrivalWarningsFor(
   return [
     `La llegada superó el margen de la sede: ${delayMinutes} minutos de retraso sobre ${graceMinutes} de tolerancia.`,
   ];
+}
+
+/**
+ * AG-120 (D-170.2). Whether the step into care lets in an arrival that ran
+ * past the site's threshold — `true` is what the entry records as
+ * `late_admission_*`.
+ *
+ * `refuse` says WHO is asking. The status route refuses without the site's
+ * permission (`LATE_ARRIVAL_NOT_AUTHORISED`); the note opening never does: it
+ * is the doctor with the patient in the room, and stopping a consultation
+ * over an administrative threshold is the harm this rule does not want. Both
+ * record who let it in.
+ *
+ * THE EMERGENCY SKIPS IT ENTIRELY (Ley 77 art. 12): a threshold that could
+ * hold back a patient called an emergency would turn a badly set parameter
+ * into an offence, so there is nothing to refuse and nothing to record.
+ */
+export function lateAdmissionOf(input: {
+  startsAt: Date;
+  checkedInAt: Date | null;
+  emergencyFlagged: boolean;
+  /** Without an appointment hour there is no lateness (AG-141's rule). */
+  walkIn?: boolean;
+  graceMinutes: number;
+  mayAdmitLate: boolean;
+  refuse: boolean;
+}): boolean {
+  const late = arrivedPastThreshold({
+    startsAt: input.startsAt,
+    checkedInAt: input.checkedInAt,
+    emergencyFlagged: input.emergencyFlagged,
+    walkIn: input.walkIn === true,
+    graceMinutes: input.graceMinutes,
+  });
+  if (!late) return false;
+  if (input.refuse && !input.mayAdmitLate) {
+    throw new LateArrivalNotAuthorisedError();
+  }
+  return true;
 }

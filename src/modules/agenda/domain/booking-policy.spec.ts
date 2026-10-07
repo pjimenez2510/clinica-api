@@ -933,6 +933,8 @@ describe('the booking window of the site', () => {
         // AG-142: los quince minutos que escribió la migración, resueltos por
         // la misma cadena y no quemados en el código.
         lateArrivalGraceMinutes: 15,
+        // AG-120: el permiso que salta el umbral, el del sobrecupo (D-170.3).
+        lateArrivalOverridePermission: 'agenda:overbook',
       });
     });
 
@@ -949,6 +951,8 @@ describe('the booking window of the site', () => {
         overbookingCap: 2,
         overbookingPermission: 'agenda:overbook',
         lateArrivalGraceMinutes: 15,
+        // AG-120: el permiso que salta el umbral, el del sobrecupo (D-170.3).
+        lateArrivalOverridePermission: 'agenda:overbook',
       });
     });
 
@@ -991,6 +995,7 @@ describe('the booking window of the site', () => {
         overbookingCap: 0,
         overbookingPermission: 'agenda:overbook',
         lateArrivalGraceMinutes: 0,
+        lateArrivalOverridePermission: 'agenda:overbook',
       });
     });
 

@@ -166,9 +166,14 @@ model User {
   serviceOrderItemsCancelled     ServiceOrderItem[]           @relation("ServiceOrderItemCancelledBy")
   certificatesRevoked            MedicalCertificate[]         @relation("CertificateRevoker")
   subjectStatusChanges           AgendaSubjectStatusHistory[] @relation("SubjectStatusChanger")
+  /// AG-129, AG-175. The emergency notices this account received, and raised.
+  emergencyAlertsReceived        AgendaEmergencyAlert[]       @relation("EmergencyAlertRecipient")
+  emergencyAlertsRaised          AgendaEmergencyAlert[]       @relation("EmergencyAlertRaiser")
   chargeItemsVoided              ChargeItem[]                 @relation("ChargeVoider")
   billableServicesTaxReviewed    BillableService[]            @relation("TaxRateReviewer")
   agendaEntriesEmergencyAssessed AgendaEntry[]                @relation("EmergencyAssessor")
+  /// AG-120. The late appointments this account let into care past the threshold.
+  agendaEntriesLateAdmitted      AgendaEntry[]                @relation("LateAdmitter")
 
   /// Money. Two lists over `charge_item` and not one, because raising a charge
   /// and authorising a discount above the role's ceiling are two acts by two
@@ -897,6 +902,30 @@ enum AllergyCriticality {
   @@map("allergy_criticality")
 }
 
+/// AG-129, AG-175 (E8). The notice of an arrival called an emergency: one row
+/// per recipient, written in the same transaction as the call. Append-only by
+/// trigger (`trg_agenda_emergency_alert_immutable`) except the
+/// acknowledgement, written once by its recipient.
+model AgendaEmergencyAlert {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  agendaEntryId String      @map("agenda_entry_id") @db.Uuid
+  agendaEntry   AgendaEntry @relation(fields: [agendaEntryId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_emergency_alert_entry_fk")
+  siteId        String      @map("site_id") @db.Uuid
+  site          Site        @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_emergency_alert_site_fk")
+  recipientId   String      @map("recipient_id") @db.Uuid
+  recipient     User        @relation("EmergencyAlertRecipient", fields: [recipientId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_emergency_alert_recipient_fk")
+  raisedById    String      @map("raised_by_id") @db.Uuid
+  raisedBy      User        @relation("EmergencyAlertRaiser", fields: [raisedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_emergency_alert_raised_by_fk")
+
+  /// The application's clock: the screen compares it.
+  alertedAt      DateTime  @map("alerted_at") @db.Timestamptz(6)
+  acknowledgedAt DateTime? @map("acknowledged_at") @db.Timestamptz(6)
+
+  @@index([agendaEntryId, alertedAt], map: "agenda_emergency_alert_by_entry")
+  @@map("agenda_emergency_alert")
+}
+
 // ---------------------------------------------------------------------------
 // CATALOGS
 // ---------------------------------------------------------------------------
@@ -1168,6 +1197,9 @@ model Site {
 
   /// BI-218. Its credit notes, listed by site.
   creditNotes CreditNote[]
+
+  /// AG-129. The emergency notices given at this site.
+  emergencyAlerts AgendaEmergencyAlert[]
 
   @@map("site")
 }
@@ -2285,6 +2317,14 @@ model AgendaEntry {
   /// mitad importante: el motivo de una retractación no es el de una anulación,
   /// y una sola columna haría imposible saber DESDE LA FILA cuál de los dos
   /// actos ocurrió — que es justo lo que estos dos estados vienen a separar.
+  /// AG-120 (D-170.2). Who let this appointment into care with its arrival
+  /// past the site's threshold, and when: the status route with the site's
+  /// permission, or the note opening, which never refuses. Both or neither
+  /// (`agenda_entry_late_admission_names_who_and_when`).
+  lateAdmissionById String?   @map("late_admission_by_id") @db.Uuid
+  lateAdmissionBy   User?     @relation("LateAdmitter", fields: [lateAdmissionById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_entry_late_admission_fk")
+  lateAdmissionAt   DateTime? @map("late_admission_at") @db.Timestamptz(6)
+
   leftWithoutBeingSeenAt     DateTime? @map("left_without_being_seen_at") @db.Timestamptz(6)
   leftWithoutBeingSeenReason String?   @map("left_without_being_seen_reason") @db.VarChar(500)
   enteredInErrorAt           DateTime? @map("entered_in_error_at") @db.Timestamptz(6)
@@ -2300,6 +2340,8 @@ model AgendaEntry {
   boardNote String? @map("board_note") @db.VarChar(120)
 
   subjectStatusHistory AgendaSubjectStatusHistory[]
+  /// AG-129. Whom its emergency call notified.
+  emergencyAlerts      AgendaEmergencyAlert[]
 
   /// SP-028: el tipo de atención que recepción eligió al reservar, y con el
   /// que se resolvió la duración (SP-023). `RESTRICT` es lo que produce

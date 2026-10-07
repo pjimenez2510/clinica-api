@@ -223,6 +223,15 @@ export const updateSiteParametersSchema = z
      * responde con el problema genérico de validación.
      */
     waitlistMaxContactAttempts: parameterSchema.optional(),
+    /** AG-142. The late-arrival threshold; its range is the domain's. */
+    lateArrivalGraceMinutes: parameterSchema.optional(),
+    /** AG-142, AG-120. Same contract as `overbookingPermission`. */
+    lateArrivalOverridePermission: z
+      .string({ error: 'Indique el permiso que admite una llegada tardía' })
+      .trim()
+      .min(1, 'Indique el permiso que admite una llegada tardía')
+      .max(64, 'Un código de permiso no supera 64 caracteres')
+      .optional(),
     /**
      * One value today (D-001, D-004): the system does not delete. It travels
      * in the contract anyway so the screen can show what the policy IS, and so
@@ -268,6 +277,10 @@ export const siteParametersSchema = z.object({
   overbookingPermission: z.string(),
   /** AG-066, AG-094. Viaja en la respuesta o la sede no puede verlo (D-040). */
   waitlistMaxContactAttempts: z.number().int(),
+  /** AG-142. Minutes; 0 = no threshold. */
+  lateArrivalGraceMinutes: z.number().int(),
+  /** AG-142, AG-120. The code, as stored. */
+  lateArrivalOverridePermission: z.string(),
   cancelledRetention: z.enum(CANCELLED_RETENTION_POLICIES),
   /** ORD-063. Siempre hay plazo: 60 de fábrica, cambiable (D-111 §1). */
   criticalNoticeWithinMinutes: z.number().int(),

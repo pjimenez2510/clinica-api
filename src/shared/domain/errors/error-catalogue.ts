@@ -36,6 +36,16 @@ export const DOMAIN_ERROR_CODES = [
   // AG-153 (D-099 §3): «Marcar atendida» con la atención aún en curso.
   'ATTENTION_STILL_IN_PROGRESS',
   'AGENDA_ENTRY_NOT_FOUND',
+  // AG-173 (D-153.6): la llegada de una cita de otro día clínico (409).
+  'ARRIVAL_NOT_ON_APPOINTMENT_DAY',
+  // AG-174 (D-141.5): corregir la emergencia tras la estancia exige
+  // `record:write` (403).
+  'EMERGENCY_CORRECTION_NEEDS_CLINICAL_PERMISSION',
+  // AG-120 (D-170.2): la ruta de estado no pasa a atención una llegada tardía
+  // sin el permiso que fija la sede (403).
+  'LATE_ARRIVAL_NOT_AUTHORISED',
+  // AG-175: el aviso de emergencia no existe o no es de quien lo marca (404).
+  'EMERGENCY_ALERT_NOT_FOUND',
   // AG-162, AG-163 (D-127): la cita se edita en el sitio mientras su estado lo
   // admite, y la inasistencia se deshace el mismo día.
   'AGENDA_ENTRY_NOT_EDITABLE',

@@ -4,7 +4,15 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import request from 'supertest';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { AppModule } from '../../src/app.module';
@@ -14,6 +22,7 @@ import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/ro
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaClinicalNoteRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-note.repository';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
 import {
@@ -65,7 +74,24 @@ interface EntryBody {
   releasedAt: string | null;
 }
 
+/**
+ * AG-173 (D-153.6). An arrival is recorded only on the appointment's own day,
+ * so this file's clock stands on that Monday, at 11:20 in Guayaquil: after
+ * every slot this file books (the latest is 11:00; a no-show still needs its
+ * start to have passed), and the same day as all of them. Derived from the
+ * slot, never typed. An arrival at 08:00 is then 200 minutes late: past the
+ * default threshold (AG-119 warns) and inside the widest one a site may set
+ * (240, AG-142), which is how a test steps into care without AG-120.
+ */
+const ON_THE_DAY = new Date(Date.parse(PAST_SLOT.startsAt) + 200 * 60_000);
+
 describe('las transiciones de estado de la cita por HTTP', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: ON_THE_DAY });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   const db = useDatabase();
   let app: NestExpressApplication;
   let prisma: PrismaClient;
@@ -200,6 +226,17 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         ...PAST_SLOT,
         ...overrides,
       });
+
+  /**
+   * AG-120, AG-142. The widest threshold a site may set: the file's arrivals
+   * (200 minutes late) go into care without asking for the permission.
+   */
+  async function insideTheWidestThreshold(): Promise<void> {
+    await prisma.siteParameter.update({
+      where: { siteId },
+      data: { lateArrivalGraceMinutes: 240 },
+    });
+  }
 
   /** Reserva y devuelve el identificador de la cita, ya en BOOKED. */
   async function bookedEntry(
@@ -1113,6 +1150,7 @@ describe('las transiciones de estado de la cita por HTTP', () => {
 
     it('AG-131 no condiciona el paso a IN_PROGRESS a que haya forma de pago', async () => {
       const entryId = await arrivedEntry();
+      await insideTheWidestThreshold();
 
       await transition(entryId, { to: 'IN_PROGRESS' }).expect(200);
 
@@ -1120,6 +1158,307 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         where: { id: entryId },
       });
       expect(stored.status).toBe('IN_PROGRESS');
+    });
+  });
+
+  /**
+   * AG-141. Late arrival over a range, from rows written directly: two
+   * timestamps and the site's threshold, nothing typed.
+   */
+  describe('la llegada tardía de un periodo (AG-141)', () => {
+    async function arrivalAt(
+      startOffsetMinutes: number,
+      delayMinutes: number | null,
+      overrides: { bookingChannel?: 'PHONE' | 'WALK_IN'; site?: string } = {},
+    ): Promise<void> {
+      const startsAt = new Date(
+        Date.parse(PAST_SLOT.startsAt) + startOffsetMinutes * 60_000,
+      );
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          siteId: overrides.site ?? siteId,
+          practitionerId,
+          patientId,
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + 20 * 60_000),
+          bookingChannel: overrides.bookingChannel ?? 'PHONE',
+          createdById: userId,
+          ...(delayMinutes === null
+            ? {}
+            : {
+                status: 'CHECKED_IN',
+                checkedInAt: new Date(
+                  startsAt.getTime() + delayMinutes * 60_000,
+                ),
+                emergencyAssessedAt: new Date(
+                  startsAt.getTime() + delayMinutes * 60_000,
+                ),
+                emergencyAssessedById: userId,
+              }),
+        },
+      });
+    }
+
+    it('AG-141 sirve la mediana, las que pasan el umbral de la sede y su denominador, sin las sin cita', async () => {
+      await arrivalAt(0, -10);
+      await arrivalAt(20, 5);
+      await arrivalAt(40, 40);
+      // Control: an arrival WITHOUT an appointment does not count, nor one
+      // that nobody recorded, nor another site's for a receptionist of this one.
+      await arrivalAt(60, 90, { bookingChannel: 'WALK_IN' });
+      await arrivalAt(80, null);
+      await linkPractitionerToSite(prisma, practitionerId, otherSiteId);
+      await arrivalAt(100, 120, { site: otherSiteId });
+
+      const day = clinicalDateOf(new Date(PAST_SLOT.startsAt));
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/agenda/metrics/late-arrival?from=${day}&to=${day}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const body = response.body as {
+        overall: { arrivals: number; late: number; medianDelayMinutes: number };
+        bySite: { siteId: string }[];
+        byPractitioner: { practitionerId: string; arrivals: number }[];
+      };
+      expect(body.overall).toEqual({
+        arrivals: 3,
+        late: 1,
+        medianDelayMinutes: 5,
+      });
+      expect(body.bySite.map((site) => site.siteId)).toEqual([siteId]);
+      expect(body.byPractitioner).toEqual([
+        expect.objectContaining({ practitionerId, arrivals: 3 }),
+      ]);
+
+      // The threshold is the site's: at 45 minutes, nobody was late.
+      await prisma.siteParameter.update({
+        where: { siteId },
+        data: { lateArrivalGraceMinutes: 45 },
+      });
+      const wider = await request(app.getHttpServer())
+        .get(`/api/v1/agenda/metrics/late-arrival?from=${day}&to=${day}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect((wider.body as typeof body).overall.late).toBe(0);
+    });
+  });
+
+  /**
+   * AG-129, AG-175 (D-170.1). The notice of an emergency arrival: born in the
+   * arrival's transaction, append-only but for «Enterado», and acknowledged
+   * only by its recipient — the practitioner of the appointment.
+   */
+  describe('el aviso de una llegada en emergencia (AG-129, AG-175)', () => {
+    /** The practitioner, signed in with a real password and the doctor's role. */
+    async function signInAsThePractitioner(): Promise<string> {
+      const doctor = await prisma.practitioner.findUniqueOrThrow({
+        where: { id: practitionerId },
+      });
+      const email = `doctora-${doctor.id}@clinica.ec`;
+      await prisma.user.update({
+        where: { id: doctor.userId },
+        data: {
+          email,
+          passwordHash: await argon2.hash(PASSWORD, {
+            type: argon2.argon2id,
+            memoryCost: PASSWORD_HASHING.memoryCost,
+            timeCost: PASSWORD_HASHING.timeCost,
+            parallelism: PASSWORD_HASHING.parallelism,
+          }),
+        },
+      });
+      const medico = await prisma.role.findUniqueOrThrow({
+        where: { code: 'MEDICO' },
+      });
+      await prisma.userRoleGrant.create({
+        data: { userId: doctor.userId, roleId: medico.id, siteId },
+      });
+      registry.invalidate();
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email, password: PASSWORD })
+        .expect(200);
+      return (response.body as { accessToken: string }).accessToken;
+    }
+
+    const mine = (bearer: string) =>
+      request(app.getHttpServer())
+        .get('/api/v1/agenda/emergency-alerts/mine')
+        .set('Authorization', `Bearer ${bearer}`);
+    const acknowledge = (bearer: string, alertId: string) =>
+      request(app.getHttpServer())
+        .post(`/api/v1/agenda/emergency-alerts/${alertId}/acknowledgement`)
+        .set('Authorization', `Bearer ${bearer}`);
+
+    it('AG-129 la llegada en emergencia avisa al profesional de la cita en la misma transacción, y la negativa a nadie', async () => {
+      const doctor = await prisma.practitioner.findUniqueOrThrow({
+        where: { id: practitionerId },
+      });
+      const entryId = await bookedEntry();
+      const response = await transition(entryId, {
+        to: 'CHECKED_IN',
+        emergency: true,
+        emergencyNote: 'Dolor torácico',
+      }).expect(200);
+
+      const alerts = await prisma.agendaEmergencyAlert.findMany({
+        where: { agendaEntryId: entryId },
+      });
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]).toMatchObject({
+        recipientId: doctor.userId,
+        raisedById: userId,
+        siteId,
+        acknowledgedAt: null,
+      });
+      // The same instant as the call: one transaction, one clock.
+      expect(alerts[0]?.alertedAt).toEqual(stored.emergencyFlaggedAt);
+      // And the detail says whom it notified.
+      expect(
+        (response.body as { emergencyAlerts: { recipientName: string }[] })
+          .emergencyAlerts,
+      ).toEqual([expect.objectContaining({ recipientName: 'Ana Villacís' })]);
+
+      // Control: «no era una emergencia» notifies nobody.
+      const other = await bookedEntry({
+        startsAt: PAST_SLOT.endsAt,
+        endsAt: new Date(Date.parse(PAST_SLOT.endsAt) + 20 * 60_000).toISOString(), // prettier-ignore
+      });
+      await transition(other, { to: 'CHECKED_IN', emergency: false }).expect(200); // prettier-ignore
+      expect(
+        await prisma.agendaEmergencyAlert.count({
+          where: { agendaEntryId: other },
+        }),
+      ).toBe(0);
+    });
+
+    it('AG-175 la base no deja reescribir ni borrar el aviso, y el enterado se escribe una sola vez', async () => {
+      const entryId = await bookedEntry();
+      await transition(entryId, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      const alert = await prisma.agendaEmergencyAlert.findFirstOrThrow({
+        where: { agendaEntryId: entryId },
+      });
+
+      await expect(
+        prisma.agendaEmergencyAlert.update({
+          where: { id: alert.id },
+          data: { recipientId: userId },
+        }),
+      ).rejects.toThrow(/agenda_emergency_alert_is_append_only/);
+      await expect(
+        prisma.agendaEmergencyAlert.delete({ where: { id: alert.id } }),
+      ).rejects.toThrow(/agenda_emergency_alert_is_append_only/);
+
+      // Control positivo: el enterado, una vez, sí.
+      const seen = new Date();
+      await prisma.agendaEmergencyAlert.update({
+        where: { id: alert.id },
+        data: { acknowledgedAt: seen },
+      });
+      await expect(
+        prisma.agendaEmergencyAlert.update({
+          where: { id: alert.id },
+          data: { acknowledgedAt: new Date(seen.getTime() + 60_000) },
+        }),
+      ).rejects.toThrow(/agenda_emergency_alert_is_append_only/);
+    });
+
+    it('AG-175 el destinatario lo ve pendiente y lo marca «Enterado»; nadie más puede', async () => {
+      const entryId = await bookedEntry();
+      await transition(entryId, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      const doctorToken = await signInAsThePractitioner();
+
+      const pending = await mine(doctorToken).expect(200);
+      const items = (pending.body as { items: { id: string; patientName: string; agendaEntryId: string }[] }).items; // prettier-ignore
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        agendaEntryId: entryId,
+        patientName: 'Guamán, María',
+      });
+      const alertId = items[0]!.id;
+
+      // Recepción, que lo disparó, no es su destinataria: el mismo 404 que
+      // un aviso que no existe.
+      expect((await mine(token).expect(200)).body).toEqual({ items: [] });
+      const refused = await acknowledge(token, alertId).expect(404);
+      expect((refused.body as Problem).code).toBe('EMERGENCY_ALERT_NOT_FOUND');
+
+      const seen = await acknowledge(doctorToken, alertId).expect(200);
+      const at = (seen.body as { acknowledgedAt: string }).acknowledgedAt;
+      // Un segundo «Enterado» contesta el primero, sin reescribirlo.
+      const again = await acknowledge(doctorToken, alertId).expect(200);
+      expect((again.body as { acknowledgedAt: string }).acknowledgedAt).toBe(
+        at,
+      );
+      expect((await mine(doctorToken).expect(200)).body).toEqual({ items: [] });
+    });
+
+    it('AG-129 a una cuenta desactivada no se le «avisa»: no queda fila que diga que se avisó', async () => {
+      const doctor = await prisma.practitioner.findUniqueOrThrow({
+        where: { id: practitionerId },
+      });
+      const entryId = await bookedEntry();
+      await prisma.user.update({
+        where: { id: doctor.userId },
+        data: { active: false },
+      });
+
+      const response = await transition(entryId, {
+        to: 'CHECKED_IN',
+        emergency: true,
+      }).expect(200);
+
+      // La llegada y la calificación quedan igual (art. 10); el aviso, no.
+      expect((response.body as { emergencyFlaggedAt: string | null }).emergencyFlaggedAt).not.toBeNull(); // prettier-ignore
+      expect(
+        (response.body as { emergencyAlerts: unknown[] }).emergencyAlerts,
+      ).toEqual([]);
+      expect(
+        await prisma.agendaEmergencyAlert.count({
+          where: { agendaEntryId: entryId },
+        }),
+      ).toBe(0);
+    });
+
+    it('AG-175 la base no admite un enterado anterior al aviso', async () => {
+      const entryId = await bookedEntry();
+      await transition(entryId, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      const alert = await prisma.agendaEmergencyAlert.findFirstOrThrow({
+        where: { agendaEntryId: entryId },
+      });
+      await expect(
+        prisma.agendaEmergencyAlert.update({
+          where: { id: alert.id },
+          data: {
+            acknowledgedAt: new Date(alert.alertedAt.getTime() - 60_000),
+          },
+        }),
+      ).rejects.toThrow(/agenda_emergency_alert_acknowledged_after_alerted/);
+      // Control positivo: en el mismo instante, sí.
+      await prisma.agendaEmergencyAlert.update({
+        where: { id: alert.id },
+        data: { acknowledgedAt: alert.alertedAt },
+      });
+    });
+
+    it('AG-129 corregir a «sí» con el paciente en sala también avisa', async () => {
+      const entryId = await bookedEntry();
+      await transition(entryId, { to: 'CHECKED_IN', emergency: false }).expect(200); // prettier-ignore
+      await request(app.getHttpServer())
+        .patch(`/api/v1/agenda/sites/${siteId}/entries/${entryId}/emergency`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ emergency: true })
+        .expect(200);
+      expect(
+        await prisma.agendaEmergencyAlert.count({
+          where: { agendaEntryId: entryId },
+        }),
+      ).toBe(1);
     });
   });
 
@@ -1144,6 +1483,8 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         practitionerId,
         patientId,
         agendaEntryId: entryId,
+        // On the file's clock (AG-173): opened just now, after the arrival.
+        startedAt: new Date(),
       });
       return { entryId, encounter };
     }
@@ -1185,6 +1526,126 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         fromStatus: 'CHECKED_IN',
         toStatus: 'IN_PROGRESS',
         changedById: doctor.userId,
+      });
+    });
+
+    it('AG-120 abrir la nota de una llegada fuera de plazo no se rechaza y deja quién la admitió (D-170.2)', async () => {
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+      const doctor = await prisma.practitioner.findUniqueOrThrow({
+        where: { id: practitionerId },
+      });
+
+      await openTheNote(encounter.id);
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('IN_PROGRESS');
+      expect(stored.lateAdmissionById).toBe(doctor.userId);
+      expect(stored.lateAdmissionAt).toEqual(expect.any(Date));
+    });
+
+    it('AG-120 una emergencia que llegó tarde no queda como admitida fuera de plazo al abrir la nota', async () => {
+      const entryId = await bookedEntry();
+      await transition(entryId, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      const encounter = await createEncounter(prisma, {
+        siteId,
+        practitionerId,
+        patientId,
+        agendaEntryId: entryId,
+        startedAt: new Date(),
+      });
+
+      await openTheNote(encounter.id);
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('IN_PROGRESS');
+      expect(stored.lateAdmissionById).toBeNull();
+    });
+
+    it('AG-120 la base exige quién y cuándo de la admisión fuera de plazo, juntos', async () => {
+      const { entryId } = await inTheWaitingRoomWithAttention();
+      await expect(
+        prisma.agendaEntry.update({
+          where: { id: entryId },
+          data: { lateAdmissionById: userId },
+        }),
+      ).rejects.toThrow(/agenda_entry_late_admission_names_who_and_when/);
+      // Control positivo: los dos.
+      await prisma.agendaEntry.update({
+        where: { id: entryId },
+        data: { lateAdmissionById: userId, lateAdmissionAt: new Date() },
+      });
+    });
+
+    it('AG-120 dentro del margen, abrir la nota no anota ninguna admisión fuera de plazo (control)', async () => {
+      const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+      await insideTheWidestThreshold();
+
+      await openTheNote(encounter.id);
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('IN_PROGRESS');
+      expect(stored.lateAdmissionById).toBeNull();
+      expect(stored.lateAdmissionAt).toBeNull();
+    });
+
+    it('AG-120 la ruta de estado no pasa a atención una llegada tardía sin el permiso de la sede', async () => {
+      const { entryId } = await inTheWaitingRoomWithAttention();
+
+      // Recepción no tiene `agenda:overbook`, el permiso de fábrica (D-170.3).
+      const refused = await transition(entryId, { to: 'IN_PROGRESS' }).expect(403); // prettier-ignore
+      expect((refused.body as Problem).code).toBe(
+        'LATE_ARRIVAL_NOT_AUTHORISED',
+      );
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('CHECKED_IN');
+      expect(stored.lateAdmissionById).toBeNull();
+
+      // Control positivo: la sede nombra un permiso que recepción sí tiene.
+      await prisma.siteParameter.update({
+        where: { siteId },
+        data: { lateArrivalOverridePermission: 'agenda:write' },
+      });
+      await transition(entryId, { to: 'IN_PROGRESS' }).expect(200);
+      const admitted = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(admitted.lateAdmissionById).toBe(userId);
+    });
+
+    it('AG-142 la base no admite un umbral de más de cuatro horas ni un permiso que no existe', async () => {
+      await expect(
+        prisma.siteParameter.update({
+          where: { siteId },
+          data: { lateArrivalGraceMinutes: 241 },
+        }),
+      ).rejects.toThrow(/site_parameter_late_arrival_grace_range/);
+      await expect(
+        prisma.siteParameter.update({
+          where: { siteId },
+          data: { lateArrivalOverridePermission: 'agenda:inventado' },
+        }),
+        // `foreign_key_violation`, which Prisma reports without the trigger's
+        // name (same as `trg_site_parameter_overbooking_permission`).
+      ).rejects.toThrow(/[Ff]oreign key/);
+      const unchanged = await prisma.siteParameter.findUniqueOrThrow({
+        where: { siteId },
+      });
+      expect(unchanged.lateArrivalOverridePermission).toBe('agenda:overbook');
+      // Control positivo: el borde y un permiso instalado sí.
+      await prisma.siteParameter.update({
+        where: { siteId },
+        data: {
+          lateArrivalGraceMinutes: 240,
+          lateArrivalOverridePermission: 'settings:manage',
+        },
       });
     });
 
@@ -1283,6 +1744,7 @@ describe('las transiciones de estado de la cita por HTTP', () => {
 
     it('AG-150 la cita publica el estado de su atención viva, y no su identificador', async () => {
       const { entryId, encounter } = await inTheWaitingRoomWithAttention();
+      await insideTheWidestThreshold();
 
       const confirmed = await transition(entryId, {
         to: 'IN_PROGRESS',

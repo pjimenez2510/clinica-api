@@ -444,6 +444,12 @@ export interface SiteBookingParameters {
    * which is exactly why the resolution below uses `??` and not `||`.
    */
   lateArrivalGraceMinutes: number;
+  /**
+   * AG-120, AG-142. Which permission lets a late appointment into care
+   * through the status route. Data, like `overbookingPermission`, and
+   * checked the same two ways before it is stored (D-170.3).
+   */
+  lateArrivalOverridePermission: string;
 }
 
 /**
@@ -500,6 +506,7 @@ export const DEFAULT_BOOKING_PARAMETERS: SiteBookingParameters = Object.freeze({
   overbookingPermission: 'agenda:overbook',
   // AG-142. The column default the migration wrote, stated once and shared.
   lateArrivalGraceMinutes: DEFAULT_LATE_ARRIVAL_GRACE_MINUTES,
+  lateArrivalOverridePermission: 'agenda:overbook',
 });
 
 /**
@@ -540,6 +547,9 @@ export function resolveBookingParameters(
     lateArrivalGraceMinutes:
       stored?.lateArrivalGraceMinutes ??
       DEFAULT_BOOKING_PARAMETERS.lateArrivalGraceMinutes,
+    lateArrivalOverridePermission:
+      stored?.lateArrivalOverridePermission ??
+      DEFAULT_BOOKING_PARAMETERS.lateArrivalOverridePermission,
   };
 }
 

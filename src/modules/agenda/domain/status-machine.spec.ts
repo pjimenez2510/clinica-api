@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  WallClockTime,
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+} from '../../../shared/domain/clinic-time';
+import {
   AgendaEntryHasEncounterError,
+  ArrivalNotOnAppointmentDayError,
   AttentionStillInProgressError,
   AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
@@ -10,6 +17,7 @@ import {
 import type { AgendaEntryStatus, TransitionRead } from './agenda.repository';
 import {
   type AgendaTransitionTarget,
+  assertArrivalOnAppointmentDay,
   assertNoShowNotBeforeStart,
   assertTransition,
   effectsOf,
@@ -176,6 +184,38 @@ describe('the no-show clock rule', () => {
   });
 });
 
+/**
+ * AG-173 (D-153.6). The day is the clinic's, derived from today's clock and
+ * never typed: the case that matters is the evening, when Guayaquil is still
+ * on the appointment's day and UTC already moved to the next.
+ */
+describe('AG-173 the arrival belongs to the appointment day', () => {
+  const today = clinicalDateOf(new Date());
+  const at = (date: typeof today, hhmm: string) =>
+    atWallClock(date, WallClockTime.parse(hhmm));
+
+  it('AG-173 admits the arrival on the appointment day, also at 19:30 in Guayaquil (already tomorrow in UTC)', () => {
+    const startsAt = at(today, '18:00');
+    const now = at(today, '19:30');
+    // Control: in UTC the two instants fall on DIFFERENT days (23:00Z and
+    // 00:30Z), so a UTC comparison would refuse what Guayaquil admits.
+    expect(now.toISOString().slice(0, 10)).not.toBe(
+      startsAt.toISOString().slice(0, 10),
+    );
+    expect(() => assertArrivalOnAppointmentDay(startsAt, now)).not.toThrow();
+  });
+
+  it('AG-173 refuses the arrival on an appointment of another day, before or after', () => {
+    const now = at(today, '10:00');
+    expect(() =>
+      assertArrivalOnAppointmentDay(at(addDays(today, 1), '08:00'), now),
+    ).toThrow(ArrivalNotOnAppointmentDayError);
+    expect(() =>
+      assertArrivalOnAppointmentDay(at(addDays(today, -1), '18:00'), now),
+    ).toThrow(ArrivalNotOnAppointmentDayError);
+  });
+});
+
 describe('the effects of each arrival', () => {
   const now = new Date('2026-09-14T13:05:00Z');
 
@@ -251,6 +291,10 @@ describe('deshacer un bloqueo (AG-114)', () => {
     startsAt: new Date('2026-09-14T13:00:00Z'),
     releasedAt: null,
     noShowAt: null,
+    checkedInAt: null,
+    emergencyFlagged: false,
+    walkIn: false,
+    alreadyAdmittedLate: false,
     statusBeforeNoShow: null,
     hasEncounter: false,
     encounterHasClinicalAct: false,
@@ -293,6 +337,10 @@ describe('volver a cerrar un bloqueo quitado (AG-154)', () => {
     startsAt: new Date(),
     releasedAt: new Date(),
     noShowAt: null,
+    checkedInAt: null,
+    emergencyFlagged: false,
+    walkIn: false,
+    alreadyAdmittedLate: false,
     statusBeforeNoShow: null,
     hasEncounter: false,
     encounterHasClinicalAct: false,
@@ -332,6 +380,10 @@ describe('la atención manda sobre la cita (AG-045, AG-148)', () => {
     startsAt: now,
     releasedAt: null,
     noShowAt: null,
+    checkedInAt: null,
+    emergencyFlagged: false,
+    walkIn: false,
+    alreadyAdmittedLate: false,
     statusBeforeNoShow: null,
     hasEncounter: true,
     encounterHasClinicalAct: true,

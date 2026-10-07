@@ -98,6 +98,17 @@ export interface SiteParameters {
    * point of it being a site parameter (REQ-145).
    */
   waitlistMaxContactAttempts: number;
+  /**
+   * AG-142, AG-119, AG-120. Minutes of delay above which an arrival is late
+   * at this site. Zero is the strictest value: any delay is late.
+   */
+  lateArrivalGraceMinutes: number;
+  /**
+   * AG-142, AG-120. Which permission lets a late appointment into care
+   * through the status route. A permission code stored as data, checked like
+   * `overbookingPermission` (D-170.3 is open on which one).
+   */
+  lateArrivalOverridePermission: string;
   cancelledRetention: CancelledRetention;
   /**
    * ORD-063, ORD-065. Minutes a critical laboratory value may wait for its
@@ -201,6 +212,17 @@ export const PARAMETER_RANGES = {
       `Los intentos de contacto de la lista de espera van de ${min} a ${max}`,
   },
   /**
+   * AG-142. Mirrors `site_parameter_late_arrival_grace_range`. Zero is the
+   * strictest — any delay is late —; four hours late is not a late arrival
+   * any policy can be about, it is another appointment.
+   */
+  lateArrivalGraceMinutes: {
+    min: 0,
+    max: 240,
+    describe: (min, max) =>
+      `El margen de llegada tardía va de ${min} a ${max} minutos (4 horas)`,
+  },
+  /**
    * ORD-063, ORD-065. Mirrors `site_parameter_critical_notice_within_minutes_range`.
    * Below 5 minutes it is noise; above a day it is no longer «de manera
    * urgente» (A.M. 00002393 art. 39). The deadline is mandatory (D-113 a):
@@ -259,6 +281,9 @@ export const DEFAULT_SITE_PARAMETERS: SiteParameters = {
   overbookingPermission: 'agenda:overbook',
   /** D-040 (a), recommendation pending the clinic's answer. The column default. */
   waitlistMaxContactAttempts: 3,
+  /** The columns' defaults since 20-08-2026; which ones is D-170.3. */
+  lateArrivalGraceMinutes: 15,
+  lateArrivalOverridePermission: 'agenda:overbook',
   cancelledRetention: 'NEVER',
   /** D-111 §1, decided by the author on 01-10-2026: sixty minutes. */
   criticalNoticeWithinMinutes: 60,
@@ -286,11 +311,16 @@ export const DEFAULT_SITE_PARAMETERS: SiteParameters = {
 export function assertPermissionIsDeclared(
   code: string,
   declared: readonly string[],
+  field: PermissionParameter = 'overbookingPermission',
 ): void {
   if (declared.includes(code)) return;
 
-  throw new UnknownPermissionError([code], 'overbookingPermission');
+  throw new UnknownPermissionError([code], field);
 }
+
+/** The parameters that hold a permission code (AG-101, AG-142). */
+export type PermissionParameter =
+  'overbookingPermission' | 'lateArrivalOverridePermission';
 
 /**
  * CF-065. Refuses the whole write when any number is outside its range, and

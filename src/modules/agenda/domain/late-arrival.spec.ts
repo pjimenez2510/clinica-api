@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LATE_ARRIVAL_GRACE_MINUTES,
   arrivalDelayMinutes,
+  lateAdmissionOf,
   lateArrivalWarningsFor,
 } from './late-arrival';
+import { LateArrivalNotAuthorisedError } from './agenda.errors';
 
 /**
  * AG-118, AG-119, AG-142. The arrival delay, judged without a database and
@@ -107,5 +109,58 @@ describe('la advertencia de llegada tardía', () => {
     // como [NECESITA ACLARACIÓN] bajo AG-142 —, y un defecto es lo que hace
     // que el sistema arranque, no la prueba de que alguien lo eligió.
     expect(DEFAULT_LATE_ARRIVAL_GRACE_MINUTES).toBe(15);
+  });
+});
+
+/**
+ * AG-120 (D-170.2). Letting a late appointment into care: refused by the
+ * status route without the site's permission, recorded when it is let in.
+ */
+describe('AG-120 la admisión fuera de plazo', () => {
+  const late = {
+    startsAt: EIGHT,
+    checkedInAt: minutesAfter(40),
+    emergencyFlagged: false,
+    graceMinutes: 15,
+  };
+
+  it('AG-120 sin el permiso de la sede, la llegada tardía no pasa a atención', () => {
+    expect(() =>
+      lateAdmissionOf({ ...late, mayAdmitLate: false, refuse: true }),
+    ).toThrow(LateArrivalNotAuthorisedError);
+  });
+
+  it('AG-120 con el permiso pasa, y queda como admitida fuera de plazo', () => {
+    expect(lateAdmissionOf({ ...late, mayAdmitLate: true, refuse: true })).toBe(
+      true,
+    );
+  });
+
+  it('AG-120 abrir la nota nunca rechaza, y también deja constancia (D-170.2)', () => {
+    expect(
+      lateAdmissionOf({ ...late, mayAdmitLate: false, refuse: false }),
+    ).toBe(true);
+  });
+
+  it('AG-120 dentro del margen no hay nada que admitir ni que rechazar (control)', () => {
+    expect(
+      lateAdmissionOf({
+        ...late,
+        checkedInAt: minutesAfter(15),
+        mayAdmitLate: false,
+        refuse: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('AG-120 con la llegada calificada como emergencia el umbral no se aplica', () => {
+    expect(
+      lateAdmissionOf({
+        ...late,
+        emergencyFlagged: true,
+        mayAdmitLate: false,
+        refuse: true,
+      }),
+    ).toBe(false);
   });
 });
