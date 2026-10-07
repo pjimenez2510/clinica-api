@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { parseClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  clinicalDateOf,
+  parseClinicalDate,
+} from '../../../shared/domain/clinic-time';
 import { InvalidRucError } from '../../../shared/domain/value-objects/ruc.vo';
 import {
   LastActivePayerError,
@@ -310,14 +313,14 @@ describe('BI-231 la bitácora con antes y después', () => {
           code: 'IESS',
           kind: 'PUBLIC_NETWORK',
           ruc: VALID_RUC,
-          agreementReference: 'CONV-2026-01',
+          agreementReference: 'CONV-0042',
         }),
       ),
     });
 
     await pricing.updatePayer(
       'payer-iess',
-      { agreementReference: 'CONV-2026-01' },
+      { agreementReference: 'CONV-0042' },
       requester,
     );
 
@@ -330,21 +333,24 @@ describe('BI-231 la bitácora con antes y después', () => {
           agreementReference: null,
         }) as unknown,
         after: expect.objectContaining({
-          agreementReference: 'CONV-2026-01',
+          agreementReference: 'CONV-0042',
         }) as unknown,
       }),
     );
   });
 
   it('BI-231 a new price carries only the after half, its amount as a string', async () => {
-    const { service: pricing, mocks } = build();
+    const today = clinicalDateOf(new Date());
+    const { service: pricing, mocks } = build({
+      applyPriceChange: vi.fn().mockResolvedValue(price('new', '35.00', today)),
+    });
 
     await pricing.setPrice(
       {
         payerId: 'payer-particular',
         billableServiceId: 'service-1',
         amount: Money.parse('35.00'),
-        effectiveFrom: parseClinicalDate('2026-07-01'),
+        effectiveFrom: today,
       },
       requester,
     );
@@ -357,7 +363,7 @@ describe('BI-231 la bitácora con antes y después', () => {
         after: {
           billableServiceId: 'service-1',
           amount: '35.00',
-          validFrom: '2026-07-01',
+          validFrom: today,
           validTo: null,
         },
       }),
