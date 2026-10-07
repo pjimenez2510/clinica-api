@@ -205,15 +205,16 @@ línea de corte; emitir un RIDE y comprobar que **no** contiene ningún QR.
 
 **Cubre:** DOC-070 a DOC-079.
 
-**Solo servidor:** DOC-070, DOC-071, DOC-073, DOC-074, DOC-076 a DOC-078. Lo
+**Solo servidor:** DOC-070, DOC-071, DOC-073, DOC-074, DOC-076 a DOC-079. Lo
 que dicen está en los bytes del PDF, que compone el servidor y la pantalla
 entrega sin tocarlos (DOC-002, DOC-006): ningún código de la interfaz hace que
 la receta lleve su banda o el RIDE sus banderas, y una prueba de interfaz que
 los citara no probaría nada. Se comprueban sobre el PDF que la pantalla
 descarga en `clinica-web/e2e/flujos/f05-documentos.spec.ts` (receta, orden y
 certificado); el RIDE lo descarga caja, y su comprobación es del recorrido de
-F-06. DOC-079 sí tiene mitad visible: el editor de la receta rechaza el
-controlado en su línea y dice dónde se escribe (PR-070).
+F-06. DOC-079 es la ausencia de un generador: lo que la pantalla enseña al
+rechazar un controlado es el aviso genérico de un rechazo del servidor, con su
+frase (PR-070), y el recorrido de controlados lo comprueba contra la API real.
 
 ### H5 — La firma electrónica: el hueco declarado _(P3)_
 
