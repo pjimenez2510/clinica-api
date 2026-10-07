@@ -347,15 +347,32 @@ export class AllergyContraindicationError extends ConflictError {
     'La ficha registra una alergia al principio activo de esta receta. Si la alergia no es real, refútela en la ficha y vuelva a emitir';
   override readonly fieldErrors: readonly DomainFieldError[];
 
-  constructor(lines: readonly number[]) {
+  /**
+   * One field error per line, and — PR-112, PR-114 — one per allergy, by its
+   * id and nothing else: since the match is by substance, the allergy's
+   * concept may not be the line's, and the screen needs to know which one to
+   * offer to refute. No drug name travels (PR-094).
+   */
+  constructor(alerts: readonly { line: number; allergyId: string }[]) {
+    const lines = [...new Set(alerts.map((alert) => alert.line))].sort(
+      (a, b) => a - b,
+    );
+    const allergies = [...new Set(alerts.map((alert) => alert.allergyId))];
     super('Prescribed substance matches an active allergy of the chart', {
       lines: lines.join(','),
     });
-    this.fieldErrors = lines.map((line) => ({
-      field: `items.${line - 1}.conceptId`,
-      code: 'ALLERGY_CONTRAINDICATION',
-      message: `La ficha registra alergia a este principio activo (línea ${line})`,
-    }));
+    this.fieldErrors = [
+      ...lines.map((line) => ({
+        field: `items.${line - 1}.conceptId`,
+        code: 'ALLERGY_CONTRAINDICATION',
+        message: `La ficha registra alergia a este principio activo (línea ${line})`,
+      })),
+      ...allergies.map((allergyId) => ({
+        field: `allergies.${allergyId}`,
+        code: 'ALLERGY_CONTRAINDICATION',
+        message: 'Esta alergia de la ficha impide emitir la receta',
+      })),
+    ];
   }
 }
 

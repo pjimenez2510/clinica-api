@@ -372,6 +372,17 @@ ver el rechazo en uno ya pedido; cambiar la unidad de un analito con rangos
 escribiendo los rangos nuevos en el mismo guardado.
 **Cubre:** ORD-140, ORD-141, ORD-142. **Solo servidor:** ORD-142.
 
+### E15 — El Tarifario de prestaciones 2014 _(P2)_
+
+**Prueba independiente:** importar el tarifario sobre una base con el de
+desarrollo: el buscador de códigos de tarifario encuentra las prestaciones
+oficiales, y un examen que aún apunta a un código de desarrollo se sigue
+pidiendo.
+
+**Cubre:** ORD-133.
+
+**Solo servidor:** ORD-133.
+
 ### Fuera de las ocho
 
 **Transcripción masiva y gráficas de evolución.** Se transcribe **solo lo que se
@@ -1844,6 +1855,23 @@ renombrarlo rompe la completitud (ORD-039) y la corrección (ORD-055).
 - **ORD-142** — Toda edición de un examen o de un analito DEBERÁ dejar en
   `access_audit` el antes y el después de los campos editados.
   > AD-10 y la mitad que ORD-111 no guardaba (D-150).
+
+## 15. El Tarifario de prestaciones del SNS (D-149)
+
+- **ORD-133** — CUANDO se importe el Tarifario de Prestaciones para el SNS
+  2014, el sistema DEBERÁ guardarlo como edición nueva de `TARIFF`, con
+  código, descripción, sección del tarifario y las UVR por nivel de atención
+  que trae la fila; y DEBERÁ retirar los conceptos de la edición anterior
+  **salvo** los que un examen activo todavía nombra en `tariff_code`, que
+  siguen vigentes y se informan al terminar.
+  > Retirar el código que un examen usa haría que ese examen dejara de
+  > pedirse (ORD-004) el día de la carga. Se informa para que la clínica le
+  > ponga el código oficial desde el catálogo de exámenes. El tarifario es
+  > nomenclatura: lo que la clínica cobra no cambia, y ningún importe se
+  > calcula con la UVR mientras el factor de conversión no esté decidido
+  > (D-149).
+
+---
 
 ## Códigos de error nuevos
 

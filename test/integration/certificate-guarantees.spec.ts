@@ -430,6 +430,29 @@ describe('CER-034 y CER-035 la contingencia y la maternidad, garantizadas por la
     ).resolves.toBe(1);
   });
 
+  it('CER-049 EN-233 la base reconoce como obstetrico el codigo de la OMS con punto, y no otro', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const before = (days: number) => addDays(scene.day, -days);
+    const maternity = () =>
+      insertRest(prisma, scene, {
+        contingency: 'MATERNITY',
+        admission: before(3),
+        birth: before(2),
+        discharge: scene.day,
+      });
+
+    // Sin diagnóstico obstétrico: J02.9, de la edición de la OMS.
+    await createDiagnosis(prisma, scene.encounterId, 'J02.9');
+    await expect(maternity()).rejects.toThrow(
+      /medical_certificate_maternity_obstetric_diagnosis/,
+    );
+
+    // Control positivo: O80.9, como lo escribe la edición de la OMS.
+    await createDiagnosis(prisma, scene.encounterId, 'O80.9');
+    await expect(maternity()).resolves.toBe(1);
+  });
+
   it('CER-035 las fechas de maternidad no caben en otra contingencia', async () => {
     const prisma = db();
     const scene = await aScene(prisma);

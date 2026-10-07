@@ -501,6 +501,18 @@ alergia del paciente sigue a la vista.
 
 **Cubre:** EN-230 a EN-232. **Solo interfaz:** EN-230, EN-231, EN-232.
 
+### H13 — La CIE-10 oficial de la OMS _(P1)_
+
+**Prueba independiente:** importar la lista de la OMS sobre una base que ya
+tiene la edición de desarrollo: desde el día de corte se buscan y eligen sólo
+códigos de la OMS (`J02.9`, no `J02`), y un diagnóstico registrado antes sigue
+resolviéndose con el concepto con el que se registró.
+
+**Cubre:** EN-233, EN-234.
+
+**Solo servidor:** EN-233 y EN-234 (son el importador y la vigencia del
+catálogo; la pantalla de diagnóstico no cambia, sólo lo que ofrece).
+
 ### Fuera de las nueve
 
 **EN-148 a EN-150** —el triaje— tampoco pertenecen a ninguna entrega, y por otro
@@ -3780,6 +3792,45 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
   > **Excepción mientras decide D-145:** el valor anterior de un resultado
   > corregido sigue a la vista en su tarjeta, porque quien actuó sobre él
   > tiene que verlo sin buscarlo (ORD, informe sustituido).
+
+---
+
+## 28. La CIE-10 oficial de la OMS (REQ-026)
+
+- **EN-233** — CUANDO se importe la lista tabular de la CIE-10 de la OMS en
+  español (edición del DEIS, la que usa el RDACAA), el sistema DEBERÁ
+  guardarla como **edición nueva** de `CIE10`: cada código con su punto
+  (`J02.9`; los de tres caracteres sin subdivisión, con la `X` de la lista,
+  `I10.X`), colgado de su capítulo —los 22 de la OMS, raíces del árbol— y con
+  la hoja de la que sale en `attributes.use` (`PRINCIPAL`, `ASTERISK`,
+  `EXTERNAL_CAUSE`); y SI el sistema ya tenía conceptos vigentes, ENTONCES
+  DEBERÁ **retirarlos** desde el día de corte, sin borrar ninguno. El día de
+  corte es el siguiente al de la importación en `America/Guayaquil`, salvo
+  que se indique otro (`CIE10_EFFECTIVE_FROM`, AAAA-MM-DD: con una edición
+  vigente no se admite uno anterior a mañana); sin edición previa, la edición
+  rige desde el 1 de enero de 2019, antes que cualquier atención.
+  > La lista trae **sólo códigos de cuatro caracteres** —los que el RDACAA
+  > acepta— y ni grupos ni categorías de tres, así que todo lo que cuelga de
+  > un capítulo es elegible. Un diagnóstico apunta por id a la versión del
+  > concepto vigente en la fecha de su atención (EN-040), y ése no cambia:
+  > una atención abierta antes del corte sigue codificando con la edición
+  > anterior, y `trg_diagnosis_concept_in_force` sigue admitiéndolo. El corte
+  > es mañana y no hoy por eso mismo: una atención de esta mañana con
+  > diagnósticos de la edición anterior no puede quedar con conceptos que ya
+  > no rigen el día de su atención.
+  >
+  > La CIE-10-ES de España **no** se usa: es una adaptación con códigos que la
+  > OMS no tiene.
+
+- **EN-234** — ANTES de importar una edición de `CIE10`, el importador DEBERÁ
+  listar cada código ya registrado en un diagnóstico o en una retirada que la
+  edición nueva no trae, con la **equivalencia propuesta** (el código de la
+  lista que empieza igual: `A00` → `A00.0`, `A00.1`, `A00.9`), y NO DEBERÁ
+  borrar, reescribir ni volver a apuntar ningún diagnóstico.
+  > Es información para quien carga el catálogo, no una corrección: lo
+  > registrado se queda con el código y el texto que se congelaron (EN-041).
+
+---
 
 ## Códigos de error nuevos
 

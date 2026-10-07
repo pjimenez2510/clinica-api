@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { exactAllergyMatches } from './allergy-check';
+import { exactAllergyMatches, substanceKeysOf } from './allergy-check';
 import type { KnownAllergy } from './allergy-check';
 
 /**
@@ -118,5 +118,81 @@ describe('la comprobación de alergia', () => {
     expect(
       exactAllergyMatches([{ line: 1, conceptId: AMOXICILLIN }], []),
     ).toEqual([]);
+  });
+
+  describe('PR-114 a través de las ediciones del CNMB', () => {
+    // Cada edición del cuadro crea conceptos nuevos: la amoxicilina de la
+    // edición anterior y la de la nueva tienen ids distintos y el mismo código.
+    const OLD = 'concept-enalapril-dev';
+    const NEW = 'concept-enalapril-2026';
+    const keys = new Map([
+      [OLD, substanceKeysOf({ code: 'ENALAPRIL', display: 'Enalapril', attributes: null })], // prettier-ignore
+      [NEW, substanceKeysOf({ code: 'C09AA02', display: 'Enalapril', attributes: { replaces: ['ENALAPRIL'], substances: ['dci:enalapril'] } })], // prettier-ignore
+      [IBUPROFEN, substanceKeysOf({ code: 'M01AE01', display: 'Ibuprofeno', attributes: null })], // prettier-ignore
+    ]);
+
+    it('PR-114 avisa al recetar la edición nueva de un medicamento cuya alergia se registró contra la anterior', () => {
+      expect(
+        exactAllergyMatches(
+          [{ line: 1, conceptId: NEW }],
+          [allergyTo(OLD)],
+          keys,
+        ),
+      ).toEqual([{ line: 1, allergyId: `allergy-${OLD}`, match: 'EXACT' }]);
+    });
+
+    it('PR-114 avisa también en el otro sentido: alergia a la nueva, borrador con la anterior', () => {
+      expect(
+        exactAllergyMatches(
+          [{ line: 1, conceptId: OLD }],
+          [allergyTo(NEW)],
+          keys,
+        ),
+      ).toHaveLength(1);
+    });
+
+    it('PR-114 no avisa de otro medicamento aunque los dos tengan claves', () => {
+      expect(
+        exactAllergyMatches(
+          [{ line: 1, conceptId: IBUPROFEN }],
+          [allergyTo(NEW)],
+          keys,
+        ),
+      ).toEqual([]);
+    });
+
+    it('PR-114 las claves son el código, los que sustituye y sus principios activos, sin repetir ni vacíos', () => {
+      expect(
+        substanceKeysOf({
+          code: 'C09AA02',
+          display: 'Enalapril',
+          attributes: {
+            replaces: ['ENALAPRIL', '', 7],
+            substances: ['dci:enalapril', 3],
+          },
+        }),
+      ).toEqual(['C09AA02', 'ENALAPRIL', 'dci:enalapril']);
+      // Sin principios activos declarados (el cuadro de desarrollo), el nombre.
+      expect(
+        substanceKeysOf({ code: 'ACIDO-ACETILSALICILICO', display: 'Ácido  Acetilsalicílico', attributes: null }), // prettier-ignore
+      ).toEqual(['ACIDO-ACETILSALICILICO', 'dci:acido acetilsalicilico']);
+    });
+
+    it('PR-114 el mismo principio activo bajo dos códigos del cuadro es la misma sustancia', () => {
+      // El cuadro reparte el ácido acetilsalicílico en B01AC06 (100 mg) y
+      // N02BA01 (500 mg): la alergia a uno salta con el otro.
+      const aspirin = new Map([
+        ['b01ac06', substanceKeysOf({ code: 'B01AC06', display: 'Ácido acetilsalicílico', attributes: { substances: ['dci:acido acetilsalicilico'] } })], // prettier-ignore
+        ['n02ba01', substanceKeysOf({ code: 'N02BA01', display: 'Ácido acetilsalicílico', attributes: { substances: ['dci:acido acetilsalicilico'] } })], // prettier-ignore
+        ['dev', substanceKeysOf({ code: 'ACIDO-ACETILSALICILICO', display: 'Ácido acetilsalicílico', attributes: null })], // prettier-ignore
+      ]);
+
+      expect(
+        exactAllergyMatches([{ line: 1, conceptId: 'n02ba01' }], [allergyTo('b01ac06')], aspirin), // prettier-ignore
+      ).toHaveLength(1);
+      expect(
+        exactAllergyMatches([{ line: 1, conceptId: 'n02ba01' }], [allergyTo('dev')], aspirin), // prettier-ignore
+      ).toHaveLength(1);
+    });
   });
 });

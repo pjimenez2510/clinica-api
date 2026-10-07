@@ -340,6 +340,39 @@ describe('editar un diagnóstico en el sitio (EN-212)', () => {
     await recode(prisma, obstetric!.id, 'J02', editor.id, 'Código mal elegido');
   });
 
+  it('EN-212 D-117.15 EN-233 con la CIE-10 de la OMS: O80 se corrige a O80.9 bajo un reposo de maternidad; a J02.9, no', async () => {
+    const prisma = db();
+    const { practitioner, encounter, diagnoses, editor } =
+      await anEncounterWithDiagnoses(prisma, ['O80']);
+    const [obstetric] = diagnoses;
+    const day = clinicalDateOf(encounter.startedAt);
+    await prisma.$executeRaw`
+      INSERT INTO medical_certificate
+        (encounter_id, patient_id, issued_by_id, type, rest_from, rest_to,
+         include_diagnosis, verification_code, contingency_type,
+         maternity_admission_on, birth_on, maternity_discharge_on, issued_at)
+      VALUES (${encounter.id}::uuid, ${encounter.patientId}::uuid,
+              ${practitioner.id}::uuid, 'MEDICAL_REST', ${day}::date,
+              ${addDays(day, 83)}::date, true,
+              ${`EN233M-${encounter.id.slice(0, 12)}`}, 'MATERNITY',
+              ${addDays(day, -2)}::date, ${addDays(day, -1)}::date,
+              ${day}::date, ${encounter.startedAt})`;
+
+    // The code of the development list to the WHO's, with its dot: still
+    // obstetric, the rest still supported.
+    await recode(
+      prisma,
+      obstetric!.id,
+      'O80.9',
+      editor.id,
+      'Edición de la OMS',
+    );
+    // Control: from the WHO's obstetric code to a non-obstetric one, refused.
+    await expect(
+      recode(prisma, obstetric!.id, 'J02.9', editor.id, 'Código mal elegido'),
+    ).rejects.toThrow(/encounter_diagnosis_supports_maternity_rest/);
+  });
+
   it('EN-212 la BASE no deja mover un diagnóstico a otra atención, ni siquiera con sello (encounter_diagnosis_stays_on_its_encounter)', async () => {
     const prisma = db();
     const { encounter, diagnoses, editor } =

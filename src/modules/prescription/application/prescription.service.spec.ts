@@ -155,6 +155,7 @@ const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
     offFormularyJustification: item.offFormularyJustification,
   })),
   allergies: [],
+  substanceKeys: new Map(),
   cityOfPrescription: 'Quito',
   diagnosisCount: 1,
   prescriber: {
@@ -194,6 +195,13 @@ class FakeRepository implements PrescriptionRepository {
 
   presentationsOf(): Promise<{ form: string; concentration: string }[]> {
     return Promise.resolve([]);
+  }
+
+  /** PR-114. What the CNMB says each concept is; empty unless a test sets it. */
+  keys = new Map<string, readonly string[]>();
+
+  substanceKeysOf(): Promise<ReadonlyMap<string, readonly string[]>> {
+    return Promise.resolve(this.keys);
   }
 
   rewriteDraft(rewrite: DraftRewrite): Promise<PrescriptionView> {
@@ -455,6 +463,48 @@ describe('el servicio de recetas', () => {
     expect(composed.allergyAlerts).toEqual([
       { line: 1, allergyId: 'allergy-1', match: 'EXACT' },
     ]);
+  });
+
+  it('PR-114 informa al componer de la alergia registrada contra otra edición del CNMB', async () => {
+    // La línea receta la amoxicilina de la edición nueva; la alergia apunta
+    // a la de la anterior: ids distintos, mismo código.
+    allergyReader.allergies = [anAllergy('concept-amoxicillin-previous')];
+    repository.keys = new Map([
+      [AMOXICILLIN, ['J01CA04', 'AMOXICILINA']],
+      ['concept-amoxicillin-previous', ['AMOXICILINA']],
+    ]);
+
+    const composed = await service.compose(composeRequest, requester);
+
+    expect(composed.allergyAlerts).toEqual([
+      { line: 1, allergyId: 'allergy-1', match: 'EXACT' },
+    ]);
+  });
+
+  it('PR-114 interrumpe la emisión con la alergia de otra edición, con las claves leídas en la transacción', async () => {
+    repository.snapshot = aSnapshot({
+      allergies: [
+        {
+          id: 'allergy-1',
+          substanceConceptId: 'concept-amoxicillin-previous',
+          substanceText: 'Amoxicilina',
+        },
+      ],
+      substanceKeys: new Map([
+        [AMOXICILLIN, ['J01CA04', 'AMOXICILINA']],
+        ['concept-amoxicillin-previous', ['AMOXICILINA']],
+      ]),
+    });
+
+    // The refusal names the allergy by its id, so the screen can offer to
+    // refute it even when its concept is not the line's (PR-112).
+    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+      code: 'ALLERGY_CONTRAINDICATION',
+      fieldErrors: expect.arrayContaining([
+        expect.objectContaining({ field: 'items.0.conceptId' }),
+        expect.objectContaining({ field: 'allergies.allergy-1' }),
+      ]),
+    });
   });
 
   it('PR-060 interrumpe la EMISIÓN de esa misma receta', async () => {
