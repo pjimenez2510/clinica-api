@@ -1200,15 +1200,20 @@ describe('ORD-124 la anulación y el informe, a la vez, contra PostgreSQL', () =
     const userId = (await createUser(prisma)).id;
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
+    let signalLocked!: () => void;
+    const locked = new Promise<void>((resolve) => (signalLocked = resolve));
 
     // Otra sesión anula la glucosa y retiene el bloqueo.
     const cancelling = prisma.$transaction(
       async (tx) => {
         await tx.$executeRaw`UPDATE "service_order_item" SET "status" = 'CANCELLED', "completed_at" = clock_timestamp(), "cancelled_by_id" = ${userId}::uuid WHERE "id" = ${glucose.id}::uuid`;
+        signalLocked();
         await held;
       },
       { timeout: 20_000 },
     );
+    // El informe sale solo cuando la anulación ya tiene la fila.
+    await locked;
     const now = new Date();
     const registering = reports
       .register(
@@ -1243,16 +1248,21 @@ describe('ORD-124 la anulación y el informe, a la vez, contra PostgreSQL', () =
     const userId = (await createUser(prisma)).id;
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
+    let signalLocked!: () => void;
+    const locked = new Promise<void>((resolve) => (signalLocked = resolve));
 
     // El informe completa la biometría y retiene el bloqueo.
     const completing = prisma.$transaction(
       async (tx) => {
         await tx.$queryRaw`SELECT 1 FROM "service_order_item" WHERE "id" = ${bh.id}::uuid FOR UPDATE`;
         await tx.$executeRaw`UPDATE "service_order_item" SET "status" = 'COMPLETED', "completed_at" = clock_timestamp() WHERE "id" = ${bh.id}::uuid`;
+        signalLocked();
         await held;
       },
       { timeout: 20_000 },
     );
+    // La anulación sale solo cuando el informe ya tiene la fila completada.
+    await locked;
     const cancelling = orders
       .cancelItem({
         orderId: order.id,
