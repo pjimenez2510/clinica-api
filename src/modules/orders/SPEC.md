@@ -323,16 +323,23 @@ y volver: siguen marcados. Emitir y abrir el PDF: «HEMATOLOGÍA» y «BIOQUÍMI
 encabezan sus exámenes, la cabecera trae el sexo y, arriba de las indicaciones,
 la línea del ayuno nombra la glucosa; la biometría, que no pide preparación, no
 ocupa línea.
-**Cubre:** ORD-123, ORD-125, ORD-126, ORD-127, ORD-128.
+**Cubre:** ORD-123, ORD-125, ORD-126, ORD-127, ORD-128, **ORD-150** —la
+orden en pantalla agrupada y con el sexo como el PDF (`feat/f05-certificados-ordenes`)—.
 
 ORD-127 y ORD-128 (D-138.1 y D-138.5) entran en esta rama por encargo de la
 principal: son de la bandera y de la lista de borradores, no del papel.
 
-**Solo servidor:** ORD-127 (la edad con que se elige el rango no se ve en
-pantalla).
-**Solo interfaz:** ORD-123. Lo marcado de otro tipo vive en la pantalla
-mientras se compone y nunca viaja: el servidor sólo recibe la orden de un tipo,
-y lo que rechaza la mezcla es ORD-097, ya probado contra la base.
+**Solo servidor:** ORD-125, ORD-126, ORD-127. Los dos primeros son el
+contenido del PDF, que compone el servidor y la pantalla entrega sin tocar
+(DOC-002, DOC-006): se prueban sobre el layout en la API y, sobre los bytes
+que entrega el clic, en el recorrido `f05-documentos`; lo que la pantalla
+enseña de ellos es ORD-130 y ORD-150. ORD-127: la edad con que se elige el
+rango no se ve en pantalla.
+
+**Solo interfaz:** ORD-123, ORD-150. Lo marcado de otro tipo vive en la
+pantalla mientras se compone y nunca viaja: el servidor sólo recibe la orden de
+un tipo, y lo que rechaza la mezcla es ORD-097, ya probado contra la base.
+ORD-150 es la orden emitida tal como la pinta la pantalla.
 
 ### E12 — Un examen anulado no recibe informe _(P1)_
 
@@ -1786,6 +1793,20 @@ como el 010A._
   > se lee del catálogo **al imprimir**, como la muestra y la preparación
   > (DOC-072): la línea congela código y nombre, no la sección. Lo que la
   > orden ya imprimía se conserva.
+
+- **ORD-150** — La orden emitida en pantalla DEBERÁ agrupar sus exámenes vivos
+  como el PDF (ORD-126) —bajo su sección del 010A, en el orden en que aparece
+  por primera vez, y los que no tienen sección al final bajo «OTROS
+  EXÁMENES»— y llevar en la cabecera el sexo de la ficha con la misma palabra
+  que el PDF («—» si no se registró); y MIENTRAS el catálogo cargado no tenga
+  el examen de una línea —cargando, fallido, o retirado después de emitir—, la
+  pantalla **NO DEBERÁ** ponerlo bajo una sección ni decir la línea del ayuno,
+  y DEBERÁ remitir al PDF, que lee el examen por su código aunque esté
+  retirado.
+  > **Solo interfaz** (revisión de `feat/f05-certificados-ordenes`). Sin la
+  > última parte, con un perfil lipídico retirado la pantalla decía «8 horas
+  > de ayuno» por la glucosa y el PDF «12 horas»: quien lo lee en pantalla
+  > se lo dice mal al paciente.
 
 ## 13. Lo que el autor decidió el 06-10-2026 (D-137, D-139.1, D-139.2)
 
