@@ -56,6 +56,7 @@ import {
 import { bookingWarningsFor } from '../domain/holiday-calendar';
 import {
   arrivalDelayMinutes,
+  lateAdmissionOf,
   lateArrivalWarningsFor,
 } from '../domain/late-arrival';
 import {
@@ -329,6 +330,12 @@ export interface TransitionRequest {
    * cannot be told apart from a datum somebody simply forgot.
    */
   coverageCheckSkippedReason?: string;
+  /**
+   * AG-120. Whether the caller holds a permission AT THIS SITE, resolved by
+   * the controller from the session. Asked with the code the site stores,
+   * which only the service reads. Absent: holds nothing.
+   */
+  holds?: (permission: string) => boolean;
 }
 
 /**
@@ -1347,6 +1354,19 @@ export class AgendaService {
       throw new EmergencyAssessmentRequiredError();
     }
 
+    /**
+     * AG-120. The site's threshold and who may skip it, read BEFORE the
+     * transaction and only for the step into care: the closure needs them to
+     * judge the row, and a parameter a moment old is as good as one read
+     * inside — it is not what two receptionists race on.
+     */
+    const lateArrivalPolicy =
+      request.to === 'IN_PROGRESS'
+        ? resolveBookingParameters(
+            await this.agenda.siteParametersFor(request.siteId),
+          )
+        : null;
+
     const entry = await this.agenda.transition(
       {
         siteId: request.siteId,
@@ -1380,6 +1400,23 @@ export class AgendaService {
           request.reason,
           now,
         );
+        /**
+         * AG-120 (D-170.2). The status route refuses a late arrival into care
+         * without the site's permission, and records who let it in with it.
+         */
+        const admittedLate =
+          lateArrivalPolicy !== null &&
+          lateAdmissionOf({
+            startsAt: read.startsAt,
+            checkedInAt: read.checkedInAt,
+            emergencyFlagged: read.emergencyFlagged,
+            graceMinutes: lateArrivalPolicy.lateArrivalGraceMinutes,
+            mayAdmitLate:
+              request.holds?.(
+                lateArrivalPolicy.lateArrivalOverridePermission,
+              ) ?? false,
+            refuse: true,
+          });
 
         return {
           to: request.to,
@@ -1409,6 +1446,9 @@ export class AgendaService {
             ...(request.to === 'ENTERED_IN_ERROR'
               ? { enteredInErrorReason: request.reason?.trim() }
               : {}),
+            ...(admittedLate
+              ? { lateAdmissionById: requester.userId, lateAdmissionAt: now }
+              : {}),
           },
           // AG-044: the reason lands on the entry only when it is annulled.
           // AG-117 does NOT borrow this column — see `effectsOf`.
@@ -1419,6 +1459,11 @@ export class AgendaService {
           // AG-117 both land, with who wrote it and when.
           historyNote: request.reason,
           interruptAttention,
+          // AG-129. An arrival called an emergency notifies, in the same
+          // transaction: the consequence is fixed and not configurable.
+          ...(request.to === 'CHECKED_IN' && request.emergency === true
+            ? { emergencyAlert: { raisedById: requester.userId, at: now } }
+            : {}),
         };
       },
     );

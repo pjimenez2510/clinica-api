@@ -604,6 +604,53 @@ async function startAttendance(
       changedById,
     },
   });
+
+  await recordLateAdmission(tx, agendaEntryId, changedById);
+}
+
+/**
+ * AG-120 (D-170.2). An arrival past the site's threshold that goes into care
+ * by the note keeps who let it in. The note is NEVER refused for it: it is the
+ * doctor with the patient in the room, and the relocation is the counter's
+ * call, which AG-119 warned about at the arrival.
+ *
+ * The rule is agenda's and is written here for the same reason as the two
+ * statements above: no module imports another. Same rule as its
+ * `lateAdmissionOf`: delay in whole minutes over the site's grace, and an
+ * arrival flagged as an emergency is exempt (Ley 77 art. 12).
+ */
+async function recordLateAdmission(
+  tx: Prisma.TransactionClient,
+  agendaEntryId: string,
+  admittedById: string,
+): Promise<void> {
+  const entry = await tx.agendaEntry.findUniqueOrThrow({
+    where: { id: agendaEntryId },
+    select: {
+      siteId: true,
+      startsAt: true,
+      checkedInAt: true,
+      emergencyFlaggedAt: true,
+    },
+  });
+  if (entry.checkedInAt === null || entry.emergencyFlaggedAt !== null) return;
+
+  const parameters = await tx.siteParameter.findUnique({
+    where: { siteId: entry.siteId },
+    select: { lateArrivalGraceMinutes: true },
+  });
+  // Every site has its row (CF-062); the column's default otherwise.
+  const grace = parameters?.lateArrivalGraceMinutes ?? 15;
+  const delay = Math.round(
+    (entry.checkedInAt.getTime() - entry.startsAt.getTime()) / 60_000,
+  );
+  if (delay <= grace) return;
+
+  await tx.agendaEntry.update({
+    where: { id: agendaEntryId },
+    // The application's clock, never `now()` in SQL: the walks move it.
+    data: { lateAdmissionById: admittedById, lateAdmissionAt: new Date() },
+  });
 }
 
 /** EN-121. The caller's resolved scope as a `where` fragment; `'all'` adds no filter. */

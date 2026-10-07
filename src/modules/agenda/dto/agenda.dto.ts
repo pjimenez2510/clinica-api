@@ -451,6 +451,21 @@ export const agendaEntrySchema = z.object({
   attention: z
     .enum(['OPEN', 'ON_HOLD', 'DISCONTINUED', 'DISCHARGED', 'COMPLETED'])
     .nullable(),
+  /**
+   * AG-120. Quién la pasó a atención con la llegada por encima del margen de
+   * la sede, y cuándo; `null` si no hizo falta.
+   */
+  lateAdmission: z
+    .object({ byName: z.string(), at: z.iso.datetime() })
+    .nullable(),
+  /** AG-129, AG-175. A quién avisó la calificación de emergencia, y si lo vio. */
+  emergencyAlerts: z.array(
+    z.object({
+      recipientName: z.string(),
+      alertedAt: z.iso.datetime(),
+      acknowledgedAt: z.iso.datetime().nullable(),
+    }),
+  ),
 });
 /** One entry as every listing serves it; also the response of creating and releasing a block. */
 export class AgendaEntryDto extends createZodDto(agendaEntrySchema) {}
@@ -1231,4 +1246,40 @@ export type WaitlistEntryResponse = z.infer<typeof waitlistEntrySchema>;
 export type WaitlistResponse = z.infer<typeof waitlistSchema>;
 export type WaitlistCandidatesResponse = z.infer<
   typeof waitlistCandidatesSchema
+>;
+
+/** AG-175. One pending emergency notice, as the recipient's banner shows it. */
+export const pendingEmergencyAlertSchema = z.object({
+  id: z.uuid(),
+  agendaEntryId: z.uuid(),
+  siteId: z.uuid(),
+  siteName: z.string(),
+  /** Apellidos, nombres: lo necesario para encontrarlo en la sala. */
+  patientName: z.string(),
+  startsAt: z.iso.datetime(),
+  alertedAt: z.iso.datetime(),
+  /** Quién calificó la llegada. */
+  raisedByName: z.string(),
+});
+export const pendingEmergencyAlertsSchema = z.object({
+  items: z.array(pendingEmergencyAlertSchema),
+});
+/** Response of GET /agenda/emergency-alerts/mine. */
+export class PendingEmergencyAlertsDto extends createZodDto(
+  pendingEmergencyAlertsSchema,
+) {}
+export type PendingEmergencyAlertsResponse = z.infer<
+  typeof pendingEmergencyAlertsSchema
+>;
+
+export const emergencyAlertAcknowledgementSchema = z.object({
+  id: z.uuid(),
+  acknowledgedAt: z.iso.datetime(),
+});
+/** Response of POST /agenda/emergency-alerts/:alertId/acknowledgement. */
+export class EmergencyAlertAcknowledgementDto extends createZodDto(
+  emergencyAlertAcknowledgementSchema,
+) {}
+export type EmergencyAlertAcknowledgementResponse = z.infer<
+  typeof emergencyAlertAcknowledgementSchema
 >;

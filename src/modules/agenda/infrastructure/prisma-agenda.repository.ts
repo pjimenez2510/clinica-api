@@ -47,6 +47,7 @@ import type {
   ScheduleContext,
   ScheduleContextQuery,
   StatusChange,
+  EmergencyAlertRaise,
   StoredDurationSources,
   StoredSiteParameters,
   SubjectStatusCommand,
@@ -136,6 +137,18 @@ const ENTRY_SELECT = {
   encounters: {
     where: { status: { not: 'ENTERED_IN_ERROR' } },
     select: { status: true },
+  },
+  // AG-120. Who let it in past the threshold: the name, never the account.
+  lateAdmissionAt: true,
+  lateAdmissionBy: { select: { firstName: true, lastName: true } },
+  // AG-129. Whom the emergency call notified. A handful of rows at most.
+  emergencyAlerts: {
+    orderBy: { alertedAt: 'asc' },
+    select: {
+      alertedAt: true,
+      acknowledgedAt: true,
+      recipient: { select: { firstName: true, lastName: true } },
+    },
   },
 } satisfies Prisma.AgendaEntrySelect;
 
@@ -575,6 +588,8 @@ export class PrismaAgendaRepository implements AgendaRepository {
         // of a row already being fetched by primary key, and AG-095 resolves
         // it through the same chain.
         lateArrivalGraceMinutes: true,
+        // AG-120. Who may let a late appointment into care.
+        lateArrivalOverridePermission: true,
       },
     });
   }
@@ -1239,6 +1254,7 @@ export class PrismaAgendaRepository implements AgendaRepository {
           releasedAt: true,
           emergencyAssessedAt: true,
           emergencyAssessedById: true,
+          emergencyFlaggedAt: true,
           _count: { select: { waitlistOrigin: true } },
         },
       });
@@ -1296,6 +1312,10 @@ export class PrismaAgendaRepository implements AgendaRepository {
           select: { status: true },
         });
         throw new AgendaEntryNotEditableError(current.status);
+      }
+
+      if (edit.emergencyAlert) {
+        await raiseEmergencyAlert(tx, command.entryId, edit.emergencyAlert);
       }
 
       const entry = await tx.agendaEntry.findUniqueOrThrow({
@@ -1384,6 +1404,9 @@ async function applyStatusChange(
       startsAt: true,
       releasedAt: true,
       noShowAt: true,
+      // AG-120. The delay and the emergency that exempts it.
+      checkedInAt: true,
+      emergencyFlaggedAt: true,
     },
   });
   if (!row) throw new AgendaEntryNotFoundError();
@@ -1409,6 +1432,8 @@ async function applyStatusChange(
     startsAt: row.startsAt,
     releasedAt: row.releasedAt,
     noShowAt: row.noShowAt,
+    checkedInAt: row.checkedInAt,
+    emergencyFlagged: row.emergencyFlaggedAt !== null,
     statusBeforeNoShow: noShowRow?.fromStatus ?? null,
     hasEncounter: attention !== null,
     encounterHasClinicalAct: attention?.hasClinicalAct ?? false,
@@ -1503,6 +1528,40 @@ async function applyStatusChange(
       toStatus: change.to,
       changedById: command.changedById,
       note: change.historyNote,
+    },
+  });
+
+  if (change.emergencyAlert) {
+    await raiseEmergencyAlert(tx, command.entryId, change.emergencyAlert);
+  }
+}
+
+/**
+ * AG-129 (D-170.1). The notice of an emergency arrival, in the transaction of
+ * the call: no row, no notice; no notice, no row.
+ *
+ * WHOM IT REACHES IS D-170.1, AND UNTIL THE CLINIC DECIDES IT IS THE
+ * PRACTITIONER OF THE APPOINTMENT — who will receive the patient, and the one
+ * professional the system knows for certain is expecting them. One row per
+ * recipient, so widening it (everyone with a schedule at the site right now,
+ * the recommendation) is more rows and no new shape.
+ */
+async function raiseEmergencyAlert(
+  tx: Prisma.TransactionClient,
+  agendaEntryId: string,
+  raise: EmergencyAlertRaise,
+): Promise<void> {
+  const entry = await tx.agendaEntry.findUniqueOrThrow({
+    where: { id: agendaEntryId },
+    select: { siteId: true, practitioner: { select: { userId: true } } },
+  });
+  await tx.agendaEmergencyAlert.create({
+    data: {
+      agendaEntryId,
+      siteId: entry.siteId,
+      recipientId: entry.practitioner.userId,
+      raisedById: raise.raisedById,
+      alertedAt: raise.at,
     },
   });
 }
@@ -1665,6 +1724,13 @@ function toEntryView(row: {
   rescheduledFromId: string | null;
   rescheduledTo: { id: string }[];
   encounters: { status: string }[];
+  lateAdmissionAt: Date | null;
+  lateAdmissionBy: { firstName: string; lastName: string } | null;
+  emergencyAlerts: {
+    alertedAt: Date;
+    acknowledgedAt: Date | null;
+    recipient: { firstName: string; lastName: string };
+  }[];
 }): AgendaEntryView {
   return {
     // Ecuadorian filing order, same as the register screen: surname first.
@@ -1707,5 +1773,21 @@ function toEntryView(row: {
     attention:
       (row.encounters[0]?.status as AgendaEntryView['attention'] | undefined) ??
       null,
+    // AG-120. The pair is both-or-neither in the base.
+    lateAdmission:
+      row.lateAdmissionAt && row.lateAdmissionBy
+        ? {
+            byName:
+              `${row.lateAdmissionBy.firstName} ${row.lateAdmissionBy.lastName}`.trim(),
+            at: row.lateAdmissionAt,
+          }
+        : null,
+    // AG-129. Whom it notified, by name.
+    emergencyAlerts: row.emergencyAlerts.map((alert) => ({
+      recipientName:
+        `${alert.recipient.firstName} ${alert.recipient.lastName}`.trim(),
+      alertedAt: alert.alertedAt,
+      acknowledgedAt: alert.acknowledgedAt,
+    })),
   };
 }

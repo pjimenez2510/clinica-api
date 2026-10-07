@@ -11,6 +11,7 @@ import {
   SlotNotAlignedError,
   ArrivalNotOnAppointmentDayError,
   EmergencyCorrectionNeedsClinicalPermissionError,
+  LateArrivalNotAuthorisedError,
 } from '../domain/agenda.errors';
 import {
   WallClockTime,
@@ -151,6 +152,8 @@ function anEntry(overrides: Partial<AgendaEntryView> = {}): AgendaEntryView {
     rescheduledFromId: null,
     rescheduledToId: null,
     attention: null,
+    lateAdmission: null,
+    emergencyAlerts: [],
     ...overrides,
   };
 }
@@ -225,6 +228,8 @@ function aTransitionRead(
     startsAt: EIGHT,
     releasedAt: null,
     noShowAt: null,
+    checkedInAt: null,
+    emergencyFlagged: false,
     statusBeforeNoShow: null,
     hasEncounter: false,
     encounterHasClinicalAct: false,
@@ -242,6 +247,7 @@ function anEditRead(overrides: Partial<EditRead> = {}): EditRead {
     releasedAt: null,
     emergencyAssessedAt: null,
     emergencyAssessedById: null,
+    emergencyFlaggedAt: null,
     hasEncounter: false,
     fromWaitlist: false,
     ...overrides,
@@ -1171,6 +1177,113 @@ describe('transitioning an appointment', () => {
     expect(recorded.transitions[0]?.change.to).toBe('CHECKED_IN');
   });
 
+  /** AG-120. In the waiting room, having arrived 40 minutes after its hour. */
+  const LATE_IN_THE_ROOM = aTransitionRead({
+    status: 'CHECKED_IN',
+    startsAt: EIGHT,
+    checkedInAt: AT_THE_COUNTER,
+  });
+
+  it('AG-120 the status route refuses a late arrival into care without the site permission, and writes nothing', async () => {
+    const { service, recorded } = serviceWith({
+      transitionRead: LATE_IN_THE_ROOM,
+      siteParameters: {
+        lateArrivalGraceMinutes: 15,
+        lateArrivalOverridePermission: 'agenda:overbook',
+      },
+    });
+
+    await expect(
+      service.transition(
+        { ...aTransition(), to: 'IN_PROGRESS', holds: () => false },
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(LateArrivalNotAuthorisedError);
+    expect(recorded.transitions).toEqual([]);
+  });
+
+  it('AG-120 with the permission the SITE names, it goes in and records who let it in', async () => {
+    const asked: string[] = [];
+    const { service, recorded } = serviceWith({
+      transitionRead: LATE_IN_THE_ROOM,
+      siteParameters: {
+        lateArrivalGraceMinutes: 15,
+        lateArrivalOverridePermission: 'settings:manage',
+      },
+    });
+
+    await service.transition(
+      {
+        ...aTransition(),
+        to: 'IN_PROGRESS',
+        holds: (permission) => {
+          asked.push(permission);
+          return permission === 'settings:manage';
+        },
+      },
+      REQUESTER,
+    );
+
+    // AG-142: the code comes from the site, not from this file.
+    expect(asked).toEqual(['settings:manage']);
+    const effects = recorded.transitions[0]?.change.effects;
+    expect(effects?.lateAdmissionById).toBe(USER);
+    expect(effects?.lateAdmissionAt).toBeInstanceOf(Date);
+  });
+
+  it('AG-120 inside the threshold nothing is refused nor recorded (control)', async () => {
+    const { service, recorded } = serviceWith({
+      transitionRead: LATE_IN_THE_ROOM,
+      siteParameters: { lateArrivalGraceMinutes: 60 },
+    });
+
+    await service.transition(
+      { ...aTransition(), to: 'IN_PROGRESS', holds: () => false },
+      REQUESTER,
+    );
+
+    expect(
+      recorded.transitions[0]?.change.effects.lateAdmissionById,
+    ).toBeUndefined();
+  });
+
+  it('AG-120 an arrival flagged as an emergency is exempt from the threshold', async () => {
+    const { service, recorded } = serviceWith({
+      transitionRead: { ...LATE_IN_THE_ROOM, emergencyFlagged: true },
+      siteParameters: { lateArrivalGraceMinutes: 15 },
+    });
+
+    await service.transition(
+      { ...aTransition(), to: 'IN_PROGRESS', holds: () => false },
+      REQUESTER,
+    );
+
+    expect(recorded.transitions[0]?.change.to).toBe('IN_PROGRESS');
+    expect(
+      recorded.transitions[0]?.change.effects.lateAdmissionById,
+    ).toBeUndefined();
+  });
+
+  it('AG-129 an arrival called an emergency raises its notice in the same change, and a negative call does not', async () => {
+    const yes = serviceWith({ transitionRead: STARTED });
+    await yes.service.transition(
+      { ...aTransition(), to: 'CHECKED_IN', emergency: true },
+      REQUESTER,
+    );
+    expect(yes.recorded.transitions[0]?.change.emergencyAlert).toEqual({
+      raisedById: USER,
+      at: AT_THE_COUNTER,
+    });
+
+    // Control: «no era una emergencia» is a call too, and notifies nobody.
+    const no = serviceWith({ transitionRead: STARTED });
+    await no.service.transition(
+      { ...aTransition(), to: 'CHECKED_IN', emergency: false },
+      REQUESTER,
+    );
+    expect(no.recorded.transitions[0]?.change.emergencyAlert).toBeUndefined();
+  });
+
   it('AG-044 sends the reason to the cancellation note and to the history', async () => {
     const { service, recorded } = serviceWith();
 
@@ -2063,6 +2176,50 @@ describe('correcting the emergency call (AG-132)', () => {
     );
 
     expect(recorded.edits).toHaveLength(1);
+  });
+
+  it('AG-129 a correction to «sí» with the patient here notifies; again «sí», or after the stay, does not', async () => {
+    const present = serviceWith({
+      editRead: anEditRead({
+        status: 'CHECKED_IN',
+        emergencyAssessedAt: EIGHT,
+        emergencyAssessedById: DOCTOR_USER,
+      }),
+    });
+    await present.service.correctEmergency(
+      { siteId: SITE, entryId: 'entry-1', emergency: true, mayWriteRecord: false }, // prettier-ignore
+      REQUESTER,
+    );
+    expect(present.recorded.edits[0]?.edit.emergencyAlert?.raisedById).toBe(
+      USER,
+    );
+
+    const already = serviceWith({
+      editRead: anEditRead({
+        status: 'CHECKED_IN',
+        emergencyAssessedAt: EIGHT,
+        emergencyAssessedById: DOCTOR_USER,
+        emergencyFlaggedAt: EIGHT,
+      }),
+    });
+    await already.service.correctEmergency(
+      { siteId: SITE, entryId: 'entry-1', emergency: true, mayWriteRecord: false }, // prettier-ignore
+      REQUESTER,
+    );
+    expect(already.recorded.edits[0]?.edit.emergencyAlert).toBeUndefined();
+
+    const gone = serviceWith({
+      editRead: anEditRead({
+        status: 'FULFILLED',
+        emergencyAssessedAt: EIGHT,
+        emergencyAssessedById: DOCTOR_USER,
+      }),
+    });
+    await gone.service.correctEmergency(
+      { siteId: SITE, entryId: 'entry-1', emergency: true, mayWriteRecord: true }, // prettier-ignore
+      REQUESTER,
+    );
+    expect(gone.recorded.edits[0]?.edit.emergencyAlert).toBeUndefined();
   });
 
   it('AG-132 corrects only a call that was made', async () => {

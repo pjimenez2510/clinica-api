@@ -513,6 +513,38 @@ export class NoShowBeforeStartError extends BusinessRuleViolation {
 }
 
 /**
+ * AG-175. No emergency notice with that id is addressed to the session. One
+ * answer for «does not exist» and «is somebody else's», like
+ * `AGENDA_ENTRY_NOT_FOUND`: telling them apart would confirm notices of
+ * other people to whoever guesses ids.
+ */
+export class EmergencyAlertNotFoundError extends NotFoundError {
+  readonly code = 'EMERGENCY_ALERT_NOT_FOUND';
+  override readonly userTitle =
+    'Ese aviso de emergencia no existe o no es para usted';
+
+  constructor() {
+    super('Emergency alert not found for this recipient');
+  }
+}
+
+/**
+ * AG-120 (D-170.2). The status route was asked to take a late arrival into
+ * care by somebody without the permission the site configures for it. 403,
+ * like the overbooking authoriser (AG-101): the act is legitimate, the person
+ * is not the one the clinic chose. The text says what to do instead.
+ */
+export class LateArrivalNotAuthorisedError extends ForbiddenError {
+  readonly code = 'LATE_ARRIVAL_NOT_AUTHORISED';
+  override readonly userTitle =
+    'La llegada superó el margen de la sede. Para pasarla a atención hace falta quien pueda autorizarlo; si no, reprograme la cita';
+
+  constructor() {
+    super('Late arrival into care without the site permission');
+  }
+}
+
+/**
  * AG-174 (D-141.5). Correcting the emergency call of a patient who already
  * left is a clinical judgement, and it takes the permission that writes the
  * record. 403: the request is right, the person is not the one to make it.

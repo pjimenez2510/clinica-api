@@ -168,6 +168,8 @@ function agendaEntry(
     rescheduledFromId: null,
     rescheduledToId: null,
     attention: null,
+    lateAdmission: null,
+    emergencyAlerts: [],
     ...overrides,
   };
 }

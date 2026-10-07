@@ -173,7 +173,22 @@ export function planEmergencyCorrection(
     throw new EmergencyCorrectionNeedsClinicalPermissionError();
   }
   const note = correction.note?.trim() || null;
+  /**
+   * AG-129, AG-174. A correction to «sí» notifies only while the patient is
+   * here — the notice exists to receive somebody at the door (art. 8) — and
+   * only if it was not already «sí».
+   */
+  const notifies =
+    correction.emergency && !afterTheStay && entry.emergencyFlaggedAt === null;
   return {
+    ...(notifies
+      ? {
+          emergencyAlert: {
+            raisedById: correction.correctedById,
+            at: correction.now,
+          },
+        }
+      : {}),
     emergency: {
       assessedAt: entry.emergencyAssessedAt,
       assessedById: entry.emergencyAssessedById,
