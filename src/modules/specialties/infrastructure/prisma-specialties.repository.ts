@@ -137,6 +137,13 @@ export class PrismaSpecialtiesRepository implements SpecialtiesRepository {
     });
   }
 
+  async findServiceType(id: string): Promise<ServiceTypeView | null> {
+    return this.prisma.serviceType.findUnique({
+      where: { id },
+      select: SERVICE_TYPE_SELECT,
+    });
+  }
+
   /** SP-020; SP-026 answered by `service_type_name_unique_per_specialty`. */
   async createServiceType(input: {
     specialtyId: string;
