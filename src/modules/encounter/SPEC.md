@@ -3755,8 +3755,9 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
   certificados y las colas de resultados DEBERÁN ser los botones de tipo fijo
   del sistema: en una fila, editar con lápiz, descargar o imprimir, y quitar,
   anular o descartar en rojo, sólo con icono, que digan su nombre al pasar el
-  ratón o al enfocarlos y lo anuncien al lector de pantalla; y cada tarjeta
-  DEBERÁ tener a lo sumo una acción principal.
+  ratón o al enfocarlos y lo anuncien al lector de pantalla, nombrando de qué
+  registro son; y cada pantalla, tarjeta o fila DEBERÁ tener a lo sumo una
+  acción principal.
   > Lo mismo que BI-207 en caja. «Hay muchos botones: editar, agregar,
   > descargar… me confundo» (autor).
 - **EN-231** — Esas pantallas NO DEBERÁN mostrar avisos de sólo información.
