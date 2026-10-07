@@ -495,6 +495,24 @@ AG-162 a AG-168.
 **Solo servidor:** AG-051, AG-052.
 **Solo interfaz:** AG-166, AG-167.
 
+### E12 — Recepción que se entiende sin leer _(P1)_
+
+La regla de `ESTANDAR-UI.md` §9 ter, que estrenó caja, en la agenda, el
+detalle de la cita y el tablero del día: una sola acción principal por cita,
+lo anulado plegado y ningún recuadro azul que explique cómo funciona algo. De
+paso, la disponibilidad de un profesional en un día se pide una vez y no tres.
+
+**Por qué es P1:** revisión del autor del 06-10-2026 («hay muchos botones…
+me confundo», «las personas generalmente no leen»); y la disponibilidad
+repetida acerca a recepción al límite de peticiones.
+**Prueba independiente:** como recepción, abrir la agenda del día y ver las
+citas anuladas plegadas tras «N anuladas o sin asistir · Ver»; abrir un cupo
+libre sin que se vuelva a pedir la disponibilidad que la vista de día ya
+tenía; en el tablero, ver las cerradas tras su línea y otro día dicho junto a
+la fecha.
+**Cubre:** AG-169 a AG-172.
+**Solo interfaz:** AG-169, AG-170, AG-171, AG-172.
+
 ## Criterios de éxito
 
 Medibles y sin nombrar tecnología. Son la respuesta a «¿esto quedó bien?» cuando
@@ -2504,6 +2522,44 @@ Convertirlo en configuración sería regalar la garantía.
   en su detalle (`versions`: cuándo, quién y qué cambió), y la pantalla DEBERÁ
   mostrarlas.
   > D-127.2: la historia la guarda el sistema y se puede ver.
+
+## 12. Recepción que se entiende sin leer (ESTANDAR-UI §9 ter)
+
+- **AG-169** — MIENTRAS la agenda muestre un día o una semana, la pantalla NO
+  DEBERÁ pintar en la rejilla las citas liberadas —anuladas o sin asistir—
+  salvo que se pidan con la línea «N anuladas o sin asistir · Ver», que DEBERÁ
+  decir cuántas hay a la vista y desplegarlas apagadas, con su estado; y el
+  resumen del día DEBERÁ seguir contándolas igual estén plegadas o no.
+  > «Lo anulado es ruido visual, que tenga alguna información y ya» (autor,
+  > 06-10-2026). Es la mitad visible de AG-018: el listado ya las trae
+  > señaladas; la pantalla las pliega con `HiddenItemsToggle`. Sin nada
+  > liberado no se pinta la línea.
+- **AG-170** — CUANDO la pantalla necesite la disponibilidad de un profesional
+  en una sede para un rango de días, DEBERÁ pedirla con una sola clave por
+  sede, profesional y rango, la misma desde la vista de día, la reserva y la
+  reprogramación; y MIENTRAS esa respuesta siga fresca en la caché, abrir un
+  cupo de ese día NO DEBERÁ volver a pedirla.
+  > Hallazgo del 06-10-2026: la vista de día, «Nueva cita» y «Reprogramar»
+  > guardaban la misma pregunta bajo tres claves distintas
+  > (`day-availability`, `availability` y la del diálogo) y la repetían, lo
+  > que acercaba a recepción al límite de 429. Las mutaciones que invalidan la
+  > disponibilidad (reservar, mover, anular) siguen invalidando esa única
+  > clave.
+- **AG-171** — CUANDO la pantalla ofrezca las acciones de una cita
+  —`availableActions`, en el pie del detalle y en la fila del tablero—,
+  DEBERÁ pintar como principal sólo la primera, que es el paso siguiente; el
+  resto con contorno; y en rojo sólo las que quitan algo del día (anular, no
+  asistió, se fue sin ser atendido, quitar bloqueo). Las dos pantallas DEBERÁN
+  dar a la misma acción la misma forma.
+  > §9 ter: una principal por tarjeta o fila. Antes, cada acción traía su
+  > propia variante y una cita llegada mostraba dos botones rellenos.
+- **AG-172** — MIENTRAS el tablero del día muestre un día que no es hoy en
+  Ecuador, DEBERÁ decirlo junto a la fecha, con «Volver a hoy», y no en un
+  aviso; y las citas cerradas DEBERÁN plegarse tras «N cerradas · Ver», con el
+  despliegue en la dirección (`?cerradas=si`).
+  > §9 ter: sin avisos de información. El conmutador «Mostrar también las
+  > cerradas» pasa a la línea común de lo plegado (AG-161: volver atrás
+  > conserva el estado).
 
 ## Códigos de error nuevos
 

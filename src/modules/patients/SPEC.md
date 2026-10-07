@@ -233,6 +233,21 @@ anterior en `record_version`; fusionar sin motivo y encontrar el rastro con
 autor, instante e instantánea.
 **Cubre:** PA-064 a PA-066.
 
+### P7 — La ficha que se entiende sin leer _(P1)_
+
+La regla de `ESTANDAR-UI.md` §9 ter en la ficha del paciente y sus pestañas:
+editar y descartar por icono en cada fila, lo descartado plegado y ningún
+recuadro azul; lo que importa —las alergias, la fusión— se dice en la propia
+ficha.
+
+**Por qué es P1:** revisión del autor del 06-10-2026; la ficha es la pantalla
+que más abre recepción.
+**Prueba independiente:** como médico, abrir una ficha con una alergia
+descartada y verla plegada tras «1 descartada · Ver»; corregir una alergia con
+el lápiz de su fila; abrir una ficha sin alergias registradas y verlo en ámbar.
+**Cubre:** PA-067 a PA-069.
+**Solo interfaz:** PA-067, PA-068, PA-069.
+
 ## Criterios de éxito
 
 Medibles y sin nombrar tecnología. **No empiezan en `SC-001` a propósito**: los
@@ -1975,6 +1990,35 @@ Ningún requisito de esta sección lo altera._
   > (`fix/fallos-inventario`).
 
 ---
+
+## 10. La ficha que se entiende sin leer (ESTANDAR-UI §9 ter)
+
+- **PA-067** — MIENTRAS la ficha muestre alergias, antecedentes o grupos
+  prioritarios, cada fila DEBERÁ ofrecer editar con el lápiz y descartar o
+  cerrar con la ✕ roja, con su nombre al pasar el ratón y en su
+  `aria-label`; y las alergias y los antecedentes descartados DEBERÁN plegarse
+  tras «N descartadas · Ver», que los despliega con su motivo y con
+  «Reactivar».
+  > §9 ter. Lo descartado no se borra (EN-224 lo reactiva) ni deja de contarse;
+  > sólo deja de ocupar la lista. Las versiones anteriores ya nacían plegadas.
+- **PA-068** — La banda de alergias de la ficha DEBERÁ distinguir los tres
+  estados de D-A-018 sin ningún aviso de información: con alergias activas,
+  en rojo si alguna es alta y en ámbar si no; «Sin alergias conocidas», en
+  verde con quién lo afirmó y cuándo; y sin nada registrado, en ámbar, pidiendo
+  que se pregunte.
+  > §9 ter deja los avisos para el riesgo y lo que requiere atención: una
+  > ficha a la que nadie preguntó por alergias es las dos cosas, y por eso
+  > pasa del azul al ámbar. La afirmación con nombre es un estado bueno y se
+  > pinta como tal. Lo que se decide aquí es de presentación (D-150.1).
+- **PA-069** — Lo que la ficha cuenta de una fusión NO DEBERÁ ir en un aviso
+  de información: la ficha absorbida DEBERÁ abrirse como un estado de página,
+  «Esta historia se unificó con otra», con «Abrir la historia vigente» como
+  principal; la vigente DEBERÁ listar los números anteriores en su
+  identificación; y unificar o deshacer DEBERÁN decir en el cuerpo de la
+  confirmación qué registros se quedan y cuáles vuelven.
+  > PA-054 y PA-060 siguen diciendo lo mismo, en otro sitio: el número
+  > anterior es un dato de la identificación, y la consecuencia de unificar es
+  > el texto de la confirmación (D-126.2).
 
 ## Códigos de error
 
