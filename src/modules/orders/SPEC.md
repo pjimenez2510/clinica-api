@@ -427,10 +427,11 @@ D-163.1, resuelta por el autor (§18).
 
 **Prueba independiente:** emitir una orden de una paciente registrada como
 mujer, corregir después el sexo de la ficha a hombre: la cabecera de la orden
-en pantalla y la del PDF que se vuelve a generar siguen diciendo «Mujer», y una
-hemoglobina transcrita a esa orden se clasifica con el rango de la mujer.
-**Cubre:** ORD-158, ORD-159, ORD-160. **Solo servidor:** ORD-158, ORD-160 —la
-copia la escribe la base y el rango elegido no se ve en pantalla—.
+en pantalla y la del PDF que se vuelve a generar siguen diciendo «Mujer»; una
+hemoglobina transcrita a esa orden se clasifica con el rango del hombre, el de
+la ficha (D-171.1).
+**Cubre:** ORD-158, ORD-159. **Solo servidor:** ORD-158 —la copia la escribe
+la base—. ORD-160 se retiró (D-171.1).
 
 ### Fuera de las ocho
 
@@ -765,8 +766,8 @@ cuando la gráfica exista.
   específico que alcanza al paciente tiene un lado, ENTONCES el paciente
   DEBERÁ tener alerta de ese lado: ningún crítico más específico la apaga.
 
-  **Enmendado por ORD-160 (D-163.1, 07-10-2026):** el sexo es el congelado en
-  la orden al emitirla (ORD-158), no el de la ficha hoy.
+  El sexo es el **actual de la ficha**, no el que la orden congeló para su
+  cabecera (ORD-158): D-171.1, resuelta por el autor el 07-10-2026.
 
 - **ORD-037** — El sistema DEBERÁ congelar en la fila el rango aplicado
   (`reference_low`, `reference_high`, `reference_text`).
@@ -2209,8 +2210,9 @@ a D-156.5, recomendación aceptada en todos los puntos._
   > **D-163.1, resuelta por el autor el 07-10-2026.** La edad ya quedaba
   > congelada en la atención (EN-221) y los diagnósticos en la orden
   > (ORD-121); el sexo se leía vivo de la ficha, así que corregirla después
-  > cambiaba la cabecera de un papel que el laboratorio ya tiene y el rango
-  > con que se clasifica lo que vuelve.
+  > cambiaba la cabecera de un papel que el laboratorio ya tiene. La copia es
+  > **sólo para la cabecera**: el rango sigue el sexo de la ficha (ORD-036;
+  > D-171.1, ORD-160 retirado).
   >
   > **Garantía de la base:** la copia la escribe
   > `a_service_order_freeze_patient_sex` en el instante de la emisión, sea
@@ -2229,18 +2231,16 @@ a D-156.5, recomendación aceptada en todos los puntos._
   > Volver a generar el PDF después de corregir la ficha da la misma cabecera
   > que el papel que se entregó (D-163.2 lo decía en palabras mientras tanto).
 
-- **ORD-160** — El sexo con que se elige un rango (ORD-036) DEBERÁ ser el
-  **congelado en la orden** (ORD-158), como la edad es la congelada en la
-  atención (ORD-127), y no el que tiene hoy la ficha. **Enmienda ORD-036.**
-  > Un informe transcrito o corregido después de rectificar el sexo de la
-  > ficha se clasifica con el rango que correspondía al paciente que el
-  > laboratorio recibió. **Garantía de la base:** la prueba de integración
-  > corrige el sexo de la ficha y comprueba que la bandera sigue con el
-  > congelado, con control positivo.
-  >
-  > ⏳ **D-171.1:** si el sexo se corrigió por un error de registro, el rango
-  > congelado es el del sexo equivocado; el autor decide si la transcripción
-  > avisa y deja elegir, o si el rango vuelve a leer la ficha.
+- ~~ORD-160~~ — **Retirado por D-171.1 (resuelta por el autor el 07-10-2026:
+  «solo cabecera»).** Decía que el rango (ORD-036) se eligiera con el sexo
+  congelado en la orden. Se retiró porque una corrección de sexo casi siempre
+  arregla un error de registro: el sexo verdadero siempre fue el corregido, y
+  clasificar con el congelado aplicaría el rango del sexo equivocado (una
+  hemoglobina de 12,5 g/dL saldría NORMAL con el de la mujer en un hombre,
+  cuyo límite es 13). A diferencia de la edad (EN-221), que era verdad el día
+  de la atención. **El rango y el crítico siguen eligiéndose con el sexo
+  actual de la ficha**; la prueba de integración lo fija con una orden que
+  congeló otro, con control positivo.
 
 
 ---

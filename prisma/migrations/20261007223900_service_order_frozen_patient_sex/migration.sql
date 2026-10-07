@@ -12,10 +12,10 @@
 -- La edad ya queda congelada en la atención (EN-221) y los diagnósticos en la
 -- orden (ORD-121), pero el sexo se leía vivo de la ficha: corregirla después
 -- de emitir cambiaba la cabecera de un papel que el laboratorio ya tiene
--- (ORD-126, ORD-150) y el rango de referencia con que se clasifica lo que
--- vuelve (ORD-036). Desde aquí la orden copia el sexo en el instante de la
--- emisión —lo escribe la BASE, no quien emite— y ya no lo cambia (ORD-159,
--- ORD-160 leen esa copia).
+-- (ORD-126, ORD-150). Desde aquí la orden copia el sexo en el instante de la
+-- emisión —lo escribe la BASE, no quien emite— y ya no lo cambia; la cabecera
+-- lee esa copia (ORD-159). El rango de referencia NO: sigue el sexo actual de
+-- la ficha (ORD-036; D-171.1).
 --
 -- LAS YA EMITIDAS: si la ficha corrigió su sexo DESPUÉS de emitirse la orden,
 -- `patient_change_history` guarda lo que decía antes (PA-026): la orden se
@@ -115,7 +115,7 @@ BEGIN
     OR NEW.created_at IS DISTINCT FROM OLD.created_at
     -- ORD-121. What the paper printed as diagnoses.
     OR NEW.diagnoses IS DISTINCT FROM OLD.diagnoses
-    -- ORD-158. The sex the paper printed and the ranges are chosen by.
+    -- ORD-158. The sex the paper printed (ranges follow the chart, D-171.1).
     OR NEW.patient_sex IS DISTINCT FROM OLD.patient_sex
   ) THEN
     RAISE EXCEPTION

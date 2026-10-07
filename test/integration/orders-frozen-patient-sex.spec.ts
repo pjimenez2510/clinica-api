@@ -15,11 +15,13 @@ import { useDatabase } from './setup/database';
 import { createUser } from './setup/fixtures';
 
 /**
- * ORD-158 to ORD-160 (D-163.1): the exam order FREEZES the patient's sex when
+ * ORD-158, ORD-159 (D-163.1): the exam order FREEZES the patient's sex when
  * it is issued, as it froze its diagnoses (ORD-121) and the attention its age
- * (EN-221). Until now the header — screen and PDF — and the reference range
- * read the chart's sex live, so correcting the chart afterwards changed a
- * paper the laboratory already held and the range its results were judged by.
+ * (EN-221). Until now the header — screen and PDF — read the chart's sex live,
+ * so correcting the chart afterwards changed a paper the laboratory already
+ * held. The copy is for the header ONLY: the reference range keeps following
+ * the chart (ORD-036; D-171.1, the author's, retired ORD-160), because a
+ * corrected sex almost always fixes a registration error.
  *
  * Proved against PostgreSQL: the copy is written by a trigger at the issue,
  * whatever the writer sends, and an issued order does not rewrite it. Every
@@ -199,15 +201,22 @@ describe('ORD-159 la cabecera de la orden dice el sexo congelado', () => {
   });
 });
 
-describe('ORD-160 el rango se elige con el sexo congelado en la orden', () => {
-  it('ORD-160 una hemoglobina de 12,5 transcrita tras pasar la ficha a hombre se clasifica con el rango de la mujer; en la orden emitida después, con el del hombre', async () => {
+describe('ORD-036 el rango sigue el sexo de la ficha, no el que la orden congeló para su cabecera (D-171.1)', () => {
+  it('ORD-036 ORD-158 una hemoglobina de 12,5 en una orden que congeló «mujer» se clasifica con el rango del hombre cuando la ficha se corrigió a hombre', async () => {
     const prisma = db();
     const { scene, draft } = await aDraftOrder(prisma);
     const { orders, reports } = adapters(prisma);
     await orders.issue({ orderId: draft.id, sites: 'all' });
-    await correctChartToMale(prisma, scene.patient.id);
+    const second = await placeIssued(orders, {
+      encounterId: scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.bh.id }],
+      sites: 'all',
+    });
 
-    const hers = await reports.register(
+    // Positive control: with the chart still a woman's, the woman's range.
+    const before = await reports.register(
       {
         orderId: draft.id,
         performedById: null,
@@ -216,30 +225,26 @@ describe('ORD-160 el rango se elige con el sexo congelado en la orden', () => {
       },
       requester,
     );
-    expect(hers.results[0]).toMatchObject({
+    expect(before.results[0]).toMatchObject({
       abnormalFlag: 'NORMAL',
       referenceLow: 12,
     });
 
-    // Positive control: the same value, on an order issued after the
-    // correction, is judged with the man's range.
-    const later = await placeIssued(orders, {
-      encounterId: scene.encounter.id,
-      category: 'LABORATORY',
-      priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
-      sites: 'all',
-    });
-    const his = await reports.register(
+    await correctChartToMale(prisma, scene.patient.id);
+    // The order issued before the correction still froze «mujer» (ORD-158)…
+    expect(await frozenSexOf(prisma, second.id)).toBe('FEMALE');
+
+    // …and its result is judged with the chart's sex, the man's range.
+    const after = await reports.register(
       {
-        orderId: later.id,
+        orderId: second.id,
         performedById: null,
         issuedAt: new Date(),
         results: [{ analyteDefinitionId: scene.hb.id, valueNumeric: 12.5 }],
       },
       requester,
     );
-    expect(his.results[0]).toMatchObject({
+    expect(after.results[0]).toMatchObject({
       abnormalFlag: 'LOW',
       referenceLow: 13,
     });
