@@ -104,6 +104,21 @@ describe('ORD-158 la orden congela el sexo de la ficha al emitirse', () => {
     expect(await frozenSexOf(prisma, draft.id)).toBe('FEMALE');
   });
 
+  it('ORD-158 una orden insertada ya emitida —una importación, un psql— también toma el sexo de la ficha y no el que trae', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma, { sex: 'FEMALE' });
+
+    const [row] = await prisma.$queryRaw<{ id: string }[]>`
+      INSERT INTO service_order
+        (encounter_id, site_id, ordered_by_id, category, status, patient_sex, diagnoses, updated_at)
+      VALUES (${scene.encounter.id}::uuid, ${scene.site.id}::uuid,
+              ${scene.practitioner.id}::uuid, 'LABORATORY', 'ISSUED', 'MALE',
+              '[]'::jsonb, ${new Date()})
+      RETURNING id`;
+
+    expect(await frozenSexOf(prisma, row!.id)).toBe('FEMALE');
+  });
+
   it('ORD-158 un borrador no puede llevarlo, ni uno descartado', async () => {
     const prisma = db();
     const { scene, draft } = await aDraftOrder(prisma);
@@ -119,6 +134,11 @@ describe('ORD-158 la orden congela el sexo de la ficha al emitirse', () => {
       userId: user.id,
     });
     expect(await frozenSexOf(prisma, draft.id)).toBeNull();
+    await expect(
+      prisma.$executeRaw`UPDATE service_order SET patient_sex = 'FEMALE' WHERE id = ${draft.id}::uuid`,
+    ).rejects.toThrow(
+      /service_order_frozen_once_issued|service_order_patient_sex_frozen_when_issued/,
+    );
     // Positive control: the chart has a sex the trigger could have copied.
     const chart = await prisma.patient.findUniqueOrThrow({
       where: { id: scene.patient.id },

@@ -17,8 +17,13 @@
 -- emisión —lo escribe la BASE, no quien emite— y ya no lo cambia (ORD-159,
 -- ORD-160 leen esa copia).
 --
--- LAS YA EMITIDAS: el sexo que tiene ahora la ficha es lo único que se sabe de
--- entonces. Se rellenan en la misma transacción que crea la garantía.
+-- LAS YA EMITIDAS: si la ficha corrigió su sexo DESPUÉS de emitirse la orden,
+-- `patient_change_history` guarda lo que decía antes (PA-026): la orden se
+-- rellena con el `value_before` de la primera corrección posterior a su
+-- emisión, que es lo que imprimió. Si no hubo ninguna, con el sexo que la
+-- ficha tiene hoy, que entonces es el mismo. Es lo mejor que se sabe, no una
+-- garantía: ese histórico no es inmutable. Se rellenan en la misma
+-- transacción que crea la garantía.
 --
 -- ⚠️ DENTRO DE UNA TRANSACCIÓN EXPLÍCITA: el relleno, el CHECK y los
 -- disparadores entran juntos o no entra nada. Nada se apaga: el disparador que
@@ -29,7 +34,16 @@ BEGIN;
 ALTER TABLE "service_order" ADD COLUMN IF NOT EXISTS "patient_sex" "patient_sex";
 
 UPDATE "service_order" o
-   SET "patient_sex" = p.sex
+   SET "patient_sex" = COALESCE(
+         (SELECT h.value_before::patient_sex
+            FROM patient_change_history h
+           WHERE h.patient_id = e.patient_id
+             AND h.field = 'sex'
+             AND h.changed_at > o.requested_at
+             AND h.value_before IN ('MALE', 'FEMALE', 'INTERSEX', 'UNKNOWN')
+           ORDER BY h.changed_at ASC, h.id ASC
+           LIMIT 1),
+         p.sex)
   FROM encounter e
   JOIN patient p ON p.id = e.patient_id
  WHERE e.id = o.encounter_id
