@@ -59,7 +59,12 @@ import {
   supersedingStatus,
 } from '../domain/service-order';
 import { resolveResult } from '../domain/result-value';
-import { isSelfNotice, samePersonName } from '../domain/notice-recipient';
+import {
+  isSelfNotice,
+  samePersonName,
+  selfNoticedByOrderer,
+  type WorklistNotice,
+} from '../domain/notice-recipient';
 import { notifiedCorrections } from '../domain/notified-correction';
 import type { AnalyteDefinition } from '../domain/analyte';
 import {
@@ -632,7 +637,7 @@ export class DiagnosticReportService {
         hasOnCallRole: role !== null,
         orderingUnanswered: (chain?.orderingUnanswered ?? 0) > 0,
         // ORD-146, D-116 a. The practitioner who asked already knows.
-        selfNoticed: chain?.selfNoticed ?? false,
+        dueToPatient: chain?.selfNoticed ?? false,
       });
       return {
         ...entry,
@@ -695,8 +700,12 @@ export class DiagnosticReportService {
             afterHours,
             hasOnCallRole: role !== null,
             orderingUnanswered: unanswered.some((n) => n.recipientKind === 'ORDERING_PRACTITIONER'), // prettier-ignore
-            // ORD-153 (D-156.1). Told to the patient: it is theirs to hear.
-            selfNoticed: correction.patientRequired,
+            // ORD-153 (D-156.1): told to the patient, it is theirs to hear;
+            // ORD-146: so it is once the practitioner who asked noted the
+            // correction themselves — they already know.
+            dueToPatient:
+              correction.patientRequired ||
+              selfNoticedByOrderer(result.notices.map(asWorklistNotice), order.orderedByUserId), // prettier-ignore
           });
           entries.push({
             resultId: result.id,
@@ -1215,6 +1224,18 @@ function liveLine(
   live: ReadonlySet<string>,
 ): string | null {
   return line !== undefined && live.has(line) ? line : null;
+}
+
+/** ORD-146. A recorded notice as the worklist rule reads it. */
+function asWorklistNotice(notice: CriticalNoticeView): WorklistNotice {
+  return {
+    outcome: notice.outcome,
+    selfNotice: notice.selfNotice,
+    recipientKind: notice.recipientKind,
+    namesOrderingPractitioner: notice.namesOrderingPractitioner,
+    notifiedById: notice.notifiedBy.id,
+    notifiedAt: notice.notifiedAt,
+  };
 }
 
 /** ORD-148. The caller's name, or `null` when it was who records it. */

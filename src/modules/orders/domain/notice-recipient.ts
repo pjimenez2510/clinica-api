@@ -24,7 +24,11 @@ function normalised(name: string): string {
     .trim();
   // Only one title, and only in front: «Dr. Dra.» is not a name anybody types.
   words = words.replace(LEADING_TITLE, '');
-  return words;
+  // ORD-157. «Pérez, Juan» is «Juan Pérez»: punctuation separates words.
+  return words
+    .replace(/[.,;:]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /** The words of a normalised name, in a canonical order. */
@@ -70,8 +74,14 @@ export interface SelfNoticeQuestion {
  * their own recipient told nobody anything.
  */
 export function isSelfNotice(question: SelfNoticeQuestion): boolean {
+  // A caller that is only a title («Dr.») names nobody: judged as if absent.
   const caller = question.callerName?.trim();
-  if (caller && !samePersonName(caller, question.recorder.name)) {
+  if (
+    caller &&
+    wordsOf(caller) !== '' &&
+    !samePersonName(caller, question.recorder.name)
+  ) {
+    // prettier-ignore
     return samePersonName(question.recipientName, caller);
   }
   if (

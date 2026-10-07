@@ -84,10 +84,14 @@ export function criticalNoticeTarget(state: {
   hasOnCallRole: boolean;
   /** An unanswered call to the practitioner who placed the order. */
   orderingUnanswered: boolean;
-  /** ORD-146. The value carries a notice to oneself. */
-  selfNoticed?: boolean;
+  /**
+   * ORD-146, ORD-153. The notice is the patient's to hear: the practitioner
+   * who placed the order already noted it, or the patient was told the value
+   * a correction retracted.
+   */
+  dueToPatient?: boolean;
 }): { target: CriticalNoticeTarget; escalationMissing: boolean } {
-  if (state.selfNoticed === true) {
+  if (state.dueToPatient === true) {
     return { target: 'PATIENT', escalationMissing: false };
   }
   if (state.afterHours) {

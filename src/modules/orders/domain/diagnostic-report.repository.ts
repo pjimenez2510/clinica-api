@@ -460,6 +460,8 @@ export interface CorrectionCandidateOrder {
   siteId: string;
   patientId: string;
   orderedBy: { id: string; name: string };
+  /** ORD-146, ORD-154. The account of who placed it, to tell their own notice. */
+  orderedByUserId: string;
 }
 
 /**

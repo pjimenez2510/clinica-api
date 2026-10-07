@@ -57,7 +57,8 @@ describe('el nombre como conjunto de palabras y quien llamó (D-156)', () => {
     // Control positivo: con una palabra de más o de menos no es la misma persona.
     expect(samePersonName('Pérez Juan', 'Juan Pérez Andrade')).toBe(false);
     expect(samePersonName('Juan Juan Pérez', 'Juan Pérez')).toBe(false);
-    expect(samePersonName('Pérez Andrade', 'Juan Pérez Andrade')).toBe(false);
+    expect(samePersonName('Pérez Andrade', 'Juan Pérez Andrade')).toBe(false); // Con la coma de «apellidos, nombres» también.
+    expect(samePersonName('Pérez Andrade, Juan', 'Juan Pérez Andrade')).toBe(true); // prettier-ignore
   });
 
   it('ORD-155 con quien llamó, que no es quien registra, el autoaviso se juzga con quien llamó', () => {
@@ -72,6 +73,9 @@ describe('el nombre como conjunto de palabras y quien llamó (D-156)', () => {
     );
     // Y quien llamó a sí mismo no avisó a nadie.
     expect(isSelfNotice({ ...toMe, recorder: NURSE, callerName: 'Dr. Juan Pérez Andrade' })).toBe(true); // prettier-ignore
+    // Quien llamó escrito sólo con un tratamiento no nombra a nadie: se juzga con quien registra.
+    expect(isSelfNotice({ ...toMe, callerName: 'Dr.' })).toBe(true);
+    expect(isSelfNotice({ ...toMe, callerName: ' Lcda. ' })).toBe(true);
   });
 });
 

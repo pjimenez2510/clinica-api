@@ -509,4 +509,43 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     expect(other.selfNotice).toBe(false);
     expect(await ctx.reports.critical(ctx.asNurse, now)).toEqual([]);
   });
+
+  it('ORD-155 al editar el autoaviso para decir que llamó la enfermera, deja de serlo y saca el valor de la cola de críticos', async () => {
+    const prisma = db();
+    const ctx = await aCriticalGlucose(prisma);
+    const now = new Date();
+    const toMe = { ...toPatient, recipientKind: 'ORDERING_PRACTITIONER' as const, recipientName: 'Ana Villacís' }; // prettier-ignore
+    const own = await ctx.reports.notify({ resultId: ctx.result.id, ...toMe }, ctx.asDoctor, now); // prettier-ignore
+    expect(own.selfNotice).toBe(true);
+    // Control positivo: editado con quien llamó «Dr.», que no nombra a nadie, sigue siéndolo.
+    const titleOnly = await ctx.reports.editNotice({ resultId: ctx.result.id, noticeId: own.id, expectedEditedAt: null, ...toMe, callerName: 'Dr.' }, ctx.asDoctor, new Date()); // prettier-ignore
+    expect(titleOnly.selfNotice).toBe(true);
+    expect(await ctx.reports.critical(ctx.asNurse, new Date())).toHaveLength(1);
+
+    const edited = await ctx.reports.editNotice({ resultId: ctx.result.id, noticeId: own.id, expectedEditedAt: titleOnly.editedAt, ...toMe, callerName: 'Lcda. Rosa Pilco' }, ctx.asDoctor, new Date()); // prettier-ignore
+    expect(edited.selfNotice).toBe(false);
+    const stored = await prisma.criticalResultNotice.findUniqueOrThrow({ where: { id: own.id } }); // prettier-ignore
+    expect(stored.selfNotice).toBe(false);
+    expect(await ctx.reports.critical(ctx.asNurse, new Date())).toEqual([]);
+  });
+
+  it('ORD-154 ORD-146 tras el autoaviso de la corrección del médico que pidió, la cola de correcciones dice que toca al paciente', async () => {
+    const prisma = db();
+    const ctx = await aCriticalGlucose(prisma);
+    // Al médico que pidió se le avisó del 25 por otra persona: no toca al paciente por ORD-153.
+    await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Ana Villacís', notifiedAt: minutesAgo(90) }, ctx.asNurse, new Date()); // prettier-ignore
+    const fixed = (await correctTo(ctx, ctx.report.id, 95)).results[0]!;
+    // Fuera de horario y con guardia: le toca a la guardia (control positivo).
+    const role = await prisma.role.create({ data: { code: 'GUARDIA_CLINICA', name: 'Responsable clínico de guardia' } }); // prettier-ignore
+    await prisma.siteParameter.update({ where: { siteId: ctx.scene.site.id }, data: { criticalEscalationRoleId: role.id } }); // prettier-ignore
+    const [before] = await ctx.reports.corrections(ctx.asNurse, new Date());
+    expect(before).toMatchObject({ patientRequired: false, noticeTarget: 'ON_CALL_ROLE' }); // prettier-ignore
+
+    await ctx.reports.notify({ resultId: fixed.id, ...toPatient, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Yo' }, ctx.asDoctor, new Date()); // prettier-ignore
+    const [after] = await ctx.reports.corrections(ctx.asNurse, new Date());
+    expect(after).toMatchObject({
+      resultId: fixed.id,
+      noticeTarget: 'PATIENT',
+    });
+  });
 });
