@@ -21,6 +21,7 @@ import type {
   EncounterView,
   NewEncounter,
   PatientChartStatus,
+  SurvivingChart,
   PractitionerIdentity,
   SubjectStatusStamp,
   VitalSignsView,
@@ -105,6 +106,10 @@ class FakeEncounters implements EncounterRepository {
 
   findPatientChart(): Promise<PatientChartStatus | null> {
     return Promise.resolve(this.chart);
+  }
+
+  findSurvivingChart(): Promise<SurvivingChart | null> {
+    return Promise.resolve(null);
   }
 
   findPractitionerByUser(): Promise<PractitionerIdentity | null> {

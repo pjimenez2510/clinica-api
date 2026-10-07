@@ -96,6 +96,7 @@ const anOrder = (): ServiceOrderView => ({
   number: 1,
   status: 'ISSUED',
   discardedAt: null,
+  patientSex: 'FEMALE',
   category: 'LABORATORY',
   priority: 'ROUTINE',
   clinicalNoteText: null,

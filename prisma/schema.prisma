@@ -3216,6 +3216,13 @@ model ServiceOrder {
   /// be corrected afterwards without changing what the laboratory holds.
   diagnoses Json?
 
+  /// ORD-158 (D-163.1). The chart's sex the order's header printed, frozen by
+  /// the DATABASE when it is issued (`a_service_order_freeze_patient_sex`) and
+  /// never rewritten; NULL while it is a draft
+  /// (`service_order_patient_sex_frozen_when_issued`). Only the header reads
+  /// it: the reference range still follows the chart (ORD-036, D-171.1).
+  patientSex PatientSex? @map("patient_sex")
+
   /// Denormalised count maintained by trigger. It exists only so the "pending
   /// results" worklist can be a partial index: index predicates cannot contain
   /// subqueries.

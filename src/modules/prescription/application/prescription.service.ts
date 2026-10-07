@@ -724,9 +724,8 @@ export class PrescriptionService {
     /**
      * PR-027, PR-062, PR-118. The allergies of the surviving chart AND of the
      * charts it absorbed, from the shared reader — the same adapter the
-     * doctor's screen reads. ⚠️ Over an attention of an ABSORBED chart the band
-     * (`chartScope`, downwards only) can list fewer than this document: the
-     * receta errs towards the allergy, and the band is D-169.2.
+     * doctor's screen reads — the band of an attention reads this same
+     * statement (EN-237), also over an attention of an ABSORBED chart.
      */
     const allergies = await this.allergies.activeForSurvivorOf(source.chartId);
     // PR-117. Asked only over an empty chart: with an allergy it is not said.

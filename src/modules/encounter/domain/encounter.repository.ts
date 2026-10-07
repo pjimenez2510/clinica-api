@@ -96,6 +96,16 @@ export interface PatientChartStatus {
   mergedIntoId: string | null;
 }
 
+/**
+ * EN-237. The chart that absorbed another: what an attention opened on the
+ * absorbed one reads from, and what its screen names and links to.
+ */
+export interface SurvivingChart {
+  id: string;
+  /** PA-002. The number people quote; the screen says it, never the id. */
+  mrn: string;
+}
+
 /** EN-011, EN-029. Who the caller is, clinically, and whether they may sign. */
 export interface PractitionerIdentity {
   practitionerId: string;
@@ -280,6 +290,13 @@ export interface EncounterRepository {
    * only the same thing on THIS route.
    */
   findPatientChart(patientId: string): Promise<PatientChartStatus | null>;
+
+  /**
+   * EN-237 (D-169.2). The chart that absorbed `patientId`, or `null` when no
+   * merge did — including when `patientId` is itself a survivor, or does not
+   * exist. One level up is all there is (PA-046).
+   */
+  findSurvivingChart(patientId: string): Promise<SurvivingChart | null>;
 
   /** EN-011, EN-029. The caller's clinical identity, or `null` if they have none. */
   findPractitionerByUser(userId: string): Promise<PractitionerIdentity | null>;

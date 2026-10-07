@@ -5,6 +5,7 @@ import type {
   ServiceOrderPriority,
   ServiceOrderStatus,
 } from './service-order';
+import type { PatientSex } from './analyte';
 import type { Ageing } from './order-ageing';
 
 /**
@@ -61,6 +62,11 @@ export interface ServiceOrderView {
   category: ServiceOrderCategory;
   priority: ServiceOrderPriority;
   clinicalNoteText: string | null;
+  /**
+   * ORD-158, ORD-159. The chart's sex frozen by the database when the order
+   * was issued: what its header says. `null` while a draft or discarded.
+   */
+  patientSex: PatientSex | null;
   /** Maintained by `trg_service_order_item_pending`, never written by hand. */
   pendingItems: number;
   requestedAt: Date;

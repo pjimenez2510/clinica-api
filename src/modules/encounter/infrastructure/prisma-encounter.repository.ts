@@ -23,6 +23,7 @@ import type {
   NewEncounter,
   OpenEncountersQuery,
   PatientChartStatus,
+  SurvivingChart,
   PractitionerIdentity,
   SiteScopeFilter,
   SubjectStatusStamp,
@@ -161,6 +162,18 @@ export class PrismaEncounterRepository implements EncounterRepository {
       where: { id: patientId },
       select: { id: true, mergedIntoId: true },
     });
+  }
+
+  /**
+   * EN-237. Through the relation, in one statement: the absorbed chart's
+   * `mergedInto`, which `trg_patient_merge_not_chained` keeps one level deep.
+   */
+  async findSurvivingChart(patientId: string): Promise<SurvivingChart | null> {
+    const row = await this.prisma.patient.findUnique({
+      where: { id: patientId },
+      select: { mergedInto: { select: { id: true, mrn: true } } },
+    });
+    return row?.mergedInto ?? null;
   }
 
   /**
