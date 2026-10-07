@@ -756,6 +756,104 @@ describe('SRI-089 la entrega de la nota de crédito autorizada', () => {
   });
 });
 
+describe('SRI-091 el correo que tres días después sigue fallando', () => {
+  const HOUR = 3_600_000;
+
+  /** A voucher authorised `hoursAgo` before NOW, whose e-mail always fails. */
+  function failingFor(hoursAgo: number, deliveryStatus: 'FAILED' | null) {
+    const f = fakes();
+    f.vouchers.findById.mockResolvedValue(
+      voucher({
+        status: 'AUTHORISED',
+        authorisedXml: '<autorizacion/>',
+        authorisedAt: new Date(NOW.getTime() - hoursAgo * HOUR),
+        deliveryStatus,
+      }),
+    );
+    f.vouchers.deliveryContext.mockResolvedValue({
+      document: 'INVOICE',
+      invoiceId: 'invoice-1',
+      documentNumber: '001-001-000000001',
+      issuedById: 'user-1',
+      buyerEmail: 'rebota@example.com',
+      buyerName: 'María',
+      establishmentName: 'Clínica',
+    });
+    const mailer = {
+      send: vi.fn().mockRejectedValue(new Error('550 mailbox unavailable')),
+    };
+    const rides = {
+      issueRide: vi.fn().mockResolvedValue({
+        content: Buffer.from('%PDF'),
+        fileName: 'RIDE-invoice-1.pdf',
+      }),
+      issueCreditNoteRide: vi.fn(),
+    };
+    const dispatch = new VoucherDispatchService(
+      f.vouchers,
+      f.web,
+      f.queue,
+      rides,
+      mailer,
+      () => NOW,
+      f.settings,
+      f.preparation,
+      logger,
+    );
+    return { f, mailer, dispatch };
+  }
+
+  it('SRI-091 SRI-074 antes de las 72 horas el fallo queda FAILED y se reprograma (control)', async () => {
+    const { f, dispatch } = failingFor(71, 'FAILED');
+    await dispatch.run('DELIVER', 'voucher-1');
+
+    expect(f.vouchers.recordDelivery).toHaveBeenCalledWith(
+      'voucher-1',
+      'FAILED',
+      NOW,
+    );
+    expect(f.queue.schedule).toHaveBeenCalledWith(
+      'DELIVER',
+      expect.objectContaining({ id: 'voucher-1' }),
+      expect.any(Number),
+    );
+  });
+
+  it('SRI-091 a las 72 horas de la autorización el fallo queda «no se pudo enviar» y no se reprograma', async () => {
+    const { f, dispatch } = failingFor(72, 'FAILED');
+    await dispatch.run('DELIVER', 'voucher-1');
+
+    expect(f.vouchers.recordDelivery).toHaveBeenCalledWith(
+      'voucher-1',
+      'UNDELIVERABLE',
+      NOW,
+    );
+    expect(f.vouchers.recordDelivery).not.toHaveBeenCalledWith(
+      'voucher-1',
+      'FAILED',
+      expect.anything(),
+    );
+    expect(f.queue.schedule).not.toHaveBeenCalled();
+  });
+
+  it('SRI-091 un DELIVER sobre uno que ya no se pudo enviar no lo vuelve a intentar', async () => {
+    const { f, mailer, dispatch } = failingFor(80, null);
+    f.vouchers.findById.mockResolvedValue(
+      voucher({
+        status: 'AUTHORISED',
+        authorisedXml: '<autorizacion/>',
+        authorisedAt: new Date(NOW.getTime() - 80 * HOUR),
+        deliveryStatus: 'UNDELIVERABLE',
+      }),
+    );
+    await dispatch.run('DELIVER', 'voucher-1');
+
+    expect(mailer.send).not.toHaveBeenCalled();
+    expect(f.vouchers.recordDelivery).not.toHaveBeenCalled();
+    expect(f.queue.schedule).not.toHaveBeenCalled();
+  });
+});
+
 describe('SRI-080 a SRI-083 la carga del certificado', () => {
   function service(
     f: ReturnType<typeof fakes>,

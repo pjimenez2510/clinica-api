@@ -26,6 +26,7 @@ import {
   afterAuthorisation,
   afterReception,
   authorisationDocument,
+  deliveryGivesUp,
   deliveryRetrySeconds,
   type AuthorisationAnswer,
   type QueueStep,
@@ -144,10 +145,12 @@ export class VoucherDispatchService {
     if (!voucher || voucher.status !== 'AUTHORISED' || !voucher.authorisedXml) {
       return;
     }
-    // SRI-075. Once it left, a retried job does not send it again.
+    // SRI-075. Once it left, a retried job does not send it again; SRI-091,
+    // and once it was given up, neither.
     if (
       voucher.deliveryStatus === 'SENT' ||
-      voucher.deliveryStatus === 'NO_EMAIL'
+      voucher.deliveryStatus === 'NO_EMAIL' ||
+      voucher.deliveryStatus === 'UNDELIVERABLE'
     ) {
       return;
     }
@@ -197,6 +200,20 @@ export class VoucherDispatchService {
         ],
       });
     } catch (error) {
+      const now = this.clock();
+      // SRI-091. Three days of failing is the address: stop, and say so.
+      if (deliveryGivesUp(voucher.authorisedAt, now)) {
+        this.logger.warn(
+          {
+            err: error,
+            voucher_id: voucher.id,
+            error_code: 'SRI_DELIVERY_GIVEN_UP',
+          },
+          'the authorised voucher could not be e-mailed for 72 hours; no more retries',
+        );
+        await this.vouchers.recordDelivery(voucher.id, 'UNDELIVERABLE', now);
+        return;
+      }
       this.logger.warn(
         {
           err: error,
@@ -205,7 +222,6 @@ export class VoucherDispatchService {
         },
         'the authorised voucher could not be e-mailed; it will be retried',
       );
-      const now = this.clock();
       await this.vouchers.recordDelivery(voucher.id, 'FAILED', now);
       await this.queue.schedule(
         'DELIVER',
