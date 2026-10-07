@@ -753,6 +753,21 @@ describe('ScheduleRulesService', () => {
       expect(writes().map((call) => call.method)).toEqual(['update']);
     });
 
+    it('ST-050 una regla desactivada no se reabre al editarla: se rechaza y no escribe nada', async () => {
+      answers.findRule = { ...RULE, active: false };
+
+      await expect(
+        service.update(
+          'rule-1',
+          { endTime: '13:00' },
+          REQUESTER,
+          DIRECTOR,
+          TODAY,
+        ),
+      ).rejects.toBeInstanceOf(ScheduleRuleNotEditableError);
+      expect(writes()).toEqual([]);
+    });
+
     it('ST-050 llevar el fin a antes de ayer se rechaza y no escribe nada', async () => {
       await expect(
         service.update(

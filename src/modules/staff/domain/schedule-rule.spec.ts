@@ -233,7 +233,7 @@ describe('ST-050 editar una regla que ya rigió no reescribe los días pasados',
     );
   });
 
-  it('ST-050 una fecha de inicio futura pedida se respeta en la regla nueva', () => {
+  it('ST-050 con un inicio futuro pedido, la anterior rige hasta la víspera: ningún día queda sin regla', () => {
     const later = addDays(today, 7);
     const plan = planScheduleRuleEdit(
       started,
@@ -241,7 +241,34 @@ describe('ST-050 editar una regla que ya rigió no reescribe los días pasados',
       today,
     );
 
-    expect(plan.kind === 'SPLIT' && plan.opens.validFrom).toBe(later);
+    expect(plan).toMatchObject({
+      kind: 'SPLIT',
+      closesOn: addDays(later, -1),
+      opens: { validFrom: later },
+    });
+  });
+
+  it('ST-050 cambiar sólo el inicio de una regla que ya rige se rechaza: es un hecho de días pasados', () => {
+    expect(() =>
+      planScheduleRuleEdit(started, { validFrom: addDays(today, 5) }, today),
+    ).toThrow(ScheduleRuleNotEditableError);
+  });
+
+  it('ST-050 una regla que aún no rige no se lleva a empezar en el pasado', () => {
+    const future = { ...started, validFrom: addDays(today, 3) };
+    expect(() =>
+      planScheduleRuleEdit(future, { validFrom: addDays(today, -3) }, today),
+    ).toThrow(ScheduleRuleNotEditableError);
+  });
+
+  it('ST-050 una regla que terminó ayer ya no se edita', () => {
+    expect(() =>
+      planScheduleRuleEdit(
+        { ...started, validTo: addDays(today, -1) },
+        { endTime: at('13:00') },
+        today,
+      ),
+    ).toThrow(ScheduleRuleNotEditableError);
   });
 
   it('ST-050 una regla que todavía no rige se edita en el sitio', () => {

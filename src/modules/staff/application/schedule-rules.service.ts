@@ -30,6 +30,7 @@ import {
   PractitionerNotFoundError,
   PractitionerNotInSiteError,
   PractitionerNotSchedulableError,
+  ScheduleRuleNotEditableError,
   ScheduleRuleNotFoundError,
 } from '../domain/staff.errors';
 
@@ -166,8 +167,10 @@ export class ScheduleRulesService {
     }
     await this.requireDerivable(merged);
 
+    // ST-050. A deactivated rule is not brought back by editing it.
+    if (!current.active) throw new ScheduleRuleNotEditableError();
     // ST-050. A rule that already ruled past days is not rewritten: the
-    // change opens a new rule from today and the old one ends yesterday.
+    // change opens a new rule and the old one ends the day before.
     const plan = planScheduleRuleEdit(
       placedOf(current),
       placedOf(merged),
@@ -184,6 +187,8 @@ export class ScheduleRulesService {
         validTo: plan.opens.validTo,
       };
       await this.requireDerivable(opens);
+      // Like a creation: a practitioner no longer schedulable gets no new rule.
+      await this.requireSchedulablePractitioner(current.practitionerId, true);
       const opened = await this.rules.split(ruleId, plan.closesOn, opens);
       if (!opened) throw new ScheduleRuleNotFoundError();
 

@@ -203,24 +203,32 @@ export function planScheduleRuleEdit(
   patch: Partial<PlacedScheduleRule>,
   today: ClinicalDate,
 ): ScheduleRuleEdit {
-  // Not started: there is no past to protect.
-  if (current.validFrom >= today) return { kind: 'IN_PLACE' };
+  const merged: PlacedScheduleRule = { ...current, ...patch };
+
+  // Not started: there is no past to protect — as long as the edit does not
+  // move its start into the past, which would invent a past it never had.
+  if (current.validFrom >= today) {
+    if (merged.validFrom < today) throw new ScheduleRuleNotEditableError();
+    return { kind: 'IN_PLACE' };
+  }
 
   const yesterday = addDays(today, -1);
-  // Ended before today: it is history, and a new rule is the honest answer.
-  if (current.validTo !== null && current.validTo < yesterday) {
+  // Ended (`validTo` is inclusive): it is history, a new rule is the answer.
+  if (current.validTo !== null && current.validTo < today) {
     throw new ScheduleRuleNotEditableError();
   }
 
-  const merged: PlacedScheduleRule = { ...current, ...patch };
   const reshaped =
     merged.weekday !== current.weekday ||
     merged.siteId !== current.siteId ||
     merged.startTime.toString() !== current.startTime.toString() ||
-    merged.endTime.toString() !== current.endTime.toString() ||
-    merged.validFrom !== current.validFrom;
+    merged.endTime.toString() !== current.endTime.toString();
 
   if (!reshaped) {
+    // The start of a rule already in force is a fact about past days.
+    if (merged.validFrom !== current.validFrom) {
+      throw new ScheduleRuleNotEditableError();
+    }
     // Only the end moves. Moving it before yesterday would erase days the
     // rule already ruled over.
     if (merged.validTo !== null && merged.validTo < yesterday) {
@@ -229,13 +237,15 @@ export function planScheduleRuleEdit(
     return { kind: 'IN_PLACE' };
   }
 
+  // The new hours rule from today, or from the later start asked for; the
+  // old ones rule until the day before, so no day is left without a rule.
   const validFrom =
     patch.validFrom !== undefined && patch.validFrom > today
       ? patch.validFrom
       : today;
   return {
     kind: 'SPLIT',
-    closesOn: yesterday,
+    closesOn: addDays(validFrom, -1),
     opens: { ...merged, validFrom },
   };
 }
