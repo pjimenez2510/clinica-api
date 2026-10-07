@@ -418,7 +418,7 @@ cada uno con «Editar». Avisar al paciente de una glucosa de 25 y corregirla a
 venció con el plazo de críticos de la sede; un aviso al médico de guardia no
 la cierra y uno al paciente sí.
 
-**Cubre:** ORD-151 a ORD-157. **Solo interfaz:** ORD-151, ORD-152.
+**Cubre:** ORD-151 a ORD-157. **Solo interfaz:** ORD-151, ORD-152 (la API admite todavía el analito repetido, D-168).
 **Solo servidor:** ORD-155, ORD-156, ORD-157.
 
 ### Fuera de las ocho
@@ -2095,10 +2095,12 @@ a D-156.5, recomendación aceptada en todos los puntos._
 
 - **ORD-151** — CUANDO la tarjeta de la orden enseñe un informe sustituido, la
   pantalla DEBERÁ rotularlo según el estado de la versión que lo sustituye: si
-  él era `PARTIAL` y ella es `FINAL` o `PARTIAL`, «Versión parcial del {emisión}, completada el
-  {registro de la sustitución}» y SIN tachar los valores que la versión nueva
-  escribe igual —valor, unidad y bandera—; en otro caso (`CORRECTED`, o un
-  `FINAL` sustituido por un envío incompleto), «Corregido el …
+  él era `PARTIAL`, ella es `FINAL` o `PARTIAL` y escribe igual todos sus
+  valores, «Versión parcial del {emisión}, completada el
+  {registro de la sustitución}» SIN tachar sus valores y diciendo de cada uno
+  que sigue igual en la versión vigente; en otro caso (`CORRECTED`, un parcial
+  que sigue parcial y cambia un valor, o un `FINAL` sustituido por un envío
+  incompleto), «Corregido el …
   Este era el valor anterior.» con todos sus valores tachados.
   > **D-154.1.** ORD-119: completar sin cambiar nada no altera lo que alguien
   > leyó, y llamarlo «corregido» es una alarma falsa que enseña a pasar por
@@ -2109,11 +2111,16 @@ a D-156.5, recomendación aceptada en todos los puntos._
   vigentes —ni sustituidos ni anulados—, del emitido más reciente al más
   antiguo, cada uno con sus valores, sus avisos y su «Editar»; y DEBERÁ
   ofrecer «Transcribir informe» MIENTRAS la orden tenga algún examen vivo,
-  también cuando ya tenga uno vigente.
+  también cuando ya tenga uno vigente, y en ese caso SÓLO con las
+  determinaciones que aún no tienen valor en un informe vigente: cambiar una
+  que ya lo tiene es «Editar el informe».
   > **D-154.3.** La API admite un segundo informe con uno vigente (ORD-119:
   > «registrar otro informe sigue siendo posible», el segundo envío del
   > laboratorio), y la tarjeta enseñaba sólo el primero: los críticos del
-  > segundo no se veían.
+  > segundo no se veían. **Revisión clínica (grave):** un segundo valor de la
+  > misma glucosa transcrito como informe nuevo dejaba dos verdades vigentes
+  > sin cadena de corrección, y la del 25 avisado nunca llegaba a la cola de
+  > correcciones (ORD-143). La API todavía lo admite: D-168.
 
 - **ORD-153** — CUANDO alguna versión anterior de una determinación de la cola
   de correcciones (ORD-143) tenga un aviso hecho **al paciente o a su
