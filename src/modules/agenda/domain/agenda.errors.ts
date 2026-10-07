@@ -513,6 +513,21 @@ export class NoShowBeforeStartError extends BusinessRuleViolation {
 }
 
 /**
+ * AG-174 (D-141.5). Correcting the emergency call of a patient who already
+ * left is a clinical judgement, and it takes the permission that writes the
+ * record. 403: the request is right, the person is not the one to make it.
+ */
+export class EmergencyCorrectionNeedsClinicalPermissionError extends ForbiddenError {
+  readonly code = 'EMERGENCY_CORRECTION_NEEDS_CLINICAL_PERMISSION';
+  override readonly userTitle =
+    'El paciente ya no está en la clínica: corregir su calificación de emergencia lo hace quien escribe la historia clínica';
+
+  constructor() {
+    super('Emergency call correction after the stay without record:write');
+  }
+}
+
+/**
  * AG-173 (D-153.6). The arrival of an appointment of another clinical day.
  *
  * A CONFLICT (409): the body is fine and the same request is right on the

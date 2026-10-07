@@ -492,6 +492,10 @@ export class AgendaController {
         entryId,
         emergency: dto.emergency,
         emergencyNote: dto.emergencyNote,
+        // AG-174 (D-141.5): after the stay it is a clinical correction.
+        mayWriteRecord: this.currentUser
+          .requirePrincipal()
+          .canAtSite('record:write', siteId),
       },
       { userId: this.currentUser.requireUserId() },
     );

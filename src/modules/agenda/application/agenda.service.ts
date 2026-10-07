@@ -282,6 +282,11 @@ export interface EmergencyCorrectionRequest {
   entryId: string;
   emergency: boolean;
   emergencyNote?: string;
+  /**
+   * AG-174 (D-141.5). The caller holds `record:write` at this site, resolved
+   * by the controller from the session. After the stay it is what corrects.
+   */
+  mayWriteRecord: boolean;
 }
 
 /**
@@ -1279,6 +1284,7 @@ export class AgendaService {
           note: request.emergencyNote,
           correctedById: requester.userId,
           now,
+          mayWriteRecord: request.mayWriteRecord,
         }),
     );
 

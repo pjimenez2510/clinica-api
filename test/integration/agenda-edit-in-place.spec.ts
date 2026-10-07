@@ -755,13 +755,43 @@ describe('editar en el sitio la cita y el bloqueo (D-127)', () => {
       ).rejects.toThrow(/agenda_entry_emergency_call_is_immutable/);
     });
 
-    it('AG-132 no la corrige cuando el paciente ya no está en la clínica', async () => {
+    it('AG-174 cuando el paciente ya no está, recepción no la corrige: es de quien escribe la historia', async () => {
       const entryId = await bookedEntry();
       await transition(entryId, { to: 'CHECKED_IN', emergency: false }).expect(200); // prettier-ignore
       await transition(entryId, { to: 'LEFT_WITHOUT_BEING_SEEN' }).expect(200);
 
-      const response = await correct(entryId, { emergency: true }).expect(409);
-      expect((response.body as Problem).code).toBe('AGENDA_ENTRY_NOT_EDITABLE');
+      const response = await correct(entryId, { emergency: true }).expect(403);
+      expect((response.body as Problem).code).toBe(
+        'EMERGENCY_CORRECTION_NEEDS_CLINICAL_PERMISSION',
+      );
+      expect(await versionsOf(entryId)).toHaveLength(0);
+    });
+
+    it('AG-174 con `record:write` sí la corrige después, y la anterior queda en la versión', async () => {
+      const entryId = await bookedEntry();
+      await transition(entryId, { to: 'CHECKED_IN', emergency: false }).expect(200); // prettier-ignore
+      await transition(entryId, { to: 'LEFT_WITHOUT_BEING_SEEN' }).expect(200);
+
+      // La misma cuenta recibe además el rol médico en la sede.
+      const medico = await prisma.role.findUniqueOrThrow({
+        where: { code: 'MEDICO' },
+      });
+      await prisma.userRoleGrant.create({
+        data: { userId, roleId: medico.id, siteId },
+      });
+      registry.invalidate();
+      token = (
+        (
+          await request(app.getHttpServer())
+            .post('/api/v1/auth/login')
+            .send({ email: EMAIL, password: PASSWORD })
+            .expect(200)
+        ).body as { accessToken: string }
+      ).accessToken;
+
+      const response = await correct(entryId, { emergency: true }).expect(200);
+      expect((response.body as EntryBody).emergencyFlaggedAt).not.toBeNull();
+      expect(await versionsOf(entryId)).toHaveLength(1);
     });
 
     it('AG-132 no corrige una calificación que no se hizo', async () => {

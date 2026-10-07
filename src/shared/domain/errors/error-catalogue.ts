@@ -38,6 +38,9 @@ export const DOMAIN_ERROR_CODES = [
   'AGENDA_ENTRY_NOT_FOUND',
   // AG-173 (D-153.6): la llegada de una cita de otro día clínico (409).
   'ARRIVAL_NOT_ON_APPOINTMENT_DAY',
+  // AG-174 (D-141.5): corregir la emergencia tras la estancia exige
+  // `record:write` (403).
+  'EMERGENCY_CORRECTION_NEEDS_CLINICAL_PERMISSION',
   // AG-162, AG-163 (D-127): la cita se edita en el sitio mientras su estado lo
   // admite, y la inasistencia se deshace el mismo día.
   'AGENDA_ENTRY_NOT_EDITABLE',

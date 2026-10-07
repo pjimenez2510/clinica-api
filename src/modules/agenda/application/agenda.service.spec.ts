@@ -10,6 +10,7 @@ import {
   RoomNotInSiteError,
   SlotNotAlignedError,
   ArrivalNotOnAppointmentDayError,
+  EmergencyCorrectionNeedsClinicalPermissionError,
 } from '../domain/agenda.errors';
 import {
   WallClockTime,
@@ -1992,7 +1993,7 @@ describe('correcting the emergency call (AG-132)', () => {
     });
 
     await service.correctEmergency(
-      { siteId: SITE, entryId: 'entry-1', emergency: true, emergencyNote: 'Dolor torácico' }, // prettier-ignore
+      { siteId: SITE, entryId: 'entry-1', emergency: true, emergencyNote: 'Dolor torácico', mayWriteRecord: false }, // prettier-ignore
       REQUESTER,
     );
 
@@ -2004,8 +2005,32 @@ describe('correcting the emergency call (AG-132)', () => {
     expect(emergency?.note).toBe('Dolor torácico');
   });
 
-  it('AG-132 corrects only while the patient is in the building', async () => {
-    const { service } = serviceWith({
+  it('AG-174 after the stay, the correction asks for record:write, and without it refuses', async () => {
+    for (const status of [
+      'FULFILLED',
+      'LEFT_WITHOUT_BEING_SEEN',
+      'CANCELLED',
+    ] as const) {
+      const { service, recorded } = serviceWith({
+        editRead: anEditRead({
+          status,
+          emergencyAssessedAt: EIGHT,
+          emergencyAssessedById: DOCTOR_USER,
+        }),
+      });
+
+      await expect(
+        service.correctEmergency(
+          { siteId: SITE, entryId: 'entry-1', emergency: true, mayWriteRecord: false }, // prettier-ignore
+          REQUESTER,
+        ),
+      ).rejects.toBeInstanceOf(EmergencyCorrectionNeedsClinicalPermissionError);
+      expect(recorded.edits).toEqual([]);
+    }
+  });
+
+  it('AG-174 after the stay, whoever writes the record corrects it, and the arrival call stays', async () => {
+    const { service, recorded } = serviceWith({
       editRead: anEditRead({
         status: 'FULFILLED',
         emergencyAssessedAt: EIGHT,
@@ -2013,12 +2038,31 @@ describe('correcting the emergency call (AG-132)', () => {
       }),
     });
 
-    await expect(
-      service.correctEmergency(
-        { siteId: SITE, entryId: 'entry-1', emergency: true },
-        REQUESTER,
-      ),
-    ).rejects.toBeInstanceOf(AgendaEntryNotEditableError);
+    await service.correctEmergency(
+      { siteId: SITE, entryId: 'entry-1', emergency: true, mayWriteRecord: true }, // prettier-ignore
+      REQUESTER,
+    );
+
+    const emergency = recorded.edits[0]?.edit.emergency;
+    expect(emergency?.assessedAt).toEqual(EIGHT);
+    expect(emergency?.flaggedById).toBe(USER);
+  });
+
+  it('AG-174 with the patient in the building, agenda:write is enough (control)', async () => {
+    const { service, recorded } = serviceWith({
+      editRead: anEditRead({
+        status: 'IN_PROGRESS',
+        emergencyAssessedAt: EIGHT,
+        emergencyAssessedById: DOCTOR_USER,
+      }),
+    });
+
+    await service.correctEmergency(
+      { siteId: SITE, entryId: 'entry-1', emergency: false, mayWriteRecord: false }, // prettier-ignore
+      REQUESTER,
+    );
+
+    expect(recorded.edits).toHaveLength(1);
   });
 
   it('AG-132 corrects only a call that was made', async () => {
@@ -2026,7 +2070,7 @@ describe('correcting the emergency call (AG-132)', () => {
 
     await expect(
       service.correctEmergency(
-        { siteId: SITE, entryId: 'entry-1', emergency: false },
+        { siteId: SITE, entryId: 'entry-1', emergency: false, mayWriteRecord: true }, // prettier-ignore
         REQUESTER,
       ),
     ).rejects.toBeInstanceOf(AgendaEntryNotEditableError);
