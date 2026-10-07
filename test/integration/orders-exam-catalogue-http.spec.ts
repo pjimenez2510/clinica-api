@@ -249,6 +249,14 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     const refused = await send('patch', `/exam-catalogue/exams/${bh.id}`, { code: 'EX-OTRO' }).expect(409); // prettier-ignore
     expect((refused.body as Problem).code).toBe('EXAM_CODE_IN_USE');
     expect((await examCoded('EX-BH')).id).toBe(bh.id);
+
+    // La BASE también, aunque se salte el servicio; el no pedido sí cambia.
+    await expect(
+      prisma.$executeRaw`UPDATE "exam_definition" SET "code" = 'EX-RAW' WHERE "id" = ${bh.id}::uuid`,
+    ).rejects.toThrow(/exam_definition_code_in_use/);
+    await expect(
+      prisma.$executeRaw`UPDATE "exam_definition" SET "code" = 'EX-PERFIL-RENAL-3' WHERE "id" = ${created.id}::uuid`,
+    ).resolves.toBe(1);
   });
 
   it('ORD-129 «Pide ayuno» y sus horas se guardan, se publican al pedir y la base no admite horas sin ayuno', async () => {

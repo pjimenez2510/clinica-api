@@ -26,6 +26,18 @@ registerConstraintMeanings({
     field: 'roomId',
     message: 'El consultorio seleccionado no pertenece a esa sede',
   },
+  // OR-034, OR-035. The service asks first; this answers the write that raced
+  // it or bypassed it, with the same code.
+  site_msp_unicode_in_use: {
+    code: 'SITE_MSP_UNICODE_IN_USE',
+    field: 'mspUnicode',
+    message: 'La sede ya tiene atenciones con este código',
+  },
+  emission_point_code_in_use: {
+    code: 'EMISSION_POINT_CODE_IN_USE',
+    field: 'code',
+    message: 'Ya hay comprobantes emitidos con este código',
+  },
   // OR-023: three digits, and the leading zero is significant.
   emission_point_code_format: {
     code: 'INVALID_EMISSION_POINT_CODE',

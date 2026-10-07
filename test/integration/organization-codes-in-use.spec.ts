@@ -46,6 +46,31 @@ describe('el código MSP de la sede queda fijo con la primera atención (OR-034)
     expect(await repository.siteHasEncounters(site.id)).toBe(true);
   });
 
+  it('OR-034 la BASE rechaza cambiar el código MSP de una sede con atenciones, aunque se salte el servicio', async () => {
+    const prisma = db();
+    const site = await createSite(prisma);
+    // Control positivo: sin atenciones, el mismo UPDATE entra.
+    await expect(
+      prisma.$executeRaw`UPDATE "site" SET "msp_unicode" = 'MSP-RAW-1' WHERE "id" = ${site.id}::uuid`,
+    ).resolves.toBe(1);
+
+    const practitioner = await createPractitioner(prisma);
+    const patient = await createPatient(prisma);
+    await createEncounter(prisma, {
+      siteId: site.id,
+      practitionerId: practitioner.id,
+      patientId: patient.id,
+    });
+
+    await expect(
+      prisma.$executeRaw`UPDATE "site" SET "msp_unicode" = 'MSP-RAW-2' WHERE "id" = ${site.id}::uuid`,
+    ).rejects.toThrow(/site_msp_unicode_in_use/);
+    // Lo que no es el código se sigue editando.
+    await expect(
+      prisma.$executeRaw`UPDATE "site" SET "phone" = '022222222' WHERE "id" = ${site.id}::uuid`,
+    ).resolves.toBe(1);
+  });
+
   it('OR-034 el código corregido se guarda en la sede', async () => {
     const prisma = db();
     const site = await createSite(prisma);
@@ -130,6 +155,20 @@ describe('el código del punto de emisión queda fijo con el primer comprobante 
     expect(await resources.emissionPointHasVouchers(point.id)).toBe(false);
     await issue();
     expect(await resources.emissionPointHasVouchers(point.id)).toBe(true);
+  });
+
+  it('OR-035 la BASE rechaza cambiar el código de un punto que ya emitió, aunque se salte el servicio', async () => {
+    const { prisma, point, issue } = await aPointThatCanIssue();
+    // Control positivo: sin comprobantes, el mismo UPDATE entra.
+    await expect(
+      prisma.$executeRaw`UPDATE "emission_point" SET "code" = '005' WHERE "id" = ${point.id}::uuid`,
+    ).resolves.toBe(1);
+
+    await issue();
+
+    await expect(
+      prisma.$executeRaw`UPDATE "emission_point" SET "code" = '006' WHERE "id" = ${point.id}::uuid`,
+    ).rejects.toThrow(/emission_point_code_in_use/);
   });
 
   it('OR-035 el código corregido se guarda, y uno que ya tiene otro punto de la sede se rechaza', async () => {

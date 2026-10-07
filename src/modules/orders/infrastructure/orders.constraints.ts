@@ -10,6 +10,12 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
  * first could.
  */
 registerConstraintMeanings({
+  // ORD-140. The service asks first; this answers the write that raced it.
+  exam_definition_code_in_use: {
+    code: 'EXAM_CODE_IN_USE',
+    field: 'code',
+    message: 'Hay órdenes que ya citan este código',
+  },
   exam_definition_code_unique: {
     code: 'EXAM_CODE_DUPLICATE',
     field: 'code',
