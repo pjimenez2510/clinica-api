@@ -189,8 +189,15 @@ límite de píxeles contra bombas de descompresión. **SVG se rechaza.**
 lo guardado **no** los contiene y que su `sha256` no es el del fichero enviado.
 
 **Cubre:** DOC-030 a DOC-039, DOC-050 a DOC-061.
-**Solo servidor:** DOC-032, DOC-054, DOC-055, DOC-056, DOC-058. Inmutabilidad de
+**Solo servidor:** DOC-030, DOC-032, DOC-033, DOC-053, DOC-054, DOC-055, DOC-056, DOC-058. Inmutabilidad de
 plantillas e imágenes y el reencodado, que se prueban sobre los bytes guardados.
+La unicidad clase + versión (DOC-030) es un índice de la base: lo que la
+pantalla enseña de la versión es la vigente (DOC-031). La copia del número de
+versión en el artefacto (DOC-033) es para la auditoría y ninguna pantalla de
+F-08 la enseña. Contar los píxeles (DOC-053) exige leer la imagen, y eso solo lo
+hace el servidor: su rechazo llega por el mismo camino que el de DOC-052 —el
+aviso con el motivo y la imagen puesta sin cambiar—, que sí se prueba en
+pantalla (feat/f08-privacidad-organizacion, 07-10-2026).
 
 ### H4 — Los cuatro documentos, con lo que la norma pide de cada uno _(P1)_
 
