@@ -347,6 +347,20 @@ rechaza.
 existe todavía; es una restricción de la base) y BI-203 (lo dispara la
 corrección de la atención; caja ve el cargo ya re-tarifado).
 
+### B13 — Caja que se entiende sin leer _(P1)_
+
+Revisión del autor del 06-10-2026: caja en pestañas, «Pasar a caja» como el
+diálogo de abrir una cuenta, lo quitado fuera de la vista y las acciones de las
+filas reconocibles por su icono. La regla común vive en `ESTANDAR-UI.md`; caja
+es la primera pantalla que la cumple.
+
+**Prueba independiente:** como caja, pasar a caja una atención de «Por cobrar»
+eligiendo el pagador en el diálogo —sin ver ningún error antes de elegir— y
+llegar a su cuenta; quitar un cargo y verlo desaparecer tras «1 quitado · Ver»;
+cambiar de pestaña, abrir una cuenta y volver atrás a la misma pestaña.
+
+**Cubre:** BI-204 a BI-207. **Solo interfaz:** BI-204, BI-205, BI-206, BI-207.
+
 ### B11 — Prestaciones con estructura _(P2)_
 
 La categoría de una prestación deja de ser texto libre y pasa a un catálogo
@@ -1813,6 +1827,39 @@ dos registros distintos.**
   > `CONSULTATION_REPRICER` de `shared/billing`, después de su transacción,
   > como `billing` avisa a `sri` (SRI-041). Lo facturado lo resuelve
   > «Corregir» la factura (CA-8).
+
+## 21. Caja que se entiende sin leer
+
+- **BI-204** — CUANDO caja pase a caja una atención sin cuenta abierta, la
+  pantalla DEBERÁ preguntar quién paga en un diálogo sobre la propia caja, con
+  el pagador de la cuenta más reciente del paciente en esa sede ya elegido si
+  la tiene, y NO DEBERÁ enviar la atención ni mostrar error alguno antes de que
+  se confirme; al confirmar DEBERÁ llevar directamente a la cuenta, y SI algún
+  acto no se pudo proponer (BI-155), ENTONCES DEBERÁ decirlo con su motivo.
+  > Enmienda la forma de BI-150 en pantalla, no su criterio. La pantalla
+  > intermedia «Enviar a caja» enviaba sin pagador al entrar y el rechazo
+  > (`PAYER_REQUIRED_TO_OPEN_ACCOUNT`) salía en rojo antes de que nadie
+  > eligiera nada. Ahora es el mismo diálogo que abrir una cuenta a mano.
+  > Que el pagador venga elegido de la cuenta anterior es D-144.1.
+- **BI-205** — La pantalla de caja DEBERÁ organizarse en pestañas —Por cobrar,
+  Cuentas abiertas, Facturas, Comprobantes SRI y Tarifario— con la sede y el
+  buscador de paciente encima de todas, y DEBERÁ llevar la pestaña elegida en
+  la dirección, de modo que volver atrás desde una cuenta devuelva a la misma
+  pestaña (PA-063).
+- **BI-206** — Las listas de caja —los cargos de una cuenta y las facturas— NO
+  DEBERÁN mostrar por defecto lo quitado, lo marcado «No se cobra» ni lo
+  anulado; DEBERÁN decir cuántos hay en una línea discreta que los despliega
+  («2 quitados · Ver»).
+  > Enmienda la nota de la tarjeta de la cuenta que los dejaba siempre a la
+  > vista (FLUJO §8). El acto clínico sigue sin borrarse: lo quitado está a un
+  > clic, con su estado, y no suma.
+- **BI-207** — Las acciones de cada fila de caja DEBERÁN ser botones de icono
+  fijo por tipo —editar con lápiz, descargar o imprimir, quitar en rojo— que
+  digan su nombre al pasar el ratón o al enfocarlos y lo anuncien al lector de
+  pantalla; y caja NO DEBERÁ mostrar avisos de sólo información.
+  > «Hay muchos botones: editar, agregar, descargar… me confundo» y «estas
+  > alertas de información no me agradan» (autor). Lo que importa se ve en la
+  > fila, en un botón deshabilitado que dice por qué o bajo el campo.
 
 ---
 
