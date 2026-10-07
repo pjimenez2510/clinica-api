@@ -559,7 +559,11 @@ export interface BillingAccountRepository {
     changedById: string;
     now: Date;
   }): Promise<AccountView>;
-  closeAccount(accountId: string): Promise<AccountView>;
+  closeAccount(command: {
+    accountId: string;
+    closedById: string;
+    now: Date;
+  }): Promise<AccountView>;
 
   /** BI-074. Derived, never a column. */
   listCharges(accountId: string): Promise<ChargeView[]>;

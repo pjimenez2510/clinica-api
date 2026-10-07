@@ -309,7 +309,11 @@ export class BillingController {
     @Param('accountId', ParseUUIDPipe) accountId: string,
   ): Promise<AccountResponse> {
     return toAccountResponse(
-      await this.accounts.closeAccount({ accountId, siteId }),
+      await this.accounts.closeAccount({
+        accountId,
+        siteId,
+        closedById: this.currentUser.requireUserId(),
+      }),
     );
   }
 

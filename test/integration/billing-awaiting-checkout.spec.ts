@@ -453,7 +453,8 @@ describe('caja: lo pendiente de cobro (B10)', () => {
         .send({ payerId })
         .expect(200);
     const settle = (encounterId: string) =>
-      prisma.patientAccount.updateMany({ where: { encounterId, status: 'OPEN' }, data: { status: 'SETTLED', closedAt: now } }); // prettier-ignore
+      // BI-215: closing is stamped, or the database refuses it.
+      prisma.patientAccount.updateMany({ where: { encounterId, status: 'OPEN' }, data: { status: 'SETTLED', closedAt: now, changedById: authorId, changedAt: now } }); // prettier-ignore
     const rowOf = async (encounterId: string) =>
       (await awaiting()).find((row) => row.encounterId === encounterId);
 

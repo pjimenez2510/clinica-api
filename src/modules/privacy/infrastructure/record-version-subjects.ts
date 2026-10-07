@@ -140,6 +140,29 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
        WHERE a.patient_id IN ${chartScopeIds(chartId)}`,
     omittedBecause: null,
   },
+  // BI-215 (D-142.2, fix/corregir-factura). The account's previous payer,
+  // price list or status: the patient's own record of who was to pay.
+  patient_account: {
+    resourceIdsOf: byPatientId('patient_account'),
+    omittedBecause: null,
+  },
+  // BI-217 (D-093 B). The receiver of an invoice the SRI returned, before
+  // caja corrected it. The receiver may be ANOTHER person — whoever deducts
+  // the expense (BI-082) — so who it named does not leave (D-140.2); what
+  // remains says that the invoice was corrected and when.
+  invoice: {
+    resourceIdsOf: (chartId) => Prisma.sql`
+      SELECT i.id FROM invoice i
+        JOIN patient_account a ON a.id = i.account_id
+       WHERE a.patient_id IN ${chartScopeIds(chartId)}`,
+    omittedBecause: null,
+    redactedColumns: [
+      'buyer_identification_type',
+      'buyer_identification',
+      'buyer_name',
+      'buyer_email',
+    ],
+  },
   // AG-064. The outcome of a call about this patient's waiting-list entry.
   waitlist_contact_attempt: {
     resourceIdsOf: (chartId) => Prisma.sql`

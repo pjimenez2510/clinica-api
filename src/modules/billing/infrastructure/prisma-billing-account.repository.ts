@@ -193,8 +193,8 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     now: Date;
   }): Promise<AccountView> {
     const row = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`
-        SELECT "id" FROM "patient_account"
+      const [locked] = await tx.$queryRaw<{ changed_at: Date | null }[]>`
+        SELECT "changed_at" FROM "patient_account"
          WHERE "id" = ${command.accountId}::uuid
            FOR UPDATE`;
       await tx.$queryRaw`
@@ -236,7 +236,13 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
 
       return tx.patientAccount.update({
         where: { id: command.accountId },
-        data: { payerId: command.payerId, priceListId: command.priceListId },
+        data: {
+          payerId: command.payerId,
+          priceListId: command.priceListId,
+          // BI-215: the previous payer is archived by the database.
+          changedById: command.changedById,
+          changedAt: stampAfter(locked?.changed_at ?? null, command.now),
+        },
         include: ACCOUNT_INCLUDE,
       });
     });
@@ -278,11 +284,27 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
    * the instant in both directions, so the two are written together or the
    * row is refused.
    */
-  async closeAccount(accountId: string): Promise<AccountView> {
-    const row = await this.prisma.patientAccount.update({
-      where: { id: accountId },
-      data: { status: 'SETTLED', closedAt: new Date() },
-      include: ACCOUNT_INCLUDE,
+  async closeAccount(command: {
+    accountId: string;
+    closedById: string;
+    now: Date;
+  }): Promise<AccountView> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.patientAccount.findUniqueOrThrow({
+        where: { id: command.accountId },
+        select: { changedAt: true },
+      });
+      // BI-215: closing is a change of the account, stamped and versioned.
+      return tx.patientAccount.update({
+        where: { id: command.accountId },
+        data: {
+          status: 'SETTLED',
+          closedAt: command.now,
+          changedById: command.closedById,
+          changedAt: stampAfter(current.changedAt, command.now),
+        },
+        include: ACCOUNT_INCLUDE,
+      });
     });
     return toAccountView(row);
   }

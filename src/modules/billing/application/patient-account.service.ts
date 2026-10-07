@@ -252,6 +252,7 @@ export class PatientAccountService {
   async closeAccount(query: {
     accountId: string;
     siteId: string;
+    closedById: string;
   }): Promise<AccountView> {
     const account = await this.requireOpenAccount(query);
 
@@ -262,7 +263,11 @@ export class PatientAccountService {
 
     if (open.length > 0) throw new AccountHasOpenChargesError(open);
 
-    return this.accounts.closeAccount(account.id);
+    return this.accounts.closeAccount({
+      accountId: account.id,
+      closedById: query.closedById,
+      now: new Date(),
+    });
   }
 
   /**

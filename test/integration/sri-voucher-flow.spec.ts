@@ -294,11 +294,11 @@ describe('SRI-001, SRI-041 preparar al emitir, sin bloquear nunca la factura', (
   it('SRI-017 una factura sin forma de pago (anterior a BI-170) no se firma, y lo dice', async () => {
     await loadCertificate();
     const invoice = await issueInvoice();
-    // As an invoice issued before the column existed: lifting the permanence
-    // trigger for the one statement that empties it.
-    await prisma.$executeRaw`ALTER TABLE "invoice" DISABLE TRIGGER trg_invoice_payment_method_permanent`;
+    // As an invoice issued before the column existed: lifting the table's
+    // triggers for the one statement that empties it.
+    await prisma.$executeRaw`ALTER TABLE "invoice" DISABLE TRIGGER USER`;
     await prisma.$executeRaw`UPDATE "invoice" SET "payment_method" = NULL WHERE "id" = ${invoice.id}::uuid`;
-    await prisma.$executeRaw`ALTER TABLE "invoice" ENABLE TRIGGER trg_invoice_payment_method_permanent`;
+    await prisma.$executeRaw`ALTER TABLE "invoice" ENABLE TRIGGER USER`;
     await preparation.prepare(invoice.id);
     expect(await voucherOf(invoice.id)).toMatchObject({
       status: 'PREPARED',

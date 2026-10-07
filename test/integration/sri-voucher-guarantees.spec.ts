@@ -556,14 +556,13 @@ describe('BI-170 la forma de pago de la factura', () => {
   it('BI-170 control: una factura antigua sin forma de pago rechaza un código fuera de la tabla', async () => {
     const invoice = await anIssuedInvoice();
     // An invoice issued before the column existed has NULL. Recreated by
-    // lifting the permanence trigger for one statement, which is what the
+    // lifting the table's triggers for one statement, which is what the
     // migration left behind for such rows.
     await context.prisma
-      .$executeRaw`ALTER TABLE "invoice" DISABLE TRIGGER trg_invoice_payment_method_permanent`;
+      .$executeRaw`ALTER TABLE "invoice" DISABLE TRIGGER USER`;
     await context.prisma
       .$executeRaw`UPDATE "invoice" SET "payment_method" = NULL WHERE "id" = ${invoice.id}::uuid`;
-    await context.prisma
-      .$executeRaw`ALTER TABLE "invoice" ENABLE TRIGGER trg_invoice_payment_method_permanent`;
+    await context.prisma.$executeRaw`ALTER TABLE "invoice" ENABLE TRIGGER USER`;
 
     expect(
       await rejectionOf(

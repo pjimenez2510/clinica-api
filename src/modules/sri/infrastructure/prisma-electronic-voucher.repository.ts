@@ -49,9 +49,23 @@ type VoucherRow = Prisma.ElectronicVoucherGetPayload<{
   select: typeof VOUCHER_SELECT;
 }>;
 
+/**
+ * The invoice a voucher belongs to. Since SRI-086 a voucher is an invoice's OR
+ * a credit note's; the paths that only know invoices read it through here, and
+ * the database guarantees a `01` voucher carries its invoice
+ * (`electronic_voucher_type_matches_its_document`).
+ */
+function invoiceIdOf(row: { id: string; invoiceId: string | null }): string {
+  if (row.invoiceId === null) {
+    throw new Error(`Voucher ${row.id} is not an invoice's voucher`);
+  }
+  return row.invoiceId;
+}
+
 function toRecord(row: VoucherRow): VoucherRecord {
   return {
     ...row,
+    invoiceId: invoiceIdOf(row),
     environment: row.environment as SriEnvironment,
     status: row.status as VoucherStatus,
     blockedReason: row.blockedReason as BlockedReason | null,
@@ -318,11 +332,11 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       if (voucher.count === 0) return false;
       const row = await tx.electronicVoucher.findUniqueOrThrow({
         where: { id },
-        select: { invoiceId: true },
+        select: { id: true, invoiceId: true },
       });
       // SRI-058. Back to ISSUED: it is not rejected while it is being re-sent.
       await tx.invoice.updateMany({
-        where: { id: row.invoiceId, status: 'REJECTED' },
+        where: { id: invoiceIdOf(row), status: 'REJECTED' },
         data: { status: 'ISSUED' },
       });
       return true;
@@ -721,7 +735,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
       },
     });
     return rows.map((row) => ({
-      invoiceId: row.invoiceId,
+      invoiceId: invoiceIdOf(row),
       voucherId: row.id,
       status: row.status as VoucherStatus,
       blockedReason: row.blockedReason as BlockedReason | null,
@@ -760,7 +774,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         },
       },
     });
-    if (!row) return null;
+    if (!row?.invoice) return null;
     const { invoice } = row;
     const site = invoice.emissionPoint.site;
     return {

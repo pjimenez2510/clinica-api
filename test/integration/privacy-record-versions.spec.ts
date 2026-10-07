@@ -271,6 +271,31 @@ async function everyVersionedRowOf(
     },
   });
 
+  // BI-215, BI-217: the account and an invoice of it. The invoice row is
+  // written by SQL: issuing goes through the repository, and only its
+  // existence matters here.
+  const emissionPoint = await prisma.emissionPoint.create({
+    data: { siteId: scene.site.id, code: String((await prisma.emissionPoint.count()) + 100).slice(-3), description: 'Caja' }, // prettier-ignore
+  });
+  const invoice = await prisma.invoice.create({
+    data: {
+      accountId: account.id,
+      siteId: scene.site.id,
+      emissionPointId: emissionPoint.id,
+      sequential: '000000001',
+      buyerIdentificationType: '05',
+      buyerIdentification: '1710034065',
+      buyerName: 'Receptor',
+      subtotalTaxed: 0,
+      subtotalUntaxed: 25,
+      taxTotal: 0,
+      total: 25,
+      status: 'ISSUED',
+      issuedAt: new Date(),
+      issuedById: author.id,
+    },
+  });
+
   const versioned: Record<string, string> = {
     encounter: encounterId,
     // Vitals are one row per attention, archived by `encounter_id`.
@@ -283,6 +308,8 @@ async function everyVersionedRowOf(
     data_subject_request: request.id,
     agenda_entry: appointment.id,
     charge_item: charge.id,
+    patient_account: account.id,
+    invoice: invoice.id,
     waitlist_contact_attempt: call.id,
   };
   for (const [table, resourceId] of Object.entries(versioned)) {

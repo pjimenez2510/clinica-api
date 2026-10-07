@@ -118,6 +118,28 @@ describe('SRI-001 composición de la clave de acceso', () => {
     expect(key).toBe('0503201201176001321000110010030009900641234567814');
   });
 
+  it('SRI-085 compone la clave de una nota de crédito (tipo 04) y reproduce la de la Ficha', () => {
+    // Ficha v2.34, formato XML de la nota de crédito (p. 55):
+    // 21102011 · 04 · 1792146739001 · 1 · 002 001 · 000000001 · 12345678 · 1 · 2
+    const key = composeAccessKey({
+      issuedOn: parseClinicalDate('2011-10-21'), // fecha-fija: vector de prueba de la Ficha del SRI
+      documentType: '04',
+      ruc: '1792146739001',
+      environment: '1',
+      establishmentCode: '002',
+      emissionPointCode: '001',
+      sequential: '000000001',
+      numericCode: '12345678',
+    });
+    expect(key).toBe('2110201104179214673900110020010000000011234567812');
+  });
+
+  it('SRI-085 rechaza un tipo de comprobante que no se construye', () => {
+    expect(() =>
+      composeAccessKey({ ...PARTS, documentType: '05' as '04' }),
+    ).toThrow(InvalidAccessKeyPartError);
+  });
+
   it.each([
     ['ruc', { ruc: '179000156300' }],
     ['establishmentCode', { establishmentCode: '1' }],

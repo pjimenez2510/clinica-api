@@ -18,8 +18,8 @@ import {
  * (`trg_electronic_voucher_permanent`, `trg_invoice_access_key_permanent`).
  */
 
-/** SRI table 3. Only the invoice is built today. */
-export type VoucherDocumentType = '01';
+/** SRI table 3: `01` factura, `04` nota de crédito (SRI-085). */
+export type VoucherDocumentType = '01' | '04';
 
 /** `1` pruebas, `2` producción. Part of the key: fixed when it is composed. */
 export type SriEnvironment = '1' | '2';
@@ -28,7 +28,7 @@ export type SriEnvironment = '1' | '2';
 const EMISSION_TYPE = '1';
 
 export interface AccessKeyParts {
-  /** The invoice's date of issue in `America/Guayaquil` (SRI-004). */
+  /** The document's date of issue in `America/Guayaquil` (SRI-004). */
   issuedOn: ClinicalDate;
   documentType: VoucherDocumentType;
   /** The issuer's 13-digit RUC. */
@@ -52,7 +52,7 @@ export class InvalidAccessKeyPartError extends Error {
 }
 
 const SHAPES: Record<Exclude<keyof AccessKeyParts, 'issuedOn'>, RegExp> = {
-  documentType: /^01$/,
+  documentType: /^0[14]$/,
   ruc: /^[0-9]{13}$/,
   environment: /^[12]$/,
   establishmentCode: /^[0-9]{3}$/,
