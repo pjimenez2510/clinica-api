@@ -3,7 +3,10 @@ import { Module } from '@nestjs/common';
 
 import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
-import { ACTIVE_ALLERGY_READER } from '../../shared/clinical/patient-allergy.port';
+import {
+  ACTIVE_ALLERGY_READER,
+  SURVIVING_CHART_ALLERGY_READER,
+} from '../../shared/clinical/patient-allergy.port';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 import { PrismaActiveAllergyReader } from '../../shared/infrastructure/clinical/prisma-active-allergy.reader';
 
@@ -155,6 +158,15 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
      * and hides the penicillin allergy of an absorbed chart.
      */
     { provide: ACTIVE_ALLERGY_READER, useClass: PrismaActiveAllergyReader },
+    /**
+     * EN-237. The band, the summary and the signed snapshot ask the
+     * prescription's question —«from the surviving chart»— which the same
+     * adapter answers: one statement for what is shown and what is checked.
+     */
+    {
+      provide: SURVIVING_CHART_ALLERGY_READER,
+      useExisting: ACTIVE_ALLERGY_READER,
+    },
     { provide: ACCESS_AUDIT_RECORDER, useClass: PrismaAccessAuditRecorder },
   ],
 })

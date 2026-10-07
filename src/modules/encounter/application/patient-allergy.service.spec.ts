@@ -8,6 +8,7 @@ import type {
 import type {
   ActiveAllergy,
   ActiveAllergyReader,
+  SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import {
   PatientAllergyNotFoundError,
@@ -176,7 +177,9 @@ class FakeAllergies implements PatientAllergyRepository {
   }
 }
 
-class FakeActiveReader implements ActiveAllergyReader {
+class FakeActiveReader
+  implements ActiveAllergyReader, SurvivingChartAllergyReader
+{
   asked: string[] = [];
   /**
    * Built as an `ActiveAllergy` and NOT as an `AllergyView` with two nulls:
@@ -197,6 +200,13 @@ class FakeActiveReader implements ActiveAllergyReader {
 
   activeFor(chartId: string): Promise<readonly ActiveAllergy[]> {
     this.asked.push(chartId);
+    return Promise.resolve(this.rows);
+  }
+
+  askedFromSurvivor: string[] = [];
+
+  activeForSurvivorOf(chartId: string): Promise<readonly ActiveAllergy[]> {
+    this.askedFromSurvivor.push(chartId);
     return Promise.resolve(this.rows);
   }
 }
@@ -373,15 +383,16 @@ describe('las alergias del paciente', () => {
     ).rejects.toBeInstanceOf(PatientAllergyNotFoundError);
   });
 
-  it('EN-084 sirve las alergias activas por el MISMO lector que comprobará la prescripción', async () => {
+  it('EN-084 EN-237 sirve las alergias activas desde la superviviente, por el MISMO lector que comprobará la prescripción', async () => {
     /**
      * No es una preferencia de estilo: dos consultas del mismo predicado
      * acaban discrepando, y en lo que discreparían es en el alcance de ficha
      * — la alergia a la penicilina de la ficha absorbida que deja de verse.
      */
-    const active = await service.activeFor(PATIENT);
+    const active = await service.activeForSurvivorOf(PATIENT);
 
-    expect(reader.asked).toEqual([PATIENT]);
+    // EN-237: desde la superviviente, la misma pregunta que hace la receta.
+    expect(reader.askedFromSurvivor).toEqual([PATIENT]);
     expect(active).toHaveLength(1);
     // Y el lector compartido no expone el motivo de una refutación: no es
     // asunto de quien prescribe.
@@ -391,7 +402,7 @@ describe('las alergias del paciente', () => {
   it('EN-084 no deja fila de bitácora al servir las activas: la deja el acto que las pidió', async () => {
     // Sus llamadores auditan lo que están haciendo —abrir la atención
     // (EN-122) o leer el resumen (EN-161)—. Una entrada aquí duplicaría todas.
-    await service.activeFor(PATIENT);
+    await service.activeForSurvivorOf(PATIENT);
 
     expect(audit.entries).toHaveLength(0);
   });

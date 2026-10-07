@@ -7,6 +7,7 @@ import type {
 import type {
   ActiveAllergy,
   ActiveAllergyReader,
+  SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import type {
   AppointmentForProposal,
@@ -119,6 +120,12 @@ const aPrevious = (
 
 class FakeEncounters {
   stored: EncounterView | null = anEncounter();
+  /** EN-237. The chart that absorbed the attention's own, when one did. */
+  survivor: { id: string; mrn: string } | null = null;
+
+  findSurvivingChart(): Promise<{ id: string; mrn: string } | null> {
+    return Promise.resolve(this.survivor);
+  }
 
   findById(query: EncounterQuery): Promise<EncounterView | null> {
     if (this.stored === null) return Promise.resolve(null);
@@ -179,7 +186,9 @@ class FakeSummaries implements ChartSummaryRepository {
   }
 }
 
-class FakeActiveReader implements ActiveAllergyReader {
+class FakeActiveReader
+  implements ActiveAllergyReader, SurvivingChartAllergyReader
+{
   asked: string[] = [];
   rows: ActiveAllergy[] = [
     {
@@ -194,6 +203,12 @@ class FakeActiveReader implements ActiveAllergyReader {
   ];
 
   activeFor(chartId: string): Promise<readonly ActiveAllergy[]> {
+    this.asked.push(chartId);
+    return Promise.resolve(this.rows);
+  }
+
+  /** EN-237. The same list, climbing to the survivor in its own statement. */
+  activeForSurvivorOf(chartId: string): Promise<readonly ActiveAllergy[]> {
     this.asked.push(chartId);
     return Promise.resolve(this.rows);
   }
@@ -385,6 +400,23 @@ describe('la historia a la vista durante la consulta', () => {
 
     expect(reader.asked).toEqual([PATIENT]);
     expect(summaries.queries.every((q) => q.patientId === PATIENT)).toBe(true);
+  });
+
+  it('EN-237 lee la historia desde la ficha superviviente cuando la de la atención se unificó, y audita la que divulgó', async () => {
+    encounters.survivor = { id: 'surviving', mrn: 'HC0000000002' };
+
+    await service.forEncounter(ENCOUNTER, requester);
+
+    // The allergies in the band's own statement, from the attention's chart;
+    // «sin alergias conocidas» of the attention's chart, as the receta asks it.
+    expect(reader.asked).toEqual([PATIENT]);
+    expect(allergyRecords.asked).toEqual([PATIENT]);
+    expect(summaries.queries.every((q) => q.patientId === 'surviving')).toBe(
+      true,
+    );
+    expect(audit.entries.map((entry) => entry.resourceId)).toEqual([
+      'surviving',
+    ]);
   });
 
   it('EN-159 excluye la atención en curso de «las anteriores»', async () => {

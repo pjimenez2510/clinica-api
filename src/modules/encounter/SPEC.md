@@ -397,7 +397,12 @@ alergias y antecedentes sin `record:write`—, y **EN-085 y EN-086**, que
 estuvieron bloqueadas por esquema hasta `feat/f03-preparacion`: la tabla de
 antecedentes y el autor de la alergia. Desde D-127, **EN-224 a EN-226** (§24):
 descartar sin motivo, reactivar, editar en la fila con versiones, y «sin
-alergias conocidas» en un paso y retirable.
+alergias conocidas» en un paso y retirable. Desde D-169.2, **EN-237 y EN-238**: la
+atención de una ficha que se fusionó con la consulta abierta lee y escribe
+la ficha vigente, y lo dice.
+
+**Solo interfaz:** EN-238. El servidor ya escribe sólo en la ficha vigente y
+nombra la alergia por su identificador; decirlo y llevar allí es de la pantalla.
 
 **Solo servidor:** EN-082. Que refutar **no borre** sólo se ve contando filas.
 **EN-087** lo es por lo mismo: la inmutabilidad de la afirmación y el rechazo
@@ -1914,6 +1919,69 @@ requisitos que cambian.
   > Un rol **propio** de una clínica que registraba alergias con `record:write`
   > deja de poder hacerlo hasta que se le conceda: los roles son datos, y
   > concederlo en silencio a quien no lo declara es lo que D-012 prohíbe.
+- **EN-237** — CUANDO se abra una atención (EN-081), se lea su resumen de la
+  historia (EN-159), se proponga «subsecuente» (EN-184) o se firme una de sus
+  notas (EN-206) y la ficha de la atención haya sido **absorbida** por una
+  fusión, el sistema DEBERÁ leer las alergias activas, los antecedentes y las
+  atenciones anteriores de la **ficha superviviente y de todas las que ésta
+  absorbió** —la de la atención incluida—, NO DEBERÁ servir como «sin
+  alergias conocidas» la afirmación hecha sobre la superviviente (como la
+  receta, PR-117: «no registradas»), y la apertura DEBERÁ decir en qué ficha
+  se fusionó (`mergedInto`: su `patientId` y su número de historia). Un
+  certificado emitido en esa atención DEBERÁ copiar los datos laborales de la
+  superviviente (CER-038), los que la pantalla enseña. Sin fusión,
+  `mergedInto` DEBERÁ ser `null` y la lectura la de siempre (`chartScope`).
+  > **D-169.2 (b), 07-10-2026.** La fusión no mira las atenciones, así que la
+  > de la duplicada sigue abierta, y desde ella `chartScope` baja y nunca
+  > sube: la banda, la pestaña de receta y el resumen callaban la Penicilina
+  > de la ficha real que el servidor ya bloqueaba al emitir (PR-118). Desde
+  > esta atención se lee lo que dice la fusión: es la misma persona.
+  >
+  > Las alergias —la banda, el resumen y la foto que se firma— se leen con
+  > **la misma sentencia** que comprueba la receta (`activeForSurvivorOf`,
+  > PR-118), para que el médico vea exactamente la lista contra la que se
+  > receta (EN-084). Los antecedentes y las atenciones anteriores resuelven
+  > primero la superviviente y leen con `chartScope` desde ella: una fusión o
+  > un deshacer que cayera entre las dos sentencias deja una lectura del
+  > instante anterior. Al deshacer la fusión, la atención vuelve a leer solo
+  > su ficha.
+  >
+  > La bitácora: abrir la atención sigue dejando su fila sobre la atención
+  > (EN-122), y leer el resumen la deja sobre la ficha que divulgó, la
+  > superviviente (EN-161).
+  >
+  > «Sin alergias conocidas» se pregunta a la ficha de la atención, como la
+  > receta: una absorbida responde «no registradas» (el lado seguro), porque
+  > la afirmación se hizo sobre la otra ficha y no en esta atención. Si vale o
+  > no para ella es D-169.2 (h), del autor.
+  >
+  > **Lo que no cambia:** la ficha absorbida sigue sin abrirse
+  > (`PATIENT_MERGED`, PA-045) y sin admitir registros (`PATIENT_CHART_NOT_OPEN`).
+  > Si una fusión debe rechazar una duplicada con atenciones abiertas, o la
+  > atención de una absorbida dejar de admitir contenido, es D-169.2 (a), del
+  > autor.
+- **EN-238** — MIENTRAS la atención abierta en pantalla sea de una ficha
+  absorbida (`mergedInto` no `null`, EN-237), la pantalla DEBERÁ decir «La
+  ficha de esta atención se unificó con la historia <número>» con un enlace a
+  la ficha vigente; la cabecera, «Ficha completa», las alergias, los
+  antecedentes y los datos del paciente DEBERÁN ser los de la ficha vigente,
+  y registrar o descartar alergias y antecedentes desde la atención DEBERÁ
+  hacerse sobre ella; «sin alergias conocidas» NO DEBERÁ mostrarse ni
+  ofrecerse para afirmar o retirar desde esa atención (en la banda y en la
+  nota dice, como la receta, «no registradas»), y la pantalla NO DEBERÁ
+  ofrecer corregir la identidad o los datos del paciente (documento, campos
+  del RDACAA, datos laborales del certificado), que se corrigen en la
+  historia vigente; y CUANDO una receta se rechace con
+  `ALLERGY_CONTRAINDICATION`, el rechazo DEBERÁ nombrar la sustancia de cada
+  alergia que lo impide («Alergia a Amoxicilina») y no su identificador, y
+  su enlace a las alergias DEBERÁ llevar a la ficha vigente.
+  > **D-169.2 (d).** Sin esto el rechazo listaba `allergies.<uuid>` y
+  > enlazaba a la ficha absorbida, que responde `PATIENT_MERGED`; refutar
+  > desde ella se rechazaba: bloqueado —seguro— pero en un callejón. Escribir
+  > en la vigente no necesita ninguna ruta nueva: es la única ficha que
+  > admite registros (PA-045), y la que la fusión dice que es de esta persona.
+  > La cuenta de caja de la atención sigue en su ficha: la factura no es
+  > historia clínica.
 
 ## 7. Los bloques de programa: obstétricos, SIVAN, vacunas y VIH
 
@@ -4131,7 +4199,7 @@ que es global: una atención ocurre en un sitio.
 | --- | --- | --- | --- |
 | `GET` | `/encounters` | `record:read` | EN-015, EN-098, EN-123, **EN-162** |
 | `POST` | `/encounters` | `encounter:open` | EN-001 a EN-014, EN-017, EN-127, EN-141 |
-| `GET` | `/encounters/:id` | `record:read` | EN-063, EN-081, EN-122 |
+| `GET` | `/encounters/:id` | `record:read` | EN-063, EN-081, EN-122, EN-237 |
 | `GET` | `/encounters/open` | `record:read` | EN-146 |
 | `POST` | `/encounters/:id/hold` | `encounter:open` | EN-128 |
 | `POST` | `/encounters/:id/resume` | `encounter:open` | EN-128 |
@@ -4268,6 +4336,8 @@ prueba o el CI falla**.
 | EN-015, EN-068 | Integración contra PostgreSQL real: tras fusionar A→B, la historia leída desde B **incluye las atenciones de A**, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo. Un doble no puede demostrarlo: depende de que el enlace se recorra en la base |
 | EN-162 | Integración contra PostgreSQL real: la página y el `total` salen del **mismo predicado** —hay una atención de otra sede que ni cuenta ni aparece—, y tres páginas seguidas no repiten ni pierden ninguna. Contrato HTTP: el defecto es la primera página, `pageSize` por encima del tope es 422, y la página **sigue sin llevar contenido clínico** |
 | EN-020, EN-021 | Contrato HTTP + unitario: el JSON Schema del formulario 002 rechaza una nota sin motivo de consulta, y el código de formulario viaja como dato |
+| EN-237 | **Integración contra PostgreSQL real con la fusión de verdad** (`PatientMergeService`), con control positivo: tras fusionar la ficha de una atención abierta, su apertura, su resumen y la instantánea al firmar leen la alergia, el antecedente y la atención anterior de la superviviente, y `mergedInto` lleva su número; sin fusión no leen nada de la otra ficha y `mergedInto` es `null` |
+| EN-238 | Unitario de la pantalla (la ficha vigente de una atención; el rechazo con la sustancia) y **recorrido F-04** con la fusión hecha por la API a mitad de consulta |
 | EN-016, EN-081 | Contrato HTTP: la respuesta de la cita lleva el booleano y **no** el identificador de la atención; la apertura de atención lleva las alergias activas sin pedirlas aparte |
 | EN-029 | Integración: un profesional con registro ACESS vencido **ayer** no puede firmar hoy, sin que nadie haya tocado su fila |
 | EN-082, EN-086, EN-107, EN-018 | Integración: **contar filas** tras refutar, anular y cerrar. Que algo no se borre sólo se demuestra contando |

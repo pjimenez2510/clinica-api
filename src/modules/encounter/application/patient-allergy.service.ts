@@ -6,10 +6,10 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import {
-  ACTIVE_ALLERGY_READER,
+  SURVIVING_CHART_ALLERGY_READER,
   type ActiveAllergy,
-  type ActiveAllergyReader,
   type AllergyCriticality,
+  type SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import {
   ENCOUNTER_REPOSITORY,
@@ -131,8 +131,12 @@ export class PatientAllergyService {
   constructor(
     @Inject(PATIENT_ALLERGY_REPOSITORY)
     private readonly allergies: PatientAllergyRepository,
-    @Inject(ACTIVE_ALLERGY_READER)
-    private readonly activeAllergies: ActiveAllergyReader,
+    /**
+     * EN-237. One adapter answers both questions (`PrismaActiveAllergyReader`),
+     * so the band and the prescription check read the same statement.
+     */
+    @Inject(SURVIVING_CHART_ALLERGY_READER)
+    private readonly activeAllergies: SurvivingChartAllergyReader,
     @Inject(ENCOUNTER_REPOSITORY)
     private readonly encounters: EncounterRepository,
     @Inject(ACCESS_AUDIT_RECORDER)
@@ -375,18 +379,25 @@ export class PatientAllergyService {
    * EN-081, EN-084. The chart's active allergies.
    *
    * ⚠️ THROUGH THE SHARED READER AND NOT THROUGH THIS MODULE'S REPOSITORY, on
-   * purpose: this is the SAME statement `prescription` will run to check what
-   * is being prescribed (EN-084). One predicate, one place to be wrong, and
-   * the thing it would be wrong about is the chart scope — the merged chart
-   * whose penicillin allergy stops being visible.
+   * purpose: this is the SAME statement `prescription` runs to check what is
+   * being prescribed (EN-084). One predicate, one place to be wrong, and the
+   * thing it would be wrong about is the chart scope — the allergy of the
+   * other chart of a merge, which has to be visible from either.
+   *
+   * ⚠️ FROM THE SURVIVING CHART (EN-237, PR-118). The attention may have been
+   * opened on a duplicate that admissions merged while it was open; the band
+   * then lists the survivor's allergies too — the very statement that blocks
+   * the prescription written in it, so the doctor sees what is checked.
    *
    * NOT AUDITED HERE. Its callers audit the act they are performing: opening
    * an attention (EN-122) or reading the chart summary (EN-161). An entry
    * written here as well would double every one of those, which is the
    * burying EN-123 exists to prevent.
    */
-  async activeFor(patientId: string): Promise<readonly ActiveAllergy[]> {
-    return this.activeAllergies.activeFor(patientId);
+  async activeForSurvivorOf(
+    patientId: string,
+  ): Promise<readonly ActiveAllergy[]> {
+    return this.activeAllergies.activeForSurvivorOf(patientId);
   }
 
   /**

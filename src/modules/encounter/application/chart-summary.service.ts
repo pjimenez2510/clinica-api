@@ -5,9 +5,9 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import {
-  ACTIVE_ALLERGY_READER,
+  SURVIVING_CHART_ALLERGY_READER,
   type ActiveAllergy,
-  type ActiveAllergyReader,
+  type SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import {
   CHART_SUMMARY_REPOSITORY,
@@ -37,6 +37,7 @@ import {
   type PatientHistoryRepository,
 } from '../domain/patient-history.repository';
 
+import { chartOfRecord } from './chart-of-record';
 import type { Requester } from './encounter.service';
 
 /**
@@ -170,8 +171,8 @@ export class ChartSummaryService {
   constructor(
     @Inject(CHART_SUMMARY_REPOSITORY)
     private readonly summaries: ChartSummaryRepository,
-    @Inject(ACTIVE_ALLERGY_READER)
-    private readonly allergies: ActiveAllergyReader,
+    @Inject(SURVIVING_CHART_ALLERGY_READER)
+    private readonly allergies: SurvivingChartAllergyReader,
     /**
      * EN-087. Only for `standingAbsenceFor`, and it is a read.
      *
@@ -228,8 +229,11 @@ export class ChartSummaryService {
     });
     if (!encounter) throw new EncounterNotFoundError();
 
+    // EN-237. The surviving chart when this attention's own was merged while
+    // it was open: the history of the PERSON, which the merge says it is.
+    const chartId = await chartOfRecord(this.encounters, encounter.patientId);
     const query = {
-      patientId: encounter.patientId,
+      patientId: chartId,
       sites: requester.sites,
       excludeEncounterId: encounter.id,
       limit: PREVIOUS_ENCOUNTERS,
@@ -248,17 +252,22 @@ export class ChartSummaryService {
       previousEncounters,
       totalEncounters,
     ] = await Promise.all([
-      this.allergies.activeFor(encounter.patientId),
+      // EN-237. The band's statement, the one the prescription checks.
+      this.allergies.activeForSurvivorOf(encounter.patientId),
+      // EN-237, PR-117. Of the ATTENTION's chart, as the receta asks it: an
+      // absorbed chart answers `null` («no registradas»); the survivor's
+      // assertion was never made about this attention (D-169.2).
       this.allergyRecords.standingAbsenceFor(encounter.patientId),
-      this.historyRecords.activeFor(encounter.patientId),
+      this.historyRecords.activeFor(chartId),
       this.summaries.previousEncounters(query),
       this.summaries.countEncounters(query),
     ]);
 
+    // The chart whose history was disclosed: the survivor's, when it is.
     await this.audit.record({
       userId: requester.userId,
       resourceType: RESOURCE_TYPE,
-      resourceId: encounter.patientId,
+      resourceId: chartId,
       action: 'READ',
       ip: requester.ip,
       userAgent: requester.userAgent,
@@ -298,8 +307,10 @@ export class ChartSummaryService {
     const code = await this.summaries.cie10CodeOf(conceptId);
     if (code === null) throw new ConceptWrongCatalogueError('CIE10');
 
+    // EN-237. A category diagnosed on the surviving chart counts too.
+    const chartId = await chartOfRecord(this.encounters, encounter.patientId);
     const basis = await this.summaries.priorDiagnosisInCategory({
-      patientId: encounter.patientId,
+      patientId: chartId,
       sites: requester.sites,
       encounterId: encounter.id,
       before: encounter.startedAt,
@@ -309,7 +320,7 @@ export class ChartSummaryService {
     await this.audit.record({
       userId: requester.userId,
       resourceType: RESOURCE_TYPE,
-      resourceId: encounter.patientId,
+      resourceId: chartId,
       action: 'READ',
       ip: requester.ip,
       userAgent: requester.userAgent,

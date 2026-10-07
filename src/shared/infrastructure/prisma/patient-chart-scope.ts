@@ -144,9 +144,11 @@ export function chartScope(chartId: string): ChartScopeFilter {
  * ONE LEVEL UP IS ALL THERE IS: `trg_patient_merge_not_chained` refuses A→B→C
  * (PA-046), so the survivor of an absorbed chart is never itself absorbed.
  *
- * ⚠️ NOT A REPLACEMENT FOR `chartScope` EVERYWHERE. Only the prescription
- * reads through it today (PR-118); whether every read from an attention
- * should, or whether such an attention should exist at all, is D-169.2.
+ * ⚠️ NOT A REPLACEMENT FOR `chartScope` EVERYWHERE. The prescription reads
+ * through it (PR-118), and so does the band of an attention (EN-237), so the
+ * doctor sees the list the prescription is checked against; the rest of an
+ * attention's history resolves the survivor first (`chartOfRecord` in
+ * `encounter`). Whether such an attention should exist at all is D-169.2.
  */
 export function chartScopeOfSurvivor(chartId: string): ChartScopeFilter {
   return {

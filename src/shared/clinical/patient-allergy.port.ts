@@ -112,11 +112,12 @@ export const ACTIVE_ALLERGY_READER = Symbol('ActiveAllergyReader');
  *
  * ⚠️ A SEPARATE PORT AND NOT A SECOND METHOD OF `ActiveAllergyReader`, because
  * the two answer different questions. `activeFor` is «what this chart and the
- * ones it absorbed say» — the band of an attention reads it. This one also
+ * ones it absorbed say» — the chart's own screen reads it. This one also
  * climbs to the chart that absorbed the one asked about: an attention opened
  * on a duplicate that admissions merged afterwards is still open (the merge
  * does not look at attentions), and the surviving chart's allergy has to stop
- * the prescription written in it. The same adapter answers both, so the
+ * the prescription written in it — and the band of that attention reads it
+ * too (EN-237), so the doctor sees what is checked. The same adapter answers both, so the
  * predicate is still written once (`patient-chart-scope.ts`).
  */
 export interface SurvivingChartAllergyReader {

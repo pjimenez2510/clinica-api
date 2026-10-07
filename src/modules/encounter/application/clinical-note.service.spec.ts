@@ -241,6 +241,9 @@ class FakeBackground {
   activeFor(): Promise<ActiveAllergy[]> {
     return Promise.resolve(this.allergies);
   }
+  activeForSurvivorOf(): Promise<ActiveAllergy[]> {
+    return Promise.resolve(this.allergies);
+  }
   standingAbsenceFor(): Promise<AllergyAbsenceAssertion | null> {
     return Promise.resolve(this.absence);
   }
@@ -308,6 +311,10 @@ describe('los casos de uso de la nota clínica', () => {
         background,
         background as unknown as PatientAllergyRepository,
         new FakeHistory(background) as unknown as PatientHistoryRepository,
+        // EN-237: no chart here was merged.
+        {
+          findSurvivingChart: () => Promise.resolve(null),
+        } as unknown as EncounterRepository,
       ),
       templates as unknown as NoteTemplateRepository,
       logger,
