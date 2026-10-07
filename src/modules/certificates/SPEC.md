@@ -145,6 +145,21 @@ límites del reposo avisan y no frenan (D-128.7)—.
 **Desde D-128.7** la prueba independiente cambia en la ventana: un reposo que
 empieza dentro de tres días se guarda, y la respuesta lo avisa.
 
+### C4 — Lo que el 117 dice de una ficha unificada, y el sexo del día _(P1, 07-10-2026)_
+
+D-169.2 (i) y D-171.2.
+
+**Por qué es P1:** un certificado con el nombre de una ficha duplicada y sin
+cédula es un papel que el empleador o el IESS no pueden atribuir a nadie; y
+uno que al volver a generarse cambia de sexo ya no es el que se entregó.
+**Prueba independiente:** abrir la atención en una ficha duplicada sin
+documento, unificarla con la real, emitir un reposo desde esa atención y leer
+en el 117 el nombre, la cédula y la historia de la real; corregir después el
+sexo de la ficha y volver a generar el PDF: dice el sexo del día de la emisión.
+**Cubre:** CER-057, CER-058.
+**Solo servidor:** CER-057, CER-058. El 117 lo compone el servidor
+(`composeForm117`) y la pantalla y el PDF lo pintan sin tocarlo.
+
 ---
 
 ## Requisitos
@@ -807,6 +822,45 @@ PR-030).
   > `medical_certificate_rest_starts_within_a_year`, en el disparador de
   > inserción y antes del candado por ficha. No revalida filas guardadas.
 
+### 8. La ficha unificada y el sexo del día (D-169.2 i y D-171.2, 07-10-2026)
+
+- **CER-057** — MIENTRAS la ficha del certificado esté **unificada** con otra
+  (`patient.merged_into_id`), el 117 —en pantalla, en el PDF y al volver a
+  generarlo— DEBERÁ servir la identidad de la **ficha vigente**: apellidos y
+  nombres (CER-021), su documento de identidad como número de historia clínica
+  única y su `mrn` como número de archivo (CER-020). La edad DEBERÁ seguir
+  siendo la congelada de la atención (CER-021). Sin unificar —o deshecha la
+  unificación—, la de su propia ficha.
+
+  > **D-169.2 (i).** La fusión no mira las atenciones (D-031): una duplicada
+  > con su atención abierta se unifica con la real, y el certificado emitido
+  > después desde esa atención salía con el nombre de la duplicada y —porque su
+  > documento pasa a la vigente al unificar (PA-043)— **sin cédula**. Los datos
+  > laborales ya se copiaban de la vigente (EN-237, CER-038); ahora también la
+  > identidad, para que la cabecera del papel sea una sola persona. Se lee al
+  > componer, no se copia: la identidad es la de la persona, y lo que no debe
+  > cambiar tras la emisión —diagnósticos, datos laborales, sexo— ya se copia.
+
+- **CER-058** — CUANDO se emita un certificado, el sistema DEBERÁ copiar en él
+  el **sexo de la ficha vigente de la atención** en ese instante
+  (`medical_certificate.patient_sex`; la superviviente si la ficha está
+  unificada), y el 117 —en pantalla, en el PDF y al volver a generarlo— DEBERÁ
+  decir ese sexo y no el que tenga la ficha después. **Enmienda CER-021** en
+  el sexo.
+
+  > **D-171.2.** Como la orden (ORD-158): corregir la ficha después cambiaba el
+  > sexo de un papel que ya tiene el empleador o el IESS, mientras sus
+  > diagnósticos y datos laborales ya se congelaban (CER-027, CER-038).
+  >
+  > **Garantía de la base** (`20261008000000_medical_certificate_frozen_patient_sex`):
+  > la copia la escribe `a_medical_certificate_freeze_patient_sex` en la
+  > inserción, mande lo que mande quien emite; `medical_certificate_frozen`
+  > (CER-011) ya impide reescribirla. **Los ya emitidos** se rellenan con el
+  > sexo que su ficha tenía al emitirse según `patient_change_history`
+  > (PA-026): el `value_before` de la primera corrección de sexo posterior a la
+  > emisión o, si no la hubo, el de hoy — lo mismo que la orden. Es lo mejor
+  > que se sabe, no una garantía.
+
 ---
 
 ## Criterios de éxito
@@ -872,6 +926,7 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | Disparador `medical_certificate_issue_rules`: coherencia de la maternidad y candado por ficha (los límites de CER-046, CER-047 y CER-051 ya no, CER-055) | `medical_certificate` | CER-048 a CER-050, D-109, D-110 |
 | Disparador sin las reglas de días | `20261005060500_certificate_rest_limits_warn` | CER-055 |
 | Disparador con el tope de cordura: 365 días y un año desde la atención | `20261006095636_certificate_rest_sanity_limits` | CER-056 |
+| `patient_sex` copiado por `a_medical_certificate_freeze_patient_sex` (la ficha vigente) y relleno de los emitidos | `20261008000000_medical_certificate_frozen_patient_sex` | CER-058 |
 
 ## Rutas
 
@@ -894,6 +949,8 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | CER-055 | **Integración contra la base**: cada límite de días se guarda con un `INSERT` directo, y lo que se queda (CER-030, CER-039, CER-049) sigue rechazando por el mismo camino. **Por HTTP**: cada límite emite y devuelve su aviso, con control positivo de un reposo normal sin avisos. Unitario del dominio: cada aviso, su borde y su texto |
 | CER-056 | **Integración contra la base**: 365 días y el inicio a un año justo, antes y después, se guardan con un `INSERT` directo; un día más se rechaza, y el rechazo llega como `CERTIFICATE_REST_IMPLAUSIBLE` en su campo. **Por HTTP**: 366 días y un inicio a un año y un día responden 422 por campo sin guardar nada, y 365 días se emiten con el aviso de CER-055. Unitario del dominio (bordes, 29 de febrero) y del servicio (también al corregir). Interfaz: el mensaje bajo el campo |
 | CER-020 a CER-029 | Unitario del dominio: edad y condición, horas y fechas en letras, «NA» |
+| CER-057 | **Integración por HTTP con la fusión real** (`PatientMergeService`): el 117 de la atención de una duplicada sin documento, unificada después, dice nombre, cédula y `mrn` de la vigente en pantalla y en el lector del PDF; control positivo: sin unificar, los de su ficha |
+| CER-058 | **Integración contra la base**: la copia la escribe el disparador aunque el `INSERT` traiga otra; un `UPDATE` crudo se rechaza; corregir la ficha no la cambia y el 117 —pantalla y PDF— sigue diciendo el del día (control positivo: la ficha sí cambió y el certificado nuevo dice el nuevo); en una atención unificada, el de la vigente |
 | C1 y C2 en pantalla | `e2e/flujos/f05-ordenes-y-receta.spec.ts` con `medico@` |
 
 ## Preguntas abiertas

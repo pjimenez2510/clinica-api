@@ -218,9 +218,10 @@ cruzada, que se declaran y no se simulan.
 ficha en otra, recetar ese mismo concepto **desde la superviviente** y comprobar
 que la emisión se rechaza.
 
-**Cubre:** PR-060 a PR-067, PR-118.
+**Cubre:** PR-060 a PR-067, PR-118, **PR-119** —el documento de la receta
+nombra a la persona de la ficha vigente (D-169.2 c)—.
 
-**Solo servidor:** PR-118. El rechazo y la alerta del borrador son los de
+**Solo servidor:** PR-118, PR-119. El rechazo y la alerta del borrador son los de
 PR-060 y PR-067 y viajan por las mismas respuestas. La pestaña de receta toma
 su lista de alergias —el aviso previo a componer y las sustancias que nombra un
 rechazo (PR-112)— de la banda y del resumen de la atención, que desde EN-237
@@ -897,6 +898,14 @@ Hay tres niveles de comprobación y **sólo el primero se construye**:
   > si la fusión debe rechazar una duplicada con atenciones abiertas, o la
   > atención de una ficha absorbida dejar de admitir contenido, lo decide el
   > autor (D-169.2).
+
+- **PR-119** — SI la ficha de la atención ha sido **absorbida** por otra,
+  ENTONCES el documento de la receta (PR-024) DEBERÁ servir los apellidos y
+  nombres de la ficha **superviviente**, los mismos que imprime su PDF
+  (DOC-117); la edad, la congelada de la atención (PR-025).
+  > D-169.2 (c). La pantalla de la receta decía el nombre de la duplicada
+  > sobre las alergias de la vigente (PR-118). Se lee al componer el
+  > documento, como PR-024 manda, desde `mergedInto ?? patient`.
 
 - **PR-063** — Una alergia **refutada** NO DEBERÁ interrumpir la emisión.
 

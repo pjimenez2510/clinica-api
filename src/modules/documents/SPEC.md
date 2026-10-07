@@ -335,6 +335,20 @@ la fecha.
 pantalla sólo lo pide y lo abre. Se comprueba sobre el PDF que la pantalla
 descarga en `clinica-web/e2e/flujos/f05-documentos.spec.ts`.
 
+### H12 — Lo que se imprime de una ficha unificada _(P1, 07-10-2026)_
+
+D-169.2 (c) e (i).
+
+**Prueba independiente:** abrir la atención en una ficha duplicada sin
+documento, unificarla con la real y, desde esa atención, emitir una receta, una
+orden de exámenes y el resumen: los tres PDF dicen el nombre, la cédula y la
+historia de la real, con la edad de la atención.
+
+**Cubre:** DOC-117.
+
+**Solo servidor:** DOC-117. El PDF lo compone el servidor y la pantalla sólo
+lo pide y lo abre.
+
 ---
 
 ## Criterios de éxito
@@ -906,6 +920,23 @@ descarga en `clinica-web/e2e/flujos/f05-documentos.spec.ts`.
   > obligatorio, con formato rígido del Estado — otra razón para no acercarse.
 
 
+- **DOC-117** — MIENTRAS la ficha de la atención esté **unificada** con otra
+  (`patient.merged_into_id`), la receta (DOC-072), la orden de exámenes y el
+  resumen de la atención (DOC-111) —al emitirse y al volver a generarse—
+  DEBERÁN imprimir la identidad de la **ficha vigente**: apellidos y nombres,
+  documento de identidad y número de historia (D-078); y el resumen, su sexo.
+  La edad DEBERÁ seguir siendo la congelada de la atención (art. 5.b.ii), y
+  el sexo de la orden, el que la orden congeló (ORD-158, ORD-161). Sin
+  unificar —o deshecha la unificación—, la de su propia ficha. El 117 lo dice
+  CER-057.
+
+  > **D-169.2 (c) e (i).** La receta de esa atención ya imprimía las alergias
+  > de la vigente (PR-118) bajo el nombre de la duplicada y —porque su
+  > documento pasa a la vigente al unificar (PA-043)— sin cédula: un papel que
+  > la farmacia o el laboratorio cotejan con la persona equivocada. Se lee al
+  > componer (`mergedInto ?? patient`, un nivel por PA-046), no se copia: la
+  > identidad es la de la persona.
+
 ## 4 bis. El marco común (D-095)
 
 - **DOC-080** — Todo documento **clínico** —receta, orden, certificado— DEBERÁ
@@ -1346,6 +1377,7 @@ Por qué no se construye hoy:
 | DOC-108, DOC-109 | **Integración por HTTP** (`documents-http.spec.ts`): corregir sin motivo y con él; anular una receta, un certificado y un examen, y corregir una receta, archivan el que sustituye al vigente con su marca y su motivo; sin PDF previo no se archiva nada (control positivo); un fallo forzado de la base al archivar no impide la anulación, y «Corregir…» lo archiva después; cada respuesta lleva `documentArchived` (`true`, `false` con el fallo forzado, `null` sin PDF). Unitario: el motivo de cada causa, el vigente que se sustituye, el puerto que nunca lanza y responde `true`, `false` o `null`, el registro del fallo que sobrevive a la poda sin el mensaje, y que cada servicio lo llama tras anular o corregir y propaga la respuesta |
 | DOC-020 a DOC-025, DOC-070 a DOC-085 | Unitarias sobre los bytes generados: el PDF se inspecciona, no se cree; y veraPDF (`pnpm pdfa:check`) al cerrar |
 | DOC-116 | Unitaria del layout (las tres frases, ninguna en rojo salvo las alergias) e **integración contra PostgreSQL real** del lector: la afirmación en pie, retirada, superada por una alergia posterior, hecha sobre una ficha absorbida, y la receta de una ficha que después se absorbió (no se imprime) |
+| DOC-117 | **Integración contra PostgreSQL real con la fusión real** (`PatientMergeService`): el lector de la receta, la orden y el resumen de la atención de una duplicada sin documento, unificada después, da nombre, cédula y `mrn` de la vigente con la edad de la atención; control positivo: sin unificar, los de su ficha; deshecha la unificación, otra vez los suyos |
 | DOC-038, DOC-039, DOC-061, DOC-094 a DOC-096 | Integración por HTTP: permiso, transacción y cuerpo de la respuesta reales |
 | DOC-050 a DOC-056 | Unitarias sobre el normalizador de imagen, con ficheros sintéticos |
 | DOC-013, DOC-079, DOC-100 | **Sin prueba, porque no hay código.** Están declarados y no construidos, y el `Estado: borrador` de este documento es lo que lo hace legítimo |
