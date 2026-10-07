@@ -72,9 +72,19 @@ export class SharpImageNormaliser implements ImageNormaliser {
       animated: false,
     });
 
+    // THE DIMENSIONS FROM THE HEADER, WITHOUT THE CAP. With `limitInputPixels`
+    // set, libvips refuses the bomb already in `metadata()`, and the `catch`
+    // below turned it into «unreadable»: the person was told the file was
+    // broken instead of too big (DOC-053, found by the F-08 walk, 07-10-2026).
+    // `metadata()` reads the header only — nothing is decoded — so asking it
+    // without the cap is safe; the cap stays on the pipeline that decodes.
     let metadata: sharp.Metadata;
     try {
-      metadata = await pipeline.metadata();
+      metadata = await sharp(bytes, {
+        limitInputPixels: false,
+        failOn: 'error',
+        animated: false,
+      }).metadata();
     } catch {
       throw new DocumentImageUnreadableError(slot);
     }
