@@ -483,6 +483,24 @@ por la API: `CLINICAL_NOTE_ALREADY_OPEN`, y la atención sigue con una.
 
 **Solo servidor:** EN-229 (la pantalla ya no abre una segunda).
 
+### H12 — La consulta que se entiende sin leer _(P1)_
+
+Revisión del autor del 06-10-2026, la misma que rehízo caja (B13 de
+`billing/SPEC.md`): acciones reconocibles por su icono, nada de avisos que
+explican y lo anulado fuera de la vista. Vale para todo lo que el médico ve
+desde la atención —la consulta con sus pestañas, la receta, las órdenes y sus
+resultados, los certificados— y para las colas de críticos, órdenes
+pendientes y resultados sin emparejar. La regla común vive en
+`ESTANDAR-UI.md` §9 ter.
+
+**Prueba independiente:** como médico, recorrer una atención: editar y quitar
+un diagnóstico desde los iconos de su fila y verlo plegarse tras «1 quitado ·
+Ver»; anular una receta y verla plegarse tras «1 anulada · Ver»; ver que
+ninguna pestaña tiene un recuadro azul que explique cómo funciona, y que la
+alergia del paciente sigue a la vista.
+
+**Cubre:** EN-230 a EN-232. **Solo interfaz:** EN-230, EN-231, EN-232.
+
 ### Fuera de las nueve
 
 **EN-148 a EN-150** —el triaje— tampoco pertenecen a ninguna entrega, y por otro
@@ -3728,6 +3746,36 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
   > La migración se probó sobre una copia de la base del autor (0
   > atenciones con dos cadenas). Se prueba contra la base con control
   > positivo (otra atención sí abre la suya; otro formulario no choca).
+
+---
+
+## 27. La consulta que se entiende sin leer (ESTANDAR-UI §9 ter, D-144.3)
+
+- **EN-230** — Las acciones de la atención, la receta, las órdenes, los
+  certificados y las colas de resultados DEBERÁN ser los botones de tipo fijo
+  del sistema: en una fila, editar con lápiz, descargar o imprimir, y quitar,
+  anular o descartar en rojo, sólo con icono, que digan su nombre al pasar el
+  ratón o al enfocarlos y lo anuncien al lector de pantalla; y cada tarjeta
+  DEBERÁ tener a lo sumo una acción principal.
+  > Lo mismo que BI-207 en caja. «Hay muchos botones: editar, agregar,
+  > descargar… me confundo» (autor).
+- **EN-231** — Esas pantallas NO DEBERÁN mostrar avisos de sólo información.
+  Lo que pide algo al usuario DEBERÁ decirse como estado en la fila o junto
+  al botón al que afecta —un botón deshabilitado dice por qué, pegado a él—;
+  y los avisos de riesgo para el paciente —la alergia al medicamento, el
+  valor crítico— DEBERÁN quedarse.
+  > D-144.3: los ámbar que piden algo pasan a estado donde quepan. Un ámbar
+  > que no tiene un botón ni una fila donde vivir se queda como ámbar; la
+  > rama lo dice en su plan.
+- **EN-232** — Las listas de la atención —diagnósticos, recetas, órdenes y
+  sus exámenes, certificados, informes y las versiones anteriores de un
+  registro— NO DEBERÁN mostrar por defecto lo quitado, anulado, descartado,
+  retirado o sustituido; DEBERÁN decir cuántos hay en una línea discreta que
+  los despliega con su estado («2 anuladas · Ver»), y SI todo lo de la lista
+  está oculto, ENTONCES DEBERÁN decir que no hay nada vigente en vez de una
+  lista vacía.
+  > Como BI-206. Lo anulado no se borra —la historia lo conserva y está a un
+  > clic—, pero no compite con lo vigente.
 
 ## Códigos de error nuevos
 
