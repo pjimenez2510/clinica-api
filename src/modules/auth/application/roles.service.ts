@@ -56,6 +56,8 @@ export interface CreateRoleCommand {
  * system role, or one with live grants — is retired.
  */
 export interface UpdateRoleCommand {
+  /** AU-051. */
+  code?: string;
   name?: string;
   description?: string | null;
   active?: boolean;
@@ -149,7 +151,18 @@ export class RolesService {
       );
     }
 
+    // AU-051. A system role's code is an identifier the product relies on;
+    // the trigger refuses it anyway, this says so before reaching it.
+    const code =
+      command.code === undefined || command.code === role.code
+        ? undefined
+        : command.code;
+    if (code !== undefined && role.isSystem) {
+      throw new SystemRoleProtectedError();
+    }
+
     const updated = await this.roles.update(id, {
+      code,
       name: command.name,
       description: command.description,
       active: command.active,

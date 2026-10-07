@@ -57,6 +57,8 @@ export interface CreateAccountCommand {
  * `null` clears it — see `update`.
  */
 export interface UpdateAccountCommand {
+  /** AU-050. */
+  email?: string;
   firstName?: string;
   lastName?: string;
   cedula?: string | null;
@@ -173,7 +175,10 @@ export class AccountsService {
     return { account: created, invitation };
   }
 
-  /** AU-025. The email is not patchable — see the DTO for why. */
+  /**
+   * AU-025, AU-050. The email is correctable; see the DTO for why that
+   * rewrites nothing about who did what.
+   */
   async update(
     id: string,
     command: UpdateAccountCommand,
@@ -183,7 +188,9 @@ export class AccountsService {
     const before = await this.accounts.findById(id);
     if (!before) throw new UserNotFoundError();
 
+    const email = command.email?.trim().toLowerCase();
     const updated = await this.accounts.update(id, {
+      email: email === before.email ? undefined : email,
       firstName: command.firstName,
       lastName: command.lastName,
       // `undefined` leaves it alone, `null` clears it; collapsing the two
@@ -200,6 +207,12 @@ export class AccountsService {
       before: accountSnapshot(before),
       after: accountSnapshot(updated),
     });
+
+    // AU-050. The invitation that went to the old address is annulled and a
+    // new one goes to the corrected one (AU-027 does both in one call).
+    if (updated.email !== before.email && updated.credentialPending) {
+      await this.invitations.issue(updated.id, requester);
+    }
     return updated;
   }
 

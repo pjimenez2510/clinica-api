@@ -206,6 +206,37 @@ describe('la administración de roles', () => {
     });
   });
 
+  describe('corregir el código de un rol (AU-051)', () => {
+    it('AU-051 corrige el código de un rol propio', async () => {
+      const updated = await service.update(
+        CUSTOM_ROLE.id,
+        { code: 'ENLACE_ASEGURADORAS' },
+        REQUESTER,
+      );
+
+      expect(updated.code).toBe('ENLACE_ASEGURADORAS');
+    });
+
+    it('AU-051 el código de un rol del sistema no cambia: SYSTEM_ROLE_PROTECTED, sin escribir', async () => {
+      await expect(
+        service.update(ADMIN_ROLE.id, { code: 'GERENCIA' }, REQUESTER),
+      ).rejects.toBeInstanceOf(SystemRoleProtectedError);
+      expect(repository.calls.map((call) => call.method)).not.toContain(
+        'update',
+      );
+    });
+
+    it('AU-051 mandar el mismo código de un rol del sistema junto al nombre no es un cambio de código', async () => {
+      const updated = await service.update(
+        ADMIN_ROLE.id,
+        { code: ADMIN_ROLE.code, name: 'Gerencia' },
+        REQUESTER,
+      );
+
+      expect(updated).toMatchObject({ code: 'ADMIN', name: 'Gerencia' });
+    });
+  });
+
   describe('bitácora con antes y después (AU-052)', () => {
     it('AU-052 records the role before and after an edit', async () => {
       await service.update(

@@ -615,6 +615,60 @@ describe('la administración de cuentas', () => {
     });
   });
 
+  describe('corregir el correo (AU-050)', () => {
+    it('AU-050 corrige el correo en minúsculas y, si aún no entró, anula la invitación y manda otra', async () => {
+      accounts.updateAnswer = { ...ACCOUNT, email: 'ana.villacis@clinica.ec' };
+
+      await service.update(
+        'user-1',
+        { email: ' Ana.Villacis@Clinica.ec ' },
+        REQUESTER,
+      );
+
+      expect(
+        accounts.calls.find((call) => call.method === 'update')?.args[1],
+      ).toMatchObject({
+        email: 'ana.villacis@clinica.ec',
+      });
+      expect(invitations.issuedFor).toEqual(['user-1']);
+    });
+
+    it('AU-050 una cuenta que ya entró conserva sus sesiones y no recibe invitación', async () => {
+      accounts.findAnswer = { ...ACCOUNT, credentialPending: false };
+      accounts.updateAnswer = {
+        ...ACCOUNT,
+        credentialPending: false,
+        email: 'ana.villacis@clinica.ec',
+      };
+
+      await service.update(
+        'user-1',
+        { email: 'ana.villacis@clinica.ec' },
+        REQUESTER,
+      );
+
+      expect(invitations.issuedFor).toEqual([]);
+      expect(accounts.calls.map((call) => call.method)).not.toContain(
+        'setActive',
+      );
+    });
+
+    it('AU-050 enviar el mismo correo no lo reescribe ni reenvía nada', async () => {
+      await service.update(
+        'user-1',
+        { email: ACCOUNT.email, firstName: 'Ana' },
+        REQUESTER,
+      );
+
+      expect(
+        accounts.calls.find((call) => call.method === 'update')?.args[1],
+      ).toMatchObject({
+        email: undefined,
+      });
+      expect(invitations.issuedFor).toEqual([]);
+    });
+  });
+
   describe('bitácora con antes y después (AU-052)', () => {
     /** Every key a secret could hide under, in any casing. */
     const SECRET_KEY = /password|hash|secret|mfa|totp|token|backup/i;
