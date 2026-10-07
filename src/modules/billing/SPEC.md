@@ -270,8 +270,15 @@ vuelve**; y comprobar contra PostgreSQL que el segundo cargo del mismo acto lo
 rechaza la BASE y no una lectura previa.
 
 **Cubre:** BI-150 a BI-158, BI-180, y da ruta por fin a BI-055, BI-056 y BI-059.
-**Solo servidor:** BI-180. Cambia qué propone el servidor, no la pantalla: caja
-muestra la propuesta que recibe, y sin acto clínico la recibe vacía.
+**Solo servidor:** BI-156, BI-180. BI-180 cambia qué propone el servidor, no la
+pantalla: caja muestra la propuesta que recibe, y sin acto clínico la recibe
+vacía. BI-156 es una prohibición sin pantalla propia: que el paso a caja no
+escriba nada clínico lo garantiza la forma del puerto (`ClinicalActsRepository`
+no tiene ni un método de escritura), y que el cierre de la atención no espere a
+caja es la ausencia de una condición en la barra de cierre de la atención:
+firmar la 002 da el alta haya cuenta o no (EN-130), y la cuenta sólo se enlaza
+después (EN-131). Ninguna pantalla de caja hace nada
+distinto por ella (07-10-2026, `feat/f06-cargos`).
 
 > **Lo entregado el 20-08-2026.** La ruta de paso a caja, idempotente en sus dos
 > mitades; la derivación de las tres fuentes sobre las ataduras que ya existían
