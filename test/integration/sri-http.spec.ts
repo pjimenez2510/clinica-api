@@ -646,6 +646,127 @@ describe('el comprobante electrónico por HTTP', () => {
     });
   });
 
+  describe('SRI-088 la nota de crédito en el monitor', () => {
+    /** As the SRI's answer leaves an invoice: its voucher and it, authorised. */
+    async function authorise(invoice: {
+      id: string;
+      electronic: { voucherId: string; accessKey: string } | null;
+    }) {
+      // prettier-ignore
+      await prisma.$executeRaw`
+        UPDATE "electronic_voucher"
+           SET "status" = 'AUTHORISED',
+               "authorisation_number" = "access_key",
+               "authorised_at" = CURRENT_TIMESTAMP,
+               "authorised_xml" = '<autorizacion/>'
+         WHERE "id" = ${invoice.electronic!.voucherId}::uuid`;
+      await prisma.$executeRaw`
+        UPDATE "invoice" SET "status" = 'AUTHORISED', "authorised_at" = CURRENT_TIMESTAMP
+         WHERE "id" = ${invoice.id}::uuid`;
+    }
+
+    it('SRI-088 SRI-087 la nota de crédito devuelta aparece como nota de crédito de su factura, y se reenvía con la misma clave', async () => {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      await authorise(invoice);
+
+      const issued = await api()
+        .post(
+          `/api/v1/billing/sites/${siteId}/invoices/${invoice.id}/credit-notes`,
+        )
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ reasonCode: 'AMOUNT' })
+        .expect(201);
+      const note = (
+        issued.body as {
+          creditNote: {
+            id: string;
+            electronic: { voucherId: string; state: string; accessKey: string };
+          };
+        }
+      ).creditNote;
+      // SRI-087. Prepared and signed at once, like the invoice; it waits for
+      // a web service this test does not configure (SRI-054).
+      expect(note.electronic).toMatchObject({ state: 'SIGNED' });
+      expect(note.electronic.accessKey.slice(8, 10)).toBe('04');
+
+      await prisma.$executeRaw`
+        UPDATE "electronic_voucher" SET "status" = 'RETURNED',
+               "last_messages" = '[{"identifier":"35","message":"ARCHIVO NO CUMPLE ESTRUCTURA XML","additionalInformation":null,"type":"ERROR"}]'
+         WHERE "id" = ${note.electronic.voucherId}::uuid`;
+      await prisma.$executeRaw`UPDATE "credit_note" SET "status" = 'REJECTED' WHERE "id" = ${note.id}::uuid`;
+
+      const monitor = await api()
+        .get('/api/v1/sri/vouchers')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      const rows = (
+        monitor.body as {
+          rows: {
+            document: string;
+            creditNoteId: string | null;
+            invoiceId: string;
+            modifiedDocumentNumber: string | null;
+            status: string;
+            needsAPerson: boolean;
+          }[];
+        }
+      ).rows;
+      expect(rows).toContainEqual(
+        expect.objectContaining({
+          document: 'CREDIT_NOTE',
+          creditNoteId: note.id,
+          invoiceId: invoice.id,
+          modifiedDocumentNumber: `001-001-${invoice.accessKey!.slice(30, 39)}`,
+          status: 'RETURNED',
+          needsAPerson: true,
+        }),
+      );
+      // Control: the authorised invoice itself is not in the monitor.
+      expect(
+        rows.filter(
+          (row) => row.document === 'INVOICE' && row.invoiceId === invoice.id,
+        ),
+      ).toEqual([]);
+
+      await api()
+        .post(`/api/v1/sri/vouchers/${note.electronic.voucherId}/retry`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(204);
+      const voucher = await prisma.electronicVoucher.findUniqueOrThrow({
+        where: { id: note.electronic.voucherId },
+      });
+      expect(voucher.status).toBe('SIGNED');
+      expect(voucher.accessKey).toBe(note.electronic.accessKey);
+      expect(
+        (await prisma.creditNote.findUniqueOrThrow({ where: { id: note.id } }))
+          .status,
+      ).toBe('ISSUED');
+    });
+
+    it('SRI-088 la lista de notas de crédito trae su estado electrónico', async () => {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      await authorise(invoice);
+      await api()
+        .post(
+          `/api/v1/billing/sites/${siteId}/invoices/${invoice.id}/credit-notes`,
+        )
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ reasonCode: 'RECEIVER_DATA' })
+        .expect(201);
+
+      const list = await api()
+        .get(`/api/v1/billing/sites/${siteId}/credit-notes`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      const [item] = (
+        list.body as { items: { electronic: { state: string } | null }[] }
+      ).items;
+      expect(item!.electronic).toMatchObject({ state: 'SIGNED' });
+    });
+  });
+
   describe('SRI-080 a SRI-083 el certificado desde la administración', () => {
     it('SRI-080 SRI-082 administración lo carga y ve titular, emisor y vigencia, nunca el contenido', async () => {
       const response = await uploadCertificate().then((r) => {

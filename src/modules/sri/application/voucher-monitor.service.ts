@@ -97,9 +97,7 @@ export class VoucherMonitorService implements ElectronicVoucherStatusReader {
             needsAPerson(row.status, row.receivedAt ?? row.issuedAt, now),
           // SRI-008. An invoice without a voucher says which datum it lacks.
           missingData:
-            row.status === 'NO_VOUCHER'
-              ? await this.missingDataOf(row.invoiceId)
-              : [],
+            row.status === 'NO_VOUCHER' ? await this.missingDataOf(row) : [],
         };
       }),
     );
@@ -117,8 +115,11 @@ export class VoucherMonitorService implements ElectronicVoucherStatusReader {
     };
   }
 
-  private async missingDataOf(invoiceId: string): Promise<string[]> {
-    const source = await this.vouchers.preparationSource(invoiceId);
+  private async missingDataOf(row: MonitorRow): Promise<string[]> {
+    const source =
+      row.creditNoteId === null
+        ? await this.vouchers.preparationSource(row.invoiceId)
+        : await this.vouchers.creditNotePreparationSource(row.creditNoteId);
     return source ? missingIssuerData(source) : [];
   }
 

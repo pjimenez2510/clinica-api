@@ -171,7 +171,13 @@ export interface TransportFailureDetail extends Omit<
 
 /** One row of the monitor (SRI-061). Never a clinical datum (SRI-067). */
 export interface MonitorRow {
+  /** SRI-088. Which document the row is. */
+  document: 'INVOICE' | 'CREDIT_NOTE';
+  /** The invoice, or the one the credit note modifies. */
   invoiceId: string;
+  creditNoteId: string | null;
+  /** SRI-088. The number of the invoice a credit note modifies. */
+  modifiedDocumentNumber: string | null;
   voucherId: string | null;
   siteId: string;
   documentNumber: string;

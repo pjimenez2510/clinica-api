@@ -60,7 +60,13 @@ const voucherStatus = z.enum([
 ]);
 
 const monitorRowSchema = z.object({
+  /** SRI-088. An invoice or a credit note. */
+  document: z.enum(['INVOICE', 'CREDIT_NOTE']),
+  /** The invoice, or the one the credit note modifies. */
   invoiceId: z.uuid(),
+  creditNoteId: z.uuid().nullable(),
+  /** SRI-088. For a credit note, the number of the invoice it modifies. */
+  modifiedDocumentNumber: z.string().nullable(),
   voucherId: z.uuid().nullable(),
   siteId: z.uuid(),
   documentNumber: z.string(),
