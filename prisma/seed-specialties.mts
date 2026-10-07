@@ -1,8 +1,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
-import { seedBilling } from './seed-billing.mts';
-
 /**
  * Seed for the SPECIALTIES module (C1): the specialty catalogue of D-008
  * with default service types, so the administration screen and the agenda
@@ -25,9 +23,10 @@ import { seedBilling } from './seed-billing.mts';
  * `seed-staff.mts` now, together with the `duration_exception` of ST-009 that
  * nobody was writing at all.
  *
- * Chain: run AFTER `pnpm db:seed` (users). It re-runs the billing seed at the
- * end, so every specialty's consultation gets linked (BI-232) whatever the
- * order. Then `pnpm db:seed:staff` if you
+ * Chain: run AFTER `pnpm db:seed` (users). The `db:seed:specialties` script
+ * runs the billing seed right after this one, so every specialty's
+ * consultation gets linked (BI-232) whatever the order; this file does not
+ * write billing's tables itself. Then `pnpm db:seed:staff` if you
  * want the seeded practitioners to have a specialty and a duration exception.
  */
 
@@ -148,11 +147,6 @@ async function main(): Promise<void> {
         `${result.serviceTypesCreated} tipos de atención creados ` +
         `(${SPECIALTIES.length} especialidades en total).`,
     );
-    // BI-232: `db:seed` seeds billing BEFORE this catalogue exists, so no
-    // consultation gets linked to its specialty. Re-running it here links them
-    // without touching what the clinic changed: the billing seed only links
-    // what is free and never prices what already has a price.
-    await seedBilling(prisma);
   } finally {
     await prisma.$disconnect();
   }
