@@ -73,6 +73,10 @@ export type CriticalNoticeTarget =
  *    Without one the worklist SAYS SO (`escalationMissing`) and keeps the
  *    ordering practitioner: nobody is escalated to on its own.
  *  - OTHERWISE: the practitioner who placed the order.
+ *
+ * ORD-146 (D-116 a) BEFORE ALL OF IT: once that practitioner recorded a
+ * notice to themselves, they know. Whoever phones them adds nothing, and the
+ * patient at home still knows nothing: the notice is due to the PATIENT.
  */
 export function criticalNoticeTarget(state: {
   overdue: boolean;
@@ -80,7 +84,12 @@ export function criticalNoticeTarget(state: {
   hasOnCallRole: boolean;
   /** An unanswered call to the practitioner who placed the order. */
   orderingUnanswered: boolean;
+  /** ORD-146. The value carries a notice to oneself. */
+  selfNoticed?: boolean;
 }): { target: CriticalNoticeTarget; escalationMissing: boolean } {
+  if (state.selfNoticed === true) {
+    return { target: 'PATIENT', escalationMissing: false };
+  }
   if (state.afterHours) {
     return state.hasOnCallRole
       ? { target: 'ON_CALL_ROLE', escalationMissing: false }
