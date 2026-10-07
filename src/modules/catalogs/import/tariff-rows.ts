@@ -132,19 +132,48 @@ export function rowsOfPage(
   let seenData = false;
   let seenTable = false;
 
-  for (let i = 0; i + 1 < ys.length; i += 1) {
-    const top = ys[i]!;
+  /** The table bands of the page: those vertical borders cross. */
+  const bands = ys.slice(0, -1).flatMap((top, i) => {
     const bottom = ys[i + 1]!;
     const middle = (top + bottom) / 2;
-
-    // A band is a table row only if vertical borders cross it; otherwise it
-    // is the paragraph between two tables.
     const borders = lines(
       verticals
         .filter((rule) => rule.y0 <= middle && rule.y1 >= middle)
         .map((rule) => rule.x0),
     );
-    if (borders.length < 3) continue;
+    // Fewer than three borders: the paragraph between two tables.
+    return borders.length < 3 ? [] : [{ top, bottom, borders }];
+  });
+
+  /**
+   * THE HEADINGS OUTSIDE THE TABLES. In the professional fees (section D) a
+   * section is a line of its own between tables — «SISTEMA RESPIRATORIO»,
+   * «NARIZ» — and not a row. A line in capitals, without figures, is one.
+   */
+  const inTable = (word: Word) => {
+    const y = (word.y0 + word.y1) / 2;
+    return bands.some((band) => y > band.top && y < band.bottom);
+  };
+  const outside = new Map<number, Word[]>();
+  for (const word of layout.words.filter((w) => !inTable(w))) {
+    const y = Math.round(word.y0);
+    outside.set(y, [...(outside.get(y) ?? []), word]);
+  }
+  const headings = [...outside.entries()]
+    .map(([y, words]) => ({ y, text: textOf(words) }))
+    .filter(
+      ({ text }) =>
+        /^[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ ,;()/–-]{3,79}$/.test(text) &&
+        !/\d/.test(text),
+    );
+
+  for (const { top, bottom, borders } of bands) {
+    for (const heading of headings.filter((h) => h.y < top)) {
+      section = heading.text;
+      headings.splice(headings.indexOf(heading), 1);
+    }
+    const middle = (top + bottom) / 2;
+
     if (!seenTable) {
       seenTable = true;
       continued = top <= TOP_OF_PAGE;
@@ -279,6 +308,9 @@ export function rowsOfPage(
     rows.push(row);
     last = row;
   }
+
+  // A heading under the last table names what the next page continues.
+  if (headings.length > 0) section = headings.at(-1)!.text;
 
   return { rows, anomalies, state: { section, columns, last } };
 }

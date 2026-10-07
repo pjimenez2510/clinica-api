@@ -194,4 +194,25 @@ describe('rowsOfPage (ORD-133)', () => {
     expect(concept!.display.endsWith('compleja…')).toBe(true);
     expect(concept!.description).toBe(long);
   });
+
+  it('ORD-133: a heading in capitals between tables names the section of the rows under it', () => {
+    const { rows } = rowsOfPage(
+      {
+        page: 175,
+        rules: table([300, 320]),
+        words: [
+          word('SISTEMA', 110, 250),
+          word('RESPIRATORIO', 160, 250),
+          word('NARIZ', 110, 270),
+          word('175', 280, 800),
+          word('30210', 55, 305),
+          word('Terapia', 110, 305),
+          word('1,40', 405, 305),
+        ],
+      },
+      { section: 'OTRA', columns: '', last: null },
+    );
+
+    expect(rows[0]).toMatchObject({ code: '30210', section: 'NARIZ' });
+  });
 });
