@@ -3776,6 +3776,9 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
   lista vacía.
   > Como BI-206. Lo anulado no se borra —la historia lo conserva y está a un
   > clic—, pero no compite con lo vigente.
+  > **Excepción mientras decide D-145:** el valor anterior de un resultado
+  > corregido sigue a la vista en su tarjeta, porque quien actuó sobre él
+  > tiene que verlo sin buscarlo (ORD, informe sustituido).
 
 ## Códigos de error nuevos
 
