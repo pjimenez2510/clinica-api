@@ -3174,8 +3174,9 @@ model ServiceOrder {
   /// be corrected afterwards without changing what the laboratory holds.
   diagnoses Json?
 
-  /// ORD-158 (D-163.1). The chart's sex the order's header printed, frozen by
-  /// the DATABASE when it is issued (`a_service_order_freeze_patient_sex`) and
+  /// ORD-158 (D-163.1). The chart's sex the order's header printed —the
+  /// survivor's if the attention's chart was merged, ORD-161— frozen by the
+  /// DATABASE when it is issued (`a_service_order_freeze_patient_sex`) and
   /// never rewritten; NULL while it is a draft
   /// (`service_order_patient_sex_frozen_when_issued`). Only the header reads
   /// it: the reference range still follows the chart (ORD-036, D-171.1).
@@ -3469,6 +3470,12 @@ model MedicalCertificate {
   jobTitle             String?   @map("job_title") @db.VarChar(120)
   residenceAddressLine String?   @map("residence_address_line") @db.VarChar(255)
   patientPhone         String?   @map("patient_phone") @db.VarChar(32)
+  /// CER-058 (D-171.2). The sex the 117 prints: the chart in force's at the
+  /// issue (the survivor's, if merged), copied by
+  /// `a_medical_certificate_freeze_patient_sex` whatever the row carries and
+  /// kept by `medical_certificate_frozen`. The default only lets Prisma omit
+  /// it; the trigger always overwrites it.
+  patientSex           PatientSex @default(UNKNOWN) @map("patient_sex")
 
   revokedById      String? @map("revoked_by_id") @db.Uuid
   revokedBy        User?   @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_revoked_by_fk")

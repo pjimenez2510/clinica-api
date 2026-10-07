@@ -8,6 +8,24 @@ import type {
 } from '../../domain/form-117/form-117';
 
 /**
+ * CER-020, CER-021. Who the certificate is about: names, chart number and the
+ * official documents still in force on the chart. Read at composing time, not
+ * copied: it is the person's identity, and what must not move after the issue
+ * —diagnoses, work data, sex— is copied.
+ */
+const FORM_117_IDENTITY_SELECT = {
+  familyName: true,
+  secondFamilyName: true,
+  givenName: true,
+  secondGivenName: true,
+  mrn: true,
+  identifiers: {
+    where: { use: 'OFFICIAL', patientMerged: false },
+    select: { type: true, value: true },
+  },
+} satisfies Prisma.PatientSelect;
+
+/**
  * CER-020 to CER-038. What form 117 is composed from, read ONCE and the same
  * way by the screen (`certificates`) and by the PDF (`documents`).
  *
@@ -16,10 +34,10 @@ import type {
  * read the frozen diagnoses and the other did not, the screen and the paper
  * would have said different things about the same certificate.
  *
- * ⚠️ THE DIAGNOSES AND THE WORK DATA ARE THE CERTIFICATE'S OWN COPY, taken at
- * the issue (CER-027, CER-038) — never the attention's or the chart's as they
- * are now. A diagnosis recorded after the issue must not reach a paper the
- * patient authorised without it.
+ * ⚠️ THE DIAGNOSES, THE WORK DATA AND THE SEX ARE THE CERTIFICATE'S OWN COPY,
+ * taken at the issue (CER-027, CER-038, CER-058) — never the attention's or the
+ * chart's as they are now. A diagnosis recorded after the issue must not reach
+ * a paper the patient authorised without it.
  */
 export const FORM_117_SOURCE_SELECT = {
   id: true,
@@ -53,19 +71,19 @@ export const FORM_117_SOURCE_SELECT = {
       parish: { select: { parent: { select: { display: true } } } },
     },
   },
+  // CER-058. The sex the paper printed, frozen at the issue by
+  // `a_medical_certificate_freeze_patient_sex` — never the chart's today.
+  patientSex: true,
   patient: {
     select: {
-      familyName: true,
-      secondFamilyName: true,
-      givenName: true,
-      secondGivenName: true,
-      sex: true,
-      mrn: true,
-      // CER-020. The official documents still in force on this chart.
-      identifiers: {
-        where: { use: 'OFFICIAL', patientMerged: false },
-        select: { type: true, value: true },
-      },
+      ...FORM_117_IDENTITY_SELECT,
+      /**
+       * CER-057 (D-169.2 i). The attention may have been opened on a duplicate
+       * that admissions merged afterwards (D-031 re-points nothing): the paper
+       * names the person of the chart IN FORCE, whose document the merge moved
+       * there (PA-043). One level, never a chain (PA-046).
+       */
+      mergedInto: { select: FORM_117_IDENTITY_SELECT },
     },
   },
   encounter: {
@@ -144,6 +162,9 @@ export function toForm117Source(row: Form117SourceRow): Form117Source {
           birthOn: calendarDate(row.birthOn),
           dischargeOn: calendarDate(row.maternityDischargeOn),
         };
+  // CER-057. The chart in force: the survivor when the certificate's own
+  // chart was absorbed.
+  const chart = row.patient.mergedInto ?? row.patient;
   return {
     certificate: {
       id: row.id,
@@ -167,17 +188,17 @@ export function toForm117Source(row: Form117SourceRow): Form117Source {
       phone: row.site.phone,
     },
     patient: {
-      familyName: row.patient.familyName,
-      secondFamilyName: row.patient.secondFamilyName,
-      givenName: row.patient.givenName,
-      secondGivenName: row.patient.secondGivenName,
-      sex: row.patient.sex,
-      mrn: row.patient.mrn,
+      familyName: chart.familyName,
+      secondFamilyName: chart.secondFamilyName,
+      givenName: chart.givenName,
+      secondGivenName: chart.secondGivenName,
+      sex: row.patientSex,
+      mrn: chart.mrn,
       employerName: row.employerName,
       jobTitle: row.jobTitle,
       residenceAddressLine: row.residenceAddressLine,
       phone: row.patientPhone,
-      identifiers: row.patient.identifiers,
+      identifiers: chart.identifiers,
     },
     encounter: {
       startedAt: row.encounter.startedAt,

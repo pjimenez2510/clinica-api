@@ -7,12 +7,14 @@ import type { Requester } from '../../src/modules/orders/application/service-ord
 import { PrismaDiagnosticReportRepository } from '../../src/modules/orders/infrastructure/prisma-diagnostic-report.repository';
 import { PrismaExamCatalogueRepository } from '../../src/modules/orders/infrastructure/prisma-exam-catalogue.repository';
 import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastructure/prisma-service-order.repository';
+import { PatientMergeService } from '../../src/modules/patients/application/patient-merge.service';
+import { PrismaPatientRepository } from '../../src/modules/patients/infrastructure/prisma-patient.repository';
 import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.port';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { aScene, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
-import { createUser } from './setup/fixtures';
+import { createPatient, createUser } from './setup/fixtures';
 
 /**
  * ORD-158, ORD-159 (D-163.1): the exam order FREEZES the patient's sex when
@@ -248,5 +250,81 @@ describe('ORD-036 el rango sigue el sexo de la ficha, no el que la orden congel�
       abnormalFlag: 'LOW',
       referenceLow: 13,
     });
+  });
+});
+
+describe('ORD-161 en la atención de una ficha unificada, el sexo de la vigente (D-171.3)', () => {
+  const mergesOf = (prisma: PrismaClient) =>
+    new PatientMergeService(
+      new PrismaPatientRepository(prisma as unknown as PrismaService),
+      silentAudit,
+      noopLogger as never,
+    );
+
+  /**
+   * A duplicate registered «mujer» by mistake, with its attention open and an
+   * order issued before the merge; the real chart of the same man; and the
+   * merge, the real one.
+   */
+  async function aMergedScene(prisma: PrismaClient) {
+    const { scene, draft } = await aDraftOrder(prisma);
+    const { orders } = adapters(prisma);
+    const beforeMerge = await orders.issue({ orderId: draft.id, sites: 'all' });
+    const survivor = await createPatient(prisma, { sex: 'MALE' });
+    const merge = async () =>
+      mergesOf(prisma).merge(
+        { sourcePatientId: scene.patient.id, targetPatientId: survivor.id },
+        { userId: (await createUser(prisma)).id },
+      );
+    const issueAnother = () =>
+      placeIssued(orders, {
+        encounterId: scene.encounter.id,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId: scene.bh.id }],
+        sites: 'all',
+      });
+    return { scene, beforeMerge, merge, issueAnother };
+  }
+
+  it('ORD-161 la orden emitida tras unificar congela el sexo de la vigente', async () => {
+    const prisma = db();
+    const { beforeMerge, merge, issueAnother } = await aMergedScene(prisma);
+    // Control positivo: sin unificar, el de la ficha de la atención.
+    expect(await frozenSexOf(prisma, beforeMerge.id)).toBe('FEMALE');
+
+    await merge();
+    const after = await issueAnother();
+    expect(await frozenSexOf(prisma, after.id)).toBe('MALE');
+    // Y la de antes no se reescribe (ORD-158).
+    expect(await frozenSexOf(prisma, beforeMerge.id)).toBe('FEMALE');
+  });
+
+  it('ORD-161 ORD-036 el resultado de esa atención se clasifica con el sexo de la vigente', async () => {
+    const prisma = db();
+    const { reports } = adapters(prisma);
+    const { scene, beforeMerge, merge, issueAnother } =
+      await aMergedScene(prisma);
+    const register = (orderId: string) =>
+      reports.register(
+        {
+          orderId,
+          performedById: null,
+          issuedAt: new Date(),
+          results: [{ analyteDefinitionId: scene.hb.id, valueNumeric: 12.5 }],
+        },
+        requester,
+      );
+
+    // Control positivo: sin unificar, el rango de la mujer de su ficha.
+    expect((await register(beforeMerge.id)).results[0]).toMatchObject({
+      abnormalFlag: 'NORMAL',
+      referenceLow: 12,
+    });
+
+    await merge();
+    expect(
+      (await register((await issueAnother()).id)).results[0],
+    ).toMatchObject({ abnormalFlag: 'LOW', referenceLow: 13 });
   });
 });
