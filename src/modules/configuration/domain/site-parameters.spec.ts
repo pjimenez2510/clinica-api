@@ -59,6 +59,8 @@ describe('los parámetros de operación de una sede', () => {
       overbookingEnabled: true,
       overbookingPermission: 'agenda:overbook',
       waitlistMaxContactAttempts: 3,
+      lateArrivalGraceMinutes: 15,
+      lateArrivalOverridePermission: 'agenda:overbook',
       cancelledRetention: 'NEVER',
       criticalNoticeWithinMinutes: 60,
       criticalEscalationRoleId: null,
@@ -165,6 +167,8 @@ describe('los parámetros de operación de una sede', () => {
         overbookingEnabled: true,
         overbookingPermission: 'agenda:overbook',
         waitlistMaxContactAttempts: 3,
+        lateArrivalGraceMinutes: 15,
+        lateArrivalOverridePermission: 'agenda:overbook',
         cancelledRetention: 'NEVER',
         criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
@@ -191,6 +195,8 @@ describe('los parámetros de operación de una sede', () => {
         overbookingEnabled: true,
         overbookingPermission: 'agenda:overbook',
         waitlistMaxContactAttempts: 3,
+        lateArrivalGraceMinutes: 15,
+        lateArrivalOverridePermission: 'agenda:overbook',
         cancelledRetention: 'NEVER',
         criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
@@ -256,6 +262,9 @@ describe('los parámetros de operación de una sede', () => {
       // deja de garantizarse por configurarlo—, y el número dentro del rango
       // es decisión de la clínica (D-040), no del código.
       'waitlistMaxContactAttempts',
+      // AG-142 (E8): el margen de llegada tardía. Nada deja de garantizarse:
+      // la llegada se registra igual (AG-119) y la emergencia lo salta (AG-120).
+      'lateArrivalGraceMinutes',
       // ORD-063, ORD-065, ORD-046: los plazos de las colas de resultados. El
       // valor dentro del rango es de la clínica (D-050, D-111).
       'criticalNoticeWithinMinutes',

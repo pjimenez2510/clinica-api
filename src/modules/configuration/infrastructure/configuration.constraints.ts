@@ -46,6 +46,13 @@ registerConstraintMeanings({
     field: 'waitlistMaxContactAttempts',
     message: 'Los intentos de contacto de la lista de espera van de 1 a 10',
   },
+  // AG-142. El margen de llegada tardía, para la escritura que no pasa por
+  // `assertParametersInRange`.
+  site_parameter_late_arrival_grace_range: {
+    code: 'PARAM_OUT_OF_RANGE',
+    field: 'lateArrivalGraceMinutes',
+    message: 'El margen de llegada tardía va de 0 a 240 minutos (4 horas)',
+  },
   // ORD-063, ORD-065, ORD-046. Mismo motivo: la escritura que no pasa por
   // `assertParametersInRange`.
   site_parameter_critical_notice_within_minutes_range: {

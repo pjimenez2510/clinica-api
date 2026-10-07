@@ -85,6 +85,10 @@ describe('la superficie de configuración', () => {
       // siendo inmutable y la cola sigue enseñando lo que no se avisó.
       'criticalEscalationRoleId',
       'criticalNoticeWithinMinutes',
+      // AG-142 (E8): el umbral de llegada tardía y quién lo salta. Lo mismo
+      // que el sobrecupo: la clínica elige el número y QUIÉN, no la garantía.
+      'lateArrivalGraceMinutes',
+      'lateArrivalOverridePermission',
       'maxLeadDays',
       'minLeadMinutes',
       'overbookingCap',
