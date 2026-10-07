@@ -2095,9 +2095,10 @@ a D-156.5, recomendación aceptada en todos los puntos._
 
 - **ORD-151** — CUANDO la tarjeta de la orden enseñe un informe sustituido, la
   pantalla DEBERÁ rotularlo según el estado de la versión que lo sustituye: si
-  es `FINAL` o `PARTIAL`, «Versión parcial del {emisión}, completada el
+  él era `PARTIAL` y ella es `FINAL` o `PARTIAL`, «Versión parcial del {emisión}, completada el
   {registro de la sustitución}» y SIN tachar los valores que la versión nueva
-  escribe igual —valor, unidad y bandera—; si es `CORRECTED`, «Corregido el …
+  escribe igual —valor, unidad y bandera—; en otro caso (`CORRECTED`, o un
+  `FINAL` sustituido por un envío incompleto), «Corregido el …
   Este era el valor anterior.» con todos sus valores tachados.
   > **D-154.1.** ORD-119: completar sin cambiar nada no altera lo que alguien
   > leyó, y llamarlo «corregido» es una alarma falsa que enseña a pasar por
