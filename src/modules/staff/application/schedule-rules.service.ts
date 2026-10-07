@@ -112,7 +112,9 @@ export class ScheduleRulesService {
     await this.requireDerivable(input);
 
     const rule = await this.rules.create({ practitionerId, ...input });
-    await this.trail.record('CREATE', rule.id, requester);
+    await this.trail.record('CREATE', rule.id, requester, {
+      after: scheduleRuleSnapshot(rule),
+    });
 
     return { rule, conflicts: await this.conflictsAfter(rule) };
   }
@@ -165,7 +167,10 @@ export class ScheduleRulesService {
     const updated = await this.rules.update(ruleId, definedOf(patch));
     if (!updated) throw new ScheduleRuleNotFoundError();
 
-    await this.trail.record('UPDATE', updated.id, requester);
+    await this.trail.record('UPDATE', updated.id, requester, {
+      before: scheduleRuleSnapshot(current),
+      after: scheduleRuleSnapshot(updated),
+    });
     return {
       rule: updated,
       /**
@@ -213,7 +218,10 @@ export class ScheduleRulesService {
     );
     if (!updated) throw new ScheduleRuleNotFoundError();
 
-    await this.trail.record('UPDATE', updated.id, requester);
+    await this.trail.record('UPDATE', updated.id, requester, {
+      before: scheduleRuleSnapshot(current),
+      after: scheduleRuleSnapshot(updated),
+    });
     return { rule: updated, conflicts: await this.conflictsAfter(updated) };
   }
 
@@ -356,4 +364,20 @@ function definedOf<T extends object>(patch: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(patch).filter(([, value]) => value !== undefined),
   ) as Partial<T>;
+}
+
+/**
+ * ST-052. The editable fields of a rule — site, day, hours, validity and the
+ * active flag — without the ids, which are the audit row's own `resourceId`.
+ */
+function scheduleRuleSnapshot(rule: ScheduleRuleView): object {
+  return {
+    siteId: rule.siteId,
+    weekday: rule.weekday,
+    startTime: rule.startTime,
+    endTime: rule.endTime,
+    validFrom: rule.validFrom,
+    validTo: rule.validTo,
+    active: rule.active,
+  };
 }

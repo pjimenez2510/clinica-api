@@ -208,6 +208,33 @@ describe('ScheduleRulesService', () => {
       });
     });
 
+    it('ST-052 records the previous and new schedule of an edited rule', async () => {
+      answers.update = { ...RULE, endTime: '13:00' };
+
+      await service.update('rule-1', { endTime: '13:00' }, REQUESTER, DIRECTOR);
+
+      const snapshot = {
+        siteId: 'site-1',
+        weekday: 1,
+        startTime: '08:00',
+        validFrom: RULE.validFrom,
+        validTo: null,
+        active: true,
+      };
+      expect(recorded[0]?.before).toEqual({ ...snapshot, endTime: '12:00' });
+      expect(recorded[0]?.after).toEqual({ ...snapshot, endTime: '13:00' });
+    });
+
+    it('ST-052 a new rule carries only the after half', async () => {
+      await service.create('prac-1', DRAFT, REQUESTER, DIRECTOR);
+
+      expect(recorded[0]?.before).toBeUndefined();
+      expect(recorded[0]?.after).toMatchObject({
+        startTime: '14:00',
+        endTime: '18:00',
+      });
+    });
+
     it('ST-007 rechaza una regla en una sede donde el profesional no atiende', async () => {
       answers.worksAt = false;
 

@@ -187,6 +187,45 @@ describe('PractitionerService', () => {
       });
     });
 
+    it('ST-052 records the previous and new values of the edited profile', async () => {
+      answers.updatePractitioner = {
+        ...PRACTITIONER,
+        mspCode: 'MSP-43',
+        schedulable: false,
+      };
+
+      await service.update(
+        PRACTITIONER.id,
+        { mspCode: 'MSP-43', schedulable: false },
+        REQUESTER,
+      );
+
+      const unchanged = {
+        cedula: '1710034065',
+        acessRegistration: 'ACESS-1001',
+        acessExpiresOn: PRACTITIONER.acessExpiresOn,
+        emergencyContactPhone: null,
+        active: true,
+      };
+      expect(recorded[0]?.before).toEqual({
+        ...unchanged,
+        mspCode: 'MSP-42',
+        schedulable: true,
+      });
+      expect(recorded[0]?.after).toEqual({
+        ...unchanged,
+        mspCode: 'MSP-43',
+        schedulable: false,
+      });
+    });
+
+    it('ST-052 a new profile carries only the after half', async () => {
+      await service.create({ userId: 'user-9' }, REQUESTER);
+
+      expect(recorded[0]?.before).toBeUndefined();
+      expect(recorded[0]?.after).toMatchObject({ mspCode: 'MSP-42' });
+    });
+
     it('ST-010 el listado pasa el interruptor tal cual: por defecto solo activos', async () => {
       await service.list(false);
       await service.list(true);

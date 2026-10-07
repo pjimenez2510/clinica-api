@@ -149,6 +149,7 @@ describe('PractitionerAssignmentsService', () => {
   let calls: Call[];
   let recorded: AccessAuditEntry[];
   let service: PractitionerAssignmentsService;
+  let repository: StaffRepository;
 
   beforeEach(() => {
     answers = {
@@ -162,6 +163,7 @@ describe('PractitionerAssignmentsService', () => {
       siteSlotAtoms: [10],
     };
     const double = makeDouble(answers);
+    repository = double.repository;
     calls = double.calls;
     recorded = [];
     service = new PractitionerAssignmentsService(
@@ -438,6 +440,108 @@ describe('PractitionerAssignmentsService', () => {
       const rows = await service.listDurations('prac-1');
 
       expect(rows.map((row) => row.resolvedMinutes)).toEqual([45, 30]);
+    });
+  });
+
+  describe('bitácora con antes y después (ST-052)', () => {
+    const site = (siteId: string): PractitionerSiteView => ({
+      siteId,
+      name: siteId,
+      active: true,
+    });
+    const held = (
+      specialtyId: string,
+      isPrimary: boolean,
+    ): PractitionerSpecialtyView => ({
+      specialtyId,
+      code: specialtyId,
+      name: specialtyId,
+      active: true,
+      isPrimary,
+    });
+    const duration = (exceptionMinutes: number | null) => ({
+      serviceTypeId: 'type-1',
+      serviceTypeName: 'Control',
+      specialtyId: 'spec-1',
+      specialtyName: 'Cardiología',
+      baseMinutes: 20,
+      exceptionMinutes,
+    });
+
+    it('ST-052 records the sites before and after a replacement', async () => {
+      answers.sites = [site('site-1')];
+      repository.replacePractitionerSites = () => {
+        answers.sites = [site('site-1'), site('site-2')];
+        return Promise.resolve();
+      };
+
+      await service.replaceSites(
+        'prac-1',
+        ['site-1', 'site-2'],
+        REQUESTER,
+        DIRECTOR,
+      );
+
+      expect(recorded[0]?.before).toEqual({ siteIds: ['site-1'] });
+      expect(recorded[0]?.after).toEqual({ siteIds: ['site-1', 'site-2'] });
+    });
+
+    it('ST-052 records the specialties before and after, primary flag included', async () => {
+      answers.specialties = [held('spec-1', true)];
+      answers.findSpecialtiesByIds = [ACTIVE, { id: 'spec-3', active: true }];
+      repository.replacePractitionerSpecialties = () => {
+        answers.specialties = [held('spec-3', true), held('spec-1', false)];
+        return Promise.resolve();
+      };
+
+      await service.replaceSpecialties(
+        'prac-1',
+        [
+          { specialtyId: 'spec-3', isPrimary: true },
+          { specialtyId: 'spec-1', isPrimary: false },
+        ],
+        REQUESTER,
+      );
+
+      expect(recorded[0]?.before).toEqual({
+        specialties: [{ specialtyId: 'spec-1', isPrimary: true }],
+      });
+      expect(recorded[0]?.after).toEqual({
+        specialties: [
+          { specialtyId: 'spec-3', isPrimary: true },
+          { specialtyId: 'spec-1', isPrimary: false },
+        ],
+      });
+    });
+
+    it('ST-052 records the duration exception it replaced', async () => {
+      answers.durations = [duration(30)];
+
+      await service.setDurationException('prac-1', 'type-1', 40, REQUESTER);
+
+      expect(recorded[0]?.before).toEqual({
+        serviceTypeId: 'type-1',
+        exceptionMinutes: 30,
+      });
+      expect(recorded[0]?.after).toEqual({
+        serviceTypeId: 'type-1',
+        exceptionMinutes: 40,
+      });
+    });
+
+    it('ST-052 records the duration exception it removed', async () => {
+      answers.durations = [duration(30)];
+
+      await service.removeDurationException('prac-1', 'type-1', REQUESTER);
+
+      expect(recorded[0]?.before).toEqual({
+        serviceTypeId: 'type-1',
+        exceptionMinutes: 30,
+      });
+      expect(recorded[0]?.after).toEqual({
+        serviceTypeId: 'type-1',
+        exceptionMinutes: null,
+      });
     });
   });
 });
