@@ -166,7 +166,9 @@ export class OrganizationService {
     }
     if (!current) {
       const created = await this.repository.createEstablishment(input);
-      await this.recordMutation('CREATE', created.id, requester);
+      await this.recordMutation('CREATE', created.id, requester, {
+        after: establishmentSnapshot(created),
+      });
       return created;
     }
 
@@ -178,7 +180,10 @@ export class OrganizationService {
     // truthful; retrying would be guessing what the caller wanted.
     if (!updated) throw new EstablishmentNotFoundError();
 
-    await this.recordMutation('UPDATE', updated.id, requester);
+    await this.recordMutation('UPDATE', updated.id, requester, {
+      before: establishmentSnapshot(current),
+      after: establishmentSnapshot(updated),
+    });
     return updated;
   }
 
@@ -203,7 +208,10 @@ export class OrganizationService {
     });
     if (!updated) throw new EstablishmentNotFoundError();
 
-    await this.recordMutation('UPDATE', updated.id, requester);
+    await this.recordMutation('UPDATE', updated.id, requester, {
+      before: establishmentSnapshot(current),
+      after: establishmentSnapshot(updated),
+    });
     return updated;
   }
 
@@ -260,7 +268,9 @@ export class OrganizationService {
     };
 
     const created = await this.repository.createSite(input);
-    await this.recordMutation('CREATE', created.id, requester);
+    await this.recordMutation('CREATE', created.id, requester, {
+      after: siteSnapshot(created),
+    });
     return created;
   }
 
@@ -285,10 +295,17 @@ export class OrganizationService {
       patch.ruc = OrganizationService.validRuc(command.ruc);
     }
 
+    // OR-033. The site as it stood, so the trail can say what was replaced.
+    const current = await this.repository.findSite(id);
+    if (!current) throw new SiteNotFoundError();
+
     const updated = await this.repository.updateSite(id, patch);
     if (!updated) throw new SiteNotFoundError();
 
-    await this.recordMutation('UPDATE', updated.id, requester);
+    await this.recordMutation('UPDATE', updated.id, requester, {
+      before: siteSnapshot(current),
+      after: siteSnapshot(updated),
+    });
     return updated;
   }
 
@@ -330,6 +347,7 @@ export class OrganizationService {
     action: AuditAction,
     resourceId: string,
     requester: Requester,
+    change: OrganizationChange = {},
   ): Promise<void> {
     await this.audit.record({
       userId: requester.userId,
@@ -338,6 +356,56 @@ export class OrganizationService {
       action,
       ip: requester.ip,
       userAgent: requester.userAgent,
+      // OR-033. Plain copies; `'organization'` carries a payload since
+      // `admin_edit_in_place` (D-150).
+      before: change.before && { ...change.before },
+      after: change.after && { ...change.after },
     });
   }
+}
+
+/**
+ * OR-033, D-150. What a mutation replaced and what it left, as the editable
+ * fields of the domain view: `before` is absent on a creation.
+ */
+export interface OrganizationChange {
+  before?: Readonly<object>;
+  after?: Readonly<object>;
+}
+
+/**
+ * OR-033. The establishment's editable fields. Without `id`, which is the
+ * audit row's `resourceId`, and without `fiscalProfileDeclaredAt`, an instant
+ * the adapter stamps and nobody types.
+ */
+export function establishmentSnapshot(view: EstablishmentView): object {
+  return {
+    mspUnicode: view.mspUnicode,
+    typology: view.typology,
+    legalName: view.legalName,
+    ruc: view.ruc,
+    headOfficeAddress: view.headOfficeAddress,
+    keepsAccounting: view.keepsAccounting,
+    specialTaxpayerResolution: view.specialTaxpayerResolution,
+    withholdingAgentResolution: view.withholdingAgentResolution,
+    rimpeRegime: view.rimpeRegime,
+    tradeName: view.tradeName,
+    contactEmail: view.contactEmail,
+    operatingPermit: view.operatingPermit,
+    active: view.active,
+  };
+}
+
+/** OR-033. A site's editable fields, without its ids. */
+export function siteSnapshot(view: SiteView): object {
+  return {
+    mspUnicode: view.mspUnicode,
+    name: view.name,
+    ruc: view.ruc,
+    parishConceptId: view.parishConceptId,
+    addressLine: view.addressLine,
+    phone: view.phone,
+    sriEstablishmentCode: view.sriEstablishmentCode,
+    active: view.active,
+  };
 }

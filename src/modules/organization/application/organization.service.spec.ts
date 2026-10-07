@@ -240,6 +240,11 @@ describe('OrganizationService', () => {
           action: 'CREATE',
           ip: '10.0.0.1',
           userAgent: undefined,
+          // OR-033. A creation carries only what it left.
+          before: undefined,
+          after: expect.objectContaining({
+            legalName: 'Clínica de Prueba S.A.',
+          }) as unknown,
         },
       ]);
     });
@@ -488,7 +493,8 @@ describe('OrganizationService', () => {
 
       await service.updateSite('site-1', { active: false }, REQUESTER);
 
-      expect(calls).toEqual([
+      // OR-033 reads the site first, for the trail; the WRITE is what matters.
+      expect(calls.filter((call) => call.method !== 'findSite')).toEqual([
         { method: 'updateSite', args: ['site-1', { name: undefined, parishConceptId: undefined, addressLine: undefined, phone: undefined, active: false }] }, // prettier-ignore
       ]);
       expect(entries.map((e) => e.action)).toEqual(['UPDATE']);
@@ -501,7 +507,8 @@ describe('OrganizationService', () => {
 
       await service.updateSite('site-1', { name: 'Sede Norte II' }, REQUESTER);
 
-      const patch = calls[0]?.args[1] as Record<string, unknown>;
+      const patch = calls.find((call) => call.method === 'updateSite')
+        ?.args[1] as Record<string, unknown>;
       expect('ruc' in patch).toBe(false);
     });
 
@@ -546,6 +553,82 @@ describe('OrganizationService', () => {
       await expect(service.getSite('site-1')).rejects.toThrow(
         SiteNotFoundError,
       );
+    });
+  });
+
+  describe('bitácora con antes y después (OR-033)', () => {
+    it('OR-033 records the establishment before and after an edit', async () => {
+      const { service } = build();
+
+      await service.saveEstablishment(
+        {
+          mspUnicode: ESTABLISHMENT.mspUnicode,
+          typology: ESTABLISHMENT.typology,
+          legalName: 'Clínica Renombrada S.A.',
+          ruc: VALID_RUC,
+        },
+        REQUESTER,
+      );
+
+      expect(entries[0]).toMatchObject({
+        action: 'UPDATE',
+        resourceType: 'organization',
+        before: { legalName: 'Clínica de Prueba S.A.' },
+        after: { legalName: 'Clínica Renombrada S.A.' },
+      });
+      expect(entries[0]?.before).not.toHaveProperty('id');
+      expect(entries[0]?.before).not.toHaveProperty('fiscalProfileDeclaredAt');
+    });
+
+    it('OR-033 records the document header before and after an edit', async () => {
+      const { service } = build();
+
+      await service.saveDocumentIdentity(
+        {
+          tradeName: 'Clínica Norte',
+          contactEmail: null,
+          operatingPermit: null,
+        },
+        REQUESTER,
+      );
+
+      expect(entries[0]?.before).toMatchObject({ tradeName: null });
+      expect(entries[0]?.after).toMatchObject({ tradeName: 'Clínica Norte' });
+    });
+
+    it('OR-033 records the site before and after an edit', async () => {
+      answers.updateSite = { ...SITE, name: 'Sede Quito Norte' };
+      const { service } = build();
+
+      await service.updateSite(
+        SITE.id,
+        { name: 'Sede Quito Norte' },
+        REQUESTER,
+      );
+
+      expect(entries[0]?.before).toEqual({
+        mspUnicode: 'MSP-0001-N',
+        name: 'Sede Norte',
+        ruc: null,
+        parishConceptId: null,
+        addressLine: 'Av. de los Granados',
+        phone: '02 000 0000',
+        sriEstablishmentCode: '001',
+        active: true,
+      });
+      expect(entries[0]?.after).toMatchObject({ name: 'Sede Quito Norte' });
+    });
+
+    it('OR-033 a new site carries only the after half', async () => {
+      const { service } = build();
+
+      await service.createSite(
+        { mspUnicode: 'MSP-0002', name: 'Sede Sur' },
+        REQUESTER,
+      );
+
+      expect(entries[0]?.before).toBeUndefined();
+      expect(entries[0]?.after).toMatchObject({ name: 'Sede Sur' });
     });
   });
 });

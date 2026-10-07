@@ -17,7 +17,7 @@ import {
   type SiteRoomView,
 } from '../domain/site-resources.repository';
 
-import type { Requester } from './organization.service';
+import type { OrganizationChange, Requester } from './organization.service';
 
 /**
  * Consulting rooms and points of emission (O2: OR-020..OR-026).
@@ -86,7 +86,9 @@ export class SiteResourcesService {
     await this.requireSite(siteId);
 
     const created = await this.repository.createRoom({ siteId, name });
-    await this.recordMutation('CREATE', created.id, requester);
+    await this.recordMutation('CREATE', created.id, requester, {
+      after: roomSnapshot(created),
+    });
     return created;
   }
 
@@ -96,10 +98,14 @@ export class SiteResourcesService {
     patch: { name?: string; active?: boolean },
     requester: Requester,
   ): Promise<SiteRoomView> {
+    const current = await this.currentRoom(id);
     const updated = await this.repository.updateRoom(id, patch);
     if (!updated) throw new SiteRoomNotFoundError();
 
-    await this.recordMutation('UPDATE', updated.id, requester);
+    await this.recordMutation('UPDATE', updated.id, requester, {
+      before: roomSnapshot(current),
+      after: roomSnapshot(updated),
+    });
     return updated;
   }
 
@@ -137,7 +143,9 @@ export class SiteResourcesService {
       code: input.code,
       description: input.description ?? null,
     });
-    await this.recordMutation('CREATE', created.id, requester);
+    await this.recordMutation('CREATE', created.id, requester, {
+      after: emissionPointSnapshot(created),
+    });
     return created;
   }
 
@@ -152,10 +160,14 @@ export class SiteResourcesService {
     patch: { description?: string | null; active?: boolean },
     requester: Requester,
   ): Promise<EmissionPointView> {
+    const current = await this.currentEmissionPoint(id);
     const updated = await this.repository.updateEmissionPoint(id, patch);
     if (!updated) throw new EmissionPointNotFoundError();
 
-    await this.recordMutation('UPDATE', updated.id, requester);
+    await this.recordMutation('UPDATE', updated.id, requester, {
+      before: emissionPointSnapshot(current),
+      after: emissionPointSnapshot(updated),
+    });
     return updated;
   }
 
@@ -176,11 +188,44 @@ export class SiteResourcesService {
     if (!exists) throw new SiteNotFoundError();
   }
 
+  /**
+   * OR-033. The room as it stood, so the trail can say what an edit replaced.
+   *
+   * Through the site's own listing because the port has no read by id, and a
+   * room is found in its site's list or nowhere: two reads of a handful of
+   * rows, on an administrative edit that happens a few times a year.
+   */
+  private async currentRoom(id: string): Promise<SiteRoomView> {
+    const siteId = await this.repository.siteOfRoom(id);
+    const room =
+      siteId === null
+        ? undefined
+        : (await this.repository.listRooms(siteId, true)).find(
+            (row) => row.id === id,
+          );
+    if (!room) throw new SiteRoomNotFoundError();
+    return room;
+  }
+
+  /** OR-033. See `currentRoom`. */
+  private async currentEmissionPoint(id: string): Promise<EmissionPointView> {
+    const siteId = await this.repository.siteOfEmissionPoint(id);
+    const point =
+      siteId === null
+        ? undefined
+        : (await this.repository.listEmissionPoints(siteId, true)).find(
+            (row) => row.id === id,
+          );
+    if (!point) throw new EmissionPointNotFoundError();
+    return point;
+  }
+
   /** OR-026: author and instant for every mutation. See `OrganizationService`. */
   private async recordMutation(
     action: AuditAction,
     resourceId: string,
     requester: Requester,
+    change: OrganizationChange = {},
   ): Promise<void> {
     await this.audit.record({
       userId: requester.userId,
@@ -189,6 +234,26 @@ export class SiteResourcesService {
       action,
       ip: requester.ip,
       userAgent: requester.userAgent,
+      // OR-033. Plain copies, as in `OrganizationService`.
+      before: change.before && { ...change.before },
+      after: change.after && { ...change.after },
     });
   }
+}
+
+/** OR-033. A room's editable fields: its name and whether it is offered. */
+function roomSnapshot(view: SiteRoomView): object {
+  return { name: view.name, active: view.active };
+}
+
+/**
+ * OR-033. A point of emission's fields. The code travels although it is not
+ * editable (OR-026): it is what names the point to whoever reads the trail.
+ */
+function emissionPointSnapshot(view: EmissionPointView): object {
+  return {
+    code: view.code,
+    description: view.description,
+    active: view.active,
+  };
 }
