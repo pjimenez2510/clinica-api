@@ -27,9 +27,15 @@ function normalised(name: string): string {
   return words;
 }
 
+/** The words of a normalised name, in a canonical order. */
+const wordsOf = (name: string): string =>
+  normalised(name).split(' ').filter(Boolean).sort().join(' ');
+
 /**
- * ORD-147. Whether two typed names are the same person's: word for word,
- * ignoring case, accents, spacing and a leading title.
+ * ORD-147, ORD-157 (D-156.5). Whether two typed names are the same person's:
+ * the SAME WORDS in any order —«Pérez Andrade Juan», as the cédula writes it,
+ * is «Juan Pérez Andrade»—, ignoring case, accents, spacing and a leading
+ * title. Every word counts as many times as it is written.
  *
  * ⚠️ NEVER BY PARTS. «Dr. Pérez» for «Juan Pérez» is not recognised on
  * purpose: matching a surname would give one person's notice to another
@@ -37,8 +43,8 @@ function normalised(name: string): string {
  * the critical worklist.
  */
 export function samePersonName(a: string, b: string): boolean {
-  const left = normalised(a);
-  return left !== '' && left === normalised(b);
+  const left = wordsOf(a);
+  return left !== '' && left === wordsOf(b);
 }
 
 /** ORD-062, ORD-147. What judging a notice to oneself needs. */
@@ -57,21 +63,21 @@ export interface SelfNoticeQuestion {
  * ORD-062, ORD-147 (D-113 b, D-116 d). A notice to oneself: the ordering
  * practitioner recording «al médico que pidió», or ANY notice whose recipient
  * carries the name of the account that records it, whatever its kind.
+ *
+ * ORD-155 (D-156.3). When SOMEBODY ELSE made the call (ORD-148), it is judged
+ * with the caller and not with the recorder: the practitioner who writes «the
+ * nurse phoned me» was told something by the nurse. Only a caller who is
+ * their own recipient told nobody anything.
  */
 export function isSelfNotice(question: SelfNoticeQuestion): boolean {
+  const caller = question.callerName?.trim();
+  if (caller && !samePersonName(caller, question.recorder.name)) {
+    return samePersonName(question.recipientName, caller);
+  }
   if (
     question.recipientKind === 'ORDERING_PRACTITIONER' &&
     question.recorder.userId === question.orderedByUserId
   ) {
-    return true;
-  }
-  // ORD-148 (revisión clínica). A call whose caller is its own recipient
-  // told nobody anything, whoever wrote it down.
-  if (
-    question.callerName &&
-    samePersonName(question.recipientName, question.callerName)
-  ) {
-    // prettier-ignore
     return true;
   }
   return samePersonName(question.recipientName, question.recorder.name);

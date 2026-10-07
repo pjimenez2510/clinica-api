@@ -50,6 +50,31 @@ describe('el destinatario de un aviso', () => {
   });
 });
 
+describe('el nombre como conjunto de palabras y quien llamó (D-156)', () => {
+  it('ORD-157 reconoce las mismas palabras en cualquier orden, como en la cédula', () => {
+    expect(samePersonName('Pérez Andrade Juan', 'Juan Pérez Andrade')).toBe(true); // prettier-ignore
+    expect(samePersonName('Dr. ANDRADE juan  perez', 'Juan Pérez Andrade')).toBe(true); // prettier-ignore
+    // Control positivo: con una palabra de más o de menos no es la misma persona.
+    expect(samePersonName('Pérez Juan', 'Juan Pérez Andrade')).toBe(false);
+    expect(samePersonName('Juan Juan Pérez', 'Juan Pérez')).toBe(false);
+    expect(samePersonName('Pérez Andrade', 'Juan Pérez Andrade')).toBe(false);
+  });
+
+  it('ORD-155 con quien llamó, que no es quien registra, el autoaviso se juzga con quien llamó', () => {
+    // «La enfermera me llamó a mí»: el médico que pidió lo registra a su nombre.
+    const toMe = { recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Juan Pérez Andrade', recorder: DOCTOR, orderedByUserId: 'doctor' }; // prettier-ignore
+    expect(isSelfNotice({ ...toMe, callerName: 'Lcda. María Quishpe' })).toBe(false); // prettier-ignore
+    expect(isSelfNotice({ ...toMe, recipientKind: 'OTHER_PRACTITIONER', callerName: 'María Quishpe' })).toBe(false); // prettier-ignore
+    // Control positivo: sin quien llamó, o si quien llamó es la propia cuenta, sí lo es.
+    expect(isSelfNotice(toMe)).toBe(true);
+    expect(isSelfNotice({ ...toMe, callerName: 'Pérez Andrade Juan' })).toBe(
+      true,
+    );
+    // Y quien llamó a sí mismo no avisó a nadie.
+    expect(isSelfNotice({ ...toMe, recorder: NURSE, callerName: 'Dr. Juan Pérez Andrade' })).toBe(true); // prettier-ignore
+  });
+});
+
 describe('el cierre de la cola de críticos (ORD-146)', () => {
   const NOW = new Date();
   const at = (minutes: number) => new Date(NOW.getTime() - minutes * 60_000);
