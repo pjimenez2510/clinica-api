@@ -1,4 +1,5 @@
 import type { AbnormalFlag, PatientProfile } from './analyte';
+import type { NotifiedCorrection } from './notified-correction';
 import type { DiagnosticReportStatus } from './service-order';
 import type { ResolvedResult } from './result-value';
 import type {
@@ -74,6 +75,13 @@ export interface ObservationView {
   observedAt: Date;
   /** ORD-062. The notices given of this value, oldest first. */
   notices: readonly CriticalNoticeView[];
+  /**
+   * ORD-143. On a STANDING value that corrects one somebody was told about:
+   * what was told, and whether the correction still waits for its notice.
+   * `null` otherwise — and on every write's answer, which does not read the
+   * chain.
+   */
+  correction: NotifiedCorrection | null;
 }
 
 /** ORD-062. Who received the notice of a critical value. */
@@ -129,6 +137,13 @@ export interface CriticalNoticeView {
    */
   selfNotice: boolean;
   /**
+   * ORD-146. The recipient carries the name of the practitioner who placed
+   * the order, whatever its kind.
+   */
+  namesOrderingPractitioner: boolean;
+  /** ORD-148. Who made the call, when it was not who recorded it. */
+  callerName: string | null;
+  /**
    * ORD-120. Who edited it last, and when; `null` on a notice nobody edited.
    * Who GAVE it (`notifiedBy`) never changes.
    */
@@ -171,6 +186,8 @@ export interface CriticalNoticeEdit {
   readBackConfirmed: boolean | null;
   afterHours: boolean;
   selfNotice: boolean;
+  namesOrderingPractitioner: boolean;
+  callerName: string | null;
   /** The session's account: the stamp's «who». */
   editedById: string;
   /**
@@ -201,6 +218,10 @@ export interface NewCriticalNotice {
   readBackConfirmed: boolean | null;
   afterHours: boolean;
   selfNotice: boolean;
+  /** ORD-146. Judged by the service with the order's practitioner. */
+  namesOrderingPractitioner: boolean;
+  /** ORD-148. `null` when the account that records it made the call. */
+  callerName: string | null;
   sites: SiteScopeFilter;
   /**
    * ORD-062, ORD-091. The trail row is written IN THE SAME TRANSACTION as the
@@ -311,6 +332,8 @@ export interface CriticalChain {
   noAnswerAttempts: number;
   /** Unanswered calls to the practitioner who placed the order. */
   orderingUnanswered: number;
+  /** ORD-146. The standing value carries a notice to oneself. */
+  selfNoticed: boolean;
 }
 
 export interface CriticalWorklistEntry extends FlaggedResultEntry {
@@ -320,6 +343,8 @@ export interface CriticalWorklistEntry extends FlaggedResultEntry {
   noAnswerAttempts: number;
   /** ORD-065, D-116 b. An earlier version of the chain was already notified. */
   previouslyNotified: boolean;
+  /** ORD-146. The practitioner who placed the order already noted it. */
+  selfNoticed: boolean;
   waitingMinutes: CriticalWait['waitingMinutes'];
   noticeDueAt: CriticalWait['dueAt'];
   overdue: CriticalWait['overdue'];
@@ -387,6 +412,38 @@ export interface MatchableResult {
   supersededAt: Date | null;
   /** ORD-062, D-113 b. Who placed the order, to tell a notice to oneself. */
   orderedByUserId: string;
+  /** ORD-146, ORD-147. Their name, as the account carries it. */
+  orderedByName: string;
+}
+
+/**
+ * ORD-143. One entry of the worklist of corrections of notified values: the
+ * standing value, what it corrects and whom was told before.
+ */
+export interface CorrectionWorklistEntry {
+  resultId: string;
+  reportId: string;
+  orderId: string;
+  siteId: string;
+  patientId: string;
+  analyteDisplay: string;
+  valueNumeric: number | null;
+  valueCode: string | null;
+  valueText: string | null;
+  unit: string | null;
+  abnormalFlag: AbnormalFlag | null;
+  told: NotifiedCorrection['told'];
+  earlierNotices: NotifiedCorrection['earlierNotices'];
+  correctedAt: Date;
+  orderedBy: { id: string; name: string };
+}
+
+/** ORD-143. An order whose reports may hold a correction of a notified value. */
+export interface CorrectionCandidateOrder {
+  orderId: string;
+  siteId: string;
+  patientId: string;
+  orderedBy: { id: string; name: string };
 }
 
 /**
@@ -520,6 +577,24 @@ export interface DiagnosticReportRepository {
   criticalChains(
     reportIds: readonly string[],
   ): Promise<ReadonlyMap<string, CriticalChain>>;
+
+  /**
+   * ORD-143. The orders in scope with a notice given on a value of a report
+   * that a correction replaced: where a correction of a notified value can
+   * be. The rule itself is `notifiedCorrections`, over their reports.
+   */
+  notifiedCorrectionOrders(
+    sites: SiteScopeFilter,
+  ): Promise<CorrectionCandidateOrder[]>;
+
+  /** ORD-143. The reports of several orders at once, corrections included. */
+  ofOrders(
+    orderIds: readonly string[],
+    sites: SiteScopeFilter,
+  ): Promise<DiagnosticReportView[]>;
+
+  /** ORD-147. The name of an account, as a recipient would be written. */
+  accountName(userId: string): Promise<string | undefined>;
 
   /**
    * ORD-062. Writes the notice of a critical value.

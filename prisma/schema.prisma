@@ -3304,15 +3304,22 @@ model CriticalResultNotice {
   note       String?  @db.VarChar(500)
 
   /// ORD-067, D-111 §5. A call nobody answered is recorded too, and is not a notice.
-  outcome           CriticalNoticeOutcome
+  outcome                   CriticalNoticeOutcome
   /// ORD-066, D-111 §4. The recipient repeated the value; required on a notice,
   /// absent on an attempt (`critical_result_notice_read_back`).
-  readBackConfirmed Boolean?              @map("read_back_confirmed")
+  readBackConfirmed         Boolean?              @map("read_back_confirmed")
   /// ORD-068, D-111 §3. Given outside the site's hours.
-  afterHours        Boolean               @map("after_hours")
+  afterHours                Boolean               @map("after_hours")
   /// ORD-062, D-113 b. The ordering practitioner recorded a notice to
   /// themselves: kept as a record, it does not close the critical worklist.
-  selfNotice        Boolean               @map("self_notice")
+  selfNotice                Boolean               @map("self_notice")
+  /// ORD-146, D-116 a. The recipient carries the name of the practitioner who
+  /// placed the order, whatever its kind: after a notice to oneself, it does
+  /// not close the critical worklist either. `false` on rows written before it.
+  namesOrderingPractitioner Boolean               @default(false) @map("names_ordering_practitioner")
+  /// ORD-148, D-116 e. Who made the call when it was not the account that
+  /// records it; `NULL` when it was (`critical_result_notice_caller_named`).
+  callerName                String?               @map("caller_name") @db.VarChar(200)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 

@@ -383,6 +383,19 @@ pidiendo.
 
 **Solo servidor:** ORD-133.
 
+### E16 — La corrección de un valor avisado se comunica _(P1, 07-10-2026)_
+
+D-115 (B) y D-116 a, b, d, e, f (§16).
+
+**Prueba independiente:** avisar al paciente de una glucosa de 25 y
+corregirla a 95: la determinación sale en «Correcciones de valores avisados»
+con el 25, el 95 y a quién se avisó, y sale de la cola al registrar el aviso
+de la corrección. Corregirla a 22: vuelve a la cola de críticos esperando
+desde la corrección. Un autoaviso del médico deja el destino en «al
+paciente», y el aviso de la enfermera al médico no lo cierra.
+
+**Cubre:** ORD-143 a ORD-149. **Solo servidor:** ORD-145, ORD-147.
+
 ### Fuera de las ocho
 
 **Transcripción masiva y gráficas de evolución.** Se transcribe **solo lo que se
@@ -949,6 +962,11 @@ cuando la gráfica exista.
   aunque la corrección llegara a las 07:30: el acto ocurrió, y su constancia
   es la que exige el art. 39.
 
+  > **Enmendado el 07-10-2026:** el autoaviso es también el que nombra a
+  > quien registra con cualquier tipo (ORD-147); tras él, el aviso al médico
+  > que pidió no cierra la cola (ORD-146); y un resultado sin bandera crítica
+  > admite aviso cuando corrige un valor avisado (ORD-144).
+
 - **ORD-063** — La política de valores críticos —qué analitos, qué umbrales, a
   quién se avisa y qué pasa fuera de horario— DEBERÁ ser configuración de la
   clínica y no una constante del código; toda sede DEBERÁ tener un plazo de
@@ -992,6 +1010,10 @@ cuando la gráfica exista.
   corrección que sigue siendo crítica no es un valor nuevo que espere desde
   cero: es el mismo aviso pendiente (revisión clínica). Un informe en papel de
   hace tres días entra ya vencido, y es verdad.
+
+  > **Enmendado por ORD-145 (D-116 b, 07-10-2026):** si una versión anterior
+  > ya se avisó, el plazo corre desde la primera versión crítica posterior;
+  > y por ORD-146 (D-116 a): tras un autoaviso, el aviso toca al paciente.
 
 - **ORD-066** — CUANDO se registra un aviso hecho, el sistema DEBERÁ exigir la
   confirmación de que quien lo recibió **repitió el valor** («read-back»), y SI
@@ -1871,6 +1893,162 @@ renombrarlo rompe la completitud (ORD-039) y la corrección (ORD-055).
   > calcula con la UVR mientras el factor de conversión no esté decidido
   > (D-149).
 
+## 16. Quien actuó sobre un crítico se entera de su corrección (D-115, D-116)
+
+_Resueltas por el autor el 07-10-2026: D-115 (B) y D-116 a, b, d, e, f. Al
+paciente se le avisó de una glucosa de 25 —quizá fue a urgencias— y el
+laboratorio la corrige a 95: hasta aquí nada pedía comunicar la corrección,
+porque el 95 no es crítico y no entraba en ninguna cola._
+
+- **ORD-143** — CUANDO el informe vigente de una orden sustituya a otro y, en
+  su cadena de correcciones, una versión anterior de una determinación tenga
+  un **aviso hecho** (`NOTIFIED`, también el autoaviso), el sistema DEBERÁ
+  poner esa determinación en la cola de **correcciones de valores avisados**
+  de las sedes del alcance de quien pregunta SI su valor vigente **no es
+  crítico** y difiere —valor o unidad— del de la última versión de la que se
+  avisó; y DEBERÁ dejarla en la cola hasta que exista sobre el valor vigente
+  un aviso hecho que la cierre: uno que no sea autoaviso, o un autoaviso
+  cuando todos los avisos hechos de las versiones anteriores fueron
+  autoavisos **de la misma cuenta**. SI la última versión avisada es a su vez
+  una corrección que seguía esperando su aviso, ENTONCES la versión vigente
+  DEBERÁ heredarla —con el valor del que se avisó entonces— aunque escriba el
+  mismo valor. Cada entrada DEBERÁ decir la determinación, el valor del que se
+  avisó —con su unidad, su bandera y cuándo se emitió—, el valor vigente,
+  cuándo se registró la corrección, los avisos hechos de las versiones
+  anteriores —a quién, de qué tipo y cuándo— y quién pidió el examen. La cola
+  DEBERÁ listarlas **todas**, de la que más lleva esperando a la que menos, y
+  la lectura del informe DEBERÁ marcar en cada resultado vigente si corrige un
+  valor avisado y si la corrección espera aviso.
+  > **D-115 (B).** Quien actuó sobre el 25 tiene que saber que era falso: es
+  > el art. 39 en sentido contrario. **La corrección que sigue siendo
+  > crítica no entra aquí**: espera en la cola de críticos, que exige un
+  > aviso nuevo (ORD-145), y ese aviso es la misma constancia.
+  >
+  > **Un valor que la corrección escribe igual no se comunica:** el
+  > laboratorio corrige el potasio y vuelve a escribir la glucosa de 95 de la
+  > que ya se avisó; nada que la persona sabía cambió.
+  >
+  > **Por qué el autoaviso cuenta en las dos puntas:** el médico que se anotó
+  > el 25 pudo actuar sobre él, así que la corrección le concierne; y si sólo
+  > él lo supo, su propia constancia de la corrección basta. Si se avisó a
+  > alguien más —el paciente, otro médico—, hace falta un aviso a alguien
+  > distinto de quien lo registra (D-113 b). La cola enseña a quién se avisó
+  > antes para que se llame a esa persona; exigir un aviso **a cada una** es
+  > D-156.
+  >
+  > **La corrección pendiente se hereda (revisión, grave):** el paciente supo
+  > del 25, el médico se anotó el 95 y el laboratorio reescribe el 95 al
+  > corregir otra cosa: el 95 «ya avisado» sólo lo sabía él, y la corrección
+  > del 25 sigue sin llegar al paciente.
+  >
+  > **Sin plazo:** D-115 no fija uno, y la cola dice desde cuándo espera sin
+  > marcar vencida ninguna entrada (D-156).
+  >
+  > **Garantía:** la regla vive en una función pura del dominio que leen la
+  > cola, la lectura del informe y el registro del aviso (ORD-144); la cola
+  > busca en la base las órdenes con un aviso hecho sobre un informe
+  > sustituido y aplica esa función a sus informes, leídos de una vez. La
+  > cola **no lleva el nombre** de un paciente o familiar avisado (ORD-024):
+  > no se audita por entrada, y el nombre se lee en la orden.
+
+- **ORD-144** — CUANDO se registre un aviso sobre un resultado **sin bandera
+  crítica**, el sistema DEBERÁ admitirlo SÓLO SI el resultado es la versión
+  vigente que corrige un valor avisado (ORD-143), con las mismas reglas que
+  el aviso de un crítico —read-back (ORD-066), intento sin respuesta
+  (ORD-067), fuera de horario (ORD-068), instante acotado y valor sustituido
+  (ORD-062), edición (ORD-120)—; SI no lo corrige, ENTONCES DEBERÁ
+  rechazarlo con `RESULT_NOT_CRITICAL`.
+  > «Con el mismo registro que el aviso» (D-115): la constancia es una fila
+  > de `critical_result_notice` sobre el valor vigente, y la pantalla la
+  > ofrece en el informe de la orden como «Avisar de la corrección».
+
+- **ORD-145** — CUANDO una versión anterior de la cadena de un valor crítico
+  ya tuvo un aviso que cerraba la cola, el sistema DEBERÁ contar los minutos
+  de espera de ORD-065 desde la emisión de la **primera versión crítica
+  posterior a la última avisada**, y DEBERÁ contar los intentos sin respuesta
+  de ORD-067 —y los que no contestó el médico que pidió, para la escalada—
+  sólo desde esa versión.
+  > **D-116 b.** El número cambió: es un aviso nuevo, y su plazo corre desde
+  > la corrección y no desde la primera emisión. Una corrección crítica de un
+  > valor del que **nadie** avisó sigue siendo el mismo aviso pendiente, y
+  > cuenta desde la primera versión crítica (ORD-065). Las llamadas sin
+  > respuesta sobre el valor ya avisado eran de otro aviso, ya hecho.
+  >
+  > **Enmienda ORD-065** («desde la emisión de la primera versión crítica de
+  > su cadena»).
+
+- **ORD-146** — MIENTRAS el resultado crítico tenga un **autoaviso del
+  médico que pidió el examen** (registrado por su cuenta), cada entrada de la
+  cola de críticos DEBERÁ decir que el aviso toca **al paciente**, y un aviso
+  hecho **a ese médico** —por el tipo, o porque su destinatario lleva su
+  nombre (ORD-147)— **posterior** a su autoaviso NO DEBERÁ cerrar la cola;
+  uno anterior sí la cerró. La misma regla DEBERÁ decidir qué versión de
+  una cadena «ya se avisó» para ORD-145.
+  > **D-116 a.** El médico ya lo sabe; la enfermera que lo llama («sí, ya lo
+  > sé») no le cuenta nada nuevo, y el paciente en su casa sigue sin saber.
+  > D-113 b decía «al paciente o a otra persona», y «otra persona» se había
+  > leído como «otra que quien registra».
+  >
+  > **Del médico que pidió, y «tras» (revisión):** el autoaviso de un colega
+  > no le cuenta nada al médico que pidió; y si la enfermera ya le había
+  > avisado, su constancia posterior no reabre la cola. La regla es una
+  > función del dominio (`closesCriticalWorklist`) que la consulta de la cola
+  > aplica, y su gemela en SQL decide el corte de ORD-145.
+  >
+  > **Garantía de la base:** `critical_result_notice.names_ordering_practitioner`
+  > guarda, al registrar o editar, si el destinatario lleva el nombre del
+  > médico que pidió; las constancias anteriores nacen en `false` y cuentan
+  > por su tipo.
+
+- **ORD-147** — El sistema DEBERÁ juzgar **autoaviso** todo aviso cuyo
+  destinatario lleve el nombre de la cuenta que lo registra, cualquiera que
+  sea su tipo, además del aviso «al médico que pidió» que registra ese mismo
+  médico (ORD-062) y del aviso cuyo destinatario lleva el nombre de quien
+  hizo la llamada (ORD-148); y al editarlo (ORD-120), con el nombre de quien
+  lo dio.
+  Dos nombres DEBERÁN ser el mismo cuando coincidan palabra por palabra sin
+  distinguir mayúsculas, tildes ni espacios, y sin un tratamiento inicial
+  («Dr.», «Dra.», «Lcda.»…).
+  > **D-116 d.** «Otro médico» con el propio nombre era la forma de cerrar la
+  > cola sin que nadie más supiera. Un nombre escrito a medias («Dr. Pérez»
+  > por «Juan Pérez») no se reconoce: comparar por partes atribuiría a una
+  > persona el nombre de otra.
+
+- **ORD-148** — CUANDO se registre o edite un aviso o un intento, la pantalla
+  DEBERÁ preguntar **quién hizo la llamada** —quien registra u otra persona,
+  sin ninguna opción marcada de antemano— y, si fue otra, su nombre; el
+  sistema DEBERÁ guardarlo (`caller_name`, vacío cuando llamó quien
+  registra) y la constancia DEBERÁ decir quién llamó además de quién
+  registró. CUANDO llamó otra persona, la confirmación del read-back DEBERÁ
+  nombrarla: es quien la confirma.
+  > **D-116 e.** «La llamada de las 03:00 se anota a las 08:00», y lo típico
+  > es que la anote otra persona. Quién registra sigue siendo la cuenta de la
+  > sesión (ORD-062) y no cambia al editar; quién llamó es un dato de la
+  > constancia y se edita con ella.
+  >
+  > **Garantía de la base:** `critical_result_notice_caller_named` no deja
+  > guardar un nombre vacío.
+  >
+  > **Al editar, tampoco viene elegido** (revisión): `caller_name` vacío no
+  > distingue «llamó quien registró» de una constancia anterior a la columna.
+  > El `PUT` es el aviso entero: sin `callerName`, queda vacío.
+
+- **ORD-149** — CUANDO se corrija o edite un informe (ORD-050, ORD-119), el
+  sistema DEBERÁ ofrecer y admitir **todas** las determinaciones del informe
+  que sustituye, también las que ya no están activas o ya no forman parte
+  del examen, y DEBERÁ dejar cada valor corregido bajo la misma línea que su
+  versión anterior cuando el examen ya no lo nombra; y DEBERÁ servir, con
+  `record:read`, las determinaciones que admite la corrección de un informe:
+  las de los exámenes vivos de su orden, por su código congelado, y las del
+  informe que se corrige, por su nombre y con la unidad en que se
+  escribieron.
+  > **D-116 f**, como la lectura por código de ORD-039. Con ORD-055 la
+  > corrección tiene que traer todos los analitos; si el catálogo ya no
+  > ofrece uno, el informe no se podía corregir. Y un valor que perdiera su
+  > línea al corregirse saldría en la cola sin orden (ORD-040) aunque nadie
+  > lo hubiera pedido aparte.
+
+
 ---
 
 ## Códigos de error nuevos
@@ -1896,7 +2074,7 @@ contrato —`code`, estado y mensaje—.
 | `RESULT_NOT_FOUND` | 404 | El resultado no existe o es de una sede fuera del alcance. **El mismo para ambas**, y también para un identificador que no es un número: `observation_result.id` es un `bigint` autoincremental, el más fácil de recorrer del sistema | ORD-043 |
 | `RESULT_ALREADY_MATCHED` | 409 | Ese resultado ya responde a una línea. Dos personas trabajando la misma cola es lo normal, y la que pierde no puede reapuntar una fila ya resuelta | ORD-043 |
 | `ORDER_ITEM_NOT_MATCHABLE` | 422 | La línea no es de la orden en la que llegó el resultado, o está anulada. **Uno solo para las dos**: lo que hay que hacer es idéntico, elegir otra línea de esta orden | ORD-043 |
-| `RESULT_NOT_CRITICAL` | 422 | Se intentó registrar el aviso de un resultado sin bandera crítica. La constancia de ORD-062 es la de un valor de alerta, y una sobre un valor normal llenaría la cola de seguridad de ruido | ORD-062 |
+| `RESULT_NOT_CRITICAL` | 422 | Se intentó registrar el aviso de un resultado sin bandera crítica. La constancia de ORD-062 es la de un valor de alerta, y una sobre un valor normal llenaría la cola de seguridad de ruido. Sí se admite sobre el valor vigente que corrige uno avisado (ORD-144) | ORD-062, ORD-144 |
 | `CRITICAL_NOTICE_TIME_INVALID` | 422 | El instante del aviso es futuro o anterior al resultado. Ninguno de los dos pudo ocurrir | ORD-062 |
 | `REPORT_ISSUED_IN_FUTURE` | 422 | La fecha de emisión del laboratorio es futura | ORD-030 |
 | `REPORT_CORRECTION_INCOMPLETE` | 422 | La corrección no trae todos los analitos del informe que sustituye | ORD-055 |
@@ -1979,9 +2157,11 @@ resuelto de quien llama.
 | `POST` | `/orders/:orderId/reports` | `result:write` | ORD-030 a ORD-042, ORD-094 |
 | `GET` | `/orders/:orderId/reports` | `record:read` | ORD-051, ORD-091 |
 | `POST` | `/orders/reports/:reportId/correct` | `result:write` | ORD-050 a ORD-055, ORD-119 |
+| `GET` | `/orders/reports/:reportId/analytes` | `record:read` | ORD-149 |
 | `GET` | `/orders/results/unmatched` | `record:read` | ORD-040, ORD-041, ORD-046, ORD-092 |
 | `POST` | `/orders/results/:resultId/match` | `result:write` | ORD-041, ORD-043, ORD-091 |
 | `GET` | `/orders/results/critical` | `record:read` | ORD-060, ORD-061, ORD-065, ORD-092 |
+| `GET` | `/orders/results/corrections` | `record:read` | ORD-143, ORD-092 |
 | `POST` | `/orders/results/:resultId/notices` | `result:write` | ORD-062, ORD-091 |
 | `PUT` | `/orders/results/:resultId/notices/:noticeId` | `result:write` | ORD-120 *(el aviso entero y `expectedEditedAt`; sin `notifiedAt` conserva la hora; sólo quien lo dio)* |
 | `GET` | `/orders/results/:resultId/notices/:noticeId/versions` | `record:read` | ORD-120 |
@@ -2032,6 +2212,7 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-062, ORD-064 | Integración | La constancia sale de la cola por una consulta y no se borra ni cambia de origen por un disparador: las dos cosas son de la base, con control positivo (el `INSERT` y la edición con sello entran; el `UPDATE` sin sello, el que cambia el origen y el `DELETE`, no). |
 | ORD-121 | Integración | Contra la base: el borrador no tiene copia y la emitida sí, con el principal primero, y no se reescribe; con exámenes vivos el diagnóstico se reordena, se edita y se quita —con el motivo, porque el laboratorio tiene el papel— y la orden y su documento siguen diciendo lo que imprimieron, con control positivo; un diagnóstico registrado después no entra en la emitida y sí en la siguiente. |
 | ORD-120 | Integración | Contra la base: la edición con sello archiva la versión anterior y la sin sello, la de origen y la que quita el read-back se rechazan, con control positivo; por el servicio, la edición cambia lo dicho y no quién avisó, la versión se lee con el mismo mapeo, la cola vuelve a abrirse con el aviso que pasa a «no contestó»; otra cuenta no edita, el «no contestó» no pasa a avisado, y la versión que no es la vigente se rechaza, cada una con control positivo; de dos ediciones simultáneas sobre la misma versión gana una y la otra recibe el 409, y dos seguidas en el mismo instante llevan sellos distintos. Por HTTP, la ruta, el 409 de la versión, el 422 sin versión y su 404. |
+| ORD-143 a ORD-149 | Unitario e integración | La regla de la corrección avisada, el autoaviso por nombre y el destino son puros; que la cola, el plazo desde la corrección y el cierre salgan de las filas que aterrizan —con el autoaviso y el aviso al médico que pidió—, que el nombre vacío de quien llamó se rechace y que la corrección admita una determinación retirada, contra PostgreSQL con control positivo. |
 | ORD-046, ORD-065 | Integración y unitario | El plazo es aritmética pura con el reloj inyectado; de dónde sale —el parámetro de la sede o su ausencia— se prueba contra la base. |
 | ORD-026 | Integración | El nombre viaja o no según el filtro, y se prueba con dos fichas reales. |
 | ORD-090, ORD-094 | Integración | `route-authorisation.spec` recorre las rutas que NestJS registró de verdad. |

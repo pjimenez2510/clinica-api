@@ -14,7 +14,9 @@ import {
   ResultSupersededError,
 } from '../domain/orders.errors';
 import { isLineComplete } from '../domain/service-order';
+import { closesCriticalWorklist } from '../domain/notice-recipient';
 import type {
+  CorrectionCandidateOrder,
   CriticalChain,
   CriticalNoticeEdit,
   CriticalNoticeQuery,
@@ -79,6 +81,8 @@ const NOTICE_SELECT = {
   readBackConfirmed: true,
   afterHours: true,
   selfNotice: true,
+  namesOrderingPractitioner: true,
+  callerName: true,
   notifiedBy: { select: { id: true, firstName: true, lastName: true } },
   // ORD-120. The stamp of the last edit.
   editedAt: true,
@@ -377,7 +381,12 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
             serviceOrder: {
               select: {
                 siteId: true,
-                orderedBy: { select: { userId: true } },
+                orderedBy: {
+                  select: {
+                    userId: true,
+                    user: { select: { firstName: true, lastName: true } },
+                  },
+                },
               },
             },
             supersededBy: { select: { createdAt: true } },
@@ -398,6 +407,7 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       superseded: row.report.supersededBy !== null,
       supersededAt: row.report.supersededBy?.createdAt ?? null,
       orderedByUserId: row.report.serviceOrder.orderedBy.userId,
+      orderedByName: fullName(row.report.serviceOrder.orderedBy.user),
     };
   }
 
@@ -532,8 +542,17 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
          * An unanswered call does NOT (D-111 §5), and neither does the
          * ordering practitioner «notifying» themselves: the patient at home
          * still knows nothing.
+         *
+         * ORD-146 (D-116 a). And after the ordering practitioner noted it
+         * themselves, a notice to them —by its kind, or by their name— does
+         * not either: they already knew. The query keeps every value that
+         * MAY still wait; `closesCriticalWorklist` decides, below, with the
+         * instants and who gave each notice.
          */
-        notices: { none: { outcome: 'NOTIFIED', selfNotice: false } },
+        OR: [
+          { notices: { none: { outcome: 'NOTIFIED', selfNotice: false } } },
+          { notices: { some: { outcome: 'NOTIFIED', selfNotice: true } } },
+        ],
       },
       /**
        * OLDEST FIRST, and NEVER CUT (ORD-060). A value waiting for its notice
@@ -541,16 +560,44 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
        * the one cut off would be today's.
        */
       orderBy: [{ observedAt: 'asc' }, { id: 'asc' }],
-      select: WORKLIST_SELECT,
+      select: {
+        ...WORKLIST_SELECT,
+        notices: {
+          select: {
+            outcome: true,
+            selfNotice: true,
+            recipientKind: true,
+            namesOrderingPractitioner: true,
+            notifiedById: true,
+            notifiedAt: true,
+          },
+        },
+      },
     });
-    return rows.map(toWorklistEntry);
+    return rows
+      .filter(
+        (row) =>
+          !closesCriticalWorklist(
+            row.notices,
+            row.report.serviceOrder.orderedBy.userId,
+          ),
+      )
+      .map(toWorklistEntry);
   }
 
   /**
-   * ORD-065, ORD-067. For each report, its correction chain back to the first
-   * report: per analyte, when its FIRST CRITICAL version was observed, whether
-   * an earlier version was already notified, and the unanswered calls made
-   * anywhere along the chain. One recursive query for the whole list.
+   * ORD-065, ORD-067, ORD-145, ORD-146. For each report, its correction chain
+   * back to the first report: per analyte, when the pending notice started,
+   * whether an earlier version was already notified, the unanswered calls of
+   * the pending notice, and whether the standing value carries a notice to
+   * oneself. One recursive query for the whole list.
+   *
+   * ⚠️ THE PENDING NOTICE STARTS AFTER THE LAST VERSION NOTIFIED (ORD-145,
+   * D-116 b). A correction that is still critical of a value somebody was
+   * told about is a NEW notice —the number changed—: its minutes run from the
+   * first critical version after that one, and the calls left unanswered
+   * before it belonged to the notice already given. With no version notified
+   * it is the same pending notice from the first critical one (ORD-065).
    */
   async criticalChains(
     reportIds: readonly string[],
@@ -562,9 +609,10 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         start_id: string;
         analyte_display: string;
         first_observed_at: Date | null;
-        previously_notified: bigint;
+        previously_notified: boolean;
         attempts: bigint;
         ordering_unanswered: bigint;
+        self_noticed: boolean;
       }[]
     >`
       WITH RECURSIVE chain AS (
@@ -579,30 +627,72 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
          -- A cycle is impossible by construction (the UNIQUE on supersedes_id
          -- and insertion order); the guard costs nothing if that ever changes.
          WHERE c.depth < 100
+      ),
+      versions AS (
+        SELECT c.start_id, c.depth, o."analyte_display", o."observed_at",
+               o."abnormal_flag" IN ('CRITICAL_LOW', 'CRITICAL_HIGH') AS critical,
+               -- A notice that closed the worklist for that version: the
+               -- judgement of \`closesCriticalWorklist\`, in SQL (ORD-146).
+               EXISTS (
+                 SELECT 1 FROM "critical_result_notice" n
+                  WHERE n."observation_result_id" = o."id"
+                    AND n."outcome" = 'NOTIFIED' AND NOT n."self_notice"
+                    AND NOT (
+                      (n."recipient_kind" = 'ORDERING_PRACTITIONER'
+                        OR n."names_ordering_practitioner")
+                      AND EXISTS (
+                        SELECT 1 FROM "critical_result_notice" s
+                         WHERE s."observation_result_id" = o."id"
+                           AND s."outcome" = 'NOTIFIED' AND s."self_notice"
+                           AND s."notified_by_id" = pr."user_id"
+                           AND s."notified_at" <= n."notified_at"))
+               ) AS notified,
+               -- ORD-146: noted by the ordering practitioner themselves.
+               EXISTS (
+                 SELECT 1 FROM "critical_result_notice" n
+                  WHERE n."observation_result_id" = o."id"
+                    AND n."outcome" = 'NOTIFIED' AND n."self_notice"
+                    AND n."notified_by_id" = pr."user_id"
+               ) AS self_noticed,
+               (SELECT COUNT(*) FROM "critical_result_notice" n
+                 WHERE n."observation_result_id" = o."id"
+                   AND n."outcome" = 'NO_ANSWER') AS attempts,
+               (SELECT COUNT(*) FROM "critical_result_notice" n
+                 WHERE n."observation_result_id" = o."id"
+                   AND n."outcome" = 'NO_ANSWER'
+                   AND n."recipient_kind" = 'ORDERING_PRACTITIONER')
+                 AS ordering_unanswered
+          FROM chain c
+          JOIN "observation_result" o ON o."report_id" = c.report_id
+          JOIN "diagnostic_report" dr ON dr."id" = c.report_id
+          JOIN "service_order" so ON so."id" = dr."service_order_id"
+          JOIN "practitioner" pr ON pr."id" = so."ordered_by_id"
+      ),
+      cut AS (
+        -- The most recent EARLIER version somebody was told about.
+        SELECT start_id, "analyte_display",
+               MIN(depth) FILTER (WHERE notified AND depth > 0) AS notified_depth
+          FROM versions
+         GROUP BY start_id, "analyte_display"
       )
-      SELECT c.start_id::text AS start_id,
-             o."analyte_display",
-             -- From the first CRITICAL version: a 95 corrected to 22 has been
-             -- waiting since the 22, not since the 95 (tercera revisión).
-             MIN(o."observed_at") FILTER (
-               WHERE o."abnormal_flag" IN ('CRITICAL_LOW', 'CRITICAL_HIGH')
+      SELECT v.start_id::text AS start_id,
+             v."analyte_display",
+             MIN(v."observed_at") FILTER (
+               WHERE v.critical
+                 AND (k.notified_depth IS NULL OR v.depth < k.notified_depth)
              ) AS first_observed_at,
-             -- A notice actually given about an EARLIER version of the chain.
-             COUNT(n."id") FILTER (
-               WHERE n."outcome" = 'NOTIFIED'
-                 AND NOT n."self_notice"
-                 AND c.report_id <> c.start_id
-             ) AS previously_notified,
-             COUNT(n."id") FILTER (WHERE n."outcome" = 'NO_ANSWER') AS attempts,
-             COUNT(n."id") FILTER (
-               WHERE n."outcome" = 'NO_ANSWER'
-                 AND n."recipient_kind" = 'ORDERING_PRACTITIONER'
-             ) AS ordering_unanswered
-        FROM chain c
-        JOIN "observation_result" o ON o."report_id" = c.report_id
-        LEFT JOIN "critical_result_notice" n
-               ON n."observation_result_id" = o."id"
-       GROUP BY c.start_id, o."analyte_display"
+             (k.notified_depth IS NOT NULL) AS previously_notified,
+             COALESCE(SUM(v.attempts) FILTER (
+               WHERE k.notified_depth IS NULL OR v.depth < k.notified_depth
+             ), 0)::bigint AS attempts,
+             COALESCE(SUM(v.ordering_unanswered) FILTER (
+               WHERE k.notified_depth IS NULL OR v.depth < k.notified_depth
+             ), 0)::bigint AS ordering_unanswered,
+             BOOL_OR(v.self_noticed AND v.depth = 0) AS self_noticed
+        FROM versions v
+        JOIN cut k
+          ON k.start_id = v.start_id AND k."analyte_display" = v."analyte_display"
+       GROUP BY v.start_id, v."analyte_display", k.notified_depth
     `;
 
     return new Map(
@@ -610,12 +700,80 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         chainKey(row.start_id, row.analyte_display),
         {
           firstObservedAt: row.first_observed_at,
-          previouslyNotified: Number(row.previously_notified) > 0,
+          previouslyNotified: row.previously_notified,
           noAnswerAttempts: Number(row.attempts),
           orderingUnanswered: Number(row.ordering_unanswered),
+          selfNoticed: row.self_noticed,
         },
       ]),
     );
+  }
+
+  /**
+   * ORD-143. The orders in scope with a notice given on a value of a report
+   * a correction replaced. Few by nature —a notified critical that the
+   * laboratory then corrects— and the rule is applied to their reports by
+   * the caller.
+   */
+  async notifiedCorrectionOrders(
+    sites: SiteScopeFilter,
+  ): Promise<CorrectionCandidateOrder[]> {
+    const rows = await this.prisma.serviceOrder.findMany({
+      where: {
+        ...siteFilter(sites),
+        reports: {
+          some: {
+            supersededBy: { isNot: null },
+            results: { some: { notices: { some: { outcome: 'NOTIFIED' } } } },
+          },
+        },
+      },
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        siteId: true,
+        encounter: { select: { patientId: true } },
+        orderedBy: {
+          select: {
+            id: true,
+            user: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+    return rows.map((row) => ({
+      orderId: row.id,
+      siteId: row.siteId,
+      patientId: row.encounter.patientId,
+      orderedBy: { id: row.orderedBy.id, name: fullName(row.orderedBy.user) },
+    }));
+  }
+
+  /** ORD-143. The reports of several orders in one read. */
+  async ofOrders(
+    orderIds: readonly string[],
+    sites: SiteScopeFilter,
+  ): Promise<DiagnosticReportView[]> {
+    if (orderIds.length === 0) return [];
+    const rows = await this.prisma.diagnosticReport.findMany({
+      where: {
+        serviceOrderId: { in: [...new Set(orderIds)] },
+        serviceOrder: siteFilter(sites),
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: REPORT_SELECT,
+    });
+    return rows.map(toReportView);
+  }
+
+  /** ORD-147. The account's name, as a recipient would be written. */
+  async accountName(userId: string): Promise<string | undefined> {
+    if (!isUuid(userId)) return undefined;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true },
+    });
+    return user ? fullName(user) : undefined;
   }
 
   /** ORD-046, ORD-063, ORD-065. Each site's worklist policy. */
@@ -853,6 +1011,8 @@ async function rewriteNotice(
       readBackConfirmed: edit.readBackConfirmed,
       afterHours: edit.afterHours,
       selfNotice: edit.selfNotice,
+      namesOrderingPractitioner: edit.namesOrderingPractitioner,
+      callerName: edit.callerName,
       editedById: edit.editedById,
       editedAt: stamp,
     },
@@ -892,6 +1052,8 @@ interface NoticeSnapshot {
   read_back_confirmed?: boolean | null;
   after_hours: boolean;
   self_notice: boolean;
+  names_ordering_practitioner?: boolean;
+  caller_name?: string | null;
   edited_by_id?: string | null;
   edited_at?: string | null;
 }
@@ -920,6 +1082,8 @@ function noticeRowFromSnapshot(
     readBackConfirmed: snapshot.read_back_confirmed ?? null,
     afterHours: snapshot.after_hours,
     selfNotice: snapshot.self_notice,
+    namesOrderingPractitioner: snapshot.names_ordering_practitioner ?? false,
+    callerName: snapshot.caller_name ?? null,
     notifiedBy: author(snapshot.notified_by_id),
     editedAt: snapshot.edited_at == null ? null : new Date(snapshot.edited_at),
     editedBy: snapshot.edited_by_id == null ? null : author(snapshot.edited_by_id), // prettier-ignore
@@ -928,7 +1092,12 @@ function noticeRowFromSnapshot(
 
 /** A user as a reader of the record recognises them. */
 function personOf(user: Author): { id: string; name: string } {
-  return { id: user.id, name: `${user.firstName} ${user.lastName}` };
+  return { id: user.id, name: fullName(user) };
+}
+
+/** «Nombres Apellidos», the way a notice's recipient is typed. */
+function fullName(user: { firstName: string; lastName: string }): string {
+  return `${user.firstName} ${user.lastName}`;
 }
 
 /**
@@ -981,6 +1150,8 @@ async function writeNotice(
       readBackConfirmed: notice.readBackConfirmed,
       afterHours: notice.afterHours,
       selfNotice: notice.selfNotice,
+      namesOrderingPractitioner: notice.namesOrderingPractitioner,
+      callerName: notice.callerName,
     },
     select: NOTICE_SELECT,
   });
@@ -1031,6 +1202,7 @@ const WORKLIST_SELECT = {
           orderedBy: {
             select: {
               id: true,
+              userId: true,
               user: { select: { firstName: true, lastName: true } },
             },
           },
@@ -1139,6 +1311,8 @@ function toObservationView(row: ResultRow): ObservationView {
     abnormalFlag: row.abnormalFlag,
     observedAt: row.observedAt,
     notices: row.notices.map(toNoticeView),
+    // ORD-143. Read over the order's whole chain by the service, not here.
+    correction: null,
   };
 }
 
@@ -1160,6 +1334,8 @@ function toNoticeView(row: NoticeRow): CriticalNoticeView {
     readBackConfirmed: row.readBackConfirmed,
     afterHours: row.afterHours,
     selfNotice: row.selfNotice,
+    namesOrderingPractitioner: row.namesOrderingPractitioner,
+    callerName: row.callerName,
     editedBy: row.editedBy === null ? null : personOf(row.editedBy),
     editedAt: row.editedAt,
   };
