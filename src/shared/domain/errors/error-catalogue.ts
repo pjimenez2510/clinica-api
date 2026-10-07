@@ -759,6 +759,11 @@ export const DOMAIN_ERROR_CODES = [
   'CONCEPT_WRONG_CATALOGUE',
   'DIAGNOSIS_CONCEPT_NOT_IN_FORCE',
   'DIAGNOSIS_PRIMARY_TAKEN',
+  //   * `DIAGNOSIS_PRINCIPAL_USE_INVALID` (422) — EN-235 (D-147.3). Un
+  //     asterisco o una causa externa como principal. Lo garantiza
+  //     `trg_encounter_diagnosis_principal_use` y llega por el mapeo; el
+  //     adaptador lo pregunta antes, como `DIAGNOSIS_PRIMARY_TAKEN`.
+  'DIAGNOSIS_PRINCIPAL_USE_INVALID',
   //   * `DIAGNOSIS_NOT_FOUND` (404) — EN-180, EN-183. No es de esa atención o ya
   //     se quitó: el mismo para las dos, como `ENCOUNTER_NOT_FOUND`.
   //   * `DIAGNOSIS_RETRACTION_REASON_REQUIRED` (422) — EN-214, EN-189.

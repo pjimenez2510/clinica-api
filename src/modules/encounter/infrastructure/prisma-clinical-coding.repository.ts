@@ -7,6 +7,7 @@ import {
   DiagnosisConceptNotInForceError,
   DiagnosisNotFoundError,
   DiagnosisPrimaryTakenError,
+  DiagnosisPrincipalUseInvalidError,
   DiagnosisRetractionReasonRequiredError,
   DiagnosisLastAfterDischargeError,
   DiagnosisPrimaryRequiredAfterDischargeError,
@@ -159,6 +160,8 @@ interface ConceptRow {
   concept_code: string;
   concept_display: string;
   in_force: boolean;
+  /** EN-235. `attributes.use`, as the WHO import wrote it. */
+  use: string | null;
 }
 
 /**
@@ -234,6 +237,10 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
        */
       if (isPrimary(rank) && ranksInUse.some((row) => isPrimary(row.rank))) {
         throw new DiagnosisPrimaryTakenError();
+      }
+      // EN-235. The trigger is the guarantee; this is its sentence.
+      if (isPrimary(rank) && !conceptMayBePrincipal(concept)) {
+        throw new DiagnosisPrincipalUseInvalidError();
       }
 
       return tx.encounterDiagnosis.create({
@@ -431,6 +438,10 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         change.diagnosisId,
       );
       if (isPrimary(target.rank)) return;
+      // EN-235. Asked before anything moves: the trigger says it too.
+      if (!mayBePrincipal(target.use)) {
+        throw new DiagnosisPrincipalUseInvalidError();
+      }
       await promote(tx, change.encounterId, target, change, now);
     });
 
@@ -458,9 +469,13 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       await refuseCorrection(tx, edit.encounterId, status, edit);
       const current = await tx.encounterDiagnosis.findFirst({
         where: { id: edit.diagnosisId, encounterId: edit.encounterId },
-        select: { ...DIAGNOSIS_SELECT },
+        select: DIAGNOSIS_WITH_USE_SELECT,
       });
       if (!current) throw new DiagnosisNotFoundError();
+      // EN-235. Whether the code it ends with may be the principal.
+      let endsMayBePrincipal = mayBePrincipal(
+        cie10UseOf(current.concept.attributes),
+      );
 
       let identity: Prisma.EncounterDiagnosisUncheckedUpdateInput = {};
       if (
@@ -477,6 +492,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           throw new ConceptWrongCatalogueError(CIE10);
         }
         if (!concept.in_force) throw new DiagnosisConceptNotInForceError();
+        endsMayBePrincipal = conceptMayBePrincipal(concept);
 
         if (concept.concept_code !== current.cie10Code) {
           const [paper] = await tx.$queryRaw<
@@ -502,6 +518,19 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           cie10Code: concept.concept_code,
           cie10Display: concept.concept_display,
         };
+      }
+
+      // EN-235. It becomes the principal, or the principal changes its code,
+      // to a code that may not be one. A principal coded before the rule is
+      // not judged while neither its rank nor its code changes.
+      const becomesPrincipal =
+        edit.primary === true && !isPrimary(current.rank);
+      const principalRecoded =
+        isPrimary(current.rank) &&
+        edit.primary !== false &&
+        'conceptId' in identity;
+      if ((becomesPrincipal || principalRecoded) && !endsMayBePrincipal) {
+        throw new DiagnosisPrincipalUseInvalidError();
       }
 
       let rank: number | undefined;
@@ -945,13 +974,22 @@ async function requireDiagnosisOf(
   tx: Prisma.TransactionClient,
   encounterId: string,
   diagnosisId: string,
-): Promise<{ id: string; rank: number }> {
+): Promise<{ id: string; rank: number; use: Cie10Use | null }> {
   const diagnosis = await tx.encounterDiagnosis.findFirst({
     where: { id: diagnosisId, encounterId },
-    select: { id: true, rank: true },
+    select: { id: true, rank: true, concept: { select: { attributes: true } } },
   });
   if (!diagnosis) throw new DiagnosisNotFoundError();
-  return diagnosis;
+  return {
+    id: diagnosis.id,
+    rank: diagnosis.rank,
+    use: cie10UseOf(diagnosis.concept.attributes),
+  };
+}
+
+/** EN-235. Whether a concept read by `conceptForEncounter` may be the principal. */
+function conceptMayBePrincipal(concept: ConceptRow): boolean {
+  return mayBePrincipal(cie10UseOf({ use: concept.use }));
 }
 
 /**
@@ -1066,6 +1104,7 @@ async function conceptForEncounter(
     SELECT cs."code"::text                 AS system_code,
            cc."code"::text                 AS concept_code,
            cc."display"::text              AS concept_display,
+           cc."attributes"->>'use'         AS use,
            (cc."valid_period" @> (e."started_at" AT TIME ZONE 'America/Guayaquil')::date)
                                            AS in_force
       FROM "encounter" AS e

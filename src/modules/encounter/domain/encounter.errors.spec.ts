@@ -12,53 +12,54 @@ import {
 
 import {
   AllergyAlreadyRefutedError,
-  DentalIndexNotApplicableError,
+  AllergyNotRefutedError,
+  AllergyRefutedAloneError,
   AmendmentReasonRequiredError,
+  AnthropometryPendingError,
   AppointmentNotAttendableError,
   BmiIsDerivedError,
+  ChartHasAllergiesError,
+  ClinicalNoteAlreadyOpenError,
   ClinicalNoteNotFoundError,
   ConceptWrongCatalogueError,
-  DiagnosisLastAfterDischargeError,
-  DiagnosisPrimaryRequiredAfterDischargeError,
+  DentalIndexNotApplicableError,
+  DiagnosisConceptNotInForceError,
   DiagnosisCorrectionRequiresSignatureError,
   DiagnosisEditReasonRequiredError,
-  DiagnosisSupportsMaternityRestError,
-  DiagnosisConceptNotInForceError,
+  DiagnosisLastAfterDischargeError,
   DiagnosisNotFoundError,
   DiagnosisNotRestorableError,
+  DiagnosisPrimaryRequiredAfterDischargeError,
   DiagnosisPrimaryTakenError,
+  DiagnosisPrincipalUseInvalidError,
   DiagnosisRetractionReasonRequiredError,
+  DiagnosisSupportsMaternityRestError,
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
-  EncounterHasOthersDraftsError,
   EncounterAlreadyReportedError,
   EncounterAppointmentMismatchError,
   EncounterCloserNotAuthorError,
+  EncounterHasLiveActsError,
+  EncounterHasOthersDraftsError,
   EncounterNotFoundError,
+  HistoryAlreadyRefutedError,
+  HistoryNotRefutedError,
   InvalidEncounterTransitionError,
-  ClinicalNoteAlreadyOpenError,
+  NoKnownAllergiesNotStandingError,
   NoteAlreadySignedError,
   NoteContentIncompleteError,
+  NoteNotAmendableError,
   NoteTemplateInvalidError,
   NoteTemplateStaleError,
-  NoteNotAmendableError,
   PatientAllergyNotFoundError,
   PatientChartNotOpenError,
-  PractitionerNotLicensedError,
   PatientHistoryNotFoundError,
-  HistoryAlreadyRefutedError,
-  AllergyNotRefutedError,
-  HistoryNotRefutedError,
-  NoKnownAllergiesNotStandingError,
-  RefutationReasonRequiredError,
-  AllergyRefutedAloneError,
-  VitalsCorrectionRequiresSignatureError,
-  ChartHasAllergiesError,
+  PractitionerNotLicensedError,
   PractitionerProfileRequiredError,
+  RefutationReasonRequiredError,
   SubstituteClosureReasonRequiredError,
   UnknownClinicalFormError,
-  AnthropometryPendingError,
-  EncounterHasLiveActsError,
+  VitalsCorrectionRequiresSignatureError,
 } from './encounter.errors';
 
 /**
@@ -639,5 +640,20 @@ describe('EN-166 la atención con actos vivos no se anula', () => {
     expect(error.userTitle).toBe(
       'Esta atención no lleva ese índice odontológico: sólo en odontología, el CEO-D con más de 6 meses y menos de 11 años, y el CPO-D desde los 12 años',
     );
+  });
+
+  it('EN-235 responde 422, en el catálogo, con la frase en conceptId', () => {
+    const error = new DiagnosisPrincipalUseInvalidError();
+
+    expect(error.code).toBe('DIAGNOSIS_PRINCIPAL_USE_INVALID');
+    expect(error).toBeInstanceOf(ValidationError); // 422
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+    expect(error.fieldErrors).toEqual([
+      {
+        field: 'conceptId',
+        code: 'DIAGNOSIS_PRINCIPAL_USE_INVALID',
+        message: 'Registre primero la enfermedad o la lesión',
+      },
+    ]);
   });
 });

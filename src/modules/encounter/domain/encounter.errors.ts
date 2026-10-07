@@ -979,6 +979,33 @@ export class DiagnosisPrimaryTakenError extends ConflictError {
 }
 
 /**
+ * EN-235 (D-147.3). An asterisk or an external cause of the WHO's list left
+ * as the principal: registering it first, recoding the principal to it, or
+ * marking it principal.
+ *
+ * GUARANTEED BY `trg_encounter_diagnosis_principal_use`, which the constraint
+ * mapping turns into this same code; the adapter asks it first under the
+ * attention's lock so the refusal carries its sentence — the two paths of
+ * `DIAGNOSIS_PRIMARY_TAKEN`.
+ */
+export class DiagnosisPrincipalUseInvalidError extends ValidationError {
+  readonly code = 'DIAGNOSIS_PRINCIPAL_USE_INVALID';
+  override readonly userTitle =
+    'Registre primero la enfermedad o la lesión: un código asterisco o de causa externa no puede ser el diagnóstico principal';
+  override readonly fieldErrors = [
+    {
+      field: 'conceptId',
+      code: 'DIAGNOSIS_PRINCIPAL_USE_INVALID',
+      message: 'Registre primero la enfermedad o la lesión',
+    },
+  ];
+
+  constructor() {
+    super('An asterisk or external-cause code cannot be the principal');
+  }
+}
+
+/**
  * EN-082. The allergy named is not on this chart, nor on any chart it
  * absorbed.
  *

@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 import { PrismaClinicalCodingRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-coding.repository';
 import '../../src/modules/encounter/infrastructure/encounter.constraints';
+import {
+  DomainError,
+  ValidationError,
+} from '../../src/shared/domain/errors/domain-error';
 import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
@@ -85,9 +89,22 @@ async function problemFrom(operation: Promise<unknown>) {
   try {
     await operation;
   } catch (error) {
-    return extractDatabaseProblem(error);
+    return extractDatabaseProblem(error) ?? domainProblemOf(error);
   }
   throw new Error('the operation should have failed');
+}
+
+/**
+ * The adapter asks first and throws the catalogued error (EN-235): the same
+ * code, status and field error the constraint mapping gives.
+ */
+function domainProblemOf(error: unknown) {
+  if (!(error instanceof DomainError)) throw error;
+  return {
+    status: error instanceof ValidationError ? 422 : undefined,
+    code: error.code,
+    errors: error.fieldErrors,
+  };
 }
 
 const REFUSED = {
@@ -251,6 +268,24 @@ describe('EN-235 lo que no puede ser el diagnóstico principal', () => {
     ]);
     // Nothing was versioned: the refused edits left no trace.
     expect(await prisma.recordVersion.count({ where: { resourceType: 'encounter_diagnosis' } })).toBe(0); // prettier-ignore
+  });
+
+  it('EN-235 el adaptador deja editar la condición de un principal anterior a la regla, y no cambiarle el código a otro asterisco', async () => {
+    const prisma = db();
+    const { encounter, sites, editor } = await anEncounter(prisma);
+    const concept = await aConcept(prisma, 'G63.2');
+    const other = await aConcept(prisma, 'H36.0', 'ASTERISK');
+    const coding = codingOf(prisma);
+    const legacy = await coding.addDiagnosis({ encounterId: encounter.id, conceptId: concept.id, certainty: 'DEFINITIVE', occurrence: 'FIRST_TIME', sites }); // prettier-ignore
+    await prisma.catalogConcept.update({
+      where: { id: concept.id },
+      data: { attributes: { level: 3, use: 'ASTERISK' } },
+    });
+    const authority = { encounterId: encounter.id, diagnosisId: legacy.id, editedById: editor.id, mayCorrectAfterDischarge: true, reason: null, sites }; // prettier-ignore
+
+    const edited = await coding.editDiagnosis({ ...authority, certainty: 'PRESUMPTIVE' }); // prettier-ignore
+    expect(edited).toMatchObject({ rank: 1, certainty: 'PRESUMPTIVE', mayBePrincipal: false }); // prettier-ignore
+    expect(await problemFrom(coding.editDiagnosis({ ...authority, conceptId: other.id }))).toMatchObject(REFUSED); // prettier-ignore
   });
 
   it('EN-235 deshacer el quitar de un principal cuyo uso lo impide lo devuelve DETRÁS, sin error', async () => {
