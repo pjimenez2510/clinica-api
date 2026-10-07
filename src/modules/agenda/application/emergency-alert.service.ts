@@ -26,12 +26,8 @@ export class EmergencyAlertService {
     this.logger.setContext(EmergencyAlertService.name);
   }
 
-  async pendingFor(
-    recipientId: string,
-    sites: 'all' | readonly string[],
-  ): Promise<PendingEmergencyAlert[]> {
-    if (sites !== 'all' && sites.length === 0) return [];
-    return this.alerts.pendingFor(recipientId, sites);
+  async pendingFor(recipientId: string): Promise<PendingEmergencyAlert[]> {
+    return this.alerts.pendingFor(recipientId);
   }
 
   /**

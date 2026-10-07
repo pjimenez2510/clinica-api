@@ -1,3 +1,7 @@
+import {
+  DEFAULT_LATE_ARRIVAL_GRACE_MINUTES,
+  arrivedPastThreshold,
+} from '../../../shared/domain/late-arrival-rule';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -631,6 +635,7 @@ async function recordLateAdmission(
       startsAt: true,
       checkedInAt: true,
       emergencyFlaggedAt: true,
+      bookingChannel: true,
     },
   });
   if (entry.checkedInAt === null || entry.emergencyFlaggedAt !== null) return;
@@ -639,15 +644,21 @@ async function recordLateAdmission(
     where: { siteId: entry.siteId },
     select: { lateArrivalGraceMinutes: true },
   });
-  // Every site has its row (CF-062); the column's default otherwise.
-  const grace = parameters?.lateArrivalGraceMinutes ?? 15;
-  const delay = Math.round(
-    (entry.checkedInAt.getTime() - entry.startsAt.getTime()) / 60_000,
-  );
-  if (delay <= grace) return;
+  const late = arrivedPastThreshold({
+    startsAt: entry.startsAt,
+    checkedInAt: entry.checkedInAt,
+    emergencyFlagged: false,
+    walkIn: entry.bookingChannel === 'WALK_IN',
+    // Every site has its row (CF-062); the column's default otherwise.
+    graceMinutes:
+      parameters?.lateArrivalGraceMinutes ?? DEFAULT_LATE_ARRIVAL_GRACE_MINUTES,
+  });
+  if (!late) return;
 
-  await tx.agendaEntry.update({
-    where: { id: agendaEntryId },
+  // Only the first admission: an attention annulled and opened again
+  // (AG-147) does not rewrite who let the patient in.
+  await tx.agendaEntry.updateMany({
+    where: { id: agendaEntryId, lateAdmissionById: null },
     // The application's clock, never `now()` in SQL: the walks move it.
     data: { lateAdmissionById: admittedById, lateAdmissionAt: new Date() },
   });

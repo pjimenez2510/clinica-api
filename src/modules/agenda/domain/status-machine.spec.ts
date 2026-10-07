@@ -195,10 +195,13 @@ describe('AG-173 the arrival belongs to the appointment day', () => {
     atWallClock(date, WallClockTime.parse(hhmm));
 
   it('AG-173 admits the arrival on the appointment day, also at 19:30 in Guayaquil (already tomorrow in UTC)', () => {
-    const startsAt = at(today, '19:00');
+    const startsAt = at(today, '18:00');
     const now = at(today, '19:30');
-    // Control: the two instants really do straddle the UTC midnight.
-    expect(now.toISOString().slice(0, 10)).not.toBe(today);
+    // Control: in UTC the two instants fall on DIFFERENT days (23:00Z and
+    // 00:30Z), so a UTC comparison would refuse what Guayaquil admits.
+    expect(now.toISOString().slice(0, 10)).not.toBe(
+      startsAt.toISOString().slice(0, 10),
+    );
     expect(() => assertArrivalOnAppointmentDay(startsAt, now)).not.toThrow();
   });
 
@@ -290,6 +293,8 @@ describe('deshacer un bloqueo (AG-114)', () => {
     noShowAt: null,
     checkedInAt: null,
     emergencyFlagged: false,
+    walkIn: false,
+    alreadyAdmittedLate: false,
     statusBeforeNoShow: null,
     hasEncounter: false,
     encounterHasClinicalAct: false,
@@ -334,6 +339,8 @@ describe('volver a cerrar un bloqueo quitado (AG-154)', () => {
     noShowAt: null,
     checkedInAt: null,
     emergencyFlagged: false,
+    walkIn: false,
+    alreadyAdmittedLate: false,
     statusBeforeNoShow: null,
     hasEncounter: false,
     encounterHasClinicalAct: false,
@@ -375,6 +382,8 @@ describe('la atención manda sobre la cita (AG-045, AG-148)', () => {
     noShowAt: null,
     checkedInAt: null,
     emergencyFlagged: false,
+    walkIn: false,
+    alreadyAdmittedLate: false,
     statusBeforeNoShow: null,
     hasEncounter: true,
     encounterHasClinicalAct: true,

@@ -9,7 +9,6 @@ import {
 } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import { ALL_SITES } from '../../shared/authorisation/principal';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
@@ -27,8 +26,8 @@ import {
  *
  * `agenda:read` AND NOT A PERMISSION OF ITS OWN (AG-130): every schedulable
  * professional holds it, and a permission nobody is granted would be a notice
- * nobody receives. `'query'` site scope: the notices are the session's own,
- * and the handler narrows them to the sites where it may read the agenda.
+ * nobody receives. `'query'` site scope: the handler narrows to the
+ * session's own notices, whichever site they come from.
  */
 @ApiTags('agenda')
 @Controller({ path: 'agenda/emergency-alerts', version: '1' })
@@ -44,11 +43,10 @@ export class AgendaAlertsController {
   @ApiOperation({ summary: 'Avisos de emergencia pendientes para mí' })
   @ApiOkResponse({ type: PendingEmergencyAlertsDto })
   async mine(): Promise<PendingEmergencyAlertsResponse> {
-    const principal = this.currentUser.requirePrincipal();
-    const scope = principal.sitesFor('agenda:read');
+    // The session's own notices, at any site: they were addressed to it
+    // (clinical review, G1). The `'query'` scope is that narrowing.
     const items = await this.alerts.pendingFor(
-      principal.userId,
-      scope === ALL_SITES ? 'all' : scope,
+      this.currentUser.requireUserId(),
     );
     return {
       items: items.map((item) => ({

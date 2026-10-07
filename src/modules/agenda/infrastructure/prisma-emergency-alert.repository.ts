@@ -11,16 +11,17 @@ import type {
 export class PrismaEmergencyAlertRepository implements EmergencyAlertRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async pendingFor(
-    recipientId: string,
-    sites: 'all' | readonly string[],
-  ): Promise<PendingEmergencyAlert[]> {
+  /**
+   * NOT narrowed by site: the notice is addressed to this account, and a
+   * doctor seeing patients at a site where their role was not granted would
+   * otherwise never see the emergency that was sent to them.
+   */
+  async pendingFor(recipientId: string): Promise<PendingEmergencyAlert[]> {
     // `agenda_emergency_alert_pending_by_recipient` is exactly this predicate.
     const rows = await this.prisma.agendaEmergencyAlert.findMany({
       where: {
         recipientId,
         acknowledgedAt: null,
-        ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
       },
       orderBy: { alertedAt: 'asc' },
       select: {

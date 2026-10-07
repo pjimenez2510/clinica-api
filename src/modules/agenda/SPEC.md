@@ -1436,6 +1436,15 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > `late_admission_at`, con quien la abrió. La ruta de estado —que la pantalla
   > ya no ofrece, y es la que usaría cualquier otro cliente— sí rechaza.
   > Dónde debe aplicarse el umbral es D-170.2.
+  >
+  > **Revisión en contexto limpio (07-10-2026).** La regla vive una sola vez,
+  > en `shared/domain/late-arrival-rule.ts`, porque la usan la agenda y la nota.
+  > La cita por Ventanilla (`WALK_IN`) nunca es «fuera de plazo»: no tenía hora
+  > comprometida, como en AG-141. Queda quien la admitió **la primera vez**:
+  > una atención anulada y vuelta a abrir (AG-147) no lo reescribe. El paso
+  > `CHECKED_IN → IN_PROGRESS → FULFILLED` con que se cierra una atención
+  > interrumpida con actos (AG-149) no es una admisión a la consulta y no se
+  > anota.
 
   > **La política es de la clínica; lo que el sistema aporta es poder aplicarla
   > y dejar constancia.** Sin este requisito, «a partir de veinte minutos se
@@ -1792,6 +1801,12 @@ reclame, esa fila es la diferencia entre un incidente y una imputación penal.
   > sistema sabe con certeza que lo espera; la respuesta y la pantalla dicen a
   > quién se avisó. Al corregir la calificación a «sí» con el paciente en la
   > clínica (AG-132) se avisa igual; después de que se fue, no (AG-174).
+  >
+  > **A una cuenta desactivada no se le escribe aviso**, y la pantalla dice
+  > entonces que no se pudo avisar a nadie y que se avise en persona: una fila
+  > «Se avisó a…» a una cuenta que no puede verla es el aviso que no existió.
+  > Qué pasa si nadie marca «Enterado», y que el aviso en pantalla no sustituye
+  > el traspaso en persona, es D-170.4.
 - **AG-130** — La calificación de emergencia NO DEBERÁ admitir grados ni
   niveles, NO DEBERÁ alterar por sí sola el orden de la agenda ni la prioridad
   de la lista de espera, y NO DEBERÁ exigir ningún permiso distinto del que
@@ -1893,7 +1908,9 @@ reclame, esa fila es la diferencia entre un incidente y una imputación penal.
   > aplicación —correo y mensajes son Fase 4—.
   >
   > **No reordena nada ni pide permiso propio** (AG-130): ver los avisos
-  > propios es `agenda:read`, que tiene todo profesional agendable.
+  > propios es `agenda:read`, que tiene todo profesional agendable. **No se
+  > filtran por sede**: el aviso es de la cuenta, y un médico que atiende en
+  > una sede donde su rol no está concedido no vería el que se le mandó.
 
 ## 5 quater. El tablero del día
 

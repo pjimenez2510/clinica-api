@@ -1415,6 +1415,7 @@ export class AgendaService {
             startsAt: read.startsAt,
             checkedInAt: read.checkedInAt,
             emergencyFlagged: read.emergencyFlagged,
+            walkIn: read.walkIn,
             graceMinutes: lateArrivalPolicy.lateArrivalGraceMinutes,
             mayAdmitLate:
               request.holds?.(
@@ -1451,7 +1452,7 @@ export class AgendaService {
             ...(request.to === 'ENTERED_IN_ERROR'
               ? { enteredInErrorReason: request.reason?.trim() }
               : {}),
-            ...(admittedLate
+            ...(admittedLate && !read.alreadyAdmittedLate
               ? { lateAdmissionById: requester.userId, lateAdmissionAt: now }
               : {}),
           },

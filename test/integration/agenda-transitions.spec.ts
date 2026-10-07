@@ -1398,6 +1398,54 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       expect((await mine(doctorToken).expect(200)).body).toEqual({ items: [] });
     });
 
+    it('AG-129 a una cuenta desactivada no se le «avisa»: no queda fila que diga que se avisó', async () => {
+      const doctor = await prisma.practitioner.findUniqueOrThrow({
+        where: { id: practitionerId },
+      });
+      const entryId = await bookedEntry();
+      await prisma.user.update({
+        where: { id: doctor.userId },
+        data: { active: false },
+      });
+
+      const response = await transition(entryId, {
+        to: 'CHECKED_IN',
+        emergency: true,
+      }).expect(200);
+
+      // La llegada y la calificación quedan igual (art. 10); el aviso, no.
+      expect((response.body as { emergencyFlaggedAt: string | null }).emergencyFlaggedAt).not.toBeNull(); // prettier-ignore
+      expect(
+        (response.body as { emergencyAlerts: unknown[] }).emergencyAlerts,
+      ).toEqual([]);
+      expect(
+        await prisma.agendaEmergencyAlert.count({
+          where: { agendaEntryId: entryId },
+        }),
+      ).toBe(0);
+    });
+
+    it('AG-175 la base no admite un enterado anterior al aviso', async () => {
+      const entryId = await bookedEntry();
+      await transition(entryId, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      const alert = await prisma.agendaEmergencyAlert.findFirstOrThrow({
+        where: { agendaEntryId: entryId },
+      });
+      await expect(
+        prisma.agendaEmergencyAlert.update({
+          where: { id: alert.id },
+          data: {
+            acknowledgedAt: new Date(alert.alertedAt.getTime() - 60_000),
+          },
+        }),
+      ).rejects.toThrow(/agenda_emergency_alert_acknowledged_after_alerted/);
+      // Control positivo: en el mismo instante, sí.
+      await prisma.agendaEmergencyAlert.update({
+        where: { id: alert.id },
+        data: { acknowledgedAt: alert.alertedAt },
+      });
+    });
+
     it('AG-129 corregir a «sí» con el paciente en sala también avisa', async () => {
       const entryId = await bookedEntry();
       await transition(entryId, { to: 'CHECKED_IN', emergency: false }).expect(200); // prettier-ignore
@@ -1495,6 +1543,41 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       expect(stored.status).toBe('IN_PROGRESS');
       expect(stored.lateAdmissionById).toBe(doctor.userId);
       expect(stored.lateAdmissionAt).toEqual(expect.any(Date));
+    });
+
+    it('AG-120 una emergencia que llegó tarde no queda como admitida fuera de plazo al abrir la nota', async () => {
+      const entryId = await bookedEntry();
+      await transition(entryId, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      const encounter = await createEncounter(prisma, {
+        siteId,
+        practitionerId,
+        patientId,
+        agendaEntryId: entryId,
+        startedAt: new Date(),
+      });
+
+      await openTheNote(encounter.id);
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.status).toBe('IN_PROGRESS');
+      expect(stored.lateAdmissionById).toBeNull();
+    });
+
+    it('AG-120 la base exige quién y cuándo de la admisión fuera de plazo, juntos', async () => {
+      const { entryId } = await inTheWaitingRoomWithAttention();
+      await expect(
+        prisma.agendaEntry.update({
+          where: { id: entryId },
+          data: { lateAdmissionById: userId },
+        }),
+      ).rejects.toThrow(/agenda_entry_late_admission_names_who_and_when/);
+      // Control positivo: los dos.
+      await prisma.agendaEntry.update({
+        where: { id: entryId },
+        data: { lateAdmissionById: userId, lateAdmissionAt: new Date() },
+      });
     });
 
     it('AG-120 dentro del margen, abrir la nota no anota ninguna admisión fuera de plazo (control)', async () => {

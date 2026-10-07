@@ -25,13 +25,10 @@ export interface PendingEmergencyAlert {
 
 export interface EmergencyAlertRepository {
   /**
-   * The recipient's notices not yet acknowledged, oldest first, at the sites
-   * in scope (`'all'` for a global grant).
+   * The recipient's notices not yet acknowledged, oldest first, at any site:
+   * they are addressed to the account, whatever its grants.
    */
-  pendingFor(
-    recipientId: string,
-    sites: 'all' | readonly string[],
-  ): Promise<PendingEmergencyAlert[]>;
+  pendingFor(recipientId: string): Promise<PendingEmergencyAlert[]>;
   /**
    * Stamps «Enterado» once. Answers the instant stored — the one already
    * there if it was acknowledged before — or `null` when no notice with that

@@ -420,6 +420,10 @@ export interface TransitionRead {
   checkedInAt: Date | null;
   /** AG-120. A flagged emergency is exempt from the threshold (art. 12). */
   emergencyFlagged: boolean;
+  /** AG-120. A walk-in had no hour to be late for (as AG-141). */
+  walkIn: boolean;
+  /** AG-120. Who let it in first stays: a second admission writes nothing. */
+  alreadyAdmittedLate: boolean;
   /**
    * AG-163. The status the appointment had before it became `NO_SHOW`, read
    * from its history; `null` when it is not a no-show.

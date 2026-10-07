@@ -570,7 +570,7 @@ export class EmergencyCorrectionNeedsClinicalPermissionError extends ForbiddenEr
 export class ArrivalNotOnAppointmentDayError extends ConflictError {
   readonly code = 'ARRIVAL_NOT_ON_APPOINTMENT_DAY';
   override readonly userTitle =
-    'Esta cita no es de hoy. Si el paciente está aquí, mueva la cita a hoy o regístrelo sin cita';
+    'Esta cita no es de hoy. Si el paciente está aquí, mueva la cita a hoy o resérvele una por Ventanilla para hoy, y registre ahí su llegada';
 
   constructor() {
     // No dates in the message: when somebody is expected is the patient's.

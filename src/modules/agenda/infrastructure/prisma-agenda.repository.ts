@@ -1325,6 +1325,10 @@ export class PrismaAgendaRepository implements AgendaRepository {
           siteId: command.siteId,
           status: row.status,
           releasedAt: row.releasedAt,
+          // AG-129: two corrections racing to «sí» notify once.
+          ...(edit.emergency
+            ? { emergencyFlaggedAt: row.emergencyFlaggedAt }
+            : {}),
         },
         data: {
           startsAt: edit.startsAt,
@@ -1458,6 +1462,8 @@ async function applyStatusChange(
       // AG-120. The delay and the emergency that exempts it.
       checkedInAt: true,
       emergencyFlaggedAt: true,
+      bookingChannel: true,
+      lateAdmissionById: true,
     },
   });
   if (!row) throw new AgendaEntryNotFoundError();
@@ -1485,6 +1491,8 @@ async function applyStatusChange(
     noShowAt: row.noShowAt,
     checkedInAt: row.checkedInAt,
     emergencyFlagged: row.emergencyFlaggedAt !== null,
+    walkIn: row.bookingChannel === 'WALK_IN',
+    alreadyAdmittedLate: row.lateAdmissionById !== null,
     statusBeforeNoShow: noShowRow?.fromStatus ?? null,
     hasEncounter: attention !== null,
     encounterHasClinicalAct: attention?.hasClinicalAct ?? false,
@@ -1604,8 +1612,15 @@ async function raiseEmergencyAlert(
 ): Promise<void> {
   const entry = await tx.agendaEntry.findUniqueOrThrow({
     where: { id: agendaEntryId },
-    select: { siteId: true, practitioner: { select: { userId: true } } },
+    select: {
+      siteId: true,
+      practitioner: { select: { userId: true, user: { select: { active: true } } } }, // prettier-ignore
+    },
   });
+  // A deactivated account sees nothing: a row addressed to it would make the
+  // detail say «Se avisó a…» to nobody. Without a row the screen says that
+  // nobody in the system was told, and to tell them in person.
+  if (!entry.practitioner.user.active) return;
   await tx.agendaEmergencyAlert.create({
     data: {
       agendaEntryId,

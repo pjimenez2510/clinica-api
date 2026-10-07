@@ -1,3 +1,7 @@
+import {
+  DEFAULT_LATE_ARRIVAL_GRACE_MINUTES,
+  arrivedPastThreshold,
+} from '../../../shared/domain/late-arrival-rule';
 import { LateArrivalNotAuthorisedError } from './agenda.errors';
 /**
  * AG-118, AG-119, AG-142. The arrival delay: a subtraction, never a status.
@@ -31,7 +35,7 @@ import { LateArrivalNotAuthorisedError } from './agenda.errors';
  * which point the policy has stopped existing. A default is what makes the
  * system start, not evidence that somebody chose it.
  */
-export const DEFAULT_LATE_ARRIVAL_GRACE_MINUTES = 15;
+export { DEFAULT_LATE_ARRIVAL_GRACE_MINUTES };
 
 const MILLISECONDS_PER_MINUTE = 60_000;
 
@@ -113,13 +117,20 @@ export function lateAdmissionOf(input: {
   startsAt: Date;
   checkedInAt: Date | null;
   emergencyFlagged: boolean;
+  /** Without an appointment hour there is no lateness (AG-141's rule). */
+  walkIn?: boolean;
   graceMinutes: number;
   mayAdmitLate: boolean;
   refuse: boolean;
 }): boolean {
-  if (input.emergencyFlagged) return false;
-  const delay = arrivalDelayMinutes(input);
-  if (delay === null || delay <= input.graceMinutes) return false;
+  const late = arrivedPastThreshold({
+    startsAt: input.startsAt,
+    checkedInAt: input.checkedInAt,
+    emergencyFlagged: input.emergencyFlagged,
+    walkIn: input.walkIn === true,
+    graceMinutes: input.graceMinutes,
+  });
+  if (!late) return false;
   if (input.refuse && !input.mayAdmitLate) {
     throw new LateArrivalNotAuthorisedError();
   }

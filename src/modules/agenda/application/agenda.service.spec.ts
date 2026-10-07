@@ -233,6 +233,8 @@ function aTransitionRead(
     noShowAt: null,
     checkedInAt: null,
     emergencyFlagged: false,
+    walkIn: false,
+    alreadyAdmittedLate: false,
     statusBeforeNoShow: null,
     hasEncounter: false,
     encounterHasClinicalAct: false,
