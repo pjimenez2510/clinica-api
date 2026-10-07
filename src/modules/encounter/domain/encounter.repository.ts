@@ -255,7 +255,6 @@ export interface SubjectStatusStamp {
   now: Date;
 }
 
-/** The attention's port, described at the top of this file. */
 /**
  * EN-228, D-134.3, D-140.4. What the service decided about correcting the
  * taking after the discharge: `record:sign` at the attention's site, a
@@ -269,6 +268,7 @@ export interface VitalsCorrectionAuthority {
   afterDischargeRefusal?: AfterDischargeRefusal;
 }
 
+/** The attention's port, described at the top of this file. */
 export interface EncounterRepository {
   /**
    * EN-001. The chart's merge state, or `null` when no such chart exists.

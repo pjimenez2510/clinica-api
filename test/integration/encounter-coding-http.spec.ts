@@ -1970,7 +1970,12 @@ describe('el bloque K por HTTP', () => {
       await put(path, doctorToken, { index: 'CEO_D', decayed: 3, extracted: 1, filled: 3 }).expect(200); // prettier-ignore
       expect(((await get(path, doctorToken).expect(200)).body as { reading: { decayed: number; editedAt: string | null } }).reading).toMatchObject({ decayed: 3, editedAt: expect.any(String) }); // prettier-ignore
       expect(await prisma.recordVersion.count({ where: { resourceType: 'encounter_dental_index', resourceId: encounterId } })).toBe(1); // prettier-ignore
-      expect(await auditRows('encounter_dental_index')).toBe(4);
+      // GET with nothing recorded leaves no trail; CREATE, UPDATE and the READ do.
+      expect(await auditRows('encounter_dental_index')).toBe(3);
+      // The same counts again write nothing, and nothing is audited.
+      await put(path, doctorToken, { index: 'CEO_D', decayed: 3, extracted: 1, filled: 3 }).expect(200); // prettier-ignore
+      expect(await auditRows('encounter_dental_index')).toBe(3);
+      expect(await prisma.recordVersion.count({ where: { resourceType: 'encounter_dental_index', resourceId: encounterId } })).toBe(1); // prettier-ignore
     });
 
     it('EN-052 D-160 fuera de odontología no toca índice, y guardarlo responde 422 DENTAL_INDEX_NOT_APPLICABLE sin escribir', async () => {
@@ -2000,7 +2005,9 @@ describe('el bloque K por HTTP', () => {
         'DENTAL_INDEX_NOT_APPLICABLE',
       );
       const tooMany = await put(path, doctorToken, { index: 'CPO_D', decayed: 33, missing: 0, filled: 1 }).expect(422); // prettier-ignore
-      expect((tooMany.body as Problem).errors).toEqual([expect.objectContaining({ field: 'decayed', code: 'VALIDATION_FAILED' })]); // prettier-ignore
+      expect((tooMany.body as Problem).errors).toEqual([expect.objectContaining({ field: 'decayed', code: 'TOO_BIG' })]); // prettier-ignore
+      const overTotal = await put(path, doctorToken, { index: 'CPO_D', decayed: 11, missing: 11, filled: 11 }).expect(422); // prettier-ignore
+      expect((overTotal.body as Problem).errors).toEqual([expect.objectContaining({ field: 'index', message: 'Entre cariados, perdidos y obturados no pueden pasar de los 32 dientes permanentes' })]); // prettier-ignore
       const incomplete = await put(path, doctorToken, { index: 'CPO_D', decayed: 1, filled: 1 }).expect(422); // prettier-ignore
       expect((incomplete.body as Problem).errors?.map((e) => e.field)).toContain('missing'); // prettier-ignore
 

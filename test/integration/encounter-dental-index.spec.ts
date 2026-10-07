@@ -158,26 +158,62 @@ describe('EN-052 el índice CEO-D / CPO-D contra la base', () => {
     expect(await prisma.encounterDentalIndex.count()).toBe(2);
   });
 
-  it('EN-052 la BASE acota cada cuenta a los dientes que hay: 21 en el CEO-D y 33 en el CPO-D no entran; 20 y 32, sí', async () => {
+  it('EN-052 la BASE acota cada cuenta a los dientes que hay: 21 en una cuenta del CEO-D o 33 en el CPO-D no entran; 20 y 32, sí', async () => {
     const prisma = db();
     const child = await anAttentionAged(prisma, { years: 8 });
     const adult = await anAttentionAged(prisma, { years: 30 });
+    const none = { decayed: 0, extracted: null, filled: 0, missing: 0 };
 
-    expect(await problemFrom(insert(prisma, child.encounter.id, child.author.id, { ...CEO_D, decayed: 21 }))).toMatchObject({
+    expect(await problemFrom(insert(prisma, child.encounter.id, child.author.id, { decayed: 21, extracted: 0, filled: 0, missing: null }))).toMatchObject({
       status: 422,
       code: 'VALIDATION_FAILED',
       errors: [expect.objectContaining({ field: 'decayed' })],
     }); // prettier-ignore
-    expect(await problemFrom(insert(prisma, adult.encounter.id, adult.author.id, { ...CPO_D, filled: 33 }))).toMatchObject({
+    expect(await problemFrom(insert(prisma, adult.encounter.id, adult.author.id, { ...none, filled: 33 }))).toMatchObject({ status: 422, code: 'VALIDATION_FAILED' }); // prettier-ignore
+    expect(await problemFrom(insert(prisma, adult.encounter.id, adult.author.id, { ...none, decayed: -1 }))).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      errors: [expect.objectContaining({ field: 'decayed' })],
+    }); // prettier-ignore
+
+    // Positive control: every tooth of the mouth in one count.
+    await insert(prisma, child.encounter.id, child.author.id, { decayed: 20, extracted: 0, filled: 0, missing: null }); // prettier-ignore
+    await insert(prisma, adult.encounter.id, adult.author.id, { ...none, filled: 32 }); // prettier-ignore
+    expect(await prisma.encounterDentalIndex.count()).toBe(2);
+  });
+
+  it('EN-052 la BASE acota la SUMA: cada diente en una sola categoría, 21 temporales o 33 permanentes no; 20 y 32, sí', async () => {
+    const prisma = db();
+    const child = await anAttentionAged(prisma, { years: 8 });
+    const adult = await anAttentionAged(prisma, { years: 30 });
+
+    expect(await problemFrom(insert(prisma, child.encounter.id, child.author.id, { decayed: 7, extracted: 7, filled: 7, missing: null }))).toMatchObject({
       status: 422,
       code: 'VALIDATION_FAILED',
-      errors: [expect.objectContaining({ field: 'filled' })],
+      errors: [{ field: 'index', code: 'VALIDATION_FAILED', message: 'Entre cariados, extraídos y obturados no pueden pasar de los 20 dientes temporales' }],
     }); // prettier-ignore
-    expect(await problemFrom(insert(prisma, adult.encounter.id, adult.author.id, { ...CPO_D, decayed: -1 }))).toMatchObject({ code: 'VALIDATION_FAILED' }); // prettier-ignore
+    expect(await problemFrom(insert(prisma, adult.encounter.id, adult.author.id, { decayed: 11, extracted: null, filled: 11, missing: 11 }))).toMatchObject({
+      status: 422,
+      code: 'VALIDATION_FAILED',
+      errors: [{ field: 'index', code: 'VALIDATION_FAILED', message: 'Entre cariados, perdidos y obturados no pueden pasar de los 32 dientes permanentes' }],
+    }); // prettier-ignore
+    expect(await prisma.encounterDentalIndex.count()).toBe(0);
 
-    await insert(prisma, child.encounter.id, child.author.id, { ...CEO_D, decayed: 20 }); // prettier-ignore
-    await insert(prisma, adult.encounter.id, adult.author.id, { ...CPO_D, filled: 32 }); // prettier-ignore
+    // Positive control: the whole mouth, and not one tooth more.
+    await insert(prisma, child.encounter.id, child.author.id, { decayed: 7, extracted: 7, filled: 6, missing: null }); // prettier-ignore
+    await insert(prisma, adult.encounter.id, adult.author.id, { decayed: 11, extracted: null, filled: 11, missing: 10 }); // prettier-ignore
     expect(await prisma.encounterDentalIndex.count()).toBe(2);
+  });
+
+  it('EN-052 la BASE nombra la cuenta que falta del índice que toca', async () => {
+    const prisma = db();
+    const child = await anAttentionAged(prisma, { years: 8 });
+
+    expect(await problemFrom(insert(prisma, child.encounter.id, child.author.id, { ...CEO_D, extracted: null }))).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      errors: [expect.objectContaining({ field: 'extracted', message: 'Indique los dientes extraídos' })],
+    }); // prettier-ignore
+    // Positive control: with the three, it goes in.
+    await insert(prisma, child.encounter.id, child.author.id, CEO_D);
   });
 
   it('EN-052 EN-210 corregir deja el índice anterior entero en record_version, y sin sello no se corrige', async () => {
@@ -186,7 +222,7 @@ describe('EN-052 el índice CEO-D / CPO-D contra la base', () => {
     const dental = dentalOf(prisma);
 
     const first = await dental.save(adult.query, CPO_D, adult.author.id);
-    expect(first).toMatchObject({ ...CPO_D, editedAt: null });
+    expect(first).toMatchObject({ outcome: 'CREATED', reading: { ...CPO_D, editedAt: null } }); // prettier-ignore
 
     // Without a stamp nobody edits.
     await expect(
@@ -194,10 +230,12 @@ describe('EN-052 el índice CEO-D / CPO-D contra la base', () => {
     ).rejects.toThrow(/record_version_change_is_stamped/);
 
     const corrected = await dental.save(adult.query, { ...CPO_D, decayed: 5 }, adult.author.id); // prettier-ignore
-    expect(corrected.decayed).toBe(5);
-    expect(corrected.editedAt).not.toBeNull();
+    expect(corrected.outcome).toBe('UPDATED');
+    expect(corrected.reading.decayed).toBe(5);
+    expect(corrected.reading.editedAt).not.toBeNull();
     // The same counts again are not an edit.
-    await dental.save(adult.query, { ...CPO_D, decayed: 5 }, adult.author.id);
+    const again = await dental.save(adult.query, { ...CPO_D, decayed: 5 }, adult.author.id); // prettier-ignore
+    expect(again.outcome).toBe('UNCHANGED');
 
     const versions = await prisma.recordVersion.findMany({
       where: { resourceType: 'encounter_dental_index', resourceId: adult.encounter.id }, // prettier-ignore
@@ -208,6 +246,91 @@ describe('EN-052 el índice CEO-D / CPO-D contra la base', () => {
       changedById: adult.author.id,
       data: expect.objectContaining({ decayed: 4, missing: 1, filled: 6, extracted: null }), // prettier-ignore
     });
+  });
+
+  it('EN-052 dos primeros guardados a la vez: el que llega segundo al candado corrige al primero, versionado, y ninguno falla', async () => {
+    const prisma = db();
+    const adult = await anAttentionAged(prisma, { years: 30 });
+    const dental = dentalOf(prisma);
+    const a = { ...CPO_D, decayed: 1 };
+    const b = { ...CPO_D, decayed: 2 };
+
+    const results = await Promise.all([
+      dental.save(adult.query, a, adult.author.id),
+      dental.save(adult.query, b, adult.author.id),
+    ]);
+
+    const created = results.find((r) => r.outcome === 'CREATED');
+    const updated = results.find((r) => r.outcome === 'UPDATED');
+    expect(created).toBeDefined();
+    expect(updated).toBeDefined();
+    // The winner is the one that took the lock second: its counts stand, and
+    // the first one's are the version it replaced.
+    const live = await dental.find(adult.query);
+    expect(live?.decayed).toBe(updated!.reading.decayed);
+    const versions = await prisma.recordVersion.findMany({
+      where: { resourceType: 'encounter_dental_index', resourceId: adult.encounter.id }, // prettier-ignore
+    });
+    expect(versions.map((v) => (v.data as { decayed: number }).decayed)).toEqual([created!.reading.decayed]); // prettier-ignore
+  });
+
+  it('EN-052 D-160 los bordes de la edad congelada, derivada en la base: 6m0d no, 6m1d CEO-D; 10a11m30d CEO-D; 11a0m0d y 11a11m30d ninguno; 12a0m0d CPO-D', async () => {
+    const prisma = db();
+    // The 15th of the latest past month of 31 days, at noon in Ecuador.
+    // PostgreSQL's `age()` borrows the days of the birth month, which is the
+    // pivot's month: with 31 of them every case lands on the age it names.
+    const [pivot] = await prisma.$queryRaw<{ day: string; started_at: Date }[]>`
+      SELECT (m::date + 14)::text AS day,
+             ((m::date + 14) + time '12:00') AT TIME ZONE 'America/Guayaquil' AS started_at
+        FROM generate_series(
+               date_trunc('month', ${new Date()}::timestamptz AT TIME ZONE 'America/Guayaquil') - interval '3 months',
+               date_trunc('month', ${new Date()}::timestamptz AT TIME ZONE 'America/Guayaquil') - interval '1 month',
+               interval '1 month') AS m
+       WHERE extract(day from m + interval '1 month' - interval '1 day') = 31
+       ORDER BY m DESC
+       LIMIT 1`; // prettier-ignore
+    const site = await createSite(prisma);
+    const practitioner = await createPractitioner(prisma);
+    const author = await createUser(prisma);
+
+    /** Born `back` before the pivot, plus `forward`: both intervals, in SQL. */
+    async function attention(back: string, forward = '0 days') {
+      const [birth] = await prisma.$queryRaw<{ on: Date }[]>`
+        SELECT (${pivot!.day}::date - ${back}::interval + ${forward}::interval)::date AS on`; // prettier-ignore
+      const patient = await createPatient(prisma, { birthDate: birth!.on });
+      return createEncounter(prisma, {
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        patientId: patient.id,
+        startedAt: pivot!.started_at,
+      });
+    }
+
+    const cases = [
+      { back: '6 months', age: [0, 6, 0], ceo: false, cpo: false },
+      { back: '6 months 1 day', age: [0, 6, 1], ceo: true, cpo: false },
+      { back: '11 years', forward: '1 day', age: [10, 11, 30], ceo: true, cpo: false },
+      { back: '11 years', age: [11, 0, 0], ceo: false, cpo: false },
+      { back: '12 years', forward: '1 day', age: [11, 11, 30], ceo: false, cpo: false },
+      { back: '12 years', age: [12, 0, 0], ceo: false, cpo: true },
+    ] as const; // prettier-ignore
+
+    for (const each of cases) {
+      const encounter = await attention(each.back, 'forward' in each ? each.forward : undefined); // prettier-ignore
+      // The frozen age is the one the case names.
+      expect([encounter.ageYears, encounter.ageMonths, encounter.ageDays]).toEqual([...each.age]); // prettier-ignore
+
+      const ceo = await insert(prisma, encounter.id, author.id, CEO_D).then(() => true, (error: unknown) => {
+        expect(extractDatabaseProblem(error)).toMatchObject(NOT_APPLICABLE);
+        return false;
+      }); // prettier-ignore
+      if (ceo) await prisma.$executeRaw`DELETE FROM encounter_dental_index WHERE encounter_id = ${encounter.id}::uuid`; // prettier-ignore
+      const cpo = await insert(prisma, encounter.id, author.id, CPO_D).then(() => true, (error: unknown) => {
+        expect(extractDatabaseProblem(error)).toMatchObject(NOT_APPLICABLE);
+        return false;
+      }); // prettier-ignore
+      expect([each.age.join('-'), ceo, cpo]).toEqual([each.age.join('-'), each.ceo, each.cpo]); // prettier-ignore
+    }
   });
 
   it('EN-052 el adaptador no escribe en una atención con el alta, y sí mientras está viva', async () => {

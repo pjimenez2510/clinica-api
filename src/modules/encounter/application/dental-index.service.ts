@@ -81,14 +81,18 @@ export class DentalIndexService {
       sites: requester.sites,
     });
 
-    await this.audit.record({
-      userId: requester.userId,
-      resourceType: DENTAL_INDEX_RESOURCE_TYPE,
-      resourceId: encounter.id,
-      action: 'READ',
-      ip: requester.ip,
-      userAgent: requester.userAgent,
-    });
+    // Audited when something clinical is disclosed: «no recorded index» is
+    // not a finding of anybody.
+    if (reading !== null) {
+      await this.audit.record({
+        userId: requester.userId,
+        resourceType: DENTAL_INDEX_RESOURCE_TYPE,
+        resourceId: encounter.id,
+        action: 'READ',
+        ip: requester.ip,
+        userAgent: requester.userAgent,
+      });
+    }
 
     return { index, reading };
   }
@@ -120,7 +124,6 @@ export class DentalIndexService {
     }
 
     const query = { encounterId: encounter.id, sites: requester.sites };
-    const existed = (await this.dental.find(query)) !== null;
     const counts: DentalIndexCounts =
       request.index === 'CEO_D'
         ? {
@@ -135,18 +138,21 @@ export class DentalIndexService {
             filled: request.filled,
             missing: request.missing ?? null,
           };
-    const reading = await this.dental.save(query, counts, requester.userId);
+    // CREATE or UPDATE is the adapter's to say: it decides under the lock.
+    const saved = await this.dental.save(query, counts, requester.userId);
 
-    await this.audit.record({
-      userId: requester.userId,
-      resourceType: DENTAL_INDEX_RESOURCE_TYPE,
-      resourceId: encounter.id,
-      action: existed ? 'UPDATE' : 'CREATE',
-      ip: requester.ip,
-      userAgent: requester.userAgent,
-    });
+    if (saved.outcome !== 'UNCHANGED') {
+      await this.audit.record({
+        userId: requester.userId,
+        resourceType: DENTAL_INDEX_RESOURCE_TYPE,
+        resourceId: encounter.id,
+        action: saved.outcome === 'CREATED' ? 'CREATE' : 'UPDATE',
+        ip: requester.ip,
+        userAgent: requester.userAgent,
+      });
+    }
 
-    return { index, reading };
+    return { index, reading: saved.reading };
   }
 
   private async indexOf(encounter: EncounterView): Promise<DentalIndex | null> {

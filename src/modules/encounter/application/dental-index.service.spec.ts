@@ -8,7 +8,10 @@ import type {
   DentalIndexCounts,
   DentalIndexReading,
 } from '../domain/dental-index';
-import type { DentalIndexRepository } from '../domain/dental-index.repository';
+import type {
+  DentalIndexRepository,
+  DentalIndexSave,
+} from '../domain/dental-index.repository';
 import {
   DentalIndexNotApplicableError,
   EncounterAlreadyClosedError,
@@ -63,10 +66,22 @@ class FakeDental implements DentalIndexRepository {
   save(
     _query: EncounterQuery,
     counts: DentalIndexCounts,
-  ): Promise<DentalIndexReading> {
+  ): Promise<DentalIndexSave> {
     this.saved.push(counts);
-    this.stored = { ...counts, recordedAt: new Date(), editedAt: null };
-    return Promise.resolve(this.stored);
+    const before = this.stored;
+    const same =
+      before !== null &&
+      before.decayed === counts.decayed &&
+      before.extracted === counts.extracted &&
+      before.filled === counts.filled &&
+      before.missing === counts.missing;
+    if (!same) {
+      this.stored = { ...counts, recordedAt: new Date(), editedAt: null };
+    }
+    return Promise.resolve({
+      reading: this.stored!,
+      outcome: before === null ? 'CREATED' : same ? 'UNCHANGED' : 'UPDATED',
+    });
   }
 }
 
@@ -96,8 +111,12 @@ describe('EN-052 el índice CEO-D / CPO-D de la atención', () => {
     await expect(service.dentalIndexOf('encounter-1', requester)).resolves.toEqual({ index: 'CEO_D', reading: null }); // prettier-ignore
     encounter = anEncounter({ ageYears: 30 });
     await expect(service.dentalIndexOf('encounter-1', requester)).resolves.toMatchObject({ index: 'CPO_D' }); // prettier-ignore
+    // Nothing recorded, nothing disclosed: no trail.
+    expect(audit).toEqual([]);
+
+    dental.stored = { decayed: 1, extracted: null, filled: 2, missing: 0, recordedAt: new Date(), editedAt: null }; // prettier-ignore
+    await service.dentalIndexOf('encounter-1', requester);
     expect(audit.map((entry) => [entry.resourceType, entry.action])).toEqual([
-      ['encounter_dental_index', 'READ'],
       ['encounter_dental_index', 'READ'],
     ]);
   });
@@ -144,6 +163,8 @@ describe('EN-052 el índice CEO-D / CPO-D de la atención', () => {
 
     const first = await service.recordDentalIndex('encounter-1', { index: 'CPO_D', decayed: 3, missing: 2, filled: 5 }, requester); // prettier-ignore
     expect(first).toMatchObject({ index: 'CPO_D', reading: { decayed: 3, extracted: null, missing: 2, filled: 5 } }); // prettier-ignore
+    await service.recordDentalIndex('encounter-1', { index: 'CPO_D', decayed: 2, missing: 2, filled: 6 }, requester); // prettier-ignore
+    // The same counts again: no write to account for.
     await service.recordDentalIndex('encounter-1', { index: 'CPO_D', decayed: 2, missing: 2, filled: 6 }, requester); // prettier-ignore
     expect(audit.map((entry) => entry.action)).toEqual(['CREATE', 'UPDATE']);
   });

@@ -9,6 +9,16 @@
 import type { DentalIndexCounts, DentalIndexReading } from './dental-index';
 import type { EncounterQuery } from './encounter.repository';
 
+/**
+ * EN-052. What the save did, decided under the attention's lock: two first
+ * saves at once are a record and a correction, never a duplicate key; the
+ * same counts again are no write at all.
+ */
+export interface DentalIndexSave {
+  reading: DentalIndexReading;
+  outcome: 'CREATED' | 'UPDATED' | 'UNCHANGED';
+}
+
 export interface DentalIndexRepository {
   /**
    * EN-203, EN-052. The code of the attention's specialty, by the rule the
@@ -31,7 +41,7 @@ export interface DentalIndexRepository {
     query: EncounterQuery,
     counts: DentalIndexCounts,
     authorId: string,
-  ): Promise<DentalIndexReading>;
+  ): Promise<DentalIndexSave>;
 }
 
 /** Injection token. The application never names the adapter. */

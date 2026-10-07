@@ -6,7 +6,10 @@ import type {
   DentalIndexCounts,
   DentalIndexReading,
 } from '../domain/dental-index';
-import type { DentalIndexRepository } from '../domain/dental-index.repository';
+import type {
+  DentalIndexRepository,
+  DentalIndexSave,
+} from '../domain/dental-index.repository';
 import type { EncounterStatus } from '../domain/encounter';
 import {
   EncounterAlreadyClosedError,
@@ -53,7 +56,7 @@ export class PrismaDentalIndexRepository implements DentalIndexRepository {
     query: EncounterQuery,
     counts: DentalIndexCounts,
     authorId: string,
-  ): Promise<DentalIndexReading> {
+  ): Promise<DentalIndexSave> {
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
       const inScope = await tx.encounter.findFirst({
@@ -73,12 +76,14 @@ export class PrismaDentalIndexRepository implements DentalIndexRepository {
         throw new EncounterAlreadyClosedError(locked.status);
       }
 
+      // Read after the lock: a first save that waited for another sees its
+      // row, and corrects it instead of colliding on the primary key.
       const current = await tx.encounterDentalIndex.findUnique({
         where: { encounterId: query.encounterId },
         select: { ...READING_SELECT },
       });
       if (current === null) {
-        return tx.encounterDentalIndex.create({
+        const created = await tx.encounterDentalIndex.create({
           data: {
             encounterId: query.encounterId,
             ...counts,
@@ -87,6 +92,7 @@ export class PrismaDentalIndexRepository implements DentalIndexRepository {
           },
           select: READING_SELECT,
         });
+        return { reading: created, outcome: 'CREATED' };
       }
 
       // The same counts are not an edit: no version of an identical row.
@@ -96,13 +102,13 @@ export class PrismaDentalIndexRepository implements DentalIndexRepository {
         current.filled === counts.filled &&
         current.missing === counts.missing
       ) {
-        return current;
+        return { reading: current, outcome: 'UNCHANGED' };
       }
 
       // EN-210. `record_version_archive` refuses an edit whose stamp did not
       // move: a second correction in the same millisecond moves past it.
       const previous = current.editedAt ?? current.recordedAt;
-      return tx.encounterDentalIndex.update({
+      const updated = await tx.encounterDentalIndex.update({
         where: { encounterId: query.encounterId },
         data: {
           ...counts,
@@ -111,6 +117,7 @@ export class PrismaDentalIndexRepository implements DentalIndexRepository {
         },
         select: READING_SELECT,
       });
+      return { reading: updated, outcome: 'UPDATED' };
     });
   }
 }

@@ -324,6 +324,18 @@ registerConstraintMeanings({
     message: 'Otra persona enmendó esta nota mientras usted la editaba. Actualice la pantalla y vuelva a intentarlo', // prettier-ignore
   },
   /**
+   * EN-235 (D-147.3). `trg_encounter_diagnosis_principal_use`: an asterisk or
+   * an external cause of the WHO's list never stays as the principal — when
+   * registering, when its code changes, when it is marked principal. The one
+   * source for the API, an import and a `psql`; the trigger raises the name
+   * as the prefix of its message, which is how it travels.
+   */
+  encounter_diagnosis_principal_use: {
+    code: 'DIAGNOSIS_PRINCIPAL_USE_INVALID',
+    field: 'conceptId',
+    message: 'Registre primero la enfermedad o la lesión',
+  },
+  /**
    * EN-043. `encounter_diagnosis_one_primary`, a partial unique index `ON
    * encounter_diagnosis (encounter_id) WHERE rank = 1`.
    *
@@ -336,18 +348,6 @@ registerConstraintMeanings({
    * Two principals make the monthly report count one consultation twice, in
    * two different causes of morbidity.
    */
-  /**
-   * EN-235 (D-147.3). `trg_encounter_diagnosis_principal_use`: an asterisk or
-   * an external cause of the WHO's list never stays as the principal — when
-   * registering, when its code changes, when it is marked principal. The one
-   * source for the API, an import and a `psql`; the trigger raises the name
-   * as the prefix of its message, which is how it travels.
-   */
-  encounter_diagnosis_principal_use: {
-    code: 'DIAGNOSIS_PRINCIPAL_USE_INVALID',
-    field: 'conceptId',
-    message: 'Registre primero la enfermedad o la lesión',
-  },
   encounter_diagnosis_one_primary: {
     code: 'DIAGNOSIS_PRIMARY_TAKEN',
     field: 'rank',
@@ -356,43 +356,71 @@ registerConstraintMeanings({
 });
 
 /**
- * EN-052 (D-160). The CEO-D / CPO-D. Each count is bounded by the teeth there
- * are — 32 permanent, 20 primary — and named on its own box; the frozen age
- * outside both bands, and the other index's count, are not applicable. The
- * figures MUST match `20261007085419_encounter_dental_index`.
+ * EN-052 (D-160). The CEO-D / CPO-D. Every count is bounded by the teeth there
+ * are — 32 permanent, 20 primary — and named on its own box; so is the sum of
+ * the three, each tooth being in one category; the frozen age outside both
+ * bands, and the other index's count, are not applicable. The figures MUST
+ * match `20261007085419_encounter_dental_index` and
+ * `20261007132856_encounter_dental_index_teeth_total`.
  */
-function dentalCountOutOfRange(field: string, label: string) {
-  return {
-    code: 'VALIDATION_FAILED',
-    field,
-    message: `Los dientes ${label} deben estar entre 0 y 32: revise el valor ingresado`,
-  };
-}
+const DENTAL_COUNTS = [
+  ['decayed', 'cariados'],
+  ['extracted', 'extraídos'],
+  ['filled', 'obturados'],
+  ['missing', 'perdidos'],
+] as const;
 
 registerConstraintMeanings({
-  encounter_dental_index_decayed_range: dentalCountOutOfRange('decayed', 'cariados'), // prettier-ignore
-  encounter_dental_index_extracted_range: dentalCountOutOfRange('extracted', 'extraídos'), // prettier-ignore
-  encounter_dental_index_filled_range: dentalCountOutOfRange('filled', 'obturados'), // prettier-ignore
-  encounter_dental_index_missing_range: dentalCountOutOfRange('missing', 'perdidos'), // prettier-ignore
-  encounter_dental_index_primary_teeth: {
+  ...Object.fromEntries(
+    DENTAL_COUNTS.flatMap(([field, label]) => [
+      [
+        `encounter_dental_index_${field}_range`,
+        {
+          code: 'VALIDATION_FAILED',
+          field,
+          message: `Los dientes ${label} deben estar entre 0 y 32: revise el valor ingresado`,
+        },
+      ],
+      [
+        `encounter_dental_index_${field}_required`,
+        {
+          code: 'VALIDATION_FAILED',
+          field,
+          message: `Indique los dientes ${label}`,
+        },
+      ],
+      [
+        `encounter_dental_index_${field}_primary`,
+        {
+          code: 'VALIDATION_FAILED',
+          field,
+          message: `El CEO-D cuenta dientes temporales: los ${label} son 20 como mucho`,
+        },
+      ],
+    ]),
+  ),
+  encounter_dental_index_primary_total: {
     code: 'VALIDATION_FAILED',
-    field: 'decayed',
-    message: 'El CEO-D cuenta dientes temporales: cada cuenta es de 20 como mucho', // prettier-ignore
+    field: 'index',
+    message: 'Entre cariados, extraídos y obturados no pueden pasar de los 20 dientes temporales', // prettier-ignore
   },
-  encounter_dental_index_counts_required: {
+  encounter_dental_index_permanent_total: {
     code: 'VALIDATION_FAILED',
-    field: 'decayed',
-    message: 'Indique las tres cuentas del índice: cariados, obturados y extraídos (CEO-D) o perdidos (CPO-D)', // prettier-ignore
+    field: 'index',
+    message: 'Entre cariados, perdidos y obturados no pueden pasar de los 32 dientes permanentes', // prettier-ignore
   },
   encounter_dental_index_applies: {
     code: 'DENTAL_INDEX_NOT_APPLICABLE',
     field: 'index',
     message: 'Esta atención no lleva ese índice odontológico: sólo en odontología, el CEO-D con más de 6 meses y menos de 11 años, y el CPO-D desde los 12 años', // prettier-ignore
   },
-  /** EN-052. Whoever recorded the index stays its author. */
+  /**
+   * EN-052. Whoever recorded the index stays its author. No body field sets
+   * it, so the error names the attention the index belongs to.
+   */
   encounter_dental_index_keeps_its_author: {
     code: 'VALIDATION_FAILED',
-    field: 'recordedBy',
+    field: 'encounterId',
     message: 'Quien registró el índice no cambia al corregirlo',
   },
 });

@@ -4,13 +4,17 @@ import { z } from 'zod';
 /**
  * EN-052. The CEO-D / CPO-D of an attention.
  *
- * The counts are whole numbers and nothing more here: how many teeth there
- * are (20 primary, 32 permanent) is the database's (`encounter_dental_index_*`),
- * which answers naming the count, as the ranges of the vital signs do.
+ * Here each count is a whole number from 0 to 32, the teeth a mouth can have.
+ * The 20 primary teeth of the CEO-D and the bound on the sum are the
+ * database's (`encounter_dental_index_*`), which answers naming the count.
  */
 const DENTAL_INDEX = z.enum(['CEO_D', 'CPO_D']);
 const count = (label: string) =>
-  z.number({ error: `Indique los dientes ${label}` }).int(`Indique los dientes ${label} como número entero`); // prettier-ignore
+  z
+    .number({ error: `Indique los dientes ${label}` })
+    .int(`Indique los dientes ${label} como número entero`)
+    .min(0, `Los dientes ${label} no pueden ser negativos`)
+    .max(32, `Los dientes ${label} son 32 como mucho`);
 
 export const recordDentalIndexSchema = z
   .object({
