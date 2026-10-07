@@ -17,7 +17,12 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite, createUser } from './setup/fixtures';
+import {
+  createDiagnosis,
+  createPatient,
+  createSite,
+  createUser,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -307,25 +312,93 @@ describe('EN-237 la atención de una ficha que se unificó con la consulta abier
       expect(body.totalEncounters).toBe(0);
     });
 
-    it('EN-237 EN-087 sirve «sin alergias conocidas» de la superviviente, con su autor', async () => {
+    it('EN-237 EN-087 no sirve «sin alergias conocidas» de la superviviente en la atención absorbida, como la receta', async () => {
+      // D-169.2: la afirmación se hizo sobre S, no en esta atención; el lado
+      // seguro es «no registradas», lo mismo que imprime la receta (PR-117).
       const duplicate = await createPatient(prisma);
       const survivor = await createPatient(prisma);
       const encounterId = await openEncounter(duplicate.id, MINUTE);
+      const survivorEncounterId = await openEncounter(survivor.id, MINUTE);
       await post(`/patients/${survivor.id}/allergies/none-known`).expect(201);
-
-      const before = (
-        await get(`/encounters/${encounterId}/chart-summary`).expect(200)
-      ).body as ChartSummaryBody;
-      // Control positivo: antes de unificar, la afirmación es de otra persona.
-      expect(before.noKnownAllergies).toBeNull();
-
       await merge(duplicate.id, survivor.id);
 
-      const after = (
+      const absorbed = (
         await get(`/encounters/${encounterId}/chart-summary`).expect(200)
       ).body as ChartSummaryBody;
+      expect(absorbed.allergies).toEqual([]);
+      expect(absorbed.noKnownAllergies).toBeNull();
+
+      // Control positivo: en la atención de la propia superviviente, sí.
+      const own = (
+        await get(`/encounters/${survivorEncounterId}/chart-summary`).expect(
+          200,
+        )
+      ).body as ChartSummaryBody;
+      expect(own.noKnownAllergies?.assertedByName).toBe('Ana Villacís');
+    });
+  });
+
+  describe('la propuesta de «subsecuente», la bitácora y deshacer la fusión', () => {
+    it('EN-237 EN-184 propone «subsecuente» por un diagnóstico de la misma categoría en la superviviente', async () => {
+      const { duplicate, survivor, encounterId, earlierOfSurvivor } =
+        await theScene({ merged: false });
+      await createDiagnosis(prisma, earlierOfSurvivor, 'E11.9');
+      const concept = await prisma.catalogConcept.findFirstOrThrow({
+        where: { code: 'E11.9' },
+      });
+      const propose = async () =>
+        (
+          await get(
+            `/encounters/${encounterId}/diagnoses/occurrence-proposal?conceptId=${concept.id}`,
+          ).expect(200)
+        ).body as { proposed: string };
+
+      // Control positivo: sin unificar, la diabetes es de otra persona.
+      expect((await propose()).proposed).toBe('FIRST_TIME');
+
+      await merge(duplicate.id, survivor.id);
+      expect((await propose()).proposed).toBe('SUBSEQUENT');
+    });
+
+    it('EN-237 EN-161 leer el resumen deja una fila de bitácora sobre la ficha que divulgó: la superviviente', async () => {
+      const { survivor, duplicate, encounterId } = await theScene({
+        merged: true,
+      });
+      const rows = (resourceId: string) =>
+        prisma.accessAudit.count({
+          where: { resourceType: 'patient_chart_summary', resourceId },
+        });
+
+      await get(`/encounters/${encounterId}/chart-summary`).expect(200);
+
+      expect(await rows(survivor.id)).toBe(1);
+      expect(await rows(duplicate.id)).toBe(0);
+    });
+
+    it('EN-237 al deshacer la fusión la atención vuelve a leer solo su ficha', async () => {
+      const { duplicate, encounterId } = await theScene({ merged: true });
+      const opened = async () =>
+        (await get(`/encounters/${encounterId}`).expect(200))
+          .body as EncounterDetailBody;
+      // Control positivo: unificada, lee la vigente.
+      expect((await opened()).allergies).toHaveLength(1);
+
+      await app
+        .get(PatientMergeService, { strict: false })
+        .undo(
+          { sourcePatientId: duplicate.id },
+          { userId: (await createUser(prisma)).id },
+        );
+
+      const after = await opened();
       expect(after.allergies).toEqual([]);
-      expect(after.noKnownAllergies?.assertedByName).toBe('Ana Villacís');
+      expect(after.mergedInto).toBeNull();
+      const summary = (
+        await get(`/encounters/${encounterId}/chart-summary`).expect(200)
+      ).body as ChartSummaryBody;
+      expect(summary.allergies).toEqual([]);
+      expect(summary.history).toEqual([]);
+      expect(summary.previousEncounters).toEqual([]);
     });
   });
 

@@ -8,6 +8,7 @@ import {
   ACTIVE_ALLERGY_READER,
   type ActiveAllergy,
   type ActiveAllergyReader,
+  type SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import {
   CHART_SUMMARY_REPOSITORY,
@@ -172,7 +173,8 @@ export class ChartSummaryService {
     @Inject(CHART_SUMMARY_REPOSITORY)
     private readonly summaries: ChartSummaryRepository,
     @Inject(ACTIVE_ALLERGY_READER)
-    private readonly allergies: ActiveAllergyReader,
+    private readonly allergies: ActiveAllergyReader &
+      SurvivingChartAllergyReader,
     /**
      * EN-087. Only for `standingAbsenceFor`, and it is a read.
      *
@@ -252,8 +254,12 @@ export class ChartSummaryService {
       previousEncounters,
       totalEncounters,
     ] = await Promise.all([
-      this.allergies.activeFor(chartId),
-      this.allergyRecords.standingAbsenceFor(chartId),
+      // EN-237. The band's statement, the one the prescription checks.
+      this.allergies.activeForSurvivorOf(encounter.patientId),
+      // EN-237, PR-117. Of the ATTENTION's chart, as the receta asks it: an
+      // absorbed chart answers `null` («no registradas»); the survivor's
+      // assertion was never made about this attention (D-169.2).
+      this.allergyRecords.standingAbsenceFor(encounter.patientId),
       this.historyRecords.activeFor(chartId),
       this.summaries.previousEncounters(query),
       this.summaries.countEncounters(query),

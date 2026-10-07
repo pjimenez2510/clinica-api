@@ -7,6 +7,7 @@ import type {
 import type {
   ActiveAllergy,
   ActiveAllergyReader,
+  SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import type {
   AppointmentForProposal,
@@ -185,7 +186,9 @@ class FakeSummaries implements ChartSummaryRepository {
   }
 }
 
-class FakeActiveReader implements ActiveAllergyReader {
+class FakeActiveReader
+  implements ActiveAllergyReader, SurvivingChartAllergyReader
+{
   asked: string[] = [];
   rows: ActiveAllergy[] = [
     {
@@ -200,6 +203,12 @@ class FakeActiveReader implements ActiveAllergyReader {
   ];
 
   activeFor(chartId: string): Promise<readonly ActiveAllergy[]> {
+    this.asked.push(chartId);
+    return Promise.resolve(this.rows);
+  }
+
+  /** EN-237. The same list, climbing to the survivor in its own statement. */
+  activeForSurvivorOf(chartId: string): Promise<readonly ActiveAllergy[]> {
     this.asked.push(chartId);
     return Promise.resolve(this.rows);
   }
@@ -393,13 +402,15 @@ describe('la historia a la vista durante la consulta', () => {
     expect(summaries.queries.every((q) => q.patientId === PATIENT)).toBe(true);
   });
 
-  it('EN-237 lee desde la ficha superviviente cuando la de la atención se unificó, y audita la que divulgó', async () => {
+  it('EN-237 lee la historia desde la ficha superviviente cuando la de la atención se unificó, y audita la que divulgó', async () => {
     encounters.survivor = { id: 'surviving', mrn: 'HC0000000002' };
 
     await service.forEncounter(ENCOUNTER, requester);
 
-    expect(reader.asked).toEqual(['surviving']);
-    expect(allergyRecords.asked).toEqual(['surviving']);
+    // The allergies in the band's own statement, from the attention's chart;
+    // «sin alergias conocidas» of the attention's chart, as the receta asks it.
+    expect(reader.asked).toEqual([PATIENT]);
+    expect(allergyRecords.asked).toEqual([PATIENT]);
     expect(summaries.queries.every((q) => q.patientId === 'surviving')).toBe(
       true,
     );

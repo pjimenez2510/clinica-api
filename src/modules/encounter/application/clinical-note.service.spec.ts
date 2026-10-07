@@ -241,6 +241,9 @@ class FakeBackground {
   activeFor(): Promise<ActiveAllergy[]> {
     return Promise.resolve(this.allergies);
   }
+  activeForSurvivorOf(): Promise<ActiveAllergy[]> {
+    return Promise.resolve(this.allergies);
+  }
   standingAbsenceFor(): Promise<AllergyAbsenceAssertion | null> {
     return Promise.resolve(this.absence);
   }

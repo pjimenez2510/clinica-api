@@ -11,6 +11,7 @@ import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
+import { PatientMergeService } from '../../src/modules/patients/application/patient-merge.service';
 import {
   lateIssueDayOf,
   MATERNITY_CHAIN_NOTICE,
@@ -1168,6 +1169,45 @@ describe('el certificado medico por HTTP', () => {
       )
     ).body as Form117Body;
     expect(form.work).toMatchObject({ employer: 'Florícola del Valle' });
+  });
+
+  it('EN-237 CER-038 en la atención de una ficha unificada el reposo imprime los datos laborales de la vigente, los que ve la pantalla', async () => {
+    await aDiagnosis(encounterId);
+    await prisma.patient.update({
+      where: { id: patientId },
+      data: { employerName: null },
+    });
+    // Control positivo: sin unificar, la ficha de la atención y su aviso.
+    const own = await issue(restOf(1));
+    expect(own.restNotices).toEqual([
+      'Falta en la ficha la empresa del paciente. El IESS puede devolver el reposo sin estos datos; complételos en la ficha.',
+    ]);
+
+    const survivor = await createPatient(prisma);
+    await prisma.patient.update({
+      where: { id: survivor.id },
+      data: {
+        employerName: 'Exportadora Andina',
+        jobTitle: 'Contadora',
+        residenceAddressLine: 'Av. Amazonas y Colón',
+        phone: '0987654321',
+      },
+    });
+    await app
+      .get(PatientMergeService, { strict: false })
+      .merge(
+        { sourcePatientId: patientId, targetPatientId: survivor.id },
+        { userId: (await createUser(prisma)).id },
+      );
+
+    const issued = await issue(restOf(1));
+    expect(issued.restNotices).toEqual([]);
+    const form = (
+      await get(`/certificates/${issued.certificate.id}`, doctor.token).expect(
+        200,
+      )
+    ).body as Form117Body;
+    expect(form.work).toMatchObject({ employer: 'Exportadora Andina' });
   });
 
   it('CER-027 CER-038 lo emitido no cambia: ni un diagnostico registrado despues ni la ficha corregida llegan al certificado', async () => {

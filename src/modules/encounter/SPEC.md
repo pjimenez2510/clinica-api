@@ -1922,11 +1922,14 @@ requisitos que cambian.
 - **EN-237** — CUANDO se abra una atención (EN-081), se lea su resumen de la
   historia (EN-159), se proponga «subsecuente» (EN-184) o se firme una de sus
   notas (EN-206) y la ficha de la atención haya sido **absorbida** por una
-  fusión, el sistema DEBERÁ leer las alergias activas, «sin alergias
-  conocidas», los antecedentes y las atenciones anteriores de la **ficha
-  superviviente y de todas las que ésta absorbió** —la de la atención
-  incluida—, y la apertura DEBERÁ decir en qué ficha se fusionó
-  (`mergedInto`: su `patientId` y su número de historia). Sin fusión,
+  fusión, el sistema DEBERÁ leer las alergias activas, los antecedentes y las
+  atenciones anteriores de la **ficha superviviente y de todas las que ésta
+  absorbió** —la de la atención incluida—, NO DEBERÁ servir como «sin
+  alergias conocidas» la afirmación hecha sobre la superviviente (como la
+  receta, PR-117: «no registradas»), y la apertura DEBERÁ decir en qué ficha
+  se fusionó (`mergedInto`: su `patientId` y su número de historia). Un
+  certificado emitido en esa atención DEBERÁ copiar los datos laborales de la
+  superviviente (CER-038), los que la pantalla enseña. Sin fusión,
   `mergedInto` DEBERÁ ser `null` y la lectura la de siempre (`chartScope`).
   > **D-169.2 (b), 07-10-2026.** La fusión no mira las atenciones, así que la
   > de la duplicada sigue abierta, y desde ella `chartScope` baja y nunca
@@ -1934,12 +1937,19 @@ requisitos que cambian.
   > de la ficha real que el servidor ya bloqueaba al emitir (PR-118). Desde
   > esta atención se lee lo que dice la fusión: es la misma persona.
   >
-  > La banda se resuelve con **la misma sentencia** que comprueba la receta
-  > (`activeForSurvivorOf`, PR-118), para que el médico vea exactamente la
-  > lista contra la que se receta (EN-084). El resumen y la instantánea
-  > resuelven primero la superviviente y leen con `chartScope` desde ella:
-  > una fusión o un deshacer que cayera entre las dos sentencias deja una
-  > lectura del instante anterior, que la siguiente apertura corrige.
+  > Las alergias —la banda, el resumen y la foto que se firma— se leen con
+  > **la misma sentencia** que comprueba la receta (`activeForSurvivorOf`,
+  > PR-118), para que el médico vea exactamente la lista contra la que se
+  > receta (EN-084). Los antecedentes y las atenciones anteriores resuelven
+  > primero la superviviente y leen con `chartScope` desde ella: una fusión o
+  > un deshacer que cayera entre las dos sentencias deja una lectura del
+  > instante anterior. Al deshacer la fusión, la atención vuelve a leer solo
+  > su ficha.
+  >
+  > «Sin alergias conocidas» se pregunta a la ficha de la atención, como la
+  > receta: una absorbida responde «no registradas» (el lado seguro), porque
+  > la afirmación se hizo sobre la otra ficha y no en esta atención. Si vale o
+  > no para ella es D-169.2 (h), del autor.
   >
   > **Lo que no cambia:** la ficha absorbida sigue sin abrirse
   > (`PATIENT_MERGED`, PA-045) y sin admitir registros (`PATIENT_CHART_NOT_OPEN`).
@@ -1951,8 +1961,11 @@ requisitos que cambian.
   ficha de esta atención se unificó con la historia <número>» con un enlace a
   la ficha vigente; la cabecera, «Ficha completa», las alergias, «sin
   alergias conocidas», los antecedentes y los datos del paciente DEBERÁN ser
-  los de la ficha vigente, y registrarlos o descartarlos desde la atención
-  DEBERÁ hacerse sobre ella; y CUANDO una receta se rechace con
+  los de la ficha vigente, y registrar o descartar alergias y antecedentes
+  desde la atención DEBERÁ hacerse sobre ella; la pantalla NO DEBERÁ ofrecer
+  desde esa atención afirmar «sin alergias conocidas», ni corregir la
+  identidad o los datos del paciente (documento, campos del RDACAA, datos
+  laborales del certificado), que se corrigen en la historia vigente; y CUANDO una receta se rechace con
   `ALLERGY_CONTRAINDICATION`, el rechazo DEBERÁ nombrar la sustancia de cada
   alergia que lo impide («Alergia a Amoxicilina») y no su identificador, y
   su enlace a las alergias DEBERÁ llevar a la ficha vigente.

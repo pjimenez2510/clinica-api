@@ -27,6 +27,14 @@ import {
   toForm117Source,
 } from '../../../shared/infrastructure/prisma/form-117-source';
 
+/** CER-038. The chart's work data the IESS form prints. */
+const PATIENT_WORK_SELECT = {
+  employerName: true,
+  jobTitle: true,
+  residenceAddressLine: true,
+  phone: true,
+} as const;
+
 /**
  * The certificate's rows in, domain shapes out.
  *
@@ -254,10 +262,11 @@ async function issueWithin(
         select: {
           // CER-048. Whose chart the rests are read from.
           mergedIntoId: true,
-          employerName: true,
-          jobTitle: true,
-          residenceAddressLine: true,
-          phone: true,
+          ...PATIENT_WORK_SELECT,
+          // EN-237 (D-169.2). When admissions merged this attention's chart
+          // while it was open, the screen shows — and corrects — the
+          // SURVIVING chart's work data; the paper copies the same.
+          mergedInto: { select: PATIENT_WORK_SELECT },
         },
       },
       // CER-036. The city is the CANTON: the parent of the site's DPA
@@ -284,6 +293,8 @@ async function issueWithin(
   // trigger, which reads the chart again under the same lock, is the
   // guarantee.
   const chartId = encounter.patient.mergedIntoId ?? encounter.patientId;
+  // EN-237. The work data the doctor saw and could correct: the survivor's.
+  const work = encounter.patient.mergedInto ?? encounter.patient;
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('medical_certificate_rest:' || ${chartId}::text, 0))`;
   await beforeRests?.();
   const rests = await tx.medicalCertificate.findMany({
@@ -312,7 +323,7 @@ async function issueWithin(
           : [{ from, to, maternityBirthOn }];
       },
     ),
-    patientWork: encounter.patient,
+    patientWork: work,
   });
 
   return tx.medicalCertificate.create({
@@ -349,10 +360,10 @@ async function issueWithin(
       // certificate keeps none of the patient's work data, for ever.
       ...(plan.type === 'MEDICAL_REST'
         ? {
-            employerName: encounter.patient.employerName,
-            jobTitle: encounter.patient.jobTitle,
-            residenceAddressLine: encounter.patient.residenceAddressLine,
-            patientPhone: encounter.patient.phone,
+            employerName: work.employerName,
+            jobTitle: work.jobTitle,
+            residenceAddressLine: work.residenceAddressLine,
+            patientPhone: work.phone,
           }
         : {}),
     },

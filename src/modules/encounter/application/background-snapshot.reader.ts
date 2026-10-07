@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   ACTIVE_ALLERGY_READER,
   type ActiveAllergyReader,
+  type SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import {
   backgroundSnapshotOf,
@@ -44,7 +45,8 @@ import { chartOfRecord } from './chart-of-record';
 export class BackgroundSnapshotReader {
   constructor(
     @Inject(ACTIVE_ALLERGY_READER)
-    private readonly allergies: ActiveAllergyReader,
+    private readonly allergies: ActiveAllergyReader &
+      SurvivingChartAllergyReader,
     @Inject(PATIENT_ALLERGY_REPOSITORY)
     private readonly allergyRecords: PatientAllergyRepository,
     @Inject(PATIENT_HISTORY_REPOSITORY)
@@ -60,8 +62,14 @@ export class BackgroundSnapshotReader {
   ): Promise<BackgroundSnapshot> {
     const chartId = await chartOfRecord(this.encounters, attentionChartId);
     const [allergies, noKnownAllergies, history] = await Promise.all([
-      this.allergies.activeFor(chartId),
-      this.allergyRecords.standingAbsenceFor(chartId),
+      // EN-237. In ONE statement from the attention's chart, the one the
+      // prescription checks: what is frozen into a signed record does not
+      // depend on a merge or an undo landing between two reads.
+      this.allergies.activeForSurvivorOf(attentionChartId),
+      // EN-237, PR-117. Asked of the ATTENTION's chart, like the receta: an
+      // absorbed chart answers `null` («no registradas», the safe side), and
+      // the survivor's assertion was never made about this attention.
+      this.allergyRecords.standingAbsenceFor(attentionChartId),
       this.historyRecords.activeFor(chartId),
     ]);
     return backgroundSnapshotOf({
