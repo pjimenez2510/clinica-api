@@ -287,6 +287,22 @@ export function deliveryRetrySeconds(
   );
 }
 
+/** SRI-091. Past this, a failing e-mail is the address, not the server. */
+const DELIVERY_GIVE_UP_MS = 72 * 3600 * 1000;
+
+/**
+ * SRI-091. Whether a failed e-mail stops being retried: seventy-two hours or
+ * more since the authorisation. Three days cover a mail server down over a
+ * weekend; what still fails after that is an address the server refuses, and
+ * every further try would issue another RIDE for nobody (D-158.3).
+ */
+export function deliveryGivesUp(authorisedAt: Date | null, now: Date): boolean {
+  return (
+    authorisedAt !== null &&
+    now.getTime() - authorisedAt.getTime() >= DELIVERY_GIVE_UP_MS
+  );
+}
+
 /** A clinic clock ahead of the SRI's by less than this cannot fool the date check. */
 const CLOCK_MARGIN_MS = 5 * 60 * 1000;
 

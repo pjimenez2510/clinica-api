@@ -82,6 +82,8 @@ let config: ConfigService<Env, true>;
 let connection: PgBossConnection;
 let preparation: VoucherPreparationService;
 let dispatch: VoucherDispatchService;
+/** The same dispatcher on another clock: SRI-091 needs «three days later». */
+let dispatchAt: (clock: () => Date) => VoucherDispatchService;
 let certificates: SigningCertificateService;
 let accounts: PrismaBillingAccountRepository;
 let mailer: FakeMailer;
@@ -143,28 +145,30 @@ beforeEach(async () => {
     NOW,
     silentLogger,
   );
-  dispatch = new VoucherDispatchService(
-    vouchers,
-    web,
-    queue,
-    {
-      issueRide: (invoiceId) =>
-        Promise.resolve({
-          content: Buffer.from('%PDF-1.4 RIDE de prueba'),
-          fileName: `RIDE-${invoiceId}.pdf`,
-        }),
-      issueCreditNoteRide: (creditNoteId) =>
-        Promise.resolve({
-          content: Buffer.from('%PDF-1.4 RIDE de nota de crédito de prueba'),
-          fileName: `RIDE-NC-${creditNoteId}.pdf`,
-        }),
-    },
-    mailer,
-    NOW,
-    settings,
-    preparation,
-    silentLogger,
-  );
+  dispatchAt = (clock) =>
+    new VoucherDispatchService(
+      vouchers,
+      web,
+      queue,
+      {
+        issueRide: (invoiceId) =>
+          Promise.resolve({
+            content: Buffer.from('%PDF-1.4 RIDE de prueba'),
+            fileName: `RIDE-${invoiceId}.pdf`,
+          }),
+        issueCreditNoteRide: (creditNoteId) =>
+          Promise.resolve({
+            content: Buffer.from('%PDF-1.4 RIDE de nota de crédito de prueba'),
+            fileName: `RIDE-NC-${creditNoteId}.pdf`,
+          }),
+      },
+      mailer,
+      clock,
+      settings,
+      preparation,
+      silentLogger,
+    );
+  dispatch = dispatchAt(NOW);
   certificates = new SigningCertificateService(
     certificateRows,
     new ForgePkcs12Inspector(),
@@ -854,6 +858,49 @@ describe('SRI-072 a SRI-076 la entrega al cliente', () => {
     mailer.failWith = null;
     await dispatch.run('DELIVER', voucher.id);
     expect((await voucherOf(invoice.id)).deliveryStatus).toBe('SENT');
+  });
+
+  it('SRI-091 el correo que sigue fallando 72 horas después de la autorización queda «no se pudo enviar», y ni la cola ni el barrido lo reintentan', async () => {
+    const { invoice, voucher } =
+      await anAuthorisedVoucher('rebota@example.com');
+    mailer.failWith = new Error('550 mailbox unavailable');
+    const { authorisedAt } = await voucherOf(invoice.id);
+    if (!authorisedAt) throw new Error('the double did not authorise it');
+    const at = (hours: number) => () =>
+      new Date(authorisedAt.getTime() + hours * 3_600_000);
+
+    // Control: one hour short of the three days it is still a retry.
+    await dispatchAt(at(71)).run('DELIVER', voucher.id);
+    expect((await voucherOf(invoice.id)).deliveryStatus).toBe('FAILED');
+
+    await dispatchAt(at(72)).run('DELIVER', voucher.id);
+    expect(await voucherOf(invoice.id)).toMatchObject({
+      status: 'AUTHORISED',
+      deliveryStatus: 'UNDELIVERABLE',
+    });
+    expect((await invoiceRow(invoice.id)).status).toBe('AUTHORISED');
+
+    // Given up for good: a mail server that came back does not get it.
+    mailer.failWith = null;
+    const sent = mailer.sent.length;
+    await dispatchAt(at(80)).run('DELIVER', voucher.id);
+    expect(mailer.sent).toHaveLength(sent);
+    const work = await new PrismaElectronicVoucherRepository(
+      prisma as unknown as PrismaService,
+    ).pendingWork(200, at(80)(), '1');
+    expect(work.undelivered.map((one) => one.id)).not.toContain(voucher.id);
+  });
+
+  it('SRI-091 la base admite «no se pudo enviar» y sigue rechazando un estado de entrega que no conoce', async () => {
+    const { voucher } = await anAuthorisedVoucher();
+    await prisma.electronicVoucher.update({
+      where: { id: voucher.id },
+      data: { deliveryStatus: 'UNDELIVERABLE' },
+    });
+    // Control positivo: the CHECK still refuses what it does not know.
+    await expect(
+      prisma.$executeRaw`UPDATE "electronic_voucher" SET "delivery_status" = 'BOUNCED' WHERE "id" = ${voucher.id}::uuid`,
+    ).rejects.toThrow(/electronic_voucher_delivery_status_is_known/);
   });
 
   it('SRI-076 sin correo del receptor no se intenta y queda dicho', async () => {

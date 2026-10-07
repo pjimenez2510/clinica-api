@@ -269,18 +269,21 @@ las líneas propuestas con su motivo y volver a enviar, y comprobar que **no
 vuelve**; y comprobar contra PostgreSQL que el segundo cargo del mismo acto lo
 rechaza la BASE y no una lectura previa.
 
-**Cubre:** BI-150 a BI-158, BI-180, y da ruta por fin a BI-055, BI-056 y BI-059.
-**Solo servidor:** BI-180. Cambia qué propone el servidor, no la pantalla: caja
-muestra la propuesta que recibe, y sin acto clínico la recibe vacía.
+**Cubre:** BI-150 a BI-158, BI-180, BI-232, y da ruta por fin a BI-055, BI-056 y BI-059.
+**Solo servidor:** BI-180, BI-156, BI-232. BI-180 cambia qué propone el
+servidor, no la pantalla: caja muestra la propuesta que recibe, y sin acto
+clínico la recibe vacía. BI-156, desde D-162: lo que obliga es que el servidor
+no encadene el cierre y el paso a caja, y la pantalla ofrece caja tras el alta
+a propósito. BI-232 es lo que trae la semilla; en pantalla se ve como el motivo
+de BI-155, que ya tiene su prueba de interfaz.
 
-> **BI-156 no se declara de servidor (07-10-2026, `feat/f06-cargos`).** Su
-> primera mitad —el alta clínica (EN-130) no espera a caja— y la tercera —el
-> paso a caja no escribe nada clínico— no tienen pantalla de caja propia. Pero
-> la segunda, «ni el envío a caja a que la atención esté cerrada», la pantalla
-> la condiciona: «Por cobrar» lista sólo atenciones terminadas (BI-181) y la
-> barra de cierre ofrece caja tras el alta. El servidor no lo condiciona. Si la
-> pantalla debe ofrecer el paso a caja de una atención abierta, o BI-156 se
-> enmienda a «el servidor no lo condiciona», es D-162.
+> **BI-156 se declara de servidor (D-162, resuelta por el autor el
+> 07-10-2026).** Caja **no** pasa a caja una atención en curso por ahora: el
+> cobro anticipado cambiaría lo que se propone (la consulta sí, los exámenes aún
+> no pedidos no) y abriría una cuenta que el médico puede seguir moviendo.
+> «Por cobrar» lista sólo atenciones terminadas (BI-181) y la barra de cierre
+> ofrece caja tras el alta; el servidor no condiciona ni lo uno ni lo otro, y
+> eso es lo que BI-156 exige desde la enmienda.
 
 > **Lo entregado el 20-08-2026.** La ruta de paso a caja, idempotente en sus dos
 > mitades; la derivación de las tres fuentes sobre las ataduras que ya existían
@@ -1565,8 +1568,9 @@ dos registros distintos.**
   > examen puede ser tan revelador como un diagnóstico, y esta respuesta pasa
   > por registros.
 - **BI-156** — El sistema NO DEBERÁ condicionar el cierre de una atención a que
-  se haya enviado a caja, ni el envío a caja a que la atención esté cerrada; y
-  el envío a caja NO DEBERÁ crear, modificar ni borrar ningún dato clínico.
+  se haya enviado a caja, ni el **servidor** el envío a caja a que la atención
+  esté cerrada —la pantalla lo ofrece tras el alta (D-162)—; y el envío a caja
+  NO DEBERÁ crear, modificar ni borrar ningún dato clínico.
   > **Ley 77 art. 9 y BI-004 sobre el flujo del día.** Son dos actos y el
   > clínico manda: encadenarlos produce exactamente el sistema que retiene al
   > médico esperando a que un cajero termine. La mitad negativa se cumple por
@@ -1593,6 +1597,20 @@ dos registros distintos.**
   > precio dependiera de cuál devolviera primero una consulta. Una atención sin
   > cita no tiene especialidad, y eso es una propuesta con una línea de menos
   > (BI-155), nunca una adivinanza.
+- **BI-232** — El catálogo de arranque DEBERÁ traer, para cada especialidad del
+  catálogo de especialidades de arranque, una prestación de consulta de primera
+  vez y otra subsecuente atadas a ella (BI-158), y NO DEBERÁ ponerles precio
+  salvo a las que ya lo traían.
+  > D-161, resuelta por el autor el 07-10-2026. Antes eran cinco especialidades
+  > de veintidós: una atención de cardiología llegaba a caja con «No hay
+  > prestación que lo cobre» y caja tecleaba la consulta. Con la prestación y
+  > sin precio, el motivo de BI-155 pasa a «No hay precio vigente para ese día»,
+  > que administración arregla en un minuto poniendo el precio; crear y atar la
+  > prestación era otro trabajo. El precio es de la clínica y no se inventa.
+  >
+  > La atadura sigue la disciplina de la semilla: sólo si la especialidad existe
+  > y la correspondencia está libre. Si la semilla de facturación corre antes
+  > que la de especialidades, la siguiente corrida ata lo que faltaba.
 
 ## 17. Caja: qué falta cobrar, y a quién
 
@@ -2355,6 +2373,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | BI-184 | Unitario de la pantalla (qué se ofrece) + recorrido F-06: facturar, añadir, facturar lo pendiente y cerrar |
 | BI-185 a BI-187 | Unitario de dominio + integración contra PostgreSQL real: la referencia `NOT NULL`, la clase conocida y el `RESTRICT` los garantiza la base |
 | BI-188, BI-189 | Integración contra la siembra real + contrato HTTP |
+| BI-232 | Integración contra la siembra real: las especialidades sembradas y la facturación sembrada, en los dos órdenes, contra las 22 especialidades reales del catálogo |
 
 ## Preguntas abiertas
 

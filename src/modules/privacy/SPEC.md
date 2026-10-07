@@ -131,10 +131,13 @@ del paciente, y la descarga queda en la bitácora.
 inter-operable y de lectura mecánica», y el art. 13 que el acceso se atienda.
 **Prueba independiente:** exportar una ficha que absorbió a otra y comprobar
 que salen los documentos de las dos, que la bitácora tiene la fila `EXPORT`, y
-que si esa fila no se puede escribir no sale nada.
-**Cubre:** PD-040 a PD-043.
+que si esa fila no se puede escribir no sale nada; y que al responder la
+solicitud de acceso el texto llega propuesto con lo que el archivo no lleva.
+**Cubre:** PD-040 a PD-043, PD-049, PD-050.
 
-**Solo servidor:** PD-043.
+**Solo servidor:** PD-043, PD-050. Que la exportación escriba la bitácora, y
+la frase de `appointments` y `billing` en `omitted` (la pantalla ya dice
+«vigentes»).
 
 ### D5 — Corregir sin borrar (D-127, D-128.8, D-128.9, D-131.1) _(P1)_
 
@@ -306,6 +309,36 @@ con los disparadores de la base.
   lectura, una fila `EXPORT` por cada ficha cuyos datos salen y otra que nombra
   la solicitud que la justificó; SI no se pueden escribir, ENTONCES el sistema
   NO DEBERÁ entregar nada.
+- **PD-049** — CUANDO alguien con `patient:data-requests` pida la propuesta de
+  respuesta de una solicitud de acceso o de portabilidad, el sistema DEBERÁ
+  devolver un párrafo que diga que el archivo no lo incluye todo y, una por
+  línea y en el orden de `omitted`, cada sección que la exportación declara
+  con su motivo, sin las referencias a decisiones y en no más de 4 000
+  caracteres (PD-033). SI la solicitud es de otro derecho, ENTONCES DEBERÁ
+  rechazarlo con `DATA_EXPORT_NOT_APPLICABLE` (422). Pedir la propuesta NO
+  DEBERÁ escribir nada, tampoco en la bitácora: no lee datos de la ficha, sólo
+  el derecho de la solicitud. Al responder una solicitud de acceso o de
+  portabilidad, la pantalla DEBERÁ poner esa propuesta en el texto de la
+  respuesta, editable y sin pisar lo ya escrito; lo que se guarda es lo que
+  quede escrito (PD-033). Con el resultado `DENIED` NO DEBERÁ quedar la
+  propuesta sin tocar: dice que se entregó un archivo.
+  > **D-164.2, resuelta por el autor el 07-10-2026.** Para que quede en el
+  > registro de la solicitud lo que se le dijo al titular. Una sola fuente: el
+  > párrafo sale de la misma lista que el archivo lleva en `omitted`. La vía
+  > de la historia clínica sigue diciendo «por otra vía» hasta D-164.1.
+- **PD-050** — En `omitted`, el motivo de `appointments` y el de `billing`
+  DEBERÁN decir que no se incluye todavía ninguna —ni pasadas ni futuras— y
+  que sí van las versiones anteriores de lo que se corrigió (PD-048), con lo
+  que esas versiones no llevan: el motivo y las notas de la cita, y quien
+  recibió la factura (D-140.2). El de `clinical_record` DEBERÁ nombrar qué
+  partes de la historia tienen versiones anteriores en el archivo.
+  > **D-164.3, resuelta por el autor el 07-10-2026**, con la frase «las
+  > vigentes no se incluyen todavía; sus versiones anteriores sí». La revisión
+  > clínica de la rama mostró que el titular lee «vigentes» como «futuras» y
+  > entiende que sus citas pasadas van, y que «sus versiones anteriores sí» no
+  > dice que salen recortadas: se dice así, que es lo que el archivo lleva de
+  > verdad, en condicional: depende de que en esa ficha se haya corregido
+  > algo. A confirmar por el autor (D-166.1).
 
 ## 5. Corregir sin borrar (D-126, D-127)
 
@@ -469,7 +502,8 @@ puede verla»).
 | `POST` | `/privacy/patients/:patientId/requests` | `patient:data-requests` | PD-030 a PD-032, PD-037        |
 | `GET`  | `/privacy/requests`                     | `patient:data-requests` | PD-035                         |
 | `POST` | `/privacy/requests/:requestId/response` | `patient:data-requests` | PD-033, PD-034, PD-037, PD-038 |
-| `GET`  | `/privacy/requests/:requestId/export`   | `patient:data-requests` | PD-040 a PD-043, PD-048        |
+| `GET`  | `/privacy/requests/:requestId/export`   | `patient:data-requests` | PD-040 a PD-043, PD-048, PD-050 |
+| `GET`  | `/privacy/requests/:requestId/answer-proposal` | `patient:data-requests` | PD-049         |
 | `POST` | `/privacy/patients/:patientId/consents/:consentId/correction` | `patient:write` | PD-044            |
 | `PATCH` | `/privacy/requests/:requestId`         | `patient:data-requests` | PD-046                         |
 | `POST` | `/privacy/requests/:requestId/response/correction` | `patient:data-requests` | PD-047             |

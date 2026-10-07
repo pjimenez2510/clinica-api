@@ -281,6 +281,8 @@ export interface DataSubjectRequestRepository {
     now: Date,
   ): Promise<CorrectAnswerResult>;
   find(requestId: string): Promise<DataRequestView | null>;
+  /** PD-049. Only the right: nothing of the chart nor of what was asked. */
+  rightOf(requestId: string): Promise<DataSubjectRight | null>;
   /** PD-036. */
   requestsOf(patientId: string): Promise<DataRequestView[]>;
   /** PD-035. Unanswered, earliest due first. */
