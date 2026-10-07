@@ -24,7 +24,12 @@ import {
   ROLE_PERMISSION_CACHE,
   type RolePermissionCachePort,
 } from './admin-ports';
-import { AuthAdminAuditTrail, type Requester } from './auth-admin-audit.trail';
+import {
+  AuthAdminAuditTrail,
+  type Requester,
+  accountSnapshot,
+  grantsSnapshot,
+} from './auth-admin-audit.trail';
 import {
   CredentialInvitationsService,
   type IssuedInvitation,
@@ -160,7 +165,9 @@ export class AccountsService {
       passwordHash: UNUSABLE_PASSWORD_HASH,
     });
 
-    await this.trail.record('CREATE', created.id, requester);
+    await this.trail.record('CREATE', created.id, requester, {
+      after: accountSnapshot(created),
+    });
 
     const invitation = await this.invitations.issue(created.id, requester);
     return { account: created, invitation };
@@ -172,6 +179,10 @@ export class AccountsService {
     command: UpdateAccountCommand,
     requester: Requester,
   ): Promise<AccountView> {
+    // AU-052. The account as it stood, so the trail can say what was replaced.
+    const before = await this.accounts.findById(id);
+    if (!before) throw new UserNotFoundError();
+
     const updated = await this.accounts.update(id, {
       firstName: command.firstName,
       lastName: command.lastName,
@@ -185,7 +196,10 @@ export class AccountsService {
     });
     if (!updated) throw new UserNotFoundError();
 
-    await this.trail.record('UPDATE', updated.id, requester);
+    await this.trail.record('UPDATE', updated.id, requester, {
+      before: accountSnapshot(before),
+      after: accountSnapshot(updated),
+    });
     return updated;
   }
 
@@ -212,6 +226,9 @@ export class AccountsService {
       );
     }
 
+    const before = await this.accounts.findById(id);
+    if (!before) throw new UserNotFoundError();
+
     const updated = await this.accounts.setActive(id, false);
     if (!updated) throw new UserNotFoundError();
 
@@ -222,16 +239,25 @@ export class AccountsService {
       RevocationReason.ACCOUNT_DEACTIVATED,
     );
 
-    await this.trail.record('UPDATE', updated.id, requester);
+    await this.trail.record('UPDATE', updated.id, requester, {
+      before: accountSnapshot(before),
+      after: accountSnapshot(updated),
+    });
     return updated;
   }
 
   /** AU-022, AU-025. Reactivating does not restore any session, only access. */
   async activate(id: string, requester: Requester): Promise<AccountView> {
+    const before = await this.accounts.findById(id);
+    if (!before) throw new UserNotFoundError();
+
     const updated = await this.accounts.setActive(id, true);
     if (!updated) throw new UserNotFoundError();
 
-    await this.trail.record('UPDATE', updated.id, requester);
+    await this.trail.record('UPDATE', updated.id, requester, {
+      before: accountSnapshot(before),
+      after: accountSnapshot(updated),
+    });
     return updated;
   }
 
@@ -281,9 +307,11 @@ export class AccountsService {
 
     // AU-038, before the roles are even looked up: nothing is written, and the
     // refusal names the permission and never a site.
+    // AU-052: kept, because it is also what the trail says was replaced.
+    const current = await this.accounts.listGrants(userId);
     assertScopesInScope(caller, 'user:manage', [
       ...desired.map((grant) => grant.siteId),
-      ...(await this.accounts.listGrants(userId)).map((grant) => grant.siteId),
+      ...current.map((grant) => grant.siteId),
     ]);
 
     // Every role has to exist before anything is written. Doing it inside the
@@ -315,7 +343,10 @@ export class AccountsService {
     // makes immediate is the resolution of those roles into permissions.
     this.cache.invalidate();
 
-    await this.trail.record('UPDATE', userId, requester);
+    await this.trail.record('UPDATE', userId, requester, {
+      before: grantsSnapshot(current),
+      after: grantsSnapshot(grants),
+    });
     return grants;
   }
 

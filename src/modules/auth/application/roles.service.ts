@@ -25,7 +25,12 @@ import {
   type RolePermissionCachePort,
   type RoleView,
 } from './admin-ports';
-import { AuthAdminAuditTrail, type Requester } from './auth-admin-audit.trail';
+import {
+  AuthAdminAuditTrail,
+  type Requester,
+  permissionsSnapshot,
+  roleSnapshot,
+} from './auth-admin-audit.trail';
 
 /** The permission whose loss locks the installation (AU-024). */
 const ADMINISTERS_USERS = 'user:manage';
@@ -110,7 +115,9 @@ export class RolesService {
       description: command.description ?? null,
     });
 
-    await this.trail.record('CREATE', created.id, requester);
+    await this.trail.record('CREATE', created.id, requester, {
+      after: roleSnapshot(created),
+    });
     return created;
   }
 
@@ -150,7 +157,10 @@ export class RolesService {
     if (!updated) throw new RoleNotFoundError();
 
     this.cache.invalidate();
-    await this.trail.record('UPDATE', updated.id, requester);
+    await this.trail.record('UPDATE', updated.id, requester, {
+      before: roleSnapshot(role),
+      after: roleSnapshot(updated),
+    });
     return updated;
   }
 
@@ -249,6 +259,8 @@ export class RolesService {
       await this.assertAdministrationSurvivesWithout(roleId, requester.userId);
     }
 
+    // AU-052. What the replacement is about to overwrite, for the trail.
+    const previous = await this.roles.listPermissions(roleId);
     const permissions = await this.roles.replacePermissions(
       roleId,
       desired,
@@ -261,7 +273,10 @@ export class RolesService {
     // conclude it did not work and change it again.
     this.cache.invalidate();
 
-    await this.trail.record('UPDATE', roleId, requester);
+    await this.trail.record('UPDATE', roleId, requester, {
+      before: permissionsSnapshot(previous),
+      after: permissionsSnapshot(permissions),
+    });
 
     // AU-034: computed on what was actually saved, not on what was asked for.
     return { permissions, warnings: warningsFor(permissions) };
