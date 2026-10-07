@@ -5,9 +5,8 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import {
-  ACTIVE_ALLERGY_READER,
+  SURVIVING_CHART_ALLERGY_READER,
   type ActiveAllergy,
-  type ActiveAllergyReader,
   type SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import {
@@ -172,9 +171,8 @@ export class ChartSummaryService {
   constructor(
     @Inject(CHART_SUMMARY_REPOSITORY)
     private readonly summaries: ChartSummaryRepository,
-    @Inject(ACTIVE_ALLERGY_READER)
-    private readonly allergies: ActiveAllergyReader &
-      SurvivingChartAllergyReader,
+    @Inject(SURVIVING_CHART_ALLERGY_READER)
+    private readonly allergies: SurvivingChartAllergyReader,
     /**
      * EN-087. Only for `standingAbsenceFor`, and it is a read.
      *

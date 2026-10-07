@@ -1,8 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import {
-  ACTIVE_ALLERGY_READER,
-  type ActiveAllergyReader,
+  SURVIVING_CHART_ALLERGY_READER,
   type SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import {
@@ -44,9 +43,8 @@ import { chartOfRecord } from './chart-of-record';
 @Injectable()
 export class BackgroundSnapshotReader {
   constructor(
-    @Inject(ACTIVE_ALLERGY_READER)
-    private readonly allergies: ActiveAllergyReader &
-      SurvivingChartAllergyReader,
+    @Inject(SURVIVING_CHART_ALLERGY_READER)
+    private readonly allergies: SurvivingChartAllergyReader,
     @Inject(PATIENT_ALLERGY_REPOSITORY)
     private readonly allergyRecords: PatientAllergyRepository,
     @Inject(PATIENT_HISTORY_REPOSITORY)

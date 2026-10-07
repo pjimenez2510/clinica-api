@@ -1946,6 +1946,10 @@ requisitos que cambian.
   > instante anterior. Al deshacer la fusión, la atención vuelve a leer solo
   > su ficha.
   >
+  > La bitácora: abrir la atención sigue dejando su fila sobre la atención
+  > (EN-122), y leer el resumen la deja sobre la ficha que divulgó, la
+  > superviviente (EN-161).
+  >
   > «Sin alergias conocidas» se pregunta a la ficha de la atención, como la
   > receta: una absorbida responde «no registradas» (el lado seguro), porque
   > la afirmación se hizo sobre la otra ficha y no en esta atención. Si vale o
@@ -1959,13 +1963,15 @@ requisitos que cambian.
 - **EN-238** — MIENTRAS la atención abierta en pantalla sea de una ficha
   absorbida (`mergedInto` no `null`, EN-237), la pantalla DEBERÁ decir «La
   ficha de esta atención se unificó con la historia <número>» con un enlace a
-  la ficha vigente; la cabecera, «Ficha completa», las alergias, «sin
-  alergias conocidas», los antecedentes y los datos del paciente DEBERÁN ser
-  los de la ficha vigente, y registrar o descartar alergias y antecedentes
-  desde la atención DEBERÁ hacerse sobre ella; la pantalla NO DEBERÁ ofrecer
-  desde esa atención afirmar «sin alergias conocidas», ni corregir la
-  identidad o los datos del paciente (documento, campos del RDACAA, datos
-  laborales del certificado), que se corrigen en la historia vigente; y CUANDO una receta se rechace con
+  la ficha vigente; la cabecera, «Ficha completa», las alergias, los
+  antecedentes y los datos del paciente DEBERÁN ser los de la ficha vigente,
+  y registrar o descartar alergias y antecedentes desde la atención DEBERÁ
+  hacerse sobre ella; «sin alergias conocidas» NO DEBERÁ mostrarse ni
+  ofrecerse para afirmar o retirar desde esa atención (en la banda y en la
+  nota dice, como la receta, «no registradas»), y la pantalla NO DEBERÁ
+  ofrecer corregir la identidad o los datos del paciente (documento, campos
+  del RDACAA, datos laborales del certificado), que se corrigen en la
+  historia vigente; y CUANDO una receta se rechace con
   `ALLERGY_CONTRAINDICATION`, el rechazo DEBERÁ nombrar la sustancia de cada
   alergia que lo impide («Alergia a Amoxicilina») y no su identificador, y
   su enlace a las alergias DEBERÁ llevar a la ficha vigente.

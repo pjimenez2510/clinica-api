@@ -6,9 +6,8 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import {
-  ACTIVE_ALLERGY_READER,
+  SURVIVING_CHART_ALLERGY_READER,
   type ActiveAllergy,
-  type ActiveAllergyReader,
   type AllergyCriticality,
   type SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
@@ -136,9 +135,8 @@ export class PatientAllergyService {
      * EN-237. One adapter answers both questions (`PrismaActiveAllergyReader`),
      * so the band and the prescription check read the same statement.
      */
-    @Inject(ACTIVE_ALLERGY_READER)
-    private readonly activeAllergies: ActiveAllergyReader &
-      SurvivingChartAllergyReader,
+    @Inject(SURVIVING_CHART_ALLERGY_READER)
+    private readonly activeAllergies: SurvivingChartAllergyReader,
     @Inject(ENCOUNTER_REPOSITORY)
     private readonly encounters: EncounterRepository,
     @Inject(ACCESS_AUDIT_RECORDER)
@@ -381,10 +379,10 @@ export class PatientAllergyService {
    * EN-081, EN-084. The chart's active allergies.
    *
    * ⚠️ THROUGH THE SHARED READER AND NOT THROUGH THIS MODULE'S REPOSITORY, on
-   * purpose: this is the SAME statement `prescription` will run to check what
-   * is being prescribed (EN-084). One predicate, one place to be wrong, and
-   * the thing it would be wrong about is the chart scope — the merged chart
-   * whose penicillin allergy stops being visible.
+   * purpose: this is the SAME statement `prescription` runs to check what is
+   * being prescribed (EN-084). One predicate, one place to be wrong, and the
+   * thing it would be wrong about is the chart scope — the allergy of the
+   * other chart of a merge, which has to be visible from either.
    *
    * ⚠️ FROM THE SURVIVING CHART (EN-237, PR-118). The attention may have been
    * opened on a duplicate that admissions merged while it was open; the band
