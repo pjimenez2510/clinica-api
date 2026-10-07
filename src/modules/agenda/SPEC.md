@@ -2526,14 +2526,18 @@ Convertirlo en configuración sería regalar la garantía.
 ## 12. Recepción que se entiende sin leer (ESTANDAR-UI §9 ter)
 
 - **AG-169** — MIENTRAS la agenda muestre un día o una semana, la pantalla NO
-  DEBERÁ pintar en la rejilla las citas liberadas —anuladas o sin asistir—
-  salvo que se pidan con la línea «N anuladas o sin asistir · Ver», que DEBERÁ
-  decir cuántas hay a la vista y desplegarlas apagadas, con su estado; y el
-  resumen del día DEBERÁ seguir contándolas igual estén plegadas o no.
+  DEBERÁ pintar en la rejilla las entradas liberadas —anuladas, sin asistir,
+  registradas por error y bloqueos quitados— salvo que se pidan con la línea
+  «N anuladas o sin asistir · Ver», que DEBERÁ decir cuántas hay a la vista y
+  desplegarlas apagadas, con su estado; NO DEBERÁ plegar las de «Se fue sin
+  ser atendido»; y el resumen del día DEBERÁ seguir contándolas igual estén
+  plegadas o no.
   > «Lo anulado es ruido visual, que tenga alguna información y ya» (autor,
   > 06-10-2026). Es la mitad visible de AG-018: el listado ya las trae
   > señaladas; la pantalla las pliega con `HiddenItemsToggle`. Sin nada
-  > liberado no se pinta la línea.
+  > liberado no se pinta la línea. «Se fue sin ser atendido» también libera el
+  > cupo, pero esa persona vino y puede que haya que llamarla (revisión
+  > clínica, D-153.2).
 - **AG-170** — CUANDO la pantalla necesite la disponibilidad de un profesional
   en una sede para un rango de días, DEBERÁ pedirla con una sola clave por
   sede, profesional y rango, la misma desde la vista de día, la reserva y la
