@@ -39,6 +39,7 @@ import type {
 import {
   // NO `import type` for parameter DTOs: Swagger would lose the parameters.
   AnswerDataRequestDto,
+  AnswerProposalDto,
   ConsentTextDto,
   ConsentTextListDto,
   CorrectConsentDto,
@@ -51,6 +52,7 @@ import {
   PublishConsentTextDto,
   RecordConsentDto,
   RegisterDataRequestDto,
+  type AnswerProposalResponse,
   type ConsentTextResponse,
   type DataRequestResponse,
   type PatientConsentResponse,
@@ -310,6 +312,19 @@ export class PrivacyController {
   }
 
   // --- D4 ----------------------------------------------------------------------
+
+  /** PD-049 (D-164.2). What the export leaves out, as a proposed answer. */
+  @Get('requests/:requestId/answer-proposal')
+  @RequirePermission('patient:data-requests', 'global')
+  @ApiOperation({
+    summary: 'Respuesta propuesta: lo que la exportación no incluye',
+  })
+  @ApiOkResponse({ type: AnswerProposalDto })
+  async answerProposal(
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+  ): Promise<AnswerProposalResponse> {
+    return { response: await this.requests.answerProposal(requestId) };
+  }
 
   /**
    * PD-040 to PD-043. A download: the body is the document itself, named by the

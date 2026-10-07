@@ -37,7 +37,11 @@ import {
   writeTrail,
   type Db,
 } from './privacy-reads';
-import { DUE_DATE_HORIZON_DAYS, legalDueDate } from '../domain/legal-due-date';
+import {
+  DUE_DATE_HORIZON_DAYS,
+  legalDueDate,
+  type DataSubjectRight,
+} from '../domain/legal-due-date';
 
 import { recordVersionsOfChart } from './record-version-subjects';
 
@@ -254,6 +258,14 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
     if (outcome.status !== 'corrected') return outcome;
     const request = await this.find(requestId);
     return { status: 'corrected', request: request! };
+  }
+
+  async rightOf(requestId: string): Promise<DataSubjectRight | null> {
+    const row = await this.prisma.dataSubjectRequest.findUnique({
+      where: { id: requestId },
+      select: { right: true },
+    });
+    return row?.right ?? null;
   }
 
   async find(requestId: string): Promise<DataRequestView | null> {
