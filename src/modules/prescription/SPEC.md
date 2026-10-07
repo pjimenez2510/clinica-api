@@ -230,6 +230,18 @@ está enunciada, no construida, y el §5 dice exactamente qué falta.
 
 **Cubre:** PR-070 a PR-073.
 
+### H6 — El CNMB oficial _(P1)_
+
+**Prueba independiente:** importar el CNMB 2026 sobre una base con el cuadro de
+desarrollo y recetar amoxicilina: el buscador ofrece sus presentaciones del
+cuadro, una cápsula de 500 mg está en el cuadro, una de 750 mg no, y la alergia
+registrada contra el medicamento de desarrollo sigue saltando.
+
+**Cubre:** PR-114 a PR-116.
+
+**Solo servidor:** PR-114 y PR-116 (la alerta y la importación se ven en la
+pantalla igual que antes; lo que cambia es que no se pierden).
+
 ### Fuera de las cinco
 
 La **dispensación**, la **interacción medicamento–medicamento**, la **duplicidad
@@ -1269,6 +1281,43 @@ expone lo que hace falta._
   > tecleada («Enalapril 500 mg»). Es la excepción de D-126.4: un riesgo para
   > el paciente. La marca la decide el servidor al guardar (PR-110); el editor
   > guarda, mira la respuesta y pregunta antes de emitir.
+
+## 13. El CNMB oficial (REQ-054, D-084)
+
+- **PR-114** — El sistema DEBERÁ comparar una línea con las alergias del
+  paciente (PR-060) por el **código** del medicamento en el CNMB y por los
+  códigos a los que ese medicamento **sustituye** (`attributes.replaces`), y no
+  por el id del concepto.
+  > Cada edición del cuadro crea conceptos nuevos (el catálogo es versionado):
+  > una alergia registrada contra la versión anterior de la amoxicilina tiene
+  > que saltar al recetar la nueva. Comparando ids, la primera carga del CNMB
+  > oficial habría apagado todas las alergias registradas. `replaces` lleva
+  > los códigos del cuadro de desarrollo (`ENALAPRIL` → `C09AA02`).
+
+- **PR-115** — Una presentación del CNMB DEBERÁ declarar las **formas del
+  vocabulario de la receta** que admite (`forms`) y el nombre de su forma en
+  el cuadro (`label`), y SI la forma de la línea es una de ellas y la
+  concentración coincide, ENTONCES la línea DEBERÁ estar en el cuadro (PR-104,
+  PR-110).
+  > El cuadro dice «Sólido oral» y la receta dice «Tableta» o «Cápsula». Una
+  > correspondencia fija entre las dos, en el importador, traduce la forma del
+  > cuadro; elegir la presentación propone la primera forma, y cambiarla por
+  > otra de las admitidas no la saca del cuadro. Una forma del cuadro sin
+  > equivalente en la receta (intratraqueal, intravesical, intrauterina) no
+  > admite ninguna: esa línea sale marcada fuera del cuadro.
+
+- **PR-116** — CUANDO se importe el CNMB oficial, el sistema DEBERÁ guardar
+  un concepto por «Código medicamento» (vigente con la edición, retirando sin
+  borrar el cuadro anterior), con su DCI, sus presentaciones (PR-115), el
+  código y la clase ATC, el nivel de prescripción y de atención, la vía y el
+  riesgo en embarazo; y DEBERÁ marcar `controlled` en los que figuran en las
+  listas de estupefacientes y psicotrópicos (D-148), para que PR-070 siga
+  sin componer su receta.
+  > El cuadro no marca los controlados. Mientras un farmacéutico no confirme
+  > la lista (D-148), se marcan los de las convenciones de 1961 y 1971: el
+  > lado seguro, porque marcar de más sólo manda al talonario de la ACESS.
+
+---
 
 ## Códigos de error nuevos
 
