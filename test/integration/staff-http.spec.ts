@@ -1793,6 +1793,17 @@ describe('el personal por HTTP', () => {
         serviceType: { name: 'Control', durationMinutes: 20 },
       });
 
+      // D-161: the development doctor is of general medicine, whose
+      // consultation the starting catalogue prices (BI-232).
+      const doctor = await prisma.practitionerSpecialty.findFirstOrThrow({
+        where: { practitioner: { user: { email: 'medico@clinica.ec' } } },
+        select: { isPrimary: true, specialty: { select: { code: true } } },
+      });
+      expect(doctor).toEqual({
+        isPrimary: true,
+        specialty: { code: 'medicina-general' },
+      });
+
       const second = await seedStaff(prisma);
       expect(second.specialtiesAssigned).toBe(0);
       expect(second.durationExceptions).toBe(0);

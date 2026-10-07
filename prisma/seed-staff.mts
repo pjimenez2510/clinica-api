@@ -88,21 +88,29 @@ const SUNDAY = 7;
  * ST-008. The primary specialty of each seeded practitioner, by the account
  * they hang from. Moved verbatim from `seed-specialties.mts`: the codes are
  * public contract and changing the emitter cannot change them.
+ *
+ * `medico@` is of general medicine since D-161 (07-10-2026): a specialty whose
+ * consultation the starting catalogue prices, so a visit of the development
+ * doctor reaches caja with its consultation proposed AND priced. It was
+ * cardiology, whose consultation has no starting price (BI-232). Development
+ * data, not the clinic's; no walk depends on it (the walks seed neither staff
+ * nor specialties).
  */
 const PRACTITIONER_PRIMARIES: readonly {
   email: string;
   specialtyCode: string;
 }[] = [
-  { email: 'medico@clinica.ec', specialtyCode: 'cardiologia' },
+  { email: 'medico@clinica.ec', specialtyCode: 'medicina-general' },
   { email: 'admin@clinica.ec', specialtyCode: 'medicina-general' },
 ];
 
 /**
  * ST-009. One duration exception, so the screen opens on something.
  *
- * «Control» lasts 20 minutes by default (SP-020) and this cardiologist takes
- * 40: an exception that is VISIBLY different from the base is what makes the
- * D-010 hierarchy —excepción → base— legible at a glance.
+ * «Control» lasts 20 minutes by default (SP-020) and this doctor takes 40, in
+ * their own specialty (general medicine since D-161): an exception that is
+ * VISIBLY different from the base is what makes the D-010 hierarchy
+ * —excepción → base— legible at a glance.
  *
  * 40 AND NOT 45 SINCE D-021: every duration has to be a multiple of the site's
  * slot atom, which a fresh site starts at 10 minutes. A seed that wrote 45
@@ -117,7 +125,7 @@ const DURATION_EXCEPTIONS: readonly {
 }[] = [
   {
     email: 'medico@clinica.ec',
-    specialtyCode: 'cardiologia',
+    specialtyCode: 'medicina-general',
     serviceTypeName: 'Control',
     durationMinutes: 40,
   },
