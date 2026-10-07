@@ -107,8 +107,14 @@ intentar por SQL directo cambiar la clave en `invoice` y en
 `electronic_voucher`: las dos se rechazan y la fila no se movió.
 
 **Cubre:** SRI-001 a SRI-019.
-**Solo servidor:** SRI-001 a SRI-018. Son la composición de la clave y del XML y
-las garantías de la base; la clave se ve en pantalla en S4 y S5.
+**Solo servidor:** SRI-001 a SRI-019. Son la composición de la clave y del XML y
+las garantías de la base; la clave se ve en pantalla en S4 y S5. SRI-019 tampoco
+tiene mitad de interfaz: el número que la pantalla lista es la cadena que la API
+devuelve, sin que `clinica-web` componga nada con la sede ni el
+establecimiento, y el que se imprime está en los bytes del RIDE. El recorrido de
+F-06 (`clinica-web/e2e/flujos/f06-caja.spec.ts`) comprueba que el número de la
+fila y el del RIDE descargado llevan el establecimiento, el punto y el
+secuencial de la clave.
 
 ### S2 — La firma, con el certificado custodiado _(P1)_
 
@@ -166,7 +172,12 @@ autorización y encontrar en Mailpit el correo con dos adjuntos, un PDF y un XML
 cuyo `numeroAutorizacion` es la clave.
 
 **Cubre:** SRI-070 a SRI-076.
-**Solo servidor:** SRI-073 a SRI-076.
+**Solo servidor:** SRI-070, SRI-073 a SRI-076. SRI-070 es lo que el RIDE
+imprime, que compone `documents` y la pantalla entrega sin tocar (DOC-002,
+DOC-006), como DOC-076: una prueba de interfaz que lo citara no probaría nada.
+Se comprueba sobre el RIDE que caja descarga en el recorrido de F-06. SRI-074 y
+SRI-076 sí asoman en la fila de la factura («Correo no enviado; se reintenta»,
+«Sin correo»), y su prueba de interfaz cita SRI-072, del que son el detalle.
 
 ### S6 — Cargar el certificado desde la administración _(P2)_
 
