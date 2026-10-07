@@ -73,6 +73,7 @@ describe('la corrección de un valor avisado', () => {
       correctedAt: minutesAgo(60),
       due: true,
       standing: true,
+      patientRequired: true,
     });
     // La versión que avisó no corrige nada.
     expect(found.has('a')).toBe(false);
@@ -102,15 +103,14 @@ describe('la corrección de un valor avisado', () => {
       ),
     );
     expect(found.has('c')).toBe(false);
-    // Control positivo: si cambia la unidad, sí.
+    // Control positivo: si cambia la unidad de un valor crítico avisado, sí.
     const unit = notifiedCorrections(
       chain(
         [glucose('a', 25, { notices: [notice()] })],
-        [glucose('b', 95, { notices: [notice()] })],
-        [glucose('c', 95, { unit: 'mmol/L' })],
+        [glucose('b', 25, { unit: 'mmol/L', abnormalFlag: 'HIGH' })],
       ),
     );
-    expect(unit.get('c')?.told.valueNumeric).toBe(95);
+    expect(unit.get('b')?.told.valueNumeric).toBe(25);
   });
 
   it('ORD-143 un aviso hecho de la corrección la cierra; uno sin respuesta, no', () => {
@@ -205,5 +205,82 @@ describe('la corrección de un valor avisado', () => {
       chain([glucose('a', 25, { notices: [own('doctor')] })], [glucose('b', 95, { notices: [own('doctor')] })]), // prettier-ignore
     );
     expect(same.get('b')?.due).toBe(false);
+  });
+});
+
+describe('la corrección que tiene que llegar a quien se avisó (D-156)', () => {
+  it('ORD-153 si se avisó al paciente, sólo un aviso de la corrección al paciente o a su representante la cierra', () => {
+    const toPatient = notice({ recipientKind: 'PATIENT' });
+    const onCall = notice({ recipientKind: 'OTHER_PRACTITIONER', recipientName: 'Dra. Guardia' }); // prettier-ignore
+    const open = notifiedCorrections(
+      chain(
+        [glucose('a', 25, { notices: [toPatient, onCall] })],
+        [glucose('b', 95, { notices: [onCall] })],
+      ),
+    );
+    expect(open.get('b')).toMatchObject({ due: true, patientRequired: true });
+    for (const recipientKind of ['PATIENT', 'REPRESENTATIVE']) {
+      const closed = notifiedCorrections(
+        chain(
+          [glucose('a', 25, { notices: [toPatient] })],
+          [glucose('b', 95, { notices: [notice({ recipientKind })] })],
+        ),
+      );
+      expect(closed.get('b')?.due).toBe(false);
+    }
+  });
+
+  it('ORD-153 sin aviso anterior al paciente basta cualquiera; un autoaviso con nombre de paciente no lo pide', () => {
+    const onCall = notice({ recipientKind: 'OTHER_PRACTITIONER' });
+    const found = notifiedCorrections(
+      chain(
+        [glucose('a', 25, { notices: [onCall] })],
+        [glucose('b', 95, { notices: [notice({ recipientKind: 'ORDERING_PRACTITIONER' })] })], // prettier-ignore
+      ),
+    );
+    expect(found.get('b')).toMatchObject({
+      due: false,
+      patientRequired: false,
+    });
+    const self = notice({ recipientKind: 'PATIENT', selfNotice: true, notifiedBy: { id: 'doctor' } }); // prettier-ignore
+    const own = notifiedCorrections(
+      chain([glucose('a', 25, { notices: [self] })], [glucose('b', 95)]),
+    );
+    expect(own.get('b')?.patientRequired).toBe(false);
+  });
+
+  it('ORD-153 la corrección pendiente que se hereda sigue pidiendo al paciente', () => {
+    const self = notice({ selfNotice: true, recipientKind: 'ORDERING_PRACTITIONER', notifiedBy: { id: 'doctor' } }); // prettier-ignore
+    const found = notifiedCorrections(
+      chain(
+        [glucose('a', 25, { notices: [notice()] })],
+        [glucose('b', 95, { notices: [self] })],
+        [glucose('c', 95, { notices: [notice({ recipientKind: 'OTHER_PRACTITIONER' })] })], // prettier-ignore
+      ),
+    );
+    expect(found.get('c')).toMatchObject({ due: true, patientRequired: true, told: { valueNumeric: 25 } }); // prettier-ignore
+  });
+
+  it('ORD-156 con valor anterior avisado no crítico, la corrección sólo vuelve si cambia la bandera', () => {
+    const told = [
+      [glucose('a', 25, { notices: [notice()] })],
+      [glucose('b', 95, { notices: [notice()] })],
+    ];
+    // 95 avisado de la corrección → 97: sigue normal.
+    expect(notifiedCorrections(chain(...told, [glucose('c', 97)])).has('c')).toBe(false); // prettier-ignore
+    expect(notifiedCorrections(chain(...told, [glucose('c', 5.3, { unit: 'mmol/L' })])).has('c')).toBe(false); // prettier-ignore
+    // Control positivo: a 130, alto, sí, y de lo que se dijo: el 95.
+    const high = notifiedCorrections(chain(...told, [glucose('c', 130, { abnormalFlag: 'HIGH' })])); // prettier-ignore
+    expect(high.get('c')).toMatchObject({ due: true, told: { valueNumeric: 95, abnormalFlag: 'NORMAL' } }); // prettier-ignore
+  });
+
+  it('ORD-156 sin bandera en alguno de los dos, se juzga por lo escrito', () => {
+    const told = [
+      [glucose('a', 25, { notices: [notice()] })],
+      [glucose('b', 95, { abnormalFlag: null, notices: [notice()] })],
+    ];
+    expect(notifiedCorrections(chain(...told, [glucose('c', 97, { abnormalFlag: null })])).has('c')).toBe(true); // prettier-ignore
+    expect(notifiedCorrections(chain(...told, [glucose('c', 97)])).has('c')).toBe(true); // prettier-ignore
+    expect(notifiedCorrections(chain(...told, [glucose('c', 95, { abnormalFlag: null })])).has('c')).toBe(false); // prettier-ignore
   });
 });
