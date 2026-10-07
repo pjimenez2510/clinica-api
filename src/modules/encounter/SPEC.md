@@ -302,7 +302,8 @@ falla; y comprobar que el código y la descripción guardados no se pueden
 desincronizar del concepto.
 **Cubre:** EN-040 a EN-052, **EN-180 a EN-189** —quitar un diagnóstico con
 rastro, cambiar el principal y las propuestas de §19—, **EN-212** —editarlo en
-el sitio con versión (§21)— y **EN-151 a EN-154**, el consentimiento informado:
+el sitio con versión (§21)—, **EN-235** —lo que no puede ser el principal
+(§29, D-147.3)— y **EN-151 a EN-154**, el consentimiento informado:
 va aquí porque el formulario 024 cuelga del **procedimiento** de riesgo mayor
 (EN-050), no de la atención.
 
@@ -319,6 +320,14 @@ llegue. EN-044, EN-046 y EN-049 están construidas **con lo que hay**, con su
 coste escrito en el propio requisito: dos valores de condición en vez de
 cuatro, la marca prevención/morbilidad derivada del código pero no almacenada, y
 la notificación obligatoria marcada a mano porque el concepto no la sabe.
+
+**Estado (07-10-2026, `feat/f04-diagnosticos`).** La mitad visible de los
+procedimientos (EN-050, EN-051, EN-151) y del índice odontológico (EN-052, con
+su esquema y D-160) se construyen; EN-235 nace con su disparador. EN-152 a
+EN-154 **siguen sin construir**, ahora por decisión y no sólo por esquema: el
+A.M. 5316 deja a cada establecimiento elaborar y aprobar el contenido del 024
+por intervención, y quién clasifica el riesgo mayor y qué guarda el sistema
+del papel firmado son preguntas de **D-159**.
 
 ### H4 — Signos vitales y antropometría _(P1)_
 
@@ -1353,9 +1362,24 @@ requisitos que cambian.
   las atenciones odontológicas: dientes cariados, extraídos y obturados en
   pacientes de más de 6 meses y menos de 11 años; y cariados, perdidos y obturados
   a partir de 12 años.
-  > **Falta esquema.** Columnas 101 a 104 del formulario. No hay ninguna columna, y
-  > el instructivo lo restringe a *«profesionales con especialidad odontólogo y
-  > odontólogo rural»*. Los rangos de edad son del propio instructivo (p. 66) y se
+  > Columnas 101 (cariados), 102 (extraídos), 103 (obturados) y 104 (perdidos)
+  > del formulario: el CEO-D usa 101, 102 y 103 y el CPO-D 101, 103 y 104
+  > (instructivo, p. 46). El instructivo lo restringe a *«profesionales con
+  > especialidad odontólogo y odontólogo rural»*.
+  >
+  > **Esquema (07-10-2026).** `encounter_dental_index`, una fila por atención
+  > con las cuatro cuentas, quién y cuándo, versionada al corregirse como la
+  > toma de signos (EN-210). `trg_encounter_dental_index_applies` rechaza con
+  > `DENTAL_INDEX_NOT_APPLICABLE` la fila de una edad congelada fuera de los
+  > dos tramos, y `extraídos` en el CPO-D o `perdidos` en el CEO-D; los
+  > `CHECK` acotan cada cuenta a los dientes que hay (20 temporales, 32
+  > permanentes). La especialidad la decide el servicio con la misma regla que
+  > la plantilla de la nota (EN-203): la base no sabe de especialidades.
+  >
+  > **D-160 — construido así mientras decide:** se aplica el instructivo al
+  > pie de la letra, así que a los 11 años, a los 6 meses o menos y sin edad
+  > conocida no se ofrece ninguno de los dos; y cuenta como odontología la
+  > especialidad `odontologia` del catálogo. Los rangos de edad son del propio instructivo (p. 66) y se
   > evalúan con la **edad congelada** de EN-008, no con la de hoy: un niño de 10
   > años atendido en marzo sigue teniendo 10 en la fila de marzo para siempre — el
   > mismo razonamiento que PA-005 dejó escrito para «intersexual en menores de un
@@ -2777,6 +2801,17 @@ programada._
 - **EN-152** — MIENTRAS un procedimiento esté clasificado como de **riesgo
   mayor**, el sistema DEBERÁ exigir el **formulario 024** suscrito y atado a ese
   procedimiento antes de registrarlo como realizado.
+  > **Espera a D-159 (07-10-2026).** El anexo del A.M. 5316 manda que cada
+  > establecimiento, *«en función de su cartera de servicios»*, elabore el
+  > contenido del 024 de cada intervención, lo valide con pacientes y lo
+  > apruebe su director médico; y enumera los casos de consentimiento escrito
+  > obligatorio (cirugía de riesgo mayor, radiología con anestesia o
+  > contraste, radioterapia y quimioterapia, endoscopias, biopsias,
+  > reproducción asistida, prueba de VIH y *«todos aquellos que impliquen un
+  > riesgo mayor»*). Quién marca qué prestación lo exige, qué guarda el
+  > sistema del papel firmado y si el 024 lo imprime el sistema no lo decide
+  > un agente.
+  >
   > **Falta esquema.** Faltan las dos mitades: la clasificación de riesgo en el
   > catálogo de prestaciones —que es lo que decide si hace falta— y la tabla del
   > consentimiento, que hoy no existe. Atado **al procedimiento** (EN-050) y no a
@@ -3743,8 +3778,14 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
   tiene en esa sede. Antes del alta DEBERÁ bastar `vitals:write`.
   > **D-134.3**, como el bloque K (D-117.13, EN-212): la 002 ya está firmada
   > con esas cifras. Enfermería sigue tomando y corrigiendo los signos hasta
-  > el alta. No se exige registro ACESS vigente: la decisión pide `record:sign`
-  > y nada más.
+  > el alta.
+  >
+  > **D-140.4 (07-10-2026): y con registro ACESS vigente**, como el
+  > diagnóstico tras el alta (D-117.13). Quien firma historia en la sede y no
+  > tiene perfil de profesional recibe `PRACTITIONER_PROFILE_REQUIRED`; con el
+  > registro vencido el día clínico de hoy, `PRACTITIONER_NOT_LICENSED`; en
+  > los dos casos sin cambiar la toma. La pantalla no lo adelanta: el vencimiento
+  > lo sabe el servidor el día que se corrige.
   >
   > El servicio lo decide con la sesión (`record:sign` en la sede de la
   > atención) y lo pasa al adaptador, que vuelve a mirar el alta **bajo el
@@ -3844,6 +3885,34 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
   > Es información para quien carga el catálogo, no una corrección: lo
   > registrado se queda con el código y el texto que se congelaron (EN-041).
 
+## 29. Lo que no puede ser el diagnóstico principal (D-147.3)
+
+- **EN-235** — SI un diagnóstico fuera a quedar como **principal** (rango 1)
+  —al registrarlo, al cambiar su código o al marcarlo principal— con un
+  código que la CIE-10 de la OMS trae como **asterisco** o de **causa
+  externa** (`attributes.use` `ASTERISK` o `EXTERNAL_CAUSE`, que es V01–Y98),
+  ENTONCES el sistema DEBERÁ rechazarlo con `DIAGNOSIS_PRINCIPAL_USE_INVALID`
+  y el mensaje «Registre primero la enfermedad o la lesión», sin cambiar
+  nada; y la pantalla, al elegir uno de esos códigos, NO DEBERÁ ofrecerlo
+  como principal y DEBERÁ decir por qué. Como diagnóstico secundario se
+  registra igual, y deshacer el quitar de uno lo devuelve detrás del
+  principal.
+  > **D-147.3**, resuelta por el autor el 07-10-2026. La regla de la OMS es
+  > que el asterisco acompaña a su daga y nunca es el principal —la propia
+  > lista del DEIS dice *«permitidos solo para diagnóstico complementario o
+  > adicional»*—, y que la causa externa describe la circunstancia, no la
+  > morbilidad: el RDACAA contaría la consulta en la causa equivocada.
+  >
+  > **Garantía de la base:** `trg_encounter_diagnosis_principal_use`, al
+  > insertar y al cambiar `rank` o `concept_id`, levanta con el nombre
+  > `encounter_diagnosis_principal_use`, que el mapeo de constraints traduce
+  > a la frase: una sola fuente para la API, un import y un `psql`.
+  >
+  > **Lo que no se juzga:** un concepto sin `use` —la edición de desarrollo
+  > anterior a la de la OMS— no se rechaza, porque el asterisco no se deduce
+  > del código; y las filas que ya eran principal antes de la regla siguen
+  > como están mientras no se toque su rango ni su código.
+
 ---
 
 ## Códigos de error nuevos
@@ -3916,6 +3985,8 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_ALREADY_REPORTED` | 409 | Corregir los diagnósticos de una atención ya reportada al RDACAA | EN-212, EN-213 |
 | `DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE` | 409 | Desmarcar o quitar el principal de una atención con el alta sin que otro quede principal. Se marca otro antes (EN-183). Lo exigen el servicio y la base | EN-183, EN-188 |
 | `DIAGNOSIS_NOT_RESTORABLE` | 409 | Deshacer el quitar de un diagnóstico ya recuperado, o cuyo código volvió a registrarse | EN-213 |
+| `DIAGNOSIS_PRINCIPAL_USE_INVALID` | 422 | Dejar como principal un código asterisco o de causa externa (D-147.3). Del mapeo de constraints (`encounter_diagnosis_principal_use`), campo `conceptId` | EN-235 |
+| `DENTAL_INDEX_NOT_APPLICABLE` | 422 | Registrar el CEO-D o el CPO-D fuera de odontología, fuera de su tramo de edad, o con la cuenta del otro índice. Lo dicen el servicio y la base | EN-052 |
 
 `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` (EN-188, G2) se retiró con EN-212, y
 `DIAGNOSIS_CITED_BY_ISSUED_DOCUMENT` (EN-182) con ORD-121.
@@ -4188,6 +4259,8 @@ prueba o el CI falla**.
 | EN-163, EN-164 | Contrato HTTP con sesión real: enfermería guarda el motivo con los signos y registra alergia, afirmación y antecedente; **falla** al refutar |
 | EN-144, EN-145, EN-147 | Integración y **observación**: cierra quien abrió; otro con `record:sign` cierra dejando la constancia de sustitución; otro sin él falla; y una atención abierta hace cuarenta días **sigue abierta**, porque no existe ningún proceso que la cierre |
 | EN-148, EN-149 | Contrato HTTP con la capacidad **apagada** —que es el defecto—: la ruta de triaje responde `TRIAGE_NOT_ENABLED` y **ninguna respuesta del módulo lleva nivel de triaje**, afirmado sobre el cuerpo. Con la capacidad encendida, el nivel se registra con su autor |
+| EN-235 | **Integración contra PostgreSQL real, con control positivo**: un asterisco y una causa externa no entran como rango 1 ni por `INSERT` ni por `UPDATE` de rango o de concepto, y como rango 2 sí; un código `PRINCIPAL` sí; un concepto sin `use` sí. HTTP: registrar, editar el código y marcar principal responden `DIAGNOSIS_PRINCIPAL_USE_INVALID` con la frase, y deshacer devuelve el asterisco detrás |
+| EN-052 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza el CEO-D a los 11 años y a los 6 meses, `extraídos` en el CPO-D, `perdidos` en el CEO-D y una cuenta por encima de los dientes que hay, y acepta las dos buenas; corregir deja la anterior en `record_version`. HTTP: fuera de odontología `DENTAL_INDEX_NOT_APPLICABLE` |
 | EN-151, EN-152, EN-153, EN-154 | Contrato HTTP: un procedimiento de riesgo mínimo se registra **sin consentimiento alguno**; uno de riesgo mayor sin 024 se rechaza; la negativa **no cierra** la atención; y revocar deja el consentimiento anterior legible (contar filas) |
 | EN-155, EN-156 | Integración con el parámetro en sus dos posiciones: encendido, firmar sin certificado vigente falla; apagado, la nota se firma **y la constancia de que no lleva certificado viaja en la nota**, no en la pantalla |
 | EN-157, EN-158 | Unitario + integración: configurar catorce años se rechaza; y **contar filas** después de vencer el plazo sobre datos de prueba envejecidos — no se borra ninguna |
