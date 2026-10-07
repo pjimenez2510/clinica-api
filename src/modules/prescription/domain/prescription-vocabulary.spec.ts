@@ -7,6 +7,7 @@ import {
   doseText,
   frequencyText,
   isDeclaredPresentation,
+  matchingPresentations,
 } from './prescription-vocabulary';
 
 describe('el vocabulario de la línea de receta (PR-101 a PR-104)', () => {
@@ -112,5 +113,25 @@ describe('el vocabulario de la línea de receta (PR-101 a PR-104)', () => {
 
     expect(isDeclaredPresentation(oralRehydration, 'POWDER_FOR_ORAL_SUSPENSION', '20,5 g')).toBe(true); // prettier-ignore
     expect(isDeclaredPresentation(oralRehydration, 'TABLET', '20,5 g')).toBe(false); // prettier-ignore
+  });
+
+  it('PR-115 la línea sabe qué presentación del cuadro es, y con ella su DCI', () => {
+    const haloperidol = [
+      { form: 'INJECTABLE_SOLUTION', forms: ['INJECTABLE_SOLUTION'], label: 'Líquido parenteral', concentration: '5 mg/mL', dci: 'Haloperidol' }, // prettier-ignore
+      { form: 'INJECTABLE_SOLUTION', forms: ['INJECTABLE_SOLUTION'], label: 'Líquido parenteral', concentration: '50 mg/mL', dci: 'Haloperidol decanoato' }, // prettier-ignore
+    ];
+
+    expect(
+      matchingPresentations(haloperidol, 'INJECTABLE_SOLUTION', '50 mg/mL').map((p) => p.dci), // prettier-ignore
+    ).toEqual(['Haloperidol decanoato']);
+    expect(matchingPresentations(haloperidol, 'TABLET', '50 mg/mL')).toEqual(
+      [],
+    );
+  });
+
+  it('PR-115 la receta nombra las formas que el cuadro distingue: liberación prolongada, sublingual, lipídica', () => {
+    expect(DOSAGE_FORMS.EXTENDED_RELEASE_TABLET.label).toBe('Tableta de liberación prolongada'); // prettier-ignore
+    expect(DOSAGE_FORMS.SUBLINGUAL_TABLET.label).toBe('Tableta sublingual');
+    expect(DOSAGE_FORMS.LIPID_POWDER_FOR_INJECTION.label).toBe('Polvo para solución inyectable, formulación lipídica'); // prettier-ignore
   });
 });

@@ -150,6 +150,7 @@ export function toVocabularyResponse(
       concentration: presentation.concentration,
       forms: [...(presentation.forms ?? [presentation.form])],
       label: presentation.label ?? '',
+      dci: presentation.dci ?? '',
     })),
     dosageForms: Object.entries(DOSAGE_FORMS).map(([code, form]) => ({
       code,

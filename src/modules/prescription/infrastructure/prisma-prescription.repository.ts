@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
-  isDeclaredPresentation,
+  matchingPresentations,
   type DeclaredPresentation,
 } from '../domain/prescription-vocabulary';
 import {
@@ -963,11 +963,26 @@ async function resolveItems(
      * catalogue and change with every load of the cuadro. «Enalapril 500 mg»
      * no longer passes for a medicine of the cuadro.
      */
-    const offFormulary = !isDeclaredPresentation(
-      concept.presentations ?? [],
+    const declared = concept.presentations ?? [];
+    const matching = matchingPresentations(
+      declared,
       item.dosageFormCode ?? null,
       item.concentration,
     );
+    const offFormulary = declared.length > 0 && matching.length === 0;
+    /**
+     * PR-115. The DCI of the presentation the line IS, when the cuadro says
+     * one: «Haloperidol decanoato 50 mg/mL» is not «Haloperidol». Two
+     * presentations of different DCI in the same form and strength (the
+     * plasma and recombinant factor IX) leave the medicine's name.
+     */
+    const dcis = [
+      ...new Set(
+        matching.flatMap((presentation) =>
+          presentation.dci ? [presentation.dci] : [],
+        ),
+      ),
+    ];
 
     return {
       conceptId: item.conceptId,
@@ -978,7 +993,7 @@ async function resolveItems(
        * prescribed — and that same redundancy is how a lie would get in, so
        * the value can only come from the row read in this transaction.
        */
-      genericName: concept.display,
+      genericName: dcis.length === 1 ? dcis[0]! : concept.display,
       offFormulary,
       ...commonItemFields(item),
     };

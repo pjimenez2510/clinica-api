@@ -265,6 +265,34 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
     expect(composed.prescription.items.map((item) => item.offFormulary)).toEqual([false, true, true]); // prettier-ignore
   });
 
+  it('PR-115: the line freezes the DCI of the presentation it is: haloperidol decanoate is not haloperidol', async () => {
+    const prisma = db();
+    await importCnmb(prisma, { now: new Date(), effectiveFrom: CUTOVER });
+    const { encounter, who } = await anAttention(prisma);
+    const haloperidol = await official(prisma, 'N05AD01');
+    const presentations = await serviceOf(prisma).presentationsOf(
+      haloperidol.id,
+    );
+    const depot = presentations.find((p) => p.dci === 'Haloperidol decanoato')!;
+    const plain = presentations.find((p) => p.dci === 'Haloperidol' && p.form === 'INJECTABLE_SOLUTION')!; // prettier-ignore
+
+    const composed = await serviceOf(prisma).compose(
+      {
+        encounterId: encounter.id,
+        ...INDICATIONS,
+        items: [
+          aLine(haloperidol.id, 'INJECTABLE_SOLUTION', depot.concentration),
+          aLine(haloperidol.id, 'INJECTABLE_SOLUTION', plain.concentration),
+        ],
+      },
+      who,
+    );
+
+    expect(composed.prescription.items.map((item) => item.genericName)).toEqual(
+      ['Haloperidol decanoato', 'Haloperidol'],
+    );
+  });
+
   it('PR-114: an allergy recorded against the development enalapril refuses the official one, and not another medicine', async () => {
     const prisma = db();
     const development = await developmentCuadro(prisma);

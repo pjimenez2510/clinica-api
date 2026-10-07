@@ -52,6 +52,11 @@ export const DOSE_UNIT_CODES = Object.keys(DOSE_UNITS) as DoseUnit[];
 export const DOSAGE_FORMS = {
   TABLET: { label: 'Tableta', unit: 'TABLET' },
   COATED_TABLET: { label: 'Tableta recubierta', unit: 'TABLET' },
+  // PR-115. Forms the CNMB tells apart and a receta has to say.
+  EXTENDED_RELEASE_TABLET: { label: 'Tableta de liberación prolongada', unit: 'TABLET' }, // prettier-ignore
+  SUBLINGUAL_TABLET: { label: 'Tableta sublingual', unit: 'TABLET' },
+  DISPERSIBLE_TABLET: { label: 'Tableta dispersable', unit: 'TABLET' },
+  GASTRORESISTANT_CAPSULE: { label: 'Cápsula gastrorresistente', unit: 'CAPSULE' }, // prettier-ignore
   CHEWABLE_TABLET: { label: 'Tableta masticable', unit: 'TABLET' },
   CAPSULE: { label: 'Cápsula', unit: 'CAPSULE' },
   ORAL_SUSPENSION: { label: 'Suspensión oral', unit: null },
@@ -62,6 +67,10 @@ export const DOSAGE_FORMS = {
   GRANULES: { label: 'Granulado', unit: 'SACHET' },
   INJECTABLE_SOLUTION: { label: 'Solución inyectable', unit: null },
   POWDER_FOR_INJECTION: { label: 'Polvo para solución inyectable', unit: null }, // prettier-ignore
+  LIPID_POWDER_FOR_INJECTION: { label: 'Polvo para solución inyectable, formulación lipídica', unit: null }, // prettier-ignore
+  NANOPARTICLE_POWDER_FOR_INJECTION: { label: 'Polvo para suspensión inyectable de nanopartículas', unit: null }, // prettier-ignore
+  EXTENDED_RELEASE_INJECTION: { label: 'Polvo para suspensión inyectable de liberación prolongada', unit: null }, // prettier-ignore
+  SUBDERMAL_IMPLANT: { label: 'Implante subdérmico', unit: null },
   CREAM: { label: 'Crema', unit: null },
   OINTMENT: { label: 'Ungüento', unit: null },
   GEL: { label: 'Gel', unit: null },
@@ -131,6 +140,12 @@ export function frequencyText(
 export interface DeclaredPresentation {
   /** The form a choice of this presentation proposes. */
   form: string;
+  /**
+   * PR-115. The DCI of this presentation when the cuadro gives one: it may
+   * differ from the medicine's name (`Haloperidol decanoato`), and it is what
+   * the receta prints.
+   */
+  dci?: string;
   concentration: string;
   /**
    * PR-115. Every form of the vocabulary this presentation admits, when the
@@ -143,16 +158,14 @@ export interface DeclaredPresentation {
 }
 
 /**
- * PR-104. Whether the line is in one of the presentations its concept
- * declares. A concept that declares none admits any — the official CNMB is
- * not loaded yet, and refusing every line would stop prescribing altogether.
+ * PR-115. The presentations the line IS: those whose forms admit its form and
+ * whose concentration it states. Usually one; it names the DCI to print.
  */
-export function isDeclaredPresentation(
+export function matchingPresentations(
   declared: readonly DeclaredPresentation[],
   form: string | null,
   concentration: string | null,
-): boolean {
-  if (declared.length === 0) return true;
+): DeclaredPresentation[] {
   // «62,5» and «62.5», «µg» and «mcg» are the same concentration.
   const normal = (value: string | null) =>
     (value ?? '')
@@ -160,7 +173,7 @@ export function isDeclaredPresentation(
       .replace(/\s+/g, '')
       .replace(/,/g, '.')
       .replace(/µg/g, 'mcg');
-  return declared.some((presentation) => {
+  return declared.filter((presentation) => {
     const admitsForm = (presentation.forms ?? [presentation.form]).some(
       (admitted) => admitted !== '' && normal(admitted) === normal(form),
     );
@@ -185,6 +198,21 @@ export function isDeclaredPresentation(
     // PR-115. A composition described in prose is not a figure to compare.
     return presentation.concentration.length > DESCRIBED_COMPOSITION;
   });
+}
+
+/**
+ * PR-104, PR-115. Whether the line is in one of the presentations its concept
+ * declares. A concept that declares none admits any.
+ */
+export function isDeclaredPresentation(
+  declared: readonly DeclaredPresentation[],
+  form: string | null,
+  concentration: string | null,
+): boolean {
+  return (
+    declared.length === 0 ||
+    matchingPresentations(declared, form, concentration).length > 0
+  );
 }
 
 /**

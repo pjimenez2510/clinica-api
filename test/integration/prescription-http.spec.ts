@@ -1171,6 +1171,7 @@ describe('la receta por HTTP', () => {
         concentration: '500 mg',
         forms: ['CAPSULE'],
         label: '',
+        dci: '',
       },
     ]);
     const without = await get('/prescriptions/vocabulary', doctorToken).expect(200); // prettier-ignore

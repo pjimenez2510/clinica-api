@@ -91,12 +91,11 @@ describe('the CNMB 2026 (PR-114 to PR-116)', () => {
     expect(
       vocabularyFormsOf('Líquido intratraqueal', 'IT - Intratraqueal'),
     ).toEqual([]);
-    expect(
-      vocabularyFormsOf(
-        'Sólido parenteral (implante subdérmico)',
-        'P - Parenteral',
-      ),
-    ).toEqual([]);
+    // A qualified form maps to its own, never to the plain one (PR-115).
+    expect(vocabularyFormsOf('Sólido oral (liberación prolongada)', 'O - Oral')).toEqual(['EXTENDED_RELEASE_TABLET']); // prettier-ignore
+    expect(vocabularyFormsOf('Sólido oral sublingual', 'O - Oral')).toEqual(['SUBLINGUAL_TABLET']); // prettier-ignore
+    expect(vocabularyFormsOf('Sólido parenteral (formas lipídicas)', 'P - Parenteral')).toEqual(['LIPID_POWDER_FOR_INJECTION']); // prettier-ignore
+    expect(vocabularyFormsOf('Sólido parenteral (implante subdérmico)', 'P - Parenteral')).toEqual(['SUBDERMAL_IMPLANT']); // prettier-ignore
   });
 
   it('PR-116: refuses a file whose columns moved, rather than reading the wrong one', () => {

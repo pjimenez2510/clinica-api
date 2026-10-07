@@ -148,7 +148,9 @@ export function substanceKey(dci: string): string {
  * says tableta or cápsula, and either is the cuadro's.
  *
  * A form with no counterpart in the vocabulary (intratraqueal, intravesical,
- * intrauterino, implante) admits none: a line in it is outside the cuadro.
+ * intrauterino, rectal líquido) admits none: a line in it is outside the
+ * cuadro. A qualified form —liberación prolongada, sublingual, lipídica— maps
+ * to its own form and to no other, so the receta says it.
  */
 export function vocabularyFormsOf(label: string, route: string): string[] {
   const form = plain(label);
@@ -157,6 +159,11 @@ export function vocabularyFormsOf(label: string, route: string): string[] {
   if (form.startsWith('solido oral')) {
     if (form.includes('polvo')) return ['POWDER_FOR_ORAL_SUSPENSION'];
     if (form.includes('granul')) return ['GRANULES'];
+    // The qualified forms are what the receta has to say, and only that.
+    if (form.includes('liberacion prolongada')) return ['EXTENDED_RELEASE_TABLET']; // prettier-ignore
+    if (form.includes('sublingual')) return ['SUBLINGUAL_TABLET'];
+    if (form.includes('dispersable')) return ['DISPERSIBLE_TABLET'];
+    if (form.includes('gastroresistente')) return ['GASTRORESISTANT_CAPSULE'];
     if (form.includes('capsula')) return ['CAPSULE'];
     return ['TABLET', 'COATED_TABLET', 'CHEWABLE_TABLET', 'CAPSULE'];
   }
@@ -167,8 +174,13 @@ export function vocabularyFormsOf(label: string, route: string): string[] {
     return ['ORAL_SUSPENSION', 'SYRUP', 'ORAL_SOLUTION', 'ORAL_DROPS'];
   }
   if (form.startsWith('liquido parenteral')) return ['INJECTABLE_SOLUTION'];
-  if (form.startsWith('solido parenteral'))
-    return form.includes('implante') ? [] : ['POWDER_FOR_INJECTION'];
+  if (form.startsWith('solido parenteral')) {
+    if (form.includes('implante')) return ['SUBDERMAL_IMPLANT'];
+    if (form.includes('lipidic')) return ['LIPID_POWDER_FOR_INJECTION'];
+    if (form.includes('nanoparticula')) return ['NANOPARTICLE_POWDER_FOR_INJECTION']; // prettier-ignore
+    if (form.includes('liberacion prolongada')) return ['EXTENDED_RELEASE_INJECTION']; // prettier-ignore
+    return ['POWDER_FOR_INJECTION'];
+  }
   if (form.startsWith('semisolido cutaneo'))
     return ['CREAM', 'OINTMENT', 'GEL'];
   if (form.startsWith('liquido cutaneo')) return ['LOTION'];

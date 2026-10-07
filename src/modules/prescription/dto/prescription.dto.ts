@@ -285,6 +285,8 @@ export const prescriptionVocabularySchema = z.object({
       forms: z.array(z.string()),
       /** PR-115. The form as the cuadro names it; '' when it names none. */
       label: z.string(),
+      /** PR-115. The DCI of this presentation; '' when the cuadro gives none. */
+      dci: z.string(),
     }),
   ),
 });
