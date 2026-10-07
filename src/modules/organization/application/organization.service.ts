@@ -9,6 +9,7 @@ import { Ruc } from '../../../shared/domain/value-objects/ruc.vo';
 import {
   EstablishmentNotFoundError,
   SiteEstablishmentRequiredError,
+  SiteMspUnicodeInUseError,
   SiteNotFoundError,
 } from '../domain/organization.errors';
 import {
@@ -68,6 +69,8 @@ export interface CreateSiteCommand {
  * is how a site that cannot be deleted is retired (OR-006).
  */
 export interface UpdateSiteCommand {
+  /** OR-034. */
+  mspUnicode?: string;
   name?: string;
   ruc?: string | null;
   parishConceptId?: string | null;
@@ -298,6 +301,17 @@ export class OrganizationService {
     // OR-033. The site as it stood, so the trail can say what was replaced.
     const current = await this.repository.findSite(id);
     if (!current) throw new SiteNotFoundError();
+
+    // OR-034. The MSP code is a typo to fix until an attention carries it.
+    if (
+      command.mspUnicode !== undefined &&
+      command.mspUnicode !== current.mspUnicode
+    ) {
+      if (await this.repository.siteHasEncounters(id)) {
+        throw new SiteMspUnicodeInUseError();
+      }
+      patch.mspUnicode = command.mspUnicode;
+    }
 
     const updated = await this.repository.updateSite(id, patch);
     if (!updated) throw new SiteNotFoundError();

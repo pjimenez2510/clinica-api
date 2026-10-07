@@ -5,6 +5,7 @@ import { InvalidRucError } from '../../../shared/domain/value-objects/ruc.vo';
 import {
   EstablishmentNotFoundError,
   SiteNotFoundError,
+  SiteMspUnicodeInUseError,
 } from '../domain/organization.errors';
 import type {
   DocumentIdentityInput,
@@ -73,6 +74,7 @@ interface Answers {
   findSite: SiteView | null;
   updateSite: SiteView | null;
   deleteSite: boolean;
+  siteHasEncounters?: boolean;
 }
 
 /** Every call the double receives, in order: writes AND reads. */
@@ -134,6 +136,10 @@ function makeDouble(answers: Answers): {
     deleteSite: (id: string) => {
       note('deleteSite', id);
       return Promise.resolve(answers.deleteSite);
+    },
+    siteHasEncounters: (siteId: string) => {
+      note('siteHasEncounters', siteId);
+      return Promise.resolve(answers.siteHasEncounters ?? false);
     },
   };
 
@@ -629,6 +635,49 @@ describe('OrganizationService', () => {
 
       expect(entries[0]?.before).toBeUndefined();
       expect(entries[0]?.after).toMatchObject({ name: 'Sede Sur' });
+    });
+  });
+
+  describe('corregir el código MSP de una sede (OR-034)', () => {
+    it('OR-034 se corrige mientras la sede no tiene atenciones', async () => {
+      const { service, calls } = build();
+
+      await service.updateSite(
+        SITE.id,
+        { mspUnicode: 'MSP-9999' },
+        { userId: 'u' },
+      );
+
+      const update = calls.find((call) => call.method === 'updateSite');
+      expect(update?.args[1]).toMatchObject({ mspUnicode: 'MSP-9999' });
+    });
+
+    it('OR-034 con atenciones se rechaza con SITE_MSP_UNICODE_IN_USE y no escribe', async () => {
+      answers.siteHasEncounters = true;
+      const { service, calls } = build();
+
+      await expect(
+        service.updateSite(
+          SITE.id,
+          { mspUnicode: 'MSP-9999' },
+          { userId: 'u' },
+        ),
+      ).rejects.toBeInstanceOf(SiteMspUnicodeInUseError);
+      expect(calls.some((call) => call.method === 'updateSite')).toBe(false);
+    });
+
+    it('OR-034 enviar el mismo código no pregunta ni cambia nada', async () => {
+      answers.siteHasEncounters = true;
+      const { service, calls } = build();
+
+      await service.updateSite(
+        SITE.id,
+        { mspUnicode: SITE.mspUnicode, name: 'Sede Norte' },
+        { userId: 'u' },
+      );
+
+      const update = calls.find((call) => call.method === 'updateSite');
+      expect(update?.args[1]).not.toHaveProperty('mspUnicode');
     });
   });
 });

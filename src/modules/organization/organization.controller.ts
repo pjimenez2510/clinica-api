@@ -218,7 +218,7 @@ export class OrganizationController {
     );
   }
 
-  /** OR-005, OR-007 (deactivate), OR-008. */
+  /** OR-005, OR-007 (deactivate), OR-008, OR-034 (MSP code while unused). */
   @Patch('sites/:id')
   @RequirePermission('site:manage', 'param:id')
   @ApiOperation({ summary: 'Editar o desactivar una sede' })
@@ -232,6 +232,7 @@ export class OrganizationController {
       await this.organization.updateSite(
         id,
         {
+          mspUnicode: dto.mspUnicode,
           name: dto.name,
           ruc: dto.ruc,
           parishConceptId: dto.parishConceptId,

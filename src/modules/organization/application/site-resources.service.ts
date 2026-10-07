@@ -6,6 +6,7 @@ import {
   type AuditAction,
 } from '../../../shared/audit/access-audit.port';
 import {
+  EmissionPointCodeInUseError,
   EmissionPointNotFoundError,
   SiteNotFoundError,
   SiteRoomNotFoundError,
@@ -157,10 +158,16 @@ export class SiteResourcesService {
    */
   async updateEmissionPoint(
     id: string,
-    patch: { description?: string | null; active?: boolean },
+    patch: { code?: string; description?: string | null; active?: boolean },
     requester: Requester,
   ): Promise<EmissionPointView> {
     const current = await this.currentEmissionPoint(id);
+    // OR-035. The code is part of every number the point issued.
+    if (patch.code !== undefined && patch.code !== current.code) {
+      if (await this.repository.emissionPointHasVouchers(id)) {
+        throw new EmissionPointCodeInUseError();
+      }
+    }
     const updated = await this.repository.updateEmissionPoint(id, patch);
     if (!updated) throw new EmissionPointNotFoundError();
 

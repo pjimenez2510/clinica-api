@@ -5,6 +5,7 @@ import {
   EmissionPointNotFoundError,
   SiteNotFoundError,
   SiteRoomNotFoundError,
+  EmissionPointCodeInUseError,
 } from '../domain/organization.errors';
 import type {
   EmissionPointView,
@@ -49,6 +50,7 @@ interface Answers {
   deleteRoom: boolean;
   updateEmissionPoint: EmissionPointView | null;
   deleteEmissionPoint: boolean;
+  hasVouchers?: boolean;
 }
 
 interface Call {
@@ -109,6 +111,10 @@ function makeDouble(answers: Answers): {
     deleteEmissionPoint: (id) => {
       note('deleteEmissionPoint', id);
       return Promise.resolve(answers.deleteEmissionPoint);
+    },
+    emissionPointHasVouchers: (id) => {
+      note('emissionPointHasVouchers', id);
+      return Promise.resolve(answers.hasVouchers ?? false);
     },
   };
 
@@ -364,6 +370,54 @@ describe('SiteResourcesService', () => {
         service.updateRoom('ghost', { name: 'X' }, REQUESTER),
       ).rejects.toThrow(SiteRoomNotFoundError);
       expect(entries).toEqual([]);
+    });
+  });
+
+  describe('corregir el código de un punto de emisión (OR-035)', () => {
+    it('OR-035 se corrige mientras el punto no emitió comprobantes', async () => {
+      const { service, calls } = build();
+
+      await service.updateEmissionPoint(
+        EMISSION_POINT.id,
+        { code: '009' },
+        { userId: 'u' },
+      );
+
+      const update = calls.find(
+        (call) => call.method === 'updateEmissionPoint',
+      );
+      expect(update?.args[1]).toMatchObject({ code: '009' });
+    });
+
+    it('OR-035 si ya emitió, se rechaza con EMISSION_POINT_CODE_IN_USE y no escribe', async () => {
+      answers.hasVouchers = true;
+      const { service, calls } = build();
+
+      await expect(
+        service.updateEmissionPoint(
+          EMISSION_POINT.id,
+          { code: '009' },
+          { userId: 'u' },
+        ),
+      ).rejects.toBeInstanceOf(EmissionPointCodeInUseError);
+      expect(calls.some((call) => call.method === 'updateEmissionPoint')).toBe(
+        false,
+      );
+    });
+
+    it('OR-035 cambiar sólo la descripción no pregunta por los comprobantes', async () => {
+      answers.hasVouchers = true;
+      const { service, calls } = build();
+
+      await service.updateEmissionPoint(
+        EMISSION_POINT.id,
+        { description: 'Caja 2' },
+        { userId: 'u' },
+      );
+
+      expect(
+        calls.some((call) => call.method === 'emissionPointHasVouchers'),
+      ).toBe(false);
     });
   });
 });
