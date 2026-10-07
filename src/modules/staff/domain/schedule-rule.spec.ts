@@ -212,9 +212,9 @@ describe('ST-050 editar una regla que ya rigió no reescribe los días pasados',
   });
 
   it('ST-050 cambiar de sede o de día también parte la regla', () => {
-    expect(
-      planScheduleRuleEdit(started, { siteId: 'sur' }, today).kind,
-    ).toBe('SPLIT');
+    expect(planScheduleRuleEdit(started, { siteId: 'sur' }, today).kind).toBe(
+      'SPLIT',
+    );
     expect(planScheduleRuleEdit(started, { weekday: 2 }, today).kind).toBe(
       'SPLIT',
     );
@@ -222,9 +222,15 @@ describe('ST-050 editar una regla que ya rigió no reescribe los días pasados',
 
   it('ST-050 la regla nueva conserva el fin que tenía la anterior', () => {
     const ending = { ...started, validTo: addDays(today, 30) };
-    const plan = planScheduleRuleEdit(ending, { startTime: at('09:00') }, today);
+    const plan = planScheduleRuleEdit(
+      ending,
+      { startTime: at('09:00') },
+      today,
+    );
 
-    expect(plan.kind === 'SPLIT' && plan.opens.validTo).toBe(addDays(today, 30));
+    expect(plan.kind === 'SPLIT' && plan.opens.validTo).toBe(
+      addDays(today, 30),
+    );
   });
 
   it('ST-050 una fecha de inicio futura pedida se respeta en la regla nueva', () => {
@@ -241,9 +247,9 @@ describe('ST-050 editar una regla que ya rigió no reescribe los días pasados',
   it('ST-050 una regla que todavía no rige se edita en el sitio', () => {
     const future = { ...started, validFrom: addDays(today, 3) };
 
-    expect(planScheduleRuleEdit(future, { endTime: at('13:00') }, today)).toEqual(
-      { kind: 'IN_PLACE' },
-    );
+    expect(
+      planScheduleRuleEdit(future, { endTime: at('13:00') }, today),
+    ).toEqual({ kind: 'IN_PLACE' });
   });
 
   it('ST-050 mover sólo el fin hacia adelante se edita en el sitio', () => {

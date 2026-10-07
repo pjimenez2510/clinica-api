@@ -65,6 +65,7 @@ interface AdminExam {
 interface AdminAnalyte {
   id: string;
   code: string;
+  unit: string | null;
   ranges: {
     rangeKind: string;
     sex: string | null;
