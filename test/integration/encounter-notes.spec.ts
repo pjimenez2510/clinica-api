@@ -581,4 +581,29 @@ describe('la nota clínica firmada', () => {
     expect(after.content).toEqual(COMPLETE_002);
     expect(after.contentHash).toBe(signed.contentHash);
   });
+
+  it('EN-236 la BASE rechaza firmar la 002 que da el alta sin diagnóstico principal, y la firma con él', async () => {
+    const prisma = db();
+    const ids = await aDraft(prisma);
+    // The attention has its diagnosis, but behind: nothing is the principal.
+    await prisma.$executeRaw`
+      UPDATE encounter_diagnosis
+         SET rank = 2, edited_by_id = ${ids.practitioner.userId}::uuid, edited_at = ${new Date()}
+       WHERE encounter_id = ${ids.encounter.id}::uuid`;
+
+    await failsWith(
+      sign(prisma, ids, ids.encounter.id, ids.note.id),
+      'clinical_note_sign_needs_principal_diagnosis',
+    );
+    const unsigned = await prisma.clinicalNote.findUniqueOrThrow({ where: { id: ids.note.id } }); // prettier-ignore
+    expect(unsigned.status).toBe('DRAFT');
+
+    // Positive control: back as the principal, the same note signs.
+    await prisma.$executeRaw`
+      UPDATE encounter_diagnosis
+         SET rank = 1, edited_by_id = ${ids.practitioner.userId}::uuid, edited_at = ${new Date(Date.now() + 1000)}
+       WHERE encounter_id = ${ids.encounter.id}::uuid`;
+    const signed = await sign(prisma, ids, ids.encounter.id, ids.note.id);
+    expect(signed.status).toBe('SIGNED');
+  });
 });

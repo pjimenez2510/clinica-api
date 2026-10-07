@@ -130,6 +130,7 @@ const anEncounterRead = (
   endedAt: null,
   dischargeCondition: null,
   diagnosisCount: 1,
+  hasPrincipalDiagnosis: true,
   anthropometryPending: [],
   ...overrides,
 });
@@ -377,6 +378,32 @@ describe('los casos de uso de la nota clínica', () => {
     expect(
       (refusal as NoteContentIncompleteError).fieldErrors?.map((e) => e.field),
     ).toEqual(['content.planTratamiento', 'diagnoses']);
+  });
+
+  it('EN-236 rechaza firmar la 002 que da el alta con diagnósticos y ninguno principal, nombrando principalDiagnosis', async () => {
+    notes.encounter = anEncounterRead({ diagnosisCount: 1, hasPrincipalDiagnosis: false }); // prettier-ignore
+
+    const refusal = await service
+      .sign(
+        { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, // prettier-ignore
+        requester,
+      )
+      .catch((error: unknown) => error);
+
+    expect(refusal).toBeInstanceOf(NoteContentIncompleteError);
+    expect((refusal as NoteContentIncompleteError).fieldErrors).toEqual([
+      {
+        field: 'principalDiagnosis',
+        code: 'NOTE_CONTENT_INCOMPLETE',
+        message: 'Registre la enfermedad o la lesión como diagnóstico principal antes de firmar', // prettier-ignore
+      },
+    ]);
+
+    // Positive control: with the principal, the same note signs.
+    notes.encounter = anEncounterRead();
+    await expect(
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
+    ).resolves.toBeDefined();
   });
 
   it('EN-217 rechaza firmar la 002 mientras falte la antropometría obligatoria, nombrando cada medida', async () => {

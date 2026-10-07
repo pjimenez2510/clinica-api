@@ -1711,6 +1711,51 @@ describe('la atención por HTTP', () => {
       ).resolves.toHaveLength(2);
     });
 
+    it('EN-236 firmar la 002 con diagnósticos y ninguno principal responde 422 en principalDiagnosis sin firmar; con el principal firma; la interrupción no lo exige', async () => {
+      const { id: doctorUserId } = await prisma.user.findUniqueOrThrow({ where: { email: 'medico@clinica.ec' } }); // prettier-ignore
+      /** The external cause first: coded, and behind (EN-235). */
+      const onlyBehind = async (encounterId: string) => {
+        await createDiagnosis(prisma, encounterId, 'W19.0');
+        await prisma.$executeRaw`
+          UPDATE encounter_diagnosis
+             SET rank = 2, edited_by_id = ${doctorUserId}::uuid, edited_at = ${new Date()}
+           WHERE encounter_id = ${encounterId}::uuid`;
+      };
+      const encounterId = await openEncounter();
+      await onlyBehind(encounterId);
+      const draft = await post(`/encounters/${encounterId}/notes`, doctorToken, { formCode: '002', content: COMPLETE_002 }).expect(201); // prettier-ignore
+      const noteId = (draft.body as NoteBody).id;
+      const sign = () => post(`/encounters/${encounterId}/notes/${noteId}/sign`, doctorToken, { dischargeCondition: 'ALIVE' }); // prettier-ignore
+
+      const refused = await sign().expect(422);
+      expect(refused.body).toMatchObject({
+        code: 'NOTE_CONTENT_INCOMPLETE',
+        errors: [
+          {
+            field: 'principalDiagnosis',
+            code: 'NOTE_CONTENT_INCOMPLETE',
+            message: 'Registre la enfermedad o la lesión como diagnóstico principal antes de firmar', // prettier-ignore
+          },
+        ],
+      });
+      await expect(prisma.clinicalNote.findUniqueOrThrow({ where: { id: noteId } })).resolves.toMatchObject({ status: 'DRAFT' }); // prettier-ignore
+
+      // Positive control, same note: the lesion as the principal, it signs.
+      await createDiagnosis(prisma, encounterId, 'S52.5');
+      await prisma.$executeRaw`
+        UPDATE encounter_diagnosis
+           SET rank = 1, edited_by_id = ${doctorUserId}::uuid, edited_at = ${new Date()}
+         WHERE encounter_id = ${encounterId}::uuid AND cie10_code = 'S52.5'`;
+      await sign().expect(200);
+
+      // An interruption signs its drafts without a principal (EN-167).
+      const interrupted = await openEncounter();
+      await onlyBehind(interrupted);
+      await post(`/encounters/${interrupted}/notes`, doctorToken, { formCode: '002', content: COMPLETE_002 }).expect(201); // prettier-ignore
+      await post(`/encounters/${interrupted}/discontinue`, doctorToken, { reason: 'El paciente se retiró', origin: 'PATIENT' }).expect(200); // prettier-ignore
+      await expect(prisma.clinicalNote.findFirstOrThrow({ where: { encounterId: interrupted } })).resolves.toMatchObject({ status: 'SIGNED' }); // prettier-ignore
+    });
+
     it('EN-217 hace que la base rechace la 002 firmada con alta de un menor de 5 años sin peso, talla ni perimetro, y no la interrumpida', async () => {
       const { id: signerId } = await prisma.practitioner.findFirstOrThrow({
         where: { user: { email: 'medico@clinica.ec' } },

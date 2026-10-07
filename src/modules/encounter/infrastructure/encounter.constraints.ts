@@ -276,6 +276,16 @@ registerConstraintMeanings({
     message: 'Registre al menos un diagnóstico antes de firmar',
   },
   /**
+   * EN-236. The same deferred trigger: diagnoses on the attention and none of
+   * them the principal. The service refuses it first; this is the sentence
+   * for whatever reaches the commit anyway.
+   */
+  clinical_note_sign_needs_principal_diagnosis: {
+    code: 'NOTE_CONTENT_INCOMPLETE',
+    field: 'principalDiagnosis',
+    message: 'Registre la enfermedad o la lesión como diagnóstico principal antes de firmar', // prettier-ignore
+  },
+  /**
    * EN-217 (D-132 B). The deferred trigger: the consultation note signed and
    * the attention discharged with the mandatory anthropometry missing. The
    * service refuses it first naming each measure; this is the sentence for

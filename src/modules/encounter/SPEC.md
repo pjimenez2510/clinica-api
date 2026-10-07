@@ -303,7 +303,7 @@ desincronizar del concepto.
 **Cubre:** EN-040 a EN-052, **EN-180 a EN-189** —quitar un diagnóstico con
 rastro, cambiar el principal y las propuestas de §19—, **EN-212** —editarlo en
 el sitio con versión (§21)—, **EN-235** —lo que no puede ser el principal
-(§29, D-147.3)— y **EN-151 a EN-154**, el consentimiento informado:
+(§29, D-147.3)—, **EN-236** —firmar el alta exige el principal (§29)— y **EN-151 a EN-154**, el consentimiento informado:
 va aquí porque el formulario 024 cuelga del **procedimiento** de riesgo mayor
 (EN-050), no de la atención.
 
@@ -1372,14 +1372,20 @@ requisitos que cambian.
   > toma de signos (EN-210). `trg_encounter_dental_index_applies` rechaza con
   > `DENTAL_INDEX_NOT_APPLICABLE` la fila de una edad congelada fuera de los
   > dos tramos, y `extraídos` en el CPO-D o `perdidos` en el CEO-D; los
-  > `CHECK` acotan cada cuenta a los dientes que hay (20 temporales, 32
-  > permanentes). La especialidad la decide el servicio con la misma regla que
+  > `CHECK` acotan cada cuenta, y la suma de las tres del índice, a los
+  > dientes que hay (20 temporales, 32 permanentes): cada diente está en una
+  > sola categoría. La especialidad la decide el servicio con la misma regla que
   > la plantilla de la nota (EN-203): la base no sabe de especialidades.
   >
   > **D-160 — construido así mientras decide:** se aplica el instructivo al
   > pie de la letra, así que a los 11 años, a los 6 meses o menos y sin edad
   > conocida no se ofrece ninguno de los dos; y cuenta como odontología la
-  > especialidad `odontologia` del catálogo. Los rangos de edad son del propio instructivo (p. 66) y se
+  > especialidad `odontologia` del catálogo. **El índice no se corrige tras
+  > el alta** mientras D-160.4 no se decide: se registra y corrige sólo con la
+  > atención admitiendo contenido (EN-130). **La especialidad es la de la
+  > regla de EN-203** —la del tipo de la cita y, sin ella, la principal del
+  > profesional— mientras D-160.5 (que recomienda la del profesional) no se
+  > decide. Los rangos de edad son del propio instructivo (p. 66) y se
   > evalúan con la **edad congelada** de EN-008, no con la de hoy: un niño de 10
   > años atendido en marzo sigue teniendo 10 en la fila de marzo para siempre — el
   > mismo razonamiento que PA-005 dejó escrito para «intersexual en menores de un
@@ -3913,6 +3919,23 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
   > del código; y las filas que ya eran principal antes de la regla siguen
   > como están mientras no se toque su rango ni su código.
 
+- **EN-236** — CUANDO se firme la nota **002** que da el alta, el sistema
+  DEBERÁ exigir que la atención tenga un **diagnóstico principal** (rango 1),
+  y SI no lo tiene, ENTONCES DEBERÁ rechazar la firma con
+  `NOTE_CONTENT_INCOMPLETE` nombrando `principalDiagnosis` y el mensaje
+  «Registre la enfermedad o la lesión como diagnóstico principal antes de
+  firmar», sin firmar. Una atención sin ningún diagnóstico sigue nombrando
+  `diagnoses` (EN-020).
+  > Con EN-235, lo natural en una lesión es registrar primero la causa
+  > externa, que queda de rango 2, y la atención podía firmarse sin
+  > principal: el RDACAA no sabría en qué causa contar la consulta.
+  >
+  > **Garantía de la base:** `trg_clinical_note_sign_needs_diagnosis`,
+  > diferido, levanta además `clinical_note_sign_needs_principal_diagnosis`
+  > cuando la firma deja el alta sin ninguna fila de rango 1. Como EN-020,
+  > sólo con el alta: firmar los borradores de una interrupción (EN-167) no lo
+  > exige.
+
 ---
 
 ## Códigos de error nuevos
@@ -3943,7 +3966,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ANTHROPOMETRY_PENDING` | 422 | Se firma la 002 (da el alta) sin la antropometría obligatoria del menor de 5 años o de la embarazada, o una corrección de la toma tras el alta la dejaría pendiente (D-134.3); nombra cada campo | EN-217 |
 | `VITALS_CORRECTION_REQUIRES_SIGNATURE` | 403 | Corregir la toma de una atención con el alta sin `record:sign` en su sede (D-134.3) | EN-228 |
 | `CLINICAL_NOTE_ALREADY_OPEN` | 409 | Abrir la nota 002 de una atención que ya tiene una (D-139.5) | EN-229 |
-| `NOTE_CONTENT_INCOMPLETE` | 422 | Firmar sin una sección obligatoria, o la 002 sin ningún diagnóstico en la atención (`diagnoses`). Nombra lo que falta, nunca su contenido | EN-020 |
+| `NOTE_CONTENT_INCOMPLETE` | 422 | Firmar sin una sección obligatoria, o la 002 sin ningún diagnóstico en la atención (`diagnoses`), o sin diagnóstico principal (`principalDiagnosis`). Nombra lo que falta, nunca su contenido | EN-020, EN-236 |
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
 | `VIOLENCE_SCREENING_RESTRICTED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite | EN-072 |
 | `HIV_DATA_RESTRICTED` | 403 | Lo mismo para el bloque de VIH | EN-095 |
@@ -3985,7 +4008,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_ALREADY_REPORTED` | 409 | Corregir los diagnósticos de una atención ya reportada al RDACAA | EN-212, EN-213 |
 | `DIAGNOSIS_PRIMARY_REQUIRED_AFTER_DISCHARGE` | 409 | Desmarcar o quitar el principal de una atención con el alta sin que otro quede principal. Se marca otro antes (EN-183). Lo exigen el servicio y la base | EN-183, EN-188 |
 | `DIAGNOSIS_NOT_RESTORABLE` | 409 | Deshacer el quitar de un diagnóstico ya recuperado, o cuyo código volvió a registrarse | EN-213 |
-| `DIAGNOSIS_PRINCIPAL_USE_INVALID` | 422 | Dejar como principal un código asterisco o de causa externa (D-147.3). Del mapeo de constraints (`encounter_diagnosis_principal_use`), campo `conceptId` | EN-235 |
+| `DIAGNOSIS_PRINCIPAL_USE_INVALID` | 422 | Dejar como principal un código asterisco o de causa externa (D-147.3). Llega por el mapeo de constraints (`encounter_diagnosis_principal_use`), campo `conceptId`, y está en el catálogo congelado como `DIAGNOSIS_PRIMARY_TAKEN`: es contrato público | EN-235 |
 | `DENTAL_INDEX_NOT_APPLICABLE` | 422 | Registrar el CEO-D o el CPO-D fuera de odontología, fuera de su tramo de edad, o con la cuenta del otro índice. Lo dicen el servicio y la base | EN-052 |
 
 `DIAGNOSIS_PRIMARY_AFTER_DISCHARGE` (EN-188, G2) se retiró con EN-212, y
@@ -4260,6 +4283,7 @@ prueba o el CI falla**.
 | EN-144, EN-145, EN-147 | Integración y **observación**: cierra quien abrió; otro con `record:sign` cierra dejando la constancia de sustitución; otro sin él falla; y una atención abierta hace cuarenta días **sigue abierta**, porque no existe ningún proceso que la cierre |
 | EN-148, EN-149 | Contrato HTTP con la capacidad **apagada** —que es el defecto—: la ruta de triaje responde `TRIAGE_NOT_ENABLED` y **ninguna respuesta del módulo lleva nivel de triaje**, afirmado sobre el cuerpo. Con la capacidad encendida, el nivel se registra con su autor |
 | EN-235 | **Integración contra PostgreSQL real, con control positivo**: un asterisco y una causa externa no entran como rango 1 ni por `INSERT` ni por `UPDATE` de rango o de concepto, y como rango 2 sí; un código `PRINCIPAL` sí; un concepto sin `use` sí. HTTP: registrar, editar el código y marcar principal responden `DIAGNOSIS_PRINCIPAL_USE_INVALID` con la frase, y deshacer devuelve el asterisco detrás |
+| EN-236 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza firmar la 002 que da el alta con diagnósticos y ninguno de rango 1, y la firma con el principal; firmar los borradores de una interrupción no lo exige. HTTP: `NOTE_CONTENT_INCOMPLETE` en `principalDiagnosis`, sin firmar |
 | EN-052 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza el CEO-D a los 11 años y a los 6 meses, `extraídos` en el CPO-D, `perdidos` en el CEO-D y una cuenta por encima de los dientes que hay, y acepta las dos buenas; corregir deja la anterior en `record_version`. HTTP: fuera de odontología `DENTAL_INDEX_NOT_APPLICABLE` |
 | EN-151, EN-152, EN-153, EN-154 | Contrato HTTP: un procedimiento de riesgo mínimo se registra **sin consentimiento alguno**; uno de riesgo mayor sin 024 se rechaza; la negativa **no cierra** la atención; y revocar deja el consentimiento anterior legible (contar filas) |
 | EN-155, EN-156 | Integración con el parámetro en sus dos posiciones: encendido, firmar sin certificado vigente falla; apagado, la nota se firma **y la constancia de que no lleva certificado viaja en la nota**, no en la pantalla |

@@ -516,8 +516,14 @@ export class NoteContentIncompleteError extends ValidationError {
     invalid: readonly string[] = [],
     /** EN-020. The 002 discharges the attention, and that needs a diagnosis. */
     withoutDiagnosis = false,
+    /** EN-236. And one of them the principal (rank 1). */
+    withoutPrincipal = false,
   ) {
-    const named = withoutDiagnosis ? [...missing, 'diagnoses'] : missing;
+    const named = [
+      ...missing,
+      ...(withoutDiagnosis ? ['diagnoses'] : []),
+      ...(withoutPrincipal ? ['principalDiagnosis'] : []),
+    ];
     super(
       `Form is missing mandatory sections: ${named.join(', ')}`,
       { missing: named.join(','), invalid: invalid.join(',') },
@@ -538,6 +544,16 @@ export class NoteContentIncompleteError extends ValidationError {
                 field: 'diagnoses',
                 code: 'NOTE_CONTENT_INCOMPLETE',
                 message: 'Registre al menos un diagnóstico antes de firmar',
+              },
+            ]
+          : []),
+        ...(withoutPrincipal
+          ? [
+              {
+                field: 'principalDiagnosis',
+                code: 'NOTE_CONTENT_INCOMPLETE',
+                message:
+                  'Registre la enfermedad o la lesión como diagnóstico principal antes de firmar',
               },
             ]
           : []),
