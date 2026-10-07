@@ -925,11 +925,13 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         // ORD-121. What the order said when it was issued: it is only printed
         // issued (ORD-100), so the copy is always there.
         diagnoses: true,
+        // ORD-159. The sex frozen at the issue (ORD-158), not the chart's today.
+        patientSex: true,
         encounter: {
           select: {
             ageYears: true,
             ageMonths: true,
-            patient: { select: { ...PATIENT_SELECT, sex: true } },
+            patient: { select: PATIENT_SELECT },
           },
         },
         orderedBy: { select: PRACTITIONER_SELECT },
@@ -984,7 +986,15 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           row.encounter.ageYears,
           row.encounter.ageMonths,
         ),
-        patientSex: row.encounter.patient.sex,
+        // ORD-159. Regenerating the PDF after the chart was corrected prints
+        // what the laboratory received. Issued, so frozen
+        // (`service_order_patient_sex_frozen_when_issued`); a missing one is a
+        // broken invariant, never printed as «—».
+        patientSex:
+          row.patientSex ??
+          (() => {
+            throw new Error('Issued service order without its frozen sex');
+          })(),
         // ORD-121, D-117.5. Frozen at the issue: correcting the attention
         // afterwards does not change the paper the laboratory holds.
         diagnoses: frozenDiagnoses(row.diagnoses) ?? [],

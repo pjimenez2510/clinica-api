@@ -421,6 +421,18 @@ la cierra y uno al paciente sí.
 **Cubre:** ORD-151 a ORD-157. **Solo interfaz:** ORD-151, ORD-152 (la API admite todavía el analito repetido, D-168).
 **Solo servidor:** ORD-155, ORD-156, ORD-157.
 
+### E18 — La orden guarda el sexo del día en que se emitió _(P1, 07-10-2026)_
+
+D-163.1, resuelta por el autor (§18).
+
+**Prueba independiente:** emitir una orden de una paciente registrada como
+mujer, corregir después el sexo de la ficha a hombre: la cabecera de la orden
+en pantalla y la del PDF que se vuelve a generar siguen diciendo «Mujer»; una
+hemoglobina transcrita a esa orden se clasifica con el rango del hombre, el de
+la ficha (D-171.1).
+**Cubre:** ORD-158, ORD-159. **Solo servidor:** ORD-158 —la copia la escribe
+la base—. ORD-160 se retiró (D-171.1).
+
 ### Fuera de las ocho
 
 **Transcripción masiva y gráficas de evolución.** Se transcribe **solo lo que se
@@ -753,6 +765,9 @@ cuando la gráfica exista.
   rango de **referencia** se sigue aplicando entero. Así, SI un crítico menos
   específico que alcanza al paciente tiene un lado, ENTONCES el paciente
   DEBERÁ tener alerta de ese lado: ningún crítico más específico la apaga.
+
+  El sexo es el **actual de la ficha**, no el que la orden congeló para su
+  cabecera (ORD-158): D-171.1, resuelta por el autor el 07-10-2026.
 
 - **ORD-037** — El sistema DEBERÁ congelar en la fila el rango aplicado
   (`reference_low`, `reference_high`, `reference_text`).
@@ -1808,6 +1823,9 @@ como el 010A._
   > se lee del catálogo **al imprimir**, como la muestra y la preparación
   > (DOC-072): la línea congela código y nombre, no la sección. Lo que la
   > orden ya imprimía se conserva.
+  >
+  > **Enmendado por ORD-159 (D-163.1, 07-10-2026):** el sexo es el congelado
+  > en la orden al emitirla, no el de la ficha hoy.
 
 - **ORD-150** — La orden emitida en pantalla DEBERÁ agrupar sus exámenes vivos
   como el PDF (ORD-126) —bajo su sección del 010A, en el orden en que aparece
@@ -1822,6 +1840,9 @@ como el 010A._
   > última parte, con un perfil lipídico retirado la pantalla decía «8 horas
   > de ayuno» por la glucosa y el PDF «12 horas»: quien lo lee en pantalla
   > se lo dice mal al paciente.
+  >
+  > **Enmendado por ORD-159 (D-163.1, 07-10-2026):** el sexo de la cabecera
+  > es el congelado en la orden, no el de la ficha.
 
 ## 13. Lo que el autor decidió el 06-10-2026 (D-137, D-139.1, D-139.2)
 
@@ -2177,6 +2198,49 @@ a D-156.5, recomendación aceptada en todos los puntos._
   > **D-156.5.** «Pérez Juan» es «Juan Pérez», como en la cédula. Un nombre a
   > medias («Dr. Pérez») sigue sin reconocerse: atribuiría a una persona el
   > nombre de otra. **Enmienda ORD-147.**
+
+
+## 18. La orden guarda el sexo del día en que se emitió (D-163.1)
+
+- **ORD-158** — CUANDO se emita una orden (`DRAFT` → `ISSUED`), el sistema
+  DEBERÁ copiar en ella el **sexo de la ficha** en ese instante
+  (`service_order.patient_sex`), y la orden emitida NO DEBERÁ cambiarlo
+  después, aunque la ficha se corrija; una orden en borrador o descartada NO
+  DEBERÁ tenerlo.
+  > **D-163.1, resuelta por el autor el 07-10-2026.** La edad ya quedaba
+  > congelada en la atención (EN-221) y los diagnósticos en la orden
+  > (ORD-121); el sexo se leía vivo de la ficha, así que corregirla después
+  > cambiaba la cabecera de un papel que el laboratorio ya tiene. La copia es
+  > **sólo para la cabecera**: el rango sigue el sexo de la ficha (ORD-036;
+  > D-171.1, ORD-160 retirado).
+  >
+  > **Garantía de la base:** la copia la escribe
+  > `a_service_order_freeze_patient_sex` en el instante de la emisión, sea
+  > quien sea quien emite; `service_order_patient_sex_frozen_when_issued`
+  > exige que la emitida la tenga y la que no lo es no; y
+  > `service_order_guard_status` no deja reescribirla. Las emitidas antes de
+  > esta regla se rellenaron al migrar
+  > (`20261007223900_service_order_frozen_patient_sex`) con lo que decía la
+  > ficha antes de la primera corrección de sexo posterior a la emisión
+  > (`patient_change_history`, PA-026), y sin corrección, con el de hoy.
+
+- **ORD-159** — La cabecera de la orden emitida, en el PDF (ORD-126) y en
+  pantalla (ORD-150), DEBERÁ decir el **sexo congelado en la orden**
+  (ORD-158), con la misma palabra que hasta ahora («—» si no se registró), y
+  no el que tiene hoy la ficha. **Enmienda ORD-126 y ORD-150.**
+  > Volver a generar el PDF después de corregir la ficha da la misma cabecera
+  > que el papel que se entregó (D-163.2 lo decía en palabras mientras tanto).
+
+- ~~ORD-160~~ — **Retirado por D-171.1 (resuelta por el autor el 07-10-2026:
+  «solo cabecera»).** Decía que el rango (ORD-036) se eligiera con el sexo
+  congelado en la orden. Se retiró porque una corrección de sexo casi siempre
+  arregla un error de registro: el sexo verdadero siempre fue el corregido, y
+  clasificar con el congelado aplicaría el rango del sexo equivocado (una
+  hemoglobina de 12,5 g/dL saldría NORMAL con el de la mujer en un hombre,
+  cuyo límite es 13). A diferencia de la edad (EN-221), que era verdad el día
+  de la atención. **El rango y el crítico siguen eligiéndose con el sexo
+  actual de la ficha**; la prueba de integración lo fija con una orden que
+  congeló otro, con control positivo.
 
 
 ---
