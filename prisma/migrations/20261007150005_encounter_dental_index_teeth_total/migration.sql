@@ -9,7 +9,7 @@
 -- EN-052. Each tooth is in ONE category: the sum is bounded too
 -- ═══════════════════════════════════════════════════════════════════════════
 --
--- `20261007085419_encounter_dental_index` bounded every count on its own, so
+-- `20261007150002_encounter_dental_index` bounded every count on its own, so
 -- 20 decayed + 20 extracted + 20 filled passed as a CEO-D: sixty primary teeth
 -- in a mouth that has twenty. Decayed, extracted and filled add up to at most
 -- 20 in the CEO-D; decayed, missing and filled to at most 32 in the CPO-D.

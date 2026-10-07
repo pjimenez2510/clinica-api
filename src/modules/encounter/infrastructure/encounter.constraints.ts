@@ -360,8 +360,8 @@ registerConstraintMeanings({
  * are — 32 permanent, 20 primary — and named on its own box; so is the sum of
  * the three, each tooth being in one category; the frozen age outside both
  * bands, and the other index's count, are not applicable. The figures MUST
- * match `20261007085419_encounter_dental_index` and
- * `20261007132856_encounter_dental_index_teeth_total`.
+ * match `20261007150002_encounter_dental_index` and
+ * `20261007150005_encounter_dental_index_teeth_total`.
  */
 const DENTAL_COUNTS = [
   ['decayed', 'cariados'],
