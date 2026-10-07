@@ -275,14 +275,14 @@ banderas fiscales ya declaradas sin que pida la casilla.
 - **OR-033** — Toda edición de un establecimiento, una sede, un consultorio o
   un punto de emisión DEBERÁ dejar en `access_audit` el antes y el después de
   los campos editados.
-  > AD-10. OR-005 pedía autor e instante (D-145).
+  > AD-10. OR-005 pedía autor e instante (D-150).
 - **OR-034** — El sistema DEBERÁ permitir corregir el **código único del MSP**
   de una sede (`PATCH /organization/sites/{id}` con `mspUnicode`) MIENTRAS la
   sede no tenga ninguna atención registrada; SI la tiene, ENTONCES DEBERÁ
   rechazarlo con `SITE_MSP_UNICODE_IN_USE`. La unicidad sigue siendo OR-002.
   > AD-11. El código va en cada atención que se reporta al MSP (OR-003) y en
   > los documentos que salen de la sede; mientras no hay ninguna, es un dato
-  > mal tecleado y nada más (D-145).
+  > mal tecleado y nada más (D-150).
 - **OR-035** — El sistema DEBERÁ permitir corregir el **código** de un punto de
   emisión (`PATCH …/emission-points/{id}` con `code`) MIENTRAS no haya emitido
   ninguna factura ni nota de crédito; SI ya emitió, ENTONCES DEBERÁ rechazarlo

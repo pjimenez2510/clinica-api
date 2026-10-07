@@ -323,7 +323,7 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
   especialidades o de una regla de horario DEBERÁ dejar en `access_audit` el
   antes y el después de los campos editados.
   > AD-10. ST-010 y ST-044 pedían autor e instante; el valor anterior no se
-  > guardaba. Admitido por la lista blanca desde `admin_edit_in_place` (D-145).
+  > guardaba. Admitido por la lista blanca desde `admin_edit_in_place` (D-150).
 
 ## Códigos de error
 

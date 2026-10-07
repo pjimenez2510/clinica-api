@@ -1839,7 +1839,7 @@ renombrarlo rompe la completitud (ORD-039) y la corrección (ORD-055).
   > rangos sustituidos se cierran con su vigencia (ORD-113). Enmienda ORD-110.
 - **ORD-142** — Toda edición de un examen o de un analito DEBERÁ dejar en
   `access_audit` el antes y el después de los campos editados.
-  > AD-10 y la mitad que ORD-111 no guardaba (D-145).
+  > AD-10 y la mitad que ORD-111 no guardaba (D-150).
 
 ## Códigos de error nuevos
 

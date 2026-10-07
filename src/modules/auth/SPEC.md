@@ -964,7 +964,7 @@ enlace que no sirve y con un correo que no sale.
   llevar nunca la contraseña, su hash ni el secreto del segundo factor.
   > AD-10 y el «valor anterior» que AU-025 pedía y nadie guardaba. La lista
   > blanca `access_audit_payload_only_for_declared_resources` admite `auth`
-  > desde `admin_edit_in_place` (D-145).
+  > desde `admin_edit_in_place` (D-150).
 
 ## Códigos de error
 

@@ -27,7 +27,7 @@
 --    prestaciones, precios, pagadores y el catálogo de exámenes. NINGUNO es
 --    de paciente: la historia clínica sigue fuera de la lista, que es lo que
 --    D-017 protege. Los datos del personal que entran aquí (nombre, correo,
---    cédula) los recoge D-145. Las contraseñas y los secretos del segundo
+--    cédula) los recoge D-150. Las contraseñas y los secretos del segundo
 --    factor no los manda nadie: cada rastro elige sus campos.
 --
 --    El CHECK se sustituye por otro más ancho. Toda fila existente cumple el
@@ -79,7 +79,7 @@ ALTER TABLE "access_audit"
 
 COMMENT ON CONSTRAINT "access_audit_payload_only_for_declared_resources"
   ON "access_audit" IS
-  'D-017, D-145 (AD-10). Lista blanca de tipos de recurso que pueden llevar '
+  'D-017, D-150 (AD-10). Lista blanca de tipos de recurso que pueden llevar '
   'valor anterior y posterior: configuración y administración. Ningún recurso '
   'de paciente: esta tabla vigila quién mira la historia, es de solo inserción '
   'y no se purga.';

@@ -1413,7 +1413,7 @@ es falsa, hay requisitos que cambian.
 - **BI-231** — Toda edición de una prestación, una categoría, un precio o un
   pagador DEBERÁ dejar en `access_audit` el antes y el después de los campos
   editados.
-  > AD-10 (D-145). La bitácora de facturación no mandaba el antes y el después
+  > AD-10 (D-150). La bitácora de facturación no mandaba el antes y el después
   > porque la lista blanca lo habría descartado en silencio; desde
   > `admin_edit_in_place` los admite.
 

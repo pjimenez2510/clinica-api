@@ -340,7 +340,7 @@ rechaza con `SERVICE_TYPE_IN_USE`.
 
 - **SP-029** — Toda edición de una especialidad o de un tipo de atención DEBERÁ
   dejar en `access_audit` el antes y el después de los campos editados.
-  > AD-10. SP-002 pedía autor e instante (D-145). El código de la especialidad
+  > AD-10. SP-002 pedía autor e instante (D-150). El código de la especialidad
   > sigue sin editarse: lo deriva el servidor y no se muestra (SP-009,
   > decisión del autor del 19-08-2026).
 
