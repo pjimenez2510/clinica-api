@@ -25,6 +25,7 @@ import {
   AnalyteNotFoundError,
   AnalyteUnitWithRangesError,
   ExamDefinitionNotFoundError,
+  ExamCodeInUseError,
   ExamHasOpenOrdersError,
   ExamServiceKindMismatchError,
   ExamServiceNotFoundError,
@@ -96,10 +97,18 @@ export class ExamAdministrationService {
    */
   async updateExam(
     id: string,
-    patch: Partial<ExamWrite>,
+    patch: Partial<ExamWrite> & { code?: string },
     editor: CatalogueEditor,
   ): Promise<AdminExamView> {
     const current = await this.exam(id);
+    // ORD-140. The code is a typo to fix until an order line froze it.
+    if (
+      patch.code !== undefined &&
+      patch.code !== current.code &&
+      (await this.catalogue.examWasOrdered(current.code))
+    ) {
+      throw new ExamCodeInUseError();
+    }
     const next: ExamWrite = { ...writeOf(current), ...patch };
     const serviceChanged =
       patch.billableServiceId !== undefined &&
@@ -181,6 +190,8 @@ export class ExamAdministrationService {
     id: string,
     patch: Partial<AnalyteWrite>,
     editor: CatalogueEditor,
+    /** ORD-141. The ranges written in the new unit, saved with it. */
+    ranges?: readonly ReferenceRange[],
   ): Promise<AdminAnalyteView> {
     const current = await this.requireAnalyte(id);
     const next: AnalyteWrite = {
@@ -214,6 +225,22 @@ export class ExamAdministrationService {
     const bounded = current.ranges.some(
       (range) => range.low !== null || range.high !== null,
     );
+    // ORD-141. With the new ranges in the same save, the unit and its ranges
+    // change together in one transaction, or neither does.
+    if (ranges !== undefined) {
+      assertRangesHold(next.valueType, ranges);
+      const updated = await this.catalogue.setRanges(
+        id,
+        ranges,
+        new Date(),
+        next,
+      );
+      await this.record(ANALYTE_RESOURCE, id, 'UPDATE', editor, {
+        before: { ...analyteSnapshot(current), ...rangesSnapshot(current) },
+        after: { ...analyteSnapshot(updated), ...rangesSnapshot(updated) },
+      });
+      return updated;
+    }
     if (reunited && bounded) throw new AnalyteUnitWithRangesError();
     if (retyped) assertRangesHold(next.valueType, current.ranges);
     const updated = await this.catalogue.updateAnalyte(id, next);

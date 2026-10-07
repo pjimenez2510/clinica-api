@@ -76,8 +76,14 @@ export const createExamSchema = z
 /** Body of POST /exam-catalogue/exams. */
 export class CreateExamDto extends createZodDto(createExamSchema) {}
 
-/** ORD-103. Any subset; the code is not among them, it never changes. */
-export const updateExamSchema = z.object(examFields).partial().strict();
+/**
+ * ORD-103, ORD-140. Any subset. The code is among them, but the service
+ * refuses it with `EXAM_CODE_IN_USE` once an order asked for the exam.
+ */
+export const updateExamSchema = z
+  .object({ code: CODE, ...examFields })
+  .partial()
+  .strict();
 /** Body of PATCH /exam-catalogue/exams/:examId. */
 export class UpdateExamDto extends createZodDto(updateExamSchema) {}
 
@@ -135,10 +141,6 @@ export const createAnalyteSchema = z
 /** Body of POST /exam-catalogue/analytes. */
 export class CreateAnalyteDto extends createZodDto(createAnalyteSchema) {}
 
-export const updateAnalyteSchema = z.object(analyteFields).partial().strict();
-/** Body of PATCH /exam-catalogue/analytes/:analyteId. */
-export class UpdateAnalyteDto extends createZodDto(updateAnalyteSchema) {}
-
 /** ORD-106. One range: by sex and age in days, bounds or text. */
 const rangeSchema = z
   .object({
@@ -159,6 +161,18 @@ export const analyteRangesSchema = z
   .strict();
 /** Body of PUT /exam-catalogue/analytes/:analyteId/ranges. */
 export class AnalyteRangesDto extends createZodDto(analyteRangesSchema) {}
+
+/**
+ * ORD-104, ORD-141. Any subset of the analyte's fields, and optionally its new
+ * ranges: the unit and the ranges written in it change together, in one
+ * transaction, or neither does.
+ */
+export const updateAnalyteSchema = z
+  .object({ ...analyteFields, ranges: analyteRangesSchema.shape.ranges })
+  .partial()
+  .strict();
+/** Body of PATCH /exam-catalogue/analytes/:analyteId. */
+export class UpdateAnalyteDto extends createZodDto(updateAnalyteSchema) {}
 
 // ─── Responses ───────────────────────────────────────────────────────────
 

@@ -863,6 +863,26 @@ export class ExamServiceNotFoundError extends NotFoundError {
 }
 
 /**
+ * ORD-140. An order already asked for the exam, and its line froze this code
+ * (ORD-002): the paper report cites it.
+ */
+export class ExamCodeInUseError extends ConflictError {
+  readonly code = 'EXAM_CODE_IN_USE';
+  override readonly userTitle =
+    'Ese examen ya se pidió en alguna orden con su código, y ya no se puede cambiar';
+
+  constructor() {
+    super('The code of an exam already ordered cannot change', {}, [
+      {
+        field: 'code',
+        code: 'EXAM_CODE_IN_USE',
+        message: 'Hay órdenes que ya citan este código',
+      },
+    ]);
+  }
+}
+
+/**
  * ORD-110. The analyte already has results: its name and its type are what
  * those results froze (ORD-031) and what correcting them compares against
  * (ORD-055). Renaming or retyping it would leave every one of them
@@ -886,7 +906,7 @@ export class AnalyteHasResultsError extends ConflictError {
 export class AnalyteUnitWithRangesError extends ConflictError {
   readonly code = 'ANALYTE_UNIT_WITH_RANGES';
   override readonly userTitle =
-    'Sus rangos están en la unidad actual. Quite los rangos, cambie la unidad y vuelva a escribirlos';
+    'Sus rangos están en la unidad actual: escriba los rangos en la unidad nueva en el mismo guardado';
 
   constructor() {
     super('The analyte has ranges in its current unit');

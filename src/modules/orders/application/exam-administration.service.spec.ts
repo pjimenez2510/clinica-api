@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
 import type { ReferenceRange } from '../domain/analyte';
+import {
+  AnalyteUnitWithRangesError,
+  ExamCodeInUseError,
+} from '../domain/orders.errors';
 import type {
   AdminAnalyteView,
   AdminExamView,
@@ -72,6 +76,7 @@ function build(overrides: Partial<Record<string, unknown>> = {}) {
     setStructure: vi.fn().mockResolvedValue(EXAM),
     pendingLines: vi.fn().mockResolvedValue(0),
     analyteHasResults: vi.fn().mockResolvedValue(false),
+    examWasOrdered: vi.fn().mockResolvedValue(false),
     updateAnalyte: vi.fn().mockResolvedValue(ANALYTE),
     setRanges: vi.fn().mockResolvedValue(ANALYTE),
     service: vi.fn().mockResolvedValue(undefined),
@@ -212,5 +217,67 @@ describe('ExamAdministrationService · bitácora con antes y después (ORD-142)'
     expect(recorded[0]).toMatchObject({ action: 'CREATE' });
     expect(recorded[0]?.before).toBeUndefined();
     expect(recorded[0]?.after).toMatchObject({ code: 'EX-GLU' });
+  });
+});
+
+describe('ExamAdministrationService · corregir en el sitio (ORD-140, ORD-141)', () => {
+  it('ORD-140 corrige el código de un examen que ninguna orden pidió', async () => {
+    const updateExam = vi
+      .fn()
+      .mockResolvedValue({ ...EXAM, code: 'EX-GLU-AY' });
+    const { service } = build({
+      examWasOrdered: vi.fn().mockResolvedValue(false),
+      updateExam,
+    });
+
+    await service.updateExam('exam-1', { code: 'EX-GLU-AY' }, EDITOR);
+
+    expect(updateExam).toHaveBeenCalledWith('exam-1', { code: 'EX-GLU-AY' });
+  });
+
+  it('ORD-140 el código de un examen ya pedido no cambia: EXAM_CODE_IN_USE, sin escribir', async () => {
+    const updateExam = vi.fn();
+    const { service } = build({
+      examWasOrdered: vi.fn().mockResolvedValue(true),
+      updateExam,
+    });
+
+    await expect(
+      service.updateExam('exam-1', { code: 'EX-GLU-AY' }, EDITOR),
+    ).rejects.toBeInstanceOf(ExamCodeInUseError);
+    expect(updateExam).not.toHaveBeenCalled();
+  });
+
+  it('ORD-141 la unidad y sus rangos nuevos van juntos, en una sola escritura', async () => {
+    const mmol: ReferenceRange = { ...RANGE, low: 3.9, high: 5.6 };
+    const setRanges = vi
+      .fn()
+      .mockResolvedValue({ ...ANALYTE, unit: 'mmol/L', ranges: [mmol] });
+    const updateAnalyte = vi.fn();
+    const { service } = build({ setRanges, updateAnalyte });
+
+    const updated = await service.updateAnalyte(
+      'analyte-glu',
+      { unit: 'mmol/L', decimals: 1 },
+      EDITOR,
+      [mmol],
+    );
+
+    expect(updated.unit).toBe('mmol/L');
+    expect(updateAnalyte).not.toHaveBeenCalled();
+    expect(setRanges).toHaveBeenCalledWith(
+      'analyte-glu',
+      [mmol],
+      expect.any(Date),
+      expect.objectContaining({ unit: 'mmol/L', decimals: 1 }),
+    );
+  });
+
+  it('ORD-141 sin rangos en la petición, cambiar la unidad de un analito con rangos sigue rechazándose', async () => {
+    const { service } = build();
+
+    await expect(
+      service.updateAnalyte('analyte-glu', { unit: 'mmol/L' }, EDITOR),
+    ).rejects.toBeInstanceOf(AnalyteUnitWithRangesError);
   });
 });

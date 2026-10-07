@@ -80,6 +80,8 @@ function build(overrides: Record<string, unknown> = {}) {
     listPricesOfService: vi.fn().mockResolvedValue([]),
     listPricesOfList: vi.fn().mockResolvedValue([]),
     applyPriceChange: vi.fn().mockResolvedValue(price('new', '35.00', '2026-07-01')), // prettier-ignore
+    findPrice: vi.fn().mockResolvedValue(null),
+    correctPriceAmount: vi.fn(),
     record: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
