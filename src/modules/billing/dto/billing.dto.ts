@@ -668,7 +668,7 @@ const chargeResponseSchema = z.object({
 export class ChargeDto extends createZodDto(chargeResponseSchema) {}
 export type ChargeResponse = z.infer<typeof chargeResponseSchema>;
 
-const totalsSchema = z.object({
+export const totalsSchema = z.object({
   subtotalTaxed: z.string(),
   subtotalUntaxed: z.string(),
   discountTotal: z.string(),
@@ -738,6 +738,26 @@ const checkoutResponseSchema = z.object({
 export class CheckoutResponseDto extends createZodDto(checkoutResponseSchema) {}
 export type CheckoutResponse = z.infer<typeof checkoutResponseSchema>;
 
+/** SRI-060, SRI-088. A document's electronic voucher before the SRI. */
+export const electronicStateSchema = z.object({
+  voucherId: z.uuid(),
+  state: z.enum([
+    'PREPARED',
+    'SIGNED',
+    'RECEIVED',
+    'AUTHORISED',
+    'RETURNED',
+    'NOT_AUTHORISED',
+  ]),
+  blockedReason: z.string().nullable(),
+  accessKey: z.string(),
+  authorisedAt: z.iso.datetime().nullable(),
+  deliveryStatus: z.string().nullable(),
+  lastMessage: z
+    .object({ identifier: z.string(), message: z.string() })
+    .nullable(),
+});
+
 const invoiceResponseSchema = z.object({
   id: z.uuid(),
   accountId: z.uuid(),
@@ -760,26 +780,7 @@ const invoiceResponseSchema = z.object({
    * SRI-060. Its electronic voucher before the SRI; `null` while there is none
    * (the installation lacks a datum, SRI-008, or the sweep has not run yet).
    */
-  electronic: z
-    .object({
-      voucherId: z.uuid(),
-      state: z.enum([
-        'PREPARED',
-        'SIGNED',
-        'RECEIVED',
-        'AUTHORISED',
-        'RETURNED',
-        'NOT_AUTHORISED',
-      ]),
-      blockedReason: z.string().nullable(),
-      accessKey: z.string(),
-      authorisedAt: z.iso.datetime().nullable(),
-      deliveryStatus: z.string().nullable(),
-      lastMessage: z
-        .object({ identifier: z.string(), message: z.string() })
-        .nullable(),
-    })
-    .nullable(),
+  electronic: electronicStateSchema.nullable(),
 });
 /** One invoice, and the list of GET /billing/sites/:siteId/invoices. */
 export class InvoiceDto extends createZodDto(invoiceResponseSchema) {}

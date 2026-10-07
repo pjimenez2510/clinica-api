@@ -1016,7 +1016,7 @@ export function translateInvoiceRejection(error: unknown): unknown {
  * buyer's identification is, and it is personal data that must not reach a log
  * (BI-007) — the same warning `database-problem.ts` carries at its head.
  */
-function databaseMessageOf(error: unknown): string {
+export function databaseMessageOf(error: unknown): string {
   if (typeof error !== 'object' || error === null) return '';
 
   const candidate = error as {

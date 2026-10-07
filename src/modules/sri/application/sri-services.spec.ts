@@ -175,6 +175,7 @@ function fakes() {
     monitor: vi.fn().mockResolvedValue([]),
     lastTransportFailure: vi.fn().mockResolvedValue(null),
     statusOfInvoices: vi.fn().mockResolvedValue([]),
+    statusOfCreditNotes: vi.fn().mockResolvedValue([]),
     deliveryContext: vi.fn(),
   };
   const certificates = {

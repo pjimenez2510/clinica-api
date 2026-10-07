@@ -55,6 +55,10 @@ export interface ElectronicVoucherStatusReader {
   summariesOf(
     invoiceIds: readonly string[],
   ): Promise<Map<string, ElectronicVoucherSummary>>;
+  /** SRI-088. Credit notes with no voucher are absent from the map. */
+  summariesOfCreditNotes(
+    creditNoteIds: readonly string[],
+  ): Promise<Map<string, ElectronicVoucherSummary>>;
 }
 export const ELECTRONIC_VOUCHER_STATUS = Symbol(
   'ElectronicVoucherStatusReader',

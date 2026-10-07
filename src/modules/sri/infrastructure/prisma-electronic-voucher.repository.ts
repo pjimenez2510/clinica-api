@@ -153,6 +153,35 @@ function totalsOf(row: {
   };
 }
 
+/** SRI-060, SRI-088. What `billing` shows beside each document. */
+const STATUS_SELECT = {
+  id: true,
+  invoiceId: true,
+  creditNoteId: true,
+  status: true,
+  blockedReason: true,
+  accessKey: true,
+  authorisedAt: true,
+  deliveryStatus: true,
+  lastMessages: true,
+} satisfies Prisma.ElectronicVoucherSelect;
+
+function toStatusView(
+  row: Prisma.ElectronicVoucherGetPayload<{ select: typeof STATUS_SELECT }>,
+  documentId: string,
+): VoucherStatusView {
+  return {
+    documentId,
+    voucherId: row.id,
+    status: row.status as VoucherStatus,
+    blockedReason: row.blockedReason as BlockedReason | null,
+    accessKey: row.accessKey,
+    authorisedAt: row.authorisedAt,
+    deliveryStatus: row.deliveryStatus as DeliveryStatus | null,
+    lastMessages: messagesOf(row.lastMessages),
+  };
+}
+
 /** SRI-084. How often the sweep retries what only a certificate fixes. */
 const CERTIFICATE_RETRY_MS = 3600 * 1000;
 
@@ -891,27 +920,20 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
     if (invoiceIds.length === 0) return [];
     const rows = await this.prisma.electronicVoucher.findMany({
       where: { invoiceId: { in: [...invoiceIds] } },
-      select: {
-        id: true,
-        invoiceId: true,
-        status: true,
-        blockedReason: true,
-        accessKey: true,
-        authorisedAt: true,
-        deliveryStatus: true,
-        lastMessages: true,
-      },
+      select: STATUS_SELECT,
     });
-    return rows.map((row) => ({
-      invoiceId: invoiceIdOf(row),
-      voucherId: row.id,
-      status: row.status as VoucherStatus,
-      blockedReason: row.blockedReason as BlockedReason | null,
-      accessKey: row.accessKey,
-      authorisedAt: row.authorisedAt,
-      deliveryStatus: row.deliveryStatus as DeliveryStatus | null,
-      lastMessages: messagesOf(row.lastMessages),
-    }));
+    return rows.map((row) => toStatusView(row, invoiceIdOf(row)));
+  }
+
+  async statusOfCreditNotes(
+    creditNoteIds: readonly string[],
+  ): Promise<VoucherStatusView[]> {
+    if (creditNoteIds.length === 0) return [];
+    const rows = await this.prisma.electronicVoucher.findMany({
+      where: { creditNoteId: { in: [...creditNoteIds] } },
+      select: STATUS_SELECT,
+    });
+    return rows.map((row) => toStatusView(row, row.creditNoteId!));
   }
 
   async deliveryContext(id: string) {

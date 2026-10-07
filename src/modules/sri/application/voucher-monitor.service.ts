@@ -13,6 +13,7 @@ import {
   type ElectronicVoucherRepository,
   type MonitorRow,
   type TransportFailureDetail,
+  type VoucherStatusView,
 } from '../domain/electronic-voucher.repository';
 import {
   ElectronicVoucherNotFoundError,
@@ -189,25 +190,37 @@ export class VoucherMonitorService implements ElectronicVoucherStatusReader {
   async summariesOf(
     invoiceIds: readonly string[],
   ): Promise<Map<string, ElectronicVoucherSummary>> {
-    const views = await this.vouchers.statusOfInvoices(invoiceIds);
-    return new Map(
-      views.map((view) => {
-        const last = view.lastMessages.at(-1) ?? null;
-        return [
-          view.invoiceId,
-          {
-            voucherId: view.voucherId,
-            state: view.status,
-            blockedReason: view.blockedReason,
-            accessKey: view.accessKey,
-            authorisedAt: view.authorisedAt,
-            deliveryStatus: view.deliveryStatus,
-            lastMessage: last
-              ? { identifier: last.identifier, message: last.message }
-              : null,
-          },
-        ];
-      }),
-    );
+    return summaries(await this.vouchers.statusOfInvoices(invoiceIds));
   }
+
+  /** SRI-088. The same beside each credit note. */
+  async summariesOfCreditNotes(
+    creditNoteIds: readonly string[],
+  ): Promise<Map<string, ElectronicVoucherSummary>> {
+    return summaries(await this.vouchers.statusOfCreditNotes(creditNoteIds));
+  }
+}
+
+function summaries(
+  views: readonly VoucherStatusView[],
+): Map<string, ElectronicVoucherSummary> {
+  return new Map(
+    views.map((view) => {
+      const last = view.lastMessages.at(-1) ?? null;
+      return [
+        view.documentId,
+        {
+          voucherId: view.voucherId,
+          state: view.status,
+          blockedReason: view.blockedReason,
+          accessKey: view.accessKey,
+          authorisedAt: view.authorisedAt,
+          deliveryStatus: view.deliveryStatus,
+          lastMessage: last
+            ? { identifier: last.identifier, message: last.message }
+            : null,
+        },
+      ];
+    }),
+  );
 }

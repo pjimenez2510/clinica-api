@@ -193,7 +193,8 @@ export interface MonitorRow {
 
 /** The voucher's state as `billing` shows it beside the invoice (SRI-060). */
 export interface VoucherStatusView {
-  invoiceId: string;
+  /** The invoice's or the credit note's id, whichever was asked for. */
+  documentId: string;
   voucherId: string;
   status: VoucherStatus;
   blockedReason: BlockedReason | null;
@@ -287,6 +288,10 @@ export interface ElectronicVoucherRepository {
     voucherId: string,
   ): Promise<TransportFailureDetail | null>;
   statusOfInvoices(invoiceIds: readonly string[]): Promise<VoucherStatusView[]>;
+  /** SRI-088. The same beside each credit note. */
+  statusOfCreditNotes(
+    creditNoteIds: readonly string[],
+  ): Promise<VoucherStatusView[]>;
 
   /** What `RIDE_ISSUER` and the e-mail need about the invoice (SRI-072). */
   deliveryContext(id: string): Promise<{

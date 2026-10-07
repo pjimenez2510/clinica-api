@@ -613,6 +613,18 @@ export const DOMAIN_ERROR_CODES = [
   'INVOICE_NOT_FOUND',
   'INVOICE_RECEIVER_IS_PAYER',
   'INVOICE_RECEIVER_REQUIRED',
+  // Corregir una factura (BI-091 a BI-097, BI-208 a BI-218, inventario CA-8
+  // y CA-9). La nota de crédito es la única forma de corregir lo autorizado;
+  // lo devuelto por el SRI se corrige y se reenvía con la misma clave.
+  'CREDIT_NOTE_EXCEEDS_INVOICE',
+  'CREDIT_NOTE_FINAL_CONSUMER',
+  'CREDIT_NOTE_INVOICE_NOT_AUTHORISED',
+  'CREDIT_NOTE_INVOICE_VOIDED',
+  'CREDIT_NOTE_LINE_ALREADY_CREDITED',
+  'CREDIT_NOTE_LINE_NOT_IN_INVOICE',
+  'CREDIT_NOTE_REASON_REQUIRED',
+  'CREDIT_NOTE_WINDOW_EXPIRED',
+  'INVOICE_NOT_EDITABLE',
   // ─── Encounter, H1/H2/H4 (EN-001 a EN-034, EN-060 a EN-068, EN-126 a
   // EN-147). La atención: abrirla, documentarla y cerrarla.
   //

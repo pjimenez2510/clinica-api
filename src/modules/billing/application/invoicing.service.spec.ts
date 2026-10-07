@@ -108,6 +108,7 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     prepare: vi.fn().mockResolvedValue(undefined),
     prepareCreditNote: vi.fn().mockResolvedValue(undefined),
     summariesOf: vi.fn().mockResolvedValue(new Map()),
+    summariesOfCreditNotes: vi.fn().mockResolvedValue(new Map()),
     logError: vi.fn(),
     ...options.accounts,
   };

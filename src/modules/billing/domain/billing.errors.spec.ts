@@ -7,7 +7,10 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
-import { parseClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  clinicalDateOf,
+  parseClinicalDate,
+} from '../../../shared/domain/clinic-time';
 import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogue';
 import * as errors from './billing.errors';
 
@@ -167,5 +170,40 @@ describe('BI-171 el código de prestación que el SRI no acepta', () => {
     );
     expect(error.userTitle).toContain('PROC-ESTETICA-TOXINA-BOTULINICA');
     expect(error.userTitle).toContain('25 caracteres');
+  });
+});
+
+describe('BI-091 a BI-097, BI-208 a BI-216 corregir una factura: los errores', () => {
+  const CASES: readonly [string, () => DomainError, string, unknown][] = [
+    ['BI-209', () => new errors.CreditNoteReasonRequiredError(), 'CREDIT_NOTE_REASON_REQUIRED', ValidationError], // prettier-ignore
+    ['BI-094', () => new errors.CreditNoteWindowExpiredError(clinicalDateOf(new Date())), 'CREDIT_NOTE_WINDOW_EXPIRED', ConflictError], // prettier-ignore
+    ['BI-095', () => new errors.CreditNoteExceedsInvoiceError(), 'CREDIT_NOTE_EXCEEDS_INVOICE', BusinessRuleViolation], // prettier-ignore
+    ['BI-097', () => new errors.CreditNoteInvoiceVoidedError(), 'CREDIT_NOTE_INVOICE_VOIDED', ConflictError], // prettier-ignore
+    ['BI-208', () => new errors.CreditNoteInvoiceNotAuthorisedError(), 'CREDIT_NOTE_INVOICE_NOT_AUTHORISED', ConflictError], // prettier-ignore
+    ['BI-211', () => new errors.CreditNoteLineNotInInvoiceError(), 'CREDIT_NOTE_LINE_NOT_IN_INVOICE', BusinessRuleViolation], // prettier-ignore
+    ['BI-211', () => new errors.CreditNoteLineAlreadyCreditedError(), 'CREDIT_NOTE_LINE_ALREADY_CREDITED', ConflictError], // prettier-ignore
+    ['BI-213', () => new errors.CreditNoteFinalConsumerError(), 'CREDIT_NOTE_FINAL_CONSUMER', ConflictError], // prettier-ignore
+    ['BI-216', () => new errors.InvoiceNotEditableError(), 'INVOICE_NOT_EDITABLE', ConflictError], // prettier-ignore
+  ];
+
+  for (const [requirement, make, code, category] of CASES) {
+    it(`${requirement} ${code} lleva su categoría, está en el catálogo y dice qué hacer`, () => {
+      const error = make();
+      expect(error.code).toBe(code);
+      expect(error).toBeInstanceOf(category);
+      expect(DOMAIN_ERROR_CODES).toContain(code);
+      expect(error.userTitle).toBeTruthy();
+    });
+  }
+
+  it('BI-209 CREDIT_NOTE_REASON_REQUIRED señala el campo del texto de «Otro»', () => {
+    const error = new errors.CreditNoteReasonRequiredError();
+    expect(error.fieldErrors?.[0]?.field).toBe('reasonText');
+  });
+
+  it('BI-213 CREDIT_NOTE_FINAL_CONSUMER dice lo que la pantalla dice junto a la fila', () => {
+    expect(new errors.CreditNoteFinalConsumerError().userTitle).toBe(
+      'Consumidor Final: no admite nota de crédito',
+    );
   });
 });
