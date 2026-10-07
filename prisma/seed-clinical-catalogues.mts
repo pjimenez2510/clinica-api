@@ -7,6 +7,10 @@ import { Prisma, PrismaClient } from '@prisma/client';
 
 import { readCnmb } from '../src/modules/catalogs/import/cnmb.ts';
 import { nextClinicDay } from '../src/modules/catalogs/import/cutover.ts';
+import {
+  readTariffCsv,
+  tariffConceptsOf,
+} from '../src/modules/catalogs/import/tariff-rows.ts';
 import { readWorkbook } from '../src/modules/catalogs/import/xlsx.ts';
 
 /**
@@ -143,111 +147,167 @@ export async function importCnmb(
   return { status: 'imported', inserted, effectiveFrom };
 }
 
-const TARIFF_VERSION = 'DEV-2026-08';
-const EFFECTIVE_FROM = new Date('2026-01-01T00:00:00Z');
+const TARIFF_DEFAULTS = {
+  file: resolve(import.meta.dirname, 'catalogs/tarifario-sns-2014.csv'),
+  version: 'sns-2014',
+  sourceUrl:
+    'https://www.salud.gob.ec/tarifario-de-prestaciones-para-el-sistema-nacional-de-salud/',
+};
 
-/**
- * SHA-256 of the fixture as JSON, recorded as the release's `source_checksum`.
- * It is provenance only: whether to seed is decided by the version alone.
- */
-function checksumOf(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+/** Desde cuándo rige el tarifario en una base que no tenía ninguno. */
+const TARIFF_FIRST_EDITION_FROM = new Date('2014-01-01T00:00:00Z');
+
+export interface TariffImportResult {
+  status: 'imported' | 'unchanged';
+  inserted: number;
+  effectiveFrom: Date | null;
+  /** ORD-133. Códigos anteriores que un examen activo nombra: siguen vigentes. */
+  kept: { code: string; exams: string[] }[];
 }
 
 /**
- * Imports the official CNMB and creates the `DEV` release of the tariff,
- * derived from the active `exam_definition` rows (so it needs `seedBilling`
- * first and is skipped when there are none).
+ * ORD-133. Importa el Tarifario de Prestaciones del SNS 2014 desde el CSV que
+ * extrae `scripts/extract-tariff.mts`. La release guarda el SHA-256 del PDF,
+ * que es el archivo oficial; el CSV es su lectura reproducible.
+ *
+ * RETIRA LA EDICIÓN ANTERIOR SALVO LO QUE UN EXAMEN USA. Un examen nombra su
+ * prestación por código (`exam_definition.tariff_code`, ORD-004): retirar ese
+ * código dejaría de poder pedirse el examen el día de la carga. Se queda
+ * vigente, y se informa para que la clínica le ponga el código oficial.
  */
-export async function seedClinicalCatalogues(
+export async function importTariff(
   prisma: PrismaClient,
-  now = new Date(),
-) {
-  const cnmbResult = await importCnmb(prisma, { now });
+  options: { file?: string; version?: string; now: Date; effectiveFrom?: Date },
+): Promise<TariffImportResult> {
+  const file = options.file ?? TARIFF_DEFAULTS.file;
+  const version = options.version ?? TARIFF_DEFAULTS.version;
+  const { pdfChecksum, rows } = readTariffCsv(readFileSync(file, 'utf8'));
+  const concepts = tariffConceptsOf(rows);
 
-  // ── Tarifario, derivado de los exámenes que la clínica sabe hacer ───────
   const tariff = await prisma.catalogSystem.upsert({
     where: { code: 'TARIFF' },
     update: { name: 'Tarifario de prestaciones', hierarchical: false },
     create: { code: 'TARIFF', name: 'Tarifario de prestaciones', hierarchical: false }, // prettier-ignore
   });
 
-  const exams = await prisma.examDefinition.findMany({
-    where: { active: true },
-    select: { code: true, name: true },
-    orderBy: { code: 'asc' },
+  const existing = await prisma.catalogRelease.findUnique({
+    where: { systemId_version: { systemId: tariff.id, version } },
   });
-
-  let tariffCount = 0;
-  if (exams.length > 0) {
-    const tariffChecksum = checksumOf(exams);
-    const existing = await prisma.catalogRelease.findUnique({
-      where: { systemId_version: { systemId: tariff.id, version: TARIFF_VERSION } }, // prettier-ignore
-    });
-    if (!existing) {
-      await prisma.$transaction(async (tx) => {
-        const release = await tx.catalogRelease.create({
-          data: {
-            systemId: tariff.id,
-            version: TARIFF_VERSION,
-            publishedOn: EFFECTIVE_FROM,
-            effectiveFrom: EFFECTIVE_FROM,
-            sourceUrl: 'derivado de exam_definition',
-            sourceChecksum: tariffChecksum,
-          },
-        });
-        await tx.catalogConcept.updateMany({
-          where: { systemId: tariff.id, validTo: null },
-          data: { validTo: EFFECTIVE_FROM, retiredByReleaseId: release.id },
-        });
-        const created = await tx.catalogConcept.createMany({
-          data: exams.map((exam) => ({
-            systemId: tariff.id,
-            introducedByReleaseId: release.id,
-            code: exam.code,
-            display: exam.name,
-            validFrom: EFFECTIVE_FROM,
-            attributes: { source: 'DEV FIXTURE — derivado de exam_definition' },
-          })),
-        });
-        tariffCount = created.count;
-      });
-    } else {
-      // An exam added to the seed after the release was published (ORD-101's
-      // imaging and procedure examples) joins it; the ones already there are
-      // left as they are.
-      const live = new Set(
-        (
-          await prisma.catalogConcept.findMany({
-            where: { systemId: tariff.id, validTo: null },
-            select: { code: true },
-          })
-        ).map((concept) => concept.code),
-      );
-      const missing = exams.filter((exam) => !live.has(exam.code));
-      if (missing.length > 0) {
-        await prisma.catalogConcept.createMany({
-          data: missing.map((exam) => ({
-            systemId: tariff.id,
-            introducedByReleaseId: existing.id,
-            code: exam.code,
-            display: exam.name,
-            validFrom: EFFECTIVE_FROM,
-            attributes: { source: 'DEV FIXTURE — derivado de exam_definition' },
-          })),
-        });
-      }
-      tariffCount = live.size + missing.length;
-    }
+  if (existing) {
+    if (existing.sourceChecksum === pdfChecksum)
+      return {
+        status: 'unchanged',
+        inserted: 0,
+        effectiveFrom: null,
+        kept: [],
+      };
+    throw new Error(
+      `La versión ${version} del tarifario ya existe con otro checksum. ` +
+        'Impórtela con un número de versión nuevo.',
+    );
   }
 
+  const inForce = await prisma.catalogConcept.findMany({
+    where: { systemId: tariff.id, validTo: null },
+    select: { code: true },
+  });
+  const effectiveFrom =
+    options.effectiveFrom ??
+    (inForce.length > 0
+      ? nextClinicDay(options.now)
+      : TARIFF_FIRST_EDITION_FROM);
+
+  const official = new Set(concepts.map((concept) => concept.code));
+  const exams = await prisma.examDefinition.findMany({
+    where: { active: true, tariffCode: { not: null } },
+    select: { code: true, tariffCode: true },
+  });
+  const kept = inForce
+    .map((concept) => concept.code)
+    .filter((code) => !official.has(code))
+    .map((code) => ({
+      code,
+      exams: exams
+        .filter((exam) => exam.tariffCode === code)
+        .map((exam) => exam.code),
+    }))
+    .filter((entry) => entry.exams.length > 0);
+
+  const inserted = await prisma.$transaction(
+    async (tx) => {
+      const release = await tx.catalogRelease.create({
+        data: {
+          systemId: tariff.id,
+          version,
+          publishedOn: TARIFF_FIRST_EDITION_FROM,
+          effectiveFrom,
+          sourceUrl: TARIFF_DEFAULTS.sourceUrl,
+          sourceChecksum: pdfChecksum,
+        },
+      });
+      // Retirar, no borrar: órdenes y procedimientos apuntan a estas filas.
+      await tx.catalogConcept.updateMany({
+        where: {
+          systemId: tariff.id,
+          validTo: null,
+          code: { notIn: kept.map((entry) => entry.code) },
+        },
+        data: { validTo: effectiveFrom, retiredByReleaseId: release.id },
+      });
+      const created = await tx.catalogConcept.createMany({
+        data: concepts.map((concept) => ({
+          systemId: tariff.id,
+          introducedByReleaseId: release.id,
+          code: concept.code,
+          display: concept.display,
+          validFrom: effectiveFrom,
+          attributes: {
+            ...(concept.description
+              ? { description: concept.description }
+              : {}),
+            section: concept.section,
+            columns: concept.columns,
+            uvr: concept.values,
+            page: concept.page,
+            ...(concept.entries.length > 0
+              ? { entries: concept.entries as unknown as Prisma.InputJsonArray }
+              : {}),
+          },
+        })),
+      });
+      return created.count;
+    },
+    { timeout: 120_000, maxWait: 30_000 },
+  );
+
+  return { status: 'imported', inserted, effectiveFrom, kept };
+}
+
+/**
+ * Imports the official CNMB and the official tariff. Idempotent: an edition
+ * already imported is left as it is.
+ */
+export async function seedClinicalCatalogues(
+  prisma: PrismaClient,
+  now = new Date(),
+) {
+  const cnmbResult = await importCnmb(prisma, { now });
+  const tariffResult = await importTariff(prisma, { now });
+
+  const since = (date: Date | null) => date!.toISOString().slice(0, 10);
   console.log('Catálogos clínicos:');
   console.log(
     cnmbResult.status === 'unchanged'
       ? '  CNMB    sin cambios: la versión ya está importada'
-      : `  CNMB    ${String(cnmbResult.inserted).padStart(4)}  vigente desde ${cnmbResult.effectiveFrom!.toISOString().slice(0, 10)}`,
+      : `  CNMB    ${String(cnmbResult.inserted).padStart(5)}  vigente desde ${since(cnmbResult.effectiveFrom)}`,
   );
-  console.log(`  TARIFF  ${String(tariffCount).padStart(4)}  derivado de exam_definition, sólo como nomenclatura`); // prettier-ignore
+  console.log(
+    tariffResult.status === 'unchanged'
+      ? '  TARIFF  sin cambios: la versión ya está importada'
+      : `  TARIFF  ${String(tariffResult.inserted).padStart(5)}  vigente desde ${since(tariffResult.effectiveFrom)}, sólo como nomenclatura`,
+  );
+  for (const { code, exams } of tariffResult.kept)
+    console.log(`  ⚠️  ${code} sigue vigente: lo usa ${exams.join(', ')}. Póngale el código oficial en el catálogo de exámenes.`); // prettier-ignore
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

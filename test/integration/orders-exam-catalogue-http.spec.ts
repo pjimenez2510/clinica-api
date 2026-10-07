@@ -26,6 +26,17 @@ import {
   clinicalDateOf,
 } from '../../src/shared/domain/clinic-time';
 import { aTariffConcept, placeIssued } from './orders-fixtures';
+
+/**
+ * ORD-004, ORD-133. The tariff concept a seeded exam names, under the exam's
+ * `tariff_code` — the official one since the 2014 tariff (ORD-133).
+ */
+async function aTariffConceptOf(prisma: PrismaClient, examCode: string) {
+  const exam = await prisma.examDefinition.findUniqueOrThrow({
+    where: { code: examCode },
+  });
+  return aTariffConcept(prisma, { code: exam.tariffCode! });
+}
 import { useDatabase } from './setup/database';
 import {
   createEncounter,
@@ -514,7 +525,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       );
       const site = await createSite(prisma);
       const practitioner = await createPractitioner(prisma);
-      await aTariffConcept(prisma, { code: examCode });
+      await aTariffConceptOf(prisma, examCode);
       const exam = await examCoded(examCode);
       const analyte = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: analyteCode } }); // prettier-ignore
 
@@ -624,7 +635,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       );
       const site = await createSite(prisma);
       const practitioner = await createPractitioner(prisma);
-      await aTariffConcept(prisma, { code: 'EX-GLUCOSA-AYUNAS' });
+      await aTariffConceptOf(prisma, 'EX-GLUCOSA-AYUNAS');
       const exam = await examCoded('EX-GLUCOSA-AYUNAS');
       const requester = { userId: 'user-1', sites: 'all' as const };
       const issuedAt = () => new Date(Date.now() - 3_600_000);
@@ -681,7 +692,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       );
       const site = await createSite(prisma);
       const practitioner = await createPractitioner(prisma);
-      await aTariffConcept(prisma, { code: 'EX-GLUCOSA-AYUNAS' });
+      await aTariffConceptOf(prisma, 'EX-GLUCOSA-AYUNAS');
       const exam = await examCoded('EX-GLUCOSA-AYUNAS');
       const requester = { userId: 'user-1', sites: 'all' as const };
       const issuedAt = () => new Date(Date.now() - 3_600_000);
@@ -750,7 +761,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       practitionerId: practitioner.id,
       patientId: patient.id,
     });
-    await aTariffConcept(prisma, { code: 'EX-BH' });
+    await aTariffConceptOf(prisma, 'EX-BH');
     const bh = await examCoded('EX-BH');
     const hb = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'HB' } }); // prettier-ignore
     const order = await placeIssued(orders, {
