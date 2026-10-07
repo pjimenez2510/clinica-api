@@ -220,7 +220,13 @@ que la emisión se rechaza.
 
 **Cubre:** PR-060 a PR-067, PR-118.
 
-**Solo servidor:** PR-118. El rechazo y la alerta son los de PR-060 y PR-067, que la pantalla ya pinta.
+**Solo servidor:** PR-118. El rechazo y la alerta del borrador son los de
+PR-060 y PR-067 y viajan por las mismas respuestas. ⚠️ **No es «lo mismo en
+pantalla»:** la pestaña de receta toma su lista de alergias —el aviso previo a
+componer y las sustancias que nombra un rechazo (PR-112)— de la banda de la
+atención, que lee con `chartScope` y no sube. En la atención de una ficha
+absorbida, la pestaña puede callar una alergia que el servidor sí bloquea y el
+PDF sí imprime (D-169.2).
 
 ### H5 — Controlados: el documento que NO emitimos _(P3)_
 
@@ -883,11 +889,12 @@ Hay tres niveles de comprobación y **sólo el primero se construye**:
   > porque `trg_patient_merge_not_chained` prohíbe la cadena (PA-046).
   > El papel de la receta lo compone `documents` (DOC-072) con su propia
   > lectura, y sube igual: el `mergedInto` de la ficha de la atención con sus
-  > absorbidas (`prisma-document-source.reader.ts`), para que la pantalla, el
-  > bloqueo y el PDF digan lo mismo.
+  > absorbidas (`prisma-document-source.reader.ts`), para que el bloqueo, el
+  > documento que sirve este módulo y el PDF digan lo mismo.
   >
-  > Sólo la receta. La banda de la atención y el resto de `encounter` siguen
-  > leyendo con `chartScope`; si la fusión debe rechazar una duplicada con
+  > Sólo la receta. La banda de la atención —y con ella la lista de alergias
+  > que pinta la pestaña de receta— y el resto de `encounter` siguen leyendo
+  > con `chartScope`; si la fusión debe rechazar una duplicada con
   > atenciones abiertas, o la atención de una ficha absorbida dejar de admitir
   > contenido, lo decide el autor (D-169.2).
 
