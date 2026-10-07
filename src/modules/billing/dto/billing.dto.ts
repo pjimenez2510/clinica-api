@@ -397,6 +397,20 @@ export const issueInvoiceSchema = z.object({
 /** Body of POST /billing/sites/:siteId/invoices. */
 export class IssueInvoiceDto extends createZodDto(issueInvoiceSchema) {}
 
+/**
+ * BI-216, SRI-090. «Editar» on an invoice the SRI returned or did not
+ * authorise: the receiver and the payment method, under the same rules as the
+ * issuance — and nothing else of it.
+ */
+export const resubmitInvoiceSchema = z.object({
+  receiver: receiverSchema,
+  paymentMethod: z.enum(PAYMENT_METHODS, {
+    error: 'Indique la forma de pago',
+  }),
+});
+/** Body of POST /billing/sites/:siteId/invoices/:invoiceId/resubmission. */
+export class ResubmitInvoiceDto extends createZodDto(resubmitInvoiceSchema) {}
+
 export const invoiceQuerySchema = z.object({
   accountId: z.uuid().optional(),
 });

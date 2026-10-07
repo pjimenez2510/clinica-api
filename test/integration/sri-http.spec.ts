@@ -646,6 +646,118 @@ describe('el comprobante electrónico por HTTP', () => {
     });
   });
 
+  describe('BI-216 SRI-090 corregir y reenviar la factura devuelta', () => {
+    async function aReturnedInvoice() {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      await prisma.$executeRaw`
+        UPDATE "electronic_voucher" SET "status" = 'RETURNED',
+               "last_messages" = '[{"identifier":"46","message":"RUC NO EXISTE","additionalInformation":null,"type":"ERROR"}]'
+         WHERE "id" = ${invoice.electronic!.voucherId}::uuid`;
+      await prisma.$executeRaw`UPDATE "invoice" SET "status" = 'REJECTED' WHERE "id" = ${invoice.id}::uuid`;
+      return invoice;
+    }
+
+    const resubmit = (invoiceId: string, body: object, token = cashierToken) =>
+      api()
+        .post(
+          `/api/v1/billing/sites/${siteId}/invoices/${invoiceId}/resubmission`,
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .send(body);
+
+    const corrected = {
+      receiver: {
+        identificationType: '05',
+        identification: '0919176818',
+        name: 'Andrade Guamán, José María',
+        email: 'jose@example.com',
+      },
+      paymentMethod: '19',
+    };
+
+    it('BI-216 BI-217 SRI-090 caja corrige el receptor y la forma de pago, se firma con la misma clave y lo anterior queda en record_version', async () => {
+      const invoice = await aReturnedInvoice();
+
+      const response = await resubmit(invoice.id, corrected);
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        id: invoice.id,
+        status: 'ISSUED',
+        buyerIdentification: '0919176818',
+        buyerName: 'Andrade Guamán, José María',
+        paymentMethod: '19',
+        accessKey: invoice.accessKey,
+        electronic: { state: 'SIGNED', accessKey: invoice.accessKey },
+      });
+
+      // SRI-090. The XML re-sent says what was corrected, under the same key.
+      const voucher = await prisma.electronicVoucher.findUniqueOrThrow({
+        where: { invoiceId: invoice.id },
+      });
+      expect(voucher.accessKey).toBe(invoice.accessKey);
+      expect(voucher.signedXml).toContain(
+        '<identificacionComprador>0919176818</identificacionComprador>',
+      );
+      expect(voucher.signedXml).toContain('<formaPago>19</formaPago>');
+
+      // BI-217. What it said before, with who changed it.
+      const [version] = await prisma.recordVersion.findMany({
+        where: { resourceType: 'invoice', resourceId: invoice.id },
+      });
+      expect(version!.data).toMatchObject({
+        buyer_identification: '1710034065',
+        payment_method: '01',
+      });
+      expect(
+        await prisma.accessAudit.count({
+          where: {
+            resourceType: 'invoice',
+            resourceId: invoice.id,
+            action: 'UPDATE',
+          },
+        }),
+      ).toBe(1);
+    });
+
+    it('BI-216 una factura que el SRI no devolvió no se edita', async () => {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+
+      const response = await resubmit(invoice.id, corrected);
+      expect(response.status).toBe(409);
+      expect((response.body as Problem).code).toBe('INVOICE_NOT_EDITABLE');
+      expect(
+        (await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } }))
+          .buyerIdentification,
+      ).toBe('1710034065');
+    });
+
+    it('BI-216 BI-159 una cédula mal escrita no corrige nada', async () => {
+      const invoice = await aReturnedInvoice();
+      const response = await resubmit(invoice.id, {
+        ...corrected,
+        receiver: { ...corrected.receiver, identification: '0919176819' },
+      });
+      expect(response.status).toBe(422);
+      expect((response.body as Problem).code).toBe('INVALID_CEDULA');
+      expect(
+        (await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } }))
+          .status,
+      ).toBe('REJECTED');
+    });
+
+    it('BI-216 recepción no corrige facturas (403) y caja de otra sede tampoco', async () => {
+      const invoice = await aReturnedInvoice();
+      expect((await resubmit(invoice.id, corrected, receptionToken)).status).toBe(403); // prettier-ignore
+      expect(
+        (await resubmit(invoice.id, corrected, otherCashierToken)).status,
+      ).toBe(403);
+      // Control positivo: la caja de la sede, sí.
+      expect((await resubmit(invoice.id, corrected)).status).toBe(200);
+    });
+  });
+
   describe('SRI-088 la nota de crédito en el monitor', () => {
     /** As the SRI's answer leaves an invoice: its voucher and it, authorised. */
     async function authorise(invoice: {

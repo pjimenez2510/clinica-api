@@ -7,8 +7,10 @@ import {
 } from '../../../shared/audit/access-audit.port';
 import {
   ELECTRONIC_VOUCHER_PREPARER,
+  ELECTRONIC_VOUCHER_RESENDER,
   ELECTRONIC_VOUCHER_STATUS,
   type ElectronicVoucherPreparer,
+  type ElectronicVoucherResender,
   type ElectronicVoucherStatusReader,
   type ElectronicVoucherSummary,
 } from '../../../shared/billing/electronic-voucher.port';
@@ -24,6 +26,7 @@ import {
 import {
   AccountNotFoundError,
   EmissionPointInactiveError,
+  InvoiceNotEditableError,
   InvoiceNotFoundError,
 } from '../domain/billing.errors';
 import {
@@ -51,7 +54,7 @@ export type InvoiceWithVoucher = InvoiceView & {
  * Issuing the invoice, and getting the receiver right.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * ⚠️ THERE IS NO METHOD HERE THAT CHANGES AN INVOICE, AND THAT IS BI-090.
+ * ⚠️ NOTHING HERE CHANGES AN INVOICE THE SRI ACCEPTED, AND THAT IS BI-090.
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * D-A-007: the SRI does not allow modifying or deleting an authorised
@@ -68,7 +71,14 @@ export type InvoiceWithVoucher = InvoiceView & {
  * the application never tries.
  *
  * Correcting is a credit note: another act, another permission
- * (`billing:credit-note`), a mandatory reason, and delivery B3.
+ * (`billing:credit-note`), a mandatory reason — `CreditNoteService` (B14).
+ *
+ * THE ONE EXCEPTION IS AN INVOICE THE SRI DID NOT ACCEPT (BI-216, D-093 B):
+ * returned or not authorised, it is not a voucher anybody holds, and the
+ * Ficha's Note 1 lets it be re-sent «una vez corregido el error» with the
+ * same key. `correctAndResend` corrects its receiver or its payment method —
+ * never its lines — and the database refuses that in any other status
+ * (`trg_invoice_receiver_editable_only_when_rejected`, BI-217).
  */
 @Injectable()
 export class InvoicingService {
@@ -83,6 +93,8 @@ export class InvoicingService {
     private readonly vouchers: ElectronicVoucherPreparer,
     @Inject(ELECTRONIC_VOUCHER_STATUS)
     private readonly voucherStatus: ElectronicVoucherStatusReader,
+    @Inject(ELECTRONIC_VOUCHER_RESENDER)
+    private readonly resender: ElectronicVoucherResender,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(InvoicingService.name);
@@ -189,6 +201,77 @@ export class InvoicingService {
       );
       return { ...invoice, electronic: null };
     }
+  }
+
+  /**
+   * BI-216, SRI-090. «Editar» on an invoice the SRI returned or did not
+   * authorise: its receiver and its payment method, with the rules of the
+   * issuance (BI-080, BI-081, BI-159, BI-170), and re-sent at once with the
+   * same key. The previous row is archived by the database (BI-217).
+   *
+   * The correction commits FIRST and the re-sending follows: if the voucher
+   * cannot go now, the corrected invoice stays returned on the screen with
+   * «Reenviar» at hand, and nothing is lost.
+   */
+  async correctAndResend(
+    command: {
+      invoiceId: string;
+      siteId: string;
+      receiver: ReceiverRequest;
+      paymentMethod: PaymentMethod;
+    },
+    requester: Requester,
+  ): Promise<InvoiceWithVoucher> {
+    const invoice = await this.accounts.findInvoice(command);
+    // BI-135. Another site's invoice answers like one that does not exist.
+    if (!invoice) throw new InvoiceNotFoundError();
+    if (invoice.status !== 'REJECTED') throw new InvoiceNotEditableError();
+
+    const account = await this.requireAccount({
+      accountId: invoice.accountId,
+      siteId: command.siteId,
+    });
+    const receiver = resolveReceiver(
+      command.receiver,
+      await this.receiverContext(account),
+    );
+
+    const corrected = await this.accounts.correctRejectedInvoice({
+      invoiceId: invoice.id,
+      siteId: command.siteId,
+      receiver,
+      paymentMethod: command.paymentMethod,
+      changedById: requester.userId,
+      now: new Date(),
+    });
+    // Re-sent or answered by the SRI a moment earlier: not REJECTED any more.
+    if (!corrected) throw new InvoiceNotEditableError();
+
+    // BI-132. Who corrected the receiver of which invoice.
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: INVOICE_RESOURCE_TYPE,
+      resourceId: invoice.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    try {
+      await this.resender.resendInvoice(invoice.id);
+    } catch (error) {
+      // The correction is committed and versioned: an error now would make
+      // the cashier type it again. It stays returned, with «Reenviar».
+      this.logger.error(
+        {
+          err: error,
+          invoice_id: invoice.id,
+          error_code: 'SRI_RESEND_FAILED',
+        },
+        'the corrected invoice could not be re-sent; it stays returned',
+      );
+    }
+    return this.findInvoice(command);
   }
 
   /**

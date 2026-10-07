@@ -50,6 +50,7 @@ import {
 } from '../domain/charge';
 import {
   type BuyerIdentificationType,
+  type InvoiceReceiver,
   type InvoiceStatus,
   type PaymentMethod,
   nextSequential,
@@ -937,6 +938,45 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       where: { id: query.invoiceId, siteId: query.siteId },
     });
     return row === null ? null : toInvoiceView(row);
+  }
+
+  async correctRejectedInvoice(correction: {
+    invoiceId: string;
+    siteId: string;
+    receiver: InvoiceReceiver;
+    paymentMethod: PaymentMethod;
+    changedById: string;
+    now: Date;
+  }): Promise<InvoiceView | null> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const [locked] = await tx.$queryRaw<{ changed_at: Date | null }[]>`
+          SELECT "changed_at" FROM "invoice"
+           WHERE "id" = ${correction.invoiceId}::uuid
+             AND "site_id" = ${correction.siteId}::uuid
+             AND "status" = 'REJECTED'
+             FOR UPDATE`;
+        if (!locked) return null;
+        const row = await tx.invoice.update({
+          where: { id: correction.invoiceId },
+          data: {
+            buyerIdentificationType:
+              correction.receiver.buyerIdentificationType,
+            buyerIdentification: correction.receiver.buyerIdentification,
+            buyerName: correction.receiver.buyerName,
+            buyerEmail: correction.receiver.buyerEmail,
+            isFinalConsumer: correction.receiver.isFinalConsumer,
+            paymentMethod: correction.paymentMethod,
+            // BI-217: the previous receiver is archived by the database.
+            changedById: correction.changedById,
+            changedAt: stampAfter(locked.changed_at, correction.now),
+          },
+        });
+        return toInvoiceView(row);
+      });
+    } catch (error) {
+      throw translateInvoiceRejection(error);
+    }
   }
 
   async listInvoices(query: {

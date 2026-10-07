@@ -703,6 +703,22 @@ export interface BillingAccountRepository {
     siteId: string;
     accountId?: string;
   }): Promise<InvoiceView[]>;
+
+  /**
+   * BI-216, BI-217. The receiver and the payment method of an invoice the SRI
+   * returned or did not authorise, stamped so the database archives the
+   * previous row (`record_version`). `null` when it is no longer `REJECTED`:
+   * the database refuses it in any other status
+   * (`trg_invoice_receiver_editable_only_when_rejected`).
+   */
+  correctRejectedInvoice(correction: {
+    invoiceId: string;
+    siteId: string;
+    receiver: InvoiceReceiver;
+    paymentMethod: PaymentMethod;
+    changedById: string;
+    now: Date;
+  }): Promise<InvoiceView | null>;
 }
 
 export const BILLING_ACCOUNT_REPOSITORY = Symbol('BillingAccountRepository');

@@ -5,6 +5,7 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import type {
+  ElectronicVoucherResender,
   ElectronicVoucherStatusReader,
   ElectronicVoucherSummary,
 } from '../../../shared/billing/electronic-voucher.port';
@@ -13,6 +14,7 @@ import {
   type ElectronicVoucherRepository,
   type MonitorRow,
   type TransportFailureDetail,
+  type VoucherRecord,
   type VoucherStatusView,
 } from '../domain/electronic-voucher.repository';
 import {
@@ -68,7 +70,9 @@ export interface MonitorView {
  * it has: re-sending what the SRI returned.
  */
 @Injectable()
-export class VoucherMonitorService implements ElectronicVoucherStatusReader {
+export class VoucherMonitorService
+  implements ElectronicVoucherStatusReader, ElectronicVoucherResender
+{
   constructor(
     @Inject(ELECTRONIC_VOUCHER_REPOSITORY)
     private readonly vouchers: ElectronicVoucherRepository,
@@ -149,6 +153,29 @@ export class VoucherMonitorService implements ElectronicVoucherStatusReader {
       userAgent: requester.userAgent,
     });
 
+    await this.signReopened(voucher, unsignedXml);
+  }
+
+  /**
+   * SRI-090. The port `billing` calls after correcting a returned invoice:
+   * the same as «Reenviar», with the data the correction just wrote. Who
+   * corrected it is in `billing`'s trail (the invoice's `UPDATE`).
+   */
+  async resendInvoice(invoiceId: string): Promise<boolean> {
+    const voucher = await this.vouchers.findByInvoice(invoiceId);
+    if (!voucher || !isRetriableByAPerson(voucher.status)) return false;
+    const unsignedXml = await this.preparation.recompose(voucher);
+    if (unsignedXml === null) return false;
+    if (!(await this.vouchers.reopen(voucher.id, unsignedXml))) return false;
+    await this.signReopened(voucher, unsignedXml);
+    return true;
+  }
+
+  /** SRI-058. The reopened voucher, signed with its recomposed XML and queued. */
+  private async signReopened(
+    voucher: VoucherRecord,
+    unsignedXml: string,
+  ): Promise<void> {
     await this.preparation.sign({
       ...voucher,
       status: 'PREPARED',

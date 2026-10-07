@@ -57,6 +57,7 @@ import {
   InvoiceListDto,
   InvoiceQueryDto,
   IssueInvoiceDto,
+  ResubmitInvoiceDto,
   OpenAccountDto,
   ReceiverProposalDto,
   RepricingDto,
@@ -556,6 +557,38 @@ export class BillingController {
     );
 
     return toInvoiceResponse(invoice);
+  }
+
+  /**
+   * BI-216, SRI-090 (D-093 B). Corrects the receiver or the payment method of
+   * an invoice the SRI returned or did not authorise, and re-sends it with
+   * the same key. A POST of an action and not a PATCH of the invoice: there
+   * is still no edit of an invoice (BI-090), and this one is refused in any
+   * other status, by the service and by the database (BI-217).
+   */
+  @Post('invoices/:invoiceId/resubmission')
+  @RequirePermission('billing:write', 'param:siteId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Corregir y reenviar una factura devuelta por el SRI',
+  })
+  @ApiOkResponse({ type: InvoiceDto })
+  async resubmitInvoice(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
+    @Body() dto: ResubmitInvoiceDto,
+  ): Promise<InvoiceResponse> {
+    return toInvoiceResponse(
+      await this.invoicing.correctAndResend(
+        {
+          invoiceId,
+          siteId,
+          receiver: dto.receiver,
+          paymentMethod: dto.paymentMethod,
+        },
+        { userId: this.currentUser.requireUserId() },
+      ),
+    );
   }
 
   /** BI-135. */

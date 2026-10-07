@@ -25,6 +25,21 @@ export interface ElectronicVoucherPreparer {
 export const ELECTRONIC_VOUCHER_PREPARER = Symbol('ElectronicVoucherPreparer');
 
 /**
+ * SRI-090 (D-093 B). After `billing` corrects the receiver or the payment
+ * method of an invoice the SRI returned or did not authorise, `sri`
+ * recomposes its XML with the new data AND THE SAME KEY, signs it and sends
+ * it — what «Reenviar» does (SRI-058), called from the correction.
+ *
+ * Unlike `prepare`, it says whether it could: the correction is already
+ * committed and versioned, and if the voucher could not be re-sent now the
+ * invoice stays returned on the screen, with «Reenviar» at hand.
+ */
+export interface ElectronicVoucherResender {
+  resendInvoice(invoiceId: string): Promise<boolean>;
+}
+export const ELECTRONIC_VOUCHER_RESENDER = Symbol('ElectronicVoucherResender');
+
+/**
  * SRI-060. The electronic state of each invoice, as `billing` shows it.
  * Written as unions and not imported from `sri`: a shared port is read by
  * code that may not know that module exists.
