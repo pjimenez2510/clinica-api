@@ -2551,8 +2551,9 @@ Convertirlo en configuración sería regalar la garantía.
   > clave.
 - **AG-171** — CUANDO la pantalla ofrezca las acciones de una cita
   —`availableActions`, en el pie del detalle y en la fila del tablero—,
-  DEBERÁ pintar como principal sólo la primera, que es el paso siguiente; el
-  resto con contorno; y en rojo sólo las que quitan algo del día (anular, no
+  DEBERÁ pintar como principal sólo la primera, que es el paso siguiente,
+  salvo que quite algo del día; el resto con contorno; y en rojo sólo las que
+  quitan algo del día (anular, no
   asistió, se fue sin ser atendido, quitar bloqueo). Las dos pantallas DEBERÁN
   dar a la misma acción la misma forma.
   > §9 ter: una principal por tarjeta o fila. Antes, cada acción traía su
