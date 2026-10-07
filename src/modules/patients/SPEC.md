@@ -2009,7 +2009,7 @@ Ningún requisito de esta sección lo altera._
   > §9 ter deja los avisos para el riesgo y lo que requiere atención: una
   > ficha a la que nadie preguntó por alergias es las dos cosas, y por eso
   > pasa del azul al ámbar. La afirmación con nombre es un estado bueno y se
-  > pinta como tal. Lo que se decide aquí es de presentación (D-150.1).
+  > pinta como tal. Lo que se decide aquí es de presentación (D-153.1).
 - **PA-069** — Lo que la ficha cuenta de una fusión NO DEBERÁ ir en un aviso
   de información: la ficha absorbida DEBERÁ abrirse como un estado de página,
   «Esta historia se unificó con otra», con «Abrir la historia vigente» como
