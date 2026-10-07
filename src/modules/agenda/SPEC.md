@@ -1325,6 +1325,10 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   admitir un motivo opcional, DEBERÁ registrar `entered_in_error_at` y DEBERÁ
   liberar el cupo; y NO DEBERÁ admitir esa transición sobre una cita que ya
   alcanzó `CHECKED_IN`. La pantalla DEBERÁ pedir una confirmación sin motivo.
+  > **En pantalla desde el 07-10-2026** (`feat/f02-desenlaces-llegada`):
+  > «Registrada por error…» en el detalle y en el tablero, antes de la llegada
+  > y sin atención viva, con una confirmación que dice que no cuenta como
+  > anulada ni como inasistencia.
   > **Enmendado el 06-10-2026 (D-126, D-127, `fix/menos-preguntas-agenda`).** Decía «DEBERÁ exigir motivo»
   > (fila AG-4). Con la edición en el sitio (AG-162) casi no se usa: la cita
   > con un dato mal puesto se corrige, no se retira. El `CHECK`
@@ -2649,7 +2653,7 @@ Convertirlo en configuración sería regalar la garantía.
   DEBERÁ pintar como principal sólo la primera, que es el paso siguiente,
   salvo que quite algo del día; el resto con contorno; y en rojo sólo las que
   quitan algo del día (anular, no
-  asistió, se fue sin ser atendido, quitar bloqueo). Las dos pantallas DEBERÁN
+  asistió, se fue sin ser atendido, registrada por error, quitar bloqueo). Las dos pantallas DEBERÁN
   dar a la misma acción la misma forma.
   > §9 ter: una principal por tarjeta o fila. Antes, cada acción traía su
   > propia variante y una cita llegada mostraba dos botones rellenos.
