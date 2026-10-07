@@ -1155,7 +1155,7 @@ describe('la receta por HTTP', () => {
     expect(body.routes).toContainEqual({ code: 'ORAL', label: 'Vía oral' });
   });
 
-  it('PR-103 PR-104 con el medicamento, publica las presentaciones que el CNMB le declara', async () => {
+  it('PR-103 PR-104 PR-115 con el medicamento, publica las presentaciones que el CNMB le declara', async () => {
     await prisma.catalogConcept.update({
       where: { id: conceptId },
       data: { attributes: { presentations: [{ form: 'CAPSULE', concentration: '500 mg' }] } }, // prettier-ignore
@@ -1164,7 +1164,15 @@ describe('la receta por HTTP', () => {
     const withConcept = await get(`/prescriptions/vocabulary?conceptId=${conceptId}`, doctorToken).expect(200); // prettier-ignore
     expect(
       (withConcept.body as { presentations: unknown[] }).presentations,
-    ).toEqual([{ form: 'CAPSULE', concentration: '500 mg' }]);
+    ).toEqual([
+      // PR-115. A presentation written before `forms` admits only its form.
+      {
+        form: 'CAPSULE',
+        concentration: '500 mg',
+        forms: ['CAPSULE'],
+        label: '',
+      },
+    ]);
     const without = await get('/prescriptions/vocabulary', doctorToken).expect(200); // prettier-ignore
     expect((without.body as { presentations: unknown[] }).presentations).toEqual([]); // prettier-ignore
   });

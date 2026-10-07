@@ -63,4 +63,29 @@ describe('el vocabulario de la línea de receta (PR-101 a PR-104)', () => {
   it('PR-104 un concepto que no declara presentaciones admite cualquiera', () => {
     expect(isDeclaredPresentation([], 'TABLET', '500 mg')).toBe(true);
   });
+
+  it('PR-115 una presentación del cuadro admite cualquiera de sus formas, con la misma concentración', () => {
+    const solidOral = [
+      {
+        form: 'TABLET',
+        forms: ['TABLET', 'COATED_TABLET', 'CHEWABLE_TABLET', 'CAPSULE'],
+        label: 'Sólido oral',
+        concentration: '500 mg',
+      },
+    ];
+
+    expect(isDeclaredPresentation(solidOral, 'CAPSULE', '500 mg')).toBe(true);
+    expect(isDeclaredPresentation(solidOral, 'TABLET', '500 mg')).toBe(true);
+    expect(isDeclaredPresentation(solidOral, 'CAPSULE', '750 mg')).toBe(false);
+    expect(isDeclaredPresentation(solidOral, 'SYRUP', '500 mg')).toBe(false);
+  });
+
+  it('PR-115 una forma del cuadro sin equivalente en la receta no admite ninguna', () => {
+    const implant = [
+      { form: '', forms: [], label: 'Sólido parenteral (implante subdérmico)', concentration: '68 mg' }, // prettier-ignore
+    ];
+
+    expect(isDeclaredPresentation(implant, 'TABLET', '68 mg')).toBe(false);
+    expect(isDeclaredPresentation(implant, '', '68 mg')).toBe(false);
+  });
 });

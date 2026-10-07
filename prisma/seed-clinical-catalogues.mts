@@ -1,105 +1,148 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+
+import { readCnmb } from '../src/modules/catalogs/import/cnmb.ts';
+import { nextClinicDay } from '../src/modules/catalogs/import/cutover.ts';
+import { readWorkbook } from '../src/modules/catalogs/import/xlsx.ts';
 
 /**
- * CNMB y tarifario de prestaciones, EN VERSIÓN DE DESARROLLO.
+ * El CNMB oficial y el tarifario de prestaciones.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * LEA ESTO ANTES DE USARLO PARA ALGO QUE NO SEA PROBAR
+ * EL CNMB (PR-114 a PR-116)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * ⚠️ **ESTO NO ES EL CNMB.** El Cuadro Nacional de Medicamentos Básicos vigente
- * es la **11.ª revisión, con 494 principios activos**, y la **12.ª —512— se
- * aprobó el 5 de agosto de 2026** y entra al publicarse en Registro Oficial.
- * Lo que hay aquí son **treinta y tantos principios activos reales** de los más
- * usados en consulta externa, cargados para que el módulo de receta se pueda
- * ejercitar. La carga real es un trabajo de datos, no de código, y está en el
- * ROADMAP.
+ * `catalogs/cnmb-2026.xlsx` es el Cuadro Nacional de Medicamentos Básicos que
+ * entregó el autor: 890 presentaciones, 528 «Código medicamento». Sustituye al
+ * cuadro de desarrollo (`DEV-2026-08`, treinta y tantos principios activos
+ * escritos a mano), que se RETIRA, nunca se borra: hay recetas y alergias que
+ * apuntan a sus filas por id. Cada medicamento oficial lleva en `replaces` el
+ * código de desarrollo que fue, para que esas alergias sigan saltando (PR-114).
  *
- * ⚠️ **Y ESTO NO ES EL TARIFARIO.** Son los conceptos mínimos para que una
- * orden de examen se pueda emitir, derivados de `exam_definition`. El Tarifario
- * de Prestaciones del SNS es un PDF de 2014 sin formato estructurado, y además
- * —esto importa— **no fija lo que la clínica cobra a un paciente particular**:
- * su ámbito se redujo en 2017 al relacionamiento dentro de la red pública. Aquí
- * sirve sólo como NOMENCLATURA.
+ * El cuadro no marca estupefacientes ni psicotrópicos: la marca `controlled`
+ * sale de `CONTROLLED_CODES` (D-148), pendiente de un farmacéutico.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * POR QUÉ EXISTE ESTE ARCHIVO
+ * EL TARIFARIO
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Porque sin él los dos módulos son inoperables y alguien acaba metiendo filas
- * a mano en la base para poder probar — que fue exactamente lo que pasó. Datos
- * escritos a mano no se reproducen, no se revisan y no se borran: aparecen un
- * año después con un código inventado dentro de una receta impresa.
- *
- * La versión lleva `DEV` en el nombre a propósito, para que ninguna instalación
- * confunda esto con la lista del ministerio.
+ * El Tarifario de Prestaciones del SNS **no fija lo que la clínica cobra a un
+ * paciente particular**: su ámbito se redujo en 2017 al relacionamiento dentro
+ * de la red pública. Aquí sirve sólo como NOMENCLATURA.
  */
+
+const CNMB_DEFAULTS = {
+  file: resolve(import.meta.dirname, 'catalogs/cnmb-2026.xlsx'),
+  version: 'cnmb-2026',
+  sourceUrl: 'https://www.conasa.gob.ec/biblioteca/',
+};
+
+/** Desde cuándo rige el cuadro en una base que no tenía ninguno. */
+const CNMB_FIRST_EDITION_FROM = new Date('2026-01-01T00:00:00Z');
+
+export interface CnmbImportOptions {
+  file?: string;
+  version?: string;
+  /** El instante de la importación, para el día de corte. */
+  now: Date;
+  /** Fuerza el día de corte; si no, el siguiente día clínico a `now`. */
+  effectiveFrom?: Date;
+}
 
 /**
- * PR-104. Una presentación del cuadro: forma farmacéutica (código del
- * vocabulario de la receta) y concentración. Las de aquí son de desarrollo y
- * no las del CNMB: sirven para que la regla se vea.
+ * PR-116. Importa el cuadro. Idempotente en (sistema, versión): el mismo
+ * archivo otra vez no hace nada; otro bajo la misma versión se rechaza.
  */
-type Presentation = { form: string; concentration: string };
-const p = (form: string, concentration: string): Presentation => ({
-  form,
-  concentration,
-});
+export async function importCnmb(
+  prisma: PrismaClient,
+  options: CnmbImportOptions,
+): Promise<{
+  status: 'imported' | 'unchanged';
+  inserted: number;
+  effectiveFrom: Date | null;
+}> {
+  const file = options.file ?? CNMB_DEFAULTS.file;
+  const version = options.version ?? CNMB_DEFAULTS.version;
+  const content = readFileSync(file);
+  const checksum = createHash('sha256').update(content).digest('hex');
+  const [sheet] = readWorkbook(content);
+  if (!sheet) throw new Error(`${file} no tiene hojas`);
+  const medicines = readCnmb(sheet);
 
-/** Principios activos por su Denominación Común Internacional. */
-const CNMB_DEV: readonly {
-  code: string;
-  display: string;
-  presentations: readonly Presentation[];
-  /**
-   * PR-070. Estupefaciente o psicotrópico: se receta en el recetario especial
-   * de la ACESS y este sistema no compone esa receta. Cuáles lo son lo dirá el
-   * CNMB real (D-084); aquí sólo hay uno para que la regla se vea.
-   */
-  controlled?: true;
-}[] = [
-  { code: 'PARACETAMOL', display: 'Paracetamol', presentations: [p('TABLET', '500 mg'), p('SYRUP', '120 mg/5 ml'), p('ORAL_DROPS', '100 mg/ml')] }, // prettier-ignore
-  { code: 'IBUPROFENO', display: 'Ibuprofeno', presentations: [p('TABLET', '400 mg'), p('ORAL_SUSPENSION', '100 mg/5 ml')] }, // prettier-ignore
-  { code: 'AMOXICILINA', display: 'Amoxicilina', presentations: [p('CAPSULE', '500 mg'), p('POWDER_FOR_ORAL_SUSPENSION', '250 mg/5 ml')] }, // prettier-ignore
-  { code: 'AMOXICILINA-CLAVULANICO', display: 'Amoxicilina + ácido clavulánico', presentations: [p('TABLET', '500 mg + 125 mg'), p('POWDER_FOR_ORAL_SUSPENSION', '250 mg + 62,5 mg/5 ml')] }, // prettier-ignore
-  { code: 'AZITROMICINA', display: 'Azitromicina', presentations: [p('TABLET', '500 mg'), p('POWDER_FOR_ORAL_SUSPENSION', '200 mg/5 ml')] }, // prettier-ignore
-  { code: 'CEFALEXINA', display: 'Cefalexina', presentations: [p('CAPSULE', '500 mg'), p('POWDER_FOR_ORAL_SUSPENSION', '250 mg/5 ml')] }, // prettier-ignore
-  { code: 'CIPROFLOXACINO', display: 'Ciprofloxacino', presentations: [p('TABLET', '500 mg')] }, // prettier-ignore
-  { code: 'TRIMETOPRIMA-SULFAMETOXAZOL', display: 'Trimetoprima + sulfametoxazol', presentations: [p('TABLET', '160 mg + 800 mg'), p('ORAL_SUSPENSION', '40 mg + 200 mg/5 ml')] }, // prettier-ignore
-  { code: 'METRONIDAZOL', display: 'Metronidazol', presentations: [p('TABLET', '500 mg'), p('ORAL_SUSPENSION', '250 mg/5 ml')] }, // prettier-ignore
-  { code: 'NITROFURANTOINA', display: 'Nitrofurantoína', presentations: [p('CAPSULE', '100 mg')] }, // prettier-ignore
-  { code: 'LORATADINA', display: 'Loratadina', presentations: [p('TABLET', '10 mg'), p('SYRUP', '5 mg/5 ml')] }, // prettier-ignore
-  { code: 'CETIRIZINA', display: 'Cetirizina', presentations: [p('TABLET', '10 mg'), p('ORAL_DROPS', '10 mg/ml')] }, // prettier-ignore
-  { code: 'SALBUTAMOL', display: 'Salbutamol', presentations: [p('INHALER', '100 mcg/dosis'), p('NEBULISER_SOLUTION', '5 mg/ml')] }, // prettier-ignore
-  { code: 'PREDNISONA', display: 'Prednisona', presentations: [p('TABLET', '5 mg'), p('TABLET', '20 mg')] }, // prettier-ignore
-  { code: 'DEXAMETASONA', display: 'Dexametasona', presentations: [p('INJECTABLE_SOLUTION', '4 mg/ml'), p('TABLET', '4 mg')] }, // prettier-ignore
-  { code: 'OMEPRAZOL', display: 'Omeprazol', presentations: [p('CAPSULE', '20 mg')] }, // prettier-ignore
-  { code: 'RANITIDINA', display: 'Ranitidina', presentations: [p('TABLET', '150 mg')] }, // prettier-ignore
-  { code: 'METOCLOPRAMIDA', display: 'Metoclopramida', presentations: [p('TABLET', '10 mg'), p('INJECTABLE_SOLUTION', '5 mg/ml')] }, // prettier-ignore
-  { code: 'SALES-REHIDRATACION', display: 'Sales de rehidratación oral', presentations: [p('GRANULES', '20,5 g')] }, // prettier-ignore
-  { code: 'ALBENDAZOL', display: 'Albendazol', presentations: [p('TABLET', '400 mg'), p('ORAL_SUSPENSION', '400 mg/20 ml')] }, // prettier-ignore
-  { code: 'ENALAPRIL', display: 'Enalapril', presentations: [p('TABLET', '10 mg'), p('TABLET', '20 mg')] }, // prettier-ignore
-  { code: 'LOSARTAN', display: 'Losartán', presentations: [p('TABLET', '50 mg'), p('TABLET', '100 mg')] }, // prettier-ignore
-  { code: 'AMLODIPINO', display: 'Amlodipino', presentations: [p('TABLET', '5 mg'), p('TABLET', '10 mg')] }, // prettier-ignore
-  { code: 'HIDROCLOROTIAZIDA', display: 'Hidroclorotiazida', presentations: [p('TABLET', '25 mg')] }, // prettier-ignore
-  { code: 'ATORVASTATINA', display: 'Atorvastatina', presentations: [p('TABLET', '20 mg')] }, // prettier-ignore
-  { code: 'METFORMINA', display: 'Metformina', presentations: [p('TABLET', '500 mg'), p('TABLET', '850 mg')] }, // prettier-ignore
-  { code: 'GLIBENCLAMIDA', display: 'Glibenclamida', presentations: [p('TABLET', '5 mg')] }, // prettier-ignore
-  { code: 'INSULINA-NPH', display: 'Insulina humana NPH', presentations: [p('INJECTABLE_SOLUTION', '100 UI/ml')] }, // prettier-ignore
-  { code: 'LEVOTIROXINA', display: 'Levotiroxina sódica', presentations: [p('TABLET', '50 mcg'), p('TABLET', '100 mcg')] }, // prettier-ignore
-  { code: 'ACIDO-FOLICO', display: 'Ácido fólico', presentations: [p('TABLET', '1 mg')] }, // prettier-ignore
-  { code: 'SULFATO-FERROSO', display: 'Sulfato ferroso', presentations: [p('TABLET', '200 mg'), p('SYRUP', '125 mg/5 ml')] }, // prettier-ignore
-  { code: 'CARBONATO-CALCIO', display: 'Carbonato de calcio', presentations: [p('TABLET', '500 mg')] }, // prettier-ignore
-  { code: 'ACIDO-ACETILSALICILICO', display: 'Ácido acetilsalicílico', presentations: [p('TABLET', '100 mg')] }, // prettier-ignore
-  { code: 'DICLOFENACO', display: 'Diclofenaco sódico', presentations: [p('TABLET', '50 mg'), p('INJECTABLE_SOLUTION', '75 mg/3 ml')] }, // prettier-ignore
-  { code: 'TRAMADOL', display: 'Tramadol', presentations: [p('CAPSULE', '50 mg'), p('INJECTABLE_SOLUTION', '50 mg/ml')] }, // prettier-ignore
-  { code: 'MORFINA', display: 'Morfina', presentations: [p('INJECTABLE_SOLUTION', '10 mg/ml'), p('TABLET', '10 mg')], controlled: true }, // prettier-ignore
-];
+  const cnmb = await prisma.catalogSystem.upsert({
+    where: { code: 'CNMB' },
+    update: { name: 'Cuadro Nacional de Medicamentos Básicos', hierarchical: false }, // prettier-ignore
+    create: { code: 'CNMB', name: 'Cuadro Nacional de Medicamentos Básicos', hierarchical: false }, // prettier-ignore
+  });
 
-const CNMB_VERSION = 'DEV-2026-08';
+  const existing = await prisma.catalogRelease.findUnique({
+    where: { systemId_version: { systemId: cnmb.id, version } },
+  });
+  if (existing) {
+    if (existing.sourceChecksum === checksum)
+      return { status: 'unchanged', inserted: 0, effectiveFrom: null };
+    throw new Error(
+      `La versión ${version} del CNMB ya existe con otro checksum. ` +
+        'Impórtela con un número de versión nuevo.',
+    );
+  }
+
+  const inForce = await prisma.catalogConcept.count({
+    where: { systemId: cnmb.id, validTo: null },
+  });
+  const effectiveFrom =
+    options.effectiveFrom ??
+    (inForce > 0 ? nextClinicDay(options.now) : CNMB_FIRST_EDITION_FROM);
+
+  const inserted = await prisma.$transaction(
+    async (tx) => {
+      const release = await tx.catalogRelease.create({
+        data: {
+          systemId: cnmb.id,
+          version,
+          publishedOn: effectiveFrom,
+          effectiveFrom,
+          sourceUrl: CNMB_DEFAULTS.sourceUrl,
+          sourceChecksum: checksum,
+        },
+      });
+      // Retirar, no borrar: hay recetas y alergias que apuntan a estas filas.
+      await tx.catalogConcept.updateMany({
+        where: { systemId: cnmb.id, validTo: null },
+        data: { validTo: effectiveFrom, retiredByReleaseId: release.id },
+      });
+      const created = await tx.catalogConcept.createMany({
+        data: medicines.map((medicine) => ({
+          systemId: cnmb.id,
+          introducedByReleaseId: release.id,
+          code: medicine.code,
+          display: medicine.display,
+          validFrom: effectiveFrom,
+          attributes: {
+            atc: medicine.atc,
+            atcClass: medicine.atcClass,
+            // Plain JSON: the interface has no index signature Prisma can see.
+            presentations:
+              medicine.presentations as unknown as Prisma.InputJsonArray,
+            ...(medicine.controlled ? { controlled: true } : {}),
+            ...(medicine.replaces.length > 0
+              ? { replaces: medicine.replaces }
+              : {}),
+          },
+        })),
+      });
+      return created.count;
+    },
+    { timeout: 60_000, maxWait: 30_000 },
+  );
+
+  return { status: 'imported', inserted, effectiveFrom };
+}
+
 const TARIFF_VERSION = 'DEV-2026-08';
 const EFFECTIVE_FROM = new Date('2026-01-01T00:00:00Z');
 
@@ -112,100 +155,15 @@ function checksumOf(value: unknown): string {
 }
 
 /**
- * Creates the `DEV` releases of the CNMB and of the tariff, the latter derived
- * from the active `exam_definition` rows (so it needs `seedBilling` first and
- * is skipped when there are none). A new release retires the concepts in force
- * instead of deleting them, because prescriptions point at them by id.
- *
- * Idempotent on (system, version): an existing release is left as it is, even
- * if the fixture above has changed since. Development data only — see above.
+ * Imports the official CNMB and creates the `DEV` release of the tariff,
+ * derived from the active `exam_definition` rows (so it needs `seedBilling`
+ * first and is skipped when there are none).
  */
-export async function seedClinicalCatalogues(prisma: PrismaClient) {
-  // ── CNMB ────────────────────────────────────────────────────────────────
-  const cnmb = await prisma.catalogSystem.upsert({
-    where: { code: 'CNMB' },
-    update: { name: 'Cuadro Nacional de Medicamentos Básicos', hierarchical: false }, // prettier-ignore
-    create: { code: 'CNMB', name: 'Cuadro Nacional de Medicamentos Básicos', hierarchical: false }, // prettier-ignore
-  });
-
-  const cnmbChecksum = checksumOf(CNMB_DEV);
-  const cnmbExisting = await prisma.catalogRelease.findUnique({
-    where: { systemId_version: { systemId: cnmb.id, version: CNMB_VERSION } },
-  });
-
-  let cnmbCount = 0;
-  if (!cnmbExisting) {
-    await prisma.$transaction(async (tx) => {
-      const release = await tx.catalogRelease.create({
-        data: {
-          systemId: cnmb.id,
-          version: CNMB_VERSION,
-          publishedOn: EFFECTIVE_FROM,
-          effectiveFrom: EFFECTIVE_FROM,
-          sourceUrl: 'https://www.conasa.gob.ec/biblioteca/',
-          sourceChecksum: cnmbChecksum,
-        },
-      });
-      // Retirar, no borrar: hay recetas que apuntan a estas filas por su id.
-      await tx.catalogConcept.updateMany({
-        where: { systemId: cnmb.id, validTo: null },
-        data: { validTo: EFFECTIVE_FROM, retiredByReleaseId: release.id },
-      });
-      const created = await tx.catalogConcept.createMany({
-        data: CNMB_DEV.map((item) => ({
-          systemId: cnmb.id,
-          introducedByReleaseId: release.id,
-          code: item.code,
-          display: item.display,
-          validFrom: EFFECTIVE_FROM,
-          attributes: {
-            presentations: item.presentations,
-            source: 'DEV FIXTURE — no es el CNMB',
-            ...(item.controlled ? { controlled: true } : {}),
-          },
-        })),
-      });
-      cnmbCount = created.count;
-    });
-  } else {
-    cnmbCount = await prisma.catalogConcept.count({
-      where: { systemId: cnmb.id, validTo: null },
-    });
-  }
-
-  // PR-070, PR-104. Una base sembrada con esta versión antes de que existieran
-  // la marca de controlado o las presentaciones no las recibiría: la versión
-  // ya existe y no se vuelve a sembrar. Se garantizan aparte, en el sitio y sin
-  // retirar nada — retirar dejaría sin concepto vigente a las atenciones de
-  // ayer.
-  for (const item of CNMB_DEV) {
-    const current = await prisma.catalogConcept.findFirst({
-      where: { systemId: cnmb.id, code: item.code, validTo: null },
-      select: { id: true },
-    });
-    const attributes = {
-      presentations: item.presentations,
-      source: 'DEV FIXTURE — no es el CNMB',
-      ...(item.controlled ? { controlled: true } : {}),
-    };
-    if (current) {
-      await prisma.catalogConcept.update({
-        where: { id: current.id },
-        data: { attributes },
-      });
-    } else {
-      await prisma.catalogConcept.create({
-        data: {
-          systemId: cnmb.id,
-          code: item.code,
-          display: item.display,
-          validFrom: EFFECTIVE_FROM,
-          attributes,
-        },
-      });
-      cnmbCount += 1;
-    }
-  }
+export async function seedClinicalCatalogues(
+  prisma: PrismaClient,
+  now = new Date(),
+) {
+  const cnmbResult = await importCnmb(prisma, { now });
 
   // ── Tarifario, derivado de los exámenes que la clínica sabe hacer ───────
   const tariff = await prisma.catalogSystem.upsert({
@@ -283,8 +241,12 @@ export async function seedClinicalCatalogues(prisma: PrismaClient) {
     }
   }
 
-  console.log('Catálogos clínicos de desarrollo:');
-  console.log(`  CNMB    ${String(cnmbCount).padStart(4)}  ⚠️ NO es el CNMB: el vigente tiene 494 principios activos`); // prettier-ignore
+  console.log('Catálogos clínicos:');
+  console.log(
+    cnmbResult.status === 'unchanged'
+      ? '  CNMB    sin cambios: la versión ya está importada'
+      : `  CNMB    ${String(cnmbResult.inserted).padStart(4)}  vigente desde ${cnmbResult.effectiveFrom!.toISOString().slice(0, 10)}`,
+  );
   console.log(`  TARIFF  ${String(tariffCount).padStart(4)}  derivado de exam_definition, sólo como nomenclatura`); // prettier-ignore
 }
 

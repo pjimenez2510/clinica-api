@@ -129,8 +129,17 @@ export function frequencyText(
  * «10mg» are the same presentation.
  */
 export interface DeclaredPresentation {
+  /** The form a choice of this presentation proposes. */
   form: string;
   concentration: string;
+  /**
+   * PR-115. Every form of the vocabulary this presentation admits, when the
+   * catalogue names a family of them («Sólido oral»: tableta, cápsula…).
+   * Absent, only `form` is admitted; empty, none is.
+   */
+  forms?: readonly string[];
+  /** PR-115. The form as the cuadro names it, for the picker. */
+  label?: string;
 }
 
 /**
@@ -153,7 +162,8 @@ export function isDeclaredPresentation(
       .replace(/µg/g, 'mcg');
   return declared.some(
     (presentation) =>
-      normal(presentation.form) === normal(form) &&
-      normal(presentation.concentration) === normal(concentration),
+      (presentation.forms ?? [presentation.form]).some(
+        (admitted) => admitted !== '' && normal(admitted) === normal(form),
+      ) && normal(presentation.concentration) === normal(concentration),
   );
 }
