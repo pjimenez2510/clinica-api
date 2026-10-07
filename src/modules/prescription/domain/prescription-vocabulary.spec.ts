@@ -134,4 +134,37 @@ describe('el vocabulario de la línea de receta (PR-101 a PR-104)', () => {
     expect(DOSAGE_FORMS.SUBLINGUAL_TABLET.label).toBe('Tableta sublingual');
     expect(DOSAGE_FORMS.LIPID_POWDER_FOR_INJECTION.label).toBe('Polvo para solución inyectable, formulación lipídica'); // prettier-ignore
   });
+
+  it('PR-115 todo código de forma cabe en su columna (prescription_item.dosage_form_code, 32)', () => {
+    for (const code of Object.keys(DOSAGE_FORMS))
+      expect(code.length, code).toBeLessThanOrEqual(32);
+  });
+
+  it('PR-115 un rango sin unidad en el extremo bajo, el aparte de la enoxaparina, una combinación y el guion', () => {
+    const at = (concentration: string) => [
+      {
+        form: 'TABLET',
+        forms: ['TABLET'],
+        label: 'Sólido oral',
+        concentration,
+      },
+    ];
+
+    // «25 - 50 mg/5 mL»: la unidad del extremo alto vale para los dos.
+    const iron = at('25 - 50 mg/5 mL (equivalente a hierro elemental)');
+    expect(isDeclaredPresentation(iron, 'TABLET', '25 mg/5 mL')).toBe(true);
+    expect(isDeclaredPresentation(iron, 'TABLET', '25 - 50 mg/5 mL (equivalente a hierro elemental)')).toBe(false); // prettier-ignore
+    // El aparte de un rango también es un rango: la enoxaparina en mg.
+    const enoxaparin = at('2000 UI - 10.000 UI (20 mg - 100 mg)');
+    expect(isDeclaredPresentation(enoxaparin, 'TABLET', '40 mg')).toBe(true);
+    expect(isDeclaredPresentation(enoxaparin, 'TABLET', '4000 UI')).toBe(true);
+    expect(isDeclaredPresentation(enoxaparin, 'TABLET', '200 mg')).toBe(false);
+    // Una combinación con un rango que no se puede leer: ni copiada vale.
+    const salmeterol = at('25 mcg + (50 mcg - 250 mcg)');
+    expect(isDeclaredPresentation(salmeterol, 'TABLET', '25 mcg + (50 mcg - 250 mcg)')).toBe(false); // prettier-ignore
+    expect(isDeclaredPresentation(salmeterol, 'TABLET', '50 mcg')).toBe(false);
+    // «-»: el cuadro no declara concentración; sólo cuenta la forma.
+    expect(isDeclaredPresentation(at('-'), 'TABLET', '5 g')).toBe(true);
+    expect(isDeclaredPresentation(at('-'), 'SYRUP', '5 g')).toBe(false);
+  });
 });

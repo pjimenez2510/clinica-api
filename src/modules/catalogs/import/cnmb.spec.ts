@@ -119,4 +119,20 @@ describe('the CNMB 2026 (PR-114 to PR-116)', () => {
       'dci:haloperidol decanoato',
     ]);
   });
+
+  it('PR-116: names a list of components by its heading, keeping the composition, so it fits the receta (240)', () => {
+    const medicines = cuadro();
+    const vitaminB = medicines.find((m) => m.code === 'A11DB')!;
+
+    expect(vitaminB.display).toBe('Complejo B');
+    expect(vitaminB.presentations[0]?.dci).toBe('Complejo B');
+    expect(vitaminB.presentations[0]?.composition).toMatch(
+      /^Complejo B: •Tiamina/,
+    );
+    for (const medicine of medicines) {
+      expect(medicine.display.length, medicine.code).toBeLessThanOrEqual(240);
+      for (const presentation of medicine.presentations)
+        expect(presentation.dci.length, medicine.code).toBeLessThanOrEqual(240);
+    }
+  });
 });

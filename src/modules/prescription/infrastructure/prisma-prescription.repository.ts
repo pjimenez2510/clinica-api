@@ -1230,7 +1230,7 @@ function toItemContent(item: PrescriptionView['items'][number]): ItemContent {
  * reads them with the allergies they are compared with.
  */
 async function substanceKeysIn(
-  client: Pick<Prisma.TransactionClient, 'catalogConcept'>,
+  client: Prisma.TransactionClient,
   conceptIds: readonly string[],
 ): Promise<SubstanceKeys> {
   if (conceptIds.length === 0) return new Map();
@@ -1238,7 +1238,38 @@ async function substanceKeysIn(
     where: { id: { in: [...new Set(conceptIds)] }, system: { code: CNMB } },
     select: { id: true, code: true, display: true, attributes: true },
   });
+  /**
+   * PR-114. A concept of an earlier cuadro also carries the substances of the
+   * concepts that name it in `replaces`: the development «Diclofenaco sódico»
+   * is the official diclofenac, eye drops included, though its own name is
+   * not the DCI the cuadro writes.
+   */
+  const successors = await client.$queryRaw<
+    { replaced: string; substances: unknown }[]
+  >`
+    SELECT r.code AS replaced, c.attributes -> 'substances' AS substances
+      FROM catalog_concept c
+      JOIN catalog_system s ON s.id = c.system_id AND s.code = ${CNMB}
+     CROSS JOIN LATERAL jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(c.attributes -> 'replaces') = 'array'
+                 THEN c.attributes -> 'replaces' ELSE '[]'::jsonb END) AS r(code)
+     WHERE r.code = ANY(${concepts.map((concept) => concept.code)}::text[])
+  `;
   return new Map(
-    concepts.map((concept) => [concept.id, substanceKeysOf(concept)]),
+    concepts.map((concept) => {
+      const inherited = successors
+        .filter((row) => row.replaced === concept.code)
+        .flatMap((row) =>
+          Array.isArray(row.substances)
+            ? row.substances.filter(
+                (value): value is string => typeof value === 'string',
+              )
+            : [],
+        );
+      return [
+        concept.id,
+        [...new Set([...substanceKeysOf(concept), ...inherited])],
+      ];
+    }),
   );
 }

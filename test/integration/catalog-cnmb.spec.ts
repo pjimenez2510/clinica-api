@@ -467,6 +467,48 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
     ).resolves.toMatchObject({ status: 'ACTIVE' });
   });
 
+  it('PR-114: a development allergy named otherwise (diclofenaco sódico) fires with every official code of its successor substance', async () => {
+    const prisma = db();
+    const system = await prisma.catalogSystem.create({
+      data: { code: 'CNMB', name: 'CNMB' },
+    });
+    const diclofenacDev = await prisma.catalogConcept.create({
+      data: {
+        systemId: system.id,
+        code: 'DICLOFENACO',
+        display: 'Diclofenaco sódico',
+        validFrom: new Date(Date.UTC(CUTOVER.getUTCFullYear(), 0, 1)),
+      },
+    });
+    await importCnmb(prisma, {
+      now: new Date(),
+      effectiveFrom: CUTOVER,
+      allowPastCutover: true,
+    });
+    const { patient, encounter, who } = await anAttention(prisma);
+    await prisma.patientAllergy.create({
+      data: {
+        recordedById: (await createUser(prisma)).id,
+        patientId: patient.id,
+        substanceConceptId: diclofenacDev.id,
+        substanceText: 'Diclofenaco',
+        criticality: 'HIGH',
+      },
+    });
+
+    // The eye drops: not the successor named in `replaces` (M01AB05), but
+    // the same substance.
+    const composed = await serviceOf(prisma).compose(
+      {
+        encounterId: encounter.id,
+        ...INDICATIONS,
+        items: [aLine((await official(prisma, 'S01BC03')).id, 'EYE_DROPS', '0,1 %')], // prettier-ignore
+      },
+      who,
+    );
+    expect(composed.allergyAlerts).toHaveLength(1);
+  });
+
   it('PR-116: the official morphine is not composed: it goes on the ACESS pad', async () => {
     const prisma = db();
     await importCnmb(prisma, {

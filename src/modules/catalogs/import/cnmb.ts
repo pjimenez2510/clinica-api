@@ -23,6 +23,11 @@ export interface CnmbPresentation {
   name: string;
   /** The DCI of this row; the same as the medicine's but for seven codes. */
   dci: string;
+  /**
+   * The cuadro's own text when it lists components («Complejo B: •Tiamina
+   * …»): `dci` is then its heading, which is what a receta prints.
+   */
+  composition?: string;
   prescriptionLevel: string;
   careLevel: string;
   pregnancyRisk: string;
@@ -143,6 +148,19 @@ export const DEVELOPMENT_CODES: Readonly<Record<string, string>> = {
 const plain = (value: string) =>
   value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
+/**
+ * PR-116. The name of a DCI the cuadro writes as a list of components:
+ * «Complejo B: •Tiamina … NOTA: Se describen …» is «Complejo B». The note
+ * goes, and a bulleted list keeps its heading. It is what the receta prints,
+ * and `prescription_item.generic_name` holds 240 characters.
+ */
+export function shortNameOf(dci: string): string {
+  const withoutNote = dci.split(/\s*NOTA:/i)[0]!.trim();
+  return withoutNote.includes('•')
+    ? withoutNote.slice(0, withoutNote.indexOf(':')).trim() || withoutNote
+    : withoutNote;
+}
+
 /** PR-114. `dci:` and the DCI without accents, case or extra spaces. */
 export function substanceKey(dci: string): string {
   return `dci:${plain(dci).replace(/\s+/g, ' ').trim()}`;
@@ -183,7 +201,7 @@ export function vocabularyFormsOf(label: string, route: string): string[] {
   if (form.startsWith('solido parenteral')) {
     if (form.includes('implante')) return ['SUBDERMAL_IMPLANT'];
     if (form.includes('lipidic')) return ['LIPID_POWDER_FOR_INJECTION'];
-    if (form.includes('nanoparticula')) return ['NANOPARTICLE_POWDER_FOR_INJECTION']; // prettier-ignore
+    if (form.includes('nanoparticula')) return ['NANOPARTICLE_INJECTION']; // prettier-ignore
     if (form.includes('liberacion prolongada')) return ['EXTENDED_RELEASE_INJECTION']; // prettier-ignore
     return ['POWDER_FOR_INJECTION'];
   }
@@ -247,15 +265,18 @@ export function readCnmb(sheet: Sheet): CnmbMedicine[] {
     const row = HEADER.map((_, index) => (raw[index] ?? '').trim());
     const code = row[0]!;
     if (code === '') continue;
-    byCode.set(code, [...(byCode.get(code) ?? []), { row, dci: row[3]! }]);
+    byCode.set(code, [
+      ...(byCode.get(code) ?? []),
+      { row, dci: shortNameOf(row[3]!) },
+    ]);
   }
 
   return [...byCode.entries()].map(([code, entries]) => {
     const display = displayOf(entries.map((entry) => entry.dci));
     const presentations: CnmbPresentation[] = [];
     const seen = new Set<string>();
-    for (const { row } of entries) {
-      const [, , , dci, name, concentration, , level, care, route, label, use, risk] = row; // prettier-ignore
+    for (const { row, dci } of entries) {
+      const [, , , written, name, concentration, , level, care, route, label, use, risk] = row; // prettier-ignore
       const key = [dci, concentration, label, route].map((v) => plain(v!)).join('|'); // prettier-ignore
       // The cuadro repeats one row verbatim (rifampicina + isoniazida).
       if (seen.has(key)) continue;
@@ -268,7 +289,9 @@ export function readCnmb(sheet: Sheet): CnmbMedicine[] {
         concentration: concentration!,
         route: route!,
         name: name!,
-        dci: dci === display ? display : dci!,
+        // A spelling variant of the name (Ondansetron) prints as the name.
+        dci: plain(dci) === plain(display) ? display : dci,
+        ...(written !== dci ? { composition: written! } : {}),
         prescriptionLevel: level!,
         careLevel: care!,
         pregnancyRisk: risk!,

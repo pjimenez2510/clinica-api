@@ -68,7 +68,7 @@ export const DOSAGE_FORMS = {
   INJECTABLE_SOLUTION: { label: 'Solución inyectable', unit: null },
   POWDER_FOR_INJECTION: { label: 'Polvo para solución inyectable', unit: null }, // prettier-ignore
   LIPID_POWDER_FOR_INJECTION: { label: 'Polvo para solución inyectable, formulación lipídica', unit: null }, // prettier-ignore
-  NANOPARTICLE_POWDER_FOR_INJECTION: { label: 'Polvo para suspensión inyectable de nanopartículas', unit: null }, // prettier-ignore
+  NANOPARTICLE_INJECTION: { label: 'Polvo para suspensión inyectable de nanopartículas', unit: null }, // prettier-ignore
   EXTENDED_RELEASE_INJECTION: { label: 'Polvo para suspensión inyectable de liberación prolongada', unit: null }, // prettier-ignore
   SUBDERMAL_IMPLANT: { label: 'Implante subdérmico', unit: null },
   CREAM: { label: 'Crema', unit: null },
@@ -178,25 +178,32 @@ export function matchingPresentations(
       (admitted) => admitted !== '' && normal(admitted) === normal(form),
     );
     if (!admitsForm) return false;
+    const declaredText = presentation.concentration.trim();
+    // PR-115. «-»: the cuadro declares no strength, and only the form counts.
+    if (declaredText === '-') return true;
+    // PR-115. A composition described in prose is not a figure to compare.
+    if (declaredText.length > DESCRIBED_COMPOSITION) return true;
     /**
-     * PR-115. A range of the cuadro admits the amounts inside it, and only
-     * those: a line that copies the range itself would print «1 mg - 5 mg»
-     * of warfarin, and is outside.
+     * PR-115. A range of the cuadro admits the amounts inside it — in its
+     * unit or in the aside's («2000 UI - 10.000 UI (20 mg - 100 mg)») — and
+     * only those: a line that copies the range would print «1 mg - 5 mg» of
+     * warfarin, and is outside.
      */
-    const range = rangeOf(presentation.concentration);
-    if (range) {
+    const ranges = rangesOf(declaredText);
+    if (ranges.length > 0) {
       const amount = amountOf(concentration ?? '');
-      return (
-        amount !== null &&
-        amount.unit === range.unit &&
-        amount.value >= range.min &&
-        amount.value <= range.max
+      return ranges.some(
+        (range) =>
+          amount !== null &&
+          amount.unit === range.unit &&
+          amount.value >= range.min &&
+          amount.value <= range.max,
       );
     }
-    if (normal(presentation.concentration) === normal(concentration))
-      return true;
-    // PR-115. A composition described in prose is not a figure to compare.
-    return presentation.concentration.length > DESCRIBED_COMPOSITION;
+    // A range that cannot be read («25 mcg + (50 mcg - 250 mcg)») is never
+    // matched by copying it: the receta would print a range.
+    if (/\s-\s/.test(declaredText)) return false;
+    return normal(declaredText) === normal(concentration);
   });
 }
 
@@ -265,9 +272,26 @@ export function rangeOf(
     .replace(/\s*\([^)]*\)\s*$/, '')
     .split(/\s+-\s+/);
   if (!low || !high || rest.length > 0) return null;
-  const from = amountOf(low);
   const to = amountOf(high);
+  // «25 - 50 mg/5 mL»: a bare figure takes the unit of the other end.
+  const bare = figureOf(low.trim());
+  const from =
+    amountOf(low) ?? (bare !== null && to ? { value: bare, unit: to.unit } : null); // prettier-ignore
   if (!from || !to || from.unit !== to.unit || from.value > to.value)
     return null;
   return { min: from.value, max: to.value, unit: from.unit };
+}
+
+/**
+ * PR-115. The range a concentration declares and, when it has one, the range
+ * of its aside in parentheses — the same strength in another unit.
+ */
+export function rangesOf(
+  text: string,
+): { min: number; max: number; unit: string }[] {
+  const main = rangeOf(text);
+  if (!main) return [];
+  const aside = /\(([^)]*)\)\s*$/.exec(text)?.[1];
+  const other = aside ? rangeOf(aside) : null;
+  return other ? [main, other] : [main];
 }
