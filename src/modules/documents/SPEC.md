@@ -882,9 +882,11 @@ generar al anular un examen.» en el nuevo.
   conservación, ni la orden la de numeración (D-121).
 
   > Vectores y no imagen porque PDF/A-1b prohíbe la transparencia (DOC-023) y
-  > una imagen es la vía por la que entra. Un documento sin código —hoy la
-  > orden— **no lleva QR**: un QR que no lleva a ningún sitio sería un sello
-  > falso en pequeño.
+  > una imagen es la vía por la que entra. Un documento sin código **no lleva
+  > QR**: un QR que no lleva a ningún sitio sería un sello falso en pequeño.
+  > (La orden ya tiene código y se verifica, DOC-094: lleva el suyo. Lo vio el
+  > recorrido de `feat/f05-documentos-pantalla` sobre el PDF descargado; esta
+  > nota decía «hoy la orden» como ejemplo de documento sin código.)
   >
   > **Sin la línea de conservación** (revisión de usabilidad del autor,
   > 04-10-2026): «Copia de respaldo conservada cinco años (Res. ACESS-2023-0030,
