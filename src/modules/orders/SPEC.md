@@ -329,7 +329,10 @@ ORD-127 y ORD-128 (D-138.1 y D-138.5) entran en esta rama por encargo de la
 principal: son de la bandera y de la lista de borradores, no del papel.
 
 **Solo servidor:** ORD-127 (la edad con que se elige el rango no se ve en
-pantalla). ORD-123 es solo de interfaz.
+pantalla).
+**Solo interfaz:** ORD-123. Lo marcado de otro tipo vive en la pantalla
+mientras se compone y nunca viaja: el servidor sólo recibe la orden de un tipo,
+y lo que rechaza la mezcla es ORD-097, ya probado contra la base.
 
 ### E12 — Un examen anulado no recibe informe _(P1)_
 
