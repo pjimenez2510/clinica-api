@@ -5,6 +5,12 @@ import {
   chartScope,
   chartScopeIds,
 } from '../../../shared/infrastructure/prisma/patient-chart-scope';
+import {
+  STANDING_ABSENCE_SELECT,
+  asserterNameOf,
+  findStandingAllergyAbsence,
+  type StandingAbsenceRow,
+} from '../../../shared/infrastructure/clinical/standing-allergy-absence';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   refutationNeedsReason,
@@ -85,18 +91,10 @@ type AllergyRow = Prisma.PatientAllergyGetPayload<{
  * (Ana Villacís, 14-03-2026)», and a field that is never loaded cannot end up
  * in a log or in a payload somebody later decides to widen.
  */
-const ABSENCE_SELECT = {
-  id: true,
-  patientId: true,
-  assertedById: true,
-  assertedAt: true,
-  assertedBy: { select: { firstName: true, lastName: true } },
-} satisfies Prisma.PatientAllergyAbsenceSelect;
+const ABSENCE_SELECT = STANDING_ABSENCE_SELECT;
 
 /** The row `ABSENCE_SELECT` yields, with the asserter's name and nothing else of the account. */
-type AbsenceRow = Prisma.PatientAllergyAbsenceGetPayload<{
-  select: typeof ABSENCE_SELECT;
-}>;
+type AbsenceRow = StandingAbsenceRow;
 
 /**
  * EN-080 to EN-083 over PostgreSQL. Every read goes through `chartScope`, as
@@ -494,51 +492,18 @@ export class PrismaPatientAllergyRepository implements PatientAllergyRepository 
   /**
    * EN-087. The chart's standing assertion, or `null`.
    *
-   * ═══════════════════════════════════════════════════════════════════════════
-   * TWO READS, AND THE SECOND ONE IS THE REQUIREMENT
-   * ═══════════════════════════════════════════════════════════════════════════
-   *
-   * The latest assertion is not automatically the current answer. An allergy
-   * recorded AFTER it is the chart's newer word on the subject, and it keeps
-   * being the newer word even once that allergy is refuted: asserted in March,
-   * penicillin in April, ruled out in May leaves an empty chart that NOBODY HAS
-   * ASKED ABOUT SINCE. Serving March's assertion there would be the system
-   * asserting «sin alergias conocidas» on its own initiative, which is the one
-   * thing HL7's definition forbids by name.
-   *
-   * ⚠️ BOTH READS GO THROUGH `chartScope`. The assertion may have been written
-   * on a chart that was later absorbed, and — more dangerous — the allergy that
-   * supersedes it may live on one. A bare `patient_id` on the second read
-   * silently keeps a stale «ninguna» alive over the absorbed chart's penicillin
-   * allergy, which is PA-009 with a prescription at the end of it.
-   *
-   * ORDERED BY `asserted_at` AND THEN BY `id`. `uuidv7()` is time-ordered, so
-   * the tie-break is still «the last one written» when two assertions share an
-   * instant — which two requests in the same millisecond can.
+   * The rule — retracted, superseded by an allergy recorded after it or
+   * active now, on this chart or one it absorbed — is
+   * `findStandingAllergyAbsence`'s, in `shared/infrastructure/clinical`,
+   * because the receta prints it too (D-157.2) and the band and the paper
+   * have to give the same answer.
    */
   async standingAbsenceFor(
     chartId: string,
   ): Promise<AllergyAbsenceAssertion | null> {
-    const assertion = await this.prisma.patientAllergyAbsence.findFirst({
-      where: { ...chartScope(chartId) },
-      select: { ...ABSENCE_SELECT, retractedAt: true },
-      orderBy: [{ assertedAt: 'desc' }, { id: 'desc' }],
-    });
-    // EN-226. The chart's last word was withdrawn: «no se preguntó», and an
-    // older assertion does not come back behind it.
-    if (assertion === null || assertion.retractedAt !== null) return null;
-
-    // EN-224. An allergy recorded after it supersedes it — and so does one
-    // that is ACTIVE now although recorded before: one reactivated after the
-    // assertion, or one that came with a chart merged in later.
-    const supersedingAllergies = await this.prisma.patientAllergy.count({
-      where: {
-        ...chartScope(chartId),
-        OR: [{ recordedAt: { gt: assertion.assertedAt } }, { refutedAt: null }],
-      },
-    });
-
-    return supersedingAllergies > 0 ? null : toAbsenceAssertion(assertion);
+    // D-157.2. The statement the receta reads too, so they cannot disagree.
+    const row = await findStandingAllergyAbsence(this.prisma, chartId);
+    return row === null ? null : toAbsenceAssertion(row);
   }
 }
 
@@ -566,20 +531,15 @@ async function assertCnmbConcept(
 }
 
 /**
- * EN-087. The row, with the author's name assembled once.
- *
- * `trim()` because `first_name` and `last_name` are both `NOT NULL` and the
- * join is a single space: what it guards against is not a missing half but the
- * double space that a stray trailing blank in the account would put in the
- * middle of the band's one line.
+ * EN-087. The row, with the author's name assembled once, by the same rule
+ * the receta prints it with (`asserterNameOf`).
  */
 function toAbsenceAssertion(row: AbsenceRow): AllergyAbsenceAssertion {
   return {
     id: row.id,
     patientId: row.patientId,
     assertedById: row.assertedById,
-    assertedByName:
-      `${row.assertedBy.firstName} ${row.assertedBy.lastName}`.trim(),
+    assertedByName: asserterNameOf(row),
     assertedAt: row.assertedAt,
   };
 }

@@ -80,6 +80,7 @@ export function sampleSubject(
           patient,
           diagnoses,
           allergies: ['Penicilina'],
+          noKnownAllergies: null,
           prescriber: practitioner,
           lines: [
             {

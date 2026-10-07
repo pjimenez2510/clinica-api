@@ -103,6 +103,7 @@ export function toDocumentResponse(
     patient: document.patient,
     diagnoses: [...document.diagnoses],
     allergies: [...document.allergies],
+    allergyHistory: document.allergyHistory,
     prescriber: {
       fullName: document.prescriber.fullName,
       acessRegistration: document.prescriber.acessRegistration,

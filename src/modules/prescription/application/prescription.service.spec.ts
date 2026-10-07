@@ -21,6 +21,8 @@ import {
 } from '../../../shared/domain/clinic-time';
 import { PrescriptionDraftOfAnotherPrescriberError } from '../domain/prescription.errors';
 import { PrescriptionService } from './prescription.service';
+import type { AllergyAbsenceReader } from '../../../shared/clinical/allergy-absence.port';
+import type { StandingAllergyAbsence } from '../../../shared/clinical/allergy-history';
 import type {
   CancelPlan,
   DiscardPlan,
@@ -311,6 +313,17 @@ class FakeAllergyReader implements ActiveAllergyReader {
   }
 }
 
+/** PR-117. The chart's standing «sin alergias conocidas», as asked. */
+class FakeAbsenceReader implements AllergyAbsenceReader {
+  standing: StandingAllergyAbsence | null = null;
+  askedFor: string[] = [];
+
+  standingAbsenceFor(chartId: string): Promise<StandingAllergyAbsence | null> {
+    this.askedFor.push(chartId);
+    return Promise.resolve(this.standing);
+  }
+}
+
 const anAllergy = (
   substanceConceptId: string | null,
   overrides: Partial<ActiveAllergy> = {},
@@ -328,6 +341,7 @@ const anAllergy = (
 describe('el servicio de recetas', () => {
   let repository: FakeRepository;
   let allergyReader: FakeAllergyReader;
+  let absenceReader: FakeAbsenceReader;
   let entries: AccessAuditEntry[];
   let service: PrescriptionService;
   /** DOC-109. What the documents port was asked to archive. */
@@ -338,6 +352,7 @@ describe('el servicio de recetas', () => {
   beforeEach(() => {
     repository = new FakeRepository();
     allergyReader = new FakeAllergyReader();
+    absenceReader = new FakeAbsenceReader();
     entries = [];
     const audit: AccessAuditRecorder = {
       record: (entry) => {
@@ -354,7 +369,7 @@ describe('el servicio de recetas', () => {
         return Promise.resolve(archiveAnswer);
       },
     };
-    service = new PrescriptionService(repository, allergyReader, audit, logger, documents); // prettier-ignore
+    service = new PrescriptionService(repository, allergyReader, audit, logger, documents, absenceReader); // prettier-ignore
   });
 
   const composeRequest = {
@@ -941,6 +956,43 @@ describe('el servicio de recetas', () => {
 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.action).toBe('READ');
+  });
+
+  it('PR-117 el documento dice la afirmación en pie de la ficha, y con una alergia no la dice', async () => {
+    repository.document = {
+      prescription: aPrescription({ status: 'ACTIVE', issuedAt: new Date() }),
+      chartId: 'patient-1',
+      site: { id: SITE, name: 'Sede', mspUnicode: 'U1', city: 'Quito' },
+      patient: {
+        familyName: 'Guamán',
+        givenName: 'María',
+        ageYears: 34,
+        ageMonths: 2,
+        ageDays: 1,
+      },
+      diagnoses: [],
+      prescriber: {
+        givenName: 'Ana',
+        familyName: 'Villacís',
+        acessRegistration: 'ACESS-11223',
+        contactPhone: '0991234567',
+      },
+    };
+    const assertedAt = new Date();
+    absenceReader.standing = { assertedByName: 'Ana Villacís', assertedAt };
+
+    const asserted = await service.document(PRESCRIPTION, requester);
+    expect(absenceReader.askedFor).toEqual(['patient-1']);
+    expect(asserted.allergyHistory).toBe(
+      `Sin alergias conocidas (Ana Villacís, ${clinicalDateOf(assertedAt).split('-').reverse().join('/')})`,
+    );
+
+    // Control: nothing standing → ask the patient; an allergy → the allergy.
+    absenceReader.standing = null;
+    expect((await service.document(PRESCRIPTION, requester)).allergyHistory).toBe('No registradas: pregunte al paciente'); // prettier-ignore
+    absenceReader.standing = { assertedByName: 'Ana Villacís', assertedAt };
+    allergyReader.allergies = [anAllergy(null, { substanceText: 'Látex' })];
+    expect((await service.document(PRESCRIPTION, requester)).allergyHistory).toBe('Látex'); // prettier-ignore
   });
 
   it('PR-006 responde 404 de dominio cuando el documento es de otra sede', async () => {

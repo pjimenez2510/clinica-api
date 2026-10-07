@@ -1,3 +1,4 @@
+import type { StandingAllergyAbsence } from '../../../shared/clinical/allergy-history';
 import type { Form117 } from '../../../shared/domain/form-117/form-117';
 import type { DocumentKind, SiteScopeFilter } from './document-kind';
 import type { StoredImage } from './document-image';
@@ -128,6 +129,11 @@ export interface PrescriptionPrintData {
   diagnoses: readonly { code: string; display: string }[];
   /** Art. 5.b.iv — «Antecedentes de alergias». */
   allergies: readonly string[];
+  /**
+   * DOC-116, EN-087. The chart's STANDING «sin alergias conocidas», or `null`
+   * («no se preguntó»), by the rule the attention's band reads it with.
+   */
+  noKnownAllergies: StandingAllergyAbsence | null;
   prescriber: PractitionerIdentity;
   lines: readonly PrescriptionLine[];
 }

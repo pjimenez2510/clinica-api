@@ -6,6 +6,8 @@ import { CurrentUserService } from '../../shared/authorisation/current-user.serv
 import { ACTIVE_ALLERGY_READER } from '../../shared/clinical/patient-allergy.port';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 import { PrismaActiveAllergyReader } from '../../shared/infrastructure/clinical/prisma-active-allergy.reader';
+import { ALLERGY_ABSENCE_READER } from '../../shared/clinical/allergy-absence.port';
+import { PrismaAllergyAbsenceReader } from '../../shared/infrastructure/clinical/standing-allergy-absence';
 
 import { EncounterPrescriptionsController } from './encounter-prescriptions.controller';
 import { PrescriptionController } from './prescription.controller';
@@ -59,6 +61,8 @@ import { PrismaPrescriptionRepository } from './infrastructure/prisma-prescripti
      * `chartScope` on its own.
      */
     { provide: ACTIVE_ALLERGY_READER, useClass: PrismaActiveAllergyReader },
+    // PR-117. The standing «sin alergias conocidas» the receta prints.
+    { provide: ALLERGY_ABSENCE_READER, useClass: PrismaAllergyAbsenceReader },
     { provide: ACCESS_AUDIT_RECORDER, useClass: PrismaAccessAuditRecorder },
   ],
 })

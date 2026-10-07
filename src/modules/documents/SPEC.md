@@ -322,6 +322,19 @@ generar al anular un examen.» en el nuevo.
 **Cubre:** DOC-110.
 
 
+### H11 — Lo que la receta impresa dice de las alergias _(P1)_
+
+**Prueba independiente:** descargar el PDF de la receta de un paciente sin
+nada registrado y leer «No registradas: pregunte al paciente»; el de otro con
+«Sin alergias conocidas» afirmado en la atención y leer el nombre del médico y
+la fecha.
+
+**Cubre:** DOC-116.
+
+**Solo servidor:** DOC-116. La frase está en el PDF que compone el servidor; la
+pantalla sólo lo pide y lo abre. Se comprueba sobre el PDF que la pantalla
+descarga en `clinica-web/e2e/flujos/f05-documentos.spec.ts`.
+
 ---
 
 ## Criterios de éxito
@@ -788,10 +801,28 @@ generar al anular un examen.» en el nuevo.
   > y la que lee la farmacia antes de dispensar una penicilina. Imprimir «Sin
   > alergias conocidas» cuando un clínico lo afirmó queda en D-157.
 
+  > **Enmendado por DOC-116 (D-157, 07-10-2026):** «No consta ninguna
+  > registrada» pasa a «No registradas: pregunte al paciente», y la afirmación
+  > de un clínico se imprime con su nombre y fecha.
+
   > PR-110 (D-128.6): la justificación dejó de ser obligatoria y la marca dejó
   > de ser la justificación. Una línea fuera del cuadro sin justificación se
   > imprime marcada con «Medicamento o presentación que no consta en el
   > cuadro».
+
+- **DOC-116** — En la receta, «Antecedentes de alergias» DEBERÁ decir la misma
+  frase que su pantalla (PR-117): las alergias no refutadas de la ficha y de
+  las que absorbió, en rojo (DOC-085); sin ninguna, SI la ficha tiene un «sin
+  alergias conocidas» en pie (EN-087, `standingAbsenceFor`, D-A-018), ENTONCES
+  «Sin alergias conocidas (<clínico>, <DD/MM/AAAA>)»; y si no, «No
+  registradas: pregunte al paciente». Ninguna de las dos va en rojo.
+
+  > D-157.1 y D-157.2. La farmacia lee esta línea antes de dispensar y no
+  > tiene la historia a mano: lo que necesita saber es si alguien preguntó.
+  > La regla de vigencia es la de la banda de la atención, leída por la misma
+  > sentencia, para que pantalla, banda y papel no puedan discrepar.
+  > Coinciden en el instante en que se emite el PDF, que después no cambia
+  > (DOC-006); lo que pasa si la ficha cambia después, en D-169.1.
 
 - **DOC-073** — La receta DEBERÁ colocar el bloque de indicaciones al paciente
   en una **banda desprendible al pie**, separada por una **línea de corte**
@@ -987,7 +1018,9 @@ generar al anular un examen.» en el nuevo.
   - **Cambios de contenido posteriores, cada uno con su AG:** el recuadro de la
     banda de la receta, que pasa de «Sello del profesional» a «Firma y sello
     del profesional» con el registro ACESS (DOC-073), y «Ninguna conocida»,
-    que pasa a «No consta ninguna registrada» (DOC-072).
+    que pasa a «No consta ninguna registrada» (DOC-072) y después a «No
+    registradas: pregunte al paciente» o «Sin alergias conocidas (<clínico>,
+    <fecha>)» (DOC-116).
 
   > Lo comprueba `document-layout.spec.ts` contra lo que imprimía `main`.
 
@@ -1312,6 +1345,7 @@ Por qué no se construye hoy:
 | DOC-001, DOC-002, DOC-006, DOC-007, DOC-012, DOC-014 | Integración por HTTP: es donde el alcance de sedes y el permiso son reales |
 | DOC-108, DOC-109 | **Integración por HTTP** (`documents-http.spec.ts`): corregir sin motivo y con él; anular una receta, un certificado y un examen, y corregir una receta, archivan el que sustituye al vigente con su marca y su motivo; sin PDF previo no se archiva nada (control positivo); un fallo forzado de la base al archivar no impide la anulación, y «Corregir…» lo archiva después; cada respuesta lleva `documentArchived` (`true`, `false` con el fallo forzado, `null` sin PDF). Unitario: el motivo de cada causa, el vigente que se sustituye, el puerto que nunca lanza y responde `true`, `false` o `null`, el registro del fallo que sobrevive a la poda sin el mensaje, y que cada servicio lo llama tras anular o corregir y propaga la respuesta |
 | DOC-020 a DOC-025, DOC-070 a DOC-085 | Unitarias sobre los bytes generados: el PDF se inspecciona, no se cree; y veraPDF (`pnpm pdfa:check`) al cerrar |
+| DOC-116 | Unitaria del layout (las tres frases, ninguna en rojo salvo las alergias) e **integración contra PostgreSQL real** del lector: la afirmación en pie, retirada, superada por una alergia posterior, hecha sobre una ficha absorbida, y la receta de una ficha que después se absorbió (no se imprime) |
 | DOC-038, DOC-039, DOC-061, DOC-094 a DOC-096 | Integración por HTTP: permiso, transacción y cuerpo de la respuesta reales |
 | DOC-050 a DOC-056 | Unitarias sobre el normalizador de imagen, con ficheros sintéticos |
 | DOC-013, DOC-079, DOC-100 | **Sin prueba, porque no hay código.** Están declarados y no construidos, y el `Estado: borrador` de este documento es lo que lo hace legítimo |

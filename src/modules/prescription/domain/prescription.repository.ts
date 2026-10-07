@@ -27,6 +27,7 @@
 
 import type { ItemContent } from './prescription-content';
 import type { KnownAllergy, SubstanceKeys } from './allergy-check';
+import type { StandingAllergyAbsence } from '../../../shared/clinical/allergy-history';
 import type { DeclaredPresentation } from './prescription-vocabulary';
 
 import type { PrescriptionStatus } from './prescription';
@@ -378,6 +379,12 @@ export interface PrescriptionDocumentSource {
    * es alérgica esta persona?» — see `PrescriptionRecordSource` below.
    */
   allergies: readonly { substanceText: string }[];
+  /**
+   * PR-117, EN-087. The chart's STANDING «sin alergias conocidas», or `null`
+   * («no se preguntó»). From `AllergyAbsenceReader`, the statement the
+   * attention's band reads, for the same reason as the allergies.
+   */
+  noKnownAllergies: StandingAllergyAbsence | null;
   /** PR-033, PR-034. */
   prescriber: {
     givenName: string;
@@ -402,7 +409,7 @@ export interface PrescriptionDocumentSource {
  */
 export interface PrescriptionRecordSource extends Omit<
   PrescriptionDocumentSource,
-  'allergies'
+  'allergies' | 'noKnownAllergies'
 > {
   /** PR-027, PR-062. The chart whose allergies the shared reader is asked for. */
   chartId: string;

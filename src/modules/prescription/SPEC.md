@@ -242,6 +242,19 @@ registrada contra el medicamento de desarrollo sigue saltando.
 **Solo servidor:** PR-114 y PR-116 (la alerta y la importación se ven en la
 pantalla igual que antes; lo que cambia es que no se pierden).
 
+### H7 — Lo que la receta dice de las alergias _(P1)_
+
+Sin alergias registradas, la receta pide que se pregunte; con un «sin alergias
+conocidas» en pie, dice quién lo afirmó y cuándo. Lo mismo en la pantalla y en
+el papel (DOC-116).
+
+**Prueba independiente:** emitir la receta de un paciente nuevo y leer «No
+registradas: pregunte al paciente»; afirmar «Sin alergias conocidas» en la
+atención y leer «Sin alergias conocidas (<médico>, <hoy>)»; registrar después
+una alergia y leerla a ella, sin la afirmación.
+
+**Cubre:** PR-117.
+
 ### Fuera de las cinco
 
 La **dispensación**, la **interacción medicamento–medicamento**, la **duplicidad
@@ -568,6 +581,29 @@ documento existe y es lo único que la ACESS puede inspeccionar.
   > El art. 5.b.iv las pone en el contenido mínimo del documento, así que están
   > aquí aunque no interrumpan nada. La comprobación que **sí** interrumpe es
   > PR-060 y es otra cosa.
+
+- **PR-117** — El documento de la receta DEBERÁ decir sus antecedentes de
+  alergias en una sola frase compuesta por el servidor (`allergyHistory`), la
+  misma que imprime el papel (DOC-116): las alergias de PR-027 cuando las hay;
+  SI no las hay y la ficha —o una que absorbió— tiene un «sin alergias
+  conocidas» **en pie** (EN-087, con la regla de `standingAbsenceFor`: ni
+  retirado ni superado por una alergia registrada después o activa, D-A-018),
+  ENTONCES «Sin alergias conocidas (<clínico>, <DD/MM/AAAA>)», con la fecha de
+  la afirmación en `America/Guayaquil`; y en cualquier otro caso «No
+  registradas: pregunte al paciente». **NO DEBERÁ** decir que no tiene
+  alergias sin nombrar a quien lo afirmó.
+
+  > D-157.1 y D-157.2 (07-10-2026). La frase es para quien dispensa, que no
+  > tiene la historia: «no consta» le dejaba sin saber si alguien preguntó, y
+  > lo que hace con «pregunte al paciente» es preguntar. La afirmación sólo se
+  > imprime con nombre y fecha porque es un acto de un clínico, nunca una
+  > posición por defecto del sistema.
+  >
+  > La frase se lee al pedir el documento, y el PDF se guarda al emitirse
+  > (DOC-002): pantalla y papel coinciden en ese instante. Qué dice después
+  > la pantalla de una receta emitida, en D-169.1. Una atención de una ficha
+  > que después se absorbió no imprime la afirmación (la superviviente puede
+  > tener una alergia que esa ficha no ve): dice «No registradas».
 
 ### 2.3 Datos del medicamento (art. 5.c)
 
@@ -1505,6 +1541,7 @@ prueba o el CI falla**.
 | PR-111 | Interfaz: elegir «Dosis única» vacía y oculta la duración; un borrador antiguo reabierto con «Dosis única» no la trae |
 | PR-112 | Interfaz (`clinica-web`): el rechazo por alergia ofrece «Descartar esta alergia» a quien tiene `record:write`; al descartarla **no** se vuelve a emitir y el aviso no trae «Deshacer»; el diálogo muestra criticidad y reacción, exige motivo con criticidad alta y guarda «Descartada al emitir una receta». Sin el permiso queda el enlace. La exigencia de motivo de la API, en la integración de EN-224 |
 | PR-113 | Interfaz (`clinica-web`): emitir con una línea del CNMB marcada pide la confirmación que nombra la línea y no emite hasta confirmarla; sin concepto o en una presentación declarada se emite sin preguntar |
+| PR-117 | Unitaria de la frase (las tres ramas, la fecha en `America/Guayaquil` a las 21:00) y del documento; **integración contra PostgreSQL real** del documento por el servicio: sin nada, la afirmación hecha sobre una ficha absorbida (control positivo), superada por una alergia registrada después aunque se refute, y otra retirada. La receta de una ficha que después se absorbió, en la de DOC-116. Interfaz: la pantalla pinta `allergyHistory` tal cual |
 | PR-100, PR-104 | **Integración contra PostgreSQL real**, con control positivo: reescribir un borrador conserva su id y sustituye las líneas; las de una emitida no se tocan ni desde la base; otra presentación de un concepto que declara las suyas se compone sin justificación y sale marcada (PR-110) |
 | PR-062 | **Integración contra PostgreSQL real, con una fusión de fichas de por medio.** Es el único nivel que puede demostrarlo: depende de que el enlace se recorra en la base, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo recorriendo el AST |
 | PR-050 | **Unitario con el huso alterado**, como `clinical-date-timezone.spec.ts`: la misma emisión bajo `UTC` y bajo `Asia/Tokyo` da la misma fecha límite. Es el defecto real que originó REQ-160 |
