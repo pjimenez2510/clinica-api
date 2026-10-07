@@ -125,6 +125,21 @@ funcionando.
 **Solo servidor:** AU-036. Cerrar las sesiones de OTRA persona no se observa
 desde la pantalla de quien reinicia; se comprueba contra la base.
 
+### A5 — Administrar sin quitar y volver a poner _(P1, 06-10-2026)_
+
+Las filas AD-1, AD-2, AD-8 y AD-10 del inventario de D-126 y D-127: lo que
+tiene efecto pide una confirmación, y lo mal tecleado se corrige en el sitio.
+
+**Prueba independiente:** como administrador, desactivar una cuenta y ver la
+confirmación que dice que se cierran sus sesiones; retirar un rol y confirmar;
+cambiar la sede de un rol concedido desde su fila; corregir el correo de una
+cuenta que aún no entró y comprobar que la invitación viva se anuló y salió
+otra al correo nuevo; y leer en la bitácora el correo anterior.
+**Cubre:** AU-048 a AU-052.
+
+**Solo interfaz:** AU-048, AU-049. **Solo servidor:** AU-052 (la bitácora no
+tiene pantalla todavía).
+
 ---
 
 ## Requisitos
@@ -908,6 +923,48 @@ enlace que no sirve y con un correo que no sale.
   > de las dos acciones, nunca las dos.
 
 ---
+
+### Editar en el sitio (D-126, D-127, D-128)
+
+- **AU-048** — CUANDO un administrador pulse «Desactivar» en una cuenta, la
+  pantalla DEBERÁ pedir **una** confirmación que diga la consecuencia —la
+  persona deja de entrar y se cierran sus sesiones abiertas—, sin pedir motivo.
+  Activarla NO DEBERÁ pedir confirmación.
+  > AD-1. Desactivar cierra sesiones ajenas (AU-023): tiene efecto, así que
+  > D-126.2 pide una confirmación por si se pulsó por error.
+- **AU-049** — CUANDO se retire un rol concedido, la pantalla DEBERÁ pedir
+  **una** confirmación que nombre el rol y su alcance; conceder NO DEBERÁ
+  pedirla. Y el alcance de sede de un rol concedido DEBERÁ poder cambiarse
+  desde su fila en un solo gesto («Editar»), que reemplaza la concesión por la
+  del alcance nuevo en la misma petición (`PUT /auth/users/{id}/roles`), con
+  las reglas de AU-038.
+  > AD-2 y la mitad de AD-8. Antes, cambiar de «Sede Norte» a «Todas las
+  > sedes» era retirar y volver a conceder: dos gestos y un instante en que la
+  > persona no tenía el rol.
+- **AU-050** — El sistema DEBERÁ permitir corregir el **correo** de una cuenta
+  (`PATCH /auth/users/{id}` con `email`), con la misma validación y unicidad que
+  al crearla (`EMAIL_ALREADY_REGISTERED`). MIENTRAS la cuenta tenga la primera
+  credencial pendiente, ENTONCES el sistema DEBERÁ anular la invitación viva y
+  enviar una nueva al correo corregido (AU-027). Corregir el correo NO DEBERÁ
+  cerrar las sesiones de la cuenta.
+  > AD-8. El caso que lo hace urgente es el correo mal tecleado al dar de alta:
+  > la invitación está en el buzón de un desconocido, y la única salida era
+  > otra cuenta. La versión anterior la guarda la bitácora (AU-052), no
+  > `record_version`: esa tabla archiva la fila entera, y la fila de la cuenta
+  > lleva la contraseña y el secreto del segundo factor (AU-025).
+- **AU-051** — El sistema DEBERÁ permitir corregir el **código** de un rol
+  propio (`PATCH /auth/roles/{id}` con `code`), con la unicidad de
+  `ROLE_CODE_DUPLICATE`; el de un rol del sistema NO DEBERÁ cambiar
+  (`SYSTEM_ROLE_PROTECTED`, `trg_role_protect_system`).
+  > AD-8. Las concesiones y los permisos apuntan al rol por su id, así que el
+  > código de un rol propio es una etiqueta: corregirlo no mueve nada.
+- **AU-052** — Toda edición de una cuenta o de un rol DEBERÁ dejar en
+  `access_audit` el **antes y el después** de los campos editados (nombre,
+  apellido, cédula, correo; código, nombre, descripción, activo), y NO DEBERÁ
+  llevar nunca la contraseña, su hash ni el secreto del segundo factor.
+  > AD-10 y el «valor anterior» que AU-025 pedía y nadie guardaba. La lista
+  > blanca `access_audit_payload_only_for_declared_resources` admite `auth`
+  > desde `admin_edit_in_place` (D-145).
 
 ## Códigos de error
 

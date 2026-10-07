@@ -361,6 +361,15 @@ cambiar de pestaña, abrir una cuenta y volver atrás a la misma pestaña.
 
 **Cubre:** BI-204 a BI-207. **Solo interfaz:** BI-204, BI-205, BI-206, BI-207.
 
+### B14 — Corregir el tarifario en el sitio _(P1, 06-10-2026)_
+
+AD-3 y AD-10 del inventario de D-126 y D-127.
+
+**Prueba independiente:** como administrador, corregir el importe del precio
+vigente de una prestación y verlo en su historial con el importe anterior;
+comprobar que un cargo ya registrado con el importe viejo no cambió.
+**Cubre:** BI-230, BI-231. **Solo servidor:** BI-231.
+
 ### B11 — Prestaciones con estructura _(P2)_
 
 La categoría de una prestación deja de ser texto libre y pasa a un catálogo
@@ -787,6 +796,16 @@ es falsa, hay requisitos que cambian.
   > tres cosas manda a alguien a buscar en el sitio equivocado.
 - **BI-048** — El sistema DEBERÁ expresar todo precio en dólares de los Estados
   Unidos y NO DEBERÁ ofrecer conversión de moneda.
+- **BI-230** — El sistema DEBERÁ permitir corregir el **importe** de un precio
+  vigente o futuro (`PATCH /billing/prices/{id}`), guardando la versión
+  anterior en `record_version` con quién y cuándo; SI la vigencia del precio
+  terminó antes de hoy, ENTONCES DEBERÁ rechazarlo con `PRICE_NOT_EDITABLE`.
+  Los cargos ya registrados NO DEBERÁN cambiar.
+  > AD-3 (D-127). El error de hoy se corregía mañana: sólo se podía abrir otro
+  > precio «desde» una fecha posterior. Enmienda BI-044: ya no es verdad que
+  > «nadie podría explicar por qué» un cargo dice un importe distinto de su
+  > fila, porque la fila anterior queda en `record_version` y el cargo congela
+  > el suyo (BI-050). Lo garantiza `trg_price_record_version`.
 
 ## 6. El cargo: la pieza que congela
 
@@ -1390,6 +1409,13 @@ es falsa, hay requisitos que cambian.
   > El mismo razonamiento de AG-105 y de `AGENDA_ENTRY_NOT_FOUND`: distinguirlos
   > confirma la existencia de facturas ajenas a quien prueba identificadores, y
   > una factura confirma que un paciente estuvo.
+
+- **BI-231** — Toda edición de una prestación, una categoría, un precio o un
+  pagador DEBERÁ dejar en `access_audit` el antes y el después de los campos
+  editados.
+  > AD-10 (D-145). La bitácora de facturación no mandaba el antes y el después
+  > porque la lista blanca lo habría descartado en silencio; desde
+  > `admin_edit_in_place` los admite.
 
 ## 15. Parametrización
 

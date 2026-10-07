@@ -94,6 +94,13 @@ diálogo ofrece especialidad y tipo.
 
 **Cubre:** SP-028 junto a los AG-### de agenda que ya lo describen.
 
+### C5 — La bitácora dice qué había _(P1, 06-10-2026)_
+
+AD-10 del inventario de D-126 y D-127.
+
+**Prueba independiente:** renombrar una especialidad y leer en la bitácora el nombre anterior.
+**Cubre:** SP-029. **Solo servidor:** SP-029.
+
 **Prueba independiente:** proponer la duración de un especialidad·tipo para un
 médico con y sin excepción contra PostgreSQL real, reservar con esa duración y
 comprobar que el tipo queda en la fila de la cita, y que borrar ese tipo se
@@ -328,6 +335,14 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   > enseña a saltarse los que sí.
 
 ---
+
+### Editar en el sitio (D-126, D-127)
+
+- **SP-029** — Toda edición de una especialidad o de un tipo de atención DEBERÁ
+  dejar en `access_audit` el antes y el después de los campos editados.
+  > AD-10. SP-002 pedía autor e instante (D-145). El código de la especialidad
+  > sigue sin editarse: lo deriva el servidor y no se muestra (SP-009,
+  > decisión del autor del 19-08-2026).
 
 ## Códigos de error
 
