@@ -102,7 +102,10 @@ describe('la receta como documento', () => {
     // 20:00 UTC is 15:00 in Guayaquil: the same day in both zones.
     const withAssertion = source({
       allergies: [],
-      noKnownAllergies: { assertedByName: 'Ana Villacís', assertedAt: ISSUED_AT },
+      noKnownAllergies: {
+        assertedByName: 'Ana Villacís',
+        assertedAt: ISSUED_AT,
+      },
     });
     const day = ISSUED_AT.toISOString().slice(0, 10).split('-').reverse().join('/'); // prettier-ignore
     expect(

@@ -257,9 +257,16 @@ describe('DOC-104 los datos generales, en la franja gris de la plantilla', () =>
   it('DOC-085 DOC-116 las alergias registradas van en rojo, y «No registradas» ni la afirmación no', () => {
     const allergyOf = (
       allergies: string[],
-      noKnownAllergies: { assertedByName: string; assertedAt: Date } | null = null,
+      noKnownAllergies: {
+        assertedByName: string;
+        assertedAt: Date;
+      } | null = null,
     ) =>
-      composeLayout(prescription({ allergies, noKnownAllergies }), context, template)
+      composeLayout(
+        prescription({ allergies, noKnownAllergies }),
+        context,
+        template,
+      )
         .blocks.flatMap((block) =>
           block.kind === 'fields' ? block.entries : [],
         )

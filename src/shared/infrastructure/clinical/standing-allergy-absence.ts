@@ -61,8 +61,13 @@ export async function findStandingAllergyAbsence(
   });
   if (supersedingAllergies > 0) return null;
 
-  const { retractedAt: _retracted, ...row } = assertion;
-  return row;
+  return {
+    id: assertion.id,
+    patientId: assertion.patientId,
+    assertedById: assertion.assertedById,
+    assertedAt: assertion.assertedAt,
+    assertedBy: assertion.assertedBy,
+  };
 }
 
 /** What a standing assertion carries: the asserter's name and nothing else of the account. */

@@ -1586,7 +1586,11 @@ describe('la receta contra PostgreSQL', () => {
     const service = serviceOf(prisma);
     const requesterArgs = { userId: requester.userId, sites: [...requester.sites] }; // prettier-ignore
     const composed = await service.compose(
-      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(medicine.id)] },
+      {
+        encounterId: encounter.id,
+        ...INDICATIONS,
+        items: [aLine(medicine.id)],
+      },
       requesterArgs,
     );
     await service.issue(composed.prescription.id, requesterArgs);
