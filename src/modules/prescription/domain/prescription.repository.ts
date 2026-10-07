@@ -26,7 +26,7 @@
  */
 
 import type { ItemContent } from './prescription-content';
-import type { KnownAllergy } from './allergy-check';
+import type { KnownAllergy, SubstanceKeys } from './allergy-check';
 import type { DeclaredPresentation } from './prescription-vocabulary';
 
 import type { PrescriptionStatus } from './prescription';
@@ -254,6 +254,8 @@ export interface IssueSnapshot {
   items: readonly ItemContent[];
   /** PR-062. The chart's allergies AND those of every chart it absorbed. */
   allergies: readonly KnownAllergy[];
+  /** PR-114. The substance keys of every line's and every allergy's concept. */
+  substanceKeys: SubstanceKeys;
   /** PR-021. The canton of the site's DPA parish; `null` when unconfigured. */
   cityOfPrescription: string | null;
   /** PR-095. How many diagnoses the attention has, read under the lock. */
@@ -457,6 +459,12 @@ export interface PrescriptionRepository {
    * is not a CNMB concept or declares nothing.
    */
   presentationsOf(conceptId: string): Promise<DeclaredPresentation[]>;
+
+  /**
+   * PR-114. The substance keys (code and `replaces`) of these CNMB concepts,
+   * of any edition; a concept of another catalogue has none.
+   */
+  substanceKeysOf(conceptIds: readonly string[]): Promise<SubstanceKeys>;
 
   /** PR-006. One prescription within the caller's scope, or `null`. */
   findById(query: PrescriptionQuery): Promise<PrescriptionView | null>;

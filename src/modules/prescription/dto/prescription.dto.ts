@@ -278,7 +278,16 @@ export const prescriptionVocabularySchema = z.object({
   frequencies: z.array(z.object({ code: z.string(), label: z.string() })),
   /** PR-104. Only with `?conceptId=`: the presentations that medicine has. */
   presentations: z.array(
-    z.object({ form: z.string(), concentration: z.string() }),
+    z.object({
+      form: z.string(),
+      concentration: z.string(),
+      /** PR-115. The forms this presentation admits, the proposed one first. */
+      forms: z.array(z.string()),
+      /** PR-115. The form as the cuadro names it; '' when it names none. */
+      label: z.string(),
+      /** PR-115. The DCI of this presentation; '' when the cuadro gives none. */
+      dci: z.string(),
+    }),
   ),
 });
 

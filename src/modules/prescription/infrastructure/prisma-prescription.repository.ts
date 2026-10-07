@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
-  isDeclaredPresentation,
+  matchingPresentations,
   type DeclaredPresentation,
 } from '../domain/prescription-vocabulary';
 import {
@@ -18,6 +18,8 @@ import {
   PrescriptionNotEditableError,
   PrescriptionNotFoundError,
 } from '../domain/prescription.errors';
+import { substanceKeysOf } from '../domain/allergy-check';
+import type { SubstanceKeys } from '../domain/allergy-check';
 import type { ItemContent } from '../domain/prescription-content';
 import type { PrescriptionStatus } from '../domain/prescription';
 import type {
@@ -326,6 +328,11 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
     return Array.isArray(declared) ? (declared as DeclaredPresentation[]) : [];
   }
 
+  /** PR-114. See the port. */
+  substanceKeysOf(conceptIds: readonly string[]): Promise<SubstanceKeys> {
+    return substanceKeysIn(this.prisma, conceptIds);
+  }
+
   /** PR-006. One prescription within the caller's scope, or `null`. */
   async findById(query: PrescriptionQuery): Promise<PrescriptionView | null> {
     const row = await this.prisma.prescription.findFirst({
@@ -473,6 +480,17 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         nonPharmacologicalAdvice: view.nonPharmacologicalAdvice,
         items: view.items.map(toItemContent),
         allergies,
+        // PR-114. Read in the same transaction as the allergies it compares.
+        substanceKeys: await substanceKeysIn(tx, [
+          ...view.items.flatMap((item) =>
+            item.conceptId === null ? [] : [item.conceptId],
+          ),
+          ...allergies.flatMap((allergy) =>
+            allergy.substanceConceptId === null
+              ? []
+              : [allergy.substanceConceptId],
+          ),
+        ]),
         cityOfPrescription: canton?.display ?? null,
         diagnosisCount: current.encounter._count.diagnoses,
         prescriber: {
@@ -945,11 +963,26 @@ async function resolveItems(
      * catalogue and change with every load of the cuadro. «Enalapril 500 mg»
      * no longer passes for a medicine of the cuadro.
      */
-    const offFormulary = !isDeclaredPresentation(
-      concept.presentations ?? [],
+    const declared = concept.presentations ?? [];
+    const matching = matchingPresentations(
+      declared,
       item.dosageFormCode ?? null,
       item.concentration,
     );
+    const offFormulary = declared.length > 0 && matching.length === 0;
+    /**
+     * PR-115. The DCI of the presentation the line IS, when the cuadro says
+     * one: «Haloperidol decanoato 50 mg/mL» is not «Haloperidol». Two
+     * presentations of different DCI in the same form and strength (the
+     * plasma and recombinant factor IX) leave the medicine's name.
+     */
+    const dcis = [
+      ...new Set(
+        matching.flatMap((presentation) =>
+          presentation.dci ? [presentation.dci] : [],
+        ),
+      ),
+    ];
 
     return {
       conceptId: item.conceptId,
@@ -960,7 +993,7 @@ async function resolveItems(
        * prescribed — and that same redundancy is how a lie would get in, so
        * the value can only come from the row read in this transaction.
        */
-      genericName: concept.display,
+      genericName: dcis.length === 1 ? dcis[0]! : concept.display,
       offFormulary,
       ...commonItemFields(item),
     };
@@ -1189,4 +1222,54 @@ function toItemContent(item: PrescriptionView['items'][number]): ItemContent {
     conceptId: item.conceptId,
     offFormularyJustification: item.offFormularyJustification,
   };
+}
+
+/**
+ * PR-114. The keys of each CNMB concept named, of whatever edition: the code
+ * and the codes it replaces. A pooled client or a transaction, so the issue
+ * reads them with the allergies they are compared with.
+ */
+async function substanceKeysIn(
+  client: Prisma.TransactionClient,
+  conceptIds: readonly string[],
+): Promise<SubstanceKeys> {
+  if (conceptIds.length === 0) return new Map();
+  const concepts = await client.catalogConcept.findMany({
+    where: { id: { in: [...new Set(conceptIds)] }, system: { code: CNMB } },
+    select: { id: true, code: true, display: true, attributes: true },
+  });
+  /**
+   * PR-114. A concept of an earlier cuadro also carries the substances of the
+   * concepts that name it in `replaces`: the development «Diclofenaco sódico»
+   * is the official diclofenac, eye drops included, though its own name is
+   * not the DCI the cuadro writes.
+   */
+  const successors = await client.$queryRaw<
+    { replaced: string; substances: unknown }[]
+  >`
+    SELECT r.code AS replaced, c.attributes -> 'substances' AS substances
+      FROM catalog_concept c
+      JOIN catalog_system s ON s.id = c.system_id AND s.code = ${CNMB}
+     CROSS JOIN LATERAL jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(c.attributes -> 'replaces') = 'array'
+                 THEN c.attributes -> 'replaces' ELSE '[]'::jsonb END) AS r(code)
+     WHERE r.code = ANY(${concepts.map((concept) => concept.code)}::text[])
+  `;
+  return new Map(
+    concepts.map((concept) => {
+      const inherited = successors
+        .filter((row) => row.replaced === concept.code)
+        .flatMap((row) =>
+          Array.isArray(row.substances)
+            ? row.substances.filter(
+                (value): value is string => typeof value === 'string',
+              )
+            : [],
+        );
+      return [
+        concept.id,
+        [...new Set([...substanceKeysOf(concept), ...inherited])],
+      ];
+    }),
+  );
 }

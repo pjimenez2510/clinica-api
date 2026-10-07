@@ -87,17 +87,87 @@ export interface AllergyAlert {
 export function exactAllergyMatches(
   items: readonly PrescribedSubstance[],
   allergies: readonly KnownAllergy[],
+  keys: SubstanceKeys = new Map(),
 ): AllergyAlert[] {
   const alerts: AllergyAlert[] = [];
 
   for (const item of items) {
     if (item.conceptId === null) continue;
+    const itemKeys = keys.get(item.conceptId) ?? [];
     for (const allergy of allergies) {
       if (allergy.substanceConceptId === null) continue;
-      if (allergy.substanceConceptId !== item.conceptId) continue;
+      const same =
+        allergy.substanceConceptId === item.conceptId ||
+        (keys.get(allergy.substanceConceptId) ?? []).some((key) =>
+          itemKeys.includes(key),
+        );
+      if (!same) continue;
       alerts.push({ line: item.line, allergyId: allergy.id, match: 'EXACT' });
     }
   }
 
   return alerts;
+}
+
+/**
+ * PR-114. The keys of one substance, by CNMB concept id: its code and the codes
+ * it replaces.
+ *
+ * ⚠️ WHY KEYS AND NOT IDS ALONE. The CNMB is versioned: every edition creates
+ * new concepts, so the amoxicillin an allergy was recorded against and the one
+ * prescribed after the next load have DIFFERENT ids and the SAME code. Compared
+ * by id, the first load of the official cuadro would have silenced every
+ * allergy recorded before it. The code is still a key — no text, no stemming —
+ * and `replaces` carries the codes of an edition that named the medicine
+ * otherwise (`ENALAPRIL` of the development cuadro is `C09AA02`).
+ */
+export type SubstanceKeys = ReadonlyMap<string, readonly string[]>;
+
+/**
+ * PR-114. The key of an active substance: its DCI without accents, case or
+ * extra spaces. The CNMB files one substance under several codes (acetylsalicylic
+ * acid is `B01AC06` at 100 mg and `N02BA01` at 500 mg; metronidazole three
+ * times), and an allergy to it is an allergy to all of them. The importer
+ * writes the same key in `attributes.substances` (`catalogs/import/cnmb.ts`).
+ */
+export function substanceKeyOf(dci: string): string {
+  const plain = dci
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+  return `dci:${plain}`;
+}
+
+/**
+ * PR-114. The keys of one CNMB concept: its code, the codes it replaces and
+ * the active substances it declares — or, when it declares none (the
+ * development cuadro), the substance its name is. No blanks, no repeats.
+ */
+export function substanceKeysOf(concept: {
+  code: string;
+  display: string;
+  attributes: unknown;
+}): string[] {
+  const attributes =
+    typeof concept.attributes === 'object' && concept.attributes !== null
+      ? (concept.attributes as { replaces?: unknown; substances?: unknown })
+      : {};
+  const strings = (value: unknown) =>
+    Array.isArray(value)
+      ? value.filter(
+          (item): item is string => typeof item === 'string' && item !== '',
+        )
+      : [];
+  const substances = strings(attributes.substances);
+  return [
+    ...new Set([
+      concept.code,
+      ...strings(attributes.replaces),
+      ...(substances.length > 0
+        ? substances
+        : [substanceKeyOf(concept.display)]),
+    ]),
+  ];
 }

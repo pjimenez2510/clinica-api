@@ -986,6 +986,11 @@ interface SeedExam {
   turnaroundHours: number;
   /** Código de la prestación que se cobra por este examen. */
   billableServiceCode: string;
+  /**
+   * ORD-004, ORD-133. Su código en el Tarifario de Prestaciones del SNS 2014,
+   * la prestación institucional (sección B) que nombra este examen.
+   */
+  tariffCode: string;
   /** En orden de impresión. */
   analyteCodes: string[];
 }
@@ -1014,6 +1019,7 @@ const EXAMS: SeedExam[] = [
     turnaroundHours: 4,
     fastingHours: null,
     billableServiceCode: 'LAB-BH',
+    tariffCode: '340077',
     analyteCodes: ['HB', 'HCT', 'WBC', 'PLT', 'NEUT-PCT', 'LYMPH-PCT'],
   },
   {
@@ -1027,6 +1033,7 @@ const EXAMS: SeedExam[] = [
     turnaroundHours: 4,
     fastingHours: 8,
     billableServiceCode: 'LAB-GLUCOSA-AYUNAS',
+    tariffCode: '360009',
     analyteCodes: ['GLU'],
   },
   {
@@ -1040,6 +1047,7 @@ const EXAMS: SeedExam[] = [
     turnaroundHours: 4,
     fastingHours: null,
     billableServiceCode: 'LAB-EMO',
+    tariffCode: '380012',
     analyteCodes: [
       'EMO-COLOR',
       'EMO-ASPECTO',
@@ -1067,6 +1075,7 @@ const EXAMS: SeedExam[] = [
     turnaroundHours: 24,
     fastingHours: null,
     billableServiceCode: 'IMG-RX-SIMPLE',
+    tariffCode: '71020',
     analyteCodes: ['INFORME'],
   },
   {
@@ -1080,6 +1089,7 @@ const EXAMS: SeedExam[] = [
     turnaroundHours: 24,
     fastingHours: 6,
     billableServiceCode: 'IMG-ECO-ABDOMINAL',
+    tariffCode: '76700',
     analyteCodes: ['INFORME'],
   },
   {
@@ -1092,6 +1102,7 @@ const EXAMS: SeedExam[] = [
     turnaroundHours: 2,
     fastingHours: null,
     billableServiceCode: 'PROC-ECG',
+    tariffCode: '550123',
     analyteCodes: ['INFORME'],
   },
 ];
@@ -1359,13 +1370,12 @@ async function ensureExam(
             ${exam.form010Section}, NULLIF(${exam.specimenType}, ''),
             ${exam.patientPreparation}, ${exam.fastingHours !== null}, ${exam.fastingHours}::smallint,
             ${exam.turnaroundHours}, ${billableServiceId}::uuid,
-            ${exam.code}, CURRENT_TIMESTAMP)
+            ${exam.tariffCode}, CURRENT_TIMESTAMP)
     ON CONFLICT ("code") DO UPDATE
       SET "billable_service_id" = COALESCE("exam_definition"."billable_service_id",
                                            EXCLUDED."billable_service_id"),
-          -- ORD-004. The tariff that seed-clinical-catalogues derives from the
-          -- exams uses the exam's own code; a clinic that pointed it elsewhere
-          -- is respected.
+          -- ORD-004, ORD-133. The code of the official tariff; a clinic that
+          -- pointed it elsewhere is respected.
           "tariff_code" = COALESCE("exam_definition"."tariff_code",
                                    EXCLUDED."tariff_code"),
           "updated_at" = CURRENT_TIMESTAMP

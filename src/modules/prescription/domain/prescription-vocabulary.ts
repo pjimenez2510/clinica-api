@@ -52,6 +52,11 @@ export const DOSE_UNIT_CODES = Object.keys(DOSE_UNITS) as DoseUnit[];
 export const DOSAGE_FORMS = {
   TABLET: { label: 'Tableta', unit: 'TABLET' },
   COATED_TABLET: { label: 'Tableta recubierta', unit: 'TABLET' },
+  // PR-115. Forms the CNMB tells apart and a receta has to say.
+  EXTENDED_RELEASE_TABLET: { label: 'Tableta de liberación prolongada', unit: 'TABLET' }, // prettier-ignore
+  SUBLINGUAL_TABLET: { label: 'Tableta sublingual', unit: 'TABLET' },
+  DISPERSIBLE_TABLET: { label: 'Tableta dispersable', unit: 'TABLET' },
+  GASTRORESISTANT_CAPSULE: { label: 'Cápsula gastrorresistente', unit: 'CAPSULE' }, // prettier-ignore
   CHEWABLE_TABLET: { label: 'Tableta masticable', unit: 'TABLET' },
   CAPSULE: { label: 'Cápsula', unit: 'CAPSULE' },
   ORAL_SUSPENSION: { label: 'Suspensión oral', unit: null },
@@ -62,6 +67,10 @@ export const DOSAGE_FORMS = {
   GRANULES: { label: 'Granulado', unit: 'SACHET' },
   INJECTABLE_SOLUTION: { label: 'Solución inyectable', unit: null },
   POWDER_FOR_INJECTION: { label: 'Polvo para solución inyectable', unit: null }, // prettier-ignore
+  LIPID_POWDER_FOR_INJECTION: { label: 'Polvo para solución inyectable, formulación lipídica', unit: null }, // prettier-ignore
+  NANOPARTICLE_INJECTION: { label: 'Polvo para suspensión inyectable de nanopartículas', unit: null }, // prettier-ignore
+  EXTENDED_RELEASE_INJECTION: { label: 'Polvo para suspensión inyectable de liberación prolongada', unit: null }, // prettier-ignore
+  SUBDERMAL_IMPLANT: { label: 'Implante subdérmico', unit: null },
   CREAM: { label: 'Crema', unit: null },
   OINTMENT: { label: 'Ungüento', unit: null },
   GEL: { label: 'Gel', unit: null },
@@ -129,21 +138,34 @@ export function frequencyText(
  * «10mg» are the same presentation.
  */
 export interface DeclaredPresentation {
+  /** The form a choice of this presentation proposes. */
   form: string;
+  /**
+   * PR-115. The DCI of this presentation when the cuadro gives one: it may
+   * differ from the medicine's name (`Haloperidol decanoato`), and it is what
+   * the receta prints.
+   */
+  dci?: string;
   concentration: string;
+  /**
+   * PR-115. Every form of the vocabulary this presentation admits, when the
+   * catalogue names a family of them («Sólido oral»: tableta, cápsula…).
+   * Absent, only `form` is admitted; empty, none is.
+   */
+  forms?: readonly string[];
+  /** PR-115. The form as the cuadro names it, for the picker. */
+  label?: string;
 }
 
 /**
- * PR-104. Whether the line is in one of the presentations its concept
- * declares. A concept that declares none admits any — the official CNMB is
- * not loaded yet, and refusing every line would stop prescribing altogether.
+ * PR-115. The presentations the line IS: those whose forms admit its form and
+ * whose concentration it states. Usually one; it names the DCI to print.
  */
-export function isDeclaredPresentation(
+export function matchingPresentations(
   declared: readonly DeclaredPresentation[],
   form: string | null,
   concentration: string | null,
-): boolean {
-  if (declared.length === 0) return true;
+): DeclaredPresentation[] {
   // «62,5» and «62.5», «µg» and «mcg» are the same concentration.
   const normal = (value: string | null) =>
     (value ?? '')
@@ -151,9 +173,125 @@ export function isDeclaredPresentation(
       .replace(/\s+/g, '')
       .replace(/,/g, '.')
       .replace(/µg/g, 'mcg');
-  return declared.some(
-    (presentation) =>
-      normal(presentation.form) === normal(form) &&
-      normal(presentation.concentration) === normal(concentration),
+  return declared.filter((presentation) => {
+    const admitsForm = (presentation.forms ?? [presentation.form]).some(
+      (admitted) => admitted !== '' && normal(admitted) === normal(form),
+    );
+    if (!admitsForm) return false;
+    const declaredText = presentation.concentration.trim();
+    // PR-115. «-»: the cuadro declares no strength, and only the form counts.
+    if (declaredText === '-') return true;
+    // PR-115. A composition described in prose is not a figure to compare.
+    if (declaredText.length > DESCRIBED_COMPOSITION) return true;
+    /**
+     * PR-115. A range of the cuadro admits the amounts inside it — in its
+     * unit or in the aside's («2000 UI - 10.000 UI (20 mg - 100 mg)») — and
+     * only those: a line that copies the range would print «1 mg - 5 mg» of
+     * warfarin, and is outside.
+     */
+    const ranges = rangesOf(declaredText);
+    if (ranges.length > 0) {
+      const amount = amountOf(concentration ?? '');
+      return ranges.some(
+        (range) =>
+          amount !== null &&
+          amount.unit === range.unit &&
+          amount.value >= range.min &&
+          amount.value <= range.max,
+      );
+    }
+    // A range that cannot be read («25 mcg + (50 mcg - 250 mcg)») is never
+    // matched by copying it: the receta would print a range.
+    if (/\s-\s/.test(declaredText)) return false;
+    return normal(declaredText) === normal(concentration);
+  });
+}
+
+/**
+ * PR-104, PR-115. Whether the line is in one of the presentations its concept
+ * declares. A concept that declares none admits any.
+ */
+export function isDeclaredPresentation(
+  declared: readonly DeclaredPresentation[],
+  form: string | null,
+  concentration: string | null,
+): boolean {
+  return (
+    declared.length === 0 ||
+    matchingPresentations(declared, form, concentration).length > 0
   );
+}
+
+/**
+ * PR-115. Longer than this, the cuadro describes a composition («Glucosa
+ * 13,5 g/L - 20 g/L Cloruro de Sodio …») rather than stating a strength,
+ * and it does not fit the line's concentration (80 characters) either.
+ */
+export const DESCRIBED_COMPOSITION = 80;
+
+/**
+ * An Ecuadorian figure: «1,5», «1.200.000», «2'400.000». A dot followed by
+ * three digits groups thousands; a comma is the decimal mark.
+ */
+function figureOf(text: string): number | null {
+  const plain = text.replace(/'/g, '');
+  if (!/^\d+([.,]\d+)*$/.test(plain)) return null;
+  const grouped = plain.includes(',')
+    ? plain.replace(/\./g, '').replace(',', '.')
+    : /^\d+(\.\d{3})+$/.test(plain)
+      ? plain.replace(/\./g, '')
+      : plain;
+  const value = Number(grouped);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** «UI», «Ul» (an erratum of the cuadro for UI) and «µg» written one way. */
+const unitOf = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/µg/g, 'mcg')
+    .replace(/^ul/, 'ui');
+
+/** PR-115. «850 mg» → 850 «mg»; anything else, nothing. */
+export function amountOf(text: string): { value: number; unit: string } | null {
+  const match = /^\s*([\d.,']+)\s*([^\d\s][^-]*?)\s*$/.exec(text);
+  const value = match ? figureOf(match[1]!) : null;
+  return match && value !== null ? { value, unit: unitOf(match[2]!) } : null;
+}
+
+/**
+ * PR-115. «500 mg - 1000 mg» → 500 to 1000 «mg». Only a range of one
+ * strength with the same unit at both ends; anything else, nothing.
+ */
+export function rangeOf(
+  text: string,
+): { min: number; max: number; unit: string } | null {
+  // «… (equivalente a hierro elemental)», «(20 mg - 100 mg)»: an aside.
+  const [low, high, ...rest] = text
+    .replace(/\s*\([^)]*\)\s*$/, '')
+    .split(/\s+-\s+/);
+  if (!low || !high || rest.length > 0) return null;
+  const to = amountOf(high);
+  // «25 - 50 mg/5 mL»: a bare figure takes the unit of the other end.
+  const bare = figureOf(low.trim());
+  const from =
+    amountOf(low) ?? (bare !== null && to ? { value: bare, unit: to.unit } : null); // prettier-ignore
+  if (!from || !to || from.unit !== to.unit || from.value > to.value)
+    return null;
+  return { min: from.value, max: to.value, unit: from.unit };
+}
+
+/**
+ * PR-115. The range a concentration declares and, when it has one, the range
+ * of its aside in parentheses — the same strength in another unit.
+ */
+export function rangesOf(
+  text: string,
+): { min: number; max: number; unit: string }[] {
+  const main = rangeOf(text);
+  if (!main) return [];
+  const aside = /\(([^)]*)\)\s*$/.exec(text)?.[1];
+  const other = aside ? rangeOf(aside) : null;
+  return other ? [main, other] : [main];
 }
