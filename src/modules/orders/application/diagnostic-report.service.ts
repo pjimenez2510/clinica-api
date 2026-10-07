@@ -653,25 +653,51 @@ export class DiagnosticReportService {
 
   /**
    * ORD-143 (D-115). The corrections of values somebody was told about that
-   * still wait for the notice of the correction, oldest first, ALL of them.
+   * still wait for the notice of the correction, oldest first, ALL of them —
+   * each with the site's critical deadline and escalation (ORD-154, D-156.2)
+   * and, when the patient was told, the patient as its target (ORD-153).
    *
    * NOT AUDITED PER ENTRY (ORD-092), like the two other worklists: what
    * travels is the determination and the value, no name and no diagnosis.
    * The rule is `notifiedCorrections`, over each candidate order's reports —
    * the same function the reading of the order and the notice ask.
    */
-  async corrections(requester: Requester): Promise<CorrectionWorklistEntry[]> {
+  async corrections(
+    requester: Requester,
+    now: Date,
+  ): Promise<CorrectionWorklistEntry[]> {
     const orders = await this.reports.notifiedCorrectionOrders(requester.sites); // prettier-ignore
     // One read for every candidate order, grouped here (revisión: no N+1).
     const all = await this.reports.ofOrders(orders.map((o) => o.orderId), requester.sites); // prettier-ignore
+    // ORD-154 (D-156.2). The critical deadline and escalation of each site,
+    // judged against ONE instant for the whole listing.
+    const siteIds = orders.map((order) => order.siteId);
+    const policies = await this.reports.safetyPolicies(siteIds);
+    const inHours = await this.reports.sitesInHours(siteIds, now);
     const entries: CorrectionWorklistEntry[] = [];
     for (const order of orders) {
       const reports = all.filter((report) => report.serviceOrderId === order.orderId); // prettier-ignore
       const found = notifiedCorrections(reports);
+      const policy = policies.get(order.siteId) ?? DEFAULT_POLICY;
+      const role = policy.criticalEscalationRole;
+      const afterHours = !inHours.has(order.siteId);
       for (const report of reports) {
         for (const result of report.results) {
           const correction = found.get(result.id);
           if (!correction?.standing || !correction.due) continue;
+          // ORD-154. The calls about the corrected value nobody answered.
+          const unanswered = result.notices.filter((n) => n.outcome === 'NO_ANSWER'); // prettier-ignore
+          // The wait runs from the moment the correction was recorded: that
+          // is when the told value stopped being true.
+          const wait = criticalWait(correction.correctedAt, now, policy.criticalNoticeWithinMinutes); // prettier-ignore
+          const due = criticalNoticeTarget({
+            overdue: wait.overdue,
+            afterHours,
+            hasOnCallRole: role !== null,
+            orderingUnanswered: unanswered.some((n) => n.recipientKind === 'ORDERING_PRACTITIONER'), // prettier-ignore
+            // ORD-153 (D-156.1). Told to the patient: it is theirs to hear.
+            selfNoticed: correction.patientRequired,
+          });
           entries.push({
             resultId: result.id,
             reportId: report.id,
@@ -688,6 +714,15 @@ export class DiagnosticReportService {
             earlierNotices: correction.earlierNotices,
             correctedAt: correction.correctedAt,
             orderedBy: order.orderedBy,
+            patientRequired: correction.patientRequired,
+            noAnswerAttempts: unanswered.length,
+            waitingMinutes: wait.waitingMinutes,
+            noticeDueAt: wait.dueAt,
+            overdue: wait.overdue,
+            escalateTo: role ? { roleId: role.id, name: role.name } : null,
+            afterHours,
+            noticeTarget: due.target,
+            escalationMissing: due.escalationMissing,
           });
         }
       }

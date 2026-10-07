@@ -288,6 +288,8 @@ export const notifiedCorrectionSchema = z.object({
   correctedAt: z.iso.datetime(),
   /** No notice of the correction closes it yet (ORD-144). */
   due: z.boolean(),
+  /** ORD-153. It has to reach the patient or their representative. */
+  patientRequired: z.boolean(),
 });
 
 /** ORD-031 to ORD-038. One determination as a client reads it. */
@@ -435,6 +437,21 @@ export const correctionResultSchema = z.object({
   earlierNotices: z.array(earlierNoticeSchema),
   correctedAt: z.iso.datetime(),
   orderedBy: z.object({ id: z.uuid(), name: z.string() }),
+  /** ORD-153. An earlier version was told to the patient or their representative. */
+  patientRequired: z.boolean(),
+  /** ORD-154. Unanswered calls about the corrected value. */
+  noAnswerAttempts: z.number().int(),
+  /** ORD-154 (D-156.2). The site's critical deadline, from `correctedAt`. */
+  waitingMinutes: z.number().int(),
+  noticeDueAt: z.iso.datetime(),
+  overdue: z.boolean(),
+  escalateTo: z.object({ roleId: z.uuid(), name: z.string() }).nullable(),
+  /** ORD-068. The site is out of hours now. */
+  afterHours: z.boolean(),
+  /** ORD-153, ORD-154. Whom the notice of the correction is due to now. */
+  noticeTarget: z.enum(['ORDERING_PRACTITIONER', 'ON_CALL_ROLE', 'PATIENT']),
+  /** ORD-154. The escalation is due and the site named no on-call role. */
+  escalationMissing: z.boolean(),
 });
 export const correctionResultListSchema = z.object({
   items: z.array(correctionResultSchema),

@@ -436,6 +436,22 @@ export interface CorrectionWorklistEntry {
   earlierNotices: NotifiedCorrection['earlierNotices'];
   correctedAt: Date;
   orderedBy: { id: string; name: string };
+  /** ORD-153. An earlier version was told to the patient or their representative. */
+  patientRequired: boolean;
+  /** ORD-154. Unanswered calls about the corrected value. */
+  noAnswerAttempts: number;
+  /** ORD-154 (D-156.2). The site's critical deadline, from `correctedAt`. */
+  waitingMinutes: CriticalWait['waitingMinutes'];
+  noticeDueAt: CriticalWait['dueAt'];
+  overdue: CriticalWait['overdue'];
+  /** The site's on-call role, when it names one. */
+  escalateTo: { roleId: string; name: string } | null;
+  /** ORD-068. The site is out of hours now. */
+  afterHours: boolean;
+  /** ORD-153, ORD-154. Whom the notice of the correction is due to now. */
+  noticeTarget: CriticalNoticeTarget;
+  /** ORD-154. The escalation is due and the site named nobody. */
+  escalationMissing: boolean;
 }
 
 /** ORD-143. An order whose reports may hold a correction of a notified value. */
