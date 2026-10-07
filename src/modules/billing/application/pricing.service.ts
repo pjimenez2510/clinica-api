@@ -29,6 +29,11 @@ import {
   planPriceChange,
   priceInForceOn,
 } from '../domain/price-list';
+import {
+  type BillingChange,
+  payerSnapshot,
+  priceSnapshot,
+} from './billing-audit.snapshots';
 import type { Requester } from './service-catalogue.service';
 
 const PAYER_RESOURCE_TYPE = 'payer';
@@ -70,7 +75,9 @@ export class PricingService {
     const ruc = this.checkPayerRuc(payer.kind, payer.ruc);
 
     const created = await this.catalogue.createPayer({ ...payer, ruc });
-    await this.record(PAYER_RESOURCE_TYPE, created.id, 'CREATE', requester);
+    await this.record(PAYER_RESOURCE_TYPE, created.id, 'CREATE', requester, {
+      after: payerSnapshot(created),
+    });
     return created;
   }
 
@@ -101,7 +108,10 @@ export class PricingService {
     }
 
     const updated = await this.catalogue.updatePayer(payerId, changes);
-    await this.record(PAYER_RESOURCE_TYPE, payerId, 'UPDATE', requester);
+    await this.record(PAYER_RESOURCE_TYPE, payerId, 'UPDATE', requester, {
+      before: payerSnapshot(payer),
+      after: payerSnapshot(updated),
+    });
     return updated;
   }
 
@@ -174,7 +184,9 @@ export class PricingService {
       ),
     );
 
-    await this.record(PRICE_RESOURCE_TYPE, opened.id, 'CREATE', requester);
+    await this.record(PRICE_RESOURCE_TYPE, opened.id, 'CREATE', requester, {
+      after: priceSnapshot(opened),
+    });
     return opened;
   }
 
@@ -218,6 +230,7 @@ export class PricingService {
     resourceId: string,
     action: 'CREATE' | 'UPDATE',
     requester: Requester,
+    change: BillingChange = {},
   ): Promise<void> {
     await this.audit.record({
       userId: requester.userId,
@@ -226,6 +239,9 @@ export class PricingService {
       action,
       ip: requester.ip,
       userAgent: requester.userAgent,
+      // BI-231. Plain copies of the snapshots in `billing-audit.snapshots.ts`.
+      before: change.before && { ...change.before },
+      after: change.after && { ...change.after },
     });
   }
 }

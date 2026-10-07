@@ -292,3 +292,75 @@ describe('BI-040, BI-044, BI-046 el tarifario', () => {
     );
   });
 });
+
+describe('BI-231 la bitácora con antes y después', () => {
+  it('BI-231 records the payer before and after an edit', async () => {
+    const { service: pricing, mocks } = build({
+      findPayer: vi.fn().mockResolvedValue(
+        payer({
+          id: 'payer-iess',
+          code: 'IESS',
+          kind: 'PUBLIC_NETWORK',
+          ruc: VALID_RUC,
+        }),
+      ),
+      updatePayer: vi.fn().mockResolvedValue(
+        payer({
+          id: 'payer-iess',
+          code: 'IESS',
+          kind: 'PUBLIC_NETWORK',
+          ruc: VALID_RUC,
+          agreementReference: 'CONV-2026-01',
+        }),
+      ),
+    });
+
+    await pricing.updatePayer(
+      'payer-iess',
+      { agreementReference: 'CONV-2026-01' },
+      requester,
+    );
+
+    expect(mocks.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: 'payer',
+        resourceId: 'payer-iess',
+        action: 'UPDATE',
+        before: expect.objectContaining({
+          agreementReference: null,
+        }) as unknown,
+        after: expect.objectContaining({
+          agreementReference: 'CONV-2026-01',
+        }) as unknown,
+      }),
+    );
+  });
+
+  it('BI-231 a new price carries only the after half, its amount as a string', async () => {
+    const { service: pricing, mocks } = build();
+
+    await pricing.setPrice(
+      {
+        payerId: 'payer-particular',
+        billableServiceId: 'service-1',
+        amount: Money.parse('35.00'),
+        effectiveFrom: parseClinicalDate('2026-07-01'),
+      },
+      requester,
+    );
+
+    expect(mocks.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: 'price',
+        action: 'CREATE',
+        before: undefined,
+        after: {
+          billableServiceId: 'service-1',
+          amount: '35.00',
+          validFrom: '2026-07-01',
+          validTo: null,
+        },
+      }),
+    );
+  });
+});
