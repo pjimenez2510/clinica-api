@@ -2129,7 +2129,8 @@ a D-156.5, recomendación aceptada en todos los puntos._
   minutos lleva esperando desde que se registró la corrección, cuándo vence y
   si venció, con el plazo de aviso de críticos de su sede (ORD-063, ORD-065);
   y a quién toca avisar ahora con la misma escalada que el crítico (ORD-065,
-  ORD-068): al paciente cuando lo pide ORD-153; si no, fuera de horario al rol
+  ORD-068): al paciente cuando lo pide ORD-153 o cuando el médico que pidió
+  ya anotó la corrección como autoaviso (ORD-146); si no, fuera de horario al rol
   de guardia de la sede, vencida o sin respuesta del médico que pidió al rol de
   guardia, y si no al médico que pidió; y DEBERÁ decir si la escalada toca y la
   sede no designó guardia, y las llamadas sin respuesta sobre el valor
@@ -2142,7 +2143,8 @@ a D-156.5, recomendación aceptada en todos los puntos._
 - **ORD-155** — CUANDO un aviso diga que llamó otra persona (ORD-148) cuyo
   nombre no es el de la cuenta que lo registra, el sistema DEBERÁ juzgar el
   autoaviso (ORD-147) **con quien llamó**: es autoaviso sólo si el
-  destinatario lleva el nombre de quien llamó. Sin ella, DEBERÁ juzgarlo con la
+  destinatario lleva el nombre de quien llamó. Sin ella —o si sólo trae un
+  tratamiento («Dr.»), que no nombra a nadie—, DEBERÁ juzgarlo con la
   cuenta que lo registra, como en ORD-062 y ORD-147.
   > **D-156.3.** El médico que anota «la enfermera me llamó a mí» no se avisó
   > a sí mismo: la enfermera sí le contó algo. **Enmienda ORD-147.** Las
@@ -2161,8 +2163,8 @@ a D-156.5, recomendación aceptada en todos los puntos._
   > «lado»: se juzga por lo escrito. **Enmienda ORD-143.**
 
 - **ORD-157** — Dos nombres DEBERÁN ser el mismo (ORD-147) cuando tengan las
-  **mismas palabras en cualquier orden**, sin distinguir mayúsculas, tildes ni
-  espacios y sin un tratamiento inicial; NO DEBERÁN serlo cuando a uno le falte
+  **mismas palabras en cualquier orden**, sin distinguir mayúsculas, tildes,
+  espacios ni puntuación («Pérez, Juan») y sin un tratamiento inicial; NO DEBERÁN serlo cuando a uno le falte
   o le sobre una palabra.
   > **D-156.5.** «Pérez Juan» es «Juan Pérez», como en la cédula. Un nombre a
   > medias («Dr. Pérez») sigue sin reconocerse: atribuiría a una persona el
