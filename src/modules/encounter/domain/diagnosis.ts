@@ -98,3 +98,48 @@ export function nextRankAfter(ranksInUse: readonly number[]): number {
 export function cie10CategoryOf(code: string): string {
   return code.replace(/[.\s]/g, '').slice(0, 3).toUpperCase();
 }
+
+/**
+ * EN-235 (D-147.3). What the WHO's CIE-10 list says a code may be used for,
+ * as `catalog_concept.attributes.use` keeps it; `null` for a concept of an
+ * edition that does not say.
+ */
+export type Cie10Use = 'PRINCIPAL' | 'ASTERISK' | 'EXTERNAL_CAUSE';
+
+/**
+ * EN-235. Whether a code of this use may be the principal diagnosis. An
+ * asterisk accompanies its dagger and an external cause describes the
+ * circumstance, not the morbidity; a concept with no use is not judged.
+ *
+ * ⚠️ THE DATABASE IS THE GUARANTEE: `trg_encounter_diagnosis_principal_use`
+ * refuses the same two uses. This answer is what the screen reads to stop
+ * offering «principal» before anybody sends it.
+ */
+export function mayBePrincipal(use: Cie10Use | null): boolean {
+  return use !== 'ASTERISK' && use !== 'EXTERNAL_CAUSE';
+}
+
+/** EN-235. The use of a concept, read defensively from its JSON attributes. */
+export function cie10UseOf(attributes: unknown): Cie10Use | null {
+  if (typeof attributes !== 'object' || attributes === null) return null;
+  const use = (attributes as { use?: unknown }).use;
+  return use === 'PRINCIPAL' || use === 'ASTERISK' || use === 'EXTERNAL_CAUSE'
+    ? use
+    : null;
+}
+
+/**
+ * EN-213, EN-235. The rank a removed diagnosis comes back with: its own,
+ * unless it was the principal and either another took the place or its code
+ * may no longer be the principal — then behind every rank in use, and never
+ * 1.
+ */
+export function rankOnRestore(
+  archivedRank: number,
+  ranksInUse: readonly number[],
+  mayBeThePrincipal: boolean,
+): number {
+  if (!isPrimary(archivedRank)) return archivedRank;
+  if (mayBeThePrincipal && !ranksInUse.some(isPrimary)) return archivedRank;
+  return Math.max(nextRankAfter(ranksInUse), PRIMARY_RANK + 1);
+}

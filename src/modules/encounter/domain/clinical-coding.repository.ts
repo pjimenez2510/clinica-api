@@ -77,6 +77,12 @@ export interface DiagnosisView {
   careModality: CareModality;
   /** EN-049. Whether the code is of obligatory epidemiological notification. */
   notifiable: boolean;
+  /**
+   * EN-235 (D-147.3). Whether its concept may be the principal: `false` for
+   * an asterisk or an external cause of the WHO's list. Read off the CONCEPT,
+   * which is where the list says it; the screen stops offering «principal».
+   */
+  mayBePrincipal: boolean;
   note: string | null;
   recordedAt: Date;
   /**

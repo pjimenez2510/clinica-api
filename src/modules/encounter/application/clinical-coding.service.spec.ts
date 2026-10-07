@@ -138,6 +138,7 @@ class FakeCoding implements ClinicalCodingRepository {
       rank: diagnosis.rank ?? 1,
       careModality: 'MORBIDITY',
       notifiable: diagnosis.notifiable ?? false,
+      mayBePrincipal: true,
       note: diagnosis.note ?? null,
       recordedAt: new Date('2026-09-14T14:20:00Z'),
       editedAt: null,

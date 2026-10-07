@@ -197,6 +197,12 @@ export const catalogConceptSchema = z.object({
    * es un título, y el RDACAA lo rechaza.
    */
   selectable: z.boolean(),
+  /**
+   * EN-235 (D-147.3). Para qué sirve el código según la lista de la OMS: un
+   * `ASTERISK` o una `EXTERNAL_CAUSE` nunca son el diagnóstico principal, y
+   * la pantalla no los ofrece como tal. `null` en lo que no lo dice.
+   */
+  use: z.enum(['PRINCIPAL', 'ASTERISK', 'EXTERNAL_CAUSE']).nullable(),
 });
 /** One concept; no route returns it alone, it is the row of every list below. */
 export class CatalogConceptDto extends createZodDto(catalogConceptSchema) {}

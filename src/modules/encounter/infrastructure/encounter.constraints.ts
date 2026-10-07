@@ -326,6 +326,18 @@ registerConstraintMeanings({
    * Two principals make the monthly report count one consultation twice, in
    * two different causes of morbidity.
    */
+  /**
+   * EN-235 (D-147.3). `trg_encounter_diagnosis_principal_use`: an asterisk or
+   * an external cause of the WHO's list never stays as the principal — when
+   * registering, when its code changes, when it is marked principal. The one
+   * source for the API, an import and a `psql`; the trigger raises the name
+   * as the prefix of its message, which is how it travels.
+   */
+  encounter_diagnosis_principal_use: {
+    code: 'DIAGNOSIS_PRINCIPAL_USE_INVALID',
+    field: 'conceptId',
+    message: 'Registre primero la enfermedad o la lesión',
+  },
   encounter_diagnosis_one_primary: {
     code: 'DIAGNOSIS_PRIMARY_TAKEN',
     field: 'rank',

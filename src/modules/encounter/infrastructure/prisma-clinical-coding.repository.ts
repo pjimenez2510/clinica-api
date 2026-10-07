@@ -27,9 +27,13 @@ import {
   hasDischarge,
 } from '../domain/encounter-state';
 import {
+  type Cie10Use,
   careModalityOfCie10,
+  cie10UseOf,
   isPrimary,
+  mayBePrincipal,
   nextRankAfter,
+  rankOnRestore,
 } from '../domain/diagnosis';
 import type {
   AfterDischargeRefusal,
@@ -113,6 +117,19 @@ const DIAGNOSIS_SELECT = {
 /** The row `DIAGNOSIS_SELECT` yields, derived from it so the two cannot drift. */
 type DiagnosisRow = Prisma.EncounterDiagnosisGetPayload<{
   select: typeof DIAGNOSIS_SELECT;
+}>;
+
+/**
+ * EN-235. `DIAGNOSIS_SELECT` with the concept's attributes, which say whether
+ * it may be the principal. What every read of a live diagnosis selects.
+ */
+const DIAGNOSIS_WITH_USE_SELECT = {
+  ...DIAGNOSIS_SELECT,
+  concept: { select: { attributes: true } },
+} satisfies Prisma.EncounterDiagnosisSelect;
+
+type DiagnosisWithUseRow = Prisma.EncounterDiagnosisGetPayload<{
+  select: typeof DIAGNOSIS_WITH_USE_SELECT;
 }>;
 
 /**
@@ -238,11 +255,11 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           notifiable: diagnosis.notifiable ?? false,
           note: diagnosis.note,
         },
-        select: DIAGNOSIS_SELECT,
+        select: DIAGNOSIS_WITH_USE_SELECT,
       });
     });
 
-    return toDiagnosisView(row);
+    return toLiveDiagnosisView(row);
   }
 
   /**
@@ -262,9 +279,9 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       // EN-043, EN-047. `rank` IS the priority order and 1 is the principal,
       // so this is the order the export takes its three from.
       orderBy: [{ rank: 'asc' }, { recordedAt: 'asc' }],
-      select: DIAGNOSIS_SELECT,
+      select: DIAGNOSIS_WITH_USE_SELECT,
     });
-    return rows.map(toDiagnosisView);
+    return rows.map(toLiveDiagnosisView);
   }
 
   /**
@@ -519,7 +536,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       if (Object.keys(changes).length === 0) {
         return tx.encounterDiagnosis.findUniqueOrThrow({
           where: { id: current.id },
-          select: DIAGNOSIS_SELECT,
+          select: DIAGNOSIS_WITH_USE_SELECT,
         });
       }
 
@@ -536,11 +553,11 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           editedById: edit.editedById,
           editedAt: stampAfter(stamped?.edited_at ?? null, now),
         },
-        select: DIAGNOSIS_SELECT,
+        select: DIAGNOSIS_WITH_USE_SELECT,
       });
     });
 
-    return toDiagnosisView(row);
+    return toLiveDiagnosisView(row);
   }
 
   /**
@@ -596,7 +613,9 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       lineage.push({ id: earlier.id, headReason: earlier.editReason });
     }
 
-    const views: DiagnosisVersionView[] = [];
+    const pending: (Omit<DiagnosisVersionView, 'diagnosis'> & {
+      snapshot: DiagnosisSnapshot;
+    })[] = [];
     for (const row of lineage) {
       const versions = await this.prisma.recordVersion.findMany({
         where: { resourceType: 'encounter_diagnosis', resourceId: row.id },
@@ -614,7 +633,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
             ? row.headReason
             : (versions[index - 1]!.data as unknown as DiagnosisSnapshot)
                 .edit_reason;
-        views.push({
+        pending.push({
           version: version.version,
           replacedBy: {
             id: version.changedBy.id,
@@ -622,15 +641,28 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           },
           replacedAt: version.changedAt,
           reason: replacing ?? null,
-          diagnosis: toDiagnosisView(
-            diagnosisRowFromSnapshot(
-              version.data as unknown as DiagnosisSnapshot,
-            ),
-          ),
+          snapshot: version.data as unknown as DiagnosisSnapshot,
         });
       });
     }
-    return views;
+
+    // EN-235. The use of every concept the versions name, in one statement.
+    const concepts = await this.prisma.catalogConcept.findMany({
+      where: {
+        id: { in: [...new Set(pending.map((v) => v.snapshot.concept_id))] },
+      },
+      select: { id: true, attributes: true },
+    });
+    const useOf = new Map(
+      concepts.map((concept) => [concept.id, cie10UseOf(concept.attributes)]),
+    );
+    return pending.map(({ snapshot, ...version }) => ({
+      ...version,
+      diagnosis: toDiagnosisView(
+        diagnosisRowFromSnapshot(snapshot),
+        useOf.get(snapshot.concept_id) ?? null,
+      ),
+    }));
   }
 
   /**
@@ -666,12 +698,17 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       if (live.some((d) => d.cie10Code === archived.cie10Code)) {
         throw new DiagnosisNotRestorableError();
       }
-      const ranks = live.map((d) => d.rank);
-      // A principal comes back as principal only if the place is still free.
-      const rank =
-        isPrimary(archived.rank) && ranks.some(isPrimary)
-          ? nextRankAfter(ranks)
-          : archived.rank;
+      // A principal comes back as principal only if the place is still free
+      // and its code may still be the principal (EN-235): otherwise behind.
+      const concept = await tx.catalogConcept.findUnique({
+        where: { id: archived.conceptId },
+        select: { attributes: true },
+      });
+      const rank = rankOnRestore(
+        archived.rank,
+        live.map((d) => d.rank),
+        mayBePrincipal(cie10UseOf(concept?.attributes ?? null)),
+      );
 
       const restored = await tx.encounterDiagnosis.create({
         data: {
@@ -686,7 +723,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           note: archived.note,
           recordedAt: archived.recordedAt,
         },
-        select: DIAGNOSIS_SELECT,
+        select: DIAGNOSIS_WITH_USE_SELECT,
       });
       // `encounter_diagnosis_retraction_frozen` admits this once, and only
       // towards that very diagnosis back on its attention.
@@ -701,7 +738,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       return restored;
     });
 
-    return toDiagnosisView(row);
+    return toLiveDiagnosisView(row);
   }
 
   /**
@@ -1106,8 +1143,17 @@ function diagnosisRowFromSnapshot(snapshot: DiagnosisSnapshot): DiagnosisRow {
   };
 }
 
+/** EN-235. A live row, with its concept's use read alongside. */
+function toLiveDiagnosisView(row: DiagnosisWithUseRow): DiagnosisView {
+  const { concept, ...diagnosis } = row;
+  return toDiagnosisView(diagnosis, cie10UseOf(concept.attributes));
+}
+
 /** An `encounter_diagnosis` row as the domain reads it. */
-function toDiagnosisView(row: DiagnosisRow): DiagnosisView {
+function toDiagnosisView(
+  row: DiagnosisRow,
+  use: Cie10Use | null,
+): DiagnosisView {
   return {
     id: row.id,
     encounterId: row.encounterId,
@@ -1130,6 +1176,8 @@ function toDiagnosisView(row: DiagnosisRow): DiagnosisView {
      */
     careModality: careModalityOfCie10(row.cie10Code),
     notifiable: row.notifiable,
+    // EN-235. From the concept's use, which is where the WHO list says it.
+    mayBePrincipal: mayBePrincipal(use),
     note: row.note,
     recordedAt: row.recordedAt,
     editedAt: row.editedAt,

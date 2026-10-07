@@ -143,7 +143,7 @@ describe('catálogos por HTTP', () => {
         display: 'Neumonía, no especificada',
         parentId: capitulo.id,
         validFrom: desde,
-        attributes: { level: 3, chapter: 'J00-J99' },
+        attributes: { level: 3, chapter: 'J00-J99', use: 'PRINCIPAL' },
       },
     });
 
@@ -230,6 +230,39 @@ describe('catálogos por HTTP', () => {
       chapter: 'J00-J99',
       selectable: true,
     });
+  });
+
+  it('EN-235 cada concepto dice para qué sirve según la lista de la OMS, y `null` si no lo dice', async () => {
+    const usoDe = async (consulta: string) => {
+      const { items } = (await buscar(consulta).expect(200)).body as {
+        items: (ConceptoCuerpo & { use: string | null })[];
+      };
+      return items.map((c) => [c.code, c.use]);
+    };
+
+    // EN-235. What the WHO list says each code may be used for, leaves of
+    // no chapter: seeded here so the tree of the other tests stays as it is.
+    const cie10 = await prisma.catalogSystem.findUniqueOrThrow({ where: { code: 'CIE10' } }); // prettier-ignore
+    for (const [code, display, use] of [
+      ['H36.0', 'Retinopatía diabética', 'ASTERISK'],
+      ['W19.0', 'Caída no especificada, en vivienda', 'EXTERNAL_CAUSE'],
+      ['R50.9', 'Fiebre, no especificada', undefined],
+    ] as const) {
+      await prisma.catalogConcept.create({
+        data: {
+          systemId: cie10.id,
+          code,
+          display,
+          validFrom: new Date(0),
+          attributes: use === undefined ? { level: 3 } : { level: 3, use },
+        },
+      });
+    }
+
+    expect(await usoDe('?q=J18.9')).toEqual([['J18.9', 'PRINCIPAL']]);
+    expect(await usoDe('?q=H36.0')).toEqual([['H36.0', 'ASTERISK']]);
+    expect(await usoDe('?q=W19.0')).toEqual([['W19.0', 'EXTERNAL_CAUSE']]);
+    expect(await usoDe('?q=R50.9')).toEqual([['R50.9', null]]);
   });
 
   it('el capítulo viaja con su nombre, no sólo con su código', async () => {

@@ -246,6 +246,8 @@ describe('el bloque K por HTTP', () => {
       display: string;
       validFrom?: Date;
       validTo?: Date | null;
+      /** EN-235. The use the WHO list gives the code, if any. */
+      use?: 'PRINCIPAL' | 'ASTERISK' | 'EXTERNAL_CAUSE';
     },
   ): Promise<string> {
     const system = await prisma.catalogSystem.upsert({
@@ -260,6 +262,7 @@ describe('el bloque K por HTTP', () => {
         display: concept.display,
         validFrom: concept.validFrom ?? new Date('2019-01-01'),
         validTo: concept.validTo ?? null,
+        ...(concept.use === undefined ? {} : { attributes: { level: 3, use: concept.use } }), // prettier-ignore
       },
     });
     return row.id;
@@ -1814,6 +1817,107 @@ describe('el bloque K por HTTP', () => {
       });
       const refused = await post(`/encounters/${encounterId}/diagnoses`, doctorToken, aDiagnosisBody(fever)).expect(409); // prettier-ignore
       expect((refused.body as Problem).code).toBe('ENCOUNTER_ALREADY_CLOSED');
+    });
+  });
+
+  describe('EN-235 lo que no puede ser el diagnóstico principal', () => {
+    const patch = (path: string, body: object) =>
+      request(app.getHttpServer())
+        .patch(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send(body);
+
+    const refusal = {
+      status: 422,
+      code: 'DIAGNOSIS_PRINCIPAL_USE_INVALID',
+      errors: [
+        {
+          field: 'conceptId',
+          code: 'DIAGNOSIS_PRINCIPAL_USE_INVALID',
+          message: 'Registre primero la enfermedad o la lesión',
+        },
+      ],
+    };
+
+    async function concepts() {
+      return {
+        lesion: await aConcept('CIE10', { code: 'S52.5', display: 'Fractura de la epífisis inferior del radio', use: 'PRINCIPAL' }), // prettier-ignore
+        cause: await aConcept('CIE10', { code: 'W19.0', display: 'Caída no especificada, en vivienda', use: 'EXTERNAL_CAUSE' }), // prettier-ignore
+        asterisk: await aConcept('CIE10', { code: 'G63.2', display: 'Polineuropatía diabética', use: 'ASTERISK' }), // prettier-ignore
+      };
+    }
+
+    const diagnoses = async (encounterId: string) =>
+      ((await get(`/encounters/${encounterId}/diagnoses`, doctorToken).expect(200)).body as { items: (DiagnosisBody & { mayBePrincipal: boolean })[] }).items; // prettier-ignore
+
+    it('EN-235 registrar como primer diagnóstico una causa externa responde 422 con la frase y no registra nada; detrás del principal se registra', async () => {
+      const encounterId = await openEncounter();
+      const { lesion, cause } = await concepts();
+      const path = `/encounters/${encounterId}/diagnoses`;
+
+      const refused = await post(path, doctorToken, aDiagnosisBody(cause)).expect(422); // prettier-ignore
+      expect(refused.body).toMatchObject(refusal);
+      expect(refused.headers['content-type']).toContain(
+        'application/problem+json',
+      );
+      expect(await diagnoses(encounterId)).toEqual([]);
+      const explicit = await post(path, doctorToken, aDiagnosisBody(cause, { rank: 1 })).expect(422); // prettier-ignore
+      expect(explicit.body).toMatchObject(refusal);
+
+      // Positive control: the lesion first, then the cause behind it.
+      const first = await post(path, doctorToken, aDiagnosisBody(lesion)).expect(201); // prettier-ignore
+      expect(first.body).toMatchObject({ cie10Code: 'S52.5', rank: 1, mayBePrincipal: true }); // prettier-ignore
+      const second = await post(path, doctorToken, aDiagnosisBody(cause)).expect(201); // prettier-ignore
+      expect(second.body).toMatchObject({ cie10Code: 'W19.0', rank: 2, mayBePrincipal: false }); // prettier-ignore
+    });
+
+    it('EN-235 marcar principal un asterisco, por su ruta o por la edición, responde 422 y el principal sigue siendo el mismo', async () => {
+      const encounterId = await openEncounter();
+      const { lesion, asterisk } = await concepts();
+      const path = `/encounters/${encounterId}/diagnoses`;
+      await post(path, doctorToken, aDiagnosisBody(lesion)).expect(201);
+      const companion = (await post(path, doctorToken, aDiagnosisBody(asterisk)).expect(201)).body as DiagnosisBody; // prettier-ignore
+
+      const promoted = await post(`${path}/${companion.id}/primary`, doctorToken).expect(422); // prettier-ignore
+      expect(promoted.body).toMatchObject(refusal);
+      const edited = await patch(`${path}/${companion.id}`, { primary: true }).expect(422); // prettier-ignore
+      expect(edited.body).toMatchObject(refusal);
+
+      expect((await diagnoses(encounterId)).map((d) => [d.cie10Code, d.rank, d.mayBePrincipal])).toEqual([
+        ['S52.5', 1, true],
+        ['G63.2', 2, false],
+      ]); // prettier-ignore
+      // Positive control: the same edit without making it the principal.
+      await patch(`${path}/${companion.id}`, { certainty: 'PRESUMPTIVE' }).expect(200); // prettier-ignore
+    });
+
+    it('EN-235 cambiar el código del principal a una causa externa responde 422 y no cambia el código; el del secundario, sí', async () => {
+      const encounterId = await openEncounter();
+      const { lesion, cause, asterisk } = await concepts();
+      const path = `/encounters/${encounterId}/diagnoses`;
+      const head = (await post(path, doctorToken, aDiagnosisBody(lesion)).expect(201)).body as DiagnosisBody; // prettier-ignore
+      const companion = (await post(path, doctorToken, aDiagnosisBody(asterisk)).expect(201)).body as DiagnosisBody; // prettier-ignore
+
+      const refused = await patch(`${path}/${head.id}`, { conceptId: cause }).expect(422); // prettier-ignore
+      expect(refused.body).toMatchObject(refusal);
+      expect((await diagnoses(encounterId))[0]).toMatchObject({ cie10Code: 'S52.5', rank: 1 }); // prettier-ignore
+
+      const recoded = await patch(`${path}/${companion.id}`, { conceptId: cause }).expect(200); // prettier-ignore
+      expect(recoded.body).toMatchObject({ cie10Code: 'W19.0', rank: 2, mayBePrincipal: false }); // prettier-ignore
+    });
+
+    it('EN-235 deshacer el quitar de un principal cuyo código ya no puede serlo lo devuelve detrás, sin error', async () => {
+      const encounterId = await openEncounter();
+      // Coded as principal before the WHO edition said it was an asterisk.
+      const legacy = await aConcept('CIE10', { code: 'H36.0', display: 'Retinopatía diabética' }); // prettier-ignore
+      const path = `/encounters/${encounterId}/diagnoses`;
+      const head = (await post(path, doctorToken, aDiagnosisBody(legacy)).expect(201)).body as DiagnosisBody; // prettier-ignore
+      expect(head.rank).toBe(1);
+      await prisma.catalogConcept.update({ where: { id: legacy }, data: { attributes: { level: 3, use: 'ASTERISK' } } }); // prettier-ignore
+      await post(`${path}/${head.id}/retract`, doctorToken).expect(204);
+
+      const restored = await post(`${path}/${head.id}/restore`, doctorToken).expect(200); // prettier-ignore
+      expect(restored.body).toMatchObject({ cie10Code: 'H36.0', rank: 2, mayBePrincipal: false }); // prettier-ignore
     });
   });
 });
