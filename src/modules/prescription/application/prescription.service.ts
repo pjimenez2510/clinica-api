@@ -19,6 +19,7 @@ import {
 } from '../../../shared/clinical/patient-allergy.port';
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import { exactAllergyMatches } from '../domain/allergy-check';
+import type { KnownAllergy } from '../domain/allergy-check';
 import { assertPrescriptionComplete } from '../domain/prescription-content';
 import { composeDocument } from '../domain/prescription-document';
 import type { DeclaredPresentation } from '../domain/prescription-vocabulary';
@@ -203,13 +204,7 @@ export class PrescriptionService {
      * written, with the DCI frozen from the concept the adapter resolved.
      */
     const allergies = await this.allergies.activeFor(encounter.patientId);
-    const allergyAlerts = exactAllergyMatches(
-      prescription.items.map((item) => ({
-        line: item.line,
-        conceptId: item.conceptId,
-      })),
-      allergies,
-    );
+    const allergyAlerts = await this.allergyAlertsOf(prescription, allergies);
 
     await this.audit.record({
       userId: requester.userId,
@@ -240,6 +235,28 @@ export class PrescriptionService {
   }
 
   /**
+   * PR-067, PR-114. The informative alerts of a draft: by concept and by
+   * substance key, so an allergy recorded against another edition of the
+   * CNMB still shows.
+   */
+  private async allergyAlertsOf(
+    prescription: PrescriptionView,
+    allergies: readonly KnownAllergy[],
+  ) {
+    const lines = prescription.items.map((item) => ({
+      line: item.line,
+      conceptId: item.conceptId,
+    }));
+    const keys = await this.prescriptions.substanceKeysOf([
+      ...lines.flatMap((line) => (line.conceptId ? [line.conceptId] : [])),
+      ...allergies.flatMap((allergy) =>
+        allergy.substanceConceptId ? [allergy.substanceConceptId] : [],
+      ),
+    ]);
+    return exactAllergyMatches(lines, allergies, keys);
+  }
+
+  /**
    * PR-100. Rewrites a draft whole — its lines and its indications — so the
    * doctor corrects it instead of discarding and typing it again. Who may,
    * whether it is still a draft and whether the attention still admits
@@ -266,13 +283,7 @@ export class PrescriptionService {
       requester,
     );
     const allergies = await this.allergies.activeFor(encounter.patientId);
-    const allergyAlerts = exactAllergyMatches(
-      prescription.items.map((item) => ({
-        line: item.line,
-        conceptId: item.conceptId,
-      })),
-      allergies,
-    );
+    const allergyAlerts = await this.allergyAlertsOf(prescription, allergies);
 
     await this.audit.record({
       userId: requester.userId,
@@ -375,6 +386,7 @@ export class PrescriptionService {
             conceptId: item.conceptId,
           })),
           snapshot.allergies,
+          snapshot.substanceKeys,
         );
         if (alerts.length > 0) {
           throw new AllergyContraindicationError(

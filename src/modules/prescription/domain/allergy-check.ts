@@ -87,17 +87,52 @@ export interface AllergyAlert {
 export function exactAllergyMatches(
   items: readonly PrescribedSubstance[],
   allergies: readonly KnownAllergy[],
+  keys: SubstanceKeys = new Map(),
 ): AllergyAlert[] {
   const alerts: AllergyAlert[] = [];
 
   for (const item of items) {
     if (item.conceptId === null) continue;
+    const itemKeys = keys.get(item.conceptId) ?? [];
     for (const allergy of allergies) {
       if (allergy.substanceConceptId === null) continue;
-      if (allergy.substanceConceptId !== item.conceptId) continue;
+      const same =
+        allergy.substanceConceptId === item.conceptId ||
+        (keys.get(allergy.substanceConceptId) ?? []).some((key) =>
+          itemKeys.includes(key),
+        );
+      if (!same) continue;
       alerts.push({ line: item.line, allergyId: allergy.id, match: 'EXACT' });
     }
   }
 
   return alerts;
+}
+
+/**
+ * PR-114. The keys of one substance, by CNMB concept id: its code and the codes
+ * it replaces.
+ *
+ * ⚠️ WHY KEYS AND NOT IDS ALONE. The CNMB is versioned: every edition creates
+ * new concepts, so the amoxicillin an allergy was recorded against and the one
+ * prescribed after the next load have DIFFERENT ids and the SAME code. Compared
+ * by id, the first load of the official cuadro would have silenced every
+ * allergy recorded before it. The code is still a key — no text, no stemming —
+ * and `replaces` carries the codes of an edition that named the medicine
+ * otherwise (`ENALAPRIL` of the development cuadro is `C09AA02`).
+ */
+export type SubstanceKeys = ReadonlyMap<string, readonly string[]>;
+
+/** PR-114. `[code, ...attributes.replaces]`, without blanks or repeats. */
+export function substanceKeysOf(code: string, attributes: unknown): string[] {
+  const replaces =
+    typeof attributes === 'object' && attributes !== null
+      ? (attributes as { replaces?: unknown }).replaces
+      : undefined;
+  const others = Array.isArray(replaces)
+    ? replaces.filter(
+        (value): value is string => typeof value === 'string' && value !== '',
+      )
+    : [];
+  return [...new Set([code, ...others])];
 }

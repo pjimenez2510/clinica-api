@@ -18,6 +18,8 @@ import {
   PrescriptionNotEditableError,
   PrescriptionNotFoundError,
 } from '../domain/prescription.errors';
+import { substanceKeysOf } from '../domain/allergy-check';
+import type { SubstanceKeys } from '../domain/allergy-check';
 import type { ItemContent } from '../domain/prescription-content';
 import type { PrescriptionStatus } from '../domain/prescription';
 import type {
@@ -326,6 +328,11 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
     return Array.isArray(declared) ? (declared as DeclaredPresentation[]) : [];
   }
 
+  /** PR-114. See the port. */
+  substanceKeysOf(conceptIds: readonly string[]): Promise<SubstanceKeys> {
+    return substanceKeysIn(this.prisma, conceptIds);
+  }
+
   /** PR-006. One prescription within the caller's scope, or `null`. */
   async findById(query: PrescriptionQuery): Promise<PrescriptionView | null> {
     const row = await this.prisma.prescription.findFirst({
@@ -473,6 +480,17 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         nonPharmacologicalAdvice: view.nonPharmacologicalAdvice,
         items: view.items.map(toItemContent),
         allergies,
+        // PR-114. Read in the same transaction as the allergies it compares.
+        substanceKeys: await substanceKeysIn(tx, [
+          ...view.items.flatMap((item) =>
+            item.conceptId === null ? [] : [item.conceptId],
+          ),
+          ...allergies.flatMap((allergy) =>
+            allergy.substanceConceptId === null
+              ? []
+              : [allergy.substanceConceptId],
+          ),
+        ]),
         cityOfPrescription: canton?.display ?? null,
         diagnosisCount: current.encounter._count.diagnoses,
         prescriber: {
@@ -1189,4 +1207,26 @@ function toItemContent(item: PrescriptionView['items'][number]): ItemContent {
     conceptId: item.conceptId,
     offFormularyJustification: item.offFormularyJustification,
   };
+}
+
+/**
+ * PR-114. The keys of each CNMB concept named, of whatever edition: the code
+ * and the codes it replaces. A pooled client or a transaction, so the issue
+ * reads them with the allergies they are compared with.
+ */
+async function substanceKeysIn(
+  client: Pick<Prisma.TransactionClient, 'catalogConcept'>,
+  conceptIds: readonly string[],
+): Promise<SubstanceKeys> {
+  if (conceptIds.length === 0) return new Map();
+  const concepts = await client.catalogConcept.findMany({
+    where: { id: { in: [...new Set(conceptIds)] }, system: { code: CNMB } },
+    select: { id: true, code: true, attributes: true },
+  });
+  return new Map(
+    concepts.map((concept) => [
+      concept.id,
+      substanceKeysOf(concept.code, concept.attributes),
+    ]),
+  );
 }
