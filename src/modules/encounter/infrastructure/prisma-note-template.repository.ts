@@ -13,6 +13,7 @@ import type {
   NoteTemplateSummary,
   PublishNoteTemplate,
 } from '../domain/note-template.repository';
+import { encounterSpecialty } from './encounter-specialty';
 
 const TEMPLATE_SELECT = {
   id: true,
@@ -133,27 +134,8 @@ export class PrismaNoteTemplateRepository implements NoteTemplateRepository {
   }
 
   async specialtyOfEncounter(encounterId: string): Promise<string | null> {
-    const encounter = await this.prisma.encounter.findUnique({
-      where: { id: encounterId },
-      select: {
-        agendaEntry: { select: { serviceType: { select: { specialtyId: true } } } }, // prettier-ignore
-        practitioner: {
-          select: {
-            specialties: {
-              where: { isPrimary: true },
-              select: { specialtyId: true },
-              take: 1,
-            },
-          },
-        },
-      },
-    });
-    if (!encounter) return null;
-    return (
-      encounter.agendaEntry?.serviceType?.specialtyId ??
-      encounter.practitioner.specialties[0]?.specialtyId ??
-      null
-    );
+    // The one statement of EN-203's rule, shared with the dental index.
+    return (await encounterSpecialty(this.prisma, encounterId))?.id ?? null;
   }
 
   async specialtyExists(specialtyId: string): Promise<boolean> {

@@ -92,6 +92,7 @@ describe('privacy: lo que no sale de las versiones (D-140.2)', () => {
     const hanging = [
       'encounter',
       'encounter_vitals',
+      'encounter_dental_index',
       'encounter_diagnosis',
       'critical_result_notice',
     ];
@@ -349,6 +350,8 @@ async function everyVersionedRowOf(
     encounter: encounterId,
     // Vitals are one row per attention, archived by `encounter_id`.
     encounter_vitals: encounterId,
+    // EN-052. The dental index too: one row per attention.
+    encounter_dental_index: encounterId,
     encounter_diagnosis: diagnosis.id,
     critical_result_notice: notice.id,
     patient_allergy: allergy.id,

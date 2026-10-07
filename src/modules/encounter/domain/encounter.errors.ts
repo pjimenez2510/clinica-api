@@ -1354,3 +1354,19 @@ export class NoteTemplateStaleError extends ConflictError {
     });
   }
 }
+
+/**
+ * EN-052, D-160. The CEO-D or the CPO-D asked of an attention that does not
+ * take it: not odontology, a frozen age in neither band (11 years, 6 months or
+ * less, unknown), or the counts of the other index. The database says the
+ * same for the age and the counts (`encounter_dental_index_applies`).
+ */
+export class DentalIndexNotApplicableError extends BusinessRuleViolation {
+  readonly code = 'DENTAL_INDEX_NOT_APPLICABLE';
+  override readonly userTitle =
+    'Esta atención no lleva ese índice odontológico: sólo en odontología, el CEO-D con más de 6 meses y menos de 11 años, y el CPO-D desde los 12 años';
+
+  constructor() {
+    super('The dental index does not apply to this encounter');
+  }
+}

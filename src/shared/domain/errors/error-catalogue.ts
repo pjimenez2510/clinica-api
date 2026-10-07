@@ -798,6 +798,11 @@ export const DOMAIN_ERROR_CODES = [
   //   * `VITALS_CORRECTION_REQUIRES_SIGNATURE` (403) — EN-228 (D-134.3). Tras
   //     el alta corrige la toma quien tiene `record:sign` en la sede.
   'VITALS_CORRECTION_REQUIRES_SIGNATURE',
+  //   * `DENTAL_INDEX_NOT_APPLICABLE` (422) — EN-052 (D-160). El CEO-D o el
+  //     CPO-D fuera de odontología, fuera de su tramo de edad congelada o con
+  //     la cuenta del otro índice. Lo dicen el servicio y la base
+  //     (`encounter_dental_index_applies`).
+  'DENTAL_INDEX_NOT_APPLICABLE',
   // ── H6: alergias visibles durante la consulta ──────────────────────────
   //   * `PATIENT_ALLERGY_NOT_FOUND` (404) — EN-082. La alergia no está en esa
   //     ficha ni en ninguna que esa ficha absorbiera. **Uno solo para «no

@@ -1920,4 +1920,103 @@ describe('el bloque K por HTTP', () => {
       expect(restored.body).toMatchObject({ cie10Code: 'H36.0', rank: 2, mayBePrincipal: false }); // prettier-ignore
     });
   });
+
+  describe('EN-052 el índice CEO-D / CPO-D por HTTP', () => {
+    const put = (path: string, token: string, body: object) =>
+      request(app.getHttpServer())
+        .put(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body);
+
+    /** The doctor's primary specialty: odontology, or another. */
+    async function practises(code: string): Promise<void> {
+      const specialty = await prisma.specialty.create({
+        data: { code, name: code === 'odontologia' ? 'Odontología' : 'Medicina general' }, // prettier-ignore
+      });
+      await prisma.practitionerSpecialty.create({
+        data: { practitionerId: doctorPractitionerId, specialtyId: specialty.id, isPrimary: true }, // prettier-ignore
+      });
+    }
+
+    /** An attention an hour ago of a patient that many years old then. */
+    async function anAttentionOfAge(years: number): Promise<string> {
+      const startedAt = new Date(Date.now() - 3_600_000);
+      const [y, m, d] = clinicalDateOf(startedAt).split('-').map(Number) as [number, number, number]; // prettier-ignore
+      const patient = await createPatient(prisma, {
+        birthDate: new Date(Date.UTC(y - years, m - 4, d)),
+      });
+      const response = await post('/encounters', doctorToken, {
+        siteId,
+        practitionerId: doctorPractitionerId,
+        patientId: patient.id,
+        startedAt: startedAt.toISOString(),
+        careModality: 'MORBIDITY',
+        visitSequence: 'FIRST_TIME',
+      }).expect(201);
+      return (response.body as { id: string }).id;
+    }
+
+    it('EN-052 en odontología dice qué índice toca y guarda el CEO-D; la corrección deja la anterior versionada', async () => {
+      await practises('odontologia');
+      const encounterId = await anAttentionOfAge(8);
+      const path = `/encounters/${encounterId}/dental-index`;
+
+      expect((await get(path, doctorToken).expect(200)).body).toEqual({ index: 'CEO_D', reading: null }); // prettier-ignore
+      const saved = await put(path, doctorToken, { index: 'CEO_D', decayed: 2, extracted: 1, filled: 3 }).expect(200); // prettier-ignore
+      expect(saved.body).toMatchObject({
+        index: 'CEO_D',
+        reading: { decayed: 2, extracted: 1, filled: 3, missing: null, editedAt: null }, // prettier-ignore
+      });
+      await put(path, doctorToken, { index: 'CEO_D', decayed: 3, extracted: 1, filled: 3 }).expect(200); // prettier-ignore
+      expect(((await get(path, doctorToken).expect(200)).body as { reading: { decayed: number; editedAt: string | null } }).reading).toMatchObject({ decayed: 3, editedAt: expect.any(String) }); // prettier-ignore
+      expect(await prisma.recordVersion.count({ where: { resourceType: 'encounter_dental_index', resourceId: encounterId } })).toBe(1); // prettier-ignore
+      expect(await auditRows('encounter_dental_index')).toBe(4);
+    });
+
+    it('EN-052 D-160 fuera de odontología no toca índice, y guardarlo responde 422 DENTAL_INDEX_NOT_APPLICABLE sin escribir', async () => {
+      await practises('medicina_general');
+      const encounterId = await anAttentionOfAge(30);
+      const path = `/encounters/${encounterId}/dental-index`;
+
+      expect((await get(path, doctorToken).expect(200)).body).toEqual({ index: null, reading: null }); // prettier-ignore
+      const refused = await put(path, doctorToken, { index: 'CPO_D', decayed: 1, missing: 0, filled: 2 }).expect(422); // prettier-ignore
+      expect(refused.body).toMatchObject({
+        code: 'DENTAL_INDEX_NOT_APPLICABLE',
+        title: 'Esta atención no lleva ese índice odontológico: sólo en odontología, el CEO-D con más de 6 meses y menos de 11 años, y el CPO-D desde los 12 años', // prettier-ignore
+      });
+      expect(await prisma.encounterDentalIndex.count()).toBe(0);
+    });
+
+    it('EN-052 D-160 a los 11 años no toca ninguno; con la cuenta del otro índice se rechaza; en su tramo el CPO-D entra', async () => {
+      await practises('odontologia');
+      const eleven = await anAttentionOfAge(11);
+      expect((await get(`/encounters/${eleven}/dental-index`, doctorToken).expect(200)).body).toMatchObject({ index: null }); // prettier-ignore
+      await put(`/encounters/${eleven}/dental-index`, doctorToken, { index: 'CEO_D', decayed: 1, extracted: 0, filled: 1 }).expect(422); // prettier-ignore
+
+      const adult = await anAttentionOfAge(30);
+      const path = `/encounters/${adult}/dental-index`;
+      const crossed = await put(path, doctorToken, { index: 'CPO_D', decayed: 1, extracted: 1, missing: 0, filled: 1 }).expect(422); // prettier-ignore
+      expect((crossed.body as Problem).code).toBe(
+        'DENTAL_INDEX_NOT_APPLICABLE',
+      );
+      const tooMany = await put(path, doctorToken, { index: 'CPO_D', decayed: 33, missing: 0, filled: 1 }).expect(422); // prettier-ignore
+      expect((tooMany.body as Problem).errors).toEqual([expect.objectContaining({ field: 'decayed', code: 'VALIDATION_FAILED' })]); // prettier-ignore
+      const incomplete = await put(path, doctorToken, { index: 'CPO_D', decayed: 1, filled: 1 }).expect(422); // prettier-ignore
+      expect((incomplete.body as Problem).errors?.map((e) => e.field)).toContain('missing'); // prettier-ignore
+
+      // Positive control: its own counts, in its band.
+      await put(path, doctorToken, { index: 'CPO_D', decayed: 1, missing: 0, filled: 1 }).expect(200); // prettier-ignore
+    });
+
+    it('EN-052 ENFERMERÍA no registra el índice, y sin sesión no se lee', async () => {
+      await practises('odontologia');
+      const encounterId = await anAttentionOfAge(30);
+      const path = `/encounters/${encounterId}/dental-index`;
+
+      await put(path, nurseToken, { index: 'CPO_D', decayed: 1, missing: 0, filled: 1 }).expect(403); // prettier-ignore
+      await request(app.getHttpServer()).get(`/api/v1${path}`).expect(401);
+      // Positive control: the doctor does.
+      await put(path, doctorToken, { index: 'CPO_D', decayed: 1, missing: 0, filled: 1 }).expect(200); // prettier-ignore
+    });
+  });
 });

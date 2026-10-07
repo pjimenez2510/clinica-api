@@ -12,6 +12,7 @@ import {
 
 import {
   AllergyAlreadyRefutedError,
+  DentalIndexNotApplicableError,
   AmendmentReasonRequiredError,
   AppointmentNotAttendableError,
   BmiIsDerivedError,
@@ -627,5 +628,16 @@ describe('EN-166 la atención con actos vivos no se anula', () => {
     ]);
     // Counts only in the params: no patient, no drug reaches a log.
     expect(error.params).toMatchObject({ certificates: 1, prescriptions: 1 });
+  });
+
+  it('EN-052 responde 422 con su código, en el catálogo, y dice qué índice lleva cada edad', () => {
+    const error = new DentalIndexNotApplicableError();
+
+    expect(error.code).toBe('DENTAL_INDEX_NOT_APPLICABLE');
+    expect(error).toBeInstanceOf(BusinessRuleViolation); // 422
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+    expect(error.userTitle).toBe(
+      'Esta atención no lleva ese índice odontológico: sólo en odontología, el CEO-D con más de 6 meses y menos de 11 años, y el CPO-D desde los 12 años',
+    );
   });
 });

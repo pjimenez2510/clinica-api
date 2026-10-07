@@ -346,6 +346,48 @@ registerConstraintMeanings({
 });
 
 /**
+ * EN-052 (D-160). The CEO-D / CPO-D. Each count is bounded by the teeth there
+ * are — 32 permanent, 20 primary — and named on its own box; the frozen age
+ * outside both bands, and the other index's count, are not applicable. The
+ * figures MUST match `20261007085419_encounter_dental_index`.
+ */
+function dentalCountOutOfRange(field: string, label: string) {
+  return {
+    code: 'VALIDATION_FAILED',
+    field,
+    message: `Los dientes ${label} deben estar entre 0 y 32: revise el valor ingresado`,
+  };
+}
+
+registerConstraintMeanings({
+  encounter_dental_index_decayed_range: dentalCountOutOfRange('decayed', 'cariados'), // prettier-ignore
+  encounter_dental_index_extracted_range: dentalCountOutOfRange('extracted', 'extraídos'), // prettier-ignore
+  encounter_dental_index_filled_range: dentalCountOutOfRange('filled', 'obturados'), // prettier-ignore
+  encounter_dental_index_missing_range: dentalCountOutOfRange('missing', 'perdidos'), // prettier-ignore
+  encounter_dental_index_primary_teeth: {
+    code: 'VALIDATION_FAILED',
+    field: 'decayed',
+    message: 'El CEO-D cuenta dientes temporales: cada cuenta es de 20 como mucho', // prettier-ignore
+  },
+  encounter_dental_index_counts_required: {
+    code: 'VALIDATION_FAILED',
+    field: 'decayed',
+    message: 'Indique las tres cuentas del índice: cariados, obturados y extraídos (CEO-D) o perdidos (CPO-D)', // prettier-ignore
+  },
+  encounter_dental_index_applies: {
+    code: 'DENTAL_INDEX_NOT_APPLICABLE',
+    field: 'index',
+    message: 'Esta atención no lleva ese índice odontológico: sólo en odontología, el CEO-D con más de 6 meses y menos de 11 años, y el CPO-D desde los 12 años', // prettier-ignore
+  },
+  /** EN-052. Whoever recorded the index stays its author. */
+  encounter_dental_index_keeps_its_author: {
+    code: 'VALIDATION_FAILED',
+    field: 'recordedBy',
+    message: 'Quien registró el índice no cambia al corregirlo',
+  },
+});
+
+/**
  * ⚠️ LOS TRES DISPARADORES DEL NÚCLEO CLÍNICO NO ESTÁN AQUÍ, Y NO ES UN
  * OLVIDO.
  *

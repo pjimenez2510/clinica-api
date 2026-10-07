@@ -74,6 +74,11 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
     resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
   },
+  // EN-052. One row per attention, archived by `encounter_id` (EN-210).
+  encounter_dental_index: {
+    resourceIdsOf: standingEncountersOf,
+    omittedBecause: null,
+  },
   encounter_diagnosis: {
     resourceIdsOf: (chartId) => Prisma.sql`
       SELECT d.id FROM encounter_diagnosis d
