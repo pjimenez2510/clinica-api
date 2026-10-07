@@ -1967,7 +1967,8 @@ dos registros distintos.**
   escribe `sri`: la clave de acceso, una vez, y el paso a `AUTHORISED` o
   `REJECTED` y de vuelta a `ISSUED` al reenviar (`trg_credit_note_immutable`).
   > Es el disparador que la nota «Falta esquema» de §10 dejaba para B3.
-- **BI-213** — SI la factura se emitió a «Consumidor Final» ENTONCES el sistema
+- **BI-213** — SI la factura se emitió a «Consumidor Final» —por la marca o
+  por la identificación `9999999999999`— ENTONCES el sistema
   DEBERÁ rechazar su nota de crédito con `CREDIT_NOTE_FINAL_CONSUMER`, la base
   DEBERÁ rechazarla por su cuenta, y la pantalla NO DEBERÁ ofrecer «Corregir»
   en esa factura y DEBERÁ decir junto a la fila «Consumidor Final: no admite
@@ -1980,7 +1981,13 @@ dos registros distintos.**
   los mismos valores congelados y que diga qué cargo corrige; DEBERÁ reabrir la
   cuenta si estaba liquidada; y la base DEBERÁ rechazar un segundo cargo que
   corrija el mismo cargo (`charge_item_one_correction_per_charge`) y uno que
-  corrija un cargo no acreditado.
+  corrija un cargo no acreditado o acreditado con «Servicio no prestado»; y
+  SI se intenta facturar ese cargo mientras la nota de crédito que acreditó el
+  original no esté `AUTHORISED` ENTONCES el sistema DEBERÁ rechazarlo con
+  `CORRECTION_AWAITS_CREDIT_NOTE`, y la base DEBERÁ rechazarlo por su cuenta
+  (`charge_item_correction_awaits_credit_note`).
+  > **Revisión clínica, C1 (D-152.7):** sin la espera, una nota que el SRI no
+  > autorizara dejaría el servicio en dos facturas válidas.
   > «Deja la cuenta lista para facturar de nuevo con lo corregido ya cargado»
   > (CA-8, D-152.3). El cargo original sigue facturado (BI-096): la copia es
   > otro cargo, con origen `CORRECTION`, que se edita en el sitio como
@@ -2003,9 +2010,13 @@ dos registros distintos.**
   > comprobante que el SRI no aceptó: lo autorizado sigue sin editarse. Las
   > líneas y los importes no se editan (D-152.1).
 - **BI-217** — La base DEBERÁ rechazar el cambio del receptor o de la forma de
-  pago de una factura que no esté `REJECTED`, y CUANDO cambien en una
-  `REJECTED`, DEBERÁ guardar la fila anterior en `record_version` con quién y
-  cuándo.
+  pago de una factura que no esté `REJECTED` con su comprobante `RETURNED` o
+  `NOT_AUTHORISED`, DEBERÁ rechazar que una factura `AUTHORISED` pase a otro
+  estado que no sea `VOIDED`, y CUANDO el receptor o la forma de pago cambien
+  en una devuelta, DEBERÁ guardar la fila anterior en `record_version` con
+  quién y cuándo.
+  > **Revisión clínica, C2:** `trg_invoice_immutable` congelaba las columnas
+  > de la autorizada pero no su estado, y dos sentencias la editaban.
   > Hasta ahora `trg_invoice_immutable` solo congelaba lo autorizado o anulado,
   > y la forma de pago no cambiaba nunca (`trg_invoice_payment_method_permanent`).
 - **BI-218** — En la lista de facturas, la fila de una factura `AUTHORISED`
@@ -2014,8 +2025,9 @@ dos registros distintos.**
   DEBERÁ llevar a la cuenta con la emisión de la factura abierta y el receptor
   de la factura corregida propuesto, salvo con «Servicio no prestado». La fila
   de una factura `REJECTED` DEBERÁ ofrecer «Editar» con el receptor y la forma
-  de pago en el sitio. La página de notas de crédito DEBERÁ listarlas con su
-  factura, su motivo, su estado ante el SRI y su RIDE.
+  de pago en el sitio, y SI no se pudo reenviar DEBERÁ decirlo. La página de
+  notas de crédito DEBERÁ listarlas paginadas en el servidor, con su factura,
+  su motivo, su estado ante el SRI y su RIDE.
   > Lo de pantalla de BI-208, BI-213 y BI-216, con los botones de
   > `ESTANDAR-UI.md` §9 ter. Sustituye al marcador vacío de `notas-credito.vue`.
 
@@ -2082,6 +2094,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `CREDIT_NOTE_LINE_ALREADY_CREDITED` | 409 | BI-211 |
 | `CREDIT_NOTE_FINAL_CONSUMER` | 409 | BI-213 |
 | `INVOICE_NOT_EDITABLE` | 409 | BI-216 |
+| `CORRECTION_AWAITS_CREDIT_NOTE` | 409 | BI-214 |
 | `PAYMENT_METHOD_NOT_FOUND` | 404 | BI-100 |
 | `PAYMENT_EXCEEDS_BALANCE` | 422 | BI-101 |
 | `PAYMENT_REVERSAL_REASON_REQUIRED` | 422 | BI-102 |

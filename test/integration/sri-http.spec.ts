@@ -720,6 +720,28 @@ describe('el comprobante electrónico por HTTP', () => {
       ).toBe(1);
     });
 
+    it('SRI-090 si falta un dato del emisor, la corrección se guarda pero no se reenvía, y la respuesta lo dice', async () => {
+      const invoice = await aReturnedInvoice();
+      // A datum of the issuer removed after issuing: it cannot be recomposed.
+      const { establishmentId } = await prisma.site.findUniqueOrThrow({
+        where: { id: siteId },
+        select: { establishmentId: true },
+      });
+      await prisma.establishment.update({
+        where: { id: establishmentId },
+        data: { headOfficeAddress: null },
+      });
+
+      const response = await resubmit(invoice.id, corrected);
+      expect(response.status).toBe(200);
+      // Still REJECTED: the screen says «guardada, sin reenviar» (I-3).
+      expect(response.body).toMatchObject({
+        status: 'REJECTED',
+        buyerIdentification: '0919176818',
+        electronic: { state: 'RETURNED' },
+      });
+    });
+
     it('BI-216 una factura que el SRI no devolvió no se edita', async () => {
       await uploadCertificate();
       const invoice = await issueInvoice();
