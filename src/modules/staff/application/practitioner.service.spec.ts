@@ -204,7 +204,6 @@ describe('PractitionerService', () => {
         cedula: '1710034065',
         acessRegistration: 'ACESS-1001',
         acessExpiresOn: PRACTITIONER.acessExpiresOn,
-        emergencyContactPhone: null,
         active: true,
       };
       expect(recorded[0]?.before).toEqual({

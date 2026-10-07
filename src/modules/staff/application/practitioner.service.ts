@@ -27,6 +27,9 @@ import { type Requester, StaffAuditTrail } from './staff-audit.trail';
 /**
  * ST-052. The fields of the file this service edits, and nothing else: the
  * name and the e-mail belong to the account and are audited by `auth`.
+ *
+ * NOT the emergency contact's phone: it is a third person's data, outside
+ * what D-150.1 lists, and this trail is never purged.
  */
 export function practitionerSnapshot(view: PractitionerView): object {
   return {
@@ -34,7 +37,6 @@ export function practitionerSnapshot(view: PractitionerView): object {
     acessRegistration: view.acessRegistration,
     acessExpiresOn: view.acessExpiresOn,
     mspCode: view.mspCode,
-    emergencyContactPhone: view.emergencyContactPhone,
     schedulable: view.schedulable,
     active: view.active,
   };
