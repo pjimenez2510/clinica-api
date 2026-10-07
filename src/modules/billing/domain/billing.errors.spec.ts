@@ -50,6 +50,8 @@ const EXPECTED: readonly [
   [errors.PriceListNotFoundError, 'PRICE_LIST_NOT_FOUND', NotFoundError],
   [errors.PricePeriodInvalidError, 'PRICE_PERIOD_INVALID', ValidationError],
   [errors.PriceNegativeAmountError, 'PRICE_NEGATIVE_AMOUNT', ValidationError],
+  [errors.PriceNotEditableError, 'PRICE_NOT_EDITABLE', ValidationError],
+  [errors.PriceEntryNotFoundError, 'PRICE_ENTRY_NOT_FOUND', NotFoundError],
   [errors.AccountNotFoundError, 'ACCOUNT_NOT_FOUND', NotFoundError],
   [errors.AccountClosedError, 'ACCOUNT_CLOSED', ConflictError],
   [errors.AccountHasBilledChargesError, 'ACCOUNT_HAS_BILLED_CHARGES', ConflictError], // prettier-ignore

@@ -4,7 +4,10 @@ import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
-import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  type ClinicalDate,
+  clinicalDateOf,
+} from '../../../shared/domain/clinic-time';
 import { Ruc } from '../../../shared/domain/value-objects/ruc.vo';
 
 import {
@@ -21,11 +24,13 @@ import {
   PayerInUseError,
   PayerNotFoundError,
   PayerRucRequiredError,
+  PriceEntryNotFoundError,
   PriceListNotFoundError,
 } from '../domain/billing.errors';
 import { Money } from '../domain/money';
 import {
   type PriceRow,
+  checkPriceCorrection,
   planPriceChange,
   priceInForceOn,
 } from '../domain/price-list';
@@ -188,6 +193,33 @@ export class PricingService {
       after: priceSnapshot(opened),
     });
     return opened;
+  }
+
+  /**
+   * BI-230 (D-127). Correcting a mistyped amount IN PLACE, for a price in
+   * force or still to come. The previous row is archived by
+   * `trg_price_record_version` with the stamp written here; the charges keep
+   * the amount they froze (BI-050).
+   */
+  async correctPrice(
+    priceId: string,
+    amount: Money,
+    requester: Requester,
+    now: Date = new Date(),
+  ): Promise<PriceRow> {
+    const current = await this.catalogue.findPrice(priceId);
+    if (!current) throw new PriceEntryNotFoundError();
+    checkPriceCorrection(current, amount, clinicalDateOf(now));
+
+    const corrected = await this.catalogue.correctPriceAmount(priceId, amount, {
+      by: requester.userId,
+      at: now,
+    });
+    await this.record(PRICE_RESOURCE_TYPE, priceId, 'UPDATE', requester, {
+      before: priceSnapshot(current),
+      after: priceSnapshot(corrected),
+    });
+    return corrected;
   }
 
   /**

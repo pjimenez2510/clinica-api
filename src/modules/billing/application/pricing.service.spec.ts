@@ -10,7 +10,9 @@ import {
   PayerInUseError,
   PayerNotFoundError,
   PayerRucRequiredError,
+  PriceEntryNotFoundError,
   PriceListNotFoundError,
+  PriceNotEditableError,
 } from '../domain/billing.errors';
 import type {
   BillingCatalogueRepository,
@@ -368,5 +370,65 @@ describe('BI-231 la bitácora con antes y después', () => {
         },
       }),
     );
+  });
+});
+
+describe('BI-230 corregir el importe de un precio en el sitio', () => {
+  const now = new Date();
+  const today = clinicalDateOf(now);
+  const inForce = {
+    ...price('price-1', '30.00', today),
+    priceListId: 'list-particular',
+  };
+
+  it('BI-230 corrige el importe con el sello de quién y cuándo, y deja el antes y el después', async () => {
+    const { service, mocks } = build({
+      findPrice: vi.fn().mockResolvedValue(inForce),
+      correctPriceAmount: vi
+        .fn()
+        .mockResolvedValue({ ...inForce, amount: Money.parse('31.50') }),
+    });
+
+    const corrected = await service.correctPrice(
+      'price-1',
+      Money.parse('31.50'),
+      requester,
+      now,
+    );
+
+    expect(corrected.amount.toString()).toBe('31.50');
+    expect(mocks.correctPriceAmount).toHaveBeenCalledWith(
+      'price-1',
+      Money.parse('31.50'),
+      { by: 'user-1', at: now },
+    );
+    expect(mocks.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'UPDATE',
+        resourceType: 'price',
+        before: expect.objectContaining({ amount: '30.00' }),
+        after: expect.objectContaining({ amount: '31.50' }),
+      }),
+    );
+  });
+
+  it('BI-230 un precio que ya dejó de regir no se corrige, y no se escribe nada', async () => {
+    const { service, mocks } = build({
+      findPrice: vi.fn().mockResolvedValue({ ...inForce, validTo: today }),
+      correctPriceAmount: vi.fn(),
+    });
+
+    await expect(
+      service.correctPrice('price-1', Money.parse('31.50'), requester, now),
+    ).rejects.toBeInstanceOf(PriceNotEditableError);
+    expect(mocks.correctPriceAmount).not.toHaveBeenCalled();
+  });
+
+  it('BI-230 un precio inexistente responde PRICE_ENTRY_NOT_FOUND', async () => {
+    const { service } = build({ findPrice: vi.fn().mockResolvedValue(null) });
+
+    await expect(
+      service.correctPrice('ghost', Money.parse('1'), requester, now),
+    ).rejects.toBeInstanceOf(PriceEntryNotFoundError);
   });
 });

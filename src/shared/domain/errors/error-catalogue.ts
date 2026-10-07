@@ -538,6 +538,7 @@ export const DOMAIN_ERROR_CODES = [
   // no los distingue manda a alguien a buscar en el sitio equivocado.
   // El solape de vigencias NO está aquí: lo produce `price_temporal_unique` y
   // sale por el mapeo de PostgreSQL, que tiene su propia tabla.
+  'PRICE_ENTRY_NOT_FOUND',
   'PRICE_LIST_NOT_FOUND',
   'PRICE_NEGATIVE_AMOUNT',
   'PRICE_NOT_EDITABLE',

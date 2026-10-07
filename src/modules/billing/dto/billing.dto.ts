@@ -200,6 +200,13 @@ export const setPriceSchema = z.object({
 /** Body of POST /billing/payers/:payerId/prices; the payer is the route's. */
 export class SetPriceDto extends createZodDto(setPriceSchema) {}
 
+/** BI-230. Correcting the amount of a price in force or still to come. */
+export const correctPriceSchema = z.object({
+  amount: money('El precio'),
+});
+/** Body of PATCH /billing/prices/:priceId. */
+export class CorrectPriceDto extends createZodDto(correctPriceSchema) {}
+
 // ───────────────────────────────────────────────────────────────────────────
 // The account and the charge
 // ───────────────────────────────────────────────────────────────────────────

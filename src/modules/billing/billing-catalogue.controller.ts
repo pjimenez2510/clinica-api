@@ -49,6 +49,7 @@ import {
   ServicePriceListDto,
   ServiceDto,
   ServiceListDto,
+  CorrectPriceDto,
   SetPriceDto,
   TaxRateDto,
   UpdatePayerDto,
@@ -387,6 +388,30 @@ export class BillingCatalogueController {
           amount: Money.parse(dto.amount),
           effectiveFrom: dto.effectiveFrom,
         },
+        requester,
+      ),
+    );
+  }
+
+  /**
+   * BI-230. «Editar» a mistyped amount, in place and with version. The row
+   * before the correction is kept by the base (`record_version`).
+   */
+  @Patch('prices/:priceId')
+  @RequirePermission('billing:price-manage', 'global')
+  @ApiOperation({
+    summary: 'Corregir el importe de un precio vigente o futuro',
+  })
+  @ApiOkResponse({ type: PriceDto })
+  async correctPrice(
+    @Param('priceId', ParseUUIDPipe) priceId: string,
+    @Body() dto: CorrectPriceDto,
+  ): Promise<PriceResponse> {
+    const requester = this.requireClinicWide('billing:price-manage');
+    return toPriceResponse(
+      await this.pricing.correctPrice(
+        priceId,
+        Money.parse(dto.amount),
         requester,
       ),
     );

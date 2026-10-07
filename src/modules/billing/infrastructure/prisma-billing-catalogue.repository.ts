@@ -523,6 +523,31 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
       return toPriceRow(created);
     });
   }
+
+  /** BI-230. */
+  async findPrice(
+    priceId: string,
+  ): Promise<(PriceRow & { priceListId: string }) | null> {
+    const row = await this.prisma.price.findUnique({ where: { id: priceId } });
+    return row ? { ...toPriceRow(row), priceListId: row.priceListId } : null;
+  }
+
+  /** BI-230. The stamp is what lets `trg_price_record_version` archive. */
+  async correctPriceAmount(
+    priceId: string,
+    amount: Money,
+    stamp: { by: string; at: Date },
+  ): Promise<PriceRow> {
+    const row = await this.prisma.price.update({
+      where: { id: priceId },
+      data: {
+        amount: amount.toString(),
+        changedById: stamp.by,
+        changedAt: stamp.at,
+      },
+    });
+    return toPriceRow(row);
+  }
 }
 
 /** A `ClinicalDate` as a `@db.Date` column takes it: midnight UTC, no zone shift. */
