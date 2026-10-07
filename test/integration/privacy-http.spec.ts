@@ -1632,6 +1632,61 @@ describe('privacy por HTTP', () => {
       expect(await trail('patient', patient.id, 'EXPORT')).toHaveLength(1);
     });
 
+    it('PD-049 la respuesta propuesta a una de acceso dice lo que el archivo no lleva, sin escribir nada; y lo editado es lo que queda', async () => {
+      const patient = await createPatient(prisma);
+      const access = await requestFor(patient.id, 'ACCESS');
+
+      const auditRows = () => prisma.accessAudit.count();
+      const before = await auditRows();
+      const response = await get(
+        `/requests/${access.id}/answer-proposal`,
+      ).expect(200);
+      const proposal = (response.body as { response: string }).response;
+      expect(await auditRows()).toBe(before);
+
+      // The same list the file carries, one line per section in its order.
+      const exported = await get(`/requests/${access.id}/export`).expect(200);
+      // Positive control: the export does write to the trail.
+      expect(await auditRows()).toBeGreaterThan(before);
+      const omitted = (exported.body as { omitted: { section: string }[] })
+        .omitted;
+      const lines = proposal.split('\n');
+      expect(lines[0]).toBe('El archivo con sus datos no lo incluye todo:');
+      expect(lines).toHaveLength(omitted.length + 1);
+      expect(proposal).not.toMatch(/\([A-Z]{1,3}-\d{2,3}/);
+      expect(proposal).toContain(
+        'Las citas y la lista de espera: las vigentes no se incluyen todavía; sus versiones anteriores sí',
+      );
+
+      // PD-033. What is saved is what was written: the proposal, edited.
+      const written = `${proposal}\nSe entregó en persona.`;
+      await post(`/requests/${access.id}/response`, {
+        outcome: 'PARTIALLY_GRANTED',
+        response: written,
+      }).expect(200);
+      const stored = await prisma.dataSubjectRequest.findUniqueOrThrow({
+        where: { id: access.id },
+      });
+      expect(stored.response).toBe(written);
+    });
+
+    it('PD-049 otro derecho no tiene propuesta, una inexistente es 404 y recepción no la pide', async () => {
+      const patient = await createPatient(prisma);
+      const rectification = await requestFor(patient.id, 'RECTIFICATION');
+      const portability = await requestFor(patient.id, 'PORTABILITY');
+
+      const refused = await get(
+        `/requests/${rectification.id}/answer-proposal`,
+      ).expect(422);
+      expect((refused.body as Problem).code).toBe('DATA_EXPORT_NOT_APPLICABLE');
+      await get(`/requests/${portability.id}/answer-proposal`).expect(200);
+      await get(`/requests/${crypto.randomUUID()}/answer-proposal`).expect(404);
+      await get(
+        `/requests/${portability.id}/answer-proposal`,
+        deskToken,
+      ).expect(403);
+    });
+
     it('PD-040 recepción no exporta: cerrado por defecto', async () => {
       const patient = await createPatient(prisma);
       const access = await requestFor(patient.id, 'ACCESS');

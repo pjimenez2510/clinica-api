@@ -6,7 +6,7 @@ import {
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
-import { EXPORT_OMISSIONS } from '../domain/data-export';
+import { answerProposal, EXPORT_OMISSIONS } from '../domain/data-export';
 import { legalDueDate } from '../domain/legal-due-date';
 import {
   ConsentTextInvalidError,
@@ -321,6 +321,38 @@ describe('DataSubjectRequestsService', () => {
     await expect(service.export('r-1', WHO, NOW)).rejects.toBeInstanceOf(
       DataRequestNotFoundError,
     );
+  });
+});
+
+describe('la propuesta de respuesta (D-164.2)', () => {
+  it('PD-049 propone a acceso y portabilidad lo que el archivo no lleva, y rechaza otro derecho o una inexistente sin escribir nada', async () => {
+    const find = vi
+      .fn()
+      .mockResolvedValueOnce(requestView({ right: 'ACCESS' }))
+      .mockResolvedValueOnce(requestView({ right: 'PORTABILITY' }))
+      .mockResolvedValueOnce(requestView({ right: 'RECTIFICATION' }))
+      .mockResolvedValueOnce(null);
+    const answer = vi.fn();
+    const exportChart = vi.fn();
+    const repository = requestRepository({ find, answer, exportChart });
+    const audit = { record: vi.fn() };
+    const service = new DataSubjectRequestsService(repository, audit);
+
+    await expect(service.answerProposal('r-1')).resolves.toBe(
+      answerProposal(EXPORT_OMISSIONS),
+    );
+    await expect(service.answerProposal('r-1')).resolves.toBe(
+      answerProposal(EXPORT_OMISSIONS),
+    );
+    await expect(service.answerProposal('r-1')).rejects.toBeInstanceOf(
+      DataExportNotApplicableError,
+    );
+    await expect(service.answerProposal('r-1')).rejects.toBeInstanceOf(
+      DataRequestNotFoundError,
+    );
+    expect(answer).not.toHaveBeenCalled();
+    expect(exportChart).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
   });
 });
 

@@ -18,7 +18,7 @@ export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
   {
     section: 'sexual_orientation',
     reason:
-      'Tiene permiso propio (PA-058); no se exporta con el permiso de protección de datos (D-083 §3).',
+      'La orientación sexual tiene permiso propio (PA-058); no se exporta con el permiso de protección de datos (D-083 §3).',
   },
   {
     section: 'priority_groups',
@@ -37,12 +37,13 @@ export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
   },
   {
     section: 'appointments',
-    reason: 'Las citas y la lista de espera no se incluyen todavía (D-098 §7).',
+    reason:
+      'Las citas y la lista de espera: las vigentes no se incluyen todavía; sus versiones anteriores sí, en `versions` (D-098 §7, D-164.3).',
   },
   {
     section: 'billing',
     reason:
-      'Las cuentas, facturas y notas de crédito no se incluyen todavía (D-098 §7).',
+      'Las cuentas, cargos, facturas y notas de crédito: las vigentes no se incluyen todavía; sus versiones anteriores sí, en `versions`, donde las hay (D-098 §7, D-164.3).',
   },
   {
     section: 'record_corrections',
@@ -55,6 +56,30 @@ export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
       'Quién consultó la ficha (bitácora de accesos) no se incluye todavía (D-098 §7).',
   },
 ];
+
+/** `(D-083 §3)`, `(D-098 §7, D-164.3)`: references for the file's reader. */
+const DECISION_REFERENCE = /\s*\((?:[A-Z]{1,3}-\d{2,3}[^)]*)\)/g;
+
+/** `\`versions\`` names a field of the file; a letter quotes it. */
+const FIELD_NAME = /`([^`]+)`/g;
+
+/**
+ * PD-049 (D-164.2). The paragraph proposed as the answer to an access or
+ * portability request: what the file leaves out and why, one line per section
+ * and in the file's order, so that what the data subject was told stays in
+ * the request's record (PD-033). Built from the SAME list the file carries in
+ * `omitted` — never a second copy that could drift from it — without the
+ * decision codes, which are the file reader's and not the data subject's.
+ */
+export function answerProposal(omissions: readonly ExportOmission[]): string {
+  return [
+    'El archivo con sus datos no lo incluye todo:',
+    ...omissions.map(
+      ({ reason }) =>
+        `- ${reason.replace(DECISION_REFERENCE, '').replace(FIELD_NAME, '«$1»').trim()}`,
+    ),
+  ].join('\n');
+}
 
 /** PD-040, PD-042. Only these rights are answered with the data itself. */
 export const EXPORTABLE_RIGHTS = new Set(['ACCESS', 'PORTABILITY']);

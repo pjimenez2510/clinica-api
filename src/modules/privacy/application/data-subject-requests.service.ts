@@ -10,7 +10,11 @@ import {
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
-import { EXPORT_OMISSIONS, EXPORTABLE_RIGHTS } from '../domain/data-export';
+import {
+  answerProposal,
+  EXPORT_OMISSIONS,
+  EXPORTABLE_RIGHTS,
+} from '../domain/data-export';
 import {
   DUE_DATE_HORIZON_DAYS,
   legalDueDate,
@@ -230,6 +234,21 @@ export class DataSubjectRequestsService {
       requester,
       now,
     );
+  }
+
+  /**
+   * PD-049 (D-164.2). The answer proposed for an access or portability
+   * request: what the export leaves out and why. Reads only the request's
+   * right — no data of the chart —, so it writes nothing, not even an audit
+   * row; what the data subject was told is recorded when the answer is saved.
+   */
+  async answerProposal(requestId: string): Promise<string> {
+    const request = await this.requests.find(requestId);
+    if (!request) throw new DataRequestNotFoundError();
+    if (!EXPORTABLE_RIGHTS.has(request.right)) {
+      throw new DataExportNotApplicableError();
+    }
+    return answerProposal(EXPORT_OMISSIONS);
   }
 
   /** PD-032. The legal due date of a right received at an instant. */
