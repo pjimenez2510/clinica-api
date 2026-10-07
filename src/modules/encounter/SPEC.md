@@ -1431,6 +1431,17 @@ requisitos que cambian.
   > obligatoria y la respuesta dice qué falta; `VITALS_REQUIRED` se retiró y
   > la firma responde `ANTHROPOMETRY_PENDING`, que nombra los campos y no
   > cuál de las dos condiciones se cumplió.
+  >
+  > **Enmendado el 07-10-2026 (`feat/f03-cierre-interfaz`): la pantalla lo dice
+  > ANTES de guardar.** La apertura de la atención (`GET /encounters/:id`)
+  > sirve `anthropometryRequired`, las medidas que la atención exige con
+  > independencia de lo medido, y enfermería ve la casilla marcada mientras
+  > teclea; sin ella sólo podía saberlo después de la primera toma, porque
+  > `GET …/vitals` responde `null` sin toma. **Una sola regla**: la base la
+  > escribe en `encounter_anthropometry_required`, y
+  > `encounter_anthropometry_pending` pasa a ser «lo exigido que falta en la
+  > toma» encima de ella. Viaja sólo en la apertura, que es la lectura con
+  > bitácora (EN-122), y nunca en el listado (EN-123).
 - **EN-064** — El sistema DEBERÁ registrar **cómo se tomó la talla**: **1 de
   pie** o **2 acostado**.
   > Columna 23 del RDACAA. No es un detalle
@@ -4018,7 +4029,7 @@ que es global: una atención ocurre en un sitio.
 | --- | --- | --- | --- |
 | `GET` | `/encounters` | `record:read` | EN-015, EN-098, EN-123, **EN-162** |
 | `POST` | `/encounters` | `encounter:open` | EN-001 a EN-014, EN-017, EN-127, EN-141 |
-| `GET` | `/encounters/:id` | `record:read` | EN-081, EN-122 |
+| `GET` | `/encounters/:id` | `record:read` | EN-063, EN-081, EN-122 |
 | `GET` | `/encounters/open` | `record:read` | EN-146 |
 | `POST` | `/encounters/:id/hold` | `encounter:open` | EN-128 |
 | `POST` | `/encounters/:id/resume` | `encounter:open` | EN-128 |

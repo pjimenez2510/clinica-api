@@ -392,6 +392,13 @@ export interface EncounterRepository {
   anthropometryPending(encounterId: string): Promise<AnthropometryField[]>;
 
   /**
+   * EN-063. The anthropometry the attention demands, whatever was measured —
+   * `encounter_anthropometry_required`, the rule `anthropometryPending` reads
+   * too. It lets the screen mark the mandatory boxes before the first taking.
+   */
+  anthropometryRequired(encounterId: string): Promise<AnthropometryField[]>;
+
+  /**
    * EN-211. The takings corrections replaced, newest first; empty when the
    * taking was never corrected or the attention is not in the requester's
    * sites.

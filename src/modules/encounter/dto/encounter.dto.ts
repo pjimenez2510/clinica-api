@@ -430,6 +430,15 @@ export class EncounterPageDto extends createZodDto(encounterPageSchema) {}
 export const encounterDetailSchema = encounterSchema.extend({
   /** EN-081. The unrefuted ones, worst first. Never the refuted ones. */
   allergies: z.array(activeAllergySchema),
+  /**
+   * EN-063. The anthropometry this attention demands to sign its 002 — under
+   * five: weight, height and head circumference; pregnant on the clinical
+   * date: weight and height (D-129) —, whatever was measured. What is still
+   * missing travels on the taking (`anthropometryPending`, EN-217).
+   */
+  anthropometryRequired: z.array(
+    z.enum(['weightKg', 'heightCm', 'headCircumferenceCm']),
+  ),
 });
 /** Response of GET /encounters/:id. */
 export class EncounterDetailDto extends createZodDto(encounterDetailSchema) {}

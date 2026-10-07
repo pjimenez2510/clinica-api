@@ -188,6 +188,13 @@ class FakeEncounters implements EncounterRepository {
     return Promise.resolve(this.pending);
   }
 
+  /** EN-063. What the database would say is demanded; proven against it. */
+  anthropometryRequired(): Promise<
+    ('weightKg' | 'heightCm' | 'headCircumferenceCm')[]
+  > {
+    return Promise.resolve([]);
+  }
+
   findVitalsVersions(): Promise<VitalsVersionView[]> {
     return Promise.resolve([]);
   }

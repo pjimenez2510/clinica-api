@@ -628,6 +628,19 @@ export class PrismaEncounterRepository implements EncounterRepository {
   }
 
   /**
+   * EN-063. What `encounter_anthropometry_required` says the attention
+   * demands; `encounter_anthropometry_pending` is built on it, so the two
+   * cannot disagree.
+   */
+  async anthropometryRequired(
+    encounterId: string,
+  ): Promise<AnthropometryField[]> {
+    const [row] = await this.prisma.$queryRaw<{ required: string[] | null }[]>`
+      SELECT encounter_anthropometry_required(${encounterId}::uuid) AS required`;
+    return (row?.required ?? []) as AnthropometryField[];
+  }
+
+  /**
    * EN-068. Block D of one attention.
    *
    * NARROWED BY THE ATTENTION'S OWN SCOPE and not by the vitals table, which
