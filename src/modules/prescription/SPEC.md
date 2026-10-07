@@ -881,6 +881,10 @@ Hay tres niveles de comprobación y **sólo el primero se construye**:
   > `chartScopeOfSurvivor` (`patient-chart-scope.ts`), un único filtro de
   > relación que sube un nivel y baja a todas las absorbidas — un nivel basta
   > porque `trg_patient_merge_not_chained` prohíbe la cadena (PA-046).
+  > El papel de la receta lo compone `documents` (DOC-072) con su propia
+  > lectura, y sube igual: el `mergedInto` de la ficha de la atención con sus
+  > absorbidas (`prisma-document-source.reader.ts`), para que la pantalla, el
+  > bloqueo y el PDF digan lo mismo.
   >
   > Sólo la receta. La banda de la atención y el resto de `encounter` siguen
   > leyendo con `chartScope`; si la fusión debe rechazar una duplicada con
@@ -1569,7 +1573,7 @@ prueba o el CI falla**.
 | PR-113 | Interfaz (`clinica-web`): emitir con una línea del CNMB marcada pide la confirmación que nombra la línea y no emite hasta confirmarla; sin concepto o en una presentación declarada se emite sin preguntar |
 | PR-117 | Unitaria de la frase (las tres ramas, la fecha en `America/Guayaquil` a las 21:00) y del documento; **integración contra PostgreSQL real** del documento por el servicio: sin nada, la afirmación hecha sobre una ficha absorbida (control positivo), superada por una alergia registrada después aunque se refute, y otra retirada. La receta de una ficha que después se absorbió, en la de DOC-116. Interfaz: la pantalla pinta `allergyHistory` tal cual |
 | PR-100, PR-104 | **Integración contra PostgreSQL real**, con control positivo: reescribir un borrador conserva su id y sustituye las líneas; las de una emitida no se tocan ni desde la base; otra presentación de un concepto que declara las suyas se compone sin justificación y sale marcada (PR-110) |
-| PR-062, PR-118 | **Integración contra PostgreSQL real, con una fusión de fichas de por medio** (PR-118: la fusión real de `patients` con la atención abierta en la absorbida, y control positivo sin fusión). Es el único nivel que puede demostrarlo: depende de que el enlace se recorra en la base, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo recorriendo el AST |
+| PR-062, PR-118 | **Integración contra PostgreSQL real, con una fusión de fichas de por medio** (PR-118: la fusión real de `patients` con la atención abierta en la absorbida, y control positivo sin fusión, en `prescription-issue.spec.ts`; el PDF en `documents-allergy-history.spec.ts`). Es el único nivel que puede demostrarlo: depende de que el enlace se recorra en la base, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo recorriendo el AST |
 | PR-050 | **Unitario con el huso alterado**, como `clinical-date-timezone.spec.ts`: la misma emisión bajo `UTC` y bajo `Asia/Tokyo` da la misma fecha límite. Es el defecto real que originó REQ-160 |
 | PR-025, PR-030 | **Unitario de dominio exhaustivo.** La edad en años y meses y el número en letras son funciones puras con casos límite densos —cero meses, un mes, cuatro años once meses, cinco años justos; uno, dieciséis, veintiuno, cien, ciento uno, doscientos, quinientos, mil, veintiún mil— y enumerar sólo los que uno recuerda es cómo se cuela «veinte y uno» |
 | PR-007, PR-034, PR-060 | **Integración**: el concepto de otro catálogo, el registro ACESS vencido **ayer** sin que nadie haya tocado la fila, y la alergia exacta. Los tres se responden con una consulta dentro de la transacción que escribe |

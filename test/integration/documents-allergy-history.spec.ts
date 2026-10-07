@@ -189,4 +189,30 @@ describe('DOC-116 la receta impresa y el «sin alergias conocidas»', () => {
       (await printed(prisma, prescription.id)).noKnownAllergies,
     ).toBeNull();
   });
+
+  it('PR-118 la receta de una ficha ya ABSORBIDA imprime la alergia de la superviviente', async () => {
+    const prisma = db();
+    const { patient: duplicate, prescription } = await aReceta(prisma);
+    const survivor = await createPatient(prisma);
+    await prisma.patientAllergy.create({
+      data: {
+        patientId: survivor.id,
+        recordedById: (await createUser(prisma)).id,
+        substanceText: 'Penicilina',
+        criticality: 'HIGH',
+      },
+    });
+    // Control positivo: sin la fusión es la alergia de OTRA persona y la
+    // receta de la duplicada no la dice.
+    expect((await printed(prisma, prescription.id)).allergies).toEqual([]);
+
+    await prisma.patient.update({
+      where: { id: duplicate.id },
+      // `patient_merged_at_matches_link` exige las dos columnas o ninguna.
+      data: { mergedIntoId: survivor.id, mergedAt: new Date() },
+    });
+    expect((await printed(prisma, prescription.id)).allergies).toEqual([
+      'Penicilina',
+    ]);
+  });
 });

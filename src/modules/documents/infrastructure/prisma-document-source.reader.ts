@@ -762,6 +762,19 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
                  * costs nothing over getting it wrong.
                  */
                 ...chartScopeSelect('allergies', ALLERGY_SELECT),
+                /**
+                 * PR-118 (D-169.2). AND FROM THE SURVIVOR, when this chart was
+                 * itself absorbed: the attention may have been opened on a
+                 * duplicate that admissions merged afterwards, and reading
+                 * only downwards would print «No registradas» on a receta for
+                 * the patient whose penicillin allergy is on the surviving
+                 * chart. Its `mergedFrom` includes this chart, so the
+                 * survivor's half is the WHOLE person — the same reach as
+                 * `chartScopeOfSurvivor` on the receta's screen and issue.
+                 */
+                mergedInto: {
+                  select: chartScopeSelect('allergies', ALLERGY_SELECT),
+                },
               },
             },
             diagnoses: {
@@ -797,7 +810,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     // knowing an allergy was ruled out is clinical information, and it is
     // simply not something the receta prints.
     const allergies = chartScopeRows<'allergies', StoredAllergy>(
-      row.encounter.patient,
+      row.encounter.patient.mergedInto ?? row.encounter.patient,
       'allergies',
     )
       .filter((allergy) => allergy.refutedAt === null)
