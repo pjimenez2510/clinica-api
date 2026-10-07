@@ -62,10 +62,10 @@ describe('el plazo de las colas de seguridad', () => {
   it('ORD-146 tras un autoaviso el aviso toca al paciente, en horario, vencido o fuera de horario', () => {
     for (const afterHours of [false, true]) {
       for (const overdue of [false, true]) {
-        expect(criticalNoticeTarget({ overdue, afterHours, hasOnCallRole: true, orderingUnanswered: false, selfNoticed: true })).toEqual({ target: 'PATIENT', escalationMissing: false }); // prettier-ignore
+        expect(criticalNoticeTarget({ overdue, afterHours, hasOnCallRole: true, orderingUnanswered: false, dueToPatient: true })).toEqual({ target: 'PATIENT', escalationMissing: false }); // prettier-ignore
       }
     }
     // Control positivo: sin autoaviso, el mismo estado toca al médico que pidió.
-    expect(criticalNoticeTarget({ overdue: false, afterHours: false, hasOnCallRole: true, orderingUnanswered: false, selfNoticed: false })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: false }); // prettier-ignore
+    expect(criticalNoticeTarget({ overdue: false, afterHours: false, hasOnCallRole: true, orderingUnanswered: false, dueToPatient: false })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: false }); // prettier-ignore
   });
 });

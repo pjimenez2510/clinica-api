@@ -736,6 +736,7 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         orderedBy: {
           select: {
             id: true,
+            userId: true,
             user: { select: { firstName: true, lastName: true } },
           },
         },
@@ -746,6 +747,7 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       siteId: row.siteId,
       patientId: row.encounter.patientId,
       orderedBy: { id: row.orderedBy.id, name: fullName(row.orderedBy.user) },
+      orderedByUserId: row.orderedBy.userId,
     }));
   }
 

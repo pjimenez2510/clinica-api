@@ -222,6 +222,8 @@ export class DiagnosticReportController {
   ): Promise<CorrectionResultListResponse> {
     const items = await this.reports.corrections(
       this.requester(req, 'record:read'),
+      // ORD-154. One instant for the whole listing.
+      new Date(),
     );
     return { items: items.map(toCorrectionEntryResponse) };
   }
@@ -527,6 +529,7 @@ function toCorrectionResponse(
     earlierNotices: correction.earlierNotices.map(toEarlierNoticeResponse),
     correctedAt: correction.correctedAt.toISOString(),
     due: correction.due,
+    patientRequired: correction.patientRequired,
   };
 }
 
@@ -577,6 +580,15 @@ function toCorrectionEntryResponse(
     })),
     correctedAt: entry.correctedAt.toISOString(),
     orderedBy: entry.orderedBy,
+    patientRequired: entry.patientRequired,
+    noAnswerAttempts: entry.noAnswerAttempts,
+    waitingMinutes: entry.waitingMinutes,
+    noticeDueAt: entry.noticeDueAt.toISOString(),
+    overdue: entry.overdue,
+    escalateTo: entry.escalateTo,
+    afterHours: entry.afterHours,
+    noticeTarget: entry.noticeTarget,
+    escalationMissing: entry.escalationMissing,
   };
 }
 

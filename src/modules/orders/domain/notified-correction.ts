@@ -74,6 +74,11 @@ export interface NotifiedCorrection {
    * only a standing one waits on the worklist.
    */
   standing: boolean;
+  /**
+   * ORD-153 (D-156.1). An earlier version was told to the patient or their
+   * representative: only a notice to one of the two closes it.
+   */
+  patientRequired: boolean;
 }
 
 const isCritical = (flag: AbnormalFlag | null): boolean =>
@@ -89,6 +94,30 @@ function sameReading(a: StatedResult, b: StatedResult): boolean {
     a.valueText === b.valueText &&
     a.unit === b.unit
   );
+}
+
+/** ORD-153. Told to the patient or to whoever answers for them. */
+const toPatient = (notice: StatedNotice): boolean =>
+  notice.recipientKind === 'PATIENT' ||
+  notice.recipientKind === 'REPRESENTATIVE';
+
+/**
+ * ORD-143, ORD-156 (D-156.4). Whether a value reads differently from the one
+ * somebody was told about. Told a value that was NOT critical —itself the
+ * notice of a correction—, only a change of flag counts: 95 told, corrected
+ * to 97, is still normal and the report's record is enough. A value without a
+ * flag (no range applied, a text) has no «side»: judged by what is written,
+ * the safe side.
+ */
+function readsDifferently(told: StatedResult, now: StatedResult): boolean {
+  if (
+    !isCritical(told.abnormalFlag) &&
+    told.abnormalFlag !== null &&
+    now.abnormalFlag !== null
+  ) {
+    return told.abnormalFlag !== now.abnormalFlag;
+  }
+  return !sameReading(told, now);
 }
 
 /** A report chain is bounded by construction; this only stops a corrupt one. */
@@ -111,7 +140,9 @@ const MAX_CHAIN = 100;
  * 25—, a later version that rewrites the 95 does not make it «already told»:
  * it carries the same pending correction, of the same 25.
  *
- * Closed by a notice given on the value that is not a notice to oneself; or
+ * Closed by a notice given on the value to the patient or their
+ * representative when an earlier one went to them (ORD-153); otherwise by
+ * one that is not a notice to oneself; or
  * by one to oneself when every notice given before was too, BY THE SAME
  * ACCOUNT —only that practitioner ever knew, and their own record is the one
  * that matters; another colleague noting it for themselves tells them
@@ -153,18 +184,25 @@ export function notifiedCorrections(
       // A told version that is itself a correction still waiting: inherited.
       const pending = found.get(last.result.id);
       const inherited = pending?.due === true ? pending : undefined;
-      if (!inherited && sameReading(last.result, result)) continue;
+      if (!inherited && !readsDifferently(last.result, result)) continue;
 
       const earlierNotices = before
         .flatMap(({ result: each }) => each.notices.filter(given))
         .sort((a, b) => a.notifiedAt.getTime() - b.notifiedAt.getTime());
+      // ORD-153 (D-156.1). The patient who heard of the 25 has to hear of
+      // the 95: a call to the on-call doctor does not tell them.
+      const patientRequired = earlierNotices.some(
+        (notice) => toPatient(notice) && !notice.selfNotice,
+      );
       const closed = result.notices.some(
         (notice) =>
           given(notice) &&
-          (!notice.selfNotice ||
-            earlierNotices.every(
-              (n) => n.selfNotice && n.notifiedBy.id === notice.notifiedBy.id,
-            )),
+          (patientRequired
+            ? toPatient(notice) && !notice.selfNotice
+            : !notice.selfNotice ||
+              earlierNotices.every(
+                (n) => n.selfNotice && n.notifiedBy.id === notice.notifiedBy.id,
+              )),
       );
 
       found.set(result.id, {
@@ -186,6 +224,7 @@ export function notifiedCorrections(
           result.observedAt,
         due: !closed,
         standing: version.supersededById === null,
+        patientRequired,
       });
     }
   };
