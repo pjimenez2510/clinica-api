@@ -674,6 +674,10 @@ const chargeResponseSchema = z.object({
   /** BI-055. Por qué NO se cobra, cuando alguien lo quitó. */
   voidedAt: z.iso.datetime().nullable(),
   voidReason: z.string().nullable(),
+  /** BI-169, BI-218. The invoice that billed it; `null` until it is billed. */
+  invoiceId: z.uuid().nullable(),
+  /** BI-214. «Corrección»: the credited charge this line bills again. */
+  correctsChargeItemId: z.uuid().nullable(),
   /** BI-058. Derived from the four frozen values above, never stored. */
   lineTotal: z.string(),
   lineTax: z.string(),

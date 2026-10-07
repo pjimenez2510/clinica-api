@@ -407,6 +407,10 @@ export interface ChargeView {
   serviceOrderItemId: string | null;
   voidedAt: Date | null;
   voidReason: string | null;
+  /** BI-169. The invoice that billed it, while it is BILLED. */
+  invoiceId: string | null;
+  /** BI-214. On a CORRECTION line, the credited charge it bills again. */
+  correctsChargeItemId: string | null;
 }
 
 /**

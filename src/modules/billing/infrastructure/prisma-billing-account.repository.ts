@@ -1213,6 +1213,8 @@ function toChargeView(row: ChargeItemRow): ChargeView {
     serviceOrderItemId: row.serviceOrderItemId,
     voidedAt: row.voidedAt,
     voidReason: row.voidReason,
+    invoiceId: row.invoiceId,
+    correctsChargeItemId: row.correctsChargeItemId,
   };
 }
 

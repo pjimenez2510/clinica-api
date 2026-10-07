@@ -75,6 +75,8 @@ const charge = (
   serviceOrderItemId: null,
   voidedAt: null,
   voidReason: null,
+  invoiceId: null,
+  correctsChargeItemId: null,
   ...overrides,
 });
 

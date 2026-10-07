@@ -723,6 +723,8 @@ function toChargeResponse(charge: ChargeView): ChargeResponse {
     serviceOrderItemId: charge.serviceOrderItemId,
     voidedAt: charge.voidedAt?.toISOString() ?? null,
     voidReason: charge.voidReason,
+    invoiceId: charge.invoiceId,
+    correctsChargeItemId: charge.correctsChargeItemId,
     // BI-058. Derived on the way out from the FROZEN values, so the client
     // never has to do decimal arithmetic in JavaScript to show a line.
     lineTotal: lineBase(line).toString(),
