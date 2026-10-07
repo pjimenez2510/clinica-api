@@ -21,6 +21,7 @@
  * on later — which is precisely the race AG-045 was left open by.
  */
 
+import type { AfterDischargeRefusal } from './practitioner-licence';
 import type {
   CareModality,
   CareSetting,
@@ -255,6 +256,19 @@ export interface SubjectStatusStamp {
 }
 
 /** The attention's port, described at the top of this file. */
+/**
+ * EN-228, D-134.3, D-140.4. What the service decided about correcting the
+ * taking after the discharge: `record:sign` at the attention's site, a
+ * practitioner profile and an ACESS registration in force — the same rule as
+ * the coding (D-117.13). Decided whatever the state the service read; the
+ * refusal is the sentence the adapter gives if it finds the discharge under
+ * the lock.
+ */
+export interface VitalsCorrectionAuthority {
+  mayCorrectAfterDischarge: boolean;
+  afterDischargeRefusal?: AfterDischargeRefusal;
+}
+
 export interface EncounterRepository {
   /**
    * EN-001. The chart's merge state, or `null` when no such chart exists.
@@ -372,11 +386,11 @@ export interface EncounterRepository {
     vitals: VitalSigns,
     authorId: string,
     /**
-     * EN-228, D-134.3. Whether the author signs history at the attention's
-     * site. Asked again under the attention's lock: a discharged attention is
-     * corrected only when this is `true`.
+     * EN-228, D-134.3, D-140.4. Whether the author may correct the taking of
+     * a discharged attention, and why not. Asked again under the attention's
+     * lock: a discharged attention is corrected only when it may.
      */
-    mayCorrectAfterDischarge: boolean,
+    authority: VitalsCorrectionAuthority,
   ): Promise<VitalSignsView>;
 
   /** EN-068. The vital signs of one attention, or `null` when none were taken. */

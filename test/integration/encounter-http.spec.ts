@@ -1881,6 +1881,49 @@ describe('la atención por HTTP', () => {
       expect(corrected.body).toMatchObject({ systolicBp: 130 });
     });
 
+    it('EN-228 D-140.4 tras el alta el médico con el registro ACESS vencido recibe 403 PRACTITIONER_NOT_LICENSED y la toma no cambia; vigente, la corrige', async () => {
+      const encounterId = await openEncounter();
+      await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        systolicBp: 120,
+        diastolicBp: 80,
+      }).expect(200);
+      const draft = await post(`/encounters/${encounterId}/notes`, doctorToken, {
+        formCode: '002',
+        content: COMPLETE_002,
+      }).expect(201); // prettier-ignore
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
+      await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
+
+      const encounter = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId }, select: { practitioner: { select: { userId: true } } } }); // prettier-ignore
+      const lapse = (days: number) =>
+        prisma.user.update({
+          where: { id: encounter.practitioner.userId },
+          data: {
+            acessExpiresOn: new Date(Date.now() + days * 24 * 3_600_000),
+          },
+        });
+      await lapse(-3);
+      const refused = await put(`/encounters/${encounterId}/vitals`, doctorToken, {
+        systolicBp: 130,
+        diastolicBp: 85,
+      }).expect(403); // prettier-ignore
+      expect((refused.body as Problem).code).toBe('PRACTITIONER_NOT_LICENSED');
+      const untouched = await prisma.encounterVitals.findUniqueOrThrow({ where: { encounterId } }); // prettier-ignore
+      expect(untouched.systolicBp).toBe(120);
+
+      // Positive control: the registration in force, the same correction.
+      await lapse(30);
+      const corrected = await put(`/encounters/${encounterId}/vitals`, doctorToken, {
+        systolicBp: 130,
+        diastolicBp: 85,
+      }).expect(200); // prettier-ignore
+      expect(corrected.body).toMatchObject({ systolicBp: 130 });
+    });
+
     it('EN-217 D-134.3 tras el alta la toma de un menor de 5 años se corrige conservando las medidas, y quitar el peso responde 422 ANTHROPOMETRY_PENDING', async () => {
       const opened = new Date(openBody().startedAt);
       const child = await createPatient(prisma, {

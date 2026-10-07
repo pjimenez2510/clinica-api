@@ -12,7 +12,6 @@ import {
 } from '../../../shared/audit/access-audit.port';
 import {
   CLINICAL_CODING_REPOSITORY,
-  type AfterDischargeRefusal,
   type ClinicalCodingRepository,
   type CorrectionAuthority,
   type DiagnosisVersionView,
@@ -39,7 +38,7 @@ import {
   hasDischarge,
 } from '../domain/encounter-state';
 import type { SiteScopeFilter } from '../domain/encounter.repository';
-import { assertLicensedOn } from '../domain/practitioner-licence';
+import { afterDischargeRefusalOf } from '../domain/practitioner-licence';
 import type {
   CareModality,
   DiagnosisCertainty,
@@ -681,9 +680,13 @@ export class ClinicalCodingService {
     const signsHere =
       requester.signSites === 'all' ||
       requester.signSites.includes(encounter.siteId);
-    const refusal = signsHere
-      ? await this.licenceRefusal(requester.userId)
-      : 'NOT_SIGNER';
+    const refusal = afterDischargeRefusalOf(
+      signsHere,
+      signsHere
+        ? await this.encounters.findPractitionerByUser(requester.userId)
+        : null,
+      new Date(),
+    );
 
     if (hasDischarge(encounter.status)) {
       if (refusal === 'NOT_SIGNER') {
@@ -700,21 +703,6 @@ export class ClinicalCodingService {
       mayCorrectAfterDischarge: refusal === undefined,
       ...(refusal === undefined ? {} : { afterDischargeRefusal: refusal }),
     };
-  }
-
-  /** D-117.13. The practitioner behind the account, and their licence today. */
-  private async licenceRefusal(
-    userId: string,
-  ): Promise<AfterDischargeRefusal | undefined> {
-    const identity = await this.encounters.findPractitionerByUser(userId);
-    if (!identity) return 'NO_PRACTITIONER_PROFILE';
-    try {
-      assertLicensedOn(identity.acessExpiresOn, new Date());
-    } catch (error) {
-      if (error instanceof PractitionerNotLicensedError) return 'NOT_LICENSED';
-      throw error;
-    }
-    return undefined;
   }
 
   /**

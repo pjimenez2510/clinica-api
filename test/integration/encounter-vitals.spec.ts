@@ -62,7 +62,7 @@ function recordedBy(
           ? vitals
           : { ...vitals, heightPosition: 'STANDING' },
         authorId,
-        mayCorrectAfterDischarge,
+        { mayCorrectAfterDischarge },
       ),
   };
 }
@@ -399,17 +399,14 @@ describe('los signos vitales de la atención', () => {
       query,
       { heightCm: 165, heightPosition: 'STANDING' },
       practitioner.userId,
-      false,
+      { mayCorrectAfterDischarge: false },
     );
     expect(standing.heightPosition).toBe('STANDING');
 
     const problem = await problemFrom(
-      repository.saveVitals(
-        query,
-        { heightCm: 165 },
-        practitioner.userId,
-        false,
-      ),
+      repository.saveVitals(query, { heightCm: 165 }, practitioner.userId, {
+        mayCorrectAfterDischarge: false,
+      }),
     );
     expect(problem?.status).toBe(HttpStatus.UNPROCESSABLE_ENTITY);
     expect(problem?.errors?.[0]?.field).toBe('heightPosition');
@@ -425,7 +422,7 @@ describe('los signos vitales de la atención', () => {
         { encounterId: encounter.id, sites: [site.id] },
         { weightKg: 12, heightPosition: 'LYING' },
         practitioner.userId,
-        false,
+        { mayCorrectAfterDischarge: false },
       ),
     );
     expect(problem?.code).toBe('VITALS_HEIGHT_POSITION_REQUIRED');
@@ -506,7 +503,7 @@ describe('los signos vitales de la atención', () => {
       query,
       { weightKg: 68, measuredAt: takenAt },
       nurse.id,
-      false,
+      { mayCorrectAfterDischarge: false },
     );
     expect(taken.recordedBy).toEqual({ id: nurse.id, name: 'Carmen Salazar' });
     expect(taken.correctedBy).toBeNull();
@@ -516,7 +513,7 @@ describe('los signos vitales de la atención', () => {
       query,
       { weightKg: 68, temperatureC: 37.2 },
       practitioner.userId,
-      false,
+      { mayCorrectAfterDischarge: false },
     );
 
     expect(corrected.recordedBy?.id).toBe(nurse.id);
@@ -594,7 +591,7 @@ describe('los signos vitales de la atención', () => {
       { encounterId: encounter.id, sites: [site.id] },
       { weightKg: 68.5 },
       practitioner.userId,
-      false,
+      { mayCorrectAfterDischarge: false },
     );
 
     expect(corrected.recordedBy).toBeNull();
@@ -661,7 +658,7 @@ describe('los signos vitales de la atención', () => {
         { encounterId: encounter.id, sites: [site.id] },
         { weightKg },
         practitioner.userId,
-        false,
+        { mayCorrectAfterDischarge: false },
       );
       return encounter;
     };
@@ -864,7 +861,9 @@ describe('los signos vitales de la atención', () => {
       };
 
       await expect(
-        repositoryOf(prisma).saveVitals(query, correction, nurse.id, false),
+        repositoryOf(prisma).saveVitals(query, correction, nurse.id, {
+          mayCorrectAfterDischarge: false,
+        }),
       ).rejects.toMatchObject({ code: 'VITALS_CORRECTION_REQUIRES_SIGNATURE' });
       const untouched = await prisma.encounterVitals.findUniqueOrThrow({
         where: { encounterId: encounter.id },
@@ -877,8 +876,39 @@ describe('los signos vitales de la atención', () => {
         query,
         correction,
         practitioner.userId,
-        true,
+        { mayCorrectAfterDischarge: true },
       );
+      expect(corrected.temperatureC).toBe(36.6);
+    });
+
+    it('EN-228 D-140.4 bajo el candado, tras el alta, la licencia vencida o la falta de perfil responden su frase y la toma queda intacta', async () => {
+      const prisma = db();
+      const { encounter, query, practitioner } =
+        await aDischargedUnderFive(prisma);
+      const correction = {
+        weightKg: 12.1,
+        heightCm: 86,
+        heightPosition: 'STANDING' as const,
+        headCircumferenceCm: 48,
+        temperatureC: 36.6,
+      };
+      const save = (authority: Parameters<ReturnType<typeof repositoryOf>['saveVitals']>[3]) =>
+        repositoryOf(prisma).saveVitals(query, correction, practitioner.userId, authority); // prettier-ignore
+
+      await expect(
+        save({ mayCorrectAfterDischarge: false, afterDischargeRefusal: 'NOT_LICENSED' }), // prettier-ignore
+      ).rejects.toMatchObject({ code: 'PRACTITIONER_NOT_LICENSED' });
+      await expect(
+        save({ mayCorrectAfterDischarge: false, afterDischargeRefusal: 'NO_PRACTITIONER_PROFILE' }), // prettier-ignore
+      ).rejects.toMatchObject({ code: 'PRACTITIONER_PROFILE_REQUIRED' });
+      const untouched = await prisma.encounterVitals.findUniqueOrThrow({
+        where: { encounterId: encounter.id },
+      });
+      expect(Number(untouched.temperatureC)).toBe(37.8);
+      expect(untouched.correctedById).toBeNull();
+
+      // Positive control: the same correction by whoever may correct.
+      const corrected = await save({ mayCorrectAfterDischarge: true });
       expect(corrected.temperatureC).toBe(36.6);
     });
 

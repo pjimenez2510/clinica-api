@@ -9,6 +9,7 @@ import {
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
   PatientChartNotOpenError,
+  PractitionerNotLicensedError,
   PractitionerProfileRequiredError,
   VitalsCorrectionRequiresSignatureError,
 } from '../domain/encounter.errors';
@@ -23,6 +24,7 @@ import type {
   PractitionerIdentity,
   SubjectStatusStamp,
   VitalSignsView,
+  VitalsCorrectionAuthority,
   VitalsVersionView,
 } from '../domain/encounter.repository';
 import type { ClosurePlan } from '../domain/encounter-closure';
@@ -96,7 +98,7 @@ class FakeEncounters implements EncounterRepository {
   savedVitals: VitalSigns[] = [];
   vitalsAuthors: string[] = [];
   /** EN-228. What the service told the adapter to allow under the lock. */
-  correctionAuthority: boolean[] = [];
+  correctionAuthority: VitalsCorrectionAuthority[] = [];
   /** EN-217. The taking already on the attention, if any. */
   taken: VitalSignsView | null = null;
   stamps: SubjectStatusStamp[] = [];
@@ -160,11 +162,11 @@ class FakeEncounters implements EncounterRepository {
     _query: EncounterQuery,
     vitals: VitalSigns,
     recordedById: string,
-    mayCorrectAfterDischarge: boolean,
+    authority: VitalsCorrectionAuthority,
   ): Promise<VitalSignsView> {
     this.savedVitals.push(vitals);
     this.vitalsAuthors.push(recordedById);
-    this.correctionAuthority.push(mayCorrectAfterDischarge);
+    this.correctionAuthority.push(authority);
     return Promise.resolve({
       ...vitals,
       encounterId: this.stored.id,
@@ -578,7 +580,60 @@ describe('los casos de uso de la atención', () => {
         { weightKg: 68.2 },
         { ...nurse, signSites: 'all' },
       );
-      expect(repository.correctionAuthority).toEqual([true, true]);
+      expect(repository.correctionAuthority).toEqual([
+        { mayCorrectAfterDischarge: true },
+        { mayCorrectAfterDischarge: true },
+      ]);
+    });
+
+    it('EN-228 D-140.4 tras el alta, quien firma en la sede sin perfil de profesional recibe PRACTITIONER_PROFILE_REQUIRED y la toma queda intacta', async () => {
+      discharge();
+      repository.practitioner = null;
+
+      await expect(
+        service.recordVitals('encounter-1', { weightKg: 68.1 }, { ...nurse, signSites: [SITE] }), // prettier-ignore
+      ).rejects.toBeInstanceOf(PractitionerProfileRequiredError);
+      expect(repository.savedVitals).toEqual([]);
+      expect(audit.entries).toEqual([]);
+    });
+
+    it('EN-228 D-140.4 tras el alta, con el registro ACESS vencido el día clínico de hoy, PRACTITIONER_NOT_LICENSED y la toma queda intacta', async () => {
+      discharge();
+      repository.practitioner = {
+        practitionerId: PRACTITIONER,
+        acessExpiresOn: new Date(Date.now() - 3 * 24 * 3_600_000),
+      };
+
+      await expect(
+        service.recordVitals('encounter-1', { weightKg: 68.1 }, { ...nurse, signSites: [SITE] }), // prettier-ignore
+      ).rejects.toBeInstanceOf(PractitionerNotLicensedError);
+      expect(repository.savedVitals).toEqual([]);
+
+      // Positive control: the same correction with the registration in force.
+      repository.practitioner = {
+        practitionerId: PRACTITIONER,
+        acessExpiresOn: new Date(Date.now() + 30 * 24 * 3_600_000),
+      };
+      await service.recordVitals('encounter-1', { weightKg: 68.1 }, { ...nurse, signSites: [SITE] }); // prettier-ignore
+      expect(repository.savedVitals).toHaveLength(1);
+    });
+
+    it('EN-228 D-140.4 antes del alta no se mira la licencia, pero el adaptador sabe por qué no podría corregir tras el alta', async () => {
+      repository.taken = taking();
+      repository.practitioner = {
+        practitionerId: PRACTITIONER,
+        acessExpiresOn: new Date(Date.now() - 3 * 24 * 3_600_000),
+      };
+
+      await service.recordVitals('encounter-1', { weightKg: 68.1 }, { ...nurse, signSites: [SITE] }); // prettier-ignore
+      repository.practitioner = null;
+      await service.recordVitals('encounter-1', { weightKg: 68.2 }, { ...nurse, signSites: [SITE] }); // prettier-ignore
+
+      expect(repository.savedVitals).toHaveLength(2);
+      expect(repository.correctionAuthority).toEqual([
+        { mayCorrectAfterDischarge: false, afterDischargeRefusal: 'NOT_LICENSED' },
+        { mayCorrectAfterDischarge: false, afterDischargeRefusal: 'NO_PRACTITIONER_PROFILE' },
+      ]); // prettier-ignore
     });
 
     it('EN-228 antes del alta basta vitals:write (control positivo), y el adaptador sabe que esa cuenta no corrige tras el alta', async () => {
@@ -586,7 +641,12 @@ describe('los casos de uso de la atención', () => {
 
       await service.recordVitals('encounter-1', { weightKg: 68.1 }, nurse);
       expect(repository.savedVitals).toHaveLength(1);
-      expect(repository.correctionAuthority).toEqual([false]);
+      expect(repository.correctionAuthority).toEqual([
+        {
+          mayCorrectAfterDischarge: false,
+          afterDischargeRefusal: 'NOT_SIGNER',
+        },
+      ]);
     });
   });
 

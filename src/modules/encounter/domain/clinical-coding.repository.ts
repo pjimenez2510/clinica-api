@@ -35,6 +35,7 @@ import type {
   VisitSequence,
 } from './encounter';
 import type { SiteScopeFilter } from './encounter.repository';
+import type { AfterDischargeRefusal } from './practitioner-licence';
 
 /**
  * One diagnosis of block K, as this module serves it.
@@ -268,9 +269,8 @@ export interface CorrectionAuthority {
   afterDischargeRefusal?: AfterDischargeRefusal;
 }
 
-/** D-117.13. What stops somebody from correcting the coding after the discharge. */
-export type AfterDischargeRefusal =
-  'NOT_SIGNER' | 'NO_PRACTITIONER_PROFILE' | 'NOT_LICENSED';
+/** D-117.13. Re-exported: the rule that decides it lives with the licence. */
+export type { AfterDischargeRefusal };
 
 /** EN-183, EN-212. Which diagnosis becomes the principal. */
 export interface PrimaryChange extends CorrectionAuthority {

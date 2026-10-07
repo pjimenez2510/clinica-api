@@ -10,7 +10,6 @@ import {
   EncounterNotFoundError,
   PatientChartNotOpenError,
   PractitionerProfileRequiredError,
-  VitalsCorrectionRequiresSignatureError,
 } from '../domain/encounter.errors';
 import {
   ENCOUNTER_REPOSITORY,
@@ -26,6 +25,10 @@ import {
   hasDischarge,
 } from '../domain/encounter-state';
 import { planClosure } from '../domain/encounter-closure';
+import {
+  afterDischargeRefusalOf,
+  vitalsCorrectionRefusal,
+} from '../domain/practitioner-licence';
 import type { AnthropometryField, VitalSigns } from '../domain/vital-signs';
 import type {
   CareModality,
@@ -471,13 +474,26 @@ export class EncounterService {
     const encounter = await this.requireEncounter(encounterId, requester);
     const query = { encounterId: encounter.id, sites: requester.sites };
     /**
-     * EN-228, D-134.3. Decided whatever the state read here and handed to the
-     * adapter, which asks the attention again under its lock: a discharge
-     * that lands between this read and the write is refused there too.
+     * EN-228, D-134.3, D-140.4. Decided whatever the state read here and
+     * handed to the adapter, which asks the attention again under its lock: a
+     * discharge that lands between this read and the write is refused there
+     * too. The same rule as correcting the coding (D-117.13): `record:sign`
+     * at the site, a practitioner profile, an ACESS registration in force.
      */
-    const mayCorrectAfterDischarge =
+    const signsHere =
       requester.signSites === 'all' ||
       requester.signSites.includes(encounter.siteId);
+    const refusal = afterDischargeRefusalOf(
+      signsHere,
+      signsHere
+        ? await this.encounters.findPractitionerByUser(requester.userId)
+        : null,
+      new Date(),
+    );
+    const authority = {
+      mayCorrectAfterDischarge: refusal === undefined,
+      ...(refusal === undefined ? {} : { afterDischargeRefusal: refusal }),
+    };
 
     /**
      * EN-217. After the discharge the taking is still CORRECTED — versioned
@@ -489,8 +505,8 @@ export class EncounterService {
       this.assertAcceptsContent(encounter);
     } else if ((await this.encounters.findVitals(query)) === null) {
       throw new EncounterAlreadyClosedError(encounter.status);
-    } else if (!mayCorrectAfterDischarge) {
-      throw new VitalsCorrectionRequiresSignatureError();
+    } else if (refusal !== undefined) {
+      throw vitalsCorrectionRefusal(refusal);
     }
 
     /**
@@ -505,7 +521,7 @@ export class EncounterService {
       query,
       vitals,
       requester.userId,
-      mayCorrectAfterDischarge,
+      authority,
     );
 
     // EN-136. The board moves because the signs were SAVED — the fact proves
