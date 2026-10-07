@@ -250,6 +250,68 @@ describe('el autoaviso y el destino (ORD-146, ORD-147)', () => {
   });
 });
 
+describe('lo que la revisión encontró (ORD-143, ORD-145, ORD-146, ORD-148)', () => {
+  it('ORD-143 el autoaviso que no cerró la corrección no la da por avisada cuando el laboratorio reescribe el mismo 95', async () => {
+    const prisma = db();
+    const ctx = await aCriticalGlucose(prisma);
+    await ctx.reports.notify({ resultId: ctx.result.id, ...toPatient, notifiedAt: minutesAgo(90) }, ctx.asNurse, new Date()); // prettier-ignore
+    const corrected = await correctTo(ctx, ctx.report.id, 95);
+    const own = { ...toPatient, recipientKind: 'ORDERING_PRACTITIONER' as const, recipientName: 'Yo' }; // prettier-ignore
+    await ctx.reports.notify({ resultId: corrected.results[0]!.id, ...own }, ctx.asDoctor, new Date()); // prettier-ignore
+    const rewritten = await correctTo(ctx, corrected.id, 95, 10);
+    const [entry, ...rest] = await ctx.reports.corrections(ctx.asNurse);
+    expect(rest).toEqual([]);
+    expect(entry).toMatchObject({ resultId: rewritten.results[0]!.id, told: { valueNumeric: 25 } }); // prettier-ignore
+  });
+
+  it('ORD-146 el autoaviso por nombre de otra cuenta no manda el aviso al paciente, y el aviso al médico que pidió lo cierra', async () => {
+    const prisma = db();
+    const ctx = await aCriticalGlucose(prisma);
+    const now = new Date();
+    const colleague = await ctx.reports.notify(
+      { resultId: ctx.result.id, ...toPatient, recipientKind: 'OTHER_PRACTITIONER', recipientName: 'Carmen Salazar' }, // prettier-ignore
+      ctx.asNurse,
+      now,
+    );
+    expect(colleague.selfNotice).toBe(true);
+    expect((await ctx.reports.critical(ctx.asNurse, now))[0]).toMatchObject({ selfNoticed: false }); // prettier-ignore
+    await ctx.reports.notify({ resultId: ctx.result.id, ...toPatient, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'La médica' }, ctx.asNurse, now); // prettier-ignore
+    expect(await ctx.reports.critical(ctx.asNurse, now)).toEqual([]);
+  });
+
+  it('ORD-146 el aviso al médico que pidió anterior a su autoaviso sigue cerrando la cola', async () => {
+    const prisma = db();
+    const ctx = await aCriticalGlucose(prisma);
+    const now = new Date();
+    await ctx.reports.notify({ resultId: ctx.result.id, ...toPatient, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'La médica', notifiedAt: minutesAgo(60, now) }, ctx.asNurse, now); // prettier-ignore
+    await ctx.reports.notify({ resultId: ctx.result.id, ...toPatient, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Yo', notifiedAt: minutesAgo(30, now) }, ctx.asDoctor, now); // prettier-ignore
+    expect(await ctx.reports.critical(ctx.asNurse, now)).toEqual([]);
+  });
+
+  it('ORD-145 ORD-146 un aviso al médico tras su autoaviso no cuenta como avisado: la corrección aún crítica sigue esperando desde el primer valor', async () => {
+    const prisma = db();
+    const ctx = await aCriticalGlucose(prisma);
+    const now = new Date();
+    await ctx.reports.notify({ resultId: ctx.result.id, ...toPatient, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Yo', notifiedAt: minutesAgo(100, now) }, ctx.asDoctor, now); // prettier-ignore
+    await ctx.reports.notify({ resultId: ctx.result.id, ...toPatient, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'La médica', notifiedAt: minutesAgo(90, now) }, ctx.asNurse, now); // prettier-ignore
+    const still = await correctTo(ctx, ctx.report.id, 30, 20, now);
+    expect((await ctx.reports.critical(ctx.asNurse, now))[0]).toMatchObject({ resultId: still.results[0]!.id, previouslyNotified: false, waitingMinutes: 120 }); // prettier-ignore
+  });
+
+  it('ORD-148 el aviso cuyo destinatario es quien hizo la llamada es un autoaviso y no cierra la cola', async () => {
+    const prisma = db();
+    const ctx = await aCriticalGlucose(prisma);
+    const now = new Date();
+    const odd = await ctx.reports.notify(
+      { resultId: ctx.result.id, ...toPatient, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Ana Villacís', callerName: 'Dra. Ana Villacís' }, // prettier-ignore
+      ctx.asNurse,
+      now,
+    );
+    expect(odd.selfNotice).toBe(true);
+    expect(await ctx.reports.critical(ctx.asNurse, now)).toHaveLength(1);
+  });
+});
+
 describe('el plazo desde la corrección (ORD-145)', () => {
   it('ORD-145 la corrección aún crítica de un valor avisado espera desde la corrección, sin las llamadas del aviso ya hecho', async () => {
     const prisma = db();

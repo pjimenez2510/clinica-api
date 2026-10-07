@@ -14,6 +14,7 @@ import {
   ResultSupersededError,
 } from '../domain/orders.errors';
 import { isLineComplete } from '../domain/service-order';
+import { closesCriticalWorklist } from '../domain/notice-recipient';
 import type {
   CorrectionCandidateOrder,
   CriticalChain,
@@ -542,27 +543,15 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
          * ordering practitioner «notifying» themselves: the patient at home
          * still knows nothing.
          *
-         * ORD-146 (D-116 a). And once there is a notice to oneself, a notice
-         * to that same practitioner —by its kind, or by their name with
-         * another kind— does not either: they already knew.
+         * ORD-146 (D-116 a). And after the ordering practitioner noted it
+         * themselves, a notice to them —by its kind, or by their name— does
+         * not either: they already knew. The query keeps every value that
+         * MAY still wait; `closesCriticalWorklist` decides, below, with the
+         * instants and who gave each notice.
          */
         OR: [
           { notices: { none: { outcome: 'NOTIFIED', selfNotice: false } } },
-          {
-            AND: [
-              { notices: { some: { outcome: 'NOTIFIED', selfNotice: true } } },
-              {
-                notices: {
-                  none: {
-                    outcome: 'NOTIFIED',
-                    selfNotice: false,
-                    recipientKind: { not: 'ORDERING_PRACTITIONER' },
-                    namesOrderingPractitioner: false,
-                  },
-                },
-              },
-            ],
-          },
+          { notices: { some: { outcome: 'NOTIFIED', selfNotice: true } } },
         ],
       },
       /**
@@ -571,9 +560,29 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
        * the one cut off would be today's.
        */
       orderBy: [{ observedAt: 'asc' }, { id: 'asc' }],
-      select: WORKLIST_SELECT,
+      select: {
+        ...WORKLIST_SELECT,
+        notices: {
+          select: {
+            outcome: true,
+            selfNotice: true,
+            recipientKind: true,
+            namesOrderingPractitioner: true,
+            notifiedById: true,
+            notifiedAt: true,
+          },
+        },
+      },
     });
-    return rows.map(toWorklistEntry);
+    return rows
+      .filter(
+        (row) =>
+          !closesCriticalWorklist(
+            row.notices,
+            row.report.serviceOrder.orderedBy.userId,
+          ),
+      )
+      .map(toWorklistEntry);
   }
 
   /**
@@ -622,16 +631,28 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       versions AS (
         SELECT c.start_id, c.depth, o."analyte_display", o."observed_at",
                o."abnormal_flag" IN ('CRITICAL_LOW', 'CRITICAL_HIGH') AS critical,
-               -- A notice that closed the worklist for that version.
+               -- A notice that closed the worklist for that version: the
+               -- judgement of \`closesCriticalWorklist\`, in SQL (ORD-146).
                EXISTS (
                  SELECT 1 FROM "critical_result_notice" n
                   WHERE n."observation_result_id" = o."id"
                     AND n."outcome" = 'NOTIFIED' AND NOT n."self_notice"
+                    AND NOT (
+                      (n."recipient_kind" = 'ORDERING_PRACTITIONER'
+                        OR n."names_ordering_practitioner")
+                      AND EXISTS (
+                        SELECT 1 FROM "critical_result_notice" s
+                         WHERE s."observation_result_id" = o."id"
+                           AND s."outcome" = 'NOTIFIED' AND s."self_notice"
+                           AND s."notified_by_id" = pr."user_id"
+                           AND s."notified_at" <= n."notified_at"))
                ) AS notified,
+               -- ORD-146: noted by the ordering practitioner themselves.
                EXISTS (
                  SELECT 1 FROM "critical_result_notice" n
                   WHERE n."observation_result_id" = o."id"
                     AND n."outcome" = 'NOTIFIED' AND n."self_notice"
+                    AND n."notified_by_id" = pr."user_id"
                ) AS self_noticed,
                (SELECT COUNT(*) FROM "critical_result_notice" n
                  WHERE n."observation_result_id" = o."id"
@@ -643,6 +664,9 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
                  AS ordering_unanswered
           FROM chain c
           JOIN "observation_result" o ON o."report_id" = c.report_id
+          JOIN "diagnostic_report" dr ON dr."id" = c.report_id
+          JOIN "service_order" so ON so."id" = dr."service_order_id"
+          JOIN "practitioner" pr ON pr."id" = so."ordered_by_id"
       ),
       cut AS (
         -- The most recent EARLIER version somebody was told about.
@@ -723,6 +747,23 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       patientId: row.encounter.patientId,
       orderedBy: { id: row.orderedBy.id, name: fullName(row.orderedBy.user) },
     }));
+  }
+
+  /** ORD-143. The reports of several orders in one read. */
+  async ofOrders(
+    orderIds: readonly string[],
+    sites: SiteScopeFilter,
+  ): Promise<DiagnosticReportView[]> {
+    if (orderIds.length === 0) return [];
+    const rows = await this.prisma.diagnosticReport.findMany({
+      where: {
+        serviceOrderId: { in: [...new Set(orderIds)] },
+        serviceOrder: siteFilter(sites),
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: REPORT_SELECT,
+    });
+    return rows.map(toReportView);
   }
 
   /** ORD-147. The account's name, as a recipient would be written. */
@@ -1161,6 +1202,7 @@ const WORKLIST_SELECT = {
           orderedBy: {
             select: {
               id: true,
+              userId: true,
               user: { select: { firstName: true, lastName: true } },
             },
           },

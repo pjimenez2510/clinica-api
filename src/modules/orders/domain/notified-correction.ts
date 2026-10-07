@@ -24,6 +24,8 @@ import type { AbnormalFlag } from './analyte';
 
 /** One notice as the rule needs it. */
 export interface StatedNotice {
+  /** The account that recorded it. */
+  notifiedBy: { id: string };
   recipientKind: string;
   recipientName: string;
   notifiedAt: Date;
@@ -99,25 +101,40 @@ const MAX_CHAIN = 100;
  *
  * Entered when an earlier version of the same determination has a notice
  * given —a notice to oneself included: the practitioner who noted the 25 may
- * have acted on it— and the standing value is not critical and reads
- * differently from the last version told. A value rewritten the same (the
- * laboratory corrected the potassium) changes nothing anybody knew.
+ * have acted on it— and the value is not critical and reads differently from
+ * the last version told. A value rewritten the same (the laboratory corrected
+ * the potassium) changes nothing anybody knew.
  *
- * Closed by a notice given on the standing value that is not a notice to
- * oneself; or by one to oneself when every notice given before was too —only
- * that practitioner ever knew, and their own record is the one that matters.
+ * ⚠️ A CORRECTION STILL WAITING IS INHERITED (revisión, grave). If the last
+ * version told is itself a correction whose notice never closed it —the
+ * practitioner noted the 95 for themselves while the patient was told the
+ * 25—, a later version that rewrites the 95 does not make it «already told»:
+ * it carries the same pending correction, of the same 25.
+ *
+ * Closed by a notice given on the value that is not a notice to oneself; or
+ * by one to oneself when every notice given before was too, BY THE SAME
+ * ACCOUNT —only that practitioner ever knew, and their own record is the one
+ * that matters; another colleague noting it for themselves tells them
+ * nothing—.
  */
 export function notifiedCorrections(
   versions: readonly StatedVersion[],
 ): Map<string, NotifiedCorrection> {
   const byId = new Map(versions.map((version) => [version.id, version]));
   const found = new Map<string, NotifiedCorrection>();
+  const judged = new Set<string>();
 
-  for (const version of versions) {
-    if (version.supersedesId === null) continue;
+  /** Judges a version after every version it replaced (memoised). */
+  const judge = (version: StatedVersion, depth = 0): void => {
+    if (judged.has(version.id) || depth > MAX_CHAIN) return;
+    judged.add(version.id);
+    if (version.supersedesId === null) return;
+    const previous = byId.get(version.supersedesId);
+    if (previous) judge(previous, depth + 1);
+
     // The versions it replaced, newest first.
     const earlier: StatedVersion[] = [];
-    let next = byId.get(version.supersedesId);
+    let next = previous;
     while (next && earlier.length < MAX_CHAIN) {
       earlier.push(next);
       next = next.supersedesId ? byId.get(next.supersedesId) : undefined;
@@ -125,41 +142,54 @@ export function notifiedCorrections(
 
     for (const result of version.results) {
       if (isCritical(result.abnormalFlag)) continue;
-      const before = earlier.flatMap((version) => {
-        const same = version.results.find(
+      const before = earlier.flatMap((older) => {
+        const same = older.results.find(
           (each) => each.analyteDisplay === result.analyteDisplay,
         );
-        return same ? [{ version, result: same }] : [];
+        return same ? [{ version: older, result: same }] : [];
       });
-      const told = before.find(({ result: each }) => each.notices.some(given));
-      if (!told || sameReading(told.result, result)) continue;
+      const last = before.find(({ result: each }) => each.notices.some(given));
+      if (!last) continue;
+      // A told version that is itself a correction still waiting: inherited.
+      const pending = found.get(last.result.id);
+      const inherited = pending?.due === true ? pending : undefined;
+      if (!inherited && sameReading(last.result, result)) continue;
 
       const earlierNotices = before
         .flatMap(({ result: each }) => each.notices.filter(given))
         .sort((a, b) => a.notifiedAt.getTime() - b.notifiedAt.getTime());
-      const onlyToOneself = earlierNotices.every((n) => n.selfNotice);
       const closed = result.notices.some(
-        (notice) => given(notice) && (!notice.selfNotice || onlyToOneself),
+        (notice) =>
+          given(notice) &&
+          (!notice.selfNotice ||
+            earlierNotices.every(
+              (n) => n.selfNotice && n.notifiedBy.id === notice.notifiedBy.id,
+            )),
       );
 
       found.set(result.id, {
         resultId: result.id,
-        told: {
-          valueNumeric: told.result.valueNumeric,
-          valueCode: told.result.valueCode,
-          valueText: told.result.valueText,
-          unit: told.result.unit,
-          abnormalFlag: told.result.abnormalFlag,
-          observedAt: told.result.observedAt,
+        told: inherited?.told ?? {
+          valueNumeric: last.result.valueNumeric,
+          valueCode: last.result.valueCode,
+          valueText: last.result.valueText,
+          unit: last.result.unit,
+          abnormalFlag: last.result.abnormalFlag,
+          observedAt: last.result.observedAt,
         },
         earlierNotices,
         // The told version was replaced, so the instant exists; the fallback
         // only keeps a corrupt chain from printing a blank.
-        correctedAt: told.version.supersededRecordedAt ?? result.observedAt,
+        correctedAt:
+          inherited?.correctedAt ??
+          last.version.supersededRecordedAt ??
+          result.observedAt,
         due: !closed,
         standing: version.supersededById === null,
       });
     }
-  }
+  };
+
+  for (const version of versions) judge(version);
   return found;
 }

@@ -587,6 +587,12 @@ export interface DiagnosticReportRepository {
     sites: SiteScopeFilter,
   ): Promise<CorrectionCandidateOrder[]>;
 
+  /** ORD-143. The reports of several orders at once, corrections included. */
+  ofOrders(
+    orderIds: readonly string[],
+    sites: SiteScopeFilter,
+  ): Promise<DiagnosticReportView[]>;
+
   /** ORD-147. The name of an account, as a recipient would be written. */
   accountName(userId: string): Promise<string | undefined>;
 

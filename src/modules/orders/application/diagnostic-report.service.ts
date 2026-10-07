@@ -391,18 +391,31 @@ export class DiagnosticReportService {
         });
       }
     }
-    const missing = previous.results
-      .map((result) => result.analyteDisplay)
-      .filter((name) => !named.has(name));
-    const retired = await this.exams.analytesByNames(missing);
-    const byName = new Map(retired.map((analyte) => [analyte.name, analyte]));
-    for (const name of [...new Set(missing)]) {
-      const analyte = byName.get(name);
+    const missing = previous.results.filter(
+      (result) => !named.has(result.analyteDisplay),
+    );
+    const homonyms = await this.exams.analytesByNames(
+      missing.map((result) => result.analyteDisplay),
+    );
+    for (const result of missing) {
+      if (named.has(result.analyteDisplay)) continue;
+      /**
+       * Of two definitions with that name, the one with the unit the value
+       * was written in (revisión clínica): another unit would write the
+       * corrected number —and compare it with the inherited thresholds— in a
+       * unit nobody measured. Active first, then the last changed.
+       */
+      const analyte = homonyms.find(
+        (each) =>
+          each.name === result.analyteDisplay && each.unit === result.unit,
+      );
       // A name no analyte carries any more cannot be written again: the
       // correction will say which one is missing (ORD-055).
       if (!analyte) continue;
+      named.add(result.analyteDisplay);
       offered.push({
         analyte,
+        // After the exams' own: the screen lists them in this order.
         position: offered.length + 1,
         isReflex: false,
         examName: null,
@@ -649,9 +662,11 @@ export class DiagnosticReportService {
    */
   async corrections(requester: Requester): Promise<CorrectionWorklistEntry[]> {
     const orders = await this.reports.notifiedCorrectionOrders(requester.sites); // prettier-ignore
+    // One read for every candidate order, grouped here (revisión: no N+1).
+    const all = await this.reports.ofOrders(orders.map((o) => o.orderId), requester.sites); // prettier-ignore
     const entries: CorrectionWorklistEntry[] = [];
     for (const order of orders) {
-      const reports = await this.reports.ofOrder(order.orderId, requester.sites); // prettier-ignore
+      const reports = all.filter((report) => report.serviceOrderId === order.orderId); // prettier-ignore
       const found = notifiedCorrections(reports);
       for (const report of reports) {
         for (const result of report.results) {
@@ -751,6 +766,7 @@ export class DiagnosticReportService {
         name: (await this.reports.accountName(requester.userId)) ?? '',
       },
       orderedByUserId: result.orderedByUserId,
+      callerName: callerOf(request),
     });
 
     // ORD-068. Out of hours at the moment of the CALL, not of the typing.
@@ -851,6 +867,7 @@ export class DiagnosticReportService {
         name: current.notifiedBy.name,
       },
       orderedByUserId: result.orderedByUserId,
+      callerName: callerOf(request),
     });
     // ORD-068. Out of hours at the moment of the CALL.
     const inHours = await this.reports.sitesInHours([result.siteId], notifiedAt); // prettier-ignore

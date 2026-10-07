@@ -237,7 +237,7 @@ describe('los resultados por HTTP', () => {
 
     const queue = await get('/orders/results/corrections').expect(200);
     expect(queue.body).toMatchObject({
-      items: [{ resultId: standing, valueNumeric: 95, told: { valueNumeric: 25 }, earlierNotices: [{ recipientKind: 'PATIENT' }] }], // prettier-ignore
+      items: [{ resultId: standing, valueNumeric: 95, told: { valueNumeric: 25 }, earlierNotices: [{ recipientKind: 'PATIENT', recipientName: null }] }], // prettier-ignore
     });
     const read = await get(`/orders/${orderId}/reports`).expect(200);
     const current = (read.body as { items: { supersededById: string | null; results: { correction: { due: boolean } | null }[] }[] }).items.find((r) => r.supersededById === null); // prettier-ignore

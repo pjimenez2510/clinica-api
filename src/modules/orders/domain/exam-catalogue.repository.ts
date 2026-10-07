@@ -82,10 +82,10 @@ export interface ExamCatalogueRepository {
   analytesByIds(ids: readonly string[]): Promise<AnalyteDefinition[]>;
 
   /**
-   * ORD-149. The analytes named, by the name a stored result froze, retired
-   * ones included: a report that carries one must stay correctable. Of two
-   * with the same name —only one can be active— the active one, else the
-   * last one changed.
+   * ORD-149. Every analyte carrying one of these names —the name a stored
+   * result froze—, retired ones included, active first and then the last
+   * changed: a report that carries one must stay correctable, and the caller
+   * picks the homonym with the result's unit.
    */
   analytesByNames(names: readonly string[]): Promise<AnalyteDefinition[]>;
 }

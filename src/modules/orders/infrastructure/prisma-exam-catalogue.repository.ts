@@ -174,9 +174,7 @@ export class PrismaExamCatalogueRepository implements ExamCatalogueRepository {
       orderBy: [{ active: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
       select: ANALYTE_SELECT,
     });
-    const first = new Map<string, AnalyteRow>();
-    for (const row of rows) if (!first.has(row.name)) first.set(row.name, row);
-    return [...first.values()].map(toAnalyte);
+    return rows.map(toAnalyte);
   }
 }
 

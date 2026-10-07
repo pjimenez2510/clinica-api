@@ -1909,7 +1909,10 @@ porque el 95 no es crítico y no entraba en ninguna cola._
   avisó; y DEBERÁ dejarla en la cola hasta que exista sobre el valor vigente
   un aviso hecho que la cierre: uno que no sea autoaviso, o un autoaviso
   cuando todos los avisos hechos de las versiones anteriores fueron
-  autoavisos. Cada entrada DEBERÁ decir la determinación, el valor del que se
+  autoavisos **de la misma cuenta**. SI la última versión avisada es a su vez
+  una corrección que seguía esperando su aviso, ENTONCES la versión vigente
+  DEBERÁ heredarla —con el valor del que se avisó entonces— aunque escriba el
+  mismo valor. Cada entrada DEBERÁ decir la determinación, el valor del que se
   avisó —con su unidad, su bandera y cuándo se emitió—, el valor vigente,
   cuándo se registró la corrección, los avisos hechos de las versiones
   anteriores —a quién, de qué tipo y cuándo— y quién pidió el examen. La cola
@@ -1933,13 +1936,20 @@ porque el 95 no es crítico y no entraba en ninguna cola._
   > antes para que se llame a esa persona; exigir un aviso **a cada una** es
   > D-156.
   >
+  > **La corrección pendiente se hereda (revisión, grave):** el paciente supo
+  > del 25, el médico se anotó el 95 y el laboratorio reescribe el 95 al
+  > corregir otra cosa: el 95 «ya avisado» sólo lo sabía él, y la corrección
+  > del 25 sigue sin llegar al paciente.
+  >
   > **Sin plazo:** D-115 no fija uno, y la cola dice desde cuándo espera sin
   > marcar vencida ninguna entrada (D-156).
   >
   > **Garantía:** la regla vive en una función pura del dominio que leen la
   > cola, la lectura del informe y el registro del aviso (ORD-144); la cola
   > busca en la base las órdenes con un aviso hecho sobre un informe
-  > sustituido y aplica esa función a sus informes.
+  > sustituido y aplica esa función a sus informes, leídos de una vez. La
+  > cola **no lleva el nombre** de un paciente o familiar avisado (ORD-024):
+  > no se audita por entrada, y el nombre se lee en la orden.
 
 - **ORD-144** — CUANDO se registre un aviso sobre un resultado **sin bandera
   crítica**, el sistema DEBERÁ admitirlo SÓLO SI el resultado es la versión
@@ -1967,15 +1977,23 @@ porque el 95 no es crítico y no entraba en ninguna cola._
   > **Enmienda ORD-065** («desde la emisión de la primera versión crítica de
   > su cadena»).
 
-- **ORD-146** — MIENTRAS el resultado crítico tenga un **autoaviso**, cada
-  entrada de la cola de críticos DEBERÁ decir que el aviso toca **al
-  paciente**, y un aviso hecho **al médico que pidió el examen** —por el
-  tipo, o porque su destinatario lleva el nombre de ese médico (ORD-147)—
-  NO DEBERÁ cerrar la cola.
+- **ORD-146** — MIENTRAS el resultado crítico tenga un **autoaviso del
+  médico que pidió el examen** (registrado por su cuenta), cada entrada de la
+  cola de críticos DEBERÁ decir que el aviso toca **al paciente**, y un aviso
+  hecho **a ese médico** —por el tipo, o porque su destinatario lleva su
+  nombre (ORD-147)— **posterior** a su autoaviso NO DEBERÁ cerrar la cola;
+  uno anterior sí la cerró. La misma regla DEBERÁ decidir qué versión de
+  una cadena «ya se avisó» para ORD-145.
   > **D-116 a.** El médico ya lo sabe; la enfermera que lo llama («sí, ya lo
   > sé») no le cuenta nada nuevo, y el paciente en su casa sigue sin saber.
   > D-113 b decía «al paciente o a otra persona», y «otra persona» se había
   > leído como «otra que quien registra».
+  >
+  > **Del médico que pidió, y «tras» (revisión):** el autoaviso de un colega
+  > no le cuenta nada al médico que pidió; y si la enfermera ya le había
+  > avisado, su constancia posterior no reabre la cola. La regla es una
+  > función del dominio (`closesCriticalWorklist`) que la consulta de la cola
+  > aplica, y su gemela en SQL decide el corte de ORD-145.
   >
   > **Garantía de la base:** `critical_result_notice.names_ordering_practitioner`
   > guarda, al registrar o editar, si el destinatario lleva el nombre del
@@ -1985,7 +2003,9 @@ porque el 95 no es crítico y no entraba en ninguna cola._
 - **ORD-147** — El sistema DEBERÁ juzgar **autoaviso** todo aviso cuyo
   destinatario lleve el nombre de la cuenta que lo registra, cualquiera que
   sea su tipo, además del aviso «al médico que pidió» que registra ese mismo
-  médico (ORD-062); y al editarlo (ORD-120), con el nombre de quien lo dio.
+  médico (ORD-062) y del aviso cuyo destinatario lleva el nombre de quien
+  hizo la llamada (ORD-148); y al editarlo (ORD-120), con el nombre de quien
+  lo dio.
   Dos nombres DEBERÁN ser el mismo cuando coincidan palabra por palabra sin
   distinguir mayúsculas, tildes ni espacios, y sin un tratamiento inicial
   («Dr.», «Dra.», «Lcda.»…).
@@ -2008,6 +2028,10 @@ porque el 95 no es crítico y no entraba en ninguna cola._
   >
   > **Garantía de la base:** `critical_result_notice_caller_named` no deja
   > guardar un nombre vacío.
+  >
+  > **Al editar, tampoco viene elegido** (revisión): `caller_name` vacío no
+  > distingue «llamó quien registró» de una constancia anterior a la columna.
+  > El `PUT` es el aviso entero: sin `callerName`, queda vacío.
 
 - **ORD-149** — CUANDO se corrija o edite un informe (ORD-050, ORD-119), el
   sistema DEBERÁ ofrecer y admitir **todas** las determinaciones del informe
@@ -2016,7 +2040,8 @@ porque el 95 no es crítico y no entraba en ninguna cola._
   versión anterior cuando el examen ya no lo nombra; y DEBERÁ servir, con
   `record:read`, las determinaciones que admite la corrección de un informe:
   las de los exámenes vivos de su orden, por su código congelado, y las del
-  informe que se corrige, por su nombre.
+  informe que se corrige, por su nombre y con la unidad en que se
+  escribieron.
   > **D-116 f**, como la lectura por código de ORD-039. Con ORD-055 la
   > corrección tiene que traer todos los analitos; si el catálogo ya no
   > ofrece uno, el informe no se podía corregir. Y un valor que perdiera su

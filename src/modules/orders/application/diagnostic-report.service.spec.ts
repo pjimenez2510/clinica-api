@@ -174,6 +174,9 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
   notifiedCorrectionOrders(): Promise<never[]> {
     return Promise.resolve([]);
   }
+  ofOrders(): Promise<DiagnosticReportView[]> {
+    return Promise.resolve([]);
+  }
   accountName(): Promise<string | undefined> {
     return Promise.resolve(undefined);
   }

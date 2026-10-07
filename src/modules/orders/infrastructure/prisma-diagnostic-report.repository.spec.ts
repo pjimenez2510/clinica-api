@@ -328,12 +328,13 @@ describe('el adaptador del informe', () => {
           abnormalFlag: 'CRITICAL_LOW',
           observedAt: new Date('2026-09-16T13:00:00Z'),
           _count: { notices: 0 },
+          notices: [],
           report: {
             serviceOrderId: ORDER,
             serviceOrder: {
               siteId: 'site-1',
               encounter: { patientId: 'chart-1' },
-              orderedBy: { id: 'pr-1', user: { firstName: 'Ana', lastName: 'Villacís' } }, // prettier-ignore
+              orderedBy: { id: 'pr-1', userId: 'user-1', user: { firstName: 'Ana', lastName: 'Villacís' } }, // prettier-ignore
             },
           },
         },

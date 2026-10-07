@@ -49,6 +49,8 @@ export interface SelfNoticeQuestion {
   recorder: { userId: string; name: string };
   /** The account of the practitioner who placed the order. */
   orderedByUserId: string;
+  /** ORD-148. Who made the call, when it was not the recorder. */
+  callerName?: string | null;
 }
 
 /**
@@ -63,5 +65,71 @@ export function isSelfNotice(question: SelfNoticeQuestion): boolean {
   ) {
     return true;
   }
+  // ORD-148 (revisión clínica). A call whose caller is its own recipient
+  // told nobody anything, whoever wrote it down.
+  if (
+    question.callerName &&
+    samePersonName(question.recipientName, question.callerName)
+  ) {
+    // prettier-ignore
+    return true;
+  }
   return samePersonName(question.recipientName, question.recorder.name);
+}
+
+/** ORD-062, ORD-146. A notice as the critical worklist judges it. */
+export interface WorklistNotice {
+  outcome: string;
+  selfNotice: boolean;
+  recipientKind: string;
+  namesOrderingPractitioner: boolean;
+  notifiedById: string;
+  notifiedAt: Date;
+}
+
+const toOneselfByOrderer = (notice: WorklistNotice, orderer: string) =>
+  notice.outcome === 'NOTIFIED' &&
+  notice.selfNotice &&
+  notice.notifiedById === orderer;
+
+/**
+ * ORD-146 (D-116 a). The practitioner who placed the order recorded a notice
+ * to themselves: they know, and the notice is now due to the patient. Only
+ * THEIR notice to themselves: a colleague noting it for themselves tells the
+ * ordering practitioner nothing (revisión).
+ */
+export function selfNoticedByOrderer(
+  notices: readonly WorklistNotice[],
+  ordererUserId: string,
+): boolean {
+  return notices.some((notice) => toOneselfByOrderer(notice, ordererUserId));
+}
+
+/**
+ * ORD-062, ORD-146. Whether the notices of a critical value take it off the
+ * worklist: a notice given that is not a notice to oneself — except one to
+ * the practitioner who placed the order AFTER they had noted it themselves
+ * («sí, ya lo sé» tells them nothing). One given to them BEFORE still counts:
+ * they were told then (D-116 a: «tras un autoaviso»).
+ *
+ * The SAME judgement is written in SQL in `criticalChains` (which version a
+ * correction starts its new notice after); the integration suite holds the
+ * two to the same cases.
+ */
+export function closesCriticalWorklist(
+  notices: readonly WorklistNotice[],
+  ordererUserId: string,
+): boolean {
+  return notices.some((notice) => {
+    if (notice.outcome !== 'NOTIFIED' || notice.selfNotice) return false;
+    const toOrderer =
+      notice.recipientKind === 'ORDERING_PRACTITIONER' ||
+      notice.namesOrderingPractitioner;
+    if (!toOrderer) return true;
+    return !notices.some(
+      (own) =>
+        toOneselfByOrderer(own, ordererUserId) &&
+        own.notifiedAt.getTime() <= notice.notifiedAt.getTime(),
+    );
+  });
 }

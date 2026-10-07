@@ -562,7 +562,19 @@ function toCorrectionEntryResponse(
     unit: entry.unit,
     abnormalFlag: entry.abnormalFlag,
     told: toToldResponse(entry.told),
-    earlierNotices: entry.earlierNotices.map(toEarlierNoticeResponse),
+    /**
+     * ORD-024, ORD-092 (revisión). The worklist is not audited per entry, so
+     * it carries no identity: the name of a patient or a relative told stays
+     * in the order, whose reading is audited. A practitioner's name travels.
+     */
+    earlierNotices: entry.earlierNotices.map((notice) => ({
+      ...toEarlierNoticeResponse(notice),
+      recipientName:
+        notice.recipientKind === 'PATIENT' ||
+        notice.recipientKind === 'REPRESENTATIVE'
+          ? null
+          : notice.recipientName,
+    })),
     correctedAt: entry.correctedAt.toISOString(),
     orderedBy: entry.orderedBy,
   };

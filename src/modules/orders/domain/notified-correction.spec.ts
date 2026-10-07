@@ -15,6 +15,7 @@ const minutesAgo = (minutes: number) =>
   new Date(NOW.getTime() - minutes * 60_000);
 
 const notice = (overrides: Partial<StatedNotice> = {}): StatedNotice => ({
+  notifiedBy: { id: 'nurse' },
   recipientKind: 'PATIENT',
   recipientName: 'Paciente',
   notifiedAt: minutesAgo(90),
@@ -140,7 +141,7 @@ describe('la corrección de un valor avisado', () => {
   });
 
   it('ORD-143 si sólo el médico se lo anotó, su propia constancia de la corrección la cierra', () => {
-    const self = notice({ selfNotice: true, recipientKind: 'ORDERING_PRACTITIONER' }); // prettier-ignore
+    const self = notice({ selfNotice: true, recipientKind: 'ORDERING_PRACTITIONER', notifiedBy: { id: 'doctor' } }); // prettier-ignore
     const pending = notifiedCorrections(
       chain([glucose('a', 25, { notices: [self] })], [glucose('b', 95)]),
     );
@@ -169,5 +170,40 @@ describe('la corrección de un valor avisado', () => {
     expect(found.get('c')?.standing).toBe(true);
     // El 25 dejó de ser cierto con la primera corrección.
     expect(found.get('c')?.correctedAt).toEqual(minutesAgo(60));
+  });
+
+  it('ORD-143 un autoaviso que no cerró la corrección no la da por avisada cuando otra corrección reescribe el mismo valor', () => {
+    const self = notice({ selfNotice: true, notifiedBy: { id: 'doctor' } });
+    const found = notifiedCorrections(
+      chain(
+        [glucose('a', 25, { notices: [notice()] })],
+        [glucose('b', 95, { notices: [self] })],
+        [glucose('c', 95)],
+      ),
+    );
+    // Sigue esperando, y de lo que se le dijo al paciente: el 25.
+    expect(found.get('c')).toMatchObject({ due: true, standing: true, told: { valueNumeric: 25 } }); // prettier-ignore
+    // Control positivo: si el 95 se avisó de verdad, reescribirlo no pide nada.
+    const told = notifiedCorrections(
+      chain(
+        [glucose('a', 25, { notices: [notice()] })],
+        [glucose('b', 95, { notices: [notice()] })],
+        [glucose('c', 95)],
+      ),
+    );
+    expect(told.has('c')).toBe(false);
+  });
+
+  it('ORD-143 el autoaviso de otra cuenta no cierra la corrección que sólo anotó el médico que pidió', () => {
+    const own = (id: string) =>
+      notice({ selfNotice: true, notifiedBy: { id } });
+    const other = notifiedCorrections(
+      chain([glucose('a', 25, { notices: [own('doctor')] })], [glucose('b', 95, { notices: [own('colleague')] })]), // prettier-ignore
+    );
+    expect(other.get('b')?.due).toBe(true);
+    const same = notifiedCorrections(
+      chain([glucose('a', 25, { notices: [own('doctor')] })], [glucose('b', 95, { notices: [own('doctor')] })]), // prettier-ignore
+    );
+    expect(same.get('b')?.due).toBe(false);
   });
 });

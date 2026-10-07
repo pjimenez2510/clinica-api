@@ -213,6 +213,7 @@ const noticeFields = z.object({
   /**
    * ORD-148, D-116 e. Who made the call, when it was not the account that
    * records it. Absent or `null`: it was. A name, when given, is required.
+   * On an edit the body is the whole notice (`PUT`): absent clears it.
    */
   callerName: z
     .string()
@@ -260,11 +261,11 @@ export const editNoticeSchema = noticeFields
   .superRefine(unansweredHasNoReadBack);
 export class EditNoticeDto extends createZodDto(editNoticeSchema) {}
 
-/** ORD-031 to ORD-038. One determination as a client reads it. */
 /** ORD-143. One notice given of an earlier version, as the worklist shows it. */
 const earlierNoticeSchema = z.object({
   recipientKind: NOTICE_RECIPIENT,
-  recipientName: z.string(),
+  /** `null` on the worklist for a patient or relative: no identity there. */
+  recipientName: z.string().nullable(),
   notifiedAt: z.iso.datetime(),
   selfNotice: z.boolean(),
 });
@@ -289,6 +290,7 @@ export const notifiedCorrectionSchema = z.object({
   due: z.boolean(),
 });
 
+/** ORD-031 to ORD-038. One determination as a client reads it. */
 export const observationSchema = z.object({
   id: z.string(),
   /** ORD-040. `null` means nobody asked for it: it is in the unmatched list. */
