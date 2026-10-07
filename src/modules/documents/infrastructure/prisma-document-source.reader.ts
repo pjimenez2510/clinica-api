@@ -13,6 +13,10 @@ import {
 } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { FORM_002_BUILT_IN_SECTIONS } from '../../../shared/clinical/form-002';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
+import {
+  asserterNameOf,
+  findStandingAllergyAbsence,
+} from '../../../shared/infrastructure/clinical/standing-allergy-absence';
 import type { SiteScopeFilter } from '../domain/document-kind';
 import type {
   AllowedImageMimeType,
@@ -739,6 +743,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         encounter: {
           select: {
             siteId: true,
+            // DOC-116. The chart the standing assertion is asked for.
+            patientId: true,
             ageYears: true,
             ageMonths: true,
             patient: {
@@ -750,7 +756,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
                  * ⚠️ `chartScopeSelect` AND NOT A PLAIN `allergies`. A merged
                  * chart keeps its own rows: an allergy recorded before the
                  * merge lives on the ABSORBED chart, and reading only the
-                 * survivor's would print «No consta ninguna registrada» on a receta for a
+                 * survivor's would print «No registradas» on a receta for a
                  * patient whose penicillin allergy the clinic has on file. It
                  * travels as one statement — `relationJoins` is on — so it
                  * costs nothing over getting it wrong.
@@ -786,6 +792,29 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     });
     if (row === null) return null;
 
+    // Refuted ones are filtered HERE and not in the `where`, because
+    // `chartScopeSelect` applies one selection to both halves of the chart:
+    // knowing an allergy was ruled out is clinical information, and it is
+    // simply not something the receta prints.
+    const allergies = chartScopeRows<'allergies', StoredAllergy>(
+      row.encounter.patient,
+      'allergies',
+    )
+      .filter((allergy) => allergy.refutedAt === null)
+      .map((allergy) => allergy.substanceText);
+    // DOC-116 (D-157.2). Asked only over an empty chart, through THE
+    // statement the attention's band and the receta's screen read: a second
+    // copy of «sigue en pie» is how the paper would say «sin alergias
+    // conocidas» where the band says «no registradas».
+    const standing =
+      allergies.length === 0
+        ? await findStandingAllergyAbsence(this.prisma, row.encounter.patientId)
+        : null;
+    const noKnownAllergies =
+      standing === null
+        ? null
+        : { assertedByName: asserterNameOf(standing), assertedAt: standing.assertedAt }; // prettier-ignore
+
     return {
       kind: 'PRESCRIPTION',
       data: {
@@ -816,16 +845,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
             code: diagnosis.cie10Code,
             display: diagnosis.cie10Display,
           })),
-        // Refuted ones are filtered HERE and not in the `where`, because
-        // `chartScopeSelect` applies one selection to both halves of the chart:
-        // knowing an allergy was ruled out is clinical information, and it is
-        // simply not something the receta prints.
-        allergies: chartScopeRows<'allergies', StoredAllergy>(
-          row.encounter.patient,
-          'allergies',
-        )
-          .filter((allergy) => allergy.refutedAt === null)
-          .map((allergy) => allergy.substanceText),
+        allergies,
+        noKnownAllergies,
         prescriber: toPractitioner(row.prescriber),
         lines: row.items.map((item) => ({
           genericName: item.genericName,

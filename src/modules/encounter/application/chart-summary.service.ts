@@ -175,13 +175,11 @@ export class ChartSummaryService {
     /**
      * EN-087. Only for `standingAbsenceFor`, and it is a read.
      *
-     * ⚠️ NOT THROUGH THE SHARED PORT, unlike the allergies themselves. «¿A qué
-     * es alérgica esta persona?» is the question two modules ask and the reason
-     * `ActiveAllergyReader` lives in `shared/`; «¿alguien afirmó que no tiene
-     * ninguna?» is asked by this consultation and by nobody else — a
-     * prescription is stopped by an allergy that EXISTS, and an assertion of
-     * absence changes nothing it does. Widening the shared port for a caller
-     * that does not exist is the symmetry `CLAUDE.md` §9 refuses.
+     * Through this module's own port, which this module owns the writes of.
+     * The receta asks the same question since D-157.2 (PR-117, DOC-116) and
+     * both are answered by ONE statement, `findStandingAllergyAbsence` in
+     * `shared/infrastructure/clinical`, so the band and the paper cannot
+     * disagree about whether «sin alergias conocidas» still stands.
      *
      * ⚠️ AND THIS SERVICE NEVER CALLS THE PORT'S WRITE METHODS. It is a read
      * model: it composes, owns no invariant and writes no clinical content.

@@ -105,6 +105,7 @@ const prescriptionSubject = (status = 'ACTIVE'): DocumentSubject => ({
     },
     diagnoses: [],
     allergies: [],
+    noKnownAllergies: null,
     prescriber: {
       fullName: 'Cedeño Rosa',
       acessRegistration: 'ACESS-1',

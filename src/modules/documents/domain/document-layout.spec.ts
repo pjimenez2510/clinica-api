@@ -194,6 +194,7 @@ const prescription = (
     patient,
     diagnoses: [{ code: 'J00', display: 'Rinofaringitis aguda' }],
     allergies: [],
+    noKnownAllergies: null,
     prescriber,
     lines: [
       {
@@ -253,15 +254,19 @@ describe('DOC-104 los datos generales, en la franja gris de la plantilla', () =>
     ]);
   });
 
-  it('DOC-085 las alergias registradas van en rojo, y «No consta ninguna registrada» no', () => {
-    const allergyOf = (allergies: string[]) =>
-      composeLayout(prescription({ allergies }), context, template)
+  it('DOC-085 DOC-116 las alergias registradas van en rojo, y «No registradas» ni la afirmación no', () => {
+    const allergyOf = (
+      allergies: string[],
+      noKnownAllergies: { assertedByName: string; assertedAt: Date } | null = null,
+    ) =>
+      composeLayout(prescription({ allergies, noKnownAllergies }), context, template)
         .blocks.flatMap((block) =>
           block.kind === 'fields' ? block.entries : [],
         )
         .find((entry) => entry.label === 'Antecedentes de alergias');
     expect(allergyOf(['Penicilina'])?.alert).toBe(true);
     expect(allergyOf([])?.alert).not.toBe(true);
+    expect(allergyOf([], { assertedByName: 'Rosa Cedeño', assertedAt: new Date() })?.alert).not.toBe(true); // prettier-ignore
   });
 });
 
@@ -291,17 +296,47 @@ describe('DOC-072 la receta lleva los cinco bloques del art. 5', () => {
     expect(text).toContain('Tomar con alimentos');
   });
 
-  it('DOC-072 EN-087 sin alergias registradas dice «No consta ninguna registrada», nunca «Ninguna conocida»', () => {
+  it('DOC-116 EN-087 sin alergias registradas ni afirmación dice «No registradas: pregunte al paciente», nunca «Ninguna conocida»', () => {
     // A blank says nothing, and «Ninguna conocida» says what nobody asserted:
     // a list with nothing on it is «not known», not «none» (EN-087, D-A-018).
-    // The pharmacy reads this line and does not have the chart.
+    // The pharmacy reads this line and does not have the chart (D-157.1).
     const text = wholeText(composeLayout(prescription({ allergies: [] }), context, template)); // prettier-ignore
-    expect(text).toContain('No consta ninguna registrada');
-    expect(text).not.toMatch(/ninguna conocida/i);
+    expect(text).toContain('No registradas: pregunte al paciente');
+    expect(text).not.toMatch(/ninguna conocida|No consta ninguna/i);
     // Positive control: a recorded allergy is printed instead.
     const withOne = wholeText(composeLayout(prescription({ allergies: ['Penicilina'] }), context, template)); // prettier-ignore
     expect(withOne).toContain('Penicilina');
-    expect(withOne).not.toContain('No consta ninguna registrada');
+    expect(withOne).not.toContain('No registradas');
+  });
+
+  it('DOC-116 con un «sin alergias conocidas» en pie imprime quién y el día en Ecuador', () => {
+    // The receta's own instant: 20:00 of the 20th in Guayaquil, already the
+    // 21st in UTC.
+    const assertedAt = (prescription().data as { issuedAt: Date }).issuedAt;
+    const text = wholeText(
+      composeLayout(
+        prescription({
+          allergies: [],
+          noKnownAllergies: { assertedByName: 'Rosa Cedeño', assertedAt },
+        }),
+        context,
+        template,
+      ),
+    );
+    expect(text).toContain('Sin alergias conocidas (Rosa Cedeño, 20/08/2026)');
+    expect(text).not.toContain('No registradas');
+    // Control: with an allergy the assertion is not printed.
+    const withOne = wholeText(
+      composeLayout(
+        prescription({
+          allergies: ['Penicilina'],
+          noKnownAllergies: { assertedByName: 'Rosa Cedeño', assertedAt },
+        }),
+        context,
+        template,
+      ),
+    );
+    expect(withOne).not.toContain('Sin alergias conocidas');
   });
 
   it('DOC-072 enumera las alergias registradas cuando las hay', () => {

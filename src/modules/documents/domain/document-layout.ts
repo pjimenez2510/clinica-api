@@ -9,6 +9,7 @@ import {
   wallClockOf,
 } from '../../../shared/domain/clinic-time';
 
+import { allergyHistoryOf } from '../../../shared/clinical/allergy-history';
 import { composeFrame } from './document-frame';
 import {
   OUTPATIENT_VALIDITY_DAYS,
@@ -189,15 +190,14 @@ export function composePrescriptionLayout(
             : data.diagnoses.map((d) => `${d.code} · ${d.display}`).join(' | '),
       },
       {
-        // Art. 5.b.iv. Never an empty box, and never «Ninguna conocida»: an
-        // empty list is «not known», not «none» (EN-087, D-A-018), and the
-        // pharmacy reading this line has no chart to ask. The words are the
-        // receta screen's. DOC-085: a recorded allergy is printed in red.
+        // Art. 5.b.iv, DOC-116. Never an empty box, and never «Ninguna
+        // conocida»: an empty list is «not known», not «none» (EN-087,
+        // D-A-018), and the pharmacy reading this line has no chart to ask.
+        // The sentence is the receta screen's, from the same function (PR-117):
+        // the allergies, the standing assertion with who and when, or «No
+        // registradas: pregunte al paciente». DOC-085: only an allergy is red.
         label: 'Antecedentes de alergias',
-        value:
-          data.allergies.length === 0
-            ? 'No consta ninguna registrada'
-            : data.allergies.join(', '),
+        value: allergyHistoryOf(data.allergies, data.noKnownAllergies),
         ...(data.allergies.length === 0 ? {} : { alert: true }),
       },
     ]),
