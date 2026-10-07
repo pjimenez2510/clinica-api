@@ -1301,7 +1301,7 @@ expone lo que hace falta._
   > `N02BA01` (500 mg); el metronidazol, tres—: con el cuadro de desarrollo
   > eran un concepto y la alerta saltaba. Una sal o un éster distinto
   > («Hidrocortisona» frente a «Hidrocortisona, succinato sódico») y los
-  > componentes de una combinación no casan: es D-147 bis en D-148.
+  > componentes de una combinación no casan: queda en D-148.
 
 - **PR-115** — Una presentación del CNMB DEBERÁ declarar las **formas del
   vocabulario de la receta** que admite (`forms`) y el nombre de su forma en
