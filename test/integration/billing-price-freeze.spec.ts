@@ -241,6 +241,41 @@ describe('BI-050 el cargo congela el precio resuelto por la fecha del servicio',
   });
 });
 
+describe('BI-230 corregir un precio no mueve los cargos ya registrados', () => {
+  it('BI-230 el cargo conserva el importe anterior, y se cuentan los que aún no se facturan', async () => {
+    const raised = await charge();
+    const price = (
+      await context.catalogue.listPricesOfService(
+        context.priceListId,
+        context.serviceId,
+      )
+    )[0]!;
+    // Control: before the correction, the charge is counted at the old amount.
+    expect(
+      await context.catalogue.countOpenChargesAt(price.id, price.amount),
+    ).toBe(1);
+
+    await context.catalogue.correctPriceAmount(price.id, Money.parse('31.50'), {
+      by: context.userId,
+      at: new Date(),
+    });
+
+    const kept = await context.prisma.chargeItem.findUniqueOrThrow({
+      where: { id: raised.id },
+    });
+    expect(Money.parse(kept.unitAmount.toString())).toEqual(price.amount);
+    expect(
+      await context.catalogue.countOpenChargesAt(price.id, price.amount),
+    ).toBe(1);
+    expect(
+      await context.catalogue.countOpenChargesAt(
+        price.id,
+        Money.parse('31.50'),
+      ),
+    ).toBe(0);
+  });
+});
+
 describe('BI-006, BI-042 lo que garantiza la base y no el código', () => {
   it('BI-006 no guarda ningún importe en la fila de la prestación', async () => {
     // Written as a requirement and not as a convention because the temptation

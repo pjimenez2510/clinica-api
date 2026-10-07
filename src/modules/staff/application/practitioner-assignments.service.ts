@@ -111,9 +111,14 @@ export class PractitionerAssignmentsService {
     ]);
 
     await this.repository.replacePractitionerSites(practitionerId, siteIds);
-    await this.trail.record('UPDATE', practitionerId, requester);
+    const after = await this.repository.listPractitionerSites(practitionerId);
+    // ST-052. The list of sites before and after the replacement.
+    await this.trail.record('UPDATE', practitionerId, requester, {
+      before: { siteIds: current.map((site) => site.siteId) },
+      after: { siteIds: after.map((site) => site.siteId) },
+    });
 
-    return this.repository.listPractitionerSites(practitionerId);
+    return after;
   }
 
   // --- Specialties (ST-008) --------------------------------------------------
@@ -162,9 +167,15 @@ export class PractitionerAssignmentsService {
     }
 
     await this.repository.replacePractitionerSpecialties(practitionerId, items);
-    await this.trail.record('UPDATE', practitionerId, requester);
+    const after =
+      await this.repository.listPractitionerSpecialties(practitionerId);
+    // ST-052. The assignment before and after, primary flag included.
+    await this.trail.record('UPDATE', practitionerId, requester, {
+      before: { specialties: specialtyAssignmentsOf(current) },
+      after: { specialties: specialtyAssignmentsOf(after) },
+    });
 
-    return this.repository.listPractitionerSpecialties(practitionerId);
+    return after;
   }
 
   // --- Duration exceptions (ST-009) ------------------------------------------
@@ -222,12 +233,20 @@ export class PractitionerAssignmentsService {
       clinicSlotAtom(await this.repository.siteSlotAtoms()),
     );
 
+    const exceptionBefore = await this.currentException(
+      practitionerId,
+      serviceTypeId,
+    );
     await this.repository.upsertDurationException(
       practitionerId,
       serviceTypeId,
       durationMinutes,
     );
-    await this.trail.record('UPDATE', practitionerId, requester);
+    // ST-052. `null` before means there was no exception: this one is new.
+    await this.trail.record('UPDATE', practitionerId, requester, {
+      before: { serviceTypeId, exceptionMinutes: exceptionBefore },
+      after: { serviceTypeId, exceptionMinutes: durationMinutes },
+    });
   }
 
   /**
@@ -242,13 +261,37 @@ export class PractitionerAssignmentsService {
   ): Promise<void> {
     await this.requirePractitioner(practitionerId);
 
+    const exceptionBefore = await this.currentException(
+      practitionerId,
+      serviceTypeId,
+    );
     const removed = await this.repository.deleteDurationException(
       practitionerId,
       serviceTypeId,
     );
     if (removed) {
-      await this.trail.record('UPDATE', practitionerId, requester);
+      await this.trail.record('UPDATE', practitionerId, requester, {
+        before: { serviceTypeId, exceptionMinutes: exceptionBefore },
+        after: { serviceTypeId, exceptionMinutes: null },
+      });
     }
+  }
+
+  /**
+   * ST-052. The exception a practitioner holds for one service type, or `null`.
+   * Read only so the trail can say what an edit replaced; nothing is decided
+   * on it — the upsert and the delete are single statements either way.
+   */
+  private async currentException(
+    practitionerId: string,
+    serviceTypeId: string,
+  ): Promise<number | null> {
+    const rows =
+      await this.repository.listPractitionerDurations(practitionerId);
+    return (
+      rows.find((row) => row.serviceTypeId === serviceTypeId)
+        ?.exceptionMinutes ?? null
+    );
   }
 
   /** 404 before any assignment is touched, so a write never reaches an unknown practitioner. */
@@ -256,4 +299,14 @@ export class PractitionerAssignmentsService {
     const practitioner = await this.repository.findPractitioner(practitionerId);
     if (!practitioner) throw new PractitionerNotFoundError();
   }
+}
+
+/** ST-052. The assignment as a plain list, without the display names. */
+function specialtyAssignmentsOf(
+  rows: readonly PractitionerSpecialtyView[],
+): SpecialtyAssignment[] {
+  return rows.map((row) => ({
+    specialtyId: row.specialtyId,
+    isPrimary: row.isPrimary,
+  }));
 }

@@ -65,6 +65,7 @@ interface AdminExam {
 interface AdminAnalyte {
   id: string;
   code: string;
+  unit: string | null;
   ranges: {
     rangeKind: string;
     sex: string | null;
@@ -222,15 +223,40 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     expect(trail.map((row) => row.action)).toEqual(['CREATE', 'UPDATE']);
   });
 
-  it('ORD-103 el código lo arbitra la base: otro examen con el mismo se rechaza, y el código no se corrige', async () => {
+  it('ORD-103 el código lo arbitra la base: otro examen con el mismo se rechaza', async () => {
     // Control positivo: un código nuevo entra.
     await send('post', '/exam-catalogue/exams', NEW_EXAM).expect(201);
 
     const duplicate = await send('post', '/exam-catalogue/exams', NEW_EXAM).expect(409); // prettier-ignore
     expect((duplicate.body as Problem).code).toBe('EXAM_CODE_DUPLICATE');
 
+    // ORD-140: también al corregirlo.
     const bh = await examCoded('EX-BH');
-    await send('patch', `/exam-catalogue/exams/${bh.id}`, { code: 'EX-OTRO' }).expect(422); // prettier-ignore
+    const taken = await send('patch', `/exam-catalogue/exams/${bh.id}`, { code: NEW_EXAM.code }).expect(409); // prettier-ignore
+    expect((taken.body as Problem).code).toBe('EXAM_CODE_DUPLICATE');
+  });
+
+  it('ORD-140 el código de un examen se corrige mientras ninguna orden lo pidió; después, EXAM_CODE_IN_USE', async () => {
+    const created = (await send('post', '/exam-catalogue/exams', NEW_EXAM).expect(201)).body as AdminExam; // prettier-ignore
+    // Control positivo: nadie lo pidió, el código se corrige.
+    const corrected = await send('patch', `/exam-catalogue/exams/${created.id}`, { code: 'EX-PERFIL-RENAL-2' }).expect(200); // prettier-ignore
+    expect((corrected.body as AdminExam).code).toBe('EX-PERFIL-RENAL-2');
+
+    expect((await get(`/exam-catalogue/exams/${created.id}`).expect(200)).body).toMatchObject({ codeLocked: false }); // prettier-ignore
+
+    const { bh } = await anIssuedBloodCount();
+    expect((await get(`/exam-catalogue/exams/${bh.id}`).expect(200)).body).toMatchObject({ codeLocked: true }); // prettier-ignore
+    const refused = await send('patch', `/exam-catalogue/exams/${bh.id}`, { code: 'EX-OTRO' }).expect(409); // prettier-ignore
+    expect((refused.body as Problem).code).toBe('EXAM_CODE_IN_USE');
+    expect((await examCoded('EX-BH')).id).toBe(bh.id);
+
+    // La BASE también, aunque se salte el servicio; el no pedido sí cambia.
+    await expect(
+      prisma.$executeRaw`UPDATE "exam_definition" SET "code" = 'EX-RAW' WHERE "id" = ${bh.id}::uuid`,
+    ).rejects.toThrow(/exam_definition_code_in_use/);
+    await expect(
+      prisma.$executeRaw`UPDATE "exam_definition" SET "code" = 'EX-PERFIL-RENAL-3' WHERE "id" = ${created.id}::uuid`,
+    ).resolves.toBe(1);
   });
 
   it('ORD-129 «Pide ayuno» y sus horas se guardan, se publican al pedir y la base no admite horas sin ayuno', async () => {
@@ -831,6 +857,39 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
 
     await send('put', `/exam-catalogue/analytes/${created.id}/ranges`, { ranges: [] }).expect(200); // prettier-ignore
     await send('patch', `/exam-catalogue/analytes/${created.id}`, { unit: 'mmol/L' }).expect(200); // prettier-ignore
+  });
+
+  it('ORD-141 la unidad y sus rangos nuevos se guardan juntos; si un rango no vale, no cambia ninguno', async () => {
+    const created = (await send('post', '/exam-catalogue/analytes', {
+      code: 'GLU3', name: 'Glucosa venosa', valueType: 'NUMERIC', unit: 'mg/dL',
+      decimals: 0, allowedValues: null, loincCode: null, active: true,
+    }).expect(201)).body as AdminAnalyte; // prettier-ignore
+    await send('put', `/exam-catalogue/analytes/${created.id}/ranges`, {
+      ranges: [range({ rangeKind: 'CRITICAL', low: 40, high: 400 })],
+    }).expect(200); // prettier-ignore
+
+    // Un rango imposible (bajo mayor que alto): nada cambia, tampoco la unidad.
+    await send('patch', `/exam-catalogue/analytes/${created.id}`, {
+      unit: 'mmol/L', decimals: 1,
+      ranges: [range({ rangeKind: 'CRITICAL', low: 22, high: 2.2 })],
+    }).expect(422); // prettier-ignore
+    const untouched = await prisma.analyteDefinition.findUniqueOrThrow({ where: { id: created.id } }); // prettier-ignore
+    expect(untouched.unit).toBe('mg/dL');
+
+    // Los mismos límites de antes con la unidad nueva: el crítico se apagaría.
+    const carried = await send('patch', `/exam-catalogue/analytes/${created.id}`, {
+      unit: 'mmol/L', decimals: 1,
+      ranges: [range({ rangeKind: 'CRITICAL', low: 40, high: 400 })],
+    }).expect(409); // prettier-ignore
+    expect((carried.body as Problem).code).toBe('ANALYTE_UNIT_WITH_RANGES');
+
+    // Control positivo: con rangos válidos en la unidad nueva, entran los dos.
+    const saved = (await send('patch', `/exam-catalogue/analytes/${created.id}`, {
+      unit: 'mmol/L', decimals: 1,
+      ranges: [range({ rangeKind: 'CRITICAL', low: 2.2, high: 22 })],
+    }).expect(200)).body as AdminAnalyte; // prettier-ignore
+    expect(saved.unit).toBe('mmol/L');
+    expect(saved.ranges).toEqual([expect.objectContaining({ low: 2.2, high: 22 })]); // prettier-ignore
   });
 
   it('ORD-110 con órdenes esperando resultado no cambian las determinaciones del examen; el orden sí', async () => {

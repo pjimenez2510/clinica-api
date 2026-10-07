@@ -59,6 +59,8 @@ export interface CreateAccountInput {
  * is deliberately absent — see the adapter's `update`.
  */
 export interface AccountPatch {
+  /** AU-050. Lowercase, as on creation. */
+  email?: string;
   firstName?: string;
   lastName?: string;
   cedula?: string | null;
@@ -225,6 +227,8 @@ export interface CreateRoleInput {
  * deleted.
  */
 export interface RolePatch {
+  /** AU-051. Clinic roles only: the service refuses a system role's. */
+  code?: string;
   name?: string;
   description?: string | null;
   active?: boolean;

@@ -212,3 +212,47 @@ export class SriEstablishmentCodeDuplicateError extends ConflictError {
     );
   }
 }
+
+/**
+ * OR-034. The site already has attentions, and each one carries this code to
+ * the ministry's reports and to the documents the site issued.
+ */
+export class SiteMspUnicodeInUseError extends ConflictError {
+  readonly code = 'SITE_MSP_UNICODE_IN_USE';
+  override readonly userTitle =
+    'Esta sede ya tiene atenciones registradas con su código del MSP, y ya no se puede cambiar';
+
+  constructor() {
+    super('The MSP code of a site with attentions cannot change', {}, [
+      {
+        field: 'mspUnicode',
+        code: 'SITE_MSP_UNICODE_IN_USE',
+        message: 'La sede ya tiene atenciones con este código',
+      },
+    ]);
+  }
+}
+
+/**
+ * OR-035. The point already issued comprobantes, and the code is part of
+ * every number the SRI holds.
+ */
+export class EmissionPointCodeInUseError extends ConflictError {
+  readonly code = 'EMISSION_POINT_CODE_IN_USE';
+  override readonly userTitle =
+    'Este punto de emisión ya emitió comprobantes con su código, y ya no se puede cambiar';
+
+  constructor() {
+    super(
+      'The code of an emission point that issued vouchers cannot change',
+      {},
+      [
+        {
+          field: 'code',
+          code: 'EMISSION_POINT_CODE_IN_USE',
+          message: 'Ya hay comprobantes emitidos con este código',
+        },
+      ],
+    );
+  }
+}

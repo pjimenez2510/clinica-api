@@ -91,8 +91,11 @@ export interface SiteResourcesRepository {
 
   updateEmissionPoint(
     id: string,
-    patch: { description?: string | null; active?: boolean },
+    patch: { code?: string; description?: string | null; active?: boolean },
   ): Promise<EmissionPointView | null>;
+
+  /** OR-035. Whether the point already issued an invoice or a credit note. */
+  emissionPointHasVouchers(id: string): Promise<boolean>;
 
   /**
    * `false` when the row does not exist.

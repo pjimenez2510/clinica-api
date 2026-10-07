@@ -66,6 +66,17 @@ export interface ScheduleRuleRepository {
     },
   ): Promise<ScheduleRuleView | null>;
 
+  /**
+   * ST-050. Closes the rule on `closesOn` and opens `opens`, AS ONE
+   * TRANSACTION: apart, there would be a day with no schedule or an overlap
+   * the exclusion constraint refuses. `null` when the row is gone.
+   */
+  split(
+    id: string,
+    closesOn: ClinicalDate,
+    opens: ScheduleRuleWrite,
+  ): Promise<ScheduleRuleView | null>;
+
   /** ST-007: whether the practitioner attends at that site at all. */
   practitionerWorksAt(practitionerId: string, siteId: string): Promise<boolean>;
 

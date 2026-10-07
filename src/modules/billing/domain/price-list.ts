@@ -3,7 +3,7 @@ import {
   parseClinicalDate,
 } from '../../../shared/domain/clinic-time';
 import { Money } from './money';
-import { PriceNegativeAmountError, PricePeriodInvalidError } from './billing.errors'; // prettier-ignore
+import { PriceNegativeAmountError, PriceNotEditableError, PricePeriodInvalidError } from './billing.errors'; // prettier-ignore
 
 /**
  * What one service costs, to one payer, over one period.
@@ -121,6 +121,27 @@ export function planPriceChange(
       current === null ? null : { priceId: current.id, validTo: effectiveFrom },
     opens: { amount, validFrom: effectiveFrom, validTo: null },
   };
+}
+
+/**
+ * BI-230 (D-127). Correcting a mistyped amount, in place.
+ *
+ * BI-044 used to say «editar el precio no existe», because the row that
+ * justified a charge would stop saying that amount. Two things changed that:
+ * the charge freezes its own amount (BI-050), and `trg_price_record_version`
+ * archives the previous row with who and when. What stays forbidden is
+ * rewriting HISTORY: a row whose validity ended before today is left as it is,
+ * and the way to change what a service costs from now on is a new price.
+ */
+export function checkPriceCorrection(
+  price: ValidityPeriod,
+  amount: Money,
+  today: ClinicalDate,
+): void {
+  if (price.validTo !== null && price.validTo <= today) {
+    throw new PriceNotEditableError();
+  }
+  if (amount.isNegative()) throw new PriceNegativeAmountError();
 }
 
 /** A `@db.Date` column, read as the calendar day it stores. */

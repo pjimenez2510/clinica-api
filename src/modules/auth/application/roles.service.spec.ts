@@ -104,7 +104,11 @@ class RolesDouble implements RoleAdminRepositoryPort {
   update(id: string, patch: RolePatch): Promise<RoleView | null> {
     this.calls.push({ method: 'update', args: [id, patch] });
     const role = this.roles.find((candidate) => candidate.id === id);
-    return Promise.resolve(role ? { ...role, ...patch } : null);
+    // Like the adapter: an absent field is left alone, not erased.
+    const defined = Object.fromEntries(
+      Object.entries(patch).filter(([, value]) => value !== undefined),
+    );
+    return Promise.resolve(role ? { ...role, ...defined } : null);
   }
 
   delete(id: string): Promise<boolean> {
@@ -199,6 +203,80 @@ describe('la administración de roles', () => {
       await expect(
         service.update('role-inventado', { name: 'X' }, REQUESTER),
       ).rejects.toBeInstanceOf(RoleNotFoundError);
+    });
+  });
+
+  describe('corregir el código de un rol (AU-051)', () => {
+    it('AU-051 corrige el código de un rol propio', async () => {
+      const updated = await service.update(
+        CUSTOM_ROLE.id,
+        { code: 'ENLACE_ASEGURADORAS' },
+        REQUESTER,
+      );
+
+      expect(updated.code).toBe('ENLACE_ASEGURADORAS');
+    });
+
+    it('AU-051 el código de un rol del sistema no cambia: SYSTEM_ROLE_PROTECTED, sin escribir', async () => {
+      await expect(
+        service.update(ADMIN_ROLE.id, { code: 'GERENCIA' }, REQUESTER),
+      ).rejects.toBeInstanceOf(SystemRoleProtectedError);
+      expect(repository.calls.map((call) => call.method)).not.toContain(
+        'update',
+      );
+    });
+
+    it('AU-051 mandar el mismo código de un rol del sistema junto al nombre no es un cambio de código', async () => {
+      const updated = await service.update(
+        ADMIN_ROLE.id,
+        { code: ADMIN_ROLE.code, name: 'Gerencia' },
+        REQUESTER,
+      );
+
+      expect(updated).toMatchObject({ code: 'ADMIN', name: 'Gerencia' });
+    });
+  });
+
+  describe('bitácora con antes y después (AU-052)', () => {
+    it('AU-052 records the role before and after an edit', async () => {
+      await service.update(
+        CUSTOM_ROLE.id,
+        { name: 'Auditoría externa', description: 'Revisa la bitácora' },
+        REQUESTER,
+      );
+
+      expect(recorded[0]).toMatchObject({
+        action: 'UPDATE',
+        resourceType: 'auth',
+        resourceId: CUSTOM_ROLE.id,
+      });
+      expect(recorded[0]?.before).toEqual({
+        code: 'AUDITOR_EXTERNO',
+        name: 'Auditor externo',
+        description: null,
+        active: true,
+      });
+      expect(recorded[0]?.after).toEqual({
+        code: 'AUDITOR_EXTERNO',
+        name: 'Auditoría externa',
+        description: 'Revisa la bitácora',
+        active: true,
+      });
+    });
+
+    it('AU-052 records the permissions a role had and the ones it was given', async () => {
+      repository.permissions = ['audit:read'];
+
+      await service.replacePermissions(
+        CUSTOM_ROLE.id,
+        ['audit:read', 'site:read'],
+        REQUESTER,
+      );
+
+      expect(recorded[0]?.before).toEqual({ permissions: ['audit:read'] });
+      expect(recorded[0]?.after).toEqual({
+        permissions: ['audit:read', 'site:read'],
+      });
     });
   });
 

@@ -176,12 +176,8 @@ export class PrismaAccountAdminRepository implements AccountAdminRepositoryPort 
   }
 
   /**
-   * The EMAIL is not patchable, and that is the whole reason `AccountPatch`
-   * does not carry it: it is the sign-in identifier and it appears in every
-   * audit row this person ever produced, so changing it from an administration
-   * screen would quietly rewrite who did what. A person whose address really
-   * changes gets a new account and the old one deactivated, which is also what
-   * keeps the trail honest.
+   * AU-020, AU-025, AU-050. A duplicate email answers
+   * `EMAIL_ALREADY_REGISTERED` from the unique index.
    */
   async update(id: string, patch: AccountPatch): Promise<AccountView | null> {
     try {

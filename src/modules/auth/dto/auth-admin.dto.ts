@@ -77,21 +77,26 @@ export const createAccountSchema = z.object({
 export class CreateAccountDto extends createZodDto(createAccountSchema) {}
 
 /**
- * THE EMAIL IS ABSENT ON PURPOSE, and so is any password field.
+ * AU-050. The EMAIL is correctable: the audit trail keys on the user id, not
+ * on the address, so correcting a mistyped address rewrites nothing about who
+ * did what — and the first-credential invitation that went to the wrong inbox
+ * is annulled and sent again (AU-027). Its previous value is kept by the trail
+ * (AU-052).
  *
- *   - The email is the sign-in identifier and it is what every audit row of
- *     this person was written under. Editing it from an administration screen
- *     would quietly rewrite who did what; a person whose address really
- *     changes gets a new account and the old one deactivated.
- *   - AU-021 forbids an administrator choosing somebody else's password. There
- *     is no field for it here and no field for it on creation either, which is
- *     how the requirement is enforced rather than remembered.
- *   - `active` is absent too: AU-022 and AU-023 make activation its own
- *     endpoint, because deactivating has a second half — killing the open
- *     sessions — that a generic PATCH would invite somebody to forget.
+ * Still absent on purpose:
+ *   - any password field: AU-021 forbids an administrator choosing somebody
+ *     else's password, which is how the requirement is enforced rather than
+ *     remembered;
+ *   - `active`: AU-022 and AU-023 make activation its own endpoint, because
+ *     deactivating has a second half — killing the open sessions — that a
+ *     generic PATCH would invite somebody to forget.
  */
 export const updateAccountSchema = z
   .object({
+    email: z
+      .email('Indique un correo institucional válido')
+      .max(255, 'El correo no puede superar 255 caracteres')
+      .optional(),
     firstName: nameSchema('nombre').optional(),
     lastName: nameSchema('apellido').optional(),
     cedula: cedulaSchema.nullish(),
@@ -119,6 +124,11 @@ export const accountSchema = z.object({
    * account is not usable yet.
    */
   credentialPending: z.boolean(),
+  /**
+   * AU-050. Only on the answer to an email correction: whether the new
+   * invitation left for the corrected address (AU-029).
+   */
+  invitationSent: z.boolean().optional(),
 });
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -269,16 +279,18 @@ export const createRoleSchema = z.object({
 export class CreateRoleDto extends createZodDto(createRoleSchema) {}
 
 /**
- * The CODE is absent, and so is `isSystem`.
+ * AU-051. The CODE of a clinic role is correctable: grants and permissions
+ * point at the role by id, so the code is a label. A system role's code still
+ * never changes — the service refuses it with `SYSTEM_ROLE_PROTECTED`, and
+ * `trg_role_protect_system` refuses it anyway.
  *
- * The code identifies the role everywhere it is mentioned outside the
- * database, and `trg_role_protect_system` refuses to change it on a system
- * role anyway. `isSystem` says who OWNS the role — the product or the clinic —
- * and letting the application set it would make a role undeletable by the very
- * person who created it by mistake (AU-031).
+ * `isSystem` stays absent: it says who OWNS the role — the product or the
+ * clinic — and letting the application set it would make a role undeletable by
+ * the very person who created it by mistake (AU-031).
  */
 export const updateRoleSchema = z
   .object({
+    code: roleCodeSchema.optional(),
     name: roleNameSchema.optional(),
     description: roleDescriptionSchema.nullish(),
     /** AU-031: deactivating is what is offered instead of deleting. */

@@ -5,6 +5,7 @@ import { Principal } from '../../../shared/authorisation/principal';
 import { SiteScopeDeniedError } from '../../../shared/authorisation/site-scope';
 import {
   type ClinicalDate,
+  addDays,
   parseClinicalDate,
 } from '../../../shared/domain/clinic-time';
 import type { BookedInterval } from '../domain/schedule-conflicts';
@@ -17,6 +18,7 @@ import {
   PractitionerNotFoundError,
   PractitionerNotInSiteError,
   PractitionerNotSchedulableError,
+  ScheduleRuleNotEditableError,
   ScheduleRuleNotFoundError,
 } from '../domain/staff.errors';
 
@@ -58,6 +60,13 @@ const RULE: ScheduleRuleView = {
   validTo: null,
   active: true,
 };
+
+/**
+ * ST-050. The day the rule starts: it has ruled no past day yet, so an edit
+ * is IN PLACE. The cases below that are about editing itself — not about the
+ * split — run on this day.
+ */
+const NOT_STARTED = RULE.validFrom;
 
 const DRAFT = {
   siteId: 'site-1',
@@ -115,6 +124,14 @@ function makeDouble(answers: Answers): {
       note('update', id, patch);
       return Promise.resolve(answers.update);
     },
+    split: (id, closesOn, opens) => {
+      note('split', id, closesOn, opens);
+      return Promise.resolve(
+        answers.update === null
+          ? null
+          : { ...opens, id: 'rule-split', active: true },
+      );
+    },
     practitionerWorksAt: (practitionerId, siteId) => {
       note('practitionerWorksAt', practitionerId, siteId);
       return Promise.resolve(answers.worksAt);
@@ -143,7 +160,7 @@ function makeDouble(answers: Answers): {
   return { repository, calls };
 }
 
-const WRITE_METHODS = ['create', 'update'];
+const WRITE_METHODS = ['create', 'update', 'split'];
 
 describe('ScheduleRulesService', () => {
   let answers: Answers;
@@ -199,12 +216,51 @@ describe('ScheduleRulesService', () => {
     });
 
     it('ST-044 editar una regla deja constancia como UPDATE', async () => {
-      await service.update('rule-1', { endTime: '13:00' }, REQUESTER, DIRECTOR);
+      await service.update(
+        'rule-1',
+        { endTime: '13:00' },
+        REQUESTER,
+        DIRECTOR,
+        NOT_STARTED,
+      );
 
       expect(recorded[0]).toMatchObject({
         action: 'UPDATE',
         resourceId: RULE.id,
         resourceType: 'staff',
+      });
+    });
+
+    it('ST-052 records the previous and new schedule of an edited rule', async () => {
+      answers.update = { ...RULE, endTime: '13:00' };
+
+      await service.update(
+        'rule-1',
+        { endTime: '13:00' },
+        REQUESTER,
+        DIRECTOR,
+        NOT_STARTED,
+      );
+
+      const snapshot = {
+        siteId: 'site-1',
+        weekday: 1,
+        startTime: '08:00',
+        validFrom: RULE.validFrom,
+        validTo: null,
+        active: true,
+      };
+      expect(recorded[0]?.before).toEqual({ ...snapshot, endTime: '12:00' });
+      expect(recorded[0]?.after).toEqual({ ...snapshot, endTime: '13:00' });
+    });
+
+    it('ST-052 a new rule carries only the after half', async () => {
+      await service.create('prac-1', DRAFT, REQUESTER, DIRECTOR);
+
+      expect(recorded[0]?.before).toBeUndefined();
+      expect(recorded[0]?.after).toMatchObject({
+        startTime: '14:00',
+        endTime: '18:00',
       });
     });
 
@@ -221,7 +277,13 @@ describe('ScheduleRulesService', () => {
       answers.worksAt = false;
 
       await expect(
-        service.update('rule-1', { siteId: 'site-2' }, REQUESTER, DIRECTOR),
+        service.update(
+          'rule-1',
+          { siteId: 'site-2' },
+          REQUESTER,
+          DIRECTOR,
+          NOT_STARTED,
+        ),
       ).rejects.toBeInstanceOf(PractitionerNotInSiteError);
       expect(writes()).toEqual([]);
     });
@@ -232,6 +294,7 @@ describe('ScheduleRulesService', () => {
         { siteId: RULE.siteId },
         REQUESTER,
         DIRECTOR,
+        NOT_STARTED,
       );
 
       expect(calls.filter((call) => call.method === 'practitionerWorksAt')).toEqual([]); // prettier-ignore
@@ -282,7 +345,13 @@ describe('ScheduleRulesService', () => {
       // The patch alone is harmless; merged with the stored row it produces a
       // rule that yields no slot. Validating the patch would let it through.
       await expect(
-        service.update('rule-1', { endTime: '08:10' }, REQUESTER, DIRECTOR),
+        service.update(
+          'rule-1',
+          { endTime: '08:10' },
+          REQUESTER,
+          DIRECTOR,
+          NOT_STARTED,
+        ),
       ).rejects.toBeInstanceOf(InvalidScheduleRuleError);
       expect(writes()).toEqual([]);
     });
@@ -291,7 +360,13 @@ describe('ScheduleRulesService', () => {
       answers.findRule = null;
 
       await expect(
-        service.update('ghost', { endTime: '13:00' }, REQUESTER, DIRECTOR),
+        service.update(
+          'ghost',
+          { endTime: '13:00' },
+          REQUESTER,
+          DIRECTOR,
+          NOT_STARTED,
+        ),
       ).rejects.toBeInstanceOf(ScheduleRuleNotFoundError);
     });
   });
@@ -338,6 +413,7 @@ describe('ScheduleRulesService', () => {
         { endTime: '11:00' },
         REQUESTER,
         DIRECTOR,
+        NOT_STARTED,
       );
 
       expect(outcome.conflicts.map((conflict) => conflict.agendaEntryId)).toEqual(['entry-1']); // prettier-ignore
@@ -353,7 +429,13 @@ describe('ScheduleRulesService', () => {
         },
       ];
 
-      await service.update('rule-1', { endTime: '11:00' }, REQUESTER, DIRECTOR);
+      await service.update(
+        'rule-1',
+        { endTime: '11:00' },
+        REQUESTER,
+        DIRECTOR,
+        NOT_STARTED,
+      );
 
       // The load-bearing assertion is the ABSENCE of any other write: the
       // conflicts are handed to a human, never resolved by the system.
@@ -366,7 +448,7 @@ describe('ScheduleRulesService', () => {
       // `undefined` means «leave it as it is». A plain spread would erase the
       // stored `validFrom`, and the validation would then blow up on a date
       // that is not there — a 500 where a 200 belongs.
-      await service.update('rule-1', { endTime: '11:00', validTo: undefined }, REQUESTER, DIRECTOR); // prettier-ignore
+      await service.update('rule-1', { endTime: '11:00', validTo: undefined }, REQUESTER, DIRECTOR, NOT_STARTED); // prettier-ignore
 
       expect(writes()).toEqual([
         { method: 'update', args: ['rule-1', { endTime: '11:00' }] },
@@ -388,6 +470,7 @@ describe('ScheduleRulesService', () => {
         { endTime: '13:00' },
         REQUESTER,
         DIRECTOR,
+        NOT_STARTED,
       );
 
       expect(outcome.conflicts).toEqual([]);
@@ -420,6 +503,7 @@ describe('ScheduleRulesService', () => {
         { siteId: 'site-2' },
         REQUESTER,
         DIRECTOR,
+        NOT_STARTED,
       );
 
       expect(outcome.conflicts.map((conflict) => conflict.agendaEntryId)).toEqual(['entry-norte']); // prettier-ignore
@@ -459,6 +543,7 @@ describe('ScheduleRulesService', () => {
         { siteId: 'site-2', endTime: '10:00' },
         REQUESTER,
         DIRECTOR,
+        NOT_STARTED,
       );
 
       // En orden cronológico y no por sede: quien llama tiene que telefonear a
@@ -469,7 +554,13 @@ describe('ScheduleRulesService', () => {
     it('ST-043 sin cambio de sede sigue preguntando por una sola', async () => {
       // La consulta extra sólo aparece cuando la regla se mueve: cobrarla en
       // cada edición sería una consulta por petición que nunca devuelve nada.
-      await service.update('rule-1', { endTime: '13:00' }, REQUESTER, DIRECTOR);
+      await service.update(
+        'rule-1',
+        { endTime: '13:00' },
+        REQUESTER,
+        DIRECTOR,
+        NOT_STARTED,
+      );
 
       expect(
         calls
@@ -500,6 +591,7 @@ describe('ScheduleRulesService', () => {
         { endTime: '11:00' },
         REQUESTER,
         DIRECTOR,
+        NOT_STARTED,
       );
 
       // Covered by the afternoon rule the change never touched.
@@ -588,11 +680,105 @@ describe('ScheduleRulesService', () => {
         { endTime: '13:00' },
         REQUESTER,
         SCOPED_TO_SITE_1,
+        NOT_STARTED,
       );
 
       expect(writes()).toEqual([
         { method: 'update', args: ['rule-1', { endTime: '13:00' }] },
       ]);
+    });
+  });
+
+  describe('editar una regla que ya rigió (ST-050)', () => {
+    it('ST-050 cambiar la hora la cierra ayer y abre otra desde hoy, sin tocar la fila en el sitio', async () => {
+      const outcome = await service.update(
+        'rule-1',
+        { endTime: '13:00' },
+        REQUESTER,
+        DIRECTOR,
+        TODAY,
+      );
+
+      expect(writes()).toEqual([
+        {
+          method: 'split',
+          args: [
+            'rule-1',
+            addDays(TODAY, -1),
+            {
+              practitionerId: RULE.practitionerId,
+              siteId: RULE.siteId,
+              weekday: RULE.weekday,
+              startTime: '08:00',
+              endTime: '13:00',
+              validFrom: TODAY,
+              validTo: null,
+            },
+          ],
+        },
+      ]);
+      expect(outcome.rule).toMatchObject({
+        id: 'rule-split',
+        endTime: '13:00',
+      });
+    });
+
+    it('ST-050 deja en la bitácora el cierre de la anterior y el alta de la nueva', async () => {
+      await service.update(
+        'rule-1',
+        { endTime: '13:00' },
+        REQUESTER,
+        DIRECTOR,
+        TODAY,
+      );
+
+      expect(recorded.map((entry) => [entry.action, entry.resourceId])).toEqual(
+        [
+          ['UPDATE', 'rule-1'],
+          ['CREATE', 'rule-split'],
+        ],
+      );
+      expect(recorded[0]!.after).toMatchObject({ validTo: addDays(TODAY, -1) });
+    });
+
+    it('ST-050 mover sólo el fin hacia adelante sigue siendo una edición en el sitio', async () => {
+      await service.update(
+        'rule-1',
+        { validTo: addDays(TODAY, 30) },
+        REQUESTER,
+        DIRECTOR,
+        TODAY,
+      );
+
+      expect(writes().map((call) => call.method)).toEqual(['update']);
+    });
+
+    it('ST-050 una regla desactivada no se reabre al editarla: se rechaza y no escribe nada', async () => {
+      answers.findRule = { ...RULE, active: false };
+
+      await expect(
+        service.update(
+          'rule-1',
+          { endTime: '13:00' },
+          REQUESTER,
+          DIRECTOR,
+          TODAY,
+        ),
+      ).rejects.toBeInstanceOf(ScheduleRuleNotEditableError);
+      expect(writes()).toEqual([]);
+    });
+
+    it('ST-050 llevar el fin a antes de ayer se rechaza y no escribe nada', async () => {
+      await expect(
+        service.update(
+          'rule-1',
+          { validTo: addDays(TODAY, -5) },
+          REQUESTER,
+          DIRECTOR,
+          TODAY,
+        ),
+      ).rejects.toBeInstanceOf(ScheduleRuleNotEditableError);
+      expect(writes()).toEqual([]);
     });
   });
 });

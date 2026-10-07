@@ -175,6 +175,7 @@ model User {
   /// people — the second pair of eyes only counts if it is a different pair.
   chargeItemsCreated  ChargeItem[] @relation("ChargeItemAuthor")
   chargeItemsChanged  ChargeItem[] @relation("ChargeItemChanger")
+  pricesChanged       Price[]      @relation("PriceChanger")
   discountsAuthorised ChargeItem[] @relation("ChargeItemDiscountAuthoriser")
   invoicesIssued      Invoice[]    @relation("InvoiceIssuer")
   creditNotesIssued   CreditNote[] @relation("CreditNoteIssuer")
@@ -3765,6 +3766,15 @@ model Price {
   /// list. Enforced by PostgreSQL, so no application path can create the
   /// ambiguity that would make «what did this cost that day» unanswerable.
   validPeriod Unsupported("daterange")?
+
+  /// BI-230 (D-127). Who corrected the amount or the start, and when. NULL
+  /// until the first correction; `trg_price_record_version` refuses a
+  /// correction without a NEW stamp and archives the previous row in
+  /// `record_version`. Closing the row when the next one opens (BI-045) is not
+  /// a correction and needs no stamp.
+  changedById String?   @map("changed_by") @db.Uuid
+  changedBy   User?     @relation("PriceChanger", fields: [changedById], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "price_changed_by_fkey")
+  changedAt   DateTime? @map("changed_at") @db.Timestamptz(6)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

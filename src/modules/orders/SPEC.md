@@ -363,6 +363,15 @@ informe parcial y ver que la línea ya no ofrece «Anular».
 **Solo servidor:** ORD-132 (el umbral elegido no se ve en pantalla). ORD-130
 es solo de interfaz.
 
+### E14 — Corregir el catálogo de exámenes en el sitio _(P1, 06-10-2026)_
+
+AD-6, AD-10 y AD-11 del inventario de D-126 y D-127 (§14).
+
+**Prueba independiente:** corregir el código de un examen que nadie pidió, y
+ver el rechazo en uno ya pedido; cambiar la unidad de un analito con rangos
+escribiendo los rangos nuevos en el mismo guardado.
+**Cubre:** ORD-140, ORD-141, ORD-142. **Solo servidor:** ORD-142.
+
 ### Fuera de las ocho
 
 **Transcripción masiva y gráficas de evolución.** Se transcribe **solo lo que se
@@ -1806,6 +1815,35 @@ como el 010A._
   > con fecha estimada y un potasio crítico definido sólo para 0–30 días se
   > quedaba sin alerta. El error de la edad estimada lleva a avisar de más,
   > nunca de menos.
+
+## 14. Corregir el catálogo de exámenes en el sitio (D-126, D-127)
+
+Las filas AD-6, AD-10 y AD-11 del inventario. AD-7 ya la cumplen ORD-113 y
+ORD-114. AD-9 —renombrar o cambiar la unidad de un analito con resultados—
+espera a ORD-031: hasta que el resultado guarde el identificador del analito,
+renombrarlo rompe la completitud (ORD-039) y la corrección (ORD-055).
+
+- **ORD-140** — El sistema DEBERÁ permitir corregir el **código** de un examen
+  MIENTRAS ninguna orden lo haya pedido (ninguna `service_order_item` con ese
+  `test_code`); SI ya se pidió, ENTONCES DEBERÁ rechazarlo con
+  `EXAM_CODE_IN_USE`. La unicidad sigue siendo `EXAM_CODE_DUPLICATE`.
+  > AD-11. Enmienda ORD-103 («el código no cambia una vez creado»): lo que
+  > protege es la línea que lo congeló (ORD-002), y sin líneas no hay nada que
+  > proteger.
+- **ORD-141** — El sistema DEBERÁ admitir en un solo `PATCH` del analito la
+  unidad **y** sus rangos nuevos, y aplicarlos en una transacción: o cambian
+  los dos o ninguno. Sin rangos en la petición, cambiar la unidad de un analito
+  con rangos con límites sigue rechazándose con `ANALYTE_UNIT_WITH_RANGES`; y
+  SI algún rango con límites enviado con la unidad nueva conserva los mismos
+  límites de uno escrito en la anterior, ENTONCES DEBERÁ rechazarlo igual.
+  > Revisión del 06-10-2026: la pantalla precargaba los rangos, y un clic en
+  > «Guardar» dejaba «crítico 40–400» leído en mmol/L.
+  > AD-6. Antes había que borrar los rangos, cambiar la unidad y volver a
+  > escribirlos: entre el segundo y el tercer paso, un crítico apagado. Los
+  > rangos sustituidos se cierran con su vigencia (ORD-113). Enmienda ORD-110.
+- **ORD-142** — Toda edición de un examen o de un analito DEBERÁ dejar en
+  `access_audit` el antes y el después de los campos editados.
+  > AD-10 y la mitad que ORD-111 no guardaba (D-150).
 
 ## Códigos de error nuevos
 

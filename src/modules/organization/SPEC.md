@@ -85,6 +85,18 @@ rechazo; guardar `002` y leerlo igual, con el cero.
 > La edición desde la pantalla de Administración queda pendiente (F-08): en
 > `feat/sri-factura-electronica` se construye el dato, su garantía y la ruta.
 
+### O4 — Códigos que se corrigen mientras nadie los usó _(P1, 06-10-2026)_
+
+Las filas AD-10 y AD-11 del inventario de D-126 y D-127.
+
+**Prueba independiente:** corregir el código MSP de una sede sin atenciones y
+el código de un punto de emisión sin comprobantes; comprobar que con una
+atención o una factura se rechaza; y guardar el establecimiento sin tocar las
+banderas fiscales ya declaradas sin que pida la casilla.
+**Cubre:** OR-033 a OR-036.
+
+**Solo interfaz:** OR-036. **Solo servidor:** OR-033.
+
 ---
 
 ## Requisitos
@@ -257,6 +269,32 @@ rechazo; guardar `002` y leerlo igual, con el cero.
   > Revisión del 01-10-2026.
 
 ---
+
+### Editar en el sitio (D-126, D-127)
+
+- **OR-033** — Toda edición de un establecimiento, una sede, un consultorio o
+  un punto de emisión DEBERÁ dejar en `access_audit` el antes y el después de
+  los campos editados.
+  > AD-10. OR-005 pedía autor e instante (D-150).
+- **OR-034** — El sistema DEBERÁ permitir corregir el **código único del MSP**
+  de una sede (`PATCH /organization/sites/{id}` con `mspUnicode`) MIENTRAS la
+  sede no tenga ninguna atención registrada; SI la tiene, ENTONCES DEBERÁ
+  rechazarlo con `SITE_MSP_UNICODE_IN_USE`. La unicidad sigue siendo OR-002.
+  > AD-11. El código va en cada atención que se reporta al MSP (OR-003) y en
+  > los documentos que salen de la sede; mientras no hay ninguna, es un dato
+  > mal tecleado y nada más (D-150).
+- **OR-035** — El sistema DEBERÁ permitir corregir el **código** de un punto de
+  emisión (`PATCH …/emission-points/{id}` con `code`) MIENTRAS no haya emitido
+  ninguna factura ni nota de crédito; SI ya emitió, ENTONCES DEBERÁ rechazarlo
+  con `EMISSION_POINT_CODE_IN_USE`. La unicidad sigue siendo OR-024.
+  > AD-11. El código forma parte del número del comprobante que el SRI ya
+  > tiene (`001-002-000000123`): cambiarlo después dejaría dos series con el
+  > mismo nombre.
+- **OR-036** — La pantalla del establecimiento DEBERÁ pedir la casilla «Revisé
+  estas banderas fiscales» sólo MIENTRAS nunca se hayan declarado o CUANDO el
+  formulario cambie alguna de ellas; un guardado que no las toca NO DEBERÁ
+  pedirla, y conserva la declaración (OR-031).
+  > AD-11, «las banderas fiscales: la casilla sólo cuando cambian».
 
 ## Códigos de error
 
