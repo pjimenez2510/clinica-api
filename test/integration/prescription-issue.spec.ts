@@ -2,6 +2,8 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import type { PinoLogger } from 'nestjs-pino';
 import { describe, expect, it, vi } from 'vitest';
 
+import { PatientMergeService } from '../../src/modules/patients/application/patient-merge.service';
+import { PrismaPatientRepository } from '../../src/modules/patients/infrastructure/prisma-patient.repository';
 import { PrescriptionService } from '../../src/modules/prescription/application/prescription.service';
 import { PrismaPrescriptionRepository } from '../../src/modules/prescription/infrastructure/prisma-prescription.repository';
 import { writeItem } from '../../src/modules/prescription/domain/written-item';
@@ -86,6 +88,17 @@ const serviceOf = (prisma: PrismaClient) => {
     new PrismaAllergyAbsenceReader(prisma as unknown as PrismaService),
   );
 };
+
+/**
+ * PR-118. The merge admissions runs, over the real `patients` repository: the
+ * point is that THIS path leaves the absorbed chart's attention open.
+ */
+const mergeServiceOf = (prisma: PrismaClient) =>
+  new PatientMergeService(
+    new PrismaPatientRepository(prisma as unknown as PrismaService),
+    { record: () => Promise.resolve() },
+    { setContext: vi.fn(), info: vi.fn() } as unknown as PinoLogger,
+  );
 
 /** A CNMB medicine as the catalogue holds it: a system and a versioned concept. */
 async function aCnmbConcept(
@@ -1431,6 +1444,242 @@ describe('la receta contra PostgreSQL', () => {
         sites: [...requester.sites],
       }),
     ).rejects.toMatchObject({ code: 'ALLERGY_CONTRAINDICATION' });
+  });
+
+  /**
+   * PR-118 (D-169.2). LA MITAD QUE SUBE.
+   *
+   * La escena: la duplicada D tiene su atención ABIERTA; admisiones la fusiona
+   * en la ficha real S, que lleva la alergia ALTA. La fusión no mira las
+   * atenciones, así que la de D sigue abierta, y el médico receta en ella.
+   * `chartScope(D)` baja a las absorbidas de D —ninguna— y nunca sube a S: la
+   * receta no avisaba, no bloqueaba y quedaba `ACTIVE`.
+   *
+   * LA FUSIÓN ES LA DE VERDAD (`PatientMergeService` sobre el repositorio de
+   * `patients`), no un `UPDATE` a mano: lo que se demuestra es que el camino
+   * que usa admisiones deja la atención de D en este estado.
+   */
+  describe('PR-118 la receta en la atención de una ficha ya absorbida', () => {
+    async function theScene(
+      prisma: PrismaClient,
+      { merge }: { merge: boolean },
+    ) {
+      const {
+        encounter,
+        patient: duplicate,
+        requester,
+      } = await anEncounter(prisma);
+      const survivor = await createPatient(prisma);
+      const concept = await aCnmbConcept(prisma, {
+        code: 'J01CA04',
+        display: 'Amoxicilina',
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+      });
+      await prisma.patientAllergy.create({
+        data: {
+          recordedById: (await createUser(prisma)).id,
+          // En la SUPERVIVIENTE: es la ficha que la recepción y el médico
+          // mantienen, y donde se registró la alergia.
+          patientId: survivor.id,
+          substanceConceptId: concept.id,
+          substanceText: 'Amoxicilina',
+          criticality: 'HIGH',
+        },
+      });
+      if (merge) {
+        await mergeServiceOf(prisma).merge(
+          { sourcePatientId: duplicate.id, targetPatientId: survivor.id },
+          { userId: (await createUser(prisma)).id },
+        );
+      }
+      const args = { userId: requester.userId, sites: [...requester.sites] };
+      const service = serviceOf(prisma);
+      const composed = await service.compose(
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(concept.id)],
+        },
+        args,
+      );
+      return { prisma, service, composed, args, encounter, duplicate };
+    }
+
+    it('PR-118 compone con la alerta, el documento lista la alergia y la emisión se rechaza', async () => {
+      const { prisma, service, composed, args, encounter, duplicate } =
+        await theScene(db(), { merge: true });
+
+      // La premisa de D-169.2, comprobada y no supuesta: la fusión real deja
+      // la duplicada absorbida y su atención abierta.
+      const absorbed = await prisma.patient.findUniqueOrThrow({
+        where: { id: duplicate.id },
+        select: { mergedIntoId: true },
+      });
+      expect(absorbed.mergedIntoId).not.toBeNull();
+      const stillOpen = await prisma.encounter.findUniqueOrThrow({
+        where: { id: encounter.id },
+        select: { status: true },
+      });
+      expect(stillOpen.status).toBe('OPEN');
+
+      // PR-067: al componer informa …
+      expect(composed.allergyAlerts).toEqual([
+        { line: 1, allergyId: expect.any(String), match: 'EXACT' },
+      ]);
+      // … PR-027: el documento la dice …
+      expect(
+        (await service.document(composed.prescription.id, args)).allergies,
+      ).toEqual(['Amoxicilina']);
+      // … y PR-060: al emitir interrumpe, y la receta sigue en borrador.
+      await expect(
+        service.issue(composed.prescription.id, args),
+      ).rejects.toMatchObject({ code: 'ALLERGY_CONTRAINDICATION' });
+      const after = await prisma.prescription.findUniqueOrThrow({
+        where: { id: composed.prescription.id },
+        select: { status: true },
+      });
+      expect(after.status).toBe('DRAFT');
+    });
+
+    it('PR-118 control positivo: sin la fusión la alergia es de otra persona y se emite', async () => {
+      const { service, composed, args } = await theScene(db(), {
+        merge: false,
+      });
+
+      expect(composed.allergyAlerts).toEqual([]);
+      expect(
+        (await service.document(composed.prescription.id, args)).allergies,
+      ).toEqual([]);
+      await expect(
+        service.issue(composed.prescription.id, args),
+      ).resolves.toMatchObject({ status: 'ACTIVE' });
+    });
+
+    /**
+     * EL ORDEN MÁS PROBABLE DEL INCIDENTE: el borrador ya estaba compuesto en
+     * D, sin alerta porque D y S eran todavía dos personas, y la fusión llega
+     * antes de pulsar «Emitir». La emisión relee DENTRO de su transacción.
+     */
+    it('PR-118 un borrador compuesto antes de la fusión no se emite después de ella', async () => {
+      const prisma = db();
+      const {
+        encounter,
+        patient: duplicate,
+        requester,
+      } = await anEncounter(prisma);
+      const survivor = await createPatient(prisma);
+      const concept = await aCnmbConcept(prisma, {
+        code: 'J01CA04',
+        display: 'Amoxicilina',
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+      });
+      await prisma.patientAllergy.create({
+        data: {
+          recordedById: (await createUser(prisma)).id,
+          patientId: survivor.id,
+          substanceConceptId: concept.id,
+          substanceText: 'Amoxicilina',
+          criticality: 'HIGH',
+        },
+      });
+      const args = { userId: requester.userId, sites: [...requester.sites] };
+      const service = serviceOf(prisma);
+      const composed = await service.compose(
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(concept.id)],
+        },
+        args,
+      );
+      // Control positivo: antes de la fusión es la alergia de otra persona.
+      expect(composed.allergyAlerts).toEqual([]);
+
+      await mergeServiceOf(prisma).merge(
+        { sourcePatientId: duplicate.id, targetPatientId: survivor.id },
+        { userId: (await createUser(prisma)).id },
+      );
+
+      // PR-067: reescribir el borrador ya la informa …
+      const rewritten = await service.rewrite(
+        {
+          prescriptionId: composed.prescription.id,
+          ...INDICATIONS,
+          items: [aLine(concept.id)],
+        },
+        args,
+      );
+      expect(rewritten.allergyAlerts).toEqual([
+        { line: 1, allergyId: expect.any(String), match: 'EXACT' },
+      ]);
+      // … y PR-060: emitir se rechaza.
+      await expect(
+        service.issue(composed.prescription.id, args),
+      ).rejects.toMatchObject({ code: 'ALLERGY_CONTRAINDICATION' });
+    });
+
+    /**
+     * LA CUARTA RAMA DEL FILTRO: la alergia está en OTRA ficha que la misma
+     * superviviente absorbió. Desde D hay que subir a S y bajar a la hermana.
+     * Y deshacer la fusión de D la devuelve a ser ella sola.
+     */
+    it('PR-118 la alergia de otra absorbida por la misma superviviente bloquea, y deja de hacerlo al deshacer la fusión', async () => {
+      const prisma = db();
+      const {
+        encounter,
+        patient: duplicate,
+        requester,
+      } = await anEncounter(prisma);
+      const survivor = await createPatient(prisma);
+      const sibling = await createPatient(prisma);
+      const concept = await aCnmbConcept(prisma, {
+        code: 'J01CA04',
+        display: 'Amoxicilina',
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+      });
+      await prisma.patientAllergy.create({
+        data: {
+          recordedById: (await createUser(prisma)).id,
+          patientId: sibling.id,
+          substanceConceptId: concept.id,
+          substanceText: 'Amoxicilina',
+          criticality: 'HIGH',
+        },
+      });
+      const merges = mergeServiceOf(prisma);
+      const desk = { userId: (await createUser(prisma)).id };
+      await merges.merge(
+        { sourcePatientId: sibling.id, targetPatientId: survivor.id },
+        desk,
+      );
+      await merges.merge(
+        { sourcePatientId: duplicate.id, targetPatientId: survivor.id },
+        desk,
+      );
+
+      const args = { userId: requester.userId, sites: [...requester.sites] };
+      const service = serviceOf(prisma);
+      const composed = await service.compose(
+        {
+          encounterId: encounter.id,
+          ...INDICATIONS,
+          items: [aLine(concept.id)],
+        },
+        args,
+      );
+      expect(composed.allergyAlerts).toEqual([
+        { line: 1, allergyId: expect.any(String), match: 'EXACT' },
+      ]);
+      await expect(
+        service.issue(composed.prescription.id, args),
+      ).rejects.toMatchObject({ code: 'ALLERGY_CONTRAINDICATION' });
+
+      // Deshecha la fusión de D, la hermana vuelve a ser otra persona.
+      await merges.undo({ sourcePatientId: duplicate.id }, desk);
+      await expect(
+        service.issue(composed.prescription.id, args),
+      ).resolves.toMatchObject({ status: 'ACTIVE' });
+    });
   });
 
   it('PR-063 una alergia refutada deja emitir', async () => {

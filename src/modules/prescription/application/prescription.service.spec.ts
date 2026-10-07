@@ -11,7 +11,7 @@ import type {
 } from '../../../shared/audit/access-audit.port';
 import type {
   ActiveAllergy,
-  ActiveAllergyReader,
+  SurvivingChartAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
 import {
   WallClockTime,
@@ -305,10 +305,10 @@ class FakeRepository implements PrescriptionRepository {
  * the service ASKS it — that the answer resolves the merge link is proved
  * against a real database in `test/integration/prescription-issue.spec.ts`.
  */
-class FakeAllergyReader implements ActiveAllergyReader {
+class FakeAllergyReader implements SurvivingChartAllergyReader {
   allergies: ActiveAllergy[] = [];
 
-  activeFor(): Promise<readonly ActiveAllergy[]> {
+  activeForSurvivorOf(): Promise<readonly ActiveAllergy[]> {
     return Promise.resolve(this.allergies);
   }
 }

@@ -3,7 +3,7 @@ import { Module } from '@nestjs/common';
 
 import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
-import { ACTIVE_ALLERGY_READER } from '../../shared/clinical/patient-allergy.port';
+import { SURVIVING_CHART_ALLERGY_READER } from '../../shared/clinical/patient-allergy.port';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 import { PrismaActiveAllergyReader } from '../../shared/infrastructure/clinical/prisma-active-allergy.reader';
 import { ALLERGY_ABSENCE_READER } from '../../shared/clinical/allergy-absence.port';
@@ -59,8 +59,14 @@ import { PrismaPrescriptionRepository } from './infrastructure/prisma-prescripti
      * one statement for the whole system, so the doctor's screen and the
      * prescriber's check cannot disagree — and neither of them can forget
      * `chartScope` on its own.
+     *
+     * PR-118. Wired under the prescription's own question, «from the
+     * surviving chart», which the same class answers.
      */
-    { provide: ACTIVE_ALLERGY_READER, useClass: PrismaActiveAllergyReader },
+    {
+      provide: SURVIVING_CHART_ALLERGY_READER,
+      useClass: PrismaActiveAllergyReader,
+    },
     // PR-117. The standing «sin alergias conocidas» the receta prints.
     { provide: ALLERGY_ABSENCE_READER, useClass: PrismaAllergyAbsenceReader },
     { provide: ACCESS_AUDIT_RECORDER, useClass: PrismaAccessAuditRecorder },

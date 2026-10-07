@@ -2,7 +2,7 @@ import { admitsPrescribing } from '../domain/prescription';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
+import { chartScopeOfSurvivor } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   matchingPresentations,
@@ -432,14 +432,20 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
        * `ActiveAllergyReader`, AND THE REASON IS THE TRANSACTION. The shared
        * reader takes the pooled client, so its statement would run OUTSIDE this
        * transaction — a read the write cannot see, which is exactly the race
-       * this closure exists to close. It runs on `tx` with the SAME predicate:
-       * `chartScope` plus `refutedAt: null`. Everywhere else in this module the
-       * allergies come from the shared port, so this is the single exception
-       * and it is written down rather than left to be discovered.
+       * this closure exists to close. It runs on `tx` with the SAME predicate
+       * as `SurvivingChartAllergyReader`: `chartScopeOfSurvivor` plus
+       * `refutedAt: null`. Everywhere else in this module the allergies come
+       * from the shared port, so this is the single exception and it is
+       * written down rather than left to be discovered.
+       *
+       * PR-118 (D-169.2). FROM THE SURVIVING CHART, and not `chartScope`: the
+       * attention may belong to a duplicate merged after it was opened, and
+       * from there `chartScope` never climbs to the chart that holds the
+       * allergy.
        */
       const allergies = await tx.patientAllergy.findMany({
         where: {
-          ...chartScope(current.encounter.patientId),
+          ...chartScopeOfSurvivor(current.encounter.patientId),
           refutedAt: null,
         },
         select: { id: true, substanceConceptId: true, substanceText: true },

@@ -4,8 +4,12 @@ import { Prisma } from '@prisma/client';
 import type {
   ActiveAllergy,
   ActiveAllergyReader,
+  SurvivingChartAllergyReader,
 } from '../../clinical/patient-allergy.port';
-import { chartScope } from '../prisma/patient-chart-scope';
+import {
+  chartScope,
+  chartScopeOfSurvivor,
+} from '../prisma/patient-chart-scope';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -37,7 +41,9 @@ import { PrismaService } from '../prisma/prisma.service';
  * about the chart that two modules depend on is not the property of either.
  */
 @Injectable()
-export class PrismaActiveAllergyReader implements ActiveAllergyReader {
+export class PrismaActiveAllergyReader
+  implements ActiveAllergyReader, SurvivingChartAllergyReader
+{
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -64,9 +70,38 @@ export class PrismaActiveAllergyReader implements ActiveAllergyReader {
    * kills. The day it ever needs a `LIMIT`, the sort has to move into the
    * statement, and this comment is the warning.
    */
-  async activeFor(chartId: string): Promise<readonly ActiveAllergy[]> {
+  activeFor(chartId: string): Promise<readonly ActiveAllergy[]> {
+    return this.activeWithin(chartId, 'CHART');
+  }
+
+  /**
+   * PR-118 (D-169.2). The same list, from the SURVIVING chart: up to the one
+   * that absorbed `chartId` and down to all it absorbed. What a prescription
+   * checks, because the attention it is written in may belong to a duplicate
+   * merged after it was opened.
+   */
+  activeForSurvivorOf(chartId: string): Promise<readonly ActiveAllergy[]> {
+    return this.activeWithin(chartId, 'SURVIVOR');
+  }
+
+  /**
+   * The one statement both reaches go through: unrefuted, worst first.
+   *
+   * THE SCOPE IS CALLED INSIDE THE `where` and not passed in built:
+   * `patient-chart-scope.spec.ts` reads this `where` and only trusts a call to
+   * the shared resolution it can see there.
+   */
+  private async activeWithin(
+    chartId: string,
+    reach: 'CHART' | 'SURVIVOR',
+  ): Promise<readonly ActiveAllergy[]> {
     const rows = await this.prisma.patientAllergy.findMany({
-      where: { ...chartScope(chartId), refutedAt: null },
+      where: {
+        ...(reach === 'SURVIVOR'
+          ? chartScopeOfSurvivor(chartId)
+          : chartScope(chartId)),
+        refutedAt: null,
+      },
       select: ALLERGY_SELECT,
       orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }],
     });

@@ -105,3 +105,30 @@ export interface ActiveAllergyReader {
 
 /** Injection token. No caller ever names the adapter. */
 export const ACTIVE_ALLERGY_READER = Symbol('ActiveAllergyReader');
+
+/**
+ * PR-118 (D-169.2). The allergies a PRESCRIPTION checks: those of the person,
+ * from whichever of her charts the attention was opened on.
+ *
+ * ⚠️ A SEPARATE PORT AND NOT A SECOND METHOD OF `ActiveAllergyReader`, because
+ * the two answer different questions. `activeFor` is «what this chart and the
+ * ones it absorbed say» — the band of an attention reads it. This one also
+ * climbs to the chart that absorbed the one asked about: an attention opened
+ * on a duplicate that admissions merged afterwards is still open (the merge
+ * does not look at attentions), and the surviving chart's allergy has to stop
+ * the prescription written in it. The same adapter answers both, so the
+ * predicate is still written once (`patient-chart-scope.ts`).
+ */
+export interface SurvivingChartAllergyReader {
+  /**
+   * PR-027, PR-060, PR-062, PR-067, PR-118. The unrefuted allergies of the
+   * surviving chart of `chartId` and of every chart it absorbed, worst first.
+   * For a chart nobody absorbed it is exactly `activeFor`.
+   */
+  activeForSurvivorOf(chartId: string): Promise<readonly ActiveAllergy[]>;
+}
+
+/** Injection token. No caller ever names the adapter. */
+export const SURVIVING_CHART_ALLERGY_READER = Symbol(
+  'SurvivingChartAllergyReader',
+);
