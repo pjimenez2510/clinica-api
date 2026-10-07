@@ -413,6 +413,8 @@ function toDiagnosisResponse(diagnosis: DiagnosisView): DiagnosisResponse {
     // EN-046. Derived from the frozen code, served so nobody derives it twice.
     careModality: diagnosis.careModality,
     notifiable: diagnosis.notifiable,
+    // EN-235. Whether its code may be the principal.
+    mayBePrincipal: diagnosis.mayBePrincipal,
     note: diagnosis.note,
     recordedAt: diagnosis.recordedAt.toISOString(),
     editedAt: diagnosis.editedAt?.toISOString() ?? null,

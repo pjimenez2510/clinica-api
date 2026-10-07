@@ -10,9 +10,9 @@ import {
   EncounterAppointmentMismatchError,
   EncounterNotFoundError,
   InvalidEncounterTransitionError,
-  VitalsCorrectionRequiresSignatureError,
 } from '../domain/encounter.errors';
 import { subjectStatusAfter } from '../domain/patient-flow';
+import { vitalsCorrectionRefusal } from '../domain/practitioner-licence';
 import type { ClosurePlan } from '../domain/encounter-closure';
 import type {
   ChartHistoryQuery,
@@ -27,6 +27,7 @@ import type {
   SiteScopeFilter,
   SubjectStatusStamp,
   VitalSignsView,
+  VitalsCorrectionAuthority,
   VitalsVersionView,
 } from '../domain/encounter.repository';
 import type { AnthropometryField, VitalSigns } from '../domain/vital-signs';
@@ -493,7 +494,7 @@ export class PrismaEncounterRepository implements EncounterRepository {
     query: EncounterQuery,
     vitals: VitalSigns,
     authorId: string,
-    mayCorrectAfterDischarge: boolean,
+    authority: VitalsCorrectionAuthority,
   ): Promise<VitalSignsView> {
     const measurements = {
       weightKg: vitals.weightKg,
@@ -527,10 +528,14 @@ export class PrismaEncounterRepository implements EncounterRepository {
          WHERE id = ${query.encounterId}::uuid
            FOR UPDATE`;
       if (attention?.reported) throw new EncounterAlreadyReportedError();
-      // EN-228, D-134.3. After the discharge only whoever signs history at the
-      // site corrects the taking — asked here too, under the lock.
-      if (attention?.discharged && !mayCorrectAfterDischarge) {
-        throw new VitalsCorrectionRequiresSignatureError();
+      // EN-228, D-134.3, D-140.4. After the discharge only whoever signs
+      // history at the site, with a practitioner profile and an ACESS
+      // registration in force, corrects the taking — asked here too, under
+      // the lock, with the sentence the service gives.
+      if (attention?.discharged && !authority.mayCorrectAfterDischarge) {
+        throw vitalsCorrectionRefusal(
+          authority.afterDischargeRefusal ?? 'NOT_SIGNER',
+        );
       }
 
       /**

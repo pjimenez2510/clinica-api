@@ -13,6 +13,10 @@ import {
 } from './chart-summary.controller';
 import { ChartSummaryService } from './application/chart-summary.service';
 import { ClinicalCodingController } from './clinical-coding.controller';
+import { DentalIndexController } from './dental-index.controller';
+import { DentalIndexService } from './application/dental-index.service';
+import { DENTAL_INDEX_REPOSITORY } from './domain/dental-index.repository';
+import { PrismaDentalIndexRepository } from './infrastructure/prisma-dental-index.repository';
 import { ClinicalCodingService } from './application/clinical-coding.service';
 import { ClinicalNoteController } from './clinical-note.controller';
 import { NoteTemplateController } from './note-template.controller';
@@ -86,6 +90,7 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
     EncounterExitController,
     ClinicalNoteController,
     ClinicalCodingController,
+    DentalIndexController,
     PatientAllergyController,
     PatientHistoryController,
     ChartSummaryController,
@@ -96,6 +101,7 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
     EncounterExitService,
     ClinicalNoteService,
     ClinicalCodingService,
+    DentalIndexService,
     PatientAllergyService,
     NoKnownAllergiesService,
     PatientHistoryService,
@@ -115,6 +121,10 @@ import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-
     {
       provide: CLINICAL_CODING_REPOSITORY,
       useClass: PrismaClinicalCodingRepository,
+    },
+    {
+      provide: DENTAL_INDEX_REPOSITORY,
+      useClass: PrismaDentalIndexRepository,
     },
     {
       provide: PATIENT_ALLERGY_REPOSITORY,

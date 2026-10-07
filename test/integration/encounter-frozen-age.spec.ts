@@ -72,6 +72,49 @@ describe('la edad congelada en la atención contra PostgreSQL', () => {
     });
   });
 
+  it('EN-008 la edad congelada en años, meses y días no se cambia con un UPDATE, y el resto de la atención sí', async () => {
+    const prisma = db();
+    const now = new Date();
+    const scene = await aScene(prisma);
+    await prisma.patient.update({
+      where: { id: scene.patient.id },
+      data: { birthDate: bornDaysAgo(now, 4000) },
+    });
+    const encounter = await prisma.encounter.create({
+      data: {
+        siteId: scene.site.id,
+        practitionerId: scene.practitioner.id,
+        patientId: scene.patient.id,
+        startedAt: now,
+        careModality: 'MORBIDITY',
+        visitSequence: 'SUBSEQUENT',
+      },
+      select: { id: true, ageYears: true, ageMonths: true, ageDays: true },
+    });
+    expect(encounter.ageYears).toBe(10);
+
+    for (const column of ['age_years', 'age_months', 'age_days']) {
+      await expect(
+        prisma.$executeRawUnsafe(`UPDATE "encounter" SET "${column}" = NULL WHERE "id" = $1::uuid`, encounter.id), // prettier-ignore
+      ).rejects.toThrow(/EN-008/);
+    }
+    // The same value is not a change: an UPDATE that lists it goes through.
+    await prisma.$executeRaw`UPDATE "encounter" SET "age_years" = ${encounter.ageYears} WHERE "id" = ${encounter.id}::uuid`; // prettier-ignore
+    // Positive control: another column of the attention changes.
+    await prisma.encounter.update({
+      where: { id: encounter.id },
+      data: { careSetting: 'EXTRAMURAL' },
+    });
+    await expect(
+      prisma.encounter.findUniqueOrThrow({ where: { id: encounter.id } }),
+    ).resolves.toMatchObject({
+      ageYears: encounter.ageYears,
+      ageMonths: encounter.ageMonths,
+      ageDays: encounter.ageDays,
+      careSetting: 'EXTRAMURAL',
+    });
+  });
+
   it('ORD-127 corregir la fecha de la ficha no cambia la edad con que se clasifica; una atención nueva sí la toma', async () => {
     const prisma = db();
     const now = new Date();

@@ -759,6 +759,11 @@ export const DOMAIN_ERROR_CODES = [
   'CONCEPT_WRONG_CATALOGUE',
   'DIAGNOSIS_CONCEPT_NOT_IN_FORCE',
   'DIAGNOSIS_PRIMARY_TAKEN',
+  //   * `DIAGNOSIS_PRINCIPAL_USE_INVALID` (422) — EN-235 (D-147.3). Un
+  //     asterisco o una causa externa como principal. Lo garantiza
+  //     `trg_encounter_diagnosis_principal_use` y llega por el mapeo; el
+  //     adaptador lo pregunta antes, como `DIAGNOSIS_PRIMARY_TAKEN`.
+  'DIAGNOSIS_PRINCIPAL_USE_INVALID',
   //   * `DIAGNOSIS_NOT_FOUND` (404) — EN-180, EN-183. No es de esa atención o ya
   //     se quitó: el mismo para las dos, como `ENCOUNTER_NOT_FOUND`.
   //   * `DIAGNOSIS_RETRACTION_REASON_REQUIRED` (422) — EN-214, EN-189.
@@ -798,6 +803,11 @@ export const DOMAIN_ERROR_CODES = [
   //   * `VITALS_CORRECTION_REQUIRES_SIGNATURE` (403) — EN-228 (D-134.3). Tras
   //     el alta corrige la toma quien tiene `record:sign` en la sede.
   'VITALS_CORRECTION_REQUIRES_SIGNATURE',
+  //   * `DENTAL_INDEX_NOT_APPLICABLE` (422) — EN-052 (D-160). El CEO-D o el
+  //     CPO-D fuera de odontología, fuera de su tramo de edad congelada o con
+  //     la cuenta del otro índice. Lo dicen el servicio y la base
+  //     (`encounter_dental_index_applies`).
+  'DENTAL_INDEX_NOT_APPLICABLE',
   // ── H6: alergias visibles durante la consulta ──────────────────────────
   //   * `PATIENT_ALLERGY_NOT_FOUND` (404) — EN-082. La alergia no está en esa
   //     ficha ni en ninguna que esa ficha absorbiera. **Uno solo para «no

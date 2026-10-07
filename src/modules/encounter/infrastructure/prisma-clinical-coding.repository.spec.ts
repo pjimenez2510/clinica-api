@@ -120,6 +120,8 @@ function prismaDouble(options: {
           notifiable: data.notifiable,
           note: data.note ?? null,
           recordedAt: new Date('2026-08-14T14:20:00Z'),
+          // EN-235. The concept's attributes, selected alongside the row.
+          concept: { attributes: { use: 'PRINCIPAL' } },
         });
       },
     },

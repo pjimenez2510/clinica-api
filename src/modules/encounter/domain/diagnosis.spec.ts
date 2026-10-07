@@ -4,8 +4,11 @@ import {
   PRIMARY_RANK,
   careModalityOfCie10,
   cie10CategoryOf,
+  cie10UseOf,
   isPrimary,
+  mayBePrincipal,
   nextRankAfter,
+  rankOnRestore,
 } from './diagnosis';
 
 /**
@@ -92,5 +95,32 @@ describe('prevención o morbilidad, servida con cada diagnóstico (EN-186)', () 
     expect(careModalityOfCie10('Z99')).toBe('PREVENTION');
     expect(careModalityOfCie10('J02')).toBe('MORBIDITY');
     expect(careModalityOfCie10('Y98')).toBe('MORBIDITY');
+  });
+});
+
+describe('EN-235 lo que no puede ser el principal', () => {
+  it('EN-235 un asterisco y una causa externa no pueden ser principal; un PRINCIPAL y un concepto sin uso, sí', () => {
+    expect(mayBePrincipal('ASTERISK')).toBe(false);
+    expect(mayBePrincipal('EXTERNAL_CAUSE')).toBe(false);
+    expect(mayBePrincipal('PRINCIPAL')).toBe(true);
+    expect(mayBePrincipal(null)).toBe(true);
+  });
+
+  it('EN-235 lee el uso de los atributos del concepto, y nada que no sea uno de los tres', () => {
+    expect(cie10UseOf({ use: 'ASTERISK', level: 3 })).toBe('ASTERISK');
+    expect(cie10UseOf({ use: 'EXTERNAL_CAUSE' })).toBe('EXTERNAL_CAUSE');
+    expect(cie10UseOf({ use: 'PRINCIPAL' })).toBe('PRINCIPAL');
+    expect(cie10UseOf({ use: 'asterisk' })).toBeNull();
+    expect(cie10UseOf({ level: 3 })).toBeNull();
+    expect(cie10UseOf(null)).toBeNull();
+    expect(cie10UseOf('ASTERISK')).toBeNull();
+  });
+
+  it('EN-213 EN-235 deshacer devuelve el principal a su sitio si sigue libre y su código puede serlo; si no, detrás y nunca como 1', () => {
+    expect(rankOnRestore(1, [2], true)).toBe(1);
+    expect(rankOnRestore(1, [1, 2], true)).toBe(3);
+    expect(rankOnRestore(1, [2], false)).toBe(3);
+    expect(rankOnRestore(1, [], false)).toBe(2);
+    expect(rankOnRestore(2, [1], false)).toBe(2);
   });
 });

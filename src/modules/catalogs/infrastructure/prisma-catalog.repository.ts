@@ -5,6 +5,7 @@ import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.serv
 import type {
   CatalogBrowseCriteria,
   CatalogConcept,
+  CatalogConceptUse,
   CatalogPage,
   CatalogRepository,
   CatalogSearchCriteria,
@@ -27,6 +28,8 @@ interface FilaConcepto {
   chapter: string | null;
   chapterDisplay: string | null;
   level: number;
+  /** EN-235. `attributes.use`, as the WHO import wrote it. */
+  use: string | null;
   /**
    * Si el catálogo del que sale forma un árbol.
    *
@@ -100,6 +103,7 @@ const CONCEPT_COLUMNS = Prisma.sql`
   c.attributes->>'chapter' AS chapter,
   capitulo.display AS "chapterDisplay",
   COALESCE((c.attributes->>'level')::int, 0) AS level,
+  c.attributes->>'use' AS use,
   s.hierarchical
 `;
 
@@ -434,6 +438,7 @@ export class PrismaCatalogRepository implements CatalogRepository {
         cadena.attributes->>'chapter' AS chapter,
         capitulo.display AS "chapterDisplay",
         COALESCE((cadena.attributes->>'level')::int, 0) AS level,
+        cadena.attributes->>'use' AS use,
         s.hierarchical,
         cadena.depth
       FROM cadena
@@ -489,5 +494,16 @@ function toConcept(fila: FilaConcepto): CatalogConcept {
      * acepta.
      */
     selectable: !fila.hierarchical || fila.level >= NIVEL_SELECCIONABLE,
+    // EN-235. Only the three uses the WHO list has; anything else says nothing.
+    use: conceptUseOf(fila.use),
   };
+}
+
+/** EN-235. `attributes.use` when it is one of the WHO list's three, else `null`. */
+function conceptUseOf(
+  use: string | null | undefined,
+): CatalogConceptUse | null {
+  return use === 'PRINCIPAL' || use === 'ASTERISK' || use === 'EXTERNAL_CAUSE'
+    ? use
+    : null;
 }

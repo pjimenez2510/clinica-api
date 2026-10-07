@@ -7,6 +7,7 @@ import {
   DiagnosisConceptNotInForceError,
   DiagnosisNotFoundError,
   DiagnosisPrimaryTakenError,
+  DiagnosisPrincipalUseInvalidError,
   DiagnosisRetractionReasonRequiredError,
   DiagnosisLastAfterDischargeError,
   DiagnosisPrimaryRequiredAfterDischargeError,
@@ -27,9 +28,13 @@ import {
   hasDischarge,
 } from '../domain/encounter-state';
 import {
+  type Cie10Use,
   careModalityOfCie10,
+  cie10UseOf,
   isPrimary,
+  mayBePrincipal,
   nextRankAfter,
+  rankOnRestore,
 } from '../domain/diagnosis';
 import type {
   AfterDischargeRefusal,
@@ -116,6 +121,19 @@ type DiagnosisRow = Prisma.EncounterDiagnosisGetPayload<{
 }>;
 
 /**
+ * EN-235. `DIAGNOSIS_SELECT` with the concept's attributes, which say whether
+ * it may be the principal. What every read of a live diagnosis selects.
+ */
+const DIAGNOSIS_WITH_USE_SELECT = {
+  ...DIAGNOSIS_SELECT,
+  concept: { select: { attributes: true } },
+} satisfies Prisma.EncounterDiagnosisSelect;
+
+type DiagnosisWithUseRow = Prisma.EncounterDiagnosisGetPayload<{
+  select: typeof DIAGNOSIS_WITH_USE_SELECT;
+}>;
+
+/**
  * ⚠️ `tariffAmount` IS NOT SELECTED, AND THAT IS THE REQUIREMENT (EN-051). A
  * value that is never loaded cannot leak into a response, a screen or an
  * invoice raised from the wrong side of the boundary.
@@ -142,6 +160,8 @@ interface ConceptRow {
   concept_code: string;
   concept_display: string;
   in_force: boolean;
+  /** EN-235. `attributes.use`, as the WHO import wrote it. */
+  use: string | null;
 }
 
 /**
@@ -218,6 +238,10 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       if (isPrimary(rank) && ranksInUse.some((row) => isPrimary(row.rank))) {
         throw new DiagnosisPrimaryTakenError();
       }
+      // EN-235. The trigger is the guarantee; this is its sentence.
+      if (isPrimary(rank) && !conceptMayBePrincipal(concept)) {
+        throw new DiagnosisPrincipalUseInvalidError();
+      }
 
       return tx.encounterDiagnosis.create({
         data: {
@@ -238,11 +262,11 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           notifiable: diagnosis.notifiable ?? false,
           note: diagnosis.note,
         },
-        select: DIAGNOSIS_SELECT,
+        select: DIAGNOSIS_WITH_USE_SELECT,
       });
     });
 
-    return toDiagnosisView(row);
+    return toLiveDiagnosisView(row);
   }
 
   /**
@@ -262,9 +286,9 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       // EN-043, EN-047. `rank` IS the priority order and 1 is the principal,
       // so this is the order the export takes its three from.
       orderBy: [{ rank: 'asc' }, { recordedAt: 'asc' }],
-      select: DIAGNOSIS_SELECT,
+      select: DIAGNOSIS_WITH_USE_SELECT,
     });
-    return rows.map(toDiagnosisView);
+    return rows.map(toLiveDiagnosisView);
   }
 
   /**
@@ -414,6 +438,10 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         change.diagnosisId,
       );
       if (isPrimary(target.rank)) return;
+      // EN-235. Asked before anything moves: the trigger says it too.
+      if (!mayBePrincipal(target.use)) {
+        throw new DiagnosisPrincipalUseInvalidError();
+      }
       await promote(tx, change.encounterId, target, change, now);
     });
 
@@ -441,9 +469,13 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       await refuseCorrection(tx, edit.encounterId, status, edit);
       const current = await tx.encounterDiagnosis.findFirst({
         where: { id: edit.diagnosisId, encounterId: edit.encounterId },
-        select: { ...DIAGNOSIS_SELECT },
+        select: DIAGNOSIS_WITH_USE_SELECT,
       });
       if (!current) throw new DiagnosisNotFoundError();
+      // EN-235. Whether the code it ends with may be the principal.
+      let endsMayBePrincipal = mayBePrincipal(
+        cie10UseOf(current.concept.attributes),
+      );
 
       let identity: Prisma.EncounterDiagnosisUncheckedUpdateInput = {};
       if (
@@ -460,6 +492,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           throw new ConceptWrongCatalogueError(CIE10);
         }
         if (!concept.in_force) throw new DiagnosisConceptNotInForceError();
+        endsMayBePrincipal = conceptMayBePrincipal(concept);
 
         if (concept.concept_code !== current.cie10Code) {
           const [paper] = await tx.$queryRaw<
@@ -485,6 +518,19 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           cie10Code: concept.concept_code,
           cie10Display: concept.concept_display,
         };
+      }
+
+      // EN-235. It becomes the principal, or the principal changes its code,
+      // to a code that may not be one. A principal coded before the rule is
+      // not judged while neither its rank nor its code changes.
+      const becomesPrincipal =
+        edit.primary === true && !isPrimary(current.rank);
+      const principalRecoded =
+        isPrimary(current.rank) &&
+        edit.primary !== false &&
+        'conceptId' in identity;
+      if ((becomesPrincipal || principalRecoded) && !endsMayBePrincipal) {
+        throw new DiagnosisPrincipalUseInvalidError();
       }
 
       let rank: number | undefined;
@@ -519,7 +565,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       if (Object.keys(changes).length === 0) {
         return tx.encounterDiagnosis.findUniqueOrThrow({
           where: { id: current.id },
-          select: DIAGNOSIS_SELECT,
+          select: DIAGNOSIS_WITH_USE_SELECT,
         });
       }
 
@@ -536,11 +582,11 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           editedById: edit.editedById,
           editedAt: stampAfter(stamped?.edited_at ?? null, now),
         },
-        select: DIAGNOSIS_SELECT,
+        select: DIAGNOSIS_WITH_USE_SELECT,
       });
     });
 
-    return toDiagnosisView(row);
+    return toLiveDiagnosisView(row);
   }
 
   /**
@@ -596,7 +642,9 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       lineage.push({ id: earlier.id, headReason: earlier.editReason });
     }
 
-    const views: DiagnosisVersionView[] = [];
+    const pending: (Omit<DiagnosisVersionView, 'diagnosis'> & {
+      snapshot: DiagnosisSnapshot;
+    })[] = [];
     for (const row of lineage) {
       const versions = await this.prisma.recordVersion.findMany({
         where: { resourceType: 'encounter_diagnosis', resourceId: row.id },
@@ -614,7 +662,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
             ? row.headReason
             : (versions[index - 1]!.data as unknown as DiagnosisSnapshot)
                 .edit_reason;
-        views.push({
+        pending.push({
           version: version.version,
           replacedBy: {
             id: version.changedBy.id,
@@ -622,15 +670,28 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           },
           replacedAt: version.changedAt,
           reason: replacing ?? null,
-          diagnosis: toDiagnosisView(
-            diagnosisRowFromSnapshot(
-              version.data as unknown as DiagnosisSnapshot,
-            ),
-          ),
+          snapshot: version.data as unknown as DiagnosisSnapshot,
         });
       });
     }
-    return views;
+
+    // EN-235. The use of every concept the versions name, in one statement.
+    const concepts = await this.prisma.catalogConcept.findMany({
+      where: {
+        id: { in: [...new Set(pending.map((v) => v.snapshot.concept_id))] },
+      },
+      select: { id: true, attributes: true },
+    });
+    const useOf = new Map(
+      concepts.map((concept) => [concept.id, cie10UseOf(concept.attributes)]),
+    );
+    return pending.map(({ snapshot, ...version }) => ({
+      ...version,
+      diagnosis: toDiagnosisView(
+        diagnosisRowFromSnapshot(snapshot),
+        useOf.get(snapshot.concept_id) ?? null,
+      ),
+    }));
   }
 
   /**
@@ -666,12 +727,17 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       if (live.some((d) => d.cie10Code === archived.cie10Code)) {
         throw new DiagnosisNotRestorableError();
       }
-      const ranks = live.map((d) => d.rank);
-      // A principal comes back as principal only if the place is still free.
-      const rank =
-        isPrimary(archived.rank) && ranks.some(isPrimary)
-          ? nextRankAfter(ranks)
-          : archived.rank;
+      // A principal comes back as principal only if the place is still free
+      // and its code may still be the principal (EN-235): otherwise behind.
+      const concept = await tx.catalogConcept.findUnique({
+        where: { id: archived.conceptId },
+        select: { attributes: true },
+      });
+      const rank = rankOnRestore(
+        archived.rank,
+        live.map((d) => d.rank),
+        mayBePrincipal(cie10UseOf(concept?.attributes ?? null)),
+      );
 
       const restored = await tx.encounterDiagnosis.create({
         data: {
@@ -686,7 +752,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           note: archived.note,
           recordedAt: archived.recordedAt,
         },
-        select: DIAGNOSIS_SELECT,
+        select: DIAGNOSIS_WITH_USE_SELECT,
       });
       // `encounter_diagnosis_retraction_frozen` admits this once, and only
       // towards that very diagnosis back on its attention.
@@ -701,7 +767,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       return restored;
     });
 
-    return toDiagnosisView(row);
+    return toLiveDiagnosisView(row);
   }
 
   /**
@@ -908,13 +974,22 @@ async function requireDiagnosisOf(
   tx: Prisma.TransactionClient,
   encounterId: string,
   diagnosisId: string,
-): Promise<{ id: string; rank: number }> {
+): Promise<{ id: string; rank: number; use: Cie10Use | null }> {
   const diagnosis = await tx.encounterDiagnosis.findFirst({
     where: { id: diagnosisId, encounterId },
-    select: { id: true, rank: true },
+    select: { id: true, rank: true, concept: { select: { attributes: true } } },
   });
   if (!diagnosis) throw new DiagnosisNotFoundError();
-  return diagnosis;
+  return {
+    id: diagnosis.id,
+    rank: diagnosis.rank,
+    use: cie10UseOf(diagnosis.concept.attributes),
+  };
+}
+
+/** EN-235. Whether a concept read by `conceptForEncounter` may be the principal. */
+function conceptMayBePrincipal(concept: ConceptRow): boolean {
+  return mayBePrincipal(cie10UseOf({ use: concept.use }));
 }
 
 /**
@@ -1029,6 +1104,7 @@ async function conceptForEncounter(
     SELECT cs."code"::text                 AS system_code,
            cc."code"::text                 AS concept_code,
            cc."display"::text              AS concept_display,
+           cc."attributes"->>'use'         AS use,
            (cc."valid_period" @> (e."started_at" AT TIME ZONE 'America/Guayaquil')::date)
                                            AS in_force
       FROM "encounter" AS e
@@ -1106,8 +1182,17 @@ function diagnosisRowFromSnapshot(snapshot: DiagnosisSnapshot): DiagnosisRow {
   };
 }
 
+/** EN-235. A live row, with its concept's use read alongside. */
+function toLiveDiagnosisView(row: DiagnosisWithUseRow): DiagnosisView {
+  const { concept, ...diagnosis } = row;
+  return toDiagnosisView(diagnosis, cie10UseOf(concept.attributes));
+}
+
 /** An `encounter_diagnosis` row as the domain reads it. */
-function toDiagnosisView(row: DiagnosisRow): DiagnosisView {
+function toDiagnosisView(
+  row: DiagnosisRow,
+  use: Cie10Use | null,
+): DiagnosisView {
   return {
     id: row.id,
     encounterId: row.encounterId,
@@ -1130,6 +1215,8 @@ function toDiagnosisView(row: DiagnosisRow): DiagnosisView {
      */
     careModality: careModalityOfCie10(row.cie10Code),
     notifiable: row.notifiable,
+    // EN-235. From the concept's use, which is where the WHO list says it.
+    mayBePrincipal: mayBePrincipal(use),
     note: row.note,
     recordedAt: row.recordedAt,
     editedAt: row.editedAt,

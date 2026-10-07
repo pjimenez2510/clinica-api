@@ -137,6 +137,8 @@ export interface NoteEncounterRead {
   dischargeCondition: string | null;
   /** EN-020. Diagnoses on the attention, read inside the signing transaction. */
   diagnosisCount: number;
+  /** EN-236. Whether one of them is the principal (rank 1). */
+  hasPrincipalDiagnosis: boolean;
 }
 
 /**

@@ -2615,6 +2615,7 @@ model Encounter {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   vitals             EncounterVitals?
+  dentalIndex        EncounterDentalIndex?
   violenceScreening  ViolenceScreening?
   priorityGroups     EncounterPriorityGroup[]
   diagnoses          EncounterDiagnosis[]
@@ -2692,6 +2693,35 @@ model EncounterVitals {
   correctedAt   DateTime? @map("corrected_at") @db.Timestamptz(6)
 
   @@map("encounter_vitals")
+}
+
+/// EN-052. The CEO-D or CPO-D of an odontology attention — columns 101 to 104
+/// of the RDACAA form. Which index applies is decided by the age FROZEN on the
+/// attention (`trg_encounter_dental_index_applies`, D-160); corrected in place
+/// and versioned in `record_version` (EN-210). The foreign keys to `app_user`
+/// exist in SQL and are not declared as relations: that would add
+/// back-relation fields to `User`, owned by `auth`, for queries nobody makes.
+model EncounterDentalIndex {
+  encounterId String    @id @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  /// Column 101. Both indices.
+  decayed   Int? @db.SmallInt
+  /// Column 102. CEO-D only (primary teeth).
+  extracted Int? @db.SmallInt
+  /// Column 103. Both indices.
+  filled    Int? @db.SmallInt
+  /// Column 104. CPO-D only (permanent teeth).
+  missing   Int? @db.SmallInt
+
+  recordedById String   @map("recorded_by_id") @db.Uuid
+  recordedAt   DateTime @map("recorded_at") @db.Timestamptz(6)
+
+  /// EN-210. The stamp of the last correction; both or neither.
+  editedById String?   @map("edited_by_id") @db.Uuid
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+
+  @@map("encounter_dental_index")
 }
 
 /// RDACAA priority and vulnerable groups, recorded per attention.

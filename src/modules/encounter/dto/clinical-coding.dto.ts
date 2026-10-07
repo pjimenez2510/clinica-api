@@ -239,6 +239,12 @@ export const diagnosisSchema = z.object({
    */
   careModality: CARE_MODALITY,
   notifiable: z.boolean(),
+  /**
+   * EN-235 (D-147.3). `false` when its code is an asterisk or an external
+   * cause of the WHO's list: it is never the principal, so the screen does
+   * not offer «Marcar principal» for it.
+   */
+  mayBePrincipal: z.boolean(),
   note: z.string().nullable(),
   recordedAt: z.iso.datetime(),
   /** EN-212. When it was last edited; `null` if never. */

@@ -58,7 +58,17 @@ export interface CatalogConcept {
    * en vez de quedarse en una convención que alguien recuerda.
    */
   selectable: boolean;
+  /**
+   * EN-235 (D-147.3). What the WHO's CIE-10 list says the code may be used
+   * for: `ASTERISK` and `EXTERNAL_CAUSE` are never the principal diagnosis.
+   * `null` for a concept that does not say — another catalogue, or the
+   * development edition before the WHO's.
+   */
+  use: CatalogConceptUse | null;
 }
+
+/** EN-234, EN-235. The sheet of the WHO list a CIE-10 code comes from. */
+export type CatalogConceptUse = 'PRINCIPAL' | 'ASTERISK' | 'EXTERNAL_CAUSE';
 
 /**
  * One text search over one catalogue: codes still valid on `on` that resemble

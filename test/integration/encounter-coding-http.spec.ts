@@ -246,6 +246,8 @@ describe('el bloque K por HTTP', () => {
       display: string;
       validFrom?: Date;
       validTo?: Date | null;
+      /** EN-235. The use the WHO list gives the code, if any. */
+      use?: 'PRINCIPAL' | 'ASTERISK' | 'EXTERNAL_CAUSE';
     },
   ): Promise<string> {
     const system = await prisma.catalogSystem.upsert({
@@ -260,6 +262,7 @@ describe('el bloque K por HTTP', () => {
         display: concept.display,
         validFrom: concept.validFrom ?? new Date('2019-01-01'),
         validTo: concept.validTo ?? null,
+        ...(concept.use === undefined ? {} : { attributes: { level: 3, use: concept.use } }), // prettier-ignore
       },
     });
     return row.id;
@@ -1814,6 +1817,213 @@ describe('el bloque K por HTTP', () => {
       });
       const refused = await post(`/encounters/${encounterId}/diagnoses`, doctorToken, aDiagnosisBody(fever)).expect(409); // prettier-ignore
       expect((refused.body as Problem).code).toBe('ENCOUNTER_ALREADY_CLOSED');
+    });
+  });
+
+  describe('EN-235 lo que no puede ser el diagnóstico principal', () => {
+    const patch = (path: string, body: object) =>
+      request(app.getHttpServer())
+        .patch(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${doctorToken}`)
+        .send(body);
+
+    const refusal = {
+      status: 422,
+      code: 'DIAGNOSIS_PRINCIPAL_USE_INVALID',
+      errors: [
+        {
+          field: 'conceptId',
+          code: 'DIAGNOSIS_PRINCIPAL_USE_INVALID',
+          message: 'Registre primero la enfermedad o la lesión',
+        },
+      ],
+    };
+
+    async function concepts() {
+      return {
+        lesion: await aConcept('CIE10', { code: 'S52.5', display: 'Fractura de la epífisis inferior del radio', use: 'PRINCIPAL' }), // prettier-ignore
+        cause: await aConcept('CIE10', { code: 'W19.0', display: 'Caída no especificada, en vivienda', use: 'EXTERNAL_CAUSE' }), // prettier-ignore
+        asterisk: await aConcept('CIE10', { code: 'G63.2', display: 'Polineuropatía diabética', use: 'ASTERISK' }), // prettier-ignore
+      };
+    }
+
+    const diagnoses = async (encounterId: string) =>
+      ((await get(`/encounters/${encounterId}/diagnoses`, doctorToken).expect(200)).body as { items: (DiagnosisBody & { mayBePrincipal: boolean })[] }).items; // prettier-ignore
+
+    it('EN-235 registrar como primer diagnóstico una causa externa responde 422 con la frase y no registra nada; detrás del principal se registra', async () => {
+      const encounterId = await openEncounter();
+      const { lesion, cause } = await concepts();
+      const path = `/encounters/${encounterId}/diagnoses`;
+
+      const refused = await post(path, doctorToken, aDiagnosisBody(cause)).expect(422); // prettier-ignore
+      expect(refused.body).toMatchObject(refusal);
+      expect(refused.headers['content-type']).toContain(
+        'application/problem+json',
+      );
+      expect(await diagnoses(encounterId)).toEqual([]);
+      const explicit = await post(path, doctorToken, aDiagnosisBody(cause, { rank: 1 })).expect(422); // prettier-ignore
+      expect(explicit.body).toMatchObject(refusal);
+
+      // Positive control: the lesion first, then the cause behind it.
+      const first = await post(path, doctorToken, aDiagnosisBody(lesion)).expect(201); // prettier-ignore
+      expect(first.body).toMatchObject({ cie10Code: 'S52.5', rank: 1, mayBePrincipal: true }); // prettier-ignore
+      const second = await post(path, doctorToken, aDiagnosisBody(cause)).expect(201); // prettier-ignore
+      expect(second.body).toMatchObject({ cie10Code: 'W19.0', rank: 2, mayBePrincipal: false }); // prettier-ignore
+    });
+
+    it('EN-235 marcar principal un asterisco, por su ruta o por la edición, responde 422 y el principal sigue siendo el mismo', async () => {
+      const encounterId = await openEncounter();
+      const { lesion, asterisk } = await concepts();
+      const path = `/encounters/${encounterId}/diagnoses`;
+      await post(path, doctorToken, aDiagnosisBody(lesion)).expect(201);
+      const companion = (await post(path, doctorToken, aDiagnosisBody(asterisk)).expect(201)).body as DiagnosisBody; // prettier-ignore
+
+      const promoted = await post(`${path}/${companion.id}/primary`, doctorToken).expect(422); // prettier-ignore
+      expect(promoted.body).toMatchObject(refusal);
+      const edited = await patch(`${path}/${companion.id}`, { primary: true }).expect(422); // prettier-ignore
+      expect(edited.body).toMatchObject(refusal);
+
+      expect((await diagnoses(encounterId)).map((d) => [d.cie10Code, d.rank, d.mayBePrincipal])).toEqual([
+        ['S52.5', 1, true],
+        ['G63.2', 2, false],
+      ]); // prettier-ignore
+      // Positive control: the same edit without making it the principal.
+      await patch(`${path}/${companion.id}`, { certainty: 'PRESUMPTIVE' }).expect(200); // prettier-ignore
+    });
+
+    it('EN-235 cambiar el código del principal a una causa externa responde 422 y no cambia el código; el del secundario, sí', async () => {
+      const encounterId = await openEncounter();
+      const { lesion, cause, asterisk } = await concepts();
+      const path = `/encounters/${encounterId}/diagnoses`;
+      const head = (await post(path, doctorToken, aDiagnosisBody(lesion)).expect(201)).body as DiagnosisBody; // prettier-ignore
+      const companion = (await post(path, doctorToken, aDiagnosisBody(asterisk)).expect(201)).body as DiagnosisBody; // prettier-ignore
+
+      const refused = await patch(`${path}/${head.id}`, { conceptId: cause }).expect(422); // prettier-ignore
+      expect(refused.body).toMatchObject(refusal);
+      expect((await diagnoses(encounterId))[0]).toMatchObject({ cie10Code: 'S52.5', rank: 1 }); // prettier-ignore
+
+      const recoded = await patch(`${path}/${companion.id}`, { conceptId: cause }).expect(200); // prettier-ignore
+      expect(recoded.body).toMatchObject({ cie10Code: 'W19.0', rank: 2, mayBePrincipal: false }); // prettier-ignore
+    });
+
+    it('EN-235 deshacer el quitar de un principal cuyo código ya no puede serlo lo devuelve detrás, sin error', async () => {
+      const encounterId = await openEncounter();
+      // Coded as principal before the WHO edition said it was an asterisk.
+      const legacy = await aConcept('CIE10', { code: 'H36.0', display: 'Retinopatía diabética' }); // prettier-ignore
+      const path = `/encounters/${encounterId}/diagnoses`;
+      const head = (await post(path, doctorToken, aDiagnosisBody(legacy)).expect(201)).body as DiagnosisBody; // prettier-ignore
+      expect(head.rank).toBe(1);
+      await prisma.catalogConcept.update({ where: { id: legacy }, data: { attributes: { level: 3, use: 'ASTERISK' } } }); // prettier-ignore
+      await post(`${path}/${head.id}/retract`, doctorToken).expect(204);
+
+      const restored = await post(`${path}/${head.id}/restore`, doctorToken).expect(200); // prettier-ignore
+      expect(restored.body).toMatchObject({ cie10Code: 'H36.0', rank: 2, mayBePrincipal: false }); // prettier-ignore
+    });
+  });
+
+  describe('EN-052 el índice CEO-D / CPO-D por HTTP', () => {
+    const put = (path: string, token: string, body: object) =>
+      request(app.getHttpServer())
+        .put(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body);
+
+    /** The doctor's primary specialty: odontology, or another. */
+    async function practises(code: string): Promise<void> {
+      const specialty = await prisma.specialty.create({
+        data: { code, name: code === 'odontologia' ? 'Odontología' : 'Medicina general' }, // prettier-ignore
+      });
+      await prisma.practitionerSpecialty.create({
+        data: { practitionerId: doctorPractitionerId, specialtyId: specialty.id, isPrimary: true }, // prettier-ignore
+      });
+    }
+
+    /** An attention an hour ago of a patient that many years old then. */
+    async function anAttentionOfAge(years: number): Promise<string> {
+      const startedAt = new Date(Date.now() - 3_600_000);
+      const [y, m, d] = clinicalDateOf(startedAt).split('-').map(Number) as [number, number, number]; // prettier-ignore
+      const patient = await createPatient(prisma, {
+        birthDate: new Date(Date.UTC(y - years, m - 4, d)),
+      });
+      const response = await post('/encounters', doctorToken, {
+        siteId,
+        practitionerId: doctorPractitionerId,
+        patientId: patient.id,
+        startedAt: startedAt.toISOString(),
+        careModality: 'MORBIDITY',
+        visitSequence: 'FIRST_TIME',
+      }).expect(201);
+      return (response.body as { id: string }).id;
+    }
+
+    it('EN-052 en odontología dice qué índice toca y guarda el CEO-D; la corrección deja la anterior versionada', async () => {
+      await practises('odontologia');
+      const encounterId = await anAttentionOfAge(8);
+      const path = `/encounters/${encounterId}/dental-index`;
+
+      expect((await get(path, doctorToken).expect(200)).body).toEqual({ index: 'CEO_D', reading: null }); // prettier-ignore
+      const saved = await put(path, doctorToken, { index: 'CEO_D', decayed: 2, extracted: 1, filled: 3 }).expect(200); // prettier-ignore
+      expect(saved.body).toMatchObject({
+        index: 'CEO_D',
+        reading: { decayed: 2, extracted: 1, filled: 3, missing: null, editedAt: null }, // prettier-ignore
+      });
+      await put(path, doctorToken, { index: 'CEO_D', decayed: 3, extracted: 1, filled: 3 }).expect(200); // prettier-ignore
+      expect(((await get(path, doctorToken).expect(200)).body as { reading: { decayed: number; editedAt: string | null } }).reading).toMatchObject({ decayed: 3, editedAt: expect.any(String) }); // prettier-ignore
+      expect(await prisma.recordVersion.count({ where: { resourceType: 'encounter_dental_index', resourceId: encounterId } })).toBe(1); // prettier-ignore
+      // GET with nothing recorded leaves no trail; CREATE, UPDATE and the READ do.
+      expect(await auditRows('encounter_dental_index')).toBe(3);
+      // The same counts again write nothing, and nothing is audited.
+      await put(path, doctorToken, { index: 'CEO_D', decayed: 3, extracted: 1, filled: 3 }).expect(200); // prettier-ignore
+      expect(await auditRows('encounter_dental_index')).toBe(3);
+      expect(await prisma.recordVersion.count({ where: { resourceType: 'encounter_dental_index', resourceId: encounterId } })).toBe(1); // prettier-ignore
+    });
+
+    it('EN-052 D-160 fuera de odontología no toca índice, y guardarlo responde 422 DENTAL_INDEX_NOT_APPLICABLE sin escribir', async () => {
+      await practises('medicina_general');
+      const encounterId = await anAttentionOfAge(30);
+      const path = `/encounters/${encounterId}/dental-index`;
+
+      expect((await get(path, doctorToken).expect(200)).body).toEqual({ index: null, reading: null }); // prettier-ignore
+      const refused = await put(path, doctorToken, { index: 'CPO_D', decayed: 1, missing: 0, filled: 2 }).expect(422); // prettier-ignore
+      expect(refused.body).toMatchObject({
+        code: 'DENTAL_INDEX_NOT_APPLICABLE',
+        title: 'Esta atención no lleva ese índice odontológico: sólo en odontología, el CEO-D con más de 6 meses y menos de 11 años, y el CPO-D desde los 12 años', // prettier-ignore
+      });
+      expect(await prisma.encounterDentalIndex.count()).toBe(0);
+    });
+
+    it('EN-052 D-160 a los 11 años no toca ninguno; con la cuenta del otro índice se rechaza; en su tramo el CPO-D entra', async () => {
+      await practises('odontologia');
+      const eleven = await anAttentionOfAge(11);
+      expect((await get(`/encounters/${eleven}/dental-index`, doctorToken).expect(200)).body).toMatchObject({ index: null }); // prettier-ignore
+      await put(`/encounters/${eleven}/dental-index`, doctorToken, { index: 'CEO_D', decayed: 1, extracted: 0, filled: 1 }).expect(422); // prettier-ignore
+
+      const adult = await anAttentionOfAge(30);
+      const path = `/encounters/${adult}/dental-index`;
+      const crossed = await put(path, doctorToken, { index: 'CPO_D', decayed: 1, extracted: 1, missing: 0, filled: 1 }).expect(422); // prettier-ignore
+      expect((crossed.body as Problem).code).toBe(
+        'DENTAL_INDEX_NOT_APPLICABLE',
+      );
+      const tooMany = await put(path, doctorToken, { index: 'CPO_D', decayed: 33, missing: 0, filled: 1 }).expect(422); // prettier-ignore
+      expect((tooMany.body as Problem).errors).toEqual([expect.objectContaining({ field: 'decayed', code: 'TOO_BIG' })]); // prettier-ignore
+      const overTotal = await put(path, doctorToken, { index: 'CPO_D', decayed: 11, missing: 11, filled: 11 }).expect(422); // prettier-ignore
+      expect((overTotal.body as Problem).errors).toEqual([expect.objectContaining({ field: 'index', message: 'Entre cariados, perdidos y obturados no pueden pasar de los 32 dientes permanentes' })]); // prettier-ignore
+      const incomplete = await put(path, doctorToken, { index: 'CPO_D', decayed: 1, filled: 1 }).expect(422); // prettier-ignore
+      expect((incomplete.body as Problem).errors?.map((e) => e.field)).toContain('missing'); // prettier-ignore
+
+      // Positive control: its own counts, in its band.
+      await put(path, doctorToken, { index: 'CPO_D', decayed: 1, missing: 0, filled: 1 }).expect(200); // prettier-ignore
+    });
+
+    it('EN-052 ENFERMERÍA no registra el índice, y sin sesión no se lee', async () => {
+      await practises('odontologia');
+      const encounterId = await anAttentionOfAge(30);
+      const path = `/encounters/${encounterId}/dental-index`;
+
+      await put(path, nurseToken, { index: 'CPO_D', decayed: 1, missing: 0, filled: 1 }).expect(403); // prettier-ignore
+      await request(app.getHttpServer()).get(`/api/v1${path}`).expect(401);
+      // Positive control: the doctor does.
+      await put(path, doctorToken, { index: 'CPO_D', decayed: 1, missing: 0, filled: 1 }).expect(200); // prettier-ignore
     });
   });
 });

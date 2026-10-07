@@ -317,6 +317,11 @@ export function assertNoteComplete(
    * the doctor reads everything missing in one refusal.
    */
   withoutDiagnosis = false,
+  /**
+   * EN-236. True when the note discharges the attention and none of its
+   * diagnoses is the principal (rank 1).
+   */
+  withoutPrincipal = false,
 ): void {
   const background = backgroundSnapshotIn(content);
   const missing: string[] = [];
@@ -350,7 +355,17 @@ export function assertNoteComplete(
     }
   }
 
-  if (missing.length > 0 || invalid.length > 0 || withoutDiagnosis) {
-    throw new NoteContentIncompleteError(missing, invalid, withoutDiagnosis);
+  if (
+    missing.length > 0 ||
+    invalid.length > 0 ||
+    withoutDiagnosis ||
+    withoutPrincipal
+  ) {
+    throw new NoteContentIncompleteError(
+      missing,
+      invalid,
+      withoutDiagnosis,
+      withoutPrincipal,
+    );
   }
 }

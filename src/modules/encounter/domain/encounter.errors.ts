@@ -516,8 +516,14 @@ export class NoteContentIncompleteError extends ValidationError {
     invalid: readonly string[] = [],
     /** EN-020. The 002 discharges the attention, and that needs a diagnosis. */
     withoutDiagnosis = false,
+    /** EN-236. And one of them the principal (rank 1). */
+    withoutPrincipal = false,
   ) {
-    const named = withoutDiagnosis ? [...missing, 'diagnoses'] : missing;
+    const named = [
+      ...missing,
+      ...(withoutDiagnosis ? ['diagnoses'] : []),
+      ...(withoutPrincipal ? ['principalDiagnosis'] : []),
+    ];
     super(
       `Form is missing mandatory sections: ${named.join(', ')}`,
       { missing: named.join(','), invalid: invalid.join(',') },
@@ -538,6 +544,16 @@ export class NoteContentIncompleteError extends ValidationError {
                 field: 'diagnoses',
                 code: 'NOTE_CONTENT_INCOMPLETE',
                 message: 'Registre al menos un diagnóstico antes de firmar',
+              },
+            ]
+          : []),
+        ...(withoutPrincipal
+          ? [
+              {
+                field: 'principalDiagnosis',
+                code: 'NOTE_CONTENT_INCOMPLETE',
+                message:
+                  'Registre la enfermedad o la lesión como diagnóstico principal antes de firmar',
               },
             ]
           : []),
@@ -963,6 +979,33 @@ export class DiagnosisPrimaryTakenError extends ConflictError {
 }
 
 /**
+ * EN-235 (D-147.3). An asterisk or an external cause of the WHO's list left
+ * as the principal: registering it first, recoding the principal to it, or
+ * marking it principal.
+ *
+ * GUARANTEED BY `trg_encounter_diagnosis_principal_use`, which the constraint
+ * mapping turns into this same code; the adapter asks it first under the
+ * attention's lock so the refusal carries its sentence — the two paths of
+ * `DIAGNOSIS_PRIMARY_TAKEN`.
+ */
+export class DiagnosisPrincipalUseInvalidError extends ValidationError {
+  readonly code = 'DIAGNOSIS_PRINCIPAL_USE_INVALID';
+  override readonly userTitle =
+    'Registre primero la enfermedad o la lesión: un código asterisco o de causa externa no puede ser el diagnóstico principal';
+  override readonly fieldErrors = [
+    {
+      field: 'conceptId',
+      code: 'DIAGNOSIS_PRINCIPAL_USE_INVALID',
+      message: 'Registre primero la enfermedad o la lesión',
+    },
+  ];
+
+  constructor() {
+    super('An asterisk or external-cause code cannot be the principal');
+  }
+}
+
+/**
  * EN-082. The allergy named is not on this chart, nor on any chart it
  * absorbed.
  *
@@ -1352,5 +1395,21 @@ export class NoteTemplateStaleError extends ConflictError {
       expected: String(expected),
       current: String(current),
     });
+  }
+}
+
+/**
+ * EN-052, D-160. The CEO-D or the CPO-D asked of an attention that does not
+ * take it: not odontology, a frozen age in neither band (11 years, 6 months or
+ * less, unknown), or the counts of the other index. The database says the
+ * same for the age and the counts (`encounter_dental_index_applies`).
+ */
+export class DentalIndexNotApplicableError extends BusinessRuleViolation {
+  readonly code = 'DENTAL_INDEX_NOT_APPLICABLE';
+  override readonly userTitle =
+    'Esta atención no lleva ese índice odontológico: sólo en odontología, el CEO-D con más de 6 meses y menos de 11 años, y el CPO-D desde los 12 años';
+
+  constructor() {
+    super('The dental index does not apply to this encounter');
   }
 }

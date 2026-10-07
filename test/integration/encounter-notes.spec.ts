@@ -56,7 +56,7 @@ const SIGNED_AT = new Date('2026-08-14T15:00:00Z');
 const notesOf = (prisma: PrismaClient) =>
   new PrismaClinicalNoteRepository(prisma as unknown as PrismaService);
 
-async function aDraft(prisma: PrismaClient) {
+async function aDraft(prisma: PrismaClient, diagnosisCode = 'J00') {
   const site = await createSite(prisma);
   const practitioner = await createPractitioner(prisma);
   const patient = await createPatient(prisma);
@@ -74,7 +74,7 @@ async function aDraft(prisma: PrismaClient) {
   });
 
   // EN-020. Signing the 002 discharges, and a discharge needs a diagnosis.
-  await createDiagnosis(prisma, encounter.id, 'J00');
+  await createDiagnosis(prisma, encounter.id, diagnosisCode);
 
   const note = await notesOf(prisma).createDraft({
     encounterId: encounter.id,
@@ -580,5 +580,57 @@ describe('la nota clínica firmada', () => {
     });
     expect(after.content).toEqual(COMPLETE_002);
     expect(after.contentHash).toBe(signed.contentHash);
+  });
+
+  it('EN-236 la BASE rechaza firmar la 002 que da el alta sin diagnóstico principal, y la firma con él', async () => {
+    const prisma = db();
+    const ids = await aDraft(prisma);
+    // The attention has its diagnosis, but behind: nothing is the principal.
+    await prisma.$executeRaw`
+      UPDATE encounter_diagnosis
+         SET rank = 2, edited_by_id = ${ids.practitioner.userId}::uuid, edited_at = ${new Date()}
+       WHERE encounter_id = ${ids.encounter.id}::uuid`;
+
+    await failsWith(
+      sign(prisma, ids, ids.encounter.id, ids.note.id),
+      'clinical_note_sign_needs_principal_diagnosis',
+    );
+    const unsigned = await prisma.clinicalNote.findUniqueOrThrow({ where: { id: ids.note.id } }); // prettier-ignore
+    expect(unsigned.status).toBe('DRAFT');
+
+    // Positive control: back as the principal, the same note signs.
+    await prisma.$executeRaw`
+      UPDATE encounter_diagnosis
+         SET rank = 1, edited_by_id = ${ids.practitioner.userId}::uuid, edited_at = ${new Date(Date.now() + 1000)}
+       WHERE encounter_id = ${ids.encounter.id}::uuid`;
+    const signed = await sign(prisma, ids, ids.encounter.id, ids.note.id);
+    expect(signed.status).toBe('SIGNED');
+  });
+
+  it('EN-236 con EN-235 la BASE rechaza firmar el alta cuyo principal se reclasificó como asterisco o causa externa, y la firma cuando vuelve a ser principal', async () => {
+    const prisma = db();
+    // A code no other test uses: the reclassification is this test's alone.
+    const ids = await aDraft(prisma, 'K35.8');
+    const reclassify = (use: string) => prisma.$executeRaw`
+      UPDATE catalog_concept
+         SET attributes = jsonb_build_object('use', ${use}::text)
+       WHERE code = 'K35.8'`;
+
+    // The rank 1 was written before the catalogue said what it is: the
+    // EN-235 trigger never judged it, the signature must.
+    for (const use of ['ASTERISK', 'EXTERNAL_CAUSE']) {
+      await reclassify(use);
+      await failsWith(
+        sign(prisma, ids, ids.encounter.id, ids.note.id),
+        'clinical_note_sign_needs_principal_diagnosis',
+      );
+      const unsigned = await prisma.clinicalNote.findUniqueOrThrow({ where: { id: ids.note.id } }); // prettier-ignore
+      expect(unsigned.status).toBe('DRAFT');
+    }
+
+    // Positive control: the same rank 1, back as a disease, signs.
+    await reclassify('PRINCIPAL');
+    const signed = await sign(prisma, ids, ids.encounter.id, ids.note.id);
+    expect(signed.status).toBe('SIGNED');
   });
 });

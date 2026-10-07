@@ -328,6 +328,11 @@ export class ClinicalNoteService {
           template,
           content,
           form.dischargesTheEncounter && encounter.diagnosisCount === 0,
+          // EN-236. And one of them the principal: the RDACAA counts the
+          // consultation in its cause.
+          form.dischargesTheEncounter &&
+            encounter.diagnosisCount > 0 &&
+            !encounter.hasPrincipalDiagnosis,
         );
 
         /**
