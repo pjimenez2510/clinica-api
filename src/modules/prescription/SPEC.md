@@ -221,12 +221,11 @@ que la emisión se rechaza.
 **Cubre:** PR-060 a PR-067, PR-118.
 
 **Solo servidor:** PR-118. El rechazo y la alerta del borrador son los de
-PR-060 y PR-067 y viajan por las mismas respuestas. ⚠️ **No es «lo mismo en
-pantalla»:** la pestaña de receta toma su lista de alergias —el aviso previo a
-componer y las sustancias que nombra un rechazo (PR-112)— de la banda de la
-atención, que lee con `chartScope` y no sube. En la atención de una ficha
-absorbida, la pestaña puede callar una alergia que el servidor sí bloquea y el
-PDF sí imprime (D-169.2).
+PR-060 y PR-067 y viajan por las mismas respuestas. La pestaña de receta toma
+su lista de alergias —el aviso previo a componer y las sustancias que nombra un
+rechazo (PR-112)— de la banda y del resumen de la atención, que desde EN-237
+leen también desde la superviviente: en la atención de una ficha absorbida la
+pestaña dice la alergia que el servidor bloquea (EN-238, recorrido F-04).
 
 ### H5 — Controlados: el documento que NO emitimos _(P3)_
 
@@ -893,11 +892,11 @@ Hay tres niveles de comprobación y **sólo el primero se construye**:
   > absorbidas (`prisma-document-source.reader.ts`), para que el bloqueo, el
   > documento que sirve este módulo y el PDF digan lo mismo.
   >
-  > Sólo la receta. La banda de la atención —y con ella la lista de alergias
-  > que pinta la pestaña de receta— y el resto de `encounter` siguen leyendo
-  > con `chartScope`; si la fusión debe rechazar una duplicada con
-  > atenciones abiertas, o la atención de una ficha absorbida dejar de admitir
-  > contenido, lo decide el autor (D-169.2).
+  > La banda de la atención lee esta misma sentencia, y el resumen y la foto
+  > de antecedentes al firmar leen desde la superviviente (EN-237, `encounter`);
+  > si la fusión debe rechazar una duplicada con atenciones abiertas, o la
+  > atención de una ficha absorbida dejar de admitir contenido, lo decide el
+  > autor (D-169.2).
 
 - **PR-063** — Una alergia **refutada** NO DEBERÁ interrumpir la emisión.
 
