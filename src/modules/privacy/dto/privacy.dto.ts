@@ -219,3 +219,10 @@ export const dataRequestListSchema = z.object({
   items: z.array(dataRequestSchema).readonly(),
 });
 export class DataRequestListDto extends createZodDto(dataRequestListSchema) {}
+
+/** PD-049. The answer proposed for an access or portability request. */
+export const answerProposalSchema = z.object({
+  response: z.string().max(DATA_REQUEST_TEXT_MAX_LENGTH),
+});
+export class AnswerProposalDto extends createZodDto(answerProposalSchema) {}
+export type AnswerProposalResponse = z.infer<typeof answerProposalSchema>;

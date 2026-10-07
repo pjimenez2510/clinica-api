@@ -6,7 +6,7 @@ import {
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
-import { EXPORT_OMISSIONS } from '../domain/data-export';
+import { answerProposal, EXPORT_OMISSIONS } from '../domain/data-export';
 import { legalDueDate } from '../domain/legal-due-date';
 import {
   ConsentTextInvalidError,
@@ -86,6 +86,7 @@ function requestRepository(
     edit: vi.fn(),
     correctAnswer: vi.fn(),
     find: vi.fn().mockResolvedValue(null),
+    rightOf: vi.fn().mockResolvedValue(null),
     requestsOf: vi.fn().mockResolvedValue([]),
     open: vi.fn().mockResolvedValue([]),
     exportChart: vi.fn(),
@@ -319,6 +320,50 @@ describe('DataSubjectRequestsService', () => {
     );
 
     await expect(service.export('r-1', WHO, NOW)).rejects.toBeInstanceOf(
+      DataRequestNotFoundError,
+    );
+  });
+});
+
+describe('la propuesta de respuesta (D-164.2)', () => {
+  it.each(['ACCESS', 'PORTABILITY'] as const)(
+    'PD-049 a %s le propone lo que el archivo no lleva, sin escribir nada',
+    async (right) => {
+      const answer = vi.fn();
+      const exportChart = vi.fn();
+      const find = vi.fn();
+      const rightOf = vi.fn().mockResolvedValue(right);
+      const audit = { record: vi.fn() };
+      const service = new DataSubjectRequestsService(
+        requestRepository({ rightOf, find, answer, exportChart }),
+        audit,
+      );
+
+      await expect(service.answerProposal('r-1')).resolves.toBe(
+        answerProposal(EXPORT_OMISSIONS),
+      );
+      // Only the right is read: not the request's view, with what was asked.
+      expect(find).not.toHaveBeenCalled();
+      expect(answer).not.toHaveBeenCalled();
+      expect(exportChart).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    },
+  );
+
+  it('PD-049 otro derecho es DATA_EXPORT_NOT_APPLICABLE', async () => {
+    const service = newRequestsService(
+      requestRepository({
+        rightOf: vi.fn().mockResolvedValue('RECTIFICATION'),
+      }),
+    );
+    await expect(service.answerProposal('r-1')).rejects.toBeInstanceOf(
+      DataExportNotApplicableError,
+    );
+  });
+
+  it('PD-049 una solicitud inexistente es DATA_REQUEST_NOT_FOUND', async () => {
+    const service = newRequestsService(requestRepository());
+    await expect(service.answerProposal('r-1')).rejects.toBeInstanceOf(
       DataRequestNotFoundError,
     );
   });
