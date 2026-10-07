@@ -358,7 +358,8 @@ porque se actúa sobre él.
 `agenda_status_history` tiene su fila, que la tasa de inasistencia del día **no
 subió** y que el recuento propio sí; y registrar una llegada sin calificación de
 emergencia y comprobar que se rechaza.
-**Cubre:** AG-116 a AG-120, AG-128 a AG-132, AG-140, AG-141, AG-142.
+**Cubre:** AG-116 a AG-120, AG-128 a AG-132, AG-140, AG-141, AG-142,
+AG-173 a AG-175.
 
 **Solo servidor:** AG-132, AG-140. La inmutabilidad del registro de la
 calificación son dos disparadores de PostgreSQL, por la misma razón que AG-005;
@@ -448,6 +449,11 @@ su fila de historial, que el servidor rechaza `LEFT_WITHOUT_BEING_SEEN` y
 `CANCELLED` sobre ella, y que el menú ya no los ofrece.
 **Cubre:** AG-045, AG-146 a AG-150, AG-153, **AG-160 y AG-161** (ver la atención de una cita cerrada, 04-10-2026). Decisiones D-076, D-077, D-080,
 D-081, D-082, D-085, D-099.
+
+**Solo interfaz:** AG-160, AG-161. Las dos dicen qué hace la PANTALLA con una
+cita cerrada —qué botón ofrece, qué abre y a dónde vuelve—; lo que el servidor
+pone de su parte es la búsqueda de la atención por la cita, que es EN-208 y se
+prueba en `encounter`.
 
 > **AG-045 se cubre otra vez aquí** porque su mitad visible nace en esta
 > entrega; su mitad de servidor sigue en E2.
@@ -1306,7 +1312,9 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > enumeran los admitidos «para que añadir un valor obligue a decidir aquí»:
   > eso es cierto de la mitad `BLOCK` del `CHECK`, no de la otra.
   >
-  > **Falta esquema.** Queda `agenda_entry.left_without_being_seen_reason`, y el
+  > **Esquema resuelto el 20-08-2026** (`20260820121023_agenda_outcomes_and_board`):
+  > `agenda_entry.left_without_being_seen_at` y `left_without_being_seen_reason`. Lo que decía el recuadro:
+  > faltaba el motivo, y el
   > instante: `agenda_entry` tiene `checked_in_at`, `no_show_at` y
   > `cancelled_at`, y el desenlace nuevo no tiene el suyo. No basta con la fila
   > de `agenda_status_history` —ahí está, pero AG-140 filtra por desenlace y
@@ -1347,7 +1355,8 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > citas y lo prohíbe para los bloqueos sin tocar el `CHECK`, por lo que se
   > explica en AG-116.
   >
-  > **Falta esquema.** `agenda_entry.entered_in_error_at` y su motivo. **No** se
+  > **Esquema resuelto el 20-08-2026** (`20260820121023_agenda_outcomes_and_board`):
+  > `agenda_entry.entered_in_error_at` y su motivo. **No** se
   > reutiliza la columna de motivo de anulación: el motivo de una retractación
   > no es el de una anulación, y una sola columna haría incomprobable desde la
   > fila cuál de los dos actos ocurrió — que es justo lo que este requisito
@@ -1388,12 +1397,41 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   >
   > **No lleva código de error** porque no es un error: viaja en el cuerpo de la
   > respuesta correcta, como la advertencia de feriado de AG-110.
+- **AG-173** — CUANDO se registre la llegada de una cita cuyo día en
+  `America/Guayaquil` no sea el de hoy en `America/Guayaquil`, el sistema DEBERÁ
+  rechazarlo con `ARRIVAL_NOT_ON_APPOINTMENT_DAY`; y la pantalla NO DEBERÁ
+  ofrecer «Registrar llegada» sobre ella.
+  > **D-153.6 (resuelta el 07-10-2026).** La revisión clínica del rediseño de
+  > recepción vio que nada impedía registrar la llegada sobre la cita de otro
+  > día abierta desde un enlace guardado: el tablero de ayer con la fila de hoy
+  > de un paciente que vino una vez. Una llegada registrada en la cita
+  > equivocada escribe la calificación de emergencia del art. 10 en un día en
+  > que nadie llegó, y deja sin calificar el día en que sí.
+  >
+  > **El paciente que viene otro día no se queda sin atender**: se mueve su
+  > cita a hoy (AG-050, AG-162) o se le da una sin cita (AG-032), y su llegada
+  > se registra ahí. El mensaje lo dice. El día es el de la clínica, nunca el de
+  > la sesión (AG-001): una cita de las 19:30 de Guayaquil es del mismo día
+  > aunque en UTC ya sea mañana.
 - **AG-120** — MIENTRAS el retraso de llegada de una cita supere el umbral de la
   sede y quien solicita la transición no tenga el permiso que la sede configura
   para admitirla (AG-142), el sistema DEBERÁ rechazar el paso a `IN_PROGRESS`
-  con `LATE_ARRIVAL_NOT_AUTHORISED`, y DEBERÁ registrar quién admitió la cita
-  fuera del umbral cuando sí lo tenga. DONDE la llegada esté calificada como
-  situación de emergencia (AG-128), el umbral NO DEBERÁ aplicarse.
+  por la ruta de estado de la cita con `LATE_ARRIVAL_NOT_AUTHORISED`; CUANDO la
+  cita pase a `IN_PROGRESS` con el retraso por encima del umbral —por esa ruta
+  con el permiso, o al abrir la nota (AG-146)—, el sistema DEBERÁ registrar en
+  la cita quién la admitió fuera del umbral y en qué instante, y la pantalla
+  DEBERÁ mostrarlo en el detalle de la cita. DONDE la llegada esté calificada
+  como situación de emergencia (AG-128), el umbral NO DEBERÁ aplicarse.
+  > **Construido el 07-10-2026 (`feat/f02-desenlaces-llegada`), con D-170.2
+  > abierta.** Desde AG-146 el paso a «en atención» lo da abrir la nota, y la
+  > nota la abre el médico con el paciente delante. **La nota no se rechaza**:
+  > detener a un médico frente a su paciente por un parámetro administrativo
+  > es el daño que este requisito no quiere causar, y la reubicación es una
+  > decisión del mostrador, que es donde AG-119 la advierte. Lo que la nota sí
+  > hace es dejar constancia: `agenda_entry.late_admission_by_id` y
+  > `late_admission_at`, con quien la abrió. La ruta de estado —que la pantalla
+  > ya no ofrece, y es la que usaría cualquier otro cliente— sí rechaza.
+  > Dónde debe aplicarse el umbral es D-170.2.
 
   > **La política es de la clínica; lo que el sistema aporta es poder aplicarla
   > y dejar constancia.** Sin este requisito, «a partir de veinte minutos se
@@ -1724,9 +1762,11 @@ reclame, esa fila es la diferencia entre un incidente y una imputación penal.
   > alcanzó `CHECKED_IN`, en la forma de `agenda_entry_overbooking_coherence`.
   > Sin ese `CHECK` la exigencia vive sólo en el servicio, y una escritura por
   > fuera del módulo deja una llegada sin calificar que nada delata.
-- **AG-129** — CUANDO la calificación de emergencia sea afirmativa, el sistema
+- **AG-129** — CUANDO la calificación de emergencia sea afirmativa —al registrar
+  la llegada, o al corregirla a «sí» con el paciente en la clínica—, el sistema
   DEBERÁ avisar al profesional de turno de la sede y DEBERÁ dejar constancia del
-  aviso con su destinatario y su instante.
+  aviso con su destinatario y su instante, en la misma transacción; y la
+  pantalla DEBERÁ decir a quién se avisó.
   > **La consecuencia es fija y no configurable**, al revés que casi todo lo de
   > §10. Un aviso que una sede pueda apagar es un aviso que el día del incidente
   > no existió, y lo que la ley no admite es que la calificación no tenga
@@ -1737,12 +1777,17 @@ reclame, esa fila es la diferencia entre un incidente y una imputación penal.
   > destinatario ni hora no es prueba de nada; con ellos, la fila contesta a
   > quién se avisó y cuándo, que es lo que se pregunta después.
   >
-  > **Falta esquema.** No existe «profesional de turno» como dato: hoy la sede
-  > tiene profesionales agendables (AG-108) y reglas de horario, no un turno. Y
-  > no existe ningún canal de notificación en el sistema —el portal es Fase 3 y
-  > los recordatorios Fase 4—. Las dos piezas son de esta entrega y hay que
-  > construirlas; mientras no existan, el requisito no se puede cumplir a medias
-  > escribiendo sólo la fila.
+  > **Construido el 07-10-2026 (`feat/f02-desenlaces-llegada`), con D-170.1
+  > abierta.** Lo que faltaba eran dos piezas. **El canal**: un aviso dentro de
+  > la aplicación (AG-175), una fila por destinatario en `agenda_emergency_alert`
+  > escrita en la misma transacción que la calificación —sin la fila no hay
+  > aviso, y sin el aviso no hay fila—. **El destinatario**: no existe «turno»
+  > como dato, y quién es el profesional de turno es una decisión de la
+  > clínica (D-170.1). **Mientras decide, el aviso va al profesional de la
+  > cita**, que es quien va a recibir al paciente y el único profesional que el
+  > sistema sabe con certeza que lo espera; la respuesta y la pantalla dicen a
+  > quién se avisó. Al corregir la calificación a «sí» con el paciente en la
+  > clínica (AG-132) se avisa igual; después de que se fue, no (AG-174).
 - **AG-130** — La calificación de emergencia NO DEBERÁ admitir grados ni
   niveles, NO DEBERÁ alterar por sí sola el orden de la agenda ni la prioridad
   de la lista de espera, y NO DEBERÁ exigir ningún permiso distinto del que
@@ -1803,10 +1848,48 @@ reclame, esa fila es la diferencia entre un incidente y una imputación penal.
   > prueba lo que el art. 10 pide que se pruebe: la prueba es que la fila no ha
   > podido cambiar.
   >
-  > **Falta esquema.** Un disparador `BEFORE UPDATE` sobre `agenda_entry` que
-  > rechace modificar las tres columnas de AG-128 una vez escritas —no un
-  > disparador de tabla entera, porque la fila sí cambia por lo demás—, en la
-  > misma forma que `trg_agenda_status_history_immutable`.
+  > **Esquema resuelto**: `trg_agenda_entry_emergency_immutable`
+  > (`20260820121023_agenda_outcomes_and_board`), rehecho el 06-10-2026
+  > (`20261006152642_agenda_edit_in_place`) para admitir la corrección sellada.
+- **AG-174** — MIENTRAS la cita esté en un estado posterior a la estancia del
+  paciente —`FULFILLED`, `LEFT_WITHOUT_BEING_SEEN`, o `CANCELLED` con la
+  llegada registrada—, el sistema DEBERÁ exigir `record:write`, además del
+  permiso del registro de llegada, para corregir la calificación de emergencia
+  (AG-132), y DEBERÁ rechazarlo con
+  `EMERGENCY_CORRECTION_NEEDS_CLINICAL_PERMISSION` a quien no lo tenga; NO
+  DEBERÁ avisar a nadie (AG-129) por una corrección a «sí» hecha entonces; y la
+  pantalla NO DEBERÁ ofrecer la corrección a quien no lo tenga.
+  > **D-141.5 (resuelta el 07-10-2026).** Con el paciente en sala la corrige
+  > quien registra llegadas, porque es un error de mostrador que se ve en el
+  > momento. Después, corregirla es reescribir lo que se afirmó sobre el estado
+  > de una persona que ya no está, y eso es un juicio clínico: `record:write`,
+  > el permiso de escribir la historia, y no uno nuevo que ningún rol llevaría.
+  > La original sigue en la versión (AG-132) se corrija cuando se corrija.
+  >
+  > **Sin aviso** porque el aviso existe para recibir de inmediato (art. 8) a
+  > alguien que está en la puerta; avisar a un médico de una emergencia de
+  > ayer le haría buscar a un paciente que ya se fue.
+- **AG-175** — MIENTRAS un aviso de emergencia (AG-129) dirigido a quien tiene la
+  sesión abierta no esté marcado «Enterado», la pantalla DEBERÁ mostrarlo en
+  cualquier pantalla de la aplicación con el paciente, la sede y la hora del
+  aviso; CUANDO su destinatario lo marque «Enterado», el sistema DEBERÁ
+  registrar el instante; y el sistema NO DEBERÁ admitir que lo marque nadie más
+  que su destinatario, ni que la fila del aviso se borre o se reescriba, venga
+  de donde venga.
+  > **Lo que prueba el aviso es la fila, y lo que prueba que llegó es
+  > «Enterado».** «Se avisó» sin saber si alguien lo vio deja la misma pregunta
+  > que deja un timbre que nadie oyó. Las dos horas —la del aviso y la del
+  > enterado— son lo que se pregunta después de un incidente, y una fila que se
+  > pudiera reescribir no contestaría a ninguna: un disparador la hace
+  > append-only salvo el enterado, que se escribe una vez.
+  >
+  > **En cualquier pantalla y no en el tablero**: el médico puede estar
+  > escribiendo la nota de otro paciente, y un aviso que sólo se ve donde no
+  > está no avisa. Se consulta cada pocos segundos; no hay canal fuera de la
+  > aplicación —correo y mensajes son Fase 4—.
+  >
+  > **No reordena nada ni pide permiso propio** (AG-130): ver los avisos
+  > propios es `agenda:read`, que tiene todo profesional agendable.
 
 ## 5 quater. El tablero del día
 
@@ -2288,6 +2371,15 @@ pasó de hora.
   > Sale de dos `timestamptz` de la fila (AG-118) y del umbral vigente de la
   > sede (AG-142). No hay ningún dato nuevo que capturar, que es lo que la hace
   > cierta sin depender de que nadie se acuerde de nada.
+  >
+  > **Qué entra, construido el 07-10-2026:** las citas (`kind = APPOINTMENT`)
+  > con llegada registrada cuyo día de cita cae en el rango —fechas
+  > ecuatorianas inclusivas, como AG-080—, **salvo las del canal `WALK_IN`**:
+  > quien llega sin cita no tenía hora comprometida, su «retraso» es el tiempo
+  > que tardó recepción en teclearlo, y contarlo arrastraría la mediana hacia
+  > cero. El umbral es el vigente de la sede de cada cita, no el que regía el
+  > día de la llegada: la pregunta es cuántos llegarían tarde con la política
+  > de hoy. La mediana se sirve en minutos enteros y es `null` sin llegadas.
 
 ## 10. Parametrización
 
@@ -2387,13 +2479,16 @@ decide que el valor es configurable.
   > lo que permite a una sede desactivar la política sin migración. El
   > identificador se cita literal y este requisito usa ése, no otro.
   >
-  > **Falta esquema.** El permiso que lo salta no tiene columna:
+  > **Esquema resuelto el 20-08-2026** (`20260820121023_agenda_outcomes_and_board`):
+  > `site_parameter.late_arrival_override_permission`, con `agenda:overbook` por defecto. Desde
+  > el 07-10-2026 los dos se editan en Parámetros de la sede y AG-120 los lee.
+  > Lo que decía el recuadro: el permiso que lo salta no tenía columna:
   > `late_arrival_override_permission`, hermana de la que la sede ya usa para
   > autorizar el sobrecupo (AG-094, AG-101). Sin ella AG-120 no tiene contra qué
   > comprobar y su rechazo quedaría con el permiso quemado en el código, que es
   > lo que REQ-145 prohíbe.
   >
-  > > **[NECESITA ACLARACIÓN]** — **qué permiso** salta el umbral, y si los 15
+  > > **[NECESITA ACLARACIÓN]** (D-170.3) — **qué permiso** salta el umbral, y si los 15
   > > minutos que escribió la migración son los que la clínica quiere. Un umbral
   > > demasiado corto empuja a recepción a reprogramar a medio mundo y a
   > > saltárselo siempre, con lo que el control deja de existir; uno demasiado
@@ -2598,6 +2693,9 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `BOOKING_RETRY_EXHAUSTED`              | 503    | AG-026         |
 | `NO_SHOW_BEFORE_START`                 | 422    | AG-043         |
 | `AGENDA_ENTRY_NOT_FOUND`               | 404    | AG-071         |
+| `ARRIVAL_NOT_ON_APPOINTMENT_DAY`       | 409    | AG-173         |
+| `EMERGENCY_CORRECTION_NEEDS_CLINICAL_PERMISSION` | 403 | AG-174 |
+| `EMERGENCY_ALERT_NOT_FOUND`            | 404    | AG-175         |
 | `ACCESS_CONTEXT_NOT_FOUND`             | 404    | AG-073         |
 | `WAITLIST_ENTRY_NOT_FOUND`             | 404    | AG-071         |
 | `WAITLIST_ENTRY_CLOSED`                | 409    | AG-067         |
@@ -2726,7 +2824,9 @@ aún no está validado.
 | `GET`    | `/agenda/sites/{siteId}/board/public`                           | `agenda:board:public` | `param:siteId` | AG-136, AG-137, AG-139         |
 | `PATCH`  | `/agenda/sites/{siteId}/entries/{entryId}`                      | `agenda:write`   | `param:siteId`  | AG-050 a AG-052, AG-115, AG-162, AG-168 |
 | `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/no-show/undo`         | `agenda:write`   | `param:siteId`  | AG-163                           |
-| `PATCH`  | `/agenda/sites/{siteId}/entries/{entryId}/emergency`            | `agenda:write`   | `param:siteId`  | AG-132                           |
+| `PATCH`  | `/agenda/sites/{siteId}/entries/{entryId}/emergency`            | `agenda:write`   | `param:siteId`  | AG-132, AG-174                   |
+| `GET`    | `/agenda/emergency-alerts/mine`                                 | `agenda:read`    | `query`         | AG-129, AG-175                   |
+| `POST`   | `/agenda/emergency-alerts/{alertId}/acknowledgement`            | `agenda:read`    | `query`         | AG-175                           |
 | `PATCH`  | `/agenda/sites/{siteId}/blocks/{entryId}`                       | `agenda:write`   | `param:siteId`  | AG-164                           |
 | `POST`   | `/agenda/sites/{siteId}/blocks`                                | `agenda:write`   | `param:siteId`  | AG-037, AG-038                   |
 | `DELETE` | `/agenda/sites/{siteId}/blocks/{entryId}`                       | `agenda:write`   | `param:siteId`  | AG-114                           |
@@ -2811,6 +2911,8 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | AG-121 a AG-127                                 | Unitario de dominio (la derivación) + integración contra PostgreSQL real: el rastro es append-only y AG-122 se comprueba con la prueba de rutas de AG-070, que falla si aparece una que fije un estado derivado |
 | AG-128, AG-129, AG-131, AG-132                  | Integración contra PostgreSQL real + contrato HTTP: la constancia la garantizan un `CHECK` y un disparador, y la exigencia se comprueba mandando un registro de llegada sin calificación |
 | AG-130                                          | Seguridad dirigida: la calificación se hace con el permiso del registro de llegada y con ningún otro |
+| AG-173, AG-174                                  | Unitario de dominio con reloj inyectado (la llegada a las 19:30 de Guayaquil es del mismo día) + contrato HTTP con una sesión sin `record:write` |
+| AG-175                                          | Integración contra PostgreSQL real: el aviso nace en la transacción de la llegada, el disparador rechaza reescribirlo y borrarlo (con control positivo), y sólo el destinatario lo marca |
 | AG-133 a AG-135, AG-138                         | Contrato HTTP + unitario de dominio: el orden por hora, el tiempo calculado, y que dos roles distintos reciban conjuntos de campos distintos |
 | AG-136, AG-137                                  | Seguridad dirigida + contrato HTTP: una sesión con `agenda:board:public` y nada más no alcanza la proyección de personal, y la fila que recibe no lleva ninguno de los campos prohibidos |
 | AG-139, AG-140                                  | Integración contra PostgreSQL real: una consulta del tablero deja **una** fila de bitácora y no una por cita (SC-004), y la tasa no se mueve cuando una cita pasa a `LEFT_WITHOUT_BEING_SEEN` |
