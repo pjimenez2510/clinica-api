@@ -189,7 +189,10 @@ export class OrganizationController {
   @ApiOperation({ summary: 'Datos de una sede' })
   @ApiOkResponse({ type: SiteDto })
   async getSite(@Param('id', ParseUUIDPipe) id: string): Promise<SiteResponse> {
-    return this.visibleSite(await this.organization.getSite(id));
+    return {
+      ...this.visibleSite(await this.organization.getSite(id)),
+      mspUnicodeLocked: await this.organization.isMspUnicodeLocked(id),
+    };
   }
 
   /** OR-004, OR-005, OR-008. */

@@ -151,7 +151,15 @@ export class SiteResourcesController {
       siteId,
       query.includeInactive,
     );
-    return { items };
+    // OR-035. A site has a handful of points: one question each.
+    return {
+      items: await Promise.all(
+        items.map(async (point) => ({
+          ...point,
+          codeLocked: await this.resources.isEmissionPointCodeLocked(point.id),
+        })),
+      ),
+    };
   }
 
   /** OR-023, OR-024, OR-026. */

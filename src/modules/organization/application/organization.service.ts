@@ -278,6 +278,11 @@ export class OrganizationService {
   }
 
   /** OR-005, OR-007 (deactivate), OR-008. */
+  /** OR-034. Whether the site's MSP code is already fixed by an attention. */
+  async isMspUnicodeLocked(siteId: string): Promise<boolean> {
+    return this.repository.siteHasEncounters(siteId);
+  }
+
   async updateSite(
     id: string,
     command: UpdateSiteCommand,

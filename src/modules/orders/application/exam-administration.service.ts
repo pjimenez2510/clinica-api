@@ -95,6 +95,11 @@ export class ExamAdministrationService {
    * changing the type of an exam already charged as laboratory into imaging
    * is refused as surely as charging it with an imaging service.
    */
+  /** ORD-140. Whether an order line already froze this exam code. */
+  async isExamCodeLocked(examCode: string): Promise<boolean> {
+    return this.catalogue.examWasOrdered(examCode);
+  }
+
   async updateExam(
     id: string,
     patch: Partial<ExamWrite> & { code?: string },

@@ -178,6 +178,11 @@ export class SiteResourcesService {
     return updated;
   }
 
+  /** OR-035. Whether the point already issued an invoice or credit note. */
+  async isEmissionPointCodeLocked(id: string): Promise<boolean> {
+    return this.repository.emissionPointHasVouchers(id);
+  }
+
   /** OR-026. */
   async deleteEmissionPoint(id: string, requester: Requester): Promise<void> {
     const deleted = await this.repository.deleteEmissionPoint(id);

@@ -242,7 +242,10 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     const corrected = await send('patch', `/exam-catalogue/exams/${created.id}`, { code: 'EX-PERFIL-RENAL-2' }).expect(200); // prettier-ignore
     expect((corrected.body as AdminExam).code).toBe('EX-PERFIL-RENAL-2');
 
+    expect((await get(`/exam-catalogue/exams/${created.id}`).expect(200)).body).toMatchObject({ codeLocked: false }); // prettier-ignore
+
     const { bh } = await anIssuedBloodCount();
+    expect((await get(`/exam-catalogue/exams/${bh.id}`).expect(200)).body).toMatchObject({ codeLocked: true }); // prettier-ignore
     const refused = await send('patch', `/exam-catalogue/exams/${bh.id}`, { code: 'EX-OTRO' }).expect(409); // prettier-ignore
     expect((refused.body as Problem).code).toBe('EXAM_CODE_IN_USE');
     expect((await examCoded('EX-BH')).id).toBe(bh.id);

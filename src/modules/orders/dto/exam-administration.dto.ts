@@ -234,6 +234,8 @@ const examServiceSchema = z.object({
 export const adminExamSchema = z.object({
   id: z.uuid(),
   code: z.string(),
+  /** ORD-140. Only when reading ONE exam: an order already froze the code. */
+  codeLocked: z.boolean().optional(),
   name: z.string(),
   category: CATEGORY,
   form010Section: z.string().nullable(),

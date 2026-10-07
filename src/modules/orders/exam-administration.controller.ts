@@ -81,7 +81,11 @@ export class ExamAdministrationController {
   async exam(
     @Param('examId', ParseUUIDPipe) examId: string,
   ): Promise<AdminExamResponse> {
-    return toExamResponse(await this.catalogue.exam(examId));
+    const exam = await this.catalogue.exam(examId);
+    return {
+      ...toExamResponse(exam),
+      codeLocked: await this.catalogue.isExamCodeLocked(exam.code),
+    };
   }
 
   @Post('exams')

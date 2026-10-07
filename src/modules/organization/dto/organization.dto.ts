@@ -249,6 +249,11 @@ export const siteSchema = z.object({
   sriEstablishmentCode: z.string().nullable(),
   /** OR-007: `false` means it is not offered for new appointments. */
   active: z.boolean(),
+  /**
+   * OR-034. Only when reading ONE site: the MSP code no longer changes,
+   * because an attention already carries it.
+   */
+  mspUnicodeLocked: z.boolean().optional(),
 });
 /** Response of reading, creating and updating one site. */
 export class SiteDto extends createZodDto(siteSchema) {}
@@ -352,6 +357,8 @@ export const emissionPointSchema = z.object({
   code: z.string(),
   description: z.string().nullable(),
   active: z.boolean(),
+  /** OR-035. In the list: the code no longer changes, it issued vouchers. */
+  codeLocked: z.boolean().optional(),
 });
 /** Response of creating and updating a point of emission. */
 export class EmissionPointDto extends createZodDto(emissionPointSchema) {}
