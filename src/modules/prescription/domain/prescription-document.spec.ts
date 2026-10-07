@@ -72,6 +72,7 @@ const source = (
   },
   diagnoses: [{ code: 'J020', display: 'Faringitis estreptocócica' }],
   allergies: [{ substanceText: 'Penicilina' }],
+  noKnownAllergies: null,
   prescriber: {
     givenName: 'Ana',
     familyName: 'Villacís',
@@ -82,6 +83,40 @@ const source = (
 });
 
 describe('la receta como documento', () => {
+  it('PR-117 con alergias, la frase las nombra', () => {
+    const document = composeDocument(source(), { context: 'AMBULATORY' });
+    expect(document.allergies).toEqual(['Penicilina']);
+    expect(document.allergyHistory).toBe('Penicilina');
+  });
+
+  it('PR-117 sin alergias ni afirmación, «No registradas: pregunte al paciente»', () => {
+    const document = composeDocument(source({ allergies: [] }), {
+      context: 'AMBULATORY',
+    });
+    expect(document.allergyHistory).toBe(
+      'No registradas: pregunte al paciente',
+    );
+  });
+
+  it('PR-117 con la afirmación en pie, quién y el día en Ecuador, también bajo otro huso', () => {
+    // 20:00 UTC is 15:00 in Guayaquil: the same day in both zones.
+    const withAssertion = source({
+      allergies: [],
+      noKnownAllergies: { assertedByName: 'Ana Villacís', assertedAt: ISSUED_AT },
+    });
+    const day = ISSUED_AT.toISOString().slice(0, 10).split('-').reverse().join('/'); // prettier-ignore
+    expect(
+      composeDocument(withAssertion, { context: 'AMBULATORY' }).allergyHistory,
+    ).toBe(`Sin alergias conocidas (Ana Villacís, ${day})`);
+    // Control: under Asia/Tokyo the instant is already the next day.
+    expect(
+      composeDocument(withAssertion, {
+        context: 'AMBULATORY',
+        timeZone: 'Asia/Tokyo',
+      }).allergyHistory,
+    ).not.toContain(day);
+  });
+
   it('PR-021 lleva la ciudad y el instante de prescripción', () => {
     const document = composeDocument(source(), { context: 'AMBULATORY' });
 

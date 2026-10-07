@@ -9,6 +9,7 @@ import { PrismaPrescriptionRepository } from '../../src/modules/prescription/inf
 import '../../src/modules/prescription/infrastructure/prescription.constraints';
 import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.port';
 import { PrismaActiveAllergyReader } from '../../src/shared/infrastructure/clinical/prisma-active-allergy.reader';
+import { PrismaAllergyAbsenceReader } from '../../src/shared/infrastructure/clinical/standing-allergy-absence';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -48,6 +49,8 @@ const serviceOf = (prisma: PrismaClient) => {
     audit,
     logger,
     { archiveAnnulled: () => Promise.resolve(null) },
+    // PR-117. The statement the attention's band reads.
+    new PrismaAllergyAbsenceReader(prisma as unknown as PrismaService),
   );
 };
 

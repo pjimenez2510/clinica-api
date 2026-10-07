@@ -25,6 +25,7 @@ import {
 } from './prescription';
 import { prescriptionAgeOf, type PrescriptionAge } from './prescription-age';
 import { spellQuantity } from '../../../shared/domain/quantity-in-words';
+import { allergyHistoryOf } from '../../../shared/clinical/allergy-history';
 import { validThrough, validityDaysFor } from './prescription-validity';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type { MedicationRoute } from './prescription';
@@ -111,6 +112,13 @@ export interface PrescriptionDocument {
   diagnoses: readonly { code: string; display: string }[];
   /** PR-027. Art. 5.b.iv — «Antecedentes de alergias». */
   allergies: readonly string[];
+  /**
+   * PR-117 (D-157). What the receta SAYS about allergies, in one sentence: the
+   * allergies, «Sin alergias conocidas (<who>, <date>)» or «No registradas:
+   * pregunte al paciente». Composed here so the screen paints it as it comes,
+   * and by the same function the paper prints it with (DOC-116).
+   */
+  allergyHistory: string;
   prescriber: {
     /** PR-033. Art. 5.d.i. */
     fullName: string;
@@ -213,6 +221,11 @@ export function composeDocument(
     },
     diagnoses: source.diagnoses,
     allergies: source.allergies.map((allergy) => allergy.substanceText),
+    allergyHistory: allergyHistoryOf(
+      source.allergies.map((allergy) => allergy.substanceText),
+      source.noKnownAllergies,
+      options.timeZone,
+    ),
     prescriber: {
       fullName: `${prescriber.familyName} ${prescriber.givenName}`,
       acessRegistration: prescriber.acessRegistration,

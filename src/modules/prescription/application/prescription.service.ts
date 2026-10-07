@@ -17,6 +17,10 @@ import {
   ACTIVE_ALLERGY_READER,
   type ActiveAllergyReader,
 } from '../../../shared/clinical/patient-allergy.port';
+import {
+  ALLERGY_ABSENCE_READER,
+  type AllergyAbsenceReader,
+} from '../../../shared/clinical/allergy-absence.port';
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import { exactAllergyMatches } from '../domain/allergy-check';
 import type { KnownAllergy } from '../domain/allergy-check';
@@ -164,6 +168,13 @@ export class PrescriptionService {
     /** DOC-109. The PDF with the mark, archived once the annulment is committed. */
     @Inject(ANNULLED_DOCUMENT_ARCHIVER)
     private readonly documents: AnnulledDocumentArchiver,
+    /**
+     * PR-117 (D-157.2). «¿Sigue en pie un "sin alergias conocidas"?», from the
+     * statement the attention's band reads, so the receta cannot say it where
+     * the band says «no registradas».
+     */
+    @Inject(ALLERGY_ABSENCE_READER)
+    private readonly absences: AllergyAbsenceReader,
   ) {
     this.logger.setContext(PrescriptionService.name);
   }
@@ -708,6 +719,11 @@ export class PrescriptionService {
      * the person reacts to.
      */
     const allergies = await this.allergies.activeFor(source.chartId);
+    // PR-117. Asked only over an empty chart: with an allergy it is not said.
+    const noKnownAllergies =
+      allergies.length === 0
+        ? await this.absences.standingAbsenceFor(source.chartId)
+        : null;
 
     /**
      * PR-050, PR-051. `AMBULATORY` because that is the only modality this
@@ -716,7 +732,10 @@ export class PrescriptionService {
      * the day an emergency exists the call site is what changes, and it is
      * findable.
      */
-    return composeDocument({ ...source, allergies }, { context: 'AMBULATORY' });
+    return composeDocument(
+      { ...source, allergies, noKnownAllergies },
+      { context: 'AMBULATORY' },
+    );
   }
 
   /** PR-004. The caller's clinical identity, or a refusal naming nothing. */

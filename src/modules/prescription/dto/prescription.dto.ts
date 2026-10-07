@@ -552,6 +552,12 @@ export const prescriptionDocumentSchema = z.object({
   diagnoses: z.array(z.object({ code: z.string(), display: z.string() })),
   /** PR-027. Art. 5.b.iv — «Antecedentes de alergias». */
   allergies: z.array(z.string()),
+  /**
+   * PR-117 (D-157). The sentence the receta says about allergies, as the
+   * paper prints it: the allergies, «Sin alergias conocidas (<clínico>,
+   * <fecha>)» or «No registradas: pregunte al paciente». Painted as it comes.
+   */
+  allergyHistory: z.string(),
   prescriber: z.object({
     fullName: z.string(),
     /** PR-034. Art. 5.d.ii — printed on the document. */

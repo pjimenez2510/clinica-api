@@ -6,6 +6,7 @@ import { PrescriptionService } from '../../src/modules/prescription/application/
 import { PrismaPrescriptionRepository } from '../../src/modules/prescription/infrastructure/prisma-prescription.repository';
 import { writeItem } from '../../src/modules/prescription/domain/written-item';
 import { PrismaActiveAllergyReader } from '../../src/shared/infrastructure/clinical/prisma-active-allergy.reader';
+import { PrismaAllergyAbsenceReader } from '../../src/shared/infrastructure/clinical/standing-allergy-absence';
 import '../../src/modules/prescription/infrastructure/prescription.constraints';
 import {
   WallClockTime,
@@ -81,6 +82,8 @@ const serviceOf = (prisma: PrismaClient) => {
     logger,
     // DOC-109 is proven in `documents-http.spec.ts`.
     { archiveAnnulled: () => Promise.resolve(null) },
+    // PR-117. The statement the attention's band reads.
+    new PrismaAllergyAbsenceReader(prisma as unknown as PrismaService),
   );
 };
 
@@ -1564,6 +1567,67 @@ describe('la receta contra PostgreSQL', () => {
       days: 3,
       through: addDays(issuedOn, 2),
     });
+  });
+
+  it('PR-117 el documento dice «No registradas», la afirmación en pie de la ficha absorbida con quién y cuándo, y deja de decirla tras una alergia posterior aunque se refute', async () => {
+    const prisma = db();
+    const { patient, requester, encounter } = await anEncounter(prisma);
+    const absorbed = await createPatient(prisma);
+    await prisma.patient.update({
+      where: { id: absorbed.id },
+      // `patient_merged_at_matches_link` exige las dos columnas o ninguna.
+      data: { mergedIntoId: patient.id, mergedAt: new Date() },
+    });
+    const medicine = await aCnmbConcept(prisma, {
+      code: 'J01CA04',
+      display: 'Amoxicilina',
+      validFrom: new Date('2019-01-01'), // fecha-fija: vigente desde siempre
+    });
+    const service = serviceOf(prisma);
+    const requesterArgs = { userId: requester.userId, sites: [...requester.sites] }; // prettier-ignore
+    const composed = await service.compose(
+      { encounterId: encounter.id, ...INDICATIONS, items: [aLine(medicine.id)] },
+      requesterArgs,
+    );
+    await service.issue(composed.prescription.id, requesterArgs);
+    const history = async () =>
+      (await service.document(composed.prescription.id, requesterArgs))
+        .allergyHistory;
+
+    // Nobody asked: the pharmacy is told to.
+    expect(await history()).toBe('No registradas: pregunte al paciente');
+
+    // Positive control: asserted on the ABSORBED chart, read from the survivor.
+    const clinician = await prisma.user.create({
+      data: {
+        email: `afirma-${Date.now()}@clinica.ec`,
+        passwordHash: 'not-a-real-hash',
+        firstName: 'Lucía',
+        lastName: 'Andrade',
+      },
+    });
+    const assertion = await prisma.patientAllergyAbsence.create({
+      data: { patientId: absorbed.id, assertedById: clinician.id },
+    });
+    const day = clinicalDateOf(assertion.assertedAt).split('-').reverse().join('/'); // prettier-ignore
+    expect(await history()).toBe(
+      `Sin alergias conocidas (Lucía Andrade, ${day})`,
+    );
+
+    // EN-224, D-A-018: an allergy recorded after it, even once refuted, leaves
+    // a chart nobody has asked about since.
+    const later = new Date(assertion.assertedAt.getTime() + 1000);
+    await prisma.patientAllergy.create({
+      data: {
+        patientId: patient.id,
+        recordedById: clinician.id,
+        substanceText: 'Látex',
+        recordedAt: later,
+        refutedAt: new Date(later.getTime() + 1000),
+        refutedById: clinician.id,
+      },
+    });
+    expect(await history()).toBe('No registradas: pregunte al paciente');
   });
 
   it('PR-006 no sirve el documento de una receta de otra sede', async () => {
