@@ -205,6 +205,16 @@ línea de corte; emitir un RIDE y comprobar que **no** contiene ningún QR.
 
 **Cubre:** DOC-070 a DOC-079.
 
+**Solo servidor:** DOC-070, DOC-071, DOC-073, DOC-074, DOC-076 a DOC-078. Lo
+que dicen está en los bytes del PDF, que compone el servidor y la pantalla
+entrega sin tocarlos (DOC-002, DOC-006): ningún código de la interfaz hace que
+la receta lleve su banda o el RIDE sus banderas, y una prueba de interfaz que
+los citara no probaría nada. Se comprueban sobre el PDF que la pantalla
+descarga en `clinica-web/e2e/flujos/f05-documentos.spec.ts` (receta, orden y
+certificado); el RIDE lo descarga caja, y su comprobación es del recorrido de
+F-06. DOC-079 sí tiene mitad visible: el editor de la receta rechaza el
+controlado en su línea y dice dónde se escribe (PR-070).
+
 ### H5 — La firma electrónica: el hueco declarado _(P3)_
 
 **No se construye.** §7 dice qué falta, qué no está verificado y por qué
@@ -232,8 +242,15 @@ la segunda; validar el fichero con veraPDF.
 > **Fidelidad (`fix/documentos-fidelidad`, 01-10-2026).** El autor revisó los
 > PDF reales: «no se siguió lo que definimos, más que todo la factura». DOC-103
 > a DOC-107 fijan **cómo se pinta** lo que DOC-072 a DOC-078 ya dicen; ninguno
-> añade ni quita contenido. **Solo servidor:** todos; la vista previa de
-> Administración → Identidad enseña el mismo PDF.
+> añade ni quita contenido.
+
+**Solo servidor:** DOC-025, DOC-080 a DOC-085, DOC-103 a DOC-107. Son la
+cabecera, el pie, las fuentes y el pintado del PDF, que compone el servidor; la
+pantalla entrega esos bytes (DOC-002, DOC-006) y la vista previa de
+Administración → Identidad enseña el mismo PDF. Lo que se lee en el papel
+—cabecera, línea de sede, CONFIDENCIAL, pie con «Página x de y» y verificación,
+fuentes— se comprueba sobre el PDF que la pantalla descarga en
+`clinica-web/e2e/flujos/f05-documentos.spec.ts`.
 
 ### H7 — La verificación pública del documento _(P1)_
 
@@ -274,6 +291,11 @@ diagnósticos: lleva CONFIDENCIAL y no lleva «Firma y sello del profesional»;
 sí «Atendido por» con el nombre.
 
 **Cubre:** DOC-114, DOC-115.
+
+**Solo servidor:** DOC-114, DOC-115. La leyenda y la ausencia del recuadro de
+firma están en el PDF que compone el servidor al momento; la pantalla sólo lo
+pide y lo abre (EN-220, DOC-111). Se comprueban sobre el resumen que la
+pantalla descarga en `clinica-web/e2e/flujos/f05-documentos.spec.ts`.
 
 ### H9 — «Volver a generar», dicho en simple _(P1)_
 
