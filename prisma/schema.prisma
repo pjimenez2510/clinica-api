@@ -4133,6 +4133,8 @@ model CreditNote {
   lines             CreditNoteLine[]
   /// SRI-086. Its electronic voucher, one for ever, once prepared.
   electronicVoucher ElectronicVoucher?
+  /// SRI-089. Its archived RIDEs.
+  documentRenders   DocumentRender[]
 
   @@unique([emissionPointId, sequential], map: "credit_note_sequential_unique")
   @@index([invoiceId], map: "credit_note_by_invoice")
@@ -4427,6 +4429,9 @@ enum DocumentKind {
   /// DOC-111, DOC-113. Composed on demand and never archived: no
   /// `document_render` row can be of this kind (it has no subject column).
   ENCOUNTER_SUMMARY
+  /// SRI-089. The RIDE of a credit note, on the INVOICE_RIDE template: no
+  /// `document_template` row is of this kind.
+  CREDIT_NOTE_RIDE
 
   @@map("document_kind")
 }
@@ -4593,10 +4598,10 @@ model DocumentRender {
   /// prescription freezing the DCI while holding `concept_id`.
   templateVersion Int @map("template_version")
 
-  /// DOC-003. EXACTLY ONE of the four (`document_render_one_subject`), and it
+  /// DOC-003. EXACTLY ONE of the five (`document_render_one_subject`), and it
   /// has to match `kind` (`document_render_kind_matches_subject`).
   ///
-  /// FOUR COLUMNS AND NOT A `(type, id)` PAIR: with real columns there are real
+  /// REAL COLUMNS AND NOT A `(type, id)` PAIR: with real columns there are real
   /// foreign keys, so the archive can never point at a prescription that does
   /// not exist. A polymorphic pair has none, and the day a row is removed the
   /// archive points at nothing and nothing complains.
@@ -4611,6 +4616,10 @@ model DocumentRender {
 
   invoiceId String?  @map("invoice_id") @db.Uuid
   invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_render_invoice_fk")
+
+  /// SRI-089. The fifth subject: the RIDE of a credit note.
+  creditNoteId String?     @map("credit_note_id") @db.Uuid
+  creditNote   CreditNote? @relation(fields: [creditNoteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "document_render_credit_note_fk")
 
   /// DOC-012. The site the subject belongs to, copied so the scope filter does
   /// not have to join four tables to answer «is this one of mine?».
@@ -4643,6 +4652,7 @@ model DocumentRender {
 
   @@index([prescriptionId], map: "document_render_by_prescription")
   @@index([invoiceId], map: "document_render_by_invoice")
+  @@index([creditNoteId], map: "document_render_by_credit_note")
   @@index([siteId, issuedAt(sort: Desc)], map: "document_render_by_site")
   @@map("document_render")
 }

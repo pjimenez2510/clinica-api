@@ -52,6 +52,7 @@ const SUMMARY_SELECT = {
   serviceOrderId: true,
   certificateId: true,
   invoiceId: true,
+  creditNoteId: true,
   siteId: true,
   byteSize: true,
   sha256: true,
@@ -70,7 +71,7 @@ type RenderRow = Prisma.DocumentRenderGetPayload<{
 }>;
 
 /**
- * DOC-003. The one subject, out of the four columns.
+ * DOC-003. The one subject, out of the five columns.
  *
  * The `CHECK`s guarantee exactly one is populated AND that it matches the kind,
  * so this cannot legitimately return `null` for a stored row — and it still
@@ -88,6 +89,8 @@ function subjectIdOf(row: RenderRow): string {
       return row.certificateId ?? '';
     case 'INVOICE_RIDE':
       return row.invoiceId ?? '';
+    case 'CREDIT_NOTE_RIDE':
+      return row.creditNoteId ?? '';
     case 'ENCOUNTER_SUMMARY':
       // DOC-111. Unreachable: `document_render_kind_matches_subject` admits
       // no row of this kind.
@@ -96,7 +99,7 @@ function subjectIdOf(row: RenderRow): string {
 }
 
 /**
- * Row to summary, with the four subject columns folded into one `subjectId`.
+ * Row to summary, with the five subject columns folded into one `subjectId`.
  */
 function toSummary(row: RenderRow): DocumentRenderSummary {
   return {
@@ -122,7 +125,11 @@ function subjectColumn(
   subjectId: string,
 ): Pick<
   Prisma.DocumentRenderUncheckedCreateInput,
-  'prescriptionId' | 'serviceOrderId' | 'certificateId' | 'invoiceId'
+  | 'prescriptionId'
+  | 'serviceOrderId'
+  | 'certificateId'
+  | 'invoiceId'
+  | 'creditNoteId'
 > {
   switch (kind) {
     case 'PRESCRIPTION':
@@ -133,6 +140,8 @@ function subjectColumn(
       return { certificateId: subjectId };
     case 'INVOICE_RIDE':
       return { invoiceId: subjectId };
+    case 'CREDIT_NOTE_RIDE':
+      return { creditNoteId: subjectId };
     case 'ENCOUNTER_SUMMARY':
       // DOC-111. Never archived, and the base refuses it besides.
       throw new Error('An encounter summary is never archived');

@@ -299,16 +299,26 @@ export interface ElectronicVoucherRepository {
     creditNoteIds: readonly string[],
   ): Promise<VoucherStatusView[]>;
 
-  /** What `RIDE_ISSUER` and the e-mail need about the invoice (SRI-072). */
-  deliveryContext(id: string): Promise<{
-    invoiceId: string;
-    issuedById: string;
-    buyerEmail: string | null;
-    buyerName: string;
-    documentNumber: string;
-    establishmentName: string;
-  } | null>;
+  /**
+   * What `RIDE_ISSUER` and the e-mail need about the voucher's document: the
+   * invoice (SRI-072) or the credit note (SRI-089).
+   */
+  deliveryContext(id: string): Promise<DeliveryContext | null>;
 }
+
+/** SRI-072, SRI-089. The receiver and the document an e-mail is about. */
+export type DeliveryContext = {
+  /** Whoever issued the document: the RIDE is filed in their name. */
+  issuedById: string;
+  buyerEmail: string | null;
+  buyerName: string;
+  /** `001-001-000000123`, the document's own. */
+  documentNumber: string;
+  establishmentName: string;
+} & (
+  | { document: 'INVOICE'; invoiceId: string }
+  | { document: 'CREDIT_NOTE'; creditNoteId: string }
+);
 export const ELECTRONIC_VOUCHER_REPOSITORY = Symbol(
   'ElectronicVoucherRepository',
 );

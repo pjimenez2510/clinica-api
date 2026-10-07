@@ -1,4 +1,4 @@
-import { DOCUMENT_TITLE } from './document-kind';
+import { DOCUMENT_TITLE, isFiscalDocumentKind } from './document-kind';
 import type { DocumentKind } from './document-kind';
 import type { DocumentContext } from './document-source';
 import type { DocumentTemplate } from './document-template';
@@ -43,15 +43,19 @@ export interface FrameRequest {
  * por sede (A.M. 00002393, art. 43)» for the same nothing: its number is on
  * it already (D-121).
  */
+const RIDE_NOTES = [
+  'Representación impresa del comprobante electrónico (RIDE) · Ficha técnica del SRI, Anexo 2',
+  'Consulte su validez en srienlinea.sri.gob.ec con la clave de acceso',
+] as const;
+
 const FOOTER_NOTES: Readonly<Record<DocumentKind, readonly string[]>> = {
   PRESCRIPTION: [],
   SERVICE_ORDER: [],
   MEDICAL_CERTIFICATE: ['Documento sin enmiendas'],
   ENCOUNTER_SUMMARY: [],
-  INVOICE_RIDE: [
-    'Representación impresa del comprobante electrónico (RIDE) · Ficha técnica del SRI, Anexo 2',
-    'Consulte su validez en srienlinea.sri.gob.ec con la clave de acceso',
-  ],
+  INVOICE_RIDE: RIDE_NOTES,
+  // SRI-089. A RIDE too: the same two lines.
+  CREDIT_NOTE_RIDE: RIDE_NOTES,
 };
 
 /**
@@ -94,11 +98,11 @@ export function composeFrame(
   request: FrameRequest,
 ): DocumentFrame {
   /**
-   * DOC-084. THE RIDE KEEPS ITS OWN HEAD AND NO QR, WHATEVER IT IS HANDED.
-   * Its header is the SRI's Anexo 2 (DOC-076) and DOC-078 forbids a QR on it;
+   * DOC-084, SRI-089. THE RIDE —OF AN INVOICE OR OF A CREDIT NOTE— KEEPS
+   * ITS OWN HEAD AND NO QR, WHATEVER IT IS HANDED. Its header is the SRI's Anexo 2 (DOC-076) and DOC-078 forbids a QR on it;
    * deciding it here, not trusting the composer, is what keeps both true.
    */
-  const fiscal = request.kind === 'INVOICE_RIDE';
+  const fiscal = isFiscalDocumentKind(request.kind);
   const code = fiscal ? null : request.verificationCode;
 
   return {

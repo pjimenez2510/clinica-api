@@ -32,13 +32,17 @@ import type { Requester } from './application/document.service';
 import type { DocumentKind } from './domain/document-kind';
 
 /**
- * DOC-090. The one kind these routes may serve.
+ * DOC-090. The kinds these routes may serve: the RIDE of an invoice and,
+ * since SRI-089, of a credit note — both tax documents under `billing:read`.
  *
  * An artefact is found by an identifier that says nothing about its class, so
  * without this a caller holding `billing:read` could fetch a receta by passing
  * its id here: the permission is on the ROUTE and the kind is in the ROW.
  */
-const RIDE_ONLY = ['INVOICE_RIDE'] as const satisfies readonly DocumentKind[];
+const RIDE_ONLY = [
+  'INVOICE_RIDE',
+  'CREDIT_NOTE_RIDE',
+] as const satisfies readonly DocumentKind[];
 
 /**
  * The RIDE: the printable representation of the electronic invoice.
@@ -81,6 +85,25 @@ export class InvoiceDocumentsController {
   ): Promise<DocumentRenderResponse> {
     const stored = await this.documents.emit(
       { kind: 'INVOICE_RIDE', subjectId: invoiceId },
+      this.requester(req),
+    );
+    return toRenderResponse(stored);
+  }
+
+  /**
+   * SRI-089. Emits and files the RIDE of one credit note, under the same
+   * permission and site scope as the invoice's: whoever bills at that site.
+   */
+  @Post('credit-notes/:creditNoteId')
+  @RequirePermission('billing:read', 'query')
+  @ApiOperation({ summary: 'Emitir y archivar el RIDE de una nota de crédito' })
+  @ApiCreatedResponse({ type: DocumentRenderDto })
+  async emitCreditNote(
+    @Param('creditNoteId', ParseUUIDPipe) creditNoteId: string,
+    @Req() req: Request,
+  ): Promise<DocumentRenderResponse> {
+    const stored = await this.documents.emit(
+      { kind: 'CREDIT_NOTE_RIDE', subjectId: creditNoteId },
       this.requester(req),
     );
     return toRenderResponse(stored);

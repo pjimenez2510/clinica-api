@@ -9,6 +9,7 @@ import {
   type AttemptEffect,
   type AttemptRecord,
   type CreditNotePreparationSource,
+  type DeliveryContext,
   type DeliveryStatus,
   type ElectronicVoucherRepository,
   type LastTransportFailure,
@@ -1020,7 +1021,18 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
     return rows.map((row) => toStatusView(row, row.creditNoteId!));
   }
 
-  async deliveryContext(id: string) {
+  async deliveryContext(id: string): Promise<DeliveryContext | null> {
+    const site = {
+      select: {
+        code: true,
+        site: {
+          select: {
+            sriEstablishmentCode: true,
+            establishment: { select: { legalName: true } },
+          },
+        },
+      },
+    } as const;
     const row = await this.prisma.electronicVoucher.findUnique({
       where: { id },
       select: {
@@ -1032,37 +1044,41 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
             buyerEmail: true,
             buyerName: true,
             sequential: true,
-            emissionPoint: {
-              select: {
-                code: true,
-                site: {
-                  select: {
-                    name: true,
-                    sriEstablishmentCode: true,
-                    establishment: { select: { legalName: true } },
-                  },
-                },
-              },
-            },
+            emissionPoint: site,
+          },
+        },
+        // SRI-089. A credit note's voucher is delivered like an invoice's.
+        creditNote: {
+          select: {
+            id: true,
+            issuedById: true,
+            accessKey: true,
+            buyerEmail: true,
+            buyerName: true,
+            sequential: true,
+            emissionPoint: site,
           },
         },
       },
     });
-    if (!row?.invoice) return null;
-    const { invoice } = row;
-    const site = invoice.emissionPoint.site;
-    return {
-      invoiceId: invoice.id,
-      issuedById: invoice.issuedById,
-      buyerEmail: invoice.buyerEmail,
-      buyerName: invoice.buyerName,
+    const document = row?.invoice ?? row?.creditNote;
+    if (!row || !document) return null;
+    const { emissionPoint } = document;
+    const common = {
+      issuedById: document.issuedById,
+      buyerEmail: document.buyerEmail,
+      buyerName: document.buyerName,
+      // The document's OWN number: a credit note's comes from its own key.
       documentNumber: invoiceDocumentNumber({
-        accessKey: invoice.accessKey,
-        establishmentCode: site.sriEstablishmentCode,
-        emissionPointCode: invoice.emissionPoint.code,
-        sequential: invoice.sequential,
+        accessKey: document.accessKey,
+        establishmentCode: emissionPoint.site.sriEstablishmentCode,
+        emissionPointCode: emissionPoint.code,
+        sequential: document.sequential,
       }),
-      establishmentName: site.establishment.legalName,
+      establishmentName: emissionPoint.site.establishment.legalName,
     };
+    return row.invoice
+      ? { ...common, document: 'INVOICE', invoiceId: row.invoice.id }
+      : { ...common, document: 'CREDIT_NOTE', creditNoteId: document.id };
   }
 }

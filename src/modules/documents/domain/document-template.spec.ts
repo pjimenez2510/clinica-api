@@ -109,6 +109,7 @@ describe('DOC-090 qué clases sirve cada permiso', () => {
     // may open a chart has no business being handed an invoice because both
     // happen to be PDFs.
     expect(isClinicalDocumentKind('INVOICE_RIDE')).toBe(false);
+    expect(isClinicalDocumentKind('CREDIT_NOTE_RIDE')).toBe(false);
     for (const kind of CLINICAL_DOCUMENT_KINDS) {
       expect(isClinicalDocumentKind(kind)).toBe(true);
     }
@@ -119,7 +120,8 @@ describe('DOC-090 qué clases sirve cada permiso', () => {
     // numbering and under the doctor's nominal custody. A PDF we produced would
     // not be that prescription.
     // DOC-113: the fifth is the summary of the attention, never archived.
-    expect(DOCUMENT_KINDS).toHaveLength(5);
+    // SRI-089: the sixth is the RIDE of the credit note.
+    expect(DOCUMENT_KINDS).toHaveLength(6);
     expect(DOCUMENT_KINDS.join(',')).not.toMatch(/CONTROLLED|ESTUPEFACIENTE/i);
   });
 

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   CLINICAL_DOCUMENT_KINDS,
   DOCUMENT_KINDS,
+  TEMPLATE_KINDS,
 } from '../domain/document-kind';
 import { MAX_HEADER_FIELDS } from '../domain/document-template';
 
@@ -31,7 +32,12 @@ const CLINICAL_KIND = z.enum(
   { error: 'Elija el tipo de documento clínico que quiere imprimir' },
 );
 
-const ANY_KIND = z.enum(DOCUMENT_KINDS as unknown as [string, ...string[]]);
+/**
+ * DOC-030. A kind that has a template of its own. Not `CREDIT_NOTE_RIDE`: it
+ * borrows the invoice RIDE's (SRI-089), so publishing one would write a
+ * version nothing reads.
+ */
+const ANY_KIND = z.enum(TEMPLATE_KINDS as unknown as [string, ...string[]]);
 
 /** DOC-001, DOC-002. Which document, of what. */
 const renderRequestSchema = z.object({
@@ -126,7 +132,8 @@ export class PreviewTemplateDto extends createZodDto(templateSlotsSchema) {}
 
 const renderSummarySchema = z.object({
   id: z.uuid(),
-  kind: ANY_KIND,
+  // Every kind an artefact can be, the credit note's RIDE included (SRI-089).
+  kind: z.enum(DOCUMENT_KINDS as unknown as [string, ...string[]]),
   subjectId: z.uuid(),
   siteId: z.uuid(),
   byteSize: z.number().int(),
@@ -149,7 +156,7 @@ const renderSummarySchema = z.object({
   supersedeReason: z.string().nullable(),
 });
 
-/** Response of every route that emits or reads an archived render, clinical documents and invoice RIDEs alike. */
+/** Response of every route that emits or reads an archived render, clinical documents and RIDEs alike. */
 export class DocumentRenderDto extends createZodDto(renderSummarySchema) {}
 /** What the presenter returns for it, inferred from the schema. */
 export type DocumentRenderResponse = z.infer<typeof renderSummarySchema>;

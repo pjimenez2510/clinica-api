@@ -15,5 +15,13 @@ export interface IssuedRide {
 
 export interface RideIssuer {
   issueRide(invoiceId: string, issuedById: string): Promise<IssuedRide>;
+  /**
+   * SRI-089. The RIDE of a credit note, filed in the name of whoever issued
+   * the credit note, for the e-mail of its authorised voucher.
+   */
+  issueCreditNoteRide(
+    creditNoteId: string,
+    issuedById: string,
+  ): Promise<IssuedRide>;
 }
 export const RIDE_ISSUER = Symbol('RideIssuer');

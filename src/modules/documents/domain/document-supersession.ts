@@ -37,6 +37,7 @@ export function supersedeReasonOf(
         ? 'Certificado anulado'
         : NEW_VERSION_REASON;
     case 'INVOICE_RIDE':
+    case 'CREDIT_NOTE_RIDE':
     case 'ENCOUNTER_SUMMARY':
       return NEW_VERSION_REASON;
   }
@@ -54,6 +55,7 @@ function correctionOf(subject: DocumentSubject): string | null {
     case 'MEDICAL_CERTIFICATE':
       return `Corrección del certificado N.º ${subject.data.form.number}`;
     case 'INVOICE_RIDE':
+    case 'CREDIT_NOTE_RIDE':
     case 'ENCOUNTER_SUMMARY':
       return null;
   }

@@ -81,7 +81,7 @@ registerConstraintMeanings({
   document_render_one_subject: {
     code: 'DOCUMENT_SUBJECT_INCONSISTENT',
     field: 'subjectId',
-    message: 'Un documento archivado representa exactamente una receta, orden, certificado o factura', // prettier-ignore
+    message: 'Un documento archivado representa exactamente una receta, orden, certificado, factura o nota de crédito', // prettier-ignore
   },
   document_render_kind_matches_subject: {
     code: 'DOCUMENT_KIND_MISMATCH',

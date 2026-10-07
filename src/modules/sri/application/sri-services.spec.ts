@@ -488,6 +488,10 @@ describe('SRI-057 el despacho es idempotente', () => {
             content: Buffer.from('%PDF'),
             fileName: 'r.pdf',
           }),
+          issueCreditNoteRide: vi.fn().mockResolvedValue({
+            content: Buffer.from('%PDF'),
+            fileName: 'r.pdf',
+          }),
         },
         mailer,
         () => NOW,
@@ -594,6 +598,7 @@ describe('SRI-057 el despacho es idempotente', () => {
       voucher({ status: 'AUTHORISED', authorisedXml: '<autorizacion/>' }),
     );
     f.vouchers.deliveryContext.mockResolvedValue({
+      document: 'INVOICE',
       invoiceId: 'invoice-1',
       issuedById: 'user-1',
       buyerEmail: 'maria@example.com',
@@ -629,6 +634,124 @@ describe('SRI-057 el despacho es idempotente', () => {
       'AUTHORISE',
       expect.objectContaining({ id: 'due' }),
       0,
+    );
+  });
+});
+
+describe('SRI-089 la entrega de la nota de crédito autorizada', () => {
+  function delivering(context: Record<string, unknown>) {
+    const f = fakes();
+    f.vouchers.findById.mockResolvedValue(
+      voucher({ status: 'AUTHORISED', authorisedXml: '<autorizacion/>' }),
+    );
+    f.vouchers.deliveryContext.mockResolvedValue(context);
+    f.vouchers.recordDelivery.mockResolvedValue(undefined);
+    const mailer = { send: vi.fn().mockResolvedValue(undefined) };
+    const rides = {
+      issueRide: vi.fn().mockResolvedValue({
+        content: Buffer.from('%PDF factura'),
+        fileName: 'RIDE-invoice-1.pdf',
+      }),
+      issueCreditNoteRide: vi.fn().mockResolvedValue({
+        content: Buffer.from('%PDF nota'),
+        fileName: 'RIDE-NC-credit-note-1.pdf',
+      }),
+    };
+    const dispatch = new VoucherDispatchService(
+      f.vouchers,
+      f.web,
+      f.queue,
+      rides,
+      mailer,
+      () => NOW,
+      f.settings,
+      f.preparation,
+      logger,
+    );
+    return { f, mailer, rides, dispatch };
+  }
+
+  const common = {
+    issuedById: 'user-1',
+    buyerEmail: 'maria@example.com',
+    buyerName: 'María',
+    establishmentName: 'Clínica',
+  };
+
+  it('SRI-089 envía el RIDE de la nota de crédito y su XML con el asunto «Nota de crédito electrónica»', async () => {
+    const { f, mailer, rides, dispatch } = delivering({
+      ...common,
+      document: 'CREDIT_NOTE',
+      creditNoteId: 'credit-note-1',
+      documentNumber: '001-001-000000007',
+    });
+    await dispatch.run('DELIVER', 'voucher-1');
+
+    expect(rides.issueCreditNoteRide).toHaveBeenCalledWith(
+      'credit-note-1',
+      'user-1',
+    );
+    expect(rides.issueRide).not.toHaveBeenCalled();
+    const message = mailer.send.mock.calls[0]![0] as {
+      subject: string;
+      text: string;
+      attachments: { fileName: string; contentType: string }[];
+    };
+    expect(message.subject).toBe(
+      'Nota de crédito electrónica 001-001-000000007 — Clínica',
+    );
+    expect(message.text).toContain(
+      'la nota de crédito electrónica 001-001-000000007',
+    );
+    expect(message.text).not.toContain('factura');
+    expect(message.attachments.map((a) => a.fileName)).toEqual([
+      'RIDE-NC-credit-note-1.pdf',
+      `${KEY}.xml`,
+    ]);
+    expect(f.vouchers.recordDelivery).toHaveBeenCalledWith(
+      'voucher-1',
+      'SENT',
+      NOW,
+    );
+  });
+
+  it('SRI-089 SRI-072 la factura se sigue entregando como factura', async () => {
+    const { mailer, rides, dispatch } = delivering({
+      ...common,
+      document: 'INVOICE',
+      invoiceId: 'invoice-1',
+      documentNumber: '001-001-000000001',
+    });
+    await dispatch.run('DELIVER', 'voucher-1');
+
+    expect(rides.issueRide).toHaveBeenCalledWith('invoice-1', 'user-1');
+    expect(rides.issueCreditNoteRide).not.toHaveBeenCalled();
+    const message = mailer.send.mock.calls[0]![0] as {
+      subject: string;
+      text: string;
+    };
+    expect(message.subject).toBe(
+      'Factura electrónica 001-001-000000001 — Clínica',
+    );
+    expect(message.text).toContain('la factura electrónica 001-001-000000001');
+  });
+
+  it('SRI-089 SRI-076 sin correo del receptor la nota de crédito no se intenta y queda dicho', async () => {
+    const { f, mailer, rides, dispatch } = delivering({
+      ...common,
+      buyerEmail: null,
+      document: 'CREDIT_NOTE',
+      creditNoteId: 'credit-note-1',
+      documentNumber: '001-001-000000007',
+    });
+    await dispatch.run('DELIVER', 'voucher-1');
+
+    expect(mailer.send).not.toHaveBeenCalled();
+    expect(rides.issueCreditNoteRide).not.toHaveBeenCalled();
+    expect(f.vouchers.recordDelivery).toHaveBeenCalledWith(
+      'voucher-1',
+      'NO_EMAIL',
+      NOW,
     );
   });
 });

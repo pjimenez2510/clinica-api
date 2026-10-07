@@ -1703,6 +1703,164 @@ describe('DOC-076 a DOC-078 el RIDE de la factura', () => {
   });
 });
 
+describe('SRI-089 el RIDE de la nota de crédito', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const issuedAt = new Date();
+  const invoiceIssuedAt = new Date(issuedAt.getTime() - 3 * DAY);
+  const shown = (instant: Date): string => {
+    const [year, month, day] = clinicalDateOf(instant).split('-');
+    return `${day}/${month}/${year}`;
+  };
+  const NOTE_KEY = `${KEY_IN_TESTS.slice(0, 8)}04${KEY_IN_TESTS.slice(10)}`;
+
+  const note: DocumentSubject = {
+    kind: 'CREDIT_NOTE_RIDE',
+    data: {
+      subjectId: 'credit-note-1',
+      siteId: 'site-1',
+      documentNumber: '001-001-000000007',
+      accessKey: NOTE_KEY,
+      status: 'AUTHORISED',
+      issuedAt,
+      authorisedAt: issuedAt,
+      buyerIdentificationType: '05',
+      buyerIdentification: '1710034065',
+      buyerName: 'Guamán Andrade María José',
+      buyerEmail: 'maria@example.com',
+      reason: 'Error en los datos del receptor',
+      modifiedDocument: {
+        number: '001-001-000000123',
+        issuedAt: invoiceIssuedAt,
+      },
+      lines: [
+        {
+          code: 'INS-GUANTES',
+          auxiliaryCode: null,
+          description: 'Guantes de examen',
+          quantity: '2.00',
+          unitPrice: '2.00',
+          discount: '0.00',
+          total: '4.00',
+          taxSriCode: '4',
+          taxPercentage: '15.00',
+        },
+      ],
+      subtotalTaxed: '4.00',
+      subtotalUntaxed: '0.00',
+      discountTotal: '0.00',
+      taxTotal: '0.60',
+      total: '4.60',
+    },
+  };
+  const withData = (
+    data: Partial<
+      Extract<DocumentSubject, { kind: 'CREDIT_NOTE_RIDE' }>['data']
+    >,
+  ): DocumentSubject =>
+    note.kind === 'CREDIT_NOTE_RIDE'
+      ? { kind: 'CREDIT_NOTE_RIDE', data: { ...note.data, ...data } }
+      : note;
+
+  it('SRI-089 dice «NOTA DE CRÉDITO» en el recuadro del comprobante, con su número y su clave', () => {
+    const layout = composeLayout(note, context, template);
+    const head = layout.blocks[0];
+    if (head?.kind !== 'boxes') throw new Error('expected the two columns');
+    const [voucher] = head.right;
+    expect(
+      voucher?.kind === 'box' &&
+        voucher.blocks.find((block) => block.kind === 'title'),
+    ).toEqual({ kind: 'title', text: 'NOTA DE CRÉDITO' });
+    expect(layout.frame.title).toBe('NOTA DE CRÉDITO');
+    expect(layout.frame.reference).toBe('001-001-000000007');
+
+    const text = wholeText(layout);
+    expect(text).toContain('No.=001-001-000000007');
+    expect(text).toContain(`NÚMERO DE AUTORIZACIÓN=${NOTE_KEY}`);
+    expect(text).toContain(`CLAVE DE ACCESO\n${NOTE_KEY}`);
+    expect(text).not.toContain('FACTURA No.');
+  });
+
+  it('SRI-089 imprime el documento que modifica con su fecha, y el motivo', () => {
+    const text = wholeText(composeLayout(note, context, template));
+    expect(text).toContain(
+      'Comprobante que se modifica=FACTURA 001-001-000000123',
+    );
+    expect(text).toContain(
+      `Fecha de emisión (comprobante a modificar)=${shown(invoiceIssuedAt)}`,
+    );
+    expect(text).toContain(`Fecha de emisión=${shown(issuedAt)}`);
+    expect(text).toContain(
+      'Razón de modificación=Error en los datos del receptor',
+    );
+    expect(text).toContain(
+      'Razón social / Apellidos y nombres=Guamán Andrade María José',
+    );
+    expect(text).toContain('Identificación=1710034065');
+  });
+
+  it('SRI-089 imprime sus líneas y los subtotales de la nota de crédito, sin propina ni forma de pago', () => {
+    const layout = composeLayout(note, context, template);
+    const text = wholeText(layout);
+    expect(text).toContain(
+      'INS-GUANTES|—|2.00|Guantes de examen|2.00|0.00|4.00',
+    );
+    expect(text).toContain(
+      [
+        'SUBTOTAL 15%|4.00',
+        'SUBTOTAL 0%|0.00',
+        'SUBTOTAL NO OBJETO DE IVA|0.00',
+        'SUBTOTAL EXENTO DE IVA|0.00',
+        'SUBTOTAL SIN IMPUESTOS|4.00',
+        'TOTAL DESCUENTO|0.00',
+        'ICE|0.00',
+        'IVA 15%|0.60',
+        'VALOR TOTAL|4.60',
+      ].join('\n'),
+    );
+    expect(text).not.toContain('PROPINA');
+    expect(text).not.toContain('Forma de pago');
+    // The issuer's box and the fiscal legends are the invoice's.
+    expect(text).toContain('R.U.C.=0993123456001');
+    expect(text).toContain('OBLIGADO A LLEVAR CONTABILIDAD=SÍ');
+  });
+
+  it('SRI-089 SRI-071 mientras no esté autorizada dice «PENDIENTE DE AUTORIZACIÓN», sin número ni fecha inventados', () => {
+    const text = wholeText(
+      composeLayout(
+        withData({ status: 'ISSUED', authorisedAt: null }),
+        context,
+        template,
+      ),
+    );
+    expect(text).toContain('NÚMERO DE AUTORIZACIÓN=PENDIENTE DE AUTORIZACIÓN');
+    expect(text).toContain(
+      'FECHA Y HORA DE AUTORIZACIÓN=PENDIENTE DE AUTORIZACIÓN',
+    );
+    // The key is printed anyway, under its bars.
+    expect(text).toContain(`CLAVE DE ACCESO\n${NOTE_KEY}`);
+  });
+
+  it('SRI-089 SRI-071 una nota de crédito que el SRI no autorizó no promete una autorización', () => {
+    const text = wholeText(
+      composeLayout(
+        withData({ status: 'REJECTED', authorisedAt: null }),
+        context,
+        template,
+      ),
+    );
+    expect(text).toContain('NÚMERO DE AUTORIZACIÓN=NO AUTORIZADA POR EL SRI');
+    expect(text).not.toContain('PENDIENTE DE AUTORIZACIÓN');
+  });
+
+  it('SRI-089 DOC-084 es un documento fiscal: sin cabecera clínica, sin QR y con las notas del RIDE al pie', () => {
+    const layout = composeLayout(note, context, template);
+    expect(layout.frame.header).toBeNull();
+    expect(layout.frame.footer.verification).toBeNull();
+    expect(layout.frame.footer.notes.join(' ')).toContain('RIDE');
+    expect(wholeText(layout).toLowerCase()).not.toContain('qr');
+  });
+});
+
 /** A key whose 24th digit says «pruebas», as `sri` composes them. */
 const KEY_IN_TESTS = '3009202601179000156300110010010000001230045678911';
 
@@ -1714,7 +1872,7 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
    * may not drop one.
    */
   const BEFORE: Record<
-    Exclude<DocumentSubject['kind'], 'ENCOUNTER_SUMMARY'>,
+    Exclude<DocumentSubject['kind'], 'ENCOUNTER_SUMMARY' | 'CREDIT_NOTE_RIDE'>,
     string[]
   > = {
     // prettier-ignore
