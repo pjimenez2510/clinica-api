@@ -198,12 +198,13 @@ export const createSiteSchema = z.object({
 export class CreateSiteDto extends createZodDto(createSiteSchema) {}
 
 /**
- * The MSP code is absent on purpose: it identifies the site in every attention
- * already reported to the ministry (REQ-020), so a PATCH that could change it
- * would rewrite the meaning of reports already filed.
+ * OR-034. The MSP code identifies the site in every attention reported to the
+ * ministry (REQ-020), so it is correctable only while the site has none: the
+ * service refuses it afterwards with `SITE_MSP_UNICODE_IN_USE`.
  */
 export const updateSiteSchema = z
   .object({
+    mspUnicode: mspUnicodeSchema.optional(),
     name: siteNameSchema.optional(),
     ruc: rucSchema.nullish(),
     parishConceptId: z.uuid('Seleccione una parroquia de la lista').nullish(),
@@ -248,6 +249,11 @@ export const siteSchema = z.object({
   sriEstablishmentCode: z.string().nullable(),
   /** OR-007: `false` means it is not offered for new appointments. */
   active: z.boolean(),
+  /**
+   * OR-034. Only when reading ONE site: the MSP code no longer changes,
+   * because an attention already carries it.
+   */
+  mspUnicodeLocked: z.boolean().optional(),
 });
 /** Response of reading, creating and updating one site. */
 export class SiteDto extends createZodDto(siteSchema) {}
@@ -323,18 +329,22 @@ export class CreateEmissionPointDto extends createZodDto(
 ) {}
 
 /**
- * The CODE is not editable: `billing` stores it on every comprobante it issues
- * (REQ-085), so changing it would rewrite documents already filed with the
- * SRI. Deactivating the point is what an administrator actually needs.
+ * OR-035. The CODE is part of every comprobante number the point issues
+ * (REQ-085), so it is correctable only while the point has issued none: the
+ * service refuses it afterwards with `EMISSION_POINT_CODE_IN_USE`.
  */
 export const updateEmissionPointSchema = z
   .object({
+    code: emissionPointCodeSchema.optional(),
     description: emissionPointDescriptionSchema.nullish(),
     active: z.boolean({ error: 'Indique si el punto de emisión está activo' }).optional(), // prettier-ignore
   })
   .refine(
-    (value) => value.description !== undefined || value.active !== undefined,
-    { message: 'Indique al menos un cambio: descripción o estado' },
+    (value) =>
+      value.code !== undefined ||
+      value.description !== undefined ||
+      value.active !== undefined,
+    { message: 'Indique al menos un cambio: código, descripción o estado' },
   );
 /** Body of PATCH /organization/emission-points/:id. */
 export class UpdateEmissionPointDto extends createZodDto(
@@ -347,6 +357,8 @@ export const emissionPointSchema = z.object({
   code: z.string(),
   description: z.string().nullable(),
   active: z.boolean(),
+  /** OR-035. In the list: the code no longer changes, it issued vouchers. */
+  codeLocked: z.boolean().optional(),
 });
 /** Response of creating and updating a point of emission. */
 export class EmissionPointDto extends createZodDto(emissionPointSchema) {}

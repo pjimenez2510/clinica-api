@@ -14,6 +14,18 @@ export interface Requester {
 }
 
 /**
+ * What the mutation replaced and what it left (ST-052, D-150).
+ *
+ * `before` is absent on a creation; an edit carries both. What travels is the
+ * EDITABLE fields of the domain view — never the ORM row — so a column added
+ * to `app_user` tomorrow does not start flowing into an append-only table.
+ */
+export interface StaffChange {
+  before?: Readonly<object>;
+  after?: Readonly<object>;
+}
+
+/**
  * Every mutation of the staff file in the trail, under ONE `resourceType`.
  *
  * A collaborator and not a private method copied into three services: ST-010
@@ -44,6 +56,7 @@ export class StaffAuditTrail {
     action: AuditAction,
     resourceId: string,
     requester: Requester,
+    change: StaffChange = {},
   ): Promise<void> {
     await this.audit.record({
       userId: requester.userId,
@@ -52,6 +65,15 @@ export class StaffAuditTrail {
       action,
       ip: requester.ip,
       userAgent: requester.userAgent,
+      /**
+       * ST-052. Copied rather than passed along, so what reaches the column is
+       * a plain JSON object and not a reference somebody could mutate before
+       * the INSERT. `'staff'` is on the whitelist of
+       * `access_audit_payload_only_for_declared_resources` since
+       * `admin_edit_in_place` (D-150): a professional's file, not a patient's.
+       */
+      before: change.before && { ...change.before },
+      after: change.after && { ...change.after },
     });
   }
 }

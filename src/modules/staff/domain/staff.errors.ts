@@ -178,6 +178,26 @@ export class ScheduleRuleNotFoundError extends NotFoundError {
 }
 
 /**
+ * ST-050. A rule whose validity ended before yesterday is history: editing it
+ * would rewrite the agenda of days already lived. A new rule is the answer.
+ */
+export class ScheduleRuleNotEditableError extends ValidationError {
+  readonly code = 'SCHEDULE_RULE_NOT_EDITABLE';
+  override readonly userTitle =
+    'Esa regla ya no rige y los días pasados no se reescriben: cree una regla nueva';
+
+  constructor() {
+    super('A schedule rule cannot be edited into days already past', {}, [
+      {
+        field: 'validTo',
+        code: 'SCHEDULE_RULE_NOT_EDITABLE',
+        message: 'El fin de vigencia no puede quedar antes de ayer',
+      },
+    ]);
+  }
+}
+
+/**
  * ST-008. A practitioner holds one or more specialties, EXACTLY ONE of them
  * primary. The base guarantees "at most one" with the partial unique index
  * `practitioner_specialty_one_primary`; "at least one" cannot be a CHECK — it

@@ -252,6 +252,7 @@ export class AuthAdminController {
     return this.accounts.update(
       id,
       {
+        email: dto.email,
         firstName: dto.firstName,
         lastName: dto.lastName,
         cedula: dto.cedula,
@@ -431,7 +432,12 @@ export class AuthAdminController {
   ): Promise<RoleResponse> {
     return this.roles.update(
       id,
-      { name: dto.name, description: dto.description, active: dto.active },
+      {
+        code: dto.code,
+        name: dto.name,
+        description: dto.description,
+        active: dto.active,
+      },
       this.requester(req),
     );
   }

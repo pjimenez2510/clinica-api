@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseClinicalDate } from '../../../shared/domain/clinic-time';
-import { PriceNegativeAmountError, PricePeriodInvalidError } from './billing.errors'; // prettier-ignore
+import {
+  addDays,
+  clinicalDateOf,
+  parseClinicalDate,
+} from '../../../shared/domain/clinic-time';
+import { PriceNegativeAmountError, PriceNotEditableError, PricePeriodInvalidError } from './billing.errors'; // prettier-ignore
 import { Money } from './money';
 import {
   type PriceRow,
   checkNewPrice,
+  checkPriceCorrection,
   isInForceOn,
   planPriceChange,
   priceInForceOn,
@@ -140,5 +145,65 @@ describe('BI-044 cambiar un precio es cerrar una vigencia y abrir otra', () => {
     expect(toClinicalDate(new Date('2026-07-01T00:00:00Z'))).toBe(
       on('2026-07-01'),
     );
+  });
+});
+
+describe('BI-230 corregir el importe de un precio en el sitio', () => {
+  const today = clinicalDateOf(new Date());
+  const amount = Money.parse('31.50');
+
+  it('BI-230 admite corregir un precio vigente, abierto o con fin futuro', () => {
+    expect(() =>
+      checkPriceCorrection(
+        { validFrom: addDays(today, -30), validTo: null },
+        amount,
+        today,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      checkPriceCorrection(
+        { validFrom: addDays(today, -30), validTo: addDays(today, 1) },
+        amount,
+        today,
+      ),
+    ).not.toThrow();
+  });
+
+  it('BI-230 admite corregir un precio que todavía no rige', () => {
+    expect(() =>
+      checkPriceCorrection(
+        { validFrom: addDays(today, 10), validTo: null },
+        amount,
+        today,
+      ),
+    ).not.toThrow();
+  });
+
+  it('BI-230 rechaza corregir un precio cuya vigencia terminó antes de hoy', () => {
+    // `validTo` is exclusive: ending today means its last day was yesterday.
+    expect(() =>
+      checkPriceCorrection(
+        { validFrom: addDays(today, -30), validTo: today },
+        amount,
+        today,
+      ),
+    ).toThrow(PriceNotEditableError);
+  });
+
+  it('BI-230 rechaza un importe negativo también al corregir', () => {
+    expect(() =>
+      checkPriceCorrection(
+        { validFrom: today, validTo: null },
+        Money.parse('-1'),
+        today,
+      ),
+    ).toThrow(PriceNegativeAmountError);
+  });
+
+  it('BI-230 el error dice qué hacer y nombra el importe', () => {
+    const error = new PriceNotEditableError();
+    expect(error.code).toBe('PRICE_NOT_EDITABLE');
+    expect(error.userTitle).toMatch(/fije un precio nuevo/);
+    expect(error.fieldErrors?.[0]).toMatchObject({ field: 'amount' });
   });
 });

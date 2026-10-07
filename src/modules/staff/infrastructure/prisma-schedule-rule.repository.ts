@@ -128,6 +128,38 @@ export class PrismaScheduleRuleRepository implements ScheduleRuleRepository {
     return toView(created);
   }
 
+  async split(
+    id: string,
+    closesOn: ClinicalDate,
+    opens: ScheduleRuleWrite,
+  ): Promise<ScheduleRuleView | null> {
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        await tx.practitionerScheduleRule.update({
+          where: { id },
+          data: { validTo: fromClinicalDate(closesOn) },
+        });
+        return tx.practitionerScheduleRule.create({
+          data: {
+            practitionerId: opens.practitionerId,
+            siteId: opens.siteId,
+            weekday: opens.weekday,
+            startTime: toTimeColumn(opens.startTime),
+            endTime: toTimeColumn(opens.endTime),
+            validFrom: fromClinicalDate(opens.validFrom),
+            validTo:
+              opens.validTo === null ? null : fromClinicalDate(opens.validTo),
+          },
+          select: RULE_SELECT,
+        });
+      });
+      return toView(created);
+    } catch (error) {
+      if (isRecordNotFound(error)) return null;
+      throw error;
+    }
+  }
+
   async update(
     id: string,
     patch: Partial<Omit<ScheduleRuleWrite, 'practitionerId'>> & {

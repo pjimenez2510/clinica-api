@@ -17,6 +17,7 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 
 import { useDatabase } from './setup/database';
 import {
+  createEncounter,
   createPatient,
   createPractitioner,
   establishmentId,
@@ -613,6 +614,62 @@ describe('la organización por HTTP', () => {
       });
       expect(trail.map((row) => row.action)).toEqual(['CREATE', 'UPDATE']);
       expect(trail.every((row) => row.userId === adminUserId)).toBe(true);
+    });
+  });
+
+  describe('corregir los códigos mientras nadie los usó (OR-034, OR-035)', () => {
+    it('OR-034 el código MSP de una sede sin atenciones se corrige; con una, la sede lo dice y se rechaza', async () => {
+      const site = await createSite();
+      expect((await get(`/sites/${site.id}`).expect(200)).body).toMatchObject({
+        mspUnicodeLocked: false,
+      });
+      // Control positivo: sin atenciones, entra.
+      await patch(`/sites/${site.id}`, { mspUnicode: 'MSP-9001' }).expect(200);
+
+      const practitioner = await createPractitioner(prisma);
+      const patient = await createPatient(prisma);
+      await createEncounter(prisma, {
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        patientId: patient.id,
+      });
+
+      expect((await get(`/sites/${site.id}`).expect(200)).body).toMatchObject({
+        mspUnicode: 'MSP-9001',
+        mspUnicodeLocked: true,
+      });
+      const refused = await patch(`/sites/${site.id}`, {
+        mspUnicode: 'MSP-9002',
+      }).expect(409);
+      expect((refused.body as { code: string }).code).toBe(
+        'SITE_MSP_UNICODE_IN_USE',
+      );
+    });
+
+    it('OR-035 el código de un punto de emisión sin comprobantes se corrige, y la lista dice que no está fijo', async () => {
+      const site = await createSite();
+      const point = (
+        await post(`/sites/${site.id}/emission-points`, { code: '001' }).expect(
+          201,
+        )
+      ).body as { id: string };
+
+      const listed = (
+        await get(`/sites/${site.id}/emission-points`).expect(200)
+      ).body as {
+        items: { id: string; codeLocked: boolean }[];
+      };
+      expect(listed.items).toEqual([
+        expect.objectContaining({ id: point.id, codeLocked: false }),
+      ]);
+
+      const corrected = await patch(
+        `/emission-points/${point.id}?siteId=${site.id}`,
+        {
+          code: '002',
+        },
+      ).expect(200);
+      expect((corrected.body as { code: string }).code).toBe('002');
     });
   });
 

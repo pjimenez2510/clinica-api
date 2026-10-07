@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
-import { SpecialtyNotFoundError } from '../../../shared/domain/errors/master-data.errors';
+import {
+  ServiceTypeNotFoundError,
+  SpecialtyNotFoundError,
+} from '../../../shared/domain/errors/master-data.errors';
 import { DurationNotSlotMultipleError } from '../../../shared/domain/errors/slot-atom.errors';
 import type {
   SpecialtiesRepository,
@@ -45,6 +48,7 @@ const SERVICE_TYPE: ServiceTypeView = {
 /** What each test may tune before calling the service. */
 interface Answers {
   findSpecialty: SpecialtyView | null;
+  findServiceType: ServiceTypeView | null;
   updateSpecialty: SpecialtyView | null;
   updateServiceType: ServiceTypeView | null;
   deleteSpecialty: boolean;
@@ -93,6 +97,10 @@ function makeDouble(answers: Answers): {
       note('listServiceTypes', specialtyId, includeInactive);
       return Promise.resolve([SERVICE_TYPE]);
     },
+    findServiceType: (id) => {
+      note('findServiceType', id);
+      return Promise.resolve(answers.findServiceType);
+    },
     createServiceType: (input) => {
       note('createServiceType', input);
       return Promise.resolve(SERVICE_TYPE);
@@ -132,6 +140,7 @@ describe('SpecialtiesService', () => {
   beforeEach(() => {
     answers = {
       findSpecialty: SPECIALTY,
+      findServiceType: SERVICE_TYPE,
       updateSpecialty: SPECIALTY,
       updateServiceType: { ...SERVICE_TYPE, durationMinutes: 30 },
       deleteSpecialty: true,
@@ -350,6 +359,67 @@ describe('SpecialtiesService', () => {
           [],
         );
       });
+    });
+  });
+
+  describe('bitácora con antes y después (SP-029)', () => {
+    it('SP-029 records the specialty before and after a rename', async () => {
+      answers.updateSpecialty = { ...SPECIALTY, name: 'Cardiología Clínica' };
+
+      await service.updateSpecialty(
+        SPECIALTY.id,
+        { name: 'Cardiología Clínica' },
+        REQUESTER,
+      );
+
+      expect(recorded[0]).toMatchObject({
+        action: 'UPDATE',
+        resourceType: 'configuration',
+        resourceId: SPECIALTY.id,
+      });
+      expect(recorded[0]?.before).toEqual({
+        code: 'cardiologia',
+        name: 'Cardiología',
+        active: true,
+      });
+      expect(recorded[0]?.after).toEqual({
+        code: 'cardiologia',
+        name: 'Cardiología Clínica',
+        active: true,
+      });
+    });
+
+    it('SP-029 records the service type before and after a duration change', async () => {
+      await service.updateServiceType(
+        SERVICE_TYPE.id,
+        { durationMinutes: 30 },
+        REQUESTER,
+      );
+
+      expect(recorded[0]?.before).toEqual({
+        specialtyId: SPECIALTY.id,
+        name: 'Control',
+        durationMinutes: 20,
+        active: true,
+      });
+      expect(recorded[0]?.after).toMatchObject({ durationMinutes: 30 });
+    });
+
+    it('SP-029 a new specialty carries only the after half', async () => {
+      await service.createSpecialty({ name: 'Cardiología' }, REQUESTER);
+
+      expect(recorded[0]?.before).toBeUndefined();
+      expect(recorded[0]?.after).toMatchObject({ name: 'Cardiología' });
+    });
+
+    it('SP-029 editing a service type that does not exist answers 404 and records nothing', async () => {
+      answers.findServiceType = null;
+
+      await expect(
+        service.updateServiceType('ghost', { name: 'X' }, REQUESTER),
+      ).rejects.toBeInstanceOf(ServiceTypeNotFoundError);
+      expect(writes()).toEqual([]);
+      expect(recorded).toEqual([]);
     });
   });
 });

@@ -317,6 +317,27 @@ export class EmailAlreadyRegisteredError extends ConflictError {
   }
 }
 
+/**
+ * AU-050. The person already signed in with this address: correcting it from
+ * administration would let whoever administers receive their next invitation
+ * and take the account — and with it, their signature.
+ */
+export class AccountEmailFixedError extends ConflictError {
+  readonly code = 'ACCOUNT_EMAIL_FIXED';
+  override readonly userTitle =
+    'Esta persona ya entró con este correo: desde aquí sólo se corrige el de una cuenta que todavía no ha entrado';
+
+  constructor() {
+    super('The email of an account that already signed in cannot change', {}, [
+      {
+        field: 'email',
+        code: 'ACCOUNT_EMAIL_FIXED',
+        message: 'Ya entró con este correo',
+      },
+    ]);
+  }
+}
+
 /** The account does not exist. */
 export class UserNotFoundError extends NotFoundError {
   readonly code = 'USER_NOT_FOUND';

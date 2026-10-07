@@ -83,7 +83,9 @@ export class SpecialtiesService {
       code: specialtyCodeFromName(input.name),
       name: input.name,
     });
-    await this.recordMutation('CREATE', created.id, requester);
+    await this.recordMutation('CREATE', created.id, requester, {
+      after: specialtySnapshot(created),
+    });
     return created;
   }
 
@@ -107,10 +109,17 @@ export class SpecialtiesService {
     patch: { name?: string; active?: boolean },
     requester: Requester,
   ): Promise<SpecialtyView> {
+    // SP-029. The row as it stood, so the trail can say what was replaced.
+    const current = await this.repository.findSpecialty(id);
+    if (!current) throw new SpecialtyNotFoundError();
+
     const updated = await this.repository.updateSpecialty(id, patch);
     if (!updated) throw new SpecialtyNotFoundError();
 
-    await this.recordMutation('UPDATE', updated.id, requester);
+    await this.recordMutation('UPDATE', updated.id, requester, {
+      before: specialtySnapshot(current),
+      after: specialtySnapshot(updated),
+    });
     return updated;
   }
 
@@ -149,7 +158,9 @@ export class SpecialtiesService {
     await this.requireSlotMultiple(input.durationMinutes);
 
     const created = await this.repository.createServiceType(input);
-    await this.recordMutation('CREATE', created.id, requester);
+    await this.recordMutation('CREATE', created.id, requester, {
+      after: serviceTypeSnapshot(created),
+    });
     return created;
   }
 
@@ -168,10 +179,17 @@ export class SpecialtiesService {
       await this.requireSlotMultiple(patch.durationMinutes);
     }
 
+    // SP-029. See `updateSpecialty`.
+    const current = await this.repository.findServiceType(id);
+    if (!current) throw new ServiceTypeNotFoundError();
+
     const updated = await this.repository.updateServiceType(id, patch);
     if (!updated) throw new ServiceTypeNotFoundError();
 
-    await this.recordMutation('UPDATE', updated.id, requester);
+    await this.recordMutation('UPDATE', updated.id, requester, {
+      before: serviceTypeSnapshot(current),
+      after: serviceTypeSnapshot(updated),
+    });
     return updated;
   }
 
@@ -221,6 +239,7 @@ export class SpecialtiesService {
     action: AuditAction,
     resourceId: string,
     requester: Requester,
+    change: { before?: Readonly<object>; after?: Readonly<object> } = {},
   ): Promise<void> {
     await this.audit.record({
       userId: requester.userId,
@@ -229,6 +248,28 @@ export class SpecialtiesService {
       action,
       ip: requester.ip,
       userAgent: requester.userAgent,
+      // SP-029. Plain copies; `'configuration'` has carried a payload since
+      // D-017, and these rows hold names, a duration and a flag — no PHI.
+      before: change.before && { ...change.before },
+      after: change.after && { ...change.after },
     });
   }
+}
+
+/**
+ * SP-029. A specialty's fields. The code travels although nobody edits it
+ * (SP-010): it is what names the specialty to whoever reads the trail.
+ */
+function specialtySnapshot(view: SpecialtyView): object {
+  return { code: view.code, name: view.name, active: view.active };
+}
+
+/** SP-029. A service type's editable fields, with the specialty it hangs off. */
+function serviceTypeSnapshot(view: ServiceTypeView): object {
+  return {
+    specialtyId: view.specialtyId,
+    name: view.name,
+    durationMinutes: view.durationMinutes,
+    active: view.active,
+  };
 }

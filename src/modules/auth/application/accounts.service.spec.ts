@@ -9,6 +9,7 @@ import {
   CannotGrantToSelfError,
   RoleNotFoundError,
   UserNotFoundError,
+  AccountEmailFixedError,
 } from '../domain/auth.errors';
 import { UNUSABLE_PASSWORD_HASH } from '../domain/password-hashing';
 
@@ -101,6 +102,8 @@ class AccountsDouble implements AccountAdminRepositoryPort {
   readonly calls: Call[] = [];
   findAnswer: AccountView | null = ACCOUNT;
   setActiveAnswer: AccountView | null = { ...ACCOUNT, active: false };
+  /** AU-052. What `update` answers when it must differ from the stored row. */
+  updateAnswer: AccountView | null | undefined = undefined;
   createdWith: CreateAccountInput | null = null;
 
   list(filter: AccountListFilter): Promise<readonly AccountListItem[]> {
@@ -121,7 +124,9 @@ class AccountsDouble implements AccountAdminRepositoryPort {
 
   update(id: string, patch: AccountPatch): Promise<AccountView | null> {
     this.calls.push({ method: 'update', args: [id, patch] });
-    return Promise.resolve(this.findAnswer);
+    return Promise.resolve(
+      this.updateAnswer === undefined ? this.findAnswer : this.updateAnswer,
+    );
   }
 
   setActive(id: string, active: boolean): Promise<AccountView | null> {
@@ -349,6 +354,16 @@ describe('la administración de cuentas', () => {
           action: 'CREATE',
           ip: '10.0.0.1',
           userAgent: undefined,
+          // AU-052. A creation carries what it left, and only the fields
+          // an administrator types.
+          before: undefined,
+          after: {
+            firstName: 'Ana',
+            lastName: 'Villacís',
+            cedula: null,
+            email: 'nueva@clinica.ec',
+            active: true,
+          },
         },
       ]);
       // La entrada de bitácora no tiene dónde poner un hash, que es cómo se
@@ -592,8 +607,159 @@ describe('la administración de cuentas', () => {
           action: 'UPDATE',
           ip: '10.0.0.1',
           userAgent: undefined,
+          before: { grants: [] },
+          after: {
+            grants: [{ roleId: NURSE_ROLE.id, roleCode: 'ROLE', siteId: null }],
+          },
         },
       ]);
+    });
+  });
+
+  describe('corregir el correo (AU-050)', () => {
+    it('AU-050 corrige el correo en minúsculas y, si aún no entró, anula la invitación y manda otra', async () => {
+      accounts.updateAnswer = { ...ACCOUNT, email: 'ana.villacis@clinica.ec' };
+
+      await service.update(
+        'user-1',
+        { email: ' Ana.Villacis@Clinica.ec ' },
+        REQUESTER,
+      );
+
+      expect(
+        accounts.calls.find((call) => call.method === 'update')?.args[1],
+      ).toMatchObject({
+        email: 'ana.villacis@clinica.ec',
+      });
+      expect(invitations.issuedFor).toEqual(['user-1']);
+    });
+
+    it('AU-050 el correo de una cuenta que ya entró no se cambia: ACCOUNT_EMAIL_FIXED, sin escribir ni invitar', async () => {
+      accounts.findAnswer = { ...ACCOUNT, credentialPending: false };
+
+      await expect(
+        service.update('user-1', { email: 'otra@clinica.ec' }, REQUESTER),
+      ).rejects.toBeInstanceOf(AccountEmailFixedError);
+      expect(accounts.calls.map((call) => call.method)).not.toContain('update');
+      expect(invitations.issuedFor).toEqual([]);
+    });
+
+    it('AU-050 una cuenta que ya entró sí corrige su nombre mientras manda el mismo correo', async () => {
+      accounts.findAnswer = { ...ACCOUNT, credentialPending: false };
+
+      await service.update(
+        'user-1',
+        { email: ' NUEVA@clinica.ec ', firstName: 'Ana María' },
+        REQUESTER,
+      );
+
+      expect(invitations.issuedFor).toEqual([]);
+    });
+
+    it('AU-050 enviar el mismo correo no lo reescribe ni reenvía nada', async () => {
+      await service.update(
+        'user-1',
+        { email: ACCOUNT.email, firstName: 'Ana' },
+        REQUESTER,
+      );
+
+      expect(
+        accounts.calls.find((call) => call.method === 'update')?.args[1],
+      ).toMatchObject({
+        email: undefined,
+      });
+      expect(invitations.issuedFor).toEqual([]);
+    });
+  });
+
+  describe('bitácora con antes y después (AU-052)', () => {
+    /** Every key a secret could hide under, in any casing. */
+    const SECRET_KEY = /password|hash|secret|mfa|totp|token|backup/i;
+    const keysOf = (entry: AccessAuditEntry | undefined): string[] => [
+      ...Object.keys(entry?.before ?? {}),
+      ...Object.keys(entry?.after ?? {}),
+    ];
+
+    it('AU-052 records the account before and after an edit, without secrets', async () => {
+      accounts.findAnswer = { ...ACCOUNT, cedula: null, mfaEnabled: true };
+      accounts.updateAnswer = {
+        ...ACCOUNT,
+        lastName: 'Villacís Mora',
+        cedula: '1710034065',
+        mfaEnabled: true,
+      };
+
+      await service.update(
+        'user-1',
+        { lastName: 'Villacís Mora', cedula: '1710034065' },
+        REQUESTER,
+      );
+
+      expect(recorded[0]).toMatchObject({
+        action: 'UPDATE',
+        resourceType: 'auth',
+        resourceId: 'user-1',
+      });
+      expect(recorded[0]?.before).toEqual({
+        firstName: 'Ana',
+        lastName: 'Villacís',
+        cedula: null,
+        email: 'nueva@clinica.ec',
+        active: true,
+      });
+      expect(recorded[0]?.after).toEqual({
+        firstName: 'Ana',
+        lastName: 'Villacís Mora',
+        cedula: '1710034065',
+        email: 'nueva@clinica.ec',
+        active: true,
+      });
+      expect(keysOf(recorded[0]).filter((key) => SECRET_KEY.test(key))).toEqual([]); // prettier-ignore
+    });
+
+    it('AU-052 records the active flag before and after a deactivation', async () => {
+      await service.deactivate('user-1', REQUESTER);
+
+      expect(recorded[0]?.before).toMatchObject({ active: true });
+      expect(recorded[0]?.after).toMatchObject({ active: false });
+      expect(keysOf(recorded[0]).filter((key) => SECRET_KEY.test(key))).toEqual([]); // prettier-ignore
+    });
+
+    it('AU-052 records the grants that were replaced and the ones that replaced them', async () => {
+      accounts.grants = [
+        {
+          roleId: ADMIN_ROLE.id,
+          roleCode: 'ADMIN',
+          roleName: 'Administrador',
+          siteId: 'site-1',
+        },
+      ];
+
+      await service.replaceGrants(
+        'user-1',
+        [{ roleId: NURSE_ROLE.id, siteId: null }],
+        REQUESTER,
+        DIRECTOR,
+      );
+
+      expect(recorded[0]?.before).toEqual({
+        grants: [
+          { roleId: ADMIN_ROLE.id, roleCode: 'ADMIN', siteId: 'site-1' },
+        ],
+      });
+      expect(recorded[0]?.after).toEqual({
+        grants: [{ roleId: NURSE_ROLE.id, roleCode: 'ROLE', siteId: null }],
+      });
+    });
+
+    it('AU-052 editing an account that does not exist records nothing', async () => {
+      accounts.findAnswer = null;
+
+      await expect(
+        service.update('ghost', { firstName: 'X' }, REQUESTER),
+      ).rejects.toBeInstanceOf(UserNotFoundError);
+      expect(accounts.calls.some((call) => call.method === 'update')).toBe(false); // prettier-ignore
+      expect(recorded).toEqual([]);
     });
   });
 

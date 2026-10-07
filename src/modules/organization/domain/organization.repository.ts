@@ -118,6 +118,8 @@ export type SiteScopeFilter = 'all' | readonly string[];
  * is not here: it cannot be edited.
  */
 export interface SitePatch {
+  /** OR-034. Only while the site has no attention. */
+  mspUnicode?: string;
   name?: string;
   ruc?: string | null;
   parishConceptId?: string | null;
@@ -181,6 +183,9 @@ export interface OrganizationRepository {
   createSite(input: SiteInput): Promise<SiteView>;
 
   updateSite(id: string, patch: SitePatch): Promise<SiteView | null>;
+
+  /** OR-034. Whether any attention was registered at the site. */
+  siteHasEncounters(siteId: string): Promise<boolean>;
 
   /**
    * Hard delete (OR-006). `false` when the row does not exist; throws

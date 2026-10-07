@@ -347,6 +347,24 @@ export interface BillingCatalogueRepository {
     billableServiceId: string,
     change: PriceChange,
   ): Promise<PriceRow>;
+  /** BI-230. One price row with the list it belongs to, or `null`. */
+  findPrice(
+    priceId: string,
+  ): Promise<(PriceRow & { priceListId: string }) | null>;
+  /**
+   * BI-230. Rewrites the amount of one row with the stamp of who corrected it;
+   * `trg_price_record_version` archives the previous row in the same statement.
+   */
+  correctPriceAmount(
+    priceId: string,
+    amount: Money,
+    stamp: { by: string; at: Date },
+  ): Promise<PriceRow>;
+  /**
+   * BI-230. Charges not yet invoiced (planned or billable) that froze this
+   * price at `amount`: they keep it (BI-050), so whoever corrects has to know.
+   */
+  countOpenChargesAt(priceId: string, amount: Money): Promise<number>;
 }
 
 export const BILLING_CATALOGUE_REPOSITORY = Symbol(

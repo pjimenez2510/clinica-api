@@ -151,7 +151,15 @@ export class SiteResourcesController {
       siteId,
       query.includeInactive,
     );
-    return { items };
+    // OR-035. A site has a handful of points: one question each.
+    return {
+      items: await Promise.all(
+        items.map(async (point) => ({
+          ...point,
+          codeLocked: await this.resources.isEmissionPointCodeLocked(point.id),
+        })),
+      ),
+    };
   }
 
   /** OR-023, OR-024, OR-026. */
@@ -172,7 +180,7 @@ export class SiteResourcesController {
     );
   }
 
-  /** OR-026. The code itself is not editable — see the DTO for why. */
+  /** OR-026, OR-035 (the code, while the point issued nothing). */
   @Patch('emission-points/:id')
   @RequirePermission('site:manage', 'query')
   @ApiOperation({ summary: 'Editar o desactivar un punto de emisión' })
@@ -185,7 +193,7 @@ export class SiteResourcesController {
     await this.assertEmissionPointInScope(id);
     return this.resources.updateEmissionPoint(
       id,
-      { description: dto.description, active: dto.active },
+      { code: dto.code, description: dto.description, active: dto.active },
       this.requester(req),
     );
   }

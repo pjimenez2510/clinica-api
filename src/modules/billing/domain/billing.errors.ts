@@ -254,6 +254,17 @@ export class PayerRucRequiredError extends ValidationError {
 // Price lists (BI-040 to BI-048)
 // ───────────────────────────────────────────────────────────────────────────
 
+/** BI-230. The price row named in the route does not exist. */
+export class PriceEntryNotFoundError extends NotFoundError {
+  readonly code = 'PRICE_ENTRY_NOT_FOUND';
+  override readonly userTitle =
+    'Ese precio no existe. Actualice la lista e intente de nuevo';
+
+  constructor() {
+    super('Price entry not found');
+  }
+}
+
 /** BI-040. */
 export class PriceListNotFoundError extends NotFoundError {
   readonly code = 'PRICE_LIST_NOT_FOUND';
@@ -277,6 +288,27 @@ export class PricePeriodInvalidError extends ValidationError {
         field: 'validTo',
         code: 'PRICE_PERIOD_INVALID',
         message: 'Indique una fecha posterior a la de inicio, o déjela vacía',
+      },
+    ]);
+  }
+}
+
+/**
+ * BI-230. A price whose validity ended before today is history: what it
+ * justified is already frozen in its charges, and the way to change what a
+ * service costs from now on is a new price (BI-044).
+ */
+export class PriceNotEditableError extends ValidationError {
+  readonly code = 'PRICE_NOT_EDITABLE';
+  override readonly userTitle =
+    'Ese precio ya no rige: para cambiar lo que cuesta, fije un precio nuevo';
+
+  constructor() {
+    super('A price whose validity already ended cannot be corrected', {}, [
+      {
+        field: 'amount',
+        code: 'PRICE_NOT_EDITABLE',
+        message: 'Sólo se corrige un precio vigente o futuro',
       },
     ]);
   }

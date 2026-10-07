@@ -67,6 +67,9 @@ export interface SpecialtiesRepository {
     includeInactive: boolean,
   ): Promise<readonly ServiceTypeView[]>;
 
+  /** SP-029. One service type, active or not; `null` when there is none. */
+  findServiceType(id: string): Promise<ServiceTypeView | null>;
+
   /** SP-020. Throws `ServiceTypeDuplicateError` on a repeated name (SP-026). */
   createServiceType(input: {
     specialtyId: string;

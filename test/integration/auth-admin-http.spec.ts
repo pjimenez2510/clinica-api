@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 // AU-035: el segundo factor se matricula por las rutas reales, y el TOTP se
 // calcula desde el `uri` de la matrícula — lo que haría el teléfono al leer el
@@ -707,6 +707,86 @@ describe('la administración de cuentas y roles por HTTP', () => {
 
       // El administrador de antes ya no administra: el relevo se completó.
       await get('/users', token).expect(403);
+    });
+  });
+
+  describe('corregir sin otra cuenta ni otro rol (AU-050, AU-051)', () => {
+    it('AU-050 corrige el correo de una cuenta que aún no entró y le manda la invitación al correo nuevo', async () => {
+      const created = await createAccount({ email: 'mal.tecleado@clinica.ec' });
+      mailer.reset();
+
+      const response = await patch(`/users/${created.id}`, {
+        email: 'Bien.Escrito@Clinica.ec',
+      }).expect(200);
+
+      expect((response.body as AccountBody).email).toBe(
+        'bien.escrito@clinica.ec',
+      );
+      expect(mailer.last()?.to).toBe('bien.escrito@clinica.ec');
+      // AU-027: only the new link is alive.
+      expect(
+        await prisma.credentialInvitation.count({
+          where: { userId: created.id, usedAt: null },
+        }),
+      ).toBe(1);
+      const audit = await prisma.accessAudit.findFirst({
+        where: {
+          resourceType: 'auth',
+          resourceId: created.id,
+          before: { not: Prisma.DbNull },
+        },
+        orderBy: { occurredAt: 'desc' },
+      });
+      expect(audit?.before).toMatchObject({ email: 'mal.tecleado@clinica.ec' });
+      expect(
+        (response.body as { invitationSent?: boolean }).invitationSent,
+      ).toBe(true);
+      // AU-052: what reached the never-purged trail has no secret in it.
+      const stored = JSON.stringify([audit?.before, audit?.after]);
+      expect(stored).not.toMatch(/password|hash|secret|mfa|totp|token|backup/i);
+    });
+
+    it('AU-050 el correo de una cuenta que ya entró no se cambia: ACCOUNT_EMAIL_FIXED, y nadie recibe invitación', async () => {
+      mailer.reset();
+      const refused = await patch(`/users/${adminUserId}`, {
+        email: 'otra.direccion@clinica.ec',
+      }).expect(409);
+
+      expect((refused.body as Problem).code).toBe('ACCOUNT_EMAIL_FIXED');
+      expect(mailer.sent).toHaveLength(0);
+      const stored = await prisma.user.findUniqueOrThrow({
+        where: { id: adminUserId },
+      });
+      expect(stored.email).toBe(ADMIN_EMAIL);
+    });
+
+    it('AU-050 un correo que ya tiene otra cuenta se rechaza con EMAIL_ALREADY_REGISTERED', async () => {
+      await createAccount({ email: 'ocupado@clinica.ec' });
+      const created = await createAccount({ email: 'libre@clinica.ec' });
+
+      const response = await patch(`/users/${created.id}`, {
+        email: 'ocupado@clinica.ec',
+      }).expect(409);
+
+      expect((response.body as Problem).code).toBe('EMAIL_ALREADY_REGISTERED');
+    });
+
+    it('AU-051 corrige el código de un rol propio, y el de uno del sistema se rechaza', async () => {
+      const custom = await createRole({
+        code: 'ENLACE_SEGUROS',
+        name: 'Enlace',
+      });
+
+      const corrected = await patch(`/roles/${custom.id}`, {
+        code: 'ENLACE_ASEGURADORAS',
+      }).expect(200);
+      expect((corrected.body as RoleBody).code).toBe('ENLACE_ASEGURADORAS');
+
+      const medico = await roleIdOf('MEDICO');
+      const refused = await patch(`/roles/${medico}`, {
+        code: 'DOCTOR',
+      }).expect(422);
+      expect((refused.body as Problem).code).toBe('SYSTEM_ROLE_PROTECTED');
     });
   });
 

@@ -16,6 +16,8 @@ import type {
   TaxRateView,
 } from '../domain/billing.repository';
 import { Percentage } from '../domain/money';
+import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
+
 import { ServiceCatalogueService } from './service-catalogue.service';
 
 const requester = { userId: 'user-1' };
@@ -199,7 +201,7 @@ describe('BI-012, BI-014 retirar una prestación', () => {
 });
 
 describe('BI-046, BI-132 la bitácora del catálogo', () => {
-  it('BI-046 registra quién creó la prestación, sin cargar la ficha en la bitácora', async () => {
+  it('BI-046 registra quién creó la prestación, y desde BI-231 solo lo que dejó', async () => {
     const { service: catalogue, mocks } = build();
 
     await catalogue.createService(newService, requester);
@@ -211,7 +213,72 @@ describe('BI-046, BI-132 la bitácora del catálogo', () => {
       action: 'CREATE',
       ip: undefined,
       userAgent: undefined,
+      before: undefined,
+      after: expect.objectContaining({ code: 'CONS-MG-PV' }) as unknown,
     });
+  });
+
+  it('BI-231 records the service before and after an edit, amounts as strings', async () => {
+    const { service: catalogue, mocks } = build({
+      updateBillableService: vi.fn().mockResolvedValue({
+        ...service,
+        name: 'Consulta general',
+        taxRateId: 'tax-15',
+        taxPercentage: Percentage.parse('15'),
+      }),
+    });
+
+    await catalogue.updateService(
+      'service-1',
+      { name: 'Consulta general', taxRateId: 'tax-15' },
+      requester,
+    );
+
+    const entry = mocks.record.mock.calls[0]?.[0] as AccessAuditEntry;
+    const common = {
+      code: 'CONS-MG-PV',
+      categoryId: CONSULTATIONS.id,
+      tariffCode: null,
+      active: true,
+      specialtyId: null,
+      visitSequence: null,
+    };
+    expect(entry.before).toEqual({
+      ...common,
+      name: 'Consulta de medicina general, primera vez',
+      taxRateId: 'tax-0',
+    });
+    expect(entry.after).toEqual({
+      ...common,
+      name: 'Consulta general',
+      taxRateId: 'tax-15',
+    });
+    // `Money` and `Percentage` hold bigints: a snapshot carrying one would
+    // make the audit INSERT throw and the entry would be lost.
+    expect(() => JSON.stringify(entry)).not.toThrow();
+  });
+
+  it('BI-231 records the category before and after an edit', async () => {
+    const { service: catalogue, mocks } = build({
+      updateServiceCategory: vi
+        .fn()
+        .mockResolvedValue({ ...SUPPLIES, name: 'Insumos médicos' }),
+    });
+
+    await catalogue.updateCategory(
+      SUPPLIES.id,
+      { name: 'Insumos médicos' },
+      requester,
+    );
+
+    expect(mocks.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: 'billable_service_category',
+        action: 'UPDATE',
+        before: { name: 'Insumos', kind: 'SUPPLY', active: true },
+        after: { name: 'Insumos médicos', kind: 'SUPPLY', active: true },
+      }),
+    );
   });
 
   it('BI-025 al cambiar la tarifa no toca ningún cargo ya registrado', async () => {

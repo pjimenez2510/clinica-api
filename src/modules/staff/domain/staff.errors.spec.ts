@@ -128,6 +128,7 @@ describe('los errores del módulo staff', () => {
       'PRACTITIONER_NOT_IN_SITE',
       'PRACTITIONER_NOT_SCHEDULABLE',
       'PRIMARY_SPECIALTY_REQUIRED',
+      'SCHEDULE_RULE_NOT_EDITABLE',
       'SCHEDULE_RULE_NOT_FOUND',
       'SPECIALTY_INACTIVE',
     ] as const) {
