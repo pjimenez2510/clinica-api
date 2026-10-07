@@ -17,6 +17,7 @@ import {
 import {
   type ScheduleRuleDraft,
   closeScheduleRuleOn,
+  planScheduleRuleEdit,
   scheduleRuleProblems,
 } from '../domain/schedule-rule';
 import {
@@ -140,6 +141,7 @@ export class ScheduleRulesService {
     patch: ScheduleRulePatch,
     requester: Requester,
     caller: Principal,
+    today: ClinicalDate = clinicalDateOf(new Date()),
   ): Promise<ScheduleRuleOutcome> {
     const current = await this.requireRule(ruleId);
     assertSitesInScope(caller, 'staff:manage', [
@@ -163,6 +165,45 @@ export class ScheduleRulesService {
       );
     }
     await this.requireDerivable(merged);
+
+    // ST-050. A rule that already ruled past days is not rewritten: the
+    // change opens a new rule from today and the old one ends yesterday.
+    const plan = planScheduleRuleEdit(
+      placedOf(current),
+      placedOf(merged),
+      today,
+    );
+    if (plan.kind === 'SPLIT') {
+      const opens = {
+        practitionerId: current.practitionerId,
+        siteId: plan.opens.siteId,
+        weekday: plan.opens.weekday,
+        startTime: plan.opens.startTime.toString(),
+        endTime: plan.opens.endTime.toString(),
+        validFrom: plan.opens.validFrom,
+        validTo: plan.opens.validTo,
+      };
+      await this.requireDerivable(opens);
+      const opened = await this.rules.split(ruleId, plan.closesOn, opens);
+      if (!opened) throw new ScheduleRuleNotFoundError();
+
+      await this.trail.record('UPDATE', current.id, requester, {
+        before: scheduleRuleSnapshot(current),
+        after: scheduleRuleSnapshot({ ...current, validTo: plan.closesOn }),
+      });
+      await this.trail.record('CREATE', opened.id, requester, {
+        after: scheduleRuleSnapshot(opened),
+      });
+      return {
+        rule: opened,
+        conflicts: await this.conflictsAfter(
+          opened,
+          current.siteId === opened.siteId
+            ? [opened.siteId]
+            : [current.siteId, opened.siteId],
+        ),
+      };
+    }
 
     const updated = await this.rules.update(ruleId, definedOf(patch));
     if (!updated) throw new ScheduleRuleNotFoundError();
@@ -379,5 +420,24 @@ function scheduleRuleSnapshot(rule: ScheduleRuleView): object {
     validFrom: rule.validFrom,
     validTo: rule.validTo,
     active: rule.active,
+  };
+}
+
+/** ST-050. A rule, stored or merged, in the shape the edit plan reads. */
+function placedOf(rule: {
+  siteId: string;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  validFrom: ClinicalDate;
+  validTo: ClinicalDate | null;
+}) {
+  return {
+    siteId: rule.siteId,
+    weekday: rule.weekday,
+    startTime: WallClockTime.parse(rule.startTime),
+    endTime: WallClockTime.parse(rule.endTime),
+    validFrom: rule.validFrom,
+    validTo: rule.validTo,
   };
 }

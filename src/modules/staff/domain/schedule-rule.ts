@@ -1,8 +1,10 @@
 import {
   type ClinicalDate,
   WallClockTime,
+  addDays,
   clinicalDaySpan,
 } from '../../../shared/domain/clinic-time';
+import { ScheduleRuleNotEditableError } from './staff.errors';
 
 /**
  * What a schedule rule must satisfy, and what closing one means (ST-041,
@@ -169,4 +171,71 @@ export function isInForceOn(
 ): boolean {
   if (clinicalDaySpan(rule.validFrom, date) === 0) return false;
   return rule.validTo === null || clinicalDaySpan(date, rule.validTo) > 0;
+}
+
+/** A rule as an edit sees it: the draft plus the site it belongs to. */
+export interface PlacedScheduleRule extends ScheduleRuleDraft {
+  siteId: string;
+}
+
+/**
+ * What editing a rule does (ST-050, D-127).
+ *
+ * IN PLACE while the rule has not ruled any day yet, or when only its end
+ * moves forward: nothing in the past changes.
+ *
+ * SPLIT when the day, the site or the hours of a rule that already ruled past
+ * days change: the old row is closed YESTERDAY and a new one opens TODAY (or
+ * on the later start asked for) with what was edited, until the end the old
+ * one had. The two rows are the history — last week's agenda keeps saying
+ * what it said — and the user never has to «cerrar y crear otra».
+ */
+export type ScheduleRuleEdit =
+  | { kind: 'IN_PLACE' }
+  | {
+      kind: 'SPLIT';
+      closesOn: ClinicalDate;
+      opens: PlacedScheduleRule;
+    };
+
+export function planScheduleRuleEdit(
+  current: PlacedScheduleRule,
+  patch: Partial<PlacedScheduleRule>,
+  today: ClinicalDate,
+): ScheduleRuleEdit {
+  // Not started: there is no past to protect.
+  if (current.validFrom >= today) return { kind: 'IN_PLACE' };
+
+  const yesterday = addDays(today, -1);
+  // Ended before today: it is history, and a new rule is the honest answer.
+  if (current.validTo !== null && current.validTo < yesterday) {
+    throw new ScheduleRuleNotEditableError();
+  }
+
+  const merged: PlacedScheduleRule = { ...current, ...patch };
+  const reshaped =
+    merged.weekday !== current.weekday ||
+    merged.siteId !== current.siteId ||
+    merged.startTime.toString() !== current.startTime.toString() ||
+    merged.endTime.toString() !== current.endTime.toString() ||
+    merged.validFrom !== current.validFrom;
+
+  if (!reshaped) {
+    // Only the end moves. Moving it before yesterday would erase days the
+    // rule already ruled over.
+    if (merged.validTo !== null && merged.validTo < yesterday) {
+      throw new ScheduleRuleNotEditableError();
+    }
+    return { kind: 'IN_PLACE' };
+  }
+
+  const validFrom =
+    patch.validFrom !== undefined && patch.validFrom > today
+      ? patch.validFrom
+      : today;
+  return {
+    kind: 'SPLIT',
+    closesOn: yesterday,
+    opens: { ...merged, validFrom },
+  };
 }
