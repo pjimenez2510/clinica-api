@@ -12,6 +12,7 @@ import {
   type CriticalNoticeRecipient,
   type CriticalNoticeVersionView,
   type CriticalNoticeView,
+  type CorrectionWorklistEntry,
   type CriticalWorklistEntry,
   type DiagnosticReportRepository,
   type DiagnosticReportView,
@@ -58,6 +59,9 @@ import {
   supersedingStatus,
 } from '../domain/service-order';
 import { resolveResult } from '../domain/result-value';
+import { isSelfNotice, samePersonName } from '../domain/notice-recipient';
+import { notifiedCorrections } from '../domain/notified-correction';
+import type { AnalyteDefinition } from '../domain/analyte';
 import {
   appliedCriticalLimits,
   type CriticalLimits,
@@ -164,6 +168,11 @@ export interface RecordNoticeRequest {
   /** When the call happened; the clock's «now» when absent. */
   notifiedAt?: Date;
   note?: string;
+  /**
+   * ORD-148, D-116 e. Who made the call, when it was not the account that
+   * records it; absent when it was.
+   */
+  callerName?: string | null;
 }
 
 /**
@@ -301,7 +310,7 @@ export class DiagnosticReportService {
 
     // ORD-114, ORD-122, D-130.1. Each value is compared with the critical
     // bounds the corrected version applied to it, not with today's.
-    const prepared = await this.prepare(previous.serviceOrderId, request.results, requester, appliedCriticalLimits(previous.results)); // prettier-ignore
+    const prepared = await this.prepare(previous.serviceOrderId, request.results, requester, appliedCriticalLimits(previous.results), linesOf(previous)); // prettier-ignore
 
     /**
      * ORD-055 (tercera revisión clínica, grave). Superseding a report retracts
@@ -348,6 +357,74 @@ export class DiagnosticReportService {
   }
 
   /**
+   * ORD-149 (D-116 f). The determinations a correction of this report admits:
+   * those of the live lines' exams, by their frozen code and active or not,
+   * and every one the report carried, by its frozen name and active or not.
+   */
+  async correctionAnalytes(
+    reportId: string,
+    requester: Requester,
+  ): Promise<CorrectionAnalyte[]> {
+    const previous = await this.reports.byId({ reportId, sites: requester.sites }); // prettier-ignore
+    if (!previous) throw new ReportNotFoundError();
+    const order = await this.orders.byId({
+      orderId: previous.serviceOrderId,
+      sites: requester.sites,
+    });
+    if (!order) throw new OrderNotFoundError();
+
+    const live = order.items.filter((item) => item.status !== 'CANCELLED');
+    const exams = await this.exams.byCodes(live.map((item) => item.testCode));
+    const examByCode = new Map(exams.map((exam) => [exam.code, exam]));
+    const offered: CorrectionAnalyte[] = [];
+    const named = new Set<string>();
+    for (const item of live) {
+      const exam = examByCode.get(item.testCode);
+      for (const entry of exam?.analytes ?? []) {
+        if (named.has(entry.analyte.name)) continue;
+        named.add(entry.analyte.name);
+        offered.push({
+          analyte: entry.analyte,
+          position: entry.position,
+          isReflex: entry.isReflex,
+          examName: exam?.name ?? item.testDisplay,
+        });
+      }
+    }
+    const missing = previous.results.filter(
+      (result) => !named.has(result.analyteDisplay),
+    );
+    const homonyms = await this.exams.analytesByNames(
+      missing.map((result) => result.analyteDisplay),
+    );
+    for (const result of missing) {
+      if (named.has(result.analyteDisplay)) continue;
+      /**
+       * Of two definitions with that name, the one with the unit the value
+       * was written in (revisión clínica): another unit would write the
+       * corrected number —and compare it with the inherited thresholds— in a
+       * unit nobody measured. Active first, then the last changed.
+       */
+      const analyte = homonyms.find(
+        (each) =>
+          each.name === result.analyteDisplay && each.unit === result.unit,
+      );
+      // A name no analyte carries any more cannot be written again: the
+      // correction will say which one is missing (ORD-055).
+      if (!analyte) continue;
+      named.add(result.analyteDisplay);
+      offered.push({
+        analyte,
+        // After the exams' own: the screen lists them in this order.
+        position: offered.length + 1,
+        isReflex: false,
+        examName: null,
+      });
+    }
+    return offered;
+  }
+
+  /**
    * ORD-051, ORD-091. The reports of one order, corrections included.
    *
    * AUDITED, unlike the two worklists (ORD-092), and the difference is what
@@ -358,7 +435,9 @@ export class DiagnosticReportService {
     orderId: string,
     requester: Requester,
   ): Promise<DiagnosticReportView[]> {
-    const reports = await this.reports.ofOrder(orderId, requester.sites);
+    const reports = withCorrections(
+      await this.reports.ofOrder(orderId, requester.sites),
+    );
 
     await this.audit.record({
       userId: requester.userId,
@@ -539,8 +618,10 @@ export class DiagnosticReportService {
     return entries.map((entry) => {
       const policy = policies.get(entry.siteId) ?? DEFAULT_POLICY;
       const chain = chains.get(chainKey(entry.reportId, entry.analyteDisplay));
-      // The deadline runs from the chain's FIRST CRITICAL version: a correction that is
-      // still critical is the same pending notice, not a new one from zero.
+      // The deadline runs from the chain's FIRST CRITICAL version after the
+      // last one notified (ORD-065, ORD-145): a correction still critical of a
+      // value nobody was told about is the same pending notice; of one
+      // somebody was told about, a new one.
       const firstObservedAt = chain?.firstObservedAt ?? entry.observedAt;
       const wait = criticalWait(firstObservedAt, now, policy.criticalNoticeWithinMinutes); // prettier-ignore
       const role = policy.criticalEscalationRole;
@@ -550,12 +631,15 @@ export class DiagnosticReportService {
         afterHours,
         hasOnCallRole: role !== null,
         orderingUnanswered: (chain?.orderingUnanswered ?? 0) > 0,
+        // ORD-146, D-116 a. The practitioner who asked already knows.
+        selfNoticed: chain?.selfNoticed ?? false,
       });
       return {
         ...entry,
         firstObservedAt,
         noAnswerAttempts: chain?.noAnswerAttempts ?? 0,
         previouslyNotified: chain?.previouslyNotified ?? false,
+        selfNoticed: chain?.selfNoticed ?? false,
         waitingMinutes: wait.waitingMinutes,
         noticeDueAt: wait.dueAt,
         overdue: wait.overdue,
@@ -565,6 +649,55 @@ export class DiagnosticReportService {
         escalationMissing: due.escalationMissing,
       };
     });
+  }
+
+  /**
+   * ORD-143 (D-115). The corrections of values somebody was told about that
+   * still wait for the notice of the correction, oldest first, ALL of them.
+   *
+   * NOT AUDITED PER ENTRY (ORD-092), like the two other worklists: what
+   * travels is the determination and the value, no name and no diagnosis.
+   * The rule is `notifiedCorrections`, over each candidate order's reports —
+   * the same function the reading of the order and the notice ask.
+   */
+  async corrections(requester: Requester): Promise<CorrectionWorklistEntry[]> {
+    const orders = await this.reports.notifiedCorrectionOrders(requester.sites); // prettier-ignore
+    // One read for every candidate order, grouped here (revisión: no N+1).
+    const all = await this.reports.ofOrders(orders.map((o) => o.orderId), requester.sites); // prettier-ignore
+    const entries: CorrectionWorklistEntry[] = [];
+    for (const order of orders) {
+      const reports = all.filter((report) => report.serviceOrderId === order.orderId); // prettier-ignore
+      const found = notifiedCorrections(reports);
+      for (const report of reports) {
+        for (const result of report.results) {
+          const correction = found.get(result.id);
+          if (!correction?.standing || !correction.due) continue;
+          entries.push({
+            resultId: result.id,
+            reportId: report.id,
+            orderId: order.orderId,
+            siteId: order.siteId,
+            patientId: order.patientId,
+            analyteDisplay: result.analyteDisplay,
+            valueNumeric: result.valueNumeric,
+            valueCode: result.valueCode,
+            valueText: result.valueText,
+            unit: result.unit,
+            abnormalFlag: result.abnormalFlag,
+            told: correction.told,
+            earlierNotices: correction.earlierNotices,
+            correctedAt: correction.correctedAt,
+            orderedBy: order.orderedBy,
+          });
+        }
+      }
+    }
+    // ORD-143. What has waited longest first; never cut.
+    return entries.sort(
+      (a, b) =>
+        a.correctedAt.getTime() - b.correctedAt.getTime() ||
+        a.resultId.localeCompare(b.resultId),
+    );
   }
 
   /**
@@ -599,12 +732,7 @@ export class DiagnosticReportService {
       sites: requester.sites,
     });
     if (!result) throw new ResultNotFoundError();
-    if (
-      result.abnormalFlag !== 'CRITICAL_LOW' &&
-      result.abnormalFlag !== 'CRITICAL_HIGH'
-    ) {
-      throw new ResultNotCriticalError();
-    }
+    await this.assertNotifiable(result, requester);
     // ORD-066, D-111 §4. A notice given carries the read-back; an attempt has
     // nobody who could have repeated anything.
     const given = request.outcome === 'NOTIFIED';
@@ -626,13 +754,20 @@ export class DiagnosticReportService {
       throw new ResultSupersededError();
     }
     /**
-     * ORD-062, D-113 b. The practitioner who placed the order «notifying»
-     * themselves is recorded as it happened — and does not close the worklist:
-     * the patient at home still knows nothing.
+     * ORD-062, ORD-147 (D-113 b, D-116 d). A notice to oneself is recorded as
+     * it happened — and does not close the worklist: the patient at home
+     * still knows nothing. Judged on the name of the account that records it.
      */
-    const selfNotice =
-      request.recipientKind === 'ORDERING_PRACTITIONER' &&
-      requester.userId === result.orderedByUserId;
+    const selfNotice = isSelfNotice({
+      recipientKind: request.recipientKind,
+      recipientName: request.recipientName,
+      recorder: {
+        userId: requester.userId,
+        name: (await this.reports.accountName(requester.userId)) ?? '',
+      },
+      orderedByUserId: result.orderedByUserId,
+      callerName: callerOf(request),
+    });
 
     // ORD-068. Out of hours at the moment of the CALL, not of the typing.
     const inHours = await this.reports.sitesInHours([result.siteId], notifiedAt); // prettier-ignore
@@ -650,6 +785,9 @@ export class DiagnosticReportService {
       readBackConfirmed: given ? true : null,
       afterHours: !inHours.has(result.siteId),
       selfNotice,
+      // ORD-146. A recipient with the ordering practitioner's name.
+      namesOrderingPractitioner: samePersonName(request.recipientName, result.orderedByName), // prettier-ignore
+      callerName: callerOf(request),
       sites: requester.sites,
       trail: { ip: requester.ip, userAgent: requester.userAgent },
     });
@@ -720,10 +858,17 @@ export class DiagnosticReportService {
     if (result.supersededAt && notifiedAt >= result.supersededAt) {
       throw new ResultSupersededError();
     }
-    // ORD-062, D-113 b. Who gave the notice, not who edits it.
-    const selfNotice =
-      request.recipientKind === 'ORDERING_PRACTITIONER' &&
-      current.notifiedBy.id === result.orderedByUserId;
+    // ORD-062, ORD-147. Who gave the notice, not who edits it.
+    const selfNotice = isSelfNotice({
+      recipientKind: request.recipientKind,
+      recipientName: request.recipientName,
+      recorder: {
+        userId: current.notifiedBy.id,
+        name: current.notifiedBy.name,
+      },
+      orderedByUserId: result.orderedByUserId,
+      callerName: callerOf(request),
+    });
     // ORD-068. Out of hours at the moment of the CALL.
     const inHours = await this.reports.sitesInHours([result.siteId], notifiedAt); // prettier-ignore
 
@@ -739,6 +884,8 @@ export class DiagnosticReportService {
       readBackConfirmed: given ? true : null,
       afterHours: !inHours.has(result.siteId),
       selfNotice,
+      namesOrderingPractitioner: samePersonName(request.recipientName, result.orderedByName), // prettier-ignore
+      callerName: callerOf(request),
       editedById: requester.userId,
       editedAt: now,
       expectedEditedAt: request.expectedEditedAt,
@@ -785,6 +932,27 @@ export class DiagnosticReportService {
   }
 
   /**
+   * ORD-062, ORD-144. A notice is recorded of a critical value, or of the
+   * value that corrects one somebody was told about (D-115). Anything else is
+   * `RESULT_NOT_CRITICAL`.
+   */
+  private async assertNotifiable(
+    result: { resultId: string; orderId: string; abnormalFlag: string | null },
+    requester: Requester,
+  ): Promise<void> {
+    if (
+      result.abnormalFlag === 'CRITICAL_LOW' ||
+      result.abnormalFlag === 'CRITICAL_HIGH'
+    ) {
+      return;
+    }
+    const reports = await this.reports.ofOrder(result.orderId, requester.sites);
+    if (!notifiedCorrections(reports).has(result.resultId)) {
+      throw new ResultNotCriticalError();
+    }
+  }
+
+  /**
    * ORD-031 to ORD-042. Everything a report needs before a row is written:
    * the patient it classifies against, the analytes it names, which line each
    * one answers, and whether the order is finished.
@@ -800,6 +968,8 @@ export class DiagnosticReportService {
     requester: Requester,
     /** ORD-114, ORD-122. A correction's inherited critical bounds, by name. */
     applied?: ReadonlyMap<string, CriticalLimits>,
+    /** ORD-149. A correction's lines, by name, for what the exam no longer names. */
+    inheritedLines?: ReadonlyMap<string, string>,
   ): Promise<{
     status: DiagnosticReportStatus;
     results: ReportedResult[];
@@ -844,6 +1014,7 @@ export class DiagnosticReportService {
     };
     const exams = await this.exams.byCodes(live.items.map((i) => i.testCode));
     const lineOfAnalyte = matchAnalytesToLines(live, exams);
+    const liveLines = new Set(live.items.map((item) => item.id));
 
     const results: ReportedResult[] = submitted.map((result) => {
       const analyte = byId.get(result.analyteDefinitionId);
@@ -856,7 +1027,11 @@ export class DiagnosticReportService {
         ...resolveResult(analyte, result, patient, applied?.get(analyte.name)),
         // ORD-040. `null` when the order asked for nothing that yields this
         // analyte: stored, never discarded, never matched automatically.
-        orderItemId: lineOfAnalyte.get(analyte.id) ?? null,
+        // ORD-149: a corrected value the exam no longer names keeps the live
+        // line its earlier version answered.
+        orderItemId:
+          lineOfAnalyte.get(analyte.id) ??
+          liveLine(inheritedLines?.get(analyte.name), liveLines),
       };
     });
 
@@ -979,4 +1154,53 @@ function statusOf(
   // on it is an addition, and calling it PARTIAL would put a finished order
   // back on a list nobody needs to work.
   return stillOpen.length === 0 || everyLineIn ? 'FINAL' : 'PARTIAL';
+}
+
+/** ORD-149. One determination a correction admits, with the exam it is of. */
+export interface CorrectionAnalyte {
+  analyte: AnalyteDefinition;
+  position: number;
+  isReflex: boolean;
+  /** `null` for one the order's exams no longer name. */
+  examName: string | null;
+}
+
+/** ORD-149. The line each determination of a report answered, by name. */
+function linesOf(report: DiagnosticReportView): Map<string, string> {
+  const lines = new Map<string, string>();
+  for (const result of report.results) {
+    if (result.orderItemId !== null) lines.set(result.analyteDisplay, result.orderItemId); // prettier-ignore
+  }
+  return lines;
+}
+
+/** ORD-124, ORD-149. An inherited line, only while it is still live. */
+function liveLine(
+  line: string | undefined,
+  live: ReadonlySet<string>,
+): string | null {
+  return line !== undefined && live.has(line) ? line : null;
+}
+
+/** ORD-148. The caller's name, or `null` when it was who records it. */
+function callerOf(request: { callerName?: string | null }): string | null {
+  return request.callerName?.trim() || null;
+}
+
+/**
+ * ORD-143. The reports of one order, each standing value marked with the
+ * correction of a notified value it is, if any.
+ */
+function withCorrections(
+  reports: DiagnosticReportView[],
+): DiagnosticReportView[] {
+  const found = notifiedCorrections(reports);
+  if (found.size === 0) return reports;
+  return reports.map((report) => ({
+    ...report,
+    results: report.results.map((result) => {
+      const correction = found.get(result.id);
+      return correction?.standing ? { ...result, correction } : result;
+    }),
+  }));
 }

@@ -1,6 +1,8 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { examAnalyteSchema } from './exam-catalogue.dto';
+
 /**
  * The result's contract — the four columns of form 010B, and the two things
  * this API refuses to be told.
@@ -148,8 +150,12 @@ export const criticalNoticeSchema = z.object({
   readBackConfirmed: z.boolean().nullable(),
   /** ORD-068. Given outside the site's hours. */
   afterHours: z.boolean(),
-  /** ORD-062, D-113 b. A notice to oneself: recorded, does not close the worklist. */
+  /** ORD-062, ORD-147. A notice to oneself: recorded, does not close the worklist. */
   selfNotice: z.boolean(),
+  /** ORD-146. The recipient carries the ordering practitioner's name. */
+  namesOrderingPractitioner: z.boolean(),
+  /** ORD-148. Who made the call, when it was not who recorded it (`notifiedBy`). */
+  callerName: z.string().nullable(),
   /** ORD-120. Who edited it last, and when; `null` if nobody did. */
   editedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
   editedAt: z.iso.datetime().nullable(),
@@ -204,6 +210,18 @@ const noticeFields = z.object({
     .trim()
     .max(500, 'La nota no puede superar 500 caracteres')
     .optional(),
+  /**
+   * ORD-148, D-116 e. Who made the call, when it was not the account that
+   * records it. Absent or `null`: it was. A name, when given, is required.
+   * On an edit the body is the whole notice (`PUT`): absent clears it.
+   */
+  callerName: z
+    .string()
+    .trim()
+    .min(1, 'Escriba quién hizo la llamada')
+    .max(200, 'El nombre no puede superar 200 caracteres')
+    .nullable()
+    .optional(),
 });
 
 /** ORD-067. Nobody answered, so nobody repeated anything. */
@@ -243,6 +261,35 @@ export const editNoticeSchema = noticeFields
   .superRefine(unansweredHasNoReadBack);
 export class EditNoticeDto extends createZodDto(editNoticeSchema) {}
 
+/** ORD-143. One notice given of an earlier version, as the worklist shows it. */
+const earlierNoticeSchema = z.object({
+  recipientKind: NOTICE_RECIPIENT,
+  /** `null` on the worklist for a patient or relative: no identity there. */
+  recipientName: z.string().nullable(),
+  notifiedAt: z.iso.datetime(),
+  selfNotice: z.boolean(),
+});
+
+/** ORD-143. What a standing value corrects: the value somebody was told. */
+const toldValueSchema = z.object({
+  valueNumeric: z.number().nullable(),
+  valueCode: z.string().nullable(),
+  valueText: z.string().nullable(),
+  unit: z.string().nullable(),
+  abnormalFlag: ABNORMAL_FLAG.nullable(),
+  observedAt: z.iso.datetime(),
+});
+
+/** ORD-143. A standing value that corrects one somebody was told about. */
+export const notifiedCorrectionSchema = z.object({
+  told: toldValueSchema,
+  earlierNotices: z.array(earlierNoticeSchema),
+  /** When the correction that retracted the told value was recorded. */
+  correctedAt: z.iso.datetime(),
+  /** No notice of the correction closes it yet (ORD-144). */
+  due: z.boolean(),
+});
+
 /** ORD-031 to ORD-038. One determination as a client reads it. */
 export const observationSchema = z.object({
   id: z.string(),
@@ -268,6 +315,8 @@ export const observationSchema = z.object({
   observedAt: z.iso.datetime(),
   /** ORD-062. The notices given of this value, oldest first. */
   notices: z.array(criticalNoticeSchema),
+  /** ORD-143. On a standing value correcting a notified one; `null` otherwise. */
+  correction: notifiedCorrectionSchema.nullable(),
 });
 
 /** ORD-030, ORD-051. One report as a client reads it. */
@@ -334,6 +383,8 @@ export const criticalResultSchema = flaggedResultSchema.extend({
   noAnswerAttempts: z.number().int(),
   /** ORD-065, D-116 b. An earlier version of the chain was already notified. */
   previouslyNotified: z.boolean(),
+  /** ORD-146. The practitioner who placed the order already noted it. */
+  selfNoticed: z.boolean(),
   /** ORD-068. The site is out of hours now. */
   afterHours: z.boolean(),
   /** ORD-065, ORD-068. Whom the notice is due to now (D-111 §2, §3). */
@@ -365,6 +416,44 @@ export const unmatchedResultListSchema = z.object({
 /** Response of GET /orders/results/unmatched. */
 export class UnmatchedResultListDto extends createZodDto(
   unmatchedResultListSchema,
+) {}
+
+/** ORD-143. A correction of a notified value waiting for its notice. */
+export const correctionResultSchema = z.object({
+  resultId: z.string(),
+  reportId: z.uuid(),
+  orderId: z.uuid(),
+  siteId: z.uuid(),
+  patientId: z.uuid(),
+  analyteDisplay: z.string(),
+  valueNumeric: z.number().nullable(),
+  valueCode: z.string().nullable(),
+  valueText: z.string().nullable(),
+  unit: z.string().nullable(),
+  abnormalFlag: ABNORMAL_FLAG.nullable(),
+  told: toldValueSchema,
+  earlierNotices: z.array(earlierNoticeSchema),
+  correctedAt: z.iso.datetime(),
+  orderedBy: z.object({ id: z.uuid(), name: z.string() }),
+});
+export const correctionResultListSchema = z.object({
+  items: z.array(correctionResultSchema),
+});
+/** Response of GET /orders/results/corrections. */
+export class CorrectionResultListDto extends createZodDto(
+  correctionResultListSchema,
+) {}
+
+/**
+ * ORD-149. The determinations a correction of a report admits, with the exam
+ * each is of (`null`: the order's exams no longer name it).
+ */
+export const correctionAnalyteListSchema = z.object({
+  items: z.array(examAnalyteSchema.extend({ examName: z.string().nullable() })),
+});
+/** Response of GET /orders/reports/:reportId/analytes. */
+export class CorrectionAnalyteListDto extends createZodDto(
+  correctionAnalyteListSchema,
 ) {}
 
 /**
@@ -409,6 +498,8 @@ export type DiagnosticReportListResponse = z.infer<
 export type CriticalResultListResponse = z.infer<typeof criticalResultListSchema>; // prettier-ignore
 export type UnmatchedResultListResponse = z.infer<typeof unmatchedResultListSchema>; // prettier-ignore
 export type CriticalNoticeResponse = z.infer<typeof criticalNoticeSchema>;
+export type CorrectionResultListResponse = z.infer<typeof correctionResultListSchema>; // prettier-ignore
+export type CorrectionAnalyteListResponse = z.infer<typeof correctionAnalyteListSchema>; // prettier-ignore
 export type CriticalNoticeVersionListResponse = z.infer<
   typeof criticalNoticeVersionListSchema
 >;

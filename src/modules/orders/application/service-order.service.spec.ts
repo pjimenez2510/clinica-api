@@ -108,6 +108,12 @@ class FakeCatalogue implements ExamCatalogueRepository {
     const all = [HAEMOGLOBIN, GLUCOSE];
     return Promise.resolve(all.filter((analyte) => ids.includes(analyte.id)));
   }
+  analytesByNames(names: readonly string[]): Promise<AnalyteDefinition[]> {
+    const all = [HAEMOGLOBIN, GLUCOSE];
+    return Promise.resolve(
+      all.filter((analyte) => names.includes(analyte.name)),
+    );
+  }
 }
 
 class FakeOrders implements ServiceOrderRepository {

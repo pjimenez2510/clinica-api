@@ -1109,11 +1109,14 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       { reportId: critical.id, performedById: null, issuedAt: at(1), results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 22 }] }, // prettier-ignore
       requester,
     );
+    // ORD-145 (D-116 b): del 25 ya se avisó; el 22 es un aviso nuevo, y
+    // espera desde la corrección.
     const [again] = await reports.critical(requester, now);
     expect(again).toMatchObject({
-      waitingMinutes: 120,
+      waitingMinutes: 60,
       previouslyNotified: true,
     });
+    expect(again?.firstObservedAt).toEqual(at(1));
   });
 });
 

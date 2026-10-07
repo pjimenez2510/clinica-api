@@ -106,6 +106,8 @@ describe('las rutas del módulo de órdenes', () => {
         'GET /orders/results/unmatched → record:read',
         'POST /orders/results/:resultId/match → result:write',
         'GET /orders/results/critical → record:read',
+        // ORD-143. Las correcciones de valores avisados, con el de leer.
+        'GET /orders/results/corrections → record:read',
         // ORD-062. Avisar lo registra quien transcribe, no quien diagnostica (D-111 §6).
         'POST /orders/results/:resultId/notices → result:write',
         // ORD-120. Editarlo, con el permiso de registrarlo; sus versiones se leen
@@ -113,6 +115,8 @@ describe('las rutas del módulo de órdenes', () => {
         'PUT /orders/results/:resultId/notices/:noticeId → result:write',
         'GET /orders/results/:resultId/notices/:noticeId/versions → record:read',
         'POST /orders/reports/:reportId/correct → result:write',
+        // ORD-149. Lo que admite la corrección: lectura del catálogo y del informe.
+        'GET /orders/reports/:reportId/analytes → record:read',
         'POST /orders/:orderId/reports → result:write',
         'GET /orders/:orderId/reports → record:read',
         'GET /exams → catalog:read',
