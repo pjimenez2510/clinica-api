@@ -47,9 +47,8 @@ autorización y, cuando la tiene, entrega al cliente el RIDE y el XML autorizado
 
 **Fuera de alcance:**
 
-- **Nota de crédito, nota de débito, retención, liquidación de compra** (REQ-087)
-  y **anulación**: billing/B3 y entregas posteriores. El comprobante guarda su
-  `codDoc`, pero solo se construye la factura (`01`).
+- **Nota de débito, retención, liquidación de compra** (REQ-087) y
+  **anulación** (D-151.1). La **nota de crédito** (`04`) entró con S7 (§7 bis).
 - **ATS** (REQ-088).
 - **Firma PAdES de documentos clínicos** (documents §7, certificates): es el
   certificado **de una persona**, el médico; aquí se custodia el **del emisor**.
@@ -179,6 +178,22 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
 
 **Cubre:** SRI-080 a SRI-084.
 **Solo servidor:** SRI-083, SRI-084.
+
+### S7 — La nota de crédito electrónica y el reenvío corregido _(P1)_
+
+La nota de crédito de billing/B14 se convierte en comprobante `04` por el mismo
+camino que la factura: clave, XML `notaCredito` 1.1.0, firma, cola, monitor,
+RIDE y correo. Y la factura devuelta o no autorizada que caja corrige se
+recompone con los datos nuevos y se reenvía con su clave de siempre.
+
+**Prueba independiente:** emitir una nota de crédito, validar su XML contra el
+XSD oficial, verificar la firma y verla autorizada por el doble; con el doble
+devolviendo la siguiente, verla en el monitor como nota de crédito y
+reenviarla; y editar el receptor de una factura devuelta y comprobar que el XML
+reenviado lleva el receptor nuevo y la misma clave.
+
+**Cubre:** SRI-085 a SRI-090.
+**Solo servidor:** SRI-086, SRI-087.
 
 ---
 
@@ -625,6 +640,57 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
 
 ---
 
+## 7 bis. La nota de crédito y el reenvío corregido
+
+> billing/B14 (BI-208 a BI-218). **Fuentes:** Ficha Técnica v2.34, formato XML
+> de la nota de crédito (pp. 55-57 y 71) y Nota 1 de la tabla de errores (pp.
+> 37-38); XSD oficial `NotaCredito_V1.1.0.xsd` (SRI, febrero de 2022),
+> versionado en `infrastructure/xsd/`. Enmienda el «Fuera de alcance» de este
+> documento para la nota de crédito: la nota de débito, la retención, la
+> liquidación de compra y la anulación siguen fuera.
+
+- **SRI-085** — CUANDO se emita una nota de crédito, el sistema DEBERÁ crear su
+  comprobante con la clave de SRI-001 a SRI-003 con tipo `04`, la serie y el
+  secuencial **de la nota de crédito** y la fecha de su emisión en
+  `America/Guayaquil`; y DEBERÁ componer el XML `notaCredito` versión 1.1.0,
+  válido contra el XSD oficial, con `codDocModificado` `01`,
+  `numDocModificado` (serie y secuencial de la factura, `001-001-000000001`),
+  `fechaEmisionDocSustento` (la de la factura), `valorModificacion` (el importe
+  de la nota de crédito), `motivo` y una línea por cargo acreditado, solo con
+  los valores congelados en la nota de crédito.
+  > SRI-005 vale igual: la clave de la nota de crédito no se regenera nunca.
+- **SRI-086** — La base DEBERÁ admitir que un comprobante sea de una factura o
+  de una nota de crédito, exactamente de uno (`electronic_voucher_one_document`),
+  con el tipo que le corresponde —`01` la factura, `04` la nota de crédito—
+  (`electronic_voucher_type_matches_its_document`), uno solo por nota de
+  crédito, y DEBERÁ rechazar que `credit_note.access_key` sea otra que la de su
+  comprobante (`credit_note_access_key_is_its_vouchers`) o que cambie una vez
+  escrita.
+- **SRI-087** — El sistema DEBERÁ firmar el comprobante de la nota de crédito en
+  XAdES-BES sobre la raíz `notaCredito` con el certificado de SRI-027, y DEBERÁ
+  enviarlo, consultarlo, reintentarlo y barrerlo con la misma cola y las mismas
+  reglas que la factura (SRI-040 a SRI-059), llevando a la nota de crédito los
+  estados que esas reglas llevan a la factura (`AUTHORISED`, `REJECTED`, y de
+  vuelta a `ISSUED` al reenviar).
+- **SRI-088** — El monitor DEBERÁ listar también las notas de crédito no
+  autorizadas, diciendo que son nota de crédito y de qué factura, con su motivo
+  ante el SRI y «Reenviar» cuando proceda (SRI-058); y el estado electrónico de
+  cada nota de crédito DEBERÁ verse en su lista (BI-218).
+- **SRI-089** — El RIDE de la nota de crédito DEBERÁ decir «NOTA DE CRÉDITO»,
+  imprimir su clave, el documento que modifica con su fecha, el motivo y sus
+  líneas, y decir «pendiente de autorización» mientras no lo esté (SRI-071);
+  y CUANDO quede autorizada, el sistema DEBERÁ enviar al correo del receptor el
+  RIDE y el XML autorizado con el asunto «Nota de crédito electrónica»,
+  siguiendo SRI-072 a SRI-076.
+- **SRI-090** — CUANDO caja corrija una factura `REJECTED` (BI-216), el sistema
+  DEBERÁ recomponer el XML con los datos corregidos **y la misma clave**,
+  firmarlo y enviarlo en el mismo acto, como SRI-058, y DEBERÁ registrar en la
+  bitácora quién lo corrigió; el monitor DEBERÁ ofrecer «Editar» junto a
+  «Reenviar» en las facturas devueltas o no autorizadas.
+  > D-093 B. La Nota 1 de la Ficha: los rechazados se reenvían «una vez
+  > corregido el error motivo del rechazo sin generar nuevos números de clave
+  > de acceso o secuenciales».
+
 ## 8. Códigos de error nuevos
 
 | Código                      | Categoría | Cuándo                                                                                       |
@@ -669,6 +735,7 @@ el autor quiera hacerlo:
 | SRI-040 a SRI-059                                      | Integración: pg-boss real, PostgreSQL real y el doble del SRI por HTTP                                    |
 | SRI-060 a SRI-069, SRI-080 a SRI-084                   | Integración por HTTP (permiso, alcance, contrato) y e2e de la interfaz                                    |
 | SRI-070 a SRI-076                                      | Unitarias sobre los bytes del RIDE; integración con un `Mailer` falso y e2e con Mailpit                   |
+| SRI-085 a SRI-090                                      | Unitarias del XML contra el XSD oficial y de la firma; integración contra PostgreSQL (SRI-086 por SQL directo) y el doble del SRI; e2e del recorrido de caja |
 
 ## 11. Preguntas abiertas
 
