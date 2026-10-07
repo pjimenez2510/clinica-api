@@ -2217,9 +2217,10 @@ a D-156.5, recomendación aceptada en todos los puntos._
   > quien sea quien emite; `service_order_patient_sex_frozen_when_issued`
   > exige que la emitida la tenga y la que no lo es no; y
   > `service_order_guard_status` no deja reescribirla. Las emitidas antes de
-  > esta regla se rellenaron con el sexo que tenía la ficha al migrar
-  > (`20261007223900_service_order_frozen_patient_sex`): es lo único que se
-  > sabe de entonces.
+  > esta regla se rellenaron al migrar
+  > (`20261007223900_service_order_frozen_patient_sex`) con lo que decía la
+  > ficha antes de la primera corrección de sexo posterior a la emisión
+  > (`patient_change_history`, PA-026), y sin corrección, con el de hoy.
 
 - **ORD-159** — La cabecera de la orden emitida, en el PDF (ORD-126) y en
   pantalla (ORD-150), DEBERÁ decir el **sexo congelado en la orden**
@@ -2236,6 +2237,10 @@ a D-156.5, recomendación aceptada en todos los puntos._
   > laboratorio recibió. **Garantía de la base:** la prueba de integración
   > corrige el sexo de la ficha y comprueba que la bandera sigue con el
   > congelado, con control positivo.
+  >
+  > ⏳ **D-171.1:** si el sexo se corrigió por un error de registro, el rango
+  > congelado es el del sexo equivocado; el autor decide si la transcripción
+  > avisa y deja elegir, o si el rango vuelve a leer la ficha.
 
 
 ---
