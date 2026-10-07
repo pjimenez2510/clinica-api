@@ -107,7 +107,7 @@ function rectanglesOf(page: number): { rules: Box[]; shades: Box[] } {
 
 const rows: TariffRow[] = [];
 const anomalies: Anomaly[] = [];
-let state: PageState = { section: '', columns: '', last: null };
+let state: PageState = { section: '', columns: [], last: null };
 for (let page = 1; page <= pages; page += 1) {
   const result = rowsOfPage(
     { page, words: wordsByPage[page - 1] ?? [], ...rectanglesOf(page) },
@@ -123,9 +123,11 @@ writeFileSync(
   OUT,
   [
     `# sha256 del PDF: ${pdfChecksum}`,
+    // `values` and `columns` go cell by cell, separated by `|`; an empty
+    // cell is an empty field between two bars.
     'code,description,values,section,columns,page',
     ...rows.map((row) =>
-      [row.code, row.description, row.values.join(' '), row.section, row.columns, String(row.page)] // prettier-ignore
+      [row.code, row.description, row.values.join('|'), row.section, row.columns.join('|'), String(row.page)] // prettier-ignore
         .map(csv)
         .join(','),
     ),

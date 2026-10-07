@@ -6,7 +6,8 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Prisma, PrismaClient } from '@prisma/client';
 
 import { readCnmb } from '../src/modules/catalogs/import/cnmb.ts';
-import { nextClinicDay } from '../src/modules/catalogs/import/cutover.ts';
+import { cutoverOf } from '../src/modules/catalogs/import/cutover.ts';
+import { substanceKeysOf } from '../src/modules/prescription/domain/allergy-check.ts';
 import {
   readTariffCsv,
   tariffConceptsOf,
@@ -53,8 +54,10 @@ export interface CnmbImportOptions {
   version?: string;
   /** El instante de la importación, para el día de corte. */
   now: Date;
-  /** Fuerza el día de corte; si no, el siguiente día clínico a `now`. */
-  effectiveFrom?: Date;
+  /** El día de corte pedido (AAAA-MM-DD); si no, el siguiente día clínico. */
+  effectiveFrom?: string | Date;
+  /** Sólo pruebas: un corte anterior a mañana sobre una edición vigente. */
+  allowPastCutover?: boolean;
 }
 
 /**
@@ -68,6 +71,8 @@ export async function importCnmb(
   status: 'imported' | 'unchanged';
   inserted: number;
   effectiveFrom: Date | null;
+  /** PR-114. Allergy substances the new edition has no successor for. */
+  orphans: { code: string; display: string; allergies: number }[];
 }> {
   const file = options.file ?? CNMB_DEFAULTS.file;
   const version = options.version ?? CNMB_DEFAULTS.version;
@@ -88,7 +93,7 @@ export async function importCnmb(
   });
   if (existing) {
     if (existing.sourceChecksum === checksum)
-      return { status: 'unchanged', inserted: 0, effectiveFrom: null };
+      return { status: 'unchanged', inserted: 0, effectiveFrom: null, orphans: [] }; // prettier-ignore
     throw new Error(
       `La versión ${version} del CNMB ya existe con otro checksum. ` +
         'Impórtela con un número de versión nuevo.',
@@ -98,9 +103,13 @@ export async function importCnmb(
   const inForce = await prisma.catalogConcept.count({
     where: { systemId: cnmb.id, validTo: null },
   });
-  const effectiveFrom =
-    options.effectiveFrom ??
-    (inForce > 0 ? nextClinicDay(options.now) : CNMB_FIRST_EDITION_FROM);
+  const effectiveFrom = cutoverOf({
+    requested: options.effectiveFrom,
+    now: options.now,
+    editionInForce: inForce > 0,
+    firstEditionFrom: CNMB_FIRST_EDITION_FROM,
+    allowPast: options.allowPastCutover,
+  });
 
   const inserted = await prisma.$transaction(
     async (tx) => {
@@ -108,7 +117,6 @@ export async function importCnmb(
         data: {
           systemId: cnmb.id,
           version,
-          publishedOn: effectiveFrom,
           effectiveFrom,
           sourceUrl: CNMB_DEFAULTS.sourceUrl,
           sourceChecksum: checksum,
@@ -145,7 +153,37 @@ export async function importCnmb(
     { timeout: 60_000, maxWait: 30_000 },
   );
 
-  return { status: 'imported', inserted, effectiveFrom };
+  /**
+   * PR-114. THE ALLERGIES THE NEW EDITION LEAVES WITHOUT A SUCCESSOR. An
+   * allergy points at a concept of an earlier cuadro; it still fires while
+   * some concept of the new one shares a key with it — code, replaced code or
+   * active substance. One whose substance left the cuadro (cetirizine) only
+   * fires if it is prescribed by its old concept: said, not fixed, because
+   * what to do is clinical.
+   */
+  const current = await prisma.catalogConcept.findMany({
+    where: { systemId: cnmb.id, introducedByReleaseId: { not: null }, validTo: null }, // prettier-ignore
+    select: { code: true, display: true, attributes: true },
+  });
+  const live = new Set(current.flatMap((concept) => substanceKeysOf(concept)));
+  const allergic = await prisma.catalogConcept.findMany({
+    where: { systemId: cnmb.id, validTo: { not: null }, allergies: { some: {} } }, // prettier-ignore
+    select: {
+      code: true,
+      display: true,
+      attributes: true,
+      _count: { select: { allergies: true } },
+    },
+  });
+  const orphans = allergic
+    .filter((concept) => !substanceKeysOf(concept).some((key) => live.has(key)))
+    .map((concept) => ({
+      code: concept.code,
+      display: concept.display,
+      allergies: concept._count.allergies,
+    }));
+
+  return { status: 'imported', inserted, effectiveFrom, orphans };
 }
 
 const TARIFF_DEFAULTS = {
@@ -178,11 +216,19 @@ export interface TariffImportResult {
  */
 export async function importTariff(
   prisma: PrismaClient,
-  options: { file?: string; version?: string; now: Date; effectiveFrom?: Date },
+  options: CnmbImportOptions,
 ): Promise<TariffImportResult> {
   const file = options.file ?? TARIFF_DEFAULTS.file;
   const version = options.version ?? TARIFF_DEFAULTS.version;
-  const { pdfChecksum, rows } = readTariffCsv(readFileSync(file, 'utf8'));
+  const csv = readFileSync(file, 'utf8');
+  /**
+   * THE CSV'S CHECKSUM, NOT ONLY THE PDF'S. A corrected extraction of the same
+   * PDF is another CSV, and under the same version it must be refused, not
+   * skipped as «unchanged». The CSV's first line carries the PDF's SHA-256,
+   * so this one answers for both.
+   */
+  const checksum = createHash('sha256').update(csv).digest('hex');
+  const { rows } = readTariffCsv(csv);
   const concepts = tariffConceptsOf(rows);
 
   const tariff = await prisma.catalogSystem.upsert({
@@ -195,7 +241,7 @@ export async function importTariff(
     where: { systemId_version: { systemId: tariff.id, version } },
   });
   if (existing) {
-    if (existing.sourceChecksum === pdfChecksum)
+    if (existing.sourceChecksum === checksum)
       return {
         status: 'unchanged',
         inserted: 0,
@@ -212,11 +258,13 @@ export async function importTariff(
     where: { systemId: tariff.id, validTo: null },
     select: { code: true },
   });
-  const effectiveFrom =
-    options.effectiveFrom ??
-    (inForce.length > 0
-      ? nextClinicDay(options.now)
-      : TARIFF_FIRST_EDITION_FROM);
+  const effectiveFrom = cutoverOf({
+    requested: options.effectiveFrom,
+    now: options.now,
+    editionInForce: inForce.length > 0,
+    firstEditionFrom: TARIFF_FIRST_EDITION_FROM,
+    allowPast: options.allowPastCutover,
+  });
 
   const official = new Set(concepts.map((concept) => concept.code));
   const exams = await prisma.examDefinition.findMany({
@@ -243,7 +291,7 @@ export async function importTariff(
           publishedOn: TARIFF_FIRST_EDITION_FROM,
           effectiveFrom,
           sourceUrl: TARIFF_DEFAULTS.sourceUrl,
-          sourceChecksum: pdfChecksum,
+          sourceChecksum: checksum,
         },
       });
       // Retirar, no borrar: órdenes y procedimientos apuntan a estas filas.
@@ -268,7 +316,8 @@ export async function importTariff(
               : {}),
             section: concept.section,
             columns: concept.columns,
-            uvr: concept.values,
+            values: concept.values,
+            unit: concept.unit,
             page: concept.page,
             ...(concept.entries.length > 0
               ? { entries: concept.entries as unknown as Prisma.InputJsonArray }
@@ -292,8 +341,16 @@ export async function seedClinicalCatalogues(
   prisma: PrismaClient,
   now = new Date(),
 ) {
-  const cnmbResult = await importCnmb(prisma, { now });
-  const tariffResult = await importTariff(prisma, { now });
+  // `CNMB_EFFECTIVE_FROM` y `TARIFF_EFFECTIVE_FROM` (AAAA-MM-DD) fijan el
+  // corte, como `CIE10_EFFECTIVE_FROM`; por defecto, el día clínico siguiente.
+  const cnmbResult = await importCnmb(prisma, {
+    now,
+    effectiveFrom: process.env.CNMB_EFFECTIVE_FROM,
+  });
+  const tariffResult = await importTariff(prisma, {
+    now,
+    effectiveFrom: process.env.TARIFF_EFFECTIVE_FROM,
+  });
 
   const since = (date: Date | null) => date!.toISOString().slice(0, 10);
   console.log('Catálogos clínicos:');
@@ -307,6 +364,8 @@ export async function seedClinicalCatalogues(
       ? '  TARIFF  sin cambios: la versión ya está importada'
       : `  TARIFF  ${String(tariffResult.inserted).padStart(5)}  vigente desde ${since(tariffResult.effectiveFrom)}, sólo como nomenclatura`,
   );
+  for (const { code, display, allergies } of cnmbResult.orphans)
+    console.log(`  ⚠️  ${allergies} alergia(s) a ${display} (${code}): el cuadro nuevo no trae esa sustancia.`); // prettier-ignore
   for (const { code, exams } of tariffResult.kept)
     console.log(`  ⚠️  ${code} sigue vigente: lo usa ${exams.join(', ')}. Póngale el código oficial en el catálogo de exámenes.`); // prettier-ignore
 }

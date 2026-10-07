@@ -135,13 +135,18 @@ export function proposeEquivalents(
     .filter((code) => !available.has(code))
     .sort()
     .map((code) => {
-      const prefix = code.replace('.', '');
-      return {
-        code,
-        proposals: all.filter(
-          (candidate) =>
-            prefix.length <= 4 && candidate.replace('.', '').startsWith(prefix),
-        ),
-      };
+      /**
+       * The code itself, then cut to four characters, then to the category of
+       * three: `A00` gives its subcategories, and a clinical-modification
+       * `E11.65` gives `E11.6`, or failing that every `E11`.
+       */
+      const plain = code.replace('.', '');
+      for (const prefix of [plain, plain.slice(0, 4), plain.slice(0, 3)]) {
+        const proposals = all.filter((candidate) =>
+          candidate.replace('.', '').startsWith(prefix),
+        );
+        if (proposals.length > 0) return { code, proposals };
+      }
+      return { code, proposals: [] };
     });
 }

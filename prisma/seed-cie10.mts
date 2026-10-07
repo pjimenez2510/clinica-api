@@ -12,7 +12,7 @@ import {
   WHO_CHAPTERS,
   withDot,
 } from '../src/modules/catalogs/import/cie10-who.ts';
-import { nextClinicDay } from '../src/modules/catalogs/import/cutover.ts';
+import { cutoverOf } from '../src/modules/catalogs/import/cutover.ts';
 import { readWorkbook } from '../src/modules/catalogs/import/xlsx.ts';
 
 /**
@@ -72,8 +72,10 @@ export interface Cie10ImportOptions {
   sourceUrl?: string;
   /** El instante de la importación, para el día de corte. */
   now: Date;
-  /** Fuerza el día de corte; si no, el siguiente día clínico a `now`. */
-  effectiveFrom?: Date;
+  /** El día de corte pedido (AAAA-MM-DD); si no, el siguiente día clínico. */
+  effectiveFrom?: string | Date;
+  /** Sólo pruebas: un corte anterior a mañana sobre una edición vigente. */
+  allowPastCutover?: boolean;
 }
 
 export interface Cie10ImportResult {
@@ -152,9 +154,13 @@ export async function importCie10(
    * EL DÍA DE CORTE. Con una edición vigente, la nueva rige desde el día
    * clínico siguiente (ver `nextClinicDay`); sin ninguna, desde siempre.
    */
-  const effectiveFrom =
-    options.effectiveFrom ??
-    (inForce > 0 ? nextClinicDay(options.now) : FIRST_EDITION_FROM);
+  const effectiveFrom = cutoverOf({
+    requested: options.effectiveFrom,
+    now: options.now,
+    editionInForce: inForce > 0,
+    firstEditionFrom: FIRST_EDITION_FROM,
+    allowPast: options.allowPastCutover,
+  });
 
   /**
    * TODO DENTRO DE UNA TRANSACCIÓN: un catálogo a medias que se declara
@@ -234,9 +240,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     version,
     sourceUrl: process.env.CIE10_SOURCE_URL,
     now: new Date(),
-    effectiveFrom: process.env.CIE10_EFFECTIVE_FROM
-      ? new Date(`${process.env.CIE10_EFFECTIVE_FROM}T00:00:00Z`)
-      : undefined,
+    effectiveFrom: process.env.CIE10_EFFECTIVE_FROM,
   });
 
   if (result.status === 'unchanged') {

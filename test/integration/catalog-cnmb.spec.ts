@@ -184,6 +184,7 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
     const result = await importCnmb(prisma, {
       now: new Date(),
       effectiveFrom: CUTOVER,
+      allowPastCutover: true,
     });
 
     expect(result).toMatchObject({ status: 'imported', inserted: 528 });
@@ -196,8 +197,46 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
       attributes: expect.objectContaining({ replaces: ['ENALAPRIL'] }),
     });
     expect(
-      await importCnmb(prisma, { now: new Date(), effectiveFrom: CUTOVER }),
+      await importCnmb(prisma, {
+        now: new Date(),
+        effectiveFrom: CUTOVER,
+        allowPastCutover: true,
+      }),
     ).toMatchObject({ status: 'unchanged' });
+  });
+
+  it('PR-114: says which recorded allergies the new cuadro has no successor for, and not the others', async () => {
+    const prisma = db();
+    const development = await developmentCuadro(prisma);
+    const cetirizine = await prisma.catalogConcept.create({
+      data: {
+        systemId: development.enalapril.systemId,
+        code: 'CETIRIZINA',
+        display: 'Cetirizina',
+        validFrom: development.enalapril.validFrom,
+      },
+    });
+    const patient = await createPatient(prisma);
+    for (const concept of [cetirizine, development.enalapril])
+      await prisma.patientAllergy.create({
+        data: {
+          recordedById: (await createUser(prisma)).id,
+          patientId: patient.id,
+          substanceConceptId: concept.id,
+          substanceText: concept.display,
+          criticality: 'HIGH',
+        },
+      });
+
+    const result = await importCnmb(prisma, {
+      now: new Date(),
+      effectiveFrom: CUTOVER,
+      allowPastCutover: true,
+    });
+
+    expect(result.orphans).toEqual([
+      { code: 'CETIRIZINA', display: 'Cetirizina', allergies: 1 },
+    ]);
   });
 
   it('PR-115: every form a presentation admits is a form of the prescription vocabulary', async () => {
@@ -220,7 +259,11 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
 
   it('PR-115: an amoxicillin capsule of 500 mg is in the cuadro; one of 750 mg is marked outside', async () => {
     const prisma = db();
-    await importCnmb(prisma, { now: new Date(), effectiveFrom: CUTOVER });
+    await importCnmb(prisma, {
+      now: new Date(),
+      effectiveFrom: CUTOVER,
+      allowPastCutover: true,
+    });
     const { encounter, who } = await anAttention(prisma);
     const amoxicillin = await official(prisma, 'J01CA04');
     const service = serviceOf(prisma);
@@ -245,7 +288,11 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
 
   it('PR-115: metformin of 850 mg is inside the range the cuadro declares; 1500 mg and the range itself are outside', async () => {
     const prisma = db();
-    await importCnmb(prisma, { now: new Date(), effectiveFrom: CUTOVER });
+    await importCnmb(prisma, {
+      now: new Date(),
+      effectiveFrom: CUTOVER,
+      allowPastCutover: true,
+    });
     const { encounter, who } = await anAttention(prisma);
     const metformin = await official(prisma, 'A10BA02');
 
@@ -267,7 +314,11 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
 
   it('PR-115: the line freezes the DCI of the presentation it is: haloperidol decanoate is not haloperidol', async () => {
     const prisma = db();
-    await importCnmb(prisma, { now: new Date(), effectiveFrom: CUTOVER });
+    await importCnmb(prisma, {
+      now: new Date(),
+      effectiveFrom: CUTOVER,
+      allowPastCutover: true,
+    });
     const { encounter, who } = await anAttention(prisma);
     const haloperidol = await official(prisma, 'N05AD01');
     const presentations = await serviceOf(prisma).presentationsOf(
@@ -306,7 +357,11 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
         criticality: 'HIGH',
       },
     });
-    await importCnmb(prisma, { now: new Date(), effectiveFrom: CUTOVER });
+    await importCnmb(prisma, {
+      now: new Date(),
+      effectiveFrom: CUTOVER,
+      allowPastCutover: true,
+    });
     const service = serviceOf(prisma);
 
     const composed = await service.compose(
@@ -358,7 +413,11 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
         validFrom: new Date(Date.UTC(CUTOVER.getUTCFullYear(), 0, 1)),
       },
     });
-    await importCnmb(prisma, { now: new Date(), effectiveFrom: CUTOVER });
+    await importCnmb(prisma, {
+      now: new Date(),
+      effectiveFrom: CUTOVER,
+      allowPastCutover: true,
+    });
     const { patient, encounter, who } = await anAttention(prisma);
     const allergyTo = async (conceptId: string, text: string) =>
       prisma.patientAllergy.create({
@@ -410,7 +469,11 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
 
   it('PR-116: the official morphine is not composed: it goes on the ACESS pad', async () => {
     const prisma = db();
-    await importCnmb(prisma, { now: new Date(), effectiveFrom: CUTOVER });
+    await importCnmb(prisma, {
+      now: new Date(),
+      effectiveFrom: CUTOVER,
+      allowPastCutover: true,
+    });
     const { encounter, who } = await anAttention(prisma);
     const service = serviceOf(prisma);
 

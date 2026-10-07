@@ -6,6 +6,7 @@ import {
   readTariffCsv,
   rowsOfPage,
   tariffConceptsOf,
+  unitOf,
 } from './tariff-rows';
 import type { Box, PageLayout, Word } from './tariff-rows';
 
@@ -35,7 +36,7 @@ const word = (text: string, x: number, y: number): Word => ({
   y1: y + 8,
 });
 
-const fresh = { section: '', columns: '', last: null };
+const fresh = { section: '', columns: [] as string[], last: null };
 
 describe('rowsOfPage (ORD-133)', () => {
   it('ORD-133: a description centred on its code is one row, read top to bottom', () => {
@@ -67,7 +68,7 @@ describe('rowsOfPage (ORD-133)', () => {
         description: 'EXAMEN CRÁNEO; VISTAS',
         values: ['2.80', '1234.95'],
         section: 'RADIOLOGIA',
-        columns: 'UVR · I',
+        columns: ['UVR', 'I'],
         page: 59,
       },
     ]);
@@ -120,7 +121,7 @@ describe('rowsOfPage (ORD-133)', () => {
           word('5,87', 405, 379),
         ],
       },
-      { ...fresh, last: { code: '99100', description: 'Anestesia', values: [], section: '', columns: '', page: 18 } }, // prettier-ignore
+      { ...fresh, last: { code: '99100', description: 'Anestesia', values: [], section: '', columns: [], page: 18 } }, // prettier-ignore
     );
 
     expect(rows[0]).toMatchObject({ code: '381110', section: 'HABITACION' });
@@ -164,9 +165,9 @@ describe('rowsOfPage (ORD-133)', () => {
       `# sha256 del PDF: ${'a'.repeat(64)}`,
       'code,description,values,section,columns,page',
       '"99100","Anestesia, edad extrema","","","","18"',
-      '"70250","EXAMEN RADIOLÓGICO, CRÁNEO","2.80 2.95 3.69","RADIOLOGIA","UVR I · UVR II · UVR III","59"',
-      '"99100","Anestesia para paciente de edad ""extrema""","1.00","","UVR","109"',
-      '"70250","Examen radiológico, cráneo","1.30 7.00","OTROS","HONORARIOS","316"',
+      '"70250","EXAMEN RADIOLÓGICO, CRÁNEO","2.80|2.95|3.69","RADIOLOGIA","UVR I|UVR II|UVR III","59"',
+      '"99100","Anestesia para paciente de edad ""extrema""","1.00|","","HONORARIOS UVR|ANESTESIA UVR","109"',
+      '"70250","Examen radiológico, cráneo","1.30|7.00","OTROS","HONORARIOS|ANESTESIA","316"',
     ].join('\n');
 
     const { pdfChecksum, rows } = readTariffCsv(csv);
@@ -174,7 +175,7 @@ describe('rowsOfPage (ORD-133)', () => {
 
     expect(pdfChecksum).toBe('a'.repeat(64));
     expect(concepts.map((c) => [c.code, c.display, c.values])).toEqual([
-      ['99100', 'Anestesia para paciente de edad "extrema"', ['1.00']],
+      ['99100', 'Anestesia para paciente de edad "extrema"', ['1.00', '']],
       ['70250', 'EXAMEN RADIOLÓGICO, CRÁNEO', ['2.80', '2.95', '3.69']],
     ]);
     expect(concepts[1]?.entries.map((e) => e.page)).toEqual([59, 316]);
@@ -187,7 +188,7 @@ describe('rowsOfPage (ORD-133)', () => {
   it('ORD-133: shortens a name longer than the column at a word, and keeps the whole description', () => {
     const long = `Revisión ${'compleja '.repeat(80)}fin`;
     const [concept] = tariffConceptsOf([
-      { code: '12345', description: long, values: ['1.00'], section: '', columns: '', page: 1 }, // prettier-ignore
+      { code: '12345', description: long, values: ['1.00'], section: '', columns: [], page: 1 }, // prettier-ignore
     ]);
 
     expect(concept!.display.length).toBeLessThanOrEqual(DISPLAY_LENGTH);
@@ -210,9 +211,30 @@ describe('rowsOfPage (ORD-133)', () => {
           word('1,40', 405, 305),
         ],
       },
-      { section: 'OTRA', columns: '', last: null },
+      { section: 'OTRA', columns: [], last: null },
     );
 
     expect(rows[0]).toMatchObject({ code: '30210', section: 'NARIZ' });
+  });
+
+  it('ORD-133: a figure stays in its column, and an empty cell stays empty', () => {
+    const { rows } = rowsOfPage(
+      {
+        page: 37,
+        rules: table([200, 220]),
+        // UVR II in the second value column; the first one is empty.
+        words: [word('394233', 55, 205), word('Sala', 110, 205), word('18,28', 455, 205)], // prettier-ignore
+      },
+      { ...fresh, columns: ['UVR I', 'UVR II'] },
+    );
+
+    expect(rows[0]?.values).toEqual(['', '18.28']);
+  });
+
+  it('ORD-133: tells relative value units from dollars by the headings', () => {
+    expect(unitOf(['UVR I', 'UVR II', 'UVR III'])).toBe('UVR');
+    expect(unitOf(['VALOR NIVEL DE ATENCION UVR I'])).toBe('UVR');
+    expect(unitOf(['TARIFA INTEGRAL US.DOLARES'])).toBe('USD');
+    expect(unitOf([])).toBeNull();
   });
 });

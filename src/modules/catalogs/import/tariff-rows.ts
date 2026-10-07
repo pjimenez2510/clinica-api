@@ -45,12 +45,16 @@ export interface PageLayout {
 export interface TariffRow {
   code: string;
   description: string;
-  /** The figures of the row, as decimals with a dot: `['2.80', '2.95']`. */
+  /**
+   * One figure per value column, as a decimal with a dot, and `''` where the
+   * cell is empty: `['', '18.28', '0.00']`. Which column a figure is in is
+   * which level of care it prices.
+   */
   values: string[];
   /** The last heading row of the table above it: «RADIOLOGIA CONVENCIONAL». */
   section: string;
-  /** The column headings of the table it sits in: «UVR I · UVR II · UVR III». */
-  columns: string;
+  /** The heading of each value column: `['UVR I', 'UVR II', 'UVR III']`. */
+  columns: string[];
   page: number;
 }
 
@@ -69,6 +73,11 @@ const FIGURE = /^(\d{1,3}(\.\d{3})*,\d{2}|\d{1,3}(\.\d{3})+)$/;
  * A band of notes inside a table: it neither is a row nor names a section.
  */
 const NOTE = /^(NOTA|\(\*|Incluye|INCLUYE|Comprende)/;
+/**
+ * The pages of worked examples in the rules (an anaesthesia bill, a fee
+ * computed): tables of figures that are not prestaciones.
+ */
+const WORKED_EXAMPLE_PAGES: ReadonlySet<number> = new Set([83, 102]);
 /** A table that starts this high on the page is one continued from the last. */
 const TOP_OF_PAGE = 75;
 /** Borders are under 1.5 pt thick; two within 1 pt are the same line. */
@@ -79,6 +88,16 @@ const isHorizontal = (rule: Box) =>
   rule.y1 - rule.y0 < THIN && rule.x1 - rule.x0 > 10;
 const isVertical = (rule: Box) =>
   rule.x1 - rule.x0 < THIN && rule.y1 - rule.y0 > 4;
+
+/**
+ * The figures of a cut row completed by its tail: column by column when both
+ * have the same columns, appended otherwise.
+ */
+function filledIn(head: readonly string[], tail: readonly string[]): string[] {
+  if (head.length !== tail.length)
+    return [...head, ...tail].filter((value) => value !== '');
+  return head.map((value, k) => (value !== '' ? value : tail[k]!));
+}
 
 /** `1.234,56` → `1234.56`. */
 export function figureOf(text: string): string {
@@ -105,7 +124,7 @@ function textOf(words: readonly Word[]): string {
 
 export interface PageState {
   section: string;
-  columns: string;
+  columns: string[];
   /** The last row read, which a page break may have cut. */
   last: TariffRow | null;
 }
@@ -118,6 +137,8 @@ export function rowsOfPage(
   layout: PageLayout,
   state: PageState,
 ): { rows: TariffRow[]; anomalies: Anomaly[]; state: PageState } {
+  if (WORKED_EXAMPLE_PAGES.has(layout.page))
+    return { rows: [], anomalies: [{ page: layout.page, text: '', reason: 'página de ejemplos de cálculo' }], state }; // prettier-ignore
   const horizontals = layout.rules.filter(isHorizontal);
   const verticals = layout.rules.filter(isVertical);
   const ys = lines(horizontals.map((rule) => rule.y0));
@@ -212,16 +233,13 @@ export function rowsOfPage(
     if (heading) {
       // A heading band of the table: its value cells name the columns.
       headerCells = [...headerCells, valueCells.map(textOf)];
-      columns = valueCells
-        .map((_, k) =>
-          headerCells
-            .map((band) => band[k] ?? '')
-            .join(' ')
-            .replace(/\s+/g, ' ')
-            .trim(),
-        )
-        .filter((label) => label !== '')
-        .join(' · ');
+      columns = valueCells.map((_, k) =>
+        headerCells
+          .map((band) => band[k] ?? '')
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      );
       continue;
     }
     headerCells = [];
@@ -235,7 +253,11 @@ export function rowsOfPage(
      */
     let code = codeCell.filter((word) => CODE.test(word.text));
     let description = textOf(descriptionCell);
-    let figures = valueCells.flat().filter((word) => FIGURE.test(word.text));
+    /** One figure per value cell, `''` for an empty one. */
+    let values = valueCells.map((cell) => {
+      const figure = cell.find((word) => FIGURE.test(word.text));
+      return figure ? figureOf(figure.text) : '';
+    });
     if (code.length === 0) {
       const anywhere = words.filter((word) => CODE.test(word.text));
       const longest = cells.reduce((a, b) => (b.length > a.length ? b : a));
@@ -243,9 +265,11 @@ export function rowsOfPage(
       // rules («74 min · 99291 · 42 · 1,47») are not prestaciones.
       if (anywhere.length === 1 && longest.length >= 3) {
         code = anywhere;
-        figures = words.filter(
-          (word) => FIGURE.test(word.text) && word !== anywhere[0],
-        );
+        // A merged row has no columns of its own: its figures, left to right.
+        values = words
+          .filter((word) => FIGURE.test(word.text) && word !== anywhere[0])
+          .sort((a, b) => a.x0 - b.x0)
+          .map((word) => figureOf(word.text));
         const rest = cells.map((cell) =>
           cell.filter(
             (word) => word !== anywhere[0] && !FIGURE.test(word.text),
@@ -258,9 +282,7 @@ export function rowsOfPage(
         );
       }
     }
-    const values = [...figures]
-      .sort((a, b) => a.x0 - b.x0)
-      .map((word) => figureOf(word.text));
+    const hasFigures = values.some((value) => value !== '');
 
     if (code.length > 1) {
       anomalies.push({ page: layout.page, text: all, reason: 'varios códigos en una fila' }); // prettier-ignore
@@ -277,21 +299,22 @@ export function rowsOfPage(
        */
       if (continued && firstData && last !== null && !NOTE.test(all)) {
         last.description = `${last.description} ${description}`.trim();
-        last.values = [...last.values, ...values];
+        last.values = filledIn(last.values, values);
       } else if (NOTE.test(all)) {
         // A note inside the table: neither a row nor a section.
       } else if (
-        values.length > 0 &&
+        hasFigures &&
         last !== null &&
-        last.values.length === 0 &&
+        !last.values.some((value) => value !== '') &&
         last.page === layout.page
       ) {
         // A row drawn in two bands (90840): its figures in the second one.
         last.description = `${last.description} ${description}`.trim();
         last.values = values;
-      } else if (values.some((value) => Number(value) !== 0)) {
+      } else if (values.some((value) => value !== '' && Number(value) !== 0)) {
         anomalies.push({ page: layout.page, text: all, reason: 'cifras sin código' }); // prettier-ignore
-      } else if (description !== '') {
+      } else if (/^[A-ZÁÉÍÓÚÑ(]/.test(description)) {
+        // A title of the table. A fragment in lower case is not one.
         section = description;
       }
       continue;
@@ -324,8 +347,10 @@ export interface TariffConcept {
   description: string | null;
   /** The row the name comes from: the first one with figures. */
   section: string;
-  columns: string;
+  columns: string[];
   values: string[];
+  /** What its figures are: relative value units, or dollars. */
+  unit: 'UVR' | 'USD' | null;
   page: number;
   /**
    * Every row of the code, when there is more than one. Most are the same
@@ -358,9 +383,9 @@ export function readTariffCsv(content: string): {
       return {
         code: code!,
         description: description!,
-        values: values === '' ? [] : values!.split(' '),
+        values: values === '' ? [] : values!.split('|'),
         section: section!,
-        columns: columns!,
+        columns: columns === '' ? [] : columns!.split('|'),
         page: Number(page),
       };
     });
@@ -377,13 +402,26 @@ function shortened(text: string): string {
   return `${cut.slice(0, cut.lastIndexOf(' ')).trimEnd()}…`;
 }
 
+/**
+ * ORD-133. What a table's figures are, by its headings: relative value units
+ * (UVR), or dollars («TARIFA INTEGRAL US.DOLARES», «VALOR UNITARIO»). The
+ * dollars are amounts already; the UVR wait for the conversion factor (D-149).
+ */
+export function unitOf(columns: readonly string[]): 'UVR' | 'USD' | null {
+  const headings = columns.join(' ');
+  if (/UVR/i.test(headings)) return 'UVR';
+  if (/USD|D[OÓ]LAR|VALOR|\$/i.test(headings)) return 'USD';
+  return null;
+}
+
 /** ORD-133. One concept per code, in the order the PDF first names them. */
 export function tariffConceptsOf(rows: readonly TariffRow[]): TariffConcept[] {
   const byCode = new Map<string, TariffRow[]>();
   for (const row of rows) byCode.set(row.code, [...(byCode.get(row.code) ?? []), row]); // prettier-ignore
 
   return [...byCode.entries()].map(([code, all]) => {
-    const main = all.find((row) => row.values.length > 0) ?? all[0]!;
+    const main =
+      all.find((row) => row.values.some((value) => value !== '')) ?? all[0]!;
     return {
       code,
       display: shortened(main.description),
@@ -392,6 +430,7 @@ export function tariffConceptsOf(rows: readonly TariffRow[]): TariffConcept[] {
       section: main.section,
       columns: main.columns,
       values: main.values,
+      unit: unitOf(main.columns),
       page: main.page,
       entries:
         all.length > 1

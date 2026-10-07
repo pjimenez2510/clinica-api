@@ -77,11 +77,20 @@ describe('the WHO CIE-10 list (EN-233, EN-234)', () => {
   });
 
   it('EN-234: proposes, for a registered code the list lacks, the codes that begin like it', () => {
-    const available = new Set(['A00.0', 'A00.1', 'A00.9', 'A01.0']);
+    const available = new Set(['A00.0', 'A00.1', 'A00.9', 'A01.0', 'E11.6', 'E11.9']); // prettier-ignore
 
-    expect(proposeEquivalents(['A00', 'A01.0', 'J45.909'], available)).toEqual([
+    expect(
+      proposeEquivalents(
+        ['A00', 'A01.0', 'E11.65', 'E11.18', 'Q99.99X'],
+        available,
+      ),
+    ).toEqual([
+      // prettier-ignore
       { code: 'A00', proposals: ['A00.0', 'A00.1', 'A00.9'] },
-      { code: 'J45.909', proposals: [] },
+      // A clinical-modification code: cut to four, then to the category.
+      { code: 'E11.18', proposals: ['E11.6', 'E11.9'] },
+      { code: 'E11.65', proposals: ['E11.6'] },
+      { code: 'Q99.99X', proposals: [] },
     ]);
   });
 });

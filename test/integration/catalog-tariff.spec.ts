@@ -52,6 +52,7 @@ describe('the official tariff (ORD-133)', () => {
     const result = await importTariff(prisma, {
       now: new Date(),
       effectiveFrom: cutover,
+      allowPastCutover: true,
     });
 
     expect(result.status).toBe('imported');
@@ -81,7 +82,11 @@ describe('the official tariff (ORD-133)', () => {
   it('ORD-133: an exam with its old code is still ordered, and one moved to the official code orders the official concept', async () => {
     const prisma = db();
     const { scene, cutover } = await aSceneWithTheOldTariff(prisma);
-    await importTariff(prisma, { now: new Date(), effectiveFrom: cutover });
+    await importTariff(prisma, {
+      now: new Date(),
+      effectiveFrom: cutover,
+      allowPastCutover: true,
+    });
 
     // Positive control: the code kept in force still orders (ORD-004).
     await expect(
@@ -103,7 +108,11 @@ describe('the official tariff (ORD-133)', () => {
   it('ORD-133: a code nobody used is retired: an exam pointed at it afterwards is refused', async () => {
     const prisma = db();
     const { scene, cutover } = await aSceneWithTheOldTariff(prisma);
-    await importTariff(prisma, { now: new Date(), effectiveFrom: cutover });
+    await importTariff(prisma, {
+      now: new Date(),
+      effectiveFrom: cutover,
+      allowPastCutover: true,
+    });
 
     await prisma.examDefinition.update({
       where: { id: scene.glucose.id },

@@ -200,8 +200,9 @@ export async function seedDevelopment(prisma: PrismaClient): Promise<void> {
    * `pnpm db:seed` no duplica nada.
    */
   await seedBilling(prisma);
-  // Después de `seedBilling`, y no antes: el tarifario se DERIVA de
-  // `exam_definition`, que aquella siembra crea.
+  // Después de `seedBilling`, y no antes: el tarifario oficial deja vigentes
+  // los códigos antiguos que un examen todavía nombra (ORD-133), y para eso
+  // los exámenes tienen que existir.
   await seedClinicalCatalogues(prisma);
 
   const superuser = await prisma.role.upsert({

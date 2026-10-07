@@ -60,7 +60,26 @@ no tiene código. Un código puede aparecer más de una vez —casi siempre la
 misma prestación en el componente institucional (sección B) y en honorarios
 (sección D)—: el concepto es uno y `attributes.entries` guarda cada aparición.
 
-`seedClinicalCatalogues` lo importa (ORD-133) como nomenclatura: guarda las
-UVR y ningún importe, porque el factor de conversión está por decidir (D-149).
+`seedClinicalCatalogues` lo importa (ORD-133) como nomenclatura: guarda, columna
+por columna, la cifra de cada nivel (`attributes.values`, vacía donde la celda
+lo está), el título de cada columna (`attributes.columns`) y su unidad
+(`attributes.unit`: `UVR`, o `USD` en las tarifas integrales y los paquetes).
+Ningún importe se calcula con las UVR: el factor de conversión está por
+decidir (D-149). La release guarda el SHA-256 del CSV, cuya primera línea lleva
+el del PDF: una extracción corregida del mismo PDF es otro CSV y, con la misma
+versión, se rechaza.
 Los códigos anteriores que un examen activo todavía nombra siguen vigentes y se
 informan, para ponerles el código oficial desde el catálogo de exámenes.
+
+## Día de corte
+
+`CIE10_EFFECTIVE_FROM`, `CNMB_EFFECTIVE_FROM` y `TARIFF_EFFECTIVE_FROM`
+(AAAA-MM-DD) fijan el día desde el que rige la edición. Por defecto, el día
+clínico siguiente a la carga si ya había una edición vigente, y una fecha
+anterior a cualquier atención si no la había. Con una edición vigente se
+rechaza un corte anterior a mañana: retiraría conceptos que usan las
+atenciones de hoy.
+
+**Para probar en pantalla el mismo día** sobre una base que ya tenía los
+catálogos de desarrollo, lo limpio es una base nueva sembrada de cero
+(`clinica_<tema>_2`, `pnpm db:deploy` y las semillas): allí rigen desde siempre.

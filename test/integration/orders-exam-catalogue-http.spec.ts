@@ -26,6 +26,14 @@ import {
   clinicalDateOf,
 } from '../../src/shared/domain/clinic-time';
 import { aTariffConcept, placeIssued } from './orders-fixtures';
+import { useDatabase } from './setup/database';
+import {
+  createEncounter,
+  createPatient,
+  createPractitioner,
+  createSite,
+} from './setup/fixtures';
+import { closeApp, listenForTests } from './setup/http-server';
 
 /**
  * ORD-004, ORD-133. The tariff concept a seeded exam names, under the exam's
@@ -37,14 +45,6 @@ async function aTariffConceptOf(prisma: PrismaClient, examCode: string) {
   });
   return aTariffConcept(prisma, { code: exam.tariffCode! });
 }
-import { useDatabase } from './setup/database';
-import {
-  createEncounter,
-  createPatient,
-  createPractitioner,
-  createSite,
-} from './setup/fixtures';
-import { closeApp, listenForTests } from './setup/http-server';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════

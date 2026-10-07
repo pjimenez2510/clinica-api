@@ -3752,7 +3752,9 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
   `EXTERNAL_CAUSE`); y SI el sistema ya tenía conceptos vigentes, ENTONCES
   DEBERÁ **retirarlos** desde el día de corte, sin borrar ninguno. El día de
   corte es el siguiente al de la importación en `America/Guayaquil`, salvo
-  que se indique otro; sin edición previa, la edición rige desde su año.
+  que se indique otro (`CIE10_EFFECTIVE_FROM`, AAAA-MM-DD: con una edición
+  vigente no se admite uno anterior a mañana); sin edición previa, la edición
+  rige desde el 1 de enero de 2019, antes que cualquier atención.
   > La lista trae **sólo códigos de cuatro caracteres** —los que el RDACAA
   > acepta— y ni grupos ni categorías de tres, así que todo lo que cuelga de
   > un capítulo es elegible. Un diagnóstico apunta por id a la versión del

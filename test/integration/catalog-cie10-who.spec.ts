@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
 import { importCie10 } from '../../prisma/seed-cie10.mts';
+import { nextClinicDay } from '../../src/modules/catalogs/import/cutover';
 import { PrismaCatalogRepository } from '../../src/modules/catalogs/infrastructure/prisma-catalog.repository';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
@@ -65,7 +66,7 @@ describe('the WHO CIE-10 import (EN-233, EN-234)', () => {
     const catalog = catalogOf(db());
 
     // The cut-over is the clinic day after the import.
-    expect(cutover.getTime()).toBeGreaterThan(now.getTime() - 86_400_000);
+    expect(cutover).toEqual(nextClinicDay(now));
 
     const pharyngitis = await catalog.findByCode('CIE10', 'J02.9', cutover);
     expect(pharyngitis).toMatchObject({
