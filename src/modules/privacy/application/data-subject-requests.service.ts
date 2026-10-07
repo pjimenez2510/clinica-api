@@ -243,11 +243,9 @@ export class DataSubjectRequestsService {
    * row; what the data subject was told is recorded when the answer is saved.
    */
   async answerProposal(requestId: string): Promise<string> {
-    const request = await this.requests.find(requestId);
-    if (!request) throw new DataRequestNotFoundError();
-    if (!EXPORTABLE_RIGHTS.has(request.right)) {
-      throw new DataExportNotApplicableError();
-    }
+    const right = await this.requests.rightOf(requestId);
+    if (!right) throw new DataRequestNotFoundError();
+    if (!EXPORTABLE_RIGHTS.has(right)) throw new DataExportNotApplicableError();
     return answerProposal(EXPORT_OMISSIONS);
   }
 

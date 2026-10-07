@@ -13,7 +13,7 @@ export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
   {
     section: 'clinical_record',
     reason:
-      'La historia clínica (atenciones, diagnósticos, notas, signos vitales, alergias, antecedentes, recetas, órdenes, resultados, certificados y referencias) se entrega por otra vía mientras se decide su formato (D-083 §3). Las versiones guardadas de lo que se corrigió sí van en `versions` (D-131.1).',
+      'La historia clínica vigente (atenciones, diagnósticos, notas, signos vitales, alergias, antecedentes, recetas, órdenes, resultados, certificados y referencias) se entrega por otra vía mientras se decide su formato (D-083 §3). Si se corrigió algo de las atenciones, signos vitales, diagnósticos, alergias, antecedentes o avisos de resultados críticos, sus versiones anteriores sí van; las de los avisos, sin el nombre ni la nota de la persona avisada (D-131.1, D-140.2).',
   },
   {
     section: 'sexual_orientation',
@@ -38,17 +38,17 @@ export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
   {
     section: 'appointments',
     reason:
-      'Las citas y la lista de espera: las vigentes no se incluyen todavía; sus versiones anteriores sí, en `versions` (D-098 §7, D-164.3).',
+      'Las citas, pasadas y futuras, y la lista de espera no se incluyen todavía; si se movió o corrigió alguna cita o una llamada de la lista de espera, sus versiones anteriores sí van, las de las citas sin su motivo ni sus notas (D-098 §7, D-164.3).',
   },
   {
     section: 'billing',
     reason:
-      'Las cuentas, cargos, facturas y notas de crédito: las vigentes no se incluyen todavía; sus versiones anteriores sí, en `versions`, donde las hay (D-098 §7, D-164.3).',
+      'Las cuentas, cargos, facturas y notas de crédito no se incluyen todavía; si se corrigió alguna cuenta, cargo o factura, sus versiones anteriores sí van, las de las facturas sin los datos de quien las recibió (D-098 §7, D-164.3).',
   },
   {
     section: 'record_corrections',
     reason:
-      'El histórico de correcciones de la ficha no se incluye todavía (D-098 §7).',
+      'El histórico de correcciones de los datos de identificación de la ficha no se incluye todavía (D-098 §7).',
   },
   {
     section: 'access_log',

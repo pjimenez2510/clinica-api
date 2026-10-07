@@ -86,6 +86,7 @@ function requestRepository(
     edit: vi.fn(),
     correctAnswer: vi.fn(),
     find: vi.fn().mockResolvedValue(null),
+    rightOf: vi.fn().mockResolvedValue(null),
     requestsOf: vi.fn().mockResolvedValue([]),
     open: vi.fn().mockResolvedValue([]),
     exportChart: vi.fn(),
@@ -325,34 +326,46 @@ describe('DataSubjectRequestsService', () => {
 });
 
 describe('la propuesta de respuesta (D-164.2)', () => {
-  it('PD-049 propone a acceso y portabilidad lo que el archivo no lleva, y rechaza otro derecho o una inexistente sin escribir nada', async () => {
-    const find = vi
-      .fn()
-      .mockResolvedValueOnce(requestView({ right: 'ACCESS' }))
-      .mockResolvedValueOnce(requestView({ right: 'PORTABILITY' }))
-      .mockResolvedValueOnce(requestView({ right: 'RECTIFICATION' }))
-      .mockResolvedValueOnce(null);
-    const answer = vi.fn();
-    const exportChart = vi.fn();
-    const repository = requestRepository({ find, answer, exportChart });
-    const audit = { record: vi.fn() };
-    const service = new DataSubjectRequestsService(repository, audit);
+  it.each(['ACCESS', 'PORTABILITY'] as const)(
+    'PD-049 a %s le propone lo que el archivo no lleva, sin escribir nada',
+    async (right) => {
+      const answer = vi.fn();
+      const exportChart = vi.fn();
+      const find = vi.fn();
+      const rightOf = vi.fn().mockResolvedValue(right);
+      const audit = { record: vi.fn() };
+      const service = new DataSubjectRequestsService(
+        requestRepository({ rightOf, find, answer, exportChart }),
+        audit,
+      );
 
-    await expect(service.answerProposal('r-1')).resolves.toBe(
-      answerProposal(EXPORT_OMISSIONS),
-    );
-    await expect(service.answerProposal('r-1')).resolves.toBe(
-      answerProposal(EXPORT_OMISSIONS),
+      await expect(service.answerProposal('r-1')).resolves.toBe(
+        answerProposal(EXPORT_OMISSIONS),
+      );
+      // Only the right is read: not the request's view, with what was asked.
+      expect(find).not.toHaveBeenCalled();
+      expect(answer).not.toHaveBeenCalled();
+      expect(exportChart).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    },
+  );
+
+  it('PD-049 otro derecho es DATA_EXPORT_NOT_APPLICABLE', async () => {
+    const service = newRequestsService(
+      requestRepository({
+        rightOf: vi.fn().mockResolvedValue('RECTIFICATION'),
+      }),
     );
     await expect(service.answerProposal('r-1')).rejects.toBeInstanceOf(
       DataExportNotApplicableError,
     );
+  });
+
+  it('PD-049 una solicitud inexistente es DATA_REQUEST_NOT_FOUND', async () => {
+    const service = newRequestsService(requestRepository());
     await expect(service.answerProposal('r-1')).rejects.toBeInstanceOf(
       DataRequestNotFoundError,
     );
-    expect(answer).not.toHaveBeenCalled();
-    expect(exportChart).not.toHaveBeenCalled();
-    expect(audit.record).not.toHaveBeenCalled();
   });
 });
 

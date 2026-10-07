@@ -1655,7 +1655,7 @@ describe('privacy por HTTP', () => {
       expect(lines).toHaveLength(omitted.length + 1);
       expect(proposal).not.toMatch(/\([A-Z]{1,3}-\d{2,3}/);
       expect(proposal).toContain(
-        'Las citas y la lista de espera: las vigentes no se incluyen todavía; sus versiones anteriores sí',
+        'Las citas, pasadas y futuras, y la lista de espera no se incluyen todavía; si se movió o corrigió alguna cita',
       );
 
       // PD-033. What is saved is what was written: the proposal, edited.

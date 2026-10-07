@@ -39,14 +39,21 @@ describe('lo que el archivo no lleva, dicho al titular', () => {
     expect(answerProposal(EXPORT_OMISSIONS).length).toBeLessThanOrEqual(4_000);
   });
 
-  it('PD-050 citas y facturación: las vigentes no van todavía, sus versiones anteriores sí', () => {
+  it('PD-050 citas y facturación: ni las pasadas ni las futuras van todavía; sí sus versiones anteriores, y lo que esas versiones no llevan', () => {
     const reasonOf = (section: string) =>
       EXPORT_OMISSIONS.find((one) => one.section === section)?.reason;
 
-    for (const section of ['appointments', 'billing']) {
-      expect(reasonOf(section)).toContain(
-        'las vigentes no se incluyen todavía; sus versiones anteriores sí',
-      );
-    }
+    expect(reasonOf('appointments')).toContain(
+      'Las citas, pasadas y futuras, y la lista de espera no se incluyen todavía; si se movió o corrigió alguna cita',
+    );
+    expect(reasonOf('appointments')).toContain(
+      'sus versiones anteriores sí van, las de las citas sin su motivo ni sus notas',
+    );
+    expect(reasonOf('billing')).toContain(
+      'no se incluyen todavía; si se corrigió alguna cuenta, cargo o factura, sus versiones anteriores sí van',
+    );
+    expect(reasonOf('billing')).toContain(
+      'las de las facturas sin los datos de quien las recibió',
+    );
   });
 });

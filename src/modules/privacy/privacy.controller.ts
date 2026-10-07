@@ -52,6 +52,7 @@ import {
   PublishConsentTextDto,
   RecordConsentDto,
   RegisterDataRequestDto,
+  type AnswerProposalResponse,
   type ConsentTextResponse,
   type DataRequestResponse,
   type PatientConsentResponse,
@@ -321,7 +322,7 @@ export class PrivacyController {
   @ApiOkResponse({ type: AnswerProposalDto })
   async answerProposal(
     @Param('requestId', ParseUUIDPipe) requestId: string,
-  ): Promise<{ response: string }> {
+  ): Promise<AnswerProposalResponse> {
     return { response: await this.requests.answerProposal(requestId) };
   }
 

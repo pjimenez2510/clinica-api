@@ -225,3 +225,4 @@ export const answerProposalSchema = z.object({
   response: z.string().max(DATA_REQUEST_TEXT_MAX_LENGTH),
 });
 export class AnswerProposalDto extends createZodDto(answerProposalSchema) {}
+export type AnswerProposalResponse = z.infer<typeof answerProposalSchema>;
