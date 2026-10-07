@@ -129,10 +129,16 @@ describe('EN-052 el índice CEO-D / CPO-D contra la base', () => {
     expect(await problemFrom(insert(prisma, six.encounter.id, six.author.id, CEO_D))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
 
     const unknown = await anAttentionAged(prisma, { years: 8 });
-    // An attention whose age was never frozen (a row older than EN-008).
-    await prisma.$executeRaw`
-      UPDATE encounter SET age_years = NULL, age_months = NULL, age_days = NULL
-       WHERE id = ${unknown.encounter.id}::uuid`;
+    // An attention whose age was never frozen (a row older than EN-008). The
+    // age cannot be changed (`trg_encounter_age_frozen`), so the trigger is
+    // set aside for this one statement, inside its own transaction.
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`ALTER TABLE encounter DISABLE TRIGGER trg_encounter_age_frozen`;
+      await tx.$executeRaw`
+        UPDATE encounter SET age_years = NULL, age_months = NULL, age_days = NULL
+         WHERE id = ${unknown.encounter.id}::uuid`;
+      await tx.$executeRaw`ALTER TABLE encounter ENABLE TRIGGER trg_encounter_age_frozen`;
+    });
     expect(await problemFrom(insert(prisma, unknown.encounter.id, unknown.author.id, CEO_D))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
     expect(await prisma.encounterDentalIndex.count()).toBe(0);
   });
