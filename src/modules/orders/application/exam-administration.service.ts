@@ -50,8 +50,10 @@ const ANALYTE_RESOURCE = 'analyte_definition';
  *
  * ⚠️ EVERY CHANGE LEAVES A ROW IN `access_audit` (ORD-111). A critical band
  * moved decides whether somebody calls a patient tonight (ORD-060), and who
- * moved it has to be answerable. Only identifiers travel: the trail is not a
- * second copy of the catalogue.
+ * moved it has to be answerable. Since ORD-142 an edit also carries what it
+ * replaced and what it left — the editable fields, never the `usedBy` lists
+ * or the service's row — because «who moved the band» is half an answer
+ * without «from where to where» (D-150).
  */
 @Injectable()
 export class ExamAdministrationService {
@@ -80,7 +82,9 @@ export class ExamAdministrationService {
   ): Promise<AdminExamView> {
     await this.assertServiceFits(exam, true);
     const created = await this.catalogue.createExam(code, exam);
-    await this.record(EXAM_RESOURCE, created.id, 'CREATE', editor);
+    await this.record(EXAM_RESOURCE, created.id, 'CREATE', editor, {
+      after: examSnapshot(created),
+    });
     return created;
   }
 
@@ -106,7 +110,10 @@ export class ExamAdministrationService {
     // Only what changed is written: two tabs saving at once (Datos, Cobro) do
     // not undo each other.
     const updated = await this.catalogue.updateExam(id, patch);
-    await this.record(EXAM_RESOURCE, id, 'UPDATE', editor);
+    await this.record(EXAM_RESOURCE, id, 'UPDATE', editor, {
+      before: examSnapshot(current),
+      after: examSnapshot(updated),
+    });
     return updated;
   }
 
@@ -140,7 +147,10 @@ export class ExamAdministrationService {
       throw new ExamHasOpenOrdersError();
     }
     const updated = await this.catalogue.setStructure(id, entries);
-    await this.record(EXAM_RESOURCE, id, 'UPDATE', editor);
+    await this.record(EXAM_RESOURCE, id, 'UPDATE', editor, {
+      before: structureSnapshot(current),
+      after: structureSnapshot(updated),
+    });
     return updated;
   }
 
@@ -156,7 +166,9 @@ export class ExamAdministrationService {
   ): Promise<AdminAnalyteView> {
     assertAnalyteFitsItsType(analyte);
     const created = await this.catalogue.createAnalyte(code, analyte);
-    await this.record(ANALYTE_RESOURCE, created.id, 'CREATE', editor);
+    await this.record(ANALYTE_RESOURCE, created.id, 'CREATE', editor, {
+      after: analyteSnapshot(created),
+    });
     return created;
   }
 
@@ -205,7 +217,10 @@ export class ExamAdministrationService {
     if (reunited && bounded) throw new AnalyteUnitWithRangesError();
     if (retyped) assertRangesHold(next.valueType, current.ranges);
     const updated = await this.catalogue.updateAnalyte(id, next);
-    await this.record(ANALYTE_RESOURCE, id, 'UPDATE', editor);
+    await this.record(ANALYTE_RESOURCE, id, 'UPDATE', editor, {
+      before: analyteSnapshot(current),
+      after: analyteSnapshot(updated),
+    });
     return updated;
   }
 
@@ -220,7 +235,10 @@ export class ExamAdministrationService {
     // ORD-113. ONE instant for what closes and what opens, from the
     // application's clock: the history then reads without a gap or an overlap.
     const updated = await this.catalogue.setRanges(id, ranges, new Date());
-    await this.record(ANALYTE_RESOURCE, id, 'UPDATE', editor);
+    await this.record(ANALYTE_RESOURCE, id, 'UPDATE', editor, {
+      before: rangesSnapshot(analyte),
+      after: rangesSnapshot(updated),
+    });
     return updated;
   }
 
@@ -260,6 +278,7 @@ export class ExamAdministrationService {
     resourceId: string,
     action: 'CREATE' | 'UPDATE',
     editor: CatalogueEditor,
+    change: { before?: Readonly<object>; after?: Readonly<object> } = {},
   ): Promise<void> {
     await this.audit.record({
       userId: editor.userId,
@@ -268,6 +287,11 @@ export class ExamAdministrationService {
       action,
       ip: editor.ip,
       userAgent: editor.userAgent,
+      // ORD-142. Plain copies; `exam_definition` and `analyte_definition`
+      // carry a payload since `admin_edit_in_place` (D-150). A catalogue row,
+      // never a patient's result.
+      before: change.before && { ...change.before },
+      after: change.after && { ...change.after },
     });
   }
 }
@@ -290,4 +314,41 @@ function writeOf(exam: AdminExamView): ExamWrite {
     billableServiceId: exam.billableService?.id ?? null,
     active: exam.active,
   };
+}
+
+/** ORD-142. An exam's editable fields, with the immutable code that names it. */
+function examSnapshot(exam: AdminExamView): object {
+  return { code: exam.code, ...writeOf(exam) };
+}
+
+/** ORD-142. The exam's analytes in printing order, as `setStructure` takes them. */
+function structureSnapshot(exam: AdminExamView): object {
+  return {
+    analytes: exam.analytes.map((entry) => ({
+      analyteDefinitionId: entry.analyte.id,
+      isReflex: entry.isReflex,
+    })),
+  };
+}
+
+/**
+ * ORD-142. An analyte's editable fields. Not its ranges, which `setRanges`
+ * replaces and audits on its own, and not `usedBy`, which nobody edits here.
+ */
+function analyteSnapshot(analyte: AdminAnalyteView): object {
+  return {
+    code: analyte.code,
+    name: analyte.name,
+    valueType: analyte.valueType,
+    unit: analyte.unit,
+    decimals: analyte.decimals,
+    allowedValues: analyte.allowedValues && [...analyte.allowedValues],
+    loincCode: analyte.loincCode,
+    active: analyte.active,
+  };
+}
+
+/** ORD-142. The analyte's reference ranges, replaced whole (ORD-106). */
+function rangesSnapshot(analyte: AdminAnalyteView): object {
+  return { ranges: analyte.ranges.map((range) => ({ ...range })) };
 }
