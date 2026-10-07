@@ -800,7 +800,9 @@ es falsa, hay requisitos que cambian.
   vigente o futuro (`PATCH /billing/prices/{id}`), guardando la versión
   anterior en `record_version` con quién y cuándo; SI la vigencia del precio
   terminó antes de hoy, ENTONCES DEBERÁ rechazarlo con `PRICE_NOT_EDITABLE`.
-  Los cargos ya registrados NO DEBERÁN cambiar.
+  Los cargos ya registrados NO DEBERÁN cambiar, y la respuesta DEBERÁ decir
+  cuántos cargos sin facturar conservan el importe anterior
+  (`openChargesAtPreviousAmount`), para que alguien los revise.
   > AD-3 (D-127). El error de hoy se corregía mañana: sólo se podía abrir otro
   > precio «desde» una fecha posterior. Enmienda BI-044: ya no es verdad que
   > «nadie podría explicar por qué» un cargo dice un importe distinto de su

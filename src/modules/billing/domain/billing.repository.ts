@@ -360,6 +360,11 @@ export interface BillingCatalogueRepository {
     amount: Money,
     stamp: { by: string; at: Date },
   ): Promise<PriceRow>;
+  /**
+   * BI-230. Charges not yet invoiced (planned or billable) that froze this
+   * price at `amount`: they keep it (BI-050), so whoever corrects has to know.
+   */
+  countOpenChargesAt(priceId: string, amount: Money): Promise<number>;
 }
 
 export const BILLING_CATALOGUE_REPOSITORY = Symbol(

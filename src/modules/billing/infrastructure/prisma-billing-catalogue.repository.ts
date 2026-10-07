@@ -532,6 +532,17 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return row ? { ...toPriceRow(row), priceListId: row.priceListId } : null;
   }
 
+  /** BI-230. */
+  async countOpenChargesAt(priceId: string, amount: Money): Promise<number> {
+    return this.prisma.chargeItem.count({
+      where: {
+        resolvedPriceId: priceId,
+        status: { in: ['PLANNED', 'BILLABLE'] },
+        unitAmount: amount.toString(),
+      },
+    });
+  }
+
   /** BI-230. The stamp is what lets `trg_price_record_version` archive. */
   async correctPriceAmount(
     priceId: string,

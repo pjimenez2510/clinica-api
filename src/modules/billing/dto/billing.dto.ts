@@ -558,6 +558,18 @@ const priceResponseSchema = z.object({
 });
 /** Response of POST /billing/payers/:payerId/prices: the validity just opened. */
 export class PriceDto extends createZodDto(priceResponseSchema) {}
+
+/**
+ * BI-230. The corrected price, and how many charges not yet invoiced keep the
+ * amount it had: they are not rewritten (BI-050).
+ */
+const correctedPriceResponseSchema = priceResponseSchema.extend({
+  openChargesAtPreviousAmount: z.number().int(),
+});
+/** Response of PATCH /billing/prices/:priceId. */
+export class CorrectedPriceDto extends createZodDto(
+  correctedPriceResponseSchema,
+) {}
 const priceListResponseSchema = z.object({
   priceListId: z.uuid(),
   payerId: z.uuid(),

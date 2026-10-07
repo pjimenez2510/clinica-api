@@ -206,7 +206,7 @@ export class PricingService {
     amount: Money,
     requester: Requester,
     now: Date = new Date(),
-  ): Promise<PriceRow> {
+  ): Promise<PriceRow & { openChargesAtPreviousAmount: number }> {
     const current = await this.catalogue.findPrice(priceId);
     if (!current) throw new PriceEntryNotFoundError();
     checkPriceCorrection(current, amount, clinicalDateOf(now));
@@ -219,7 +219,15 @@ export class PricingService {
       before: priceSnapshot(current),
       after: priceSnapshot(corrected),
     });
-    return corrected;
+    // The charges already raised keep the mistyped amount (BI-050): the
+    // answer says how many, so the screen can send someone to look.
+    return {
+      ...corrected,
+      openChargesAtPreviousAmount: await this.catalogue.countOpenChargesAt(
+        priceId,
+        current.amount,
+      ),
+    };
   }
 
   /**

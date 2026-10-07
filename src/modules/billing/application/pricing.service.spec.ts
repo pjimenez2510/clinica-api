@@ -82,6 +82,7 @@ function build(overrides: Record<string, unknown> = {}) {
     applyPriceChange: vi.fn().mockResolvedValue(price('new', '35.00', '2026-07-01')), // prettier-ignore
     findPrice: vi.fn().mockResolvedValue(null),
     correctPriceAmount: vi.fn(),
+    countOpenChargesAt: vi.fn().mockResolvedValue(0),
     record: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -411,6 +412,30 @@ describe('BI-230 corregir el importe de un precio en el sitio', () => {
         before: expect.objectContaining({ amount: '30.00' }),
         after: expect.objectContaining({ amount: '31.50' }),
       }),
+    );
+  });
+
+  it('BI-230 dice cuántos cargos sin facturar conservan el importe anterior', async () => {
+    const countOpenChargesAt = vi.fn().mockResolvedValue(10);
+    const { service } = build({
+      findPrice: vi.fn().mockResolvedValue(inForce),
+      correctPriceAmount: vi
+        .fn()
+        .mockResolvedValue({ ...inForce, amount: Money.parse('31.50') }),
+      countOpenChargesAt,
+    });
+
+    const corrected = await service.correctPrice(
+      'price-1',
+      Money.parse('31.50'),
+      requester,
+      now,
+    );
+
+    expect(corrected.openChargesAtPreviousAmount).toBe(10);
+    expect(countOpenChargesAt).toHaveBeenCalledWith(
+      'price-1',
+      Money.parse('30.00'),
     );
   });
 

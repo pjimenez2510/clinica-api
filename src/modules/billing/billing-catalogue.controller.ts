@@ -50,6 +50,7 @@ import {
   ServiceDto,
   ServiceListDto,
   CorrectPriceDto,
+  CorrectedPriceDto,
   SetPriceDto,
   TaxRateDto,
   UpdatePayerDto,
@@ -402,7 +403,7 @@ export class BillingCatalogueController {
   @ApiOperation({
     summary: 'Corregir el importe de un precio vigente o futuro',
   })
-  @ApiOkResponse({ type: PriceDto })
+  @ApiOkResponse({ type: CorrectedPriceDto })
   async correctPrice(
     @Param('priceId', ParseUUIDPipe) priceId: string,
     @Body() dto: CorrectPriceDto,
