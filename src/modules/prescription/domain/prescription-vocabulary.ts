@@ -160,10 +160,86 @@ export function isDeclaredPresentation(
       .replace(/\s+/g, '')
       .replace(/,/g, '.')
       .replace(/µg/g, 'mcg');
-  return declared.some(
-    (presentation) =>
-      (presentation.forms ?? [presentation.form]).some(
-        (admitted) => admitted !== '' && normal(admitted) === normal(form),
-      ) && normal(presentation.concentration) === normal(concentration),
-  );
+  return declared.some((presentation) => {
+    const admitsForm = (presentation.forms ?? [presentation.form]).some(
+      (admitted) => admitted !== '' && normal(admitted) === normal(form),
+    );
+    if (!admitsForm) return false;
+    /**
+     * PR-115. A range of the cuadro admits the amounts inside it, and only
+     * those: a line that copies the range itself would print «1 mg - 5 mg»
+     * of warfarin, and is outside.
+     */
+    const range = rangeOf(presentation.concentration);
+    if (range) {
+      const amount = amountOf(concentration ?? '');
+      return (
+        amount !== null &&
+        amount.unit === range.unit &&
+        amount.value >= range.min &&
+        amount.value <= range.max
+      );
+    }
+    if (normal(presentation.concentration) === normal(concentration))
+      return true;
+    // PR-115. A composition described in prose is not a figure to compare.
+    return presentation.concentration.length > DESCRIBED_COMPOSITION;
+  });
+}
+
+/**
+ * PR-115. Longer than this, the cuadro describes a composition («Glucosa
+ * 13,5 g/L - 20 g/L Cloruro de Sodio …») rather than stating a strength,
+ * and it does not fit the line's concentration (80 characters) either.
+ */
+export const DESCRIBED_COMPOSITION = 80;
+
+/**
+ * An Ecuadorian figure: «1,5», «1.200.000», «2'400.000». A dot followed by
+ * three digits groups thousands; a comma is the decimal mark.
+ */
+function figureOf(text: string): number | null {
+  const plain = text.replace(/'/g, '');
+  if (!/^\d+([.,]\d+)*$/.test(plain)) return null;
+  const grouped = plain.includes(',')
+    ? plain.replace(/\./g, '').replace(',', '.')
+    : /^\d+(\.\d{3})+$/.test(plain)
+      ? plain.replace(/\./g, '')
+      : plain;
+  const value = Number(grouped);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** «UI», «Ul» (an erratum of the cuadro for UI) and «µg» written one way. */
+const unitOf = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/µg/g, 'mcg')
+    .replace(/^ul/, 'ui');
+
+/** PR-115. «850 mg» → 850 «mg»; anything else, nothing. */
+export function amountOf(text: string): { value: number; unit: string } | null {
+  const match = /^\s*([\d.,']+)\s*([^\d\s][^-]*?)\s*$/.exec(text);
+  const value = match ? figureOf(match[1]!) : null;
+  return match && value !== null ? { value, unit: unitOf(match[2]!) } : null;
+}
+
+/**
+ * PR-115. «500 mg - 1000 mg» → 500 to 1000 «mg». Only a range of one
+ * strength with the same unit at both ends; anything else, nothing.
+ */
+export function rangeOf(
+  text: string,
+): { min: number; max: number; unit: string } | null {
+  // «… (equivalente a hierro elemental)», «(20 mg - 100 mg)»: an aside.
+  const [low, high, ...rest] = text
+    .replace(/\s*\([^)]*\)\s*$/, '')
+    .split(/\s+-\s+/);
+  if (!low || !high || rest.length > 0) return null;
+  const from = amountOf(low);
+  const to = amountOf(high);
+  if (!from || !to || from.unit !== to.unit || from.value > to.value)
+    return null;
+  return { min: from.value, max: to.value, unit: from.unit };
 }

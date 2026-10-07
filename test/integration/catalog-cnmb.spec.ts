@@ -243,6 +243,28 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
     ).toMatchObject({ label: 'Sólido oral', forms: expect.arrayContaining(['CAPSULE']) }); // prettier-ignore
   });
 
+  it('PR-115: metformin of 850 mg is inside the range the cuadro declares; 1500 mg and the range itself are outside', async () => {
+    const prisma = db();
+    await importCnmb(prisma, { now: new Date(), effectiveFrom: CUTOVER });
+    const { encounter, who } = await anAttention(prisma);
+    const metformin = await official(prisma, 'A10BA02');
+
+    const composed = await serviceOf(prisma).compose(
+      {
+        encounterId: encounter.id,
+        ...INDICATIONS,
+        items: [
+          aLine(metformin.id, 'TABLET', '850 mg'),
+          aLine(metformin.id, 'TABLET', '1500 mg'),
+          aLine(metformin.id, 'TABLET', '500 mg - 1000 mg'),
+        ],
+      },
+      who,
+    );
+
+    expect(composed.prescription.items.map((item) => item.offFormulary)).toEqual([false, true, true]); // prettier-ignore
+  });
+
   it('PR-114: an allergy recorded against the development enalapril refuses the official one, and not another medicine', async () => {
     const prisma = db();
     const development = await developmentCuadro(prisma);

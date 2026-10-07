@@ -1314,6 +1314,15 @@ expone lo que hace falta._
   > otra de las admitidas no la saca del cuadro. Una forma del cuadro sin
   > equivalente en la receta (intratraqueal, intravesical, intrauterina) no
   > admite ninguna: esa línea sale marcada fuera del cuadro.
+  >
+  > **Rangos.** El cuadro declara 66 presentaciones como rango («500 mg -
+  > 1000 mg» de metformina, «1 mg - 5 mg» de warfarina): una concentración
+  > dentro del rango y con su unidad está en el cuadro; el rango copiado a la
+  > línea, no —la receta imprimiría «1 mg - 5 mg»—, y elegir esa presentación
+  > deja la concentración vacía para que se escriba la cifra. Cinco
+  > presentaciones describen su composición en un párrafo (sales de
+  > rehidratación oral): sólo se compara la forma. Qué cifras de cada rango
+  > existen de verdad lo confirma un farmacéutico (D-148).
 
 - **PR-116** — CUANDO se importe el CNMB oficial, el sistema DEBERÁ guardar
   un concepto por «Código medicamento» (vigente con la edición, retirando sin

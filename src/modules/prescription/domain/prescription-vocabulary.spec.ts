@@ -88,4 +88,29 @@ describe('el vocabulario de la línea de receta (PR-101 a PR-104)', () => {
     expect(isDeclaredPresentation(implant, 'TABLET', '68 mg')).toBe(false);
     expect(isDeclaredPresentation(implant, '', '68 mg')).toBe(false);
   });
+
+  it('PR-115 una concentración dentro del rango que el cuadro declara, con su unidad, está en el cuadro', () => {
+    const metformin = [
+      { form: 'TABLET', forms: ['TABLET'], label: 'Sólido oral', concentration: '500 mg - 1000 mg' }, // prettier-ignore
+    ];
+    const penicillin = [
+      { form: 'POWDER_FOR_INJECTION', forms: ['POWDER_FOR_INJECTION'], label: 'Sólido parenteral', concentration: "600.000 UI - 2'400.000 UI" }, // prettier-ignore
+    ];
+
+    expect(isDeclaredPresentation(metformin, 'TABLET', '850 mg')).toBe(true);
+    expect(isDeclaredPresentation(metformin, 'TABLET', '1000mg')).toBe(true);
+    expect(isDeclaredPresentation(metformin, 'TABLET', '1,5 g')).toBe(false);
+    expect(isDeclaredPresentation(metformin, 'TABLET', '1500 mg')).toBe(false);
+    expect(isDeclaredPresentation(metformin, 'TABLET', '500 mg - 1000 mg')).toBe(false); // prettier-ignore
+    expect(isDeclaredPresentation(penicillin, 'POWDER_FOR_INJECTION', '1.200.000 UI')).toBe(true); // prettier-ignore
+  });
+
+  it('PR-115 una composición descrita en texto, que no es una cifra, sólo exige la forma', () => {
+    const oralRehydration = [
+      { form: 'POWDER_FOR_ORAL_SUSPENSION', forms: ['POWDER_FOR_ORAL_SUSPENSION'], label: 'Sólido oral (polvo)', concentration: 'Glucosa 13,5 g/L - 20 g/L Cloruro de Sodio 2,6 g/L - 3,5 g/L Cloruro de Potasio 1,5 g/L Citrato trisódico dihidrato 2,9 g/L' }, // prettier-ignore
+    ];
+
+    expect(isDeclaredPresentation(oralRehydration, 'POWDER_FOR_ORAL_SUSPENSION', '20,5 g')).toBe(true); // prettier-ignore
+    expect(isDeclaredPresentation(oralRehydration, 'TABLET', '20,5 g')).toBe(false); // prettier-ignore
+  });
 });
