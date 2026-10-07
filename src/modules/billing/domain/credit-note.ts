@@ -15,7 +15,7 @@ import {
  * credited, and whether what was credited is billed again.
  *
  * The database says the same things on its own (`credit_note_*`, migration
- * `20261007023909_credit_note_and_corrections`); what this file adds is that
+ * `20261007033700_credit_note_and_corrections`); what this file adds is that
  * the cashier hears them as sentences before anything is numbered.
  */
 

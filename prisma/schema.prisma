@@ -4092,7 +4092,7 @@ model Invoice {
 /// for an invoice that is not authorised or that went to «Consumidor Final»
 /// (`trg_credit_note_credits_an_authorised_invoice`), nor credit more than the
 /// invoice (`trg_credit_note_within_its_invoice`, deferred). None of that is
-/// expressible here — see `20261007023909_credit_note_and_corrections`.
+/// expressible here — see `20261007033700_credit_note_and_corrections`.
 model CreditNote {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
