@@ -272,6 +272,18 @@ export class EncounterService {
   }
 
   /**
+   * EN-063. The anthropometry this attention demands, for the screen to mark
+   * before the first taking. Asked AFTER `byId` resolved the attention in the
+   * caller's scope, and with no audit row of its own: it travels inside the
+   * opening, which is the accountable read (EN-123).
+   */
+  anthropometryRequiredOf(
+    encounter: EncounterView,
+  ): Promise<AnthropometryField[]> {
+    return this.encounters.anthropometryRequired(encounter.id);
+  }
+
+  /**
    * EN-015, EN-162. One page of a chart's attentions, chronologically,
    * including those of the charts it absorbed.
    *

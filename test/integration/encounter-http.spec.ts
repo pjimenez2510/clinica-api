@@ -921,6 +921,101 @@ describe('la atención por HTTP', () => {
       await vitalsOf(later.id, []);
     });
 
+    it('EN-063 la apertura de la atención dice qué medidas exige ANTES de la primera toma, y no cambia al tomarlas', async () => {
+      /**
+       * The screen marks the mandatory boxes while nursing types, so it has to
+       * know before the first taking exists (`GET …/vitals` is `null` then).
+       * `anthropometryRequired` is the same rule `anthropometryPending` reads,
+       * without looking at the taking. Ages and dates derive from the opening.
+       */
+      const nurse = await prisma.user.findUniqueOrThrow({
+        where: { email: 'enfermeria@clinica.ec' },
+      });
+      const opened = new Date(openBody().startedAt);
+      const [year, month, day] = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Guayaquil',
+      })
+        .format(opened)
+        .split('-')
+        .map(Number) as [number, number, number];
+      const daysFrom = (days: number) =>
+        new Date(Date.UTC(year, month - 1, day + days));
+      const yearsBefore = (years: number) =>
+        new Date(Date.UTC(year - years, month - 1, day));
+      const pregnancy = (patientId: string, startsOn: Date, endsOn: Date) =>
+        prisma.patientPriorityGroup.create({
+          data: {
+            patientId,
+            groupCode: 'PREGNANT',
+            startsOn,
+            endsOn,
+            origin: 'SELF_DECLARED',
+            recordedById: nurse.id,
+          },
+        });
+      const requiredOn = async (encounterId: string) =>
+        (
+          (await get(`/encounters/${encounterId}`, nurseToken).expect(200))
+            .body as { anthropometryRequired: string[] }
+        ).anthropometryRequired;
+
+      const child = await createPatient(prisma, { birthDate: yearsBefore(2) });
+      const childEncounter = await openEncounter(nurseToken, { patientId: child.id }); // prettier-ignore
+      expect(await requiredOn(childEncounter)).toEqual([
+        'weightKg',
+        'heightCm',
+        'headCircumferenceCm',
+      ]);
+      // Taking them all empties the pending list, not the required one.
+      await put(`/encounters/${childEncounter}/vitals`, nurseToken, {
+        weightKg: 12.1,
+        heightCm: 86,
+        heightPosition: 'STANDING',
+        headCircumferenceCm: 48,
+      }).expect(200);
+      expect(await requiredOn(childEncounter)).toEqual([
+        'weightKg',
+        'heightCm',
+        'headCircumferenceCm',
+      ]);
+
+      // D-129: the pregnant adult, weight and height only.
+      const pregnant = await createPatient(prisma);
+      await pregnancy(pregnant.id, daysFrom(-90), daysFrom(150));
+      const pregnantEncounter = await openEncounter(nurseToken, { patientId: pregnant.id }); // prettier-ignore
+      expect(await requiredOn(pregnantEncounter)).toEqual([
+        'weightKg',
+        'heightCm',
+      ]);
+
+      // Positive controls: a pregnancy that ended before the attention, and an
+      // adult with no record, demand nothing.
+      const ended = await createPatient(prisma);
+      await pregnancy(ended.id, daysFrom(-300), daysFrom(-1));
+      const endedEncounter = await openEncounter(nurseToken, { patientId: ended.id }); // prettier-ignore
+      expect(await requiredOn(endedEncounter)).toEqual([]);
+      const adult = await createPatient(prisma, { birthDate: yearsBefore(40) });
+      const adultEncounter = await openEncounter(nurseToken, { patientId: adult.id }); // prettier-ignore
+      expect(await requiredOn(adultEncounter)).toEqual([]);
+    });
+
+    it('EN-063 EN-217 lo pendiente es lo exigido que falta: la toma parcial del menor de 5 años deja sólo lo que no se midió', async () => {
+      const opened = new Date(openBody().startedAt);
+      const child = await createPatient(prisma, {
+        birthDate: new Date(
+          Date.UTC(opened.getUTCFullYear() - 3, opened.getUTCMonth(), 1),
+        ),
+      });
+      const encounterId = await openEncounter(nurseToken, { patientId: child.id }); // prettier-ignore
+      const saved = await put(`/encounters/${encounterId}/vitals`, nurseToken, {
+        heightCm: 92,
+        heightPosition: 'STANDING',
+      }).expect(200);
+      expect(
+        (saved.body as { anthropometryPending: string[] }).anthropometryPending,
+      ).toEqual(['weightKg', 'headCircumferenceCm']);
+    });
+
     it('EN-064 rechaza por HTTP una talla sin posicion, senalando la casilla', async () => {
       const encounterId = await openEncounter(nurseToken);
 

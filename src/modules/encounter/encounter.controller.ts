@@ -266,11 +266,15 @@ export class EncounterController {
     // Asked for AFTER the attention resolves, never before: an attention
     // outside the caller's scope must not become a way to learn that a chart
     // has allergies recorded on it.
-    const allergies = await this.allergies.activeFor(encounter.patientId);
+    const [allergies, anthropometryRequired] = await Promise.all([
+      this.allergies.activeFor(encounter.patientId),
+      this.encounters.anthropometryRequiredOf(encounter),
+    ]);
 
     return {
       ...toEncounterResponse(encounter),
       allergies: allergies.map(toActiveAllergyResponse),
+      anthropometryRequired,
     };
   }
 
