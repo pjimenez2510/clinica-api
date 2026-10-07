@@ -118,6 +118,9 @@ function prismaDouble(
           options.orderRow === undefined
             ? {
                 siteId: 'site-1',
+                // ORD-160. El sexo que congeló la orden al emitirse; la ficha
+                // dice otro hoy y no se lee.
+                patientSex: 'FEMALE',
                 encounter: {
                   patientId: 'chart-1',
                   // EN-221. La edad entera que congeló la atención; el resto
@@ -125,7 +128,7 @@ function prismaDouble(
                   ageDays: 10,
                   ageInDays: 12_000,
                   ageEstimated: false,
-                  patient: { sex: 'FEMALE' },
+                  patient: { sex: 'MALE' },
                 },
               }
             : options.orderRow,
@@ -280,7 +283,7 @@ describe('el adaptador del informe', () => {
     expect(report?.supersededAt).toEqual(new Date('2026-09-19T13:00:00Z'));
   });
 
-  it('ORD-036 ORD-127 lee la edad entera que congeló la atención, si era estimada, y el sexo de la ficha', async () => {
+  it('ORD-036 ORD-127 ORD-160 lee la edad entera que congeló la atención, si era estimada, y el sexo que congeló la orden', async () => {
     // La edad entera en días que congeló la atención (EN-221), no la de hoy
     // ni la de la fecha de la ficha: un resultado de hace dos años, o
     // corregido tras rectificar la fecha, no se reclasifica. Y no

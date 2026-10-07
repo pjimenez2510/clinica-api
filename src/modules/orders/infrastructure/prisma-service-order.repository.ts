@@ -93,6 +93,8 @@ const ORDER_SELECT = {
   category: true,
   priority: true,
   clinicalNoteText: true,
+  // ORD-158. Frozen at the issue: the header's sex, not the chart's today.
+  patientSex: true,
   pendingItems: true,
   requestedAt: true,
   // The chart id travels because the screen links to it. NOTHING about what
@@ -962,6 +964,7 @@ function toOrderView(row: OrderRow): ServiceOrderView {
     category: row.category,
     priority: row.priority,
     clinicalNoteText: row.clinicalNoteText,
+    patientSex: row.patientSex,
     pendingItems: row.pendingItems,
     requestedAt: row.requestedAt,
     items: row.items.map((item) => ({

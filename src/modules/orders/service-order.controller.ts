@@ -312,6 +312,7 @@ export function toOrderResponse(order: ServiceOrderView): ServiceOrderResponse {
     category: order.category,
     priority: order.priority,
     clinicalNoteText: order.clinicalNoteText,
+    patientSex: order.patientSex,
     pendingItems: order.pendingItems,
     requestedAt: order.requestedAt.toISOString(),
     items: order.items.map((item) => ({

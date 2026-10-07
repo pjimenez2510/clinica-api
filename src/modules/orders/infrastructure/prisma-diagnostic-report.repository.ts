@@ -299,11 +299,12 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
   }
 
   /**
-   * ORD-036. Who the order is for, and how old they were THAT DAY.
+   * ORD-036. Who the order is for, and their sex and age THAT DAY.
    *
-   * The age is the one the ATTENTION froze (EN-221, ORD-127): a report
-   * transcribed two years later, or corrected after the chart's birth date
-   * was rectified, still classifies against the age the patient HAD.
+   * The age is the one the ATTENTION froze (EN-221, ORD-127), and the sex the
+   * one the ORDER froze when it was issued (ORD-158, ORD-160): a report
+   * transcribed two years later, or corrected after the chart was rectified,
+   * still classifies against the patient the laboratory received.
    */
   async patientOfOrder(
     orderId: string,
@@ -313,23 +314,24 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
       where: { id: orderId, ...siteFilter(sites) },
       select: {
         siteId: true,
+        patientSex: true,
         encounter: {
           select: {
             patientId: true,
             ageInDays: true,
             ageEstimated: true,
-            patient: { select: { sex: true } },
           },
         },
       },
     });
     if (!row) return undefined;
 
-    const { patient } = row.encounter;
     return {
       patientId: row.encounter.patientId,
       siteId: row.siteId,
-      sex: patient.sex,
+      // ORD-160. `null` only on a draft or discarded order, which takes no
+      // report (ORD-100): no range qualified by sex applies then.
+      sex: row.patientSex,
       /**
        * ORD-036, ORD-127. The WHOLE age in days the attention froze (EN-221),
        * and whether its birth date was an estimate. ⚠️ NOT `age_days`: that is
