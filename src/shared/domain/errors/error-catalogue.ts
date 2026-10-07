@@ -624,6 +624,7 @@ export const DOMAIN_ERROR_CODES = [
   'CREDIT_NOTE_LINE_NOT_IN_INVOICE',
   'CREDIT_NOTE_REASON_REQUIRED',
   'CREDIT_NOTE_WINDOW_EXPIRED',
+  'CORRECTION_AWAITS_CREDIT_NOTE',
   'INVOICE_NOT_EDITABLE',
   // ─── Encounter, H1/H2/H4 (EN-001 a EN-034, EN-060 a EN-068, EN-126 a
   // EN-147). La atención: abrirla, documentarla y cerrarla.

@@ -154,6 +154,51 @@ describe('privacy: lo que no sale de las versiones (D-140.2)', () => {
     expect(version?.data).not.toHaveProperty('recipient_name');
     expect(version?.data).not.toHaveProperty('note');
   });
+
+  it('PD-048 BI-217 las versiones de una factura corregida salen sin el receptor, que puede ser otra persona', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const versions = await everyVersionedRowOf(prisma, scene);
+    const invoiceId = versions.versioned.invoice!;
+    const author = await createUser(prisma);
+    await prisma.recordVersion.create({
+      data: {
+        resourceType: 'invoice',
+        resourceId: invoiceId,
+        version: 2,
+        data: {
+          id: invoiceId,
+          status: 'REJECTED',
+          payment_method: '01',
+          buyer_identification_type: '05',
+          buyer_identification: '0919176818',
+          buyer_name: 'Quien deduce el gasto',
+          buyer_email: 'otra.persona@example.com',
+        },
+        changedById: author.id,
+        changedAt: new Date(),
+      },
+    });
+
+    const exported = (await recordVersionsOfChart(prisma, scene.patient.id))
+      .filter((each) => each.table === 'invoice')
+      .map((each) => each.data as Record<string, unknown>);
+    const corrected = exported.find((data) => data.status === 'REJECTED');
+
+    // Control positivo: la versión de la factura sale, con lo que no es de nadie.
+    expect(corrected).toMatchObject({
+      status: 'REJECTED',
+      payment_method: '01',
+    });
+    for (const column of [
+      'buyer_identification_type',
+      'buyer_identification',
+      'buyer_name',
+      'buyer_email',
+    ]) {
+      expect(corrected).not.toHaveProperty(column);
+    }
+  });
 });
 
 /**
@@ -352,6 +397,7 @@ async function everyVersionedRowOf(
   return {
     patientId,
     resourceIds: [...Object.values(versioned), absence.id],
+    versioned,
   };
 }
 

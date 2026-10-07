@@ -17,9 +17,15 @@ import { addMonths, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import {
+  createEncounter,
+  createPatient,
+  createPractitioner,
+  createSite,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
-import { authoriseVoucher } from './setup/sri-fixtures';
+import { composeAccessKey } from '../../src/modules/sri/domain/access-key';
+import { authoriseVoucher, TEST_ISSUER_RUC } from './setup/sri-fixtures';
 
 /**
  * billing/B14 by HTTP: «Corregir» an authorised invoice with a credit note,
@@ -193,6 +199,8 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       finalConsumer?: boolean;
       settled?: boolean;
       site?: 'own' | 'other';
+      /** The account of an attention (BI-214: another open account of it). */
+      encounterId?: string;
     } = {},
   ) {
     const own = (options.site ?? 'own') === 'own';
@@ -202,6 +210,7 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
         patientId,
         siteId: site,
         payerId,
+        encounterId: options.encounterId ?? null,
         priceListId: (
           await prisma.priceList.findFirstOrThrow({ where: { payerId } })
         ).id,
@@ -277,6 +286,37 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
     };
   }
 
+  let keys = 0;
+  /**
+   * As the SRI's answer leaves a credit note: a `04` voucher and the note
+   * AUTHORISED with its key. The sites here have no issuer data, so nothing
+   * prepares it on its own — and nothing reaches any SRI.
+   */
+  async function authoriseCreditNote(creditNoteId: string): Promise<void> {
+    keys += 1;
+    const numericCode = String(70_000_000 + keys);
+    const accessKey = composeAccessKey({
+      issuedOn: today(),
+      documentType: '04',
+      ruc: TEST_ISSUER_RUC,
+      environment: '1',
+      establishmentCode: '001',
+      emissionPointCode: '001',
+      sequential: String(keys).padStart(9, '0'),
+      numericCode,
+    });
+    await prisma.$executeRaw`
+      INSERT INTO "electronic_voucher"
+        ("credit_note_id", "site_id", "document_type", "access_key",
+         "numeric_code", "environment", "schema_version", "status", "unsigned_xml")
+      SELECT "id", "site_id", '04', ${accessKey}, ${numericCode}, '1', '1.1.0',
+             'PREPARED', '<notaCredito id="comprobante"/>'
+        FROM "credit_note" WHERE "id" = ${creditNoteId}::uuid`;
+    await prisma.$executeRaw`
+      UPDATE "credit_note" SET "access_key" = ${accessKey}, "status" = 'AUTHORISED'
+       WHERE "id" = ${creditNoteId}::uuid`;
+  }
+
   const correct = (
     invoiceId: string,
     body: object,
@@ -349,20 +389,40 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       }),
     ).toBe(1);
 
-    // Control: what came back is billed again, to the right receiver.
-    const reissued = await api()
-      .post(`/api/v1/billing/sites/${siteId}/invoices`)
-      .set('Authorization', `Bearer ${cashierToken}`)
-      .send({
-        accountId,
-        emissionPointId,
-        paymentMethod: '01',
-        receiver: {
-          identificationType: '05',
-          identification: '0919176818',
-          name: 'Andrade Guamán, José María',
-        },
-      });
+    // D-152.8: the wrong receiver's e-mail is not copied to the credit note.
+    expect(
+      (
+        await prisma.creditNote.findUniqueOrThrow({
+          where: { id: creditNote.id },
+        })
+      ).buyerEmail,
+    ).toBeNull();
+
+    // C1 (D-152.7): what came back is billed again once the SRI authorised
+    // the credit note — not before.
+    const reissue = () =>
+      api()
+        .post(`/api/v1/billing/sites/${siteId}/invoices`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({
+          accountId,
+          emissionPointId,
+          paymentMethod: '01',
+          receiver: {
+            identificationType: '05',
+            identification: '0919176818',
+            name: 'Andrade Guamán, José María',
+          },
+        });
+    const early = await reissue();
+    expect(early.status).toBe(409);
+    expect((early.body as Problem).code).toBe('CORRECTION_AWAITS_CREDIT_NOTE');
+    expect(
+      await prisma.chargeItem.count({ where: { accountId, origin: 'CORRECTION', status: 'BILLABLE' } }), // prettier-ignore
+    ).toBe(2);
+
+    await authoriseCreditNote(creditNote.id);
+    const reissued = await reissue();
     expect(reissued.status).toBe(201);
     expect((reissued.body as { totals: { total: string } }).totals.total).toBe(
       '60.00',
@@ -528,6 +588,95 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
     expect((await correct(invoiceId, { reasonCode: 'AMOUNT' })).status).toBe(
       201,
     );
+  });
+
+  it('BI-210 dos cajeras corrigen dos facturas del mismo punto a la vez: los secuenciales salen consecutivos y únicos', async () => {
+    const first = await anInvoice();
+    const second = await anInvoice();
+
+    const [a, b] = await Promise.all([
+      correct(first.invoiceId, { reasonCode: 'AMOUNT' }),
+      correct(second.invoiceId, { reasonCode: 'AMOUNT' }),
+    ]);
+    expect([a.status, b.status]).toEqual([201, 201]);
+    expect(
+      [a, b]
+        .map((each) => (each.body as IssuedBody).creditNote.sequential)
+        .sort(),
+    ).toEqual(['000000001', '000000002']);
+  });
+
+  it('BI-214 si la atención ya tiene otra cuenta abierta, lo acreditado vuelve a esa', async () => {
+    const practitioner = await createPractitioner(prisma);
+    const encounter = await createEncounter(prisma, {
+      siteId,
+      practitionerId: practitioner.id,
+      patientId,
+    });
+    const credited = await anInvoice({
+      settled: true,
+      encounterId: encounter.id,
+    });
+    const open = await prisma.patientAccount.create({
+      data: {
+        patientId,
+        siteId,
+        payerId,
+        encounterId: encounter.id,
+        priceListId: (
+          await prisma.priceList.findFirstOrThrow({ where: { payerId } })
+        ).id,
+      },
+    });
+
+    const response = await correct(credited.invoiceId, {
+      reasonCode: 'AMOUNT',
+    });
+    expect(response.status).toBe(201);
+    expect((response.body as IssuedBody).rebilledAccountId).toBe(open.id);
+    expect(
+      await prisma.chargeItem.count({
+        where: { accountId: open.id, origin: 'CORRECTION' },
+      }),
+    ).toBe(2);
+    // Control: la liquidada sigue liquidada.
+    expect(
+      (
+        await prisma.patientAccount.findUniqueOrThrow({
+          where: { id: credited.accountId },
+        })
+      ).status,
+    ).toBe('SETTLED');
+  });
+
+  it('BI-214 una cuenta anulada no se reabre: la corrección entera se rechaza y no queda nada escrito', async () => {
+    const { invoiceId, accountId } = await anInvoice();
+    await prisma.$executeRaw`
+      UPDATE "patient_account"
+         SET "status" = 'CANCELLED', "closed_at" = CURRENT_TIMESTAMP,
+             "changed_by" = (SELECT "id" FROM "app_user" LIMIT 1),
+             "changed_at" = CURRENT_TIMESTAMP
+       WHERE "id" = ${accountId}::uuid`;
+
+    const response = await correct(invoiceId, { reasonCode: 'AMOUNT' });
+    expect(response.status).toBe(409);
+    expect((response.body as Problem).code).toBe('ACCOUNT_CLOSED');
+    expect(await prisma.creditNote.count()).toBe(0);
+    // Control: «Servicio no prestado» no devuelve nada, así que sí se emite.
+    expect(
+      (await correct(invoiceId, { reasonCode: 'SERVICE_NOT_PROVIDED' })).status,
+    ).toBe(201);
+  });
+
+  it('BI-071 cerrar la cuenta vuelve a contar sus cargos bajo bloqueo: con lo acreditado de vuelta, no se cierra', async () => {
+    const { invoiceId, accountId } = await anInvoice();
+    await correct(invoiceId, { reasonCode: 'AMOUNT' }).expect(201);
+
+    const close = await api()
+      .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/close`)
+      .set('Authorization', `Bearer ${cashierToken}`);
+    expect(close.status).toBe(409);
+    expect((close.body as Problem).code).toBe('ACCOUNT_HAS_OPEN_CHARGES');
   });
 
   it('BI-211 dos cajeras corrigen la misma factura a la vez: una gana, la otra recibe el conflicto', async () => {

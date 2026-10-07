@@ -25,6 +25,9 @@ import type {
   RepricedLine,
 } from '../domain/billing.repository';
 import {
+  AccountClosedError,
+  AccountHasOpenChargesError,
+  CorrectionAwaitsCreditNoteError,
   AccountHasBilledChargesError,
   ActAlreadyChargedError,
   ChargeAlreadyInvoicedError,
@@ -291,10 +294,25 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     now: Date;
   }): Promise<AccountView> {
     const row = await this.prisma.$transaction(async (tx) => {
-      const current = await tx.patientAccount.findUniqueOrThrow({
-        where: { id: command.accountId },
-        select: { changedAt: true },
+      // Locked and counted again here: a credit note may have sent charges
+      // back between the service's check and this write (review, M-1/I5).
+      const [current] = await tx.$queryRaw<
+        { status: string; changed_at: Date | null }[]
+      >`
+        SELECT "status", "changed_at" FROM "patient_account"
+         WHERE "id" = ${command.accountId}::uuid
+           FOR UPDATE`;
+      if (!current || current.status !== 'OPEN') throw new AccountClosedError();
+      const open = await tx.chargeItem.findMany({
+        where: {
+          accountId: command.accountId,
+          status: { in: [...OPEN_CHARGE_STATUSES] },
+        },
+        select: { id: true },
       });
+      if (open.length > 0) {
+        throw new AccountHasOpenChargesError(open.map((charge) => charge.id));
+      }
       // BI-215: closing is a change of the account, stamped and versioned.
       return tx.patientAccount.update({
         where: { id: command.accountId },
@@ -302,7 +320,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
           status: 'SETTLED',
           closedAt: command.now,
           changedById: command.closedById,
-          changedAt: stampAfter(current.changedAt, command.now),
+          changedAt: stampAfter(current.changed_at, command.now),
         },
         include: ACCOUNT_INCLUDE,
       });
@@ -1042,6 +1060,10 @@ export function translateInvoiceRejection(error: unknown): unknown {
   }
   if (/invoice_voided_is_final/.test(message)) {
     return new InvoiceImmutableError('A voided invoice does not come back');
+  }
+  // C1 (D-152.7): what a credit note credited waits for its authorisation.
+  if (/charge_item_correction_awaits_credit_note/.test(message)) {
+    return new CorrectionAwaitsCreditNoteError();
   }
   if (/invoice_is_never_deleted/.test(message)) {
     return new InvoiceImmutableError('An invoice is never deleted');

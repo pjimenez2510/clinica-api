@@ -5,6 +5,7 @@ import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 
 import {
+  AccountClosedError,
   CreditNoteExceedsInvoiceError,
   CreditNoteFinalConsumerError,
   CreditNoteInvoiceNotAuthorisedError,
@@ -21,6 +22,7 @@ import type {
   IssuedCreditNote,
 } from '../domain/credit-note.repository';
 import {
+  FINAL_CONSUMER_IDENTIFICATION,
   nextSequential,
   type BuyerIdentificationType,
   type InvoiceStatus,
@@ -73,6 +75,7 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
         siteId: true,
         status: true,
         isFinalConsumer: true,
+        buyerIdentification: true,
         issuedAt: true,
         createdAt: true,
         chargeItems: {
@@ -87,7 +90,10 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
       accountId: row.accountId,
       siteId: row.siteId,
       status: row.status as InvoiceStatus,
-      isFinalConsumer: row.isFinalConsumer,
+      // BI-213: by the mark or by the SRI's placeholder identification.
+      isFinalConsumer:
+        row.isFinalConsumer ||
+        row.buyerIdentification === FINAL_CONSUMER_IDENTIFICATION,
       issuedOn: clinicalDateOf(row.issuedAt ?? row.createdAt),
       chargeIds: row.chargeItems.map((charge) => charge.id),
       creditedChargeIds: row.chargeItems
@@ -122,7 +128,12 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
         if (!invoice || invoice.status !== 'AUTHORISED') {
           throw new CreditNoteInvoiceNotAuthorisedError();
         }
-        if (invoice.is_final_consumer) throw new CreditNoteFinalConsumerError();
+        if (
+          invoice.is_final_consumer ||
+          invoice.buyer_identification === FINAL_CONSUMER_IDENTIFICATION
+        ) {
+          throw new CreditNoteFinalConsumerError();
+        }
 
         const charges = await tx.chargeItem.findMany({
           where: { id: { in: [...issuance.chargeIds] } },
@@ -177,7 +188,13 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
             buyerIdentificationType: invoice.buyer_identification_type,
             buyerIdentification: invoice.buyer_identification,
             buyerName: invoice.buyer_name,
-            buyerEmail: invoice.buyer_email,
+            // D-152.8: when the receiver was the error, its e-mail is not the
+            // patient's to send the credit note — with the lines of a health
+            // service — to again. It is handed over printed.
+            buyerEmail:
+              issuance.reasonCode === 'RECEIVER_DATA'
+                ? null
+                : invoice.buyer_email,
             subtotalTaxed: totals.subtotalTaxed.toString(),
             subtotalUntaxed: totals.subtotalUntaxed.toString(),
             discountTotal: totals.discountTotal.toString(),
@@ -246,14 +263,32 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
   async list(query: {
     siteId: string;
     invoiceId?: string;
-  }): Promise<CreditNoteView[]> {
-    const rows = await this.prisma.creditNote.findMany({
-      where: { siteId: query.siteId, invoiceId: query.invoiceId },
-      orderBy: [{ issuedAt: 'desc' }, { sequential: 'desc' }],
-      take: 500,
+    page: number;
+    pageSize: number;
+  }): Promise<{ items: CreditNoteView[]; total: number }> {
+    const where = { siteId: query.siteId, invoiceId: query.invoiceId };
+    const [rows, total] = await Promise.all([
+      this.prisma.creditNote.findMany({
+        where,
+        orderBy: [{ issuedAt: 'desc' }, { sequential: 'desc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+        include: CREDIT_NOTE_INCLUDE,
+      }),
+      this.prisma.creditNote.count({ where }),
+    ]);
+    return { items: rows.map(toCreditNoteView), total };
+  }
+
+  async findById(query: {
+    id: string;
+    siteId: string;
+  }): Promise<CreditNoteView | null> {
+    const row = await this.prisma.creditNote.findFirst({
+      where: { id: query.id, siteId: query.siteId },
       include: CREDIT_NOTE_INCLUDE,
     });
-    return rows.map(toCreditNoteView);
+    return row ? toCreditNoteView(row) : null;
   }
 }
 
@@ -279,6 +314,9 @@ async function reopenForRebilling(
      WHERE "id" = ${command.accountId}::uuid
        FOR UPDATE`;
   if (!account || account.status === 'OPEN') return command.accountId;
+  // An annulled account is not brought back by a credit note: the whole
+  // correction is refused and nothing is written.
+  if (account.status !== 'SETTLED') throw new AccountClosedError();
 
   if (account.encounter_id !== null) {
     const open = await tx.patientAccount.findFirst({

@@ -853,3 +853,19 @@ export class InvoiceNotEditableError extends ConflictError {
     super('Only a returned or not authorised invoice is corrected');
   }
 }
+
+/**
+ * C1 of the clinical review (D-152.7). What a credit note credited comes back
+ * to the account at once, but it is billed again only once the SRI has
+ * authorised the credit note: until then the service would sit on two valid
+ * invoices. Usually a matter of seconds (the queue sends it on its own).
+ */
+export class CorrectionAwaitsCreditNoteError extends ConflictError {
+  readonly code = 'CORRECTION_AWAITS_CREDIT_NOTE';
+  override readonly userTitle =
+    'Lo corregido se factura cuando el SRI autorice la nota de crédito: vuelva a intentarlo en unos segundos';
+
+  constructor() {
+    super('A corrected charge is billed once its credit note is authorised');
+  }
+}

@@ -84,12 +84,24 @@ export class CreditNoteController {
   async list(
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Query() query: CreditNoteQueryDto,
-  ): Promise<{ items: CreditNoteResponse[] }> {
-    const items = await this.creditNotes.list({
+  ): Promise<{
+    items: CreditNoteResponse[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const { items, total } = await this.creditNotes.list({
       siteId,
       invoiceId: query.invoiceId,
+      page: query.page,
+      pageSize: query.pageSize,
     });
-    return { items: items.map(toCreditNoteResponse) };
+    return {
+      items: items.map(toCreditNoteResponse),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   }
 }
 

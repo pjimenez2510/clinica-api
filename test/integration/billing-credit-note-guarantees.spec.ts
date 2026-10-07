@@ -10,7 +10,11 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
-import { authoriseVoucher, TEST_ISSUER_RUC } from './setup/sri-fixtures';
+import {
+  authoriseVoucher,
+  insertVoucher,
+  TEST_ISSUER_RUC,
+} from './setup/sri-fixtures';
 
 /**
  * billing/B14 and sri/S7: what the DATABASE guarantees about correcting an
@@ -154,10 +158,18 @@ let sequence = 0;
 async function insertCreditNote(
   invoiceId: string,
   chargeIds: readonly string[],
-  options: { amount?: string; reason?: string; reasonCode?: string } = {},
+  options: {
+    /** The header's total, when it must NOT be the sum of the lines. */
+    amount?: string;
+    /** What each line says it credits; the header sums them. */
+    lineNet?: string;
+    reason?: string;
+    reasonCode?: string;
+  } = {},
 ): Promise<string> {
   sequence += 1;
-  const net = (30 * chargeIds.length).toFixed(2);
+  const lineNet = options.lineNet ?? '30.00';
+  const net = (Number(lineNet) * chargeIds.length).toFixed(2);
   const amount = options.amount ?? net;
   return scene.prisma.$transaction(async (tx) => {
     const [row] = await tx.$queryRaw<{ id: string }[]>`
@@ -182,10 +194,40 @@ async function insertCreditNote(
            "quantity", "unit_amount", "discount_amount", "tax_sri_code",
            "tax_percentage", "net_amount", "tax_amount")
         VALUES (${row!.id}::uuid, ${chargeId}::uuid, ${CONSULTATION},
-                'Consulta', 1, 30, 0, '0', 0, 30, 0)`;
+                'Consulta', 1, ${lineNet}::numeric, 0, '0', 0,
+                ${lineNet}::numeric, 0)`;
     }
     return row!.id;
   });
+}
+
+/**
+ * As the SRI's answer leaves a credit note: its voucher (`04`) and the note
+ * AUTHORISED with that key. The voucher stays PREPARED: what matters here is
+ * the note's status, which is what the guarantees read.
+ */
+async function authoriseCreditNote(creditNoteId: string): Promise<void> {
+  sequence += 1;
+  const numericCode = String(80_000_000 + sequence);
+  const accessKey = composeAccessKey({
+    issuedOn: clinicalDateOf(new Date()),
+    documentType: '04',
+    ruc: TEST_ISSUER_RUC,
+    environment: '1',
+    establishmentCode: '001',
+    emissionPointCode: '001',
+    sequential: String(sequence).padStart(9, '0'),
+    numericCode,
+  });
+  await scene.prisma.$executeRaw`
+    INSERT INTO "electronic_voucher"
+      ("credit_note_id", "site_id", "document_type", "access_key",
+       "numeric_code", "environment", "schema_version", "status", "unsigned_xml")
+    VALUES (${creditNoteId}::uuid, ${scene.siteId}::uuid, '04', ${accessKey},
+            ${numericCode}, '1', '1.1.0', 'PREPARED', '<notaCredito id="comprobante"/>')`;
+  await scene.prisma.$executeRaw`
+    UPDATE "credit_note" SET "access_key" = ${accessKey}, "status" = 'AUTHORISED'
+     WHERE "id" = ${creditNoteId}::uuid`;
 }
 
 async function rejectionOf(promise: Promise<unknown>): Promise<string> {
@@ -250,7 +292,7 @@ describe('BI-209 a BI-213, BI-095 la nota de crédito en la base', () => {
     // $60.00 de factura: una nota de $60.01 no cabe.
     expect(
       await rejectionOf(
-        insertCreditNote(invoiceId, [charges[0]!], { amount: '60.01' }),
+        insertCreditNote(invoiceId, [charges[0]!], { lineNet: '60.01' }),
       ),
     ).toMatch(/credit_note_exceeds_invoice/);
     expect(await scene.prisma.creditNote.count()).toBe(0);
@@ -431,6 +473,89 @@ describe('SRI-086 el comprobante es de una factura o de una nota de crédito', (
   });
 });
 
+describe('BI-210 BI-212 la cabecera cuadra con sus líneas, y lo autorizado no se mueve', () => {
+  it('BI-210 la base rechaza una cabecera que no suma sus líneas, una sin líneas y una incoherente consigo misma', async () => {
+    const { invoiceId, charges } = await anInvoice();
+
+    expect(
+      await rejectionOf(
+        insertCreditNote(invoiceId, [charges[0]!], { amount: '45.00' }),
+      ),
+    ).toMatch(/credit_note_matches_its_lines/);
+    expect(
+      await rejectionOf(insertCreditNote(invoiceId, [], { amount: '30.00' })),
+    ).toMatch(/credit_note_matches_its_lines/);
+    expect(
+      await rejectionOf(
+        scene.prisma.$executeRaw`
+          INSERT INTO "credit_note"
+            ("invoice_id", "site_id", "emission_point_id", "sequential",
+             "reason_code", "reason", "buyer_identification_type",
+             "buyer_identification", "buyer_name", "subtotal_taxed",
+             "subtotal_untaxed", "discount_total", "tax_total", "amount",
+             "status", "issued_by_id", "issued_at", "updated_at")
+          VALUES (${invoiceId}::uuid, ${scene.siteId}::uuid,
+                  ${scene.emissionPointId}::uuid, '000000900', 'AMOUNT',
+                  'Error en el importe', '05', '1710034065', 'Guamán', 0, 30, 0,
+                  0, 31, 'ISSUED', ${scene.userId}::uuid, CURRENT_TIMESTAMP,
+                  CURRENT_TIMESTAMP)`,
+      ),
+    ).toMatch(/credit_note_total_is_consistent/);
+    expect(await scene.prisma.creditNote.count()).toBe(0);
+
+    // Control positivo: la que suma su línea entra.
+    await insertCreditNote(invoiceId, [charges[0]!]);
+    expect(await scene.prisma.creditNote.count()).toBe(1);
+  });
+
+  it('BI-212 SRI-086 la nota autorizada no cambia de estado y su clave no se reescribe', async () => {
+    const { invoiceId, charges } = await anInvoice();
+    const id = await insertCreditNote(invoiceId, [charges[0]!]);
+    await authoriseCreditNote(id);
+
+    expect(
+      await rejectionOf(
+        scene.prisma
+          .$executeRaw`UPDATE "credit_note" SET "status" = 'REJECTED' WHERE "id" = ${id}::uuid`,
+      ),
+    ).toMatch(/credit_note_immutable/);
+    expect(
+      await rejectionOf(
+        scene.prisma
+          .$executeRaw`UPDATE "credit_note" SET "access_key" = NULL WHERE "id" = ${id}::uuid`,
+      ),
+    ).toMatch(/credit_note_immutable/);
+    // Control: the note is what the SRI left.
+    expect(
+      (await scene.prisma.creditNote.findUniqueOrThrow({ where: { id } }))
+        .status,
+    ).toBe('AUTHORISED');
+  });
+});
+
+describe('C2 BI-084 una factura autorizada no vuelve atrás', () => {
+  it('BI-084 BI-217 la base rechaza pasar una autorizada a devuelta, y admite anularla', async () => {
+    const authorised = await anInvoice();
+
+    expect(
+      await rejectionOf(
+        scene.prisma
+          .$executeRaw`UPDATE "invoice" SET "status" = 'REJECTED' WHERE "id" = ${authorised.invoiceId}::uuid`,
+      ),
+    ).toMatch(/invoice_authorised_is_immutable/);
+    // Control positivo: el paso a anulada sigue siendo el único admitido.
+    await scene.prisma
+      .$executeRaw`UPDATE "invoice" SET "status" = 'VOIDED' WHERE "id" = ${authorised.invoiceId}::uuid`;
+    expect(
+      (
+        await scene.prisma.invoice.findUniqueOrThrow({
+          where: { id: authorised.invoiceId },
+        })
+      ).status,
+    ).toBe('VOIDED');
+  });
+});
+
 describe('BI-214 lo acreditado vuelve a la cuenta una sola vez', () => {
   async function insertCopy(accountId: string, corrects: string) {
     await scene.prisma.$executeRaw`
@@ -442,6 +567,49 @@ describe('BI-214 lo acreditado vuelve a la cuenta una sola vez', () => {
               'Consulta', '0', 0, 'BILLABLE', 'CORRECTION', ${corrects}::uuid,
               ${scene.userId}::uuid, CURRENT_TIMESTAMP)`;
   }
+
+  it('BI-214 la base no devuelve a la cuenta lo acreditado con «Servicio no prestado»', async () => {
+    const { accountId, invoiceId, charges } = await anInvoice();
+    await insertCreditNote(invoiceId, [charges[0]!], {
+      reasonCode: 'SERVICE_NOT_PROVIDED',
+      reason: 'Servicio no prestado',
+    });
+    await insertCreditNote(invoiceId, [charges[1]!]);
+
+    expect(await rejectionOf(insertCopy(accountId, charges[0]!))).toMatch(
+      /charge_item_corrects_a_credited_charge/,
+    );
+    // Control positivo: lo acreditado por un error del receptor, sí vuelve.
+    await insertCopy(accountId, charges[1]!);
+  });
+
+  it('C1 BI-214 la copia no se factura mientras el SRI no autorice la nota de crédito, y después sí', async () => {
+    const { accountId, invoiceId, charges } = await anInvoice();
+    const noteId = await insertCreditNote(invoiceId, [charges[0]!]);
+    await insertCopy(accountId, charges[0]!);
+    const copy = await scene.prisma.chargeItem.findFirstOrThrow({
+      where: { correctsChargeItemId: charges[0]! },
+    });
+    const bill = () =>
+      scene.prisma.$executeRaw`
+        UPDATE "charge_item" SET "status" = 'BILLED', "invoice_id" = ${invoiceId}::uuid
+         WHERE "id" = ${copy.id}::uuid`;
+
+    expect(await rejectionOf(bill())).toMatch(
+      /charge_item_correction_awaits_credit_note/,
+    );
+
+    // Control positivo: autorizada la nota, lo corregido se factura.
+    await authoriseCreditNote(noteId);
+    await bill();
+    expect(
+      (
+        await scene.prisma.chargeItem.findUniqueOrThrow({
+          where: { id: copy.id },
+        })
+      ).status,
+    ).toBe('BILLED');
+  });
 
   it('BI-214 la base rechaza copiar un cargo no acreditado, y copiar dos veces el mismo', async () => {
     const { accountId, invoiceId, charges } = await anInvoice();
@@ -577,9 +745,21 @@ describe('BI-217 solo la factura devuelta cambia de receptor, y con versión', (
       /invoice_receiver_editable_only_when_rejected|invoice_payment_method_is_permanent/,
     );
 
-    // La devuelta: sin sello, no; con sello, sí, y la anterior queda.
+    // Devuelta en la factura pero sin comprobante devuelto: tampoco (C2).
     await scene.prisma
       .$executeRaw`UPDATE "invoice" SET "status" = 'REJECTED' WHERE "id" = ${issued.invoiceId}::uuid`;
+    expect(await rejectionOf(correct(issued.invoiceId))).toMatch(
+      /invoice_receiver_editable_only_when_rejected/,
+    );
+    // La devuelta de verdad —su comprobante RETURNED—: sin sello, no; con
+    // sello, sí, y la anterior queda.
+    const voucher = await insertVoucher(scene.prisma, issued.invoiceId, {
+      signed: true,
+    });
+    await scene.prisma
+      .$executeRaw`UPDATE "electronic_voucher" SET "status" = 'RETURNED' WHERE "id" = ${voucher.id}::uuid`;
+    await scene.prisma
+      .$executeRaw`UPDATE "invoice" SET "access_key" = ${voucher.accessKey} WHERE "id" = ${issued.invoiceId}::uuid`;
     expect(
       await rejectionOf(
         scene.prisma

@@ -12,6 +12,50 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
  * by PostgreSQL constraints, and this registration is their enumeration.
  */
 registerConstraintMeanings({
+  // ── The credit note (BI-095, BI-209 to BI-214; fix/corregir-factura) ─────
+  //
+  // The service and the repository refuse all of these first, with their own
+  // codes; what reaches here is a write from below the application — a
+  // script, an assistant — and it gets a sentence instead of a 500.
+  credit_note_reason_fits_the_voucher: {
+    code: 'CREDIT_NOTE_REASON_REQUIRED',
+    field: 'reasonText',
+    message: 'El motivo de la nota de crédito tiene de 1 a 300 caracteres',
+  },
+  credit_note_total_is_consistent: {
+    code: 'CREDIT_NOTE_TOTAL_INCONSISTENT',
+    field: 'chargeIds',
+    message: 'El total de la nota de crédito no cuadra con sus subtotales',
+  },
+  credit_note_matches_its_lines: {
+    code: 'CREDIT_NOTE_TOTAL_INCONSISTENT',
+    field: 'chargeIds',
+    message: 'La nota de crédito no suma sus líneas, o no tiene ninguna',
+  },
+  credit_note_amount_is_positive: {
+    code: 'CREDIT_NOTE_NOTHING_TO_CREDIT',
+    field: 'chargeIds',
+    message: 'Las líneas elegidas no suman nada que acreditar',
+  },
+  credit_note_sequential_unique: {
+    code: 'CREDIT_NOTE_SEQUENTIAL_TAKEN',
+    field: 'chargeIds',
+    message:
+      'Otra nota de crédito tomó ese número a la vez: vuelva a intentarlo',
+  },
+  charge_item_corrects_a_credited_charge: {
+    code: 'CHARGE_NOT_CREDITED',
+    field: 'correctsChargeItemId',
+    message:
+      'Sólo vuelve a facturarse lo que una nota de crédito acreditó para corregirlo',
+  },
+  invoice_receiver_editable_only_when_rejected: {
+    code: 'INVOICE_NOT_EDITABLE',
+    field: 'receiver',
+    message:
+      'Solo se corrige y se reenvía una factura que el SRI devolvió o no autorizó',
+  },
+
   // ── The tariff (BI-041, BI-042) ─────────────────────────────────────────
   //
   // ⚠️ THE GUARANTEE OF THE WHOLE MODULE, and it is not in TypeScript.

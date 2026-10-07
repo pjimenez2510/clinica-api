@@ -88,10 +88,17 @@ export interface CreditNoteRepository {
    */
   issue(issuance: CreditNoteIssuance): Promise<IssuedCreditNote>;
 
-  /** BI-218. The site's credit notes, newest first. */
+  /** BI-218. A page of the site's credit notes, newest first, and the count. */
   list(query: {
     siteId: string;
     invoiceId?: string;
-  }): Promise<CreditNoteView[]>;
+    page: number;
+    pageSize: number;
+  }): Promise<{ items: CreditNoteView[]; total: number }>;
+
+  findById(query: {
+    id: string;
+    siteId: string;
+  }): Promise<CreditNoteView | null>;
 }
 export const CREDIT_NOTE_REPOSITORY = Symbol('CreditNoteRepository');

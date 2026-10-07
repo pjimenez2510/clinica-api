@@ -144,28 +144,28 @@ export class CreditNoteService {
     // prepares whatever this call could not.
     await this.vouchers.prepareCreditNote(issued.creditNote.id);
 
-    const [withVoucher] = await this.withVouchers(
-      await this.creditNotes
-        .list({
-          siteId: command.siteId,
-          invoiceId: invoice.id,
-        })
-        .then((notes) =>
-          notes.filter((note) => note.id === issued.creditNote.id),
-        ),
-    );
+    const stored = await this.creditNotes.findById({
+      id: issued.creditNote.id,
+      siteId: command.siteId,
+    });
+    const [withVoucher] = await this.withVouchers([
+      stored ?? issued.creditNote,
+    ]);
     return {
-      creditNote: withVoucher ?? { ...issued.creditNote, electronic: null },
+      creditNote: withVoucher!,
       rebilledAccountId: issued.rebilledAccountId,
     };
   }
 
-  /** BI-218. The site's credit notes, with their state before the SRI. */
+  /** BI-218. A page of the site's credit notes, with their SRI state. */
   async list(query: {
     siteId: string;
     invoiceId?: string;
-  }): Promise<CreditNoteWithVoucher[]> {
-    return this.withVouchers(await this.creditNotes.list(query));
+    page: number;
+    pageSize: number;
+  }): Promise<{ items: CreditNoteWithVoucher[]; total: number }> {
+    const { items, total } = await this.creditNotes.list(query);
+    return { items: await this.withVouchers(items), total };
   }
 
   /** SRI-088. One read for the whole list. */

@@ -15,7 +15,9 @@ import { electronicStateSchema, totalsSchema } from './billing.dto';
  * branch on — rather than by a generic validation failure.
  */
 export const issueCreditNoteSchema = z.object({
-  chargeIds: z.array(z.uuid()).optional(),
+  // At least one when sent: «every line» is said by leaving it out, never by
+  // an empty list a buggy client could send (clinical review, minor).
+  chargeIds: z.array(z.uuid()).min(1).optional(),
   reasonCode: z.enum(CREDIT_NOTE_REASON_CODES, {
     error: 'Elija el motivo de la nota de crédito',
   }),
@@ -26,6 +28,8 @@ export class IssueCreditNoteDto extends createZodDto(issueCreditNoteSchema) {}
 
 export const creditNoteQuerySchema = z.object({
   invoiceId: z.uuid().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 /** Query of GET /billing/sites/:siteId/credit-notes. */
 export class CreditNoteQueryDto extends createZodDto(creditNoteQuerySchema) {}
@@ -70,7 +74,12 @@ export type CreditNoteResponse = z.infer<typeof creditNoteResponseSchema>;
 /** One credit note, and the list of GET /billing/sites/:siteId/credit-notes. */
 export class CreditNoteDto extends createZodDto(creditNoteResponseSchema) {}
 export class CreditNoteListDto extends createZodDto(
-  z.object({ items: z.array(creditNoteResponseSchema) }),
+  z.object({
+    items: z.array(creditNoteResponseSchema),
+    total: z.number().int(),
+    page: z.number().int(),
+    pageSize: z.number().int(),
+  }),
 ) {}
 
 const issuedCreditNoteSchema = z.object({
