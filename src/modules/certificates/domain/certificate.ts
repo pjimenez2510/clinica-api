@@ -331,11 +331,13 @@ export const MONTHS_BETWEEN_PREGNANCIES = 9;
 
 /**
  * CER-049. An obstetric CIE-10: O00 to O99 or Z34 to Z39, with their
- * subcategories, as the catalogue writes them (`O80`, `Z390`). A chapter
- * range (`O00-O9A`) or the US-only `O9A` is not one.
+ * subcategories, with or without the dot — the WHO edition writes `O80.9`
+ * and `Z34.9` (EN-233), attentions of before it keep `O80` and `Z390`. A
+ * chapter range (`O00-O9A`) or the US-only `O9A` is not one. The same pattern
+ * as the database's `cie10_is_obstetric`.
  */
 export function isObstetricCie10(code: string): boolean {
-  return /^(O[0-9]{2}|Z3[4-9])[0-9A-Z]*$/.test(code);
+  return /^(O[0-9]{2}|Z3[4-9])(\.?[0-9A-Z]{1,4})?$/.test(code);
 }
 
 /**

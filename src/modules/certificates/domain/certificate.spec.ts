@@ -796,6 +796,15 @@ describe('D-109 y D-110 lo que acota el reposo de maternidad', () => {
     }
   });
 
+  it('CER-049 EN-233 los codigos de la CIE-10 de la OMS, con punto, tambien son obstetricos', () => {
+    for (const code of ['O80.9', 'O80.0', 'Z34.9', 'Z39.2', 'O99.4']) {
+      expect(isObstetricCie10(code), code).toBe(true);
+    }
+    for (const code of ['J02.9', 'Z33.X', 'O9A.1', 'O80.', 'O80.12345']) {
+      expect(isObstetricCie10(code), code).toBe(false);
+    }
+  });
+
   it('CER-048 no se solapa con otro reposo no anulado de la paciente; contiguo, si', () => {
     const birth = addDays(today, -5);
     const period = { from: birth, to: addDays(today, 10) };
