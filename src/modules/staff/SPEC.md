@@ -87,6 +87,18 @@ insertadas concurrentemente — gana exactamente una.
 alcance por sede sobre una escritura, y una pantalla no puede demostrar una
 negativa que el servidor no produce.
 
+### S3 — Corregir sin rehacer _(P1, 06-10-2026)_
+
+Las filas AD-4, AD-5 y AD-10 del inventario de D-126 y D-127.
+
+**Prueba independiente:** editar la hora de una regla que ya rigió la semana
+pasada y comprobar que la anterior quedó cerrada a ayer y la nueva rige desde
+hoy, y que los días pasados siguen diciendo lo que decían; quitar la
+especialidad principal eligiendo en el mismo diálogo cuál queda como principal.
+**Cubre:** ST-050, ST-051, ST-052.
+
+**Solo interfaz:** ST-051. **Solo servidor:** ST-052.
+
 ---
 
 ## Requisitos
@@ -286,6 +298,36 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
   > permiso y nunca una sede.
 
 ---
+
+### Editar en el sitio (D-126, D-127)
+
+- **ST-050** — CUANDO se edite el día, la sede o las horas de una regla de
+  horario que **ya rigió algún día anterior a hoy** (fecha de la clínica,
+  `America/Guayaquil`), el sistema DEBERÁ abrir en la misma transacción una
+  regla nueva con lo editado, vigente desde hoy —o desde la fecha pedida, si es
+  posterior— hasta el fin que tenía, y cerrar la anterior la víspera de ese
+  inicio; una regla que todavía no ha empezado DEBERÁ editarse en el sitio. SI
+  la regla está desactivada o ya terminó, SI se pide cambiar sólo el inicio de
+  una regla que ya rige, SI se lleva el inicio de una que no ha empezado al
+  pasado, o SI se lleva el fin a antes de ayer, ENTONCES DEBERÁ rechazarlo con
+  `SCHEDULE_RULE_NOT_EDITABLE`. El solape sigue rechazándose por ST-042.
+  > AD-4. La edición reescribía la fila entera, días pasados incluidos: la
+  > agenda de la semana pasada pasaba a decir que el médico atendía a una hora
+  > en que no atendió. Ahora lo hace el sistema solo: el usuario edita, y la
+  > historia queda en las dos filas. Enmienda ST-041, que sólo lo pedía al
+  > cerrar. Revisión del 06-10-2026: con un inicio futuro, cerrar «ayer» dejaba
+  > días sin horario; y editar una regla desactivada la reabría.
+- **ST-051** — CUANDO se quite la especialidad principal de un profesional que
+  tiene otras, la pantalla DEBERÁ pedir en el mismo diálogo cuál queda como
+  principal (y, si queda una sola, proponerla), y guardar las dos cosas en una
+  sola petición (`PUT …/specialties`).
+  > AD-5. Antes: «Marque otra como principal antes de quitar ésta», dos pasos.
+  > El servidor ya admitía el conjunto nuevo entero; faltaba la pantalla.
+- **ST-052** — Toda edición del perfil profesional, de sus sedes, de sus
+  especialidades o de una regla de horario DEBERÁ dejar en `access_audit` el
+  antes y el después de los campos editados.
+  > AD-10. ST-010 y ST-044 pedían autor e instante; el valor anterior no se
+  > guardaba. Admitido por la lista blanca desde `admin_edit_in_place` (D-150).
 
 ## Códigos de error
 

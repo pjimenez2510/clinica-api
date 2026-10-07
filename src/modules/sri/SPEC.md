@@ -181,7 +181,7 @@ rechazo; subirlo con la correcta y ver titular, emisor y caducidad.
 
 ### S7 — La nota de crédito electrónica y el reenvío corregido _(P1)_
 
-La nota de crédito de billing/B14 se convierte en comprobante `04` por el mismo
+La nota de crédito de billing/B15 se convierte en comprobante `04` por el mismo
 camino que la factura: clave, XML `notaCredito` 1.1.0, firma, cola, monitor,
 RIDE y correo. Y la factura devuelta o no autorizada que caja corrige se
 recompone con los datos nuevos y se reenvía con su clave de siempre.
@@ -642,7 +642,7 @@ reenviado lleva el receptor nuevo y la misma clave.
 
 ## 7 bis. La nota de crédito y el reenvío corregido
 
-> billing/B14 (BI-208 a BI-218). **Fuentes:** Ficha Técnica v2.34, formato XML
+> billing/B15 (BI-208 a BI-218). **Fuentes:** Ficha Técnica v2.34, formato XML
 > de la nota de crédito (pp. 55-57 y 71) y Nota 1 de la tabla de errores (pp.
 > 37-38); XSD oficial `NotaCredito_V1.1.0.xsd` (SRI, febrero de 2022),
 > versionado en `infrastructure/xsd/`. Enmienda el «Fuera de alcance» de este

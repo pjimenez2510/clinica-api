@@ -176,12 +176,13 @@ export class PrismaSiteResourcesRepository implements SiteResourcesRepository {
   }
 
   /**
-   * OR-023. No duplicate branch: the code, the only unique column, is not in
-   * the patch. `null` when the row is gone.
+   * OR-023, OR-035. The code is in the patch while the point issued nothing,
+   * so a duplicate within the site is refused like on creation. `null` when
+   * the row is gone.
    */
   async updateEmissionPoint(
     id: string,
-    patch: { description?: string | null; active?: boolean },
+    patch: { code?: string; description?: string | null; active?: boolean },
   ): Promise<EmissionPointView | null> {
     try {
       return await this.prisma.emissionPoint.update({
@@ -191,8 +192,23 @@ export class PrismaSiteResourcesRepository implements SiteResourcesRepository {
       });
     } catch (error) {
       if (isRecordNotFound(error)) return null;
-      throw error;
+      throw duplicateErrorFrom(error) ?? error;
     }
+  }
+
+  /** OR-035. */
+  async emissionPointHasVouchers(id: string): Promise<boolean> {
+    const [invoice, creditNote] = await Promise.all([
+      this.prisma.invoice.findFirst({
+        where: { emissionPointId: id },
+        select: { id: true },
+      }),
+      this.prisma.creditNote.findFirst({
+        where: { emissionPointId: id },
+        select: { id: true },
+      }),
+    ]);
+    return invoice !== null || creditNote !== null;
   }
 
   /**

@@ -17,6 +17,7 @@ import {
 import {
   type ScheduleRuleDraft,
   closeScheduleRuleOn,
+  planScheduleRuleEdit,
   scheduleRuleProblems,
 } from '../domain/schedule-rule';
 import {
@@ -29,6 +30,7 @@ import {
   PractitionerNotFoundError,
   PractitionerNotInSiteError,
   PractitionerNotSchedulableError,
+  ScheduleRuleNotEditableError,
   ScheduleRuleNotFoundError,
 } from '../domain/staff.errors';
 
@@ -112,7 +114,9 @@ export class ScheduleRulesService {
     await this.requireDerivable(input);
 
     const rule = await this.rules.create({ practitionerId, ...input });
-    await this.trail.record('CREATE', rule.id, requester);
+    await this.trail.record('CREATE', rule.id, requester, {
+      after: scheduleRuleSnapshot(rule),
+    });
 
     return { rule, conflicts: await this.conflictsAfter(rule) };
   }
@@ -138,6 +142,7 @@ export class ScheduleRulesService {
     patch: ScheduleRulePatch,
     requester: Requester,
     caller: Principal,
+    today: ClinicalDate = clinicalDateOf(new Date()),
   ): Promise<ScheduleRuleOutcome> {
     const current = await this.requireRule(ruleId);
     assertSitesInScope(caller, 'staff:manage', [
@@ -162,10 +167,56 @@ export class ScheduleRulesService {
     }
     await this.requireDerivable(merged);
 
+    // ST-050. A deactivated rule is not brought back by editing it.
+    if (!current.active) throw new ScheduleRuleNotEditableError();
+    // ST-050. A rule that already ruled past days is not rewritten: the
+    // change opens a new rule and the old one ends the day before.
+    const plan = planScheduleRuleEdit(
+      placedOf(current),
+      placedOf(merged),
+      today,
+    );
+    if (plan.kind === 'SPLIT') {
+      const opens = {
+        practitionerId: current.practitionerId,
+        siteId: plan.opens.siteId,
+        weekday: plan.opens.weekday,
+        startTime: plan.opens.startTime.toString(),
+        endTime: plan.opens.endTime.toString(),
+        validFrom: plan.opens.validFrom,
+        validTo: plan.opens.validTo,
+      };
+      await this.requireDerivable(opens);
+      // Like a creation: a practitioner no longer schedulable gets no new rule.
+      await this.requireSchedulablePractitioner(current.practitionerId, true);
+      const opened = await this.rules.split(ruleId, plan.closesOn, opens);
+      if (!opened) throw new ScheduleRuleNotFoundError();
+
+      await this.trail.record('UPDATE', current.id, requester, {
+        before: scheduleRuleSnapshot(current),
+        after: scheduleRuleSnapshot({ ...current, validTo: plan.closesOn }),
+      });
+      await this.trail.record('CREATE', opened.id, requester, {
+        after: scheduleRuleSnapshot(opened),
+      });
+      return {
+        rule: opened,
+        conflicts: await this.conflictsAfter(
+          opened,
+          current.siteId === opened.siteId
+            ? [opened.siteId]
+            : [current.siteId, opened.siteId],
+        ),
+      };
+    }
+
     const updated = await this.rules.update(ruleId, definedOf(patch));
     if (!updated) throw new ScheduleRuleNotFoundError();
 
-    await this.trail.record('UPDATE', updated.id, requester);
+    await this.trail.record('UPDATE', updated.id, requester, {
+      before: scheduleRuleSnapshot(current),
+      after: scheduleRuleSnapshot(updated),
+    });
     return {
       rule: updated,
       /**
@@ -213,7 +264,10 @@ export class ScheduleRulesService {
     );
     if (!updated) throw new ScheduleRuleNotFoundError();
 
-    await this.trail.record('UPDATE', updated.id, requester);
+    await this.trail.record('UPDATE', updated.id, requester, {
+      before: scheduleRuleSnapshot(current),
+      after: scheduleRuleSnapshot(updated),
+    });
     return { rule: updated, conflicts: await this.conflictsAfter(updated) };
   }
 
@@ -356,4 +410,39 @@ function definedOf<T extends object>(patch: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(patch).filter(([, value]) => value !== undefined),
   ) as Partial<T>;
+}
+
+/**
+ * ST-052. The editable fields of a rule — site, day, hours, validity and the
+ * active flag — without the ids, which are the audit row's own `resourceId`.
+ */
+function scheduleRuleSnapshot(rule: ScheduleRuleView): object {
+  return {
+    siteId: rule.siteId,
+    weekday: rule.weekday,
+    startTime: rule.startTime,
+    endTime: rule.endTime,
+    validFrom: rule.validFrom,
+    validTo: rule.validTo,
+    active: rule.active,
+  };
+}
+
+/** ST-050. A rule, stored or merged, in the shape the edit plan reads. */
+function placedOf(rule: {
+  siteId: string;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  validFrom: ClinicalDate;
+  validTo: ClinicalDate | null;
+}) {
+  return {
+    siteId: rule.siteId,
+    weekday: rule.weekday,
+    startTime: WallClockTime.parse(rule.startTime),
+    endTime: WallClockTime.parse(rule.endTime),
+    validFrom: rule.validFrom,
+    validTo: rule.validTo,
+  };
 }

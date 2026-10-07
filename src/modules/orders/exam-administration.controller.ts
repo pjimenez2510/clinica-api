@@ -81,7 +81,11 @@ export class ExamAdministrationController {
   async exam(
     @Param('examId', ParseUUIDPipe) examId: string,
   ): Promise<AdminExamResponse> {
-    return toExamResponse(await this.catalogue.exam(examId));
+    const exam = await this.catalogue.exam(examId);
+    return {
+      ...toExamResponse(exam),
+      codeLocked: await this.catalogue.isExamCodeLocked(exam.code),
+    };
   }
 
   @Post('exams')
@@ -152,15 +156,22 @@ export class ExamAdministrationController {
 
   @Patch('analytes/:analyteId')
   @RequirePermission('catalog:manage', 'global')
-  @ApiOperation({ summary: 'Corregir una determinación (en todos sus exámenes)' }) // prettier-ignore
+  @ApiOperation({ summary: 'Corregir una determinación (en todos sus exámenes), con sus rangos si cambia la unidad' }) // prettier-ignore
   @ApiOkResponse({ type: AdminAnalyteDto })
   async updateAnalyte(
     @Param('analyteId', ParseUUIDPipe) analyteId: string,
     @Body() dto: UpdateAnalyteDto,
     @Req() req: Request,
   ): Promise<AdminAnalyteResponse> {
+    // ORD-141. The ranges travel apart from the fields they are written in.
+    const { ranges, ...fields } = dto;
     return toAnalyteResponse(
-      await this.catalogue.updateAnalyte(analyteId, dto, this.editor(req)),
+      await this.catalogue.updateAnalyte(
+        analyteId,
+        fields,
+        this.editor(req),
+        ranges,
+      ),
     );
   }
 

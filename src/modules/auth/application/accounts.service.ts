@@ -8,6 +8,7 @@ import {
   CannotGrantToSelfError,
   RoleNotFoundError,
   UserNotFoundError,
+  AccountEmailFixedError,
 } from '../domain/auth.errors';
 import { UNUSABLE_PASSWORD_HASH } from '../domain/password-hashing';
 
@@ -24,7 +25,12 @@ import {
   ROLE_PERMISSION_CACHE,
   type RolePermissionCachePort,
 } from './admin-ports';
-import { AuthAdminAuditTrail, type Requester } from './auth-admin-audit.trail';
+import {
+  AuthAdminAuditTrail,
+  type Requester,
+  accountSnapshot,
+  grantsSnapshot,
+} from './auth-admin-audit.trail';
 import {
   CredentialInvitationsService,
   type IssuedInvitation,
@@ -52,6 +58,8 @@ export interface CreateAccountCommand {
  * `null` clears it — see `update`.
  */
 export interface UpdateAccountCommand {
+  /** AU-050. */
+  email?: string;
   firstName?: string;
   lastName?: string;
   cedula?: string | null;
@@ -160,19 +168,38 @@ export class AccountsService {
       passwordHash: UNUSABLE_PASSWORD_HASH,
     });
 
-    await this.trail.record('CREATE', created.id, requester);
+    await this.trail.record('CREATE', created.id, requester, {
+      after: accountSnapshot(created),
+    });
 
     const invitation = await this.invitations.issue(created.id, requester);
     return { account: created, invitation };
   }
 
-  /** AU-025. The email is not patchable — see the DTO for why. */
+  /**
+   * AU-025, AU-050. The email is correctable ONLY while the account has never
+   * signed in: that is the mistyped address of a new hire. Afterwards it is
+   * fixed — the invitation can be re-issued to an account with a password, so
+   * an address an administrator could change would be an address an
+   * administrator could take the account through (D-150.3).
+   */
   async update(
     id: string,
     command: UpdateAccountCommand,
     requester: Requester,
-  ): Promise<AccountView> {
+  ): Promise<AccountView & { invitationSent?: boolean }> {
+    // AU-052. The account as it stood, so the trail can say what was replaced.
+    const before = await this.accounts.findById(id);
+    if (!before) throw new UserNotFoundError();
+
+    const typed = command.email?.trim().toLowerCase();
+    const email = typed === before.email ? undefined : typed;
+    if (email !== undefined && !before.credentialPending) {
+      throw new AccountEmailFixedError();
+    }
+
     const updated = await this.accounts.update(id, {
+      email,
       firstName: command.firstName,
       lastName: command.lastName,
       // `undefined` leaves it alone, `null` clears it; collapsing the two
@@ -185,7 +212,17 @@ export class AccountsService {
     });
     if (!updated) throw new UserNotFoundError();
 
-    await this.trail.record('UPDATE', updated.id, requester);
+    await this.trail.record('UPDATE', updated.id, requester, {
+      before: accountSnapshot(before),
+      after: accountSnapshot(updated),
+    });
+
+    // AU-050. The invitation that went to the old address is annulled and a
+    // new one goes to the corrected one (AU-027 does both in one call).
+    if (email !== undefined) {
+      const invitation = await this.invitations.issue(updated.id, requester);
+      return { ...updated, invitationSent: invitation.sent };
+    }
     return updated;
   }
 
@@ -212,6 +249,9 @@ export class AccountsService {
       );
     }
 
+    const before = await this.accounts.findById(id);
+    if (!before) throw new UserNotFoundError();
+
     const updated = await this.accounts.setActive(id, false);
     if (!updated) throw new UserNotFoundError();
 
@@ -222,16 +262,25 @@ export class AccountsService {
       RevocationReason.ACCOUNT_DEACTIVATED,
     );
 
-    await this.trail.record('UPDATE', updated.id, requester);
+    await this.trail.record('UPDATE', updated.id, requester, {
+      before: accountSnapshot(before),
+      after: accountSnapshot(updated),
+    });
     return updated;
   }
 
   /** AU-022, AU-025. Reactivating does not restore any session, only access. */
   async activate(id: string, requester: Requester): Promise<AccountView> {
+    const before = await this.accounts.findById(id);
+    if (!before) throw new UserNotFoundError();
+
     const updated = await this.accounts.setActive(id, true);
     if (!updated) throw new UserNotFoundError();
 
-    await this.trail.record('UPDATE', updated.id, requester);
+    await this.trail.record('UPDATE', updated.id, requester, {
+      before: accountSnapshot(before),
+      after: accountSnapshot(updated),
+    });
     return updated;
   }
 
@@ -281,9 +330,11 @@ export class AccountsService {
 
     // AU-038, before the roles are even looked up: nothing is written, and the
     // refusal names the permission and never a site.
+    // AU-052: kept, because it is also what the trail says was replaced.
+    const current = await this.accounts.listGrants(userId);
     assertScopesInScope(caller, 'user:manage', [
       ...desired.map((grant) => grant.siteId),
-      ...(await this.accounts.listGrants(userId)).map((grant) => grant.siteId),
+      ...current.map((grant) => grant.siteId),
     ]);
 
     // Every role has to exist before anything is written. Doing it inside the
@@ -315,7 +366,10 @@ export class AccountsService {
     // makes immediate is the resolution of those roles into permissions.
     this.cache.invalidate();
 
-    await this.trail.record('UPDATE', userId, requester);
+    await this.trail.record('UPDATE', userId, requester, {
+      before: grantsSnapshot(current),
+      after: grantsSnapshot(grants),
+    });
     return grants;
   }
 

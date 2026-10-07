@@ -17,7 +17,7 @@ import {
 } from './setup/sri-fixtures';
 
 /**
- * billing/B14 and sri/S7: what the DATABASE guarantees about correcting an
+ * billing/B15 and sri/S7: what the DATABASE guarantees about correcting an
  * invoice — the credit note that never changes, the line credited once, the
  * copy billed once, the voucher of one document, the account and the returned
  * invoice that keep their previous version.

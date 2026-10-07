@@ -83,10 +83,17 @@ export interface AccessAuditEntry {
    * ⚠️ ONLY SOME RESOURCE TYPES MAY CARRY THESE, AND THE BASE IS WHAT SAYS SO.
    * `access_audit_payload_only_for_declared_resources` refuses a row whose
    * `resource_type` is not on the whitelist and whose payload is not null.
-   * Today the list is exactly `'configuration'`. Clinical resource types are
-   * deliberately absent: this table exists to watch who reads a chart, it is
-   * append-only and it is never purged, so a chart's contents landing in it
+   * Since `admin_edit_in_place` (D-150, AD-10) the list is `'configuration'`
+   * plus the administrative resources: `'staff'`, `'organization'`, `'auth'`,
+   * `'billable_service'`, `'billable_service_category'`, `'price'`, `'payer'`,
+   * `'exam_definition'` and `'analyte_definition'`. Clinical resource types
+   * are deliberately absent: this table exists to watch who reads a chart, it
+   * is append-only and it is never purged, so a chart's contents landing in it
    * could never be corrected, minimised or removed.
+   *
+   * Even on a whitelisted type, what travels is chosen field by field by each
+   * writer's trail: an account's row carries its password hash and its second
+   * factor's secret, and neither may ever reach this table (AU-052).
    *
    * So passing these for a clinical resource is not a convention violation
    * that reviewers might catch — PostgreSQL refuses the INSERT, and because a

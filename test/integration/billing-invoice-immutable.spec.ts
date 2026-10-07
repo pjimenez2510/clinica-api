@@ -393,9 +393,11 @@ describe('BI-083, BI-086, BI-088, BI-089 lo que la factura copia y lo que rechaz
     const invoice = await issue(accountId);
 
     // The tariff is raised UNDERNEATH the application, which is the only way
-    // to show that nothing re-reads it.
+    // to show that nothing re-reads it. Stamped: since BI-230 an amount is
+    // only rewritten with who and when (`trg_price_record_version`).
     await context.prisma.$executeRaw`
-      UPDATE "price" SET "amount" = '999.00', "updated_at" = CURRENT_TIMESTAMP
+      UPDATE "price" SET "amount" = '999.00', "updated_at" = CURRENT_TIMESTAMP,
+             "changed_by" = ${context.userId}::uuid, "changed_at" = ${new Date()}
        WHERE "price_list_id" = ${context.priceListId}::uuid
          AND "billable_service_id" = ${context.serviceId}::uuid`;
 

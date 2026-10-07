@@ -1,13 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { parseClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  clinicalDateOf,
+  parseClinicalDate,
+} from '../../../shared/domain/clinic-time';
 import { InvalidRucError } from '../../../shared/domain/value-objects/ruc.vo';
 import {
   LastActivePayerError,
   PayerInUseError,
   PayerNotFoundError,
   PayerRucRequiredError,
+  PriceEntryNotFoundError,
   PriceListNotFoundError,
+  PriceNotEditableError,
 } from '../domain/billing.errors';
 import type {
   BillingCatalogueRepository,
@@ -75,6 +80,9 @@ function build(overrides: Record<string, unknown> = {}) {
     listPricesOfService: vi.fn().mockResolvedValue([]),
     listPricesOfList: vi.fn().mockResolvedValue([]),
     applyPriceChange: vi.fn().mockResolvedValue(price('new', '35.00', '2026-07-01')), // prettier-ignore
+    findPrice: vi.fn().mockResolvedValue(null),
+    correctPriceAmount: vi.fn(),
+    countOpenChargesAt: vi.fn().mockResolvedValue(0),
     record: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -290,5 +298,164 @@ describe('BI-040, BI-044, BI-046 el tarifario', () => {
     expect(mocks.record).toHaveBeenCalledWith(
       expect.objectContaining({ resourceType: 'price', userId: 'user-1' }),
     );
+  });
+});
+
+describe('BI-231 la bitácora con antes y después', () => {
+  it('BI-231 records the payer before and after an edit', async () => {
+    const { service: pricing, mocks } = build({
+      findPayer: vi.fn().mockResolvedValue(
+        payer({
+          id: 'payer-iess',
+          code: 'IESS',
+          kind: 'PUBLIC_NETWORK',
+          ruc: VALID_RUC,
+        }),
+      ),
+      updatePayer: vi.fn().mockResolvedValue(
+        payer({
+          id: 'payer-iess',
+          code: 'IESS',
+          kind: 'PUBLIC_NETWORK',
+          ruc: VALID_RUC,
+          agreementReference: 'CONV-0042',
+        }),
+      ),
+    });
+
+    await pricing.updatePayer(
+      'payer-iess',
+      { agreementReference: 'CONV-0042' },
+      requester,
+    );
+
+    expect(mocks.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: 'payer',
+        resourceId: 'payer-iess',
+        action: 'UPDATE',
+        before: expect.objectContaining({
+          agreementReference: null,
+        }) as unknown,
+        after: expect.objectContaining({
+          agreementReference: 'CONV-0042',
+        }) as unknown,
+      }),
+    );
+  });
+
+  it('BI-231 a new price carries only the after half, its amount as a string', async () => {
+    const today = clinicalDateOf(new Date());
+    const { service: pricing, mocks } = build({
+      applyPriceChange: vi.fn().mockResolvedValue(price('new', '35.00', today)),
+    });
+
+    await pricing.setPrice(
+      {
+        payerId: 'payer-particular',
+        billableServiceId: 'service-1',
+        amount: Money.parse('35.00'),
+        effectiveFrom: today,
+      },
+      requester,
+    );
+
+    expect(mocks.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceType: 'price',
+        action: 'CREATE',
+        before: undefined,
+        after: {
+          billableServiceId: 'service-1',
+          amount: '35.00',
+          validFrom: today,
+          validTo: null,
+        },
+      }),
+    );
+  });
+});
+
+describe('BI-230 corregir el importe de un precio en el sitio', () => {
+  const now = new Date();
+  const today = clinicalDateOf(now);
+  const inForce = {
+    ...price('price-1', '30.00', today),
+    priceListId: 'list-particular',
+  };
+
+  it('BI-230 corrige el importe con el sello de quién y cuándo, y deja el antes y el después', async () => {
+    const { service, mocks } = build({
+      findPrice: vi.fn().mockResolvedValue(inForce),
+      correctPriceAmount: vi
+        .fn()
+        .mockResolvedValue({ ...inForce, amount: Money.parse('31.50') }),
+    });
+
+    const corrected = await service.correctPrice(
+      'price-1',
+      Money.parse('31.50'),
+      requester,
+      now,
+    );
+
+    expect(corrected.amount.toString()).toBe('31.50');
+    expect(mocks.correctPriceAmount).toHaveBeenCalledWith(
+      'price-1',
+      Money.parse('31.50'),
+      { by: 'user-1', at: now },
+    );
+    expect(mocks.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'UPDATE',
+        resourceType: 'price',
+        before: expect.objectContaining({ amount: '30.00' }),
+        after: expect.objectContaining({ amount: '31.50' }),
+      }),
+    );
+  });
+
+  it('BI-230 dice cuántos cargos sin facturar conservan el importe anterior', async () => {
+    const countOpenChargesAt = vi.fn().mockResolvedValue(10);
+    const { service } = build({
+      findPrice: vi.fn().mockResolvedValue(inForce),
+      correctPriceAmount: vi
+        .fn()
+        .mockResolvedValue({ ...inForce, amount: Money.parse('31.50') }),
+      countOpenChargesAt,
+    });
+
+    const corrected = await service.correctPrice(
+      'price-1',
+      Money.parse('31.50'),
+      requester,
+      now,
+    );
+
+    expect(corrected.openChargesAtPreviousAmount).toBe(10);
+    expect(countOpenChargesAt).toHaveBeenCalledWith(
+      'price-1',
+      Money.parse('30.00'),
+    );
+  });
+
+  it('BI-230 un precio que ya dejó de regir no se corrige, y no se escribe nada', async () => {
+    const { service, mocks } = build({
+      findPrice: vi.fn().mockResolvedValue({ ...inForce, validTo: today }),
+      correctPriceAmount: vi.fn(),
+    });
+
+    await expect(
+      service.correctPrice('price-1', Money.parse('31.50'), requester, now),
+    ).rejects.toBeInstanceOf(PriceNotEditableError);
+    expect(mocks.correctPriceAmount).not.toHaveBeenCalled();
+  });
+
+  it('BI-230 un precio inexistente responde PRICE_ENTRY_NOT_FOUND', async () => {
+    const { service } = build({ findPrice: vi.fn().mockResolvedValue(null) });
+
+    await expect(
+      service.correctPrice('ghost', Money.parse('1'), requester, now),
+    ).rejects.toBeInstanceOf(PriceEntryNotFoundError);
   });
 });

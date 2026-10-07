@@ -28,6 +28,12 @@ import {
   TaxRateRequiredError,
 } from '../domain/billing.errors';
 
+import {
+  type BillingChange,
+  billableServiceSnapshot,
+  serviceCategorySnapshot,
+} from './billing-audit.snapshots';
+
 /** Who is asking, for the trail BI-046 and BI-132 demand. */
 export interface Requester {
   userId: string;
@@ -38,11 +44,11 @@ export interface Requester {
 /**
  * `access_audit.resource_type` for the two things this service changes.
  *
- * ⚠️ NO `before`/`after` PAYLOAD ON EITHER, and it is not an omission:
- * `access_audit_payload_only_for_declared_resources` whitelists exactly
- * `'configuration'`, and because a failure to record does not throw, a row
- * with a payload on any other resource type would be silently LOST — the trail
- * would look thinner than the truth, which is the worst failure a trail has.
+ * Both carry `before`/`after` since `admin_edit_in_place` widened
+ * `access_audit_payload_only_for_declared_resources` to them (BI-231, D-150).
+ * Until then they could not: a failure to record does not throw, so a row with
+ * a payload on a resource type outside the whitelist would have been silently
+ * LOST. Whoever adds a resource type here checks that list first.
  */
 const SERVICE_RESOURCE_TYPE = 'billable_service';
 const CATEGORY_RESOURCE_TYPE = 'billable_service_category';
@@ -121,7 +127,15 @@ export class ServiceCatalogueService {
     await this.requireActiveCategory(service.categoryId);
 
     const created = await this.catalogue.createBillableService(service);
-    await this.recordChange(created.id, 'CREATE', requester);
+    await this.recordChange(
+      created.id,
+      'CREATE',
+      requester,
+      SERVICE_RESOURCE_TYPE,
+      {
+        after: billableServiceSnapshot(created),
+      },
+    );
     return created;
   }
 
@@ -174,7 +188,16 @@ export class ServiceCatalogueService {
       serviceId,
       update,
     );
-    await this.recordChange(serviceId, 'UPDATE', requester);
+    await this.recordChange(
+      serviceId,
+      'UPDATE',
+      requester,
+      SERVICE_RESOURCE_TYPE,
+      {
+        before: billableServiceSnapshot(current),
+        after: billableServiceSnapshot(updated),
+      },
+    );
     return updated;
   }
 
@@ -235,7 +258,15 @@ export class ServiceCatalogueService {
     requester: Requester,
   ): Promise<ServiceCategoryView> {
     const created = await this.catalogue.createServiceCategory(category);
-    await this.recordChange(created.id, 'CREATE', requester, CATEGORY_RESOURCE_TYPE); // prettier-ignore
+    await this.recordChange(
+      created.id,
+      'CREATE',
+      requester,
+      CATEGORY_RESOURCE_TYPE,
+      {
+        after: serviceCategorySnapshot(created),
+      },
+    );
     return created;
   }
 
@@ -260,7 +291,16 @@ export class ServiceCatalogueService {
       );
     }
     const updated = await this.catalogue.updateServiceCategory(categoryId, update); // prettier-ignore
-    await this.recordChange(categoryId, 'UPDATE', requester, CATEGORY_RESOURCE_TYPE); // prettier-ignore
+    await this.recordChange(
+      categoryId,
+      'UPDATE',
+      requester,
+      CATEGORY_RESOURCE_TYPE,
+      {
+        before: serviceCategorySnapshot(existing),
+        after: serviceCategorySnapshot(updated),
+      },
+    );
     return updated;
   }
 
@@ -299,6 +339,7 @@ export class ServiceCatalogueService {
     action: 'CREATE' | 'UPDATE',
     requester: Requester,
     resourceType: string = SERVICE_RESOURCE_TYPE,
+    change: BillingChange = {},
   ): Promise<void> {
     await this.audit.record({
       userId: requester.userId,
@@ -307,6 +348,9 @@ export class ServiceCatalogueService {
       action,
       ip: requester.ip,
       userAgent: requester.userAgent,
+      // BI-231. Plain copies of the snapshots in `billing-audit.snapshots.ts`.
+      before: change.before && { ...change.before },
+      after: change.after && { ...change.after },
     });
   }
 }

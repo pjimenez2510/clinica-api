@@ -103,7 +103,7 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
 
   async updateExam(
     id: string,
-    patch: Partial<ExamWrite>,
+    patch: Partial<ExamWrite> & { code?: string },
   ): Promise<AdminExamView> {
     try {
       const row = await this.prisma.examDefinition.update({
@@ -176,6 +176,15 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
         serviceOrder: { status: 'ISSUED' },
       },
     });
+  }
+
+  /** ORD-140. */
+  async examWasOrdered(examCode: string): Promise<boolean> {
+    const found = await this.prisma.serviceOrderItem.findFirst({
+      where: { testCode: examCode },
+      select: { id: true },
+    });
+    return found !== null;
   }
 
   async analyteHasResults(analyteName: string): Promise<boolean> {
@@ -253,11 +262,21 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
     analyteId: string,
     ranges: readonly ReferenceRange[],
     now: Date,
+    analyte?: AnalyteWrite,
   ): Promise<AdminAnalyteView> {
     const row = await this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<{ id: string }[]>`
         SELECT "id" FROM "analyte_definition" WHERE "id" = ${analyteId}::uuid FOR UPDATE`;
       if (locked.length === 0) throw new AnalyteNotFoundError();
+
+      // ORD-141. The unit and the ranges written in it, in the same
+      // transaction: a refused range leaves the unit as it was.
+      if (analyte) {
+        await tx.analyteDefinition.update({
+          where: { id: analyteId },
+          data: analyteData(analyte),
+        });
+      }
 
       // ABSOLUTE ranges are not edited here, so they are not replaced either.
       const inForce = await tx.analyteReferenceRange.findMany({

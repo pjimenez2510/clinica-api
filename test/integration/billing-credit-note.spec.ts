@@ -28,7 +28,7 @@ import { composeAccessKey } from '../../src/modules/sri/domain/access-key';
 import { authoriseVoucher, TEST_ISSUER_RUC } from './setup/sri-fixtures';
 
 /**
- * billing/B14 by HTTP: «Corregir» an authorised invoice with a credit note,
+ * billing/B15 by HTTP: «Corregir» an authorised invoice with a credit note,
  * as caja does it — the permission of its own, the site scope, every refusal
  * with the code the specification names, and the account left ready to bill
  * again. Nothing reaches the SRI: the invoice is authorised by raw SQL, as

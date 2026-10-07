@@ -24,6 +24,24 @@ import {
 
 import { type Requester, StaffAuditTrail } from './staff-audit.trail';
 
+/**
+ * ST-052. The fields of the file this service edits, and nothing else: the
+ * name and the e-mail belong to the account and are audited by `auth`.
+ *
+ * NOT the emergency contact's phone: it is a third person's data, outside
+ * what D-150.1 lists, and this trail is never purged.
+ */
+export function practitionerSnapshot(view: PractitionerView): object {
+  return {
+    cedula: view.cedula,
+    acessRegistration: view.acessRegistration,
+    acessExpiresOn: view.acessExpiresOn,
+    mspCode: view.mspCode,
+    schedulable: view.schedulable,
+    active: view.active,
+  };
+}
+
 /** ST-005, as the warning screen reads it: the row plus how long is left. */
 export interface AcessExpiryWarning extends AcessExpiryRow {
   daysToExpiry: number;
@@ -81,7 +99,9 @@ export class PractitionerService {
       mspCode: input.mspCode ?? null,
       schedulable: input.schedulable ?? true,
     });
-    await this.trail.record('CREATE', created.id, requester);
+    await this.trail.record('CREATE', created.id, requester, {
+      after: practitionerSnapshot(created),
+    });
     return created;
   }
 
@@ -104,10 +124,17 @@ export class PractitionerService {
     },
     requester: Requester,
   ): Promise<PractitionerView> {
+    // ST-052. The file as it stood, so the trail can say what was replaced.
+    const before = await this.repository.findPractitioner(id);
+    if (!before) throw new PractitionerNotFoundError();
+
     const updated = await this.repository.updatePractitioner(id, patch);
     if (!updated) throw new PractitionerNotFoundError();
 
-    await this.trail.record('UPDATE', updated.id, requester);
+    await this.trail.record('UPDATE', updated.id, requester, {
+      before: practitionerSnapshot(before),
+      after: practitionerSnapshot(updated),
+    });
     return updated;
   }
 

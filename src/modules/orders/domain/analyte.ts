@@ -102,3 +102,31 @@ export interface PatientProfile {
    */
   ageEstimated?: boolean;
 }
+
+/**
+ * ORD-141. Whether any bounded range sent with a NEW unit keeps the very
+ * bounds of a range written in the OLD one.
+ *
+ * Changing glucose from mg/dL to mmol/L while sending «crítico 40–400» back
+ * unchanged would read 25 mmol/L (≈ 450 mg/dL) as within bounds: the critical
+ * value nobody is called about (ORD-060). The screen prefills the ranges, so
+ * one click on «Guardar» would do exactly that. Bounds are compared as the
+ * column stores them, `Decimal(14,4)`.
+ */
+export function boundsCarriedOver(
+  current: readonly ReferenceRange[],
+  sent: readonly ReferenceRange[],
+): boolean {
+  const stored = (bound: number | null) =>
+    bound === null ? null : Math.round(bound * 10_000);
+  const bounded = (range: ReferenceRange) =>
+    range.low !== null || range.high !== null;
+  const old = current
+    .filter(bounded)
+    .map((range) => `${stored(range.low)}:${stored(range.high)}`);
+  return sent
+    .filter(bounded)
+    .some((range) =>
+      old.includes(`${stored(range.low)}:${stored(range.high)}`),
+    );
+}

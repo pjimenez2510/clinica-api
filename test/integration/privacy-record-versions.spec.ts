@@ -71,7 +71,11 @@ describe('privacy: las versiones guardadas llegan a su titular', () => {
     });
 
     const reached = new Set(found.map((version) => version.table));
-    expect([...reached].sort()).toEqual(Object.keys(VERSIONED_TABLES).sort());
+    // A price (BI-230) is versioned and nobody's: it reaches no chart.
+    const ofPatients = Object.entries(VERSIONED_TABLES)
+      .filter(([, path]) => !path.reachesNoPatient)
+      .map(([table]) => table);
+    expect([...reached].sort()).toEqual(ofPatients.sort());
     const ids = found.map((version) => version.resourceId);
     for (const id of theirs.resourceIds) expect(ids).not.toContain(id);
     for (const id of mine.resourceIds) expect(ids).toContain(id);

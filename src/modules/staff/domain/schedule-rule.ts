@@ -1,8 +1,10 @@
 import {
   type ClinicalDate,
   WallClockTime,
+  addDays,
   clinicalDaySpan,
 } from '../../../shared/domain/clinic-time';
+import { ScheduleRuleNotEditableError } from './staff.errors';
 
 /**
  * What a schedule rule must satisfy, and what closing one means (ST-041,
@@ -169,4 +171,81 @@ export function isInForceOn(
 ): boolean {
   if (clinicalDaySpan(rule.validFrom, date) === 0) return false;
   return rule.validTo === null || clinicalDaySpan(date, rule.validTo) > 0;
+}
+
+/** A rule as an edit sees it: the draft plus the site it belongs to. */
+export interface PlacedScheduleRule extends ScheduleRuleDraft {
+  siteId: string;
+}
+
+/**
+ * What editing a rule does (ST-050, D-127).
+ *
+ * IN PLACE while the rule has not ruled any day yet, or when only its end
+ * moves forward: nothing in the past changes.
+ *
+ * SPLIT when the day, the site or the hours of a rule that already ruled past
+ * days change: the old row is closed YESTERDAY and a new one opens TODAY (or
+ * on the later start asked for) with what was edited, until the end the old
+ * one had. The two rows are the history — last week's agenda keeps saying
+ * what it said — and the user never has to «cerrar y crear otra».
+ */
+export type ScheduleRuleEdit =
+  | { kind: 'IN_PLACE' }
+  | {
+      kind: 'SPLIT';
+      closesOn: ClinicalDate;
+      opens: PlacedScheduleRule;
+    };
+
+export function planScheduleRuleEdit(
+  current: PlacedScheduleRule,
+  patch: Partial<PlacedScheduleRule>,
+  today: ClinicalDate,
+): ScheduleRuleEdit {
+  const merged: PlacedScheduleRule = { ...current, ...patch };
+
+  // Not started: there is no past to protect — as long as the edit does not
+  // move its start into the past, which would invent a past it never had.
+  if (current.validFrom >= today) {
+    if (merged.validFrom < today) throw new ScheduleRuleNotEditableError();
+    return { kind: 'IN_PLACE' };
+  }
+
+  const yesterday = addDays(today, -1);
+  // Ended (`validTo` is inclusive): it is history, a new rule is the answer.
+  if (current.validTo !== null && current.validTo < today) {
+    throw new ScheduleRuleNotEditableError();
+  }
+
+  const reshaped =
+    merged.weekday !== current.weekday ||
+    merged.siteId !== current.siteId ||
+    merged.startTime.toString() !== current.startTime.toString() ||
+    merged.endTime.toString() !== current.endTime.toString();
+
+  if (!reshaped) {
+    // The start of a rule already in force is a fact about past days.
+    if (merged.validFrom !== current.validFrom) {
+      throw new ScheduleRuleNotEditableError();
+    }
+    // Only the end moves. Moving it before yesterday would erase days the
+    // rule already ruled over.
+    if (merged.validTo !== null && merged.validTo < yesterday) {
+      throw new ScheduleRuleNotEditableError();
+    }
+    return { kind: 'IN_PLACE' };
+  }
+
+  // The new hours rule from today, or from the later start asked for; the
+  // old ones rule until the day before, so no day is left without a rule.
+  const validFrom =
+    patch.validFrom !== undefined && patch.validFrom > today
+      ? patch.validFrom
+      : today;
+  return {
+    kind: 'SPLIT',
+    closesOn: addDays(validFrom, -1),
+    opens: { ...merged, validFrom },
+  };
 }

@@ -5,6 +5,7 @@ import {
   EmissionPointNotFoundError,
   SiteNotFoundError,
   SiteRoomNotFoundError,
+  EmissionPointCodeInUseError,
 } from '../domain/organization.errors';
 import type {
   EmissionPointView,
@@ -49,6 +50,7 @@ interface Answers {
   deleteRoom: boolean;
   updateEmissionPoint: EmissionPointView | null;
   deleteEmissionPoint: boolean;
+  hasVouchers?: boolean;
 }
 
 interface Call {
@@ -109,6 +111,10 @@ function makeDouble(answers: Answers): {
     deleteEmissionPoint: (id) => {
       note('deleteEmissionPoint', id);
       return Promise.resolve(answers.deleteEmissionPoint);
+    },
+    emissionPointHasVouchers: (id) => {
+      note('emissionPointHasVouchers', id);
+      return Promise.resolve(answers.hasVouchers ?? false);
     },
   };
 
@@ -201,7 +207,10 @@ describe('SiteResourcesService', () => {
     it('OR-022 desactiva un consultorio y responde SITE_ROOM_NOT_FOUND si no existe', async () => {
       const found = build();
       await found.service.updateRoom('room-1', { active: false }, REQUESTER);
-      expect(found.calls).toEqual([
+      // OR-033 reads the room first, for the trail; the WRITE is what matters.
+      expect(
+        found.calls.filter((call) => call.method === 'updateRoom'),
+      ).toEqual([
         { method: 'updateRoom', args: ['room-1', { active: false }] },
       ]);
 
@@ -299,6 +308,116 @@ describe('SiteResourcesService', () => {
         'UPDATE',
         'UPDATE',
       ]);
+    });
+  });
+
+  describe('bitácora con antes y después (OR-033)', () => {
+    it('OR-033 records the room before and after an edit', async () => {
+      answers.updateRoom = { ...ROOM, name: 'Consultorio 2', active: false };
+      const { service } = build();
+
+      await service.updateRoom(
+        ROOM.id,
+        { name: 'Consultorio 2', active: false },
+        REQUESTER,
+      );
+
+      expect(entries[0]).toMatchObject({
+        action: 'UPDATE',
+        resourceType: 'organization',
+        resourceId: ROOM.id,
+      });
+      expect(entries[0]?.before).toEqual({
+        name: 'Consultorio 1',
+        active: true,
+      });
+      expect(entries[0]?.after).toEqual({
+        name: 'Consultorio 2',
+        active: false,
+      });
+    });
+
+    it('OR-033 records the emission point before and after an edit', async () => {
+      answers.updateEmissionPoint = {
+        ...EMISSION_POINT,
+        description: 'Caja 2',
+      };
+      const { service } = build();
+
+      await service.updateEmissionPoint(
+        EMISSION_POINT.id,
+        { description: 'Caja 2' },
+        REQUESTER,
+      );
+
+      expect(entries[0]?.before).toEqual({
+        code: '001',
+        description: 'Punto de emisión principal',
+        active: true,
+      });
+      expect(entries[0]?.after).toEqual({
+        code: '001',
+        description: 'Caja 2',
+        active: true,
+      });
+    });
+
+    it('OR-033 editing a room that does not exist answers 404 and records nothing', async () => {
+      answers.siteOfRoom = null;
+      const { service } = build();
+
+      await expect(
+        service.updateRoom('ghost', { name: 'X' }, REQUESTER),
+      ).rejects.toThrow(SiteRoomNotFoundError);
+      expect(entries).toEqual([]);
+    });
+  });
+
+  describe('corregir el código de un punto de emisión (OR-035)', () => {
+    it('OR-035 se corrige mientras el punto no emitió comprobantes', async () => {
+      const { service, calls } = build();
+
+      await service.updateEmissionPoint(
+        EMISSION_POINT.id,
+        { code: '009' },
+        { userId: 'u' },
+      );
+
+      const update = calls.find(
+        (call) => call.method === 'updateEmissionPoint',
+      );
+      expect(update?.args[1]).toMatchObject({ code: '009' });
+    });
+
+    it('OR-035 si ya emitió, se rechaza con EMISSION_POINT_CODE_IN_USE y no escribe', async () => {
+      answers.hasVouchers = true;
+      const { service, calls } = build();
+
+      await expect(
+        service.updateEmissionPoint(
+          EMISSION_POINT.id,
+          { code: '009' },
+          { userId: 'u' },
+        ),
+      ).rejects.toBeInstanceOf(EmissionPointCodeInUseError);
+      expect(calls.some((call) => call.method === 'updateEmissionPoint')).toBe(
+        false,
+      );
+    });
+
+    it('OR-035 cambiar sólo la descripción no pregunta por los comprobantes', async () => {
+      answers.hasVouchers = true;
+      const { service, calls } = build();
+
+      await service.updateEmissionPoint(
+        EMISSION_POINT.id,
+        { description: 'Caja 2' },
+        { userId: 'u' },
+      );
+
+      expect(
+        calls.some((call) => call.method === 'emissionPointHasVouchers'),
+      ).toBe(false);
     });
   });
 });

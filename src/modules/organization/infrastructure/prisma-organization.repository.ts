@@ -205,6 +205,15 @@ export class PrismaOrganizationRepository implements OrganizationRepository {
     }
   }
 
+  /** OR-034. */
+  async siteHasEncounters(siteId: string): Promise<boolean> {
+    const encounter = await this.prisma.encounter.findFirst({
+      where: { siteId },
+      select: { id: true },
+    });
+    return encounter !== null;
+  }
+
   /** OR-006: the RESTRICT foreign keys have the final word. */
   async deleteSite(id: string): Promise<boolean> {
     try {

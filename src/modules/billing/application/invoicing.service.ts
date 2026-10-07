@@ -71,7 +71,7 @@ export type InvoiceWithVoucher = InvoiceView & {
  * the application never tries.
  *
  * Correcting is a credit note: another act, another permission
- * (`billing:credit-note`), a mandatory reason — `CreditNoteService` (B14).
+ * (`billing:credit-note`), a mandatory reason — `CreditNoteService` (B15).
  *
  * THE ONE EXCEPTION IS AN INVOICE THE SRI DID NOT ACCEPT (BI-216, D-093 B):
  * returned or not authorised, it is not a voucher anybody holds, and the

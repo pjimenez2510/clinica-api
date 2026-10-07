@@ -41,7 +41,11 @@ export interface VersionedTablePath {
    * D-140.2. Columns taken out of every version before it leaves: data about
    * SOMEBODY ELSE that the row happens to hold.
    */
-  redactedColumns?: readonly string[];
+  redactedColumns?: readonly string[]; /**
+   * A versioned table that is nobody's personal data (a price): declared to
+   * keep the map exhaustive, it reaches no chart by construction.
+   */
+  reachesNoPatient?: true;
 }
 
 const byPatientId =
@@ -162,6 +166,15 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
       'buyer_name',
       'buyer_email',
     ],
+  },
+  // BI-230 (fix/administracion-sencilla). A price corrected in place is
+  // configuration, nobody's personal data: declared so the map stays
+  // exhaustive, with a path that reaches no chart.
+  price: {
+    resourceIdsOf: () => Prisma.sql`SELECT NULL::uuid AS id WHERE false`,
+    omittedBecause:
+      'Un precio es configuración de la clínica: no es dato de ningún paciente.',
+    reachesNoPatient: true,
   },
   // AG-064. The outcome of a call about this patient's waiting-list entry.
   waitlist_contact_attempt: {

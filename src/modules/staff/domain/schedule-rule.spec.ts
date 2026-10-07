@@ -2,14 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import {
   WallClockTime,
+  addDays,
+  clinicalDateOf,
   parseClinicalDate,
 } from '../../../shared/domain/clinic-time';
 
 import {
+  type PlacedScheduleRule,
   closeScheduleRuleOn,
+  planScheduleRuleEdit,
   isInForceOn,
   scheduleRuleProblems,
 } from './schedule-rule';
+import { ScheduleRuleNotEditableError } from './staff.errors';
 
 const on = (value: string) => parseClinicalDate(value);
 const at = (value: string) => WallClockTime.parse(value);
@@ -182,5 +187,114 @@ describe('la regla de horario', () => {
     expect(
       isInForceOn({ validFrom: on('2026-01-01'), validTo: null }, on('2030-01-01')), // prettier-ignore
     ).toBe(true);
+  });
+});
+
+describe('ST-050 editar una regla que ya rigió no reescribe los días pasados', () => {
+  const today = clinicalDateOf(new Date());
+  const started: PlacedScheduleRule = {
+    siteId: 'norte',
+    weekday: 1,
+    startTime: at('08:00'),
+    endTime: at('12:00'),
+    validFrom: addDays(today, -60),
+    validTo: null,
+  };
+
+  it('ST-050 cambiar la hora de una regla que ya rigió la cierra ayer y abre otra desde hoy', () => {
+    const plan = planScheduleRuleEdit(started, { endTime: at('13:00') }, today);
+
+    expect(plan).toEqual({
+      kind: 'SPLIT',
+      closesOn: addDays(today, -1),
+      opens: { ...started, endTime: at('13:00'), validFrom: today },
+    });
+  });
+
+  it('ST-050 cambiar de sede o de día también parte la regla', () => {
+    expect(planScheduleRuleEdit(started, { siteId: 'sur' }, today).kind).toBe(
+      'SPLIT',
+    );
+    expect(planScheduleRuleEdit(started, { weekday: 2 }, today).kind).toBe(
+      'SPLIT',
+    );
+  });
+
+  it('ST-050 la regla nueva conserva el fin que tenía la anterior', () => {
+    const ending = { ...started, validTo: addDays(today, 30) };
+    const plan = planScheduleRuleEdit(
+      ending,
+      { startTime: at('09:00') },
+      today,
+    );
+
+    expect(plan.kind === 'SPLIT' && plan.opens.validTo).toBe(
+      addDays(today, 30),
+    );
+  });
+
+  it('ST-050 con un inicio futuro pedido, la anterior rige hasta la víspera: ningún día queda sin regla', () => {
+    const later = addDays(today, 7);
+    const plan = planScheduleRuleEdit(
+      started,
+      { startTime: at('09:00'), validFrom: later },
+      today,
+    );
+
+    expect(plan).toMatchObject({
+      kind: 'SPLIT',
+      closesOn: addDays(later, -1),
+      opens: { validFrom: later },
+    });
+  });
+
+  it('ST-050 cambiar sólo el inicio de una regla que ya rige se rechaza: es un hecho de días pasados', () => {
+    expect(() =>
+      planScheduleRuleEdit(started, { validFrom: addDays(today, 5) }, today),
+    ).toThrow(ScheduleRuleNotEditableError);
+  });
+
+  it('ST-050 una regla que aún no rige no se lleva a empezar en el pasado', () => {
+    const future = { ...started, validFrom: addDays(today, 3) };
+    expect(() =>
+      planScheduleRuleEdit(future, { validFrom: addDays(today, -3) }, today),
+    ).toThrow(ScheduleRuleNotEditableError);
+  });
+
+  it('ST-050 una regla que terminó ayer ya no se edita', () => {
+    expect(() =>
+      planScheduleRuleEdit(
+        { ...started, validTo: addDays(today, -1) },
+        { endTime: at('13:00') },
+        today,
+      ),
+    ).toThrow(ScheduleRuleNotEditableError);
+  });
+
+  it('ST-050 una regla que todavía no rige se edita en el sitio', () => {
+    const future = { ...started, validFrom: addDays(today, 3) };
+
+    expect(
+      planScheduleRuleEdit(future, { endTime: at('13:00') }, today),
+    ).toEqual({ kind: 'IN_PLACE' });
+  });
+
+  it('ST-050 mover sólo el fin hacia adelante se edita en el sitio', () => {
+    expect(
+      planScheduleRuleEdit(started, { validTo: addDays(today, 90) }, today),
+    ).toEqual({ kind: 'IN_PLACE' });
+  });
+
+  it('ST-050 rechaza llevar el fin a antes de ayer, o editar una regla que ya terminó', () => {
+    expect(() =>
+      planScheduleRuleEdit(started, { validTo: addDays(today, -5) }, today),
+    ).toThrow(ScheduleRuleNotEditableError);
+    expect(() =>
+      planScheduleRuleEdit(
+        { ...started, validTo: addDays(today, -10) },
+        { endTime: at('13:00') },
+        today,
+      ),
+    ).toThrow(ScheduleRuleNotEditableError);
   });
 });

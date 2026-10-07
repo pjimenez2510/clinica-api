@@ -325,11 +325,13 @@ export const DOMAIN_ERROR_CODES = [
   // OR-022. `ESTABLISHMENT_NOT_FOUND` no es corrupción de datos: una
   // instalación recién montada no tiene establecimiento hasta que alguien
   // rellena el formulario, y OR-001 prohíbe operar hasta entonces.
+  'EMISSION_POINT_CODE_IN_USE',
   'EMISSION_POINT_DUPLICATE',
   'SRI_ESTABLISHMENT_CODE_DUPLICATE',
   'EMISSION_POINT_NOT_FOUND',
   'ESTABLISHMENT_NOT_FOUND',
   'MSP_UNICODE_DUPLICATE',
+  'SITE_MSP_UNICODE_IN_USE',
   // SRI (sri/SPEC.md §8). El comprobante electrónico y el certificado del
   // emisor. Uno solo para «no existe» y «fuera de alcance» (SRI-065); uno solo
   // para «no es .p12» y «clave equivocada» (SRI-081), que distinguidos son un
@@ -375,6 +377,7 @@ export const DOMAIN_ERROR_CODES = [
   'PRACTITIONER_NOT_IN_SITE',
   'PRACTITIONER_NOT_SCHEDULABLE',
   'PRIMARY_SPECIALTY_REQUIRED',
+  'SCHEDULE_RULE_NOT_EDITABLE',
   'SCHEDULE_RULE_NOT_FOUND',
   'SERVICE_TYPE_DUPLICATE',
   'SERVICE_TYPE_IN_USE',
@@ -438,6 +441,7 @@ export const DOMAIN_ERROR_CODES = [
   'INVALID_CREDENTIAL_TOKEN',
   'MAIL_DELIVERY_FAILED',
   'MAIL_NOT_CONFIGURED',
+  'ACCOUNT_EMAIL_FIXED',
   'EMAIL_ALREADY_REGISTERED',
   'ROLE_CODE_DUPLICATE',
   'ROLE_IN_USE',
@@ -535,8 +539,10 @@ export const DOMAIN_ERROR_CODES = [
   // no los distingue manda a alguien a buscar en el sitio equivocado.
   // El solape de vigencias NO está aquí: lo produce `price_temporal_unique` y
   // sale por el mapeo de PostgreSQL, que tiene su propia tabla.
+  'PRICE_ENTRY_NOT_FOUND',
   'PRICE_LIST_NOT_FOUND',
   'PRICE_NEGATIVE_AMOUNT',
+  'PRICE_NOT_EDITABLE',
   'PRICE_NOT_FOUND',
   'PRICE_PERIOD_INVALID',
   // La cuenta y el cargo (BI-033, BI-057, BI-071, BI-072, BI-135).
@@ -1103,6 +1109,7 @@ export const DOMAIN_ERROR_CODES = [
   'ANALYTE_HAS_RESULTS',
   'ANALYTE_UNIT_WITH_RANGES',
   'EXAM_HAS_OPEN_ORDERS',
+  'EXAM_CODE_IN_USE',
   'ANALYTE_NOT_FOUND',
   'EXAM_DEFINITION_NOT_FOUND',
   'EXAM_SERVICE_KIND_MISMATCH',

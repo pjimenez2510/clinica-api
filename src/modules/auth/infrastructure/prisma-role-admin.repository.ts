@@ -124,7 +124,7 @@ export class PrismaRoleAdminRepository implements RoleAdminRepositoryPort {
     }
   }
 
-  /** The CODE is not patchable; see the service for why. */
+  /** AU-051. The code travels only for a clinic role; the service checks. */
   async update(id: string, patch: RolePatch): Promise<RoleView | null> {
     try {
       const row = await this.prisma.role.update({

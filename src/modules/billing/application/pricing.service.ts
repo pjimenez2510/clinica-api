@@ -4,7 +4,10 @@ import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
-import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  type ClinicalDate,
+  clinicalDateOf,
+} from '../../../shared/domain/clinic-time';
 import { Ruc } from '../../../shared/domain/value-objects/ruc.vo';
 
 import {
@@ -21,14 +24,21 @@ import {
   PayerInUseError,
   PayerNotFoundError,
   PayerRucRequiredError,
+  PriceEntryNotFoundError,
   PriceListNotFoundError,
 } from '../domain/billing.errors';
 import { Money } from '../domain/money';
 import {
   type PriceRow,
+  checkPriceCorrection,
   planPriceChange,
   priceInForceOn,
 } from '../domain/price-list';
+import {
+  type BillingChange,
+  payerSnapshot,
+  priceSnapshot,
+} from './billing-audit.snapshots';
 import type { Requester } from './service-catalogue.service';
 
 const PAYER_RESOURCE_TYPE = 'payer';
@@ -70,7 +80,9 @@ export class PricingService {
     const ruc = this.checkPayerRuc(payer.kind, payer.ruc);
 
     const created = await this.catalogue.createPayer({ ...payer, ruc });
-    await this.record(PAYER_RESOURCE_TYPE, created.id, 'CREATE', requester);
+    await this.record(PAYER_RESOURCE_TYPE, created.id, 'CREATE', requester, {
+      after: payerSnapshot(created),
+    });
     return created;
   }
 
@@ -101,7 +113,10 @@ export class PricingService {
     }
 
     const updated = await this.catalogue.updatePayer(payerId, changes);
-    await this.record(PAYER_RESOURCE_TYPE, payerId, 'UPDATE', requester);
+    await this.record(PAYER_RESOURCE_TYPE, payerId, 'UPDATE', requester, {
+      before: payerSnapshot(payer),
+      after: payerSnapshot(updated),
+    });
     return updated;
   }
 
@@ -174,8 +189,45 @@ export class PricingService {
       ),
     );
 
-    await this.record(PRICE_RESOURCE_TYPE, opened.id, 'CREATE', requester);
+    await this.record(PRICE_RESOURCE_TYPE, opened.id, 'CREATE', requester, {
+      after: priceSnapshot(opened),
+    });
     return opened;
+  }
+
+  /**
+   * BI-230 (D-127). Correcting a mistyped amount IN PLACE, for a price in
+   * force or still to come. The previous row is archived by
+   * `trg_price_record_version` with the stamp written here; the charges keep
+   * the amount they froze (BI-050).
+   */
+  async correctPrice(
+    priceId: string,
+    amount: Money,
+    requester: Requester,
+    now: Date = new Date(),
+  ): Promise<PriceRow & { openChargesAtPreviousAmount: number }> {
+    const current = await this.catalogue.findPrice(priceId);
+    if (!current) throw new PriceEntryNotFoundError();
+    checkPriceCorrection(current, amount, clinicalDateOf(now));
+
+    const corrected = await this.catalogue.correctPriceAmount(priceId, amount, {
+      by: requester.userId,
+      at: now,
+    });
+    await this.record(PRICE_RESOURCE_TYPE, priceId, 'UPDATE', requester, {
+      before: priceSnapshot(current),
+      after: priceSnapshot(corrected),
+    });
+    // The charges already raised keep the mistyped amount (BI-050): the
+    // answer says how many, so the screen can send someone to look.
+    return {
+      ...corrected,
+      openChargesAtPreviousAmount: await this.catalogue.countOpenChargesAt(
+        priceId,
+        current.amount,
+      ),
+    };
   }
 
   /**
@@ -218,6 +270,7 @@ export class PricingService {
     resourceId: string,
     action: 'CREATE' | 'UPDATE',
     requester: Requester,
+    change: BillingChange = {},
   ): Promise<void> {
     await this.audit.record({
       userId: requester.userId,
@@ -226,6 +279,9 @@ export class PricingService {
       action,
       ip: requester.ip,
       userAgent: requester.userAgent,
+      // BI-231. Plain copies of the snapshots in `billing-audit.snapshots.ts`.
+      before: change.before && { ...change.before },
+      after: change.after && { ...change.after },
     });
   }
 }

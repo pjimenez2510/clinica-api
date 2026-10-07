@@ -189,7 +189,10 @@ export class OrganizationController {
   @ApiOperation({ summary: 'Datos de una sede' })
   @ApiOkResponse({ type: SiteDto })
   async getSite(@Param('id', ParseUUIDPipe) id: string): Promise<SiteResponse> {
-    return this.visibleSite(await this.organization.getSite(id));
+    return {
+      ...this.visibleSite(await this.organization.getSite(id)),
+      mspUnicodeLocked: await this.organization.isMspUnicodeLocked(id),
+    };
   }
 
   /** OR-004, OR-005, OR-008. */
@@ -218,7 +221,7 @@ export class OrganizationController {
     );
   }
 
-  /** OR-005, OR-007 (deactivate), OR-008. */
+  /** OR-005, OR-007 (deactivate), OR-008, OR-034 (MSP code while unused). */
   @Patch('sites/:id')
   @RequirePermission('site:manage', 'param:id')
   @ApiOperation({ summary: 'Editar o desactivar una sede' })
@@ -232,6 +235,7 @@ export class OrganizationController {
       await this.organization.updateSite(
         id,
         {
+          mspUnicode: dto.mspUnicode,
           name: dto.name,
           ruc: dto.ruc,
           parishConceptId: dto.parishConceptId,

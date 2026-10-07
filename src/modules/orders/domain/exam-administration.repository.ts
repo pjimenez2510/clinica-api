@@ -88,7 +88,10 @@ export interface ExamAdministrationRepository {
   /** `EXAM_CODE_DUPLICATE` comes from `exam_definition_code_unique`. */
   createExam(code: string, exam: ExamWrite): Promise<AdminExamView>;
   /** Writes only what changed: two tabs saving at once do not undo each other. */
-  updateExam(id: string, patch: Partial<ExamWrite>): Promise<AdminExamView>;
+  updateExam(
+    id: string,
+    patch: Partial<ExamWrite> & { code?: string },
+  ): Promise<AdminExamView>;
   /**
    * ORD-105. Replaces the exam's structure whole, in the order given. Refuses
    * with `ANALYTE_NOT_FOUND`, inside the write, an analyte missing, or retired
@@ -111,6 +114,9 @@ export interface ExamAdministrationRepository {
    */
   analyteHasResults(analyteName: string): Promise<boolean>;
 
+  /** ORD-140. Whether any order line froze this exam code (ORD-002). */
+  examWasOrdered(examCode: string): Promise<boolean>;
+
   /** ORD-108. The service by id, `undefined` when there is none. */
   service(id: string): Promise<ExamServiceView | undefined>;
 
@@ -130,6 +136,8 @@ export interface ExamAdministrationRepository {
     analyteId: string,
     ranges: readonly ReferenceRange[],
     now: Date,
+    /** ORD-141. The analyte's fields, written in the same transaction. */
+    analyte?: AnalyteWrite,
   ): Promise<AdminAnalyteView>;
 
   /** ORD-114. Every range the analyte ever had, open and closed. */
