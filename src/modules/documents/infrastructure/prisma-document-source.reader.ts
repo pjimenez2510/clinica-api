@@ -750,7 +750,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
                  * ⚠️ `chartScopeSelect` AND NOT A PLAIN `allergies`. A merged
                  * chart keeps its own rows: an allergy recorded before the
                  * merge lives on the ABSORBED chart, and reading only the
-                 * survivor's would print «Ninguna conocida» on a receta for a
+                 * survivor's would print «No consta ninguna registrada» on a receta for a
                  * patient whose penicillin allergy the clinic has on file. It
                  * travels as one statement — `relationJoins` is on — so it
                  * costs nothing over getting it wrong.

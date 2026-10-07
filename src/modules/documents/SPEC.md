@@ -205,6 +205,17 @@ línea de corte; emitir un RIDE y comprobar que **no** contiene ningún QR.
 
 **Cubre:** DOC-070 a DOC-079.
 
+**Solo servidor:** DOC-070, DOC-071, DOC-073, DOC-074, DOC-076 a DOC-079. Lo
+que dicen está en los bytes del PDF, que compone el servidor y la pantalla
+entrega sin tocarlos (DOC-002, DOC-006): ningún código de la interfaz hace que
+la receta lleve su banda o el RIDE sus banderas, y una prueba de interfaz que
+los citara no probaría nada. Se comprueban sobre el PDF que la pantalla
+descarga en `clinica-web/e2e/flujos/f05-documentos.spec.ts` (receta, orden y
+certificado); el RIDE lo descarga caja, y su comprobación es del recorrido de
+F-06. DOC-079 es la ausencia de un generador: lo que la pantalla enseña al
+rechazar un controlado es el aviso genérico de un rechazo del servidor, con su
+frase (PR-070), y el recorrido de controlados lo comprueba contra la API real.
+
 ### H5 — La firma electrónica: el hueco declarado _(P3)_
 
 **No se construye.** §7 dice qué falta, qué no está verificado y por qué
@@ -232,8 +243,15 @@ la segunda; validar el fichero con veraPDF.
 > **Fidelidad (`fix/documentos-fidelidad`, 01-10-2026).** El autor revisó los
 > PDF reales: «no se siguió lo que definimos, más que todo la factura». DOC-103
 > a DOC-107 fijan **cómo se pinta** lo que DOC-072 a DOC-078 ya dicen; ninguno
-> añade ni quita contenido. **Solo servidor:** todos; la vista previa de
-> Administración → Identidad enseña el mismo PDF.
+> añade ni quita contenido.
+
+**Solo servidor:** DOC-025, DOC-080 a DOC-085, DOC-103 a DOC-107. Son la
+cabecera, el pie, las fuentes y el pintado del PDF, que compone el servidor; la
+pantalla entrega esos bytes (DOC-002, DOC-006) y la vista previa de
+Administración → Identidad enseña el mismo PDF. Lo que se lee en el papel
+—cabecera, línea de sede, CONFIDENCIAL, pie con «Página x de y» y verificación,
+fuentes— se comprueba sobre el PDF que la pantalla descarga en
+`clinica-web/e2e/flujos/f05-documentos.spec.ts`.
 
 ### H7 — La verificación pública del documento _(P1)_
 
@@ -274,6 +292,11 @@ diagnósticos: lleva CONFIDENCIAL y no lleva «Firma y sello del profesional»;
 sí «Atendido por» con el nombre.
 
 **Cubre:** DOC-114, DOC-115.
+
+**Solo servidor:** DOC-114, DOC-115. La leyenda y la ausencia del recuadro de
+firma están en el PDF que compone el servidor al momento; la pantalla sólo lo
+pide y lo abre (EN-220, DOC-111). Se comprueban sobre el resumen que la
+pantalla descarga en `clinica-web/e2e/flujos/f05-documentos.spec.ts`.
 
 ### H9 — «Volver a generar», dicho en simple _(P1)_
 
@@ -742,7 +765,16 @@ generar al anular un examen.» en el nuevo.
   orden: datos generales, datos del paciente, medicamento, prescriptor e
   indicaciones.
   Y DEBERÁ marcar «Fuera del CNMB» cada línea que lo esté (REQ-054), con su
-  justificación si el prescriptor la escribió.
+  justificación si el prescriptor la escribió. Sin alergias registradas
+  vigentes, «Antecedentes de alergias» DEBERÁ decir «No consta ninguna
+  registrada», como la pantalla de la receta, y **NO DEBERÁ** decir «Ninguna
+  conocida» (EN-087).
+
+  > Lo encontró la revisión clínica de `feat/f05-documentos-pantalla` sobre el
+  > PDF descargado: la pantalla decía «no consta ninguna registrada» y el papel
+  > «Ninguna conocida», que es la afirmación que sólo hace un clínico (D-A-018)
+  > y la que lee la farmacia antes de dispensar una penicilina. Imprimir «Sin
+  > alergias conocidas» cuando un clínico lo afirmó queda en D-157.
 
   > PR-110 (D-128.6): la justificación dejó de ser obligatoria y la marca dejó
   > de ser la justificación. Una línea fuera del cuadro sin justificación se
@@ -752,7 +784,16 @@ generar al anular un examen.» en el nuevo.
 - **DOC-073** — La receta DEBERÁ colocar el bloque de indicaciones al paciente
   en una **banda desprendible al pie**, separada por una **línea de corte**
   situada a una distancia **fija** del borde inferior, y esa banda DEBERÁ
-  repetir el nombre del paciente y la fecha.
+  repetir el nombre del paciente y la fecha, y llevar el recuadro «Firma y
+  sello del profesional» con su número de registro ACESS (art. 5.e.iv y v).
+
+  > **Firma, sello y registro en la banda** (revisión clínica de
+  > `feat/f05-documentos-pantalla`, 07-10-2026). El art. 5.e enumera seis datos
+  > de las indicaciones —i nombres, ii fecha, iii indicaciones con signos de
+  > alarma y recomendaciones, iv firma y sello, v registro ACESS, vi teléfono—
+  > y la banda decía sólo «Sello del profesional», sin registro: cortada, no
+  > era el 5.e. El registro va bajo el recuadro y no en la fila del paciente,
+  > donde partía el nombre y sacaba la banda de su altura. Confirmar en D-157.
 
   > **El art. 5.e lo admite y por eso es geometría, no adorno.** Si la banda
   > cae donde no se puede cortar, no es desprendible; y una banda desprendible
@@ -860,9 +901,11 @@ generar al anular un examen.» en el nuevo.
   conservación, ni la orden la de numeración (D-121).
 
   > Vectores y no imagen porque PDF/A-1b prohíbe la transparencia (DOC-023) y
-  > una imagen es la vía por la que entra. Un documento sin código —hoy la
-  > orden— **no lleva QR**: un QR que no lleva a ningún sitio sería un sello
-  > falso en pequeño.
+  > una imagen es la vía por la que entra. Un documento sin código **no lleva
+  > QR**: un QR que no lleva a ningún sitio sería un sello falso en pequeño.
+  > (La orden ya tiene código y se verifica, DOC-094: lleva el suyo. Lo vio el
+  > recorrido de `feat/f05-documentos-pantalla` sobre el PDF descargado; esta
+  > nota decía «hoy la orden» como ejemplo de documento sin código.)
   >
   > **Sin la línea de conservación** (revisión de usabilidad del autor,
   > 04-10-2026): «Copia de respaldo conservada cinco años (Res. ACESS-2023-0030,
@@ -929,6 +972,10 @@ generar al anular un examen.» en el nuevo.
   - **Añadidos por decisión de la principal el 01-10-2026** (la plantilla
     aprobada los trae): la hora de emisión o de solicitud, la historia clínica
     en la franja (DOC-104), la nota del IESS (DOC-075) y PRE/DEF (CER-027).
+  - **Cambios de contenido posteriores, cada uno con su AG:** el recuadro de la
+    banda de la receta, que pasa de «Sello del profesional» a «Firma y sello
+    del profesional» con el registro ACESS (DOC-073), y «Ninguna conocida»,
+    que pasa a «No consta ninguna registrada» (DOC-072).
 
   > Lo comprueba `document-layout.spec.ts` contra lo que imprimía `main`.
 

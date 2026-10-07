@@ -189,13 +189,14 @@ export function composePrescriptionLayout(
             : data.diagnoses.map((d) => `${d.code} · ${d.display}`).join(' | '),
       },
       {
-        // Art. 5.b.iv. «Ninguna conocida» and not an empty box: a blank says
-        // nobody asked, and this field exists precisely to record that
-        // somebody did. DOC-085: a recorded allergy is printed in red.
+        // Art. 5.b.iv. Never an empty box, and never «Ninguna conocida»: an
+        // empty list is «not known», not «none» (EN-087, D-A-018), and the
+        // pharmacy reading this line has no chart to ask. The words are the
+        // receta screen's. DOC-085: a recorded allergy is printed in red.
         label: 'Antecedentes de alergias',
         value:
           data.allergies.length === 0
-            ? 'Ninguna conocida'
+            ? 'No consta ninguna registrada'
             : data.allergies.join(', '),
         ...(data.allergies.length === 0 ? {} : { alert: true }),
       },
@@ -350,8 +351,13 @@ export function composePrescriptionLayout(
             },
         patientIndications,
         {
+          // Art. 5.e.iv and v: once torn off, the band is all the patient
+          // keeps, so it carries the prescriber's signature and seal AND the
+          // ACESS registration. Under the box and not in the identification
+          // row: a third column wrapped the name and pushed the band past its
+          // fixed height (DOC-073).
           kind: 'signature',
-          caption: 'Sello del profesional',
+          caption: `Firma y sello del profesional\nRegistro ACESS ${data.prescriber.acessRegistration ?? '—'}`,
           image: data.prescriber.seal !== null ? 'seal' : null,
         },
       ],

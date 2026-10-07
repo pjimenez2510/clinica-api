@@ -1794,10 +1794,14 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
         y += SIZE.label + 2;
       }
 
+      // DOC-070. Its whole line —descenders included— above the bottom
+      // margin: placed by the font size alone, the «g» of «Página» dipped
+      // into the 15 mm (the walk of `feat/f05-documentos-pantalla` measured
+      // it on the downloaded PDF).
       doc.text(
         `Página ${index + 1} de ${range.count}`,
         left + textWidth,
-        bottom - SIZE.label - 1,
+        bottom - doc.currentLineHeight(),
         { width: pageLabelWidth, align: 'right', lineBreak: false },
       );
 
