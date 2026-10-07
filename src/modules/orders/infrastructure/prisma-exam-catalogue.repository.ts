@@ -163,6 +163,21 @@ export class PrismaExamCatalogueRepository implements ExamCatalogueRepository {
     });
     return rows.map(toAnalyte);
   }
+
+  /** ORD-149. By frozen name, active first, retired ones included. */
+  async analytesByNames(
+    names: readonly string[],
+  ): Promise<AnalyteDefinition[]> {
+    if (names.length === 0) return [];
+    const rows = await this.prisma.analyteDefinition.findMany({
+      where: { name: { in: [...new Set(names)] } },
+      orderBy: [{ active: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
+      select: ANALYTE_SELECT,
+    });
+    const first = new Map<string, AnalyteRow>();
+    for (const row of rows) if (!first.has(row.name)) first.set(row.name, row);
+    return [...first.values()].map(toAnalyte);
+  }
 }
 
 /** Row to view, analytes in their stored position. */

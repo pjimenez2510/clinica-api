@@ -64,8 +64,14 @@ export interface NotifiedCorrection {
   earlierNotices: readonly StatedNotice[];
   /** When the correction that replaced the told version was recorded. */
   correctedAt: Date;
-  /** No notice on the standing value closes it yet. */
+  /** No notice on this value closes it yet. */
   due: boolean;
+  /**
+   * The version is the standing one. A replaced one is kept in the answer so
+   * the call made while it still stood can be recorded (ORD-062, ORD-144);
+   * only a standing one waits on the worklist.
+   */
+  standing: boolean;
 }
 
 const isCritical = (flag: AbnormalFlag | null): boolean =>
@@ -87,9 +93,9 @@ function sameReading(a: StatedResult, b: StatedResult): boolean {
 const MAX_CHAIN = 100;
 
 /**
- * ORD-143. For every STANDING result of the order that corrects a value
- * somebody was told about, what it corrects and whether the correction still
- * waits for its notice.
+ * ORD-143. For every result of the order that corrects a value somebody was
+ * told about, what it corrects and whether the correction still waits for its
+ * notice —the STANDING ones are the worklist—.
  *
  * Entered when an earlier version of the same determination has a notice
  * given —a notice to oneself included: the practitioner who noted the 25 may
@@ -107,19 +113,17 @@ export function notifiedCorrections(
   const byId = new Map(versions.map((version) => [version.id, version]));
   const found = new Map<string, NotifiedCorrection>();
 
-  for (const standing of versions) {
-    if (standing.supersededById !== null || standing.supersedesId === null) {
-      continue;
-    }
+  for (const version of versions) {
+    if (version.supersedesId === null) continue;
     // The versions it replaced, newest first.
     const earlier: StatedVersion[] = [];
-    let next = byId.get(standing.supersedesId);
+    let next = byId.get(version.supersedesId);
     while (next && earlier.length < MAX_CHAIN) {
       earlier.push(next);
       next = next.supersedesId ? byId.get(next.supersedesId) : undefined;
     }
 
-    for (const result of standing.results) {
+    for (const result of version.results) {
       if (isCritical(result.abnormalFlag)) continue;
       const before = earlier.flatMap((version) => {
         const same = version.results.find(
@@ -153,6 +157,7 @@ export function notifiedCorrections(
         // only keeps a corrupt chain from printing a blank.
         correctedAt: told.version.supersededRecordedAt ?? result.observedAt,
         due: !closed,
+        standing: version.supersededById === null,
       });
     }
   }

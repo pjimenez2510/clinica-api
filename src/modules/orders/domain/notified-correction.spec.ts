@@ -71,8 +71,9 @@ describe('la corrección de un valor avisado', () => {
       earlierNotices: [told],
       correctedAt: minutesAgo(60),
       due: true,
+      standing: true,
     });
-    // Sólo la versión vigente: la sustituida no entra.
+    // La versión que avisó no corrige nada.
     expect(found.has('a')).toBe(false);
   });
 
@@ -99,7 +100,7 @@ describe('la corrección de un valor avisado', () => {
         [glucose('c', 95)],
       ),
     );
-    expect(found.size).toBe(0);
+    expect(found.has('c')).toBe(false);
     // Control positivo: si cambia la unidad, sí.
     const unit = notifiedCorrections(
       chain(
@@ -162,6 +163,10 @@ describe('la corrección de un valor avisado', () => {
       ),
     );
     expect(found.get('c')?.told.valueNumeric).toBe(25);
+    // El 95, ya sustituido, también corrige el 25: la llamada hecha mientras
+    // estaba vigente se puede anotar (ORD-144); sólo el 97 espera en la cola.
+    expect(found.get('b')?.standing).toBe(false);
+    expect(found.get('c')?.standing).toBe(true);
     // El 25 dejó de ser cierto con la primera corrección.
     expect(found.get('c')?.correctedAt).toEqual(minutesAgo(60));
   });

@@ -80,6 +80,14 @@ export interface ExamCatalogueRepository {
    * one is unknown.
    */
   analytesByIds(ids: readonly string[]): Promise<AnalyteDefinition[]>;
+
+  /**
+   * ORD-149. The analytes named, by the name a stored result froze, retired
+   * ones included: a report that carries one must stay correctable. Of two
+   * with the same name —only one can be active— the active one, else the
+   * last one changed.
+   */
+  analytesByNames(names: readonly string[]): Promise<AnalyteDefinition[]>;
 }
 
 /** Injection token. The application never names the adapter. */

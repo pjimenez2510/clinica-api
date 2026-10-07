@@ -26,7 +26,9 @@ import type { Permission } from '../../shared/authorisation/permission.catalogue
 
 import { DiagnosticReportService } from './application/diagnostic-report.service';
 import type { Requester } from './application/service-order.service';
+import type { NotifiedCorrection } from './domain/notified-correction';
 import type {
+  CorrectionWorklistEntry,
   CriticalNoticeView,
   CriticalWorklistEntry,
   DiagnosticReportView,
@@ -34,6 +36,8 @@ import type {
   UnmatchedWorklistEntry,
 } from './domain/diagnostic-report.repository';
 import {
+  CorrectionAnalyteListDto,
+  CorrectionResultListDto,
   CorrectReportDto,
   CriticalNoticeDto,
   CriticalNoticeVersionListDto,
@@ -46,6 +50,8 @@ import {
   RecordNoticeDto,
   RegisterReportDto,
   WorklistQueryDto,
+  type CorrectionAnalyteListResponse,
+  type CorrectionResultListResponse,
   type CriticalNoticeResponse,
   type CriticalNoticeVersionListResponse,
   type DiagnosticReportListResponse,
@@ -199,6 +205,28 @@ export class DiagnosticReportController {
   }
 
   /**
+   * ORD-143 (D-115). Corrections of values somebody was told about that wait
+   * for the notice of the correction. Never cut, like the critical list.
+   *
+   * ⚠️ DECLARED BEFORE THE PARAMETERISED ROUTES: Express matches in
+   * registration order.
+   */
+  @Get('results/corrections')
+  @RequirePermission('record:read', 'query')
+  @ApiOperation({
+    summary: 'Listar las correcciones de valores avisados pendientes de avisar',
+  })
+  @ApiOkResponse({ type: CorrectionResultListDto })
+  async corrections(
+    @Req() req: Request,
+  ): Promise<CorrectionResultListResponse> {
+    const items = await this.reports.corrections(
+      this.requester(req, 'record:read'),
+    );
+    return { items: items.map(toCorrectionEntryResponse) };
+  }
+
+  /**
    * ORD-062. Records that somebody was told of a critical value, which takes
    * it off the list above.
    *
@@ -231,6 +259,7 @@ export class DiagnosticReportController {
         channel: dto.channel,
         notifiedAt: dto.notifiedAt === undefined ? undefined : new Date(dto.notifiedAt), // prettier-ignore
         note: dto.note,
+        callerName: dto.callerName,
       },
       this.requester(req, 'result:write'),
       new Date(),
@@ -269,6 +298,7 @@ export class DiagnosticReportController {
         channel: dto.channel,
         notifiedAt: dto.notifiedAt === undefined ? undefined : new Date(dto.notifiedAt), // prettier-ignore
         note: dto.note,
+        callerName: dto.callerName,
       },
       this.requester(req, 'result:write'),
       new Date(),
@@ -334,6 +364,43 @@ export class DiagnosticReportController {
       this.requester(req, 'result:write'),
     );
     return toReportResponse(report);
+  }
+
+  /**
+   * ORD-149 (D-116 f). The determinations a correction of this report admits,
+   * retired ones included: what the dialog offers when correcting.
+   */
+  @Get('reports/:reportId/analytes')
+  @RequirePermission('record:read', 'query')
+  @ApiOperation({
+    summary:
+      'Listar las determinaciones que admite la corrección de un informe',
+  })
+  @ApiOkResponse({ type: CorrectionAnalyteListDto })
+  async correctionAnalytes(
+    @Param('reportId', ParseUUIDPipe) reportId: string,
+    @Req() req: Request,
+  ): Promise<CorrectionAnalyteListResponse> {
+    const items = await this.reports.correctionAnalytes(
+      reportId,
+      this.requester(req, 'record:read'),
+    );
+    return {
+      items: items.map((entry) => ({
+        id: entry.analyte.id,
+        code: entry.analyte.code,
+        name: entry.analyte.name,
+        unit: entry.analyte.unit,
+        valueType: entry.analyte.valueType,
+        decimals: entry.analyte.decimals,
+        allowedValues: entry.analyte.allowedValues
+          ? [...entry.analyte.allowedValues]
+          : null,
+        position: entry.position,
+        isReflex: entry.isReflex,
+        examName: entry.examName,
+      })),
+    };
   }
 
   /** ORD-030 to ORD-042. Registers what came back against an order. */
@@ -445,7 +512,59 @@ function toReportResponse(
       abnormalFlag: result.abnormalFlag,
       observedAt: result.observedAt.toISOString(),
       notices: result.notices.map(toNoticeResponse),
+      correction:
+        result.correction === null ? null : toCorrectionResponse(result.correction), // prettier-ignore
     })),
+  };
+}
+
+/** ORD-143. What a standing value corrects, instants as ISO 8601. */
+function toCorrectionResponse(
+  correction: NotifiedCorrection,
+): NonNullable<DiagnosticReportResponse['results'][number]['correction']> {
+  return {
+    told: toToldResponse(correction.told),
+    earlierNotices: correction.earlierNotices.map(toEarlierNoticeResponse),
+    correctedAt: correction.correctedAt.toISOString(),
+    due: correction.due,
+  };
+}
+
+function toToldResponse(told: NotifiedCorrection['told']) {
+  return { ...told, observedAt: told.observedAt.toISOString() };
+}
+
+function toEarlierNoticeResponse(
+  notice: NotifiedCorrection['earlierNotices'][number],
+) {
+  return {
+    recipientKind: notice.recipientKind as CriticalNoticeView['recipientKind'],
+    recipientName: notice.recipientName,
+    notifiedAt: notice.notifiedAt.toISOString(),
+    selfNotice: notice.selfNotice,
+  };
+}
+
+/** ORD-143. One correction waiting for its notice. */
+function toCorrectionEntryResponse(
+  entry: CorrectionWorklistEntry,
+): CorrectionResultListResponse['items'][number] {
+  return {
+    resultId: entry.resultId,
+    reportId: entry.reportId,
+    orderId: entry.orderId,
+    siteId: entry.siteId,
+    patientId: entry.patientId,
+    analyteDisplay: entry.analyteDisplay,
+    valueNumeric: entry.valueNumeric,
+    valueCode: entry.valueCode,
+    valueText: entry.valueText,
+    unit: entry.unit,
+    abnormalFlag: entry.abnormalFlag,
+    told: toToldResponse(entry.told),
+    earlierNotices: entry.earlierNotices.map(toEarlierNoticeResponse),
+    correctedAt: entry.correctedAt.toISOString(),
+    orderedBy: entry.orderedBy,
   };
 }
 
@@ -464,6 +583,8 @@ function toNoticeResponse(notice: CriticalNoticeView): CriticalNoticeResponse {
     readBackConfirmed: notice.readBackConfirmed,
     afterHours: notice.afterHours,
     selfNotice: notice.selfNotice,
+    namesOrderingPractitioner: notice.namesOrderingPractitioner,
+    callerName: notice.callerName,
     editedBy: notice.editedBy,
     editedAt: notice.editedAt?.toISOString() ?? null,
   };
@@ -502,6 +623,7 @@ function toCriticalResponse(
     orderedBy: entry.orderedBy,
     noAnswerAttempts: entry.noAnswerAttempts,
     previouslyNotified: entry.previouslyNotified,
+    selfNoticed: entry.selfNoticed,
     afterHours: entry.afterHours,
     noticeTarget: entry.noticeTarget,
     escalationMissing: entry.escalationMissing,

@@ -170,6 +170,13 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
   sitesInHours(): Promise<ReadonlySet<string>> {
     return Promise.resolve(new Set<string>());
   }
+  // ORD-143, ORD-147: against the database, in `orders-notified-correction.spec.ts`.
+  notifiedCorrectionOrders(): Promise<never[]> {
+    return Promise.resolve([]);
+  }
+  accountName(): Promise<string | undefined> {
+    return Promise.resolve(undefined);
+  }
 
   /** ORD-043. The orphan result the queue is showing, or nothing. */
   orphan: MatchableResult | undefined = {
@@ -183,6 +190,7 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
     superseded: false,
     supersededAt: null,
     orderedByUserId: 'user-ordering',
+    orderedByName: 'Juan Pérez',
   };
   matched: { command: MatchResultCommand; expected: ExpectedAnalytes }[] = [];
 
@@ -421,7 +429,7 @@ describe('el registro y la corrección de un resultado', () => {
         { ...examBh, analytes: [{ analyte: HAEMOGLOBIN, position: 1, isReflex: false }, { analyte: GLUCOSE, position: 2, isReflex: false }] }, // prettier-ignore
       ]);
     // El original se marcó con un crítico alto de 350; hoy el catálogo dice 400.
-    const glucose = { id: '1', orderItemId: ITEM_BH, analyteConceptId: null, analyteDisplay: GLUCOSE.name, valueNumeric: 380, valueText: null, valueCode: null, unit: 'mg/dL', referenceLow: 70, referenceHigh: 100, referenceText: null, criticalLow: 40, criticalHigh: 350, abnormalFlag: 'CRITICAL_HIGH' as const, observedAt: new Date(), notices: [] }; // prettier-ignore
+    const glucose = { id: '1', orderItemId: ITEM_BH, analyteConceptId: null, analyteDisplay: GLUCOSE.name, valueNumeric: 380, valueText: null, valueCode: null, unit: 'mg/dL', referenceLow: 70, referenceHigh: 100, referenceText: null, criticalLow: 40, criticalHigh: 350, abnormalFlag: 'CRITICAL_HIGH' as const, observedAt: new Date(), notices: [], correction: null }; // prettier-ignore
     reports.existing.set('report-0', { ...aReport(), results: [glucose] });
 
     await service.correct(
@@ -447,7 +455,7 @@ describe('el registro y la corrección de un resultado', () => {
         { ...examBh, analytes: [{ analyte: HAEMOGLOBIN, position: 1, isReflex: false }, { analyte: GLUCOSE, position: 2, isReflex: false }] }, // prettier-ignore
       ]);
     // El original sólo traía la hemoglobina, sin crítico.
-    const haemoglobin = { id: '1', orderItemId: ITEM_BH, analyteConceptId: null, analyteDisplay: HAEMOGLOBIN.name, valueNumeric: 13, valueText: null, valueCode: null, unit: 'g/dL', referenceLow: 12, referenceHigh: 15.5, referenceText: null, criticalLow: null, criticalHigh: null, abnormalFlag: 'NORMAL' as const, observedAt: new Date(), notices: [] }; // prettier-ignore
+    const haemoglobin = { id: '1', orderItemId: ITEM_BH, analyteConceptId: null, analyteDisplay: HAEMOGLOBIN.name, valueNumeric: 13, valueText: null, valueCode: null, unit: 'g/dL', referenceLow: 12, referenceHigh: 15.5, referenceText: null, criticalLow: null, criticalHigh: null, abnormalFlag: 'NORMAL' as const, observedAt: new Date(), notices: [], correction: null }; // prettier-ignore
     reports.existing.set('report-0', { ...aReport(), results: [haemoglobin] });
 
     await service.correct(
@@ -589,6 +597,7 @@ describe('el registro y la corrección de un resultado', () => {
       superseded: false,
       supersededAt: null,
       orderedByUserId: 'user-ordering',
+      orderedByName: 'Juan Pérez',
     };
 
     await expect(

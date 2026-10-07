@@ -201,6 +201,52 @@ describe('los resultados por HTTP', () => {
     ).toBe(1);
   });
 
+  it('ORD-143 ORD-144 ORD-148 por HTTP: la corrección de un valor avisado sale en su cola y en el informe, admite su aviso con quién llamó, y un nombre vacío se rechaza', async () => {
+    const resultId = await criticalGlucose();
+    const notice = {
+      outcome: 'NOTIFIED',
+      readBack: true,
+      recipientKind: 'PATIENT',
+      recipientName: 'La paciente',
+      channel: 'PHONE',
+    };
+    // ORD-148: un nombre vacío de quien llamó no entra.
+    const blank = await post(`/orders/results/${resultId}/notices`, { ...notice, callerName: '   ' }); // prettier-ignore
+    expect(blank.status).toBe(422);
+    expect((blank.body as Problem).errors?.[0]?.field).toBe('callerName');
+    expect(await prisma.criticalResultNotice.count()).toBe(0);
+    const told = await post(`/orders/results/${resultId}/notices`, {
+      ...notice,
+      callerName: 'Lcda. Rosa Pilco',
+      notifiedAt: new Date(Date.now() - 30 * 60_000).toISOString(),
+    }).expect(201);
+    expect((told.body as { callerName: string }).callerName).toBe('Lcda. Rosa Pilco'); // prettier-ignore
+
+    // Control positivo: sin corrección, la cola está vacía.
+    expect((await get('/orders/results/corrections').expect(200)).body).toEqual({ items: [] }); // prettier-ignore
+
+    const reports = await get(`/orders/${orderId}/reports`).expect(200);
+    const reportId = (reports.body as { items: { id: string }[] }).items[0]!.id;
+    const offered = await get(`/orders/reports/${reportId}/analytes`).expect(200); // prettier-ignore
+    expect((offered.body as { items: { id: string }[] }).items.map((a) => a.id)).toEqual([glucoseAnalyteId]); // prettier-ignore
+    const corrected = await post(`/orders/reports/${reportId}/correct`, {
+      issuedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+      results: [{ analyteDefinitionId: glucoseAnalyteId, valueNumeric: 95 }],
+    }).expect(201);
+    const standing = (corrected.body as { results: { id: string }[] }).results[0]!.id; // prettier-ignore
+
+    const queue = await get('/orders/results/corrections').expect(200);
+    expect(queue.body).toMatchObject({
+      items: [{ resultId: standing, valueNumeric: 95, told: { valueNumeric: 25 }, earlierNotices: [{ recipientKind: 'PATIENT' }] }], // prettier-ignore
+    });
+    const read = await get(`/orders/${orderId}/reports`).expect(200);
+    const current = (read.body as { items: { supersededById: string | null; results: { correction: { due: boolean } | null }[] }[] }).items.find((r) => r.supersededById === null); // prettier-ignore
+    expect(current?.results[0]?.correction?.due).toBe(true);
+
+    await post(`/orders/results/${standing}/notices`, notice).expect(201);
+    expect((await get('/orders/results/corrections').expect(200)).body).toEqual({ items: [] }); // prettier-ignore
+  });
+
   it('ORD-066 un aviso sin read-back responde 422 nombrando el campo', async () => {
     const resultId = await criticalGlucose();
 
