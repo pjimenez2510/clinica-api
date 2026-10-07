@@ -1332,8 +1332,9 @@ expone lo que hace falta._
   listas de estupefacientes y psicotrópicos (D-148), para que PR-070 siga
   sin componer su receta.
   > El cuadro no marca los controlados. Mientras un farmacéutico no confirme
-  > la lista (D-148), se marcan los de las convenciones de 1961 y 1971: el
-  > lado seguro, porque marcar de más sólo manda al talonario de la ACESS.
+  > la lista (D-148), se marcan los de las convenciones de 1961 y 1971 y,
+  > además, los dudosos —tramadol, tapentadol, tiopental, hidrato de cloral—:
+  > el lado seguro, porque marcar de más sólo manda al talonario de la ACESS.
 
 ---
 

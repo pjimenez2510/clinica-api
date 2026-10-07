@@ -70,8 +70,9 @@ const HEADER = [
  *
  * ⚠️ PENDING A PHARMACIST (D-148). On the safe side: marking one too many
  * sends it to the ACESS pad; marking one too few prints a receta the law does
- * not accept. Tramadol, tapentadol, tiopental and hidrato de cloral are not on
- * the international lists and are left unmarked, as questions in D-148.
+ * not accept. So tramadol, tapentadol, tiopental and hidrato de cloral —not on
+ * the international lists, and whether Ecuador controls them is D-148.2— are
+ * marked too until the pharmacist says otherwise.
  */
 export const CONTROLLED_CODES: ReadonlySet<string> = new Set([
   'N01AH01', // fentanilo — 1961, I
@@ -89,6 +90,11 @@ export const CONTROLLED_CODES: ReadonlySet<string> = new Set([
   'N05BA09', // clobazam — 1971, IV
   'N05BA12', // alprazolam — 1971, IV
   'N05CD08', // midazolam — 1971, IV
+  // D-148.2: not international; marked until a pharmacist rules.
+  'N02AX02', // tramadol
+  'N02AX06', // tapentadol
+  'N01AF03', // tiopental sódico
+  'N05CC01', // hidrato de cloral
 ]);
 
 /**

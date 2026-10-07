@@ -496,8 +496,14 @@ describe('el servicio de recetas', () => {
       ]),
     });
 
+    // The refusal names the allergy by its id, so the screen can offer to
+    // refute it even when its concept is not the line's (PR-112).
     await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
       code: 'ALLERGY_CONTRAINDICATION',
+      fieldErrors: expect.arrayContaining([
+        expect.objectContaining({ field: 'items.0.conceptId' }),
+        expect.objectContaining({ field: 'allergies.allergy-1' }),
+      ]),
     });
   });
 

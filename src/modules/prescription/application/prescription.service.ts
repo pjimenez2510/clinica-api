@@ -389,11 +389,7 @@ export class PrescriptionService {
           snapshot.substanceKeys,
         );
         if (alerts.length > 0) {
-          throw new AllergyContraindicationError(
-            [...new Set(alerts.map((alert) => alert.line))].sort(
-              (a, b) => a - b,
-            ),
-          );
+          throw new AllergyContraindicationError(alerts);
         }
 
         return { issuedAt: now, verificationCode };

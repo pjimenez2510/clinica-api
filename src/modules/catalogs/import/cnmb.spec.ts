@@ -67,7 +67,9 @@ describe('the CNMB 2026 (PR-114 to PR-116)', () => {
 
     expect(new Set(controlled)).toEqual(CONTROLLED_CODES);
     expect(medicines.find((m) => m.code === 'N02AA01')?.controlled).toBe(true);
-    expect(medicines.find((m) => m.code === 'N02AX02')?.controlled).toBe(false);
+    // D-148.2: tramadol is marked until a pharmacist rules; paracetamol is not.
+    expect(medicines.find((m) => m.code === 'N02AX02')?.controlled).toBe(true);
+    expect(medicines.find((m) => m.code === 'N02BE01')?.controlled).toBe(false);
   });
 
   it('PR-114: every development code has a successor that exists in the cuadro', () => {
