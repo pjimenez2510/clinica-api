@@ -58,4 +58,11 @@ describe('allergyHistoryOf', () => {
       allergyHistoryOf([], { assertedByName: 'Ana Pérez', assertedAt }),
     ).toBe(`Sin alergias conocidas (Ana Pérez, ${printed(day)})`);
   });
+
+  it('PR-117 sin nombre de quien lo afirmó no dice «sin alergias»', () => {
+    const assertedAt = atWallClock(today(), WallClockTime.of(9, 0));
+    expect(allergyHistoryOf([], { assertedByName: '  ', assertedAt })).toBe(
+      ALLERGIES_NOT_RECORDED,
+    );
+  });
 });

@@ -41,6 +41,17 @@ export async function findStandingAllergyAbsence(
   db: Prisma.TransactionClient,
   chartId: string,
 ): Promise<StandingAbsenceRow | null> {
+  // A chart that has since been ABSORBED is not the chart any more: its
+  // survivor may hold an allergy that `chartScope` (which reads down, never
+  // up) cannot see from here. A receta issued on the duplicate before the
+  // merge would otherwise print «sin alergias conocidas» of a patient whose
+  // penicillin is on the surviving chart. «No se preguntó» is the safe answer.
+  const chart = await db.patient.findUnique({
+    where: { id: chartId },
+    select: { mergedIntoId: true },
+  });
+  if (chart === null || chart.mergedIntoId !== null) return null;
+
   const assertion = await db.patientAllergyAbsence.findFirst({
     where: { ...chartScope(chartId) },
     select: { ...STANDING_ABSENCE_SELECT, retractedAt: true },
@@ -93,6 +104,13 @@ export function asserterNameOf(row: StandingAbsenceRow): string {
   return `${row.assertedBy.firstName} ${row.assertedBy.lastName}`.trim();
 }
 
+/** PR-117, DOC-116. The row as the receta's sentence reads it. */
+export function toStandingAllergyAbsence(
+  row: StandingAbsenceRow,
+): StandingAllergyAbsence {
+  return { assertedByName: asserterNameOf(row), assertedAt: row.assertedAt };
+}
+
 /** EN-087, PR-117. `AllergyAbsenceReader` over PostgreSQL. */
 @Injectable()
 export class PrismaAllergyAbsenceReader implements AllergyAbsenceReader {
@@ -102,8 +120,6 @@ export class PrismaAllergyAbsenceReader implements AllergyAbsenceReader {
     chartId: string,
   ): Promise<StandingAllergyAbsence | null> {
     const row = await findStandingAllergyAbsence(this.prisma, chartId);
-    return row === null
-      ? null
-      : { assertedByName: asserterNameOf(row), assertedAt: row.assertedAt };
+    return row === null ? null : toStandingAllergyAbsence(row);
   }
 }

@@ -159,4 +159,34 @@ describe('DOC-116 la receta impresa y el «sin alergias conocidas»', () => {
       (await printed(prisma, prescription.id)).noKnownAllergies,
     ).toBeNull();
   });
+
+  it('DOC-116 una receta de la ficha que después se ABSORBIÓ no imprime la afirmación de esa ficha: la superviviente puede tener una alergia', async () => {
+    const prisma = db();
+    const { patient: duplicate, prescription } = await aReceta(prisma);
+    const clinician = await createUser(prisma);
+    await prisma.patientAllergyAbsence.create({
+      data: { patientId: duplicate.id, assertedById: clinician.id },
+    });
+    // Positive control: before the merge it stands and is printed.
+    expect(
+      (await printed(prisma, prescription.id)).noKnownAllergies,
+    ).not.toBeNull();
+
+    const survivor = await createPatient(prisma);
+    await prisma.patientAllergy.create({
+      data: {
+        patientId: survivor.id,
+        recordedById: clinician.id,
+        substanceText: 'Penicilina',
+        criticality: 'HIGH',
+      },
+    });
+    await prisma.patient.update({
+      where: { id: duplicate.id },
+      data: { mergedIntoId: survivor.id, mergedAt: new Date() },
+    });
+    expect(
+      (await printed(prisma, prescription.id)).noKnownAllergies,
+    ).toBeNull();
+  });
 });

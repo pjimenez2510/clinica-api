@@ -9,8 +9,10 @@ import type { StandingAllergyAbsence } from './allergy-history';
  * get the SAME answer as the attention's band. The rule is not obvious —
  * retracted, or superseded by an allergy recorded after it or active now, on
  * the chart or on one it absorbed (`standingAbsenceFor`, D-A-018, EN-224,
- * EN-226) — so it is one statement in `shared/infrastructure/clinical`, read
- * by every caller.
+ * EN-226) — so it is one statement in `shared/infrastructure/clinical`,
+ * `findStandingAllergyAbsence`. This port is how `prescription` reaches it;
+ * `encounter` and the `documents` reader, which already hold a Prisma
+ * client, call the function itself.
  *
  * Separate from `ActiveAllergyReader` because it answers a different
  * question: an absence changes nothing a prescription CHECKS, only what the

@@ -14,8 +14,8 @@ import {
 import { FORM_002_BUILT_IN_SECTIONS } from '../../../shared/clinical/form-002';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
-  asserterNameOf,
   findStandingAllergyAbsence,
+  toStandingAllergyAbsence,
 } from '../../../shared/infrastructure/clinical/standing-allergy-absence';
 import type { SiteScopeFilter } from '../domain/document-kind';
 import type {
@@ -811,9 +811,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         ? await findStandingAllergyAbsence(this.prisma, row.encounter.patientId)
         : null;
     const noKnownAllergies =
-      standing === null
-        ? null
-        : { assertedByName: asserterNameOf(standing), assertedAt: standing.assertedAt }; // prettier-ignore
+      standing === null ? null : toStandingAllergyAbsence(standing);
 
     return {
       kind: 'PRESCRIPTION',

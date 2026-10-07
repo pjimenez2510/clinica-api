@@ -598,6 +598,12 @@ documento existe y es lo único que la ACESS puede inspeccionar.
   > lo que hace con «pregunte al paciente» es preguntar. La afirmación sólo se
   > imprime con nombre y fecha porque es un acto de un clínico, nunca una
   > posición por defecto del sistema.
+  >
+  > La frase se lee al pedir el documento, y el PDF se guarda al emitirse
+  > (DOC-002): pantalla y papel coinciden en ese instante. Qué dice después
+  > la pantalla de una receta emitida, en D-169.1. Una atención de una ficha
+  > que después se absorbió no imprime la afirmación (la superviviente puede
+  > tener una alergia que esa ficha no ve): dice «No registradas».
 
 ### 2.3 Datos del medicamento (art. 5.c)
 
@@ -1535,7 +1541,7 @@ prueba o el CI falla**.
 | PR-111 | Interfaz: elegir «Dosis única» vacía y oculta la duración; un borrador antiguo reabierto con «Dosis única» no la trae |
 | PR-112 | Interfaz (`clinica-web`): el rechazo por alergia ofrece «Descartar esta alergia» a quien tiene `record:write`; al descartarla **no** se vuelve a emitir y el aviso no trae «Deshacer»; el diálogo muestra criticidad y reacción, exige motivo con criticidad alta y guarda «Descartada al emitir una receta». Sin el permiso queda el enlace. La exigencia de motivo de la API, en la integración de EN-224 |
 | PR-113 | Interfaz (`clinica-web`): emitir con una línea del CNMB marcada pide la confirmación que nombra la línea y no emite hasta confirmarla; sin concepto o en una presentación declarada se emite sin preguntar |
-| PR-117 | Unitaria de la frase (las tres ramas, la fecha en `America/Guayaquil` a las 21:00) y del documento; **integración contra PostgreSQL real** del documento por HTTP: sin nada, con la afirmación, con la afirmación retirada y con una alergia registrada después (control positivo), y la afirmación hecha sobre una ficha absorbida. Interfaz: la pantalla pinta `allergyHistory` tal cual |
+| PR-117 | Unitaria de la frase (las tres ramas, la fecha en `America/Guayaquil` a las 21:00) y del documento; **integración contra PostgreSQL real** del documento por el servicio: sin nada, la afirmación hecha sobre una ficha absorbida (control positivo), superada por una alergia registrada después aunque se refute, y otra retirada. La receta de una ficha que después se absorbió, en la de DOC-116. Interfaz: la pantalla pinta `allergyHistory` tal cual |
 | PR-100, PR-104 | **Integración contra PostgreSQL real**, con control positivo: reescribir un borrador conserva su id y sustituye las líneas; las de una emitida no se tocan ni desde la base; otra presentación de un concepto que declara las suyas se compone sin justificación y sale marcada (PR-110) |
 | PR-062 | **Integración contra PostgreSQL real, con una fusión de fichas de por medio.** Es el único nivel que puede demostrarlo: depende de que el enlace se recorra en la base, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo recorriendo el AST |
 | PR-050 | **Unitario con el huso alterado**, como `clinical-date-timezone.spec.ts`: la misma emisión bajo `UTC` y bajo `Asia/Tokyo` da la misma fecha límite. Es el defecto real que originó REQ-160 |

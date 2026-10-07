@@ -46,7 +46,11 @@ export function allergyHistoryOf(
   timeZone: string = CLINIC_TIME_ZONE,
 ): string {
   if (allergies.length > 0) return allergies.join(', ');
-  if (absence === null) return ALLERGIES_NOT_RECORDED;
+  // PR-117: never «sin alergias» without WHO said it. A nameless account
+  // falls to the safe sentence.
+  if (absence === null || absence.assertedByName.trim() === '') {
+    return ALLERGIES_NOT_RECORDED;
+  }
   const [year, month, day] = clinicalDateOf(absence.assertedAt, timeZone).split(
     '-',
   );

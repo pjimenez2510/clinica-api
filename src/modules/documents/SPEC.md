@@ -821,6 +821,8 @@ descarga en `clinica-web/e2e/flujos/f05-documentos.spec.ts`.
   > tiene la historia a mano: lo que necesita saber es si alguien preguntó.
   > La regla de vigencia es la de la banda de la atención, leída por la misma
   > sentencia, para que pantalla, banda y papel no puedan discrepar.
+  > Coinciden en el instante en que se emite el PDF, que después no cambia
+  > (DOC-006); lo que pasa si la ficha cambia después, en D-169.1.
 
 - **DOC-073** — La receta DEBERÁ colocar el bloque de indicaciones al paciente
   en una **banda desprendible al pie**, separada por una **línea de corte**
@@ -1343,7 +1345,7 @@ Por qué no se construye hoy:
 | DOC-001, DOC-002, DOC-006, DOC-007, DOC-012, DOC-014 | Integración por HTTP: es donde el alcance de sedes y el permiso son reales |
 | DOC-108, DOC-109 | **Integración por HTTP** (`documents-http.spec.ts`): corregir sin motivo y con él; anular una receta, un certificado y un examen, y corregir una receta, archivan el que sustituye al vigente con su marca y su motivo; sin PDF previo no se archiva nada (control positivo); un fallo forzado de la base al archivar no impide la anulación, y «Corregir…» lo archiva después; cada respuesta lleva `documentArchived` (`true`, `false` con el fallo forzado, `null` sin PDF). Unitario: el motivo de cada causa, el vigente que se sustituye, el puerto que nunca lanza y responde `true`, `false` o `null`, el registro del fallo que sobrevive a la poda sin el mensaje, y que cada servicio lo llama tras anular o corregir y propaga la respuesta |
 | DOC-020 a DOC-025, DOC-070 a DOC-085 | Unitarias sobre los bytes generados: el PDF se inspecciona, no se cree; y veraPDF (`pnpm pdfa:check`) al cerrar |
-| DOC-116 | Unitaria del layout (las tres frases, ninguna en rojo salvo las alergias) e **integración contra PostgreSQL real** del lector: la afirmación en pie, retirada, superada por una alergia posterior y hecha sobre una ficha absorbida |
+| DOC-116 | Unitaria del layout (las tres frases, ninguna en rojo salvo las alergias) e **integración contra PostgreSQL real** del lector: la afirmación en pie, retirada, superada por una alergia posterior, hecha sobre una ficha absorbida, y la receta de una ficha que después se absorbió (no se imprime) |
 | DOC-038, DOC-039, DOC-061, DOC-094 a DOC-096 | Integración por HTTP: permiso, transacción y cuerpo de la respuesta reales |
 | DOC-050 a DOC-056 | Unitarias sobre el normalizador de imagen, con ficheros sintéticos |
 | DOC-013, DOC-079, DOC-100 | **Sin prueba, porque no hay código.** Están declarados y no construidos, y el `Estado: borrador` de este documento es lo que lo hace legítimo |

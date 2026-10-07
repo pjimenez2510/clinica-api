@@ -330,7 +330,7 @@ describe('DOC-072 la receta lleva los cinco bloques del art. 5', () => {
         template,
       ),
     );
-    expect(text).toContain('Sin alergias conocidas (Rosa Cedeño, 20/08/2026)');
+    expect(text).toContain('Sin alergias conocidas (Rosa Cedeño, 20/08/2026)'); // fecha-fija: oráculo del huso sobre el issuedAt de la fixture
     expect(text).not.toContain('No registradas');
     // Control: with an allergy the assertion is not printed.
     const withOne = wholeText(

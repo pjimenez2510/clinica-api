@@ -1632,6 +1632,25 @@ describe('la receta contra PostgreSQL', () => {
       },
     });
     expect(await history()).toBe('No registradas: pregunte al paciente');
+
+    // EN-226: asserted again and then withdrawn — the older one does not
+    // come back behind it.
+    const again = await prisma.patientAllergyAbsence.create({
+      data: {
+        patientId: patient.id,
+        assertedById: clinician.id,
+        assertedAt: new Date(later.getTime() + 2000),
+      },
+    });
+    expect(await history()).toContain('Sin alergias conocidas (Lucía Andrade');
+    await prisma.patientAllergyAbsence.update({
+      where: { id: again.id },
+      data: {
+        retractedById: clinician.id,
+        retractedAt: new Date(again.assertedAt.getTime() + 1000),
+      },
+    });
+    expect(await history()).toBe('No registradas: pregunte al paciente');
   });
 
   it('PR-006 no sirve el documento de una receta de otra sede', async () => {
