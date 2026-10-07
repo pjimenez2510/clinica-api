@@ -337,6 +337,15 @@ async function setDurationExceptions(prisma: PrismaClient): Promise<number> {
     const specialtyId = await specialtyIdOf(prisma, exception.specialtyCode);
     if (!specialtyId) continue;
 
+    // A base seeded before D-161.2 keeps medico@ in cardiología
+    // (`assignPrimarySpecialties` never moves a specialty already there): an
+    // exception on a specialty the practitioner does not practise is a row
+    // that means nothing.
+    const practises = await prisma.practitionerSpecialty.count({
+      where: { practitionerId, specialtyId },
+    });
+    if (practises === 0) continue;
+
     const serviceType = await prisma.serviceType.findFirst({
       where: {
         specialtyId,

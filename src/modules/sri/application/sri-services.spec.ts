@@ -760,7 +760,10 @@ describe('SRI-091 el correo que tres días después sigue fallando', () => {
   const HOUR = 3_600_000;
 
   /** A voucher authorised `hoursAgo` before NOW, whose e-mail always fails. */
-  function failingFor(hoursAgo: number, deliveryStatus: 'FAILED' | null) {
+  function failingFor(
+    hoursAgo: number,
+    deliveryStatus: 'FAILED' | 'UNDELIVERABLE' | null,
+  ) {
     const f = fakes();
     f.vouchers.findById.mockResolvedValue(
       voucher({
@@ -837,15 +840,7 @@ describe('SRI-091 el correo que tres días después sigue fallando', () => {
   });
 
   it('SRI-091 un DELIVER sobre uno que ya no se pudo enviar no lo vuelve a intentar', async () => {
-    const { f, mailer, dispatch } = failingFor(80, null);
-    f.vouchers.findById.mockResolvedValue(
-      voucher({
-        status: 'AUTHORISED',
-        authorisedXml: '<autorizacion/>',
-        authorisedAt: new Date(NOW.getTime() - 80 * HOUR),
-        deliveryStatus: 'UNDELIVERABLE',
-      }),
-    );
+    const { f, mailer, dispatch } = failingFor(80, 'UNDELIVERABLE');
     await dispatch.run('DELIVER', 'voucher-1');
 
     expect(mailer.send).not.toHaveBeenCalled();

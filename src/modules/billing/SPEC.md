@@ -2373,7 +2373,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | BI-184 | Unitario de la pantalla (qué se ofrece) + recorrido F-06: facturar, añadir, facturar lo pendiente y cerrar |
 | BI-185 a BI-187 | Unitario de dominio + integración contra PostgreSQL real: la referencia `NOT NULL`, la clase conocida y el `RESTRICT` los garantiza la base |
 | BI-188, BI-189 | Integración contra la siembra real + contrato HTTP |
-| BI-232 | Integración contra la siembra real: las especialidades sembradas y la facturación sembrada, en los dos órdenes; unitaria que contrasta la lista de la semilla con la de especialidades |
+| BI-232 | Integración contra la siembra real: las especialidades sembradas y la facturación sembrada, en los dos órdenes, contra las 22 especialidades reales del catálogo |
 
 ## Preguntas abiertas
 

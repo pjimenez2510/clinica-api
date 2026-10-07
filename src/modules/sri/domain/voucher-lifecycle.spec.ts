@@ -5,6 +5,7 @@ import {
   afterReception,
   deliveryRetrySeconds,
   authorisationDocument,
+  deliveryGivesUp,
   isRetriableByAPerson,
   needsAPerson,
   retryDelaySeconds,
@@ -276,5 +277,23 @@ describe('SRI-074 la espera del correo que falló', () => {
     expect(deliveryRetrySeconds(ago(1800), now)).toBe(1800);
     expect(deliveryRetrySeconds(ago(3 * 86_400), now)).toBe(6 * 3600);
     expect(deliveryRetrySeconds(null, now)).toBe(600);
+  });
+});
+
+describe('SRI-091 cuándo el correo deja de intentarse', () => {
+  const GIVE_UP_MS = 72 * 3_600_000;
+  const now = new Date();
+  const authorisedAgo = (ms: number) => new Date(now.getTime() - ms);
+
+  it('SRI-091 un milisegundo antes de las 72 horas todavía se reintenta (control)', () => {
+    expect(deliveryGivesUp(authorisedAgo(GIVE_UP_MS - 1), now)).toBe(false);
+  });
+
+  it('SRI-091 a las 72 horas exactas de la autorización deja de intentarse', () => {
+    expect(deliveryGivesUp(authorisedAgo(GIVE_UP_MS), now)).toBe(true);
+  });
+
+  it('SRI-091 sin autorización no hay plazo que cumplir', () => {
+    expect(deliveryGivesUp(null, now)).toBe(false);
   });
 });

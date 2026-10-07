@@ -349,17 +349,6 @@ interface SeedService {
 }
 
 /**
- * Un catálogo de arranque para una clínica ambulatoria multiespecialidad.
- * Realista, no exhaustivo: es lo que hace que la primera consulta se pueda
- * cobrar el primer día, y a partir de ahí la clínica lo amplía.
- *
- * `tariff_code` va NULL en todos. El Tarifario del MSP es NOMENCLATURA y no
- * fija lo que se cobra a un paciente particular —su alcance quedó acotado a
- * las relaciones dentro de la red pública por el A.M. 0046-2017—, y poner
- * códigos inventados sería peor que no poner ninguno: se llenaría de datos que
- * parecen oficiales. Se completan cuando la clínica facture a la red pública.
- */
-/**
  * BI-232 (D-161, resuelta por el autor el 07-10-2026). Las especialidades de
  * `seed-specialties.mts` que no tienen consulta con precio de arranque, con su
  * abreviatura para el código y su nombre en minúscula para la prestación.
@@ -451,6 +440,17 @@ const UNPRICED_CONSULTATIONS: SeedService[] =
     ],
   );
 
+/**
+ * Un catálogo de arranque para una clínica ambulatoria multiespecialidad.
+ * Realista, no exhaustivo: es lo que hace que la primera consulta se pueda
+ * cobrar el primer día, y a partir de ahí la clínica lo amplía.
+ *
+ * `tariff_code` va NULL en todos. El Tarifario del MSP es NOMENCLATURA y no
+ * fija lo que se cobra a un paciente particular —su alcance quedó acotado a
+ * las relaciones dentro de la red pública por el A.M. 0046-2017—, y poner
+ * códigos inventados sería peor que no poner ninguno: se llenaría de datos que
+ * parecen oficiales. Se completan cuando la clínica facture a la red pública.
+ */
 const SERVICES: SeedService[] = [
   // ── Consultas ────────────────────────────────────────────────────────────
   // Todas a 0%: prestación de salud, LRTI art. 56.2.
