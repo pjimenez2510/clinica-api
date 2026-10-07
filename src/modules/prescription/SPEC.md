@@ -1402,8 +1402,8 @@ Ninguna es una migración correctiva: la base está en fase `development`
 | Ciudad de prescripción: parroquia **obligatoria** en una sede que emite | `site` | PR-021 |
 | Instantánea de la línea protegida por disparador, que el diagnóstico sí tiene | `prescription_item` | PR-008 |
 | Catálogo de **vías de administración** en vez de un `varchar` libre | `catalog_system`, `prescription_item` | PR-029 |
-| ✅ construido — **Signos de alarma** (**art. 5.e.iv**). Columna: **`warning_signs`**. De la receta y no de la línea, así que no cabe en `prescription_item.instructions` | `prescription` | PR-038 |
-| ✅ construido — **Recomendaciones no farmacológicas** (**art. 5.e.v**, y el art. 27.c las pone *antes* de decidir el medicamento). Columna: **`non_pharmacological_advice`** | `prescription` | PR-039 |
+| ✅ construido — **Signos de alarma** (**art. 5.e.iii**; el 5.e.iv es la firma y el sello). Columna: **`warning_signs`**. De la receta y no de la línea, así que no cabe en `prescription_item.instructions` | `prescription` | PR-038 |
+| ✅ construido — **Recomendaciones no farmacológicas** (**art. 5.e.iii**; el 5.e.v es el registro ACESS; y el art. 27.c las pone *antes* de decidir el medicamento). Columna: **`non_pharmacological_advice`** | `prescription` | PR-039 |
 | ✅ construido — **Teléfono de contacto permanente del prescriptor** (**art. 5.e.vi**). Columna: **`emergency_contact_phone`**. No sirve `site.phone`: la norma dice «del prescriptor», y a las tres de la mañana hay que llamar a alguien | `practitioner` | PR-040 |
 | Modo de firma, instante y serie del certificado; **constancia de firma sin certificado** | `prescription` | PR-036 |
 | ✅ construido — Motivo, autor e instante de la **anulación** (**art. 70**): **`cancelled_at`, `cancelled_by_id`, `cancel_reason`** (`20261005060200`, PR-108). **Falta** el estado «notificada» | `prescription` | PR-010, PR-073, PR-108 |

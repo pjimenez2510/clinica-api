@@ -253,7 +253,7 @@ describe('DOC-104 los datos generales, en la franja gris de la plantilla', () =>
     ]);
   });
 
-  it('DOC-085 las alergias registradas van en rojo, y «Ninguna conocida» no', () => {
+  it('DOC-085 las alergias registradas van en rojo, y «No consta ninguna registrada» no', () => {
     const allergyOf = (allergies: string[]) =>
       composeLayout(prescription({ allergies }), context, template)
         .blocks.flatMap((block) =>
@@ -291,11 +291,17 @@ describe('DOC-072 la receta lleva los cinco bloques del art. 5', () => {
     expect(text).toContain('Tomar con alimentos');
   });
 
-  it('DOC-072 dice «Ninguna conocida» y no deja la casilla de alergias en blanco', () => {
-    // A blank says nobody asked, and this field exists precisely to record that
-    // somebody did (art. 5.b.iv).
-    const layout = composeLayout(prescription(), context, template);
-    expect(wholeText(layout)).toContain('Ninguna conocida');
+  it('DOC-072 EN-087 sin alergias registradas dice «No consta ninguna registrada», nunca «Ninguna conocida»', () => {
+    // A blank says nothing, and «Ninguna conocida» says what nobody asserted:
+    // a list with nothing on it is «not known», not «none» (EN-087, D-A-018).
+    // The pharmacy reads this line and does not have the chart.
+    const text = wholeText(composeLayout(prescription({ allergies: [] }), context, template)); // prettier-ignore
+    expect(text).toContain('No consta ninguna registrada');
+    expect(text).not.toMatch(/ninguna conocida/i);
+    // Positive control: a recorded allergy is printed instead.
+    const withOne = wholeText(composeLayout(prescription({ allergies: ['Penicilina'] }), context, template)); // prettier-ignore
+    expect(withOne).toContain('Penicilina');
+    expect(withOne).not.toContain('No consta ninguna registrada');
   });
 
   it('DOC-072 enumera las alergias registradas cuando las hay', () => {
@@ -498,6 +504,18 @@ describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaci
     expect(tearOff).toContain(
       'Amoxicilina 500 mg: 1 tableta, cada 8 horas, por vía oral, durante 7 días. Tomar con alimentos',
     );
+  });
+
+  it('DOC-073 la banda lleva lo que el art. 5.e pide de las indicaciones: firma y sello del prescriptor y su registro ACESS', () => {
+    // Art. 5.e.iv y v (Res. ACESS-2023-0030, p. 10). Once torn off, the band
+    // is all the patient keeps: without them it is not the 5.e of a receta.
+    const band = composeLayout(prescription(), context, template).tearOff!;
+    const signatures = band.blocks.flatMap((block) =>
+      block.kind === 'signature' ? [block.caption] : [],
+    );
+    expect(signatures).toEqual([
+      'Firma y sello del profesional\nRegistro ACESS ACESS-99887',
+    ]);
   });
 
   it('PR-040 junto a los signos de alarma va el teléfono al que llamar, que es el del prescriptor', () => {
@@ -2014,6 +2032,11 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
     // band keeps its own «Fecha», which is why the old text is also checked.
     PRESCRIPTION: {
       'Fecha=20/08/2026': ['Fecha de emisión=20/08/2026 · 20:00'],
+      // DOC-073, art. 5.e.iv y v: the band's seal is the prescriber's
+      // signature and seal, with the ACESS registration under it.
+      'Sello del profesional': [
+        'Firma y sello del profesional\nRegistro ACESS ACESS-0000-0000',
+      ],
     },
     // D-095: the hour of the request.
     SERVICE_ORDER: {
