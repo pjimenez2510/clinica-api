@@ -406,6 +406,21 @@ paciente», y el aviso de la enfermera al médico no lo cierra.
 
 **Cubre:** ORD-143 a ORD-149. **Solo servidor:** ORD-145, ORD-147.
 
+### E17 — Los informes se leen sin falsas alarmas y la corrección llega a quien debe _(P1, 07-10-2026)_
+
+D-154.1, D-154.3 y D-156.1 a D-156.5 (§17).
+
+**Prueba independiente:** completar un parcial sin cambiar nada: el anterior
+se rotula «Versión parcial del …, completada el …» y sus valores no se tachan.
+Transcribir un segundo informe con uno vigente: la tarjeta enseña los dos,
+cada uno con «Editar». Avisar al paciente de una glucosa de 25 y corregirla a
+95: la cola de correcciones dice que toca al paciente, cuánto espera y si
+venció con el plazo de críticos de la sede; un aviso al médico de guardia no
+la cierra y uno al paciente sí.
+
+**Cubre:** ORD-151 a ORD-157. **Solo interfaz:** ORD-151, ORD-152.
+**Solo servidor:** ORD-155, ORD-156, ORD-157.
+
 ### Fuera de las ocho
 
 **Transcripción masiva y gráficas de evolución.** Se transcribe **solo lo que se
@@ -2071,6 +2086,87 @@ porque el 95 no es crítico y no entraba en ninguna cola._
   > ofrece uno, el informe no se podía corregir. Y un valor que perdiera su
   > línea al corregirse saldría en la cola sin orden (ORD-040) aunque nadie
   > lo hubiera pedido aparte.
+
+
+## 17. Los informes sin falsas alarmas y la corrección que llega a quien debe (D-154, D-156)
+
+_Resueltas por el autor el 07-10-2026: D-154.1 y D-154.3 (interfaz) y D-156.1
+a D-156.5, recomendación aceptada en todos los puntos._
+
+- **ORD-151** — CUANDO la tarjeta de la orden enseñe un informe sustituido, la
+  pantalla DEBERÁ rotularlo según el estado de la versión que lo sustituye: si
+  es `FINAL` o `PARTIAL`, «Versión parcial del {emisión}, completada el
+  {registro de la sustitución}» y SIN tachar los valores que la versión nueva
+  escribe igual —valor, unidad y bandera—; si es `CORRECTED`, «Corregido el …
+  Este era el valor anterior.» con todos sus valores tachados.
+  > **D-154.1.** ORD-119: completar sin cambiar nada no altera lo que alguien
+  > leyó, y llamarlo «corregido» es una alarma falsa que enseña a pasar por
+  > alto «Corregido». Un parcial que se edita y sigue a medias sí puede
+  > cambiar un valor: ése, y sólo ése, se tacha.
+
+- **ORD-152** — La tarjeta de la orden DEBERÁ listar **todos** los informes
+  vigentes —ni sustituidos ni anulados—, del emitido más reciente al más
+  antiguo, cada uno con sus valores, sus avisos y su «Editar»; y DEBERÁ
+  ofrecer «Transcribir informe» MIENTRAS la orden tenga algún examen vivo,
+  también cuando ya tenga uno vigente.
+  > **D-154.3.** La API admite un segundo informe con uno vigente (ORD-119:
+  > «registrar otro informe sigue siendo posible», el segundo envío del
+  > laboratorio), y la tarjeta enseñaba sólo el primero: los críticos del
+  > segundo no se veían.
+
+- **ORD-153** — CUANDO alguna versión anterior de una determinación de la cola
+  de correcciones (ORD-143) tenga un aviso hecho **al paciente o a su
+  representante** que no sea autoaviso, el sistema DEBERÁ dejarla en la cola
+  hasta que exista sobre el valor vigente un aviso hecho al paciente o a su
+  representante que no sea autoaviso; un aviso a otra persona NO DEBERÁ
+  cerrarla. Cada entrada DEBERÁ decir que el aviso toca al paciente, y la
+  lectura del informe DEBERÁ marcarlo en la corrección. Sin aviso anterior al
+  paciente o a su representante, la cierra cualquier aviso de ORD-143.
+  > **D-156.1.** El paciente que supo del 25 quizá fue a urgencias; que la
+  > enfermera avise al médico de guardia de que era 95 no se lo cuenta.
+
+- **ORD-154** — Cada entrada de la cola de correcciones DEBERÁ decir cuántos
+  minutos lleva esperando desde que se registró la corrección, cuándo vence y
+  si venció, con el plazo de aviso de críticos de su sede (ORD-063, ORD-065);
+  y a quién toca avisar ahora con la misma escalada que el crítico (ORD-065,
+  ORD-068): al paciente cuando lo pide ORD-153; si no, fuera de horario al rol
+  de guardia de la sede, vencida o sin respuesta del médico que pidió al rol de
+  guardia, y si no al médico que pidió; y DEBERÁ decir si la escalada toca y la
+  sede no designó guardia, y las llamadas sin respuesta sobre el valor
+  vigente.
+  > **D-156.2.** Quien actuó sobre el valor falso puede estar recibiendo un
+  > tratamiento que no necesita: el mismo plazo de la sede (60 minutos de
+  > fábrica) y la misma escalada que el crítico. **Enmienda ORD-143** («sin
+  > plazo»).
+
+- **ORD-155** — CUANDO un aviso diga que llamó otra persona (ORD-148) cuyo
+  nombre no es el de la cuenta que lo registra, el sistema DEBERÁ juzgar el
+  autoaviso (ORD-147) **con quien llamó**: es autoaviso sólo si el
+  destinatario lleva el nombre de quien llamó. Sin ella, DEBERÁ juzgarlo con la
+  cuenta que lo registra, como en ORD-062 y ORD-147.
+  > **D-156.3.** El médico que anota «la enfermera me llamó a mí» no se avisó
+  > a sí mismo: la enfermera sí le contó algo. **Enmienda ORD-147.** Las
+  > constancias ya guardadas conservan el juicio con que se registraron
+  > (`self_notice`); la edición las vuelve a juzgar.
+
+- **ORD-156** — CUANDO el valor de la última versión avisada de una
+  determinación **no sea crítico** y ninguna corrección pendiente se herede
+  (ORD-143), el sistema DEBERÁ poner la determinación en la cola de
+  correcciones SÓLO SI la bandera del valor vigente difiere de la del valor
+  avisado; SI alguna de las dos no tiene bandera, ENTONCES DEBERÁ ponerla
+  cuando difieran valor o unidad, como en ORD-143.
+  > **D-156.4.** 25 avisado, 95 avisado de la corrección y el laboratorio
+  > corrige a 97: sigue normal, y basta la constancia del informe. Del lado
+  > seguro, un valor sin bandera (sin rango que aplique, un texto) no tiene
+  > «lado»: se juzga por lo escrito. **Enmienda ORD-143.**
+
+- **ORD-157** — Dos nombres DEBERÁN ser el mismo (ORD-147) cuando tengan las
+  **mismas palabras en cualquier orden**, sin distinguir mayúsculas, tildes ni
+  espacios y sin un tratamiento inicial; NO DEBERÁN serlo cuando a uno le falte
+  o le sobre una palabra.
+  > **D-156.5.** «Pérez Juan» es «Juan Pérez», como en la cédula. Un nombre a
+  > medias («Dr. Pérez») sigue sin reconocerse: atribuiría a una persona el
+  > nombre de otra. **Enmienda ORD-147.**
 
 
 ---
