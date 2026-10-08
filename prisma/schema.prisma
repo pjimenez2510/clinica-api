@@ -176,6 +176,8 @@ model User {
   emergencyAlertsRaised          AgendaEmergencyAlert[]       @relation("EmergencyAlertRaiser")
   chargeItemsVoided              ChargeItem[]                 @relation("ChargeVoider")
   billableServicesTaxReviewed    BillableService[]            @relation("TaxRateReviewer")
+  paymentMethodsUpdated          PaymentMethod[]              @relation("PaymentMethodUpdater")
+  discountLimitsUpdated          RoleDiscountLimit[]          @relation("DiscountLimitUpdater")
   agendaEntriesEmergencyAssessed AgendaEntry[]                @relation("EmergencyAssessor")
   /// AG-120. The late appointments this account let into care past the threshold.
   agendaEntriesLateAdmitted      AgendaEntry[]                @relation("LateAdmitter")
@@ -4784,6 +4786,32 @@ model ExamDefinitionAnalyte {
   @@map("exam_definition_analyte")
 }
 
+/// BI-100, BI-144. A way the clinic gets paid, under its own name, and the
+/// SRI's table 24 code it is declared with on the invoice.
+///
+/// A ROW and not the SRI list itself: the clinic says «Deuna» or «Visa», the
+/// SRI only knows `20` or `19`, and two methods may share a code (Visa and
+/// Mastercard are both `19`). `payment_method_sri_code_is_known` admits the
+/// same closed list as `invoice_payment_method_is_known`, and
+/// `payment_method_name_unique` (on `lower(btrim(name))`, written by the
+/// migration) stops two «Deuna» in the cashier's selector. Never deleted
+/// (BI-146): deactivated.
+model PaymentMethod {
+  id           String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name         String  @db.VarChar(60)
+  sriCode      String  @map("sri_code") @db.Char(2)
+  active       Boolean @default(true)
+  displayOrder Int     @map("display_order")
+
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// BI-147. NULL only on what the installation brings and nobody touched.
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedBy   User?    @relation("PaymentMethodUpdater", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "payment_method_updated_by_fk")
+
+  @@map("payment_method")
+}
+
 /// How much each role may discount without asking a second person.
 ///
 /// A ROW and not a constant, because the user's answer on discounts was
@@ -4805,6 +4833,10 @@ model RoleDiscountLimit {
   /// Below this, no second signature at all. Lets a clinic waive rounding
   /// without turning every cent into a two-person ceremony.
   autoApproveBelowAmount Decimal @default(0) @map("auto_approve_below_amount") @db.Decimal(12, 2)
+
+  /// BI-147. Who changed it last; `updatedAt` alone does not answer «who».
+  updatedById String? @map("updated_by_id") @db.Uuid
+  updatedBy   User?   @relation("DiscountLimitUpdater", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "role_discount_limit_updated_by_fk")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
