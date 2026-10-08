@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
@@ -27,9 +29,20 @@ describe('the agenda query', () => {
     expect(parsed.date).toBeUndefined();
   });
 
-  it('AG-178 admits 31 days and refuses the 32nd, on the field `to`', () => {
-    expect(issuesOf({ from: TODAY, to: addDays(TODAY, 30) })).toEqual([]);
-    expect(issuesOf({ from: TODAY, to: addDays(TODAY, 31) })).toEqual(['to']);
+  it('AG-178 admits 7 days of the whole site and refuses the 8th, on the field `to`', () => {
+    expect(issuesOf({ from: TODAY, to: addDays(TODAY, 6) })).toEqual([]);
+    expect(issuesOf({ from: TODAY, to: addDays(TODAY, 7) })).toEqual(['to']);
+  });
+
+  it('AG-178 admits 31 days of one practitioner and refuses the 32nd, on the field `to`', () => {
+    const practitionerId = randomUUID();
+
+    expect(
+      issuesOf({ from: TODAY, to: addDays(TODAY, 30), practitionerId }),
+    ).toEqual([]);
+    expect(
+      issuesOf({ from: TODAY, to: addDays(TODAY, 31), practitionerId }),
+    ).toEqual(['to']);
   });
 
   it('AG-178 refuses a range that ends before it starts', () => {

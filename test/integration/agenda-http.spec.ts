@@ -936,9 +936,17 @@ describe('la agenda por HTTP', () => {
     });
 
     // AG-178. The range is derived from the fixture's own slot, not typed.
-    const rangeOf = (from: string, to: string, site = siteId) =>
+    const rangeOf = (
+      from: string,
+      to: string,
+      site = siteId,
+      practitioner?: string,
+    ) =>
       request(app.getHttpServer())
-        .get(`/api/v1/agenda/sites/${site}/entries?from=${from}&to=${to}`)
+        .get(
+          `/api/v1/agenda/sites/${site}/entries?from=${from}&to=${to}` +
+            (practitioner ? `&practitionerId=${practitioner}` : ''),
+        )
         .set('Authorization', `Bearer ${token}`);
     const SLOT_DAY = clinicalDateOf(new Date(FIRST_SLOT.startsAt));
 
@@ -973,15 +981,45 @@ describe('la agenda por HTTP', () => {
       expect(day).toMatchObject({ from: SLOT_DAY, to: SLOT_DAY });
     });
 
-    it('AG-178 rechaza más de 31 días, y un día y un rango a la vez, con 422 y el campo', async () => {
-      const tooLong = await rangeOf(SLOT_DAY, addDays(SLOT_DAY, 31)).expect(
-        422,
-      );
+    it('AG-178 sin profesional admite 7 días y rechaza el 8.º con 422 en `to`', async () => {
+      const created = await book(anAppointment()).expect(201);
+
+      const week = await rangeOf(SLOT_DAY, addDays(SLOT_DAY, 6)).expect(200);
+      // Control positivo: el rango admitido trae la cita de verdad.
+      expect(
+        (week.body as { items: { id: string }[] }).items.map((i) => i.id),
+      ).toEqual([(created.body as { id: string }).id]);
+
+      const tooLong = await rangeOf(SLOT_DAY, addDays(SLOT_DAY, 7)).expect(422);
       expect(tooLong.body as Problem).toMatchObject({
         code: 'VALIDATION_FAILED',
         errors: [expect.objectContaining({ field: 'to' })],
       });
-      await rangeOf(SLOT_DAY, addDays(SLOT_DAY, 30)).expect(200);
+    });
+
+    it('AG-178 con profesional admite 31 días y rechaza el 32.º; un día y un rango a la vez, 422', async () => {
+      const created = await book(anAppointment()).expect(201);
+
+      const month = await rangeOf(
+        addDays(SLOT_DAY, -1),
+        addDays(SLOT_DAY, 29),
+        siteId,
+        practitionerId,
+      ).expect(200);
+      expect(
+        (month.body as { items: { id: string }[] }).items.map((i) => i.id),
+      ).toEqual([(created.body as { id: string }).id]);
+
+      const tooLong = await rangeOf(
+        SLOT_DAY,
+        addDays(SLOT_DAY, 31),
+        siteId,
+        practitionerId,
+      ).expect(422);
+      expect(tooLong.body as Problem).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        errors: [expect.objectContaining({ field: 'to' })],
+      });
 
       const both = await request(app.getHttpServer())
         .get(

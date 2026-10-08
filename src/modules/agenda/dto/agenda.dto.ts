@@ -93,12 +93,17 @@ const instant = (label: string) =>
   });
 
 /**
- * AG-178. How many days one request for the agenda may span: a month. It bounds
- * the QUERY — a week is six days and a month view is the widest a screen asks
- * for — and is not clinic policy. `MAX_RANGE_DAYS` (a year) is the bound of the
- * derived availability, which reads rules and not rows.
+ * AG-178. How many days one request for the agenda may span. It bounds the
+ * QUERY, and is not clinic policy. The whole site — every practitioner — for a
+ * week, which is what the week view asks for (six days); one practitioner for
+ * a month. The site for a month is a month view, which does not exist yet:
+ * until it does, nothing on screen needs a month of every column, and one
+ * request for it would read every row of the site for 31 days.
+ * `MAX_RANGE_DAYS` (a year) is the bound of the derived availability, which
+ * reads rules and not rows.
  */
 export const MAX_AGENDA_RANGE_DAYS = 31;
+export const MAX_SITE_AGENDA_RANGE_DAYS = 7;
 
 export const dailyAgendaQuerySchema = z
   .object({
@@ -167,11 +172,20 @@ export const dailyAgendaQuerySchema = z
         path: ['to'],
         message: 'La fecha final no puede ser anterior a la inicial',
       });
-    } else if (span > MAX_AGENDA_RANGE_DAYS) {
+      return;
+    }
+    const limit =
+      query.practitionerId === undefined
+        ? MAX_SITE_AGENDA_RANGE_DAYS
+        : MAX_AGENDA_RANGE_DAYS;
+    if (span > limit) {
       ctx.addIssue({
         code: 'custom',
         path: ['to'],
-        message: `El rango no puede superar ${MAX_AGENDA_RANGE_DAYS} días`,
+        message:
+          query.practitionerId === undefined
+            ? `Sin profesional, el rango no puede superar ${limit} días`
+            : `El rango no puede superar ${limit} días`,
       });
     }
   });
