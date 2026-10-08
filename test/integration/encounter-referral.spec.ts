@@ -445,3 +445,166 @@ describe('EN-103 la interconsulta solicitada o recibida', () => {
     expect(await prisma.interconsultation.count()).toBe(2);
   });
 });
+
+describe('EN-103 EN-107 lo respondido no se reescribe', () => {
+  it('EN-103 la BASE rechaza cambiar el cuadro de la solicitada y la respuesta ya escrita; la deja escribir una vez', async () => {
+    const prisma = db();
+    const at = await anAttention(prisma);
+    const other = await createPractitioner(prisma);
+    const asked = await prisma.interconsultation.create({
+      data: {
+        encounterId: at.encounterId,
+        role: 'REQUESTED',
+        requestedById: at.practitionerId,
+        reason: 'Valorar soplo',
+        findings: '¿Soplo funcional?',
+      },
+    });
+
+    expect(
+      await problemFrom(prisma.interconsultation.update({ where: { id: asked.id }, data: { findings: 'Otro cuadro' } })), // prettier-ignore
+    ).toMatchObject({ status: 409 });
+
+    // Positive control: the answer is written once, from empty.
+    await prisma.interconsultation.update({
+      where: { id: asked.id },
+      data: { status: 'ANSWERED', opinion: 'Soplo funcional', respondedById: at.practitionerId, respondedAt: new Date() }, // prettier-ignore
+    });
+    for (const change of [
+      { opinion: 'Soplo orgánico' },
+      { respondedById: other.id },
+      { respondedAt: new Date(Date.now() + 60_000) },
+    ]) {
+      expect(
+        await problemFrom(prisma.interconsultation.update({ where: { id: asked.id }, data: change })), // prettier-ignore
+      ).toMatchObject({ status: 409 });
+    }
+    expect(
+      (await prisma.interconsultation.findUniqueOrThrow({ where: { id: asked.id } })).opinion, // prettier-ignore
+    ).toBe('Soplo funcional');
+  });
+
+  it('EN-107 la BASE rechaza cambiar una interconsulta anulada', async () => {
+    const prisma = db();
+    const at = await anAttention(prisma);
+    const asked = await prisma.interconsultation.create({
+      data: { encounterId: at.encounterId, role: 'REQUESTED', requestedById: at.practitionerId, reason: 'Valorar soplo' }, // prettier-ignore
+    });
+    await prisma.interconsultation.update({
+      where: { id: asked.id },
+      data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledById: at.practitionerId, cancellationReason: 'Pedida por error' }, // prettier-ignore
+    });
+
+    expect(
+      await problemFrom(prisma.interconsultation.update({ where: { id: asked.id }, data: { cancellationReason: 'Otro motivo' } })), // prettier-ignore
+    ).toMatchObject({ status: 409 });
+  });
+
+  it('EN-107 la BASE rechaza vaciar las tablas con TRUNCATE', async () => {
+    const prisma = db();
+    for (const table of ['referral', 'interconsultation']) {
+      await expect(
+        prisma.$executeRawUnsafe(`TRUNCATE TABLE ${table}`),
+      ).rejects.toThrow(/never deleted/);
+    }
+    // Positive control: a row put in before stays.
+    const at = await anAttention(prisma);
+    await referral(prisma, at);
+    await expect(prisma.$executeRawUnsafe('TRUNCATE TABLE referral')).rejects.toThrow(/never deleted/); // prettier-ignore
+    expect(await prisma.referral.count()).toBe(1);
+  });
+});
+
+describe('EN-104 EN-107 el 053 sigue a su acto', () => {
+  it('EN-104 la BASE rechaza retirar el 053 de una referencia viva, y lo deja retirar al anularla', async () => {
+    const prisma = db();
+    const at = await anAttention(prisma);
+    const [generated] = await prisma.$queryRaw<{ id: string }[]>`SELECT uuidv7()::text AS id`; // prettier-ignore
+    const noteId = generated!.id;
+    const signedAt = new Date();
+    await prisma.clinicalNote.create({
+      data: {
+        id: noteId,
+        chainId: noteId,
+        encounterId: at.encounterId,
+        formCode: '053',
+        status: 'SIGNED',
+        content: { motivo: 'Valoración' },
+        authorId: at.practitionerId,
+        signedById: at.practitionerId,
+        signedAt,
+        contentHash: 'a'.repeat(64),
+      },
+    });
+    const issued = await referral(prisma, at, { clinicalNoteId: noteId });
+    const retract = () =>
+      prisma.clinicalNote.update({ where: { id: noteId }, data: { status: 'ENTERED_IN_ERROR' } }); // prettier-ignore
+
+    expect(await problemFrom(retract())).toMatchObject(
+      refusedWith('VALIDATION_FAILED', 'noteId'),
+    );
+
+    // Positive control: with its act annulled, the paper goes too.
+    await cancel(prisma, issued.id, at.practitionerId);
+    await retract();
+    expect(
+      (await prisma.clinicalNote.findUniqueOrThrow({ where: { id: noteId } })).status, // prettier-ignore
+    ).toBe('ENTERED_IN_ERROR');
+  });
+});
+
+describe('EN-102 anular y responder a la vez', () => {
+  /**
+   * Two connections. A counter-referral being written holds the answered
+   * referral FOR SHARE; the annulment of that referral waits for it and then
+   * sees the answer. Who wins: the answer; the annulment is refused.
+   */
+  it('EN-102 con una contrarreferencia en vuelo, anular su referencia espera y se rechaza al ver la respuesta', async () => {
+    const prisma = db();
+    const first = await anAttention(prisma);
+    const answered = await referral(prisma, first);
+    const later = await anAttention(prisma, first.patientId);
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let written!: () => void;
+    const insertDone = new Promise<void>((resolve) => (written = resolve));
+
+    const answering = prisma.$transaction(
+      async (tx) => {
+        await tx.referral.create({
+          data: {
+            encounterId: later.encounterId,
+            patientId: later.patientId,
+            issuedById: later.practitionerId,
+            direction: 'COUNTER_REFERRAL',
+            respondsToId: answered.id,
+            reason: 'Retorno',
+          },
+        });
+        written();
+        await gate;
+      },
+      { timeout: 30_000 },
+    );
+    await insertDone;
+
+    const cancelling = problemFrom(cancel(prisma, answered.id, first.practitionerId)); // prettier-ignore
+    // Deterministic, no sleep: wait until the annulment is blocked on a lock.
+    for (;;) {
+      const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+        SELECT count(*) AS waiting FROM pg_stat_activity
+         WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+      if (Number(row?.waiting ?? 0) > 0) break;
+    }
+    release();
+    await answering;
+
+    expect(await cancelling).toMatchObject(
+      refusedWith('REFERRAL_ALREADY_ANSWERED', 'referralId'),
+    );
+    expect(
+      (await prisma.referral.findUniqueOrThrow({ where: { id: answered.id } })).status, // prettier-ignore
+    ).toBe('ISSUED');
+  });
+});

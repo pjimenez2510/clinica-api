@@ -76,6 +76,12 @@ export const DIRECTION_LABEL: Readonly<Record<ReferralDirection, string>> = {
   REVERSE_REFERRAL: 'Referencia inversa',
 };
 
+const CERTAINTY_LABEL: Readonly<Record<DiagnosisAtIssue['certainty'], string>> =
+  {
+    PRESUMPTIVE: 'presuntivo',
+    DEFINITIVE: 'definitivo',
+  };
+
 const PRIORITY_LABEL: Readonly<Record<ReferralPriority, string>> = {
   ROUTINE: 'Rutina',
   URGENT: 'Urgente',
@@ -87,6 +93,8 @@ export interface DiagnosisAtIssue {
   code: string;
   display: string;
   principal: boolean;
+  /** Presumptive or definitive: what the receiving doctor reads first. */
+  certainty: 'PRESUMPTIVE' | 'DEFINITIVE';
 }
 
 /** What the doctor issues (EN-100, EN-101, EN-106). */
@@ -108,6 +116,7 @@ export interface ReferralFormContext {
   diagnoses: readonly DiagnosisAtIssue[];
   /** EN-102. The referral answered, as the paper names it. */
   answered: {
+    direction: ReferralDirection;
     issuedOn: string;
     destinationName: string | null;
     reason: string;
@@ -137,7 +146,7 @@ export function referralFormContent(
     diagnosticos: diagnosesText(context.diagnoses),
     respondeA: context.answered
       ? [
-          `Referencia del ${context.answered.issuedOn}`,
+          `${DIRECTION_LABEL[context.answered.direction]} del ${context.answered.issuedOn}`,
           context.answered.destinationName,
           context.answered.reason,
         ]
@@ -189,7 +198,7 @@ function diagnosesText(diagnoses: readonly DiagnosisAtIssue[]): string | null {
     .sort((a, b) => Number(b.principal) - Number(a.principal))
     .map(
       (each) =>
-        `${each.code} ${each.display}${each.principal ? ' (principal)' : ''}`,
+        `${each.code} ${each.display} (${CERTAINTY_LABEL[each.certainty]}${each.principal ? ', principal' : ''})`,
     )
     .join('; ');
 }

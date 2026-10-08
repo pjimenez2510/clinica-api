@@ -22,8 +22,8 @@ const DRAFT: ReferralDraft = {
 };
 
 const DIAGNOSES = [
-  { code: 'I10.X', display: 'Hipertensión esencial', principal: false },
-  { code: 'R07.4', display: 'Dolor torácico, no especificado', principal: true }, // prettier-ignore
+  { code: 'I10.X', display: 'Hipertensión esencial', principal: false, certainty: 'DEFINITIVE' as const }, // prettier-ignore
+  { code: 'R07.4', display: 'Dolor torácico, no especificado', principal: true, certainty: 'PRESUMPTIVE' as const }, // prettier-ignore
 ];
 
 describe('EN-100 las cuatro direcciones', () => {
@@ -66,11 +66,11 @@ describe('EN-104 el contenido del formulario 053', () => {
       motivo: 'Dolor torácico atípico',
       resumen: 'ECG sin cambios agudos',
       diagnosticos:
-        'R07.4 Dolor torácico, no especificado (principal); I10.X Hipertensión esencial',
+        'R07.4 Dolor torácico, no especificado (presuntivo, principal); I10.X Hipertensión esencial (definitivo)',
     });
   });
 
-  it('EN-102 la contrarreferencia dice a qué referencia responde y no imprime destino', () => {
+  it('EN-102 la contrarreferencia dice a qué responde, con su tipo, y no imprime destino', () => {
     const content = referralFormContent(
       {
         ...DRAFT,
@@ -84,6 +84,7 @@ describe('EN-104 el contenido del formulario 053', () => {
         specialtyName: null,
         diagnoses: [],
         answered: {
+          direction: 'DERIVATION',
           issuedOn: '01/10/2026',
           destinationName: 'Hospital General de Chone',
           reason: 'Dolor torácico atípico',
@@ -96,7 +97,7 @@ describe('EN-104 el contenido del formulario 053', () => {
       prioridad: 'Urgente',
       motivo: 'Dolor torácico atípico',
       respondeA:
-        'Referencia del 01/10/2026 · Hospital General de Chone · Dolor torácico atípico',
+        'Derivación del 01/10/2026 · Hospital General de Chone · Dolor torácico atípico',
     });
   });
 

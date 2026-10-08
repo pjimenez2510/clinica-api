@@ -2399,7 +2399,11 @@ transcribir y no volver a leer el instructivo._
   > anulada; y rechaza anular una referencia que tiene respuesta viva. La
   > contrarreferencia responde a una referencia **emitida aquí**: registrar las
   > que otro establecimiento envía es D-191 §1. Todo llega como
-  > `COUNTER_REFERRAL_WITHOUT_REFERRAL` (422).
+  > `COUNTER_REFERRAL_WITHOUT_REFERRAL` (422); una referencia de otra sede es
+  > `REFERRAL_NOT_FOUND` (404), como cualquier otra que no existe (EN-121).
+  > **Anular y responder a la vez** (revisión clínica, 08-10-2026): la
+  > contrarreferencia toma la referencia `FOR SHARE`, que choca con el UPDATE
+  > que la anula; gana la respuesta y la anulación se rechaza al verla.
 - **EN-103** — El sistema DEBERÁ registrar si la atención **solicitó** o
   **recibió** una interconsulta.
   > **Falta esquema.** Columna 111 del formulario: **1 interconsulta solicitada ·
@@ -2414,7 +2418,9 @@ transcribir y no volver a leer el instructivo._
   > motivo y la pregunta, y nace `REQUESTED`. La **recibida** se registra al
   > contestarla: quién la pidió como texto —suele venir de otro servicio o de
   > fuera—, el motivo y la respuesta escrita, y nace `ANSWERED` con quien
-  > responde. `interconsultation_role_shape` lo impone en la base.
+  > responde. `interconsultation_role_shape` lo impone en la base, y
+  > `trg_interconsultation_guard` que lo pedido —motivo y cuadro— no cambie y
+  > la respuesta se escriba una sola vez.
 - **EN-104** — CUANDO se emita una referencia o una contrarreferencia, el sistema
   DEBERÁ generar la nota clínica del **formulario 053** —numeración antigua
   011—, y CUANDO se solicite una interconsulta, la del **formulario 007**.
@@ -2431,7 +2437,9 @@ transcribir y no volver a leer el instructivo._
   > (único). `053` y `007` están en el registro de formularios marcados como
   > **de su propio acto**: la ruta de notas no los abre, no los enmienda y no
   > los retracta —se corrigen anulando la referencia, que pasa su nota a
-  > `ENTERED_IN_ERROR`—.
+  > `ENTERED_IN_ERROR`—. `trg_clinical_note_act_form_follows_its_act` rechaza
+  > retirar un 053 o 007 cuyo acto sigue vivo. Lo que imprime cada formulario
+  > frente al Anexo 1 está en D-191 §6.
 - **EN-243** — CUANDO se pida el formulario 053 o 007 de una referencia o una
   interconsulta, el sistema DEBERÁ componerlo en PDF/A desde su nota firmada,
   con la identidad de la clínica y el sello de quien la firmó, DEBERÁ dejar

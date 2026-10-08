@@ -32,6 +32,16 @@
 -- la migración se puede volver a aplicar.
 BEGIN;
 
+-- La especialidad cambia de tabla SIN rellenar nada: sólo vale si las dos
+-- tablas están vacías. Se comprueba en vez de suponerlo.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM referral) OR EXISTS (SELECT 1 FROM interconsultation) THEN
+    RAISE EXCEPTION 'referral or interconsultation has rows: this migration assumes both are empty';
+  END IF;
+END;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- 1. La especialidad de destino: el catálogo MSP de la clínica (REQ-149)
 -- ---------------------------------------------------------------------------
@@ -290,7 +300,11 @@ BEGIN
       FROM referral r
       JOIN patient p ON p.id = r.patient_id
       JOIN patient q ON q.id = NEW.patient_id
-     WHERE r.id = NEW.responds_to_id;
+     WHERE r.id = NEW.responds_to_id
+      -- Choca con el UPDATE que la anula: una anulación en vuelo se espera
+      -- y se relee confirmada, y la anulación que llegue después ve esta
+      -- respuesta (READ COMMITTED no las serializaba por sí solo).
+       FOR SHARE OF r;
 
     -- `IS DISTINCT FROM` y `COALESCE`: una ficha sin fusión tiene NULL, y un
     -- NULL en un `OR` dejaría pasar la fila en vez de rechazarla.
@@ -369,7 +383,14 @@ BEGIN
      OR NEW.requested_by_name IS DISTINCT FROM OLD.requested_by_name
      OR NEW.specialty_id IS DISTINCT FROM OLD.specialty_id
      OR NEW.reason IS DISTINCT FROM OLD.reason
+     OR NEW.findings IS DISTINCT FROM OLD.findings
      OR NEW.requested_at IS DISTINCT FROM OLD.requested_at
+     -- La respuesta se escribe una vez —de vacía a contestada— y no cambia:
+     -- en una recibida es el único registro de lo contestado.
+     OR ((OLD.opinion IS NOT NULL OR OLD.responded_by_id IS NOT NULL OR OLD.responded_at IS NOT NULL)
+         AND (NEW.opinion IS DISTINCT FROM OLD.opinion
+              OR NEW.responded_by_id IS DISTINCT FROM OLD.responded_by_id
+              OR NEW.responded_at IS DISTINCT FROM OLD.responded_at))
      OR (OLD.clinical_note_id IS NOT NULL
          AND NEW.clinical_note_id IS DISTINCT FROM OLD.clinical_note_id)
      OR (OLD.status = 'CANCELLED' AND NEW IS DISTINCT FROM OLD)
@@ -389,6 +410,35 @@ CREATE TRIGGER trg_interconsultation_guard
 CREATE TRIGGER trg_interconsultation_no_truncate
   BEFORE TRUNCATE ON "interconsultation"
   FOR EACH STATEMENT EXECUTE FUNCTION referral_no_truncate();
+
+-- ---------------------------------------------------------------------------
+-- 8 bis. EN-104, EN-107. El 053 o el 007 sigue a su acto
+-- ---------------------------------------------------------------------------
+-- La nota de un acto sólo sale del expediente cuando su acto se anula: si se
+-- retirara sola, la referencia viva se quedaría sin su papel.
+
+CREATE OR REPLACE FUNCTION clinical_note_act_form_follows_its_act()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM referral r WHERE r.clinical_note_id = NEW.id AND r.status::text = 'CANCELLED')
+     AND NOT EXISTS (SELECT 1 FROM interconsultation i WHERE i.clinical_note_id = NEW.id AND i.status::text = 'CANCELLED')
+  THEN
+    RAISE EXCEPTION 'clinical_note_act_form_follows_its_act: annul the referral or interconsultation instead'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_clinical_note_act_form_follows_its_act
+  BEFORE UPDATE OF status ON "clinical_note"
+  FOR EACH ROW
+  WHEN (NEW.form_code IN ('053', '007')
+        AND NEW.status = 'ENTERED_IN_ERROR'
+        AND OLD.status IS DISTINCT FROM NEW.status)
+  EXECUTE FUNCTION clinical_note_act_form_follows_its_act();
 
 -- ---------------------------------------------------------------------------
 -- 9. EN-105. Salir «referido» exige la referencia

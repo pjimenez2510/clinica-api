@@ -168,13 +168,22 @@ export class PrismaReferralRepository implements ReferralRepository {
       const answered = draft.respondsToId
         ? await tx.referral.findFirst({
             where: { id: draft.respondsToId, encounter: siteFilter(query.sites) }, // prettier-ignore
-            select: { issuedAt: true, destinationName: true, reason: true },
+            select: {
+              direction: true,
+              issuedAt: true,
+              destinationName: true,
+              reason: true,
+            },
           })
         : null;
+      // EN-102, EN-121. What is answered is a referral the caller can see:
+      // one of another site is the same «does not exist» as any other.
+      if (draft.respondsToId && !answered) throw new ReferralNotFoundError();
       const context: IssueContext = {
         specialtyName: await specialtyNameOf(tx, draft.specialtyId),
         diagnoses: await diagnosesOf(tx, encounter.id),
         answered: answered && {
+          direction: answered.direction,
           issuedOn: ecuadorianDate(answered.issuedAt),
           destinationName: answered.destinationName,
           reason: answered.reason,
@@ -419,10 +428,15 @@ async function retractFormNote(
   noteId: string | null,
 ): Promise<void> {
   if (noteId === null) return;
-  await tx.clinicalNote.updateMany({
+  const retracted = await tx.clinicalNote.updateMany({
     where: { id: noteId, status: 'SIGNED' },
     data: { status: 'ENTERED_IN_ERROR' },
   });
+  // The act and its paper leave together or not at all: a note no longer
+  // signed means something else retracted it, and that is not this path.
+  if (retracted.count !== 1) {
+    throw new Error('The form note of the act is no longer signed');
+  }
 }
 
 async function specialtyNameOf(
@@ -445,13 +459,19 @@ async function diagnosesOf(
 ): Promise<DiagnosisAtIssue[]> {
   const rows = await tx.encounterDiagnosis.findMany({
     where: { encounterId },
-    select: { cie10Code: true, cie10Display: true, rank: true },
+    select: {
+      cie10Code: true,
+      cie10Display: true,
+      rank: true,
+      certainty: true,
+    },
     orderBy: [{ rank: 'asc' }, { recordedAt: 'asc' }],
   });
   return rows.map((row) => ({
     code: row.cie10Code,
     display: row.cie10Display,
     principal: row.rank === 1,
+    certainty: row.certainty,
   }));
 }
 

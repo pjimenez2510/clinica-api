@@ -16,7 +16,12 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createDiagnosis, createPatient, createSite } from './setup/fixtures';
+import {
+  createDiagnosis,
+  createEncounter,
+  createPatient,
+  createSite,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -63,6 +68,7 @@ describe('la referencia y la interconsulta por HTTP, con sesiones reales (EN-100
   let doctorUserId: string;
   let nurseToken: string;
   let elsewhereDoctorToken: string;
+  let otherSiteId: string;
 
   beforeEach(async () => {
     enableBigIntSerialisation();
@@ -98,6 +104,7 @@ describe('la referencia y la interconsulta por HTTP, con sesiones reales (EN-100
     const site = await createSite(prisma);
     const otherSite = await createSite(prisma, 'Sede Sur');
     siteId = site.id;
+    otherSiteId = otherSite.id;
     patientId = (await createPatient(prisma)).id;
 
     const doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065', siteId); // prettier-ignore
@@ -223,7 +230,8 @@ describe('la referencia y la interconsulta por HTTP, con sesiones reales (EN-100
         especialidad: 'Cardiología',
         prioridad: 'Urgente',
         motivo: REFERRAL.reason,
-        diagnosticos: 'R07.4 Dolor torácico, no especificado (principal)',
+        diagnosticos:
+          'R07.4 Dolor torácico, no especificado (definitivo, principal)',
       });
       // EN-027. Content, signer and instant inside the digest.
       expect(note.contentHash).toBe(
@@ -325,6 +333,38 @@ describe('la referencia y la interconsulta por HTTP, con sesiones reales (EN-100
       const refused = await send('post', `/encounters/${encounterId}/referrals`, doctorToken, { direction: 'COUNTER_REFERRAL', respondsToId: own.id, reason: 'Retorno' }).expect(422); // prettier-ignore
       expect((refused.body as Problem).code).toBe('COUNTER_REFERRAL_WITHOUT_REFERRAL'); // prettier-ignore
       expect(await prisma.referral.count()).toBe(1);
+    });
+  });
+
+  describe('EN-102 EN-121 lo que se responde está en el alcance', () => {
+    it('EN-102 una contrarreferencia a una referencia de otra sede es «no existe», y no escribe nada', async () => {
+      const elsewhere = await createEncounter(prisma, {
+        siteId: otherSiteId,
+        practitionerId: doctorPractitionerId,
+        patientId,
+      });
+      const foreign = await prisma.referral.create({
+        data: {
+          encounterId: elsewhere.id,
+          patientId,
+          issuedById: doctorPractitionerId,
+          direction: 'REFERRAL',
+          destinationMspUnicode: '05176',
+          destinationName: 'Hospital General de Chone',
+          reason: 'Valoración',
+        },
+      });
+      const here = await openEncounter();
+
+      const refused = await send('post', `/encounters/${here}/referrals`, doctorToken, { direction: 'COUNTER_REFERRAL', respondsToId: foreign.id, reason: 'Retorno' }).expect(404); // prettier-ignore
+      expect((refused.body as Problem).code).toBe('REFERRAL_NOT_FOUND');
+      expect(await prisma.referral.count()).toBe(1);
+      expect(await prisma.clinicalNote.count({ where: { formCode: '053' } })).toBe(0); // prettier-ignore
+
+      // Positive control: one of this site is answered.
+      const own = await issue(here);
+      const other = await openEncounter();
+      await issue(other, { direction: 'COUNTER_REFERRAL', respondsToId: own.id, reason: 'Retorno' }); // prettier-ignore
     });
   });
 

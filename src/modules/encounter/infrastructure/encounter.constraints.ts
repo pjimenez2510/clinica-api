@@ -622,6 +622,12 @@ registerConstraintMeanings({
     field: 'status',
     message: 'Una referencia nace emitida',
   },
+  // EN-104, EN-107. The 053 or 007 leaves only with its act.
+  clinical_note_act_form_follows_its_act: {
+    code: 'VALIDATION_FAILED',
+    field: 'noteId',
+    message: 'Este formulario se retira anulando su referencia o interconsulta',
+  },
   // EN-130. New content only in a live attention.
   referral_needs_live_encounter: {
     code: 'ENCOUNTER_ALREADY_CLOSED',
