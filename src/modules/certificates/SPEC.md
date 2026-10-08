@@ -863,9 +863,9 @@ PR-030).
 
 - **CER-058** — CUANDO se emita un certificado, el sistema DEBERÁ copiar en él
   el **sexo de la ficha que nombra** (CER-057) en ese instante
-  (`medical_certificate.patient_sex`), y el 117 —en pantalla, en el PDF y al volver a generarlo— DEBERÁ
-  decir ese sexo y no el que tenga la ficha después. **Enmienda CER-021** en
-  el sexo.
+  (`medical_certificate.patient_sex`), y el 117 —en pantalla, en el PDF y al
+  volver a generarlo— DEBERÁ decir ese sexo y no el que tenga la ficha
+  después. **Enmienda CER-021** en el sexo.
 
   > **D-171.2.** Como la orden (ORD-158): corregir la ficha después cambiaba el
   > sexo de un papel que ya tiene el empleador o el IESS, mientras sus

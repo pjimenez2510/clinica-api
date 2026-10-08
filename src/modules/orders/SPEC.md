@@ -2252,6 +2252,7 @@ a D-156.5, recomendación aceptada en todos los puntos._
   olvidado (ORD-115) DEBERÁ nombrar la vigente de su atención. El rango de
   referencia y el crítico siguen eligiéndose con el sexo de la ficha de la
   atención (ORD-036, D-171.1).
+
   > **D-171.3** (recomendación de la revisión clínica de
   > `feat/f07-orden-sexo-congelado`, construida en
   > `fix/identidad-impresa-ficha-fusionada` y pendiente de que el autor la

@@ -75,8 +75,9 @@ export const FORM_117_SOURCE_SELECT = {
   // names (`a_medical_certificate_freeze_chart_of_record`) — never the chart's
   // today, and never another chart's.
   patientSex: true,
-  // The attention's chart, for a certificate written before the chart of
-  // record existed in a client's types; the database never leaves it null.
+  // The attention's chart: a fallback only Prisma's types need. The column is
+  // NOT NULL in the database; it is optional in the schema so a writer may
+  // omit it and let the trigger write it.
   patient: { select: FORM_117_IDENTITY_SELECT },
   /**
    * CER-057 (D-169.2 i). The chart the 117 NAMES: the one in force for the

@@ -1804,8 +1804,8 @@ model Patient {
   encounters            Encounter[]
   waitlistEntries       WaitlistEntry[]
   /// CER-057, ORD-161. The papers that NAME this chart: the one in force when
-  /// they were issued (`chart_of_record_id`). Declared before `certificates`
-  /// on purpose: the chart-scope guard reads the last relation per model.
+  /// they were issued (`chart_of_record_id`). Not history (`exact` in the
+  /// chart-scope guard): a paper names one chart on purpose.
   certificatesNamingIt  MedicalCertificate[]    @relation("CertificateChartOfRecord")
   serviceOrdersNamingIt ServiceOrder[]          @relation("ServiceOrderChartOfRecord")
   certificates          MedicalCertificate[]    @relation("CertificatePatient")

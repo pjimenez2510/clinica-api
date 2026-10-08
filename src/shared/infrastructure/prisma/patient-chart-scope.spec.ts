@@ -302,10 +302,15 @@ function readChartChildren(): ChartChild[] {
   // `priorityGroups  PatientPriorityGroup[]` → PatientPriorityGroup →
   // priorityGroups. A list relation on Patient is how a nested select reaches
   // a child table without naming a patient id at all.
+  // Keyed by model AND relation name: a model with two relations to Patient
+  // (the certificate's patient and the chart it names, CER-057) must resolve
+  // the one over `patient_id`, whatever order they are declared in.
   const relationOf = new Map<string, string>();
   for (const line of (patient[2] ?? '').split('\n')) {
-    const match = /^\s*(\w+)\s+(\w+)\[\]/.exec(line);
-    if (match?.[1] && match[2]) relationOf.set(match[2], match[1]);
+    const match = /^\s*(\w+)\s+(\w+)\[\](?:.*@relation\("(\w+)"\))?/.exec(line);
+    if (match?.[1] && match[2]) {
+      relationOf.set(`${match[2]}#${match[3] ?? ''}`, match[1]);
+    }
   }
 
   const children: ChartChild[] = [];
@@ -314,10 +319,13 @@ function readChartChildren(): ChartChild[] {
     if (!/@map\("patient_id"\)/.test(body)) continue;
 
     const mapped = /@@map\("(\w+)"\)/.exec(body)?.[1];
+    // The relation that owns `patientId`, by its name if it has one.
+    const owner =
+      /Patient\s+@relation\((?:"(\w+)",\s*)?fields:\s*\[patientId\]/.exec(body);
     children.push({
       table: mapped ?? name,
       accessor: name.charAt(0).toLowerCase() + name.slice(1),
-      relation: relationOf.get(name),
+      relation: relationOf.get(`${name}#${owner?.[1] ?? ''}`),
     });
   }
   return children;

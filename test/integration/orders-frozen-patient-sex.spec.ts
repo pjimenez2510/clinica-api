@@ -360,6 +360,42 @@ describe('ORD-161 la orden nombra la ficha vigente al emitirse, con su sexo, y n
     ).rejects.toThrow(/service_order_frozen_once_issued/);
   });
 
+  it('ORD-161 un borrador no puede nombrar una ficha: la base lo rechaza', async () => {
+    const prisma = db();
+    const { scene, draft } = await aDraftOrder(prisma);
+    // Control positivo: el borrador se edita por el mismo camino.
+    await prisma.$executeRaw`UPDATE service_order SET clinical_note_text = 'Ayuno de 8 horas' WHERE id = ${draft.id}::uuid`;
+    await expect(
+      prisma.$executeRaw`UPDATE service_order SET chart_of_record_id = ${scene.patient.id}::uuid WHERE id = ${draft.id}::uuid`,
+    ).rejects.toThrow(/service_order_chart_of_record_when_issued/);
+  });
+
+  it('ORD-161 ORD-036 el resultado en esa atención se sigue clasificando con el sexo de la ficha de la atención (D-171.3, pendiente del autor)', async () => {
+    const prisma = db();
+    const scene = await aMergedScene(prisma);
+    await scene.merge();
+    const after = await scene.issueAnother();
+    // Control positivo: la orden nombra a la vigente, un hombre.
+    expect((await scene.printed(after.id)).sex).toBe('MALE');
+
+    const report = await adapters(prisma).reports.register(
+      {
+        orderId: after.id,
+        performedById: null,
+        issuedAt: new Date(),
+        results: [
+          { analyteDefinitionId: scene.scene.hb.id, valueNumeric: 12.5 },
+        ],
+      },
+      requester,
+    );
+    // El rango de la mujer de la duplicada: cambiarlo es la decisión D-171.3.
+    expect(report.results[0]).toMatchObject({
+      abnormalFlag: 'NORMAL',
+      referenceLow: 12,
+    });
+  });
+
   it('ORD-161 ORD-026 la cola de pendientes nombra la misma ficha que el papel', async () => {
     const prisma = db();
     const scene = await aMergedScene(prisma);

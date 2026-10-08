@@ -140,7 +140,7 @@ type Scene = Awaited<ReturnType<typeof theScene>>;
 /** The patient identity each of the three papers is handed. */
 async function printedIdentities(scene: Scene) {
   const reader = readerOf(scene.prisma);
-  const receta = await reader.findSubject({
+  const prescription = await reader.findSubject({
     kind: 'PRESCRIPTION',
     subjectId: scene.prescriptionId,
     sites: 'all',
@@ -156,14 +156,14 @@ async function printedIdentities(scene: Scene) {
     sites: 'all',
   });
   if (
-    receta?.kind !== 'PRESCRIPTION' ||
+    prescription?.kind !== 'PRESCRIPTION' ||
     order?.kind !== 'SERVICE_ORDER' ||
     summary?.kind !== 'ENCOUNTER_SUMMARY'
   ) {
     throw new Error('a paper is missing');
   }
   return {
-    receta: receta.data.patient,
+    prescription: prescription.data.patient,
     order: order.data.patient,
     summary: summary.data.patient,
     summarySex: summary.data.patientSex,
@@ -171,7 +171,7 @@ async function printedIdentities(scene: Scene) {
 }
 
 const identityOf = (
-  chart: { familyName: string; givenName: string; mrn: string },
+  chart: { mrn: string },
   fullName: string,
   identifier: string | null,
   age: { ageYears: number | null; ageMonths: number | null },
@@ -195,7 +195,7 @@ describe('DOC-117 lo que se imprime en la atención de una ficha unificada', () 
 
     // Control positivo: sin unificar, la ficha de la atención.
     expect(await printedIdentities(scene)).toEqual({
-      receta: own,
+      prescription: own,
       order: own,
       summary: own,
       summarySex: 'FEMALE',
@@ -210,7 +210,7 @@ describe('DOC-117 lo que se imprime en la atención de una ficha unificada', () 
     });
     expect(absorbed.mergedIntoId).toBe(scene.survivor.id);
 
-    const vigente = identityOf(
+    const inForce = identityOf(
       scene.survivor,
       'Guamán Pilco María Rosa',
       CEDULA,
@@ -219,11 +219,11 @@ describe('DOC-117 lo que se imprime en la atención de una ficha unificada', () 
       scene.frozenAge,
     );
     expect(await printedIdentities(scene)).toEqual({
-      receta: vigente,
+      prescription: inForce,
       // ORD-161. La orden emitida ANTES de unificar nombra la ficha con la
       // que se emitió, la misma cuyo sexo congeló: un papel, una ficha.
       order: own,
-      summary: vigente,
+      summary: inForce,
       summarySex: 'FEMALE',
     });
     // Y la que se emite después, a la vigente.
@@ -244,14 +244,14 @@ describe('DOC-117 lo que se imprime en la atención de una ficha unificada', () 
     });
     expect(
       printedAfter?.kind === 'SERVICE_ORDER' && printedAfter.data.patient,
-    ).toEqual(vigente);
+    ).toEqual(inForce);
   });
 
   it('DOC-117 deshecha la unificación, la receta y el resumen vuelven a la ficha de la atención', async () => {
     const scene = await theScene(db());
     await scene.merge();
     // Control positivo: unificada, la vigente.
-    expect((await printedIdentities(scene)).receta.mrn).toBe(
+    expect((await printedIdentities(scene)).prescription.mrn).toBe(
       scene.survivor.mrn,
     );
 
@@ -263,7 +263,11 @@ describe('DOC-117 lo que se imprime en la atención de una ficha unificada', () 
       scene.frozenAge,
     );
     const after = await printedIdentities(scene);
-    expect([after.receta, after.order, after.summary]).toEqual([own, own, own]);
+    expect([after.prescription, after.order, after.summary]).toEqual([
+      own,
+      own,
+      own,
+    ]);
   });
 
   it('DOC-117 el resumen dice el sexo de la vigente', async () => {

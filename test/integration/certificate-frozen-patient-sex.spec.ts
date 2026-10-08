@@ -117,6 +117,26 @@ describe('CER-058 el certificado congela el sexo de la ficha al emitirse', () =>
     expect(await frozenSexOf(prisma, id)).toBe('FEMALE');
   });
 
+  it('CER-057 la BASE fija la ficha vigente de la atención aunque el INSERT traiga otra', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const other = await createPatient(prisma);
+    const [row] = await prisma.$queryRaw<{ id: string }[]>`
+      INSERT INTO medical_certificate
+        (encounter_id, patient_id, issued_by_id, type, verification_code, issued_at, chart_of_record_id)
+      VALUES (${scene.encounter.id}::uuid, ${scene.patient.id}::uuid,
+              ${scene.practitioner.id}::uuid, 'ATTENDANCE'::certificate_type,
+              ${nextCode()}, ${scene.encounter.startedAt}, ${other.id}::uuid)
+      RETURNING id`;
+    const named = await prisma.medicalCertificate.findUniqueOrThrow({
+      where: { id: row!.id },
+      select: { chartOfRecordId: true },
+    });
+    // Control positivo: la otra ficha existe y la FK la admitía.
+    expect(other.id).not.toBe(scene.patient.id);
+    expect(named.chartOfRecordId).toBe(scene.patient.id);
+  });
+
   it('CER-058 corregir la ficha después no cambia el 117 al volver a generarlo; el certificado nuevo dice el nuevo', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
