@@ -15,6 +15,7 @@ import {
   ENCOUNTER_REPOSITORY,
   type EncounterPage,
   type EncounterRepository,
+  type EncounterStatusChange,
   type EncounterView,
   type SiteScopeFilter,
   type SurvivingChart,
@@ -31,10 +32,11 @@ import {
   vitalsCorrectionRefusal,
 } from '../domain/practitioner-licence';
 import type { AnthropometryField, VitalSigns } from '../domain/vital-signs';
-import type {
-  CareModality,
-  CareSetting,
-  VisitSequence,
+import {
+  DEFAULT_CARE_PLACE,
+  type CareModality,
+  type CarePlace,
+  type VisitSequence,
 } from '../domain/encounter';
 
 /**
@@ -96,7 +98,10 @@ export interface OpenEncounterRequest {
   /** EN-034. The real instant of the attention, never `now()`. */
   startedAt: Date;
   careModality: CareModality;
-  careSetting: CareSetting;
+  /** EN-012. Absent: «1 Establecimiento de salud» (D-177.3). */
+  carePlace?: CarePlace;
+  /** EN-013. Absent: outside the strategy. */
+  medicoDelBarrio?: boolean;
   /** EN-007. Asked for, never derived from the history. */
   visitSequence: VisitSequence;
 }
@@ -209,8 +214,10 @@ export class EncounterService {
       agendaEntryId: request.agendaEntryId,
       startedAt: request.startedAt,
       careModality: request.careModality,
-      careSetting: request.careSetting,
+      carePlace: request.carePlace ?? DEFAULT_CARE_PLACE,
+      medicoDelBarrio: request.medicoDelBarrio ?? false,
       visitSequence: request.visitSequence,
+      openedById: requester.userId,
     });
 
     /**
@@ -273,6 +280,26 @@ export class EncounterService {
     });
 
     return encounter;
+  }
+
+  /**
+   * EN-133. The state trail of one attention: each change with its act, who
+   * and when, oldest first.
+   *
+   * NO AUDIT ROW, as with the listing (EN-123): it carries no clinical
+   * content —states, instants and staff names— and the accountable read of
+   * the attention is `byId`. Out of scope answers the same 404 as `byId`.
+   */
+  async statusHistory(
+    encounterId: string,
+    requester: Requester,
+  ): Promise<EncounterStatusChange[]> {
+    const trail = await this.encounters.statusHistoryOf({
+      encounterId,
+      sites: requester.sites,
+    });
+    if (trail === null) throw new EncounterNotFoundError();
+    return trail;
   }
 
   /**

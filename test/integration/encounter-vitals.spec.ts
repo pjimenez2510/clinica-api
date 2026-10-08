@@ -78,7 +78,6 @@ async function anEncounter(prisma: PrismaClient) {
     patientId: patient.id,
     startedAt: new Date('2026-08-14T14:00:00Z'),
     careModality: 'MORBIDITY',
-    careSetting: 'INTRAMURAL',
     visitSequence: 'FIRST_TIME',
   });
 
@@ -651,7 +650,6 @@ describe('los signos vitales de la atención', () => {
         patientId,
         startedAt: new Date(now - daysAgo * day),
         careModality: 'MORBIDITY',
-        careSetting: 'INTRAMURAL',
         visitSequence: 'SUBSEQUENT',
       });
       await repository.saveVitals(
@@ -794,7 +792,6 @@ describe('los signos vitales de la atención', () => {
         patientId: patient.id,
         startedAt,
         careModality: 'MORBIDITY',
-        careSetting: 'INTRAMURAL',
         visitSequence: 'FIRST_TIME',
       });
       const query = { encounterId: encounter.id, sites: [site.id] };

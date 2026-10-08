@@ -245,7 +245,18 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     serviceId: string,
     update: BillableServiceUpdate,
   ): Promise<BillableServiceView> {
-    const row = await this.prisma.billableService.update({
+    // BI-024 (D-172.2). Cleared by the row as stored, not by what the service
+    // read: a review recorded in between still does not survive a new rate.
+    const clearReviewIfRateChanges =
+      update.taxRateId === undefined || update.taxReview !== undefined
+        ? []
+        : [
+            this.prisma.billableService.updateMany({
+              where: { id: serviceId, NOT: { taxRateId: update.taxRateId } },
+              data: { taxReviewedAt: null, taxReviewedById: null },
+            }),
+          ];
+    const write = this.prisma.billableService.update({
       where: { id: serviceId },
       data: {
         name: update.name,
@@ -262,10 +273,38 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
               specialtyId: update.consultation?.specialtyId ?? null,
               visitSequence: update.consultation?.visitSequence ?? null,
             }),
+        // BI-024. Both columns or neither, which is what
+        // `billable_service_tax_review_names_who_and_when` demands underneath.
+        ...(update.taxReview === undefined
+          ? {}
+          : {
+              taxReviewedAt: update.taxReview?.reviewedAt ?? null,
+              taxReviewedById: update.taxReview?.reviewedById ?? null,
+            }),
       },
       include: SERVICE_INCLUDE,
     });
-    return toServiceView(row);
+    const results = await this.prisma.$transaction([
+      ...clearReviewIfRateChanges,
+      write,
+    ]);
+    return toServiceView(results.at(-1) as ServiceRow);
+  }
+
+  /** BI-024. Conditional on the rate the reviewer saw (see the port). */
+  async markTaxReviewed(
+    serviceId: string,
+    taxRateId: string,
+    review: { reviewedAt: Date; reviewedById: string },
+  ): Promise<BillableServiceView | null> {
+    const { count } = await this.prisma.billableService.updateMany({
+      where: { id: serviceId, taxRateId },
+      data: {
+        taxReviewedAt: review.reviewedAt,
+        taxReviewedById: review.reviewedById,
+      },
+    });
+    return count === 0 ? null : this.findBillableService(serviceId);
   }
 
   /**
@@ -586,12 +625,14 @@ const SERVICE_INCLUDE = {
   taxRate: true,
   category: true,
   procedureConcept: { select: { id: true, code: true, display: true } },
+  taxReviewedBy: { select: { firstName: true, lastName: true } },
 } satisfies Prisma.BillableServiceInclude;
 
 type ServiceRow = BillableServiceRow & {
   taxRate: TaxRateRow;
   category: CategoryRow;
   procedureConcept: { id: string; code: string; display: string } | null;
+  taxReviewedBy: { firstName: string; lastName: string } | null;
 };
 
 /** The `kind` cast leans on `billable_service_category_kind_is_known`. */
@@ -625,6 +666,17 @@ function toServiceView(row: ServiceRow): BillableServiceView {
     active: row.active,
     specialtyId: row.specialtyId,
     visitSequence: row.visitSequence as VisitSequence | null,
+    // The CHECK keeps the two columns together; the user comes with the id.
+    taxReview:
+      row.taxReviewedAt === null ||
+      row.taxReviewedById === null ||
+      row.taxReviewedBy === null
+        ? null
+        : {
+            reviewedAt: row.taxReviewedAt,
+            reviewedById: row.taxReviewedById,
+            reviewedByName: `${row.taxReviewedBy.firstName} ${row.taxReviewedBy.lastName}`,
+          },
   };
 }
 

@@ -240,6 +240,8 @@ export class ClinicalCodingController {
         encounterId,
         careModality: dto.careModality,
         visitSequence: dto.visitSequence,
+        carePlace: dto.carePlace,
+        medicoDelBarrio: dto.medicoDelBarrio,
       },
       this.correctingRequester(req),
     );

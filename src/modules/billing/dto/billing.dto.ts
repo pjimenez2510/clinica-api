@@ -519,6 +519,13 @@ export class UpdateServiceCategoryDto extends createZodDto(
   updateServiceCategorySchema,
 ) {}
 
+/** BI-024. The rate the reviewer saw: the review signs that one or none. */
+export const markTaxReviewedSchema = z.object({
+  taxRateId: z.uuid({ error: 'Indique la tarifa que revisó' }),
+});
+/** Body of POST /billing/services/:serviceId/tax-review. */
+export class MarkTaxReviewedDto extends createZodDto(markTaxReviewedSchema) {}
+
 const serviceResponseSchema = z.object({
   id: z.uuid(),
   code: z.string(),
@@ -536,6 +543,13 @@ const serviceResponseSchema = z.object({
   /** BI-158. Which consultation this service IS, when it is one. */
   specialtyId: z.uuid().nullable(),
   visitSequence: z.enum(VISIT_SEQUENCES).nullable(),
+  /** BI-022 to BI-024. Who checked the tax rate and when; `null` = pending. */
+  taxReview: z
+    .object({
+      reviewedAt: z.iso.datetime(),
+      reviewedBy: z.object({ id: z.uuid(), name: z.string() }),
+    })
+    .nullable(),
 });
 /** One service, and the catalogue of GET /billing/services. */
 export class ServiceDto extends createZodDto(serviceResponseSchema) {}

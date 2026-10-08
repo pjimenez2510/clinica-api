@@ -328,7 +328,7 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       .set('Authorization', `Bearer ${token}`)
       .send(body);
 
-  it('BI-208 BI-210 BI-214 BI-215 corregir el receptor acredita toda la factura, a nombre del mismo receptor, y deja la cuenta reabierta con las líneas por facturar', async () => {
+  it('BI-208 BI-210 BI-214 BI-215 BI-096 corregir el receptor acredita toda la factura, a nombre del mismo receptor, deja facturados los cargos originales y reabre la cuenta con una copia por facturar', async () => {
     const { invoiceId, accountId, chargeIds } = await anInvoice({
       settled: true,
     });

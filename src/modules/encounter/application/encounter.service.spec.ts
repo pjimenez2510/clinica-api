@@ -17,6 +17,7 @@ import type {
   ChartHistoryQuery,
   EncounterPage,
   EncounterQuery,
+  EncounterStatusChange,
   EncounterRepository,
   EncounterView,
   NewEncounter,
@@ -75,6 +76,8 @@ const anEncounter = (
   status: 'OPEN',
   careModality: 'MORBIDITY',
   careSetting: 'INTRAMURAL',
+  carePlace: 1,
+  medicoDelBarrio: false,
   visitSequence: 'FIRST_TIME',
   ageYears: 36,
   ageMonths: 2,
@@ -124,6 +127,25 @@ class FakeEncounters implements EncounterRepository {
   findById(query: EncounterQuery): Promise<EncounterView | null> {
     return Promise.resolve(
       query.encounterId === this.stored.id ? this.stored : null,
+    );
+  }
+
+  /** EN-133. One opening row for the stored attention, as the trigger writes it. */
+  statusHistoryOf(
+    query: EncounterQuery,
+  ): Promise<EncounterStatusChange[] | null> {
+    return Promise.resolve(
+      query.encounterId === this.stored.id
+        ? [
+            {
+              from: null,
+              to: 'OPEN',
+              fact: 'OPENED',
+              byName: 'Ana Villacís',
+              at: this.stored.startedAt,
+            },
+          ]
+        : null,
     );
   }
 
@@ -243,7 +265,6 @@ describe('los casos de uso de la atención', () => {
     patientId: PATIENT,
     startedAt: new Date('2026-09-14T14:00:00Z'),
     careModality: 'MORBIDITY' as const,
-    careSetting: 'INTRAMURAL' as const,
     visitSequence: 'FIRST_TIME' as const,
   };
 
@@ -385,6 +406,38 @@ describe('los casos de uso de la atención', () => {
       service.byId('another-encounter', requester),
     ).rejects.toBeInstanceOf(EncounterNotFoundError);
     expect(audit.entries).toEqual([]);
+  });
+
+  it('EN-133 EN-127 abrir dice al almacén quién abre, y la atención nace en el establecimiento y fuera de la estrategia', async () => {
+    await service.open(openRequest, requester);
+    expect(repository.opened[0]).toMatchObject({
+      openedById: requester.userId,
+      carePlace: 1,
+      medicoDelBarrio: false,
+    });
+  });
+
+  it('EN-012 EN-013 abrir con otro lugar y la estrategia los lleva al almacén', async () => {
+    await service.open(
+      { ...openRequest, carePlace: 4, medicoDelBarrio: true },
+      requester,
+    );
+    expect(repository.opened[0]).toMatchObject({
+      carePlace: 4,
+      medicoDelBarrio: true,
+    });
+  });
+
+  it('EN-133 sirve el historial de estados sin dejar fila de bitácora, y una atención ajena es 404', async () => {
+    const trail = await service.statusHistory('encounter-1', requester);
+    expect(trail).toEqual([
+      expect.objectContaining({ from: null, to: 'OPEN', fact: 'OPENED' }),
+    ]);
+    expect(audit.entries).toEqual([]);
+
+    await expect(
+      service.statusHistory('another-encounter', requester),
+    ).rejects.toBeInstanceOf(EncounterNotFoundError);
   });
 
   it('EN-146 lista las atenciones sin cerrar del profesional', async () => {

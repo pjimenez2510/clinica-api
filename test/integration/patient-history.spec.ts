@@ -51,7 +51,6 @@ describe('los antecedentes del paciente contra PostgreSQL', () => {
       practitionerId: practitioner.id,
       patientId: patient.id,
       careModality: 'MORBIDITY' as const,
-      careSetting: 'INTRAMURAL' as const,
       visitSequence: 'FIRST_TIME' as const,
     };
     const now = Date.now();

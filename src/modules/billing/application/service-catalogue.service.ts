@@ -26,6 +26,7 @@ import {
   ServiceKindMismatchError,
   TaxRateNotFoundError,
   TaxRateRequiredError,
+  TaxReviewRateChangedError,
 } from '../domain/billing.errors';
 
 import {
@@ -184,10 +185,58 @@ export class ServiceCatalogueService {
       });
     }
 
+    // D-172.2. A new rate is nobody's review yet; the old review stays in the
+    // trail through the `before` snapshot. The same rate saved again is not
+    // a change, and renaming touches no review at all.
+    const changesRate =
+      update.taxRateId !== undefined && update.taxRateId !== current.taxRateId;
     const updated = await this.catalogue.updateBillableService(
       serviceId,
-      update,
+      changesRate ? { ...update, taxReview: null } : update,
     );
+    await this.recordChange(
+      serviceId,
+      'UPDATE',
+      requester,
+      SERVICE_RESOURCE_TYPE,
+      {
+        before: billableServiceSnapshot(current),
+        after: billableServiceSnapshot(updated),
+      },
+    );
+    return updated;
+  }
+
+  /**
+   * BI-024. Records that `requester` checked the service's tax rate —THE ONE
+   * THEY SAW, `seenTaxRateId`—, now.
+   *
+   * ⚠️ THE RATE TRAVELS WITH THE REVIEW (D-172). A tab opened on 0 % while
+   * somebody else moved the service to 15 % would otherwise sign the 15 %,
+   * which its author never looked at; and the write is conditional on that
+   * rate, so the same holds when the change lands between this read and the
+   * write.
+   *
+   * THE INSTANT IS THE APPLICATION'S CLOCK, not PostgreSQL's `now()`: it is
+   * what every other stamp of this module uses, and what the walks move.
+   * Marking it again simply records the newer review; the older one stays in
+   * the trail.
+   */
+  async markTaxReviewed(
+    serviceId: string,
+    seenTaxRateId: string,
+    requester: Requester,
+  ): Promise<BillableServiceView> {
+    const current = await this.requireService(serviceId);
+    if (current.taxRateId !== seenTaxRateId) {
+      throw new TaxReviewRateChangedError();
+    }
+    const updated = await this.catalogue.markTaxReviewed(
+      serviceId,
+      seenTaxRateId,
+      { reviewedAt: new Date(), reviewedById: requester.userId },
+    );
+    if (updated === null) throw new TaxReviewRateChangedError();
     await this.recordChange(
       serviceId,
       'UPDATE',

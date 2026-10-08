@@ -434,3 +434,32 @@ export const RESULTS_WORK_PERMISSIONS = [
 export function missingResultsWork(granted: readonly string[]): string[] {
   return RESULTS_WORK_PERMISSIONS.filter((code) => !granted.includes(code));
 }
+
+/**
+ * EN-032, EN-157 (D-A-011). The shortest retention of the clinical record the
+ * clinic may declare: fifteen years from the patient's last attention, which
+ * `site_parameter_retention_minimum` holds in the database.
+ */
+export const MINIMUM_RECORD_RETENTION_YEARS = 15;
+
+/**
+ * EN-158. The retention the installation declares: the LONGEST of its sites
+ * (EN-157 — a patient's record is one even if seen at two sites), counted from
+ * the last attention, and never a purge.
+ */
+export interface RecordRetention {
+  years: number;
+  countsFrom: 'LAST_ENCOUNTER';
+  purgedOnExpiry: false;
+}
+
+/** EN-157. The longest declared period wins; never under the minimum. */
+export function recordRetentionOf(
+  declaredYears: readonly number[],
+): RecordRetention {
+  return {
+    years: Math.max(MINIMUM_RECORD_RETENTION_YEARS, ...declaredYears),
+    countsFrom: 'LAST_ENCOUNTER',
+    purgedOnExpiry: false,
+  };
+}

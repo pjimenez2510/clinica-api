@@ -535,6 +535,9 @@ export const DOMAIN_ERROR_CODES = [
   'TAX_RATE_IN_USE',
   'TAX_RATE_NOT_FOUND',
   'TAX_RATE_REQUIRED',
+  // BI-024 (D-172). La revisión firma la tarifa que se vio: si cambió
+  // entretanto, 409 y se vuelve a mirar.
+  'TAX_REVIEW_RATE_CHANGED',
   // Pagadores (BI-030 a BI-034). Son filas y no un `enum` del código, así que
   // se pueden agotar: `LAST_ACTIVE_PAYER` (409) impide dejar la instalación
   // sin ninguno activo, que es una clínica que no puede abrir una sola cuenta.

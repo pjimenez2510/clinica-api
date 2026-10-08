@@ -1,6 +1,8 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { CARE_PLACE } from './encounter.dto';
+
 /**
  * Block K's contract — the RDACAA's diagnoses and procedures.
  *
@@ -189,18 +191,24 @@ export const editDiagnosisSchema = z
 export class EditDiagnosisDto extends createZodDto(editDiagnosisSchema) {}
 
 /**
- * EN-187, EN-215. Correcting the attention's own coding: what the patient
- * came for and whether it is first-time or subsequent. Only what travels
- * changes.
+ * EN-187, EN-215, EN-012, EN-013. Correcting the attention's own coding: what
+ * the patient came for, whether it is first-time or subsequent, where it was
+ * given and whether it is of the «Médico del Barrio» strategy. Only what
+ * travels changes.
  */
 export const correctEncounterCodingSchema = z
   .object({
     careModality: CARE_MODALITY.optional(),
     visitSequence: VISIT_SEQUENCE.optional(),
+    carePlace: CARE_PLACE.optional(),
+    medicoDelBarrio: z.boolean().optional(),
   })
   .refine(
     (body) =>
-      body.careModality !== undefined || body.visitSequence !== undefined,
+      body.careModality !== undefined ||
+      body.visitSequence !== undefined ||
+      body.carePlace !== undefined ||
+      body.medicoDelBarrio !== undefined,
     { message: 'Indique qué corrige de la atención' },
   );
 /** Body of PATCH /encounters/:encounterId. */
@@ -212,6 +220,10 @@ export class CorrectEncounterCodingDto extends createZodDto(
 export const encounterCodingSchema = z.object({
   careModality: CARE_MODALITY,
   visitSequence: VISIT_SEQUENCE,
+  /** EN-012. */
+  carePlace: CARE_PLACE,
+  /** EN-013. */
+  medicoDelBarrio: z.boolean(),
 });
 /** Response of PATCH /encounters/:encounterId. */
 export class EncounterCodingDto extends createZodDto(encounterCodingSchema) {}
