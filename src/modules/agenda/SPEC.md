@@ -528,6 +528,20 @@ la fecha.
 **Cubre:** AG-169 a AG-172, AG-178.
 **Solo interfaz:** AG-169, AG-170, AG-171, AG-172.
 
+### E13 — La agenda, los tableros y la sala se enteran solos _(P1, 08-10-2026)_
+
+D-187 paso 2, aceptada por el autor: lo que otra persona cambia en la agenda
+o en el tablero se ve sin recargar y sin esperar al siguiente sondeo, por el
+canal de avisos de `auth` (AU-054 a AU-058). El sondeo queda de respaldo.
+
+**Prueba independiente:** con recepción de la sede A en el tablero y la sala
+de espera de A abiertas, registrar la llegada de una cita de A desde otra
+sesión: las dos pantallas la pintan sin recargar; la misma llegada en la sede
+B no llega a ninguna de ellas.
+**Cubre:** AG-179 a AG-181.
+**Solo servidor:** AG-179, AG-180.
+**Solo interfaz:** AG-181.
+
 ## Criterios de éxito
 
 Medibles y sin nombrar tecnología. Son la respuesta a «¿esto quedó bien?» cuando
@@ -2817,6 +2831,43 @@ Convertirlo en configuración sería regalar la garantía.
   > pantalla—; un mes de todas las columnas sólo lo pediría una vista de mes,
   > que no existe. Con un profesional sigue siendo un mes (31 días).
 
+## 13. Los avisos en vivo (D-187, paso 2)
+
+- **AG-179** — CUANDO se confirme una escritura que cambie las entradas de una
+  sede —reservar, mover, editar o anular una cita; poner, editar, quitar o
+  restaurar un bloqueo; cualquier cambio de estado de la cita o del paciente
+  (llegada, en sala, en signos, en consulta, «salió y vuelve», alta,
+  interrumpida, registrada por error, no asistió y su deshacer, la
+  calificación de emergencia); convertir una entrada de la lista de espera; o
+  la nota del tablero—, el sistema DEBERÁ publicar el aviso `agenda` de esa
+  sede y, salvo la nota del tablero, también el aviso `waiting-room`; DEBERÁ
+  publicarlos después de confirmada la escritura, y NO DEBERÁ publicarlos si
+  la escritura falló.
+  > D-187 §3 b y c. El aviso dice sólo el tipo y la sede (AU-055): ni el día
+  > ni el profesional, que dirían «el Dr. X tiene algo el día D». La pantalla
+  > de esa sede relee lo que tiene abierto y nada más. La nota del tablero no
+  > se proyecta en la sala (AG-137), así que no la despierta.
+- **AG-180** — El aviso `agenda` DEBERÁ entregarse sólo a las sesiones con
+  `agenda:read` en la sede del aviso, y `waiting-room` sólo a las que tienen
+  `agenda:board:public` en ella; la cuenta de la pantalla de sala, que sólo
+  tiene ese permiso, NO DEBERÁ recibir ningún otro tipo de aviso.
+  > La sala está a la vista de cualquiera que espere (AG-136): recibe lo que
+  > proyecta y nada más. Es AU-056 aplicado a los dos tipos.
+- **AG-181** — MIENTRAS el canal esté vivo, el tablero de recepción, el
+  tablero del día, la sala de espera y la agenda de día y de semana DEBERÁN
+  volver a pedir lo que tienen a la vista al llegar un aviso de su sede, sin
+  ningún aviso visible —la semana, su rango en una sola petición (AG-178)—, y
+  también al abrirse o volver el canal y al recibir `resync`; NO DEBERÁN
+  pedir nada por un aviso de otra sede; con el canal vivo, el sondeo de los
+  tableros y de la sala DEBERÁ espaciarse a 5 minutos, y con el canal caído
+  DEBERÁ volver a los 30 segundos; y MIENTRAS la pestaña esté oculta NO
+  DEBERÁN pedir nada, y al volver a ella DEBERÁN pedir lo que quedó
+  pendiente.
+  > D-187 §4: refrescar en silencio, sin campanas. La pestaña oculta no pide
+  > por lo mismo que el sondeo de hoy: cada lectura del tablero deja una fila
+  > en la bitácora (AG-139). La agenda no tenía sondeo: se releía al volver a
+  > la pantalla, y con el canal caído sigue así.
+
 ## Códigos de error nuevos
 
 Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
@@ -3079,6 +3130,8 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | AG-136, AG-137                                  | Seguridad dirigida + contrato HTTP: una sesión con `agenda:board:public` y nada más no alcanza la proyección de personal, y la fila que recibe no lleva ninguno de los campos prohibidos |
 | AG-176                                          | Contrato HTTP con una sesión de `ENFERMERIA` de verdad (escribe la nota sin `agenda:write`) + integración: la nota sobre un bloqueo se rechaza y la escrita no toca ningún otro campo |
 | AG-178                                          | Unitario del esquema (tope de 7 días sin profesional y de 31 con él, exclusión de `date` y rango) + integración contra PostgreSQL real con control positivo: la cita del `to` a las 23:30 de Guayaquil sale y la del día siguiente no; 7 días sin profesional y 31 con él traen la cita, el 8.º y el 32.º son 422 en `to` + unitario de interfaz: la semana sale en **una** petición |
+| AG-179, AG-180                                  | Unitario del interceptor (no publica en `GET` ni si la escritura falla) + integración con sesiones reales y control positivo de sede: reservar y registrar la llegada en A llega a recepción de A y a la sala de A, y no a recepción de B; la sala no recibe `agenda` |
+| AG-181                                          | Unitario de interfaz del composable y de cada pantalla (aviso de otra sede no relee, pestaña oculta no pide, cadencia según el canal) + recorridos F-01 y F-02: lo que otra sesión hace aparece sin recargar |
 | AG-139, AG-140                                  | Integración contra PostgreSQL real: una consulta del tablero deja **una** fila de bitácora y no una por cita (SC-004), y la tasa no se mueve cuando una cita pasa a `LEFT_WITHOUT_BEING_SEEN` |
 | AG-142                                          | Integración: cambiar el umbral de una sede cambia la advertencia siguiente y no toca las llegadas ya registradas (AG-098) |
 | AG-146 a AG-149                                 | Integración contra PostgreSQL real con control positivo: la cita y la atención se mueven en la misma transacción y la fila de historial existe; una prueba reproduce la captura del autor                        |

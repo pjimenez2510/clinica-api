@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
+import { LiveEventBus } from '../../../shared/events/live-event-bus';
+
 import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
@@ -52,6 +54,7 @@ import { acceptsNewClinicalContent } from '../domain/encounter-state';
 import { assertLicensedOn } from '../domain/practitioner-licence';
 import type { DischargeCondition } from '../domain/encounter';
 import type { Requester } from './encounter.service';
+import { announceEncounterChange } from './announce-encounter-change';
 
 /**
  * Its own resource type in the trail, and not `'encounter'`.
@@ -145,6 +148,8 @@ export class ClinicalNoteService {
     @Inject(NOTE_TEMPLATE_REPOSITORY)
     private readonly templates: NoteTemplateRepository,
     private readonly logger: PinoLogger,
+    /** AG-179, BI-238. Where «this site's day changed» is said. */
+    private readonly liveEvents: LiveEventBus,
   ) {
     this.logger.setContext(ClinicalNoteService.name);
   }
@@ -196,6 +201,8 @@ export class ClinicalNoteService {
       ip: requester.ip,
       userAgent: requester.userAgent,
     });
+    // AG-179. EN-137: opening the note puts the patient «en consulta».
+    await this.announce(request.encounterId, requester, false);
 
     return { ...note, template };
   }
@@ -403,6 +410,8 @@ export class ClinicalNoteService {
       { action: 'CLINICAL_NOTE_SIGNED' },
       'clinical note signed',
     );
+    // AG-179, BI-238. The signature that discharges ends the attention.
+    await this.announce(request.encounterId, requester, true);
 
     return { ...signed, template };
   }
@@ -554,6 +563,8 @@ export class ClinicalNoteService {
       ip: requester.ip,
       userAgent: requester.userAgent,
     });
+    // AG-179, BI-238. Retracting the discharging note moves the board back.
+    await this.announce(request.encounterId, requester, true);
 
     return this.withTemplate(retracted);
   }
@@ -590,6 +601,29 @@ export class ClinicalNoteService {
    */
   private assertLicensed(acessExpiresOn: Date | null): void {
     assertLicensedOn(acessExpiresOn, new Date());
+  }
+
+  /**
+   * AG-179, BI-238. The note's port does not hand back the site, so it is
+   * read here, after the write. A failure to read it is swallowed: the write
+   * is saved, and the screens still have their fallback polling (AU-058).
+   */
+  private async announce(
+    encounterId: string,
+    requester: Requester,
+    ended: boolean,
+  ): Promise<void> {
+    try {
+      const encounter = await this.encounters.findById({
+        encounterId,
+        sites: requester.sites,
+      });
+      if (encounter) {
+        announceEncounterChange(this.liveEvents, encounter.siteId, { ended });
+      }
+    } catch {
+      // Nothing to undo: the event is a courtesy to the open screens.
+    }
   }
 
   /** EN-011. The caller's clinical identity, or a refusal naming nothing. */

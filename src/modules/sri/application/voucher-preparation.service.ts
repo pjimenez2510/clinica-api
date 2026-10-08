@@ -3,6 +3,8 @@ import { randomInt } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
+import { LiveEventBus } from '../../../shared/events/live-event-bus';
+
 import type { ElectronicVoucherPreparer } from '../../../shared/billing/electronic-voucher.port';
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import {
@@ -128,8 +130,15 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
     @Inject(SRI_SETTINGS) private readonly settings: SriSettings,
     @Inject(SRI_CLOCK) private readonly clock: SriClock,
     private readonly logger: PinoLogger,
+    /** SRI-092. Where «a voucher of this site changed» is said. */
+    private readonly liveEvents: LiveEventBus,
   ) {
     this.logger.setContext(VoucherPreparationService.name);
+  }
+
+  /** SRI-092. After the write, with the voucher's site and nothing else. */
+  private announce(voucher: VoucherRecord): void {
+    this.liveEvents.publish({ kind: 'sri', siteId: voucher.siteId });
   }
 
   /**
@@ -190,6 +199,7 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
       unsignedXml: composeInvoiceXml(this.voucherSource(source, accessKey)),
       blockedReason: null,
     });
+    this.announce(voucher);
 
     return this.sign(voucher);
   }
@@ -252,6 +262,7 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
       ),
       blockedReason: null,
     });
+    this.announce(voucher);
 
     return this.sign(voucher);
   }
@@ -345,6 +356,7 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
       certificateId: certificate.id,
       signedAt,
     });
+    this.announce(voucher);
 
     // SRI-054. Without the web service declared, it waits signed.
     if (this.sri.isConfigured()) {
@@ -406,6 +418,7 @@ export class VoucherPreparationService implements ElectronicVoucherPreparer {
   ): Promise<VoucherRecord> {
     if (voucher.blockedReason !== reason) {
       await this.vouchers.block(voucher.id, reason);
+      this.announce(voucher);
     }
     return { ...voucher, blockedReason: reason };
   }

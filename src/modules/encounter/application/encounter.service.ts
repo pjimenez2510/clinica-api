@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
+import { LiveEventBus } from '../../../shared/events/live-event-bus';
+
 import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
@@ -37,6 +39,7 @@ import {
   type CarePlace,
   type VisitSequence,
 } from '../domain/encounter';
+import { announceEncounterChange } from './announce-encounter-change';
 
 /**
  * The resource type the access trail uses for an attention.
@@ -146,6 +149,8 @@ export class EncounterService {
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
     private readonly logger: PinoLogger,
+    /** AG-179. Where «this site's day changed» is said. */
+    private readonly liveEvents: LiveEventBus,
   ) {
     this.logger.setContext(EncounterService.name);
   }
@@ -235,6 +240,7 @@ export class EncounterService {
       { site_id: encounter.siteId, action: 'ENCOUNTER_OPENED' },
       'encounter opened',
     );
+    announceEncounterChange(this.liveEvents, encounter.siteId, { ended: false }); // prettier-ignore
 
     return encounter;
   }
@@ -394,6 +400,8 @@ export class EncounterService {
       fact: 'VITALS_OPENED',
       now: new Date(),
     });
+    // AG-179. «En signos» on the board.
+    announceEncounterChange(this.liveEvents, encounter.siteId, { ended: false }); // prettier-ignore
 
     return encounter;
   }

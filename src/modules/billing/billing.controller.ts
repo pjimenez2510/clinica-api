@@ -21,6 +21,7 @@ import {
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { AnnouncesChange } from '../../shared/events/announces-change';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -102,6 +103,8 @@ import {
  */
 @ApiTags('billing')
 @Controller({ path: 'billing/sites/:siteId', version: '1' })
+// BI-238. Every write here changes what caja of the site shows.
+@AnnouncesChange('billing')
 export class BillingController {
   constructor(
     private readonly accounts: PatientAccountService,
@@ -134,6 +137,7 @@ export class BillingController {
    */
   @Post('encounters/:encounterId/checkout')
   @RequirePermission('billing:write', 'param:siteId')
+  @AnnouncesChange('billing', 'agenda', 'waiting-room')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Enviar una atención a caja con sus cargos propuestos' }) // prettier-ignore
   @ApiOkResponse({ type: CheckoutResponseDto })
@@ -303,6 +307,9 @@ export class BillingController {
    */
   @Post('accounts/:accountId/close')
   @RequirePermission('billing:write', 'param:siteId')
+  // BI-238, AG-179. Closing the account closes the attention (D-184): the
+  // boards see it leave.
+  @AnnouncesChange('billing', 'agenda', 'waiting-room')
   // 200 and not 201: closing an account creates nothing. A POST because it is
   // a transition and not an edit of the row.
   @HttpCode(HttpStatus.OK)
@@ -554,6 +561,8 @@ export class BillingController {
    * happen.
    */
   @Post('invoices')
+  // BI-238, SRI-092. A new invoice is a new row of the SRI monitor.
+  @AnnouncesChange('billing', 'sri')
   @RequirePermission('billing:write', 'param:siteId')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Emitir la factura de una cuenta' })
@@ -589,6 +598,7 @@ export class BillingController {
    * other status, by the service and by the database (BI-217).
    */
   @Post('invoices/:invoiceId/resubmission')
+  @AnnouncesChange('billing', 'sri')
   @RequirePermission('billing:write', 'param:siteId')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

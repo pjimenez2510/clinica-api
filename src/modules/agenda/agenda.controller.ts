@@ -20,6 +20,7 @@ import {
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import type { Permission } from '../../shared/authorisation/permission.catalogue';
+import { AnnouncesChange } from '../../shared/events/announces-change';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { toEntryResponse } from './agenda-entry.response';
@@ -77,6 +78,9 @@ import {
  * check. The URLs of the two existing routes are unchanged.
  */
 @Controller({ path: 'agenda/sites/:siteId', version: '1' })
+// AG-179. Every write here changes the site's day: the agenda and the boards,
+// and what the waiting room projects.
+@AnnouncesChange('agenda', 'waiting-room')
 export class AgendaController {
   constructor(
     private readonly agenda: AgendaService,

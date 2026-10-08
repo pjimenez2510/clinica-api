@@ -31,6 +31,8 @@ import type {
   VitalsVersionView,
 } from '../domain/encounter.repository';
 import type { VitalSigns } from '../domain/vital-signs';
+import type { LiveEvent } from '../../../shared/events/live-event';
+import { InProcessLiveEventBus } from '../../../shared/events/live-event-bus';
 import {
   EncounterService,
   type Requester,
@@ -228,6 +230,7 @@ describe('los casos de uso de la atención', () => {
   let repository: FakeEncounters;
   let audit: AccessAuditRecorder & { entries: AccessAuditEntry[] };
   let service: EncounterService;
+  let heard: LiveEvent[];
 
   beforeEach(() => {
     repository = new FakeEncounters();
@@ -246,7 +249,10 @@ describe('los casos de uso de la atención', () => {
       error: vi.fn(),
     } as unknown as PinoLogger;
 
-    service = new EncounterService(repository, audit, logger);
+    heard = [];
+    const liveEvents = new InProcessLiveEventBus();
+    liveEvents.subscribe((event) => heard.push(event));
+    service = new EncounterService(repository, audit, logger, liveEvents);
   });
 
   const openRequest = {
@@ -303,6 +309,19 @@ describe('los casos de uso de la atención', () => {
       action: 'CREATE',
       ip: '10.0.0.9',
     });
+  });
+
+  it('AG-179 abrir la atención avisa a la agenda y a la sala de su sede, no a caja; rechazada, a nadie', async () => {
+    await service.open(openRequest, requester);
+    expect(heard).toEqual([
+      { kind: 'agenda', siteId: SITE },
+      { kind: 'waiting-room', siteId: SITE },
+    ]);
+
+    heard.length = 0;
+    repository.chart = null;
+    await expect(service.open(openRequest, requester)).rejects.toThrow();
+    expect(heard).toEqual([]);
   });
 
   it('EN-017 no deja fila de bitácora cuando la apertura se rechaza', async () => {
