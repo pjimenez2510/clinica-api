@@ -89,9 +89,19 @@ async function main(): Promise<void> {
     },
   });
   // BI-192, ORD-115. A draft written while the visit was open, never issued.
-  const glucose = await prisma.examDefinition.findUnique({
+  // ORD-163. Its name and tariff code are its service's.
+  const glucoseRow = await prisma.examDefinition.findUnique({
     where: { code: 'EX-GLUCOSA-AYUNAS' },
+    select: {
+      code: true,
+      billableService: { select: { name: true, tariffCode: true } },
+    },
   });
+  const glucose = glucoseRow && {
+    code: glucoseRow.code,
+    name: glucoseRow.billableService.name,
+    tariffCode: glucoseRow.billableService.tariffCode,
+  };
   const [tariff] = glucose?.tariffCode
     ? await prisma.$queryRaw<{ id: string }[]>`
         SELECT cc."id"::text AS id

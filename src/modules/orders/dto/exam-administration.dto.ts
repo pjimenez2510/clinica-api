@@ -57,16 +57,43 @@ const examFields = {
   performedExternally: z.boolean(),
   externalLabName: optionalText(160, 'El laboratorio no puede superar 160 caracteres'), // prettier-ignore
   externalLabCode: optionalText(64, 'El código del laboratorio no puede superar 64 caracteres'), // prettier-ignore
-  /** ORD-004. The tariff code the order line resolves on the clinical date. */
+  /**
+   * ORD-004, ORD-163. The tariff code the order line resolves on the clinical
+   * date, kept on the exam's service (`billable_service.tariff_code`).
+   */
   tariffCode: optionalText(32, 'El código del tarifario no puede superar 32 caracteres'), // prettier-ignore
-  billableServiceId: z.uuid('Elija la prestación de la lista').nullable(),
   active: z.boolean(),
 };
 
+/** BI-001. Money is decimal text, never a JSON number. */
+const MONEY = z
+  .string()
+  .regex(/^\d{1,10}(\.\d{1,2})?$/, 'El precio se escribe en dólares con dos decimales, por ejemplo 19.90'); // prettier-ignore
+
+/**
+ * ORD-162. How the new exam is charged: a service born with it (category, tax
+ * rate and, optionally, its self-pay price from today) or an existing one.
+ */
+const billingSchema = z.union([
+  z
+    .object({
+      categoryId: z.uuid('Elija la categoría de la lista'),
+      taxRateId: z.uuid('Elija el IVA de la lista'),
+      selfPayAmount: MONEY.nullable().default(null),
+    })
+    .strict(),
+  z
+    .object({ billableServiceId: z.uuid('Elija la prestación de la lista') })
+    .strict(),
+]);
+
 export const createExamSchema = z
   .object({
-    code: CODE,
+    // ORD-162. The exam's code is also its service's: 25 is the SRI's limit
+    // for the main code of an invoice line (BI-171).
+    code: CODE.max(25, 'El código no puede superar 25 caracteres'),
     ...examFields,
+    billing: billingSchema,
     // ORD-129. Defaults on creation only: inside the PATCH's `.partial()` a
     // default would reset the fast on every edit that leaves it out.
     requiresFasting: examFields.requiresFasting.default(false),
@@ -249,8 +276,8 @@ export const adminExamSchema = z.object({
   externalLabCode: z.string().nullable(),
   tariffCode: z.string().nullable(),
   active: z.boolean(),
-  /** ORD-108. Shown by code, name and class; never a price (ORD-002). */
-  billableService: examServiceSchema.nullable(),
+  /** ORD-108, ORD-163. Always one, by code, name and class; never a price (ORD-002). */
+  billableService: examServiceSchema,
   /** ORD-105. In printing order, each with its ranges (ORD-106). */
   analytes: z.array(
     z.object({

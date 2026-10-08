@@ -23,6 +23,7 @@ import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { useDatabase } from './setup/database';
 import {
   createDiagnosis,
+  createExamService,
   createIssuedPrescription,
   createPatient,
   createSite,
@@ -814,7 +815,13 @@ describe('los documentos por HTTP', () => {
         await prisma.examDefinition.create({
           data: {
             code: exam.code,
-            name: exam.name,
+            // ORD-163. The name is the exam's service's.
+            billableServiceId: (
+              await createExamService(prisma, {
+                code: exam.code,
+                name: exam.name,
+              })
+            ).id,
             form010Section: exam.section,
             patientPreparation: exam.preparation,
             // ORD-129. The fast is the exam's datum, read at print time.

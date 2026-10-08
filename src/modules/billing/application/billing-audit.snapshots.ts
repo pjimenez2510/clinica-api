@@ -27,7 +27,7 @@ export interface BillingChange {
   after?: Readonly<object>;
 }
 
-/** BI-231. A billable service's editable fields (BI-011, BI-158). */
+/** BI-231. A billable service's editable fields (BI-011). */
 export function billableServiceSnapshot(view: BillableServiceView): object {
   return {
     code: view.code,
@@ -36,8 +36,6 @@ export function billableServiceSnapshot(view: BillableServiceView): object {
     tariffCode: view.tariffCode,
     taxRateId: view.taxRateId,
     active: view.active,
-    specialtyId: view.specialtyId,
-    visitSequence: view.visitSequence,
     // BI-024. The review travels with the row, so the one a rate change
     // clears is still readable here: who checked which rate, and when.
     taxReviewedAt: view.taxReview?.reviewedAt.toISOString() ?? null,

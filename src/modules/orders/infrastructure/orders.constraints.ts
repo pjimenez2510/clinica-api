@@ -16,6 +16,13 @@ registerConstraintMeanings({
     field: 'code',
     message: 'Hay órdenes que ya citan este código',
   },
+  // ORD-163. One service charges at most one exam: the service asks first,
+  // this answers the write that raced it.
+  exam_definition_one_per_service: {
+    code: 'EXAM_SERVICE_TAKEN',
+    field: 'billableServiceId',
+    message: 'Esa prestación ya cobra otro examen',
+  },
   exam_definition_code_unique: {
     code: 'EXAM_CODE_DUPLICATE',
     field: 'code',

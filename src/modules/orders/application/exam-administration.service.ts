@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
@@ -16,6 +17,7 @@ import {
   type AdminExamView,
   type AnalyteWrite,
   type ExamAdministrationRepository,
+  type ExamBilling,
   type ExamWrite,
   type RangeVersion,
   type StructureEntry,
@@ -27,9 +29,13 @@ import {
   ExamDefinitionNotFoundError,
   ExamCodeInUseError,
   ExamHasOpenOrdersError,
+  ExamServiceCategoryNotFoundError,
   ExamServiceKindMismatchError,
   ExamServiceNotFoundError,
+  ExamServiceTakenError,
+  ExamTaxRateNotFoundError,
 } from '../domain/orders.errors';
+import type { ServiceOrderCategory } from '../domain/service-order';
 
 /** Who changes the catalogue, for the trail (ORD-111). */
 export interface CatalogueEditor {
@@ -75,14 +81,25 @@ export class ExamAdministrationService {
     return exam;
   }
 
-  /** ORD-103, ORD-108. A new exam, charged with a service of its own class. */
+  /**
+   * ORD-103, ORD-108, ORD-162. A new exam, born with its service —or tied to
+   * one of its class that charges no other exam—, in one transaction. Who may
+   * set a price is the controller's question (`billing:price-manage`).
+   */
   async createExam(
     code: string,
     exam: ExamWrite,
+    billing: ExamBilling,
     editor: CatalogueEditor,
+    now: Date = new Date(),
   ): Promise<AdminExamView> {
-    await this.assertServiceFits(exam, true);
-    const created = await this.catalogue.createExam(code, exam);
+    await this.assertBillingFits(exam.category, billing);
+    const created = await this.catalogue.createExam(
+      code,
+      exam,
+      billing,
+      clinicalDateOf(now),
+    );
     await this.record(EXAM_RESOURCE, created.id, 'CREATE', editor, {
       after: examSnapshot(created),
     });
@@ -114,12 +131,12 @@ export class ExamAdministrationService {
     ) {
       throw new ExamCodeInUseError();
     }
-    const next: ExamWrite = { ...writeOf(current), ...patch };
-    const serviceChanged =
-      patch.billableServiceId !== undefined &&
-      patch.billableServiceId !== current.billableService?.id;
-    if (serviceChanged || patch.category !== undefined) {
-      await this.assertServiceFits(next, serviceChanged);
+    // ORD-109. The service stays (ORD-163); the type must still be its class.
+    if (
+      patch.category !== undefined &&
+      patch.category !== current.billableService.kind
+    ) {
+      throw new ExamServiceKindMismatchError();
     }
     // Only what changed is written: two tabs saving at once (Datos, Cobro) do
     // not undo each other.
@@ -291,21 +308,33 @@ export class ExamAdministrationService {
   }
 
   /**
-   * ORD-108, ORD-109. The service's class is the exam's type. A service that
-   * is newly chosen must also be active; one already linked and since
-   * deactivated does not block correcting the exam's name.
+   * ORD-108, ORD-162. The service's class is the exam's type. A NEW service's
+   * category must be active and the rate must exist; an EXISTING one must be
+   * active, of the exam's class and charge no other exam (ORD-163).
    */
-  private async assertServiceFits(
-    exam: ExamWrite,
-    chosenNow: boolean,
+  private async assertBillingFits(
+    category: ServiceOrderCategory,
+    billing: ExamBilling,
   ): Promise<void> {
-    if (exam.billableServiceId === null) return;
-    const service = await this.catalogue.service(exam.billableServiceId);
-    if (!service || (chosenNow && !service.active)) {
-      throw new ExamServiceNotFoundError();
+    if (billing.kind === 'NEW') {
+      const serviceCategory = await this.catalogue.serviceCategory(
+        billing.categoryId,
+      );
+      if (!serviceCategory?.active)
+        throw new ExamServiceCategoryNotFoundError();
+      if (serviceCategory.kind !== category) {
+        throw new ExamServiceKindMismatchError();
+      }
+      if (!(await this.catalogue.taxRateExists(billing.taxRateId))) {
+        throw new ExamTaxRateNotFoundError();
+      }
+      return;
     }
-    if (service.kind !== exam.category) {
-      throw new ExamServiceKindMismatchError();
+    const service = await this.catalogue.service(billing.billableServiceId);
+    if (!service?.active) throw new ExamServiceNotFoundError();
+    if (service.kind !== category) throw new ExamServiceKindMismatchError();
+    if (await this.catalogue.serviceIsTaken(service.id)) {
+      throw new ExamServiceTakenError();
     }
   }
 
@@ -347,14 +376,17 @@ function writeOf(exam: AdminExamView): ExamWrite {
     externalLabName: exam.externalLabName,
     externalLabCode: exam.externalLabCode,
     tariffCode: exam.tariffCode,
-    billableServiceId: exam.billableService?.id ?? null,
     active: exam.active,
   };
 }
 
 /** ORD-142. An exam's editable fields, with the immutable code that names it. */
 function examSnapshot(exam: AdminExamView): object {
-  return { code: exam.code, ...writeOf(exam) };
+  return {
+    code: exam.code,
+    ...writeOf(exam),
+    billableServiceId: exam.billableService.id,
+  };
 }
 
 /** ORD-142. The exam's analytes in printing order, as `setStructure` takes them. */

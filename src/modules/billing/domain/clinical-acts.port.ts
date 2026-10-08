@@ -73,9 +73,9 @@ export interface OrderedExam {
  * A visit, seen from the money side: what decides WHAT to propose, and never
  * whether care may proceed.
  *
- * `specialtyId` is `null` more often than it looks — a walk-in with no
- * appointment has no service type to read it from — and that is a proposal
- * with one line missing, never an error: BI-155.
+ * `serviceTypeId` is `null` more often than it looks — a walk-in has no
+ * appointment to read it from — and that is a proposal with one line
+ * missing, never an error: BI-155.
  */
 export interface EncounterActs {
   encounterId: string;
@@ -85,9 +85,10 @@ export interface EncounterActs {
   status: string;
   /** The date of the visit itself, in Ecuador. Prices the consultation line. */
   serviceDate: ClinicalDate;
+  /** RDACAA's first-time or subsequent: recorded, and no longer priced (BI-158). */
   visitSequence: VisitSequence;
-  /** From the appointment's service type. `null` for a walk-in. */
-  specialtyId: string | null;
+  /** BI-158. The appointment's service type, what is charged. `null` for a walk-in. */
+  serviceTypeId: string | null;
   procedures: PerformedProcedure[];
   exams: OrderedExam[];
   /**

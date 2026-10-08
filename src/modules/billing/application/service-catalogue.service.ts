@@ -161,27 +161,20 @@ export class ServiceCatalogueService {
       await this.requireTaxRate(update.taxRateId);
     }
     // BI-187 is checked only when the update touches what it guards — the
-    // category or the consultation tie. A service already out of step (a
+    // category. A service already out of step (a
     // migrated «Consulta externa» left as OTHER) can still be renamed,
     // re-rated or deactivated: correcting is always possible.
     const movesCategory =
       update.categoryId !== undefined &&
       update.categoryId !== current.category.id;
-    if (movesCategory || update.consultation !== undefined) {
-      const category = movesCategory
-        ? await this.requireActiveCategory(update.categoryId!)
-        : current.category;
+    if (movesCategory) {
+      const category = await this.requireActiveCategory(update.categoryId!);
       assertKindAdmits(category.kind, {
-        consultations:
-          update.consultation === undefined
-            ? Number(current.specialtyId !== null)
-            : Number(update.consultation !== null),
+        consultations: current.serviceTypes.length,
         procedures: Number(current.procedureConcept !== null),
-        examCategories: movesCategory
-          ? (await this.catalogue.listExamsOfService(serviceId)).map(
-              (exam) => exam.category,
-            )
-          : [],
+        examCategories: (
+          await this.catalogue.listExamsOfService(serviceId)
+        ).map((exam) => exam.category),
       });
     }
 

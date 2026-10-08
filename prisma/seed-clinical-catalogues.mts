@@ -210,7 +210,7 @@ export interface TariffImportResult {
  * que es el archivo oficial; el CSV es su lectura reproducible.
  *
  * RETIRA LA EDICIÓN ANTERIOR SALVO LO QUE UN EXAMEN USA. Un examen nombra su
- * prestación por código (`exam_definition.tariff_code`, ORD-004): retirar ese
+ * prestación por código (el `tariff_code` de su prestación, ORD-004, ORD-163): retirar ese
  * código dejaría de poder pedirse el examen el día de la carga. Se queda
  * vigente, y se informa para que la clínica le ponga el código oficial.
  */
@@ -267,10 +267,16 @@ export async function importTariff(
   });
 
   const official = new Set(concepts.map((concept) => concept.code));
-  const exams = await prisma.examDefinition.findMany({
-    where: { active: true, tariffCode: { not: null } },
-    select: { code: true, tariffCode: true },
-  });
+  // ORD-163. The tariff code is the exam's SERVICE's.
+  const exams = (
+    await prisma.examDefinition.findMany({
+      where: { active: true, billableService: { tariffCode: { not: null } } },
+      select: { code: true, billableService: { select: { tariffCode: true } } },
+    })
+  ).map((exam) => ({
+    code: exam.code,
+    tariffCode: exam.billableService.tariffCode,
+  }));
   const kept = inForce
     .map((concept) => concept.code)
     .filter((code) => !official.has(code))

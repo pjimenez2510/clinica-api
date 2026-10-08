@@ -108,28 +108,6 @@ registerConstraintMeanings({
     message:
       'El RUC son trece dígitos y termina en un código de establecimiento como 001',
   },
-  // ── Qué prestación es «la consulta» (BI-158) ────────────────────────────
-  //
-  // The pair travels together or not at all: half a mapping resolves nothing,
-  // and a specialty with no sequence would make «which of the two
-  // consultations is this» ambiguous.
-  billable_service_consultation_states_both: {
-    code: 'CONSULTATION_MAPPING_INCOMPLETE',
-    field: 'consultation',
-    message: 'Indique la especialidad y si es primera vez o subsecuente: las dos o ninguna', // prettier-ignore
-  },
-  billable_service_visit_sequence_is_known: {
-    code: 'INVALID_VISIT_SEQUENCE',
-    field: 'consultation.visitSequence',
-    message: 'Valores admitidos: FIRST_TIME, SUBSEQUENT',
-  },
-  // «Se coge la primera» es como una clínica cobra la consulta vieja durante
-  // meses sin que nada falle, así que la base admite una sola.
-  billable_service_one_per_consultation: {
-    code: 'CONSULTATION_ALREADY_MAPPED',
-    field: 'consultation',
-    message: 'Esa especialidad ya tiene una prestación para ese tipo de consulta: quítesela antes de asignarla aquí', // prettier-ignore
-  },
   payer_code_unique: {
     code: 'PAYER_CODE_DUPLICATE',
     field: 'code',

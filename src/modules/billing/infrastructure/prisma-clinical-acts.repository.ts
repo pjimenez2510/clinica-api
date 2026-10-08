@@ -66,14 +66,12 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
   /**
    * BI-150, BI-151. The visit and its acts, in ONE round trip.
    *
-   * ⚠️ THE SPECIALTY COMES FROM THE APPOINTMENT'S SERVICE TYPE and from
-   * nowhere else. The alternative — the practitioner's specialties — is wrong
-   * in the one case that matters: a doctor registered under two specialties
-   * would make the consultation price depend on which of them a query happened
-   * to return first, and a walk-in with no appointment would still have no
-   * answer. `null` here is a proposal with one line missing (BI-155), which
-   * the cashier fills in; a wrong specialty is a wrong price on an invoice
-   * nobody can correct afterwards.
+   * ⚠️ THE CONSULTATION COMES FROM THE APPOINTMENT'S SERVICE TYPE and from
+   * nowhere else (BI-158, D-179.3): the type is what is charged. The
+   * practitioner's specialties would make the price depend on which of them a
+   * query returned first, and a walk-in with no appointment has no type at
+   * all. `null` here is a proposal with one line missing (BI-155), which the
+   * cashier fills in.
    *
    * ⚠️ AND IT IS SCOPED BY SITE, so a visit of another site answers `null` —
    * indistinguishable from one that does not exist (BI-135). A visit confirms
@@ -92,9 +90,7 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
         status: true,
         startedAt: true,
         visitSequence: true,
-        agendaEntry: {
-          select: { serviceType: { select: { specialtyId: true } } },
-        },
+        agendaEntry: { select: { serviceTypeId: true } },
         procedures: {
           select: {
             id: true,
@@ -128,7 +124,7 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
       status: row.status,
       serviceDate: clinicalDateOf(row.startedAt),
       visitSequence: row.visitSequence,
-      specialtyId: row.agendaEntry?.serviceType?.specialtyId ?? null,
+      serviceTypeId: row.agendaEntry?.serviceTypeId ?? null,
       clinicallyAttended,
       procedures: row.procedures.map((procedure): PerformedProcedure => ({
         encounterProcedureId: procedure.id,

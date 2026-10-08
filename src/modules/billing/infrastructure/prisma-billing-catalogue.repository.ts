@@ -16,7 +16,6 @@ import type {
   BillableServiceUpdate,
   BillableServiceView,
   BillingCatalogueRepository,
-  ConsultationMapping,
   NewBillableService,
   NewPayer,
   PayerKind,
@@ -30,7 +29,6 @@ import type {
   TaxRateView,
 } from '../domain/billing.repository';
 import type { ServiceMatch } from '../domain/charge-proposal';
-import type { VisitSequence } from '../domain/clinical-acts.port';
 import { Money, Percentage } from '../domain/money';
 import { type PriceChange, type PriceRow, toClinicalDate } from '../domain/price-list'; // prettier-ignore
 
@@ -84,11 +82,22 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
 
   /** BI-188. A read of the exam catalogue, never a write (BI-004). */
   async listExamsOfService(serviceId: string): Promise<ServiceExamView[]> {
-    return this.prisma.examDefinition.findMany({
+    // ORD-163. At most one, and named by this very service.
+    const rows = await this.prisma.examDefinition.findMany({
       where: { billableServiceId: serviceId },
-      select: { id: true, code: true, name: true, category: true, active: true }, // prettier-ignore
-      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        code: true,
+        category: true,
+        active: true,
+        billableService: { select: { name: true } },
+      },
+      orderBy: { code: 'asc' },
     });
+    return rows.map(({ billableService, ...exam }) => ({
+      ...exam,
+      name: billableService.name,
+    }));
   }
 
   /** BI-185. Alphabetical; inactive ones only on request, never hidden. */
@@ -143,8 +152,9 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     examCategories: string[];
   }> {
     const [consultations, procedures, exams] = await Promise.all([
+      // BI-187, SP-031. The services of this category some service type charges.
       this.prisma.billableService.count({
-        where: { categoryId, specialtyId: { not: null } },
+        where: { categoryId, serviceTypes: { some: {} } },
       }),
       this.prisma.billableService.count({
         where: { categoryId, procedureConceptId: { not: null } },
@@ -264,15 +274,6 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
         tariffCode: update.tariffCode,
         taxRateId: update.taxRateId,
         active: update.active,
-        // BI-158. `null` clears the pair, `undefined` leaves it alone, and
-        // half a pair is impossible to express — which is what
-        // `billable_service_consultation_states_both` refuses underneath.
-        ...(update.consultation === undefined
-          ? {}
-          : {
-              specialtyId: update.consultation?.specialtyId ?? null,
-              visitSequence: update.consultation?.visitSequence ?? null,
-            }),
         // BI-024. Both columns or neither, which is what
         // `billable_service_tax_review_names_who_and_when` demands underneath.
         ...(update.taxReview === undefined
@@ -308,7 +309,8 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
   }
 
   /**
-   * BI-158. The consultation of a specialty, ACTIVE OR NOT.
+   * BI-158, SP-031. The consultation of a service type —its first service—,
+   * ACTIVE OR NOT.
    *
    * The active flag travels instead of filtering: a proposal that silently
    * skipped a deactivated consultation would look identical to one for a
@@ -317,16 +319,19 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
    * es la consulta de dermatología».
    */
   async findConsultationService(
-    mapping: ConsultationMapping,
+    serviceTypeId: string,
   ): Promise<ServiceMatch | null> {
-    const row = await this.prisma.billableService.findFirst({
-      where: {
-        specialtyId: mapping.specialtyId,
-        visitSequence: mapping.visitSequence,
-      },
-      select: { id: true, active: true },
+    const row = await this.prisma.serviceTypeBillableService.findFirst({
+      where: { serviceTypeId },
+      orderBy: { position: 'asc' },
+      select: { billableService: { select: { id: true, active: true } } },
     });
-    return row === null ? null : { billableServiceId: row.id, active: row.active }; // prettier-ignore
+    return row === null
+      ? null
+      : {
+          billableServiceId: row.billableService.id,
+          active: row.billableService.active,
+        };
   }
 
   /**
@@ -377,7 +382,7 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     if (codes.length === 0) return new Map();
 
     const rows = await this.prisma.examDefinition.findMany({
-      where: { code: { in: [...codes] }, billableServiceId: { not: null } },
+      where: { code: { in: [...codes] } },
       select: {
         code: true,
         billableService: { select: { id: true, active: true } },
@@ -386,7 +391,6 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
 
     const byCode = new Map<string, ServiceMatch>();
     for (const row of rows) {
-      if (row.billableService === null) continue;
       byCode.set(row.code, {
         billableServiceId: row.billableService.id,
         active: row.billableService.active,
@@ -626,6 +630,15 @@ const SERVICE_INCLUDE = {
   category: true,
   procedureConcept: { select: { id: true, code: true, display: true } },
   taxReviewedBy: { select: { firstName: true, lastName: true } },
+  // BI-188, SP-031. What it charges for, when it is a consultation.
+  serviceTypes: {
+    orderBy: { serviceType: { name: 'asc' } },
+    select: {
+      serviceType: {
+        select: { id: true, name: true, specialty: { select: { name: true } } }, // prettier-ignore
+      },
+    },
+  },
 } satisfies Prisma.BillableServiceInclude;
 
 type ServiceRow = BillableServiceRow & {
@@ -633,6 +646,9 @@ type ServiceRow = BillableServiceRow & {
   category: CategoryRow;
   procedureConcept: { id: string; code: string; display: string } | null;
   taxReviewedBy: { firstName: string; lastName: string } | null;
+  serviceTypes: {
+    serviceType: { id: string; name: string; specialty: { name: string } };
+  }[];
 };
 
 /** The `kind` cast leans on `billable_service_category_kind_is_known`. */
@@ -646,8 +662,7 @@ function toCategoryView(row: CategoryRow): ServiceCategoryView {
 }
 
 /**
- * Row to view, with the tax code and percentage taken from the joined rate. The
- * `visitSequence` cast leans on `billable_service_visit_sequence_is_known`.
+ * Row to view, with the tax code and percentage taken from the joined rate.
  */
 function toServiceView(row: ServiceRow): BillableServiceView {
   return {
@@ -664,8 +679,11 @@ function toServiceView(row: ServiceRow): BillableServiceView {
         ? null
         : Percentage.parse(row.taxRate.percentage),
     active: row.active,
-    specialtyId: row.specialtyId,
-    visitSequence: row.visitSequence as VisitSequence | null,
+    serviceTypes: row.serviceTypes.map(({ serviceType }) => ({
+      id: serviceType.id,
+      name: serviceType.name,
+      specialtyName: serviceType.specialty.name,
+    })),
     // The CHECK keeps the two columns together; the user comes with the id.
     taxReview:
       row.taxReviewedAt === null ||

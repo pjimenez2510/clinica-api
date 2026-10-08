@@ -5,11 +5,17 @@ import type { ReferenceRange } from '../domain/analyte';
 import {
   AnalyteUnitWithRangesError,
   ExamCodeInUseError,
+  ExamServiceCategoryNotFoundError,
+  ExamServiceKindMismatchError,
+  ExamServiceTakenError,
+  ExamTaxRateNotFoundError,
 } from '../domain/orders.errors';
 import type {
   AdminAnalyteView,
   AdminExamView,
   ExamAdministrationRepository,
+  ExamBilling,
+  ExamWrite,
 } from '../domain/exam-administration.repository';
 
 import { ExamAdministrationService } from './exam-administration.service';
@@ -61,7 +67,14 @@ const EXAM: AdminExamView = {
   performedExternally: false,
   externalLabName: null,
   externalLabCode: null,
-  billableService: null,
+  billableService: {
+    id: 'service-glu',
+    code: 'EX-GLU',
+    name: 'Glucosa en ayunas',
+    categoryName: 'Laboratorio',
+    kind: 'LABORATORY',
+    active: true,
+  },
   active: true,
   analytes: [{ analyte: ANALYTE, position: 1, isReflex: false }],
 };
@@ -80,6 +93,11 @@ function build(overrides: Partial<Record<string, unknown>> = {}) {
     updateAnalyte: vi.fn().mockResolvedValue(ANALYTE),
     setRanges: vi.fn().mockResolvedValue(ANALYTE),
     service: vi.fn().mockResolvedValue(undefined),
+    serviceIsTaken: vi.fn().mockResolvedValue(false),
+    serviceCategory: vi
+      .fn()
+      .mockResolvedValue({ kind: 'LABORATORY', active: true }),
+    taxRateExists: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
   const service = new ExamAdministrationService(
@@ -208,15 +226,107 @@ describe('ExamAdministrationService · bitácora con antes y después (ORD-142)'
         externalLabName: null,
         externalLabCode: null,
         tariffCode: null,
-        billableServiceId: null,
         active: true,
       },
+      NEW_BILLING,
       EDITOR,
     );
 
     expect(recorded[0]).toMatchObject({ action: 'CREATE' });
     expect(recorded[0]?.before).toBeUndefined();
     expect(recorded[0]?.after).toMatchObject({ code: 'EX-GLU' });
+  });
+});
+
+const NEW_BILLING: ExamBilling = {
+  kind: 'NEW',
+  categoryId: 'category-lab',
+  taxRateId: 'rate-0',
+  selfPayAmount: '12.00',
+};
+
+const WRITE: ExamWrite = {
+  name: 'Perfil renal',
+  category: 'LABORATORY',
+  form010Section: null,
+  specimenType: null,
+  patientPreparation: null,
+  turnaroundHours: null,
+  requiresFasting: false,
+  fastingHours: null,
+  performedExternally: true,
+  externalLabName: null,
+  externalLabCode: null,
+  tariffCode: '360010',
+  active: true,
+};
+
+describe('ExamAdministrationService · un examen, una prestación (ORD-162, ORD-163)', () => {
+  it('ORD-162 crea el examen con su cobro y el precio desde hoy en Ecuador', async () => {
+    const createExam = vi.fn().mockResolvedValue(EXAM);
+    const { service } = build({ createExam });
+    // 02:00 UTC de cualquier día es todavía el día anterior en Guayaquil.
+    const now = new Date();
+    now.setUTCHours(2, 0, 0, 0);
+    const dayBefore = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10); // prettier-ignore
+
+    await service.createExam('EX-RENAL', WRITE, NEW_BILLING, EDITOR, now);
+
+    expect(createExam).toHaveBeenCalledWith(
+      'EX-RENAL',
+      WRITE,
+      NEW_BILLING,
+      dayBefore,
+    );
+  });
+
+  it('ORD-162 rechaza una categoría desactivada, de otra clase o un IVA que no existe, sin escribir', async () => {
+    const createExam = vi.fn();
+    const cases: [Record<string, unknown>, new () => Error][] = [
+      [{ serviceCategory: vi.fn().mockResolvedValue({ kind: 'LABORATORY', active: false }) }, ExamServiceCategoryNotFoundError], // prettier-ignore
+      [{ serviceCategory: vi.fn().mockResolvedValue(undefined) }, ExamServiceCategoryNotFoundError], // prettier-ignore
+      [{ serviceCategory: vi.fn().mockResolvedValue({ kind: 'IMAGING', active: true }) }, ExamServiceKindMismatchError], // prettier-ignore
+      [
+        { taxRateExists: vi.fn().mockResolvedValue(false) },
+        ExamTaxRateNotFoundError,
+      ],
+    ];
+    for (const [overrides, error] of cases) {
+      const { service } = build({ ...overrides, createExam });
+      await expect(
+        service.createExam('EX-RENAL', WRITE, NEW_BILLING, EDITOR),
+      ).rejects.toBeInstanceOf(error);
+    }
+    expect(createExam).not.toHaveBeenCalled();
+  });
+
+  it('ORD-163 una prestación existente que ya cobra otro examen se rechaza con EXAM_SERVICE_TAKEN', async () => {
+    const createExam = vi.fn();
+    const { service } = build({
+      createExam,
+      service: vi.fn().mockResolvedValue(EXAM.billableService),
+      serviceIsTaken: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(
+      service.createExam(
+        'EX-RENAL',
+        WRITE,
+        { kind: 'EXISTING', billableServiceId: 'service-glu' },
+        EDITOR,
+      ),
+    ).rejects.toBeInstanceOf(ExamServiceTakenError);
+    expect(createExam).not.toHaveBeenCalled();
+  });
+
+  it('ORD-109 cambiar el tipo a otra clase que la de su prestación se rechaza', async () => {
+    const updateExam = vi.fn();
+    const { service } = build({ updateExam });
+
+    await expect(
+      service.updateExam('exam-1', { category: 'IMAGING' }, EDITOR),
+    ).rejects.toBeInstanceOf(ExamServiceKindMismatchError);
+    expect(updateExam).not.toHaveBeenCalled();
   });
 });
 

@@ -20,6 +20,7 @@ import {
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { assertClinicWideScope } from '../../shared/authorisation/site-scope';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -97,9 +98,24 @@ export class ExamAdministrationController {
     @Body() dto: CreateExamDto,
     @Req() req: Request,
   ): Promise<AdminExamResponse> {
-    const { code, ...exam } = dto;
+    const { code, billing, ...exam } = dto;
+    // ORD-162 (D-049). A price moves money: only with `billing:price-manage`
+    // over the whole clinic, checked before anything is written.
+    if ('selfPayAmount' in billing && billing.selfPayAmount !== null) {
+      assertClinicWideScope(
+        this.currentUser.requirePrincipal(),
+        'billing:price-manage',
+      );
+    }
     return toExamResponse(
-      await this.catalogue.createExam(code, exam, this.editor(req)),
+      await this.catalogue.createExam(
+        code,
+        exam,
+        'billableServiceId' in billing
+          ? { kind: 'EXISTING', billableServiceId: billing.billableServiceId }
+          : { kind: 'NEW', ...billing },
+        this.editor(req),
+      ),
     );
   }
 
@@ -243,7 +259,14 @@ function toExamResponse(exam: AdminExamView): AdminExamResponse {
     externalLabCode: exam.externalLabCode,
     tariffCode: exam.tariffCode,
     active: exam.active,
-    billableService: exam.billableService ? { ...exam.billableService } : null,
+    billableService: {
+      id: exam.billableService.id,
+      code: exam.billableService.code,
+      name: exam.billableService.name,
+      categoryName: exam.billableService.categoryName,
+      kind: exam.billableService.kind,
+      active: exam.billableService.active,
+    },
     analytes: exam.analytes.map((entry) => ({
       position: entry.position,
       isReflex: entry.isReflex,

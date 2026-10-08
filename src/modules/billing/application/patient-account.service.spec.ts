@@ -98,8 +98,7 @@ const service = (
   taxSriCode: '0',
   taxPercentage: Percentage.ZERO,
   active: true,
-  specialtyId: null,
-  visitSequence: null,
+  serviceTypes: [],
   taxReview: null,
   ...overrides,
 });
@@ -155,7 +154,7 @@ function build(
     record: vi.fn().mockResolvedValue(undefined),
     draftOrdersOf: vi.fn().mockResolvedValue([]),
     findEncounterActs: vi.fn().mockResolvedValue({
-      specialtyId: 'specialty-1',
+      serviceTypeId: 'service-type-1',
       visitSequence: 'SUBSEQUENT',
     }),
     findConsultationService: vi.fn().mockResolvedValue({

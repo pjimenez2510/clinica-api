@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import { createCatalogueEntry } from '../../../shared/infrastructure/prisma/catalogue-entry';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type { ReferenceRange } from '../domain/analyte';
 import type {
@@ -8,13 +10,16 @@ import type {
   AdminExamView,
   AnalyteWrite,
   ExamAdministrationRepository,
+  ExamBilling,
   ExamServiceView,
   ExamWrite,
   RangeVersion,
+  ServiceCategoryView,
   StructureEntry,
 } from '../domain/exam-administration.repository';
 import {
   AnalyteNotFoundError,
+  ExamCodeDuplicateError,
   ExamDefinitionNotFoundError,
 } from '../domain/orders.errors';
 import {
@@ -42,6 +47,7 @@ const SERVICE_SELECT = {
   id: true,
   code: true,
   name: true,
+  tariffCode: true,
   active: true,
   category: { select: { name: true, kind: true } },
 } satisfies Prisma.BillableServiceSelect;
@@ -62,9 +68,11 @@ const ADMIN_ANALYTE_SELECT = {
   loincCode: true,
   active: true,
   exams: {
-    orderBy: { examDefinition: { name: 'asc' } },
+    orderBy: { examDefinition: { billableService: { name: 'asc' } } },
     select: {
-      examDefinition: { select: { id: true, code: true, name: true } },
+      examDefinition: {
+        select: { id: true, code: true, billableService: { select: { name: true } } }, // prettier-ignore
+      },
     },
   },
 } satisfies Prisma.AnalyteDefinitionSelect;
@@ -79,7 +87,11 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
 
   async exams(): Promise<AdminExamView[]> {
     const rows = await this.prisma.examDefinition.findMany({
-      orderBy: [{ active: 'desc' }, { category: 'asc' }, { name: 'asc' }],
+      orderBy: [
+        { active: 'desc' },
+        { category: 'asc' },
+        { billableService: { name: 'asc' } },
+      ],
       select: ADMIN_EXAM_SELECT,
     });
     return rows.map(toAdminExam);
@@ -93,23 +105,78 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
     return row ? toAdminExam(row) : undefined;
   }
 
-  async createExam(code: string, exam: ExamWrite): Promise<AdminExamView> {
-    const row = await this.prisma.examDefinition.create({
-      data: { code, ...exam },
-      select: ADMIN_EXAM_SELECT,
+  /** ORD-162, ORD-163. The exam and its service, in one transaction. */
+  async createExam(
+    code: string,
+    exam: ExamWrite,
+    billing: ExamBilling,
+    today: ClinicalDate,
+  ): Promise<AdminExamView> {
+    const { name, tariffCode, ...own } = exam;
+    const row = await this.prisma.$transaction(async (tx) => {
+      // The service is written first, so a clash on the EXAM's code is asked
+      // here; `exam_definition_code_unique` still arbitrates a race.
+      if (
+        await tx.examDefinition.findUnique({
+          where: { code },
+          select: { id: true },
+        })
+      ) {
+        // prettier-ignore
+        throw new ExamCodeDuplicateError();
+      }
+      let billableServiceId: string;
+      if (billing.kind === 'NEW') {
+        billableServiceId = await createCatalogueEntry(tx, {
+          // ONE code: what the order line freezes is what the invoice cites.
+          code,
+          name,
+          categoryId: billing.categoryId,
+          taxRateId: billing.taxRateId,
+          tariffCode,
+          selfPay:
+            billing.selfPayAmount === null
+              ? null
+              : { amount: billing.selfPayAmount, validFrom: today },
+        });
+      } else {
+        billableServiceId = billing.billableServiceId;
+        await tx.billableService.update({
+          where: { id: billableServiceId },
+          data: { name, tariffCode },
+        });
+      }
+      return tx.examDefinition.create({
+        data: { code, ...own, billableServiceId },
+        select: ADMIN_EXAM_SELECT,
+      });
     });
     return toAdminExam(row);
   }
 
+  /** ORD-163. The exam's own columns, and its name and tariff on its service. */
   async updateExam(
     id: string,
     patch: Partial<ExamWrite> & { code?: string },
   ): Promise<AdminExamView> {
+    const { name, tariffCode, ...own } = patch;
     try {
-      const row = await this.prisma.examDefinition.update({
-        where: { id },
-        data: patch,
-        select: ADMIN_EXAM_SELECT,
+      const row = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.examDefinition.update({
+          where: { id },
+          data: own,
+          select: { billableServiceId: true },
+        });
+        if (name !== undefined || tariffCode !== undefined) {
+          await tx.billableService.update({
+            where: { id: updated.billableServiceId },
+            data: { name, tariffCode },
+          });
+        }
+        return tx.examDefinition.findUniqueOrThrow({
+          where: { id },
+          select: ADMIN_EXAM_SELECT,
+        });
       });
       return toAdminExam(row);
     } catch (error) {
@@ -201,6 +268,33 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
       select: SERVICE_SELECT,
     });
     return row ? toService(row) : undefined;
+  }
+
+  /** ORD-162. */
+  async serviceIsTaken(serviceId: string): Promise<boolean> {
+    const found = await this.prisma.examDefinition.findUnique({
+      where: { billableServiceId: serviceId },
+      select: { id: true },
+    });
+    return found !== null;
+  }
+
+  /** ORD-162. */
+  async serviceCategory(id: string): Promise<ServiceCategoryView | undefined> {
+    const row = await this.prisma.billableServiceCategory.findUnique({
+      where: { id },
+      select: { kind: true, active: true },
+    });
+    return row ?? undefined;
+  }
+
+  /** ORD-162. */
+  async taxRateExists(id: string): Promise<boolean> {
+    const row = await this.prisma.taxRate.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    return row !== null;
   }
 
   async analytes(): Promise<AdminAnalyteView[]> {
@@ -401,6 +495,7 @@ function toService(row: {
   id: string;
   code: string;
   name: string;
+  tariffCode: string | null;
   active: boolean;
   category: { name: string; kind: string };
 }): ExamServiceView {
@@ -419,7 +514,7 @@ function toAdminExam(row: AdminExamRow): AdminExamView {
     ...toExamView(row),
     active: row.active,
     externalLabCode: row.externalLabCode,
-    billableService: row.billableService ? toService(row.billableService) : null, // prettier-ignore
+    billableService: toService(row.billableService),
   };
 }
 
@@ -428,6 +523,10 @@ function toAdminAnalyte(row: AdminAnalyteRow): AdminAnalyteView {
     ...toAnalyte(row),
     loincCode: row.loincCode,
     active: row.active,
-    usedBy: row.exams.map((entry) => entry.examDefinition),
+    usedBy: row.exams.map(({ examDefinition: exam }) => ({
+      id: exam.id,
+      code: exam.code,
+      name: exam.billableService.name,
+    })),
   };
 }
