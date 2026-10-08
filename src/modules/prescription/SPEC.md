@@ -233,6 +233,9 @@ pestaña dice la alergia que el servidor bloquea (EN-238, recorrido F-04).
 El registro interno del talonario físico y el reporte mensual a la ACESS.
 **Ninguna de las dos tablas existe** y este documento no las inventa: la entrega
 está enunciada, no construida, y el §5 dice exactamente qué falta.
+Antes del esquema faltan tres respuestas que no son técnicas —quién es el
+custodio, el formato del reporte de la ACESS y qué sustancias son controladas—,
+registradas en D-183.3.
 
 **Prueba independiente:** no la tiene todavía, y decirlo es el punto.
 
