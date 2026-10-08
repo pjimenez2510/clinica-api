@@ -486,6 +486,18 @@ describe('los casos de uso de la atención', () => {
     ]);
   });
 
+  it('AG-179 abrir y guardar los signos avisan al tablero de su sede', async () => {
+    await service.startVitals('encounter-1', requester);
+    await service.recordVitals('encounter-1', { weightKg: 68.4 }, nurse);
+
+    expect(heard).toEqual([
+      { kind: 'agenda', siteId: SITE },
+      { kind: 'waiting-room', siteId: SITE },
+      { kind: 'agenda', siteId: SITE },
+      { kind: 'waiting-room', siteId: SITE },
+    ]);
+  });
+
   it('EN-217 guarda la toma aunque falte la antropometría obligatoria, y dice qué falta', async () => {
     /**
      * EN-008: what was true THAT DAY. D-132 B: the taking is saved and the

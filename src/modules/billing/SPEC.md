@@ -2138,11 +2138,16 @@ dos registros distintos.**
   entregarlo sólo a las sesiones con `billing:read` en ella.
   > El aviso no dice qué cuenta ni de quién (AU-055). Termina una atención en
   > `encounter` y no en `billing`, y es lo que la pone en «Por cobrar» (BI-181).
-- **BI-239** — MIENTRAS el canal esté vivo, «Por cobrar», «Cuentas abiertas»
-  y la cuenta abierta en pantalla DEBERÁN volver a pedir lo suyo al llegar el
-  aviso `billing` de su sede, sin ningún aviso visible, y también al abrirse o
-  volver el canal; con el canal caído, como hasta ahora: al volver a la
-  pantalla.
+- **BI-239** — MIENTRAS el canal esté vivo, «Por cobrar» y «Cuentas
+  abiertas» DEBERÁN volver a pedir lo suyo al llegar el aviso `billing` de su
+  sede, sin ningún aviso visible, y también al volver el canal; la cuenta
+  abierta en pantalla NO DEBERÁ releerse al aviso; con el canal caído, como
+  hasta ahora: al volver a la pantalla.
+  > La cuenta no, por la revisión clínica (G1): el diálogo «Emitir factura»
+  > envía como total esperado el que tiene a la vista (BI-184, BI-197), y
+  > releerla al aviso de un cargo nuevo cambiaba ese total en silencio, con lo
+  > que el servidor ya no podía rechazar la factura por un importe que nadie
+  > acordó. Se relee al volver a la pantalla y tras las acciones propias.
 
 ## 22. Corregir una factura
 

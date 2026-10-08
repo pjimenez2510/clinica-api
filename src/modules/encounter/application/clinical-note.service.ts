@@ -410,8 +410,13 @@ export class ClinicalNoteService {
       { action: 'CLINICAL_NOTE_SIGNED' },
       'clinical note signed',
     );
-    // AG-179, BI-238. The signature that discharges ends the attention.
-    await this.announce(request.encounterId, requester, true);
+    // AG-179, BI-238. The signature that discharges ends the attention; caja
+    // hears only that one.
+    await this.announce(
+      request.encounterId,
+      requester,
+      requireForm(signed.formCode, signed.formVersion).dischargesTheEncounter,
+    );
 
     return { ...signed, template };
   }

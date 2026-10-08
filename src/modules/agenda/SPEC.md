@@ -538,7 +538,7 @@ canal de avisos de `auth` (AU-054 a AU-058). El sondeo queda de respaldo.
 de espera de A abiertas, registrar la llegada de una cita de A desde otra
 sesión: las dos pantallas la pintan sin recargar; la misma llegada en la sede
 B no llega a ninguna de ellas.
-**Cubre:** AG-179 a AG-181.
+**Cubre:** AG-179 a AG-182.
 **Solo servidor:** AG-179, AG-180.
 **Solo interfaz:** AG-181.
 
@@ -2866,12 +2866,28 @@ Convertirlo en configuración sería regalar la garantía.
   > D-187 §4: refrescar en silencio, sin campanas. La pestaña oculta no pide
   > por lo mismo que el sondeo de hoy: cada lectura del tablero deja una fila
   > en la bitácora (AG-139). La agenda no tenía sondeo: se releía al volver a
-  > la pantalla, y con el canal caído sigue así. La disponibilidad NO se
+  > la pantalla, y con el canal caído sigue así. La cuenta abierta de caja
+  > tampoco (BI-239): un diálogo de factura abierto cambiaría su total. La disponibilidad NO se
   > relee al aviso: el diálogo de reservar lee la misma entrada (AG-170) y
   > cambiaría de cupo en silencio mientras recepción habla con el paciente;
   > el cupo que otro tomó lo rechaza el servidor y el diálogo lo dice
   > (AG-023). La primera apertura del canal, justo tras cargar, no relee lo
   > recién leído (más de 10 s, sí).
+- **AG-182** — CUANDO se confirme una llegada calificada de emergencia que
+  levante su aviso (AG-129), o su corrección a emergencia (AG-132), el sistema
+  DEBERÁ publicar el aviso `emergency-alerts` dirigido sólo a los
+  destinatarios que aún no lo marcaron «Enterado», y CUANDO uno lo marque
+  «Enterado» (AG-175), dirigido sólo a él; NO DEBERÁ entregarlo a ninguna otra
+  sesión —tampoco a otro profesional de la misma sede— y el aviso que llega al
+  navegador DEBERÁ ser `{ kind, siteId }`, sin destinatario ni paciente; y
+  MIENTRAS el canal esté vivo, la banda de avisos de emergencia DEBERÁ
+  volver a pedir los suyos al llegar ese aviso, con un sondeo de respaldo de
+  5 minutos en lugar de los 15 segundos de AG-175, que DEBERÁN volver con el
+  canal caído.
+  > Enmienda el «se consulta cada pocos segundos» de AG-175 (pedido del autor,
+  > 08-10-2026). El destinatario viaja entre instancias de la API (Redis) y se
+  > filtra en el servidor; el flujo lo reconstruye como `{ kind, siteId }`
+  > (AU-055), así que ni el propio destinatario recibe a quién iba.
 
 ## Códigos de error nuevos
 
@@ -3135,7 +3151,8 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | AG-136, AG-137                                  | Seguridad dirigida + contrato HTTP: una sesión con `agenda:board:public` y nada más no alcanza la proyección de personal, y la fila que recibe no lleva ninguno de los campos prohibidos |
 | AG-176                                          | Contrato HTTP con una sesión de `ENFERMERIA` de verdad (escribe la nota sin `agenda:write`) + integración: la nota sobre un bloqueo se rechaza y la escrita no toca ningún otro campo |
 | AG-178                                          | Unitario del esquema (tope de 7 días sin profesional y de 31 con él, exclusión de `date` y rango) + integración contra PostgreSQL real con control positivo: la cita del `to` a las 23:30 de Guayaquil sale y la del día siguiente no; 7 días sin profesional y 31 con él traen la cita, el 8.º y el 32.º son 422 en `to` + unitario de interfaz: la semana sale en **una** petición |
-| AG-179, AG-180                                  | Unitario del interceptor (no publica en `GET` ni si la escritura falla) + integración con sesiones reales y control positivo de sede: reservar y registrar la llegada en A llega a recepción de A y a la sala de A, y no a recepción de B; la sala no recibe `agenda` |
+| AG-179, AG-180                                  | Unitario del interceptor (no publica en `GET`/`HEAD` ni si la escritura falla) y de los servicios de atención + integración con sesiones reales y control positivo de sede: anular una cita de A llega a recepción de A y a la sala de A, y no a recepción de B; la nota del tablero no despierta a la sala; la pausa de la atención llega a A y no a B |
+| AG-182                                          | Integración con sesiones reales: la llegada en emergencia llega a la sesión del médico destinatario como `{ kind, siteId }` y no a otro médico de la sede (control positivo: ese flujo sí oye `agenda` de la misma escritura); el «Enterado» igual + unitario de la banda + recorrido F-02 |
 | AG-181                                          | Unitario de interfaz del composable y de cada pantalla (aviso de otra sede no relee, pestaña oculta no pide, cadencia según el canal) + recorridos F-01 y F-02: lo que otra sesión hace aparece sin recargar |
 | AG-139, AG-140                                  | Integración contra PostgreSQL real: una consulta del tablero deja **una** fila de bitácora y no una por cita (SC-004), y la tasa no se mueve cuando una cita pasa a `LEFT_WITHOUT_BEING_SEEN` |
 | AG-142                                          | Integración: cambiar el umbral de una sede cambia la advertencia siguiente y no toca las llegadas ya registradas (AG-098) |

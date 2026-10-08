@@ -5,6 +5,7 @@ import { Principal } from '../authorisation/principal';
 import {
   LIVE_EVENT_PERMISSION,
   LIVE_STREAM_PERMISSIONS,
+  type LiveEvent,
   type LiveEventKind,
   mayReceive,
   parseLiveEvent,
@@ -125,5 +126,30 @@ describe('el aviso en vivo', () => {
       'billing:read',
       'record:read',
     ]);
+  });
+
+  it('AG-182: el aviso de emergencia llega sólo a sus destinatarios, y sin ellos a nadie', () => {
+    const doctor = new Principal('01990000-0000-7000-8000-0000000000d1', [
+      { roleCode: 'MEDICO', siteId: SITE_A, permissions: ['agenda:read', 'record:read'] }, // prettier-ignore
+    ]);
+    const colleague = new Principal('01990000-0000-7000-8000-0000000000d2', [
+      { roleCode: 'MEDICO', siteId: SITE_A, permissions: ['agenda:read', 'record:read'] }, // prettier-ignore
+    ]);
+    const addressed: LiveEvent = {
+      kind: 'emergency-alerts',
+      siteId: SITE_A,
+      userIds: [doctor.userId],
+    };
+
+    expect(mayReceive(doctor, addressed)).toBe(true);
+    expect(mayReceive(colleague, addressed)).toBe(false);
+    expect(
+      mayReceive(doctor, { kind: 'emergency-alerts', siteId: SITE_A }),
+    ).toBe(false);
+    // The addressees survive the trip through Redis, and only as uuids.
+    expect(parseLiveEvent(JSON.stringify(addressed))).toEqual(addressed);
+    expect(
+      parseLiveEvent(JSON.stringify({ ...addressed, userIds: ['ana'] })),
+    ).toBeNull();
   });
 });

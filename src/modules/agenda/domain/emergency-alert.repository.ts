@@ -34,9 +34,14 @@ export interface EmergencyAlertRepository {
    * there if it was acknowledged before — or `null` when no notice with that
    * id is addressed to this recipient.
    */
+  /** AG-175. The instant, and the alert's site for AG-182's event. */
   acknowledge(
     alertId: string,
     recipientId: string,
     at: Date,
-  ): Promise<Date | null>;
+  ): Promise<{ acknowledgedAt: Date; siteId: string } | null>;
+  /** AG-182. Who still has an unacknowledged notice of this appointment. */
+  pendingRecipientsOfEntry(
+    agendaEntryId: string,
+  ): Promise<{ siteId: string; recipientId: string }[]>;
 }

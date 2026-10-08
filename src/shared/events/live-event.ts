@@ -34,9 +34,19 @@ export const LIVE_EVENT_PERMISSION = {
   billing: 'billing:read',
   /** SRI-092. An electronic voucher of a site changed state. */
   sri: 'billing:read',
+  /**
+   * AG-182. An emergency notice (AG-129, AG-175) was raised or acknowledged.
+   * ADDRESSED: it reaches only the sessions of its recipients (`userIds`).
+   */
+  'emergency-alerts': 'agenda:read',
 } as const satisfies Record<string, Permission>;
 
 export type LiveEventKind = keyof typeof LIVE_EVENT_PERMISSION;
+
+/** AG-182. The kinds that are said to their recipients, never to a site. */
+const ADDRESSED_KINDS: ReadonlySet<LiveEventKind> = new Set([
+  'emergency-alerts',
+]);
 
 /**
  * AU-054 (afinado). What a session must hold —any one of them, at some site—
@@ -59,6 +69,12 @@ const KINDS = Object.keys(LIVE_EVENT_PERMISSION) as [
 export const liveEventSchema = z.strictObject({
   kind: z.enum(KINDS),
   siteId: z.uuid(),
+  /**
+   * AG-182. For an addressed event, who may hear it. It travels between API
+   * instances and NEVER to a browser: the stream rebuilds each event as
+   * `{ kind, siteId }` (AU-055).
+   */
+  userIds: z.array(z.uuid()).min(1).max(50).optional(),
 });
 
 export type LiveEvent = z.infer<typeof liveEventSchema>;
@@ -84,5 +100,9 @@ export function parseLiveEvent(raw: string): LiveEvent | null {
  * site's list would pass.
  */
 export function mayReceive(principal: Principal, event: LiveEvent): boolean {
+  // AG-182. An addressed kind without its addressees reaches nobody: closed
+  // by default, not «everybody at the site».
+  if (ADDRESSED_KINDS.has(event.kind) && !event.userIds) return false;
+  if (event.userIds && !event.userIds.includes(principal.userId)) return false;
   return principal.canAtSite(LIVE_EVENT_PERMISSION[event.kind], event.siteId);
 }

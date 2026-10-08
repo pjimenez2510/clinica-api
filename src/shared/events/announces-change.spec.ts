@@ -61,12 +61,18 @@ describe('AnnouncesChange', () => {
     expect(heard).toEqual([]);
   });
 
-  it('AG-179: una lectura no publica, y una sede que no es un uuid tampoco', async () => {
+  it('AG-179: una lectura (GET o HEAD) no publica, y una sede que no es un uuid tampoco', async () => {
     const { interceptor, heard } = setUp();
 
     await lastValueFrom(
       interceptor.intercept(
         contextFor({ method: 'GET', params: { siteId: SITE } }),
+        answers([]),
+      ),
+    );
+    await lastValueFrom(
+      interceptor.intercept(
+        contextFor({ method: 'HEAD', params: { siteId: SITE } }),
         answers([]),
       ),
     );

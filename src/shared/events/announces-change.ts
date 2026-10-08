@@ -47,6 +47,8 @@ const SITE_PARAM = 'siteId';
  */
 const ANNOUNCING = Symbol('live:announcing');
 
+const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
 @Injectable()
 export class AnnounceChangeInterceptor implements NestInterceptor {
   constructor(
@@ -66,9 +68,13 @@ export class AnnounceChangeInterceptor implements NestInterceptor {
     }>();
     if (request[ANNOUNCING]) return next.handle();
     request[ANNOUNCING] = true;
-    // A read changes nothing: announcing it would wake every screen of the
-    // site for nothing.
-    if (!kinds?.length || request.method === 'GET') return next.handle();
+    // Only a write announces. A read changes nothing, and Express answers a
+    // `HEAD` with the `GET` handler: a loop of them would wake every screen
+    // of the site, each one leaving its row in the access log (revisión
+    // clínica M2).
+    if (!kinds?.length || !WRITES.has(request.method ?? '')) {
+      return next.handle();
+    }
     const siteId = request.params?.[SITE_PARAM];
 
     // `tap` on the value: the handler RESOLVED, so its transaction committed.

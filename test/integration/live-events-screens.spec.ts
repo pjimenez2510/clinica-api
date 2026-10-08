@@ -19,10 +19,15 @@ import {
   LiveEventBus,
 } from '../../src/shared/events/live-event-bus';
 import { LIVE_HEARTBEAT } from '../../src/shared/events/live-event-stream';
+import {
+  clinicalDateOf,
+  clinicalDayBounds,
+} from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
 import {
+  createEncounter,
   createPatient,
   createPractitioner,
   createSite,
@@ -159,17 +164,27 @@ describe('los avisos en vivo de agenda, tableros, sala y caja por HTTP', () => {
     return stream;
   }
 
-  /** A booked appointment two days from now, written straight to the table. */
-  async function appointment(siteId: string): Promise<string> {
+  /**
+   * A booked appointment two days from now —or today, for an arrival—
+   * written straight to the table.
+   */
+  async function appointment(
+    siteId: string,
+    options: { today?: boolean; practitionerId?: string } = {},
+  ): Promise<string> {
     const patient = await createPatient(prisma);
     // One hour apart: the same practitioner cannot be booked twice at once.
     booked += 1;
-    const startsAt = new Date(Date.now() + 2 * DAY_MS + booked * 60 * MINUTE_MS); // prettier-ignore
+    // An arrival is registered on the appointment's own day (Guayaquil).
+    const base = options.today
+      ? clinicalDayBounds(clinicalDateOf(new Date())).startsAt.getTime() + 8 * 60 * MINUTE_MS // prettier-ignore
+      : Date.now() + 2 * DAY_MS;
+    const startsAt = new Date(base + booked * 60 * MINUTE_MS);
     const entry = await prisma.agendaEntry.create({
       data: {
         kind: 'APPOINTMENT',
         siteId,
-        practitionerId,
+        practitionerId: options.practitionerId ?? practitionerId,
         patientId: patient.id,
         startsAt,
         endsAt: new Date(startsAt.getTime() + 20 * MINUTE_MS),
@@ -178,6 +193,41 @@ describe('los avisos en vivo de agenda, tableros, sala y caja por HTTP', () => {
       },
     });
     return entry.id;
+  }
+
+  /** A practitioner of the site who signs in as the doctor they are. */
+  async function doctorAt(
+    siteId: string,
+    email: string,
+  ): Promise<{ practitionerId: string; token: string }> {
+    const practitioner = await createPractitioner(prisma);
+    await linkPractitionerToSite(prisma, practitioner.id, siteId);
+    await prisma.user.update({
+      where: { id: practitioner.userId },
+      data: {
+        email,
+        passwordHash: await argon2.hash(PASSWORD, {
+          type: argon2.argon2id,
+          memoryCost: PASSWORD_HASHING.memoryCost,
+          timeCost: PASSWORD_HASHING.timeCost,
+          parallelism: PASSWORD_HASHING.parallelism,
+        }),
+      },
+    });
+    const medico = await prisma.role.findUniqueOrThrow({
+      where: { code: 'MEDICO' },
+    });
+    await prisma.userRoleGrant.create({
+      data: { userId: practitioner.userId, roleId: medico.id, siteId },
+    });
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email, password: PASSWORD })
+      .expect(200);
+    return {
+      practitionerId: practitioner.id,
+      token: (login.body as { accessToken: string }).accessToken,
+    };
   }
 
   const cancel = (token: string, siteId: string, entryId: string) =>
@@ -325,5 +375,85 @@ describe('los avisos en vivo de agenda, tableros, sala y caja por HTTP', () => {
     // Reception of A reads no caja: it is told nothing about it.
     await settled(reception);
     expect(kindsOf(reception)).toEqual([]);
+  });
+
+  it('AG-182: la llegada en emergencia avisa sólo a la sesión de su destinatario, sin datos, y el «Enterado» también; otro médico de la sede no se entera', async () => {
+    const recipient = await doctorAt(siteA, 'doctora.norte@clinica.ec');
+    const colleague = await doctorAt(siteA, 'doctor.norte@clinica.ec');
+    const receptionA = await account('recepcion.norte@clinica.ec', 'RECEPCION', siteA); // prettier-ignore
+    const entryId = await appointment(siteA, {
+      today: true,
+      practitionerId: recipient.practitionerId,
+    });
+    const mine = await openStream(recipient.token);
+    const theirs = await openStream(colleague.token);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/agenda/sites/${siteA}/entries/${entryId}/status`)
+      .set('Authorization', `Bearer ${receptionA}`)
+      .send({ to: 'CHECKED_IN', emergency: true })
+      .expect(200);
+
+    await until(() => ofKind(mine, 'emergency-alerts').length === 1);
+    // Kind and site, and not who it was addressed to (AU-055).
+    expect(JSON.parse(ofKind(mine, 'emergency-alerts')[0]!.data)).toEqual({
+      kind: 'emergency-alerts',
+      siteId: siteA,
+    });
+    // Control positivo: the colleague's stream is alive and heard the same
+    // write as `agenda`; the emergency is not theirs.
+    await until(() => ofKind(theirs, 'agenda').length >= 1);
+    await settled(theirs);
+    expect(ofKind(theirs, 'emergency-alerts')).toEqual([]);
+
+    // «Enterado»: the recipient's other screens drop the banner.
+    const pending = await request(app.getHttpServer())
+      .get('/api/v1/agenda/emergency-alerts/mine')
+      .set('Authorization', `Bearer ${recipient.token}`)
+      .expect(200);
+    const alertId = (pending.body as { items: { id: string }[] }).items[0]!.id;
+    await request(app.getHttpServer())
+      .post(`/api/v1/agenda/emergency-alerts/${alertId}/acknowledgement`)
+      .set('Authorization', `Bearer ${recipient.token}`)
+      .expect(200);
+    await until(() => ofKind(mine, 'emergency-alerts').length === 2);
+    await settled(theirs);
+    expect(ofKind(theirs, 'emergency-alerts')).toEqual([]);
+  });
+
+  it('AG-179: poner en pausa la atención («salió y vuelve») avisa al tablero y a la sala de su sede, no a la otra', async () => {
+    const receptionA = await account('recepcion.norte@clinica.ec', 'RECEPCION', siteA); // prettier-ignore
+    const receptionB = await account('recepcion.sur@clinica.ec', 'RECEPCION', siteB); // prettier-ignore
+    const entryId = await appointment(siteA, { today: true });
+    await request(app.getHttpServer())
+      .post(`/api/v1/agenda/sites/${siteA}/entries/${entryId}/status`)
+      .set('Authorization', `Bearer ${receptionA}`)
+      .send({ to: 'CHECKED_IN', emergency: false })
+      .expect(200);
+    const entry = await prisma.agendaEntry.findUniqueOrThrow({
+      where: { id: entryId },
+    });
+    await createEncounter(prisma, {
+      siteId: siteA,
+      practitionerId,
+      patientId: entry.patientId!,
+      agendaEntryId: entryId,
+    });
+    const streamA = await openStream(receptionA);
+    const streamB = await openStream(receptionB);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/encounters/for-entry/${entryId}/hold`)
+      .set('Authorization', `Bearer ${receptionA}`)
+      .send({ reason: 'Va al laboratorio de enfrente' })
+      .expect((response) => expect(response.status).toBeLessThan(300));
+
+    await until(() => ofKind(streamA, 'agenda').length === 1);
+    expect(JSON.parse(ofKind(streamA, 'agenda')[0]!.data)).toEqual({
+      kind: 'agenda',
+      siteId: siteA,
+    });
+    await settled(streamB);
+    expect(ofKind(streamB, 'agenda')).toEqual([]);
   });
 });

@@ -517,6 +517,10 @@ export class EncounterService {
       ip: requester.ip,
       userAgent: requester.userAgent,
     });
+    // AG-179. «Lista para pasar» on the board (revisión clínica M1).
+    if (!correctingAfterDischarge) {
+      announceEncounterChange(this.liveEvents, encounter.siteId, { ended: false }); // prettier-ignore
+    }
 
     return {
       ...saved,

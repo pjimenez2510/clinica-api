@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
+import { LiveEventBus } from '../../../shared/events/live-event-bus';
+
 import { EmergencyAlertNotFoundError } from '../domain/agenda.errors';
 import {
   EMERGENCY_ALERT_REPOSITORY,
@@ -22,6 +24,8 @@ export class EmergencyAlertService {
     @Inject(EMERGENCY_ALERT_REPOSITORY)
     private readonly alerts: EmergencyAlertRepository,
     private readonly logger: PinoLogger,
+    /** AG-182. Where «you have a notice» is said, to its recipient only. */
+    private readonly liveEvents: LiveEventBus,
   ) {
     this.logger.setContext(EmergencyAlertService.name);
   }
@@ -36,14 +40,45 @@ export class EmergencyAlertService {
    */
   async acknowledge(alertId: string, recipientId: string): Promise<Date> {
     // The application's clock, never PostgreSQL's: the screen compares it.
-    const at = await this.alerts.acknowledge(alertId, recipientId, new Date());
-    if (at === null) throw new EmergencyAlertNotFoundError();
+    const acknowledged = await this.alerts.acknowledge(
+      alertId,
+      recipientId,
+      new Date(),
+    );
+    if (acknowledged === null) throw new EmergencyAlertNotFoundError();
+    // AG-182. The recipient's other tabs and sessions drop the banner too.
+    this.liveEvents.publish({
+      kind: 'emergency-alerts',
+      siteId: acknowledged.siteId,
+      userIds: [recipientId],
+    });
 
     // AG-074. Stable codes only: whose emergency it was is health data.
     this.logger.info(
       { action: 'AGENDA_EMERGENCY_ALERT_ACKNOWLEDGED' },
       'emergency alert acknowledged',
     );
-    return at;
+    return acknowledged.acknowledgedAt;
+  }
+
+  /**
+   * AG-182. After an arrival called an emergency (AG-129) or its correction
+   * (AG-132) committed: each recipient still unaware hears that they have a
+   * notice —never whose or why (AU-055)— and reads `mine` again. Never
+   * throws: the arrival is saved, and the banner still has its polling.
+   */
+  async announcePendingOf(agendaEntryId: string): Promise<void> {
+    try {
+      const pending = await this.alerts.pendingRecipientsOfEntry(agendaEntryId);
+      const bySite = new Map<string, string[]>();
+      for (const { siteId, recipientId } of pending) {
+        bySite.set(siteId, [...(bySite.get(siteId) ?? []), recipientId]);
+      }
+      for (const [siteId, userIds] of bySite) {
+        this.liveEvents.publish({ kind: 'emergency-alerts', siteId, userIds });
+      }
+    } catch {
+      // Nothing to undo: the event is a courtesy to the open screens.
+    }
   }
 }
