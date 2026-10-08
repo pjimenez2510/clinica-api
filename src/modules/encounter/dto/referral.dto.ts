@@ -11,7 +11,7 @@ import {
  * encounter H8 (EN-100 to EN-107).
  *
  * The cross-field rules repeat, per field and earlier, the CHECKs and the
- * guard of `20261008210100_referral_interconsultation_h8`, which remain the
+ * guard of `20261008230100_referral_interconsultation_h8`, which remain the
  * guarantee.
  */
 const text = (max: number, message: string) =>

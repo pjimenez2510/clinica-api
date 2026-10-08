@@ -91,7 +91,7 @@ type InterconsultationRow = Prisma.InterconsultationGetPayload<{
 /**
  * encounter H8 (EN-100 to EN-107). `trg_referral_guard`,
  * `trg_interconsultation_guard`, `referral_one_live_response` and the CHECKs
- * of `20261008210100_referral_interconsultation_h8` are the guarantee; this
+ * of `20261008230100_referral_interconsultation_h8` are the guarantee; this
  * adapter takes the attention's lock and writes each act with its 053 or 007.
  */
 @Injectable()

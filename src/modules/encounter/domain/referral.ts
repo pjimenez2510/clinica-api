@@ -12,7 +12,7 @@ import type { NoteContent } from './clinical-note';
  * WHAT THE DATABASE GUARANTEES AND WHAT THIS FILE SAYS
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * `20261008210100_referral_interconsultation_h8` is the guarantee: where a
+ * `20261008230100_referral_interconsultation_h8` is the guarantee: where a
  * referral goes, what a counter-referral answers, one live answer at most, a
  * «referred» discharge with its referral, and nothing deleted or rewritten.
  * This file holds the vocabulary and the CONTENT OF THE FORM (053 or 007) the
