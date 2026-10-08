@@ -13,7 +13,9 @@ import {
 import type { EncounterStatus } from '../domain/encounter';
 import type {
   AnnulmentPlan,
+  HoldPlan,
   InterruptionPlan,
+  ResumePlan,
 } from '../domain/encounter-state';
 import type {
   AnnulmentActor,
@@ -252,6 +254,60 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
         signedNoteIds,
         unsignedEmptyNoteIds,
       };
+    });
+  }
+
+  /** EN-128. See the port. */
+  async hold(
+    query: EncounterQuery,
+    decide: (encounter: EncounterView) => HoldPlan,
+    changedById: string,
+  ): Promise<EncounterView> {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await lockAndRead(tx, query);
+      const plan = decide(current);
+      await moveConditionally(tx, query, current.status, plan.to, {
+        status: plan.to,
+        holdReason: plan.reason,
+        heldById: changedById,
+        heldAt: plan.at,
+      });
+      // AG-124. The other axis of the same fact: the board shows the patient
+      // out of the building, not «en atención» in an empty consulting room.
+      await movePatientAxis(tx, current.agendaEntryId, {
+        // Only from the attention itself: resuming puts them back in
+        // `RECEIVING_CARE`, which is true only of who was in it. Someone still
+        // in the waiting room or in preparation keeps their state — sending
+        // them back «en atención» would be a state no fact supports (AG-122).
+        from: ['RECEIVING_CARE'],
+        to: 'ON_LEAVE',
+        at: plan.at,
+      });
+      return readView(tx, query.encounterId);
+    });
+  }
+
+  /** EN-128. See the port. */
+  async resume(
+    query: EncounterQuery,
+    decide: (encounter: EncounterView) => ResumePlan,
+    changedById: string,
+  ): Promise<EncounterView> {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await lockAndRead(tx, query);
+      const plan = decide(current);
+      await moveConditionally(tx, query, current.status, plan.to, {
+        status: plan.to,
+        resumedById: changedById,
+        resumedAt: plan.at,
+      });
+      // AG-124. Back in the building, and back in the attention they left.
+      await movePatientAxis(tx, current.agendaEntryId, {
+        from: ['ON_LEAVE'],
+        to: 'RECEIVING_CARE',
+        at: plan.at,
+      });
+      return readView(tx, query.encounterId);
     });
   }
 }
@@ -503,6 +559,29 @@ async function settleAppointment(
     from: 'IN_PROGRESS',
     to: 'FULFILLED',
     subjectStatus: 'DEPARTED',
+  });
+}
+
+/**
+ * AG-124, EN-128. Moves ONLY the patient axis of the attention's appointment,
+ * from the states named: the appointment's own status does not change —the
+ * consultation is still in progress— and so it leaves no row in its history;
+ * the fact that moved it is the suspension, in the attention's trail with its
+ * reason. Never from `DEPARTED` (AG-125): a passage that ended stays ended.
+ */
+async function movePatientAxis(
+  tx: Prisma.TransactionClient,
+  agendaEntryId: string | null,
+  move: {
+    from: readonly ('RECEIVING_CARE' | 'ON_LEAVE')[];
+    to: 'ON_LEAVE' | 'RECEIVING_CARE';
+    at: Date;
+  },
+): Promise<void> {
+  if (agendaEntryId === null) return;
+  await tx.agendaEntry.updateMany({
+    where: { id: agendaEntryId, subjectStatus: { in: [...move.from] } },
+    data: { subjectStatus: move.to, subjectStatusAt: move.at },
   });
 }
 

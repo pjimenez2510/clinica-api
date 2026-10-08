@@ -1460,6 +1460,15 @@ export function composeEncounterSummaryLayout(
               emphasis: true,
             },
           ] as Block[])),
+      // EN-156. The constancy travels with the paper, not only the screen.
+      ...(data.note?.withoutCertificate === true
+        ? ([
+            {
+              kind: 'paragraph',
+              text: 'Firmada sin certificado electrónico, con la credencial del profesional.',
+            },
+          ] as Block[])
+        : []),
       ...(data.note === null || data.note.sections.length === 0
         ? []
         : ([

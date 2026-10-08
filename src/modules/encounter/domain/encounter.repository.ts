@@ -87,6 +87,8 @@ export interface EncounterView {
   annulment: { reason: string | null; at: Date } | null;
   /** EN-167. Why, from where and when it was interrupted; `null` unless `DISCONTINUED`. */
   interruption: { reason: string; origin: DiscontinuedOrigin; at: Date } | null;
+  /** EN-128. Why the patient stepped out and since when; `null` unless `ON_HOLD`. */
+  hold: { reason: string; at: Date } | null;
 }
 
 /**
@@ -171,6 +173,8 @@ export interface EncounterStatusChange {
   /** The user's display name; `null` when no stamp names one (D-177.4). */
   byName: string | null;
   at: Date;
+  /** EN-128. Why the patient stepped out; only on `PUT_ON_HOLD`. */
+  reason: string | null;
 }
 
 /** EN-015, EN-162. One page of a chart's attentions, in chronological order. */
@@ -226,6 +230,14 @@ export interface EncounterPage {
 export type SiteScopeFilter = 'all' | readonly string[];
 
 /** EN-146. The attentions one practitioner has not closed. */
+/**
+ * EN-146. An attention nobody closed, with who it is for: by name and chart
+ * number, which is what lets the practitioner find it. Nothing clinical.
+ */
+export interface StillOpenEncounter extends EncounterView {
+  patient: { name: string; mrn: string };
+}
+
 export interface OpenEncountersQuery {
   /** Absent means «everyone in my scope», which is what a supervisor reads. */
   practitionerId?: string;
@@ -387,7 +399,7 @@ export interface EncounterRepository {
    * OLDEST FIRST because the list is read to find what is being forgotten, and
    * the thing being forgotten is the oldest one.
    */
-  listStillOpen(query: OpenEncountersQuery): Promise<EncounterView[]>;
+  listStillOpen(query: OpenEncountersQuery): Promise<StillOpenEncounter[]>;
 
   /**
    * EN-009, EN-131, EN-132, EN-144, EN-147. One closure, one transaction.

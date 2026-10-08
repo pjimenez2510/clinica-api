@@ -10,7 +10,12 @@
  * attention does.
  */
 
-import type { AnnulmentPlan, InterruptionPlan } from './encounter-state';
+import type {
+  AnnulmentPlan,
+  HoldPlan,
+  InterruptionPlan,
+  ResumePlan,
+} from './encounter-state';
 import type { EncounterQuery, EncounterView } from './encounter.repository';
 
 export const ENCOUNTER_EXIT_REPOSITORY = Symbol('ENCOUNTER_EXIT_REPOSITORY');
@@ -76,4 +81,23 @@ export interface EncounterExitRepository {
     drafts: DraftSigning,
     changedById: string,
   ): Promise<InterruptionOutcome>;
+
+  /**
+   * EN-128. The patient steps out and is expected back: the attention goes to
+   * `ON_HOLD` with the reason, the user and the instant, locked and
+   * conditioned on the status that was read. The trail row (EN-133) is the
+   * database's, with the reason in it.
+   */
+  hold(
+    query: EncounterQuery,
+    decide: (encounter: EncounterView) => HoldPlan,
+    changedById: string,
+  ): Promise<EncounterView>;
+
+  /** EN-128. The patient is back: the SAME attention returns to `OPEN`. */
+  resume(
+    query: EncounterQuery,
+    decide: (encounter: EncounterView) => ResumePlan,
+    changedById: string,
+  ): Promise<EncounterView>;
 }

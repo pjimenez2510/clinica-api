@@ -17,6 +17,7 @@ import {
   type EncounterRepository,
   type EncounterStatusChange,
   type EncounterView,
+  type StillOpenEncounter,
   type SiteScopeFilter,
   type SurvivingChart,
   type VitalSignsView,
@@ -375,7 +376,7 @@ export class EncounterService {
   async listStillOpen(
     practitionerId: string | undefined,
     requester: Requester,
-  ): Promise<EncounterView[]> {
+  ): Promise<StillOpenEncounter[]> {
     return this.encounters.listStillOpen({
       practitionerId,
       sites: requester.sites,

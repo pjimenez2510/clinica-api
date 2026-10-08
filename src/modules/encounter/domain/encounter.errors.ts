@@ -799,6 +799,24 @@ export class EncounterInterruptionReasonRequiredError extends ValidationError {
 }
 
 /**
+ * EN-128. Suspending an attention without saying why the patient stepped out.
+ * Without the reason the state cannot say anything — not why they left, nor
+ * what they are expected back with.
+ */
+export class EncounterHoldReasonRequiredError extends ValidationError {
+  readonly code = 'ENCOUNTER_HOLD_REASON_REQUIRED';
+  override readonly userTitle =
+    'Indique por qué sale el paciente antes de suspender la atención';
+  override readonly fieldErrors = [
+    { field: 'reason', code: this.code, message: 'Indique por qué sale el paciente' }, // prettier-ignore
+  ];
+
+  constructor() {
+    super('Encounter hold requested without a reason');
+  }
+}
+
+/**
  * EN-025, EN-026. The version named cannot be amended or retracted: it is a
  * draft, it was already superseded, or it was already retracted.
  *

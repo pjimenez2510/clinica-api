@@ -86,6 +86,7 @@ const anEncounter = (
   closedBySubstituteReason: null,
   annulment: null,
   interruption: null,
+  hold: null,
   ...overrides,
 });
 

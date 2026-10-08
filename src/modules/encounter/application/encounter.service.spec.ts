@@ -20,6 +20,7 @@ import type {
   EncounterStatusChange,
   EncounterRepository,
   EncounterView,
+  StillOpenEncounter,
   NewEncounter,
   PatientChartStatus,
   SurvivingChart,
@@ -88,6 +89,7 @@ const anEncounter = (
   closedBySubstituteReason: null,
   annulment: null,
   interruption: null,
+  hold: null,
   ...overrides,
 });
 
@@ -143,6 +145,7 @@ class FakeEncounters implements EncounterRepository {
               fact: 'OPENED',
               byName: 'Ana Villacís',
               at: this.stored.startedAt,
+              reason: null,
             },
           ]
         : null,
@@ -164,8 +167,13 @@ class FakeEncounters implements EncounterRepository {
     });
   }
 
-  listStillOpen(): Promise<EncounterView[]> {
-    return Promise.resolve([this.stored]);
+  listStillOpen(): Promise<StillOpenEncounter[]> {
+    return Promise.resolve([
+      {
+        ...this.stored,
+        patient: { name: 'Ana Villacís', mrn: 'HC0000000001' },
+      },
+    ]);
   }
 
   close(

@@ -22,6 +22,7 @@ import {
   DiscontinueEncounterDto,
   DiscontinuedEncounterDto,
   EncounterDto,
+  HoldEncounterDto,
   type DiscontinuedEncounterResponse,
   type EncounterResponse,
 } from './dto/encounter.dto';
@@ -107,6 +108,48 @@ export class EncounterExitController {
       ...toEncounterResponse(encounter),
       unsignedEmptyNoteIds: [...unsignedEmptyNoteIds],
     };
+  }
+
+  /**
+   * EN-128. The patient steps out and is expected back. `encounter:open`, as
+   * the routes table of the SPEC declares: whoever may open the attention may
+   * say the patient stepped out of it — reception sees them leave as often as
+   * the doctor does — and it writes nothing into the record (EN-141).
+   */
+  @Post(':id/hold')
+  @RequirePermission('encounter:open', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Suspender la atención: el paciente sale y volverá',
+  })
+  @ApiOkResponse({ type: EncounterDto })
+  async hold(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: HoldEncounterDto,
+    @Req() req: Request,
+  ): Promise<EncounterResponse> {
+    const held = await this.exits.hold(
+      { encounterId: id, reason: dto.reason },
+      this.requester(req, 'encounter:open'),
+    );
+    return toEncounterResponse(held);
+  }
+
+  /** EN-128. The patient is back: the same attention, open again. */
+  @Post(':id/resume')
+  @RequirePermission('encounter:open', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reanudar la atención suspendida' })
+  @ApiOkResponse({ type: EncounterDto })
+  async resume(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ): Promise<EncounterResponse> {
+    const resumed = await this.exits.resume(
+      { encounterId: id },
+      this.requester(req, 'encounter:open'),
+    );
+    return toEncounterResponse(resumed);
   }
 
   /** Where the caller holds `record:sign`: every site, or these. */

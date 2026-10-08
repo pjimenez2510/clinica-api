@@ -247,13 +247,16 @@ abierta, una que se interrumpió y una que se dio de alta y nadie cobró, y no h
 dato que las distinga. Es de la misma familia que REQ-020 y REQ-021: no se
 captura retroactivamente.
 
-**Solo servidor:** EN-005, EN-008, EN-010, EN-017, EN-132, EN-145, EN-168. La carrera con
+**Solo servidor:** EN-004, EN-005, EN-008, EN-010, EN-017, EN-132, EN-145, EN-168. La carrera con
 la anulación, la edad que escribe un disparador, el orden de los instantes, la
 fila de bitácora, las transiciones que el servidor rechaza y **la ausencia de
 cierre automático** son garantías de almacenamiento: ninguna pantalla puede
 enseñar que un `UPDATE` perdió una carrera, ni que un proceso nocturno **no**
 existe. EN-168, una atención viva por cita, la garantiza un índice
-único parcial: la pantalla nunca ofrece abrir la segunda.
+único parcial: la pantalla nunca ofrece abrir la segunda. EN-004, la cita de
+otro paciente, la garantiza `trg_encounter_matches_appointment`: la pantalla
+abre la atención con el paciente de la propia cita y no tiene forma de mandar
+otro.
 
 ### H2 — La nota clínica firmada y su enmienda _(P1)_
 
@@ -2448,10 +2451,21 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   volver dentro de la misma atención, el sistema DEBERÁ pasarla a `ON_HOLD`
   registrando el motivo, quién lo registró y el instante; y CUANDO el paciente
   vuelva, DEBERÁ devolverla a `OPEN` **sin abrir una atención nueva**.
-  > **Falta esquema.** El valor `ON_HOLD` ya existe en `EncounterStatus`; lo que
-  > no existe es **el motivo, el autor y el instante de la suspensión**, y sin
-  > ellos el estado no sabe decir por qué el paciente salió ni cuánto lleva
-  > fuera.
+  > **Esquema y rutas desde el 08-10-2026 (`feat/f04-consulta-huecos`).**
+  > `encounter.hold_reason`, `held_by_id` y `held_at` —exigidos en `ON_HOLD` por
+  > `encounter_on_hold_states_who_when_and_why`— y `resumed_by_id`/`resumed_at`;
+  > el historial (EN-133) copia en su fila `PUT_ON_HOLD` el motivo
+  > (`encounter_status_history.reason`), así que la suspensión siguiente no
+  > borra la anterior. `POST /encounters/:id/hold` y `POST /encounters/:id/resume`,
+  > con `encounter:open` —quien puede abrir la atención puede decir que el
+  > paciente salió de ella, recepción tanto como el médico— y sin la regla de
+  > quién de las salidas (D-085 §2): no termina ni firma nada y se deshace
+  > reanudando; quién lo hizo queda en el historial. Con cita, la misma
+  > transacción mueve el eje del paciente (AG-124): suspender a quien está
+  > `RECEIVING_CARE` lo pasa a `ON_LEAVE` y reanudar lo devuelve a
+  > `RECEIVING_CARE`, sin tocar el estado de la cita, que sigue en curso. A
+  > quien todavía no entró a la consulta no se le mueve: reanudar lo pondría
+  > «en atención» sin un hecho que lo diga (AG-122).
   >
   > El caso corriente: el médico pide un examen que se hace en
   > el laboratorio de enfrente y el paciente vuelve con el resultado en la mano.
@@ -2848,6 +2862,12 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > firmar, atenciones sin cerrar— no cabe en la lista del día porque no tiene
   > hora que lo ordene. Y es la única defensa que queda si no hay cierre
   > automático: lo que no se cierra solo, alguien tiene que poder verlo.
+  >
+  > **Con de quién es (08-10-2026, `feat/f04-consulta-huecos`):** cada fila
+  > lleva el nombre y la historia clínica del paciente —sin nada clínico, lo
+  > mismo que el tablero del día—, porque una lista que sólo dice «abierta el
+  > lunes a las 10:12» no se puede atender. La pantalla es «Sin cerrar» en
+  > Atención.
 - **EN-147** — SI quien cierra una atención no es quien la abrió, ENTONCES el
   sistema DEBERÁ exigir `record:sign` y DEBERÁ dejar constancia de que el cierre
   **no lo hizo el autor**.
@@ -3004,9 +3024,22 @@ programada._
   DEBERÁ firmarse con la **credencial única** del profesional, y DEBERÁ quedar
   **constancia explícita** —conservada con la nota y visible en toda impresión y
   en toda exportación— de que esa firma **no lleva certificado**.
-  > **Falta esquema.** La constancia es una columna de la nota, no un texto que
-  > la pantalla pinte: si vive en la pantalla, desaparece en el PDF que alguien
-  > entrega en una inspección, que es justo donde importa.
+  > **Esquema desde el 08-10-2026 (`feat/f04-consulta-huecos`).** La constancia
+  > es una columna de la nota, no un texto que la pantalla pinte: si vive en la
+  > pantalla, desaparece en el PDF que alguien entrega en una inspección, que es
+  > justo donde importa. `clinical_note.signature_method` (`CREDENTIAL` o
+  > `CERTIFICATE`) la escribe la base en el acto de firmar
+  > (`a_clinical_note_signature_states_its_method`: una firma que no declara
+  > otro método es con credencial, el único camino que existe) y queda congelada
+  > con el contenido (`trg_clinical_note_immutable`). Las notas firmadas antes
+  > de la columna quedan en NULL, que se lee igual: no había otra forma. La nota la publica y el resumen
+  > de la atención (DOC-111) la imprime.
+  >
+  > **Construido así mientras decide D-177.1:** el sistema no custodia todavía
+  > ningún certificado, así que **toda firma es `CREDENTIAL`** y lleva la
+  > constancia, también con el parámetro encendido. Escribir otra cosa sería
+  > afirmar un certificado que no hubo. Que el parámetro encendido **impida**
+  > firmar (EN-155) es lo que D-177.1 deja al autor.
   >
   > **Por qué es parametrizable pese a que aquí sí tienen certificado:** el sistema
   > es multi-instalación, y la norma de farmacias privadas
@@ -4128,6 +4161,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_HAS_OTHERS_DRAFTS` | 409 | Interrumpir una atención con un borrador de nota de otra persona, que quedaría sin firma para siempre (D-085 §2); o anularla con una receta u orden en borrador de otro prescriptor o firmante, que es suya para emitir o descartar (M3). Un título por acto | EN-167, EN-218 |
 | `ENCOUNTER_ANNULMENT_REASON_REQUIRED` | — | **Retirado por EN-218 (D-126.2)**: anular ya no exige motivo | EN-166 |
 | `ENCOUNTER_INTERRUPTION_REASON_REQUIRED` | 422  | Interrumpir una atención sin motivo escrito o sin origen (D-082: sin condición de egreso, que no se exige). Se exige **en el servicio** además del DTO, por lo mismo que `AMENDMENT_REASON_REQUIRED`                                                                                                                                                                                                                        | EN-129                 |
+| `ENCOUNTER_HOLD_REASON_REQUIRED` | 422 | Suspender una atención sin decir por qué sale el paciente. Se exige en el servicio y en la base (`encounter_on_hold_states_who_when_and_why`) | EN-128 |
 | `ENCOUNTER_CLOSER_NOT_AUTHOR` | 403 | Cierra alguien que no la abrió y no lleva `record:sign`. Con `record:sign` **no falla**: cierra dejando constancia de la sustitución | EN-144, EN-147 |
 | `NURSING_SCOPE_DENIED` | 403 | Se intentó registrar diagnóstico, procedimiento o receta con `nursing:write`. **Distinto de un 403 genérico de permiso**: dice que el acto está fuera del ámbito del título, no que falte una casilla en el rol | EN-142 |
 | `CERTIFIED_SIGNATURE_REQUIRED` | 422 | Firmar sin certificado vigente con `requireCertifiedSignature` habilitado. **No es 403**: el profesional tiene permiso para firmar; lo que falta es el certificado | EN-155 |

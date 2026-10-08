@@ -24,6 +24,7 @@ import type {
   EncounterView,
   NewEncounter,
   OpenEncountersQuery,
+  StillOpenEncounter,
   PatientChartStatus,
   SurvivingChart,
   PractitionerIdentity,
@@ -81,6 +82,8 @@ export const ENCOUNTER_SELECT = {
   discontinuedReason: true,
   discontinuedOrigin: true,
   discontinuedAt: true,
+  holdReason: true,
+  heldAt: true,
   // EN-220. Whether its 002 stands signed: the summary is offered only then.
   notes: {
     where: { formCode: '002', status: 'SIGNED' },
@@ -348,6 +351,7 @@ export class PrismaEncounterRepository implements EncounterRepository {
             toStatus: true,
             fact: true,
             changedAt: true,
+            reason: true,
             changedBy: { select: { firstName: true, lastName: true } },
           },
         },
@@ -363,6 +367,7 @@ export class PrismaEncounterRepository implements EncounterRepository {
           ? null
           : `${change.changedBy.firstName} ${change.changedBy.lastName}`,
       at: change.changedAt,
+      reason: change.reason,
     }));
   }
 
@@ -441,7 +446,9 @@ export class PrismaEncounterRepository implements EncounterRepository {
    * OLDEST FIRST because the list exists to show what is being forgotten, and
    * what is being forgotten is the oldest thing on it.
    */
-  async listStillOpen(query: OpenEncountersQuery): Promise<EncounterView[]> {
+  async listStillOpen(
+    query: OpenEncountersQuery,
+  ): Promise<StillOpenEncounter[]> {
     const rows = await this.prisma.encounter.findMany({
       where: {
         status: { in: ['OPEN', 'ON_HOLD'] },
@@ -451,9 +458,33 @@ export class PrismaEncounterRepository implements EncounterRepository {
         ...siteFilter(query.sites),
       },
       orderBy: [{ startedAt: 'asc' }, { id: 'asc' }],
-      select: ENCOUNTER_SELECT,
+      select: {
+        ...ENCOUNTER_SELECT,
+        patient: {
+          select: {
+            mrn: true,
+            givenName: true,
+            secondGivenName: true,
+            familyName: true,
+            secondFamilyName: true,
+          },
+        },
+      },
     });
-    return rows.map(toEncounterView);
+    return rows.map((row) => ({
+      ...toEncounterView(row),
+      patient: {
+        name: [
+          row.patient.givenName,
+          row.patient.secondGivenName,
+          row.patient.familyName,
+          row.patient.secondFamilyName,
+        ]
+          .filter(Boolean)
+          .join(' '),
+        mrn: row.patient.mrn,
+      },
+    }));
   }
 
   /**
@@ -894,6 +925,12 @@ export function toEncounterView(row: EncounterRow): EncounterView {
             origin: row.discontinuedOrigin,
             at: row.discontinuedAt,
           }
+        : null,
+    // EN-128. Only while suspended: the columns keep the last suspension
+    // after resuming, and the trail keeps every one.
+    hold:
+      row.status === 'ON_HOLD' && row.holdReason !== null && row.heldAt !== null
+        ? { reason: row.holdReason, at: row.heldAt }
         : null,
   };
 }

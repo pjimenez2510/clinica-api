@@ -175,6 +175,17 @@ export const annulEncounterSchema = z.object({
 });
 export class AnnulEncounterDto extends createZodDto(annulEncounterSchema) {}
 
+/** EN-128. Body of POST /encounters/:id/hold: why the patient steps out. */
+export const holdEncounterSchema = z.object({
+  /** Obligatory in the service and in the database; optional here so its absence answers with the field. */
+  reason: z
+    .string()
+    .trim()
+    .max(500, 'El motivo no puede superar 500 caracteres')
+    .optional(),
+});
+export class HoldEncounterDto extends createZodDto(holdEncounterSchema) {}
+
 /** EN-167 (D-076, D-082). Body of POST /encounters/:id/discontinue. */
 export const discontinueEncounterSchema = z.object({
   reason: z
@@ -377,6 +388,8 @@ export const encounterSchema = z.object({
       at: z.iso.datetime(),
     })
     .nullable(),
+  /** EN-128. Why the patient stepped out and since when; `null` unless `ON_HOLD`. */
+  hold: z.object({ reason: z.string(), at: z.iso.datetime() }).nullable(),
 });
 /** Response of opening and closing an attention, and of POST /encounters/:id/vitals/start (EN-135). */
 export class EncounterDto extends createZodDto(encounterSchema) {}
@@ -395,6 +408,8 @@ export const encounterStatusHistorySchema = z.object({
       /** `null` when no stamp names an author (D-177.4). */
       byName: z.string().nullable(),
       at: z.iso.datetime(),
+      /** EN-128. Why the patient stepped out; only on `PUT_ON_HOLD`. */
+      reason: z.string().nullable(),
     }),
   ),
 });
@@ -422,7 +437,16 @@ export type DiscontinuedEncounterResponse = z.infer<
 >;
 
 export const encounterListSchema = z.object({
-  items: z.array(encounterSchema),
+  /**
+   * EN-146. WITH WHO, by name and chart number: a list of forgotten
+   * attentions that says only «abierta el lunes a las 10:12» cannot be acted
+   * on. No clinical content — the same as the day's board shows.
+   */
+  items: z.array(
+    encounterSchema.extend({
+      patient: z.object({ name: z.string(), mrn: z.string() }),
+    }),
+  ),
 });
 /** Response of GET /encounters/open. */
 export class EncounterListDto extends createZodDto(encounterListSchema) {}

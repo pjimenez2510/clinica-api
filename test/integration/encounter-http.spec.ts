@@ -499,6 +499,38 @@ describe('la atención por HTTP', () => {
       expect(encounterId).toBeTruthy();
     });
 
+    it('EN-146 las sin cerrar de un profesional dicen de quién son, con su historia clínica, y sólo las abiertas o suspendidas', async () => {
+      const open = await openEncounter();
+      const held = await openEncounter();
+      await post(`/encounters/${held}/hold`, doctorToken, {
+        reason: 'Va a la farmacia',
+      }).expect(200);
+      const other = await openEncounter(secondDoctorToken, {
+        practitionerId: secondDoctorPractitionerId,
+      });
+      const patient = await prisma.patient.findUniqueOrThrow({
+        where: { id: patientId },
+      });
+
+      const listed = await get(
+        `/encounters/open?practitionerId=${doctorPractitionerId}`,
+        doctorToken,
+      ).expect(200);
+      const items = (
+        listed.body as {
+          items: { id: string; status: string; patient: { name: string; mrn: string } }[]; // prettier-ignore
+        }
+      ).items;
+
+      expect(items.map((item) => item.id).sort()).toEqual([open, held].sort());
+      expect(items.map((item) => item.id)).not.toContain(other);
+      expect(items.find((item) => item.id === held)?.status).toBe('ON_HOLD');
+      expect(items[0]?.patient).toEqual({
+        name: expect.stringContaining(patient.familyName) as string,
+        mrn: patient.mrn,
+      });
+    });
+
     it('EN-122 deja una fila al ABRIR una atención concreta', async () => {
       const encounterId = await openEncounter();
       const before = await auditRows();
@@ -1297,6 +1329,61 @@ describe('la atención por HTTP', () => {
         status: 'DISCHARGED',
         dischargeCondition: 'ALIVE',
       });
+    });
+
+    it('EN-156 con la firma certificada apagada en la sede, la nota firmada dice que no lleva certificado', async () => {
+      await prisma.siteParameter.update({
+        where: { siteId },
+        data: { requireCertifiedSignature: false },
+      });
+      const encounterId = await openEncounter();
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: COMPLETE_002,
+        },
+      ).expect(201);
+      expect(draft.body).toMatchObject({ signatureMethod: null });
+
+      await createDiagnosis(prisma, encounterId, 'J00');
+      const signed = await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
+
+      expect(signed.body).toMatchObject({ signatureMethod: 'CREDENTIAL' });
+      const listed = await get(`/encounters/${encounterId}/notes`, doctorToken).expect(200); // prettier-ignore
+      expect(listed.body).toMatchObject({
+        items: [expect.objectContaining({ signatureMethod: 'CREDENTIAL' })],
+      });
+    });
+
+    it('EN-156 D-177.1 con el parámetro encendido —por defecto— también firma con la credencial y lo dice: no hay certificado que custodiar', async () => {
+      const parameter = await prisma.siteParameter.findUniqueOrThrow({
+        where: { siteId },
+      });
+      expect(parameter.requireCertifiedSignature).toBe(true);
+      const encounterId = await openEncounter();
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: COMPLETE_002,
+        },
+      ).expect(201);
+      await createDiagnosis(prisma, encounterId, 'J00');
+
+      const signed = await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
+
+      expect(signed.body).toMatchObject({ signatureMethod: 'CREDENTIAL' });
     });
 
     it('EN-206 la nota firmada conserva la foto de alergias y antecedentes aunque luego se refuten, y el hash cuadra', async () => {
@@ -2365,6 +2452,273 @@ describe('la atención por HTTP', () => {
       await post(`/encounters/${encounterId}/discontinue`, doctorToken, {
         reason: 'x',
         origin: 'PATIENT',
+      }).expect(404);
+    });
+  });
+
+  describe('suspender y reanudar (EN-128)', () => {
+    it('EN-128 suspende con motivo y la reanuda: la misma atención, y el historial guarda quién, cuándo y por qué', async () => {
+      const encounterId = await openEncounter();
+      const before = await prisma.encounter.count({ where: { patientId } });
+
+      const held = await post(`/encounters/${encounterId}/hold`, doctorToken, {
+        reason: '  Va al laboratorio de enfrente  ',
+      }).expect(200);
+      expect(held.body).toMatchObject({
+        id: encounterId,
+        status: 'ON_HOLD',
+        hold: { reason: 'Va al laboratorio de enfrente' },
+        endedAt: null,
+      });
+
+      const resumed = await post(`/encounters/${encounterId}/resume`, doctorToken).expect(200); // prettier-ignore
+      expect(resumed.body).toMatchObject({
+        id: encounterId,
+        status: 'OPEN',
+        hold: null,
+      });
+      expect(await prisma.encounter.count({ where: { patientId } })).toBe(
+        before,
+      );
+
+      const trail = await get(`/encounters/${encounterId}/status-history`, doctorToken).expect(200); // prettier-ignore
+      const items = (trail.body as { items: Record<string, unknown>[] }).items;
+      expect(items.map((item) => item.fact)).toEqual([
+        'OPENED',
+        'PUT_ON_HOLD',
+        'RESUMED',
+      ]);
+      expect(items[1]).toMatchObject({
+        from: 'OPEN',
+        to: 'ON_HOLD',
+        reason: 'Va al laboratorio de enfrente',
+      });
+      expect(items[1]?.byName).not.toBeNull();
+      expect(items[2]).toMatchObject({ to: 'OPEN', reason: null });
+      expect(items[2]?.byName).not.toBeNull();
+    });
+
+    it('EN-128 AG-124 con cita, el paciente sale del establecimiento al suspender y vuelve a la atención al reanudar; la cita sigue en curso', async () => {
+      const appointment = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'WALK_IN',
+          siteId,
+          practitionerId: doctorPractitionerId,
+          patientId,
+          subjectStatus: 'ARRIVED',
+          subjectStatusAt: new Date(),
+          ...hourSlot(10),
+        },
+      });
+      const entry = () =>
+        prisma.agendaEntry.findUniqueOrThrow({
+          where: { id: appointment.id },
+          select: { status: true, subjectStatus: true },
+        });
+      const encounterId = await openEncounter(doctorToken, {
+        agendaEntryId: appointment.id,
+      });
+      await post(`/encounters/${encounterId}/notes`, doctorToken, {
+        formCode: '002',
+        content: COMPLETE_002,
+      }).expect(201);
+      const before = await entry();
+      expect(before.subjectStatus).toBe('RECEIVING_CARE');
+
+      await post(`/encounters/${encounterId}/hold`, doctorToken, {
+        reason: 'Va a hacerse una imagen',
+      }).expect(200);
+      expect(await entry()).toEqual({
+        status: before.status,
+        subjectStatus: 'ON_LEAVE',
+      });
+
+      await post(`/encounters/${encounterId}/resume`, doctorToken).expect(200);
+      expect(await entry()).toEqual({
+        status: before.status,
+        subjectStatus: 'RECEIVING_CARE',
+      });
+    });
+
+    it('EN-128 una segunda salida guarda su propio motivo: el historial conserva las dos', async () => {
+      const encounterId = await openEncounter();
+      await post(`/encounters/${encounterId}/hold`, doctorToken, { reason: 'Va al laboratorio' }).expect(200); // prettier-ignore
+      await post(`/encounters/${encounterId}/resume`, doctorToken).expect(200);
+      await post(`/encounters/${encounterId}/hold`, doctorToken, { reason: 'Va a la farmacia' }).expect(200); // prettier-ignore
+
+      const trail = await get(`/encounters/${encounterId}/status-history`, doctorToken).expect(200); // prettier-ignore
+      const reasons = (
+        trail.body as { items: { fact: string; reason: string | null }[] }
+      ).items // prettier-ignore
+        .filter((item) => item.fact === 'PUT_ON_HOLD')
+        .map((item) => item.reason);
+      expect(reasons).toEqual(['Va al laboratorio', 'Va a la farmacia']);
+    });
+
+    it('EN-128 EN-133 la base no deja suspender ni reanudar reusando la constancia anterior, ni poner motivo fuera de una suspensión', async () => {
+      const encounterId = await openEncounter();
+      await post(`/encounters/${encounterId}/hold`, doctorToken, { reason: 'Va al laboratorio' }).expect(200); // prettier-ignore
+      await post(`/encounters/${encounterId}/resume`, doctorToken).expect(200);
+
+      // Otra vez a ON_HOLD con la constancia de la primera: rechazado.
+      await expect(
+        prisma.encounter.update({ where: { id: encounterId }, data: { status: 'ON_HOLD' } }), // prettier-ignore
+      ).rejects.toThrow(/encounter_on_hold_states_who_when_and_why/);
+
+      // Los dos de cada acto, juntos o ninguno.
+      await expect(
+        prisma.encounter.update({ where: { id: encounterId }, data: { heldAt: null } }), // prettier-ignore
+      ).rejects.toThrow(/encounter_hold_stamped/);
+      await expect(
+        prisma.encounter.update({ where: { id: encounterId }, data: { resumedAt: null } }), // prettier-ignore
+      ).rejects.toThrow(/encounter_resume_stamped/);
+
+      // El motivo sólo vive en la fila de la suspensión.
+      const rows = await prisma.$queryRaw<{ id: bigint }[]>`
+        SELECT id FROM encounter_status_history WHERE encounter_id = ${encounterId}::uuid AND fact = 'RESUMED'`;
+      await expect(
+        prisma.$executeRaw`ALTER TABLE encounter_status_history DISABLE TRIGGER USER`.then(
+          () =>
+            prisma.$executeRaw`UPDATE encounter_status_history SET reason = 'x' WHERE id = ${rows[0]!.id}`,
+        ),
+      ).rejects.toThrow(/encounter_status_history_reason_only_on_hold/);
+      await prisma.$executeRaw`ALTER TABLE encounter_status_history ENABLE TRIGGER USER`;
+
+      // Control positivo: con su propia constancia, sí.
+      const user = await prisma.user.findFirstOrThrow({ select: { id: true } });
+      const held = await prisma.encounter.update({
+        where: { id: encounterId },
+        data: {
+          status: 'ON_HOLD',
+          holdReason: 'Imagen',
+          heldById: user.id,
+          heldAt: new Date(),
+        },
+      });
+      expect(held.status).toBe('ON_HOLD');
+    });
+
+    it('EN-128 AG-122 quien todavía no entró a la consulta no pasa a «fuera» al suspender, ni a «en atención» al reanudar', async () => {
+      const appointment = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'WALK_IN',
+          siteId,
+          practitionerId: doctorPractitionerId,
+          patientId,
+          subjectStatus: 'ARRIVED',
+          subjectStatusAt: new Date(),
+          ...hourSlot(11),
+        },
+      });
+      const encounterId = await openEncounter(doctorToken, { agendaEntryId: appointment.id }); // prettier-ignore
+      const subject = async () =>
+        (await prisma.agendaEntry.findUniqueOrThrow({ where: { id: appointment.id } })).subjectStatus; // prettier-ignore
+
+      await post(`/encounters/${encounterId}/hold`, doctorToken, { reason: 'Sale un momento' }).expect(200); // prettier-ignore
+      expect(await subject()).toBe('ARRIVED');
+      await post(`/encounters/${encounterId}/resume`, doctorToken).expect(200);
+      expect(await subject()).toBe('ARRIVED');
+    });
+
+    it('EN-128 sin motivo responde 422 por campo, y la atención sigue abierta', async () => {
+      const encounterId = await openEncounter();
+
+      const refused = await post(
+        `/encounters/${encounterId}/hold`,
+        doctorToken,
+        {
+          reason: '   ',
+        },
+      ).expect(422);
+
+      expect((refused.body as Problem).code).toBe(
+        'ENCOUNTER_HOLD_REASON_REQUIRED',
+      );
+      expect((refused.body as Problem).errors?.map((e) => e.field)).toEqual([
+        'reason',
+      ]);
+      const stored = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
+      expect(stored.status).toBe('OPEN');
+    });
+
+    it('EN-128 EN-132 una atención de alta no se suspende, y una abierta no se «reanuda»', async () => {
+      const encounterId = await openEncounter();
+      await post(`/encounters/${encounterId}/resume`, doctorToken).expect(409);
+
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: COMPLETE_002,
+        },
+      ).expect(201);
+      await createDiagnosis(prisma, encounterId, 'J00');
+      await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
+
+      await post(`/encounters/${encounterId}/hold`, doctorToken, {
+        reason: 'Sale',
+      }).expect(409);
+    });
+
+    it('EN-128 la base no admite una atención suspendida sin motivo, y sí con él (control positivo)', async () => {
+      const encounterId = await openEncounter();
+      const user = await prisma.user.findFirstOrThrow({ select: { id: true } });
+
+      await expect(
+        prisma.encounter.update({ where: { id: encounterId }, data: { status: 'ON_HOLD' } }), // prettier-ignore
+      ).rejects.toThrow(/encounter_on_hold_states_who_when_and_why/);
+
+      const held = await prisma.encounter.update({
+        where: { id: encounterId },
+        data: {
+          status: 'ON_HOLD',
+          holdReason: 'Radiografía',
+          heldById: user.id,
+          heldAt: new Date(),
+        },
+      });
+      expect(held.status).toBe('ON_HOLD');
+    });
+
+    it('EN-128 EN-141 recepción suspende y reanuda con `encounter:open`; quien no puede abrir, no (403)', async () => {
+      const encounterId = await openEncounter();
+
+      await post(`/encounters/${encounterId}/hold`, receptionToken, {
+        reason: 'Salió a la farmacia',
+      }).expect(200);
+      await post(`/encounters/${encounterId}/resume`, receptionToken).expect(
+        200,
+      );
+
+      const cashier = (
+        await signIn('CAJA', 'caja@clinica.ec', '1705123451', false)
+      ).token;
+      await post(`/encounters/${encounterId}/hold`, cashier, {
+        reason: 'x',
+      }).expect(403);
+    });
+
+    it('EN-128 la atención de otra sede responde 404', async () => {
+      const { id: encounterId } = await prisma.encounter.create({
+        data: {
+          siteId: otherSiteId,
+          practitionerId: doctorPractitionerId,
+          patientId,
+          startedAt: new Date(),
+          careModality: 'MORBIDITY',
+          visitSequence: 'FIRST_TIME',
+        },
+      });
+
+      await post(`/encounters/${encounterId}/hold`, doctorToken, {
+        reason: 'x',
       }).expect(404);
     });
   });

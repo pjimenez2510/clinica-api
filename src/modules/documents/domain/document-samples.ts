@@ -214,6 +214,7 @@ export function sampleSubject(
           note: {
             signedAt: issuedAt,
             amendedAt: null,
+            withoutCertificate: true,
             sections: [
               { title: 'Motivo de consulta', text: SAMPLE_MARK },
               { title: 'Plan de tratamiento', text: 'Control en un mes.' },
