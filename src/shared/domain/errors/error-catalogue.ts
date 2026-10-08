@@ -732,6 +732,9 @@ export const DOMAIN_ERROR_CODES = [
   'ENCOUNTER_HAS_OTHERS_DRAFTS',
   'APPOINTMENT_ARRIVAL_NOT_RECORDED',
   'ENCOUNTER_INTERRUPTION_REASON_REQUIRED',
+  // EN-128. Suspender sin motivo: 422 por campo, en el servicio y en la base
+  // (`encounter_on_hold_states_who_when_and_why`).
+  'ENCOUNTER_HOLD_REASON_REQUIRED',
   'AMENDMENT_REASON_REQUIRED',
   'ANTHROPOMETRY_PENDING',
   'APPOINTMENT_NOT_ATTENDABLE',

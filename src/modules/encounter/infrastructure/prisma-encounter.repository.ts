@@ -81,6 +81,8 @@ export const ENCOUNTER_SELECT = {
   discontinuedReason: true,
   discontinuedOrigin: true,
   discontinuedAt: true,
+  holdReason: true,
+  heldAt: true,
   // EN-220. Whether its 002 stands signed: the summary is offered only then.
   notes: {
     where: { formCode: '002', status: 'SIGNED' },
@@ -348,6 +350,7 @@ export class PrismaEncounterRepository implements EncounterRepository {
             toStatus: true,
             fact: true,
             changedAt: true,
+            reason: true,
             changedBy: { select: { firstName: true, lastName: true } },
           },
         },
@@ -363,6 +366,7 @@ export class PrismaEncounterRepository implements EncounterRepository {
           ? null
           : `${change.changedBy.firstName} ${change.changedBy.lastName}`,
       at: change.changedAt,
+      reason: change.reason,
     }));
   }
 
@@ -894,6 +898,12 @@ export function toEncounterView(row: EncounterRow): EncounterView {
             origin: row.discontinuedOrigin,
             at: row.discontinuedAt,
           }
+        : null,
+    // EN-128. Only while suspended: the columns keep the last suspension
+    // after resuming, and the trail keeps every one.
+    hold:
+      row.status === 'ON_HOLD' && row.holdReason !== null && row.heldAt !== null
+        ? { reason: row.holdReason, at: row.heldAt }
         : null,
   };
 }

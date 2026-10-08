@@ -88,6 +88,7 @@ const anEncounter = (
   closedBySubstituteReason: null,
   annulment: null,
   interruption: null,
+  hold: null,
   ...overrides,
 });
 
@@ -143,6 +144,7 @@ class FakeEncounters implements EncounterRepository {
               fact: 'OPENED',
               byName: 'Ana Villacís',
               at: this.stored.startedAt,
+              reason: null,
             },
           ]
         : null,

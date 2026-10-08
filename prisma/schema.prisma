@@ -112,6 +112,8 @@ model User {
   agendaEntriesEdited    AgendaEntry[]            @relation("AgendaEntryEditor")
   encountersAnnulled     Encounter[]              @relation("EncounterAnnuller")
   encountersDiscontinued Encounter[]              @relation("EncounterDiscontinuer")
+  encountersHeld         Encounter[]              @relation("EncounterHolder")
+  encountersResumed      Encounter[]              @relation("EncounterResumer")
   encountersCorrected    Encounter[]              @relation("EncounterCorrector")
   encountersOpened       Encounter[]              @relation("EncounterOpener")
   encounterStatusChanges EncounterStatusHistory[]
@@ -2677,6 +2679,19 @@ model Encounter {
   /// (`encounter_exit_substitute_reason_belongs_to_an_exit`).
   exitSubstituteReason String? @map("exit_substitute_reason") @db.VarChar(500)
 
+  /// EN-128. The current (or last) suspension: the patient stepped out and is
+  /// expected back. Reason, author and instant exactly on `ON_HOLD`
+  /// (`encounter_on_hold_states_who_when_and_why`); every one is kept with
+  /// its reason in `encounter_status_history`. Users, like the other exits.
+  holdReason  String?   @map("hold_reason") @db.VarChar(500)
+  heldById    String?   @map("held_by_id") @db.Uuid
+  heldBy      User?     @relation("EncounterHolder", fields: [heldById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_held_by_fk")
+  heldAt      DateTime? @map("held_at") @db.Timestamptz(6)
+  /// EN-128. Who brought it back to `OPEN`, and when.
+  resumedById String?   @map("resumed_by_id") @db.Uuid
+  resumedBy   User?     @relation("EncounterResumer", fields: [resumedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_resumed_by_fk")
+  resumedAt   DateTime? @map("resumed_at") @db.Timestamptz(6)
+
   /// EN-215 (D-127). Who last corrected the modality or the first-time /
   /// subsequent mark, and when: the stamp `trg_encounter_record_version`
   /// demands of that correction, which keeps the previous attention in
@@ -2760,6 +2775,9 @@ model EncounterStatusHistory {
   changedById String?  @map("changed_by_id") @db.Uuid
   changedBy   User?    @relation(fields: [changedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_status_history_actor_fk")
   changedAt   DateTime @map("changed_at") @db.Timestamptz(6)
+
+  /// EN-128. Why the patient stepped out; only on `PUT_ON_HOLD`.
+  reason String? @db.VarChar(500)
 
   @@index([encounterId, id], map: "encounter_status_history_by_encounter")
   @@map("encounter_status_history")

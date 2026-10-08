@@ -2457,8 +2457,10 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > el historial (EN-133) copia en su fila `PUT_ON_HOLD` el motivo
   > (`encounter_status_history.reason`), así que la suspensión siguiente no
   > borra la anterior. `POST /encounters/:id/hold` y `POST /encounters/:id/resume`,
-  > con `record:write` y la misma regla de quién que interrumpir (D-085 §2: la
-  > atendiente, o un sustituto con `record:sign` y su motivo). El eje del
+  > con `encounter:open` —quien puede abrir la atención puede decir que el
+  > paciente salió de ella, recepción tanto como el médico— y sin la regla de
+  > quién de las salidas (D-085 §2): no termina ni firma nada y se deshace
+  > reanudando; quién lo hizo queda en el historial. El eje del
   > paciente (`ON_LEAVE`, AG-124) no lo mueve esta ruta: es de `agenda`.
   >
   > El caso corriente: el médico pide un examen que se hace en
@@ -4149,6 +4151,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_HAS_OTHERS_DRAFTS` | 409 | Interrumpir una atención con un borrador de nota de otra persona, que quedaría sin firma para siempre (D-085 §2); o anularla con una receta u orden en borrador de otro prescriptor o firmante, que es suya para emitir o descartar (M3). Un título por acto | EN-167, EN-218 |
 | `ENCOUNTER_ANNULMENT_REASON_REQUIRED` | — | **Retirado por EN-218 (D-126.2)**: anular ya no exige motivo | EN-166 |
 | `ENCOUNTER_INTERRUPTION_REASON_REQUIRED` | 422  | Interrumpir una atención sin motivo escrito o sin origen (D-082: sin condición de egreso, que no se exige). Se exige **en el servicio** además del DTO, por lo mismo que `AMENDMENT_REASON_REQUIRED`                                                                                                                                                                                                                        | EN-129                 |
+| `ENCOUNTER_HOLD_REASON_REQUIRED` | 422 | Suspender una atención sin decir por qué sale el paciente. Se exige en el servicio y en la base (`encounter_on_hold_states_who_when_and_why`) | EN-128 |
 | `ENCOUNTER_CLOSER_NOT_AUTHOR` | 403 | Cierra alguien que no la abrió y no lleva `record:sign`. Con `record:sign` **no falla**: cierra dejando constancia de la sustitución | EN-144, EN-147 |
 | `NURSING_SCOPE_DENIED` | 403 | Se intentó registrar diagnóstico, procedimiento o receta con `nursing:write`. **Distinto de un 403 genérico de permiso**: dice que el acto está fuera del ámbito del título, no que falte una casilla en el rol | EN-142 |
 | `CERTIFIED_SIGNATURE_REQUIRED` | 422 | Firmar sin certificado vigente con `requireCertifiedSignature` habilitado. **No es 403**: el profesional tiene permiso para firmar; lo que falta es el certificado | EN-155 |

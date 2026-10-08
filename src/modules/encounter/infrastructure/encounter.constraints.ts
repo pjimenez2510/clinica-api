@@ -234,6 +234,12 @@ registerConstraintMeanings({
     field: 'reason',
     message: 'Indique por qué se interrumpe la atención y si vino del paciente o del establecimiento', // prettier-ignore
   },
+  /** EN-128. A suspended attention says why, who and since when. */
+  encounter_on_hold_states_who_when_and_why: {
+    code: 'ENCOUNTER_HOLD_REASON_REQUIRED',
+    field: 'reason',
+    message: 'Indique por qué sale el paciente',
+  },
   /** EN-010. `encounter_time_order`: the end never precedes the beginning. */
   encounter_time_order: {
     code: 'INVALID_TIME_RANGE',

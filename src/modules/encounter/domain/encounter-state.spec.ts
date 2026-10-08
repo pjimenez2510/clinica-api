@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DischargeConditionRequiredError,
+  EncounterHoldReasonRequiredError,
   EncounterInterruptionReasonRequiredError,
   InvalidEncounterTransitionError,
 } from './encounter.errors';
@@ -11,7 +12,9 @@ import {
   assertEncounterTransition,
   endsTheAct,
   planAnnulment,
+  planHold,
   planInterruption,
+  planResume,
   planStateChange,
   requiresDischargeCondition,
 } from './encounter-state';
@@ -327,5 +330,54 @@ describe('interrumpir la atención (EN-167)', () => {
         now,
       }),
     ).toThrow(InvalidEncounterTransitionError);
+  });
+});
+
+describe('EN-128 el paciente sale y vuelve', () => {
+  const now = new Date();
+
+  it('EN-128 suspende una atención abierta con su motivo, sin espacios sobrantes', () => {
+    expect(
+      planHold({ from: 'OPEN', reason: '  Va al laboratorio  ', now }),
+    ).toEqual({ to: 'ON_HOLD', reason: 'Va al laboratorio', at: now });
+  });
+
+  it('EN-128 no suspende sin motivo, ni con uno en blanco', () => {
+    expect(() => planHold({ from: 'OPEN', reason: undefined, now })).toThrow(
+      EncounterHoldReasonRequiredError,
+    );
+    expect(() => planHold({ from: 'OPEN', reason: '   ', now })).toThrow(
+      EncounterHoldReasonRequiredError,
+    );
+  });
+
+  it('EN-128 EN-132 sólo se suspende lo abierto: ni la suspendida, ni la de alta, ni la cerrada', () => {
+    for (const from of [
+      'ON_HOLD',
+      'DISCHARGED',
+      'COMPLETED',
+      'DISCONTINUED',
+    ] as const) {
+      expect(() => planHold({ from, reason: 'Sale', now })).toThrow(
+        InvalidEncounterTransitionError,
+      );
+    }
+  });
+
+  it('EN-128 la suspendida vuelve a abierta, y sólo ella', () => {
+    expect(planResume({ from: 'ON_HOLD', now })).toEqual({
+      to: 'OPEN',
+      at: now,
+    });
+    for (const from of [
+      'OPEN',
+      'DISCHARGED',
+      'COMPLETED',
+      'DISCONTINUED',
+    ] as const) {
+      expect(() => planResume({ from, now })).toThrow(
+        InvalidEncounterTransitionError,
+      );
+    }
   });
 });

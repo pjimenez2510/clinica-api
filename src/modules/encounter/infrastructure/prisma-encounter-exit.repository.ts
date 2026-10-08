@@ -13,7 +13,9 @@ import {
 import type { EncounterStatus } from '../domain/encounter';
 import type {
   AnnulmentPlan,
+  HoldPlan,
   InterruptionPlan,
+  ResumePlan,
 } from '../domain/encounter-state';
 import type {
   AnnulmentActor,
@@ -252,6 +254,43 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
         signedNoteIds,
         unsignedEmptyNoteIds,
       };
+    });
+  }
+
+  /** EN-128. See the port. */
+  async hold(
+    query: EncounterQuery,
+    decide: (encounter: EncounterView) => HoldPlan,
+    changedById: string,
+  ): Promise<EncounterView> {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await lockAndRead(tx, query);
+      const plan = decide(current);
+      await moveConditionally(tx, query, current.status, plan.to, {
+        status: plan.to,
+        holdReason: plan.reason,
+        heldById: changedById,
+        heldAt: plan.at,
+      });
+      return readView(tx, query.encounterId);
+    });
+  }
+
+  /** EN-128. See the port. */
+  async resume(
+    query: EncounterQuery,
+    decide: (encounter: EncounterView) => ResumePlan,
+    changedById: string,
+  ): Promise<EncounterView> {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await lockAndRead(tx, query);
+      const plan = decide(current);
+      await moveConditionally(tx, query, current.status, plan.to, {
+        status: plan.to,
+        resumedById: changedById,
+        resumedAt: plan.at,
+      });
+      return readView(tx, query.encounterId);
     });
   }
 }

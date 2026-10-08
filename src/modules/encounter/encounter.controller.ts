@@ -313,6 +313,7 @@ export class EncounterController {
         fact: change.fact,
         byName: change.byName,
         at: change.at.toISOString(),
+        reason: change.reason,
       })),
     };
   }
@@ -593,6 +594,10 @@ export function toEncounterResponse(
       reason: encounter.interruption.reason,
       origin: encounter.interruption.origin,
       at: encounter.interruption.at.toISOString(),
+    },
+    hold: encounter.hold && {
+      reason: encounter.hold.reason,
+      at: encounter.hold.at.toISOString(),
     },
   };
 }

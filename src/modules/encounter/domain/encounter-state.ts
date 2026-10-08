@@ -15,6 +15,7 @@
 
 import {
   DischargeConditionRequiredError,
+  EncounterHoldReasonRequiredError,
   EncounterInterruptionReasonRequiredError,
   InvalidEncounterTransitionError,
 } from './encounter.errors';
@@ -278,6 +279,46 @@ export function planInterruption(input: {
     origin: input.origin,
     at: input.now,
   };
+}
+
+/**
+ * EN-128. The patient steps out and is expected back: `OPEN → ON_HOLD` with the
+ * reason. Only from `OPEN` (EN-132); nothing ends, so `ended_at` stays empty.
+ */
+export function planHold(input: {
+  from: EncounterStatus;
+  reason: string | undefined;
+  now: Date;
+}): HoldPlan {
+  assertEncounterTransition(input.from, 'ON_HOLD');
+  const reason = input.reason?.trim();
+  if (!reason) throw new EncounterHoldReasonRequiredError();
+  return { to: 'ON_HOLD', reason, at: input.now };
+}
+
+/** What a suspension writes on the attention. */
+export interface HoldPlan {
+  to: 'ON_HOLD';
+  reason: string;
+  at: Date;
+}
+
+/**
+ * EN-128. The patient is back: `ON_HOLD → OPEN`, the SAME attention — coming
+ * back from the laboratory is not a second consultation (EN-006).
+ */
+export function planResume(input: {
+  from: EncounterStatus;
+  now: Date;
+}): ResumePlan {
+  assertEncounterTransition(input.from, 'OPEN');
+  return { to: 'OPEN', at: input.now };
+}
+
+/** What resuming writes on the attention. */
+export interface ResumePlan {
+  to: 'OPEN';
+  at: Date;
 }
 
 /** What an interruption writes on the attention. */

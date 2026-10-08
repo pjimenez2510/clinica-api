@@ -20,7 +20,12 @@ import {
   type EncounterRepository,
   type EncounterView,
 } from '../domain/encounter.repository';
-import { planAnnulment, planInterruption } from '../domain/encounter-state';
+import {
+  planAnnulment,
+  planHold,
+  planInterruption,
+  planResume,
+} from '../domain/encounter-state';
 import { assertAnnullable, planExitActor } from '../domain/encounter-exit';
 import type { Requester } from './encounter.service';
 
@@ -268,5 +273,68 @@ export class EncounterExitService {
     }
 
     return { encounter: discontinued, unsignedEmptyNoteIds };
+  }
+
+  /**
+   * EN-128. The patient steps out and is expected back —to the laboratory
+   * across the street—: `OPEN → ON_HOLD` with the reason, who and when.
+   *
+   * WHOEVER MAY OPEN THE ATTENTION AT THE SITE (`encounter:open`, the SPEC's
+   * routes table), not only the attending one, and that is the difference with
+   * the exits (D-085 §2): nothing ends and nothing is signed, it is
+   * reversible, and the patient who comes back may be received by whoever is
+   * at the desk. Who did it stays in the trail.
+   */
+  async hold(
+    request: { encounterId: string; reason?: string },
+    requester: Requester,
+  ): Promise<EncounterView> {
+    const now = new Date();
+    const held = await this.exits.hold(
+      { encounterId: request.encounterId, sites: requester.sites },
+      (encounter) =>
+        planHold({ from: encounter.status, reason: request.reason, now }),
+      requester.userId,
+    );
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: held.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    // The fact only: the reason is clinical text.
+    this.logger.info(
+      { site_id: held.siteId, action: 'ENCOUNTER_PUT_ON_HOLD' },
+      'encounter put on hold',
+    );
+    return held;
+  }
+
+  /** EN-128. The patient is back: the SAME attention returns to `OPEN`. */
+  async resume(
+    request: { encounterId: string },
+    requester: Requester,
+  ): Promise<EncounterView> {
+    const now = new Date();
+    const resumed = await this.exits.resume(
+      { encounterId: request.encounterId, sites: requester.sites },
+      (encounter) => planResume({ from: encounter.status, now }),
+      requester.userId,
+    );
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: RESOURCE_TYPE,
+      resourceId: resumed.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    this.logger.info(
+      { site_id: resumed.siteId, action: 'ENCOUNTER_RESUMED' },
+      'encounter resumed',
+    );
+    return resumed;
   }
 }

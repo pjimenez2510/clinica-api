@@ -87,6 +87,8 @@ export interface EncounterView {
   annulment: { reason: string | null; at: Date } | null;
   /** EN-167. Why, from where and when it was interrupted; `null` unless `DISCONTINUED`. */
   interruption: { reason: string; origin: DiscontinuedOrigin; at: Date } | null;
+  /** EN-128. Why the patient stepped out and since when; `null` unless `ON_HOLD`. */
+  hold: { reason: string; at: Date } | null;
 }
 
 /**
@@ -171,6 +173,8 @@ export interface EncounterStatusChange {
   /** The user's display name; `null` when no stamp names one (D-177.4). */
   byName: string | null;
   at: Date;
+  /** EN-128. Why the patient stepped out; only on `PUT_ON_HOLD`. */
+  reason: string | null;
 }
 
 /** EN-015, EN-162. One page of a chart's attentions, in chronological order. */
