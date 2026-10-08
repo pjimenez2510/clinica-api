@@ -128,7 +128,12 @@ export class EncounterController {
       query.practitionerId,
       this.requester(req, 'record:read'),
     );
-    return { items: items.map(toEncounterResponse) };
+    return {
+      items: items.map((item) => ({
+        ...toEncounterResponse(item),
+        patient: item.patient,
+      })),
+    };
   }
 
   /**

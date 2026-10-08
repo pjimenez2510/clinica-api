@@ -2860,6 +2860,12 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > firmar, atenciones sin cerrar— no cabe en la lista del día porque no tiene
   > hora que lo ordene. Y es la única defensa que queda si no hay cierre
   > automático: lo que no se cierra solo, alguien tiene que poder verlo.
+  >
+  > **Con de quién es (08-10-2026, `feat/f04-consulta-huecos`):** cada fila
+  > lleva el nombre y la historia clínica del paciente —sin nada clínico, lo
+  > mismo que el tablero del día—, porque una lista que sólo dice «abierta el
+  > lunes a las 10:12» no se puede atender. La pantalla es «Sin cerrar» en
+  > Atención.
 - **EN-147** — SI quien cierra una atención no es quien la abrió, ENTONCES el
   sistema DEBERÁ exigir `record:sign` y DEBERÁ dejar constancia de que el cierre
   **no lo hizo el autor**.

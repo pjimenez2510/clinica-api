@@ -437,7 +437,16 @@ export type DiscontinuedEncounterResponse = z.infer<
 >;
 
 export const encounterListSchema = z.object({
-  items: z.array(encounterSchema),
+  /**
+   * EN-146. WITH WHO, by name and chart number: a list of forgotten
+   * attentions that says only «abierta el lunes a las 10:12» cannot be acted
+   * on. No clinical content — the same as the day's board shows.
+   */
+  items: z.array(
+    encounterSchema.extend({
+      patient: z.object({ name: z.string(), mrn: z.string() }),
+    }),
+  ),
 });
 /** Response of GET /encounters/open. */
 export class EncounterListDto extends createZodDto(encounterListSchema) {}

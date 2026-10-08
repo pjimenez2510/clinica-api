@@ -230,6 +230,14 @@ export interface EncounterPage {
 export type SiteScopeFilter = 'all' | readonly string[];
 
 /** EN-146. The attentions one practitioner has not closed. */
+/**
+ * EN-146. An attention nobody closed, with who it is for: by name and chart
+ * number, which is what lets the practitioner find it. Nothing clinical.
+ */
+export interface StillOpenEncounter extends EncounterView {
+  patient: { name: string; mrn: string };
+}
+
 export interface OpenEncountersQuery {
   /** Absent means «everyone in my scope», which is what a supervisor reads. */
   practitionerId?: string;
@@ -391,7 +399,7 @@ export interface EncounterRepository {
    * OLDEST FIRST because the list is read to find what is being forgotten, and
    * the thing being forgotten is the oldest one.
    */
-  listStillOpen(query: OpenEncountersQuery): Promise<EncounterView[]>;
+  listStillOpen(query: OpenEncountersQuery): Promise<StillOpenEncounter[]>;
 
   /**
    * EN-009, EN-131, EN-132, EN-144, EN-147. One closure, one transaction.

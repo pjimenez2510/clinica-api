@@ -499,6 +499,38 @@ describe('la atención por HTTP', () => {
       expect(encounterId).toBeTruthy();
     });
 
+    it('EN-146 las sin cerrar de un profesional dicen de quién son, con su historia clínica, y sólo las abiertas o suspendidas', async () => {
+      const open = await openEncounter();
+      const held = await openEncounter();
+      await post(`/encounters/${held}/hold`, doctorToken, {
+        reason: 'Va a la farmacia',
+      }).expect(200);
+      const other = await openEncounter(secondDoctorToken, {
+        practitionerId: secondDoctorPractitionerId,
+      });
+      const patient = await prisma.patient.findUniqueOrThrow({
+        where: { id: patientId },
+      });
+
+      const listed = await get(
+        `/encounters/open?practitionerId=${doctorPractitionerId}`,
+        doctorToken,
+      ).expect(200);
+      const items = (
+        listed.body as {
+          items: { id: string; status: string; patient: { name: string; mrn: string } }[]; // prettier-ignore
+        }
+      ).items;
+
+      expect(items.map((item) => item.id).sort()).toEqual([open, held].sort());
+      expect(items.map((item) => item.id)).not.toContain(other);
+      expect(items.find((item) => item.id === held)?.status).toBe('ON_HOLD');
+      expect(items[0]?.patient).toEqual({
+        name: expect.stringContaining(patient.familyName) as string,
+        mrn: patient.mrn,
+      });
+    });
+
     it('EN-122 deja una fila al ABRIR una atención concreta', async () => {
       const encounterId = await openEncounter();
       const before = await auditRows();

@@ -24,6 +24,7 @@ import type {
   EncounterView,
   NewEncounter,
   OpenEncountersQuery,
+  StillOpenEncounter,
   PatientChartStatus,
   SurvivingChart,
   PractitionerIdentity,
@@ -445,7 +446,9 @@ export class PrismaEncounterRepository implements EncounterRepository {
    * OLDEST FIRST because the list exists to show what is being forgotten, and
    * what is being forgotten is the oldest thing on it.
    */
-  async listStillOpen(query: OpenEncountersQuery): Promise<EncounterView[]> {
+  async listStillOpen(
+    query: OpenEncountersQuery,
+  ): Promise<StillOpenEncounter[]> {
     const rows = await this.prisma.encounter.findMany({
       where: {
         status: { in: ['OPEN', 'ON_HOLD'] },
@@ -455,9 +458,33 @@ export class PrismaEncounterRepository implements EncounterRepository {
         ...siteFilter(query.sites),
       },
       orderBy: [{ startedAt: 'asc' }, { id: 'asc' }],
-      select: ENCOUNTER_SELECT,
+      select: {
+        ...ENCOUNTER_SELECT,
+        patient: {
+          select: {
+            mrn: true,
+            givenName: true,
+            secondGivenName: true,
+            familyName: true,
+            secondFamilyName: true,
+          },
+        },
+      },
     });
-    return rows.map(toEncounterView);
+    return rows.map((row) => ({
+      ...toEncounterView(row),
+      patient: {
+        name: [
+          row.patient.givenName,
+          row.patient.secondGivenName,
+          row.patient.familyName,
+          row.patient.secondFamilyName,
+        ]
+          .filter(Boolean)
+          .join(' '),
+        mrn: row.patient.mrn,
+      },
+    }));
   }
 
   /**

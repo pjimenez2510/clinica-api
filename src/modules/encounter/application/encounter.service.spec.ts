@@ -20,6 +20,7 @@ import type {
   EncounterStatusChange,
   EncounterRepository,
   EncounterView,
+  StillOpenEncounter,
   NewEncounter,
   PatientChartStatus,
   SurvivingChart,
@@ -166,8 +167,13 @@ class FakeEncounters implements EncounterRepository {
     });
   }
 
-  listStillOpen(): Promise<EncounterView[]> {
-    return Promise.resolve([this.stored]);
+  listStillOpen(): Promise<StillOpenEncounter[]> {
+    return Promise.resolve([
+      {
+        ...this.stored,
+        patient: { name: 'Ana Villacís', mrn: 'HC0000000001' },
+      },
+    ]);
   }
 
   close(
