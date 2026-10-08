@@ -355,6 +355,17 @@ describe('SRI-011 el código de la prestación en el comprobante', () => {
   });
 });
 
+describe('BI-048 todo en dólares', () => {
+  it('BI-048 la factura declara la moneda DOLAR, y el origen no tiene moneda que elegir', () => {
+    const source = aSource();
+    const factura = parsed(composeInvoiceXml(source));
+
+    expect(factura.infoFactura.moneda).toBe('DOLAR');
+    // No conversion is offered: there is nothing to convert from.
+    expect(JSON.stringify(source)).not.toMatch(/currency|moneda/i);
+  });
+});
+
 describe('SRI-014 formatos y escape', () => {
   it('SRI-014 fecha dd/mm/aaaa, seis decimales en cantidad y precio, dos en lo demás', () => {
     const factura = parsed(composeInvoiceXml(aSource()));
