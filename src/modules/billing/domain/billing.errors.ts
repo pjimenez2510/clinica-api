@@ -441,6 +441,32 @@ export class AccountHasOpenChargesError extends ConflictError {
 }
 
 /**
+ * BI-237 (D-184.2). An account with nothing invoiced is closed with the
+ * reason it is not charged — «control sin costo», «cortesía» —, so that every
+ * attention ends `COMPLETED` by the same path and it is written why it cost
+ * nothing. `trg_patient_account_settled_states_why_unpaid` refuses it too.
+ */
+export class AccountNoChargeReasonRequiredError extends ValidationError {
+  readonly code = 'ACCOUNT_NO_CHARGE_REASON_REQUIRED';
+  override readonly userTitle =
+    'No hay nada facturado: indique por qué no se cobra antes de cerrar la cuenta';
+
+  constructor() {
+    super(
+      'An account with nothing invoiced needs the reason it is not charged',
+      {},
+      [
+        {
+          field: 'noChargeReason',
+          code: 'ACCOUNT_NO_CHARGE_REASON_REQUIRED',
+          message: 'Indique por qué no se cobra',
+        },
+      ],
+    );
+  }
+}
+
+/**
  * BI-057. The database admits three decimals (`charge_item.quantity` is
  * `numeric(10,3)`, and `charge_item_quantity_is_positive` is the guarantee);
  * what neither admits is zero or less.

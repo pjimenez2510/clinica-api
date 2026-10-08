@@ -369,8 +369,14 @@ y le sale la consulta propuesta. Una atención interrumpida sin acto clínico
 aparece con el motivo por el que no tiene nada que cobrar. Y facturar, añadir
 un cargo, facturar lo pendiente y cerrar la cuenta termina siempre.
 
-**Cubre:** BI-181 a BI-184, BI-190, BI-194. **Solo servidor:** BI-190 (la pantalla
+**Cubre:** BI-181 a BI-184, BI-190, BI-194, BI-236, BI-237. **Solo servidor:** BI-190 (la pantalla
 dice el número y lista lo que el servidor sirve; qué cuenta es del servidor).
+
+> **D-184 (08-10-2026, `feat/f04-cierre-atencion`): cerrar la cuenta cierra la
+> atención** (BI-236), y la que no se cobra se cierra con su motivo (BI-237).
+> Prueba independiente: caja cierra la cuenta facturada de una atención con el
+> alta y la atención queda `COMPLETED` y el paciente `DEPARTED`; cierra en cero
+> la de un control con «Control sin costo», y sin motivo no la deja cerrar.
 
 ### B12 — Menos preguntas en caja _(P1)_
 
@@ -1646,6 +1652,13 @@ dos registros distintos.**
   > médico esperando a que un cajero termine. La mitad negativa se cumple por
   > la forma del puerto —`ClinicalActsRepository` no tiene ni un método de
   > escritura— y no por acordarse.
+  >
+  > **Precisado por D-184 (08-10-2026, `feat/f04-cierre-atencion`).** «El
+  > cierre de una atención» es aquí el **alta clínica** (`DISCHARGED`), que no
+  > espera a caja. Lo que sí ocurre desde D-184 es lo inverso y sin pedir nada
+  > al médico: **cerrar la cuenta** pasa la atención de alta a `COMPLETED`
+  > (BI-236). Eso no es el envío a caja, que sigue sin tocar ningún dato
+  > clínico.
 - **BI-157** — SI un cargo derivado se anula, ENTONCES un envío posterior de la
   misma atención NO DEBERÁ volver a proponerlo.
   > La fila anulada se conserva (BI-055) y ocupa su hueco en el índice único.
@@ -1788,6 +1801,53 @@ dos registros distintos.**
   > emisiones simultáneas no se reparten las mismas líneas. Un cargo a $0 no
   > se factura: se marca «No se cobra» en un clic, sin motivo (BI-196, que
   > enmienda D-120 con D-126).
+
+### Cerrar la cuenta cierra la atención (D-184, aceptada por el autor el 08-10-2026)
+
+- **BI-236** — CUANDO caja cierre una cuenta cuya atención tenga el alta dada
+  (`DISCHARGED`), el sistema DEBERÁ pasar esa atención a `COMPLETED` y a su
+  paciente a `DEPARTED` **en la misma transacción**, con quien cerró la cuenta
+  y el instante del cierre, sin pedir nada a quien atendió (EN-131, EN-139); SI
+  la atención no tiene el alta —sigue abierta, en espera o terminó de otro
+  modo—, ENTONCES DEBERÁ cerrar la cuenta sin cambiarla; y el extracto DEBERÁ
+  servir el estado de la atención de la cuenta, para que la pantalla diga antes
+  de cerrar que la atención también se cierra.
+  > **D-184.1.** Caja no ve un paso nuevo: cerrar la cuenta, que ya hacía,
+  > también cierra la atención. Es lo que D-A-008 asigna a `COMPLETED` —no
+  > queda nada, ni clínico ni administrativo—, y no inventa ningún hecho
+  > clínico: la condición de egreso ya la declaró el médico al firmar.
+  >
+  > **Garantía de la base:** `trg_patient_account_closes_its_encounter` y no
+  > el servicio, por dos razones. La primera es que es la misma transacción
+  > por construcción: no hay forma de liquidar la cuenta sin que la atención
+  > la siga, ni de olvidarlo en un segundo camino de cierre. La segunda es la
+  > frontera: `billing` no escribe en `encounter` (BI-156, `pnpm
+  > arch:check`), y el disparador es de la tabla de caja. El instante es el
+  > `closed_at` de la cuenta, del reloj de la aplicación.
+  >
+  > Sólo de `OPEN` a `SETTLED`: reabrir la cuenta tras una nota de crédito y
+  > volver a cerrarla no toca una atención que ya es `COMPLETED`, que es
+  > terminal (EN-131). Una cuenta sin atención —el examen comprado en el
+  > mostrador— se cierra igual que antes.
+- **BI-237** — SI se cierra una cuenta sin ningún cargo facturado, ENTONCES el
+  sistema DEBERÁ exigir el **motivo por el que no se cobra** y guardarlo en la
+  cuenta, y SI no lo trae DEBERÁ rechazarlo con
+  `ACCOUNT_NO_CHARGE_REASON_REQUIRED` sin cerrarla; la base DEBERÁ rechazar
+  liquidar una cuenta sin cargo facturado y sin motivo.
+  > **D-184.2.** Así toda atención termina en `COMPLETED` por el mismo
+  > camino: la que no se cobra —el control sin costo, la cortesía— también
+  > pasa por caja y se cierra con «Sin cobro». «Consta por qué no se cobra»
+  > es exactamente lo que EN-131 exige para dar la cuenta por cerrada.
+  >
+  > **En la pantalla es una lista corta con «Otro»** (`ReasonPicker`, D-126.3):
+  > «Control sin costo», «Cortesía». No se pregunta cuando hay algo facturado:
+  > ahí ya consta qué se cobró.
+  >
+  > **Garantía de la base:** `trg_patient_account_settled_states_why_unpaid`
+  > (`BEFORE UPDATE OF status`, sólo de `OPEN` a `SETTLED`) y
+  > `patient_account_no_charge_reason_not_blank`. Al reabrirse tras una nota
+  > de crédito el motivo se vacía —la versión anterior queda en
+  > `record_version` (BI-215)—: el siguiente cierre dice el suyo.
 
 ## 18. Prestaciones con estructura
 
@@ -2201,6 +2261,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `ACCOUNT_NOT_FOUND` | 404 | BI-135 |
 | `ACCOUNT_CLOSED` | 409 | BI-071 |
 | `ACCOUNT_HAS_OPEN_CHARGES` | 409 | BI-072 |
+| `ACCOUNT_NO_CHARGE_REASON_REQUIRED` | 422 | BI-237 |
 | `INVOICE_NOT_FOUND` | 404 | BI-135 |
 | `INVOICE_RECEIVER_REQUIRED` | 422 | BI-080 |
 | `INVOICE_RECEIVER_IS_PAYER` | 422 | BI-087 |
@@ -2267,6 +2328,7 @@ registrados en `infrastructure/billing.constraints.ts`.
 | `DISCOUNT_EXCEEDS_LINE_AMOUNT` | 422 | `charge_item_discount_within_line` | BI-065 |
 | `INVALID_ACCOUNT_STATUS` | 422 | `patient_account_status_is_known` | BI-070 |
 | `ACCOUNT_CLOSURE_INCOHERENT` | 422 | `patient_account_closed_states_its_instant` | BI-071 |
+| `ACCOUNT_NO_CHARGE_REASON_REQUIRED` | 422 | `trg_patient_account_settled_states_why_unpaid`, `patient_account_no_charge_reason_not_blank` | BI-237 |
 | `ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER` | 409 | `patient_account_one_open_per_encounter` | BI-070 |
 | `INVOICE_SEQUENTIAL_TAKEN` | 409 | `invoice_sequential_unique` | BI-085 |
 | `INVOICE_TOTAL_INCONSISTENT` | 422 | `invoice_total_is_consistent` | BI-058, BI-083 |
@@ -2364,7 +2426,7 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:read` | `param:siteId` | BI-074, BI-135, BI-192 |
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}/invoice-receiver` | `billing:read` | `param:siteId` | BI-082 |
 | `PATCH` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:write` | `param:siteId` | BI-033, BI-198 |
-| `POST` | `/billing/sites/{siteId}/accounts/{accountId}/close` | `billing:write` | `param:siteId` | BI-071, BI-072 |
+| `POST` | `/billing/sites/{siteId}/accounts/{accountId}/close` | `billing:write` | `param:siteId` | BI-071, BI-072, **BI-236**, **BI-237** |
 | `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges` | `billing:write` | `param:siteId` | BI-015, BI-016, BI-047, BI-050 a BI-058 |
 | `POST` | `/billing/sites/{siteId}/encounters/{encounterId}/checkout` | `billing:write` | `param:siteId` | BI-150 a BI-158 |
 | `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/confirm` | `billing:write` | `param:siteId` | BI-152 |

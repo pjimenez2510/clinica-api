@@ -173,6 +173,16 @@ export interface ClinicalActsRepository {
   }): Promise<DraftOrderNotice[]>;
 
   /**
+   * BI-236. The state of the account's attention, so caja is told before
+   * closing that the attention closes with it (only a `DISCHARGED` one does).
+   * `null` when it is not at that site.
+   */
+  encounterStatusOf(query: {
+    encounterId: string;
+    siteId: string;
+  }): Promise<string | null>;
+
+  /**
    * D-119, BI-190. The unsettled ended visits older than the window, counted,
    * without the ones that are never charged.
    */

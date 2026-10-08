@@ -12,11 +12,13 @@ import {
   Req,
 } from '@nestjs/common';
 import {
+  ApiBody,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { ZodValidationPipe } from 'nestjs-zod';
 
 import type { Request } from 'express';
 
@@ -49,6 +51,7 @@ import {
   AccountStatementDto,
   AddChargeDto,
   ChangePayerDto,
+  CloseAccountDto,
   ChargeDto,
   CheckoutDto,
   CheckoutResponseDto,
@@ -75,6 +78,9 @@ import {
   type ReceiverProposalResponse,
   type RepricingResponse,
 } from './dto/billing.dto';
+
+/** BI-237. The optional body of the account closure, validated as `{}` when absent. */
+const CLOSE_ACCOUNT_BODY = new ZodValidationPipe(CloseAccountDto);
 
 /**
  * What one visit owes, and the document that settles it.
@@ -291,12 +297,14 @@ export class BillingController {
   }
 
   /**
-   * BI-071, BI-072, BI-073.
+   * BI-071, BI-072, BI-073, BI-236, BI-237.
    *
    * Closing the account is NOT a precondition of invoicing, and invoicing is
    * not a precondition of closing the encounter clinically: chaining them
    * produces exactly the system that keeps a doctor waiting for a cashier, or
-   * the other way round.
+   * the other way round. What closing DOES do since D-184 is close the
+   * attention that already has its discharge, in the same transaction — the
+   * database does it — and, with nothing invoiced, it asks why.
    */
   @Post('accounts/:accountId/close')
   @RequirePermission('billing:write', 'param:siteId')
@@ -304,15 +312,25 @@ export class BillingController {
   // a transition and not an edit of the row.
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cerrar una cuenta sin cargos pendientes' })
+  @ApiBody({ type: CloseAccountDto, required: false })
   @ApiOkResponse({ type: AccountDto })
   async closeAccount(
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Param('accountId', ParseUUIDPipe) accountId: string,
+    // `unknown` so the global pipe stands aside: the body is OPTIONAL — an
+    // account with something invoiced closes with none — and an absent body
+    // is validated here as `{}` by the same pipe, with the same 422.
+    @Body() body: unknown,
   ): Promise<AccountResponse> {
+    const dto = (await CLOSE_ACCOUNT_BODY.transform(body ?? {}, {
+      type: 'body',
+      metatype: CloseAccountDto,
+    })) as CloseAccountDto;
     return toAccountResponse(
       await this.accounts.closeAccount({
         accountId,
         siteId,
+        noChargeReason: dto.noChargeReason,
         closedById: this.currentUser.requireUserId(),
       }),
     );
@@ -654,6 +672,7 @@ function toAccountResponse(account: AccountView): AccountResponse {
     status: account.status,
     openedAt: account.openedAt.toISOString(),
     closedAt: account.closedAt?.toISOString() ?? null,
+    noChargeReason: account.noChargeReason,
   };
 }
 
@@ -675,6 +694,8 @@ function toStatementResponse(
       savedAt: draft.savedAt.toISOString(),
     })),
     consultationOutdated: statement.consultationOutdated,
+    encounterStatus:
+      statement.encounterStatus as AccountStatementResponse['encounterStatus'],
   };
 }
 

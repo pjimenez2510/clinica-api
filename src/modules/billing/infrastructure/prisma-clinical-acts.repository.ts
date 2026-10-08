@@ -257,6 +257,18 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
     }));
   }
 
+  /** BI-236. Scoped by site, like every read here (BI-135). */
+  async encounterStatusOf(query: {
+    encounterId: string;
+    siteId: string;
+  }): Promise<string | null> {
+    const row = await this.prisma.encounter.findFirst({
+      where: { id: query.encounterId, siteId: query.siteId },
+      select: { status: true },
+    });
+    return row?.status ?? null;
+  }
+
   /**
    * D-119. How many ended visits older than the window are still unsettled,
    * so the screen can say they exist instead of dropping them silently.

@@ -26,6 +26,7 @@ import type {
 } from '../domain/billing.repository';
 import {
   AccountClosedError,
+  AccountNoChargeReasonRequiredError,
   AccountHasOpenChargesError,
   CorrectionAwaitsCreditNoteError,
   AccountHasBilledChargesError,
@@ -291,6 +292,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   async closeAccount(command: {
     accountId: string;
     closedById: string;
+    noChargeReason: string | null;
     now: Date;
   }): Promise<AccountView> {
     const row = await this.prisma.$transaction(async (tx) => {
@@ -313,12 +315,23 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       if (open.length > 0) {
         throw new AccountHasOpenChargesError(open.map((charge) => charge.id));
       }
+      // BI-237: with something invoiced there is nothing to explain.
+      const billed = await tx.chargeItem.count({
+        where: { accountId: command.accountId, status: 'BILLED' },
+      });
+      if (billed === 0 && command.noChargeReason === null) {
+        throw new AccountNoChargeReasonRequiredError();
+      }
       // BI-215: closing is a change of the account, stamped and versioned.
+      // BI-236: `trg_patient_account_closes_its_encounter` closes the
+      // discharged attention in this same transaction, with `closedAt` and
+      // the stamp below.
       return tx.patientAccount.update({
         where: { id: command.accountId },
         data: {
           status: 'SETTLED',
           closedAt: command.now,
+          noChargeReason: billed === 0 ? command.noChargeReason : null,
           changedById: command.closedById,
           changedAt: stampAfter(current.changed_at, command.now),
         },
@@ -1118,6 +1131,7 @@ function toAccountView(row: AccountRow): AccountView {
     status: row.status as AccountStatus,
     openedAt: row.openedAt,
     closedAt: row.closedAt,
+    noChargeReason: row.noChargeReason,
   };
 }
 

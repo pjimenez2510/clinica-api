@@ -400,7 +400,7 @@ estado de paciente pasó a `IN_PREPARATION` **sin que nadie lo teclee**, que el
 tablero lo ordena por hora de la cita, que el tiempo en el estado actual lo
 calcula el servidor, y que la proyección `PUBLIC` de esa misma fila no lleva
 nombre completo ni nota corta.
-**Cubre:** AG-121 a AG-127, AG-133 a AG-139, AG-176.
+**Cubre:** AG-121 a AG-127, AG-133 a AG-139, AG-176, AG-177.
 
 **Solo servidor:** AG-122, AG-123, AG-126, AG-139. Que un estado NO se pueda teclear se
 demuestra por la ausencia de ruta —una pantalla no puede enseñar un botón que no
@@ -1702,6 +1702,16 @@ añade.
   > atención— y el paciente pasa a `ON_LEAVE`; al reanudar vuelve a
   > `RECEIVING_CARE`. La cita no cambia de estado. Que una orden de examen
   > externo la suspenda sola es de la entrega H8 de `encounter`.
+- **AG-177** — MIENTRAS la atención de una cita esté en curso (`OPEN`), el menú
+  de su fila en el tablero DEBERÁ ofrecer «Salió y vuelve» a quien tenga
+  `encounter:open`, con el motivo de una lista corta y «Otro»; y MIENTRAS esté
+  suspendida (`ON_HOLD`), DEBERÁ ofrecer «Volvió»; los dos SIN abrir la
+  historia clínica ni pedir `record:read` (EN-239).
+  > **D-184.4 (aceptada por el autor el 08-10-2026,
+  > `feat/f04-cierre-atencion`).** Recepción ve salir al paciente tanto como el
+  > médico, y EN-128 ya le daba el permiso; lo que no tenía era el botón, que
+  > vivía dentro de la atención. Es la misma lista de acciones del tablero y
+  > del calendario (`care-flow/actions.ts`), así que se ofrece en los dos.
 - **AG-125** — CUANDO se cierre la cuenta de la atención, el sistema DEBERÁ
   pasar al paciente a `DEPARTED`, y `DEPARTED` NO DEBERÁ admitir ninguna
   transición posterior dentro de la misma cita.

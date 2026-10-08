@@ -18,6 +18,7 @@ import {
 } from '../domain/billing.repository';
 import {
   AccountClosedError,
+  AccountNoChargeReasonRequiredError,
   AccountHasOpenChargesError,
   AccountNotFoundError,
   BillableServiceInactiveError,
@@ -72,6 +73,12 @@ export interface AccountStatement {
    */
   draftOrders: DraftOrderNotice[];
   /**
+   * BI-236. The state of the account's attention (`null` without one): a
+   * `DISCHARGED` attention closes with the account, and the screen says so
+   * before the cashier confirms.
+   */
+  encounterStatus: string | null;
+  /**
    * BI-203. The visit's consultation line no longer matches the visit: its
    * sequence was corrected and the line could not be repriced on its own
    * (no price, inactive service, or already billed). Derived on read, so it
@@ -112,7 +119,7 @@ export class PatientAccountService {
     @Inject(CLINICAL_ACTS_REPOSITORY)
     private readonly acts: Pick<
       ClinicalActsRepository,
-      'draftOrdersOf' | 'findEncounterActs'
+      'draftOrdersOf' | 'findEncounterActs' | 'encounterStatusOf'
     >,
   ) {}
 
@@ -213,6 +220,12 @@ export class PatientAccountService {
         charges.filter((charge) => charge.status === 'BILLABLE').map(toLine),
       ),
       draftOrders,
+      encounterStatus: account.encounterId
+        ? await this.acts.encounterStatusOf({
+            encounterId: account.encounterId,
+            siteId: account.siteId,
+          })
+        : null,
       consultationOutdated: await this.consultationOutdated(account, charges),
     };
   }
@@ -253,6 +266,8 @@ export class PatientAccountService {
     accountId: string;
     siteId: string;
     closedById: string;
+    /** BI-237. Why nothing is charged; demanded only when nothing was billed. */
+    noChargeReason?: string;
   }): Promise<AccountView> {
     const account = await this.requireOpenAccount(query);
 
@@ -263,9 +278,22 @@ export class PatientAccountService {
 
     if (open.length > 0) throw new AccountHasOpenChargesError(open);
 
+    /**
+     * BI-237 (D-184.2). With nothing invoiced, it has to be written why: that
+     * is what lets the free check-up end `COMPLETED` by the same path as the
+     * paid one. With something invoiced the reason is not asked and not kept.
+     */
+    const billed = charges.some((charge) => charge.status === 'BILLED');
+    const reason = query.noChargeReason?.trim() ?? '';
+    if (!billed && reason === '') {
+      throw new AccountNoChargeReasonRequiredError();
+    }
+
+    // BI-236: the database closes the discharged attention with it.
     return this.accounts.closeAccount({
       accountId: account.id,
       closedById: query.closedById,
+      noChargeReason: billed ? null : reason,
       now: new Date(),
     });
   }

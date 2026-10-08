@@ -415,6 +415,8 @@ export interface AccountView {
   status: AccountStatus;
   openedAt: Date;
   closedAt: Date | null;
+  /** BI-237. Why it was closed with nothing charged, if it was. */
+  noChargeReason: string | null;
 }
 
 /** `patient_account_status_is_known`. */
@@ -604,9 +606,16 @@ export interface BillingAccountRepository {
     changedById: string;
     now: Date;
   }): Promise<AccountView>;
+  /**
+   * BI-072, BI-236, BI-237. Settles the account; the database closes its
+   * discharged attention in the same transaction
+   * (`trg_patient_account_closes_its_encounter`).
+   */
   closeAccount(command: {
     accountId: string;
     closedById: string;
+    /** BI-237. Why nothing was charged; `null` when something was invoiced. */
+    noChargeReason: string | null;
     now: Date;
   }): Promise<AccountView>;
 

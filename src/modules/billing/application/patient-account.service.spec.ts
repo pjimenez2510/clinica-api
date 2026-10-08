@@ -4,6 +4,7 @@ import { parseClinicalDate } from '../../../shared/domain/clinic-time';
 import {
   AccountClosedError,
   AccountHasOpenChargesError,
+  AccountNoChargeReasonRequiredError,
   AccountNotFoundError,
   BillableServiceInactiveError,
   PayerInactiveError,
@@ -46,6 +47,7 @@ const account = (overrides: Partial<AccountView> = {}): AccountView => ({
   status: 'OPEN',
   openedAt: new Date('2026-05-11T14:00:00Z'),
   closedAt: null,
+  noChargeReason: null,
   ...overrides,
 });
 
@@ -153,6 +155,7 @@ function build(
     }),
     record: vi.fn().mockResolvedValue(undefined),
     draftOrdersOf: vi.fn().mockResolvedValue([]),
+    encounterStatusOf: vi.fn().mockResolvedValue('DISCHARGED'),
     findEncounterActs: vi.fn().mockResolvedValue({
       serviceTypeId: 'service-type-1',
       visitSequence: 'SUBSEQUENT',
@@ -173,6 +176,7 @@ function build(
       {
         draftOrdersOf: mocks.draftOrdersOf,
         findEncounterActs: mocks.findEncounterActs,
+        encounterStatusOf: mocks.encounterStatusOf,
       },
     ),
     mocks,
@@ -306,6 +310,43 @@ describe('BI-071, BI-072 cerrar la cuenta', () => {
     // BI-215: closing is stamped with who closed it.
     expect(mocks.closeAccount).toHaveBeenCalledWith(
       expect.objectContaining({ accountId: ACCOUNT, closedById: USER }),
+    );
+  });
+
+  it('BI-237 sin nada facturado exige el motivo de no cobrar, y no llama al repositorio', async () => {
+    const { service: accounts, mocks } = build({
+      accounts: {
+        listCharges: vi
+          .fn()
+          .mockResolvedValue([charge('charge-1', 'NOT_BILLABLE'), charge('charge-2', 'CANCELLED')]), // prettier-ignore
+      },
+    });
+
+    for (const noChargeReason of [undefined, '   ']) {
+      await expect(
+        accounts.closeAccount({ accountId: ACCOUNT, siteId: SITE, closedById: USER, noChargeReason }), // prettier-ignore
+      ).rejects.toBeInstanceOf(AccountNoChargeReasonRequiredError);
+    }
+    expect(mocks.closeAccount).not.toHaveBeenCalled();
+
+    // Control positivo: con el motivo, recortado, se cierra.
+    await accounts.closeAccount({ accountId: ACCOUNT, siteId: SITE, closedById: USER, noChargeReason: '  Control sin costo ' }); // prettier-ignore
+    expect(mocks.closeAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ noChargeReason: 'Control sin costo' }),
+    );
+  });
+
+  it('BI-237 con algo facturado no pide motivo ni lo guarda', async () => {
+    const { service: accounts, mocks } = build({
+      accounts: {
+        listCharges: vi.fn().mockResolvedValue([charge('charge-1', 'BILLED')]),
+      },
+    });
+
+    await accounts.closeAccount({ accountId: ACCOUNT, siteId: SITE, closedById: USER, noChargeReason: 'Cortesía' }); // prettier-ignore
+
+    expect(mocks.closeAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ noChargeReason: null }),
     );
   });
 
@@ -758,5 +799,29 @@ describe('BI-203 el extracto dice la consulta que ya no corresponde a la atenci�
 
       expect(statement.consultationOutdated).toBeNull();
     }
+  });
+});
+
+describe('BI-236 el extracto dice el estado de la atención que se cierra con la cuenta', () => {
+  it('BI-236 sirve el estado de la atención de la cuenta, leído en su sede', async () => {
+    const { service, mocks } = build({
+      accounts: {
+        findAccount: vi.fn().mockResolvedValue(account({ encounterId: 'encounter-1' })), // prettier-ignore
+      },
+    });
+
+    const statement = await service.statement({ accountId: ACCOUNT, siteId: SITE }); // prettier-ignore
+
+    expect(statement.encounterStatus).toBe('DISCHARGED');
+    expect(mocks.encounterStatusOf).toHaveBeenCalledWith({ encounterId: 'encounter-1', siteId: SITE }); // prettier-ignore
+  });
+
+  it('BI-236 una cuenta sin atención no tiene estado que decir', async () => {
+    const { service, mocks } = build();
+
+    const statement = await service.statement({ accountId: ACCOUNT, siteId: SITE }); // prettier-ignore
+
+    expect(statement.encounterStatus).toBeNull();
+    expect(mocks.encounterStatusOf).not.toHaveBeenCalled();
   });
 });

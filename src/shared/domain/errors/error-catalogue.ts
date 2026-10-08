@@ -578,6 +578,8 @@ export const DOMAIN_ERROR_CODES = [
   'ACCOUNT_CLOSED',
   'ACCOUNT_HAS_BILLED_CHARGES',
   'ACCOUNT_HAS_OPEN_CHARGES',
+  // BI-237 (D-184.2): cerrar sin nada facturado pide el motivo de no cobrar.
+  'ACCOUNT_NO_CHARGE_REASON_REQUIRED',
   'ACCOUNT_NOT_FOUND',
   'INVALID_CHARGE_QUANTITY',
   // Del acto clínico al cargo (BI-150 a BI-158), que es el paso de la consulta

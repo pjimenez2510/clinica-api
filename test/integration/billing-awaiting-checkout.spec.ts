@@ -220,6 +220,10 @@ describe('caja: lo pendiente de cobro (B10)', () => {
         ...(options.status === 'DISCHARGED' || options.status === 'COMPLETED'
           ? { dischargeCondition: 'ALIVE' }
           : {}),
+        // EN-131 (D-184): closed by caja, with who and when.
+        ...(options.status === 'COMPLETED'
+          ? { closedAt: options.endedAt, closedByUserId: authorId }
+          : {}),
         ...(options.status === 'DISCONTINUED'
           ? {
               discontinuedReason: 'Se fue antes de ser atendido',
@@ -454,7 +458,7 @@ describe('caja: lo pendiente de cobro (B10)', () => {
         .expect(200);
     const settle = (encounterId: string) =>
       // BI-215: closing is stamped, or the database refuses it.
-      prisma.patientAccount.updateMany({ where: { encounterId, status: 'OPEN' }, data: { status: 'SETTLED', closedAt: now, changedById: authorId, changedAt: now } }); // prettier-ignore
+      prisma.patientAccount.updateMany({ where: { encounterId, status: 'OPEN' }, data: { status: 'SETTLED', closedAt: now, changedById: authorId, changedAt: now, noChargeReason: 'Cortesía' } }); // prettier-ignore
     const rowOf = async (encounterId: string) =>
       (await awaiting()).find((row) => row.encounterId === encounterId);
 
