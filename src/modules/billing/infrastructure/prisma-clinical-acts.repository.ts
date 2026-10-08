@@ -268,8 +268,8 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
         status: true,
         _count: {
           select: {
+            // D-189: only an order is still issuable with the discharge given.
             serviceOrders: { where: { status: 'DRAFT' } },
-            prescriptions: { where: { status: 'DRAFT' } },
           },
         },
       },
@@ -277,7 +277,7 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
     if (!row) return null;
     return {
       status: row.status,
-      hasDrafts: row._count.serviceOrders + row._count.prescriptions > 0,
+      hasDrafts: row._count.serviceOrders > 0,
     };
   }
 

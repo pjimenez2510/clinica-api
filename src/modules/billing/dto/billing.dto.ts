@@ -232,7 +232,11 @@ export const closeAccountSchema = z.object({
  * Body of POST /billing/sites/:siteId/accounts/:accountId/close. Optional as
  * a whole: an account with something invoiced closes with no body at all.
  */
-export class CloseAccountDto extends createZodDto(closeAccountSchema) {}
+export class CloseAccountDto extends createZodDto(
+  // No body at all is the same as `{}`: an account with something invoiced
+  // closes with none, as it always did.
+  z.preprocess((body) => body ?? {}, closeAccountSchema),
+) {}
 
 export const addChargeSchema = z.object({
   billableServiceId: z.uuid('Seleccione la prestación'),
@@ -776,7 +780,7 @@ const statementSchema = z.object({
     .nullable(),
   /**
    * BI-236, D-189. Si cerrar la cuenta cierra también la atención: tiene el
-   * alta y ninguna orden ni receta en borrador.
+   * alta y ninguna orden de exámenes en borrador (D-189).
    */
   closesEncounter: z.boolean(),
 });

@@ -80,7 +80,7 @@ export interface AccountStatement {
   encounterStatus: string | null;
   /**
    * BI-236, D-189. Whether closing the account closes the attention: it has
-   * its discharge and nothing in draft — the same rule as
+   * its discharge and no exam order in draft — the same rule as
    * `trg_patient_account_closes_its_encounter`.
    */
   closesEncounter: boolean;

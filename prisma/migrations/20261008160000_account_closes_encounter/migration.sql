@@ -96,31 +96,49 @@ CREATE TRIGGER "trg_patient_account_settled_states_why_unpaid"
 -- atención con el alta dada: la que sigue abierta o en espera no la cierra
 -- caja, y una terminal no cambia. El instante es el de la cuenta, que es el
 -- reloj de la aplicación; nunca `now()`.
-CREATE FUNCTION patient_account_closes_its_encounter()
-RETURNS TRIGGER
+--
+-- «Cerrada» es que no queda nada, tampoco clínico (EN-131). Lo único clínico
+-- que el médico aún puede hacer con el alta dada es emitir una ORDEN en
+-- borrador (ORD-115) —una receta en borrador ya no se emite con el alta
+-- (PR-002), así que no detiene nada—, y una atención COMPLETED ya no la
+-- admite (ORD-005). Por eso: con una orden en borrador la cuenta se cierra y
+-- la atención espera; cuando el último borrador sale de DRAFT —emitido o
+-- descartado— y la atención tiene su cuenta liquidada y ninguna abierta, se
+-- cierra con el instante y el autor de esa cuenta (D-189). El examen emitido
+-- vuelve a caja igual (BI-194 lista también las COMPLETED).
+CREATE FUNCTION encounter_completes_when_settled(p_encounter UUID)
+RETURNS VOID
 LANGUAGE plpgsql
 AS $$
 DECLARE
+  v_at    TIMESTAMPTZ;
+  v_by    UUID;
   v_entry UUID;
 BEGIN
+  IF EXISTS (
+    SELECT 1 FROM "patient_account"
+     WHERE "encounter_id" = p_encounter AND "status" = 'OPEN'
+  ) THEN
+    RETURN;
+  END IF;
+  SELECT "closed_at", "changed_by" INTO v_at, v_by
+    FROM "patient_account"
+   WHERE "encounter_id" = p_encounter AND "status" = 'SETTLED'
+   ORDER BY "closed_at" DESC
+   LIMIT 1;
+  IF v_at IS NULL THEN
+    RETURN;
+  END IF;
+
   UPDATE "encounter"
      SET "status" = 'COMPLETED',
-         "closed_at" = NEW."closed_at",
-         "closed_by_user_id" = NEW."changed_by"
-   WHERE "id" = NEW."encounter_id"
+         "closed_at" = v_at,
+         "closed_by_user_id" = v_by
+   WHERE "id" = p_encounter
      AND "status" = 'DISCHARGED'
-     -- «Cerrada» es que no queda nada, tampoco clínico (EN-131): una orden o
-     -- una receta en borrador es algo que el médico todavía puede emitir
-     -- (ORD-115), y una atención COMPLETED ya no lo admite (ORD-005). Con un
-     -- borrador la atención sigue de alta; la cierra la cuenta siguiente
-     -- (BI-194). D-189.
      AND NOT EXISTS (
        SELECT 1 FROM "service_order"
-        WHERE "encounter_id" = NEW."encounter_id" AND "status" = 'DRAFT'
-     )
-     AND NOT EXISTS (
-       SELECT 1 FROM "prescription"
-        WHERE "encounter_id" = NEW."encounter_id" AND "status" = 'DRAFT'
+        WHERE "encounter_id" = p_encounter AND "status" = 'DRAFT'
      )
   RETURNING "agenda_entry_id" INTO v_entry;
 
@@ -129,11 +147,20 @@ BEGIN
   IF v_entry IS NOT NULL THEN
     UPDATE "agenda_entry"
        SET "subject_status" = 'DEPARTED',
-           "subject_status_at" = NEW."closed_at"
+           "subject_status_at" = v_at
      WHERE "id" = v_entry
        AND "subject_status" IS NOT NULL
        AND "subject_status" <> 'DEPARTED';
   END IF;
+END;
+$$;
+
+CREATE FUNCTION patient_account_closes_its_encounter()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM encounter_completes_when_settled(NEW."encounter_id");
   RETURN NULL;
 END;
 $$;
@@ -147,6 +174,24 @@ CREATE TRIGGER "trg_patient_account_closes_its_encounter"
     AND NEW."encounter_id" IS NOT NULL
   )
   EXECUTE FUNCTION patient_account_closes_its_encounter();
+
+-- D-189: el último borrador que sale de DRAFT deja cerrar la atención cuya
+-- cuenta ya se liquidó.
+CREATE FUNCTION service_order_draft_resolved_closes_encounter()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM encounter_completes_when_settled(NEW."encounter_id");
+  RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER "trg_service_order_draft_resolved_closes_encounter"
+  AFTER UPDATE OF "status" ON "service_order"
+  FOR EACH ROW
+  WHEN (OLD."status" = 'DRAFT' AND NEW."status" <> 'DRAFT')
+  EXECUTE FUNCTION service_order_draft_resolved_closes_encounter();
 
 -- ── 4. El historial (EN-133) nombra a quien cerró la cuenta ───────────────
 --

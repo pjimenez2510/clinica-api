@@ -12,13 +12,11 @@ import {
   Req,
 } from '@nestjs/common';
 import {
-  ApiBody,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { ZodValidationPipe } from 'nestjs-zod';
 
 import type { Request } from 'express';
 
@@ -78,9 +76,6 @@ import {
   type ReceiverProposalResponse,
   type RepricingResponse,
 } from './dto/billing.dto';
-
-/** BI-237. The optional body of the account closure, validated as `{}` when absent. */
-const CLOSE_ACCOUNT_BODY = new ZodValidationPipe(CloseAccountDto);
 
 /**
  * What one visit owes, and the document that settles it.
@@ -312,20 +307,12 @@ export class BillingController {
   // a transition and not an edit of the row.
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cerrar una cuenta sin cargos pendientes' })
-  @ApiBody({ type: CloseAccountDto, required: false })
   @ApiOkResponse({ type: AccountDto })
   async closeAccount(
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Param('accountId', ParseUUIDPipe) accountId: string,
-    // `unknown` so the global pipe stands aside: the body is OPTIONAL — an
-    // account with something invoiced closes with none — and an absent body
-    // is validated here as `{}` by the same pipe, with the same 422.
-    @Body() body: unknown,
+    @Body() dto: CloseAccountDto,
   ): Promise<AccountResponse> {
-    const dto = (await CLOSE_ACCOUNT_BODY.transform(body ?? {}, {
-      type: 'body',
-      metatype: CloseAccountDto,
-    })) as CloseAccountDto;
     return toAccountResponse(
       await this.accounts.closeAccount({
         accountId,

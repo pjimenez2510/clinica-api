@@ -1809,10 +1809,12 @@ dos registros distintos.**
   paciente a `DEPARTED` **en la misma transacción**, con quien cerró la cuenta
   y el instante del cierre, sin pedir nada a quien atendió (EN-131, EN-139); SI
   la atención no tiene el alta —sigue abierta, en espera o terminó de otro
-  modo— o le queda una orden o una receta **en borrador**, ENTONCES DEBERÁ
-  cerrar la cuenta sin cambiarla; y el extracto DEBERÁ servir el estado de la
-  atención y si se cierra con la cuenta (`closesEncounter`), para que la
-  pantalla lo diga antes de cerrar.
+  modo— o le queda una orden de exámenes **en borrador**, ENTONCES DEBERÁ
+  cerrar la cuenta sin cambiarla, y CUANDO el último borrador se emita o se
+  descarte con la cuenta ya liquidada y ninguna abierta, DEBERÁ cerrar
+  entonces la atención con el instante y el autor de esa cuenta; y el
+  extracto DEBERÁ servir el estado de la atención y si se cierra con la
+  cuenta (`closesEncounter`), para que la pantalla lo diga antes de cerrar.
   > **D-184.1.** Caja no ve un paso nuevo: cerrar la cuenta, que ya hacía,
   > también cierra la atención. Es lo que D-A-008 asigna a `COMPLETED` —no
   > queda nada, ni clínico ni administrativo—, y no inventa ningún hecho
@@ -1826,12 +1828,15 @@ dos registros distintos.**
   > arch:check`), y el disparador es de la tabla de caja. El instante es el
   > `closed_at` de la cuenta, del reloj de la aplicación.
   >
-  > **El borrador la deja de alta (D-189, registrada con recomendación).**
-  > «Cerrada» es que no queda nada, tampoco clínico (EN-131), y el borrador
-  > es justo lo que el médico todavía puede emitir tras el cierre de caja
-  > (ORD-115, BI-192): una atención `COMPLETED` ya no lo admite (ORD-005).
-  > Así el examen emitido después vuelve a caja (BI-194) y la cuenta
-  > siguiente cierra la atención.
+  > **El borrador de orden la deja de alta (D-189, registrada con
+  > recomendación).** «Cerrada» es que no queda nada, tampoco clínico
+  > (EN-131), y la orden en borrador es justo lo que el médico todavía puede
+  > emitir tras el cierre de caja (ORD-115, BI-192): una atención `COMPLETED`
+  > ya no lo admite (ORD-005). Cuando el último borrador sale de `DRAFT`
+  > —emitido o descartado— `trg_service_order_draft_resolved_closes_encounter`
+  > la cierra; el examen emitido vuelve a caja igual (BI-194 lista también
+  > las `COMPLETED`). Una receta en borrador no detiene nada: con el alta ya
+  > no se emite (PR-002), sólo se descarta.
   >
   > Sólo de `OPEN` a `SETTLED`: reabrir la cuenta tras una nota de crédito y
   > volver a cerrarla no toca una atención que ya es `COMPLETED`, que es

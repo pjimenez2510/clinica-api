@@ -173,10 +173,11 @@ export interface ClinicalActsRepository {
   }): Promise<DraftOrderNotice[]>;
 
   /**
-   * BI-236. The state of the account's attention, and whether an order or a
-   * prescription is still in draft in it, so caja is told before closing
-   * whether the attention closes with it (only a `DISCHARGED` one with no
-   * draft does, D-189). `null` when it is not at that site.
+   * BI-236. The state of the account's attention, and whether an exam order
+   * is still in draft in it, so caja is told before closing whether the
+   * attention closes with it (only a `DISCHARGED` one with no draft order
+   * does; with one, it closes when the last draft is issued or discarded,
+   * D-189). `null` when it is not at that site.
    */
   encounterStatusOf(query: {
     encounterId: string;
