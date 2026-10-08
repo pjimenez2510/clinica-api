@@ -2159,7 +2159,7 @@ dos registros distintos.**
 - **BI-233** — CUANDO alguien con `billing:read` en la sede pida sus facturas,
   el sistema DEBERÁ devolverlas por páginas (20, 50 o 100) con el total, de la
   más reciente a la más antigua, y DEBERÁ admitir filtrarlas por número
-  (`000000123`, `123` o `001-001-000000123`), por comprador (nombre que
+  (`000000123`, `123`, o `001-001-000000123`, que además exige ese establecimiento y ese punto), por comprador (nombre que
   contiene lo escrito o identificación que empieza igual) y por un rango de
   fechas de emisión, días de la clínica (`America/Guayaquil`) incluidos los dos
   extremos.

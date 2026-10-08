@@ -737,6 +737,11 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       authorised: false,
       finalConsumer: true,
     });
+    // The printed number needs the site's SRI code (SRI-008).
+    await prisma.site.update({
+      where: { id: siteId },
+      data: { sriEstablishmentCode: '001' },
+    });
     // The first one, issued three days ago.
     await prisma.invoice.update({
       where: { id: first.invoiceId },
@@ -770,6 +775,44 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       ids: [first.invoiceId],
       total: 3,
     });
+  });
+
+  it('BI-233 con dos puntos de emisión la más reciente va primero, y el número completo distingue el punto', async () => {
+    const a = await anInvoice({ authorised: false });
+    const b = await anInvoice({ authorised: false });
+    const c = await anInvoice({ authorised: false });
+    await prisma.site.update({
+      where: { id: siteId },
+      data: { sriEstablishmentCode: '001' },
+    });
+    const second = await prisma.emissionPoint.create({
+      data: { siteId, code: '002', description: 'Caja dos' },
+    });
+    const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+    await prisma.invoice.update({
+      where: { id: a.invoiceId },
+      data: { issuedAt: daysAgo(1) },
+    });
+    // Another point's higher sequential, issued earlier than both.
+    await prisma.invoice.update({
+      where: { id: b.invoiceId },
+      data: {
+        emissionPointId: second.id,
+        sequential: '000000009',
+        issuedAt: daysAgo(3),
+      },
+    });
+
+    expect((await listed('invoices')).ids).toEqual([
+      c.invoiceId,
+      a.invoiceId,
+      b.invoiceId,
+    ]);
+    expect((await listed('invoices?search=001-002-000000009')).ids).toEqual([
+      b.invoiceId,
+    ]);
+    // Control: the same sequential on the other point is nobody's.
+    expect((await listed('invoices?search=001-001-000000009')).ids).toEqual([]);
   });
 
   it('BI-235 la factura y la nota de crédito llevan su número impreso completo, el de la clave cuando la tienen', async () => {

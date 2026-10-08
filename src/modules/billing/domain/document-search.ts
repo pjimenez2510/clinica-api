@@ -14,7 +14,12 @@ export interface IssuedDocumentFilter {
 
 /** What a typed search means, decided once for both lists. */
 export type DocumentSearch =
-  | { kind: 'number'; sequential: string }
+  | {
+      kind: 'number';
+      establishment: string;
+      emissionPoint: string;
+      sequential: string;
+    }
   /** Digits that may be a number or the start of a cedula or RUC. */
   | { kind: 'digits'; sequential: string | null; identificationPrefix: string }
   | { kind: 'name'; text: string };
@@ -37,6 +42,8 @@ export function parseDocumentSearch(
   if (full) {
     return {
       kind: 'number',
+      establishment: full[1]!,
+      emissionPoint: full[2]!,
       sequential: full[3]!.padStart(SEQUENTIAL_LENGTH, '0'),
     };
   }

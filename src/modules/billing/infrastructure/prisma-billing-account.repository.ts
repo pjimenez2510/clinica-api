@@ -1018,7 +1018,13 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       this.prisma.invoice.findMany({
         where,
         include: INVOICE_NUMBER_INCLUDE,
-        orderBy: [{ sequential: 'desc' }, { id: 'desc' }],
+        // BI-233: by issue, newest first; sequentials of two emission points
+        // interleave, so they only break ties. A draft has no date: last.
+        orderBy: [
+          { issuedAt: { sort: 'desc', nulls: 'last' } },
+          { sequential: 'desc' },
+          { id: 'desc' },
+        ],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
       }),
@@ -1260,10 +1266,6 @@ function toChargeView(row: ChargeItemRow): ChargeView {
 }
 
 /**
- * Row to view. The totals are the STORED ones, read back as written at issuance
- * and never recomputed from the charges (BI-086).
- */
-/**
  * D-185.1, BI-235. What the printed number is made of: the site's SRI code
  * and the emission point's, read with every invoice.
  */
@@ -1277,6 +1279,10 @@ type InvoiceRow = Prisma.InvoiceGetPayload<{
   include: typeof INVOICE_NUMBER_INCLUDE;
 }>;
 
+/**
+ * Row to view. The totals are the STORED ones, read back as written at issuance
+ * and never recomputed from the charges (BI-086).
+ */
 function toInvoiceView(row: InvoiceRow): InvoiceView {
   const totals: DocumentTotals = {
     subtotalTaxed: Money.parse(row.subtotalTaxed),

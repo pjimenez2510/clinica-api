@@ -6,6 +6,8 @@ describe('BI-233 la búsqueda de una factura o una nota de crédito', () => {
   it('BI-233 el número completo del papel es un número y nada más', () => {
     expect(parseDocumentSearch(' 001-002-123 ')).toEqual({
       kind: 'number',
+      establishment: '001',
+      emissionPoint: '002',
       sequential: '000000123',
     });
   });
