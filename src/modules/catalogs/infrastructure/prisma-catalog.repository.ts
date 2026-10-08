@@ -274,7 +274,12 @@ export class PrismaCatalogRepository implements CatalogRepository {
           (replace(c.code, '.', '') = ${prefijoCodigo.slice(0, -1)}) DESC,
           -- 2. Luego los códigos que empiezan por lo tecleado.
           (replace(c.code, '.', '') LIKE ${prefijoCodigo}) DESC,
-          -- 3. Luego por parecido del texto.
+          -- 3. CAT-001: then descriptions that START with the text. Similarity
+          --    scores the best WORD, so «Puerto San Miguel» ties with «San
+          --    Antonio» for «san»; whoever types the start of a name expects it
+          --    first.
+          (c.search_display LIKE immutable_unaccent(lower(${texto})) || '%') DESC,
+          -- 4. Luego por parecido del texto.
           word_similarity(immutable_unaccent(lower(${texto})), c.search_display) DESC,
           c.code ASC
         LIMIT ${criteria.limit}
