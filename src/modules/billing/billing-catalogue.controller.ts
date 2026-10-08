@@ -39,6 +39,7 @@ import {
   CreatePayerDto,
   CreateServiceCategoryDto,
   CreateServiceDto,
+  MarkTaxReviewedDto,
   PayerDto,
   PayerListDto,
   PriceDto,
@@ -185,8 +186,10 @@ export class BillingCatalogueController {
 
   /**
    * BI-024. «Revisé la tarifa de esta prestación»: who and when, from the
-   * session and the application's clock. Changing the rate afterwards makes
-   * it pending again (D-172.2).
+   * session and the application's clock, of the rate in the body —the one
+   * the reviewer saw—, or 409 `TAX_REVIEW_RATE_CHANGED` if it is no longer
+   * the service's. Changing the rate afterwards makes it pending again
+   * (D-172.2).
    */
   @Post('services/:serviceId/tax-review')
   @RequirePermission('billing:price-manage', 'global')
@@ -195,10 +198,11 @@ export class BillingCatalogueController {
   @ApiOkResponse({ type: ServiceDto })
   async markTaxReviewed(
     @Param('serviceId', ParseUUIDPipe) serviceId: string,
+    @Body() dto: MarkTaxReviewedDto,
   ): Promise<ServiceResponse> {
     const requester = this.requireClinicWide('billing:price-manage');
     return toServiceResponse(
-      await this.services.markTaxReviewed(serviceId, requester),
+      await this.services.markTaxReviewed(serviceId, dto.taxRateId, requester),
     );
   }
 

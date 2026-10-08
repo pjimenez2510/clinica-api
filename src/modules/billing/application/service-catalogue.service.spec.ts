@@ -8,6 +8,7 @@ import {
   ServiceKindMismatchError,
   TaxRateNotFoundError,
   TaxRateRequiredError,
+  TaxReviewRateChangedError,
 } from '../domain/billing.errors';
 import type {
   BillableServiceView,
@@ -83,6 +84,7 @@ function build(overrides: Record<string, unknown> = {}) {
       ),
     createBillableService: vi.fn().mockResolvedValue(service),
     updateBillableService: vi.fn().mockResolvedValue(service),
+    markTaxReviewed: vi.fn().mockResolvedValue(service),
     countReferencesToService: vi.fn().mockResolvedValue(0),
     deleteBillableService: vi.fn().mockResolvedValue(undefined),
     record: vi.fn().mockResolvedValue(undefined),
@@ -325,56 +327,78 @@ describe('BI-011 el código del tarifario nacional es nomenclatura', () => {
   });
 });
 
-describe('BI-022 a BI-024 la revisión contable de la tarifa', () => {
+describe('BI-023 BI-024 la revisión contable de la tarifa', () => {
   const reviewer = { userId: 'accountant-1' };
   const reviewed = {
     reviewedAt: new Date(),
     reviewedById: reviewer.userId,
     reviewedByName: 'Rosa Cedeño',
   };
+  const withReview = () => ({
+    markTaxReviewed: vi
+      .fn()
+      .mockResolvedValue({ ...service, taxReview: reviewed }),
+  });
 
-  it('BI-022 una prestación nueva no nace revisada: nada en el alta escribe la revisión', async () => {
-    const { service: catalogue, mocks } = build();
+  // BI-022's other half —0 % when no rate is given— waits for D-172.1, so
+  // this cites the review it shares with BI-024 and not BI-022 itself.
+  it('BI-024 una prestación nueva no nace revisada: nada en el alta escribe la revisión', async () => {
+    const { service: catalogue, mocks } = build(withReview());
 
     await catalogue.createService(newService, requester);
 
     expect(mocks.createBillableService.mock.calls[0]?.[0]).not.toHaveProperty(
       'taxReview',
     );
+    expect(mocks.markTaxReviewed).not.toHaveBeenCalled();
   });
 
-  it('BI-024 marcarla revisada escribe quién y el instante del reloj de la aplicación', async () => {
-    const { service: catalogue, mocks } = build({
-      updateBillableService: vi
-        .fn()
-        .mockResolvedValue({ ...service, taxReview: reviewed }),
-    });
+  it('BI-024 marcarla revisada escribe quién y el instante del reloj de la aplicación, sobre la tarifa que vio', async () => {
+    const { service: catalogue, mocks } = build(withReview());
     const before = Date.now();
 
-    const result = await catalogue.markTaxReviewed('service-1', reviewer);
+    const result = await catalogue.markTaxReviewed('service-1', 'tax-0', reviewer); // prettier-ignore
 
-    const update = mocks.updateBillableService.mock.calls[0]?.[1] as {
-      taxReview: { reviewedAt: Date; reviewedById: string };
-    };
-    expect(update.taxReview.reviewedById).toBe('accountant-1');
-    expect(update.taxReview.reviewedAt.getTime()).toBeGreaterThanOrEqual(
-      before,
-    );
-    expect(update.taxReview.reviewedAt.getTime()).toBeLessThanOrEqual(
-      Date.now(),
-    );
-    expect(Object.keys(update)).toEqual(['taxReview']);
+    const [id, seen, review] = mocks.markTaxReviewed.mock.calls[0] as [
+      string,
+      string,
+      { reviewedAt: Date; reviewedById: string },
+    ];
+    expect([id, seen, review.reviewedById]).toEqual([
+      'service-1',
+      'tax-0',
+      'accountant-1',
+    ]);
+    expect(review.reviewedAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(review.reviewedAt.getTime()).toBeLessThanOrEqual(Date.now());
     expect(result.taxReview).toEqual(reviewed);
   });
 
-  it('BI-024 la bitácora guarda la fila antes y después de la revisión, con quién', async () => {
+  it('BI-024 si la tarifa ya no es la que vio quien revisa, se rechaza y no escribe nada', async () => {
+    const { service: catalogue, mocks } = build(withReview());
+
+    await expect(
+      catalogue.markTaxReviewed('service-1', 'tax-15', reviewer),
+    ).rejects.toBeInstanceOf(TaxReviewRateChangedError);
+    expect(mocks.markTaxReviewed).not.toHaveBeenCalled();
+    expect(mocks.record).not.toHaveBeenCalled();
+  });
+
+  it('BI-024 si la tarifa cambia entre la lectura y la escritura, también se rechaza', async () => {
     const { service: catalogue, mocks } = build({
-      updateBillableService: vi
-        .fn()
-        .mockResolvedValue({ ...service, taxReview: reviewed }),
+      markTaxReviewed: vi.fn().mockResolvedValue(null),
     });
 
-    await catalogue.markTaxReviewed('service-1', reviewer);
+    await expect(
+      catalogue.markTaxReviewed('service-1', 'tax-0', reviewer),
+    ).rejects.toBeInstanceOf(TaxReviewRateChangedError);
+    expect(mocks.record).not.toHaveBeenCalled();
+  });
+
+  it('BI-024 la bitácora guarda la fila antes y después de la revisión, con quién', async () => {
+    const { service: catalogue, mocks } = build(withReview());
+
+    await catalogue.markTaxReviewed('service-1', 'tax-0', reviewer);
 
     const entry = mocks.record.mock.calls[0]?.[0] as AccessAuditEntry;
     expect(entry).toMatchObject({
@@ -428,13 +452,14 @@ describe('BI-022 a BI-024 la revisión contable de la tarifa', () => {
 
   it('BI-024 marcar revisada una prestación inexistente responde 404 sin escribir', async () => {
     const { service: catalogue, mocks } = build({
+      ...withReview(),
       findBillableService: vi.fn().mockResolvedValue(null),
     });
 
     await expect(
-      catalogue.markTaxReviewed('missing', reviewer),
+      catalogue.markTaxReviewed('missing', 'tax-0', reviewer),
     ).rejects.toBeInstanceOf(BillableServiceNotFoundError);
-    expect(mocks.updateBillableService).not.toHaveBeenCalled();
+    expect(mocks.markTaxReviewed).not.toHaveBeenCalled();
   });
 });
 

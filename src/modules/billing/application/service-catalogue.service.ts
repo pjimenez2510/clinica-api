@@ -26,6 +26,7 @@ import {
   ServiceKindMismatchError,
   TaxRateNotFoundError,
   TaxRateRequiredError,
+  TaxReviewRateChangedError,
 } from '../domain/billing.errors';
 
 import {
@@ -207,7 +208,14 @@ export class ServiceCatalogueService {
   }
 
   /**
-   * BI-024. Records that `requester` checked the service's tax rate, now.
+   * BI-024. Records that `requester` checked the service's tax rate —THE ONE
+   * THEY SAW, `seenTaxRateId`—, now.
+   *
+   * ⚠️ THE RATE TRAVELS WITH THE REVIEW (D-172). A tab opened on 0 % while
+   * somebody else moved the service to 15 % would otherwise sign the 15 %,
+   * which its author never looked at; and the write is conditional on that
+   * rate, so the same holds when the change lands between this read and the
+   * write.
    *
    * THE INSTANT IS THE APPLICATION'S CLOCK, not PostgreSQL's `now()`: it is
    * what every other stamp of this module uses, and what the walks move.
@@ -216,12 +224,19 @@ export class ServiceCatalogueService {
    */
   async markTaxReviewed(
     serviceId: string,
+    seenTaxRateId: string,
     requester: Requester,
   ): Promise<BillableServiceView> {
     const current = await this.requireService(serviceId);
-    const updated = await this.catalogue.updateBillableService(serviceId, {
-      taxReview: { reviewedAt: new Date(), reviewedById: requester.userId },
-    });
+    if (current.taxRateId !== seenTaxRateId) {
+      throw new TaxReviewRateChangedError();
+    }
+    const updated = await this.catalogue.markTaxReviewed(
+      serviceId,
+      seenTaxRateId,
+      { reviewedAt: new Date(), reviewedById: requester.userId },
+    );
+    if (updated === null) throw new TaxReviewRateChangedError();
     await this.recordChange(
       serviceId,
       'UPDATE',

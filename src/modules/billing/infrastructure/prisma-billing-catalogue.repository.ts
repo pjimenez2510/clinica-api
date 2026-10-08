@@ -276,6 +276,22 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return toServiceView(row);
   }
 
+  /** BI-024. Conditional on the rate the reviewer saw (see the port). */
+  async markTaxReviewed(
+    serviceId: string,
+    taxRateId: string,
+    review: { reviewedAt: Date; reviewedById: string },
+  ): Promise<BillableServiceView | null> {
+    const { count } = await this.prisma.billableService.updateMany({
+      where: { id: serviceId, taxRateId },
+      data: {
+        taxReviewedAt: review.reviewedAt,
+        taxReviewedById: review.reviewedById,
+      },
+    });
+    return count === 0 ? null : this.findBillableService(serviceId);
+  }
+
   /**
    * BI-158. The consultation of a specialty, ACTIVE OR NOT.
    *

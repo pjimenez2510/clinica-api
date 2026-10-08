@@ -519,6 +519,13 @@ export class UpdateServiceCategoryDto extends createZodDto(
   updateServiceCategorySchema,
 ) {}
 
+/** BI-024. The rate the reviewer saw: the review signs that one or none. */
+export const markTaxReviewedSchema = z.object({
+  taxRateId: z.uuid({ error: 'Indique la tarifa que revisó' }),
+});
+/** Body of POST /billing/services/:serviceId/tax-review. */
+export class MarkTaxReviewedDto extends createZodDto(markTaxReviewedSchema) {}
+
 const serviceResponseSchema = z.object({
   id: z.uuid(),
   code: z.string(),

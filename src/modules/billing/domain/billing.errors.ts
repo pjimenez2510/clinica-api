@@ -168,6 +168,21 @@ export class TaxRateInUseError extends ConflictError {
   }
 }
 
+/**
+ * BI-024 (D-172). The review names the rate its author SAW: if the rate
+ * changed in between —another tab, another administrator—, marking it would
+ * sign a rate nobody looked at.
+ */
+export class TaxReviewRateChangedError extends ConflictError {
+  readonly code = 'TAX_REVIEW_RATE_CHANGED';
+  override readonly userTitle =
+    'La tarifa de esta prestación cambió mientras la revisaba: vuelva a mirarla antes de marcarla revisada';
+
+  constructor() {
+    super('The tax rate is no longer the one the reviewer saw');
+  }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Payers (BI-030 to BI-035)
 // ───────────────────────────────────────────────────────────────────────────

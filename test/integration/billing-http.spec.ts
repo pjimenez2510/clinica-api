@@ -1173,7 +1173,7 @@ describe('la facturación por HTTP', () => {
         ).body as { items: ServiceBody[] }
       ).items;
 
-    it('BI-022 BI-023 la lista sirve la revisión de cada prestación, y la sembrada y la recién creada nacen por revisar', async () => {
+    it('BI-023 BI-024 la lista sirve la revisión de cada prestación, y la sembrada y la recién creada nacen por revisar', async () => {
       const seeded = await services();
       expect(seeded.length).toBeGreaterThan(0);
       expect(seeded.every((one) => one.taxReview === null)).toBe(true);
@@ -1200,9 +1200,15 @@ describe('la facturación por HTTP', () => {
       });
       const before = Date.now();
 
+      const seen = (
+        await prisma.billableService.findUniqueOrThrow({
+          where: { id: serviceId },
+        })
+      ).taxRateId;
       const marked = await api()
         .post(`/api/v1/billing/services/${serviceId}/tax-review`)
         .set('Authorization', `Bearer ${tariffToken}`)
+        .send({ taxRateId: seen })
         .expect(200);
 
       const review = (marked.body as ServiceBody).taxReview!;
@@ -1248,10 +1254,52 @@ describe('la facturación por HTTP', () => {
       });
     });
 
+    it('BI-024 marcar revisada una tarifa que ya no es la de la prestación se rechaza y no escribe nada; con la que tiene, sí (control)', async () => {
+      const general = await prisma.taxRate.findFirstOrThrow({
+        where: { sriCode: '4', validTo: null },
+      });
+      const current = (
+        await prisma.billableService.findUniqueOrThrow({
+          where: { id: serviceId },
+        })
+      ).taxRateId;
+      expect(general.id).not.toBe(current);
+
+      // The tab still showed the general rate; the service is on another.
+      const stale = await api()
+        .post(`/api/v1/billing/services/${serviceId}/tax-review`)
+        .set('Authorization', `Bearer ${tariffToken}`)
+        .send({ taxRateId: general.id })
+        .expect(409);
+      expect((stale.body as Problem).code).toBe('TAX_REVIEW_RATE_CHANGED');
+      const untouched = await prisma.billableService.findUniqueOrThrow({
+        where: { id: serviceId },
+      });
+      expect(untouched.taxReviewedAt).toBeNull();
+      expect(
+        await prisma.accessAudit.count({
+          where: { resourceType: 'billable_service', resourceId: serviceId },
+        }),
+      ).toBe(0);
+
+      await api()
+        .post(`/api/v1/billing/services/${serviceId}/tax-review`)
+        .set('Authorization', `Bearer ${tariffToken}`)
+        .send({ taxRateId: current })
+        .expect(200);
+    });
+
     it('BI-024 BI-134 caja no marca revisada una tarifa, y no queda nada escrito', async () => {
       const response = await api()
         .post(`/api/v1/billing/services/${serviceId}/tax-review`)
         .set('Authorization', `Bearer ${cashierToken}`)
+        .send({
+          taxRateId: (
+            await prisma.billableService.findUniqueOrThrow({
+              where: { id: serviceId },
+            })
+          ).taxRateId,
+        })
         .expect(403);
 
       expect((response.body as Problem).code).toBe('PERMISSION_DENIED');

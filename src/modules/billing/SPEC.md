@@ -148,7 +148,9 @@ BI-122.
 > dos últimos puntos existen desde la migración `20260820071129`, y la
 > anulación de un cargo es «Quitar» (BI-195). Con esta rama, BI-022 a BI-024
 > tienen ruta y pantalla. Siguen fuera, con su decisión: BI-016, BI-121 y
-> BI-122 (D-173), y la mitad «0 % por defecto» de BI-022 (D-172).
+> BI-122 (D-173), y BI-022 entero hasta D-172.1 —su marca «por revisar» está
+> hecha y la prueban BI-023 y BI-024; su «0 % por defecto» choca con BI-013, y
+> ninguna prueba lo cita mientras no se decida—.
 
 **Solo servidor:** BI-001, BI-002, BI-006, BI-021, BI-025, BI-026, BI-042,
 BI-044, BI-050, BI-051, BI-053, BI-054, BI-055, BI-059, BI-074. Son garantías
@@ -159,8 +161,12 @@ BI-053), que cambiar la tarifa de una prestación no alcance ningún cargo
 se derive en vez de guardarse—. Se demuestran contra PostgreSQL cambiando un
 precio por debajo de la aplicación; una pantalla que los «probara» estaría
 comprobando su propio doble. BI-021 es la siembra, y BI-026 no tiene pantalla
-porque ninguna ruta borra una tarifa del SRI: la que una prestación o un cargo
-nombra la protege la `RESTRICT` de la base.
+porque **ninguna ruta borra una tarifa del SRI**: se cierran con `valid_to`.
+Por debajo de la aplicación, la `RESTRICT` de `billable_service_tax_rate_fk`
+protege sólo la que nombra una prestación; un cargo copia el código y el
+porcentaje (BI-050) y no tiene clave hacia la tarifa, así que su protección es
+que no exista la ruta. `TAX_RATE_IN_USE` queda en el catálogo de errores para
+el día que exista.
 
 > **Por qué los impuestos entran ya en B1 y no en la entrega de la factura.** La
 > tarifa no es un adorno del documento: es parte del importe que se congela

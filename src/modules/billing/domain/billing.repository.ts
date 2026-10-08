@@ -301,6 +301,17 @@ export interface BillingCatalogueRepository {
    * purpose — the `RESTRICT` foreign keys are the real guarantee, and this
    * pair only turns their rejection into a sentence.
    */
+  /**
+   * BI-024. Records the review ONLY IF the service still carries `taxRateId`,
+   * in the same statement; `null` when it no longer does (or does not
+   * exist). A read first and a write after would leave the window in which
+   * another administrator changes the rate and the review signs the new one.
+   */
+  markTaxReviewed(
+    serviceId: string,
+    taxRateId: string,
+    review: { reviewedAt: Date; reviewedById: string },
+  ): Promise<BillableServiceView | null>;
   countReferencesToService(serviceId: string): Promise<number>;
   deleteBillableService(serviceId: string): Promise<void>;
 
