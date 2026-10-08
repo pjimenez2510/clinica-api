@@ -374,6 +374,15 @@ describe('the agenda over a range of days', () => {
     // one before it. Neither belongs.
     await appointment(wall(addDays(TO, 1), 0));
     await appointment(wall(addDays(FROM, -1), 23, 30));
+    // `ends_at` is exclusive: one that ends exactly at 00:00 of `from` does
+    // not belong either.
+    await anAppointment(prisma, {
+      siteId: site.id,
+      practitionerId: practitioner.id,
+      patientId: (await createPatient(prisma)).id,
+      startsAt: wall(addDays(FROM, -1), 23, 40),
+      endsAt: wall(FROM, 0),
+    });
 
     const listed = await service.agendaRange({
       siteId: site.id,

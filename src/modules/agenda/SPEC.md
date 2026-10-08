@@ -2790,8 +2790,9 @@ Convertirlo en configuración sería regalar la garantía.
   `date`, el sistema DEBERÁ devolver en una sola respuesta las entradas que se
   solapan con ese rango, con los mismos filtros, el mismo permiso, el mismo
   ámbito de sede, el mismo orden y la misma forma que la agenda de un día
-  (AG-017, AG-018); SI el rango supera 31 días, o se piden a la vez `date` y
-  el rango, o ninguno de los dos, ENTONCES DEBERÁ rechazarlo con 422
+  (AG-017, AG-018); SI el rango supera 31 días, termina antes de empezar, le
+  falta uno de sus extremos, o se piden a la vez `date` y el rango, o ninguno
+  de los dos, ENTONCES DEBERÁ rechazarlo con 422
   `VALIDATION_FAILED` y el campo señalado; y MIENTRAS la vista de semana esté
   abierta, la pantalla DEBERÁ pedir sus seis días con una sola petición y
   repartirlos por día ella misma.
