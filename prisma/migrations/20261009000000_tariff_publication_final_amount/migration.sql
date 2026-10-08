@@ -25,11 +25,19 @@
 --
 -- `NOT VALID` hace el resto: PostgreSQL no comprueba la restricción en las
 -- filas existentes, pero sí en TODA fila nueva. Desde aquí no entra una línea
--- publicada sin su precio final, ni uno menor que el precio sin impuesto.
+-- publicada sin su precio final, ni con uno que no sea el precio más su IVA.
+--
+-- La IDENTIDAD es de la base, como `invoice_total_is_consistent`: la cifra la
+-- pone la aplicación y la base comprueba que cuadra. `round` sobre `numeric`
+-- redondea alejándose de cero, que con importes no negativos
+-- (`tariff_publication_item_amount_not_negative`) es el HALF UP de `lineTax`.
 
 ALTER TABLE "tariff_publication_item"
   ADD COLUMN "final_amount" DECIMAL(12, 2);
 
 ALTER TABLE "tariff_publication_item"
   ADD CONSTRAINT "tariff_publication_item_final_amount_present"
-  CHECK ("final_amount" IS NOT NULL AND "final_amount" >= "amount") NOT VALID;
+  CHECK (
+    "final_amount" IS NOT NULL
+    AND "final_amount" = "amount" + round("amount" * coalesce("tax_percentage", 0) / 100, 2)
+  ) NOT VALID;

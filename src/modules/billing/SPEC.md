@@ -1427,8 +1427,9 @@ es falsa, hay requisitos que cambian.
 > `tariff_publication_item` con el **código, el nombre, la categoría, el precio,
 > el % de IVA y el precio final copiados**, no referenciados (`final_amount`,
 > `20261009000000_tariff_publication_final_amount`: obligatorio en toda fila
-> nueva por `tariff_publication_item_final_amount_present`, nulo sólo en las
-> publicadas antes). La publicación es una foto: si
+> nueva por `tariff_publication_item_final_amount_present`, que comprueba que
+> es el precio más su IVA redondeado al centavo; nulo sólo en las publicadas
+> antes). La publicación es una foto: si
 > leyera `price`, cambiaría sola y BI-115 no podría existir. Las dos tablas son
 > de solo inserción por disparador (`trg_tariff_publication_immutable`).
 >

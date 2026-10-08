@@ -220,7 +220,7 @@ describe('el tarifario de la pared por HTTP', () => {
     expect(toxin).toMatchObject({ amount: '250.00', taxPercentage: '15.00', finalAmount: '287.50' }); // prettier-ignore
   });
 
-  it('BI-113 la base no admite una línea publicada sin su precio final, ni con uno menor que el precio', async () => {
+  it('BI-113 la base no admite una línea publicada sin su precio final, ni con uno que no sea el precio más su IVA', async () => {
     const published = (await publish().expect(201)).body as { id: string };
     const row = await prisma.tariffPublication.findUniqueOrThrow({ where: { id: published.id } }); // prettier-ignore
     const next = await prisma.tariffPublication.create({
@@ -245,6 +245,7 @@ describe('el tarifario de la pared por HTTP', () => {
 
     await expect(prisma.tariffPublicationItem.create({ data: line(null) })).rejects.toThrow(/tariff_publication_item_final_amount_present/); // prettier-ignore
     await expect(prisma.tariffPublicationItem.create({ data: line('29.99') })).rejects.toThrow(/tariff_publication_item_final_amount_present/); // prettier-ignore
+    await expect(prisma.tariffPublicationItem.create({ data: line('34.51') })).rejects.toThrow(/tariff_publication_item_final_amount_present/); // prettier-ignore
     // Positive control: with its final price it goes in.
     await prisma.tariffPublicationItem.create({ data: line('34.50') });
   });
@@ -254,6 +255,15 @@ describe('el tarifario de la pared por HTTP', () => {
     const row = await prisma.tariffPublication.findUniqueOrThrow({ where: { id: published.id } }); // prettier-ignore
     // A row from before the migration: the NOT VALID check exempts what was
     // already there, so it is recreated as the migration found it.
+    // The definition is read from the database, not copied from the migration,
+    // so what is restored is exactly what was there.
+    const definition = async () =>
+      prisma.$queryRaw<{ def: string; convalidated: boolean }[]>`
+        SELECT pg_get_constraintdef("oid") AS "def", "convalidated"
+        FROM "pg_constraint"
+        WHERE "conname" = 'tariff_publication_item_final_amount_present'`;
+    const [before] = await definition();
+    expect(before?.convalidated).toBe(false);
     await prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(`ALTER TABLE "tariff_publication_item" DROP CONSTRAINT "tariff_publication_item_final_amount_present"`); // prettier-ignore
       const old = await tx.tariffPublication.create({
@@ -276,8 +286,10 @@ describe('el tarifario de la pared por HTTP', () => {
           taxPercentage: '15.00',
         },
       });
-      await tx.$executeRawUnsafe(`ALTER TABLE "tariff_publication_item" ADD CONSTRAINT "tariff_publication_item_final_amount_present" CHECK ("final_amount" IS NOT NULL AND "final_amount" >= "amount") NOT VALID`); // prettier-ignore
+      // pg_get_constraintdef already ends in «NOT VALID».
+      await tx.$executeRawUnsafe(`ALTER TABLE "tariff_publication_item" ADD CONSTRAINT "tariff_publication_item_final_amount_present" ${before!.def}`); // prettier-ignore
     });
+    expect(await definition()).toEqual([before]);
 
     const body = (await wall().expect(200)).body as PublicTariff;
     expect(body.version).toBe(row.version + 1);
