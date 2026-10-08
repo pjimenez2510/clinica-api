@@ -1790,7 +1790,12 @@ requisitos que cambian.
 > bitácora cuando hay respuesta. Se escribe con `PUT` y las dos llaves
 > (`record:protected` y `record:write`), sólo con la atención viva. Los CHECK
 > de EN-071, EN-074 y EN-077 y la clave foránea de EN-076 están en
-> `20261008170000_violence_screening_block_f`. Fuera: registrar la
+> `20261008170000_violence_screening_block_f`; los tipos sin repetir, la
+> respuesta anterior archivada entera en `violence_screening_version` (fuera
+> de `record_version`: D-188 §3), y el rechazo de escribir con la atención no
+> viva o de borrar, en `20261008170100_violence_screening_history`. La fila
+> de bitácora se escribe en la misma transacción que la lectura o el guardado:
+> si no se puede escribir, no se muestra ni se guarda nada. Fuera: registrar la
 > notificación después del alta (D-188 §5) y el formulario 094 en papel
 > (D-052 §1).
 
@@ -4171,7 +4176,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `CLINICAL_NOTE_ALREADY_OPEN` | 409 | Abrir la nota 002 de una atención que ya tiene una (D-139.5) | EN-229 |
 | `NOTE_CONTENT_INCOMPLETE` | 422 | Firmar sin una sección obligatoria, o la 002 sin ningún diagnóstico en la atención (`diagnoses`), o sin diagnóstico principal (`principalDiagnosis`). Nombra lo que falta, nunca su contenido | EN-020, EN-236 |
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
-| `VIOLENCE_SCREENING_RESTRICTED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite | EN-072 |
+| `PERMISSION_DENIED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave: el de la guarda, sin código propio que nombre el dato. Al **leer** no se rechaza: se omite | EN-072 |
 | `HIV_DATA_RESTRICTED` | 403 | Lo mismo para el bloque de VIH | EN-095 |
 | `PROGRAM_BLOCK_NOT_APPLICABLE` | 422 | Se registró un bloque de programa que la población de la atención no alcanza —obstétrico sin embarazo, SIVAN fuera del rango de edad— | EN-090, EN-092, EN-097 |
 | `CONFIRMATORY_TEST_WITHOUT_SCREENING` | 422 | Segunda prueba de VIH sin primera reactiva | EN-094 |
@@ -4357,8 +4362,6 @@ que es global: una atención ocurre en un sitio.
 | `GET` | `/encounters/:id/diagnoses` | `record:read` | EN-043, EN-046, EN-047 |
 | `POST` | `/encounters/:id/procedures` | `record:write` | EN-050, EN-151 |
 | `GET` | `/encounters/:id/procedures` | `record:read` | EN-050 |
-| `GET` | `/encounters/:id/violence-screening` | `record:read` + la segunda llave | EN-070 a EN-076 |
-| `PUT` | `/encounters/:id/violence-screening` | `record:write` + la segunda llave | EN-070 a EN-077 |
 | `GET` | `/patients/:id/allergies` | `record:read` | EN-080 a EN-083, **EN-087** |
 | `POST` | `/patients/:id/allergies` | `background:write` | EN-080, EN-086, **EN-164** |
 | `POST` | `/patients/:id/allergies/none-known` | `background:write` | EN-087, **EN-164** |

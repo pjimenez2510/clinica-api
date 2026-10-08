@@ -1557,7 +1557,9 @@ model Practitioner {
   encountersClosed Encounter[] @relation("EncounterCloser")
 
   /// EN-076. Who applied each screening of block F.
-  violenceScreenings ViolenceScreening[]
+  violenceScreenings         ViolenceScreening[]
+  /// EN-076. Who replaced an earlier answer of block F.
+  violenceScreeningsReplaced ViolenceScreeningVersion[]
 
   @@map("practitioner")
 }
@@ -2986,7 +2988,31 @@ model ViolenceScreening {
   screenedBy   Practitioner @relation(fields: [screenedById], references: [id], onDelete: Restrict)
   screenedAt   DateTime     @default(now()) @map("screened_at") @db.Timestamptz(6)
 
+  /// Earlier answers, archived by `trg_violence_screening_guard`.
+  versions ViolenceScreeningVersion[]
+
   @@map("violence_screening")
+}
+
+/// EN-070, EN-076. The answers a correction replaced, archived WHOLE by
+/// `trg_violence_screening_guard` (`20261008170100_violence_screening_history`).
+///
+/// ⚠️ NOT IN `record_version` ON PURPOSE: the data-subject export reads that
+/// table, and what the patient sees of this is pending (D-188 §3). Nothing
+/// reads this one today; whoever does goes through the screening's door.
+model ViolenceScreeningVersion {
+  id          String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  encounterId String            @map("encounter_id") @db.Uuid
+  screening   ViolenceScreening @relation(fields: [encounterId], references: [encounterId], onDelete: Restrict, map: "violence_screening_version_encounter_fkey")
+  version     Int
+  data        Json              @db.JsonB
+
+  replacedById String       @map("replaced_by_id") @db.Uuid
+  replacedBy   Practitioner @relation(fields: [replacedById], references: [id], onDelete: Restrict, map: "violence_screening_version_replaced_by_fkey")
+  replacedAt   DateTime     @map("replaced_at") @db.Timestamptz(6)
+
+  @@unique([encounterId, version], map: "violence_screening_version_unique")
+  @@map("violence_screening_version")
 }
 
 /// FHIR Condition.

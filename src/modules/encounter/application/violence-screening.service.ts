@@ -2,10 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
 import {
-  ACCESS_AUDIT_RECORDER,
-  type AccessAuditRecorder,
-} from '../../../shared/audit/access-audit.port';
-import {
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
   PractitionerProfileRequiredError,
@@ -25,12 +21,6 @@ import {
   type ViolenceScreeningRepository,
 } from '../domain/violence-screening.repository';
 import type { Requester } from './encounter.service';
-
-/**
- * The trail's name for block F. It names the SECTION of the attention, not
- * its content, for the same reason the permission does not say «violence».
- */
-const SCREENING_RESOURCE_TYPE = 'encounter_screening';
 
 /**
  * What a read gives back. `visible: false` is the OMISSION of EN-072: the
@@ -55,7 +45,9 @@ export type ScreeningSheet =
  *
  * ONE AUDIT ROW PER READ THAT DISCLOSED SOMETHING (EN-075): a recorded
  * screening shown to a key holder. The omission discloses nothing and leaves
- * none; neither does «not answered yet».
+ * none; neither does «not answered yet». WRITTEN BY THE ADAPTER INSIDE ITS
+ * TRANSACTION, never through the shared recorder, which logs and carries on
+ * when it cannot write: here no row means no answer.
  *
  * THE LOG CARRIES THE FACT AND NOTHING ELSE (EN-073): no result, no type, no
  * patient, nothing interpolated.
@@ -67,8 +59,6 @@ export class ViolenceScreeningService {
     private readonly encounters: EncounterRepository,
     @Inject(VIOLENCE_SCREENING_REPOSITORY)
     private readonly screenings: ViolenceScreeningRepository,
-    @Inject(ACCESS_AUDIT_RECORDER)
-    private readonly audit: AccessAuditRecorder,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(ViolenceScreeningService.name);
@@ -89,21 +79,10 @@ export class ViolenceScreeningService {
     const encounter = await this.requireEncounter(encounterId, requester);
     if (!holdsKeyAt(encounter.siteId)) return { visible: false };
 
-    const screening = await this.screenings.find({
-      encounterId: encounter.id,
-      sites: requester.sites,
-    });
-
-    if (screening !== null) {
-      await this.audit.record({
-        userId: requester.userId,
-        resourceType: SCREENING_RESOURCE_TYPE,
-        resourceId: encounter.id,
-        action: 'READ',
-        ip: requester.ip,
-        userAgent: requester.userAgent,
-      });
-    }
+    const screening = await this.screenings.readWithTrail(
+      { encounterId: encounter.id, sites: requester.sites },
+      trailOf(requester),
+    );
 
     return { visible: true, screening };
   }
@@ -130,17 +109,10 @@ export class ViolenceScreeningService {
       { encounterId: encounter.id, sites: requester.sites },
       answer,
       { practitionerId: practitioner.practitionerId, at: new Date() },
+      trailOf(requester),
     );
 
     if (saved.outcome !== 'UNCHANGED') {
-      await this.audit.record({
-        userId: requester.userId,
-        resourceType: SCREENING_RESOURCE_TYPE,
-        resourceId: encounter.id,
-        action: saved.outcome === 'CREATED' ? 'CREATE' : 'UPDATE',
-        ip: requester.ip,
-        userAgent: requester.userAgent,
-      });
       // EN-073. The fact only.
       this.logger.info(
         { action: 'ENCOUNTER_SCREENING_RECORDED' },
@@ -162,4 +134,12 @@ export class ViolenceScreeningService {
     if (!encounter) throw new EncounterNotFoundError();
     return encounter;
   }
+}
+
+function trailOf(requester: Requester) {
+  return {
+    userId: requester.userId,
+    ip: requester.ip,
+    userAgent: requester.userAgent,
+  };
 }

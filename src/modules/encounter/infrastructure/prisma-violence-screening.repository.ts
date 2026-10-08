@@ -15,8 +15,15 @@ import type {
 } from '../domain/violence-screening';
 import type {
   ScreeningSave,
+  ScreeningTrail,
   ViolenceScreeningRepository,
 } from '../domain/violence-screening.repository';
+
+/**
+ * The trail's name for block F. It names the SECTION of the attention, not its
+ * content, for the same reason the permission does not say «violence».
+ */
+const SCREENING_RESOURCE_TYPE = 'encounter_screening';
 
 const SCREENING_SELECT = {
   result: true,
@@ -45,21 +52,29 @@ type ScreeningRow = Prisma.ViolenceScreeningGetPayload<{
 export class PrismaViolenceScreeningRepository implements ViolenceScreeningRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async find(query: EncounterQuery): Promise<ScreeningRecord | null> {
-    const row = await this.prisma.violenceScreening.findFirst({
-      where: {
-        encounterId: query.encounterId,
-        encounter: siteFilter(query.sites),
-      },
-      select: SCREENING_SELECT,
+  async readWithTrail(
+    query: EncounterQuery,
+    trail: ScreeningTrail,
+  ): Promise<ScreeningRecord | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.violenceScreening.findFirst({
+        where: {
+          encounterId: query.encounterId,
+          encounter: siteFilter(query.sites),
+        },
+        select: SCREENING_SELECT,
+      });
+      if (row === null) return null;
+      await writeTrail(tx, query.encounterId, 'READ', trail);
+      return toRecord(row);
     });
-    return row && toRecord(row);
   }
 
   async save(
     query: EncounterQuery,
     answer: ScreeningAnswer,
     author: { practitionerId: string; at: Date },
+    trail: ScreeningTrail,
   ): Promise<ScreeningSave> {
     return this.prisma.$transaction(async (tx) => {
       const inScope = await tx.encounter.findFirst({
@@ -96,14 +111,18 @@ export class PrismaViolenceScreeningRepository implements ViolenceScreeningRepos
           },
           select: SCREENING_SELECT,
         });
+        await writeTrail(tx, query.encounterId, 'CREATE', trail);
         return { record: toRecord(created), outcome: 'CREATED' };
       }
 
       if (sameAnswer(toRecord(current), answer)) {
+        // What comes back says who answered and when: that is a read.
+        await writeTrail(tx, query.encounterId, 'READ', trail);
         return { record: toRecord(current), outcome: 'UNCHANGED' };
       }
 
-      // EN-076. A correction is a new answer: who gave it and when move with it.
+      // EN-076. A correction is a new answer: who gave it and when move with
+      // it, and `trg_violence_screening_guard` archives the row it replaces.
       const updated = await tx.violenceScreening.update({
         where: { encounterId: query.encounterId },
         data: {
@@ -113,9 +132,33 @@ export class PrismaViolenceScreeningRepository implements ViolenceScreeningRepos
         },
         select: SCREENING_SELECT,
       });
+      await writeTrail(tx, query.encounterId, 'UPDATE', trail);
       return { record: toRecord(updated), outcome: 'UPDATED' };
     });
   }
+}
+
+/**
+ * EN-075. The row, inside the caller's transaction: it commits with what it
+ * records or not at all. No `before`/`after`: the clinical content never goes
+ * to `access_audit`, which is never purged.
+ */
+async function writeTrail(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+  action: 'READ' | 'CREATE' | 'UPDATE',
+  trail: ScreeningTrail,
+): Promise<void> {
+  await tx.accessAudit.create({
+    data: {
+      userId: trail.userId,
+      resourceType: SCREENING_RESOURCE_TYPE,
+      resourceId: encounterId,
+      action,
+      ip: trail.ip,
+      userAgent: trail.userAgent?.slice(0, 512),
+    },
+  });
 }
 
 function toColumns(answer: ScreeningAnswer) {

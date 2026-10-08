@@ -82,6 +82,7 @@ describe('el tamizaje de violencia por HTTP, con sesiones reales (EN-070 a EN-07
   let secondDoctorPractitionerId: string;
   let nurseToken: string;
   let elsewhereDoctorToken: string;
+  let otherSiteId: string;
 
   beforeEach(async () => {
     enableBigIntSerialisation();
@@ -120,6 +121,7 @@ describe('el tamizaje de violencia por HTTP, con sesiones reales (EN-070 a EN-07
     const otherSite = await createSite(prisma, 'Sede Sur');
     const patient = await createPatient(prisma);
     siteId = site.id;
+    otherSiteId = otherSite.id;
     patientId = patient.id;
 
     const doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065', siteId); // prettier-ignore
@@ -176,6 +178,53 @@ describe('el tamizaje de violencia por HTTP, con sesiones reales (EN-070 a EN-07
       token: (response.body as { accessToken: string }).accessToken,
       practitionerId: practitioner.id,
     };
+  }
+
+  /**
+   * An account whose permissions are split across sites, through roles of the
+   * clinic's own (roles are data): what makes the site scope of the second
+   * key checkable at all.
+   */
+  async function signInSplit(
+    email: string,
+    cedula: string,
+    grants: { permissions: string[]; siteId: string }[],
+  ): Promise<string> {
+    const user = await prisma.user.create({
+      data: {
+        email,
+        firstName: 'Luis',
+        lastName: 'Andrade',
+        cedula,
+        passwordHash: await argon2.hash(PASSWORD, {
+          type: argon2.argon2id,
+          memoryCost: PASSWORD_HASHING.memoryCost,
+          timeCost: PASSWORD_HASHING.timeCost,
+          parallelism: PASSWORD_HASHING.parallelism,
+        }),
+      },
+    });
+    await prisma.practitioner.create({ data: { userId: user.id } });
+    for (const [index, grant] of grants.entries()) {
+      const role = await prisma.role.create({
+        data: {
+          code: `PROPIO_${index}_${cedula}`,
+          name: `Rol propio ${index}`,
+          permissions: {
+            create: grant.permissions.map((permissionCode) => ({ permissionCode })), // prettier-ignore
+          },
+        },
+      });
+      await prisma.userRoleGrant.create({
+        data: { userId: user.id, roleId: role.id, siteId: grant.siteId },
+      });
+    }
+    registry.invalidate();
+    const response = await request(app!.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email, password: PASSWORD })
+      .expect(200);
+    return (response.body as { accessToken: string }).accessToken;
   }
 
   const send = (
@@ -272,6 +321,36 @@ describe('el tamizaje de violencia por HTTP, con sesiones reales (EN-070 a EN-07
     });
   });
 
+  describe('EN-072 la llave vale en la sede de la atención', () => {
+    it('EN-072 con record:read en la sede y la llave sólo en otra, la respuesta es la omisión', async () => {
+      const encounterId = await openEncounter();
+      await send('put', `/encounters/${encounterId}/screening`, doctorToken, POSITIVE).expect(200); // prettier-ignore
+      const token = await signInSplit('partida1@clinica.ec', '1701234567', [
+        { permissions: ['record:read'], siteId },
+        { permissions: ['record:protected'], siteId: otherSiteId },
+      ]);
+
+      const response = await send('get', `/encounters/${encounterId}/screening`, token).expect(200); // prettier-ignore
+      expect(response.body).toEqual({});
+      expect(await screeningReads(encounterId)).toBe(0);
+    });
+
+    it('EN-072 con la llave en la sede y record:write sólo en otra, registrar es 404; con las dos en la sede, se registra', async () => {
+      const encounterId = await openEncounter();
+      const split = await signInSplit('partida2@clinica.ec', '0907654321', [
+        { permissions: ['record:read', 'record:protected'], siteId },
+        { permissions: ['record:write'], siteId: otherSiteId },
+      ]);
+
+      await send('put', `/encounters/${encounterId}/screening`, split, { result: 'NO_SIGNS' }).expect(404); // prettier-ignore
+      expect(await prisma.violenceScreening.count()).toBe(0);
+
+      // Positive control: the doctor holds both at this site.
+      await send('put', `/encounters/${encounterId}/screening`, doctorToken, { result: 'NO_SIGNS' }).expect(200); // prettier-ignore
+      expect(await prisma.violenceScreening.count()).toBe(1);
+    });
+  });
+
   describe('EN-075 una fila de bitácora por lectura', () => {
     it('EN-075 cada lectura del médico deja una fila READ con la atención, y sin respuesta no deja ninguna', async () => {
       const encounterId = await openEncounter();
@@ -300,6 +379,16 @@ describe('el tamizaje de violencia por HTTP, con sesiones reales (EN-070 a EN-07
         expect(row.before ?? null).toBeNull();
         expect(row.after ?? null).toBeNull();
       }
+    });
+
+    it('EN-075 repetir la misma respuesta devuelve quién y cuándo, así que deja su fila READ', async () => {
+      const encounterId = await openEncounter();
+      await send('put', `/encounters/${encounterId}/screening`, doctorToken, { result: 'NO_SIGNS' }).expect(200); // prettier-ignore
+      expect(await screeningReads(encounterId)).toBe(0);
+
+      const again = await send('put', `/encounters/${encounterId}/screening`, secondDoctorToken, { result: 'NO_SIGNS' }).expect(200); // prettier-ignore
+      expect((again.body as { screenedById: string }).screenedById).toBe(doctorPractitionerId); // prettier-ignore
+      expect(await screeningReads(encounterId)).toBe(1);
     });
   });
 
@@ -443,6 +532,12 @@ describe('el tamizaje de violencia por HTTP, con sesiones reales (EN-070 a EN-07
       // EN-130. After the discharge it is no longer written.
       const closed = await send('put', `/encounters/${encounterId}/screening`, doctorToken, { result: 'NO_SIGNS' }).expect(409); // prettier-ignore
       expect((closed.body as Problem).code).toBe('ENCOUNTER_ALREADY_CLOSED');
+
+      // EN-130. And the DATABASE refuses it too, whoever writes. Before the
+      // discharge the same row was written (the PUT above): the control.
+      await expect(
+        prisma.$executeRaw`UPDATE violence_screening SET result = 'NO_SIGNS' WHERE encounter_id = ${encounterId}::uuid`,
+      ).rejects.toThrow(/violence_screening_frozen/);
     });
   });
 });

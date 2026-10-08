@@ -150,7 +150,7 @@ describe('EN-074 la notificación a la autoridad', () => {
           actionTaken: null,
         }),
       ),
-    ).toMatchObject({ status: 422 });
+    ).toMatchObject(refusedOn('reportedToAuthority'));
 
     await insert(prisma, ids, NOTIFIED);
     expect(await prisma.violenceScreening.count()).toBe(1);
@@ -219,5 +219,71 @@ describe('EN-076 quién aplicó el tamizaje', () => {
     // Positive control: a practitioner nothing points at can be deleted.
     const loose = await createPractitioner(prisma);
     await prisma.practitioner.delete({ where: { id: loose.id } });
+  });
+});
+
+describe('EN-071 EN-070 EN-076 lo que la base guarda del tamizaje', () => {
+  it('EN-071 la BASE rechaza un tipo repetido, y acepta los mismos sin repetir', async () => {
+    const prisma = db();
+    const ids = await anAttention(prisma);
+
+    await expect(
+      insert(prisma, ids, { ...POSITIVE, types: ['PHYSICAL', 'PHYSICAL'] }),
+    ).rejects.toThrow(/violence_screening_types_distinct/);
+
+    await insert(prisma, ids, { ...POSITIVE, types: ['PHYSICAL', 'SEXUAL'] });
+    expect(await prisma.violenceScreening.count()).toBe(1);
+  });
+
+  it('EN-070 EN-076 la BASE archiva entera la respuesta que una corrección reemplaza, con quién la reemplazó', async () => {
+    const prisma = db();
+    const ids = await anAttention(prisma);
+    await insert(prisma, ids, NOTIFIED);
+    expect(await prisma.violenceScreeningVersion.count()).toBe(0);
+
+    const other = await createPractitioner(prisma);
+    const at = new Date();
+    await prisma.violenceScreening.update({
+      where: { encounterId: ids.encounterId },
+      data: {
+        result: 'NO_SIGNS',
+        types: [],
+        actionTaken: null,
+        reportedToAuthority: false,
+        authorityFormSerial: null,
+        injury: null,
+        aggressorIdentified: null,
+        aggressorRelationship: null,
+        screenedById: other.id,
+        screenedAt: at,
+      },
+    });
+
+    const [archived] = await prisma.violenceScreeningVersion.findMany({
+      where: { encounterId: ids.encounterId },
+    });
+    expect(archived).toMatchObject({
+      version: 1,
+      replacedById: other.id,
+      replacedAt: at,
+      data: expect.objectContaining({
+        result: 'SUSPECTED',
+        authority_form_serial: '0012345',
+        screened_by_id: ids.screenedById,
+      }) as unknown,
+    });
+  });
+
+  it('EN-070 la BASE no deja borrar un tamizaje, ni lo que se archivó de él', async () => {
+    const prisma = db();
+    const ids = await anAttention(prisma);
+    await insert(prisma, ids, { result: 'NO_SIGNS' });
+
+    await expect(
+      prisma.violenceScreening.delete({
+        where: { encounterId: ids.encounterId },
+      }),
+    ).rejects.toThrow(/violence_screening_immutable/);
+    expect(await prisma.violenceScreening.count()).toBe(1);
   });
 });
