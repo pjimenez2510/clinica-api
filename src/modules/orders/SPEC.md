@@ -434,6 +434,20 @@ la ficha (D-171.1).
 unificada, el sexo de la vigente (D-171.3)—. **Solo servidor:** ORD-158 —la
 copia la escribe la base— y ORD-161. ORD-160 se retiró (D-171.1).
 
+### E19 — Un examen, una prestación _(P1, 07-10-2026)_
+
+D-179.1, aceptada por el autor (§19). El examen se escribe una vez, en
+Exámenes, con su cobro; su prestación nace detrás y aparece ya hecha en
+Prestaciones y precios.
+
+**Prueba independiente:** dar de alta «Perfil renal» con categoría
+Laboratorio, IVA 0 % y 12,00 en la lista particular: Prestaciones y precios lo
+lista con ese código, ese nombre y ese precio sin haberlo escrito allí;
+corregir su nombre desde el examen lo corrige en la prestación; y contra
+PostgreSQL, que la base no admite un examen sin prestación ni dos exámenes
+sobre la misma.
+**Cubre:** ORD-162, ORD-163. **Solo servidor:** ORD-163.
+
 ### Fuera de las ocho
 
 **Transcripción masiva y gráficas de evolución.** Se transcribe **solo lo que se
@@ -522,6 +536,10 @@ cuando la gráfica exista.
   > y la línea ya no puede emparejarse mal. Un examen sin `tariff_code`, o con un
   > código que no está en el TARIFARIO, se rechaza con
   > `CATALOG_CONCEPT_NOT_FOUND`.
+  >
+  > **Enmendado el 07-10-2026 (D-179.1, ORD-163).** El código se lee de la
+  > **prestación** del examen (`billable_service.tariff_code`), que es el único
+  > sitio donde se escribe; `exam_definition.tariff_code` se retiró.
 
   La vigencia se resuelve **en `America/Guayaquil`**, como
   `trg_diagnosis_concept_in_force`: un `::date` sobre un `timestamptz` a las
@@ -1311,7 +1329,7 @@ desde la pantalla.
 - **ORD-103** — Con `catalog:manage`, el sistema DEBERÁ permitir dar de alta y
   corregir un examen —código, nombre, tipo, sección, muestra, preparación,
   tiempo de entrega, si lo hace un laboratorio externo y cuál, código del
-  tarifario— y desactivarlo y reactivarlo; el código NO DEBERÁ cambiar una vez
+  tarifario (que se guarda en su prestación, ORD-163)— y desactivarlo y reactivarlo; el código NO DEBERÁ cambiar una vez
   creado, y un examen NO DEBERÁ borrarse. SI el código ya lo lleva otro examen,
   ENTONCES DEBERÁ rechazarlo con `EXAM_CODE_DUPLICATE`.
 
@@ -1374,8 +1392,8 @@ desde la pantalla.
   ORD-036 elige el rango **más específico**; entre dos igual de específicos que
   se pisan no hay respuesta, y la bandera dependería del orden de las filas.
 
-- **ORD-108** — Con `catalog:manage`, el sistema DEBERÁ permitir fijar la
-  **prestación de cobro** de un examen, y SI la clase de la categoría de esa
+- **ORD-108** — Con `catalog:manage`, el sistema DEBERÁ fijar la
+  **prestación de cobro** de un examen al darlo de alta (ORD-162), y SI la clase de la categoría de esa
   prestación (`billable_service_category.kind`) no es el tipo del examen,
   ENTONCES DEBERÁ rechazarlo con `EXAM_SERVICE_KIND_MISMATCH`; SI la
   prestación no existe o está desactivada, con `EXAM_SERVICE_NOT_FOUND`.
@@ -1386,6 +1404,11 @@ desde la pantalla.
   prestación con que se cobra un examen; desde aquí, BI-187 compara con el tipo
   de sus exámenes y deja de admitir sólo laboratorio e imagen, para que un
   electrocardiograma se cobre como procedimiento.
+
+  > **Enmendado el 07-10-2026 (D-179.1).** La prestación ya no se cambia
+  > después del alta: el examen y su prestación son la misma cosa (ORD-163),
+  > y cambiarla le cambiaría el nombre al examen. El `PATCH` dejó de aceptar
+  > `billableServiceId`.
 
 - **ORD-109** — SI se cambia el tipo de un examen que tiene prestación de cobro
   a uno que no es la clase de esa prestación, ENTONCES el sistema DEBERÁ
@@ -1945,7 +1968,8 @@ renombrarlo rompe la completitud (ORD-039) y la corrección (ORD-055).
   2014, el sistema DEBERÁ guardarlo como edición nueva de `TARIFF`, con
   código, descripción, sección del tarifario y las UVR por nivel de atención
   que trae la fila; y DEBERÁ retirar los conceptos de la edición anterior
-  **salvo** los que un examen activo todavía nombra en `tariff_code`, que
+  **salvo** los que un examen activo todavía nombra por el `tariff_code` de su
+  prestación (ORD-163), que
   siguen vigentes y se informan al terminar.
   > Retirar el código que un examen usa haría que ese examen dejara de
   > pedirse (ORD-004) el día de la carga. Se informa para que la clínica le
@@ -2267,6 +2291,46 @@ a D-156.5, recomendación aceptada en todos los puntos._
   > `a_service_order_freeze_patient_sex` escribe ficha y sexo al emitir;
   > `service_order_chart_of_record_when_issued` y `service_order_guard_status`.
 
+## 19. Un examen, una prestación (D-179.1)
+
+_Aceptada por el autor el 07-10-2026. Hasta aquí el nombre y el código del
+tarifario se escribían en Exámenes, otra vez en Prestaciones y precios y otra
+en la pestaña de cobro, y nada obligaba a que coincidieran._
+
+- **ORD-162** — CUANDO se dé de alta un examen con `catalog:manage`, el
+  sistema DEBERÁ crear en la misma transacción su prestación de cobro —con el
+  código y el nombre del examen, su código del tarifario, la categoría y el
+  IVA indicados y, si se indica, su precio en la lista particular vigente
+  desde el día de hoy en Ecuador— y DEBERÁ dejar en la bitácora de facturación
+  (`billable_service`) quién la creó, con qué categoría, IVA y precio; o, si se
+  indica una prestación existente, atarlo a ella **sin reescribirla**: el
+  examen toma su nombre y su código del tarifario. SI la categoría no existe o está desactivada, ENTONCES DEBERÁ
+  rechazarlo con `EXAM_SERVICE_CATEGORY_NOT_FOUND`; SI el IVA no existe, con
+  `EXAM_TAX_RATE_NOT_FOUND`; SI la clase de la categoría, o la de la
+  prestación existente, no es el tipo del examen, con
+  `EXAM_SERVICE_KIND_MISMATCH`; SI la prestación existente no existe o está
+  desactivada, con `EXAM_SERVICE_NOT_FOUND`; SI ya cobra otro examen, con
+  `EXAM_SERVICE_TAKEN`; SI ya hay una prestación con ese código, con
+  `BILLABLE_SERVICE_CODE_DUPLICATE`; y SI la prestación es nueva y quien lo
+  da de alta no tiene `billing:price-manage` en toda la clínica, con
+  `SITE_SCOPE_DENIED` sin crear nada.
+  > Clasificar una prestación —su categoría, su IVA (BI-005) y su precio— es
+  > de facturación (D-049), como en Prestaciones y precios: con
+  > `catalog:manage` solo, el examen se ata a una prestación que ya exista.
+  > El IVA elegido queda **sin revisar** (D-A-006, BI-024), como el de la
+  > semilla. *(Revisión clínica de la rama: la primera versión dejaba elegir
+  > el IVA sin el permiso y reescribía el nombre de la prestación existente.)*
+- **ORD-163** — El nombre y el código del tarifario de un examen DEBERÁN
+  guardarse sólo en su prestación: el sistema DEBERÁ servirlos desde ella, y
+  CUANDO se corrijan desde el examen DEBERÁ escribirlos en ella en la misma
+  transacción. La **base** DEBERÁ exigir que todo examen tenga prestación
+  (`billable_service_id NOT NULL`) y que ninguna prestación cobre dos
+  exámenes (`exam_definition_one_per_service`).
+  > Dos exámenes sobre una prestación tendrían el mismo nombre, que es el de
+  > ella. Un perfil que la clínica factura junto es **un** examen con varias
+  > determinaciones (ORD-105), no varios exámenes sobre una línea. Si la
+  > clínica necesita otra cosa, D-181.
+
 ---
 
 ## Códigos de error nuevos
@@ -2316,7 +2380,10 @@ contrato —`code`, estado y mensaje—.
 | `REFERENCE_RANGE_INVALID` | 422 | Límites o edades al revés, un rango numérico o crítico sobre un analito que no es numérico, o una banda crítica que entra en la de referencia | ORD-106, ORD-112 |
 | `REFERENCE_RANGE_OVERLAP` | 422 | Dos rangos igual de específicos que cubren al mismo paciente | ORD-107 |
 | `EXAM_SERVICE_KIND_MISMATCH` | 422 | La prestación de cobro es de otra clase que el tipo del examen | ORD-108, ORD-109 |
-| `EXAM_SERVICE_NOT_FOUND` | 404 | La prestación de cobro no existe o está desactivada | ORD-108 |
+| `EXAM_SERVICE_NOT_FOUND` | 404 | La prestación de cobro no existe o está desactivada | ORD-108, ORD-162 |
+| `EXAM_SERVICE_TAKEN` | 409 | La prestación elegida ya cobra otro examen. Lo arbitra `exam_definition_one_per_service` | ORD-162, ORD-163 |
+| `EXAM_SERVICE_CATEGORY_NOT_FOUND` | 422 | La categoría del cobro no existe o está desactivada | ORD-162 |
+| `EXAM_TAX_RATE_NOT_FOUND` | 422 | El IVA del cobro no existe | ORD-162 |
 | `ANALYTE_NAME_DUPLICATE` | 409 | Otra determinación activa ya lleva ese nombre. Lo arbitra `analyte_definition_active_name_unique` | ORD-104 |
 | `ANALYTE_HAS_RESULTS` | 409 | Renombrar, cambiar el tipo o la unidad de una determinación con resultados | ORD-110 |
 | `ANALYTE_UNIT_WITH_RANGES` | 409 | Cambiar la unidad mientras tiene rangos escritos en la vieja | ORD-106 |

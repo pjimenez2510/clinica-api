@@ -42,6 +42,7 @@ const EXPECTED: readonly [
   [errors.ServiceCategoryNotFoundError, 'SERVICE_CATEGORY_NOT_FOUND', NotFoundError], // prettier-ignore
   [errors.ServiceCategoryInactiveError, 'SERVICE_CATEGORY_INACTIVE', BusinessRuleViolation], // prettier-ignore
   [errors.ServiceKindMismatchError, 'SERVICE_KIND_MISMATCH', BusinessRuleViolation], // prettier-ignore
+  [errors.ServiceNamedElsewhereError, 'SERVICE_NAMED_ELSEWHERE', ConflictError], // prettier-ignore
   [errors.TaxRateRequiredError, 'TAX_RATE_REQUIRED', ValidationError],
   [errors.TaxRateNotFoundError, 'TAX_RATE_NOT_FOUND', NotFoundError],
   [errors.TaxRateInUseError, 'TAX_RATE_IN_USE', ConflictError],

@@ -87,10 +87,6 @@ const PROTECTED = [
   'charge_item_one_per_encounter_procedure',
   'charge_item_one_per_service_order_item',
   'charge_item_one_consultation_per_encounter',
-  // Índice único PARCIAL (`WHERE specialty_id IS NOT NULL`): UNA prestación por
-  // (especialidad, secuencia de visita), que es lo que hace inequívoca la
-  // propuesta del cargo de la consulta (BI-158).
-  'billable_service_one_per_consultation',
 ];
 
 /**

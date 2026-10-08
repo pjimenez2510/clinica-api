@@ -402,11 +402,13 @@ calcula el servidor, y que la proyección `PUBLIC` de esa misma fila no lleva
 nombre completo ni nota corta.
 **Cubre:** AG-121 a AG-127, AG-133 a AG-139, AG-176.
 
-**Solo servidor:** AG-122, AG-126, AG-139. Que un estado NO se pueda teclear se
+**Solo servidor:** AG-122, AG-123, AG-126, AG-139. Que un estado NO se pueda teclear se
 demuestra por la ausencia de ruta —una pantalla no puede enseñar un botón que no
-existe—; el rastro append-only del estado del paciente es garantía de la base
-como el de AG-005; y quién consultó el tablero se escribe en `access_audit` sin
-que nadie lo vea.
+existe—; que la espera entre pasos no tenga estado propio es que el servidor no
+lo cambia, y la pantalla sólo repite el estado y los minutos que recibe; el
+rastro append-only del estado del paciente es garantía de la base como el de
+AG-005; y quién consultó el tablero se escribe en `access_audit` sin que nadie
+lo vea.
 
 > **El esquema del eje entró el 20-08-2026 y no bloquea nada**
 > (`20260820052524_clinical_flow_states`): el enum `patient_subject_status`, las

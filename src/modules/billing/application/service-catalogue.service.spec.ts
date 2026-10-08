@@ -9,6 +9,7 @@ import {
   TaxRateNotFoundError,
   TaxRateRequiredError,
   TaxReviewRateChangedError,
+  ServiceNamedElsewhereError,
 } from '../domain/billing.errors';
 import type {
   BillableServiceView,
@@ -56,8 +57,7 @@ const service: BillableServiceView = {
   taxSriCode: '0',
   taxPercentage: Percentage.ZERO,
   active: true,
-  specialtyId: null,
-  visitSequence: null,
+  serviceTypes: [],
   taxReview: null,
 };
 
@@ -243,8 +243,6 @@ describe('BI-046, BI-132 la bitácora del catálogo', () => {
       categoryId: CONSULTATIONS.id,
       tariffCode: null,
       active: true,
-      specialtyId: null,
-      visitSequence: null,
       taxReviewedAt: null,
       taxReviewedById: null,
     };
@@ -476,38 +474,20 @@ describe('BI-185, BI-187 la categoría es un catálogo y su clase manda', () => 
     ).rejects.toBeInstanceOf(ServiceCategoryInactiveError);
   });
 
-  it('BI-187 rechaza declarar la consulta de una especialidad sobre un insumo', async () => {
+  it('BI-187 rechaza pasar a una categoría de otra clase la prestación que cobra un tipo de atención', async () => {
+    const charging = {
+      ...service,
+      serviceTypes: [
+        { id: 'type-1', name: 'Control', specialtyName: 'Dermatología' },
+      ],
+    };
     const { service: catalogue } = build({
-      findBillableService: vi
-        .fn()
-        .mockResolvedValue({ ...service, category: SUPPLIES }),
-    });
-
-    await expect(
-      catalogue.updateService(
-        'service-1',
-        { consultation: { specialtyId: 'sp-1', visitSequence: 'FIRST_TIME' } },
-        requester,
-      ),
-    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
-  });
-
-  it('BI-187 rechaza pasar la consulta de una especialidad a una categoría de otra clase, y la deja pasar si se quita la atadura a la vez', async () => {
-    const mapped = { ...service, specialtyId: 'sp-1', visitSequence: 'FIRST_TIME' as const }; // prettier-ignore
-    const { service: catalogue } = build({
-      findBillableService: vi.fn().mockResolvedValue(mapped),
+      findBillableService: vi.fn().mockResolvedValue(charging),
     });
 
     await expect(
       catalogue.updateService('service-1', { categoryId: SUPPLIES.id }, requester), // prettier-ignore
     ).rejects.toBeInstanceOf(ServiceKindMismatchError);
-    await expect(
-      catalogue.updateService(
-        'service-1',
-        { categoryId: SUPPLIES.id, consultation: null },
-        requester,
-      ),
-    ).resolves.toBeDefined();
   });
 
   it('BI-187 un procedimiento atado a su concepto no se pasa a otra clase', async () => {
@@ -529,21 +509,54 @@ describe('BI-185, BI-187 la categoría es un catálogo y su clase manda', () => 
   });
 });
 
+describe('ORD-163 SP-030 lo que nace con un examen o un tipo se corrige allí', () => {
+  it('ORD-163 SP-030 renombrar o cambiar el tarifario de la prestación de un tipo de atención se rechaza; su IVA, no', async () => {
+    const { service: catalogue } = build({
+      findBillableService: vi.fn().mockResolvedValue({
+        ...service,
+        serviceTypes: [{ id: 'type-1', name: 'Control', specialtyName: 'Dermatología' }], // prettier-ignore
+      }),
+    });
+
+    await expect(
+      catalogue.updateService('service-1', { name: 'Otra' }, requester),
+    ).rejects.toBeInstanceOf(ServiceNamedElsewhereError);
+    await expect(
+      catalogue.updateService('service-1', { tariffCode: '99' }, requester),
+    ).rejects.toBeInstanceOf(ServiceNamedElsewhereError);
+    // Control positivo: lo que es de facturación se sigue corrigiendo aquí.
+    await expect(
+      catalogue.updateService('service-1', { active: false }, requester),
+    ).resolves.toBeDefined();
+  });
+
+  it('ORD-163 la prestación de un examen no se renombra desde aquí', async () => {
+    const { service: catalogue } = build({
+      listExamsOfService: vi.fn().mockResolvedValue([{ id: 'e-1', code: 'EX-1', name: 'X', category: 'LABORATORY', active: true }]), // prettier-ignore
+    });
+
+    await expect(
+      catalogue.updateService('service-1', { name: 'Otra' }, requester),
+    ).rejects.toBeInstanceOf(ServiceNamedElsewhereError);
+  });
+});
+
 describe('BI-187 corregir siempre es posible', () => {
-  it('BI-187 una prestación que ya está en desajuste se puede renombrar o desactivar', async () => {
+  it('BI-187 una prestación que ya está en desajuste se puede desactivar', async () => {
     // A migrated clinic: «Consulta externa» became OTHER with its consultation
     // still tied to a specialty. Renaming or deactivating must not be refused.
     const { service: catalogue } = build({
       findBillableService: vi.fn().mockResolvedValue({
         ...service,
         category: { ...SUPPLIES, kind: 'OTHER' },
-        specialtyId: 'sp-1',
-        visitSequence: 'FIRST_TIME',
+        serviceTypes: [
+          { id: 'type-1', name: 'Control', specialtyName: 'Dermatología' },
+        ],
       }),
     });
 
     await expect(
-      catalogue.updateService('service-1', { name: 'Otra', active: false }, requester), // prettier-ignore
+      catalogue.updateService('service-1', { active: false }, requester), // prettier-ignore
     ).resolves.toBeDefined();
   });
 

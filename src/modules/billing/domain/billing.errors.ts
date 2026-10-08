@@ -916,3 +916,30 @@ export class CorrectionAwaitsCreditNoteError extends ConflictError {
     super('A corrected charge is billed once its credit note is authorised');
   }
 }
+
+/**
+ * ORD-163, SP-030 (D-179). The service IS an exam, or is born with a service
+ * type: its name (and, for an exam, its tariff code) is written there, once.
+ * Changing it here would rename the exam the order freezes, without the exam
+ * catalogue's trail (ORD-111), or leave it to be overwritten by the type.
+ */
+export class ServiceNamedElsewhereError extends ConflictError {
+  readonly code = 'SERVICE_NAMED_ELSEWHERE';
+  override readonly userTitle =
+    'Esta prestación nace de un examen o de un tipo de atención: su nombre y su tarifario se corrigen allí';
+
+  constructor() {
+    super(
+      'Service name and tariff code are owned by its exam or service type',
+      {},
+      [
+        // prettier-ignore
+        {
+        field: 'name',
+        code: 'SERVICE_NAMED_ELSEWHERE',
+        message: 'Se corrige en Exámenes o en Especialidades',
+      },
+      ],
+    );
+  }
+}

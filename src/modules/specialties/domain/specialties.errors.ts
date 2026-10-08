@@ -1,4 +1,7 @@
-import { ConflictError } from '../../../shared/domain/errors/domain-error';
+import {
+  BusinessRuleViolation,
+  ConflictError,
+} from '../../../shared/domain/errors/domain-error';
 
 /**
  * What can go wrong when administering the clinic's parametrisation, in
@@ -123,5 +126,20 @@ export class ServiceTypeInUseError extends ConflictError {
 
   constructor() {
     super('Service type is referenced and cannot be deleted');
+  }
+}
+
+/**
+ * SP-030. The service type cannot be born with its service: there is no
+ * active consultation category, or no health tax rate (SRI code `0`), to
+ * create it in. Administration fixes it in Prestaciones y precios.
+ */
+export class ConsultationBillingUnavailableError extends BusinessRuleViolation {
+  readonly code = 'CONSULTATION_BILLING_UNAVAILABLE';
+  override readonly userTitle =
+    'No hay una categoría de consultas activa ni IVA de salud para cobrar este tipo de atención. Créela en Prestaciones y precios';
+
+  constructor() {
+    super('No active CONSULTATION category or health tax rate');
   }
 }

@@ -1,7 +1,6 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type { ChargeStatus, DocumentTotals } from './charge';
 import type { ChargeOrigin, ServiceMatch } from './charge-proposal';
-import type { VisitSequence } from './clinical-acts.port';
 import type { InvoiceReceiver, InvoiceStatus, PaymentMethod } from './invoice';
 import type { Money, Percentage, Quantity } from './money';
 import type { PatientIdentity } from './patient-identity';
@@ -117,13 +116,11 @@ export interface BillableServiceView {
   taxPercentage: Percentage | null;
   active: boolean;
   /**
-   * BI-158. Which consultation this service IS, when it is one.
-   *
-   * Both or neither (`billable_service_consultation_states_both`). Null on
-   * almost every row: a gauze is nobody's consultation.
+   * BI-158, BI-188, SP-031. The service types this service charges for, when
+   * it is a consultation; empty on almost every row. Set from Especialidades,
+   * never from here (SP-030).
    */
-  specialtyId: string | null;
-  visitSequence: VisitSequence | null;
+  serviceTypes: readonly ChargedServiceType[];
   /**
    * BI-022 to BI-024. Who checked the tax rate with accounting judgement, and
    * when; `null` is «pendiente de revisión». Every service is born pending
@@ -195,15 +192,11 @@ export interface NewBillableService {
   taxRateId: string;
 }
 
-/**
- * BI-158. «This service IS the consultation of that specialty, of that kind».
- *
- * A pair and never half of one: `billable_service_consultation_states_both`
- * refuses a specialty with no sequence, and clearing it means clearing both.
- */
-export interface ConsultationMapping {
-  specialtyId: string;
-  visitSequence: VisitSequence;
+/** BI-188, SP-031. A service type a consultation service charges for. */
+export interface ChargedServiceType {
+  id: string;
+  name: string;
+  specialtyName: string;
 }
 
 /**
@@ -216,8 +209,6 @@ export interface BillableServiceUpdate {
   tariffCode?: string | null;
   taxRateId?: string;
   active?: boolean;
-  /** BI-158. `null` unsets both columns; absent leaves them alone. */
-  consultation?: ConsultationMapping | null;
   /**
    * BI-024. A review to record, or `null` to return the rate to pending;
    * absent leaves it alone. Written by the service, never taken from a body.
@@ -322,15 +313,11 @@ export interface BillingCatalogueRepository {
   deleteBillableService(serviceId: string): Promise<void>;
 
   /**
-   * BI-158. THE SERVICE THAT IS «THE CONSULTATION» of a specialty.
-   *
-   * `billable_service_one_per_consultation` makes the answer at most one row,
-   * which is what stops the proposal from having to pick — and «se coge la
-   * primera» is how a clinic charges the old consultation for months.
+   * BI-158, SP-031. THE SERVICE THAT IS «THE CONSULTATION» of a service type:
+   * its first (`position` 0). `service_type_billable_service_one_per_position`
+   * makes it at most one row, so the proposal never has to pick.
    */
-  findConsultationService(
-    mapping: ConsultationMapping,
-  ): Promise<ServiceMatch | null>;
+  findConsultationService(serviceTypeId: string): Promise<ServiceMatch | null>;
 
   /**
    * BI-151. `catalog_concept.id` → the service that charges for that

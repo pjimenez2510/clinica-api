@@ -131,6 +131,19 @@ export class ListServiceTypesQueryDto extends createZodDto(
 export const createServiceTypeSchema = z.object({
   name: serviceTypeNameSchema,
   durationMinutes: durationMinutesSchema,
+  /**
+   * SP-030. Its self-pay price from today, as decimal text (BI-001), or
+   * nothing: a type without a price proposes the consultation with «No hay
+   * precio vigente». Needs `billing:price-manage` (D-049).
+   */
+  price: z
+    .string()
+    .regex(
+      /^\d{1,10}(\.\d{1,2})?$/,
+      'El precio se escribe en dólares con dos decimales, por ejemplo 25.00',
+    ) // prettier-ignore
+    .nullable()
+    .default(null),
 });
 /** Body of POST /specialties/:id/service-types; the specialty is the route's. */
 export class CreateServiceTypeDto extends createZodDto(
@@ -161,6 +174,10 @@ export const serviceTypeSchema = z.object({
   name: z.string(),
   durationMinutes: z.number().int(),
   active: z.boolean(),
+  /** SP-031. Its first service, born with it; changing its price is `billing`'s. */
+  billableServiceId: z.uuid().nullable(),
+  /** SP-030. That service's self-pay price in force today, as decimal text. */
+  price: z.string().nullable(),
 });
 /** Response of creating and updating a type of attention. */
 export class ServiceTypeDto extends createZodDto(serviceTypeSchema) {}

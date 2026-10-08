@@ -43,6 +43,8 @@ const SERVICE_TYPE: ServiceTypeView = {
   name: 'Control',
   durationMinutes: 20,
   active: true,
+  billableServiceId: 'service-1',
+  price: '25.00',
 };
 
 /** What each test may tune before calling the service. */
@@ -142,7 +144,7 @@ describe('SpecialtiesService', () => {
       findSpecialty: SPECIALTY,
       findServiceType: SERVICE_TYPE,
       updateSpecialty: SPECIALTY,
-      updateServiceType: { ...SERVICE_TYPE, durationMinutes: 30 },
+      updateServiceType: { ...SERVICE_TYPE, durationMinutes: 30, price: null },
       deleteSpecialty: true,
       deleteServiceType: true,
       siteSlotAtoms: [10],
@@ -252,7 +254,12 @@ describe('SpecialtiesService', () => {
 
       await expect(
         service.createServiceType(
-          { specialtyId: 'missing', name: 'Control', durationMinutes: 20 },
+          {
+            specialtyId: 'missing',
+            name: 'Control',
+            durationMinutes: 20,
+            price: null,
+          },
           REQUESTER,
         ),
       ).rejects.toBeInstanceOf(SpecialtyNotFoundError);
@@ -277,22 +284,63 @@ describe('SpecialtiesService', () => {
       ]);
     });
 
+    it('SP-030 crea el tipo con su precio desde hoy en Ecuador y lo deja en la bitácora con su prestación', async () => {
+      // 03:00 UTC de cualquier día es aún el anterior en Guayaquil.
+      const now = new Date();
+      now.setUTCHours(3, 0, 0, 0);
+      const dayBefore = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10); // prettier-ignore
+      await service.createServiceType(
+        { specialtyId: SPECIALTY.id, name: 'Control', durationMinutes: 20, price: '25.00' }, // prettier-ignore
+        REQUESTER,
+        now,
+      );
+
+      expect(writes()).toEqual([
+        {
+          method: 'createServiceType',
+          args: [
+            {
+              specialtyId: SPECIALTY.id,
+              name: 'Control',
+              durationMinutes: 20,
+              price: '25.00',
+              today: dayBefore,
+            },
+          ],
+        },
+      ]);
+      expect(recorded[0]?.after).toMatchObject({
+        billableServiceId: 'service-1',
+      });
+    });
+
     it('SP-027 toda mutación de tipos de atención deja bitácora', async () => {
       await service.createServiceType(
-        { specialtyId: SPECIALTY.id, name: 'Control', durationMinutes: 20 },
+        {
+          specialtyId: SPECIALTY.id,
+          name: 'Control',
+          durationMinutes: 20,
+          price: null,
+        },
         REQUESTER,
       );
       await service.updateServiceType('type-1', { durationMinutes: 30 }, REQUESTER); // prettier-ignore
       await service.deleteServiceType('type-1', REQUESTER);
 
-      expect(recorded.map((entry) => entry.action)).toEqual([
+      const configuration = recorded.filter(
+        (entry) => entry.resourceType === 'configuration',
+      );
+      expect(configuration.map((entry) => entry.action)).toEqual([
         'CREATE',
         'UPDATE',
         'UPDATE',
       ]);
+      // BI-231. The service born with the type is in billing's trail.
       expect(
-        recorded.every((entry) => entry.resourceType === 'configuration'),
-      ).toBe(true);
+        recorded.filter((entry) => entry.resourceType === 'billable_service'),
+      ).toEqual([
+        expect.objectContaining({ action: 'CREATE', resourceId: 'service-1' }),
+      ]);
     });
 
     /**
@@ -303,7 +351,12 @@ describe('SpecialtiesService', () => {
       it('SP-021 rechaza al CREAR una duración que no es múltiplo, sin escribir', async () => {
         const rejection = await service
           .createServiceType(
-            { specialtyId: SPECIALTY.id, name: 'Control', durationMinutes: 25 },
+            {
+              specialtyId: SPECIALTY.id,
+              name: 'Control',
+              durationMinutes: 25,
+              price: null,
+            },
             REQUESTER,
           )
           .catch((error: unknown) => error);
@@ -336,14 +389,24 @@ describe('SpecialtiesService', () => {
 
         await expect(
           service.createServiceType(
-            { specialtyId: SPECIALTY.id, name: 'Control', durationMinutes: 20 },
+            {
+              specialtyId: SPECIALTY.id,
+              name: 'Control',
+              durationMinutes: 20,
+              price: null,
+            },
             REQUESTER,
           ),
         ).rejects.toBeInstanceOf(DurationNotSlotMultipleError);
 
         await expect(
           service.createServiceType(
-            { specialtyId: SPECIALTY.id, name: 'Control', durationMinutes: 30 },
+            {
+              specialtyId: SPECIALTY.id,
+              name: 'Control',
+              durationMinutes: 30,
+              price: null,
+            },
             REQUESTER,
           ),
         ).resolves.toBeDefined();
@@ -401,6 +464,7 @@ describe('SpecialtiesService', () => {
         name: 'Control',
         durationMinutes: 20,
         active: true,
+        billableServiceId: 'service-1',
       });
       expect(recorded[0]?.after).toMatchObject({ durationMinutes: 30 });
     });

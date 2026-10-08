@@ -332,6 +332,9 @@ export const DOMAIN_ERROR_CODES = [
   // ramificara por el mismo código tendría que leer el texto en español para
   // saber qué corregir.
   'DURATION_NOT_SLOT_MULTIPLE',
+  // SP-030 (D-179.3). El tipo de atención nace con su prestación, y no hay
+  // categoría de consultas activa o IVA de salud donde crearla (422).
+  'CONSULTATION_BILLING_UNAVAILABLE',
   // Organización, O1 y O2 (ADR-011). Los duplicados y los «en uso» son 409 y
   // los produce la base —índices únicos y FK RESTRICT—: el adaptador los
   // traduce por nombre de constraint al código que la spec fija. «En uso»
@@ -532,6 +535,9 @@ export const DOMAIN_ERROR_CODES = [
   'SERVICE_CATEGORY_INACTIVE',
   'SERVICE_CATEGORY_NOT_FOUND',
   'SERVICE_KIND_MISMATCH',
+  // D-179. El nombre y el tarifario de la prestación de un examen o de un
+  // tipo de atención se corrigen allí (409).
+  'SERVICE_NAMED_ELSEWHERE',
   'TAX_RATE_IN_USE',
   'TAX_RATE_NOT_FOUND',
   'TAX_RATE_REQUIRED',
@@ -1144,6 +1150,17 @@ export const DOMAIN_ERROR_CODES = [
   'EXAM_DEFINITION_NOT_FOUND',
   'EXAM_SERVICE_KIND_MISMATCH',
   'EXAM_SERVICE_NOT_FOUND',
+  // ─── Orders, E19 (D-179.1). Un examen, una prestación.
+  //   * `EXAM_SERVICE_TAKEN` (409) — ORD-162, ORD-163: la prestación ya cobra
+  //     otro examen (`exam_definition_one_per_service`).
+  //   * `EXAM_CODE_DUPLICATE` (409) — ORD-162: el examen nace con su
+  //     prestación, y su código se pregunta antes de escribirla.
+  //   * `EXAM_SERVICE_CATEGORY_NOT_FOUND` (422) y `EXAM_TAX_RATE_NOT_FOUND`
+  //     (422) — ORD-162: la categoría o el IVA de la prestación que nace.
+  'EXAM_SERVICE_TAKEN',
+  'EXAM_CODE_DUPLICATE',
+  'EXAM_SERVICE_CATEGORY_NOT_FOUND',
+  'EXAM_TAX_RATE_NOT_FOUND',
   'REFERENCE_RANGE_INVALID',
   'REFERENCE_RANGE_OVERLAP',
   // ─── Orders, E7 (ORD-043). Sacar un resultado huérfano de la cola.

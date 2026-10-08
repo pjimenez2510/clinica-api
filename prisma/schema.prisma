@@ -1545,10 +1545,6 @@ model Specialty {
 
   practitioners    PractitionerSpecialty[]
   serviceTypes     ServiceType[]
-  /// BI-158. The consultation services of this specialty, first-visit and
-  /// subsequent. `RESTRICT`: a specialty somebody charges for is deactivated,
-  /// never deleted.
-  billableServices BillableService[]
   /// EN-203. The note templates of this specialty (D-124).
   noteTemplates    ClinicalNoteTemplate[]
 
@@ -1597,8 +1593,31 @@ model ServiceType {
   /// AG-060. The same `RESTRICT`, for the people still waiting for that type:
   /// deleting it would leave them waiting for something that no longer exists.
   waitlistEntries    WaitlistEntry[]
+  /// SP-030, SP-031. What is charged for this type, in order.
+  billableServices   ServiceTypeBillableService[]
 
   @@map("service_type")
+}
+
+/// SP-031 (D-179.3). The services a service type charges for, in order. The
+/// one at `position` 0 is born with the type, renamed with it and proposed by
+/// caja (BI-158). One row per position
+/// (`service_type_billable_service_one_per_position`, in the migration).
+model ServiceTypeBillableService {
+  serviceTypeId String      @map("service_type_id") @db.Uuid
+  serviceType   ServiceType @relation(fields: [serviceTypeId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "service_type_billable_service_type_fk")
+
+  billableServiceId String          @map("billable_service_id") @db.Uuid
+  billableService   BillableService @relation(fields: [billableServiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "service_type_billable_service_service_fk")
+
+  position Int @default(0) @db.SmallInt
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([serviceTypeId, billableServiceId])
+  @@unique([serviceTypeId, position], map: "service_type_billable_service_one_per_position")
+  @@index([billableServiceId], map: "service_type_billable_service_by_service")
+  @@map("service_type_billable_service")
 }
 
 /// One practitioner's own duration for one service type (D-007, SP-022): the
@@ -3867,7 +3886,7 @@ model BillableService {
   /// Tarifario does NOT set what a private patient is charged, its scope having
   /// been narrowed by A.M. 0046-2017 to dealings inside the public network. It
   /// is kept because it is what makes billing TO that network possible.
-  tariffCode String? @map("tariff_code") @db.VarChar(16)
+  tariffCode String? @map("tariff_code") @db.VarChar(32)
 
   /// D-A-006: the rate is a property OF THE SERVICE, and editable.
   taxRateId String  @map("tax_rate_id") @db.Uuid
@@ -3879,26 +3898,10 @@ model BillableService {
   procedureConceptId String?         @map("procedure_concept_id") @db.Uuid
   procedureConcept   CatalogConcept? @relation(fields: [procedureConceptId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_procedure_fk")
 
-  /// BI-158. WHICH SERVICE IS «THE CONSULTATION» of a specialty, and whether
-  /// it is the first visit or a subsequent one.
-  ///
-  /// A ROW AND NOT A RULE OVER THE CODE. Reading `CONS-DER-PV` as «dermatology,
-  /// first visit» works with the seed and fails silently at the first clinic
-  /// that uses its own coding: the consultation charge would simply stop being
-  /// proposed, and an unbilled consultation raises no error at all — only less
-  /// money. Same reasoning as BI-005 on not inferring the tax rate.
-  ///
-  /// Both or neither (`billable_service_consultation_states_both`), and one
-  /// service per pair (`billable_service_one_per_consultation`, PARTIAL, in
-  /// the migration).
-  specialtyId   String?    @map("specialty_id") @db.Uuid
-  specialty     Specialty? @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_specialty_fk")
-  /// `FIRST_TIME` or `SUBSEQUENT`, as text and not as the clinical
-  /// `visit_sequence` enum: the economic catalogue must be able to evolve
-  /// without depending on a type of the clinical schema, and
-  /// `billable_service_visit_sequence_is_known` refuses anything else just as
-  /// early.
-  visitSequence String?    @map("visit_sequence") @db.VarChar(16)
+  /// BI-158, SP-031 (D-179.3). The service types this service charges for;
+  /// a consultation is born with its type and is not tied to a specialty by
+  /// hand any more.
+  serviceTypes ServiceTypeBillableService[]
 
   active    Boolean  @default(true)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -3906,6 +3909,7 @@ model BillableService {
 
   prices          Price[]
   chargeItems     ChargeItem[]
+  /// ORD-163. At most one (`exam_definition_one_per_service`).
   examDefinitions ExamDefinition[]
   /// WHO CHECKED THIS RATE, which is the whole point of D-A-006.
   ///
@@ -4495,16 +4499,9 @@ model ExamDefinition {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
   code String @unique(map: "exam_definition_code_unique") @db.VarChar(32)
-  name String @db.VarChar(200)
 
   /// ORD-097, ORD-101. An order only carries exams of its own category.
   category ServiceOrderCategory @default(LABORATORY)
-
-  /// ORD-004. The code of the tariff service this exam IS. A code and not a
-  /// concept id because the tariff is versioned: the concept in force on the
-  /// attention's clinical date is resolved when the order is placed. NULL means
-  /// the exam cannot be ordered yet.
-  tariffCode String? @map("tariff_code") @db.VarChar(32)
 
   /// The section of MSP form 010A this belongs to, so that a compliant order
   /// can be printed. That form binds the private sector too:
@@ -4529,10 +4526,12 @@ model ExamDefinition {
   externalLabName     String? @map("external_lab_name") @db.VarChar(160)
   externalLabCode     String? @map("external_lab_code") @db.VarChar(64)
 
-  /// What it costs — by pointing at the same four-piece model as everything
-  /// else. The price is NOT here; it is in a price list, per payer, per period.
-  billableServiceId String?          @map("billable_service_id") @db.Uuid
-  billableService   BillableService? @relation(fields: [billableServiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "exam_definition_service_fk")
+  /// ORD-162, ORD-163 (D-179.1). The service this exam IS: its NAME and its
+  /// TARIFF CODE (ORD-004) live there and nowhere else. Required, and one
+  /// service charges at most one exam (`exam_definition_one_per_service`, in
+  /// the migration). The price is not here either: a price list, per payer.
+  billableServiceId String          @unique(map: "exam_definition_one_per_service") @map("billable_service_id") @db.Uuid
+  billableService   BillableService @relation(fields: [billableServiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "exam_definition_service_fk")
 
   active    Boolean  @default(true)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

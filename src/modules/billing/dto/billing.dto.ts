@@ -20,7 +20,6 @@ import {
   CHARGE_ORIGINS,
   PROPOSAL_SKIP_REASONS,
 } from '../domain/charge-proposal';
-import { VISIT_SEQUENCES } from '../domain/clinical-acts.port';
 
 /**
  * The billing contract, requests and responses.
@@ -116,7 +115,7 @@ export const createServiceSchema = z.object({
   /** BI-185. A row of the catalogue, never free text. */
   categoryId: z.uuid('Seleccione la categoría'),
   /** BI-011. Nomenclature only: no amount is ever taken from the Tarifario. */
-  tariffCode: z.string().trim().max(16).nullish(),
+  tariffCode: z.string().trim().max(32).nullish(),
   taxRateId: z.uuid('Seleccione la tarifa de impuesto que aplica'),
 });
 /** Body of POST /billing/services (`billing:price-manage`, clinic-wide). */
@@ -125,29 +124,11 @@ export class CreateServiceDto extends createZodDto(createServiceSchema) {}
 export const updateServiceSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   categoryId: z.uuid('Seleccione la categoría').optional(),
-  tariffCode: z.string().trim().max(16).nullish(),
+  tariffCode: z.string().trim().max(32).nullish(),
   taxRateId: z.uuid('Seleccione la tarifa de impuesto que aplica').optional(),
   active: z.boolean().optional(),
-  /**
-   * BI-158. Declares this service to be THE CONSULTATION of a specialty.
-   *
-   * A PAIR OR `null`, never half of one, and it arrives as an object for the
-   * same reason `finalConsumer` does: two independent optional fields would
-   * let a client send the specialty and forget the sequence, and the refusal
-   * would come from a database CHECK instead of from a field-level message.
-   *
-   * `null` clears it. Omitting it leaves whatever was there — a `PATCH` that
-   * reset the mapping every time somebody renamed a service would take the
-   * consultation off the proposal without anybody noticing.
-   */
-  consultation: z
-    .object({
-      specialtyId: z.uuid('Seleccione la especialidad'),
-      visitSequence: z.enum(VISIT_SEQUENCES, {
-        error: 'Valores admitidos: FIRST_TIME, SUBSEQUENT',
-      }),
-    })
-    .nullish(),
+  // BI-187 (D-179.3). No `consultation` any more: a consultation service is
+  // born with its service type (SP-030) and tied from there.
 });
 /** Body of PATCH /billing/services/:serviceId. */
 export class UpdateServiceDto extends createZodDto(updateServiceSchema) {}
@@ -540,9 +521,10 @@ const serviceResponseSchema = z.object({
   taxSriCode: z.string(),
   taxPercentage: z.string().nullable(),
   active: z.boolean(),
-  /** BI-158. Which consultation this service IS, when it is one. */
-  specialtyId: z.uuid().nullable(),
-  visitSequence: z.enum(VISIT_SEQUENCES).nullable(),
+  /** BI-158, BI-188, SP-031. The service types it charges for, when a consultation. */
+  serviceTypes: z.array(
+    z.object({ id: z.uuid(), name: z.string(), specialtyName: z.string() }),
+  ),
   /** BI-022 to BI-024. Who checked the tax rate and when; `null` = pending. */
   taxReview: z
     .object({

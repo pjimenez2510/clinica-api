@@ -101,6 +101,18 @@ AD-10 del inventario de D-126 y D-127.
 **Prueba independiente:** renombrar una especialidad y leer en la bitácora el nombre anterior.
 **Cubre:** SP-029. **Solo servidor:** SP-029.
 
+### C6 — El tipo de atención es lo que se cobra _(P1, 07-10-2026)_
+
+D-179.3, aceptada por el autor. El tipo de atención se crea con nombre,
+duración y un solo precio, en una fila; su prestación nace detrás y caja
+propone ese precio para las citas de ese tipo (BI-158).
+
+**Prueba independiente:** crear «Control prenatal» en Ginecología con 20
+minutos y 25,00: Prestaciones y precios lo lista con ese precio en la lista
+particular sin haberlo escrito allí; renombrarlo renombra su prestación; una
+cita de ese tipo llega a caja con la consulta de 25,00 propuesta.
+**Cubre:** SP-030, SP-031. **Solo servidor:** SP-031.
+
 **Prueba independiente:** proponer la duración de un especialidad·tipo para un
 médico con y sin excepción contra PostgreSQL real, reservar con esa duración y
 comprobar que el tipo queda en la fila de la cita, y que borrar ese tipo se
@@ -334,6 +346,36 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   > incoherencia en vez de impedirla, y un aviso que ya no puede dispararse sólo
   > enseña a saltarse los que sí.
 
+- **SP-030** — CUANDO se cree un tipo de atención, el sistema DEBERÁ crear en
+  la misma transacción su prestación de cobro —en una categoría activa de
+  clase `CONSULTATION`, con el IVA de servicios de salud (código SRI `0`) sin
+  revisar y nombrada «<especialidad> · <tipo>»— y, si se indica un precio, su
+  precio en la lista particular vigente desde el día de hoy en Ecuador; CUANDO
+  se renombre el tipo DEBERÁ renombrar esa prestación; CUANDO se borre el tipo
+  DEBERÁ desactivar la prestación que ya no cobre ningún otro tipo; y DEBERÁ
+  servir con cada tipo su prestación y el precio particular vigente hoy; y
+  CUANDO se edite un tipo que no tiene prestación (uno anterior a D-179),
+  DEBERÁ crearle la suya, sin precio. La prestación que nace DEBERÁ quedar en
+  la bitácora de facturación (`billable_service`) con su precio. SI no
+  hay ninguna categoría activa de clase consulta o ningún IVA de código `0`,
+  ENTONCES DEBERÁ rechazarlo con `CONSULTATION_BILLING_UNAVAILABLE`; y SI trae
+  precio y quien lo crea no tiene `billing:price-manage` en toda la clínica,
+  con `SITE_SCOPE_DENIED` sin crear nada.
+  > D-179.3. Antes la prestación se ataba a mano a la especialidad y a
+  > primera vez o subsecuente (BI-158 en su versión anterior), en otra
+  > pantalla y con otro nombre. El precio se **cambia** después por la ruta
+  > de precios de `billing`, que es la que cierra y abre vigencias
+  > (BI-041 a BI-048); este módulo sólo escribe el primero. El IVA por defecto
+  > no es una clasificación fiscal: queda sin revisar, como el de la semilla
+  > (D-A-006).
+- **SP-031** — El sistema DEBERÁ admitir más de una prestación por tipo de
+  atención, en orden (`service_type_billable_service.position`), y la primera
+  DEBERÁ ser la que nace con el tipo, la que se renombra con él, la que
+  muestra la pantalla y la que caja propone (BI-158).
+  > Como Cliniko («billable items» por tipo de cita): una consulta más un
+  > procedimiento fijo. La pantalla no lo ofrece todavía; el modelo no habrá
+  > que rehacerlo el día que se pida.
+
 ---
 
 ### Editar en el sitio (D-126, D-127)
@@ -359,6 +401,7 @@ una prueba comprueba que ninguna clase de error inventa un código fuera de él.
 | `SPECIALTY_NOT_FOUND`      | 404  | La especialidad indicada no existe                               |
 | `SERVICE_TYPE_NOT_FOUND`   | 404  | El tipo de atención indicado no existe                           |
 | `DURATION_NOT_SLOT_MULTIPLE` | 422 | La duración no es múltiplo del turno de la agenda (SP-021, SP-022) |
+| `CONSULTATION_BILLING_UNAVAILABLE` | 422 | No hay categoría activa de clase consulta, o IVA de salud, para crear la prestación del tipo (SP-030) |
 
 
 `PRACTITIONER_NOT_FOUND`, `PRIMARY_SPECIALTY_REQUIRED` y `SPECIALTY_INACTIVE`

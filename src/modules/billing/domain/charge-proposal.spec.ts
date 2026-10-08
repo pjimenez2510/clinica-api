@@ -34,7 +34,7 @@ const acts = (overrides: Partial<EncounterActs> = {}): EncounterActs => ({
   status: 'DISCHARGED',
   serviceDate: VISIT_DATE,
   visitSequence: 'FIRST_TIME',
-  specialtyId: DERMATOLOGY,
+  serviceTypeId: DERMATOLOGY,
   procedures: [],
   exams: [],
   clinicallyAttended: true,
@@ -148,11 +148,9 @@ describe('BI-151 el costo sale de lo que realmente se hizo', () => {
 });
 
 describe('BI-158 la consulta se resuelve por dato, nunca por el nombre', () => {
-  it('BI-158 pide la consulta por especialidad y tipo de visita', () => {
-    expect(consultationKeyOf(acts({ visitSequence: 'SUBSEQUENT' }))).toEqual({
-      specialtyId: DERMATOLOGY,
-      visitSequence: 'SUBSEQUENT',
-    });
+  it('BI-158 pide la consulta por el tipo de atención de la cita, sea primera vez o subsecuente', () => {
+    expect(consultationKeyOf(acts({ visitSequence: 'SUBSEQUENT' }))).toBe(DERMATOLOGY); // prettier-ignore
+    expect(consultationKeyOf(acts({ visitSequence: 'FIRST_TIME' }))).toBe(DERMATOLOGY); // prettier-ignore
   });
 
   it('BI-158 no propone consulta cuando la atención no dice de qué especialidad es', () => {
@@ -160,12 +158,12 @@ describe('BI-158 la consulta se resuelve por dato, nunca por el nombre', () => {
     // from. The answer is a proposal with one line missing — never a guess: a
     // wrong specialty is a wrong price on an invoice nobody can correct.
     const proposal = proposeCharges(
-      acts({ specialtyId: null }),
+      acts({ serviceTypeId: null }),
       mapping(),
       nothingCharged(),
     );
 
-    expect(consultationKeyOf(acts({ specialtyId: null }))).toBeNull();
+    expect(consultationKeyOf(acts({ serviceTypeId: null }))).toBeNull();
     expect(proposal.proposed).toEqual([]);
     expect(proposal.skipped).toEqual([
       expect.objectContaining({

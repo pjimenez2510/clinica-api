@@ -22,6 +22,7 @@ import {
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { assertClinicWideScope } from '../../shared/authorisation/site-scope';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -145,7 +146,7 @@ export class SpecialtiesController {
     return { items };
   }
 
-  /** SP-020. */
+  /** SP-020, SP-030. */
   @Post(':id/service-types')
   @RequirePermission('config:manage', 'global')
   @HttpCode(HttpStatus.CREATED)
@@ -156,11 +157,20 @@ export class SpecialtiesController {
     @Body() dto: CreateServiceTypeDto,
     @Req() req: Request,
   ): Promise<ServiceTypeResponse> {
+    // SP-030 (D-049). A price moves money: only with `billing:price-manage`
+    // over the whole clinic, checked before anything is written.
+    if (dto.price !== null) {
+      assertClinicWideScope(
+        this.currentUser.requirePrincipal(),
+        'billing:price-manage',
+      );
+    }
     return this.specialties.createServiceType(
       {
         specialtyId: id,
         name: dto.name,
         durationMinutes: dto.durationMinutes,
+        price: dto.price,
       },
       this.requester(req),
     );

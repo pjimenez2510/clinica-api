@@ -11,7 +11,6 @@ import { PrismaBillingAccountRepository } from '../../src/modules/billing/infras
 import { PrismaBillingCatalogueRepository } from '../../src/modules/billing/infrastructure/prisma-billing-catalogue.repository';
 import { PrismaClinicalActsRepository } from '../../src/modules/billing/infrastructure/prisma-clinical-acts.repository';
 import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
-import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -78,22 +77,22 @@ beforeEach(async () => {
     data: { practitionerId: practitioner.id, siteId: site.id },
   });
 
-  // The specialty EXISTS BEFORE the billing seed runs, which is what lets
-  // `linkConsultation` tie `CONS-DER-PV` to it. That order is the real one: a
-  // clinic seeds its specialties before its price list.
+  // The specialty and its «Primera vez» EXIST BEFORE the billing seed runs,
+  // which is what lets `linkServiceType` tie `CONS-DER-PV` to that type
+  // (BI-158, SP-031). That order is the real one: a clinic seeds its
+  // specialties before its price list.
   const specialty = await prisma.specialty.create({
     data: { code: DERMATOLOGY, name: 'Dermatología' },
   });
-
-  await seedBilling(prisma);
-
   const serviceType = await prisma.serviceType.create({
     data: {
       specialtyId: specialty.id,
-      name: 'Consulta dermatológica',
+      name: 'Primera vez',
       durationMinutes: 30,
     },
   });
+
+  await seedBilling(prisma);
 
   // The appointment is what says WHICH SPECIALTY this visit was, and it is the
   // only place that says it: a practitioner registered under two specialties
@@ -471,44 +470,39 @@ describe('BI-153 una línea no puede decir que viene de un acto que no señala',
 });
 
 describe('BI-158 qué prestación es «la consulta» es un dato, no una regla', () => {
-  it('BI-158 la siembra ata la consulta de dermatología a su especialidad', async () => {
-    const service = await context.prisma.billableService.findUniqueOrThrow({
-      where: { code: CONSULTATION_CODE },
-    });
+  it('BI-158 la siembra ata la consulta de dermatología a su tipo de atención', async () => {
+    const link =
+      await context.prisma.serviceTypeBillableService.findFirstOrThrow({
+        where: { billableService: { code: CONSULTATION_CODE } },
+        select: { position: true, serviceType: { select: { name: true } } },
+      });
 
-    expect(service.visitSequence).toBe('FIRST_TIME');
-    expect(service.specialtyId).not.toBeNull();
+    expect(link).toEqual({ position: 0, serviceType: { name: 'Primera vez' } });
   });
 
-  it('BI-158 la base admite UNA prestación por especialidad y tipo de visita', async () => {
-    // «Se coge la primera» es como una clínica cobra la consulta vieja durante
-    // meses sin que nada falle.
-    const service = await context.prisma.billableService.findUniqueOrThrow({
-      where: { code: CONSULTATION_CODE },
+  it('SP-031 la base admite UNA prestación por posición de un tipo, y varias en posiciones distintas', async () => {
+    // «Se coge la primera» tiene que tener una sola respuesta.
+    const { serviceTypeId } =
+      await context.prisma.serviceTypeBillableService.findFirstOrThrow({
+        where: { billableService: { code: CONSULTATION_CODE } },
+      });
+    const other = await context.prisma.billableService.findUniqueOrThrow({
+      where: { code: 'CONS-MG-PV' },
     });
 
     await expect(
-      context.prisma.billableService.update({
-        where: { code: 'CONS-MG-PV' },
-        data: {
-          specialtyId: service.specialtyId,
-          visitSequence: 'FIRST_TIME',
-        },
+      context.prisma.serviceTypeBillableService.create({
+        data: { serviceTypeId, billableServiceId: other.id, position: 0 },
       }),
-    ).rejects.toBeDefined();
-  });
-
-  it('BI-158 la base rechaza media correspondencia', async () => {
-    const rejection = await context.prisma.billableService
-      .update({
-        where: { code: 'CONS-MG-SUB' },
-        data: { visitSequence: 'SUBSEQUENT' },
-      })
-      .catch((error: unknown) => extractDatabaseProblem(error));
-
-    expect(rejection).toMatchObject({
-      code: 'CONSULTATION_MAPPING_INCOMPLETE',
-    });
+    ).rejects.toThrow(
+      /service_type_billable_service_one_per_position|`service_type_id`,`position`/,
+    );
+    // Control positivo: en la segunda posición, sí (consulta + procedimiento).
+    await expect(
+      context.prisma.serviceTypeBillableService.create({
+        data: { serviceTypeId, billableServiceId: other.id, position: 1 },
+      }),
+    ).resolves.toBeDefined();
   });
 
   it('BI-158, BI-155 sin especialidad no propone consulta, y lo dice', async () => {
@@ -534,7 +528,7 @@ describe('BI-158 qué prestación es «la consulta» es un dato, no una regla', 
   });
 });
 
-describe('BI-203 corregir primera vez o subsecuente re-tarifa la consulta sin facturar', () => {
+describe('BI-203 la consulta sin facturar se vuelve a resolver desde el tipo de la cita', () => {
   function repricer(): ChargeCorrectionService {
     const asService = context.prisma as unknown as PrismaService;
     return new ChargeCorrectionService(
@@ -557,6 +551,28 @@ describe('BI-203 corregir primera vez o subsecuente re-tarifa la consulta sin fa
     });
   }
 
+  /** SP-031. The appointment's type is now charged with `code`. */
+  async function retieTypeTo(code: string): Promise<void> {
+    const link =
+      await context.prisma.serviceTypeBillableService.findFirstOrThrow({
+        where: { billableService: { code: CONSULTATION_CODE } },
+      });
+    const service = await context.prisma.billableService.findUniqueOrThrow({
+      where: { code },
+    });
+    await context.prisma.serviceTypeBillableService.delete({
+      where: {
+        serviceTypeId_billableServiceId: {
+          serviceTypeId: link.serviceTypeId,
+          billableServiceId: link.billableServiceId,
+        },
+      },
+    });
+    await context.prisma.serviceTypeBillableService.create({
+      data: { serviceTypeId: link.serviceTypeId, billableServiceId: service.id, position: 0 }, // prettier-ignore
+    });
+  }
+
   async function consultation() {
     return context.prisma.chargeItem.findFirstOrThrow({
       where: { encounterId: context.encounterId, origin: 'CONSULTATION' },
@@ -564,12 +580,28 @@ describe('BI-203 corregir primera vez o subsecuente re-tarifa la consulta sin fa
     });
   }
 
-  it('BI-203 la consulta propuesta pasa a la subsecuente con su precio y deja la versión', async () => {
+  it('BI-158 BI-203 corregir a subsecuente no cambia la consulta: la decide el tipo de la cita', async () => {
     await press();
-    // Positive control: before the correction the line is the first visit.
-    expect((await consultation()).billableService.code).toBe(CONSULTATION_CODE);
+    const before = await consultation();
 
     await correctToSubsequent();
+    await repricer().repriceConsultation({
+      encounterId: context.encounterId,
+      siteId: context.siteId,
+      changedById: context.userId,
+    });
+
+    const after = await consultation();
+    expect(after.billableService.code).toBe(CONSULTATION_CODE);
+    expect(after.unitAmount.toFixed(2)).toBe(before.unitAmount.toFixed(2));
+  });
+
+  it('BI-203 la consulta propuesta pasa a la nueva prestación de su tipo con su precio y deja la versión', async () => {
+    await press();
+    // Positive control: before the change the line is the type's first service.
+    expect((await consultation()).billableService.code).toBe(CONSULTATION_CODE);
+
+    await retieTypeTo('CONS-DER-SUB');
     await repricer().repriceConsultation({
       encounterId: context.encounterId,
       siteId: context.siteId,
@@ -587,9 +619,9 @@ describe('BI-203 corregir primera vez o subsecuente re-tarifa la consulta sin fa
     ).toBe(1);
   });
 
-  it('BI-203 sin precio para la subsecuente deja el cargo, y el extracto lo señala', async () => {
+  it('BI-203 sin precio para la nueva prestación del tipo deja el cargo, y el extracto lo señala', async () => {
     await press();
-    // The subsequent dermatology consultation loses its self-pay price.
+    // The type moves to a service with no self-pay price.
     const subsequent = await context.prisma.billableService.findUniqueOrThrow({
       where: { code: 'CONS-DER-SUB' },
     });
@@ -597,7 +629,7 @@ describe('BI-203 corregir primera vez o subsecuente re-tarifa la consulta sin fa
       where: { billableServiceId: subsequent.id },
     });
 
-    await correctToSubsequent();
+    await retieTypeTo('CONS-DER-SUB');
     await repricer().repriceConsultation({
       encounterId: context.encounterId,
       siteId: context.siteId,
@@ -629,7 +661,7 @@ describe('BI-203 corregir primera vez o subsecuente re-tarifa la consulta sin fa
       now: new Date(),
     });
 
-    await correctToSubsequent();
+    await retieTypeTo('CONS-DER-SUB');
     await repricer().repriceConsultation({
       encounterId: context.encounterId,
       siteId: context.siteId,

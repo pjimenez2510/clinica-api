@@ -175,9 +175,6 @@ export class BillingCatalogueController {
           tariffCode: dto.tariffCode,
           taxRateId: dto.taxRateId,
           active: dto.active,
-          // BI-158. The DTO always took it and nothing passed it on: the
-          // mapping could only be changed by the seed (found in B11).
-          consultation: dto.consultation,
         },
         requester,
       ),
@@ -467,10 +464,8 @@ function toServiceResponse(service: BillableServiceView): ServiceResponse {
     taxSriCode: service.taxSriCode,
     taxPercentage: service.taxPercentage?.toString() ?? null,
     active: service.active,
-    // BI-158. Which consultation this service IS, so administration can see
-    // and change it instead of the mapping living only in the seed.
-    specialtyId: service.specialtyId,
-    visitSequence: service.visitSequence,
+    // BI-188, SP-031. Which service types it charges for, read-only here.
+    serviceTypes: service.serviceTypes.map((type) => ({ ...type })),
     taxReview:
       service.taxReview === null
         ? null
