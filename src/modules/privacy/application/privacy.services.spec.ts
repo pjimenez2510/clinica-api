@@ -88,7 +88,7 @@ function requestRepository(
     find: vi.fn().mockResolvedValue(null),
     rightOf: vi.fn().mockResolvedValue(null),
     requestsOf: vi.fn().mockResolvedValue([]),
-    open: vi.fn().mockResolvedValue([]),
+    open: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     exportChart: vi.fn(),
     ...overrides,
   };
@@ -255,12 +255,13 @@ describe('DataSubjectRequestsService', () => {
     const yesterday: ClinicalDate = addDays(TODAY, -1);
     const service = newRequestsService(
       requestRepository({
-        open: vi
-          .fn()
-          .mockResolvedValue([
+        open: vi.fn().mockResolvedValue({
+          items: [
             requestView({ id: 'late', dueOn: yesterday }),
             requestView({ id: 'today', dueOn: TODAY }),
-          ]),
+          ],
+          total: 2,
+        }),
         requestsOf: vi.fn().mockResolvedValue([
           requestView({
             id: 'answered-late',
@@ -277,7 +278,12 @@ describe('DataSubjectRequestsService', () => {
       }),
     );
 
-    expect((await service.open(NOW)).map((r) => [r.id, r.isOverdue])).toEqual([
+    const open = await service.open(
+      { overdueOnly: false },
+      { page: 1, pageSize: 20 },
+      NOW,
+    );
+    expect(open.items.map((r) => [r.id, r.isOverdue])).toEqual([
       ['late', true],
       ['today', false],
     ]);

@@ -285,12 +285,27 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
     return this.views(this.prisma, rows);
   }
 
-  async open(): Promise<DataRequestView[]> {
-    const rows = await this.prisma.dataSubjectRequest.findMany({
-      where: { outcome: null },
-      orderBy: [{ dueOn: 'asc' }, { receivedAt: 'asc' }],
-    });
-    return this.views(this.prisma, rows);
+  async open(
+    filter: { right?: DataSubjectRight; dueBefore?: ClinicalDate },
+    page: { page: number; pageSize: number },
+  ): Promise<{ items: DataRequestView[]; total: number }> {
+    const where: Prisma.DataSubjectRequestWhereInput = {
+      outcome: null,
+      ...(filter.right ? { right: filter.right } : {}),
+      ...(filter.dueBefore
+        ? { dueOn: { lt: fromClinicalDate(filter.dueBefore) } }
+        : {}),
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.dataSubjectRequest.findMany({
+        where,
+        orderBy: [{ dueOn: 'asc' }, { receivedAt: 'asc' }, { id: 'asc' }],
+        skip: (page.page - 1) * page.pageSize,
+        take: page.pageSize,
+      }),
+      this.prisma.dataSubjectRequest.count({ where }),
+    ]);
+    return { items: await this.views(this.prisma, rows), total };
   }
 
   async exportChart(

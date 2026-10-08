@@ -285,8 +285,14 @@ export interface DataSubjectRequestRepository {
   rightOf(requestId: string): Promise<DataSubjectRight | null>;
   /** PD-036. */
   requestsOf(patientId: string): Promise<DataRequestView[]>;
-  /** PD-035. Unanswered, earliest due first. */
-  open(): Promise<DataRequestView[]>;
+  /**
+   * PD-035, PD-051. Unanswered, earliest due first, one page at a time;
+   * `dueBefore` keeps only those due before that day (the overdue ones).
+   */
+  open(
+    filter: { right?: DataSubjectRight; dueBefore?: ClinicalDate },
+    page: { page: number; pageSize: number },
+  ): Promise<{ items: DataRequestView[]; total: number }>;
   /**
    * PD-040, PD-041, PD-043. Reads the chart and its absorbed ones and writes
    * the `EXPORT` trail row in the same transaction: if the row cannot be

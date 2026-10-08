@@ -1,6 +1,8 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { explicitFlag } from '../../../shared/http/query-flag';
+
 import { DATA_REQUEST_TEXT_MAX_LENGTH } from '../application/data-subject-requests.service';
 import { DATA_SUBJECT_RIGHTS } from '../domain/legal-due-date';
 import {
@@ -219,6 +221,27 @@ export const dataRequestListSchema = z.object({
   items: z.array(dataRequestSchema).readonly(),
 });
 export class DataRequestListDto extends createZodDto(dataRequestListSchema) {}
+
+/** PD-051. Query of GET /privacy/requests. */
+export const openRequestsQuerySchema = z.object({
+  right: z.enum(DATA_SUBJECT_RIGHTS).optional(),
+  /** Only those already overdue. */
+  overdue: explicitFlag,
+  page: z.coerce.number().int().min(1).default(1),
+  /** ESTANDAR-UI §12.7: 20, 50 or 100. */
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+export class OpenRequestsQueryDto extends createZodDto(
+  openRequestsQuerySchema,
+) {}
+
+/** PD-035, PD-051. Response of GET /privacy/requests: one page and the total. */
+export const openRequestsPageSchema = dataRequestListSchema.extend({
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+});
+export class OpenRequestsPageDto extends createZodDto(openRequestsPageSchema) {}
 
 /** PD-049. The answer proposed for an access or portability request. */
 export const answerProposalSchema = z.object({

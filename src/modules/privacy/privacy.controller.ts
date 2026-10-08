@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   Res,
 } from '@nestjs/common';
@@ -47,6 +48,8 @@ import {
   DataRequestDto,
   DataRequestListDto,
   EditDataRequestDto,
+  OpenRequestsPageDto,
+  OpenRequestsQueryDto,
   PatientConsentDto,
   PatientConsentListDto,
   PublishConsentTextDto,
@@ -234,13 +237,25 @@ export class PrivacyController {
   @Get('requests')
   @RequirePermission('patient:data-requests', 'global')
   @ApiOperation({ summary: 'Solicitudes abiertas, por vencimiento' })
-  @ApiOkResponse({ type: DataRequestListDto })
-  async open(): Promise<{ items: DataRequestResponse[] }> {
+  @ApiOkResponse({ type: OpenRequestsPageDto })
+  async open(@Query() query: OpenRequestsQueryDto): Promise<{
+    items: DataRequestResponse[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
     // WITHOUT THE FREE TEXT. What a patient asked, and what was answered, can
     // carry health data; reading it is a READ of that chart (see `requestsOf`).
     // This list is for ordering the work by due date across the clinic
     // (REQ-111), so it says who, what right and when — and nothing written.
-    const items = await this.requests.open();
+    const { page, pageSize } = query;
+    const { items, total } = await this.requests.open(
+      {
+        ...(query.right ? { right: query.right } : {}),
+        overdueOnly: query.overdue,
+      },
+      { page, pageSize },
+    );
     return {
       items: items.map((entry) => ({
         ...requestResponse(entry),
@@ -248,6 +263,9 @@ export class PrivacyController {
         answer: null,
         previousAnswers: [],
       })),
+      total,
+      page,
+      pageSize,
     };
   }
 

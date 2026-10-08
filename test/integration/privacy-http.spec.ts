@@ -1373,6 +1373,45 @@ describe('privacy por HTTP', () => {
       ]);
     });
 
+    it('PD-051 las abiertas se filtran por derecho y por vencidas, y llegan por páginas con el total', async () => {
+      const [a, b, c] = await Promise.all([
+        createPatient(prisma),
+        createPatient(prisma),
+        createPatient(prisma),
+      ]);
+      const late = (
+        await register(a.id, {
+          right: 'ACCESS',
+          receivedAt: new Date(Date.now() - 30 * DAY_MS).toISOString(),
+        }).expect(201)
+      ).body as RequestBody;
+      const access = (await register(b.id, { right: 'ACCESS' }).expect(201))
+        .body as RequestBody;
+      const rectification = (
+        await register(c.id, { right: 'RECTIFICATION' }).expect(201)
+      ).body as RequestBody;
+      type Page = { items: RequestBody[]; total: number; pageSize: number };
+      const ids = (body: unknown) => (body as Page).items.map((r) => r.id);
+
+      // Control: without filters, all three, earliest due first.
+      const all = await get('/requests').expect(200);
+      expect(ids(all.body)).toEqual([late.id, access.id, rectification.id]);
+      expect((all.body as Page).total).toBe(3);
+
+      const byRight = await get('/requests?right=ACCESS').expect(200);
+      expect(ids(byRight.body)).toEqual([late.id, access.id]);
+
+      const overdue = await get('/requests?overdue=true').expect(200);
+      expect(ids(overdue.body)).toEqual([late.id]);
+      expect((overdue.body as Page).items[0]!.isOverdue).toBe(true);
+
+      const second = await get('/requests?page=2&pageSize=2').expect(200);
+      expect(ids(second.body)).toEqual([rectification.id]);
+      expect((second.body as Page).total).toBe(3);
+
+      await get('/requests?pageSize=101').expect(422);
+    });
+
     it('PD-036 la ficha superviviente muestra las solicitudes de la absorbida', async () => {
       const { survivor, absorbed } = await mergedPair();
       const created = (
