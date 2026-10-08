@@ -200,8 +200,11 @@ describe('la referencia y la interconsulta por HTTP, con sesiones reales (EN-100
     it('EN-100 EN-101 EN-104 EN-106 la referencia nace con su 053 firmado en la misma transacción, con su huella y los diagnósticos del momento', async () => {
       const encounterId = await openEncounter();
       await createDiagnosis(prisma, encounterId, 'R07.4', 'Dolor torácico, no especificado'); // prettier-ignore
+      const cardiology = await prisma.specialty.create({
+        data: { code: 'CARDIOLOGY_H8', name: 'Cardiología' },
+      });
 
-      const issued = await issue(encounterId);
+      const issued = await issue(encounterId, { ...REFERRAL, specialtyId: cardiology.id }); // prettier-ignore
       expect(issued.status).toBe('ISSUED');
 
       const note = await prisma.clinicalNote.findUniqueOrThrow({
@@ -217,6 +220,7 @@ describe('la referencia y la interconsulta por HTTP, con sesiones reales (EN-100
       expect(note.content).toMatchObject({
         tipo: 'Referencia',
         establecimientoDestino: 'Hospital General de Chone (UNICÓDIGO 05176)',
+        especialidad: 'Cardiología',
         prioridad: 'Urgente',
         motivo: REFERRAL.reason,
         diagnosticos: 'R07.4 Dolor torácico, no especificado (principal)',
@@ -235,6 +239,8 @@ describe('la referencia y la interconsulta por HTTP, con sesiones reales (EN-100
       expect(sheet.body).toMatchObject({
         referrals: [{ id: issued.id, direction: 'REFERRAL', destination: REFERRAL.destination }], // prettier-ignore
         interconsultations: [],
+        // REQ-149. The list to name the destination's specialty.
+        specialties: expect.arrayContaining([{ id: cardiology.id, name: 'Cardiología' }]), // prettier-ignore
       });
       expect(await trail('referral', encounterId, 'READ')).toBe(1);
     });

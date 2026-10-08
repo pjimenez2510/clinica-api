@@ -186,6 +186,8 @@ export const referralSheetSchema = z.object({
       issuedAt: z.iso.datetime(),
     }),
   ),
+  /** REQ-149. The clinic's active specialties, to name the destination's. */
+  specialties: z.array(z.object({ id: z.uuid(), name: z.string() })),
 });
 export class ReferralSheetDto extends createZodDto(referralSheetSchema) {}
 export type ReferralSheetResponse = z.infer<typeof referralSheetSchema>;

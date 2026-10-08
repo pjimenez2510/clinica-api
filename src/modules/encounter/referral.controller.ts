@@ -81,6 +81,7 @@ export class ReferralController {
         reason: row.reason,
         issuedAt: row.issuedAt.toISOString(),
       })),
+      specialties: [...sheet.specialties],
     };
   }
 

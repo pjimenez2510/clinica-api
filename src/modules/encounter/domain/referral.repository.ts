@@ -68,6 +68,11 @@ export interface ReferralSheet {
   referrals: readonly ReferralView[];
   interconsultations: readonly InterconsultationView[];
   answerable: readonly AnswerableReferral[];
+  /**
+   * The clinic's active specialties (REQ-149), to name the destination's: the
+   * doctor does not hold `config:read`, and the form needs the list.
+   */
+  specialties: readonly { id: string; name: string }[];
 }
 
 /** Who signs what is issued, and when, from the app's clock. */

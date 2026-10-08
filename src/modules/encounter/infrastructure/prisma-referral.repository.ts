@@ -105,37 +105,43 @@ export class PrismaReferralRepository implements ReferralRepository {
     });
     if (!encounter) return null;
 
-    const [referrals, interconsultations, answerable] = await Promise.all([
-      this.prisma.referral.findMany({
-        where: { encounterId: encounter.id },
-        select: REFERRAL_SELECT,
-        orderBy: { issuedAt: 'asc' },
-      }),
-      this.prisma.interconsultation.findMany({
-        where: { encounterId: encounter.id },
-        select: INTERCONSULTATION_SELECT,
-        orderBy: { requestedAt: 'asc' },
-      }),
-      this.prisma.referral.findMany({
-        where: {
-          // PA-055. The person's referrals, from any of her charts.
-          ...chartScope(encounter.patientId),
-          direction: { in: [...ANSWERABLE_DIRECTIONS] },
-          status: { not: 'CANCELLED' },
-          responses: { none: { status: { not: 'CANCELLED' } } },
-          encounter: siteFilter(query.sites),
-        },
-        select: {
-          id: true,
-          direction: true,
-          destinationName: true,
-          reason: true,
-          issuedAt: true,
-        },
-        orderBy: { issuedAt: 'desc' },
-        take: 20,
-      }),
-    ]);
+    const [referrals, interconsultations, answerable, specialties] =
+      await Promise.all([
+        this.prisma.referral.findMany({
+          where: { encounterId: encounter.id },
+          select: REFERRAL_SELECT,
+          orderBy: { issuedAt: 'asc' },
+        }),
+        this.prisma.interconsultation.findMany({
+          where: { encounterId: encounter.id },
+          select: INTERCONSULTATION_SELECT,
+          orderBy: { requestedAt: 'asc' },
+        }),
+        this.prisma.referral.findMany({
+          where: {
+            // PA-055. The person's referrals, from any of her charts.
+            ...chartScope(encounter.patientId),
+            direction: { in: [...ANSWERABLE_DIRECTIONS] },
+            status: { not: 'CANCELLED' },
+            responses: { none: { status: { not: 'CANCELLED' } } },
+            encounter: siteFilter(query.sites),
+          },
+          select: {
+            id: true,
+            direction: true,
+            destinationName: true,
+            reason: true,
+            issuedAt: true,
+          },
+          orderBy: { issuedAt: 'desc' },
+          take: 20,
+        }),
+        this.prisma.specialty.findMany({
+          where: { active: true },
+          select: { id: true, name: true },
+          orderBy: { name: 'asc' },
+        }),
+      ]);
 
     return {
       referrals: referrals.map(toReferralView),
@@ -147,6 +153,7 @@ export class PrismaReferralRepository implements ReferralRepository {
         reason: row.reason,
         issuedAt: row.issuedAt,
       })),
+      specialties,
     };
   }
 
