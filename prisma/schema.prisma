@@ -752,6 +752,38 @@ enum ViolenceType {
   @@map("violence_type")
 }
 
+/// EN-074. «Lesiones por presunta violencia», instructivo del RDACAA (p. 49):
+/// 1 daño · 2 enfermedad · 3 incapacidad (reposo de más de 3 días).
+enum ViolenceInjury {
+  DAMAGE
+  ILLNESS
+  DISABILITY
+
+  @@map("violence_injury")
+}
+
+/// EN-074. «Identifica al presunto agresor»: 1 sí · 2 no · 3 no sabe / no responde.
+enum AggressorIdentified {
+  YES
+  NO
+  UNKNOWN
+
+  @@map("aggressor_identified")
+}
+
+/// EN-074. «Parentesco con el agresor»: 1 amigo · 2 conocido · 3 desconocido ·
+/// 4 familiar · 5 vecino · 6 no sabe / no responde.
+enum AggressorRelationship {
+  FRIEND
+  ACQUAINTANCE
+  STRANGER
+  RELATIVE
+  NEIGHBOUR
+  UNKNOWN
+
+  @@map("aggressor_relationship")
+}
+
 enum PrescriptionStatus {
   DRAFT
   ACTIVE
@@ -1524,6 +1556,9 @@ model Practitioner {
   /// substitute closure be seen at all.
   encountersClosed Encounter[] @relation("EncounterCloser")
 
+  /// EN-076. Who applied each screening of block F.
+  violenceScreenings ViolenceScreening[]
+
   @@map("practitioner")
 }
 
@@ -1543,10 +1578,10 @@ model Specialty {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  practitioners    PractitionerSpecialty[]
-  serviceTypes     ServiceType[]
+  practitioners PractitionerSpecialty[]
+  serviceTypes  ServiceType[]
   /// EN-203. The note templates of this specialty (D-124).
-  noteTemplates    ClinicalNoteTemplate[]
+  noteTemplates ClinicalNoteTemplate[]
 
   @@map("specialty")
 }
@@ -2902,28 +2937,54 @@ model EncounterPriorityGroup {
   @@map("encounter_priority_group")
 }
 
-/// RDACAA violence screening.
+/// RDACAA violence screening — block F of form 002 (EN-070 to EN-078).
 ///
-/// Its own table, not four columns on `encounter`, because its access regime
-/// differs: it is the most sensitive item in the record. A table can be REVOKEd
-/// TODO: no REVOKE, no separate permission and no distinct flow exists yet.
-/// The separation is a design intent, not a property the schema currently has.
-/// and audited separately; a column cannot without column-level grants.
+/// Its own table, not columns on `encounter`, because its access regime
+/// differs: it is the most sensitive item in the record. The separation is
+/// enforced in the application, not by grants — the API connects as one
+/// database role:
+///
+///   - reading it needs `record:protected` on top of `record:read`, and
+///     without it the read OMITS it instead of refusing (EN-072);
+///   - it is read by ONE route, `GET /encounters/:id/screening`, which leaves
+///     one `access_audit` row per read (EN-075);
+///   - no listing, error or log carries it (EN-073).
+///
+/// ⚠️ WHOEVER ADDS THIS RELATION TO ANOTHER `select` REMOVES THAT DOOR WITHOUT
+/// ANYTHING FAILING. The defence is the integration test that asserts its
+/// absence on every other encounter response.
+///
+/// No row means «not answered yet» and the discharge refuses it (EN-240);
+/// `NOT_APPLIED` is an explicit answer — «no se aplicó» — and is the one that
+/// can be counted (EN-070). The CHECKs are in `20261008170000_violence_screening_block_f`.
 model ViolenceScreening {
   encounterId String    @id @map("encounter_id") @db.Uuid
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
 
   result ViolenceScreeningResult @default(NOT_APPLIED)
 
-  /// Several types can coexist in a single case.
+  /// Several types can coexist in a single case. At least one when positive,
+  /// none otherwise (EN-071, CHECK).
   types ViolenceType[]
 
-  screeningTool       String? @map("screening_tool") @db.VarChar(80)
-  actionTaken         String? @map("action_taken") @db.Text
+  screeningTool String? @map("screening_tool") @db.VarChar(80)
+  /// EN-077. Free text on purpose; mandatory when positive (CHECK).
+  actionTaken   String? @map("action_taken") @db.Text
+
+  /// EN-074. Only a positive screening can be notified (CHECK).
   reportedToAuthority Boolean @default(false) @map("reported_to_authority")
 
-  screenedById String?  @map("screened_by_id") @db.Uuid
-  screenedAt   DateTime @default(now()) @map("screened_at") @db.Timestamptz(6)
+  /// EN-074. Copied from the official notification form (Form. 094, D-052):
+  /// the four together and only when notified, blank otherwise (CHECK).
+  authorityFormSerial   String?                @map("authority_form_serial") @db.VarChar(40)
+  injury                ViolenceInjury?
+  aggressorIdentified   AggressorIdentified?   @map("aggressor_identified")
+  aggressorRelationship AggressorRelationship? @map("aggressor_relationship")
+
+  /// EN-076. Who and when: the question asked twelve months later is who.
+  screenedById String       @map("screened_by_id") @db.Uuid
+  screenedBy   Practitioner @relation(fields: [screenedById], references: [id], onDelete: Restrict)
+  screenedAt   DateTime     @default(now()) @map("screened_at") @db.Timestamptz(6)
 
   @@map("violence_screening")
 }
