@@ -13,7 +13,11 @@ import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
-import { addMonths, clinicalDateOf } from '../../src/shared/domain/clinic-time';
+import {
+  addDays,
+  addMonths,
+  clinicalDateOf,
+} from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -712,5 +716,78 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       .get(`/api/v1/billing/sites/${otherSiteId}/credit-notes`)
       .set('Authorization', `Bearer ${cashierToken}`);
     expect(elsewhere.status).toBe(403);
+  });
+
+  /** The ids a list answered, in its order. */
+  async function listed(
+    path: string,
+  ): Promise<{ ids: string[]; total: number }> {
+    const response = await api()
+      .get(`/api/v1/billing/sites/${siteId}/${path}`)
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .expect(200);
+    const body = response.body as { items: { id: string }[]; total: number };
+    return { ids: body.items.map((item) => item.id), total: body.total };
+  }
+
+  it('BI-233 las facturas de la sede se buscan por número, por comprador y por fecha, por páginas', async () => {
+    const first = await anInvoice({ authorised: false });
+    const second = await anInvoice({ authorised: false });
+    const finalConsumer = await anInvoice({
+      authorised: false,
+      finalConsumer: true,
+    });
+    // The first one, issued three days ago.
+    await prisma.invoice.update({
+      where: { id: first.invoiceId },
+      data: { issuedAt: new Date(Date.now() - 3 * 86_400_000) },
+    });
+
+    // Control: without filters, all three, the newest number first.
+    expect(await listed('invoices')).toEqual({
+      ids: [finalConsumer.invoiceId, second.invoiceId, first.invoiceId],
+      total: 3,
+    });
+    expect((await listed('invoices?search=2')).ids).toEqual([second.invoiceId]);
+    expect((await listed('invoices?search=001-001-000000003')).ids).toEqual([
+      finalConsumer.invoiceId,
+    ]);
+    expect((await listed('invoices?search=consumidor')).ids).toEqual([
+      finalConsumer.invoiceId,
+    ]);
+    expect((await listed('invoices?search=1710')).ids).toEqual([
+      second.invoiceId,
+      first.invoiceId,
+    ]);
+    expect((await listed(`invoices?from=${today()}`)).ids).toEqual([
+      finalConsumer.invoiceId,
+      second.invoiceId,
+    ]);
+    expect((await listed(`invoices?to=${addDays(today(), -1)}`)).ids).toEqual([
+      first.invoiceId,
+    ]);
+    expect(await listed('invoices?page=2&pageSize=2')).toEqual({
+      ids: [first.invoiceId],
+      total: 3,
+    });
+  });
+
+  it('BI-234 las notas de crédito se buscan con los mismos filtros, sobre la nota', async () => {
+    const { invoiceId } = await anInvoice();
+    const created = await correct(invoiceId, {
+      reasonCode: 'RECEIVER_DATA',
+    }).expect(201);
+    const noteId = (created.body as { creditNote: { id: string } }).creditNote
+      .id;
+
+    expect((await listed('credit-notes?search=guamán')).ids).toEqual([noteId]);
+    expect((await listed('credit-notes?search=1')).ids).toEqual([noteId]);
+    expect((await listed('credit-notes?search=consumidor')).ids).toEqual([]);
+    expect(
+      (await listed(`credit-notes?from=${today()}&to=${today()}`)).ids,
+    ).toEqual([noteId]);
+    expect(
+      (await listed(`credit-notes?from=${addDays(today(), 1)}`)).total,
+    ).toBe(0);
   });
 });

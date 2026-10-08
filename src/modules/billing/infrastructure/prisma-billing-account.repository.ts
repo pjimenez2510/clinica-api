@@ -5,6 +5,8 @@ import type {
   PatientAccount as PatientAccountRow,
   Prisma,
 } from '@prisma/client';
+import type { IssuedDocumentFilter } from '../domain/document-search';
+import { issuedDocumentWhere } from './document-search.where';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
@@ -1000,12 +1002,25 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   async listInvoices(query: {
     siteId: string;
     accountId?: string;
-  }): Promise<InvoiceView[]> {
-    const rows = await this.prisma.invoice.findMany({
-      where: { siteId: query.siteId, accountId: query.accountId },
-      orderBy: { sequential: 'desc' },
-    });
-    return rows.map(toInvoiceView);
+    filter: IssuedDocumentFilter;
+    page: number;
+    pageSize: number;
+  }): Promise<{ items: InvoiceView[]; total: number }> {
+    const where: Prisma.InvoiceWhereInput = {
+      siteId: query.siteId,
+      accountId: query.accountId,
+      ...issuedDocumentWhere(query.filter),
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where,
+        orderBy: [{ sequential: 'desc' }, { id: 'desc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.invoice.count({ where }),
+    ]);
+    return { items: rows.map(toInvoiceView), total };
   }
 }
 

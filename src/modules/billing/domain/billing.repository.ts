@@ -5,6 +5,7 @@ import type { InvoiceReceiver, InvoiceStatus, PaymentMethod } from './invoice';
 import type { Money, Percentage, Quantity } from './money';
 import type { PatientIdentity } from './patient-identity';
 import type { PriceChange, PriceRow, ValidityPeriod } from './price-list';
+import type { IssuedDocumentFilter } from './document-search';
 
 /**
  * What billing needs from storage, stated without naming a database.
@@ -744,10 +745,14 @@ export interface BillingAccountRepository {
     invoiceId: string;
     siteId: string;
   }): Promise<InvoiceView | null>;
+  /** BI-133, BI-233. A page of the site's invoices, newest first, and the count. */
   listInvoices(query: {
     siteId: string;
     accountId?: string;
-  }): Promise<InvoiceView[]>;
+    filter: IssuedDocumentFilter;
+    page: number;
+    pageSize: number;
+  }): Promise<{ items: InvoiceView[]; total: number }>;
 
   /**
    * BI-216, BI-217. The receiver and the payment method of an invoice the SRI

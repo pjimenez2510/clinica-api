@@ -93,6 +93,11 @@ export class CreditNoteController {
     const { items, total } = await this.creditNotes.list({
       siteId,
       invoiceId: query.invoiceId,
+      filter: {
+        search: query.search,
+        issuedFrom: query.from,
+        issuedTo: query.to,
+      },
       page: query.page,
       pageSize: query.pageSize,
     });

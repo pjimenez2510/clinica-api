@@ -399,8 +399,23 @@ export const resubmitInvoiceSchema = z.object({
 /** Body of POST /billing/sites/:siteId/invoices/:invoiceId/resubmission. */
 export class ResubmitInvoiceDto extends createZodDto(resubmitInvoiceSchema) {}
 
+/**
+ * BI-233, BI-234. The filters an invoice list and a credit-note list share:
+ * the number or the buyer, and the days of issue, both ends included.
+ */
+export const issuedDocumentQueryShape = {
+  /** `123`, `000000123`, `001-001-000000123`, a buyer's name or identification. */
+  search: z.string().trim().max(300).optional(),
+  from: clinicalDateField('Indique una fecha válida').optional(),
+  to: clinicalDateField('Indique una fecha válida').optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  /** ESTANDAR-UI §12.7: 20, 50 or 100. */
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+};
+
 export const invoiceQuerySchema = z.object({
   accountId: z.uuid().optional(),
+  ...issuedDocumentQueryShape,
 });
 /** Query of GET /billing/sites/:siteId/invoices. */
 export class InvoiceQueryDto extends createZodDto(invoiceQuerySchema) {}
@@ -818,7 +833,12 @@ const invoiceResponseSchema = z.object({
 /** One invoice, and the list of GET /billing/sites/:siteId/invoices. */
 export class InvoiceDto extends createZodDto(invoiceResponseSchema) {}
 export class InvoiceListDto extends createZodDto(
-  z.object({ items: z.array(invoiceResponseSchema) }),
+  z.object({
+    items: z.array(invoiceResponseSchema),
+    total: z.number().int(),
+    page: z.number().int(),
+    pageSize: z.number().int(),
+  }),
 ) {}
 /** Return type of the invoice mapper, inferred from the published schema. */
 export type InvoiceResponse = z.infer<typeof invoiceResponseSchema>;

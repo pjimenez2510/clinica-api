@@ -400,7 +400,7 @@ eligiendo el pagador en el diálogo —sin ver ningún error antes de elegir— 
 llegar a su cuenta; quitar un cargo y verlo desaparecer tras «1 quitado · Ver»;
 cambiar de pestaña, abrir una cuenta y volver atrás a la misma pestaña.
 
-**Cubre:** BI-204 a BI-207. **Solo interfaz:** BI-204, BI-205, BI-206, BI-207.
+**Cubre:** BI-204 a BI-207, BI-233. **Solo interfaz:** BI-204, BI-205, BI-206, BI-207.
 
 ### B14 — Corregir el tarifario en el sitio _(P1, 06-10-2026)_
 
@@ -431,7 +431,7 @@ devuelva otra factura, editar su receptor y verla autorizada con la misma
 clave. Y contra PostgreSQL: que una nota de crédito no cambia, que una línea no
 se acredita dos veces y que una factura autorizada no cambia de receptor.
 
-**Cubre:** BI-091, BI-094, BI-095, BI-096, BI-097, BI-208 a BI-218.
+**Cubre:** BI-091, BI-094, BI-095, BI-096, BI-097, BI-208 a BI-218, BI-234.
 
 **Solo servidor:** BI-095, BI-211, BI-212, BI-215, BI-217 (garantías de la base
 y una versión que ninguna pantalla enseña todavía).
@@ -2156,6 +2156,20 @@ dos registros distintos.**
   su motivo, su estado ante el SRI y su RIDE.
   > Lo de pantalla de BI-208, BI-213 y BI-216, con los botones de
   > `ESTANDAR-UI.md` §9 ter. Sustituye al marcador vacío de `notas-credito.vue`.
+- **BI-233** — CUANDO alguien con `billing:read` en la sede pida sus facturas,
+  el sistema DEBERÁ devolverlas por páginas (20, 50 o 100) con el total, de la
+  más reciente a la más antigua, y DEBERÁ admitir filtrarlas por número
+  (`000000123`, `123` o `001-001-000000123`), por comprador (nombre que
+  contiene lo escrito o identificación que empieza igual) y por un rango de
+  fechas de emisión, días de la clínica (`America/Guayaquil`) incluidos los dos
+  extremos.
+  > D-185.2 y ESTANDAR-UI §12.7: la lista devolvía todas las de la sede de una
+  > vez, y caja no podía buscar la de un cliente por teléfono. La lista de la
+  > cuenta pide la página más grande: son pocas.
+- **BI-234** — CUANDO alguien con `billing:read` en la sede pida sus notas de
+  crédito, el sistema DEBERÁ admitir los mismos filtros de BI-233 sobre la
+  nota (su número, su comprador, su fecha de emisión), con la paginación de
+  BI-218.
 
 ---
 
@@ -2374,12 +2388,12 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `PATCH` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}` | `billing:write` | `param:siteId` | BI-197 |
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}/repricing` | `billing:read` | `param:siteId` | BI-198 |
 | `POST` | `/billing/sites/{siteId}/charges/{chargeId}/discount` | `billing:write` | `param:siteId` | BI-060 a BI-066 |
-| `GET` | `/billing/sites/{siteId}/invoices` | `billing:read` | `param:siteId` | BI-133, BI-135 |
+| `GET` | `/billing/sites/{siteId}/invoices` | `billing:read` | `param:siteId` | BI-133, BI-135, BI-233 |
 | `GET` | `/billing/sites/{siteId}/invoices/{invoiceId}` | `billing:read` | `param:siteId` | BI-135 |
 | `POST` | `/billing/sites/{siteId}/invoices` | `billing:write` | `param:siteId` | BI-080 a BI-089 |
 | `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/void` | `invoice:void` | `param:siteId` | BI-092, BI-093, BI-096 |
 | `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/credit-notes` | `billing:credit-note` | `param:siteId` | BI-091, BI-094 a BI-097, BI-208 a BI-214 |
-| `GET` | `/billing/sites/{siteId}/credit-notes` | `billing:read` | `param:siteId` | BI-218 |
+| `GET` | `/billing/sites/{siteId}/credit-notes` | `billing:read` | `param:siteId` | BI-218, BI-234 |
 | `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/resubmission` | `billing:write` | `param:siteId` | BI-216, BI-217 |
 | `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/payments` | `billing:write` | `param:siteId` | BI-100 a BI-103 |
 | `POST` | `/billing/sites/{siteId}/payments/{paymentId}/reversal` | `billing:write` | `param:siteId` | BI-102 |

@@ -512,12 +512,29 @@ export class BillingController {
   async listInvoices(
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Query() query: InvoiceQueryDto,
-  ): Promise<{ items: InvoiceResponse[] }> {
-    const items = await this.invoicing.listInvoices({
+  ): Promise<{
+    items: InvoiceResponse[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const { items, total } = await this.invoicing.listInvoices({
       siteId,
       accountId: query.accountId,
+      filter: {
+        search: query.search,
+        issuedFrom: query.from,
+        issuedTo: query.to,
+      },
+      page: query.page,
+      pageSize: query.pageSize,
     });
-    return { items: items.map(toInvoiceResponse) };
+    return {
+      items: items.map(toInvoiceResponse),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   }
 
   /**

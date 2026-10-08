@@ -1,4 +1,5 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import type { IssuedDocumentFilter } from './document-search';
 
 import type { DocumentTotals } from './charge';
 import type { CreditNoteReasonCode } from './credit-note';
@@ -92,6 +93,7 @@ export interface CreditNoteRepository {
   list(query: {
     siteId: string;
     invoiceId?: string;
+    filter: IssuedDocumentFilter;
     page: number;
     pageSize: number;
   }): Promise<{ items: CreditNoteView[]; total: number }>;

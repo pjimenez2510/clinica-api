@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import type { IssuedDocumentFilter } from '../domain/document-search';
+import { issuedDocumentWhere } from './document-search.where';
 
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
@@ -263,10 +265,15 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
   async list(query: {
     siteId: string;
     invoiceId?: string;
+    filter: IssuedDocumentFilter;
     page: number;
     pageSize: number;
   }): Promise<{ items: CreditNoteView[]; total: number }> {
-    const where = { siteId: query.siteId, invoiceId: query.invoiceId };
+    const where: Prisma.CreditNoteWhereInput = {
+      siteId: query.siteId,
+      invoiceId: query.invoiceId,
+      ...issuedDocumentWhere(query.filter),
+    };
     const [rows, total] = await Promise.all([
       this.prisma.creditNote.findMany({
         where,

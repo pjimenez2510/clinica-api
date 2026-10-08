@@ -4,7 +4,11 @@ import { z } from 'zod';
 import { CREDIT_NOTE_REASON_CODES } from '../domain/credit-note';
 import { BUYER_IDENTIFICATION_TYPES } from '../domain/invoice';
 
-import { electronicStateSchema, totalsSchema } from './billing.dto';
+import {
+  electronicStateSchema,
+  issuedDocumentQueryShape,
+  totalsSchema,
+} from './billing.dto';
 
 /**
  * BI-208, BI-209. «Corregir»: which lines and why.
@@ -28,8 +32,7 @@ export class IssueCreditNoteDto extends createZodDto(issueCreditNoteSchema) {}
 
 export const creditNoteQuerySchema = z.object({
   invoiceId: z.uuid().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  ...issuedDocumentQueryShape,
 });
 /** Query of GET /billing/sites/:siteId/credit-notes. */
 export class CreditNoteQueryDto extends createZodDto(creditNoteQuerySchema) {}
