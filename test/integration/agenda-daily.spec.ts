@@ -380,7 +380,7 @@ describe('the agenda over a range of days', () => {
       siteId: site.id,
       practitionerId: practitioner.id,
       patientId: (await createPatient(prisma)).id,
-      startsAt: wall(addDays(FROM, -1), 23, 40),
+      startsAt: wall(addDays(FROM, -1), 23, 50),
       endsAt: wall(FROM, 0),
     });
 
