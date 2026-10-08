@@ -6,7 +6,11 @@ import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.serv
 
 import { Money, Percentage } from '../domain/money';
 import { toClinicalDate } from '../domain/price-list';
-import type { TariffCandidate, TariffLine } from '../domain/tariff-publication';
+import {
+  type TariffCandidate,
+  type TariffLine,
+  sortTariffLines,
+} from '../domain/tariff-publication';
 import type {
   NewTariffPublication,
   TariffPublicationRepository,
@@ -176,7 +180,9 @@ export class PrismaTariffPublicationRepository implements TariffPublicationRepos
       amount: Money.parse(item.amount),
       taxPercentage: percentageOf(item.taxPercentage),
     }));
-    return { ...toSummary(row), lines };
+    // By category and name, as the sheet is read (BI-114): the rows come
+    // back in no particular order.
+    return { ...toSummary(row), lines: sortTariffLines(lines) };
   }
 }
 

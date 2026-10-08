@@ -140,7 +140,7 @@ describe('el tarifario de la pared por HTTP', () => {
     return row.amount.toFixed(2);
   }
 
-  it('BI-110 BI-112 sin sesión y sin publicación dice que no hay tarifario; publicado, lo enseña con versión y vigencia', async () => {
+  it('BI-110 BI-112 BI-114 sin sesión y sin publicación dice que no hay tarifario; publicado, lo enseña con versión y vigencia', async () => {
     const before = await wall().expect(404);
     expect((before.body as Problem).code).toBe('TARIFF_PUBLICATION_NOT_FOUND');
     expect((before.body as Problem).title).toBe(
@@ -159,6 +159,14 @@ describe('el tarifario de la pared por HTTP', () => {
       item.name.startsWith('Consulta de medicina general'),
     );
     expect(consultation?.amount).toBe(await selfPayAmountToday());
+
+    // BI-114: by category, then name, as the sheet is read.
+    const order = body.items.map((item) => [item.categoryName, item.name]);
+    const sorted = [...order].sort(
+      ([ca, na], [cb, nb]) =>
+        ca!.localeCompare(cb!, 'es') || na!.localeCompare(nb!, 'es'),
+    );
+    expect(order).toEqual(sorted);
   });
 
   it('BI-112 la respuesta pública lleva exactamente lo publicado: ni ids, ni códigos, ni autor, ni pagador', async () => {
