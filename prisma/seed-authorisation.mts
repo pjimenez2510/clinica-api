@@ -144,6 +144,15 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
             permissionCode,
           })),
         },
+        // AG-138. The starting view, only at creation: afterwards the view
+        // is the clinic's. An existing role got it from the migration
+        // `agenda_board_view_field`.
+        boardViewFields: {
+          create: (role.boardFields ?? []).map((field) => ({
+            field,
+            createdAt: new Date(),
+          })),
+        },
       },
     });
     rolesCreated.push(role.code);
