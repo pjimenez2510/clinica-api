@@ -639,6 +639,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
             content: true,
             signedAt: true,
             supersedesId: true,
+            signatureMethod: true,
             template: { select: { sections: true } },
           },
         },
@@ -709,6 +710,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
             : {
                 signedAt: note.signedAt,
                 amendedAt: note.supersedesId === null ? null : note.signedAt,
+                // EN-156. NULL predates the column: the credential, too.
+                withoutCertificate: note.signatureMethod !== 'CERTIFICATE',
                 sections: noteSectionsOf(
                   note.content,
                   note.template?.sections ?? null,

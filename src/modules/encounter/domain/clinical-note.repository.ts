@@ -16,7 +16,7 @@
  * with the content, the hash, the signer and the instant untouched.
  */
 
-import type { NoteContent } from './clinical-note';
+import type { NoteContent, SignatureMethod } from './clinical-note';
 import type { EncounterStatus, NoteStatus } from './encounter';
 import type { SiteScopeFilter } from './encounter.repository';
 import type { AnthropometryField } from './vital-signs';
@@ -50,6 +50,12 @@ export interface ClinicalNoteView {
   signedByName: string | null;
   signedAt: Date | null;
   contentHash: string | null;
+  /**
+   * EN-156. How it was signed, written by the database at the signature.
+   * `null` on a draft and on notes signed before the column, which were all
+   * the credential (D-177.1).
+   */
+  signatureMethod: SignatureMethod | null;
   /** EN-025. The version this one replaced, and why. */
   supersedesId: string | null;
   amendmentReason: string | null;

@@ -115,6 +115,7 @@ const aNote = (
   signedByName: null,
   signedAt: null,
   contentHash: null,
+  signatureMethod: null,
   supersedesId: null,
   amendmentReason: null,
   createdAt: new Date('2026-09-14T14:10:00Z'),

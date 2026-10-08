@@ -323,6 +323,12 @@ export interface EncounterSummaryPrintData {
     signedAt: Date;
     /** When it is an amendment: the instant the current version was signed. */
     amendedAt: Date | null;
+    /**
+     * EN-156. Signed with the credential and no electronic certificate — every
+     * note today (D-177.1). Printed, because the constancy that lives only on
+     * a screen is gone from the paper handed over at an inspection.
+     */
+    withoutCertificate: boolean;
     sections: readonly { title: string; text: string }[];
   } | null;
   diagnoses: readonly {

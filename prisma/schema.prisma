@@ -711,6 +711,15 @@ enum DiagnosisOccurrence {
   @@map("diagnosis_occurrence")
 }
 
+/// EN-156. How a clinical note was signed. Today always the credential: no
+/// practitioner's certificate is held yet (D-177.1).
+enum SignatureMethod {
+  CREDENTIAL
+  CERTIFICATE
+
+  @@map("signature_method")
+}
+
 enum NoteStatus {
   DRAFT
   SIGNED
@@ -3062,6 +3071,11 @@ model ClinicalNote {
   /// content has not changed since signature WITHOUT relying on the
   /// immutability trigger never having been disabled.
   contentHash String? @map("content_hash") @db.Char(64)
+
+  /// EN-156. How the note was signed, stamped by the signature and frozen with
+  /// it. NULL on drafts and on notes signed before the column existed — which
+  /// were all signed with the credential (D-177.1).
+  signatureMethod SignatureMethod? @map("signature_method")
 
   supersedesId String?       @unique @map("supersedes_id") @db.Uuid
   supersedes   ClinicalNote? @relation("NoteAmendment", fields: [supersedesId], references: [id], onDelete: Restrict)

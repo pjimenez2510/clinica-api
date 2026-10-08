@@ -1299,6 +1299,61 @@ describe('la atención por HTTP', () => {
       });
     });
 
+    it('EN-156 con la firma certificada apagada en la sede, la nota firmada dice que no lleva certificado', async () => {
+      await prisma.siteParameter.update({
+        where: { siteId },
+        data: { requireCertifiedSignature: false },
+      });
+      const encounterId = await openEncounter();
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: COMPLETE_002,
+        },
+      ).expect(201);
+      expect(draft.body).toMatchObject({ signatureMethod: null });
+
+      await createDiagnosis(prisma, encounterId, 'J00');
+      const signed = await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
+
+      expect(signed.body).toMatchObject({ signatureMethod: 'CREDENTIAL' });
+      const listed = await get(`/encounters/${encounterId}/notes`, doctorToken).expect(200); // prettier-ignore
+      expect(listed.body).toMatchObject({
+        items: [expect.objectContaining({ signatureMethod: 'CREDENTIAL' })],
+      });
+    });
+
+    it('EN-156 D-177.1 con el parámetro encendido —por defecto— también firma con la credencial y lo dice: no hay certificado que custodiar', async () => {
+      const parameter = await prisma.siteParameter.findUniqueOrThrow({
+        where: { siteId },
+      });
+      expect(parameter.requireCertifiedSignature).toBe(true);
+      const encounterId = await openEncounter();
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: COMPLETE_002,
+        },
+      ).expect(201);
+      await createDiagnosis(prisma, encounterId, 'J00');
+
+      const signed = await post(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
+        doctorToken,
+        { dischargeCondition: 'ALIVE' },
+      ).expect(200);
+
+      expect(signed.body).toMatchObject({ signatureMethod: 'CREDENTIAL' });
+    });
+
     it('EN-206 la nota firmada conserva la foto de alergias y antecedentes aunque luego se refuten, y el hash cuadra', async () => {
       const allergy = await post(
         `/patients/${patientId}/allergies`,

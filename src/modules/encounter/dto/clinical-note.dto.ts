@@ -172,6 +172,13 @@ export const clinicalNoteSchema = z.object({
   signedAt: z.iso.datetime().nullable(),
   contentHash: z.string().nullable(),
   /**
+   * EN-156. How the note was signed. Anything but `CERTIFICATE` on a signed
+   * note is a signature WITHOUT an electronic certificate, and the screen and
+   * the summary say so: `null` there is a note signed before the column
+   * existed, when the credential was the only way (D-177.1).
+   */
+  signatureMethod: z.enum(['CREDENTIAL', 'CERTIFICATE']).nullable(),
+  /**
    * EN-025, EN-026. The version this one replaced, and why.
    *
    * A RETRACTED VERSION HAS NEITHER, and that is how a client tells «esto lo

@@ -2204,6 +2204,7 @@ describe('DOC-111 el resumen de la atención', () => {
       note: {
         signedAt: startedAt,
         amendedAt: null,
+        withoutCertificate: true,
         sections: [
           { title: 'Motivo de consulta', text: 'Dolor de garganta' },
           { title: 'Plan de tratamiento', text: 'Hidratación' },
@@ -2286,12 +2287,34 @@ describe('DOC-111 el resumen de la atención', () => {
     expect(text).not.toContain('Firma y sello');
   });
 
+  it('EN-156 la nota firmada sin certificado lo dice en el papel; con certificado, no', () => {
+    const credential = wholeText(composeLayout(summary(), context, template));
+    expect(credential).toContain('Firmada sin certificado electrónico');
+
+    const certified = wholeText(
+      composeLayout(
+        summary({
+          note: {
+            signedAt: startedAt,
+            amendedAt: null,
+            withoutCertificate: false,
+            sections: [{ title: 'Motivo de consulta', text: 'Dolor' }],
+          },
+        }),
+        context,
+        template,
+      ),
+    );
+    expect(certified).not.toContain('sin certificado');
+  });
+
   it('DOC-111 una enmienda lo dice, y un bloque vacío no se imprime', () => {
     const amended = composeLayout(
       summary({
         note: {
           signedAt: startedAt,
           amendedAt: startedAt,
+          withoutCertificate: true,
           sections: [{ title: 'Motivo de consulta', text: 'Dolor' }],
         },
         vitals: [],

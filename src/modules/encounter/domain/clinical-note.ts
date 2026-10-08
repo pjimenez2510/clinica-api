@@ -188,6 +188,13 @@ export type NoteContent = Readonly<Record<string, unknown>>;
  * code path would serialise differently and the digest would report a forgery
  * that never happened.
  */
+/**
+ * EN-156. How a note was signed. Only `CREDENTIAL` exists today: no
+ * practitioner's certificate is held yet (D-177.1), and the database stamps it
+ * at the signature (`a_clinical_note_signature_states_its_method`).
+ */
+export type SignatureMethod = 'CREDENTIAL' | 'CERTIFICATE';
+
 export function contentHashOf(input: {
   content: NoteContent;
   signedById: string;

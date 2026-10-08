@@ -290,6 +290,7 @@ function toNoteResponse(note: NoteWithTemplate): ClinicalNoteResponse {
     // EN-027. Published so the digest can be verified from outside the
     // database, which is what SC-012 counts.
     contentHash: note.contentHash,
+    signatureMethod: note.signatureMethod,
     supersedesId: note.supersedesId,
     amendmentReason: note.amendmentReason,
     createdAt: note.createdAt.toISOString(),
