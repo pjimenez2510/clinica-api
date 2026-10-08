@@ -84,7 +84,8 @@ export class AgendaController {
   ) {}
 
   /**
-   * AG-017, AG-018. The agenda of one day.
+   * AG-017, AG-018. The agenda of one day — or, with `from` and `to`, of
+   * several in one answer (AG-178).
    *
    * NOT AUDITED PER ROW (AG-072, SC-004): the list carries identifiers and no
    * clinical content, and one audit entry per line would bury the accesses
@@ -93,15 +94,23 @@ export class AgendaController {
    */
   @Get('entries')
   @RequirePermission('agenda:read', 'param:siteId')
-  @ApiOperation({ summary: 'Consultar la agenda de un día en una sede' })
+  @ApiOperation({
+    summary:
+      'Consultar la agenda de un día, o de un rango de días, en una sede',
+  })
   @ApiOkResponse({ type: DailyAgendaDto })
   async dailyAgenda(
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Query() query: DailyAgendaQueryDto,
   ): Promise<DailyAgendaResponse> {
-    const items = await this.agenda.dailyAgenda({
+    // AG-178. The schema has already made sure exactly one of the two forms
+    // arrived; a day is the range from it to itself.
+    const from = query.date ?? query.from!;
+    const to = query.date ?? query.to!;
+    const items = await this.agenda.agendaRange({
       siteId,
-      date: query.date,
+      from,
+      to,
       practitionerId: query.practitionerId,
       roomId: query.roomId,
       includeReleased: query.includeReleased,
@@ -109,7 +118,9 @@ export class AgendaController {
 
     return {
       siteId,
-      date: query.date,
+      ...(query.date ? { date: query.date } : {}),
+      from,
+      to,
       items: items.map(toEntryResponse),
       includeReleased: query.includeReleased,
     };

@@ -14,6 +14,7 @@ import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/ro
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
+import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { useDatabase } from './setup/database';
 import {
   createPatient,
@@ -932,6 +933,73 @@ describe('la agenda por HTTP', () => {
         .expect(422);
 
       expect((response.body as Problem).code).toBe('VALIDATION_FAILED');
+    });
+
+    // AG-178. The range is derived from the fixture's own slot, not typed.
+    const rangeOf = (from: string, to: string, site = siteId) =>
+      request(app.getHttpServer())
+        .get(`/api/v1/agenda/sites/${site}/entries?from=${from}&to=${to}`)
+        .set('Authorization', `Bearer ${token}`);
+    const SLOT_DAY = clinicalDateOf(new Date(FIRST_SLOT.startsAt));
+
+    it('AG-178 devuelve varios días en una respuesta, con el rango repetido', async () => {
+      const created = await book(anAppointment()).expect(201);
+
+      const response = await rangeOf(
+        addDays(SLOT_DAY, -1),
+        addDays(SLOT_DAY, 4),
+      ).expect(200);
+
+      const body = response.body as {
+        date?: string;
+        from: string;
+        to: string;
+        items: { id: string; startsAt: string }[];
+      };
+      expect(body.items.map((item) => item.id)).toEqual([
+        (created.body as { id: string }).id,
+      ]);
+      expect(body).toMatchObject({
+        siteId,
+        from: addDays(SLOT_DAY, -1),
+        to: addDays(SLOT_DAY, 4),
+      });
+      expect(body.date).toBeUndefined();
+      // The day route answers the same two fields for its one day.
+      const day = (await dayOf().expect(200)).body as {
+        from: string;
+        to: string;
+      };
+      expect(day).toMatchObject({ from: SLOT_DAY, to: SLOT_DAY });
+    });
+
+    it('AG-178 rechaza más de 31 días, y un día y un rango a la vez, con 422 y el campo', async () => {
+      const tooLong = await rangeOf(SLOT_DAY, addDays(SLOT_DAY, 31)).expect(
+        422,
+      );
+      expect(tooLong.body as Problem).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        errors: [expect.objectContaining({ field: 'to' })],
+      });
+      await rangeOf(SLOT_DAY, addDays(SLOT_DAY, 30)).expect(200);
+
+      const both = await request(app.getHttpServer())
+        .get(
+          `/api/v1/agenda/sites/${siteId}/entries?date=${SLOT_DAY}&from=${SLOT_DAY}&to=${SLOT_DAY}`,
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .expect(422);
+      expect((both.body as Problem).code).toBe('VALIDATION_FAILED');
+    });
+
+    it('AG-178 rechaza el rango de una sede fuera de alcance', async () => {
+      const response = await rangeOf(
+        SLOT_DAY,
+        addDays(SLOT_DAY, 5),
+        otherSiteId,
+      ).expect(403);
+
+      expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
     });
   });
 

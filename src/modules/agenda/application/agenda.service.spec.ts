@@ -17,6 +17,8 @@ import {
 } from '../domain/agenda.errors';
 import {
   WallClockTime,
+  addDays,
+  clinicalDayBounds,
   parseClinicalDate,
 } from '../../../shared/domain/clinic-time';
 import type {
@@ -635,6 +637,30 @@ describe('the daily agenda', () => {
     });
 
     expect(recorded.daily.map((q) => q.includeReleased)).toEqual([false, true]);
+  });
+
+  it('AG-178 asks the repository once for a range, cut in America/Guayaquil', async () => {
+    // Six days, `to` included: from 05:00Z on the first to 05:00Z the day
+    // after the last. One query, not six.
+    const { service, recorded } = serviceWith();
+    const to = addDays(DATE, 5);
+
+    await service.agendaRange({
+      siteId: SITE,
+      from: DATE,
+      to,
+      practitionerId: PRACTITIONER,
+      includeReleased: true,
+    });
+
+    expect(recorded.daily).toHaveLength(1);
+    expect(recorded.daily[0]).toMatchObject({
+      siteId: SITE,
+      from: clinicalDayBounds(DATE).startsAt,
+      untilExclusive: clinicalDayBounds(to).endsAtExclusive,
+      practitionerId: PRACTITIONER,
+      includeReleased: true,
+    });
   });
 
   it('AG-072 records no chart access for the rows it lists', async () => {

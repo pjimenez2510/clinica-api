@@ -525,7 +525,7 @@ citas anuladas plegadas tras «N anuladas o sin asistir · Ver»; abrir un cupo
 libre sin que se vuelva a pedir la disponibilidad que la vista de día ya
 tenía; en el tablero, ver las cerradas tras su línea y otro día dicho junto a
 la fecha.
-**Cubre:** AG-169 a AG-172.
+**Cubre:** AG-169 a AG-172, AG-178.
 **Solo interfaz:** AG-169, AG-170, AG-171, AG-172.
 
 ## Criterios de éxito
@@ -2785,6 +2785,23 @@ Convertirlo en configuración sería regalar la garantía.
   > §9 ter: sin avisos de información. El conmutador «Mostrar también las
   > cerradas» pasa a la línea común de lo plegado (AG-161: volver atrás
   > conserva el estado).
+- **AG-178** — CUANDO se solicite la agenda de una sede con `from` y `to`
+  —fechas del calendario de `America/Guayaquil`, `to` inclusive— en lugar de
+  `date`, el sistema DEBERÁ devolver en una sola respuesta las entradas que se
+  solapan con ese rango, con los mismos filtros, el mismo permiso, el mismo
+  ámbito de sede, el mismo orden y la misma forma que la agenda de un día
+  (AG-017, AG-018); SI el rango supera 31 días, termina antes de empezar, le
+  falta uno de sus extremos, o se piden a la vez `date` y el rango, o ninguno
+  de los dos, ENTONCES DEBERÁ rechazarlo con 422
+  `VALIDATION_FAILED` y el campo señalado; y MIENTRAS la vista de semana esté
+  abierta, la pantalla DEBERÁ pedir sus seis días con una sola petición y
+  repartirlos por día ella misma.
+  > Pedido del autor del 08-10-2026: la semana hacía seis `GET …/entries`, uno
+  > por día, y los repetía en cada refresco, lo que acercaba a recepción al
+  > límite de 429. El tope de 31 días acota la consulta (un mes de agenda),
+  > no es política clínica; el índice parcial `agenda_entry_daily_agenda` sirve
+  > el rango igual que el día. El reparto por día de la pantalla usa el mismo
+  > solapamiento que el servidor: un bloqueo de una semana cae en cada día.
 
 ## Códigos de error nuevos
 
@@ -2940,7 +2957,7 @@ aún no está validado.
 | `GET`    | `/agenda/metrics/no-show`                                      | `agenda:read`    | `query`         | AG-080, AG-081                   |
 | `GET`    | `/agenda/sites/{siteId}/practitioners`                         | `agenda:read`    | `param:siteId`  | AG-108, AG-111                   |
 | `GET`    | `/agenda/sites/{siteId}/specialties/{specialtyId}/service-types`| `agenda:read`   | `param:siteId`  | AG-112                           |
-| `GET`    | `/agenda/sites/{siteId}/entries`                               | `agenda:read`    | `param:siteId`  | AG-017, AG-018                   |
+| `GET`    | `/agenda/sites/{siteId}/entries`                               | `agenda:read`    | `param:siteId`  | AG-017, AG-018, AG-178           |
 | `GET`    | `/agenda/sites/{siteId}/availability`                          | `agenda:read`    | `param:siteId`  | AG-003, AG-010 a AG-016, AG-093  |
 | `GET`    | `/agenda/sites/{siteId}/duration`                              | `agenda:read`    | `param:siteId`  | SP-023, SP-028                   |
 | `POST`   | `/agenda/sites/{siteId}/entries`                               | `agenda:write`   | `param:siteId`  | AG-020 a AG-035, AG-110          |
@@ -3047,6 +3064,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | AG-133 a AG-135, AG-138                         | Contrato HTTP + unitario de dominio: el orden por hora, el tiempo calculado, y que dos roles distintos reciban conjuntos de campos distintos |
 | AG-136, AG-137                                  | Seguridad dirigida + contrato HTTP: una sesión con `agenda:board:public` y nada más no alcanza la proyección de personal, y la fila que recibe no lleva ninguno de los campos prohibidos |
 | AG-176                                          | Contrato HTTP con una sesión de `ENFERMERIA` de verdad (escribe la nota sin `agenda:write`) + integración: la nota sobre un bloqueo se rechaza y la escrita no toca ningún otro campo |
+| AG-178                                          | Unitario del esquema (tope, exclusión de `date` y rango) + integración contra PostgreSQL real con control positivo: la cita del `to` a las 23:30 de Guayaquil sale y la del día siguiente no + unitario de interfaz: la semana sale en **una** petición |
 | AG-139, AG-140                                  | Integración contra PostgreSQL real: una consulta del tablero deja **una** fila de bitácora y no una por cita (SC-004), y la tasa no se mueve cuando una cita pasa a `LEFT_WITHOUT_BEING_SEEN` |
 | AG-142                                          | Integración: cambiar el umbral de una sede cambia la advertencia siguiente y no toca las llegadas ya registradas (AG-098) |
 | AG-146 a AG-149                                 | Integración contra PostgreSQL real con control positivo: la cita y la atención se mueven en la misma transacción y la fila de historial existe; una prueba reproduce la captura del autor                        |
