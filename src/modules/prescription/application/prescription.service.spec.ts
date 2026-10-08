@@ -522,6 +522,35 @@ describe('el servicio de recetas', () => {
     });
   });
 
+  it('PR-065 PR-067 informa al componer de la misma clase ATC, y la EMISIÓN no se interrumpe por ella', async () => {
+    const PENICILLIN_G = 'concept-bencilpenicilina';
+    allergyReader.allergies = [anAllergy(PENICILLIN_G)];
+    repository.keys = new Map([
+      [AMOXICILLIN, ['J01CA04', 'dci:amoxicilina']],
+      [PENICILLIN_G, ['J01CE01', 'dci:bencilpenicilina']],
+    ]);
+
+    const composed = await service.compose(composeRequest, requester);
+
+    expect(composed.allergyAlerts).toEqual([
+      { line: 1, allergyId: 'allergy-1', match: 'CLASS' },
+    ]);
+
+    // Same chart, same keys, read in the issue's transaction: issued.
+    repository.snapshot = aSnapshot({
+      allergies: [
+        {
+          id: 'allergy-1',
+          substanceConceptId: PENICILLIN_G,
+          substanceText: 'Bencilpenicilina',
+        },
+      ],
+      substanceKeys: repository.keys,
+    });
+    const issued = await service.issue(PRESCRIPTION, requester);
+    expect(issued.status).toBe('ACTIVE');
+  });
+
   it('PR-060 interrumpe la EMISIÓN de esa misma receta', async () => {
     // Las dos mitades de PR-067: informar y interrumpir son dos cosas, y sólo
     // la segunda ocurre cuando el documento va a existir.

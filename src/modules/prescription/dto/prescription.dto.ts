@@ -500,7 +500,11 @@ export class PrescriptionListDto extends createZodDto(prescriptionListSchema) {}
 export const allergyAlertSchema = z.object({
   line: z.number().int(),
   allergyId: z.uuid(),
-  match: z.literal('EXACT'),
+  /**
+   * PR-060: `EXACT`, the same substance — the issue will be refused.
+   * PR-065: `CLASS`, the same ATC class — informs, never refuses.
+   */
+  match: z.enum(['EXACT', 'CLASS']),
 });
 
 export const composedPrescriptionSchema = z.object({

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { exactAllergyMatches, substanceKeysOf } from './allergy-check';
+import {
+  exactAllergyMatches,
+  substanceKeysOf,
+  therapeuticClassMatches,
+  therapeuticClassOf,
+} from './allergy-check';
 import type { KnownAllergy } from './allergy-check';
 
 /**
@@ -100,8 +105,8 @@ describe('la comprobación de alergia', () => {
 
   it('PR-066 no avisa de nada que no sea coincidencia exacta', () => {
     /**
-     * Ni clase terapéutica (PR-065, falta el ATC) ni reactividad cruzada
-     * (PR-066, base de conocimiento comercial). Esta prueba es la que rompe el
+     * Ni clase terapéutica (PR-065, que es otra función y sólo informa) ni
+     * reactividad cruzada (PR-066, base de conocimiento comercial). Esta prueba es la que rompe el
      * día que alguien «mejore» la función con una heurística de nombres, que es
      * exactamente lo que produce la lista de advertencias que nadie audita.
      */
@@ -193,6 +198,91 @@ describe('la comprobación de alergia', () => {
       expect(
         exactAllergyMatches([{ line: 1, conceptId: 'n02ba01' }], [allergyTo('dev')], aspirin), // prettier-ignore
       ).toHaveLength(1);
+    });
+  });
+
+  describe('PR-065 la clase terapéutica, por el código ATC del CNMB', () => {
+    const PENICILLIN_G = 'concept-bencilpenicilina';
+    const AMOX = 'concept-amoxicilina';
+    const AMOX_CLAV = 'concept-amoxicilina-clavulanico';
+    const CEFALEXIN = 'concept-cefalexina';
+    const DEV = 'concept-enalapril-dev';
+    const keys = new Map([
+      [PENICILLIN_G, substanceKeysOf({ code: 'J01CE01', display: 'Bencilpenicilina', attributes: { substances: ['dci:bencilpenicilina'] } })], // prettier-ignore
+      [AMOX, substanceKeysOf({ code: 'J01CA04', display: 'Amoxicilina', attributes: { substances: ['dci:amoxicilina'] } })], // prettier-ignore
+      [AMOX_CLAV, substanceKeysOf({ code: 'J01CR02', display: 'Amoxicilina + ácido clavulánico', attributes: { substances: ['dci:amoxicilina + acido clavulanico'] } })], // prettier-ignore
+      [CEFALEXIN, substanceKeysOf({ code: 'J01DB01', display: 'Cefalexina', attributes: null })], // prettier-ignore
+      [DEV, substanceKeysOf({ code: 'ENALAPRIL', display: 'Enalapril', attributes: null })], // prettier-ignore
+    ]);
+
+    it('PR-065 la clase es el nivel 3 del ATC, y sólo de un código ATC completo', () => {
+      expect(therapeuticClassOf('J01CA04')).toBe('J01C');
+      expect(therapeuticClassOf('ENALAPRIL')).toBeNull();
+      expect(therapeuticClassOf('dci:amoxicilina')).toBeNull();
+      expect(therapeuticClassOf('J01C')).toBeNull();
+    });
+
+    it('PR-065 informa de la amoxicilina a quien es alérgico a la bencilpenicilina, como CLASS', () => {
+      expect(
+        therapeuticClassMatches(
+          [{ line: 2, conceptId: AMOX }],
+          [allergyTo(PENICILLIN_G)],
+          keys,
+        ),
+      ).toEqual([
+        { line: 2, allergyId: `allergy-${PENICILLIN_G}`, match: 'CLASS' },
+      ]);
+    });
+
+    it('PR-065 la combinación de la misma familia también informa', () => {
+      expect(
+        therapeuticClassMatches(
+          [{ line: 1, conceptId: AMOX_CLAV }],
+          [allergyTo(AMOX)],
+          keys,
+        ).map((alert) => alert.match),
+      ).toEqual(['CLASS']);
+    });
+
+    it('PR-065 PR-066 una cefalosporina tras una alergia a penicilina NO informa: eso es reactividad cruzada', () => {
+      expect(
+        therapeuticClassMatches(
+          [{ line: 1, conceptId: CEFALEXIN }],
+          [allergyTo(PENICILLIN_G)],
+          keys,
+        ),
+      ).toEqual([]);
+    });
+
+    it('PR-065 lo que ya es coincidencia exacta no se repite como clase', () => {
+      expect(
+        therapeuticClassMatches(
+          [{ line: 1, conceptId: AMOX }],
+          [allergyTo(AMOX)],
+          keys,
+        ),
+      ).toEqual([]);
+      // Control positivo: la exacta sí está, y es la que interrumpe.
+      expect(
+        exactAllergyMatches(
+          [{ line: 1, conceptId: AMOX }],
+          [allergyTo(AMOX)],
+          keys,
+        ).map((alert) => alert.match),
+      ).toEqual(['EXACT']);
+    });
+
+    it('PR-065 sin código ATC no hay clase: ni el cuadro de desarrollo, ni la alergia en texto, ni la línea fuera del cuadro', () => {
+      expect(
+        therapeuticClassMatches(
+          [
+            { line: 1, conceptId: DEV },
+            { line: 2, conceptId: null },
+          ],
+          [allergyTo(null), allergyTo(DEV)],
+          keys,
+        ),
+      ).toEqual([]);
     });
   });
 });

@@ -888,6 +888,42 @@ describe('la receta por HTTP', () => {
     expect(JSON.stringify(problem)).not.toContain('Amoxicilina');
   });
 
+  it('PR-065 alérgico a la bencilpenicilina: la amoxicilina informa como CLASS y la receta se emite', async () => {
+    const cnmb = await prisma.catalogSystem.findFirstOrThrow({
+      where: { code: 'CNMB' },
+    });
+    const penicillinG = await prisma.catalogConcept.create({
+      data: {
+        systemId: cnmb.id,
+        code: 'J01CE01',
+        display: 'Bencilpenicilina',
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigencia del concepto, anterior a todo
+      },
+    });
+    await prisma.patientAllergy.create({
+      data: {
+        recordedById: (await createUser(prisma)).id,
+        patientId,
+        substanceConceptId: penicillinG.id,
+        substanceText: 'Bencilpenicilina',
+        criticality: 'HIGH',
+      },
+    });
+
+    const composed = await composeAsDoctor();
+    expect(composed.allergyAlerts).toEqual([
+      { line: 1, allergyId: expect.any(String), match: 'CLASS' },
+    ]);
+    // PR-094: el aviso no nombra ni el medicamento ni el alérgeno.
+    expect(JSON.stringify(composed.allergyAlerts)).not.toMatch(/penicilina|Amoxicilina/i); // prettier-ignore
+
+    // PR-067: sólo la coincidencia exacta interrumpe; la clase no.
+    await post(
+      `/prescriptions/${composed.prescription.id}/issue`,
+      doctorToken,
+    ).expect(200);
+  });
+
   it('PR-061 la alerta no se salta desde la petición: la única salida es refutar la alergia', async () => {
     const allergy = await prisma.patientAllergy.create({
       data: {

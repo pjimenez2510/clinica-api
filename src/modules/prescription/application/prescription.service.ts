@@ -22,7 +22,10 @@ import {
   type AllergyAbsenceReader,
 } from '../../../shared/clinical/allergy-absence.port';
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
-import { exactAllergyMatches } from '../domain/allergy-check';
+import {
+  exactAllergyMatches,
+  therapeuticClassMatches,
+} from '../domain/allergy-check';
 import type { KnownAllergy } from '../domain/allergy-check';
 import { assertPrescriptionComplete } from '../domain/prescription-content';
 import { composeDocument } from '../domain/prescription-document';
@@ -136,10 +139,10 @@ export interface ComposedPrescription {
  *    to keep the reason in, and a justification that is not stored is worse
  *    than none. The way past an allergy alert is to REFUTE the allergy, which
  *    leaves a row, an author and notes.
- *  - IT DOES NOT WARN ABOUT THERAPEUTIC CLASS OR CROSS-REACTIVITY (PR-065,
- *    PR-066). The first needs an ATC code nothing populates; the second is a
- *    commercial knowledge base, and simulating one produces warnings nobody can
- *    audit and everybody learns to close.
+ *  - IT DOES NOT INTERRUPT FOR A THERAPEUTIC CLASS, AND DOES NOT WARN ABOUT
+ *    CROSS-REACTIVITY (PR-065, PR-066). The class informs while composing;
+ *    cross-reactivity is a commercial knowledge base, and simulating one
+ *    produces warnings nobody can audit and everybody learns to close.
  *  - IT DOES NOT PRICE ANYTHING. What a medicine costs is `billing`'s, and this
  *    clinic dispenses nothing.
  */
@@ -253,9 +256,12 @@ export class PrescriptionService {
   }
 
   /**
-   * PR-067, PR-114. The informative alerts of a draft: by concept and by
-   * substance key, so an allergy recorded against another edition of the
-   * CNMB still shows.
+   * PR-065, PR-067, PR-114. The informative alerts of a draft: by concept
+   * and by substance key, so an allergy recorded against another edition of
+   * the CNMB still shows; and, after the exact ones, the same ATC class.
+   * The class alert is only ever given HERE: the issue checks the exact match
+   * and nothing else (PR-060), so a warning the doctor already read does not
+   * come back as a refusal.
    */
   private async allergyAlertsOf(
     prescription: PrescriptionView,
@@ -271,7 +277,10 @@ export class PrescriptionService {
         allergy.substanceConceptId ? [allergy.substanceConceptId] : [],
       ),
     ]);
-    return exactAllergyMatches(lines, allergies, keys);
+    return [
+      ...exactAllergyMatches(lines, allergies, keys),
+      ...therapeuticClassMatches(lines, allergies, keys),
+    ];
   }
 
   /**
