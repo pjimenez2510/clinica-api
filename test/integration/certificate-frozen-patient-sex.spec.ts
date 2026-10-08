@@ -151,4 +151,57 @@ describe('CER-058 el certificado congela el sexo de la ficha al emitirse', () =>
     expect(await frozenSexOf(prisma, merged)).toBe('MALE');
     expect(await printedSexOf(prisma, merged)).toBe('Hombre');
   });
+
+  it('CER-057 CER-058 deshecha la unificación, el emitido mientras duró sigue nombrando la ficha y el sexo con que se emitió', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    const survivor = await createPatient(prisma, { sex: 'MALE' });
+    await prisma.patient.update({
+      where: { id: survivor.id },
+      data: { familyName: 'Guamán', givenName: 'Mario' },
+    });
+    const desk = { userId: (await createUser(prisma)).id };
+    await mergesOf(prisma).merge(
+      { sourcePatientId: scene.patient.id, targetPatientId: survivor.id },
+      desk,
+    );
+    const during = await insertCertificate(prisma, scene);
+    const printed = async () => {
+      const subject = await new PrismaDocumentSourceReader(
+        client(prisma),
+        'http://localhost/verificar',
+      ).findSubject({
+        kind: 'MEDICAL_CERTIFICATE',
+        subjectId: during,
+        sites: 'all',
+      });
+      if (subject?.kind !== 'MEDICAL_CERTIFICATE') throw new Error('no 117');
+      const { patient, establishment } = subject.data.form;
+      return [
+        patient.firstFamilyName,
+        establishment.archiveNumber,
+        patient.sex,
+      ];
+    };
+    // Control positivo: unificada, la vigente con su sexo.
+    expect(await printed()).toEqual(['Guamán', survivor.mrn, 'Hombre']);
+
+    await mergesOf(prisma).undo({ sourcePatientId: scene.patient.id }, desk);
+    expect(await printed()).toEqual(['Guamán', survivor.mrn, 'Hombre']);
+    await expect(
+      prisma.$executeRaw`UPDATE medical_certificate SET chart_of_record_id = ${scene.patient.id}::uuid WHERE id = ${during}::uuid`,
+    ).rejects.toThrow(/medical_certificate_frozen/);
+  });
+
+  it('CER-057 la base rechaza un certificado sobre otro paciente que el de su atención', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    // Control positivo: el de la atención se guarda por el mismo INSERT.
+    expect(await insertCertificate(prisma, scene)).toEqual(expect.any(String));
+
+    const other = await createPatient(prisma);
+    await expect(
+      insertCertificate(prisma, { ...scene, patient: other }),
+    ).rejects.toThrow(/medical_certificate_patient_of_attention/);
+  });
 });

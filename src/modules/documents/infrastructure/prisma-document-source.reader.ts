@@ -170,21 +170,12 @@ function toPractitioner(row: PractitionerRow): PractitionerIdentity {
 type PatientRow = Prisma.PatientGetPayload<{ select: typeof PATIENT_SELECT }>;
 
 /**
- * DOC-117 (D-169.2 c, i). The attention's chart AND the chart it was merged
- * into, if any: the merge re-points nothing (D-031), so an attention opened on
- * a duplicate that admissions merged afterwards still hangs off the duplicate
- * —whose document moved to the survivor (PA-043)—. One level, never a chain
- * (PA-046).
- */
-const PATIENT_OF_RECORD_SELECT = {
-  ...PATIENT_SELECT,
-  mergedInto: { select: PATIENT_SELECT },
-} satisfies Prisma.PatientSelect;
-
-/**
- * DOC-117. The chart whose identity a paper prints: the one in force. Read at
- * composing time, not copied — it is the person's identity; the age stays the
- * attention's (art. 5.b.ii) and the order's sex the one it froze (ORD-158).
+ * DOC-117 (D-169.2 c, i). The chart whose identity the receta and the summary
+ * print: the one in force NOW. The merge re-points nothing (D-031), so an
+ * attention opened on a duplicate merged afterwards still hangs off the
+ * duplicate, whose document moved to the survivor (PA-043). One level, never a
+ * chain (PA-046). Neither paper carries a frozen sex to disagree with; the 117
+ * and the order freeze the chart they name instead (`chartOfRecord`).
  */
 function chartOfRecord<Chart>(
   row: Chart & { mergedInto: Chart | null },
@@ -968,10 +959,14 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
           select: {
             ageYears: true,
             ageMonths: true,
-            // DOC-117. With the chart in force.
-            patient: { select: PATIENT_OF_RECORD_SELECT },
+            patient: { select: PATIENT_SELECT },
           },
         },
+        // DOC-117, ORD-161. The chart the order NAMES, frozen at the issue
+        // with the sex it froze: merging or undoing afterwards must not put
+        // one chart's name over another's sex. Issued, so always there
+        // (`service_order_chart_of_record_when_issued`).
+        chartOfRecord: { select: PATIENT_SELECT },
         orderedBy: { select: PRACTITIONER_SELECT },
         items: {
           orderBy: { createdAt: 'asc' },
@@ -1020,7 +1015,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         priority: row.priority,
         clinicalNoteText: row.clinicalNoteText,
         patient: toPatient(
-          chartOfRecord(row.encounter.patient),
+          row.chartOfRecord ?? row.encounter.patient,
           row.encounter.ageYears,
           row.encounter.ageMonths,
         ),

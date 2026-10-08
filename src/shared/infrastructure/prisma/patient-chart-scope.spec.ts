@@ -200,6 +200,18 @@ const CHART_LINKS: Record<
       'apareciera también como fusión de las fichas que A absorbió —que ' +
       'PA-046 prohíbe— y que deshacer no supiera qué enlace limpiar.',
   },
+  'medical_certificate.chart_of_record_id': {
+    resolution: 'exact',
+    why:
+      'CER-057 (D-169.2 i). La ficha que el 117 NOMBRA, congelada al ' +
+      'emitirse junto con su sexo: es una fila concreta a propósito. ' +
+      'Resolverla por el alcance haría que unificar o deshacer después ' +
+      'pusiera el nombre de una ficha sobre el sexo de otra.',
+  },
+  'service_order.chart_of_record_id': {
+    resolution: 'exact',
+    why: 'ORD-161. Por lo mismo que el 117: la ficha que la orden nombra, congelada con el sexo que imprime.', // prettier-ignore
+  },
   'patient_merge.target_patient_id': {
     resolution: 'exact',
     why: 'Por lo mismo que `source_patient_id`: es la otra mitad de la pareja de filas que una fila del rastro nombra.', // prettier-ignore

@@ -71,21 +71,21 @@ export const FORM_117_SOURCE_SELECT = {
       parish: { select: { parent: { select: { display: true } } } },
     },
   },
-  // CER-058. The sex the paper printed, frozen at the issue by
-  // `a_medical_certificate_freeze_patient_sex` — never the chart's today.
+  // CER-058. The sex the paper printed, frozen at the issue with the chart it
+  // names (`a_medical_certificate_freeze_chart_of_record`) — never the chart's
+  // today, and never another chart's.
   patientSex: true,
-  patient: {
-    select: {
-      ...FORM_117_IDENTITY_SELECT,
-      /**
-       * CER-057 (D-169.2 i). The attention may have been opened on a duplicate
-       * that admissions merged afterwards (D-031 re-points nothing): the paper
-       * names the person of the chart IN FORCE, whose document the merge moved
-       * there (PA-043). One level, never a chain (PA-046).
-       */
-      mergedInto: { select: FORM_117_IDENTITY_SELECT },
-    },
-  },
+  // The attention's chart, for a certificate written before the chart of
+  // record existed in a client's types; the database never leaves it null.
+  patient: { select: FORM_117_IDENTITY_SELECT },
+  /**
+   * CER-057 (D-169.2 i). The chart the 117 NAMES: the one in force for the
+   * attention at the issue —the survivor if the attention's chart had been
+   * merged (D-031 re-points nothing, and the duplicate's document moved to
+   * the survivor, PA-043)—. FROZEN as a reference, not re-resolved: merging or
+   * undoing afterwards must not put one chart's name over another's sex.
+   */
+  chartOfRecord: { select: FORM_117_IDENTITY_SELECT },
   encounter: {
     select: {
       startedAt: true,
@@ -162,9 +162,8 @@ export function toForm117Source(row: Form117SourceRow): Form117Source {
           birthOn: calendarDate(row.birthOn),
           dischargeOn: calendarDate(row.maternityDischargeOn),
         };
-  // CER-057. The chart in force: the survivor when the certificate's own
-  // chart was absorbed.
-  const chart = row.patient.mergedInto ?? row.patient;
+  // CER-057. The chart the certificate names, the same whose sex it froze.
+  const chart = row.chartOfRecord ?? row.patient;
   return {
     certificate: {
       id: row.id,

@@ -1266,7 +1266,8 @@ describe('el certificado medico por HTTP', () => {
     };
 
     // Control positivo: sin unificar, la ficha de la atención.
-    const own = await identity((await issue(attendance())).certificate.id);
+    const before = (await issue(attendance())).certificate.id;
+    const own = await identity(before);
     expect(own).toMatchObject({
       names: ['Pilco', 'NA', 'Rosa', 'NA'],
       document: 'NA',
@@ -1281,6 +1282,9 @@ describe('el certificado medico por HTTP', () => {
       );
 
     const merged = await identity((await issue(restOf(1))).certificate.id);
+    // Un papel, una ficha: el emitido ANTES de unificar sigue nombrando la
+    // ficha con la que se emitió, la misma cuyo sexo congeló (CER-058).
+    expect(await identity(before)).toEqual(own);
     expect(merged).toEqual({
       names: ['Guamán', 'Pilco', 'María', 'Rosa'],
       document: '1713175071',

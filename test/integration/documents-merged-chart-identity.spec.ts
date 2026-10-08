@@ -122,6 +122,7 @@ async function theScene(prisma: PrismaClient) {
     duplicate,
     survivor,
     encounterId: scene.encounter.id,
+    bhId: scene.bh.id,
     prescriptionId: prescription.id,
     orderId: order.id,
     frozenAge,
@@ -183,7 +184,7 @@ const identityOf = (
 });
 
 describe('DOC-117 lo que se imprime en la atención de una ficha unificada', () => {
-  it('DOC-117 la receta, la orden y el resumen imprimen nombre, cédula e historia de la vigente, con la edad de la atención', async () => {
+  it('DOC-117 ORD-161 la receta, el resumen y la orden emitida tras unificar imprimen nombre, cédula e historia de la vigente, con la edad de la atención', async () => {
     const scene = await theScene(db());
     const own = identityOf(
       scene.duplicate,
@@ -219,13 +220,34 @@ describe('DOC-117 lo que se imprime en la atención de una ficha unificada', () 
     );
     expect(await printedIdentities(scene)).toEqual({
       receta: vigente,
-      order: vigente,
+      // ORD-161. La orden emitida ANTES de unificar nombra la ficha con la
+      // que se emitió, la misma cuyo sexo congeló: un papel, una ficha.
+      order: own,
       summary: vigente,
       summarySex: 'FEMALE',
     });
+    // Y la que se emite después, a la vigente.
+    const after = await placeIssued(
+      new PrismaServiceOrderRepository(client(scene.prisma)),
+      {
+        encounterId: scene.encounterId,
+        category: 'LABORATORY',
+        priority: 'ROUTINE',
+        lines: [{ examDefinitionId: scene.bhId }],
+        sites: 'all',
+      },
+    );
+    const printedAfter = await readerOf(scene.prisma).findSubject({
+      kind: 'SERVICE_ORDER',
+      subjectId: after.id,
+      sites: 'all',
+    });
+    expect(
+      printedAfter?.kind === 'SERVICE_ORDER' && printedAfter.data.patient,
+    ).toEqual(vigente);
   });
 
-  it('DOC-117 deshecha la unificación, los papeles vuelven a la ficha de la atención', async () => {
+  it('DOC-117 deshecha la unificación, la receta y el resumen vuelven a la ficha de la atención', async () => {
     const scene = await theScene(db());
     await scene.merge();
     // Control positivo: unificada, la vigente.

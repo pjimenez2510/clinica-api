@@ -155,7 +155,8 @@ uno que al volver a generarse cambia de sexo ya no es el que se entregó.
 **Prueba independiente:** abrir la atención en una ficha duplicada sin
 documento, unificarla con la real, emitir un reposo desde esa atención y leer
 en el 117 el nombre, la cédula y la historia de la real; corregir después el
-sexo de la ficha y volver a generar el PDF: dice el sexo del día de la emisión.
+sexo de la ficha y volver a generar el PDF: dice el sexo del día de la emisión;
+un 117 emitido antes de unificar sigue nombrando la ficha con que se emitió.
 **Cubre:** CER-057, CER-058.
 **Solo servidor:** CER-057, CER-058. El 117 lo compone el servidor
 (`composeForm117`) y la pantalla y el PDF lo pintan sin tocarlo.
@@ -824,27 +825,45 @@ PR-030).
 
 ### 8. La ficha unificada y el sexo del día (D-169.2 i y D-171.2, 07-10-2026)
 
-- **CER-057** — MIENTRAS la ficha del certificado esté **unificada** con otra
-  (`patient.merged_into_id`), el 117 —en pantalla, en el PDF y al volver a
-  generarlo— DEBERÁ servir la identidad de la **ficha vigente**: apellidos y
-  nombres (CER-021), su documento de identidad como número de historia clínica
-  única y su `mrn` como número de archivo (CER-020). La edad DEBERÁ seguir
-  siendo la congelada de la atención (CER-021). Sin unificar —o deshecha la
-  unificación—, la de su propia ficha.
+- **CER-057** — CUANDO se emita un certificado, el sistema DEBERÁ fijar en él
+  la **ficha que nombra**: la **vigente** de la ficha de su atención en ese
+  instante (`medical_certificate.chart_of_record_id`; la superviviente si la
+  ficha de la atención estaba unificada), y el 117 —en pantalla, en el PDF y
+  al volver a generarlo— DEBERÁ servir la identidad de **esa** ficha:
+  apellidos y nombres (CER-021), su documento de identidad como número de
+  historia clínica única y su `mrn` como número de archivo (CER-020). Unificar
+  o deshacer la unificación después NO DEBERÁ cambiar qué ficha nombra. La
+  edad DEBERÁ seguir siendo la congelada de la atención (CER-021). La base
+  DEBERÁ rechazar un certificado cuyo paciente no sea el de su atención
+  (CER-001).
 
   > **D-169.2 (i).** La fusión no mira las atenciones (D-031): una duplicada
   > con su atención abierta se unifica con la real, y el certificado emitido
   > después desde esa atención salía con el nombre de la duplicada y —porque su
   > documento pasa a la vigente al unificar (PA-043)— **sin cédula**. Los datos
-  > laborales ya se copiaban de la vigente (EN-237, CER-038); ahora también la
-  > identidad, para que la cabecera del papel sea una sola persona. Se lee al
-  > componer, no se copia: la identidad es la de la persona, y lo que no debe
-  > cambiar tras la emisión —diagnósticos, datos laborales, sexo— ya se copia.
+  > laborales ya se copiaban de la vigente (EN-237, CER-038).
+  >
+  > **Se fija la ficha, no se copia su identidad**: el nombre y el documento se
+  > leen al componer de la ficha fijada —una errata corregida en esa ficha
+  > llega al papel, como hasta ahora—, pero la ficha no se vuelve a resolver.
+  > La primera versión de esta rama la resolvía en vivo y la revisión clínica
+  > vio el daño: un 117 emitido antes de unificar pasaba a decir el nombre y la
+  > cédula de la vigente con el sexo congelado de la duplicada, y uno emitido
+  > durante una unificación que se deshace, el nombre de la duplicada con el
+  > sexo de la vigente. Lo que queda (un papel emitido antes de unificar
+  > nombra a la duplicada, que ya no tiene documento) está en D-169.2.
+  >
+  > **Garantía de la base** (`20261008000000_paper_chart_of_record`):
+  > `a_medical_certificate_freeze_chart_of_record` escribe la ficha y su sexo
+  > (CER-058) en la inserción, mande lo que mande quien emite, y rechaza el
+  > paciente que no es el de la atención
+  > (`medical_certificate_patient_of_attention`); `medical_certificate_frozen`
+  > (CER-011) ya impide reescribirlos. Los ya emitidos nombran la ficha de su
+  > atención, que es la que imprimían.
 
 - **CER-058** — CUANDO se emita un certificado, el sistema DEBERÁ copiar en él
-  el **sexo de la ficha vigente de la atención** en ese instante
-  (`medical_certificate.patient_sex`; la superviviente si la ficha está
-  unificada), y el 117 —en pantalla, en el PDF y al volver a generarlo— DEBERÁ
+  el **sexo de la ficha que nombra** (CER-057) en ese instante
+  (`medical_certificate.patient_sex`), y el 117 —en pantalla, en el PDF y al volver a generarlo— DEBERÁ
   decir ese sexo y no el que tenga la ficha después. **Enmienda CER-021** en
   el sexo.
 
@@ -852,10 +871,10 @@ PR-030).
   > sexo de un papel que ya tiene el empleador o el IESS, mientras sus
   > diagnósticos y datos laborales ya se congelaban (CER-027, CER-038).
   >
-  > **Garantía de la base** (`20261008000000_medical_certificate_frozen_patient_sex`):
-  > la copia la escribe `a_medical_certificate_freeze_patient_sex` en la
-  > inserción, mande lo que mande quien emite; `medical_certificate_frozen`
-  > (CER-011) ya impide reescribirla. **Los ya emitidos** se rellenan con el
+  > **Garantía de la base** (`20261008000000_paper_chart_of_record`): la
+  > copia la escribe `a_medical_certificate_freeze_chart_of_record` con la
+  > ficha (CER-057); `medical_certificate_frozen` (CER-011) ya impide
+  > reescribirla. **Los ya emitidos** se rellenan con el
   > sexo que su ficha tenía al emitirse según `patient_change_history`
   > (PA-026): el `value_before` de la primera corrección de sexo posterior a la
   > emisión o, si no la hubo, el de hoy — lo mismo que la orden. Es lo mejor
@@ -926,7 +945,7 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | Disparador `medical_certificate_issue_rules`: coherencia de la maternidad y candado por ficha (los límites de CER-046, CER-047 y CER-051 ya no, CER-055) | `medical_certificate` | CER-048 a CER-050, D-109, D-110 |
 | Disparador sin las reglas de días | `20261005060500_certificate_rest_limits_warn` | CER-055 |
 | Disparador con el tope de cordura: 365 días y un año desde la atención | `20261006095636_certificate_rest_sanity_limits` | CER-056 |
-| `patient_sex` copiado por `a_medical_certificate_freeze_patient_sex` (la ficha vigente) y relleno de los emitidos | `20261008000000_medical_certificate_frozen_patient_sex` | CER-058 |
+| `chart_of_record_id` y `patient_sex` escritos por `a_medical_certificate_freeze_chart_of_record` (la ficha vigente de la atención y su sexo), el paciente de la atención exigido, y relleno de los emitidos | `20261008000000_paper_chart_of_record` | CER-057, CER-058 |
 
 ## Rutas
 
@@ -949,7 +968,7 @@ Todo lo que faltaba está en `20261001070500_certificate_number_and_revocation`.
 | CER-055 | **Integración contra la base**: cada límite de días se guarda con un `INSERT` directo, y lo que se queda (CER-030, CER-039, CER-049) sigue rechazando por el mismo camino. **Por HTTP**: cada límite emite y devuelve su aviso, con control positivo de un reposo normal sin avisos. Unitario del dominio: cada aviso, su borde y su texto |
 | CER-056 | **Integración contra la base**: 365 días y el inicio a un año justo, antes y después, se guardan con un `INSERT` directo; un día más se rechaza, y el rechazo llega como `CERTIFICATE_REST_IMPLAUSIBLE` en su campo. **Por HTTP**: 366 días y un inicio a un año y un día responden 422 por campo sin guardar nada, y 365 días se emiten con el aviso de CER-055. Unitario del dominio (bordes, 29 de febrero) y del servicio (también al corregir). Interfaz: el mensaje bajo el campo |
 | CER-020 a CER-029 | Unitario del dominio: edad y condición, horas y fechas en letras, «NA» |
-| CER-057 | **Integración por HTTP con la fusión real** (`PatientMergeService`): el 117 de la atención de una duplicada sin documento, unificada después, dice nombre, cédula y `mrn` de la vigente en pantalla y en el lector del PDF; control positivo: sin unificar, los de su ficha |
+| CER-057 | **Integración por HTTP con la fusión real** (`PatientMergeService`): el 117 emitido en la atención de una duplicada sin documento, ya unificada, dice nombre, cédula y `mrn` de la vigente en pantalla y en el lector del PDF; control positivo: el emitido antes de unificar, los de su ficha, también releído después. **Contra la base**: deshecha la unificación, el emitido mientras duró sigue nombrando a la vigente con su sexo y no se reescribe; un certificado sobre otro paciente que el de su atención se rechaza (control: el de la atención se guarda) |
 | CER-058 | **Integración contra la base**: la copia la escribe el disparador aunque el `INSERT` traiga otra; un `UPDATE` crudo se rechaza; corregir la ficha no la cambia y el 117 —pantalla y PDF— sigue diciendo el del día (control positivo: la ficha sí cambió y el certificado nuevo dice el nuevo); en una atención unificada, el de la vigente |
 | C1 y C2 en pantalla | `e2e/flujos/f05-ordenes-y-receta.spec.ts` con `medico@` |
 

@@ -2243,21 +2243,28 @@ a D-156.5, recomendación aceptada en todos los puntos._
   actual de la ficha**; la prueba de integración lo fija con una orden que
   congeló otro, con control positivo.
 
-- **ORD-161** — MIENTRAS la ficha de la atención esté **unificada** con otra
-  (`patient.merged_into_id`), la orden DEBERÁ congelar al emitirse (ORD-158)
-  el sexo de la **ficha vigente**, y el rango de referencia y el crítico
-  (ORD-036) DEBERÁN elegirse con el sexo de la ficha vigente. Sin unificar, el
-  de su propia ficha.
-  > **D-171.3** (recomendación de la revisión clínica, construida en
+- **ORD-161** — CUANDO se emita una orden, el sistema DEBERÁ fijar en ella la
+  **ficha que nombra** —la **vigente** de la ficha de su atención en ese
+  instante (`service_order.chart_of_record_id`; la superviviente si estaba
+  unificada)— y congelar el sexo **de esa ficha** (ORD-158); la cabecera del
+  PDF (ORD-126) y la cola de pendientes con nombre (ORD-026) DEBERÁN nombrar
+  esa ficha, y unificar o deshacer después NO DEBERÁ cambiarla. Un borrador
+  olvidado (ORD-115) DEBERÁ nombrar la vigente de su atención. El rango de
+  referencia y el crítico siguen eligiéndose con el sexo de la ficha de la
+  atención (ORD-036, D-171.1).
+  > **D-171.3** (recomendación de la revisión clínica de
+  > `feat/f07-orden-sexo-congelado`, construida en
   > `fix/identidad-impresa-ficha-fusionada` y pendiente de que el autor la
-  > confirme). Una ficha absorbida ya no se corrige (PA-045): la corrección del
-  > sexo se hace en la vigente, que es la que D-171.1 manda seguir. Copiar el
-  > de la duplicada imprimiría en la cabecera, bajo el nombre de la vigente
-  > (DOC-117), el sexo de otra ficha, y clasificaría con el sexo que nadie
-  > puede ya corregir. **Garantía de la base:**
-  > `service_order_freeze_patient_sex` lee `COALESCE(merged_into_id, id)`
-  > (`20261008000000_medical_certificate_frozen_patient_sex`).
-
+  > confirme): una ficha absorbida ya no se corrige (PA-045), y su sexo bajo
+  > el nombre de la vigente mezclaría dos fichas en un papel. **Se fija la
+  > ficha y no se resuelve en vivo** por lo mismo que el 117 (CER-057): un
+  > papel nunca junta el nombre de una ficha con el sexo de otra, tampoco si
+  > se deshace la unificación. Con qué sexo se clasifica un resultado en esa
+  > atención —el de la duplicada, que nadie corrige, o el de la vigente, que
+  > sería el error si la unificación fue equivocada— es del autor (D-171.3).
+  > **Garantía de la base** (`20261008000000_paper_chart_of_record`):
+  > `a_service_order_freeze_patient_sex` escribe ficha y sexo al emitir;
+  > `service_order_chart_of_record_when_issued` y `service_order_guard_status`.
 
 ---
 

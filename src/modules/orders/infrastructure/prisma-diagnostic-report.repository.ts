@@ -318,21 +318,14 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
             patientId: true,
             ageInDays: true,
             ageEstimated: true,
-            patient: {
-              select: {
-                sex: true,
-                // ORD-161 (D-171.3). An absorbed chart is no longer corrected
-                // (PA-045): the sex D-171.1 follows is the one in force.
-                mergedInto: { select: { sex: true } },
-              },
-            },
+            patient: { select: { sex: true } },
           },
         },
       },
     });
     if (!row) return undefined;
 
-    const patient = row.encounter.patient.mergedInto ?? row.encounter.patient;
+    const { patient } = row.encounter;
     return {
       patientId: row.encounter.patientId,
       siteId: row.siteId,
