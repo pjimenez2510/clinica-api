@@ -249,6 +249,25 @@ export const PERMISSION_CATALOGUE = [
       'Autorizar el propio sobrecupo, sin que otra persona lo autorice. Es la excepción para el médico de guardia: quien lo tiene puede saltarse la separación entre quien reserva y quien autoriza',
     explicitGrantOnly: true,
   },
+  // AG-136. The waiting-room screen. A permission of its own, and NOT a flag
+  // on `agenda:read`, because the screen that faces the room must have no way
+  // to ask for the staff projection: its session simply cannot read it. The
+  // role that carries it (`PANTALLA_SALA`) carries nothing else.
+  {
+    code: 'agenda:board:public',
+    resource: 'agenda',
+    description:
+      'Ver la pantalla de la sala de espera: quién está hoy en la clínica, con su primer nombre y la inicial del apellido. No da acceso a la agenda',
+  },
+  // AG-176. The short note of a board row. Not `agenda:write`: nursing, who
+  // uses it most, neither books nor cancels, and should not gain that to
+  // leave «pasa a curación» on a row (D-176.3).
+  {
+    code: 'agenda:board:note',
+    resource: 'agenda',
+    description:
+      'Escribir la nota corta de una cita en el tablero del día. No modifica la cita',
+  },
   {
     code: 'record:read',
     resource: 'record',

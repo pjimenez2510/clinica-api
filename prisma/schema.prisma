@@ -176,6 +176,8 @@ model User {
   agendaEntriesEmergencyAssessed AgendaEntry[]                @relation("EmergencyAssessor")
   /// AG-120. The late appointments this account let into care past the threshold.
   agendaEntriesLateAdmitted      AgendaEntry[]                @relation("LateAdmitter")
+  boardViewFieldsCreated         BoardViewField[]             @relation("BoardViewFieldCreator")
+  agendaBoardNotesWritten        AgendaEntry[]                @relation("BoardNoteWriter")
 
   /// Money. Two lists over `charge_item` and not one, because raising a charge
   /// and authorising a discount above the role's ceiling are two acts by two
@@ -260,9 +262,11 @@ model Role {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  permissions   RolePermission[]
-  grants        UserRoleGrant[]
-  discountLimit RoleDiscountLimit?
+  permissions     RolePermission[]
+  grants          UserRoleGrant[]
+  discountLimit   RoleDiscountLimit?
+  /// AG-138. The columns of the day board this role sees.
+  boardViewFields BoardViewField[]
 
   /// ORD-063, ORD-046. Sites that escalate critical values to this role, and
   /// sites whose unmatched-results queue this role answers for.
@@ -2344,7 +2348,12 @@ model AgendaEntry {
   /// fuera de toda lectura por ser dato de salud (AG-036, AG-072, AG-074). Una
   /// nota de tablero compartiendo esa columna devolvería un diagnóstico a una
   /// pantalla que da a la sala de espera.
-  boardNote String? @map("board_note") @db.VarChar(120)
+  boardNote     String?   @map("board_note") @db.VarChar(120)
+  /// AG-176. Who wrote the note last, and when — also when the write cleared
+  /// it. Its own stamp and not `edited_by_id`: annotating is not editing.
+  boardNoteById String?   @map("board_note_by_id") @db.Uuid
+  boardNoteBy   User?     @relation("BoardNoteWriter", fields: [boardNoteById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_entry_board_note_by_fk")
+  boardNoteAt   DateTime? @map("board_note_at") @db.Timestamptz(6)
 
   subjectStatusHistory AgendaSubjectStatusHistory[]
   /// AG-129. Whom its emergency call notified.
@@ -5143,4 +5152,26 @@ model RecordVersion {
 
   @@unique([resourceType, resourceId, version], map: "record_version_resource_version_key")
   @@map("record_version")
+}
+
+/// AG-138. Which optional columns of the day board a role sees.
+///
+/// The fields that EXIST are code (`src/shared/domain/board-fields.ts`), and
+/// `board_view_field_known_field` repeats the closed union in the base. Which
+/// role sees which is configuration. Closed by default: a role without rows
+/// sees only the fixed columns.
+model BoardViewField {
+  roleId String @map("role_id") @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "board_view_field_role_fk")
+
+  field String @db.VarChar(32)
+
+  /// The application's clock, always written by the application.
+  createdAt   DateTime @map("created_at") @db.Timestamptz(6)
+  /// NULL only on the starting views the migration and the seed write.
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdBy   User?    @relation("BoardViewFieldCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "board_view_field_created_by_fk")
+
+  @@id([roleId, field], map: "board_view_field_pkey")
+  @@map("board_view_field")
 }

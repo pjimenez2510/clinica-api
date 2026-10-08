@@ -90,7 +90,7 @@ import type { PresenceEntry } from '../domain/overbooking-policy';
  * A value that is never loaded cannot leak into a response, a log or a support
  * screenshot, which is the same reason `OCCUPANCY_SELECT` below leaves it out.
  */
-const ENTRY_SELECT = {
+export const ENTRY_SELECT = {
   id: true,
   kind: true,
   siteId: true,
@@ -1306,6 +1306,8 @@ export class PrismaAgendaRepository implements AgendaRepository {
           emergencyAssessedAt: true,
           emergencyAssessedById: true,
           emergencyFlaggedAt: true,
+          // AG-176: whose board note it is, to clear it on a change of patient.
+          patientId: true,
           _count: { select: { waitlistOrigin: true } },
         },
       });
@@ -1339,6 +1341,17 @@ export class PrismaAgendaRepository implements AgendaRepository {
           reason: edit.reason,
           bookingChannel: edit.bookingChannel,
           patientId: edit.patientId,
+          // AG-162, AG-176. The board note was written about the patient who
+          // WAS here: corrected to another person, it would label them with
+          // somebody else's note. Cleared like the reason, stamped by who
+          // corrected the appointment.
+          ...(edit.patientId !== undefined && edit.patientId !== row.patientId
+            ? {
+                boardNote: null,
+                boardNoteById: command.editedById,
+                boardNoteAt: command.at,
+              }
+            : {}),
           ...(edit.clearOverbooking
             ? {
                 blocksCalendar: true,
@@ -1764,7 +1777,7 @@ function toScheduleRule(row: {
 }
 
 /** Row to view. The casts of `kind`, `status` and the channel rest on the PostgreSQL enums behind those columns. */
-function toEntryView(row: {
+export function toEntryView(row: {
   id: string;
   kind: string;
   siteId: string;

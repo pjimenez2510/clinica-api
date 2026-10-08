@@ -126,5 +126,14 @@ describe('contrato de parámetros de las rutas', () => {
     }
 
     expect(borrados).toEqual([]);
-  });
+    /**
+     * ITS OWN TIMEOUT, AND THE CAUSE IS KNOWN. This test imports EVERY
+     * controller, which is the whole application graph, cold and under the
+     * coverage instrumentation of `pnpm verify`. Alone it takes about a second;
+     * in the full suite on a machine shared with other heavy runs it crossed
+     * the 5 s default of a unit test («Test timed out in 5000ms», reproduced
+     * in one of two runs of `test:cov`, 07-10-2026). The work is fixed and
+     * finite, so a longer ceiling hides nothing.
+     */
+  }, 30_000);
 });

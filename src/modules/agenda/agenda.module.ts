@@ -1,13 +1,19 @@
 import './infrastructure/agenda.constraints';
 import { Module } from '@nestjs/common';
 
+import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 
 import { AgendaAlertsController } from './agenda-alerts.controller';
 import { AgendaController } from './agenda.controller';
 import { AgendaMetricsController } from './agenda-metrics.controller';
 import { AgendaReferenceController } from './agenda-reference.controller';
 import { AgendaService } from './application/agenda.service';
+import { BoardService } from './application/board.service';
+import { BoardController } from './board.controller';
+import { BOARD_REPOSITORY } from './domain/board.repository';
+import { PrismaBoardRepository } from './infrastructure/prisma-board.repository';
 import { EmergencyAlertService } from './application/emergency-alert.service';
 import { WaitlistService } from './application/waitlist.service';
 import { AGENDA_REPOSITORY } from './domain/agenda.repository';
@@ -31,9 +37,10 @@ import { WaitlistController } from './waitlist.controller';
  * `shared/authorisation` because every module needs to know who is asking. It
  * reads `ClsService`, which is global, so providing it twice costs nothing.
  *
- * NO ACCESS AUDIT RECORDER, and that is a decision rather than an oversight
- * (AG-072, SC-004): nothing this module serves is clinical content, and a
- * recorder wired in here would eventually be called once per listed row.
+ * THE ACCESS AUDIT RECORDER IS FOR THE BOARD ONLY (AG-139). Nothing else this
+ * module serves is clinical content and none of it is audited (AG-072,
+ * SC-004); `BoardService` writes ONE row per consultation of the board —
+ * never one per listed row — and is the only provider that receives it.
  */
 @Module({
   controllers: [
@@ -41,6 +48,7 @@ import { WaitlistController } from './waitlist.controller';
     AgendaAlertsController,
     AgendaMetricsController,
     AgendaReferenceController,
+    BoardController,
     WaitlistController,
   ],
   providers: [
@@ -53,7 +61,12 @@ import { WaitlistController } from './waitlist.controller';
     // AG-175. The recipient's side of the emergency notice: another reason
     // to change (D-170.1), and no method shared with booking.
     EmergencyAlertService,
+    // E9. The board: its projections, its note and its views per role — its
+    // own reasons to change (D-176), and the module's only audited reader.
+    BoardService,
     CurrentUserService,
+    { provide: ACCESS_AUDIT_RECORDER, useClass: PrismaAccessAuditRecorder },
+    { provide: BOARD_REPOSITORY, useClass: PrismaBoardRepository },
     { provide: AGENDA_REPOSITORY, useClass: PrismaAgendaRepository },
     { provide: WAITLIST_REPOSITORY, useClass: PrismaWaitlistRepository },
     {

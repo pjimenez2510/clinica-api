@@ -7,6 +7,7 @@ import argon2 from 'argon2';
 // left the seed producing hashes with the old ones, so the development
 // password was silently rehashed on every single login.
 import { PASSWORD_HASHING } from '../src/modules/auth/domain/password-hashing.ts';
+import { BOARD_FIELDS } from '../src/shared/domain/board-fields.ts';
 // El catálogo es la fuente: construir el rol de desarrollo a partir de él
 // evita una segunda lista que alguien tendría que recordar actualizar.
 //
@@ -123,6 +124,17 @@ const USERS = [
     acessRegistration: null,
     role: 'ENFERMERIA',
   },
+  {
+    // AG-136. The screen that faces the waiting room. Its account holds the
+    // PANTALLA_SALA role and nothing else, which is what proves it cannot
+    // reach the staff board.
+    email: 'sala@clinica.ec',
+    firstName: 'Pantalla',
+    lastName: 'Sala de espera',
+    cedula: '1715554448',
+    acessRegistration: null,
+    role: 'PANTALLA_SALA',
+  },
 ];
 
 /**
@@ -216,6 +228,16 @@ export async function seedDevelopment(prisma: PrismaClient): Promise<void> {
     data: SEEDABLE_PERMISSIONS.map((permissionCode) => ({
       roleId: superuser.id,
       permissionCode,
+    })),
+  });
+
+  // AG-138. The development role sees every column of the day board.
+  await prisma.boardViewField.deleteMany({ where: { roleId: superuser.id } });
+  await prisma.boardViewField.createMany({
+    data: BOARD_FIELDS.map((field) => ({
+      roleId: superuser.id,
+      field,
+      createdAt: new Date(),
     })),
   });
 

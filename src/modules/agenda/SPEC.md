@@ -124,6 +124,13 @@ pantalla que pueda enseñarlo aunque quisiera. Con qué permiso se lee es decisi
 del usuario (ver AG-005); cuando exista esa ruta, AG-004 recupera mitad visible y
 sale de esta lista.
 
+**Solo interfaz:** AG-143. Es una lectura de lo que la agenda del día ya sirve
+—nombre, estado, hora y profesional de cada cita, también de las liberadas
+(AG-018, AG-109)— y no pide dato nuevo ni ruta propia: el servidor que la
+alimenta es el de AG-017 y AG-109, que ya tienen sus pruebas. Lo que AG-143
+añade es qué se nombra junto a la cifra y qué no, y eso lo decide la pantalla
+(`day-summary.spec.ts`, recorrido `f02-llegada.spec.ts`).
+
 > **AG-045 entra aquí el 15-08-2026, al cerrar la mitad visible de E2, y con el
 > argumento escrito** —la regla de esta lista es que quien calla debe interfaz—.
 > **El hecho que decide la regla no viaja al cliente.** `AgendaEntryDto` no lleva
@@ -393,7 +400,7 @@ estado de paciente pasó a `IN_PREPARATION` **sin que nadie lo teclee**, que el
 tablero lo ordena por hora de la cita, que el tiempo en el estado actual lo
 calcula el servidor, y que la proyección `PUBLIC` de esa misma fila no lleva
 nombre completo ni nota corta.
-**Cubre:** AG-121 a AG-127, AG-133 a AG-139.
+**Cubre:** AG-121 a AG-127, AG-133 a AG-139, AG-176.
 
 **Solo servidor:** AG-122, AG-126, AG-139. Que un estado NO se pueda teclear se
 demuestra por la ausencia de ruta —una pantalla no puede enseñar un botón que no
@@ -405,10 +412,10 @@ que nadie lo vea.
 > (`20260820052524_clinical_flow_states`): el enum `patient_subject_status`, las
 > dos columnas de `agenda_entry` y sus dos `CHECK` ya existen, igual que los dos
 > valores nuevos de `agenda_status` de E8, las columnas de la calificación de
-> emergencia y el umbral de llegada tardía. Lo que queda de esquema está anotado
-> requisito a requisito y es poco: el historial del estado del paciente
-> (AG-126), la nota del tablero (AG-134), las vistas por rol (AG-138) y las dos
-> mitades que la ley exige y la migración no cubre (AG-128, AG-132).
+> emergencia y el umbral de llegada tardía. El historial del estado del
+> paciente (AG-126) y la nota del tablero (AG-134) entraron el mismo día
+> (`20260820121023_agenda_outcomes_and_board`), y las vistas por rol (AG-138)
+> el 07-10-2026 (`feat/f02-tablero-del-dia`, tabla `board_view_field`).
 >
 > **AG-121 a AG-127 dependen de `encounter` y no al revés.** Cinco de los seis
 > estados los dispara un hecho que documenta ese módulo —se abre la toma de
@@ -1704,12 +1711,13 @@ añade.
   > es una afirmación sobre el código y no sobre los datos, y un día que alguien
   > añada la ruta prohibida por AG-122 nada en la base lo delataría.
   >
-  > **Falta esquema.** Es el hueco que queda del eje entero.
+  > **El esquema existe desde el 20-08-2026**
+  > (`20260820121023_agenda_outcomes_and_board`); lo que sigue es por qué.
   > `agenda_entry.subject_status_at` guarda **sólo el último** instante: al
   > tercer cambio no se puede contestar cuándo fueron los dos primeros ni quién
   > los provocó. Es literalmente el defecto que AG-064 tenía con
   > `last_contacted_at` y que se cerró construyendo
-  > `waitlist_contact_attempt`. Hace falta `agenda_subject_status_history` con
+  > `waitlist_contact_attempt`. Por eso existe `agenda_subject_status_history`, con
   > la forma y los disparadores de `agenda_status_history` —rechazo de `UPDATE`,
   > `DELETE` y `TRUNCATE`, clave foránea `RESTRICT` (D-022)—, más la referencia
   > al hecho que lo originó.
@@ -1932,21 +1940,37 @@ pasó de hora.
   > La sede va en la ruta —`param:siteId`, AG-071—; especialidad y profesional
   > son filtros de consulta, que es lo que pidió el usuario y lo que hacen los
   > cuatro sistemas de referencia.
+  >
+  > **Es un tablero de personas**: sólo citas (`kind = APPOINTMENT`), nunca
+  > bloqueos (AG-021), y con las liberadas del día dentro, como AG-018 —el
+  > tablero es también el registro de lo que pasó hoy, y quien marca «no vino»
+  > tiene que ver que se guardó—. La especialidad acota por los profesionales
+  > que la ejercen (`practitioner_specialty`), que es lo que la pantalla ya
+  > hacía en el cliente y ahora hace el servidor.
 - **AG-134** — El tablero DEBERÁ incluir por cada fila la hora de la cita, la
-  identificación del paciente según la proyección, el profesional, el
-  consultorio, el estado de la cita, el estado del paciente, el tiempo en el
-  estado actual y la nota corta.
+  identificación del paciente según la proyección, el estado de la cita, el
+  estado del paciente y, si la llegada se calificó como emergencia, esa marca;
+  y, según la vista del rol (AG-138), el profesional, el consultorio, el tiempo
+  en el estado actual, el retraso y la nota corta.
   > **La nota corta recupera algo que se perdió al informatizar la pizarra.** Al
   > sustituir la de rotulador por una electrónica se documentó la pérdida de
   > funciones que nadie había escrito: los símbolos improvisados entre colegas,
   > las señales visuales inmediatas. Un campo de texto corto y libre por fila es
   > lo que las devuelve.
   >
-  > **Falta esquema.** `agenda_entry.board_note`, texto corto. No se reutiliza
+  > **El esquema existe desde el 20-08-2026**: `agenda_entry.board_note`,
+  > `varchar(120)` (`20260820121023_agenda_outcomes_and_board`). No se reutiliza
   > `reason`: esa columna es donde recepción escribe el motivo de consulta y por
   > eso quedó fuera de toda lectura (AG-036, AG-072, AG-074), y una nota de
   > tablero que compartiera columna con un dato de salud volvería a meterlo en
-  > una pantalla que está a la vista.
+  > una pantalla que está a la vista. Quién la escribe es AG-176.
+  >
+  > **La fila del personal lleva además la cita entera** —lo mismo que la agenda
+  > del día sirve de ella (AG-017, AG-109, AG-150)—, porque el tablero ofrece
+  > las mismas acciones que el calendario y esas acciones se deciden con esos
+  > campos. Que el profesional y el consultorio viajen con su NOMBRE y no sólo
+  > con su identificador es lo que deja de obligar a la pantalla a cruzar dos
+  > listados más.
 - **AG-135** — El sistema DEBERÁ calcular el tiempo transcurrido en el estado
   actual a partir del instante del último cambio registrado, y NO DEBERÁ
   admitirlo como dato de entrada en ninguna ruta.
@@ -1957,6 +1981,15 @@ pasó de hora.
   > Se calcula sobre el estado del PACIENTE cuando lo hay, y sobre el de la cita
   > cuando todavía no —una cita que aún no llegó no tiene estado de paciente
   > (AG-127)—.
+  >
+  > **El servidor sirve las dos cosas: el instante y los minutos.** El instante
+  > (`stateSince`) es el de la última fila de `agenda_subject_status_history` o
+  > de `agenda_status_history`, leído de su caché (`subject_status_at`) cuando la
+  > hay; los minutos (`minutesInState`) se cuentan contra el reloj de la
+  > aplicación en el momento de servir, nunca contra `now()` de PostgreSQL —los
+  > recorridos mueven el reloj de la API y no el de la base—. La pantalla puede
+  > seguir contando desde el instante entre dos lecturas: es aritmética sobre
+  > dos instantes, no un dato tecleado.
 - **AG-136** — El sistema DEBERÁ servir el tablero en dos proyecciones,
   `STAFF` y `PUBLIC`, cada una con su propia ruta y su propio permiso, y NO
   DEBERÁ exponer ningún parámetro que convierta una en la otra.
@@ -1971,11 +2004,19 @@ pasó de hora.
   > **Permiso nuevo, `agenda:board:public`**, en `permission.catalogue.ts`. Es
   > cambio de código por lo mismo que AG-099: el catálogo es la enumeración
   > contra la que se valida cada ruta. A qué rol se concede es configurable, y
-  > el rol que lo lleva es el de la pantalla de sala, que no lleva `agenda:read`.
+  > el rol que lo lleva es el de la pantalla de sala (`PANTALLA_SALA`, de
+  > fábrica), que no lleva `agenda:read`.
+  >
+  > **Y por eso la pantalla de sala tiene su propia lista de sedes**
+  > (`GET /agenda/board/public/sites`, con el mismo alcance que AG-107): sin
+  > `agenda:read` no puede pedir `/agenda/sites`, y una pantalla que no sabe en
+  > qué sede está no puede pedir ningún tablero.
 - **AG-137** — MIENTRAS la proyección sea `PUBLIC`, el sistema DEBERÁ reducir la
   identificación del paciente al turno o al nombre y la inicial del primer
-  apellido, y NO DEBERÁ incluir documento, nombre completo, motivo de consulta,
-  diagnóstico, medicación ni la nota corta.
+  apellido, DEBERÁ listar sólo a quien está hoy en el establecimiento —llegó y
+  no se ha ido ni salió—, y NO DEBERÁ incluir documento, nombre completo,
+  motivo de consulta, diagnóstico, medicación, la nota corta ni ningún
+  identificador de la cita o del paciente.
   > **Es la única pantalla del sistema que ve gente que no es el paciente**, y
   > por eso la línea de AG-109 —que concede el nombre al listado del día porque
   > recepción llama a la gente por su nombre— no se puede estirar hasta aquí:
@@ -1987,7 +2028,13 @@ pasó de hora.
   > AG-072 y AG-074 mantienen fuera de las lecturas. Es el mismo razonamiento
   > que dejó `reason` fuera del listado.
   >
-  > > **[NECESITA ACLARACIÓN]** — turno o nombre e inicial: son dos formas
+  > **Sólo los presentes, y sólo hoy**: la ruta no admite fecha, y quien no ha
+  > llegado no sale. Una pantalla que da a la sala enseñando la lista de quién
+  > tiene cita hoy diría a la sala entera quién viene y a qué hora, sin que
+  > esa persona esté allí para que haga falta llamarla. **Construido así
+  > mientras se decide** (D-176.2).
+  >
+  > > **[NECESITA ACLARACIÓN]** (D-176.1) — turno o nombre e inicial: son dos formas
   > > distintas y la clínica tiene que elegir una. El turno no identifica a
   > > nadie pero obliga a repartir números en recepción; el nombre e inicial no
   > > cambia el flujo pero sigue identificando a quien ya sabe a quién busca. Y
@@ -1995,7 +2042,9 @@ pasó de hora.
   > > tomado de la guía estadounidense de divulgaciones incidentales, que es el
   > > estándar internacional de referencia: **HIPAA no aplica en Ecuador** y lo
   > > vinculante aquí es la **LOPDP**, que hay que verificar antes de cerrar
-  > > esto. Es decisión de negocio y legal, no de un agente.
+  > > esto. Es decisión de negocio y legal, no de un agente. **Construido
+  > > mientras decide:** el primer nombre y la inicial del primer apellido
+  > > («María A.»), que no cambia el flujo del mostrador.
 - **AG-138** — El sistema DEBERÁ resolver el conjunto de campos de la proyección
   `STAFF` a partir de una configuración por rol, administrable sin desplegar
   código, y NO DEBERÁ servir el mismo conjunto a todos los roles.
@@ -2005,10 +2054,33 @@ pasó de hora.
   > el mismo razonamiento de AG-099 aplicado a columnas en vez de a permisos:
   > qué campos existen es código, quién ve cuáles es configuración.
   >
-  > **Falta esquema.** Una tabla `board_view_field` que ate rol y campo, con la
-  > semilla de las dos vistas de arranque. El conjunto de campos posibles es una
-  > unión cerrada en el código, como `permission.catalogue.ts`, para que un
-  > campo nuevo obligue a decidir quién lo ve.
+  > **El esquema entró el 07-10-2026**: la tabla `board_view_field` ata rol y
+  > campo (`role_id`, `field`, quién y cuándo), con un `CHECK` sobre la unión
+  > cerrada de campos —`PRACTITIONER`, `ROOM`, `TIME_IN_STATE`, `LATENESS`,
+  > `BOARD_NOTE`—, que vive también en el código (`board-fields.ts`) para que un
+  > campo nuevo obligue a decidir quién lo ve. Hora, paciente, estado y
+  > emergencia **no son configurables**: sin ellos no hay tablero, y la
+  > emergencia escondida en una vista es justo lo que el art. 10 de la Ley 77
+  > no admite.
+  >
+  > **Es una preferencia de presentación, no un control de acceso.** La fila
+  > lleva siempre la cita entera (identificadores del profesional y del
+  > consultorio, instantes de llegada), que cualquiera con `agenda:read` lee ya
+  > en la agenda del día y que las acciones necesitan. La única columna que una
+  > vista retiene de verdad es la nota. La frontera de lo que se ve está en la
+  > proyección pública (AG-137), no aquí.
+  >
+  > **Cerrado por defecto**: un rol sin filas ve sólo lo fijo. Quien lleva dos
+  > roles en la sede ve la unión de los dos. El campo que el rol no tiene viaja
+  > vacío y la respuesta dice qué campos lleva (`fields`), para que la pantalla
+  > no pinte una columna de rayas.
+  >
+  > **Las vistas de arranque** las pone la migración sobre los roles de fábrica
+  > que ya existen y la semilla sobre los que crea: recepción todo; enfermería
+  > consultorio, tiempo y nota; el médico consultorio, tiempo, retraso y nota.
+  > Se administran en Administración → Roles (`GET /agenda/board-views`,
+  > `PUT /agenda/board-views/{roleId}`, con `user:read` y `user:manage` como el
+  > resto del rol), y cada cambio queda en la bitácora.
 - **AG-139** — CUANDO se consulte el tablero, el sistema DEBERÁ registrar en la
   bitácora de acceso quién lo consultó, cuándo, desde dónde y con qué
   proyección, y NO DEBERÁ registrar un acceso por cada fila listada.
@@ -2020,6 +2092,34 @@ pasó de hora.
   >
   > **Y de paso contesta si el tablero se usa de verdad**, que es el dato que
   > falta en todos los casos documentados de pizarra electrónica abandonada.
+  >
+  > **La proyección va en el tipo de recurso** —`agenda_board_staff` o
+  > `agenda_board_public`, con la sede como identificador—, porque
+  > `access_audit` no tiene columna para ella y añadirla por un único lector
+  > sería ensanchar una tabla que no se purga nunca. «Desde dónde» es la IP y
+  > el agente, como en AG-073.
+- **AG-176** — CUANDO alguien con `agenda:board:note` escriba la nota corta de
+  una cita de su sede, el sistema DEBERÁ guardarla recortada y con un máximo de
+  120 caracteres, DEBERÁ vaciarla cuando llegue en blanco, y NO DEBERÁ admitirla
+  sobre un bloqueo ni modificar ningún otro campo de la cita.
+  > **Permiso propio y no `agenda:write`**, porque quien más la necesita es
+  > enfermería, que no reserva ni anula citas y no debería poder hacerlo para
+  > dejar «pasa a curación». De fábrica lo llevan recepción, enfermería y el
+  > médico (D-176.3).
+  >
+  > **Con su propio sello** (`board_note_by_id`, `board_note_at`): quién la
+  > escribió por última vez y cuándo, también si la vació. Escribirla no es una
+  > edición de la cita —el disparador de versiones de `agenda_entry` no la
+  > mira, y sellar `edited_by_id` haría que toda cita anotada se leyera
+  > «editada»—, así que escribirla no archiva versión. **Pero la nota vigente
+  > SÍ queda dentro de la versión que archiva una edición de la cita** (hora,
+  > consultorio, paciente): `record_version` guarda la fila entera. Si eso se
+  > queda así o la nota sale del archivado, y si cada escritura deja fila en la
+  > bitácora, es D-176.3. Como es texto libre, la exportación al titular la
+  > deja fuera igual que el motivo (D-141.4), también pendiente en D-176.3.
+  >
+  > **Corregir el paciente de la cita la vacía** (AG-162): la nota era de la
+  > otra persona. Se sella con quien corrigió la cita.
 
 ## 6. Reprogramación
 
@@ -2698,6 +2798,8 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `NO_SHOW_UNDO_EXPIRED`                 | 409    | AG-163         |
 | `APPOINTMENT_FROM_WAITLIST`            | 409    | AG-063, AG-162 |
 | `WAITLIST_NO_CONTACT_ATTEMPT`          | 409    | AG-064         |
+| `BOARD_NOTE_NEEDS_A_PATIENT`           | 409    | AG-176         |
+| `BOARD_VIEW_ROLE_NOT_FOUND`            | 404    | AG-138         |
 | `WAITLIST_CONTACT_OF_ANOTHER`          | 403    | AG-064         |
 | `WAITLIST_CONTACT_CHANGED`             | 409    | AG-064         |
 | `BOOKING_IN_THE_PAST`                  | 422    | AG-031         |
@@ -2843,6 +2945,10 @@ aún no está validado.
 | `GET`    | `/agenda/metrics/late-arrival`                                  | `agenda:read`    | `query`         | AG-141                           |
 | `GET`    | `/agenda/sites/{siteId}/board`                                  | `agenda:read`    | `param:siteId`  | AG-121, AG-123 a AG-135, AG-138, AG-139 |
 | `GET`    | `/agenda/sites/{siteId}/board/public`                           | `agenda:board:public` | `param:siteId` | AG-136, AG-137, AG-139         |
+| `GET`    | `/agenda/board/public/sites`                                    | `agenda:board:public` | `query`   | AG-136                           |
+| `PUT`    | `/agenda/sites/{siteId}/entries/{entryId}/board-note`           | `agenda:board:note` | `param:siteId` | AG-176                       |
+| `GET`    | `/agenda/board-views`                                           | `user:read`      | `global`        | AG-138                           |
+| `PUT`    | `/agenda/board-views/{roleId}`                                  | `user:manage`    | `global`        | AG-138                           |
 | `PATCH`  | `/agenda/sites/{siteId}/entries/{entryId}`                      | `agenda:write`   | `param:siteId`  | AG-050 a AG-052, AG-115, AG-162, AG-168 |
 | `POST`   | `/agenda/sites/{siteId}/entries/{entryId}/no-show/undo`         | `agenda:write`   | `param:siteId`  | AG-163                           |
 | `PATCH`  | `/agenda/sites/{siteId}/entries/{entryId}/emergency`            | `agenda:write`   | `param:siteId`  | AG-132, AG-174                   |
@@ -2936,6 +3042,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | AG-175                                          | Integración contra PostgreSQL real: el aviso nace en la transacción de la llegada, el disparador rechaza reescribirlo y borrarlo (con control positivo), y sólo el destinatario lo marca |
 | AG-133 a AG-135, AG-138                         | Contrato HTTP + unitario de dominio: el orden por hora, el tiempo calculado, y que dos roles distintos reciban conjuntos de campos distintos |
 | AG-136, AG-137                                  | Seguridad dirigida + contrato HTTP: una sesión con `agenda:board:public` y nada más no alcanza la proyección de personal, y la fila que recibe no lleva ninguno de los campos prohibidos |
+| AG-176                                          | Contrato HTTP con una sesión de `ENFERMERIA` de verdad (escribe la nota sin `agenda:write`) + integración: la nota sobre un bloqueo se rechaza y la escrita no toca ningún otro campo |
 | AG-139, AG-140                                  | Integración contra PostgreSQL real: una consulta del tablero deja **una** fila de bitácora y no una por cita (SC-004), y la tasa no se mueve cuando una cita pasa a `LEFT_WITHOUT_BEING_SEEN` |
 | AG-142                                          | Integración: cambiar el umbral de una sede cambia la advertencia siguiente y no toca las llegadas ya registradas (AG-098) |
 | AG-146 a AG-149                                 | Integración contra PostgreSQL real con control positivo: la cita y la atención se mueven en la misma transacción y la fila de historial existe; una prueba reproduce la captura del autor                        |

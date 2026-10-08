@@ -50,6 +50,10 @@ export const DOMAIN_ERROR_CODES = [
   // admite, y la inasistencia se deshace el mismo día.
   'AGENDA_ENTRY_NOT_EDITABLE',
   'NO_SHOW_UNDO_EXPIRED',
+  // AG-176: la nota del tablero es de una cita con paciente.
+  'BOARD_NOTE_NEEDS_A_PATIENT',
+  // AG-138: la vista del tablero de un rol que no existe.
+  'BOARD_VIEW_ROLE_NOT_FOUND',
   // AG-063: la cita que salió de la lista de espera no cambia de paciente.
   'APPOINTMENT_FROM_WAITLIST',
   'INVALID_AGENDA_TRANSITION',

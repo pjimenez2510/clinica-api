@@ -22,6 +22,8 @@ import {
   InvalidAgendaTransitionError,
   InvalidBookingChannelError,
   InvalidSlotDurationError,
+  BoardNoteNeedsAPatientError,
+  BoardViewRoleNotFoundError,
   NoShowUndoExpiredError,
   AppointmentFromWaitlistError,
   WaitlistContactChangedError,
@@ -230,6 +232,24 @@ describe('the transition errors (E2)', () => {
     expect(error.code).toBe('AGENDA_ENTRY_NOT_EDITABLE');
     expect(error).toBeInstanceOf(ConflictError); // 409
     expect(error.userTitle).toContain('ya no admite ese cambio');
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AG-176 answers BOARD_NOTE_NEEDS_A_PATIENT as a 409 naming the block', () => {
+    const error = new BoardNoteNeedsAPatientError();
+
+    expect(error.code).toBe('BOARD_NOTE_NEEDS_A_PATIENT');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toContain('no de un bloqueo');
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AG-138 answers BOARD_VIEW_ROLE_NOT_FOUND as a 404', () => {
+    const error = new BoardViewRoleNotFoundError();
+
+    expect(error.code).toBe('BOARD_VIEW_ROLE_NOT_FOUND');
+    expect(error).toBeInstanceOf(NotFoundError); // 404
+    expect(error.userTitle).toBe('El rol no existe');
     expect(DOMAIN_ERROR_CODES).toContain(error.code);
   });
 

@@ -1,4 +1,5 @@
 import type { Permission } from '../../../shared/authorisation/permission.catalogue';
+import type { BoardField } from '../../../shared/domain/board-fields';
 
 /**
  * The roles a clinic starts with, and nothing more.
@@ -25,6 +26,12 @@ export interface DefaultRole {
   name: string;
   description: string;
   permissions: readonly Permission[];
+  /**
+   * AG-138. The columns of the day board this role starts with. Written ONLY
+   * when the role is created — afterwards the view is the clinic's, edited in
+   * Administración → Roles. Absent means the fixed columns only.
+   */
+  boardFields?: readonly BoardField[];
 }
 
 export const DEFAULT_ROLES: readonly DefaultRole[] = [
@@ -143,6 +150,8 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'patient:sexual-orientation',
       'agenda:read',
       'agenda:write',
+      // AG-176, D-176.3. La nota corta del tablero.
+      'agenda:board:note',
       // D-005, AG-101. El médico AUTORIZA el sobrecupo que recepción reserva:
       // es quien atenderá la urgencia y quien puede decir que cabe. No lleva
       // `agenda:overbook:self` — ése se concede a mano (AU-035 hace lo mismo
@@ -166,6 +175,8 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // only — creating or deactivating a site stays with `site:manage`.
       'site:read',
     ],
+    // AG-138, D-176.4. El médico: sin el profesional, que suele ser él.
+    boardFields: ['ROOM', 'TIME_IN_STATE', 'LATENESS', 'BOARD_NOTE'],
   },
   {
     code: 'ENFERMERIA',
@@ -181,6 +192,9 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // la misma puerta que el médico.
       'patient:priority',
       'agenda:read',
+      // AG-176, D-176.3. Quien más escribe la nota corta del tablero, sin
+      // poder reservar ni anular: por eso no es `agenda:write`.
+      'agenda:board:note',
       'record:read',
       'vitals:write',
       // D-A-003, 20-08-2026. Without this, EN-066 was impossible to satisfy:
@@ -210,6 +224,8 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'catalog:read',
       'site:read',
     ],
+    // AG-138, D-176.4. Enfermería: dónde está, cuánto lleva, y la nota.
+    boardFields: ['ROOM', 'TIME_IN_STATE', 'BOARD_NOTE'],
   },
   {
     code: 'RECEPCION',
@@ -221,6 +237,8 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'patient:write',
       'agenda:read',
       'agenda:write',
+      // AG-176, D-176.3.
+      'agenda:board:note',
       // D-A-003. A.M. 00115-2021 art. 11: «La apertura de la historia clínica
       // única … la realizará el personal de Gestión de Admisiones». That is
       // this role. Note the description above still holds: opening a chart is
@@ -228,6 +246,14 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'encounter:open',
       'catalog:read',
       'site:read',
+    ],
+    // AG-138, D-176.4. Recepción mira el día entero: todas las columnas.
+    boardFields: [
+      'PRACTITIONER',
+      'ROOM',
+      'TIME_IN_STATE',
+      'LATENESS',
+      'BOARD_NOTE',
     ],
   },
   {
@@ -254,6 +280,16 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
     name: 'Auditor',
     description: 'Consulta la bitácora de accesos. No modifica nada.',
     permissions: ['audit:read', 'catalog:read'],
+  },
+  {
+    // AG-136. La pantalla colgada hacia la sala de espera. Lleva ESTE permiso y
+    // ningún otro: sin `agenda:read`, su sesión no puede pedir la proyección
+    // del personal aunque alguien cambie la dirección.
+    code: 'PANTALLA_SALA',
+    name: 'Pantalla de sala de espera',
+    description:
+      'Muestra en la sala de espera quién está hoy en la clínica, con su primer nombre y la inicial del apellido. No ve la agenda ni ninguna ficha.',
+    permissions: ['agenda:board:public'],
   },
 ];
 

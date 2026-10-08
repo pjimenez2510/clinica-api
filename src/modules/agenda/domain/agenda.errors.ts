@@ -479,6 +479,20 @@ export class WaitlistContactChangedError extends ConflictError {
 }
 
 /**
+ * AG-176. A board note on a block: the board is a list of people, and a
+ * blocked stretch of a practitioner's day has nobody to leave a note about.
+ */
+export class BoardNoteNeedsAPatientError extends ConflictError {
+  readonly code = 'BOARD_NOTE_NEEDS_A_PATIENT';
+  override readonly userTitle =
+    'La nota del tablero es de una cita con paciente, no de un bloqueo';
+
+  constructor() {
+    super('Board note requested on a block');
+  }
+}
+
+/**
  * AG-163. «Deshacer» a no-show on a later day than the one it was marked.
  * The same day is the window of a mistaken click; after that the figure of
  * AG-080 has already been read by somebody.
@@ -636,6 +650,20 @@ export class SubjectStatusNotDerivableError extends ConflictError {
     super('Subject status cannot move on this entry', {
       current: current ?? 'NONE',
     });
+  }
+}
+
+/**
+ * AG-138. The role whose board view was asked for does not exist. Its own code
+ * and not auth's `ROLE_NOT_FOUND`: no module imports another, and the catalogue
+ * admits each code once.
+ */
+export class BoardViewRoleNotFoundError extends NotFoundError {
+  readonly code = 'BOARD_VIEW_ROLE_NOT_FOUND';
+  override readonly userTitle = 'El rol no existe';
+
+  constructor() {
+    super('Board view requested for an unknown role');
   }
 }
 
