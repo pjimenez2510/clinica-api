@@ -11,6 +11,7 @@ import {
   MFA_FLOW_ONLY_KEY,
   OWN_ACCOUNT_KEY,
   REQUIRED_PERMISSION_KEY,
+  type RequiredPermissions,
   SITE_SCOPE_KEY,
   type SiteScopeDeclaration,
 } from '../../../shared/http/auth.decorators';
@@ -117,10 +118,17 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    const required = this.reflector.getAllAndOverride<Permission | undefined>(
-      REQUIRED_PERMISSION_KEY,
-      targets,
-    );
+    const declared = this.reflector.getAllAndOverride<
+      Permission | RequiredPermissions | undefined
+    >(REQUIRED_PERMISSION_KEY, targets);
+    // AU-054 (afinado). One permission, or «any of these» (the live channel).
+    const anyOf: readonly Permission[] =
+      declared === undefined
+        ? []
+        : typeof declared === 'string'
+          ? [declared]
+          : declared;
+    const required = anyOf.length > 0 ? anyOf.join(' | ') : undefined;
 
     if (!required) {
       this.logger.error(
@@ -154,7 +162,7 @@ export class PermissionsGuard implements CanActivate {
       await this.roles.resolve(claims.grants),
     );
 
-    if (!principal.can(required)) {
+    if (!anyOf.some((permission) => principal.can(permission))) {
       this.logger.warn(
         { user_id: principal.userId, error_code: 'PERMISSION_DENIED' },
         'permission denied',
@@ -191,7 +199,10 @@ export class PermissionsGuard implements CanActivate {
       }>();
       const siteId = request.params?.[parameter];
 
-      if (!siteId || !principal.canAtSite(required, siteId)) {
+      if (
+        !siteId ||
+        !anyOf.some((permission) => principal.canAtSite(permission, siteId))
+      ) {
         this.logger.warn(
           { user_id: principal.userId, error_code: 'SITE_SCOPE_DENIED' },
           'site not in scope',

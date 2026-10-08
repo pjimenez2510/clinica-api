@@ -4,6 +4,8 @@ import { Principal } from '../authorisation/principal';
 
 import {
   LIVE_EVENT_PERMISSION,
+  LIVE_STREAM_PERMISSIONS,
+  type LiveEventKind,
   mayReceive,
   parseLiveEvent,
 } from './live-event';
@@ -86,5 +88,42 @@ describe('el aviso en vivo', () => {
     bus.publish({ kind: 'critical-results', siteId: SITE_B });
 
     expect(heard).toEqual([SITE_A]);
+  });
+
+  it('AG-180: la pantalla de sala sólo oye `waiting-room` de su sede; recepción, `agenda` y no `billing`', () => {
+    const room = new Principal('sala', [
+      { roleCode: 'PANTALLA_SALA', siteId: SITE_A, permissions: ['agenda:board:public'] }, // prettier-ignore
+    ]);
+    const reception = new Principal('recepcion', [
+      { roleCode: 'RECEPCION', siteId: SITE_A, permissions: ['agenda:read', 'agenda:write'] }, // prettier-ignore
+    ]);
+    const heardBy = (principal: Principal, siteId: string) =>
+      (Object.keys(LIVE_EVENT_PERMISSION) as LiveEventKind[]).filter((kind) =>
+        mayReceive(principal, { kind, siteId }),
+      );
+
+    expect(heardBy(room, SITE_A)).toEqual(['waiting-room']);
+    expect(heardBy(room, SITE_B)).toEqual([]);
+    expect(heardBy(reception, SITE_A)).toEqual(['agenda']);
+    expect(heardBy(reception, SITE_B)).toEqual([]);
+  });
+
+  it('BI-238, SRI-092: caja oye `billing` y `sri` de su sede y nada clínico', () => {
+    const cashier = new Principal('caja', [
+      { roleCode: 'CAJA', siteId: SITE_A, permissions: ['billing:read', 'billing:write'] }, // prettier-ignore
+    ]);
+    const kinds = (
+      Object.keys(LIVE_EVENT_PERMISSION) as LiveEventKind[]
+    ).filter((kind) => mayReceive(cashier, { kind, siteId: SITE_A }));
+    expect(kinds).toEqual(['billing', 'sri']);
+  });
+
+  it('AU-054: el canal pide el permiso de algún tipo, cada uno una vez', () => {
+    expect([...LIVE_STREAM_PERMISSIONS].sort()).toEqual([
+      'agenda:board:public',
+      'agenda:read',
+      'billing:read',
+      'record:read',
+    ]);
   });
 });

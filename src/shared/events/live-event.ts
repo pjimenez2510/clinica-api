@@ -19,9 +19,33 @@ import type { Principal } from '../authorisation/principal';
 export const LIVE_EVENT_PERMISSION = {
   /** ORD-164. The critical-values queue of a site changed. */
   'critical-results': 'record:read',
+  /**
+   * AG-179, AG-180. The entries of a site changed: the agenda, the reception
+   * board and the day board read theirs again.
+   */
+  agenda: 'agenda:read',
+  /**
+   * AG-179, AG-180. What the waiting room projects may have changed. A kind
+   * of its own so the room's account —which holds `agenda:board:public` and
+   * nothing else— hears this and only this.
+   */
+  'waiting-room': 'agenda:board:public',
+  /** BI-238. Caja of a site: an account, a charge, a visit ready to charge. */
+  billing: 'billing:read',
+  /** SRI-092. An electronic voucher of a site changed state. */
+  sri: 'billing:read',
 } as const satisfies Record<string, Permission>;
 
 export type LiveEventKind = keyof typeof LIVE_EVENT_PERMISSION;
+
+/**
+ * AU-054 (afinado). What a session must hold —any one of them, at some site—
+ * for the channel to open and to stay open: the permission of some kind of
+ * event. Derived from the map, so a new kind widens the route by itself.
+ */
+export const LIVE_STREAM_PERMISSIONS = [
+  ...new Set(Object.values(LIVE_EVENT_PERMISSION)),
+] as [Permission, ...Permission[]];
 
 const KINDS = Object.keys(LIVE_EVENT_PERMISSION) as [
   LiveEventKind,

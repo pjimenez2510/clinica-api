@@ -112,6 +112,36 @@ class OtherPermissionController {
   }
 }
 
+/** AU-054 (afinado). «Cualquiera de», con uno que la sesión trae y otro que no. */
+@Controller('any-of')
+class AnyOfController {
+  @Get()
+  @RequirePermission(['patient:merge', 'patient:read'], 'global')
+  read(): { reached: boolean } {
+    return { reached: true };
+  }
+}
+
+/** «Cualquiera de» sin ninguno de los que la sesión trae. */
+@Controller('none-of')
+class NoneOfController {
+  @Get()
+  @RequirePermission(['patient:merge', 'record:read'], 'global')
+  read(): { reached: boolean } {
+    return { reached: true };
+  }
+}
+
+/** «Cualquiera de» con la sede en la URL. */
+@Controller('any-of/sites/:siteId')
+class AnyOfAtSiteController {
+  @Get()
+  @RequirePermission(['record:read', 'patient:read'], 'param:siteId')
+  read(): { reached: boolean } {
+    return { reached: true };
+  }
+}
+
 /**
  * Ocupa el sitio de `JwtAuthGuard`: publica los claims en el contexto cuando
  * la petición dice traer sesión, y no publica nada cuando no.
@@ -180,6 +210,9 @@ describe('PermissionsGuard, cerrado por defecto', () => {
         PermissionOnlyController,
         SiteScopedController,
         OtherPermissionController,
+        AnyOfController,
+        NoneOfController,
+        AnyOfAtSiteController,
       ],
       providers: [
         { provide: APP_FILTER, useClass: ProblemDetailsFilter },
@@ -276,5 +309,19 @@ describe('PermissionsGuard, cerrado por defecto', () => {
     const response = await withSession(`/sites/${NORTE}/patients`).expect(200);
 
     expect(response.body).toEqual({ reached: true });
+  });
+
+  it('AU-054 (afinado): «cualquiera de» deja pasar a quien trae uno, y rechaza a quien no trae ninguno', async () => {
+    expect((await withSession('/any-of').expect(200)).body).toEqual({
+      reached: true,
+    });
+    const refused = await withSession('/none-of').expect(403);
+    expect((refused.body as Problem).code).toBe('PERMISSION_DENIED');
+  });
+
+  it('AU-011 con «cualquiera de»: uno de ellos EN ESA SEDE, no en otra', async () => {
+    await withSession(`/any-of/sites/${NORTE}`).expect(200);
+    const refused = await withSession(`/any-of/sites/${SUR}`).expect(403);
+    expect((refused.body as Problem).code).toBe('SITE_SCOPE_DENIED');
   });
 });
