@@ -26,11 +26,14 @@ import { ScheduleRulesService } from './application/schedule-rules.service';
 import type { Requester } from './application/staff-audit.trail';
 import {
   // NO `import type` for parameter DTOs: see staff.controller.ts.
+  ClinicScheduleDto,
   CreateScheduleRuleDto,
+  ListClinicScheduleQueryDto,
   ListScheduleRulesQueryDto,
   ScheduleRuleListDto,
   ScheduleRuleOutcomeDto,
   UpdateScheduleRuleDto,
+  type ClinicScheduleResponse,
   type ScheduleRuleListResponse,
   type ScheduleRuleOutcomeResponse,
 } from './dto/staff.dto';
@@ -69,6 +72,24 @@ export class StaffScheduleController {
     private readonly schedule: ScheduleRulesService,
     private readonly currentUser: CurrentUserService,
   ) {}
+
+  /** ST-053. Every practitioner's rules, filtered and one page at a time. */
+  @Get('schedule-rules')
+  @RequirePermission('staff:read', 'global')
+  @ApiOperation({
+    summary: 'Horarios de toda la clínica, por sede, día y profesional',
+  })
+  @ApiOkResponse({ type: ClinicScheduleDto })
+  async listClinic(
+    @Query() query: ListClinicScheduleQueryDto,
+  ): Promise<ClinicScheduleResponse> {
+    const { page, pageSize, ...filter } = query;
+    const { items, total } = await this.schedule.listClinic(filter, {
+      page,
+      pageSize,
+    });
+    return { items: [...items], total, page, pageSize };
+  }
 
   /** ST-040, ST-041. */
   @Get('practitioners/:practitionerId/schedule-rules')

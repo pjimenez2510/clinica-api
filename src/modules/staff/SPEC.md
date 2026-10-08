@@ -81,7 +81,7 @@ aquí).
 
 **Prueba independiente:** dos reglas vigentes solapadas del mismo profesional
 insertadas concurrentemente — gana exactamente una.
-**Cubre:** ST-040 a ST-046, ST-048.
+**Cubre:** ST-040 a ST-046, ST-048, ST-053.
 
 **Solo servidor:** ST-044 y ST-048. El primero es bitácora; el segundo es
 alcance por sede sobre una escritura, y una pantalla no puede demostrar una
@@ -296,6 +296,16 @@ _Numeración conservada de `CF-040`..`CF-046` al mudarse desde `configuration`
   > en la sede preguntada, y contestar eso a quien no tiene la sede en su
   > alcance es enumerar el mapa de la clínica. `SITE_SCOPE_DENIED` nombra el
   > permiso y nunca una sede.
+- **ST-053** — CUANDO alguien con `staff:read` pida los horarios de toda la
+  clínica, el sistema DEBERÁ devolver una página (20, 50 o 100 por página) de
+  las reglas de horario de todos los profesionales, con el nombre del
+  profesional y de la sede, ordenadas por día, hora de inicio y apellido, y el
+  total; DEBERÁ admitir filtrarlas por sede, por día de la semana y por
+  profesional, y DEBERÁ dejar fuera las cerradas (desactivadas o con fin
+  anterior a hoy, fecha de la clínica) salvo que se pidan.
+  > ESTANDAR-UI §12.7 (revisión del autor, 07-10-2026): «Horarios por sede, día
+  > y profesional». Antes un horario sólo se veía abriendo la ficha de cada
+  > profesional. Es la misma lectura de ST-040, sin otro dato ni otro permiso.
 
 ---
 
@@ -443,6 +453,7 @@ quiera puede concederlo: los roles son datos.
 | `PUT`    | `/practitioners/:id/duration-exceptions/:serviceTypeId`             | ST-009           |
 | `DELETE` | `/practitioners/:id/duration-exceptions/:serviceTypeId`             | ST-009           |
 | `GET`    | `/practitioners/:id/schedule-rules?includeClosed=`                  | ST-040, ST-041   |
+| `GET`    | `/schedule-rules?siteId=&weekday=&practitionerId=&includeClosed=&page=&pageSize=` | ST-053 |
 | `POST`   | `/practitioners/:id/schedule-rules`                                 | ST-040..046, 048 |
 | `PATCH`  | `/schedule-rules/:id`                                               | ST-040..046, 048 |
 | `DELETE` | `/schedule-rules/:id`                                               | ST-041, 043, 048 |

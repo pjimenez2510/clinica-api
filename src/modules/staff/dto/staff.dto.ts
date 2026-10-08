@@ -55,6 +55,22 @@ export class ListScheduleRulesQueryDto extends createZodDto(
   listScheduleRulesQuerySchema,
 ) {}
 
+export const listClinicScheduleQuerySchema = z.object({
+  siteId: z.uuid().optional(),
+  /** ISO-8601: 1 = Monday … 7 = Sunday. */
+  weekday: z.coerce.number().int().min(1).max(7).optional(),
+  practitionerId: z.uuid().optional(),
+  /** Deactivated rules and those that ended before today, too. */
+  includeClosed: explicitFlag,
+  page: z.coerce.number().int().min(1).default(1),
+  /** ESTANDAR-UI §12.7: 20, 50 or 100. */
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+/** Query of GET /staff/schedule-rules (ST-053). */
+export class ListClinicScheduleQueryDto extends createZodDto(
+  listClinicScheduleQuerySchema,
+) {}
+
 // --- The practitioner (ST-001..ST-003, ST-006, ST-010) ---------------------
 
 /**
@@ -436,6 +452,21 @@ export const scheduleRuleListSchema = z.object({
 });
 /** Response of GET /staff/practitioners/:practitionerId/schedule-rules. */
 export class ScheduleRuleListDto extends createZodDto(scheduleRuleListSchema) {}
+
+export const clinicScheduleRuleSchema = scheduleRuleSchema.extend({
+  /** «Apellidos, Nombres». */
+  practitionerName: z.string(),
+  siteName: z.string(),
+});
+export const clinicScheduleSchema = z.object({
+  items: z.array(clinicScheduleRuleSchema).readonly(),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+});
+/** Response of GET /staff/schedule-rules (ST-053). */
+export class ClinicScheduleDto extends createZodDto(clinicScheduleSchema) {}
+export type ClinicScheduleResponse = z.infer<typeof clinicScheduleSchema>;
 
 /**
  * ST-043. The appointments the change left outside the new hours — LISTED,
