@@ -16,6 +16,7 @@ import {
   AllergyRefutedAloneError,
   AmendmentReasonRequiredError,
   AnthropometryPendingError,
+  ScreeningLockedAfterDischargeError,
   ScreeningPendingError,
   AppointmentNotAttendableError,
   BmiIsDerivedError,
@@ -89,6 +90,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new BmiIsDerivedError(),
   new AnthropometryPendingError(['heightCm']),
   new ScreeningPendingError(),
+  new ScreeningLockedAfterDischargeError(),
   new ClinicalNoteNotFoundError(),
   new UnknownClinicalFormError(['002@1']),
   new NoteContentIncompleteError(['motivoConsulta']),
@@ -317,6 +319,16 @@ describe('el contrato de errores de la atención', () => {
         message: 'Responda el tamizaje: sin signos, no se aplicó o con signos',
       },
     ]);
+  });
+
+  it('EN-242 tras el alta sólo se completa la notificación: 409, sin repetir nada del tamizaje', () => {
+    const error = new ScreeningLockedAfterDischargeError();
+
+    expect(error.code).toBe('SCREENING_LOCKED_AFTER_DISCHARGE');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toBe(
+      'La atención ya tiene el alta: del tamizaje sólo se completa la notificación a la autoridad de un tamizaje con signos',
+    );
   });
 
   it('EN-217 al firmar nombra cada medida que falta, porque la pantalla une los mensajes en una línea', () => {

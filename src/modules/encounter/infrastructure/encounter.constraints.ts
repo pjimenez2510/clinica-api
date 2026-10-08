@@ -303,6 +303,17 @@ registerConstraintMeanings({
     message: 'Falta peso/talla: obligatorio para firmar la nota',
   },
   /**
+   * EN-240 (D-188 §7). The deferred trigger: the consultation note signed and
+   * the attention discharged with block F unanswered. The service refuses it
+   * first; this is the sentence for whatever reaches the commit anyway. It
+   * says what is missing and nothing else: every attention has one.
+   */
+  clinical_note_sign_needs_screening: {
+    code: 'SCREENING_PENDING',
+    field: 'screening',
+    message: 'Responda el tamizaje: sin signos, no se aplicó o con signos',
+  },
+  /**
    * EN-217, D-134.3. A correction of the taking of a discharged attention
    * left the mandatory anthropometry missing. The adapter refuses it first,
    * under the attention's lock, naming each measure; this is the sentence for
@@ -490,6 +501,36 @@ registerConstraintMeanings({
     code: 'VALIDATION_FAILED',
     field: 'reportedToAuthority',
     message: 'Sólo se notifica a la autoridad un tamizaje con signos',
+  },
+  /**
+   * EN-074, EN-242. Every notified screening says who recorded the
+   * notification and when; the adapter always stamps both.
+   */
+  violence_screening_notified_who_and_when: {
+    code: 'VALIDATION_FAILED',
+    field: 'notification',
+    message: 'La notificación a la autoridad se registra con quién y cuándo',
+  },
+  /**
+   * EN-242, EN-130. `trg_violence_screening_guard`, for whatever reaches the
+   * table without the adapter, which refuses both first under the
+   * attention's lock. They say the rule, never a value (EN-073).
+   */
+  violence_screening_after_discharge: {
+    code: 'SCREENING_LOCKED_AFTER_DISCHARGE',
+    field: 'notification',
+    message:
+      'La atención ya tiene el alta: del tamizaje sólo se completa la notificación a la autoridad',
+  },
+  violence_screening_moved: {
+    code: 'VALIDATION_FAILED',
+    field: 'screening',
+    message: 'El tamizaje pertenece a su atención',
+  },
+  violence_screening_frozen: {
+    code: 'ENCOUNTER_ALREADY_CLOSED',
+    field: 'screening',
+    message: 'La atención ya no admite contenido clínico nuevo',
   },
   violence_screening_report_block_iff_reported: {
     code: 'VALIDATION_FAILED',

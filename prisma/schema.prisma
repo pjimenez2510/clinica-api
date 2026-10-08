@@ -1558,7 +1558,9 @@ model Practitioner {
   encountersClosed Encounter[] @relation("EncounterCloser")
 
   /// EN-076. Who applied each screening of block F.
-  violenceScreenings         ViolenceScreening[]
+  violenceScreenings         ViolenceScreening[] @relation("ViolenceScreeningScreenedBy")
+  /// EN-074, EN-242. Who recorded the notification to the authority.
+  violenceScreeningsNotified ViolenceScreening[] @relation("ViolenceScreeningNotifiedBy")
   /// EN-076. Who replaced an earlier answer of block F.
   violenceScreeningsReplaced ViolenceScreeningVersion[]
 
@@ -2992,8 +2994,15 @@ model ViolenceScreening {
 
   /// EN-076. Who and when: the question asked twelve months later is who.
   screenedById String       @map("screened_by_id") @db.Uuid
-  screenedBy   Practitioner @relation(fields: [screenedById], references: [id], onDelete: Restrict)
+  screenedBy   Practitioner @relation("ViolenceScreeningScreenedBy", fields: [screenedById], references: [id], onDelete: Restrict)
   screenedAt   DateTime     @default(now()) @map("screened_at") @db.Timestamptz(6)
+
+  /// EN-074, EN-242. Who recorded the notification block and when — with the
+  /// discharge given it is completed apart from the screening, so it carries
+  /// its own author. Both present exactly when notified (CHECK).
+  notifiedById String?       @map("notified_by_id") @db.Uuid
+  notifiedBy   Practitioner? @relation("ViolenceScreeningNotifiedBy", fields: [notifiedById], references: [id], onDelete: Restrict)
+  notifiedAt   DateTime?     @map("notified_at") @db.Timestamptz(6)
 
   /// Earlier answers, archived by `trg_violence_screening_guard`.
   versions ViolenceScreeningVersion[]

@@ -529,15 +529,118 @@ describe('el tamizaje de violencia por HTTP, con sesiones reales (EN-070 a EN-07
       await send('put', `/encounters/${encounterId}/screening`, doctorToken, { result: 'NOT_APPLIED' }).expect(200); // prettier-ignore
       await send('post', `/encounters/${encounterId}/notes/${noteId}/sign`, doctorToken, { dischargeCondition: 'ALIVE' }).expect(200); // prettier-ignore
 
-      // EN-130. After the discharge it is no longer written.
+      // EN-130, EN-242. After the discharge the answer is no longer changed.
       const closed = await send('put', `/encounters/${encounterId}/screening`, doctorToken, { result: 'NO_SIGNS' }).expect(409); // prettier-ignore
-      expect((closed.body as Problem).code).toBe('ENCOUNTER_ALREADY_CLOSED');
+      expect((closed.body as Problem).code).toBe(
+        'SCREENING_LOCKED_AFTER_DISCHARGE',
+      );
 
-      // EN-130. And the DATABASE refuses it too, whoever writes. Before the
+      // And the DATABASE refuses it too, whoever writes. Before the
       // discharge the same row was written (the PUT above): the control.
       await expect(
         prisma.$executeRaw`UPDATE violence_screening SET result = 'NO_SIGNS' WHERE encounter_id = ${encounterId}::uuid`,
-      ).rejects.toThrow(/violence_screening_frozen/);
+      ).rejects.toThrow(/violence_screening_after_discharge/);
+    });
+  });
+
+  /**
+   * EN-242 (D-188 §5). The 094 is often filled once the 002 is signed: with
+   * the discharge given, the key holder completes the notification — and
+   * only it.
+   */
+  describe('EN-242 la notificación a la autoridad tras el alta', () => {
+    const { notification, ...UNNOTIFIED } = POSITIVE;
+
+    async function discharged(answer: object): Promise<string> {
+      const encounterId = await openEncounter();
+      const draft = await send('post', `/encounters/${encounterId}/notes`, doctorToken, { formCode: '002', content: COMPLETE_002 }).expect(201); // prettier-ignore
+      await createDiagnosis(prisma, encounterId, 'J00');
+      await send('put', `/encounters/${encounterId}/screening`, doctorToken, answer).expect(200); // prettier-ignore
+      await send('post', `/encounters/${encounterId}/notes/${(draft.body as { id: string }).id}/sign`, doctorToken, { dischargeCondition: 'ALIVE' }).expect(200); // prettier-ignore
+      return encounterId;
+    }
+
+    it('EN-242 otro médico con la llave completa la notificación tras el alta: queda quién y cuándo, la anterior archivada, y quién aplicó el tamizaje no cambia', async () => {
+      const encounterId = await discharged(UNNOTIFIED);
+      const before = await prisma.violenceScreening.findUniqueOrThrow({ where: { encounterId } }); // prettier-ignore
+      expect(before.notifiedById).toBeNull();
+
+      const saved = await send('put', `/encounters/${encounterId}/screening`, secondDoctorToken, POSITIVE).expect(200); // prettier-ignore
+
+      expect(saved.body).toMatchObject({
+        result: 'CONFIRMED',
+        notification,
+        screenedById: doctorPractitionerId,
+        screenedAt: before.screenedAt.toISOString(),
+        notifiedById: secondDoctorPractitionerId,
+      });
+      const after = await prisma.violenceScreening.findUniqueOrThrow({ where: { encounterId } }); // prettier-ignore
+      expect(after).toMatchObject({
+        reportedToAuthority: true,
+        authorityFormSerial: SERIAL,
+        screenedById: doctorPractitionerId,
+        screenedAt: before.screenedAt,
+        notifiedById: secondDoctorPractitionerId,
+      });
+      expect(after.notifiedAt!.getTime()).toBeGreaterThanOrEqual(before.screenedAt.getTime()); // prettier-ignore
+      const versions = await prisma.violenceScreeningVersion.findMany({ where: { encounterId } }); // prettier-ignore
+      expect(versions).toHaveLength(1);
+      expect(versions[0]).toMatchObject({ replacedById: secondDoctorPractitionerId }); // prettier-ignore
+      // EN-075. The write leaves its trail row.
+      expect(
+        await prisma.accessAudit.count({ where: { resourceType: 'encounter_screening', resourceId: encounterId, action: 'UPDATE' } }), // prettier-ignore
+      ).toBe(1);
+
+      // The same notification again changes nothing and archives nothing.
+      await send('put', `/encounters/${encounterId}/screening`, secondDoctorToken, POSITIVE).expect(200); // prettier-ignore
+      expect(await prisma.violenceScreeningVersion.count({ where: { encounterId } })).toBe(1); // prettier-ignore
+    });
+
+    it('EN-242 tras el alta rechaza con SCREENING_LOCKED_AFTER_DISCHARGE cambiar el resultado, los tipos o la acción, quitar la notificación, o notificar un «sin signos»; corregir la notificación sí', async () => {
+      const encounterId = await discharged(POSITIVE);
+      const put = (body: object) =>
+        send('put', `/encounters/${encounterId}/screening`, doctorToken, body);
+
+      for (const body of [
+        { ...POSITIVE, result: 'SUSPECTED' },
+        { ...POSITIVE, types: ['PHYSICAL'] },
+        { ...POSITIVE, actionTaken: 'Otra acción' },
+        UNNOTIFIED,
+      ]) {
+        const refused = await put(body).expect(409);
+        expect((refused.body as Problem).code).toBe(
+          'SCREENING_LOCKED_AFTER_DISCHARGE',
+        );
+        // EN-073. The refusal repeats nothing of the screening.
+        for (const telltale of TELLTALES) {
+          expect(JSON.stringify(refused.body)).not.toContain(telltale);
+        }
+      }
+      expect(await prisma.violenceScreeningVersion.count({ where: { encounterId } })).toBe(0); // prettier-ignore
+
+      // Positive control: the same answer with the notification corrected,
+      // the types in another order.
+      await put({
+        ...POSITIVE,
+        types: ['SEXUAL', 'PHYSICAL'],
+        notification: { ...notification, formSerial: 'SERIE-0098766' },
+      }).expect(200);
+      expect(await prisma.violenceScreeningVersion.count({ where: { encounterId } })).toBe(1); // prettier-ignore
+
+      const negative = await discharged({ result: 'NO_SIGNS' });
+      const refused = await send('put', `/encounters/${negative}/screening`, doctorToken, { ...POSITIVE }).expect(409); // prettier-ignore
+      expect((refused.body as Problem).code).toBe(
+        'SCREENING_LOCKED_AFTER_DISCHARGE',
+      );
+    });
+
+    it('EN-242 EN-072 tras el alta enfermería sigue sin poder escribirlo (403), y una atención de otra sede es 404', async () => {
+      const encounterId = await discharged(UNNOTIFIED);
+
+      await send('put', `/encounters/${encounterId}/screening`, nurseToken, POSITIVE).expect(403); // prettier-ignore
+      await send('put', `/encounters/${encounterId}/screening`, elsewhereDoctorToken, POSITIVE).expect(404); // prettier-ignore
+      const untouched = await prisma.violenceScreening.findUniqueOrThrow({ where: { encounterId } }); // prettier-ignore
+      expect(untouched.reportedToAuthority).toBe(false);
     });
   });
 });

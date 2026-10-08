@@ -242,6 +242,34 @@ export async function createDiagnosis(
   });
 }
 
+/**
+ * EN-240 (D-188 §7). Answers block F of an attention — «No se aplicó» —, as
+ * the doctor does before signing the 002 that discharges:
+ * `trg_clinical_note_sign_needs_screening` refuses that signature without an
+ * answer, and a test that signs straight in the database answers it first.
+ * The rule is not weakened for tests. Call it while the attention is live:
+ * `trg_violence_screening_guard` freezes block F with the discharge.
+ * Idempotent: an attention already answered keeps its answer.
+ */
+export async function answerScreening(
+  prisma: PrismaClient,
+  encounterId: string,
+  screenedById: string,
+) {
+  const answered = await prisma.violenceScreening.count({
+    where: { encounterId },
+  });
+  if (answered > 0) return;
+  await prisma.violenceScreening.create({
+    data: {
+      encounterId,
+      result: 'NOT_APPLIED',
+      screenedById,
+      screenedAt: new Date(),
+    },
+  });
+}
+
 /** An hour of appointment, in UTC so the assertion does not depend on the host. */
 export function hourSlot(hour: number): { startsAt: Date; endsAt: Date } {
   return {

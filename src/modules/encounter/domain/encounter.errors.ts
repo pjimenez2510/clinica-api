@@ -471,6 +471,24 @@ export class ScreeningPendingError extends ValidationError {
   }
 }
 
+/**
+ * EN-242 (D-188 §5). With the discharge given, block F admits only the
+ * notification to the authority: completed or corrected, never removed, and
+ * only on a screening with signs.
+ *
+ * ⚠️ IT ECHOES NOTHING (EN-073): not the result, not whether there is a
+ * screening — a key holder asked, and the sentence is the same in every case.
+ */
+export class ScreeningLockedAfterDischargeError extends ConflictError {
+  readonly code = 'SCREENING_LOCKED_AFTER_DISCHARGE';
+  override readonly userTitle =
+    'La atención ya tiene el alta: del tamizaje sólo se completa la notificación a la autoridad de un tamizaje con signos';
+
+  constructor() {
+    super('With the discharge given only the notification is completed');
+  }
+}
+
 /* ─── Nota clínica (H2: EN-020 a EN-034) ─────────────────────────────────── */
 
 /** EN-022. The note does not exist, or belongs to another attention. */

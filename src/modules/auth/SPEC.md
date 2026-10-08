@@ -79,9 +79,9 @@ que entra el lunes, sigue exigiendo tocar la base de datos a mano.
 **Prueba independiente:** crear una cuenta, concederle un rol en una sede, y
 comprobar que sus permisos efectivos cambian **sin reiniciar** y que la
 concesión aparece en la bitácora.
-**Cubre:** AU-020 a AU-034, AU-038, AU-042, AU-045, AU-047.
+**Cubre:** AU-020 a AU-034, AU-038, AU-042, AU-045, AU-047, AU-053.
 
-**Solo servidor:** AU-025, AU-026, AU-027, AU-038 y AU-042. Los dos primeros son
+**Solo servidor:** AU-025, AU-026, AU-027, AU-038, AU-042 y AU-053. Los dos primeros son
 bitácora y el plazo de caducidad definido en un único sitio; AU-027 es un
 índice único parcial. La pantalla no puede enseñar ninguno: por AU-028, un
 enlace caducado, gastado o inventado responden lo mismo. AU-038 es alcance por
@@ -841,6 +841,28 @@ enlace que no sirve y con un correo que no sale.
   > **Lo que no cubre:** un rol propio creado **después** con `record:write` y
   > sin `background:write` no lo recibe: la concesión ya se hizo. Qué hacer con
   > él es D-071.
+- **AU-053** — CUANDO se sincronicen los permisos y la base no haya recibido
+  todavía esta concesión, el sistema DEBERÁ conceder `record:protected` a
+  **todo** rol que tenga `record:sign` —del sistema o propio de la clínica—,
+  **una sola vez por base**, con su fila en `authorisation_one_off`; un rol al
+  que después se le quite NO DEBERÁ recuperarlo, y uno sin `record:sign` NO
+  DEBERÁ recibirlo. DEBERÁ informar en la salida de qué roles lo recibieron.
+  > **D-188 §6 (aceptada por el autor el 08-10-2026,
+  > `feat/f04-tamizaje-y-cierre-pendientes`).** La firma de la 002 exige el
+  > tamizaje respondido (EN-240) y el tamizaje se lee y se escribe con
+  > `record:protected`. D-012 sólo dio el código nuevo a `MEDICO`: un rol
+  > propio que firma la 002 —«Odontólogo»— no podía dar el alta. Quien firma
+  > la 002 ya tenía que responderlo; nadie decidió quitárselo.
+  >
+  > **En la sincronización y no en una migración, como AU-042.** En una base
+  > nueva la migración corre antes de que existan el permiso y los roles, y en
+  > una sin `record:protected` el código lo crearía la sincronización después
+  > de la migración, que ya no concedería nada. La fila
+  > `record-protected-to-record-signers` es el «una vez».
+  >
+  > **Lo que no cubre**, como AU-042: un rol propio creado **después** con
+  > `record:sign` no lo recibe; se reparte desde Roles. `ADMIN` no firma la
+  > 002 y no lo recibe (D-188 §1).
 
 ### Recuperación del segundo factor (REQ-154, D-014)
 
