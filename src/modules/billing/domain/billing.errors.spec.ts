@@ -51,6 +51,11 @@ const EXPECTED: readonly [
   [errors.PayerInactiveError, 'PAYER_INACTIVE', BusinessRuleViolation],
   [errors.PayerInUseError, 'PAYER_IN_USE', ConflictError],
   [errors.LastActivePayerError, 'LAST_ACTIVE_PAYER', ConflictError],
+  // BI-100, BI-141, BI-144, BI-146.
+  [errors.PaymentMethodNotFoundError, 'PAYMENT_METHOD_NOT_FOUND', NotFoundError], // prettier-ignore
+  [errors.PaymentMethodNameTakenError, 'PAYMENT_METHOD_NAME_TAKEN', ConflictError], // prettier-ignore
+  [errors.LastActivePaymentMethodError, 'LAST_ACTIVE_PAYMENT_METHOD', ConflictError], // prettier-ignore
+  [errors.DiscountLimitRoleNotFoundError, 'DISCOUNT_LIMIT_ROLE_NOT_FOUND', NotFoundError], // prettier-ignore
   [errors.PayerRucRequiredError, 'PAYER_RUC_REQUIRED', ValidationError],
   [errors.PriceListNotFoundError, 'PRICE_LIST_NOT_FOUND', NotFoundError],
   [errors.PricePeriodInvalidError, 'PRICE_PERIOD_INVALID', ValidationError],
