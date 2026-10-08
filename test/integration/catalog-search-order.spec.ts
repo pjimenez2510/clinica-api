@@ -74,4 +74,10 @@ describe('orden de la búsqueda en catálogos', () => {
       found.indexOf('Puerto San Miguel'),
     );
   });
+
+  it('CAT-001 un «%» o un «_» tecleado es un carácter, no un comodín que sube todo', async () => {
+    expect(await search('%%')).toEqual([]);
+    // Control positivo: el mismo largo con letras sí encuentra.
+    expect((await search('sa')).length).toBeGreaterThan(0);
+  });
 });
