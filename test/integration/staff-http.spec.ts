@@ -8,6 +8,7 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
+import { seedBilling } from '../../prisma/seed-billing.mts';
 import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { seedStaff } from '../../prisma/seed-staff.mts';
 import { AppModule } from '../../src/app.module';
@@ -118,6 +119,9 @@ describe('el personal por HTTP', () => {
     }
 
     await syncAuthorisation(prisma);
+    // SP-030. A service type is born with its service: the consultation
+    // category and the 0 % rate it is created in come from the billing seed.
+    await seedBilling(prisma);
     // The role→permission cache is indexed by id, and truncation recreates the
     // roles with fresh ids: without this every request answers 403.
     registry.invalidate();
