@@ -18,6 +18,11 @@
 -- ⚠️ DATO DE ACCESO RESTRINGIDO (ver `20261008170000_violence_screening_block_f`):
 -- ningún mensaje de aquí lleva un valor del tamizaje.
 
+-- UNA TRANSACCIÓN: el relleno apaga un momento `trg_violence_screening_guard`,
+-- y Prisma no envuelve la migración. Si algo falla a medias, el guardián no
+-- puede quedar apagado.
+BEGIN;
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 1. QUIÉN REGISTRÓ LA NOTIFICACIÓN, Y CUÁNDO (EN-074, EN-242)
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -91,29 +96,48 @@ BEGIN
       MESSAGE = 'violence_screening_immutable: a screening is corrected, never deleted';
   END IF;
 
+  -- A screening belongs to its attention: moved to a live one, the answer of
+  -- a discharged attention would be rewritten there (revisión de la rama).
+  IF TG_OP = 'UPDATE' AND NEW.encounter_id IS DISTINCT FROM OLD.encounter_id THEN
+    RAISE EXCEPTION USING
+      ERRCODE = 'integrity_constraint_violation',
+      MESSAGE = 'violence_screening_moved: a screening belongs to its attention';
+  END IF;
+
   SELECT e.status::text INTO encounter_status
     FROM encounter e WHERE e.id = NEW.encounter_id;
 
   IF encounter_status IN ('OPEN', 'ON_HOLD') THEN
     NULL;
   ELSIF encounter_status IN ('DISCHARGED', 'COMPLETED') AND TG_OP = 'UPDATE' THEN
-    IF NEW.encounter_id IS DISTINCT FROM OLD.encounter_id
-       OR NEW.result IS DISTINCT FROM OLD.result
+    IF NEW.result IS DISTINCT FROM OLD.result
        OR NEW.types IS DISTINCT FROM OLD.types
        OR NEW.action_taken IS DISTINCT FROM OLD.action_taken
        OR NEW.screening_tool IS DISTINCT FROM OLD.screening_tool
        OR NEW.screened_by_id IS DISTINCT FROM OLD.screened_by_id
        OR NEW.screened_at IS DISTINCT FROM OLD.screened_at
        OR NOT NEW.reported_to_authority
-       OR NEW.notified_at IS NOT DISTINCT FROM OLD.notified_at THEN
+       -- Something of the block itself changes: re-stamping who notified, or
+       -- when, over the same notification is not a notification.
+       OR (NEW.reported_to_authority IS NOT DISTINCT FROM OLD.reported_to_authority
+           AND NEW.authority_form_serial IS NOT DISTINCT FROM OLD.authority_form_serial
+           AND NEW.injury IS NOT DISTINCT FROM OLD.injury
+           AND NEW.aggressor_identified IS NOT DISTINCT FROM OLD.aggressor_identified
+           AND NEW.aggressor_relationship IS NOT DISTINCT FROM OLD.aggressor_relationship)
+       -- Its own stamp, after the previous one: the 24-hour term (D-052 §1)
+       -- is read from it. Columns against columns, never `now()`.
+       OR NEW.notified_at IS NULL
+       OR NEW.notified_at <= COALESCE(OLD.notified_at, OLD.screened_at) THEN
       RAISE EXCEPTION USING
-        ERRCODE = '42501',
+        ERRCODE = 'integrity_constraint_violation',
         MESSAGE = 'violence_screening_after_discharge: with the discharge given only the notification to the authority is completed',
         HINT = 'EN-242, D-188 §5.';
     END IF;
   ELSE
+    -- 23000 and not 42501 since this delivery: a privilege error reads as «no
+    -- tiene permisos»; this one is the attention's state (encounter.constraints).
     RAISE EXCEPTION USING
-      ERRCODE = '42501',
+      ERRCODE = 'integrity_constraint_violation',
       MESSAGE = 'violence_screening_frozen: the attention no longer accepts new content';
   END IF;
 
@@ -176,3 +200,5 @@ CREATE CONSTRAINT TRIGGER trg_clinical_note_sign_needs_screening
   FOR EACH ROW
   WHEN (OLD.status = 'DRAFT' AND NEW.status = 'SIGNED' AND NEW.form_code = '002')
   EXECUTE FUNCTION clinical_note_sign_needs_screening();
+
+COMMIT;

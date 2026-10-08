@@ -511,6 +511,27 @@ registerConstraintMeanings({
     field: 'notification',
     message: 'La notificación a la autoridad se registra con quién y cuándo',
   },
+  /**
+   * EN-242, EN-130. `trg_violence_screening_guard`, for whatever reaches the
+   * table without the adapter, which refuses both first under the
+   * attention's lock. They say the rule, never a value (EN-073).
+   */
+  violence_screening_after_discharge: {
+    code: 'SCREENING_LOCKED_AFTER_DISCHARGE',
+    field: 'notification',
+    message:
+      'La atención ya tiene el alta: del tamizaje sólo se completa la notificación a la autoridad',
+  },
+  violence_screening_moved: {
+    code: 'VALIDATION_FAILED',
+    field: 'screening',
+    message: 'El tamizaje pertenece a su atención',
+  },
+  violence_screening_frozen: {
+    code: 'ENCOUNTER_ALREADY_CLOSED',
+    field: 'screening',
+    message: 'La atención ya no admite contenido clínico nuevo',
+  },
   violence_screening_report_block_iff_reported: {
     code: 'VALIDATION_FAILED',
     field: 'notification',

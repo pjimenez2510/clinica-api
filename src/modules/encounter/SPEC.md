@@ -1763,6 +1763,10 @@ requisitos que cambian.
   > de serie es del formulario **físico** y viaja como texto.
 - **EN-075** — Toda lectura del tamizaje de violencia DEBERÁ quedar en la
   bitácora como acceso a dato de salud, nombrando la ficha (REQ-110).
+  > **Lo que no deja fila (revisión de `feat/f04-tamizaje-y-cierre-pendientes`):**
+  > un `PUT` que tras el alta se rechaza con `SCREENING_LOCKED_AFTER_DISCHARGE`.
+  > Sólo lo intenta quien tiene las dos llaves —que puede leerlo, y esa lectura
+  > sí deja fila—, y la respuesta es la misma haya o no tamizaje.
 - **EN-076** — El sistema DEBERÁ registrar **quién** aplicó el tamizaje y
   **cuándo**.
   > `screened_by_id` y `screened_at` existen. `screened_by_id` es hoy **nullable y
@@ -1845,8 +1849,11 @@ requisitos que cambian.
   > el resto del tamizaje (EN-070) y también deja quién y cuándo.
   >
   > **Garantía de la base:** `violence_screening_guard` admite con el alta
-  > sólo el `UPDATE` que deja igual todo salvo el bloque de notificación,
-  > notificado y con `notified_by_id`/`notified_at` nuevos;
+  > sólo el `UPDATE` que deja igual todo salvo el bloque de notificación, que
+  > **cambia algo de él**, queda notificado y lleva un `notified_at` posterior
+  > al anterior (o al del tamizaje) —columnas contra columnas, nunca `now()`—;
+  > lo demás lo traduce `encounter.constraints.ts` a
+  > `SCREENING_LOCKED_AFTER_DISCHARGE`;
   > `violence_screening_notified_who_and_when` exige quién y cuándo en todo
   > tamizaje notificado. La fila anterior va a `violence_screening_version`
   > con quien la reemplazó. **Lo que no garantiza la base:** quién escribe;

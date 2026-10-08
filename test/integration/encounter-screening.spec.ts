@@ -423,6 +423,124 @@ describe('EN-242 tras el alta sólo se completa la notificación', () => {
     expect(await prisma.violenceScreeningVersion.count()).toBe(2);
   });
 
+  it('EN-242 la BASE rechaza tras el alta tocar cada columna de la respuesta o de quién la aplicó, aunque la notificación cambie con su sello; con la atención viva, cada cambio entra', async () => {
+    const prisma = db();
+    const other = await createPractitioner(prisma);
+    const later = () => new Date(Date.now() + 60_000);
+    const fresh = await anAttention(prisma);
+    const changes: Record<string, unknown>[] = [
+      { types: ['SEXUAL'] },
+      { actionTaken: 'Otra acción' },
+      { screeningTool: 'Otro instrumento' },
+      { screenedById: other.id },
+      { screenedAt: later() },
+      { encounterId: fresh.encounterId },
+    ];
+
+    for (const change of changes) {
+      const ids = await anAttention(prisma);
+      await insert(prisma, ids, NOTIFIED);
+      await discharge(prisma, ids.encounterId);
+      await expect(
+        prisma.violenceScreening.update({
+          where: { encounterId: ids.encounterId },
+          // The notification changes too, properly stamped: the rest still
+          // may not.
+          data: {
+            ...change,
+            authorityFormSerial: '0099999',
+            notifiedAt: later(),
+          },
+        }),
+        JSON.stringify(Object.keys(change)),
+      ).rejects.toThrow(/violence_screening_(after_discharge|moved)/);
+    }
+    expect(await prisma.violenceScreeningVersion.count()).toBe(0);
+
+    // Positive control: live, each of them goes in (but the attention's).
+    for (const change of changes.slice(0, 5)) {
+      const ids = await anAttention(prisma);
+      await insert(prisma, ids, NOTIFIED);
+      await prisma.violenceScreening.update({
+        where: { encounterId: ids.encounterId },
+        data: { ...change, screenedAt: later() },
+      });
+    }
+    expect(await prisma.violenceScreeningVersion.count()).toBe(5);
+
+    // Never to another attention, live or not.
+    const live = await anAttention(prisma);
+    await insert(prisma, live, POSITIVE);
+    await expect(
+      prisma.violenceScreening.update({
+        where: { encounterId: live.encounterId },
+        data: { encounterId: fresh.encounterId, screenedAt: later() },
+      }),
+    ).rejects.toThrow(/violence_screening_moved/);
+  });
+
+  it('EN-242 la BASE no deja volver a sellar quién notificó y cuándo sobre la misma notificación, ni con un instante anterior; con la notificación corregida y después, sí', async () => {
+    const prisma = db();
+    const ids = await anAttention(prisma);
+    await insert(prisma, ids, NOTIFIED);
+    await discharge(prisma, ids.encounterId);
+    const where = { encounterId: ids.encounterId };
+    const before = await prisma.violenceScreening.findUniqueOrThrow({ where });
+    const other = await createPractitioner(prisma);
+
+    await expect(
+      prisma.violenceScreening.update({
+        where,
+        data: {
+          notifiedById: other.id,
+          notifiedAt: new Date(Date.now() + 60_000),
+        },
+      }),
+    ).rejects.toThrow(/violence_screening_after_discharge/);
+    await expect(
+      prisma.violenceScreening.update({
+        where,
+        data: {
+          authorityFormSerial: '0099999',
+          notifiedById: other.id,
+          notifiedAt: new Date(before.notifiedAt!.getTime() - 60_000),
+        },
+      }),
+    ).rejects.toThrow(/violence_screening_after_discharge/);
+
+    // Positive control: corrected and stamped after the previous one.
+    await prisma.violenceScreening.update({
+      where,
+      data: {
+        authorityFormSerial: '0099999',
+        notifiedById: other.id,
+        notifiedAt: new Date(before.notifiedAt!.getTime() + 60_000),
+      },
+    });
+    expect(await prisma.violenceScreeningVersion.count()).toBe(1);
+  });
+
+  it('EN-242 EN-130 lo que rechaza el guardián se traduce a su código y no a un 403', async () => {
+    const prisma = db();
+    const ids = await anAttention(prisma);
+    await insert(prisma, ids, POSITIVE);
+    await discharge(prisma, ids.encounterId);
+
+    expect(
+      await problemFrom(
+        prisma.violenceScreening.update({
+          where: { encounterId: ids.encounterId },
+          data: { result: 'CONFIRMED' },
+        }),
+      ),
+    ).toMatchObject({ code: 'SCREENING_LOCKED_AFTER_DISCHARGE' });
+    const fresh = await anAttention(prisma);
+    await discharge(prisma, fresh.encounterId);
+    expect(await problemFrom(insert(prisma, fresh, POSITIVE))).toMatchObject({
+      code: 'ENCOUNTER_ALREADY_CLOSED',
+    });
+  });
+
   it('EN-242 la BASE exige quién y cuándo en todo tamizaje notificado, y ninguno sin notificar', async () => {
     const prisma = db();
     const a = await anAttention(prisma);
