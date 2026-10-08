@@ -328,3 +328,101 @@ export async function createExamService(
     },
   });
 }
+
+/**
+ * EN-131, BI-236 (D-184). Closes an attention the only way there is: caja
+ * settles its account, and the database closes the attention that already
+ * has its discharge, with that account's instant and author. Nothing here
+ * writes `COMPLETED`: `trg_patient_account_closes_its_encounter` does.
+ *
+ * An attention still `OPEN` is given its discharge first, an hour after it
+ * started: only the state and its condition, no 002 is signed, so the trail's
+ * NOTE_SIGNED row has no author. Meant for attentions with nothing invoiced:
+ * the reason it is not charged (BI-237) is stated only when no charge is
+ * BILLED. Any account the attention already had open is the one settled (one
+ * per attention, `patient_account_one_open_per_encounter`), since one left
+ * open keeps the attention waiting. The cashier is a fresh user; its role
+ * does not matter to the database.
+ *
+ * Throws when the attention did not close: a draft order keeps it waiting
+ * for its doctor (D-189), and a test that expected it closed must not go on
+ * believing it is.
+ */
+export async function closeThroughCashier(
+  prisma: PrismaClient,
+  encounterId: string,
+) {
+  let encounter = await prisma.encounter.findUniqueOrThrow({
+    where: { id: encounterId },
+  });
+  if (encounter.status !== 'OPEN' && encounter.status !== 'DISCHARGED') {
+    throw new Error(
+      `closeThroughCashier: an attention ${encounter.status} is not closed by caja`,
+    );
+  }
+  if (encounter.status === 'OPEN') {
+    encounter = await prisma.encounter.update({
+      where: { id: encounterId },
+      data: {
+        status: 'DISCHARGED',
+        endedAt: new Date(encounter.startedAt.getTime() + 3_600_000),
+        dischargeCondition: 'ALIVE',
+      },
+    });
+  }
+  const payer = await prisma.payer.upsert({
+    where: { code: 'PARTICULAR' },
+    update: {},
+    create: { code: 'PARTICULAR', name: 'Particular', kind: 'SELF_PAY' },
+  });
+  const priceList =
+    (await prisma.priceList.findFirst({ where: { payerId: payer.id } })) ??
+    (await prisma.priceList.create({
+      data: { payerId: payer.id, name: 'Vigente' },
+    }));
+  const open = await prisma.patientAccount.findMany({
+    where: { encounterId, status: 'OPEN' },
+  });
+  const accounts = open.length
+    ? open
+    : [
+        await prisma.patientAccount.create({
+          data: {
+            patientId: encounter.patientId,
+            siteId: encounter.siteId,
+            encounterId,
+            payerId: payer.id,
+            priceListId: priceList.id,
+          },
+        }),
+      ];
+  const cashier = await createUser(prisma);
+  // The app's clock, never before the discharge it closes.
+  const closedAt = new Date(
+    Math.max(Date.now(), encounter.endedAt?.getTime() ?? 0),
+  );
+  for (const account of accounts) {
+    const billed = await prisma.chargeItem.count({
+      where: { accountId: account.id, status: 'BILLED' },
+    });
+    await prisma.patientAccount.update({
+      where: { id: account.id },
+      data: {
+        status: 'SETTLED',
+        closedAt,
+        changedById: cashier.id,
+        changedAt: closedAt,
+        noChargeReason: billed ? undefined : 'Atención sin cargo',
+      },
+    });
+  }
+  const closed = await prisma.encounter.findUniqueOrThrow({
+    where: { id: encounterId },
+  });
+  if (closed.status !== 'COMPLETED') {
+    throw new Error(
+      `closeThroughCashier: the attention stayed ${closed.status} (a draft order keeps it waiting, D-189)`,
+    );
+  }
+  return { encounter: closed, cashierId: cashier.id, closedAt };
+}
