@@ -24,10 +24,12 @@
 import type { AfterDischargeRefusal } from './practitioner-licence';
 import type {
   CareModality,
+  CarePlace,
   CareSetting,
   DischargeCondition,
   DiscontinuedOrigin,
   EncounterStatus,
+  EncounterStatusFact,
   VisitSequence,
 } from './encounter';
 import type { StateChange } from './encounter-state';
@@ -61,7 +63,12 @@ export interface EncounterView {
   endedAt: Date | null;
   status: EncounterStatus;
   careModality: CareModality;
+  /** Derived by the database from `carePlace`. */
   careSetting: CareSetting;
+  /** EN-012. The RDACAA «lugar de atención» code. */
+  carePlace: CarePlace;
+  /** EN-013. The MSP «Médico del Barrio» strategy. */
+  medicoDelBarrio: boolean;
   visitSequence: VisitSequence;
   /**
    * EN-008. The age the patient HAD that day, written by
@@ -140,8 +147,30 @@ export interface NewEncounter {
    */
   startedAt: Date;
   careModality: CareModality;
-  careSetting: CareSetting;
+  /** EN-012. Absent: the column's «1 Establecimiento de salud». */
+  carePlace?: CarePlace;
+  /** EN-013. Absent: outside the strategy. */
+  medicoDelBarrio?: boolean;
   visitSequence: VisitSequence;
+  /**
+   * EN-133. The account that opened it: the actor of its first state row.
+   * The service always names it; only a fixture writing straight to storage
+   * leaves it out, and its trail then says nobody.
+   */
+  openedById?: string;
+}
+
+/**
+ * EN-133. One change of state of an attention, as the database recorded it:
+ * the act that produced it, who and when. `from` is `null` on the opening.
+ */
+export interface EncounterStatusChange {
+  from: EncounterStatus | null;
+  to: EncounterStatus;
+  fact: EncounterStatusFact;
+  /** The user's display name; `null` when no stamp names one (D-177.4). */
+  byName: string | null;
+  at: Date;
 }
 
 /** EN-015, EN-162. One page of a chart's attentions, in chronological order. */
@@ -323,6 +352,14 @@ export interface EncounterRepository {
 
   /** EN-121, EN-122. One attention within the caller's scope, or `null`. */
   findById(query: EncounterQuery): Promise<EncounterView | null>;
+
+  /**
+   * EN-133. The state trail of one attention within the caller's scope,
+   * oldest first, or `null` when the attention is not there to read.
+   */
+  statusHistoryOf(
+    query: EncounterQuery,
+  ): Promise<EncounterStatusChange[] | null>;
 
   /**
    * EN-015. One chart's attentions — and its absorbed charts' — newest first.

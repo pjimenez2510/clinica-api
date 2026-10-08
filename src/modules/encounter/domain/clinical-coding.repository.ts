@@ -30,6 +30,7 @@
 
 import type {
   CareModality,
+  CarePlace,
   DiagnosisCertainty,
   DiagnosisOccurrence,
   VisitSequence,
@@ -192,6 +193,10 @@ export interface EncounterCodingCorrection extends CorrectionAuthority {
   encounterId: string;
   careModality?: CareModality;
   visitSequence?: VisitSequence;
+  /** EN-012. */
+  carePlace?: CarePlace;
+  /** EN-013. */
+  medicoDelBarrio?: boolean;
   sites: SiteScopeFilter;
 }
 
@@ -199,6 +204,8 @@ export interface EncounterCodingCorrection extends CorrectionAuthority {
 export interface EncounterCodingView {
   careModality: CareModality;
   visitSequence: VisitSequence;
+  carePlace: CarePlace;
+  medicoDelBarrio: boolean;
 }
 
 /** EN-050. What registering a procedure needs to be told. */

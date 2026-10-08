@@ -345,7 +345,6 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       agendaEntryId: ids.agendaEntryId,
       startedAt: new Date(),
       careModality: 'MORBIDITY',
-      careSetting: 'INTRAMURAL',
       visitSequence: 'FIRST_TIME',
     });
     expect(good.status).toBe('OPEN');

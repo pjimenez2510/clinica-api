@@ -20,6 +20,8 @@ import type {
   DiagnosisRetraction,
   DiagnosisVersionView,
   DiagnosisView,
+  EncounterCodingCorrection,
+  EncounterCodingView,
   NewDiagnosis,
   NewProcedure,
   ProcedureView,
@@ -80,6 +82,8 @@ const anEncounter = (
   status: 'OPEN',
   careModality: 'MORBIDITY',
   careSetting: 'INTRAMURAL',
+  carePlace: 1,
+  medicoDelBarrio: false,
   visitSequence: 'SUBSEQUENT',
   ageYears: 36,
   ageMonths: 2,
@@ -224,16 +228,14 @@ class FakeCoding implements ClinicalCodingRepository {
     return Promise.resolve([]);
   }
 
-  correctEncounterCoding(correction: {
-    careModality?: 'MORBIDITY' | 'PREVENTION';
-    visitSequence?: 'FIRST_TIME' | 'SUBSEQUENT';
-  }): Promise<{
-    careModality: 'MORBIDITY' | 'PREVENTION';
-    visitSequence: 'FIRST_TIME' | 'SUBSEQUENT';
-  }> {
+  correctEncounterCoding(
+    correction: EncounterCodingCorrection,
+  ): Promise<EncounterCodingView> {
     return Promise.resolve({
       careModality: correction.careModality ?? 'MORBIDITY',
       visitSequence: correction.visitSequence ?? 'FIRST_TIME',
+      carePlace: correction.carePlace ?? 1,
+      medicoDelBarrio: correction.medicoDelBarrio ?? false,
     });
   }
 }

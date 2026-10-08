@@ -14,11 +14,13 @@ import {
 import { subjectStatusAfter } from '../domain/patient-flow';
 import { vitalsCorrectionRefusal } from '../domain/practitioner-licence';
 import type { ClosurePlan } from '../domain/encounter-closure';
+import type { CarePlace } from '../domain/encounter';
 import type {
   ChartHistoryQuery,
   EncounterPage,
   EncounterQuery,
   EncounterRepository,
+  EncounterStatusChange,
   EncounterView,
   NewEncounter,
   OpenEncountersQuery,
@@ -63,6 +65,8 @@ export const ENCOUNTER_SELECT = {
   status: true,
   careModality: true,
   careSetting: true,
+  carePlace: true,
+  medicoDelBarrio: true,
   visitSequence: true,
   // EN-008. Written by `trg_encounter_freeze_age` and never recomputed.
   ageYears: true,
@@ -298,8 +302,13 @@ export class PrismaEncounterRepository implements EncounterRepository {
           agendaEntryId: encounter.agendaEntryId,
           startedAt: encounter.startedAt,
           careModality: encounter.careModality,
-          careSetting: encounter.careSetting,
+          // EN-012. `careSetting` is not written: the database derives it.
+          carePlace: encounter.carePlace,
+          medicoDelBarrio: encounter.medicoDelBarrio,
           visitSequence: encounter.visitSequence,
+          // EN-133. The actor of the first row of the state trail, which
+          // `trg_encounter_status_history_open` writes in this statement.
+          openedById: encounter.openedById,
           // EN-127. The only state an attention is born in. Stated rather than
           // left to the column default so the row this module writes is
           // readable without opening the schema.
@@ -319,6 +328,42 @@ export class PrismaEncounterRepository implements EncounterRepository {
       select: ENCOUNTER_SELECT,
     });
     return row === null ? null : toEncounterView(row);
+  }
+
+  /**
+   * EN-133. The trail `trg_encounter_status_history` wrote, IN THE ORDER IT
+   * HAPPENED (`id`), not by instant: a stamp may carry an instant earlier
+   * than the row before it, and the trail tells the sequence.
+   */
+  async statusHistoryOf(
+    query: EncounterQuery,
+  ): Promise<EncounterStatusChange[] | null> {
+    const row = await this.prisma.encounter.findFirst({
+      where: { id: query.encounterId, ...siteFilter(query.sites) },
+      select: {
+        statusHistory: {
+          orderBy: { id: 'asc' },
+          select: {
+            fromStatus: true,
+            toStatus: true,
+            fact: true,
+            changedAt: true,
+            changedBy: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+    if (row === null) return null;
+    return row.statusHistory.map((change) => ({
+      from: change.fromStatus,
+      to: change.toStatus,
+      fact: change.fact,
+      byName:
+        change.changedBy === null
+          ? null
+          : `${change.changedBy.firstName} ${change.changedBy.lastName}`,
+      at: change.changedAt,
+    }));
   }
 
   /**
@@ -821,6 +866,8 @@ export function toEncounterView(row: EncounterRow): EncounterView {
     status: row.status,
     careModality: row.careModality,
     careSetting: row.careSetting,
+    carePlace: row.carePlace as CarePlace,
+    medicoDelBarrio: row.medicoDelBarrio,
     visitSequence: row.visitSequence,
     ageYears: row.ageYears,
     ageMonths: row.ageMonths,

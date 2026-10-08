@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { CARE_PLACES } from '../domain/encounter';
 import { activeAllergySchema } from './patient-allergy.dto';
 
 /**
@@ -33,6 +34,20 @@ const DISCHARGE_CONDITION = z.enum([
 const CARE_MODALITY = z.enum(['MORBIDITY', 'PREVENTION']);
 const CARE_SETTING = z.enum(['INTRAMURAL', 'EXTRAMURAL']);
 const VISIT_SEQUENCE = z.enum(['FIRST_TIME', 'SUBSEQUENT']);
+/** EN-012. The RDACAA «lugar de atención» code: 1 to 16, or 98 «Otros». */
+export const CARE_PLACE = z.literal(CARE_PLACES, {
+  error: 'Elija un lugar de atención del catálogo del RDACAA',
+});
+/** EN-133. The act behind a change of state. */
+const ENCOUNTER_STATUS_FACT = z.enum([
+  'OPENED',
+  'NOTE_SIGNED',
+  'ACCOUNT_CLOSED',
+  'INTERRUPTED',
+  'ANNULLED',
+  'PUT_ON_HOLD',
+  'RESUMED',
+]);
 
 /**
  * An instant, with its offset stated.
@@ -80,7 +95,14 @@ export const openEncounterSchema = z.object({
    */
   startedAt: instant('La hora de inicio de la atención'),
   careModality: CARE_MODALITY,
-  careSetting: CARE_SETTING.default('INTRAMURAL'),
+  /**
+   * EN-012, EN-013, D-177.3. Optional, and NOT ASKED by the screen: the
+   * attention is born in «1 Establecimiento de salud» and outside the
+   * strategy, and is corrected in place. `careSetting` is no longer an input:
+   * the database derives it from the place.
+   */
+  carePlace: CARE_PLACE.optional(),
+  medicoDelBarrio: z.boolean().optional(),
   /**
    * EN-007. ASKED FOR AND NEVER DERIVED. The ministry's definition is «por una
    * determinada enfermedad o acción de salud y en un determinado servicio», so
@@ -308,7 +330,12 @@ export const encounterSchema = z.object({
   endedAt: z.iso.datetime().nullable(),
   status: ENCOUNTER_STATUS,
   careModality: CARE_MODALITY,
+  /** Derived from `carePlace` by the database: 1 is INTRAMURAL. */
   careSetting: CARE_SETTING,
+  /** EN-012. The RDACAA «lugar de atención» code. */
+  carePlace: CARE_PLACE,
+  /** EN-013. The MSP «Médico del Barrio» strategy. */
+  medicoDelBarrio: z.boolean(),
   visitSequence: VISIT_SEQUENCE,
   /**
    * EN-008, REQ-027, REQ-160. The age the patient HAD that day, in the three
@@ -353,6 +380,31 @@ export const encounterSchema = z.object({
 });
 /** Response of opening and closing an attention, and of POST /encounters/:id/vitals/start (EN-135). */
 export class EncounterDto extends createZodDto(encounterSchema) {}
+
+/**
+ * EN-133. The state trail of one attention, oldest first: each change with
+ * the act that produced it, who and when. Nothing clinical travels here.
+ */
+export const encounterStatusHistorySchema = z.object({
+  items: z.array(
+    z.object({
+      /** `null` exactly on the opening. */
+      from: ENCOUNTER_STATUS.nullable(),
+      to: ENCOUNTER_STATUS,
+      fact: ENCOUNTER_STATUS_FACT,
+      /** `null` when no stamp names an author (D-177.4). */
+      byName: z.string().nullable(),
+      at: z.iso.datetime(),
+    }),
+  ),
+});
+/** Response of GET /encounters/:id/status-history. */
+export class EncounterStatusHistoryDto extends createZodDto(
+  encounterStatusHistorySchema,
+) {}
+export type EncounterStatusHistoryResponse = z.infer<
+  typeof encounterStatusHistorySchema
+>;
 
 /**
  * EN-167, D-099 §4. Response of interrupting: the attention, and the drafts

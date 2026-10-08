@@ -1,3 +1,4 @@
+import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
 import { useDatabase } from './setup/database';
@@ -6,6 +7,7 @@ import {
   createPatient,
   createPractitioner,
   createSite,
+  createUser,
 } from './setup/fixtures';
 
 /**
@@ -64,7 +66,20 @@ describe('el código de verificación de la atención contra PostgreSQL', () => 
 
     await prisma.encounter.update({
       where: { id: first.id },
-      data: { careSetting: 'EXTRAMURAL' },
+      data: {
+        medicoDelBarrio: true,
+        correctedById: await correctorId(prisma),
+        correctedAt: new Date(),
+      },
     });
   });
 });
+
+/**
+ * The stamp a correction of the attention's coding demands
+ * (`trg_encounter_record_version`): the positive controls above change
+ * `medico_del_barrio`, a column of the attention the frozen ones do not cover.
+ */
+async function correctorId(prisma: PrismaClient): Promise<string> {
+  return (await createUser(prisma)).id;
+}

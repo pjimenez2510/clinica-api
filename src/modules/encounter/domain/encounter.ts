@@ -77,13 +77,39 @@ export type VisitSequence = 'FIRST_TIME' | 'SUBSEQUENT';
 export type CareModality = 'MORBIDITY' | 'PREVENTION';
 
 /**
- * Where the attention happened, as the schema has it TODAY.
- *
- * ⚠️ EN-012 says this should be a thirteen-value catalogue and the enum has
- * two. The note lives on the requirement; this union states what can be
- * stored, and nothing here pretends otherwise.
+ * Intramural or extramural. DERIVED by the database from `CarePlace` (1 →
+ * INTRAMURAL, any other → EXTRAMURAL, `trg_encounter_care_setting_from_place`):
+ * it is read, never written.
  */
 export type CareSetting = 'INTRAMURAL' | 'EXTRAMURAL';
+
+/**
+ * EN-012. «Lugar de atención» of the RDACAA, as the form's own code
+ * (instructivo § 1.2.5, p. 46): 1 to 16, and 98 «Otros». The labels are the
+ * screen's; what the report needs, and what is stored, is the code.
+ * `encounter_care_place_in_catalogue` holds the same list in the database.
+ */
+export const CARE_PLACES = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 98,
+] as const;
+export type CarePlace = (typeof CARE_PLACES)[number];
+
+/** EN-012. Where an attention is born: «1 Establecimiento de salud». */
+export const DEFAULT_CARE_PLACE: CarePlace = 1;
+
+/**
+ * EN-133. The act that produced a change of state. With EN-134 the state is
+ * never typed, so each transition has exactly one; the database writes it
+ * (`trg_encounter_status_history`).
+ */
+export type EncounterStatusFact =
+  | 'OPENED'
+  | 'NOTE_SIGNED'
+  | 'ACCOUNT_CLOSED'
+  | 'INTERRUPTED'
+  | 'ANNULLED'
+  | 'PUT_ON_HOLD'
+  | 'RESUMED';
 
 /** EN-023, EN-024, EN-026. The life of one version of a clinical note. */
 export type NoteStatus =

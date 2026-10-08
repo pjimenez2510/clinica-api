@@ -69,7 +69,6 @@ async function aDraft(prisma: PrismaClient, diagnosisCode = 'J00') {
     patientId: patient.id,
     startedAt: new Date('2026-08-14T14:00:00Z'),
     careModality: 'MORBIDITY',
-    careSetting: 'INTRAMURAL',
     visitSequence: 'FIRST_TIME',
   });
 

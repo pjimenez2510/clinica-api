@@ -41,6 +41,7 @@ import type { SiteScopeFilter } from '../domain/encounter.repository';
 import { afterDischargeRefusalOf } from '../domain/practitioner-licence';
 import type {
   CareModality,
+  CarePlace,
   DiagnosisCertainty,
   DiagnosisOccurrence,
   VisitSequence,
@@ -401,6 +402,8 @@ export class ClinicalCodingService {
       encounterId: string;
       careModality?: CareModality;
       visitSequence?: VisitSequence;
+      carePlace?: CarePlace;
+      medicoDelBarrio?: boolean;
     },
     requester: CodingRequester,
   ): Promise<EncounterCodingView> {
@@ -414,6 +417,8 @@ export class ClinicalCodingService {
       encounterId: encounter.id,
       careModality: request.careModality,
       visitSequence: request.visitSequence,
+      carePlace: request.carePlace,
+      medicoDelBarrio: request.medicoDelBarrio,
       sites: requester.sites,
       ...authority,
     });

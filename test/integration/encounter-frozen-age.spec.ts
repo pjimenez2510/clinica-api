@@ -1,3 +1,4 @@
+import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
 import { PrismaDiagnosticReportRepository } from '../../src/modules/orders/infrastructure/prisma-diagnostic-report.repository';
@@ -10,7 +11,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { aScene, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
-import { createEncounter } from './setup/fixtures';
+import { createEncounter, createUser } from './setup/fixtures';
 
 /**
  * EN-221, ORD-127 (D-138.1). The attention freezes the whole age in days and
@@ -68,7 +69,11 @@ describe('la edad congelada en la atención contra PostgreSQL', () => {
     // Control positivo: otra columna de la atención sí cambia.
     await prisma.encounter.update({
       where: { id: encounter.id },
-      data: { careSetting: 'EXTRAMURAL' },
+      data: {
+        medicoDelBarrio: true,
+        correctedById: await correctorId(prisma),
+        correctedAt: new Date(),
+      },
     });
   });
 
@@ -103,7 +108,11 @@ describe('la edad congelada en la atención contra PostgreSQL', () => {
     // Positive control: another column of the attention changes.
     await prisma.encounter.update({
       where: { id: encounter.id },
-      data: { careSetting: 'EXTRAMURAL' },
+      data: {
+        medicoDelBarrio: true,
+        correctedById: await correctorId(prisma),
+        correctedAt: new Date(),
+      },
     });
     await expect(
       prisma.encounter.findUniqueOrThrow({ where: { id: encounter.id } }),
@@ -111,7 +120,7 @@ describe('la edad congelada en la atención contra PostgreSQL', () => {
       ageYears: encounter.ageYears,
       ageMonths: encounter.ageMonths,
       ageDays: encounter.ageDays,
-      careSetting: 'EXTRAMURAL',
+      medicoDelBarrio: true,
     });
   });
 
@@ -293,4 +302,13 @@ function serviceOf(prisma: ReturnType<typeof db>) {
     ),
     orders: new PrismaServiceOrderRepository(client),
   };
+}
+
+/**
+ * The stamp a correction of the attention's coding demands
+ * (`trg_encounter_record_version`): the positive controls above change
+ * `medico_del_barrio`, a column of the attention the frozen ones do not cover.
+ */
+async function correctorId(prisma: PrismaClient): Promise<string> {
+  return (await createUser(prisma)).id;
 }

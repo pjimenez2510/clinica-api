@@ -148,6 +148,14 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
     }
   }
 
+  async declaredRetentionYears(): Promise<readonly number[]> {
+    const rows = await this.prisma.siteParameter.findMany({
+      distinct: ['recordRetentionYears'],
+      select: { recordRetentionYears: true },
+    });
+    return rows.map((row) => row.recordRetentionYears);
+  }
+
   /**
    * D-021. The distinct durations the clinic has configured: the base of every
    * service type and every per-practitioner exception.

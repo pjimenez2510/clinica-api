@@ -74,6 +74,8 @@ const anEncounter = (
   status: 'OPEN',
   careModality: 'MORBIDITY',
   careSetting: 'INTRAMURAL',
+  carePlace: 1,
+  medicoDelBarrio: false,
   visitSequence: 'SUBSEQUENT',
   ageYears: 36,
   ageMonths: 2,

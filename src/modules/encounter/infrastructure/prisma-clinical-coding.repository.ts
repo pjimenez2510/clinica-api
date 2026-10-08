@@ -21,7 +21,12 @@ import {
   PractitionerNotLicensedError,
   PractitionerProfileRequiredError,
 } from '../domain/encounter.errors';
-import type { EncounterStatus } from '../domain/encounter';
+import type {
+  CareModality,
+  CarePlace,
+  EncounterStatus,
+  VisitSequence,
+} from '../domain/encounter';
 import {
   acceptsDiagnosisCorrection,
   acceptsNewClinicalContent,
@@ -825,7 +830,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
 
       const current = await tx.encounter.findUniqueOrThrow({
         where: { id: correction.encounterId },
-        select: { careModality: true, visitSequence: true, correctedAt: true },
+        select: { ...CODING_SELECT, correctedAt: true },
       });
       const changes = {
         ...(correction.careModality !== undefined &&
@@ -836,26 +841,33 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         correction.visitSequence !== current.visitSequence
           ? { visitSequence: correction.visitSequence }
           : {}),
+        ...(correction.carePlace !== undefined &&
+        correction.carePlace !== current.carePlace
+          ? { carePlace: correction.carePlace }
+          : {}),
+        ...(correction.medicoDelBarrio !== undefined &&
+        correction.medicoDelBarrio !== current.medicoDelBarrio
+          ? { medicoDelBarrio: correction.medicoDelBarrio }
+          : {}),
       };
       // Nothing to change is not an edit: no version of an identical row.
       if (Object.keys(changes).length === 0) {
-        return {
-          careModality: current.careModality,
-          visitSequence: current.visitSequence,
-        };
+        return toCodingView(current);
       }
 
       // EN-210. `trg_encounter_record_version` keeps the previous attention
       // and refuses a correction whose stamp did not move.
-      return tx.encounter.update({
-        where: { id: correction.encounterId },
-        data: {
-          ...changes,
-          correctedById: correction.editedById,
-          correctedAt: stampAfter(current.correctedAt, now),
-        },
-        select: { careModality: true, visitSequence: true },
-      });
+      return toCodingView(
+        await tx.encounter.update({
+          where: { id: correction.encounterId },
+          data: {
+            ...changes,
+            correctedById: correction.editedById,
+            correctedAt: stampAfter(current.correctedAt, now),
+          },
+          select: CODING_SELECT,
+        }),
+      );
     });
   }
 
@@ -1234,5 +1246,28 @@ function toProcedureView(row: ProcedureRow): ProcedureView {
     quantity: row.quantity,
     performedAt: row.performedAt,
     note: row.note,
+  };
+}
+
+/** EN-187, EN-215, EN-012, EN-013. The attention's own coding. */
+const CODING_SELECT = {
+  careModality: true,
+  visitSequence: true,
+  carePlace: true,
+  medicoDelBarrio: true,
+} as const;
+
+function toCodingView(row: {
+  careModality: CareModality;
+  visitSequence: VisitSequence;
+  carePlace: number;
+  medicoDelBarrio: boolean;
+}): EncounterCodingView {
+  return {
+    careModality: row.careModality,
+    visitSequence: row.visitSequence,
+    // `encounter_care_place_in_catalogue` holds the column to the union.
+    carePlace: row.carePlace as CarePlace,
+    medicoDelBarrio: row.medicoDelBarrio,
   };
 }

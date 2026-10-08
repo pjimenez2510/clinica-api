@@ -77,6 +77,13 @@ class RepositoryDouble implements SiteParameterRepository {
     'role-caja': ['billing:read'],
   };
 
+  /** EN-157: what each site declares. */
+  retentionAnswer: readonly number[] = [15];
+
+  declaredRetentionYears(): Promise<readonly number[]> {
+    return Promise.resolve(this.retentionAnswer);
+  }
+
   rolePermissions(roleId: string): Promise<readonly string[] | null> {
     this.calls.push({ method: 'rolePermissions', args: [roleId] });
     return Promise.resolve(this.rolesAnswer[roleId] ?? null);
