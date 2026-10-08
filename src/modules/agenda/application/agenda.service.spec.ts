@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { LateArrivalRow } from '../domain/late-arrival-metric';
 
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import { ServiceTypeNotFoundError } from '../../../shared/domain/errors/master-data.errors';
@@ -9,6 +11,9 @@ import {
   OutsideScheduleRuleError,
   RoomNotInSiteError,
   SlotNotAlignedError,
+  ArrivalNotOnAppointmentDayError,
+  EmergencyCorrectionNeedsClinicalPermissionError,
+  LateArrivalNotAuthorisedError,
 } from '../domain/agenda.errors';
 import {
   WallClockTime,
@@ -149,6 +154,8 @@ function anEntry(overrides: Partial<AgendaEntryView> = {}): AgendaEntryView {
     rescheduledFromId: null,
     rescheduledToId: null,
     attention: null,
+    lateAdmission: null,
+    emergencyAlerts: [],
     ...overrides,
   };
 }
@@ -173,6 +180,7 @@ interface Recorded {
   daily: DailyAgendaQuery[];
   /** AG-080, AG-081: the scope and the window the metric asked storage for. */
   noShowQueries: NoShowCountsQuery[];
+  lateArrivalQueries: NoShowCountsQuery[];
   context: ScheduleContextQuery[];
   availability: AvailabilityContextQuery[];
   rooms: string[];
@@ -223,6 +231,10 @@ function aTransitionRead(
     startsAt: EIGHT,
     releasedAt: null,
     noShowAt: null,
+    checkedInAt: null,
+    emergencyFlagged: false,
+    walkIn: false,
+    alreadyAdmittedLate: false,
     statusBeforeNoShow: null,
     hasEncounter: false,
     encounterHasClinicalAct: false,
@@ -240,6 +252,7 @@ function anEditRead(overrides: Partial<EditRead> = {}): EditRead {
     releasedAt: null,
     emergencyAssessedAt: null,
     emergencyAssessedById: null,
+    emergencyFlaggedAt: null,
     hasEncounter: false,
     fromWaitlist: false,
     ...overrides,
@@ -282,6 +295,8 @@ function repositoryDouble(
     editRead?: EditRead;
     /** AG-168: the versions storage answers. */
     versions?: AgendaEntryVersion[];
+    /** AG-141: the arrivals storage answers. */
+    lateArrivalRows?: LateArrivalRow[];
     /** AG-094, AG-095: what the site has stored, `null` when it has no row. */
     siteParameters?: StoredSiteParameters | null;
     /** AG-110: the rows of `holiday` the booked date could be closed by. */
@@ -307,6 +322,7 @@ function repositoryDouble(
   const recorded: Recorded = {
     daily: [],
     noShowQueries: [],
+    lateArrivalQueries: [],
     context: [],
     availability: [],
     rooms: [],
@@ -331,6 +347,10 @@ function repositoryDouble(
     noShowCounts: (query) => {
       recorded.noShowQueries.push(query);
       return Promise.resolve(overrides.noShowCounts ?? []);
+    },
+    lateArrivalRows: (query) => {
+      recorded.lateArrivalQueries.push(query);
+      return Promise.resolve(overrides.lateArrivalRows ?? []);
     },
     dailyAgenda: (query) => {
       recorded.daily.push(query);
@@ -1060,7 +1080,20 @@ describe('transitioning an appointment', () => {
    */
   const STARTED = aTransitionRead({
     status: 'CONFIRMED',
-    startsAt: new Date('2026-01-05T13:00:00Z'),
+    startsAt: EIGHT,
+  });
+
+  /**
+   * AG-173. The clock of this block is forty minutes after `EIGHT`, the
+   * fixture's appointment: an arrival is only recorded on its own day, so the
+   * check-ins below happen on it, and STARTED has begun.
+   */
+  const AT_THE_COUNTER = new Date(EIGHT.getTime() + 40 * 60_000);
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: AT_THE_COUNTER });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   /** AG-116: arrived, and the patient axis says so (AG-127). */
@@ -1123,6 +1156,144 @@ describe('transitioning an appointment', () => {
     ).rejects.toBeInstanceOf(NoShowBeforeStartError);
 
     expect(recorded.transitions).toEqual([]);
+  });
+
+  it('AG-173 refuses the arrival of an appointment of another day and writes nothing', async () => {
+    const DAY = 24 * 60 * 60_000;
+    for (const startsAt of [
+      new Date(EIGHT.getTime() + DAY),
+      new Date(EIGHT.getTime() - DAY),
+    ]) {
+      const { service, recorded } = serviceWith({
+        transitionRead: aTransitionRead({ status: 'CONFIRMED', startsAt }),
+      });
+
+      await expect(
+        service.transition(
+          { ...aTransition(), to: 'CHECKED_IN', emergency: false },
+          REQUESTER,
+        ),
+      ).rejects.toBeInstanceOf(ArrivalNotOnAppointmentDayError);
+      expect(recorded.transitions).toEqual([]);
+    }
+  });
+
+  it("AG-173 still records the arrival of TODAY's appointment (control)", async () => {
+    const { service, recorded } = serviceWith({ transitionRead: STARTED });
+
+    await service.transition(
+      { ...aTransition(), to: 'CHECKED_IN', emergency: false },
+      REQUESTER,
+    );
+
+    expect(recorded.transitions[0]?.change.to).toBe('CHECKED_IN');
+  });
+
+  /** AG-120. In the waiting room, having arrived 40 minutes after its hour. */
+  const LATE_IN_THE_ROOM = aTransitionRead({
+    status: 'CHECKED_IN',
+    startsAt: EIGHT,
+    checkedInAt: AT_THE_COUNTER,
+  });
+
+  it('AG-120 the status route refuses a late arrival into care without the site permission, and writes nothing', async () => {
+    const { service, recorded } = serviceWith({
+      transitionRead: LATE_IN_THE_ROOM,
+      siteParameters: {
+        lateArrivalGraceMinutes: 15,
+        lateArrivalOverridePermission: 'agenda:overbook',
+      },
+    });
+
+    await expect(
+      service.transition(
+        { ...aTransition(), to: 'IN_PROGRESS', holds: () => false },
+        REQUESTER,
+      ),
+    ).rejects.toBeInstanceOf(LateArrivalNotAuthorisedError);
+    expect(recorded.transitions).toEqual([]);
+  });
+
+  it('AG-120 with the permission the SITE names, it goes in and records who let it in', async () => {
+    const asked: string[] = [];
+    const { service, recorded } = serviceWith({
+      transitionRead: LATE_IN_THE_ROOM,
+      siteParameters: {
+        lateArrivalGraceMinutes: 15,
+        lateArrivalOverridePermission: 'settings:manage',
+      },
+    });
+
+    await service.transition(
+      {
+        ...aTransition(),
+        to: 'IN_PROGRESS',
+        holds: (permission) => {
+          asked.push(permission);
+          return permission === 'settings:manage';
+        },
+      },
+      REQUESTER,
+    );
+
+    // AG-142: the code comes from the site, not from this file.
+    expect(asked).toEqual(['settings:manage']);
+    const effects = recorded.transitions[0]?.change.effects;
+    expect(effects?.lateAdmissionById).toBe(USER);
+    expect(effects?.lateAdmissionAt).toBeInstanceOf(Date);
+  });
+
+  it('AG-120 inside the threshold nothing is refused nor recorded (control)', async () => {
+    const { service, recorded } = serviceWith({
+      transitionRead: LATE_IN_THE_ROOM,
+      siteParameters: { lateArrivalGraceMinutes: 60 },
+    });
+
+    await service.transition(
+      { ...aTransition(), to: 'IN_PROGRESS', holds: () => false },
+      REQUESTER,
+    );
+
+    expect(
+      recorded.transitions[0]?.change.effects.lateAdmissionById,
+    ).toBeUndefined();
+  });
+
+  it('AG-120 an arrival flagged as an emergency is exempt from the threshold', async () => {
+    const { service, recorded } = serviceWith({
+      transitionRead: { ...LATE_IN_THE_ROOM, emergencyFlagged: true },
+      siteParameters: { lateArrivalGraceMinutes: 15 },
+    });
+
+    await service.transition(
+      { ...aTransition(), to: 'IN_PROGRESS', holds: () => false },
+      REQUESTER,
+    );
+
+    expect(recorded.transitions[0]?.change.to).toBe('IN_PROGRESS');
+    expect(
+      recorded.transitions[0]?.change.effects.lateAdmissionById,
+    ).toBeUndefined();
+  });
+
+  it('AG-129 an arrival called an emergency raises its notice in the same change, and a negative call does not', async () => {
+    const yes = serviceWith({ transitionRead: STARTED });
+    await yes.service.transition(
+      { ...aTransition(), to: 'CHECKED_IN', emergency: true },
+      REQUESTER,
+    );
+    expect(yes.recorded.transitions[0]?.change.emergencyAlert).toEqual({
+      raisedById: USER,
+      at: AT_THE_COUNTER,
+    });
+
+    // Control: «no era una emergencia» is a call too, and notifies nobody.
+    const no = serviceWith({ transitionRead: STARTED });
+    await no.service.transition(
+      { ...aTransition(), to: 'CHECKED_IN', emergency: false },
+      REQUESTER,
+    );
+    expect(no.recorded.transitions[0]?.change.emergencyAlert).toBeUndefined();
   });
 
   it('AG-044 sends the reason to the cancellation note and to the history', async () => {
@@ -1405,7 +1576,8 @@ describe('transitioning an appointment', () => {
     // at the counter and in the median of AG-141.
     const { service } = serviceWith({
       transitionRead: aTransitionRead({
-        startsAt: new Date('2100-01-01T13:00:00Z'),
+        // Twenty minutes before its hour, the same day.
+        startsAt: new Date(AT_THE_COUNTER.getTime() + 20 * 60_000),
       }),
     });
 
@@ -1414,7 +1586,7 @@ describe('transitioning an appointment', () => {
       REQUESTER,
     );
 
-    expect(outcome.arrivalDelayMinutes).toBeLessThan(0);
+    expect(outcome.arrivalDelayMinutes).toBe(-20);
   });
 
   it('AG-119 warns about a late arrival and records it anyway', async () => {
@@ -1946,7 +2118,7 @@ describe('correcting the emergency call (AG-132)', () => {
     });
 
     await service.correctEmergency(
-      { siteId: SITE, entryId: 'entry-1', emergency: true, emergencyNote: 'Dolor torácico' }, // prettier-ignore
+      { siteId: SITE, entryId: 'entry-1', emergency: true, emergencyNote: 'Dolor torácico', mayWriteRecord: false }, // prettier-ignore
       REQUESTER,
     );
 
@@ -1958,8 +2130,32 @@ describe('correcting the emergency call (AG-132)', () => {
     expect(emergency?.note).toBe('Dolor torácico');
   });
 
-  it('AG-132 corrects only while the patient is in the building', async () => {
-    const { service } = serviceWith({
+  it('AG-174 after the stay, the correction asks for record:write, and without it refuses', async () => {
+    for (const status of [
+      'FULFILLED',
+      'LEFT_WITHOUT_BEING_SEEN',
+      'CANCELLED',
+    ] as const) {
+      const { service, recorded } = serviceWith({
+        editRead: anEditRead({
+          status,
+          emergencyAssessedAt: EIGHT,
+          emergencyAssessedById: DOCTOR_USER,
+        }),
+      });
+
+      await expect(
+        service.correctEmergency(
+          { siteId: SITE, entryId: 'entry-1', emergency: true, mayWriteRecord: false }, // prettier-ignore
+          REQUESTER,
+        ),
+      ).rejects.toBeInstanceOf(EmergencyCorrectionNeedsClinicalPermissionError);
+      expect(recorded.edits).toEqual([]);
+    }
+  });
+
+  it('AG-174 after the stay, whoever writes the record corrects it, and the arrival call stays', async () => {
+    const { service, recorded } = serviceWith({
       editRead: anEditRead({
         status: 'FULFILLED',
         emergencyAssessedAt: EIGHT,
@@ -1967,12 +2163,75 @@ describe('correcting the emergency call (AG-132)', () => {
       }),
     });
 
-    await expect(
-      service.correctEmergency(
-        { siteId: SITE, entryId: 'entry-1', emergency: true },
-        REQUESTER,
-      ),
-    ).rejects.toBeInstanceOf(AgendaEntryNotEditableError);
+    await service.correctEmergency(
+      { siteId: SITE, entryId: 'entry-1', emergency: true, mayWriteRecord: true }, // prettier-ignore
+      REQUESTER,
+    );
+
+    const emergency = recorded.edits[0]?.edit.emergency;
+    expect(emergency?.assessedAt).toEqual(EIGHT);
+    expect(emergency?.flaggedById).toBe(USER);
+  });
+
+  it('AG-174 with the patient in the building, agenda:write is enough (control)', async () => {
+    const { service, recorded } = serviceWith({
+      editRead: anEditRead({
+        status: 'IN_PROGRESS',
+        emergencyAssessedAt: EIGHT,
+        emergencyAssessedById: DOCTOR_USER,
+      }),
+    });
+
+    await service.correctEmergency(
+      { siteId: SITE, entryId: 'entry-1', emergency: false, mayWriteRecord: false }, // prettier-ignore
+      REQUESTER,
+    );
+
+    expect(recorded.edits).toHaveLength(1);
+  });
+
+  it('AG-129 a correction to «sí» with the patient here notifies; again «sí», or after the stay, does not', async () => {
+    const present = serviceWith({
+      editRead: anEditRead({
+        status: 'CHECKED_IN',
+        emergencyAssessedAt: EIGHT,
+        emergencyAssessedById: DOCTOR_USER,
+      }),
+    });
+    await present.service.correctEmergency(
+      { siteId: SITE, entryId: 'entry-1', emergency: true, mayWriteRecord: false }, // prettier-ignore
+      REQUESTER,
+    );
+    expect(present.recorded.edits[0]?.edit.emergencyAlert?.raisedById).toBe(
+      USER,
+    );
+
+    const already = serviceWith({
+      editRead: anEditRead({
+        status: 'CHECKED_IN',
+        emergencyAssessedAt: EIGHT,
+        emergencyAssessedById: DOCTOR_USER,
+        emergencyFlaggedAt: EIGHT,
+      }),
+    });
+    await already.service.correctEmergency(
+      { siteId: SITE, entryId: 'entry-1', emergency: true, mayWriteRecord: false }, // prettier-ignore
+      REQUESTER,
+    );
+    expect(already.recorded.edits[0]?.edit.emergencyAlert).toBeUndefined();
+
+    const gone = serviceWith({
+      editRead: anEditRead({
+        status: 'FULFILLED',
+        emergencyAssessedAt: EIGHT,
+        emergencyAssessedById: DOCTOR_USER,
+      }),
+    });
+    await gone.service.correctEmergency(
+      { siteId: SITE, entryId: 'entry-1', emergency: true, mayWriteRecord: true }, // prettier-ignore
+      REQUESTER,
+    );
+    expect(gone.recorded.edits[0]?.edit.emergencyAlert).toBeUndefined();
   });
 
   it('AG-132 corrects only a call that was made', async () => {
@@ -1980,7 +2239,7 @@ describe('correcting the emergency call (AG-132)', () => {
 
     await expect(
       service.correctEmergency(
-        { siteId: SITE, entryId: 'entry-1', emergency: false },
+        { siteId: SITE, entryId: 'entry-1', emergency: false, mayWriteRecord: true }, // prettier-ignore
         REQUESTER,
       ),
     ).rejects.toBeInstanceOf(AgendaEntryNotEditableError);
@@ -2666,5 +2925,42 @@ describe('AG-080 la tasa de inasistencia', () => {
     expect(report.overall).toMatchObject({ noShow: 2, total: 10, rate: 0.2 });
     expect(report.bySite).toHaveLength(1);
     expect(report.byChannel).toHaveLength(1);
+  });
+});
+
+describe('AG-141 the late arrival of a range', () => {
+  it('AG-141 bounds the range as inclusive Ecuadorian days and does not close it at «now»', async () => {
+    const { service, recorded } = serviceWith({
+      lateArrivalRows: [
+        {
+          siteId: SITE,
+          siteName: 'Norte',
+          practitionerId: PRACTITIONER,
+          practitionerName: 'Ana Villacís',
+          startsAt: EIGHT,
+          checkedInAt: new Date(EIGHT.getTime() + 40 * 60_000),
+          graceMinutes: 15,
+        },
+      ],
+    });
+
+    const report = await service.lateArrival({
+      sites: [SITE],
+      from: DATE,
+      to: DATE,
+    });
+
+    const window = recorded.lateArrivalQueries[0];
+    expect(window?.sites).toEqual([SITE]);
+    // [00:00, 24:00) in Guayaquil: 05:00Z to 05:00Z.
+    expect(window?.from.toISOString().slice(11)).toBe('05:00:00.000Z');
+    expect(
+      (window!.untilExclusive.getTime() - window!.from.getTime()) / 3_600_000,
+    ).toBe(24);
+    expect(report.overall).toEqual({
+      arrivals: 1,
+      late: 1,
+      medianDelayMinutes: 40,
+    });
   });
 });

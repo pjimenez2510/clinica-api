@@ -425,6 +425,8 @@ describe('los parámetros de reserva de la sede', () => {
         // AG-142: el umbral de llegada tardía se resuelve por la misma cadena
         // y su defecto de código tiene que ser el de la columna.
         lateArrivalGraceMinutes: stored.lateArrivalGraceMinutes,
+        // AG-120: y el permiso que lo salta.
+        lateArrivalOverridePermission: stored.lateArrivalOverridePermission,
       }).toEqual(DEFAULT_BOOKING_PARAMETERS);
     });
   });

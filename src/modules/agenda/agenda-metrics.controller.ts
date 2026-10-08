@@ -7,6 +7,8 @@ import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { AgendaService } from './application/agenda.service';
 import {
+  LateArrivalMetricDto,
+  type LateArrivalMetricResponse,
   NoShowMetricDto,
   NoShowMetricQueryDto,
   type NoShowMetricResponse,
@@ -76,5 +78,26 @@ export class AgendaMetricsController {
       byPractitioner: report.byPractitioner,
       byChannel: report.byChannel,
     };
+  }
+
+  /**
+   * AG-141. Late arrival over a range: median delay, arrivals past their
+   * site's threshold and the denominator, by site and practitioner. Same
+   * `'query'` scope and the same narrowing as the no-show rate.
+   */
+  @Get('metrics/late-arrival')
+  @RequirePermission('agenda:read', 'query')
+  @ApiOperation({ summary: 'Llegada tardía por sede y profesional' })
+  @ApiOkResponse({ type: LateArrivalMetricDto })
+  async lateArrival(
+    @Query() query: NoShowMetricQueryDto,
+  ): Promise<LateArrivalMetricResponse> {
+    const scope = this.currentUser.requirePrincipal().sitesFor('agenda:read');
+    const report = await this.agenda.lateArrival({
+      sites: scope === ALL_SITES ? 'all' : scope,
+      from: query.from,
+      to: query.to,
+    });
+    return { from: query.from, to: query.to, ...report };
   }
 }

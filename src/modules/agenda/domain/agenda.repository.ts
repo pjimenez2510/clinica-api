@@ -17,6 +17,7 @@
  * is precisely the race those constraints exist to close.
  */
 
+import type { LateArrivalRow } from './late-arrival-metric';
 import type { BookingChannel, StoredSiteParameters } from './booking-policy';
 import type { Holiday } from './holiday-calendar';
 import type { NoShowCountRow } from './no-show-metric';
@@ -169,6 +170,23 @@ export interface AgendaEntryView {
    * forbids— and what the board needs to say «Interrumpida» (D-076).
    */
   attention: AttentionStatus | null;
+  /**
+   * AG-120. Who let it into care past the site's threshold, and when; `null`
+   * when nobody had to. A name and not an id: the detail says who.
+   */
+  lateAdmission: { byName: string; at: Date } | null;
+  /**
+   * AG-129. Whom its emergency call notified, and whether they saw it,
+   * oldest first. Empty when the call was «no».
+   */
+  emergencyAlerts: EmergencyAlertOnEntry[];
+}
+
+/** AG-129, AG-175. One notice as the appointment's detail shows it. */
+export interface EmergencyAlertOnEntry {
+  recipientName: string;
+  alertedAt: Date;
+  acknowledgedAt: Date | null;
 }
 
 /**
@@ -398,6 +416,14 @@ export interface TransitionRead {
   releasedAt: Date | null;
   /** AG-163. When the no-show was marked, to judge «el mismo día». */
   noShowAt: Date | null;
+  /** AG-120. The arrival, to measure the delay against the threshold. */
+  checkedInAt: Date | null;
+  /** AG-120. A flagged emergency is exempt from the threshold (art. 12). */
+  emergencyFlagged: boolean;
+  /** AG-120. A walk-in had no hour to be late for (as AG-141). */
+  walkIn: boolean;
+  /** AG-120. Who let it in first stays: a second admission writes nothing. */
+  alreadyAdmittedLate: boolean;
   /**
    * AG-163. The status the appointment had before it became `NO_SHOW`, read
    * from its history; `null` when it is not a no-show.
@@ -507,6 +533,12 @@ export interface TransitionEffects {
    * demand — and demanding it would be illegal in the case that matters most.
    */
   coverageCheckSkippedReason?: string;
+  /**
+   * AG-120 (D-170.2). Who let the late appointment into care, and when.
+   * Both or neither (`agenda_entry_late_admission_names_who_and_when`).
+   */
+  lateAdmissionById?: string;
+  lateAdmissionAt?: Date;
 }
 
 /**
@@ -523,6 +555,18 @@ export interface StatusChange {
   historyNote?: string;
   /** AG-148. Present only when the move interrupts the live attention. */
   interruptAttention?: AttentionInterruption;
+  /** AG-129. Present when the arrival was called an emergency. */
+  emergencyAlert?: EmergencyAlertRaise;
+}
+
+/**
+ * AG-129. A notice of an emergency arrival, raised in the transaction of the
+ * call. Whom it reaches is the adapter's to resolve (D-170.1: until the
+ * clinic decides, the practitioner of the appointment), one row each.
+ */
+export interface EmergencyAlertRaise {
+  raisedById: string;
+  at: Date;
 }
 
 /**
@@ -600,6 +644,8 @@ export interface EntryEdit {
     flaggedById: string | null;
     note: string | null;
   };
+  /** AG-129. A correction to «sí» with the patient in the clinic notifies. */
+  emergencyAlert?: EmergencyAlertRaise;
 }
 
 /** AG-162. The row as the edit policy judges it, inside the transaction. */
@@ -610,6 +656,8 @@ export interface EditRead {
   releasedAt: Date | null;
   emergencyAssessedAt: Date | null;
   emergencyAssessedById: string | null;
+  /** AG-129. Already flagged: a correction to «sí» again notifies nobody. */
+  emergencyFlaggedAt: Date | null;
   hasEncounter: boolean;
   /** AG-063. Whether a waiting-list entry was converted into this one. */
   fromWaitlist: boolean;
@@ -780,6 +828,12 @@ export interface AgendaRepository {
    * why it is the one filter this method is allowed to hold.
    */
   noShowCounts(query: NoShowCountsQuery): Promise<readonly NoShowCountRow[]>;
+  /**
+   * AG-141. The arrivals of appointments whose start falls in the window,
+   * with their site's current threshold — WALK_IN excluded: who came without
+   * an appointment had no hour to be late for.
+   */
+  lateArrivalRows(query: NoShowCountsQuery): Promise<LateArrivalRow[]>;
   /** AG-017, AG-018. Ordered by start instant. */
   dailyAgenda(query: DailyAgendaQuery): Promise<AgendaEntryView[]>;
   /** AG-027. `null` when no such chart exists — the insert then fails on the FK. */

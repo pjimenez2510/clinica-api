@@ -513,6 +513,72 @@ export class NoShowBeforeStartError extends BusinessRuleViolation {
 }
 
 /**
+ * AG-175. No emergency notice with that id is addressed to the session. One
+ * answer for «does not exist» and «is somebody else's», like
+ * `AGENDA_ENTRY_NOT_FOUND`: telling them apart would confirm notices of
+ * other people to whoever guesses ids.
+ */
+export class EmergencyAlertNotFoundError extends NotFoundError {
+  readonly code = 'EMERGENCY_ALERT_NOT_FOUND';
+  override readonly userTitle =
+    'Ese aviso de emergencia no existe o no es para usted';
+
+  constructor() {
+    super('Emergency alert not found for this recipient');
+  }
+}
+
+/**
+ * AG-120 (D-170.2). The status route was asked to take a late arrival into
+ * care by somebody without the permission the site configures for it. 403,
+ * like the overbooking authoriser (AG-101): the act is legitimate, the person
+ * is not the one the clinic chose. The text says what to do instead.
+ */
+export class LateArrivalNotAuthorisedError extends ForbiddenError {
+  readonly code = 'LATE_ARRIVAL_NOT_AUTHORISED';
+  override readonly userTitle =
+    'La llegada superó el margen de la sede. Para pasarla a atención hace falta quien pueda autorizarlo; si no, reprograme la cita';
+
+  constructor() {
+    super('Late arrival into care without the site permission');
+  }
+}
+
+/**
+ * AG-174 (D-141.5). Correcting the emergency call of a patient who already
+ * left is a clinical judgement, and it takes the permission that writes the
+ * record. 403: the request is right, the person is not the one to make it.
+ */
+export class EmergencyCorrectionNeedsClinicalPermissionError extends ForbiddenError {
+  readonly code = 'EMERGENCY_CORRECTION_NEEDS_CLINICAL_PERMISSION';
+  override readonly userTitle =
+    'El paciente ya no está en la clínica: corregir su calificación de emergencia lo hace quien escribe la historia clínica';
+
+  constructor() {
+    super('Emergency call correction after the stay without record:write');
+  }
+}
+
+/**
+ * AG-173 (D-153.6). The arrival of an appointment of another clinical day.
+ *
+ * A CONFLICT (409): the body is fine and the same request is right on the
+ * appointment's day. What refuses it is the calendar — an arrival recorded on
+ * the wrong row writes the art. 10 call on a day nobody came, and leaves the
+ * day somebody did come without one. The text says what to do instead.
+ */
+export class ArrivalNotOnAppointmentDayError extends ConflictError {
+  readonly code = 'ARRIVAL_NOT_ON_APPOINTMENT_DAY';
+  override readonly userTitle =
+    'Esta cita no es de hoy. Si el paciente está aquí, mueva la cita a hoy o resérvele una por Ventanilla para hoy, y registre ahí su llegada';
+
+  constructor() {
+    // No dates in the message: when somebody is expected is the patient's.
+    super('Arrival requested outside the clinical day of the appointment');
+  }
+}
+
+/**
  * AG-128, Ley 77 art. 10. An arrival registered without the emergency call
  * having been made.
  *

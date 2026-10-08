@@ -3,14 +3,18 @@ import { Module } from '@nestjs/common';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 
+import { AgendaAlertsController } from './agenda-alerts.controller';
 import { AgendaController } from './agenda.controller';
 import { AgendaMetricsController } from './agenda-metrics.controller';
 import { AgendaReferenceController } from './agenda-reference.controller';
 import { AgendaService } from './application/agenda.service';
+import { EmergencyAlertService } from './application/emergency-alert.service';
 import { WaitlistService } from './application/waitlist.service';
 import { AGENDA_REPOSITORY } from './domain/agenda.repository';
+import { EMERGENCY_ALERT_REPOSITORY } from './domain/emergency-alert.repository';
 import { WAITLIST_REPOSITORY } from './domain/waitlist.repository';
 import { PrismaAgendaRepository } from './infrastructure/prisma-agenda.repository';
+import { PrismaEmergencyAlertRepository } from './infrastructure/prisma-emergency-alert.repository';
 import { PrismaWaitlistRepository } from './infrastructure/prisma-waitlist.repository';
 import { WaitlistController } from './waitlist.controller';
 
@@ -34,6 +38,7 @@ import { WaitlistController } from './waitlist.controller';
 @Module({
   controllers: [
     AgendaController,
+    AgendaAlertsController,
     AgendaMetricsController,
     AgendaReferenceController,
     WaitlistController,
@@ -45,9 +50,16 @@ import { WaitlistController } from './waitlist.controller';
     // reasons. It reads the agenda's port for the two facts that live there —
     // which interval came free, and whose chart an appointment is.
     WaitlistService,
+    // AG-175. The recipient's side of the emergency notice: another reason
+    // to change (D-170.1), and no method shared with booking.
+    EmergencyAlertService,
     CurrentUserService,
     { provide: AGENDA_REPOSITORY, useClass: PrismaAgendaRepository },
     { provide: WAITLIST_REPOSITORY, useClass: PrismaWaitlistRepository },
+    {
+      provide: EMERGENCY_ALERT_REPOSITORY,
+      useClass: PrismaEmergencyAlertRepository,
+    },
   ],
 })
 export class AgendaModule {}

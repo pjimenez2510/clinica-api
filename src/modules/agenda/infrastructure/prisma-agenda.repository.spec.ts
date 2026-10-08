@@ -54,6 +54,9 @@ function entryRow(overrides: Record<string, unknown> = {}) {
     serviceTypeConceptId: null,
     createdById: USER,
     encounters: [],
+    lateAdmissionAt: null,
+    lateAdmissionBy: null,
+    emergencyAlerts: [],
     // AG-051: what `ENTRY_SELECT` reads of the reschedule chain. An empty list
     // is "nothing replaced this one", which the partial unique index makes the
     // only alternative to a single element.

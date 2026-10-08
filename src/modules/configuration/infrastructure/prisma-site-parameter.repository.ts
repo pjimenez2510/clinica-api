@@ -41,6 +41,9 @@ const PARAMETER_SELECT = {
   // E5 (AG-066, AG-094). El octavo parámetro de AG-094, que `site_parameter`
   // no tuvo hasta `agenda_waitlist_contact_trail`.
   waitlistMaxContactAttempts: true,
+  // AG-142 (E8): el umbral de llegada tardía y el permiso que lo salta.
+  lateArrivalGraceMinutes: true,
+  lateArrivalOverridePermission: true,
   cancelledRetention: true,
   // ORD-046, ORD-063, ORD-065: la política de las colas de resultados.
   criticalNoticeWithinMinutes: true,
@@ -124,6 +127,10 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
              */
             overbookingPermission: patch.overbookingPermission,
             waitlistMaxContactAttempts: patch.waitlistMaxContactAttempts,
+            // AG-142. El permiso, como el del sobrecupo: el servicio ya lo
+            // comprobó y el disparador de la base es la última palabra.
+            lateArrivalGraceMinutes: patch.lateArrivalGraceMinutes,
+            lateArrivalOverridePermission: patch.lateArrivalOverridePermission,
             // `null` clears a role (quien pidió); `undefined` leaves alone.
             criticalNoticeWithinMinutes: patch.criticalNoticeWithinMinutes,
             criticalEscalationRoleId: patch.criticalEscalationRoleId,

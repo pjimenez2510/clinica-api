@@ -35,6 +35,7 @@ import { ServiceTypeNotFoundError } from '../../../shared/domain/errors/master-d
 import { resolveDuration } from '../../../shared/domain/duration-resolution';
 import {
   type AgendaTransitionTarget,
+  assertArrivalOnAppointmentDay,
   assertNoShowNotBeforeStart,
   assertTransition,
   effectsOf,
@@ -45,9 +46,14 @@ import {
 } from '../domain/status-machine';
 import {
   type ClinicalDate,
+  addDays,
   clinicalDateOf,
   clinicalDayBounds,
 } from '../../../shared/domain/clinic-time';
+import {
+  type LateArrivalReport,
+  summariseLateArrival,
+} from '../domain/late-arrival-metric';
 import {
   type AvailabilityView,
   deriveAvailability,
@@ -55,6 +61,7 @@ import {
 import { bookingWarningsFor } from '../domain/holiday-calendar';
 import {
   arrivalDelayMinutes,
+  lateAdmissionOf,
   lateArrivalWarningsFor,
 } from '../domain/late-arrival';
 import {
@@ -281,6 +288,11 @@ export interface EmergencyCorrectionRequest {
   entryId: string;
   emergency: boolean;
   emergencyNote?: string;
+  /**
+   * AG-174 (D-141.5). The caller holds `record:write` at this site, resolved
+   * by the controller from the session. After the stay it is what corrects.
+   */
+  mayWriteRecord: boolean;
 }
 
 /**
@@ -323,6 +335,12 @@ export interface TransitionRequest {
    * cannot be told apart from a datum somebody simply forgot.
    */
   coverageCheckSkippedReason?: string;
+  /**
+   * AG-120. Whether the caller holds a permission AT THIS SITE, resolved by
+   * the controller from the session. Asked with the code the site stores,
+   * which only the service reads. Absent: holds nothing.
+   */
+  holds?: (permission: string) => boolean;
 }
 
 /**
@@ -1278,6 +1296,7 @@ export class AgendaService {
           note: request.emergencyNote,
           correctedById: requester.userId,
           now,
+          mayWriteRecord: request.mayWriteRecord,
         }),
     );
 
@@ -1340,6 +1359,19 @@ export class AgendaService {
       throw new EmergencyAssessmentRequiredError();
     }
 
+    /**
+     * AG-120. The site's threshold and who may skip it, read BEFORE the
+     * transaction and only for the step into care: the closure needs them to
+     * judge the row, and a parameter a moment old is as good as one read
+     * inside — it is not what two receptionists race on.
+     */
+    const lateArrivalPolicy =
+      request.to === 'IN_PROGRESS'
+        ? resolveBookingParameters(
+            await this.agenda.siteParametersFor(request.siteId),
+          )
+        : null;
+
     const entry = await this.agenda.transition(
       {
         siteId: request.siteId,
@@ -1357,6 +1389,10 @@ export class AgendaService {
         if (request.to === 'NO_SHOW') {
           assertNoShowNotBeforeStart(read.startsAt, now);
         }
+        // AG-173 (D-153.6): the arrival lands on the appointment's own day.
+        if (request.to === 'CHECKED_IN') {
+          assertArrivalOnAppointmentDay(read.startsAt, now);
+        }
         /**
          * AG-045, AG-148: a documented attention outweighs the agenda. A live
          * attention forbids annulling, the no-show and the retraction; it
@@ -1369,6 +1405,24 @@ export class AgendaService {
           request.reason,
           now,
         );
+        /**
+         * AG-120 (D-170.2). The status route refuses a late arrival into care
+         * without the site's permission, and records who let it in with it.
+         */
+        const admittedLate =
+          lateArrivalPolicy !== null &&
+          lateAdmissionOf({
+            startsAt: read.startsAt,
+            checkedInAt: read.checkedInAt,
+            emergencyFlagged: read.emergencyFlagged,
+            walkIn: read.walkIn,
+            graceMinutes: lateArrivalPolicy.lateArrivalGraceMinutes,
+            mayAdmitLate:
+              request.holds?.(
+                lateArrivalPolicy.lateArrivalOverridePermission,
+              ) ?? false,
+            refuse: true,
+          });
 
         return {
           to: request.to,
@@ -1398,6 +1452,9 @@ export class AgendaService {
             ...(request.to === 'ENTERED_IN_ERROR'
               ? { enteredInErrorReason: request.reason?.trim() }
               : {}),
+            ...(admittedLate && !read.alreadyAdmittedLate
+              ? { lateAdmissionById: requester.userId, lateAdmissionAt: now }
+              : {}),
           },
           // AG-044: the reason lands on the entry only when it is annulled.
           // AG-117 does NOT borrow this column — see `effectsOf`.
@@ -1408,6 +1465,11 @@ export class AgendaService {
           // AG-117 both land, with who wrote it and when.
           historyNote: request.reason,
           interruptAttention,
+          // AG-129. An arrival called an emergency notifies, in the same
+          // transaction: the consequence is fixed and not configurable.
+          ...(request.to === 'CHECKED_IN' && request.emergency === true
+            ? { emergencyAlert: { raisedById: requester.userId, at: now } }
+            : {}),
         };
       },
     );
@@ -1611,6 +1673,22 @@ export class AgendaService {
     });
 
     return { ...summariseNoShow(rows), countedUntil: window.untilExclusive };
+  }
+
+  /**
+   * AG-141. Late arrival over a range, by site and practitioner.
+   *
+   * THE WINDOW IS NOT CLOSED AT «NOW», unlike the no-show rate (AG-081): an
+   * arrival that has not happened is simply not a row, so there is nothing
+   * the future could inflate. Same scope argument as `noShowRate`.
+   */
+  async lateArrival(request: NoShowRateRequest): Promise<LateArrivalReport> {
+    const rows = await this.agenda.lateArrivalRows({
+      sites: request.sites,
+      from: clinicalDayBounds(request.from).startsAt,
+      untilExclusive: clinicalDayBounds(addDays(request.to, 1)).startsAt,
+    });
+    return summariseLateArrival(rows);
   }
 
   /**

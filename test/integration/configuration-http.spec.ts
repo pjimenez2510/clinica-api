@@ -764,6 +764,9 @@ describe('la configuración por HTTP', () => {
         // conteste, y es el defecto de la columna: cambiarlo cuesta una
         // pantalla y no una migración.
         waitlistMaxContactAttempts: 3,
+        // AG-142: el umbral de llegada tardía y quién lo salta (D-170.3).
+        lateArrivalGraceMinutes: 15,
+        lateArrivalOverridePermission: 'agenda:overbook',
         cancelledRetention: 'NEVER',
         criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
@@ -1282,6 +1285,9 @@ describe('la configuración por HTTP', () => {
         overbookingEnabled: true,
         overbookingPermission: 'agenda:overbook',
         waitlistMaxContactAttempts: 3,
+        // AG-142: el umbral de llegada tardía y quién lo salta (D-170.3).
+        lateArrivalGraceMinutes: 15,
+        lateArrivalOverridePermission: 'agenda:overbook',
         cancelledRetention: 'NEVER',
         criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,

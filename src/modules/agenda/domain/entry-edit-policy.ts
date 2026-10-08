@@ -16,6 +16,7 @@
 import {
   AgendaEntryHasEncounterError,
   AgendaEntryNotEditableError,
+  EmergencyCorrectionNeedsClinicalPermissionError,
   AgendaEntryNotFoundError,
   AppointmentFromWaitlistError,
 } from './agenda.errors';
@@ -38,10 +39,21 @@ const ANNOTATABLE: readonly AgendaEntryStatus[] = [
   'IN_PROGRESS',
 ];
 
-/** AG-132. Where the emergency call can still be corrected. */
+/** AG-132. Where the emergency call is corrected by whoever records arrivals. */
 const EMERGENCY_CORRECTABLE: readonly AgendaEntryStatus[] = [
   'CHECKED_IN',
   'IN_PROGRESS',
+];
+
+/**
+ * AG-174 (D-141.5). After the stay: the patient was here and is gone. A
+ * `CANCELLED` row only counts if the arrival was recorded, which the caller
+ * already demands (no call, nothing to correct).
+ */
+const AFTER_THE_STAY: readonly AgendaEntryStatus[] = [
+  'FULFILLED',
+  'LEFT_WITHOUT_BEING_SEEN',
+  'CANCELLED',
 ];
 
 /** The fields of an appointment edit that move it or change whose it is. */
@@ -129,6 +141,8 @@ export interface EmergencyCorrection {
   note: string | undefined;
   correctedById: string;
   now: Date;
+  /** AG-174. The corrector holds `record:write` at this site. */
+  mayWriteRecord: boolean;
 }
 
 /**
@@ -147,15 +161,34 @@ export function planEmergencyCorrection(
   correction: EmergencyCorrection,
 ): EntryEdit {
   if (entry.kind !== 'APPOINTMENT') throw new AgendaEntryNotFoundError();
+  const afterTheStay = AFTER_THE_STAY.includes(entry.status);
   if (
     entry.emergencyAssessedAt === null ||
     entry.emergencyAssessedById === null ||
-    !EMERGENCY_CORRECTABLE.includes(entry.status)
+    (!EMERGENCY_CORRECTABLE.includes(entry.status) && !afterTheStay)
   ) {
     throw new AgendaEntryNotEditableError(entry.status);
   }
+  if (afterTheStay && !correction.mayWriteRecord) {
+    throw new EmergencyCorrectionNeedsClinicalPermissionError();
+  }
   const note = correction.note?.trim() || null;
+  /**
+   * AG-129, AG-174. A correction to «sí» notifies only while the patient is
+   * here — the notice exists to receive somebody at the door (art. 8) — and
+   * only if it was not already «sí».
+   */
+  const notifies =
+    correction.emergency && !afterTheStay && entry.emergencyFlaggedAt === null;
   return {
+    ...(notifies
+      ? {
+          emergencyAlert: {
+            raisedById: correction.correctedById,
+            at: correction.now,
+          },
+        }
+      : {}),
     emergency: {
       assessedAt: entry.emergencyAssessedAt,
       assessedById: entry.emergencyAssessedById,

@@ -16,6 +16,7 @@ import {
   AgendaEntryNotFoundError,
   InvalidAgendaTransitionError,
   NoShowBeforeStartError,
+  ArrivalNotOnAppointmentDayError,
   NoShowUndoExpiredError,
 } from './agenda.errors';
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
@@ -226,6 +227,18 @@ export function planNoShowUndo(entry: TransitionRead, now: Date): StatusChange {
 export function assertNoShowNotBeforeStart(startsAt: Date, now: Date): void {
   if (now.getTime() < startsAt.getTime()) {
     throw new NoShowBeforeStartError();
+  }
+}
+
+/**
+ * AG-173 (D-153.6). An arrival is recorded on the appointment's own clinical
+ * day, in `America/Guayaquil` (AG-001) — never the session's, never UTC's: at
+ * 19:30 in Guayaquil UTC is already tomorrow and the appointment is still
+ * today's. `now` is a parameter, like every instant here.
+ */
+export function assertArrivalOnAppointmentDay(startsAt: Date, now: Date): void {
+  if (clinicalDateOf(startsAt) !== clinicalDateOf(now)) {
+    throw new ArrivalNotOnAppointmentDayError();
   }
 }
 
