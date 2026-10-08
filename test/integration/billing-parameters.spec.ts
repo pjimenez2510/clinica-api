@@ -116,6 +116,8 @@ describe('B7 la parametrización de caja', () => {
     email: string,
     roleCode: 'ADMIN' | 'CAJA',
     cedula: string,
+    /** D-023: a grant confined to ONE site. Absent = clinic-wide. */
+    grantedSiteId?: string,
   ): Promise<{ token: string; userId: string }> {
     const user = await prisma.user.create({
       data: {
@@ -135,7 +137,7 @@ describe('B7 la parametrización de caja', () => {
       where: { code: roleCode },
     });
     await prisma.userRoleGrant.create({
-      data: { userId: user.id, roleId: role.id },
+      data: { userId: user.id, roleId: role.id, siteId: grantedSiteId },
     });
     const response = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
@@ -351,6 +353,91 @@ describe('B7 la parametrización de caja', () => {
     });
   });
 
+  describe('BI-146 lo que la base garantiza al desactivar y al borrar', () => {
+    it('BI-146 la base rechaza desactivar el último activo por SQL directo, y desactiva uno cuando queda otro (control)', async () => {
+      const { cash, card } = await twoMethods();
+
+      await expect(
+        prisma.$executeRaw`UPDATE payment_method SET active = false WHERE id = ${card}::uuid`,
+      ).resolves.toBe(1);
+      await expect(
+        prisma.$executeRaw`UPDATE payment_method SET active = false WHERE id = ${cash}::uuid`,
+      ).rejects.toThrowError(/payment_method_one_stays_active/);
+    });
+
+    it('BI-146 la base rechaza borrar un medio de pago, y lo renombra (control)', async () => {
+      const { cash } = await twoMethods();
+
+      await expect(
+        prisma.$executeRaw`UPDATE payment_method SET name = 'Efectivo en caja' WHERE id = ${cash}::uuid`,
+      ).resolves.toBe(1);
+      await expect(
+        prisma.$executeRaw`DELETE FROM payment_method WHERE id = ${cash}::uuid`,
+      ).rejects.toThrowError(/payment_method_is_never_deleted/);
+    });
+
+    it('BI-146 dos administradores apagan a la vez los dos últimos: gana uno y el otro recibe LAST_ACTIVE_PAYMENT_METHOD', async () => {
+      const { cash, card } = await twoMethods();
+
+      const [first, second] = await Promise.all([
+        send('patch', `/payment-methods/${cash}`, { active: false }),
+        send('patch', `/payment-methods/${card}`, { active: false }),
+      ]);
+
+      // Exactly one winner. The loser is refused by the service's count (409)
+      // when the winner already committed, or by the database's lock (422)
+      // when both read two active methods: either way, the same code.
+      expect(
+        [first.status, second.status].filter((status) => status === 200),
+      ).toHaveLength(1);
+      const loser = first.status === 200 ? second : first;
+      expect([409, 422]).toContain(loser.status);
+      expect((loser.body as Problem).code).toBe('LAST_ACTIVE_PAYMENT_METHOD');
+      expect(
+        await prisma.paymentMethod.count({ where: { active: true } }),
+      ).toBe(1);
+    });
+  });
+
+  describe('D-023 la parametrización es de toda la clínica', () => {
+    it('BI-140 un administrador con settings:manage en una sola sede recibe 403 al escribir, y el de toda la clínica escribe (control)', async () => {
+      const { cash } = await twoMethods();
+      const site = await createSite(prisma, 'Sede Norte');
+      const scoped = await signIn(
+        'norte@clinica.ec',
+        'ADMIN',
+        '1710034073',
+        site.id,
+      );
+      const caja = await prisma.role.findUniqueOrThrow({
+        where: { code: 'CAJA' },
+      });
+
+      await send('patch', `/payment-methods/${cash}`, {
+        name: 'Efectivo',
+      }).expect(200);
+
+      await send(
+        'post',
+        '/payment-methods',
+        { name: 'Deuna', sriCode: '20' },
+        scoped.token,
+      ).expect(403);
+      await send(
+        'patch',
+        `/payment-methods/${cash}`,
+        { active: false },
+        scoped.token,
+      ).expect(403);
+      await send(
+        'put',
+        `/discount-limits/${caja.id}`,
+        { maxDiscountPercentage: '50' },
+        scoped.token,
+      ).expect(403);
+    });
+  });
+
   describe('BI-141 BI-142 el límite de descuento de cada rol', () => {
     it('BI-141 todo rol sale con su límite, y el que no tiene ninguno sale en cero', async () => {
       const response = await get('/discount-limits').expect(200);
@@ -399,6 +486,23 @@ describe('B7 la parametrización de caja', () => {
       expect((over.body as Problem).errors?.map((e) => e.field)).toContain(
         'maxDiscountPercentage',
       );
+    });
+
+    it('BI-141 la base rechaza un límite por encima del 100 % por SQL directo, y admite el 100 % (control)', async () => {
+      const caja = await prisma.role.findUniqueOrThrow({
+        where: { code: 'CAJA' },
+      });
+
+      await expect(
+        prisma.$executeRaw`
+          INSERT INTO role_discount_limit (role_id, max_discount_percentage, updated_at)
+          VALUES (${caja.id}::uuid, 100.00, CURRENT_TIMESTAMP)`,
+      ).resolves.toBe(1);
+      await expect(
+        prisma.$executeRaw`
+          UPDATE role_discount_limit SET max_discount_percentage = 100.01
+           WHERE role_id = ${caja.id}::uuid`,
+      ).rejects.toThrowError(/role_discount_limit_percentage_in_range/);
     });
 
     it('BI-141 caja no lee ni asigna límites: 403 sin settings:read ni settings:manage', async () => {

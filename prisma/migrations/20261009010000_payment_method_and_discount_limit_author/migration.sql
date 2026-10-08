@@ -111,3 +111,41 @@ ALTER TABLE "access_audit"
       'role_discount_limit'
     )
   );
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- BI-146: NUNCA SE BORRA, Y NUNCA SE QUEDA CAJA SIN NINGUNO ACTIVO
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- El servicio cuenta los activos antes de desactivar uno, pero una cuenta
+-- seguida de una escritura no arbitra a dos administradores a la vez: cada uno
+-- ve dos activos, cada uno apaga el suyo, y quedan cero. La base lo arbitra con
+-- un candado de transacción: la segunda espera a que la primera confirme, y
+-- entonces ya ve que el suyo era el último.
+--
+-- Y no se borra: el cobro de B6 lo referenciará y una factura ya declaró su
+-- código. Hasta que exista esa clave foránea, lo impide este disparador.
+CREATE OR REPLACE FUNCTION trg_payment_method_one_stays_active()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'payment_method_is_never_deleted'
+      USING ERRCODE = 'insufficient_privilege',
+            HINT = 'Un medio de pago se desactiva; no se borra.';
+  END IF;
+  IF OLD."active" AND NOT NEW."active" THEN
+    PERFORM pg_advisory_xact_lock(hashtext('payment_method_one_stays_active'));
+    IF NOT EXISTS (
+      SELECT 1 FROM "payment_method"
+       WHERE "active" AND "id" <> NEW."id"
+    ) THEN
+      RAISE EXCEPTION 'payment_method_one_stays_active: es el único medio de pago activo'
+        USING ERRCODE = 'integrity_constraint_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_payment_method_one_stays_active
+  BEFORE UPDATE OF "active" OR DELETE ON "payment_method"
+  FOR EACH ROW EXECUTE FUNCTION trg_payment_method_one_stays_active();

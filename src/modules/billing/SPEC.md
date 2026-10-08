@@ -1633,6 +1633,10 @@ es falsa, hay requisitos que cambian.
   `LAST_ACTIVE_PAYMENT_METHOD`.
   > Sin ningún medio activo caja no puede emitir ni una factura, y lo descubre
   > con el paciente delante.
+  > Lo arbitra la base (`trg_payment_method_one_stays_active`, con un candado
+  > de transacción): dos administradores apagando a la vez los dos últimos
+  > leerían cada uno dos activos. El mismo disparador rechaza el `DELETE`
+  > hasta que la clave foránea del cobro (B6) lo haga por sí sola.
 - **BI-147** — CUANDO se cree o cambie un medio de pago o el límite de descuento
   de un rol, el sistema DEBERÁ guardar en la fila quién y cuándo lo cambió por
   última vez, y DEBERÁ dejar en `access_audit` el antes y el después.

@@ -12,6 +12,15 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
  * by PostgreSQL constraints, and this registration is their enumeration.
  */
 registerConstraintMeanings({
+  // ── The payment methods (BI-146) ──────────────────────────────────────────
+  // The service refuses the last one first; this answers two administrators
+  // switching off the last two at once, which only the database can arbitrate.
+  payment_method_one_stays_active: {
+    code: 'LAST_ACTIVE_PAYMENT_METHOD',
+    field: 'active',
+    message:
+      'Es el único medio de pago activo: active otro antes de desactivar éste',
+  },
   // ── The tariff on the wall (BI-113) ───────────────────────────────────────
   // The adapter numbers the version under the self-pay list's lock, so this
   // only answers a write from below the application.
