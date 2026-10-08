@@ -15,7 +15,9 @@ import { describe, expect, it } from 'vitest';
  * decision with its own requirement — never a line slipped into `src`.
  */
 
-const SRC = join(import.meta.dirname, '..', '..', '..');
+// `cwd()` and not `import.meta.dirname`: this compiles to CommonJS and runs as
+// ESM under Vitest (see `route-parameter-contract.spec.ts`).
+const SRC = join(process.cwd(), 'src');
 
 /** What a purge of the archive looks like, through Prisma or in raw SQL. */
 const PURGE = [
