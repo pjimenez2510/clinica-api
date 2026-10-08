@@ -292,6 +292,22 @@ export const siteParametersSchema = z.object({
 /** Response of reading and saving a site's parameters: always the whole set. */
 export class SiteParametersDto extends createZodDto(siteParametersSchema) {}
 
+/**
+ * EN-032, EN-157, EN-158. How long the clinical record is kept, as the
+ * installation declares it. Read-only: no route writes it.
+ */
+export const recordRetentionSchema = z.object({
+  /** The longest of the sites, never under fifteen (D-A-011). */
+  years: z.number().int().min(15),
+  /** Counted from the patient's last attention. */
+  countsFrom: z.literal('LAST_ENCOUNTER'),
+  /** EN-158. Nothing is deleted when it runs out. */
+  purgedOnExpiry: z.literal(false),
+});
+/** Response of GET /configuration/record-retention. */
+export class RecordRetentionDto extends createZodDto(recordRetentionSchema) {}
+export type RecordRetentionResponse = z.infer<typeof recordRetentionSchema>;
+
 /** Response types inferred from the published schemas; see agenda.dto.ts. */
 export type HolidayResponse = z.infer<typeof holidaySchema>;
 export type HolidayListResponse = z.infer<typeof holidayListSchema>;

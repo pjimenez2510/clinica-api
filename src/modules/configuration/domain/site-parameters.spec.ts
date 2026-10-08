@@ -9,7 +9,9 @@ import {
   assertParametersInRange,
   assertPermissionIsDeclared,
   DEFAULT_SITE_PARAMETERS,
+  MINIMUM_RECORD_RETENTION_YEARS,
   PARAMETER_RANGES,
+  recordRetentionOf,
 } from './site-parameters';
 
 /**
@@ -357,6 +359,22 @@ describe('los parámetros de operación de una sede', () => {
       expect(() => {
         assertAtomFitsStoredDurations(60, []);
       }).not.toThrow();
+    });
+  });
+});
+
+describe('EN-157, EN-158 el plazo de conservación que declara la instalación', () => {
+  it('EN-157 gana el mayor de las sedes y nunca baja de quince años', () => {
+    expect(recordRetentionOf([15, 20]).years).toBe(20);
+    expect(recordRetentionOf([]).years).toBe(MINIMUM_RECORD_RETENTION_YEARS);
+    expect(recordRetentionOf([10]).years).toBe(15);
+  });
+
+  it('EN-158 cuenta desde la última atención y no purga nada', () => {
+    expect(recordRetentionOf([15])).toEqual({
+      years: 15,
+      countsFrom: 'LAST_ENCOUNTER',
+      purgedOnExpiry: false,
     });
   });
 });

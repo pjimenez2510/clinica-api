@@ -15,6 +15,8 @@ import {
   assertParametersInRange,
   assertPermissionIsDeclared,
   missingResultsWork,
+  recordRetentionOf,
+  type RecordRetention,
   type SiteParametersPatch,
 } from '../domain/site-parameters';
 import { PERMISSIONS } from '../../../shared/authorisation/permission.catalogue';
@@ -48,6 +50,15 @@ export class SiteParametersService {
    * CF-062. A site always has a row — the base writes it on insert — so a
    * missing one means the site is unknown.
    */
+  /**
+   * EN-032, EN-157, EN-158. How long the clinical record is kept, as the
+   * installation declares it: the longest of its sites, from the last
+   * attention, and nothing is purged when it runs out.
+   */
+  async recordRetention(): Promise<RecordRetention> {
+    return recordRetentionOf(await this.repository.declaredRetentionYears());
+  }
+
   async get(siteId: string): Promise<SiteParameterView> {
     const parameters = await this.repository.find(siteId);
     if (!parameters) throw new SiteParametersNotFoundError();

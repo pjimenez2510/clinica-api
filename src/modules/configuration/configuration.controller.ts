@@ -37,11 +37,13 @@ import {
   // the endpoint WITHOUT its parameters — silently, end to end. See
   // catalogs.controller.ts.
   ListHolidaysQueryDto,
+  RecordRetentionDto,
   SiteParametersDto,
   UpdateHolidayDto,
   UpdateSiteParametersDto,
   type HolidayListResponse,
   type HolidayResponse,
+  type RecordRetentionResponse,
   type SiteParametersResponse,
 } from './dto/configuration.dto';
 
@@ -212,6 +214,20 @@ export class ConfigurationController {
    * with the site's current values. The switch travels in the ANSWER too — a
    * parameter an administrator cannot SEE is one they cannot rely on.
    */
+  /**
+   * EN-032, EN-157, EN-158. The retention of the clinical record the
+   * installation declares (LOPDP art. 51): the longest of its sites, from the
+   * last attention, never purged. Read-only on purpose: the minimum is the
+   * database's (`site_parameter_retention_minimum`) and no route lowers it.
+   */
+  @Get('record-retention')
+  @RequirePermission('settings:read', 'global')
+  @ApiOperation({ summary: 'Plazo de conservación de la historia clínica' })
+  @ApiOkResponse({ type: RecordRetentionDto })
+  async recordRetention(): Promise<RecordRetentionResponse> {
+    return this.parameters.recordRetention();
+  }
+
   @Get('sites/:siteId/parameters')
   @RequirePermission('settings:read', 'param:siteId')
   @ApiOperation({ summary: 'Parámetros de operación de una sede' })

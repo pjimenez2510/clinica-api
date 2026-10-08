@@ -41,6 +41,13 @@ export interface SiteParameterRepository {
   find(siteId: string): Promise<SiteParameterView | null>;
 
   /**
+   * EN-157, EN-158. The retention of the clinical record each site declares,
+   * in years. Not exposed per site on purpose: the record is the patient's,
+   * and the installation declares the longest (`recordRetentionOf`).
+   */
+  declaredRetentionYears(): Promise<readonly number[]>;
+
+  /**
    * `null` when the site has no row, which means the site is unknown.
    *
    * Both sides come from ONE transaction; see `SiteParameterChange`.
