@@ -498,19 +498,21 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         encounter: {
           select: {
             patientId: true,
-            // ORD-026. Read only when asked: the plain worklist never sees it.
-            patient: query.includePatientName
-              ? {
-                  select: {
-                    givenName: true,
-                    secondGivenName: true,
-                    familyName: true,
-                    secondFamilyName: true,
-                  },
-                }
-              : false,
           },
         },
+        // ORD-026, ORD-161. Read only when asked: the plain worklist never
+        // sees it. The chart the PAPER names (frozen at the issue): what the
+        // laboratory checks the specimen against has to read the same.
+        chartOfRecord: query.includePatientName
+          ? {
+              select: {
+                givenName: true,
+                secondGivenName: true,
+                familyName: true,
+                secondFamilyName: true,
+              },
+            }
+          : false,
         items: {
           where: {
             completedAt: null,
@@ -556,12 +558,12 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
         testDisplay: item.testDisplay,
         requestedAt: order.requestedAt,
         // ORD-026. The whole name: two surnames are what tell namesakes apart.
-        patientName: order.encounter.patient
+        patientName: order.chartOfRecord
           ? [
-              order.encounter.patient.givenName,
-              order.encounter.patient.secondGivenName,
-              order.encounter.patient.familyName,
-              order.encounter.patient.secondFamilyName,
+              order.chartOfRecord.givenName,
+              order.chartOfRecord.secondGivenName,
+              order.chartOfRecord.familyName,
+              order.chartOfRecord.secondFamilyName,
             ]
               .filter(Boolean)
               .join(' ')
@@ -626,6 +628,16 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
                 secondGivenName: true,
                 familyName: true,
                 secondFamilyName: true,
+                // ORD-161. A draft names no chart yet: the one in force, as
+                // its order will name it when issued. One level (PA-046).
+                mergedInto: {
+                  select: {
+                    givenName: true,
+                    secondGivenName: true,
+                    familyName: true,
+                    secondFamilyName: true,
+                  },
+                },
               },
             },
           },
@@ -638,7 +650,8 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
     });
 
     return rows.map((order) => {
-      const { patient } = order.encounter;
+      const patient =
+        order.encounter.patient.mergedInto ?? order.encounter.patient;
       return {
         orderId: order.id,
         encounterId: order.encounterId,

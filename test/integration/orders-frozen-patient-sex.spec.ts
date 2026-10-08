@@ -7,12 +7,15 @@ import type { Requester } from '../../src/modules/orders/application/service-ord
 import { PrismaDiagnosticReportRepository } from '../../src/modules/orders/infrastructure/prisma-diagnostic-report.repository';
 import { PrismaExamCatalogueRepository } from '../../src/modules/orders/infrastructure/prisma-exam-catalogue.repository';
 import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastructure/prisma-service-order.repository';
+import { STALE_DRAFT_AFTER_MS } from '../../src/modules/orders/domain/service-order';
+import { PatientMergeService } from '../../src/modules/patients/application/patient-merge.service';
+import { PrismaPatientRepository } from '../../src/modules/patients/infrastructure/prisma-patient.repository';
 import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.port';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { aScene, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
-import { createUser } from './setup/fixtures';
+import { createPatient, createUser } from './setup/fixtures';
 
 /**
  * ORD-158, ORD-159 (D-163.1): the exam order FREEZES the patient's sex when
@@ -248,5 +251,199 @@ describe('ORD-036 el rango sigue el sexo de la ficha, no el que la orden congel�
       abnormalFlag: 'LOW',
       referenceLow: 13,
     });
+  });
+});
+
+describe('ORD-161 la orden nombra la ficha vigente al emitirse, con su sexo, y no la cambia después (D-169.2 i, D-171.3)', () => {
+  const mergesOf = (prisma: PrismaClient) =>
+    new PatientMergeService(
+      new PrismaPatientRepository(prisma as unknown as PrismaService),
+      silentAudit,
+      noopLogger as never,
+    );
+
+  /**
+   * A duplicate registered «mujer» by mistake, without a document, with its
+   * attention open and an order issued before the merge; the real chart of the
+   * same man; and the merge and its undoing, the real ones.
+   */
+  async function aMergedScene(prisma: PrismaClient) {
+    const { scene, draft } = await aDraftOrder(prisma);
+    await prisma.patient.update({
+      where: { id: scene.patient.id },
+      data: { familyName: 'Pilco', givenName: 'Rosa' },
+    });
+    const { orders, documents } = adapters(prisma);
+    const beforeMerge = await orders.issue({ orderId: draft.id, sites: 'all' });
+    const survivor = await createPatient(prisma, { sex: 'MALE' });
+    await prisma.patient.update({
+      where: { id: survivor.id },
+      data: { familyName: 'Guamán', givenName: 'Mario' },
+    });
+    const desk = { userId: (await createUser(prisma)).id };
+    const merges = mergesOf(prisma);
+    const printed = async (orderId: string) => {
+      const subject = await documents.findSubject({
+        kind: 'SERVICE_ORDER',
+        subjectId: orderId,
+        sites: 'all',
+      });
+      if (subject?.kind !== 'SERVICE_ORDER') throw new Error('no order');
+      return {
+        name: subject.data.patient.fullName,
+        mrn: subject.data.patient.mrn,
+        sex: subject.data.patientSex,
+      };
+    };
+    return {
+      scene,
+      survivor,
+      beforeMerge,
+      printed,
+      merge: () =>
+        merges.merge(
+          { sourcePatientId: scene.patient.id, targetPatientId: survivor.id },
+          desk,
+        ),
+      undo: () => merges.undo({ sourcePatientId: scene.patient.id }, desk),
+      issueAnother: () =>
+        placeIssued(orders, {
+          encounterId: scene.encounter.id,
+          category: 'LABORATORY',
+          priority: 'ROUTINE',
+          lines: [{ examDefinitionId: scene.bh.id }],
+          sites: 'all',
+        }),
+    };
+  }
+
+  it('ORD-161 la emitida tras unificar nombra a la vigente con su sexo; la de antes sigue nombrando a su ficha con el suyo', async () => {
+    const prisma = db();
+    const scene = await aMergedScene(prisma);
+    const own = {
+      name: 'Pilco Rosa',
+      mrn: scene.scene.patient.mrn,
+      sex: 'FEMALE',
+    };
+    // Control positivo: sin unificar, la ficha de la atención.
+    expect(await scene.printed(scene.beforeMerge.id)).toEqual(own);
+
+    await scene.merge();
+    const after = await scene.issueAnother();
+    expect(await scene.printed(after.id)).toEqual({
+      name: 'Guamán Mario',
+      mrn: scene.survivor.mrn,
+      sex: 'MALE',
+    });
+    // Un solo papel, una sola ficha: la de antes no pasa a decir el nombre de
+    // la vigente sobre el sexo de la duplicada.
+    expect(await scene.printed(scene.beforeMerge.id)).toEqual(own);
+  });
+
+  it('ORD-161 deshecha la unificación, la orden emitida mientras duró sigue nombrando a la ficha y el sexo con que se emitió', async () => {
+    const prisma = db();
+    const scene = await aMergedScene(prisma);
+    await scene.merge();
+    const during = await scene.issueAnother();
+    const asIssued = {
+      name: 'Guamán Mario',
+      mrn: scene.survivor.mrn,
+      sex: 'MALE',
+    };
+    // Control positivo: unificada, la vigente.
+    expect(await scene.printed(during.id)).toEqual(asIssued);
+
+    await scene.undo();
+    expect(await scene.printed(during.id)).toEqual(asIssued);
+    await expect(
+      prisma.$executeRaw`UPDATE service_order SET chart_of_record_id = ${scene.scene.patient.id}::uuid WHERE id = ${during.id}::uuid`,
+    ).rejects.toThrow(/service_order_frozen_once_issued/);
+  });
+
+  it('ORD-161 un borrador no puede nombrar una ficha: la base lo rechaza', async () => {
+    const prisma = db();
+    const { scene, draft } = await aDraftOrder(prisma);
+    // Control positivo: el borrador se edita por el mismo camino.
+    await prisma.$executeRaw`UPDATE service_order SET clinical_note_text = 'Ayuno de 8 horas' WHERE id = ${draft.id}::uuid`;
+    await expect(
+      prisma.$executeRaw`UPDATE service_order SET chart_of_record_id = ${scene.patient.id}::uuid WHERE id = ${draft.id}::uuid`,
+    ).rejects.toThrow(/service_order_chart_of_record_when_issued/);
+  });
+
+  it('ORD-161 ORD-036 el resultado en esa atención se sigue clasificando con el sexo de la ficha de la atención (D-171.3, pendiente del autor)', async () => {
+    const prisma = db();
+    const scene = await aMergedScene(prisma);
+    await scene.merge();
+    const after = await scene.issueAnother();
+    // Control positivo: la orden nombra a la vigente, un hombre.
+    expect((await scene.printed(after.id)).sex).toBe('MALE');
+
+    const report = await adapters(prisma).reports.register(
+      {
+        orderId: after.id,
+        performedById: null,
+        issuedAt: new Date(),
+        results: [
+          { analyteDefinitionId: scene.scene.hb.id, valueNumeric: 12.5 },
+        ],
+      },
+      requester,
+    );
+    // El rango de la mujer de la duplicada: cambiarlo es la decisión D-171.3.
+    expect(report.results[0]).toMatchObject({
+      abnormalFlag: 'NORMAL',
+      referenceLow: 12,
+    });
+  });
+
+  it('ORD-161 ORD-026 la cola de pendientes nombra la misma ficha que el papel', async () => {
+    const prisma = db();
+    const scene = await aMergedScene(prisma);
+    await scene.merge();
+    const after = await scene.issueAnother();
+    const names = async () =>
+      new Map(
+        (
+          await adapters(prisma).orders.pending({
+            sites: 'all',
+            chartId: scene.survivor.id,
+            includePatientName: true,
+            now: new Date(),
+            limit: 50,
+          })
+        ).map((entry) => [entry.orderId, entry.patientName]),
+      );
+
+    const byOrder = await names();
+    // Control positivo: la de antes de unificar, con el nombre de su ficha.
+    expect(byOrder.get(scene.beforeMerge.id)).toBe('Rosa Pilco');
+    expect(byOrder.get(after.id)).toBe('Mario Guamán');
+  });
+
+  it('ORD-161 un borrador olvidado en esa atención nombra a la vigente', async () => {
+    const prisma = db();
+    const scene = await aMergedScene(prisma);
+    const { orders } = adapters(prisma);
+    const draft = await orders.compose({
+      encounterId: scene.scene.encounter.id,
+      category: 'LABORATORY',
+      priority: 'ROUTINE',
+      lines: [{ examDefinitionId: scene.scene.bh.id }],
+      sites: 'all',
+    });
+    const nameOfDraft = async () =>
+      (
+        await orders.staleDrafts({
+          userId: scene.scene.practitioner.userId,
+          sites: 'all',
+          // A day after its last edit, the open attention's draft is «olvidado».
+          now: new Date(Date.now() + STALE_DRAFT_AFTER_MS + 60_000),
+        })
+      ).find((entry) => entry.orderId === draft.id)?.patientName;
+
+    // Control positivo: sin unificar, la ficha de la atención.
+    expect(await nameOfDraft()).toBe('Rosa Pilco');
+    await scene.merge();
+    expect(await nameOfDraft()).toBe('Mario Guamán');
   });
 });

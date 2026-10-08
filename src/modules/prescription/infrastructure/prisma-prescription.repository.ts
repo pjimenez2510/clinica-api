@@ -837,7 +837,16 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
              * `ActiveAllergyReader`'s, so «la ficha y las que absorbió» is one
              * statement for the whole system instead of one per module.
              */
-            patient: { select: { familyName: true, givenName: true } },
+            patient: {
+              select: {
+                familyName: true,
+                givenName: true,
+                // PR-119 (D-169.2 c). The person of the chart in force: an
+                // attention opened on a duplicate merged afterwards still
+                // hangs off the duplicate (D-031). One level (PA-046).
+                mergedInto: { select: { familyName: true, givenName: true } },
+              },
+            },
           },
         },
         prescriber: {
@@ -856,7 +865,7 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
     });
     if (row === null) return null;
 
-    const chart = row.encounter.patient;
+    const chart = row.encounter.patient.mergedInto ?? row.encounter.patient;
 
     return {
       prescription: toPrescriptionView(row),

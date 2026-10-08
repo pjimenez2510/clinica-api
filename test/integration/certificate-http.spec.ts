@@ -11,6 +11,7 @@ import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
+import { PrismaDocumentSourceReader } from '../../src/modules/documents/infrastructure/prisma-document-source.reader';
 import { PatientMergeService } from '../../src/modules/patients/application/patient-merge.service';
 import {
   lateIssueDayOf,
@@ -1208,6 +1209,89 @@ describe('el certificado medico por HTTP', () => {
       )
     ).body as Form117Body;
     expect(form.work).toMatchObject({ employer: 'Exportadora Andina' });
+  });
+
+  it('CER-057 en la atención de una ficha unificada el 117 dice nombre, cédula e historia de la vigente, en pantalla y en el PDF', async () => {
+    await aDiagnosis(encounterId);
+    // La duplicada: registrada deprisa, sin documento.
+    await prisma.patient.update({
+      where: { id: patientId },
+      data: { familyName: 'Pilco', givenName: 'Rosa' },
+    });
+    const duplicate = await prisma.patient.findUniqueOrThrow({
+      where: { id: patientId },
+      select: { mrn: true },
+    });
+    const survivor = await createPatient(prisma);
+    await prisma.patient.update({
+      where: { id: survivor.id },
+      data: {
+        familyName: 'Guamán',
+        secondFamilyName: 'Pilco',
+        givenName: 'María',
+        secondGivenName: 'Rosa',
+      },
+    });
+    await prisma.patientIdentifier.create({
+      data: { patientId: survivor.id, type: 'CEDULA', value: '1713175071' },
+    });
+
+    const identity = async (certificateId: string) => {
+      const form = (
+        await get(`/certificates/${certificateId}`, doctor.token).expect(200)
+      ).body as Form117Body;
+      const pdf = await new PrismaDocumentSourceReader(
+        prisma as unknown as PrismaService,
+        'http://localhost/verificar',
+      ).findSubject({
+        kind: 'MEDICAL_CERTIFICATE',
+        subjectId: certificateId,
+        sites: 'all',
+      });
+      if (pdf?.kind !== 'MEDICAL_CERTIFICATE') throw new Error('no 117');
+      // La pantalla y el papel componen el mismo 117 (composeForm117).
+      expect(pdf.data.form.patient).toEqual(form.patient);
+      expect(pdf.data.form.establishment).toEqual(form.establishment);
+      return {
+        names: [
+          form.patient.firstFamilyName,
+          form.patient.secondFamilyName,
+          form.patient.firstGivenName,
+          form.patient.secondGivenName,
+        ],
+        document: form.establishment.clinicalRecordNumber,
+        archive: form.establishment.archiveNumber,
+        age: form.patient.age,
+      };
+    };
+
+    // Control positivo: sin unificar, la ficha de la atención.
+    const before = (await issue(attendance())).certificate.id;
+    const own = await identity(before);
+    expect(own).toMatchObject({
+      names: ['Pilco', 'NA', 'Rosa', 'NA'],
+      document: 'NA',
+      archive: duplicate.mrn,
+    });
+
+    await app
+      .get(PatientMergeService, { strict: false })
+      .merge(
+        { sourcePatientId: patientId, targetPatientId: survivor.id },
+        { userId: (await createUser(prisma)).id },
+      );
+
+    const merged = await identity((await issue(restOf(1))).certificate.id);
+    // Un papel, una ficha: el emitido ANTES de unificar sigue nombrando la
+    // ficha con la que se emitió, la misma cuyo sexo congeló (CER-058).
+    expect(await identity(before)).toEqual(own);
+    expect(merged).toEqual({
+      names: ['Guamán', 'Pilco', 'María', 'Rosa'],
+      document: '1713175071',
+      archive: survivor.mrn,
+      // La edad es la congelada de la atención (CER-021), no la de la vigente.
+      age: own.age,
+    });
   });
 
   it('CER-027 CER-038 lo emitido no cambia: ni un diagnostico registrado despues ni la ficha corregida llegan al certificado', async () => {

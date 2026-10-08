@@ -430,8 +430,9 @@ mujer, corregir después el sexo de la ficha a hombre: la cabecera de la orden
 en pantalla y la del PDF que se vuelve a generar siguen diciendo «Mujer»; una
 hemoglobina transcrita a esa orden se clasifica con el rango del hombre, el de
 la ficha (D-171.1).
-**Cubre:** ORD-158, ORD-159. **Solo servidor:** ORD-158 —la copia la escribe
-la base—. ORD-160 se retiró (D-171.1).
+**Cubre:** ORD-158, ORD-159, **ORD-161** —en la atención de una ficha
+unificada, el sexo de la vigente (D-171.3)—. **Solo servidor:** ORD-158 —la
+copia la escribe la base— y ORD-161. ORD-160 se retiró (D-171.1).
 
 ### Fuera de las ocho
 
@@ -2242,6 +2243,29 @@ a D-156.5, recomendación aceptada en todos los puntos._
   actual de la ficha**; la prueba de integración lo fija con una orden que
   congeló otro, con control positivo.
 
+- **ORD-161** — CUANDO se emita una orden, el sistema DEBERÁ fijar en ella la
+  **ficha que nombra** —la **vigente** de la ficha de su atención en ese
+  instante (`service_order.chart_of_record_id`; la superviviente si estaba
+  unificada)— y congelar el sexo **de esa ficha** (ORD-158); la cabecera del
+  PDF (ORD-126) y la cola de pendientes con nombre (ORD-026) DEBERÁN nombrar
+  esa ficha, y unificar o deshacer después NO DEBERÁ cambiarla. Un borrador
+  olvidado (ORD-115) DEBERÁ nombrar la vigente de su atención. El rango de
+  referencia y el crítico siguen eligiéndose con el sexo de la ficha de la
+  atención (ORD-036, D-171.1).
+
+  > **D-171.3** (recomendación de la revisión clínica de
+  > `feat/f07-orden-sexo-congelado`, construida en
+  > `fix/identidad-impresa-ficha-fusionada` y pendiente de que el autor la
+  > confirme): una ficha absorbida ya no se corrige (PA-045), y su sexo bajo
+  > el nombre de la vigente mezclaría dos fichas en un papel. **Se fija la
+  > ficha y no se resuelve en vivo** por lo mismo que el 117 (CER-057): un
+  > papel nunca junta el nombre de una ficha con el sexo de otra, tampoco si
+  > se deshace la unificación. Con qué sexo se clasifica un resultado en esa
+  > atención —el de la duplicada, que nadie corrige, o el de la vigente, que
+  > sería el error si la unificación fue equivocada— es del autor (D-171.3).
+  > **Garantía de la base** (`20261008000000_paper_chart_of_record`):
+  > `a_service_order_freeze_patient_sex` escribe ficha y sexo al emitir;
+  > `service_order_chart_of_record_when_issued` y `service_order_guard_status`.
 
 ---
 

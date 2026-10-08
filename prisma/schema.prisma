@@ -1791,26 +1791,31 @@ model Patient {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  identifiers         PatientIdentifier[]
-  priorityGroups      PatientPriorityGroup[]
-  changeHistory       PatientChangeHistory[]
-  contacts            PatientContact[]
-  allergies           PatientAllergy[]
+  identifiers           PatientIdentifier[]
+  priorityGroups        PatientPriorityGroup[]
+  changeHistory         PatientChangeHistory[]
+  contacts              PatientContact[]
+  allergies             PatientAllergy[]
   /// EN-087. The «sin alergias conocidas» assertions written on this chart.
-  allergyAbsences     PatientAllergyAbsence[]
+  allergyAbsences       PatientAllergyAbsence[]
   /// EN-085. Personal and family history that persists between attentions.
-  history             PatientHistory[]
-  agendaEntries       AgendaEntry[]
-  encounters          Encounter[]
-  waitlistEntries     WaitlistEntry[]
-  certificates        MedicalCertificate[]
-  referrals           Referral[]
-  mergesAsSource      PatientMerge[]          @relation("MergeSource")
-  mergesAsTarget      PatientMerge[]          @relation("MergeTarget")
-  accounts            PatientAccount[]
+  history               PatientHistory[]
+  agendaEntries         AgendaEntry[]
+  encounters            Encounter[]
+  waitlistEntries       WaitlistEntry[]
+  /// CER-057, ORD-161. The papers that NAME this chart: the one in force when
+  /// they were issued (`chart_of_record_id`). Not history (`exact` in the
+  /// chart-scope guard): a paper names one chart on purpose.
+  certificatesNamingIt  MedicalCertificate[]    @relation("CertificateChartOfRecord")
+  serviceOrdersNamingIt ServiceOrder[]          @relation("ServiceOrderChartOfRecord")
+  certificates          MedicalCertificate[]    @relation("CertificatePatient")
+  referrals             Referral[]
+  mergesAsSource        PatientMerge[]          @relation("MergeSource")
+  mergesAsTarget        PatientMerge[]          @relation("MergeTarget")
+  accounts              PatientAccount[]
   /// `privacy`, PD-016, PD-036: read through `chartScope` like the rest of the person's history.
-  consents            PatientConsent[]
-  dataSubjectRequests DataSubjectRequest[]
+  consents              PatientConsent[]
+  dataSubjectRequests   DataSubjectRequest[]
 
   @@index([familyName, givenName])
   @@index([birthDate])
@@ -3216,12 +3221,21 @@ model ServiceOrder {
   /// be corrected afterwards without changing what the laboratory holds.
   diagnoses Json?
 
-  /// ORD-158 (D-163.1). The chart's sex the order's header printed, frozen by
-  /// the DATABASE when it is issued (`a_service_order_freeze_patient_sex`) and
+  /// ORD-158 (D-163.1). The chart's sex the order's header printed —that of
+  /// `chartOfRecord`, ORD-161— frozen by the
+  /// DATABASE when it is issued (`a_service_order_freeze_patient_sex`) and
   /// never rewritten; NULL while it is a draft
   /// (`service_order_patient_sex_frozen_when_issued`). Only the header reads
   /// it: the reference range still follows the chart (ORD-036, D-171.1).
   patientSex PatientSex? @map("patient_sex")
+
+  /// ORD-161 (D-169.2 i, D-171.3). The chart the order NAMES and whose sex it
+  /// froze: the one in force for the attention's chart at the issue (the
+  /// survivor, if merged), written with `patient_sex` by
+  /// `a_service_order_freeze_patient_sex` and never rewritten; NULL while it is
+  /// a draft (`service_order_chart_of_record_when_issued`).
+  chartOfRecordId String?  @map("chart_of_record_id") @db.Uuid
+  chartOfRecord   Patient? @relation("ServiceOrderChartOfRecord", fields: [chartOfRecordId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "service_order_chart_of_record_fk")
 
   /// Denormalised count maintained by trigger. It exists only so the "pending
   /// results" worklist can be a partial index: index predicates cannot contain
@@ -3456,7 +3470,15 @@ model MedicalCertificate {
   number Int @default(0)
 
   patientId String  @map("patient_id") @db.Uuid
-  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  patient   Patient @relation("CertificatePatient", fields: [patientId], references: [id], onDelete: Restrict)
+
+  /// CER-057 (D-169.2 i). The chart the 117 NAMES: the one in force for the
+  /// attention's chart at the issue (the survivor, if it had been merged),
+  /// written by `a_medical_certificate_freeze_chart_of_record` whatever the row
+  /// carries and kept by `medical_certificate_frozen`. NOT NULL in the
+  /// database; optional here only so a writer may omit it.
+  chartOfRecordId String?  @map("chart_of_record_id") @db.Uuid
+  chartOfRecord   Patient? @relation("CertificateChartOfRecord", fields: [chartOfRecordId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_chart_of_record_fk")
 
   issuedById String       @map("issued_by_id") @db.Uuid
   issuedBy   Practitioner @relation(fields: [issuedById], references: [id], onDelete: Restrict)
@@ -3499,18 +3521,24 @@ model MedicalCertificate {
   /// without receiving any clinical data.
   verificationCode String @unique @map("verification_code") @db.VarChar(24)
 
-  issuedAt             DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
+  issuedAt             DateTime   @default(now()) @map("issued_at") @db.Timestamptz(6)
   /// CER-011. Who, when and why, the three together or none:
   /// `medical_certificate_revocation_states_who_when_and_why`. The row is never
   /// deleted. `revoked_by_id` is the ACCOUNT that annulled it.
-  revokedAt            DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedAt            DateTime?  @map("revoked_at") @db.Timestamptz(6)
   /// CER-027. The diagnoses it printed, copied at the issue (`[]` without them).
-  diagnoses            Json      @default("[]")
+  diagnoses            Json       @default("[]")
   /// CER-038. The chart's work and contact as they were at the issue.
-  employerName         String?   @map("employer_name") @db.VarChar(160)
-  jobTitle             String?   @map("job_title") @db.VarChar(120)
-  residenceAddressLine String?   @map("residence_address_line") @db.VarChar(255)
-  patientPhone         String?   @map("patient_phone") @db.VarChar(32)
+  employerName         String?    @map("employer_name") @db.VarChar(160)
+  jobTitle             String?    @map("job_title") @db.VarChar(120)
+  residenceAddressLine String?    @map("residence_address_line") @db.VarChar(255)
+  patientPhone         String?    @map("patient_phone") @db.VarChar(32)
+  /// CER-058 (D-171.2). The sex the 117 prints: that of `chartOfRecord` at the
+  /// issue, copied by `a_medical_certificate_freeze_chart_of_record` whatever
+  /// the row carries and
+  /// kept by `medical_certificate_frozen`. The default only lets Prisma omit
+  /// it; the trigger always overwrites it.
+  patientSex           PatientSex @default(UNKNOWN) @map("patient_sex")
 
   revokedById      String? @map("revoked_by_id") @db.Uuid
   revokedBy        User?   @relation("CertificateRevoker", fields: [revokedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "medical_certificate_revoked_by_fk")

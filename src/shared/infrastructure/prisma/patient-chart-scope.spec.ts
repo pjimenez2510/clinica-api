@@ -200,6 +200,18 @@ const CHART_LINKS: Record<
       'apareciera también como fusión de las fichas que A absorbió —que ' +
       'PA-046 prohíbe— y que deshacer no supiera qué enlace limpiar.',
   },
+  'medical_certificate.chart_of_record_id': {
+    resolution: 'exact',
+    why:
+      'CER-057 (D-169.2 i). La ficha que el 117 NOMBRA, congelada al ' +
+      'emitirse junto con su sexo: es una fila concreta a propósito. ' +
+      'Resolverla por el alcance haría que unificar o deshacer después ' +
+      'pusiera el nombre de una ficha sobre el sexo de otra.',
+  },
+  'service_order.chart_of_record_id': {
+    resolution: 'exact',
+    why: 'ORD-161. Por lo mismo que el 117: la ficha que la orden nombra, congelada con el sexo que imprime.', // prettier-ignore
+  },
   'patient_merge.target_patient_id': {
     resolution: 'exact',
     why: 'Por lo mismo que `source_patient_id`: es la otra mitad de la pareja de filas que una fila del rastro nombra.', // prettier-ignore
@@ -290,10 +302,15 @@ function readChartChildren(): ChartChild[] {
   // `priorityGroups  PatientPriorityGroup[]` → PatientPriorityGroup →
   // priorityGroups. A list relation on Patient is how a nested select reaches
   // a child table without naming a patient id at all.
+  // Keyed by model AND relation name: a model with two relations to Patient
+  // (the certificate's patient and the chart it names, CER-057) must resolve
+  // the one over `patient_id`, whatever order they are declared in.
   const relationOf = new Map<string, string>();
   for (const line of (patient[2] ?? '').split('\n')) {
-    const match = /^\s*(\w+)\s+(\w+)\[\]/.exec(line);
-    if (match?.[1] && match[2]) relationOf.set(match[2], match[1]);
+    const match = /^\s*(\w+)\s+(\w+)\[\](?:.*@relation\("(\w+)"\))?/.exec(line);
+    if (match?.[1] && match[2]) {
+      relationOf.set(`${match[2]}#${match[3] ?? ''}`, match[1]);
+    }
   }
 
   const children: ChartChild[] = [];
@@ -302,10 +319,13 @@ function readChartChildren(): ChartChild[] {
     if (!/@map\("patient_id"\)/.test(body)) continue;
 
     const mapped = /@@map\("(\w+)"\)/.exec(body)?.[1];
+    // The relation that owns `patientId`, by its name if it has one.
+    const owner =
+      /Patient\s+@relation\((?:"(\w+)",\s*)?fields:\s*\[patientId\]/.exec(body);
     children.push({
       table: mapped ?? name,
       accessor: name.charAt(0).toLowerCase() + name.slice(1),
-      relation: relationOf.get(name),
+      relation: relationOf.get(`${name}#${owner?.[1] ?? ''}`),
     });
   }
   return children;
