@@ -14,6 +14,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { aScene } from './orders-fixtures';
 import { useDatabase } from './setup/database';
+import { closeThroughCashier } from './setup/fixtures';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -206,17 +207,23 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
     await expect(issue(prisma, draft.id)).resolves.toMatchObject({ status: 'ISSUED' }); // prettier-ignore
   });
 
-  it('ORD-005 ORD-099 en una atención cerrada no se emite, pero sí se descarta', async () => {
+  it('ORD-005 ORD-099 en una atención terminada no se emite, pero sí se descarta', async () => {
     const prisma = db();
     const { scene, draft } = await aDraft(prisma);
+    // Terminada por interrupción, con su constancia (EN-167). `COMPLETED` con
+    // un borrador vivo ya no existe: caja liquida y la atención espera de
+    // alta a que el borrador se emita o se descarte (D-189, BI-236 en
+    // billing-closes-encounter.spec.ts).
+    const endedAt = new Date(scene.encounter.startedAt.getTime() + 3_600_000);
     await prisma.encounter.update({
       where: { id: scene.encounter.id },
       data: {
-        status: 'COMPLETED',
-        // Después de `started_at` (`encounter_time_order`), y con su
-        // condición de alta (`encounter_discharge_states_a_condition`).
-        endedAt: new Date(scene.encounter.startedAt.getTime() + 3_600_000),
-        dischargeCondition: 'ALIVE',
+        status: 'DISCONTINUED',
+        endedAt,
+        discontinuedReason: 'El paciente se retiró a mitad de la consulta',
+        discontinuedOrigin: 'PATIENT',
+        discontinuedById: (await prisma.practitioner.findUniqueOrThrow({ where: { id: scene.practitioner.id } })).userId, // prettier-ignore
+        discontinuedAt: endedAt,
       },
     });
 
@@ -250,14 +257,8 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
     );
 
     await orders.discard({ orderId: draft.id, sites: 'all', userId });
-    await prisma.encounter.update({
-      where: { id: scene.encounter.id },
-      data: {
-        status: 'COMPLETED',
-        endedAt: new Date(scene.encounter.startedAt.getTime() + 3_600_000),
-        dischargeCondition: 'ALIVE',
-      },
-    });
+    // Sin borrador vivo, caja la cierra al liquidar (BI-236).
+    await closeThroughCashier(prisma, scene.encounter.id);
 
     await expect(
       orders.restore({ orderId: draft.id, sites: 'all' }),
@@ -363,7 +364,8 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
   const endEncounter = (
     prisma: PrismaClient,
     scene: Awaited<ReturnType<typeof aScene>>,
-    status: 'DISCHARGED' | 'COMPLETED',
+    // `COMPLETED` only through caja: `closeThroughCashier` (D-184).
+    status: 'DISCHARGED',
   ) =>
     prisma.encounter.update({
       where: { id: scene.encounter.id },
@@ -371,6 +373,20 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
         status,
         endedAt: new Date(scene.encounter.startedAt.getTime() + 3_600_000),
         dischargeCondition: 'ALIVE',
+      },
+    });
+  /** Suspended with its own reason, author and instant (EN-128). */
+  const putOnHold = async (
+    prisma: PrismaClient,
+    scene: Awaited<ReturnType<typeof aScene>>,
+  ) =>
+    prisma.encounter.update({
+      where: { id: scene.encounter.id },
+      data: {
+        status: 'ON_HOLD',
+        holdReason: 'Imagen',
+        heldById: await signerOf(prisma, scene.practitioner.id),
+        heldAt: new Date(),
       },
     });
   /** When the draft was last saved, as the row says: the 24 hours run from it (ORD-128). */
@@ -401,8 +417,17 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
     });
     expect(entry?.patientName).toContain(scene.patient.familyName);
 
-    // ORD-005: terminada, sólo se descarta.
-    await prisma.encounter.update({ where: { id: scene.encounter.id }, data: { status: 'COMPLETED' } }); // prettier-ignore
+    // ORD-005: terminada, sólo se descarta. Anulada con su constancia: con el
+    // borrador vivo caja no la cierra (D-189).
+    await prisma.encounter.update({
+      where: { id: scene.encounter.id },
+      data: {
+        status: 'ENTERED_IN_ERROR',
+        enteredInErrorReason: 'Ficha equivocada',
+        enteredInErrorById: userId,
+        enteredInErrorAt: new Date(),
+      },
+    });
     expect((await stale())[0]).toMatchObject({ canIssue: false });
 
     // De otro profesional, no es suyo.
@@ -436,7 +461,7 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
     const [open] = await at(DAY_MS + 1);
     expect(open).toMatchObject({ orderId: draft.id, encounterStatus: 'OPEN', canIssue: true }); // prettier-ignore
 
-    await prisma.encounter.update({ where: { id: scene.encounter.id }, data: { status: 'ON_HOLD' } }); // prettier-ignore
+    await putOnHold(prisma, scene);
     expect(await at(DAY_MS - MINUTE_MS)).toEqual([]);
     expect((await at(DAY_MS + MINUTE_MS))[0]).toMatchObject({ orderId: draft.id, encounterStatus: 'ON_HOLD' }); // prettier-ignore
   });
@@ -493,7 +518,7 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
   it('BI-192 D-130.3 la cuenta de una atención aún abierta ve también su borrador viejo', async () => {
     const prisma = db();
     const { scene, draft } = await aDraft(prisma);
-    await prisma.encounter.update({ where: { id: scene.encounter.id }, data: { status: 'ON_HOLD' } }); // prettier-ignore
+    await putOnHold(prisma, scene);
     // Guardado hace dos días: el extracto no mira la edad del borrador.
     await prisma.$executeRaw`UPDATE service_order SET created_at = created_at - interval '2 days' WHERE id = ${draft.id}::uuid`; // prettier-ignore
 

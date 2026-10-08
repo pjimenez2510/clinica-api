@@ -12,7 +12,12 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 import { placeIssued, aScene, aTariffConcept } from './orders-fixtures';
 import { attemptWhileAnnulled } from './setup/encounter-race';
 import { useDatabase } from './setup/database';
-import { createPatient, createSite, createUser } from './setup/fixtures';
+import {
+  closeThroughCashier,
+  createPatient,
+  createSite,
+  createUser,
+} from './setup/fixtures';
 
 /**
  * The order against a real PostgreSQL.
@@ -337,17 +342,8 @@ describe('la orden de exámenes contra PostgreSQL', () => {
   it('ORD-005 rechaza pedir exámenes en una atención ya cerrada', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
-    await prisma.encounter.update({
-      where: { id: scene.encounter.id },
-      data: {
-        status: 'COMPLETED',
-        // Después de `started_at`, que el fixture pone en el 14-09-2026:
-        // `encounter_time_order` no admite una atención que termina antes de
-        // empezar, y con razón.
-        endedAt: new Date('2026-09-14T15:00:00Z'),
-        dischargeCondition: 'ALIVE',
-      },
-    });
+    // Cerrada como se cierra: caja liquida la cuenta (BI-236).
+    await closeThroughCashier(prisma, scene.encounter.id);
 
     await expect(
       placeIssued(ordersOf(prisma), {

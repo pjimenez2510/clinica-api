@@ -32,6 +32,7 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 
 import { useDatabase } from './setup/database';
 import {
+  closeThroughCashier,
   createDiagnosis,
   createPatient,
   createSite,
@@ -457,14 +458,8 @@ describe('el certificado medico por HTTP', () => {
     // Control positivo: la misma atención abierta admite el certificado.
     await issue(attendance());
 
-    await prisma.encounter.update({
-      where: { id: encounterId },
-      data: {
-        status: 'COMPLETED',
-        endedAt: new Date(),
-        dischargeCondition: 'ALIVE',
-      },
-    });
+    // Cerrada como se cierra: caja liquida la cuenta (BI-236).
+    await closeThroughCashier(prisma, encounterId);
 
     const response = await post(
       `/encounters/${encounterId}/certificates`,
@@ -1631,10 +1626,7 @@ describe('el certificado medico por HTTP', () => {
 
   it('CER-053 con la atención cerrada no se corrige, y no se anula nada', async () => {
     const issued = await issue(attendance());
-    await prisma.encounter.update({
-      where: { id: encounterId },
-      data: { status: 'COMPLETED', endedAt: new Date(), dischargeCondition: 'ALIVE' }, // prettier-ignore
-    });
+    await closeThroughCashier(prisma, encounterId);
 
     const response = await correct(issued.certificate.id, doctor.token, {
       ...attendance(),

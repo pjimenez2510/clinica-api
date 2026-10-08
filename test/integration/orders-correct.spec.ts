@@ -12,6 +12,7 @@ import type { AnnulledDocumentArchiver } from '../../src/shared/documents/annull
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { aScene, placeIssued } from './orders-fixtures';
+import { closeThroughCashier } from './setup/fixtures';
 import { useDatabase } from './setup/database';
 
 /**
@@ -164,14 +165,8 @@ describe('ORD-118 corregir una orden emitida', () => {
   it('ORD-118 con la atención cerrada no corrige, y no anula nada', async () => {
     const prisma = db();
     const { scene, signer, order } = await anIssuedOrder(prisma);
-    await prisma.encounter.update({
-      where: { id: scene.encounter.id },
-      data: {
-        status: 'COMPLETED',
-        endedAt: new Date(scene.encounter.startedAt.getTime() + 3_600_000),
-        dischargeCondition: 'ALIVE',
-      },
-    });
+    // Cerrada como se cierra: caja liquida la cuenta (BI-236).
+    await closeThroughCashier(prisma, scene.encounter.id);
 
     await expect(
       serviceOf(prisma).correct(order.id, signer),

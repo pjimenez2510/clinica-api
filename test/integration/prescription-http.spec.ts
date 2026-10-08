@@ -15,7 +15,12 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite, createUser } from './setup/fixtures';
+import {
+  closeThroughCashier,
+  createPatient,
+  createSite,
+  createUser,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -704,15 +709,8 @@ describe('la receta por HTTP', () => {
     await post(`/prescriptions/${id}/restore`, doctorToken).expect(200);
     await post(`/prescriptions/${id}/discard`, doctorToken).expect(200);
 
-    const encounter = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
-    await prisma.encounter.update({
-      where: { id: encounterId },
-      data: {
-        status: 'COMPLETED',
-        endedAt: new Date(encounter.startedAt.getTime() + 3_600_000),
-        dischargeCondition: 'ALIVE',
-      },
-    });
+    // Cerrada como se cierra: caja liquida la cuenta (BI-236).
+    await closeThroughCashier(prisma, encounterId);
 
     const refused = await post(`/prescriptions/${id}/restore`, doctorToken).expect(409); // prettier-ignore
     expect((refused.body as Problem).code).toBe(
@@ -1122,14 +1120,7 @@ describe('la receta por HTTP', () => {
   });
 
   it('PR-002 rechaza recetar en una atención ya cerrada', async () => {
-    await prisma.encounter.update({
-      where: { id: encounterId },
-      data: {
-        status: 'COMPLETED',
-        endedAt: new Date('2026-09-14T15:00:00Z'),
-        dischargeCondition: 'ALIVE',
-      },
-    });
+    await closeThroughCashier(prisma, encounterId);
 
     const response = await post(
       `/encounters/${encounterId}/prescriptions`,
