@@ -41,7 +41,7 @@ interface PublicTariff {
   version: number;
   effectiveFrom: string;
   establishmentName: string | null;
-  items: { categoryName: string; name: string; amount: string; taxPercentage: string | null }[]; // prettier-ignore
+  items: { categoryName: string; name: string; amount: string; taxPercentage: string | null; finalAmount: string }[]; // prettier-ignore
 }
 interface Overview {
   items: { id: string; version: number; lineCount: number }[];
@@ -185,6 +185,7 @@ describe('el tarifario de la pared por HTTP', () => {
       expect(Object.keys(item).sort()).toEqual([
         'amount',
         'categoryName',
+        'finalAmount',
         'name',
         'taxPercentage',
       ]);
@@ -193,6 +194,108 @@ describe('el tarifario de la pared por HTTP', () => {
     expect(text).not.toContain('Cedeño');
     expect(text).not.toContain('CONS-MG-PV');
     expect(text).not.toContain('IESS');
+  });
+
+  it('BI-110 BI-113 la publicación copia el precio final con IVA, redondeado como la factura (LODC art. 9)', async () => {
+    const published = (await publish().expect(201)).body as { id: string };
+    const rows = await prisma.tariffPublicationItem.findMany({
+      where: { publicationId: published.id },
+      select: { serviceCode: true, amount: true, taxPercentage: true, finalAmount: true }, // prettier-ignore
+    });
+    const byCode = new Map(rows.map((row) => [row.serviceCode, row]));
+    const final = (code: string) => byCode.get(code)?.finalAmount?.toFixed(2);
+
+    // Positive control: a 15 % line is in the publication with its list price.
+    expect(byCode.get('PROC-ESTETICA-TOXINA-BOT')?.amount.toFixed(2)).toBe('250.00'); // prettier-ignore
+    expect(byCode.get('PROC-ESTETICA-TOXINA-BOT')?.taxPercentage?.toFixed(2)).toBe('15.00'); // prettier-ignore
+    expect(final('PROC-ESTETICA-TOXINA-BOT')).toBe('287.50');
+    // 0.50 × 15 % = 0.075 → 0.08, half up on the line, as `lineTax` does.
+    expect(final('INS-GUANTES-EXAMEN')).toBe('0.58');
+    // At 0 % the final price is the price.
+    expect(final('CONS-MG-PV')).toBe(await selfPayAmountToday());
+    expect(rows.every((row) => row.finalAmount !== null)).toBe(true);
+
+    const body = (await wall().expect(200)).body as PublicTariff;
+    const toxin = body.items.find((item) => item.name.startsWith('Aplicación de toxina botulínica')); // prettier-ignore
+    expect(toxin).toMatchObject({ amount: '250.00', taxPercentage: '15.00', finalAmount: '287.50' }); // prettier-ignore
+  });
+
+  it('BI-113 la base no admite una línea publicada sin su precio final, ni con uno que no sea el precio más su IVA', async () => {
+    const published = (await publish().expect(201)).body as { id: string };
+    const row = await prisma.tariffPublication.findUniqueOrThrow({ where: { id: published.id } }); // prettier-ignore
+    const next = await prisma.tariffPublication.create({
+      data: {
+        version: row.version + 1,
+        effectiveFrom: row.effectiveFrom,
+        publishedAt: row.publishedAt,
+        publishedById: row.publishedById,
+        priceListId: row.priceListId,
+      },
+    });
+    const line = (finalAmount: string | null) => ({
+      publicationId: next.id,
+      billableServiceId: serviceId,
+      serviceCode: 'CONS-MG-PV',
+      serviceName: 'Consulta',
+      categoryName: 'Consultas',
+      amount: '30.00',
+      taxPercentage: '15.00',
+      finalAmount,
+    });
+
+    await expect(prisma.tariffPublicationItem.create({ data: line(null) })).rejects.toThrow(/tariff_publication_item_final_amount_present/); // prettier-ignore
+    await expect(prisma.tariffPublicationItem.create({ data: line('29.99') })).rejects.toThrow(/tariff_publication_item_final_amount_present/); // prettier-ignore
+    await expect(prisma.tariffPublicationItem.create({ data: line('34.51') })).rejects.toThrow(/tariff_publication_item_final_amount_present/); // prettier-ignore
+    // Positive control: with its final price it goes in.
+    await prisma.tariffPublicationItem.create({ data: line('34.50') });
+  });
+
+  it('BI-113 una línea publicada antes del precio final se lee calculándolo de lo que copió', async () => {
+    const published = (await publish().expect(201)).body as { id: string };
+    const row = await prisma.tariffPublication.findUniqueOrThrow({ where: { id: published.id } }); // prettier-ignore
+    // A row from before the migration: the NOT VALID check exempts what was
+    // already there, so it is recreated as the migration found it.
+    // The definition is read from the database, not copied from the migration,
+    // so what is restored is exactly what was there.
+    const definition = async () =>
+      prisma.$queryRaw<{ def: string; convalidated: boolean }[]>`
+        SELECT pg_get_constraintdef("oid") AS "def", "convalidated"
+        FROM "pg_constraint"
+        WHERE "conname" = 'tariff_publication_item_final_amount_present'`;
+    const [before] = await definition();
+    expect(before?.convalidated).toBe(false);
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`ALTER TABLE "tariff_publication_item" DROP CONSTRAINT "tariff_publication_item_final_amount_present"`); // prettier-ignore
+      const old = await tx.tariffPublication.create({
+        data: {
+          version: row.version + 1,
+          effectiveFrom: row.effectiveFrom,
+          publishedAt: row.publishedAt,
+          publishedById: row.publishedById,
+          priceListId: row.priceListId,
+        },
+      });
+      await tx.tariffPublicationItem.create({
+        data: {
+          publicationId: old.id,
+          billableServiceId: serviceId,
+          serviceCode: 'CONS-MG-PV',
+          serviceName: 'Consulta antigua',
+          categoryName: 'Consultas',
+          amount: '30.00',
+          taxPercentage: '15.00',
+        },
+      });
+      // pg_get_constraintdef already ends in «NOT VALID».
+      await tx.$executeRawUnsafe(`ALTER TABLE "tariff_publication_item" ADD CONSTRAINT "tariff_publication_item_final_amount_present" ${before!.def}`); // prettier-ignore
+    });
+    expect(await definition()).toEqual([before]);
+
+    const body = (await wall().expect(200)).body as PublicTariff;
+    expect(body.version).toBe(row.version + 1);
+    expect(body.items).toEqual([
+      { categoryName: 'Consultas', name: 'Consulta antigua', amount: '30.00', taxPercentage: '15.00', finalAmount: '34.50' }, // prettier-ignore
+    ]);
   });
 
   it('BI-111 ningún parámetro la desvía a la lista de un convenio', async () => {

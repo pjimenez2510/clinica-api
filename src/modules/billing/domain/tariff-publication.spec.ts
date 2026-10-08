@@ -6,6 +6,7 @@ import {
   type TariffCandidate,
   type TariffLine,
   tariffDifferences,
+  tariffFinalAmount,
   tariffLinesOn,
 } from './tariff-publication';
 
@@ -32,6 +33,7 @@ const line = (overrides: Partial<TariffLine> = {}): TariffLine => ({
   categoryName: 'Consultas',
   amount: Money.parse('30.00'),
   taxPercentage: Percentage.ZERO,
+  finalAmount: Money.parse('30.00'),
   ...overrides,
 });
 
@@ -125,5 +127,37 @@ describe('BI-115 la publicación desactualizada', () => {
       { kind: 'WITHDRAWN', billableServiceId: 'gone', name: 'Retirada' },
       { kind: 'ADDED', billableServiceId: 'new', name: 'Nueva' },
     ]);
+  });
+});
+
+describe('BI-110 BI-113 el precio final con IVA que se exhibe (LODC art. 9, D-192.1)', () => {
+  it('BI-113 la línea al 15 % lleva su precio final, el de la factura', () => {
+    const [only] = tariffLinesOn(
+      [candidate({ taxPercentage: Percentage.parse('15.00') })],
+      today,
+    );
+    expect(only?.amount.toString()).toBe('30.00');
+    expect(only?.finalAmount.toString()).toBe('34.50');
+  });
+
+  it('BI-110 al 0 % y sin porcentaje (no objeto, exento) el final es el precio', () => {
+    expect(tariffFinalAmount(Money.parse('30.00'), Percentage.ZERO).toString()).toBe('30.00'); // prettier-ignore
+    expect(tariffFinalAmount(Money.parse('30.00'), null).toString()).toBe(
+      '30.00',
+    );
+  });
+
+  it('BI-110 redondea al centavo HALF UP, como lineTax de la factura', () => {
+    // 0.10 × 15 % = 0.015 → 0.02; 0.70 × 15 % = 0.105 → 0.11.
+    const fifteen = Percentage.parse('15.00');
+    expect(tariffFinalAmount(Money.parse('0.10'), fifteen).toString()).toBe(
+      '0.12',
+    );
+    expect(tariffFinalAmount(Money.parse('0.70'), fifteen).toString()).toBe(
+      '0.81',
+    );
+    expect(tariffFinalAmount(Money.parse('0.03'), fifteen).toString()).toBe(
+      '0.03',
+    );
   });
 });

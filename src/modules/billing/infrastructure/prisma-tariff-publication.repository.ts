@@ -10,6 +10,7 @@ import {
   type TariffCandidate,
   type TariffLine,
   sortTariffLines,
+  tariffFinalAmount,
 } from '../domain/tariff-publication';
 import type {
   NewTariffPublication,
@@ -93,6 +94,7 @@ export class PrismaTariffPublicationRepository implements TariffPublicationRepos
           // Strings, never numbers, bound straight to `numeric` (BI-001).
           amount: line.amount.toString(),
           taxPercentage: line.taxPercentage?.toString() ?? null,
+          finalAmount: line.finalAmount.toString(),
         })),
       });
       return created.id;
@@ -143,20 +145,31 @@ export class PrismaTariffPublicationRepository implements TariffPublicationRepos
             categoryName: true,
             amount: true,
             taxPercentage: true,
+            finalAmount: true,
           },
         },
       },
     });
     if (row === null) return null;
 
-    const lines: TariffLine[] = row.items.map((item) => ({
-      billableServiceId: item.billableServiceId,
-      code: item.serviceCode,
-      name: item.serviceName,
-      categoryName: item.categoryName,
-      amount: Money.parse(item.amount),
-      taxPercentage: percentageOf(item.taxPercentage),
-    }));
+    const lines: TariffLine[] = row.items.map((item) => {
+      const amount = Money.parse(item.amount);
+      const taxPercentage = percentageOf(item.taxPercentage);
+      return {
+        billableServiceId: item.billableServiceId,
+        code: item.serviceCode,
+        name: item.serviceName,
+        categoryName: item.categoryName,
+        amount,
+        taxPercentage,
+        // Copied since D-192.1; a row published before it is derived from
+        // what it did copy, with the same function (BI-113).
+        finalAmount:
+          item.finalAmount === null
+            ? tariffFinalAmount(amount, taxPercentage)
+            : Money.parse(item.finalAmount),
+      };
+    });
     // By category and name, as the sheet is read (BI-114): the rows come
     // back in no particular order.
     return { ...toSummary(row), lines: sortTariffLines(lines) };

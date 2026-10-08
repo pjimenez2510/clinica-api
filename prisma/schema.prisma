@@ -4167,6 +4167,10 @@ model TariffPublicationItem {
   amount        Decimal  @db.Decimal(12, 2)
   /// NULL for «no objeto» and «exento».
   taxPercentage Decimal? @map("tax_percentage") @db.Decimal(5, 2)
+  /// With its tax (LODC art. 9, D-192.1). NULL only on rows published before
+  /// it was copied: `tariff_publication_item_final_amount_present` (NOT VALID)
+  /// demands it on every new one.
+  finalAmount   Decimal? @map("final_amount") @db.Decimal(12, 2)
 
   @@unique([publicationId, billableServiceId], map: "tariff_publication_item_service_unique")
   @@map("tariff_publication_item")

@@ -1,5 +1,6 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
-import type { Money, Percentage } from './money';
+import { lineTax } from './charge';
+import { Money, type Percentage, Quantity } from './money';
 import { type ValidityPeriod, isInForceOn } from './price-list';
 
 /**
@@ -29,6 +30,31 @@ export interface TariffLine {
   amount: Money;
   /** `null` for «no objeto» and «exento». */
   taxPercentage: Percentage | null;
+  /**
+   * What the wall shows: `amount` with its tax (LODC art. 9, D-192.1). Copied
+   * at publication (BI-113), derived only for the rows published before it.
+   */
+  finalAmount: Money;
+}
+
+/**
+ * BI-110, BI-113. The price with its tax included, as the desk would charge
+ * ONE unit of it with no discount — through `lineTax`, the very function that
+ * taxes an invoice line, so the poster and the invoice cannot disagree by a
+ * cent on the rounding (half up, on the line).
+ */
+export function tariffFinalAmount(
+  amount: Money,
+  taxPercentage: Percentage | null,
+): Money {
+  return amount.plus(
+    lineTax({
+      quantity: Quantity.ONE,
+      unitAmount: amount,
+      discountAmount: Money.ZERO,
+      taxPercentage,
+    }),
+  );
 }
 
 /** A service of the self-pay list with every validity of its price there. */
@@ -64,6 +90,7 @@ export function tariffLinesOn(
       categoryName: candidate.categoryName,
       amount: price.amount,
       taxPercentage: candidate.taxPercentage,
+      finalAmount: tariffFinalAmount(price.amount, candidate.taxPercentage),
     });
   }
   return sortTariffLines(lines);

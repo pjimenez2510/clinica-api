@@ -36,6 +36,7 @@ const line = (amount: string): TariffLine => ({
   categoryName: 'Consultas',
   amount: Money.parse(amount),
   taxPercentage: Percentage.ZERO,
+  finalAmount: Money.parse(amount),
 });
 
 const publication = (
