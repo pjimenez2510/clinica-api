@@ -141,6 +141,21 @@ en la bitácora el correo anterior.
 **Solo interfaz:** AU-048, AU-049. **Solo servidor:** AU-052 (la bitácora no
 tiene pantalla todavía).
 
+### A6 — El canal de avisos en vivo _(P1, 08-10-2026)_
+
+D-187, aceptada por el autor: las pantallas se enteran solas de lo que cambió,
+en vez de preguntar cada minuto. Este paso abre el canal y lo protege como a
+cualquier otra ruta; lo que viaja por él lo decide cada módulo (el primero,
+los valores críticos de `orders`, ORD-164 a ORD-166).
+
+**Prueba independiente:** con una sesión real del médico de la sede A, abrir
+`GET /events` y registrar un valor crítico en la sede A: llega el aviso, con
+su tipo y su sede y nada más; registrar otro en la sede B: no llega; cerrar la
+sesión: el canal se corta en el latido siguiente.
+**Cubre:** AU-054 a AU-058.
+
+**Solo servidor:** AU-054 a AU-058. La pantalla que lo usa es la de ORD-165.
+
 ---
 
 ## Requisitos
@@ -993,6 +1008,56 @@ enlace que no sirve y con un correo que no sale.
   > AD-10 y el «valor anterior» que AU-025 pedía y nadie guardaba. La lista
   > blanca `access_audit_payload_only_for_declared_resources` admite `auth`
   > desde `admin_edit_in_place` (D-150).
+
+### El canal de avisos en vivo (D-187)
+
+- **AU-054** — CUANDO una sesión completa —segundo factor hecho, familia
+  abierta (AU-036, AU-040)— con `record:read` en alguna sede pida
+  `GET /events`, el sistema DEBERÁ abrir un flujo de eventos del servidor
+  (`text/event-stream`) y DEBERÁ enviar por él un latido al menos cada 25
+  segundos; SI la petición no trae una sesión válida ENTONCES DEBERÁ
+  rechazarla como cualquier otra ruta (401) sin abrir el flujo, y SI la sesión
+  no tiene `record:read` en ninguna sede, con `PERMISSION_DENIED`.
+  > **El token va en la cabecera `Authorization`, como en el resto de la API,
+  > y no en una cookie ni en la URL.** D-187 decía «la misma cookie de
+  > sesión», pero la única cookie de esta API es la de renovación (AU-004),
+  > que no autentica ninguna otra ruta; y un token en la URL acaba en los
+  > registros de cualquier proxy. La interfaz abre el flujo con `fetch`
+  > (el paquete `eventsource`, que deja poner cabeceras), y así pasa por los
+  > MISMOS guardas que cualquier petición: no hay una segunda puerta.
+  > `record:read` porque el único aviso de este paso es el de los críticos
+  > (ORD-164); el paso 2 (agenda, tableros) tendrá que ampliar la ruta.
+- **AU-055** — Un aviso DEBERÁ llevar sólo **qué cambió**: su tipo y la sede
+  donde cambió; NO DEBERÁ llevar ningún dato clínico ni personal —ni paciente,
+  ni valor, ni analito, ni nombre—. La pantalla que lo recibe vuelve a pedir lo
+  suyo por la API de siempre, que aplica permisos, alcance y bitácora.
+  > D-187 §2 y la LOPDP (minimización): un aviso que viaja a una sesión que
+  > no debía verlo no le enseña nada. El tamizaje de violencia no se anuncia.
+- **AU-056** — MIENTRAS el flujo esté abierto, el sistema DEBERÁ entregar a
+  la sesión sólo los avisos de las sedes donde tiene el permiso que declara el
+  tipo del aviso, con los permisos resueltos de nuevo en cada latido; un tipo
+  de aviso sin permiso declarado NO DEBERÁ poder publicarse.
+  > El mismo alcance por sede que una lectura (AU-011, ADR-007): el médico de
+  > la sede B no se entera de que en la sede A entró un crítico. Resolverlo en
+  > cada latido es lo que hace el guarda en cada petición: un rol retirado deja
+  > de recibir sin esperar a que caduque nada.
+- **AU-057** — El sistema DEBERÁ cerrar el flujo cuando caduque el token de
+  acceso con que se abrió, y en el primer latido tras cerrarse, revocarse o
+  caducar la sesión.
+  > Sin esto, un canal abierto sobreviviría al «Cerrar sesión» y a la
+  > desactivación de la cuenta: la mitad de sesión que AU-036 cerró en las
+  > peticiones. Al cortarse, la interfaz renueva y vuelve a abrir, y los
+  > guardas deciden de nuevo.
+- **AU-058** — CUANDO esté configurado `REDIS_URL`, un aviso publicado en una
+  instancia de la API DEBERÁ llegar a los flujos abiertos en todas, por el
+  canal de Redis `LIVE_EVENTS_CHANNEL`; SI Redis no responde ENTONCES la
+  escritura que originó el aviso NO DEBERÁ fallar ni deshacerse. Sin
+  `REDIS_URL`, los avisos DEBERÁN circular dentro de la propia instancia.
+  > El aviso es una comodidad sobre la verdad, que está en la base: perderlo
+  > deja la pantalla como hoy, con su sondeo de respaldo (ORD-166). Dejar sin
+  > guardar un aviso de crítico porque Redis no contestó sería al revés.
+  > El canal es configurable porque el pub/sub de Redis no distingue bases
+  > lógicas: dos instalaciones sobre un mismo Redis se oirían entre sí.
 
 ## Códigos de error
 

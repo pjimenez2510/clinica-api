@@ -13,6 +13,13 @@ import { catchError, timeout } from 'rxjs/operators';
 /** Milliseconds before cutting a request off. Overridable per route. */
 export const DEFAULT_TIMEOUT_MS = 15_000;
 
+/**
+ * AU-054. For the one kind of route whose response is MEANT to stay open: the
+ * live-events stream. `timeout()` on it would cut it after 15 s of silence,
+ * which is shorter than its heartbeat. It ends by itself (AU-057) instead.
+ */
+export const NO_TIMEOUT = 'none';
+
 /** Metadata key written by `@Timeout()` and read by the interceptor. */
 const TIMEOUT_KEY = 'timeout_ms';
 
@@ -22,7 +29,7 @@ const TIMEOUT_KEY = 'timeout_ms';
  * The SRI web services take seconds and sometimes over a minute, so the routes
  * that talk to them need a much wider margin than a normal query.
  */
-export const Timeout = (ms: number): MethodDecorator =>
+export const Timeout = (ms: number | typeof NO_TIMEOUT): MethodDecorator =>
   // `SetMetadata`, like every other decorator in the project. Reaching for
   // `Reflect.defineMetadata` directly worked, but being the single exception
   // to a pattern with no reason written down is how a codebase stops having
@@ -50,11 +57,12 @@ export class TimeoutInterceptor implements NestInterceptor {
    * timeout is converted; every other error passes through untouched.
    */
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const ms =
-      this.reflector.get<number | undefined>(
-        TIMEOUT_KEY,
-        context.getHandler(),
-      ) ?? DEFAULT_TIMEOUT_MS;
+    const declared = this.reflector.get<number | typeof NO_TIMEOUT | undefined>(
+      TIMEOUT_KEY,
+      context.getHandler(),
+    );
+    if (declared === NO_TIMEOUT) return next.handle();
+    const ms = declared ?? DEFAULT_TIMEOUT_MS;
 
     return next.handle().pipe(
       timeout(ms),

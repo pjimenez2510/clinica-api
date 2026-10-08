@@ -54,6 +54,11 @@ export interface AccessTokenClaims {
    * session of the account also voids a challenge in flight.
    */
   sep?: number;
+  /**
+   * Expiry, in seconds since the epoch, as `jose` stamps it. AU-057: the
+   * live-events stream opened with this token ends when it does.
+   */
+  exp?: number;
 }
 
 /**
@@ -90,6 +95,8 @@ const accessClaimsSchema = z.object({
     .default([]),
   mfa: z.boolean().default(false),
   sep: z.number().int().nonnegative().optional(),
+  // AU-057. Kept so the live-events stream can end when the token does.
+  exp: z.number().int().positive().optional(),
 });
 
 /**

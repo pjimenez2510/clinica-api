@@ -25,6 +25,7 @@ import { validateEnv } from './shared/config/env.schema';
 import { TimeoutInterceptor } from './shared/http/interceptors/timeout.interceptor';
 import { ProblemDetailsFilter } from './shared/http/problem-details.filter';
 import { SharedInfrastructureModule } from './shared/infrastructure/shared-infrastructure.module';
+import { LiveEventsModule } from './shared/events/live-events.module';
 import type { Env } from './shared/config/env.schema';
 import { buildLoggerConfig } from './shared/observability/logger.config';
 
@@ -90,6 +91,7 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
     }),
 
     SharedInfrastructureModule,
+    LiveEventsModule,
     AuthModule,
     PatientsModule,
     AgendaModule,
