@@ -42,6 +42,7 @@ import {
 } from '../domain/encounter.repository';
 import {
   AnthropometryPendingError,
+  ScreeningPendingError,
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
@@ -357,6 +358,15 @@ export class ClinicalNoteService {
           encounter.anthropometryPending.length > 0
         ) {
           throw new AnthropometryPendingError(encounter.anthropometryPending);
+        }
+
+        /**
+         * EN-240, EN-070. The discharge needs block F answered: «sin signos»,
+         * «no se aplicó» or with signs. Interrupting does not discharge and
+         * does not ask, as with the anthropometry.
+         */
+        if (form.dischargesTheEncounter && !encounter.screeningAnswered) {
+          throw new ScreeningPendingError();
         }
 
         return {

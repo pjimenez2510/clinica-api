@@ -163,6 +163,10 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'result:write',
       'record:write',
       'record:sign',
+      // EN-072, EN-240, D-188. The violence screening of block F: whoever
+      // signs the discharge has to be able to answer it. Only `MEDICO` by
+      // default — not `ADMIN`, not `ENFERMERIA` — until D-188 says otherwise.
+      'record:protected',
       'vitals:write',
       // EN-164. The doctor keeps recording allergies and history: this is the
       // permission those routes ask for now, instead of `record:write`.

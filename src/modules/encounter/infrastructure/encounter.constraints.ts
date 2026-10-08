@@ -465,3 +465,36 @@ registerConstraintMeanings({
  * devolviendo la COLUMNA y no el nombre del índice, así que este registro
  * nunca lo encontraría. Sigue en `pending-constraints.ts`.
  */
+
+/**
+ * EN-071, EN-074, EN-077. Block F of form 002, from
+ * `20261008170000_violence_screening_block_f`.
+ *
+ * ⚠️ NONE OF THESE MESSAGES NAMES A VALUE (EN-073). They say which field the
+ * doctor has to fill, never what the screening says; PostgreSQL's `detail`,
+ * which carries the row, is never read (`database-problem.ts`).
+ */
+registerConstraintMeanings({
+  violence_screening_types_iff_positive: {
+    code: 'VALIDATION_FAILED',
+    field: 'types',
+    message:
+      'Con signos se marca al menos un tipo; sin signos no se marca ninguno',
+  },
+  violence_screening_action_iff_positive: {
+    code: 'VALIDATION_FAILED',
+    field: 'actionTaken',
+    message: 'Con signos se escribe la acción tomada; sin signos, ninguna',
+  },
+  violence_screening_report_needs_positive: {
+    code: 'VALIDATION_FAILED',
+    field: 'reportedToAuthority',
+    message: 'Sólo se notifica a la autoridad un tamizaje con signos',
+  },
+  violence_screening_report_block_iff_reported: {
+    code: 'VALIDATION_FAILED',
+    field: 'notification',
+    message:
+      'Al notificar se copian del formulario el número de serie, las lesiones, si identifica al agresor y el parentesco; sin notificar, ninguno',
+  },
+});
