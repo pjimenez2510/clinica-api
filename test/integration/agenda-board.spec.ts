@@ -307,7 +307,148 @@ describe('el tablero del día por HTTP (E9)', () => {
         ].sort(),
       );
       expect(of('ENFERMERIA')).toEqual(['BOARD_NOTE', 'ROOM', 'TIME_IN_STATE']);
+      expect(of('MEDICO')).toEqual([
+        'BOARD_NOTE',
+        'LATENESS',
+        'ROOM',
+        'TIME_IN_STATE',
+      ]);
       expect(of('PANTALLA_SALA')).toEqual([]);
+    });
+  });
+
+  describe('AG-138 AG-176 las demás garantías de la migración', () => {
+    it('AG-176 la base exige que la nota diga quién y cuándo, los dos o ninguno', async () => {
+      const entry = await appointment(9 * 60);
+      const writer = await createUser(prisma);
+
+      // Control positivo: el par completo entra, y ninguno de los dos también.
+      await prisma.agendaEntry.update({
+        where: { id: entry.id },
+        data: {
+          boardNote: 'Algo',
+          boardNoteById: writer.id,
+          boardNoteAt: new Date(),
+        },
+      });
+      await expect(
+        prisma.agendaEntry.update({
+          where: { id: entry.id },
+          data: { boardNoteById: null },
+        }),
+      ).rejects.toThrow(/agenda_entry_board_note_stamped/);
+      await expect(
+        prisma.agendaEntry.update({
+          where: { id: entry.id },
+          data: { boardNoteAt: null },
+        }),
+      ).rejects.toThrow(/agenda_entry_board_note_stamped/);
+    });
+
+    it('AG-176 quien escribió una nota no se borra de la base (RESTRICT)', async () => {
+      const entry = await appointment(9 * 60);
+      const writer = await createUser(prisma);
+      const bystander = await createUser(prisma);
+      await prisma.agendaEntry.update({
+        where: { id: entry.id },
+        data: {
+          boardNote: 'Algo',
+          boardNoteById: writer.id,
+          boardNoteAt: new Date(),
+        },
+      });
+
+      // Control positivo: una cuenta sin notas se borra.
+      await prisma.user.delete({ where: { id: bystander.id } });
+      await expect(
+        prisma.user.delete({ where: { id: writer.id } }),
+      ).rejects.toThrow();
+    });
+
+    it('AG-138 la vista es del rol: un rol sin usar se borra con ella, y un campo no se repite', async () => {
+      const role = await prisma.role.create({
+        data: { code: 'PRUEBA_CASCADA', name: 'Prueba de cascada' },
+      });
+      const author = await createUser(prisma);
+      await prisma.boardViewField.create({
+        data: {
+          roleId: role.id,
+          field: 'ROOM',
+          createdAt: new Date(),
+          createdById: author.id,
+        },
+      });
+
+      await expect(
+        prisma.boardViewField.create({
+          data: { roleId: role.id, field: 'ROOM', createdAt: new Date() },
+        }),
+      ).rejects.toThrow();
+      // Quien la configuró no se borra mientras la fila exista (RESTRICT).
+      await expect(
+        prisma.user.delete({ where: { id: author.id } }),
+      ).rejects.toThrow();
+
+      await prisma.role.delete({ where: { id: role.id } });
+      expect(
+        await prisma.boardViewField.count({ where: { roleId: role.id } }),
+      ).toBe(0);
+    });
+
+    it('AG-162 AG-176 corregir el paciente de la cita vacía la nota, que era del otro', async () => {
+      const entry = await appointment(11 * 60, {
+        boardNote: 'Viene con su hija',
+      });
+      const other = await createPatient(prisma);
+      const untouched = await appointment(12 * 60, { boardNote: 'Se queda' });
+
+      // Control positivo: cambiar sólo el canal no toca la nota.
+      await request(app.getHttpServer())
+        .patch(`/api/v1/agenda/sites/${siteId}/entries/${untouched.id}`)
+        .set('Authorization', `Bearer ${receptionToken}`)
+        .send({ bookingChannel: 'WALK_IN' })
+        .expect(200);
+      expect(
+        (
+          await prisma.agendaEntry.findUniqueOrThrow({
+            where: { id: untouched.id },
+          })
+        ).boardNote,
+      ).toBe('Se queda');
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/agenda/sites/${siteId}/entries/${entry.id}`)
+        .set('Authorization', `Bearer ${receptionToken}`)
+        .send({ patientId: other.id })
+        .expect(200);
+
+      const after = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entry.id },
+      });
+      expect(after.patientId).toBe(other.id);
+      expect(after.boardNote).toBeNull();
+      expect(after.boardNoteById).not.toBeNull();
+    });
+
+    it('AG-138 dos administradores guardando a la vez la misma vista: gana el último, sin error', async () => {
+      const nursing = await prisma.role.findUniqueOrThrow({
+        where: { code: 'ENFERMERIA' },
+      });
+
+      const [first, second] = await Promise.all([
+        put(`/agenda/board-views/${nursing.id}`, adminToken, {
+          fields: ['ROOM'],
+        }),
+        put(`/agenda/board-views/${nursing.id}`, adminToken, {
+          fields: ['BOARD_NOTE'],
+        }),
+      ]);
+
+      expect([first.status, second.status]).toEqual([200, 200]);
+      const stored = await prisma.boardViewField.findMany({
+        where: { roleId: nursing.id },
+      });
+      expect(stored).toHaveLength(1);
     });
   });
 

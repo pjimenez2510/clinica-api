@@ -1948,9 +1948,10 @@ pasó de hora.
   > que la ejercen (`practitioner_specialty`), que es lo que la pantalla ya
   > hacía en el cliente y ahora hace el servidor.
 - **AG-134** — El tablero DEBERÁ incluir por cada fila la hora de la cita, la
-  identificación del paciente según la proyección, el profesional, el
-  consultorio, el estado de la cita, el estado del paciente, el tiempo en el
-  estado actual y la nota corta.
+  identificación del paciente según la proyección, el estado de la cita, el
+  estado del paciente y, si la llegada se calificó como emergencia, esa marca;
+  y, según la vista del rol (AG-138), el profesional, el consultorio, el tiempo
+  en el estado actual, el retraso y la nota corta.
   > **La nota corta recupera algo que se perdió al informatizar la pizarra.** Al
   > sustituir la de rotulador por una electrónica se documentó la pérdida de
   > funciones que nadie había escrito: los símbolos improvisados entre colegas,
@@ -2099,14 +2100,19 @@ pasó de hora.
   > dejar «pasa a curación». De fábrica lo llevan recepción, enfermería y el
   > médico (D-176.3).
   >
-  > **Con su propio sello y sin historial** (`board_note_by_id`,
-  > `board_note_at`): quién la escribió por última vez y cuándo, también si la
-  > vació. No es una edición de la cita —el disparador de versiones de
-  > `agenda_entry` no la mira, y sellar `edited_by_id` haría que toda cita
-  > anotada se leyera «editada»—, y no se guardan las notas anteriores: es
-  > texto libre a la vista de todo el personal y conservar cada versión es
-  > guardar más de lo que el tablero necesita. Como es texto libre, la
-  > exportación al titular la deja fuera igual que el motivo (D-141.4).
+  > **Con su propio sello** (`board_note_by_id`, `board_note_at`): quién la
+  > escribió por última vez y cuándo, también si la vació. Escribirla no es una
+  > edición de la cita —el disparador de versiones de `agenda_entry` no la
+  > mira, y sellar `edited_by_id` haría que toda cita anotada se leyera
+  > «editada»—, así que escribirla no archiva versión. **Pero la nota vigente
+  > SÍ queda dentro de la versión que archiva una edición de la cita** (hora,
+  > consultorio, paciente): `record_version` guarda la fila entera. Si eso se
+  > queda así o la nota sale del archivado, y si cada escritura deja fila en la
+  > bitácora, es D-176.3. Como es texto libre, la exportación al titular la
+  > deja fuera igual que el motivo (D-141.4), también pendiente en D-176.3.
+  >
+  > **Corregir el paciente de la cita la vacía** (AG-162): la nota era de la
+  > otra persona. Se sella con quien corrigió la cita.
 
 ## 6. Reprogramación
 

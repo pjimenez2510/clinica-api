@@ -1306,6 +1306,8 @@ export class PrismaAgendaRepository implements AgendaRepository {
           emergencyAssessedAt: true,
           emergencyAssessedById: true,
           emergencyFlaggedAt: true,
+          // AG-176: whose board note it is, to clear it on a change of patient.
+          patientId: true,
           _count: { select: { waitlistOrigin: true } },
         },
       });
@@ -1339,6 +1341,17 @@ export class PrismaAgendaRepository implements AgendaRepository {
           reason: edit.reason,
           bookingChannel: edit.bookingChannel,
           patientId: edit.patientId,
+          // AG-162, AG-176. The board note was written about the patient who
+          // WAS here: corrected to another person, it would label them with
+          // somebody else's note. Cleared like the reason, stamped by who
+          // corrected the appointment.
+          ...(edit.patientId !== undefined && edit.patientId !== row.patientId
+            ? {
+                boardNote: null,
+                boardNoteById: command.editedById,
+                boardNoteAt: command.at,
+              }
+            : {}),
           ...(edit.clearOverbooking
             ? {
                 blocksCalendar: true,

@@ -192,6 +192,10 @@ export class PrismaBoardRepository implements BoardRepository {
     at: Date;
   }): Promise<{ before: BoardField[]; after: BoardField[] } | null> {
     return this.prisma.$transaction(async (tx) => {
+      // Two administrators saving the same role at once: the second waits for
+      // the first and replaces its view, instead of colliding on the primary
+      // key between the delete and the insert.
+      await tx.$queryRaw`SELECT 1 FROM "role" WHERE "id" = ${input.roleId}::uuid FOR UPDATE`;
       const role = await tx.role.findUnique({
         where: { id: input.roleId },
         select: { boardViewFields: { select: { field: true } } },

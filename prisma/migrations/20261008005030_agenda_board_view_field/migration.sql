@@ -68,9 +68,9 @@ ON CONFLICT DO NOTHING;
 -- purpose: writing a sticky note is not editing the appointment, and stamping
 -- `edited_by_id` for it would make every annotated appointment read «editada».
 -- So the note carries its own stamp — the last writer, also when the write
--- cleared it. No history of earlier notes: it is free text at sight of the
--- whole staff, and keeping every version of it is keeping more than the board
--- needs (LOPDP, minimisation).
+-- cleared it. Writing it archives no version; an EDIT of the appointment
+-- still archives the whole row, the current note included (`record_version`).
+-- Whether it stays so is D-176.3.
 ALTER TABLE "agenda_entry"
   ADD COLUMN "board_note_by_id" UUID,
   ADD COLUMN "board_note_at" TIMESTAMPTZ(6);
