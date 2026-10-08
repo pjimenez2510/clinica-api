@@ -659,6 +659,12 @@ es falsa, hay requisitos que cambian.
   > automatismo que cobra por el hecho de existir una cita cobra las que no se
   > atendieron.
   >
+  > **Cumplido el 07-10-2026 por D-179.3 (resuelve D-173.1).** El tipo de
+  > atención lleva su prestación (`service_type_billable_service`, SP-030,
+  > SP-031) y caja la propone desde el tipo de la cita (BI-158). Se propone
+  > al pasar la atención a caja, no al abrir la cita, y sigue sin
+  > registrarse sola (BI-152).
+  >
   > **[NECESITA ACLARACIÓN] (D-173.1).** Desde B8 la consulta ya se propone
   > —propuesta, no cobrada (BI-152)— por la especialidad y el tipo de visita de
   > la atención (BI-158), de un dato editable. Atar además la prestación al tipo
@@ -1647,9 +1653,17 @@ dos registros distintos.**
   > deshiciera al siguiente clic estaría cobrando lo que alguien decidió no
   > cobrar.
 - **BI-158** — El sistema DEBERÁ resolver qué prestación es la consulta a
-  partir de la **especialidad de la atención y su tipo de visita**, tomándolo de
-  un dato editable, y NO DEBERÁ deducirlo del código ni del nombre de la
-  prestación.
+  partir del **tipo de atención de la cita** de la que nació la atención
+  —su primera prestación (SP-031)—, y NO DEBERÁ deducirlo del código ni del
+  nombre de la prestación, ni de primera vez o subsecuente. SI la atención no
+  nació de una cita con tipo, o el tipo no tiene prestación, ENTONCES DEBERÁ
+  dar la consulta por no propuesta con `NO_BILLABLE_SERVICE` (BI-155).
+  > **Enmendado el 07-10-2026 (D-179.3).** Decía «a partir de la especialidad
+  > de la atención y su tipo de visita», con la prestación marcada a mano con
+  > `billable_service.specialty_id` y `visit_sequence`, que se retiraron. El
+  > tipo de atención es lo que se cobra: un «Control prenatal» cuesta lo suyo
+  > aunque sea la primera visita de la paciente. Primera vez o subsecuente se
+  > sigue calculando sola para el RDACAA (EN-215) y ya no decide el precio.
   > Leer `CONS-DER-PV` como «dermatología, primera vez» funciona con la siembra
   > y falla en la primera clínica que use su propia codificación — **en
   > silencio**: dejaría de proponerse el cargo de la consulta, y una consulta no
@@ -1661,10 +1675,14 @@ dos registros distintos.**
   > precio dependiera de cuál devolviera primero una consulta. Una atención sin
   > cita no tiene especialidad, y eso es una propuesta con una línea de menos
   > (BI-155), nunca una adivinanza.
-- **BI-232** — El catálogo de arranque DEBERÁ traer, para cada especialidad del
-  catálogo de especialidades de arranque, una prestación de consulta de primera
-  vez y otra subsecuente atadas a ella (BI-158), y NO DEBERÁ ponerles precio
-  salvo a las que ya lo traían.
+- **BI-232** — El catálogo de arranque DEBERÁ traer, para cada tipo de atención
+  de arranque de cada especialidad («Primera vez» y «Control»), una prestación
+  de consulta atada a él (SP-031), y NO DEBERÁ ponerles precio salvo a las que
+  ya lo traían.
+  > **Enmendado el 07-10-2026 (D-179.3):** la atadura es al tipo de atención,
+  > no a la especialidad y la secuencia. Las prestaciones de arranque conservan
+  > su código (`CONS-MG-PV`, `CONS-MG-SUB`…): «primera vez» va con el tipo
+  > «Primera vez» y «subsecuente» con «Control».
   > D-161, resuelta por el autor el 07-10-2026. Antes eran cinco especialidades
   > de veintidós: una atención de cardiología llegaba a caja con «No hay
   > prestación que lo cobre» y caja tecleaba la consulta. Con la prestación y
@@ -1791,11 +1809,8 @@ dos registros distintos.**
   borrado de una categoría que alguna prestación usa.
   > Las clases de examen y procedimiento son las mismas que las de una orden
   > (`service_order_category`), para que una orden y su cobro hablen igual.
-- **BI-187** — SI se declara una prestación como la consulta de una
-  especialidad (BI-158) y su categoría no es de clase `CONSULTATION`, ENTONCES
-  el sistema DEBERÁ rechazarlo con `SERVICE_KIND_MISMATCH`; y SI se cambia a
-  una categoría de otra clase una prestación que es la consulta de una
-  especialidad, que está atada a un concepto de procedimiento (la nueva no es
+- **BI-187** — SI se cambia a una categoría de otra clase una prestación que
+  cobra un tipo de atención (SP-030; la nueva no es `CONSULTATION`), que está atada a un concepto de procedimiento (la nueva no es
   `PROCEDURE`) o por la que se cobra un examen (la nueva no es el tipo de ese
   examen, ORD-108), ENTONCES DEBERÁ rechazarlo igual. La clase de una categoría
   DEBERÁ poder cambiarse sólo mientras ninguna de sus prestaciones tenga una
@@ -1817,13 +1832,21 @@ dos registros distintos.**
   > Queda conectado, y la siembra sólo ata consultas en categorías de clase
   > consulta.
   >
+  > **Enmendado el 07-10-2026 (D-179.3).** La prestación ya no se declara
+  > consulta de nada desde Prestaciones y precios: nace con su tipo de
+  > atención (SP-030) y la ficha de la prestación dice de qué tipo es, sin
+  > dejarlo cambiar. El `PATCH` dejó de aceptar `consultation`, y con él
+  > `CONSULTATION_MAPPING_INCOMPLETE`, `INVALID_VISIT_SEQUENCE` y
+  > `CONSULTATION_ALREADY_MAPPED` dejaron de existir.
+  >
   > **Desde `fix/atencion-examenes` (ORD-108):** el examen tiene tipo
   > —laboratorio, imagen o procedimiento— y la prestación con que se cobra es de
   > esa misma clase. Antes la regla admitía «laboratorio o imagen» para todo
   > examen, y un electrocardiograma no podía cobrarse como procedimiento.
 - **BI-188** — CUANDO se consulte una prestación de clase `LABORATORY` o
   `IMAGING`, el sistema DEBERÁ servir los exámenes del catálogo de exámenes que
-  se cobran con ella (`exam_definition.billable_service_id`), y NO DEBERÁ
+  se cobran con ella (desde D-179.1, a lo sumo uno, ORD-163), y de una de clase
+  `CONSULTATION`, los tipos de atención que cobra (SP-031) (`exam_definition.billable_service_id`), y NO DEBERÁ
   modificarlos desde la facturación.
   > El enlace prestación ↔ examen ya existe del lado del examen (BI-151). La
   > estructura de resultados —analitos, unidades, rangos, críticos— es del
@@ -1976,6 +1999,12 @@ dos registros distintos.**
   > `CONSULTATION_REPRICER` de `shared/billing`, después de su transacción,
   > como `billing` avisa a `sri` (SRI-041). Lo facturado lo resuelve
   > «Corregir» la factura (CA-8).
+  >
+  > **Desde D-179.3** la prestación sale del tipo de atención (BI-158), no de
+  > la secuencia: corregir primera vez o subsecuente vuelve a resolver la misma
+  > y el cargo no cambia. El aviso se conserva porque el tipo de una cita sí
+  > puede llegar a cambiar de prestación (SP-031) y entonces esta misma vía la
+  > vuelve a resolver.
 
 ## 21. Caja que se entiende sin leer
 
