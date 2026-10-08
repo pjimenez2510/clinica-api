@@ -143,13 +143,24 @@ BI-122.
 >   sí está: un cargo `BILLED` o `CANCELLED` no cuenta para el total ni vuelve a
 >   facturarse, y el `CHECK` de motivo del descuento tiene prueba contra la
 >   base.
+>
+> **Al día el 07-10-2026 (`feat/f06-cobrar-consulta`).** Las columnas de los
+> dos últimos puntos existen desde la migración `20260820071129`, y la
+> anulación de un cargo es «Quitar» (BI-195). Con esta rama, BI-022 a BI-024
+> tienen ruta y pantalla. Siguen fuera, con su decisión: BI-016, BI-121 y
+> BI-122 (D-173), y la mitad «0 % por defecto» de BI-022 (D-172).
 
-**Solo servidor:** BI-001, BI-002, BI-006, BI-042, BI-044, BI-051, BI-053,
-BI-055, BI-059, BI-074. Son garantías de almacenamiento y de la base —el tipo
-`numeric`, el huso, el `EXCLUDE` de vigencias, que congelar signifique de verdad
-copiar y no leer, y que el total se derive en vez de guardarse—. Se demuestran
-contra PostgreSQL cambiando un precio por debajo de la aplicación; una pantalla
-que los «probara» estaría comprobando su propio doble.
+**Solo servidor:** BI-001, BI-002, BI-006, BI-021, BI-025, BI-026, BI-042,
+BI-044, BI-050, BI-051, BI-053, BI-054, BI-055, BI-059, BI-074. Son garantías
+de almacenamiento y de la base —el tipo `numeric`, el huso, el `EXCLUDE` de
+vigencias, que congelar signifique de verdad copiar y no leer (BI-050, BI-051,
+BI-053), que cambiar la tarifa de una prestación no alcance ningún cargo
+(BI-025), que el cargo nombre su cuenta y su paciente (BI-054), y que el total
+se derive en vez de guardarse—. Se demuestran contra PostgreSQL cambiando un
+precio por debajo de la aplicación; una pantalla que los «probara» estaría
+comprobando su propio doble. BI-021 es la siembra, y BI-026 no tiene pantalla
+porque ninguna ruta borra una tarifa del SRI: la que una prestación o un cargo
+nombra la protege la `RESTRICT` de la base.
 
 > **Por qué los impuestos entran ya en B1 y no en la entrega de la factura.** La
 > tarifa no es un adorno del documento: es parte del importe que se congela
@@ -184,6 +195,9 @@ secuencial sin huecos y que un cargo no pueda estar en dos facturas vivas son
 garantías de la base, y ninguna pantalla puede enseñar la ausencia de un
 `UPDATE`.
 
+**Solo interfaz:** BI-160. Es un aviso que no bloquea, y por eso no tiene nada
+que exigir en la ruta (lo explica el propio requisito).
+
 > **Lo entregado el 20-08-2026.** La emisión con receptor declarado, «Consumidor
 > Final» como excepción con confirmación y motivo del SERVIDOR, el secuencial
 > por punto de emisión bajo bloqueo de fila, los totales con IVA por ítem
@@ -194,7 +208,9 @@ garantías de la base, y ninguna pantalla puede enseñar la ausencia de un
 > anulada se admite y de anulada no se vuelve.
 >
 > Fuera: **BI-096**, que es la otra mitad de BI-088 y necesita saber qué factura
-> se llevó cada cargo — se termina en B3, con la anulación.
+> se llevó cada cargo — se termina en B3, con la anulación. *(Al día el
+> 07-10-2026: BI-096 está en B15; su mitad de la nota de crédito está hecha y
+> la de la anulación no tiene disparador, porque el sistema no anula, D-151.1.)*
 
 > **Lo que esta entrega NO hace: hablar con el SRI.** La factura se genera, se
 > numera y se guarda; no se firma ni se autoriza (ROADMAP, Fase 1). Eso importa
@@ -402,9 +418,10 @@ devuelva otra factura, editar su receptor y verla autorizada con la misma
 clave. Y contra PostgreSQL: que una nota de crédito no cambia, que una línea no
 se acredita dos veces y que una factura autorizada no cambia de receptor.
 
-**Cubre:** BI-091, BI-094, BI-095, BI-096, BI-097, BI-208 a BI-218. **Solo
-servidor:** BI-095, BI-211, BI-212, BI-215, BI-217 (garantías de la base y una
-versión que ninguna pantalla enseña todavía).
+**Cubre:** BI-091, BI-094, BI-095, BI-096, BI-097, BI-208 a BI-218.
+
+**Solo servidor:** BI-095, BI-211, BI-212, BI-215, BI-217 (garantías de la base
+y una versión que ninguna pantalla enseña todavía).
 
 > **Lo que B15 no hace:** anular (BI-092, BI-093). Lo explica D-151.1.
 
@@ -628,6 +645,12 @@ es falsa, hay requisitos que cambian.
   > ella no hay propuesta automática, que es justamente el lado seguro — el
   > automatismo que cobra por el hecho de existir una cita cobra las que no se
   > atendieron.
+  >
+  > **[NECESITA ACLARACIÓN] (D-173.1).** Desde B8 la consulta ya se propone
+  > —propuesta, no cobrada (BI-152)— por la especialidad y el tipo de visita de
+  > la atención (BI-158), de un dato editable. Atar además la prestación al tipo
+  > de atención de la cita exige decidir cuál gana cuando las dos proponen, y si
+  > se proponen dos líneas. Hasta que se decida, la propuesta es la de BI-158.
 
 ## 3. Impuestos
 
@@ -656,13 +679,19 @@ es falsa, hay requisitos que cambian.
   > La marca es el requisito, no el valor. Sembrar 0 % sin marca produce un
   > catálogo entero que nadie revisó y que parece revisado.
   >
-  > **Falta esquema.** `billable_service.tax_reviewed_at timestamptz NULL` y
-  > `tax_reviewed_by`. Siguen sin existir: el esquema aplicado exige la tarifa
-  > (`tax_rate_id NOT NULL`) pero no guarda quién la revisó. Un booleano no
-  > serviría — la pregunta que se hace un contador es «¿quién y cuándo?», y
-  > vuelve cada año. **BI-022 a BI-024 quedan pendientes de esas dos columnas.**
-  > Lo que sí está hecho es lo que evita el daño: la siembra pone 0 % en salud y
-  > 15 % en insumos y estética, y lo anuncia en voz alta al terminar.
+  > **El esquema ya lo tiene**: `billable_service.tax_reviewed_at` y
+  > `tax_reviewed_by_id`, juntos o ninguno
+  > (`billable_service_tax_review_names_who_and_when`). Un booleano no serviría
+  > — la pregunta que se hace un contador es «¿quién y cuándo?», y vuelve cada
+  > año. La siembra pone 0 % en salud y 15 % en insumos y estética, y lo
+  > anuncia en voz alta al terminar.
+  >
+  > **[NECESITA ACLARACIÓN] (D-172.1) — choca con BI-013.** BI-013, construido
+  > y probado, rechaza la prestación sin tarifa con `TAX_RATE_REQUIRED`; esta
+  > pide ponerle 0 %. **Construido así mientras decide:** la tarifa se sigue
+  > exigiendo (sin valor por defecto, D-A-006) y **toda prestación nueva nace
+  > pendiente de revisión**, que es la mitad de este requisito que no choca con
+  > nada: la marca, que es lo que el requisito dice que importa.
 - **BI-023** — El sistema DEBERÁ ofrecer el listado de prestaciones agrupado por
   tarifa de impuesto, con las pendientes de revisión primero.
   > Ésta es la pantalla que D-A-006 exige que exista: *«el sistema no la
@@ -671,6 +700,15 @@ es falsa, hay requisitos que cambian.
 - **BI-024** — CUANDO se marque una prestación como revisada, el sistema DEBERÁ
   registrar quién y cuándo, y NO DEBERÁ perder ese registro al cambiarle después
   la tarifa.
+  > **[NECESITA ACLARACIÓN] (D-172.2) — qué pasa con la marca al cambiar la
+  > tarifa.** «No perder el registro» admite dos lecturas: que la prestación
+  > siga revisada, o que lo revisado se conserve en algún sitio. **Construido
+  > así mientras decide:** cambiar la tarifa la **devuelve a pendiente** —la
+  > tarifa nueva no la revisó nadie, y seguir diciendo «revisada por X» de una
+  > tarifa que X no vio es justo el catálogo que parece revisado y no lo está—,
+  > y la revisión anterior se conserva en la bitácora (`access_audit`, con la
+  > fila antes y después: quién la revisó, cuándo y qué tarifa tenía). Cambiar
+  > el nombre o la categoría no toca la marca.
 - **BI-025** — CUANDO cambie la tarifa de una prestación, el sistema NO DEBERÁ
   alterar la tarifa ni el importe de impuesto de ningún cargo ya registrado.
   > Es BI-051 aplicado al impuesto, y se dice aparte porque el impuesto es el
@@ -1304,6 +1342,13 @@ es falsa, hay requisitos que cambian.
   > refacturarlo cobraría dos veces. Confundirlas es el defecto que produce
   > cuentas que se cobran dos veces o que no se cobran nunca, según hacia dónde
   > se equivoque quien lo implemente.
+  >
+  > **Hoy sólo tiene disparador la segunda mitad** (07-10-2026): el sistema no
+  > anula —la anulación se hace en el portal del SRI, D-151.1—, y la nota de
+  > crédito deja facturado el cargo original y devuelve a la cuenta una
+  > **copia** por facturar (`origin = 'CORRECTION'`, BI-214), que es la forma de
+  > no cobrar dos veces el mismo cargo. Si un día se registra aquí la anulación
+  > del portal, la primera mitad se construye con ella.
 - **BI-097** — SI se intenta emitir una nota de crédito sobre una factura
   anulada, ENTONCES el sistema DEBERÁ rechazarlo con
   `CREDIT_NOTE_INVOICE_VOIDED`.
@@ -1428,6 +1473,12 @@ es falsa, hay requisitos que cambian.
   > La constancia sirve para que la cuenta no se pierda; no exigir motivo es
   > deliberado, porque el motivo es la ley y un campo obligatorio en ese momento
   > es exactamente la fricción que el art. 9 prohíbe.
+  >
+  > **[NECESITA ACLARACIÓN] (D-173.2).** El sistema no marca una atención como
+  > emergencia en caja ni tiene un acto «diferir el cobro»: una urgencia se
+  > atiende y se da de alta sin cuenta (BI-120), y la cuenta se abre después.
+  > Si la clínica quiere esa constancia, hace falta decidir qué la dispara y
+  > dónde vive.
 
 ## 14. Autorización y trazabilidad
 
