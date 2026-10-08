@@ -20,6 +20,7 @@ import {
   createPatient,
   createUser,
 } from './setup/fixtures';
+import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 
 /**
  * PD-048 (D-131.1, opción A). `record_version` guarda copias de datos de salud
@@ -427,6 +428,7 @@ async function aCriticalNotice(
       warn: () => undefined,
       error: () => undefined,
     } as never,
+    new InProcessLiveEventBus(),
   );
   const order = await placeIssued(orders, {
     encounterId: scene.encounter.id,

@@ -32,6 +32,8 @@ import type {
   ServiceOrderRepository,
   ServiceOrderView,
 } from '../domain/service-order.repository';
+import { InProcessLiveEventBus } from '../../../shared/events/live-event-bus';
+import type { LiveEvent } from '../../../shared/events/live-event';
 
 /**
  * The result's use cases, against in-memory ports.
@@ -250,9 +252,13 @@ describe('el registro y la corrección de un resultado', () => {
   let catalogue: FakeCatalogue;
   let audit: AccessAuditRecorder & { entries: AccessAuditEntry[] };
   let service: DiagnosticReportService;
+  let announced: LiveEvent[];
 
   beforeEach(() => {
     reports = new FakeReports();
+    announced = [];
+    const liveEvents = new InProcessLiveEventBus();
+    liveEvents.subscribe((event) => announced.push(event));
     orders = new FakeOrders();
     catalogue = new FakeCatalogue();
     const entries: AccessAuditEntry[] = [];
@@ -276,6 +282,7 @@ describe('el registro y la corrección de un resultado', () => {
       catalogue as unknown as ExamCatalogueRepository,
       audit,
       logger,
+      liveEvents,
     );
   });
 
@@ -368,6 +375,33 @@ describe('el registro y la corrección de un resultado', () => {
         ],
       },
     ]);
+  });
+
+  it('ORD-164 al registrar un informe avisa a las pantallas de su sede que la cola de críticos cambió, sin el dato', async () => {
+    await service.register(
+      aRequest([{ analyteDefinitionId: HAEMOGLOBIN.id, valueNumeric: 13 }]),
+      requester,
+    );
+
+    expect(announced).toEqual([{ kind: 'critical-results', siteId: SITE }]);
+  });
+
+  it('ORD-164 no avisa de una escritura que no ocurrió', async () => {
+    await expect(
+      service.register(
+        aRequest([
+          { analyteDefinitionId: HAEMOGLOBIN.id, valueNumeric: 9, abnormalFlag: 'LOW' }, // prettier-ignore
+        ]),
+        requester,
+      ),
+    ).rejects.toThrow();
+    // Control positivo: el mismo camino, válido, sí avisa.
+    await service.register(
+      aRequest([{ analyteDefinitionId: HAEMOGLOBIN.id, valueNumeric: 9 }]),
+      requester,
+    );
+
+    expect(announced).toHaveLength(1);
   });
 
   it('ORD-030 deja el informe parcial mientras falta una determinación', async () => {
@@ -585,6 +619,12 @@ describe('el registro y la corrección de un resultado', () => {
         { analyteDisplay: NITRITES.name, isReflex: true },
       ],
     });
+  });
+
+  it('ORD-164 al emparejar un resultado avisa a la sede de su orden', async () => {
+    await service.match({ resultId: ORPHAN, orderItemId: ITEM_BH }, requester);
+
+    expect(announced).toEqual([{ kind: 'critical-results', siteId: SITE }]);
   });
 
   it('ORD-043 rechaza emparejar un resultado que ya responde a una línea', async () => {

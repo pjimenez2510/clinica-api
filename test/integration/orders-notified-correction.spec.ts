@@ -12,6 +12,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 import { aScene, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import { createSite, createUser } from './setup/fixtures';
+import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 
 /**
  * Quien actuó sobre un crítico se entera de su corrección (ORD-143 a ORD-149,
@@ -40,6 +41,7 @@ function serviceOf(prisma: PrismaClient) {
       new PrismaExamCatalogueRepository(client),
       silentAudit,
       noopLogger as never,
+      new InProcessLiveEventBus(),
     ),
     orders: new PrismaServiceOrderRepository(client),
   };

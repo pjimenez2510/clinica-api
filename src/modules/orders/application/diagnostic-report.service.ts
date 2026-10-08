@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
+import { LiveEventBus } from '../../../shared/events/live-event-bus';
+
 import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
@@ -252,6 +254,8 @@ export class DiagnosticReportService {
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
     private readonly logger: PinoLogger,
+    /** ORD-164. Where «the critical queue of this site changed» is said. */
+    private readonly liveEvents: LiveEventBus,
   ) {
     this.logger.setContext(DiagnosticReportService.name);
   }
@@ -598,6 +602,7 @@ export class DiagnosticReportService {
       { site_id: order.siteId, action: 'RESULT_MATCHED' },
       'orphan result paired with an ordered line',
     );
+    this.announceCriticalQueue(order.siteId);
 
     return report;
   }
@@ -841,6 +846,7 @@ export class DiagnosticReportService {
       { action: 'CRITICAL_NOTICE_RECORDED', channel: notice.channel },
       'critical value notice recorded',
     );
+    this.announceCriticalQueue(result.siteId);
 
     return notice;
   }
@@ -942,6 +948,7 @@ export class DiagnosticReportService {
       { action: 'CRITICAL_NOTICE_EDITED', channel: notice.channel },
       'critical value notice edited',
     );
+    this.announceCriticalQueue(result.siteId);
 
     return notice;
   }
@@ -1124,6 +1131,17 @@ export class DiagnosticReportService {
       { site_id: siteId, action, result_count: report.results.length },
       'diagnostic report written',
     );
+    this.announceCriticalQueue(siteId);
+  }
+
+  /**
+   * ORD-164. Tells the open screens of this site that its critical queue may
+   * have changed — AFTER the write committed, which is why every caller does
+   * it last. It may say so when nothing critical moved; it never carries what
+   * moved (AU-055), and `publish` never throws (AU-058).
+   */
+  private announceCriticalQueue(siteId: string): void {
+    this.liveEvents.publish({ kind: 'critical-results', siteId });
   }
 }
 

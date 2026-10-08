@@ -13,6 +13,7 @@ import { placeIssued, aScene } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import { createSite, createUser } from './setup/fixtures';
 import { OrderItemNotPendingError } from '../../src/modules/orders/domain/orders.errors';
+import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 
 /**
  * The result against a real PostgreSQL.
@@ -63,6 +64,7 @@ function serviceOf(prisma: PrismaClient) {
       new PrismaExamCatalogueRepository(client),
       silentAudit,
       noopLogger as never,
+      new InProcessLiveEventBus(),
     ),
     orders: new PrismaServiceOrderRepository(client),
     store: new PrismaDiagnosticReportRepository(client),

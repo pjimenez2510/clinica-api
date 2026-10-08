@@ -16,6 +16,7 @@ import '../../src/modules/orders/infrastructure/orders.constraints';
 
 import { useDatabase } from './setup/database';
 import { createUser } from './setup/fixtures';
+import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -48,6 +49,7 @@ async function aPartialBloodCount(prisma: PrismaClient) {
     new PrismaExamCatalogueRepository(client),
     silentAudit,
     noopLogger as never,
+    new InProcessLiveEventBus(),
   );
   const scene = await aScene(prisma);
   // Una segunda determinación de la biometría, para que la hemoglobina sola

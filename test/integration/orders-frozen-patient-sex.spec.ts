@@ -16,6 +16,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 import { aScene, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import { createPatient, createUser } from './setup/fixtures';
+import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 
 /**
  * ORD-158, ORD-159 (D-163.1): the exam order FREEZES the patient's sex when
@@ -52,6 +53,7 @@ function adapters(prisma: PrismaClient) {
       new PrismaExamCatalogueRepository(client),
       silentAudit,
       noopLogger as never,
+      new InProcessLiveEventBus(),
     ),
     documents: new PrismaDocumentSourceReader(
       client,
