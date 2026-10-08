@@ -997,3 +997,56 @@ export class ServiceNamedElsewhereError extends ConflictError {
     );
   }
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// What the clinic changes without a deploy (BI-140 to BI-147)
+// ───────────────────────────────────────────────────────────────────────────
+
+/** BI-100. */
+export class PaymentMethodNotFoundError extends NotFoundError {
+  readonly code = 'PAYMENT_METHOD_NOT_FOUND';
+  override readonly userTitle = 'Ese medio de pago no existe';
+
+  constructor() {
+    super('No payment method with that identifier');
+  }
+}
+
+/**
+ * BI-146. Without one active method the cashier cannot issue a single
+ * invoice, and finds out with the patient standing at the desk.
+ */
+export class LastActivePaymentMethodError extends ConflictError {
+  readonly code = 'LAST_ACTIVE_PAYMENT_METHOD';
+  override readonly userTitle =
+    'Es el único medio de pago activo: active otro antes de desactivar éste';
+
+  constructor() {
+    super('Refusing to deactivate the only active payment method');
+  }
+}
+
+/** BI-141. The role the limit was asked for does not exist. */
+export class DiscountLimitRoleNotFoundError extends NotFoundError {
+  readonly code = 'DISCOUNT_LIMIT_ROLE_NOT_FOUND';
+  override readonly userTitle = 'Ese rol no existe';
+
+  constructor() {
+    super('No role with that identifier');
+  }
+}
+
+/**
+ * BI-144. Two «Deuna» in the cashier's selector are a question the cashier
+ * cannot answer. Compared without case or surrounding spaces, as
+ * `payment_method_name_unique` does; the index answers a race with
+ * `DUPLICATE_VALUE`.
+ */
+export class PaymentMethodNameTakenError extends ConflictError {
+  readonly code = 'PAYMENT_METHOD_NAME_TAKEN';
+  override readonly userTitle = 'Ya hay un medio de pago con ese nombre';
+
+  constructor() {
+    super('Another payment method already has that name');
+  }
+}

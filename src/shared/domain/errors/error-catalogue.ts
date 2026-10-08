@@ -555,6 +555,14 @@ export const DOMAIN_ERROR_CODES = [
   'PAYER_IN_USE',
   'PAYER_NOT_FOUND',
   'PAYER_RUC_REQUIRED',
+  // Parametrización (BI-140 a BI-147). Los medios de pago son filas como los
+  // pagadores, y se agotan igual: `LAST_ACTIVE_PAYMENT_METHOD` (409) impide
+  // dejar caja sin ninguno. El nombre repetido lo rechaza la base
+  // (`payment_method_name_unique` → `PAYMENT_METHOD_NAME_TAKEN`).
+  'DISCOUNT_LIMIT_ROLE_NOT_FOUND',
+  'LAST_ACTIVE_PAYMENT_METHOD',
+  'PAYMENT_METHOD_NAME_TAKEN',
+  'PAYMENT_METHOD_NOT_FOUND',
   // El tarifario (BI-040 a BI-047). `PRICE_NOT_FOUND` es 422 y NOMBRA LOS
   // TRES DATOS con los que se buscó —prestación, pagador y fecha de
   // servicio—: quien está en caja tiene que poder decir si falta el precio, si

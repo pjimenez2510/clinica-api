@@ -337,7 +337,19 @@ no existe como dato. **Cubre:** BI-100 a BI-105.
 B4 (los límites de descuento), de BI-021 (las tarifas del SRI) y de BI-100 (los
 medios de pago). Sin ella esos valores quedan quemados en el código, que es lo
 que REQ-145 prohíbe y lo que el principio rector del usuario descarta. Entra
-**antes que B4**, aunque se especifique después. **Cubre:** BI-140 a BI-143.
+**antes que B4**, aunque se especifique después. **Cubre:** BI-140 a BI-147.
+**Solo servidor:** BI-142, BI-143. BI-142 es una garantía de almacenamiento —el
+descuento ya concedido vive congelado en su línea y ningún límite lo lee—, y
+BI-143 es lo que NO tiene pantalla.
+
+> **Lo entregado el 08-10-2026 (`feat/f06-parametrizacion`).** Los medios de pago
+> como filas (`payment_method`), cada uno con su forma de pago de la Tabla 24;
+> caja elige entre los activos al emitir; el límite de descuento de cada rol en
+> la ficha del rol, y las tarifas de impuesto a la vista de administración, sin
+> editar. **Fuera, con su decisión (D-193):** qué medios acepta la clínica y con
+> qué código declara una billetera (D-193.1), y quién pone en vigencia una
+> tarifa de IVA nueva cuando un decreto la mueve (D-193.2). Sin B4 el límite se
+> guarda y no se aplica todavía: ninguna ruta concede descuentos.
 
 ### B9 — Cada línea sabe de qué factura es _(P1)_
 
@@ -1596,6 +1608,40 @@ es falsa, hay requisitos que cambian.
   > son política de la clínica: son la norma. Un parámetro que los relaje es un
   > parámetro para incumplir, y quien lo encuentre encendido no sabrá si fue una
   > decisión o un descuido.
+- **BI-144** — Cada medio de pago DEBERÁ tener un nombre que la clínica elige y
+  la forma de pago de la Tabla 24 del SRI con que se declara (la lista cerrada de
+  BI-170), y la base DEBERÁ rechazar otro código
+  (`payment_method_sri_code_is_known`) y dos medios con el mismo nombre sin
+  distinguir mayúsculas (`payment_method_name_unique`).
+  > El nombre es de la clínica («Deuna», «Visa»); el código es del SRI. Dos
+  > medios pueden declararse con el mismo código —Visa y Mastercard son los dos
+  > `19`—, que es exactamente por qué el código no puede ser la fila.
+- **BI-145** — CUANDO caja emita una factura, el sistema DEBERÁ ofrecer sólo los
+  medios de pago activos, en su orden, y DEBERÁ escribir en la factura la forma
+  de pago del medio elegido.
+  > **El servidor no rechaza todavía una forma de pago que ningún medio activo
+  > declara**: la factura guarda el código, no el medio, y la base sólo admite
+  > la lista cerrada de BI-170. El medio como clave llega con el cobro (B6,
+  > `payment.payment_method_id`), que es donde una clave foránea lo garantiza
+  > de verdad; un rechazo por lectura previa aquí sería la mitad de esa
+  > garantía y obligaría a sembrar medios en cada prueba que emite.
+  > La reemisión de una factura devuelta conserva la forma de pago con que se
+  > emitió aunque el medio se haya desactivado después: el pago ya ocurrió, y
+  > BI-170 la hace permanente.
+- **BI-146** — El sistema NO DEBERÁ borrar un medio de pago: DEBERÁ
+  desactivarlo, y SI es el último activo, ENTONCES DEBERÁ rechazarlo con
+  `LAST_ACTIVE_PAYMENT_METHOD`.
+  > Sin ningún medio activo caja no puede emitir ni una factura, y lo descubre
+  > con el paciente delante.
+  > Lo arbitra la base (`trg_payment_method_one_stays_active`, con un candado
+  > de transacción): dos administradores apagando a la vez los dos últimos
+  > leerían cada uno dos activos. El mismo disparador rechaza el `DELETE`
+  > hasta que la clave foránea del cobro (B6) lo haga por sí sola.
+- **BI-147** — CUANDO se cree o cambie un medio de pago o el límite de descuento
+  de un rol, el sistema DEBERÁ guardar en la fila quién y cuándo lo cambió por
+  última vez, y DEBERÁ dejar en `access_audit` el antes y el después.
+  > «¿Quién subió el límite de recepción al 30 %?» es la pregunta que se hace
+  > después de un descuadre. Un `updated_at` sin autor no la contesta.
 
 ---
 
@@ -2378,6 +2424,9 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `INVOICE_NOT_EDITABLE` | 409 | BI-216 |
 | `CORRECTION_AWAITS_CREDIT_NOTE` | 409 | BI-214 |
 | `PAYMENT_METHOD_NOT_FOUND` | 404 | BI-100 |
+| `PAYMENT_METHOD_NAME_TAKEN` | 409 | BI-144 |
+| `LAST_ACTIVE_PAYMENT_METHOD` | 409 | BI-146 |
+| `DISCOUNT_LIMIT_ROLE_NOT_FOUND` | 404 | BI-141 |
 | `PAYMENT_EXCEEDS_BALANCE` | 422 | BI-101 |
 | `PAYMENT_REVERSAL_REASON_REQUIRED` | 422 | BI-102 |
 | `CASH_SESSION_CLOSED` | 409 | BI-104 |
@@ -2543,9 +2592,10 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `POST` | `/billing/sites/{siteId}/payments/{paymentId}/reversal` | `billing:write` | `param:siteId` | BI-102 |
 | `POST` | `/billing/sites/{siteId}/cash-sessions/close` | `billing:write` | `param:siteId` | BI-104, BI-105 |
 | `GET` | `/billing/discount-limits` | `settings:read` | `global` | BI-062, BI-141 |
-| `PUT` | `/billing/discount-limits/{roleId}` | `settings:manage` | `global` | BI-141, BI-142 |
-| `GET` | `/billing/payment-methods` | `billing:read` | `global` | BI-100 |
-| `POST` | `/billing/payment-methods` | `settings:manage` | `global` | BI-100, BI-140 |
+| `PUT` | `/billing/discount-limits/{roleId}` | `settings:manage` | `global` | BI-141, BI-142, BI-147 |
+| `GET` | `/billing/payment-methods` | `billing:read` | `global` | BI-100, BI-145 |
+| `POST` | `/billing/payment-methods` | `settings:manage` | `global` | BI-100, BI-140, BI-144, BI-147 |
+| `PATCH` | `/billing/payment-methods/{paymentMethodId}` | `settings:manage` | `global` | BI-144, BI-146, BI-147 |
 | `GET` | `/billing/tariff-publications` | `billing:read` | `global` | BI-113 |
 | `POST` | `/billing/tariff-publications` | `tariff:publish` | `global` | BI-113, BI-115 |
 | `GET` | `/billing/tariff-publications/{publicationId}` | `billing:read` | `global` | BI-113 |
@@ -2626,7 +2676,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | BI-100 a BI-105 | Unitario de dominio + integración |
 | BI-110 a BI-115 | Seguridad dirigida **sin credenciales** + contrato HTTP: la ruta pública responde sin sesión, y ningún parámetro la desvía a otra lista de precios |
 | BI-130 a BI-135 | Seguridad dirigida + la prueba de rutas que recorre las que NestJS registró de verdad |
-| BI-140 a BI-143 | Integración + contrato HTTP por campo |
+| BI-140 a BI-147 | Integración + contrato HTTP por campo; BI-142 y BI-144 contra PostgreSQL real con control positivo |
 | BI-150 a BI-153, BI-155, BI-156, BI-158 | Unitario de dominio (la derivación es pura) + integración sobre la siembra REAL: se comprueba que los tres precios salen del catálogo que se instala, no de un fixture |
 | BI-154, BI-157 | Integración contra PostgreSQL real: se envía dos veces, se anula una línea y se vuelve a enviar, y se intenta el segundo cargo del mismo acto **por SQL directo**. Los tres índices únicos parciales son el requisito; una lectura previa no lo es |
 | BI-181 a BI-183 | Integración contra PostgreSQL real con el reloj inyectado: la ventana de siete días se cuenta en Ecuador, y la lista no escribe en `access_audit` |

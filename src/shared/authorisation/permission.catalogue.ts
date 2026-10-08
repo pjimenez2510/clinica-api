@@ -465,13 +465,13 @@ export const PERMISSION_CATALOGUE = [
     code: 'settings:read',
     resource: 'settings',
     description:
-      'Consultar los feriados y los parámetros de operación de cada sede',
+      'Consultar los feriados, los parámetros de operación de cada sede y el límite de descuento de cada rol',
   },
   {
     code: 'settings:manage',
     resource: 'settings',
     description:
-      'Administrar feriados y parámetros de operación: antelaciones, tope de sobrecupos y retención',
+      'Administrar feriados y parámetros de operación: antelaciones, tope de sobrecupos y retención; los medios de pago y el límite de descuento de cada rol',
   },
   // Administering accounts and roles (`auth`, A2). `user:manage` already
   // existed and covers every mutation; `user:read` is new and is what lets a
