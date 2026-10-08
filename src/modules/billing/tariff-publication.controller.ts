@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Req,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
@@ -14,6 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { assertClinicWideScope } from '../../shared/authorisation/site-scope';
@@ -75,11 +77,15 @@ export class TariffPublicationController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Publicar el tarifario que se exhibe al público' })
   @ApiCreatedResponse({ type: TariffPublicationDto })
-  async publish(): Promise<TariffPublicationResponse> {
+  async publish(@Req() req: Request): Promise<TariffPublicationResponse> {
     assertClinicWideScope(this.currentUser.requirePrincipal(), 'tariff:publish'); // prettier-ignore
+    // D-118: who, and from where — `req.ip` is the client because `trust
+    // proxy` counts hops.
     return toPublicationResponse(
       await this.publications.publish({
         userId: this.currentUser.requireUserId(),
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
       }),
     );
   }

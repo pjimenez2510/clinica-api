@@ -61,14 +61,12 @@ function build(candidates: TariffCandidate[] | null = [candidate('30.00')]) {
           ? null
           : { priceListId: 'list-particular', candidates },
       ),
-    publish: vi.fn().mockImplementation((command: NewTariffPublication) =>
-      Promise.resolve(
-        publication({
-          lines: [...command.lines],
-          lineCount: command.lines.length,
-        }),
-      ),
-    ),
+    // Like the adapter: `linesOf` runs on the candidates read under the lock.
+    publish: vi.fn().mockImplementation((command: NewTariffPublication) => {
+      if (candidates === null) return Promise.resolve(null);
+      const lines = command.linesOf(candidates);
+      return Promise.resolve(publication({ lines, lineCount: lines.length }));
+    }),
     listPublications: vi.fn().mockResolvedValue([]),
     findPublication: vi.fn().mockResolvedValue(null),
     findLatestPublication: vi.fn().mockResolvedValue(null),
@@ -85,11 +83,11 @@ describe('TariffPublicationService', () => {
     await service.publish({ userId: 'user-1' }, now);
 
     const command = mocks.publish.mock.calls[0]?.[0] as NewTariffPublication;
-    expect(command.priceListId).toBe('list-particular');
     expect(command.effectiveFrom).toBe(today);
     expect(command.publishedAt).toBe(now);
     expect(command.publishedById).toBe('user-1');
-    expect(command.lines.map((l) => l.amount.toString())).toEqual(['30.00']);
+    const lines = command.linesOf([candidate('30.00')]);
+    expect(lines.map((l) => l.amount.toString())).toEqual(['30.00']);
     expect(record).toHaveBeenCalledWith(
       expect.objectContaining({
         resourceType: 'tariff_publication',
@@ -100,12 +98,11 @@ describe('TariffPublicationService', () => {
   });
 
   it('BI-111 sin nada activo con precio vigente no publica un cartel vacío', async () => {
-    const { service, mocks } = build([candidate('30.00', { active: false })]);
+    const { service } = build([candidate('30.00', { active: false })]);
 
     await expect(
       service.publish({ userId: 'user-1' }, now),
     ).rejects.toBeInstanceOf(TariffPublicationEmptyError);
-    expect(mocks.publish).not.toHaveBeenCalled();
   });
 
   it('BI-111 sin lista particular no hay de dónde publicar', async () => {

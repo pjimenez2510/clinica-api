@@ -64,20 +64,18 @@ export class TariffPublicationService {
     requester: Requester,
     now: Date = new Date(),
   ): Promise<TariffPublicationView> {
-    const source = await this.publications.findSelfPayTariff();
-    if (source === null) throw new PriceListNotFoundError();
-
     const day = clinicalDateOf(now);
-    const lines = tariffLinesOn(source.candidates, day);
-    if (lines.length === 0) throw new TariffPublicationEmptyError();
-
     const published = await this.publications.publish({
-      priceListId: source.priceListId,
       effectiveFrom: day,
       publishedAt: now,
       publishedById: requester.userId,
-      lines,
+      linesOf: (candidates) => {
+        const lines = tariffLinesOn(candidates, day);
+        if (lines.length === 0) throw new TariffPublicationEmptyError();
+        return lines;
+      },
     });
+    if (published === null) throw new PriceListNotFoundError();
 
     // BI-046, BI-132: what the clinic tells the public it charges is
     // answerable — who published which version. NO PAYLOAD, on purpose: the

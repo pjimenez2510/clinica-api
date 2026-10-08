@@ -28,11 +28,14 @@ export interface TariffPublicationView extends TariffPublicationSummary {
 }
 
 export interface NewTariffPublication {
-  priceListId: string;
   effectiveFrom: ClinicalDate;
   publishedAt: Date;
   publishedById: string;
-  lines: readonly TariffLine[];
+  /**
+   * What enters the wall, decided by the domain on the candidates read
+   * UNDER THE LOCK (BI-111). May throw: nothing is written then.
+   */
+  linesOf: (candidates: readonly TariffCandidate[]) => TariffLine[];
 }
 
 export const TARIFF_PUBLICATION_REPOSITORY = Symbol(
@@ -51,10 +54,13 @@ export interface TariffPublicationRepository {
   } | null>;
 
   /**
-   * BI-113. Copies the lines under the list's lock, with the next version and
-   * the establishment's name of today.
+   * BI-113. Under the self-pay list's lock: reads its services, copies what
+   * `linesOf` selects with the next version and today's establishment name.
+   * `null` when the installation has no self-pay list.
    */
-  publish(publication: NewTariffPublication): Promise<TariffPublicationView>;
+  publish(
+    publication: NewTariffPublication,
+  ): Promise<TariffPublicationView | null>;
 
   /** BI-113. Every publication, newest first. */
   listPublications(): Promise<TariffPublicationSummary[]>;

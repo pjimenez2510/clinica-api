@@ -308,6 +308,40 @@ describe('el tarifario de la pared por HTTP', () => {
     await expect(
       prisma.$executeRawUnsafe(`DELETE FROM "tariff_publication"`),
     ).rejects.toThrow(/tariff_publication_immutable/);
+    await expect(
+      prisma.$executeRawUnsafe(`TRUNCATE "tariff_publication_item"`),
+    ).rejects.toThrow(/tariff_publication_immutable/);
+    await expect(
+      prisma.$executeRawUnsafe(`TRUNCATE "tariff_publication" CASCADE`),
+    ).rejects.toThrow(/tariff_publication_immutable/);
+  });
+
+  it('BI-113 dos administradores publicando a la vez reciben versiones consecutivas, no un rechazo', async () => {
+    const [first, second] = await Promise.all([publish(), publish()]);
+    expect([first.status, second.status]).toEqual([201, 201]);
+    const versions = [first, second]
+      .map((response) => (response.body as { version: number }).version)
+      .sort();
+    expect(versions).toEqual([1, 2]);
+  });
+
+  it('BI-113 publicar exige el permiso en toda la clínica, no en una sede', async () => {
+    const site = await prisma.site.findFirstOrThrow();
+    const siteAdmin = await signIn(prisma, app, 'sede@clinica.ec', 'ADMIN', site.id, '1713175071'); // prettier-ignore
+
+    const refused = await publish(siteAdmin).expect(403);
+    expect((refused.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+    // Positive control: the clinic-wide administrator publishes.
+    await publish().expect(201);
+  });
+
+  it('BI-113 la bitácora dice quién publicó y desde dónde', async () => {
+    const published = (await publish().set('User-Agent', 'pantalla-de-prueba').expect(201)).body as { id: string }; // prettier-ignore
+    const entry = await prisma.accessAudit.findFirstOrThrow({
+      where: { resourceType: 'tariff_publication', resourceId: published.id },
+    });
+    expect(entry.action).toBe('CREATE');
+    expect(entry.userAgent).toBe('pantalla-de-prueba');
   });
 
   it('BI-113 la base no admite dos publicaciones con la misma versión', async () => {

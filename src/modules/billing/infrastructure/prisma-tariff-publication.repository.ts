@@ -37,54 +37,29 @@ export class PrismaTariffPublicationRepository implements TariffPublicationRepos
     priceListId: string;
     candidates: TariffCandidate[];
   } | null> {
-    const priceListId = await selfPayPriceListId(this.prisma);
-    if (priceListId === null) return null;
-
-    const services = await this.prisma.billableService.findMany({
-      where: { prices: { some: { priceListId } } },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        active: true,
-        category: { select: { name: true } },
-        taxRate: { select: { percentage: true } },
-        prices: {
-          where: { priceListId },
-          select: { amount: true, validFrom: true, validTo: true },
-        },
-      },
-    });
-
-    return {
-      priceListId,
-      candidates: services.map((service) => ({
-        billableServiceId: service.id,
-        code: service.code,
-        name: service.name,
-        categoryName: service.category.name,
-        active: service.active,
-        taxPercentage: percentageOf(service.taxRate.percentage),
-        prices: service.prices.map((price) => ({
-          amount: Money.parse(price.amount),
-          validFrom: toClinicalDate(price.validFrom),
-          validTo:
-            price.validTo === null ? null : toClinicalDate(price.validTo),
-        })),
-      })),
-    };
+    return readSelfPayTariff(this.prisma);
   }
 
   /**
    * Under the list's row lock, so two administrators publishing at once get
    * consecutive versions instead of one `tariff_publication_version_unique`
-   * refusal. The establishment's name is copied like the rest.
+   * refusal — and the PHOTO is taken AFTER the lock, inside the same
+   * transaction, so what is copied is what the list says at the instant the
+   * version is numbered. The establishment's name is copied like the rest.
    */
-  async publish(command: NewTariffPublication): Promise<TariffPublicationView> {
+  async publish(
+    command: NewTariffPublication,
+  ): Promise<TariffPublicationView | null> {
     const id = await this.prisma.$transaction(async (tx) => {
+      const listId = await selfPayPriceListId(tx);
+      if (listId === null) return null;
       await tx.$queryRaw`
-        SELECT 1 FROM "price_list" WHERE "id" = ${command.priceListId}::uuid
-           FOR UPDATE`;
+        SELECT 1 FROM "price_list" WHERE "id" = ${listId}::uuid FOR UPDATE`;
+      const source = await readSelfPayTariff(tx);
+      if (source === null) return null;
+      // May throw a domain error (nothing to publish): the transaction rolls back.
+      const lines = command.linesOf(source.candidates);
+
       const last = await tx.tariffPublication.aggregate({
         _max: { version: true },
       });
@@ -99,7 +74,8 @@ export class PrismaTariffPublicationRepository implements TariffPublicationRepos
           effectiveFrom: asDateColumn(command.effectiveFrom),
           publishedAt: command.publishedAt,
           publishedById: command.publishedById,
-          priceListId: command.priceListId,
+          priceListId: source.priceListId,
+          // `establishment_trade_name_not_blank` keeps an empty trade name out.
           establishmentName:
             establishment === null
               ? null
@@ -108,7 +84,7 @@ export class PrismaTariffPublicationRepository implements TariffPublicationRepos
         select: { id: true },
       });
       await tx.tariffPublicationItem.createMany({
-        data: command.lines.map((line) => ({
+        data: lines.map((line) => ({
           publicationId: created.id,
           billableServiceId: line.billableServiceId,
           serviceCode: line.code,
@@ -121,6 +97,7 @@ export class PrismaTariffPublicationRepository implements TariffPublicationRepos
       });
       return created.id;
     });
+    if (id === null) return null;
 
     const published = await this.findPublication(id);
     if (published === null) {
@@ -218,4 +195,45 @@ function toSummary(row: SummaryRow): TariffPublicationSummary {
 /** A null percentage stays null: «no objeto» and «exento» are not 0 %. */
 function percentageOf(value: Prisma.Decimal | null): Percentage | null {
   return value === null ? null : Percentage.parse(value);
+}
+
+/** BI-111. The clinic's self-pay list and its services, on any client. */
+async function readSelfPayTariff(
+  client: Prisma.TransactionClient,
+): Promise<{ priceListId: string; candidates: TariffCandidate[] } | null> {
+  const priceListId = await selfPayPriceListId(client);
+  if (priceListId === null) return null;
+
+  const services = await client.billableService.findMany({
+    where: { prices: { some: { priceListId } } },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      active: true,
+      category: { select: { name: true } },
+      taxRate: { select: { percentage: true } },
+      prices: {
+        where: { priceListId },
+        select: { amount: true, validFrom: true, validTo: true },
+      },
+    },
+  });
+
+  return {
+    priceListId,
+    candidates: services.map((service) => ({
+      billableServiceId: service.id,
+      code: service.code,
+      name: service.name,
+      categoryName: service.category.name,
+      active: service.active,
+      taxPercentage: percentageOf(service.taxRate.percentage),
+      prices: service.prices.map((price) => ({
+        amount: Money.parse(price.amount),
+        validFrom: toClinicalDate(price.validFrom),
+        validTo: price.validTo === null ? null : toClinicalDate(price.validTo),
+      })),
+    })),
+  };
 }
