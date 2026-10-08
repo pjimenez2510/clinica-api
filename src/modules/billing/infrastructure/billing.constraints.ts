@@ -12,6 +12,15 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
  * by PostgreSQL constraints, and this registration is their enumeration.
  */
 registerConstraintMeanings({
+  // ── The tariff on the wall (BI-113) ───────────────────────────────────────
+  // The adapter numbers the version under the self-pay list's lock, so this
+  // only answers a write from below the application.
+  tariff_publication_version_unique: {
+    code: 'TARIFF_PUBLICATION_VERSION_TAKEN',
+    field: 'version',
+    message:
+      'Otra persona acaba de publicar el tarifario: vuelva a cargar la página',
+  },
   // ── Closing without charging (BI-237, D-184.2) ────────────────────────────
   patient_account_settled_states_why_unpaid: {
     code: 'ACCOUNT_NO_CHARGE_REASON_REQUIRED',

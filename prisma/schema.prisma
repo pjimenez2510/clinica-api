@@ -185,14 +185,15 @@ model User {
   /// Money. Two lists over `charge_item` and not one, because raising a charge
   /// and authorising a discount above the role's ceiling are two acts by two
   /// people — the second pair of eyes only counts if it is a different pair.
-  chargeItemsCreated  ChargeItem[]     @relation("ChargeItemAuthor")
-  chargeItemsChanged  ChargeItem[]     @relation("ChargeItemChanger")
-  pricesChanged       Price[]          @relation("PriceChanger")
-  discountsAuthorised ChargeItem[]     @relation("ChargeItemDiscountAuthoriser")
-  invoicesIssued      Invoice[]        @relation("InvoiceIssuer")
-  creditNotesIssued   CreditNote[]     @relation("CreditNoteIssuer")
-  accountsChanged     PatientAccount[] @relation("PatientAccountChanger")
-  invoicesChanged     Invoice[]        @relation("InvoiceChanger")
+  chargeItemsCreated  ChargeItem[]        @relation("ChargeItemAuthor")
+  chargeItemsChanged  ChargeItem[]        @relation("ChargeItemChanger")
+  pricesChanged       Price[]             @relation("PriceChanger")
+  tariffsPublished    TariffPublication[] @relation("TariffPublisher")
+  discountsAuthorised ChargeItem[]        @relation("ChargeItemDiscountAuthoriser")
+  invoicesIssued      Invoice[]           @relation("InvoiceIssuer")
+  creditNotesIssued   CreditNote[]        @relation("CreditNoteIssuer")
+  accountsChanged     PatientAccount[]    @relation("PatientAccountChanger")
+  invoicesChanged     Invoice[]           @relation("InvoiceChanger")
 
   /// REQ-090. Who loaded each issuer certificate (SRI-082).
   signingCertificatesUploaded SigningCertificate[] @relation("SigningCertificateUploader")
@@ -1558,9 +1559,9 @@ model Practitioner {
   encountersClosed Encounter[] @relation("EncounterCloser")
 
   /// EN-076. Who applied each screening of block F.
-  violenceScreenings         ViolenceScreening[] @relation("ViolenceScreeningScreenedBy")
+  violenceScreenings         ViolenceScreening[]        @relation("ViolenceScreeningScreenedBy")
   /// EN-074, EN-242. Who recorded the notification to the authority.
-  violenceScreeningsNotified ViolenceScreening[] @relation("ViolenceScreeningNotifiedBy")
+  violenceScreeningsNotified ViolenceScreening[]        @relation("ViolenceScreeningNotifiedBy")
   /// EN-076. Who replaced an earlier answer of block F.
   violenceScreeningsReplaced ViolenceScreeningVersion[]
 
@@ -4010,10 +4011,11 @@ model BillableService {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  prices          Price[]
-  chargeItems     ChargeItem[]
+  prices                 Price[]
+  chargeItems            ChargeItem[]
+  tariffPublicationItems TariffPublicationItem[]
   /// ORD-163. At most one (`exam_definition_one_per_service`).
-  examDefinitions ExamDefinition[]
+  examDefinitions        ExamDefinition[]
   /// WHO CHECKED THIS RATE, which is the whole point of D-A-006.
   ///
   /// The seed ships a DEFAULT: 0% for health services (LRTI art. 56.2), the
@@ -4025,9 +4027,9 @@ model BillableService {
   /// Until these existed there was no way to tell a rate somebody checked from
   /// one nobody has looked at since it was seeded. That difference is what an
   /// inspection asks about.
-  taxReviewedAt   DateTime?        @map("tax_reviewed_at") @db.Timestamptz(6)
-  taxReviewedById String?          @map("tax_reviewed_by_id") @db.Uuid
-  taxReviewedBy   User?            @relation("TaxRateReviewer", fields: [taxReviewedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_tax_reviewer_fk")
+  taxReviewedAt          DateTime?               @map("tax_reviewed_at") @db.Timestamptz(6)
+  taxReviewedById        String?                 @map("tax_reviewed_by_id") @db.Uuid
+  taxReviewedBy          User?                   @relation("TaxRateReviewer", fields: [taxReviewedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_tax_reviewer_fk")
 
   @@index([categoryId, name], map: "billable_service_by_category")
   @@map("billable_service")
@@ -4057,10 +4059,66 @@ model PriceList {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  prices   Price[]
-  accounts PatientAccount[]
+  prices             Price[]
+  accounts           PatientAccount[]
+  tariffPublications TariffPublication[]
 
   @@map("price_list")
+}
+
+/// BI-110 to BI-115 (LOS art. 184). A PHOTO of the self-pay list on the day
+/// it was published: amounts, names, category and tax are COPIED, never
+/// referenced, so the wall does not change when somebody edits a price (BI-115
+/// can only exist because of that). Insert-only by trigger
+/// (`trg_tariff_publication_immutable`): the previous versions are what the
+/// wall said on their day (BI-113). The public route reads THIS and never
+/// `price` (BI-112).
+model TariffPublication {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  /// 1, 2, 3… `tariff_publication_version_unique`.
+  version       Int
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  /// The application's clock, not PostgreSQL's `now()`.
+  publishedAt   DateTime @map("published_at") @db.Timestamptz(6)
+  publishedById String   @map("published_by") @db.Uuid
+  publishedBy   User     @relation("TariffPublisher", fields: [publishedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "tariff_publication_published_by_fk")
+
+  /// The self-pay list it was taken from (BI-111). Internal only.
+  priceListId String    @map("price_list_id") @db.Uuid
+  priceList   PriceList @relation(fields: [priceListId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "tariff_publication_price_list_fk")
+
+  establishmentName String? @map("establishment_name") @db.VarChar(160)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  items TariffPublicationItem[]
+
+  @@unique([version], map: "tariff_publication_version_unique")
+  @@map("tariff_publication")
+}
+
+/// One line of a published tariff, copied (BI-113).
+model TariffPublicationItem {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  publicationId String            @map("publication_id") @db.Uuid
+  publication   TariffPublication @relation(fields: [publicationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "tariff_publication_item_publication_fk")
+
+  /// To compare with what is in force (BI-115); what is shown is the copy.
+  billableServiceId String          @map("billable_service_id") @db.Uuid
+  billableService   BillableService @relation(fields: [billableServiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "tariff_publication_item_service_fk")
+
+  serviceCode   String   @map("service_code") @db.VarChar(32)
+  serviceName   String   @map("service_name") @db.VarChar(200)
+  categoryName  String   @map("category_name") @db.VarChar(120)
+  /// Decimal, never Float (BI-001). Without tax, as in the list.
+  amount        Decimal  @db.Decimal(12, 2)
+  /// NULL for «no objeto» and «exento».
+  taxPercentage Decimal? @map("tax_percentage") @db.Decimal(5, 2)
+
+  @@unique([publicationId, billableServiceId], map: "tariff_publication_item_service_unique")
+  @@map("tariff_publication_item")
 }
 
 /// What one service costs in one list, over one period.

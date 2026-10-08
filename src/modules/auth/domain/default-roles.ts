@@ -72,6 +72,9 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // clínicas»— vale igual para la caja.
       'billing:read',
       'billing:price-manage',
+      // BI-113. Publicar el tarifario de la pared va con quien fija los
+      // precios (D-049: «flexible, el admin asigna»).
+      'tariff:publish',
       // D-005, AG-101. La dirección también autoriza sobrecupos: el caso de
       // «la sede está llena y la dirección decide atender a alguien más» es
       // uno de los tres que D-005 enumera. Como el médico, sin

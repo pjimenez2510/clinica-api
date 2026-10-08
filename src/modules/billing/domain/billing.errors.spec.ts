@@ -54,6 +54,8 @@ const EXPECTED: readonly [
   [errors.PayerRucRequiredError, 'PAYER_RUC_REQUIRED', ValidationError],
   [errors.PriceListNotFoundError, 'PRICE_LIST_NOT_FOUND', NotFoundError],
   [errors.PricePeriodInvalidError, 'PRICE_PERIOD_INVALID', ValidationError],
+  [errors.TariffPublicationNotFoundError, 'TARIFF_PUBLICATION_NOT_FOUND', NotFoundError], // prettier-ignore
+  [errors.TariffPublicationEmptyError, 'TARIFF_PUBLICATION_EMPTY', ConflictError], // prettier-ignore
   [errors.PriceNegativeAmountError, 'PRICE_NEGATIVE_AMOUNT', ValidationError],
   [errors.PriceNotEditableError, 'PRICE_NOT_EDITABLE', ValidationError],
   [errors.PriceEntryNotFoundError, 'PRICE_ENTRY_NOT_FOUND', NotFoundError],
