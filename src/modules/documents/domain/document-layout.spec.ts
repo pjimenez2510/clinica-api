@@ -528,6 +528,30 @@ describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaci
     expect(textOf(active.blocks)).not.toContain('ANULADA');
   });
 
+  it('PR-036 dice que la firma es con usuario y clave en el sistema, sin certificado de firma electrónica', () => {
+    const data = prescription();
+    const issued = wholeText(composeLayout(data, context, template));
+    // The date of the sample's instant, in Guayaquil.
+    const day = clinicalDateOf((data.data as { issuedAt: Date }).issuedAt).split('-').reverse().join('/'); // prettier-ignore
+    expect(issued).toContain(
+      `Electrónica, el ${day}, con usuario y clave en el sistema, sin certificado de firma electrónica`,
+    );
+
+    // Un borrador no está firmado, y no lo afirma.
+    const draft = wholeText(
+      composeLayout(
+        prescription({
+          issuedAt: null,
+          sequenceNumber: null,
+          verificationCode: null,
+        }),
+        context,
+        template,
+      ),
+    );
+    expect(draft).not.toContain('usuario y clave');
+  });
+
   it('PR-020 una previsualización de borrador no imprime «null» ni un número que no tiene', () => {
     const layout = composeLayout(
       prescription({ sequenceNumber: null, verificationCode: null }),

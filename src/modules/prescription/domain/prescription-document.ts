@@ -132,11 +132,11 @@ export interface PrescriptionDocument {
      * stands for the signature of an electronic prescription is the
      * authenticated prescriber, and the instant it happened is this one.
      *
-     * ⚠️ **Falta esquema** for the rest of PR-036: `prescription` carries no
-     * signature mode, no certificate serial and no constancia of a signature
-     * issued without one. Nothing is asserted here that is not stored — a
-     * document claiming a certified signature nobody verified would be worse
-     * than one that says only who and when.
+     * PR-036. Nothing in this system holds a certificate, so every issued
+     * receta was signed with the credential and BOTH the screen and the paper
+     * say so: «sin certificado de firma electrónica». A signature mode and a
+     * certificate serial arrive with the custody of the certificate (D-177.1);
+     * until then a document claiming a certified signature would be false.
      */
     signedAt: Date | null;
   };

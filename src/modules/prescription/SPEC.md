@@ -689,15 +689,22 @@ documento existe y es lo único que la ACESS puede inspeccionar.
   > sistema informático mediante el registro con usuario y clave de acceso»*, así
   > que una clínica sin certificados no puede quedarse sin poder trabajar.
   >
-  > ⚠️ **Falta esquema.** `prescription` no tiene columna de firma ni de
-  > constancia, y **el certificado de firma electrónica es el bloqueante externo
-  > #3**: no hay certificado con el que probar la primera mitad. Hoy la emisión
-  > **no exige certificado** —el parámetro no se lee— y la constancia no se
-  > guarda. En consecuencia el documento **no afirma nada sobre la firma más allá
-  > de quién firmó y cuándo**: un documento que dijera «firma certificada» sin
-  > que nadie haya verificado un certificado sería peor que uno que sólo dice
-  > quién y cuándo. Cerrar esto es `signature_mode`, `signed_at` y
-  > `certificate_serial` en `prescription`.
+  > **La constancia, construida** (`feat/f05-receta-documentos-huecos`,
+  > 08-10-2026). La receta emitida dice en el papel y en la pantalla «Firma:
+  > Electrónica, el <fecha>, con usuario y clave en el sistema, sin certificado
+  > de firma electrónica». No hace falta columna para decirlo: el sistema no
+  > guarda ningún certificado, así que **toda** receta emitida se firmó con la
+  > credencial, y el instante es `issued_at`. La columna (`signature_mode`,
+  > `certificate_serial`) nace con la custodia del certificado, que es cuando
+  > habrá dos maneras de firmar.
+  >
+  > **La primera mitad sigue sin construir**, y no por esquema: **el certificado
+  > de firma electrónica es el bloqueante externo #3** y la custodia del de
+  > cada médico es D-177.1. Con `requireCertifiedSignature` encendido —el valor
+  > por defecto— la emisión **no se bloquea** y la receta lleva la misma
+  > constancia: es decir la verdad mientras decide (D-183.2). Bloquear dejaría
+  > a la clínica sin recetar; callar haría pasar por certificada una firma que
+  > no lo es.
 
 ### 2.5 Indicaciones (art. 5.e)
 
@@ -800,6 +807,10 @@ documento existe y es lo único que la ACESS puede inspeccionar.
   > informáticos restringirá la atención asistencial a pacientes»*. Lo que sí es
   > nuestro es no impedirlo: la receta se compone y se emite sin depender de
   > ningún servicio externo.
+  >
+  > Lo prueba `prescription.service.spec.ts`: con el archivo de documentos sin
+  > poder guardar nada, la receta se emite y no se le pide nada; el PDF se
+  > compone cuando alguien lo pide.
 
 ## 4. Alergias: el nivel que es nuestro, y los dos que no (REQ-008)
 
@@ -1495,7 +1506,7 @@ Ninguna es una migración correctiva: la base está en fase `development`
 | ✅ construido — **Signos de alarma** (**art. 5.e.iii**; el 5.e.iv es la firma y el sello). Columna: **`warning_signs`**. De la receta y no de la línea, así que no cabe en `prescription_item.instructions` | `prescription` | PR-038 |
 | ✅ construido — **Recomendaciones no farmacológicas** (**art. 5.e.iii**; el 5.e.v es el registro ACESS; y el art. 27.c las pone *antes* de decidir el medicamento). Columna: **`non_pharmacological_advice`** | `prescription` | PR-039 |
 | ✅ construido — **Teléfono de contacto permanente del prescriptor** (**art. 5.e.vi**). Columna: **`emergency_contact_phone`**. No sirve `site.phone`: la norma dice «del prescriptor», y a las tres de la mañana hay que llamar a alguien | `practitioner` | PR-040 |
-| Modo de firma, instante y serie del certificado; **constancia de firma sin certificado** | `prescription` | PR-036 |
+| ✅ construida — **Constancia de firma sin certificado**, en el papel y en la pantalla. **Falta** el modo de firma y la serie del certificado, que nacen con su custodia (D-177.1) | `prescription` | PR-036 |
 | ✅ construido — Motivo, autor e instante de la **anulación** (**art. 70**): **`cancelled_at`, `cancelled_by_id`, `cancel_reason`** (`20261005060200`, PR-108). **Falta** el estado «notificada» | `prescription` | PR-010, PR-073, PR-108 |
 | **Número de línea** en la receta, hoy derivado del orden de `uuidv7()` | `prescription_item` | PR-032 |
 | Marca de **antimicrobiano** (código ATC del CNMB) | `catalog_concept.attributes` | PR-052 |
