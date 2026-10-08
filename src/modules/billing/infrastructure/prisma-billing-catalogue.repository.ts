@@ -245,7 +245,18 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     serviceId: string,
     update: BillableServiceUpdate,
   ): Promise<BillableServiceView> {
-    const row = await this.prisma.billableService.update({
+    // BI-024 (D-172.2). Cleared by the row as stored, not by what the service
+    // read: a review recorded in between still does not survive a new rate.
+    const clearReviewIfRateChanges =
+      update.taxRateId === undefined || update.taxReview !== undefined
+        ? []
+        : [
+            this.prisma.billableService.updateMany({
+              where: { id: serviceId, NOT: { taxRateId: update.taxRateId } },
+              data: { taxReviewedAt: null, taxReviewedById: null },
+            }),
+          ];
+    const write = this.prisma.billableService.update({
       where: { id: serviceId },
       data: {
         name: update.name,
@@ -273,7 +284,11 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
       },
       include: SERVICE_INCLUDE,
     });
-    return toServiceView(row);
+    const results = await this.prisma.$transaction([
+      ...clearReviewIfRateChanges,
+      write,
+    ]);
+    return toServiceView(results.at(-1) as ServiceRow);
   }
 
   /** BI-024. Conditional on the rate the reviewer saw (see the port). */

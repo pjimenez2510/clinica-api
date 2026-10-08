@@ -291,16 +291,16 @@ export interface BillingCatalogueRepository {
   }): Promise<BillableServiceView[]>;
   findBillableService(serviceId: string): Promise<BillableServiceView | null>;
   createBillableService(service: NewBillableService): Promise<BillableServiceView>; // prettier-ignore
+  /**
+   * A partial update. When it carries a `taxRateId` different from the one
+   * stored, the tax review is cleared IN THE SAME TRANSACTION, whatever the
+   * caller read before (BI-024, D-172.2): a review must never survive onto a
+   * rate its author did not see.
+   */
   updateBillableService(
     serviceId: string,
     update: BillableServiceUpdate,
   ): Promise<BillableServiceView>;
-  /**
-   * BI-012. Deletes ONLY when nothing references it; the caller has already
-   * refused when it does. The count and the delete are asked separately on
-   * purpose — the `RESTRICT` foreign keys are the real guarantee, and this
-   * pair only turns their rejection into a sentence.
-   */
   /**
    * BI-024. Records the review ONLY IF the service still carries `taxRateId`,
    * in the same statement; `null` when it no longer does (or does not
@@ -312,6 +312,12 @@ export interface BillingCatalogueRepository {
     taxRateId: string,
     review: { reviewedAt: Date; reviewedById: string },
   ): Promise<BillableServiceView | null>;
+  /**
+   * BI-012. Deletes ONLY when nothing references it; the caller has already
+   * refused when it does. The count and the delete are asked separately on
+   * purpose — the `RESTRICT` foreign keys are the real guarantee, and this
+   * pair only turns their rejection into a sentence.
+   */
   countReferencesToService(serviceId: string): Promise<number>;
   deleteBillableService(serviceId: string): Promise<void>;
 

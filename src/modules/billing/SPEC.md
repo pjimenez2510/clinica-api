@@ -137,7 +137,8 @@ BI-122.
 > omisión que se pueda «completar» sin tocar otra cosa**:
 >
 > - **BI-016** — no existe `billable_service.service_type_id`.
-> - **BI-022 a BI-024** — no existen `tax_reviewed_at` ni `tax_reviewed_by`.
+> - **BI-022 a BI-024** — no existían `tax_reviewed_at` ni `tax_reviewed_by`
+>   (ya existen: ver la nota de abajo).
 > - **BI-055, BI-056, BI-059 como RUTA de anulación** — no existen `voided_at`,
 >   `voided_by` ni `void_reason`, y el motivo no cabe en `access_audit`. Lo que
 >   sí está: un cargo `BILLED` o `CANCELLED` no cuenta para el total ni vuelve a
@@ -152,8 +153,9 @@ BI-122.
 > hecha y la prueban BI-023 y BI-024; su «0 % por defecto» choca con BI-013, y
 > ninguna prueba lo cita mientras no se decida—.
 
-**Solo servidor:** BI-001, BI-002, BI-006, BI-021, BI-025, BI-026, BI-042,
-BI-044, BI-050, BI-051, BI-053, BI-054, BI-055, BI-059, BI-074. Son garantías
+**Solo servidor:** BI-001, BI-002, BI-006, BI-012, BI-015, BI-021, BI-025,
+BI-026, BI-032, BI-035, BI-042, BI-044, BI-050, BI-051, BI-053, BI-054, BI-055,
+BI-059, BI-074. Son garantías
 de almacenamiento y de la base —el tipo `numeric`, el huso, el `EXCLUDE` de
 vigencias, que congelar signifique de verdad copiar y no leer (BI-050, BI-051,
 BI-053), que cambiar la tarifa de una prestación no alcance ningún cargo
@@ -166,7 +168,12 @@ Por debajo de la aplicación, la `RESTRICT` de `billable_service_tax_rate_fk`
 protege sólo la que nombra una prestación; un cargo copia el código y el
 porcentaje (BI-050) y no tiene clave hacia la tarifa, así que su protección es
 que no exista la ruta. `TAX_RATE_IN_USE` queda en el catálogo de errores para
-el día que exista.
+el día que exista. BI-012 y BI-032 son rechazos de una ruta que ninguna
+pantalla llama: lo que una factura nombra se desactiva desde su ficha (BI-014,
+BI-031), no se borra. BI-015 es el rechazo del servidor; en pantalla la
+prestación desactivada simplemente no se ofrece, que es BI-014. BI-035 es de
+la propuesta del receptor, que hace el servidor (BI-082): la pantalla no
+recibe el pagador.
 
 > **Por qué los impuestos entran ya en B1 y no en la entrega de la factura.** La
 > tarifa no es un adorno del documento: es parte del importe que se congela
@@ -196,7 +203,7 @@ emisión y comprobar que los secuenciales son consecutivos y únicos; intentar
 actualizar una factura emitida por debajo de la aplicación y comprobar que la
 base lo rechaza. **Cubre:** BI-080 a BI-090, BI-159, BI-160.
 
-**Solo servidor:** BI-084, BI-085, BI-086, BI-088. La inmutabilidad, el
+**Solo servidor:** BI-084, BI-085, BI-086, BI-087, BI-088. BI-087 lo rechaza la ruta (`INVOICE_RECEIVER_IS_PAYER`) y la pantalla propone al paciente (BI-082). La inmutabilidad, el
 secuencial sin huecos y que un cargo no pueda estar en dos facturas vivas son
 garantías de la base, y ninguna pantalla puede enseñar la ausencia de un
 `UPDATE`.
@@ -2299,11 +2306,10 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 
 | Método | Ruta | Permiso | Alcance | Requisitos |
 | --- | --- | --- | --- | --- |
-| `GET` | `/billing/services` | `billing:read` | `global` | BI-010, BI-011, BI-014 |
+| `GET` | `/billing/services` | `billing:read` | `global` | BI-010, BI-011, BI-014, BI-023 |
 | `POST` | `/billing/services` | `billing:price-manage` | `global` | BI-010 a BI-016 |
 | `PATCH` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-011 a BI-016, BI-025 |
 | `DELETE` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-012 |
-| `GET` | `/billing/services/by-tax-rate` | `billing:price-manage` | `global` | BI-023 |
 | `POST` | `/billing/services/{id}/tax-review` | `billing:price-manage` | `global` | BI-024 |
 | `GET` | `/billing/services/{id}/prices` | `billing:read` | `global` | BI-189 |
 | `GET` | `/billing/services/{id}/exams` | `billing:read` | `global` | BI-188 |
@@ -2376,9 +2382,12 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 > **No están**, y cada una dice arriba por qué: `/charges/{id}/discount` (B4,
 > falta que `SELF_AUTHORISATION_DENIED` se mude a `shared/`),
 > `/invoices/{id}/void` y `/invoices/{id}/credit-notes` (B3), los cobros y la
-> caja (B6), el tarifario público (B5) y los límites de descuento (B7). `GET
-> /billing/services/by-tax-rate` y `POST /billing/services/{id}/tax-review`
-> esperan a `tax_reviewed_at` (BI-022).
+> caja (B6), el tarifario público (B5) y los límites de descuento (B7). **BI-023 no
+> tiene ruta propia** (07-10-2026): `GET /billing/services` sirve el catálogo
+> entero, sin paginar, con `taxReview` en cada fila, y la pantalla lo agrupa
+> por tarifa con las pendientes primero. `POST /billing/services/{id}/tax-review`
+> lleva en el cuerpo la tarifa que se revisó y responde 409
+> `TAX_REVIEW_RATE_CHANGED` si ya no es la de la prestación.
 
 > **El catálogo, los pagadores y los precios llevan alcance `global` y no
 > `param:siteId`.** Lo que cobra la clínica no es de una sede: es de la clínica.
