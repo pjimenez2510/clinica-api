@@ -265,8 +265,9 @@ describe('la orden de exámenes contra PostgreSQL', () => {
   it('ORD-004 rechaza un examen que no tiene prestación en el tarifario', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
-    await prisma.examDefinition.update({
-      where: { id: scene.bh.id },
+    await prisma.billableService.update({
+      // ORD-163. The tariff code is the exam's service's.
+      where: { id: scene.bh.billableServiceId },
       data: { tariffCode: null },
     });
 
@@ -286,8 +287,9 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const prisma = db();
     const scene = await aScene(prisma);
     await aTariffConcept(prisma, { systemCode: 'CIE10', code: 'J020' });
-    await prisma.examDefinition.update({
-      where: { id: scene.bh.id },
+    await prisma.billableService.update({
+      // ORD-163. The tariff code is the exam's service's.
+      where: { id: scene.bh.billableServiceId },
       data: { tariffCode: 'J020' },
     });
 
@@ -308,8 +310,9 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     const prisma = db();
     const scene = await aScene(prisma);
     const clinicalDay = clinicalDateOf(scene.encounter.startedAt);
-    await prisma.examDefinition.update({
-      where: { id: scene.bh.id },
+    await prisma.billableService.update({
+      // ORD-163. The tariff code is the exam's service's.
+      where: { id: scene.bh.billableServiceId },
       data: { tariffCode: 'T-RETIRADO' },
     });
     await aTariffConcept(prisma, {

@@ -329,23 +329,17 @@ interface SeedService {
    */
   selfPayAmount?: string;
   /**
-   * BI-158. Qué prestación es **la consulta** de una especialidad, y de qué
-   * tipo. Sólo lo llevan las consultas; una gasa no es la consulta de
-   * nadie.
+   * BI-158, BI-232, SP-031 (D-179.3). El TIPO DE ATENCIÓN que esta prestación
+   * cobra: «primera vez» va con el tipo de arranque «Primera vez» y
+   * «subsecuente» con «Control» (`seed-specialties.mts`). Sólo lo llevan las
+   * consultas; una gasa no es la consulta de nadie.
    *
-   * Es lo que permite que al terminar una atención el cargo de la consulta
-   * SALGA SOLO en vez de teclearse. Sin esta correspondencia el sistema no la
-   * adivina —no lee el código ni el nombre, y por eso `CONS-DER-PV` no
-   * significa nada para él (D-A-006 aplicado al mismo error)—: simplemente no
-   * la propone, y quien está en caja la añade a mano.
-   *
-   * El código de la especialidad es el de `seed-specialties.mts`. Si esa
-   * especialidad no existe en la base, la prestación se siembra igual y se
-   * queda sin correspondencia: la siembra del catálogo económico no puede
-   * fallar entera porque falte una fila del clínico.
+   * Es lo que permite que al pasar una atención a caja el cargo de la consulta
+   * SALGA SOLO, desde el tipo de la cita. Si el tipo no existe en la base, la
+   * prestación se siembra igual y se queda sin atar: la siembra del catálogo
+   * económico no puede fallar entera porque falte una fila del clínico.
    */
-  specialtyCode?: string;
-  visitSequence?: 'FIRST_TIME' | 'SUBSEQUENT';
+  serviceType?: { specialtyCode: string; name: string };
 }
 
 /**
@@ -359,7 +353,7 @@ interface SeedService {
  * en un minuto). Inventar la tarifa de una especialidad no es de la semilla.
  *
  * El código cabe en los 25 caracteres del SRI (BI-171): `CONS-` + abreviatura
- * + `-SUB`. La correspondencia la ata `linkConsultation`, sólo si la
+ * + `-SUB`. La atadura la hace `linkServiceType`, sólo si el tipo
  * especialidad existe y está libre, como las cinco de arriba.
  */
 const OTHER_SPECIALTY_CONSULTATIONS: readonly {
@@ -426,16 +420,14 @@ const UNPRICED_CONSULTATIONS: SeedService[] =
         name: `Consulta de ${name}, primera vez`,
         category: 'Consultas',
         taxSriCode: HEALTH_ZERO,
-        specialtyCode,
-        visitSequence: 'FIRST_TIME' as const,
+        serviceType: { specialtyCode, name: 'Primera vez' },
       },
       {
         code: `CONS-${abbreviation}-SUB`,
         name: `Consulta de ${name}, subsecuente`,
         category: 'Consultas',
         taxSriCode: HEALTH_ZERO,
-        specialtyCode,
-        visitSequence: 'SUBSEQUENT' as const,
+        serviceType: { specialtyCode, name: 'Control' },
       },
     ],
   );
@@ -460,8 +452,7 @@ const SERVICES: SeedService[] = [
     category: 'Consultas',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '30.00',
-    specialtyCode: 'medicina-general',
-    visitSequence: 'FIRST_TIME',
+    serviceType: { specialtyCode: 'medicina-general', name: 'Primera vez' },
   },
   {
     code: 'CONS-MG-SUB',
@@ -469,8 +460,7 @@ const SERVICES: SeedService[] = [
     category: 'Consultas',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '20.00',
-    specialtyCode: 'medicina-general',
-    visitSequence: 'SUBSEQUENT',
+    serviceType: { specialtyCode: 'medicina-general', name: 'Control' },
   },
   {
     code: 'CONS-PED-PV',
@@ -478,8 +468,7 @@ const SERVICES: SeedService[] = [
     category: 'Consultas',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '40.00',
-    specialtyCode: 'pediatria',
-    visitSequence: 'FIRST_TIME',
+    serviceType: { specialtyCode: 'pediatria', name: 'Primera vez' },
   },
   {
     code: 'CONS-PED-SUB',
@@ -487,8 +476,7 @@ const SERVICES: SeedService[] = [
     category: 'Consultas',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '28.00',
-    specialtyCode: 'pediatria',
-    visitSequence: 'SUBSEQUENT',
+    serviceType: { specialtyCode: 'pediatria', name: 'Control' },
   },
   {
     code: 'CONS-GIN-PV',
@@ -496,8 +484,10 @@ const SERVICES: SeedService[] = [
     category: 'Consultas',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '45.00',
-    specialtyCode: 'ginecologia-obstetricia',
-    visitSequence: 'FIRST_TIME',
+    serviceType: {
+      specialtyCode: 'ginecologia-obstetricia',
+      name: 'Primera vez',
+    },
   },
   {
     code: 'CONS-GIN-SUB',
@@ -505,8 +495,7 @@ const SERVICES: SeedService[] = [
     category: 'Consultas',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '30.00',
-    specialtyCode: 'ginecologia-obstetricia',
-    visitSequence: 'SUBSEQUENT',
+    serviceType: { specialtyCode: 'ginecologia-obstetricia', name: 'Control' },
   },
   {
     code: 'CONS-DER-PV',
@@ -514,8 +503,7 @@ const SERVICES: SeedService[] = [
     category: 'Consultas',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '50.00',
-    specialtyCode: 'dermatologia',
-    visitSequence: 'FIRST_TIME',
+    serviceType: { specialtyCode: 'dermatologia', name: 'Primera vez' },
   },
   {
     code: 'CONS-DER-SUB',
@@ -523,8 +511,7 @@ const SERVICES: SeedService[] = [
     category: 'Consultas',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '35.00',
-    specialtyCode: 'dermatologia',
-    visitSequence: 'SUBSEQUENT',
+    serviceType: { specialtyCode: 'dermatologia', name: 'Control' },
   },
   {
     code: 'CONS-TRA-PV',
@@ -532,8 +519,10 @@ const SERVICES: SeedService[] = [
     category: 'Consultas',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '50.00',
-    specialtyCode: 'traumatologia-ortopedia',
-    visitSequence: 'FIRST_TIME',
+    serviceType: {
+      specialtyCode: 'traumatologia-ortopedia',
+      name: 'Primera vez',
+    },
   },
   {
     code: 'CONS-TRA-SUB',
@@ -541,8 +530,7 @@ const SERVICES: SeedService[] = [
     category: 'Consultas',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '35.00',
-    specialtyCode: 'traumatologia-ortopedia',
-    visitSequence: 'SUBSEQUENT',
+    serviceType: { specialtyCode: 'traumatologia-ortopedia', name: 'Control' },
   },
 
   // BI-232 (D-161): la consulta de las demás especialidades del catálogo.
@@ -674,6 +662,16 @@ const SERVICES: SeedService[] = [
   {
     code: 'IMG-RX-SIMPLE',
     name: 'Radiografía simple (una proyección)',
+    category: 'Imagen',
+    taxSriCode: HEALTH_ZERO,
+    selfPayAmount: '20.00',
+  },
+  // ORD-163. La radiografía de tórax es UN examen con su prestación: con la
+  // genérica «Radiografía simple» el examen se habría llamado así. El precio es
+  // el que cobraba hasta hoy a través de aquélla.
+  {
+    code: 'IMG-RX-TORAX',
+    name: 'Radiografía de tórax (PA y lateral)',
     category: 'Imagen',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '20.00',
@@ -1073,6 +1071,11 @@ const ANALYTES: SeedAnalyte[] = [
 /** A starting exam: its 010A section, the service that bills it, and its analytes in print order. */
 interface SeedExam {
   code: string;
+  /**
+   * ORD-163 (D-179.1). NO lleva nombre: el del examen es el de su prestación
+   * (`billableServiceCode`), que es donde se escribe. Éste sólo documenta la
+   * semilla y la comprueba: la prestación tiene que llamarse así.
+   */
   name: string;
   /** ORD-097, ORD-101. Lo que filtra la lista al pedir. */
   category: 'LABORATORY' | 'IMAGING' | 'PROCEDURE';
@@ -1083,11 +1086,12 @@ interface SeedExam {
   /** ORD-129 (D-137). Las horas mínimas de ayuno, o `null` si no lo pide. */
   fastingHours: number | null;
   turnaroundHours: number;
-  /** Código de la prestación que se cobra por este examen. */
+  /** Código de la prestación que ES este examen (una por examen, ORD-163). */
   billableServiceCode: string;
   /**
    * ORD-004, ORD-133. Su código en el Tarifario de Prestaciones del SNS 2014,
-   * la prestación institucional (sección B) que nombra este examen.
+   * la prestación institucional (sección B) que nombra este examen. Se escribe
+   * en la PRESTACIÓN (ORD-163), y sólo si no tiene ya uno.
    */
   tariffCode: string;
   /** En orden de impresión. */
@@ -1173,7 +1177,7 @@ const EXAMS: SeedExam[] = [
     patientPreparation: 'Retire objetos metálicos del tórax.',
     turnaroundHours: 24,
     fastingHours: null,
-    billableServiceCode: 'IMG-RX-SIMPLE',
+    billableServiceCode: 'IMG-RX-TORAX',
     tariffCode: '71020',
     analyteCodes: ['INFORME'],
   },
@@ -1338,46 +1342,43 @@ async function ensureService(
     RETURNING "id"`;
 
   const serviceId = rows[0]!.id;
-  await linkConsultation(tx, serviceId, service);
+  await linkServiceType(tx, serviceId, service);
   return serviceId;
 }
 
 /**
- * BI-158. Ata la prestación a «la consulta de esta especialidad, de este tipo».
+ * BI-158, SP-031. Ata la prestación a su tipo de atención, como la primera
+ * (`position` 0) de ese tipo.
  *
- * ⚠️ SÓLO SI NADIE LA HA ATADO YA (`specialty_id IS NULL`), como todo lo que
- * decide la clínica. Una clínica que decidió que su consulta de dermatología
- * subsecuente es otra prestación lo hizo a propósito, y un despliegue que se lo
- * devolviera sería un fallo que parece magia.
- *
- * ⚠️ Y SÓLO SI LA CORRESPONDENCIA ESTÁ LIBRE. `billable_service_one_per_consultation`
- * admite UNA prestación por (especialidad, secuencia): sin esta guarda, sembrar
- * sobre una base donde la clínica ya nombró la suya rompería la transacción
- * entera del arranque por un dato opcional.
+ * ⚠️ SÓLO SI EL TIPO NO TIENE YA LA SUYA, como todo lo que decide la clínica:
+ * un tipo que la clínica creó o reató tiene su prestación a propósito, y un
+ * despliegue que se la cambiara sería un fallo que parece magia. Y sólo una
+ * prestación de una categoría de clase consulta (BI-187).
  */
-async function linkConsultation(
+async function linkServiceType(
   tx: Client,
   serviceId: string,
   service: SeedService,
 ): Promise<void> {
-  if (!service.specialtyCode || !service.visitSequence) return;
+  if (!service.serviceType) return;
 
   await tx.$executeRaw`
-    UPDATE "billable_service" AS "target"
-       SET "specialty_id"   = "specialty"."id",
-           "visit_sequence" = ${service.visitSequence}
-      FROM "specialty"
-     WHERE "target"."id" = ${serviceId}::uuid
-       AND "target"."specialty_id" IS NULL
-       -- BI-187: only a service of a consultation category is a consultation.
-       AND EXISTS (SELECT 1 FROM "billable_service_category" AS "category"
-                    WHERE "category"."id" = "target"."category_id"
+    INSERT INTO "service_type_billable_service" ("service_type_id", "billable_service_id", "position")
+    SELECT "type"."id", ${serviceId}::uuid, 0
+      FROM "service_type" AS "type"
+      JOIN "specialty" ON "specialty"."id" = "type"."specialty_id"
+     WHERE lower("specialty"."code") = lower(${service.serviceType.specialtyCode})
+       AND lower("type"."name") = lower(${service.serviceType.name})
+       AND EXISTS (SELECT 1
+                     FROM "billable_service" AS "target"
+                     JOIN "billable_service_category" AS "category"
+                       ON "category"."id" = "target"."category_id"
+                    WHERE "target"."id" = ${serviceId}::uuid
                       AND "category"."kind" = 'CONSULTATION')
-       AND lower("specialty"."code") = lower(${service.specialtyCode})
-       AND NOT EXISTS (
-         SELECT 1 FROM "billable_service" AS "taken"
-          WHERE "taken"."specialty_id" = "specialty"."id"
-            AND "taken"."visit_sequence" = ${service.visitSequence})`;
+       AND NOT EXISTS (SELECT 1 FROM "service_type_billable_service" AS "taken"
+                        WHERE "taken"."service_type_id" = "type"."id"
+                          AND "taken"."position" = 0)
+    ON CONFLICT DO NOTHING`;
 }
 
 /**
@@ -1450,34 +1451,33 @@ async function ensureRange(
 }
 
 /**
- * El examen, enlazado con la prestación que lo cobra.
+ * El examen, enlazado con la prestación que lo ES (ORD-163).
  *
- * `COALESCE` en el enlace: si la fila ya existía sin prestación, se completa;
- * si la clínica la apuntó a otra, se respeta. Sembrar no es corregir a nadie.
+ * El examen no tiene nombre ni código del tarifario: los dos son de la
+ * prestación. El código del tarifario se le pone sólo si no tiene uno —si la
+ * clínica lo cambió, se respeta—, y el enlace de un examen que ya existe no se
+ * toca. Sembrar no es corregir a nadie.
  */
 async function ensureExam(
   tx: Client,
   exam: SeedExam,
   billableServiceId: string,
 ): Promise<string> {
+  await tx.$executeRaw`
+    UPDATE "billable_service"
+       SET "tariff_code" = ${exam.tariffCode}, "updated_at" = CURRENT_TIMESTAMP
+     WHERE "id" = ${billableServiceId}::uuid AND "tariff_code" IS NULL`;
+
   const rows = await tx.$queryRaw<{ id: string }[]>`
     INSERT INTO "exam_definition"
-      ("code", "name", "category", "form_010_section", "specimen_type", "patient_preparation",
+      ("code", "category", "form_010_section", "specimen_type", "patient_preparation",
        "requires_fasting", "fasting_hours",
-       "turnaround_hours", "billable_service_id", "tariff_code", "updated_at")
-    VALUES (${exam.code}, ${exam.name}, ${exam.category}::service_order_category,
+       "turnaround_hours", "billable_service_id", "updated_at")
+    VALUES (${exam.code}, ${exam.category}::service_order_category,
             ${exam.form010Section}, NULLIF(${exam.specimenType}, ''),
             ${exam.patientPreparation}, ${exam.fastingHours !== null}, ${exam.fastingHours}::smallint,
-            ${exam.turnaroundHours}, ${billableServiceId}::uuid,
-            ${exam.tariffCode}, CURRENT_TIMESTAMP)
-    ON CONFLICT ("code") DO UPDATE
-      SET "billable_service_id" = COALESCE("exam_definition"."billable_service_id",
-                                           EXCLUDED."billable_service_id"),
-          -- ORD-004, ORD-133. The code of the official tariff; a clinic that
-          -- pointed it elsewhere is respected.
-          "tariff_code" = COALESCE("exam_definition"."tariff_code",
-                                   EXCLUDED."tariff_code"),
-          "updated_at" = CURRENT_TIMESTAMP
+            ${exam.turnaroundHours}, ${billableServiceId}::uuid, CURRENT_TIMESTAMP)
+    ON CONFLICT ("code") DO UPDATE SET "updated_at" = CURRENT_TIMESTAMP
     RETURNING "id"`;
 
   return rows[0]!.id;
@@ -1617,6 +1617,15 @@ export async function seedBilling(prisma: PrismaClient): Promise<void> {
         if (!serviceId) {
           throw new Error(
             `El examen ${exam.code} se cobra como ${exam.billableServiceCode}, que no está en el catálogo`,
+          );
+        }
+
+        // ORD-163. The exam is named by its service: a seed that drifted would
+        // give the exam another name than the one written here.
+        const seeded = SERVICES.find((each) => each.code === exam.billableServiceCode); // prettier-ignore
+        if (seeded?.name !== exam.name) {
+          throw new Error(
+            `El examen ${exam.code} se llama «${exam.name}» y su prestación «${seeded?.name}»`,
           );
         }
 

@@ -18,6 +18,10 @@ import {
   CriticalReadBackRequiredError,
   ExamCategoryMismatchError,
   ExamNotOrderableError,
+  ExamCodeDuplicateError,
+  ExamServiceCategoryNotFoundError,
+  ExamServiceTakenError,
+  ExamTaxRateNotFoundError,
   OrderEncounterNotFoundError,
   OrderDraftOfAnotherPractitionerError,
   OrderNotDiscardedError,
@@ -85,6 +89,10 @@ const EVERY_ERROR: readonly DomainError[] = [
   new CriticalNoticeNotFoundError(),
   new ReportIssuedInFutureError(),
   new ReportCorrectionIncompleteError(['Glucosa en ayunas']),
+  new ExamServiceTakenError(),
+  new ExamCodeDuplicateError(),
+  new ExamServiceCategoryNotFoundError(),
+  new ExamTaxRateNotFoundError(),
 ];
 
 describe('el contrato de errores de las órdenes', () => {
@@ -122,6 +130,17 @@ describe('el contrato de errores de las órdenes', () => {
     const order = new OrderNotFoundError();
     expect(order).toBeInstanceOf(NotFoundError);
     expect(order.userTitle).toContain('sedes a las que usted tiene acceso');
+  });
+
+  it('ORD-162 nombra el campo del cobro que falla, y una prestación ocupada es un conflicto', () => {
+    expect(new ExamServiceTakenError()).toBeInstanceOf(ConflictError);
+    expect(new ExamServiceTakenError().fieldErrors?.[0]?.field).toBe('billableServiceId'); // prettier-ignore
+    expect(new ExamServiceCategoryNotFoundError()).toBeInstanceOf(
+      ValidationError,
+    );
+    expect(new ExamServiceCategoryNotFoundError().fieldErrors?.[0]?.field).toBe('categoryId'); // prettier-ignore
+    expect(new ExamTaxRateNotFoundError().fieldErrors?.[0]?.field).toBe('taxRateId'); // prettier-ignore
+    expect(new ExamServiceTakenError().userTitle).toContain('otro examen');
   });
 
   it('ORD-003 rechaza la orden entera y señala el campo de los exámenes', () => {

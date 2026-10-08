@@ -93,8 +93,9 @@ describe('the official tariff (ORD-133)', () => {
       orderOf(prisma, scene.encounter.id, scene.bh.id),
     ).resolves.toMatchObject({ status: 'DRAFT' });
 
-    await prisma.examDefinition.update({
-      where: { id: scene.glucose.id },
+    await prisma.billableService.update({
+      // ORD-163. The tariff code is the exam's service's.
+      where: { id: scene.glucose.billableServiceId },
       data: { tariffCode: '360009' },
     });
     const order = await orderOf(prisma, scene.encounter.id, scene.glucose.id);
@@ -114,8 +115,9 @@ describe('the official tariff (ORD-133)', () => {
       allowPastCutover: true,
     });
 
-    await prisma.examDefinition.update({
-      where: { id: scene.glucose.id },
+    await prisma.billableService.update({
+      // ORD-163. The tariff code is the exam's service's.
+      where: { id: scene.glucose.billableServiceId },
       data: { tariffCode: 'EX-NADIE-LO-USA' },
     });
 

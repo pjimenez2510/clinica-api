@@ -80,7 +80,7 @@ function build(overrides: Record<string, unknown> = {}) {
     findEncounterActs: vi.fn().mockResolvedValue({
       encounterId: 'encounter-1',
       siteId: SITE,
-      specialtyId: 'specialty-1',
+      serviceTypeId: 'service-type-1',
       visitSequence: 'SUBSEQUENT',
     }),
     ...overrides,
@@ -219,10 +219,10 @@ describe('BI-203 la consulta se re-tarifa al corregir primera vez o subsecuente'
 
     await service.repriceConsultation(reprice);
 
-    expect(mocks.findConsultationService).toHaveBeenCalledWith({
-      specialtyId: 'specialty-1',
-      visitSequence: 'SUBSEQUENT',
-    });
+    // BI-158 (D-179.3). By the type of the appointment, not by the sequence.
+    expect(mocks.findConsultationService).toHaveBeenCalledWith(
+      'service-type-1',
+    );
     expect(mocks.editCharge).toHaveBeenCalledWith(
       expect.objectContaining({
         chargeId: 'charge-1',

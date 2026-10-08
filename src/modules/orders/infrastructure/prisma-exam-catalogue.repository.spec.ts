@@ -38,8 +38,8 @@ const analyteRow = (overrides: Record<string, unknown> = {}) => ({
 const examRow = (analyte: Record<string, unknown>, isReflex = false) => ({
   id: 'exam-1',
   code: 'EX-BH',
-  tariffCode: 'EX-BH',
-  name: 'Biometría hemática completa',
+  // ORD-163. Name and tariff code are the service's.
+  billableService: { name: 'Biometría hemática completa', tariffCode: 'EX-BH' },
   form010Section: 'HEMATOLOGÍA',
   specimenType: 'Sangre total con EDTA',
   patientPreparation: 'No requiere ayuno.',

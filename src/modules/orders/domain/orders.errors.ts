@@ -863,6 +863,77 @@ export class ExamServiceNotFoundError extends NotFoundError {
 }
 
 /**
+ * ORD-103, ORD-162. Another exam already carries this code. The same answer
+ * `exam_definition_code_unique` gives (orders.constraints.ts): since the exam
+ * is born with its service, the adapter asks before writing the service, or
+ * the clash would be reported as the SERVICE's code.
+ */
+export class ExamCodeDuplicateError extends ConflictError {
+  readonly code = 'EXAM_CODE_DUPLICATE';
+  override readonly userTitle = 'Ya hay un examen con ese código';
+
+  constructor() {
+    super('Exam code already exists', {}, [
+      {
+        field: 'code',
+        code: 'EXAM_CODE_DUPLICATE',
+        message: 'Ya hay un examen con ese código',
+      },
+    ]);
+  }
+}
+
+/** ORD-162, ORD-163. The chosen service already charges another exam. */
+export class ExamServiceTakenError extends ConflictError {
+  readonly code = 'EXAM_SERVICE_TAKEN';
+  override readonly userTitle =
+    'Esa prestación ya cobra otro examen. Cree la suya con el examen';
+
+  constructor() {
+    super('Billable service already charges another exam', {}, [
+      {
+        field: 'billableServiceId',
+        code: 'EXAM_SERVICE_TAKEN',
+        message: 'Esa prestación ya cobra otro examen',
+      },
+    ]);
+  }
+}
+
+/** ORD-162. The category of the new service is unknown or retired. */
+export class ExamServiceCategoryNotFoundError extends ValidationError {
+  readonly code = 'EXAM_SERVICE_CATEGORY_NOT_FOUND';
+  override readonly userTitle =
+    'Esa categoría no existe o está desactivada. Elíjala de la lista';
+
+  constructor() {
+    super('Service category not found or inactive', {}, [
+      {
+        field: 'categoryId',
+        code: 'EXAM_SERVICE_CATEGORY_NOT_FOUND',
+        message: 'Elija la categoría de la lista',
+      },
+    ]);
+  }
+}
+
+/** ORD-162. The tax rate of the new service is unknown. */
+export class ExamTaxRateNotFoundError extends ValidationError {
+  readonly code = 'EXAM_TAX_RATE_NOT_FOUND';
+  override readonly userTitle = 'Ese IVA no existe. Elíjalo de la lista';
+
+  constructor() {
+    super('Tax rate not found', {}, [
+      {
+        field: 'taxRateId',
+        code: 'EXAM_TAX_RATE_NOT_FOUND',
+        message: 'Elija el IVA de la lista',
+      },
+    ]);
+  }
+}
+
+/**
  * ORD-140. An order already asked for the exam, and its line froze this code
  * (ORD-002): the paper report cites it.
  */

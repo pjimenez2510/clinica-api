@@ -5,6 +5,7 @@ import type {
 } from './analyte';
 import type { ExamDefinitionView } from './exam-catalogue.repository';
 import type { ServiceOrderCategory } from './service-order';
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 
 /**
  * The exam catalogue, WRITTEN (ORD-103 to ORD-111).
@@ -34,7 +35,8 @@ export interface ExamServiceView {
 export interface AdminExamView extends ExamDefinitionView {
   active: boolean;
   externalLabCode: string | null;
-  billableService: ExamServiceView | null;
+  /** ORD-163. Always one: the exam IS its service. */
+  billableService: ExamServiceView;
 }
 
 /** ORD-104. One analyte, with the exams that yield it. */
@@ -45,7 +47,10 @@ export interface AdminAnalyteView extends AnalyteDefinition {
   usedBy: readonly { id: string; code: string; name: string }[];
 }
 
-/** ORD-103. What an exam is written with, all but its immutable code. */
+/**
+ * ORD-103. What an exam is written with, all but its immutable code.
+ * `name` and `tariffCode` are written ON ITS SERVICE (ORD-163).
+ */
 export interface ExamWrite {
   name: string;
   category: ServiceOrderCategory;
@@ -60,7 +65,26 @@ export interface ExamWrite {
   externalLabName: string | null;
   externalLabCode: string | null;
   tariffCode: string | null;
-  billableServiceId: string | null;
+  active: boolean;
+}
+
+/**
+ * ORD-162. How a new exam is charged: a service born with it, or one that
+ * already exists and charges no other exam.
+ */
+export type ExamBilling =
+  | {
+      kind: 'NEW';
+      categoryId: string;
+      taxRateId: string;
+      /** Self-pay price from today (decimal text), or none. */
+      selfPayAmount: string | null;
+    }
+  | { kind: 'EXISTING'; billableServiceId: string };
+
+/** ORD-162. A category of the clinic's catalogue, as the check needs it. */
+export interface ServiceCategoryView {
+  kind: string;
   active: boolean;
 }
 
@@ -85,9 +109,25 @@ export interface ExamAdministrationRepository {
   /** ORD-103. Every exam, active or not, with structure, ranges and service. */
   exams(): Promise<AdminExamView[]>;
   exam(id: string): Promise<AdminExamView | undefined>;
-  /** `EXAM_CODE_DUPLICATE` comes from `exam_definition_code_unique`. */
-  createExam(code: string, exam: ExamWrite): Promise<AdminExamView>;
-  /** Writes only what changed: two tabs saving at once do not undo each other. */
+  /**
+   * ORD-162, ORD-163. The exam and, for a NEW billing, its service and first
+   * self-pay price from `today` — one transaction. With an EXISTING service
+   * the exam takes the service's name and tariff code; the service is not
+   * rewritten. `EXAM_CODE_DUPLICATE` comes from
+   * `exam_definition_code_unique`, `BILLABLE_SERVICE_CODE_DUPLICATE` from
+   * `billable_service_code_unique`, `EXAM_SERVICE_TAKEN` from
+   * `exam_definition_one_per_service`.
+   */
+  createExam(
+    code: string,
+    exam: ExamWrite,
+    billing: ExamBilling,
+    today: ClinicalDate,
+  ): Promise<AdminExamView>;
+  /**
+   * Writes only what changed: two tabs saving at once do not undo each other.
+   * `name` and `tariffCode` go to the exam's service, in the same transaction.
+   */
   updateExam(
     id: string,
     patch: Partial<ExamWrite> & { code?: string },
@@ -119,6 +159,15 @@ export interface ExamAdministrationRepository {
 
   /** ORD-108. The service by id, `undefined` when there is none. */
   service(id: string): Promise<ExamServiceView | undefined>;
+
+  /** ORD-162. Whether an exam is already charged with this service. */
+  serviceIsTaken(serviceId: string): Promise<boolean>;
+
+  /** ORD-162. The category by id, `undefined` when there is none. */
+  serviceCategory(id: string): Promise<ServiceCategoryView | undefined>;
+
+  /** ORD-162. Whether the tax rate exists. */
+  taxRateExists(id: string): Promise<boolean>;
 
   analytes(): Promise<AdminAnalyteView[]>;
   analyte(id: string): Promise<AdminAnalyteView | undefined>;

@@ -5,6 +5,7 @@ import {
   type AccessAuditRecorder,
   type AuditAction,
 } from '../../../shared/audit/access-audit.port';
+import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import {
   ServiceTypeNotFoundError,
   SpecialtyNotFoundError,
@@ -145,10 +146,20 @@ export class SpecialtiesService {
     return this.repository.listServiceTypes(specialtyId, includeInactive);
   }
 
-  /** SP-020. */
+  /**
+   * SP-020, SP-030. The type and the service it is charged with, born
+   * together; the price, if any, from today in Ecuador. Who may set a price is
+   * the controller's question (`billing:price-manage`).
+   */
   async createServiceType(
-    input: { specialtyId: string; name: string; durationMinutes: number },
+    input: {
+      specialtyId: string;
+      name: string;
+      durationMinutes: number;
+      price: string | null;
+    },
     requester: Requester,
+    now: Date = new Date(),
   ): Promise<ServiceTypeView> {
     // The specialty is named by the URL, so a wrong id is a missing resource;
     // letting the FK answer would dress a 404 up as invalid data.
@@ -157,11 +168,40 @@ export class SpecialtiesService {
 
     await this.requireSlotMultiple(input.durationMinutes);
 
-    const created = await this.repository.createServiceType(input);
+    const created = await this.repository.createServiceType({
+      ...input,
+      today: clinicalDateOf(now),
+    });
     await this.recordMutation('CREATE', created.id, requester, {
       after: serviceTypeSnapshot(created),
     });
+    await this.recordServiceBorn(created, requester);
     return created;
+  }
+
+  /**
+   * BI-231 (D-179.3). The service born with a type is billing's row: who set
+   * its first price, and that its rate is the unreviewed health default
+   * (D-182), is written in billing's own trail.
+   */
+  private async recordServiceBorn(
+    type: ServiceTypeView,
+    requester: Requester,
+  ): Promise<void> {
+    if (type.billableServiceId === null) return;
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'billable_service',
+      resourceId: type.billableServiceId,
+      action: 'CREATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+      after: {
+        serviceTypeId: type.id,
+        selfPayAmount: type.price,
+        taxRate: 'SRI 0, sin revisar (D-182)',
+      },
+    });
   }
 
   /**
@@ -183,8 +223,16 @@ export class SpecialtiesService {
     const current = await this.repository.findServiceType(id);
     if (!current) throw new ServiceTypeNotFoundError();
 
-    const updated = await this.repository.updateServiceType(id, patch);
+    const updated = await this.repository.updateServiceType(
+      id,
+      patch,
+      clinicalDateOf(new Date()),
+    );
     if (!updated) throw new ServiceTypeNotFoundError();
+    // SP-030. A type that had no service (one of before D-179) got its own.
+    if (current.billableServiceId === null) {
+      await this.recordServiceBorn(updated, requester);
+    }
 
     await this.recordMutation('UPDATE', updated.id, requester, {
       before: serviceTypeSnapshot(current),
@@ -271,5 +319,6 @@ function serviceTypeSnapshot(view: ServiceTypeView): object {
     name: view.name,
     durationMinutes: view.durationMinutes,
     active: view.active,
+    billableServiceId: view.billableServiceId,
   };
 }

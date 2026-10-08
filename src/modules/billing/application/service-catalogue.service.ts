@@ -27,6 +27,7 @@ import {
   TaxRateNotFoundError,
   TaxRateRequiredError,
   TaxReviewRateChangedError,
+  ServiceNamedElsewhereError,
 } from '../domain/billing.errors';
 
 import {
@@ -156,32 +157,37 @@ export class ServiceCatalogueService {
     requester: Requester,
   ): Promise<BillableServiceView> {
     const current = await this.requireService(serviceId);
+    // ORD-163, SP-030 (D-179). What an exam or a service type names is
+    // corrected there, once: never here behind its back.
+    const renames = update.name !== undefined && update.name !== current.name;
+    const retariffs =
+      update.tariffCode !== undefined &&
+      update.tariffCode !== current.tariffCode;
+    if (renames || retariffs) {
+      const owned =
+        current.serviceTypes.length > 0 ||
+        (await this.catalogue.listExamsOfService(serviceId)).length > 0;
+      if (owned) throw new ServiceNamedElsewhereError();
+    }
     if (update.taxRateId !== undefined) {
       if (!update.taxRateId) throw new TaxRateRequiredError();
       await this.requireTaxRate(update.taxRateId);
     }
     // BI-187 is checked only when the update touches what it guards — the
-    // category or the consultation tie. A service already out of step (a
+    // category. A service already out of step (a
     // migrated «Consulta externa» left as OTHER) can still be renamed,
     // re-rated or deactivated: correcting is always possible.
     const movesCategory =
       update.categoryId !== undefined &&
       update.categoryId !== current.category.id;
-    if (movesCategory || update.consultation !== undefined) {
-      const category = movesCategory
-        ? await this.requireActiveCategory(update.categoryId!)
-        : current.category;
+    if (movesCategory) {
+      const category = await this.requireActiveCategory(update.categoryId!);
       assertKindAdmits(category.kind, {
-        consultations:
-          update.consultation === undefined
-            ? Number(current.specialtyId !== null)
-            : Number(update.consultation !== null),
+        consultations: current.serviceTypes.length,
         procedures: Number(current.procedureConcept !== null),
-        examCategories: movesCategory
-          ? (await this.catalogue.listExamsOfService(serviceId)).map(
-              (exam) => exam.category,
-            )
-          : [],
+        examCategories: (
+          await this.catalogue.listExamsOfService(serviceId)
+        ).map((exam) => exam.category),
       });
     }
 

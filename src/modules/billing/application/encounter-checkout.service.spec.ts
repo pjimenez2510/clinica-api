@@ -47,7 +47,7 @@ const acts = (overrides: Partial<EncounterActs> = {}): EncounterActs => ({
   status: 'DISCHARGED',
   serviceDate: VISIT_DATE,
   visitSequence: 'FIRST_TIME',
-  specialtyId: 'specialty-dermatology',
+  serviceTypeId: 'service-type-dermatology',
   procedures: [],
   exams: [],
   clinicallyAttended: true,
