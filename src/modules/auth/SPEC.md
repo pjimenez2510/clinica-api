@@ -1029,6 +1029,15 @@ enlace que no sirve y con un correo que no sale.
   > MISMOS guardas que cualquier petición: no hay una segunda puerta.
   > `record:read` porque el único aviso de este paso es el de los críticos
   > (ORD-164); el paso 2 (agenda, tableros) tendrá que ampliar la ruta.
+  >
+  > **Afinado el 08-10-2026** (`feat/avisos-en-vivo-pantallas`): donde dice
+  > «`record:read` en alguna sede» se lee «**el permiso de alguno de los tipos
+  > de aviso** en alguna sede» —`record:read`, `agenda:read`,
+  > `agenda:board:public` o `billing:read`, los que declara
+  > `LIVE_EVENT_PERMISSION`—, comprobado al abrir y en cada latido. Recepción,
+  > caja y la pantalla de sala no tienen `record:read`. Sin ninguno, sigue el
+  > `PERMISSION_DENIED`. La ruta lo declara con `@RequirePermission` en su
+  > forma «cualquiera de».
 - **AU-055** — Un aviso DEBERÁ llevar sólo **qué cambió**: su tipo y la sede
   donde cambió; NO DEBERÁ llevar ningún dato clínico ni personal —ni paciente,
   ni valor, ni analito, ni nombre—. La pantalla que lo recibe vuelve a pedir lo

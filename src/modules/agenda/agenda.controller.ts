@@ -20,10 +20,12 @@ import {
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import type { Permission } from '../../shared/authorisation/permission.catalogue';
+import { AnnouncesChange } from '../../shared/events/announces-change';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { toEntryResponse } from './agenda-entry.response';
 import { AgendaService } from './application/agenda.service';
+import { EmergencyAlertService } from './application/emergency-alert.service';
 import type { AvailabilityView } from './domain/slot-availability';
 import {
   AgendaEntryDto,
@@ -77,10 +79,15 @@ import {
  * check. The URLs of the two existing routes are unchanged.
  */
 @Controller({ path: 'agenda/sites/:siteId', version: '1' })
+// AG-179. Every write here changes the site's day: the agenda and the boards,
+// and what the waiting room projects.
+@AnnouncesChange('agenda', 'waiting-room')
 export class AgendaController {
   constructor(
     private readonly agenda: AgendaService,
     private readonly currentUser: CurrentUserService,
+    /** AG-182. The emergency notice an arrival raised, said to its recipient. */
+    private readonly emergencyAlerts: EmergencyAlertService,
   ) {}
 
   /**
@@ -406,6 +413,11 @@ export class AgendaController {
       { userId: this.currentUser.requireUserId() },
     );
 
+    // AG-182. An arrival called an emergency raised its notice (AG-129).
+    if (dto.to === 'CHECKED_IN' && dto.emergency === true) {
+      await this.emergencyAlerts.announcePendingOf(entryId);
+    }
+
     // AG-118, AG-119: the delay is on the entry and the warning beside it.
     return { ...toEntryResponse(outcome.entry), warnings: outcome.warnings };
   }
@@ -518,6 +530,10 @@ export class AgendaController {
       },
       { userId: this.currentUser.requireUserId() },
     );
+    // AG-182. Corrected to an emergency, it may have raised a notice.
+    if (dto.emergency === true) {
+      await this.emergencyAlerts.announcePendingOf(entryId);
+    }
     return toEntryResponse(entry);
   }
 

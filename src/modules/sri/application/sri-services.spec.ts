@@ -1,4 +1,6 @@
 import type { PinoLogger } from 'nestjs-pino';
+import type { LiveEvent } from '../../../shared/events/live-event';
+import { InProcessLiveEventBus } from '../../../shared/events/live-event-bus';
 import { describe, expect, it, vi } from 'vitest';
 
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
@@ -225,6 +227,10 @@ function fakes() {
     environment: '1',
     softwareProviderRuc: null,
   };
+  // SRI-092. What the services said, to assert on.
+  const liveEvents = new InProcessLiveEventBus();
+  const heard: LiveEvent[] = [];
+  liveEvents.subscribe((event) => heard.push(event));
   const preparation = new VoucherPreparationService(
     vouchers,
     certificates,
@@ -235,8 +241,11 @@ function fakes() {
     settings,
     () => NOW,
     logger,
+    liveEvents,
   );
   return {
+    liveEvents,
+    heard,
     vouchers,
     certificates,
     cipher,
@@ -331,6 +340,23 @@ describe('SRI-020 a SRI-031 la firma', () => {
     expect(vouchers.markSigned).toHaveBeenCalled();
     expect(queue.schedule).toHaveBeenCalledWith('SEND', expect.anything(), 0);
     expect(signed.status).toBe('SIGNED');
+  });
+
+  it('SRI-092 firmar y dejar esperando avisan al monitor con la sede, y nada más', async () => {
+    const signedOne = fakes();
+    await signedOne.preparation.sign(voucher());
+    expect(signedOne.heard).toEqual([
+      { kind: 'sri', siteId: voucher().siteId },
+    ]);
+
+    const blockedOne = fakes();
+    blockedOne.vouchers.preparationSource.mockResolvedValue(
+      source({ issuer: { ...source().issuer, headOfficeAddress: null } }),
+    );
+    await blockedOne.preparation.sign(voucher());
+    expect(blockedOne.heard).toEqual([
+      { kind: 'sri', siteId: voucher().siteId },
+    ]);
   });
 
   it('SRI-019 una sede corregida tras emitir no cambia lo que el comprobante dice de sí mismo', async () => {
@@ -498,6 +524,7 @@ describe('SRI-057 el despacho es idempotente', () => {
         f.settings,
         f.preparation,
         logger,
+        f.liveEvents,
       ),
     };
   }
@@ -529,6 +556,27 @@ describe('SRI-057 el despacho es idempotente', () => {
     f.vouchers.recordAttempt.mockResolvedValue(false);
     await dispatchWith(f).dispatch.run('SEND', 'voucher-1');
     expect(f.queue.schedule).not.toHaveBeenCalled();
+  });
+
+  it('SRI-092 un intento aplicado avisa al monitor de la sede del comprobante; uno que otro trabajo ganó, no', async () => {
+    const f = fakes();
+    f.vouchers.findById.mockResolvedValue(
+      voucher({ status: 'RECEIVED', attemptCount: 1 }),
+    );
+    f.web.authorise.mockResolvedValue({ kind: 'PENDING' });
+    f.vouchers.recordAttempt.mockResolvedValue(true);
+    await dispatchWith(f).dispatch.run('AUTHORISE', 'voucher-1');
+    expect(f.heard).toEqual([{ kind: 'sri', siteId: voucher().siteId }]);
+
+    // Control: the same path, with somebody else first.
+    const g = fakes();
+    g.vouchers.findById.mockResolvedValue(
+      voucher({ status: 'SIGNED', signedXml: '<x/>' }),
+    );
+    g.web.receive.mockResolvedValue({ kind: 'RECIBIDA', messages: [] });
+    g.vouchers.recordAttempt.mockResolvedValue(false);
+    await dispatchWith(g).dispatch.run('SEND', 'voucher-1');
+    expect(g.heard).toEqual([]);
   });
 
   it('SRI-049 una autorización pendiente programa otra consulta con la espera creciente', async () => {
@@ -667,6 +715,7 @@ describe('SRI-089 la entrega de la nota de crédito autorizada', () => {
       f.settings,
       f.preparation,
       logger,
+      f.liveEvents,
     );
     return { f, mailer, rides, dispatch };
   }
@@ -802,6 +851,7 @@ describe('SRI-091 el correo que tres días después sigue fallando', () => {
       f.settings,
       f.preparation,
       logger,
+      f.liveEvents,
     );
     return { f, mailer, dispatch };
   }

@@ -52,6 +52,7 @@ import { useDatabase } from './setup/database';
 import { FakeMailer } from './setup/fake-mailer';
 import { createPatient, createSite, createUser } from './setup/fixtures';
 import { giveSiteAnIssuer } from './setup/sri-fixtures';
+import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -144,6 +145,7 @@ beforeEach(async () => {
     settings,
     NOW,
     silentLogger,
+    new InProcessLiveEventBus(),
   );
   dispatchAt = (clock) =>
     new VoucherDispatchService(
@@ -167,6 +169,7 @@ beforeEach(async () => {
       settings,
       preparation,
       silentLogger,
+      new InProcessLiveEventBus(),
     );
   dispatch = dispatchAt(NOW);
   certificates = new SigningCertificateService(

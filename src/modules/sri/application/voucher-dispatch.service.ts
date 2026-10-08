@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
+import { LiveEventBus } from '../../../shared/events/live-event-bus';
+
 import {
   RIDE_ISSUER,
   type RideIssuer,
@@ -12,6 +14,7 @@ import {
   type AttemptRecord,
   type ElectronicVoucherRepository,
   type VoucherQueue,
+  type DeliveryStatus,
   type VoucherRecord,
 } from '../domain/electronic-voucher.repository';
 import {
@@ -58,8 +61,25 @@ export class VoucherDispatchService {
     @Inject(SRI_SETTINGS) private readonly settings: SriSettings,
     private readonly preparation: VoucherPreparationService,
     private readonly logger: PinoLogger,
+    /** SRI-092. Where «a voucher of this site changed» is said. */
+    private readonly liveEvents: LiveEventBus,
   ) {
     this.logger.setContext(VoucherDispatchService.name);
+  }
+
+  /** SRI-092. After the write, with the voucher's site and nothing else. */
+  private announce(voucher: VoucherRecord): void {
+    this.liveEvents.publish({ kind: 'sri', siteId: voucher.siteId });
+  }
+
+  /** SRI-074, SRI-091. The delivery's outcome, said to the monitor. */
+  private async recordDelivery(
+    voucher: VoucherRecord,
+    status: DeliveryStatus,
+    at: Date,
+  ): Promise<void> {
+    await this.vouchers.recordDelivery(voucher.id, status, at);
+    this.announce(voucher);
   }
 
   async run(step: QueueStep, voucherId: string): Promise<void> {
@@ -158,7 +178,7 @@ export class VoucherDispatchService {
     const context = await this.vouchers.deliveryContext(voucher.id);
     if (!context) return;
     if (!context.buyerEmail) {
-      await this.vouchers.recordDelivery(voucher.id, 'NO_EMAIL', this.clock());
+      await this.recordDelivery(voucher, 'NO_EMAIL', this.clock());
       return;
     }
 
@@ -211,7 +231,7 @@ export class VoucherDispatchService {
           },
           'the authorised voucher could not be e-mailed for 72 hours; no more retries',
         );
-        await this.vouchers.recordDelivery(voucher.id, 'UNDELIVERABLE', now);
+        await this.recordDelivery(voucher, 'UNDELIVERABLE', now);
         return;
       }
       this.logger.warn(
@@ -222,7 +242,7 @@ export class VoucherDispatchService {
         },
         'the authorised voucher could not be e-mailed; it will be retried',
       );
-      await this.vouchers.recordDelivery(voucher.id, 'FAILED', now);
+      await this.recordDelivery(voucher, 'FAILED', now);
       await this.queue.schedule(
         'DELIVER',
         voucher,
@@ -232,7 +252,7 @@ export class VoucherDispatchService {
     }
     // SRI-075. Outside the try: the e-mail LEFT. A failure to note it must
     // not be taken for a failed e-mail and send it again.
-    await this.vouchers.recordDelivery(voucher.id, 'SENT', this.clock());
+    await this.recordDelivery(voucher, 'SENT', this.clock());
   }
 
   /**
@@ -318,8 +338,11 @@ export class VoucherDispatchService {
       authorisation,
     });
 
-    // SRI-057. Somebody else moved it first: their job carries on, not ours.
-    if (!applied || !transition.next) return;
+    // SRI-057. Somebody else moved it first: their job carries on, not ours,
+    // and they are the ones who say so (SRI-092).
+    if (!applied) return;
+    this.announce(voucher);
+    if (!transition.next) return;
     await this.queue.schedule(
       transition.next.step,
       voucher,

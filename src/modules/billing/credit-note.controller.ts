@@ -17,6 +17,7 @@ import {
 } from '@nestjs/swagger';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { AnnouncesChange } from '../../shared/events/announces-change';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -49,6 +50,8 @@ export class CreditNoteController {
 
   /** BI-208. «Corregir». */
   @Post('invoices/:invoiceId/credit-notes')
+  // BI-238, SRI-092. The invoice changes, and a voucher is born.
+  @AnnouncesChange('billing', 'sri')
   @RequirePermission('billing:credit-note', 'param:siteId')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({

@@ -46,6 +46,8 @@ import { builtInTemplate, type NoteTemplate } from '../domain/note-template';
 import type { NoteTemplateRepository } from '../domain/note-template.repository';
 import { BackgroundSnapshotReader } from './background-snapshot.reader';
 import { ClinicalNoteService } from './clinical-note.service';
+import type { LiveEvent } from '../../../shared/events/live-event';
+import { InProcessLiveEventBus } from '../../../shared/events/live-event-bus';
 import type { ActiveAllergy } from '../../../shared/clinical/patient-allergy.port';
 import {
   BACKGROUND_SNAPSHOT_KEY,
@@ -232,8 +234,8 @@ class FakeEncounters {
   }
 
   /** EN-206. The chart the snapshot is read from. */
-  findById(): Promise<{ id: string; patientId: string }> {
-    return Promise.resolve({ id: ENCOUNTER, patientId: PATIENT });
+  findById(): Promise<{ id: string; patientId: string; siteId: string }> {
+    return Promise.resolve({ id: ENCOUNTER, patientId: PATIENT, siteId: SITE });
   }
 }
 
@@ -287,8 +289,12 @@ describe('los casos de uso de la nota clínica', () => {
   let templates: FakeTemplates;
   let audit: AccessAuditRecorder & { entries: AccessAuditEntry[] };
   let service: ClinicalNoteService;
+  let heard: LiveEvent[];
 
   beforeEach(() => {
+    heard = [];
+    const liveEvents = new InProcessLiveEventBus();
+    liveEvents.subscribe((event) => heard.push(event));
     notes = new FakeNotes();
     encounters = new FakeEncounters();
     background = new FakeBackground();
@@ -323,6 +329,7 @@ describe('los casos de uso de la nota clínica', () => {
       ),
       templates as unknown as NoteTemplateRepository,
       logger,
+      liveEvents,
     );
   });
 
@@ -675,6 +682,30 @@ describe('los casos de uso de la nota clínica', () => {
 
     expect(notes.signature?.dischargesTheEncounter).toBe(true);
     expect(notes.signature?.dischargeCondition).toBe('ALIVE');
+  });
+
+  it('AG-179, BI-238 firmar el alta avisa a la agenda, a la sala y a caja de la sede de la atención', async () => {
+    await service.sign(
+      { encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' },
+      requester,
+    );
+
+    expect(heard).toEqual([
+      { kind: 'agenda', siteId: SITE },
+      { kind: 'waiting-room', siteId: SITE },
+      { kind: 'billing', siteId: SITE },
+    ]);
+  });
+
+  it('AG-179 abrir la nota avisa al tablero, y una firma rechazada no avisa', async () => {
+    await service.draft(draftRequest, requester);
+    expect(heard.map((event) => event.kind)).toEqual(['agenda', 'waiting-room']); // prettier-ignore
+
+    heard.length = 0;
+    await expect(
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1' }, requester),
+    ).rejects.toBeInstanceOf(DischargeConditionRequiredError);
+    expect(heard).toEqual([]);
   });
 
   it('EN-009 rechaza firmar la consulta externa sin condición de egreso', async () => {
