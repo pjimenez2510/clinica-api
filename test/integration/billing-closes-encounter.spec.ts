@@ -86,7 +86,7 @@ beforeEach(async () => {
  * An attention of an appointment, with the patient in consultation and, when
  * asked, the discharge already given (`DISCHARGED`, condition stated).
  */
-async function anAttention(discharged: boolean) {
+async function anAttention(discharged: boolean, hour = 9) {
   const { prisma } = clinic;
   const entry = await prisma.agendaEntry.create({
     data: {
@@ -97,7 +97,7 @@ async function anAttention(discharged: boolean) {
       patientId: clinic.patientId,
       subjectStatus: 'RECEIVING_CARE',
       subjectStatusAt: new Date(),
-      ...hourSlot(9),
+      ...hourSlot(hour),
     },
   });
   const encounter = await createEncounter(prisma, {
@@ -446,5 +446,137 @@ describe('BI-237 la cuenta sin nada facturado se cierra con el motivo por el que
     await expect(
       settle(account.id, new Date(closedAt.getTime() + 2 * MINUTE)),
     ).rejects.toThrow(/patient_account_settled_states_why_unpaid/);
+  });
+});
+
+/**
+ * EN-241, D-186. The accounts caja settled BEFORE D-184 left their attention
+ * discharged for ever: the trigger only acts on OPEN → SETTLED. The migration
+ * closes them once, through `encounter_close_settled_backlog()`, with the
+ * same function as caja's closing. The state is reproduced as it happened:
+ * the account settled while the attention was still open, the discharge
+ * after — so no trigger closed anything.
+ */
+describe('EN-241 las atenciones de alta con la cuenta liquidada antes de D-184', () => {
+  async function discharge(encounterId: string, startedAt: Date) {
+    await clinic.prisma.encounter.update({
+      where: { id: encounterId },
+      data: {
+        status: 'DISCHARGED',
+        endedAt: new Date(startedAt.getTime() + 20 * MINUTE),
+        dischargeCondition: 'ALIVE',
+      },
+    });
+  }
+
+  /** Each attention at its own hour: one practitioner, no overlap. */
+  let hour = 7;
+
+  /** Settled with something invoiced, then discharged: closable. */
+  async function settledThenDischarged() {
+    const { encounter, entry } = await anAttention(false, hour++);
+    const account = await anAccount(encounter.id, true);
+    const closedAt = new Date(Date.now() - 5 * MINUTE);
+    await settle(account.id, closedAt);
+    await discharge(encounter.id, encounter.startedAt);
+    return { encounter, entry, account, closedAt };
+  }
+
+  /** Settled in zero with no reason, as before BI-237 asked for one. */
+  async function settledInZeroBeforeBi237() {
+    const { encounter, entry } = await anAttention(false, hour++);
+    const closedAt = new Date(Date.now() - 5 * MINUTE);
+    // An INSERT already settled: BI-237's trigger watches the UPDATE of
+    // status, which is how an account settled before it looks today.
+    await clinic.prisma.patientAccount.create({
+      data: {
+        patientId: clinic.patientId,
+        siteId: clinic.siteId,
+        encounterId: encounter.id,
+        payerId: clinic.payerId,
+        priceListId: clinic.priceListId,
+        status: 'SETTLED',
+        closedAt,
+        changedById: clinic.cashierId,
+        changedAt: closedAt,
+      },
+    });
+    await discharge(encounter.id, encounter.startedAt);
+    return { encounter, entry };
+  }
+
+  const backlog = async () => {
+    const [row] = await clinic.prisma.$queryRaw<{ closed: number }[]>`
+      SELECT encounter_close_settled_backlog() AS closed`;
+    return row!.closed;
+  };
+
+  it('EN-241 cierra la atención de alta con su cuenta facturada y liquidada, con quién y cuándo cerró caja, el paciente fuera y su fila en el historial', async () => {
+    const { encounter, entry, closedAt } = await settledThenDischarged();
+    expect((await encounterOf(encounter.id)).status).toBe('DISCHARGED');
+
+    expect(await backlog()).toBe(1);
+
+    expect(await encounterOf(encounter.id)).toMatchObject({
+      status: 'COMPLETED',
+      closedAt,
+      closedByUserId: clinic.cashierId,
+      closedById: null,
+      dischargeCondition: 'ALIVE',
+    });
+    expect(await subjectOf(entry.id)).toEqual({
+      subjectStatus: 'DEPARTED',
+      subjectStatusAt: closedAt,
+    });
+    const [history] = await clinic.prisma.encounterStatusHistory.findMany({
+      where: { encounterId: encounter.id, toStatus: 'COMPLETED' },
+    });
+    expect(history).toMatchObject({
+      fact: 'ACCOUNT_CLOSED',
+      changedById: clinic.cashierId,
+      changedAt: closedAt,
+    });
+
+    // Once: called again it finds nothing to close.
+    expect(await backlog()).toBe(0);
+  });
+
+  it('EN-241 no cierra la de cuenta en cero sin motivo, la que tiene otra cuenta abierta, la de orden en borrador ni la que sigue abierta; cierra la buena a su lado', async () => {
+    const zero = await settledInZeroBeforeBi237();
+
+    const stillOpenAccount = await settledThenDischarged();
+    await anAccount(stillOpenAccount.encounter.id, false);
+
+    const withDraft = await settledThenDischarged();
+    await clinic.prisma.serviceOrder.create({
+      data: {
+        encounterId: withDraft.encounter.id,
+        siteId: clinic.siteId,
+        orderedById: clinic.practitionerId,
+        category: 'LABORATORY',
+      },
+    });
+
+    const { encounter: open } = await anAttention(false, hour++);
+    const openAccount = await anAccount(open.id, true);
+    await settle(openAccount.id, new Date());
+
+    // Positive control: the good one, next to them, does close.
+    const good = await settledThenDischarged();
+
+    expect(await backlog()).toBe(1);
+
+    expect((await encounterOf(good.encounter.id)).status).toBe('COMPLETED');
+    for (const id of [
+      zero.encounter.id,
+      stillOpenAccount.encounter.id,
+      withDraft.encounter.id,
+    ]) {
+      expect((await encounterOf(id)).status).toBe('DISCHARGED');
+    }
+    expect((await encounterOf(open.id)).status).toBe('OPEN');
+    expect((await subjectOf(zero.entry.id)).subjectStatus).toBe(
+      'RECEIVING_CARE',
+    );
   });
 });
