@@ -343,7 +343,7 @@ describe('la receta contra PostgreSQL', () => {
     expect(problem?.status).toBe(422);
   });
 
-  it('PR-110 la BASE admite una línea fuera del CNMB marcada y sin justificación, y rechaza la que no lleva la marca', async () => {
+  it('PR-009 PR-110 la BASE admite una línea fuera del CNMB marcada y sin justificación, y rechaza la que no lleva la marca', async () => {
     /**
      * `prescription_item_off_formulary`, relaxed by
      * `20261005060300_prescription_off_formulary_mark`: a line with no CNMB
