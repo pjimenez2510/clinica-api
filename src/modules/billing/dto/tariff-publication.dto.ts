@@ -16,10 +16,18 @@ const shownPriceSchema = z.object({
 });
 
 /**
+ * One line as published: the list price, its tax and the FINAL price with
+ * the tax included, which is the one the wall shows (LODC art. 9, D-192.1).
+ */
+const publishedPriceSchema = shownPriceSchema.extend({
+  finalAmount: z.string(),
+});
+
+/**
  * BI-110, BI-112. THE PUBLIC VIEW, AND EVERY KEY IN IT IS A DECISION. What was
  * published —version, the day it rules from, the clinic's name, and per line
- * the category, the name, the price and its tax— and nothing else: no id, no
- * code, no author, no payer, no list. A key added here is a key the whole
+ * the category, the name, the price, its tax and the final price— and nothing
+ * else: no id, no code, no author, no payer, no list. A key added here is a key the whole
  * internet reads; `billing-tariff-publication-http.spec.ts` lists them exactly.
  */
 const publicTariffSchema = z.object({
@@ -27,7 +35,7 @@ const publicTariffSchema = z.object({
   effectiveFrom: z.string(),
   establishmentName: z.string().nullable(),
   items: z.array(
-    shownPriceSchema.extend({
+    publishedPriceSchema.extend({
       categoryName: z.string(),
       name: z.string(),
     }),
@@ -49,7 +57,7 @@ const publicationSummarySchema = z.object({
 /** BI-113. One publication, as it was copied. */
 const publicationSchema = publicationSummarySchema.extend({
   items: z.array(
-    shownPriceSchema.extend({
+    publishedPriceSchema.extend({
       billableServiceId: z.uuid(),
       code: z.string(),
       name: z.string(),

@@ -137,7 +137,7 @@ export class PublicTariffController {
       items: publication.lines.map((line) => ({
         categoryName: line.categoryName,
         name: line.name,
-        ...shownPrice(line),
+        ...publishedPrice(line),
       })),
     };
   }
@@ -165,7 +165,7 @@ function toPublicationResponse(
       code: line.code,
       name: line.name,
       categoryName: line.categoryName,
-      ...shownPrice(line),
+      ...publishedPrice(line),
     })),
   };
 }
@@ -191,4 +191,9 @@ function shownPrice(price: Pick<TariffLine, 'amount' | 'taxPercentage'>) {
     amount: price.amount.toString(),
     taxPercentage: price.taxPercentage?.toString() ?? null,
   };
+}
+
+/** BI-110, BI-113. As published: with the final price the wall shows. */
+function publishedPrice(line: TariffLine) {
+  return { ...shownPrice(line), finalAmount: line.finalAmount.toString() };
 }

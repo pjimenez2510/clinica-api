@@ -1424,8 +1424,11 @@ es falsa, hay requisitos que cambian.
 > `effective_from date` —el día de la publicación en Ecuador—, `published_at`
 > con el reloj de la aplicación, `published_by`, `price_list_id` de la lista
 > particular de la que salió y `establishment_name` copiado; y
-> `tariff_publication_item` con el **código, el nombre, la categoría, el precio
-> y el % de IVA copiados**, no referenciados. La publicación es una foto: si
+> `tariff_publication_item` con el **código, el nombre, la categoría, el precio,
+> el % de IVA y el precio final copiados**, no referenciados (`final_amount`,
+> `20261009000000_tariff_publication_final_amount`: obligatorio en toda fila
+> nueva por `tariff_publication_item_final_amount_present`, nulo sólo en las
+> publicadas antes). La publicación es una foto: si
 > leyera `price`, cambiaría sola y BI-115 no podría existir. Las dos tablas son
 > de solo inserción por disparador (`trg_tariff_publication_immutable`).
 >
@@ -1436,12 +1439,20 @@ es falsa, hay requisitos que cambian.
 > `TARIFF_PUBLICATION_EMPTY`: un cartel vacío no informa nada verdadero.
 
 - **BI-110** — El sistema DEBERÁ publicar el tarifario de la clínica como una
-  vista accesible al público, con el nombre de cada prestación, su precio, la
-  versión de la publicación y su fecha de vigencia.
+  vista accesible al público, con el nombre de cada prestación, su precio final
+  con los impuestos incluidos, la versión de la publicación y su fecha de
+  vigencia; y DONDE la prestación grave IVA, DEBERÁ indicar junto al precio el
+  porcentaje que incluye.
   > **LOS art. 184**, que obliga a *«exhibir en sitios visibles para el público
   > las tarifas que se cobran»*. Es la obligación legal que se suele olvidar
   > porque no la pide ningún formulario: la pide un inspector, mirando la pared.
   > Un tarifario que solo existe dentro de la aplicación no la cumple.
+  > **El precio que se exhibe es el final (D-192.1).** La Ley Orgánica de
+  > Defensa del Consumidor, art. 9, y su Reglamento, art. 9, exigen informar el
+  > **valor final con impuestos** «por cualquier medio escrito, visible y
+  > legible, en el establecimiento». Un cartel con el precio sin IVA y el % al
+  > lado obliga a quien lo lee a hacer la cuenta, que es lo que la norma quiere
+  > evitar: una sola columna «Precio», y en lo gravado «incluye IVA 15 %».
 - **BI-111** — La vista pública DEBERÁ mostrar únicamente las prestaciones
   activas con precio vigente del pagador que representa al paciente que paga por
   sí mismo, y NO DEBERÁ mostrar ninguna otra lista de precios.
@@ -1457,14 +1468,21 @@ es falsa, hay requisitos que cambian.
   > una prueba de seguridad dirigida que compruebe que ningún parámetro la
   > desvía hacia otra lista. Es la única ruta pública del módulo y no va a haber
   > una segunda.
-- **BI-113** — CUANDO se publique el tarifario, el sistema DEBERÁ copiar los
-  precios a la publicación, DEBERÁ registrarle una versión, una fecha de
-  vigencia y su autor, y DEBERÁ conservar las publicaciones anteriores.
+- **BI-113** — CUANDO se publique el tarifario, el sistema DEBERÁ copiar a la
+  publicación el precio, el porcentaje de IVA y el precio final de cada
+  prestación, DEBERÁ registrarle una versión, una fecha de vigencia y su autor,
+  y DEBERÁ conservar las publicaciones anteriores.
   > Conservarlas no es historial por gusto: es la respuesta a «¿qué decía el
   > cartel el día que atendieron a mi madre?», que es exactamente la pregunta que
   > llega con un reclamo.
+  > **El precio final se copia, no se recalcula al leer**: es el precio más el
+  > IVA de una línea de cantidad uno sin descuento, redondeado al centavo con la
+  > misma función que la factura (`lineTax`), para que lo exhibido no dependa de
+  > un cambio futuro del cálculo. Las publicaciones anteriores a esta regla no
+  > lo llevan y se muestran calculándolo de lo que sí copiaron.
 - **BI-114** — El sistema DEBERÁ producir la publicación en un formato
-  imprimible que incluya la versión y la fecha de vigencia.
+  imprimible que incluya la versión, la fecha de vigencia y los precios finales
+  con impuestos incluidos.
   > La obligación es exhibir **en el sitio**. El PDF que se imprime y se cuelga
   > es la mitad que hace que esto sirva de algo.
 - **BI-115** — SI el precio vigente de alguna prestación publicada difiere del
