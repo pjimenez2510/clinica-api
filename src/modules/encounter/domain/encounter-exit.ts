@@ -13,12 +13,28 @@
  */
 
 import { isWritten } from '../../../shared/domain/written-text';
-import type { Closer } from './encounter-closure';
 import {
   EncounterCloserNotAuthorError,
   InvalidEncounterTransitionError,
 } from './encounter.errors';
 import type { EncounterStatus } from './encounter';
+
+/**
+ * Who is acting on somebody's attention, and with what authority (EN-147).
+ * Since D-184 the closure itself is caja's (EN-131); what keeps this shape is
+ * annulling and interrupting in the attending practitioner's name.
+ */
+export interface Closer {
+  /** The practitioner row of the caller, never their account id. */
+  practitionerId: string;
+  /**
+   * EN-147. Whether the caller holds `record:sign`, resolved by the service
+   * from the session: the domain does not know what a permission is.
+   */
+  canSignRecords: boolean;
+  /** EN-147. Why somebody else is acting. Trimmed by the caller. */
+  substituteReason?: string;
+}
 
 /**
  * EN-144, EN-147 applied to the exits. Returns the substitute's reason, or

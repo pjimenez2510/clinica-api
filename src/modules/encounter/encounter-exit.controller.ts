@@ -8,7 +8,12 @@ import {
   Post,
   Req,
 } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
@@ -150,6 +155,46 @@ export class EncounterExitController {
       this.requester(req, 'encounter:open'),
     );
     return toEncounterResponse(resumed);
+  }
+
+  /**
+   * EN-239 (D-184.4). «Salió y vuelve» from the board's row: reception holds
+   * `encounter:open` and not `record:read`, and the board does not publish
+   * the attention's id (EN-016), so the attention is found by its appointment.
+   * 204: the board needs nothing of the attention back.
+   */
+  @Post('for-entry/:entryId/hold')
+  @RequirePermission('encounter:open', 'query')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Desde el tablero: el paciente de la cita sale y volverá',
+  })
+  @ApiNoContentResponse()
+  async holdByEntry(
+    @Param('entryId', ParseUUIDPipe) entryId: string,
+    @Body() dto: HoldEncounterDto,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.exits.holdByEntry(
+      { agendaEntryId: entryId, reason: dto.reason },
+      this.requester(req, 'encounter:open'),
+    );
+  }
+
+  /** EN-239. «Volvió», from the board's row. */
+  @Post('for-entry/:entryId/resume')
+  @RequirePermission('encounter:open', 'query')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Desde el tablero: el paciente de la cita volvió' })
+  @ApiNoContentResponse()
+  async resumeByEntry(
+    @Param('entryId', ParseUUIDPipe) entryId: string,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.exits.resumeByEntry(
+      { agendaEntryId: entryId },
+      this.requester(req, 'encounter:open'),
+    );
   }
 
   /** Where the caller holds `record:sign`: every site, or these. */

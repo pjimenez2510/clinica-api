@@ -16,7 +16,11 @@ import type {
   InterruptionPlan,
   ResumePlan,
 } from './encounter-state';
-import type { EncounterQuery, EncounterView } from './encounter.repository';
+import type {
+  EncounterQuery,
+  EncounterView,
+  SiteScopeFilter,
+} from './encounter.repository';
 
 export const ENCOUNTER_EXIT_REPOSITORY = Symbol('ENCOUNTER_EXIT_REPOSITORY');
 
@@ -100,4 +104,13 @@ export interface EncounterExitRepository {
     decide: (encounter: EncounterView) => ResumePlan,
     changedById: string,
   ): Promise<EncounterView>;
+
+  /**
+   * EN-239. The live attention (`OPEN` or `ON_HOLD`) of an appointment, within
+   * the caller's sites, or `null`. There is at most one (EN-168).
+   */
+  liveEncounterOfEntry(query: {
+    agendaEntryId: string;
+    sites: SiteScopeFilter;
+  }): Promise<string | null>;
 }

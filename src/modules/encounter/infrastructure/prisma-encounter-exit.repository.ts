@@ -33,6 +33,7 @@ import {
 import type {
   EncounterQuery,
   EncounterView,
+  SiteScopeFilter,
 } from '../domain/encounter.repository';
 import {
   ENCOUNTER_SELECT,
@@ -255,6 +256,22 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
         unsignedEmptyNoteIds,
       };
     });
+  }
+
+  /** EN-239. See the port. */
+  async liveEncounterOfEntry(query: {
+    agendaEntryId: string;
+    sites: SiteScopeFilter;
+  }): Promise<string | null> {
+    const row = await this.prisma.encounter.findFirst({
+      where: {
+        agendaEntryId: query.agendaEntryId,
+        status: { in: ['OPEN', 'ON_HOLD'] },
+        ...siteFilter(query.sites),
+      },
+      select: { id: true },
+    });
+    return row?.id ?? null;
   }
 
   /** EN-128. See the port. */

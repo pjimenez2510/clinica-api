@@ -30,7 +30,6 @@ import type {
   VitalsCorrectionAuthority,
   VitalsVersionView,
 } from '../domain/encounter.repository';
-import type { ClosurePlan } from '../domain/encounter-closure';
 import type { VitalSigns } from '../domain/vital-signs';
 import {
   EncounterService,
@@ -174,23 +173,6 @@ class FakeEncounters implements EncounterRepository {
         patient: { name: 'Ana Villacís', mrn: 'HC0000000001' },
       },
     ]);
-  }
-
-  close(
-    _query: EncounterQuery,
-    decide: (encounter: EncounterView) => ClosurePlan,
-  ): Promise<EncounterView> {
-    const plan = decide(this.stored);
-    this.stored = {
-      ...this.stored,
-      status: plan.to,
-      endedAt: plan.endedAt,
-      dischargeCondition: plan.dischargeCondition,
-      closedById: plan.closedById,
-      closedAt: plan.closedAt,
-      closedBySubstituteReason: plan.substituteReason,
-    };
-    return Promise.resolve(this.stored);
   }
 
   saveVitals(
@@ -458,47 +440,14 @@ describe('los casos de uso de la atención', () => {
      * ⚠️ LA AUSENCIA ES EL REQUISITO. D-A-010 descarta el cierre automático
      * porque tendría que inventarse la condición de egreso (EN-009), y lo que
      * lo hace cierto en código es que no existe ningún método que un
-     * planificador pueda llamar: el único cierre toma un `Requester` con la
-     * sesión de una persona y una atención concreta.
+     * planificador pueda llamar. Desde D-184 la atención la cierra caja al
+     * cerrar la cuenta (EN-131), y ni siquiera ese camino vive aquí.
      */
     const methods = Object.getOwnPropertyNames(
       Object.getPrototypeOf(service) as object,
     );
 
-    expect(methods.filter((name) => /expire|purge|sweep|cron/i.test(name))).toEqual([]); // prettier-ignore
-    expect(methods).toContain('close');
-    // And closing takes a REQUESTER: there is no signature a scheduler could
-    // satisfy without a person's session behind it.
-    expect(FakeEncounters.prototype.close.length).toBe(2);
-  });
-
-  it('EN-131 cierra la cuenta y registra quién y cuándo', async () => {
-    repository.stored = anEncounter({
-      status: 'DISCHARGED',
-      endedAt: new Date('2026-09-14T15:00:00Z'),
-      dischargeCondition: 'ALIVE',
-    });
-
-    const closed = await service.close(
-      { encounterId: 'encounter-1', canSignRecords: false },
-      requester,
-    );
-
-    expect(closed.status).toBe('COMPLETED');
-    expect(closed.closedById).toBe(PRACTITIONER);
-    expect(closed.closedAt).not.toBeNull();
-    expect(closed.closedBySubstituteReason).toBeNull();
-  });
-
-  it('EN-144 rechaza cerrar cuando la cuenta no tiene ficha profesional detrás', async () => {
-    // `closed_by_id` is a foreign key to `practitioner`: without this refusal
-    // the case comes out as `RELATED_RECORD_MISSING` on a form where nothing
-    // is wrong.
-    repository.practitioner = null;
-
-    await expect(
-      service.close({ encounterId: 'encounter-1', canSignRecords: true }, requester), // prettier-ignore
-    ).rejects.toBeInstanceOf(PractitionerProfileRequiredError);
+    expect(methods.filter((name) => /expire|purge|sweep|cron|close/i.test(name))).toEqual([]); // prettier-ignore
   });
 
   it('EN-135 pone al paciente en preparación al abrir la toma de signos', async () => {

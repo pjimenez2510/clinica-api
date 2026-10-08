@@ -9,7 +9,6 @@ import {
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
   PatientChartNotOpenError,
-  PractitionerProfileRequiredError,
 } from '../domain/encounter.errors';
 import {
   ENCOUNTER_REPOSITORY,
@@ -27,7 +26,6 @@ import {
   acceptsNewClinicalContent,
   hasDischarge,
 } from '../domain/encounter-state';
-import { planClosure } from '../domain/encounter-closure';
 import {
   afterDischargeRefusalOf,
   vitalsCorrectionRefusal,
@@ -121,21 +119,6 @@ export interface ChartHistoryRequest {
   /** 1-based, as the client counts it. */
   page: number;
   pageSize: number;
-}
-
-/** EN-131, EN-144, EN-147. What closing the account needs to be told. */
-export interface CloseEncounterRequest {
-  encounterId: string;
-  /** EN-147. Why somebody other than the author is closing it. */
-  substituteReason?: string;
-  /**
-   * EN-147. Whether the caller holds `record:sign`.
-   *
-   * RESOLVED BY THE CONTROLLER FROM THE SESSION. The service does not ask the
-   * guard a second question — the guard already settled `record:write` — and
-   * the domain must not learn what a permission is.
-   */
-  canSignRecords: boolean;
 }
 
 /**
@@ -381,66 +364,6 @@ export class EncounterService {
       practitionerId,
       sites: requester.sites,
     });
-  }
-
-  /**
-   * EN-009, EN-131, EN-132, EN-139, EN-144, EN-147. Closes the account.
-   *
-   * THE POLICY TRAVELS INTO THE TRANSACTION as a closure, exactly as the
-   * agenda's transition does: the rules judge the row AS IT IS at the moment
-   * of the write, so two people closing the same attention cannot both
-   * succeed, and the loser is refused with the state the winner left.
-   *
-   * WHO IS CLOSING IS RESOLVED FIRST AND FROM THE SESSION. An account with no
-   * practitioner profile cannot close: `encounter.closed_by_id` is a foreign
-   * key to `practitioner`, and without this refusal the case would come out as
-   * a `RELATED_RECORD_MISSING` on a form where nothing is wrong.
-   */
-  async close(
-    request: CloseEncounterRequest,
-    requester: Requester,
-  ): Promise<EncounterView> {
-    const closer = await this.requirePractitioner(requester.userId);
-    // Taken ONCE and handed to the pure policy: the domain owns no clock, and
-    // two readings of `new Date()` inside one closure could straddle a second
-    // and stamp `ended_at` and `closed_at` a beat apart for no reason.
-    const now = new Date();
-
-    const closed = await this.encounters.close(
-      { encounterId: request.encounterId, sites: requester.sites },
-      (encounter) =>
-        planClosure({
-          encounter: {
-            status: encounter.status,
-            practitionerId: encounter.practitionerId,
-            endedAt: encounter.endedAt,
-            dischargeCondition: encounter.dischargeCondition,
-          },
-          closer: {
-            practitionerId: closer,
-            canSignRecords: request.canSignRecords,
-            substituteReason: request.substituteReason,
-          },
-          to: 'COMPLETED',
-          now,
-        }),
-    );
-
-    await this.audit.record({
-      userId: requester.userId,
-      resourceType: RESOURCE_TYPE,
-      resourceId: closed.id,
-      action: 'UPDATE',
-      ip: requester.ip,
-      userAgent: requester.userAgent,
-    });
-
-    this.logger.info(
-      { site_id: closed.siteId, action: 'ENCOUNTER_COMPLETED' },
-      'encounter account closed',
-    );
-
-    return closed;
   }
 
   /**
@@ -692,18 +615,5 @@ export class EncounterService {
     if (!acceptsNewClinicalContent(encounter.status)) {
       throw new EncounterAlreadyClosedError(encounter.status);
     }
-  }
-
-  /**
-   * EN-011, EN-144. The caller's clinical identity.
-   *
-   * The account is not the practitioner: `closed_by_id`, `author_id` and
-   * `signed_by_id` are foreign keys to `practitioner`, which is the schema
-   * saying that a clinical act has a clinical author.
-   */
-  private async requirePractitioner(userId: string): Promise<string> {
-    const identity = await this.encounters.findPractitionerByUser(userId);
-    if (!identity) throw new PractitionerProfileRequiredError();
-    return identity.practitionerId;
   }
 }

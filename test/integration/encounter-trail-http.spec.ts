@@ -6,6 +6,7 @@ import argon2 from 'argon2';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { seedBilling } from '../../prisma/seed-billing.mts';
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
@@ -66,7 +67,6 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
   let doctorPractitionerId: string;
   let receptionToken: string;
   let adminToken: string;
-  let secondDoctorToken: string;
 
   beforeEach(async () => {
     enableBigIntSerialisation();
@@ -110,7 +110,6 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
     const doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065', true, ['Ana', 'Villacís']); // prettier-ignore
     doctorToken = doctor.token;
     doctorPractitionerId = doctor.practitionerId as string;
-    secondDoctorToken = (await signIn('MEDICO', 'medico2@clinica.ec', '0602910945', true, ['Jorge', 'Andrade'])).token; // prettier-ignore
     receptionToken = (await signIn('RECEPCION', 'recepcion@clinica.ec', '0926687856', false, ['Rosa', 'Quishpe'])).token; // prettier-ignore
     adminToken = (await signIn('ADMIN', 'admin@clinica.ec', '1104637283', false, ['Luis', 'Mera'])).token; // prettier-ignore
   });
@@ -239,12 +238,21 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
       expect(Date.parse(first!.at)).toBeGreaterThanOrEqual(before - 1000);
     });
 
-    it('EN-133 abre recepción, firma la médica y cierra un sustituto: cada fila nombra a quien lo hizo', async () => {
+    it('EN-133 EN-131 abre recepción, firma la médica y cierra caja al cerrar la cuenta: cada fila nombra a quien lo hizo', async () => {
       const { id } = await openEncounter(receptionToken);
       await signTheNote(id);
-      await post(`/encounters/${id}/close`, secondDoctorToken, {
-        substituteReason: 'La médica tratante terminó su turno',
-      }).expect(200);
+      // D-184: el cierre lo hace caja, al cerrar la cuenta de la atención.
+      const cashierToken = (await signIn('CAJA', 'caja@clinica.ec', '1705123451', false, ['Jorge', 'Andrade'])).token; // prettier-ignore
+      await seedBilling(prisma);
+      const payer = await prisma.payer.findUniqueOrThrow({ where: { code: 'PARTICULAR' } }); // prettier-ignore
+      const priceList = await prisma.priceList.findFirstOrThrow({ where: { payerId: payer.id } }); // prettier-ignore
+      const encounter = await prisma.encounter.findUniqueOrThrow({ where: { id } }); // prettier-ignore
+      const account = await prisma.patientAccount.create({
+        data: { patientId: encounter.patientId, siteId: encounter.siteId, encounterId: id, payerId: payer.id, priceListId: priceList.id }, // prettier-ignore
+      });
+      await post(`/billing/sites/${encounter.siteId}/accounts/${account.id}/close`, cashierToken, {
+        noChargeReason: 'Control sin costo',
+      }).expect(200); // prettier-ignore
 
       const trail = await trailOf(id);
       expect(
