@@ -262,6 +262,14 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
               specialtyId: update.consultation?.specialtyId ?? null,
               visitSequence: update.consultation?.visitSequence ?? null,
             }),
+        // BI-024. Both columns or neither, which is what
+        // `billable_service_tax_review_names_who_and_when` demands underneath.
+        ...(update.taxReview === undefined
+          ? {}
+          : {
+              taxReviewedAt: update.taxReview?.reviewedAt ?? null,
+              taxReviewedById: update.taxReview?.reviewedById ?? null,
+            }),
       },
       include: SERVICE_INCLUDE,
     });
@@ -586,12 +594,14 @@ const SERVICE_INCLUDE = {
   taxRate: true,
   category: true,
   procedureConcept: { select: { id: true, code: true, display: true } },
+  taxReviewedBy: { select: { firstName: true, lastName: true } },
 } satisfies Prisma.BillableServiceInclude;
 
 type ServiceRow = BillableServiceRow & {
   taxRate: TaxRateRow;
   category: CategoryRow;
   procedureConcept: { id: string; code: string; display: string } | null;
+  taxReviewedBy: { firstName: string; lastName: string } | null;
 };
 
 /** The `kind` cast leans on `billable_service_category_kind_is_known`. */
@@ -625,6 +635,17 @@ function toServiceView(row: ServiceRow): BillableServiceView {
     active: row.active,
     specialtyId: row.specialtyId,
     visitSequence: row.visitSequence as VisitSequence | null,
+    // The CHECK keeps the two columns together; the user comes with the id.
+    taxReview:
+      row.taxReviewedAt === null ||
+      row.taxReviewedById === null ||
+      row.taxReviewedBy === null
+        ? null
+        : {
+            reviewedAt: row.taxReviewedAt,
+            reviewedById: row.taxReviewedById,
+            reviewedByName: `${row.taxReviewedBy.firstName} ${row.taxReviewedBy.lastName}`,
+          },
   };
 }
 

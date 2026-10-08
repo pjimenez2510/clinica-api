@@ -57,6 +57,7 @@ const service: BillableServiceView = {
   active: true,
   specialtyId: null,
   visitSequence: null,
+  taxReview: null,
 };
 
 /** The catalogue port as a double, with every mock held in a NAMED local. */
@@ -242,6 +243,8 @@ describe('BI-046, BI-132 la bitácora del catálogo', () => {
       active: true,
       specialtyId: null,
       visitSequence: null,
+      taxReviewedAt: null,
+      taxReviewedById: null,
     };
     expect(entry.before).toEqual({
       ...common,
@@ -299,7 +302,139 @@ describe('BI-046, BI-132 la bitácora del catálogo', () => {
       tariffCode: undefined,
       taxRateId: 'tax-15',
       active: undefined,
+      // D-172.2: the new rate is nobody's review yet.
+      taxReview: null,
     });
+  });
+});
+
+describe('BI-011 el código del tarifario nacional es nomenclatura', () => {
+  it('BI-011 guarda y borra el código del tarifario sin tomar de él ningún importe', async () => {
+    // The national tariff carries an amount for the public network; this
+    // clinic's price is in its own list. The update carries the code and
+    // nothing that could hold a price.
+    const { service: catalogue, mocks } = build();
+
+    await catalogue.updateService('service-1', { tariffCode: '99203' }, requester); // prettier-ignore
+    await catalogue.updateService('service-1', { tariffCode: null }, requester);
+
+    const updates = mocks.updateBillableService.mock.calls.map(
+      (call) => call[1] as unknown,
+    );
+    expect(updates).toEqual([{ tariffCode: '99203' }, { tariffCode: null }]);
+  });
+});
+
+describe('BI-022 a BI-024 la revisión contable de la tarifa', () => {
+  const reviewer = { userId: 'accountant-1' };
+  const reviewed = {
+    reviewedAt: new Date(),
+    reviewedById: reviewer.userId,
+    reviewedByName: 'Rosa Cedeño',
+  };
+
+  it('BI-022 una prestación nueva no nace revisada: nada en el alta escribe la revisión', async () => {
+    const { service: catalogue, mocks } = build();
+
+    await catalogue.createService(newService, requester);
+
+    expect(mocks.createBillableService.mock.calls[0]?.[0]).not.toHaveProperty(
+      'taxReview',
+    );
+  });
+
+  it('BI-024 marcarla revisada escribe quién y el instante del reloj de la aplicación', async () => {
+    const { service: catalogue, mocks } = build({
+      updateBillableService: vi
+        .fn()
+        .mockResolvedValue({ ...service, taxReview: reviewed }),
+    });
+    const before = Date.now();
+
+    const result = await catalogue.markTaxReviewed('service-1', reviewer);
+
+    const update = mocks.updateBillableService.mock.calls[0]?.[1] as {
+      taxReview: { reviewedAt: Date; reviewedById: string };
+    };
+    expect(update.taxReview.reviewedById).toBe('accountant-1');
+    expect(update.taxReview.reviewedAt.getTime()).toBeGreaterThanOrEqual(
+      before,
+    );
+    expect(update.taxReview.reviewedAt.getTime()).toBeLessThanOrEqual(
+      Date.now(),
+    );
+    expect(Object.keys(update)).toEqual(['taxReview']);
+    expect(result.taxReview).toEqual(reviewed);
+  });
+
+  it('BI-024 la bitácora guarda la fila antes y después de la revisión, con quién', async () => {
+    const { service: catalogue, mocks } = build({
+      updateBillableService: vi
+        .fn()
+        .mockResolvedValue({ ...service, taxReview: reviewed }),
+    });
+
+    await catalogue.markTaxReviewed('service-1', reviewer);
+
+    const entry = mocks.record.mock.calls[0]?.[0] as AccessAuditEntry;
+    expect(entry).toMatchObject({
+      userId: 'accountant-1',
+      resourceType: 'billable_service',
+      resourceId: 'service-1',
+      action: 'UPDATE',
+      before: { taxReviewedAt: null, taxReviewedById: null },
+      after: {
+        taxReviewedAt: reviewed.reviewedAt.toISOString(),
+        taxReviewedById: 'accountant-1',
+      },
+    });
+  });
+
+  it('BI-024 cambiar la tarifa la devuelve a pendiente, y la revisión anterior queda en la bitácora', async () => {
+    const { service: catalogue, mocks } = build({
+      findBillableService: vi
+        .fn()
+        .mockResolvedValue({ ...service, taxReview: reviewed }),
+    });
+
+    await catalogue.updateService('service-1', { taxRateId: 'tax-15' }, requester); // prettier-ignore
+
+    expect(mocks.updateBillableService.mock.calls[0]?.[1]).toMatchObject({
+      taxRateId: 'tax-15',
+      taxReview: null,
+    });
+    const entry = mocks.record.mock.calls[0]?.[0] as AccessAuditEntry;
+    expect(entry.before).toMatchObject({
+      taxRateId: 'tax-0',
+      taxReviewedAt: reviewed.reviewedAt.toISOString(),
+      taxReviewedById: 'accountant-1',
+    });
+  });
+
+  it('BI-024 cambiar el nombre, o guardar la misma tarifa, no toca la revisión (control)', async () => {
+    const { service: catalogue, mocks } = build({
+      findBillableService: vi
+        .fn()
+        .mockResolvedValue({ ...service, taxReview: reviewed }),
+    });
+
+    await catalogue.updateService('service-1', { name: 'Consulta general' }, requester); // prettier-ignore
+    await catalogue.updateService('service-1', { taxRateId: 'tax-0' }, requester); // prettier-ignore
+
+    for (const [, update] of mocks.updateBillableService.mock.calls) {
+      expect(update).not.toHaveProperty('taxReview');
+    }
+  });
+
+  it('BI-024 marcar revisada una prestación inexistente responde 404 sin escribir', async () => {
+    const { service: catalogue, mocks } = build({
+      findBillableService: vi.fn().mockResolvedValue(null),
+    });
+
+    await expect(
+      catalogue.markTaxReviewed('missing', reviewer),
+    ).rejects.toBeInstanceOf(BillableServiceNotFoundError);
+    expect(mocks.updateBillableService).not.toHaveBeenCalled();
   });
 });
 

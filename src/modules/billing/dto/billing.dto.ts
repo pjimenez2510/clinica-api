@@ -536,6 +536,13 @@ const serviceResponseSchema = z.object({
   /** BI-158. Which consultation this service IS, when it is one. */
   specialtyId: z.uuid().nullable(),
   visitSequence: z.enum(VISIT_SEQUENCES).nullable(),
+  /** BI-022 to BI-024. Who checked the tax rate and when; `null` = pending. */
+  taxReview: z
+    .object({
+      reviewedAt: z.iso.datetime(),
+      reviewedBy: z.object({ id: z.uuid(), name: z.string() }),
+    })
+    .nullable(),
 });
 /** One service, and the catalogue of GET /billing/services. */
 export class ServiceDto extends createZodDto(serviceResponseSchema) {}

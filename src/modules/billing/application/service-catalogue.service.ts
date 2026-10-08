@@ -184,10 +184,44 @@ export class ServiceCatalogueService {
       });
     }
 
+    // D-172.2. A new rate is nobody's review yet; the old review stays in the
+    // trail through the `before` snapshot. The same rate saved again is not
+    // a change, and renaming touches no review at all.
+    const changesRate =
+      update.taxRateId !== undefined && update.taxRateId !== current.taxRateId;
     const updated = await this.catalogue.updateBillableService(
       serviceId,
-      update,
+      changesRate ? { ...update, taxReview: null } : update,
     );
+    await this.recordChange(
+      serviceId,
+      'UPDATE',
+      requester,
+      SERVICE_RESOURCE_TYPE,
+      {
+        before: billableServiceSnapshot(current),
+        after: billableServiceSnapshot(updated),
+      },
+    );
+    return updated;
+  }
+
+  /**
+   * BI-024. Records that `requester` checked the service's tax rate, now.
+   *
+   * THE INSTANT IS THE APPLICATION'S CLOCK, not PostgreSQL's `now()`: it is
+   * what every other stamp of this module uses, and what the walks move.
+   * Marking it again simply records the newer review; the older one stays in
+   * the trail.
+   */
+  async markTaxReviewed(
+    serviceId: string,
+    requester: Requester,
+  ): Promise<BillableServiceView> {
+    const current = await this.requireService(serviceId);
+    const updated = await this.catalogue.updateBillableService(serviceId, {
+      taxReview: { reviewedAt: new Date(), reviewedById: requester.userId },
+    });
     await this.recordChange(
       serviceId,
       'UPDATE',

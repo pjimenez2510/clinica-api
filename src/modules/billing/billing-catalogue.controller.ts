@@ -183,6 +183,25 @@ export class BillingCatalogueController {
     );
   }
 
+  /**
+   * BI-024. «Revisé la tarifa de esta prestación»: who and when, from the
+   * session and the application's clock. Changing the rate afterwards makes
+   * it pending again (D-172.2).
+   */
+  @Post('services/:serviceId/tax-review')
+  @RequirePermission('billing:price-manage', 'global')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Marcar revisada la tarifa de impuesto de una prestación' }) // prettier-ignore
+  @ApiOkResponse({ type: ServiceDto })
+  async markTaxReviewed(
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
+  ): Promise<ServiceResponse> {
+    const requester = this.requireClinicWide('billing:price-manage');
+    return toServiceResponse(
+      await this.services.markTaxReviewed(serviceId, requester),
+    );
+  }
+
   /** BI-189. The service's prices in every payer's list, the one in force marked. */
   @Get('services/:serviceId/prices')
   @RequirePermission('billing:read', 'global')
@@ -448,6 +467,16 @@ function toServiceResponse(service: BillableServiceView): ServiceResponse {
     // and change it instead of the mapping living only in the seed.
     specialtyId: service.specialtyId,
     visitSequence: service.visitSequence,
+    taxReview:
+      service.taxReview === null
+        ? null
+        : {
+            reviewedAt: service.taxReview.reviewedAt.toISOString(),
+            reviewedBy: {
+              id: service.taxReview.reviewedById,
+              name: service.taxReview.reviewedByName,
+            },
+          },
   };
 }
 

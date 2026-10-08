@@ -14,6 +14,7 @@ import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
+import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -1149,6 +1150,201 @@ describe('la facturación por HTTP', () => {
         .expect(409);
 
       expect((response.body as Problem).code).toBe('ACCOUNT_CLOSED');
+    });
+  });
+  describe('BI-022 a BI-024 la revisión contable de la tarifa, por HTTP', () => {
+    interface ServiceBody {
+      id: string;
+      tariffCode: string | null;
+      taxRateId: string;
+      taxReview: {
+        reviewedAt: string;
+        reviewedBy: { id: string; name: string };
+      } | null;
+    }
+
+    const services = async () =>
+      (
+        (
+          await api()
+            .get('/api/v1/billing/services')
+            .set('Authorization', `Bearer ${tariffToken}`)
+            .expect(200)
+        ).body as { items: ServiceBody[] }
+      ).items;
+
+    it('BI-022 BI-023 la lista sirve la revisión de cada prestación, y la sembrada y la recién creada nacen por revisar', async () => {
+      const seeded = await services();
+      expect(seeded.length).toBeGreaterThan(0);
+      expect(seeded.every((one) => one.taxReview === null)).toBe(true);
+
+      const category = await prisma.billableServiceCategory.findFirstOrThrow({
+        where: { kind: 'PROCEDURE' },
+      });
+      const created = await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', `Bearer ${tariffToken}`)
+        .send({
+          code: 'PROC-ALTA-NUEVA',
+          name: 'Curación simple',
+          categoryId: category.id,
+          taxRateId: seeded[0]!.taxRateId,
+        })
+        .expect(201);
+      expect((created.body as ServiceBody).taxReview).toBeNull();
+    });
+
+    it('BI-024 marcarla revisada guarda quién y cuándo; cambiar la tarifa la devuelve a pendiente y la bitácora conserva la revisión', async () => {
+      const reviewer = await prisma.user.findUniqueOrThrow({
+        where: { email: TARIFF_EMAIL },
+      });
+      const before = Date.now();
+
+      const marked = await api()
+        .post(`/api/v1/billing/services/${serviceId}/tax-review`)
+        .set('Authorization', `Bearer ${tariffToken}`)
+        .expect(200);
+
+      const review = (marked.body as ServiceBody).taxReview!;
+      expect(review.reviewedBy).toEqual({
+        id: reviewer.id,
+        name: 'Rosa Cedeño',
+      });
+      const reviewedAt = new Date(review.reviewedAt).getTime();
+      expect(reviewedAt).toBeGreaterThanOrEqual(before);
+      expect(reviewedAt).toBeLessThanOrEqual(Date.now());
+      const row = await prisma.billableService.findUniqueOrThrow({
+        where: { id: serviceId },
+      });
+      expect(row.taxReviewedById).toBe(reviewer.id);
+
+      // Renaming touches no review (control).
+      const renamed = await api()
+        .patch(`/api/v1/billing/services/${serviceId}`)
+        .set('Authorization', `Bearer ${tariffToken}`)
+        .send({ name: 'Consulta de medicina general' })
+        .expect(200);
+      expect((renamed.body as ServiceBody).taxReview).toEqual(review);
+
+      const general = await prisma.taxRate.findFirstOrThrow({
+        where: { sriCode: '4', validTo: null },
+      });
+      const rerated = await api()
+        .patch(`/api/v1/billing/services/${serviceId}`)
+        .set('Authorization', `Bearer ${tariffToken}`)
+        .send({ taxRateId: general.id })
+        .expect(200);
+      expect((rerated.body as ServiceBody).taxReview).toBeNull();
+
+      // D-172.2: the review the new rate cleared is still in the trail.
+      const trail = await prisma.accessAudit.findMany({
+        where: { resourceType: 'billable_service', resourceId: serviceId },
+        orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+      });
+      expect(trail.at(-1)!.before).toMatchObject({
+        taxRateId: row.taxRateId,
+        taxReviewedById: reviewer.id,
+        taxReviewedAt: review.reviewedAt,
+      });
+    });
+
+    it('BI-024 BI-134 caja no marca revisada una tarifa, y no queda nada escrito', async () => {
+      const response = await api()
+        .post(`/api/v1/billing/services/${serviceId}/tax-review`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(403);
+
+      expect((response.body as Problem).code).toBe('PERMISSION_DENIED');
+      const row = await prisma.billableService.findUniqueOrThrow({
+        where: { id: serviceId },
+      });
+      expect(row.taxReviewedAt).toBeNull();
+    });
+
+    it('BI-024 la base no admite quién sin cuándo ni cuándo sin quién, y sí los dos juntos (control)', async () => {
+      const reviewer = await prisma.user.findUniqueOrThrow({
+        where: { email: TARIFF_EMAIL },
+      });
+
+      await expect(
+        prisma.$executeRaw`UPDATE billable_service SET tax_reviewed_at = ${new Date()} WHERE id = ${serviceId}::uuid`,
+      ).rejects.toThrowError(/billable_service_tax_review_names_who_and_when/);
+      await expect(
+        prisma.$executeRaw`UPDATE billable_service SET tax_reviewed_by_id = ${reviewer.id}::uuid WHERE id = ${serviceId}::uuid`,
+      ).rejects.toThrowError(/billable_service_tax_review_names_who_and_when/);
+      await expect(
+        prisma.$executeRaw`UPDATE billable_service SET tax_reviewed_at = ${new Date()}, tax_reviewed_by_id = ${reviewer.id}::uuid WHERE id = ${serviceId}::uuid`,
+      ).resolves.toBe(1);
+    });
+
+    it('BI-011 el código del tarifario nacional se guarda como nomenclatura y no pone ningún precio', async () => {
+      const updated = await api()
+        .patch(`/api/v1/billing/services/${serviceId}`)
+        .set('Authorization', `Bearer ${tariffToken}`)
+        .send({ tariffCode: '99203' })
+        .expect(200);
+      expect((updated.body as ServiceBody).tariffCode).toBe('99203');
+
+      // A service with a tariff code and no price in the payer's list has no
+      // price: nothing is taken from the national tariff.
+      const category = await prisma.billableServiceCategory.findFirstOrThrow({
+        where: { kind: 'PROCEDURE' },
+      });
+      const created = await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', `Bearer ${tariffToken}`)
+        .send({
+          code: 'PROC-TARIFARIO',
+          name: 'Procedimiento con código del tarifario',
+          categoryId: category.id,
+          taxRateId: (updated.body as ServiceBody).taxRateId,
+          tariffCode: '99203',
+        })
+        .expect(201);
+      const accountId = await openAccount();
+      const charge = await api()
+        .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({
+          billableServiceId: (created.body as ServiceBody).id,
+          serviceDate: clinicalDateOf(new Date()),
+        })
+        .expect(422);
+      expect((charge.body as Problem).code).toBe('PRICE_NOT_FOUND');
+    });
+  });
+
+  describe('BI-073 facturar y cerrar son pasos separados', () => {
+    it('BI-073 se emite la factura de una cuenta abierta, y la cuenta sigue abierta', async () => {
+      const accountId = await openAccount();
+      await api()
+        .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({
+          billableServiceId: serviceId,
+          serviceDate: clinicalDateOf(new Date()),
+        })
+        .expect(201);
+
+      await api()
+        .post(`/api/v1/billing/sites/${siteId}/invoices`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({
+          accountId,
+          emissionPointId,
+          paymentMethod: '01',
+          receiver: {
+            identificationType: '05',
+            identification: '1710034065',
+            name: 'Guamán Andrade, María José',
+          },
+        })
+        .expect(201);
+
+      const account = await prisma.patientAccount.findUniqueOrThrow({
+        where: { id: accountId },
+      });
+      expect(account.status).toBe('OPEN');
     });
   });
 });
