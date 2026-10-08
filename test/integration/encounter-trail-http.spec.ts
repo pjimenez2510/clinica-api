@@ -324,20 +324,24 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
       // Cumple treinta años HOY en Guayaquil; la consulta fue ayer.
       const today = clinicalDateOf(new Date());
       const [year, month, day] = today.split('-');
+      // A 29 de febrero, treinta años atrás no es bisiesto: veintiocho sí.
+      const yearsBack = `${month}-${day}` === '02-29' ? 28 : 30;
       const born = await createPatient(prisma, {
-        birthDate: new Date(`${Number(year) - 30}-${month}-${day}T00:00:00Z`),
+        birthDate: new Date(
+          `${Number(year) - yearsBack}-${month}-${day}T00:00:00Z`,
+        ),
       });
       const opened = await openEncounter(doctorToken, {
         patientId: born.id,
         startedAt: minutesAgo(26 * 60),
       });
-      expect(opened.ageYears).toBe(29);
+      expect(opened.ageYears).toBe(yearsBack - 1);
       // Control positivo: la de hoy ya lleva los treinta.
       const now = await openEncounter(doctorToken, {
         patientId: born.id,
         startedAt: minutesAgo(1),
       });
-      expect(now.ageYears).toBe(30);
+      expect(now.ageYears).toBe(yearsBack);
     });
   });
 

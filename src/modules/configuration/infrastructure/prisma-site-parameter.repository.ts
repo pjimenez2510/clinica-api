@@ -148,6 +148,14 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
     }
   }
 
+  async declaredRetentionYears(): Promise<readonly number[]> {
+    const rows = await this.prisma.siteParameter.findMany({
+      distinct: ['recordRetentionYears'],
+      select: { recordRetentionYears: true },
+    });
+    return rows.map((row) => row.recordRetentionYears);
+  }
+
   /**
    * D-021. The distinct durations the clinic has configured: the base of every
    * service type and every per-practitioner exception.
@@ -162,14 +170,6 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
    * after the atom moved would produce exactly the unbookable configuration
    * this refusal exists to prevent — silently, and much later.
    */
-  async declaredRetentionYears(): Promise<readonly number[]> {
-    const rows = await this.prisma.siteParameter.findMany({
-      distinct: ['recordRetentionYears'],
-      select: { recordRetentionYears: true },
-    });
-    return rows.map((row) => row.recordRetentionYears);
-  }
-
   async configuredDurations(): Promise<readonly number[]> {
     const [types, exceptions] = await Promise.all([
       this.prisma.serviceType.findMany({

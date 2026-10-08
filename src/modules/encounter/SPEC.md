@@ -4133,7 +4133,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `CERTIFIED_SIGNATURE_REQUIRED` | 422 | Firmar sin certificado vigente con `requireCertifiedSignature` habilitado. **No es 403**: el profesional tiene permiso para firmar; lo que falta es el certificado | EN-155 |
 | `CONSENT_REQUIRED_FOR_PROCEDURE` | 422 | Registrar como realizado un procedimiento de riesgo mayor sin el formulario 024 suscrito ni la exención de emergencia fundamentada | EN-152 |
 | `TRIAGE_NOT_ENABLED` | 404 | Se llamó a una ruta de triaje en una sede sin la capacidad habilitada. **404 y no 403**: en esa instalación la ruta no existe, y un 403 diría que existe y está cerrada | EN-148, EN-149 |
-| `RETENTION_PERIOD_TOO_SHORT` | 422 | Configurar el plazo de conservación por debajo de quince años | EN-157 |
+| *(no expuesto)* | — | Ninguna ruta escribe el plazo: lo rechaza la base (`site_parameter_retention_minimum`) | EN-157 |
 | `PATIENT_ALLERGY_NOT_FOUND` | 404 | Se refutó una alergia que no existe en esa ficha ni en las que absorbió. **El mismo para «no existe» y «es de otra ficha»**, por lo mismo que `ENCOUNTER_NOT_FOUND` | EN-082 |
 | `ALLERGY_ALREADY_REFUTED` | 409 | Se refutó una alergia ya refutada. **No es idempotencia**: la segunda refutación reescribiría la fecha y el motivo de la primera, y quién la descartó y por qué es información clínica por derecho propio. También al **editar** una descartada: primero se reactiva (EN-225) | EN-082, EN-225 |
 | `REFUTATION_REASON_REQUIRED` | 422 | Retirado por EN-224 (D-126.2) para toda refutación **salvo** la de una alergia de criticidad alta, que lo vuelve a exigir (D-140.1). Campo `notes` | EN-082, EN-224 |

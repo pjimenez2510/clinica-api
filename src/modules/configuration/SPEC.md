@@ -33,11 +33,11 @@ Estado, deja de ser parámetro y pertenece a su módulo dueño.
 
 **Fuera de alcance, y ya no vive aquí (ADR-011, 12-08-2026):**
 
-| Lo que se fue                                          | A dónde         |
-| ------------------------------------------------------ | --------------- |
-| Especialidades, tipos de atención y duraciones         | `specialties`   |
-| Horarios de los profesionales                          | `staff`         |
-| Sedes, consultorios y establecimiento                  | `organization`  |
+| Lo que se fue                                  | A dónde        |
+| ---------------------------------------------- | -------------- |
+| Especialidades, tipos de atención y duraciones | `specialties`  |
+| Horarios de los profesionales                  | `staff`        |
+| Sedes, consultorios y establecimiento          | `organization` |
 
 > **Los identificadores `CF-001` a `CF-028` y `CF-040` a `CF-046` están
 > retirados en este documento.** Se renumeraron a `SP-###` y `ST-###` al mudarse
@@ -65,12 +65,12 @@ porque un parámetro y un feriado se declaran **por sede**.
 
 ## Vocabulario
 
-| Término              | Significado exacto en este módulo                                                        |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| **Feriado**          | Fecha no laborable con nombre y alcance: una sede o todas                                 |
-| **Parámetro de sede**| Valor operativo editable por sede: antelaciones, tope de sobrecupos, retención (D-001)   |
-| **Alcance**          | De un feriado: `una sede` o `todas`. Es lo que lo hace único junto con la fecha           |
-| **Retención**        | Cuánto tiempo se conservan las citas anuladas antes de purgarlas, si es que se purgan     |
+| Término               | Significado exacto en este módulo                                                      |
+| --------------------- | -------------------------------------------------------------------------------------- |
+| **Feriado**           | Fecha no laborable con nombre y alcance: una sede o todas                              |
+| **Parámetro de sede** | Valor operativo editable por sede: antelaciones, tope de sobrecupos, retención (D-001) |
+| **Alcance**           | De un feriado: `una sede` o `todas`. Es lo que lo hace único junto con la fecha        |
+| **Retención**         | Cuánto tiempo se conservan las citas anuladas antes de purgarlas, si es que se purgan  |
 
 ---
 
@@ -148,6 +148,7 @@ alcance por sede sobre una escritura, y quien lo burla no usa la pantalla.
   sistema DEBERÁ rechazarlo con `PARAM_OUT_OF_RANGE` nombrando el rango.
 - **CF-066** — Toda mutación de feriados y parámetros DEBERÁ quedar en la
   bitácora con autor, instante y valor anterior.
+
   > **El valor anterior existe desde el 14-08-2026 — `D-017`, opción A
   > revisada.** `access_audit` lleva `before` y `after` (`jsonb`) y este módulo
   > los escribe con la vista de dominio —fecha, nombre y alcance de un feriado;
@@ -212,13 +213,13 @@ alcance por sede sobre una escritura, y quien lo burla no usa la pantalla.
 
 ## Códigos de error
 
-| Código                      | HTTP | Cuándo                                                     |
-| --------------------------- | ---- | ---------------------------------------------------------- |
-| `HOLIDAY_DUPLICATE`         | 409  | Feriado repetido en fecha y alcance (CF-061)               |
-| `HOLIDAY_NOT_FOUND`         | 404  | El feriado indicado no existe                              |
+| Código                      | HTTP | Cuándo                                                                                 |
+| --------------------------- | ---- | -------------------------------------------------------------------------------------- |
+| `HOLIDAY_DUPLICATE`         | 409  | Feriado repetido en fecha y alcance (CF-061)                                           |
+| `HOLIDAY_NOT_FOUND`         | 404  | El feriado indicado no existe                                                          |
 | `SITE_SCOPE_DENIED`         | 403  | Tocar un feriado de otra sede, o uno de todas sin alcance de clínica (CF-067, ADR-007) |
-| `PARAM_OUT_OF_RANGE`        | 422  | Parámetro fuera de rango, nombrándolo (CF-065)             |
-| `SITE_PARAMETERS_NOT_FOUND` | 404  | La sede indicada no tiene fila de parámetros (CF-062)      |
+| `PARAM_OUT_OF_RANGE`        | 422  | Parámetro fuera de rango, nombrándolo (CF-065)                                         |
+| `SITE_PARAMETERS_NOT_FOUND` | 404  | La sede indicada no tiene fila de parámetros (CF-062)                                  |
 
 `SITE_NOT_FOUND` **no** se emite desde aquí aunque sea lo que un lector
 esperaría: ese código es de `organization`, dueño de la sede, y dos clases
@@ -236,7 +237,7 @@ añadió `20260814131942_agenda_site_operating_rules` para AG-092 y AG-031.
 - **`holiday_site_exception` es una fila por sede que trabaja el feriado**
   (AG-092), no una bandera en `holiday`: «laborable para quién» son N sedes por
   feriado. Se administra desde `PUT`/`DELETE
-  /configuration/holidays/{id}/worked-by/{siteId}`, con `settings:manage` y
+/configuration/holidays/{id}/worked-by/{siteId}`, con `settings:manage` y
   alcance sobre esa sede, y el feriado la lleva consigo al listarse. Marcar dos
   veces no es conflicto: la clave primaria ES el par. La sede inexistente la
   rechaza la clave foránea y se responde `SITE_NOT_FOUND`, que es el código de

@@ -210,11 +210,6 @@ export class ConfigurationController {
   // --- Site parameters -------------------------------------------------------
 
   /**
-   * CF-062, AG-094: the four numbers of D-001 and the past booking switch,
-   * with the site's current values. The switch travels in the ANSWER too — a
-   * parameter an administrator cannot SEE is one they cannot rely on.
-   */
-  /**
    * EN-032, EN-157, EN-158. The retention of the clinical record the
    * installation declares (LOPDP art. 51): the longest of its sites, from the
    * last attention, never purged. Read-only on purpose: the minimum is the
@@ -228,6 +223,11 @@ export class ConfigurationController {
     return this.parameters.recordRetention();
   }
 
+  /**
+   * CF-062, AG-094: the four numbers of D-001 and the past booking switch,
+   * with the site's current values. The switch travels in the ANSWER too — a
+   * parameter an administrator cannot SEE is one they cannot rely on.
+   */
   @Get('sites/:siteId/parameters')
   @RequirePermission('settings:read', 'param:siteId')
   @ApiOperation({ summary: 'Parámetros de operación de una sede' })
