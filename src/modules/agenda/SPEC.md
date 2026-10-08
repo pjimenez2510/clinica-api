@@ -2866,7 +2866,12 @@ Convertirlo en configuración sería regalar la garantía.
   > D-187 §4: refrescar en silencio, sin campanas. La pestaña oculta no pide
   > por lo mismo que el sondeo de hoy: cada lectura del tablero deja una fila
   > en la bitácora (AG-139). La agenda no tenía sondeo: se releía al volver a
-  > la pantalla, y con el canal caído sigue así.
+  > la pantalla, y con el canal caído sigue así. La disponibilidad NO se
+  > relee al aviso: el diálogo de reservar lee la misma entrada (AG-170) y
+  > cambiaría de cupo en silencio mientras recepción habla con el paciente;
+  > el cupo que otro tomó lo rechaza el servidor y el diálogo lo dice
+  > (AG-023). La primera apertura del canal, justo tras cargar, no relee lo
+  > recién leído (más de 10 s, sí).
 
 ## Códigos de error nuevos
 
