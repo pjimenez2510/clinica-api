@@ -12,7 +12,14 @@ import { PrismaAgendaRepository } from '../../src/modules/agenda/infrastructure/
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 import { isSerialisationFailure } from '../../src/shared/infrastructure/prisma/serialisation-retry';
 
-import { parseClinicalDate } from '../../src/shared/domain/clinic-time';
+import {
+  type ClinicalDate,
+  WallClockTime,
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+  parseClinicalDate,
+} from '../../src/shared/domain/clinic-time';
 import { useDatabase } from './setup/database';
 import {
   createPatient,
@@ -327,6 +334,127 @@ describe('the daily agenda', () => {
     await service.dailyAgenda({ siteId: site.id, date: DAY });
 
     await expect(prisma.accessAudit.count()).resolves.toBe(0);
+  });
+});
+
+describe('the agenda over a range of days', () => {
+  // Derived from the clock and cut in Ecuador: no date here is written by
+  // hand. Six days, `to` included, like the week view asks for.
+  const FROM = clinicalDateOf(new Date());
+  const TO = addDays(FROM, 5);
+  const wall = (date: ClinicalDate, hour: number, minute = 0) =>
+    atWallClock(date, WallClockTime.of(hour, minute));
+
+  it('AG-178 serves the whole range in one query, the last day up to 23:59 in Guayaquil', async () => {
+    const { prisma, site, practitioner, patient } = await context();
+    const { service } = agendaOf(prisma);
+    const appointment = (startsAt: Date) =>
+      createPatient(prisma).then((other) =>
+        anAppointment(prisma, {
+          siteId: site.id,
+          practitionerId: practitioner.id,
+          patientId: other.id,
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + 20 * 60_000),
+        }),
+      );
+
+    const first = await anAppointment(prisma, {
+      siteId: site.id,
+      practitionerId: practitioner.id,
+      patientId: patient.id,
+      startsAt: wall(FROM, 8),
+      endsAt: wall(FROM, 8, 20),
+    });
+    const lastMorning = await appointment(wall(TO, 9));
+    // 23:30 in Ecuador on `to` is 04:30Z the day AFTER: a range cut in UTC
+    // would lose it, and recepción would not see the evening shift.
+    const lastEvening = await appointment(wall(TO, 23, 30));
+    // The positive control: the first minute after the range, and the last
+    // one before it. Neither belongs.
+    await appointment(wall(addDays(TO, 1), 0));
+    await appointment(wall(addDays(FROM, -1), 23, 30));
+
+    const listed = await service.agendaRange({
+      siteId: site.id,
+      from: FROM,
+      to: TO,
+    });
+
+    expect(listed.map((entry) => entry.id)).toEqual([
+      first.id,
+      lastMorning.id,
+      lastEvening.id,
+    ]);
+
+    // And it is exactly the union of the days asked one by one (AG-017).
+    const dayByDay: string[] = [];
+    for (let offset = 0; offset < 6; offset += 1) {
+      const day = await service.dailyAgenda({
+        siteId: site.id,
+        date: addDays(FROM, offset),
+      });
+      dayByDay.push(...day.map((entry) => entry.id));
+    }
+    expect(dayByDay).toEqual(listed.map((entry) => entry.id));
+  });
+
+  it('AG-178 keeps the day filters: practitioner, released entries and site', async () => {
+    const { prisma, site, practitioner, patient } = await context();
+    const { service } = agendaOf(prisma);
+    const otherPractitioner = await createPractitioner(prisma);
+    const otherSite = await createSite(prisma);
+
+    const kept = await anAppointment(prisma, {
+      siteId: site.id,
+      practitionerId: practitioner.id,
+      patientId: patient.id,
+      startsAt: wall(addDays(FROM, 2), 10),
+      endsAt: wall(addDays(FROM, 2), 10, 20),
+    });
+    const released = await anAppointment(prisma, {
+      siteId: site.id,
+      practitionerId: practitioner.id,
+      patientId: (await createPatient(prisma)).id,
+      startsAt: wall(addDays(FROM, 3), 10),
+      endsAt: wall(addDays(FROM, 3), 10, 20),
+      status: 'CANCELLED',
+      releasedAt: wall(FROM, 7),
+    });
+    await anAppointment(prisma, {
+      siteId: site.id,
+      practitionerId: otherPractitioner.id,
+      patientId: (await createPatient(prisma)).id,
+      startsAt: wall(addDays(FROM, 2), 11),
+      endsAt: wall(addDays(FROM, 2), 11, 20),
+    });
+    await anAppointment(prisma, {
+      siteId: otherSite.id,
+      practitionerId: practitioner.id,
+      patientId: (await createPatient(prisma)).id,
+      startsAt: wall(addDays(FROM, 2), 12),
+      endsAt: wall(addDays(FROM, 2), 12, 20),
+    });
+
+    const byDefault = await service.agendaRange({
+      siteId: site.id,
+      from: FROM,
+      to: TO,
+      practitionerId: practitioner.id,
+    });
+    const withReleased = await service.agendaRange({
+      siteId: site.id,
+      from: FROM,
+      to: TO,
+      practitionerId: practitioner.id,
+      includeReleased: true,
+    });
+
+    expect(byDefault.map((entry) => entry.id)).toEqual([kept.id]);
+    expect(withReleased.map((entry) => entry.id)).toEqual([
+      kept.id,
+      released.id,
+    ]);
   });
 });
 

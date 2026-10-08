@@ -95,6 +95,12 @@ export interface DailyAgendaRequest {
   includeReleased?: boolean;
 }
 
+/** AG-178. A day's request over several days, `to` included. */
+export interface AgendaRangeRequest extends Omit<DailyAgendaRequest, 'date'> {
+  from: ClinicalDate;
+  to: ClinicalDate;
+}
+
 /**
  * AG-080. A range of Ecuadorian dates and the sites the caller may see.
  *
@@ -414,12 +420,26 @@ export class AgendaService {
     // AG-001: the day is delimited in Ecuador. A `::date` cast in SQL would use
     // the session's zone, and an appointment at 20:30 would fall on the next
     // day — the same arithmetic that misclassifies a neonate's age.
-    const { startsAt, endsAtExclusive } = clinicalDayBounds(request.date);
+    return this.agendaRange({
+      ...request,
+      from: request.date,
+      to: request.date,
+    });
+  }
 
+  /**
+   * AG-178. The same list over several Ecuadorian days, in ONE query: the
+   * week view asked once per day and repeated the six on every refresh.
+   *
+   * The bounds are the start of `from` and the end of `to` in Ecuador, so the
+   * rows are exactly the union of the days asked one by one — same overlap
+   * rule, same filters, same order. Not audited, for the reason the day is not.
+   */
+  async agendaRange(request: AgendaRangeRequest): Promise<AgendaEntryView[]> {
     return this.agenda.dailyAgenda({
       siteId: request.siteId,
-      from: startsAt,
-      untilExclusive: endsAtExclusive,
+      from: clinicalDayBounds(request.from).startsAt,
+      untilExclusive: clinicalDayBounds(request.to).endsAtExclusive,
       practitionerId: request.practitionerId,
       roomId: request.roomId,
       includeReleased: request.includeReleased ?? false,

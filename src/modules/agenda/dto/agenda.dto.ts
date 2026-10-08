@@ -92,17 +92,89 @@ const instant = (label: string) =>
     error: `${label} debe incluir la fecha, la hora y su zona horaria`,
   });
 
-export const dailyAgendaQuerySchema = z.object({
-  /**
-   * The ECUADORIAN calendar date, not a range of instants. The service turns
-   * it into `[00:00, 24:00)` in `America/Guayaquil` (AG-017).
-   */
-  date: clinicalDateField('Indique la fecha en formato AAAA-MM-DD'),
-  practitionerId: z.uuid('Seleccione un profesional de la lista').optional(),
-  roomId: z.uuid('Seleccione un consultorio de la lista').optional(),
-  /** AG-018. */
-  includeReleased: explicitFlag,
-});
+/**
+ * AG-178. How many days one request for the agenda may span: a month. It bounds
+ * the QUERY — a week is six days and a month view is the widest a screen asks
+ * for — and is not clinic policy. `MAX_RANGE_DAYS` (a year) is the bound of the
+ * derived availability, which reads rules and not rows.
+ */
+export const MAX_AGENDA_RANGE_DAYS = 31;
+
+export const dailyAgendaQuerySchema = z
+  .object({
+    /**
+     * The ECUADORIAN calendar date, not a range of instants. The service turns
+     * it into `[00:00, 24:00)` in `America/Guayaquil` (AG-017).
+     */
+    date: clinicalDateField(
+      'Indique la fecha en formato AAAA-MM-DD',
+    ).optional(),
+    /**
+     * AG-178. The same, for several days at once: both ECUADORIAN dates, `to`
+     * included. The week view asks once instead of once per day.
+     */
+    from: clinicalDateField(
+      'Indique la fecha inicial en formato AAAA-MM-DD',
+    ).optional(),
+    to: clinicalDateField(
+      'Indique la fecha final en formato AAAA-MM-DD',
+    ).optional(),
+    practitionerId: z.uuid('Seleccione un profesional de la lista').optional(),
+    roomId: z.uuid('Seleccione un consultorio de la lista').optional(),
+    /** AG-018. */
+    includeReleased: explicitFlag,
+  })
+  .superRefine((query, ctx) => {
+    const ranged = query.from !== undefined || query.to !== undefined;
+    if (query.date !== undefined && ranged) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['date'],
+        message: 'Indique un día o un rango de fechas, no los dos',
+      });
+      return;
+    }
+    if (!ranged) {
+      if (query.date === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['date'],
+          message: 'Indique la fecha en formato AAAA-MM-DD',
+        });
+      }
+      return;
+    }
+    if (query.from === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['from'],
+        message: 'Indique la fecha inicial en formato AAAA-MM-DD',
+      });
+      return;
+    }
+    if (query.to === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['to'],
+        message: 'Indique la fecha final en formato AAAA-MM-DD',
+      });
+      return;
+    }
+    const span = clinicalDaySpan(query.from, query.to);
+    if (span === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['to'],
+        message: 'La fecha final no puede ser anterior a la inicial',
+      });
+    } else if (span > MAX_AGENDA_RANGE_DAYS) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['to'],
+        message: `El rango no puede superar ${MAX_AGENDA_RANGE_DAYS} días`,
+      });
+    }
+  });
 /** Query of GET /agenda/sites/:siteId/entries. */
 export class DailyAgendaQueryDto extends createZodDto(dailyAgendaQuerySchema) {}
 
@@ -836,7 +908,14 @@ export type DurationProposalResponse = z.infer<typeof durationProposalSchema>;
 
 export const dailyAgendaSchema = z.object({
   siteId: z.uuid(),
-  date: z.iso.date(),
+  /** The day asked for (AG-017); absent when a range was asked (AG-178). */
+  date: z.iso.date().optional(),
+  /**
+   * AG-178. The range served, `to` included — for one day, both are that day,
+   * so a client reads the same two fields whichever way it asked.
+   */
+  from: z.iso.date(),
+  to: z.iso.date(),
   /** Ordered by start instant (AG-017). */
   items: z.array(agendaEntrySchema),
   /** Echoed so the client never has to remember what it asked for. */
