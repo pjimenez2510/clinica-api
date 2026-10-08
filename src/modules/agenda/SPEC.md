@@ -2099,10 +2099,14 @@ pasó de hora.
   > dejar «pasa a curación». De fábrica lo llevan recepción, enfermería y el
   > médico (D-176.3).
   >
-  > **Sin historial propio**: la cita ya se versiona entera (`record_version`),
-  > así que quién cambió la nota y qué decía antes se lee en sus versiones; y
-  > como es texto libre, la exportación al titular la deja fuera igual que el
-  > motivo (D-141.4).
+  > **Con su propio sello y sin historial** (`board_note_by_id`,
+  > `board_note_at`): quién la escribió por última vez y cuándo, también si la
+  > vació. No es una edición de la cita —el disparador de versiones de
+  > `agenda_entry` no la mira, y sellar `edited_by_id` haría que toda cita
+  > anotada se leyera «editada»—, y no se guardan las notas anteriores: es
+  > texto libre a la vista de todo el personal y conservar cada versión es
+  > guardar más de lo que el tablero necesita. Como es texto libre, la
+  > exportación al titular la deja fuera igual que el motivo (D-141.4).
 
 ## 6. Reprogramación
 
@@ -2782,6 +2786,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `APPOINTMENT_FROM_WAITLIST`            | 409    | AG-063, AG-162 |
 | `WAITLIST_NO_CONTACT_ATTEMPT`          | 409    | AG-064         |
 | `BOARD_NOTE_NEEDS_A_PATIENT`           | 409    | AG-176         |
+| `BOARD_VIEW_ROLE_NOT_FOUND`            | 404    | AG-138         |
 | `WAITLIST_CONTACT_OF_ANOTHER`          | 403    | AG-064         |
 | `WAITLIST_CONTACT_CHANGED`             | 409    | AG-064         |
 | `BOOKING_IN_THE_PAST`                  | 422    | AG-031         |

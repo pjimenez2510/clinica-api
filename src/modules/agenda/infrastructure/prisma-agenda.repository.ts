@@ -90,7 +90,7 @@ import type { PresenceEntry } from '../domain/overbooking-policy';
  * A value that is never loaded cannot leak into a response, a log or a support
  * screenshot, which is the same reason `OCCUPANCY_SELECT` below leaves it out.
  */
-const ENTRY_SELECT = {
+export const ENTRY_SELECT = {
   id: true,
   kind: true,
   siteId: true,
@@ -1764,7 +1764,7 @@ function toScheduleRule(row: {
 }
 
 /** Row to view. The casts of `kind`, `status` and the channel rest on the PostgreSQL enums behind those columns. */
-function toEntryView(row: {
+export function toEntryView(row: {
   id: string;
   kind: string;
   siteId: string;

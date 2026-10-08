@@ -18,7 +18,7 @@ import {
  * strings. The try/catch keeps an invalid date a per-field 422 instead of an
  * escaped RangeError.
  */
-const clinicalDateField = (message: string) =>
+export const clinicalDateField = (message: string) =>
   z.iso.date(message).transform((value, ctx): ClinicalDate => {
     try {
       return parseClinicalDate(value);
