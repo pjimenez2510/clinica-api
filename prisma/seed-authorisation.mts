@@ -77,7 +77,7 @@ const BACKFILL_19_08_2026: readonly { role: string; permission: string }[] = [
  *
  * Beside the three, one-off grants that D-012 cannot deliver: the dated list
  * above, and AU-042's, which is remembered in `authorisation_one_off` and so
- * happens once per database (`grantBackgroundWriteOnce`).
+ * happens once per database (`grantOnce`), and AU-053's, alike.
  */
 export async function syncAuthorisation(prisma: PrismaClient): Promise<{
   permissions: number;
@@ -87,7 +87,7 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
   grantedToSystemRoles: string[];
   /** `ROLE → permission` granted by the dated list above, and nothing else. */
   backfilled: string[];
-  /** `ROLE → permission` granted by a one-off of AU-042, on its first run only. */
+  /** `ROLE → permission` granted by a one-off (AU-042, AU-053), on its first run only. */
   grantedOnce: string[];
 }> {
   // Read BEFORE upserting: afterwards every code exists and «new» is no
@@ -231,11 +231,19 @@ export async function syncAuthorisation(prisma: PrismaClient): Promise<{
     orphanPermissions,
     grantedToSystemRoles,
     backfilled,
-    grantedOnce: await grantBackgroundWriteOnce(prisma),
+    grantedOnce: [
+      ...(await grantOnce(prisma, BACKGROUND_WRITE_ONE_OFF)),
+      ...(await grantOnce(prisma, RECORD_PROTECTED_ONE_OFF)),
+    ],
   };
 }
 
-const BACKGROUND_WRITE_ONE_OFF = 'background-write-to-record-writers';
+/** A one-off grant: whoever holds `holders` receives `grant`, once per database. */
+interface OneOff {
+  name: string;
+  holders: string;
+  grant: string;
+}
 
 /**
  * AU-042, D-062 point 2: `background:write` reaches EVERY role that holds
@@ -247,46 +255,70 @@ const BACKGROUND_WRITE_ONE_OFF = 'background-write-to-record-writers';
  * that on deploy. D-012's argument covers this one too: holding `record:write`
  * already meant recording allergies, so nobody decided to take it away.
  *
- * ONCE, and the row in `authorisation_one_off` is what makes it once. It is
- * claimed in the same transaction as the grant, so two syncs at the same time
- * grant once; and a role the clinic later strips of `background:write` keeps
- * it stripped, which is exactly what `BACKFILL_19_08_2026` cannot promise.
- *
  * ⚠️ WHAT IT COSTS: the FIRST run cannot tell «never had it» from «the clinic
  * took it away» before this row existed. A role that received
  * `background:write` from D-012 and lost it by hand between
  * `feat/f03-preparacion` and this deploy gets it back once. No installation
  * outside development ran that branch (`database-phase.mjs`: development).
  */
+const BACKGROUND_WRITE_ONE_OFF: OneOff = {
+  name: 'background-write-to-record-writers',
+  holders: 'record:write',
+  grant: 'background:write',
+};
 
-async function grantBackgroundWriteOnce(
+/**
+ * AU-053, D-188 §6: `record:protected` reaches EVERY role that holds
+ * `record:sign`, once per database.
+ *
+ * Signing the 002 that discharges needs block F answered (EN-240), and block
+ * F is read and written with `record:protected`. D-012 handed the new code to
+ * `MEDICO` only, so a clinic's own role that signs the 002 — «Odontólogo» —
+ * could no longer discharge. Whoever signs the 002 already had to answer it;
+ * nobody decided to take that away. `ADMIN` does not sign and gets nothing
+ * (D-188 §1). Same cost as AU-042's, for the same reason.
+ */
+const RECORD_PROTECTED_ONE_OFF: OneOff = {
+  name: 'record-protected-to-record-signers',
+  holders: 'record:sign',
+  grant: 'record:protected',
+};
+
+/**
+ * ONCE, and the row in `authorisation_one_off` is what makes it once. It is
+ * claimed in the same transaction as the grant, so two syncs at the same time
+ * grant once; and a role the clinic later strips of the permission keeps it
+ * stripped, which is exactly what `BACKFILL_19_08_2026` cannot promise.
+ */
+async function grantOnce(
   prisma: PrismaClient,
+  oneOff: OneOff,
 ): Promise<string[]> {
   return prisma.$transaction(async (tx) => {
     const claimed = await tx.authorisationOneOff.createMany({
-      data: [{ name: BACKGROUND_WRITE_ONE_OFF }],
+      data: [{ name: oneOff.name }],
       skipDuplicates: true,
     });
     if (claimed.count === 0) return [];
 
-    const writers = await tx.role.findMany({
+    const holders = await tx.role.findMany({
       where: {
-        permissions: { some: { permissionCode: 'record:write' } },
-        NOT: { permissions: { some: { permissionCode: 'background:write' } } },
+        permissions: { some: { permissionCode: oneOff.holders } },
+        NOT: { permissions: { some: { permissionCode: oneOff.grant } } },
       },
       select: { id: true, code: true },
       orderBy: { code: 'asc' },
     });
     await tx.rolePermission.createMany({
-      data: writers.map((role) => ({
+      data: holders.map((role) => ({
         roleId: role.id,
-        permissionCode: 'background:write',
+        permissionCode: oneOff.grant,
       })),
       skipDuplicates: true,
     });
-    const granted = writers.map((role) => `${role.code} → background:write`);
+    const granted = holders.map((role) => `${role.code} → ${oneOff.grant}`);
     await tx.authorisationOneOff.update({
-      where: { name: BACKGROUND_WRITE_ONE_OFF },
+      where: { name: oneOff.name },
       data: { granted },
     });
     return granted;
@@ -320,7 +352,7 @@ async function main(): Promise<void> {
     }
     if (result.grantedOnce.length > 0) {
       console.log(
-        `Permisos concedidos una sola vez a quien tenía record:write (AU-042, D-062): ${result.grantedOnce.join(', ')}.`,
+        `Permisos concedidos una sola vez (AU-042 a quien tenía record:write, AU-053 a quien tenía record:sign): ${result.grantedOnce.join(', ')}.`,
       );
     }
     if (result.orphanPermissions.length > 0) {

@@ -382,6 +382,82 @@ describe('roles are data, permissions are a contract', () => {
     expect(await holders(own.id)).not.toContain('background:write');
   });
 
+  it('AU-053 concede record:protected UNA vez a todo rol con record:sign, también a uno propio, no a quien no firma, y no lo devuelve si se le quita', async () => {
+    /**
+     * D-188 §6. `record:protected` llegó por D-012 sólo a `MEDICO`, y la firma
+     * de la 002 exige el tamizaje (EN-240): un rol propio que firma no podía
+     * dar el alta. Se reproduce esa base: el código está, sólo `MEDICO` lo
+     * tiene, y la concesión única no se ha hecho.
+     */
+    const prisma = db();
+    await syncAuthorisation(prisma);
+    await prisma.authorisationOneOff.deleteMany({
+      where: { name: 'record-protected-to-record-signers' },
+    });
+
+    const own = await prisma.role.create({
+      data: {
+        code: 'ODONTOLOGO',
+        name: 'Odontólogo',
+        description: 'Rol propio de la clínica',
+        isSystem: false,
+        permissions: {
+          create: [
+            { permissionCode: 'record:read' },
+            { permissionCode: 'record:write' },
+            { permissionCode: 'record:sign' },
+          ],
+        },
+      },
+    });
+    // Control: a role that writes the record and does not sign gets nothing.
+    const writer = await prisma.role.create({
+      data: {
+        code: 'ESCRIBIENTE',
+        name: 'Escribiente',
+        description: 'Rol propio de la clínica',
+        isSystem: false,
+        permissions: { create: [{ permissionCode: 'record:write' }] },
+      },
+    });
+    const holders = async (roleId: string) =>
+      (
+        await prisma.rolePermission.findMany({
+          where: { roleId },
+          select: { permissionCode: true },
+        })
+      ).map((grant) => grant.permissionCode);
+
+    const first = await syncAuthorisation(prisma);
+
+    expect(first.grantedOnce).toContain('ODONTOLOGO → record:protected');
+    expect(first.grantedOnce).not.toContain('ESCRIBIENTE → record:protected');
+    expect(await holders(own.id)).toContain('record:protected');
+    expect(await holders(writer.id)).not.toContain('record:protected');
+    // D-188 §1: ADMIN does not sign the 002 and does not get it.
+    const admin = await prisma.role.findUniqueOrThrow({ where: { code: 'ADMIN' } }); // prettier-ignore
+    expect(await holders(admin.id)).not.toContain('record:protected');
+    const ledger = await prisma.authorisationOneOff.findUniqueOrThrow({
+      where: { name: 'record-protected-to-record-signers' },
+    });
+    expect(ledger.granted).toEqual(first.grantedOnce);
+
+    // The clinic takes it away: that is a decision, and it stays made.
+    await prisma.rolePermission.delete({
+      where: {
+        roleId_permissionCode: {
+          roleId: own.id,
+          permissionCode: 'record:protected',
+        },
+      },
+    });
+
+    const second = await syncAuthorisation(prisma);
+
+    expect(second.grantedOnce).toEqual([]);
+    expect(await holders(own.id)).not.toContain('record:protected');
+  });
+
   it('AU-042 dos sincronizaciones a la vez conceden una sola vez: gana exactamente una', async () => {
     const prisma = db();
     await syncAuthorisation(prisma);
@@ -408,7 +484,11 @@ describe('roles are data, permissions are a contract', () => {
     expect(winners[0]?.grantedOnce).toContain(
       'MEDICO_RURAL → background:write',
     );
-    await expect(prisma.authorisationOneOff.count()).resolves.toBe(1);
+    await expect(
+      prisma.authorisationOneOff.count({
+        where: { name: 'background-write-to-record-writers' },
+      }),
+    ).resolves.toBe(1);
   });
 
   it('PA-040 reparte los dos permisos tambien en una instalacion anterior a la decision', async () => {
