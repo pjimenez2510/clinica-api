@@ -2541,6 +2541,87 @@ describe('la atención por HTTP', () => {
       });
     });
 
+    it('EN-128 una segunda salida guarda su propio motivo: el historial conserva las dos', async () => {
+      const encounterId = await openEncounter();
+      await post(`/encounters/${encounterId}/hold`, doctorToken, { reason: 'Va al laboratorio' }).expect(200); // prettier-ignore
+      await post(`/encounters/${encounterId}/resume`, doctorToken).expect(200);
+      await post(`/encounters/${encounterId}/hold`, doctorToken, { reason: 'Va a la farmacia' }).expect(200); // prettier-ignore
+
+      const trail = await get(`/encounters/${encounterId}/status-history`, doctorToken).expect(200); // prettier-ignore
+      const reasons = (
+        trail.body as { items: { fact: string; reason: string | null }[] }
+      ).items // prettier-ignore
+        .filter((item) => item.fact === 'PUT_ON_HOLD')
+        .map((item) => item.reason);
+      expect(reasons).toEqual(['Va al laboratorio', 'Va a la farmacia']);
+    });
+
+    it('EN-128 EN-133 la base no deja suspender ni reanudar reusando la constancia anterior, ni poner motivo fuera de una suspensión', async () => {
+      const encounterId = await openEncounter();
+      await post(`/encounters/${encounterId}/hold`, doctorToken, { reason: 'Va al laboratorio' }).expect(200); // prettier-ignore
+      await post(`/encounters/${encounterId}/resume`, doctorToken).expect(200);
+
+      // Otra vez a ON_HOLD con la constancia de la primera: rechazado.
+      await expect(
+        prisma.encounter.update({ where: { id: encounterId }, data: { status: 'ON_HOLD' } }), // prettier-ignore
+      ).rejects.toThrow(/encounter_on_hold_states_who_when_and_why/);
+
+      // Los dos de cada acto, juntos o ninguno.
+      await expect(
+        prisma.encounter.update({ where: { id: encounterId }, data: { heldAt: null } }), // prettier-ignore
+      ).rejects.toThrow(/encounter_hold_stamped/);
+      await expect(
+        prisma.encounter.update({ where: { id: encounterId }, data: { resumedAt: null } }), // prettier-ignore
+      ).rejects.toThrow(/encounter_resume_stamped/);
+
+      // El motivo sólo vive en la fila de la suspensión.
+      const rows = await prisma.$queryRaw<{ id: bigint }[]>`
+        SELECT id FROM encounter_status_history WHERE encounter_id = ${encounterId}::uuid AND fact = 'RESUMED'`;
+      await expect(
+        prisma.$executeRaw`ALTER TABLE encounter_status_history DISABLE TRIGGER USER`.then(
+          () =>
+            prisma.$executeRaw`UPDATE encounter_status_history SET reason = 'x' WHERE id = ${rows[0]!.id}`,
+        ),
+      ).rejects.toThrow(/encounter_status_history_reason_only_on_hold/);
+      await prisma.$executeRaw`ALTER TABLE encounter_status_history ENABLE TRIGGER USER`;
+
+      // Control positivo: con su propia constancia, sí.
+      const user = await prisma.user.findFirstOrThrow({ select: { id: true } });
+      const held = await prisma.encounter.update({
+        where: { id: encounterId },
+        data: {
+          status: 'ON_HOLD',
+          holdReason: 'Imagen',
+          heldById: user.id,
+          heldAt: new Date(),
+        },
+      });
+      expect(held.status).toBe('ON_HOLD');
+    });
+
+    it('EN-128 AG-122 quien todavía no entró a la consulta no pasa a «fuera» al suspender, ni a «en atención» al reanudar', async () => {
+      const appointment = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'WALK_IN',
+          siteId,
+          practitionerId: doctorPractitionerId,
+          patientId,
+          subjectStatus: 'ARRIVED',
+          subjectStatusAt: new Date(),
+          ...hourSlot(11),
+        },
+      });
+      const encounterId = await openEncounter(doctorToken, { agendaEntryId: appointment.id }); // prettier-ignore
+      const subject = async () =>
+        (await prisma.agendaEntry.findUniqueOrThrow({ where: { id: appointment.id } })).subjectStatus; // prettier-ignore
+
+      await post(`/encounters/${encounterId}/hold`, doctorToken, { reason: 'Sale un momento' }).expect(200); // prettier-ignore
+      expect(await subject()).toBe('ARRIVED');
+      await post(`/encounters/${encounterId}/resume`, doctorToken).expect(200);
+      expect(await subject()).toBe('ARRIVED');
+    });
+
     it('EN-128 sin motivo responde 422 por campo, y la atención sigue abierta', async () => {
       const encounterId = await openEncounter();
 

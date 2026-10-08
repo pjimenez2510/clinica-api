@@ -113,11 +113,25 @@ BEGIN
         v_by := NEW."entered_in_error_by_id";
         v_at := NEW."entered_in_error_at";
       WHEN 'ON_HOLD' THEN
+        -- Each suspension states its own reason, author and instant: one
+        -- that reused the previous one's would copy them into the trail.
+        IF NEW."held_at" IS NOT DISTINCT FROM OLD."held_at" THEN
+          RAISE EXCEPTION
+            'encounter_on_hold_states_who_when_and_why: a suspension is stamped with its own reason, author and instant'
+            USING ERRCODE = 'check_violation',
+                  HINT = 'EN-128: set hold_reason, held_by_id and held_at.';
+        END IF;
         v_fact := 'PUT_ON_HOLD';
         v_by := NEW."held_by_id";
         v_at := NEW."held_at";
         v_reason := NEW."hold_reason";
       WHEN 'OPEN' THEN
+        IF NEW."resumed_at" IS NOT DISTINCT FROM OLD."resumed_at" THEN
+          RAISE EXCEPTION
+            'encounter_resume_stamped: resuming is stamped with its own author and instant'
+            USING ERRCODE = 'check_violation',
+                  HINT = 'EN-128: set resumed_by_id and resumed_at.';
+        END IF;
         v_fact := 'RESUMED';
         v_by := NEW."resumed_by_id";
         v_at := NEW."resumed_at";

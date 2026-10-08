@@ -32,6 +32,13 @@ ALTER TABLE "clinical_note"
   ADD CONSTRAINT "clinical_note_method_only_when_signed"
   CHECK ("signature_method" IS NULL OR "signed_at" IS NOT NULL);
 
+-- Y mientras no exista la custodia (D-177.1), ninguna nota puede decir que
+-- se firmó con certificado: sería afirmar uno que no hubo. Se retira esta
+-- restricción en la migración que construya la firma certificada.
+ALTER TABLE "clinical_note"
+  ADD CONSTRAINT "clinical_note_no_certificate_without_custody"
+  CHECK ("signature_method" IS DISTINCT FROM 'CERTIFICATE');
+
 -- Toda firma NUEVA dice cómo se firmó, y la escribe la base: el único camino
 -- de firma que existe es la credencial, así que una firma que no declara otro
 -- método ES con credencial. No se exige al llamador por dos razones: los tres
@@ -95,10 +102,14 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Retraction with no replacement.
+  -- Retraction with no replacement: the signature is frozen too, or a
+  -- retraction could re-attribute who signed.
   IF NEW.status = 'ENTERED_IN_ERROR'
      AND OLD.status = 'SIGNED'
      AND NEW.content          IS NOT DISTINCT FROM OLD.content
+     AND NEW.content_hash     IS NOT DISTINCT FROM OLD.content_hash
+     AND NEW.signed_at        IS NOT DISTINCT FROM OLD.signed_at
+     AND NEW.signed_by_id     IS NOT DISTINCT FROM OLD.signed_by_id
      AND NEW.signature_method IS NOT DISTINCT FROM OLD.signature_method
   THEN
     RETURN NEW;

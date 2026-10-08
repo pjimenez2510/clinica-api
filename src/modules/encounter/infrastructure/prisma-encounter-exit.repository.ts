@@ -275,7 +275,11 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
       // AG-124. The other axis of the same fact: the board shows the patient
       // out of the building, not «en atención» in an empty consulting room.
       await movePatientAxis(tx, current.agendaEntryId, {
-        from: ['ARRIVED', 'IN_PREPARATION', 'READY', 'RECEIVING_CARE'],
+        // Only from the attention itself: resuming puts them back in
+        // `RECEIVING_CARE`, which is true only of who was in it. Someone still
+        // in the waiting room or in preparation keeps their state — sending
+        // them back «en atención» would be a state no fact supports (AG-122).
+        from: ['RECEIVING_CARE'],
         to: 'ON_LEAVE',
         at: plan.at,
       });
@@ -569,7 +573,7 @@ async function movePatientAxis(
   tx: Prisma.TransactionClient,
   agendaEntryId: string | null,
   move: {
-    from: readonly ('ARRIVED' | 'IN_PREPARATION' | 'READY' | 'RECEIVING_CARE' | 'ON_LEAVE')[]; // prettier-ignore
+    from: readonly ('RECEIVING_CARE' | 'ON_LEAVE')[];
     to: 'ON_LEAVE' | 'RECEIVING_CARE';
     at: Date;
   },

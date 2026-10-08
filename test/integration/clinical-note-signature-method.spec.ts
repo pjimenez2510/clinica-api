@@ -75,23 +75,21 @@ describe('EN-156 cómo se firmó la nota', () => {
     expect(note.signatureMethod).toBe('CREDENTIAL');
   });
 
-  it('EN-156 control positivo: un método declarado no se pisa', async () => {
-    // The day the custody exists, the certificate path writes CERTIFICATE;
-    // the default must not overwrite it.
+  it('EN-156 D-177.1 mientras no haya custodia, ninguna nota se firma «con certificado»', async () => {
     const { prisma, practitioner, encounter } = await noteContext();
 
-    const note = await prisma.clinicalNote.create({
-      data: {
-        ...noteData(encounter.id, practitioner.id),
-        status: 'SIGNED',
-        signedById: practitioner.id,
-        signedAt: new Date(),
-        contentHash: 'a'.repeat(64),
-        signatureMethod: 'CERTIFICATE',
-      },
-    });
-
-    expect(note.signatureMethod).toBe('CERTIFICATE');
+    await expect(
+      prisma.clinicalNote.create({
+        data: {
+          ...noteData(encounter.id, practitioner.id),
+          status: 'SIGNED',
+          signedById: practitioner.id,
+          signedAt: new Date(),
+          contentHash: 'a'.repeat(64),
+          signatureMethod: 'CERTIFICATE',
+        },
+      }),
+    ).rejects.toThrow(/clinical_note_no_certificate_without_custody/);
   });
 
   it('EN-156 un borrador con método lo rechaza la base', async () => {
@@ -122,13 +120,13 @@ describe('EN-156 cómo se firmó la nota', () => {
     await expect(
       prisma.clinicalNote.update({
         where: { id: note.id },
-        data: { signatureMethod: 'CERTIFICATE' },
+        data: { signatureMethod: null },
       }),
     ).rejects.toThrow(/is signed and cannot be modified/);
     await expect(
       prisma.clinicalNote.update({
         where: { id: note.id },
-        data: { status: 'SUPERSEDED', signatureMethod: 'CERTIFICATE' },
+        data: { status: 'SUPERSEDED', signatureMethod: null },
       }),
     ).rejects.toThrow(/is signed and cannot be modified/);
 
@@ -138,6 +136,39 @@ describe('EN-156 cómo se firmó la nota', () => {
       data: { status: 'SUPERSEDED' },
     });
     expect(superseded.signatureMethod).toBe('CREDENTIAL');
+  });
+
+  it('EN-023 retractar una nota firmada no cambia quién la firmó, cuándo ni su huella; retractarla tal cual, sí', async () => {
+    const { prisma, practitioner, encounter } = await noteContext();
+    const other = await createPractitioner(prisma);
+    const note = await prisma.clinicalNote.create({
+      data: {
+        ...noteData(encounter.id, practitioner.id),
+        status: 'SIGNED',
+        signedById: practitioner.id,
+        signedAt: new Date(),
+        contentHash: 'a'.repeat(64),
+      },
+    });
+
+    await expect(
+      prisma.clinicalNote.update({
+        where: { id: note.id },
+        data: { status: 'ENTERED_IN_ERROR', signedById: other.id },
+      }),
+    ).rejects.toThrow(/is signed and cannot be modified/);
+    await expect(
+      prisma.clinicalNote.update({
+        where: { id: note.id },
+        data: { status: 'ENTERED_IN_ERROR', contentHash: 'b'.repeat(64) },
+      }),
+    ).rejects.toThrow(/is signed and cannot be modified/);
+
+    const retracted = await prisma.clinicalNote.update({
+      where: { id: note.id },
+      data: { status: 'ENTERED_IN_ERROR' },
+    });
+    expect(retracted.signedById).toBe(practitioner.id);
   });
 
   it('EN-156 una nota firmada antes de la columna (NULL) todavía se enmienda: no se le inventa nada', async () => {
