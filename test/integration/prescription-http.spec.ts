@@ -933,8 +933,8 @@ describe('la receta por HTTP', () => {
         systemId: cnmb.id,
         code: 'PENICILINA',
         display: 'Penicilina',
-        validFrom: new Date('2019-01-01'),
-      }, // fecha-fija: vigencia del concepto, anterior a todo
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigencia del concepto, anterior a todo
+      },
     });
     // Control: sin sucesor no hay código ATC, y por tanto ninguna familia.
     const allergy = await prisma.patientAllergy.create({
@@ -953,12 +953,12 @@ describe('la receta por HTTP', () => {
         systemId: cnmb.id,
         code: 'J01CE01',
         display: 'Bencilpenicilina',
-        validFrom: new Date('2019-01-01'),
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigencia del concepto, anterior a todo
         attributes: {
           replaces: ['PENICILINA'],
           substances: ['dci:bencilpenicilina'],
         },
-      }, // fecha-fija: vigencia del concepto, anterior a todo
+      },
     });
     expect((await composeAsDoctor()).allergyAlerts).toEqual([
       { line: 1, allergyId: allergy.id, match: 'CLASS' },
@@ -974,9 +974,9 @@ describe('la receta por HTTP', () => {
         systemId: cnmb.id,
         code: 'J01CR02',
         display: 'Amoxicilina + ácido clavulánico',
-        validFrom: new Date('2019-01-01'),
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigencia del concepto, anterior a todo
         attributes: { substances: ['dci:amoxicilina + acido clavulanico'] },
-      }, // fecha-fija: vigencia del concepto, anterior a todo
+      },
     });
     const allergy = await prisma.patientAllergy.create({
       data: {
