@@ -712,6 +712,34 @@ describe('el servicio de recetas', () => {
     expect(issued.verificationCode).toMatch(/^[0-9A-F]{16}$/);
   });
 
+  it('PR-055 emite sin depender del archivo de documentos: con el archivo caído, la receta sale igual', async () => {
+    /**
+     * Art. 14 asks the establishment for paper pads in case the system fails,
+     * and no software can keep them. What is ours is not to add a failure of
+     * our own: issuing reads and writes the prescription and its trail, and
+     * the PDF is composed when somebody asks for it. With the archive unable
+     * to file anything, the prescription is still issued and nothing was
+     * asked of it.
+     */
+    const failing: AnnulledDocumentArchiver = {
+      // What the port answers when it could not file the PDF (DOC-109).
+      archiveAnnulled: () => Promise.resolve(false),
+    };
+    const archiveCalls = vi.spyOn(failing, 'archiveAnnulled');
+    const offline = new PrescriptionService(repository, allergyReader, { record: () => Promise.resolve() }, { setContext: vi.fn(), info: vi.fn() } as unknown as PinoLogger, failing, absenceReader); // prettier-ignore
+
+    const issued = await offline.issue(PRESCRIPTION, requester);
+
+    expect(issued.status).toBe('ACTIVE');
+    expect(archiveCalls).not.toHaveBeenCalled();
+
+    // Control positivo: el mismo archivo caído SÍ se usa, y se nota, al anular.
+    repository.snapshot = aSnapshot({ status: 'ACTIVE' });
+    const cancelled = await offline.cancel(PRESCRIPTION, 'Pérdida', requester);
+    expect(archiveCalls).toHaveBeenCalledTimes(1);
+    expect(cancelled.documentArchived).toBe(false);
+  });
+
   it('PR-010 anula una receta EMITIDA sin borrar nada', async () => {
     repository.snapshot = aSnapshot({ status: 'ACTIVE' });
 
