@@ -154,6 +154,12 @@ export interface NoteEncounterRead {
  */
 export interface SigningEncounterRead extends NoteEncounterRead {
   anthropometryPending: AnthropometryField[];
+  /**
+   * EN-240. Whether block F has an answer — any of the four, «no se aplicó»
+   * included. A boolean and never the answer: the signature needs to know
+   * THAT it was answered, not what (EN-073).
+   */
+  screeningAnswered: boolean;
 }
 
 /**

@@ -447,6 +447,30 @@ export class AnthropometryPendingError extends ValidationError {
   }
 }
 
+/**
+ * EN-240, EN-070. The discharge is signed and block F was never answered.
+ *
+ * It says the screening is UNANSWERED and nothing else: every attention has
+ * one to answer, so the sentence tells nobody anything about this patient
+ * (EN-073). «No se aplicó» is an answer and lets the signature through.
+ */
+export class ScreeningPendingError extends ValidationError {
+  readonly code = 'SCREENING_PENDING';
+  override readonly userTitle =
+    'Falta responder el tamizaje de la atención: obligatorio para firmar el alta';
+  override readonly fieldErrors = [
+    {
+      field: 'screening',
+      code: 'SCREENING_PENDING',
+      message: 'Responda el tamizaje: sin signos, no se aplicó o con signos',
+    },
+  ];
+
+  constructor() {
+    super('The screening of block F is unanswered at the discharge');
+  }
+}
+
 /* ─── Nota clínica (H2: EN-020 a EN-034) ─────────────────────────────────── */
 
 /** EN-022. The note does not exist, or belongs to another attention. */

@@ -278,6 +278,40 @@ describe('roles are data, permissions are a contract', () => {
     }
   });
 
+  it('EN-072 reparte la segunda llave de la historia (record:protected) a MEDICO y a nadie mas, tambien en una base que ya existia', async () => {
+    /**
+     * D-188 (pendiente): quien firma la 002 tiene que poder responder el
+     * tamizaje (EN-240), así que `MEDICO` la trae de fábrica; ni `ADMIN` ni
+     * `ENFERMERIA`. El conjunto es EXACTO: dársela a otro rol de fábrica falla.
+     *
+     * Y en una base que YA EXISTÍA —la del autor— llega por D-012: es un
+     * código nuevo, así que la sincronización se la da a los roles de sistema
+     * que la declaran. Se reproduce quitando el código antes de sincronizar.
+     */
+    const prisma = db();
+    await syncAuthorisation(prisma);
+    const holders = async () =>
+      (
+        await prisma.rolePermission.findMany({
+          where: { permissionCode: 'record:protected' },
+          select: { role: { select: { code: true } } },
+        })
+      )
+        .map((holder) => holder.role.code)
+        .sort();
+
+    expect(await holders()).toEqual(['MEDICO']);
+
+    await prisma.rolePermission.deleteMany({
+      where: { permissionCode: 'record:protected' },
+    });
+    await prisma.permission.delete({ where: { code: 'record:protected' } });
+    const again = await syncAuthorisation(prisma);
+
+    expect(again.grantedToSystemRoles).toContain('MEDICO → record:protected');
+    expect(await holders()).toEqual(['MEDICO']);
+  });
+
   it('AU-042 concede background:write UNA vez a todo rol con record:write, también a uno propio, y no lo devuelve si se le quita', async () => {
     /**
      * D-062, punto 2. `background:write` ya existe en toda base sincronizada

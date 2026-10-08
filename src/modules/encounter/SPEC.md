@@ -372,7 +372,7 @@ después, se construye encima de un régimen de acceso que ya está mal.
 abre la atención, **no ve el tamizaje** y no recibe un 403 que confirme que
 existe; con la llave lo ve y la lectura deja **una** fila de bitácora; y ningún
 listado de atenciones lo lleva, afirmado sobre la respuesta.
-**Cubre:** EN-070 a EN-078.
+**Cubre:** EN-070 a EN-078, EN-240.
 
 **Solo servidor:** EN-072, EN-073, EN-075. La puerta con sesión real, la ausencia
 en listados y logs, y la fila de bitácora. Una pantalla que decide no pintar algo
@@ -1784,6 +1784,33 @@ requisitos que cambian.
   > solo pondría en la ficha permanente del paciente, con otro régimen de acceso y
   > otra puerta, un dato que quien hizo el tamizaje quizá no quiera propagar todavía
   > — y lo haría con la sesión de quien tal vez no lleva esa segunda llave.
+- **EN-240** — CUANDO se firme la nota que da el alta, SI la atención no tiene
+  respuesta al tamizaje de violencia, el sistema DEBERÁ rechazar la firma con
+  `SCREENING_PENDING`; «no se aplicó» ES una respuesta y no la impide.
+  > Es lo que hace obligatorio a EN-070: un campo con valor por defecto se
+  > llena solo, y entonces «no se aplicó» deja de contar a quien no preguntó
+  > para contar a quien no tocó la casilla. Sin fila es «sin responder»; los
+  > cuatro valores son respuestas. Interrumpir no da el alta y no lo pide, como
+  > la antropometría (EN-217). El error dice que falta responder y nada más:
+  > toda atención tiene uno que responder, así que no revela nada del paciente.
+  > Consecuencia: quien firma la 002 necesita `record:protected` (D-188).
+
+> **Construido el 08-10-2026 (`feat/f04-tamizaje-violencia`).** El permiso es
+> `record:protected` y lo trae `MEDICO` de fábrica (D-188, pendiente). Se lee
+> por **una** ruta, `GET /encounters/:id/screening` con `record:read`: sin la
+> llave en la sede de la atención responde `200 {}`; con ella, `screening`
+> (`null` si nadie respondió) y una fila `encounter_screening`/`READ` en la
+> bitácora cuando hay respuesta. Se escribe con `PUT` y las dos llaves
+> (`record:protected` y `record:write`), sólo con la atención viva. Los CHECK
+> de EN-071, EN-074 y EN-077 y la clave foránea de EN-076 están en
+> `20261008170000_violence_screening_block_f`; los tipos sin repetir, la
+> respuesta anterior archivada entera en `violence_screening_version` (fuera
+> de `record_version`: D-188 §3), y el rechazo de escribir con la atención no
+> viva o de borrar, en `20261008170100_violence_screening_history`. La fila
+> de bitácora se escribe en la misma transacción que la lectura o el guardado:
+> si no se puede escribir, no se muestra ni se guarda nada. Fuera: registrar la
+> notificación después del alta (D-188 §5) y el formulario 094 en papel
+> (D-052 §1).
 
 ## 6. Alergias y antecedentes (REQ-008)
 
@@ -4199,6 +4226,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `NOTE_TEMPLATE_INVALID` | 422 | Una versión de la plantilla de nota sin una sección del mínimo, con una del mínimo no obligatoria, con una lista de menos de dos opciones o repetidas, o con títulos repetidos | EN-201, EN-202 |
 | `ENCOUNTER_ALREADY_CLOSED` | 409 | Se intentó registrar contenido clínico en una atención ya cerrada | EN-009 |
 | `DISCHARGE_CONDITION_REQUIRED` | 422 | Cerrar sin condición de egreso | EN-009 |
+| `SCREENING_PENDING` | 422 | Se firma la nota que da el alta con el tamizaje de violencia sin responder. No dice nada del paciente: toda atención tiene uno | EN-240 |
 | `REFERRAL_REQUIRED_ON_DISCHARGE` | 422 | Egreso `REFERRED` sin referencia emitida | EN-105 |
 | `NOTE_ALREADY_SIGNED` | 409 | Editar una nota firmada. **Traducido por el servicio**, no por el mapa de constraints: el disparador levanta `insufficient_privilege`, que a secas saldría como 403 y diría al médico que no tiene permisos cuando lo que pasa es que la nota está firmada | EN-023 |
 | `AMENDMENT_REASON_REQUIRED` | 422 | Enmendar sin motivo. Se exige **en el servicio** además del DTO, por lo mismo que `CANCELLATION_REASON_REQUIRED` | EN-025 |
@@ -4214,7 +4242,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `CLINICAL_NOTE_ALREADY_OPEN` | 409 | Abrir la nota 002 de una atención que ya tiene una (D-139.5) | EN-229 |
 | `NOTE_CONTENT_INCOMPLETE` | 422 | Firmar sin una sección obligatoria, o la 002 sin ningún diagnóstico en la atención (`diagnoses`), o sin diagnóstico principal (`principalDiagnosis`). Nombra lo que falta, nunca su contenido | EN-020, EN-236 |
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
-| `VIOLENCE_SCREENING_RESTRICTED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave. Al **leer** no se rechaza: se omite | EN-072 |
+| `PERMISSION_DENIED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave: el de la guarda, sin código propio que nombre el dato. Al **leer** no se rechaza: se omite | EN-072 |
 | `HIV_DATA_RESTRICTED` | 403 | Lo mismo para el bloque de VIH | EN-095 |
 | `PROGRAM_BLOCK_NOT_APPLICABLE` | 422 | Se registró un bloque de programa que la población de la atención no alcanza —obstétrico sin embarazo, SIVAN fuera del rango de edad— | EN-090, EN-092, EN-097 |
 | `CONFIRMATORY_TEST_WITHOUT_SCREENING` | 422 | Segunda prueba de VIH sin primera reactiva | EN-094 |
@@ -4375,6 +4403,8 @@ que es global: una atención ocurre en un sitio.
 | `POST` | `/encounters` | `encounter:open` | EN-001 a EN-014 *(EN-012, EN-013 opcionales, D-177.3)*, EN-017, EN-127, EN-133, EN-141 |
 | `GET` | `/encounters/:id` | `record:read` | EN-063, EN-081, EN-122, EN-237 |
 | `GET` | `/encounters/:id/status-history` | `record:read` | **EN-133** |
+| `GET` | `/encounters/:id/screening` | `record:read` (+ `record:protected` en la sede para verlo; sin él, `200 {}`) | **EN-072**, **EN-073**, **EN-075** |
+| `PUT` | `/encounters/:id/screening` | `record:protected` + `record:write` | **EN-070**, **EN-071**, **EN-074**, **EN-076**, **EN-077** |
 | `GET` | `/configuration/record-retention` | `settings:read` | **EN-157**, **EN-158** *(ruta de `configuration`: el plazo es un parámetro de sede)* |
 | `GET` | `/encounters/open` | `record:read` | EN-146 |
 | `POST` | `/encounters/:id/hold` | `encounter:open` | EN-128 |
@@ -4400,8 +4430,6 @@ que es global: una atención ocurre en un sitio.
 | `GET` | `/encounters/:id/diagnoses` | `record:read` | EN-043, EN-046, EN-047 |
 | `POST` | `/encounters/:id/procedures` | `record:write` | EN-050, EN-151 |
 | `GET` | `/encounters/:id/procedures` | `record:read` | EN-050 |
-| `GET` | `/encounters/:id/violence-screening` | `record:read` + la segunda llave | EN-070 a EN-076 |
-| `PUT` | `/encounters/:id/violence-screening` | `record:write` + la segunda llave | EN-070 a EN-077 |
 | `GET` | `/patients/:id/allergies` | `record:read` | EN-080 a EN-083, **EN-087** |
 | `POST` | `/patients/:id/allergies` | `background:write` | EN-080, EN-086, **EN-164** |
 | `POST` | `/patients/:id/allergies/none-known` | `background:write` | EN-087, **EN-164** |

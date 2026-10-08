@@ -283,6 +283,31 @@ export const PERMISSION_CATALOGUE = [
     resource: 'record',
     description: 'Firmar notas clínicas y certificados',
   },
+  // EN-072, REQ-115. The second key of the record: block F of form 002, the
+  // violence screening. `record:read` opens the attention; this opens what the
+  // attention says about violence, and is ALSO what lets somebody record it.
+  //
+  // OMITTED ON READ, REFUSED ON WRITE — the asymmetry of PA-034. Without it,
+  // `GET /encounters/:id/screening` answers 200 with no screening at all,
+  // never a 403: a refusal on a read would confirm, for that attention, that
+  // there is something behind the door. A write names the data itself, so
+  // refusing it reveals nothing.
+  //
+  // ⚠️ NOT NAMED AFTER THE DATA, for the same reason as
+  // `patient:priority:protected`: the code is read on the roles screen, in the
+  // trail and in an error, and `record:violence` would turn each of them into
+  // a hint about the patient.
+  //
+  // ⚠️ `MEDICO` CARRIES IT FROM THE FACTORY, AND NOBODY ELSE (D-188, pending):
+  // signing the discharge needs the screening answered (EN-240), so whoever
+  // signs form 002 has to be able to answer it. Roles are data — the clinic
+  // grants it to nursing or takes it away from the roles screen.
+  {
+    code: 'record:protected',
+    resource: 'record',
+    description:
+      'Ver y registrar la sección de acceso restringido de la atención (tamizaje del bloque F del formulario 002). Quien lo tiene conoce situaciones cuya difusión puede poner en riesgo a la persona',
+  },
   {
     // CER-040, D-105 §2. «La dirección médica» anula un certificado que emitió
     // otro profesional. Un PERMISO y no un rol: los roles los arma cada clínica
