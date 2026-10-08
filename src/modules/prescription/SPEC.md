@@ -194,7 +194,7 @@ dosis, frecuencia, duración, nombres del prescriptor y **su registro ACESS**.
 **Prueba independiente:** emitir una receta a un lactante de catorce meses y
 comprobar que el documento dice «1 año 2 meses» y «veinte (20)».
 
-**Cubre:** PR-020 a PR-040.
+**Cubre:** PR-020 a PR-040, PR-120.
 
 ### H3 — Vigencia y archivo _(P1)_
 
@@ -683,31 +683,36 @@ documento existe y es lo único que la ACESS puede inspeccionar.
   > electrónica la firma es la del art. 13 y la de la Disposición General Décima
   > de ARCSA-DE-2022-012-AKRG: la **autenticación del prescriptor en el sistema**.
 
-- **PR-036** — DONDE `site_parameter.require_certified_signature` esté habilitado,
-  la emisión DEBERÁ exigir certificado de firma electrónica vigente; DONDE esté
+- **PR-036** — DONDE `site_parameter.require_certified_signature` esté
   deshabilitado, la receta DEBERÁ emitirse con la credencial del prescriptor y
   DEBERÁ dejar **constancia explícita de que esa firma no lleva certificado**.
+  La exigencia del certificado con el parámetro habilitado es PR-120.
 
   > D-A-005. La norma de farmacias privadas admite *«la signatura realizada en el
   > sistema informático mediante el registro con usuario y clave de acceso»*, así
   > que una clínica sin certificados no puede quedarse sin poder trabajar.
   >
-  > **La constancia, construida** (`feat/f05-receta-documentos-huecos`,
-  > 08-10-2026). La receta emitida dice en el papel y en la pantalla «Firma:
-  > Electrónica, el <fecha>, con usuario y clave en el sistema, sin certificado
-  > de firma electrónica». No hace falta columna para decirlo: el sistema no
-  > guarda ningún certificado, así que **toda** receta emitida se firmó con la
-  > credencial, y el instante es `issued_at`. La columna (`signature_mode`,
-  > `certificate_serial`) nace con la custodia del certificado, que es cuando
-  > habrá dos maneras de firmar.
-  >
-  > **La primera mitad sigue sin construir**, y no por esquema: **el certificado
-  > de firma electrónica es el bloqueante externo #3** y la custodia del de
-  > cada médico es D-177.1. Con `requireCertifiedSignature` encendido —el valor
-  > por defecto— la emisión **no se bloquea** y la receta lleva la misma
-  > constancia: es decir la verdad mientras decide (D-183.2). Bloquear dejaría
-  > a la clínica sin recetar; callar haría pasar por certificada una firma que
-  > no lo es.
+  > **Construida** (`feat/f05-receta-documentos-huecos`, 08-10-2026). La receta
+  > emitida dice en el papel y en la pantalla «Firma: Con usuario y clave en el
+  > sistema, el <fecha>, sin certificado de firma electrónica». No hace falta
+  > columna para decirlo: el sistema no guarda ningún certificado, así que
+  > **toda** receta emitida se firmó con la credencial, y el instante es
+  > `issued_at`. La columna (`signature_mode`, `certificate_serial`) nace con la
+  > custodia del certificado, que es cuando habrá dos maneras de firmar. Con el
+  > parámetro encendido la receta lleva la misma constancia mientras decide
+  > D-183.2: es la verdad.
+
+- **PR-120** — DONDE `site_parameter.require_certified_signature` esté
+  habilitado, la emisión DEBERÁ exigir certificado de firma electrónica vigente
+  del prescriptor.
+
+  > Separado de PR-036 en la revisión de `feat/f05-receta-documentos-huecos`
+  > para que el estado no diga «completo» de lo que no lo está. **Sin
+  > construir**, y no por esquema: **el certificado de firma electrónica es el
+  > bloqueante externo #3** y la custodia del de cada médico es D-177.1. Hoy el
+  > parámetro —encendido por defecto— **no manda**: la emisión no se bloquea
+  > (bloquear dejaría a la clínica sin recetar) y la receta dice que no lleva
+  > certificado (PR-036, D-183.2).
 
 ### 2.5 Indicaciones (art. 5.e)
 

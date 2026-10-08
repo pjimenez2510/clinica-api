@@ -534,7 +534,7 @@ describe('PR-020 PR-038 PR-039 la receta impresa lleva su número y sus indicaci
     // The date of the sample's instant, in Guayaquil.
     const day = clinicalDateOf((data.data as { issuedAt: Date }).issuedAt).split('-').reverse().join('/'); // prettier-ignore
     expect(issued).toContain(
-      `Electrónica, el ${day}, con usuario y clave en el sistema, sin certificado de firma electrónica`,
+      `Con usuario y clave en el sistema, el ${day}, sin certificado de firma electrónica`,
     );
 
     // Un borrador no está firmado, y no lo afirma.

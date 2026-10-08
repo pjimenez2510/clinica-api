@@ -112,7 +112,7 @@ function patientBlock(
  * WITHOUT an electronic signature certificate.
  */
 export function credentialSignatureText(signedAt: Date): string {
-  return `Electrónica, el ${ecuadorianDate(signedAt)}, con usuario y clave en el sistema, sin certificado de firma electrónica`;
+  return `Con usuario y clave en el sistema, el ${ecuadorianDate(signedAt)}, sin certificado de firma electrónica`;
 }
 
 function prescriberBlock(prescriber: PractitionerIdentity): Block {
