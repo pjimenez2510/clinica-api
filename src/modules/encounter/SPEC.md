@@ -281,6 +281,8 @@ negativas que sólo se demuestran contra PostgreSQL —que el `UPDATE` falle, qu
 índice parcial rechace la segunda vigente, que `TRUNCATE` no pase—; la cuarta es
 que corregir la ficha del paciente **no** toque una nota ya firmada.
 
+**Solo interfaz:** EN-220. Es el botón «Descargar resumen» y cuándo se ofrece; la mitad del servidor —el PDF, su bitácora y `summaryAvailable`— es DOC-111 en `documents` y EN-219 aquí, y ya se prueba con esos números.
+
 ### H3 — Diagnósticos CIE-10 y procedimientos _(P1)_
 
 El bloque K del RDACAA: hasta tres diagnósticos con su condición y su
@@ -621,9 +623,12 @@ requisitos que cambian.
 - **EN-002** — El sistema DEBERÁ identificar la historia clínica por el **MRN**
   de la ficha (PA-001), y DEBERÁ exponer junto a él el documento de identidad
   vigente del paciente en todo documento y en toda fila del reporte.
-  > **[NECESITA ACLARACIÓN]** — **el art. 10 del A.M. 00115-2021 identifica la
+  > **Resuelto el 30-09-2026 — D-047, con la recomendación de abajo**: el MRN es
+  > la clave interna y el documento el identificador publicado en toda salida.
+  > Queda **por verificar fuera** si el A.M. 4934 obliga los 17 dígitos
+  > provisionales. Antes: **el art. 10 del A.M. 00115-2021 identifica la
   > HCU con LA CÉDULA; nosotros la anclamos en un número interno.** Registrada
-  > como **D-047** el 19-08-2026.
+  > como D-047 el 19-08-2026.
   >
   > El reglamento manda usar cédula, pasaporte, carnet de refugiado o 17 dígitos temporales,
   > según el A.M. 4934 «Uso de un solo código de Historia Clínica». PA-002 ancla
@@ -765,16 +770,36 @@ requisitos que cambian.
 - **EN-012** — El sistema DEBERÁ registrar el **lugar de atención** de cada
   atención, elegido de la lista del instructivo, y NO DEBERÁ reducirlo a
   intramural / extramural.
-  > **Falta esquema.** `encounter.care_setting` es un enum de dos valores
-  > (`INTRAMURAL`, `EXTRAMURAL`) y el instructivo (p. 29 y 30) enumera **trece**:
-  > 1 establecimiento de salud · 2 comunidad · 3 instituciones educativas ·
-  > 4 domicilio · 5 albergues creados por desastres · 6 albergues para refugiados ·
-  > 7 Centro de Desarrollo Integral (CDI) · 8 Creciendo con Nuestros Hijos (CNH) ·
-  > 9 Centros de Educación Inicial (CEI) · 10 Escuelas Interculturales Familiares
-  > Comunitarias (EIFC) · 11 centro de rehabilitación / carcelario · 12 grupos
-  > laborales, fábricas y empresas · 13 centros de recuperación de adicciones ·
-  > y «otros». Los códigos numéricos exactos están en la imagen del catálogo, al
-  > pie del formulario.
+  > **El catálogo, leído de la imagen del instructivo** (RDACAA 2.0, § 1.2.5,
+  > p. 46, el 07-10-2026 en `feat/f04-atencion-y-nota`). Son **dieciséis y
+  > «Otros»**, no trece como decía esta nota antes de leer la imagen:
+  > 1 Establecimiento de Salud · 2 Comunidad · 3 Instituciones educativas ·
+  > 4 Domicilio · 5 Albergues creados por desastre · 6 Albergues para refugiados ·
+  > 7 Albergues · 8 Centro de desarrollo infantil (CDI) · 9 Creciendo con
+  > Nuestros Hijos (CNH) · 10 Centros de educación inicial (CEI) · 11 Escuelas
+  > interculturales familiares comunitarias (EIFC) · 12 Centro de
+  > rehabilitación / carcelario · 13 Grupos laborales (fábricas y empresas) ·
+  > 14 Centros de recuperación de adicciones · 15 Casa Hogar o Acogimiento
+  > Institucional para niños, niñas y adolescentes · 16 Centro Gerontológico ·
+  > **98** Otros. El 98 no es un error de tecleo: es el código del formulario.
+  >
+  > **Construido el 07-10-2026:** `encounter.care_place`, `SMALLINT NOT NULL
+  > DEFAULT 1` con `encounter_care_place_in_catalogue`. Una atención nace en
+  > «Establecimiento de salud» —es donde atiende una clínica— y se corrige en el
+  > sitio como la modalidad (EN-215, con su versión en `record_version`); no se
+  > pregunta al abrir (D-126). `care_setting` ya no se escribe: lo deriva
+  > `trg_encounter_care_setting_from_place` (1 → `INTRAMURAL`, el resto →
+  > `EXTRAMURAL`).
+  >
+  > **Un código y no un `CatalogSystem`**, a diferencia de lo que esta nota
+  > proponía: una fila de catálogo obliga a que el catálogo esté sembrado antes
+  > de poder abrir una atención —en cada base, también en las de prueba— para
+  > ganar algo que el ministerio cambia una vez por versión del formulario, y
+  > esa versión trae además columnas nuevas, es decir, una migración de todas
+  > formas. Lo que el reporte necesita es el código, y es lo que se guarda.
+  >
+  > Antes: «Falta esquema». `encounter.care_setting` es un enum de dos valores
+  > (`INTRAMURAL`, `EXTRAMURAL`).
   >
   > Reducirlos a dos parece razonable —una clínica privada atiende casi siempre en
   > el establecimiento— y rompe la columna del reporte: la Dirección Distrital
@@ -789,10 +814,17 @@ requisitos que cambian.
   > sede, y por eso vive aquí y no en `organization`.
 - **EN-013** — El sistema DEBERÁ registrar en cada atención si pertenece a la
   **estrategia «Médico del Barrio»** del MSP.
-  > **Falta esquema.** Columna 3 del formulario, dos valores (1 sí / 2 no). No
-  > existe la columna. Es una casilla que hoy sale vacía en cada fila del reporte,
-  > y es de la atención y no del establecimiento: el mismo profesional atiende
-  > dentro y fuera de la estrategia.
+  > Columna 3 del formulario, «Estrategia MSP»: *«de ser el caso registre
+  > únicamente el código 1, caso contrario registre el código 2»* (instructivo,
+  > § 1.2, p. 46). Es de la atención y no del establecimiento: el mismo
+  > profesional atiende dentro y fuera de la estrategia.
+  >
+  > **Construido el 07-10-2026:** `encounter.medico_del_barrio`, `BOOLEAN NOT
+  > NULL DEFAULT false`; el 1/2 es cosa del reporte (H9). Nace en «No» y se
+  > corrige en el sitio junto al lugar de atención; no se pregunta al abrir:
+  > una clínica privada casi nunca pertenece a la estrategia, y una pregunta
+  > que se contesta igual en cada consulta es la que D-126 quita.
+  > Antes: «Falta esquema». No existía la columna.
 - **EN-014** — El sistema DEBERÁ registrar el **tipo de atención** de cada
   atención —consulta, procedimiento, actividad— tal como el formulario lo
   distingue, y DEBERÁ permitir que una atención no genere consulta médica y sí
@@ -861,6 +893,11 @@ requisitos que cambian.
   >
   > Es un booleano y **no** el identificador de la atención: quien tiene
   > `agenda:read` no tiene por qué poder navegar a contenido clínico.
+  >
+  > **Precisado el 07-10-2026:** lo publica AG-150 como el **estado** de la
+  > atención viva de la cita (`attention`, `null` si no tiene), que dice lo
+  > mismo que el booleano y además si sigue en curso. Sigue sin viajar el
+  > identificador.
 - **EN-017** — CUANDO se abra una atención, el sistema DEBERÁ registrar en la
   bitácora quién la abrió, cuándo, desde qué IP y sobre qué ficha (REQ-110).
 - **EN-018** — El sistema DEBERÁ conservar toda atención registrada y NO DEBERÁ
@@ -880,9 +917,12 @@ requisitos que cambian.
   > equivocada—, y es a `encounter` lo que `ENTERED_IN_ERROR` es a la nota
   > clínica (EN-026). Son dos columnas y dos preguntas distintas.
   >
-  > **El motivo y el autor entraron el 30-09-2026 (EN-166).** Lo que sigue
-  > faltando es el disparador que impida el `DELETE` de una atención vacía.
-  > Antes: **Falta esquema.** Una columna de anulación con
+  > **El motivo y el autor entraron el 30-09-2026 (EN-166), y el 07-10-2026 el
+  > disparador:** `trg_encounter_no_delete` rechaza el `DELETE` de cualquier
+  > atención —también de la vacía, que es la que las claves foráneas dejaban
+  > pasar— y `trg_encounter_no_truncate` el atajo que un disparador por fila
+  > no ve; los dos dicen que se anule.
+  > Antes: «Falta esquema». Una columna de anulación con
   > motivo y autor, y un disparador de inmutabilidad como el de `clinical_note`.
   > Sin él, la atención abierta por error se borra y desaparece del recuento de
   > producción del mes sin dejar rastro.
@@ -2614,9 +2654,29 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
 - **EN-133** — Todo cambio de estado DEBERÁ conservar **quién** lo produjo,
   **cuándo** y **el hecho que lo disparó**, y el sistema NO DEBERÁ permitir
   borrar ni editar esa constancia.
-  > **Falta esquema.** Hace falta el historial de estados: hoy no hay dónde
-  > guardarlo, y una columna de estado sin historial sólo sabe decir dónde está la
-  > atención ahora — no cuánto esperó el paciente, ni quién la dejó a medias.
+  > Hacía falta el historial de estados: una columna de estado sin historial
+  > sólo sabe decir dónde está la atención ahora — no cuánto esperó el paciente,
+  > ni quién la dejó a medias.
+  >
+  > **Construido el 07-10-2026:** `encounter_status_history` (desde, hasta, el
+  > hecho, quién y cuándo), escrita por `trg_encounter_status_history` en
+  > `AFTER INSERT` y `AFTER UPDATE OF status`. **La escribe la base y no el
+  > servicio** porque hoy cambian el estado cuatro caminos —la firma de la 002,
+  > el cierre de la cuenta, la salida (anular, interrumpir) y la agenda cuando el
+  > paciente se va sin ser visto—, uno de ellos en otro módulo, y un historial
+  > que depende de que cada camino se acuerde de escribirlo es el que tiene
+  > huecos. **El quién y el cuándo salen de las constancias que cada transición
+  > ya escribe** —`opened_by_id` y `created_at` al abrir, `closed_by_id` y
+  > `closed_at` al dar el alta y al cerrar, las de EN-166 y EN-167 al anular e
+  > interrumpir—, todas con el reloj de la aplicación y nunca con `now()`. El
+  > hecho es el documento que lo produjo (abrir, firmar la nota, cerrar la
+  > cuenta, interrumpir, anular): con EN-134 el estado no se teclea, así que
+  > cada transición tiene exactamente uno. `UPDATE`, `DELETE` y `TRUNCATE`
+  > se rechazan, como en `agenda_status_history`.
+  >
+  > **Las atenciones anteriores a la tabla no tienen historial**, y no se
+  > reconstruye: lo que el alta dejó escrito lo sobrescribe el cierre de la
+  > cuenta, así que reconstruir inventaría el quién de una de las dos.
   >
   > Es además lo que hace **verificable** la regla de la §12: si el hecho
   > disparador se guarda con cada cambio, «el estado no se teclea» deja de ser una
@@ -2956,11 +3016,12 @@ programada._
   **parámetro** cuyo valor por defecto es **quince años desde la última atención
   del paciente**, y el sistema NO DEBERÁ admitir configurarlo por debajo de ese
   valor.
-  > **Falta esquema.** El parámetro existe —`site_parameter.record_retention_years`,
-  > `15` por defecto— y `site_parameter_retention_is_positive` sólo comprueba que
-  > sea **mayor que cero**. Falta el mínimo: hoy la base acepta un año, y el
-  > mínimo legal es de los que **se prueban contra la base**, no contra un DTO,
-  > porque quien lo baje por SQL no pasa por el DTO.
+  > El parámetro existe —`site_parameter.record_retention_years`, `15` por
+  > defecto— y `site_parameter_retention_is_positive` sólo comprobaba que fuera
+  > **mayor que cero**. **Construido el 07-10-2026:**
+  > `site_parameter_retention_minimum` (`>= 15`), probado contra la base porque
+  > quien lo baje por SQL no pasa por ningún DTO. Ninguna ruta lo escribe: la
+  > pantalla de parámetros lo enseña y no lo edita.
   >
   > **Es por sede y la historia clínica no lo es**, así que hace falta una regla
   > que resuelva la ambigüedad y aquí está: SI dos sedes declaran plazos
@@ -2994,6 +3055,12 @@ programada._
   > plazos: el valor tiene que poder leerse desde el sistema para el aviso de
   > privacidad, no vivir sólo en un archivo de configuración que nadie sabe
   > consultar.
+  >
+  > **Construido el 07-10-2026:** `GET /configuration/record-retention` sirve
+  > el plazo vigente de la instalación —el mayor de las sedes (EN-157)—, desde
+  > cuándo cuenta y que nada se purga, y Administración lo enseña junto a los
+  > parámetros de la sede. Que el aviso de privacidad lo cite solo, en vez de
+  > copiarlo quien lo redacta, queda en la decisión de esta rama.
 
 ---
 
