@@ -92,8 +92,9 @@ function subjectIdOf(row: RenderRow): string {
     case 'CREDIT_NOTE_RIDE':
       return row.creditNoteId ?? '';
     case 'ENCOUNTER_SUMMARY':
-      // DOC-111. Unreachable: `document_render_kind_matches_subject` admits
-      // no row of this kind.
+    case 'CLINICAL_FORM':
+      // DOC-111, EN-243. Unreachable: `document_render_kind_matches_subject`
+      // admits no row of these kinds.
       return '';
   }
 }
@@ -143,8 +144,9 @@ function subjectColumn(
     case 'CREDIT_NOTE_RIDE':
       return { creditNoteId: subjectId };
     case 'ENCOUNTER_SUMMARY':
-      // DOC-111. Never archived, and the base refuses it besides.
-      throw new Error('An encounter summary is never archived');
+    case 'CLINICAL_FORM':
+      // DOC-111, EN-243. Never archived, and the base refuses it besides.
+      throw new Error('An encounter summary or a clinical form is never archived'); // prettier-ignore
   }
 }
 

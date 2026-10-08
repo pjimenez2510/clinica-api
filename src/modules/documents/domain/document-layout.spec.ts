@@ -1956,7 +1956,10 @@ describe('DOC-107 el pintado no cambia lo que dice el documento', () => {
    * may not drop one.
    */
   const BEFORE: Record<
-    Exclude<DocumentSubject['kind'], 'ENCOUNTER_SUMMARY' | 'CREDIT_NOTE_RIDE'>,
+    Exclude<
+      DocumentSubject['kind'],
+      'ENCOUNTER_SUMMARY' | 'CREDIT_NOTE_RIDE' | 'CLINICAL_FORM'
+    >,
     string[]
   > = {
     // prettier-ignore

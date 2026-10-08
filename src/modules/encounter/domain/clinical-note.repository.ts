@@ -160,6 +160,11 @@ export interface SigningEncounterRead extends NoteEncounterRead {
    * THAT it was answered, not what (EN-073).
    */
   screeningAnswered: boolean;
+  /**
+   * EN-105. Referrals, derivations and reverse referrals of the attention
+   * that stand (not annulled): a «referred» discharge needs one.
+   */
+  outgoingReferrals: number;
 }
 
 /**

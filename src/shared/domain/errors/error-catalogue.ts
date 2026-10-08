@@ -750,6 +750,12 @@ export const DOMAIN_ERROR_CODES = [
   // EN-242 (D-188 §5). With the discharge given only the notification to the
   // authority is completed: 409, the attention's state is what refuses.
   'SCREENING_LOCKED_AFTER_DISCHARGE',
+  // EN-105. The discharge «referido» with no referral standing: 422 on
+  // `dischargeCondition`. EN-107. The referral or interconsultation not in
+  // this attention (404), or already annulled (409).
+  'REFERRAL_REQUIRED_ON_DISCHARGE',
+  'REFERRAL_NOT_FOUND',
+  'REFERRAL_ALREADY_CANCELLED',
   'APPOINTMENT_NOT_ATTENDABLE',
   'BMI_IS_DERIVED',
   'CLINICAL_NOTE_NOT_FOUND',

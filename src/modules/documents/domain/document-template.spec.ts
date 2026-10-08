@@ -121,7 +121,8 @@ describe('DOC-090 qué clases sirve cada permiso', () => {
     // not be that prescription.
     // DOC-113: the fifth is the summary of the attention, never archived.
     // SRI-089: the sixth is the RIDE of the credit note.
-    expect(DOCUMENT_KINDS).toHaveLength(6);
+    // EN-243: the seventh is the 053 or 007, never archived.
+    expect(DOCUMENT_KINDS).toHaveLength(7);
     expect(DOCUMENT_KINDS.join(',')).not.toMatch(/CONTROLLED|ESTUPEFACIENTE/i);
   });
 

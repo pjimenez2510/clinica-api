@@ -2466,6 +2466,8 @@ describe('fusión de duplicados: el contrato y su permiso', () => {
         encounterId: encounter.id,
         patientId: source.id,
         direction: 'REFERRAL',
+        destinationMspUnicode: '05176',
+        destinationName: 'Hospital General',
         issuedById: practitioner.id,
         reason: 'valoración por especialidad',
       },

@@ -309,5 +309,27 @@ export function sampleSubject(
           total: '0.00',
         },
       };
+    case 'CLINICAL_FORM':
+      // EN-243. Never previewed on its own —it borrows the summary's
+      // template—, but a sample of every kind keeps this exhaustive.
+      return {
+        kind,
+        data: {
+          subjectId: 'sample',
+          siteId: 'sample',
+          formCode: '053',
+          title: 'REFERENCIA',
+          annulled: false,
+          signedAt: issuedAt,
+          withoutCertificate: true,
+          encounterStartedAt: issuedAt,
+          patient,
+          signer: practitioner,
+          sections: [
+            { title: 'Establecimiento de destino', text: SAMPLE_MARK },
+            { title: 'Motivo', text: SAMPLE_MARK },
+          ],
+        },
+      };
   }
 }

@@ -11,6 +11,7 @@ import {
   contentHashOf,
   planAmendment,
   requireForm,
+  requireWrittenForm,
   type NoteContent,
 } from '../domain/clinical-note';
 import {
@@ -44,6 +45,7 @@ import {
   AnthropometryPendingError,
   ScreeningPendingError,
   DischargeConditionRequiredError,
+  ReferralRequiredOnDischargeError,
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
   PractitionerProfileRequiredError,
@@ -169,8 +171,9 @@ export class ClinicalNoteService {
     requester: Requester,
   ): Promise<NoteWithTemplate> {
     const author = await this.requirePractitioner(requester.userId);
-    // EN-021. Refuses an unregistered form before anything is written.
-    requireForm(request.formCode, request.formVersion);
+    // EN-021. Refuses an unregistered form before anything is written; and
+    // EN-104, a 053 or 007, which only its own act writes.
+    requireWrittenForm(request.formCode, request.formVersion);
     const template = await this.templateForNewNote(
       request.formCode,
       request.encounterId,
@@ -369,6 +372,20 @@ export class ClinicalNoteService {
           throw new ScreeningPendingError();
         }
 
+        /**
+         * EN-105 (D-191 §2). «Referido» with no referral, derivation or
+         * reverse referral standing in the attention: the report would count
+         * a referral that does not exist. `trg_encounter_referred_needs_referral`
+         * says the same at commit.
+         */
+        if (
+          form.dischargesTheEncounter &&
+          request.dischargeCondition === 'REFERRED' &&
+          encounter.outgoingReferrals === 0
+        ) {
+          throw new ReferralRequiredOnDischargeError();
+        }
+
         return {
           signedById: signer.practitionerId,
           signedAt: now,
@@ -457,7 +474,8 @@ export class ClinicalNoteService {
           reason: request.amendmentReason,
         });
 
-        requireForm(previous.formCode, previous.formVersion);
+        // EN-104. A 053 or 007 is corrected by annulling its act.
+        requireWrittenForm(previous.formCode, previous.formVersion);
         // EN-206. An amendment corrects what was written at THAT act, and
         // that act knew what it knew: it inherits its snapshot, never the
         // caller's and never today's.
@@ -543,7 +561,12 @@ export class ClinicalNoteService {
        * and a superseded or already-retracted version is out of the way.
        * `NOTE_NOT_AMENDABLE` says the right sentence for each of the three.
        */
-      (note) => assertAmendable(note.status),
+      (note) => {
+        // EN-104. A 053 or 007 is retracted by annulling its act, which is
+        // what leaves the referral and its paper saying the same thing.
+        requireWrittenForm(note.formCode, note.formVersion);
+        assertAmendable(note.status);
+      },
     );
 
     await this.audit.record({

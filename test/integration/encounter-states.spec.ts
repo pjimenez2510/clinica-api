@@ -610,6 +610,8 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
             patientId: ids.patientId,
             issuedById: ids.practitionerId,
             direction: 'REFERRAL',
+            destinationMspUnicode: '05176',
+            destinationName: 'Hospital General',
             reason: 'Valoración por especialista',
           },
         });
@@ -617,6 +619,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
         await prisma.interconsultation.create({
           data: {
             ...owner,
+            role: 'REQUESTED',
             requestedById: ids.practitionerId,
             reason: 'Opinión de cardiología',
           },
@@ -1016,6 +1019,8 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
         patientId: ids.patientId,
         issuedById: ids.practitionerId,
         direction: 'REFERRAL',
+        destinationMspUnicode: '05176',
+        destinationName: 'Hospital General',
         reason: 'Valoración por especialista',
       },
     });
@@ -1039,6 +1044,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     const interconsultation = await prisma.interconsultation.create({
       data: {
         encounterId: encounter.id,
+        role: 'REQUESTED',
         requestedById: ids.practitionerId,
         reason: 'Opinión de cardiología',
       },
@@ -1056,7 +1062,13 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
     expect(await liveActs()).toContain('interconsulta');
     await prisma.interconsultation.update({
       where: { id: interconsultation.id },
-      data: { status: 'CANCELLED' },
+      // EN-107. Annulled with who, when and why.
+      data: {
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        cancelledById: ids.practitionerId,
+        cancellationReason: 'Pedida por error',
+      },
     });
 
     // Control positivo: revocado, rechazada y cancelada, la atención se anula.

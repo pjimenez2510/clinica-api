@@ -172,6 +172,26 @@ export class DocumentsController {
   }
 
   /**
+   * EN-243. Form 053 or 007 of a referral or interconsultation, by its note:
+   * composed now from the signed note and never archived.
+   */
+  @Get('clinical-forms/:noteId')
+  @RequirePermission('record:read', 'query')
+  @ApiOperation({ summary: 'Descargar el formulario 053 o 007 (se genera al momento desde su nota firmada)' }) // prettier-ignore
+  @ApiProduces('application/pdf')
+  async clinicalForm(
+    @Param('noteId', ParseUUIDPipe) noteId: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const rendered = await this.documents.clinicalForm(
+      noteId,
+      this.requester(req, 'record:read'),
+    );
+    sendPdf(res, rendered);
+  }
+
+  /**
    * DOC-092. The metadata. DELIBERATELY NOT AUDITED.
    *
    * What comes back is a class, a size, a hash, an instant and an author —

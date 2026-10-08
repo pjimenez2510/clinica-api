@@ -39,6 +39,7 @@ export function supersedeReasonOf(
     case 'INVOICE_RIDE':
     case 'CREDIT_NOTE_RIDE':
     case 'ENCOUNTER_SUMMARY':
+    case 'CLINICAL_FORM':
       return NEW_VERSION_REASON;
   }
 }
@@ -57,6 +58,7 @@ function correctionOf(subject: DocumentSubject): string | null {
     case 'INVOICE_RIDE':
     case 'CREDIT_NOTE_RIDE':
     case 'ENCOUNTER_SUMMARY':
+    case 'CLINICAL_FORM':
       return null;
   }
 }
