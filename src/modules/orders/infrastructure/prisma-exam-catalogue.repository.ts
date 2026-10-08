@@ -21,10 +21,10 @@ import type {
  * writes the catalogue through `PrismaExamAdministrationRepository`
  * (ORD-103 to ORD-111), with `catalog:manage`, and ordering never does.
  *
- * ⚠️ AND `billable_service_id` IS NEVER SELECTED (ORD-002). The exam points at
- * what the line is invoiced under; the AMOUNT is a price list, per payer, per
- * period, in `billing`. A column that is never loaded cannot reach a clinical
- * screen.
+ * ⚠️ AND NO AMOUNT IS EVER SELECTED (ORD-002). The exam's service is read for
+ * its NAME and TARIFF CODE only (ORD-163), which are the exam's; the AMOUNT is
+ * a price list, per payer, per period, in `billing`. A column that is never
+ * loaded cannot reach a clinical screen.
  */
 
 /**
@@ -72,11 +72,13 @@ export type AnalyteRow = Prisma.AnalyteDefinitionGetPayload<{
   select: typeof ANALYTE_SELECT;
 }>;
 
-/** An exam and its analytes, without `billable_service_id` (see above). */
+/** An exam and its analytes, with its service's name and tariff code only. */
 export const EXAM_SELECT = {
   id: true,
   code: true,
-  name: true,
+  // ORD-163. The exam's name and tariff code are its service's, and only the
+  // two of them are read here: never an amount (ORD-002).
+  billableService: { select: { name: true, tariffCode: true } },
   category: true,
   form010Section: true,
   specimenType: true,
@@ -84,7 +86,6 @@ export const EXAM_SELECT = {
   turnaroundHours: true,
   requiresFasting: true,
   fastingHours: true,
-  tariffCode: true,
   performedExternally: true,
   externalLabName: true,
   analytes: {
@@ -113,7 +114,10 @@ export class PrismaExamCatalogueRepository implements ExamCatalogueRepository {
   async active(): Promise<ExamDefinitionView[]> {
     const rows = await this.prisma.examDefinition.findMany({
       where: { active: true },
-      orderBy: [{ form010Section: 'asc' }, { name: 'asc' }],
+      orderBy: [
+        { form010Section: 'asc' },
+        { billableService: { name: 'asc' } },
+      ],
       select: EXAM_SELECT,
     });
     return rows.map(toExamView);
@@ -183,7 +187,7 @@ export function toExamView(row: ExamRow): ExamDefinitionView {
   return {
     id: row.id,
     code: row.code,
-    name: row.name,
+    name: row.billableService.name,
     category: row.category,
     form010Section: row.form010Section,
     specimenType: row.specimenType,
@@ -191,7 +195,7 @@ export function toExamView(row: ExamRow): ExamDefinitionView {
     turnaroundHours: row.turnaroundHours,
     requiresFasting: row.requiresFasting,
     fastingHours: row.fastingHours,
-    tariffCode: row.tariffCode,
+    tariffCode: row.billableService.tariffCode,
     performedExternally: row.performedExternally,
     externalLabName: row.externalLabName,
     analytes: row.analytes.map((entry) => ({

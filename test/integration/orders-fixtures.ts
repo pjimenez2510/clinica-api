@@ -8,6 +8,7 @@ import type {
 
 import {
   createEncounter,
+  createExamService,
   createPatient,
   createPractitioner,
   createSite,
@@ -132,10 +133,16 @@ export async function seedExams(prisma: PrismaClient) {
   const bh = await prisma.examDefinition.create({
     data: {
       code: 'EX-BH',
-      // ORD-004. The tariff service the exam IS, by code: the catalogue is
-      // versioned and the concept in force on the clinical date is resolved.
-      tariffCode: 'EX-BH',
-      name: 'Biometría hemática completa',
+      // ORD-004, ORD-163. The tariff code the exam is ordered under, by code,
+      // on its service: the catalogue is versioned and the concept in force
+      // on the clinical date is resolved.
+      billableServiceId: (
+        await createExamService(prisma, {
+          code: 'LAB-BH',
+          name: 'Biometría hemática completa',
+          tariffCode: 'EX-BH',
+        })
+      ).id,
       form010Section: 'HEMATOLOGÍA',
       specimenType: 'Sangre total con EDTA',
       patientPreparation: 'No requiere ayuno.',
@@ -147,8 +154,13 @@ export async function seedExams(prisma: PrismaClient) {
   const glucose = await prisma.examDefinition.create({
     data: {
       code: 'EX-GLUCOSA-AYUNAS',
-      tariffCode: 'EX-GLUCOSA-AYUNAS',
-      name: 'Glucosa en ayunas',
+      billableServiceId: (
+        await createExamService(prisma, {
+          code: 'LAB-GLUCOSA-AYUNAS',
+          name: 'Glucosa en ayunas',
+          tariffCode: 'EX-GLUCOSA-AYUNAS',
+        })
+      ).id,
       form010Section: 'BIOQUÍMICA',
       patientPreparation: 'Ayuno de 8 a 12 horas.',
       // Deliberately WITHOUT a turnaround: ORD-022's third answer.

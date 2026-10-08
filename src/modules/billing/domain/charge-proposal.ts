@@ -1,6 +1,6 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 
-import type { EncounterActs, VisitSequence } from './clinical-acts.port';
+import type { EncounterActs } from './clinical-acts.port';
 import { Quantity } from './money';
 
 /**
@@ -122,7 +122,7 @@ export interface ServiceMatch {
  * of the query-per-row that makes a cashier screen slow with twelve lines.
  */
 export interface ChargeMapping {
-  /** BI-158. The service that IS the consultation, or `null` if none is set. */
+  /** BI-158. The first service of the visit's type, or `null` if none is set. */
   consultation: ServiceMatch | null;
   /** `catalog_concept.id` → the service that charges for that procedure. */
   byProcedureConcept: ReadonlyMap<string, ServiceMatch>;
@@ -220,14 +220,14 @@ export function proposeCharges(
 
   // ── The consultation ──────────────────────────────────────────────────
   //
-  // `specialtyId === null` and «no service mapped» collapse into the same
-  // answer, NO_BILLABLE_SERVICE, and deliberately: from the cashier's side
+  // `serviceTypeId === null` and «the type charges nothing» collapse into the
+  // same answer, NO_BILLABLE_SERVICE, and deliberately: from the cashier's side
   // both mean «the system cannot tell you what this visit costs, type it», and
   // splitting them would offer a distinction nobody can act on differently.
   take(
     'CONSULTATION',
     {},
-    acts.specialtyId === null ? null : mapping.consultation,
+    acts.serviceTypeId === null ? null : mapping.consultation,
     charged.consultation,
     acts.serviceDate,
     ONE,
@@ -282,11 +282,10 @@ function quantityOf(quantity: number): Quantity {
     : ONE;
 }
 
-/** BI-158. Which pair of (specialty, visit sequence) a visit asks the catalogue for. */
-export function consultationKeyOf(acts: EncounterActs): {
-  specialtyId: string;
-  visitSequence: VisitSequence;
-} | null {
-  if (acts.specialtyId === null) return null;
-  return { specialtyId: acts.specialtyId, visitSequence: acts.visitSequence };
+/**
+ * BI-158 (D-179.3). Which service type a visit asks the catalogue for. First
+ * time or subsequent does not enter: the type is what is charged.
+ */
+export function consultationKeyOf(acts: EncounterActs): string | null {
+  return acts.serviceTypeId;
 }

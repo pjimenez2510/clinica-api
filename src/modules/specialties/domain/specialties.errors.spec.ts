@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BusinessRuleViolation,
   ConflictError,
   NotFoundError,
 } from '../../../shared/domain/errors/domain-error';
@@ -10,6 +11,7 @@ import {
   SpecialtyNotFoundError,
 } from '../../../shared/domain/errors/master-data.errors';
 import {
+  ConsultationBillingUnavailableError,
   ServiceTypeDuplicateError,
   ServiceTypeInUseError,
   SpecialtyDuplicateError,
@@ -27,6 +29,13 @@ import {
  * defend — it is the catalogue they name.
  */
 describe('specialties errors', () => {
+  it('SP-030 responde CONSULTATION_BILLING_UNAVAILABLE como regla (422) y dice dónde se arregla', () => {
+    const error = new ConsultationBillingUnavailableError();
+    expect(error).toBeInstanceOf(BusinessRuleViolation);
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+    expect(error.userTitle).toContain('Prestaciones y precios');
+  });
+
   it('SP-006 responde SPECIALTY_DUPLICATE como conflicto apuntando siempre al nombre', () => {
     const byCode = new SpecialtyDuplicateError('code');
     const byName = new SpecialtyDuplicateError('name');

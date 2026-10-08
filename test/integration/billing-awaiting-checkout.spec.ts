@@ -514,14 +514,10 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       const line = await anIssuedExam(cancelled);
       await prisma.serviceOrderItem.update({ where: { id: line }, data: { status: 'CANCELLED', completedAt: now, cancelledById: authorId } }); // prettier-ignore
 
-      // Un examen que el catálogo no sabe cobrar: sin prestación…
-      await prisma.examDefinition.update({ where: { code: 'EX-ECG' }, data: { billableServiceId: null } }); // prettier-ignore
-      const unpriced = await visit(ended(3));
-      await account(unpriced, patient.id, 'SETTLED');
-      await anIssuedExam(unpriced, 'EX-ECG');
-      // …o con la prestación desactivada.
+      // Un examen que el catálogo no sabe cobrar: con la prestación desactivada
+      // (desde ORD-163 todo examen tiene la suya).
       const echo = await prisma.examDefinition.findUniqueOrThrow({ where: { code: 'EX-ECO-ABDOMINAL' } }); // prettier-ignore
-      await prisma.billableService.update({ where: { id: echo.billableServiceId! }, data: { active: false } }); // prettier-ignore
+      await prisma.billableService.update({ where: { id: echo.billableServiceId }, data: { active: false } }); // prettier-ignore
       const inactive = await visit(ended(5));
       await account(inactive, patient.id, 'SETTLED');
       await anIssuedExam(inactive, 'EX-ECO-ABDOMINAL');
@@ -539,7 +535,7 @@ describe('caja: lo pendiente de cobro (B10)', () => {
 
       const ids = (await awaiting()).map((row) => row.encounterId);
       expect(ids).toContain(owed);
-      for (const absent of [decided, cancelled, unpriced, inactive, before]) expect(ids).not.toContain(absent); // prettier-ignore
+      for (const absent of [decided, cancelled, inactive, before]) expect(ids).not.toContain(absent); // prettier-ignore
     });
   });
 

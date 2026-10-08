@@ -7,6 +7,7 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
+import { seedBilling } from '../../prisma/seed-billing.mts';
 import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
@@ -101,6 +102,9 @@ describe('las especialidades por HTTP', () => {
     practitionerId = practitioner.id;
 
     await syncAuthorisation(prisma);
+    // SP-030. A service type is born with its service: the consultation
+    // category and the 0 % rate it is created in come from the billing seed.
+    await seedBilling(prisma);
     // The role→permission cache is indexed by id, and truncation recreates
     // the roles with fresh ids: without this every request answers 403.
     registry.invalidate();
@@ -110,7 +114,7 @@ describe('las especialidades por HTTP', () => {
 
   async function signIn(
     email: string,
-    roleCode: 'ADMIN' | 'RECEPCION',
+    roleCode: string,
     cedula: string,
   ): Promise<string> {
     const user = await prisma.user.create({
@@ -531,6 +535,96 @@ describe('las especialidades por HTTP', () => {
           where: { serviceTypeId: type.id },
         }),
       ).toBe(0);
+    });
+
+    it('SP-030 el tipo nace con su prestación, su precio desde hoy y su nombre «especialidad · tipo»', async () => {
+      const specialty = await createSpecialty('Ginecología y Obstetricia');
+
+      const created = (await post(`/${specialty.id}/service-types`, { name: 'Control prenatal', durationMinutes: 20, price: '25.00' }).expect(201)).body as { id: string; billableServiceId: string; price: string | null }; // prettier-ignore
+
+      expect(created.price).toBe('25.00');
+      const service = await prisma.billableService.findUniqueOrThrow({
+        where: { id: created.billableServiceId },
+        select: { code: true, name: true, taxReviewedAt: true, category: { select: { kind: true } }, taxRate: { select: { sriCode: true } } }, // prettier-ignore
+      });
+      expect(service).toEqual({
+        code: 'CONS-GO-CONTROL-PRENATAL',
+        name: 'Ginecología y Obstetricia · Control prenatal',
+        // D-A-006: a default, nobody's review yet.
+        taxReviewedAt: null,
+        category: { kind: 'CONSULTATION' },
+        taxRate: { sriCode: '0' },
+      });
+      // La lista lo trae con su precio.
+      const list = (await get(`/${specialty.id}/service-types`).expect(200)).body as { items: { id: string; price: string | null }[] }; // prettier-ignore
+      expect(list.items.find((item) => item.id === created.id)?.price).toBe('25.00'); // prettier-ignore
+
+      // Renombrar el tipo renombra su prestación; renombrar la especialidad, también.
+      await patch(`/service-types/${created.id}`, { name: 'Control del embarazo' }).expect(200); // prettier-ignore
+      await patch(`/${specialty.id}`, { name: 'Obstetricia' }).expect(200);
+      expect(
+        (await prisma.billableService.findUniqueOrThrow({ where: { id: created.billableServiceId } })).name, // prettier-ignore
+      ).toBe('Obstetricia · Control del embarazo');
+    });
+
+    it('SP-030 sin billing:price-manage el precio se rechaza y no se crea nada; sin precio, sí', async () => {
+      const specialty = await createSpecialty();
+      const role = await prisma.role.create({
+        data: {
+          code: 'CONFIGURACION',
+          name: 'Configuración',
+          description: 'Mantiene especialidades y duraciones.',
+          permissions: { create: [{ permissionCode: 'config:manage' }, { permissionCode: 'config:read' }] }, // prettier-ignore
+        },
+      });
+      registry.invalidate();
+      const config = await signIn('config@clinica.ec', role.code, '0926687856');
+
+      const refused = await post(`/${specialty.id}/service-types`, { name: 'Control', durationMinutes: 20, price: '25.00' }, config).expect(403); // prettier-ignore
+      expect((refused.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      expect(await prisma.serviceType.count({ where: { specialtyId: specialty.id } })).toBe(0); // prettier-ignore
+
+      // Control positivo: sin precio el tipo nace con su prestación, sin precio.
+      const created = (await post(`/${specialty.id}/service-types`, { name: 'Control', durationMinutes: 20 }, config).expect(201)).body as { billableServiceId: string; price: string | null }; // prettier-ignore
+      expect(created.price).toBeNull();
+      expect(created.billableServiceId).not.toBeNull();
+    });
+
+    it('SP-030 sin categoría de consultas activa el tipo no se crea: CONSULTATION_BILLING_UNAVAILABLE', async () => {
+      const specialty = await createSpecialty();
+      await prisma.billableServiceCategory.updateMany({
+        where: { kind: 'CONSULTATION' },
+        data: { active: false },
+      });
+
+      const refused = await post(`/${specialty.id}/service-types`, { name: 'Control', durationMinutes: 20 }).expect(422); // prettier-ignore
+      expect((refused.body as Problem).code).toBe(
+        'CONSULTATION_BILLING_UNAVAILABLE',
+      );
+      expect(await prisma.serviceType.count({ where: { specialtyId: specialty.id } })).toBe(0); // prettier-ignore
+    });
+
+    it('SP-030 un tipo de antes, sin prestación, recibe la suya al editarlo', async () => {
+      const specialty = await createSpecialty();
+      const type = (await post(`/${specialty.id}/service-types`, { name: 'Control', durationMinutes: 20 }).expect(201)).body as { id: string; billableServiceId: string }; // prettier-ignore
+      // As a type created before D-179 is: no link.
+      await prisma.serviceTypeBillableService.deleteMany({ where: { serviceTypeId: type.id } }); // prettier-ignore
+
+      const edited = (await patch(`/service-types/${type.id}`, { durationMinutes: 30 }).expect(200)).body as { billableServiceId: string | null }; // prettier-ignore
+
+      expect(edited.billableServiceId).not.toBeNull();
+      expect(edited.billableServiceId).not.toBe(type.billableServiceId);
+    });
+
+    it('SP-030 borrar un tipo desactiva la prestación que sólo él cobraba', async () => {
+      const specialty = await createSpecialty();
+      const type = (await post(`/${specialty.id}/service-types`, { name: 'Control', durationMinutes: 20 }).expect(201)).body as { id: string; billableServiceId: string }; // prettier-ignore
+
+      await destroy(`/service-types/${type.id}`).expect(204);
+
+      expect(
+        (await prisma.billableService.findUniqueOrThrow({ where: { id: type.billableServiceId } })).active, // prettier-ignore
+      ).toBe(false);
     });
 
     it('SP-025 rechaza con SERVICE_TYPE_IN_USE borrar un tipo que una cita referencia', async () => {

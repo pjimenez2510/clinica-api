@@ -160,6 +160,25 @@ describe('las categorías de prestación (B11)', () => {
   const api = () => request(app.getHttpServer());
   const bearer = () => `Bearer ${token}`;
 
+  /** SP-031. The service `code` as the first service of a new service type. */
+  async function tieToAType(code: string, specialtyCode: string) {
+    const specialty = await prisma.specialty.create({
+      data: { code: specialtyCode, name: `Especialidad ${specialtyCode}` },
+    });
+    const type = await prisma.serviceType.create({
+      data: { specialtyId: specialty.id, name: 'Primera vez', durationMinutes: 30 }, // prettier-ignore
+    });
+    const service = await prisma.billableService.findUniqueOrThrow({ where: { code } }); // prettier-ignore
+    await prisma.serviceTypeBillableService.create({
+      data: {
+        serviceTypeId: type.id,
+        billableServiceId: service.id,
+        position: 0,
+      },
+    });
+    return service;
+  }
+
   async function categoryNamed(name: string) {
     return prisma.billableServiceCategory.findFirstOrThrow({
       where: { name: { equals: name, mode: 'insensitive' } },
@@ -328,46 +347,24 @@ describe('las categorías de prestación (B11)', () => {
       ).toBeGreaterThan(0);
     });
 
-    it('BI-187 declarar «la consulta» de una especialidad sobre un insumo se rechaza; sobre una consulta, no', async () => {
-      const specialty = await prisma.specialty.create({
-        data: { code: 'pruebas-b11', name: 'Especialidad de prueba' },
-      });
+    it('BI-187 el PATCH de una prestación ya no declara consultas: el campo se rechaza', async () => {
       const supply = await prisma.billableService.findFirstOrThrow({
         where: { category: { kind: 'SUPPLY' } },
       });
-      const consultation = await prisma.billableService.findFirstOrThrow({
-        where: { category: { kind: 'CONSULTATION' }, specialtyId: null },
-      });
-      const mapping = {
-        consultation: {
-          specialtyId: specialty.id,
-          visitSequence: 'FIRST_TIME',
-        },
-      };
-
-      const refused = await api()
+      // D-179.3. A consultation is born with its service type (SP-030); the
+      // field is gone, and an unknown key is not silently dropped.
+      const response = await api()
         .patch(`/api/v1/billing/services/${supply.id}`)
         .set('Authorization', bearer())
-        .send(mapping)
-        .expect(422);
-      expect((refused.body as Problem).code).toBe('SERVICE_KIND_MISMATCH');
-
-      // Control: the same mapping on a service of kind CONSULTATION passes.
-      await api()
-        .patch(`/api/v1/billing/services/${consultation.id}`)
-        .set('Authorization', bearer())
-        .send(mapping)
-        .expect(200);
+        .send({ consultation: null, name: supply.name });
+      expect(response.status).toBe(200);
+      expect(
+        await prisma.serviceTypeBillableService.count({ where: { billableServiceId: supply.id } }), // prettier-ignore
+      ).toBe(0);
     });
 
-    it('BI-187 la consulta de una especialidad no se pasa a una categoría de otra clase', async () => {
-      const specialty = await prisma.specialty.create({
-        data: { code: 'pruebas-b11-cat', name: 'Especialidad de prueba' },
-      });
-      const mapped = await prisma.billableService.update({
-        where: { code: 'CONS-MG-PV' },
-        data: { specialtyId: specialty.id, visitSequence: 'FIRST_TIME' },
-      });
+    it('BI-187 la prestación de un tipo de atención no se pasa a una categoría de otra clase', async () => {
+      const mapped = await tieToAType('CONS-MG-PV', 'pruebas-b11-cat');
       const supplies = await categoryNamed('Insumos');
       const other = await prisma.billableServiceCategory.create({
         data: { name: 'Consultas especiales', kind: 'CONSULTATION' },
@@ -390,27 +387,21 @@ describe('las categorías de prestación (B11)', () => {
   });
 
   describe('corregir siempre es posible (BI-187)', () => {
-    it('BI-187 una consulta atada en una categoría de otra clase se puede renombrar y desactivar', async () => {
-      const specialty = await prisma.specialty.create({
-        data: { code: 'pruebas-b11-mal', name: 'Especialidad de prueba' },
-      });
+    it('BI-187 una consulta atada en una categoría de otra clase se puede desactivar', async () => {
       const other = await prisma.billableServiceCategory.create({
         data: { name: 'Consulta externa', kind: 'OTHER' },
       });
       // The state a migrated clinic can be left in: written underneath.
+      await tieToAType('CONS-MG-PV', 'pruebas-b11-mal');
       const mismatched = await prisma.billableService.update({
         where: { code: 'CONS-MG-PV' },
-        data: {
-          categoryId: other.id,
-          specialtyId: specialty.id,
-          visitSequence: 'FIRST_TIME',
-        },
+        data: { categoryId: other.id },
       });
 
       await api()
         .patch(`/api/v1/billing/services/${mismatched.id}`)
         .set('Authorization', bearer())
-        .send({ name: 'Consulta general', active: false })
+        .send({ active: false })
         .expect(200);
     });
 
@@ -418,16 +409,10 @@ describe('las categorías de prestación (B11)', () => {
       const other = await prisma.billableServiceCategory.create({
         data: { name: 'Consulta externa', kind: 'OTHER' },
       });
-      const specialty = await prisma.specialty.create({
-        data: { code: 'pruebas-b11-rec', name: 'Especialidad de prueba' },
-      });
+      await tieToAType('CONS-MG-PV', 'pruebas-b11-rec');
       await prisma.billableService.update({
         where: { code: 'CONS-MG-PV' },
-        data: {
-          categoryId: other.id,
-          specialtyId: specialty.id,
-          visitSequence: 'FIRST_TIME',
-        },
+        data: { categoryId: other.id },
       });
 
       const refused = await api()

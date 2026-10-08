@@ -7,11 +7,11 @@ import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { useDatabase } from './setup/database';
 
 /**
- * BI-232 (D-161). The starting catalogue brings the first-time and the
- * subsequent consultation of EVERY specialty of the starting specialty
- * catalogue, tied to it (BI-158), and prices only those that had a starting
- * price. Against the real seeds, not a fixture: what is checked is what a
- * clinic installs.
+ * BI-232 (D-161, amended by D-179.3). The starting catalogue brings, for each
+ * starting service type of EVERY specialty —«Primera vez» and «Control»—, a
+ * consultation tied to it as its first service (SP-031), and prices only those
+ * that had a starting price. Against the real seeds, not a fixture: what is
+ * checked is what a clinic installs.
  */
 const db = useDatabase();
 
@@ -21,57 +21,61 @@ beforeEach(() => {
   prisma = db();
 });
 
-/** Every specialty with the visit sequences its consultations cover. */
-async function consultationsBySpecialty() {
-  const specialties = await prisma.specialty.findMany({
-    select: { code: true, id: true },
-  });
-  const services = await prisma.billableService.findMany({
-    where: { specialtyId: { not: null } },
+/** Every service type with the service it charges first. */
+async function consultationsByType() {
+  return prisma.serviceType.findMany({
     select: {
-      code: true,
-      specialtyId: true,
-      visitSequence: true,
-      category: { select: { kind: true } },
-      _count: { select: { prices: true } },
+      name: true,
+      specialty: { select: { code: true } },
+      billableServices: {
+        orderBy: { position: 'asc' },
+        select: {
+          position: true,
+          billableService: {
+            select: {
+              code: true,
+              category: { select: { kind: true } },
+              _count: { select: { prices: true } },
+            },
+          },
+        },
+      },
     },
   });
-  return specialties.map((specialty) => ({
-    code: specialty.code,
-    services: services.filter((one) => one.specialtyId === specialty.id),
-  }));
 }
 
-describe('BI-232 la consulta de cada especialidad en el catálogo de arranque', () => {
-  it('BI-232 BI-158 cada especialidad sembrada tiene su consulta de primera vez y subsecuente, de la clase consulta', async () => {
+describe('BI-232 la consulta de cada tipo de atención en el catálogo de arranque', () => {
+  it('BI-232 BI-158 cada tipo sembrado tiene su consulta, de la clase consulta, en la posición 0', async () => {
     await seedSpecialties(prisma);
     await seedBilling(prisma);
 
-    const bySpecialty = await consultationsBySpecialty();
-    // Control: the specialty catalogue is really there (SP-001).
-    expect(bySpecialty).toHaveLength(22);
-    for (const { code, services } of bySpecialty) {
-      expect(
-        services.map((one) => one.visitSequence).sort(),
-        `la especialidad ${code}`,
-      ).toEqual(['FIRST_TIME', 'SUBSEQUENT']);
-      for (const service of services) {
-        expect(service.category.kind).toBe('CONSULTATION');
-        // BI-171: the SRI's 25 characters.
-        expect(service.code.length).toBeLessThanOrEqual(25);
-      }
+    const types = await consultationsByType();
+    // Control: 22 specialties × «Primera vez» y «Control» (SP-001, SP-020).
+    expect(types).toHaveLength(44);
+    for (const type of types) {
+      const where = `${type.specialty.code} · ${type.name}`;
+      expect(type.billableServices, where).toHaveLength(1);
+      const [first] = type.billableServices;
+      expect(first!.position).toBe(0);
+      expect(first!.billableService.category.kind).toBe('CONSULTATION');
+      // BI-171: the SRI's 25 characters.
+      expect(first!.billableService.code.length).toBeLessThanOrEqual(25);
     }
+    const generalFirst = types.find(
+      (type) => type.specialty.code === 'medicina-general' && type.name === 'Primera vez', // prettier-ignore
+    );
+    expect(generalFirst?.billableServices[0]?.billableService.code).toBe('CONS-MG-PV'); // prettier-ignore
   });
 
   it('BI-232 la de cardiología nace sin precio en ninguna lista, y la de medicina general con el suyo (control)', async () => {
     await seedSpecialties(prisma);
     await seedBilling(prisma);
 
-    const bySpecialty = await consultationsBySpecialty();
+    const types = await consultationsByType();
     const prices = (code: string) =>
-      bySpecialty
-        .find((one) => one.code === code)!
-        .services.map((one) => one._count.prices);
+      types
+        .filter((type) => type.specialty.code === code)
+        .map((type) => type.billableServices[0]!.billableService._count.prices);
 
     expect(prices('cardiologia')).toEqual([0, 0]);
     expect(prices('medicina-general')).toEqual([1, 1]);
@@ -80,38 +84,32 @@ describe('BI-232 la consulta de cada especialidad en el catálogo de arranque', 
   it('BI-232 sembrar facturación antes que especialidades no las ata, y la siguiente corrida sí', async () => {
     await seedBilling(prisma);
     await seedSpecialties(prisma);
-    expect(
-      await prisma.billableService.count({
-        where: { code: 'CONS-CAR-PV', specialtyId: null },
-      }),
-    ).toBe(1);
+    expect(await prisma.serviceTypeBillableService.count()).toBe(0);
 
     await seedBilling(prisma);
 
-    const cardiology = await prisma.specialty.findFirstOrThrow({
-      where: { code: 'cardiologia' },
+    const link = await prisma.serviceTypeBillableService.findFirstOrThrow({
+      where: { billableService: { code: 'CONS-CAR-PV' } },
+      select: { serviceType: { select: { name: true, specialty: { select: { code: true } } } } }, // prettier-ignore
     });
-    expect(
-      await prisma.billableService.findUniqueOrThrow({
-        where: { code: 'CONS-CAR-PV' },
-        select: { specialtyId: true, visitSequence: true },
-      }),
-    ).toEqual({ specialtyId: cardiology.id, visitSequence: 'FIRST_TIME' });
+    expect(link.serviceType).toEqual({
+      name: 'Primera vez',
+      specialty: { code: 'cardiologia' },
+    });
   });
 
-  it('BI-232 una consulta de cardiología que la clínica ya nombró no se pisa', async () => {
+  it('BI-232 el tipo al que la clínica ya le dio su prestación no se pisa', async () => {
     await seedSpecialties(prisma);
-    await seedBilling(prisma);
-    const cardiology = await prisma.specialty.findFirstOrThrow({
-      where: { code: 'cardiologia' },
+    const firstVisit = await prisma.serviceType.findFirstOrThrow({
+      where: { name: 'Primera vez', specialty: { code: 'cardiologia' } },
     });
-    // The clinic moves the correspondence to a service of its own.
+    await seedBilling(prisma);
+    // The clinic gives the type a service of its own.
     const seeded = await prisma.billableService.findUniqueOrThrow({
       where: { code: 'CONS-CAR-PV' },
     });
-    await prisma.billableService.update({
-      where: { id: seeded.id },
-      data: { specialtyId: null, visitSequence: null },
+    await prisma.serviceTypeBillableService.deleteMany({
+      where: { serviceTypeId: firstVisit.id },
     });
     const own = await prisma.billableService.create({
       data: {
@@ -119,26 +117,18 @@ describe('BI-232 la consulta de cada especialidad en el catálogo de arranque', 
         name: 'Valoración cardiológica',
         categoryId: seeded.categoryId,
         taxRateId: seeded.taxRateId,
-        specialtyId: cardiology.id,
-        visitSequence: 'FIRST_TIME',
       },
+    });
+    await prisma.serviceTypeBillableService.create({
+      data: { serviceTypeId: firstVisit.id, billableServiceId: own.id, position: 0 }, // prettier-ignore
     });
 
     await seedBilling(prisma);
 
-    expect(
-      (
-        await prisma.billableService.findUniqueOrThrow({
-          where: { code: 'CONS-CAR-PV' },
-        })
-      ).specialtyId,
-    ).toBeNull();
-    expect(
-      (
-        await prisma.billableService.findUniqueOrThrow({
-          where: { id: own.id },
-        })
-      ).specialtyId,
-    ).toBe(cardiology.id);
+    const links = await prisma.serviceTypeBillableService.findMany({
+      where: { serviceTypeId: firstVisit.id },
+      select: { billableServiceId: true },
+    });
+    expect(links).toEqual([{ billableServiceId: own.id }]);
   });
 });

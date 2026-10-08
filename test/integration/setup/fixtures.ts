@@ -287,3 +287,44 @@ export async function createIssuedPrescription(
     include: { items: true },
   });
 }
+
+/**
+ * ORD-163 (D-179.1). The service an exam IS: its name and its tariff code live
+ * there. Creates the category of `kind` and a 0 % rate the first time a test
+ * asks, and reuses them after — `useDatabase` truncates both between tests.
+ */
+export async function createExamService(
+  prisma: PrismaClient,
+  service: {
+    code: string;
+    name: string;
+    tariffCode?: string | null;
+    kind?: 'LABORATORY' | 'IMAGING' | 'PROCEDURE' | 'CONSULTATION';
+  },
+) {
+  const kind = service.kind ?? 'LABORATORY';
+  const category =
+    (await prisma.billableServiceCategory.findFirst({ where: { kind } })) ??
+    (await prisma.billableServiceCategory.create({
+      data: { name: `Categoría ${kind}`, kind },
+    }));
+  const taxRate =
+    (await prisma.taxRate.findFirst({ where: { sriCode: '0' } })) ??
+    (await prisma.taxRate.create({
+      data: {
+        sriCode: '0',
+        name: '0%',
+        percentage: '0',
+        validFrom: new Date('2000-01-01T00:00:00Z'), // fecha-fija: vigente desde antes de toda prueba
+      },
+    }));
+  return prisma.billableService.create({
+    data: {
+      code: service.code,
+      name: service.name,
+      tariffCode: service.tariffCode ?? null,
+      categoryId: category.id,
+      taxRateId: taxRate.id,
+    },
+  });
+}

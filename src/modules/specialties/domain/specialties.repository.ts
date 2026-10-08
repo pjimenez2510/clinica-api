@@ -1,3 +1,5 @@
+import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+
 /**
  * What administering the clinic's parametrisation needs from storage, stated
  * without naming a database.
@@ -21,13 +23,17 @@ export interface SpecialtyView {
   active: boolean;
 }
 
-/** A service type with its base duration (SP-020). */
+/** A service type with its base duration (SP-020) and what it charges (SP-030). */
 export interface ServiceTypeView {
   id: string;
   specialtyId: string;
   name: string;
   durationMinutes: number;
   active: boolean;
+  /** SP-031. Its first service, the one born with it; `null` if it has none. */
+  billableServiceId: string | null;
+  /** SP-030. That service's self-pay price in force today, decimal text. */
+  price: string | null;
 }
 
 /**
@@ -50,6 +56,7 @@ export interface SpecialtiesRepository {
   /**
    * Rename or (de)activate. `null` when the row does not exist — the service
    * owns the refusal, so a missing row is an answer here, not an error.
+   * SP-030: a new name renames the first service of each of its types.
    */
   updateSpecialty(
     id: string,
@@ -70,24 +77,38 @@ export interface SpecialtiesRepository {
   /** SP-029. One service type, active or not; `null` when there is none. */
   findServiceType(id: string): Promise<ServiceTypeView | null>;
 
-  /** SP-020. Throws `ServiceTypeDuplicateError` on a repeated name (SP-026). */
+  /**
+   * SP-020, SP-030. The type AND its service —in an active CONSULTATION
+   * category, at the health rate (SRI `0`), named «especialidad · tipo»— and,
+   * with `price`, its self-pay price from `today`: one transaction. Throws
+   * `ServiceTypeDuplicateError` on a repeated name (SP-026) and
+   * `ConsultationBillingUnavailableError` when there is no category or rate.
+   */
   createServiceType(input: {
     specialtyId: string;
     name: string;
     durationMinutes: number;
+    price: string | null;
+    today: ClinicalDate;
   }): Promise<ServiceTypeView>;
 
   /**
-   * SP-024 lives in what this does NOT do: it touches exactly one
-   * `service_type` row and nothing else — no appointment is read or written,
-   * so a duration change can only rule forwards.
+   * SP-024 lives in what this does NOT do: no appointment is read or written,
+   * so a duration change can only rule forwards. SP-030: a new name renames
+   * the type's first service too, in the same transaction; a type that has
+   * no service (one created before D-179) is given its own, without price.
    */
   updateServiceType(
     id: string,
     patch: { name?: string; durationMinutes?: number; active?: boolean },
+    today: ClinicalDate,
   ): Promise<ServiceTypeView | null>;
 
-  /** SP-025. Throws `ServiceTypeInUseError` when a FK RESTRICT refuses. */
+  /**
+   * SP-025. Throws `ServiceTypeInUseError` when a FK RESTRICT refuses. SP-030:
+   * the services no other type charges are deactivated, not deleted — a price
+   * or a charge may name them.
+   */
   deleteServiceType(id: string): Promise<boolean>;
 
   /**
