@@ -108,11 +108,13 @@ model User {
   /// AG-035, D-005: the overbookings this person AUTHORISED. Not the ones they
   /// booked — `agenda_entry.created_by_id` carries no relation, and keeping
   /// the two apart is the control itself (AG-103).
-  overbookingsAuthorised AgendaEntry[] @relation("OverbookingAuthoriser")
-  agendaEntriesEdited    AgendaEntry[] @relation("AgendaEntryEditor")
-  encountersAnnulled     Encounter[]   @relation("EncounterAnnuller")
-  encountersDiscontinued Encounter[]   @relation("EncounterDiscontinuer")
-  encountersCorrected    Encounter[]   @relation("EncounterCorrector")
+  overbookingsAuthorised AgendaEntry[]            @relation("OverbookingAuthoriser")
+  agendaEntriesEdited    AgendaEntry[]            @relation("AgendaEntryEditor")
+  encountersAnnulled     Encounter[]              @relation("EncounterAnnuller")
+  encountersDiscontinued Encounter[]              @relation("EncounterDiscontinuer")
+  encountersCorrected    Encounter[]              @relation("EncounterCorrector")
+  encountersOpened       Encounter[]              @relation("EncounterOpener")
+  encounterStatusChanges EncounterStatusHistory[]
 
   /// PA-039: the priority group records this person wrote, and the ones they
   /// closed. Two relations because they are two acts by two people at two
@@ -2572,7 +2574,18 @@ model Encounter {
   status EncounterStatus @default(OPEN)
 
   careModality CareModality
+  /// DERIVED from `carePlace` by `trg_encounter_care_setting_from_place`
+  /// (1 → INTRAMURAL, any other → EXTRAMURAL): never written by the API.
   careSetting  CareSetting  @default(INTRAMURAL)
+
+  /// EN-012. «Lugar de atención» of the RDACAA, as the form's code: 1 to 16,
+  /// or 98 «Otros» (instructivo § 1.2.5), held by
+  /// `encounter_care_place_in_catalogue`. Born in 1, «Establecimiento de salud».
+  carePlace Int @default(1) @map("care_place") @db.SmallInt
+
+  /// EN-013. Whether the attention belongs to the MSP «Médico del Barrio»
+  /// strategy (column 3 of the form: 1 yes / 2 no).
+  medicoDelBarrio Boolean @default(false) @map("medico_del_barrio")
 
   /// First-time vs subsequent AT THIS ESTABLISHMENT. Per-diagnosis
   /// first/subsequent is a different field on `encounter_diagnosis`.
@@ -2658,9 +2671,15 @@ model Encounter {
   /// not yet reported, and drives the pending-report partial index.
   reportedAt DateTime? @map("reported_at") @db.Timestamptz(6)
 
+  /// EN-133. Who opened it: the actor of the first row of its state trail.
+  /// NULL on the attentions opened before the trail existed (D-177.4).
+  openedById String? @map("opened_by_id") @db.Uuid
+  openedBy   User?   @relation("EncounterOpener", fields: [openedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_opened_by_fk")
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  statusHistory      EncounterStatusHistory[]
   vitals             EncounterVitals?
   dentalIndex        EncounterDentalIndex?
   violenceScreening  ViolenceScreening?
@@ -2687,6 +2706,45 @@ model Encounter {
   /// BI-181. What caja still has to look at, by site and end.
   @@index([siteId, endedAt(sort: Desc)], map: "encounter_ended_by_site")
   @@map("encounter")
+}
+
+/// EN-133. The act that produced a change of state: with EN-134 the state is
+/// never typed, so every transition has exactly one.
+enum EncounterStatusFact {
+  OPENED
+  NOTE_SIGNED
+  ACCOUNT_CLOSED
+  INTERRUPTED
+  ANNULLED
+  PUT_ON_HOLD
+  RESUMED
+
+  @@map("encounter_status_fact")
+}
+
+/// EN-133. Every change of state of an attention, with its act, who and when.
+///
+/// WRITTEN BY THE DATABASE (`trg_encounter_status_history`) from the stamps
+/// each transition already writes, so no code path can forget it; and
+/// append-only (`trg_encounter_status_history_immutable`, `_no_truncate`).
+/// Neither is expressible here: see the migration `encounter_status_history`.
+model EncounterStatusHistory {
+  id BigInt @id @default(autoincrement())
+
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_status_history_encounter_fk")
+
+  /// NULL exactly on the opening row (`encounter_status_history_origin`).
+  fromStatus EncounterStatus?    @map("from_status")
+  toStatus   EncounterStatus     @map("to_status")
+  fact       EncounterStatusFact
+
+  changedById String?  @map("changed_by_id") @db.Uuid
+  changedBy   User?    @relation(fields: [changedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_status_history_actor_fk")
+  changedAt   DateTime @map("changed_at") @db.Timestamptz(6)
+
+  @@index([encounterId, id], map: "encounter_status_history_by_encounter")
+  @@map("encounter_status_history")
 }
 
 /// Anthropometry and vital signs. RDACAA mandates weight, height, head

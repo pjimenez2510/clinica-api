@@ -4265,8 +4265,10 @@ que es global: una atención ocurre en un sitio.
 | Método | Ruta | Permiso | Requisitos |
 | --- | --- | --- | --- |
 | `GET` | `/encounters` | `record:read` | EN-015, EN-098, EN-123, **EN-162** |
-| `POST` | `/encounters` | `encounter:open` | EN-001 a EN-014, EN-017, EN-127, EN-141 |
+| `POST` | `/encounters` | `encounter:open` | EN-001 a EN-014 *(EN-012, EN-013 opcionales, D-177.3)*, EN-017, EN-127, EN-133, EN-141 |
 | `GET` | `/encounters/:id` | `record:read` | EN-063, EN-081, EN-122, EN-237 |
+| `GET` | `/encounters/:id/status-history` | `record:read` | **EN-133** |
+| `GET` | `/configuration/record-retention` | `settings:read` | **EN-157**, **EN-158** *(ruta de `configuration`: el plazo es un parámetro de sede)* |
 | `GET` | `/encounters/open` | `record:read` | EN-146 |
 | `POST` | `/encounters/:id/hold` | `encounter:open` | EN-128 |
 | `POST` | `/encounters/:id/resume` | `encounter:open` | EN-128 |
@@ -4325,7 +4327,7 @@ que es global: una atención ocurre en un sitio.
 | `GET` | `/encounters/:id/diagnoses/:diagnosisId/versions` | `record:read` | **EN-212** |
 | `GET` | `/encounters/:id/diagnoses/occurrence-proposal` | `record:read` | EN-184 |
 | `GET` | `/encounters/visit-sequence-proposal` | `record:read` | EN-185 *(lleva el diagnóstico principal de una atención anterior)* |
-| `PATCH` | `/encounters/:id` | `record:write` *(tras el alta, además `record:sign`)* | EN-187, **EN-215** *(modalidad y primera vez o subsecuente; sustituye a `PUT …/care-modality`)* |
+| `PATCH` | `/encounters/:id` | `record:write` *(tras el alta, además `record:sign`)* | EN-187, **EN-215**, **EN-012**, **EN-013** *(modalidad, primera vez o subsecuente, lugar de atención y Médico del Barrio; sustituye a `PUT …/care-modality`)* |
 
 **Las tres rutas de alergias son las únicas de alcance `'global'`, y es
 deliberado.** Una atención ocurre en una sede; el sistema inmunitario de una

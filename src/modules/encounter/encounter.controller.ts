@@ -41,6 +41,7 @@ import {
   CloseEncounterDto,
   EncounterDetailDto,
   EncounterDto,
+  EncounterStatusHistoryDto,
   EncounterListDto,
   EncounterPageDto,
   OpenEncounterDto,
@@ -52,6 +53,7 @@ import {
   type EncounterListResponse,
   type EncounterPageResponse,
   type EncounterResponse,
+  type EncounterStatusHistoryResponse,
   type VitalSignsResponse,
   type VitalsReadingResponse,
   type VitalsVersionListResponse,
@@ -228,7 +230,8 @@ export class EncounterController {
         // `age_days` on a neonate.
         startedAt: new Date(dto.startedAt),
         careModality: dto.careModality,
-        careSetting: dto.careSetting,
+        carePlace: dto.carePlace,
+        medicoDelBarrio: dto.medicoDelBarrio,
         visitSequence: dto.visitSequence,
       },
       requester,
@@ -283,6 +286,34 @@ export class EncounterController {
         mergedInto === null
           ? null
           : { patientId: mergedInto.id, mrn: mergedInto.mrn },
+    };
+  }
+
+  /**
+   * EN-133. The state trail of one attention: each change with its act, who
+   * and when, oldest first. With `record:read` and the caller's site scope,
+   * like the attention itself; out of scope answers 404.
+   */
+  @Get(':id/status-history')
+  @RequirePermission('record:read', 'query')
+  @ApiOperation({ summary: 'Historial de estados de una atención' })
+  @ApiOkResponse({ type: EncounterStatusHistoryDto })
+  async statusHistory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ): Promise<EncounterStatusHistoryResponse> {
+    const trail = await this.encounters.statusHistory(
+      id,
+      this.requester(req, 'record:read'),
+    );
+    return {
+      items: trail.map((change) => ({
+        from: change.from,
+        to: change.to,
+        fact: change.fact,
+        byName: change.byName,
+        at: change.at.toISOString(),
+      })),
     };
   }
 
@@ -542,6 +573,8 @@ export function toEncounterResponse(
     status: encounter.status,
     careModality: encounter.careModality,
     careSetting: encounter.careSetting,
+    carePlace: encounter.carePlace,
+    medicoDelBarrio: encounter.medicoDelBarrio,
     visitSequence: encounter.visitSequence,
     // EN-008. The three units the RDACAA classifies by, as they were frozen.
     ageYears: encounter.ageYears,

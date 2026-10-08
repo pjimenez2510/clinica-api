@@ -77,7 +77,6 @@ const opening = (ids: {
   ...ids,
   startedAt: new Date('2026-09-14T14:00:00Z'),
   careModality: 'MORBIDITY' as const,
-  careSetting: 'INTRAMURAL' as const,
   visitSequence: 'FIRST_TIME' as const,
 });
 

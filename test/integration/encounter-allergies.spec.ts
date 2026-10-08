@@ -375,7 +375,6 @@ describe('las alergias del paciente contra PostgreSQL', () => {
       patientId,
       startedAt,
       careModality: 'MORBIDITY' as const,
-      careSetting: 'INTRAMURAL' as const,
       visitSequence: 'FIRST_TIME' as const,
     });
 
@@ -441,7 +440,6 @@ describe('las alergias del paciente contra PostgreSQL', () => {
       patientId: patient.id,
       startedAt: new Date('2026-05-11T14:00:00Z'),
       careModality: 'MORBIDITY',
-      careSetting: 'INTRAMURAL',
       visitSequence: 'FIRST_TIME',
     });
     const today = await encounters.open({
@@ -450,7 +448,6 @@ describe('las alergias del paciente contra PostgreSQL', () => {
       patientId: patient.id,
       startedAt: new Date('2026-08-20T14:00:00Z'),
       careModality: 'MORBIDITY',
-      careSetting: 'INTRAMURAL',
       visitSequence: 'SUBSEQUENT',
     });
 
@@ -516,7 +513,6 @@ describe('las alergias del paciente contra PostgreSQL', () => {
       patientId: patient.id,
       startedAt: new Date('2026-05-11T14:00:00Z'),
       careModality: 'MORBIDITY',
-      careSetting: 'INTRAMURAL',
       visitSequence: 'FIRST_TIME',
     });
     const today = await encounters.open({
@@ -525,7 +521,6 @@ describe('las alergias del paciente contra PostgreSQL', () => {
       patientId: patient.id,
       startedAt: new Date('2026-08-20T14:00:00Z'),
       careModality: 'MORBIDITY',
-      careSetting: 'INTRAMURAL',
       visitSequence: 'SUBSEQUENT',
     });
 

@@ -86,7 +86,6 @@ async function anEncounter(
     patientId: patient.id,
     startedAt,
     careModality: 'MORBIDITY',
-    careSetting: 'INTRAMURAL',
     visitSequence: 'FIRST_TIME',
   });
 
