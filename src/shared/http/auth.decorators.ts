@@ -84,6 +84,16 @@ export const CURRENT_USER = 'currentUser';
 export type SiteScopeDeclaration = `param:${string}` | 'query' | 'global';
 
 /**
+ * «ANY OF THESE», for the one route that serves several kinds of reader: the
+ * live-events channel (AU-054 afinado), which a reception, a cashier and the
+ * waiting-room screen open with permissions that have nothing in common. A
+ * non-empty tuple, so an empty list —which would let nobody in, or everybody,
+ * depending on how it is read— does not compile. The guard admits the caller
+ * if it holds one of them (and, under `param:`, one of them at that site).
+ */
+export type RequiredPermissions = readonly [Permission, ...Permission[]];
+
+/**
  * The permission a route demands, and its `SiteScopeDeclaration`, in one
  * decorator, so a route cannot state a permission and forget the site
  * dimension: both are required, and `PermissionsGuard` refuses a route missing
@@ -100,7 +110,7 @@ export type SiteScopeDeclaration = `param:${string}` | 'query' | 'global';
  * `string` — and it was the comment itself that told the reader not to check.
  */
 export const RequirePermission = (
-  permission: Permission,
+  permission: Permission | RequiredPermissions,
   siteScope: SiteScopeDeclaration,
 ): MethodDecorator & ClassDecorator =>
   applyDecorators(

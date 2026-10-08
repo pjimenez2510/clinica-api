@@ -444,6 +444,15 @@ y una versión que ninguna pantalla enseña todavía).
 
 > **Lo que B15 no hace:** anular (BI-092, BI-093). Lo explica D-151.1.
 
+### B16 — Caja se entera sola _(P1, 08-10-2026)_
+
+D-187 paso 2 §3 d: lo que se cobra aparece en caja sin recargar, por el canal
+de avisos (AU-054 a AU-058).
+**Prueba independiente:** con caja de la sede A en «Por cobrar», dar el alta a
+una atención de A desde otra sesión: aparece sin recargar; la de la sede B no
+la despierta.
+**Cubre:** BI-238, BI-239. **Solo servidor:** BI-238. **Solo interfaz:** BI-239.
+
 ### B11 — Prestaciones con estructura _(P2)_
 
 La categoría de una prestación deja de ser texto libre y pasa a un catálogo
@@ -2117,6 +2126,28 @@ dos registros distintos.**
   > «Hay muchos botones: editar, agregar, descargar… me confundo» y «estas
   > alertas de información no me agradan» (autor). Lo que importa se ve en la
   > fila, en un botón deshabilitado que dice por qué o bajo el campo.
+
+## 23. Caja se entera sola (D-187, paso 2)
+
+- **BI-238** — CUANDO se confirme una escritura de caja en una sede —abrir,
+  editar o cerrar una cuenta; pasar una atención a caja; añadir, confirmar,
+  quitar, restaurar, editar o marcar «No se cobra» un cargo; emitir o reenviar
+  una factura— o termine una atención de esa sede —alta, interrumpida o
+  registrada por error—, el sistema DEBERÁ publicar el aviso `billing` de la
+  sede, después de confirmada la escritura y sólo si se confirmó; y DEBERÁ
+  entregarlo sólo a las sesiones con `billing:read` en ella.
+  > El aviso no dice qué cuenta ni de quién (AU-055). Termina una atención en
+  > `encounter` y no en `billing`, y es lo que la pone en «Por cobrar» (BI-181).
+- **BI-239** — MIENTRAS el canal esté vivo, «Por cobrar» y «Cuentas
+  abiertas» DEBERÁN volver a pedir lo suyo al llegar el aviso `billing` de su
+  sede, sin ningún aviso visible, y también al volver el canal; la cuenta
+  abierta en pantalla NO DEBERÁ releerse al aviso; con el canal caído, como
+  hasta ahora: al volver a la pantalla.
+  > La cuenta no, por la revisión clínica (G1): el diálogo «Emitir factura»
+  > envía como total esperado el que tiene a la vista (BI-184, BI-197), y
+  > releerla al aviso de un cargo nuevo cambiaba ese total en silencio, con lo
+  > que el servidor ya no podía rechazar la factura por un importe que nadie
+  > acordó. Se relee al volver a la pantalla y tras las acciones propias.
 
 ## 22. Corregir una factura
 

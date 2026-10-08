@@ -63,15 +63,26 @@ export class PrismaEmergencyAlertRepository implements EmergencyAlertRepository 
     alertId: string,
     recipientId: string,
     at: Date,
-  ): Promise<Date | null> {
+  ): Promise<{ acknowledgedAt: Date; siteId: string } | null> {
     await this.prisma.agendaEmergencyAlert.updateMany({
       where: { id: alertId, recipientId, acknowledgedAt: null },
       data: { acknowledgedAt: at },
     });
     const row = await this.prisma.agendaEmergencyAlert.findFirst({
       where: { id: alertId, recipientId },
-      select: { acknowledgedAt: true },
+      select: { acknowledgedAt: true, siteId: true },
     });
-    return row?.acknowledgedAt ?? null;
+    return row?.acknowledgedAt
+      ? { acknowledgedAt: row.acknowledgedAt, siteId: row.siteId }
+      : null;
+  }
+
+  async pendingRecipientsOfEntry(
+    agendaEntryId: string,
+  ): Promise<{ siteId: string; recipientId: string }[]> {
+    return this.prisma.agendaEmergencyAlert.findMany({
+      where: { agendaEntryId, acknowledgedAt: null },
+      select: { siteId: true, recipientId: true },
+    });
   }
 }

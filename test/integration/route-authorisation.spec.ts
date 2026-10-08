@@ -15,6 +15,7 @@ import {
   SITE_SCOPE_KEY,
 } from '../../src/shared/http/auth.decorators';
 import { PERMISSIONS } from '../../src/shared/authorisation/permission.catalogue';
+import { LIVE_STREAM_PERMISSIONS } from '../../src/shared/events/live-event';
 import { closeApp } from './setup/http-server';
 
 /** `'agenda/sites/:siteId'` + `'availability'` → `/agenda/sites/:siteId/availability`. */
@@ -223,12 +224,34 @@ describe('every route declares its protection', () => {
   it('AU-010 names a real permission wherever one is declared', () => {
     // A typo grants nothing and denies nothing: the route simply becomes
     // unreachable, and nobody can work out why.
+    // AU-054 (afinado): «any of these» is a non-empty list, each one real.
+    const named = (permission: unknown): unknown[] =>
+      Array.isArray(permission) ? permission : [permission];
     const unknown = routes
       .filter((r) => r.marker === 'permission')
-      .filter((r) => !PERMISSIONS.includes(r.permission as never))
+      .filter(
+        (r) =>
+          named(r.permission).length === 0 ||
+          named(r.permission).some((p) => !PERMISSIONS.includes(p as never)),
+      )
       .map((r) => `${r.route} -> ${String(r.permission)}`);
 
     expect(unknown).toEqual([]);
+  });
+
+  it('AU-054 (afinado): «cualquiera de» lo declara sólo el canal de avisos, con el permiso de cada tipo', () => {
+    // A list is wider than one permission: where it appears is a decision,
+    // and this is where it is read in the diff.
+    const lists = routes
+      .filter((r) => Array.isArray(r.permission))
+      .map((r) => ({ route: r.route, permission: r.permission }));
+
+    expect(lists).toEqual([
+      {
+        route: 'LiveEventsController.stream',
+        permission: LIVE_STREAM_PERMISSIONS,
+      },
+    ]);
   });
 
   it('AU-011 makes every permission route state how the site is checked', () => {

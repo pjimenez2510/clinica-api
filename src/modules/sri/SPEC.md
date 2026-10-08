@@ -206,6 +206,15 @@ reenviarla; y editar el receptor de una factura devuelta y comprobar que el XML
 reenviado lleva el receptor nuevo y la misma clave.
 
 **Cubre:** SRI-085 a SRI-090.
+
+### S8 — El monitor se entera solo _(P1, 08-10-2026)_
+
+D-187 paso 2 §3 e: el comprobante que el SRI autoriza o rechaza cambia en el
+monitor sin recargar, por el canal de avisos (AU-054 a AU-058); el sondeo de
+cada 10 s queda de respaldo.
+**Prueba independiente:** con el monitor abierto, autorizar un comprobante de
+la sede: la fila sale sin recargar.
+**Cubre:** SRI-092, SRI-093. **Solo servidor:** SRI-092. **Solo interfaz:** SRI-093.
 **Solo servidor:** SRI-086, SRI-087.
 
 ---
@@ -593,6 +602,21 @@ reenviado lleva el receptor nuevo y la misma clave.
   > el SRI caído, quinientas filas con la traza de celcer (unos 6 KB cada una)
   > eran unos 3 MB en cada refresco de la pantalla de caja, justo cuando más se
   > mira.
+
+## 5 bis. El monitor al instante (D-187, paso 2)
+
+- **SRI-092** — CUANDO un comprobante cambie de estado —creado, firmado,
+  bloqueado, reabierto para reenviar, con un intento de recepción o de
+  autorización aplicado, o con su entrega al cliente registrada—, el sistema
+  DEBERÁ publicar el aviso `sri` de la sede del comprobante, después de
+  guardado; y DEBERÁ entregarlo sólo a las sesiones con `billing:read` en esa
+  sede. NO DEBERÁ publicarlo cuando el intento no se aplicó (SRI-057).
+- **SRI-093** — MIENTRAS el canal esté vivo, el monitor DEBERÁ volver a
+  pedirse al llegar `sri`, sin ningún aviso visible, y de respaldo cada 5
+  minutos; con el canal caído, cada 10 segundos como hasta ahora; y MIENTRAS
+  la pestaña esté oculta NO DEBERÁ pedir nada.
+  > El respaldo de 5 min es por lo que cambia con la hora y no con una
+  > escritura: «necesita a una persona» (SRI-062) se calcula con el reloj.
 
 ## 6. El RIDE y la entrega al cliente
 

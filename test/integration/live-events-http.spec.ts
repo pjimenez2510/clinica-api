@@ -24,6 +24,12 @@ import { aTariffConcept, seedExams } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import { createEncounter, createPatient, createSite } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
+import {
+  ofKind,
+  type OpenStream,
+  openLiveStream,
+  until,
+} from './setup/live-stream';
 
 /**
  * The live-events channel over HTTP, with real sessions against a real
@@ -39,19 +45,6 @@ import { closeApp, listenForTests } from './setup/http-server';
  */
 const PASSWORD = 'el caballo come alfalfa';
 const HEARTBEAT_MS = 150;
-
-interface StreamEvent {
-  type: string;
-  data: string;
-}
-
-/** An open `GET /events`, read as the browser would. */
-interface OpenStream {
-  status: number;
-  events: StreamEvent[];
-  ended: Promise<void>;
-  close: () => void;
-}
 
 describe('el canal de avisos en vivo por HTTP', () => {
   const db = useDatabase();
@@ -210,72 +203,20 @@ describe('el canal de avisos en vivo por HTTP', () => {
 
   /** Opens `GET /events` with `fetch`, the way the interface does. */
   async function openStream(token?: string): Promise<OpenStream> {
-    const abort = new AbortController();
-    const response = await fetch(`${baseUrl}/events`, {
-      headers: {
-        Accept: 'text/event-stream',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      signal: abort.signal,
-    });
-    const events: StreamEvent[] = [];
-    const ended = (async () => {
-      if (!response.ok || !response.body) return;
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) return;
-          buffer += decoder.decode(value, { stream: true });
-          let cut: number;
-          while ((cut = buffer.indexOf('\n\n')) >= 0) {
-            const block = buffer.slice(0, cut);
-            buffer = buffer.slice(cut + 2);
-            const field = (name: string) =>
-              block
-                .split('\n')
-                .find((line) => line.startsWith(`${name}: `))
-                ?.slice(name.length + 2) ?? '';
-            events.push({ type: field('event'), data: field('data') });
-          }
-        }
-      } catch {
-        // Aborted by `close()`.
-      }
-    })();
-    const stream: OpenStream = {
-      status: response.status,
-      events,
-      ended,
-      close: () => abort.abort(),
-    };
+    const stream = await openLiveStream(baseUrl, token);
     opened.push(stream);
     return stream;
   }
 
-  async function until(
-    condition: () => boolean,
-    timeoutMs = 3_000,
-  ): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
-    while (!condition()) {
-      if (Date.now() > deadline) throw new Error('condition not met in time');
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-  }
-
-  const ofKind = (stream: OpenStream, kind: string) =>
-    stream.events.filter((event) => event.type === kind);
-
-  it('AU-054: sin sesión no hay canal, y sin `record:read` en ninguna sede tampoco; con ellos, abre y late', async () => {
+  it('AU-054: sin sesión no hay canal, y sin el permiso de ningún tipo de aviso tampoco; con él, abre y late', async () => {
     const anonymous = await openStream();
     expect(anonymous.status).toBe(401);
 
-    const cashier = await account('caja@clinica.ec', 'CAJA', siteA);
+    // AU-054 afinado: the auditor reads the access log and nothing a live
+    // screen shows.
+    const auditor = await account('auditoria@clinica.ec', 'AUDITOR', siteA);
     const refused = await fetch(`${baseUrl}/events`, {
-      headers: { Authorization: `Bearer ${cashier.token}` },
+      headers: { Authorization: `Bearer ${auditor.token}` },
     });
     expect(refused.status).toBe(403);
     expect(((await refused.json()) as { code: string }).code).toBe(
@@ -363,8 +304,10 @@ describe('el canal de avisos en vivo por HTTP', () => {
     expect((await openStream(north.token)).status).toBe(401);
   });
 
-  it('AU-056: quitarle `record:read` al rol a mitad del flujo lo corta en el latido siguiente', async () => {
-    const north = await account('medico.norte@clinica.ec', 'MEDICO', siteA);
+  it('AU-056: quitarle al rol todo permiso de aviso a mitad del flujo lo corta en el latido siguiente', async () => {
+    // AU-054 afinado: the stream lives while the session holds the permission
+    // of SOME kind; ENFERMERIA holds two (`record:read`, `agenda:read`).
+    const north = await account('enfermeria.norte@clinica.ec', 'ENFERMERIA', siteA); // prettier-ignore
     const stream = await openStream(north.token);
     let ended = false;
     void stream.ended.then(() => {
@@ -374,9 +317,18 @@ describe('el canal de avisos en vivo por HTTP', () => {
     await until(() => ofKind(stream, 'heartbeat').length >= 2);
     expect(ended).toBe(false);
 
-    const role = await prisma.role.findUniqueOrThrow({ where: { code: 'MEDICO' } }); // prettier-ignore
+    const role = await prisma.role.findUniqueOrThrow({ where: { code: 'ENFERMERIA' } }); // prettier-ignore
     await prisma.rolePermission.deleteMany({
       where: { roleId: role.id, permissionCode: 'record:read' },
+    });
+    registry.invalidate();
+    // With `agenda:read` left, it is still open: it hears the agenda.
+    const beats = ofKind(stream, 'heartbeat').length;
+    await until(() => ofKind(stream, 'heartbeat').length >= beats + 2);
+    expect(ended).toBe(false);
+
+    await prisma.rolePermission.deleteMany({
+      where: { roleId: role.id, permissionCode: 'agenda:read' },
     });
     registry.invalidate();
 

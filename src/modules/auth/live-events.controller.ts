@@ -22,10 +22,7 @@ import {
 } from '../../shared/authorisation/current-user.service';
 import { Principal } from '../../shared/authorisation/principal';
 import { LiveEventBus } from '../../shared/events/live-event-bus';
-import {
-  LIVE_EVENT_PERMISSION,
-  type LiveEventKind,
-} from '../../shared/events/live-event';
+import { LIVE_STREAM_PERMISSIONS } from '../../shared/events/live-event';
 import {
   LIVE_HEARTBEAT,
   liveEventStream,
@@ -46,10 +43,12 @@ import type { AccessTokenClaims } from './infrastructure/token.service';
 
 /**
  * What the route demands, which is also what a session must keep holding for
- * its stream to stay open (AU-054, AU-056). The permission of the only kind of
- * event this step carries; the next step widens it (D-187, paso 2).
+ * its stream to stay open (AU-054 afinado, AU-056): the permission of SOME
+ * kind of event —a reception, a cashier and the waiting-room screen share
+ * none—. What each one then hears is still filtered kind by kind and site by
+ * site (`mayReceive`).
  */
-const STREAM_PERMISSION = LIVE_EVENT_PERMISSION['critical-results' satisfies LiveEventKind]; // prettier-ignore
+const STREAM_PERMISSIONS = LIVE_STREAM_PERMISSIONS;
 
 /**
  * Without an `exp` — never for a token `jose` signed, only for a test double —
@@ -86,7 +85,7 @@ export class LiveEventsController implements BeforeApplicationShutdown {
   ) {}
 
   @Sse()
-  @RequirePermission(STREAM_PERMISSION, 'query')
+  @RequirePermission(STREAM_PERMISSIONS, 'query')
   @Timeout(NO_TIMEOUT)
   @ApiOperation({
     summary: 'Avisos en vivo: qué cambió, nunca el dato (D-187)',
@@ -96,7 +95,9 @@ export class LiveEventsController implements BeforeApplicationShutdown {
   @ApiProduces('text/event-stream')
   @ApiOkResponse({ description: 'El flujo de avisos.' })
   @ApiUnauthorizedResponse({ description: 'Sin sesión válida.' })
-  @ApiForbiddenResponse({ description: 'Sin `record:read` en ninguna sede.' })
+  @ApiForbiddenResponse({
+    description: 'Sin el permiso de ningún tipo de aviso en ninguna sede.',
+  })
   stream(): Observable<MessageEvent> {
     // Read NOW, inside the request: the stream's callbacks run outside it,
     // where the request context no longer exists.
@@ -126,7 +127,9 @@ export class LiveEventsController implements BeforeApplicationShutdown {
           claims.sub,
           await this.roles.resolve(claims.grants),
         );
-        return current.can(STREAM_PERMISSION) ? current : null;
+        return STREAM_PERMISSIONS.some((permission) => current.can(permission))
+          ? current
+          : null;
       },
     });
   }

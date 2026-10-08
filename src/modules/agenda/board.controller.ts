@@ -14,6 +14,7 @@ import type { Request } from 'express';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import type { Permission } from '../../shared/authorisation/permission.catalogue';
 import { ALL_SITES } from '../../shared/authorisation/principal';
+import { AnnouncesChange } from '../../shared/events/announces-change';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { toEntryResponse } from './agenda-entry.response';
@@ -155,6 +156,8 @@ export class BoardController {
   /** AG-176. The short note of one appointment, and nothing else of it. */
   @Put('sites/:siteId/entries/:entryId/board-note')
   @RequirePermission('agenda:board:note', 'param:siteId')
+  // AG-179. The staff boards show the note; the waiting room does not (AG-137).
+  @AnnouncesChange('agenda')
   @ApiOperation({ summary: 'Escribir la nota corta de una cita en el tablero' })
   @ApiOkResponse({ type: BoardNoteDto })
   async setBoardNote(

@@ -17,6 +17,7 @@ import {
 } from '@nestjs/swagger';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { AnnouncesChange } from '../../shared/events/announces-change';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { WaitlistService } from './application/waitlist.service';
@@ -62,6 +63,9 @@ import type { WaitlistEntryView } from './domain/waitlist.repository';
  */
 @ApiTags('agenda')
 @Controller({ path: 'agenda/sites/:siteId/waitlist', version: '1' })
+// AG-179. Only the conversion books (below); the rest is the list itself,
+// which no live screen shows.
+@AnnouncesChange()
 export class WaitlistController {
   constructor(
     private readonly waitlist: WaitlistService,
@@ -241,6 +245,7 @@ export class WaitlistController {
    */
   @Post(':entryId/conversion')
   @RequirePermission('agenda:write', 'param:siteId')
+  @AnnouncesChange('agenda', 'waiting-room')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Convertir una inscripción en la cita reservada' })
   @ApiOkResponse({ type: WaitlistEntryDto })

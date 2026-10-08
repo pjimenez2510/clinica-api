@@ -32,6 +32,7 @@ import { BackgroundSnapshotReader } from '../../src/modules/encounter/applicatio
 import { PrismaPatientAllergyRepository } from '../../src/modules/encounter/infrastructure/prisma-patient-allergy.repository';
 import { PrismaPatientHistoryRepository } from '../../src/modules/encounter/infrastructure/prisma-patient-history.repository';
 import { PrismaActiveAllergyReader } from '../../src/shared/infrastructure/clinical/prisma-active-allergy.reader';
+import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 import { useDatabase } from './setup/database';
 
 /** EN-206. The real readers behind the snapshot every signature freezes. */
@@ -242,6 +243,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       noAudit,
       backgroundOf(prisma),
       quietLogger,
+      new InProcessLiveEventBus(),
     );
 
   const notesOf = (prisma: PrismaClient) =>
@@ -545,6 +547,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       },
       backgroundOf(prisma),
       quietLogger,
+      new InProcessLiveEventBus(),
     );
 
     const outcome = await recording.discontinue(
@@ -1434,6 +1437,7 @@ describe('escribir un diagnóstico o un procedimiento se serializa con anular e 
       noAudit,
       backgroundOf(prisma),
       quietLogger,
+      new InProcessLiveEventBus(),
     );
 
     const [diagnosis, exit] = await Promise.allSettled([
@@ -1538,6 +1542,7 @@ describe('una nota con solo blancos no es acto clínico, en la base igual que en
       { record: () => Promise.resolve() },
       backgroundOf(prisma),
       quietLogger,
+      new InProcessLiveEventBus(),
     );
 
     await exits.discontinue(
@@ -1593,6 +1598,7 @@ describe('una nota con solo blancos no es acto clínico, en la base igual que en
       { record: () => Promise.resolve() },
       backgroundOf(prisma),
       quietLogger,
+      new InProcessLiveEventBus(),
     );
 
     await exits.discontinue(

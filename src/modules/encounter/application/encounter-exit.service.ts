@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
+import { LiveEventBus } from '../../../shared/events/live-event-bus';
+
 import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
@@ -31,6 +33,7 @@ import {
 } from '../domain/encounter-state';
 import { assertAnnullable, planExitActor } from '../domain/encounter-exit';
 import type { Requester } from './encounter.service';
+import { announceEncounterChange } from './announce-encounter-change';
 
 /** Same resource as the attention's own use cases: it is the attention that changes. */
 const RESOURCE_TYPE = 'encounter';
@@ -92,6 +95,8 @@ export class EncounterExitService {
     /** EN-206. The interruption signs too, and signing freezes the background. */
     private readonly background: BackgroundSnapshotReader,
     private readonly logger: PinoLogger,
+    /** AG-179, BI-238. Where «this site's day changed» is said. */
+    private readonly liveEvents: LiveEventBus,
   ) {
     this.logger.setContext(EncounterExitService.name);
   }
@@ -155,6 +160,7 @@ export class EncounterExitService {
       { site_id: annulled.siteId, action: 'ENCOUNTER_ENTERED_IN_ERROR' },
       'encounter annulled',
     );
+    announceEncounterChange(this.liveEvents, annulled.siteId, { ended: true });
 
     return annulled;
   }
@@ -275,6 +281,8 @@ export class EncounterExitService {
       });
     }
 
+    announceEncounterChange(this.liveEvents, discontinued.siteId, { ended: true }); // prettier-ignore
+
     return { encounter: discontinued, unsignedEmptyNoteIds };
   }
 
@@ -312,6 +320,7 @@ export class EncounterExitService {
       { site_id: held.siteId, action: 'ENCOUNTER_PUT_ON_HOLD' },
       'encounter put on hold',
     );
+    announceEncounterChange(this.liveEvents, held.siteId, { ended: false });
     return held;
   }
 
@@ -338,6 +347,7 @@ export class EncounterExitService {
       { site_id: resumed.siteId, action: 'ENCOUNTER_RESUMED' },
       'encounter resumed',
     );
+    announceEncounterChange(this.liveEvents, resumed.siteId, { ended: false });
     return resumed;
   }
 
