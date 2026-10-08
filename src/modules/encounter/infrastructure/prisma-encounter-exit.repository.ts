@@ -272,6 +272,13 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
         heldById: changedById,
         heldAt: plan.at,
       });
+      // AG-124. The other axis of the same fact: the board shows the patient
+      // out of the building, not «en atención» in an empty consulting room.
+      await movePatientAxis(tx, current.agendaEntryId, {
+        from: ['ARRIVED', 'IN_PREPARATION', 'READY', 'RECEIVING_CARE'],
+        to: 'ON_LEAVE',
+        at: plan.at,
+      });
       return readView(tx, query.encounterId);
     });
   }
@@ -289,6 +296,12 @@ export class PrismaEncounterExitRepository implements EncounterExitRepository {
         status: plan.to,
         resumedById: changedById,
         resumedAt: plan.at,
+      });
+      // AG-124. Back in the building, and back in the attention they left.
+      await movePatientAxis(tx, current.agendaEntryId, {
+        from: ['ON_LEAVE'],
+        to: 'RECEIVING_CARE',
+        at: plan.at,
       });
       return readView(tx, query.encounterId);
     });
@@ -542,6 +555,29 @@ async function settleAppointment(
     from: 'IN_PROGRESS',
     to: 'FULFILLED',
     subjectStatus: 'DEPARTED',
+  });
+}
+
+/**
+ * AG-124, EN-128. Moves ONLY the patient axis of the attention's appointment,
+ * from the states named: the appointment's own status does not change —the
+ * consultation is still in progress— and so it leaves no row in its history;
+ * the fact that moved it is the suspension, in the attention's trail with its
+ * reason. Never from `DEPARTED` (AG-125): a passage that ended stays ended.
+ */
+async function movePatientAxis(
+  tx: Prisma.TransactionClient,
+  agendaEntryId: string | null,
+  move: {
+    from: readonly ('ARRIVED' | 'IN_PREPARATION' | 'READY' | 'RECEIVING_CARE' | 'ON_LEAVE')[]; // prettier-ignore
+    to: 'ON_LEAVE' | 'RECEIVING_CARE';
+    at: Date;
+  },
+): Promise<void> {
+  if (agendaEntryId === null) return;
+  await tx.agendaEntry.updateMany({
+    where: { id: agendaEntryId, subjectStatus: { in: [...move.from] } },
+    data: { subjectStatus: move.to, subjectStatusAt: move.at },
   });
 }
 

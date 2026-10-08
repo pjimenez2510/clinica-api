@@ -2466,6 +2466,49 @@ describe('la atención por HTTP', () => {
       expect(items[2]?.byName).not.toBeNull();
     });
 
+    it('EN-128 AG-124 con cita, el paciente sale del establecimiento al suspender y vuelve a la atención al reanudar; la cita sigue en curso', async () => {
+      const appointment = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'WALK_IN',
+          siteId,
+          practitionerId: doctorPractitionerId,
+          patientId,
+          subjectStatus: 'ARRIVED',
+          subjectStatusAt: new Date(),
+          ...hourSlot(10),
+        },
+      });
+      const entry = () =>
+        prisma.agendaEntry.findUniqueOrThrow({
+          where: { id: appointment.id },
+          select: { status: true, subjectStatus: true },
+        });
+      const encounterId = await openEncounter(doctorToken, {
+        agendaEntryId: appointment.id,
+      });
+      await post(`/encounters/${encounterId}/notes`, doctorToken, {
+        formCode: '002',
+        content: COMPLETE_002,
+      }).expect(201);
+      const before = await entry();
+      expect(before.subjectStatus).toBe('RECEIVING_CARE');
+
+      await post(`/encounters/${encounterId}/hold`, doctorToken, {
+        reason: 'Va a hacerse una imagen',
+      }).expect(200);
+      expect(await entry()).toEqual({
+        status: before.status,
+        subjectStatus: 'ON_LEAVE',
+      });
+
+      await post(`/encounters/${encounterId}/resume`, doctorToken).expect(200);
+      expect(await entry()).toEqual({
+        status: before.status,
+        subjectStatus: 'RECEIVING_CARE',
+      });
+    });
+
     it('EN-128 sin motivo responde 422 por campo, y la atención sigue abierta', async () => {
       const encounterId = await openEncounter();
 

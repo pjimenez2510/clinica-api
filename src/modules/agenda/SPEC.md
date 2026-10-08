@@ -1694,10 +1694,12 @@ añade.
   > puede estar `RECEIVING_CARE` con la atención `ON_HOLD` mientras baja a
   > rayos.
   >
-  > Lo que todavía no existe es la **orden de examen** que ponga la atención en
-  > `ON_HOLD`, que es de `encounter` y de su entrega H8. Hasta entonces
-  > `ON_LEAVE` es alcanzable en el modelo y no lo dispara nada — la respuesta
-  > honesta, no un hueco.
+  > **Lo dispara desde el 08-10-2026 la suspensión de la atención (EN-128,
+  > `feat/f04-consulta-huecos`)**: el médico o recepción la suspenden con su
+  > motivo —el hecho documentado, con autor e instante en el historial de la
+  > atención— y el paciente pasa a `ON_LEAVE`; al reanudar vuelve a
+  > `RECEIVING_CARE`. La cita no cambia de estado. Que una orden de examen
+  > externo la suspenda sola es de la entrega H8 de `encounter`.
 - **AG-125** — CUANDO se cierre la cuenta de la atención, el sistema DEBERÁ
   pasar al paciente a `DEPARTED`, y `DEPARTED` NO DEBERÁ admitir ninguna
   transición posterior dentro de la misma cita.

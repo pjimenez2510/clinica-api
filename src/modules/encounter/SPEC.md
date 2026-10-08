@@ -2460,8 +2460,10 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > con `encounter:open` —quien puede abrir la atención puede decir que el
   > paciente salió de ella, recepción tanto como el médico— y sin la regla de
   > quién de las salidas (D-085 §2): no termina ni firma nada y se deshace
-  > reanudando; quién lo hizo queda en el historial. El eje del
-  > paciente (`ON_LEAVE`, AG-124) no lo mueve esta ruta: es de `agenda`.
+  > reanudando; quién lo hizo queda en el historial. Con cita, la misma
+  > transacción mueve el eje del paciente (AG-124): suspender lo pasa a
+  > `ON_LEAVE` y reanudar lo devuelve a `RECEIVING_CARE`, sin tocar el estado
+  > de la cita, que sigue en curso.
   >
   > El caso corriente: el médico pide un examen que se hace en
   > el laboratorio de enfrente y el paciente vuelve con el resultado en la mano.
