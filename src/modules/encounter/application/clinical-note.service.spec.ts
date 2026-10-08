@@ -12,6 +12,7 @@ import {
   clinicalDateOf,
 } from '../../../shared/domain/clinic-time';
 import {
+  ScreeningPendingError,
   AmendmentReasonRequiredError,
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
@@ -133,6 +134,7 @@ const anEncounterRead = (
   diagnosisCount: 1,
   hasPrincipalDiagnosis: true,
   anthropometryPending: [],
+  screeningAnswered: true,
   ...overrides,
 });
 
@@ -412,6 +414,20 @@ describe('los casos de uso de la nota clínica', () => {
     await expect(
       service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
     ).resolves.toBeDefined();
+  });
+
+  it('EN-240 rechaza firmar la 002 que da el alta con el tamizaje sin responder, y la firma con él respondido', async () => {
+    notes.encounter = anEncounterRead({ screeningAnswered: false });
+
+    await expect(
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ScreeningPendingError);
+
+    // Positive control: answered — whatever the answer —, the same note signs.
+    notes.encounter = anEncounterRead({ screeningAnswered: true });
+    await expect(
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
+    ).resolves.toMatchObject({ status: 'SIGNED' });
   });
 
   it('EN-217 rechaza firmar la 002 mientras falte la antropometría obligatoria, nombrando cada medida', async () => {

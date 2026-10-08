@@ -264,7 +264,14 @@ describe('la atención por HTTP', () => {
   ): Promise<string> {
     const response = await post('/encounters', token, openBody(overrides));
     expect(response.status).toBe(201);
-    return (response.body as EncounterBody).id;
+    const id = (response.body as EncounterBody).id;
+    // EN-240. The discharge needs block F answered; these tests are about
+    // everything else, so it is answered here, straight in the table, without
+    // a request that would add its own audit row to the counts below.
+    await prisma.violenceScreening.create({
+      data: { encounterId: id, result: 'NO_SIGNS', screenedById: doctorPractitionerId }, // prettier-ignore
+    });
+    return id;
   }
 
   const auditRows = (resourceType?: string) =>

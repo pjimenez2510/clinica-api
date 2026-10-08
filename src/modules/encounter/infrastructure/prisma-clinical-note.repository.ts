@@ -311,9 +311,15 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
       // asks at commit, so the refusal is a sentence and not a class code.
       const [pending] = await tx.$queryRaw<{ fields: string[] | null }[]>`
         SELECT encounter_anthropometry_pending(${row.id}::uuid) AS fields`;
+      // EN-240. Under the same lock the screening's save takes, so an answer
+      // given meanwhile is seen. Counted, never read: only THAT it exists.
+      const screenings = await tx.violenceScreening.count({
+        where: { encounterId: row.id },
+      });
       const encounter: SigningEncounterRead = {
         ...toEncounterRead(row),
         anthropometryPending: (pending?.fields ?? []) as AnthropometryField[],
+        screeningAnswered: screenings > 0,
       };
 
       const plan = decide(note, encounter);

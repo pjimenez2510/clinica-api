@@ -204,6 +204,10 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
       content: COMPLETE_002,
     }).expect(201);
     await createDiagnosis(prisma, encounterId, 'J02.9');
+    // EN-240. Block F answered, straight in the table: not what this is about.
+    await prisma.violenceScreening.create({
+      data: { encounterId, result: 'NO_SIGNS', screenedById: doctorPractitionerId }, // prettier-ignore
+    });
     await post(
       `/encounters/${encounterId}/notes/${(draft.body as { id: string }).id}/sign`,
       doctorToken,

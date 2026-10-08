@@ -16,6 +16,7 @@ import {
   AllergyRefutedAloneError,
   AmendmentReasonRequiredError,
   AnthropometryPendingError,
+  ScreeningPendingError,
   AppointmentNotAttendableError,
   BmiIsDerivedError,
   ChartHasAllergiesError,
@@ -87,6 +88,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new PractitionerNotLicensedError(),
   new BmiIsDerivedError(),
   new AnthropometryPendingError(['heightCm']),
+  new ScreeningPendingError(),
   new ClinicalNoteNotFoundError(),
   new UnknownClinicalFormError(['002@1']),
   new NoteContentIncompleteError(['motivoConsulta']),
@@ -298,6 +300,23 @@ describe('el contrato de errores de la atención', () => {
     expect(reason.userTitle).toBe(
       'Indique por qué quita el diagnóstico: un certificado, una receta o una orden ya entregados lo imprimieron',
     );
+  });
+
+  it('EN-240 dice que falta responder el tamizaje, con 422, y no dice nada del paciente', () => {
+    const error = new ScreeningPendingError();
+
+    expect(error.code).toBe('SCREENING_PENDING');
+    expect(error).toBeInstanceOf(ValidationError); // 422
+    expect(error.userTitle).toBe(
+      'Falta responder el tamizaje de la atención: obligatorio para firmar el alta',
+    );
+    expect(error.fieldErrors).toEqual([
+      {
+        field: 'screening',
+        code: 'SCREENING_PENDING',
+        message: 'Responda el tamizaje: sin signos, no se aplicó o con signos',
+      },
+    ]);
   });
 
   it('EN-217 al firmar nombra cada medida que falta, porque la pantalla une los mensajes en una línea', () => {
