@@ -21,6 +21,7 @@ import {
   scheduleRuleProblems,
 } from '../domain/schedule-rule';
 import {
+  type ClinicScheduleRuleView,
   SCHEDULE_RULE_REPOSITORY,
   type ScheduleRuleRepository,
   type ScheduleRuleView,
@@ -79,6 +80,29 @@ export class ScheduleRulesService {
     private readonly rules: ScheduleRuleRepository,
     private readonly trail: StaffAuditTrail,
   ) {}
+
+  /**
+   * ST-053. The clinic's schedule, one page at a time. The same read as one
+   * practitioner's (ST-040), for every practitioner: no field the practitioner
+   * tab does not already show.
+   */
+  async listClinic(
+    filter: {
+      siteId?: string;
+      weekday?: number;
+      practitionerId?: string;
+      includeClosed: boolean;
+    },
+    page: { page: number; pageSize: number },
+    today: ClinicalDate = clinicalDateOf(new Date()),
+  ): Promise<{ items: readonly ClinicScheduleRuleView[]; total: number }> {
+    const { siteId, ...rest } = filter;
+    return this.rules.listClinic(
+      { ...(siteId ? { siteIds: [siteId] } : {}), ...rest },
+      page,
+      today,
+    );
+  }
 
   /** ST-040. Closed rules travel only when explicitly asked for. */
   async list(

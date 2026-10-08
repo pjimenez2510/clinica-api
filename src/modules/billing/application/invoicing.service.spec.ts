@@ -61,6 +61,7 @@ const invoice: InvoiceView = {
   siteId: SITE,
   emissionPointId: EMISSION_POINT,
   sequential: '000000001',
+  documentNumber: '001-001-000000001',
   accessKey: null,
   receiver: {
     buyerIdentificationType: '05',
@@ -103,7 +104,7 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     }),
     issueInvoice: vi.fn().mockResolvedValue(invoice),
     findInvoice: vi.fn().mockResolvedValue(invoice),
-    listInvoices: vi.fn().mockResolvedValue([invoice]),
+    listInvoices: vi.fn().mockResolvedValue({ items: [invoice], total: 1 }),
     findPayer: vi.fn().mockResolvedValue(payer()),
     record: vi.fn().mockResolvedValue(undefined),
     prepare: vi.fn().mockResolvedValue(undefined),
@@ -313,7 +314,14 @@ describe('BI-080 a BI-089 emitir la factura', () => {
 
   it('SRI-060 la factura sin comprobante todavía lo dice con null, sin fallar', async () => {
     const { service: invoicing } = build();
-    const [listed] = await invoicing.listInvoices({ siteId: SITE });
+    const {
+      items: [listed],
+    } = await invoicing.listInvoices({
+      siteId: SITE,
+      filter: {},
+      page: 1,
+      pageSize: 20,
+    });
     expect(listed?.electronic).toBeNull();
   });
 });

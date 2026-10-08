@@ -6,6 +6,7 @@ import { SiteScopeDeniedError } from '../../../shared/authorisation/site-scope';
 import {
   type ClinicalDate,
   addDays,
+  clinicalDateOf,
   parseClinicalDate,
 } from '../../../shared/domain/clinic-time';
 import type { BookedInterval } from '../domain/schedule-conflicts';
@@ -103,6 +104,10 @@ function makeDouble(answers: Answers): {
   };
 
   const repository: ScheduleRuleRepository = {
+    listClinic: (filter, page, today) => {
+      note('listClinic', filter, page, today);
+      return Promise.resolve({ items: [], total: 0 });
+    },
     listByPractitioner: (practitionerId, includeClosed) => {
       note('listByPractitioner', practitionerId, includeClosed);
       return Promise.resolve(answers.rules);
@@ -314,6 +319,25 @@ describe('ScheduleRulesService', () => {
 
       // Hiding them would make it impossible to see what needs closing.
       await expect(service.list('prac-1', true)).resolves.toEqual([RULE]);
+    });
+
+    it('ST-053 los horarios de la clínica se piden por página, con la sede elegida y el hoy de la clínica', async () => {
+      const today = clinicalDateOf(new Date());
+
+      await service.listClinic(
+        { siteId: 'site-1', weekday: 2, includeClosed: false },
+        { page: 2, pageSize: 50 },
+        today,
+      );
+
+      expect(calls).toContainEqual({
+        method: 'listClinic',
+        args: [
+          { siteIds: ['site-1'], weekday: 2, includeClosed: false },
+          { page: 2, pageSize: 50 },
+          today,
+        ],
+      });
     });
 
     it('ST-040 listar el horario de un profesional inexistente responde 404', async () => {

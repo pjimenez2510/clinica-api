@@ -210,10 +210,21 @@ export class DataSubjectRequestsService {
     return rows.map((row) => this.entry(row, now));
   }
 
-  /** PD-035. */
-  async open(now: Date = new Date()): Promise<DataRequestEntry[]> {
-    const rows = await this.requests.open();
-    return rows.map((row) => this.entry(row, now));
+  /** PD-035, PD-051. */
+  async open(
+    filter: { right?: DataSubjectRight; overdueOnly: boolean },
+    page: { page: number; pageSize: number },
+    now: Date = new Date(),
+  ): Promise<{ items: DataRequestEntry[]; total: number }> {
+    const { items, total } = await this.requests.open(
+      {
+        ...(filter.right ? { right: filter.right } : {}),
+        // Overdue is «due before the clinic's today», the same test `entry` marks.
+        ...(filter.overdueOnly ? { dueBefore: clinicalDateOf(now) } : {}),
+      },
+      page,
+    );
+    return { items: items.map((row) => this.entry(row, now)), total };
   }
 
   /** PD-040 to PD-043. */

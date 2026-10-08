@@ -93,6 +93,11 @@ export class CreditNoteController {
     const { items, total } = await this.creditNotes.list({
       siteId,
       invoiceId: query.invoiceId,
+      filter: {
+        search: query.search,
+        issuedFrom: query.from,
+        issuedTo: query.to,
+      },
       page: query.page,
       pageSize: query.pageSize,
     });
@@ -111,9 +116,11 @@ function toCreditNoteResponse(note: CreditNoteWithVoucher): CreditNoteResponse {
     id: note.id,
     invoiceId: note.invoiceId,
     invoiceSequential: note.invoiceSequential,
+    invoiceDocumentNumber: note.invoiceDocumentNumber,
     siteId: note.siteId,
     emissionPointId: note.emissionPointId,
     sequential: note.sequential,
+    documentNumber: note.documentNumber,
     accessKey: note.accessKey,
     reasonCode: note.reasonCode,
     reason: note.reason,

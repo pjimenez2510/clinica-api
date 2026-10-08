@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { IssuedDocumentFilter } from '../domain/document-search';
 
 import {
   ACCESS_AUDIT_RECORDER,
@@ -161,6 +162,7 @@ export class CreditNoteService {
   async list(query: {
     siteId: string;
     invoiceId?: string;
+    filter: IssuedDocumentFilter;
     page: number;
     pageSize: number;
   }): Promise<{ items: CreditNoteWithVoucher[]; total: number }> {

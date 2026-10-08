@@ -1,4 +1,5 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import type { IssuedDocumentFilter } from './document-search';
 
 import type { DocumentTotals } from './charge';
 import type { CreditNoteReasonCode } from './credit-note';
@@ -39,6 +40,8 @@ export interface CreditNoteView {
   siteId: string;
   emissionPointId: string;
   sequential: string;
+  /** D-185.1, BI-235. The printed number, `001-002-000000004`. */
+  documentNumber: string;
   accessKey: string | null;
   reasonCode: CreditNoteReasonCode;
   reason: string;
@@ -49,6 +52,8 @@ export interface CreditNoteView {
   lines: CreditNoteLineView[];
   /** The corrected invoice's series, for the list (BI-218). */
   invoiceSequential: string;
+  /** D-185.1, BI-235. The corrected invoice's printed number. */
+  invoiceDocumentNumber: string;
 }
 
 export interface CreditNoteIssuance {
@@ -92,6 +97,7 @@ export interface CreditNoteRepository {
   list(query: {
     siteId: string;
     invoiceId?: string;
+    filter: IssuedDocumentFilter;
     page: number;
     pageSize: number;
   }): Promise<{ items: CreditNoteView[]; total: number }>;

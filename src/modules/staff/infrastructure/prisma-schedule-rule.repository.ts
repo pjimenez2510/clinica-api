@@ -9,6 +9,8 @@ import {
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type { BookedInterval } from '../domain/schedule-conflicts';
 import type {
+  ClinicScheduleFilter,
+  ClinicScheduleRuleView,
   ScheduleRuleRepository,
   ScheduleRuleView,
   ScheduleRuleWrite,
@@ -100,6 +102,63 @@ export class PrismaScheduleRuleRepository implements ScheduleRuleRepository {
       orderBy: [{ weekday: 'asc' }, { startTime: 'asc' }],
     });
     return rows.map(toView);
+  }
+
+  /**
+   * ST-053. Closed means deactivated or ended before the clinic's today; a
+   * rule that ends today still rules today.
+   */
+  async listClinic(
+    filter: ClinicScheduleFilter,
+    page: { page: number; pageSize: number },
+    today: ClinicalDate,
+  ): Promise<{ items: readonly ClinicScheduleRuleView[]; total: number }> {
+    const where: Prisma.PractitionerScheduleRuleWhereInput = {
+      ...(filter.siteIds ? { siteId: { in: [...filter.siteIds] } } : {}),
+      ...(filter.weekday === undefined ? {} : { weekday: filter.weekday }),
+      ...(filter.practitionerId
+        ? { practitionerId: filter.practitionerId }
+        : {}),
+      ...(filter.includeClosed
+        ? {}
+        : {
+            active: true,
+            OR: [
+              { validTo: null },
+              { validTo: { gte: fromClinicalDate(today) } },
+            ],
+          }),
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.practitionerScheduleRule.findMany({
+        where,
+        select: {
+          ...RULE_SELECT,
+          site: { select: { name: true } },
+          practitioner: {
+            select: { user: { select: { firstName: true, lastName: true } } },
+          },
+        },
+        orderBy: [
+          { weekday: 'asc' },
+          { startTime: 'asc' },
+          { practitioner: { user: { lastName: 'asc' } } },
+          { practitioner: { user: { firstName: 'asc' } } },
+          { id: 'asc' },
+        ],
+        skip: (page.page - 1) * page.pageSize,
+        take: page.pageSize,
+      }),
+      this.prisma.practitionerScheduleRule.count({ where }),
+    ]);
+    return {
+      items: rows.map((row) => ({
+        ...toView(row),
+        practitionerName: `${row.practitioner.user.lastName}, ${row.practitioner.user.firstName}`,
+        siteName: row.site.name,
+      })),
+      total,
+    };
   }
 
   /** Any rule, active or closed; `null` when there is none. */

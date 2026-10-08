@@ -274,6 +274,12 @@ con los disparadores de la base.
   abiertas, el sistema DEBERÁ devolver las no respondidas de toda la clínica
   ordenadas por vencimiento, la más próxima primero, cada una marcando si está
   vencida según la fecha clínica de hoy.
+- **PD-051** — CUANDO alguien con `patient:data-requests` pida las solicitudes
+  abiertas, el sistema DEBERÁ devolverlas por páginas (20, 50 o 100) con el
+  total, y DEBERÁ admitir filtrarlas por derecho y pedir sólo las vencidas,
+  con el mismo orden y la misma marca de vencida de PD-035.
+  > ESTANDAR-UI §12.7 (revisión del autor, 07-10-2026): «Solicitudes de datos»
+  > con filtros y paginación. Sin cambiar qué se ve de cada una (PD-036).
 - **PD-036** — CUANDO alguien con `patient:data-requests` pida las solicitudes de
   una ficha, el sistema DEBERÁ devolver las de la ficha y sus absorbidas, de la
   más reciente a la más antigua, respondidas o no, y dejar una fila `READ` de
@@ -500,7 +506,7 @@ puede verla»).
 | `POST` | `/privacy/patients/:patientId/consents` | `patient:write`         | PD-010 a PD-015, PD-017        |
 | `GET`  | `/privacy/patients/:patientId/requests` | `patient:data-requests` | PD-036                         |
 | `POST` | `/privacy/patients/:patientId/requests` | `patient:data-requests` | PD-030 a PD-032, PD-037        |
-| `GET`  | `/privacy/requests`                     | `patient:data-requests` | PD-035                         |
+| `GET`  | `/privacy/requests`                     | `patient:data-requests` | PD-035, PD-051                 |
 | `POST` | `/privacy/requests/:requestId/response` | `patient:data-requests` | PD-033, PD-034, PD-037, PD-038 |
 | `GET`  | `/privacy/requests/:requestId/export`   | `patient:data-requests` | PD-040 a PD-043, PD-048, PD-050 |
 | `GET`  | `/privacy/requests/:requestId/answer-proposal` | `patient:data-requests` | PD-049         |

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
+import type { IssuedDocumentFilter } from '../domain/document-search';
 
 import {
   ACCESS_AUDIT_RECORDER,
@@ -290,12 +291,16 @@ export class InvoicingService {
     return proposeReceiver(await this.receiverContext(account));
   }
 
-  /** BI-133, BI-135. */
+  /** BI-133, BI-135, BI-233. */
   async listInvoices(query: {
     siteId: string;
     accountId?: string;
-  }): Promise<InvoiceWithVoucher[]> {
-    return this.withVouchers(await this.accounts.listInvoices(query));
+    filter: IssuedDocumentFilter;
+    page: number;
+    pageSize: number;
+  }): Promise<{ items: InvoiceWithVoucher[]; total: number }> {
+    const { items, total } = await this.accounts.listInvoices(query);
+    return { items: await this.withVouchers(items), total };
   }
 
   /** BI-135. */

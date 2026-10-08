@@ -43,8 +43,31 @@ export interface ScheduleRuleWrite {
   validTo: ClinicalDate | null;
 }
 
+/** ST-053. One rule of the clinic's schedule, with whose and where. */
+export interface ClinicScheduleRuleView extends ScheduleRuleView {
+  /** «Apellidos, Nombres», as every list of people in the clinic. */
+  practitionerName: string;
+  siteName: string;
+}
+
+/** ST-053. What the clinic's schedule is narrowed by. */
+export interface ClinicScheduleFilter {
+  siteIds?: readonly string[];
+  weekday?: number;
+  practitionerId?: string;
+  /** Deactivated rules and those that ended before today travel only when asked for. */
+  includeClosed: boolean;
+}
+
 // The port described at the top of this file.
 export interface ScheduleRuleRepository {
+  /** ST-053. A page of every practitioner's rules, by weekday, start and surname. */
+  listClinic(
+    filter: ClinicScheduleFilter,
+    page: { page: number; pageSize: number },
+    today: ClinicalDate,
+  ): Promise<{ items: readonly ClinicScheduleRuleView[]; total: number }>;
+
   listByPractitioner(
     practitionerId: string,
     includeClosed: boolean,

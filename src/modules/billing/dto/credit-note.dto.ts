@@ -4,7 +4,11 @@ import { z } from 'zod';
 import { CREDIT_NOTE_REASON_CODES } from '../domain/credit-note';
 import { BUYER_IDENTIFICATION_TYPES } from '../domain/invoice';
 
-import { electronicStateSchema, totalsSchema } from './billing.dto';
+import {
+  electronicStateSchema,
+  issuedDocumentQueryShape,
+  totalsSchema,
+} from './billing.dto';
 
 /**
  * BI-208, BI-209. «Corregir»: which lines and why.
@@ -28,8 +32,7 @@ export class IssueCreditNoteDto extends createZodDto(issueCreditNoteSchema) {}
 
 export const creditNoteQuerySchema = z.object({
   invoiceId: z.uuid().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  ...issuedDocumentQueryShape,
 });
 /** Query of GET /billing/sites/:siteId/credit-notes. */
 export class CreditNoteQueryDto extends createZodDto(creditNoteQuerySchema) {}
@@ -52,9 +55,13 @@ const creditNoteResponseSchema = z.object({
   invoiceId: z.uuid(),
   /** The corrected invoice's sequential, for the list (BI-218). */
   invoiceSequential: z.string(),
+  /** D-185.1, BI-235. The corrected invoice's printed number. */
+  invoiceDocumentNumber: z.string(),
   siteId: z.uuid(),
   emissionPointId: z.uuid(),
   sequential: z.string(),
+  /** D-185.1, BI-235. The printed number, `001-002-000000004`. */
+  documentNumber: z.string(),
   accessKey: z.string().nullable(),
   reasonCode: z.enum(CREDIT_NOTE_REASON_CODES),
   /** What `<motivo>` says. */
