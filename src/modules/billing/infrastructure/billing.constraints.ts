@@ -12,6 +12,17 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
  * by PostgreSQL constraints, and this registration is their enumeration.
  */
 registerConstraintMeanings({
+  // ── Closing without charging (BI-237, D-184.2) ────────────────────────────
+  patient_account_settled_states_why_unpaid: {
+    code: 'ACCOUNT_NO_CHARGE_REASON_REQUIRED',
+    field: 'noChargeReason',
+    message: 'No hay nada facturado: indique por qué no se cobra',
+  },
+  patient_account_no_charge_reason_not_blank: {
+    code: 'ACCOUNT_NO_CHARGE_REASON_REQUIRED',
+    field: 'noChargeReason',
+    message: 'Indique por qué no se cobra',
+  },
   // ── The credit note (BI-095, BI-209 to BI-214; fix/corregir-factura) ─────
   //
   // The service and the repository refuse all of these first, with their own

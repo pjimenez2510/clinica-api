@@ -9,7 +9,10 @@ import { contentHashOf, type NoteContent } from '../domain/clinical-note';
 import { withBackgroundSnapshot } from '../domain/background-snapshot';
 import { BackgroundSnapshotReader } from './background-snapshot.reader';
 import type { DiscontinuedOrigin } from '../domain/encounter';
-import { PractitionerProfileRequiredError } from '../domain/encounter.errors';
+import {
+  EncounterNotFoundError,
+  PractitionerProfileRequiredError,
+} from '../domain/encounter.errors';
 import { assertLicensedOn } from '../domain/practitioner-licence';
 import {
   ENCOUNTER_EXIT_REPOSITORY,
@@ -336,5 +339,40 @@ export class EncounterExitService {
       'encounter resumed',
     );
     return resumed;
+  }
+
+  /**
+   * EN-239 (D-184.4). Reception, from the board: «salió y vuelve». The same
+   * act as `hold`, found by the APPOINTMENT, so the board never needs the
+   * attention's id (EN-016). Nothing of the attention is handed back.
+   */
+  async holdByEntry(
+    request: { agendaEntryId: string; reason?: string },
+    requester: Requester,
+  ): Promise<void> {
+    const encounterId = await this.liveEncounterOf(request.agendaEntryId, requester); // prettier-ignore
+    await this.hold({ encounterId, reason: request.reason }, requester);
+  }
+
+  /** EN-239. «Volvió», from the board: `resume`, found by the appointment. */
+  async resumeByEntry(
+    request: { agendaEntryId: string },
+    requester: Requester,
+  ): Promise<void> {
+    const encounterId = await this.liveEncounterOf(request.agendaEntryId, requester); // prettier-ignore
+    await this.resume({ encounterId }, requester);
+  }
+
+  /** EN-239. The live attention of the appointment, or `ENCOUNTER_NOT_FOUND`. */
+  private async liveEncounterOf(
+    agendaEntryId: string,
+    requester: Requester,
+  ): Promise<string> {
+    const id = await this.exits.liveEncounterOfEntry({
+      agendaEntryId,
+      sites: requester.sites,
+    });
+    if (id === null) throw new EncounterNotFoundError();
+    return id;
   }
 }

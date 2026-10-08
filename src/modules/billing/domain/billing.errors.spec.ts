@@ -117,6 +117,14 @@ describe('el contrato de los errores de facturación', () => {
     expect(error.params).toEqual({ openCharges: 2 });
   });
 
+  it('BI-237 ACCOUNT_NO_CHARGE_REASON_REQUIRED es 422 y señala el motivo', () => {
+    const error = new errors.AccountNoChargeReasonRequiredError();
+    expect(error.code).toBe('ACCOUNT_NO_CHARGE_REASON_REQUIRED');
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.userTitle).toContain('por qué no se cobra');
+    expect(error.fieldErrors?.[0]?.field).toBe('noChargeReason');
+  });
+
   it('BI-080 INVOICE_RECEIVER_REQUIRED señala el campo que falta', () => {
     const error = new errors.InvoiceReceiverRequiredError('receiver.name');
     expect(error.fieldErrors?.[0]?.field).toBe('receiver.name');

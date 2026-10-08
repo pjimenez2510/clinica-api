@@ -8,12 +8,9 @@ import {
   AnthropometryPendingError,
   EncounterAlreadyReportedError,
   EncounterAppointmentMismatchError,
-  EncounterNotFoundError,
-  InvalidEncounterTransitionError,
 } from '../domain/encounter.errors';
 import { subjectStatusAfter } from '../domain/patient-flow';
 import { vitalsCorrectionRefusal } from '../domain/practitioner-licence';
-import type { ClosurePlan } from '../domain/encounter-closure';
 import type { CarePlace } from '../domain/encounter';
 import type {
   ChartHistoryQuery,
@@ -485,80 +482,6 @@ export class PrismaEncounterRepository implements EncounterRepository {
         mrn: row.patient.mrn,
       },
     }));
-  }
-
-  /**
-   * EN-009, EN-131, EN-132, EN-139, EN-144, EN-147. One closure, one
-   * transaction.
-   *
-   * READ, DECIDE, WRITE CONDITIONALLY — the shape `agenda.transition` uses,
-   * for the same reason: the policy must judge the row AS IT IS inside the
-   * transaction, not a read from a moment earlier. `decide` throws to refuse
-   * and the transaction aborts with nothing written.
-   *
-   * THE UPDATE DOES NOT TRUST THE READ. Two people close the same attention at
-   * the same moment; both closures approve. The `updateMany` is conditioned on
-   * the status that was read, so the loser matches zero rows, re-reads and is
-   * refused with the status the WINNER left — the honest 409 rather than a
-   * stale acceptance that would overwrite `closed_by_id` with the second
-   * person.
-   *
-   * EN-139 RIDES IN THE SAME TRANSACTION: closing the account is the
-   * documented fact that proves the patient left, and a board written after
-   * the commit is a board that can disagree with the record.
-   */
-  async close(
-    query: EncounterQuery,
-    decide: (encounter: EncounterView) => ClosurePlan,
-  ): Promise<EncounterView> {
-    return this.prisma.$transaction(async (tx) => {
-      const row = await tx.encounter.findFirst({
-        where: { id: query.encounterId, ...siteFilter(query.sites) },
-        select: ENCOUNTER_SELECT,
-      });
-      if (!row) throw new EncounterNotFoundError();
-
-      const current = toEncounterView(row);
-      const plan = decide(current);
-
-      const updated = await tx.encounter.updateMany({
-        where: {
-          id: query.encounterId,
-          ...siteFilter(query.sites),
-          status: current.status,
-        },
-        data: {
-          status: plan.to,
-          endedAt: plan.endedAt,
-          dischargeCondition: plan.dischargeCondition,
-          closedById: plan.closedById,
-          closedAt: plan.closedAt,
-          closedBySubstituteReason: plan.substituteReason,
-        },
-      });
-
-      if (updated.count === 0) {
-        // Somebody moved it between our read and our write. The refusal names
-        // the state THEY left, never the stale one we decided on.
-        const now = await tx.encounter.findUniqueOrThrow({
-          where: { id: query.encounterId },
-          select: { status: true },
-        });
-        throw new InvalidEncounterTransitionError(now.status, plan.to);
-      }
-
-      await stampSubjectStatus(tx, {
-        encounterId: query.encounterId,
-        fact: 'ACCOUNT_CLOSED',
-        now: plan.closedAt,
-      });
-
-      const after = await tx.encounter.findUniqueOrThrow({
-        where: { id: query.encounterId },
-        select: ENCOUNTER_SELECT,
-      });
-      return toEncounterView(after);
-    });
   }
 
   /**

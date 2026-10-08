@@ -237,7 +237,7 @@ su atención, comprobando que exactamente una de las dos operaciones gana.
 derivación— y **EN-141 a EN-147** —quién abre, quién escribe y quién cierra—,
 **EN-166 a EN-169** —anular e interrumpir con constancia, una atención viva por
 cita, lo escrito en una atención terminada no se reescribe (D-080 a D-082,
-D-085)—.
+D-085)— y **EN-239** —recepción suspende y reanuda desde el tablero (D-184.4)—.
 
 **Por qué el estado entra en H1 y no después:** el estado de hoy es implícito
 —`ended_at IS NULL`— y con cinco estados eso deja de funcionar. Añadirlo cuando
@@ -663,6 +663,19 @@ requisitos que cambian.
   > mitad de la consulta externa. Obligar a crear una cita para poder atender
   > produce citas ficticias con la hora falseada, que es lo que destruye la
   > métrica de inasistencia de AG-080.
+  >
+  > **Enmendado por D-184.3 (aceptada por el autor el 08-10-2026,
+  > `feat/f04-cierre-atencion`): se da por cumplido con la llegada `WALK_IN`.**
+  > El servidor abre una atención sin `agenda_entry_id`, y eso no cambia; la
+  > pantalla, en cambio, sólo la abre desde una entrada del tablero, y el
+  > paciente que llega sin haber llamado entra por recepción como llegada
+  > `WALK_IN` a la hora real de su llegada. Eso no es la «cita ficticia» que
+  > este requisito prohíbe: lleva la hora verdadera, la inasistencia la
+  > desglosa por canal (AG-080, AG-032) y no se mezcla con las reservadas, y
+  > deja al paciente en el tablero, donde enfermería y el médico lo buscan.
+  > No se construye «Atender sin cita». Si la clínica llega a atender
+  > urgencias que no pasan por recepción, eso es «Atender sin cita» en la
+  > ficha del paciente, para el médico, y es una decisión nueva.
 - **EN-004** — SI una atención nombra una cita cuyo paciente es distinto,
   ENTONCES el sistema DEBERÁ rechazarla.
   > **Garantía de la base:** `trg_encounter_matches_appointment`, que es
@@ -2477,6 +2490,21 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > vacío durante una hora; o cerrarla y volver a abrirla, y **reabrir una
   > atención cerrada es justo lo que EN-132 prohíbe**, porque una atención cerrada
   > ya tiene condición de egreso y puede estar facturada y reportada.
+- **EN-239** — CUANDO quien tenga `encounter:open` registre desde el tablero
+  que el paciente de una cita **salió y vuelve**, o que **volvió**, el sistema
+  DEBERÁ suspender o reanudar la atención viva de esa cita (EN-128) **sin
+  publicar su identificador ni nada de su contenido**, y SI la cita no tiene
+  una atención en curso (`OPEN` u `ON_HOLD`) en una sede del alcance de quien
+  lo pide, ENTONCES DEBERÁ rechazarlo con `ENCOUNTER_NOT_FOUND`.
+  > **D-184.4 (aceptada por el autor el 08-10-2026, `feat/f04-cierre-atencion`).**
+  > EN-128 ya daba el permiso a recepción, pero el botón vivía dentro de la
+  > atención, que pide `record:read`, y el tablero no publica el identificador
+  > de la atención (EN-016): recepción sólo podía hacerlo por la API. Las dos
+  > rutas `POST /encounters/for-entry/:entryId/hold` y `…/resume` buscan la
+  > atención viva por la cita —hay como mucho una (EN-168)— y hacen exactamente
+  > lo de EN-128, con su motivo, su autor y su instante en el historial, y la
+  > misma transacción del eje del paciente (AG-124). Responden `204`: quien
+  > mira el tablero no necesita, ni debe recibir, la atención.
 - **EN-129** — CUANDO una atención empezada no pueda terminarse y el paciente no
   vaya a volver, el sistema DEBERÁ pasarla a `DISCONTINUED` exigiendo **motivo
   escrito**, **quién lo decidió** y el instante, y DEBERÁ distinguir si la
@@ -2628,13 +2656,33 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > **Que la enmienda siga siendo posible es deliberado:** EN-025 no caduca porque
   > la atención avance. Lo que no se admite es seguir escribiendo como si la
   > consulta continuara.
-- **EN-131** — CUANDO se cierre la cuenta de la atención, el sistema DEBERÁ
-  pasarla a `COMPLETED` exigiendo la **condición de egreso** (EN-009) y
-  registrando **quién** la cerró y **cuándo**; una atención `COMPLETED` NO DEBERÁ
-  volver a ningún otro estado.
-  > `encounter.closed_by_id` y `closed_at` existen, con clave foránea a
-  > `practitioner` en `RESTRICT`: la pregunta que se hace doce meses después es
-  > quién, y por eso no se deriva de la bitácora.
+- **EN-131** — CUANDO caja cierre la cuenta de una atención con el alta dada
+  (`DISCHARGED`, BI-236), el sistema DEBERÁ pasarla a `COMPLETED` **en la misma
+  transacción**, con la **condición de egreso** que declaró quien atendió al
+  firmar (EN-009, EN-144) y sin pedir nada al médico, registrando **quién**
+  cerró la cuenta y **cuándo**; una atención `COMPLETED` NO DEBERÁ volver a
+  ningún otro estado.
+  > **Enmendado por D-184.1 (aceptada por el autor el 08-10-2026,
+  > `feat/f04-cierre-atencion`).** Antes la cerraba quien la abrió con
+  > `POST /encounters/:id/close`, que ninguna pantalla llamaba: ninguna
+  > atención llegaba a `COMPLETED` y el SPEC se contradecía —esto decía que es
+  > de caja (D-A-008) y EN-144 que de quien la abrió (D-A-010)—, y caja no
+  > tiene `record:write`. Ahora el cierre es **un efecto de cerrar la cuenta**:
+  > caja no ve un paso nuevo, y el cierre no inventa ningún hecho clínico,
+  > porque la condición de egreso ya la declaró el médico al firmar. La ruta
+  > `POST /encounters/:id/close` se retira: dos caminos a `COMPLETED` volverían
+  > a abrir la contradicción.
+  >
+  > **Garantía de la base:** `trg_patient_account_closes_its_encounter`, `AFTER
+  > UPDATE OF status` de `patient_account`, pasa la atención de la cuenta a
+  > `COMPLETED` cuando la cuenta pasa de `OPEN` a `SETTLED`, sólo si está
+  > `DISCHARGED`, con `closed_by_user_id` —quien cerró la cuenta, un USUARIO,
+  > clave foránea a `app_user` en `RESTRICT`— y el `closed_at` de la cuenta,
+  > que es el reloj de la aplicación y nunca el `now()` de PostgreSQL.
+  > `encounter_completed_states_who_and_when` exige quién y cuándo en
+  > `COMPLETED`. `closed_by_id` (a `practitioner`) y
+  > `closed_by_substitute_reason` se conservan para leer lo anterior, y
+  > ningún camino nuevo los escribe.
   >
   > «Cerrar la cuenta» es que no queda nada pendiente, ni clínico ni
   > administrativo: se cobró, se facturó o consta por qué no había que cobrar.
@@ -2770,6 +2818,10 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
 - **EN-139** — CUANDO se cierre la cuenta de una atención, el sistema DEBERÁ
   registrar la atención como **cerrada** —`COMPLETED` (EN-131)— y al paciente
   como `DEPARTED`.
+  > **Desde D-184 (`feat/f04-cierre-atencion`)** las dos cosas las escribe el
+  > mismo disparador que cierra la atención (EN-131), en la transacción de caja
+  > y con el instante de la cuenta. Al paciente que ya salió no se le vuelve a
+  > sellar el instante.
 - **EN-140** — El sistema DEBERÁ exponer el **instante en que la atención entró
   en su estado actual**, y NO DEBERÁ aceptar como dato de entrada el tiempo
   transcurrido en ese estado.
@@ -2834,10 +2886,16 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > firma. Es exactamente lo que hace el estándar con `Observation.performer`, y
   > es coherente con EN-011: la atención la brinda un profesional, pero cada dato
   > sabe quién lo escribió.
-- **EN-144** — El cierre de una atención DEBERÁ hacerlo **quien la abrió**.
-  > **D-A-010**, y es respuesta directa del usuario. Quien abrió es quien sabe qué
-  > pasó; el cierre exige condición de egreso (EN-009), que es un hecho clínico y
-  > no un trámite.
+- **EN-144** — La **condición de egreso** DEBERÁ declararla **quien atiende**,
+  al firmar la nota que da el alta (EN-009, EN-138); y el cierre de la cuenta NO
+  DEBERÁ pedirla, cambiarla ni completarla.
+  > **Enmendado por D-184.1 (08-10-2026, `feat/f04-cierre-atencion`).** Antes:
+  > «el cierre de una atención DEBERÁ hacerlo quien la abrió» (D-A-010). Lo que
+  > D-A-010 protegía sigue en pie —la condición de egreso es un hecho clínico y
+  > la dice quien sabe qué pasó—, pero ya la dice al firmar, y lo que queda
+  > después es administrativo: es de caja (D-A-008, EN-131). Devolverle al
+  > médico un botón «Cerrar atención» tras el alta sería devolverle el trámite
+  > que D-A-008 le quitó.
 - **EN-145** — El sistema NO DEBERÁ cerrar ninguna atención por transcurso del
   tiempo ni por ningún proceso automático.
   > **D-A-010.** Un cierre automático tendría que **inventarse la condición de
@@ -2868,9 +2926,17 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > mismo que el tablero del día—, porque una lista que sólo dice «abierta el
   > lunes a las 10:12» no se puede atender. La pantalla es «Sin cerrar» en
   > Atención.
-- **EN-147** — SI quien cierra una atención no es quien la abrió, ENTONCES el
-  sistema DEBERÁ exigir `record:sign` y DEBERÁ dejar constancia de que el cierre
-  **no lo hizo el autor**.
+- **EN-147** — SI quien anula o interrumpe una atención —y al interrumpirla
+  firma con su nombre las notas que deja escritas (EN-167)— no es su
+  profesional, ENTONCES el sistema DEBERÁ exigir `record:sign` y DEBERÁ dejar
+  constancia de que **no lo hizo el autor**.
+  > **Enmendado por D-184.1 (08-10-2026, `feat/f04-cierre-atencion`).** Decía
+  > «quien cierra»: el cierre ya no lo hace una persona sobre la atención sino
+  > caja al cerrar la cuenta (EN-131). La regla queda donde de verdad se firma
+  > en nombre de otro: anular y interrumpir (EN-166, EN-167), con sus mismos
+  > códigos (`ENCOUNTER_CLOSER_NOT_AUTHOR`). Lo de abajo es la historia de la
+  > regla, y la constancia de la base sigue valiendo para lo cerrado antes.
+  >
   > **Garantía de la base:** `encounter_substitute_closure_states_reason` —o el
   > cierre lo hizo el mismo profesional que la brindó, o **hay motivo escrito**—,
   > con `closed_by_id` en clave foránea a `practitioner` con `RESTRICT`.
@@ -4313,9 +4379,11 @@ que es global: una atención ocurre en un sitio.
 | `GET` | `/encounters/open` | `record:read` | EN-146 |
 | `POST` | `/encounters/:id/hold` | `encounter:open` | EN-128 |
 | `POST` | `/encounters/:id/resume` | `encounter:open` | EN-128 |
+| `POST` | `/encounters/for-entry/:entryId/hold` | `encounter:open` | **EN-239** |
+| `POST` | `/encounters/for-entry/:entryId/resume` | `encounter:open` | **EN-239** |
 | `POST`  | `/encounters/:id/discontinue`                             | `record:sign`                     | EN-129, EN-132, **EN-167**                                 |
 | `POST`  | `/encounters/:id/enter-in-error`                          | `record:write`                    | EN-018, **EN-166**                                         |
-| `POST` | `/encounters/:id/close` | `record:write` | EN-009, EN-131, EN-144, EN-147 |
+| ~~`POST`~~ | ~~`/encounters/:id/close`~~ | — | **Retirada por D-184.1**: la atención la cierra caja al cerrar la cuenta (EN-131, BI-236) |
 | `GET` | `/patients/:id/encounters` | `record:read` | EN-015, EN-068 |
 | `POST` | `/encounters/:id/notes` | `record:write` | EN-020 a EN-022 |
 | `PATCH` | `/encounters/:id/notes/:noteId` | `record:write` | EN-023 (borrador) |

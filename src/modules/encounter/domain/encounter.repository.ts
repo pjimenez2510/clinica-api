@@ -33,7 +33,6 @@ import type {
   VisitSequence,
 } from './encounter';
 import type { StateChange } from './encounter-state';
-import type { ClosurePlan } from './encounter-closure';
 import type { AnthropometryField, VitalSigns } from './vital-signs';
 import type { TriggeringFact } from './patient-flow';
 
@@ -400,25 +399,6 @@ export interface EncounterRepository {
    * the thing being forgotten is the oldest one.
    */
   listStillOpen(query: OpenEncountersQuery): Promise<StillOpenEncounter[]>;
-
-  /**
-   * EN-009, EN-131, EN-132, EN-144, EN-147. One closure, one transaction.
-   *
-   * THE POLICY TRAVELS AS A FUNCTION, exactly as `agenda.transition` does and
-   * for the same reason: the rules have to judge the row AS IT IS INSIDE the
-   * transaction, not a read from a moment earlier. The adapter reads, hands
-   * the row to `decide`, and applies whatever it returns in the same
-   * transaction; `decide` throws to refuse and nothing is written.
-   *
-   * The race two people can still run — both read `DISCHARGED`, both decide —
-   * is closed by a CONDITIONAL update on the status that was read: the loser
-   * matches zero rows and is refused with the WINNER's status, never with a
-   * stale acceptance.
-   */
-  close(
-    query: EncounterQuery,
-    decide: (encounter: EncounterView) => ClosurePlan,
-  ): Promise<EncounterView>;
 
   /**
    * EN-130, EN-138. Moves the attention to `DISCHARGED` because a note was

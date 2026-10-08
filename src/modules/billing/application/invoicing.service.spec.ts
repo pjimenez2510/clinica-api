@@ -38,6 +38,7 @@ const account: AccountView = {
   encounterId: null,
   payerId: 'payer-particular',
   priceListId: 'list-particular',
+  noChargeReason: null,
   status: 'OPEN',
   openedAt: new Date('2026-05-11T14:00:00Z'),
   closedAt: null,

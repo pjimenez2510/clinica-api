@@ -116,40 +116,6 @@ export const openEncounterSchema = z.object({
 export class OpenEncounterDto extends createZodDto(openEncounterSchema) {}
 
 /**
- * EN-131, EN-144, EN-147. Closing the account.
- *
- * ⚠️ NO DISCHARGE CONDITION HERE, AND THAT IS THE DESIGN. It was stated when
- * the consultation note was signed (EN-138), which is the only moment at which
- * it is a clinical fact rather than a guess, and
- * `encounter_discharge_states_a_condition` already refused the discharge
- * without it. A field here would let the cashier restate a clinical outcome
- * the doctor had already declared — and the two would disagree.
- *
- * ⚠️ AND NO STATE FIELD EITHER. `PATCH /encounters/:id/status` would be
- * exactly the box EN-134 forbids: every state except this one is produced by
- * documenting something.
- */
-export const closeEncounterSchema = z.object({
-  /**
-   * EN-147. Why somebody other than the author is closing it.
-   *
-   * OPTIONAL HERE AND OBLIGATORY THERE: the ordinary closure is done by the
-   * practitioner who gave the attention and owes nobody an explanation, so a
-   * required field would ask for typing on every single closure. When it IS
-   * somebody else, the service refuses without it
-   * (`SUBSTITUTE_CLOSURE_REASON_REQUIRED`) and
-   * `encounter_substitute_closure_states_reason` refuses it a second time.
-   */
-  substituteReason: z
-    .string()
-    .trim()
-    .max(500, 'El motivo no puede superar 500 caracteres')
-    .optional(),
-});
-/** Body of POST /encounters/:id/close. */
-export class CloseEncounterDto extends createZodDto(closeEncounterSchema) {}
-
-/**
  * EN-166 (D-077). Body of POST /encounters/:id/enter-in-error.
  *
  * The reason is OPTIONAL in the schema and obligatory in the service, like

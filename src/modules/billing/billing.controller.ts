@@ -49,6 +49,7 @@ import {
   AccountStatementDto,
   AddChargeDto,
   ChangePayerDto,
+  CloseAccountDto,
   ChargeDto,
   CheckoutDto,
   CheckoutResponseDto,
@@ -291,12 +292,14 @@ export class BillingController {
   }
 
   /**
-   * BI-071, BI-072, BI-073.
+   * BI-071, BI-072, BI-073, BI-236, BI-237.
    *
    * Closing the account is NOT a precondition of invoicing, and invoicing is
    * not a precondition of closing the encounter clinically: chaining them
    * produces exactly the system that keeps a doctor waiting for a cashier, or
-   * the other way round.
+   * the other way round. What closing DOES do since D-184 is close the
+   * attention that already has its discharge, in the same transaction — the
+   * database does it — and, with nothing invoiced, it asks why.
    */
   @Post('accounts/:accountId/close')
   @RequirePermission('billing:write', 'param:siteId')
@@ -308,11 +311,13 @@ export class BillingController {
   async closeAccount(
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Body() dto: CloseAccountDto,
   ): Promise<AccountResponse> {
     return toAccountResponse(
       await this.accounts.closeAccount({
         accountId,
         siteId,
+        noChargeReason: dto.noChargeReason,
         closedById: this.currentUser.requireUserId(),
       }),
     );
@@ -671,6 +676,7 @@ function toAccountResponse(account: AccountView): AccountResponse {
     status: account.status,
     openedAt: account.openedAt.toISOString(),
     closedAt: account.closedAt?.toISOString() ?? null,
+    noChargeReason: account.noChargeReason,
   };
 }
 
@@ -692,6 +698,9 @@ function toStatementResponse(
       savedAt: draft.savedAt.toISOString(),
     })),
     consultationOutdated: statement.consultationOutdated,
+    encounterStatus:
+      statement.encounterStatus as AccountStatementResponse['encounterStatus'],
+    closesEncounter: statement.closesEncounter,
   };
 }
 

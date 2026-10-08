@@ -108,15 +108,16 @@ model User {
   /// AG-035, D-005: the overbookings this person AUTHORISED. Not the ones they
   /// booked — `agenda_entry.created_by_id` carries no relation, and keeping
   /// the two apart is the control itself (AG-103).
-  overbookingsAuthorised AgendaEntry[]            @relation("OverbookingAuthoriser")
-  agendaEntriesEdited    AgendaEntry[]            @relation("AgendaEntryEditor")
-  encountersAnnulled     Encounter[]              @relation("EncounterAnnuller")
-  encountersDiscontinued Encounter[]              @relation("EncounterDiscontinuer")
-  encountersHeld         Encounter[]              @relation("EncounterHolder")
-  encountersResumed      Encounter[]              @relation("EncounterResumer")
-  encountersCorrected    Encounter[]              @relation("EncounterCorrector")
-  encountersOpened       Encounter[]              @relation("EncounterOpener")
-  encounterStatusChanges EncounterStatusHistory[]
+  overbookingsAuthorised  AgendaEntry[]            @relation("OverbookingAuthoriser")
+  agendaEntriesEdited     AgendaEntry[]            @relation("AgendaEntryEditor")
+  encountersAnnulled      Encounter[]              @relation("EncounterAnnuller")
+  encountersDiscontinued  Encounter[]              @relation("EncounterDiscontinuer")
+  encountersHeld          Encounter[]              @relation("EncounterHolder")
+  encountersAccountClosed Encounter[]              @relation("EncounterAccountCloser")
+  encountersResumed       Encounter[]              @relation("EncounterResumer")
+  encountersCorrected     Encounter[]              @relation("EncounterCorrector")
+  encountersOpened        Encounter[]              @relation("EncounterOpener")
+  encounterStatusChanges  EncounterStatusHistory[]
 
   /// PA-039: the priority group records this person wrote, and the ones they
   /// closed. Two relations because they are two acts by two people at two
@@ -1543,10 +1544,10 @@ model Specialty {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  practitioners    PractitionerSpecialty[]
-  serviceTypes     ServiceType[]
+  practitioners PractitionerSpecialty[]
+  serviceTypes  ServiceType[]
   /// EN-203. The note templates of this specialty (D-124).
-  noteTemplates    ClinicalNoteTemplate[]
+  noteTemplates ClinicalNoteTemplate[]
 
   @@map("specialty")
 }
@@ -2672,6 +2673,12 @@ model Encounter {
   closedBy                 Practitioner? @relation("EncounterCloser", fields: [closedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_closed_by_fk")
   closedAt                 DateTime?     @map("closed_at") @db.Timestamptz(6)
   closedBySubstituteReason String?       @map("closed_by_substitute_reason") @db.VarChar(500)
+  /// D-184, EN-131: who CLOSED THE ACCOUNT that closed this attention — the
+  /// cashier, a user and not a practitioner. Written only by
+  /// `trg_patient_account_closes_its_encounter`; `closedById` stays for the
+  /// attentions closed by their practitioner before D-184.
+  closedByUserId           String?       @map("closed_by_user_id") @db.Uuid
+  closedByUser             User?         @relation("EncounterAccountCloser", fields: [closedByUserId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "encounter_closed_by_user_fk")
 
   /// EN-166 (D-077, D-080). Why, who and when an encounter was annulled. All
   /// three exactly on `ENTERED_IN_ERROR` and never otherwise
@@ -4035,6 +4042,11 @@ model PatientAccount {
 
   openedAt DateTime  @default(now()) @map("opened_at") @db.Timestamptz(6)
   closedAt DateTime? @map("closed_at") @db.Timestamptz(6)
+
+  /// BI-237 (D-184.2). Why nothing was charged, when the account was settled
+  /// with nothing invoiced. `trg_patient_account_settled_states_why_unpaid`
+  /// demands it then, and empties it when the account is reopened.
+  noChargeReason String? @map("no_charge_reason") @db.VarChar(200)
 
   /// BI-215 (D-142.2). The STAMP of the last change of payer, price list or
   /// status — closing it, and reopening it after a credit note.

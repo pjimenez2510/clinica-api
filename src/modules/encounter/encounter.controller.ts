@@ -38,7 +38,6 @@ import type { EncounterView } from './domain/encounter.repository';
 import type { VitalSignsView } from './domain/encounter.repository';
 import {
   ChartHistoryQueryDto,
-  CloseEncounterDto,
   EncounterDetailDto,
   EncounterDto,
   EncounterStatusHistoryDto,
@@ -321,48 +320,6 @@ export class EncounterController {
         reason: change.reason,
       })),
     };
-  }
-
-  /**
-   * EN-009, EN-131, EN-132, EN-139, EN-144, EN-147. Closes the account.
-   *
-   * A ROUTE OF ITS OWN AND NOT A `PATCH` OF THE STATE, for the same reason
-   * `POST …/merge/undo` is one in `patients`: it is an act with an author, an
-   * instant and — when it is a substitution — a reason of its own, not the
-   * edit of a field. And `PATCH /encounters/:id/status` would be exactly the
-   * box EN-134 forbids, since every other state is produced by documenting
-   * something.
-   *
-   * 200 WITH THE ATTENTION and not 204: the screen repaints it as closed
-   * without a second call.
-   */
-  @Post(':id/close')
-  @RequirePermission('record:write', 'query')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Cerrar la cuenta de una atención' })
-  @ApiOkResponse({ type: EncounterDto })
-  async close(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: CloseEncounterDto,
-    @Req() req: Request,
-  ): Promise<EncounterResponse> {
-    const closed = await this.encounters.close(
-      {
-        encounterId: id,
-        substituteReason: dto.substituteReason,
-        /**
-         * EN-147. Whether the caller may close somebody else's attention,
-         * read from the SESSION and never from the body. The guard already
-         * settled `record:write`; this is the second, narrower question, and
-         * a client that could answer it for itself would be authorising its
-         * own substitution.
-         */
-        canSignRecords: this.currentUser.requirePrincipal().can('record:sign'),
-      },
-      this.requester(req, 'record:write'),
-    );
-
-    return toEncounterResponse(closed);
   }
 
   /**

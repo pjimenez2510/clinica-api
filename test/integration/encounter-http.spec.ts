@@ -6,6 +6,7 @@ import argon2 from 'argon2';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { seedBilling } from '../../prisma/seed-billing.mts';
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
@@ -228,6 +229,25 @@ describe('la atención por HTTP', () => {
       token: (response.body as { accessToken: string }).accessToken,
       practitionerId: practitioner?.id,
     };
+  }
+
+  /**
+   * D-184. Caja closes the account of the attention, by its own route: an
+   * account with nothing charged, closed with the reason (BI-237).
+   */
+  async function settleInCaja(
+    encounterId: string,
+    token: string,
+  ): Promise<void> {
+    await seedBilling(prisma);
+    const payer = await prisma.payer.findUniqueOrThrow({ where: { code: 'PARTICULAR' } }); // prettier-ignore
+    const priceList = await prisma.priceList.findFirstOrThrow({ where: { payerId: payer.id } }); // prettier-ignore
+    const account = await prisma.patientAccount.create({
+      data: { patientId, siteId, encounterId, payerId: payer.id, priceListId: priceList.id }, // prettier-ignore
+    });
+    await post(`/billing/sites/${siteId}/accounts/${account.id}/close`, token, {
+      noChargeReason: 'Control sin costo',
+    }).expect(200);
   }
 
   const openBody = (overrides: Record<string, unknown> = {}) => ({
@@ -2705,6 +2725,101 @@ describe('la atención por HTTP', () => {
       }).expect(403);
     });
 
+    it('EN-239 AG-124 recepción, sin record:read, marca desde la cita que el paciente salió y que volvió, sin recibir la atención', async () => {
+      const appointment = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'WALK_IN',
+          siteId,
+          practitionerId: doctorPractitionerId,
+          patientId,
+          subjectStatus: 'ARRIVED',
+          subjectStatusAt: new Date(),
+          ...hourSlot(12),
+        },
+      });
+      const encounterId = await openEncounter(doctorToken, { agendaEntryId: appointment.id }); // prettier-ignore
+      await post(`/encounters/${encounterId}/notes`, doctorToken, {
+        formCode: '002',
+        content: COMPLETE_002,
+      }).expect(201);
+      const state = async () => ({
+        attention: (await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } })).status, // prettier-ignore
+        patient: (await prisma.agendaEntry.findUniqueOrThrow({ where: { id: appointment.id } })).subjectStatus, // prettier-ignore
+      });
+      // Recepción no lee la historia: el camino por la atención le está cerrado.
+      await get(`/encounters/${encounterId}`, receptionToken).expect(403);
+
+      const held = await post(`/encounters/for-entry/${appointment.id}/hold`, receptionToken, {
+        reason: 'Va a hacerse una imagen',
+      }).expect(204); // prettier-ignore
+      expect(held.body).toEqual({});
+      expect(await state()).toEqual({
+        attention: 'ON_HOLD',
+        patient: 'ON_LEAVE',
+      });
+
+      await post(`/encounters/for-entry/${appointment.id}/resume`, receptionToken).expect(204); // prettier-ignore
+      expect(await state()).toEqual({
+        attention: 'OPEN',
+        patient: 'RECEIVING_CARE',
+      });
+
+      // EN-128: el historial guarda el motivo de la salida que marcó recepción.
+      const trail = await get(`/encounters/${encounterId}/status-history`, doctorToken).expect(200); // prettier-ignore
+      const items = (trail.body as { items: { fact: string; reason: string | null }[] }).items; // prettier-ignore
+      expect(items.map((item) => item.fact)).toEqual(['OPENED', 'PUT_ON_HOLD', 'RESUMED']); // prettier-ignore
+      expect(items[1]?.reason).toBe('Va a hacerse una imagen');
+    });
+
+    it('EN-239 una cita sin atención en curso, o de otra sede, responde 404; sin motivo, 422', async () => {
+      const withoutAttention = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'WALK_IN',
+          siteId,
+          practitionerId: doctorPractitionerId,
+          patientId,
+          subjectStatus: 'ARRIVED',
+          subjectStatusAt: new Date(),
+          ...hourSlot(13),
+        },
+      });
+      await post(`/encounters/for-entry/${withoutAttention.id}/hold`, receptionToken, { reason: 'x' }).expect(404); // prettier-ignore
+      await post(`/encounters/for-entry/${withoutAttention.id}/resume`, receptionToken).expect(404); // prettier-ignore
+
+      const elsewhere = await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          bookingChannel: 'WALK_IN',
+          siteId: otherSiteId,
+          practitionerId: doctorPractitionerId,
+          patientId,
+          ...hourSlot(14),
+        },
+      });
+      await prisma.encounter.create({
+        data: {
+          siteId: otherSiteId,
+          practitionerId: doctorPractitionerId,
+          patientId,
+          agendaEntryId: elsewhere.id,
+          startedAt: new Date(),
+          careModality: 'MORBIDITY',
+          visitSequence: 'FIRST_TIME',
+        },
+      });
+      await post(`/encounters/for-entry/${elsewhere.id}/hold`, receptionToken, { reason: 'x' }).expect(404); // prettier-ignore
+
+      // Control positivo, por la misma ruta: con atención en curso en su sede.
+      await openEncounter(doctorToken, { agendaEntryId: withoutAttention.id });
+      const refused = await post(`/encounters/for-entry/${withoutAttention.id}/hold`, receptionToken, { reason: '  ' }).expect(422); // prettier-ignore
+      expect((refused.body as Problem).code).toBe(
+        'ENCOUNTER_HOLD_REASON_REQUIRED',
+      );
+      await post(`/encounters/for-entry/${withoutAttention.id}/hold`, receptionToken, { reason: 'Va a la farmacia' }).expect(204); // prettier-ignore
+    });
+
     it('EN-128 la atención de otra sede responde 404', async () => {
       const { id: encounterId } = await prisma.encounter.create({
         data: {
@@ -2723,7 +2838,7 @@ describe('la atención por HTTP', () => {
     });
   });
 
-  describe('cerrar la cuenta', () => {
+  describe('la atención la cierra caja (EN-131, D-184)', () => {
     /** Opens, documents and signs, leaving the attention DISCHARGED. */
     async function discharged(token = doctorToken): Promise<string> {
       const encounterId = await openEncounter(token);
@@ -2740,85 +2855,36 @@ describe('la atención por HTTP', () => {
       return encounterId;
     }
 
-    it('EN-131 cierra la cuenta y registra quién y cuándo', async () => {
+    it('EN-131 EN-144 el médico ya no cierra la atención: la ruta de cierre no existe, y la atención sigue de alta', async () => {
       const encounterId = await discharged();
 
-      const closed = await post(
-        `/encounters/${encounterId}/close`,
-        doctorToken,
-      ).expect(200);
+      await post(`/encounters/${encounterId}/close`, doctorToken).expect(404);
 
-      expect(closed.body).toMatchObject({
-        status: 'COMPLETED',
-        closedById: doctorPractitionerId,
-        closedBySubstituteReason: null,
+      // Control positivo: la misma atención se lee, de alta y con la
+      // condición de egreso que declaró el médico al firmar.
+      const read = await get(`/encounters/${encounterId}`, doctorToken).expect(200); // prettier-ignore
+      expect(read.body).toMatchObject({
+        status: 'DISCHARGED',
+        dischargeCondition: 'ALIVE',
       });
     });
 
-    it('EN-132 rechaza cerrar una atención que todavía no tiene alta clínica', async () => {
-      const encounterId = await openEncounter();
-
-      const response = await post(
-        `/encounters/${encounterId}/close`,
-        doctorToken,
-      ).expect(409);
-
-      const problem = response.body as Problem;
-      expect(problem.code).toBe('ENCOUNTER_STATE_TRANSITION_INVALID');
-      expect(problem.title).toContain('En curso');
-    });
-
-    it('EN-132 rechaza cerrar dos veces la misma atención', async () => {
+    it('EN-131 EN-139 cerrar la cuenta en caja la cierra, con caja como autora en el historial', async () => {
       const encounterId = await discharged();
-      await post(`/encounters/${encounterId}/close`, doctorToken).expect(200);
+      const cashier = await signIn('CAJA', 'caja@clinica.ec', '1705123451', false); // prettier-ignore
+      await settleInCaja(encounterId, cashier.token);
 
-      const response = await post(
-        `/encounters/${encounterId}/close`,
-        doctorToken,
-      ).expect(409);
+      const read = await get(`/encounters/${encounterId}`, doctorToken).expect(200); // prettier-ignore
+      expect((read.body as EncounterBody).status).toBe('COMPLETED');
 
-      expect((response.body as Problem).code).toBe(
-        'ENCOUNTER_STATE_TRANSITION_INVALID',
-      );
-    });
-
-    it('EN-147 deja cerrar a otro médico dejando constancia de la sustitución', async () => {
-      const encounterId = await discharged();
-
-      const closed = await post(
-        `/encounters/${encounterId}/close`,
-        secondDoctorToken,
-        { substituteReason: 'La doctora está de vacaciones desde el lunes' },
-      ).expect(200);
-
-      expect(closed.body).toMatchObject({
-        closedById: secondDoctorPractitionerId,
-        closedBySubstituteReason:
-          'La doctora está de vacaciones desde el lunes',
+      const trail = await get(`/encounters/${encounterId}/status-history`, doctorToken).expect(200); // prettier-ignore
+      const items = (trail.body as { items: Record<string, unknown>[] }).items;
+      expect(items.at(-1)).toMatchObject({
+        from: 'DISCHARGED',
+        to: 'COMPLETED',
+        fact: 'ACCOUNT_CLOSED',
       });
-    });
-
-    it('EN-147 rechaza el cierre por sustitución sin motivo escrito', async () => {
-      const encounterId = await discharged();
-
-      const response = await post(
-        `/encounters/${encounterId}/close`,
-        secondDoctorToken,
-      ).expect(422);
-
-      const problem = response.body as Problem;
-      expect(problem.code).toBe('SUBSTITUTE_CLOSURE_REASON_REQUIRED');
-      expect(problem.errors?.[0]?.field).toBe('substituteReason');
-    });
-
-    it('EN-144 rechaza que cierre alguien que no firma historia clínica', async () => {
-      const encounterId = await discharged();
-
-      // Enfermería no lleva `record:write`, así que el guard la para antes: el
-      // cierre no es una escritura de enfermería en ningún sentido.
-      await post(`/encounters/${encounterId}/close`, nurseToken, {
-        substituteReason: 'Me lo pidió recepción',
-      }).expect(403);
+      expect(items.at(-1)?.byName).not.toBeNull();
     });
   });
 
@@ -2897,8 +2963,9 @@ describe('la atención por HTTP', () => {
       const afterSigning = await get(`/encounters/${encounterId}`, doctorToken);
       expect((afterSigning.body as EncounterBody).status).toBe('DISCHARGED');
 
-      // EN-139: se cierra la cuenta.
-      await post(`/encounters/${encounterId}/close`, doctorToken).expect(200);
+      // EN-139: caja cierra la cuenta (D-184).
+      const cashier = await signIn('CAJA', 'caja@clinica.ec', '1705123451', false); // prettier-ignore
+      await settleInCaja(encounterId, cashier.token);
       expect(await subjectStatus()).toBe('DEPARTED');
     });
 

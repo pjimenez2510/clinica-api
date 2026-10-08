@@ -686,6 +686,8 @@ describe('BI-215 la cuenta guarda su versión anterior', () => {
     await scene.accounts.closeAccount({
       accountId,
       closedById: scene.userId,
+      // BI-237: nothing invoiced here, so it says why.
+      noChargeReason: 'Cortesía',
       now: new Date(),
     });
     const versions = await scene.prisma.recordVersion.findMany({

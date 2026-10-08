@@ -217,6 +217,27 @@ export const changePayerSchema = z.object({
  */
 export class ChangePayerDto extends createZodDto(changePayerSchema) {}
 
+export const closeAccountSchema = z.object({
+  /**
+   * BI-237. Por qué no se cobra —«Control sin costo», «Cortesía»—, exigido
+   * sólo cuando no hay nada facturado; con algo facturado no se guarda. El
+   * vacío lo decide el servicio, que es quien sabe si hay facturado.
+   */
+  noChargeReason: z
+    .string()
+    .max(200, 'El motivo no puede superar 200 caracteres')
+    .optional(),
+});
+/**
+ * Body of POST /billing/sites/:siteId/accounts/:accountId/close. Optional as
+ * a whole: an account with something invoiced closes with no body at all.
+ */
+export class CloseAccountDto extends createZodDto(
+  // No body at all is the same as `{}`: an account with something invoiced
+  // closes with none, as it always did.
+  z.preprocess((body) => body ?? {}, closeAccountSchema),
+) {}
+
 export const addChargeSchema = z.object({
   billableServiceId: z.uuid('Seleccione la prestación'),
   encounterId: z.uuid().nullish(),
@@ -641,6 +662,8 @@ const accountResponseSchema = z.object({
   status: z.enum(['OPEN', 'SETTLED', 'CANCELLED']),
   openedAt: z.iso.datetime(),
   closedAt: z.iso.datetime().nullable(),
+  /** BI-237. Por qué se cerró sin cobrar nada, si fue así. */
+  noChargeReason: z.string().nullable(),
 });
 /** One account, and the list of GET /billing/sites/:siteId/accounts. */
 export class AccountDto extends createZodDto(accountResponseSchema) {}
@@ -756,6 +779,25 @@ const statementSchema = z.object({
   consultationOutdated: z
     .object({ chargeId: z.uuid(), billed: z.boolean() })
     .nullable(),
+  /**
+   * BI-236. El estado de la atención de la cuenta (`null` sin atención): una
+   * `DISCHARGED` se cierra con la cuenta, y la pantalla lo dice antes.
+   */
+  encounterStatus: z
+    .enum([
+      'OPEN',
+      'ON_HOLD',
+      'DISCHARGED',
+      'COMPLETED',
+      'DISCONTINUED',
+      'ENTERED_IN_ERROR',
+    ]) // prettier-ignore
+    .nullable(),
+  /**
+   * BI-236, D-189. Si cerrar la cuenta cierra también la atención: tiene el
+   * alta y ninguna orden de exámenes en borrador (D-189).
+   */
+  closesEncounter: z.boolean(),
 });
 /** Response of GET /billing/sites/:siteId/accounts/:accountId (BI-074). The inferred type below is what the controller returns. */
 export class AccountStatementDto extends createZodDto(statementSchema) {}

@@ -1136,11 +1136,38 @@ describe('la facturación por HTTP', () => {
       expect((response.body as Problem).code).toBe('ACCOUNT_HAS_OPEN_CHARGES');
     });
 
+    it('BI-237 sin nada facturado, cerrar pide el motivo con 422 por campo; con él, cierra y lo guarda', async () => {
+      const accountId = await openAccount();
+
+      const refused = await api()
+        .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/close`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(422);
+      expect((refused.body as Problem).code).toBe(
+        'ACCOUNT_NO_CHARGE_REASON_REQUIRED',
+      );
+      expect((refused.body as Problem).errors?.map((e) => e.field)).toEqual([
+        'noChargeReason',
+      ]);
+
+      // Control positivo: el mismo cierre, con el motivo.
+      const closed = await api()
+        .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/close`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ noChargeReason: 'Cortesía' })
+        .expect(200);
+      expect(closed.body).toMatchObject({
+        status: 'SETTLED',
+        noChargeReason: 'Cortesía',
+      });
+    });
+
     it('BI-071 rechaza añadir cargos a una cuenta ya cerrada', async () => {
       const accountId = await openAccount();
       await api()
         .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/close`)
         .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ noChargeReason: 'Cortesía' })
         .expect(200);
 
       const response = await api()

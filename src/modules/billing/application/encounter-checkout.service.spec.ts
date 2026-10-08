@@ -73,6 +73,7 @@ const account = (overrides: Partial<AccountView> = {}): AccountView => ({
   status: 'OPEN',
   openedAt: new Date('2026-09-14T19:00:00Z'),
   closedAt: null,
+  noChargeReason: null,
   ...overrides,
 });
 
@@ -162,7 +163,7 @@ function build(options: { ports?: Record<string, unknown> } = {}) {
       actsPort,
       accounts,
       catalogue,
-      new PatientAccountService(accounts, catalogue, { record: vi.fn() }, { draftOrdersOf: () => Promise.resolve([]), findEncounterActs: () => Promise.resolve(null) }), // prettier-ignore
+      new PatientAccountService(accounts, catalogue, { record: vi.fn() }, { draftOrdersOf: () => Promise.resolve([]), findEncounterActs: () => Promise.resolve(null), encounterStatusOf: () => Promise.resolve(null) }), // prettier-ignore
     ),
     mocks,
   };
