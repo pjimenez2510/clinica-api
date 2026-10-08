@@ -81,6 +81,36 @@ export function latenessMinutes(row: BoardSubject, now: Date): number | null {
   return minutes > 0 ? minutes : null;
 }
 
+/** A grant as the principal resolves it: a role, at a site or everywhere. */
+export interface BoardGrant {
+  roleCode: string;
+  siteId: string | null;
+  permissions: readonly string[];
+}
+
+/**
+ * AG-138. The roles that shape THIS site's board: held here or everywhere,
+ * and carrying the route's permission. A role granted only at another site
+ * does not change what this site's board shows.
+ */
+export function rolesShapingBoard(
+  grants: readonly BoardGrant[],
+  siteId: string,
+  permission: string,
+): string[] {
+  return [
+    ...new Set(
+      grants
+        .filter(
+          (grant) =>
+            (grant.siteId === null || grant.siteId === siteId) &&
+            grant.permissions.includes(permission),
+        )
+        .map((grant) => grant.roleCode),
+    ),
+  ];
+}
+
 /** A role's stored view row, as the repository reads it. */
 export interface BoardViewRow {
   roleCode: string;
@@ -123,7 +153,7 @@ export function publicIdentification(
   const first = givenName.trim().split(/\s+/)[0] ?? '';
   const name = first.charAt(0).toLocaleUpperCase('es-EC') + first.slice(1);
   const initial = familyName.trim().charAt(0).toLocaleUpperCase('es-EC');
-  return initial === '' ? name : `${name} ${initial}.`;
+  return [name, initial === '' ? '' : `${initial}.`].filter(Boolean).join(' ');
 }
 
 /**

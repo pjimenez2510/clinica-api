@@ -2063,6 +2063,13 @@ pasó de hora.
   > emergencia escondida en una vista es justo lo que el art. 10 de la Ley 77
   > no admite.
   >
+  > **Es una preferencia de presentación, no un control de acceso.** La fila
+  > lleva siempre la cita entera (identificadores del profesional y del
+  > consultorio, instantes de llegada), que cualquiera con `agenda:read` lee ya
+  > en la agenda del día y que las acciones necesitan. La única columna que una
+  > vista retiene de verdad es la nota. La frontera de lo que se ve está en la
+  > proyección pública (AG-137), no aquí.
+  >
   > **Cerrado por defecto**: un rol sin filas ve sólo lo fijo. Quien lleva dos
   > roles en la sede ve la unión de los dos. El campo que el rol no tiene viaja
   > vacío y la respuesta dice qué campos lleva (`fields`), para que la pantalla

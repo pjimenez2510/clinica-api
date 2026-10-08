@@ -164,7 +164,11 @@ describe('el tablero del día por HTTP (E9)', () => {
     return `${base}${(10 - (sum % 10)) % 10}`;
   }
 
-  async function signIn(roleCode: string, email: string): Promise<string> {
+  async function signIn(
+    roleCode: string,
+    email: string,
+    extra: { roleCode: string; siteId: string }[] = [],
+  ): Promise<string> {
     const user = await prisma.user.create({
       data: {
         email,
@@ -185,6 +189,14 @@ describe('el tablero del día por HTTP (E9)', () => {
     await prisma.userRoleGrant.create({
       data: { userId: user.id, roleId: role.id, siteId },
     });
+    for (const grant of extra) {
+      const other = await prisma.role.findUniqueOrThrow({
+        where: { code: grant.roleCode },
+      });
+      await prisma.userRoleGrant.create({
+        data: { userId: user.id, roleId: other.id, siteId: grant.siteId },
+      });
+    }
     const response = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
       .send({ email, password: PASSWORD })
@@ -537,6 +549,41 @@ describe('el tablero del día por HTTP (E9)', () => {
     });
   });
 
+  describe('AG-138 la vista sale de los roles de ESTA sede', () => {
+    it('AG-138 un rol concedido en otra sede no cambia el tablero de ésta; dos en la misma suman', async () => {
+      await appointment(9 * 60, { status: 'CHECKED_IN' });
+      await appointment(9 * 60, { status: 'CHECKED_IN', siteId: otherSiteId, practitionerId: otherPractitionerId }); // prettier-ignore
+      // ENFERMERIA aquí y RECEPCION sólo en la otra sede.
+      const token = await signIn('ENFERMERIA', 'doble@clinica.ec', [
+        { roleCode: 'RECEPCION', siteId: otherSiteId },
+      ]);
+
+      const here = (await get(`/agenda/sites/${siteId}/board?date=${today}`, token).expect(200)).body as StaffBoard; // prettier-ignore
+      expect(here.fields).toEqual(['ROOM', 'TIME_IN_STATE', 'BOARD_NOTE']);
+
+      // Control positivo: en la otra sede manda recepción, y se suman.
+      await prisma.userRoleGrant.create({
+        data: {
+          userId: (await prisma.user.findUniqueOrThrow({ where: { email: 'doble@clinica.ec' } })).id, // prettier-ignore
+          roleId: (await prisma.role.findUniqueOrThrow({ where: { code: 'ENFERMERIA' } })).id, // prettier-ignore
+          siteId: otherSiteId,
+        },
+      });
+      registry.invalidate();
+      const there = (await get(`/agenda/sites/${otherSiteId}/board?date=${today}`, token).expect(200)).body as StaffBoard; // prettier-ignore
+      expect(there.fields).toEqual(['PRACTITIONER', 'ROOM', 'TIME_IN_STATE', 'LATENESS', 'BOARD_NOTE']); // prettier-ignore
+    });
+
+    it('AG-133 el filtro de profesional deja sólo sus citas', async () => {
+      const theirs = await appointment(9 * 60);
+      await appointment(9 * 60, { practitionerId: otherPractitionerId });
+
+      const response = await get(`/agenda/sites/${siteId}/board?date=${today}&practitionerId=${practitionerId}`, receptionToken).expect(200); // prettier-ignore
+
+      expect((response.body as StaffBoard).items.map((row) => row.id)).toEqual([theirs.id]); // prettier-ignore
+    });
+  });
+
   describe('AG-136 AG-137 la pantalla de la sala', () => {
     it('AG-137 sólo los presentes, con primer nombre e inicial, y ningún dato de la ficha', async () => {
       await appointment(9 * 60, {
@@ -548,6 +595,12 @@ describe('el tablero del día por HTTP (E9)', () => {
       await appointment(10 * 60, { status: 'IN_PROGRESS', subjectStatus: 'IN_PREPARATION', givenName: 'Pedro', familyName: 'Cevallos' }); // prettier-ignore
       await appointment(10 * 60 + 30, { status: 'IN_PROGRESS', subjectStatus: 'ON_LEAVE', givenName: 'Fuera', familyName: 'Zambrano' }); // prettier-ignore
       await appointment(11 * 60, { givenName: 'Aún', familyName: 'Nollega' });
+      await appointment(11 * 60, { status: 'CHECKED_IN', siteId: otherSiteId, practitionerId: otherPractitionerId, givenName: 'Otra', familyName: 'Sede' }); // prettier-ignore
+      const released = await appointment(12 * 60, { status: 'CHECKED_IN', givenName: 'Liberada', familyName: 'Ya' }); // prettier-ignore
+      await prisma.agendaEntry.update({
+        where: { id: released.id },
+        data: { releasedAt: at(12 * 60 + 10) },
+      });
 
       const response = await get(`/agenda/sites/${siteId}/board/public`, screenToken).expect(200); // prettier-ignore
       const board = response.body as PublicBoard;

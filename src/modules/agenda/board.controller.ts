@@ -18,6 +18,7 @@ import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { toEntryResponse } from './agenda-entry.response';
 import { type BoardViewer, BoardService } from './application/board.service';
+import { rolesShapingBoard } from './domain/board';
 import { AgendaSitesDto, type AgendaSitesResponse } from './dto/agenda.dto';
 import {
   BOARD_FIELD_CATALOGUE,
@@ -221,16 +222,9 @@ export class BoardController {
     siteId: string,
   ): BoardViewer {
     const principal = this.currentUser.requirePrincipal();
-    const roleCodes = principal.grants
-      .filter(
-        (grant) =>
-          (grant.siteId === null || grant.siteId === siteId) &&
-          grant.permissions.includes(permission),
-      )
-      .map((grant) => grant.roleCode);
     return {
       userId: principal.userId,
-      roleCodes: [...new Set(roleCodes)],
+      roleCodes: rolesShapingBoard(principal.grants, siteId, permission),
       ip: req.ip,
       userAgent: req.get('user-agent'),
     };

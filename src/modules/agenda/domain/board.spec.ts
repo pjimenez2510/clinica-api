@@ -11,6 +11,7 @@ import {
   publicIdentification,
   publicStateOf,
   resolveBoardFields,
+  rolesShapingBoard,
   stateSinceOf,
 } from './board';
 
@@ -236,5 +237,31 @@ describe('AG-176 la nota corta se guarda limpia', () => {
   it('AG-176 en blanco la vacía', () => {
     expect(normaliseBoardNote('   ')).toBeNull();
     expect(normaliseBoardNote(null)).toBeNull();
+  });
+});
+
+describe('AG-138 qué roles dan forma al tablero de una sede', () => {
+  const grants = [
+    { roleCode: 'RECEPCION', siteId: 'site-a', permissions: ['agenda:read'] },
+    { roleCode: 'ENFERMERIA', siteId: 'site-b', permissions: ['agenda:read'] },
+    { roleCode: 'MEDICO', siteId: null, permissions: ['agenda:read'] },
+    { roleCode: 'CAJA', siteId: 'site-a', permissions: ['billing:read'] },
+  ];
+
+  it('AG-138 los de esta sede y los globales, nunca los de otra sede', () => {
+    expect(rolesShapingBoard(grants, 'site-a', 'agenda:read')).toEqual([
+      'RECEPCION',
+      'MEDICO',
+    ]);
+  });
+
+  it('AG-138 sólo los que llevan el permiso de la ruta', () => {
+    expect(rolesShapingBoard(grants, 'site-a', 'agenda:board:public')).toEqual(
+      [],
+    );
+  });
+
+  it('AG-137 sin nombre no queda un espacio delante de la inicial', () => {
+    expect(publicIdentification('', 'Andrade')).toBe('A.');
   });
 });
