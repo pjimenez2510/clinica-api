@@ -15,6 +15,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 import { aScene } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import { closeThroughCashier } from './setup/fixtures';
+import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -53,6 +54,7 @@ function adapters(prisma: PrismaClient) {
       new PrismaExamCatalogueRepository(client),
       silentAudit,
       noopLogger as never,
+      new InProcessLiveEventBus(),
     ),
     acts: new PrismaClinicalActsRepository(client),
     documents: new PrismaDocumentSourceReader(

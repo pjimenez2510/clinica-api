@@ -9,6 +9,7 @@ import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/pri
 import { NodemailerMailer } from '../../shared/infrastructure/mail/nodemailer.mailer';
 import { MAILER } from '../../shared/mail/mail.port';
 import { AccountsService } from './application/accounts.service';
+import { LiveEventsController } from './live-events.controller';
 import {
   CREDENTIAL_INVITATION_REPOSITORY,
   CREDENTIAL_TOKENS,
@@ -72,7 +73,7 @@ import { TotpService } from './infrastructure/totp.service';
    * stops a `@Public()` from ever being copied onto a route that administers
    * the whole clinic.
    */
-  controllers: [AuthController, AuthAdminController],
+  controllers: [AuthController, AuthAdminController, LiveEventsController],
   providers: [
     AuthService,
     MfaEnrolmentService,

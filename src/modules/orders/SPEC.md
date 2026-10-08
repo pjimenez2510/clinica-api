@@ -448,6 +448,20 @@ PostgreSQL, que la base no admite un examen sin prestación ni dos exámenes
 sobre la misma.
 **Cubre:** ORD-162, ORD-163. **Solo servidor:** ORD-163.
 
+### E20 — El crítico que llega solo _(P1, 08-10-2026)_
+
+D-187 §3 a, aceptada por el autor: el valor crítico es lo primero que se avisa
+en vivo. Con el canal de AU-054, la cola de críticos y su cuenta en el menú se
+actualizan sin recargar, y sale un aviso en pantalla; el sondeo de cada minuto
+queda de respaldo, sólo si el canal se cae.
+
+**Prueba independiente:** con la cola de críticos abierta como médico, otra
+sesión registra un potasio crítico en la misma sede: sin tocar nada, sale el
+aviso «Hay un valor crítico nuevo», la fila aparece en la cola y el menú
+cuenta uno más; y no se pide la cola otra vez cada minuto mientras el canal
+está vivo.
+**Cubre:** ORD-164 a ORD-166. **Solo servidor:** ORD-164.
+
 ### Fuera de las ocho
 
 **Transcripción masiva y gráficas de evolución.** Se transcribe **solo lo que se
@@ -2335,6 +2349,54 @@ en la pestaña de cobro, y nada obligaba a que coincidieran._
   > ella. Un perfil que la clínica factura junto es **un** examen con varias
   > determinaciones (ORD-105), no varios exámenes sobre una línea. Si la
   > clínica necesita otra cosa, D-181.
+
+## 20. El crítico que llega solo (D-187)
+
+_Aceptada por el autor el 08-10-2026, paso 1 de dos. El canal es AU-054 a
+AU-058; aquí, qué publica `orders` y qué hace la pantalla con ello._
+
+- **ORD-164** — CUANDO se registre o corrija un informe, se empareje un
+  resultado, se registre o edite el aviso de un valor crítico, o se cambie el
+  plazo de aviso o el rol de guardia de la sede, el sistema
+  DEBERÁ publicar, **después** de confirmada la escritura, el aviso
+  `critical-results` con la sede de la orden, que exige `record:read` en esa
+  sede para recibirse (AU-056).
+  > Puede avisar de más —un informe sin críticos también lo publica— y nunca
+  > de menos: el aviso sólo hace releer la cola, que es la que sabe si hay
+  > algo. Publicado tras la escritura, porque un aviso de algo que se deshizo
+  > haría releer una cola que no cambió, y uno anterior al `COMMIT`, releerla
+  > antes de que cambie.
+- **ORD-165** — MIENTRAS haya una sesión con `record:read`, la interfaz DEBERÁ
+  mantener **un único** canal abierto —que se cierra al salir o al caducar la
+  sesión—, y CUANDO llegue `critical-results` DEBERÁ volver a pedir la cola de
+  críticos; SI la cola releída trae un valor que antes no estaba ENTONCES
+  DEBERÁ avisar con un toast «Hay un valor crítico nuevo pendiente de
+  avisar» que lleve a la cola, sin nombrar al paciente ni el valor; y la
+  entrada «Órdenes y resultados» del menú DEBERÁ mostrar cuántos valores
+  esperan aviso.
+  > D-187 §4: sólo el crítico enseña algo; el resto refresca en silencio. El
+  > toast no dice qué ni de quién porque una pantalla de mostrador la ve
+  > cualquiera que pase; la cola, a un clic, sí.
+- **ORD-166** — MIENTRAS el canal esté abierto y su bus no esté sordo
+  (AU-058), la interfaz NO DEBERÁ pedir la cola de críticos cada minuto:
+  DEBERÁ releerla al llegar el plazo de aviso más próximo de sus filas
+  (`noticeDueAt`), **medido con la hora del servidor** que traen los latidos,
+  —y SI una fila sigue sin vencer pasado su plazo ENTONCES DEBERÁ releerla
+  otra vez a los 15 segundos—, al recibir `resync` y, de respaldo, cada 5
+  minutos; y MIENTRAS el canal esté caído o sordo, cada minuto, como antes de
+  D-187. La interfaz DEBERÁ mantener **un único** canal por navegador, que
+  comparte con sus otras pestañas.
+  > Lo que el minuto refrescaba además del contenido es el tiempo: «lleva
+  > 12 min» y, sobre todo, el paso a «Vencido», que cambia a quién se llama
+  > (ORD-065). Releer en el instante del plazo conserva lo segundo al minuto;
+  > lo primero, a los 5 minutos. Con el reloj del servidor porque el del PC
+  > puede ir adelantado o atrasado, y el paso a «Vencido» no puede depender
+  > de él; y un canal por navegador porque con HTTP/1.1 seis pestañas con su
+  > propio flujo agotaban las seis conexiones al servidor y la séptima
+  > petición —la de la cola, la de guardar una nota— no salía *(revisión
+  > clínica de la rama, G2 y G3)*. Lo que cambia sólo con la hora —la sede
+  > que cierra y pasa el aviso a la guardia (ORD-068)— se ve a los 5 minutos
+  > como mucho: D-190.
 
 ---
 

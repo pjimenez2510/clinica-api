@@ -14,6 +14,7 @@ import { useDatabase } from './setup/database';
 import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
 import { createScheduleRule, createSite, createUser } from './setup/fixtures';
+import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 
 /**
  * The notice of a critical value against a real PostgreSQL (ORD-062 to
@@ -47,6 +48,7 @@ function serviceOf(
       new PrismaExamCatalogueRepository(client),
       audit,
       noopLogger as never,
+      new InProcessLiveEventBus(),
     ),
     orders: new PrismaServiceOrderRepository(client),
     store: new PrismaDiagnosticReportRepository(client),

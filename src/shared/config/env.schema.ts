@@ -102,6 +102,14 @@ export const envSchema = z.object({
   REDIS_URL: z.url().startsWith('redis').optional(),
 
   /**
+   * AU-058. The Redis pub/sub channel the live events travel on between API
+   * instances. Configurable because Redis pub/sub IGNORES the logical
+   * database: two installations — or a branch and `main` — sharing one Redis
+   * would otherwise hear each other's events.
+   */
+  LIVE_EVENTS_CHANNEL: z.string().min(1).default('clinica:live-events'),
+
+  /**
    * OPTIONAL until an adapter reads them.
    *
    * Requiring configuration for features that do not exist forces whoever sets

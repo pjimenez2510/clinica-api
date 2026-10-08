@@ -34,6 +34,7 @@ import {
   createSite,
 } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
+import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 
 /**
  * ORD-004, ORD-133. The tariff concept a seeded exam names, under the exam's
@@ -620,7 +621,13 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
         orders,
         new PrismaExamCatalogueRepository(client),
         { record: () => Promise.resolve() },
-        { setContext: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined } as never, // prettier-ignore
+        {
+          setContext: () => undefined,
+          info: () => undefined,
+          warn: () => undefined,
+          error: () => undefined,
+        } as never, // prettier-ignore,
+        new InProcessLiveEventBus(),
       );
       const site = await createSite(prisma);
       const practitioner = await createPractitioner(prisma);
@@ -730,7 +737,13 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
         orders,
         new PrismaExamCatalogueRepository(client),
         { record: () => Promise.resolve() },
-        { setContext: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined } as never, // prettier-ignore
+        {
+          setContext: () => undefined,
+          info: () => undefined,
+          warn: () => undefined,
+          error: () => undefined,
+        } as never, // prettier-ignore,
+        new InProcessLiveEventBus(),
       );
       const site = await createSite(prisma);
       const practitioner = await createPractitioner(prisma);
@@ -787,7 +800,13 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
         orders,
         new PrismaExamCatalogueRepository(client),
         { record: () => Promise.resolve() },
-        { setContext: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined } as never, // prettier-ignore
+        {
+          setContext: () => undefined,
+          info: () => undefined,
+          warn: () => undefined,
+          error: () => undefined,
+        } as never, // prettier-ignore,
+        new InProcessLiveEventBus(),
       );
       const site = await createSite(prisma);
       const practitioner = await createPractitioner(prisma);
@@ -849,7 +868,13 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       orders,
       new PrismaExamCatalogueRepository(client),
       { record: () => Promise.resolve() },
-      { setContext: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined } as never, // prettier-ignore
+      {
+        setContext: () => undefined,
+        info: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+      } as never, // prettier-ignore,
+      new InProcessLiveEventBus(),
     );
     // La siembra de caja ya trae `EX-BH` y `HB`: se pide ése.
     const site = await createSite(prisma);

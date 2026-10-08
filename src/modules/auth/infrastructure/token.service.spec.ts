@@ -58,7 +58,18 @@ describe('TokenService', () => {
 
     it('round-trips the claims', async () => {
       const jwt = await service.issueAccessToken(CLAIMS);
-      expect(await service.verifyAccessToken(jwt)).toEqual(CLAIMS);
+      expect(await service.verifyAccessToken(jwt)).toEqual({
+        ...CLAIMS,
+        exp: expect.any(Number) as number,
+      });
+    });
+
+    it('AU-057 keeps the expiry, so a live-events stream ends with its token', async () => {
+      const before = Math.floor(Date.now() / 1000);
+      const { exp } = await service.verifyAccessToken(
+        await service.issueAccessToken(CLAIMS),
+      );
+      expect(exp).toBeGreaterThan(before);
     });
 
     it('rejects a tampered signature', async () => {

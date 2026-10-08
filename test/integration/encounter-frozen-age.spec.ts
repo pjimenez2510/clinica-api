@@ -12,6 +12,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 import { aScene, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import { createEncounter, createUser } from './setup/fixtures';
+import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 
 /**
  * EN-221, ORD-127 (D-138.1). The attention freezes the whole age in days and
@@ -299,6 +300,7 @@ function serviceOf(prisma: ReturnType<typeof db>) {
       new PrismaExamCatalogueRepository(client),
       { record: () => Promise.resolve() },
       noopLogger as never,
+      new InProcessLiveEventBus(),
     ),
     orders: new PrismaServiceOrderRepository(client),
   };
