@@ -774,6 +774,11 @@ const statementSchema = z.object({
       'ENTERED_IN_ERROR',
     ]) // prettier-ignore
     .nullable(),
+  /**
+   * BI-236, D-189. Si cerrar la cuenta cierra también la atención: tiene el
+   * alta y ninguna orden ni receta en borrador.
+   */
+  closesEncounter: z.boolean(),
 });
 /** Response of GET /billing/sites/:siteId/accounts/:accountId (BI-074). The inferred type below is what the controller returns. */
 export class AccountStatementDto extends createZodDto(statementSchema) {}

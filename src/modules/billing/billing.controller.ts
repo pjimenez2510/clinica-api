@@ -696,6 +696,7 @@ function toStatementResponse(
     consultationOutdated: statement.consultationOutdated,
     encounterStatus:
       statement.encounterStatus as AccountStatementResponse['encounterStatus'],
+    closesEncounter: statement.closesEncounter,
   };
 }
 

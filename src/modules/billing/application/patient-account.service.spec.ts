@@ -155,7 +155,7 @@ function build(
     }),
     record: vi.fn().mockResolvedValue(undefined),
     draftOrdersOf: vi.fn().mockResolvedValue([]),
-    encounterStatusOf: vi.fn().mockResolvedValue('DISCHARGED'),
+    encounterStatusOf: vi.fn().mockResolvedValue({ status: 'DISCHARGED', hasDrafts: false }), // prettier-ignore
     findEncounterActs: vi.fn().mockResolvedValue({
       serviceTypeId: 'service-type-1',
       visitSequence: 'SUBSEQUENT',
@@ -813,7 +813,22 @@ describe('BI-236 el extracto dice el estado de la atención que se cierra con la
     const statement = await service.statement({ accountId: ACCOUNT, siteId: SITE }); // prettier-ignore
 
     expect(statement.encounterStatus).toBe('DISCHARGED');
+    expect(statement.closesEncounter).toBe(true);
     expect(mocks.encounterStatusOf).toHaveBeenCalledWith({ encounterId: 'encounter-1', siteId: SITE }); // prettier-ignore
+  });
+
+  it('BI-236 con una orden o receta en borrador la atención no se cierra con la cuenta, y el extracto lo dice', async () => {
+    const { service } = build({
+      accounts: {
+        findAccount: vi.fn().mockResolvedValue(account({ encounterId: 'encounter-1' })), // prettier-ignore
+        encounterStatusOf: vi.fn().mockResolvedValue({ status: 'DISCHARGED', hasDrafts: true }), // prettier-ignore
+      },
+    });
+
+    const statement = await service.statement({ accountId: ACCOUNT, siteId: SITE }); // prettier-ignore
+
+    expect(statement.encounterStatus).toBe('DISCHARGED');
+    expect(statement.closesEncounter).toBe(false);
   });
 
   it('BI-236 una cuenta sin atención no tiene estado que decir', async () => {
@@ -822,6 +837,7 @@ describe('BI-236 el extracto dice el estado de la atención que se cierra con la
     const statement = await service.statement({ accountId: ACCOUNT, siteId: SITE }); // prettier-ignore
 
     expect(statement.encounterStatus).toBeNull();
+    expect(statement.closesEncounter).toBe(false);
     expect(mocks.encounterStatusOf).not.toHaveBeenCalled();
   });
 });

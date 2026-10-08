@@ -239,6 +239,39 @@ describe('BI-236 cerrar la cuenta cierra la atención con el alta, en la misma t
     expect(await subjectOf(entry.id)).toEqual(before);
   });
 
+  it('BI-236 EN-131 con una orden en borrador la atención sigue de alta al cerrar la cuenta, y sin ella se cierra', async () => {
+    const { encounter, entry } = await anAttention(true);
+    const draft = await clinic.prisma.serviceOrder.create({
+      data: {
+        encounterId: encounter.id,
+        siteId: clinic.siteId,
+        orderedById: clinic.practitionerId,
+        category: 'LABORATORY',
+      },
+    });
+    const first = await anAccount(encounter.id, true);
+    const before = await subjectOf(entry.id);
+
+    await settle(first.id, new Date());
+
+    // D-189: el médico todavía puede emitir el borrador (ORD-115).
+    expect((await encounterOf(encounter.id)).status).toBe('DISCHARGED');
+    expect(await subjectOf(entry.id)).toEqual(before);
+
+    // Control positivo: descartado el borrador, la cuenta siguiente la cierra.
+    await clinic.prisma.serviceOrder.update({
+      where: { id: draft.id },
+      data: {
+        status: 'DISCARDED',
+        discardedAt: new Date(),
+        discardedById: clinic.cashierId,
+      },
+    });
+    const second = await anAccount(encounter.id, true);
+    await settle(second.id, new Date());
+    expect((await encounterOf(encounter.id)).status).toBe('COMPLETED');
+  });
+
   it('BI-236 EN-131 reabrir la cuenta y volver a cerrarla no mueve una atención ya cerrada', async () => {
     const { encounter } = await anAttention(true);
     const account = await anAccount(encounter.id, true);

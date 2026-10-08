@@ -79,6 +79,12 @@ export interface AccountStatement {
    */
   encounterStatus: string | null;
   /**
+   * BI-236, D-189. Whether closing the account closes the attention: it has
+   * its discharge and nothing in draft — the same rule as
+   * `trg_patient_account_closes_its_encounter`.
+   */
+  closesEncounter: boolean;
+  /**
    * BI-203. The visit's consultation line no longer matches the visit: its
    * sequence was corrected and the line could not be repriced on its own
    * (no price, inactive service, or already billed). Derived on read, so it
@@ -207,6 +213,13 @@ export class PatientAccountService {
         })
       : [];
 
+    const encounter = account.encounterId
+      ? await this.acts.encounterStatusOf({
+          encounterId: account.encounterId,
+          siteId: account.siteId,
+        })
+      : null;
+
     return {
       account,
       charges,
@@ -220,12 +233,9 @@ export class PatientAccountService {
         charges.filter((charge) => charge.status === 'BILLABLE').map(toLine),
       ),
       draftOrders,
-      encounterStatus: account.encounterId
-        ? await this.acts.encounterStatusOf({
-            encounterId: account.encounterId,
-            siteId: account.siteId,
-          })
-        : null,
+      encounterStatus: encounter?.status ?? null,
+      closesEncounter:
+        encounter?.status === 'DISCHARGED' && !encounter.hasDrafts,
       consultationOutdated: await this.consultationOutdated(account, charges),
     };
   }

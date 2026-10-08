@@ -261,12 +261,24 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
   async encounterStatusOf(query: {
     encounterId: string;
     siteId: string;
-  }): Promise<string | null> {
+  }): Promise<{ status: string; hasDrafts: boolean } | null> {
     const row = await this.prisma.encounter.findFirst({
       where: { id: query.encounterId, siteId: query.siteId },
-      select: { status: true },
+      select: {
+        status: true,
+        _count: {
+          select: {
+            serviceOrders: { where: { status: 'DRAFT' } },
+            prescriptions: { where: { status: 'DRAFT' } },
+          },
+        },
+      },
     });
-    return row?.status ?? null;
+    if (!row) return null;
+    return {
+      status: row.status,
+      hasDrafts: row._count.serviceOrders + row._count.prescriptions > 0,
+    };
   }
 
   /**

@@ -109,6 +109,19 @@ BEGIN
          "closed_by_user_id" = NEW."changed_by"
    WHERE "id" = NEW."encounter_id"
      AND "status" = 'DISCHARGED'
+     -- «Cerrada» es que no queda nada, tampoco clínico (EN-131): una orden o
+     -- una receta en borrador es algo que el médico todavía puede emitir
+     -- (ORD-115), y una atención COMPLETED ya no lo admite (ORD-005). Con un
+     -- borrador la atención sigue de alta; la cierra la cuenta siguiente
+     -- (BI-194). D-189.
+     AND NOT EXISTS (
+       SELECT 1 FROM "service_order"
+        WHERE "encounter_id" = NEW."encounter_id" AND "status" = 'DRAFT'
+     )
+     AND NOT EXISTS (
+       SELECT 1 FROM "prescription"
+        WHERE "encounter_id" = NEW."encounter_id" AND "status" = 'DRAFT'
+     )
   RETURNING "agenda_entry_id" INTO v_entry;
 
   -- EN-139, AG-125: el paciente salió. Al que ya consta fuera no se le
