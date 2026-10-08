@@ -18,7 +18,7 @@ import {
   PrescriptionNotEditableError,
   PrescriptionNotFoundError,
 } from '../domain/prescription.errors';
-import { substanceKeysOf } from '../domain/allergy-check';
+import { substanceKeysOf, withComponents } from '../domain/allergy-check';
 import type { SubstanceKeys } from '../domain/allergy-check';
 import type { ItemContent } from '../domain/prescription-content';
 import type { PrescriptionStatus } from '../domain/prescription';
@@ -1260,9 +1260,10 @@ async function substanceKeysIn(
    * not the DCI the cuadro writes.
    */
   const successors = await client.$queryRaw<
-    { replaced: string; substances: unknown }[]
+    { replaced: string; successor: string; substances: unknown }[]
   >`
-    SELECT r.code AS replaced, c.attributes -> 'substances' AS substances
+    SELECT r.code AS replaced, c.code AS successor,
+           c.attributes -> 'substances' AS substances
       FROM catalog_concept c
       JOIN catalog_system s ON s.id = c.system_id AND s.code = ${CNMB}
      CROSS JOIN LATERAL jsonb_array_elements_text(
@@ -1274,16 +1275,19 @@ async function substanceKeysIn(
     concepts.map((concept) => {
       const inherited = successors
         .filter((row) => row.replaced === concept.code)
-        .flatMap((row) =>
-          Array.isArray(row.substances)
+        .flatMap((row) => [
+          // PR-065. The successor's code is its ATC: an allergy recorded
+          // against the development cuadro has a class through it.
+          row.successor,
+          ...(Array.isArray(row.substances)
             ? row.substances.filter(
                 (value): value is string => typeof value === 'string',
               )
-            : [],
-        );
+            : []),
+        ]);
       return [
         concept.id,
-        [...new Set([...substanceKeysOf(concept), ...inherited])],
+        withComponents([...substanceKeysOf(concept), ...inherited]),
       ];
     }),
   );

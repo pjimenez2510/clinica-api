@@ -888,6 +888,119 @@ describe('la receta por HTTP', () => {
     expect(JSON.stringify(problem)).not.toContain('Amoxicilina');
   });
 
+  it('PR-065 alérgico a la bencilpenicilina: la amoxicilina informa como CLASS y la receta se emite', async () => {
+    const cnmb = await prisma.catalogSystem.findFirstOrThrow({
+      where: { code: 'CNMB' },
+    });
+    const penicillinG = await prisma.catalogConcept.create({
+      data: {
+        systemId: cnmb.id,
+        code: 'J01CE01',
+        display: 'Bencilpenicilina',
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigencia del concepto, anterior a todo
+      },
+    });
+    const allergy = await prisma.patientAllergy.create({
+      data: {
+        recordedById: (await createUser(prisma)).id,
+        patientId,
+        substanceConceptId: penicillinG.id,
+        substanceText: 'Bencilpenicilina',
+        criticality: 'HIGH',
+      },
+    });
+
+    const composed = await composeAsDoctor();
+    expect(composed.allergyAlerts).toEqual([
+      { line: 1, allergyId: allergy.id, match: 'CLASS' },
+    ]);
+    // PR-094: el aviso no nombra ni el medicamento ni el alérgeno.
+    expect(JSON.stringify(composed.allergyAlerts)).not.toMatch(/penicilina|Amoxicilina/i); // prettier-ignore
+
+    // PR-067: sólo la coincidencia exacta interrumpe; la clase no.
+    await post(
+      `/prescriptions/${composed.prescription.id}/issue`,
+      doctorToken,
+    ).expect(200);
+  });
+
+  it('PR-065 PR-114 una alergia registrada contra el cuadro de desarrollo también tiene familia, por su sucesor', async () => {
+    const cnmb = await prisma.catalogSystem.findFirstOrThrow({
+      where: { code: 'CNMB' },
+    });
+    const development = await prisma.catalogConcept.create({
+      data: {
+        systemId: cnmb.id,
+        code: 'PENICILINA',
+        display: 'Penicilina',
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigencia del concepto, anterior a todo
+      },
+    });
+    // Control: sin sucesor no hay código ATC, y por tanto ninguna familia.
+    const allergy = await prisma.patientAllergy.create({
+      data: {
+        recordedById: (await createUser(prisma)).id,
+        patientId,
+        substanceConceptId: development.id,
+        substanceText: 'Penicilina',
+        criticality: 'LOW',
+      },
+    });
+    expect((await composeAsDoctor()).allergyAlerts).toEqual([]);
+
+    await prisma.catalogConcept.create({
+      data: {
+        systemId: cnmb.id,
+        code: 'J01CE01',
+        display: 'Bencilpenicilina',
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigencia del concepto, anterior a todo
+        attributes: {
+          replaces: ['PENICILINA'],
+          substances: ['dci:bencilpenicilina'],
+        },
+      },
+    });
+    expect((await composeAsDoctor()).allergyAlerts).toEqual([
+      { line: 1, allergyId: allergy.id, match: 'CLASS' },
+    ]);
+  });
+
+  it('PR-060 D-148.3 alérgico a la amoxicilina, la amoxicilina + ácido clavulánico interrumpe la emisión', async () => {
+    const cnmb = await prisma.catalogSystem.findFirstOrThrow({
+      where: { code: 'CNMB' },
+    });
+    const combination = await prisma.catalogConcept.create({
+      data: {
+        systemId: cnmb.id,
+        code: 'J01CR02',
+        display: 'Amoxicilina + ácido clavulánico',
+        validFrom: new Date('2019-01-01'), // fecha-fija: vigencia del concepto, anterior a todo
+        attributes: { substances: ['dci:amoxicilina + acido clavulanico'] },
+      },
+    });
+    const allergy = await prisma.patientAllergy.create({
+      data: {
+        recordedById: (await createUser(prisma)).id,
+        patientId,
+        substanceConceptId: conceptId,
+        substanceText: 'Amoxicilina',
+        criticality: 'HIGH',
+      },
+    });
+
+    const composed = await composeAsDoctor([
+      aLine({ conceptId: combination.id }),
+    ]);
+    expect(composed.allergyAlerts).toEqual([
+      { line: 1, allergyId: allergy.id, match: 'EXACT' },
+    ]);
+    const response = await post(
+      `/prescriptions/${composed.prescription.id}/issue`,
+      doctorToken,
+    ).expect(409);
+    expect((response.body as Problem).code).toBe('ALLERGY_CONTRAINDICATION');
+  });
+
   it('PR-061 la alerta no se salta desde la petición: la única salida es refutar la alergia', async () => {
     const allergy = await prisma.patientAllergy.create({
       data: {

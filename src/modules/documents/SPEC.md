@@ -278,6 +278,8 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
 
 **Cubre:** DOC-094 a DOC-097.
 
+**Solo interfaz:** DOC-097. Es la página `/verificar/<código>` de `clinica-web`, sin el marco de la aplicación; lo que responde el servidor son los tres requisitos anteriores, y la página la prueban `route-access.spec.ts` y `verification.spec.ts` en la interfaz.
+
 ### H8 — El resumen de la atención en un PDF _(P1)_
 
 Desde la atención firmada y desde la lista de atenciones de la ficha, «Descargar
@@ -320,6 +322,8 @@ diálogo con una sola frase y un botón; anular un examen y ver «Se volvió a
 generar al anular un examen.» en el nuevo.
 
 **Cubre:** DOC-110.
+
+**Solo interfaz:** DOC-110. El servidor sigue como lo dejaron «corregir un PDF» y el PDF anulado que se archiva solo; sólo cambia lo que se lee en la tarjeta y en su diálogo, que prueban `SupersedeDocumentDialog.spec.ts` y `DocumentRendersPanel.spec.ts`.
 
 
 ### H11 — Lo que la receta impresa dice de las alergias _(P1)_

@@ -10,9 +10,11 @@
  *     `prescription_item.concept_id` both point at the CNMB, so this is a
  *     COMPARISON OF KEYS: no text, no stemming, no heuristics. Built, and it is
  *     the only one that interrupts.
- *  2. **THERAPEUTIC CLASS** — same ATC group. ⚠️ **Falta esquema** (PR-065):
- *     `catalog_concept.attributes` is meant to carry the ATC code of the CNMB
- *     and is not populated.
+ *  2. **THERAPEUTIC CLASS** — same ATC group (PR-065). The official CNMB files
+ *     every medicine under its ATC code, so this too compares keys: the first
+ *     four characters of two codes. It INFORMS and never interrupts. Which
+ *     level of the ATC is «the class» is a clinical call (D-183.1): built at
+ *     level 3, the therapeutic or pharmacological subgroup.
  *  3. **CROSS-REACTIVITY** — penicillins and cephalosporins and the rest. NOT
  *     BUILT AND NOT SIMULATED (PR-066): it is a commercial knowledge base, and
  *     an approximation of one produces warnings nobody can audit.
@@ -55,7 +57,11 @@ export interface PrescribedSubstance {
   conceptId: string | null;
 }
 
-/** PR-060, PR-067. One exact coincidence, addressed by line and by allergy. */
+/**
+ * PR-060, PR-065, PR-067. One coincidence, addressed by line and by allergy:
+ * `EXACT` is the same substance and interrupts the issue; `CLASS` is the same
+ * ATC subgroup and only informs.
+ */
 export interface AllergyAlert {
   line: number;
   allergyId: string;
@@ -66,7 +72,7 @@ export interface AllergyAlert {
    * (PR-094, SC-036). The screen already holds the line it is about, and the
    * allergy is addressed by its identifier so the doctor can open it.
    */
-  match: 'EXACT';
+  match: 'EXACT' | 'CLASS';
 }
 
 /**
@@ -161,13 +167,104 @@ export function substanceKeysOf(concept: {
         )
       : [];
   const substances = strings(attributes.substances);
+  return withComponents([
+    concept.code,
+    ...strings(attributes.replaces),
+    ...(substances.length > 0 ? substances : [substanceKeyOf(concept.display)]),
+  ]);
+}
+
+/**
+ * PR-060, D-148.3. A combination CONTAINS each of its substances: the cuadro
+ * files «Amoxicilina + ácido clavulánico» under one DCI, and an allergy to
+ * amoxicillin is an allergy to it. So every `dci:` key with a «+» also
+ * carries one key per component, and the exact match — the one that
+ * interrupts — sees it. The author decided it this way (the combination yes);
+ * the reverse direction, an allergy recorded against the combination
+ * stopping each component, is the safe side while the culprit is unknown.
+ * No blanks, no repeats.
+ */
+export function withComponents(keys: readonly string[]): string[] {
   return [
-    ...new Set([
-      concept.code,
-      ...strings(attributes.replaces),
-      ...(substances.length > 0
-        ? substances
-        : [substanceKeyOf(concept.display)]),
-    ]),
+    ...new Set(
+      keys.flatMap((key) => {
+        if (!key.startsWith('dci:') || !key.includes('+')) return [key];
+        const parts = key
+          .slice('dci:'.length)
+          .split('+')
+          .map((part) => part.trim())
+          .filter((part) => part !== '');
+        return [key, ...parts.map((part) => `dci:${part}`)];
+      }),
+    ),
   ];
+}
+
+/**
+ * PR-065. A complete ATC code: anatomical group, two digits, two letters, two
+ * digits (`J01CA04`). Anything else — the development cuadro's `ENALAPRIL`, a
+ * DCI key — has no class to read, and a code that is not one is never cut.
+ */
+const ATC_SUBSTANCE = /^[A-Z]\d{2}[A-Z]{2}\d{2}$/;
+
+/**
+ * PR-065, D-183.1. The therapeutic class of a key: level 3 of the ATC, its
+ * first four characters (`J01C`, the beta-lactam penicillins). `null` for a
+ * key that is not a complete ATC code.
+ */
+export function therapeuticClassOf(key: string): string | null {
+  return ATC_SUBSTANCE.test(key) ? key.slice(0, 4) : null;
+}
+
+function classesOf(conceptId: string, keys: SubstanceKeys): Set<string> {
+  return new Set(
+    (keys.get(conceptId) ?? []).flatMap((key) => {
+      const atcClass = therapeuticClassOf(key);
+      return atcClass === null ? [] : [atcClass];
+    }),
+  );
+}
+
+/**
+ * PR-065. Every line whose medicine shares the ATC class of a drug the chart
+ * flags, AND IS NOT ALREADY AN EXACT MATCH: the same pair said twice would be
+ * the louder alert diluted by the softer one.
+ *
+ * ⚠️ NOT CROSS-REACTIVITY (PR-066). A cephalosporin after a penicillin
+ * allergy is `J01D` against `J01C`: different classes, no alert. Which
+ * cephalosporins cross-react is what a commercial knowledge base sells, and
+ * the ATC does not say it.
+ *
+ * Same input as `exactAllergyMatches`, same refusal to compare text: an
+ * allergy recorded only as text, or a line outside the cuadro, has no code
+ * and therefore no class.
+ */
+export function therapeuticClassMatches(
+  items: readonly PrescribedSubstance[],
+  allergies: readonly KnownAllergy[],
+  keys: SubstanceKeys,
+): AllergyAlert[] {
+  const exact = new Set(
+    exactAllergyMatches(items, allergies, keys).map(
+      (alert) => `${alert.line}:${alert.allergyId}`,
+    ),
+  );
+  const alerts: AllergyAlert[] = [];
+
+  for (const item of items) {
+    if (item.conceptId === null) continue;
+    const itemClasses = classesOf(item.conceptId, keys);
+    if (itemClasses.size === 0) continue;
+    for (const allergy of allergies) {
+      if (allergy.substanceConceptId === null) continue;
+      if (exact.has(`${item.line}:${allergy.id}`)) continue;
+      const shared = [...classesOf(allergy.substanceConceptId, keys)].some(
+        (atcClass) => itemClasses.has(atcClass),
+      );
+      if (!shared) continue;
+      alerts.push({ line: item.line, allergyId: allergy.id, match: 'CLASS' });
+    }
+  }
+
+  return alerts;
 }

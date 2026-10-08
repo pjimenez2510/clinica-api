@@ -106,6 +106,15 @@ function patientBlock(
  * Art. 5.d. The prescriber's name and ACESS registration, printed as «—» when
  * missing so the gap is visible.
  */
+/**
+ * PR-036. The constancia of a signature made with the prescriber's credential,
+ * the same sentence the receta screen paints: signed in the system, when, and
+ * WITHOUT an electronic signature certificate.
+ */
+export function credentialSignatureText(signedAt: Date): string {
+  return `Con usuario y clave en el sistema, el ${ecuadorianDate(signedAt)}, sin certificado de firma electrónica`;
+}
+
 function prescriberBlock(prescriber: PractitionerIdentity): Block {
   return {
     kind: 'fields',
@@ -261,6 +270,21 @@ export function composePrescriptionLayout(
   blocks.push(
     { kind: 'heading', text: 'Prescriptor' },
     prescriberBlock(data.prescriber),
+    {
+      // PR-036 (D-A-005, D-183.2). How it was signed, said explicitly: the
+      // pharmacy rule accepts «la signatura realizada en el sistema informático
+      // mediante el registro con usuario y clave de acceso», and nothing in
+      // this system holds a certificate yet. A receta that said nothing would
+      // read as certified to whoever assumes so.
+      kind: 'fields',
+      columns: 1,
+      entries: [
+        {
+          label: 'Firma',
+          value: issuedAt === null ? '—' : credentialSignatureText(issuedAt),
+        },
+      ],
+    },
     {
       kind: 'signature',
       caption: 'Firma y sello del profesional',

@@ -194,7 +194,7 @@ dosis, frecuencia, duración, nombres del prescriptor y **su registro ACESS**.
 **Prueba independiente:** emitir una receta a un lactante de catorce meses y
 comprobar que el documento dice «1 año 2 meses» y «veinte (20)».
 
-**Cubre:** PR-020 a PR-040.
+**Cubre:** PR-020 a PR-040, PR-120.
 
 ### H3 — Vigencia y archivo _(P1)_
 
@@ -211,8 +211,8 @@ vigencia se cuenta desde ESE día y no desde el siguiente.
 ### H4 — La alerta de alergia que sí es nuestra _(P1)_
 
 Coincidencia exacta de principio activo, leída **por el alcance de ficha**, que
-**interrumpe** la emisión. Y nada más: ni clase terapéutica ni reactividad
-cruzada, que se declaran y no se simulan.
+**interrumpe** la emisión. La misma clase ATC **informa** al componer y no
+interrumpe (PR-065, D-183.1); la reactividad cruzada se declara y no se simula.
 
 **Prueba independiente:** registrar una alergia a un concepto CNMB, fusionar la
 ficha en otra, recetar ese mismo concepto **desde la superviviente** y comprobar
@@ -233,6 +233,9 @@ pestaña dice la alergia que el servidor bloquea (EN-238, recorrido F-04).
 El registro interno del talonario físico y el reporte mensual a la ACESS.
 **Ninguna de las dos tablas existe** y este documento no las inventa: la entrega
 está enunciada, no construida, y el §5 dice exactamente qué falta.
+Antes del esquema faltan tres respuestas que no son técnicas —quién es el
+custodio, el formato del reporte de la ACESS y qué sustancias son controladas—,
+registradas en D-183.3.
 
 **Prueba independiente:** no la tiene todavía, y decirlo es el punto.
 
@@ -680,24 +683,36 @@ documento existe y es lo único que la ACESS puede inspeccionar.
   > electrónica la firma es la del art. 13 y la de la Disposición General Décima
   > de ARCSA-DE-2022-012-AKRG: la **autenticación del prescriptor en el sistema**.
 
-- **PR-036** — DONDE `site_parameter.require_certified_signature` esté habilitado,
-  la emisión DEBERÁ exigir certificado de firma electrónica vigente; DONDE esté
+- **PR-036** — DONDE `site_parameter.require_certified_signature` esté
   deshabilitado, la receta DEBERÁ emitirse con la credencial del prescriptor y
   DEBERÁ dejar **constancia explícita de que esa firma no lleva certificado**.
+  La exigencia del certificado con el parámetro habilitado es PR-120.
 
   > D-A-005. La norma de farmacias privadas admite *«la signatura realizada en el
   > sistema informático mediante el registro con usuario y clave de acceso»*, así
   > que una clínica sin certificados no puede quedarse sin poder trabajar.
   >
-  > ⚠️ **Falta esquema.** `prescription` no tiene columna de firma ni de
-  > constancia, y **el certificado de firma electrónica es el bloqueante externo
-  > #3**: no hay certificado con el que probar la primera mitad. Hoy la emisión
-  > **no exige certificado** —el parámetro no se lee— y la constancia no se
-  > guarda. En consecuencia el documento **no afirma nada sobre la firma más allá
-  > de quién firmó y cuándo**: un documento que dijera «firma certificada» sin
-  > que nadie haya verificado un certificado sería peor que uno que sólo dice
-  > quién y cuándo. Cerrar esto es `signature_mode`, `signed_at` y
-  > `certificate_serial` en `prescription`.
+  > **Construida** (`feat/f05-receta-documentos-huecos`, 08-10-2026). La receta
+  > emitida dice en el papel y en la pantalla «Firma: Con usuario y clave en el
+  > sistema, el <fecha>, sin certificado de firma electrónica». No hace falta
+  > columna para decirlo: el sistema no guarda ningún certificado, así que
+  > **toda** receta emitida se firmó con la credencial, y el instante es
+  > `issued_at`. La columna (`signature_mode`, `certificate_serial`) nace con la
+  > custodia del certificado, que es cuando habrá dos maneras de firmar. Con el
+  > parámetro encendido la receta lleva la misma constancia mientras decide
+  > D-183.2: es la verdad.
+
+- **PR-120** — DONDE `site_parameter.require_certified_signature` esté
+  habilitado, la emisión DEBERÁ exigir certificado de firma electrónica vigente
+  del prescriptor.
+
+  > Separado de PR-036 en la revisión de `feat/f05-receta-documentos-huecos`
+  > para que el estado no diga «completo» de lo que no lo está. **Sin
+  > construir**, y no por esquema: **el certificado de firma electrónica es el
+  > bloqueante externo #3** y la custodia del de cada médico es D-177.1. Hoy el
+  > parámetro —encendido por defecto— **no manda**: la emisión no se bloquea
+  > (bloquear dejaría a la clínica sin recetar) y la receta dice que no lleva
+  > certificado (PR-036, D-183.2).
 
 ### 2.5 Indicaciones (art. 5.e)
 
@@ -800,6 +815,10 @@ documento existe y es lo único que la ACESS puede inspeccionar.
   > informáticos restringirá la atención asistencial a pacientes»*. Lo que sí es
   > nuestro es no impedirlo: la receta se compone y se emite sin depender de
   > ningún servicio externo.
+  >
+  > Lo prueba `prescription.service.spec.ts`: con el archivo de documentos sin
+  > poder guardar nada, la receta se emite y no se le pide nada; el PDF se
+  > compone cuando alguien lo pide.
 
 ## 4. Alergias: el nivel que es nuestro, y los dos que no (REQ-008)
 
@@ -808,7 +827,7 @@ Hay tres niveles de comprobación y **sólo el primero se construye**:
 | Nivel | Qué compara | Estado |
 | --- | --- | --- |
 | **1. Coincidencia exacta** | El concepto CNMB recetado ES el concepto CNMB al que la ficha dice que es alérgico | **Construido.** Es una comparación de claves |
-| **2. Clase terapéutica** | El recetado pertenece a la misma clase ATC que el alérgeno | **No construido.** Falta esquema |
+| **2. Clase terapéutica** | El recetado pertenece a la misma clase ATC que el alérgeno | **Construido: informa, no interrumpe** (PR-065). Nivel 3 del ATC mientras decide D-183.1 |
 | **3. Reactividad cruzada** | Penicilina ↔ cefalosporinas y demás | **No construido, y no se simula** |
 
 - **PR-060** — SI una línea de la receta nombra el **mismo concepto CNMB** que
@@ -921,9 +940,17 @@ Hay tres niveles de comprobación y **sólo el primero se construye**:
 - **PR-065** — El sistema DEBERÁ advertir de una coincidencia por **clase
   terapéutica**.
 
-  > ⚠️ **Falta esquema.** Necesita el código ATC en `catalog_concept.attributes`
-  > del CNMB, que no está poblado. Se declara para que exista el hueco y **no se
-  > aproxima** comparando los primeros caracteres de un nombre.
+  > ⚠️ ~~Falta esquema~~ — **construido** en `feat/f05-receta-documentos-huecos`
+  > (08-10-2026). Desde `fix/catalogos-oficiales` el CNMB oficial guarda cada
+  > medicamento con su **código ATC** como código del concepto (`J01CA04`), así
+  > que la clase también es una comparación de claves y **no se aproxima** con
+  > el nombre. La clase es el **nivel 3** del ATC —los cuatro primeros
+  > caracteres, subgrupo terapéutico o farmacológico: `J01C`, las penicilinas—
+  > mientras el autor decide el nivel (D-183.1). La alerta sale **al componer y
+  > al reescribir** con `match: 'CLASS'`, por línea y por alergia, sin nombre de
+  > medicamento (PR-094); **nunca interrumpe la emisión** (PR-067) y no repite
+  > una pareja que ya es coincidencia exacta. Un código que no es ATC completo
+  > (el cuadro de desarrollo, una alergia en texto) no tiene clase.
 
 - **PR-066** — La **reactividad cruzada** queda fuera de este sistema.
 
@@ -1487,12 +1514,12 @@ Ninguna es una migración correctiva: la base está en fase `development`
 | ✅ construido — **Signos de alarma** (**art. 5.e.iii**; el 5.e.iv es la firma y el sello). Columna: **`warning_signs`**. De la receta y no de la línea, así que no cabe en `prescription_item.instructions` | `prescription` | PR-038 |
 | ✅ construido — **Recomendaciones no farmacológicas** (**art. 5.e.iii**; el 5.e.v es el registro ACESS; y el art. 27.c las pone *antes* de decidir el medicamento). Columna: **`non_pharmacological_advice`** | `prescription` | PR-039 |
 | ✅ construido — **Teléfono de contacto permanente del prescriptor** (**art. 5.e.vi**). Columna: **`emergency_contact_phone`**. No sirve `site.phone`: la norma dice «del prescriptor», y a las tres de la mañana hay que llamar a alguien | `practitioner` | PR-040 |
-| Modo de firma, instante y serie del certificado; **constancia de firma sin certificado** | `prescription` | PR-036 |
+| ✅ construida — **Constancia de firma sin certificado**, en el papel y en la pantalla. **Falta** el modo de firma y la serie del certificado, que nacen con su custodia (D-177.1) | `prescription` | PR-036 |
 | ✅ construido — Motivo, autor e instante de la **anulación** (**art. 70**): **`cancelled_at`, `cancelled_by_id`, `cancel_reason`** (`20261005060200`, PR-108). **Falta** el estado «notificada» | `prescription` | PR-010, PR-073, PR-108 |
 | **Número de línea** en la receta, hoy derivado del orden de `uuidv7()` | `prescription_item` | PR-032 |
 | Marca de **antimicrobiano** (código ATC del CNMB) | `catalog_concept.attributes` | PR-052 |
 | **Modalidad de dispensación** (ambulatorio, emergencia, hospitalización) | `encounter` o `prescription` | PR-051 |
-| **Clase terapéutica** (código ATC del CNMB) | `catalog_concept.attributes` | PR-065 |
+| ✅ construido — **Clase terapéutica**: el CNMB oficial guarda cada medicamento bajo su código ATC (`catalog_concept.code`, PR-114), y la clase es su nivel 3 | `catalog_concept` | PR-065 |
 | Anulación de alerta de alergia con motivo | `prescription` | PR-061 |
 | **Talonario de controlados** y sus folios; base del reporte mensual | dos tablas nuevas | PR-071, PR-072 |
 | **Profesión del prescriptor** (médico, odontólogo, obstetriz) | `practitioner` | PR-080 |
