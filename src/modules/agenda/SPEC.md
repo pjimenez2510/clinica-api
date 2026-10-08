@@ -2800,8 +2800,8 @@ Convertirlo en configuración sería regalar la garantía.
   `date`, el sistema DEBERÁ devolver en una sola respuesta las entradas que se
   solapan con ese rango, con los mismos filtros, el mismo permiso, el mismo
   ámbito de sede, el mismo orden y la misma forma que la agenda de un día
-  (AG-017, AG-018); SI el rango supera 31 días, termina antes de empezar, le
-  falta uno de sus extremos, o se piden a la vez `date` y el rango, o ninguno
+  (AG-017, AG-018); SI el rango supera 7 días sin `practitionerId` o 31 días
+  con él, termina antes de empezar, le falta uno de sus extremos, o se piden a la vez `date` y el rango, o ninguno
   de los dos, ENTONCES DEBERÁ rechazarlo con 422
   `VALIDATION_FAILED` y el campo señalado; y MIENTRAS la vista de semana esté
   abierta, la pantalla DEBERÁ pedir sus seis días con una sola petición y
@@ -2812,6 +2812,10 @@ Convertirlo en configuración sería regalar la garantía.
   > no es política clínica; el índice parcial `agenda_entry_daily_agenda` sirve
   > el rango igual que el día. El reparto por día de la pantalla usa el mismo
   > solapamiento que el servidor: un bloqueo de una semana cae en cada día.
+  > Enmienda del 08-10-2026 (`fix/rediseno-ux-pulido`): sin profesional el
+  > tope es de 7 días —la semana de toda la sede, que es lo que pide la
+  > pantalla—; un mes de todas las columnas sólo lo pediría una vista de mes,
+  > que no existe. Con un profesional sigue siendo un mes (31 días).
 
 ## Códigos de error nuevos
 
@@ -3074,7 +3078,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | AG-133 a AG-135, AG-138                         | Contrato HTTP + unitario de dominio: el orden por hora, el tiempo calculado, y que dos roles distintos reciban conjuntos de campos distintos |
 | AG-136, AG-137                                  | Seguridad dirigida + contrato HTTP: una sesión con `agenda:board:public` y nada más no alcanza la proyección de personal, y la fila que recibe no lleva ninguno de los campos prohibidos |
 | AG-176                                          | Contrato HTTP con una sesión de `ENFERMERIA` de verdad (escribe la nota sin `agenda:write`) + integración: la nota sobre un bloqueo se rechaza y la escrita no toca ningún otro campo |
-| AG-178                                          | Unitario del esquema (tope, exclusión de `date` y rango) + integración contra PostgreSQL real con control positivo: la cita del `to` a las 23:30 de Guayaquil sale y la del día siguiente no + unitario de interfaz: la semana sale en **una** petición |
+| AG-178                                          | Unitario del esquema (tope de 7 días sin profesional y de 31 con él, exclusión de `date` y rango) + integración contra PostgreSQL real con control positivo: la cita del `to` a las 23:30 de Guayaquil sale y la del día siguiente no; 7 días sin profesional y 31 con él traen la cita, el 8.º y el 32.º son 422 en `to` + unitario de interfaz: la semana sale en **una** petición |
 | AG-139, AG-140                                  | Integración contra PostgreSQL real: una consulta del tablero deja **una** fila de bitácora y no una por cita (SC-004), y la tasa no se mueve cuando una cita pasa a `LEFT_WITHOUT_BEING_SEEN` |
 | AG-142                                          | Integración: cambiar el umbral de una sede cambia la advertencia siguiente y no toca las llegadas ya registradas (AG-098) |
 | AG-146 a AG-149                                 | Integración contra PostgreSQL real con control positivo: la cita y la atención se mueven en la misma transacción y la fila de historial existe; una prueba reproduce la captura del autor                        |
