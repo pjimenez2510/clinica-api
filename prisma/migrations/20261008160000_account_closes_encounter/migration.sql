@@ -126,7 +126,9 @@ BEGIN
    WHERE "encounter_id" = p_encounter AND "status" = 'SETTLED'
    ORDER BY "closed_at" DESC
    LIMIT 1;
-  IF v_at IS NULL THEN
+  -- Sin quién la cerró no hay cierre que copiar: una cuenta liquidada antes
+  -- de que el cierre llevara sello (BI-215) no cierra nada (D-186).
+  IF v_at IS NULL OR v_by IS NULL THEN
     RETURN;
   END IF;
 

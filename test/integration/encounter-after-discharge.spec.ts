@@ -97,7 +97,9 @@ describe('la codificación de la atención tras el alta (EN-215)', () => {
 
     // A write that does not touch the coding needs no stamp.
     await prisma.$executeRaw`
-      UPDATE encounter SET status = 'COMPLETED' WHERE id = ${encounter.id}::uuid`;
+      UPDATE encounter SET status = 'COMPLETED', closed_at = ${new Date()},
+             closed_by_user_id = ${editor.id}::uuid
+       WHERE id = ${encounter.id}::uuid`;
     expect(await versionsOf(prisma, encounter.id)).toHaveLength(1);
   });
 
