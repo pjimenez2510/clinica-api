@@ -1152,7 +1152,7 @@ describe('la facturación por HTTP', () => {
       expect((response.body as Problem).code).toBe('ACCOUNT_CLOSED');
     });
   });
-  describe('BI-022 a BI-024 la revisión contable de la tarifa, por HTTP', () => {
+  describe('BI-023 BI-024 la revisión contable de la tarifa, por HTTP', () => {
     interface ServiceBody {
       id: string;
       tariffCode: string | null;
