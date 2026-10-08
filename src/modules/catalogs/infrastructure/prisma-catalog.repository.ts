@@ -189,7 +189,12 @@ export class PrismaCatalogRepository implements CatalogRepository {
     if (texto === '') return [];
 
     // Sin puntos ni espacios: `J30.0`, `J300` y `j30 0` son el mismo prefijo.
-    const prefijoCodigo = `${texto.replace(/[\s.]/g, '').toUpperCase()}%`;
+    // The typed text as a LIKE literal (CAT-001): a «%» or «_» someone types
+    // is a character, not a wildcard that matches (and ranks) every row.
+    const asLike = (value: string) => value.replace(/[\\%_]/g, '\\$&');
+    const codigo = texto.replace(/[\s.]/g, '').toUpperCase();
+    const prefijoCodigo = `${asLike(codigo)}%`;
+    const textoLike = asLike(texto);
 
     const soloSeleccionables = criteria.onlySelectable
       ? Prisma.sql`AND (
@@ -266,15 +271,20 @@ export class PrismaCatalogRepository implements CatalogRepository {
           -- combina con un BitmapOr si NINGUNA se queda sin índice.
           AND (
             replace(c.code, '.', '') LIKE ${prefijoCodigo}
-            OR c.search_display LIKE '%' || immutable_unaccent(lower(${texto})) || '%'
+            OR c.search_display LIKE '%' || immutable_unaccent(lower(${textoLike})) || '%'
             OR immutable_unaccent(lower(${texto})) <% c.search_display
           )
         ORDER BY
           -- 1. El código exacto primero, siempre.
-          (replace(c.code, '.', '') = ${prefijoCodigo.slice(0, -1)}) DESC,
+          (replace(c.code, '.', '') = ${codigo}) DESC,
           -- 2. Luego los códigos que empiezan por lo tecleado.
           (replace(c.code, '.', '') LIKE ${prefijoCodigo}) DESC,
-          -- 3. Luego por parecido del texto.
+          -- 3. CAT-001: then descriptions that START with the text. Similarity
+          --    scores the best WORD, so «Puerto San Miguel» ties with «San
+          --    Antonio» for «san»; whoever types the start of a name expects it
+          --    first.
+          (c.search_display LIKE immutable_unaccent(lower(${textoLike})) || '%') DESC,
+          -- 4. Luego por parecido del texto.
           word_similarity(immutable_unaccent(lower(${texto})), c.search_display) DESC,
           c.code ASC
         LIMIT ${criteria.limit}
