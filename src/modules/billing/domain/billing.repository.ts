@@ -124,6 +124,20 @@ export interface BillableServiceView {
    */
   specialtyId: string | null;
   visitSequence: VisitSequence | null;
+  /**
+   * BI-022 to BI-024. Who checked the tax rate with accounting judgement, and
+   * when; `null` is «pendiente de revisión». Every service is born pending
+   * (D-172.1), and changing its rate makes it pending again (D-172.2).
+   */
+  taxReview: TaxReviewView | null;
+}
+
+/** BI-024. A review names a person and an instant, never one without the other. */
+export interface TaxReviewView {
+  reviewedAt: Date;
+  reviewedById: string;
+  /** «Nombre Apellido», as the screen says who. */
+  reviewedByName: string;
 }
 
 /**
@@ -204,6 +218,11 @@ export interface BillableServiceUpdate {
   active?: boolean;
   /** BI-158. `null` unsets both columns; absent leaves them alone. */
   consultation?: ConsultationMapping | null;
+  /**
+   * BI-024. A review to record, or `null` to return the rate to pending;
+   * absent leaves it alone. Written by the service, never taken from a body.
+   */
+  taxReview?: { reviewedAt: Date; reviewedById: string } | null;
 }
 
 /**
@@ -272,10 +291,27 @@ export interface BillingCatalogueRepository {
   }): Promise<BillableServiceView[]>;
   findBillableService(serviceId: string): Promise<BillableServiceView | null>;
   createBillableService(service: NewBillableService): Promise<BillableServiceView>; // prettier-ignore
+  /**
+   * A partial update. When it carries a `taxRateId` different from the one
+   * stored, the tax review is cleared IN THE SAME TRANSACTION, whatever the
+   * caller read before (BI-024, D-172.2): a review must never survive onto a
+   * rate its author did not see.
+   */
   updateBillableService(
     serviceId: string,
     update: BillableServiceUpdate,
   ): Promise<BillableServiceView>;
+  /**
+   * BI-024. Records the review ONLY IF the service still carries `taxRateId`,
+   * in the same statement; `null` when it no longer does (or does not
+   * exist). A read first and a write after would leave the window in which
+   * another administrator changes the rate and the review signs the new one.
+   */
+  markTaxReviewed(
+    serviceId: string,
+    taxRateId: string,
+    review: { reviewedAt: Date; reviewedById: string },
+  ): Promise<BillableServiceView | null>;
   /**
    * BI-012. Deletes ONLY when nothing references it; the caller has already
    * refused when it does. The count and the delete are asked separately on

@@ -45,6 +45,7 @@ const EXPECTED: readonly [
   [errors.TaxRateRequiredError, 'TAX_RATE_REQUIRED', ValidationError],
   [errors.TaxRateNotFoundError, 'TAX_RATE_NOT_FOUND', NotFoundError],
   [errors.TaxRateInUseError, 'TAX_RATE_IN_USE', ConflictError],
+  [errors.TaxReviewRateChangedError, 'TAX_REVIEW_RATE_CHANGED', ConflictError],
   [errors.PayerNotFoundError, 'PAYER_NOT_FOUND', NotFoundError],
   [errors.PayerInactiveError, 'PAYER_INACTIVE', BusinessRuleViolation],
   [errors.PayerInUseError, 'PAYER_IN_USE', ConflictError],

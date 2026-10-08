@@ -38,6 +38,10 @@ export function billableServiceSnapshot(view: BillableServiceView): object {
     active: view.active,
     specialtyId: view.specialtyId,
     visitSequence: view.visitSequence,
+    // BI-024. The review travels with the row, so the one a rate change
+    // clears is still readable here: who checked which rate, and when.
+    taxReviewedAt: view.taxReview?.reviewedAt.toISOString() ?? null,
+    taxReviewedById: view.taxReview?.reviewedById ?? null,
   };
 }
 

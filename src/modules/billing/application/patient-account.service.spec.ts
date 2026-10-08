@@ -100,6 +100,7 @@ const service = (
   active: true,
   specialtyId: null,
   visitSequence: null,
+  taxReview: null,
   ...overrides,
 });
 
