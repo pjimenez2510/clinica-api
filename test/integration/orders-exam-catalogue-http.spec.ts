@@ -153,9 +153,12 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
         name: 'Catálogo',
         description: 'Mantiene los catálogos de la clínica.',
         permissions: {
+          // ORD-162 (D-049). Giving an exam its new service classifies it
+          // (category, tax rate): billing's permission, which this role has.
           create: [
             { permissionCode: 'catalog:manage' },
             { permissionCode: 'catalog:read' },
+            { permissionCode: 'billing:price-manage' },
           ],
         },
       },
@@ -323,40 +326,40 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     expect(await serviceCoded('EX-PERFIL-RENAL')).toMatchObject({ name: 'Perfil renal básico', tariffCode: null }); // prettier-ignore
   });
 
-  it('ORD-162 un precio sin billing:price-manage se rechaza con SITE_SCOPE_DENIED y no crea nada', async () => {
-    const billing = { ...(NEW_EXAM.billing as object), selfPayAmount: '12.00' };
-    const refused = await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, billing }).expect(403); // prettier-ignore
-    expect((refused.body as Problem).code).toBe('SITE_SCOPE_DENIED');
-    expect(await prisma.billableService.count({ where: { code: 'EX-PERFIL-RENAL' } })).toBe(0); // prettier-ignore
-
-    // Control positivo: con el permiso, el precio nace en la lista particular.
+  it('ORD-162 sin billing:price-manage no nace ninguna prestación: SITE_SCOPE_DENIED y nada creado; con él, nace con su precio', async () => {
     await prisma.role.create({
       data: {
-        code: 'CATALOGO_PRECIOS',
-        name: 'Catálogo y precios',
-        description: 'Mantiene los catálogos y sus precios.',
-        permissions: {
-          create: [
-            { permissionCode: 'catalog:manage' },
-            { permissionCode: 'billing:price-manage' },
-          ],
-        },
+        code: 'SOLO_CATALOGO',
+        name: 'Sólo catálogo',
+        description: 'Mantiene el catálogo de exámenes.',
+        permissions: { create: [{ permissionCode: 'catalog:manage' }] },
       },
     });
     registry.invalidate();
-    token = await signIn(
-      'precios@clinica.ec',
-      'CATALOGO_PRECIOS',
-      '1710034065',
-    );
-    await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, billing }).expect(201); // prettier-ignore
+    const priced = token;
+    token = await signIn('solocatalogo@clinica.ec', 'SOLO_CATALOGO', '1710034065'); // prettier-ignore
+    const billing = { ...(NEW_EXAM.billing as object), selfPayAmount: '12.00' };
+    const refused = await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, billing }).expect(403); // prettier-ignore
+    expect((refused.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+    const unpriced = await send('post', '/exam-catalogue/exams', NEW_EXAM).expect(403); // prettier-ignore
+    expect((unpriced.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+    expect(await prisma.billableService.count({ where: { code: 'EX-PERFIL-RENAL' } })).toBe(0); // prettier-ignore
+
+    // Control positivo: con el permiso, el precio nace en la lista particular
+    // y la bitácora de facturación dice quién y con qué IVA (BI-231).
+    token = priced;
+    const created = (await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, billing }).expect(201)).body as AdminExam; // prettier-ignore
     const price = await prisma.price.findFirstOrThrow({
-      where: { billableService: { code: 'EX-PERFIL-RENAL' } },
+      where: { billableServiceId: created.billableService.id },
       select: { amount: true, validTo: true, priceList: { select: { payer: { select: { kind: true } } } } }, // prettier-ignore
     });
     expect(price.amount.toFixed(2)).toBe('12.00');
     expect(price.validTo).toBeNull();
     expect(price.priceList.payer.kind).toBe('SELF_PAY');
+    const trail = await prisma.accessAudit.findFirstOrThrow({
+      where: { resourceType: 'billable_service', resourceId: created.billableService.id }, // prettier-ignore
+    });
+    expect(trail).toMatchObject({ action: 'CREATE', after: expect.objectContaining({ selfPayAmount: '12.00' }) }); // prettier-ignore
   });
 
   it('ORD-162 una categoría de otra clase se rechaza; una prestación existente sin examen se ata', async () => {
@@ -367,8 +370,11 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
 
     // Control positivo: «Química sanguínea» existe y ningún examen la cobra.
     const free = await serviceCoded('LAB-QUIMICA');
-    const tied = (await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, billing: { billableServiceId: free.id } }).expect(201)).body as AdminExam; // prettier-ignore
+    const tied = (await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, billing: { billableServiceId: free.id } }).expect(201)).body as AdminExam & { name: string }; // prettier-ignore
     expect(tied.billableService.id).toBe(free.id);
+    // La prestación existente no se reescribe: el examen toma su nombre.
+    expect(tied.name).toBe(free.name);
+    expect((await serviceCoded('LAB-QUIMICA')).name).toBe(free.name);
   });
 
   it('ORD-163 una prestación no cobra dos exámenes: EXAM_SERVICE_TAKEN, y la base lo garantiza', async () => {

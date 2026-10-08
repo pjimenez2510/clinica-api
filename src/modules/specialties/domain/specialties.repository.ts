@@ -95,11 +95,13 @@ export interface SpecialtiesRepository {
   /**
    * SP-024 lives in what this does NOT do: no appointment is read or written,
    * so a duration change can only rule forwards. SP-030: a new name renames
-   * the type's first service too, in the same transaction.
+   * the type's first service too, in the same transaction; a type that has
+   * no service (one created before D-179) is given its own, without price.
    */
   updateServiceType(
     id: string,
     patch: { name?: string; durationMinutes?: number; active?: boolean },
+    today: ClinicalDate,
   ): Promise<ServiceTypeView | null>;
 
   /**

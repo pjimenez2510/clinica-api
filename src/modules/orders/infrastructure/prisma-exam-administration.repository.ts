@@ -140,11 +140,9 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
               : { amount: billing.selfPayAmount, validFrom: today },
         });
       } else {
+        // ORD-162. An existing service is not rewritten: the exam takes ITS
+        // name and tariff code (ORD-163), whatever the form typed.
         billableServiceId = billing.billableServiceId;
-        await tx.billableService.update({
-          where: { id: billableServiceId },
-          data: { name, tariffCode },
-        });
       }
       return tx.examDefinition.create({
         data: { code, ...own, billableServiceId },

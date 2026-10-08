@@ -111,8 +111,9 @@ export interface ExamAdministrationRepository {
   exam(id: string): Promise<AdminExamView | undefined>;
   /**
    * ORD-162, ORD-163. The exam and, for a NEW billing, its service and first
-   * self-pay price from `today` — one transaction. An EXISTING service takes
-   * the exam's name and tariff code. `EXAM_CODE_DUPLICATE` comes from
+   * self-pay price from `today` — one transaction. With an EXISTING service
+   * the exam takes the service's name and tariff code; the service is not
+   * rewritten. `EXAM_CODE_DUPLICATE` comes from
    * `exam_definition_code_unique`, `BILLABLE_SERVICE_CODE_DUPLICATE` from
    * `billable_service_code_unique`, `EXAM_SERVICE_TAKEN` from
    * `exam_definition_one_per_service`.

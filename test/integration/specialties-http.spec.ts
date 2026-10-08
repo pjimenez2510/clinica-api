@@ -604,6 +604,18 @@ describe('las especialidades por HTTP', () => {
       expect(await prisma.serviceType.count({ where: { specialtyId: specialty.id } })).toBe(0); // prettier-ignore
     });
 
+    it('SP-030 un tipo de antes, sin prestación, recibe la suya al editarlo', async () => {
+      const specialty = await createSpecialty();
+      const type = (await post(`/${specialty.id}/service-types`, { name: 'Control', durationMinutes: 20 }).expect(201)).body as { id: string; billableServiceId: string }; // prettier-ignore
+      // As a type created before D-179 is: no link.
+      await prisma.serviceTypeBillableService.deleteMany({ where: { serviceTypeId: type.id } }); // prettier-ignore
+
+      const edited = (await patch(`/service-types/${type.id}`, { durationMinutes: 30 }).expect(200)).body as { billableServiceId: string | null }; // prettier-ignore
+
+      expect(edited.billableServiceId).not.toBeNull();
+      expect(edited.billableServiceId).not.toBe(type.billableServiceId);
+    });
+
     it('SP-030 borrar un tipo desactiva la prestación que sólo él cobraba', async () => {
       const specialty = await createSpecialty();
       const type = (await post(`/${specialty.id}/service-types`, { name: 'Control', durationMinutes: 20 }).expect(201)).body as { id: string; billableServiceId: string }; // prettier-ignore

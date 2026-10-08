@@ -327,14 +327,20 @@ describe('SpecialtiesService', () => {
       await service.updateServiceType('type-1', { durationMinutes: 30 }, REQUESTER); // prettier-ignore
       await service.deleteServiceType('type-1', REQUESTER);
 
-      expect(recorded.map((entry) => entry.action)).toEqual([
+      const configuration = recorded.filter(
+        (entry) => entry.resourceType === 'configuration',
+      );
+      expect(configuration.map((entry) => entry.action)).toEqual([
         'CREATE',
         'UPDATE',
         'UPDATE',
       ]);
+      // BI-231. The service born with the type is in billing's trail.
       expect(
-        recorded.every((entry) => entry.resourceType === 'configuration'),
-      ).toBe(true);
+        recorded.filter((entry) => entry.resourceType === 'billable_service'),
+      ).toEqual([
+        expect.objectContaining({ action: 'CREATE', resourceId: 'service-1' }),
+      ]);
     });
 
     /**

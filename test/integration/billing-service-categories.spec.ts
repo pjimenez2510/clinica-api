@@ -387,7 +387,7 @@ describe('las categorías de prestación (B11)', () => {
   });
 
   describe('corregir siempre es posible (BI-187)', () => {
-    it('BI-187 una consulta atada en una categoría de otra clase se puede renombrar y desactivar', async () => {
+    it('BI-187 una consulta atada en una categoría de otra clase se puede desactivar', async () => {
       const other = await prisma.billableServiceCategory.create({
         data: { name: 'Consulta externa', kind: 'OTHER' },
       });
@@ -401,7 +401,7 @@ describe('las categorías de prestación (B11)', () => {
       await api()
         .patch(`/api/v1/billing/services/${mismatched.id}`)
         .set('Authorization', bearer())
-        .send({ name: 'Consulta general', active: false })
+        .send({ active: false })
         .expect(200);
     });
 

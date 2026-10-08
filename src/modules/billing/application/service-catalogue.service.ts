@@ -27,6 +27,7 @@ import {
   TaxRateNotFoundError,
   TaxRateRequiredError,
   TaxReviewRateChangedError,
+  ServiceNamedElsewhereError,
 } from '../domain/billing.errors';
 
 import {
@@ -156,6 +157,18 @@ export class ServiceCatalogueService {
     requester: Requester,
   ): Promise<BillableServiceView> {
     const current = await this.requireService(serviceId);
+    // ORD-163, SP-030 (D-179). What an exam or a service type names is
+    // corrected there, once: never here behind its back.
+    const renames = update.name !== undefined && update.name !== current.name;
+    const retariffs =
+      update.tariffCode !== undefined &&
+      update.tariffCode !== current.tariffCode;
+    if (renames || retariffs) {
+      const owned =
+        current.serviceTypes.length > 0 ||
+        (await this.catalogue.listExamsOfService(serviceId)).length > 0;
+      if (owned) throw new ServiceNamedElsewhereError();
+    }
     if (update.taxRateId !== undefined) {
       if (!update.taxRateId) throw new TaxRateRequiredError();
       await this.requireTaxRate(update.taxRateId);

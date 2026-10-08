@@ -99,9 +99,10 @@ export class ExamAdministrationController {
     @Req() req: Request,
   ): Promise<AdminExamResponse> {
     const { code, billing, ...exam } = dto;
-    // ORD-162 (D-049). A price moves money: only with `billing:price-manage`
-    // over the whole clinic, checked before anything is written.
-    if ('selfPayAmount' in billing && billing.selfPayAmount !== null) {
+    // ORD-162 (D-049). A NEW service is classified —its category, its tax
+    // rate (BI-005) and maybe its price—, which is billing's: only with
+    // `billing:price-manage` over the whole clinic, before anything is written.
+    if ('taxRateId' in billing) {
       assertClinicWideScope(
         this.currentUser.requirePrincipal(),
         'billing:price-manage',

@@ -494,7 +494,9 @@ describe('BI-158 qué prestación es «la consulta» es un dato, no una regla', 
       context.prisma.serviceTypeBillableService.create({
         data: { serviceTypeId, billableServiceId: other.id, position: 0 },
       }),
-    ).rejects.toThrow(/service_type_billable_service_one_per_position|Unique/);
+    ).rejects.toThrow(
+      /service_type_billable_service_one_per_position|`service_type_id`,`position`/,
+    );
     // Control positivo: en la segunda posición, sí (consulta + procedimiento).
     await expect(
       context.prisma.serviceTypeBillableService.create({

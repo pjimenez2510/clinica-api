@@ -280,6 +280,32 @@ describe('ExamAdministrationService · un examen, una prestación (ORD-162, ORD-
     );
   });
 
+  it('ORD-162 BI-231 la prestación que nace deja su rastro en la bitácora de facturación, con su IVA y su precio', async () => {
+    const { service, recorded } = build();
+
+    await service.createExam('EX-RENAL', WRITE, NEW_BILLING, EDITOR);
+
+    expect(recorded.map((entry) => entry.resourceType)).toEqual([
+      'exam_definition',
+      'billable_service',
+    ]);
+    expect(recorded[1]).toMatchObject({
+      resourceId: 'service-glu',
+      action: 'CREATE',
+      after: { taxRateId: 'rate-0', categoryId: 'category-lab', selfPayAmount: '12.00' }, // prettier-ignore
+    });
+  });
+
+  it('ORD-162 atarlo a una prestación existente no la reescribe ni deja rastro de facturación', async () => {
+    const { service, recorded } = build({
+      service: vi.fn().mockResolvedValue(EXAM.billableService),
+    });
+
+    await service.createExam('EX-RENAL', WRITE, { kind: 'EXISTING', billableServiceId: 'service-glu' }, EDITOR); // prettier-ignore
+
+    expect(recorded.map((entry) => entry.resourceType)).toEqual(['exam_definition']); // prettier-ignore
+  });
+
   it('ORD-162 rechaza una categoría desactivada, de otra clase o un IVA que no existe, sin escribir', async () => {
     const createExam = vi.fn();
     const cases: [Record<string, unknown>, new () => Error][] = [

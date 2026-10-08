@@ -1839,6 +1839,12 @@ dos registros distintos.**
   > `CONSULTATION_MAPPING_INCOMPLETE`, `INVALID_VISIT_SEQUENCE` y
   > `CONSULTATION_ALREADY_MAPPED` dejaron de existir.
   >
+  > Y SI se renombra o se cambia el código del tarifario de una prestación
+  > que es un examen (ORD-163) o que nació con un tipo de atención (SP-030),
+  > el sistema DEBERÁ rechazarlo con `SERVICE_NAMED_ELSEWHERE`: se corrige
+  > allí, una vez. Su IVA, su categoría, su estado y sus precios se siguen
+  > corrigiendo aquí.
+  >
   > **Desde `fix/atencion-examenes` (ORD-108):** el examen tiene tipo
   > —laboratorio, imagen o procedimiento— y la prestación con que se cobra es de
   > esa misma clase. Antes la regla admitía «laboratorio o imagen» para todo
@@ -2223,6 +2229,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `SERVICE_CATEGORY_NOT_FOUND` | 404 | BI-185 |
 | `SERVICE_CATEGORY_INACTIVE` | 422 | BI-185 |
 | `SERVICE_KIND_MISMATCH` | 422 | BI-187 |
+| `SERVICE_NAMED_ELSEWHERE` | 409 | BI-187, ORD-163, SP-030 |
 | `INVOICE_CHARGES_CHANGED` | 409 | BI-184 |
 
 **Se reutilizan, y no se declaran de nuevo:** `SELF_AUTHORISATION_DENIED`

@@ -353,7 +353,10 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   precio en la lista particular vigente desde el día de hoy en Ecuador; CUANDO
   se renombre el tipo DEBERÁ renombrar esa prestación; CUANDO se borre el tipo
   DEBERÁ desactivar la prestación que ya no cobre ningún otro tipo; y DEBERÁ
-  servir con cada tipo su prestación y el precio particular vigente hoy. SI no
+  servir con cada tipo su prestación y el precio particular vigente hoy; y
+  CUANDO se edite un tipo que no tiene prestación (uno anterior a D-179),
+  DEBERÁ crearle la suya, sin precio. La prestación que nace DEBERÁ quedar en
+  la bitácora de facturación (`billable_service`) con su precio. SI no
   hay ninguna categoría activa de clase consulta o ningún IVA de código `0`,
   ENTONCES DEBERÁ rechazarlo con `CONSULTATION_BILLING_UNAVAILABLE`; y SI trae
   precio y quien lo crea no tiene `billing:price-manage` en toda la clínica,

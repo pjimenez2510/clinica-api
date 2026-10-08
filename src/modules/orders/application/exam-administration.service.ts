@@ -46,6 +46,8 @@ export interface CatalogueEditor {
 
 const EXAM_RESOURCE = 'exam_definition';
 const ANALYTE_RESOURCE = 'analyte_definition';
+/** BI-231. The billing trail's name for a service. */
+const SERVICE_RESOURCE = 'billable_service';
 
 /**
  * THE EXAM CATALOGUE, ADMINISTERED BY THE CLINIC (ORD-103 to ORD-111).
@@ -103,6 +105,27 @@ export class ExamAdministrationService {
     await this.record(EXAM_RESOURCE, created.id, 'CREATE', editor, {
       after: examSnapshot(created),
     });
+    // BI-231 (D-179). The service born with the exam is billing's row, and
+    // who classified it —category, tax rate, first price— must be readable
+    // in billing's own trail.
+    if (billing.kind === 'NEW') {
+      await this.record(
+        SERVICE_RESOURCE,
+        created.billableService.id,
+        'CREATE',
+        editor,
+        {
+          after: {
+            code: created.billableService.code,
+            name: created.billableService.name,
+            categoryId: billing.categoryId,
+            taxRateId: billing.taxRateId,
+            tariffCode: created.tariffCode,
+            selfPayAmount: billing.selfPayAmount,
+          },
+        },
+      );
+    }
     return created;
   }
 

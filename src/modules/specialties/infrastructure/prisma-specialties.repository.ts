@@ -207,23 +207,7 @@ export class PrismaSpecialtiesRepository implements SpecialtiesRepository {
           },
           select: { id: true, specialty: { select: { code: true, name: true } } }, // prettier-ignore
         });
-        const defaults = await consultationDefaults(tx, input.today);
-        if (defaults === null) throw new ConsultationBillingUnavailableError();
-
-        const billableServiceId = await createCatalogueEntry(tx, {
-          code: await freeServiceCode(tx, type.specialty.code, input.name),
-          name: consultationServiceName(type.specialty.name, input.name),
-          categoryId: defaults.categoryId,
-          taxRateId: defaults.taxRateId,
-          tariffCode: null,
-          selfPay:
-            input.price === null
-              ? null
-              : { amount: input.price, validFrom: input.today },
-        });
-        await tx.serviceTypeBillableService.create({
-          data: { serviceTypeId: type.id, billableServiceId, position: 0 },
-        });
+        await bornWithService(tx, type.id, type.specialty, input.name, input.price, input.today); // prettier-ignore
         return tx.serviceType.findUniqueOrThrow({
           where: { id: type.id },
           select: SERVICE_TYPE_SELECT,
@@ -243,14 +227,24 @@ export class PrismaSpecialtiesRepository implements SpecialtiesRepository {
   async updateServiceType(
     id: string,
     patch: { name?: string; durationMinutes?: number; active?: boolean },
+    today: ClinicalDate,
   ): Promise<ServiceTypeView | null> {
     try {
       const row = await this.prisma.$transaction(async (tx) => {
         const updated = await tx.serviceType.update({
           where: { id },
           data: patch,
-          select: { ...SERVICE_TYPE_SELECT, specialty: { select: { name: true } } }, // prettier-ignore
+          select: { ...SERVICE_TYPE_SELECT, specialty: { select: { code: true, name: true } } }, // prettier-ignore
         });
+        if (updated.billableServices.length === 0) {
+          // SP-030. A type of before D-179: it gets its service now, so caja
+          // can propose it and its price can be set.
+          await bornWithService(tx, updated.id, updated.specialty, updated.name, null, today); // prettier-ignore
+          return tx.serviceType.findUniqueOrThrow({
+            where: { id },
+            select: SERVICE_TYPE_SELECT,
+          });
+        }
         // SP-030. Its own service is named after it.
         if (patch.name !== undefined) {
           await renameOwnService(tx, updated, updated.specialty.name);
@@ -365,6 +359,30 @@ async function consultationDefaults(
     }),
   ]);
   return category && rate ? { categoryId: category.id, taxRateId: rate.id } : null; // prettier-ignore
+}
+
+/** SP-030. The type's own service, at position 0, with its first price. */
+async function bornWithService(
+  tx: Prisma.TransactionClient,
+  serviceTypeId: string,
+  specialty: { code: string; name: string },
+  typeName: string,
+  price: string | null,
+  today: ClinicalDate,
+): Promise<void> {
+  const defaults = await consultationDefaults(tx, today);
+  if (defaults === null) throw new ConsultationBillingUnavailableError();
+  const billableServiceId = await createCatalogueEntry(tx, {
+    code: await freeServiceCode(tx, specialty.code, typeName),
+    name: consultationServiceName(specialty.name, typeName),
+    categoryId: defaults.categoryId,
+    taxRateId: defaults.taxRateId,
+    tariffCode: null,
+    selfPay: price === null ? null : { amount: price, validFrom: today },
+  });
+  await tx.serviceTypeBillableService.create({
+    data: { serviceTypeId, billableServiceId, position: 0 },
+  });
 }
 
 /** SP-030. The first free candidate of `consultationServiceCode`. */

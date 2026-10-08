@@ -2301,22 +2301,25 @@ en la pestaña de cobro, y nada obligaba a que coincidieran._
   sistema DEBERÁ crear en la misma transacción su prestación de cobro —con el
   código y el nombre del examen, su código del tarifario, la categoría y el
   IVA indicados y, si se indica, su precio en la lista particular vigente
-  desde el día de hoy en Ecuador— o, si se indica una prestación existente,
-  atarlo a ella. SI la categoría no existe o está desactivada, ENTONCES DEBERÁ
+  desde el día de hoy en Ecuador— y DEBERÁ dejar en la bitácora de facturación
+  (`billable_service`) quién la creó, con qué categoría, IVA y precio; o, si se
+  indica una prestación existente, atarlo a ella **sin reescribirla**: el
+  examen toma su nombre y su código del tarifario. SI la categoría no existe o está desactivada, ENTONCES DEBERÁ
   rechazarlo con `EXAM_SERVICE_CATEGORY_NOT_FOUND`; SI el IVA no existe, con
   `EXAM_TAX_RATE_NOT_FOUND`; SI la clase de la categoría, o la de la
   prestación existente, no es el tipo del examen, con
   `EXAM_SERVICE_KIND_MISMATCH`; SI la prestación existente no existe o está
   desactivada, con `EXAM_SERVICE_NOT_FOUND`; SI ya cobra otro examen, con
   `EXAM_SERVICE_TAKEN`; SI ya hay una prestación con ese código, con
-  `BILLABLE_SERVICE_CODE_DUPLICATE`; y SI trae precio y quien lo da de alta
-  no tiene `billing:price-manage` en toda la clínica, con `SITE_SCOPE_DENIED`
-  sin crear nada.
-  > El precio mueve dinero y es un permiso aparte (D-049): con
-  > `catalog:manage` solo, el examen nace con su prestación y sin precio, y
-  > caja ve «No hay precio vigente» hasta que alguien con el permiso lo fije
-  > en Prestaciones y precios. El IVA elegido queda **sin revisar**
-  > (D-A-006, BI-024), como el que trae la semilla.
+  `BILLABLE_SERVICE_CODE_DUPLICATE`; y SI la prestación es nueva y quien lo
+  da de alta no tiene `billing:price-manage` en toda la clínica, con
+  `SITE_SCOPE_DENIED` sin crear nada.
+  > Clasificar una prestación —su categoría, su IVA (BI-005) y su precio— es
+  > de facturación (D-049), como en Prestaciones y precios: con
+  > `catalog:manage` solo, el examen se ata a una prestación que ya exista.
+  > El IVA elegido queda **sin revisar** (D-A-006, BI-024), como el de la
+  > semilla. *(Revisión clínica de la rama: la primera versión dejaba elegir
+  > el IVA sin el permiso y reescribía el nombre de la prestación existente.)*
 - **ORD-163** — El nombre y el código del tarifario de un examen DEBERÁN
   guardarse sólo en su prestación: el sistema DEBERÁ servirlos desde ella, y
   CUANDO se corrijan desde el examen DEBERÁ escribirlos en ella en la misma

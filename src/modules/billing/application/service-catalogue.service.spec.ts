@@ -9,6 +9,7 @@ import {
   TaxRateNotFoundError,
   TaxRateRequiredError,
   TaxReviewRateChangedError,
+  ServiceNamedElsewhereError,
 } from '../domain/billing.errors';
 import type {
   BillableServiceView,
@@ -508,8 +509,40 @@ describe('BI-185, BI-187 la categoría es un catálogo y su clase manda', () => 
   });
 });
 
+describe('ORD-163 SP-030 lo que nace con un examen o un tipo se corrige allí', () => {
+  it('ORD-163 SP-030 renombrar o cambiar el tarifario de la prestación de un tipo de atención se rechaza; su IVA, no', async () => {
+    const { service: catalogue } = build({
+      findBillableService: vi.fn().mockResolvedValue({
+        ...service,
+        serviceTypes: [{ id: 'type-1', name: 'Control', specialtyName: 'Dermatología' }], // prettier-ignore
+      }),
+    });
+
+    await expect(
+      catalogue.updateService('service-1', { name: 'Otra' }, requester),
+    ).rejects.toBeInstanceOf(ServiceNamedElsewhereError);
+    await expect(
+      catalogue.updateService('service-1', { tariffCode: '99' }, requester),
+    ).rejects.toBeInstanceOf(ServiceNamedElsewhereError);
+    // Control positivo: lo que es de facturación se sigue corrigiendo aquí.
+    await expect(
+      catalogue.updateService('service-1', { active: false }, requester),
+    ).resolves.toBeDefined();
+  });
+
+  it('ORD-163 la prestación de un examen no se renombra desde aquí', async () => {
+    const { service: catalogue } = build({
+      listExamsOfService: vi.fn().mockResolvedValue([{ id: 'e-1', code: 'EX-1', name: 'X', category: 'LABORATORY', active: true }]), // prettier-ignore
+    });
+
+    await expect(
+      catalogue.updateService('service-1', { name: 'Otra' }, requester),
+    ).rejects.toBeInstanceOf(ServiceNamedElsewhereError);
+  });
+});
+
 describe('BI-187 corregir siempre es posible', () => {
-  it('BI-187 una prestación que ya está en desajuste se puede renombrar o desactivar', async () => {
+  it('BI-187 una prestación que ya está en desajuste se puede desactivar', async () => {
     // A migrated clinic: «Consulta externa» became OTHER with its consultation
     // still tied to a specialty. Renaming or deactivating must not be refused.
     const { service: catalogue } = build({
@@ -523,7 +556,7 @@ describe('BI-187 corregir siempre es posible', () => {
     });
 
     await expect(
-      catalogue.updateService('service-1', { name: 'Otra', active: false }, requester), // prettier-ignore
+      catalogue.updateService('service-1', { active: false }, requester), // prettier-ignore
     ).resolves.toBeDefined();
   });
 

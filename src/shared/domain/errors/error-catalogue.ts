@@ -535,6 +535,9 @@ export const DOMAIN_ERROR_CODES = [
   'SERVICE_CATEGORY_INACTIVE',
   'SERVICE_CATEGORY_NOT_FOUND',
   'SERVICE_KIND_MISMATCH',
+  // D-179. El nombre y el tarifario de la prestación de un examen o de un
+  // tipo de atención se corrigen allí (409).
+  'SERVICE_NAMED_ELSEWHERE',
   'TAX_RATE_IN_USE',
   'TAX_RATE_NOT_FOUND',
   'TAX_RATE_REQUIRED',
