@@ -496,7 +496,7 @@ describe('BI-158 qué prestación es «la consulta» es un dato, no una regla', 
       }),
     ).rejects.toThrow(
       // Prisma 7 names the fields, not the index; `position` is quoted as a keyword.
-      /service_type_billable_service_one_per_position|\(`service_type_id`, `"position"`\)/,
+      /service_type_billable_service_one_per_position|Unique constraint failed on the fields: \(`service_type_id`, `"position"`\)/,
     );
     // Control positivo: en la segunda posición, sí (consulta + procedimiento).
     await expect(
