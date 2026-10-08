@@ -207,14 +207,46 @@ describe('EN-133 el historial de estados lo escribe la base', () => {
     ]);
   });
 
-  it('EN-133 sólo la apertura no tiene estado de origen', async () => {
+  it('EN-133 una fila escrita a mano no entra, aunque esté bien formada; la de un cambio de estado real sí', async () => {
     const prisma = db();
     const { encounter } = await anAttention(prisma);
+    const someone = await createUser(prisma);
+
+    // «Dada de alta por alguien» sobre una atención que sigue abierta.
+    await expect(
+      prisma.encounterStatusHistory.create({
+        data: {
+          encounterId: encounter.id,
+          fromStatus: 'OPEN',
+          toStatus: 'DISCHARGED',
+          fact: 'NOTE_SIGNED',
+          changedById: someone.id,
+          changedAt: new Date(),
+        },
+      }),
+    ).rejects.toThrow(/encounter_status_history_written_by_trigger/);
+    // Tampoco una que diga el estado que sí tiene.
     await expect(
       prisma.$executeRaw`INSERT INTO encounter_status_history
         (encounter_id, from_status, to_status, fact, changed_at)
-        VALUES (${encounter.id}::uuid, NULL, 'DISCHARGED', 'NOTE_SIGNED', ${encounter.createdAt})`,
-    ).rejects.toThrow(/encounter_status_history_origin/);
+        VALUES (${encounter.id}::uuid, 'OPEN', 'OPEN', 'RESUMED', ${new Date()})`,
+    ).rejects.toThrow(/encounter_status_history_written_by_trigger/);
+
+    // Control positivo: el cambio de estado real escribe su fila.
+    const at = new Date(encounter.startedAt.getTime() + MINUTE);
+    await prisma.encounter.update({
+      where: { id: encounter.id },
+      data: {
+        status: 'ENTERED_IN_ERROR',
+        endedAt: at,
+        enteredInErrorById: someone.id,
+        enteredInErrorAt: at,
+      },
+    });
+    expect((await trailOf(prisma, encounter.id)).map((r) => r.fact)).toEqual([
+      'OPENED',
+      'ANNULLED',
+    ]);
   });
 });
 

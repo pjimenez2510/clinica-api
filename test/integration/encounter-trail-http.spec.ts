@@ -66,6 +66,7 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
   let doctorPractitionerId: string;
   let receptionToken: string;
   let adminToken: string;
+  let secondDoctorToken: string;
 
   beforeEach(async () => {
     enableBigIntSerialisation();
@@ -104,15 +105,14 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
     otherSiteId = (await createSite(prisma, 'Sede Sur')).id;
     patientId = (await createPatient(prisma)).id;
 
-    const doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065');
+    // UN NOMBRE POR CUENTA: con el mismo, una fila atribuida a otra persona
+    // pasaría en verde.
+    const doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065', true, ['Ana', 'Villacís']); // prettier-ignore
     doctorToken = doctor.token;
     doctorPractitionerId = doctor.practitionerId as string;
-    receptionToken = (
-      await signIn('RECEPCION', 'recepcion@clinica.ec', '0926687856', false)
-    ).token;
-    adminToken = (
-      await signIn('ADMIN', 'admin@clinica.ec', '1104637283', false)
-    ).token;
+    secondDoctorToken = (await signIn('MEDICO', 'medico2@clinica.ec', '0602910945', true, ['Jorge', 'Andrade'])).token; // prettier-ignore
+    receptionToken = (await signIn('RECEPCION', 'recepcion@clinica.ec', '0926687856', false, ['Rosa', 'Quishpe'])).token; // prettier-ignore
+    adminToken = (await signIn('ADMIN', 'admin@clinica.ec', '1104637283', false, ['Luis', 'Mera'])).token; // prettier-ignore
   });
 
   afterAll(async () => {
@@ -125,12 +125,13 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
     email: string,
     cedula: string,
     withPractitioner = true,
+    [firstName, lastName]: [string, string] = ['Ana', 'Villacís'],
   ): Promise<{ token: string; practitionerId?: string }> {
     const user = await prisma.user.create({
       data: {
         email,
-        firstName: 'Ana',
-        lastName: 'Villacís',
+        firstName,
+        lastName,
         cedula,
         passwordHash: await argon2.hash(PASSWORD, {
           type: argon2.argon2id,
@@ -231,17 +232,19 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
         from: null,
         to: 'OPEN',
         fact: 'OPENED',
-        byName: 'Ana Villacís',
+        byName: 'Rosa Quishpe',
       });
       // El instante de la apertura, no el de la consulta (EN-034): ése es el
       // dato que el médico teclea, éste el que el sistema registra.
       expect(Date.parse(first!.at)).toBeGreaterThanOrEqual(before - 1000);
     });
 
-    it('EN-133 firmar la 002 deja «nota firmada» con su firmante, y cerrar la cuenta «cuenta cerrada»', async () => {
-      const { id } = await openEncounter();
+    it('EN-133 abre recepción, firma la médica y cierra un sustituto: cada fila nombra a quien lo hizo', async () => {
+      const { id } = await openEncounter(receptionToken);
       await signTheNote(id);
-      await post(`/encounters/${id}/close`, doctorToken, {}).expect(200);
+      await post(`/encounters/${id}/close`, secondDoctorToken, {
+        substituteReason: 'La médica tratante terminó su turno',
+      }).expect(200);
 
       const trail = await trailOf(id);
       expect(
@@ -251,9 +254,11 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
         ['OPEN', 'DISCHARGED', 'NOTE_SIGNED'],
         ['DISCHARGED', 'COMPLETED', 'ACCOUNT_CLOSED'],
       ]);
-      expect(trail.every((change) => change.byName === 'Ana Villacís')).toBe(
-        true,
-      );
+      expect(trail.map((change) => change.byName)).toEqual([
+        'Rosa Quishpe',
+        'Ana Villacís',
+        'Jorge Andrade',
+      ]);
       // En orden: cada cambio no antes que el anterior.
       const instants = trail.map((change) => Date.parse(change.at));
       expect([...instants].sort((a, b) => a - b)).toEqual(instants);
@@ -278,6 +283,7 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
         from: 'OPEN',
         to: 'ENTERED_IN_ERROR',
         fact: 'ANNULLED',
+        byName: 'Ana Villacís',
       });
     });
 
@@ -312,6 +318,26 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
       expect(stored.startedAt.toISOString()).toBe(startedAt);
       // Y la fila se escribió ahora: son dos instantes distintos.
       expect(stored.createdAt.getTime() - stored.startedAt.getTime()).toBeGreaterThan(9 * 60 * MINUTE); // prettier-ignore
+    });
+
+    it('EN-034 EN-008 la edad congelada es la del día de la consulta, no la del día en que se registra', async () => {
+      // Cumple treinta años HOY en Guayaquil; la consulta fue ayer.
+      const today = clinicalDateOf(new Date());
+      const [year, month, day] = today.split('-');
+      const born = await createPatient(prisma, {
+        birthDate: new Date(`${Number(year) - 30}-${month}-${day}T00:00:00Z`),
+      });
+      const opened = await openEncounter(doctorToken, {
+        patientId: born.id,
+        startedAt: minutesAgo(26 * 60),
+      });
+      expect(opened.ageYears).toBe(29);
+      // Control positivo: la de hoy ya lleva los treinta.
+      const now = await openEncounter(doctorToken, {
+        patientId: born.id,
+        startedAt: minutesAgo(1),
+      });
+      expect(now.ageYears).toBe(30);
     });
   });
 
@@ -427,9 +453,15 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
       const patient = await get(`/patients/${opened.patientId as string}`, doctorToken).expect(200); // prettier-ignore
       const body = patient.body as {
         mrn: string;
+        primaryIdentifier: { type: string; value: string } | null;
         identifiers: { type: string; value: string }[];
       };
       expect(body.mrn).toMatch(/^HC/);
+      // Lo que la cabecera de la atención pinta al lado de la HC.
+      expect(body.primaryIdentifier).toMatchObject({
+        type: 'CEDULA',
+        value: '1712345675',
+      });
       expect(body.identifiers).toContainEqual(
         expect.objectContaining({ type: 'CEDULA', value: '1712345675' }),
       );

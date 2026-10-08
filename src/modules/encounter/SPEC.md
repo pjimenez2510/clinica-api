@@ -2674,9 +2674,16 @@ hace explícito, y la §12 ata cada transición a un hecho documentado._
   > cada transición tiene exactamente uno. `UPDATE`, `DELETE` y `TRUNCATE`
   > se rechazan, como en `agenda_status_history`.
   >
-  > **Las atenciones anteriores a la tabla no tienen historial**, y no se
-  > reconstruye: lo que el alta dejó escrito lo sobrescribe el cierre de la
-  > cuenta, así que reconstruir inventaría el quién de una de las dos.
+  > **Las atenciones anteriores a la tabla no tienen historial**, y la rama
+  > no lo reconstruye: es D-177.4. Se podría casi entero con datos que no
+  > cambian —el alta sale de la 002 firmada (`signed_by_id`, `signed_at`), el
+  > cierre de `closed_by_id`, interrumpir y anular de sus constancias—; lo único
+  > que no se sabe es quién la abrió. (Corregido en la revisión: este párrafo
+  > decía que el cierre sobrescribe lo que dejó el alta, y no es así.)
+  >
+  > **Y sólo lo escribe su disparador:** `trg_encounter_status_history_insert_guard`
+  > rechaza un `INSERT` directo aunque esté bien formado, y una fila que no diga
+  > el estado que la atención tiene.
   >
   > Es además lo que hace **verificable** la regla de la §12: si el hecho
   > disparador se guarda con cada cambio, «el estado no se teclea» deja de ser una
