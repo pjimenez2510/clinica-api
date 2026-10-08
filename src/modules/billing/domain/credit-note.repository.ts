@@ -40,6 +40,8 @@ export interface CreditNoteView {
   siteId: string;
   emissionPointId: string;
   sequential: string;
+  /** D-185.1, BI-235. The printed number, `001-002-000000004`. */
+  documentNumber: string;
   accessKey: string | null;
   reasonCode: CreditNoteReasonCode;
   reason: string;
@@ -50,6 +52,8 @@ export interface CreditNoteView {
   lines: CreditNoteLineView[];
   /** The corrected invoice's series, for the list (BI-218). */
   invoiceSequential: string;
+  /** D-185.1, BI-235. The corrected invoice's printed number. */
+  invoiceDocumentNumber: string;
 }
 
 export interface CreditNoteIssuance {

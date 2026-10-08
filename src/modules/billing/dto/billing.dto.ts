@@ -812,6 +812,8 @@ const invoiceResponseSchema = z.object({
   siteId: z.uuid(),
   emissionPointId: z.uuid(),
   sequential: z.string(),
+  /** D-185.1, BI-235. The printed number, `001-002-000000123`. */
+  documentNumber: z.string(),
   accessKey: z.string().nullable(),
   buyerIdentificationType: z.enum(BUYER_IDENTIFICATION_TYPES),
   buyerIdentification: z.string(),

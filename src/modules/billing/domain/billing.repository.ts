@@ -521,6 +521,8 @@ export interface InvoiceView {
   siteId: string;
   emissionPointId: string;
   sequential: string;
+  /** D-185.1, BI-235. The printed number, `001-002-000000123` (SRI-019). */
+  documentNumber: string;
   accessKey: string | null;
   receiver: InvoiceReceiver;
   totals: DocumentTotals;

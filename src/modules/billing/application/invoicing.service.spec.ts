@@ -61,6 +61,7 @@ const invoice: InvoiceView = {
   siteId: SITE,
   emissionPointId: EMISSION_POINT,
   sequential: '000000001',
+  documentNumber: '001-001-000000001',
   accessKey: null,
   receiver: {
     buyerIdentificationType: '05',

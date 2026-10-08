@@ -4,6 +4,7 @@ import type { IssuedDocumentFilter } from '../domain/document-search';
 import { issuedDocumentWhere } from './document-search.where';
 
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
+import { invoiceDocumentNumber } from '../../../shared/billing/document-number';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 
 import {
@@ -33,9 +34,17 @@ import { Money, Percentage, Quantity } from '../domain/money';
 
 import { databaseMessageOf } from './prisma-billing-account.repository';
 
+/** D-185.1, BI-235. The site's and the emission point's SRI codes. */
+const NUMBER_PARTS = {
+  select: { code: true, site: { select: { sriEstablishmentCode: true } } },
+} as const;
+
 const CREDIT_NOTE_INCLUDE = {
   lines: { orderBy: { createdAt: 'asc' } },
-  invoice: { select: { sequential: true } },
+  emissionPoint: NUMBER_PARTS,
+  invoice: {
+    select: { sequential: true, accessKey: true, emissionPoint: NUMBER_PARTS },
+  },
 } satisfies Prisma.CreditNoteInclude;
 
 type CreditNoteRow = Prisma.CreditNoteGetPayload<{
@@ -392,6 +401,12 @@ function toCreditNoteView(row: CreditNoteRow): CreditNoteView {
     siteId: row.siteId,
     emissionPointId: row.emissionPointId,
     sequential: row.sequential,
+    documentNumber: invoiceDocumentNumber({
+      accessKey: row.accessKey,
+      establishmentCode: row.emissionPoint.site.sriEstablishmentCode,
+      emissionPointCode: row.emissionPoint.code,
+      sequential: row.sequential,
+    }),
     accessKey: row.accessKey,
     reasonCode: row.reasonCode as CreditNoteReasonCode,
     reason: row.reason,
@@ -414,5 +429,11 @@ function toCreditNoteView(row: CreditNoteRow): CreditNoteView {
     issuedAt: row.issuedAt ?? row.createdAt,
     lines,
     invoiceSequential: row.invoice.sequential,
+    invoiceDocumentNumber: invoiceDocumentNumber({
+      accessKey: row.invoice.accessKey,
+      establishmentCode: row.invoice.emissionPoint.site.sriEstablishmentCode,
+      emissionPointCode: row.invoice.emissionPoint.code,
+      sequential: row.invoice.sequential,
+    }),
   };
 }

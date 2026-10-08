@@ -431,7 +431,7 @@ devuelva otra factura, editar su receptor y verla autorizada con la misma
 clave. Y contra PostgreSQL: que una nota de crédito no cambia, que una línea no
 se acredita dos veces y que una factura autorizada no cambia de receptor.
 
-**Cubre:** BI-091, BI-094, BI-095, BI-096, BI-097, BI-208 a BI-218, BI-234.
+**Cubre:** BI-091, BI-094, BI-095, BI-096, BI-097, BI-208 a BI-218, BI-234, BI-235.
 
 **Solo servidor:** BI-095, BI-211, BI-212, BI-215, BI-217 (garantías de la base
 y una versión que ninguna pantalla enseña todavía).
@@ -2170,6 +2170,14 @@ dos registros distintos.**
   crédito, el sistema DEBERÁ admitir los mismos filtros de BI-233 sobre la
   nota (su número, su comprador, su fecha de emisión), con la paginación de
   BI-218.
+- **BI-235** — Toda factura y toda nota de crédito que devuelva la API DEBERÁN
+  llevar su número impreso completo (`001-002-000000123`) —el de su clave de
+  acceso cuando la tiene, el de la sede y el punto de emisión cuando no, y
+  `???` en lugar del código de una sede que no lo tiene (SRI-008)—, y la nota
+  de crédito además el de la factura que corrige; la pantalla DEBERÁ mostrar
+  ese número en Facturas, en la cuenta y en Notas de crédito.
+  > D-185.1 (aceptada por el autor, 08-10-2026): la misma factura se llamaba
+  > «000000001» en Facturas y «001-001-000000001» en Comprobantes SRI.
 
 ---
 

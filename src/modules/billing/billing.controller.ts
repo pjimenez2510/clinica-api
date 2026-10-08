@@ -772,6 +772,7 @@ function toInvoiceResponse(invoice: InvoiceWithVoucher): InvoiceResponse {
     siteId: invoice.siteId,
     emissionPointId: invoice.emissionPointId,
     sequential: invoice.sequential,
+    documentNumber: invoice.documentNumber,
     accessKey: invoice.accessKey,
     buyerIdentificationType: invoice.receiver.buyerIdentificationType,
     buyerIdentification: invoice.receiver.buyerIdentification,

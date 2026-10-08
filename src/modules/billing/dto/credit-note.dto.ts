@@ -55,9 +55,13 @@ const creditNoteResponseSchema = z.object({
   invoiceId: z.uuid(),
   /** The corrected invoice's sequential, for the list (BI-218). */
   invoiceSequential: z.string(),
+  /** D-185.1, BI-235. The corrected invoice's printed number. */
+  invoiceDocumentNumber: z.string(),
   siteId: z.uuid(),
   emissionPointId: z.uuid(),
   sequential: z.string(),
+  /** D-185.1, BI-235. The printed number, `001-002-000000004`. */
+  documentNumber: z.string(),
   accessKey: z.string().nullable(),
   reasonCode: z.enum(CREDIT_NOTE_REASON_CODES),
   /** What `<motivo>` says. */

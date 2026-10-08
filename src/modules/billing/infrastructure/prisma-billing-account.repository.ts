@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import type {
   ChargeItem as ChargeItemRow,
-  Invoice as InvoiceRow,
   PatientAccount as PatientAccountRow,
   Prisma,
 } from '@prisma/client';
 import type { IssuedDocumentFilter } from '../domain/document-search';
 import { issuedDocumentWhere } from './document-search.where';
 
+import { invoiceDocumentNumber } from '../../../shared/billing/document-number';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 
@@ -898,6 +898,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
            WHERE "emission_point_id" = ${issuance.emissionPointId}::uuid`;
 
         const invoice = await tx.invoice.create({
+          include: INVOICE_NUMBER_INCLUDE,
           data: {
             accountId: issuance.accountId,
             siteId: issuance.siteId,
@@ -956,6 +957,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   }): Promise<InvoiceView | null> {
     const row = await this.prisma.invoice.findFirst({
       where: { id: query.invoiceId, siteId: query.siteId },
+      include: INVOICE_NUMBER_INCLUDE,
     });
     return row === null ? null : toInvoiceView(row);
   }
@@ -979,6 +981,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         if (!locked) return null;
         const row = await tx.invoice.update({
           where: { id: correction.invoiceId },
+          include: INVOICE_NUMBER_INCLUDE,
           data: {
             buyerIdentificationType:
               correction.receiver.buyerIdentificationType,
@@ -1014,6 +1017,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     const [rows, total] = await Promise.all([
       this.prisma.invoice.findMany({
         where,
+        include: INVOICE_NUMBER_INCLUDE,
         orderBy: [{ sequential: 'desc' }, { id: 'desc' }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -1259,6 +1263,20 @@ function toChargeView(row: ChargeItemRow): ChargeView {
  * Row to view. The totals are the STORED ones, read back as written at issuance
  * and never recomputed from the charges (BI-086).
  */
+/**
+ * D-185.1, BI-235. What the printed number is made of: the site's SRI code
+ * and the emission point's, read with every invoice.
+ */
+const INVOICE_NUMBER_INCLUDE = {
+  emissionPoint: {
+    select: { code: true, site: { select: { sriEstablishmentCode: true } } },
+  },
+} satisfies Prisma.InvoiceInclude;
+
+type InvoiceRow = Prisma.InvoiceGetPayload<{
+  include: typeof INVOICE_NUMBER_INCLUDE;
+}>;
+
 function toInvoiceView(row: InvoiceRow): InvoiceView {
   const totals: DocumentTotals = {
     subtotalTaxed: Money.parse(row.subtotalTaxed),
@@ -1274,6 +1292,12 @@ function toInvoiceView(row: InvoiceRow): InvoiceView {
     siteId: row.siteId,
     emissionPointId: row.emissionPointId,
     sequential: row.sequential,
+    documentNumber: invoiceDocumentNumber({
+      accessKey: row.accessKey,
+      establishmentCode: row.emissionPoint.site.sriEstablishmentCode,
+      emissionPointCode: row.emissionPoint.code,
+      sequential: row.sequential,
+    }),
     accessKey: row.accessKey,
     receiver: {
       buyerIdentificationType:

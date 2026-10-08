@@ -772,6 +772,35 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
     });
   });
 
+  it('BI-235 la factura y la nota de crédito llevan su número impreso completo, el de la clave cuando la tienen', async () => {
+    const pending = await anInvoice({ authorised: false });
+    const authorised = await anInvoice();
+    const response = await api()
+      .get(`/api/v1/billing/sites/${siteId}/invoices`)
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .expect(200);
+    const numbers = new Map(
+      (
+        response.body as { items: { id: string; documentNumber: string }[] }
+      ).items.map((item) => [item.id, item.documentNumber]),
+    );
+    // SRI-008: a site without its SRI code never gets an invented `001`.
+    expect(numbers.get(pending.invoiceId)).toBe('???-001-000000001');
+    expect(numbers.get(authorised.invoiceId)).toMatch(
+      /^\d{3}-\d{3}-000000002$/,
+    );
+
+    const created = await correct(authorised.invoiceId, {
+      reasonCode: 'RECEIVER_DATA',
+    }).expect(201);
+    expect(
+      (created.body as { creditNote: { invoiceDocumentNumber: string; documentNumber: string } }).creditNote, // prettier-ignore
+    ).toMatchObject({
+      invoiceDocumentNumber: numbers.get(authorised.invoiceId),
+      documentNumber: '???-001-000000001',
+    });
+  });
+
   it('BI-234 las notas de crédito se buscan con los mismos filtros, sobre la nota', async () => {
     const { invoiceId } = await anInvoice();
     const created = await correct(invoiceId, {
