@@ -56,14 +56,14 @@ COMMENT ON TABLE "payment_method" IS
   'pago de la Tabla 24 del SRI con que se declara en la factura.';
 
 -- Lo que la instalación trae: las ocho formas de la Tabla 24 con los mismos
--- nombres y el mismo orden que el selector de caja tenía hasta hoy, todas
+-- formas y el mismo orden que el selector de caja tenía hasta hoy, con nombres cortos, todas
 -- activas. Caja ve exactamente lo que veía; qué se desactiva y qué se añade
 -- lo decide la clínica (D-193.1), no esta migración.
 INSERT INTO "payment_method" ("name", "sri_code", "display_order") VALUES
   ('Efectivo', '01', 1),
   ('Tarjeta de crédito', '19', 2),
   ('Tarjeta de débito', '16', 3),
-  ('Transferencia u otro medio del sistema financiero', '20', 4),
+  ('Transferencia', '20', 4),
   ('Tarjeta prepago', '18', 5),
   ('Dinero electrónico', '17', 6),
   ('Compensación de deudas', '15', 7),
