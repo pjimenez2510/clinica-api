@@ -85,6 +85,13 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
        WHERE d.encounter_id IN (${standingEncountersOf(chartId)})`,
     omittedBecause: null,
   },
+  // EN-244. A corrected procedure: the tariff code, how many times, the note.
+  encounter_procedure: {
+    resourceIdsOf: (chartId) => Prisma.sql`
+      SELECT p.id FROM encounter_procedure p
+       WHERE p.encounter_id IN (${standingEncountersOf(chartId)})`,
+    omittedBecause: null,
+  },
   // Notice → result → report → order → attention. Who was told, and the note
   // about them (often a relative's name or number), are another person's
   // data: they do not leave (D-140.2).

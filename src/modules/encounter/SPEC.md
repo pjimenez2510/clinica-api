@@ -309,13 +309,14 @@ desincronizar del concepto.
 **Cubre:** EN-040 a EN-052, **EN-180 a EN-189** —quitar un diagnóstico con
 rastro, cambiar el principal y las propuestas de §19—, **EN-212** —editarlo en
 el sitio con versión (§21)—, **EN-235** —lo que no puede ser el principal
-(§29, D-147.3)—, **EN-236** —firmar el alta exige el principal (§29)— y **EN-151 a EN-154**, el consentimiento informado:
+(§29, D-147.3)—, **EN-236** —firmar el alta exige el principal (§29)—, **EN-244 a EN-248** —corregir, quitar y restaurar un procedimiento (§30)— y **EN-151 a EN-154**, el consentimiento informado:
 va aquí porque el formulario 024 cuelga del **procedimiento** de riesgo mayor
 (EN-050), no de la atención.
 
 **Solo servidor:** EN-041, EN-042, EN-043. Los tres son disparadores e índices
 parciales: la instantánea que no puede mentir, la vigencia en la fecha y el
-principal único.
+principal único. EN-248, el aviso a `billing` tras corregir un
+procedimiento: caja ve el cargo ya corregido (BI-240 a BI-243).
 
 **Estado (21-08-2026).** Construida la parte que el esquema admite: EN-040 a
 EN-051 y EN-151. Cuatro quedan **bloqueadas por esquema** y ninguna se ha
@@ -4356,6 +4357,94 @@ texto; lo mal escrito se edita en su fila, y la historia la guarda el sistema._
   > sólo con el alta: firmar los borradores de una interrupción (EN-167) no lo
   > exige.
 
+## 30. Corregir y quitar un procedimiento, como un diagnóstico (pedido del autor, 08-10-2026, D-194)
+
+_El autor, 08-10-2026: «por qué no me permite editar ni quitar los
+procedimientos». Hasta aquí `encounter_procedure` sólo se registraba (EN-050):
+un procedimiento mal elegido o con la cantidad equivocada se quedaba en la
+atención —y en lo que caja propone cobrar— para siempre. Mismo patrón que el
+diagnóstico (EN-180, EN-212, EN-213): se edita en su fila con la versión
+anterior guardada, y se quita archivándolo, nunca borrándolo._
+
+- **EN-244** — MIENTRAS la atención admita contenido clínico nuevo (`OPEN` u
+  `ON_HOLD`), CUANDO el médico corrija un procedimiento, el sistema DEBERÁ
+  cambiar en la misma fila lo que se envía —el **concepto del tarifario** (y
+  con él el código y la descripción copiados, EN-050), la **cantidad** y la
+  **nota**— y DEBERÁ guardar la versión anterior entera en `record_version`,
+  con quién la sustituyó y cuándo; y DEBERÁ exponer esas versiones, de la más
+  reciente a la más antigua, a quien puede leer los procedimientos de la
+  atención. Además:
+  - SI la atención no admite contenido clínico nuevo, ENTONCES DEBERÁ
+    rechazarlo con `ENCOUNTER_ALREADY_CLOSED` (D-194.1);
+  - SI el concepto nuevo no es del tarifario, ENTONCES DEBERÁ rechazarlo con
+    `CONCEPT_WRONG_CATALOGUE`, como al registrarlo;
+  - SI el procedimiento no es de esa atención, ENTONCES DEBERÁ rechazarlo con
+    `PROCEDURE_NOT_FOUND`.
+  > **Garantía de la base:** `trg_encounter_procedure_record_version`
+  > (`record_version_archive('edited_by_id', 'edited_at', 'id')`) archiva la
+  > fila anterior en la misma sentencia y rechaza la edición sin sello. El
+  > instante del sello es el reloj de la aplicación, no `now()`. Lo que la
+  > base **no** garantiza: que la atención esté viva (lo dice el servicio bajo
+  > el bloqueo de la atención, como al registrar) ni que el código copiado sea
+  > el del concepto — sigue sin haber `trg_procedure_snapshot` (EN-050).
+  >
+  > **Nada se corrige sin cambiar algo:** una edición que no cambia nada no
+  > deja versión.
+- **EN-245** — MIENTRAS la atención admita contenido clínico nuevo, CUANDO el
+  médico quite un procedimiento con un **motivo**, el sistema DEBERÁ
+  **archivarlo** en `encounter_procedure_retraction` —la fila entera, con quién
+  lo quitó, cuándo y por qué— y retirarlo de la atención, de modo que **deje
+  de contar** en todo lo que lee los procedimientos: la lista, el acto clínico
+  de la atención (`clinicalActExists`) y lo que caja propone cobrar (BI-151).
+  SI falta el motivo, ENTONCES DEBERÁ rechazarlo con
+  `PROCEDURE_RETRACTION_REASON_REQUIRED`; y la atención DEBERÁ servir los
+  quitados aparte, con quién, cuándo y por qué.
+  > **Siempre con rastro, nunca un borrado**, por la razón de EN-180: archivar
+  > y retirar, y no una columna «anulado» que cada lector tuviera que filtrar.
+  > El motivo se elige en la pantalla de una lista —«Registrado por error»,
+  > «No se realizó», «Otro»— con el primero propuesto (D-194.2): un
+  > procedimiento sostiene un cargo, y caja ve por qué desapareció su línea.
+  >
+  > **Garantía de la base:** `trg_encounter_procedure_delete_archived` rechaza
+  > el `DELETE` de un procedimiento que no esté ya en el archivo;
+  > `trg_encounter_procedure_retraction_admits` exige que el archivo sea la
+  > fila viva tal cual (`encounter_procedure_retraction_matches`) y que nazca
+  > sin recuperar; `encounter_procedure_retraction_reason_not_blank`; y el
+  > archivo no admite `DELETE` ni `TRUNCATE`, ni la tabla viva `TRUNCATE`.
+- **EN-246** — MIENTRAS la atención admita contenido clínico nuevo, CUANDO el
+  médico pida **restaurar** un procedimiento quitado, el sistema DEBERÁ
+  devolverlo tal como era —concepto, código, cantidad, instante en que se
+  hizo, nota— como fila nueva, y DEBERÁ dejar el archivo marcado, una sola
+  vez, con quién lo restauró, cuándo y como qué fila, y fuera de la lista de
+  quitados. SI ya se restauró, ENTONCES DEBERÁ rechazarlo con
+  `PROCEDURE_NOT_RESTORABLE`.
+  > **Fila nueva, no la misma** (EN-213): el identificador del archivo es el
+  > de la fila quitada, y un segundo «quitar» del restaurado lo necesitaría.
+  > Restaurar es registrar (EN-009): por eso sólo en la atención viva.
+  >
+  > **Garantía de la base:** `encounter_procedure_retraction_guard` admite
+  > como única escritura del archivo marcarlo restaurado una vez, hacia un
+  > procedimiento vivo de la misma atención y el mismo concepto
+  > (`encounter_procedure_retraction_restored_as_itself`).
+- **EN-247** — MIENTRAS la atención tenga el alta, esté interrumpida o anulada,
+  la pantalla NO DEBERÁ ofrecer corregir, quitar ni restaurar un procedimiento,
+  y DEBERÁ decirlo en una línea bajo la lista; y MIENTRAS admita contenido
+  nuevo, cada fila DEBERÁ ofrecer «Editar» (en la fila, EN-227) y «Quitar»
+  (con el motivo, en una confirmación), y cada quitado «Restaurar».
+  > **D-194.1, construido así mientras decide:** tras el alta los
+  > procedimientos no se corrigen, como no se registran (EN-009). La
+  > recomendación es la de los diagnósticos (EN-212, D-117.13): corregir tras
+  > el alta con `record:sign` y registro ACESS vigente, porque el RDACAA lee
+  > las columnas 95 a 100 de la atención y no la nota.
+- **EN-248** — CUANDO se corrija, se quite o se restaure un procedimiento, el
+  sistema DEBERÁ avisar a `billing`, después de su propia transacción, para que
+  el cargo que nació de él siga a la atención (BI-240 a BI-243), y el aviso
+  NO DEBERÁ fallar nunca hacia la atención.
+  > `encounter` no importa `billing`: avisa por el puerto
+  > `PROCEDURE_CHARGE_SYNC` de `shared/billing`, como la consulta
+  > (`CONSULTATION_REPRICER`, BI-203). Lo clínico ya está guardado; lo que
+  > caja no pueda seguir solo lo ve en la cuenta.
+
 ---
 
 ## Códigos de error nuevos
@@ -4383,6 +4472,9 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `NOTE_NOT_AMENDABLE` | 409 | Enmendar un borrador, una nota ya sustituida o una retractada | EN-025, EN-026 |
 | `PRACTITIONER_NOT_LICENSED` | 403 | Firmar con registro ACESS vencido. **Ya existe** en `staff` (ST-004); se cita, no se crea | EN-029 |
 | `CONCEPT_WRONG_CATALOGUE` | 422 | El concepto existe y es de otro catálogo —una parroquia del DPA archivada como enfermedad, un diagnóstico registrado como procedimiento, una enfermedad CIE-10 archivada como la sustancia a la que alguien es alérgico—. **Uno solo para los tres**: lo que hay que hacer es idéntico, elegir de la lista correcta, y el mensaje nombra **cuál**. En la alergia el campo señalado es `substanceConceptId` y no `conceptId` | EN-040, EN-050, EN-080 |
+| `PROCEDURE_NOT_FOUND` | 404 | El procedimiento no existe o no es de esa atención | EN-244, EN-245, EN-246 |
+| `PROCEDURE_RETRACTION_REASON_REQUIRED` | 422 | Quitar un procedimiento sin motivo, o con uno en blanco; campo `reason` | EN-245 |
+| `PROCEDURE_NOT_RESTORABLE` | 409 | Restaurar un procedimiento que ya se restauró | EN-246 |
 | `DIAGNOSIS_PRIMARY_TAKEN` | 409 | Segundo diagnóstico principal. Lo arbitra `encounter_diagnosis_one_primary`; el adaptador lee el rango en uso dentro de la misma transacción para que el rechazo sea una frase, así que el código llega por **las dos vías** | EN-043 |
 | `DIAGNOSIS_CONCEPT_NOT_IN_FORCE` | 422 | El código CIE-10 no estaba vigente en la fecha de la atención. **Lo emite el adaptador**, no el mapeo de constraints: `trg_diagnosis_concept_in_force` levanta `integrity_constraint_violation` desde PL/pgSQL, así que el nombre del disparador nunca viaja al cliente | EN-042 |
 | `VITALS_OUT_OF_RANGE` | 422 | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges_*`, una por medida (D-058). **Por campo**, señalando cuál y diciendo el rango | EN-062 |
@@ -4580,7 +4672,11 @@ que es global: una atención ocurre en un sitio.
 | `POST` | `/encounters/:id/diagnoses` | `record:write` *(tras el alta, además `record:sign`)* | EN-040 a EN-049, **EN-215** |
 | `GET` | `/encounters/:id/diagnoses` | `record:read` | EN-043, EN-046, EN-047 |
 | `POST` | `/encounters/:id/procedures` | `record:write` | EN-050, EN-151 |
-| `GET` | `/encounters/:id/procedures` | `record:read` | EN-050 |
+| `GET` | `/encounters/:id/procedures` | `record:read` | EN-050, **EN-245** *(con los quitados aparte)* |
+| `PATCH` | `/encounters/:id/procedures/:procedureId` | `record:write` | **EN-244**, EN-248 |
+| `GET` | `/encounters/:id/procedures/:procedureId/versions` | `record:read` | **EN-244** |
+| `POST` | `/encounters/:id/procedures/:procedureId/retract` | `record:write` | **EN-245**, EN-248 |
+| `POST` | `/encounters/:id/procedures/:procedureId/restore` | `record:write` | **EN-246**, EN-248 |
 | `GET` | `/patients/:id/allergies` | `record:read` | EN-080 a EN-083, **EN-087** |
 | `POST` | `/patients/:id/allergies` | `background:write` | EN-080, EN-086, **EN-164** |
 | `POST` | `/patients/:id/allergies/none-known` | `background:write` | EN-087, **EN-164** |
@@ -4697,6 +4793,7 @@ prueba o el CI falla**.
 | EN-015, EN-068 | Integración contra PostgreSQL real: tras fusionar A→B, la historia leída desde B **incluye las atenciones de A**, y `patient-chart-scope.spec.ts` caza la lectura por `patient_id` desnudo. Un doble no puede demostrarlo: depende de que el enlace se recorra en la base |
 | EN-162 | Integración contra PostgreSQL real: la página y el `total` salen del **mismo predicado** —hay una atención de otra sede que ni cuenta ni aparece—, y tres páginas seguidas no repiten ni pierden ninguna. Contrato HTTP: el defecto es la primera página, `pageSize` por encima del tope es 422, y la página **sigue sin llevar contenido clínico** |
 | EN-020, EN-021 | Contrato HTTP + unitario: el JSON Schema del formulario 002 rechaza una nota sin motivo de consulta, y el código de formulario viaja como dato |
+| EN-244, EN-245, EN-246 | **Integración contra PostgreSQL real**, con control positivo: sin sello no se edita y con sello sí, y la fila anterior está en `record_version`; el `DELETE` sin archivo se rechaza y con archivo pasa; un archivo que no es la fila viva, nacido restaurado o con motivo en blanco no entra; el archivo se marca restaurado una vez, hacia ese procedimiento, y nada más de él cambia ni se borra; y **contar filas**: quitar no borra nada. HTTP: editar, versiones, quitar con y sin motivo, restaurar dos veces, y `ENCOUNTER_ALREADY_CLOSED` tras el alta |
 | EN-237 | **Integración contra PostgreSQL real con la fusión de verdad** (`PatientMergeService`), con control positivo: tras fusionar la ficha de una atención abierta, su apertura, su resumen y la instantánea al firmar leen la alergia, el antecedente y la atención anterior de la superviviente, y `mergedInto` lleva su número; sin fusión no leen nada de la otra ficha y `mergedInto` es `null` |
 | EN-238 | Unitario de la pantalla (la ficha vigente de una atención; el rechazo con la sustancia) y **recorrido F-04** con la fusión hecha por la API a mitad de consulta |
 | EN-016, EN-081 | Contrato HTTP: la respuesta de la cita lleva el booleano y **no** el identificador de la atención; la apertura de atención lleva las alergias activas sin pedirlas aparte |
