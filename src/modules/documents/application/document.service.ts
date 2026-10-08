@@ -224,6 +224,46 @@ export class DocumentService {
   }
 
   /**
+   * EN-243. Form 053 or 007 of a referral or interconsultation: composed now
+   * from its signed note, served, never archived. What leaves is the chart of
+   * an identifiable person, so the access is recorded FIRST and nothing is
+   * served if it cannot be.
+   */
+  async clinicalForm(
+    noteId: string,
+    requester: Requester,
+  ): Promise<RenderedDocument> {
+    const { subject, images, layout } = await this.prepare(
+      { kind: 'CLINICAL_FORM', subjectId: noteId },
+      requester.sites,
+    );
+    if (subject.kind !== 'CLINICAL_FORM') {
+      throw new DocumentSubjectNotFoundError();
+    }
+
+    const content = await this.renderer.render(layout, images, {
+      title: layout.frame.title,
+      author: layout.frame.establishmentName,
+      // EN-027. The instant the note was signed: two downloads of an
+      // immutable note are the same paper, down to its metadata.
+      createdAt: subject.data.signedAt,
+    });
+
+    // REQ-110. Recorded before it is served, and it throws if it cannot be.
+    await this.documents.recordDisclosure({
+      ...disclosureOf(requester, noteId, 'PRINT'),
+      resourceType: 'clinical_note',
+    });
+
+    return {
+      content,
+      mimeType: 'application/pdf',
+      sha256: sha256Of(content),
+      fileName: `formulario-${subject.data.formCode}-${clinicalDateOf(subject.data.signedAt)}.pdf`,
+    };
+  }
+
+  /**
    * DOC-002, DOC-007, DOC-014. Emits the artefact: composes it once and files
    * the bytes.
    *
@@ -576,6 +616,9 @@ function signerOf(subject: DocumentSubject) {
     case 'ENCOUNTER_SUMMARY':
       // DOC-115 (D-139.4). Nobody signs the summary: no seal travels with it.
       return null;
+    case 'CLINICAL_FORM':
+      // EN-243. Whoever issued the 053 or 007 signed it.
+      return subject.data.signer;
     case 'INVOICE_RIDE':
     case 'CREDIT_NOTE_RIDE':
       // A tax document is not signed by a practitioner. Returning `null` rather

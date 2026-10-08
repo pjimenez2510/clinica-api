@@ -18,6 +18,9 @@ import {
   AnthropometryPendingError,
   ScreeningLockedAfterDischargeError,
   ScreeningPendingError,
+  ReferralAlreadyCancelledError,
+  ReferralNotFoundError,
+  ReferralRequiredOnDischargeError,
   AppointmentNotAttendableError,
   BmiIsDerivedError,
   ChartHasAllergiesError,
@@ -686,5 +689,39 @@ describe('EN-166 la atención con actos vivos no se anula', () => {
         message: 'Registre primero la enfermedad o la lesión',
       },
     ]);
+  });
+});
+
+describe('los errores de la referencia (EN-105, EN-107)', () => {
+  it('EN-105 el alta «Referido» sin referencia: 422 sobre la condición de egreso, diciendo dónde emitirla', () => {
+    const error = new ReferralRequiredOnDischargeError();
+
+    expect(error.code).toBe('REFERRAL_REQUIRED_ON_DISCHARGE');
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.userTitle).toBe(
+      'Para dar el alta como «Referido» emita antes la referencia en la pestaña Referencia',
+    );
+    expect(error.fieldErrors).toEqual([
+      {
+        field: 'dischargeCondition',
+        code: 'REFERRAL_REQUIRED_ON_DISCHARGE',
+        message:
+          'Emita la referencia, la derivación o la referencia inversa antes de firmar con «Referido»',
+      },
+    ]);
+  });
+
+  it('EN-107 la referencia de otra atención es 404 y anular lo anulado es 409', () => {
+    const missing = new ReferralNotFoundError();
+    expect(missing.code).toBe('REFERRAL_NOT_FOUND');
+    expect(missing).toBeInstanceOf(NotFoundError);
+    expect(missing.userTitle).toBe(
+      'Esa referencia o interconsulta no existe en esta atención. Actualice la pantalla',
+    );
+
+    const twice = new ReferralAlreadyCancelledError();
+    expect(twice.code).toBe('REFERRAL_ALREADY_CANCELLED');
+    expect(twice).toBeInstanceOf(ConflictError);
+    expect(twice.userTitle).toBe('Ya estaba anulada. Actualice la pantalla');
   });
 });

@@ -51,6 +51,10 @@ import { PrismaClinicalNoteRepository } from './infrastructure/prisma-clinical-n
 import { PrismaEncounterRepository } from './infrastructure/prisma-encounter.repository';
 import { PrismaEncounterExitRepository } from './infrastructure/prisma-encounter-exit.repository';
 import { PrismaPatientAllergyRepository } from './infrastructure/prisma-patient-allergy.repository';
+import { ReferralController } from './referral.controller';
+import { ReferralService } from './application/referral.service';
+import { REFERRAL_REPOSITORY } from './domain/referral.repository';
+import { PrismaReferralRepository } from './infrastructure/prisma-referral.repository';
 import { ViolenceScreeningController } from './violence-screening.controller';
 import { ViolenceScreeningService } from './application/violence-screening.service';
 import { VIOLENCE_SCREENING_REPOSITORY } from './domain/violence-screening.repository';
@@ -99,6 +103,7 @@ import { PrismaViolenceScreeningRepository } from './infrastructure/prisma-viole
     ClinicalCodingController,
     DentalIndexController,
     ViolenceScreeningController,
+    ReferralController,
     PatientAllergyController,
     PatientHistoryController,
     ChartSummaryController,
@@ -111,6 +116,7 @@ import { PrismaViolenceScreeningRepository } from './infrastructure/prisma-viole
     ClinicalCodingService,
     DentalIndexService,
     ViolenceScreeningService,
+    ReferralService,
     PatientAllergyService,
     NoKnownAllergiesService,
     PatientHistoryService,
@@ -139,6 +145,7 @@ import { PrismaViolenceScreeningRepository } from './infrastructure/prisma-viole
       provide: VIOLENCE_SCREENING_REPOSITORY,
       useClass: PrismaViolenceScreeningRepository,
     },
+    { provide: REFERRAL_REPOSITORY, useClass: PrismaReferralRepository },
     {
       provide: PATIENT_ALLERGY_REPOSITORY,
       useClass: PrismaPatientAllergyRepository,

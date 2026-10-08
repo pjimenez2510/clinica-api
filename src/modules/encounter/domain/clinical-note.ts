@@ -71,6 +71,13 @@ export interface ClinicalForm {
    * moment their weight was recorded — before anybody had seen them.
    */
   dischargesTheEncounter: boolean;
+  /**
+   * EN-104. `true` when the note is written BY ITS ACT —the 053 by the
+   * referral, the 007 by the interconsultation—, born signed with what was
+   * issued. The note routes never open, amend or retract one: it is corrected
+   * by annulling its act. Absent on the forms the doctor writes.
+   */
+  writtenByItsAct?: true;
 }
 
 /**
@@ -136,6 +143,26 @@ export const CLINICAL_FORMS: readonly ClinicalForm[] = [
      */
     dischargesTheEncounter: false,
   },
+  {
+    code: '053',
+    version: '1',
+    name: 'Referencia, derivación, contrarreferencia y referencia inversa',
+    /**
+     * EN-104. What the referral prints, in the keys of `referral.ts`. Only
+     * the reason is always there (EN-106); the rest depends on the direction.
+     */
+    mandatorySections: ['motivo'],
+    dischargesTheEncounter: false,
+    writtenByItsAct: true,
+  },
+  {
+    code: '007',
+    version: '1',
+    name: 'Interconsulta',
+    mandatorySections: ['motivo'],
+    dischargesTheEncounter: false,
+    writtenByItsAct: true,
+  },
 ];
 
 /** `002@1` — the key of the registry, and what a refusal names. */
@@ -157,6 +184,26 @@ export function requireForm(code: string, version: string): ClinicalForm {
   if (!form) {
     throw new UnknownClinicalFormError(
       CLINICAL_FORMS.map((known) => keyOf(known.code, known.version)),
+    );
+  }
+  return form;
+}
+
+/**
+ * EN-021, EN-104. A form the NOTE ROUTES may open, amend or retract: the
+ * 053 and the 007 are not among them, and asking for one is the same refusal
+ * as an unknown code, naming the forms the doctor writes.
+ */
+export function requireWrittenForm(
+  code: string,
+  version: string,
+): ClinicalForm {
+  const form = BY_KEY.get(keyOf(code, version));
+  if (!form || form.writtenByItsAct) {
+    throw new UnknownClinicalFormError(
+      CLINICAL_FORMS.filter((known) => !known.writtenByItsAct).map((known) =>
+        keyOf(known.code, known.version),
+      ),
     );
   }
   return form;

@@ -109,7 +109,7 @@ export interface DisclosureRecord {
    * DOC-111. `encounter_summary` when what left is the summary of an
    * attention, whose id is `resourceId`; a document otherwise.
    */
-  resourceType?: 'document' | 'encounter_summary';
+  resourceType?: 'document' | 'encounter_summary' | 'clinical_note';
   ip?: string;
   userAgent?: string;
 }

@@ -11,6 +11,7 @@ import {
   chartScopeRows,
   chartScopeSelect,
 } from '../../../shared/infrastructure/prisma/patient-chart-scope';
+import { actFormSections } from '../../../shared/clinical/act-forms';
 import { FORM_002_BUILT_IN_SECTIONS } from '../../../shared/clinical/form-002';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
@@ -309,6 +310,18 @@ function noteSectionsOf(
     .filter((section) => section.text !== '');
 }
 
+/**
+ * EN-243. The title of the paper: the act it records, as the 053 names it
+ * —«REFERENCIA», «CONTRARREFERENCIA», «DERIVACIÓN», «REFERENCIA INVERSA»—,
+ * and «INTERCONSULTA» for the 007.
+ */
+function clinicalFormTitle(formCode: string, kind: unknown): string {
+  if (formCode === '007') return 'INTERCONSULTA';
+  return typeof kind === 'string' && kind.trim() !== ''
+    ? kind.trim().toLocaleUpperCase('es-EC')
+    : 'REFERENCIA';
+}
+
 /** EN-206, EN-207. What the signature froze of the chart, in plain lines. */
 function backgroundLines(content: Record<string, unknown>): string[] {
   const snapshot = content.backgroundSnapshot;
@@ -370,6 +383,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         return this.findEncounterSummary(query.subjectId, query.sites);
       case 'CREDIT_NOTE_RIDE':
         return this.findCreditNote(query.subjectId, query.sites);
+      case 'CLINICAL_FORM':
+        return this.findClinicalForm(query.subjectId, query.sites);
     }
   }
 
@@ -1247,6 +1262,77 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
   }
 
   // ── credit note (RIDE) ───────────────────────────────────────────────────
+
+  /**
+   * EN-243. The 053 or 007 of a referral or interconsultation, from its
+   * signed note, scoped by the site of its attention. Any other form is not
+   * this class's: `null`, the same answer as one out of scope.
+   */
+  private async findClinicalForm(
+    subjectId: string,
+    sites: SiteScopeFilter,
+  ): Promise<DocumentSubject | null> {
+    const row = await this.prisma.clinicalNote.findFirst({
+      where: {
+        id: subjectId,
+        formCode: { in: ['053', '007'] },
+        status: { in: ['SIGNED', 'ENTERED_IN_ERROR'] },
+        encounter: sites === 'all' ? {} : { siteId: { in: [...sites] } },
+      },
+      select: {
+        id: true,
+        formCode: true,
+        status: true,
+        content: true,
+        signedAt: true,
+        signatureMethod: true,
+        signedBy: { select: PRACTITIONER_SELECT },
+        encounter: {
+          select: {
+            siteId: true,
+            startedAt: true,
+            ageYears: true,
+            ageMonths: true,
+            patient: {
+              select: {
+                ...PATIENT_SELECT,
+                sex: true,
+                mergedInto: { select: { ...PATIENT_SELECT, sex: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const sections = row && actFormSections(row.formCode);
+    if (!row || !sections || !row.signedAt || !row.signedBy) return null;
+
+    const content = isRecord(row.content) ? row.content : {};
+    const chart = chartOfRecord(row.encounter.patient);
+    return {
+      kind: 'CLINICAL_FORM',
+      data: {
+        subjectId: row.id,
+        siteId: row.encounter.siteId,
+        formCode: row.formCode,
+        title: clinicalFormTitle(row.formCode, content.tipo),
+        annulled: row.status === 'ENTERED_IN_ERROR',
+        signedAt: row.signedAt,
+        // EN-156. NULL predates the column: the credential, too.
+        withoutCertificate: row.signatureMethod !== 'CERTIFICATE',
+        encounterStartedAt: row.encounter.startedAt,
+        patient: toPatient(chart, row.encounter.ageYears, row.encounter.ageMonths), // prettier-ignore
+        signer: toPractitioner(row.signedBy),
+        sections: sections
+          .filter((section) => section.key !== 'tipo')
+          .map(({ key, title }) => ({
+            title,
+            text: typeof content[key] === 'string' ? content[key].trim() : '',
+          }))
+          .filter((section) => section.text !== ''),
+      },
+    };
+  }
 
   /**
    * SRI-089. The credit note's RIDE, scoped by ITS site. Everything printed

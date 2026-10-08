@@ -539,3 +539,104 @@ registerConstraintMeanings({
       'Al notificar se copian del formulario el número de serie, las lesiones, si identifica al agresor y el parentesco; sin notificar, ninguno',
   },
 });
+
+/**
+ * encounter H8 (EN-100 to EN-107). The guarantees of
+ * `20261008230100_referral_interconsultation_h8`. The service refuses the
+ * ordinary cases first; these are the sentences for whatever reaches the
+ * table anyway —a race, an import— and for the ones only the database can
+ * judge, like what a counter-referral answers.
+ */
+registerConstraintMeanings({
+  // EN-102. A counter-referral answers a live referral or derivation of the
+  // same patient; and a referral or derivation never answers anything.
+  referral_thread_coherence: {
+    code: 'COUNTER_REFERRAL_WITHOUT_REFERRAL',
+    field: 'respondsToId',
+    message: 'Elija la referencia o derivación de este paciente que la contrarreferencia responde: no puede estar anulada', // prettier-ignore
+  },
+  // EN-102. At most one LIVE answer.
+  referral_one_live_response: {
+    code: 'REFERRAL_ALREADY_ANSWERED',
+    field: 'respondsToId',
+    message: 'Esa referencia ya tiene su contrarreferencia. Anule la anterior si se registró por error', // prettier-ignore
+  },
+  referral_answered_cannot_be_cancelled: {
+    code: 'REFERRAL_ALREADY_ANSWERED',
+    field: 'referralId',
+    message: 'Esta referencia ya tiene su contrarreferencia: anule primero la contrarreferencia', // prettier-ignore
+  },
+  // EN-105. The deferred trigger at commit, and the annulment of the last
+  // referral of a «referred» discharge.
+  encounter_referred_needs_referral: {
+    code: 'REFERRAL_REQUIRED_ON_DISCHARGE',
+    field: 'dischargeCondition',
+    message: 'La atención sale como «Referido»: necesita una referencia, derivación o referencia inversa emitida', // prettier-ignore
+  },
+  // EN-101.
+  referral_destination_stated: {
+    code: 'VALIDATION_FAILED',
+    field: 'destination',
+    message: 'Indique el UNICÓDIGO y el nombre del establecimiento de destino',
+  },
+  referral_destination_code_format: {
+    code: 'VALIDATION_FAILED',
+    field: 'destination.mspUnicode',
+    message: 'El UNICÓDIGO del establecimiento lleva sólo números',
+  },
+  // EN-106.
+  referral_reason_written: {
+    code: 'VALIDATION_FAILED',
+    field: 'reason',
+    message: 'Escriba el motivo',
+  },
+  interconsultation_reason_written: {
+    code: 'VALIDATION_FAILED',
+    field: 'reason',
+    message: 'Escriba el motivo',
+  },
+  // EN-107.
+  referral_cancellation_complete: {
+    code: 'VALIDATION_FAILED',
+    field: 'reason',
+    message: 'Una anulación dice quién la hizo, cuándo y por qué: escriba el motivo', // prettier-ignore
+  },
+  interconsultation_cancellation_complete: {
+    code: 'VALIDATION_FAILED',
+    field: 'reason',
+    message: 'Una anulación dice quién la hizo, cuándo y por qué: escriba el motivo', // prettier-ignore
+  },
+  // EN-103.
+  interconsultation_role_shape: {
+    code: 'VALIDATION_FAILED',
+    field: 'role',
+    message: 'La interconsulta solicitada dice quién la pide; la recibida, quién la pidió y su respuesta', // prettier-ignore
+  },
+  referral_patient_matches_encounter: {
+    code: 'VALIDATION_FAILED',
+    field: 'patientId',
+    message: 'La referencia es del paciente de su atención',
+  },
+  referral_born_issued: {
+    code: 'VALIDATION_FAILED',
+    field: 'status',
+    message: 'Una referencia nace emitida',
+  },
+  // EN-104, EN-107. The 053 or 007 leaves only with its act.
+  clinical_note_act_form_follows_its_act: {
+    code: 'VALIDATION_FAILED',
+    field: 'noteId',
+    message: 'Este formulario se retira anulando su referencia o interconsulta',
+  },
+  // EN-130. New content only in a live attention.
+  referral_needs_live_encounter: {
+    code: 'ENCOUNTER_ALREADY_CLOSED',
+    field: 'encounterId',
+    message: 'La atención ya no admite contenido nuevo',
+  },
+  interconsultation_needs_live_encounter: {
+    code: 'ENCOUNTER_ALREADY_CLOSED',
+    field: 'encounterId',
+    message: 'La atención ya no admite contenido nuevo',
+  },
+});

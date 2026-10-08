@@ -18,6 +18,9 @@ export const DOCUMENT_KINDS = [
   'ENCOUNTER_SUMMARY',
   // SRI-089. The RIDE of a credit note, on the invoice RIDE's template.
   'CREDIT_NOTE_RIDE',
+  // EN-243. Form 053 or 007 of a referral or interconsultation, composed on
+  // demand from its signed note and NEVER archived, like the summary.
+  'CLINICAL_FORM',
 ] as const;
 
 /** One of `DOCUMENT_KINDS`, as `document_render.kind` stores it. */
@@ -57,6 +60,8 @@ export const DOCUMENT_TITLE: Readonly<Record<DocumentKind, string>> = {
   INVOICE_RIDE: 'FACTURA',
   ENCOUNTER_SUMMARY: 'RESUMEN DE LA ATENCIÓN',
   CREDIT_NOTE_RIDE: 'NOTA DE CRÉDITO',
+  // EN-243. The composer names the act: «REFERENCIA», «INTERCONSULTA»…
+  CLINICAL_FORM: 'FORMULARIO CLÍNICO',
 };
 
 /**
@@ -84,7 +89,12 @@ export type TemplateKind = (typeof TEMPLATE_KINDS)[number];
 
 /** SRI-089. The template a document is composed with. */
 export function templateKindOf(kind: DocumentKind): TemplateKind {
-  return kind === 'CREDIT_NOTE_RIDE' ? 'INVOICE_RIDE' : kind;
+  if (kind === 'CREDIT_NOTE_RIDE') return 'INVOICE_RIDE';
+  // EN-243. The 053 and the 007 are clinical papers composed on demand, like
+  // the summary, and wear its template: one more template would be one more
+  // place for the clinic to publish the same identity.
+  if (kind === 'CLINICAL_FORM') return 'ENCOUNTER_SUMMARY';
+  return kind;
 }
 
 /** DOC-084, SRI-089. The two tax documents: Anexo 2 head, no QR. */

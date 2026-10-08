@@ -30,6 +30,11 @@ export interface FrameRequest {
   confidential: boolean;
   /** DOC-083. `null` when the document has none: then no QR is printed. */
   verificationCode: string | null;
+  /**
+   * EN-243. The title, when the class covers more than one paper: the 053
+   * says «REFERENCIA» or «CONTRARREFERENCIA», never the class's name.
+   */
+  title?: string;
 }
 
 /**
@@ -53,6 +58,8 @@ const FOOTER_NOTES: Readonly<Record<DocumentKind, readonly string[]>> = {
   SERVICE_ORDER: [],
   MEDICAL_CERTIFICATE: ['Documento sin enmiendas'],
   ENCOUNTER_SUMMARY: [],
+  // EN-243. The form's number, as the HCU files it.
+  CLINICAL_FORM: [],
   INVOICE_RIDE: RIDE_NOTES,
   // SRI-089. A RIDE too: the same two lines.
   CREDIT_NOTE_RIDE: RIDE_NOTES,
@@ -106,7 +113,7 @@ export function composeFrame(
   const code = fiscal ? null : request.verificationCode;
 
   return {
-    title: DOCUMENT_TITLE[request.kind],
+    title: request.title ?? DOCUMENT_TITLE[request.kind],
     reference: request.reference,
     confidential: request.confidential,
     accentColour: template.accentColour,

@@ -30,6 +30,7 @@ import type {
 import type { AnthropometryField } from '../domain/vital-signs';
 import type { DischargeCondition, EncounterStatus } from '../domain/encounter';
 import type { SiteScopeFilter } from '../domain/encounter.repository';
+import { OUTGOING_DIRECTIONS } from '../domain/referral';
 
 /**
  * The note chain, against PostgreSQL.
@@ -316,10 +317,19 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
       const screenings = await tx.violenceScreening.count({
         where: { encounterId: row.id },
       });
+      // EN-105. Under the lock a referral's issue takes too.
+      const outgoingReferrals = await tx.referral.count({
+        where: {
+          encounterId: row.id,
+          direction: { in: [...OUTGOING_DIRECTIONS] },
+          status: { not: 'CANCELLED' },
+        },
+      });
       const encounter: SigningEncounterRead = {
         ...toEncounterRead(row),
         anthropometryPending: (pending?.fields ?? []) as AnthropometryField[],
         screeningAnswered: screenings > 0,
+        outgoingReferrals,
       };
 
       const plan = decide(note, encounter);

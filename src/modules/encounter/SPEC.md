@@ -451,10 +451,14 @@ frenar a nadie.
 contrarreferencia y comprobar que la respuesta **apunta a la referencia** y que
 una contrarreferencia sin referencia se rechaza; y registrar una referencia
 inversa, que hoy el esquema no distingue.
-**Cubre:** EN-100 a EN-107.
+**Cubre:** EN-100 a EN-107, EN-243.
 
-**Solo servidor:** EN-102. La coherencia del hilo la impone
-`referral_thread_coherence`.
+**Solo servidor:** EN-102. La coherencia del hilo la imponen
+`referral_thread_coherence`, `referral_one_live_response` y `trg_referral_guard`.
+
+**Construido el 08-10-2026** (`feat/f04-referencia`). Lo que queda a decisión
+está en D-191: las referencias recibidas de fuera, los estados que pone el
+destino y el archivo del papel con QR.
 
 ### H9 — La exportación mensual _(P3)_
 
@@ -2357,6 +2361,12 @@ transcribir y no volver a leer el instructivo._
   > Sin el cuarto valor, la referencia inversa se registraría como referencia y el
   > reporte diría que esta clínica envió a un paciente que en realidad se presentó
   > por su cuenta.
+  >
+  > **Construido (08-10-2026):** `REVERSE_REFERRAL` en `referral_direction`. Se
+  > emite con `POST /encounters/:id/referrals`, que exige `record:sign` en la
+  > sede y una atención viva (EN-130): `trg_referral_guard` rechaza además la
+  > fila en una atención terminada y con un paciente que no es el de su
+  > atención.
 - **EN-101** — El sistema DEBERÁ registrar el establecimiento de destino por su
   **código único del MSP**.
   > `destination_msp_unicode` es texto y **no** una clave foránea, a propósito: el
@@ -2364,13 +2374,36 @@ transcribir y no volver a leer el instructivo._
   > «UNICÓDIGO» y da el ejemplo `05176` para el Hospital General de Chone. Va con
   > `destination_name` para que un código que ya no exista siga siendo legible,
   > mismo criterio que la instantánea del diagnóstico.
+  >
+  > **Garantía de la base (08-10-2026):** `referral_destination_stated` exige
+  > código y nombre en la referencia, la derivación y la referencia inversa —la
+  > contrarreferencia vuelve a quien refirió y no lo pide—, y
+  > `referral_destination_code_format` que el código sea sólo dígitos. La
+  > especialidad de destino apunta a `specialty`, el catálogo MSP de la clínica
+  > (REQ-149), y no a `catalog_concept`, que nadie usaba.
 - **EN-102** — Una **contrarreferencia** DEBERÁ responder a una referencia
   concreta, y una referencia DEBERÁ tener **como máximo una** respuesta.
-  > **Garantía de la base:** `referral_thread_coherence` y `responds_to_id` como
-  > `@unique`. Es una sola tabla con dirección y no dos tablas, porque la
-  > contrarreferencia **es la respuesta** a la referencia y pertenece al mismo hilo:
-  > separarlas obliga a reconstruir la conversación con una consulta que alguien
-  > tiene que acordarse de escribir.
+  > **Garantía de la base:** `referral_thread_coherence` y
+  > `referral_one_live_response`. Es una sola tabla con dirección y no dos tablas,
+  > porque la contrarreferencia **es la respuesta** a la referencia y pertenece al
+  > mismo hilo: separarlas obliga a reconstruir la conversación con una consulta
+  > que alguien tiene que acordarse de escribir.
+  >
+  > **Precisado el 08-10-2026.** «Como máximo una» cuenta las respuestas **vivas**:
+  > el `@unique` pasó a un único parcial que ignora las anuladas, porque una
+  > contrarreferencia registrada por error y anulada (EN-107) no puede dejar la
+  > referencia sin respuesta posible. `trg_referral_guard` exige además que lo
+  > respondido sea una **referencia o una derivación** —la norma define la
+  > contrarreferencia como el retorno del usuario «referido o derivado» (D-191
+  > §5)—, del mismo paciente o de una ficha unificada con la suya (PA-055), y no
+  > anulada; y rechaza anular una referencia que tiene respuesta viva. La
+  > contrarreferencia responde a una referencia **emitida aquí**: registrar las
+  > que otro establecimiento envía es D-191 §1. Todo llega como
+  > `COUNTER_REFERRAL_WITHOUT_REFERRAL` (422); una referencia de otra sede es
+  > `REFERRAL_NOT_FOUND` (404), como cualquier otra que no existe (EN-121).
+  > **Anular y responder a la vez** (revisión clínica, 08-10-2026): la
+  > contrarreferencia toma la referencia `FOR SHARE`, que choca con el UPDATE
+  > que la anula; gana la respuesta y la anulación se rechaza al verla.
 - **EN-103** — El sistema DEBERÁ registrar si la atención **solicitó** o
   **recibió** una interconsulta.
   > **Falta esquema.** Columna 111 del formulario: **1 interconsulta solicitada ·
@@ -2379,18 +2412,60 @@ transcribir y no volver a leer el instructivo._
   > cuál de los dos papeles juega esta atención**, que es lo que el formulario pide:
   > el médico que responde la interconsulta también registra su atención, y hoy
   > saldría en blanco.
+  >
+  > **Construido (08-10-2026):** `interconsultation.role` (`REQUESTED`,
+  > `RECEIVED`). La **solicitada** guarda quién la pide, la especialidad, el
+  > motivo y la pregunta, y nace `REQUESTED`. La **recibida** se registra al
+  > contestarla: quién la pidió como texto —suele venir de otro servicio o de
+  > fuera—, el motivo y la respuesta escrita, y nace `ANSWERED` con quien
+  > responde. `interconsultation_role_shape` lo impone en la base, y
+  > `trg_interconsultation_guard` que lo pedido —motivo y cuadro— no cambie y
+  > la respuesta se escriba una sola vez.
 - **EN-104** — CUANDO se emita una referencia o una contrarreferencia, el sistema
   DEBERÁ generar la nota clínica del **formulario 053** —numeración antigua
   011—, y CUANDO se solicite una interconsulta, la del **formulario 007**.
   > Los dos códigos ya están previstos en el comentario de `clinical_note.form_code`
   > (EN-021). Es lo que hace que el documento que sale por la impresora sea el que
   > la norma nombra y no un PDF que este sistema inventó.
+  >
+  > **Construido (08-10-2026).** El 053 se escribe para las **cuatro**
+  > direcciones —el formulario es «referencia, derivación, contrarreferencia y
+  > referencia inversa»—, y el 007 para la interconsulta **solicitada**: la
+  > recibida la documenta el 002 de quien la contesta. La nota nace **firmada**
+  > en la misma transacción que la fila, con su huella (EN-027) y lo emitido más
+  > los diagnósticos del momento, y la fila la nombra en `clinical_note_id`
+  > (único). `053` y `007` están en el registro de formularios marcados como
+  > **de su propio acto**: la ruta de notas no los abre, no los enmienda y no
+  > los retracta —se corrigen anulando la referencia, que pasa su nota a
+  > `ENTERED_IN_ERROR`—. `trg_clinical_note_act_form_follows_its_act` rechaza
+  > retirar un 053 o 007 cuyo acto sigue vivo. Lo que imprime cada formulario
+  > frente al Anexo 1 está en D-191 §6.
+- **EN-243** — CUANDO se pida el formulario 053 o 007 de una referencia o una
+  interconsulta, el sistema DEBERÁ componerlo en PDF/A desde su nota firmada,
+  con la identidad de la clínica y el sello de quien la firmó, DEBERÁ dejar
+  constancia del acceso antes de servirlo, y NO DEBERÁ servirlo fuera del
+  alcance de sedes de quien lo pide.
+  > `GET /documents/clinical-forms/:noteId` con `record:read`, clase
+  > `CLINICAL_FORM`. **Se compone al pedirlo y no se archiva**, como el resumen
+  > de la atención (DOC-111): lo que imprime es una nota firmada e inmutable con
+  > su huella, así que dos descargas dicen lo mismo. Usa la plantilla del
+  > resumen y no lleva código de verificación; archivarlo con QR es D-191 §4.
+  > Una nota anulada se sirve con «ANULADA» en el título: el papel ya entregado
+  > tiene que poder reconocerse.
 - **EN-105** — CUANDO la condición de egreso de una atención sea **referido**, el
   sistema DEBERÁ exigir la referencia correspondiente.
   > EN-009 declara `REFERRED` como condición de egreso. Sin este requisito, la
   > condición de egreso dice que se refirió al paciente y no hay ningún documento
   > que diga a dónde: el reporte cuenta una referencia que no existe y el paciente
   > sale por la puerta sin papel.
+  >
+  > **Construido (08-10-2026).** «La correspondiente» es una referencia, una
+  > derivación o una referencia inversa **viva de la misma atención** (D-191 §2).
+  > Lo dice la firma bajo el candado de la atención
+  > (`REFERRAL_REQUIRED_ON_DISCHARGE`, 422, campo `dischargeCondition`) y lo
+  > garantiza la base: `trg_encounter_referred_needs_referral`, diferido, sobre
+  > `encounter`, y `trg_referral_guard`, que rechaza anular la última referencia
+  > de una atención que salió «referida».
 - **EN-106** — El sistema DEBERÁ registrar el **motivo** de toda referencia,
   derivación e interconsulta.
   > `reason` es `NOT NULL` en las dos tablas. Es lo que el establecimiento de
@@ -2401,9 +2476,13 @@ transcribir y no volver a leer el instructivo._
   > `ReferralStatus` tiene `ISSUED`, `ACCEPTED`, `REJECTED`, `COMPLETED` y
   > `EXPIRED`, e `InterconsultationStatus` tiene `CANCELLED`.
   >
-  > **Falta esquema.** `ReferralStatus` **no tiene valor de anulación** —`REJECTED` es «el destino no
-  > la aceptó», que es otra cosa— y ninguna de las dos tablas guarda el motivo de
-  > cierre ni quién lo hizo.
+  > **Construido (08-10-2026, D-103 §3).** `CANCELLED` en `referral_status`, y en
+  > las dos tablas `cancelled_at`, `cancelled_by_id` y `cancellation_reason`,
+  > todos o ninguno (`*_cancellation_complete`). Se anula con
+  > `POST …/referrals/:id/cancel` (`record:sign`) o `…/interconsultations/:id/cancel`
+  > (`record:write`), también tras el alta: es corregir lo emitido, no contenido
+  > nuevo. `trg_referral_guard` y `trg_interconsultation_guard` sólo dejan
+  > cambiar la fila para anularla, y rechazan `DELETE` y `TRUNCATE`.
 
 ## 9. La exportación mensual (REQ-028)
 
@@ -4296,7 +4375,9 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `DISCHARGE_CONDITION_REQUIRED` | 422 | Cerrar sin condición de egreso | EN-009 |
 | `SCREENING_PENDING` | 422 | Se firma la nota que da el alta con el tamizaje de violencia sin responder. No dice nada del paciente: toda atención tiene uno | EN-240 |
 | `SCREENING_LOCKED_AFTER_DISCHARGE` | 409 | Con el alta dada se pide cambiar algo del tamizaje que no es la notificación a la autoridad, quitarla, o notificar sin tamizaje con signos. No repite ningún valor | EN-242 |
-| `REFERRAL_REQUIRED_ON_DISCHARGE` | 422 | Egreso `REFERRED` sin referencia emitida | EN-105 |
+| `REFERRAL_REQUIRED_ON_DISCHARGE` | 422 | Egreso `REFERRED` sin referencia emitida; o anular la última referencia de una atención que salió «referida» | EN-105 |
+| `REFERRAL_NOT_FOUND` | 404 | La referencia o la interconsulta no existe, no es de esa atención o es de otra sede | EN-107 |
+| `REFERRAL_ALREADY_CANCELLED` | 409 | Anular lo que ya está anulado | EN-107 |
 | `NOTE_ALREADY_SIGNED` | 409 | Editar una nota firmada. **Traducido por el servicio**, no por el mapa de constraints: el disparador levanta `insufficient_privilege`, que a secas saldría como 403 y diría al médico que no tiene permisos cuando lo que pasa es que la nota está firmada | EN-023 |
 | `AMENDMENT_REASON_REQUIRED` | 422 | Enmendar sin motivo. Se exige **en el servicio** además del DTO, por lo mismo que `CANCELLATION_REASON_REQUIRED` | EN-025 |
 | `NOTE_NOT_AMENDABLE` | 409 | Enmendar un borrador, una nota ya sustituida o una retractada | EN-025, EN-026 |
@@ -4315,7 +4396,8 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `HIV_DATA_RESTRICTED` | 403 | Lo mismo para el bloque de VIH | EN-095 |
 | `PROGRAM_BLOCK_NOT_APPLICABLE` | 422 | Se registró un bloque de programa que la población de la atención no alcanza —obstétrico sin embarazo, SIVAN fuera del rango de edad— | EN-090, EN-092, EN-097 |
 | `CONFIRMATORY_TEST_WITHOUT_SCREENING` | 422 | Segunda prueba de VIH sin primera reactiva | EN-094 |
-| `COUNTER_REFERRAL_WITHOUT_REFERRAL` | 422 | Contrarreferencia que no responde a ninguna referencia. Del mapeo de constraints: `referral_thread_coherence` | EN-102 |
+| `COUNTER_REFERRAL_WITHOUT_REFERRAL` | 422 | Contrarreferencia que no responde a una referencia o derivación viva del mismo paciente. Del mapeo de constraints: `referral_thread_coherence` | EN-102 |
+| `REFERRAL_ALREADY_ANSWERED` | 409 / 422 | Una segunda contrarreferencia viva (`referral_one_live_response`, 409), o anular una referencia que ya tiene la suya (`referral_answered_cannot_be_cancelled`, 422). Del mapeo de constraints | EN-102 |
 | `ENCOUNTER_ALREADY_REPORTED` | 409 | Incluir en un envío una atención ya reportada | EN-111 |
 | `RDACAA_FIELDS_MISSING` | 422 | Exportar con fichas incompletas. Nombra **los campos**, nunca a los pacientes | EN-115 |
 | `ENCOUNTER_STATE_TRANSITION_INVALID` | 409 | Transición de estado que la tabla de EN-132 no admite: reabrir una cerrada, saltarse el alta clínica, suspender una ya dada de alta. **Un solo código para todas**: el mensaje dice en qué estado está y qué se puede hacer desde ahí | EN-132 |
@@ -4519,8 +4601,12 @@ que es global: una atención ocurre en un sitio.
 | `PUT` | `/encounters/:id/nutrition` | `nursing:write` | EN-092, EN-096 |
 | `POST` | `/encounters/:id/vaccinations` | `nursing:write` | EN-093 |
 | `PUT` | `/encounters/:id/hiv` | `record:write` + la segunda llave | EN-094, EN-095 |
-| `POST` | `/encounters/:id/referrals` | `record:sign` | EN-100 a EN-102, EN-106 |
+| `GET` | `/encounters/:id/referrals` | `record:read` | EN-100 a EN-103 *(lo de la atención y las referencias del paciente que aún pueden responderse)* |
+| `POST` | `/encounters/:id/referrals` | `record:sign` | EN-100 a EN-102, EN-104, EN-106 |
+| `POST` | `/encounters/:id/referrals/:referralId/cancel` | `record:sign` | EN-105, EN-107 |
 | `POST` | `/encounters/:id/interconsultations` | `record:write` | EN-103, EN-104, EN-106 |
+| `POST` | `/encounters/:id/interconsultations/:interconsultationId/cancel` | `record:write` | EN-107 |
+| `GET` | `/documents/clinical-forms/:noteId` | `record:read` | EN-243 |
 | `POST` | `/encounters/:id/procedures/:procedureId/consent` | `record:write` | EN-152 *(formulario 024)* |
 | `POST` | `/encounters/:id/procedures/:procedureId/consent/refusal` | `record:write` | EN-153 |
 | `POST` | `/encounters/:id/consents/:consentId/revoke` | `record:write` | EN-154 |

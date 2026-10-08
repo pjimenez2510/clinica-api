@@ -21,6 +21,7 @@ import {
 import type { DocumentTemplate } from './document-template';
 import type {
   CertificatePrintData,
+  ClinicalFormPrintData,
   CreditNotePrintData,
   DocumentContext,
   DocumentSubject,
@@ -1577,6 +1578,80 @@ export function composeEncounterSummaryLayout(
   };
 }
 
+/**
+ * EN-243. Form 053 or 007, from its signed note: the patient, the sections as
+ * the note froze them, the constancy of how it was signed, and the signature
+ * and seal of whoever issued it. No QR: it is not archived (D-191 §4).
+ */
+export function composeClinicalFormLayout(
+  data: ClinicalFormPrintData,
+  context: DocumentContext,
+  template: DocumentTemplate,
+): DocumentLayout {
+  const blocks: Block[] = [
+    {
+      kind: 'strip',
+      entries: [
+        { label: 'Fecha de emisión', value: ecuadorianDateAndMinute(data.signedAt) }, // prettier-ignore
+        { label: 'Sede', value: context.siteName },
+        // D-078. The chart number on every printed document.
+        { label: 'Historia clínica', value: data.patient.mrn },
+      ],
+    },
+    ...(data.annulled
+      ? ([
+          {
+            kind: 'paragraph',
+            text: 'ANULADA: este documento ya no tiene validez.',
+            emphasis: true,
+          },
+        ] as Block[])
+      : []),
+    { kind: 'heading', text: 'Paciente' },
+    patientBlock(data.patient, [
+      {
+        label: 'Atención',
+        value: ecuadorianDateAndMinute(data.encounterStartedAt),
+      },
+    ]),
+    { kind: 'heading', text: data.title.charAt(0) + data.title.slice(1).toLowerCase() }, // prettier-ignore
+    {
+      kind: 'fields',
+      columns: 1,
+      entries: data.sections.map((each) => ({
+        label: each.title,
+        value: each.text,
+      })),
+    },
+    { kind: 'heading', text: 'Profesional' },
+    prescriberBlock(data.signer),
+    // EN-156. The constancy travels with the paper, not only the screen.
+    ...(data.withoutCertificate
+      ? ([
+          { kind: 'paragraph', text: credentialSignatureText(data.signedAt) },
+        ] as Block[])
+      : []),
+    {
+      kind: 'signature',
+      caption: 'Firma y sello del profesional',
+      image: data.signer.seal !== null ? 'seal' : null,
+    },
+  ];
+
+  return {
+    frame: composeFrame(context, template, {
+      kind: 'CLINICAL_FORM',
+      title: data.annulled ? `${data.title} (ANULADA)` : data.title,
+      reference: `Formulario ${data.formCode}`,
+      // It carries the reason and the diagnoses: health information.
+      confidential: true,
+      verificationCode: null,
+    }),
+    blocks,
+    tearOff: null,
+  };
+}
+
 /** The one entry point: a subject and a template in, a layout out. */
 export function composeLayout(
   subject: DocumentSubject,
@@ -1596,5 +1671,7 @@ export function composeLayout(
       return composeEncounterSummaryLayout(subject.data, context, template);
     case 'CREDIT_NOTE_RIDE':
       return composeCreditNoteLayout(subject.data, context, template);
+    case 'CLINICAL_FORM':
+      return composeClinicalFormLayout(subject.data, context, template);
   }
 }

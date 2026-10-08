@@ -13,6 +13,7 @@ import {
 } from '../../../shared/domain/clinic-time';
 import {
   ScreeningPendingError,
+  ReferralRequiredOnDischargeError,
   AmendmentReasonRequiredError,
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
@@ -137,6 +138,7 @@ const anEncounterRead = (
   hasPrincipalDiagnosis: true,
   anthropometryPending: [],
   screeningAnswered: true,
+  outgoingReferrals: 0,
   ...overrides,
 });
 
@@ -435,6 +437,51 @@ describe('los casos de uso de la nota clínica', () => {
     await expect(
       service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
     ).resolves.toMatchObject({ status: 'SIGNED' });
+  });
+
+  it('EN-105 rechaza firmar con «Referido» sin referencia emitida en la atención, y firma con una', async () => {
+    notes.encounter = anEncounterRead({ outgoingReferrals: 0 });
+
+    await expect(
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'REFERRED' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ReferralRequiredOnDischargeError);
+
+    // Another outcome needs none.
+    await expect(
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
+    ).resolves.toMatchObject({ status: 'SIGNED' });
+
+    // Positive control: with a referral standing, «Referido» signs.
+    notes.stored = aNote();
+    notes.encounter = anEncounterRead({ outgoingReferrals: 1 });
+    await expect(
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', dischargeCondition: 'REFERRED' }, requester), // prettier-ignore
+    ).resolves.toMatchObject({ status: 'SIGNED' });
+  });
+
+  it('EN-104 la ruta de notas no abre, no enmienda ni retracta un 053 ni un 007: los escribe y anula su acto', async () => {
+    for (const formCode of ['053', '007']) {
+      await expect(
+        service.draft({ encounterId: ENCOUNTER, formCode, formVersion: '1', content: { motivo: 'x' } }, requester), // prettier-ignore
+      ).rejects.toBeInstanceOf(UnknownClinicalFormError);
+
+      notes.stored = aNote({ formCode, status: 'SIGNED' });
+      await expect(
+        service.amend({ encounterId: ENCOUNTER, noteId: 'note-1', content: { motivo: 'y' }, amendmentReason: 'Error' }, requester), // prettier-ignore
+      ).rejects.toBeInstanceOf(UnknownClinicalFormError);
+      await expect(
+        service.retract(
+          { encounterId: ENCOUNTER, noteId: 'note-1' },
+          requester,
+        ),
+      ).rejects.toBeInstanceOf(UnknownClinicalFormError);
+    }
+
+    // Positive control: the same retraction of a signed 002 goes through.
+    notes.stored = aNote({ status: 'SIGNED' });
+    await expect(
+      service.retract({ encounterId: ENCOUNTER, noteId: 'note-1' }, requester),
+    ).resolves.toMatchObject({ status: 'ENTERED_IN_ERROR' });
   });
 
   it('EN-217 rechaza firmar la 002 mientras falte la antropometría obligatoria, nombrando cada medida', async () => {

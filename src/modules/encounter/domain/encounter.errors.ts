@@ -489,6 +489,54 @@ export class ScreeningLockedAfterDischargeError extends ConflictError {
   }
 }
 
+/* ─── Referencia e interconsulta (H8: EN-100 a EN-107) ───────────────────── */
+
+/**
+ * EN-105. The consultation note is signed with the discharge «referido» and
+ * the attention has no referral, derivation or reverse referral standing: the
+ * report would count a referral that does not exist and the patient would
+ * leave without a paper. Also when annulling the last one of an attention
+ * already discharged as referred.
+ */
+export class ReferralRequiredOnDischargeError extends ValidationError {
+  readonly code = 'REFERRAL_REQUIRED_ON_DISCHARGE';
+  override readonly userTitle =
+    'Para dar el alta como «Referido» emita antes la referencia en la pestaña Referencia';
+  override readonly fieldErrors = [
+    {
+      field: 'dischargeCondition',
+      code: 'REFERRAL_REQUIRED_ON_DISCHARGE',
+      message:
+        'Emita la referencia, la derivación o la referencia inversa antes de firmar con «Referido»',
+    },
+  ];
+
+  constructor() {
+    super('A referred discharge needs a standing referral of the attention');
+  }
+}
+
+/** EN-107. The referral or interconsultation is not of this attention, or out of scope. */
+export class ReferralNotFoundError extends NotFoundError {
+  readonly code = 'REFERRAL_NOT_FOUND';
+  override readonly userTitle =
+    'Esa referencia o interconsulta no existe en esta atención. Actualice la pantalla';
+
+  constructor() {
+    super('Referral or interconsultation not found within this encounter');
+  }
+}
+
+/** EN-107. Annulling what is already annulled. */
+export class ReferralAlreadyCancelledError extends ConflictError {
+  readonly code = 'REFERRAL_ALREADY_CANCELLED';
+  override readonly userTitle = 'Ya estaba anulada. Actualice la pantalla';
+
+  constructor() {
+    super('The referral or interconsultation is already annulled');
+  }
+}
+
 /* ─── Nota clínica (H2: EN-020 a EN-034) ─────────────────────────────────── */
 
 /** EN-022. The note does not exist, or belongs to another attention. */

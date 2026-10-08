@@ -87,6 +87,10 @@ const PROTECTED = [
   'charge_item_one_per_encounter_procedure',
   'charge_item_one_per_service_order_item',
   'charge_item_one_consultation_per_encounter',
+  // Índice único PARCIAL (`WHERE … status <> 'CANCELLED'`): una referencia,
+  // como mucho UNA contrarreferencia viva (EN-102). Prisma no puede describir
+  // el predicado, así que lo lee como sobrante.
+  'referral_one_live_response',
 ];
 
 /**

@@ -878,10 +878,14 @@ enum CertificateType {
   @@map("certificate_type")
 }
 
+/// EN-100. The four directions of column 109 of the RDACAA: 1 referral,
+/// 2 counter-referral, 3 derivation, 4 reverse referral.
 enum ReferralDirection {
   REFERRAL
   DERIVATION
   COUNTER_REFERRAL
+  /// The user referred themselves to the emergency of a higher level.
+  REVERSE_REFERRAL
 
   @@map("referral_direction")
 }
@@ -892,8 +896,19 @@ enum ReferralStatus {
   REJECTED
   COMPLETED
   EXPIRED
+  /// EN-107, D-103 §3. Issued by mistake and annulled, with who, when and why.
+  CANCELLED
 
   @@map("referral_status")
+}
+
+/// EN-103. Column 111: whether the attention requested the interconsultation
+/// or received (and answered) it.
+enum InterconsultationRole {
+  REQUESTED
+  RECEIVED
+
+  @@map("interconsultation_role")
 }
 
 enum InterconsultationStatus {
@@ -1108,8 +1123,6 @@ model CatalogConcept {
   serviceOrderItems       ServiceOrderItem[]
   observationResults      ObservationResult[]            @relation("ObservationAnalyte")
   allergies               PatientAllergy[]
-  referrals               Referral[]                     @relation("ReferralSpecialty")
-  interconsultations      Interconsultation[]            @relation("InterconsultationSpecialty")
   billableServices        BillableService[]
 
   @@index([systemId, code])
@@ -1549,6 +1562,8 @@ model Practitioner {
   referralsIssued    Referral[]                 @relation("ReferralIssuer")
   interconsultAsked  Interconsultation[]        @relation("InterconsultRequester")
   interconsultAnswer Interconsultation[]        @relation("InterconsultResponder")
+  referralsCancelled Referral[]                 @relation("ReferralCanceller")
+  interconsultCancel Interconsultation[]        @relation("InterconsultCanceller")
   waitlistEntries    WaitlistEntry[]
   specialties        PractitionerSpecialty[]
   durationExceptions DurationException[]
@@ -1584,10 +1599,13 @@ model Specialty {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  practitioners PractitionerSpecialty[]
-  serviceTypes  ServiceType[]
+  practitioners      PractitionerSpecialty[]
+  serviceTypes       ServiceType[]
+  /// encounter H8. The destination specialty of a referral or interconsultation.
+  referrals          Referral[]
+  interconsultations Interconsultation[]
   /// EN-203. The note templates of this specialty (D-124).
-  noteTemplates ClinicalNoteTemplate[]
+  noteTemplates      ClinicalNoteTemplate[]
 
   @@map("specialty")
 }
@@ -3231,6 +3249,10 @@ model ClinicalNote {
 
   prescriptions Prescription[]
 
+  /// EN-104. The referral or interconsultation a 053 / 007 note was written with.
+  referral          Referral?          @relation("ReferralForm")
+  interconsultation Interconsultation? @relation("InterconsultationForm")
+
   /// EN-229. `clinical_note_one_002_chain_per_encounter`, a partial UNIQUE
   /// on (encounter_id) of the 002's version 1 rows, lives in SQL only.
   @@index([encounterId, formCode])
@@ -3799,25 +3821,39 @@ model Referral {
   destinationMspUnicode String? @map("destination_msp_unicode") @db.VarChar(20)
   destinationName       String? @map("destination_name") @db.VarChar(240)
 
-  specialtyConceptId String?         @map("specialty_concept_id") @db.Uuid
-  specialty          CatalogConcept? @relation("ReferralSpecialty", fields: [specialtyConceptId], references: [id], onDelete: Restrict)
+  /// The clinic's MSP specialty catalogue (REQ-149).
+  specialtyId String?    @map("specialty_id") @db.Uuid
+  specialty   Specialty? @relation(fields: [specialtyId], references: [id], onDelete: Restrict)
 
   reason   String               @db.Text
   summary  String?              @db.Text
   priority ServiceOrderPriority @default(ROUTINE)
 
   /// A counter-referral answers a referral. Self-relation on the same thread.
-  respondsToId String?   @unique @map("responds_to_id") @db.Uuid
-  respondsTo   Referral? @relation("ReferralThread", fields: [respondsToId], references: [id], onDelete: Restrict)
-  response     Referral? @relation("ReferralThread")
+  /// EN-102. At most ONE live answer: `referral_one_live_response`, a partial
+  /// unique index that ignores the annulled ones, lives in SQL only.
+  respondsToId String?    @map("responds_to_id") @db.Uuid
+  respondsTo   Referral?  @relation("ReferralThread", fields: [respondsToId], references: [id], onDelete: Restrict)
+  responses    Referral[] @relation("ReferralThread")
+
+  /// EN-104. The signed note of form 053 written with it.
+  clinicalNoteId String?       @unique @map("clinical_note_id") @db.Uuid
+  clinicalNote   ClinicalNote? @relation("ReferralForm", fields: [clinicalNoteId], references: [id], onDelete: Restrict)
 
   issuedAt   DateTime  @default(now()) @map("issued_at") @db.Timestamptz(6)
   resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  /// EN-107. All three or none (`referral_cancellation_complete`).
+  cancelledAt        DateTime?     @map("cancelled_at") @db.Timestamptz(6)
+  cancelledById      String?       @map("cancelled_by_id") @db.Uuid
+  cancelledBy        Practitioner? @relation("ReferralCanceller", fields: [cancelledById], references: [id], onDelete: Restrict)
+  cancellationReason String?       @map("cancellation_reason") @db.Text
 
   @@index([patientId, issuedAt(sort: Desc)])
   @@index([status, issuedAt])
   /// BI-190. Asked per attention.
   @@index([encounterId])
+  @@index([respondsToId])
   @@map("referral")
 }
 
@@ -3828,14 +3864,19 @@ model Interconsultation {
   encounterId String    @map("encounter_id") @db.Uuid
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
 
-  requestedById String       @map("requested_by_id") @db.Uuid
-  requestedBy   Practitioner @relation("InterconsultRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  /// EN-103. `interconsultation_role_shape`: a REQUESTED one names the
+  /// practitioner who asked; a RECEIVED one, who asked as text.
+  role InterconsultationRole
+
+  requestedById   String?       @map("requested_by_id") @db.Uuid
+  requestedBy     Practitioner? @relation("InterconsultRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  requestedByName String?       @map("requested_by_name") @db.VarChar(240)
 
   respondedById String?       @map("responded_by_id") @db.Uuid
   respondedBy   Practitioner? @relation("InterconsultResponder", fields: [respondedById], references: [id], onDelete: Restrict)
 
-  specialtyConceptId String?         @map("specialty_concept_id") @db.Uuid
-  specialty          CatalogConcept? @relation("InterconsultationSpecialty", fields: [specialtyConceptId], references: [id], onDelete: Restrict)
+  specialtyId String?    @map("specialty_id") @db.Uuid
+  specialty   Specialty? @relation(fields: [specialtyId], references: [id], onDelete: Restrict)
 
   status InterconsultationStatus @default(REQUESTED)
 
@@ -3845,6 +3886,16 @@ model Interconsultation {
 
   requestedAt DateTime  @default(now()) @map("requested_at") @db.Timestamptz(6)
   respondedAt DateTime? @map("responded_at") @db.Timestamptz(6)
+
+  /// EN-104. The signed note of form 007, for a REQUESTED one.
+  clinicalNoteId String?       @unique @map("clinical_note_id") @db.Uuid
+  clinicalNote   ClinicalNote? @relation("InterconsultationForm", fields: [clinicalNoteId], references: [id], onDelete: Restrict)
+
+  /// EN-107. All three or none (`interconsultation_cancellation_complete`).
+  cancelledAt        DateTime?     @map("cancelled_at") @db.Timestamptz(6)
+  cancelledById      String?       @map("cancelled_by_id") @db.Uuid
+  cancelledBy        Practitioner? @relation("InterconsultCanceller", fields: [cancelledById], references: [id], onDelete: Restrict)
+  cancellationReason String?       @map("cancellation_reason") @db.Text
 
   @@index([encounterId])
   @@index([status, requestedAt])
@@ -4820,6 +4871,9 @@ enum DocumentKind {
   /// SRI-089. The RIDE of a credit note, on the INVOICE_RIDE template: no
   /// `document_template` row is of this kind.
   CREDIT_NOTE_RIDE
+  /// EN-243. Form 053 or 007 of a referral or interconsultation, composed on
+  /// demand from its signed note and never archived, on the summary's template.
+  CLINICAL_FORM
 
   @@map("document_kind")
 }

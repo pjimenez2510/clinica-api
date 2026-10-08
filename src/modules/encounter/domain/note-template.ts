@@ -23,6 +23,7 @@ import {
   coversBackgroundSection,
 } from './background-snapshot';
 import { CLINICAL_FORMS } from './clinical-note';
+import { actFormSections } from '../../../shared/clinical/act-forms';
 import {
   NoteContentIncompleteError,
   NoteTemplateInvalidError,
@@ -148,19 +149,27 @@ export function builtInTemplate(formCode: string): NoteTemplate {
       CLINICAL_FORMS.map((known) => `${known.code}@${known.version}`),
     );
   }
+  // EN-104. A 053 or 007 lists every section its act may write, in the
+  // order of the paper; only the mandatory ones are required.
+  const sections =
+    actFormSections(formCode) ??
+    form.mandatorySections.map((key) => ({
+      key,
+      title: BUILT_IN_TITLES[key]?.title ?? key,
+    }));
   return {
     id: null,
     formCode,
     specialtyId: null,
     version: 0,
-    sections: form.mandatorySections.map((key) => ({
+    sections: sections.map(({ key, title }) => ({
       key,
-      title: BUILT_IN_TITLES[key]?.title ?? key,
+      title,
       help: BUILT_IN_TITLES[key]?.help ?? '',
       kind: 'TEXT' as const,
       options: [],
-      required: true,
-      minimum: true,
+      required: form.mandatorySections.includes(key),
+      minimum: form.mandatorySections.includes(key),
     })),
   };
 }

@@ -350,13 +350,38 @@ export interface EncounterSummaryPrintData {
   }[];
 }
 
+/**
+ * EN-243. Form 053 or 007 as its signed note says it: composed on demand and
+ * never archived, so «as it stands» is the note, which is immutable (EN-027).
+ */
+export interface ClinicalFormPrintData {
+  /** The `clinical_note` id. */
+  subjectId: string;
+  siteId: string;
+  /** `053` or `007`. */
+  formCode: string;
+  /** What the paper is titled: «REFERENCIA», «INTERCONSULTA»… */
+  title: string;
+  /** EN-107. The act was annulled: the paper says so. */
+  annulled: boolean;
+  signedAt: Date;
+  /** EN-156. Signed with the credential, without a certificate. */
+  withoutCertificate: boolean;
+  encounterStartedAt: Date;
+  patient: PatientIdentity;
+  /** Who issued and signed it, with the seal they carry. */
+  signer: PractitionerIdentity;
+  sections: readonly { title: string; text: string }[];
+}
+
 export type DocumentSubject =
   | { kind: 'PRESCRIPTION'; data: PrescriptionPrintData }
   | { kind: 'SERVICE_ORDER'; data: ServiceOrderPrintData }
   | { kind: 'MEDICAL_CERTIFICATE'; data: CertificatePrintData }
   | { kind: 'INVOICE_RIDE'; data: InvoicePrintData }
   | { kind: 'ENCOUNTER_SUMMARY'; data: EncounterSummaryPrintData }
-  | { kind: 'CREDIT_NOTE_RIDE'; data: CreditNotePrintData };
+  | { kind: 'CREDIT_NOTE_RIDE'; data: CreditNotePrintData }
+  | { kind: 'CLINICAL_FORM'; data: ClinicalFormPrintData };
 
 /** One subject, looked up within the caller's own site scope (DOC-012). */
 export interface SubjectQuery {
