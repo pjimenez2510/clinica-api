@@ -167,14 +167,36 @@ export function substanceKeysOf(concept: {
         )
       : [];
   const substances = strings(attributes.substances);
+  return withComponents([
+    concept.code,
+    ...strings(attributes.replaces),
+    ...(substances.length > 0 ? substances : [substanceKeyOf(concept.display)]),
+  ]);
+}
+
+/**
+ * PR-060, D-148.3. A combination CONTAINS each of its substances: the cuadro
+ * files «Amoxicilina + ácido clavulánico» under one DCI, and an allergy to
+ * amoxicillin is an allergy to it. So every `dci:` key with a «+» also
+ * carries one key per component, and the exact match — the one that
+ * interrupts — sees it. The author decided it this way (the combination yes);
+ * the reverse direction, an allergy recorded against the combination
+ * stopping each component, is the safe side while the culprit is unknown.
+ * No blanks, no repeats.
+ */
+export function withComponents(keys: readonly string[]): string[] {
   return [
-    ...new Set([
-      concept.code,
-      ...strings(attributes.replaces),
-      ...(substances.length > 0
-        ? substances
-        : [substanceKeyOf(concept.display)]),
-    ]),
+    ...new Set(
+      keys.flatMap((key) => {
+        if (!key.startsWith('dci:') || !key.includes('+')) return [key];
+        const parts = key
+          .slice('dci:'.length)
+          .split('+')
+          .map((part) => part.trim())
+          .filter((part) => part !== '');
+        return [key, ...parts.map((part) => `dci:${part}`)];
+      }),
+    ),
   ];
 }
 

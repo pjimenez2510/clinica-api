@@ -5,6 +5,7 @@ import {
   substanceKeysOf,
   therapeuticClassMatches,
   therapeuticClassOf,
+  withComponents,
 } from './allergy-check';
 import type { KnownAllergy } from './allergy-check';
 
@@ -234,14 +235,36 @@ describe('la comprobación de alergia', () => {
       ]);
     });
 
-    it('PR-065 la combinación de la misma familia también informa', () => {
+    it('PR-060 D-148.3 la combinación que CONTIENE el alérgeno es coincidencia exacta, no de familia', () => {
+      // Alérgico a la amoxicilina, se receta amoxicilina + ácido clavulánico:
+      // es el mismo principio activo y la emisión se interrumpe.
+      expect(
+        exactAllergyMatches(
+          [{ line: 1, conceptId: AMOX_CLAV }],
+          [allergyTo(AMOX)],
+          keys,
+        ).map((alert) => alert.match),
+      ).toEqual(['EXACT']);
       expect(
         therapeuticClassMatches(
           [{ line: 1, conceptId: AMOX_CLAV }],
           [allergyTo(AMOX)],
           keys,
-        ).map((alert) => alert.match),
-      ).toEqual(['CLASS']);
+        ),
+      ).toEqual([]);
+    });
+
+    it('PR-060 D-148.3 cada componente de una combinación es una clave', () => {
+      expect(
+        withComponents(['J01CR02', 'dci:amoxicilina + acido clavulanico']),
+      ).toEqual([
+        'J01CR02',
+        'dci:amoxicilina + acido clavulanico',
+        'dci:amoxicilina',
+        'dci:acido clavulanico',
+      ]);
+      // Control: una sola sustancia no se toca.
+      expect(withComponents(['dci:amoxicilina'])).toEqual(['dci:amoxicilina']);
     });
 
     it('PR-065 PR-066 una cefalosporina tras una alergia a penicilina NO informa: eso es reactividad cruzada', () => {
