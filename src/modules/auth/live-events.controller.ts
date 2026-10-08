@@ -1,4 +1,10 @@
-import { Controller, Inject, type MessageEvent, Sse } from '@nestjs/common';
+import {
+  type BeforeApplicationShutdown,
+  Controller,
+  Inject,
+  type MessageEvent,
+  Sse,
+} from '@nestjs/common';
 import {
   ApiForbiddenResponse,
   ApiOkResponse,
@@ -24,6 +30,7 @@ import {
   LIVE_HEARTBEAT,
   liveEventStream,
 } from '../../shared/events/live-event-stream';
+import { LiveStreamRegistry } from '../../shared/events/live-stream-registry';
 import {
   CURRENT_USER,
   RequirePermission,
@@ -65,7 +72,10 @@ const FALLBACK_LIFETIME_MS = 15 * 60_000;
  */
 @ApiTags('auth')
 @Controller({ path: 'events', version: '1' })
-export class LiveEventsController {
+export class LiveEventsController implements BeforeApplicationShutdown {
+  /** M2. The cap per user, and what the shutdown ends. */
+  private readonly streams = new LiveStreamRegistry();
+
   constructor(
     private readonly bus: LiveEventBus,
     private readonly currentUser: CurrentUserService,
@@ -99,6 +109,7 @@ export class LiveEventsController {
       bus: this.bus,
       principal,
       heartbeatMs: this.heartbeatMs,
+      register: (end) => this.streams.track(claims.sub, end),
       lifetimeMs:
         claims.exp === undefined
           ? FALLBACK_LIFETIME_MS
@@ -118,5 +129,10 @@ export class LiveEventsController {
         return current.can(STREAM_PERMISSION) ? current : null;
       },
     });
+  }
+
+  /** M2. A deploy does not wait fifteen minutes for open streams. */
+  beforeApplicationShutdown(): void {
+    this.streams.endAll();
   }
 }

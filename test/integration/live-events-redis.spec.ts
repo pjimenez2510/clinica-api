@@ -90,18 +90,23 @@ describe('los avisos en vivo entre instancias, por Redis', () => {
     ]);
   });
 
-  it('AU-058: con Redis caído, publicar no lanza', async () => {
+  it('AU-058: con Redis caído, publicar no lanza, el bus se declara sordo y la propia instancia sí oye el aviso', async () => {
     const down = new RedisLiveEventBus(
       'redis://127.0.0.1:1',
       'clinica:test:down',
     );
     buses.push(down);
+    const local: LiveEvent[] = [];
+    down.subscribe((event) => local.push(event));
 
+    expect(down.healthy()).toBe(false);
     expect(() =>
       down.publish({ kind: 'critical-results', siteId: SITE_A }),
     ).not.toThrow();
+    await until(() => local.length === 1);
     // Control positivo: un bus con Redis vivo sí entrega por el mismo camino.
     const alive = await instance('clinica:test:down');
+    expect(alive.bus.healthy()).toBe(true);
     alive.bus.publish({ kind: 'critical-results', siteId: SITE_A });
     await until(() => alive.heard.length === 1);
   });

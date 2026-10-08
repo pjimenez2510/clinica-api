@@ -26,6 +26,7 @@ import {
   ConfigurationAuditTrail,
   type Requester,
 } from './configuration-audit.trail';
+import { LiveEventBus } from '../../../shared/events/live-event-bus';
 
 /**
  * The operating numbers of a site: CF-062, CF-064, CF-065, CF-066.
@@ -44,6 +45,8 @@ export class SiteParametersService {
     @Inject(SITE_PARAMETER_REPOSITORY)
     private readonly repository: SiteParameterRepository,
     private readonly trail: ConfigurationAuditTrail,
+    /** ORD-164. A new deadline or on-call role moves the critical queue. */
+    private readonly liveEvents: LiveEventBus,
   ) {}
 
   /**
@@ -203,6 +206,15 @@ export class SiteParametersService {
     // save at once, the two entries chain — each one's `before` is the other's
     // `after` — instead of both claiming to have started from the same value.
     await this.trail.record('UPDATE', change.after.siteId, requester, change);
+    // ORD-164 (revisión clínica M1). The deadline and the on-call role decide
+    // «Vencido» and whom to call: the open queues read them again now, not
+    // at their next fallback tick.
+    if (
+      patch.criticalNoticeWithinMinutes !== undefined ||
+      patch.criticalEscalationRoleId !== undefined
+    ) {
+      this.liveEvents.publish({ kind: 'critical-results', siteId: change.after.siteId }); // prettier-ignore
+    }
     return change.after;
   }
 }

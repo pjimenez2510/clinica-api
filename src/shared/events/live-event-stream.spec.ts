@@ -57,10 +57,10 @@ describe('el flujo de avisos en vivo', () => {
   it('AU-054: abre con `ready` y su espera de reconexión, y late cada intervalo', async () => {
     const stream = open({});
 
-    expect(stream.received[0]).toEqual({
+    expect(stream.received[0]).toMatchObject({
       type: 'ready',
       retry: LIVE_RECONNECT_MS,
-      data: {},
+      data: { degraded: false },
     });
     await vi.advanceTimersByTimeAsync(HEARTBEAT * 2);
 
@@ -136,5 +136,67 @@ describe('el flujo de avisos en vivo', () => {
     const stream = open({ lifetimeMs: -5_000 });
     await vi.advanceTimersByTimeAsync(0);
     expect(stream.completed()).toBe(true);
+  });
+
+  it('AU-058 cada latido lleva la hora del servidor y si el bus está sordo; al volver el bus, pide releer', async () => {
+    let healthy = true;
+    const recovered: (() => void)[] = [];
+    class FlakyBus extends InProcessLiveEventBus {
+      override healthy(): boolean {
+        return healthy;
+      }
+      override onRecovered(listener: () => void): () => void {
+        recovered.push(listener);
+        return () => undefined;
+      }
+    }
+    const bus = new FlakyBus();
+    const received: MessageEvent[] = [];
+    const subscription = liveEventStream({
+      bus,
+      principal: readerAt(SITE_A),
+      recheck: () => Promise.resolve(readerAt(SITE_A)),
+      lifetimeMs: 60_000,
+      heartbeatMs: HEARTBEAT,
+    }).subscribe((message) => received.push(message));
+
+    healthy = false;
+    await vi.advanceTimersByTimeAsync(HEARTBEAT);
+    const beat = received.at(-1)!;
+    expect(beat.type).toBe('heartbeat');
+    expect(beat.data).toEqual({
+      now: new Date().toISOString(),
+      degraded: true,
+    });
+
+    healthy = true;
+    for (const listener of recovered) listener();
+    expect(received.at(-1)).toMatchObject({
+      type: 'resync',
+      data: { degraded: false },
+    });
+    subscription.unsubscribe();
+  });
+
+  it('el registro puede terminar el flujo desde fuera, y lo olvida al cerrarse', () => {
+    let end: (() => void) | undefined;
+    let forgotten = false;
+    let completed = false;
+    liveEventStream({
+      bus: new InProcessLiveEventBus(),
+      principal: readerAt(SITE_A),
+      recheck: () => Promise.resolve(readerAt(SITE_A)),
+      lifetimeMs: 60_000,
+      register: (fn) => {
+        end = fn;
+        return () => {
+          forgotten = true;
+        };
+      },
+    }).subscribe({ complete: () => (completed = true) });
+
+    end?.();
+    expect(completed).toBe(true);
+    expect(forgotten).toBe(true);
   });
 });

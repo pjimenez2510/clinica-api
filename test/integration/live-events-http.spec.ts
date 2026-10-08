@@ -362,4 +362,24 @@ describe('el canal de avisos en vivo por HTTP', () => {
     // And reopening with the same token is refused by the ordinary guard.
     expect((await openStream(north.token)).status).toBe(401);
   });
+
+  it('AU-056: quitarle `record:read` al rol a mitad del flujo lo corta en el latido siguiente', async () => {
+    const north = await account('medico.norte@clinica.ec', 'MEDICO', siteA);
+    const stream = await openStream(north.token);
+    let ended = false;
+    void stream.ended.then(() => {
+      ended = true;
+    });
+    // Control positivo: con el permiso, sigue latiendo.
+    await until(() => ofKind(stream, 'heartbeat').length >= 2);
+    expect(ended).toBe(false);
+
+    const role = await prisma.role.findUniqueOrThrow({ where: { code: 'MEDICO' } }); // prettier-ignore
+    await prisma.rolePermission.deleteMany({
+      where: { roleId: role.id, permissionCode: 'record:read' },
+    });
+    registry.invalidate();
+
+    await until(() => ended);
+  });
 });

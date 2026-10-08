@@ -18,6 +18,8 @@ import {
 
 import { ConfigurationAuditTrail } from './configuration-audit.trail';
 import { SiteParametersService } from './site-parameters.service';
+import { InProcessLiveEventBus } from '../../../shared/events/live-event-bus';
+import type { LiveEvent } from '../../../shared/events/live-event';
 
 /**
  * The rules that are the SERVICE's to enforce, against a double of its port.
@@ -127,10 +129,14 @@ describe('los parámetros de operación de una sede', () => {
   let repository: RepositoryDouble;
   let recorded: AccessAuditEntry[];
   let service: SiteParametersService;
+  let announced: LiveEvent[];
 
   beforeEach(() => {
     repository = new RepositoryDouble();
     recorded = [];
+    announced = [];
+    const liveEvents = new InProcessLiveEventBus();
+    liveEvents.subscribe((event) => announced.push(event));
     service = new SiteParametersService(
       repository,
       new ConfigurationAuditTrail({
@@ -139,6 +145,7 @@ describe('los parámetros de operación de una sede', () => {
           return Promise.resolve();
         },
       }),
+      liveEvents,
     );
   });
 
@@ -154,6 +161,14 @@ describe('los parámetros de operación de una sede', () => {
     await expect(service.get('site-9')).rejects.toBeInstanceOf(
       SiteParametersNotFoundError,
     );
+  });
+
+  it('ORD-164 cambiar el plazo de aviso de críticos avisa a las colas abiertas de la sede; cambiar otra cosa, no', async () => {
+    await service.update('site-1', { maxLeadDays: 30 }, REQUESTER);
+    expect(announced).toEqual([]);
+
+    await service.update('site-1', { criticalNoticeWithinMinutes: 30 }, REQUESTER); // prettier-ignore
+    expect(announced).toEqual([{ kind: 'critical-results', siteId: 'site-1' }]);
   });
 
   it('CF-064 escribe una sola fila y no toca nada más', async () => {

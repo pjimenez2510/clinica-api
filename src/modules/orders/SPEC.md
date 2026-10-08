@@ -2356,7 +2356,8 @@ _Aceptada por el autor el 08-10-2026, paso 1 de dos. El canal es AU-054 a
 AU-058; aquí, qué publica `orders` y qué hace la pantalla con ello._
 
 - **ORD-164** — CUANDO se registre o corrija un informe, se empareje un
-  resultado o se registre o edite el aviso de un valor crítico, el sistema
+  resultado, se registre o edite el aviso de un valor crítico, o se cambie el
+  plazo de aviso o el rol de guardia de la sede, el sistema
   DEBERÁ publicar, **después** de confirmada la escritura, el aviso
   `critical-results` con la sede de la orden, que exige `record:read` en esa
   sede para recibirse (AU-056).
@@ -2376,14 +2377,26 @@ AU-058; aquí, qué publica `orders` y qué hace la pantalla con ello._
   > D-187 §4: sólo el crítico enseña algo; el resto refresca en silencio. El
   > toast no dice qué ni de quién porque una pantalla de mostrador la ve
   > cualquiera que pase; la cola, a un clic, sí.
-- **ORD-166** — MIENTRAS el canal esté abierto, la interfaz NO DEBERÁ pedir la
-  cola de críticos cada minuto: DEBERÁ releerla al llegar el plazo de aviso
-  más próximo de sus filas (`noticeDueAt`) y, de respaldo, cada 5 minutos; y
-  MIENTRAS el canal esté caído, cada minuto, como antes de D-187.
+- **ORD-166** — MIENTRAS el canal esté abierto y su bus no esté sordo
+  (AU-058), la interfaz NO DEBERÁ pedir la cola de críticos cada minuto:
+  DEBERÁ releerla al llegar el plazo de aviso más próximo de sus filas
+  (`noticeDueAt`), **medido con la hora del servidor** que traen los latidos,
+  —y SI una fila sigue sin vencer pasado su plazo ENTONCES DEBERÁ releerla
+  otra vez a los 15 segundos—, al recibir `resync` y, de respaldo, cada 5
+  minutos; y MIENTRAS el canal esté caído o sordo, cada minuto, como antes de
+  D-187. La interfaz DEBERÁ mantener **un único** canal por navegador, que
+  comparte con sus otras pestañas.
   > Lo que el minuto refrescaba además del contenido es el tiempo: «lleva
   > 12 min» y, sobre todo, el paso a «Vencido», que cambia a quién se llama
   > (ORD-065). Releer en el instante del plazo conserva lo segundo al minuto;
-  > lo primero, a los 5 minutos.
+  > lo primero, a los 5 minutos. Con el reloj del servidor porque el del PC
+  > puede ir adelantado o atrasado, y el paso a «Vencido» no puede depender
+  > de él; y un canal por navegador porque con HTTP/1.1 seis pestañas con su
+  > propio flujo agotaban las seis conexiones al servidor y la séptima
+  > petición —la de la cola, la de guardar una nota— no salía *(revisión
+  > clínica de la rama, G2 y G3)*. Lo que cambia sólo con la hora —la sede
+  > que cierra y pasa el aviso a la guardia (ORD-068)— se ve a los 5 minutos
+  > como mucho: D-190.
 
 ---
 

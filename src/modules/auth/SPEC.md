@@ -1015,7 +1015,9 @@ enlace que no sirve y con un correo que no sale.
   abierta (AU-036, AU-040)— con `record:read` en alguna sede pida
   `GET /events`, el sistema DEBERÁ abrir un flujo de eventos del servidor
   (`text/event-stream`) y DEBERÁ enviar por él un latido al menos cada 25
-  segundos; SI la petición no trae una sesión válida ENTONCES DEBERÁ
+  segundos, que lleve la hora del servidor y si el bus de avisos está sordo
+  (AU-058); DEBERÁ admitir como mucho **5** flujos abiertos por persona,
+  cerrando el más antiguo, y DEBERÁ terminarlos todos al apagarse la API; SI la petición no trae una sesión válida ENTONCES DEBERÁ
   rechazarla como cualquier otra ruta (401) sin abrir el flujo, y SI la sesión
   no tiene `record:read` en ninguna sede, con `PERMISSION_DENIED`.
   > **El token va en la cabecera `Authorization`, como en el resto de la API,
@@ -1039,8 +1041,11 @@ enlace que no sirve y con un correo que no sale.
   de aviso sin permiso declarado NO DEBERÁ poder publicarse.
   > El mismo alcance por sede que una lectura (AU-011, ADR-007): el médico de
   > la sede B no se entera de que en la sede A entró un crítico. Resolverlo en
-  > cada latido es lo que hace el guarda en cada petición: un rol retirado deja
-  > de recibir sin esperar a que caduque nada.
+  > cada latido es lo que hace el guarda en cada petición: un permiso quitado
+  > al rol deja de recibir sin esperar a que caduque nada. Lo que el token
+  > lleva —qué roles en qué sedes— cambia, como en el guarda, al renovarse
+  > (como mucho 15 minutos, ADR-007); el aviso no lleva dato, y la lectura que
+  > provoca sí pasa por la concesión vigente.
 - **AU-057** — El sistema DEBERÁ cerrar el flujo cuando caduque el token de
   acceso con que se abrió, y en el primer latido tras cerrarse, revocarse o
   caducar la sesión.
@@ -1051,13 +1056,19 @@ enlace que no sirve y con un correo que no sale.
 - **AU-058** — CUANDO esté configurado `REDIS_URL`, un aviso publicado en una
   instancia de la API DEBERÁ llegar a los flujos abiertos en todas, por el
   canal de Redis `LIVE_EVENTS_CHANNEL`; SI Redis no responde ENTONCES la
-  escritura que originó el aviso NO DEBERÁ fallar ni deshacerse. Sin
-  `REDIS_URL`, los avisos DEBERÁN circular dentro de la propia instancia.
+  escritura que originó el aviso NO DEBERÁ fallar ni deshacerse, el aviso
+  DEBERÁ llegar al menos a los flujos de la propia instancia, y los latidos
+  DEBERÁN decir que el bus está sordo; y CUANDO Redis vuelva, cada flujo
+  DEBERÁ recibir `resync` para que su pantalla relea todo. Sin `REDIS_URL`,
+  los avisos DEBERÁN circular dentro de la propia instancia.
   > El aviso es una comodidad sobre la verdad, que está en la base: perderlo
   > deja la pantalla como hoy, con su sondeo de respaldo (ORD-166). Dejar sin
   > guardar un aviso de crítico porque Redis no contestó sería al revés.
   > El canal es configurable porque el pub/sub de Redis no distingue bases
   > lógicas: dos instalaciones sobre un mismo Redis se oirían entre sí.
+  > *(Revisión clínica de la rama, G1: un canal abierto y sordo dejaba la
+  > pantalla en el respaldo de 5 minutos sin saberlo; ahora lo sabe y vuelve
+  > al minuto.)*
 
 ## Códigos de error
 

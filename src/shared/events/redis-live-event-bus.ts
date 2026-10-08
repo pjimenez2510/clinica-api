@@ -24,8 +24,14 @@ type RedisClient = ReturnType<typeof createClient>;
  *
  * THE PUBLISHER HAS NO OFFLINE QUEUE. With one, a `PUBLISH` while Redis is
  * down waits in memory until it comes back and then fires a burst of stale
- * events; without it, it fails at once and is logged. A lost event costs a
- * screen its instant refresh, never data (ORD-166 polls as a fallback).
+ * events; without it, it fails at once — and the event is then delivered to
+ * THIS instance's streams, so a single-instance installation loses nothing.
+ *
+ * DEAF IS SAID, NOT HIDDEN (revisión clínica G1). While either connection is
+ * down `healthy()` is false and every stream's heartbeat carries it, so the
+ * screens poll every minute again; and when the subscriber is back, the
+ * streams are told to read everything again, because what was published in
+ * the gap never arrived.
  *
  * Nothing about the event is logged — it carries nothing clinical anyway, but
  * the log line has no reason to know which site changed.
@@ -36,6 +42,9 @@ export class RedisLiveEventBus extends LiveEventBus implements OnModuleDestroy {
   private readonly publisher: RedisClient;
   private readonly subscriber: RedisClient;
   private readonly ready: Promise<void>;
+  private readonly recovered = new Set<() => void>();
+  private everReady = false;
+  private subscribed = false;
 
   constructor(
     url: string,
@@ -48,6 +57,12 @@ export class RedisLiveEventBus extends LiveEventBus implements OnModuleDestroy {
     // A Redis that went away is a degraded channel, not a dead API.
     this.publisher.on('error', () => this.reportDown('publisher'));
     this.subscriber.on('error', () => this.reportDown('subscriber'));
+    // node-redis emits `ready` on the first connection and on every
+    // reconnection; re-subscribing is its job, telling the screens is ours.
+    this.subscriber.on('ready', () => {
+      if (this.everReady) this.recovered.forEach((listener) => listener());
+      this.everReady = true;
+    });
     this.ready = this.connect();
   }
 
@@ -57,9 +72,22 @@ export class RedisLiveEventBus extends LiveEventBus implements OnModuleDestroy {
   }
 
   publish(event: LiveEvent): void {
-    this.publisher
-      .publish(this.channel, JSON.stringify(event))
-      .catch(() => this.reportDown('publish'));
+    this.publisher.publish(this.channel, JSON.stringify(event)).catch(() => {
+      this.reportDown('publish');
+      // This instance's own streams still hear it.
+      this.listeners.deliver(event);
+    });
+  }
+
+  override healthy(): boolean {
+    return this.subscribed && this.publisher.isReady && this.subscriber.isReady;
+  }
+
+  override onRecovered(listener: () => void): () => void {
+    this.recovered.add(listener);
+    return () => {
+      this.recovered.delete(listener);
+    };
   }
 
   subscribe(listener: LiveEventListener): () => void {
@@ -83,6 +111,7 @@ export class RedisLiveEventBus extends LiveEventBus implements OnModuleDestroy {
         // client, an older version — is dropped, never forwarded.
         if (event) this.listeners.deliver(event);
       });
+      this.subscribed = true;
     } catch {
       this.reportDown('connect');
     }

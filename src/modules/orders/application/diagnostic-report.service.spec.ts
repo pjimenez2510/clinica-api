@@ -461,6 +461,22 @@ describe('el registro y la corrección de un resultado', () => {
     expect(reports.written[0]?.report.results[0]?.abnormalFlag).toBe('LOW');
   });
 
+  it('ORD-164 al corregir un informe avisa a la sede de su orden', async () => {
+    reports.existing.set('report-0', aReport());
+
+    await service.correct(
+      {
+        reportId: 'report-0',
+        performedById: null,
+        issuedAt: new Date(Date.now() - 60_000),
+        results: [{ analyteDefinitionId: HAEMOGLOBIN.id, valueNumeric: 9.1 }],
+      },
+      requester,
+    );
+
+    expect(announced).toEqual([{ kind: 'critical-results', siteId: SITE }]);
+  });
+
   it('ORD-114 ORD-122 la corrección compara con los límites críticos congelados en el original, no con los de hoy', async () => {
     catalogue.byCodes = () =>
       Promise.resolve([

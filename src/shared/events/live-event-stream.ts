@@ -40,6 +40,20 @@ export interface LiveStreamOptions {
   /** AU-057. Until the access token it was opened with expires. */
   lifetimeMs: number;
   heartbeatMs?: number;
+  /**
+   * Hands the registry the way to end this stream from outside (the cap per
+   * user, the shutdown); returns what forgets it. Optional for tests.
+   */
+  register?: (end: () => void) => () => void;
+}
+
+/**
+ * What `ready` and every `heartbeat` carry: the server's clock, so the screen
+ * schedules deadlines on it and not on the PC's (revisión clínica G2), and
+ * whether the bus is deaf (G1). Nothing about anybody.
+ */
+function status(bus: LiveEventBus): { now: string; degraded: boolean } {
+  return { now: new Date().toISOString(), degraded: !bus.healthy() };
 }
 
 /**
@@ -64,7 +78,11 @@ export function liveEventStream(
     let principal = options.principal;
     let checking = false;
 
-    subscriber.next({ type: 'ready', retry: LIVE_RECONNECT_MS, data: {} });
+    subscriber.next({
+      type: 'ready',
+      retry: LIVE_RECONNECT_MS,
+      data: status(options.bus),
+    });
 
     const stopListening = options.bus.subscribe((event) => {
       if (!mayReceive(principal, event)) return;
@@ -91,10 +109,18 @@ export function liveEventStream(
             return;
           }
           principal = current;
-          subscriber.next({ type: 'heartbeat', data: {} });
+          subscriber.next({ type: 'heartbeat', data: status(options.bus) });
         })
         .catch(() => undefined);
     }, heartbeatMs);
+
+    // G1. The bus was deaf and is back: what was published meanwhile is lost,
+    // so the screen reads everything again.
+    const stopRecovery = options.bus.onRecovered(() => {
+      subscriber.next({ type: 'resync', data: status(options.bus) });
+    });
+
+    const forget = options.register?.(() => subscriber.complete());
 
     const expiry = setTimeout(
       () => subscriber.complete(),
@@ -104,6 +130,8 @@ export function liveEventStream(
 
     return () => {
       stopListening();
+      stopRecovery();
+      forget?.();
       clearInterval(heartbeat);
       clearTimeout(expiry);
     };

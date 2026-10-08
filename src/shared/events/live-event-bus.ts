@@ -20,6 +20,28 @@ export abstract class LiveEventBus {
 
   /** Returns the function that stops listening. */
   abstract subscribe(listener: LiveEventListener): () => void;
+
+  /**
+   * Whether events published ANYWHERE are reaching this instance now.
+   *
+   * A stream whose browser connection is alive can still be deaf: the broker
+   * dropped, and nothing published meanwhile will ever arrive. The stream says
+   * so on every heartbeat, and the screen goes back to polling every minute
+   * (ORD-166, revisión clínica G1).
+   */
+  healthy(): boolean {
+    return true;
+  }
+
+  /**
+   * Called each time the bus comes back after being deaf: whatever was
+   * published in the gap is lost, so the streams tell their screens to read
+   * everything again. Returns the function that stops listening.
+   */
+  onRecovered(listener: () => void): () => void {
+    void listener;
+    return () => undefined;
+  }
 }
 
 /**
