@@ -214,6 +214,7 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
     // un borrador vivo ya no existe: caja liquida y la atención espera de
     // alta a que el borrador se emita o se descarte (D-189, BI-236 en
     // billing-closes-encounter.spec.ts).
+    const userId = (await prisma.practitioner.findUniqueOrThrow({ where: { id: scene.practitioner.id } })).userId; // prettier-ignore
     const endedAt = new Date(scene.encounter.startedAt.getTime() + 3_600_000);
     await prisma.encounter.update({
       where: { id: scene.encounter.id },
@@ -222,7 +223,7 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
         endedAt,
         discontinuedReason: 'El paciente se retiró a mitad de la consulta',
         discontinuedOrigin: 'PATIENT',
-        discontinuedById: (await prisma.practitioner.findUniqueOrThrow({ where: { id: scene.practitioner.id } })).userId, // prettier-ignore
+        discontinuedById: userId,
         discontinuedAt: endedAt,
       },
     });
@@ -231,7 +232,7 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
     const discarded = await adapters(prisma).orders.discard({
       orderId: draft.id,
       sites: 'all',
-      userId: (await prisma.practitioner.findUniqueOrThrow({ where: { id: scene.practitioner.id } })).userId, // prettier-ignore
+      userId,
     });
     expect(discarded.status).toBe('DISCARDED');
     expect(discarded.number).toBeNull();
@@ -360,17 +361,18 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
 });
 
 describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
-  /** The attention ended in `status`, an hour after it started. */
+  /**
+   * The attention discharged, an hour after it started. `COMPLETED` only
+   * through caja: `closeThroughCashier` (D-184).
+   */
   const endEncounter = (
     prisma: PrismaClient,
     scene: Awaited<ReturnType<typeof aScene>>,
-    // `COMPLETED` only through caja: `closeThroughCashier` (D-184).
-    status: 'DISCHARGED',
   ) =>
     prisma.encounter.update({
       where: { id: scene.encounter.id },
       data: {
-        status,
+        status: 'DISCHARGED',
         endedAt: new Date(scene.encounter.startedAt.getTime() + 3_600_000),
         dischargeCondition: 'ALIVE',
       },
@@ -406,7 +408,7 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
     // Con la atención abierta y reciente no está colgado: se emite desde la pestaña.
     expect(await stale()).toEqual([]);
 
-    await endEncounter(prisma, scene, 'DISCHARGED');
+    await endEncounter(prisma, scene);
     const [entry] = await stale();
     expect(entry).toMatchObject({
       orderId: draft.id,
@@ -440,7 +442,7 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
     const prisma = db();
     const { scene, draft } = await aDraft(prisma);
     const userId = await signerOf(prisma, scene.practitioner.id);
-    await endEncounter(prisma, scene, 'DISCHARGED');
+    await endEncounter(prisma, scene);
     const now = new Date((await savedAt(prisma, draft.id)).getTime() + HOUR_MS);
     const stale = () => adapters(prisma).orders.staleDrafts({ userId, sites: 'all', now }); // prettier-ignore
     expect(await stale()).toHaveLength(1);

@@ -1511,10 +1511,15 @@ desde la pantalla.
   abierta o en espera el borrador se emite (ORD-005).
 
   Emitir sigue sujeto a ORD-005: con el alta dada (`DISCHARGED`) se emite; en
-  una atención terminada (`COMPLETED`, `DISCONTINUED`) sólo se descarta, y la
-  pantalla lo dice en vez de ofrecer un botón que sólo puede fallar. La lista
-  no deja fila de bitácora por entrada (ORD-092): lleva el nombre del paciente
-  y qué se pidió, nada del diagnóstico.
+  una atención terminada (`COMPLETED`, `DISCONTINUED`, `ENTERED_IN_ERROR`)
+  sólo se descarta, y la pantalla lo dice en vez de ofrecer un botón que sólo
+  puede fallar. La lista no deja fila de bitácora por entrada (ORD-092): lleva
+  el nombre del paciente y qué se pidió, nada del diagnóstico.
+
+  > **Con D-189** una atención `COMPLETED` ya no tiene borrador vivo: caja
+  > liquida y la atención espera de alta hasta que el último borrador se
+  > emite o se descarta. El borrador de una atención terminada es el de una
+  > interrumpida o anulada.
 
 - **ORD-127** — La edad con que se elige un rango (ORD-036) DEBERÁ ser la
   **edad entera en días congelada en la atención** (EN-221), y no la que da

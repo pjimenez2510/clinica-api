@@ -335,11 +335,14 @@ export async function createExamService(
  * has its discharge, with that account's instant and author. Nothing here
  * writes `COMPLETED`: `trg_patient_account_closes_its_encounter` does.
  *
- * An attention still `OPEN` is discharged first, an hour after it started,
- * as signing the 002 leaves it. The account is settled with nothing
- * invoiced, so with the reason it is not charged (BI-237); any account the
- * attention already had open is settled with it, since one left open keeps
- * the attention waiting.
+ * An attention still `OPEN` is given its discharge first, an hour after it
+ * started: only the state and its condition, no 002 is signed, so the trail's
+ * NOTE_SIGNED row has no author. Meant for attentions with nothing invoiced:
+ * the reason it is not charged (BI-237) is stated only when no charge is
+ * BILLED. Any account the attention already had open is the one settled (one
+ * per attention, `patient_account_one_open_per_encounter`), since one left
+ * open keeps the attention waiting. The cashier is a fresh user; its role
+ * does not matter to the database.
  *
  * Throws when the attention did not close: a draft order keeps it waiting
  * for its doctor (D-189), and a test that expected it closed must not go on
@@ -352,6 +355,11 @@ export async function closeThroughCashier(
   let encounter = await prisma.encounter.findUniqueOrThrow({
     where: { id: encounterId },
   });
+  if (encounter.status !== 'OPEN' && encounter.status !== 'DISCHARGED') {
+    throw new Error(
+      `closeThroughCashier: an attention ${encounter.status} is not closed by caja`,
+    );
+  }
   if (encounter.status === 'OPEN') {
     encounter = await prisma.encounter.update({
       where: { id: encounterId },
@@ -394,6 +402,9 @@ export async function closeThroughCashier(
     Math.max(Date.now(), encounter.endedAt?.getTime() ?? 0),
   );
   for (const account of accounts) {
+    const billed = await prisma.chargeItem.count({
+      where: { accountId: account.id, status: 'BILLED' },
+    });
     await prisma.patientAccount.update({
       where: { id: account.id },
       data: {
@@ -401,7 +412,7 @@ export async function closeThroughCashier(
         closedAt,
         changedById: cashier.id,
         changedAt: closedAt,
-        noChargeReason: 'Atención sin cargo',
+        noChargeReason: billed ? undefined : 'Atención sin cargo',
       },
     });
   }

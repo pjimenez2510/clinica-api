@@ -342,18 +342,30 @@ describe('la orden de exámenes contra PostgreSQL', () => {
   it('ORD-005 rechaza pedir exámenes en una atención ya cerrada', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
-    // Cerrada como se cierra: caja liquida la cuenta (BI-236).
-    await closeThroughCashier(prisma, scene.encounter.id);
-
-    await expect(
+    const order = () =>
       placeIssued(ordersOf(prisma), {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
         lines: [{ examDefinitionId: scene.bh.id }],
         sites: 'all',
-      }),
-    ).rejects.toMatchObject({ code: 'ORDER_ENCOUNTER_NOT_OPEN' });
+      });
+    // Control positivo: con el alta dada todavía se pide.
+    await prisma.encounter.update({
+      where: { id: scene.encounter.id },
+      data: {
+        status: 'DISCHARGED',
+        endedAt: new Date(scene.encounter.startedAt.getTime() + 3_600_000),
+        dischargeCondition: 'ALIVE',
+      },
+    });
+    await expect(order()).resolves.toMatchObject({ status: 'ISSUED' });
+
+    // Cerrada como se cierra: caja liquida la cuenta (BI-236).
+    await closeThroughCashier(prisma, scene.encounter.id);
+    await expect(order()).rejects.toMatchObject({
+      code: 'ORDER_ENCOUNTER_NOT_OPEN',
+    });
   });
 
   it('ORD-090 responde que la atención no existe cuando es de otra sede', async () => {
