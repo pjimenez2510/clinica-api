@@ -291,6 +291,34 @@ export class PriceListNotFoundError extends NotFoundError {
   }
 }
 
+/**
+ * BI-110. No published tariff yet, or no publication with that id. The public
+ * view answers it too: there is nothing on the wall until somebody publishes.
+ */
+export class TariffPublicationNotFoundError extends NotFoundError {
+  readonly code = 'TARIFF_PUBLICATION_NOT_FOUND';
+  override readonly userTitle =
+    'La clínica todavía no ha publicado su tarifario';
+
+  constructor() {
+    super('No tariff publication');
+  }
+}
+
+/**
+ * BI-111, BI-113. Nothing active with a self-pay price in force today: a wall
+ * with an empty tariff tells the public nothing true.
+ */
+export class TariffPublicationEmptyError extends ConflictError {
+  readonly code = 'TARIFF_PUBLICATION_EMPTY';
+  override readonly userTitle =
+    'No hay prestaciones activas con precio particular vigente que publicar';
+
+  constructor() {
+    super('No active service with a self-pay price in force');
+  }
+}
+
 /** BI-041. */
 export class PricePeriodInvalidError extends ValidationError {
   readonly code = 'PRICE_PERIOD_INVALID';

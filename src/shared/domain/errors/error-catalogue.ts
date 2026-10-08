@@ -568,6 +568,9 @@ export const DOMAIN_ERROR_CODES = [
   'PRICE_NOT_EDITABLE',
   'PRICE_NOT_FOUND',
   'PRICE_PERIOD_INVALID',
+  // El tarifario que se exhibe al público (BI-110 a BI-115, LOS art. 184).
+  'TARIFF_PUBLICATION_EMPTY',
+  'TARIFF_PUBLICATION_NOT_FOUND',
   // La cuenta y el cargo (BI-033, BI-057, BI-071, BI-072, BI-135).
   // `ACCOUNT_NOT_FOUND` no distingue «no existe» de «es de otra sede», por lo
   // mismo que `AGENDA_ENTRY_NOT_FOUND`: una cuenta confirma que un paciente

@@ -404,6 +404,15 @@ export const PERMISSION_CATALOGUE = [
     description: 'Crear y modificar listas de precios y tarifas',
   },
   {
+    // BI-113, LOS art. 184. Publishing what the public reads on the wall is
+    // its own act: it decides what the clinic PROMISES to charge, for
+    // everybody who walks in. Not `billing:price-manage`, because changing a
+    // price must not change the wall by itself (BI-115).
+    code: 'tariff:publish',
+    resource: 'billing',
+    description: 'Publicar el tarifario que se exhibe al público',
+  },
+  {
     // A discount beyond the role's own ceiling needs a SECOND person. Without a
     // separate permission there is nobody to ask.
     code: 'billing:discount-override',

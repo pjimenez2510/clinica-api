@@ -448,6 +448,11 @@ describe('every route declares its protection', () => {
      * DOC-094: the verification a QR opens is public BY DECISION of the author
      * (30-09-2026). It answers with no patient data and the same body for every
      * miss, and it is capped at 30 requests a minute per IP.
+     *
+     * BI-110, BI-112: the tariff on the wall is public BY LAW (LOS art. 184,
+     * «exhibir en sitios visibles para el público las tarifas que se
+     * cobran»). It takes no parameter, reads only the publication —never
+     * `price`—, exposes no id, author or payer, and is capped at 30 a minute.
      */
     expect(publicRoutes).toEqual([
       'AuthController.checkCredential',
@@ -457,6 +462,7 @@ describe('every route declares its protection', () => {
       'DocumentVerificationController.verify',
       'HealthController.check',
       'LivenessController.ping',
+      'PublicTariffController.onTheWall',
     ]);
   });
 

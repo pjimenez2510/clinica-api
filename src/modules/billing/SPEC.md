@@ -268,7 +268,7 @@ personal **no lo cumple**.
 **Prueba independiente:** pedir la vista pública sin ninguna credencial y
 obtener el tarifario con su versión y su fecha; cambiar un precio y comprobar
 que la publicación queda marcada como desactualizada sin cambiar sola.
-**Cubre:** BI-110 a BI-115.
+**Cubre:** BI-110 a BI-115. **Solo servidor:** BI-112.
 
 > **Esta entrega amplía la superficie pública del sistema, y eso es exactamente
 > lo que la prueba de rutas de la constitución (§6) hace fallar.** La ruta
@@ -1410,11 +1410,21 @@ es falsa, hay requisitos que cambian.
 
 ## 12. El tarifario que se exhibe al público
 
-> **Falta esquema, y es cierto: nada de esta sección existe.**
-> `tariff_publication`: `id`, `version`, `published_at`,
-> `effective_from date`, `published_by`, y `tariff_publication_item` con el
-> **precio copiado**, no referenciado. La publicación es una foto: si leyera
-> `price`, cambiaría sola y BI-115 no podría existir.
+> **Ya en el esquema** (`20261008220000_tariff_publication`).
+> `tariff_publication`: `id`, `version` única (`tariff_publication_version_unique`),
+> `effective_from date` —el día de la publicación en Ecuador—, `published_at`
+> con el reloj de la aplicación, `published_by`, `price_list_id` de la lista
+> particular de la que salió y `establishment_name` copiado; y
+> `tariff_publication_item` con el **código, el nombre, la categoría, el precio
+> y el % de IVA copiados**, no referenciados. La publicación es una foto: si
+> leyera `price`, cambiaría sola y BI-115 no podría existir. Las dos tablas son
+> de solo inserción por disparador (`trg_tariff_publication_immutable`).
+>
+> **Desactualizada (BI-115)** se calcula al leer, comparando la última con lo
+> que se publicaría hoy: precio o IVA distinto (el IVA se exhibe junto al
+> precio), prestación que salió (desactivada o sin precio vigente) y prestación
+> nueva con precio. Publicar sin nada activo con precio vigente se rechaza con
+> `TARIFF_PUBLICATION_EMPTY`: un cartel vacío no informa nada verdadero.
 
 - **BI-110** — El sistema DEBERÁ publicar el tarifario de la clínica como una
   vista accesible al público, con el nombre de cada prestación, su precio, la
@@ -2322,6 +2332,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `PAYMENT_REVERSAL_REASON_REQUIRED` | 422 | BI-102 |
 | `CASH_SESSION_CLOSED` | 409 | BI-104 |
 | `TARIFF_PUBLICATION_NOT_FOUND` | 404 | BI-110 |
+| `TARIFF_PUBLICATION_EMPTY` | 409 | BI-111, BI-113 |
 | `SERVICE_CATEGORY_NOT_FOUND` | 404 | BI-185 |
 | `SERVICE_CATEGORY_INACTIVE` | 422 | BI-185 |
 | `SERVICE_KIND_MISMATCH` | 422 | BI-187 |
@@ -2403,7 +2414,7 @@ duplicarse.
 | `billing:discount-override` | ya declarado | Autorizar un descuento por encima del límite de quien lo aplica | BI-063 |
 | `billing:credit-note` | ya declarado | Emitir notas de crédito | BI-091 |
 | `invoice:void` | **nuevo** | Anular una factura dentro del plazo del SRI | BI-092 |
-| `tariff:publish` | **nuevo** | Publicar el tarifario que se exhibe al público | BI-113 |
+| `tariff:publish` | declarado (de fábrica a `ADMIN`, con `billing:price-manage`: D-049) | Publicar el tarifario que se exhibe al público | BI-113 |
 | `settings:manage` | ya declarado | Asignar los límites de descuento por rol y administrar los medios de pago | BI-140, BI-141 |
 
 > **`invoice:void` es nuevo y no es `billing:credit-note`.** D-A-007 los separa
@@ -2487,7 +2498,8 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `POST` | `/billing/payment-methods` | `settings:manage` | `global` | BI-100, BI-140 |
 | `GET` | `/billing/tariff-publications` | `billing:read` | `global` | BI-113 |
 | `POST` | `/billing/tariff-publications` | `tariff:publish` | `global` | BI-113, BI-115 |
-| `GET` | `/public/tariff` | **`@Public()`** | — | BI-110, BI-111, BI-112, BI-114 |
+| `GET` | `/billing/tariff-publications/{publicationId}` | `billing:read` | `global` | BI-113 |
+| `GET` | `/public/tariff` | **`@Public()`**, 30/min por IP, sin parámetros | — | BI-110, BI-111, BI-112, BI-114 |
 
 > **No hay ruta que actualice ni borre una factura, y esa ausencia es BI-090 en
 > la tabla de rutas.** No es un olvido que alguien pueda «completar»: es el
