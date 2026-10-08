@@ -303,6 +303,17 @@ registerConstraintMeanings({
     message: 'Falta peso/talla: obligatorio para firmar la nota',
   },
   /**
+   * EN-240 (D-188 §7). The deferred trigger: the consultation note signed and
+   * the attention discharged with block F unanswered. The service refuses it
+   * first; this is the sentence for whatever reaches the commit anyway. It
+   * says what is missing and nothing else: every attention has one.
+   */
+  clinical_note_sign_needs_screening: {
+    code: 'SCREENING_PENDING',
+    field: 'screening',
+    message: 'Responda el tamizaje: sin signos, no se aplicó o con signos',
+  },
+  /**
    * EN-217, D-134.3. A correction of the taking of a discharged attention
    * left the mandatory anthropometry missing. The adapter refuses it first,
    * under the attention's lock, naming each measure; this is the sentence for
@@ -490,6 +501,15 @@ registerConstraintMeanings({
     code: 'VALIDATION_FAILED',
     field: 'reportedToAuthority',
     message: 'Sólo se notifica a la autoridad un tamizaje con signos',
+  },
+  /**
+   * EN-074, EN-242. Every notified screening says who recorded the
+   * notification and when; the adapter always stamps both.
+   */
+  violence_screening_notified_who_and_when: {
+    code: 'VALIDATION_FAILED',
+    field: 'notification',
+    message: 'La notificación a la autoridad se registra con quién y cuándo',
   },
   violence_screening_report_block_iff_reported: {
     code: 'VALIDATION_FAILED',

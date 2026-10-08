@@ -99,6 +99,12 @@ export const screeningSchema = z.object({
   /** EN-076. Who answered it and when. */
   screenedById: z.uuid(),
   screenedAt: z.iso.datetime(),
+  /**
+   * EN-074, EN-242. Who recorded the notification and when — after the
+   * discharge it is recorded apart; `null` when not notified.
+   */
+  notifiedById: z.uuid().nullable(),
+  notifiedAt: z.iso.datetime().nullable(),
 });
 export class ScreeningDto extends createZodDto(screeningSchema) {}
 

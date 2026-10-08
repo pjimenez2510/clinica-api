@@ -237,7 +237,8 @@ su atención, comprobando que exactamente una de las dos operaciones gana.
 derivación— y **EN-141 a EN-147** —quién abre, quién escribe y quién cierra—,
 **EN-166 a EN-169** —anular e interrumpir con constancia, una atención viva por
 cita, lo escrito en una atención terminada no se reescribe (D-080 a D-082,
-D-085)— y **EN-239** —recepción suspende y reanuda desde el tablero (D-184.4)—.
+D-085)—, **EN-239** —recepción suspende y reanuda desde el tablero (D-184.4)— y
+**EN-241** —las atenciones de alta con la cuenta liquidada antes de D-184 (D-186)—.
 
 **Por qué el estado entra en H1 y no después:** el estado de hoy es implícito
 —`ended_at IS NULL`— y con cinco estados eso deja de funcionar. Añadirlo cuando
@@ -247,7 +248,7 @@ abierta, una que se interrumpió y una que se dio de alta y nadie cobró, y no h
 dato que las distinga. Es de la misma familia que REQ-020 y REQ-021: no se
 captura retroactivamente.
 
-**Solo servidor:** EN-004, EN-005, EN-008, EN-010, EN-017, EN-132, EN-145, EN-168. La carrera con
+**Solo servidor:** EN-004, EN-005, EN-008, EN-010, EN-017, EN-132, EN-145, EN-168, EN-241 (ocurre al desplegar). La carrera con
 la anulación, la edad que escribe un disparador, el orden de los instantes, la
 fila de bitácora, las transiciones que el servidor rechaza y **la ausencia de
 cierre automático** son garantías de almacenamiento: ninguna pantalla puede
@@ -372,7 +373,7 @@ después, se construye encima de un régimen de acceso que ya está mal.
 abre la atención, **no ve el tamizaje** y no recibe un 403 que confirme que
 existe; con la llave lo ve y la lectura deja **una** fila de bitácora; y ningún
 listado de atenciones lo lleva, afirmado sobre la respuesta.
-**Cubre:** EN-070 a EN-078, EN-240.
+**Cubre:** EN-070 a EN-078, EN-240, EN-242.
 
 **Solo servidor:** EN-072, EN-073, EN-075. La puerta con sesión real, la ausencia
 en listados y logs, y la fila de bitácora. Una pantalla que decide no pintar algo
@@ -1794,6 +1795,66 @@ requisitos que cambian.
   > la antropometría (EN-217). El error dice que falta responder y nada más:
   > toda atención tiene uno que responder, así que no revela nada del paciente.
   > Consecuencia: quien firma la 002 necesita `record:protected` (D-188).
+  >
+  > **Enmendado por D-188 §7 (aceptada por el autor el 08-10-2026,
+  > `feat/f04-tamizaje-y-cierre-pendientes`): lo garantiza la base.**
+  > `trg_clinical_note_sign_needs_screening`, diferido como el de la
+  > antropometría (EN-217), rechaza al confirmar la transacción el paso de
+  > borrador a firmada de la 002 cuando la atención queda con el alta y no
+  > tiene fila en `violence_screening`; lo traduce `encounter.constraints.ts`
+  > a `SCREENING_PENDING`. Interrumpir firma la 002 sin dar el alta y no lo
+  > pide. Las pruebas que firman notas directo en la base responden antes el
+  > tamizaje con `answerScreening` (`test/integration/setup/fixtures.ts`): la
+  > regla no se debilita para ellas.
+- **EN-241** — CUANDO se despliegue esta entrega, el sistema DEBERÁ cerrar
+  **una sola vez** (`COMPLETED`) cada atención con el alta (`DISCHARGED`) cuya
+  cuenta caja liquidó antes de D-184, con quien cerró esa cuenta y su
+  instante, y pasar a su paciente a `DEPARTED`; y NO DEBERÁ cerrar la que
+  tenga una cuenta abierta, una orden en borrador (D-189) o una última cuenta
+  liquidada sin nada facturado ni motivo de no cobro (BI-237). Quién y cuándo
+  cerró una cuenta liquidada lo exige ya `patient_account_change_stamped`.
+  > **D-186 (aceptada por el autor el 08-10-2026).** El disparador de D-184
+  > sólo actúa al pasar una cuenta de abierta a liquidada, así que las ya
+  > liquidadas dejaban su atención de alta para siempre y al paciente sin
+  > «Salió». No es el cierre automático que prohíbe EN-145: no inventa la
+  > condición de egreso —la declaró el médico al firmar— ni el instante ni el
+  > autor, que son los de la cuenta. La de cuenta en cero sin motivo se queda
+  > como está: no consta por qué no se cobró.
+  >
+  > **Garantía de la base:** la migración
+  > `20261008180000_encounter_close_settled_backlog` llama a
+  > `encounter_close_settled_backlog()`, que aplica
+  > `encounter_completes_when_settled` (la misma de D-184) a cada atención
+  > elegible y devuelve cuántas cerró; el historial (EN-133) deja su fila
+  > `ACCOUNT_CLOSED` con quien cerró la cuenta. En desarrollo, sin prueba
+  > sobre copia (decisión del autor); en la base del autor cierra una.
+- **EN-242** — MIENTRAS la atención tenga el alta (`DISCHARGED` o
+  `COMPLETED`), CUANDO quien tiene `record:protected` y `record:write` en su
+  sede registre o corrija la **notificación a la autoridad** (EN-074) de un
+  tamizaje positivo, el sistema DEBERÁ guardarla con **quién** la registró y
+  **cuándo**, archivando la respuesta anterior entera; y SI la escritura
+  cambia el resultado, los tipos, la acción tomada o el instrumento, quita la
+  notificación, o no hay tamizaje positivo que notificar, ENTONCES DEBERÁ
+  rechazarla con `SCREENING_LOCKED_AFTER_DISCHARGE` sin cambiar nada. Quien
+  aplicó el tamizaje y cuándo (EN-076) NO DEBERÁN cambiar.
+  > **D-188 §5 (aceptada por el autor el 08-10-2026).** El plazo para
+  > notificar es de 24 horas (D-052 §1) y el formulario 094 se llena muchas
+  > veces cuando la 002 ya está firmada. Como la corrección de signos tras el
+  > alta (D-134.3), lo que se completa no reescribe lo firmado: el resultado
+  > con el que se dio el alta no cambia. Antes del alta la notificación va con
+  > el resto del tamizaje (EN-070) y también deja quién y cuándo.
+  >
+  > **Garantía de la base:** `violence_screening_guard` admite con el alta
+  > sólo el `UPDATE` que deja igual todo salvo el bloque de notificación,
+  > notificado y con `notified_by_id`/`notified_at` nuevos;
+  > `violence_screening_notified_who_and_when` exige quién y cuándo en todo
+  > tamizaje notificado. La fila anterior va a `violence_screening_version`
+  > con quien la reemplazó. **Lo que no garantiza la base:** quién escribe;
+  > las dos llaves las mira la ruta.
+  >
+  > **En pantalla:** bajo un tamizaje con signos de una atención con el alta,
+  > quien tiene las dos llaves ve «Registrar la notificación» (o «Corregir la
+  > notificación»), que abre sólo los cuatro campos del formulario oficial.
 
 > **Construido el 08-10-2026 (`feat/f04-tamizaje-violencia`).** El permiso es
 > `record:protected` y lo trae `MEDICO` de fábrica (D-188, pendiente). Se lee
@@ -1808,9 +1869,9 @@ requisitos que cambian.
 > de `record_version`: D-188 §3), y el rechazo de escribir con la atención no
 > viva o de borrar, en `20261008170100_violence_screening_history`. La fila
 > de bitácora se escribe en la misma transacción que la lectura o el guardado:
-> si no se puede escribir, no se muestra ni se guarda nada. Fuera: registrar la
-> notificación después del alta (D-188 §5) y el formulario 094 en papel
-> (D-052 §1).
+> si no se puede escribir, no se muestra ni se guarda nada. Fuera: el
+> formulario 094 en papel (D-052 §1). La notificación después del alta es
+> EN-242 (D-188 §5, `feat/f04-tamizaje-y-cierre-pendientes`).
 
 ## 6. Alergias y antecedentes (REQ-008)
 
@@ -4227,6 +4288,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_ALREADY_CLOSED` | 409 | Se intentó registrar contenido clínico en una atención ya cerrada | EN-009 |
 | `DISCHARGE_CONDITION_REQUIRED` | 422 | Cerrar sin condición de egreso | EN-009 |
 | `SCREENING_PENDING` | 422 | Se firma la nota que da el alta con el tamizaje de violencia sin responder. No dice nada del paciente: toda atención tiene uno | EN-240 |
+| `SCREENING_LOCKED_AFTER_DISCHARGE` | 409 | Con el alta dada se pide cambiar algo del tamizaje que no es la notificación a la autoridad, quitarla, o notificar sin tamizaje con signos. No repite ningún valor | EN-242 |
 | `REFERRAL_REQUIRED_ON_DISCHARGE` | 422 | Egreso `REFERRED` sin referencia emitida | EN-105 |
 | `NOTE_ALREADY_SIGNED` | 409 | Editar una nota firmada. **Traducido por el servicio**, no por el mapa de constraints: el disparador levanta `insufficient_privilege`, que a secas saldría como 403 y diría al médico que no tiene permisos cuando lo que pasa es que la nota está firmada | EN-023 |
 | `AMENDMENT_REASON_REQUIRED` | 422 | Enmendar sin motivo. Se exige **en el servicio** además del DTO, por lo mismo que `CANCELLATION_REASON_REQUIRED` | EN-025 |
@@ -4565,6 +4627,7 @@ prueba o el CI falla**.
 | EN-148, EN-149 | Contrato HTTP con la capacidad **apagada** —que es el defecto—: la ruta de triaje responde `TRIAGE_NOT_ENABLED` y **ninguna respuesta del módulo lleva nivel de triaje**, afirmado sobre el cuerpo. Con la capacidad encendida, el nivel se registra con su autor |
 | EN-235 | **Integración contra PostgreSQL real, con control positivo**: un asterisco y una causa externa no entran como rango 1 ni por `INSERT` ni por `UPDATE` de rango o de concepto, y como rango 2 sí; un código `PRINCIPAL` sí; un concepto sin `use` sí. HTTP: registrar, editar el código y marcar principal responden `DIAGNOSIS_PRINCIPAL_USE_INVALID` con la frase, y deshacer devuelve el asterisco detrás |
 | EN-236 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza firmar la 002 que da el alta con diagnósticos y ninguno de rango 1, y la firma con el principal; también con un rango 1 que el catálogo reclasificó como asterisco o causa externa, y la firma vuelto a `PRINCIPAL`; firmar los borradores de una interrupción no lo exige. HTTP: `NOTE_CONTENT_INCOMPLETE` en `principalDiagnosis`, sin firmar |
+| EN-240, EN-241, EN-242 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza firmar la 002 que da el alta sin tamizaje y la firma con «No se aplicó», e interrumpir no lo pide; el relleno de D-186 cierra la atención de alta con cuenta facturada y liquidada —autor e instante de la cuenta, paciente fuera, fila del historial— y no toca la de cuenta abierta, en cero sin motivo ni con orden en borrador; tras el alta la base admite sólo completar la notificación —archivada la anterior, con quién y cuándo— y rechaza cambiar el resultado, quitarla o un tamizaje nuevo. HTTP: las dos llaves y `SCREENING_LOCKED_AFTER_DISCHARGE` |
 | EN-052 | **Integración contra PostgreSQL real, con control positivo**: la base rechaza el CEO-D a los 11 años y a los 6 meses, `extraídos` en el CPO-D, `perdidos` en el CEO-D y una cuenta por encima de los dientes que hay, y acepta las dos buenas; corregir deja la anterior en `record_version`. HTTP: fuera de odontología `DENTAL_INDEX_NOT_APPLICABLE` |
 | EN-151, EN-152, EN-153, EN-154 | Contrato HTTP: un procedimiento de riesgo mínimo se registra **sin consentimiento alguno**; uno de riesgo mayor sin 024 se rechaza; la negativa **no cierra** la atención; y revocar deja el consentimiento anterior legible (contar filas) |
 | EN-155, EN-156 | Integración con el parámetro en sus dos posiciones: encendido, firmar sin certificado vigente falla; apagado, la nota se firma **y la constancia de que no lleva certificado viaja en la nota**, no en la pantalla |

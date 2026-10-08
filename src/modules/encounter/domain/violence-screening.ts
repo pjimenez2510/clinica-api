@@ -79,4 +79,39 @@ export interface ScreeningAnswer {
 export interface ScreeningRecord extends ScreeningAnswer {
   screenedById: string;
   screenedAt: Date;
+  /**
+   * EN-074, EN-242. Who recorded the notification and when; `null` when not
+   * notified. After the discharge it is recorded apart from the screening.
+   */
+  notifiedById: string | null;
+  notifiedAt: Date | null;
+}
+
+/**
+ * EN-242 (D-188 §5). With the discharge given, what may change: the
+ * notification of a screening with signs, completed or corrected — never
+ * removed — and nothing else of the answer the 002 was signed with.
+ */
+export function admitsAfterDischarge(
+  current: ScreeningRecord | null,
+  next: ScreeningAnswer,
+): boolean {
+  if (current === null || next.notification === null) return false;
+  if (current.result !== 'SUSPECTED' && current.result !== 'CONFIRMED') {
+    return false;
+  }
+  return (
+    next.result === current.result &&
+    sameTypes(next.types, current.types) &&
+    next.actionTaken === current.actionTaken &&
+    next.screeningTool === current.screeningTool
+  );
+}
+
+/** EN-071. The same set of types, in any order. */
+export function sameTypes(
+  a: readonly ViolenceType[],
+  b: readonly ViolenceType[],
+): boolean {
+  return [...a].sort().join() === [...b].sort().join();
 }

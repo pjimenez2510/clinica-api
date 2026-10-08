@@ -747,6 +747,9 @@ export const DOMAIN_ERROR_CODES = [
   'ANTHROPOMETRY_PENDING',
   // EN-240. The discharge is signed with block F unanswered.
   'SCREENING_PENDING',
+  // EN-242 (D-188 §5). With the discharge given only the notification to the
+  // authority is completed: 409, the attention's state is what refuses.
+  'SCREENING_LOCKED_AFTER_DISCHARGE',
   'APPOINTMENT_NOT_ATTENDABLE',
   'BMI_IS_DERIVED',
   'CLINICAL_NOTE_NOT_FOUND',

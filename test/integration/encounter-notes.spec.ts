@@ -19,6 +19,7 @@ import '../../src/modules/encounter/infrastructure/encounter.constraints';
 
 import { useDatabase } from './setup/database';
 import {
+  answerScreening,
   createDiagnosis,
   createPatient,
   createPractitioner,
@@ -56,7 +57,11 @@ const SIGNED_AT = new Date('2026-08-14T15:00:00Z');
 const notesOf = (prisma: PrismaClient) =>
   new PrismaClinicalNoteRepository(prisma as unknown as PrismaService);
 
-async function aDraft(prisma: PrismaClient, diagnosisCode = 'J00') {
+async function aDraft(
+  prisma: PrismaClient,
+  diagnosisCode = 'J00',
+  { screened = true }: { screened?: boolean } = {},
+) {
   const site = await createSite(prisma);
   const practitioner = await createPractitioner(prisma);
   const patient = await createPatient(prisma);
@@ -74,6 +79,8 @@ async function aDraft(prisma: PrismaClient, diagnosisCode = 'J00') {
 
   // EN-020. Signing the 002 discharges, and a discharge needs a diagnosis.
   await createDiagnosis(prisma, encounter.id, diagnosisCode);
+  // EN-240. And block F answered.
+  if (screened) await answerScreening(prisma, encounter.id, practitioner.id);
 
   const note = await notesOf(prisma).createDraft({
     encounterId: encounter.id,
@@ -579,6 +586,54 @@ describe('la nota clínica firmada', () => {
     });
     expect(after.content).toEqual(COMPLETE_002);
     expect(after.contentHash).toBe(signed.contentHash);
+  });
+
+  it('EN-240 la BASE rechaza firmar la 002 que da el alta sin tamizaje respondido, con SCREENING_PENDING, y la firma con «No se aplicó»', async () => {
+    const prisma = db();
+    const ids = await aDraft(prisma, 'J00', { screened: false });
+
+    let problem: unknown;
+    try {
+      await sign(prisma, ids, ids.encounter.id, ids.note.id);
+    } catch (error) {
+      expect((error as Error).message).toContain(
+        'clinical_note_sign_needs_screening',
+      );
+      problem = extractDatabaseProblem(error);
+    }
+    expect(problem).toMatchObject({
+      code: 'SCREENING_PENDING',
+      errors: [expect.objectContaining({ field: 'screening' })],
+    });
+    const unsigned = await prisma.clinicalNote.findUniqueOrThrow({ where: { id: ids.note.id } }); // prettier-ignore
+    expect(unsigned.status).toBe('DRAFT');
+    const live = await prisma.encounter.findUniqueOrThrow({ where: { id: ids.encounter.id } }); // prettier-ignore
+    expect(live.status).toBe('OPEN');
+
+    // Positive control: «No se aplicó» is an answer, and the same note signs.
+    await answerScreening(prisma, ids.encounter.id, ids.practitioner.id);
+    const signed = await sign(prisma, ids, ids.encounter.id, ids.note.id);
+    expect(signed.status).toBe('SIGNED');
+  });
+
+  it('EN-240 firmar la 002 sin dar el alta no exige el tamizaje: la regla es del alta', async () => {
+    const prisma = db();
+    const ids = await aDraft(prisma, 'J00', { screened: false });
+
+    const signed = await notesOf(prisma).sign(
+      { encounterId: ids.encounter.id, noteId: ids.note.id, sites: [ids.site.id] },
+      (note) => ({
+        signedById: ids.practitioner.id,
+        signedAt: SIGNED_AT,
+        content: note.content,
+        contentHash: contentHashOf({ content: note.content, signedById: ids.practitioner.id, signedAt: SIGNED_AT }), // prettier-ignore
+        dischargesTheEncounter: false,
+        dischargeCondition: null,
+      }),
+    ); // prettier-ignore
+
+    expect(signed.status).toBe('SIGNED');
+    expect(await prisma.violenceScreening.count()).toBe(0);
   });
 
   it('EN-236 la BASE rechaza firmar la 002 que da el alta sin diagnóstico principal, y la firma con él', async () => {

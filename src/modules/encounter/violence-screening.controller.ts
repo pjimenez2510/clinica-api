@@ -70,7 +70,8 @@ export class ViolenceScreeningController {
   }
 
   /**
-   * EN-070, EN-076. Answers or corrects it. The guard asks for the second
+   * EN-070, EN-076. Answers or corrects it; with the discharge given, only
+   * its notification to the authority (EN-242). The guard asks for the second
    * key; the scope is where the caller ALSO holds `record:write`, so the key
    * alone never writes the history.
    */
@@ -145,5 +146,7 @@ function toResponse(record: ScreeningRecord): ScreeningResponse {
     notification: record.notification && { ...record.notification },
     screenedById: record.screenedById,
     screenedAt: record.screenedAt.toISOString(),
+    notifiedById: record.notifiedById,
+    notifiedAt: record.notifiedAt?.toISOString() ?? null,
   };
 }

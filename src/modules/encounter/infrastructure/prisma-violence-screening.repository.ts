@@ -6,12 +6,18 @@ import type { EncounterStatus } from '../domain/encounter';
 import {
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
+  ScreeningLockedAfterDischargeError,
 } from '../domain/encounter.errors';
 import type { EncounterQuery } from '../domain/encounter.repository';
-import { acceptsNewClinicalContent } from '../domain/encounter-state';
-import type {
-  ScreeningAnswer,
-  ScreeningRecord,
+import {
+  acceptsNewClinicalContent,
+  hasDischarge,
+} from '../domain/encounter-state';
+import {
+  admitsAfterDischarge,
+  sameTypes,
+  type ScreeningAnswer,
+  type ScreeningRecord,
 } from '../domain/violence-screening';
 import type {
   ScreeningSave,
@@ -37,6 +43,8 @@ const SCREENING_SELECT = {
   aggressorRelationship: true,
   screenedById: true,
   screenedAt: true,
+  notifiedById: true,
+  notifiedAt: true,
 } satisfies Prisma.ViolenceScreeningSelect;
 
 type ScreeningRow = Prisma.ViolenceScreeningGetPayload<{
@@ -91,15 +99,25 @@ export class PrismaViolenceScreeningRepository implements ViolenceScreeningRepos
          WHERE "id" = ${query.encounterId}::uuid
            FOR UPDATE`;
       if (!locked) throw new EncounterNotFoundError();
-      if (!acceptsNewClinicalContent(locked.status)) {
+      const live = acceptsNewClinicalContent(locked.status);
+      if (!live && !hasDischarge(locked.status)) {
         throw new EncounterAlreadyClosedError(locked.status);
       }
 
-      const current = await tx.violenceScreening.findUnique({
+      const found = await tx.violenceScreening.findUnique({
         where: { encounterId: query.encounterId },
         select: SCREENING_SELECT,
       });
-      const columns = toColumns(answer);
+      const current = found && toRecord(found);
+
+      if (!live) {
+        return completeNotification(tx, query.encounterId, current, answer, author, trail); // prettier-ignore
+      }
+
+      const columns = {
+        ...toColumns(answer),
+        ...notifiedStamp(current, answer, author),
+      };
 
       if (current === null) {
         const created = await tx.violenceScreening.create({
@@ -115,10 +133,10 @@ export class PrismaViolenceScreeningRepository implements ViolenceScreeningRepos
         return { record: toRecord(created), outcome: 'CREATED' };
       }
 
-      if (sameAnswer(toRecord(current), answer)) {
+      if (sameAnswer(current, answer)) {
         // What comes back says who answered and when: that is a read.
         await writeTrail(tx, query.encounterId, 'READ', trail);
-        return { record: toRecord(current), outcome: 'UNCHANGED' };
+        return { record: current, outcome: 'UNCHANGED' };
       }
 
       // EN-076. A correction is a new answer: who gave it and when move with
@@ -136,6 +154,59 @@ export class PrismaViolenceScreeningRepository implements ViolenceScreeningRepos
       return { record: toRecord(updated), outcome: 'UPDATED' };
     });
   }
+}
+
+/**
+ * EN-242 (D-188 §5). With the discharge given, only the notification of a
+ * screening with signs is completed or corrected; who applied the screening
+ * and when stay, and who recorded the notification moves with it.
+ * `trg_violence_screening_guard` refuses anything else and archives the row
+ * it replaces.
+ */
+async function completeNotification(
+  tx: Prisma.TransactionClient,
+  encounterId: string,
+  current: ScreeningRecord | null,
+  answer: ScreeningAnswer,
+  author: { practitionerId: string; at: Date },
+  trail: ScreeningTrail,
+): Promise<ScreeningSave> {
+  if (!admitsAfterDischarge(current, answer) || current === null) {
+    throw new ScreeningLockedAfterDischargeError();
+  }
+  if (sameNotification(current, answer)) {
+    await writeTrail(tx, encounterId, 'READ', trail);
+    return { record: current, outcome: 'UNCHANGED' };
+  }
+  const updated = await tx.violenceScreening.update({
+    where: { encounterId },
+    data: {
+      ...notificationColumns(answer),
+      notifiedById: author.practitionerId,
+      notifiedAt: author.at,
+    },
+    select: SCREENING_SELECT,
+  });
+  await writeTrail(tx, encounterId, 'UPDATE', trail);
+  return { record: toRecord(updated), outcome: 'UPDATED' };
+}
+
+/**
+ * EN-074. Who recorded the notification: kept when it did not change, the
+ * author when it did, and none when there is none.
+ */
+function notifiedStamp(
+  current: ScreeningRecord | null,
+  answer: ScreeningAnswer,
+  author: { practitionerId: string; at: Date },
+) {
+  if (answer.notification === null) {
+    return { notifiedById: null, notifiedAt: null };
+  }
+  if (current !== null && sameNotification(current, answer)) {
+    return { notifiedById: current.notifiedById, notifiedAt: current.notifiedAt }; // prettier-ignore
+  }
+  return { notifiedById: author.practitionerId, notifiedAt: author.at };
 }
 
 /**
@@ -167,6 +238,13 @@ function toColumns(answer: ScreeningAnswer) {
     types: answer.types,
     actionTaken: answer.actionTaken,
     screeningTool: answer.screeningTool,
+    ...notificationColumns(answer),
+  } satisfies Prisma.ViolenceScreeningUncheckedUpdateInput;
+}
+
+/** EN-074. The block copied from the official form, all or nothing. */
+function notificationColumns(answer: ScreeningAnswer) {
+  return {
     reportedToAuthority: answer.notification !== null,
     authorityFormSerial: answer.notification?.formSerial ?? null,
     injury: answer.notification?.injury ?? null,
@@ -197,16 +275,33 @@ function toRecord(row: ScreeningRow): ScreeningRecord {
       : null,
     screenedById: row.screenedById,
     screenedAt: row.screenedAt,
+    notifiedById: notified ? row.notifiedById : null,
+    notifiedAt: notified ? row.notifiedAt : null,
   };
 }
 
 function sameAnswer(current: ScreeningRecord, next: ScreeningAnswer): boolean {
   return (
     current.result === next.result &&
-    [...current.types].sort().join() === [...next.types].sort().join() &&
+    sameTypes(current.types, next.types) &&
     current.actionTaken === next.actionTaken &&
     current.screeningTool === next.screeningTool &&
-    JSON.stringify(current.notification) === JSON.stringify(next.notification)
+    sameNotification(current, next)
+  );
+}
+
+function sameNotification(
+  current: ScreeningRecord,
+  next: ScreeningAnswer,
+): boolean {
+  const a = current.notification;
+  const b = next.notification;
+  if (a === null || b === null) return a === b;
+  return (
+    a.formSerial === b.formSerial &&
+    a.injury === b.injury &&
+    a.aggressorIdentified === b.aggressorIdentified &&
+    a.aggressorRelationship === b.aggressorRelationship
   );
 }
 

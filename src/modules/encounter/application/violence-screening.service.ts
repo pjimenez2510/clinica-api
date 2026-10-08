@@ -11,7 +11,10 @@ import {
   type EncounterRepository,
   type EncounterView,
 } from '../domain/encounter.repository';
-import { acceptsNewClinicalContent } from '../domain/encounter-state';
+import {
+  acceptsNewClinicalContent,
+  hasDischarge,
+} from '../domain/encounter-state';
 import type {
   ScreeningAnswer,
   ScreeningRecord,
@@ -89,7 +92,9 @@ export class ViolenceScreeningService {
 
   /**
    * EN-070, EN-076. Answers or corrects the screening while the attention is
-   * live. The `requester.sites` are where the caller holds BOTH keys.
+   * live; with the discharge given, completes only its notification to the
+   * authority (EN-242) — the adapter decides which under the attention's
+   * lock. The `requester.sites` are where the caller holds BOTH keys.
    */
   async record(
     encounterId: string,
@@ -97,7 +102,10 @@ export class ViolenceScreeningService {
     requester: Requester,
   ): Promise<ScreeningRecord> {
     const encounter = await this.requireEncounter(encounterId, requester);
-    if (!acceptsNewClinicalContent(encounter.status)) {
+    if (
+      !acceptsNewClinicalContent(encounter.status) &&
+      !hasDischarge(encounter.status)
+    ) {
       throw new EncounterAlreadyClosedError(encounter.status);
     }
     const practitioner = await this.encounters.findPractitionerByUser(
