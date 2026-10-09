@@ -442,6 +442,7 @@ grupo prioritario «Embarazadas» no está registrado en la atención —que es 
 condición literal del instructivo, p. 50—; y que el bloque de VIH exige la misma
 llave que el tamizaje de violencia.
 **Cubre:** EN-090 a EN-095, EN-097, EN-098, EN-249 (`feat/f04-bloques-programa`).
+
 EN-096 —los suplementos, columnas 105 a 108— y EN-099 —los grupos prioritarios y
 vulnerables de la atención, columnas 29 a 34— no son de los bloques G a J y
 pasan a H14.
