@@ -549,9 +549,14 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     voidedById: string;
     reason: string | null;
     now: Date;
+    onlyIfStatus?: ChargeStatus;
   }): Promise<ChargeView> {
     return this.prisma.$transaction(async (tx) => {
       const current = await lockCharge(tx, command.chargeId);
+      // BI-243. Under the lock: a line caja confirmed meanwhile is caja's.
+      if (command.onlyIfStatus && current.status !== command.onlyIfStatus) {
+        return toChargeView(current);
+      }
       requireOpen(current.status);
 
       const row = await tx.chargeItem.update({
@@ -679,6 +684,10 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     try {
       return await this.prisma.$transaction(async (tx) => {
         const current = await lockCharge(tx, command.chargeId);
+        // BI-243. Under the lock: a line caja confirmed meanwhile is caja's.
+        if (command.onlyIfStatus && current.status !== command.onlyIfStatus) {
+          return toChargeView(current);
+        }
         requireOpen(current.status);
 
         const billableServiceId =

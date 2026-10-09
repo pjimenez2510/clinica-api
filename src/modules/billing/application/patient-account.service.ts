@@ -528,9 +528,10 @@ export class PatientAccountService {
       }
       const service = services.get(procedure.conceptId);
       const quantity = Quantity.parse(String(procedure.quantity));
+      // A concept with no service to charge it is not what the line charges.
       if (
-        (service !== undefined &&
-          service.billableServiceId !== line.billableServiceId) ||
+        service === undefined ||
+        service.billableServiceId !== line.billableServiceId ||
         quantity.thousandths !== line.quantity.thousandths
       ) {
         outdated.push({ chargeId: line.id, billed, reason: 'CHANGED' });

@@ -2138,6 +2138,38 @@ describe('el bloque K por HTTP', () => {
       expect(sheet.retracted).toEqual([]);
     });
 
+    it('EN-121 EN-244 EN-245 EN-246 la atención de otra sede no existe, el procedimiento de otra atención tampoco, y cada acto deja su fila de bitácora', async () => {
+      const { encounterId, id } = await aProcedure();
+      const elsewhere = await anEncounterElsewhere();
+      const other = await openEncounter();
+
+      for (const response of [
+        await patch(`/encounters/${elsewhere}/procedures/${id}`, doctorToken, { quantity: 1 }), // prettier-ignore
+        await post(`/encounters/${elsewhere}/procedures/${id}/retract`, doctorToken, { reason: 'x' }), // prettier-ignore
+        await get(`/encounters/${elsewhere}/procedures/${id}/versions`, doctorToken), // prettier-ignore
+      ]) {
+        expect(response.status).toBe(404);
+        expect((response.body as Problem).code).toBe('ENCOUNTER_NOT_FOUND');
+      }
+      for (const response of [
+        await patch(`/encounters/${other}/procedures/${id}`, doctorToken, { quantity: 1 }), // prettier-ignore
+        await post(`/encounters/${other}/procedures/${id}/retract`, doctorToken, { reason: 'x' }), // prettier-ignore
+        await post(`/encounters/${other}/procedures/${id}/restore`, doctorToken), // prettier-ignore
+      ]) {
+        expect(response.status).toBe(404);
+        expect((response.body as Problem).code).toBe('PROCEDURE_NOT_FOUND');
+      }
+
+      const before = await auditRows('encounter_procedure');
+      await patch(`/encounters/${encounterId}/procedures/${id}`, doctorToken, { quantity: 1 }).expect(200); // prettier-ignore
+      await get(`/encounters/${encounterId}/procedures/${id}/versions`, doctorToken).expect(200); // prettier-ignore
+      await post(`/encounters/${encounterId}/procedures/${id}/retract`, doctorToken, { reason: 'Registrado por error' }).expect(204); // prettier-ignore
+      await post(`/encounters/${encounterId}/procedures/${id}/restore`, doctorToken).expect(200); // prettier-ignore
+      expect(await auditRows('encounter_procedure')).toBe(before + 4);
+      // Positive control: nothing of the other attention moved.
+      expect(await prisma.encounterProcedure.count({ where: { encounterId: other } })).toBe(0); // prettier-ignore
+    });
+
     it('EN-244 EN-245 EN-246 tras el alta no se corrige, no se quita ni se restaura: ENCOUNTER_ALREADY_CLOSED (D-194.1)', async () => {
       const { encounterId, id } = await aProcedure();
       const second = await post(

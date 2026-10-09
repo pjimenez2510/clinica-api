@@ -53,10 +53,10 @@ function archive(
   return prisma.$executeRaw`
     INSERT INTO encounter_procedure_retraction
       (id, encounter_id, concept_id, procedure_code, procedure_display,
-       quantity, performed_at, note, edited_by_id, edited_at,
+       quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
        retracted_at, retracted_by_id, reason)
     SELECT id, encounter_id, concept_id, procedure_code, procedure_display,
-           quantity, performed_at, note, edited_by_id, edited_at,
+           quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
            ${new Date()}, ${removerId}::uuid, ${reason}
       FROM encounter_procedure WHERE id = ${procedureId}::uuid`;
 }
@@ -225,5 +225,35 @@ describe('corregir y quitar un procedimiento deja rastro (EN-244 a EN-246)', () 
            SET restored_at = NULL, restored_by_id = NULL, restored_as_id = NULL
          WHERE id = ${procedure.id}::uuid`,
     ).rejects.toThrow(/encounter_procedure_retraction_frozen/);
+  });
+
+  it('EN-245 EN-051 el archivo guarda también el importe heredado de la fila; sin él no entra', async () => {
+    const prisma = db();
+    const { encounter, concept, user } =
+      await anEncounterWithAProcedure(prisma);
+    const old = await prisma.encounterProcedure.create({
+      data: {
+        encounterId: encounter.id,
+        conceptId: concept.id,
+        procedureCode: concept.code,
+        procedureDisplay: concept.display,
+        performedAt: encounter.startedAt,
+        tariffAmount: 12.5,
+      },
+    });
+
+    await expect(
+      prisma.$executeRaw`
+        INSERT INTO encounter_procedure_retraction
+          (id, encounter_id, concept_id, procedure_code, procedure_display,
+           quantity, performed_at, note, retracted_at, retracted_by_id, reason)
+        SELECT id, encounter_id, concept_id, procedure_code, procedure_display,
+               quantity, performed_at, note, ${new Date()}, ${user.id}::uuid, 'x'
+          FROM encounter_procedure WHERE id = ${old.id}::uuid`,
+    ).rejects.toThrow(/encounter_procedure_retraction_matches/);
+
+    await archive(prisma, old.id, user.id);
+    const archived = await prisma.encounterProcedureRetraction.findUniqueOrThrow({ where: { id: old.id } }); // prettier-ignore
+    expect(archived.tariffAmount?.toString()).toBe('12.5');
   });
 });

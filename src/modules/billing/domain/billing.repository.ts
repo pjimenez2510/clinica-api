@@ -551,6 +551,8 @@ export interface ChargeStamp {
 
 /** BI-197. What an in-place edit may change; absent keys stay as they are. */
 export interface ChargeEdit extends ChargeStamp {
+  /** BI-243. Only if, under the row's lock, it still has this status. */
+  onlyIfStatus?: ChargeStatus;
   quantity?: Quantity;
   serviceDate?: ClinicalDate;
   billableServiceId?: string;
@@ -694,6 +696,8 @@ export interface BillingAccountRepository {
     voidedById: string;
     reason: string | null;
     now: Date;
+    /** BI-243. Only if, under the row's lock, it still has this status. */
+    onlyIfStatus?: ChargeStatus;
   }): Promise<ChargeView>;
 
   /**

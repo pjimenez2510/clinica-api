@@ -3208,6 +3208,8 @@ model EncounterProcedureRetraction {
   quantity         Int      @db.SmallInt
   performedAt      DateTime @map("performed_at") @db.Timestamptz(6)
   note             String?  @db.Text
+  /// EN-051. Archived as it was, so an old row does not lose it.
+  tariffAmount     Decimal? @map("tariff_amount") @db.Decimal(12, 2)
 
   editedById String?   @map("edited_by_id") @db.Uuid
   editedBy   User?     @relation("ProcedureRetractionEditor", fields: [editedById], references: [id], onDelete: Restrict)

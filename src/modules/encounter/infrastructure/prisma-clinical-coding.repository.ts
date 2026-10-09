@@ -1104,11 +1104,11 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         INSERT INTO "encounter_procedure_retraction"
           ("id", "encounter_id", "concept_id", "procedure_code",
            "procedure_display", "quantity", "performed_at", "note",
-           "edited_by_id", "edited_at",
+           "tariff_amount", "edited_by_id", "edited_at",
            "retracted_at", "retracted_by_id", "reason")
         SELECT "id", "encounter_id", "concept_id", "procedure_code",
                "procedure_display", "quantity", "performed_at", "note",
-               "edited_by_id", "edited_at",
+               "tariff_amount", "edited_by_id", "edited_at",
                ${now}, ${retraction.retractedById}::uuid, ${retraction.reason}
           FROM "encounter_procedure"
          WHERE "id" = ${retraction.procedureId}::uuid
@@ -1151,6 +1151,8 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           quantity: archived.quantity,
           performedAt: archived.performedAt,
           note: archived.note,
+          // EN-051: carried back untouched, never read nor served.
+          tariffAmount: archived.tariffAmount,
         },
         select: PROCEDURE_SELECT,
       });

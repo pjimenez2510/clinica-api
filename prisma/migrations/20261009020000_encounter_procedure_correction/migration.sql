@@ -59,6 +59,9 @@ CREATE TABLE "encounter_procedure_retraction" (
   "quantity"          SMALLINT NOT NULL,
   "performed_at"      TIMESTAMPTZ(6) NOT NULL,
   "note"              TEXT,
+  -- La columna heredada de `20260806022931_clinical_core` (EN-051): nadie la
+  -- escribe hoy, pero una fila que la traiga no la pierde al quitarse.
+  "tariff_amount"     DECIMAL(12,2),
   -- La última edición de la fila viva, que se iría con ella.
   "edited_by_id"      UUID,
   "edited_at"         TIMESTAMPTZ(6),
@@ -118,6 +121,7 @@ BEGIN
      OR live.quantity IS DISTINCT FROM NEW.quantity
      OR live.performed_at IS DISTINCT FROM NEW.performed_at
      OR live.note IS DISTINCT FROM NEW.note
+     OR live.tariff_amount IS DISTINCT FROM NEW.tariff_amount
      OR live.edited_by_id IS DISTINCT FROM NEW.edited_by_id
      OR live.edited_at IS DISTINCT FROM NEW.edited_at THEN
     RAISE EXCEPTION

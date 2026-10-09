@@ -10,6 +10,7 @@ import { ProcedureChargeFollowService } from '../../src/modules/billing/applicat
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { PrismaBillingCatalogueRepository } from '../../src/modules/billing/infrastructure/prisma-billing-catalogue.repository';
 import { PrismaClinicalActsRepository } from '../../src/modules/billing/infrastructure/prisma-clinical-acts.repository';
+import { Quantity } from '../../src/modules/billing/domain/money';
 import { PrismaClinicalCodingRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-coding.repository';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
@@ -291,6 +292,52 @@ describe('el cargo sigue al procedimiento corregido (BI-240 a BI-243)', () => {
     await changed(restored.id, 'RESTORED');
     expect(await scene.prisma.chargeItem.count({ where: { accountId, origin: 'PROCEDURE' } })).toBe(1); // prettier-ignore
     expect((await read()).proceduresOutdated).toEqual([
+      { chargeId: charge.id, billed: false, reason: 'CHANGED' },
+    ]);
+  });
+
+  it('BI-243 una confirmación que llega entre la lectura y la escritura gana: bajo el bloqueo, el cargo confirmado no se anula ni se edita', async () => {
+    const { charge } = await aProposedSuture();
+    await scene.prisma.chargeItem.update({ where: { id: charge.id }, data: { status: 'BILLABLE' } }); // prettier-ignore
+    const accounts = new PrismaBillingAccountRepository(scene.prisma as unknown as PrismaService); // prettier-ignore
+
+    await accounts.voidCharge({ chargeId: charge.id, voidedById: scene.doctorId, reason: 'x', now: new Date(), onlyIfStatus: 'PLANNED' }); // prettier-ignore
+    await accounts.editCharge({ chargeId: charge.id, changedById: scene.doctorId, now: new Date(), quantity: Quantity.parse('1'), onlyIfStatus: 'PLANNED' }); // prettier-ignore
+
+    const after = await scene.prisma.chargeItem.findUniqueOrThrow({ where: { id: charge.id } }); // prettier-ignore
+    expect(after.status).toBe('BILLABLE');
+    expect(after.quantity.toString()).toBe('2');
+
+    // Positive control: still proposed, it is followed.
+    await scene.prisma.chargeItem.update({ where: { id: charge.id }, data: { status: 'PLANNED' } }); // prettier-ignore
+    await accounts.voidCharge({ chargeId: charge.id, voidedById: scene.doctorId, reason: 'x', now: new Date(), onlyIfStatus: 'PLANNED' }); // prettier-ignore
+    expect((await scene.prisma.chargeItem.findUniqueOrThrow({ where: { id: charge.id } })).status).toBe('CANCELLED'); // prettier-ignore
+  });
+
+  it('BI-240 BI-243 corregido a un concepto sin prestación, el cargo propuesto se queda y la cuenta lo señala', async () => {
+    const { procedure, charge, accountId } = await aProposedSuture();
+    const tariff = await scene.prisma.catalogSystem.findUniqueOrThrow({ where: { code: 'TARIFF' } }); // prettier-ignore
+    const unpriced = await scene.prisma.catalogConcept.create({
+      data: {
+        systemId: tariff.id,
+        code: `NP-${Math.floor(Math.random() * 1e6)}`,
+        display: 'Sin prestación',
+        validFrom: new Date('2020-01-01'),
+      }, // prettier-ignore fecha-fija: vigente desde siempre
+    });
+
+    await scene.coding.editProcedure({
+      encounterId: scene.encounterId,
+      procedureId: procedure.id,
+      conceptId: unpriced.id,
+      editedById: scene.doctorId,
+      sites: 'all',
+    });
+    await changed(procedure.id, 'EDITED');
+
+    expect((await scene.prisma.chargeItem.findUniqueOrThrow({ where: { id: charge.id } })).status).toBe('PLANNED'); // prettier-ignore
+    const statement = await scene.statement.statement({ accountId, siteId: scene.siteId }); // prettier-ignore
+    expect(statement.proceduresOutdated).toEqual([
       { chargeId: charge.id, billed: false, reason: 'CHANGED' },
     ]);
   });

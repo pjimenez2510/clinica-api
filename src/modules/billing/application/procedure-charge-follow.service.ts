@@ -80,6 +80,8 @@ export class ProcedureChargeFollowService implements ProcedureChargeSync {
           voidedById: command.changedById,
           reason: PROCEDURE_RETRACTED_REASON,
           now,
+          // A confirmation that lands between the read and the write wins.
+          onlyIfStatus: 'PLANNED',
         });
         return;
       }
@@ -115,6 +117,7 @@ export class ProcedureChargeFollowService implements ProcedureChargeSync {
         chargeId: charge.id,
         changedById: command.changedById,
         now,
+        onlyIfStatus: 'PLANNED',
         ...(changesService
           ? { billableServiceId: service.billableServiceId }
           : {}),
