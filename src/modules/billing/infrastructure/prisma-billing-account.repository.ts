@@ -30,6 +30,8 @@ import type {
 import {
   AccountClosedError,
   AccountNoChargeReasonRequiredError,
+  CashSessionClosedError,
+  PaymentMethodInactiveError,
   AccountHasOpenChargesError,
   CorrectionAwaitsCreditNoteError,
   AccountHasBilledChargesError,
@@ -1116,7 +1118,33 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
           throw new InvoiceChargesChangedError();
         }
 
-        return toInvoiceView(invoice);
+        // BI-247. Collected at the desk: the payment of the whole total, in
+        // the same transaction, so an invoice is never «cobrada» on the
+        // screen and owed in the database. `trg_payment_guard` still checks
+        // the method, the balance and the cashier's day. A $0.00 invoice has
+        // nothing to collect.
+        if (issuance.payment && totals.total.isGreaterThan(Money.ZERO)) {
+          await tx.payment.create({
+            data: {
+              invoiceId: invoice.id,
+              siteId: issuance.siteId,
+              paymentMethodId: issuance.payment.paymentMethodId,
+              amount: totals.total.toString(),
+              reference: issuance.payment.reference,
+              receivedAt: issuance.payment.receivedAt,
+              receivedById: issuance.issuedById,
+              // BI-250. Replaced by the trigger with the Guayaquil date.
+              cashDate: issuance.payment.receivedAt,
+            },
+          });
+        }
+
+        return toInvoiceView(
+          await tx.invoice.findUniqueOrThrow({
+            where: { id: invoice.id },
+            include: INVOICE_NUMBER_INCLUDE,
+          }),
+        );
       });
     } catch (error) {
       throw translateInvoiceRejection(error);
@@ -1265,6 +1293,12 @@ export function translateInvoiceRejection(error: unknown): unknown {
   if (/invoice_is_never_deleted/.test(message)) {
     return new InvoiceImmutableError('An invoice is never deleted');
   }
+  // BI-247. The payment written with the issuance: its method was switched
+  // off meanwhile, or the cashier's day was closed.
+  if (/payment_method_inactive/.test(message)) {
+    return new PaymentMethodInactiveError();
+  }
+  if (/cash_session_closed/.test(message)) return new CashSessionClosedError();
   return error;
 }
 
@@ -1502,6 +1536,13 @@ const INVOICE_NUMBER_INCLUDE = {
   emissionPoint: {
     select: { code: true, site: { select: { sriEstablishmentCode: true } } },
   },
+  // BI-103, BI-249. What it was paid and credited, read with it: the balance
+  // is derived on every read and never stored.
+  payments: { where: { reversedAt: null }, select: { amount: true } },
+  creditNotes: {
+    where: { status: { not: 'REJECTED' } },
+    select: { amount: true },
+  },
 } satisfies Prisma.InvoiceInclude;
 
 type InvoiceRow = Prisma.InvoiceGetPayload<{
@@ -1548,6 +1589,10 @@ function toInvoiceView(row: InvoiceRow): InvoiceView {
     issuedAt: row.issuedAt,
     authorisedAt: row.authorisedAt,
     issuedById: row.issuedById,
+    paidTotal: Money.sum(row.payments.map((p) => Money.parse(p.amount))),
+    creditedTotal: Money.sum(
+      row.creditNotes.map((note) => Money.parse(note.amount)),
+    ),
   };
 }
 

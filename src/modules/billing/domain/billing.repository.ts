@@ -546,6 +546,10 @@ export interface InvoiceView {
   issuedAt: Date | null;
   authorisedAt: Date | null;
   issuedById: string;
+  /** BI-103, BI-249. Not reversed; the balance is derived from these. */
+  paidTotal: Money;
+  /** BI-103. Its credit notes the SRI did not reject. */
+  creditedTotal: Money;
 }
 
 /** Everything an invoice needs, with the receiver ALREADY resolved (BI-080). */
@@ -600,6 +604,17 @@ export interface InvoiceIssuance {
    * keeps its id, so the ids alone no longer prove the amount.
    */
   expectedTotal?: Money;
+  /**
+   * BI-247. Collected at the desk: a payment of the whole total with this
+   * method, written in the issuance's transaction. Absent, the invoice is
+   * born with its whole amount owed.
+   */
+  payment?: {
+    paymentMethodId: string;
+    reference: string | null;
+    /** The application's clock (BI-250). */
+    receivedAt: Date;
+  };
 }
 
 /**

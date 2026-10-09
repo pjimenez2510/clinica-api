@@ -25,8 +25,15 @@ import {
   type InvoiceView,
 } from '../domain/billing.repository';
 import {
+  CASH_REPOSITORY,
+  type CashRepository,
+} from '../domain/cash.repository';
+import {
   AccountNotFoundError,
   EmissionPointInactiveError,
+  PaymentMethodInactiveError,
+  PaymentMethodMismatchError,
+  PaymentMethodNotFoundError,
   InvoiceNotEditableError,
   InvoiceNotFoundError,
 } from '../domain/billing.errors';
@@ -42,7 +49,7 @@ import type { Requester } from './service-catalogue.service';
 
 const INVOICE_RESOURCE_TYPE = 'invoice';
 
-import type { Money } from '../domain/money';
+import { Money } from '../domain/money';
 /**
  * SRI-060. The invoice with its electronic voucher's state beside it, read
  * through the shared port: `billing` does not know how the SRI is spoken to.
@@ -97,6 +104,8 @@ export class InvoicingService {
     @Inject(ELECTRONIC_VOUCHER_RESENDER)
     private readonly resender: ElectronicVoucherResender,
     private readonly logger: PinoLogger,
+    @Inject(CASH_REPOSITORY)
+    private readonly cash: CashRepository,
   ) {
     this.logger.setContext(InvoicingService.name);
   }
@@ -129,10 +138,18 @@ export class InvoicingService {
       expectedChargeIds?: readonly string[];
       /** BI-184, BI-197. The total the cashier was shown. */
       expectedTotal?: Money;
+      /** BI-247. Collected now, with this method; absent, it stays owed. */
+      payment?: { paymentMethodId: string; reference?: string | null };
     },
     requester: Requester,
   ): Promise<InvoiceWithVoucher> {
     const account = await this.requireAccount(command);
+    if (command.payment) {
+      await this.requireCollectableMethod(
+        command.payment.paymentMethodId,
+        command.paymentMethod,
+      );
+    }
 
     const emissionPoint = await this.accounts.findEmissionPoint({
       emissionPointId: command.emissionPointId,
@@ -157,6 +174,14 @@ export class InvoicingService {
       issuedById: requester.userId,
       expectedChargeIds: command.expectedChargeIds,
       expectedTotal: command.expectedTotal,
+      payment: command.payment
+        ? {
+            paymentMethodId: command.payment.paymentMethodId,
+            reference: command.payment.reference ?? null,
+            // The application's clock, which the walks move (BI-250).
+            receivedAt: new Date(),
+          }
+        : undefined,
     });
 
     /**
@@ -205,6 +230,21 @@ export class InvoicingService {
   }
 
   /**
+   * BI-247. The method the money came in with is active and declares the
+   * form of payment the invoice tells the SRI. The database checks the first
+   * again when it writes the payment; the second is only knowable here.
+   */
+  private async requireCollectableMethod(
+    paymentMethodId: string,
+    declared: PaymentMethod,
+  ): Promise<void> {
+    const method = await this.cash.findPaymentMethod(paymentMethodId);
+    if (!method) throw new PaymentMethodNotFoundError();
+    if (!method.active) throw new PaymentMethodInactiveError();
+    if (method.sriCode !== declared) throw new PaymentMethodMismatchError();
+  }
+
+  /**
    * BI-216, SRI-090. «Editar» on an invoice the SRI returned or did not
    * authorise: its receiver and its payment method, with the rules of the
    * issuance (BI-080, BI-081, BI-159, BI-170), and re-sent at once with the
@@ -227,6 +267,14 @@ export class InvoicingService {
     // BI-135. Another site's invoice answers like one that does not exist.
     if (!invoice) throw new InvoiceNotFoundError();
     if (invoice.status !== 'REJECTED') throw new InvoiceNotEditableError();
+    // BI-254. Already collected: the form of payment is what the money came
+    // in with, and correcting the receiver does not change how it was paid.
+    if (
+      invoice.paidTotal.isGreaterThan(Money.ZERO) &&
+      invoice.paymentMethod !== command.paymentMethod
+    ) {
+      throw new PaymentMethodMismatchError();
+    }
 
     const account = await this.requireAccount({
       accountId: invoice.accountId,

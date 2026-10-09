@@ -28,7 +28,9 @@ import {
   ChargeCorrectionService,
   type PayerChangePreview,
 } from './application/charge-correction.service';
+import { CashService } from './application/cash.service';
 import { ChargeDiscountService } from './application/charge-discount.service';
+import { invoiceBalance } from './domain/cash';
 import { EncounterCheckoutService } from './application/encounter-checkout.service';
 import {
   InvoicingService,
@@ -117,6 +119,8 @@ export class BillingController {
     private readonly corrections: ChargeCorrectionService,
     private readonly discounts: ChargeDiscountService,
     private readonly currentUser: CurrentUserService,
+    // BI-249. The patient's balance beside the account.
+    private readonly cash: CashService,
   ) {}
 
   /**
@@ -159,7 +163,13 @@ export class BillingController {
     });
 
     return {
-      statement: toStatementResponse(result.statement),
+      statement: toStatementResponse(
+        result.statement,
+        await this.cash.patientBalance({
+          siteId,
+          patientId: result.statement.account.patientId,
+        }),
+      ),
       raisedChargeIds: result.raisedChargeIds,
       skipped: result.skipped,
     };
@@ -246,15 +256,20 @@ export class BillingController {
   ): Promise<AccountStatementResponse> {
     // D-118: who, and from where — `req.ip` is the client because
     // `trust proxy` counts hops (see the patients controller).
+    const statement = await this.accounts.openStatement(
+      { accountId, siteId },
+      {
+        userId: this.currentUser.requireUserId(),
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+      },
+    );
     return toStatementResponse(
-      await this.accounts.openStatement(
-        { accountId, siteId },
-        {
-          userId: this.currentUser.requireUserId(),
-          ip: req.ip,
-          userAgent: req.get('user-agent'),
-        },
-      ),
+      statement,
+      await this.cash.patientBalance({
+        siteId,
+        patientId: statement.account.patientId,
+      }),
     );
   }
 
@@ -651,6 +666,7 @@ export class BillingController {
           dto.expectedTotal === undefined
             ? undefined
             : Money.parse(dto.expectedTotal),
+        payment: dto.payment,
       },
       { userId: this.currentUser.requireUserId() },
     );
@@ -764,8 +780,10 @@ function toAccountResponse(account: AccountView): AccountResponse {
  */
 function toStatementResponse(
   statement: AccountStatement,
+  patientBalance: Money,
 ): AccountStatementResponse {
   return {
+    patientBalance: patientBalance.toString(),
     account: toAccountResponse(statement.account),
     charges: statement.charges.map(toChargeResponse),
     totals: toTotalsResponse(statement.totals),
@@ -890,6 +908,13 @@ function toInvoiceResponse(invoice: InvoiceWithVoucher): InvoiceResponse {
     paymentMethod: invoice.paymentMethod,
     issuedAt: invoice.issuedAt?.toISOString() ?? null,
     authorisedAt: invoice.authorisedAt?.toISOString() ?? null,
+    paidTotal: invoice.paidTotal.toString(),
+    creditedTotal: invoice.creditedTotal.toString(),
+    balance: invoiceBalance({
+      total: invoice.totals.total,
+      creditedTotal: invoice.creditedTotal,
+      paidTotal: invoice.paidTotal,
+    }).toString(),
     electronic: invoice.electronic
       ? {
           ...invoice.electronic,

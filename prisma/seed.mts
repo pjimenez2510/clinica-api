@@ -114,6 +114,18 @@ const USERS = [
     role: 'CAJA',
   },
   {
+    // B6 (BI-104, BI-252). A second cashier, so the F-06 walk can close a
+    // drawer of its own: a closed day takes no more payments from that
+    // person, and closing `caja@`'s would refuse the invoices every later
+    // walk collects. Two cashiers at one desk is also the real case.
+    email: 'caja2@clinica.ec',
+    firstName: 'Marta',
+    lastName: 'Cevallos',
+    cedula: '1716028442',
+    acessRegistration: null,
+    role: 'CAJA',
+  },
+  {
     // F-03 is walked by nursing. Its point is that vital signs, allergies and
     // history can be taken WITHOUT `record:write` (EN-066, EN-164), and only
     // an account holding exactly the ENFERMERIA role can prove that.

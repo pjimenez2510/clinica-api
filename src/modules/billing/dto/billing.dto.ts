@@ -53,7 +53,7 @@ const QUANTITY_PATTERN = /^\d{1,7}(\.\d{1,3})?$/;
  * BI-001. A monetary field: a decimal string, refused with a message that
  * names the field rather than silently rounded.
  */
-const money = (label: string) =>
+export const money = (label: string) =>
   z
     .string({ error: `${label} es obligatorio` })
     .regex(MONEY_PATTERN, `${label} se escribe en dólares con dos decimales, por ejemplo 19.90`); // prettier-ignore
@@ -63,7 +63,7 @@ const money = (label: string) =>
  * becomes a per-field issue carrying `message`, so a date that does not exist
  * is answered like any other validation error.
  */
-const clinicalDateField = (message: string) =>
+export const clinicalDateField = (message: string) =>
   z.iso.date(message).transform((value, ctx): ClinicalDate => {
     try {
       return parseClinicalDate(value);
@@ -451,6 +451,16 @@ export const issueInvoiceSchema = z.object({
    * vio. Si no coincide, `INVOICE_CHARGES_CHANGED`.
    */
   expectedTotal: money('El total').optional(),
+  /**
+   * BI-247. «Cobrado ahora»: the money came in with this method, and the
+   * invoice is born paid. Absent, it is born with its whole amount owed.
+   */
+  payment: z
+    .object({
+      paymentMethodId: z.uuid('Elija el medio de pago'),
+      reference: z.string().trim().max(100).optional(),
+    })
+    .optional(),
 });
 /** Body of POST /billing/sites/:siteId/invoices. */
 export class IssueInvoiceDto extends createZodDto(issueInvoiceSchema) {}
@@ -821,6 +831,11 @@ const statementSchema = z.object({
   proposedTotals: totalsSchema,
   /** BI-184. Lo que llevaría una factura emitida ahora: lo confirmado sin facturar. */
   invoiceableTotals: totalsSchema,
+  /**
+   * BI-249. Lo que el paciente debe en la sede, todas sus facturas juntas;
+   * negativo, lo que se le debe a él.
+   */
+  patientBalance: z.string(),
   /** BI-192. Las órdenes de exámenes de la atención que nadie emitió. */
   draftOrders: z.array(
     z.object({
@@ -938,6 +953,12 @@ const invoiceResponseSchema = z.object({
   paymentMethod: z.enum(PAYMENT_METHODS).nullable(),
   issuedAt: z.iso.datetime().nullable(),
   authorisedAt: z.iso.datetime().nullable(),
+  /** BI-103, BI-249. Collected, not reversed. */
+  paidTotal: z.string(),
+  /** BI-103. Credited by notes the SRI did not reject. */
+  creditedTotal: z.string(),
+  /** BI-103. Total − credited − paid; negative is owed back to the patient. */
+  balance: z.string(),
   /**
    * SRI-060. Its electronic voucher before the SRI; `null` while there is none
    * (the installation lacks a datum, SRI-008, or the sweep has not run yet).

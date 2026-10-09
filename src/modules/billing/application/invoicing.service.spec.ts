@@ -7,7 +7,11 @@ import {
   FinalConsumerNotConfirmedError,
   InvoiceNotEditableError,
   InvoiceNotFoundError,
+  PaymentMethodInactiveError,
+  PaymentMethodMismatchError,
+  PaymentMethodNotFoundError,
 } from '../domain/billing.errors';
+import type { CashRepository } from '../domain/cash.repository';
 import type {
   AccountView,
   BillingAccountRepository,
@@ -83,6 +87,8 @@ const invoice: InvoiceView = {
   issuedAt: new Date('2026-05-11T15:00:00Z'),
   authorisedAt: null,
   issuedById: 'user-1',
+  paidTotal: Money.ZERO,
+  creditedTotal: Money.ZERO,
 };
 
 /**
@@ -114,6 +120,9 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     summariesOfCreditNotes: vi.fn().mockResolvedValue(new Map()),
     resendInvoice: vi.fn().mockResolvedValue(true),
     correctRejectedInvoice: vi.fn(),
+    findPaymentMethod: vi
+      .fn()
+      .mockResolvedValue({ id: 'cash', sriCode: '01', active: true }),
     logError: vi.fn(),
     ...options.accounts,
   };
@@ -130,6 +139,7 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
         setContext: vi.fn(),
         error: mocks.logError,
       } as unknown as PinoLogger,
+      mocks as unknown as CashRepository,
     ),
     mocks,
   };
@@ -263,6 +273,8 @@ describe('BI-080 a BI-089 emitir la factura', () => {
       'proposedReceiver',
       'receiverContext',
       'requireAccount',
+      // BI-247: a read of the method before issuing; it modifies nothing.
+      'requireCollectableMethod',
       'withVouchers',
     ]);
   });
@@ -437,6 +449,29 @@ describe('BI-216 SRI-090 corregir y reenviar la factura devuelta', () => {
     );
   });
 
+  it('BI-254 una devuelta ya cobrada no cambia de forma de pago; el receptor sí', async () => {
+    const paid = { ...rejected, paidTotal: Money.parse('30.00') };
+    const { service, mocks } = build({
+      accounts: {
+        findInvoice: vi.fn().mockResolvedValue(paid),
+        correctRejectedInvoice: vi.fn().mockResolvedValue(paid),
+      },
+    });
+    await expect(
+      service.correctAndResend(
+        { invoiceId: 'invoice-1', siteId: SITE, receiver: corrected, paymentMethod: '19' }, // prettier-ignore
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(PaymentMethodMismatchError);
+    expect(mocks.correctRejectedInvoice).not.toHaveBeenCalled();
+
+    await service.correctAndResend(
+      { invoiceId: 'invoice-1', siteId: SITE, receiver: corrected, paymentMethod: '01' }, // prettier-ignore
+      requester,
+    );
+    expect(mocks.correctRejectedInvoice).toHaveBeenCalled();
+  });
+
   it('BI-216 una factura que no está devuelta no se edita, y no se toca nada', async () => {
     for (const status of ['ISSUED', 'AUTHORISED'] as const) {
       const { service, mocks } = build({
@@ -483,5 +518,57 @@ describe('BI-216 SRI-090 corregir y reenviar la factura devuelta', () => {
       ),
     ).resolves.toMatchObject({ id: 'invoice-1' });
     expect(mocks.logError).toHaveBeenCalled();
+  });
+});
+
+describe('BI-247 cobrar al emitir', () => {
+  const issue = (payment?: { paymentMethodId: string }) => ({
+    accountId: ACCOUNT,
+    siteId: SITE,
+    emissionPointId: EMISSION_POINT,
+    receiver,
+    paymentMethod: '01' as const,
+    payment,
+  });
+
+  it('BI-247 pasa el cobro al adaptador con el medio y el reloj de la aplicación', async () => {
+    const { service: invoicing, mocks } = build();
+    const before = Date.now();
+
+    await invoicing.issueInvoice(issue({ paymentMethodId: 'cash' }), requester);
+
+    const sent = mocks.issueInvoice.mock.calls[0]![0] as {
+      payment: { paymentMethodId: string; receivedAt: Date };
+    };
+    expect(sent.payment.paymentMethodId).toBe('cash');
+    expect(sent.payment.receivedAt.getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it('BI-247 sin cobro, la factura nace con su saldo: no se pasa ningún cobro', async () => {
+    const { service: invoicing, mocks } = build();
+    await invoicing.issueInvoice(issue(), requester);
+    expect(mocks.issueInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({ payment: undefined }),
+    );
+    expect(mocks.findPaymentMethod).not.toHaveBeenCalled();
+  });
+
+  it('BI-247 rechaza un medio inactivo, uno que no existe y uno de otra forma de pago, sin emitir', async () => {
+    for (const [method, error] of [
+      [
+        { id: 'cash', sriCode: '01', active: false },
+        PaymentMethodInactiveError,
+      ],
+      [null, PaymentMethodNotFoundError],
+      [{ id: 'card', sriCode: '19', active: true }, PaymentMethodMismatchError],
+    ] as const) {
+      const { service: invoicing, mocks } = build({
+        accounts: { findPaymentMethod: vi.fn().mockResolvedValue(method) },
+      });
+      await expect(
+        invoicing.issueInvoice(issue({ paymentMethodId: 'x' }), requester),
+      ).rejects.toBeInstanceOf(error);
+      expect(mocks.issueInvoice).not.toHaveBeenCalled();
+    }
   });
 });
