@@ -23,6 +23,12 @@ registerConstraintMeanings({
     field: 'billableServiceId',
     message: 'Esa prestación ya cobra otro examen',
   },
+  // ORD-163, BI-257. A service that charges a procedure is not an exam's.
+  exam_definition_service_not_tied: {
+    code: 'EXAM_SERVICE_TAKEN',
+    field: 'billableServiceId',
+    message: 'Esa prestación ya cobra un procedimiento',
+  },
   exam_definition_code_unique: {
     code: 'EXAM_CODE_DUPLICATE',
     field: 'code',

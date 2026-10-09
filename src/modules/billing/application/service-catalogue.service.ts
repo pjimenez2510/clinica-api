@@ -33,6 +33,7 @@ import {
   ServiceProcedureNotInTariffError,
   ServiceProcedureTakenError,
   ServiceTariffCodeFromProcedureError,
+  ServiceTariffCodeInvoicedError,
 } from '../domain/billing.errors';
 
 import {
@@ -211,8 +212,25 @@ export class ServiceCatalogueService {
           throw new ServiceProcedureTakenError();
         }
         // D-179. Tying writes the code: the one typed before is replaced
-        // (the old one stays in the trail's `before`), never asked twice.
+        // (the old one stays in the trail's `before`), never asked twice —
+        // and a different one typed in the same request is not dropped in
+        // silence.
+        if (update.tariffCode !== undefined && update.tariffCode !== code) {
+          throw new ServiceTariffCodeFromProcedureError();
+        }
         tied = { ...update, tariffCode: code };
+      } else {
+        // Untied, the procedure's code does not stay behind printing a
+        // procedure the service no longer charges; one typed now is kept.
+        tied = { ...update, tariffCode: update.tariffCode ?? null };
+      }
+      // Until the charge freezes it, the RIDE reprints the service's code:
+      // tying or untying must not rewrite what an issued invoice said.
+      if (
+        tied.tariffCode !== current.tariffCode &&
+        (await this.catalogue.hasInvoicedCharges(serviceId))
+      ) {
+        throw new ServiceTariffCodeInvoicedError();
       }
     }
     if (movesCategory || retiesProcedure) {

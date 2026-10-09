@@ -25,6 +25,16 @@ registerConstraintMeanings({
     field: 'tariffCode',
     message: 'El código del tarifario lo da el procedimiento que cobra',
   },
+  billable_service_tariff_code_invoiced: {
+    code: 'SERVICE_TARIFF_CODE_INVOICED',
+    field: 'procedureConceptId',
+    message: 'Ya facturada con otro código del tarifario',
+  },
+  billable_service_exam_not_tied: {
+    code: 'SERVICE_NAMED_ELSEWHERE',
+    field: 'procedureConceptId',
+    message: 'Es la prestación de un examen: no cobra un procedimiento',
+  },
   billable_service_one_per_procedure: {
     code: 'SERVICE_PROCEDURE_TAKEN',
     field: 'procedureConceptId',

@@ -548,6 +548,8 @@ export const DOMAIN_ERROR_CODES = [
   'SERVICE_PROCEDURE_TAKEN',
   // D-179: atada, el código del tarifario es el de su procedimiento (409).
   'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
+  // BI-257: atar o desatar no reescribe el código que ya salió en facturas.
+  'SERVICE_TARIFF_CODE_INVOICED',
   'TAX_RATE_IN_USE',
   'TAX_RATE_NOT_FOUND',
   'TAX_RATE_REQUIRED',

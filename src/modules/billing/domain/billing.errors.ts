@@ -171,6 +171,27 @@ export class ServiceTariffCodeFromProcedureError extends ConflictError {
   }
 }
 
+/**
+ * BI-257, D-179. The RIDE reprints the service's tariff code, which no charge
+ * freezes yet: tying or untying a service already invoiced would rewrite
+ * what its issued invoices say.
+ */
+export class ServiceTariffCodeInvoicedError extends ConflictError {
+  readonly code = 'SERVICE_TARIFF_CODE_INVOICED';
+  override readonly userTitle =
+    'Esta prestación ya salió en facturas con su código del tarifario: atarla o desatarla cambiaría lo que dicen. Cree otra prestación para el procedimiento';
+
+  constructor() {
+    super('Tying would change the tariff code its invoices printed', {}, [
+      {
+        field: 'procedureConceptId',
+        code: 'SERVICE_TARIFF_CODE_INVOICED',
+        message: 'Ya facturada con otro código del tarifario',
+      },
+    ]);
+  }
+}
+
 /** BI-257. One service per procedure: caja would otherwise pick one in silence. */
 export class ServiceProcedureTakenError extends ConflictError {
   readonly code = 'SERVICE_PROCEDURE_TAKEN';

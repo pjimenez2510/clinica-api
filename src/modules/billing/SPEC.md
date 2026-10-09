@@ -2212,8 +2212,18 @@ dos registros distintos.**
     atada, SI se cambia su código del tarifario aparte, ENTONCES DEBERÁ
     rechazarlo con `SERVICE_TARIFF_CODE_FROM_PROCEDURE` (D-179, «un dato, un
     sitio»; `billable_service_tariff_code_is_its_procedure`);
+  - SI la petición que ata trae otro código del tarifario, ENTONCES DEBERÁ
+    rechazarla con `SERVICE_TARIFF_CODE_FROM_PROCEDURE`; al desatarla, el
+    código DEBERÁ quedar vacío salvo que la petición traiga uno;
   - SI la prestación es la de un examen (ORD-163), ENTONCES DEBERÁ rechazar
-    atarla con `SERVICE_NAMED_ELSEWHERE`: su tarifario es del examen.
+    atarla con `SERVICE_NAMED_ELSEWHERE`, y un examen NO DEBERÁ enlazarse a
+    una prestación atada (`EXAM_SERVICE_TAKEN`): su tarifario es del examen
+    (`billable_service_exam_not_tied`, `exam_definition_service_not_tied`);
+  - SI atar o desatar cambia el código de una prestación con cargos ya
+    facturados, ENTONCES DEBERÁ rechazarlo con `SERVICE_TARIFF_CODE_INVOICED`:
+    la representación impresa vuelve a leer ese código y la factura emitida
+    diría otra cosa (`billable_service_tariff_code_invoiced`). Congelar el
+    código en el cargo levantaría esta regla; no se hace en esta entrega.
   > Hasta aquí ninguna pantalla ni semilla escribía la atadura (BI-187): el
   > cargo del procedimiento nunca se proponía y la marca del 024 no tenía a
   > qué procedimiento aplicarse.
@@ -2684,6 +2694,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `SERVICE_CONSENT_TIE_LOCKED` | 409 | BI-256 |
 | `SERVICE_PROCEDURE_TAKEN` | 409 | BI-257 |
 | `SERVICE_TARIFF_CODE_FROM_PROCEDURE` | 409 | BI-257, D-179 |
+| `SERVICE_TARIFF_CODE_INVOICED` | 409 | BI-257 |
 | `INVOICE_CHARGES_CHANGED` | 409 | BI-184 |
 
 **Se reutilizan, y no se declaran de nuevo:** `SELF_AUTHORISATION_DENIED`

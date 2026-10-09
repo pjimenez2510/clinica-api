@@ -328,6 +328,8 @@ export interface BillingCatalogueRepository {
    * `null` when it is not one.
    */
   tariffConceptCode(conceptId: string): Promise<string | null>;
+  /** BI-257. Whether any charge of the service is already on an invoice. */
+  hasInvoicedCharges(serviceId: string): Promise<boolean>;
   /** BI-257. Whether another service already charges a concept of that code. */
   procedureTakenByOther(conceptId: string, serviceId: string): Promise<boolean>;
   /**

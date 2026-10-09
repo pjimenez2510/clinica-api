@@ -613,4 +613,28 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
       data: { procedureConceptId: null, tariffCode: '99999' },
     });
   });
+
+  it('ORD-163 BI-257 la BASE no ata a un procedimiento la prestación de un examen, ni enlaza un examen a una prestación atada', async () => {
+    const prisma = db();
+    const user = await createUser(prisma);
+    const tiedConcept = await aConcept(prisma, user, false);
+    const tied = await prisma.billableService.findFirstOrThrow({ where: { procedureConceptId: tiedConcept.id } }); // prettier-ignore
+    const examService = await createExamService(prisma, { code: 'EX-PROC', name: 'Examen de procedimiento', kind: 'PROCEDURE' }); // prettier-ignore
+    const exam = (billableServiceId: string, code: string) =>
+      prisma.examDefinition.create({
+        data: { code, category: 'PROCEDURE', billableServiceId },
+      });
+
+    await expect(exam(tied.id, 'EX-A')).rejects.toThrow(
+      /exam_definition_service_not_tied/,
+    );
+    await exam(examService.id, 'EX-B');
+    const other = await aTariffConcept(prisma);
+    await expect(
+      prisma.billableService.update({
+        where: { id: examService.id },
+        data: { procedureConceptId: other.id, tariffCode: other.code },
+      }),
+    ).rejects.toThrow(/billable_service_exam_not_tied/);
+  });
 });

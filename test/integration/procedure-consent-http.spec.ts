@@ -229,6 +229,13 @@ describe('el consentimiento 024 por HTTP', () => {
     expect((tied.body as { tariffCode: string | null }).tariffCode).toBe(
       concept.code,
     );
+    const retyped = await send('patch', `/billing/services/${service.id}`, adminToken, { tariffCode: '99999' }); // prettier-ignore
+    expect(retyped.status).toBe(409);
+    expect((retyped.body as Problem).code).toBe(
+      'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
+    );
+    // Control positivo: el formulario reenvía el mismo código, y pasa.
+    await send('patch', `/billing/services/${service.id}`, adminToken, { tariffCode: concept.code, name: 'Biopsia de piel' }).expect(200); // prettier-ignore
     expect((tied.body as ServiceBody).writtenConsent).toEqual({ required: false, setAt: null, setBy: null }); // prettier-ignore
 
     // ADMIN administra precios, pero la llave del 024 no es suya (D-199.1).

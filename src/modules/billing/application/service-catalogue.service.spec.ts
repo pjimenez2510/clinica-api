@@ -15,6 +15,7 @@ import {
   ServiceProcedureNotInTariffError,
   ServiceProcedureTakenError,
   ServiceTariffCodeFromProcedureError,
+  ServiceTariffCodeInvoicedError,
 } from '../domain/billing.errors';
 import type {
   BillableServiceView,
@@ -98,6 +99,7 @@ function build(overrides: Record<string, unknown> = {}) {
     markTaxReviewed: vi.fn().mockResolvedValue(service),
     tariffConceptCode: vi.fn().mockResolvedValue('10120'),
     procedureTakenByOther: vi.fn().mockResolvedValue(false),
+    hasInvoicedCharges: vi.fn().mockResolvedValue(false),
     countReferencesToService: vi.fn().mockResolvedValue(0),
     deleteBillableService: vi.fn().mockResolvedValue(undefined),
     record: vi.fn().mockResolvedValue(undefined),
@@ -742,6 +744,30 @@ describe('BI-257 la prestación de procedimiento se ata a su concepto desde la f
     });
     await typed.updateService('service-1', { procedureConceptId: 'c-1' }, requester); // prettier-ignore
     expect(typedMocks.updateBillableService).toHaveBeenCalledWith('service-1', { procedureConceptId: 'c-1', tariffCode: '10120' }); // prettier-ignore
+  });
+
+  it('BI-257 D-179 atar con otro código tecleado se rechaza, desatar no deja el código del procedimiento, y una prestación facturada no cambia de código', async () => {
+    const { service: catalogue, mocks } = build({
+      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES }), // prettier-ignore
+    });
+    await expect(
+      catalogue.updateService('service-1', { procedureConceptId: 'c-1', tariffCode: '99999' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceTariffCodeFromProcedureError);
+
+    const { service: untie, mocks: untieMocks } = build({
+      findBillableService: vi.fn().mockResolvedValue({ ...procedureService, tariffCode: '10120' }), // prettier-ignore
+    });
+    await untie.updateService('service-1', { procedureConceptId: null }, requester); // prettier-ignore
+    expect(untieMocks.updateBillableService).toHaveBeenCalledWith('service-1', { procedureConceptId: null, tariffCode: null }); // prettier-ignore
+
+    const { service: invoiced } = build({
+      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES, tariffCode: '55555' }), // prettier-ignore
+      hasInvoicedCharges: vi.fn().mockResolvedValue(true),
+    });
+    await expect(
+      invoiced.updateService('service-1', { procedureConceptId: 'c-1' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceTariffCodeInvoicedError);
+    expect(mocks.updateBillableService).not.toHaveBeenCalled();
   });
 
   it('D-179 ORD-163 la prestación de un examen no se ata a un procedimiento: su tarifario es del examen', async () => {
