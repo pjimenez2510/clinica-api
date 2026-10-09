@@ -12,6 +12,39 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
  * by PostgreSQL constraints, and this registration is their enumeration.
  */
 registerConstraintMeanings({
+  // ── The 024 mark (BI-256) ─────────────────────────────────────────────────
+  // The service refuses it first; this answers the mark and the untying
+  // landing at once, which only the database can arbitrate.
+  billable_service_written_consent_tie_locked: {
+    code: 'SERVICE_CONSENT_TIE_LOCKED',
+    field: 'procedureConceptId',
+    message: 'Desmárquela antes de cambiar el procedimiento',
+  },
+  billable_service_tariff_code_is_its_procedure: {
+    code: 'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
+    field: 'tariffCode',
+    message: 'El código del tarifario lo da el procedimiento que cobra',
+  },
+  billable_service_tariff_code_invoiced: {
+    code: 'SERVICE_TARIFF_CODE_INVOICED',
+    field: 'procedureConceptId',
+    message: 'Ya facturada con otro código del tarifario',
+  },
+  billable_service_exam_not_tied: {
+    code: 'SERVICE_NAMED_ELSEWHERE',
+    field: 'procedureConceptId',
+    message: 'Es la prestación de un examen: no cobra un procedimiento',
+  },
+  billable_service_one_per_procedure: {
+    code: 'SERVICE_PROCEDURE_TAKEN',
+    field: 'procedureConceptId',
+    message: 'Otra prestación ya cobra ese procedimiento',
+  },
+  billable_service_written_consent_needs_a_procedure: {
+    code: 'SERVICE_NOT_A_PROCEDURE',
+    field: 'procedureConceptId',
+    message: 'Ate antes la prestación a su procedimiento del tarifario',
+  },
   // ── The payment methods (BI-146) ──────────────────────────────────────────
   // The service refuses the last one first; this answers two administrators
   // switching off the last two at once, which only the database can arbitrate.

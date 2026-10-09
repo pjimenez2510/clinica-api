@@ -338,6 +338,12 @@ A.M. 5316 deja a cada establecimiento elaborar y aprobar el contenido del 024
 por intervención, y quién clasifica el riesgo mayor y qué guarda el sistema
 del papel firmado son preguntas de **D-159**.
 
+**Estado (09-10-2026, `feat/f04-consentimiento-024`).** D-159 resuelta: EN-152
+a EN-154 se construyen con `procedure_consent` y su revocación, y la marca por
+prestación de `billing` (BI-256). Lo que queda de D-199 (quién tiene la llave
+de la marca, el documento del testigo, hasta cuándo se revoca) está construido
+con su recomendación.
+
 ### H4 — Signos vitales y antropometría _(P1)_
 
 El bloque D del RDACAA y el formulario 020: peso, talla, perímetros, constantes
@@ -3271,50 +3277,110 @@ programada._
   > a todo el mundo a hacer clic sin leer**, y entonces el consentimiento que sí
   > importa —el del riesgo mayor— se firma con el mismo automatismo que el que no
   > hacía falta.
-- **EN-152** — MIENTRAS un procedimiento esté clasificado como de **riesgo
-  mayor**, el sistema DEBERÁ exigir el **formulario 024** suscrito y atado a ese
-  procedimiento antes de registrarlo como realizado.
-  > **Espera a D-159 (07-10-2026).** El anexo del A.M. 5316 manda que cada
-  > establecimiento, *«en función de su cartera de servicios»*, elabore el
-  > contenido del 024 de cada intervención, lo valide con pacientes y lo
-  > apruebe su director médico; y enumera los casos de consentimiento escrito
-  > obligatorio (cirugía de riesgo mayor, radiología con anestesia o
-  > contraste, radioterapia y quimioterapia, endoscopias, biopsias,
-  > reproducción asistida, prueba de VIH y *«todos aquellos que impliquen un
-  > riesgo mayor»*). Quién marca qué prestación lo exige, qué guarda el
-  > sistema del papel firmado y si el 024 lo imprime el sistema no lo decide
-  > un agente.
+- **EN-152** — MIENTRAS alguna prestación que cobra un concepto del tarifario
+  tenga la marca «exige consentimiento 024» (BI-256), CUANDO el médico registre
+  un procedimiento de ese concepto, el sistema DEBERÁ exigir en la misma
+  petición, y guardar atado a ese procedimiento, una de dos cosas:
+  - el **consentimiento firmado** en papel: quién firmó —el paciente, o su
+    representante con su nombre, su parentesco y, si se da, su documento—,
+    quién informó —el profesional que lo registra (D-199.4)— y cuándo se
+    firmó, que NO DEBERÁ ser posterior a cuando se realizó y que, sin decirse,
+    es la hora de la realización y nunca la de tecleo; o
+  - la **excepción**: emergencia, o procedimiento inesperado durante otro, con
+    su **fundamento escrito**, que nunca queda vacío.
+
+  Además:
+  - SI falta, ENTONCES DEBERÁ rechazarlo con `CONSENT_024_REQUIRED` y no
+    registrar el procedimiento;
+  - SI la firma es posterior a la realización, ENTONCES DEBERÁ rechazarlo con
+    `CONSENT_SIGNED_AFTER_PROCEDURE`;
+  - SI firma un representante sin nombre o sin parentesco, ENTONCES DEBERÁ
+    rechazarlo con `CONSENT_REPRESENTATIVE_REQUIRED` (igual en la negativa y
+    en la revocación);
+  - SI una corrección (EN-244) cambia el procedimiento a un concepto que exige
+    el 024 y ningún consentimiento de ese procedimiento lo cubre, ENTONCES
+    DEBERÁ rechazarla con `CONSENT_024_REQUIRED`;
+  - CUANDO se restaure un procedimiento quitado (EN-246), el restaurado DEBERÁ
+    conservar el consentimiento o la excepción del original; SI el original no
+    tenía y su concepto ya lo exige, ENTONCES DEBERÁ rechazarlo con
+    `CONSENT_024_REQUIRED` y la frase que manda registrarlo de nuevo con su
+    consentimiento (como la corrección);
+  - SI se corrige a otro concepto un procedimiento con 024, ENTONCES el 024
+    DEBERÁ seguir sirviéndose con él;
+  - el consentimiento y la excepción DEBERÁN servirse con el procedimiento en
+    la atención, con quién lo registró y cuándo.
+  > **D-159 (07-10-2026), puntos 1 a 3.** El 024 se firma **en papel** con el
+  > texto que aprueba la clínica (el anexo del A.M. 5316 hace del contenido de
+  > cada intervención un documento del establecimiento); el sistema registra
+  > quién firmó, quién informó y cuándo. El escaneo del papel y su impresión
+  > desde el sistema son otra entrega, con `documents`.
   >
-  > **Falta esquema.** Faltan las dos mitades: la clasificación de riesgo en el
-  > catálogo de prestaciones —que es lo que decide si hace falta— y la tabla del
-  > consentimiento, que hoy no existe. Atado **al procedimiento** (EN-050) y no a
-  > la atención: un consentimiento genérico «para todo lo que se le haga hoy» no es
-  > el que la norma describe, porque el A.M. 5316 define el consentimiento como
-  > **un proceso de comunicación** sobre una intervención concreta.
+  > **Atado al procedimiento** (EN-050) y no a la atención: el A.M. 5316 define
+  > el consentimiento como un proceso de comunicación sobre **una**
+  > intervención concreta. El consentimiento nombra el concepto que cubre: un
+  > 024 de biopsia no ampara el procedimiento si se corrige a endoscopia.
   >
-  > **La excepción de emergencia va aquí:** el propio acuerdo la admite, y exige
-  > **fundamentarla por escrito en la historia**. Es decir, saltarse el 024 se
-  > puede, pero deja rastro y motivo — nunca es un campo que se quede vacío.
-- **EN-153** — CUANDO el paciente rechace la intervención, el sistema DEBERÁ
-  registrar la **negativa** con su instante y su autor, y NO DEBERÁ impedir que la
-  atención continúe.
-  > **Falta esquema.** La segunda mitad es la sección **7.8** del A.M. 5316: si el
-  > paciente rechaza, *«no significa que el profesional dejará de dar atención»* —
-  > hay que ofrecer alternativas y registrarlo. Un sistema que cierre la atención
-  > al registrar la negativa convierte una decisión del paciente en una expulsión.
-- **EN-154** — CUANDO el paciente revoque un consentimiento ya otorgado, el
-  sistema DEBERÁ registrar la **revocación** con su instante y su autor, y NO
-  DEBERÁ borrar ni modificar el consentimiento revocado.
-  > **Falta esquema.** La misma tabla que falta en EN-152 y EN-153: sin fila de
-  > consentimiento no hay nada que revocar. Se anota aparte porque la revocación
-  > añade dos columnas propias —instante y autor de la revocación— que no son
-  > las del otorgamiento.
+  > **La excepción** son las dos del anexo que D-159.3 admite: la emergencia
+  > *«cuando exista la imposibilidad de informar al paciente»* y el
+  > procedimiento inesperado *«en el curso de una intervención»*; las dos con
+  > la actuación *«fundamentada por escrito en la historia clínica»*.
   >
-  > Mismo régimen que la alergia refutada (EN-082) y la nota retractada (EN-026):
-  > que algo dejó de valer **es información por derecho propio**. Borrar el
-  > consentimiento revocado dejaría el procedimiento ya realizado sin el documento
-  > que lo amparaba el día que se hizo, que es exactamente el papel que hay que
-  > poder enseñar.
+  > **Garantía de la base:** `encounter_procedure_consent_required`, un
+  > disparador diferido al final de la transacción, rechaza el procedimiento
+  > (alta, corrección de concepto o restauración) cuyo concepto exige el 024
+  > sin un consentimiento firmado o una excepción del mismo concepto en él o en
+  > el procedimiento del que se restauró (`procedure_written_consent_covers`).
+  > La pregunta «¿lo exige?» la contesta `procedure_requires_written_consent`,
+  > la misma función para la base y para la pantalla, **por el código** del
+  > tarifario y no por la edición del concepto (sobrevive a la reimportación). `procedure_consent` nace
+  > completo según su clase (CHECK por clase) y no admite `UPDATE`, `DELETE`
+  > ni `TRUNCATE`. La marca puesta **después** no invalida lo ya registrado:
+  > el disparador mira el alta y el cambio de concepto, no cada edición.
+- **EN-153** — CUANDO el paciente rechace una intervención del tarifario, el
+  sistema DEBERÁ registrar la **negativa** con la intervención, su instante, su
+  autor (quien la registra) y quién informó, y quién se negó: el paciente o su
+  representante firmando, o nadie —el paciente no quiere firmar—, y entonces
+  el **nombre y el documento del testigo externo**; y NO DEBERÁ registrar el
+  procedimiento ni cambiar el estado de la atención. Además:
+  - SI la atención no admite contenido nuevo, ENTONCES DEBERÁ rechazarla con
+    `ENCOUNTER_ALREADY_CLOSED`;
+  - el instante DEBERÁ ser el del reloj de la aplicación al registrarla: la
+    petición no lo trae;
+  - SI no firma nadie y falta el testigo, ENTONCES DEBERÁ rechazarla con
+    `CONSENT_WITNESS_REQUIRED`;
+  - las negativas DEBERÁN servirse con los procedimientos de la atención.
+  > **D-159.4 y la sección «Rechazo de un procedimiento» del anexo**: *«no
+  > significa que el profesional de salud dejará de dar atención al
+  > paciente»*. El testigo es el del literal h: *«firma y número de cédula de
+  > ciudadanía del testigo (si el paciente no quiere suscribir el
+  > documento)»*; el documento se pide sin validar su dígito (D-199.2).
+  >
+  > **Garantía de la base:** `procedure_consent_refusal_states_who` (quién se
+  > negó, con el testigo cuando no firma nadie) y la inmutabilidad de
+  > `procedure_consent`.
+- **EN-154** — MIENTRAS la atención admita contenido nuevo, CUANDO el paciente
+  o su representante revoque un **consentimiento firmado**, el sistema DEBERÁ
+  registrar la **revocación** con su instante, quién la expresó y quién la
+  recibió, y NO DEBERÁ borrar ni modificar el consentimiento revocado ni el
+  procedimiento. Además:
+  - SI el consentimiento no es firmado (una excepción o una negativa) o ya
+    está revocado, ENTONCES DEBERÁ rechazarlo con `CONSENT_NOT_REVOCABLE`;
+  - SI no es de esa atención, ENTONCES DEBERÁ rechazarlo con
+    `PROCEDURE_CONSENT_NOT_FOUND`;
+  - la revocación DEBERÁ servirse con el consentimiento que revoca.
+  > **D-159.4 y el literal i del anexo**: la revocatoria lleva el nombre y la
+  > firma del paciente o del representante y *«el profesional sanitario que
+  > recibe la revocatoria»*. Hasta cuándo se revoca es D-199.3: mientras la
+  > atención admite contenido, el procedimiento está «en curso».
+  >
+  > Mismo régimen que la alergia refutada (EN-082) y la nota retractada
+  > (EN-026): que algo dejó de valer **es información por derecho propio**.
+  > Borrar el consentimiento revocado dejaría el procedimiento ya realizado sin
+  > el documento que lo amparaba el día que se hizo.
+  >
+  > **Garantía de la base:** `procedure_consent_revocation` es una fila aparte,
+  > una por consentimiento (clave primaria), sólo de uno firmado
+  > (`procedure_consent_revocation_of_signed`), sin `UPDATE` ni `DELETE`.
 
 ## 16. La firma electrónica certificada (D-A-005)
 
@@ -4546,6 +4612,12 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `PROCEDURE_NOT_FOUND` | 404 | El procedimiento no existe o no es de esa atención | EN-244, EN-245, EN-246 |
 | `PROCEDURE_RETRACTION_REASON_REQUIRED` | 422 | Quitar un procedimiento sin motivo, o con uno en blanco; campo `reason` | EN-245 |
 | `PROCEDURE_NOT_RESTORABLE` | 409 | Restaurar un procedimiento que ya se restauró | EN-246 |
+| `CONSENT_024_REQUIRED` | 422 | El procedimiento exige el consentimiento 024 y no llega firmado ni con excepción | EN-152 |
+| `CONSENT_SIGNED_AFTER_PROCEDURE` | 422 | La firma del 024 es posterior a la realización | EN-152 |
+| `CONSENT_REPRESENTATIVE_REQUIRED` | 422 | Firma, niega o revoca un representante sin nombre ni parentesco | EN-152 a EN-154 |
+| `CONSENT_WITNESS_REQUIRED` | 422 | Negativa sin firma y sin testigo | EN-153 |
+| `PROCEDURE_CONSENT_NOT_FOUND` | 404 | El consentimiento no es de esa atención | EN-154 |
+| `CONSENT_NOT_REVOCABLE` | 409 | Revocar una excepción, una negativa o un consentimiento ya revocado | EN-154 |
 | `DIAGNOSIS_PRIMARY_TAKEN` | 409 | Segundo diagnóstico principal. Lo arbitra `encounter_diagnosis_one_primary`; el adaptador lee el rango en uso dentro de la misma transacción para que el rechazo sea una frase, así que el código llega por **las dos vías** | EN-043 |
 | `DIAGNOSIS_CONCEPT_NOT_IN_FORCE` | 422 | El código CIE-10 no estaba vigente en la fecha de la atención. **Lo emite el adaptador**, no el mapeo de constraints: `trg_diagnosis_concept_in_force` levanta `integrity_constraint_violation` desde PL/pgSQL, así que el nombre del disparador nunca viaja al cliente | EN-042 |
 | `VITALS_OUT_OF_RANGE` | 422 | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges_*`, una por medida (D-058). **Por campo**, señalando cuál y diciendo el rango | EN-062 |
@@ -4573,7 +4645,6 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_CLOSER_NOT_AUTHOR` | 403 | Cierra alguien que no la abrió y no lleva `record:sign`. Con `record:sign` **no falla**: cierra dejando constancia de la sustitución | EN-144, EN-147 |
 | `NURSING_SCOPE_DENIED` | 403 | Se intentó registrar diagnóstico, procedimiento o receta con `nursing:write`. **Distinto de un 403 genérico de permiso**: dice que el acto está fuera del ámbito del título, no que falte una casilla en el rol | EN-142 |
 | `CERTIFIED_SIGNATURE_REQUIRED` | 422 | Firmar sin certificado vigente con `requireCertifiedSignature` habilitado. **No es 403**: el profesional tiene permiso para firmar; lo que falta es el certificado | EN-155 |
-| `CONSENT_REQUIRED_FOR_PROCEDURE` | 422 | Registrar como realizado un procedimiento de riesgo mayor sin el formulario 024 suscrito ni la exención de emergencia fundamentada | EN-152 |
 | `TRIAGE_NOT_ENABLED` | 404 | Se llamó a una ruta de triaje en una sede sin la capacidad habilitada. **404 y no 403**: en esa instalación la ruta no existe, y un 403 diría que existe y está cerrada | EN-148, EN-149 |
 | *(no expuesto)* | — | Ninguna ruta escribe el plazo: lo rechaza la base (`site_parameter_retention_minimum`) | EN-157 |
 | `PATIENT_ALLERGY_NOT_FOUND` | 404 | Se refutó una alergia que no existe en esa ficha ni en las que absorbió. **El mismo para «no existe» y «es de otra ficha»**, por lo mismo que `ENCOUNTER_NOT_FOUND` | EN-082 |
@@ -4742,12 +4813,15 @@ que es global: una atención ocurre en un sitio.
 | `PUT` | `/encounters/:id/triage` | `nursing:write` | EN-148, EN-149 *(sólo DONDE la capacidad esté habilitada)* |
 | `POST` | `/encounters/:id/diagnoses` | `record:write` *(tras el alta, además `record:sign`)* | EN-040 a EN-049, **EN-215** |
 | `GET` | `/encounters/:id/diagnoses` | `record:read` | EN-043, EN-046, EN-047 |
-| `POST` | `/encounters/:id/procedures` | `record:write` | EN-050, EN-151 |
-| `GET` | `/encounters/:id/procedures` | `record:read` | EN-050, **EN-245** *(con los quitados aparte)* |
+| `POST` | `/encounters/:id/procedures` | `record:write` | EN-050, EN-151, **EN-152** *(con su consentimiento o su excepción)* |
+| `GET` | `/encounters/:id/procedures` | `record:read` | EN-050, **EN-245** *(con los quitados aparte)*, **EN-152** a **EN-154** *(consentimiento, negativas y revocación)* |
 | `PATCH` | `/encounters/:id/procedures/:procedureId` | `record:write` | **EN-244**, EN-248 |
 | `GET` | `/encounters/:id/procedures/:procedureId/versions` | `record:read` | **EN-244** |
 | `POST` | `/encounters/:id/procedures/:procedureId/retract` | `record:write` | **EN-245**, EN-248 |
 | `POST` | `/encounters/:id/procedures/:procedureId/restore` | `record:write` | **EN-246**, EN-248 |
+| `GET` | `/encounters/:id/procedure-consent-requirement?conceptId=` | `record:read` | **EN-152** |
+| `POST` | `/encounters/:id/procedure-refusals` | `record:write` | **EN-153** |
+| `POST` | `/encounters/:id/procedure-consents/:consentId/revoke` | `record:write` | **EN-154** |
 | `GET` | `/patients/:id/allergies` | `record:read` | EN-080 a EN-083, **EN-087** |
 | `POST` | `/patients/:id/allergies` | `background:write` | EN-080, EN-086, **EN-164** |
 | `POST` | `/patients/:id/allergies/none-known` | `background:write` | EN-087, **EN-164** |

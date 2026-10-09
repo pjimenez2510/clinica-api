@@ -127,6 +127,10 @@ export const updateServiceSchema = z.object({
   tariffCode: z.string().trim().max(32).nullish(),
   taxRateId: z.uuid('Seleccione la tarifa de impuesto que aplica').optional(),
   active: z.boolean().optional(),
+  /** BI-257. The tariff procedure it charges; `null` unties it. */
+  procedureConceptId: z
+    .uuid('Seleccione un procedimiento del tarifario')
+    .nullish(),
   // BI-187 (D-179.3). No `consultation` any more: a consultation service is
   // born with its service type (SP-030) and tied from there.
 });
@@ -602,12 +606,21 @@ export const markTaxReviewedSchema = z.object({
 /** Body of POST /billing/services/:serviceId/tax-review. */
 export class MarkTaxReviewedDto extends createZodDto(markTaxReviewedSchema) {}
 
+/** BI-256. «Exige consentimiento 024», on or off. */
+export const markWrittenConsentSchema = z.object({
+  required: z.boolean({ error: 'Indique si exige el consentimiento 024' }),
+});
+/** Body of POST /billing/services/:serviceId/written-consent. */
+export class MarkWrittenConsentDto extends createZodDto(
+  markWrittenConsentSchema,
+) {}
+
 const serviceResponseSchema = z.object({
   id: z.uuid(),
   code: z.string(),
   name: z.string(),
   category: serviceCategoryResponseSchema,
-  /** BI-151, BI-187. The procedure it charges, when it is one. Seeded, read-only here. */
+  /** BI-151, BI-187, BI-257. The procedure it charges, when it is one. */
   procedureConcept: z
     .object({ id: z.uuid(), code: z.string(), display: z.string() })
     .nullable(),
@@ -620,6 +633,12 @@ const serviceResponseSchema = z.object({
   serviceTypes: z.array(
     z.object({ id: z.uuid(), name: z.string(), specialtyName: z.string() }),
   ),
+  /** BI-256. Whether its procedure demands the form 024, and who last set it. */
+  writtenConsent: z.object({
+    required: z.boolean(),
+    setAt: z.iso.datetime().nullable(),
+    setBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  }),
   /** BI-022 to BI-024. Who checked the tax rate and when; `null` = pending. */
   taxReview: z
     .object({

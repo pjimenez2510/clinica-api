@@ -270,11 +270,17 @@ export class PrismaExamAdministrationRepository implements ExamAdministrationRep
 
   /** ORD-162. */
   async serviceIsTaken(serviceId: string): Promise<boolean> {
-    const found = await this.prisma.examDefinition.findUnique({
-      where: { billableServiceId: serviceId },
-      select: { id: true },
-    });
-    return found !== null;
+    const [exam, tied] = await Promise.all([
+      this.prisma.examDefinition.findUnique({
+        where: { billableServiceId: serviceId },
+        select: { id: true },
+      }),
+      // BI-257. One that charges a procedure carries its code: not an exam's.
+      this.prisma.billableService.count({
+        where: { id: serviceId, procedureConceptId: { not: null } },
+      }),
+    ]);
+    return exam !== null || tied > 0;
   }
 
   /** ORD-162. */

@@ -274,6 +274,16 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
         tariffCode: update.tariffCode,
         taxRateId: update.taxRateId,
         active: update.active,
+        procedureConceptId: update.procedureConceptId,
+        // BI-256. `billable_service_written_consent_states_who` and
+        // `…_needs_a_procedure` are the guarantee underneath.
+        ...(update.writtenConsent === undefined
+          ? {}
+          : {
+              requiresWrittenConsent: update.writtenConsent.required,
+              writtenConsentSetAt: update.writtenConsent.setAt,
+              writtenConsentSetById: update.writtenConsent.setById,
+            }),
         // BI-024. Both columns or neither, which is what
         // `billable_service_tax_review_names_who_and_when` demands underneath.
         ...(update.taxReview === undefined
@@ -306,6 +316,47 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
       },
     });
     return count === 0 ? null : this.findBillableService(serviceId);
+  }
+
+  /**
+   * BI-257. A concept of the TARIFF system still in force: tying to one an
+   * import retired would point at a code the doctor can no longer pick.
+   */
+  /** BI-257. A charge of the service printed on an invoice. */
+  async hasInvoicedCharges(serviceId: string): Promise<boolean> {
+    const found = await this.prisma.chargeItem.count({
+      where: { billableServiceId: serviceId, invoiceId: { not: null } },
+    });
+    return found > 0;
+  }
+
+  async tariffConceptCode(conceptId: string): Promise<string | null> {
+    const found = await this.prisma.catalogConcept.findFirst({
+      where: { id: conceptId, system: { code: 'TARIFF' }, validTo: null },
+      select: { code: true },
+    });
+    return found?.code ?? null;
+  }
+
+  /**
+   * BI-257. By the CODE and not the id, like the 024 mark: an older edition
+   * of the same code tied elsewhere is the same procedure.
+   */
+  async procedureTakenByOther(
+    conceptId: string,
+    serviceId: string,
+  ): Promise<boolean> {
+    const [row] = await this.prisma.$queryRaw<{ taken: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1
+          FROM catalog_concept target
+          JOIN catalog_concept bound
+            ON bound.system_id = target.system_id AND bound.code = target.code
+          JOIN billable_service s ON s.procedure_concept_id = bound.id
+         WHERE target.id = ${conceptId}::uuid
+           AND s.id <> ${serviceId}::uuid
+      ) AS taken`;
+    return row?.taken === true;
   }
 
   /**
@@ -630,6 +681,7 @@ const SERVICE_INCLUDE = {
   category: true,
   procedureConcept: { select: { id: true, code: true, display: true } },
   taxReviewedBy: { select: { firstName: true, lastName: true } },
+  writtenConsentSetBy: { select: { firstName: true, lastName: true } },
   // BI-188, SP-031. What it charges for, when it is a consultation.
   serviceTypes: {
     orderBy: { serviceType: { name: 'asc' } },
@@ -646,6 +698,7 @@ type ServiceRow = BillableServiceRow & {
   category: CategoryRow;
   procedureConcept: { id: string; code: string; display: string } | null;
   taxReviewedBy: { firstName: string; lastName: string } | null;
+  writtenConsentSetBy: { firstName: string; lastName: string } | null;
   serviceTypes: {
     serviceType: { id: string; name: string; specialty: { name: string } };
   }[];
@@ -684,6 +737,15 @@ function toServiceView(row: ServiceRow): BillableServiceView {
       name: serviceType.name,
       specialtyName: serviceType.specialty.name,
     })),
+    writtenConsent: {
+      required: row.requiresWrittenConsent,
+      setAt: row.writtenConsentSetAt,
+      setById: row.writtenConsentSetById,
+      setByName:
+        row.writtenConsentSetBy === null
+          ? null
+          : `${row.writtenConsentSetBy.firstName} ${row.writtenConsentSetBy.lastName}`,
+    },
     // The CHECK keeps the two columns together; the user comes with the id.
     taxReview:
       row.taxReviewedAt === null ||

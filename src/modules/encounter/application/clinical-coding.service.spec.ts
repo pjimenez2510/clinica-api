@@ -26,7 +26,7 @@ import type {
   EncounterCodingView,
   NewDiagnosis,
   NewProcedure,
-  ProcedureView,
+  RecordedProcedureView,
   RetractedDiagnosisView,
   ProcedureEdit,
   ProcedureRestoration,
@@ -34,6 +34,7 @@ import type {
   ProcedureVersionView,
   RetractedProcedureView,
 } from '../domain/clinical-coding.repository';
+import type { RefusalView } from '../domain/procedure-consent';
 import type {
   EncounterQuery,
   EncounterRepository,
@@ -135,7 +136,7 @@ class FakeCoding implements ClinicalCodingRepository {
   written: NewDiagnosis[] = [];
   performed: NewProcedure[] = [];
   diagnoses: DiagnosisView[] = [];
-  procedures: ProcedureView[] = [];
+  procedures: RecordedProcedureView[] = [];
 
   addDiagnosis(diagnosis: NewDiagnosis): Promise<DiagnosisView> {
     this.written.push(diagnosis);
@@ -163,9 +164,9 @@ class FakeCoding implements ClinicalCodingRepository {
     return Promise.resolve(this.diagnoses);
   }
 
-  addProcedure(procedure: NewProcedure): Promise<ProcedureView> {
+  addProcedure(procedure: NewProcedure): Promise<RecordedProcedureView> {
     this.performed.push(procedure);
-    const view: ProcedureView = {
+    const view: RecordedProcedureView = {
       id: `procedure-${String(this.performed.length)}`,
       encounterId: procedure.encounterId,
       conceptId: procedure.conceptId,
@@ -175,18 +176,19 @@ class FakeCoding implements ClinicalCodingRepository {
       performedAt: procedure.performedAt ?? new Date('2026-09-14T14:30:00Z'),
       note: procedure.note ?? null,
       editedAt: null,
+      consent: null,
     };
     this.procedures.push(view);
     return Promise.resolve(view);
   }
 
-  proceduresOf(): Promise<ProcedureView[]> {
+  proceduresOf(): Promise<RecordedProcedureView[]> {
     return Promise.resolve(this.procedures);
   }
 
   procedureEdits: ProcedureEdit[] = [];
 
-  editProcedure(edit: ProcedureEdit): Promise<ProcedureView> {
+  editProcedure(edit: ProcedureEdit): Promise<RecordedProcedureView> {
     this.procedureEdits.push(edit);
     return Promise.resolve({
       ...this.procedures[0]!,
@@ -208,7 +210,9 @@ class FakeCoding implements ClinicalCodingRepository {
 
   procedureRestorations: ProcedureRestoration[] = [];
 
-  restoreProcedure(restoration: ProcedureRestoration): Promise<ProcedureView> {
+  restoreProcedure(
+    restoration: ProcedureRestoration,
+  ): Promise<RecordedProcedureView> {
     this.procedureRestorations.push(restoration);
     return Promise.resolve({
       ...this.procedures[0]!,
@@ -217,6 +221,10 @@ class FakeCoding implements ClinicalCodingRepository {
   }
 
   retractedProceduresOf(): Promise<RetractedProcedureView[]> {
+    return Promise.resolve([]);
+  }
+
+  refusalsOf(): Promise<RefusalView[]> {
     return Promise.resolve([]);
   }
 
@@ -791,6 +799,28 @@ describe('los casos de uso del bloque K', () => {
 
     expect(procedure.id).toBeTruthy();
     expect(coding.performed).toHaveLength(1);
+  });
+
+  it('EN-152 lleva el 024 firmado al repositorio con quien lo registra, que es quien informó', async () => {
+    await service.recordProcedure(
+      {
+        encounterId: ENCOUNTER,
+        conceptId: CONCEPT,
+        quantity: 1,
+        consent: { kind: 'SIGNED', signer: 'PATIENT', representative: null },
+      },
+      requester,
+    );
+
+    expect(coding.performed[0]?.consent).toEqual({
+      paper: { kind: 'SIGNED', signer: 'PATIENT', representative: null },
+      recordedById: requester.userId,
+    });
+  });
+
+  it('EN-153 la hoja de procedimientos sirve también las negativas', async () => {
+    const sheet = await service.proceduresOf(ENCOUNTER, requester);
+    expect(sheet.refusals).toEqual([]);
   });
 
   it('EN-009 rechaza registrar un procedimiento en una atención con alta clínica', async () => {

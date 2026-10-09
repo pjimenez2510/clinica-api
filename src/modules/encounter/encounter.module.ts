@@ -16,6 +16,7 @@ import {
 } from './chart-summary.controller';
 import { ChartSummaryService } from './application/chart-summary.service';
 import { ClinicalCodingController } from './clinical-coding.controller';
+import { ProcedureConsentController } from './procedure-consent.controller';
 import { DentalIndexController } from './dental-index.controller';
 import { ProgramBlocksController } from './program-blocks.controller';
 import { HivTestController } from './hiv-test.controller';
@@ -29,6 +30,7 @@ import { DentalIndexService } from './application/dental-index.service';
 import { DENTAL_INDEX_REPOSITORY } from './domain/dental-index.repository';
 import { PrismaDentalIndexRepository } from './infrastructure/prisma-dental-index.repository';
 import { ClinicalCodingService } from './application/clinical-coding.service';
+import { ProcedureConsentService } from './application/procedure-consent.service';
 import { ClinicalNoteController } from './clinical-note.controller';
 import { NoteTemplateController } from './note-template.controller';
 import { NoteTemplateService } from './application/note-template.service';
@@ -49,12 +51,14 @@ import { PATIENT_HISTORY_REPOSITORY } from './domain/patient-history.repository'
 import { PrismaPatientHistoryRepository } from './infrastructure/prisma-patient-history.repository';
 import { CHART_SUMMARY_REPOSITORY } from './domain/chart-summary.repository';
 import { CLINICAL_CODING_REPOSITORY } from './domain/clinical-coding.repository';
+import { PROCEDURE_CONSENT_REPOSITORY } from './domain/procedure-consent.repository';
 import { CLINICAL_NOTE_REPOSITORY } from './domain/clinical-note.repository';
 import { ENCOUNTER_REPOSITORY } from './domain/encounter.repository';
 import { ENCOUNTER_EXIT_REPOSITORY } from './domain/encounter-exit.repository';
 import { PATIENT_ALLERGY_REPOSITORY } from './domain/patient-allergy.repository';
 import { PrismaChartSummaryRepository } from './infrastructure/prisma-chart-summary.repository';
 import { PrismaClinicalCodingRepository } from './infrastructure/prisma-clinical-coding.repository';
+import { PrismaProcedureConsentRepository } from './infrastructure/prisma-procedure-consent.repository';
 import { PrismaClinicalNoteRepository } from './infrastructure/prisma-clinical-note.repository';
 import { PrismaEncounterRepository } from './infrastructure/prisma-encounter.repository';
 import { PrismaEncounterExitRepository } from './infrastructure/prisma-encounter-exit.repository';
@@ -109,6 +113,7 @@ import { PrismaViolenceScreeningRepository } from './infrastructure/prisma-viole
     EncounterExitController,
     ClinicalNoteController,
     ClinicalCodingController,
+    ProcedureConsentController,
     DentalIndexController,
     ProgramBlocksController,
     HivTestController,
@@ -124,6 +129,7 @@ import { PrismaViolenceScreeningRepository } from './infrastructure/prisma-viole
     EncounterExitService,
     ClinicalNoteService,
     ClinicalCodingService,
+    ProcedureConsentService,
     DentalIndexService,
     ProgramBlocksService,
     HivTestService,
@@ -148,6 +154,10 @@ import { PrismaViolenceScreeningRepository } from './infrastructure/prisma-viole
     {
       provide: CLINICAL_CODING_REPOSITORY,
       useClass: PrismaClinicalCodingRepository,
+    },
+    {
+      provide: PROCEDURE_CONSENT_REPOSITORY,
+      useClass: PrismaProcedureConsentRepository,
     },
     {
       provide: DENTAL_INDEX_REPOSITORY,

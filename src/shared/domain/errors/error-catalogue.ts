@@ -538,6 +538,18 @@ export const DOMAIN_ERROR_CODES = [
   // D-179. El nombre y el tarifario de la prestación de un examen o de un
   // tipo de atención se corrigen allí (409).
   'SERVICE_NAMED_ELSEWHERE',
+  // BI-256, BI-257 (D-159). La marca del 024 necesita una prestación atada a
+  // un procedimiento, y ese procedimiento es del tarifario (422).
+  'SERVICE_NOT_A_PROCEDURE',
+  'SERVICE_PROCEDURE_NOT_IN_TARIFF',
+  // BI-256, BI-257: la atadura de una prestación marcada no se mueve, y un
+  // procedimiento lo cobra una sola prestación (409).
+  'SERVICE_CONSENT_TIE_LOCKED',
+  'SERVICE_PROCEDURE_TAKEN',
+  // D-179: atada, el código del tarifario es el de su procedimiento (409).
+  'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
+  // BI-257: atar o desatar no reescribe el código que ya salió en facturas.
+  'SERVICE_TARIFF_CODE_INVOICED',
   'TAX_RATE_IN_USE',
   'TAX_RATE_NOT_FOUND',
   'TAX_RATE_REQUIRED',
@@ -880,6 +892,17 @@ export const DOMAIN_ERROR_CODES = [
   'PROCEDURE_NOT_FOUND',
   'PROCEDURE_RETRACTION_REASON_REQUIRED',
   'PROCEDURE_NOT_RESTORABLE',
+  //   * `CONSENT_024_REQUIRED` (422), `CONSENT_SIGNED_AFTER_PROCEDURE` (422),
+  //     `CONSENT_REPRESENTATIVE_REQUIRED` (422), `CONSENT_WITNESS_REQUIRED`
+  //     (422), `PROCEDURE_CONSENT_NOT_FOUND` (404) y `CONSENT_NOT_REVOCABLE` (409) —
+  //     EN-152 a EN-154 (D-159). El 024 del procedimiento de riesgo mayor, la
+  //     negativa con su testigo y la revocación.
+  'CONSENT_024_REQUIRED',
+  'CONSENT_SIGNED_AFTER_PROCEDURE',
+  'CONSENT_REPRESENTATIVE_REQUIRED',
+  'CONSENT_WITNESS_REQUIRED',
+  'PROCEDURE_CONSENT_NOT_FOUND',
+  'CONSENT_NOT_REVOCABLE',
   //   * `VITALS_CORRECTION_REQUIRES_SIGNATURE` (403) — EN-228 (D-134.3). Tras
   //     el alta corrige la toma quien tiene `record:sign` en la sede.
   'VITALS_CORRECTION_REQUIRES_SIGNATURE',

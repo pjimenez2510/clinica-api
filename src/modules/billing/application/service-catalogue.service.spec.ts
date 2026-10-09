@@ -10,6 +10,12 @@ import {
   TaxRateRequiredError,
   TaxReviewRateChangedError,
   ServiceNamedElsewhereError,
+  ServiceConsentTieLockedError,
+  ServiceNotAProcedureError,
+  ServiceProcedureNotInTariffError,
+  ServiceProcedureTakenError,
+  ServiceTariffCodeFromProcedureError,
+  ServiceTariffCodeInvoicedError,
 } from '../domain/billing.errors';
 import type {
   BillableServiceView,
@@ -59,6 +65,12 @@ const service: BillableServiceView = {
   active: true,
   serviceTypes: [],
   taxReview: null,
+  writtenConsent: {
+    required: false,
+    setAt: null,
+    setById: null,
+    setByName: null,
+  },
 };
 
 /** The catalogue port as a double, with every mock held in a NAMED local. */
@@ -85,6 +97,9 @@ function build(overrides: Record<string, unknown> = {}) {
     createBillableService: vi.fn().mockResolvedValue(service),
     updateBillableService: vi.fn().mockResolvedValue(service),
     markTaxReviewed: vi.fn().mockResolvedValue(service),
+    tariffConceptCode: vi.fn().mockResolvedValue('10120'),
+    procedureTakenByOther: vi.fn().mockResolvedValue(false),
+    hasInvoicedCharges: vi.fn().mockResolvedValue(false),
     countReferencesToService: vi.fn().mockResolvedValue(0),
     deleteBillableService: vi.fn().mockResolvedValue(undefined),
     record: vi.fn().mockResolvedValue(undefined),
@@ -245,6 +260,9 @@ describe('BI-046, BI-132 la bitácora del catálogo', () => {
       active: true,
       taxReviewedAt: null,
       taxReviewedById: null,
+      procedureConceptId: null,
+      requiresWrittenConsent: false,
+      writtenConsentSetById: null,
     };
     expect(entry.before).toEqual({
       ...common,
@@ -601,6 +619,189 @@ describe('BI-187 corregir siempre es posible', () => {
     mocks.countCategoryTies.mockResolvedValue({ consultations: 1, procedures: 0, examCategories: [] }); // prettier-ignore
     await expect(
       catalogue.updateCategory(SUPPLIES.id, { kind: 'OTHER' }, requester),
+    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
+  });
+});
+
+const PROCEDURES: ServiceCategoryView = {
+  id: 'category-procedures',
+  name: 'Procedimientos',
+  kind: 'PROCEDURE',
+  active: true,
+};
+const procedureService: BillableServiceView = {
+  ...service,
+  category: PROCEDURES,
+  procedureConcept: { id: 'c-1', code: '10120', display: 'Biopsia de piel' },
+};
+
+describe('BI-256 la marca «exige consentimiento 024» la pone la dirección médica', () => {
+  it('BI-256 marca con quién y cuándo, del reloj de la aplicación, y deja la prestación antes y después en la bitácora', async () => {
+    const marked: BillableServiceView = {
+      ...procedureService,
+      writtenConsent: { required: true, setAt: new Date(), setById: 'user-1', setByName: 'Ana Villacís' }, // prettier-ignore
+    };
+    const { service: catalogue, mocks } = build({
+      findBillableService: vi.fn().mockResolvedValue(procedureService),
+      updateBillableService: vi.fn().mockResolvedValue(marked),
+    });
+    const before = Date.now();
+
+    await expect(catalogue.markWrittenConsent('service-1', true, requester)).resolves.toBe(marked); // prettier-ignore
+
+    const [, update] = mocks.updateBillableService.mock.calls[0]!;
+    expect(update).toEqual({
+      writtenConsent: {
+        required: true,
+        setAt: expect.any(Date),
+        setById: 'user-1',
+      },
+    });
+    expect((update as { writtenConsent: { setAt: Date } }).writtenConsent.setAt.getTime()).toBeGreaterThanOrEqual(before); // prettier-ignore
+    const entry = mocks.record.mock.calls[0]![0] as AccessAuditEntry;
+    expect(entry).toMatchObject({
+      resourceType: 'billable_service',
+      action: 'UPDATE',
+      before: expect.objectContaining({ requiresWrittenConsent: false }),
+      after: expect.objectContaining({ requiresWrittenConsent: true, writtenConsentSetById: 'user-1' }), // prettier-ignore
+    });
+  });
+
+  it('BI-256 rechaza marcar una prestación que no cobra un procedimiento; ponerla como ya está no escribe nada', async () => {
+    const { service: catalogue, mocks } = build();
+    await expect(
+      catalogue.markWrittenConsent('service-1', true, requester),
+    ).rejects.toBeInstanceOf(ServiceNotAProcedureError);
+
+    // Control positivo: desmarcar la que ya está apagada no es un cambio.
+    await expect(catalogue.markWrittenConsent('service-1', false, requester)).resolves.toBe(service); // prettier-ignore
+    expect(mocks.updateBillableService).not.toHaveBeenCalled();
+    expect(mocks.record).not.toHaveBeenCalled();
+  });
+
+  it('BI-256 D-199.1 la atadura de una prestación marcada no se desata, no se cambia ni se borra con la llave de precios', async () => {
+    const { service: catalogue } = build({
+      findBillableService: vi.fn().mockResolvedValue({
+        ...procedureService,
+        writtenConsent: { required: true, setAt: new Date(), setById: 'user-1', setByName: 'Ana Villacís' }, // prettier-ignore
+      }),
+    });
+    await expect(
+      catalogue.updateService('service-1', { procedureConceptId: null }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceConsentTieLockedError);
+    await expect(
+      catalogue.updateService('service-1', { procedureConceptId: 'c-2' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceConsentTieLockedError);
+    await expect(catalogue.deleteService('service-1', requester)).rejects.toBeInstanceOf(ServiceConsentTieLockedError); // prettier-ignore
+    // Control positivo: renombrarla sí.
+    await expect(catalogue.updateService('service-1', { name: 'Biopsia' }, requester)).resolves.toBeDefined(); // prettier-ignore
+  });
+
+  it('BI-257 un procedimiento lo cobra una sola prestación', async () => {
+    const { service: catalogue } = build({
+      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES }), // prettier-ignore
+      procedureTakenByOther: vi.fn().mockResolvedValue(true),
+    });
+    await expect(
+      catalogue.updateService('service-1', { procedureConceptId: 'c-1' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceProcedureTakenError);
+  });
+});
+
+describe('BI-257 la prestación de procedimiento se ata a su concepto desde la ficha', () => {
+  it('BI-257 ata una prestación de clase procedimiento a un concepto del tarifario', async () => {
+    const { service: catalogue, mocks } = build({
+      findBillableService: vi
+        .fn()
+        .mockResolvedValue({ ...service, category: PROCEDURES }),
+    });
+    await catalogue.updateService(
+      'service-1',
+      { procedureConceptId: 'c-1' },
+      requester,
+    );
+    expect(mocks.tariffConceptCode).toHaveBeenCalledWith('c-1');
+    // D-179. Atar escribe el código del tarifario: un dato, un sitio.
+    expect(mocks.updateBillableService).toHaveBeenCalledWith('service-1', { procedureConceptId: 'c-1', tariffCode: '10120' }); // prettier-ignore
+  });
+
+  it('BI-257 D-179 atada, el código del tarifario no se escribe aparte; atar uno distinto lo reemplaza', async () => {
+    const { service: catalogue, mocks } = build({
+      findBillableService: vi.fn().mockResolvedValue({
+        ...procedureService,
+        tariffCode: '10120',
+      }),
+    });
+    await expect(
+      catalogue.updateService('service-1', { tariffCode: '99999' }, requester),
+    ).rejects.toBeInstanceOf(ServiceTariffCodeFromProcedureError);
+    // Control positivo: el mismo código guardado otra vez no es un cambio.
+    await catalogue.updateService('service-1', { tariffCode: '10120', name: 'Biopsia' }, requester); // prettier-ignore
+    expect(mocks.updateBillableService).toHaveBeenCalledTimes(1);
+
+    const { service: typed, mocks: typedMocks } = build({
+      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES, tariffCode: '55555' }), // prettier-ignore
+    });
+    await typed.updateService('service-1', { procedureConceptId: 'c-1' }, requester); // prettier-ignore
+    expect(typedMocks.updateBillableService).toHaveBeenCalledWith('service-1', { procedureConceptId: 'c-1', tariffCode: '10120' }); // prettier-ignore
+  });
+
+  it('BI-257 D-179 atar con otro código tecleado se rechaza, desatar no deja el código del procedimiento, y una prestación facturada no cambia de código', async () => {
+    const { service: catalogue, mocks } = build({
+      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES }), // prettier-ignore
+    });
+    await expect(
+      catalogue.updateService('service-1', { procedureConceptId: 'c-1', tariffCode: '99999' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceTariffCodeFromProcedureError);
+
+    const { service: untie, mocks: untieMocks } = build({
+      findBillableService: vi.fn().mockResolvedValue({ ...procedureService, tariffCode: '10120' }), // prettier-ignore
+    });
+    await untie.updateService('service-1', { procedureConceptId: null }, requester); // prettier-ignore
+    expect(untieMocks.updateBillableService).toHaveBeenCalledWith('service-1', { procedureConceptId: null, tariffCode: null }); // prettier-ignore
+
+    const { service: invoiced } = build({
+      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES, tariffCode: '55555' }), // prettier-ignore
+      hasInvoicedCharges: vi.fn().mockResolvedValue(true),
+    });
+    await expect(
+      invoiced.updateService('service-1', { procedureConceptId: 'c-1' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceTariffCodeInvoicedError);
+    expect(mocks.updateBillableService).not.toHaveBeenCalled();
+  });
+
+  it('D-179 ORD-163 la prestación de un examen no se ata a un procedimiento: su tarifario es del examen', async () => {
+    const { service: catalogue } = build({
+      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES }), // prettier-ignore
+      listExamsOfService: vi.fn().mockResolvedValue([{ id: 'e-1', category: 'PROCEDURE' }]), // prettier-ignore
+    });
+    await expect(
+      catalogue.updateService('service-1', { procedureConceptId: 'c-1' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceNamedElsewhereError);
+  });
+
+  it('BI-257 rechaza un concepto que no es del tarifario y la atadura en una prestación que no es de procedimiento', async () => {
+    const { service: catalogue } = build({
+      findBillableService: vi
+        .fn()
+        .mockResolvedValue({ ...service, category: PROCEDURES }),
+      tariffConceptCode: vi.fn().mockResolvedValue(null),
+    });
+    await expect(
+      catalogue.updateService(
+        'service-1',
+        { procedureConceptId: 'c-cie10' },
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(ServiceProcedureNotInTariffError);
+
+    const { service: consultations } = build();
+    await expect(
+      consultations.updateService(
+        'service-1',
+        { procedureConceptId: 'c-1' },
+        requester,
+      ),
     ).rejects.toBeInstanceOf(ServiceKindMismatchError);
   });
 });

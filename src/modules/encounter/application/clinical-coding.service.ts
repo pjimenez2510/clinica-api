@@ -22,7 +22,7 @@ import {
   type DiagnosisView,
   type EncounterCodingView,
   type ProcedureVersionView,
-  type ProcedureView,
+  type RecordedProcedureView,
   type RetractedDiagnosisView,
   type RetractedProcedureView,
 } from '../domain/clinical-coding.repository';
@@ -53,6 +53,10 @@ import type {
   DiagnosisOccurrence,
   VisitSequence,
 } from '../domain/encounter';
+import type {
+  ProcedureConsentInput,
+  RefusalView,
+} from '../domain/procedure-consent';
 import type { Requester } from './encounter.service';
 
 /**
@@ -138,6 +142,8 @@ export interface RecordProcedureRequest {
   quantity: number;
   performedAt?: Date;
   note?: string;
+  /** EN-152. The form 024, or the exception, when the concept demands it. */
+  consent?: ProcedureConsentInput;
 }
 
 /** EN-244. A correction in place: only what is present changes. */
@@ -150,10 +156,14 @@ export interface EditProcedureRequest {
   note?: string | null;
 }
 
-/** EN-050, EN-245. The procedures that count, and the trace of those removed. */
+/**
+ * EN-050, EN-245, EN-152, EN-153. The procedures that count with the 024 that
+ * covers each, the trace of those removed, and the refusals.
+ */
 export interface ProcedureSheet {
-  items: ProcedureView[];
+  items: RecordedProcedureView[];
   retracted: RetractedProcedureView[];
+  refusals: RefusalView[];
 }
 
 /**
@@ -583,22 +593,22 @@ export class ClinicalCodingService {
   }
 
   /**
-   * EN-050, EN-151. Registers one procedure with its quantity.
+   * EN-050, EN-151, EN-152. Registers one procedure with its quantity and,
+   * when its service carries the 024 mark (BI-256), its signed form or the
+   * exception with its ground — refused with `CONSENT_024_REQUIRED` without.
    *
-   * ⚠️ NOTHING HERE ASKS FOR AN INFORMED CONSENT, AND THAT IS EN-151 WRITTEN
-   * AS CODE. The A.M. 5316 §7.6.d is literal — «no se requiere un
-   * consentimiento informado suscrito en las intervenciones de riesgo mínimo»
-   * — and a consent barrier on the ordinary procedure is not merely useless
-   * work: it trains everybody to click without reading, so the consent that
-   * DOES matter gets signed with the same automatism. The barrier EN-152 asks
-   * for is for major-risk procedures, and it needs two things that do not
-   * exist yet — the risk classification on the service catalogue and the form
-   * 024 table — so it is not approximated here.
+   * ⚠️ WITHOUT THE MARK NOTHING IS ASKED, AND THAT IS EN-151 WRITTEN AS CODE.
+   * The A.M. 5316 §7.6.d is literal — «no se requiere un consentimiento
+   * informado suscrito en las intervenciones de riesgo mínimo» — and a consent
+   * barrier on the ordinary procedure trains everybody to click without
+   * reading, so the consent that DOES matter gets signed with the same
+   * automatism. The question is asked INSIDE the write, where the mark is read
+   * under the same transaction the deferred trigger judges.
    */
   async recordProcedure(
     request: RecordProcedureRequest,
     requester: Requester,
-  ): Promise<ProcedureView> {
+  ): Promise<RecordedProcedureView> {
     const encounter = await this.requireLiveEncounter(
       request.encounterId,
       requester,
@@ -610,6 +620,10 @@ export class ClinicalCodingService {
       quantity: request.quantity,
       performedAt: request.performedAt,
       note: request.note,
+      consent:
+        request.consent === undefined
+          ? undefined
+          : { paper: request.consent, recordedById: requester.userId },
       sites: requester.sites,
     });
 
@@ -641,11 +655,12 @@ export class ClinicalCodingService {
     const encounter = await this.requireEncounter(encounterId, requester);
 
     const query = { encounterId: encounter.id, sites: requester.sites };
-    const [items, retracted] = await Promise.all([
+    const [items, retracted, refusals] = await Promise.all([
       this.coding.proceduresOf(query),
       this.coding.retractedProceduresOf(query),
+      this.coding.refusalsOf(query),
     ]);
-    const procedures = { items, retracted };
+    const procedures = { items, retracted, refusals };
 
     await this.audit.record({
       userId: requester.userId,
@@ -668,7 +683,7 @@ export class ClinicalCodingService {
   async editProcedure(
     request: EditProcedureRequest,
     requester: Requester,
-  ): Promise<ProcedureView> {
+  ): Promise<RecordedProcedureView> {
     const encounter = await this.requireLiveEncounter(
       request.encounterId,
       requester,
@@ -789,7 +804,7 @@ export class ClinicalCodingService {
     encounterId: string,
     procedureId: string,
     requester: Requester,
-  ): Promise<ProcedureView> {
+  ): Promise<RecordedProcedureView> {
     const encounter = await this.requireLiveEncounter(encounterId, requester);
 
     const procedure = await this.coding.restoreProcedure({

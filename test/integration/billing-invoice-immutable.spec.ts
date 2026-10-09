@@ -13,6 +13,7 @@ import { parseClinicalDate } from '../../src/shared/domain/clinic-time';
 import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
+import { aTariffConcept } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
 import { authoriseVoucher } from './setup/sri-fixtures';
@@ -639,4 +640,37 @@ describe('BI-159 la base rechaza un RUC o una cédula de receptor que el SRI no 
       expect(invoice.receiver.buyerIdentification).toBe(identification);
     },
   );
+});
+
+describe('BI-257 D-179 atar no reescribe lo que dice una factura emitida', () => {
+  it('BI-257 la BASE rechaza atar a un procedimiento, con otro código, una prestación ya facturada; una sin facturar, sí', async () => {
+    const accountId = await anAccountReadyToInvoice(true);
+    await issue(accountId);
+    const concept = await aTariffConcept(context.prisma);
+    const tie = (id: string) =>
+      context.prisma.billableService.update({
+        where: { id },
+        data: { procedureConceptId: concept.id, tariffCode: concept.code },
+      });
+
+    const raised = await tie(context.serviceId).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(String(raised)).toMatch(/billable_service_tariff_code_invoiced/);
+    expect(extractDatabaseProblem(raised)?.code).toBe(
+      'SERVICE_TARIFF_CODE_INVOICED',
+    );
+
+    // Control positivo: una prestación sin cargos facturados se ata.
+    const fresh = await context.prisma.billableService.create({
+      data: {
+        code: 'PROC-SIN-FACTURA',
+        name: 'Sin facturar',
+        categoryId: (await context.prisma.billableService.findUniqueOrThrow({ where: { id: context.serviceId } })).categoryId, // prettier-ignore
+        taxRateId: (await context.prisma.billableService.findUniqueOrThrow({ where: { id: context.serviceId } })).taxRateId, // prettier-ignore
+      },
+    });
+    await tie(fresh.id);
+  });
 });

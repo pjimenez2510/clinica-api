@@ -107,6 +107,12 @@ const service = (
   active: true,
   serviceTypes: [],
   taxReview: null,
+  writtenConsent: {
+    required: false,
+    setAt: null,
+    setById: null,
+    setByName: null,
+  },
   ...overrides,
 });
 

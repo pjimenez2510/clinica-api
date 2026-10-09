@@ -106,10 +106,16 @@ export interface BillableServiceView {
   /** BI-185. The catalogue row, never free text. */
   category: ServiceCategoryView;
   /**
-   * BI-151, BI-187. The procedure this service charges, when it is one. Read
-   * here and set nowhere in the API yet: the tie is seeded.
+   * BI-151, BI-187, BI-257. The procedure this service charges, when it is
+   * one: set from the service's sheet, only on a procedure-kind service.
    */
   procedureConcept: { id: string; code: string; display: string } | null;
+  /**
+   * BI-256 (D-159). Whether registering its procedure demands the signed form
+   * 024 (EN-152), with who and when last changed it; `setAt` is `null` while
+   * nobody ever touched it, which is «no lo exige».
+   */
+  writtenConsent: WrittenConsentRuleView;
   /** MSP nomenclature only. No amount is ever taken from it (BI-011). */
   tariffCode: string | null;
   taxRateId: string;
@@ -128,6 +134,15 @@ export interface BillableServiceView {
    * (D-172.1), and changing its rate makes it pending again (D-172.2).
    */
   taxReview: TaxReviewView | null;
+}
+
+/** BI-256. The 024 mark of a service, with who and when it last changed. */
+export interface WrittenConsentRuleView {
+  required: boolean;
+  setAt: Date | null;
+  setById: string | null;
+  /** «Nombre Apellido». */
+  setByName: string | null;
 }
 
 /** BI-024. A review names a person and an instant, never one without the other. */
@@ -215,6 +230,10 @@ export interface BillableServiceUpdate {
    * absent leaves it alone. Written by the service, never taken from a body.
    */
   taxReview?: { reviewedAt: Date; reviewedById: string } | null;
+  /** BI-257. The procedure it charges; `null` unties it. */
+  procedureConceptId?: string | null;
+  /** BI-256. Written by the service with who and when, never from a body. */
+  writtenConsent?: { required: boolean; setAt: Date; setById: string };
 }
 
 /**
@@ -304,6 +323,15 @@ export interface BillingCatalogueRepository {
     taxRateId: string,
     review: { reviewedAt: Date; reviewedById: string },
   ): Promise<BillableServiceView | null>;
+  /**
+   * BI-257. The code of a concept of the tariff catalogue still in force, or
+   * `null` when it is not one.
+   */
+  tariffConceptCode(conceptId: string): Promise<string | null>;
+  /** BI-257. Whether any charge of the service is already on an invoice. */
+  hasInvoicedCharges(serviceId: string): Promise<boolean>;
+  /** BI-257. Whether another service already charges a concept of that code. */
+  procedureTakenByOther(conceptId: string, serviceId: string): Promise<boolean>;
   /**
    * BI-012. Deletes ONLY when nothing references it; the caller has already
    * refused when it does. The count and the delete are asked separately on

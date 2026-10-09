@@ -141,7 +141,7 @@ beforeEach(async () => {
   });
   await prisma.billableService.update({
     where: { code: PROCEDURE_SERVICE },
-    data: { procedureConceptId: concept.id },
+    data: { procedureConceptId: concept.id, tariffCode: concept.code },
   });
 
   const user = await prisma.user.create({

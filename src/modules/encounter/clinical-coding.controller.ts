@@ -34,6 +34,7 @@ import type {
   DiagnosisView,
   ProcedureVersionView,
   ProcedureView,
+  RecordedProcedureView,
   RetractedDiagnosisView,
   RetractedProcedureView,
 } from './domain/clinical-coding.repository';
@@ -57,8 +58,14 @@ import {
   type DiagnosisVersionListResponse,
   type ProcedureListResponse,
   type ProcedureResponse,
+  type RecordedProcedureResponse,
   type ProcedureVersionListResponse,
 } from './dto/clinical-coding.dto';
+import {
+  representativeOf,
+  toConsentResponse,
+  toRefusalResponse,
+} from './procedure-consent.controller';
 
 /**
  * Block K of the RDACAA: the diagnoses and the procedures of an attention.
@@ -90,14 +97,10 @@ import {
  * permission of each route readable in one screen is what makes the paragraph
  * above checkable at a glance.
  *
- * ⚠️ WHAT IS NOT HERE: `…/procedures/:procedureId/consent` and the two routes
- * of the refusal and the revocation (EN-152 to EN-154). Both halves are
- * missing from the schema — the risk classification on the service catalogue,
- * which is what decides whether a consent is needed at all, and the form 024
- * table — and a route that accepted a consent nothing could store would be
- * worse than none. EN-151 is satisfied by their ABSENCE: the A.M. 5316 §7.6.d
- * says no signed consent is required for a minimum-risk intervention, and a
- * barrier on the ordinary procedure trains everybody to click without reading.
+ * THE FORM 024 (EN-152, D-159) travels in the body of `POST …/procedures`
+ * when the procedure's service carries the mark; the refusal, the revocation
+ * and the screen's question live in `ProcedureConsentController`. EN-151 is
+ * kept by the mark being OFF by default: without it nothing is asked.
  */
 @ApiTags('encounter')
 @Controller({ path: 'encounters/:encounterId', version: '1' })
@@ -327,15 +330,11 @@ export class ClinicalCodingController {
   }
 
   /**
-   * EN-050, EN-151. Registers one procedure with its quantity.
-   *
-   * ⚠️ NO CONSENT IS ASKED FOR, AND THAT IS EN-151 RATHER THAN AN OMISSION.
-   * «No se requiere un consentimiento informado suscrito en las intervenciones
-   * de riesgo mínimo» is textual in the A.M. 5316 §7.6.d, and the requirement
-   * is written as a negative because the failure mode is building too much: a
-   * barrier here is work that teaches everybody to click through, and then the
-   * consent that matters — the major-risk one of EN-152 — gets signed with the
-   * same automatism.
+   * EN-050, EN-151, EN-152. Registers one procedure with its quantity and,
+   * when its service demands it, its form 024 or the exception — 422
+   * `CONSENT_024_REQUIRED` without. Without the mark no consent is asked:
+   * «no se requiere un consentimiento informado suscrito en las
+   * intervenciones de riesgo mínimo» (A.M. 5316 §7.6.d, EN-151).
    */
   @Post('procedures')
   @RequirePermission('record:write', 'query')
@@ -348,7 +347,7 @@ export class ClinicalCodingController {
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Body() dto: RecordProcedureDto,
     @Req() req: Request,
-  ): Promise<ProcedureResponse> {
+  ): Promise<RecordedProcedureResponse> {
     const procedure = await this.coding.recordProcedure(
       {
         encounterId,
@@ -357,10 +356,24 @@ export class ClinicalCodingController {
         performedAt:
           dto.performedAt === undefined ? undefined : new Date(dto.performedAt),
         note: dto.note,
+        consent:
+          dto.consent === undefined
+            ? undefined
+            : dto.consent.kind === 'SIGNED'
+              ? {
+                  kind: 'SIGNED',
+                  signer: dto.consent.signer,
+                  representative: representativeOf(dto.consent.representative),
+                  signedAt:
+                    dto.consent.signedAt === undefined
+                      ? undefined
+                      : new Date(dto.consent.signedAt),
+                }
+              : dto.consent,
       },
       this.requester(req, 'record:write'),
     );
-    return toProcedureResponse(procedure);
+    return toRecordedProcedureResponse(procedure);
   }
 
   /** EN-050. The procedures of one attention. AUDITED, like the diagnoses. */
@@ -377,8 +390,9 @@ export class ClinicalCodingController {
       this.requester(req, 'record:read'),
     );
     return {
-      items: sheet.items.map(toProcedureResponse),
+      items: sheet.items.map(toRecordedProcedureResponse),
       retracted: sheet.retracted.map(toRetractedProcedureResponse),
+      refusals: sheet.refusals.map(toRefusalResponse),
     };
   }
 
@@ -396,7 +410,7 @@ export class ClinicalCodingController {
     @Param('procedureId', ParseUUIDPipe) procedureId: string,
     @Body() dto: EditProcedureDto,
     @Req() req: Request,
-  ): Promise<ProcedureResponse> {
+  ): Promise<RecordedProcedureResponse> {
     const procedure = await this.coding.editProcedure(
       {
         encounterId,
@@ -407,7 +421,7 @@ export class ClinicalCodingController {
       },
       this.requester(req, 'record:write'),
     );
-    return toProcedureResponse(procedure);
+    return toRecordedProcedureResponse(procedure);
   }
 
   /** EN-244. The versions corrections replaced. Audited like the list. */
@@ -463,13 +477,13 @@ export class ClinicalCodingController {
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Param('procedureId', ParseUUIDPipe) procedureId: string,
     @Req() req: Request,
-  ): Promise<ProcedureResponse> {
+  ): Promise<RecordedProcedureResponse> {
     const procedure = await this.coding.restoreProcedure(
       encounterId,
       procedureId,
       this.requester(req, 'record:write'),
     );
-    return toProcedureResponse(procedure);
+    return toRecordedProcedureResponse(procedure);
   }
 
   /**
@@ -562,6 +576,17 @@ function toProcedureResponse(procedure: ProcedureView): ProcedureResponse {
     performedAt: procedure.performedAt.toISOString(),
     note: procedure.note,
     editedAt: procedure.editedAt?.toISOString() ?? null,
+  };
+}
+
+/** EN-152. The procedure with the 024 that covers it. */
+function toRecordedProcedureResponse(
+  procedure: RecordedProcedureView,
+): RecordedProcedureResponse {
+  return {
+    ...toProcedureResponse(procedure),
+    consent:
+      procedure.consent === null ? null : toConsentResponse(procedure.consent),
   };
 }
 

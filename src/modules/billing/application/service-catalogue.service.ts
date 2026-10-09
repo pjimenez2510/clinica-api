@@ -28,6 +28,12 @@ import {
   TaxRateRequiredError,
   TaxReviewRateChangedError,
   ServiceNamedElsewhereError,
+  ServiceConsentTieLockedError,
+  ServiceNotAProcedureError,
+  ServiceProcedureNotInTariffError,
+  ServiceProcedureTakenError,
+  ServiceTariffCodeFromProcedureError,
+  ServiceTariffCodeInvoicedError,
 } from '../domain/billing.errors';
 
 import {
@@ -163,7 +169,19 @@ export class ServiceCatalogueService {
     const retariffs =
       update.tariffCode !== undefined &&
       update.tariffCode !== current.tariffCode;
-    if (renames || retariffs) {
+    // BI-257. The procedure it charges, from the tariff and only on a
+    // procedure-kind service; a service carrying the 024 mark (BI-256) keeps
+    // it, or the mark would point at nothing.
+    const retiesProcedure =
+      update.procedureConceptId !== undefined &&
+      update.procedureConceptId !== (current.procedureConcept?.id ?? null);
+    const tiesProcedure = retiesProcedure && update.procedureConceptId !== null;
+    // D-179. Tied, the tariff code IS its procedure's: written by tying,
+    // never apart (`billable_service_tariff_code_is_its_procedure`).
+    if (retariffs && !retiesProcedure && current.procedureConcept !== null) {
+      throw new ServiceTariffCodeFromProcedureError();
+    }
+    if (renames || retariffs || tiesProcedure) {
       const owned =
         current.serviceTypes.length > 0 ||
         (await this.catalogue.listExamsOfService(serviceId)).length > 0;
@@ -180,11 +198,51 @@ export class ServiceCatalogueService {
     const movesCategory =
       update.categoryId !== undefined &&
       update.categoryId !== current.category.id;
-    if (movesCategory) {
-      const category = await this.requireActiveCategory(update.categoryId!);
+    let tied: BillableServiceUpdate = update;
+    if (retiesProcedure) {
+      // D-199.1. Moving the tie would move the medical direction's mark.
+      if (current.writtenConsent.required) {
+        throw new ServiceConsentTieLockedError();
+      }
+      if (update.procedureConceptId !== null) {
+        const conceptId = update.procedureConceptId!;
+        const code = await this.catalogue.tariffConceptCode(conceptId);
+        if (code === null) throw new ServiceProcedureNotInTariffError();
+        if (await this.catalogue.procedureTakenByOther(conceptId, serviceId)) {
+          throw new ServiceProcedureTakenError();
+        }
+        // D-179. Tying writes the code: the one typed before is replaced
+        // (the old one stays in the trail's `before`), never asked twice —
+        // and a different one typed in the same request is not dropped in
+        // silence.
+        if (update.tariffCode !== undefined && update.tariffCode !== code) {
+          throw new ServiceTariffCodeFromProcedureError();
+        }
+        tied = { ...update, tariffCode: code };
+      } else {
+        // Untied, the procedure's code does not stay behind printing a
+        // procedure the service no longer charges; one typed now is kept.
+        tied = { ...update, tariffCode: update.tariffCode ?? null };
+      }
+      // Until the charge freezes it, the RIDE reprints the service's code:
+      // tying or untying must not rewrite what an issued invoice said.
+      if (
+        tied.tariffCode !== current.tariffCode &&
+        (await this.catalogue.hasInvoicedCharges(serviceId))
+      ) {
+        throw new ServiceTariffCodeInvoicedError();
+      }
+    }
+    if (movesCategory || retiesProcedure) {
+      const category = movesCategory
+        ? await this.requireActiveCategory(update.categoryId!)
+        : current.category;
+      const tiedProcedure = retiesProcedure
+        ? update.procedureConceptId !== null
+        : current.procedureConcept !== null;
       assertKindAdmits(category.kind, {
         consultations: current.serviceTypes.length,
-        procedures: Number(current.procedureConcept !== null),
+        procedures: Number(tiedProcedure),
         examCategories: (
           await this.catalogue.listExamsOfService(serviceId)
         ).map((exam) => exam.category),
@@ -198,7 +256,7 @@ export class ServiceCatalogueService {
       update.taxRateId !== undefined && update.taxRateId !== current.taxRateId;
     const updated = await this.catalogue.updateBillableService(
       serviceId,
-      changesRate ? { ...update, taxReview: null } : update,
+      changesRate ? { ...tied, taxReview: null } : tied,
     );
     await this.recordChange(
       serviceId,
@@ -257,6 +315,47 @@ export class ServiceCatalogueService {
   }
 
   /**
+   * BI-256 (D-159.1, .5). Marks or unmarks the service as demanding the
+   * signed form 024 for its procedure (EN-152), with who and when — the
+   * application's clock — and the trail of the row before and after.
+   *
+   * ⚠️ `record:consent-rule`, NOT `billing:price-manage`: the mark is a
+   * clinical decision of the medical direction that lives on the economic
+   * sheet only because that is where the clinic describes what it performs.
+   * Setting it to what it already is records nothing.
+   */
+  async markWrittenConsent(
+    serviceId: string,
+    required: boolean,
+    requester: Requester,
+  ): Promise<BillableServiceView> {
+    const current = await this.requireService(serviceId);
+    if (required && current.procedureConcept === null) {
+      throw new ServiceNotAProcedureError();
+    }
+    if (current.writtenConsent.required === required) return current;
+
+    const updated = await this.catalogue.updateBillableService(serviceId, {
+      writtenConsent: {
+        required,
+        setAt: new Date(),
+        setById: requester.userId,
+      },
+    });
+    await this.recordChange(
+      serviceId,
+      'UPDATE',
+      requester,
+      SERVICE_RESOURCE_TYPE,
+      {
+        before: billableServiceSnapshot(current),
+        after: billableServiceSnapshot(updated),
+      },
+    );
+    return updated;
+  }
+
+  /**
    * BI-012. Refuses to delete a service anything references, and says so.
    *
    * The real guarantee is the `RESTRICT` on `price_service_fk` and
@@ -266,7 +365,11 @@ export class ServiceCatalogueService {
    * existing for that invoice to be readable at all.
    */
   async deleteService(serviceId: string, requester: Requester): Promise<void> {
-    await this.requireService(serviceId);
+    const current = await this.requireService(serviceId);
+    // D-199.1. Deleting it would remove the mark with a price manager's key.
+    if (current.writtenConsent.required) {
+      throw new ServiceConsentTieLockedError();
+    }
 
     const references = await this.catalogue.countReferencesToService(serviceId);
     if (references > 0) throw new BillableServiceInUseError();

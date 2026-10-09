@@ -887,7 +887,7 @@ export class ExamCodeDuplicateError extends ConflictError {
 export class ExamServiceTakenError extends ConflictError {
   readonly code = 'EXAM_SERVICE_TAKEN';
   override readonly userTitle =
-    'Esa prestación ya cobra otro examen. Cree la suya con el examen';
+    'Esa prestación ya cobra otro examen o un procedimiento. Cree la suya con el examen';
 
   constructor() {
     super('Billable service already charges another exam', {}, [

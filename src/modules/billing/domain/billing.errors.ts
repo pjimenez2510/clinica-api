@@ -109,6 +109,123 @@ export class ServiceKindMismatchError extends BusinessRuleViolation {
   }
 }
 
+/**
+ * BI-256, BI-257. The 024 mark reaches a procedure through the concept the
+ * service charges; a service with no procedure has nothing to mark, and a
+ * marked one cannot lose its procedure.
+ */
+export class ServiceNotAProcedureError extends BusinessRuleViolation {
+  readonly code = 'SERVICE_NOT_A_PROCEDURE';
+  override readonly userTitle =
+    'La marca del consentimiento 024 va en una prestación que cobra un procedimiento del tarifario';
+
+  constructor() {
+    super('The written-consent mark needs a service tied to a procedure', {}, [
+      {
+        field: 'procedureConceptId',
+        code: 'SERVICE_NOT_A_PROCEDURE',
+        message: 'Ate antes la prestación a su procedimiento del tarifario',
+      },
+    ]);
+  }
+}
+
+/**
+ * BI-256, D-199.1. A service that demands the 024 keeps its procedure: moving
+ * or deleting it would move or remove the medical direction's mark with a
+ * price manager's key. Unmarked first, then changed.
+ */
+export class ServiceConsentTieLockedError extends ConflictError {
+  readonly code = 'SERVICE_CONSENT_TIE_LOCKED';
+  override readonly userTitle =
+    'Esta prestación exige el consentimiento 024: la dirección médica tiene que desmarcarla antes de cambiar su procedimiento o borrarla';
+
+  constructor() {
+    super('A service demanding the form 024 keeps its procedure', {}, [
+      {
+        field: 'procedureConceptId',
+        code: 'SERVICE_CONSENT_TIE_LOCKED',
+        message: 'Desmárquela antes de cambiar el procedimiento',
+      },
+    ]);
+  }
+}
+
+/**
+ * BI-257, D-179. Tied to a procedure, the service's tariff code is that
+ * procedure's: it changes by tying another, never typed apart.
+ */
+export class ServiceTariffCodeFromProcedureError extends ConflictError {
+  readonly code = 'SERVICE_TARIFF_CODE_FROM_PROCEDURE';
+  override readonly userTitle =
+    'El código del tarifario lo da el procedimiento que cobra: cambie el procedimiento en Estructura';
+
+  constructor() {
+    super("The tariff code of a tied service is its procedure's", {}, [
+      {
+        field: 'tariffCode',
+        code: 'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
+        message: 'Lo da el procedimiento atado',
+      },
+    ]);
+  }
+}
+
+/**
+ * BI-257, D-179. The RIDE reprints the service's tariff code, which no charge
+ * freezes yet: tying or untying a service already invoiced would rewrite
+ * what its issued invoices say.
+ */
+export class ServiceTariffCodeInvoicedError extends ConflictError {
+  readonly code = 'SERVICE_TARIFF_CODE_INVOICED';
+  override readonly userTitle =
+    'Esta prestación ya salió en facturas con su código del tarifario: atarla o desatarla cambiaría lo que dicen. Cree otra prestación para el procedimiento';
+
+  constructor() {
+    super('Tying would change the tariff code its invoices printed', {}, [
+      {
+        field: 'procedureConceptId',
+        code: 'SERVICE_TARIFF_CODE_INVOICED',
+        message: 'Ya facturada con otro código del tarifario',
+      },
+    ]);
+  }
+}
+
+/** BI-257. One service per procedure: caja would otherwise pick one in silence. */
+export class ServiceProcedureTakenError extends ConflictError {
+  readonly code = 'SERVICE_PROCEDURE_TAKEN';
+  override readonly userTitle =
+    'Otra prestación ya cobra ese procedimiento: cámbiela allí o elija otro';
+
+  constructor() {
+    super('Another service already charges that procedure', {}, [
+      {
+        field: 'procedureConceptId',
+        code: 'SERVICE_PROCEDURE_TAKEN',
+        message: 'Otra prestación ya cobra ese procedimiento',
+      },
+    ]);
+  }
+}
+
+/** BI-257. A service charges a procedure of the tariff, never another catalogue. */
+export class ServiceProcedureNotInTariffError extends BusinessRuleViolation {
+  readonly code = 'SERVICE_PROCEDURE_NOT_IN_TARIFF';
+  override readonly userTitle =
+    'Ese procedimiento no es del tarifario: búsquelo en el tarifario';
+
+  constructor() {
+    super('The procedure concept is not of the tariff catalogue', {}, [
+      {
+        field: 'procedureConceptId',
+        code: 'SERVICE_PROCEDURE_NOT_IN_TARIFF',
+        message: 'Elija un procedimiento del tarifario',
+      },
+    ]);
+  }
+}
+
 /** BI-015. */
 export class BillableServiceInactiveError extends BusinessRuleViolation {
   readonly code = 'BILLABLE_SERVICE_INACTIVE';
