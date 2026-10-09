@@ -780,6 +780,18 @@ const statementSchema = z.object({
     .object({ chargeId: z.uuid(), billed: z.boolean() })
     .nullable(),
   /**
+   * BI-243. Los cargos de procedimiento que ya no corresponden a la atención:
+   * el procedimiento se quitó (`RETRACTED`) o cambió su prestación o su
+   * cantidad (`CHANGED`), y caja ya los había confirmado o facturado.
+   */
+  proceduresOutdated: z.array(
+    z.object({
+      chargeId: z.uuid(),
+      billed: z.boolean(),
+      reason: z.enum(['RETRACTED', 'CHANGED']),
+    }),
+  ),
+  /**
    * BI-236. El estado de la atención de la cuenta (`null` sin atención): una
    * `DISCHARGED` se cierra con la cuenta, y la pantalla lo dice antes.
    */

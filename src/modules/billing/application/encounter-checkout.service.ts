@@ -239,6 +239,7 @@ export class EncounterCheckoutService {
     return {
       consultation: charged.consultation,
       encounterProcedureIds: new Set(charged.encounterProcedureIds),
+      liveEncounterProcedureIds: new Set(charged.liveEncounterProcedureIds),
       serviceOrderItemIds: new Set(charged.serviceOrderItemIds),
     };
   }

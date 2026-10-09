@@ -135,6 +135,53 @@ export const recordProcedureSchema = z.object({
 export class RecordProcedureDto extends createZodDto(recordProcedureSchema) {}
 
 /**
+ * EN-244 (D-127). Correcting a procedure in place: its tariff concept, how
+ * many times, its note. Only what is present changes; at least one thing has
+ * to. `note: null` (or blank) clears it.
+ */
+export const editProcedureSchema = z
+  .object({
+    conceptId: z.uuid('Seleccione el procedimiento en el tarifario').optional(),
+    quantity: z
+      .number()
+      .int('La cantidad debe ser un número entero')
+      .min(1, 'La cantidad tiene que ser al menos 1')
+      .max(32767, 'La cantidad es demasiado alta')
+      .optional(),
+    note: z
+      .string()
+      .trim()
+      .max(2000, 'La nota del procedimiento no puede superar 2000 caracteres')
+      .nullable()
+      .optional(),
+  })
+  // A typed `procedureCode` would be dropped in silence: UNKNOWN_FIELD.
+  .strict()
+  .refine(
+    (edit) =>
+      edit.conceptId !== undefined ||
+      edit.quantity !== undefined ||
+      edit.note !== undefined,
+    { message: 'Indique qué cambia del procedimiento' },
+  );
+/** Body of PATCH /encounters/:encounterId/procedures/:procedureId. */
+export class EditProcedureDto extends createZodDto(editProcedureSchema) {}
+
+/**
+ * EN-245 (D-194.2). Removing a procedure states why. Optional in the transport
+ * so the refusal is the domain's, by field (`PROCEDURE_RETRACTION_REASON_REQUIRED`).
+ */
+export const retractProcedureSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .max(500, 'El motivo no puede superar 500 caracteres')
+    .optional(),
+});
+/** Body of POST /encounters/:encounterId/procedures/:procedureId/retract. */
+export class RetractProcedureDto extends createZodDto(retractProcedureSchema) {}
+
+/**
  * EN-180, EN-213, EN-214. Removing a diagnosis. The reason is optional here
  * and required by the service when an issued certificate or receta printed
  * the code: the transport cannot see the papers. On the screen it is chosen
@@ -328,15 +375,46 @@ export const procedureSchema = z.object({
   quantity: z.number().int(),
   performedAt: z.iso.datetime(),
   note: z.string().nullable(),
+  /** EN-244. When it was last corrected; `null` if never. */
+  editedAt: z.iso.datetime().nullable(),
 });
 /** Response of recording a procedure. */
 export class ProcedureDto extends createZodDto(procedureSchema) {}
 
+/** EN-245. A procedure taken off the attention, as the archive keeps it. */
+export const retractedProcedureSchema = z.object({
+  id: z.uuid(),
+  procedureCode: z.string(),
+  procedureDisplay: z.string(),
+  quantity: z.number().int(),
+  retractedAt: z.iso.datetime(),
+  retractedBy: z.object({ id: z.uuid(), name: z.string() }),
+  reason: z.string(),
+});
+
 export const procedureListSchema = z.object({
   items: z.array(procedureSchema),
+  /** EN-245. What was removed, folded on the screen, restorable while live. */
+  retracted: z.array(retractedProcedureSchema),
 });
 /** Response of GET /encounters/:encounterId/procedures. */
 export class ProcedureListDto extends createZodDto(procedureListSchema) {}
+
+/** EN-244. The versions a correction replaced, most recent first. */
+export const procedureVersionListSchema = z.object({
+  items: z.array(
+    z.object({
+      version: z.number().int(),
+      replacedBy: z.object({ id: z.uuid(), name: z.string() }),
+      replacedAt: z.iso.datetime(),
+      procedure: procedureSchema,
+    }),
+  ),
+});
+/** Response of GET /encounters/:encounterId/procedures/:procedureId/versions. */
+export class ProcedureVersionListDto extends createZodDto(
+  procedureVersionListSchema,
+) {}
 
 /** Response types the controller returns, inferred from the schemas Swagger publishes. */
 export type DiagnosisResponse = z.infer<typeof diagnosisSchema>;
@@ -346,3 +424,6 @@ export type DiagnosisVersionListResponse = z.infer<
 >;
 export type ProcedureResponse = z.infer<typeof procedureSchema>;
 export type ProcedureListResponse = z.infer<typeof procedureListSchema>;
+export type ProcedureVersionListResponse = z.infer<
+  typeof procedureVersionListSchema
+>;

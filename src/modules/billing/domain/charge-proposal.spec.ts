@@ -345,3 +345,37 @@ describe('BI-180 la atención interrumpida sin ningún acto clínico no propone 
     expect(proposed.length).toBeGreaterThan(0);
   });
 });
+
+describe('BI-242 el procedimiento restaurado no se cobra dos veces', () => {
+  const restored = { ...aSuture, encounterProcedureId: 'procedure-2', restoredFrom: ['procedure-1'] }; // prettier-ignore
+
+  it('BI-242 no lo propone mientras la línea de su fila anterior siga en pie', () => {
+    const proposal = proposeCharges(
+      acts({ procedures: [restored] }),
+      mapping(),
+      nothingCharged({
+        consultation: true,
+        encounterProcedureIds: new Set(['procedure-1']),
+        liveEncounterProcedureIds: new Set(['procedure-1']),
+      }),
+    );
+
+    expect(proposal.proposed).toEqual([]);
+  });
+
+  it('BI-242 lo propone cuando la línea anterior se quitó con el procedimiento', () => {
+    const proposal = proposeCharges(
+      acts({ procedures: [restored] }),
+      mapping(),
+      nothingCharged({
+        consultation: true,
+        encounterProcedureIds: new Set(['procedure-1']),
+        liveEncounterProcedureIds: new Set<string>(),
+      }),
+    );
+
+    expect(proposal.proposed).toEqual([
+      expect.objectContaining({ origin: 'PROCEDURE', encounterProcedureId: 'procedure-2' }), // prettier-ignore
+    ]);
+  });
+});

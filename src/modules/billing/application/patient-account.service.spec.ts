@@ -691,6 +691,7 @@ describe('BI-003, BI-120 el cobro no bloquea la atención', () => {
       'listAccounts',
       'openAccount',
       'openStatement',
+      'proceduresOutdated',
       'requireAccount',
       'requireOpenAccount',
       'requireOpenCharge',
@@ -839,5 +840,99 @@ describe('BI-236 el extracto dice el estado de la atención que se cierra con la
     expect(statement.encounterStatus).toBeNull();
     expect(statement.closesEncounter).toBe(false);
     expect(mocks.encounterStatusOf).not.toHaveBeenCalled();
+  });
+});
+
+describe('BI-243 el extracto dice los cargos de procedimiento que ya no corresponden a la atención', () => {
+  const procedureLine = (status: ChargeStatus, procedureId: string) =>
+    charge(`charge-${procedureId}`, status, {
+      origin: 'PROCEDURE',
+      encounterProcedureId: procedureId,
+      billableServiceId: 'service-suture',
+    });
+  const statementWith = async (
+    lines: ChargeView[],
+    procedures: {
+      encounterProcedureId: string;
+      conceptId: string;
+      quantity: number;
+      restoredFrom?: string[];
+    }[],
+  ) => {
+    const { service: accounts } = build({
+      accounts: {
+        findAccount: vi.fn().mockResolvedValue(account({ encounterId: 'encounter-1' })), // prettier-ignore
+        listCharges: vi.fn().mockResolvedValue(lines),
+        findEncounterActs: vi.fn().mockResolvedValue({ serviceTypeId: null, procedures }), // prettier-ignore
+        findServicesByProcedureConcept: vi.fn().mockResolvedValue(
+          new Map([
+            [
+              'concept-suture',
+              { billableServiceId: 'service-suture', active: true },
+            ],
+            [
+              'concept-cure',
+              { billableServiceId: 'service-cure', active: true },
+            ],
+          ]),
+        ),
+      },
+    });
+    return accounts.statement({ accountId: ACCOUNT, siteId: SITE });
+  };
+
+  it('BI-243 señala el confirmado cuyo procedimiento se quitó y el facturado que cambió de prestación', async () => {
+    const statement = await statementWith(
+      [
+        procedureLine('BILLABLE', 'p-gone'),
+        procedureLine('BILLED', 'p-changed'),
+      ],
+      [
+        {
+          encounterProcedureId: 'p-changed',
+          conceptId: 'concept-cure',
+          quantity: 1,
+        },
+      ],
+    );
+
+    expect(statement.proceduresOutdated).toEqual([
+      { chargeId: 'charge-p-gone', billed: false, reason: 'RETRACTED' },
+      { chargeId: 'charge-p-changed', billed: true, reason: 'CHANGED' },
+    ]);
+  });
+
+  it('BI-243 señala la cantidad cambiada y calla lo que corresponde, lo quitado y lo restaurado de su fila', async () => {
+    const statement = await statementWith(
+      [
+        procedureLine('BILLABLE', 'p-two'),
+        procedureLine('BILLABLE', 'p-same'),
+        procedureLine('CANCELLED', 'p-gone'),
+        procedureLine('BILLABLE', 'p-old'),
+      ],
+      [
+        {
+          encounterProcedureId: 'p-two',
+          conceptId: 'concept-suture',
+          quantity: 2,
+        },
+        {
+          encounterProcedureId: 'p-same',
+          conceptId: 'concept-suture',
+          quantity: 1,
+        },
+        // EN-246: restored from `p-old`, whose line still charges it.
+        {
+          encounterProcedureId: 'p-new',
+          conceptId: 'concept-suture',
+          quantity: 1,
+          restoredFrom: ['p-old'],
+        },
+      ],
+    );
+
+    expect(statement.proceduresOutdated).toEqual([
+      { chargeId: 'charge-p-two', billed: false, reason: 'CHANGED' },
+    ]);
   });
 });

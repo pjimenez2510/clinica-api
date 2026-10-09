@@ -116,6 +116,7 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
 
     if (row === null) return null;
     const clinicallyAttended = await hasClinicalAct(this.prisma, row.id);
+    const restoredFrom = await this.restoredFromOf(row.id);
 
     return {
       encounterId: row.id,
@@ -133,6 +134,7 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
         // not the date of the visit — and prices differently.
         serviceDate: clinicalDateOf(procedure.performedAt),
         quantity: procedure.quantity,
+        restoredFrom: restoredFrom(procedure.id),
       })),
       // ⚠️ THE CLINICAL DATE OF THE VISIT (BI-193, D-123.7), not of the
       // result and not of the order. Not the result: most exams here are
@@ -299,6 +301,32 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
          AND NOT ${neverCharged}
     `;
     return row?.count ?? 0;
+  }
+
+  /**
+   * EN-246, BI-242. For each live procedure of the visit, the removed rows it
+   * was restored from, newest first — read from the clinical archive, never
+   * written. One query for the visit; the chain is followed in memory.
+   */
+  private async restoredFromOf(
+    encounterId: string,
+  ): Promise<(procedureId: string) => string[]> {
+    const archived = await this.prisma.encounterProcedureRetraction.findMany({
+      where: { encounterId, restoredAsId: { not: null } },
+      select: { id: true, restoredAsId: true },
+    });
+    const formerOf = new Map(
+      archived.map((row) => [row.restoredAsId!, row.id] as const),
+    );
+    return (procedureId) => {
+      const chain: string[] = [];
+      let current = formerOf.get(procedureId);
+      while (current !== undefined && chain.length < 50) {
+        chain.push(current);
+        current = formerOf.get(current);
+      }
+      return chain;
+    };
   }
 }
 

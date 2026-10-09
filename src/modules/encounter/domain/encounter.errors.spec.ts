@@ -34,6 +34,9 @@ import {
   DiagnosisLastAfterDischargeError,
   DiagnosisNotFoundError,
   DiagnosisNotRestorableError,
+  ProcedureNotFoundError,
+  ProcedureNotRestorableError,
+  ProcedureRetractionReasonRequiredError,
   DiagnosisPrimaryRequiredAfterDischargeError,
   DiagnosisPrimaryTakenError,
   DiagnosisPrincipalUseInvalidError,
@@ -112,6 +115,9 @@ const EVERY_ERROR: readonly DomainError[] = [
   new DiagnosisSupportsMaternityRestError(),
   new EncounterAlreadyReportedError(),
   new DiagnosisNotRestorableError(),
+  new ProcedureNotFoundError(),
+  new ProcedureRetractionReasonRequiredError(),
+  new ProcedureNotRestorableError(),
   // EN-080. La tercera cara de la misma negativa: el concepto es del CNMB o
   // no lo es, y la frase tiene que nombrar la lista que hay que abrir. Con un
   // ternario, «todo lo que no es CIE-10» decía «el tarifario», y una alergia
@@ -258,6 +264,21 @@ describe('el contrato de errores de la atención', () => {
     expect(error.userTitle).toBe(
       'La atención ya tiene el alta: corrige sus signos vitales quien firma historia clínica en esta sede',
     );
+  });
+
+  it('EN-244 EN-245 EN-246 el procedimiento ajeno es 404, quitar sin motivo 422 por campo y restaurar dos veces 409', () => {
+    const missing = new ProcedureNotFoundError();
+    expect(missing.code).toBe('PROCEDURE_NOT_FOUND');
+    expect(missing).toBeInstanceOf(NotFoundError);
+    const reason = new ProcedureRetractionReasonRequiredError();
+    expect(reason.code).toBe('PROCEDURE_RETRACTION_REASON_REQUIRED');
+    expect(reason).toBeInstanceOf(ValidationError);
+    expect(reason.fieldErrors[0]?.field).toBe('reason');
+    expect(reason.userTitle).toBe('Indique por qué quita el procedimiento');
+    const twice = new ProcedureNotRestorableError();
+    expect(twice.code).toBe('PROCEDURE_NOT_RESTORABLE');
+    expect(twice).toBeInstanceOf(ConflictError);
+    expect(twice.userTitle).toContain('Actualice la lista');
   });
 
   it('EN-213 «Deshacer» lo que ya se deshizo, o lo que ya volvió a registrarse: 409 que manda a actualizar', () => {

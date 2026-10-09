@@ -483,12 +483,17 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         origin: true,
         encounterProcedureId: true,
         serviceOrderItemId: true,
+        status: true,
       },
     });
 
     return {
       consultation: rows.some((row) => row.origin === 'CONSULTATION'),
       encounterProcedureIds: rows
+        .map((row) => row.encounterProcedureId)
+        .filter((id): id is string => id !== null),
+      liveEncounterProcedureIds: rows
+        .filter((row) => row.status !== 'CANCELLED')
         .map((row) => row.encounterProcedureId)
         .filter((id): id is string => id !== null),
       serviceOrderItemIds: rows
@@ -570,6 +575,16 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   ): Promise<ChargeView | null> {
     const row = await this.prisma.chargeItem.findFirst({
       where: { encounterId, origin: 'CONSULTATION' },
+    });
+    return row === null ? null : toChargeView(row);
+  }
+
+  /** BI-240 to BI-243. At most one, by `charge_item_one_per_encounter_procedure`. */
+  async findProcedureCharge(
+    encounterProcedureId: string,
+  ): Promise<ChargeView | null> {
+    const row = await this.prisma.chargeItem.findFirst({
+      where: { encounterProcedureId, origin: 'PROCEDURE' },
     });
     return row === null ? null : toChargeView(row);
   }

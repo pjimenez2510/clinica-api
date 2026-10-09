@@ -2,6 +2,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import type { ConsultationRepricer } from '../../../shared/billing/consultation-repricer.port';
+import type { ProcedureChargeSync } from '../../../shared/billing/procedure-charge-sync.port';
 
 import type {
   AccessAuditEntry,
@@ -12,6 +13,7 @@ import {
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
   PractitionerNotLicensedError,
+  ProcedureRetractionReasonRequiredError,
 } from '../domain/encounter.errors';
 import type {
   ClinicalCodingRepository,
@@ -26,6 +28,11 @@ import type {
   NewProcedure,
   ProcedureView,
   RetractedDiagnosisView,
+  ProcedureEdit,
+  ProcedureRestoration,
+  ProcedureRetraction,
+  ProcedureVersionView,
+  RetractedProcedureView,
 } from '../domain/clinical-coding.repository';
 import type {
   EncounterQuery,
@@ -167,6 +174,7 @@ class FakeCoding implements ClinicalCodingRepository {
       quantity: procedure.quantity,
       performedAt: procedure.performedAt ?? new Date('2026-09-14T14:30:00Z'),
       note: procedure.note ?? null,
+      editedAt: null,
     };
     this.procedures.push(view);
     return Promise.resolve(view);
@@ -174,6 +182,42 @@ class FakeCoding implements ClinicalCodingRepository {
 
   proceduresOf(): Promise<ProcedureView[]> {
     return Promise.resolve(this.procedures);
+  }
+
+  procedureEdits: ProcedureEdit[] = [];
+
+  editProcedure(edit: ProcedureEdit): Promise<ProcedureView> {
+    this.procedureEdits.push(edit);
+    return Promise.resolve({
+      ...this.procedures[0]!,
+      quantity: edit.quantity ?? this.procedures[0]!.quantity,
+      editedAt: new Date('2026-09-14T14:40:00Z'), // fecha-fija: el doble sólo la devuelve
+    });
+  }
+
+  procedureVersions(): Promise<ProcedureVersionView[]> {
+    return Promise.resolve([]);
+  }
+
+  procedureRetractions: ProcedureRetraction[] = [];
+
+  retractProcedure(retraction: ProcedureRetraction): Promise<void> {
+    this.procedureRetractions.push(retraction);
+    return Promise.resolve();
+  }
+
+  procedureRestorations: ProcedureRestoration[] = [];
+
+  restoreProcedure(restoration: ProcedureRestoration): Promise<ProcedureView> {
+    this.procedureRestorations.push(restoration);
+    return Promise.resolve({
+      ...this.procedures[0]!,
+      id: 'procedure-restored',
+    });
+  }
+
+  retractedProceduresOf(): Promise<RetractedProcedureView[]> {
+    return Promise.resolve([]);
   }
 
   retracted: DiagnosisRetraction[] = [];
@@ -249,6 +293,9 @@ describe('los casos de uso del bloque K', () => {
   let repricer: {
     repriceConsultation: Mock<ConsultationRepricer['repriceConsultation']>;
   };
+  let charges: {
+    procedureChanged: Mock<ProcedureChargeSync['procedureChanged']>;
+  };
 
   beforeEach(() => {
     encounters = new FakeEncounters();
@@ -274,12 +321,19 @@ describe('los casos de uso del bloque K', () => {
         .mockResolvedValue(undefined),
     };
 
+    charges = {
+      procedureChanged: vi
+        .fn<ProcedureChargeSync['procedureChanged']>()
+        .mockResolvedValue(undefined),
+    };
+
     service = new ClinicalCodingService(
       coding,
       encounters as unknown as EncounterRepository,
       audit,
       logger,
       repricer,
+      charges,
     );
   });
 
@@ -677,6 +731,7 @@ describe('los casos de uso del bloque K', () => {
       audit,
       logger,
       { repriceConsultation: vi.fn() },
+      { procedureChanged: vi.fn() },
     );
 
     await watched.recordDiagnosis(aDiagnosis(), requester);
@@ -766,5 +821,119 @@ describe('los casos de uso del bloque K', () => {
       ['encounter_procedure', 'CREATE'],
       ['encounter_procedure', 'READ'],
     ]);
+  });
+  it('EN-244 EN-248 corrige un procedimiento de la atención viva con quien corrige y avisa a caja después', async () => {
+    await service.recordProcedure(
+      { encounterId: ENCOUNTER, conceptId: CONCEPT, quantity: 2 },
+      requester,
+    );
+
+    const edited = await service.editProcedure(
+      {
+        encounterId: ENCOUNTER,
+        procedureId: 'procedure-1',
+        quantity: 1,
+        note: '  ',
+      },
+      requester,
+    );
+
+    expect(edited.quantity).toBe(1);
+    expect(coding.procedureEdits[0]).toMatchObject({
+      procedureId: 'procedure-1',
+      quantity: 1,
+      // A blank note clears it.
+      note: null,
+      editedById: requester.userId,
+    });
+    expect(charges.procedureChanged).toHaveBeenCalledWith({
+      encounterId: ENCOUNTER,
+      siteId: SITE,
+      changedById: requester.userId,
+      procedureId: 'procedure-1',
+      change: 'EDITED',
+    });
+    expect(audit.entries.at(-1)).toMatchObject({
+      resourceType: 'encounter_procedure',
+      action: 'UPDATE',
+    });
+  });
+
+  it('EN-244 EN-245 EN-246 tras el alta no se corrige, no se quita ni se restaura (D-194.1)', async () => {
+    encounters.stored = anEncounter({
+      status: 'DISCHARGED',
+      endedAt: new Date('2026-09-14T15:00:00Z'), // fecha-fija: sólo viaja en el doble
+      dischargeCondition: 'ALIVE',
+    });
+
+    await expect(
+      service.editProcedure(
+        { encounterId: ENCOUNTER, procedureId: 'p', quantity: 1 },
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
+    await expect(
+      service.retractProcedure(
+        {
+          encounterId: ENCOUNTER,
+          procedureId: 'p',
+          reason: 'Registrado por error',
+        },
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
+    await expect(
+      service.restoreProcedure(ENCOUNTER, 'p', requester),
+    ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
+    expect(charges.procedureChanged).not.toHaveBeenCalled();
+  });
+
+  it('EN-245 quitar un procedimiento exige motivo; con él lo archiva y avisa a caja', async () => {
+    await expect(
+      service.retractProcedure(
+        { encounterId: ENCOUNTER, procedureId: 'p', reason: '   ' },
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(ProcedureRetractionReasonRequiredError);
+    expect(coding.procedureRetractions).toHaveLength(0);
+
+    await service.retractProcedure(
+      { encounterId: ENCOUNTER, procedureId: 'p', reason: ' No se realizó ' },
+      requester,
+    );
+
+    expect(coding.procedureRetractions[0]).toMatchObject({
+      procedureId: 'p',
+      reason: 'No se realizó',
+      retractedById: requester.userId,
+    });
+    expect(charges.procedureChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ procedureId: 'p', change: 'RETRACTED' }),
+    );
+  });
+
+  it('EN-246 restaurar devuelve el procedimiento como fila nueva y avisa a caja con el id nuevo', async () => {
+    await service.recordProcedure(
+      { encounterId: ENCOUNTER, conceptId: CONCEPT, quantity: 1 },
+      requester,
+    );
+
+    const restored = await service.restoreProcedure(
+      ENCOUNTER,
+      'procedure-1',
+      requester,
+    );
+
+    expect(restored.id).toBe('procedure-restored');
+    expect(coding.procedureRestorations[0]).toMatchObject({
+      retractionId: 'procedure-1',
+      restoredById: requester.userId,
+    });
+    expect(charges.procedureChanged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        procedureId: 'procedure-restored',
+        change: 'RESTORED',
+      }),
+    );
   });
 });

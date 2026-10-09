@@ -850,6 +850,12 @@ export const DOMAIN_ERROR_CODES = [
   //   * `DIAGNOSIS_NOT_RESTORABLE` (409) — EN-213. «Deshacer» lo que ya se
   //     recuperó, o cuyo código volvió a registrarse.
   'DIAGNOSIS_NOT_RESTORABLE',
+  //   * `PROCEDURE_NOT_FOUND` (404), `PROCEDURE_RETRACTION_REASON_REQUIRED`
+  //     (422) y `PROCEDURE_NOT_RESTORABLE` (409) — EN-244 a EN-246. Corregir,
+  //     quitar con motivo y restaurar un procedimiento, como un diagnóstico.
+  'PROCEDURE_NOT_FOUND',
+  'PROCEDURE_RETRACTION_REASON_REQUIRED',
+  'PROCEDURE_NOT_RESTORABLE',
   //   * `VITALS_CORRECTION_REQUIRES_SIGNATURE` (403) — EN-228 (D-134.3). Tras
   //     el alta corrige la toma quien tiene `record:sign` en la sede.
   'VITALS_CORRECTION_REQUIRES_SIGNATURE',

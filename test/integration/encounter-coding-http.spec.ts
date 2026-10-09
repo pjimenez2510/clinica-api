@@ -2026,4 +2026,150 @@ describe('el bloque K por HTTP', () => {
       await put(path, doctorToken, { index: 'CPO_D', decayed: 1, missing: 0, filled: 1 }).expect(200); // prettier-ignore
     });
   });
+  describe('corregir, quitar y restaurar un procedimiento (EN-244 a EN-247)', () => {
+    const patch = (path: string, token: string, body: object) =>
+      request(app.getHttpServer())
+        .patch(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body);
+
+    async function aProcedure(): Promise<{ encounterId: string; id: string }> {
+      const encounterId = await openEncounter();
+      const conceptId = await aConcept('TARIFF', {
+        code: `23.${Math.floor(Math.random() * 1e4)}`,
+        display: 'Extracción dental',
+      });
+      const response = await post(
+        `/encounters/${encounterId}/procedures`,
+        doctorToken,
+        { conceptId, quantity: 2 },
+      ).expect(201);
+      return { encounterId, id: (response.body as ProcedureBody).id };
+    }
+
+    interface SheetBody {
+      items: (ProcedureBody & { editedAt: string | null })[];
+      retracted: {
+        id: string;
+        reason: string;
+        retractedBy: { name: string };
+      }[];
+    }
+
+    it('EN-244 corrige el concepto y la cantidad en la fila, con su versión, y rechaza un concepto que no es del tarifario', async () => {
+      const { encounterId, id } = await aProcedure();
+      const cure = await aConcept('TARIFF', {
+        code: '96.59',
+        display: 'Curación',
+      });
+      const disease = await aConcept('CIE10', {
+        code: 'J02.9',
+        display: 'Faringitis',
+      });
+
+      await patch(`/encounters/${encounterId}/procedures/${id}`, doctorToken, { conceptId: disease }).expect(422); // prettier-ignore
+      await patch(`/encounters/${encounterId}/procedures/${id}`, doctorToken, { procedureCode: 'X' }).expect(422); // prettier-ignore
+
+      const response = await patch(
+        `/encounters/${encounterId}/procedures/${id}`,
+        doctorToken,
+        { conceptId: cure, quantity: 1, note: 'Una sola' },
+      ).expect(200);
+      expect(response.body).toMatchObject({
+        id,
+        procedureCode: '96.59',
+        procedureDisplay: 'Curación',
+        quantity: 1,
+        note: 'Una sola',
+      });
+      expect(
+        (response.body as { editedAt: string | null }).editedAt,
+      ).not.toBeNull();
+
+      const versions = await get(`/encounters/${encounterId}/procedures/${id}/versions`, doctorToken).expect(200); // prettier-ignore
+      const items = (versions.body as { items: { version: number; procedure: ProcedureBody }[] }).items; // prettier-ignore
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        version: 1,
+        procedure: { quantity: 2 },
+      });
+    });
+
+    it('EN-245 quitar exige motivo; con él lo archiva, sale de la lista y queda entre los quitados con quién y por qué', async () => {
+      const { encounterId, id } = await aProcedure();
+      const path = `/encounters/${encounterId}/procedures/${id}/retract`;
+
+      const refused = await post(path, doctorToken, {}).expect(422);
+      expect((refused.body as Problem).code).toBe(
+        'PROCEDURE_RETRACTION_REASON_REQUIRED',
+      );
+      expect((refused.body as Problem).errors?.[0]?.field).toBe('reason');
+      await post(path, nurseToken, { reason: 'Registrado por error' }).expect(
+        403,
+      );
+
+      await post(path, doctorToken, { reason: 'Registrado por error' }).expect(
+        204,
+      );
+
+      const sheet = (await get(`/encounters/${encounterId}/procedures`, doctorToken).expect(200)).body as SheetBody; // prettier-ignore
+      expect(sheet.items).toEqual([]);
+      expect(sheet.retracted).toEqual([
+        expect.objectContaining({ id, reason: 'Registrado por error', retractedBy: expect.objectContaining({ name: 'Ana Villacís' }) }), // prettier-ignore
+      ]);
+      // Nothing deleted from the history: the archive keeps the row.
+      expect(await prisma.encounterProcedureRetraction.count({ where: { id } })).toBe(1); // prettier-ignore
+      await post(path, doctorToken, { reason: 'Otra vez' }).expect(404);
+    });
+
+    it('EN-246 restaura el quitado como fila nueva una sola vez', async () => {
+      const { encounterId, id } = await aProcedure();
+      await post(`/encounters/${encounterId}/procedures/${id}/retract`, doctorToken, { reason: 'Registrado por error' }).expect(204); // prettier-ignore
+
+      const restored = await post(`/encounters/${encounterId}/procedures/${id}/restore`, doctorToken).expect(200); // prettier-ignore
+      const body = restored.body as ProcedureBody;
+      expect(body.id).not.toBe(id);
+      expect(body.quantity).toBe(2);
+
+      const twice = await post(`/encounters/${encounterId}/procedures/${id}/restore`, doctorToken).expect(409); // prettier-ignore
+      expect((twice.body as Problem).code).toBe('PROCEDURE_NOT_RESTORABLE');
+      const sheet = (await get(`/encounters/${encounterId}/procedures`, doctorToken).expect(200)).body as SheetBody; // prettier-ignore
+      expect(sheet.items.map((item) => item.id)).toEqual([body.id]);
+      expect(sheet.retracted).toEqual([]);
+    });
+
+    it('EN-244 EN-245 EN-246 tras el alta no se corrige, no se quita ni se restaura: ENCOUNTER_ALREADY_CLOSED (D-194.1)', async () => {
+      const { encounterId, id } = await aProcedure();
+      const second = await post(
+        `/encounters/${encounterId}/procedures`,
+        doctorToken,
+        {
+          conceptId: (
+            await prisma.encounterProcedure.findUniqueOrThrow({ where: { id } })
+          ).conceptId,
+          quantity: 1,
+        },
+      ).expect(201);
+      const removedId = (second.body as ProcedureBody).id;
+      await post(`/encounters/${encounterId}/procedures/${removedId}/retract`, doctorToken, { reason: 'Registrado por error' }).expect(204); // prettier-ignore
+      const encounter = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
+      await prisma.encounter.update({
+        where: { id: encounterId },
+        data: { status: 'DISCHARGED', endedAt: new Date(encounter.startedAt.getTime() + 20 * 60_000), dischargeCondition: 'ALIVE' }, // prettier-ignore
+      });
+
+      for (const response of [
+        await patch(`/encounters/${encounterId}/procedures/${id}`, doctorToken, { quantity: 1 }), // prettier-ignore
+        await post(`/encounters/${encounterId}/procedures/${id}/retract`, doctorToken, { reason: 'Registrado por error' }), // prettier-ignore
+        await post(`/encounters/${encounterId}/procedures/${removedId}/restore`, doctorToken), // prettier-ignore
+      ]) {
+        expect(response.status).toBe(409);
+        expect((response.body as Problem).code).toBe(
+          'ENCOUNTER_ALREADY_CLOSED',
+        );
+      }
+      // Positive control: the procedure stands as it was.
+      expect((await prisma.encounterProcedure.findUniqueOrThrow({ where: { id } })).quantity).toBe(2); // prettier-ignore
+    });
+  });
 });

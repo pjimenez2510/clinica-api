@@ -148,6 +148,63 @@ export interface ProcedureView {
   quantity: number;
   performedAt: Date;
   note: string | null;
+  /** EN-244. When it was last corrected; `null` if never. */
+  editedAt: Date | null;
+}
+
+/** EN-244. One version a correction replaced, with who and when. */
+export interface ProcedureVersionView {
+  version: number;
+  replacedBy: { id: string; name: string };
+  replacedAt: Date;
+  procedure: ProcedureView;
+}
+
+/** EN-245. A procedure taken off the attention, as the archive keeps it. */
+export interface RetractedProcedureView {
+  id: string;
+  procedureCode: string;
+  procedureDisplay: string;
+  quantity: number;
+  retractedAt: Date;
+  retractedBy: { id: string; name: string };
+  reason: string;
+}
+
+/** EN-244. A correction in place: only what is present changes. */
+export interface ProcedureEdit {
+  encounterId: string;
+  procedureId: string;
+  conceptId?: string;
+  quantity?: number;
+  /** `null` clears the note. */
+  note?: string | null;
+  editedById: string;
+  sites: SiteScopeFilter;
+}
+
+/** EN-245. Removing a procedure: archived whole, with who, when and why. */
+export interface ProcedureRetraction {
+  encounterId: string;
+  procedureId: string;
+  reason: string;
+  retractedById: string;
+  sites: SiteScopeFilter;
+}
+
+/** EN-246. Bringing a removed procedure back, as a new row. */
+export interface ProcedureRestoration {
+  encounterId: string;
+  retractionId: string;
+  restoredById: string;
+  sites: SiteScopeFilter;
+}
+
+/** EN-244. One procedure of one attention, inside the caller's scope. */
+export interface ProcedureQuery {
+  encounterId: string;
+  procedureId: string;
+  sites: SiteScopeFilter;
 }
 
 /** EN-040 to EN-049. What registering a diagnosis needs to be told. */
@@ -435,6 +492,21 @@ export interface ClinicalCodingRepository {
 
   /** EN-050. The procedures of one attention, in the order they were performed. */
   proceduresOf(query: CodingQuery): Promise<ProcedureView[]>;
+
+  /** EN-244. Corrects a procedure under the attention's lock, stamped. */
+  editProcedure(edit: ProcedureEdit): Promise<ProcedureView>;
+
+  /** EN-244. The versions corrections replaced, most recent first. */
+  procedureVersions(query: ProcedureQuery): Promise<ProcedureVersionView[]>;
+
+  /** EN-245. Archives and removes a procedure, in one transaction. */
+  retractProcedure(retraction: ProcedureRetraction): Promise<void>;
+
+  /** EN-246. Brings a removed procedure back as a new row; marks the archive. */
+  restoreProcedure(restoration: ProcedureRestoration): Promise<ProcedureView>;
+
+  /** EN-245. The archive of one attention, without what was restored. */
+  retractedProceduresOf(query: CodingQuery): Promise<RetractedProcedureView[]>;
 }
 
 /** Injection token. The application never names the adapter. */
