@@ -17,6 +17,14 @@ import {
 import { ChartSummaryService } from './application/chart-summary.service';
 import { ClinicalCodingController } from './clinical-coding.controller';
 import { DentalIndexController } from './dental-index.controller';
+import { ProgramBlocksController } from './program-blocks.controller';
+import { HivTestController } from './hiv-test.controller';
+import { HivTestService } from './application/hiv-test.service';
+import { HIV_TEST_REPOSITORY } from './domain/hiv-test.repository';
+import { PrismaHivTestRepository } from './infrastructure/prisma-hiv-test.repository';
+import { ProgramBlocksService } from './application/program-blocks.service';
+import { PROGRAM_BLOCKS_REPOSITORY } from './domain/program-blocks.repository';
+import { PrismaProgramBlocksRepository } from './infrastructure/prisma-program-blocks.repository';
 import { DentalIndexService } from './application/dental-index.service';
 import { DENTAL_INDEX_REPOSITORY } from './domain/dental-index.repository';
 import { PrismaDentalIndexRepository } from './infrastructure/prisma-dental-index.repository';
@@ -102,6 +110,8 @@ import { PrismaViolenceScreeningRepository } from './infrastructure/prisma-viole
     ClinicalNoteController,
     ClinicalCodingController,
     DentalIndexController,
+    ProgramBlocksController,
+    HivTestController,
     ViolenceScreeningController,
     ReferralController,
     PatientAllergyController,
@@ -115,6 +125,8 @@ import { PrismaViolenceScreeningRepository } from './infrastructure/prisma-viole
     ClinicalNoteService,
     ClinicalCodingService,
     DentalIndexService,
+    ProgramBlocksService,
+    HivTestService,
     ViolenceScreeningService,
     ReferralService,
     PatientAllergyService,
@@ -140,6 +152,11 @@ import { PrismaViolenceScreeningRepository } from './infrastructure/prisma-viole
     {
       provide: DENTAL_INDEX_REPOSITORY,
       useClass: PrismaDentalIndexRepository,
+    },
+    { provide: HIV_TEST_REPOSITORY, useClass: PrismaHivTestRepository },
+    {
+      provide: PROGRAM_BLOCKS_REPOSITORY,
+      useClass: PrismaProgramBlocksRepository,
     },
     {
       provide: VIOLENCE_SCREENING_REPOSITORY,

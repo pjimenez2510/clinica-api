@@ -79,6 +79,25 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
     resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
   },
+  // EN-249. Blocks G, H and I of the RDACAA: one row per attention each,
+  // archived by `encounter_id`. Block J (HIV) is NOT versioned here: it has
+  // its own table of versions, out of the export (EN-095).
+  encounter_obstetric: {
+    resourceIdsOf: standingEncountersOf,
+    omittedBecause: null,
+  },
+  encounter_nutrition: {
+    resourceIdsOf: standingEncountersOf,
+    omittedBecause: null,
+  },
+  // REQ-115. The risk group can say «lives with HIV» or «sex worker» (the
+  // adult hepatitis B, EN-093): out of every version that leaves, whatever
+  // the vaccine, so its absence tells nothing.
+  encounter_vaccination: {
+    resourceIdsOf: standingEncountersOf,
+    omittedBecause: null,
+    redactedColumns: ['risk_group'],
+  },
   encounter_diagnosis: {
     resourceIdsOf: (chartId) => Prisma.sql`
       SELECT d.id FROM encounter_diagnosis d

@@ -2807,6 +2807,10 @@ model Encounter {
   statusHistory       EncounterStatusHistory[]
   vitals              EncounterVitals?
   dentalIndex         EncounterDentalIndex?
+  obstetric           EncounterObstetric?
+  nutrition           EncounterNutrition?
+  vaccination         EncounterVaccination?
+  hivTest             EncounterHivTest?
   violenceScreening   ViolenceScreening?
   priorityGroups      EncounterPriorityGroup[]
   diagnoses           EncounterDiagnosis[]
@@ -2956,6 +2960,236 @@ model EncounterDentalIndex {
   editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
 
   @@map("encounter_dental_index")
+}
+
+/// EN-090, EN-091. Block G of the RDACAA (columns 39 to 50): obstetric data
+/// and the laboratory of pregnant women. One row per attention, ONLY when the
+/// chart has the PREGNANT record in force on its clinical date
+/// (`trg_encounter_obstetric_applies`). Corrected in place, the previous row
+/// archived in `record_version` (EN-249); never deleted (`program_block_guard`).
+model EncounterObstetric {
+  encounterId String    @id @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  /// Column 39.
+  risk                 ObstetricRisk
+  /// Columns 40 to 42.
+  birthPlan            Boolean              @map("birth_plan")
+  transportPlan        Boolean              @map("transport_plan")
+  plannedPregnancy     Boolean              @map("planned_pregnancy")
+  /// Column 43. With LMP the date of column 44 is required (CHECK).
+  gestationalAgeMethod GestationalAgeMethod @map("gestational_age_method")
+  /// Column 44. A calendar date, never after the clinical date.
+  lastMenstrualPeriod  DateTime?            @map("last_menstrual_period") @db.Date
+  /// Column 45. 1 to 42 (CHECK).
+  gestationalWeeks     Int                  @map("gestational_weeks") @db.SmallInt
+
+  /// Columns 46 to 50, optional: one value per test and attention (D-195.4).
+  nonTreponemalTest SyphilisResult?    @map("non_treponemal_test")
+  treponemalTest    SyphilisResult?    @map("treponemal_test")
+  syphilisTreatment SyphilisResult?    @map("syphilis_treatment")
+  partnerTreatment  PartnerTreatment?  @map("partner_treatment")
+  bacteriuria       BacteriuriaResult?
+
+  recordedById String   @map("recorded_by_id") @db.Uuid
+  recordedAt   DateTime @map("recorded_at") @db.Timestamptz(6)
+
+  /// EN-249. The stamp of the last correction; both or neither.
+  editedById String?   @map("edited_by_id") @db.Uuid
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+
+  @@map("encounter_obstetric")
+}
+
+/// EN-092. Block H of the RDACAA (columns 52 to 54): the SIVAN questions of
+/// an infant of 8 completed months or less by the FROZEN age. Column 52
+/// always; 53 from 0 to 5 months and 54 from 6 to 8, each blank outside its
+/// band (`trg_encounter_nutrition_applies`). Versioned as block G (EN-249).
+model EncounterNutrition {
+  encounterId String    @id @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  motherBreastfeeding    Boolean  @map("mother_breastfeeding")
+  exclusiveBreastfeeding Boolean? @map("exclusive_breastfeeding")
+  complementaryFeeding   Boolean? @map("complementary_feeding")
+
+  recordedById String    @map("recorded_by_id") @db.Uuid
+  recordedAt   DateTime  @map("recorded_at") @db.Timestamptz(6)
+  editedById   String?   @map("edited_by_id") @db.Uuid
+  editedAt     DateTime? @map("edited_at") @db.Timestamptz(6)
+
+  @@map("encounter_nutrition")
+}
+
+/// EN-093. Block I of the RDACAA (columns 55 to 74): the vaccines given in the
+/// attention, by their `VACCINE` catalogue code (the form's column), with
+/// their dose, and ONE risk group, as column 74. The instructivo's coherence
+/// rules are `trg_encounter_vaccination_valid`'s. The doses live in the row
+/// (`jsonb`) so a correction archives them whole in `record_version` (EN-249).
+model EncounterVaccination {
+  encounterId String    @id @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  /// `[{ "code": "67", "dose": "FIRST" }]`.
+  doses     Json              @db.JsonB
+  riskGroup VaccineRiskGroup? @map("risk_group")
+
+  recordedById String    @map("recorded_by_id") @db.Uuid
+  recordedAt   DateTime  @map("recorded_at") @db.Timestamptz(6)
+  editedById   String?   @map("edited_by_id") @db.Uuid
+  editedAt     DateTime? @map("edited_at") @db.Timestamptz(6)
+
+  @@map("encounter_vaccination")
+}
+
+/// EN-094, EN-095. Block J of the RDACAA (columns 75 to 82): the HIV test.
+///
+/// ⚠️ RESTRICTED DATA (REQ-115), with the regime of the violence screening:
+/// read only through `GET /encounters/:id/programs/restricted` with
+/// `record:protected` at the site, with its trail row in the same
+/// transaction; no listing, error or log carries it. Its versions go to
+/// `encounter_hiv_test_version` and NOT to `record_version`, which the data
+/// subject's export reads.
+model EncounterHivTest {
+  encounterId String    @id @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  reason             HivTestReason
+  screeningDevice    HivTestDevice         @map("screening_device")
+  screeningResult    HivTestResult         @map("screening_result")
+  /// Only with a reactive screening, device and result together (CHECK).
+  confirmationDevice HivTestDevice?        @map("confirmation_device")
+  confirmationResult HivTestResult?        @map("confirmation_result")
+  transmissionRoute  HivTransmissionRoute? @map("transmission_route")
+  /// Copies/mL and cells/mm³.
+  viralLoad          Int?                  @map("viral_load")
+  cd4                Int?
+
+  recordedById String    @map("recorded_by_id") @db.Uuid
+  recordedAt   DateTime  @map("recorded_at") @db.Timestamptz(6)
+  editedById   String?   @map("edited_by_id") @db.Uuid
+  editedAt     DateTime? @map("edited_at") @db.Timestamptz(6)
+
+  versions EncounterHivTestVersion[]
+
+  @@map("encounter_hiv_test")
+}
+
+/// EN-095, EN-249. Earlier HIV tests, archived by `trg_encounter_hiv_test_archive`.
+model EncounterHivTestVersion {
+  id           String           @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  encounterId  String           @map("encounter_id") @db.Uuid
+  hivTest      EncounterHivTest @relation(fields: [encounterId], references: [encounterId], onDelete: Restrict, map: "encounter_hiv_test_version_encounter_fkey")
+  version      Int
+  data         Json             @db.JsonB
+  replacedById String           @map("replaced_by_id") @db.Uuid
+  replacedAt   DateTime         @map("replaced_at") @db.Timestamptz(6)
+
+  @@unique([encounterId, version], map: "encounter_hiv_test_version_unique")
+  @@map("encounter_hiv_test_version")
+}
+
+enum HivTestReason {
+  PREGNANT
+  BLOOD_DONATION
+  VOLUNTARY
+  TUBERCULOSIS
+  STI
+  CLINICAL_SUSPICION
+  OCCUPATIONAL_EXPOSURE
+  DEPRIVED_OF_LIBERTY
+  SEXUAL_VIOLENCE
+  CAMPAIGN
+  COMMUNITY_OUTREACH
+  PARTNER_OF_PREGNANT
+
+  @@map("hiv_test_reason")
+}
+
+enum HivTestDevice {
+  RAPID_THIRD_GENERATION
+  RAPID_FOURTH_GENERATION
+  ELISA
+  CLIA
+  VIRAL_LOAD
+  IMMUNOFLUORESCENCE
+  NAT
+
+  @@map("hiv_test_device")
+}
+
+enum HivTestResult {
+  REACTIVE
+  NON_REACTIVE
+
+  @@map("hiv_test_result")
+}
+
+enum HivTransmissionRoute {
+  SEXUAL
+  BLOOD_OR_TRANSPLANT
+  INJECTED_DRUGS
+  MOTHER_TO_CHILD
+
+  @@map("hiv_transmission_route")
+}
+
+/// Grupo de riesgo de vacunas, 1 to 10, and PREGNANT (D-195.1).
+enum VaccineRiskGroup {
+  AGES_AT_RISK
+  POSTPARTUM
+  HEALTH_WORKER
+  CHRONIC_DISEASE
+  DEPRIVED_OF_LIBERTY
+  DISABILITY
+  LIVING_WITH_HIV
+  SEX_WORKER
+  TRAVELLER
+  OTHER
+  PREGNANT
+
+  @@map("vaccine_risk_group")
+}
+
+enum ObstetricRisk {
+  LOW
+  HIGH
+  IMMINENT
+
+  @@map("obstetric_risk")
+}
+
+enum GestationalAgeMethod {
+  LMP
+  ULTRASOUND
+  CLINICAL
+
+  @@map("gestational_age_method")
+}
+
+/// (+), (−) and «SD, sin dato»: the third is what a boolean would lose.
+enum SyphilisResult {
+  POSITIVE
+  NEGATIVE
+  NO_DATA
+
+  @@map("syphilis_result")
+}
+
+enum PartnerTreatment {
+  YES
+  NO
+  NOT_DONE
+
+  @@map("partner_treatment")
+}
+
+enum BacteriuriaResult {
+  NORMAL
+  ABNORMAL
+  NOT_DONE
+
+  @@map("bacteriuria_result")
 }
 
 /// RDACAA priority and vulnerable groups, recorded per attention.

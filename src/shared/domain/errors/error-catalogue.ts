@@ -874,6 +874,17 @@ export const DOMAIN_ERROR_CODES = [
   //     la cuenta del otro índice. Lo dicen el servicio y la base
   //     (`encounter_dental_index_applies`).
   'DENTAL_INDEX_NOT_APPLICABLE',
+  // ── H7: los bloques de programa del RDACAA ─────────────────────────────
+  //   * `PROGRAM_BLOCK_NOT_APPLICABLE` (422) — EN-090, EN-092, EN-097. El
+  //     bloque obstétrico sin el embarazo en la ficha ese día, el SIVAN pasados
+  //     los 8 meses o la pregunta del otro tramo. Lo dicen el servicio y la base
+  //     (`encounter_obstetric_applies`, `encounter_nutrition_applies`).
+  'PROGRAM_BLOCK_NOT_APPLICABLE',
+  //   * `PROTECTED_SECTION_REQUIRED` (403) — EN-093, REQ-115. Registrar una
+  //     vacunación con HB adulto, cuyo grupo de riesgo puede decir VIH o
+  //     trabajo sexual, sin `record:protected` en la sede. Nombra la sección,
+  //     no el dato.
+  'PROTECTED_SECTION_REQUIRED',
   // ── H6: alergias visibles durante la consulta ──────────────────────────
   //   * `PATIENT_ALLERGY_NOT_FOUND` (404) — EN-082. La alergia no está en esa
   //     ficha ni en ninguna que esa ficha absorbiera. **Uno solo para «no
