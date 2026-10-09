@@ -42,8 +42,14 @@ const DECLARATION = /^\s*[-*]\s*\*\*([A-Z]{2,4}-\d{3})\*\*/gm;
  */
 const DOCUMENT_PREFIXES = new Set(['ADR', 'RFC', 'ISO', 'IEC', 'IEEE', 'NIST']);
 const REFERENCE = /\b([A-Z]{2,4})-(\d{3})\b/g;
+/**
+ * A COPY of `TEST_TITLE` in `scripts/board.mts`, which `pnpm estado` and
+ * `pnpm rtm` import. It cannot be imported here: this file compiles as
+ * CommonJS and that one is ESM. The last test below fails if they diverge —
+ * they did once, both cutting a title at any quote inside it.
+ */
 const TEST_TITLE =
-  /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(['"`])([^'"`]+)\1/g;
+  /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(['"`])((?:(?!\1)[^\\]|\\.)+)\1/g;
 const STATE_LINE = /^\*\*Estado:\*\*\s*(\S+)/m;
 /**
  * `**Solo interfaz:** PA-063. Volver lo decide el historial…` — a requirement
@@ -53,6 +59,13 @@ const STATE_LINE = /^\*\*Estado:\*\*\s*(\S+)/m;
  * without declaring them.
  */
 const SCREEN_ONLY = /\*\*Solo interfaz:\*\*\s*([^.]*)\./g;
+/**
+ * `**Fuera del sistema:** BI-092, BI-093. D-151.1: …` — a requirement the
+ * system does not build because the rule is met outside it (board.mts,
+ * OUT_OF_SYSTEM). It owes no test on either side. Only the id list, up to the
+ * first full stop; the reason is enforced by board.mts.
+ */
+const OUT_OF_SYSTEM = /\*\*Fuera del sistema:\*\*\s*([^.]*)\./g;
 const SINGLE_ID = /\b([A-Z]{2,4}-\d{3})\b/g;
 
 /**
@@ -73,6 +86,8 @@ interface ModuleSpec {
   ids: string[];
   /** Declared «Solo interfaz»: tested in clinica-web, not here. */
   screenOnly: string[];
+  /** Declared «Fuera del sistema»: tested nowhere, by decision. */
+  outOfSystem: string[];
 }
 
 function exists(path: string): boolean {
@@ -111,14 +126,18 @@ function readSpecs(): ModuleSpec[] {
       for (const match of source.matchAll(DECLARATION)) {
         if (match[1]) ids.push(match[1]);
       }
-      const screenOnly = [...source.matchAll(SCREEN_ONLY)].flatMap((line) =>
-        [...(line[1] ?? '').matchAll(SINGLE_ID)].map((id) => id[1] ?? ''),
-      );
+      const idsIn = (pattern: RegExp): string[] =>
+        [...source.matchAll(pattern)].flatMap((line) =>
+          [...(line[1] ?? '').matchAll(SINGLE_ID)].map((id) => id[1] ?? ''),
+        );
+      const screenOnly = idsIn(SCREEN_ONLY);
+      const outOfSystem = idsIn(OUT_OF_SYSTEM);
       return {
         module,
         state: STATE_LINE.exec(source)?.[1]?.toLowerCase() ?? 'sin-estado',
         ids,
         screenOnly,
+        outOfSystem,
       };
     });
 }
@@ -188,6 +207,23 @@ describe('trazabilidad de requisitos', () => {
     ).toEqual([]);
   });
 
+  it('no declara «Fuera del sistema» un requisito que su SPEC.md no declara', () => {
+    const strays = specs.flatMap((spec) =>
+      spec.outOfSystem
+        .filter((id) => !spec.ids.includes(id))
+        .map((id) => `${spec.module}: ${id}`),
+    );
+    expect(
+      strays,
+      `«Fuera del sistema» sin declarar: ${strays.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('lee los títulos con la misma expresión que scripts/board.mts', () => {
+    const board = readFileSync(join(REPO_ROOT, 'scripts', 'board.mts'), 'utf8');
+    expect(board).toContain(TEST_TITLE.source);
+  });
+
   it('no cita en una prueba ningún requisito que no exista en un SPEC.md', () => {
     const ghosts = [...tested.entries()]
       .filter(([id]) => !declared.has(id))
@@ -214,6 +250,7 @@ describe('trazabilidad de requisitos', () => {
       const uncovered = spec.ids
         .filter((id) => !OUTCOME_PREFIXES.has(prefixOf(id)))
         .filter((id) => !spec.screenOnly.includes(id))
+        .filter((id) => !spec.outOfSystem.includes(id))
         .filter((id) => !tested.has(id));
       expect(
         uncovered,

@@ -18,9 +18,9 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
-  SCREEN_ONLY,
-  SERVER_ONLY,
+  TEST_TITLE,
   computeBoard,
+  exemptionsOf,
   computeFlows,
   workingTree,
   workspaceOf,
@@ -56,8 +56,6 @@ const RANGE = /\b([A-Z]{2,4})-(\d{3})\s+a\s+(?:[A-Z]{2,4}-)?(\d{3})/g;
 const SINGLE = /\b([A-Z]{2,4}-\d{3})\b/g;
 const DECLARATION = /^\s*[-*]\s*\*\*([A-Z]{2,4}-\d{3})\*\*/gm;
 const STATE_LINE = /^\*\*Estado:\*\*\s*(\S+)/m;
-const TEST_TITLE =
-  /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(['"`])([^'"`]+)\1/g;
 /**
  * `> **[NECESITA ACLARACIÓN]** …` — EN NEGRITA, que es como lo exige
  * `.claude/rules/especificaciones.md`.
@@ -154,6 +152,9 @@ interface Deliverable {
   tested: string[];
   /** Every id the `Cubre` names, «Solo interfaz» included: what is covered. */
   covers: string[];
+  /** Declared «Fuera del sistema»: owes no test, printed apart. */
+  outOfSystem: string[];
+  outOfSystemReason: string;
 }
 
 /**
@@ -195,18 +196,16 @@ for (const entry of exists(MODULES_DIR)
     if (!parsed) continue;
     const covers = COVERS.exec(raw)?.[1] ?? '';
     const all = expand(covers, declared);
-    // «Solo interfaz»: no backend half to test (board.mts, SCREEN_ONLY).
-    const screenOnly = new Set(
-      expand(SCREEN_ONLY.exec(raw)?.[1] ?? '', declared),
+    // «Solo interfaz»: no backend half to test; «Fuera del sistema»: nothing
+    // to test anywhere, listed apart (board.mts, exemptionsOf).
+    const { screenOnly, outOfSystem, outOfSystemReason } = exemptionsOf(
+      raw,
+      declared,
+      `${entry.name}/${parsed[1] ?? '?'}`,
     );
-    for (const id of expand(SERVER_ONLY.exec(raw)?.[1] ?? '', declared)) {
-      if (screenOnly.has(id)) {
-        throw new Error(
-          `${entry.name}/${parsed[1] ?? '?'}: ${id} declarado a la vez «Solo servidor» y «Solo interfaz»`,
-        );
-      }
-    }
-    const requirements = all.filter((id) => !screenOnly.has(id));
+    const requirements = all.filter(
+      (id) => !screenOnly.has(id) && !outOfSystem.has(id),
+    );
     deliverables.push({
       covers: all,
       id: parsed[1] ?? '',
@@ -214,6 +213,8 @@ for (const entry of exists(MODULES_DIR)
       priority: parsed[3] ?? 'P?',
       requirements,
       tested: requirements.filter((id) => tested.has(id)),
+      outOfSystem: [...outOfSystem].sort(),
+      outOfSystemReason,
     });
   }
 
@@ -299,6 +300,11 @@ for (const module of modules) {
       `  ${mark} ${deliverable.id.padEnd(3)} ${bar} ${String(done).padStart(2)}/${String(total).padEnd(2)} ` +
         `${deliverable.priority}  ${deliverable.title}`,
     );
+    if (deliverable.outOfSystem.length > 0) {
+      console.log(
+        `        fuera del sistema: ${deliverable.outOfSystem.join(', ')} — ${deliverable.outOfSystemReason}`,
+      );
+    }
   }
 
   if (module.orphans.length > 0) {

@@ -141,11 +141,30 @@ export const SERVER_ONLY = /\*\*Solo servidor:\*\*\s*([^.]*)\./;
  * BACKEND'S denominator, never the numerator. Same full-stop rule as above.
  */
 export const SCREEN_ONLY = /\*\*Solo interfaz:\*\*\s*([^.]*)\./;
+/**
+ * `**Fuera del sistema:** BI-092, BI-093. D-151.1: la anulación se hace en el
+ * portal del SRI…` — a requirement the system deliberately does not build,
+ * because the rule it answers is met outside it. It leaves BOTH denominators
+ * and is listed apart, so «nobody built it» and «nobody has to» never read
+ * alike. Same full-stop rule; the reason after the stop is MANDATORY (group 2):
+ * without it, one line could quietly retire a requirement from the board.
+ */
+export const OUT_OF_SYSTEM =
+  /\*\*Fuera del sistema:\*\*\s*([^.]*)\.[ \t]*([^\n]*(?:\n(?![ \t]*(?:\n|$)|\*\*|#)[^\n]*)*)/;
 export const RANGE = /\b([A-Z]{2,4})-(\d{3})\s+a\s+(?:[A-Z]{2,4}-)?(\d{3})/g;
 export const SINGLE = /\b([A-Z]{2,4}-\d{3})\b/g;
 export const DECLARATION = /^\s*[-*]\s*\*\*([A-Z]{2,4}-\d{3})\*\*/gm;
+/**
+ * The title of a test: group 2, between the quote that opens it (group 1) and
+ * the same quote closing it. ONLY THAT QUOTE ENDS IT. The first version
+ * excluded all three from the title, so `'AG-181 … sin \`record:read\`'`
+ * stopped at the backtick, found no closing `'` there, and the WHOLE title
+ * failed to match: AG-181 and the ids beside it went uncounted —a test that
+ * existed and passed, reported as missing. The other two quotes and any
+ * escaped character (`\'`) belong to the title.
+ */
 export const TEST_TITLE =
-  /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(['"`])([^'"`]+)\1/g;
+  /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(['"`])((?:(?!\1)[^\\]|\\.)+)\1/g;
 const ENDPOINT = /^\s+"(\/api\/[^"]+)"/gm;
 const OUTCOME_PREFIXES = new Set(['SC']);
 const FLOW = /^##\s+(F-\d{2})\s+—\s+(.+?)\s*$/;
@@ -167,6 +186,62 @@ export function expand(text: string, declared: Set<string>): string[] {
   }
   for (const [id] of rest.matchAll(SINGLE)) if (declared.has(id)) ids.add(id);
   return [...ids].sort();
+}
+
+/** What one deliverable section declares apart from its `**Cubre:**`. */
+export interface Exemptions {
+  serverOnly: Set<string>;
+  screenOnly: Set<string>;
+  outOfSystem: Set<string>;
+  /** The reason written after «Fuera del sistema», whitespace collapsed. */
+  outOfSystemReason: string;
+}
+
+/**
+ * Reads the three declarations of one deliverable section (`raw`, from its
+ * `###` to the next) and refuses the two ways they can lie. `where` names the
+ * section in the error: `billing/B3`.
+ *
+ * - AN ID IN TWO DECLARATIONS. Server-only plus screen-only leaves both
+ *   denominators and owes no test anywhere — a deliverable of only those would
+ *   print «completo» with nothing tested. Out-of-system plus either other says
+ *   two incompatible things: «it is built, on one side» and «it is not built».
+ * - «FUERA DEL SISTEMA» WITHOUT A REASON. Retiring a requirement from the board
+ *   is a decision; the decision must be readable where it is applied.
+ */
+export function exemptionsOf(
+  raw: string,
+  declared: Set<string>,
+  where: string,
+): Exemptions {
+  const serverOnly = new Set(
+    expand(SERVER_ONLY.exec(raw)?.[1] ?? '', declared),
+  );
+  const screenOnly = new Set(
+    expand(SCREEN_ONLY.exec(raw)?.[1] ?? '', declared),
+  );
+  const out = OUT_OF_SYSTEM.exec(raw);
+  const outOfSystem = new Set(expand(out?.[1] ?? '', declared));
+  const outOfSystemReason = (out?.[2] ?? '').replace(/\s+/g, ' ').trim();
+  if (out && outOfSystemReason === '') {
+    throw new Error(
+      `${where}: «Fuera del sistema» sin motivo; escríbelo tras el punto que cierra la lista`,
+    );
+  }
+  const pairs: [Set<string>, Set<string>, string][] = [
+    [serverOnly, screenOnly, '«Solo servidor» y «Solo interfaz»'],
+    [outOfSystem, serverOnly, '«Fuera del sistema» y «Solo servidor»'],
+    [outOfSystem, screenOnly, '«Fuera del sistema» y «Solo interfaz»'],
+  ];
+  for (const [a, b, names] of pairs) {
+    const both = [...a].filter((id) => b.has(id));
+    if (both.length > 0) {
+      throw new Error(
+        `${where}: ${both.join(', ')} declarado a la vez ${names}; un requisito va en una sola declaración`,
+      );
+    }
+  }
+  return { serverOnly, screenOnly, outOfSystem, outOfSystemReason };
 }
 
 /** Requirement ids named by test titles in the given files. */
@@ -214,7 +289,7 @@ export interface Deliverable {
   id: string;
   title: string;
   priority: string;
-  /** Requirements with a backend half: covered minus «Solo interfaz». */
+  /** Requirements with a backend half: covered minus «Solo interfaz» and «Fuera del sistema». */
   total: number;
   /** Of those, named by a backend test. */
   back: number;
@@ -223,6 +298,9 @@ export interface Deliverable {
   /** Of those, named by an interface test. */
   front: number;
   state: DeliverableState;
+  /** Declared «Fuera del sistema»: in neither denominator, listed apart. */
+  outOfSystem: string[];
+  outOfSystemReason: string;
 }
 
 export interface ModuleBoard {
@@ -260,25 +338,11 @@ export function computeBoard(api: Source, web: Source): ModuleBoard[] {
       if (!parsed) continue;
       const requirements = expand(COVERS.exec(raw)?.[1] ?? '', declared);
       if (requirements.length === 0) continue;
-      const serverOnly = new Set(
-        expand(SERVER_ONLY.exec(raw)?.[1] ?? '', declared),
-      );
-      const screenOnly = new Set(
-        expand(SCREEN_ONLY.exec(raw)?.[1] ?? '', declared),
-      );
-      /**
-       * A requirement declared on BOTH sides would leave both denominators and
-       * owe no test anywhere — a deliverable of only those would print
-       * «completo» with nothing tested. Refuse it, naming where.
-       */
-      const both = [...serverOnly].filter((id) => screenOnly.has(id));
-      if (both.length > 0) {
-        throw new Error(
-          `${module}/${parsed[1] ?? '?'}: ${both.join(', ')} declarado a la vez «Solo servidor» y «Solo interfaz»; un requisito tiene al menos una mitad que probar`,
-        );
-      }
-      const visible = requirements.filter((id) => !serverOnly.has(id));
-      const served = requirements.filter((id) => !screenOnly.has(id));
+      const { serverOnly, screenOnly, outOfSystem, outOfSystemReason } =
+        exemptionsOf(raw, declared, `${module}/${parsed[1] ?? '?'}`);
+      const built = requirements.filter((id) => !outOfSystem.has(id));
+      const visible = built.filter((id) => !serverOnly.has(id));
+      const served = built.filter((id) => !screenOnly.has(id));
       const back = served.filter((id) => backendTested.has(id)).length;
       const front = visible.filter((id) => frontendTested.has(id)).length;
       const total = served.length;
@@ -308,6 +372,8 @@ export function computeBoard(api: Source, web: Source): ModuleBoard[] {
         frontTotal,
         front,
         state,
+        outOfSystem: [...outOfSystem].sort(),
+        outOfSystemReason,
       });
     }
     return { module, apiExposed: isExposed(module, segments), deliverables };
