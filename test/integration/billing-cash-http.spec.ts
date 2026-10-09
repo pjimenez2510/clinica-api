@@ -298,7 +298,7 @@ describe('B6 cobros, saldo del paciente y cierre diario', () => {
       .expect(404);
     expect((foreign.body as { code: string }).code).toBe('PAYMENT_NOT_FOUND');
 
-    await api().post(`/payments/${payment!.id}/reversal`, { reason: '' }).expect(422); // prettier-ignore
+    await api().post(`/payments/${payment!.id}/reversal`, { reason: 'x'.repeat(201) }).expect(422); // prettier-ignore
 
     const reversed = await api()
       .post(`/payments/${payment!.id}/reversal`, {

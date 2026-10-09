@@ -49,7 +49,8 @@ CREATE TABLE "payment" (
   -- BI-250. La fecha en Guayaquil de `received_at`, escrita por
   -- `trg_payment_guard` sea cual sea lo que traiga el INSERT.
   "cash_date" DATE NOT NULL,
-  -- BI-102. Deshacer es poner estos tres, una vez; nunca borrar.
+  -- BI-102. Deshacer es poner quién y cuándo (y el motivo, si se da), una
+  -- vez; nunca borrar.
   "reversed_at" TIMESTAMPTZ(6),
   "reversed_by_id" UUID,
   "reversal_reason" VARCHAR(200),
@@ -67,10 +68,12 @@ CREATE TABLE "payment" (
   CONSTRAINT "payment_reversed_by_fk" FOREIGN KEY ("reversed_by_id")
     REFERENCES "app_user"("id") ON DELETE RESTRICT ON UPDATE NO ACTION,
   CONSTRAINT "payment_amount_is_positive" CHECK ("amount" > 0),
-  CONSTRAINT "payment_reversal_states_who_when_why" CHECK (
+  -- Quién y cuándo, siempre juntos; el motivo, si se da, no en blanco
+  -- (D-126: el motivo se elige de una lista y nunca es obligatorio).
+  CONSTRAINT "payment_reversal_states_who_and_when" CHECK (
     ("reversed_at" IS NULL AND "reversed_by_id" IS NULL AND "reversal_reason" IS NULL)
     OR ("reversed_at" IS NOT NULL AND "reversed_by_id" IS NOT NULL
-        AND "reversal_reason" IS NOT NULL AND btrim("reversal_reason") <> '')
+        AND ("reversal_reason" IS NULL OR btrim("reversal_reason") <> ''))
   )
 );
 

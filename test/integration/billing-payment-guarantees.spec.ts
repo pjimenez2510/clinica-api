@@ -305,7 +305,13 @@ describe('billing/B6 — the payment, guaranteed by the database', () => {
     await expect(
       scene.prisma
         .$executeRaw`UPDATE "payment" SET "reversed_at" = ${new Date()} WHERE "id" = ${id}::uuid`,
-    ).rejects.toThrowError(/payment_reversal_states_who_when_why/);
+    ).rejects.toThrowError(/payment_reversal_states_who_and_when/);
+    await expect(
+      scene.prisma.$executeRaw`
+        UPDATE "payment" SET "reversed_at" = ${new Date()},
+               "reversed_by_id" = ${scene.userId}::uuid, "reversal_reason" = '  '
+         WHERE "id" = ${id}::uuid`,
+    ).rejects.toThrowError(/payment_reversal_states_who_and_when/);
     const reverse = () => scene.prisma.$executeRaw`
       UPDATE "payment" SET "reversed_at" = ${new Date()},
              "reversed_by_id" = ${scene.userId}::uuid,
@@ -313,6 +319,19 @@ describe('billing/B6 — the payment, guaranteed by the database', () => {
        WHERE "id" = ${id}::uuid`;
     await expect(reverse()).resolves.toBe(1);
     await expect(reverse()).rejects.toThrowError(/payment_already_reversed/);
+  });
+});
+
+describe('billing/B6 — a reversal without a reason (D-126)', () => {
+  it('BI-102 the reason may be left out: who and when are enough', async () => {
+    const invoiceId = await anInvoice();
+    const id = await pay(invoiceId, '10.00');
+    await expect(
+      scene.prisma.$executeRaw`
+        UPDATE "payment" SET "reversed_at" = ${new Date()},
+               "reversed_by_id" = ${scene.userId}::uuid
+         WHERE "id" = ${id}::uuid`,
+    ).resolves.toBe(1);
   });
 });
 

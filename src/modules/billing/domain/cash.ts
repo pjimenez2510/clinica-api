@@ -45,7 +45,8 @@ export interface PaymentView {
   receivedById: string;
   /** BI-250. Written by the database. */
   cashDate: ClinicalDate;
-  reversal: { at: Date; byId: string; reason: string } | null;
+  /** BI-102. The reason is optional (D-126). */
+  reversal: { at: Date; byId: string; reason: string | null } | null;
 }
 
 /** What one method brought in that day. */

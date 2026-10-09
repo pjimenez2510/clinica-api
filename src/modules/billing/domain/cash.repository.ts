@@ -50,7 +50,7 @@ export interface CashRepository {
   reversePayment(reversal: {
     paymentId: string;
     reversedById: string;
-    reason: string;
+    reason: string | null;
     now: Date;
   }): Promise<PaymentView>;
 

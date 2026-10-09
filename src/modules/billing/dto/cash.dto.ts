@@ -25,11 +25,12 @@ export class CollectPaymentDto extends createZodDto(collectPaymentSchema) {}
 
 /** BI-102. Body of POST …/payments/:paymentId/reversal. */
 export const reversePaymentSchema = z.object({
+  /** D-126. From a short list, and never required. */
   reason: z
-    .string({ error: 'Indique por qué se revierte el cobro' })
+    .string()
     .trim()
-    .min(1, 'Indique por qué se revierte el cobro')
-    .max(200, 'El motivo tiene hasta 200 caracteres'),
+    .max(200, 'El motivo tiene hasta 200 caracteres')
+    .optional(),
 });
 export class ReversePaymentDto extends createZodDto(reversePaymentSchema) {}
 
@@ -69,7 +70,9 @@ const paymentResponseSchema = z.object({
   receivedAt: z.iso.datetime(),
   /** BI-250. The Guayaquil day it belongs to. */
   cashDate: z.iso.date(),
-  reversal: z.object({ at: z.iso.datetime(), reason: z.string() }).nullable(),
+  reversal: z
+    .object({ at: z.iso.datetime(), reason: z.string().nullable() })
+    .nullable(),
 });
 export class PaymentDto extends createZodDto(paymentResponseSchema) {}
 export type PaymentResponse = z.infer<typeof paymentResponseSchema>;

@@ -112,7 +112,7 @@ export class CashService {
 
   /** BI-102, BI-251. Only one's own payment, once, with its reason. */
   async reverse(
-    command: { siteId: string; paymentId: string; reason: string },
+    command: { siteId: string; paymentId: string; reason?: string | null },
     requester: Requester,
   ): Promise<PaymentView> {
     const payment = await this.cash.findPayment({
@@ -127,7 +127,7 @@ export class CashService {
     return this.cash.reversePayment({
       paymentId: payment.id,
       reversedById: requester.userId,
-      reason: command.reason.trim(),
+      reason: command.reason?.trim() || null,
       now: new Date(),
     });
   }

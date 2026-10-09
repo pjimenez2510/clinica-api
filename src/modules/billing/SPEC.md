@@ -1476,8 +1476,11 @@ es falsa, hay requisitos que cambian.
 - **BI-102** — El sistema NO DEBERÁ borrar un cobro: CUANDO se deshaga, DEBERÁ
   registrarse como reversión con motivo, autor e instante.
   > `trg_payment_only_reverses`: el único cambio que admite la fila es poner
-  > los tres datos de la reversión, una vez; el `DELETE` se rechaza.
-  > `payment_reversal_states_who_when_why` exige los tres juntos.
+  > los datos de la reversión, una vez; el `DELETE` se rechaza.
+  > `payment_reversal_states_who_and_when` exige autor e instante juntos.
+  > **El motivo se elige de una lista corta y se puede dejar sin elegir**
+  > (D-126, la regla del autor para toda acción con efecto): la base lo
+  > admite vacío y lo rechaza en blanco.
 - **BI-103** — El sistema DEBERÁ derivar el saldo pendiente de una factura de sus
   cobros no revertidos y de sus notas de crédito, y NO DEBERÁ almacenarlo.
 - **BI-104** — El sistema DEBERÁ permitir cerrar la caja de un usuario en una

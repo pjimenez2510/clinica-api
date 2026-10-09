@@ -94,7 +94,7 @@ export class PrismaCashRepository implements CashRepository {
   async reversePayment(reversal: {
     paymentId: string;
     reversedById: string;
-    reason: string;
+    reason: string | null;
     now: Date;
   }): Promise<PaymentView> {
     try {
@@ -304,7 +304,7 @@ function toPaymentView(row: PaymentRow): PaymentView {
     receivedById: row.receivedById,
     cashDate: toClinicalDate(row.cashDate),
     reversal:
-      row.reversedAt && row.reversedById && row.reversalReason
+      row.reversedAt && row.reversedById
         ? {
             at: row.reversedAt,
             byId: row.reversedById,
