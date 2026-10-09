@@ -241,9 +241,10 @@ corrigiendo por fuera del sistema.
 **Prueba independiente:** «Corregir» una factura emitida y obtener su nota de
 crédito, con el permiso propio y el motivo; sin motivo, recibir el rechazo;
 pedir más de lo que queda por acreditar y recibir el importe aún acreditable;
-intentarla pasados doce meses desde la emisión, sobre una factura anulada o
-sobre una emitida a Consumidor Final y recibir la negativa. La anulación no se
-prueba aquí: el sistema no anula, se hace en el portal del SRI (D-151.1).
+intentarla pasados doce meses desde la emisión o sobre una emitida a Consumidor
+Final (BI-213, D-151.3) y recibir la negativa. Sobre una factura anulada
+(BI-097) se prueba contra la base: el sistema no anula, se hace en el portal del
+SRI (D-151.1), y ningún camino de la pantalla llega a ese estado.
 **Cubre:** BI-091 a BI-097.
 
 **Solo servidor:** BI-095. Lo garantiza la base, como declara B15: la pantalla
