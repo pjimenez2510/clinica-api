@@ -206,6 +206,7 @@ reenviarla; y editar el receptor de una factura devuelta y comprobar que el XML
 reenviado lleva el receptor nuevo y la misma clave.
 
 **Cubre:** SRI-085 a SRI-090.
+**Solo servidor:** SRI-086, SRI-087.
 
 ### S8 — El monitor se entera solo _(P1, 08-10-2026)_
 
@@ -215,7 +216,6 @@ cada 10 s queda de respaldo.
 **Prueba independiente:** con el monitor abierto, autorizar un comprobante de
 la sede: la fila sale sin recargar.
 **Cubre:** SRI-092, SRI-093. **Solo servidor:** SRI-092. **Solo interfaz:** SRI-093.
-**Solo servidor:** SRI-086, SRI-087.
 
 ---
 
