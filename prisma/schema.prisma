@@ -192,6 +192,7 @@ model User {
   pricesChanged       Price[]             @relation("PriceChanger")
   tariffsPublished    TariffPublication[] @relation("TariffPublisher")
   discountsAuthorised ChargeItem[]        @relation("ChargeItemDiscountAuthoriser")
+  discountsApplied    ChargeItem[]        @relation("ChargeItemDiscountApplier")
   invoicesIssued      Invoice[]           @relation("InvoiceIssuer")
   creditNotesIssued   CreditNote[]        @relation("CreditNoteIssuer")
   accountsChanged     PatientAccount[]    @relation("PatientAccountChanger")
@@ -4411,8 +4412,20 @@ model ChargeItem {
   /// Who authorised a discount above the role's ceiling, NULL when it was
   /// within it. This is the second pair of eyes, so it is a different column
   /// from `createdById` on purpose.
-  discountAuthorisedById String? @map("discount_authorised_by_id") @db.Uuid
-  discountAuthorisedBy   User?   @relation("ChargeItemDiscountAuthoriser", fields: [discountAuthorisedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_discount_authorised_by_fk")
+  discountAuthorisedById String?   @map("discount_authorised_by_id") @db.Uuid
+  discountAuthorisedBy   User?     @relation("ChargeItemDiscountAuthoriser", fields: [discountAuthorisedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_discount_authorised_by_fk")
+  discountAuthorisedAt   DateTime? @map("discount_authorised_at") @db.Timestamptz(6)
+
+  /// BI-066. Who put the discount on the line and when — not `createdById`,
+  /// who added the line. `charge_item_discount_states_who_and_when` makes the
+  /// pair present exactly when there is a discount, and
+  /// `charge_item_discount_not_self_authorised` keeps the authoriser a
+  /// different person. `trg_charge_item_discount_is_permanent` refuses editing
+  /// any of it without a new act (a new `discountAppliedAt`), and refuses
+  /// moving the quantity or the price of a discounted line (BI-244).
+  discountAppliedById String?   @map("discount_applied_by_id") @db.Uuid
+  discountAppliedBy   User?     @relation("ChargeItemDiscountApplier", fields: [discountAppliedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_discount_applied_by_fk")
+  discountAppliedAt   DateTime? @map("discount_applied_at") @db.Timestamptz(6)
 
   /// PLANNED, BILLABLE, NOT_BILLABLE, BILLED or CANCELLED
   /// (`charge_item_status_is_known`).

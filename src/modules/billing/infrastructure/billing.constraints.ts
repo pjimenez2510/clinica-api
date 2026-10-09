@@ -222,6 +222,25 @@ registerConstraintMeanings({
     field: 'discountAmount',
     message: 'El descuento no puede superar el importe de la línea',
   },
+  // ── B4: quién y cuándo, y nadie se autoriza a sí mismo (BI-064, BI-066) ──
+  // El servicio rechaza antes con su frase; esto es lo que dice una escritura
+  // hecha por debajo de la aplicación.
+  charge_item_discount_states_who_and_when: {
+    code: 'DISCOUNT_INCOHERENT',
+    field: 'discountAmount',
+    message: 'Un descuento dice quién lo puso y cuándo, y una línea sin descuento no lleva ninguno de los dos', // prettier-ignore
+  },
+  charge_item_discount_not_self_authorised: {
+    code: 'SELF_AUTHORISATION_DENIED',
+    field: 'authorisedById',
+    message: 'Un descuento por encima del límite lo autoriza otra persona, no quien lo pone', // prettier-ignore
+  },
+  // BI-066, BI-244. Un disparador: llega por el nombre al frente del mensaje.
+  charge_item_discount_is_permanent: {
+    code: 'CHARGE_HAS_DISCOUNT',
+    field: 'discountAmount',
+    message: 'Esta línea tiene un descuento: quítelo antes de cambiar la cantidad o el precio, y un descuento no se edita, se reemplaza', // prettier-ignore
+  },
 
   // ── The account (BI-070, BI-071) ────────────────────────────────────────
   patient_account_status_is_known: {
