@@ -85,7 +85,7 @@ export class PrismaProcedureConsentRepository implements ProcedureConsentReposit
           ),
           ...witness,
           informedById: request.recordedById,
-          signedAt: refusal.refusedAt ?? now,
+          signedAt: now,
           recordedAt: now,
           recordedById: request.recordedById,
         },

@@ -542,6 +542,10 @@ export const DOMAIN_ERROR_CODES = [
   // un procedimiento, y ese procedimiento es del tarifario (422).
   'SERVICE_NOT_A_PROCEDURE',
   'SERVICE_PROCEDURE_NOT_IN_TARIFF',
+  // BI-256, BI-257: la atadura de una prestación marcada no se mueve, y un
+  // procedimiento lo cobra una sola prestación (409).
+  'SERVICE_CONSENT_TIE_LOCKED',
+  'SERVICE_PROCEDURE_TAKEN',
   'TAX_RATE_IN_USE',
   'TAX_RATE_NOT_FOUND',
   'TAX_RATE_REQUIRED',

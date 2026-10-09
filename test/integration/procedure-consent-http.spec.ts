@@ -237,10 +237,17 @@ describe('el consentimiento 024 por HTTP', () => {
     expect(body.writtenConsent.setBy?.name).toBe('Ana Villacís');
     expect(body.writtenConsent.setAt).not.toBeNull();
 
-    // Marcada, no se desata.
+    // Marcada, ni se desata, ni se cambia, ni se borra con la llave de precios.
     const untie = await send('patch', `/billing/services/${service.id}`, adminToken, { procedureConceptId: null }); // prettier-ignore
-    expect(untie.status).toBe(422);
-    expect((untie.body as Problem).code).toBe('SERVICE_NOT_A_PROCEDURE');
+    expect(untie.status).toBe(409);
+    expect((untie.body as Problem).code).toBe('SERVICE_CONSENT_TIE_LOCKED');
+    const other = await aTariffConcept(prisma);
+    const retie = await send('patch', `/billing/services/${service.id}`, adminToken, { procedureConceptId: other.id }); // prettier-ignore
+    expect((retie.body as Problem).code).toBe('SERVICE_CONSENT_TIE_LOCKED');
+    const removed = await request(app.getHttpServer())
+      .delete(`/api/v1/billing/services/${service.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect((removed.body as Problem).code).toBe('SERVICE_CONSENT_TIE_LOCKED');
 
     // La bitácora tiene la prestación antes y después.
     const trail = await prisma.accessAudit.findMany({

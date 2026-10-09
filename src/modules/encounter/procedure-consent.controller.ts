@@ -93,8 +93,6 @@ export class ProcedureConsentController {
         signer: dto.signer,
         representative: representativeOf(dto.representative),
         witness: dto.witness ?? null,
-        refusedAt:
-          dto.refusedAt === undefined ? undefined : new Date(dto.refusedAt),
       },
       this.requester(req, 'record:write'),
     );

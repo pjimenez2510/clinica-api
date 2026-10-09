@@ -303,6 +303,10 @@ describe('el contrato de errores de la atención', () => {
     expect(required.userTitle).toContain(
       'consentimiento informado firmado (024)',
     );
+    // EN-152. Corregir o restaurar no lleva 024: la salida es registrarlo de nuevo.
+    expect(new ConsentRequiredError('correction').userTitle).toContain(
+      'regístrelo como procedimiento nuevo',
+    );
     const late = new ConsentSignedAfterProcedureError();
     expect(late.code).toBe('CONSENT_SIGNED_AFTER_PROCEDURE');
     expect(late).toBeInstanceOf(ValidationError);

@@ -77,8 +77,6 @@ export interface RefusalInput {
   signer: RefusalSigner;
   representative: Representative | null;
   witness: { name: string; document: string } | null;
-  /** Absent means «ahora». */
-  refusedAt?: Date;
 }
 
 /** EN-154. Who expressed the revocation. */

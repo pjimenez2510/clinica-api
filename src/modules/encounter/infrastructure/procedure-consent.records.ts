@@ -69,8 +69,13 @@ export async function insertProcedureConsent(
   recordedById: string,
   now: Date,
 ): Promise<void> {
+  // Absent, the paper is taken as signed when the procedure was performed —
+  // never «when it was typed», which would put a later hour in the history
+  // than the paper carries and refuse a procedure recorded afterwards.
   const signedAt =
-    consent.kind === 'SIGNED' ? (consent.signedAt ?? now) : undefined;
+    consent.kind === 'SIGNED'
+      ? (consent.signedAt ?? procedure.performedAt)
+      : undefined;
   const problem = consentProblem(
     consent,
     procedure.performedAt,
@@ -179,7 +184,7 @@ type ConsentRow = Prisma.ProcedureConsentGetPayload<{
  * the row it came back from is found by walking the archive's `restored_as_id`
  * — the same lineage `procedure_written_consent_covers` follows. When a
  * procedure was corrected between concepts, the consent of its CURRENT
- * concept is the one served.
+ * concept is the one served, and otherwise the one it carried.
  */
 export async function consentsByProcedure(
   client: Client,
@@ -210,9 +215,13 @@ export async function consentsByProcedure(
       id !== undefined && depth < 50;
       id = restoredFrom.get(id), depth += 1
     ) {
-      const row = rows.find(
-        (each) => each.procedureId === id && each.conceptId === procedure.conceptId, // prettier-ignore
-      );
+      // The consent of its CURRENT concept first; failing that, the one it
+      // carried before a correction — the paper signed is still the record
+      // of that procedure, and its revocation has to stay reachable.
+      const row =
+        rows.find(
+          (each) => each.procedureId === id && each.conceptId === procedure.conceptId, // prettier-ignore
+        ) ?? rows.find((each) => each.procedureId === id);
       if (row !== undefined) {
         result.set(procedure.id, toConsentView(row));
         break;

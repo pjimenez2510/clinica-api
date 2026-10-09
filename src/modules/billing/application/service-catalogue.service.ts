@@ -28,8 +28,10 @@ import {
   TaxRateRequiredError,
   TaxReviewRateChangedError,
   ServiceNamedElsewhereError,
+  ServiceConsentTieLockedError,
   ServiceNotAProcedureError,
   ServiceProcedureNotInTariffError,
+  ServiceProcedureTakenError,
 } from '../domain/billing.errors';
 
 import {
@@ -189,14 +191,18 @@ export class ServiceCatalogueService {
       update.procedureConceptId !== undefined &&
       update.procedureConceptId !== (current.procedureConcept?.id ?? null);
     if (retiesProcedure) {
-      if (update.procedureConceptId === null) {
-        if (current.writtenConsent.required) {
-          throw new ServiceNotAProcedureError();
+      // D-199.1. Moving the tie would move the medical direction's mark.
+      if (current.writtenConsent.required) {
+        throw new ServiceConsentTieLockedError();
+      }
+      if (update.procedureConceptId !== null) {
+        const conceptId = update.procedureConceptId!;
+        if (!(await this.catalogue.isTariffConcept(conceptId))) {
+          throw new ServiceProcedureNotInTariffError();
         }
-      } else if (
-        !(await this.catalogue.isTariffConcept(update.procedureConceptId!))
-      ) {
-        throw new ServiceProcedureNotInTariffError();
+        if (await this.catalogue.procedureTakenByOther(conceptId, serviceId)) {
+          throw new ServiceProcedureTakenError();
+        }
       }
     }
     if (movesCategory || retiesProcedure) {
@@ -331,7 +337,11 @@ export class ServiceCatalogueService {
    * existing for that invoice to be readable at all.
    */
   async deleteService(serviceId: string, requester: Requester): Promise<void> {
-    await this.requireService(serviceId);
+    const current = await this.requireService(serviceId);
+    // D-199.1. Deleting it would remove the mark with a price manager's key.
+    if (current.writtenConsent.required) {
+      throw new ServiceConsentTieLockedError();
+    }
 
     const references = await this.catalogue.countReferencesToService(serviceId);
     if (references > 0) throw new BillableServiceInUseError();

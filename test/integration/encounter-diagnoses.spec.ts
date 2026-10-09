@@ -823,38 +823,4 @@ describe('lo que el bloque K todavía no puede guardar', () => {
       'Llegaron los índices odontológicos: implemente EN-052',
     ).toEqual([]);
   });
-
-  it('EN-152, EN-153 y EN-154 siguen sin tabla de consentimiento informado', async () => {
-    /**
-     * Faltan las DOS mitades: la clasificación de riesgo en el catálogo de
-     * prestaciones —que es lo que decide si hace falta consentimiento— y la
-     * tabla del formulario 024, atado AL PROCEDIMIENTO y no a la atención,
-     * porque el A.M. 5316 define el consentimiento como un proceso de
-     * comunicación sobre una intervención concreta. Con ellas llegan también
-     * la negativa (EN-153) y la revocación (EN-154), que nunca borra el
-     * consentimiento revocado.
-     *
-     * ⚠️ EN-151 SÍ ESTÁ CUMPLIDO Y LO ESTÁ POR AUSENCIA: nada exige
-     * consentimiento suscrito para un procedimiento de riesgo mínimo.
-     */
-    const prisma = db();
-    const tables = await prisma.$queryRawUnsafe<{ tablename: string }[]>(
-      `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
-    );
-
-    // NOT the consent to process personal data (LOPDP), which is a different
-    // thing with its own module: `privacy` (PD-001..PD-017) owns these two,
-    // and neither is the form 024 bound to a procedure that this guards.
-    const DATA_PROTECTION_CONSENT = new Set([
-      'consent_text_version',
-      'patient_consent',
-    ]);
-    expect(
-      tables
-        .map((row) => row.tablename)
-        .filter((name) => !DATA_PROTECTION_CONSENT.has(name))
-        .filter((name) => /consent|consentimiento/i.test(name)),
-      'Llegó la tabla del consentimiento: implemente EN-152, EN-153 y EN-154',
-    ).toEqual([]);
-  });
 });

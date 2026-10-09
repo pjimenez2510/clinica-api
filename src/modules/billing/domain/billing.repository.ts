@@ -323,8 +323,10 @@ export interface BillingCatalogueRepository {
     taxRateId: string,
     review: { reviewedAt: Date; reviewedById: string },
   ): Promise<BillableServiceView | null>;
-  /** BI-257. Whether the concept exists and belongs to the tariff catalogue. */
+  /** BI-257. Whether the concept is of the tariff catalogue and still in force. */
   isTariffConcept(conceptId: string): Promise<boolean>;
+  /** BI-257. Whether another service already charges a concept of that code. */
+  procedureTakenByOther(conceptId: string, serviceId: string): Promise<boolean>;
   /**
    * BI-012. Deletes ONLY when nothing references it; the caller has already
    * refused when it does. The count and the delete are asked separately on

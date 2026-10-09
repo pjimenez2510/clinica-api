@@ -130,6 +130,44 @@ export class ServiceNotAProcedureError extends BusinessRuleViolation {
   }
 }
 
+/**
+ * BI-256, D-199.1. A service that demands the 024 keeps its procedure: moving
+ * or deleting it would move or remove the medical direction's mark with a
+ * price manager's key. Unmarked first, then changed.
+ */
+export class ServiceConsentTieLockedError extends ConflictError {
+  readonly code = 'SERVICE_CONSENT_TIE_LOCKED';
+  override readonly userTitle =
+    'Esta prestación exige el consentimiento 024: la dirección médica tiene que desmarcarla antes de cambiar su procedimiento o borrarla';
+
+  constructor() {
+    super('A service demanding the form 024 keeps its procedure', {}, [
+      {
+        field: 'procedureConceptId',
+        code: 'SERVICE_CONSENT_TIE_LOCKED',
+        message: 'Desmárquela antes de cambiar el procedimiento',
+      },
+    ]);
+  }
+}
+
+/** BI-257. One service per procedure: caja would otherwise pick one in silence. */
+export class ServiceProcedureTakenError extends ConflictError {
+  readonly code = 'SERVICE_PROCEDURE_TAKEN';
+  override readonly userTitle =
+    'Otra prestación ya cobra ese procedimiento: cámbiela allí o elija otro';
+
+  constructor() {
+    super('Another service already charges that procedure', {}, [
+      {
+        field: 'procedureConceptId',
+        code: 'SERVICE_PROCEDURE_TAKEN',
+        message: 'Otra prestación ya cobra ese procedimiento',
+      },
+    ]);
+  }
+}
+
 /** BI-257. A service charges a procedure of the tariff, never another catalogue. */
 export class ServiceProcedureNotInTariffError extends BusinessRuleViolation {
   readonly code = 'SERVICE_PROCEDURE_NOT_IN_TARIFF';

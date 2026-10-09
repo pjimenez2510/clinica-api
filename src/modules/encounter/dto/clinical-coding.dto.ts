@@ -271,8 +271,9 @@ export const recordRefusalSchema = z.object({
         .max(20, 'El documento admite hasta 20 caracteres'),
     })
     .nullish(),
-  /** Absent means «ahora». */
-  refusedAt: instant('La hora de la negativa').optional(),
+  // No instant travels: the refusal is recorded when it is expressed, with
+  // the application's clock (a refusal «in the future» or years old is not
+  // something the screen ever needs to say).
 });
 /** Body of POST /encounters/:encounterId/procedure-refusals. */
 export class RecordRefusalDto extends createZodDto(recordRefusalSchema) {}

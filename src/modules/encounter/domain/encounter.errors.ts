@@ -1435,8 +1435,7 @@ export class ProcedureRetractionReasonRequiredError extends ValidationError {
  */
 export class ConsentRequiredError extends BusinessRuleViolation {
   readonly code = 'CONSENT_024_REQUIRED';
-  override readonly userTitle =
-    'Este procedimiento exige el consentimiento informado firmado (024): indique quién lo firmó o registre la excepción con su fundamento';
+  override readonly userTitle: string;
   override readonly fieldErrors = [
     {
       field: 'consent',
@@ -1445,8 +1444,17 @@ export class ConsentRequiredError extends BusinessRuleViolation {
     },
   ];
 
-  constructor() {
-    super('The procedure needs its signed form 024 or an exception');
+  /**
+   * `correction`: correcting into, or restoring, a procedure whose service
+   * demands the 024, with no consent of its own to carry. Neither carries a
+   * 024, so the way out is to record it anew with it (EN-152).
+   */
+  constructor(when: 'record' | 'correction' = 'record') {
+    super('The procedure needs its signed form 024 or an exception', { when });
+    this.userTitle =
+      when === 'record'
+        ? 'Este procedimiento exige el consentimiento informado firmado (024): indique quién lo firmó o registre la excepción con su fundamento'
+        : 'Este procedimiento exige el consentimiento informado firmado (024) y éste no lo tiene: regístrelo como procedimiento nuevo con su consentimiento';
   }
 }
 

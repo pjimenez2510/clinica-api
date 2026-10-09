@@ -318,12 +318,36 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
     return count === 0 ? null : this.findBillableService(serviceId);
   }
 
-  /** BI-257. A concept of the TARIFF system, by its catalogue. */
+  /**
+   * BI-257. A concept of the TARIFF system still in force: tying to one an
+   * import retired would point at a code the doctor can no longer pick.
+   */
   async isTariffConcept(conceptId: string): Promise<boolean> {
     const found = await this.prisma.catalogConcept.count({
-      where: { id: conceptId, system: { code: 'TARIFF' } },
+      where: { id: conceptId, system: { code: 'TARIFF' }, validTo: null },
     });
     return found > 0;
+  }
+
+  /**
+   * BI-257. By the CODE and not the id, like the 024 mark: an older edition
+   * of the same code tied elsewhere is the same procedure.
+   */
+  async procedureTakenByOther(
+    conceptId: string,
+    serviceId: string,
+  ): Promise<boolean> {
+    const [row] = await this.prisma.$queryRaw<{ taken: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1
+          FROM catalog_concept target
+          JOIN catalog_concept bound
+            ON bound.system_id = target.system_id AND bound.code = target.code
+          JOIN billable_service s ON s.procedure_concept_id = bound.id
+         WHERE target.id = ${conceptId}::uuid
+           AND s.id <> ${serviceId}::uuid
+      ) AS taken`;
+    return row?.taken === true;
   }
 
   /**

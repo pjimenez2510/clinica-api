@@ -15,6 +15,16 @@ registerConstraintMeanings({
   // ── The 024 mark (BI-256) ─────────────────────────────────────────────────
   // The service refuses it first; this answers the mark and the untying
   // landing at once, which only the database can arbitrate.
+  billable_service_written_consent_tie_locked: {
+    code: 'SERVICE_CONSENT_TIE_LOCKED',
+    field: 'procedureConceptId',
+    message: 'Desmárquela antes de cambiar el procedimiento',
+  },
+  billable_service_one_per_procedure: {
+    code: 'SERVICE_PROCEDURE_TAKEN',
+    field: 'procedureConceptId',
+    message: 'Otra prestación ya cobra ese procedimiento',
+  },
   billable_service_written_consent_needs_a_procedure: {
     code: 'SERVICE_NOT_A_PROCEDURE',
     field: 'procedureConceptId',

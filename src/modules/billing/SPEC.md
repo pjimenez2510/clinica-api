@@ -2178,8 +2178,13 @@ dos registros distintos.**
   la prestación. Además:
   - SI la prestación no cobra un procedimiento del tarifario (BI-257),
     ENTONCES DEBERÁ rechazarlo con `SERVICE_NOT_A_PROCEDURE`;
-  - SI se quita la atadura al procedimiento de una prestación marcada,
-    ENTONCES DEBERÁ rechazarlo con `SERVICE_NOT_A_PROCEDURE`.
+  - MIENTRAS la prestación esté marcada, SI se quita o se cambia su atadura
+    al procedimiento, o se borra la prestación, ENTONCES DEBERÁ rechazarlo con
+    `SERVICE_CONSENT_TIE_LOCKED`: la dirección médica la desmarca antes
+    (D-199.1; revisión clínica, G2).
+  - la marca DEBERÁ alcanzar al procedimiento por el **código** del tarifario
+    que la prestación ata, no por la edición: reimportar el tarifario no la
+    apaga (D-159.5; revisión clínica, G1).
   > **D-159.1 y .5.** La marca la pone la clínica, sobre las prestaciones que
   > realiza, y no el médico caso por caso; en la ficha de la prestación y no
   > en el catálogo del tarifario, que se reimporta. La llave es un permiso
@@ -2187,17 +2192,21 @@ dos registros distintos.**
   > EN-152, en `encounter`.
   >
   > **Garantía de la base:** `billable_service_written_consent_states_who`
-  > (marcada ⇒ con quién y cuándo) y
+  > (marcada ⇒ con quién y cuándo),
   > `billable_service_written_consent_needs_a_procedure` (marcada ⇒ ata un
-  > concepto).
+  > concepto) y `billable_service_written_consent_tie_locked` (marcada ⇒ ni
+  > se re-ata ni se borra).
 - **BI-257** — CUANDO quien tiene `billing:price-manage` ate una prestación de
   clase procedimiento a un concepto del tarifario, o la desate, el sistema
   DEBERÁ guardarlo y servirlo con la prestación, para que caja proponga su
   cargo (BI-151) y la marca de BI-256 lo alcance. Además:
   - SI la clase de la categoría no es procedimiento, ENTONCES DEBERÁ
     rechazarlo con `SERVICE_KIND_MISMATCH` (BI-187);
-  - SI el concepto no es del tarifario, ENTONCES DEBERÁ rechazarlo con
-    `SERVICE_PROCEDURE_NOT_IN_TARIFF`.
+  - SI el concepto no es del tarifario o ya no está vigente, ENTONCES DEBERÁ
+    rechazarlo con `SERVICE_PROCEDURE_NOT_IN_TARIFF`;
+  - SI otra prestación ya cobra ese procedimiento (el mismo código), ENTONCES
+    DEBERÁ rechazarlo con `SERVICE_PROCEDURE_TAKEN`: caja propondría una de
+    las dos en silencio (`billable_service_one_per_procedure`).
   > Hasta aquí ninguna pantalla ni semilla escribía la atadura (BI-187): el
   > cargo del procedimiento nunca se proponía y la marca del 024 no tenía a
   > qué procedimiento aplicarse.
@@ -2665,6 +2674,8 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `SERVICE_NAMED_ELSEWHERE` | 409 | BI-187, ORD-163, SP-030 |
 | `SERVICE_NOT_A_PROCEDURE` | 422 | BI-256 |
 | `SERVICE_PROCEDURE_NOT_IN_TARIFF` | 422 | BI-257 |
+| `SERVICE_CONSENT_TIE_LOCKED` | 409 | BI-256 |
+| `SERVICE_PROCEDURE_TAKEN` | 409 | BI-257 |
 | `INVOICE_CHARGES_CHANGED` | 409 | BI-184 |
 
 **Se reutilizan, y no se declaran de nuevo:** `SELF_AUTHORISATION_DENIED`

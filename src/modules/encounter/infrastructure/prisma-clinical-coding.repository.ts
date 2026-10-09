@@ -1036,7 +1036,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           (await requiresWrittenConsent(tx, edit.conceptId)) &&
           !(await writtenConsentCovers(tx, current.id, edit.conceptId))
         ) {
-          throw new ConsentRequiredError();
+          throw new ConsentRequiredError('correction');
         }
         identity = {
           conceptId: edit.conceptId,
@@ -1211,7 +1211,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         (await requiresWrittenConsent(tx, archived.conceptId)) &&
         !(await writtenConsentCovers(tx, archived.id, archived.conceptId))
       ) {
-        throw new ConsentRequiredError();
+        throw new ConsentRequiredError('correction');
       }
 
       const restored = await tx.encounterProcedure.create({

@@ -1,6 +1,10 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
+import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
+import '../../src/modules/encounter/infrastructure/encounter.constraints';
+import '../../src/modules/billing/infrastructure/billing.constraints';
+
 import { aTariffConcept } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import {
@@ -417,5 +421,158 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
     const [answer] = await prisma.$queryRaw<{ required: boolean }[]>`
       SELECT procedure_requires_written_consent(${concept.id}::uuid) AS required`;
     expect(answer?.required).toBe(true);
+  });
+
+  it('EN-152 D-159.5 la marca sobrevive a la reimportación del tarifario: el mismo código en una edición nueva sigue exigiendo el 024', async () => {
+    const prisma = db();
+    const { encounter, user } = await anAttention(prisma);
+    const old = await aConcept(prisma, user, true);
+    // The import retires the edition and creates the code anew, new id.
+    const day = 86_400_000;
+    await prisma.catalogConcept.update({
+      where: { id: old.id },
+      data: { validTo: new Date(encounter.startedAt.getTime() - 2 * day) },
+    });
+    const fresh = await prisma.catalogConcept.create({
+      data: {
+        systemId: old.systemId,
+        code: old.code,
+        display: old.display,
+        validFrom: new Date(encounter.startedAt.getTime() - day),
+      },
+    });
+
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.encounterProcedure.create({ data: procedureData(encounter, fresh) }); // prettier-ignore
+      }),
+    ).rejects.toThrow(/encounter_procedure_consent_required/);
+    // Control positivo: otro código de la misma edición no lo exige.
+    const other = await aTariffConcept(prisma);
+    await prisma.$transaction(async (tx) => {
+      await tx.encounterProcedure.create({ data: procedureData(encounter, other) }); // prettier-ignore
+    });
+  });
+
+  it('EN-152 el error del disparador diferido, al confirmar, se lee como CONSENT_024_REQUIRED y no como un 500', async () => {
+    const prisma = db();
+    const { encounter, user } = await anAttention(prisma);
+    const concept = await aConcept(prisma, user, true);
+    const caught = await prisma
+      .$transaction(async (tx) => {
+        await tx.encounterProcedure.create({ data: procedureData(encounter, concept) }); // prettier-ignore
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+    expect(extractDatabaseProblem(caught)?.code).toBe('CONSENT_024_REQUIRED');
+  });
+
+  it('EN-152 el consentimiento nombra un procedimiento vivo de su atención y su concepto, y el firmado dice quién informó y cuándo', async () => {
+    const prisma = db();
+    const { encounter, user } = await anAttention(prisma);
+    const concept = await aConcept(prisma, user, false);
+    const procedure = await prisma.encounterProcedure.create({ data: procedureData(encounter, concept) }); // prettier-ignore
+    const other = await aTariffConcept(prisma);
+
+    await expect(
+      prisma.procedureConsent.create({ data: { ...signedConsent(procedure, user.id), conceptId: other.id } }), // prettier-ignore
+    ).rejects.toThrow(/procedure_consent_names_its_procedure/);
+    await expect(
+      prisma.procedureConsent.create({ data: { ...signedConsent(procedure, user.id), informedById: null } }), // prettier-ignore
+    ).rejects.toThrow(/procedure_consent_signed_states_who/);
+    await prisma.procedureConsent.create({ data: signedConsent(procedure, user.id) }); // prettier-ignore
+  });
+
+  it('EN-246 restaurar un procedimiento quitado sin 024 cuando su concepto ya lo exige se rechaza', async () => {
+    const prisma = db();
+    const { encounter, user } = await anAttention(prisma);
+    const concept = await aConcept(prisma, user, false);
+    const original = await prisma.encounterProcedure.create({ data: procedureData(encounter, concept) }); // prettier-ignore
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        INSERT INTO encounter_procedure_retraction
+          (id, encounter_id, concept_id, procedure_code, procedure_display,
+           quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+           retracted_at, retracted_by_id, reason)
+        SELECT id, encounter_id, concept_id, procedure_code, procedure_display,
+               quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+               ${new Date()}, ${user.id}::uuid, 'Registrado por error'
+          FROM encounter_procedure WHERE id = ${original.id}::uuid`;
+      await tx.encounterProcedure.delete({ where: { id: original.id } });
+    });
+    // The mark is switched on afterwards.
+    await prisma.billableService.updateMany({
+      where: { procedureConceptId: concept.id },
+      data: { requiresWrittenConsent: true, writtenConsentSetAt: new Date(), writtenConsentSetById: user.id }, // prettier-ignore
+    });
+
+    await expect(
+      prisma.$transaction(async (tx) => {
+        const restored = await tx.encounterProcedure.create({
+          data: {
+            ...procedureData(encounter, concept),
+            performedAt: original.performedAt,
+          },
+        });
+        await tx.encounterProcedureRetraction.update({
+          where: { id: original.id },
+          data: {
+            restoredAt: new Date(),
+            restoredById: user.id,
+            restoredAsId: restored.id,
+          },
+        });
+      }),
+    ).rejects.toThrow(/encounter_procedure_consent_required/);
+  });
+
+  it('BI-256 D-199.1 la BASE no deja cambiar ni borrar la atadura de una prestación marcada; desmarcada, sí', async () => {
+    const prisma = db();
+    const user = await createUser(prisma);
+    const concept = await aConcept(prisma, user, true);
+    const other = await aTariffConcept(prisma);
+    const service = await prisma.billableService.findFirstOrThrow({ where: { procedureConceptId: concept.id } }); // prettier-ignore
+
+    await expect(
+      prisma.billableService.update({ where: { id: service.id }, data: { procedureConceptId: other.id } }), // prettier-ignore
+    ).rejects.toThrow(/billable_service_written_consent_tie_locked/);
+    await expect(
+      prisma.billableService.delete({ where: { id: service.id } }),
+    ).rejects.toThrow(/billable_service_written_consent_tie_locked/);
+
+    // Control positivo: desmarcar y cambiar en la misma escritura.
+    await prisma.billableService.update({
+      where: { id: service.id },
+      data: { requiresWrittenConsent: false, procedureConceptId: other.id },
+    });
+  });
+
+  it('BI-257 la BASE no admite dos prestaciones atadas al mismo concepto', async () => {
+    const prisma = db();
+    const user = await createUser(prisma);
+    const concept = await aConcept(prisma, user, false);
+    const second = await createExamService(prisma, { code: 'P-DOS', name: 'Biopsia (convenio)', kind: 'PROCEDURE' }); // prettier-ignore
+
+    await expect(
+      prisma.billableService.update({ where: { id: second.id }, data: { procedureConceptId: concept.id } }), // prettier-ignore
+    ).rejects.toThrow();
+    const raised = await prisma.billableService
+      .update({
+        where: { id: second.id },
+        data: { procedureConceptId: concept.id },
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(extractDatabaseProblem(raised)?.code).toBe(
+      'SERVICE_PROCEDURE_TAKEN',
+    );
+    // Control positivo: a otro concepto, sí.
+    const other = await aTariffConcept(prisma);
+    await prisma.billableService.update({ where: { id: second.id }, data: { procedureConceptId: other.id } }); // prettier-ignore
   });
 });

@@ -10,8 +10,10 @@ import {
   TaxRateRequiredError,
   TaxReviewRateChangedError,
   ServiceNamedElsewhereError,
+  ServiceConsentTieLockedError,
   ServiceNotAProcedureError,
   ServiceProcedureNotInTariffError,
+  ServiceProcedureTakenError,
 } from '../domain/billing.errors';
 import type {
   BillableServiceView,
@@ -94,6 +96,7 @@ function build(overrides: Record<string, unknown> = {}) {
     updateBillableService: vi.fn().mockResolvedValue(service),
     markTaxReviewed: vi.fn().mockResolvedValue(service),
     isTariffConcept: vi.fn().mockResolvedValue(true),
+    procedureTakenByOther: vi.fn().mockResolvedValue(false),
     countReferencesToService: vi.fn().mockResolvedValue(0),
     deleteBillableService: vi.fn().mockResolvedValue(undefined),
     record: vi.fn().mockResolvedValue(undefined),
@@ -673,7 +676,7 @@ describe('BI-256 la marca «exige consentimiento 024» la pone la dirección mé
     expect(mocks.record).not.toHaveBeenCalled();
   });
 
-  it('BI-256 no se desata el procedimiento de una prestación marcada', async () => {
+  it('BI-256 D-199.1 la atadura de una prestación marcada no se desata, no se cambia ni se borra con la llave de precios', async () => {
     const { service: catalogue } = build({
       findBillableService: vi.fn().mockResolvedValue({
         ...procedureService,
@@ -681,12 +684,24 @@ describe('BI-256 la marca «exige consentimiento 024» la pone la dirección mé
       }),
     });
     await expect(
-      catalogue.updateService(
-        'service-1',
-        { procedureConceptId: null },
-        requester,
-      ),
-    ).rejects.toBeInstanceOf(ServiceNotAProcedureError);
+      catalogue.updateService('service-1', { procedureConceptId: null }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceConsentTieLockedError);
+    await expect(
+      catalogue.updateService('service-1', { procedureConceptId: 'c-2' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceConsentTieLockedError);
+    await expect(catalogue.deleteService('service-1', requester)).rejects.toBeInstanceOf(ServiceConsentTieLockedError); // prettier-ignore
+    // Control positivo: renombrarla sí.
+    await expect(catalogue.updateService('service-1', { name: 'Biopsia' }, requester)).resolves.toBeDefined(); // prettier-ignore
+  });
+
+  it('BI-257 un procedimiento lo cobra una sola prestación', async () => {
+    const { service: catalogue } = build({
+      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES }), // prettier-ignore
+      procedureTakenByOther: vi.fn().mockResolvedValue(true),
+    });
+    await expect(
+      catalogue.updateService('service-1', { procedureConceptId: 'c-1' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceProcedureTakenError);
   });
 });
 

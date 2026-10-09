@@ -3283,8 +3283,9 @@ programada._
   petición, y guardar atado a ese procedimiento, una de dos cosas:
   - el **consentimiento firmado** en papel: quién firmó —el paciente, o su
     representante con su nombre, su parentesco y, si se da, su documento—,
-    quién informó —el profesional que lo registra— y cuándo se firmó, que NO
-    DEBERÁ ser posterior a cuando se realizó; o
+    quién informó —el profesional que lo registra (D-199.4)— y cuándo se
+    firmó, que NO DEBERÁ ser posterior a cuando se realizó y que, sin decirse,
+    es la hora de la realización y nunca la de tecleo; o
   - la **excepción**: emergencia, o procedimiento inesperado durante otro, con
     su **fundamento escrito**, que nunca queda vacío.
 
@@ -3300,7 +3301,12 @@ programada._
     el 024 y ningún consentimiento de ese procedimiento lo cubre, ENTONCES
     DEBERÁ rechazarla con `CONSENT_024_REQUIRED`;
   - CUANDO se restaure un procedimiento quitado (EN-246), el restaurado DEBERÁ
-    conservar el consentimiento o la excepción del original;
+    conservar el consentimiento o la excepción del original; SI el original no
+    tenía y su concepto ya lo exige, ENTONCES DEBERÁ rechazarlo con
+    `CONSENT_024_REQUIRED` y la frase que manda registrarlo de nuevo con su
+    consentimiento (como la corrección);
+  - SI se corrige a otro concepto un procedimiento con 024, ENTONCES el 024
+    DEBERÁ seguir sirviéndose con él;
   - el consentimiento y la excepción DEBERÁN servirse con el procedimiento en
     la atención, con quién lo registró y cuándo.
   > **D-159 (07-10-2026), puntos 1 a 3.** El 024 se firma **en papel** con el
@@ -3325,7 +3331,8 @@ programada._
   > sin un consentimiento firmado o una excepción del mismo concepto en él o en
   > el procedimiento del que se restauró (`procedure_written_consent_covers`).
   > La pregunta «¿lo exige?» la contesta `procedure_requires_written_consent`,
-  > la misma función para la base y para la pantalla. `procedure_consent` nace
+  > la misma función para la base y para la pantalla, **por el código** del
+  > tarifario y no por la edición del concepto (sobrevive a la reimportación). `procedure_consent` nace
   > completo según su clase (CHECK por clase) y no admite `UPDATE`, `DELETE`
   > ni `TRUNCATE`. La marca puesta **después** no invalida lo ya registrado:
   > el disparador mira el alta y el cambio de concepto, no cada edición.
@@ -3337,6 +3344,8 @@ programada._
   procedimiento ni cambiar el estado de la atención. Además:
   - SI la atención no admite contenido nuevo, ENTONCES DEBERÁ rechazarla con
     `ENCOUNTER_ALREADY_CLOSED`;
+  - el instante DEBERÁ ser el del reloj de la aplicación al registrarla: la
+    petición no lo trae;
   - SI no firma nadie y falta el testigo, ENTONCES DEBERÁ rechazarla con
     `CONSENT_WITNESS_REQUIRED`;
   - las negativas DEBERÁN servirse con los procedimientos de la atención.
@@ -4636,7 +4645,6 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `ENCOUNTER_CLOSER_NOT_AUTHOR` | 403 | Cierra alguien que no la abrió y no lleva `record:sign`. Con `record:sign` **no falla**: cierra dejando constancia de la sustitución | EN-144, EN-147 |
 | `NURSING_SCOPE_DENIED` | 403 | Se intentó registrar diagnóstico, procedimiento o receta con `nursing:write`. **Distinto de un 403 genérico de permiso**: dice que el acto está fuera del ámbito del título, no que falte una casilla en el rol | EN-142 |
 | `CERTIFIED_SIGNATURE_REQUIRED` | 422 | Firmar sin certificado vigente con `requireCertifiedSignature` habilitado. **No es 403**: el profesional tiene permiso para firmar; lo que falta es el certificado | EN-155 |
-| `CONSENT_REQUIRED_FOR_PROCEDURE` | 422 | Registrar como realizado un procedimiento de riesgo mayor sin el formulario 024 suscrito ni la exención de emergencia fundamentada | EN-152 |
 | `TRIAGE_NOT_ENABLED` | 404 | Se llamó a una ruta de triaje en una sede sin la capacidad habilitada. **404 y no 403**: en esa instalación la ruta no existe, y un 403 diría que existe y está cerrada | EN-148, EN-149 |
 | *(no expuesto)* | — | Ninguna ruta escribe el plazo: lo rechaza la base (`site_parameter_retention_minimum`) | EN-157 |
 | `PATIENT_ALLERGY_NOT_FOUND` | 404 | Se refutó una alergia que no existe en esa ficha ni en las que absorbió. **El mismo para «no existe» y «es de otra ficha»**, por lo mismo que `ENCOUNTER_NOT_FOUND` | EN-082 |
