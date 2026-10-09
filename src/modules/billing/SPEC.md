@@ -231,17 +231,21 @@ que exigir en la ruta (lo explica el propio requisito).
 > emisión**, y mientras no haya autorización el plazo se cuenta igual, porque lo
 > que caduca es la posibilidad de anular ante el SRI, no la nuestra.
 
-### B3 — Corregir sin editar: nota de crédito y anulación _(P2)_
+### B3 — Corregir sin editar: la nota de crédito _(P2)_
 
 **Por qué es P2:** una clínica puede operar unos días sin poder corregir una
 factura; lo que no puede es corregirla mal. Y esta entrega es **la mitad que
 hace honesta a B2**: prohibir la edición sin dar la alternativa deja al personal
 corrigiendo por fuera del sistema.
 
-**Prueba independiente:** anular una factura del día 3 el día 9 del mes
-siguiente y conseguirlo; intentarlo el día 11 y recibir el rechazo con la salida
-correcta; intentar anular una emitida a Consumidor Final y recibir la negativa
-en cualquier fecha. **Cubre:** BI-091 a BI-097.
+**Prueba independiente:** «Corregir» una factura emitida y obtener su nota de
+crédito, con el permiso propio y el motivo; sin motivo, recibir el rechazo;
+pedir más de lo que queda por acreditar y recibir el importe aún acreditable;
+intentarla pasados doce meses desde la emisión o sobre una emitida a Consumidor
+Final (BI-213, D-151.3) y recibir la negativa. Sobre una factura anulada
+(BI-097) se prueba contra la base: el sistema no anula, se hace en el portal del
+SRI (D-151.1), y ningún camino de la pantalla llega a ese estado.
+**Cubre:** BI-091 a BI-097.
 
 **Solo servidor:** BI-095. Lo garantiza la base, como declara B15: la pantalla
 no puede pedir de más, porque sólo ofrece las líneas sin acreditar (BI-218), y
