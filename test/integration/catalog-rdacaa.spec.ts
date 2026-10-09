@@ -204,10 +204,9 @@ describe('los catálogos del RDACAA', () => {
     ] as const) {
       expect((await repository.rootsOf(sistema, criterios)).total).toBe(total);
     }
-    // CINCO desde el 19-08-2026: `SEXUAL_ORIENTATION` (columna 7) y `PEOPLE`
-    // (columna 14) entraron con D-039, y son las dos columnas del formulario
-    // que este sistema no tenía.
-    expect(await db().catalogRelease.count()).toBe(5);
+    // SEIS: `SEXUAL_ORIENTATION` (columna 7) y `PEOPLE` (columna 14) entraron
+    // con D-039, y `VACCINE` (columnas 55 a 73) con el bloque I (EN-093).
+    expect(await db().catalogRelease.count()).toBe(6);
   });
 
   it('retira la lista anterior en vez de borrarla, y la ficha que la declaraba la sigue resolviendo', async () => {

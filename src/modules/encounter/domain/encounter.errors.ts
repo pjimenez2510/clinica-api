@@ -1564,3 +1564,46 @@ export class DentalIndexNotApplicableError extends BusinessRuleViolation {
     super('The dental index does not apply to this encounter');
   }
 }
+
+/** EN-090, EN-092: the program blocks that apply only to a population. */
+export type PopulationBlock = 'OBSTETRIC' | 'NUTRITION';
+
+const NOT_APPLICABLE_TITLES: Record<PopulationBlock, string> = {
+  OBSTETRIC:
+    'Esta atención no lleva datos obstétricos: la ficha no registra el embarazo en la fecha de la atención',
+  NUTRITION:
+    'Esta atención no lleva datos de lactancia: sólo se registran hasta los 8 meses de edad, con la pregunta de su edad',
+};
+
+/**
+ * EN-090, EN-092, EN-097. A program block registered for an attention whose
+ * population it does not reach: the obstetric block without the pregnancy on
+ * the chart that day, the SIVAN past 8 months, or the SIVAN question of the
+ * other band. The database says the same (`encounter_obstetric_applies`,
+ * `encounter_nutrition_applies`).
+ */
+export class ProgramBlockNotApplicableError extends BusinessRuleViolation {
+  readonly code = 'PROGRAM_BLOCK_NOT_APPLICABLE';
+  override readonly userTitle: string;
+
+  constructor(block: PopulationBlock) {
+    super('The program block does not apply to this encounter', { block });
+    this.userTitle = NOT_APPLICABLE_TITLES[block];
+  }
+}
+
+/**
+ * EN-093, REQ-115. The risk group of an adult hepatitis B can say «lives with
+ * HIV» or «sex worker»: writing a vaccination that carries one needs the
+ * second key at the attention's site. The title names the section, not the
+ * datum, like the permission.
+ */
+export class ProtectedSectionRequiredError extends ForbiddenError {
+  readonly code = 'PROTECTED_SECTION_REQUIRED';
+  override readonly userTitle =
+    'Registrar el grupo de riesgo de esta vacuna requiere el permiso de la sección de acceso restringido';
+
+  constructor() {
+    super('The vaccination carries a protected risk group');
+  }
+}

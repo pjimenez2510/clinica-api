@@ -433,10 +433,14 @@ gestación y riesgo obstétrico y comprobar que el bloque **se rechaza** si el
 grupo prioritario «Embarazadas» no está registrado en la atención —que es la
 condición literal del instructivo, p. 50—; y que el bloque de VIH exige la misma
 llave que el tamizaje de violencia.
-**Cubre:** EN-090 a EN-099.
+**Cubre:** EN-090 a EN-095, EN-097, EN-098, EN-249 (`feat/f04-bloques-programa`).
+EN-096 —los suplementos, columnas 105 a 108— y EN-099 —los grupos prioritarios y
+vulnerables de la atención, columnas 29 a 34— no son de los bloques G a J y
+pasan a H14.
 
-**Solo servidor:** EN-098. Que el bloque de VIH **no viaje** en ningún listado ni
-log, por la misma razón que EN-073.
+**Solo servidor:** EN-095, EN-098. Que el bloque de VIH **no viaje** en ningún
+listado ni log, y que su lectura deje su fila de bitácora en la misma
+transacción, por la misma razón que EN-073.
 
 ### H8 — Referencia, contrarreferencia, derivación e interconsulta _(P2)_
 
@@ -537,6 +541,18 @@ resolviéndose con el concepto con el que se registró.
 
 **Solo servidor:** EN-233 y EN-234 (son el importador y la vigencia del
 catálogo; la pantalla de diagnóstico no cambia, sólo lo que ofrece).
+
+### H14 — Suplementos y grupos de la atención _(P2)_
+
+Lo que quedó de H7 fuera de los cuatro bloques: las cuatro casillas de
+suplementos (EN-096), que deberían derivarse de la receta, y los grupos
+prioritarios y vulnerables **de la atención** con sus dos catálogos del
+instructivo (EN-099). Cuando EN-099 exista, `trg_encounter_obstetric_applies`
+pasa a leer el grupo de la atención y no el de la ficha (D-134.3 §2).
+**Prueba independiente:** registrar en una atención «embarazadas» y «personas
+con VIH» y comprobar que el segundo exige la segunda llave.
+
+**Cubre:** EN-096, EN-099.
 
 ### Fuera de las nueve
 
@@ -2141,36 +2157,49 @@ requisitos que cambian.
 
 ## 7. Los bloques de programa: obstétricos, SIVAN, vacunas y VIH
 
-_Los cuatro bloques enteros están sin esquema. Cada requisito enumera lo que el
-formulario exige, con su columna y su catálogo, para que construirlo sea
-transcribir y no volver a leer el instructivo._
+_Los cuatro bloques, G a J, construidos en `feat/f04-bloques-programa`: una
+tabla uno-a-uno con la atención cada uno, con su catálogo del instructivo
+(pp. 50 a 61 del PDF, leídas otra vez el 08-10-2026) en `CHECK` y disparadores.
+Los cuatro se leen y se escriben por **sus propias rutas** (`/programs`), nunca
+con la atención, y ninguno detiene la firma: son dato estadístico (D-A-017 §4).
+Lo que el instructivo deja sin resolver está en **D-195**._
 
-- **EN-090** — MIENTRAS la atención tenga registrado el grupo prioritario
-  **embarazada**, el sistema DEBERÁ registrar la **información obstétrica**:
-  categorización del riesgo obstétrico, plan de parto, plan de transporte,
-  embarazo planificado, método para determinar las semanas de gestación, fecha de
-  la última menstruación y semanas de gestación.
-  > **Falta esquema.** Bloque G, columnas 39 a 45. No hay tabla. Catálogos del
-  > instructivo (pp. 50 y 51):
+- **EN-090** — MIENTRAS la ficha de la paciente tenga el registro
+  **embarazada** vigente en la fecha clínica de la atención, el sistema DEBERÁ
+  registrar la **información obstétrica**: categorización del riesgo
+  obstétrico, plan de parto, plan de transporte, embarazo planificado, método
+  para determinar las semanas de gestación, fecha de la última menstruación y
+  semanas de gestación; y SI la paciente no lo tiene, ENTONCES DEBERÁ rechazarlo
+  con `PROGRAM_BLOCK_NOT_APPLICABLE`.
+  > Bloque G, columnas 39 a 45, tabla `encounter_obstetric`. Catálogos
+  > (instructivo, pp. 50 a 52 del PDF):
   >
   > - **Categorización del riesgo obstétrico** — 1 bajo riesgo · 2 alto riesgo ·
-  >   3 riesgo inminente.
+  >   3 riesgo inminente (`LOW`, `HIGH`, `IMMINENT`).
   > - **Plan de parto**, **plan de transporte** y **embarazo planificado** —
   >   1 sí · 2 no, cada uno.
   > - **Método para determinar las semanas de gestación** — 1 FUM · 2 ECO ·
-  >   3 clínico.
-  > - **Fecha de la última menstruación** — fecha de calendario, formato
-  >   año-mes-día.
-  > - **Semanas de gestación** — entero, **de 1 a 42**.
+  >   3 clínico. Con **FUM**, la fecha de la última menstruación es obligatoria
+  >   (`encounter_obstetric_lmp_for_fum`): es el dato del método.
+  > - **Fecha de la última menstruación** — fecha de calendario, nunca posterior
+  >   a la fecha clínica ni de más de 300 días antes —42 semanas y 6 días—
+  >   (`encounter_obstetric_lmp_range`, por disparador).
+  > - **Semanas de gestación** — entero, **de 1 a 42**
+  >   (`encounter_obstetric_weeks_range`). La pantalla las **propone** desde la
+  >   FUM (semanas cumplidas); quien registra las corrige.
   >
-  > La condición es literal: *«registre la siguiente información únicamente si el
-  > grupo prioritario que elige es "embarazadas"»*. Se comprueba contra
-  > `encounter_priority_group` (EN-099) y no contra la ficha, por lo mismo que
-  > EN-063.
+  > La condición del instructivo es *«únicamente si el grupo prioritario que
+  > elige es "embarazadas"»*. Mientras EN-099 no tenga catálogo, el grupo se lee
+  > de la ficha —el registro `PREGNANT` de PA-034, vigente en la fecha clínica
+  > en `America/Guayaquil`, de la ficha o de una absorbida—, la misma regla que
+  > EN-063 y que el autor aceptó en D-134.3 §2. La garantiza
+  > `trg_encounter_obstetric_applies`.
 - **EN-091** — MIENTRAS la paciente esté embarazada, el sistema DEBERÁ registrar
   los **exámenes de laboratorio a gestantes**: prueba no treponémica, prueba
-  treponémica, tratamiento, tratamiento de la pareja y resultado de bacteriuria.
-  > **Falta esquema.** Bloque G, columnas 46 a 50. Catálogos (instructivo, p. 52):
+  treponémica, tratamiento, tratamiento de la pareja y resultado de bacteriuria,
+  cada uno optativo.
+  > Bloque G, columnas 46 a 50, en la misma fila. Catálogos (instructivo, pp. 52 y 53
+  > del PDF):
   >
   > - **No treponémica**, **treponémica** y **tratamiento** — 1 (+) · 2 (−) ·
   >   **3 SD, sin dato**.
@@ -2178,56 +2207,71 @@ transcribir y no volver a leer el instructivo._
   > - **Bacteriuria, resultado del examen** — 1 normal · 2 anormal · **3 no se
   >   hizo**.
   >
-  > Las tres primeras se registran **dos veces**, antes y después de las 20 semanas
-  > (`<20 sem` y `>20 sem`), y la bacteriuria igual. El tercer valor de cada lista
-  > es el que importa y es el que un booleano perdería: «sin dato» y «no se hizo»
-  > no son «negativo».
-- **EN-092** — MIENTRAS el paciente tenga **8 meses de edad o menos**, o la
-  paciente esté en **período de lactancia**, el sistema DEBERÁ registrar los datos
-  del **SIVAN**.
-  > **Falta esquema.** Bloque H, columnas 51 a 54. Tres preguntas, todas 1 sí /
-  > 2 no (instructivo, pp. 54 y 55):
+  > El formulario tiene **una** columna por examen con el rótulo «<20 sem &
+  > >20 sem»: cada atención registra el de su momento, y el tramo sale de las
+  > semanas de gestación de la misma fila (D-195.4). El tercer valor de cada
+  > lista es el que un booleano perdería: «sin dato» y «no se hizo» no son
+  > «negativo».
+- **EN-092** — MIENTRAS el paciente tenga **8 meses de edad o menos** —en meses
+  cumplidos de la edad congelada (EN-008)—, el sistema DEBERÁ registrar los
+  datos del **SIVAN**; y SI no los tiene, ENTONCES DEBERÁ rechazarlos con
+  `PROGRAM_BLOCK_NOT_APPLICABLE`.
+  > Bloque H, columnas 52 a 54, tabla `encounter_nutrition`. Tres preguntas,
+  > todas 1 sí / 2 no (instructivo, pp. 54 y 55 del PDF):
   >
-  > - **Madre en período de lactancia**.
-  > - **Durante las últimas 24 horas recibió sólo leche materna** — se aplica a
-  >   niños **de 0 a 5 meses**.
+  > - **Madre en período de lactancia** — siempre.
+  > - **Durante las últimas 24 horas recibió sólo leche materna** — sólo de
+  >   **0 a 5 meses**.
   > - **Durante las últimas 24 horas consumió alimento sólido, semisólido o
-  >   suave** — se aplica a niños **de 6 a 8 meses**.
+  >   suave** — sólo de **6 a 8 meses**.
   >
-  > Los rangos de edad se evalúan con la **edad congelada** de EN-008.
+  > Cada pregunta, obligatoria en su tramo y vacía fuera de él
+  > (`trg_encounter_nutrition_applies`). La madre lactante **como paciente**
+  > —el instructivo nombra también a las «madres en período de lactancia»— no
+  > se construye: el sistema no sabe quién lo está (D-195.3).
 - **EN-093** — CUANDO se administre una vacuna, el sistema DEBERÁ registrar
-  **cuál**, **qué dosis** y a **qué grupo de riesgo** pertenece el paciente.
-  > **Falta esquema.** Bloque I, columnas 55 a 74. Es el bloque más grande del
-  > formulario y no existe nada. Los tres catálogos (instructivo, pp. 56 y 57):
+  **cuál**, **qué dosis** y, para las vacunas que lo piden, a **qué grupo de
+  riesgo** pertenece el paciente; y SI el grupo no es uno que esa vacuna admite,
+  o falta cuando lo pide, ENTONCES DEBERÁ rechazarlo con `VALIDATION_FAILED`
+  sobre `riskGroup`.
+  > Bloque I, columnas 55 a 74, tabla `encounter_vaccination`: una fila por
+  > atención con sus dosis y **un** grupo de riesgo, como la columna 74.
+  > Catálogos (instructivo, pp. 56 a 58 del PDF):
   >
-  > - **Vacunas** (una columna cada una) — BCG · HB0 · rotavirus · fIPV ·
-  >   neumococo · pentavalente · SRP · fiebre amarilla · varicela · bOPV · DPT ·
-  >   HPV · dT adulto · HB pediátrico · SR · HB adulto · Dt pediátrico · IPV ·
-  >   influenza.
+  > - **Vacunas** — catálogo `VACCINE` y no enum (el esquema cambia por acuerdo
+  >   ministerial y no debe costar una migración), con el **número de su
+  >   columna** como código: 55 BCG · 56 HB0 · 57 rotavirus · 58 fIPV ·
+  >   59 neumococo · 60 pentavalente · 61 SRP · 62 fiebre amarilla · 63 varicela ·
+  >   64 bOPV · 65 DPT · 66 HPV · 67 dT adulto · 68 HB pediátrico · 69 SR ·
+  >   70 HB adulto · 71 Dt pediátrico · 72 IPV · 73 influenza. Vigente en la
+  >   fecha clínica y sin repetir en la atención.
   > - **Dosis administradas** — 1 primera · 2 segunda · 3 tercera · 4 cuarta ·
   >   5 quinta · 6 sexta · **7 dosis única**.
   > - **Grupo de riesgo** — 1 edades en riesgo · 2 puérperas · 3 personal de la
   >   salud · 4 personas con enfermedades crónicas · 5 personas privadas de la
   >   libertad · 6 personas con discapacidad · 7 personas viviendo con VIH ·
-  >   8 trabajadores/as sexuales · 9 viajero · 10 otros grupos de riesgo.
+  >   8 trabajadores/as sexuales · 9 viajero · 10 otros grupos de riesgo, y
+  >   **embarazadas**, que los criterios nombran y el catálogo impreso no
+  >   numera (D-195.1).
   >
-  > **Y hay reglas de coherencia entre vacuna y grupo de riesgo**, que el
-  > instructivo enumera y que el sistema debe hacer cumplir: dT adulto admite
-  > *edades en riesgo* y *embarazadas*; influenza admite además *puérperas*,
-  > *personal de la salud*, *enfermedades crónicas*, *privados de libertad* y
-  > *discapacidad*; HB admite *personal de la salud*, *privados de libertad*,
-  > *viviendo con VIH*, *trabajadores sexuales* y *otros*; SR y fiebre amarilla
-  > admiten *edades en riesgo* y *viajeros*.
-  >
-  > La lista de vacunas es un **catálogo** y no un enum —el esquema de vacunación
-  > cambia por acuerdo ministerial y no debe costar una migración—; la dosis y el
-  > grupo de riesgo son listas cortas y cerradas.
+  > **Las reglas de coherencia del instructivo las hace cumplir la base**
+  > (`trg_encounter_vaccination_valid`): dT adulto admite *edades en riesgo* y
+  > *embarazadas*; influenza, además, *puérperas*, *personal de la salud*,
+  > *enfermedades crónicas*, *privados de libertad* y *discapacidad*; HB
+  > —el HB adulto, D-195.2— *personal de la salud*, *privados de libertad*,
+  > *viviendo con VIH*, *trabajadores sexuales* y *otros*; SR y fiebre amarilla,
+  > *edades en riesgo* y *viajeros*. Con una de esas cinco el grupo es
+  > obligatorio y tiene que valer para todas las de la atención; sin ninguna, va
+  > vacío, como en el sistema del ministerio. *Embarazadas* y *puérperas* no
+  > valen para un hombre.
 - **EN-094** — CUANDO se realice una prueba de VIH, el sistema DEBERÁ registrar
   el **motivo**, la **prueba de tamizaje** y su resultado, la **prueba de
   confirmación** y su resultado, la **vía de transmisión**, la **carga viral** y
-  el **CD4**.
-  > **Falta esquema.** Bloque J, columnas 75 a 82. Catálogos (instructivo,
-  > pp. 59 a 61):
+  el **CD4**; y SI se registra la confirmación —o la vía de transmisión— sin un
+  tamizaje reactivo, ENTONCES DEBERÁ rechazarlo con
+  `CONFIRMATORY_TEST_WITHOUT_SCREENING`.
+  > Bloque J, columnas 75 a 82, tabla `encounter_hiv_test`. Catálogos
+  > (instructivo, pp. 59 a 61 del PDF):
   >
   > - **Motivo de la prueba** — 1 embarazada · 2 donación de sangre · 3 prueba
   >   voluntaria · 4 tuberculosis · 5 ITS · 6 sospecha clínica · 7 exposición
@@ -2240,9 +2284,16 @@ transcribir y no volver a leer el instructivo._
   > - **Resultado** — reactiva · no reactiva.
   > - **Vías de transmisión** — 1 relaciones sexuales · 2 transfusión de sangre o
   >   trasplante de órganos · 3 uso de drogas intravenosas · 4 materno infantil.
+  > - **Carga viral** (copias/mL) y **CD4** (células/mm³) — enteros no negativos,
+  >   optativos.
   >
-  > **La segunda prueba sólo se registra si la primera fue reactiva**, que es la
-  > regla del instructivo y una comprobación del sistema, no una convención.
+  > *«Si el resultado de la primera prueba es reactiva, el usuario debe
+  > realizarse una segunda prueba de confirmación»*: dispositivo y resultado de
+  > la segunda van juntos y sólo con la primera reactiva
+  > (`encounter_hiv_test_confirmation_needs_reactive`). Y la vía de transmisión
+  > —«por la cual el usuario se contagió»— no se registra con la segunda prueba
+  > no reactiva (`encounter_hiv_test_route_needs_infection`); con ella reactiva
+  > o todavía sin resultado, sí, como el ejemplo del instructivo.
 - **EN-095** — El bloque de VIH DEBERÁ tener el **mismo régimen de acceso** que
   el tamizaje de violencia (EN-072), y NO DEBERÁ viajar en ningún listado, mensaje
   de error ni log.
@@ -2250,7 +2301,13 @@ transcribir y no volver a leer el instructivo._
   > y violencia**. Dos de los tres son de este módulo. Que se resuelvan con el
   > mismo mecanismo —omisión al leer, rechazo al escribir, permiso que no nombra el
   > dato— es lo que evita tener dos regímenes distintos que alguien tenga que
-  > recordar.
+  > recordar. Construido así: `GET /encounters/:id/programs/restricted` con
+  > `record:read` y, sin `record:protected` en la sede, `200 {}`; el `PUT` con
+  > las dos llaves; una fila de `access_audit` (`encounter_restricted_program`)
+  > **en la misma transacción** que la lectura o la escritura; las versiones
+  > anteriores en `encounter_hiv_test_version`, **fuera** de `record_version`
+  > (que la exportación al titular lee, como D-188 §3); y la ruta nombra la
+  > sección, no el contenido.
 - **EN-096** — El sistema DEBERÁ registrar la **prescripción de suplementos** de
   la atención: hierro y micronutrientes en polvo, vitamina A, hierro en jarabe, y
   hierro con ácido fólico.
@@ -2279,6 +2336,17 @@ transcribir y no volver a leer el instructivo._
   > con su fila de bitácora (EN-075). Es la misma línea que AG-072 traza para la
   > agenda: listar no audita por fila, y por eso listar tampoco puede llevar lo que
   > exige auditoría.
+- **EN-249** — MIENTRAS la atención esté abierta o suspendida, el sistema
+  DEBERÁ dejar **corregir en su sitio** cada bloque de programa (G, H, I y J)
+  guardando la versión anterior con quién y cuándo la sustituyó; y SI la
+  atención ya no admite contenido nuevo, o alguien intenta borrar un bloque,
+  ENTONCES DEBERÁ rechazarlo.
+  > Corregir es editar (D-127): G, H e I archivan la fila entera en
+  > `record_version` con `record_version_archive` y se declaran en
+  > `VERSIONED_TABLES`; J, en su propia tabla de versiones, fuera del alcance de
+  > la exportación (EN-095). La guarda de estado y el rechazo del `DELETE` son
+  > disparadores (`*_guard`), como el del tamizaje; tras el alta no se corrigen,
+  > como el CEO-D (EN-052).
 - **EN-099** — El sistema DEBERÁ registrar en **cada atención** los **grupos
   prioritarios** y los **grupos en situación de vulnerabilidad** que el paciente
   tenía ese día, hasta **tres de cada uno**.
@@ -4485,9 +4553,9 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `NOTE_CONTENT_INCOMPLETE` | 422 | Firmar sin una sección obligatoria, o la 002 sin ningún diagnóstico en la atención (`diagnoses`), o sin diagnóstico principal (`principalDiagnosis`). Nombra lo que falta, nunca su contenido | EN-020, EN-236 |
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
 | `PERMISSION_DENIED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave: el de la guarda, sin código propio que nombre el dato. Al **leer** no se rechaza: se omite | EN-072 |
-| `HIV_DATA_RESTRICTED` | 403 | Lo mismo para el bloque de VIH | EN-095 |
-| `PROGRAM_BLOCK_NOT_APPLICABLE` | 422 | Se registró un bloque de programa que la población de la atención no alcanza —obstétrico sin embarazo, SIVAN fuera del rango de edad— | EN-090, EN-092, EN-097 |
-| `CONFIRMATORY_TEST_WITHOUT_SCREENING` | 422 | Segunda prueba de VIH sin primera reactiva | EN-094 |
+| `PERMISSION_DENIED` | 403 | Lo mismo para el bloque de VIH, con el permiso de la guarda: **no hay** `HIV_DATA_RESTRICTED`, que nombraría el dato | EN-095 |
+| `PROGRAM_BLOCK_NOT_APPLICABLE` | 422 | Se registró un bloque de programa que la población de la atención no alcanza —obstétrico sin embarazo, SIVAN fuera del rango de edad, o la pregunta del SIVAN de otro tramo—. Lo dicen el servicio y la base (`encounter_obstetric_applies`, `encounter_nutrition_applies`) | EN-090, EN-092, EN-097 |
+| `CONFIRMATORY_TEST_WITHOUT_SCREENING` | 422 | Segunda prueba de VIH, o vía de transmisión, sin primera reactiva. Lo dicen el servicio y la base (`encounter_hiv_test_confirmation_needs_reactive`) | EN-094 |
 | `COUNTER_REFERRAL_WITHOUT_REFERRAL` | 422 | Contrarreferencia que no responde a una referencia o derivación viva del mismo paciente. Del mapeo de constraints: `referral_thread_coherence` | EN-102 |
 | `REFERRAL_ALREADY_ANSWERED` | 409 / 422 | Una segunda contrarreferencia viva (`referral_one_live_response`, 409), o anular una referencia que ya tiene la suya (`referral_answered_cannot_be_cancelled`, 422). Del mapeo de constraints | EN-102 |
 | `ENCOUNTER_ALREADY_REPORTED` | 409 | Incluir en un envío una atención ya reportada | EN-111 |
@@ -4585,10 +4653,10 @@ una.
 | Marca de código notificable como propiedad del **concepto** | `catalog_concept` | EN-049 |
 | Autor del tamizaje con clave foránea y `NOT NULL`; bloque de notificación de violencia con sus tres catálogos | `violence_screening` | EN-074, EN-076 |
 | Permiso propio del tamizaje y del bloque VIH | `permission.catalogue.ts` | EN-072, EN-095 |
-| **Bloque obstétrico** completo y laboratorio de gestantes | tabla nueva | EN-090, EN-091 |
-| **SIVAN** | tabla nueva | EN-092 |
-| **Vacunas**: catálogo, dosis, grupo de riesgo y sus reglas de coherencia | tablas y catálogo nuevos | EN-093 |
-| **VIH**: motivo, dos pruebas, vía de transmisión, carga viral y CD4 | tabla nueva | EN-094 |
+| ~~**Bloque obstétrico** completo y laboratorio de gestantes~~ — `encounter_obstetric` (`feat/f04-bloques-programa`) | tabla nueva | EN-090, EN-091 |
+| ~~**SIVAN**~~ — `encounter_nutrition` | tabla nueva | EN-092 |
+| ~~**Vacunas**: catálogo, dosis, grupo de riesgo y sus reglas de coherencia~~ — `VACCINE`, `encounter_vaccination` | tablas y catálogo nuevos | EN-093 |
+| ~~**VIH**: motivo, dos pruebas, vía de transmisión, carga viral y CD4~~ — `encounter_hiv_test` | tabla nueva | EN-094 |
 | Prescripción de suplementos | `encounter` | EN-096 |
 | Catálogos de **grupos prioritarios (14)** y **grupos vulnerables (16)** del RDACAA | `catalogSystemSchema`, `catalog_concept`, tabla nueva de vulnerables | EN-099 |
 | `REVERSE_REFERRAL` en `ReferralDirection`; anulación en `ReferralStatus` | enums | EN-100, EN-107 |
@@ -4693,10 +4761,12 @@ que es global: una atención ocurre en un sitio.
 | `PATCH` | `/patients/:id/history/:historyId` | `record:write` | **EN-225** |
 | `GET` | `/patients/:id/history/:historyId/versions` | `record:read` | **EN-225** |
 | `GET` | `/encounters/:id/chart-summary` | `record:read` | EN-159 a EN-161 |
-| `PUT` | `/encounters/:id/obstetric` | `record:write` | EN-090, EN-091 |
-| `PUT` | `/encounters/:id/nutrition` | `nursing:write` | EN-092, EN-096 |
-| `POST` | `/encounters/:id/vaccinations` | `nursing:write` | EN-093 |
-| `PUT` | `/encounters/:id/hiv` | `record:write` + la segunda llave | EN-094, EN-095 |
+| `GET` | `/encounters/:id/programs` | `record:read` | **EN-090**, **EN-092**, **EN-093**, **EN-097** |
+| `PUT` | `/encounters/:id/programs/obstetric` | `record:write` | **EN-090**, **EN-091**, **EN-249** |
+| `PUT` | `/encounters/:id/programs/nutrition` | `vitals:write` *(médico y enfermería, como la toma, D-195.5)* | **EN-092**, **EN-249** |
+| `PUT` | `/encounters/:id/programs/vaccination` | `vitals:write` *(D-195.5)* | **EN-093**, **EN-249** |
+| `GET` | `/encounters/:id/programs/restricted` | `record:read` (+ `record:protected` en la sede para verlo; sin él, `200 {}`) | **EN-094**, **EN-095**, **EN-098** |
+| `PUT` | `/encounters/:id/programs/restricted` | `record:protected` + `record:write` | **EN-094**, **EN-095**, **EN-249** |
 | `GET` | `/encounters/:id/referrals` | `record:read` | EN-100 a EN-103 *(lo de la atención y las referencias del paciente que aún pueden responderse)* |
 | `POST` | `/encounters/:id/referrals` | `record:sign` | EN-100 a EN-102, EN-104, EN-106 |
 | `POST` | `/encounters/:id/referrals/:referralId/cancel` | `record:sign` | EN-105, EN-107 |
