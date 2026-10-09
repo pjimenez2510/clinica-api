@@ -59,12 +59,13 @@ async function anAttention(
   const practitioner = await createPractitioner(prisma);
   const patient = await createPatient(prisma, {
     sex: options.sex ?? 'FEMALE',
-    // The same day of the month: the frozen age is the completed months named.
+    // A day of the month no later than today's and never past the 28th, so
+    // the month never overflows: the frozen age is exactly the months named.
     birthDate: new Date(
       Date.UTC(
         cal.year - age.years,
         cal.month - 1 - (age.months ?? 0),
-        cal.day,
+        Math.min(cal.day, 28),
       ),
     ),
   });
@@ -296,41 +297,119 @@ describe('EN-092 EN-097 el SIVAN contra la base, con la edad congelada', () => {
       },
     });
 
-  it('EN-092 de 0 a 5 meses exige «sólo leche materna» y rechaza la del alimento sólido; de 6 a 8, al revés', async () => {
-    const prisma = db();
-    const four = await anAttention(prisma, { age: { years: 0, months: 4 } });
-    const seven = await anAttention(prisma, { age: { years: 0, months: 7 } });
+  /** The age the database froze, asserted: no bound is tested by luck. */
+  async function aged(prisma: PrismaClient, months: number) {
+    const scene = await anAttention(prisma, { age: { years: 0, months } });
+    const frozen = await prisma.encounter.findUniqueOrThrow({ where: { id: scene.encounter.id } }); // prettier-ignore
+    expect([frozen.ageYears, frozen.ageMonths]).toEqual([0, months]);
+    return scene;
+  }
 
-    expect(await problemFrom(create(prisma, four, {}))).toMatchObject(invalid('exclusiveBreastfeeding')); // prettier-ignore
-    expect(await problemFrom(create(prisma, four, { exclusiveBreastfeeding: true, complementaryFeeding: false }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
-    expect(await problemFrom(create(prisma, seven, {}))).toMatchObject(invalid('complementaryFeeding')); // prettier-ignore
-    expect(await problemFrom(create(prisma, seven, { exclusiveBreastfeeding: true, complementaryFeeding: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+  it('EN-092 a los 5 meses exige «sólo leche materna» y rechaza la del alimento sólido; a los 6, al revés', async () => {
+    const prisma = db();
+    const five = await aged(prisma, 5);
+    const six = await aged(prisma, 6);
+
+    expect(await problemFrom(create(prisma, five, {}))).toMatchObject(invalid('exclusiveBreastfeeding')); // prettier-ignore
+    expect(await problemFrom(create(prisma, five, { exclusiveBreastfeeding: true, complementaryFeeding: false }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, six, {}))).toMatchObject(invalid('complementaryFeeding')); // prettier-ignore
+    expect(await problemFrom(create(prisma, six, { exclusiveBreastfeeding: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
     expect(await prisma.encounterNutrition.count()).toBe(0);
 
     // Positive control: each with the question of its band.
-    await create(prisma, four, { exclusiveBreastfeeding: true });
-    await create(prisma, seven, { complementaryFeeding: true });
+    await create(prisma, five, { exclusiveBreastfeeding: true });
+    await create(prisma, six, { complementaryFeeding: true });
     expect(await prisma.encounterNutrition.count()).toBe(2);
   });
 
   it('EN-097 a los 9 meses y al año la BASE rechaza el bloque; a los 8, entra', async () => {
     const prisma = db();
-    const nine = await anAttention(prisma, { age: { years: 0, months: 9 } });
+    const nine = await aged(prisma, 9);
     const year = await anAttention(prisma, { age: { years: 1, months: 1 } });
-    const frozen = await prisma.encounter.findUniqueOrThrow({ where: { id: nine.encounter.id } }); // prettier-ignore
-    // Nine months, or eight and some days at the start of a month.
-    expect(frozen.ageYears).toBe(0);
 
-    if (frozen.ageMonths === 9) {
-      expect(await problemFrom(create(prisma, nine, { complementaryFeeding: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
-    }
+    expect(await problemFrom(create(prisma, nine, { complementaryFeeding: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
     expect(await problemFrom(create(prisma, year, { complementaryFeeding: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
 
-    const eight = await anAttention(prisma, { age: { years: 0, months: 8 } });
+    const eight = await aged(prisma, 8);
     await create(prisma, eight, { complementaryFeeding: false });
-    expect(
-      await prisma.encounterNutrition.count({ where: { encounterId: eight.encounter.id } }), // prettier-ignore
-    ).toBe(1);
+    expect(await prisma.encounterNutrition.count()).toBe(1);
+  });
+});
+
+describe('EN-090 EN-093 la fecha clínica es la de Guayaquil, también a las 21:30', () => {
+  /**
+   * An attention yesterday at 21:30 in Guayaquil is already today in UTC
+   * (02:30Z): the pregnancy that ended yesterday applies to it, the one that
+   * starts today does not. Derived from the clock, never typed.
+   */
+  async function lateLastNight(prisma: PrismaClient) {
+    const today = calendar(new Date());
+    const startedAt = new Date(Date.UTC(today.year, today.month - 1, today.day, 2, 30)); // prettier-ignore
+    const site = await createSite(prisma);
+    const practitioner = await createPractitioner(prisma);
+    const patient = await createPatient(prisma);
+    const encounter = await createEncounter(prisma, { siteId: site.id, practitionerId: practitioner.id, patientId: patient.id, startedAt }); // prettier-ignore
+    const author = await createUser(prisma);
+    // Its clinical date, the day before the UTC one.
+    expect(clinicalDateOf(startedAt)).toBe(today.iso(-1));
+    return { encounter, patient, author, cal: calendar(startedAt) };
+  }
+
+  it('EN-090 el embarazo que terminó el día local de la atención aplica; el que empieza el día UTC, no', async () => {
+    const prisma = db();
+    const endedYesterday = await lateLastNight(prisma);
+    await pregnant(prisma, endedYesterday, -200, 0);
+    const startsToday = await lateLastNight(prisma);
+    await pregnant(prisma, startsToday, 1, 200);
+    const data = (scene: typeof endedYesterday) => ({ encounterId: scene.encounter.id, ...OBSTETRIC, recordedById: scene.author.id, recordedAt: new Date() }); // prettier-ignore
+
+    expect(await problemFrom(prisma.encounterObstetric.create({ data: data(startsToday) }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    await prisma.encounterObstetric.create({ data: data(endedYesterday) });
+    expect(await prisma.encounterObstetric.count()).toBe(1);
+  });
+
+  it('EN-093 la vacuna retirada el día UTC sigue vigente el día local de la atención', async () => {
+    const prisma = db();
+    await seedRdacaa(prisma);
+    const scene = await lateLastNight(prisma);
+    // Retired from the UTC day on: still in force on the local one.
+    await prisma.catalogConcept.updateMany({
+      where: { system: { code: 'VACCINE' }, code: '55' },
+      data: { validTo: scene.cal.plus(1) },
+    });
+    await prisma.$executeRaw`
+      INSERT INTO encounter_vaccination (encounter_id, doses, recorded_by_id, recorded_at)
+      VALUES (${scene.encounter.id}::uuid, '[{"code":"55","dose":"SINGLE"}]'::jsonb, ${scene.author.id}::uuid, ${new Date()})`; // prettier-ignore
+    expect(await prisma.encounterVaccination.count()).toBe(1);
+  });
+});
+
+describe('EN-249 cada bloque tiene su guarda en la base', () => {
+  it('EN-249 obstétrico, vacunas y VIH: con la atención de alta la BASE no los escribe, y nunca los borra; vivos, entran', async () => {
+    const prisma = db();
+    await seedRdacaa(prisma);
+    const live = await anAttention(prisma);
+    await pregnant(prisma, live, -90, 150);
+    const closed = await anAttention(prisma);
+    await pregnant(prisma, closed, -90, 150);
+    await discharge(prisma, closed.encounter.id);
+
+    const writes = (scene: typeof live) => [
+      () => prisma.encounterObstetric.create({ data: { encounterId: scene.encounter.id, ...OBSTETRIC, recordedById: scene.author.id, recordedAt: new Date() } }), // prettier-ignore
+      () => prisma.encounterVaccination.create({ data: { encounterId: scene.encounter.id, doses: [{ code: '55', dose: 'SINGLE' }], recordedById: scene.author.id, recordedAt: new Date() } }), // prettier-ignore
+      () => prisma.encounterHivTest.create({ data: { encounterId: scene.encounter.id, reason: 'VOLUNTARY', screeningDevice: 'ELISA', screeningResult: 'NON_REACTIVE', recordedById: scene.author.id, recordedAt: new Date() } }), // prettier-ignore
+    ];
+    for (const write of writes(closed)) {
+      await expect(write()).rejects.toThrow(/program_block_frozen/);
+    }
+    // Positive control: live, the same three go in.
+    for (const write of writes(live)) await write();
+
+    const where = { encounterId: live.encounter.id };
+    await expect(prisma.encounterObstetric.delete({ where })).rejects.toThrow(/program_block_immutable/); // prettier-ignore
+    await expect(prisma.encounterVaccination.delete({ where })).rejects.toThrow(/program_block_immutable/); // prettier-ignore
+    await expect(prisma.encounterHivTest.delete({ where })).rejects.toThrow(/program_block_immutable/); // prettier-ignore
+    expect(await prisma.encounterHivTest.count()).toBe(1);
   });
 });
 
@@ -476,6 +555,19 @@ describe('EN-094 EN-095 la prueba de VIH contra la base', () => {
       viralLoad: 12_000,
       cd4: 450,
     });
+    expect(await prisma.encounterHivTest.count()).toBe(1);
+  });
+
+  it('EN-094 la BASE no registra la vía de transmisión con la segunda prueba no reactiva; con ella reactiva o sin resultado, sí', async () => {
+    const prisma = db();
+    const scene = await anAttention(prisma);
+    const reactive = { screeningResult: 'REACTIVE' as const, transmissionRoute: 'SEXUAL' as const }; // prettier-ignore
+
+    expect(await problemFrom(create(prisma, scene, { ...reactive, confirmationDevice: 'ELISA', confirmationResult: 'NON_REACTIVE' }))).toMatchObject({ status: 422, code: 'CONFIRMATORY_TEST_WITHOUT_SCREENING' }); // prettier-ignore
+    expect(await prisma.encounterHivTest.count()).toBe(0);
+
+    // Positive control: the instructivo's own example, the second result blank.
+    await create(prisma, scene, reactive);
     expect(await prisma.encounterHivTest.count()).toBe(1);
   });
 

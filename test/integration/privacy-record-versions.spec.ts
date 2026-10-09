@@ -13,6 +13,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
 import { aScene, aTariffConcept, placeIssued } from './orders-fixtures';
+import { seedRdacaa } from '../../prisma/seed-rdacaa.mts';
 import { useDatabase } from './setup/database';
 import {
   createDiagnosis,
@@ -123,6 +124,45 @@ describe('privacy: lo que no sale de las versiones (D-140.2)', () => {
     // Lo que es de la persona y no de esa atención sigue saliendo.
     expect(tables).toContain('patient_allergy');
     expect(tables).toContain('patient_history');
+  });
+
+  it('EN-095 EN-249 las versiones de una vacunación corregida salen sin el grupo de riesgo, que puede decir VIH', async () => {
+    const prisma = db();
+    await seedRdacaa(prisma);
+    const scene = await aScene(prisma);
+    const author = await createUser(prisma);
+    const recordedAt = new Date();
+    await prisma.encounterVaccination.create({
+      data: {
+        encounterId: scene.encounter.id,
+        doses: [{ code: '70', dose: 'FIRST' }],
+        riskGroup: 'LIVING_WITH_HIV',
+        recordedById: author.id,
+        recordedAt,
+      },
+    });
+    // A real correction: the trigger archives the whole previous row.
+    await prisma.encounterVaccination.update({
+      where: { encounterId: scene.encounter.id },
+      data: {
+        doses: [{ code: '70', dose: 'SECOND' }],
+        editedById: author.id,
+        editedAt: new Date(recordedAt.getTime() + 1000),
+      },
+    });
+    const archived = await prisma.recordVersion.findFirstOrThrow({
+      where: { resourceType: 'encounter_vaccination', resourceId: scene.encounter.id }, // prettier-ignore
+    });
+    expect(archived.data).toMatchObject({ risk_group: 'LIVING_WITH_HIV' });
+
+    const exported = (
+      await recordVersionsOfChart(prisma, scene.patient.id)
+    ).filter((each) => each.table === 'encounter_vaccination');
+    expect(exported).toHaveLength(1);
+    // Control positivo: las dosis sí salen.
+    expect(exported[0]!.data).toMatchObject({ doses: [{ code: '70', dose: 'FIRST' }] }); // prettier-ignore
+    expect(exported[0]!.data).not.toHaveProperty('risk_group');
+    expect(JSON.stringify(exported)).not.toContain('LIVING_WITH_HIV');
   });
 
   it('PD-048 las versiones de un aviso de crítico salen sin el nombre del destinatario ni la nota', async () => {

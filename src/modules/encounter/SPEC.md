@@ -2182,7 +2182,8 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   >   3 clínico. Con **FUM**, la fecha de la última menstruación es obligatoria
   >   (`encounter_obstetric_lmp_for_fum`): es el dato del método.
   > - **Fecha de la última menstruación** — fecha de calendario, nunca posterior
-  >   a la fecha clínica (`encounter_obstetric_lmp_not_future`, por disparador).
+  >   a la fecha clínica ni de más de 300 días antes —42 semanas y 6 días—
+  >   (`encounter_obstetric_lmp_range`, por disparador).
   > - **Semanas de gestación** — entero, **de 1 a 42**
   >   (`encounter_obstetric_weeks_range`). La pantalla las **propone** desde la
   >   FUM (semanas cumplidas); quien registra las corrige.
@@ -2289,7 +2290,10 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   > *«Si el resultado de la primera prueba es reactiva, el usuario debe
   > realizarse una segunda prueba de confirmación»*: dispositivo y resultado de
   > la segunda van juntos y sólo con la primera reactiva
-  > (`encounter_hiv_test_confirmation_needs_reactive`).
+  > (`encounter_hiv_test_confirmation_needs_reactive`). Y la vía de transmisión
+  > —«por la cual el usuario se contagió»— no se registra con la segunda prueba
+  > no reactiva (`encounter_hiv_test_route_needs_infection`); con ella reactiva
+  > o todavía sin resultado, sí, como el ejemplo del instructivo.
 - **EN-095** — El bloque de VIH DEBERÁ tener el **mismo régimen de acceso** que
   el tamizaje de violencia (EN-072), y NO DEBERÁ viajar en ningún listado, mensaje
   de error ni log.

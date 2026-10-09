@@ -529,6 +529,11 @@ registerConstraintMeanings({
     field: 'confirmation',
     message: 'La segunda prueba y la vía de transmisión sólo se registran si la primera prueba fue reactiva', // prettier-ignore
   },
+  encounter_hiv_test_route_needs_infection: {
+    code: 'CONFIRMATORY_TEST_WITHOUT_SCREENING',
+    field: 'transmissionRoute',
+    message: 'Con la segunda prueba no reactiva no se registra la vía de transmisión', // prettier-ignore
+  },
   encounter_hiv_test_confirmation_whole: {
     code: 'VALIDATION_FAILED',
     field: 'confirmation',

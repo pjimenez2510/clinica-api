@@ -100,7 +100,7 @@ export class PrismaProgramBlocksRepository implements ProgramBlocksRepository {
         JOIN encounter e ON e.id = ${encounterId}::uuid
        WHERE cs.code = 'VACCINE'
          AND cc.valid_period @> (e.started_at AT TIME ZONE 'America/Guayaquil')::date
-       ORDER BY cc.code::int`;
+       ORDER BY length(cc.code), cc.code`;
   }
 
   async findObstetric(query: EncounterQuery): Promise<ObstetricRecord | null> {

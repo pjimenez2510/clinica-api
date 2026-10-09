@@ -90,9 +90,13 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
     resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
   },
+  // REQ-115. The risk group can say «lives with HIV» or «sex worker» (the
+  // adult hepatitis B, EN-093): out of every version that leaves, whatever
+  // the vaccine, so its absence tells nothing.
   encounter_vaccination: {
     resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
+    redactedColumns: ['risk_group'],
   },
   encounter_diagnosis: {
     resourceIdsOf: (chartId) => Prisma.sql`

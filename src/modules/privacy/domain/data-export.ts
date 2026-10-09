@@ -13,7 +13,7 @@ export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
   {
     section: 'clinical_record',
     reason:
-      'La historia clínica vigente (atenciones, diagnósticos, notas, signos vitales, alergias, antecedentes, recetas, órdenes, resultados, certificados y referencias) se entrega por otra vía mientras se decide su formato (D-083 §3). Si se corrigió algo de las atenciones, signos vitales, diagnósticos, datos de embarazo, lactancia o vacunas, alergias, antecedentes o avisos de resultados críticos, sus versiones anteriores sí van; las de los avisos, sin el nombre ni la nota de la persona avisada (D-131.1, D-140.2).',
+      'La historia clínica vigente (atenciones, diagnósticos, notas, signos vitales, alergias, antecedentes, recetas, órdenes, resultados, certificados y referencias) se entrega por otra vía mientras se decide su formato (D-083 §3). Si se corrigió algo de las atenciones, signos vitales, diagnósticos, datos de embarazo, lactancia o vacunas, alergias, antecedentes o avisos de resultados críticos, sus versiones anteriores sí van; las de los avisos, sin el nombre ni la nota de la persona avisada, y las de las vacunas, sin el grupo de riesgo (D-131.1, D-140.2, D-195).',
   },
   {
     section: 'sexual_orientation',
