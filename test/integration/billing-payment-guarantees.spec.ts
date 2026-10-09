@@ -2,8 +2,10 @@ import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
-import { Quantity } from '../../src/modules/billing/domain/money';
+import { summariseCashDay } from '../../src/modules/billing/domain/cash';
+import { Money, Quantity } from '../../src/modules/billing/domain/money';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
+import { PrismaCashRepository } from '../../src/modules/billing/infrastructure/prisma-cash.repository';
 import {
   addDays,
   atWallClock,
@@ -14,6 +16,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
+import { authoriseVoucher } from './setup/sri-fixtures';
 
 /**
  * billing/B6: what the DATABASE guarantees about payments and the daily close
@@ -319,6 +322,106 @@ describe('billing/B6 — the payment, guaranteed by the database', () => {
        WHERE "id" = ${id}::uuid`;
     await expect(reverse()).resolves.toBe(1);
     await expect(reverse()).rejects.toThrowError(/payment_already_reversed/);
+  });
+});
+
+describe('billing/B6 — what else the payment trigger refuses', () => {
+  it('BI-101 BI-103 what a credit note credited is not collected (positive control: the rest is)', async () => {
+    const invoiceId = await anInvoice();
+    await authoriseVoucher(scene.prisma, invoiceId);
+    const [charge] = await scene.prisma.chargeItem.findMany({
+      where: { invoiceId },
+      take: 1,
+    });
+    await scene.prisma.$transaction(async (tx) => {
+      const [note] = await tx.$queryRaw<{ id: string }[]>`
+        INSERT INTO "credit_note"
+          ("invoice_id", "site_id", "emission_point_id", "sequential",
+           "reason_code", "reason",
+           "buyer_identification_type", "buyer_identification", "buyer_name",
+           "subtotal_taxed", "subtotal_untaxed", "discount_total", "tax_total",
+           "amount", "status", "issued_by_id", "issued_at", "updated_at")
+        VALUES (${invoiceId}::uuid, ${scene.siteId}::uuid,
+                ${scene.emissionPointId}::uuid, '000000001',
+                'RECEIVER_DATA', 'Error en los datos del receptor',
+                '05', '1710034065', 'Guamán Andrade, María José',
+                0, 30, 0, 0, 30, 'ISSUED', ${scene.userId}::uuid,
+                ${new Date()}, ${new Date()})
+        RETURNING "id"`;
+      await tx.$executeRaw`
+        INSERT INTO "credit_note_line"
+          ("credit_note_id", "charge_item_id", "service_code", "description",
+           "quantity", "unit_amount", "discount_amount", "tax_sri_code",
+           "tax_percentage", "net_amount", "tax_amount")
+        VALUES (${note!.id}::uuid, ${charge!.id}::uuid, ${CONSULTATION},
+                'Consulta', 1, 30, 0, '0', 0, 30, 0)`;
+    });
+    await expect(pay(invoiceId, '30.01')).rejects.toThrowError(
+      /payment_exceeds_balance/,
+    );
+    await expect(pay(invoiceId, '30.00')).resolves.toBeTypeOf('string');
+  });
+
+  it('BI-135 a payment belongs to the site of its invoice (positive control: its own site)', async () => {
+    const invoiceId = await anInvoice();
+    const other = await createSite(scene.prisma);
+    await expect(
+      scene.prisma.$queryRaw`
+        INSERT INTO "payment"
+          ("invoice_id", "site_id", "payment_method_id", "amount",
+           "received_at", "received_by_id", "cash_date")
+        VALUES (${invoiceId}::uuid, ${other.id}::uuid, ${scene.cashId}::uuid,
+                1, ${new Date()}, ${scene.userId}::uuid, ${IGNORED_CASH_DATE}::date)`,
+    ).rejects.toThrowError(/payment_site_is_its_invoices/);
+    await expect(pay(invoiceId, '1.00')).resolves.toBeTypeOf('string');
+  });
+
+  it('BI-102 a payment is born unreversed (positive control: without the reversal it goes in)', async () => {
+    const invoiceId = await anInvoice();
+    await expect(
+      scene.prisma.$queryRaw`
+        INSERT INTO "payment"
+          ("invoice_id", "site_id", "payment_method_id", "amount",
+           "received_at", "received_by_id", "cash_date", "reversed_at",
+           "reversed_by_id")
+        VALUES (${invoiceId}::uuid, ${scene.siteId}::uuid, ${scene.cashId}::uuid,
+                1, ${new Date()}, ${scene.userId}::uuid, ${IGNORED_CASH_DATE}::date,
+                ${new Date()}, ${scene.userId}::uuid)`,
+    ).rejects.toThrowError(/payment_is_born_unreversed/);
+    await expect(pay(invoiceId, '1.00')).resolves.toBeTypeOf('string');
+  });
+
+  it('BI-253 a payment that got the lock first is in the photo the close writes', async () => {
+    const invoiceId = await anInvoice();
+    const repository = new PrismaCashRepository(
+      scene.prisma as unknown as PrismaService,
+    );
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const paying = scene.prisma.$transaction(
+      async (tx) => {
+        await pay(invoiceId, '12.00', { client: tx });
+        await held;
+      },
+      { timeout: 20_000 },
+    );
+    // The payment's trigger holds the day's lock: the close waits for it.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const closing = repository.closeCashSession({
+      siteId: scene.siteId,
+      userId: scene.userId,
+      day: dayOf(new Date()),
+      closedAt: new Date(),
+      declaredCash: Money.parse('12.00'),
+      note: null,
+      summarise: summariseCashDay,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    release();
+    await paying;
+    const session = await closing;
+    expect(session.collectedTotal.toString()).toBe('12.00');
+    expect(session.difference.toString()).toBe('0.00');
   });
 });
 

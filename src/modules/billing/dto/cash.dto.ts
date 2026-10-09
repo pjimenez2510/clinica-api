@@ -45,6 +45,11 @@ export const closeCashSessionSchema = z.object({
   date: clinicalDateField('Indique una fecha válida'),
   /** D-197.1. The cash counted in the drawer. */
   declaredCash: money('El efectivo contado'),
+  /**
+   * BI-255. The expected cash the screen showed. If a payment came in since,
+   * `CASH_DAY_CHANGED` and nothing is closed.
+   */
+  expectedCash: money('El efectivo esperado').optional(),
   note: z
     .string()
     .trim()

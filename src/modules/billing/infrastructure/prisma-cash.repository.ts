@@ -12,6 +12,7 @@ import type {
 } from '../domain/cash';
 import type { CashDayKey, CashRepository } from '../domain/cash.repository';
 import {
+  CashDayChangedError,
   CashSessionAlreadyClosedError,
   CashSessionClosedError,
   CashSessionDateInFutureError,
@@ -144,6 +145,8 @@ export class PrismaCashRepository implements CashRepository {
     close: CashDayKey & {
       closedAt: Date;
       declaredCash: Money;
+      /** BI-255. The expected cash the cashier was shown, when she was. */
+      seenExpectedCash?: Money;
       note: string | null;
       summarise: (payments: readonly PaymentView[]) => CashDaySummary;
     },
@@ -173,6 +176,13 @@ export class PrismaCashRepository implements CashRepository {
           })
         ).map(toPaymentView);
         const summary = close.summarise(payments);
+        // BI-255. Under the lock: what she counted against is still what is.
+        if (
+          close.seenExpectedCash &&
+          !close.seenExpectedCash.equals(summary.expectedCash)
+        ) {
+          throw new CashDayChangedError();
+        }
         const pending = await pendingOf(tx, close);
 
         const session = await tx.cashSession.create({

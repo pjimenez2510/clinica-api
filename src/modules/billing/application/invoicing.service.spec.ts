@@ -449,6 +449,29 @@ describe('BI-216 SRI-090 corregir y reenviar la factura devuelta', () => {
     );
   });
 
+  it('BI-254 una devuelta ya cobrada no cambia de forma de pago; el receptor sí', async () => {
+    const paid = { ...rejected, paidTotal: Money.parse('30.00') };
+    const { service, mocks } = build({
+      accounts: {
+        findInvoice: vi.fn().mockResolvedValue(paid),
+        correctRejectedInvoice: vi.fn().mockResolvedValue(paid),
+      },
+    });
+    await expect(
+      service.correctAndResend(
+        { invoiceId: 'invoice-1', siteId: SITE, receiver: corrected, paymentMethod: '19' }, // prettier-ignore
+        requester,
+      ),
+    ).rejects.toBeInstanceOf(PaymentMethodMismatchError);
+    expect(mocks.correctRejectedInvoice).not.toHaveBeenCalled();
+
+    await service.correctAndResend(
+      { invoiceId: 'invoice-1', siteId: SITE, receiver: corrected, paymentMethod: '01' }, // prettier-ignore
+      requester,
+    );
+    expect(mocks.correctRejectedInvoice).toHaveBeenCalled();
+  });
+
   it('BI-216 una factura que no está devuelta no se edita, y no se toca nada', async () => {
     for (const status of ['ISSUED', 'AUTHORISED'] as const) {
       const { service, mocks } = build({

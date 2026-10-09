@@ -236,7 +236,10 @@ describe('B6 cobros, saldo del paciente y cierre diario', () => {
 
   it('BI-248 BI-249 cobrar en dos abonos con referencia; el saldo del paciente lo dice la cuenta', async () => {
     const accountId = await anAccount();
-    const invoice = (await issue(accountId)).body as InvoiceBody;
+    // Declared as a transfer: the instalments come in by transfer and the
+    // rest by another transfer method (BI-254).
+    const invoice = (await issue(accountId, undefined, '20'))
+      .body as InvoiceBody;
     const total = Number(invoice.totals.total);
     const half = (total / 2).toFixed(2);
 
@@ -259,7 +262,7 @@ describe('B6 cobros, saldo del paciente y cierre diario', () => {
 
     // The rest, without an amount: the balance.
     const rest = await api()
-      .post(`/invoices/${invoice.id}/payments`, { paymentMethodId: cashId })
+      .post(`/invoices/${invoice.id}/payments`, { paymentMethodId: transferId })
       .expect(201);
     expect(Number((rest.body as PaymentBody).amount)).toBeCloseTo(total - Number(half), 2); // prettier-ignore
 
@@ -322,7 +325,7 @@ describe('B6 cobros, saldo del paciente y cierre diario', () => {
 
   it('BI-251 BI-105 BI-252 BI-104 caja del día, cierre con un dólar de menos, y después nada más de ese día', async () => {
     const paid = (await issue(await anAccount(), { paymentMethodId: cashId })).body as InvoiceBody; // prettier-ignore
-    const owed = (await issue(await anAccount())).body as InvoiceBody;
+    const owed = (await issue(await anAccount(), undefined, '20')).body as InvoiceBody; // prettier-ignore
     await api()
       .post(`/invoices/${owed.id}/payments`, {
         paymentMethodId: transferId,
@@ -364,7 +367,7 @@ describe('B6 cobros, saldo del paciente y cierre diario', () => {
 
     const late = await api()
       .post(`/invoices/${owed.id}/payments`, {
-        paymentMethodId: cashId,
+        paymentMethodId: transferId,
         amount: '1.00',
       }) // prettier-ignore
       .expect(409);
@@ -373,7 +376,7 @@ describe('B6 cobros, saldo del paciente y cierre diario', () => {
     // Control: the other cashier's drawer is still open that day.
     await api(otraCaja.token)
       .post(`/invoices/${owed.id}/payments`, {
-        paymentMethodId: cashId,
+        paymentMethodId: transferId,
         amount: '1.00',
       }) // prettier-ignore
       .expect(201);
@@ -397,5 +400,66 @@ describe('B6 cobros, saldo del paciente y cierre diario', () => {
     expect(refused.status).toBe(409);
     expect((refused.body as { code: string }).code).toBe('CASH_SESSION_CLOSED');
     expect(await prisma.invoice.count({ where: { accountId } })).toBe(0);
+  });
+
+  it('BI-254 una factura que declara efectivo no se cobra por transferencia, ni se le cambia la forma de pago ya cobrada', async () => {
+    const invoice = (await issue(await anAccount())).body as InvoiceBody;
+    const refused = await api()
+      .post(`/invoices/${invoice.id}/payments`, { paymentMethodId: transferId })
+      .expect(422);
+    expect((refused.body as { code: string }).code).toBe(
+      'PAYMENT_METHOD_MISMATCH',
+    );
+    // Control: a method of the declared form goes in.
+    await api()
+      .post(`/invoices/${invoice.id}/payments`, { paymentMethodId: cashId })
+      .expect(201);
+    // Returned by the SRI and already collected: the form stays.
+    await prisma.$executeRaw`UPDATE "invoice" SET "status" = 'REJECTED' WHERE "id" = ${invoice.id}::uuid`;
+    const edit = await api()
+      .post(`/invoices/${invoice.id}/resubmission`, {
+        paymentMethod: '20',
+        receiver: { identificationType: '05', identification: '1710034065', name: 'Guamán Andrade, María José' }, // prettier-ignore
+      })
+      .expect(422);
+    expect((edit.body as { code: string }).code).toBe(
+      'PAYMENT_METHOD_MISMATCH',
+    );
+  });
+
+  it('BI-255 el cierre con un efectivo esperado que ya no es el de la caja se rechaza; con el de verdad, se cierra', async () => {
+    const paid = (await issue(await anAccount(), { paymentMethodId: cashId })).body as InvoiceBody; // prettier-ignore
+    const today = clinicalDateOf(new Date());
+    const stale = await api()
+      .post('/cash-sessions/close', {
+        date: today,
+        declaredCash: '0.00',
+        expectedCash: '0.00',
+      }) // prettier-ignore
+      .expect(409);
+    expect((stale.body as { code: string }).code).toBe('CASH_DAY_CHANGED');
+    expect(await prisma.cashSession.count()).toBe(0);
+    await api()
+      .post('/cash-sessions/close', {
+        date: today,
+        declaredCash: paid.totals.total,
+        expectedCash: paid.totals.total,
+      }) // prettier-ignore
+      .expect(201);
+  });
+
+  it('BI-251 BI-135 un cobro de otra sede responde como inexistente (control: en la suya se revierte)', async () => {
+    const invoice = (await issue(await anAccount(), { paymentMethodId: cashId })).body as InvoiceBody; // prettier-ignore
+    const [payment] = await prisma.payment.findMany({ where: { invoiceId: invoice.id } }); // prettier-ignore
+    const other = await createSite(prisma);
+    const foreign = await request(app.getHttpServer())
+      .post(
+        `/api/v1/billing/sites/${other.id}/payments/${payment!.id}/reversal`,
+      )
+      .set('Authorization', `Bearer ${caja.token}`)
+      .send({})
+      .expect(404);
+    expect((foreign.body as { code: string }).code).toBe('PAYMENT_NOT_FOUND');
+    await api().post(`/payments/${payment!.id}/reversal`, {}).expect(200);
   });
 });

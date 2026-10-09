@@ -1171,6 +1171,20 @@ export class CashSessionAlreadyClosedError extends ConflictError {
   }
 }
 
+/**
+ * BI-255. Money came in while the cashier was counting: the difference she
+ * confirmed is not the one that would be written.
+ */
+export class CashDayChangedError extends ConflictError {
+  readonly code = 'CASH_DAY_CHANGED';
+  override readonly userTitle =
+    'Entró otro cobro mientras contaba: revise el efectivo esperado y vuelva a cerrar';
+
+  constructor() {
+    super('The expected cash changed after the cashier saw it');
+  }
+}
+
 /** BI-252. A day that has not come yet cannot be closed. */
 export class CashSessionDateInFutureError extends BusinessRuleViolation {
   readonly code = 'CASH_SESSION_DATE_IN_FUTURE';

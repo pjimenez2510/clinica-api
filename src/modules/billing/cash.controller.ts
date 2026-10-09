@@ -133,6 +133,10 @@ export class CashController {
           siteId,
           day: dto.date,
           declaredCash: Money.parse(dto.declaredCash),
+          seenExpectedCash:
+            dto.expectedCash === undefined
+              ? undefined
+              : Money.parse(dto.expectedCash),
           note: dto.note,
         },
         { userId: this.currentUser.requireUserId() },

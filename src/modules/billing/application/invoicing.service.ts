@@ -49,7 +49,7 @@ import type { Requester } from './service-catalogue.service';
 
 const INVOICE_RESOURCE_TYPE = 'invoice';
 
-import type { Money } from '../domain/money';
+import { Money } from '../domain/money';
 /**
  * SRI-060. The invoice with its electronic voucher's state beside it, read
  * through the shared port: `billing` does not know how the SRI is spoken to.
@@ -267,6 +267,14 @@ export class InvoicingService {
     // BI-135. Another site's invoice answers like one that does not exist.
     if (!invoice) throw new InvoiceNotFoundError();
     if (invoice.status !== 'REJECTED') throw new InvoiceNotEditableError();
+    // BI-254. Already collected: the form of payment is what the money came
+    // in with, and correcting the receiver does not change how it was paid.
+    if (
+      invoice.paidTotal.isGreaterThan(Money.ZERO) &&
+      invoice.paymentMethod !== command.paymentMethod
+    ) {
+      throw new PaymentMethodMismatchError();
+    }
 
     const account = await this.requireAccount({
       accountId: invoice.accountId,

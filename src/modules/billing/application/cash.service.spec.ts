@@ -9,6 +9,7 @@ import {
   PaymentAlreadyReversedError,
   PaymentExceedsBalanceError,
   PaymentMethodInactiveError,
+  PaymentMethodMismatchError,
   PaymentNotFoundError,
 } from '../domain/billing.errors';
 import type { PaymentView } from '../domain/cash';
@@ -46,6 +47,7 @@ function build(overrides: Record<string, unknown> = {}) {
       totals: { total: Money.parse('60.00') },
       paidTotal: Money.parse('20.00'),
       creditedTotal: Money.ZERO,
+      paymentMethod: '01',
     }),
     findPaymentMethod: vi
       .fn()
@@ -124,6 +126,7 @@ describe('billing/B6 — collecting', () => {
         totals: { total: Money.parse('60.00') },
         paidTotal: Money.parse('60.00'),
         creditedTotal: Money.ZERO,
+        paymentMethod: '01',
       }),
     });
     await expect(
@@ -154,6 +157,23 @@ describe('billing/B6 — collecting', () => {
         ROSA,
       ),
     ).rejects.toBeInstanceOf(PaymentMethodInactiveError);
+  });
+});
+
+describe('billing/B6 — the form the invoice declared', () => {
+  it('BI-254 refuses a method of another SRI form than the invoice declared', async () => {
+    const { service, mocks } = build({
+      findPaymentMethod: vi
+        .fn()
+        .mockResolvedValue({ id: 'transfer', sriCode: '20', active: true }),
+    });
+    await expect(
+      service.collect(
+        { siteId: SITE, invoiceId: 'invoice-1', paymentMethodId: 'transfer' },
+        ROSA,
+      ),
+    ).rejects.toBeInstanceOf(PaymentMethodMismatchError);
+    expect(mocks.recordPayment).not.toHaveBeenCalled();
   });
 });
 

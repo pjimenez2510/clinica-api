@@ -339,7 +339,7 @@ de BI-155, que ya tiene su prueba de interfaz.
 
 **Por qué es P3:** una clínica puede cobrar en efectivo y cuadrar a mano una
 semana; nada clínico se rompe. Pero sin esto el saldo pendiente de un paciente
-no existe como dato. **Cubre:** BI-100 a BI-105, BI-247 a BI-253.
+no existe como dato. **Cubre:** BI-100 a BI-105, BI-247 a BI-255.
 **Solo servidor:** BI-100 (ya lo entregó B7), BI-250 y BI-253: la fecha de caja
 la pone la base y la carrera entre un cobro y el cierre sólo se ve con dos
 clientes a la vez.
@@ -1474,7 +1474,8 @@ es falsa, hay requisitos que cambian.
   > factura): dos cajeras cobrando a la vez el mismo saldo leerían cada una el
   > saldo entero. «Lo acreditado» son las notas de crédito no rechazadas.
 - **BI-102** — El sistema NO DEBERÁ borrar un cobro: CUANDO se deshaga, DEBERÁ
-  registrarse como reversión con motivo, autor e instante.
+  registrarse como reversión con autor e instante, y con el motivo elegido si
+  se da.
   > `trg_payment_only_reverses`: el único cambio que admite la fila es poner
   > los datos de la reversión, una vez; el `DELETE` se rechaza.
   > `payment_reversal_states_who_and_when` exige autor e instante juntos.
@@ -1546,6 +1547,17 @@ es falsa, hay requisitos que cambian.
   `CASH_SESSION_CLOSED`.
   > Un candado de transacción por (sede, usuario, fecha), `cash_day_lock`, que
   > toman el cierre antes de leer y el disparador del cobro antes de escribir.
+- **BI-254** — CUANDO se cobre una factura que ya declara su forma de pago, el
+  sistema DEBERÁ rechazar con `PAYMENT_METHOD_MISMATCH` un medio de otra forma
+  de pago, y DEBERÁ rechazar igual cambiar la forma de pago de una devuelta
+  (BI-216) que ya tiene cobros.
+  > El comprobante le dice al SRI cómo se pagó; un abono por transferencia de
+  > una factura que declara «sin sistema financiero» lo contradice (D-197.7).
+- **BI-255** — CUANDO caja cierre enviando el efectivo esperado que vio, el
+  sistema DEBERÁ rechazar el cierre con `CASH_DAY_CHANGED` SI, bajo el candado
+  de su caja, el efectivo esperado ya es otro.
+  > La diferencia que se graba es la que la cajera confirmó, no otra que trajo
+  > un cobro de otra pestaña mientras contaba.
 
 ## 12. El tarifario que se exhibe al público
 
@@ -2588,11 +2600,12 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `PAYMENT_EXCEEDS_BALANCE` | 422 | BI-101 |
 | `CASH_SESSION_CLOSED` | 409 | BI-104, BI-253 |
 | `CASH_SESSION_ALREADY_CLOSED` | 409 | BI-252 |
+| `CASH_DAY_CHANGED` | 409 | BI-255 |
 | `CASH_SESSION_DATE_IN_FUTURE` | 422 | BI-252 |
 | `PAYMENT_NOT_FOUND` | 404 | BI-251, BI-135 |
 | `PAYMENT_ALREADY_REVERSED` | 409 | BI-102 |
 | `PAYMENT_METHOD_INACTIVE` | 422 | BI-247, BI-248 |
-| `PAYMENT_METHOD_MISMATCH` | 422 | BI-247 |
+| `PAYMENT_METHOD_MISMATCH` | 422 | BI-247, BI-254 |
 | `INVOICE_NOT_PAYABLE` | 409 | BI-248 |
 | `TARIFF_PUBLICATION_NOT_FOUND` | 404 | BI-110 |
 | `TARIFF_PUBLICATION_EMPTY` | 409 | BI-111, BI-113 |
@@ -2754,10 +2767,10 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/credit-notes` | `billing:credit-note` | `param:siteId` | BI-091, BI-094 a BI-097, BI-208 a BI-214 |
 | `GET` | `/billing/sites/{siteId}/credit-notes` | `billing:read` | `param:siteId` | BI-218, BI-234 |
 | `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/resubmission` | `billing:write` | `param:siteId` | BI-216, BI-217 |
-| `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/payments` | `billing:write` | `param:siteId` | BI-101, BI-103, BI-104, BI-248, BI-250, BI-253 |
+| `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/payments` | `billing:write` | `param:siteId` | BI-101, BI-103, BI-104, BI-248, BI-250, BI-253, BI-254 |
 | `POST` | `/billing/sites/{siteId}/payments/{paymentId}/reversal` | `billing:write` | `param:siteId` | BI-102, BI-104, BI-251 |
 | `GET` | `/billing/sites/{siteId}/cash-sessions/day` | `billing:write` | `param:siteId` | BI-105, BI-251 |
-| `POST` | `/billing/sites/{siteId}/cash-sessions/close` | `billing:write` | `param:siteId` | BI-104, BI-105, BI-252, BI-253 |
+| `POST` | `/billing/sites/{siteId}/cash-sessions/close` | `billing:write` | `param:siteId` | BI-104, BI-105, BI-252, BI-253, BI-255 |
 | `GET` | `/billing/discount-limits` | `settings:read` | `global` | BI-062, BI-141 |
 | `PUT` | `/billing/discount-limits/{roleId}` | `settings:manage` | `global` | BI-141, BI-142, BI-147 |
 | `GET` | `/billing/payment-methods` | `billing:read` | `global` | BI-100, BI-145 |
@@ -2840,7 +2853,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | BI-085 | Integración contra PostgreSQL real con dos clientes concurrentes: es SC-023, y el hueco en la numeración solo aparece bajo concurrencia |
 | BI-088, BI-096 | Integración contra PostgreSQL real: se factura, se anula y se vuelve a facturar el mismo cargo; y con nota de crédito, no |
 | BI-091 a BI-095, BI-097 | Unitario de dominio con reloj fijado (los plazos) + contrato HTTP |
-| BI-100 a BI-105, BI-247 a BI-253 | Unitario de dominio + integración contra PostgreSQL real: el tope del saldo, la reversión única, el `DELETE` y la foto del cierre **por SQL directo** con control positivo; la fecha de caja con un instante de la noche de Guayaquil; dos clientes a la vez para BI-101 y BI-253 |
+| BI-100 a BI-105, BI-247 a BI-255 | Unitario de dominio + integración contra PostgreSQL real: el tope del saldo, la reversión única, el `DELETE` y la foto del cierre **por SQL directo** con control positivo; la fecha de caja con un instante de la noche de Guayaquil; dos clientes a la vez para BI-101 y BI-253 |
 | BI-110 a BI-115 | Seguridad dirigida **sin credenciales** + contrato HTTP: la ruta pública responde sin sesión, y ningún parámetro la desvía a otra lista de precios |
 | BI-130 a BI-135 | Seguridad dirigida + la prueba de rutas que recorre las que NestJS registró de verdad |
 | BI-140 a BI-147 | Integración + contrato HTTP por campo; BI-142 y BI-144 contra PostgreSQL real con control positivo |

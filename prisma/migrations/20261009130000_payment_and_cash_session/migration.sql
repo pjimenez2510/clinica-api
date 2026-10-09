@@ -24,7 +24,7 @@ CREATE OR REPLACE FUNCTION cash_day_lock(p_site UUID, p_user UUID, p_day DATE)
 RETURNS VOID AS $$
 BEGIN
   PERFORM pg_advisory_xact_lock(
-    hashtextextended('cash_day:' || p_site || ':' || p_user || ':' || p_day, 0)
+    hashtextextended('cash_day:' || p_site || ':' || p_user || ':' || to_char(p_day, 'YYYY-MM-DD'), 0)
   );
 END;
 $$ LANGUAGE plpgsql;

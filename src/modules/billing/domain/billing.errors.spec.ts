@@ -60,6 +60,7 @@ const EXPECTED: readonly [
   [errors.PaymentExceedsBalanceError, 'PAYMENT_EXCEEDS_BALANCE', BusinessRuleViolation], // prettier-ignore
   [errors.CashSessionClosedError, 'CASH_SESSION_CLOSED', ConflictError],
   [errors.CashSessionAlreadyClosedError, 'CASH_SESSION_ALREADY_CLOSED', ConflictError], // prettier-ignore
+  [errors.CashDayChangedError, 'CASH_DAY_CHANGED', ConflictError],
   [errors.CashSessionDateInFutureError, 'CASH_SESSION_DATE_IN_FUTURE', BusinessRuleViolation], // prettier-ignore
   [errors.PaymentNotFoundError, 'PAYMENT_NOT_FOUND', NotFoundError],
   [errors.PaymentAlreadyReversedError, 'PAYMENT_ALREADY_REVERSED', ConflictError], // prettier-ignore

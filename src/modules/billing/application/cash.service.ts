@@ -15,6 +15,7 @@ import {
   PaymentAlreadyReversedError,
   PaymentExceedsBalanceError,
   PaymentMethodInactiveError,
+  PaymentMethodMismatchError,
   PaymentMethodNotFoundError,
   PaymentNotFoundError,
 } from '../domain/billing.errors';
@@ -85,6 +86,14 @@ export class CashService {
     const method = await this.cash.findPaymentMethod(command.paymentMethodId);
     if (!method) throw new PaymentMethodNotFoundError();
     if (!method.active) throw new PaymentMethodInactiveError();
+    // BI-254. The voucher already told the SRI how it is paid: the money
+    // comes in with a method of that form, or the declaration lies.
+    if (
+      invoice.paymentMethod !== null &&
+      method.sriCode !== invoice.paymentMethod
+    ) {
+      throw new PaymentMethodMismatchError();
+    }
 
     const balance = invoiceBalance({
       total: invoice.totals.total,
@@ -164,6 +173,8 @@ export class CashService {
       siteId: string;
       day: ClinicalDate;
       declaredCash: Money;
+      /** BI-255. */
+      seenExpectedCash?: Money;
       note?: string | null;
     },
     requester: Requester,
@@ -178,6 +189,7 @@ export class CashService {
       day: command.day,
       closedAt: now,
       declaredCash: command.declaredCash,
+      seenExpectedCash: command.seenExpectedCash,
       note: command.note?.trim() || null,
       summarise: summariseCashDay,
     });

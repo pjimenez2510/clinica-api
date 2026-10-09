@@ -70,6 +70,8 @@ export interface CashRepository {
     close: CashDayKey & {
       closedAt: Date;
       declaredCash: Money;
+      /** BI-255. The expected cash the cashier was shown, when she was. */
+      seenExpectedCash?: Money;
       note: string | null;
       summarise: (payments: readonly PaymentView[]) => CashDaySummary;
     },
