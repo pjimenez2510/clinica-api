@@ -134,13 +134,15 @@ export const COVERS = /\*\*Cubre:\*\*\s*([^\n]*(?:\n(?!\s*\n|###|##)[^\n]*)*)/;
  * declaring them (that bit once: «eso es AU-002» excluded a visible one).
  * No declaration means no discount: silence owes interface.
  */
-export const SERVER_ONLY = /\*\*Solo servidor:\*\*\s*([^.]*)\./;
+export const SERVER_ONLY =
+  /\*\*Solo servidor:\*\*[ \t]*((?:[^.\n]|\n(?![ \t]*\r?(?:\n|$)))*)\./;
 /**
  * `**Solo interfaz:** AU-044. Lo cuenta el navegador…` — the mirror image: a
  * requirement whose whole behaviour lives in the browser. It leaves the
  * BACKEND'S denominator, never the numerator. Same full-stop rule as above.
  */
-export const SCREEN_ONLY = /\*\*Solo interfaz:\*\*\s*([^.]*)\./;
+export const SCREEN_ONLY =
+  /\*\*Solo interfaz:\*\*[ \t]*((?:[^.\n]|\n(?![ \t]*\r?(?:\n|$)))*)\./;
 /**
  * `**Fuera del sistema:** BI-092, BI-093. D-151.1: la anulación se hace en el
  * portal del SRI…` — a requirement the system deliberately does not build,

@@ -58,7 +58,8 @@ const STATE_LINE = /^\*\*Estado:\*\*\s*(\S+)/m;
  * first full stop, as there: the explanation may name other requirements
  * without declaring them.
  */
-const SCREEN_ONLY = /\*\*Solo interfaz:\*\*\s*([^.]*)\./g;
+const SCREEN_ONLY =
+  /\*\*Solo interfaz:\*\*[ \t]*((?:[^.\n]|\n(?![ \t]*\r?(?:\n|$)))*)\./g;
 /**
  * `**Fuera del sistema:** BI-092, BI-093. D-151.1: …` — a requirement the
  * system does not build because the rule is met outside it (board.mts,

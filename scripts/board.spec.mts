@@ -284,3 +284,15 @@ describe('los SPEC.md reales', () => {
     expect(b3?.outOfSystem).toEqual(['BI-092', 'BI-093']);
   });
 });
+
+describe('«Solo servidor» y «Solo interfaz» sin punto', () => {
+  it('su lista no sigue en el párrafo siguiente', () => {
+    const got = exemptionsOf(
+      '**Solo servidor:** ZZ-001\n\nTexto que nombra ZZ-002. Más.',
+      declared,
+      'zz/Z1',
+      all,
+    );
+    expect([...got.serverOnly]).toEqual([]);
+  });
+});
