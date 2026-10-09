@@ -3,6 +3,7 @@ import { Global, Module } from '@nestjs/common';
 
 import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
 import { CONSULTATION_REPRICER } from '../../shared/billing/consultation-repricer.port';
+import { PROCEDURE_CHARGE_SYNC } from '../../shared/billing/procedure-charge-sync.port';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 
@@ -15,6 +16,7 @@ import {
   TariffPublicationController,
 } from './tariff-publication.controller';
 import { BillingParametersService } from './application/billing-parameters.service';
+import { ProcedureChargeFollowService } from './application/procedure-charge-follow.service';
 import { ChargeCorrectionService } from './application/charge-correction.service';
 import { CreditNoteService } from './application/credit-note.service';
 import { EncounterCheckoutService } from './application/encounter-checkout.service';
@@ -94,6 +96,13 @@ import { PrismaTariffPublicationRepository } from './infrastructure/prisma-tarif
      * this module is exported.
      */
     { provide: CONSULTATION_REPRICER, useExisting: ChargeCorrectionService },
+    // BI-240 to BI-243 (D-194.3). The same `@Global` token shape: `encounter`
+    // announces a corrected procedure without importing this module.
+    ProcedureChargeFollowService,
+    {
+      provide: PROCEDURE_CHARGE_SYNC,
+      useExisting: ProcedureChargeFollowService,
+    },
     ServiceCatalogueService,
     PricingService,
     PatientAccountService,
@@ -138,6 +147,6 @@ import { PrismaTariffPublicationRepository } from './infrastructure/prisma-tarif
       useClass: PrismaClinicalActsRepository,
     },
   ],
-  exports: [CONSULTATION_REPRICER],
+  exports: [CONSULTATION_REPRICER, PROCEDURE_CHARGE_SYNC],
 })
 export class BillingModule {}

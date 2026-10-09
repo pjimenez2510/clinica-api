@@ -5,6 +5,10 @@ import {
   CONSULTATION_REPRICER,
   type ConsultationRepricer,
 } from '../../../shared/billing/consultation-repricer.port';
+import {
+  PROCEDURE_CHARGE_SYNC,
+  type ProcedureChargeSync,
+} from '../../../shared/billing/procedure-charge-sync.port';
 
 import {
   ACCESS_AUDIT_RECORDER,
@@ -17,8 +21,10 @@ import {
   type DiagnosisVersionView,
   type DiagnosisView,
   type EncounterCodingView,
+  type ProcedureVersionView,
   type ProcedureView,
   type RetractedDiagnosisView,
+  type RetractedProcedureView,
 } from '../domain/clinical-coding.repository';
 import {
   ENCOUNTER_REPOSITORY,
@@ -31,6 +37,7 @@ import {
   EncounterNotFoundError,
   PractitionerNotLicensedError,
   PractitionerProfileRequiredError,
+  ProcedureRetractionReasonRequiredError,
 } from '../domain/encounter.errors';
 import {
   acceptsDiagnosisCorrection,
@@ -133,6 +140,22 @@ export interface RecordProcedureRequest {
   note?: string;
 }
 
+/** EN-244. A correction in place: only what is present changes. */
+export interface EditProcedureRequest {
+  encounterId: string;
+  procedureId: string;
+  conceptId?: string;
+  quantity?: number;
+  /** `null` clears the note. */
+  note?: string | null;
+}
+
+/** EN-050, EN-245. The procedures that count, and the trace of those removed. */
+export interface ProcedureSheet {
+  items: ProcedureView[];
+  retracted: RetractedProcedureView[];
+}
+
 /**
  * Block K of the RDACAA: the diagnoses and the procedures of an attention.
  *
@@ -183,6 +206,8 @@ export class ClinicalCodingService {
     private readonly logger: PinoLogger,
     @Inject(CONSULTATION_REPRICER)
     private readonly consultationRepricer: ConsultationRepricer,
+    @Inject(PROCEDURE_CHARGE_SYNC)
+    private readonly procedureCharges: ProcedureChargeSync,
   ) {
     this.logger.setContext(ClinicalCodingService.name);
   }
@@ -605,17 +630,22 @@ export class ClinicalCodingService {
     return procedure;
   }
 
-  /** EN-050. The procedures of one attention. AUDITED, like the diagnoses. */
+  /**
+   * EN-050, EN-245. The procedures of one attention, with the removed ones
+   * apart. AUDITED, like the diagnoses: one read, one audit row.
+   */
   async proceduresOf(
     encounterId: string,
     requester: Requester,
-  ): Promise<ProcedureView[]> {
+  ): Promise<ProcedureSheet> {
     const encounter = await this.requireEncounter(encounterId, requester);
 
-    const procedures = await this.coding.proceduresOf({
-      encounterId: encounter.id,
-      sites: requester.sites,
-    });
+    const query = { encounterId: encounter.id, sites: requester.sites };
+    const [items, retracted] = await Promise.all([
+      this.coding.proceduresOf(query),
+      this.coding.retractedProceduresOf(query),
+    ]);
+    const procedures = { items, retracted };
 
     await this.audit.record({
       userId: requester.userId,
@@ -627,6 +657,169 @@ export class ClinicalCodingService {
     });
 
     return procedures;
+  }
+
+  /**
+   * EN-244 (D-194.1). Corrects a procedure in place while the attention
+   * admits new content — the rule of recording it (EN-009). The previous row
+   * is the database's version. BI-240: `billing` follows the proposed charge,
+   * told after this transaction; the port never throws.
+   */
+  async editProcedure(
+    request: EditProcedureRequest,
+    requester: Requester,
+  ): Promise<ProcedureView> {
+    const encounter = await this.requireLiveEncounter(
+      request.encounterId,
+      requester,
+    );
+    const note = request.note === undefined ? undefined : request.note?.trim();
+
+    const procedure = await this.coding.editProcedure({
+      encounterId: encounter.id,
+      procedureId: request.procedureId,
+      conceptId: request.conceptId,
+      quantity: request.quantity,
+      note: note === undefined ? undefined : note === '' ? null : note,
+      editedById: requester.userId,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: PROCEDURE_RESOURCE_TYPE,
+      resourceId: procedure.id,
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    this.logger.info(
+      { site_id: encounter.siteId, action: 'PROCEDURE_EDITED' },
+      'procedure edited',
+    );
+    await this.procedureCharges.procedureChanged({
+      encounterId: encounter.id,
+      siteId: encounter.siteId,
+      changedById: requester.userId,
+      procedureId: procedure.id,
+      change: 'EDITED',
+    });
+
+    return procedure;
+  }
+
+  /** EN-244. The versions corrections replaced. `record:read`, audited. */
+  async procedureVersions(
+    encounterId: string,
+    procedureId: string,
+    requester: Requester,
+  ): Promise<ProcedureVersionView[]> {
+    const encounter = await this.requireEncounter(encounterId, requester);
+
+    const versions = await this.coding.procedureVersions({
+      encounterId: encounter.id,
+      procedureId,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: PROCEDURE_RESOURCE_TYPE,
+      resourceId: procedureId,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+
+    return versions;
+  }
+
+  /**
+   * EN-245 (D-194.2). Takes a procedure off a live attention, archived with
+   * who, when and why. BI-241: a proposed charge goes with it.
+   */
+  async retractProcedure(
+    request: { encounterId: string; procedureId: string; reason?: string },
+    requester: Requester,
+  ): Promise<void> {
+    const encounter = await this.requireLiveEncounter(
+      request.encounterId,
+      requester,
+    );
+    const reason = request.reason?.trim();
+    if (reason === undefined || reason === '') {
+      throw new ProcedureRetractionReasonRequiredError();
+    }
+
+    await this.coding.retractProcedure({
+      encounterId: encounter.id,
+      procedureId: request.procedureId,
+      reason,
+      retractedById: requester.userId,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: PROCEDURE_RESOURCE_TYPE,
+      resourceId: request.procedureId,
+      // Nothing clinical is ever deleted: the archive keeps it.
+      action: 'UPDATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    this.logger.info(
+      { site_id: encounter.siteId, action: 'PROCEDURE_RETRACTED' },
+      'procedure retracted',
+    );
+    await this.procedureCharges.procedureChanged({
+      encounterId: encounter.id,
+      siteId: encounter.siteId,
+      changedById: requester.userId,
+      procedureId: request.procedureId,
+      change: 'RETRACTED',
+    });
+  }
+
+  /**
+   * EN-246. Brings a removed procedure back as a new row, only while the
+   * attention is live. BI-242: with an open account its charge is proposed.
+   */
+  async restoreProcedure(
+    encounterId: string,
+    procedureId: string,
+    requester: Requester,
+  ): Promise<ProcedureView> {
+    const encounter = await this.requireLiveEncounter(encounterId, requester);
+
+    const procedure = await this.coding.restoreProcedure({
+      encounterId: encounter.id,
+      retractionId: procedureId,
+      restoredById: requester.userId,
+      sites: requester.sites,
+    });
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: PROCEDURE_RESOURCE_TYPE,
+      resourceId: procedure.id,
+      action: 'CREATE',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    this.logger.info(
+      { site_id: encounter.siteId, action: 'PROCEDURE_RESTORED' },
+      'procedure restored',
+    );
+    await this.procedureCharges.procedureChanged({
+      encounterId: encounter.id,
+      siteId: encounter.siteId,
+      changedById: requester.userId,
+      procedureId: procedure.id,
+      change: 'RESTORED',
+    });
+
+    return procedure;
   }
 
   /**

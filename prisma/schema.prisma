@@ -215,8 +215,12 @@ model User {
   criticalNoticesEdited CriticalResultNotice[] @relation("CriticalNoticeEditor")
 
   /// EN-212, D-127. The diagnoses this account edited last.
-  diagnosesEdited            EncounterDiagnosis[]           @relation("DiagnosisEditor")
-  diagnosesEditedThenRemoved EncounterDiagnosisRetraction[] @relation("DiagnosisRetractionEditor")
+  diagnosesEdited             EncounterDiagnosis[]           @relation("DiagnosisEditor")
+  diagnosesEditedThenRemoved  EncounterDiagnosisRetraction[] @relation("DiagnosisRetractionEditor")
+  proceduresEdited            EncounterProcedure[]           @relation("ProcedureEditor")
+  proceduresEditedThenRemoved EncounterProcedureRetraction[] @relation("ProcedureRetractionEditor")
+  proceduresRetracted         EncounterProcedureRetraction[] @relation("ProcedureRetractor")
+  proceduresRestored          EncounterProcedureRetraction[] @relation("ProcedureRestorer")
 
   /// EN-210, D-127. The versions this account replaced by editing.
   recordVersionsChanged RecordVersion[] @relation("RecordVersionChanger")
@@ -1121,6 +1125,7 @@ model CatalogConcept {
   diagnoses               EncounterDiagnosis[]
   retractedDiagnoses      EncounterDiagnosisRetraction[]
   procedures              EncounterProcedure[]
+  retractedProcedures     EncounterProcedureRetraction[]
   prescriptionItems       PrescriptionItem[]
   serviceOrderItems       ServiceOrderItem[]
   observationResults      ObservationResult[]            @relation("ObservationAnalyte")
@@ -2798,22 +2803,23 @@ model Encounter {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  statusHistory      EncounterStatusHistory[]
-  vitals             EncounterVitals?
-  dentalIndex        EncounterDentalIndex?
-  violenceScreening  ViolenceScreening?
-  priorityGroups     EncounterPriorityGroup[]
-  diagnoses          EncounterDiagnosis[]
-  retractedDiagnoses EncounterDiagnosisRetraction[]
-  procedures         EncounterProcedure[]
-  notes              ClinicalNote[]
-  prescriptions      Prescription[]
-  serviceOrders      ServiceOrder[]
-  certificates       MedicalCertificate[]
-  referrals          Referral[]
-  interconsultations Interconsultation[]
-  accounts           PatientAccount[]
-  chargeItems        ChargeItem[]
+  statusHistory       EncounterStatusHistory[]
+  vitals              EncounterVitals?
+  dentalIndex         EncounterDentalIndex?
+  violenceScreening   ViolenceScreening?
+  priorityGroups      EncounterPriorityGroup[]
+  diagnoses           EncounterDiagnosis[]
+  retractedDiagnoses  EncounterDiagnosisRetraction[]
+  procedures          EncounterProcedure[]
+  retractedProcedures EncounterProcedureRetraction[]
+  notes               ClinicalNote[]
+  prescriptions       Prescription[]
+  serviceOrders       ServiceOrder[]
+  certificates        MedicalCertificate[]
+  referrals           Referral[]
+  interconsultations  Interconsultation[]
+  accounts            PatientAccount[]
+  chargeItems         ChargeItem[]
 
   /// `encounter_still_open_by_practitioner` is NOT here and cannot be: it is
   /// PARTIAL (`WHERE status IN ('OPEN','ON_HOLD')`), which is what keeps it
@@ -3173,8 +3179,56 @@ model EncounterProcedure {
   performedAt DateTime @default(now()) @map("performed_at") @db.Timestamptz(6)
   note        String?  @db.Text
 
+  /// EN-244 (D-127). The STAMP of the last correction, demanded by
+  /// `trg_encounter_procedure_record_version`, which archives the previous row
+  /// into `record_version`. Who and when travel together.
+  editedById String?   @map("edited_by_id") @db.Uuid
+  editedBy   User?     @relation("ProcedureEditor", fields: [editedById], references: [id], onDelete: Restrict)
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+
   @@index([encounterId])
   @@map("encounter_procedure")
+}
+
+/// EN-245, EN-246. A procedure removed from its attention, archived whole with
+/// who, when and why (`encounter_procedure_retraction_matches`). Never edited
+/// nor deleted, except being marked restored once.
+model EncounterProcedureRetraction {
+  /// The id the procedure had: the archive is the same fact, moved.
+  id String @id @db.Uuid
+
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  conceptId String         @map("concept_id") @db.Uuid
+  concept   CatalogConcept @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  procedureCode    String   @map("procedure_code") @db.VarChar(20)
+  procedureDisplay String   @map("procedure_display") @db.VarChar(512)
+  quantity         Int      @db.SmallInt
+  performedAt      DateTime @map("performed_at") @db.Timestamptz(6)
+  note             String?  @db.Text
+  /// EN-051. Archived as it was, so an old row does not lose it.
+  tariffAmount     Decimal? @map("tariff_amount") @db.Decimal(12, 2)
+
+  editedById String?   @map("edited_by_id") @db.Uuid
+  editedBy   User?     @relation("ProcedureRetractionEditor", fields: [editedById], references: [id], onDelete: Restrict)
+  editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+
+  /// Set by the application, never `now()`: the e2e runs move its clock.
+  retractedAt   DateTime @map("retracted_at") @db.Timestamptz(6)
+  retractedById String   @map("retracted_by_id") @db.Uuid
+  retractedBy   User     @relation("ProcedureRetractor", fields: [retractedById], references: [id], onDelete: Restrict)
+  reason        String   @db.VarChar(500)
+
+  restoredAt   DateTime? @map("restored_at") @db.Timestamptz(6)
+  restoredById String?   @map("restored_by_id") @db.Uuid
+  restoredBy   User?     @relation("ProcedureRestorer", fields: [restoredById], references: [id], onDelete: Restrict)
+  /// Not a foreign key: the restored row can be removed again.
+  restoredAsId String?   @map("restored_as_id") @db.Uuid
+
+  @@index([encounterId])
+  @@map("encounter_procedure_retraction")
 }
 
 // ---------------------------------------------------------------------------

@@ -402,9 +402,11 @@ pagador con cargos y ver el total re-tarifado; y comprobar contra PostgreSQL que
 un cargo facturado no cambia de contenido y que una corrección sin sello se
 rechaza.
 
-**Cubre:** BI-195 a BI-203. **Solo servidor:** BI-200 (la ruta de descuento no
-existe todavía; es una restricción de la base) y BI-203 (lo dispara la
-corrección de la atención; caja ve el cargo ya re-tarifado).
+**Cubre:** BI-195 a BI-203, **BI-240 a BI-243** (el cargo sigue al
+procedimiento corregido, §24). **Solo servidor:** BI-200 (la ruta de descuento no
+existe todavía; es una restricción de la base), BI-203 (lo dispara la
+corrección de la atención; caja ve el cargo ya re-tarifado) y BI-240 a BI-242
+(los dispara la corrección del procedimiento; caja ve el cargo ya corregido).
 
 ### B13 — Caja que se entiende sin leer _(P1)_
 
@@ -2358,6 +2360,44 @@ dos registros distintos.**
   > D-185.1 (aceptada por el autor, 08-10-2026): la misma factura se llamaba
   > «000000001» en Facturas y «001-001-000000001» en Comprobantes SRI.
 
+## 24. El cargo sigue al procedimiento corregido (EN-244 a EN-248, D-194)
+
+_Desde EN-244 el médico corrige, quita y restaura un procedimiento. El cargo
+que nació de él (BI-151) es de `billing`: lo que caja todavía no ha mirado
+sigue a la atención solo; lo que caja ya confirmó o facturó es de caja, y caja
+lo ve._
+
+- **BI-240** — CUANDO se corrija un procedimiento (EN-244) y su cargo esté
+  **propuesto** en una cuenta abierta, el sistema DEBERÁ corregir el cargo con
+  él —la prestación que el catálogo asocia al concepto nuevo, con su precio en
+  la fecha de servicio (BI-197), y la cantidad—, con su versión y el sello de
+  quien corrigió el procedimiento; SI el concepto nuevo no tiene prestación
+  activa o no hay precio, ENTONCES DEBERÁ dejar el cargo como estaba, sin
+  deshacer la corrección clínica, y la cuenta lo señala (BI-243).
+- **BI-241** — CUANDO se quite un procedimiento (EN-245) y su cargo esté
+  **propuesto** en una cuenta abierta, el sistema DEBERÁ quitar el cargo
+  (BI-195) con el sello de quien quitó el procedimiento y el motivo
+  «Procedimiento quitado de la atención».
+  > Se puede deshacer en caja como cualquier cargo quitado (BI-195), y BI-157
+  > impide que el siguiente «Pasar a caja» lo vuelva a proponer.
+- **BI-242** — CUANDO se restaure un procedimiento (EN-246) y la atención tenga
+  una cuenta abierta, el sistema DEBERÁ proponer su cargo (BI-151, BI-152)
+  como lo haría al pasarla a caja; sin cuenta abierta, lo propone el siguiente
+  «Pasar a caja».
+  > El restaurado es una fila nueva (EN-246): su cargo es otro, y el quitado
+  > sigue quitado (BI-157).
+- **BI-243** — SI el cargo de un procedimiento está **confirmado** o
+  **facturado**, ENTONCES el sistema NO DEBERÁ cambiarlo por una corrección
+  clínica; y el extracto de la cuenta DEBERÁ señalar (`proceduresOutdated`)
+  cada cargo de procedimiento no quitado que ya no corresponde a la atención
+  —el procedimiento se quitó, o cambió su prestación o su cantidad—, con si
+  está facturado, y la pantalla de caja DEBERÁ decirlo en la fila de ese cargo.
+  > D-194.3. Derivado al leer, como `consultationOutdated` (BI-203): dice la
+  > verdad pase lo que pase con el aviso. Un cargo confirmado lo corrige o lo
+  > quita caja (BI-195, BI-197); uno facturado se corrige con la factura
+  > (BI-208). Es la conciliación de cargos de cualquier ciclo de ingresos: lo
+  > cobrado tiene que seguir respaldado por lo documentado.
+
 ---
 
 ## Códigos de error nuevos
@@ -2653,6 +2693,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 
 | Requisitos | Nivel de prueba obligatorio |
 | --- | --- |
+| BI-240 a BI-243 | **Integración contra PostgreSQL real** por HTTP, con la atención y la cuenta de verdad: corregir un procedimiento corrige su cargo propuesto y deja la versión; quitarlo lo quita; restaurarlo propone el nuevo; un cargo confirmado o facturado no cambia y el extracto lo señala. Unitario: el aviso nunca falla hacia la atención |
 | BI-001, BI-002 | Unitario con huso alterado + integración: un importe leído y reescrito no pierde centavos, y una vigencia que empieza a medianoche resuelve igual con el servidor en cualquier huso |
 | BI-003, BI-004, BI-120 a BI-122 | Seguridad dirigida sobre las rutas clínicas: **ninguna** de ellas exige dato económico. Se prueba llamando a las de `encounter` con la cuenta ausente, y falla si alguna responde 4xx por ese motivo |
 | BI-005, BI-013, BI-022, BI-023 | Unitario de dominio + contrato HTTP: sembrar una prestación sin tarifa deja 0 % **y** la marca de pendiente |

@@ -12,7 +12,7 @@ import {
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
-import { aScene, placeIssued } from './orders-fixtures';
+import { aScene, aTariffConcept, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import {
   createDiagnosis,
@@ -226,6 +226,17 @@ async function everyVersionedRowOf(
     where: { encounterId },
   });
   const notice = await aCriticalNotice(prisma, scene, author.id);
+  // EN-244. A procedure of the attention, corrected in place.
+  const concept = await aTariffConcept(prisma);
+  const procedure = await prisma.encounterProcedure.create({
+    data: {
+      encounterId,
+      conceptId: concept.id,
+      procedureCode: concept.code,
+      procedureDisplay: concept.display,
+      performedAt: scene.encounter.startedAt,
+    },
+  });
   const allergy = await prisma.patientAllergy.create({
     data: { patientId, substanceText: 'Penicilina', recordedById: author.id },
   });
@@ -354,6 +365,7 @@ async function everyVersionedRowOf(
     // EN-052. The dental index too: one row per attention.
     encounter_dental_index: encounterId,
     encounter_diagnosis: diagnosis.id,
+    encounter_procedure: procedure.id,
     critical_result_notice: notice.id,
     patient_allergy: allergy.id,
     patient_history: history.id,

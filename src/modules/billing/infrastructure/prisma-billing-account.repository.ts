@@ -483,12 +483,17 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         origin: true,
         encounterProcedureId: true,
         serviceOrderItemId: true,
+        status: true,
       },
     });
 
     return {
       consultation: rows.some((row) => row.origin === 'CONSULTATION'),
       encounterProcedureIds: rows
+        .map((row) => row.encounterProcedureId)
+        .filter((id): id is string => id !== null),
+      liveEncounterProcedureIds: rows
+        .filter((row) => row.status !== 'CANCELLED')
         .map((row) => row.encounterProcedureId)
         .filter((id): id is string => id !== null),
       serviceOrderItemIds: rows
@@ -544,9 +549,14 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     voidedById: string;
     reason: string | null;
     now: Date;
+    onlyIfStatus?: ChargeStatus;
   }): Promise<ChargeView> {
     return this.prisma.$transaction(async (tx) => {
       const current = await lockCharge(tx, command.chargeId);
+      // BI-243. Under the lock: a line caja confirmed meanwhile is caja's.
+      if (command.onlyIfStatus && current.status !== command.onlyIfStatus) {
+        return toChargeView(current);
+      }
       requireOpen(current.status);
 
       const row = await tx.chargeItem.update({
@@ -570,6 +580,16 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   ): Promise<ChargeView | null> {
     const row = await this.prisma.chargeItem.findFirst({
       where: { encounterId, origin: 'CONSULTATION' },
+    });
+    return row === null ? null : toChargeView(row);
+  }
+
+  /** BI-240 to BI-243. At most one, by `charge_item_one_per_encounter_procedure`. */
+  async findProcedureCharge(
+    encounterProcedureId: string,
+  ): Promise<ChargeView | null> {
+    const row = await this.prisma.chargeItem.findFirst({
+      where: { encounterProcedureId, origin: 'PROCEDURE' },
     });
     return row === null ? null : toChargeView(row);
   }
@@ -664,6 +684,10 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     try {
       return await this.prisma.$transaction(async (tx) => {
         const current = await lockCharge(tx, command.chargeId);
+        // BI-243. Under the lock: a line caja confirmed meanwhile is caja's.
+        if (command.onlyIfStatus && current.status !== command.onlyIfStatus) {
+          return toChargeView(current);
+        }
         requireOpen(current.status);
 
         const billableServiceId =

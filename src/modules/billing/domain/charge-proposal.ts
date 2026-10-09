@@ -143,6 +143,8 @@ export interface AlreadyCharged {
   /** Whether the consultation of this encounter is already on the account. */
   consultation: boolean;
   encounterProcedureIds: ReadonlySet<string>;
+  /** BI-242. Procedures whose charge is not removed. */
+  liveEncounterProcedureIds?: ReadonlySet<string>;
   serviceOrderItemIds: ReadonlySet<string>;
 }
 
@@ -239,7 +241,12 @@ export function proposeCharges(
       'PROCEDURE',
       { procedureId: procedure.encounterProcedureId },
       mapping.byProcedureConcept.get(procedure.conceptId) ?? null,
-      charged.encounterProcedureIds.has(procedure.encounterProcedureId),
+      charged.encounterProcedureIds.has(procedure.encounterProcedureId) ||
+        // BI-242. Restored: the line of the row it came back from, if it
+        // still stands, already charges it.
+        (procedure.restoredFrom ?? []).some(
+          (former) => charged.liveEncounterProcedureIds?.has(former) ?? false,
+        ),
       procedure.serviceDate,
       quantityOf(procedure.quantity),
     );

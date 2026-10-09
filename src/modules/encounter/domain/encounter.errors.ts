@@ -1396,6 +1396,49 @@ export class DiagnosisNotRestorableError extends ConflictError {
   }
 }
 
+/** EN-244 to EN-246. Not on that attention, or already removed. */
+export class ProcedureNotFoundError extends NotFoundError {
+  readonly code = 'PROCEDURE_NOT_FOUND';
+  override readonly userTitle =
+    'Ese procedimiento ya no consta en esta atención. Actualice la lista';
+
+  constructor() {
+    super('Procedure not found on the encounter');
+  }
+}
+
+/**
+ * EN-245 (D-194.2). A procedure holds a charge: removing it says why, chosen
+ * from a list on the screen. Demanded here and by
+ * `encounter_procedure_retraction_reason_not_blank`.
+ */
+export class ProcedureRetractionReasonRequiredError extends ValidationError {
+  readonly code = 'PROCEDURE_RETRACTION_REASON_REQUIRED';
+  override readonly userTitle = 'Indique por qué quita el procedimiento';
+  override readonly fieldErrors = [
+    {
+      field: 'reason',
+      code: 'PROCEDURE_RETRACTION_REASON_REQUIRED',
+      message: 'Indique por qué quita el procedimiento',
+    },
+  ];
+
+  constructor() {
+    super('Procedure retraction without a reason');
+  }
+}
+
+/** EN-246. Restoring what was already restored. */
+export class ProcedureNotRestorableError extends ConflictError {
+  readonly code = 'PROCEDURE_NOT_RESTORABLE';
+  override readonly userTitle =
+    'Ese procedimiento ya se restauró. Actualice la lista';
+
+  constructor() {
+    super('The removed procedure was already restored');
+  }
+}
+
 /**
  * EN-212 (D-127, D-117.14). Changing the CODE of a diagnosis that a paper in
  * a third party's hands printed — an issued certificate (EN-189) or an issued

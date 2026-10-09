@@ -20,6 +20,8 @@ import {
   EncounterNotFoundError,
   PractitionerNotLicensedError,
   PractitionerProfileRequiredError,
+  ProcedureNotFoundError,
+  ProcedureNotRestorableError,
 } from '../domain/encounter.errors';
 import type {
   CareModality,
@@ -58,7 +60,13 @@ import type {
   PrimaryChange,
   RetractedDiagnosisView,
   NewProcedure,
+  ProcedureEdit,
+  ProcedureQuery,
+  ProcedureRestoration,
+  ProcedureRetraction,
+  ProcedureVersionView,
   ProcedureView,
+  RetractedProcedureView,
 } from '../domain/clinical-coding.repository';
 import type { SiteScopeFilter } from '../domain/encounter.repository';
 
@@ -152,6 +160,7 @@ const PROCEDURE_SELECT = {
   quantity: true,
   performedAt: true,
   note: true,
+  editedAt: true,
 } satisfies Prisma.EncounterProcedureSelect;
 
 /** The row `PROCEDURE_SELECT` yields — without `tariffAmount`, because the select omits it. */
@@ -934,6 +943,295 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
     });
     return rows.map(toProcedureView);
   }
+
+  /**
+   * EN-244. A correction in place, under the attention's lock and only while
+   * it admits new content (the same rule as recording, EN-009). A new concept
+   * is checked against the tariff and its code copied from the row read in
+   * this transaction (EN-050). `trg_encounter_procedure_record_version` keeps
+   * the previous row and refuses an edit whose stamp did not move.
+   */
+  async editProcedure(edit: ProcedureEdit): Promise<ProcedureView> {
+    const now = new Date();
+    const row = await this.prisma.$transaction(async (tx) => {
+      await requireEncounterInScope(tx, edit.encounterId, edit.sites);
+      const current = await tx.encounterProcedure.findFirst({
+        where: { id: edit.procedureId, encounterId: edit.encounterId },
+        select: { ...PROCEDURE_SELECT },
+      });
+      if (!current) throw new ProcedureNotFoundError();
+
+      let identity: Prisma.EncounterProcedureUncheckedUpdateInput = {};
+      if (
+        edit.conceptId !== undefined &&
+        edit.conceptId !== current.conceptId
+      ) {
+        const concept = await conceptForEncounter(
+          tx,
+          edit.encounterId,
+          edit.conceptId,
+        );
+        if (concept === undefined || concept.system_code !== TARIFF) {
+          throw new ConceptWrongCatalogueError(TARIFF);
+        }
+        identity = {
+          conceptId: edit.conceptId,
+          procedureCode: concept.concept_code,
+          procedureDisplay: concept.concept_display,
+        };
+      }
+      const note =
+        edit.note === undefined
+          ? undefined
+          : edit.note === null || edit.note === ''
+            ? null
+            : edit.note;
+      const changes: Prisma.EncounterProcedureUncheckedUpdateInput = {
+        ...identity,
+        ...(edit.quantity !== undefined && edit.quantity !== current.quantity
+          ? { quantity: edit.quantity }
+          : {}),
+        ...(note !== undefined && note !== current.note ? { note } : {}),
+      };
+      // Nothing to change is not an edit: no version of an identical row.
+      if (Object.keys(changes).length === 0) return current;
+
+      const [stamped] = await tx.$queryRaw<{ edited_at: Date | null }[]>`
+        SELECT edited_at FROM encounter_procedure
+         WHERE id = ${current.id}::uuid
+         FOR UPDATE`;
+      return tx.encounterProcedure.update({
+        where: { id: current.id },
+        data: {
+          ...changes,
+          editedById: edit.editedById,
+          editedAt: stampAfter(stamped?.edited_at ?? null, now),
+        },
+        select: PROCEDURE_SELECT,
+      });
+    });
+    return toProcedureView(row);
+  }
+
+  /**
+   * EN-244. The versions `record_version_archive` kept, read through the SAME
+   * mapping as the current procedure. A restored procedure is a new row
+   * (EN-246): the versions of the row it came back from follow, so undoing a
+   * removal does not hide what was corrected before it.
+   */
+  async procedureVersions(
+    query: ProcedureQuery,
+  ): Promise<ProcedureVersionView[]> {
+    const where = {
+      id: query.procedureId,
+      encounterId: query.encounterId,
+      encounter: siteFilter(query.sites),
+    };
+    const [live, archived] = await Promise.all([
+      this.prisma.encounterProcedure.findFirst({ where, select: { id: true } }),
+      this.prisma.encounterProcedureRetraction.findFirst({
+        where,
+        select: { id: true },
+      }),
+    ]);
+    if (live === null && archived === null) throw new ProcedureNotFoundError();
+
+    const lineage = [query.procedureId];
+    for (let depth = 0; depth < 50; depth += 1) {
+      const earlier = await this.prisma.encounterProcedureRetraction.findFirst({
+        where: {
+          restoredAsId: lineage[lineage.length - 1]!,
+          encounterId: query.encounterId,
+        },
+        select: { id: true },
+      });
+      if (earlier === null) break;
+      lineage.push(earlier.id);
+    }
+
+    const result: ProcedureVersionView[] = [];
+    for (const id of lineage) {
+      const versions = await this.prisma.recordVersion.findMany({
+        where: { resourceType: 'encounter_procedure', resourceId: id },
+        orderBy: { version: 'desc' },
+        select: {
+          version: true,
+          data: true,
+          changedAt: true,
+          changedBy: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+      for (const version of versions) {
+        result.push({
+          version: version.version,
+          replacedBy: {
+            id: version.changedBy.id,
+            name: `${version.changedBy.firstName} ${version.changedBy.lastName}`,
+          },
+          replacedAt: version.changedAt,
+          procedure: procedureFromSnapshot(
+            version.data as unknown as ProcedureSnapshot,
+          ),
+        });
+      }
+    }
+    return result;
+  }
+
+  /**
+   * EN-245. Archives the procedure whole — with its last correction, who
+   * removed it, when and why — and removes it, in one transaction under the
+   * attention's lock. The instant is the application's clock.
+   */
+  async retractProcedure(retraction: ProcedureRetraction): Promise<void> {
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await requireEncounterInScope(
+        tx,
+        retraction.encounterId,
+        retraction.sites,
+      );
+      const target = await tx.encounterProcedure.findFirst({
+        where: {
+          id: retraction.procedureId,
+          encounterId: retraction.encounterId,
+        },
+        select: { id: true },
+      });
+      if (!target) throw new ProcedureNotFoundError();
+
+      await tx.$executeRaw`
+        INSERT INTO "encounter_procedure_retraction"
+          ("id", "encounter_id", "concept_id", "procedure_code",
+           "procedure_display", "quantity", "performed_at", "note",
+           "tariff_amount", "edited_by_id", "edited_at",
+           "retracted_at", "retracted_by_id", "reason")
+        SELECT "id", "encounter_id", "concept_id", "procedure_code",
+               "procedure_display", "quantity", "performed_at", "note",
+               "tariff_amount", "edited_by_id", "edited_at",
+               ${now}, ${retraction.retractedById}::uuid, ${retraction.reason}
+          FROM "encounter_procedure"
+         WHERE "id" = ${retraction.procedureId}::uuid
+      `;
+      await tx.encounterProcedure.delete({
+        where: { id: retraction.procedureId },
+      });
+    });
+  }
+
+  /**
+   * EN-246. The procedure comes back as a NEW row, as it was — including when
+   * it was performed — and the archive says, once, as which.
+   */
+  async restoreProcedure(
+    restoration: ProcedureRestoration,
+  ): Promise<ProcedureView> {
+    const now = new Date();
+    const row = await this.prisma.$transaction(async (tx) => {
+      await requireEncounterInScope(
+        tx,
+        restoration.encounterId,
+        restoration.sites,
+      );
+      const archived = await tx.encounterProcedureRetraction.findFirst({
+        where: {
+          id: restoration.retractionId,
+          encounterId: restoration.encounterId,
+        },
+      });
+      if (!archived) throw new ProcedureNotFoundError();
+      if (archived.restoredAt !== null) throw new ProcedureNotRestorableError();
+
+      const restored = await tx.encounterProcedure.create({
+        data: {
+          encounterId: archived.encounterId,
+          conceptId: archived.conceptId,
+          procedureCode: archived.procedureCode,
+          procedureDisplay: archived.procedureDisplay,
+          quantity: archived.quantity,
+          performedAt: archived.performedAt,
+          note: archived.note,
+          // EN-051: carried back untouched, never read nor served.
+          tariffAmount: archived.tariffAmount,
+        },
+        select: PROCEDURE_SELECT,
+      });
+      // `encounter_procedure_retraction_frozen` admits this once, and only
+      // towards that very procedure back on its attention.
+      await tx.encounterProcedureRetraction.update({
+        where: { id: archived.id },
+        data: {
+          restoredAt: now,
+          restoredById: restoration.restoredById,
+          restoredAsId: restored.id,
+        },
+      });
+      return restored;
+    });
+    return toProcedureView(row);
+  }
+
+  /** EN-245. The archive of one attention, without what was restored. */
+  async retractedProceduresOf(
+    query: CodingQuery,
+  ): Promise<RetractedProcedureView[]> {
+    const rows = await this.prisma.encounterProcedureRetraction.findMany({
+      where: {
+        encounterId: query.encounterId,
+        restoredAt: null,
+        encounter: siteFilter(query.sites),
+      },
+      orderBy: [{ retractedAt: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        procedureCode: true,
+        procedureDisplay: true,
+        quantity: true,
+        retractedAt: true,
+        reason: true,
+        retractedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      procedureCode: row.procedureCode,
+      procedureDisplay: row.procedureDisplay,
+      quantity: row.quantity,
+      retractedAt: row.retractedAt,
+      retractedBy: {
+        id: row.retractedBy.id,
+        name: `${row.retractedBy.firstName} ${row.retractedBy.lastName}`,
+      },
+      reason: row.reason,
+    }));
+  }
+}
+
+/** EN-244. The previous row as `record_version` stored it (`to_jsonb`). */
+interface ProcedureSnapshot {
+  id: string;
+  encounter_id: string;
+  concept_id: string;
+  procedure_code: string;
+  procedure_display: string;
+  quantity: number;
+  performed_at: string;
+  note: string | null;
+  edited_at: string | null;
+}
+
+function procedureFromSnapshot(snapshot: ProcedureSnapshot): ProcedureView {
+  return {
+    id: snapshot.id,
+    encounterId: snapshot.encounter_id,
+    conceptId: snapshot.concept_id,
+    procedureCode: snapshot.procedure_code,
+    procedureDisplay: snapshot.procedure_display,
+    quantity: snapshot.quantity,
+    performedAt: new Date(snapshot.performed_at),
+    note: snapshot.note,
+    editedAt: snapshot.edited_at === null ? null : new Date(snapshot.edited_at),
+  };
 }
 
 /**
@@ -1246,6 +1544,7 @@ function toProcedureView(row: ProcedureRow): ProcedureView {
     quantity: row.quantity,
     performedAt: row.performedAt,
     note: row.note,
+    editedAt: row.editedAt,
   };
 }
 

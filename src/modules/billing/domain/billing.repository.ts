@@ -498,6 +498,11 @@ export interface ChargedActs {
   /** Whether the CONSULTATION of this visit is already charged. */
   consultation: boolean;
   encounterProcedureIds: string[];
+  /**
+   * BI-242. The procedures whose charge is not removed: a restored procedure
+   * is charged by its former row's line while that line stands.
+   */
+  liveEncounterProcedureIds?: string[];
   serviceOrderItemIds: string[];
 }
 
@@ -546,6 +551,8 @@ export interface ChargeStamp {
 
 /** BI-197. What an in-place edit may change; absent keys stay as they are. */
 export interface ChargeEdit extends ChargeStamp {
+  /** BI-243. Only if, under the row's lock, it still has this status. */
+  onlyIfStatus?: ChargeStatus;
   quantity?: Quantity;
   serviceDate?: ClinicalDate;
   billableServiceId?: string;
@@ -689,6 +696,8 @@ export interface BillingAccountRepository {
     voidedById: string;
     reason: string | null;
     now: Date;
+    /** BI-243. Only if, under the row's lock, it still has this status. */
+    onlyIfStatus?: ChargeStatus;
   }): Promise<ChargeView>;
 
   /**
@@ -696,6 +705,12 @@ export interface BillingAccountRepository {
    * at most one (`charge_item_one_consultation_per_encounter`).
    */
   findConsultationCharge(encounterId: string): Promise<ChargeView | null>;
+
+  /**
+   * BI-240 to BI-243. The charge a procedure raised, whatever its status —
+   * there is at most one (`charge_item_one_per_encounter_procedure`).
+   */
+  findProcedureCharge(encounterProcedureId: string): Promise<ChargeView | null>;
 
   /** BI-196. An open line of $0 becomes `NOT_BILLABLE`, with its version. */
   markNotBillable(command: ChargeStamp): Promise<ChargeView>;

@@ -50,6 +50,11 @@ export interface PerformedProcedure {
   serviceDate: ClinicalDate;
   /** `encounter_procedure.quantity`, a whole number of times it was done. */
   quantity: number;
+  /**
+   * EN-246, BI-242. The ids of the removed rows this one was restored from,
+   * newest first: a charge that still names one of them charges THIS act.
+   */
+  restoredFrom?: string[];
 }
 
 /**

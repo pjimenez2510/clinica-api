@@ -37,7 +37,7 @@ import {
   totalsOf,
 } from '../domain/charge';
 import { consultationKeyOf } from '../domain/charge-proposal';
-import type { Quantity } from '../domain/money';
+import { Quantity } from '../domain/money';
 import {
   CLINICAL_ACTS_REPOSITORY,
   type ClinicalActsRepository,
@@ -91,6 +91,17 @@ export interface AccountStatement {
    * says the truth whatever happened to the announcement.
    */
   consultationOutdated: { chargeId: string; billed: boolean } | null;
+  /**
+   * BI-243 (D-194.3). Each procedure line that no longer matches the visit:
+   * its procedure was removed (`RETRACTED`) or now maps to another service or
+   * quantity (`CHANGED`). A proposal follows its procedure on its own
+   * (BI-240, BI-241); what is left here is caja's to correct. Derived on read.
+   */
+  proceduresOutdated: {
+    chargeId: string;
+    billed: boolean;
+    reason: 'RETRACTED' | 'CHANGED';
+  }[];
 }
 
 /**
@@ -237,6 +248,7 @@ export class PatientAccountService {
       closesEncounter:
         encounter?.status === 'DISCHARGED' && !encounter.hasDrafts,
       consultationOutdated: await this.consultationOutdated(account, charges),
+      proceduresOutdated: await this.proceduresOutdated(account, charges),
     };
   }
 
@@ -471,6 +483,61 @@ export class PatientAccountService {
       return null;
     }
     return { chargeId: line.id, billed: line.status === 'BILLED' };
+  }
+
+  /**
+   * BI-243. Compares each standing procedure line with the procedure it names
+   * — or the one restored from it (EN-246) — as it is NOW.
+   */
+  private async proceduresOutdated(
+    account: AccountView,
+    charges: readonly ChargeView[],
+  ): Promise<AccountStatement['proceduresOutdated']> {
+    const lines = charges.filter(
+      (charge) =>
+        charge.origin === 'PROCEDURE' &&
+        charge.encounterProcedureId !== null &&
+        charge.status !== 'CANCELLED' &&
+        charge.status !== 'NOT_BILLABLE',
+    );
+    if (lines.length === 0 || !account.encounterId) return [];
+
+    const acts = await this.acts.findEncounterActs({
+      encounterId: account.encounterId,
+      siteId: account.siteId,
+    });
+    const procedures = acts?.procedures ?? [];
+    const byId = new Map<string, (typeof procedures)[number]>();
+    for (const procedure of procedures) {
+      byId.set(procedure.encounterProcedureId, procedure);
+      for (const former of procedure.restoredFrom ?? []) {
+        if (!byId.has(former)) byId.set(former, procedure);
+      }
+    }
+    const services = await this.catalogue.findServicesByProcedureConcept([
+      ...new Set(procedures.map((procedure) => procedure.conceptId)),
+    ]);
+
+    const outdated: AccountStatement['proceduresOutdated'] = [];
+    for (const line of lines) {
+      const billed = line.status === 'BILLED';
+      const procedure = byId.get(line.encounterProcedureId!);
+      if (!procedure) {
+        outdated.push({ chargeId: line.id, billed, reason: 'RETRACTED' });
+        continue;
+      }
+      const service = services.get(procedure.conceptId);
+      const quantity = Quantity.parse(String(procedure.quantity));
+      // A concept with no service to charge it is not what the line charges.
+      if (
+        service === undefined ||
+        service.billableServiceId !== line.billableServiceId ||
+        quantity.thousandths !== line.quantity.thousandths
+      ) {
+        outdated.push({ chargeId: line.id, billed, reason: 'CHANGED' });
+      }
+    }
+    return outdated;
   }
 
   /** BI-135. Missing and «belongs to another site» answer identically. */

@@ -708,6 +708,7 @@ function toStatementResponse(
       savedAt: draft.savedAt.toISOString(),
     })),
     consultationOutdated: statement.consultationOutdated,
+    proceduresOutdated: statement.proceduresOutdated,
     encounterStatus:
       statement.encounterStatus as AccountStatementResponse['encounterStatus'],
     closesEncounter: statement.closesEncounter,

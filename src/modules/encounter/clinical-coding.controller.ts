@@ -32,8 +32,10 @@ import type { Requester } from './application/encounter.service';
 import type {
   DiagnosisVersionView,
   DiagnosisView,
+  ProcedureVersionView,
   ProcedureView,
   RetractedDiagnosisView,
+  RetractedProcedureView,
 } from './domain/clinical-coding.repository';
 import {
   CorrectEncounterCodingDto,
@@ -42,8 +44,11 @@ import {
   DiagnosisListDto,
   DiagnosisVersionListDto,
   EditDiagnosisDto,
+  EditProcedureDto,
   ProcedureDto,
   ProcedureListDto,
+  ProcedureVersionListDto,
+  RetractProcedureDto,
   RecordDiagnosisDto,
   RecordProcedureDto,
   RetractDiagnosisDto,
@@ -52,6 +57,7 @@ import {
   type DiagnosisVersionListResponse,
   type ProcedureListResponse,
   type ProcedureResponse,
+  type ProcedureVersionListResponse,
 } from './dto/clinical-coding.dto';
 
 /**
@@ -366,11 +372,104 @@ export class ClinicalCodingController {
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Req() req: Request,
   ): Promise<ProcedureListResponse> {
-    const items = await this.coding.proceduresOf(
+    const sheet = await this.coding.proceduresOf(
       encounterId,
       this.requester(req, 'record:read'),
     );
-    return { items: items.map(toProcedureResponse) };
+    return {
+      items: sheet.items.map(toProcedureResponse),
+      retracted: sheet.retracted.map(toRetractedProcedureResponse),
+    };
+  }
+
+  /**
+   * EN-244 (D-127). Corrects a procedure in place: its tariff concept, how
+   * many times, its note. `record:write`, like recording it; only while the
+   * attention is live (D-194.1). A `PATCH`: only what travels changes.
+   */
+  @Patch('procedures/:procedureId')
+  @RequirePermission('record:write', 'query')
+  @ApiOperation({ summary: 'Corregir un procedimiento de la atención' })
+  @ApiOkResponse({ type: ProcedureDto })
+  async editProcedure(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Param('procedureId', ParseUUIDPipe) procedureId: string,
+    @Body() dto: EditProcedureDto,
+    @Req() req: Request,
+  ): Promise<ProcedureResponse> {
+    const procedure = await this.coding.editProcedure(
+      {
+        encounterId,
+        procedureId,
+        conceptId: dto.conceptId,
+        quantity: dto.quantity,
+        note: dto.note,
+      },
+      this.requester(req, 'record:write'),
+    );
+    return toProcedureResponse(procedure);
+  }
+
+  /** EN-244. The versions corrections replaced. Audited like the list. */
+  @Get('procedures/:procedureId/versions')
+  @RequirePermission('record:read', 'query')
+  @ApiOperation({ summary: 'Versiones anteriores de un procedimiento' })
+  @ApiOkResponse({ type: ProcedureVersionListDto })
+  async procedureVersions(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Param('procedureId', ParseUUIDPipe) procedureId: string,
+    @Req() req: Request,
+  ): Promise<ProcedureVersionListResponse> {
+    const versions = await this.coding.procedureVersions(
+      encounterId,
+      procedureId,
+      this.requester(req, 'record:read'),
+    );
+    return { items: versions.map(toProcedureVersionResponse) };
+  }
+
+  /**
+   * EN-245. Takes a procedure off the attention, with a trace and a reason.
+   * A `POST` of an act and not a `DELETE`: nothing is deleted from the
+   * history, and the reason travels in a body.
+   */
+  @Post('procedures/:procedureId/retract')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Quitar un procedimiento registrado por error' })
+  @ApiNoContentResponse()
+  async retractProcedure(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Param('procedureId', ParseUUIDPipe) procedureId: string,
+    @Body() dto: RetractProcedureDto,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.coding.retractProcedure(
+      { encounterId, procedureId, reason: dto.reason },
+      this.requester(req, 'record:write'),
+    );
+  }
+
+  /**
+   * EN-246. Restores a removed procedure, which comes back with a new id.
+   * 200 with the procedure brought back.
+   */
+  @Post('procedures/:procedureId/restore')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Restaurar un procedimiento quitado' })
+  @ApiOkResponse({ type: ProcedureDto })
+  async restoreProcedure(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Param('procedureId', ParseUUIDPipe) procedureId: string,
+    @Req() req: Request,
+  ): Promise<ProcedureResponse> {
+    const procedure = await this.coding.restoreProcedure(
+      encounterId,
+      procedureId,
+      this.requester(req, 'record:write'),
+    );
+    return toProcedureResponse(procedure);
   }
 
   /**
@@ -462,5 +561,33 @@ function toProcedureResponse(procedure: ProcedureView): ProcedureResponse {
     quantity: procedure.quantity,
     performedAt: procedure.performedAt.toISOString(),
     note: procedure.note,
+    editedAt: procedure.editedAt?.toISOString() ?? null,
+  };
+}
+
+/** EN-245. The archive row; who removed it travels as a name. */
+function toRetractedProcedureResponse(
+  retracted: RetractedProcedureView,
+): ProcedureListResponse['retracted'][number] {
+  return {
+    id: retracted.id,
+    procedureCode: retracted.procedureCode,
+    procedureDisplay: retracted.procedureDisplay,
+    quantity: retracted.quantity,
+    retractedAt: retracted.retractedAt.toISOString(),
+    retractedBy: retracted.retractedBy,
+    reason: retracted.reason,
+  };
+}
+
+/** EN-244. One replaced version, with the same mapping as the current one. */
+function toProcedureVersionResponse(
+  version: ProcedureVersionView,
+): ProcedureVersionListResponse['items'][number] {
+  return {
+    version: version.version,
+    replacedBy: version.replacedBy,
+    replacedAt: version.replacedAt.toISOString(),
+    procedure: toProcedureResponse(version.procedure),
   };
 }
