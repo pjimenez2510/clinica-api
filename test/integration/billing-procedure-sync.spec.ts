@@ -322,8 +322,8 @@ describe('el cargo sigue al procedimiento corregido (BI-240 a BI-243)', () => {
         systemId: tariff.id,
         code: `NP-${Math.floor(Math.random() * 1e6)}`,
         display: 'Sin prestación',
-        validFrom: new Date('2020-01-01'),
-      }, // prettier-ignore fecha-fija: vigente desde siempre
+        validFrom: new Date('2020-01-01'), // fecha-fija: vigente desde siempre
+      },
     });
 
     await scene.coding.editProcedure({
