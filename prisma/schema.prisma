@@ -226,6 +226,11 @@ model User {
   /// EN-210, D-127. The versions this account replaced by editing.
   recordVersionsChanged RecordVersion[] @relation("RecordVersionChanger")
 
+  /// B6. The payments received, the ones reversed, and the cash closed.
+  paymentsReceived Payment[]     @relation("PaymentReceiver")
+  paymentsReversed Payment[]     @relation("PaymentReverser")
+  cashSessions     CashSession[] @relation("CashSessionOwner")
+
   @@index([email])
   @@map("app_user")
 }
@@ -1272,6 +1277,10 @@ model Site {
 
   /// AG-129. The emergency notices given at this site.
   emergencyAlerts AgendaEmergencyAlert[]
+
+  /// B6. The money received here, and its daily closes.
+  payments     Payment[]
+  cashSessions CashSession[]
 
   @@map("site")
 }
@@ -4809,6 +4818,9 @@ model Invoice {
 
   creditNotes CreditNote[]
 
+  /// B6 (BI-101). What was received against it.
+  payments Payment[]
+
   /// BI-169. The charges this invoice billed: the lines of its voucher.
   chargeItems ChargeItem[]
 
@@ -5110,7 +5122,100 @@ model PaymentMethod {
   updatedById String?  @map("updated_by_id") @db.Uuid
   updatedBy   User?    @relation("PaymentMethodUpdater", fields: [updatedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "payment_method_updated_by_fk")
 
+  payments         Payment[]
+  cashSessionLines CashSessionLine[]
+
   @@map("payment_method")
+}
+
+/// billing B6 (BI-101 to BI-104, BI-247 to BI-250). Money received against an
+/// invoice. Never deleted and never edited: the only change it admits is its
+/// reversal, once (`trg_payment_only_reverses`). `trg_payment_guard` writes
+/// `cashDate` (the Guayaquil date of `receivedAt`), refuses a payment beyond
+/// the invoice's balance and one into a closed cash day — none of which
+/// `schema.prisma` can express; see `20261009130000_payment_and_cash_session`.
+model Payment {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  invoiceId String  @map("invoice_id") @db.Uuid
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "payment_invoice_fk")
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "payment_site_fk")
+
+  paymentMethodId String        @map("payment_method_id") @db.Uuid
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "payment_payment_method_fk")
+
+  amount    Decimal @db.Decimal(12, 2)
+  reference String? @db.VarChar(100)
+
+  receivedAt   DateTime @map("received_at") @db.Timestamptz(6)
+  receivedById String   @map("received_by_id") @db.Uuid
+  receivedBy   User     @relation("PaymentReceiver", fields: [receivedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "payment_received_by_fk")
+  /// BI-250. Written by the database; whatever the INSERT carries is replaced.
+  cashDate     DateTime @map("cash_date") @db.Date
+
+  reversedAt     DateTime? @map("reversed_at") @db.Timestamptz(6)
+  reversedById   String?   @map("reversed_by_id") @db.Uuid
+  reversedBy     User?     @relation("PaymentReverser", fields: [reversedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "payment_reversed_by_fk")
+  reversalReason String?   @map("reversal_reason") @db.VarChar(200)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([invoiceId], map: "payment_by_invoice")
+  @@index([siteId, receivedById, cashDate], map: "payment_by_cash_day")
+  @@map("payment")
+}
+
+/// billing B6 (BI-104, BI-105, BI-252). The daily close of one user's cash at
+/// one site: a photo that never changes (`trg_cash_session_is_final`) and
+/// that the database checks against the payments it summarises
+/// (`trg_cash_session_matches_its_payments`, deferred).
+model CashSession {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  siteId String @map("site_id") @db.Uuid
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "cash_session_site_fk")
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation("CashSessionOwner", fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "cash_session_user_fk")
+
+  cashDate DateTime @map("cash_date") @db.Date
+  closedAt DateTime @map("closed_at") @db.Timestamptz(6)
+
+  collectedTotal Decimal @map("collected_total") @db.Decimal(12, 2)
+  expectedCash   Decimal @map("expected_cash") @db.Decimal(12, 2)
+  declaredCash   Decimal @map("declared_cash") @db.Decimal(12, 2)
+  /// GENERATED ALWAYS AS (declared_cash - expected_cash): never written.
+  difference     Decimal @default(dbgenerated()) @db.Decimal(12, 2)
+  pendingTotal   Decimal @map("pending_total") @db.Decimal(12, 2)
+  pendingCount   Int     @map("pending_count")
+  note           String? @db.VarChar(300)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  lines CashSessionLine[]
+
+  @@unique([siteId, userId, cashDate], map: "cash_session_one_per_day")
+  @@map("cash_session")
+}
+
+/// What one payment method brought in, with its name and SRI code copied.
+model CashSessionLine {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  cashSessionId String      @map("cash_session_id") @db.Uuid
+  cashSession   CashSession @relation(fields: [cashSessionId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "cash_session_line_session_fk")
+
+  paymentMethodId String        @map("payment_method_id") @db.Uuid
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "cash_session_line_payment_method_fk")
+
+  methodName   String  @map("method_name") @db.VarChar(60)
+  sriCode      String  @map("sri_code") @db.Char(2)
+  paymentCount Int     @map("payment_count")
+  amount       Decimal @db.Decimal(12, 2)
+
+  @@unique([cashSessionId, paymentMethodId], map: "cash_session_line_one_per_method")
+  @@map("cash_session_line")
 }
 
 /// How much each role may discount without asking a second person.
