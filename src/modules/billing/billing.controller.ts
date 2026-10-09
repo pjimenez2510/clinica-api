@@ -28,6 +28,7 @@ import {
   ChargeCorrectionService,
   type PayerChangePreview,
 } from './application/charge-correction.service';
+import { ChargeDiscountService } from './application/charge-discount.service';
 import { EncounterCheckoutService } from './application/encounter-checkout.service';
 import {
   InvoicingService,
@@ -41,7 +42,7 @@ import {
 import type { AccountView, ChargeView } from './domain/billing.repository';
 import type { AwaitingCheckout } from './domain/clinical-acts.port';
 import { lineBase, lineTax } from './domain/charge';
-import { Money, Quantity } from './domain/money';
+import { Money, Percentage, Quantity } from './domain/money';
 import type { PatientIdentity } from './domain/patient-identity';
 import {
   AccountDto,
@@ -49,6 +50,9 @@ import {
   AccountQueryDto,
   AccountStatementDto,
   AddChargeDto,
+  ApplyDiscountDto,
+  DiscountPolicyDto,
+  type DiscountPolicyResponse,
   ChangePayerDto,
   CloseAccountDto,
   ChargeDto,
@@ -111,6 +115,7 @@ export class BillingController {
     private readonly invoicing: InvoicingService,
     private readonly checkout: EncounterCheckoutService,
     private readonly corrections: ChargeCorrectionService,
+    private readonly discounts: ChargeDiscountService,
     private readonly currentUser: CurrentUserService,
   ) {}
 
@@ -490,6 +495,69 @@ export class BillingController {
   }
 
   /**
+   * BI-062, BI-245. Lo que el diálogo de descuento sabe antes de pedir: el
+   * límite de quien pide en esta sede y a quién puede pedírselo por encima.
+   * `billing:write` y no `billing:read`: es parte de rebajar, y la lista de
+   * quién autoriza no es de quien sólo mira.
+   */
+  @Get('accounts/:accountId/discount-policy')
+  @RequirePermission('billing:write', 'param:siteId')
+  @ApiOperation({ summary: 'Consultar el límite de descuento propio y quién lo autoriza' }) // prettier-ignore
+  @ApiOkResponse({ type: DiscountPolicyDto })
+  async discountPolicy(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+  ): Promise<DiscountPolicyResponse> {
+    const policy = await this.discounts.discountPolicy({
+      accountId,
+      siteId,
+      userId: this.currentUser.requireUserId(),
+    });
+    return {
+      maxDiscountPercentage: policy.maxDiscountPercentage.toString(),
+      authorisers: policy.authorisers,
+    };
+  }
+
+  /**
+   * BI-060 a BI-066, BI-244, BI-246. Pone, reemplaza o —con cero— quita el
+   * descuento de una línea confirmada. Por encima del límite de quien lo pide
+   * hace falta otra persona con `billing:discount-override` en la sede, y la
+   * línea queda con los dos nombres; nadie se autoriza a sí mismo.
+   */
+  @Post('accounts/:accountId/charges/:chargeId/discount')
+  @RequirePermission('billing:write', 'param:siteId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Poner o quitar el descuento de un cargo' })
+  @ApiOkResponse({ type: ChargeDto })
+  async applyDiscount(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('chargeId', ParseUUIDPipe) chargeId: string,
+    @Body() dto: ApplyDiscountDto,
+    @Req() req: Request,
+  ): Promise<ChargeResponse> {
+    return toChargeResponse(
+      await this.discounts.applyDiscount({
+        accountId,
+        siteId,
+        chargeId,
+        discount:
+          dto.percentage === undefined
+            ? { amount: Money.parse(dto.amount ?? '0') }
+            : { percentage: Percentage.parse(dto.percentage) },
+        reason: dto.reason ?? null,
+        authorisedById: dto.authorisedById ?? null,
+        requester: {
+          userId: this.currentUser.requireUserId(),
+          ip: req.ip,
+          userAgent: req.get('user-agent'),
+        },
+      }),
+    );
+  }
+
+  /**
    * BI-082. What the screen OFFERS as receiver — never what it applies.
    *
    * A route of its own rather than a field of the account: BI-080 demands the
@@ -736,6 +804,13 @@ function toTotalsResponse(
  * columns. Who created the line and who authorised a discount are not in the
  * response.
  */
+function personRef(
+  id: string | null,
+  name: string | null,
+): { id: string; name: string } | null {
+  return id === null ? null : { id, name: name ?? '' };
+}
+
 function toChargeResponse(charge: ChargeView): ChargeResponse {
   const line = toLine(charge);
 
@@ -753,6 +828,11 @@ function toChargeResponse(charge: ChargeView): ChargeResponse {
     taxPercentage: charge.taxPercentage?.toString() ?? null,
     discountAmount: charge.discountAmount.toString(),
     discountReason: charge.discountReason,
+    // BI-066, SC-021. Who and when, by name, so the line says it.
+    discountAppliedBy: personRef(charge.discountAppliedById, charge.discountAppliedByName), // prettier-ignore
+    discountAppliedAt: charge.discountAppliedAt?.toISOString() ?? null,
+    discountAuthorisedBy: personRef(charge.discountAuthorisedById, charge.discountAuthorisedByName), // prettier-ignore
+    discountAuthorisedAt: charge.discountAuthorisedAt?.toISOString() ?? null,
     status: charge.status,
     // BI-153. De dónde viene la línea, y qué acto nombra.
     origin: charge.origin,

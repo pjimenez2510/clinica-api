@@ -560,6 +560,16 @@ export const DOMAIN_ERROR_CODES = [
   // dejar caja sin ninguno. El nombre repetido lo rechaza la base
   // (`payment_method_name_unique` → `PAYMENT_METHOD_NAME_TAKEN`).
   'DISCOUNT_LIMIT_ROLE_NOT_FOUND',
+  // Los descuentos (B4, BI-063, BI-244, BI-246). Por encima del límite del
+  // rol, `DISCOUNT_EXCEEDS_LIMIT` (403) dice que falta otra persona;
+  // `DISCOUNT_NOT_AUTHORISED` (403), que la nombrada no puede autorizar;
+  // autorizarse a sí mismo es `SELF_AUTHORISATION_DENIED`, el de AG-103.
+  // `CHARGE_HAS_DISCOUNT` (409) frena cambiar el importe de una línea
+  // rebajada, y `CHARGE_NOT_CONFIRMED` (409) rebajar una propuesta.
+  'DISCOUNT_EXCEEDS_LIMIT',
+  'DISCOUNT_NOT_AUTHORISED',
+  'CHARGE_HAS_DISCOUNT',
+  'CHARGE_NOT_CONFIRMED',
   'LAST_ACTIVE_PAYMENT_METHOD',
   'PAYMENT_METHOD_NAME_TAKEN',
   'PAYMENT_METHOD_NOT_FOUND',

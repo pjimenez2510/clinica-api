@@ -443,6 +443,13 @@ export interface ChargeView {
   discountAmount: Money;
   discountReason: string | null;
   discountAuthorisedById: string | null;
+  /** BI-066. When the second person authorised it; null within the ceiling. */
+  discountAuthorisedAt: Date | null;
+  discountAuthorisedByName: string | null;
+  /** BI-066. Who put the discount on the line, and when — not `createdById`. */
+  discountAppliedById: string | null;
+  discountAppliedAt: Date | null;
+  discountAppliedByName: string | null;
   status: ChargeStatus;
   createdById: string;
   /** BI-153. Where the line came from, and which clinical act it names. */
@@ -547,6 +554,16 @@ export interface ChargeStamp {
   chargeId: string;
   changedById: string;
   now: Date;
+}
+
+/** BI-060 to BI-066. One discount act on one line. */
+export interface DiscountWrite extends ChargeStamp {
+  reason: string | null;
+  /** Under the row lock: the amount and whose second signature it carries. */
+  decide: (current: ChargeView) => {
+    amount: Money;
+    authorisedById: string | null;
+  };
 }
 
 /** BI-197. What an in-place edit may change; absent keys stay as they are. */
@@ -729,6 +746,46 @@ export interface BillingAccountRepository {
    * `CHARGE_ALREADY_VOIDED`.
    */
   editCharge(command: ChargeEdit): Promise<ChargeView>;
+
+  /**
+   * BI-060 to BI-066, BI-246. Puts, replaces or removes (amount zero) the
+   * discount of one line, IN ONE TRANSACTION WITH THE ROW LOCKED: `decide`
+   * reads the line as it is under the lock, so a quantity edited a moment
+   * before cannot turn an authorised 10 % into a 50 % (BI-244). Refuses a
+   * proposal with `CHARGE_NOT_CONFIRMED` and a line that left review as
+   * `editCharge` does.
+   */
+  applyDiscount(command: DiscountWrite): Promise<ChargeView>;
+
+  /**
+   * BI-062. The ceilings of the roles the user holds AT THIS SITE or across
+   * the clinic, active grants of active roles of an active account only. A
+   * role without a row contributes nothing: zero (BI-141).
+   */
+  discountCeilings(query: {
+    userId: string;
+    siteId: string;
+  }): Promise<Percentage[]>;
+
+  /**
+   * BI-063. What the named person holds at this site. Empty for an account
+   * that does not exist or is inactive, so «no existe» and «no puede» answer
+   * the same.
+   */
+  permissionsAt(query: {
+    userId: string;
+    siteId: string;
+  }): Promise<readonly string[]>;
+
+  /**
+   * BI-245. The other active users who hold `billing:discount-override` at
+   * this site, by name, for the cashier to pick from.
+   */
+  discountAuthorisers(query: {
+    siteId: string;
+    permission: string;
+    exceptUserId: string;
+  }): Promise<{ userId: string; name: string }[]>;
 
   /**
    * BI-198. What each OPEN line would cost in `priceListId`, without writing:

@@ -18,6 +18,7 @@ import type {
   BillingAccountRepository,
   ChargedActs,
   ChargeEdit,
+  DiscountWrite,
   ChargeStamp,
   ChargeView,
   InvoiceIssuance,
@@ -34,6 +35,8 @@ import {
   AccountHasBilledChargesError,
   ActAlreadyChargedError,
   ChargeAlreadyInvoicedError,
+  ChargeHasDiscountError,
+  ChargeNotConfirmedError,
   ChargeAlreadyVoidedError,
   ChargeNotRemovedError,
   InvoiceChargesChangedError,
@@ -228,6 +231,8 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         const reopens =
           charge.status === 'NOT_BILLABLE' && !price.amount.isZero();
         if (price.id === charge.resolvedPriceId && !reopens) continue;
+        // BI-244. A discounted line is not repriced behind its discount.
+        if (!charge.discountAmount.isZero()) throw new ChargeHasDiscountError();
 
         await tx.chargeItem.update({
           where: { id: charge.id },
@@ -349,6 +354,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
    */
   async listCharges(accountId: string): Promise<ChargeView[]> {
     const rows = await this.prisma.chargeItem.findMany({
+      include: CHARGE_INCLUDE,
       where: { accountId },
       orderBy: { createdAt: 'asc' },
     });
@@ -408,6 +414,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       }
 
       const row = await tx.chargeItem.create({
+        include: CHARGE_INCLUDE,
         data: {
           accountId: command.accountId,
           billableServiceId: command.billableServiceId,
@@ -508,6 +515,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     accountId: string;
   }): Promise<ChargeView | null> {
     const row = await this.prisma.chargeItem.findFirst({
+      include: CHARGE_INCLUDE,
       where: { id: query.chargeId, accountId: query.accountId },
     });
     return row === null ? null : toChargeView(row);
@@ -527,6 +535,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
    */
   async confirmCharge(chargeId: string): Promise<ChargeView> {
     const row = await this.prisma.chargeItem.update({
+      include: CHARGE_INCLUDE,
       where: { id: chargeId, status: 'PLANNED' },
       data: { status: 'BILLABLE' },
     });
@@ -560,12 +569,17 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       requireOpen(current.status);
 
       const row = await tx.chargeItem.update({
+        include: CHARGE_INCLUDE,
         where: { id: command.chargeId },
         data: {
           status: 'CANCELLED',
           voidedAt: command.now,
           voidedById: command.voidedById,
           voidReason: command.reason,
+          // BI-244. A removed line takes its discount with it: «Deshacer»
+          // reprices it, and a discount granted on yesterday's price would
+          // not be the one that was authorised. The version keeps it.
+          ...(current.discountAmount.isZero() ? {} : NO_DISCOUNT),
           changedById: command.voidedById,
           changedAt: stampAfter(current.changedAt, command.now),
         },
@@ -579,6 +593,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     encounterId: string,
   ): Promise<ChargeView | null> {
     const row = await this.prisma.chargeItem.findFirst({
+      include: CHARGE_INCLUDE,
       where: { encounterId, origin: 'CONSULTATION' },
     });
     return row === null ? null : toChargeView(row);
@@ -589,6 +604,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     encounterProcedureId: string,
   ): Promise<ChargeView | null> {
     const row = await this.prisma.chargeItem.findFirst({
+      include: CHARGE_INCLUDE,
       where: { encounterProcedureId, origin: 'PROCEDURE' },
     });
     return row === null ? null : toChargeView(row);
@@ -601,6 +617,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       requireOpen(current.status);
 
       const row = await tx.chargeItem.update({
+        include: CHARGE_INCLUDE,
         where: { id: command.chargeId },
         data: {
           status: 'NOT_BILLABLE',
@@ -655,6 +672,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       });
 
       const row = await tx.chargeItem.update({
+        include: CHARGE_INCLUDE,
         where: { id: command.chargeId },
         data: {
           status,
@@ -707,6 +725,10 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         ) {
           return toChargeView(current);
         }
+        // BI-244. Under the lock: the discount is in dollars and the ceiling
+        // a percentage, so the line keeps its amount while it carries one.
+        if (!current.discountAmount.isZero())
+          throw new ChargeHasDiscountError();
 
         const data: Prisma.ChargeItemUncheckedUpdateInput = {
           ...(quantity === undefined ? {} : { quantity }),
@@ -740,6 +762,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         }
 
         const row = await tx.chargeItem.update({
+          include: CHARGE_INCLUDE,
           where: { id: command.chargeId },
           data,
         });
@@ -748,6 +771,118 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     } catch (error) {
       throw translateChargeRejection(error);
     }
+  }
+
+  /**
+   * BI-060 to BI-066, BI-246. One discount act, decided under the row lock.
+   *
+   * EVERY ACT CARRIES A NEW `discount_applied_at`, removal included: it is
+   * what `trg_charge_item_discount_is_permanent` reads as «a new act and not
+   * an edit», and what makes `record_version` keep the one it replaces.
+   */
+  async applyDiscount(command: DiscountWrite): Promise<ChargeView> {
+    return this.prisma.$transaction(async (tx) => {
+      const current = await lockCharge(tx, command.chargeId);
+      requireOpen(current.status);
+      if (current.status === 'PLANNED') throw new ChargeNotConfirmedError();
+
+      const { amount, authorisedById } = command.decide(toChargeView(current));
+      if (amount.isZero() && Money.parse(current.discountAmount).isZero()) {
+        return toChargeView(current);
+      }
+
+      const stamp = stampAfter(current.changedAt, command.now);
+      const appliedAt = stampAfter(current.discountAppliedAt, command.now);
+      const row = await tx.chargeItem.update({
+        where: { id: command.chargeId },
+        include: CHARGE_INCLUDE,
+        data: amount.isZero()
+          ? {
+              ...NO_DISCOUNT,
+              changedById: command.changedById,
+              changedAt: stamp,
+            }
+          : {
+              discountAmount: amount.toString(),
+              discountReason: command.reason,
+              discountAppliedById: command.changedById,
+              discountAppliedAt: appliedAt,
+              discountAuthorisedById: authorisedById,
+              discountAuthorisedAt: authorisedById === null ? null : appliedAt,
+              changedById: command.changedById,
+              changedAt: stamp,
+            },
+      });
+      return toChargeView(row);
+    });
+  }
+
+  /** BI-062. One ceiling per role the user holds here; none is zero. */
+  async discountCeilings(query: {
+    userId: string;
+    siteId: string;
+  }): Promise<Percentage[]> {
+    const grants = await this.prisma.userRoleGrant.findMany({
+      where: activeGrantAt(query),
+      select: { role: { select: { discountLimit: { select: { maxDiscountPercentage: true } } } } }, // prettier-ignore
+    });
+    return grants.flatMap((grant) =>
+      grant.role.discountLimit
+        ? [Percentage.parse(grant.role.discountLimit.maxDiscountPercentage)]
+        : [],
+    );
+  }
+
+  /**
+   * BI-063. Revoked grants, inactive roles and inactive accounts are filtered
+   * IN THE QUERY, as agenda's `authoriserPermissions` does: someone who left
+   * the clinic cannot be named as today's authoriser.
+   */
+  async permissionsAt(query: {
+    userId: string;
+    siteId: string;
+  }): Promise<readonly string[]> {
+    const grants = await this.prisma.userRoleGrant.findMany({
+      where: activeGrantAt(query),
+      select: { role: { select: { permissions: { select: { permissionCode: true } } } } }, // prettier-ignore
+    });
+    return [
+      ...new Set(
+        grants.flatMap((grant) =>
+          grant.role.permissions.map((held) => held.permissionCode),
+        ),
+      ),
+    ];
+  }
+
+  /** BI-245. Who the cashier can ask, by name, never herself (BI-064). */
+  async discountAuthorisers(query: {
+    siteId: string;
+    permission: string;
+    exceptUserId: string;
+  }): Promise<{ userId: string; name: string }[]> {
+    const users = await this.prisma.user.findMany({
+      where: {
+        id: { not: query.exceptUserId },
+        active: true,
+        roleGrants: {
+          some: {
+            revokedAt: null,
+            OR: [{ siteId: query.siteId }, { siteId: null }],
+            role: {
+              active: true,
+              permissions: { some: { permissionCode: query.permission } },
+            },
+          },
+        },
+      },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+    });
+    return users.map((user) => ({
+      userId: user.id,
+      name: `${user.firstName} ${user.lastName}`,
+    }));
   }
 
   /**
@@ -1200,16 +1335,44 @@ type Transaction = Prisma.TransactionClient;
 async function lockCharge(
   tx: Transaction,
   chargeId: string,
-): Promise<ChargeItemRow> {
+): Promise<ChargeItemWithNames> {
   await tx.$queryRaw`
     SELECT "id" FROM "charge_item"
      WHERE "id" = ${chargeId}::uuid
        FOR UPDATE`;
-  return tx.chargeItem.findUniqueOrThrow({ where: { id: chargeId } });
+  return tx.chargeItem.findUniqueOrThrow({
+    where: { id: chargeId },
+    include: CHARGE_INCLUDE,
+  });
 }
 
 function isOpen(status: string): boolean {
   return (OPEN_CHARGE_STATUSES as readonly string[]).includes(status);
+}
+
+/** BI-244. What removing a discount writes: the amount and every stamp. */
+const NO_DISCOUNT = {
+  discountAmount: '0',
+  discountReason: null,
+  discountAppliedById: null,
+  discountAppliedAt: null,
+  discountAuthorisedById: null,
+  discountAuthorisedAt: null,
+} as const;
+
+/** BI-062, BI-063. A live grant of a live role of a live account, here. */
+function activeGrantAt(query: {
+  userId: string;
+  siteId: string;
+}): Prisma.UserRoleGrantWhereInput {
+  return {
+    userId: query.userId,
+    revokedAt: null,
+    user: { active: true },
+    role: { active: true },
+    // AU-011: `siteId: null` is a grant everywhere.
+    OR: [{ siteId: query.siteId }, { siteId: null }],
+  };
 }
 
 /** BI-198. What a payer change reprices: the open lines and the $0 ones. */
@@ -1274,7 +1437,30 @@ function stampAfter(previous: Date | null, now: Date): Date {
   return previous && previous >= now ? new Date(previous.getTime() + 1) : now;
 }
 
-function toChargeView(row: ChargeItemRow): ChargeView {
+/**
+ * BI-066, SC-021. Who applied and who authorised a discount, by name, so the
+ * line says it without asking anybody. Two first/last names and nothing else.
+ */
+const PERSON_NAME = { select: { firstName: true, lastName: true } } as const;
+const CHARGE_INCLUDE = {
+  discountAppliedBy: PERSON_NAME,
+  discountAuthorisedBy: PERSON_NAME,
+} satisfies Prisma.ChargeItemInclude;
+type ChargeItemWithNames = Prisma.ChargeItemGetPayload<{
+  include: typeof CHARGE_INCLUDE;
+}>;
+type PersonName = { firstName: string; lastName: string };
+
+function nameOf(person: PersonName | null | undefined): string | null {
+  return person ? `${person.firstName} ${person.lastName}` : null;
+}
+
+function toChargeView(
+  row: ChargeItemRow &
+    Partial<
+      Pick<ChargeItemWithNames, 'discountAppliedBy' | 'discountAuthorisedBy'>
+    >,
+): ChargeView {
   return {
     id: row.id,
     accountId: row.accountId,
@@ -1291,6 +1477,11 @@ function toChargeView(row: ChargeItemRow): ChargeView {
     discountAmount: Money.parse(row.discountAmount),
     discountReason: row.discountReason,
     discountAuthorisedById: row.discountAuthorisedById,
+    discountAuthorisedAt: row.discountAuthorisedAt,
+    discountAuthorisedByName: nameOf(row.discountAuthorisedBy),
+    discountAppliedById: row.discountAppliedById,
+    discountAppliedAt: row.discountAppliedAt,
+    discountAppliedByName: nameOf(row.discountAppliedBy),
     status: row.status as ChargeStatus,
     createdById: row.createdById,
     origin: row.origin as ChargeOrigin,

@@ -1,9 +1,11 @@
 import {
   BusinessRuleViolation,
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
+import { SelfAuthorisationDeniedError } from '../../../shared/domain/errors/self-authorisation.error';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 
 /**
@@ -1048,5 +1050,87 @@ export class PaymentMethodNameTakenError extends ConflictError {
 
   constructor() {
     super('Another payment method already has that name');
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Discounts (BI-060 to BI-066, BI-244 to BI-246)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * BI-063. Above the ceiling of the caller's roles, and nobody else named to
+ * authorise it.
+ *
+ * 403 AND NOT 422: the amount is well-formed and may well be right. What is
+ * missing is a second person, and the sentence says where to find one. The
+ * ceiling travels in `params` for whoever catches it; the screen already
+ * showed it before asking (BI-245).
+ */
+export class DiscountExceedsLimitError extends ForbiddenError {
+  readonly code = 'DISCOUNT_EXCEEDS_LIMIT';
+  override readonly userTitle =
+    'Ese descuento supera su límite: indique quién lo autoriza';
+
+  constructor(maxDiscountPercentage: string) {
+    super("The discount exceeds the ceiling of the requester's roles", {
+      maxDiscountPercentage,
+    });
+  }
+}
+
+/**
+ * BI-063. The person named as authoriser does not hold
+ * `billing:discount-override` at this site — or does not exist, or is
+ * inactive. One answer for all three, as `OVERBOOKING_NOT_AUTHORISED` does:
+ * telling them apart would confirm which accounts exist, one guess at a time.
+ */
+export class DiscountNotAuthorisedError extends ForbiddenError {
+  readonly code = 'DISCOUNT_NOT_AUTHORISED';
+  override readonly userTitle =
+    'Esa persona no puede autorizar descuentos en esta sede: elija a otra';
+
+  constructor() {
+    super('The named authoriser does not hold billing:discount-override here');
+  }
+}
+
+/** BI-064. The shared code, with caja's sentence. */
+export class DiscountSelfAuthorisationDeniedError extends SelfAuthorisationDeniedError {
+  override readonly userTitle =
+    'Un descuento por encima de su límite lo autoriza otra persona: elíjala en la lista';
+
+  constructor() {
+    super('The requester named themselves as the discount authoriser');
+  }
+}
+
+/**
+ * BI-244. The discount is in dollars and the ceiling a percentage: lowering
+ * the quantity under a 10 % would turn it into a 50 % nobody authorised. So
+ * the line keeps its amount while it carries a discount, and the way out is
+ * to remove the discount first. `trg_charge_item_discount_is_permanent`
+ * guarantees it; this is the sentence the service says before.
+ */
+export class ChargeHasDiscountError extends ConflictError {
+  readonly code = 'CHARGE_HAS_DISCOUNT';
+  override readonly userTitle =
+    'Esta línea tiene un descuento: quítelo antes de cambiar la cantidad, la prestación, la fecha o el pagador';
+
+  constructor() {
+    super('A discounted line keeps its amount until the discount is removed');
+  }
+}
+
+/**
+ * BI-246. A proposal still moves with the clinical act (BI-240 to BI-243); a
+ * discount on it would freeze it behind the doctor's back (BI-244).
+ */
+export class ChargeNotConfirmedError extends ConflictError {
+  readonly code = 'CHARGE_NOT_CONFIRMED';
+  override readonly userTitle =
+    'Confirme el cargo antes de ponerle un descuento';
+
+  constructor() {
+    super('Only a confirmed charge takes a discount');
   }
 }

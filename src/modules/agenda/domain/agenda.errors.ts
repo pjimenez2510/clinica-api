@@ -6,6 +6,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
+import { SelfAuthorisationDeniedError as SharedSelfAuthorisationDeniedError } from '../../../shared/domain/errors/self-authorisation.error';
 import {
   type ClinicalDate,
   clinicalDateOf,
@@ -904,9 +905,12 @@ export class OverbookingNotAllowedError extends BusinessRuleViolation {
  * NEITHER USER IS NAMED. The caller knows who they are, and naming the person
  * who WOULD be able to authorise would turn the endpoint into a directory of
  * who holds which permission.
+ *
+ * The class and its code live in `shared/` since B4 (a discount authorises
+ * the same way); this subclass keeps agenda's sentence and its import path.
  */
-export class SelfAuthorisationDeniedError extends ForbiddenError {
-  readonly code = 'SELF_AUTHORISATION_DENIED';
+export class SelfAuthorisationDeniedError extends SharedSelfAuthorisationDeniedError {
+  // The code is the shared class's (BI-064 reuses it); the sentence is agenda's.
   override readonly userTitle =
     'Un sobrecupo lo autoriza otra persona, no quien lo agenda. Indique al profesional que lo autoriza';
 
