@@ -146,25 +146,35 @@ export const SCREEN_ONLY = /\*\*Solo interfaz:\*\*\s*([^.]*)\./;
  * portal del SRI…` — a requirement the system deliberately does not build,
  * because the rule it answers is met outside it. It leaves BOTH denominators
  * and is listed apart, so «nobody built it» and «nobody has to» never read
- * alike. Same full-stop rule; the reason after the stop is MANDATORY (group 2):
- * without it, one line could quietly retire a requirement from the board.
+ * alike. Same full-stop rule, but the list may not cross a blank line: a
+ * forgotten stop must not retire the ids of the next paragraph from both
+ * sides. The reason is MANDATORY (group 2) and starts on the line of the stop;
+ * it runs to the end of its paragraph, never into a list, a heading or another
+ * declaration — otherwise the next line would pass for a reason.
  */
 export const OUT_OF_SYSTEM =
-  /\*\*Fuera del sistema:\*\*\s*([^.]*)\.[ \t]*([^\n]*(?:\n(?![ \t]*(?:\n|$)|\*\*|#)[^\n]*)*)/;
+  /\*\*Fuera del sistema:\*\*[ \t]*((?:[^.\n]|\n(?![ \t]*\r?(?:\n|$)))*)\.(?:[ \t]+(\S[^\r\n]*(?:\r?\n(?![ \t]*\r?(?:\n|$)|[ \t]*(?:\*\*|#|[-*>] ))[^\r\n]*)*))?/;
 export const RANGE = /\b([A-Z]{2,4})-(\d{3})\s+a\s+(?:[A-Z]{2,4}-)?(\d{3})/g;
 export const SINGLE = /\b([A-Z]{2,4}-\d{3})\b/g;
 export const DECLARATION = /^\s*[-*]\s*\*\*([A-Z]{2,4}-\d{3})\*\*/gm;
 /**
- * The title of a test: group 2, between the quote that opens it (group 1) and
- * the same quote closing it. ONLY THAT QUOTE ENDS IT. The first version
+ * The title of a test, between the quote that opens it and the same quote
+ * closing it —one group per quote, read with `titleOf`. ONLY THAT QUOTE ENDS
+ * IT. The first version
  * excluded all three from the title, so `'AG-181 … sin \`record:read\`'`
  * stopped at the backtick, found no closing `'` there, and the WHOLE title
  * failed to match: AG-181 and the ids beside it went uncounted —a test that
  * existed and passed, reported as missing. The other two quotes and any
- * escaped character (`\'`) belong to the title.
+ * escaped character (`\'`, a `\` line continuation) belong to the title. A
+ * plain line break ends nothing but is only allowed between backticks, as in
+ * JavaScript: a stray `test('` in a comment must not swallow the lines below.
  */
 export const TEST_TITLE =
-  /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(['"`])((?:(?!\1)[^\\]|\\.)+)\1/g;
+  /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(?:'((?:[^'\\\n]|\\[\s\S])+)'|"((?:[^"\\\n]|\\[\s\S])+)"|`((?:[^`\\]|\\[\s\S])+)`)/g;
+
+/** The title a `TEST_TITLE` match read, whichever quote opened it. */
+export const titleOf = (match: RegExpMatchArray): string =>
+  match[1] ?? match[2] ?? match[3] ?? '';
 const ENDPOINT = /^\s+"(\/api\/[^"]+)"/gm;
 const OUTCOME_PREFIXES = new Set(['SC']);
 const FLOW = /^##\s+(F-\d{2})\s+—\s+(.+?)\s*$/;
@@ -199,7 +209,8 @@ export interface Exemptions {
 
 /**
  * Reads the three declarations of one deliverable section (`raw`, from its
- * `###` to the next) and refuses the two ways they can lie. `where` names the
+ * `###` to the next; `covered`, what its `Cubre` names) and refuses the ways
+ * they can lie. `where` names the
  * section in the error: `billing/B3`.
  *
  * - AN ID IN TWO DECLARATIONS. Server-only plus screen-only leaves both
@@ -213,7 +224,21 @@ export function exemptionsOf(
   raw: string,
   declared: Set<string>,
   where: string,
+  covered: string[],
 ): Exemptions {
+  const kinds: [RegExp, string][] = [
+    [SERVER_ONLY, '«Solo servidor»'],
+    [SCREEN_ONLY, '«Solo interfaz»'],
+    [OUT_OF_SYSTEM, '«Fuera del sistema»'],
+  ];
+  for (const [pattern, name] of kinds) {
+    // `.exec` reads the first one only: a second would be ignored in silence.
+    if ([...raw.matchAll(new RegExp(pattern.source, 'g'))].length > 1) {
+      throw new Error(
+        `${where}: dos declaraciones ${name} en la misma entrega; júntalas en una`,
+      );
+    }
+  }
   const serverOnly = new Set(
     expand(SERVER_ONLY.exec(raw)?.[1] ?? '', declared),
   );
@@ -221,11 +246,33 @@ export function exemptionsOf(
     expand(SCREEN_ONLY.exec(raw)?.[1] ?? '', declared),
   );
   const out = OUT_OF_SYSTEM.exec(raw);
+  if (!out && raw.includes('**Fuera del sistema:**')) {
+    throw new Error(
+      `${where}: «Fuera del sistema» sin el punto que cierra su lista de requisitos`,
+    );
+  }
   const outOfSystem = new Set(expand(out?.[1] ?? '', declared));
   const outOfSystemReason = (out?.[2] ?? '').replace(/\s+/g, ' ').trim();
+  if (out && outOfSystem.size === 0) {
+    throw new Error(
+      `${where}: «Fuera del sistema» no nombra ningún requisito declarado`,
+    );
+  }
   if (out && outOfSystemReason === '') {
     throw new Error(
-      `${where}: «Fuera del sistema» sin motivo; escríbelo tras el punto que cierra la lista`,
+      `${where}: «Fuera del sistema» sin motivo; escríbelo en la misma línea, tras el punto que cierra la lista`,
+    );
+  }
+  /**
+   * AN ID THE `Cubre` DOES NOT NAME. The exemption would be listed under this
+   * deliverable while the one that covers the id still owed it.
+   */
+  const strays = [...serverOnly, ...screenOnly, ...outOfSystem].filter(
+    (id) => !covered.includes(id),
+  );
+  if (strays.length > 0) {
+    throw new Error(
+      `${where}: ${strays.join(', ')} declarado aparte pero su «Cubre» no lo nombra`,
     );
   }
   const pairs: [Set<string>, Set<string>, string][] = [
@@ -249,10 +296,8 @@ function testedBy(source: Source, dirs: string[]): Set<string> {
   const tested = new Set<string>();
   for (const dir of dirs) {
     for (const file of source.list(dir, '.ts')) {
-      for (const [, , title] of (source.read(file) ?? '').matchAll(
-        TEST_TITLE,
-      )) {
-        for (const id of title?.match(SINGLE) ?? []) tested.add(id);
+      for (const match of (source.read(file) ?? '').matchAll(TEST_TITLE)) {
+        for (const id of titleOf(match).match(SINGLE) ?? []) tested.add(id);
       }
     }
   }
@@ -333,13 +378,24 @@ export function computeBoard(api: Source, web: Source): ModuleBoard[] {
       if (id && !OUTCOME_PREFIXES.has(id.split('-')[0] ?? '')) declared.add(id);
     }
     const deliverables: Deliverable[] = [];
-    for (const raw of source.split(/^###\s+/m).slice(1)) {
+    // A deliverable ends at the next `###` OR `##`: the last one used to run
+    // to the end of the file and pick up a «Solo interfaz» quoted in a note
+    // of the requirements below (documents/H12, DOC-108).
+    for (const raw of source
+      .split(/^###\s+/m)
+      .slice(1)
+      .map((s) => s.split(/^##\s/m)[0] ?? '')) {
       const parsed = DELIVERABLE.exec(`### ${raw.split('\n')[0] ?? ''}`);
       if (!parsed) continue;
       const requirements = expand(COVERS.exec(raw)?.[1] ?? '', declared);
       if (requirements.length === 0) continue;
       const { serverOnly, screenOnly, outOfSystem, outOfSystemReason } =
-        exemptionsOf(raw, declared, `${module}/${parsed[1] ?? '?'}`);
+        exemptionsOf(
+          raw,
+          declared,
+          `${module}/${parsed[1] ?? '?'}`,
+          requirements,
+        );
       const built = requirements.filter((id) => !outOfSystem.has(id));
       const visible = built.filter((id) => !serverOnly.has(id));
       const served = built.filter((id) => !screenOnly.has(id));

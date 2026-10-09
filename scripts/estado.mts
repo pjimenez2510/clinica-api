@@ -19,6 +19,7 @@ import { join } from 'node:path';
 
 import {
   TEST_TITLE,
+  titleOf,
   computeBoard,
   exemptionsOf,
   computeFlows,
@@ -130,10 +131,8 @@ function readTestedIds(): Set<string> {
     .map((d) => join(REPO_ROOT, d))
     .filter(exists)) {
     for (const file of walkTypeScript(dir)) {
-      for (const [, , title] of readFileSync(file, 'utf8').matchAll(
-        TEST_TITLE,
-      )) {
-        for (const id of title?.match(SINGLE) ?? []) tested.add(id);
+      for (const match of readFileSync(file, 'utf8').matchAll(TEST_TITLE)) {
+        for (const id of titleOf(match).match(SINGLE) ?? []) tested.add(id);
       }
     }
   }
@@ -188,7 +187,10 @@ for (const entry of exists(MODULES_DIR)
   }
 
   const deliverables: Deliverable[] = [];
-  const sections = source.split(/^###\s+/m);
+  // Up to the next `###` or `##` (board.mts, computeBoard).
+  const sections = source
+    .split(/^###\s+/m)
+    .map((s) => s.split(/^##\s/m)[0] ?? '');
   for (const raw of sections.slice(1)) {
     const header = `### ${raw.split('\n')[0] ?? ''}`;
     DELIVERABLE.lastIndex = 0;
@@ -202,6 +204,7 @@ for (const entry of exists(MODULES_DIR)
       raw,
       declared,
       `${entry.name}/${parsed[1] ?? '?'}`,
+      all,
     );
     const requirements = all.filter(
       (id) => !screenOnly.has(id) && !outOfSystem.has(id),

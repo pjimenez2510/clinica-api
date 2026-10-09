@@ -23,7 +23,7 @@
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import { TEST_TITLE } from './board.mts';
+import { TEST_TITLE, titleOf } from './board.mts';
 
 const REPO_ROOT = process.cwd();
 const DOCS = resolve(REPO_ROOT, '..', 'clinica-docs');
@@ -129,10 +129,8 @@ function readTestedIds(): Set<string> {
     .map((d) => join(REPO_ROOT, d))
     .filter(exists)) {
     for (const file of walkTypeScript(dir)) {
-      for (const [, , title] of readFileSync(file, 'utf8').matchAll(
-        TEST_TITLE,
-      )) {
-        for (const id of title?.match(ID) ?? []) tested.add(id);
+      for (const match of readFileSync(file, 'utf8').matchAll(TEST_TITLE)) {
+        for (const id of titleOf(match).match(ID) ?? []) tested.add(id);
       }
     }
   }

@@ -49,7 +49,7 @@ const REFERENCE = /\b([A-Z]{2,4})-(\d{3})\b/g;
  * they did once, both cutting a title at any quote inside it.
  */
 const TEST_TITLE =
-  /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(['"`])((?:(?!\1)[^\\]|\\.)+)\1/g;
+  /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(?:'((?:[^'\\\n]|\\[\s\S])+)'|"((?:[^"\\\n]|\\[\s\S])+)"|`((?:[^`\\]|\\[\s\S])+)`)/g;
 const STATE_LINE = /^\*\*Estado:\*\*\s*(\S+)/m;
 /**
  * `**Solo interfaz:** PA-063. Volver lo decide el historial…` — a requirement
@@ -63,9 +63,11 @@ const SCREEN_ONLY = /\*\*Solo interfaz:\*\*\s*([^.]*)\./g;
  * `**Fuera del sistema:** BI-092, BI-093. D-151.1: …` — a requirement the
  * system does not build because the rule is met outside it (board.mts,
  * OUT_OF_SYSTEM). It owes no test on either side. Only the id list, up to the
- * first full stop; the reason is enforced by board.mts.
+ * first full stop and never across a blank line; the reason is enforced by
+ * board.mts.
  */
-const OUT_OF_SYSTEM = /\*\*Fuera del sistema:\*\*\s*([^.]*)\./g;
+const OUT_OF_SYSTEM =
+  /\*\*Fuera del sistema:\*\*[ \t]*((?:[^.\n]|\n(?![ \t]*\r?(?:\n|$)))*)\./g;
 const SINGLE_ID = /\b([A-Z]{2,4}-\d{3})\b/g;
 
 /**
@@ -153,7 +155,7 @@ function readTestedIds(): Map<string, string[]> {
   for (const file of files) {
     const source = readFileSync(file, 'utf8');
     for (const titleMatch of source.matchAll(TEST_TITLE)) {
-      const title = titleMatch[2];
+      const title = titleMatch[1] ?? titleMatch[2] ?? titleMatch[3];
       if (!title) continue;
       for (const reference of title.matchAll(REFERENCE)) {
         const [id, prefix] = reference;
@@ -221,7 +223,13 @@ describe('trazabilidad de requisitos', () => {
 
   it('lee los títulos con la misma expresión que scripts/board.mts', () => {
     const board = readFileSync(join(REPO_ROOT, 'scripts', 'board.mts'), 'utf8');
-    expect(board).toContain(TEST_TITLE.source);
+    // The literal after `export const TEST_TITLE =`, not any occurrence: a
+    // comment quoting the pattern must not keep this green.
+    const literal = /export const TEST_TITLE =\s*\/(.+)\/([a-z]*);\n/.exec(
+      board,
+    );
+    expect(literal?.[1]).toBe(TEST_TITLE.source);
+    expect(literal?.[2]).toBe(TEST_TITLE.flags);
   });
 
   it('no cita en una prueba ningún requisito que no exista en un SPEC.md', () => {
