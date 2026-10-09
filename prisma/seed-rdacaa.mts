@@ -6,10 +6,10 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Importa los cinco catálogos PLANOS que la ficha del RDACAA necesita:
+ * Importa los seis catálogos PLANOS que la ficha y la atención del RDACAA necesitan:
  * orientación sexual (columna 7), identidad de género (columna 8),
  * autoidentificación étnica (columna 12), nacionalidad indígena (columna 13) y
- * pueblo (columna 14).
+ * pueblo (columna 14); y las vacunas del bloque I (columnas 55 a 73).
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * LOS CINCO EN UN SOLO SEMBRADOR, PORQUE SON LA MISMA COSA CINCO VECES
@@ -223,7 +223,7 @@ interface CatalogoPlano {
 }
 
 /**
- * Los cinco, con sus valores por defecto.
+ * Los seis, con sus valores por defecto.
  *
  * Cada uno admite `<SISTEMA>_FILE`, `<SISTEMA>_VERSION` y
  * `<SISTEMA>_SOURCE_URL` por entorno, que es como entrará la próxima edición
@@ -295,6 +295,22 @@ const CATALOGOS: readonly CatalogoPlano[] = [
      */
     nombre: 'Pueblo (RDACAA, columna 14)',
     archivo: 'rdacaa/pueblos.csv',
+    version: VERSION_INSTRUCTIVO,
+    sourceUrl: INSTRUCTIVO_URL,
+    publishedOn: null,
+    effectiveFrom: VIGENTE_DESDE_PRIMERA_CARGA,
+  },
+  {
+    systemCode: 'VACCINE',
+    /**
+     * Columnas 55 a 73, bloque I (EN-093). EL CÓDIGO ES EL NÚMERO DE LA
+     * COLUMNA del formulario: el instructivo no numera las vacunas, las pone
+     * en columnas, y la exportación las vuelve a poner en la suya. Un
+     * catálogo y no un enum porque el esquema de vacunación cambia por
+     * acuerdo ministerial (D-195.6): una vacuna nueva es otra release.
+     */
+    nombre: 'Vacunas (RDACAA, columnas 55 a 73)',
+    archivo: 'rdacaa/vacunas.csv',
     version: VERSION_INSTRUCTIVO,
     sourceUrl: INSTRUCTIVO_URL,
     publishedOn: null,
@@ -541,7 +557,7 @@ async function sembrarUno(
 }
 
 /**
- * Deja los cinco catálogos en la base, sobre el cliente que se le dé.
+ * Deja los seis catálogos en la base, sobre el cliente que se le dé.
  *
  * EXPORTADA para que `seed.mts` la llame y para que las pruebas siembren lo
  * mismo que se sirve: sin filas, los cinco selectores de la ficha aparecen

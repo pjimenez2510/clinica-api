@@ -11,6 +11,8 @@ import {
 } from '../../../shared/domain/errors/domain-error';
 
 import {
+  ProgramBlockNotApplicableError,
+  ProtectedSectionRequiredError,
   AllergyAlreadyRefutedError,
   AllergyNotRefutedError,
   AllergyRefutedAloneError,
@@ -744,5 +746,34 @@ describe('los errores de la referencia (EN-105, EN-107)', () => {
     expect(twice.code).toBe('REFERRAL_ALREADY_CANCELLED');
     expect(twice).toBeInstanceOf(ConflictError);
     expect(twice.userTitle).toBe('Ya estaba anulada. Actualice la pantalla');
+  });
+});
+
+describe('los bloques de programa (EN-090, EN-092, EN-093)', () => {
+  it('EN-090 EN-092 responde 422 con su código, en el catálogo, y dice por qué no corresponde cada bloque', () => {
+    const obstetric = new ProgramBlockNotApplicableError('OBSTETRIC');
+    const nutrition = new ProgramBlockNotApplicableError('NUTRITION');
+
+    expect(obstetric.code).toBe('PROGRAM_BLOCK_NOT_APPLICABLE');
+    expect(obstetric).toBeInstanceOf(BusinessRuleViolation); // 422
+    expect(DOMAIN_ERROR_CODES).toContain(obstetric.code);
+    expect(obstetric.userTitle).toBe(
+      'Esta atención no lleva datos obstétricos: la ficha no registra el embarazo en la fecha de la atención',
+    );
+    expect(nutrition.userTitle).toBe(
+      'Esta atención no lleva datos de lactancia: sólo se registran hasta los 8 meses de edad, con la pregunta de su edad',
+    );
+  });
+
+  it('EN-093 responde 403 con su código, en el catálogo, y nombra la sección y no el dato', () => {
+    const error = new ProtectedSectionRequiredError();
+
+    expect(error.code).toBe('PROTECTED_SECTION_REQUIRED');
+    expect(error).toBeInstanceOf(ForbiddenError); // 403
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+    expect(error.userTitle).toBe(
+      'Registrar el grupo de riesgo de esta vacuna requiere el permiso de la sección de acceso restringido',
+    );
+    expect(error.userTitle).not.toMatch(/VIH|sexual/i);
   });
 });

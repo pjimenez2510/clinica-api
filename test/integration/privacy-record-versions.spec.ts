@@ -364,6 +364,10 @@ async function everyVersionedRowOf(
     encounter_vitals: encounterId,
     // EN-052. The dental index too: one row per attention.
     encounter_dental_index: encounterId,
+    // EN-249. The program blocks G, H and I, the same way.
+    encounter_obstetric: encounterId,
+    encounter_nutrition: encounterId,
+    encounter_vaccination: encounterId,
     encounter_diagnosis: diagnosis.id,
     encounter_procedure: procedure.id,
     critical_result_notice: notice.id,

@@ -306,7 +306,7 @@ export const PERMISSION_CATALOGUE = [
     code: 'record:protected',
     resource: 'record',
     description:
-      'Ver y registrar la sección de acceso restringido de la atención (tamizaje del bloque F del formulario 002). Quien lo tiene conoce situaciones cuya difusión puede poner en riesgo a la persona',
+      'Ver y registrar las secciones de acceso restringido de la atención (tamizaje del bloque F del formulario 002 y sección restringida de los bloques de programa). Quien lo tiene conoce situaciones cuya difusión puede poner en riesgo a la persona',
   },
   {
     // CER-040, D-105 §2. «La dirección médica» anula un certificado que emitió

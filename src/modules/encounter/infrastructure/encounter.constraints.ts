@@ -443,6 +443,121 @@ registerConstraintMeanings({
 });
 
 /**
+ * EN-090 to EN-093, EN-249. The program blocks G, H and I. Who may have each
+ * block, the last menstrual period, the vaccines and their risk group: the
+ * triggers of `20261009100000_encounter_program_block_g`,
+ * `…100100_encounter_program_block_h` and `…100200_encounter_program_block_i`.
+ */
+const PROGRAM_NOT_APPLICABLE = 'PROGRAM_BLOCK_NOT_APPLICABLE';
+
+registerConstraintMeanings({
+  encounter_obstetric_applies: {
+    code: PROGRAM_NOT_APPLICABLE,
+    field: 'encounterId',
+    message: 'Esta atención no lleva datos obstétricos: la ficha no registra el embarazo en la fecha de la atención', // prettier-ignore
+  },
+  encounter_obstetric_weeks_range: {
+    code: 'VALIDATION_FAILED',
+    field: 'gestationalWeeks',
+    message: 'Las semanas de gestación van de 1 a 42',
+  },
+  encounter_obstetric_lmp_for_fum: {
+    code: 'VALIDATION_FAILED',
+    field: 'lastMenstrualPeriod',
+    message: 'Con el método FUM, escriba la fecha de la última menstruación',
+  },
+  encounter_obstetric_lmp_range: {
+    code: 'VALIDATION_FAILED',
+    field: 'lastMenstrualPeriod',
+    message: 'La fecha de la última menstruación no puede ser posterior a la atención ni de hace más de 42 semanas', // prettier-ignore
+  },
+  encounter_nutrition_applies: {
+    code: PROGRAM_NOT_APPLICABLE,
+    field: 'encounterId',
+    message: 'Esta atención no lleva datos de lactancia: sólo se registran hasta los 8 meses de edad, con la pregunta de su edad', // prettier-ignore
+  },
+  encounter_nutrition_exclusive_required: {
+    code: 'VALIDATION_FAILED',
+    field: 'exclusiveBreastfeeding',
+    message: 'Indique si en las últimas 24 horas recibió sólo leche materna',
+  },
+  encounter_nutrition_complementary_required: {
+    code: 'VALIDATION_FAILED',
+    field: 'complementaryFeeding',
+    message: 'Indique si en las últimas 24 horas consumió alimento sólido, semisólido o suave', // prettier-ignore
+  },
+  encounter_vaccination_doses_shape: {
+    code: 'VALIDATION_FAILED',
+    field: 'doses',
+    message: 'Cada vacuna lleva su dosis',
+  },
+  encounter_vaccination_vaccine_in_force: {
+    code: 'VALIDATION_FAILED',
+    field: 'doses',
+    message: 'Una de las vacunas no está en el catálogo vigente en la fecha de la atención', // prettier-ignore
+  },
+  encounter_vaccination_vaccine_distinct: {
+    code: 'VALIDATION_FAILED',
+    field: 'doses',
+    message: 'La misma vacuna está dos veces: deje una sola dosis por vacuna',
+  },
+  encounter_vaccination_risk_group_required: {
+    code: 'VALIDATION_FAILED',
+    field: 'riskGroup',
+    message: 'Elija el grupo de riesgo: una de las vacunas lo pide',
+  },
+  encounter_vaccination_risk_group_not_asked: {
+    code: 'VALIDATION_FAILED',
+    field: 'riskGroup',
+    message: 'Ninguna de estas vacunas lleva grupo de riesgo: déjelo vacío',
+  },
+  encounter_vaccination_risk_group_not_admitted: {
+    code: 'VALIDATION_FAILED',
+    field: 'riskGroup',
+    message: 'Ese grupo de riesgo no corresponde a una de las vacunas aplicadas: elija uno que admitan todas', // prettier-ignore
+  },
+  encounter_vaccination_risk_group_sex: {
+    code: 'VALIDATION_FAILED',
+    field: 'riskGroup',
+    message: 'Embarazada y puérpera no corresponden a un paciente de sexo masculino', // prettier-ignore
+  },
+  /**
+   * EN-094. Block J. No message names the datum: «la prueba», «la sección».
+   */
+  encounter_hiv_test_confirmation_needs_reactive: {
+    code: 'CONFIRMATORY_TEST_WITHOUT_SCREENING',
+    field: 'confirmation',
+    message: 'La segunda prueba y la vía de transmisión sólo se registran si la primera prueba fue reactiva', // prettier-ignore
+  },
+  encounter_hiv_test_confirmation_whole: {
+    code: 'VALIDATION_FAILED',
+    field: 'confirmation',
+    message: 'La segunda prueba lleva su dispositivo y su resultado',
+  },
+  encounter_hiv_test_viral_load_range: {
+    code: 'VALIDATION_FAILED',
+    field: 'viralLoad',
+    message: 'Revise la carga viral: va de 0 a 100 000 000 copias/mL',
+  },
+  encounter_hiv_test_cd4_range: {
+    code: 'VALIDATION_FAILED',
+    field: 'cd4',
+    message: 'Revise el CD4: va de 0 a 5000 células/mm³',
+  },
+  encounter_hiv_test_change_is_stamped: {
+    code: 'VALIDATION_FAILED',
+    field: 'encounterId',
+    message: 'Toda corrección de la sección dice quién y cuándo',
+  },
+  /** EN-249. Whoever recorded a block stays its author. */
+  program_block_keeps_its_author: {
+    code: 'VALIDATION_FAILED',
+    field: 'encounterId',
+    message: 'Quien registró el bloque no cambia al corregirlo',
+  },
+});
+
+/**
  * ⚠️ LOS TRES DISPARADORES DEL NÚCLEO CLÍNICO NO ESTÁN AQUÍ, Y NO ES UN
  * OLVIDO.
  *
