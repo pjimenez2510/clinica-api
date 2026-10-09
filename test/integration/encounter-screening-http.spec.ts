@@ -515,6 +515,36 @@ describe('el tamizaje de violencia por HTTP, con sesiones reales (EN-070 a EN-07
     });
   });
 
+  describe('EN-078 ofrecer el grupo prioritario, nunca escribirlo', () => {
+    it('EN-078 un positivo no toca los grupos prioritarios del paciente; el grupo entra sólo por su ruta y con su llave', async () => {
+      const encounterId = await openEncounter();
+      await send('put', `/encounters/${encounterId}/screening`, doctorToken, POSITIVE).expect(200); // prettier-ignore
+
+      expect(
+        await prisma.patientPriorityGroup.count({ where: { patientId } }),
+      ).toBe(0);
+
+      // Positive control: the same count sees the group once whoever holds
+      // `patient:priority:protected` records it through `patients` (PA-034).
+      const clinicToday = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Guayaquil',
+      }).format(new Date());
+      await send(
+        'post',
+        `/patients/${patientId}/priority-groups`,
+        doctorToken,
+        {
+          group: 'DOMESTIC_OR_SEXUAL_VIOLENCE_VICTIM',
+          startsOn: clinicToday,
+          origin: 'SELF_DECLARED',
+        },
+      ).expect(201);
+      expect(
+        await prisma.patientPriorityGroup.count({ where: { patientId } }),
+      ).toBe(1);
+    });
+  });
+
   describe('EN-240 la firma del alta exige el tamizaje respondido', () => {
     it('EN-240 rechaza firmar la 002 sin tamizaje, la firma tras «no se aplicó», y después ya no se puede cambiar', async () => {
       const encounterId = await openEncounter();

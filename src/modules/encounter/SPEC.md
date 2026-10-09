@@ -315,11 +315,9 @@ el sitio con versión (§21)—, **EN-235** —lo que no puede ser el principal
 va aquí porque el formulario 024 cuelga del **procedimiento** de riesgo mayor
 (EN-050), no de la atención.
 
-**Solo servidor:** EN-041, EN-042, EN-043, EN-048, EN-248. Los tres primeros son disparadores e índices
+**Solo servidor:** EN-041, EN-042, EN-043, EN-248. Los tres primeros son disparadores e índices
 parciales: la instantánea que no puede mentir, la vigencia en la fecha y el
-principal único. EN-048, los códigos de planificación familiar de cinco
-caracteres, es carga del catálogo: el buscador de diagnósticos ofrece lo que
-el catálogo trae, sin lista propia. EN-248, el aviso a `billing` tras corregir un
+principal único. EN-248, el aviso a `billing` tras corregir un
 procedimiento: caja ve el cargo ya corregido (BI-240 a BI-243).
 
 **Estado (21-08-2026).** Construida la parte que el esquema admite: EN-040 a
@@ -384,10 +382,6 @@ listado de atenciones lo lleva, afirmado sobre la respuesta.
 en listados y logs, y la fila de bitácora. Una pantalla que decide no pintar algo
 no demuestra que no viajó — el defecto de AG-111 fue exactamente confiar en un
 doble con los permisos puestos a mano.
-
-**Solo interfaz:** EN-078. Ofrecer es la pantalla; el servidor no tiene ningún
-camino que escriba el grupo prioritario desde el tamizaje, y cuando quien tiene
-la llave acepta, lo guarda `patients` con su propia puerta (PA-034).
 
 ### H6 — Alergias y antecedentes visibles _(P2)_
 

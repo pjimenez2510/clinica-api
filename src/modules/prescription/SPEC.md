@@ -179,7 +179,7 @@ dosis única sin duración, la vía sin preseleccionar, el borrador que se
 descarta de un clic y se recupera con «Deshacer», la anulación con su registro
 del art. 70 y el «Corregir» de la receta emitida.
 **Solo interfaz:** PR-106.
-**Solo servidor:** PR-004, PR-081, PR-090 a PR-093. Son el prescriptor que sale de la sesión y nunca de la petición, el permiso declarado en cada
+**Solo servidor:** PR-001, PR-004, PR-081, PR-090 a PR-093. Son la atención en el alcance de quien compone, el prescriptor que sale de la sesión y nunca de la petición, el permiso declarado en cada
 ruta, el alcance por sede y las filas de bitácora: se prueban contando filas y
 recorriendo las rutas registradas, no en una pantalla.
 
