@@ -318,6 +318,49 @@ describe('B4 descuentos con límite y con autorización', () => {
     });
   });
 
+  describe('lo que garantiza la base, también sobre la prestación', () => {
+    it('BI-244 la base no deja cambiar la prestación de una línea con descuento ni con un acto nuevo, y sí sin descuento (control)', async () => {
+      const { id } = await line();
+      const other = await prisma.billableService.findUniqueOrThrow({
+        where: { code: 'CONS-DER-PV' },
+      });
+      await prisma.chargeItem.update({
+        where: { id },
+        data: {
+          discountAmount: '1.00',
+          discountAppliedById: caja.userId,
+          discountAppliedAt: new Date(Date.now() - 60_000),
+          changedById: caja.userId,
+          changedAt: new Date(),
+        },
+      });
+
+      await expect(
+        prisma.chargeItem.update({
+          where: { id },
+          data: {
+            billableServiceId: other.id,
+            discountAppliedAt: new Date(),
+            changedById: caja.userId,
+            changedAt: new Date(Date.now() + 1),
+          },
+        }),
+      ).rejects.toThrowError(/charge_item_discount_is_permanent/);
+
+      const plain = await line();
+      await expect(
+        prisma.chargeItem.update({
+          where: { id: plain.id },
+          data: {
+            billableServiceId: other.id,
+            changedById: caja.userId,
+            changedAt: new Date(),
+          },
+        }),
+      ).resolves.toMatchObject({ billableServiceId: other.id });
+    });
+  });
+
   describe('por HTTP, con dos sesiones de verdad', () => {
     it('BI-062 BI-063 caja con tope del 10 % aplica un 20 %, se rechaza, la supervisora lo autoriza y la línea queda con los dos nombres', async () => {
       const { id, gross } = await line();
@@ -477,6 +520,129 @@ describe('B4 descuentos con límite y con autorización', () => {
         maxDiscountPercentage: '10.00',
         authorisers: [{ userId: supervisor.userId, name: 'Ana Pérez' }],
       });
+    });
+
+    /** Someone holding the override, through a grant this test shapes. */
+    async function authoriserWith(grant: {
+      siteId?: string;
+      revoked?: boolean;
+      inactive?: boolean;
+    }): Promise<string> {
+      const role = await prisma.role.findUniqueOrThrow({ where: { code: 'SUPERVISION_CAJA' } }); // prettier-ignore
+      const user = await prisma.user.create({
+        data: {
+          email: `autoriza${Date.now()}${Math.random()}@clinica.ec`,
+          passwordHash: 'not-a-real-hash',
+          firstName: 'Otra',
+          lastName: 'Persona',
+          active: !grant.inactive,
+        },
+      });
+      await prisma.userRoleGrant.create({
+        data: {
+          userId: user.id,
+          roleId: role.id,
+          siteId: grant.siteId,
+        },
+      });
+      if (grant.revoked) {
+        // After it was granted (`user_role_grant_revocation_order`).
+        await prisma.$executeRaw`
+          UPDATE user_role_grant SET revoked_at = granted_at
+           WHERE user_id = ${user.id}::uuid`;
+      }
+      return user.id;
+    }
+
+    it('BI-063 quien lleva el permiso sólo en otra sede, con el permiso revocado o con la cuenta inactiva no autoriza, y no sale en la lista; en esta sede sí (control)', async () => {
+      const otherSite = await createSite(prisma, 'Sede Norte');
+      const elsewhere = await authoriserWith({ siteId: otherSite.id });
+      const revoked = await authoriserWith({ revoked: true });
+      const inactive = await authoriserWith({ inactive: true });
+      const here = await authoriserWith({ siteId });
+
+      for (const authorisedById of [elsewhere, revoked, inactive]) {
+        const { id } = await line();
+        const refused = await discount(id, { percentage: '20', authorisedById }).expect(403); // prettier-ignore
+        expect((refused.body as Problem).code).toBe('DISCOUNT_NOT_AUTHORISED');
+      }
+      const { id } = await line();
+      await discount(id, { percentage: '20', authorisedById: here }).expect(
+        200,
+      );
+
+      const policy = await request(app.getHttpServer())
+        .get(
+          `/api/v1/billing/sites/${siteId}/accounts/${accountId}/discount-policy`,
+        ) // prettier-ignore
+        .set('Authorization', `Bearer ${caja.token}`)
+        .expect(200);
+      const listed = (policy.body as { authorisers: { userId: string }[] }).authorisers.map((a) => a.userId); // prettier-ignore
+      expect(listed).toContain(here);
+      expect(listed).not.toContain(elsewhere);
+      expect(listed).not.toContain(revoked);
+      expect(listed).not.toContain(inactive);
+    });
+
+    it('BI-244 con una línea rebajada el pagador no cambia; quitado el descuento, sí (control)', async () => {
+      const { id } = await line();
+      await discount(id, { percentage: '5' }).expect(200);
+      const insurer = await prisma.payer.findUniqueOrThrow({ where: { code: 'IESS' } }); // prettier-ignore
+      const insurerList = await prisma.priceList.findFirstOrThrow({ where: { payerId: insurer.id } }); // prettier-ignore
+      await prisma.price.create({
+        data: {
+          priceListId: insurerList.id,
+          billableServiceId: serviceId,
+          amount: '22.00',
+          // A year and more before today, from the clock.
+          validFrom: new Date(new Date(Date.now() - 400 * 86_400_000).toISOString().slice(0, 10)), // prettier-ignore
+        },
+      });
+      const change = () =>
+        request(app.getHttpServer())
+          .patch(`/api/v1/billing/sites/${siteId}/accounts/${accountId}`)
+          .set('Authorization', `Bearer ${caja.token}`)
+          .send({ payerId: insurer.id });
+
+      const refused = await change().expect(409);
+      expect((refused.body as Problem).code).toBe('CHARGE_HAS_DISCOUNT');
+
+      await discount(id, { amount: '0.00' }).expect(200);
+      await change().expect(200);
+    });
+
+    it('BI-244 quitar la línea se lleva su descuento, y «Deshacer» la devuelve sin él', async () => {
+      const { id } = await line();
+      await discount(id, { percentage: '10' }).expect(200);
+      const path = `/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges/${id}`;
+
+      await request(app.getHttpServer())
+        .post(`${path}/void`)
+        .set('Authorization', `Bearer ${caja.token}`)
+        .send({})
+        .expect(200);
+      const restored = await request(app.getHttpServer())
+        .post(`${path}/restore`)
+        .set('Authorization', `Bearer ${caja.token}`)
+        .expect(200);
+
+      expect(restored.body as ChargeBody).toMatchObject({
+        discountAmount: '0.00',
+        discountAppliedBy: null,
+      });
+    });
+
+    it('BI-196 BI-066 una línea rebajada al 100 % no se marca «No se cobra»: su descuento se quita', async () => {
+      const { id, gross } = await line();
+      await discount(id, { amount: gross.toString(), authorisedById: supervisor.userId }).expect(200); // prettier-ignore
+
+      const refused = await request(app.getHttpServer())
+        .post(
+          `/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges/${id}/not-billable`,
+        ) // prettier-ignore
+        .set('Authorization', `Bearer ${caja.token}`)
+        .expect(409);
+      expect((refused.body as Problem).code).toBe('CHARGE_HAS_AMOUNT');
     });
 
     it('BI-131 quien no lleva billing:write no pone descuentos (403), y caja sí (control)', async () => {

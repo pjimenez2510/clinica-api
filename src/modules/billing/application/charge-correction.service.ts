@@ -23,7 +23,7 @@ import {
   PayerNotFoundError,
   PriceListNotFoundError,
 } from '../domain/billing.errors';
-import { lineBase, OPEN_CHARGE_STATUSES, totalsOf } from '../domain/charge';
+import { lineGross, OPEN_CHARGE_STATUSES, totalsOf } from '../domain/charge';
 import { consultationKeyOf } from '../domain/charge-proposal';
 import {
   CLINICAL_ACTS_REPOSITORY,
@@ -83,7 +83,9 @@ export class ChargeCorrectionService implements ConsultationRepricer {
    */
   async markNotBillable(command: ChargeCommand): Promise<ChargeView> {
     const charge = await this.requireCharge(command);
-    if (!lineBase(toLine(charge)).equals(Money.ZERO)) {
+    // The GROSS, not the base: a line discounted to $0 still has an amount,
+    // and «No se cobra» would hide its discount where nothing can remove it.
+    if (!lineGross(toLine(charge)).equals(Money.ZERO)) {
       throw new ChargeHasAmountError();
     }
     return this.accounts.markNotBillable({
