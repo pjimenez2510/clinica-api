@@ -140,12 +140,28 @@ function renderBlock(): string {
       );
     }
   }
+  const outside = board.flatMap((m) =>
+    m.deliverables
+      .filter((d) => d.outOfSystem.length > 0)
+      .map(
+        (d) =>
+          `- ${m.module} ${d.id}: ${d.outOfSystem.join(', ')} — ${d.outOfSystemReason}`,
+      ),
+  );
+  if (outside.length > 0) {
+    lines.push(
+      '',
+      '**Fuera del sistema** —declarado en su SPEC.md; no cuenta en ningún lado:',
+      '',
+      ...outside,
+    );
+  }
   lines.push(
     '',
     `**${flows.filter((f) => f.reachable).length} de ${flows.length} flujos en pantalla · ` +
       `${complete} de ${total} entregas completas de punta a punta.** En pantalla = su ` +
       'recorrido Playwright pasó en `main`. Completa = todos sus requisitos con prueba en los ' +
-      'dos lados, descontando lo declarado «Solo servidor» o «Solo interfaz».',
+      'dos lados, descontando lo declarado «Solo servidor», «Solo interfaz» o «Fuera del sistema».',
     '',
     END,
   );
