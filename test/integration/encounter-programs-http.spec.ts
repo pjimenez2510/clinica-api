@@ -414,7 +414,7 @@ describe('los bloques de programa por HTTP, con sesiones reales (EN-090 a EN-093
       expect(saved.body).toMatchObject({ doses: [{ code: '67', dose: 'SECOND' }], riskGroup: 'AGES_AT_RISK' }); // prettier-ignore
     });
 
-    it('EN-093 REQ-115 el grupo de riesgo del HB adulto: sin la llave ni se escribe ni se ve, sea cual sea; con ella, sí', async () => {
+    it('EN-093 EN-095 el grupo de riesgo del HB adulto: sin la llave ni se escribe ni se ve, sea cual sea; con ella, sí', async () => {
       const withHiv = await openEncounter(await aPatient({ years: 30 }));
       const worker = await openEncounter(await aPatient({ years: 30 }));
       const hb = (riskGroup: string) => ({
