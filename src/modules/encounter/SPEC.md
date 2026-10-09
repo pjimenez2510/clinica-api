@@ -248,7 +248,7 @@ abierta, una que se interrumpió y una que se dio de alta y nadie cobró, y no h
 dato que las distinga. Es de la misma familia que REQ-020 y REQ-021: no se
 captura retroactivamente.
 
-**Solo servidor:** EN-004, EN-005, EN-008, EN-010, EN-017, EN-132, EN-145, EN-168, EN-241 (ocurre al desplegar). La carrera con
+**Solo servidor:** EN-004, EN-005, EN-008, EN-010, EN-017, EN-132, EN-139, EN-145, EN-168, EN-241 (ocurre al desplegar). La carrera con
 la anulación, la edad que escribe un disparador, el orden de los instantes, la
 fila de bitácora, las transiciones que el servidor rechaza y **la ausencia de
 cierre automático** son garantías de almacenamiento: ninguna pantalla puede
@@ -257,7 +257,9 @@ existe. EN-168, una atención viva por cita, la garantiza un índice
 único parcial: la pantalla nunca ofrece abrir la segunda. EN-004, la cita de
 otro paciente, la garantiza `trg_encounter_matches_appointment`: la pantalla
 abre la atención con el paciente de la propia cita y no tiene forma de mandar
-otro.
+otro. EN-139, el paciente que pasa a `DEPARTED` al cerrar la cuenta, lo escribe
+el disparador de caja en su transacción (EN-131); lo que el tablero enseña del
+paciente que ya salió es AG-121 en `agenda`.
 
 ### H2 — La nota clínica firmada y su enmienda _(P1)_
 
@@ -313,7 +315,7 @@ el sitio con versión (§21)—, **EN-235** —lo que no puede ser el principal
 va aquí porque el formulario 024 cuelga del **procedimiento** de riesgo mayor
 (EN-050), no de la atención.
 
-**Solo servidor:** EN-041, EN-042, EN-043. Los tres son disparadores e índices
+**Solo servidor:** EN-041, EN-042, EN-043, EN-248. Los tres primeros son disparadores e índices
 parciales: la instantánea que no puede mentir, la vigencia en la fecha y el
 principal único. EN-248, el aviso a `billing` tras corregir un
 procedimiento: caja ve el cargo ya corregido (BI-240 a BI-243).
@@ -434,6 +436,7 @@ grupo prioritario «Embarazadas» no está registrado en la atención —que es 
 condición literal del instructivo, p. 50—; y que el bloque de VIH exige la misma
 llave que el tamizaje de violencia.
 **Cubre:** EN-090 a EN-095, EN-097, EN-098, EN-249 (`feat/f04-bloques-programa`).
+
 EN-096 —los suplementos, columnas 105 a 108— y EN-099 —los grupos prioritarios y
 vulnerables de la atención, columnas 29 a 34— no son de los bloques G a J y
 pasan a H14.

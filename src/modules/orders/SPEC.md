@@ -305,9 +305,10 @@ rangos, cobrarlo con una prestación de laboratorio, pedirlo desde una atención
 y ver rechazada la prestación de imagen.
 **Cubre:** ORD-103 a ORD-111.
 
-**Solo servidor:** ORD-110. Que un cambio del catálogo no altere un resultado ya
+**Solo servidor:** ORD-110, ORD-111. Que un cambio del catálogo no altere un resultado ya
 registrado es una propiedad de lo que el resultado congela; en pantalla no hay
-nada que lo enseñe.
+nada que lo enseñe. La fila de `access_audit` de cada alta o corrección
+(ORD-111) se prueba contándola, como las de PR-090 a PR-093.
 
 ### E11 — La orden que se compone y se imprime sin dudas _(P1)_
 
@@ -370,8 +371,9 @@ el PDF dicen «Venga con 8 horas de ayuno como mínimo (…)». Registrar un
 informe parcial y ver que la línea ya no ofrece «Anular».
 **Cubre:** ORD-129 a ORD-132.
 
-**Solo servidor:** ORD-132 (el umbral elegido no se ve en pantalla). ORD-130
-es solo de interfaz.
+**Solo servidor:** ORD-132 (el umbral elegido no se ve en pantalla).
+**Solo interfaz:** ORD-130. Es cómo la pantalla pinta las indicaciones que el
+PDF ya dice (ORD-125, ORD-129).
 
 ### E14 — Corregir el catálogo de exámenes en el sitio _(P1, 06-10-2026)_
 
@@ -461,6 +463,9 @@ aviso «Hay un valor crítico nuevo», la fila aparece en la cola y el menú
 cuenta uno más; y no se pide la cola otra vez cada minuto mientras el canal
 está vivo.
 **Cubre:** ORD-164 a ORD-166. **Solo servidor:** ORD-164.
+**Solo interfaz:** ORD-165, ORD-166. Son el canal único del navegador, el toast,
+la cuenta del menú y cuándo se relee la cola; lo que publica el servidor es
+ORD-164, y el canal y sus latidos son AU-054 a AU-058 en `auth`.
 
 ### Fuera de las ocho
 

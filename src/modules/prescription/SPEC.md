@@ -179,7 +179,7 @@ dosis única sin duración, la vía sin preseleccionar, el borrador que se
 descarta de un clic y se recupera con «Deshacer», la anulación con su registro
 del art. 70 y el «Corregir» de la receta emitida.
 **Solo interfaz:** PR-106.
-**Solo servidor:** PR-081, PR-090 a PR-093. Son el permiso declarado en cada
+**Solo servidor:** PR-001, PR-004, PR-081, PR-090 a PR-093. Son la atención en el alcance de quien compone, el prescriptor que sale de la sesión y nunca de la petición, el permiso declarado en cada
 ruta, el alcance por sede y las filas de bitácora: se prueban contando filas y
 recorriendo las rutas registradas, no en una pantalla.
 
@@ -206,7 +206,10 @@ conservación de quince ya cubre.
 vigencia se cuenta desde ESE día y no desde el siguiente.
 
 **Cubre:** PR-050 a PR-055.
-**Solo servidor:** PR-054. Que nada se borre se demuestra contando filas.
+**Solo servidor:** PR-054, PR-055. Que nada se borre se demuestra contando filas; y
+lo único de PR-055 que es del sistema —emitir sin depender de ningún servicio
+externo— se prueba con el archivo de documentos caído: el recetario de papel
+es del establecimiento.
 
 ### H4 — La alerta de alergia que sí es nuestra _(P1)_
 
