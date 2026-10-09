@@ -410,6 +410,10 @@ rastro append-only del estado del paciente es garantía de la base como el de
 AG-005; y quién consultó el tablero se escribe en `access_audit` sin que nadie
 lo vea.
 
+**Solo interfaz:** AG-177. Es el menú de la fila; su mitad de servidor son las
+rutas `…/for-entry/:entryId/hold` y `…/resume`, que son EN-239 en `encounter` y
+ya se prueban con sesiones reales con ese número.
+
 > **El esquema del eje entró el 20-08-2026 y no bloquea nada**
 > (`20260820052524_clinical_flow_states`): el enum `patient_subject_status`, las
 > dos columnas de `agenda_entry` y sus dos `CHECK` ya existen, igual que los dos

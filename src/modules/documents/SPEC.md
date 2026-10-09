@@ -278,6 +278,8 @@ código y otro sin ella— y comprobar que las dos respuestas dicen lo mismo.
 
 **Cubre:** DOC-094 a DOC-097.
 
+**Solo servidor:** DOC-095. Que la respuesta no lleve nada del paciente se prueba sobre la respuesta: una página no puede enseñar que algo no viajó.
+
 **Solo interfaz:** DOC-097. Es la página `/verificar/<código>` de `clinica-web`, sin el marco de la aplicación; lo que responde el servidor son los tres requisitos anteriores, y la página la prueban `route-access.spec.ts` y `verification.spec.ts` en la interfaz.
 
 ### H8 — El resumen de la atención en un PDF _(P1)_

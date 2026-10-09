@@ -248,7 +248,7 @@ abierta, una que se interrumpió y una que se dio de alta y nadie cobró, y no h
 dato que las distinga. Es de la misma familia que REQ-020 y REQ-021: no se
 captura retroactivamente.
 
-**Solo servidor:** EN-004, EN-005, EN-008, EN-010, EN-017, EN-132, EN-145, EN-168, EN-241 (ocurre al desplegar). La carrera con
+**Solo servidor:** EN-004, EN-005, EN-008, EN-010, EN-017, EN-132, EN-139, EN-145, EN-168, EN-241 (ocurre al desplegar). La carrera con
 la anulación, la edad que escribe un disparador, el orden de los instantes, la
 fila de bitácora, las transiciones que el servidor rechaza y **la ausencia de
 cierre automático** son garantías de almacenamiento: ninguna pantalla puede
@@ -257,7 +257,9 @@ existe. EN-168, una atención viva por cita, la garantiza un índice
 único parcial: la pantalla nunca ofrece abrir la segunda. EN-004, la cita de
 otro paciente, la garantiza `trg_encounter_matches_appointment`: la pantalla
 abre la atención con el paciente de la propia cita y no tiene forma de mandar
-otro.
+otro. EN-139, el paciente que pasa a `DEPARTED` al cerrar la cuenta, lo escribe
+el disparador de caja en su transacción (EN-131); lo que el tablero enseña del
+paciente que ya salió es AG-121 en `agenda`.
 
 ### H2 — La nota clínica firmada y su enmienda _(P1)_
 
@@ -313,9 +315,11 @@ el sitio con versión (§21)—, **EN-235** —lo que no puede ser el principal
 va aquí porque el formulario 024 cuelga del **procedimiento** de riesgo mayor
 (EN-050), no de la atención.
 
-**Solo servidor:** EN-041, EN-042, EN-043. Los tres son disparadores e índices
+**Solo servidor:** EN-041, EN-042, EN-043, EN-048, EN-248. Los tres primeros son disparadores e índices
 parciales: la instantánea que no puede mentir, la vigencia en la fecha y el
-principal único. EN-248, el aviso a `billing` tras corregir un
+principal único. EN-048, los códigos de planificación familiar de cinco
+caracteres, es carga del catálogo: el buscador de diagnósticos ofrece lo que
+el catálogo trae, sin lista propia. EN-248, el aviso a `billing` tras corregir un
 procedimiento: caja ve el cargo ya corregido (BI-240 a BI-243).
 
 **Estado (21-08-2026).** Construida la parte que el esquema admite: EN-040 a
@@ -380,6 +384,10 @@ listado de atenciones lo lleva, afirmado sobre la respuesta.
 en listados y logs, y la fila de bitácora. Una pantalla que decide no pintar algo
 no demuestra que no viajó — el defecto de AG-111 fue exactamente confiar en un
 doble con los permisos puestos a mano.
+
+**Solo interfaz:** EN-078. Ofrecer es la pantalla; el servidor no tiene ningún
+camino que escriba el grupo prioritario desde el tamizaje, y cuando quien tiene
+la llave acepta, lo guarda `patients` con su propia puerta (PA-034).
 
 ### H6 — Alergias y antecedentes visibles _(P2)_
 
