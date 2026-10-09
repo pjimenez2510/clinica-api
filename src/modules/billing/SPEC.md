@@ -243,6 +243,9 @@ siguiente y conseguirlo; intentarlo el día 11 y recibir el rechazo con la salid
 correcta; intentar anular una emitida a Consumidor Final y recibir la negativa
 en cualquier fecha. **Cubre:** BI-091 a BI-097.
 
+**Solo servidor:** BI-095. Lo garantiza la base, como declara B15; la pantalla
+sólo ofrece acreditar lo que queda de la factura (BI-218).
+
 ### B4 — Descuentos con límite y con autorización _(P2)_
 
 **Por qué es P2:** el descuento se da desde el primer día, y sin límite ni
@@ -436,6 +439,10 @@ procedimiento corregido, §24). **Solo servidor:** BI-200 (la ruta de descuento 
 existe todavía; es una restricción de la base), BI-203 (lo dispara la
 corrección de la atención; caja ve el cargo ya re-tarifado) y BI-240 a BI-242
 (los dispara la corrección del procedimiento; caja ve el cargo ya corregido).
+
+**Solo interfaz:** BI-199, BI-202. Son la confirmación de «Cerrar cuenta» y
+el aviso junto al número: el servidor no cambia por ellas —cerrar sigue siendo
+BI-071, y el tipo de identificación lo comprueba BI-160—.
 
 ### B13 — Caja que se entiende sin leer _(P1)_
 
