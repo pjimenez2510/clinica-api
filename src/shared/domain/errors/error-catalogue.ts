@@ -538,6 +538,10 @@ export const DOMAIN_ERROR_CODES = [
   // D-179. El nombre y el tarifario de la prestación de un examen o de un
   // tipo de atención se corrigen allí (409).
   'SERVICE_NAMED_ELSEWHERE',
+  // BI-256, BI-257 (D-159). La marca del 024 necesita una prestación atada a
+  // un procedimiento, y ese procedimiento es del tarifario (422).
+  'SERVICE_NOT_A_PROCEDURE',
+  'SERVICE_PROCEDURE_NOT_IN_TARIFF',
   'TAX_RATE_IN_USE',
   'TAX_RATE_NOT_FOUND',
   'TAX_RATE_REQUIRED',

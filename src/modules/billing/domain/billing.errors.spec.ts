@@ -43,6 +43,9 @@ const EXPECTED: readonly [
   [errors.ServiceCategoryInactiveError, 'SERVICE_CATEGORY_INACTIVE', BusinessRuleViolation], // prettier-ignore
   [errors.ServiceKindMismatchError, 'SERVICE_KIND_MISMATCH', BusinessRuleViolation], // prettier-ignore
   [errors.ServiceNamedElsewhereError, 'SERVICE_NAMED_ELSEWHERE', ConflictError], // prettier-ignore
+  // BI-256, BI-257 (D-159).
+  [errors.ServiceNotAProcedureError, 'SERVICE_NOT_A_PROCEDURE', BusinessRuleViolation], // prettier-ignore
+  [errors.ServiceProcedureNotInTariffError, 'SERVICE_PROCEDURE_NOT_IN_TARIFF', BusinessRuleViolation], // prettier-ignore
   [errors.TaxRateRequiredError, 'TAX_RATE_REQUIRED', ValidationError],
   [errors.TaxRateNotFoundError, 'TAX_RATE_NOT_FOUND', NotFoundError],
   [errors.TaxRateInUseError, 'TAX_RATE_IN_USE', ConflictError],

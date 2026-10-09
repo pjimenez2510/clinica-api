@@ -40,6 +40,10 @@ export function billableServiceSnapshot(view: BillableServiceView): object {
     // clears is still readable here: who checked which rate, and when.
     taxReviewedAt: view.taxReview?.reviewedAt.toISOString() ?? null,
     taxReviewedById: view.taxReview?.reviewedById ?? null,
+    // BI-257, BI-256. The procedure it charges and its 024 mark, with who.
+    procedureConceptId: view.procedureConcept?.id ?? null,
+    requiresWrittenConsent: view.writtenConsent.required,
+    writtenConsentSetById: view.writtenConsent.setById,
   };
 }
 

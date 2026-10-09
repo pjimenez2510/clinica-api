@@ -40,6 +40,7 @@ import {
   CreateServiceCategoryDto,
   CreateServiceDto,
   MarkTaxReviewedDto,
+  MarkWrittenConsentDto,
   PayerDto,
   PayerListDto,
   PriceDto,
@@ -175,7 +176,32 @@ export class BillingCatalogueController {
           tariffCode: dto.tariffCode,
           taxRateId: dto.taxRateId,
           active: dto.active,
+          procedureConceptId: dto.procedureConceptId,
         },
+        requester,
+      ),
+    );
+  }
+
+  /**
+   * BI-256 (D-159.1, D-199.1). «Exige consentimiento 024»: the medical
+   * direction's key, not the price manager's. Who and when come from the
+   * session and the application's clock.
+   */
+  @Post('services/:serviceId/written-consent')
+  @RequirePermission('record:consent-rule', 'global')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Marcar si una prestación exige el consentimiento informado escrito (024)' }) // prettier-ignore
+  @ApiOkResponse({ type: ServiceDto })
+  async markWrittenConsent(
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
+    @Body() dto: MarkWrittenConsentDto,
+  ): Promise<ServiceResponse> {
+    const requester = this.requireClinicWide('record:consent-rule');
+    return toServiceResponse(
+      await this.services.markWrittenConsent(
+        serviceId,
+        dto.required,
         requester,
       ),
     );
@@ -442,7 +468,9 @@ export class BillingCatalogueController {
    * D-023. Holding `billing:price-manage` somewhere is not holding it
    * everywhere, and the tariff is everywhere.
    */
-  private requireClinicWide(permission: 'billing:price-manage'): Requester {
+  private requireClinicWide(
+    permission: 'billing:price-manage' | 'record:consent-rule',
+  ): Requester {
     assertClinicWideScope(this.currentUser.requirePrincipal(), permission);
     return { userId: this.currentUser.requireUserId() };
   }
@@ -466,6 +494,17 @@ function toServiceResponse(service: BillableServiceView): ServiceResponse {
     active: service.active,
     // BI-188, SP-031. Which service types it charges for, read-only here.
     serviceTypes: service.serviceTypes.map((type) => ({ ...type })),
+    writtenConsent: {
+      required: service.writtenConsent.required,
+      setAt: service.writtenConsent.setAt?.toISOString() ?? null,
+      setBy:
+        service.writtenConsent.setById === null
+          ? null
+          : {
+              id: service.writtenConsent.setById,
+              name: service.writtenConsent.setByName ?? '',
+            },
+    },
     taxReview:
       service.taxReview === null
         ? null

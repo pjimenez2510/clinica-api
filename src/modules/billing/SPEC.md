@@ -2183,7 +2183,7 @@ dos registros distintos.**
   > **D-159.1 y .5.** La marca la pone la clínica, sobre las prestaciones que
   > realiza, y no el médico caso por caso; en la ficha de la prestación y no
   > en el catálogo del tarifario, que se reimporta. La llave es un permiso
-  > propio que de fábrica trae `ADMIN` (D-199.1). Lo que exige el 024 es
+  > propio que ningún rol de fábrica trae, como `certificate:revoke-any` (D-199.1). Lo que exige el 024 es
   > EN-152, en `encounter`.
   >
   > **Garantía de la base:** `billable_service_written_consent_states_who`
@@ -2197,7 +2197,7 @@ dos registros distintos.**
   - SI la clase de la categoría no es procedimiento, ENTONCES DEBERÁ
     rechazarlo con `SERVICE_KIND_MISMATCH` (BI-187);
   - SI el concepto no es del tarifario, ENTONCES DEBERÁ rechazarlo con
-    `CONCEPT_WRONG_CATALOGUE`.
+    `SERVICE_PROCEDURE_NOT_IN_TARIFF`.
   > Hasta aquí ninguna pantalla ni semilla escribía la atadura (BI-187): el
   > cargo del procedimiento nunca se proponía y la marca del 024 no tenía a
   > qué procedimiento aplicarse.
@@ -2664,6 +2664,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `SERVICE_KIND_MISMATCH` | 422 | BI-187 |
 | `SERVICE_NAMED_ELSEWHERE` | 409 | BI-187, ORD-163, SP-030 |
 | `SERVICE_NOT_A_PROCEDURE` | 422 | BI-256 |
+| `SERVICE_PROCEDURE_NOT_IN_TARIFF` | 422 | BI-257 |
 | `INVOICE_CHARGES_CHANGED` | 409 | BI-184 |
 
 **Se reutilizan, y no se declaran de nuevo:** `SELF_AUTHORISATION_DENIED`

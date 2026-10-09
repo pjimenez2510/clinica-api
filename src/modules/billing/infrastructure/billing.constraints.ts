@@ -12,6 +12,14 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
  * by PostgreSQL constraints, and this registration is their enumeration.
  */
 registerConstraintMeanings({
+  // ── The 024 mark (BI-256) ─────────────────────────────────────────────────
+  // The service refuses it first; this answers the mark and the untying
+  // landing at once, which only the database can arbitrate.
+  billable_service_written_consent_needs_a_procedure: {
+    code: 'SERVICE_NOT_A_PROCEDURE',
+    field: 'procedureConceptId',
+    message: 'Ate antes la prestación a su procedimiento del tarifario',
+  },
   // ── The payment methods (BI-146) ──────────────────────────────────────────
   // The service refuses the last one first; this answers two administrators
   // switching off the last two at once, which only the database can arbitrate.

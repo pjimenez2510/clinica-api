@@ -319,6 +319,18 @@ export const PERMISSION_CATALOGUE = [
       'Anular certificados médicos emitidos por otro profesional (dirección médica)',
   },
   {
+    // BI-256, D-159.1, D-199.1. «La dirección médica» decide qué prestaciones
+    // exigen el consentimiento informado escrito (formulario 024): el anexo
+    // del A.M. 5316 deja la aprobación de cada contenido al director médico
+    // o a la instancia de calidad. Como `certificate:revoke-any`, ningún rol
+    // de fábrica lo trae —ni `MEDICO`, porque la barrera no la pone quien
+    // decidiría saltarla—: la clínica lo concede a quien dirija.
+    code: 'record:consent-rule',
+    resource: 'record',
+    description:
+      'Marcar qué prestaciones exigen el consentimiento informado escrito (formulario 024). Corresponde a la dirección médica',
+  },
+  {
     code: 'vitals:write',
     resource: 'record',
     description: 'Registrar signos vitales y antropometría',

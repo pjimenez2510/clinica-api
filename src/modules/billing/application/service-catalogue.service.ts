@@ -28,6 +28,8 @@ import {
   TaxRateRequiredError,
   TaxReviewRateChangedError,
   ServiceNamedElsewhereError,
+  ServiceNotAProcedureError,
+  ServiceProcedureNotInTariffError,
 } from '../domain/billing.errors';
 
 import {
@@ -180,11 +182,33 @@ export class ServiceCatalogueService {
     const movesCategory =
       update.categoryId !== undefined &&
       update.categoryId !== current.category.id;
-    if (movesCategory) {
-      const category = await this.requireActiveCategory(update.categoryId!);
+    // BI-257. The procedure it charges, from the tariff and only on a
+    // procedure-kind service; a service carrying the 024 mark (BI-256) keeps
+    // it, or the mark would point at nothing.
+    const retiesProcedure =
+      update.procedureConceptId !== undefined &&
+      update.procedureConceptId !== (current.procedureConcept?.id ?? null);
+    if (retiesProcedure) {
+      if (update.procedureConceptId === null) {
+        if (current.writtenConsent.required) {
+          throw new ServiceNotAProcedureError();
+        }
+      } else if (
+        !(await this.catalogue.isTariffConcept(update.procedureConceptId!))
+      ) {
+        throw new ServiceProcedureNotInTariffError();
+      }
+    }
+    if (movesCategory || retiesProcedure) {
+      const category = movesCategory
+        ? await this.requireActiveCategory(update.categoryId!)
+        : current.category;
+      const tiedProcedure = retiesProcedure
+        ? update.procedureConceptId !== null
+        : current.procedureConcept !== null;
       assertKindAdmits(category.kind, {
         consultations: current.serviceTypes.length,
-        procedures: Number(current.procedureConcept !== null),
+        procedures: Number(tiedProcedure),
         examCategories: (
           await this.catalogue.listExamsOfService(serviceId)
         ).map((exam) => exam.category),
@@ -243,6 +267,47 @@ export class ServiceCatalogueService {
       { reviewedAt: new Date(), reviewedById: requester.userId },
     );
     if (updated === null) throw new TaxReviewRateChangedError();
+    await this.recordChange(
+      serviceId,
+      'UPDATE',
+      requester,
+      SERVICE_RESOURCE_TYPE,
+      {
+        before: billableServiceSnapshot(current),
+        after: billableServiceSnapshot(updated),
+      },
+    );
+    return updated;
+  }
+
+  /**
+   * BI-256 (D-159.1, .5). Marks or unmarks the service as demanding the
+   * signed form 024 for its procedure (EN-152), with who and when — the
+   * application's clock — and the trail of the row before and after.
+   *
+   * ⚠️ `record:consent-rule`, NOT `billing:price-manage`: the mark is a
+   * clinical decision of the medical direction that lives on the economic
+   * sheet only because that is where the clinic describes what it performs.
+   * Setting it to what it already is records nothing.
+   */
+  async markWrittenConsent(
+    serviceId: string,
+    required: boolean,
+    requester: Requester,
+  ): Promise<BillableServiceView> {
+    const current = await this.requireService(serviceId);
+    if (required && current.procedureConcept === null) {
+      throw new ServiceNotAProcedureError();
+    }
+    if (current.writtenConsent.required === required) return current;
+
+    const updated = await this.catalogue.updateBillableService(serviceId, {
+      writtenConsent: {
+        required,
+        setAt: new Date(),
+        setById: requester.userId,
+      },
+    });
     await this.recordChange(
       serviceId,
       'UPDATE',

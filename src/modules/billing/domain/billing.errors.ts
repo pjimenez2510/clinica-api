@@ -109,6 +109,44 @@ export class ServiceKindMismatchError extends BusinessRuleViolation {
   }
 }
 
+/**
+ * BI-256, BI-257. The 024 mark reaches a procedure through the concept the
+ * service charges; a service with no procedure has nothing to mark, and a
+ * marked one cannot lose its procedure.
+ */
+export class ServiceNotAProcedureError extends BusinessRuleViolation {
+  readonly code = 'SERVICE_NOT_A_PROCEDURE';
+  override readonly userTitle =
+    'La marca del consentimiento 024 va en una prestación que cobra un procedimiento del tarifario';
+
+  constructor() {
+    super('The written-consent mark needs a service tied to a procedure', {}, [
+      {
+        field: 'procedureConceptId',
+        code: 'SERVICE_NOT_A_PROCEDURE',
+        message: 'Ate antes la prestación a su procedimiento del tarifario',
+      },
+    ]);
+  }
+}
+
+/** BI-257. A service charges a procedure of the tariff, never another catalogue. */
+export class ServiceProcedureNotInTariffError extends BusinessRuleViolation {
+  readonly code = 'SERVICE_PROCEDURE_NOT_IN_TARIFF';
+  override readonly userTitle =
+    'Ese procedimiento no es del tarifario: búsquelo en el tarifario';
+
+  constructor() {
+    super('The procedure concept is not of the tariff catalogue', {}, [
+      {
+        field: 'procedureConceptId',
+        code: 'SERVICE_PROCEDURE_NOT_IN_TARIFF',
+        message: 'Elija un procedimiento del tarifario',
+      },
+    ]);
+  }
+}
+
 /** BI-015. */
 export class BillableServiceInactiveError extends BusinessRuleViolation {
   readonly code = 'BILLABLE_SERVICE_INACTIVE';
