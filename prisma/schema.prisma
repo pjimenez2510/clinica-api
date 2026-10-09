@@ -223,6 +223,14 @@ model User {
   proceduresRetracted         EncounterProcedureRetraction[] @relation("ProcedureRetractor")
   proceduresRestored          EncounterProcedureRetraction[] @relation("ProcedureRestorer")
 
+  /// EN-152 to EN-154 (D-159). The forms 024 this account recorded, the ones
+  /// it informed, and the revocations it received.
+  procedureConsentsRecorded   ProcedureConsent[]           @relation("ProcedureConsentRecorder")
+  procedureConsentsInformed   ProcedureConsent[]           @relation("ProcedureConsentInformer")
+  procedureConsentsRevoked    ProcedureConsentRevocation[] @relation("ProcedureConsentRevoker")
+  /// BI-256. The services this account last marked or unmarked as needing a 024.
+  billableServicesConsentRule BillableService[]            @relation("WrittenConsentRuleSetter")
+
   /// EN-210, D-127. The versions this account replaced by editing.
   recordVersionsChanged RecordVersion[] @relation("RecordVersionChanger")
 
@@ -1132,6 +1140,7 @@ model CatalogConcept {
   retractedDiagnoses      EncounterDiagnosisRetraction[]
   procedures              EncounterProcedure[]
   retractedProcedures     EncounterProcedureRetraction[]
+  procedureConsents       ProcedureConsent[]
   prescriptionItems       PrescriptionItem[]
   serviceOrderItems       ServiceOrderItem[]
   observationResults      ObservationResult[]            @relation("ObservationAnalyte")
@@ -2826,6 +2835,7 @@ model Encounter {
   retractedDiagnoses  EncounterDiagnosisRetraction[]
   procedures          EncounterProcedure[]
   retractedProcedures EncounterProcedureRetraction[]
+  procedureConsents   ProcedureConsent[]
   notes               ClinicalNote[]
   prescriptions       Prescription[]
   serviceOrders       ServiceOrder[]
@@ -3473,6 +3483,78 @@ model EncounterProcedureRetraction {
 
   @@index([encounterId])
   @@map("encounter_procedure_retraction")
+}
+
+/// EN-152 to EN-154 (D-159). What the paper form 024 says, tied to the
+/// procedure: SIGNED (who signed, who informed, when), EXCEPTION (emergency or
+/// unexpected during another, with its written ground) or REFUSED (no
+/// procedure: who refused, or the external witness). Never edited nor deleted;
+/// a revocation is a row of its own.
+model ProcedureConsent {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  /// The intervention it is about: a 024 for a biopsy does not cover an endoscopy.
+  conceptId String         @map("concept_id") @db.Uuid
+  concept   CatalogConcept @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  /// The procedure it covers; `null` for a refusal. NOT a foreign key: a
+  /// removed procedure moves to its archive with the same id, and the restored
+  /// one is a new row that inherits it (`procedure_written_consent_covers`).
+  procedureId String? @map("procedure_id") @db.Uuid
+
+  /// SIGNED, EXCEPTION or REFUSED. Text, like `billable_service_category.kind`.
+  kind String @db.VarChar(16)
+
+  /// PATIENT or REPRESENTATIVE (SIGNED, REFUSED), or NONE (REFUSED unsigned).
+  signer                     String? @db.VarChar(16)
+  representativeName         String? @map("representative_name") @db.VarChar(240)
+  representativeRelationship String? @map("representative_relationship") @db.VarChar(32)
+  representativeDocument     String? @map("representative_document") @db.VarChar(20)
+  /// EN-153. The external witness, when nobody signs the refusal.
+  witnessName                String? @map("witness_name") @db.VarChar(240)
+  witnessDocument            String? @map("witness_document") @db.VarChar(20)
+
+  /// EMERGENCY or UNEXPECTED_DURING_PROCEDURE, with its written ground.
+  exceptionKind   String? @map("exception_kind") @db.VarChar(32)
+  exceptionReason String? @map("exception_reason") @db.VarChar(1000)
+
+  /// Who informed the patient (SIGNED, REFUSED), and when the paper was signed
+  /// or the refusal expressed. The application's clock, never `now()`.
+  informedById String?   @map("informed_by_id") @db.Uuid
+  informedBy   User?     @relation("ProcedureConsentInformer", fields: [informedById], references: [id], onDelete: Restrict)
+  signedAt     DateTime? @map("signed_at") @db.Timestamptz(6)
+
+  recordedAt   DateTime @map("recorded_at") @db.Timestamptz(6)
+  recordedById String   @map("recorded_by_id") @db.Uuid
+  recordedBy   User     @relation("ProcedureConsentRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  revocation ProcedureConsentRevocation?
+
+  @@index([encounterId])
+  @@index([procedureId])
+  @@map("procedure_consent")
+}
+
+/// EN-154. The revocation of a SIGNED consent: who expressed it, who received
+/// it and when. The consent it revokes does not change.
+model ProcedureConsentRevocation {
+  consentId String           @id @map("consent_id") @db.Uuid
+  consent   ProcedureConsent @relation(fields: [consentId], references: [id], onDelete: Restrict)
+
+  /// PATIENT or REPRESENTATIVE.
+  signer                     String  @db.VarChar(16)
+  representativeName         String? @map("representative_name") @db.VarChar(240)
+  representativeRelationship String? @map("representative_relationship") @db.VarChar(32)
+  representativeDocument     String? @map("representative_document") @db.VarChar(20)
+
+  revokedAt   DateTime @map("revoked_at") @db.Timestamptz(6)
+  revokedById String   @map("revoked_by_id") @db.Uuid
+  revokedBy   User     @relation("ProcedureConsentRevoker", fields: [revokedById], references: [id], onDelete: Restrict)
+
+  @@map("procedure_consent_revocation")
 }
 
 // ---------------------------------------------------------------------------
@@ -4381,6 +4463,16 @@ model BillableService {
   taxReviewedAt          DateTime?               @map("tax_reviewed_at") @db.Timestamptz(6)
   taxReviewedById        String?                 @map("tax_reviewed_by_id") @db.Uuid
   taxReviewedBy          User?                   @relation("TaxRateReviewer", fields: [taxReviewedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_tax_reviewer_fk")
+
+  /// BI-256 (D-159.1, .5). «Exige consentimiento 024»: put by the clinic's
+  /// medical direction on the services it performs, OFF by default, with who
+  /// and when it last changed. Read by `procedure_requires_written_consent`,
+  /// which is what EN-152 asks. Only a service tied to a procedure concept
+  /// may carry it (`billable_service_written_consent_needs_a_procedure`).
+  requiresWrittenConsent Boolean   @default(false) @map("requires_written_consent")
+  writtenConsentSetAt    DateTime? @map("written_consent_set_at") @db.Timestamptz(6)
+  writtenConsentSetById  String?   @map("written_consent_set_by_id") @db.Uuid
+  writtenConsentSetBy    User?     @relation("WrittenConsentRuleSetter", fields: [writtenConsentSetById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_written_consent_setter_fk")
 
   @@index([categoryId, name], map: "billable_service_by_category")
   @@map("billable_service")

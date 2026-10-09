@@ -529,7 +529,8 @@ asignada sigue leyéndose; intentar declarar «la consulta» de una especialidad
 sobre una prestación de clase insumo y recibir el rechazo; y contra
 PostgreSQL, que la base no admite una prestación sin categoría.
 
-**Cubre:** BI-185 a BI-189. **Solo servidor:** BI-186 (la base garantiza la
+**Cubre:** BI-185 a BI-189, **BI-256** —la marca «exige consentimiento 024»
+(D-159)— y **BI-257** —la atadura al procedimiento desde la ficha—. **Solo servidor:** BI-186 (la base garantiza la
 categoría y la clase conocida).
 
 > Las BI-003, BI-004, BI-007 y BI-130 a BI-135 **no son una entrega**: aplican a
@@ -2170,6 +2171,37 @@ dos registros distintos.**
   > abrir la lista de cada uno: la ficha de la prestación lo responde en un
   > sitio.
 
+- **BI-256** — CUANDO quien tiene `record:consent-rule` marque o desmarque
+  una prestación como «exige consentimiento 024», el sistema DEBERÁ guardar la
+  marca en la prestación con quién y cuándo, y dejar en la bitácora la
+  prestación antes y después; la marca DEBERÁ nacer **apagada** y servirse con
+  la prestación. Además:
+  - SI la prestación no cobra un procedimiento del tarifario (BI-257),
+    ENTONCES DEBERÁ rechazarlo con `SERVICE_NOT_A_PROCEDURE`;
+  - SI se quita la atadura al procedimiento de una prestación marcada,
+    ENTONCES DEBERÁ rechazarlo con `SERVICE_NOT_A_PROCEDURE`.
+  > **D-159.1 y .5.** La marca la pone la clínica, sobre las prestaciones que
+  > realiza, y no el médico caso por caso; en la ficha de la prestación y no
+  > en el catálogo del tarifario, que se reimporta. La llave es un permiso
+  > propio que de fábrica trae `ADMIN` (D-199.1). Lo que exige el 024 es
+  > EN-152, en `encounter`.
+  >
+  > **Garantía de la base:** `billable_service_written_consent_states_who`
+  > (marcada ⇒ con quién y cuándo) y
+  > `billable_service_written_consent_needs_a_procedure` (marcada ⇒ ata un
+  > concepto).
+- **BI-257** — CUANDO quien tiene `billing:price-manage` ate una prestación de
+  clase procedimiento a un concepto del tarifario, o la desate, el sistema
+  DEBERÁ guardarlo y servirlo con la prestación, para que caja proponga su
+  cargo (BI-151) y la marca de BI-256 lo alcance. Además:
+  - SI la clase de la categoría no es procedimiento, ENTONCES DEBERÁ
+    rechazarlo con `SERVICE_KIND_MISMATCH` (BI-187);
+  - SI el concepto no es del tarifario, ENTONCES DEBERÁ rechazarlo con
+    `CONCEPT_WRONG_CATALOGUE`.
+  > Hasta aquí ninguna pantalla ni semilla escribía la atadura (BI-187): el
+  > cargo del procedimiento nunca se proponía y la marca del 024 no tenía a
+  > qué procedimiento aplicarse.
+
 ## 19. Lo que la orden de exámenes deja a caja
 
 > D-123, resuelta por el autor el 04-10-2026 con la recomendación.
@@ -2631,6 +2663,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `SERVICE_CATEGORY_INACTIVE` | 422 | BI-185 |
 | `SERVICE_KIND_MISMATCH` | 422 | BI-187 |
 | `SERVICE_NAMED_ELSEWHERE` | 409 | BI-187, ORD-163, SP-030 |
+| `SERVICE_NOT_A_PROCEDURE` | 422 | BI-256 |
 | `INVOICE_CHARGES_CHANGED` | 409 | BI-184 |
 
 **Se reutilizan, y no se declaran de nuevo:** `SELF_AUTHORISATION_DENIED`
@@ -2747,9 +2780,10 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | --- | --- | --- | --- | --- |
 | `GET` | `/billing/services` | `billing:read` | `global` | BI-010, BI-011, BI-014, BI-023 |
 | `POST` | `/billing/services` | `billing:price-manage` | `global` | BI-010 a BI-016 |
-| `PATCH` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-011 a BI-016, BI-025 |
+| `PATCH` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-011 a BI-016, BI-025, **BI-257** |
 | `DELETE` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-012 |
 | `POST` | `/billing/services/{id}/tax-review` | `billing:price-manage` | `global` | BI-024 |
+| `POST` | `/billing/services/{id}/written-consent` | `record:consent-rule` | `global` | BI-256 |
 | `GET` | `/billing/services/{id}/prices` | `billing:read` | `global` | BI-189 |
 | `GET` | `/billing/services/{id}/exams` | `billing:read` | `global` | BI-188 |
 | `GET` | `/billing/service-categories` | `billing:read` | `global` | BI-185 |
