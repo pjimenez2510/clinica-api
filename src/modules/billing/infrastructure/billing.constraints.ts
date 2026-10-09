@@ -20,6 +20,11 @@ registerConstraintMeanings({
     field: 'procedureConceptId',
     message: 'Desmárquela antes de cambiar el procedimiento',
   },
+  billable_service_tariff_code_is_its_procedure: {
+    code: 'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
+    field: 'tariffCode',
+    message: 'El código del tarifario lo da el procedimiento que cobra',
+  },
   billable_service_one_per_procedure: {
     code: 'SERVICE_PROCEDURE_TAKEN',
     field: 'procedureConceptId',

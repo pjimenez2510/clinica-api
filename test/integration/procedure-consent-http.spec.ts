@@ -225,6 +225,10 @@ describe('el consentimiento 024 por HTTP', () => {
     const tied = await send('patch', `/billing/services/${service.id}`, adminToken, { procedureConceptId: concept.id }); // prettier-ignore
     expect(tied.status).toBe(200);
     expect((tied.body as ServiceBody).procedureConcept?.id).toBe(concept.id);
+    // D-179. Un dato, un sitio: el código del tarifario es el del procedimiento.
+    expect((tied.body as { tariffCode: string | null }).tariffCode).toBe(
+      concept.code,
+    );
     expect((tied.body as ServiceBody).writtenConsent).toEqual({ required: false, setAt: null, setBy: null }); // prettier-ignore
 
     // ADMIN administra precios, pero la llave del 024 no es suya (D-199.1).

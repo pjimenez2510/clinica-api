@@ -322,11 +322,12 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
    * BI-257. A concept of the TARIFF system still in force: tying to one an
    * import retired would point at a code the doctor can no longer pick.
    */
-  async isTariffConcept(conceptId: string): Promise<boolean> {
-    const found = await this.prisma.catalogConcept.count({
+  async tariffConceptCode(conceptId: string): Promise<string | null> {
+    const found = await this.prisma.catalogConcept.findFirst({
       where: { id: conceptId, system: { code: 'TARIFF' }, validTo: null },
+      select: { code: true },
     });
-    return found > 0;
+    return found?.code ?? null;
   }
 
   /**

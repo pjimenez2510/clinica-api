@@ -55,6 +55,7 @@ async function aConcept(
     where: { id: service.id },
     data: {
       procedureConceptId: concept.id,
+      tariffCode: concept.code,
       ...(marked
         ? {
             requiresWrittenConsent: true,
@@ -405,7 +406,11 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
     await expect(
       prisma.billableService.update({
         where: { id: service.id },
-        data: { procedureConceptId: concept.id, requiresWrittenConsent: true },
+        data: {
+          procedureConceptId: concept.id,
+          tariffCode: concept.code,
+          requiresWrittenConsent: true,
+        },
       }),
     ).rejects.toThrow(/billable_service_written_consent_states_who/);
 
@@ -413,6 +418,7 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
       where: { id: service.id },
       data: {
         procedureConceptId: concept.id,
+        tariffCode: concept.code,
         requiresWrittenConsent: true,
         writtenConsentSetAt: new Date(),
         writtenConsentSetById: user.id,
@@ -537,7 +543,7 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
     const service = await prisma.billableService.findFirstOrThrow({ where: { procedureConceptId: concept.id } }); // prettier-ignore
 
     await expect(
-      prisma.billableService.update({ where: { id: service.id }, data: { procedureConceptId: other.id } }), // prettier-ignore
+      prisma.billableService.update({ where: { id: service.id }, data: { procedureConceptId: other.id, tariffCode: other.code } }), // prettier-ignore
     ).rejects.toThrow(/billable_service_written_consent_tie_locked/);
     await expect(
       prisma.billableService.delete({ where: { id: service.id } }),
@@ -546,7 +552,11 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
     // Control positivo: desmarcar y cambiar en la misma escritura.
     await prisma.billableService.update({
       where: { id: service.id },
-      data: { requiresWrittenConsent: false, procedureConceptId: other.id },
+      data: {
+        requiresWrittenConsent: false,
+        procedureConceptId: other.id,
+        tariffCode: other.code,
+      },
     });
   });
 
@@ -557,12 +567,12 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
     const second = await createExamService(prisma, { code: 'P-DOS', name: 'Biopsia (convenio)', kind: 'PROCEDURE' }); // prettier-ignore
 
     await expect(
-      prisma.billableService.update({ where: { id: second.id }, data: { procedureConceptId: concept.id } }), // prettier-ignore
+      prisma.billableService.update({ where: { id: second.id }, data: { procedureConceptId: concept.id, tariffCode: concept.code } }), // prettier-ignore
     ).rejects.toThrow();
     const raised = await prisma.billableService
       .update({
         where: { id: second.id },
-        data: { procedureConceptId: concept.id },
+        data: { procedureConceptId: concept.id, tariffCode: concept.code },
       })
       .then(
         () => undefined,
@@ -573,6 +583,34 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
     );
     // Control positivo: a otro concepto, sí.
     const other = await aTariffConcept(prisma);
-    await prisma.billableService.update({ where: { id: second.id }, data: { procedureConceptId: other.id } }); // prettier-ignore
+    await prisma.billableService.update({ where: { id: second.id }, data: { procedureConceptId: other.id, tariffCode: other.code } }); // prettier-ignore
+  });
+
+  it('BI-257 D-179 la BASE no deja a una prestación atada con un código del tarifario distinto del de su procedimiento', async () => {
+    const prisma = db();
+    const concept = await aTariffConcept(prisma);
+    const service = await createExamService(prisma, { code: 'P-TAR', name: 'Biopsia', kind: 'PROCEDURE', tariffCode: '55555' }); // prettier-ignore
+
+    await expect(
+      prisma.billableService.update({ where: { id: service.id }, data: { procedureConceptId: concept.id } }), // prettier-ignore
+    ).rejects.toThrow(/billable_service_tariff_code_is_its_procedure/);
+    await prisma.billableService.update({
+      where: { id: service.id },
+      data: { procedureConceptId: concept.id, tariffCode: concept.code },
+    });
+    const raised = await prisma.billableService
+      .update({ where: { id: service.id }, data: { tariffCode: '99999' } })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(extractDatabaseProblem(raised)?.code).toBe(
+      'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
+    );
+    // Control positivo: desatada, el código se escribe a mano otra vez.
+    await prisma.billableService.update({
+      where: { id: service.id },
+      data: { procedureConceptId: null, tariffCode: '99999' },
+    });
   });
 });

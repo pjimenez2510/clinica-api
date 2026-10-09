@@ -14,6 +14,7 @@ import {
   ServiceNotAProcedureError,
   ServiceProcedureNotInTariffError,
   ServiceProcedureTakenError,
+  ServiceTariffCodeFromProcedureError,
 } from '../domain/billing.errors';
 import type {
   BillableServiceView,
@@ -95,7 +96,7 @@ function build(overrides: Record<string, unknown> = {}) {
     createBillableService: vi.fn().mockResolvedValue(service),
     updateBillableService: vi.fn().mockResolvedValue(service),
     markTaxReviewed: vi.fn().mockResolvedValue(service),
-    isTariffConcept: vi.fn().mockResolvedValue(true),
+    tariffConceptCode: vi.fn().mockResolvedValue('10120'),
     procedureTakenByOther: vi.fn().mockResolvedValue(false),
     countReferencesToService: vi.fn().mockResolvedValue(0),
     deleteBillableService: vi.fn().mockResolvedValue(undefined),
@@ -717,8 +718,40 @@ describe('BI-257 la prestación de procedimiento se ata a su concepto desde la f
       { procedureConceptId: 'c-1' },
       requester,
     );
-    expect(mocks.isTariffConcept).toHaveBeenCalledWith('c-1');
-    expect(mocks.updateBillableService).toHaveBeenCalledWith('service-1', { procedureConceptId: 'c-1' }); // prettier-ignore
+    expect(mocks.tariffConceptCode).toHaveBeenCalledWith('c-1');
+    // D-179. Atar escribe el código del tarifario: un dato, un sitio.
+    expect(mocks.updateBillableService).toHaveBeenCalledWith('service-1', { procedureConceptId: 'c-1', tariffCode: '10120' }); // prettier-ignore
+  });
+
+  it('BI-257 D-179 atada, el código del tarifario no se escribe aparte; atar uno distinto lo reemplaza', async () => {
+    const { service: catalogue, mocks } = build({
+      findBillableService: vi.fn().mockResolvedValue({
+        ...procedureService,
+        tariffCode: '10120',
+      }),
+    });
+    await expect(
+      catalogue.updateService('service-1', { tariffCode: '99999' }, requester),
+    ).rejects.toBeInstanceOf(ServiceTariffCodeFromProcedureError);
+    // Control positivo: el mismo código guardado otra vez no es un cambio.
+    await catalogue.updateService('service-1', { tariffCode: '10120', name: 'Biopsia' }, requester); // prettier-ignore
+    expect(mocks.updateBillableService).toHaveBeenCalledTimes(1);
+
+    const { service: typed, mocks: typedMocks } = build({
+      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES, tariffCode: '55555' }), // prettier-ignore
+    });
+    await typed.updateService('service-1', { procedureConceptId: 'c-1' }, requester); // prettier-ignore
+    expect(typedMocks.updateBillableService).toHaveBeenCalledWith('service-1', { procedureConceptId: 'c-1', tariffCode: '10120' }); // prettier-ignore
+  });
+
+  it('D-179 ORD-163 la prestación de un examen no se ata a un procedimiento: su tarifario es del examen', async () => {
+    const { service: catalogue } = build({
+      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES }), // prettier-ignore
+      listExamsOfService: vi.fn().mockResolvedValue([{ id: 'e-1', category: 'PROCEDURE' }]), // prettier-ignore
+    });
+    await expect(
+      catalogue.updateService('service-1', { procedureConceptId: 'c-1' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceNamedElsewhereError);
   });
 
   it('BI-257 rechaza un concepto que no es del tarifario y la atadura en una prestación que no es de procedimiento', async () => {
@@ -726,7 +759,7 @@ describe('BI-257 la prestación de procedimiento se ata a su concepto desde la f
       findBillableService: vi
         .fn()
         .mockResolvedValue({ ...service, category: PROCEDURES }),
-      isTariffConcept: vi.fn().mockResolvedValue(false),
+      tariffConceptCode: vi.fn().mockResolvedValue(null),
     });
     await expect(
       catalogue.updateService(

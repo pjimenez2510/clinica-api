@@ -48,6 +48,7 @@ const EXPECTED: readonly [
   [errors.ServiceProcedureNotInTariffError, 'SERVICE_PROCEDURE_NOT_IN_TARIFF', BusinessRuleViolation], // prettier-ignore
   [errors.ServiceConsentTieLockedError, 'SERVICE_CONSENT_TIE_LOCKED', ConflictError], // prettier-ignore
   [errors.ServiceProcedureTakenError, 'SERVICE_PROCEDURE_TAKEN', ConflictError], // prettier-ignore
+  [errors.ServiceTariffCodeFromProcedureError, 'SERVICE_TARIFF_CODE_FROM_PROCEDURE', ConflictError], // prettier-ignore
   [errors.TaxRateRequiredError, 'TAX_RATE_REQUIRED', ValidationError],
   [errors.TaxRateNotFoundError, 'TAX_RATE_NOT_FOUND', NotFoundError],
   [errors.TaxRateInUseError, 'TAX_RATE_IN_USE', ConflictError],

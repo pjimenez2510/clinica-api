@@ -260,7 +260,7 @@ describe('la facturación por HTTP', () => {
       });
       await prisma.billableService.update({
         where: { code: 'PROC-SUTURA' },
-        data: { procedureConceptId: concept.id },
+        data: { procedureConceptId: concept.id, tariffCode: concept.code },
       });
       await prisma.encounterProcedure.create({
         data: {

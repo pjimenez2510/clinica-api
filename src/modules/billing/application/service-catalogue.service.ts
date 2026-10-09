@@ -32,6 +32,7 @@ import {
   ServiceNotAProcedureError,
   ServiceProcedureNotInTariffError,
   ServiceProcedureTakenError,
+  ServiceTariffCodeFromProcedureError,
 } from '../domain/billing.errors';
 
 import {
@@ -167,7 +168,19 @@ export class ServiceCatalogueService {
     const retariffs =
       update.tariffCode !== undefined &&
       update.tariffCode !== current.tariffCode;
-    if (renames || retariffs) {
+    // BI-257. The procedure it charges, from the tariff and only on a
+    // procedure-kind service; a service carrying the 024 mark (BI-256) keeps
+    // it, or the mark would point at nothing.
+    const retiesProcedure =
+      update.procedureConceptId !== undefined &&
+      update.procedureConceptId !== (current.procedureConcept?.id ?? null);
+    const tiesProcedure = retiesProcedure && update.procedureConceptId !== null;
+    // D-179. Tied, the tariff code IS its procedure's: written by tying,
+    // never apart (`billable_service_tariff_code_is_its_procedure`).
+    if (retariffs && !retiesProcedure && current.procedureConcept !== null) {
+      throw new ServiceTariffCodeFromProcedureError();
+    }
+    if (renames || retariffs || tiesProcedure) {
       const owned =
         current.serviceTypes.length > 0 ||
         (await this.catalogue.listExamsOfService(serviceId)).length > 0;
@@ -184,12 +197,7 @@ export class ServiceCatalogueService {
     const movesCategory =
       update.categoryId !== undefined &&
       update.categoryId !== current.category.id;
-    // BI-257. The procedure it charges, from the tariff and only on a
-    // procedure-kind service; a service carrying the 024 mark (BI-256) keeps
-    // it, or the mark would point at nothing.
-    const retiesProcedure =
-      update.procedureConceptId !== undefined &&
-      update.procedureConceptId !== (current.procedureConcept?.id ?? null);
+    let tied: BillableServiceUpdate = update;
     if (retiesProcedure) {
       // D-199.1. Moving the tie would move the medical direction's mark.
       if (current.writtenConsent.required) {
@@ -197,12 +205,14 @@ export class ServiceCatalogueService {
       }
       if (update.procedureConceptId !== null) {
         const conceptId = update.procedureConceptId!;
-        if (!(await this.catalogue.isTariffConcept(conceptId))) {
-          throw new ServiceProcedureNotInTariffError();
-        }
+        const code = await this.catalogue.tariffConceptCode(conceptId);
+        if (code === null) throw new ServiceProcedureNotInTariffError();
         if (await this.catalogue.procedureTakenByOther(conceptId, serviceId)) {
           throw new ServiceProcedureTakenError();
         }
+        // D-179. Tying writes the code: the one typed before is replaced
+        // (the old one stays in the trail's `before`), never asked twice.
+        tied = { ...update, tariffCode: code };
       }
     }
     if (movesCategory || retiesProcedure) {
@@ -228,7 +238,7 @@ export class ServiceCatalogueService {
       update.taxRateId !== undefined && update.taxRateId !== current.taxRateId;
     const updated = await this.catalogue.updateBillableService(
       serviceId,
-      changesRate ? { ...update, taxReview: null } : update,
+      changesRate ? { ...tied, taxReview: null } : tied,
     );
     await this.recordChange(
       serviceId,

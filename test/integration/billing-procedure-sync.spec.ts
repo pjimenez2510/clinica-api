@@ -84,11 +84,11 @@ beforeEach(async () => {
   const cure = await conceptOf('CUR', 'Curación');
   await prisma.billableService.update({
     where: { code: 'PROC-SUTURA' },
-    data: { procedureConceptId: suture.id },
+    data: { procedureConceptId: suture.id, tariffCode: suture.code },
   });
   await prisma.billableService.update({
     where: { code: 'PROC-CURACION' },
-    data: { procedureConceptId: cure.id },
+    data: { procedureConceptId: cure.id, tariffCode: cure.code },
   });
 
   const doctor = await createUser(prisma);

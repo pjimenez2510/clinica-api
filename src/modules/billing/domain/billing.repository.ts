@@ -323,8 +323,11 @@ export interface BillingCatalogueRepository {
     taxRateId: string,
     review: { reviewedAt: Date; reviewedById: string },
   ): Promise<BillableServiceView | null>;
-  /** BI-257. Whether the concept is of the tariff catalogue and still in force. */
-  isTariffConcept(conceptId: string): Promise<boolean>;
+  /**
+   * BI-257. The code of a concept of the tariff catalogue still in force, or
+   * `null` when it is not one.
+   */
+  tariffConceptCode(conceptId: string): Promise<string | null>;
   /** BI-257. Whether another service already charges a concept of that code. */
   procedureTakenByOther(conceptId: string, serviceId: string): Promise<boolean>;
   /**

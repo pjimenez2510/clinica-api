@@ -2207,6 +2207,13 @@ dos registros distintos.**
   - SI otra prestación ya cobra ese procedimiento (el mismo código), ENTONCES
     DEBERÁ rechazarlo con `SERVICE_PROCEDURE_TAKEN`: caja propondría una de
     las dos en silencio (`billable_service_one_per_procedure`).
+  - al atarla, el **código del tarifario** de la prestación DEBERÁ pasar a ser
+    el del procedimiento, reemplazando el que tuviera escrito; y MIENTRAS esté
+    atada, SI se cambia su código del tarifario aparte, ENTONCES DEBERÁ
+    rechazarlo con `SERVICE_TARIFF_CODE_FROM_PROCEDURE` (D-179, «un dato, un
+    sitio»; `billable_service_tariff_code_is_its_procedure`);
+  - SI la prestación es la de un examen (ORD-163), ENTONCES DEBERÁ rechazar
+    atarla con `SERVICE_NAMED_ELSEWHERE`: su tarifario es del examen.
   > Hasta aquí ninguna pantalla ni semilla escribía la atadura (BI-187): el
   > cargo del procedimiento nunca se proponía y la marca del 024 no tenía a
   > qué procedimiento aplicarse.
@@ -2676,6 +2683,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `SERVICE_PROCEDURE_NOT_IN_TARIFF` | 422 | BI-257 |
 | `SERVICE_CONSENT_TIE_LOCKED` | 409 | BI-256 |
 | `SERVICE_PROCEDURE_TAKEN` | 409 | BI-257 |
+| `SERVICE_TARIFF_CODE_FROM_PROCEDURE` | 409 | BI-257, D-179 |
 | `INVOICE_CHARGES_CHANGED` | 409 | BI-184 |
 
 **Se reutilizan, y no se declaran de nuevo:** `SELF_AUTHORISATION_DENIED`

@@ -151,6 +151,26 @@ export class ServiceConsentTieLockedError extends ConflictError {
   }
 }
 
+/**
+ * BI-257, D-179. Tied to a procedure, the service's tariff code is that
+ * procedure's: it changes by tying another, never typed apart.
+ */
+export class ServiceTariffCodeFromProcedureError extends ConflictError {
+  readonly code = 'SERVICE_TARIFF_CODE_FROM_PROCEDURE';
+  override readonly userTitle =
+    'El código del tarifario lo da el procedimiento que cobra: cambie el procedimiento en Estructura';
+
+  constructor() {
+    super("The tariff code of a tied service is its procedure's", {}, [
+      {
+        field: 'tariffCode',
+        code: 'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
+        message: 'Lo da el procedimiento atado',
+      },
+    ]);
+  }
+}
+
 /** BI-257. One service per procedure: caja would otherwise pick one in silence. */
 export class ServiceProcedureTakenError extends ConflictError {
   readonly code = 'SERVICE_PROCEDURE_TAKEN';
