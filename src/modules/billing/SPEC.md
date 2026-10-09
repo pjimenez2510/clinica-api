@@ -247,6 +247,9 @@ en cualquier fecha. **Cubre:** BI-091 a BI-097.
 no puede pedir de más, porque sólo ofrece las líneas sin acreditar (BI-218), y
 no tiene un tope propio que probar.
 
+**Fuera del sistema:** BI-092, BI-093. D-151.1: el sistema no anula —la
+anulación se hace en el portal del SRI— y «Corregir» emite nota de crédito.
+
 ### B4 — Descuentos con límite y con autorización _(P2)_
 
 **Por qué es P2:** el descuento se da desde el primer día, y sin límite ni

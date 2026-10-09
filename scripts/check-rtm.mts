@@ -23,6 +23,8 @@
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { TEST_TITLE, titleOf } from './board.mts';
+
 const REPO_ROOT = process.cwd();
 const DOCS = resolve(REPO_ROOT, '..', 'clinica-docs');
 const REQUIREMENTS_FILE = join(DOCS, 'REQUISITOS.md');
@@ -45,8 +47,6 @@ const REQ_ROW = /^\|\s*\*\*(REQ-\d{3})\*\*\s*\|([^|]*)\|([^|]*)\|([^|]*)\|/gm;
 /** `- **AG-001** — …` inside a module SPEC.md */
 const SPEC_DECLARATION = /^\s*[-*]\s*\*\*([A-Z]{2,4}-\d{3})\*\*/gm;
 const ID = /\b[A-Z]{2,4}-\d{3}\b/g;
-const TEST_TITLE =
-  /\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*(['"`])([^'"`]+)\1/g;
 
 /**
  * The area a REQ is grouped under, by the number bands of the sections of
@@ -129,10 +129,8 @@ function readTestedIds(): Set<string> {
     .map((d) => join(REPO_ROOT, d))
     .filter(exists)) {
     for (const file of walkTypeScript(dir)) {
-      for (const [, , title] of readFileSync(file, 'utf8').matchAll(
-        TEST_TITLE,
-      )) {
-        for (const id of title?.match(ID) ?? []) tested.add(id);
+      for (const match of readFileSync(file, 'utf8').matchAll(TEST_TITLE)) {
+        for (const id of titleOf(match).match(ID) ?? []) tested.add(id);
       }
     }
   }

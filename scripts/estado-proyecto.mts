@@ -66,6 +66,11 @@ for (const module of board) {
         `${bar(d.back, d.total)} ${String(d.back).padStart(2)}/${String(d.total).padEnd(2)}  ` +
         `${bar(d.front, d.frontTotal)} ${String(d.front).padStart(2)}/${String(d.frontTotal).padEnd(2)}  ${d.state}`,
     );
+    if (d.outOfSystem.length > 0) {
+      console.log(
+        `        fuera del sistema: ${d.outOfSystem.join(', ')} — ${d.outOfSystemReason}`,
+      );
+    }
   }
 }
 
@@ -74,5 +79,6 @@ console.log(
   `  ${flows.filter((f) => f.reachable).length} de ${flows.length} flujos alcanzables en pantalla · ` +
     `${complete} de ${total} entregas completas de punta a punta.\n` +
     '  En pantalla = su recorrido Playwright pasó. Completa = TODOS sus requisitos con\n' +
-    '  prueba en los DOS lados («Solo servidor» y «Solo interfaz» declarados en el SPEC.md, aparte).\n',
+    '  prueba en los DOS lados («Solo servidor», «Solo interfaz» y «Fuera del sistema»\n' +
+    '  declarados en el SPEC.md, aparte).\n',
 );

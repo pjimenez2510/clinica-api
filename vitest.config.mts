@@ -20,7 +20,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     root: './',
-    include: ['src/**/*.spec.ts'],
+    // `scripts/`: the parsing the status reports share (board.spec.mts).
+    include: ['src/**/*.spec.ts', 'scripts/**/*.spec.mts'],
     // The integration suite lives in `test/integration/` and runs from its own
     // config: it needs containers and takes orders of magnitude longer.
     exclude: ['**/node_modules/**', '**/dist/**', 'test/**'],
