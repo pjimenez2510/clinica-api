@@ -760,3 +760,35 @@ registerConstraintMeanings({
     message: 'La atención ya no admite contenido nuevo',
   },
 });
+
+/**
+ * The form 024 (EN-152 to EN-154, D-159). The adapters refuse each of these
+ * first with the domain's own error; what reaches here is a race — the mark
+ * switched on between the question and the commit, two revocations at once —
+ * or a write from below the application, and it gets the same sentence
+ * instead of a 500.
+ */
+registerConstraintMeanings({
+  encounter_procedure_consent_required: {
+    code: 'CONSENT_024_REQUIRED',
+    field: 'consent',
+    message:
+      'Este procedimiento exige el consentimiento informado firmado (024): indique quién lo firmó o registre la excepción con su fundamento',
+  },
+  procedure_consent_signed_before_performed: {
+    code: 'CONSENT_SIGNED_AFTER_PROCEDURE',
+    field: 'consent.signedAt',
+    message: 'La firma no puede ser posterior al procedimiento',
+  },
+  procedure_consent_refusal_states_who: {
+    code: 'CONSENT_WITNESS_REQUIRED',
+    field: 'witness',
+    message:
+      'Si el paciente no firma la negativa, indique el nombre y el documento del testigo',
+  },
+  procedure_consent_revocation_pkey: {
+    code: 'CONSENT_NOT_REVOCABLE',
+    field: 'consentId',
+    message: 'Ese consentimiento ya se revocó. Actualice la lista',
+  },
+});

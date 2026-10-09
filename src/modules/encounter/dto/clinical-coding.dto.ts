@@ -1,6 +1,12 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import {
+  CONSENT_EXCEPTION_KINDS,
+  CONSENT_SIGNERS,
+  REFUSAL_SIGNERS,
+  REPRESENTATIVE_RELATIONSHIPS,
+} from '../domain/procedure-consent';
 import { CARE_PLACE } from './encounter.dto';
 
 /**
@@ -99,6 +105,50 @@ export const recordDiagnosisSchema = z.object({
 /** Body of POST /encounters/:encounterId/diagnoses. */
 export class RecordDiagnosisDto extends createZodDto(recordDiagnosisSchema) {}
 
+/** EN-152 to EN-154. Who signs for the patient: name and relationship. */
+const representativeSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, 'Indique el nombre del representante')
+    .max(240, 'El nombre admite hasta 240 caracteres'),
+  relationship: z.enum(REPRESENTATIVE_RELATIONSHIPS, {
+    error: 'Elija el parentesco del representante',
+  }),
+  document: z
+    .string()
+    .trim()
+    .max(20, 'El documento admite hasta 20 caracteres')
+    .nullish(),
+});
+
+/**
+ * EN-152 (D-159.2, .3). The form 024 that travels with the procedure: who
+ * signed the paper and when, or the exception with its written ground.
+ */
+export const procedureConsentSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('SIGNED'),
+    signer: z.enum(CONSENT_SIGNERS, {
+      error: 'Indique si firmó el paciente o su representante',
+    }),
+    representative: representativeSchema.nullish(),
+    /** Absent means «ahora». Never after the procedure (EN-152). */
+    signedAt: instant('La hora de la firma').optional(),
+  }),
+  z.object({
+    kind: z.literal('EXCEPTION'),
+    exceptionKind: z.enum(CONSENT_EXCEPTION_KINDS, {
+      error: 'Elija si fue una emergencia o un procedimiento inesperado',
+    }),
+    reason: z
+      .string()
+      .trim()
+      .min(1, 'Escriba el fundamento de la excepción')
+      .max(1000, 'El fundamento admite hasta 1000 caracteres'),
+  }),
+]);
+
 /**
  * EN-050. Registering one procedure.
  *
@@ -130,6 +180,8 @@ export const recordProcedureSchema = z.object({
     .trim()
     .max(2000, 'La nota del procedimiento no puede superar 2000 caracteres')
     .optional(),
+  /** EN-152. Only when the concept's service demands the 024 (EN-151). */
+  consent: procedureConsentSchema.optional(),
 });
 /** Body of POST /encounters/:encounterId/procedures. */
 export class RecordProcedureDto extends createZodDto(recordProcedureSchema) {}
@@ -180,6 +232,60 @@ export const retractProcedureSchema = z.object({
 });
 /** Body of POST /encounters/:encounterId/procedures/:procedureId/retract. */
 export class RetractProcedureDto extends createZodDto(retractProcedureSchema) {}
+
+/** EN-152. `?conceptId=` of the screen's question «¿exige el 024?». */
+export const consentRequirementQuerySchema = z.object({
+  conceptId: z.uuid('Seleccione el procedimiento en el tarifario'),
+});
+export class ConsentRequirementQueryDto extends createZodDto(
+  consentRequirementQuerySchema,
+) {}
+
+/** EN-152. The answer: whether its service carries the 024 mark. */
+export const consentRequirementSchema = z.object({ required: z.boolean() });
+export class ConsentRequirementDto extends createZodDto(
+  consentRequirementSchema,
+) {}
+
+/**
+ * EN-153 (D-159.4). The refusal of an intervention: who refused, or — when
+ * nobody signs — the external witness with their document.
+ */
+export const recordRefusalSchema = z.object({
+  conceptId: z.uuid('Seleccione el procedimiento en el tarifario'),
+  signer: z.enum(REFUSAL_SIGNERS, {
+    error: 'Indique quién firmó la negativa, o que no firmó nadie',
+  }),
+  representative: representativeSchema.nullish(),
+  witness: z
+    .object({
+      name: z
+        .string()
+        .trim()
+        .min(1, 'Indique el nombre del testigo')
+        .max(240, 'El nombre admite hasta 240 caracteres'),
+      document: z
+        .string()
+        .trim()
+        .min(1, 'Indique el documento del testigo')
+        .max(20, 'El documento admite hasta 20 caracteres'),
+    })
+    .nullish(),
+  /** Absent means «ahora». */
+  refusedAt: instant('La hora de la negativa').optional(),
+});
+/** Body of POST /encounters/:encounterId/procedure-refusals. */
+export class RecordRefusalDto extends createZodDto(recordRefusalSchema) {}
+
+/** EN-154. Who expresses the revocation. */
+export const revokeConsentSchema = z.object({
+  signer: z.enum(CONSENT_SIGNERS, {
+    error: 'Indique si revoca el paciente o su representante',
+  }),
+  representative: representativeSchema.nullish(),
+});
+/** Body of POST /encounters/:encounterId/procedure-consents/:consentId/revoke. */
+export class RevokeConsentDto extends createZodDto(revokeConsentSchema) {}
 
 /**
  * EN-180, EN-213, EN-214. Removing a diagnosis. The reason is optional here
@@ -378,8 +484,63 @@ export const procedureSchema = z.object({
   /** EN-244. When it was last corrected; `null` if never. */
   editedAt: z.iso.datetime().nullable(),
 });
-/** Response of recording a procedure. */
-export class ProcedureDto extends createZodDto(procedureSchema) {}
+const personSchema = z.object({ id: z.uuid(), name: z.string() });
+const representativeResponseSchema = z
+  .object({
+    name: z.string(),
+    relationship: z.enum(REPRESENTATIVE_RELATIONSHIPS),
+    document: z.string().nullable(),
+  })
+  .nullable();
+
+/** EN-152, EN-154. The 024 of a procedure, with its revocation if any. */
+export const procedureConsentResponseSchema = z.object({
+  id: z.uuid(),
+  kind: z.enum(['SIGNED', 'EXCEPTION']),
+  signer: z.enum(CONSENT_SIGNERS).nullable(),
+  representative: representativeResponseSchema,
+  exceptionKind: z.enum(CONSENT_EXCEPTION_KINDS).nullable(),
+  exceptionReason: z.string().nullable(),
+  informedBy: personSchema.nullable(),
+  signedAt: z.iso.datetime().nullable(),
+  recordedAt: z.iso.datetime(),
+  recordedBy: personSchema,
+  revocation: z
+    .object({
+      signer: z.enum(CONSENT_SIGNERS),
+      representative: representativeResponseSchema,
+      revokedAt: z.iso.datetime(),
+      revokedBy: personSchema,
+    })
+    .nullable(),
+});
+/** Response of revoking a consent. */
+export class ProcedureConsentDto extends createZodDto(
+  procedureConsentResponseSchema,
+) {}
+
+/** EN-152. A procedure with the 024 that covers it, or `null`. */
+export const recordedProcedureSchema = procedureSchema.extend({
+  consent: procedureConsentResponseSchema.nullable(),
+});
+/** Response of recording, correcting or restoring a procedure. */
+export class ProcedureDto extends createZodDto(recordedProcedureSchema) {}
+
+/** EN-153. A refusal, with the intervention it refused. */
+export const refusalSchema = z.object({
+  id: z.uuid(),
+  conceptId: z.uuid(),
+  procedureCode: z.string(),
+  procedureDisplay: z.string(),
+  signer: z.enum(REFUSAL_SIGNERS),
+  representative: representativeResponseSchema,
+  witness: z.object({ name: z.string(), document: z.string() }).nullable(),
+  informedBy: personSchema,
+  refusedAt: z.iso.datetime(),
+  recordedBy: personSchema,
+});
+/** Response of recording a refusal. */
+export class RefusalDto extends createZodDto(refusalSchema) {}
 
 /** EN-245. A procedure taken off the attention, as the archive keeps it. */
 export const retractedProcedureSchema = z.object({
@@ -393,9 +554,11 @@ export const retractedProcedureSchema = z.object({
 });
 
 export const procedureListSchema = z.object({
-  items: z.array(procedureSchema),
+  items: z.array(recordedProcedureSchema),
   /** EN-245. What was removed, folded on the screen, restorable while live. */
   retracted: z.array(retractedProcedureSchema),
+  /** EN-153. The interventions the patient refused. */
+  refusals: z.array(refusalSchema),
 });
 /** Response of GET /encounters/:encounterId/procedures. */
 export class ProcedureListDto extends createZodDto(procedureListSchema) {}
@@ -423,6 +586,11 @@ export type DiagnosisVersionListResponse = z.infer<
   typeof diagnosisVersionListSchema
 >;
 export type ProcedureResponse = z.infer<typeof procedureSchema>;
+export type RecordedProcedureResponse = z.infer<typeof recordedProcedureSchema>;
+export type ProcedureConsentResponse = z.infer<
+  typeof procedureConsentResponseSchema
+>;
+export type RefusalResponse = z.infer<typeof refusalSchema>;
 export type ProcedureListResponse = z.infer<typeof procedureListSchema>;
 export type ProcedureVersionListResponse = z.infer<
   typeof procedureVersionListSchema

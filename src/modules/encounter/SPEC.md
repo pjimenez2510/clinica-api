@@ -3283,8 +3283,8 @@ programada._
   petición, y guardar atado a ese procedimiento, una de dos cosas:
   - el **consentimiento firmado** en papel: quién firmó —el paciente, o su
     representante con su nombre, su parentesco y, si se da, su documento—,
-    quién informó —el profesional que registra, u otro usuario que se nombre—
-    y cuándo se firmó, que NO DEBERÁ ser posterior a cuando se realizó; o
+    quién informó —el profesional que lo registra— y cuándo se firmó, que NO
+    DEBERÁ ser posterior a cuando se realizó; o
   - la **excepción**: emergencia, o procedimiento inesperado durante otro, con
     su **fundamento escrito**, que nunca queda vacío.
 
@@ -3293,6 +3293,9 @@ programada._
     registrar el procedimiento;
   - SI la firma es posterior a la realización, ENTONCES DEBERÁ rechazarlo con
     `CONSENT_SIGNED_AFTER_PROCEDURE`;
+  - SI firma un representante sin nombre o sin parentesco, ENTONCES DEBERÁ
+    rechazarlo con `CONSENT_REPRESENTATIVE_REQUIRED` (igual en la negativa y
+    en la revocación);
   - SI una corrección (EN-244) cambia el procedimiento a un concepto que exige
     el 024 y ningún consentimiento de ese procedimiento lo cubre, ENTONCES
     DEBERÁ rechazarla con `CONSENT_024_REQUIRED`;
@@ -3354,7 +3357,7 @@ programada._
   - SI el consentimiento no es firmado (una excepción o una negativa) o ya
     está revocado, ENTONCES DEBERÁ rechazarlo con `CONSENT_NOT_REVOCABLE`;
   - SI no es de esa atención, ENTONCES DEBERÁ rechazarlo con
-    `CONSENT_NOT_FOUND`;
+    `PROCEDURE_CONSENT_NOT_FOUND`;
   - la revocación DEBERÁ servirse con el consentimiento que revoca.
   > **D-159.4 y el literal i del anexo**: la revocatoria lleva el nombre y la
   > firma del paciente o del representante y *«el profesional sanitario que
@@ -4602,8 +4605,9 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `PROCEDURE_NOT_RESTORABLE` | 409 | Restaurar un procedimiento que ya se restauró | EN-246 |
 | `CONSENT_024_REQUIRED` | 422 | El procedimiento exige el consentimiento 024 y no llega firmado ni con excepción | EN-152 |
 | `CONSENT_SIGNED_AFTER_PROCEDURE` | 422 | La firma del 024 es posterior a la realización | EN-152 |
+| `CONSENT_REPRESENTATIVE_REQUIRED` | 422 | Firma, niega o revoca un representante sin nombre ni parentesco | EN-152 a EN-154 |
 | `CONSENT_WITNESS_REQUIRED` | 422 | Negativa sin firma y sin testigo | EN-153 |
-| `CONSENT_NOT_FOUND` | 404 | El consentimiento no es de esa atención | EN-154 |
+| `PROCEDURE_CONSENT_NOT_FOUND` | 404 | El consentimiento no es de esa atención | EN-154 |
 | `CONSENT_NOT_REVOCABLE` | 409 | Revocar una excepción, una negativa o un consentimiento ya revocado | EN-154 |
 | `DIAGNOSIS_PRIMARY_TAKEN` | 409 | Segundo diagnóstico principal. Lo arbitra `encounter_diagnosis_one_primary`; el adaptador lee el rango en uso dentro de la misma transacción para que el rechazo sea una frase, así que el código llega por **las dos vías** | EN-043 |
 | `DIAGNOSIS_CONCEPT_NOT_IN_FORCE` | 422 | El código CIE-10 no estaba vigente en la fecha de la atención. **Lo emite el adaptador**, no el mapeo de constraints: `trg_diagnosis_concept_in_force` levanta `integrity_constraint_violation` desde PL/pgSQL, así que el nombre del disparador nunca viaja al cliente | EN-042 |

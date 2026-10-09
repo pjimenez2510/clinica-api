@@ -39,6 +39,12 @@ import {
   ProcedureNotFoundError,
   ProcedureNotRestorableError,
   ProcedureRetractionReasonRequiredError,
+  ConsentNotFoundError,
+  ConsentNotRevocableError,
+  ConsentRepresentativeRequiredError,
+  ConsentRequiredError,
+  ConsentSignedAfterProcedureError,
+  ConsentWitnessRequiredError,
   DiagnosisPrimaryRequiredAfterDischargeError,
   DiagnosisPrimaryTakenError,
   DiagnosisPrincipalUseInvalidError,
@@ -120,6 +126,12 @@ const EVERY_ERROR: readonly DomainError[] = [
   new ProcedureNotFoundError(),
   new ProcedureRetractionReasonRequiredError(),
   new ProcedureNotRestorableError(),
+  new ConsentRequiredError(),
+  new ConsentSignedAfterProcedureError(),
+  new ConsentRepresentativeRequiredError(),
+  new ConsentWitnessRequiredError(),
+  new ConsentNotFoundError(),
+  new ConsentNotRevocableError(),
   // EN-080. La tercera cara de la misma negativa: el concepto es del CNMB o
   // no lo es, y la frase tiene que nombrar la lista que hay que abrir. Con un
   // ternario, «todo lo que no es CIE-10» decía «el tarifario», y una alergia
@@ -281,6 +293,34 @@ describe('el contrato de errores de la atención', () => {
     expect(twice.code).toBe('PROCEDURE_NOT_RESTORABLE');
     expect(twice).toBeInstanceOf(ConflictError);
     expect(twice.userTitle).toContain('Actualice la lista');
+  });
+
+  it('EN-152 EN-153 EN-154 el 024: falta 422 por campo, firma tardía, representante y testigo 422, ajeno 404 y no revocable 409', () => {
+    const required = new ConsentRequiredError();
+    expect(required.code).toBe('CONSENT_024_REQUIRED');
+    expect(required).toBeInstanceOf(BusinessRuleViolation);
+    expect(required.fieldErrors[0]?.field).toBe('consent');
+    expect(required.userTitle).toContain(
+      'consentimiento informado firmado (024)',
+    );
+    const late = new ConsentSignedAfterProcedureError();
+    expect(late.code).toBe('CONSENT_SIGNED_AFTER_PROCEDURE');
+    expect(late).toBeInstanceOf(ValidationError);
+    expect(late.fieldErrors[0]?.field).toBe('consent.signedAt');
+    const representative = new ConsentRepresentativeRequiredError();
+    expect(representative.code).toBe('CONSENT_REPRESENTATIVE_REQUIRED');
+    expect(representative).toBeInstanceOf(ValidationError);
+    const witness = new ConsentWitnessRequiredError();
+    expect(witness.code).toBe('CONSENT_WITNESS_REQUIRED');
+    expect(witness).toBeInstanceOf(ValidationError);
+    expect(witness.fieldErrors[0]?.field).toBe('witness');
+    expect(witness.userTitle).toContain('testigo');
+    const missing = new ConsentNotFoundError();
+    expect(missing.code).toBe('PROCEDURE_CONSENT_NOT_FOUND');
+    expect(missing).toBeInstanceOf(NotFoundError);
+    const twice = new ConsentNotRevocableError();
+    expect(twice.code).toBe('CONSENT_NOT_REVOCABLE');
+    expect(twice).toBeInstanceOf(ConflictError);
   });
 
   it('EN-213 «Deshacer» lo que ya se deshizo, o lo que ya volvió a registrarse: 409 que manda a actualizar', () => {

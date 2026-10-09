@@ -29,6 +29,11 @@
  */
 
 import type {
+  ProcedureConsentInput,
+  ProcedureConsentView,
+  RefusalView,
+} from './procedure-consent';
+import type {
   CareModality,
   CarePlace,
   DiagnosisCertainty,
@@ -152,6 +157,15 @@ export interface ProcedureView {
   editedAt: Date | null;
 }
 
+/**
+ * EN-152. A procedure as the attention serves it: with the form 024 that
+ * covers it — its own, or the one of the procedure it was restored from —
+ * or `null` when none does.
+ */
+export interface RecordedProcedureView extends ProcedureView {
+  consent: ProcedureConsentView | null;
+}
+
 /** EN-244. One version a correction replaced, with who and when. */
 export interface ProcedureVersionView {
   version: number;
@@ -273,6 +287,16 @@ export interface NewProcedure {
   /** EN-034. WHEN it was performed, which is not when it was typed. */
   performedAt?: Date;
   note?: string;
+  /**
+   * EN-152. The form 024 — signed, or the exception with its ground — when
+   * the concept's service demands it. Checked against the requirement INSIDE
+   * the write: the mark can change between the screen's question and here.
+   */
+  consent?: {
+    paper: ProcedureConsentInput;
+    /** Who records it, and so who informed the patient (EN-152). */
+    recordedById: string;
+  };
   sites: SiteScopeFilter;
 }
 
@@ -488,13 +512,17 @@ export interface ClinicalCodingRepository {
    *
    * ⚠️ AND IT WRITES NO AMOUNT (EN-051). The charge is `billing`'s.
    */
-  addProcedure(procedure: NewProcedure): Promise<ProcedureView>;
+  addProcedure(procedure: NewProcedure): Promise<RecordedProcedureView>;
 
   /** EN-050. The procedures of one attention, in the order they were performed. */
-  proceduresOf(query: CodingQuery): Promise<ProcedureView[]>;
+  proceduresOf(query: CodingQuery): Promise<RecordedProcedureView[]>;
 
-  /** EN-244. Corrects a procedure under the attention's lock, stamped. */
-  editProcedure(edit: ProcedureEdit): Promise<ProcedureView>;
+  /**
+   * EN-244. Corrects a procedure under the attention's lock, stamped. A new
+   * concept that demands the 024 is refused unless a consent of that concept
+   * already covers the procedure (EN-152).
+   */
+  editProcedure(edit: ProcedureEdit): Promise<RecordedProcedureView>;
 
   /** EN-244. The versions corrections replaced, most recent first. */
   procedureVersions(query: ProcedureQuery): Promise<ProcedureVersionView[]>;
@@ -503,10 +531,15 @@ export interface ClinicalCodingRepository {
   retractProcedure(retraction: ProcedureRetraction): Promise<void>;
 
   /** EN-246. Brings a removed procedure back as a new row; marks the archive. */
-  restoreProcedure(restoration: ProcedureRestoration): Promise<ProcedureView>;
+  restoreProcedure(
+    restoration: ProcedureRestoration,
+  ): Promise<RecordedProcedureView>;
 
   /** EN-245. The archive of one attention, without what was restored. */
   retractedProceduresOf(query: CodingQuery): Promise<RetractedProcedureView[]>;
+
+  /** EN-153. The refusals of one attention, as expressed. */
+  refusalsOf(query: CodingQuery): Promise<RefusalView[]>;
 }
 
 /** Injection token. The application never names the adapter. */

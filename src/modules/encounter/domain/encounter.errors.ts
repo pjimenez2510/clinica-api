@@ -1428,6 +1428,104 @@ export class ProcedureRetractionReasonRequiredError extends ValidationError {
   }
 }
 
+/**
+ * EN-152 (D-159). The service of this procedure demands the signed form 024,
+ * and the request brought neither it nor the written ground of an exception.
+ * 422 by field: the screen opens the block that asks for it.
+ */
+export class ConsentRequiredError extends BusinessRuleViolation {
+  readonly code = 'CONSENT_024_REQUIRED';
+  override readonly userTitle =
+    'Este procedimiento exige el consentimiento informado firmado (024): indique quién lo firmó o registre la excepción con su fundamento';
+  override readonly fieldErrors = [
+    {
+      field: 'consent',
+      code: 'CONSENT_024_REQUIRED',
+      message: 'Indique quién firmó el 024, o la excepción con su fundamento',
+    },
+  ];
+
+  constructor() {
+    super('The procedure needs its signed form 024 or an exception');
+  }
+}
+
+/** EN-152. The 024 is signed before the act, never after it. */
+export class ConsentSignedAfterProcedureError extends ValidationError {
+  readonly code = 'CONSENT_SIGNED_AFTER_PROCEDURE';
+  override readonly userTitle =
+    'El consentimiento se firma antes del procedimiento: revise la hora de la firma';
+  override readonly fieldErrors = [
+    {
+      field: 'consent.signedAt',
+      code: 'CONSENT_SIGNED_AFTER_PROCEDURE',
+      message: 'La firma no puede ser posterior al procedimiento',
+    },
+  ];
+
+  constructor() {
+    super('The form 024 is signed after the procedure');
+  }
+}
+
+/** EN-152 to EN-154. A representative signs with their name and relationship. */
+export class ConsentRepresentativeRequiredError extends ValidationError {
+  readonly code = 'CONSENT_REPRESENTATIVE_REQUIRED';
+  override readonly userTitle =
+    'Indique el nombre y el parentesco del representante que firma';
+  override readonly fieldErrors = [
+    {
+      field: 'representative',
+      code: 'CONSENT_REPRESENTATIVE_REQUIRED',
+      message: 'Indique el nombre y el parentesco del representante',
+    },
+  ];
+
+  constructor() {
+    super('A representative signs with name and relationship');
+  }
+}
+
+/** EN-153. Nobody signs the refusal: the external witness does. */
+export class ConsentWitnessRequiredError extends ValidationError {
+  readonly code = 'CONSENT_WITNESS_REQUIRED';
+  override readonly userTitle =
+    'Si el paciente no firma la negativa, indique el nombre y el documento del testigo';
+  override readonly fieldErrors = [
+    {
+      field: 'witness',
+      code: 'CONSENT_WITNESS_REQUIRED',
+      message: 'Indique el nombre y el documento del testigo',
+    },
+  ];
+
+  constructor() {
+    super('An unsigned refusal needs its witness');
+  }
+}
+
+/** EN-154. The consent is not of this attention, or outside the scope. */
+export class ConsentNotFoundError extends NotFoundError {
+  readonly code = 'PROCEDURE_CONSENT_NOT_FOUND';
+  override readonly userTitle =
+    'Ese consentimiento no consta en esta atención. Actualice la lista';
+
+  constructor() {
+    super('Consent not found on the encounter');
+  }
+}
+
+/** EN-154. Only a signed consent, not yet revoked, is revoked. */
+export class ConsentNotRevocableError extends ConflictError {
+  readonly code = 'CONSENT_NOT_REVOCABLE';
+  override readonly userTitle =
+    'Sólo se revoca un consentimiento firmado que no se haya revocado ya. Actualice la lista';
+
+  constructor() {
+    super('The consent is not a signed one, or it is already revoked');
+  }
+}
+
 /** EN-246. Restoring what was already restored. */
 export class ProcedureNotRestorableError extends ConflictError {
   readonly code = 'PROCEDURE_NOT_RESTORABLE';

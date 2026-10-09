@@ -22,6 +22,7 @@ import {
   PractitionerProfileRequiredError,
   ProcedureNotFoundError,
   ProcedureNotRestorableError,
+  ConsentRequiredError,
 } from '../domain/encounter.errors';
 import type {
   CareModality,
@@ -66,9 +67,18 @@ import type {
   ProcedureRetraction,
   ProcedureVersionView,
   ProcedureView,
+  RecordedProcedureView,
   RetractedProcedureView,
 } from '../domain/clinical-coding.repository';
 import type { SiteScopeFilter } from '../domain/encounter.repository';
+import type { RefusalView } from '../domain/procedure-consent';
+import {
+  consentsByProcedure,
+  insertProcedureConsent,
+  refusalsOf as refusalsOfEncounter,
+  requiresWrittenConsent,
+  writtenConsentCovers,
+} from './procedure-consent.records';
 
 /**
  * Block K's rows in, domain shapes out.
@@ -880,8 +890,13 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
     });
   }
 
-  /** EN-050. Writes one procedure with its quantity. */
-  async addProcedure(procedure: NewProcedure): Promise<ProcedureView> {
+  /**
+   * EN-050, EN-152. Writes one procedure with its quantity and, when its
+   * concept's service demands it, its form 024 — in the same transaction, so
+   * `encounter_procedure_consent_required` sees both at the commit.
+   */
+  async addProcedure(procedure: NewProcedure): Promise<RecordedProcedureView> {
+    const now = new Date();
     const row = await this.prisma.$transaction(async (tx) => {
       await requireEncounterInScope(tx, procedure.encounterId, procedure.sites);
 
@@ -896,8 +911,16 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       if (concept === undefined || concept.system_code !== TARIFF) {
         throw new ConceptWrongCatalogueError(TARIFF);
       }
+      // EN-152. Asked inside the write: the mark may have changed since the
+      // screen asked. EN-151: without the mark nothing is asked.
+      if (
+        procedure.consent === undefined &&
+        (await requiresWrittenConsent(tx, procedure.conceptId))
+      ) {
+        throw new ConsentRequiredError();
+      }
 
-      return tx.encounterProcedure.create({
+      const created = await tx.encounterProcedure.create({
         data: {
           encounterId: procedure.encounterId,
           conceptId: procedure.conceptId,
@@ -912,8 +935,9 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           procedureDisplay: concept.concept_display,
           quantity: procedure.quantity,
           // EN-034. The instant of the ACT, which is not the instant of the
-          // typing. Absent means «ahora», the ordinary case at the chairside.
-          performedAt: procedure.performedAt,
+          // typing. Absent means «ahora», the ordinary case at the chairside —
+          // the application's clock, which the 024's signature is compared to.
+          performedAt: procedure.performedAt ?? now,
           note: procedure.note,
           /**
            * ⚠️ `tariffAmount` IS ABSENT AND STAYS ABSENT (EN-051, D-049). What
@@ -926,13 +950,23 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         },
         select: PROCEDURE_SELECT,
       });
+      if (procedure.consent !== undefined) {
+        await insertProcedureConsent(
+          tx,
+          created,
+          procedure.consent.paper,
+          procedure.consent.recordedById,
+          now,
+        );
+      }
+      return created;
     });
 
-    return toProcedureView(row);
+    return this.withConsent(row);
   }
 
-  /** EN-050. The procedures of one attention, in the order they happened. */
-  async proceduresOf(query: CodingQuery): Promise<ProcedureView[]> {
+  /** EN-050, EN-152. The procedures of one attention, in the order they happened. */
+  async proceduresOf(query: CodingQuery): Promise<RecordedProcedureView[]> {
     const rows = await this.prisma.encounterProcedure.findMany({
       where: {
         encounterId: query.encounterId,
@@ -941,7 +975,29 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       orderBy: [{ performedAt: 'asc' }, { id: 'asc' }],
       select: PROCEDURE_SELECT,
     });
-    return rows.map(toProcedureView);
+    const consents = await consentsByProcedure(
+      this.prisma,
+      query.encounterId,
+      rows,
+    );
+    return rows.map((row) => ({
+      ...toProcedureView(row),
+      consent: consents.get(row.id) ?? null,
+    }));
+  }
+
+  /** EN-153. The refusals of one attention, inside the caller's scope. */
+  async refusalsOf(query: CodingQuery): Promise<RefusalView[]> {
+    const inScope = await this.prisma.encounter.count({
+      where: { id: query.encounterId, ...siteFilter(query.sites) },
+    });
+    return inScope === 0 ? [] : refusalsOfEncounter(this.prisma, query.encounterId); // prettier-ignore
+  }
+
+  /** One live procedure with the 024 that covers it. */
+  private async withConsent(row: ProcedureRow): Promise<RecordedProcedureView> {
+    const consents = await consentsByProcedure(this.prisma, row.encounterId, [row]); // prettier-ignore
+    return { ...toProcedureView(row), consent: consents.get(row.id) ?? null };
   }
 
   /**
@@ -951,7 +1007,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
    * this transaction (EN-050). `trg_encounter_procedure_record_version` keeps
    * the previous row and refuses an edit whose stamp did not move.
    */
-  async editProcedure(edit: ProcedureEdit): Promise<ProcedureView> {
+  async editProcedure(edit: ProcedureEdit): Promise<RecordedProcedureView> {
     const now = new Date();
     const row = await this.prisma.$transaction(async (tx) => {
       await requireEncounterInScope(tx, edit.encounterId, edit.sites);
@@ -973,6 +1029,14 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         );
         if (concept === undefined || concept.system_code !== TARIFF) {
           throw new ConceptWrongCatalogueError(TARIFF);
+        }
+        // EN-152. Correcting INTO a concept that demands the 024 needs a
+        // consent of that concept already on the procedure.
+        if (
+          (await requiresWrittenConsent(tx, edit.conceptId)) &&
+          !(await writtenConsentCovers(tx, current.id, edit.conceptId))
+        ) {
+          throw new ConsentRequiredError();
         }
         identity = {
           conceptId: edit.conceptId,
@@ -1010,7 +1074,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         select: PROCEDURE_SELECT,
       });
     });
-    return toProcedureView(row);
+    return this.withConsent(row);
   }
 
   /**
@@ -1125,7 +1189,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
    */
   async restoreProcedure(
     restoration: ProcedureRestoration,
-  ): Promise<ProcedureView> {
+  ): Promise<RecordedProcedureView> {
     const now = new Date();
     const row = await this.prisma.$transaction(async (tx) => {
       await requireEncounterInScope(
@@ -1141,6 +1205,14 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       });
       if (!archived) throw new ProcedureNotFoundError();
       if (archived.restoredAt !== null) throw new ProcedureNotRestorableError();
+      // EN-152, EN-246. The restored row inherits the 024 of the one it comes
+      // back from; one removed before the mark existed has none to inherit.
+      if (
+        (await requiresWrittenConsent(tx, archived.conceptId)) &&
+        !(await writtenConsentCovers(tx, archived.id, archived.conceptId))
+      ) {
+        throw new ConsentRequiredError();
+      }
 
       const restored = await tx.encounterProcedure.create({
         data: {
@@ -1168,7 +1240,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
       });
       return restored;
     });
-    return toProcedureView(row);
+    return this.withConsent(row);
   }
 
   /** EN-245. The archive of one attention, without what was restored. */
@@ -1252,7 +1324,7 @@ function procedureFromSnapshot(snapshot: ProcedureSnapshot): ProcedureView {
  * not seen. The service's own check, taken before the transaction, could not
  * see either.
  */
-async function requireEncounterInScope(
+export async function requireEncounterInScope(
   tx: Prisma.TransactionClient,
   encounterId: string,
   sites: SiteScopeFilter,
@@ -1405,7 +1477,7 @@ async function refuseCorrection(
  * which is the defect `20260806040611_clinical_date_in_ecuador_timezone`
  * exists to have fixed.
  */
-async function conceptForEncounter(
+export async function conceptForEncounter(
   tx: Prisma.TransactionClient,
   encounterId: string,
   conceptId: string,

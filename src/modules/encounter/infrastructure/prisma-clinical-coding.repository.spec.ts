@@ -146,6 +146,9 @@ function prismaDouble(options: {
   const prisma = {
     $transaction: <T>(run: (client: typeof tx) => Promise<T>): Promise<T> =>
       run(tx),
+    // EN-152. The 024 read back with the procedure: none in these doubles.
+    procedureConsent: { findMany: () => Promise.resolve([]) },
+    encounterProcedureRetraction: { findMany: () => Promise.resolve([]) },
   };
 
   return { prisma: prisma as unknown as PrismaService, calls };
