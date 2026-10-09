@@ -258,6 +258,11 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
               discountAmount: row.discountAmount,
               discountReason: row.discountReason,
               discountAuthorisedById: row.discountAuthorisedById,
+              // BI-066. The discount travels with who granted it and when:
+              // `charge_item_discount_states_who_and_when` demands the stamps.
+              discountAuthorisedAt: row.discountAuthorisedAt,
+              discountAppliedById: row.discountAppliedById,
+              discountAppliedAt: row.discountAppliedAt,
               status: 'BILLABLE',
               createdById: issuance.issuedById,
             })),

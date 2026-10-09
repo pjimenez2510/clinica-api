@@ -320,6 +320,55 @@ export const editChargeSchema = z
 /** Body of PATCH …/accounts/:accountId/charges/:chargeId. */
 export class EditChargeDto extends createZodDto(editChargeSchema) {}
 
+/**
+ * BI-060 to BI-066. Un descuento sobre una línea confirmada: en dólares
+ * (`amount`) o en porcentaje (`percentage`), nunca los dos; `amount: "0.00"`
+ * lo quita. `authorisedById` sólo hace falta por encima del límite propio
+ * (BI-063); dentro, se ignora. Quien lo aplica es la sesión, nunca el cuerpo.
+ */
+export const applyDiscountSchema = z
+  .object({
+    amount: money('El descuento').optional(),
+    percentage: z
+      .string()
+      .trim()
+      .regex(
+        /^\d{1,3}(\.\d{1,2})?$/,
+        'Escriba un porcentaje con hasta dos decimales',
+      ) // prettier-ignore
+      .refine(
+        (value) => Number(value) <= 100,
+        'El descuento no puede pasar del 100 %',
+      ) // prettier-ignore
+      .optional(),
+    reason: z
+      .string()
+      .trim()
+      .max(300, 'El motivo admite hasta 300 caracteres')
+      .optional(),
+    authorisedById: z.uuid('Elija quién lo autoriza').optional(),
+  })
+  .strict()
+  .refine(
+    (body) => (body.amount === undefined) !== (body.percentage === undefined),
+    {
+      message: 'Indique el descuento en dólares o en porcentaje',
+      path: ['amount'],
+    },
+  );
+/** Body of POST …/accounts/:accountId/charges/:chargeId/discount. */
+export class ApplyDiscountDto extends createZodDto(applyDiscountSchema) {}
+
+/** BI-245. Lo que el diálogo sabe antes de pedir nada. */
+const discountPolicySchema = z.object({
+  /** BI-062. El mayor de los límites de quien pide en esta sede; `'0.00'` sin ninguno. */
+  maxDiscountPercentage: z.string(),
+  /** BI-245. Otras personas con `billing:discount-override` en la sede. */
+  authorisers: z.array(z.object({ userId: z.uuid(), name: z.string() })),
+});
+export class DiscountPolicyDto extends createZodDto(discountPolicySchema) {}
+export type DiscountPolicyResponse = z.infer<typeof discountPolicySchema>;
+
 /** BI-198. Query of GET …/accounts/:accountId/repricing. */
 export const repricingQuerySchema = z.object({
   payerId: z.uuid('Indique quién paga'),
@@ -700,6 +749,9 @@ export type AwaitingCheckoutResponse = z.infer<typeof awaitingCheckoutSchema>;
  * A charge, AS IT WAS FROZEN. Everything here is a copy taken on the day of
  * service; nothing is looked up when this is served (BI-051).
  */
+/** A person named on a line: id and display name, nothing else. */
+const personRefSchema = z.object({ id: z.uuid(), name: z.string() });
+
 const chargeResponseSchema = z.object({
   id: z.uuid(),
   accountId: z.uuid(),
@@ -715,6 +767,12 @@ const chargeResponseSchema = z.object({
   taxPercentage: z.string().nullable(),
   discountAmount: z.string(),
   discountReason: z.string().nullable(),
+  /** BI-066, SC-021. Quién puso el descuento y cuándo; `null` sin descuento. */
+  discountAppliedBy: personRefSchema.nullable(),
+  discountAppliedAt: z.iso.datetime().nullable(),
+  /** BI-063. Quién lo autorizó por encima del límite, y cuándo; `null` si cupo. */
+  discountAuthorisedBy: personRefSchema.nullable(),
+  discountAuthorisedAt: z.iso.datetime().nullable(),
   status: z.enum(['PLANNED', 'BILLABLE', 'NOT_BILLABLE', 'BILLED', 'CANCELLED']), // prettier-ignore
   /**
    * BI-153. DE DÓNDE VIENE LA LÍNEA, que es lo que quien cobra tiene que poder

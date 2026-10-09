@@ -252,7 +252,17 @@ el límite por rol es un parámetro, no un número en el código.
 **Prueba independiente:** un usuario cuyo rol tope en el 10 % aplica un 20 %,
 recibe el rechazo, otro usuario con `billing:discount-override` lo autoriza y
 el cargo queda con los dos nombres; el mismo usuario intentando autorizarse a sí
-mismo es rechazado. **Cubre:** BI-060 a BI-066.
+mismo es rechazado. **Cubre:** BI-060 a BI-066, BI-244 a BI-246.
+**Solo servidor:** BI-060, BI-064, BI-065, BI-244, BI-246 — son garantías de la
+base o del servicio; la pantalla no ofrece lo que rechazan (BI-245).
+
+> **Lo entregado el 08-10-2026 (`feat/f06-descuentos`).** En la cuenta, cada
+> línea confirmada lleva «Descuento»: en dólares o en porcentaje, con el total
+> que queda y el límite propio a la vista; por encima del límite pide quién lo
+> autoriza y la línea queda con los dos nombres. **Fuera, con su decisión
+> (D-196):** si el autorizador confirma con su propia contraseña en el puesto de
+> caja (hoy se nombra, como el sobrecupo de D-005), la lista de motivos, y qué
+> rol de fábrica lleva `billing:discount-override` (hoy ninguno).
 
 ### B5 — El tarifario en la pared _(P2)_
 
@@ -1026,16 +1036,14 @@ es falsa, hay requisitos que cambian.
 > (`discount_amount <= unit_amount * quantity`). Los dos tienen prueba contra
 > PostgreSQL.
 >
-> **Falta esquema:** `discount_authorised_at` y, sobre todo,
-> `role_discount_limit` (`role_id`, `max_percentage numeric(5,2)`), que es de
-> B7. **Sin ella BI-062 no se puede resolver, así que B4 no se construye en esta
-> entrega y no hay ruta de descuento.** Nada la sustituye con un número en el
-> código: eso es exactamente lo que REQ-145 prohíbe.
->
-> Y hay una segunda dependencia que no es de esquema: BI-064 reutiliza
-> `SELF_AUTHORISATION_DENIED`, cuya clase vive hoy en `modules/agenda`. Ningún
-> módulo importa de otro, así que ese error tiene que **mudarse a `shared/`**
-> antes de que `billing` pueda usarlo — un cambio en `agenda`, no aquí.
+> **Lo que añadió B4 (08-10-2026, `feat/f06-descuentos`).** `role_discount_limit`
+> llegó con B7. B4 añade `discount_applied_by_id`, `discount_applied_at` y
+> `discount_authorised_at`; `charge_item_discount_states_who_and_when` (sin
+> descuento no hay sellos; con descuento, quién y cuándo, y el autorizador con
+> su instante), `charge_item_discount_not_self_authorised` (BI-064 en la base) y
+> `trg_charge_item_discount_is_permanent` (BI-066, BI-244). `SELF_AUTHORISATION_DENIED`
+> vive ahora en `shared/domain/errors/`: `agenda` y `billing` la extienden con
+> su frase, con el mismo código.
 
 - **BI-060** — El sistema DEBERÁ aplicar el descuento **por línea de cargo** y
   DEBERÁ congelarlo en la fila, y NO DEBERÁ guardarlo como un ajuste al total de
@@ -1082,6 +1090,32 @@ es falsa, hay requisitos que cambian.
   > solo en la bitácora: la bitácora responde «qué pasó aquel martes» y esto
   > responde «por qué esta línea de esta factura vale menos», que es la pregunta
   > que hace quien la mira un año después.
+- **BI-244** — MIENTRAS una línea lleve descuento, el sistema NO DEBERÁ
+  cambiar su cantidad, su prestación, su fecha ni su precio —al editarla o al
+  cambiar el pagador— y DEBERÁ rechazarlo con `CHARGE_HAS_DISCOUNT`, que dice
+  que se quite antes el descuento.
+  > El descuento se guarda en dólares (BI-060) y el límite es un porcentaje: bajar
+  > la cantidad de una línea con un 10 % autorizado lo convertiría en un 50 % que
+  > nadie autorizó. Recalcularlo solo cambiaría lo que alguien autorizó (BI-066).
+  > La base lo garantiza (`trg_charge_item_discount_is_permanent`); el servicio
+  > lo dice antes con su frase. La consulta que se recalcula sola (BI-203) se
+  > queda como estaba y lo registra, como cuando no hay prestación.
+  > Quitar la línea (BI-195) se lleva su descuento —la versión lo guarda—:
+  > «Deshacer» la vuelve a tarifar, y un descuento autorizado sobre el precio
+  > de ayer no sería el que se autorizó.
+- **BI-245** — CUANDO caja abra el descuento de una línea, el sistema DEBERÁ
+  servir el límite de quien lo pide en esa sede y quiénes pueden autorizar por
+  encima —los otros usuarios activos con `billing:discount-override` en la
+  sede—, y la pantalla DEBERÁ pedir el autorizador sólo cuando el descuento
+  supere el límite, con el total de la línea que queda a la vista.
+  > Es la mitad visible de BI-062 y BI-063: sin el límite en pantalla la cajera
+  > descubre que no puede con un rechazo, y sin la lista tendría que saber quién
+  > lleva el permiso. Quien pide no está en la lista (BI-064).
+- **BI-246** — SI la línea es una propuesta sin confirmar (`PLANNED`),
+  ENTONCES el sistema DEBERÁ rechazar el descuento con `CHARGE_NOT_CONFIRMED`.
+  > Una propuesta la sigue moviendo el acto clínico (BI-240 a BI-243); un
+  > descuento encima la congelaría por la espalda (BI-244). Se rebaja lo que caja
+  > ya confirmó.
 
 ## 8. La cuenta
 
@@ -2436,9 +2470,11 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `CHARGE_VOID_REASON_REQUIRED` | 422 | BI-055 |
 | `CHARGE_ITEM_VOIDED` | 409 | BI-059 |
 | `INVALID_CHARGE_QUANTITY` | 422 | BI-057 |
-| `DISCOUNT_REASON_REQUIRED` | 422 | BI-061 |
 | `DISCOUNT_EXCEEDS_LIMIT` | 403 | BI-063 |
+| `DISCOUNT_NOT_AUTHORISED` | 403 | BI-063 (el autorizador no lleva `billing:discount-override` en la sede, o no existe) |
 | `DISCOUNT_EXCEEDS_LINE_AMOUNT` | 422 | BI-065 |
+| `CHARGE_HAS_DISCOUNT` | 409 | BI-244 |
+| `CHARGE_NOT_CONFIRMED` | 409 | BI-246 |
 | `ACCOUNT_NOT_FOUND` | 404 | BI-135 |
 | `ACCOUNT_CLOSED` | 409 | BI-071 |
 | `ACCOUNT_HAS_OPEN_CHARGES` | 409 | BI-072 |
@@ -2509,8 +2545,9 @@ registrados en `infrastructure/billing.constraints.ts`.
 | `INVALID_RUC` | 422 | `invoice_buyer_ruc_valid` | BI-159 |
 | `INVALID_CEDULA` | 422 | `invoice_buyer_cedula_valid` | BI-159 |
 | `INVALID_CHARGE_QUANTITY` | 422 | `charge_item_quantity_is_positive` | BI-057 |
-| `DISCOUNT_REASON_REQUIRED` | 422 | `charge_item_discount_states_a_reason` | BI-061 |
 | `DISCOUNT_EXCEEDS_LINE_AMOUNT` | 422 | `charge_item_discount_within_line` | BI-065 |
+| `SELF_AUTHORISATION_DENIED` | 403 | `charge_item_discount_not_self_authorised` | BI-064 |
+| `CHARGE_HAS_DISCOUNT` | 409 | `trg_charge_item_discount_is_permanent` | BI-066, BI-244 |
 | `INVALID_ACCOUNT_STATUS` | 422 | `patient_account_status_is_known` | BI-070 |
 | `ACCOUNT_CLOSURE_INCOHERENT` | 422 | `patient_account_closed_states_its_instant` | BI-071 |
 | `ACCOUNT_NO_CHARGE_REASON_REQUIRED` | 422 | `trg_patient_account_settled_states_why_unpaid`, `patient_account_no_charge_reason_not_blank` | BI-237 |
@@ -2620,7 +2657,8 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/not-billable` | `billing:write` | `param:siteId` | BI-196 |
 | `PATCH` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}` | `billing:write` | `param:siteId` | BI-197 |
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}/repricing` | `billing:read` | `param:siteId` | BI-198 |
-| `POST` | `/billing/sites/{siteId}/charges/{chargeId}/discount` | `billing:write` | `param:siteId` | BI-060 a BI-066 |
+| `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/discount` | `billing:write` | `param:siteId` | BI-060 a BI-066, BI-244, BI-246 |
+| `GET` | `/billing/sites/{siteId}/accounts/{accountId}/discount-policy` | `billing:write` | `param:siteId` | BI-062, BI-245 |
 | `GET` | `/billing/sites/{siteId}/invoices` | `billing:read` | `param:siteId` | BI-133, BI-135, BI-233 |
 | `GET` | `/billing/sites/{siteId}/invoices/{invoiceId}` | `billing:read` | `param:siteId` | BI-135 |
 | `POST` | `/billing/sites/{siteId}/invoices` | `billing:write` | `param:siteId` | BI-080 a BI-089 |
@@ -2664,8 +2702,7 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 > habría que buscar el cargo primero y comprobar su cuenta después, que es la
 > forma de la fuga horizontal.
 >
-> **No están**, y cada una dice arriba por qué: `/charges/{id}/discount` (B4,
-> falta que `SELF_AUTHORISATION_DENIED` se mude a `shared/`),
+> **No están**, y cada una dice arriba por qué:
 > `/invoices/{id}/void` y `/invoices/{id}/credit-notes` (B3), los cobros y la
 > caja (B6), el tarifario público (B5) y los límites de descuento (B7). **BI-023 no
 > tiene ruta propia** (07-10-2026): `GET /billing/services` sirve el catálogo

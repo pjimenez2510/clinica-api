@@ -205,6 +205,8 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       site?: 'own' | 'other';
       /** The account of an attention (BI-214: another open account of it). */
       encounterId?: string;
+      /** B4: $3.00 off each line, applied by one user and authorised by another. */
+      discounted?: boolean;
     } = {},
   ) {
     const own = (options.site ?? 'own') === 'own';
@@ -220,9 +222,21 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
         ).id,
       },
     });
+    const [applier, authoriser] = await prisma.user.findMany({ take: 2 });
+    const granted = new Date(Date.now() - 60_000);
     for (let line = 0; line < (options.lines ?? 2); line += 1) {
       await prisma.chargeItem.create({
         data: {
+          ...(options.discounted
+            ? {
+                discountAmount: 3,
+                discountReason: 'Convenio',
+                discountAppliedById: applier!.id,
+                discountAppliedAt: granted,
+                discountAuthorisedById: authoriser!.id,
+                discountAuthorisedAt: granted,
+              }
+            : {}),
           accountId: account.id,
           billableServiceId: serviceId,
           serviceDate: new Date(`${today()}T00:00:00Z`),
@@ -240,7 +254,8 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       where: { accountId: account.id },
       orderBy: { createdAt: 'asc' },
     });
-    const total = 30 * charges.length;
+    const discountTotal = options.discounted ? 3 * charges.length : 0;
+    const total = 30 * charges.length - discountTotal;
     const invoice = await prisma.invoice.create({
       data: {
         accountId: account.id,
@@ -262,8 +277,9 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
             }),
         paymentMethod: '01',
         subtotalTaxed: 0,
-        subtotalUntaxed: total,
+        subtotalUntaxed: 30 * charges.length,
         taxTotal: 0,
+        discountTotal,
         total,
         status: 'ISSUED',
         issuedAt: new Date(),
@@ -331,6 +347,32 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       .post(`/api/v1/billing/sites/${site}/invoices/${invoiceId}/credit-notes`)
       .set('Authorization', `Bearer ${token}`)
       .send(body);
+
+  it('BI-214 BI-066 corregir una factura con una línea rebajada la vuelve a cobrar con el mismo descuento, quién lo puso y quién lo autorizó', async () => {
+    const { invoiceId, accountId, chargeIds } = await anInvoice({
+      lines: 1,
+      settled: true,
+      discounted: true,
+    });
+    const original = await prisma.chargeItem.findUniqueOrThrow({
+      where: { id: chargeIds[0] },
+    });
+
+    const response = await correct(invoiceId, { reasonCode: 'RECEIVER_DATA' });
+    expect(response.status).toBe(201);
+
+    const copy = await prisma.chargeItem.findFirstOrThrow({
+      where: { accountId, origin: 'CORRECTION' },
+    });
+    expect(copy.discountAmount.toFixed(2)).toBe('3.00');
+    expect(copy).toMatchObject({
+      discountReason: 'Convenio',
+      discountAppliedById: original.discountAppliedById,
+      discountAppliedAt: original.discountAppliedAt,
+      discountAuthorisedById: original.discountAuthorisedById,
+      discountAuthorisedAt: original.discountAuthorisedAt,
+    });
+  });
 
   it('BI-208 BI-210 BI-214 BI-215 BI-096 corregir el receptor acredita toda la factura, a nombre del mismo receptor, deja facturados los cargos originales y reabre la cuenta con una copia por facturar', async () => {
     const { invoiceId, accountId, chargeIds } = await anInvoice({

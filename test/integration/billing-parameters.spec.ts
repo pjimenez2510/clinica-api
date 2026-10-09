@@ -6,20 +6,16 @@ import argon2 from 'argon2';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { seedBilling } from '../../prisma/seed-billing.mts';
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
-import { Quantity } from '../../src/modules/billing/domain/money';
-import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
-import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import { createSite } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -29,8 +25,8 @@ import { closeApp, listenForTests } from './setup/http-server';
  *   - BI-144: the closed list of SRI codes and the case-blind uniqueness of the
  *     name are the DATABASE'S, proved by writing straight through SQL, each
  *     with its positive control on the same path.
- *   - BI-142: changing a role's ceiling does not move one cent of a discount
- *     already granted — proved by reading the charge row before and after.
+ *   - BI-142 lives in `billing-discount.spec.ts` since B4: the discount is
+ *     granted through its route there, not written by hand.
  *   - BI-141, BI-146, BI-147 over HTTP: the contract the screen consumes, who
  *     may write, and the trail it leaves.
  */
@@ -530,78 +526,6 @@ describe('B7 la parametrización de caja', () => {
       expect((missing.body as Problem).code).toBe(
         'DISCOUNT_LIMIT_ROLE_NOT_FOUND',
       );
-    });
-
-    it('BI-142 cambiar el límite de un rol no mueve ni un centavo de un descuento ya concedido', async () => {
-      await seedBilling(prisma);
-      const site = await createSite(prisma);
-      const patient = await createPatient(prisma);
-      const payer = await prisma.payer.findUniqueOrThrow({
-        where: { code: 'PARTICULAR' },
-      });
-      const priceList = await prisma.priceList.findFirstOrThrow({
-        where: { payerId: payer.id },
-      });
-      const service = await prisma.billableService.findUniqueOrThrow({
-        where: { code: 'CONS-MG-PV' },
-      });
-      const account = await prisma.patientAccount.create({
-        data: {
-          patientId: patient.id,
-          siteId: site.id,
-          payerId: payer.id,
-          priceListId: priceList.id,
-        },
-      });
-      const accounts = new PrismaBillingAccountRepository(
-        prisma as unknown as PrismaService,
-      );
-      const charged = await accounts.addCharge({
-        accountId: account.id,
-        billableServiceId: service.id,
-        encounterId: null,
-        serviceDate: clinicalDateOf(new Date()),
-        quantity: Quantity.ONE,
-        createdById: adminUserId,
-        origin: 'MANUAL',
-        encounterProcedureId: null,
-        serviceOrderItemId: null,
-        status: 'BILLABLE',
-      });
-      // A discount granted under the old ceiling, written as B4 will write it.
-      await prisma.chargeItem.update({
-        where: { id: charged.id },
-        data: {
-          discountAmount: '3.00',
-          discountReason: 'Convenio con la empresa',
-          changedById: adminUserId,
-          changedAt: new Date(),
-        },
-      });
-      const before = await prisma.chargeItem.findUniqueOrThrow({
-        where: { id: charged.id },
-      });
-      const caja = await prisma.role.findUniqueOrThrow({
-        where: { code: 'CAJA' },
-      });
-
-      // Control: the route really writes the ceiling.
-      await send('put', `/discount-limits/${caja.id}`, {
-        maxDiscountPercentage: '0',
-      }).expect(200);
-      expect(
-        (
-          await prisma.roleDiscountLimit.findUniqueOrThrow({
-            where: { roleId: caja.id },
-          })
-        ).maxDiscountPercentage.toFixed(2),
-      ).toBe('0.00');
-
-      const after = await prisma.chargeItem.findUniqueOrThrow({
-        where: { id: charged.id },
-      });
-      expect(after.discountAmount.toFixed(2)).toBe('3.00');
-      expect(after).toEqual(before);
     });
   });
 });

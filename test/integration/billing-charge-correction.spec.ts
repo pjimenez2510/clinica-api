@@ -525,6 +525,8 @@ describe('BI-200 el descuento no exige motivo', () => {
       data: {
         discountAmount: '5.00',
         discountReason: null,
+        discountAppliedById: context.userId,
+        discountAppliedAt: new Date(),
         changedById: context.userId,
         changedAt: new Date(),
       },

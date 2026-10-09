@@ -17,6 +17,7 @@ import {
 } from './tariff-publication.controller';
 import { BillingParametersService } from './application/billing-parameters.service';
 import { ProcedureChargeFollowService } from './application/procedure-charge-follow.service';
+import { ChargeDiscountService } from './application/charge-discount.service';
 import { ChargeCorrectionService } from './application/charge-correction.service';
 import { CreditNoteService } from './application/credit-note.service';
 import { EncounterCheckoutService } from './application/encounter-checkout.service';
@@ -89,6 +90,8 @@ import { PrismaTariffPublicationRepository } from './infrastructure/prisma-tarif
   ],
   providers: [
     ChargeCorrectionService,
+    // B4. Who may give money away, and whose signature it takes.
+    ChargeDiscountService,
     /**
      * BI-203 (D-134.2). `@Global` FOR THIS ONE TOKEN, as `sri` does for its
      * two: `encounter` announces a corrected visit sequence without importing

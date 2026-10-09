@@ -420,6 +420,8 @@ describe('BI-006, BI-042 lo que garantiza la base y no el código', () => {
         data: {
           discountAmount: '30.01',
           discountReason: 'Convenio',
+          discountAppliedById: context.userId,
+          discountAppliedAt: new Date(),
           changedById: context.userId,
           changedAt: new Date(),
         },
