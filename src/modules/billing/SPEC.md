@@ -1126,10 +1126,15 @@ es falsa, hay requisitos que cambian.
   servir el límite de quien lo pide en esa sede y quiénes pueden autorizar por
   encima —los otros usuarios activos con `billing:discount-override` en la
   sede—, y la pantalla DEBERÁ pedir el autorizador sólo cuando el descuento
-  supere el límite, con el total de la línea que queda a la vista.
+  supere el límite, con el total de la línea que queda a la vista, y NO DEBERÁ
+  aplicarlo hasta que quien cobra marque la casilla «<nombre> lo autorizó».
   > Es la mitad visible de BI-062 y BI-063: sin el límite en pantalla la cajera
   > descubre que no puede con un rechazo, y sin la lista tendría que saber quién
   > lleva el permiso. Quien pide no está en la lista (BI-064).
+  > **Enmendado por D-196 §1 (autor, 08-10-2026):** «solo con un check, no muy
+  > complicado». Sin contraseña: la casilla es de la pantalla y no viaja; el
+  > servidor ya guarda los dos nombres y la hora (BI-066). Cambiar de
+  > autorizador la desmarca.
 - **BI-246** — SI la línea es una propuesta sin confirmar (`PLANNED`),
   ENTONCES el sistema DEBERÁ rechazar el descuento con `CHARGE_NOT_CONFIRMED`.
   > Una propuesta la sigue moviendo el acto clínico (BI-240 a BI-243); un
