@@ -10,12 +10,14 @@ import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/pri
 import { BillingCatalogueController } from './billing-catalogue.controller';
 import { BillingParametersController } from './billing-parameters.controller';
 import { BillingController } from './billing.controller';
+import { CashController } from './cash.controller';
 import { CreditNoteController } from './credit-note.controller';
 import {
   PublicTariffController,
   TariffPublicationController,
 } from './tariff-publication.controller';
 import { BillingParametersService } from './application/billing-parameters.service';
+import { CashService } from './application/cash.service';
 import { ProcedureChargeFollowService } from './application/procedure-charge-follow.service';
 import { ChargeDiscountService } from './application/charge-discount.service';
 import { ChargeCorrectionService } from './application/charge-correction.service';
@@ -31,11 +33,13 @@ import {
   BILLING_CATALOGUE_REPOSITORY,
 } from './domain/billing.repository';
 import { BILLING_PARAMETERS_REPOSITORY } from './domain/billing-parameters.repository';
+import { CASH_REPOSITORY } from './domain/cash.repository';
 import { CLINICAL_ACTS_REPOSITORY } from './domain/clinical-acts.port';
 import { CREDIT_NOTE_REPOSITORY } from './domain/credit-note.repository';
 import { TARIFF_PUBLICATION_REPOSITORY } from './domain/tariff-publication.repository';
 import { PrismaBillingAccountRepository } from './infrastructure/prisma-billing-account.repository';
 import { PrismaBillingParametersRepository } from './infrastructure/prisma-billing-parameters.repository';
+import { PrismaCashRepository } from './infrastructure/prisma-cash.repository';
 import { PrismaClinicalActsRepository } from './infrastructure/prisma-clinical-acts.repository';
 import { PrismaCreditNoteRepository } from './infrastructure/prisma-credit-note.repository';
 import { PrismaBillingCatalogueRepository } from './infrastructure/prisma-billing-catalogue.repository';
@@ -83,6 +87,8 @@ import { PrismaTariffPublicationRepository } from './infrastructure/prisma-tarif
     // B7 (BI-140 to BI-147): what the clinic changes without a deploy.
     BillingParametersController,
     BillingController,
+    // B6. The money that came in, and the cashier's day.
+    CashController,
     CreditNoteController,
     // BI-110 to BI-115. The second is the module's only `@Public()` route.
     TariffPublicationController,
@@ -119,6 +125,9 @@ import { PrismaTariffPublicationRepository } from './infrastructure/prisma-tarif
     TariffPublicationService,
     // B7. Payment methods and discount limits, under `settings:manage`.
     BillingParametersService,
+    // B6. Receiving money and closing the day: a seventh reason to change.
+    CashService,
+    { provide: CASH_REPOSITORY, useClass: PrismaCashRepository },
     {
       provide: BILLING_PARAMETERS_REPOSITORY,
       useClass: PrismaBillingParametersRepository,

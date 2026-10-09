@@ -1134,3 +1134,106 @@ export class ChargeNotConfirmedError extends ConflictError {
     super('Only a confirmed charge takes a discount');
   }
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Payments and the daily close of cash (B6, BI-101 to BI-105, BI-247 to BI-253)
+// ───────────────────────────────────────────────────────────────────────────
+
+/** BI-101. `trg_payment_guard` decides it; this is what the desk reads. */
+export class PaymentExceedsBalanceError extends BusinessRuleViolation {
+  readonly code = 'PAYMENT_EXCEEDS_BALANCE';
+  override readonly userTitle =
+    'El cobro supera el saldo de la factura: revise el importe';
+
+  constructor() {
+    super('The payment exceeds the invoice balance');
+  }
+}
+
+/** BI-104, BI-253. A closed cash day takes nothing more. */
+export class CashSessionClosedError extends ConflictError {
+  readonly code = 'CASH_SESSION_CLOSED';
+  override readonly userTitle =
+    'Su caja de ese día ya está cerrada: no admite más cobros ni reversiones';
+
+  constructor() {
+    super('The cash session of that day is closed');
+  }
+}
+
+/** BI-252. One close per user, site and day. */
+export class CashSessionAlreadyClosedError extends ConflictError {
+  readonly code = 'CASH_SESSION_ALREADY_CLOSED';
+  override readonly userTitle = 'Esa caja ya está cerrada';
+
+  constructor() {
+    super('The cash session of that day was already closed');
+  }
+}
+
+/** BI-252. A day that has not come yet cannot be closed. */
+export class CashSessionDateInFutureError extends BusinessRuleViolation {
+  readonly code = 'CASH_SESSION_DATE_IN_FUTURE';
+  override readonly userTitle = 'No se puede cerrar la caja de un día que no ha llegado'; // prettier-ignore
+
+  constructor() {
+    super('Refusing to close a cash day still to come');
+  }
+}
+
+/**
+ * BI-251, BI-135. Another person's payment, or another site's, answers like
+ * one that does not exist.
+ */
+export class PaymentNotFoundError extends NotFoundError {
+  readonly code = 'PAYMENT_NOT_FOUND';
+  override readonly userTitle = 'Ese cobro no existe o no es suyo';
+
+  constructor() {
+    super('No payment of this user in this site with that identifier');
+  }
+}
+
+/** BI-102. A reversal is written once. */
+export class PaymentAlreadyReversedError extends ConflictError {
+  readonly code = 'PAYMENT_ALREADY_REVERSED';
+  override readonly userTitle = 'Ese cobro ya está revertido';
+
+  constructor() {
+    super('The payment was already reversed');
+  }
+}
+
+/** BI-247, BI-248. Only an active method takes money. */
+export class PaymentMethodInactiveError extends BusinessRuleViolation {
+  readonly code = 'PAYMENT_METHOD_INACTIVE';
+  override readonly userTitle = 'Ese medio de pago ya no está activo: elija otro'; // prettier-ignore
+
+  constructor() {
+    super('The payment method is not active');
+  }
+}
+
+/**
+ * BI-247. The invoice declares one SRI form of payment and the money came in
+ * with another: the voucher would tell the SRI something that did not happen.
+ */
+export class PaymentMethodMismatchError extends BusinessRuleViolation {
+  readonly code = 'PAYMENT_METHOD_MISMATCH';
+  override readonly userTitle =
+    'El medio del cobro no corresponde a la forma de pago de la factura';
+
+  constructor() {
+    super('The payment method does not declare the invoice payment form');
+  }
+}
+
+/** BI-248. A draft or a voided invoice is not collected. */
+export class InvoiceNotPayableError extends ConflictError {
+  readonly code = 'INVOICE_NOT_PAYABLE';
+  override readonly userTitle = 'Esa factura no se puede cobrar: está anulada o sin emitir'; // prettier-ignore
+
+  constructor() {
+    super('The invoice is not issued, or it is voided');
+  }
+}

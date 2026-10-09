@@ -28,6 +28,8 @@ import { createPatient, createSite } from './setup/fixtures';
 const db = useDatabase();
 
 const CONSULTATION = 'CONS-MG-PV';
+/** BI-250. Whatever the INSERT says, the trigger writes the real day. */
+const IGNORED_CASH_DATE = '1999-01-01'; // fecha-fija: the trigger replaces it
 
 interface Scene {
   prisma: PrismaClient;
@@ -166,8 +168,7 @@ async function pay(
     VALUES (${invoiceId}::uuid, ${scene.siteId}::uuid,
             ${options.methodId ?? scene.cashId}::uuid, ${amount}::numeric,
             ${options.at ?? new Date()}, ${options.userId ?? scene.userId}::uuid,
-            -- fecha-fija: whatever it says, the trigger replaces it (BI-250)
-            ${options.cashDate ?? '1999-01-01'}::date)
+            ${options.cashDate ?? IGNORED_CASH_DATE}::date)
     RETURNING "id"`;
   return row!.id;
 }

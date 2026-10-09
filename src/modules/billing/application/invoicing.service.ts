@@ -25,8 +25,15 @@ import {
   type InvoiceView,
 } from '../domain/billing.repository';
 import {
+  CASH_REPOSITORY,
+  type CashRepository,
+} from '../domain/cash.repository';
+import {
   AccountNotFoundError,
   EmissionPointInactiveError,
+  PaymentMethodInactiveError,
+  PaymentMethodMismatchError,
+  PaymentMethodNotFoundError,
   InvoiceNotEditableError,
   InvoiceNotFoundError,
 } from '../domain/billing.errors';
@@ -97,6 +104,8 @@ export class InvoicingService {
     @Inject(ELECTRONIC_VOUCHER_RESENDER)
     private readonly resender: ElectronicVoucherResender,
     private readonly logger: PinoLogger,
+    @Inject(CASH_REPOSITORY)
+    private readonly cash: CashRepository,
   ) {
     this.logger.setContext(InvoicingService.name);
   }
@@ -129,10 +138,18 @@ export class InvoicingService {
       expectedChargeIds?: readonly string[];
       /** BI-184, BI-197. The total the cashier was shown. */
       expectedTotal?: Money;
+      /** BI-247. Collected now, with this method; absent, it stays owed. */
+      payment?: { paymentMethodId: string; reference?: string | null };
     },
     requester: Requester,
   ): Promise<InvoiceWithVoucher> {
     const account = await this.requireAccount(command);
+    if (command.payment) {
+      await this.requireCollectableMethod(
+        command.payment.paymentMethodId,
+        command.paymentMethod,
+      );
+    }
 
     const emissionPoint = await this.accounts.findEmissionPoint({
       emissionPointId: command.emissionPointId,
@@ -157,6 +174,14 @@ export class InvoicingService {
       issuedById: requester.userId,
       expectedChargeIds: command.expectedChargeIds,
       expectedTotal: command.expectedTotal,
+      payment: command.payment
+        ? {
+            paymentMethodId: command.payment.paymentMethodId,
+            reference: command.payment.reference ?? null,
+            // The application's clock, which the walks move (BI-250).
+            receivedAt: new Date(),
+          }
+        : undefined,
     });
 
     /**
@@ -202,6 +227,21 @@ export class InvoicingService {
       );
       return { ...invoice, electronic: null };
     }
+  }
+
+  /**
+   * BI-247. The method the money came in with is active and declares the
+   * form of payment the invoice tells the SRI. The database checks the first
+   * again when it writes the payment; the second is only knowable here.
+   */
+  private async requireCollectableMethod(
+    paymentMethodId: string,
+    declared: PaymentMethod,
+  ): Promise<void> {
+    const method = await this.cash.findPaymentMethod(paymentMethodId);
+    if (!method) throw new PaymentMethodNotFoundError();
+    if (!method.active) throw new PaymentMethodInactiveError();
+    if (method.sriCode !== declared) throw new PaymentMethodMismatchError();
   }
 
   /**

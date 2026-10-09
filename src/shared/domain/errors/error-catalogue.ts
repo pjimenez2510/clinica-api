@@ -573,6 +573,19 @@ export const DOMAIN_ERROR_CODES = [
   'LAST_ACTIVE_PAYMENT_METHOD',
   'PAYMENT_METHOD_NAME_TAKEN',
   'PAYMENT_METHOD_NOT_FOUND',
+  // Los cobros y el cierre de caja (B6, BI-101 a BI-105, BI-247 a BI-253).
+  // El saldo, la caja cerrada y la foto del cierre los arbitra la base
+  // (`trg_payment_guard`, `trg_payment_only_reverses`,
+  // `cash_session_one_per_day`); el adaptador traduce sus frases a éstos.
+  'PAYMENT_EXCEEDS_BALANCE',
+  'CASH_SESSION_CLOSED',
+  'CASH_SESSION_ALREADY_CLOSED',
+  'CASH_SESSION_DATE_IN_FUTURE',
+  'PAYMENT_NOT_FOUND',
+  'PAYMENT_ALREADY_REVERSED',
+  'PAYMENT_METHOD_INACTIVE',
+  'PAYMENT_METHOD_MISMATCH',
+  'INVOICE_NOT_PAYABLE',
   // El tarifario (BI-040 a BI-047). `PRICE_NOT_FOUND` es 422 y NOMBRA LOS
   // TRES DATOS con los que se buscó —prestación, pagador y fecha de
   // servicio—: quien está en caja tiene que poder decir si falta el precio, si
