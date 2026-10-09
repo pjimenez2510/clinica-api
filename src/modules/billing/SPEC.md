@@ -243,6 +243,10 @@ siguiente y conseguirlo; intentarlo el día 11 y recibir el rechazo con la salid
 correcta; intentar anular una emitida a Consumidor Final y recibir la negativa
 en cualquier fecha. **Cubre:** BI-091 a BI-097.
 
+**Solo servidor:** BI-095. Lo garantiza la base, como declara B15: la pantalla
+no puede pedir de más, porque sólo ofrece las líneas sin acreditar (BI-218), y
+no tiene un tope propio que probar.
+
 ### B4 — Descuentos con límite y con autorización _(P2)_
 
 **Por qué es P2:** el descuento se da desde el primer día, y sin límite ni
@@ -278,7 +282,8 @@ personal **no lo cumple**.
 **Prueba independiente:** pedir la vista pública sin ninguna credencial y
 obtener el tarifario con su versión y su fecha; cambiar un precio y comprobar
 que la publicación queda marcada como desactualizada sin cambiar sola.
-**Cubre:** BI-110 a BI-115. **Solo servidor:** BI-112.
+**Cubre:** BI-110 a BI-115. **Solo servidor:** BI-111, BI-112. Qué entra en el
+cartel lo decide el servidor al publicar; la vista pública pinta lo publicado.
 
 > **Esta entrega amplía la superficie pública del sistema, y eso es exactamente
 > lo que la prueba de rutas de la constitución (§6) hace fallar.** La ruta
@@ -340,8 +345,9 @@ de BI-155, que ya tiene su prueba de interfaz.
 **Por qué es P3:** una clínica puede cobrar en efectivo y cuadrar a mano una
 semana; nada clínico se rompe. Pero sin esto el saldo pendiente de un paciente
 no existe como dato. **Cubre:** BI-100 a BI-105, BI-247 a BI-255.
-**Solo servidor:** BI-100 (ya lo entregó B7), BI-250 y BI-253: la fecha de caja
-la pone la base y la carrera entre un cobro y el cierre sólo se ve con dos
+**Solo servidor:** BI-100 (ya lo entregó B7), BI-103, BI-250 y BI-253: la fecha de caja
+la pone la base, el saldo se deriva en el servidor y la pantalla lo enseña tal
+cual llega, y la carrera entre un cobro y el cierre sólo se ve con dos
 clientes a la vez.
 
 **Prueba independiente:** como caja, emitir una factura «Cobrado» con
@@ -436,6 +442,10 @@ procedimiento corregido, §24). **Solo servidor:** BI-200 (la ruta de descuento 
 existe todavía; es una restricción de la base), BI-203 (lo dispara la
 corrección de la atención; caja ve el cargo ya re-tarifado) y BI-240 a BI-242
 (los dispara la corrección del procedimiento; caja ve el cargo ya corregido).
+
+**Solo interfaz:** BI-199, BI-202. Son la confirmación de «Cerrar cuenta» y
+el aviso junto al número: el servidor no cambia por ellas —cerrar sigue siendo
+BI-071, y el tipo de identificación lo comprueba BI-159—.
 
 ### B13 — Caja que se entiende sin leer _(P1)_
 
