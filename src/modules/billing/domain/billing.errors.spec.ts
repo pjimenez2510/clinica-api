@@ -56,6 +56,16 @@ const EXPECTED: readonly [
   [errors.PaymentMethodNameTakenError, 'PAYMENT_METHOD_NAME_TAKEN', ConflictError], // prettier-ignore
   [errors.LastActivePaymentMethodError, 'LAST_ACTIVE_PAYMENT_METHOD', ConflictError], // prettier-ignore
   [errors.DiscountLimitRoleNotFoundError, 'DISCOUNT_LIMIT_ROLE_NOT_FOUND', NotFoundError], // prettier-ignore
+  // B6: BI-101, BI-102, BI-104, BI-247, BI-248, BI-251, BI-252.
+  [errors.PaymentExceedsBalanceError, 'PAYMENT_EXCEEDS_BALANCE', BusinessRuleViolation], // prettier-ignore
+  [errors.CashSessionClosedError, 'CASH_SESSION_CLOSED', ConflictError],
+  [errors.CashSessionAlreadyClosedError, 'CASH_SESSION_ALREADY_CLOSED', ConflictError], // prettier-ignore
+  [errors.CashSessionDateInFutureError, 'CASH_SESSION_DATE_IN_FUTURE', BusinessRuleViolation], // prettier-ignore
+  [errors.PaymentNotFoundError, 'PAYMENT_NOT_FOUND', NotFoundError],
+  [errors.PaymentAlreadyReversedError, 'PAYMENT_ALREADY_REVERSED', ConflictError], // prettier-ignore
+  [errors.PaymentMethodInactiveError, 'PAYMENT_METHOD_INACTIVE', BusinessRuleViolation], // prettier-ignore
+  [errors.PaymentMethodMismatchError, 'PAYMENT_METHOD_MISMATCH', BusinessRuleViolation], // prettier-ignore
+  [errors.InvoiceNotPayableError, 'INVOICE_NOT_PAYABLE', ConflictError],
   [errors.PayerRucRequiredError, 'PAYER_RUC_REQUIRED', ValidationError],
   [errors.PriceListNotFoundError, 'PRICE_LIST_NOT_FOUND', NotFoundError],
   [errors.PricePeriodInvalidError, 'PRICE_PERIOD_INVALID', ValidationError],
