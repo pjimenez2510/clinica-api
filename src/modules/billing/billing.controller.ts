@@ -599,7 +599,7 @@ export class BillingController {
     };
   }
 
-  /** BI-133, BI-135. */
+  /** BI-133, BI-135, BI-233, BI-259. */
   @Get('invoices')
   @RequirePermission('billing:read', 'param:siteId')
   @ApiOperation({ summary: 'Consultar las facturas de una sede' })
@@ -621,6 +621,7 @@ export class BillingController {
         issuedFrom: query.from,
         issuedTo: query.to,
       },
+      owed: query.owed,
       page: query.page,
       pageSize: query.pageSize,
     });

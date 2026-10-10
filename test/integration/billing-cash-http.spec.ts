@@ -21,6 +21,7 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
+import { authoriseVoucher } from './setup/sri-fixtures';
 
 /**
  * B6 — cobros, saldo y cierre diario (BI-101 a BI-105, BI-247 a BI-253), por
@@ -527,5 +528,86 @@ describe('B6 cobros, saldo del paciente y cierre por turno', () => {
       .expect(404);
     expect((foreign.body as { code: string }).code).toBe('PAYMENT_NOT_FOUND');
     await api().post(`/payments/${payment!.id}/reversal`, {}).expect(200);
+  });
+
+  it('BI-259 «con saldo» deja sólo las facturas que se deben, de cualquier día, con los demás filtros y el total ya filtrado', async () => {
+    const owed = (await issue(await anAccount())).body as InvoiceBody;
+    const paid = (await issue(await anAccount(), { paymentMethodId: cashId })).body as InvoiceBody; // prettier-ignore
+    // Half paid by transfer: still owes the other half.
+    const partial = (await issue(await anAccount(), undefined, '20')).body as InvoiceBody; // prettier-ignore
+    await api()
+      .post(`/invoices/${partial.id}/payments`, {
+        paymentMethodId: transferId,
+        amount: (Number(partial.totals.total) / 2).toFixed(2),
+      })
+      .expect(201);
+    // Paid and then reversed: owes it all again (BI-103).
+    const reversed = (await issue(await anAccount(), { paymentMethodId: cashId })).body as InvoiceBody; // prettier-ignore
+    const [payment] = await prisma.payment.findMany({ where: { invoiceId: reversed.id } }); // prettier-ignore
+    await api().post(`/payments/${payment!.id}/reversal`, {}).expect(200);
+    // Voided with its balance whole: nothing to collect.
+    const voided = (await issue(await anAccount())).body as InvoiceBody;
+    await prisma.$executeRaw`UPDATE "invoice" SET "status" = 'VOIDED' WHERE "id" = ${voided.id}::uuid`;
+    // Credited whole: its balance is zero without a single payment.
+    const credited = (await issue(await anAccount())).body as InvoiceBody;
+    await authoriseVoucher(prisma, credited.id);
+    await api()
+      .post(`/invoices/${credited.id}/credit-notes`, {
+        reasonCode: 'RECEIVER_DATA',
+      })
+      .expect(201);
+    // The owed one, from three days ago: «Con saldo» is not today's list.
+    await prisma.invoice.update({
+      where: { id: owed.id },
+      data: { issuedAt: new Date(Date.now() - 3 * 86_400_000) },
+    });
+
+    const listed = async (query: string) => {
+      const body = (await api().get(`/invoices${query}`).expect(200)).body as {
+        items: { id: string; balance: string }[];
+        total: number;
+      };
+      return {
+        ids: body.items.map((item) => item.id).sort(),
+        total: body.total,
+      };
+    };
+
+    // Control: without the filter, all six, and `owed=false` is the same.
+    expect((await listed('')).total).toBe(6);
+    expect((await listed('?owed=false')).total).toBe(6);
+
+    expect(await listed('?owed=true')).toEqual({
+      ids: [owed.id, partial.id, reversed.id].sort(),
+      total: 3,
+    });
+    const yesterday = addDays(clinicalDateOf(new Date()), -1);
+    expect(await listed(`?owed=true&to=${yesterday}`)).toEqual({
+      ids: [owed.id],
+      total: 1,
+    });
+    // With the search (by number) and with the day of issue.
+    const [owedRow] = await prisma.invoice.findMany({
+      where: { id: owed.id },
+      select: { sequential: true },
+    });
+    expect(await listed(`?owed=true&search=${owedRow!.sequential}`)).toEqual({
+      ids: [owed.id],
+      total: 1,
+    });
+    const today = clinicalDateOf(new Date());
+    expect(await listed(`?owed=true&from=${today}`)).toEqual({
+      ids: [partial.id, reversed.id].sort(),
+      total: 2,
+    });
+    const page = await listed('?owed=true&page=2&pageSize=2');
+    expect(page.total).toBe(3);
+    expect(page.ids).toHaveLength(1);
+    // The paid, voided and credited ones exist (positive control above).
+    expect(
+      (await listed('?owed=true')).ids.some((id) =>
+        [paid.id, voided.id, credited.id].includes(id),
+      ),
+    ).toBe(false);
   });
 });
