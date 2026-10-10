@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -207,6 +209,11 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       encounterId?: string;
       /** B4: $3.00 off each line, applied by one user and authorised by another. */
       discounted?: boolean;
+      /**
+       * BI-214: the lines a procedure and an exam of the attention raised —
+       * the first line PROCEDURE, the second EXAM. Needs `encounterId`.
+       */
+      acts?: { encounterProcedureId: string; serviceOrderItemId: string };
     } = {},
   ) {
     const own = (options.site ?? 'own') === 'own';
@@ -236,6 +243,19 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
                 discountAuthorisedById: authoriser!.id,
                 discountAuthorisedAt: granted,
               }
+            : {}),
+          ...(options.acts
+            ? line === 0
+              ? {
+                  origin: 'PROCEDURE',
+                  encounterId: options.encounterId,
+                  encounterProcedureId: options.acts.encounterProcedureId,
+                }
+              : {
+                  origin: 'EXAM',
+                  encounterId: options.encounterId,
+                  serviceOrderItemId: options.acts.serviceOrderItemId,
+                }
             : {}),
           accountId: account.id,
           billableServiceId: serviceId,
@@ -903,5 +923,237 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
     expect(
       (await listed(`credit-notes?from=${addDays(today(), 1)}`)).total,
     ).toBe(0);
+  });
+
+  /** BI-074. The account as caja reads it. */
+  async function statementOf(accountId: string) {
+    const response = await api()
+      .get(`/api/v1/billing/sites/${siteId}/accounts/${accountId}`)
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .expect(200);
+    return response.body as {
+      totals: { total: string };
+      charges: {
+        id: string;
+        origin: string;
+        status: string;
+        creditNote: {
+          id: string;
+          documentNumber: string;
+          status: string;
+        } | null;
+      }[];
+    };
+  }
+
+  it('BI-074 BI-260 tras una nota de crédito que vuelve a facturar, la cuenta suma lo que se debe una vez y cada cargo acreditado dice su nota', async () => {
+    const { invoiceId, accountId, chargeIds } = await anInvoice({
+      settled: true,
+    });
+    // Control: before the credit note, the two billed lines are the total.
+    expect((await statementOf(accountId)).totals.total).toBe('60.00');
+
+    const created = await correct(invoiceId, {
+      reasonCode: 'RECEIVER_DATA',
+    }).expect(201);
+    const note = (created.body as IssuedBody).creditNote as CreditNoteBody & {
+      documentNumber: string;
+    };
+
+    const statement = await statementOf(accountId);
+    // The originals stay BILLED (BI-096) and their copies are back: $60, not $120.
+    expect(statement.charges).toHaveLength(4);
+    expect(statement.totals.total).toBe('60.00');
+    const credited = statement.charges.filter((charge) =>
+      chargeIds.includes(charge.id),
+    );
+    expect(credited.map((charge) => charge.creditNote)).toEqual([
+      { id: note.id, documentNumber: note.documentNumber, status: 'ISSUED' },
+      { id: note.id, documentNumber: note.documentNumber, status: 'ISSUED' },
+    ]);
+    expect(
+      statement.charges
+        .filter((charge) => charge.origin === 'CORRECTION')
+        .map((charge) => charge.creditNote),
+    ).toEqual([null, null]);
+  });
+
+  it('BI-074 con «Servicio no prestado» lo acreditado sale del total; si el SRI rechaza la nota, vuelve a contar', async () => {
+    const { invoiceId, accountId } = await anInvoice({ settled: true });
+    const created = await correct(invoiceId, {
+      reasonCode: 'SERVICE_NOT_PROVIDED',
+    }).expect(201);
+    expect((await statementOf(accountId)).totals.total).toBe('0.00');
+
+    // A note the SRI rejected credits nothing (BI-103): the lines count again.
+    const noteId = (created.body as IssuedBody).creditNote.id;
+    await prisma.$executeRaw`
+      UPDATE "credit_note" SET "status" = 'REJECTED' WHERE "id" = ${noteId}::uuid`;
+    const statement = await statementOf(accountId);
+    expect(statement.totals.total).toBe('60.00');
+    expect(statement.charges.map((charge) => charge.creditNote)).toEqual([
+      null,
+      null,
+    ]);
+  });
+
+  it('BI-074 si el SRI rechaza la nota que vuelve a facturar, se debe otra vez el original y no su copia', async () => {
+    const { invoiceId, accountId } = await anInvoice({ settled: true });
+    const created = await correct(invoiceId, {
+      reasonCode: 'RECEIVER_DATA',
+    }).expect(201);
+    // Control: standing, the copies are what is owed.
+    expect((await statementOf(accountId)).totals.total).toBe('60.00');
+
+    const noteId = (created.body as IssuedBody).creditNote.id;
+    await prisma.$executeRaw`
+      UPDATE "credit_note" SET "status" = 'REJECTED' WHERE "id" = ${noteId}::uuid`;
+    // The invoice stands again, and the copies wait (BI-214): $60, not $120.
+    expect((await statementOf(accountId)).totals.total).toBe('60.00');
+    // BI-260. The invoice still names the note, with what the SRI said, and
+    // it credits nothing (BI-103).
+    const listed = (
+      await api()
+        .get(`/api/v1/billing/sites/${siteId}/invoices`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200)
+    ).body as {
+      items: { id: string; creditedTotal: string; creditNotes: { id: string; status: string }[] }[]; // prettier-ignore
+    };
+    expect(listed.items.find((item) => item.id === invoiceId)).toMatchObject({
+      creditedTotal: '0.00',
+      creditNotes: [{ id: noteId, status: 'REJECTED' }],
+    });
+  });
+
+  it('BI-260 la factura acreditada dice su nota de crédito y la factura que vuelve a cobrar lo acreditado', async () => {
+    const { invoiceId, accountId } = await anInvoice({ settled: true });
+    const created = await correct(invoiceId, {
+      reasonCode: 'RECEIVER_DATA',
+    }).expect(201);
+    const note = (created.body as IssuedBody).creditNote as CreditNoteBody & {
+      documentNumber: string;
+    };
+
+    type InvoiceRefs = {
+      id: string;
+      creditNotes: { id: string; documentNumber: string; status: string }[];
+      replacedBy: { id: string; accountId: string; documentNumber: string }[];
+    };
+    const invoicesOf = async () =>
+      new Map(
+        (
+          (
+            await api()
+              .get(`/api/v1/billing/sites/${siteId}/invoices`)
+              .set('Authorization', `Bearer ${cashierToken}`)
+              .expect(200)
+          ).body as { items: InvoiceRefs[] }
+        ).items.map((item) => [item.id, item]),
+      );
+
+    // Credited and not billed again yet: the note, and nothing replaces it.
+    expect((await invoicesOf()).get(invoiceId)).toMatchObject({
+      creditNotes: [
+        { id: note.id, documentNumber: note.documentNumber, status: 'ISSUED' },
+      ],
+      replacedBy: [],
+    });
+
+    // The copies are billed once the note is authorised (BI-214).
+    await authoriseCreditNote(note.id);
+    const copies = await prisma.chargeItem.findMany({
+      where: { accountId, origin: 'CORRECTION' },
+    });
+    const replacement = await prisma.invoice.create({
+      data: {
+        accountId,
+        siteId,
+        emissionPointId,
+        sequential: '000000002',
+        buyerIdentificationType: '05',
+        buyerIdentification: '1710034065',
+        buyerName: 'Guamán Andrade, María José',
+        paymentMethod: '01',
+        subtotalTaxed: 0,
+        subtotalUntaxed: 60,
+        taxTotal: 0,
+        discountTotal: 0,
+        total: 60,
+        status: 'ISSUED',
+        issuedAt: new Date(),
+        issuedById: copies[0]!.createdById,
+      },
+    });
+    await prisma.chargeItem.updateMany({
+      where: { id: { in: copies.map((copy) => copy.id) } },
+      data: { status: 'BILLED', invoiceId: replacement.id },
+    });
+
+    const invoices = await invoicesOf();
+    expect(invoices.get(invoiceId)).toMatchObject({
+      creditNotes: [{ id: note.id, status: 'AUTHORISED' }],
+      replacedBy: [
+        {
+          id: replacement.id,
+          accountId,
+          documentNumber: '???-001-000000002',
+        },
+      ],
+    });
+    // The replacement itself is credited by nothing and replaces nothing.
+    expect(invoices.get(replacement.id)).toMatchObject({
+      creditNotes: [],
+      replacedBy: [],
+    });
+  });
+
+  it('BI-214 la copia de un cargo de procedimiento o de examen nombra el mismo acto que su original', async () => {
+    const practitioner = await createPractitioner(prisma);
+    const encounter = await createEncounter(prisma, {
+      siteId,
+      practitionerId: practitioner.id,
+      patientId,
+    });
+    // Scalars with no foreign key (BI-153): any identifier names «the act».
+    const acts = {
+      encounterProcedureId: randomUUID(),
+      serviceOrderItemId: randomUUID(),
+    };
+    const { invoiceId, accountId } = await anInvoice({
+      settled: true,
+      encounterId: encounter.id,
+      acts,
+    });
+
+    await correct(invoiceId, { reasonCode: 'AMOUNT' }).expect(201);
+
+    const copies = await prisma.chargeItem.findMany({
+      where: { accountId, origin: 'CORRECTION' },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(
+      copies
+        .map((copy) => [copy.encounterProcedureId, copy.serviceOrderItemId])
+        .sort(),
+    ).toEqual(
+      [
+        [acts.encounterProcedureId, null],
+        [null, acts.serviceOrderItemId],
+      ].sort(),
+    );
+
+    // BI-243. The procedure is not in the attention (no such row): the copy,
+    // which charges it, is said; the credited original is not.
+    const procedureCopy = copies.find((copy) => copy.encounterProcedureId)!;
+    const statement = (
+      await api()
+        .get(`/api/v1/billing/sites/${siteId}/accounts/${accountId}`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200)
+    ).body as { proceduresOutdated: unknown[] };
+    expect(statement.proceduresOutdated).toEqual([
+      { chargeId: procedureCopy.id, billed: false, reason: 'RETRACTED' },
+    ]);
   });
 });

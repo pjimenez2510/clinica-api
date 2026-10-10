@@ -47,6 +47,8 @@ const charge = (status: ChargeStatus): ChargeView => ({
   voidReason: null,
   invoiceId: null,
   correctsChargeItemId: null,
+  creditNote: null,
+  correctedNoteRejected: false,
 });
 
 function build(overrides: Record<string, unknown> = {}) {

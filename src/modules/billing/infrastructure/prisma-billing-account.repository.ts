@@ -1562,9 +1562,40 @@ function stampAfter(previous: Date | null, now: Date): Date {
  * line says it without asking anybody. Two first/last names and nothing else.
  */
 const PERSON_NAME = { select: { firstName: true, lastName: true } } as const;
+/** D-185.1, BI-235. What a printed number is made of. */
+const NUMBER_PARTS = {
+  select: { code: true, site: { select: { sriEstablishmentCode: true } } },
+} as const;
+
+/**
+ * BI-260. The credit note that credited a line, unless the SRI rejected it:
+ * the same rule as `creditedTotal` (BI-103). A credit note shares its
+ * invoice's emission point, and so the parts of its number.
+ */
+const CREDITING_NOTE = {
+  select: {
+    creditNote: {
+      select: {
+        id: true,
+        sequential: true,
+        accessKey: true,
+        status: true,
+        emissionPoint: NUMBER_PARTS,
+      },
+    },
+  },
+} as const;
+
 const CHARGE_INCLUDE = {
   discountAppliedBy: PERSON_NAME,
   discountAuthorisedBy: PERSON_NAME,
+  creditNoteLine: CREDITING_NOTE,
+  // BI-074. A copy counts while the note that credited its original stands.
+  correctsChargeItem: {
+    select: {
+      creditNoteLine: { select: { creditNote: { select: { status: true } } } },
+    },
+  },
 } satisfies Prisma.ChargeItemInclude;
 type ChargeItemWithNames = Prisma.ChargeItemGetPayload<{
   include: typeof CHARGE_INCLUDE;
@@ -1575,10 +1606,36 @@ function nameOf(person: PersonName | null | undefined): string | null {
   return person ? `${person.firstName} ${person.lastName}` : null;
 }
 
+type CreditingNoteRow = NonNullable<ChargeItemWithNames['creditNoteLine']>;
+
+/** BI-260. `null` when nothing credited it, or the SRI rejected the note. */
+function creditingNoteOf(
+  line: CreditingNoteRow | null | undefined,
+): ChargeView['creditNote'] {
+  const note = line?.creditNote;
+  if (!note || note.status === 'REJECTED') return null;
+  return {
+    id: note.id,
+    documentNumber: invoiceDocumentNumber({
+      accessKey: note.accessKey,
+      establishmentCode: note.emissionPoint.site.sriEstablishmentCode,
+      emissionPointCode: note.emissionPoint.code,
+      sequential: note.sequential,
+    }),
+    status: note.status,
+  };
+}
+
 function toChargeView(
   row: ChargeItemRow &
     Partial<
-      Pick<ChargeItemWithNames, 'discountAppliedBy' | 'discountAuthorisedBy'>
+      Pick<
+        ChargeItemWithNames,
+        | 'discountAppliedBy'
+        | 'discountAuthorisedBy'
+        | 'creditNoteLine'
+        | 'correctsChargeItem'
+      >
     >,
 ): ChargeView {
   return {
@@ -1611,6 +1668,9 @@ function toChargeView(
     voidReason: row.voidReason,
     invoiceId: row.invoiceId,
     correctsChargeItemId: row.correctsChargeItemId,
+    creditNote: creditingNoteOf(row.creditNoteLine),
+    correctedNoteRejected:
+      row.correctsChargeItem?.creditNoteLine?.creditNote.status === 'REJECTED',
   };
 }
 
@@ -1625,9 +1685,33 @@ const INVOICE_NUMBER_INCLUDE = {
   // BI-103, BI-249. What it was paid and credited, read with it: the balance
   // is derived on every read and never stored.
   payments: { where: { reversedAt: null }, select: { amount: true } },
+  // BI-103, BI-260. All of them: the rejected ones do not credit (the total
+  // below skips them) but the row says the SRI returned them.
   creditNotes: {
-    where: { status: { not: 'REJECTED' } },
-    select: { amount: true },
+    orderBy: { issuedAt: 'asc' },
+    select: { id: true, amount: true, sequential: true, accessKey: true, status: true }, // prettier-ignore
+  },
+  // BI-260. The invoices that billed the copies of its credited lines.
+  chargeItems: {
+    where: { creditNoteLine: { isNot: null } },
+    select: {
+      correctedBy: {
+        where: { invoiceId: { not: null } },
+        select: {
+          invoice: {
+            select: {
+              id: true,
+              accountId: true,
+              sequential: true,
+              accessKey: true,
+              status: true,
+              issuedAt: true,
+              emissionPoint: NUMBER_PARTS,
+            },
+          },
+        },
+      },
+    },
   },
 } satisfies Prisma.InvoiceInclude;
 
@@ -1677,9 +1761,54 @@ function toInvoiceView(row: InvoiceRow): InvoiceView {
     issuedById: row.issuedById,
     paidTotal: Money.sum(row.payments.map((p) => Money.parse(p.amount))),
     creditedTotal: Money.sum(
-      row.creditNotes.map((note) => Money.parse(note.amount)),
+      row.creditNotes
+        .filter((note) => note.status !== 'REJECTED')
+        .map((note) => Money.parse(note.amount)),
     ),
+    // A credit note shares its invoice's emission point (BI-210).
+    creditNotes: row.creditNotes.map((note) => ({
+      id: note.id,
+      documentNumber: invoiceDocumentNumber({
+        accessKey: note.accessKey,
+        establishmentCode: row.emissionPoint.site.sriEstablishmentCode,
+        emissionPointCode: row.emissionPoint.code,
+        sequential: note.sequential,
+      }),
+      status: note.status,
+    })),
+    replacedBy: replacementsOf(row),
   };
+}
+
+/** BI-260. Each replacing invoice once, oldest first. */
+function replacementsOf(row: InvoiceRow): InvoiceView['replacedBy'] {
+  const invoices = new Map(
+    row.chargeItems
+      .flatMap((charge) => charge.correctedBy)
+      // BI-260. A draft or a voided invoice replaces nothing.
+      .filter(
+        ({ invoice }) =>
+          invoice !== null &&
+          invoice.status !== 'DRAFT' &&
+          invoice.status !== 'VOIDED',
+      )
+      .flatMap(({ invoice }) =>
+        invoice ? [[invoice.id, invoice] as const] : [],
+      ),
+  );
+  return [...invoices.values()]
+    .sort((a, b) => (a.issuedAt?.getTime() ?? 0) - (b.issuedAt?.getTime() ?? 0))
+    .map((invoice) => ({
+      id: invoice.id,
+      accountId: invoice.accountId,
+      documentNumber: invoiceDocumentNumber({
+        accessKey: invoice.accessKey,
+        establishmentCode: invoice.emissionPoint.site.sriEstablishmentCode,
+        emissionPointCode: invoice.emissionPoint.code,
+        sequential: invoice.sequential,
+      }),
+      status: invoice.status,
+    }));
 }
 
 /** BI-184. The same set of ids, in any order. */

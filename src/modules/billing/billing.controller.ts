@@ -875,6 +875,7 @@ function toChargeResponse(charge: ChargeView): ChargeResponse {
     voidReason: charge.voidReason,
     invoiceId: charge.invoiceId,
     correctsChargeItemId: charge.correctsChargeItemId,
+    creditNote: charge.creditNote,
     // BI-058. Derived on the way out from the FROZEN values, so the client
     // never has to do decimal arithmetic in JavaScript to show a line.
     lineTotal: lineBase(line).toString(),
@@ -925,6 +926,8 @@ function toInvoiceResponse(invoice: InvoiceWithVoucher): InvoiceResponse {
     authorisedAt: invoice.authorisedAt?.toISOString() ?? null,
     paidTotal: invoice.paidTotal.toString(),
     creditedTotal: invoice.creditedTotal.toString(),
+    creditNotes: invoice.creditNotes,
+    replacedBy: invoice.replacedBy,
     balance: invoiceBalance({
       total: invoice.totals.total,
       creditedTotal: invoice.creditedTotal,
