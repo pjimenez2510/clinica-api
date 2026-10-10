@@ -403,3 +403,119 @@ export function sameVaccination(
       .join(',');
   return key(a) === key(b);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUPLEMENTOS — COLUMNAS 105 A 108 (EN-096, EN-262)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Columns 105 to 108, in the form's order. */
+export const SUPPLEMENTS = [
+  'micronutrientPowder',
+  'vitaminA',
+  'ironSyrup',
+  'ironFolicAcid',
+] as const;
+export type Supplement = (typeof SUPPLEMENTS)[number];
+
+/** EN-096. Each box, «si prescribe o no»; `null`: not answered. */
+export type SupplementAnswer = Record<Supplement, boolean | null>;
+export type SupplementRecord = SupplementAnswer & BlockStamp;
+
+/** EN-096. The children's boxes, in completed months of the frozen age. */
+export const SUPPLEMENT_AGE_MONTHS = {
+  micronutrientPowder: { min: 6, max: 24 },
+  vitaminA: { min: 6, max: 59 },
+  ironSyrup: { min: 24, max: 59 },
+} as const;
+
+/**
+ * EN-096. Which boxes the attention's population reaches: the children's by
+ * the frozen age, iron with folic acid by the pregnancy on the chart that day
+ * or her own «yes» to lactation (EN-260). The same bounds as
+ * `trg_encounter_supplement_applies`.
+ */
+export function supplementsThatApply(
+  age: FrozenAge,
+  pregnantOrLactating: boolean,
+): Record<Supplement, boolean> {
+  const months =
+    age.ageYears === null || age.ageMonths === null
+      ? null
+      : age.ageYears * 12 + age.ageMonths;
+  const within = (box: keyof typeof SUPPLEMENT_AGE_MONTHS) =>
+    months !== null &&
+    months >= SUPPLEMENT_AGE_MONTHS[box].min &&
+    months <= SUPPLEMENT_AGE_MONTHS[box].max;
+  return {
+    micronutrientPowder: within('micronutrientPowder'),
+    vitaminA: within('vitaminA'),
+    ironSyrup: within('ironSyrup'),
+    ironFolicAcid: pregnantOrLactating,
+  };
+}
+
+/** EN-096. The first box answered outside its population, or `null`. */
+export function supplementOutsidePopulation(
+  applies: Record<Supplement, boolean>,
+  answer: SupplementAnswer,
+): Supplement | null {
+  return SUPPLEMENTS.find((box) => answer[box] !== null && !applies[box]) ?? null; // prettier-ignore
+}
+
+/** A line of a prescription of the attention, as the proposal reads it. */
+export interface PrescribedMedicine {
+  /** The CNMB code of its concept; `null` outside the CNMB. */
+  cnmbCode: string | null;
+  /** The pharmaceutical form it was written with (`SYRUP`, `TABLET`, …). */
+  dosageFormCode: string | null;
+}
+
+/** The liquid oral forms of the CNMB: what makes iron a «jarabe». */
+const LIQUID_ORAL_FORMS = [
+  'ORAL_SUSPENSION',
+  'SYRUP',
+  'ORAL_SOLUTION',
+  'ORAL_DROPS',
+] as const;
+
+/**
+ * EN-262 (D-198.2). What counts for each box, by CNMB code — and form, for
+ * the syrup. ⚠️ A CLINICIAN CONFIRMS IT: changing it is a line here.
+ */
+export const SUPPLEMENT_MEDICINES: Readonly<
+  Record<Supplement, { codes: readonly string[]; forms?: readonly string[] }>
+> = {
+  /** Hierro, multivitaminas y minerales (polvo): las «chispas». */
+  micronutrientPowder: { codes: ['B03AE04'] },
+  /** Retinol, any presentation (the instructivo says «cápsula»). */
+  vitaminA: { codes: ['A11CA01'] },
+  /** Sulfato ferroso in a liquid form, not the tablet. */
+  ironSyrup: { codes: ['B03AA07'], forms: LIQUID_ORAL_FORMS },
+  /** Sales de hierro + ácido fólico. */
+  ironFolicAcid: { codes: ['B03AD'] },
+};
+
+/**
+ * EN-262. The proposal: «Sí» where a prescription of the attention carries a
+ * medicine that counts for the box, «No» where none does, and `null` where
+ * the box does not apply.
+ */
+export function proposedSupplements(
+  applies: Record<Supplement, boolean>,
+  medicines: readonly PrescribedMedicine[],
+): SupplementAnswer {
+  const counts = (box: Supplement) => {
+    const rule = SUPPLEMENT_MEDICINES[box];
+    return medicines.some(
+      (medicine) =>
+        medicine.cnmbCode !== null &&
+        rule.codes.includes(medicine.cnmbCode) &&
+        (rule.forms === undefined ||
+          (medicine.dosageFormCode !== null &&
+            rule.forms.includes(medicine.dosageFormCode))),
+    );
+  };
+  return Object.fromEntries(
+    SUPPLEMENTS.map((box) => [box, applies[box] ? counts(box) : null]),
+  ) as SupplementAnswer;
+}

@@ -387,6 +387,105 @@ describe('EN-260 la lactancia de la mujer de 10 a 49 años, en la columna 52 de 
   });
 });
 
+describe('EN-096 los suplementos contra la base, por la población de cada casilla', () => {
+  type Supplements = {
+    micronutrientPowder?: boolean;
+    vitaminA?: boolean;
+    ironSyrup?: boolean;
+    ironFolicAcid?: boolean;
+  };
+  const create = (
+    prisma: PrismaClient,
+    scene: Awaited<ReturnType<typeof anAttention>>,
+    answer: Supplements,
+  ) =>
+    prisma.encounterSupplement.create({
+      data: {
+        encounterId: scene.encounter.id,
+        ...answer,
+        recordedById: scene.author.id,
+        recordedAt: new Date(),
+      },
+    });
+
+  /** The age the database froze, in completed months, asserted. */
+  async function aged(
+    prisma: PrismaClient,
+    totalMonths: number,
+    sex: 'MALE' | 'FEMALE' = 'FEMALE',
+  ) {
+    // prettier-ignore
+    const years = Math.floor(totalMonths / 12);
+    const months = totalMonths % 12;
+    const scene = await anAttention(prisma, { age: { years, months }, sex });
+    const frozen = await prisma.encounter.findUniqueOrThrow({ where: { id: scene.encounter.id } }); // prettier-ignore
+    expect([frozen.ageYears, frozen.ageMonths]).toEqual([years, months]);
+    return scene;
+  }
+
+  it('EN-096 las chispas de 6 a 24 meses, la vitamina A de 6 a 59 y el hierro en jarabe de 24 a 59: fuera, la BASE las rechaza', async () => {
+    const prisma = db();
+    const five = await aged(prisma, 5);
+    const twentyFive = await aged(prisma, 25);
+    const twentyThree = await aged(prisma, 23);
+    const sixty = await aged(prisma, 60);
+
+    expect(await problemFrom(create(prisma, five, { micronutrientPowder: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, five, { vitaminA: false }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, twentyFive, { micronutrientPowder: false }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, twentyThree, { ironSyrup: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, sixty, { vitaminA: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, sixty, { ironSyrup: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await prisma.encounterSupplement.count()).toBe(0);
+
+    // Positive controls: the bounds themselves.
+    await create(prisma, await aged(prisma, 6), { micronutrientPowder: true, vitaminA: true }); // prettier-ignore
+    await create(prisma, await aged(prisma, 24), { micronutrientPowder: false, vitaminA: true, ironSyrup: true }); // prettier-ignore
+    await create(prisma, await aged(prisma, 59), { vitaminA: false, ironSyrup: false }); // prettier-ignore
+    expect(await prisma.encounterSupplement.count()).toBe(3);
+  });
+
+  it('EN-096 EN-260 el hierro con ácido fólico, a la embarazada y a la que dijo estar lactando; sin ninguno de los dos, no', async () => {
+    const prisma = db();
+    const neither = await anAttention(prisma, { age: { years: 28 } });
+    const saidNo = await anAttention(prisma, { age: { years: 28 } });
+    await prisma.encounterNutrition.create({ data: { encounterId: saidNo.encounter.id, motherBreastfeeding: false, recordedById: saidNo.author.id, recordedAt: new Date() } }); // prettier-ignore
+
+    expect(await problemFrom(create(prisma, neither, { ironFolicAcid: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, saidNo, { ironFolicAcid: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await prisma.encounterSupplement.count()).toBe(0);
+
+    // Positive controls: pregnant on the chart that day; lactating by her own answer.
+    const expecting = await anAttention(prisma, { age: { years: 28 } });
+    await pregnant(prisma, expecting, -90, 150);
+    await create(prisma, expecting, { ironFolicAcid: true });
+    const lactating = await anAttention(prisma, { age: { years: 28 } });
+    await prisma.encounterNutrition.create({ data: { encounterId: lactating.encounter.id, motherBreastfeeding: true, recordedById: lactating.author.id, recordedAt: new Date() } }); // prettier-ignore
+    await create(prisma, lactating, { ironFolicAcid: false });
+    expect(await prisma.encounterSupplement.count()).toBe(2);
+  });
+
+  it('EN-096 EN-249 se corrige con su versión y su sello, sólo con la atención viva, y nunca se borra', async () => {
+    const prisma = db();
+    const scene = await aged(prisma, 30);
+    const recordedAt = new Date();
+    await prisma.encounterSupplement.create({ data: { encounterId: scene.encounter.id, vitaminA: true, recordedById: scene.author.id, recordedAt } }); // prettier-ignore
+    const where = { encounterId: scene.encounter.id };
+
+    await expect(prisma.encounterSupplement.update({ where, data: { vitaminA: false } })).rejects.toThrow(/record_version_change_is_stamped/); // prettier-ignore
+    await expect(prisma.encounterSupplement.delete({ where })).rejects.toThrow(/program_block_immutable/); // prettier-ignore
+
+    // Positive control: stamped, it goes in and the previous row is kept.
+    await prisma.encounterSupplement.update({ where, data: { vitaminA: false, editedById: scene.author.id, editedAt: new Date(recordedAt.getTime() + 1000) } }); // prettier-ignore
+    const versions = await prisma.recordVersion.findMany({ where: { resourceType: 'encounter_supplement', resourceId: scene.encounter.id } }); // prettier-ignore
+    expect(versions).toHaveLength(1);
+    expect(versions[0]!.data).toMatchObject({ vitamin_a: true });
+
+    await discharge(prisma, scene.encounter.id);
+    await expect(prisma.encounterSupplement.update({ where, data: { vitaminA: true, editedById: scene.author.id, editedAt: new Date(recordedAt.getTime() + 2000) } })).rejects.toThrow(/program_block_frozen/); // prettier-ignore
+  });
+});
+
 describe('EN-090 EN-093 la fecha clínica es la de Guayaquil, también a las 21:30', () => {
   /**
    * An attention yesterday at 21:30 in Guayaquil is already today in UTC
@@ -636,6 +735,19 @@ describe('EN-094 EN-095 la prueba de VIH contra la base', () => {
     // Positive control: the instructivo's own example, the second result blank.
     await create(prisma, scene, reactive);
     expect(await prisma.encounterHivTest.count()).toBe(1);
+  });
+
+  it('EN-094 D-195.11 la BASE admite carga viral y CD4 con la primera prueba no reactiva (infección aguda, recién nacido expuesto), y acota su rango', async () => {
+    const prisma = db();
+    const scene = await anAttention(prisma);
+
+    expect(await problemFrom(create(prisma, scene, { viralLoad: -1 }))).toMatchObject(invalid('viralLoad')); // prettier-ignore
+    expect(await prisma.encounterHivTest.count()).toBe(0);
+
+    // Positive control: the first test non-reactive, with no confirmation.
+    await create(prisma, scene, { viralLoad: 250_000, cd4: 820 });
+    const row = await prisma.encounterHivTest.findUniqueOrThrow({ where: { encounterId: scene.encounter.id } }); // prettier-ignore
+    expect([row.screeningResult, row.viralLoad, row.cd4]).toEqual(['NON_REACTIVE', 250_000, 820]); // prettier-ignore
   });
 
   it('EN-095 EN-249 la corrección archiva la anterior en su propia tabla y NUNCA en record_version; sin sello, no entra', async () => {

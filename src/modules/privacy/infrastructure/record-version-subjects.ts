@@ -107,6 +107,11 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
     redactedColumns: ['risk_group'],
     redactedInLists: { doses: ['riskGroup'] },
   },
+  // EN-096. Whether supplements were prescribed: nothing about anybody else.
+  encounter_supplement: {
+    resourceIdsOf: standingEncountersOf,
+    omittedBecause: null,
+  },
   encounter_diagnosis: {
     resourceIdsOf: (chartId) => Prisma.sql`
       SELECT d.id FROM encounter_diagnosis d

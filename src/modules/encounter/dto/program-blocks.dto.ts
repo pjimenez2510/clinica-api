@@ -107,6 +107,27 @@ export class RecordVaccinationDto extends createZodDto(
   recordVaccinationSchema,
 ) {}
 
+// ── Suplementos (EN-096) ────────────────────────────────────────────────────
+
+const supplementBox = z.boolean().nullable().default(null);
+
+export const recordSupplementsSchema = z
+  .object({
+    /** Column 105, from 6 to 24 months. */
+    micronutrientPowder: supplementBox,
+    /** Column 106, from 6 to 59 months. */
+    vitaminA: supplementBox,
+    /** Column 107, from 24 to 59 months. */
+    ironSyrup: supplementBox,
+    /** Column 108, pregnant or lactating women. */
+    ironFolicAcid: supplementBox,
+  })
+  .strict();
+/** Body of PUT /encounters/:encounterId/programs/supplements. */
+export class RecordSupplementsDto extends createZodDto(
+  recordSupplementsSchema,
+) {}
+
 // ── Responses ───────────────────────────────────────────────────────────────
 
 const stamp = {
@@ -140,6 +161,18 @@ export class VaccinationRecordDto extends createZodDto(
   vaccinationRecordSchema,
 ) {}
 
+export const supplementRecordSchema = recordSupplementsSchema
+  .extend(stamp)
+  .required();
+export class SupplementRecordDto extends createZodDto(supplementRecordSchema) {}
+
+const supplementFlags = z.object({
+  micronutrientPowder: z.boolean(),
+  vitaminA: z.boolean(),
+  ironSyrup: z.boolean(),
+  ironFolicAcid: z.boolean(),
+});
+
 export const programsSheetSchema = z.object({
   /** `YYYY-MM-DD`, the attention's clinical date in America/Guayaquil. */
   clinicalDate: z.iso.date(),
@@ -172,6 +205,21 @@ export const programsSheetSchema = z.object({
      */
     riskGroupWithheld: z.boolean(),
   }),
+  supplements: z.object({
+    /** EN-096. Which boxes the attention's population reaches. */
+    applies: supplementFlags,
+    /**
+     * EN-262. What the prescriptions of the attention propose for each box,
+     * `null` where it does not apply. A proposal: nothing is saved with it.
+     */
+    proposed: z.object({
+      micronutrientPowder: z.boolean().nullable(),
+      vitaminA: z.boolean().nullable(),
+      ironSyrup: z.boolean().nullable(),
+      ironFolicAcid: z.boolean().nullable(),
+    }),
+    record: supplementRecordSchema.nullable(),
+  }),
 });
 /** Response of GET /encounters/:encounterId/programs. */
 export class ProgramsSheetDto extends createZodDto(programsSheetSchema) {}
@@ -180,3 +228,4 @@ export type ProgramsSheetResponse = z.infer<typeof programsSheetSchema>;
 export type ObstetricRecordResponse = z.infer<typeof obstetricRecordSchema>;
 export type NutritionRecordResponse = z.infer<typeof nutritionRecordSchema>;
 export type VaccinationRecordResponse = z.infer<typeof vaccinationRecordSchema>;
+export type SupplementRecordResponse = z.infer<typeof supplementRecordSchema>;

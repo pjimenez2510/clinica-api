@@ -1672,13 +1672,15 @@ export class DentalIndexNotApplicableError extends BusinessRuleViolation {
 }
 
 /** EN-090, EN-092: the program blocks that apply only to a population. */
-export type PopulationBlock = 'OBSTETRIC' | 'NUTRITION';
+export type PopulationBlock = 'OBSTETRIC' | 'NUTRITION' | 'SUPPLEMENTS';
 
 const NOT_APPLICABLE_TITLES: Record<PopulationBlock, string> = {
   OBSTETRIC:
     'Esta atención no lleva datos obstétricos: la ficha no registra el embarazo en la fecha de la atención',
   NUTRITION:
-    'Esta atención no lleva datos de lactancia: sólo se registran hasta los 8 meses de edad, con la pregunta de su edad',
+    'Esta atención no lleva datos de lactancia: se registran hasta los 8 meses de edad, con la pregunta de su edad, y en la mujer de 10 a 49 años sólo su propia lactancia',
+  SUPPLEMENTS:
+    'Ese suplemento no corresponde a esta atención: cada uno tiene su edad, y el hierro con ácido fólico es para la embarazada o la mujer lactante',
 };
 
 /**

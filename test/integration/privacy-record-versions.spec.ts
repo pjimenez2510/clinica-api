@@ -407,6 +407,8 @@ async function everyVersionedRowOf(
     encounter_obstetric: encounterId,
     encounter_nutrition: encounterId,
     encounter_vaccination: encounterId,
+    // EN-096. The supplements, the same way.
+    encounter_supplement: encounterId,
     encounter_diagnosis: diagnosis.id,
     encounter_procedure: procedure.id,
     critical_result_notice: notice.id,

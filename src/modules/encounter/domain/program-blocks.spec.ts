@@ -5,9 +5,12 @@ import {
   lastMenstrualPeriodProblem,
   nutritionBandOf,
   nutritionProblem,
+  proposedSupplements,
   riskGroupIsProtected,
   riskGroupsAdmittedBy,
   sameVaccination,
+  supplementOutsidePopulation,
+  supplementsThatApply,
   vaccinationProblem,
   VACCINE_CODES,
   weeksSinceLastMenstrualPeriod,
@@ -181,5 +184,41 @@ describe('EN-261 sin la llave, el HB adulto ya registrado se conserva o no se to
     const answer = { doses: [given('55')] };
     expect(keepProtectedRiskGroup(answer, null)).toEqual(answer);
     expect(keepProtectedRiskGroup(answer, { doses: [given('56')] })).toEqual(answer); // prettier-ignore
+  });
+});
+
+describe('EN-096 EN-262 los suplementos: su población y la propuesta desde la receta', () => {
+  const none = { micronutrientPowder: null, vitaminA: null, ironSyrup: null, ironFolicAcid: null }; // prettier-ignore
+
+  it('EN-096 cada casilla, en su edad: chispas de 6 a 24 meses, vitamina A de 6 a 59, hierro en jarabe de 24 a 59', () => {
+    expect(supplementsThatApply(age(0, 5), false)).toEqual({ micronutrientPowder: false, vitaminA: false, ironSyrup: false, ironFolicAcid: false }); // prettier-ignore
+    expect(supplementsThatApply(age(0, 6), false)).toEqual({ micronutrientPowder: true, vitaminA: true, ironSyrup: false, ironFolicAcid: false }); // prettier-ignore
+    expect(supplementsThatApply(age(2, 0), false)).toEqual({ micronutrientPowder: true, vitaminA: true, ironSyrup: true, ironFolicAcid: false }); // prettier-ignore
+    expect(supplementsThatApply(age(2, 1), false)).toMatchObject({ micronutrientPowder: false, ironSyrup: true }); // prettier-ignore
+    expect(supplementsThatApply(age(4, 11), false)).toMatchObject({ vitaminA: true, ironSyrup: true }); // prettier-ignore
+    expect(supplementsThatApply(age(5, 0), false)).toMatchObject({ vitaminA: false, ironSyrup: false }); // prettier-ignore
+    expect(supplementsThatApply(age(null, null), false).vitaminA).toBe(false);
+  });
+
+  it('EN-096 el hierro con ácido fólico, sólo a la embarazada o lactante', () => {
+    expect(supplementsThatApply(age(28, 0), true).ironFolicAcid).toBe(true);
+    expect(supplementsThatApply(age(28, 0), false).ironFolicAcid).toBe(false);
+    const adult = supplementsThatApply(age(28, 0), false);
+    expect(supplementOutsidePopulation(adult, { ...none, ironFolicAcid: false })).toBe('ironFolicAcid'); // prettier-ignore
+    expect(supplementOutsidePopulation(adult, none)).toBeNull();
+  });
+
+  it('EN-262 propone Sí con el medicamento de la casilla en la receta, No sin él, y nada donde no aplica', () => {
+    const toddler = supplementsThatApply(age(3, 0), false);
+    expect(proposedSupplements(toddler, [])).toEqual({ micronutrientPowder: null, vitaminA: false, ironSyrup: false, ironFolicAcid: null }); // prettier-ignore
+    expect(proposedSupplements(toddler, [{ cnmbCode: 'A11CA01', dosageFormCode: 'CAPSULE' }, { cnmbCode: 'B03AA07', dosageFormCode: 'SYRUP' }])).toEqual({ micronutrientPowder: null, vitaminA: true, ironSyrup: true, ironFolicAcid: null }); // prettier-ignore
+  });
+
+  it('EN-262 el sulfato ferroso en tableta no es hierro en jarabe, ni una línea fuera del CNMB cuenta', () => {
+    const toddler = supplementsThatApply(age(3, 0), false);
+    expect(proposedSupplements(toddler, [{ cnmbCode: 'B03AA07', dosageFormCode: 'TABLET' }]).ironSyrup).toBe(false); // prettier-ignore
+    expect(proposedSupplements(toddler, [{ cnmbCode: null, dosageFormCode: 'SYRUP' }]).ironSyrup).toBe(false); // prettier-ignore
+    const expecting = supplementsThatApply(age(28, 0), true);
+    expect(proposedSupplements(expecting, [{ cnmbCode: 'B03AD', dosageFormCode: 'TABLET' }]).ironFolicAcid).toBe(true); // prettier-ignore
   });
 });

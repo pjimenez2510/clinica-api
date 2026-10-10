@@ -794,7 +794,7 @@ describe('los errores de la referencia (EN-105, EN-107)', () => {
 });
 
 describe('los bloques de programa (EN-090, EN-092, EN-093)', () => {
-  it('EN-090 EN-092 responde 422 con su código, en el catálogo, y dice por qué no corresponde cada bloque', () => {
+  it('EN-090 EN-092 EN-096 EN-260 responde 422 con su código, en el catálogo, y dice por qué no corresponde cada bloque', () => {
     const obstetric = new ProgramBlockNotApplicableError('OBSTETRIC');
     const nutrition = new ProgramBlockNotApplicableError('NUTRITION');
 
@@ -805,7 +805,10 @@ describe('los bloques de programa (EN-090, EN-092, EN-093)', () => {
       'Esta atención no lleva datos obstétricos: la ficha no registra el embarazo en la fecha de la atención',
     );
     expect(nutrition.userTitle).toBe(
-      'Esta atención no lleva datos de lactancia: sólo se registran hasta los 8 meses de edad, con la pregunta de su edad',
+      'Esta atención no lleva datos de lactancia: se registran hasta los 8 meses de edad, con la pregunta de su edad, y en la mujer de 10 a 49 años sólo su propia lactancia',
+    );
+    expect(new ProgramBlockNotApplicableError('SUPPLEMENTS').userTitle).toBe(
+      'Ese suplemento no corresponde a esta atención: cada uno tiene su edad, y el hierro con ácido fólico es para la embarazada o la mujer lactante',
     );
   });
 

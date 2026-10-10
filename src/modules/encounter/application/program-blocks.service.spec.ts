@@ -18,6 +18,9 @@ import type {
   NutritionRecord,
   ObstetricAnswer,
   ObstetricRecord,
+  PrescribedMedicine,
+  SupplementAnswer,
+  SupplementRecord,
   VaccinationAnswer,
   VaccinationRecord,
 } from '../domain/program-blocks';
@@ -64,8 +67,27 @@ class FakeBlocks implements ProgramBlocksRepository {
     return Promise.resolve(this.pregnant);
   }
   sex = 'FEMALE';
+  lactating = false;
+  medicines: PrescribedMedicine[] = [];
+  supplement: SupplementRecord | null = null;
   patientSexOf() {
     return Promise.resolve(this.sex);
+  }
+  isLactating() {
+    return Promise.resolve(this.lactating);
+  }
+  prescribedMedicines() {
+    return Promise.resolve(this.medicines);
+  }
+  findSupplement() {
+    return Promise.resolve(this.supplement);
+  }
+  saveSupplement(
+    _q: unknown,
+    answer: SupplementAnswer,
+  ): Promise<ProgramBlockSave<SupplementRecord>> {
+    this.supplement = { ...answer, ...stamp() };
+    return Promise.resolve({ record: this.supplement, outcome: 'CREATED' });
   }
   vaccinesInForce(): Promise<VaccineOption[]> {
     return Promise.resolve([{ code: '55', display: 'BCG' }]);
@@ -187,6 +209,29 @@ describe('ProgramBlocksService (EN-090 a EN-093)', () => {
     blocks.sex = 'MALE';
     expect((await service.programsOf('encounter-1', requester, () => true)).nutrition.band).toBeNull(); // prettier-ignore
     await expect(service.recordNutrition('encounter-1', own, requester)).rejects.toBeInstanceOf(ProgramBlockNotApplicableError); // prettier-ignore
+  });
+
+  it('EN-262 propone los suplementos de la población desde la receta, y EN-096 rechaza el de otra población', async () => {
+    encounter = anEncounter({ ageYears: 3, ageMonths: 0 });
+    blocks.medicines = [{ cnmbCode: 'B03AA07', dosageFormCode: 'SYRUP' }];
+    const sheet = await service.programsOf('encounter-1', requester, () => true); // prettier-ignore
+    expect(sheet.supplements.applies).toEqual({ micronutrientPowder: false, vitaminA: true, ironSyrup: true, ironFolicAcid: false }); // prettier-ignore
+    expect(sheet.supplements.proposed).toEqual({ micronutrientPowder: null, vitaminA: false, ironSyrup: true, ironFolicAcid: null }); // prettier-ignore
+    expect(sheet.supplements.record).toBeNull();
+
+    const none = { micronutrientPowder: null, vitaminA: null, ironSyrup: null, ironFolicAcid: null }; // prettier-ignore
+    await expect(service.recordSupplements('encounter-1', { ...none, ironFolicAcid: true }, requester)).rejects.toBeInstanceOf(ProgramBlockNotApplicableError); // prettier-ignore
+    // «Sí» without a prescription is the MSP's programme: it goes in.
+    await service.recordSupplements('encounter-1', { ...none, vitaminA: true, ironSyrup: true }, requester); // prettier-ignore
+    expect(blocks.supplement).toMatchObject({
+      vitaminA: true,
+      ironSyrup: true,
+    });
+  });
+
+  it('EN-096 EN-260 a la mujer lactante se le ofrece el hierro con ácido fólico', async () => {
+    blocks.lactating = true;
+    expect((await service.programsOf('encounter-1', requester, () => true)).supplements.applies.ironFolicAcid).toBe(true); // prettier-ignore
   });
 
   it('EN-249 con la atención de alta no se escribe ningún bloque; sin atención en el alcance, 404', async () => {

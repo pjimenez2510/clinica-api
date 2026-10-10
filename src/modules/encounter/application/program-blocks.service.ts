@@ -25,7 +25,13 @@ import {
   type NutritionRecord,
   type ObstetricAnswer,
   type ObstetricRecord,
+  proposedSupplements,
+  supplementOutsidePopulation,
+  supplementsThatApply,
   withholdProtectedRiskGroup,
+  type Supplement,
+  type SupplementAnswer,
+  type SupplementRecord,
   type VaccinationAnswer,
   type VaccinationRecord,
 } from '../domain/program-blocks';
@@ -61,6 +67,16 @@ export interface ProgramsSheet {
      * tells nothing beyond the vaccine everybody sees.
      */
     riskGroupWithheld: boolean;
+  };
+  /**
+   * EN-096, EN-262. Which boxes the population reaches, what the
+   * prescriptions of the attention propose for them (`null` where a box does
+   * not apply), and what was confirmed.
+   */
+  supplements: {
+    applies: Record<Supplement, boolean>;
+    proposed: SupplementAnswer;
+    record: SupplementRecord | null;
   };
 }
 
@@ -98,15 +114,28 @@ export class ProgramBlocksService {
   ): Promise<ProgramsSheet> {
     const encounter = await this.requireEncounter(encounterId, requester);
     const query = { encounterId: encounter.id, sites: requester.sites };
-    const [pregnant, sex, vaccines, obstetric, nutrition, vaccination] =
-      await Promise.all([
-        this.blocks.isPregnant(encounter.id),
-        this.blocks.patientSexOf(encounter.id),
-        this.blocks.vaccinesInForce(encounter.id),
-        this.blocks.findObstetric(query),
-        this.blocks.findNutrition(query),
-        this.blocks.findVaccination(query),
-      ]);
+    const [
+      pregnant,
+      lactating,
+      sex,
+      vaccines,
+      medicines,
+      obstetric,
+      nutrition,
+      vaccination,
+      supplement,
+    ] = await Promise.all([
+      this.blocks.isPregnant(encounter.id),
+      this.blocks.isLactating(encounter.id),
+      this.blocks.patientSexOf(encounter.id),
+      this.blocks.vaccinesInForce(encounter.id),
+      this.blocks.prescribedMedicines(encounter.id),
+      this.blocks.findObstetric(query),
+      this.blocks.findNutrition(query),
+      this.blocks.findVaccination(query),
+      this.blocks.findSupplement(query),
+    ]);
+    const supplementsApply = supplementsThatApply(encounter, pregnant || lactating); // prettier-ignore
 
     const withheld =
       vaccination !== null &&
@@ -115,7 +144,7 @@ export class ProgramBlocksService {
       ) &&
       !holdsKeyAt(encounter.siteId);
 
-    if (obstetric || nutrition || vaccination) {
+    if (obstetric || nutrition || vaccination || supplement) {
       await this.trail(requester, encounter.id, 'READ');
     }
 
@@ -131,7 +160,41 @@ export class ProgramBlocksService {
             : vaccination,
         riskGroupWithheld: withheld,
       },
+      supplements: {
+        applies: supplementsApply,
+        proposed: proposedSupplements(supplementsApply, medicines),
+        record: supplement,
+      },
     };
+  }
+
+  /**
+   * EN-096, EN-249. The supplements of the attention, each only in its
+   * population: the children's by the frozen age, iron with folic acid with
+   * the pregnancy that day or her own «yes» to lactation. What the proposal
+   * said is not checked: «Sí» without a prescription is the MSP's programme.
+   */
+  async recordSupplements(
+    encounterId: string,
+    answer: SupplementAnswer,
+    requester: Requester,
+  ): Promise<SupplementRecord> {
+    const encounter = await this.requireLiveEncounter(encounterId, requester);
+    const [pregnant, lactating] = await Promise.all([
+      this.blocks.isPregnant(encounter.id),
+      this.blocks.isLactating(encounter.id),
+    ]);
+    const applies = supplementsThatApply(encounter, pregnant || lactating);
+    if (supplementOutsidePopulation(applies, answer) !== null) {
+      throw new ProgramBlockNotApplicableError('SUPPLEMENTS');
+    }
+    const saved = await this.blocks.saveSupplement(
+      { encounterId: encounter.id, sites: requester.sites },
+      answer,
+      requester.userId,
+    );
+    await this.trailSave(requester, encounter.id, saved.outcome);
+    return saved.record;
   }
 
   /** EN-090, EN-091, EN-249. Block G, only with the pregnancy on the chart that day. */

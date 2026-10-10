@@ -486,6 +486,11 @@ registerConstraintMeanings({
     field: 'complementaryFeeding',
     message: 'Indique si en las últimas 24 horas consumió alimento sólido, semisólido o suave', // prettier-ignore
   },
+  encounter_supplement_applies: {
+    code: PROGRAM_NOT_APPLICABLE,
+    field: 'encounterId',
+    message: 'Ese suplemento no corresponde a esta atención: cada uno tiene su edad, y el hierro con ácido fólico es para la embarazada o la mujer lactante', // prettier-ignore
+  },
   encounter_vaccination_doses_shape: {
     code: 'VALIDATION_FAILED',
     field: 'doses',

@@ -276,6 +276,11 @@ describe('los bloques de programa por HTTP, con sesiones reales (EN-090 a EN-093
         } | null;
         riskGroupWithheld: boolean;
       };
+      supplements: {
+        applies: Record<string, boolean>;
+        proposed: Record<string, boolean | null>;
+        record: Record<string, unknown> | null;
+      };
     };
 
   const trailOf = (encounterId: string, action: string) =>
@@ -524,6 +529,79 @@ describe('los bloques de programa por HTTP, con sesiones reales (EN-090 a EN-093
       // Positive control: with the key, the doctor removes it.
       await send('put', url, doctorToken, { doses: [{ code: '73', dose: 'SINGLE', riskGroup: 'HEALTH_WORKER' }] }).expect(200); // prettier-ignore
       expect(await groupOf(encounterId)).toBeUndefined();
+    });
+  });
+
+  describe('EN-096 EN-262 los suplementos, propuestos desde la receta', () => {
+    /** A CNMB medicine in force since long before the clinical date. */
+    async function cnmb(code: string, display: string): Promise<string> {
+      const system = await prisma.catalogSystem.upsert({ where: { code: 'CNMB' }, create: { code: 'CNMB', name: 'CNMB' }, update: {} }); // prettier-ignore
+      const concept = await prisma.catalogConcept.create({ data: { systemId: system.id, code, display, validFrom: around(-3650) } }); // prettier-ignore
+      return concept.id;
+    }
+    /** A prescription of the attention, still a draft, with its lines. */
+    async function prescribe(
+      encounterId: string,
+      lines: { conceptId: string; dosageFormCode: string }[],
+      status: 'DRAFT' | 'DISCARDED' = 'DRAFT',
+    ) {
+      const prescription = await prisma.prescription.create({ data: { encounterId, siteId, prescriberId: doctorPractitionerId } }); // prettier-ignore
+      for (const line of lines) {
+        await prisma.prescriptionItem.create({ data: { prescriptionId: prescription.id, ...line, genericName: 'Sulfato ferroso', doseText: '5 mL', frequencyText: 'Cada día' } }); // prettier-ignore
+      }
+      if (status === 'DISCARDED') {
+        const nurse = await prisma.user.findUniqueOrThrow({ where: { email: 'enfermeria@clinica.ec' } }); // prettier-ignore
+        await prisma.prescription.update({ where: { id: prescription.id }, data: { status, discardedAt: new Date(), discardedById: nurse.id } }); // prettier-ignore
+      }
+    }
+
+    it('EN-262 al niño de 3 años le propone hierro en jarabe con el sulfato ferroso líquido de la receta, y no con la tableta ni con la receta descartada', async () => {
+      const ferrous = await cnmb('B03AA07', 'Sulfato ferroso');
+      const syrup = await openEncounter(await aPatient({ years: 3 }));
+      const tablet = await openEncounter(await aPatient({ years: 3 }));
+      const discarded = await openEncounter(await aPatient({ years: 3 }));
+      await prescribe(syrup, [{ conceptId: ferrous, dosageFormCode: 'SYRUP' }]);
+      await prescribe(tablet, [{ conceptId: ferrous, dosageFormCode: 'TABLET' }]); // prettier-ignore
+      await prescribe(discarded, [{ conceptId: ferrous, dosageFormCode: 'SYRUP' }], 'DISCARDED'); // prettier-ignore
+
+      const sheet = (await programs(syrup, doctorToken)).supplements;
+      expect(sheet.applies).toEqual({ micronutrientPowder: false, vitaminA: true, ironSyrup: true, ironFolicAcid: false }); // prettier-ignore
+      expect(sheet.proposed).toEqual({ micronutrientPowder: null, vitaminA: false, ironSyrup: true, ironFolicAcid: null }); // prettier-ignore
+      expect(sheet.record).toBeNull();
+      expect((await programs(tablet, doctorToken)).supplements.proposed.ironSyrup).toBe(false); // prettier-ignore
+      expect((await programs(discarded, doctorToken)).supplements.proposed.ironSyrup).toBe(false); // prettier-ignore
+    });
+
+    it('EN-096 el médico confirma la propuesta, la corrige con «Sí» sin receta, y enfermería no la registra (403)', async () => {
+      const encounterId = await openEncounter(await aPatient({ years: 3 }));
+      const url = `/encounters/${encounterId}/programs/supplements`;
+      const answer = { vitaminA: true, ironSyrup: false };
+
+      await send('put', url, nurseToken, answer).expect(403);
+      // Out of its population: the powder is from 6 to 24 months.
+      const refused = await send('put', url, doctorToken, { ...answer, micronutrientPowder: true }).expect(422); // prettier-ignore
+      expect(refused.body).toMatchObject({ code: 'PROGRAM_BLOCK_NOT_APPLICABLE' }); // prettier-ignore
+
+      // Positive control: «Sí» without any prescription (the MSP's programme).
+      const saved = await send('put', url, doctorToken, answer).expect(200);
+      expect(saved.body).toMatchObject({ micronutrientPowder: null, vitaminA: true, ironSyrup: false, ironFolicAcid: null, editedAt: null }); // prettier-ignore
+      expect((await programs(encounterId, nurseToken)).supplements.record).toMatchObject(answer); // prettier-ignore
+    });
+
+    it('EN-096 EN-260 a la mujer que dice estar lactando se le ofrece el hierro con ácido fólico; antes, no', async () => {
+      const ironFolic = await cnmb('B03AD', 'Sales de hierro + ácido fólico');
+      const encounterId = await openEncounter(await aPatient({ years: 26 }, 'FEMALE')); // prettier-ignore
+      await prescribe(encounterId, [{ conceptId: ironFolic, dosageFormCode: 'TABLET' }]); // prettier-ignore
+      const url = `/encounters/${encounterId}/programs/supplements`;
+
+      expect((await programs(encounterId, doctorToken)).supplements.applies.ironFolicAcid).toBe(false); // prettier-ignore
+      await send('put', url, doctorToken, { ironFolicAcid: true }).expect(422);
+
+      await send('put', `/encounters/${encounterId}/programs/nutrition`, doctorToken, { motherBreastfeeding: true }).expect(200); // prettier-ignore
+      const sheet = (await programs(encounterId, doctorToken)).supplements;
+      expect(sheet.applies.ironFolicAcid).toBe(true);
+      expect(sheet.proposed.ironFolicAcid).toBe(true);
+      await send('put', url, doctorToken, { ironFolicAcid: true }).expect(200);
     });
   });
 
