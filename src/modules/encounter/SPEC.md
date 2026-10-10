@@ -566,6 +566,21 @@ con VIH» y comprobar que el segundo exige la segunda llave.
 
 **Cubre:** EN-096, EN-099, EN-262.
 
+### H15 — Las pestañas de la consulta dicen lo que falta _(P1)_
+
+Revisión de producto del 10-10-2026, D-205 §1: las pestañas se quedan y se
+mejoran (sustituye a D-A-016). Las marcas dicen lo que de verdad falta, la
+barra se agrupa, «Programas» no aparece cuando nada aplica, la cabecera fija
+dice cuánto falta para firmar y lleva ahí, `Alt+1…9` cambia de pestaña y el
+diálogo de firma da un solo aviso.
+**Prueba independiente:** como médico, abrir la atención de un menor de cinco
+años con la toma sin talla: «Signos» marca «Falta talla», la cabecera dice
+«Falta 1 para firmar» y lleva a «Signos»; `Alt+2` abre la segunda pestaña; en un
+adulto sin embarazo «Programas» no está en la barra.
+
+**Cubre:** EN-263 a EN-268. **Solo interfaz:** EN-263, EN-264, EN-265, EN-266,
+EN-267, EN-268 (la API no cambia: las marcas leen lo que ya llega).
+
 ### Fuera de las nueve
 
 **EN-148 a EN-150** —el triaje— tampoco pertenecen a ninguna entrega, y por otro
@@ -4817,6 +4832,66 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > `PROCEDURE_CHARGE_SYNC` de `shared/billing`, como la consulta
   > (`CONSULTATION_REPRICER`, BI-203). Lo clínico ya está guardado; lo que
   > caja no pueda seguir solo lo ve en la cuenta.
+
+---
+
+## 31. Las pestañas de la consulta dicen lo que falta (D-205 §1)
+
+- **EN-263** — MIENTRAS la nota de la atención no esté firmada, la marca de
+  cada pestaña DEBERÁ decir lo que esa pestaña tiene pendiente para la firma
+  o lo que tras el alta ya no se registra: «Signos», la antropometría
+  obligatoria que falta («Falta talla»), haya toma o no; «Nota», los apartados
+  vacíos y, a quien tiene la segunda llave, el tamizaje sin responder;
+  «Diagnósticos», la falta de diagnóstico o de principal y el índice dental que
+  aplica sin registrar; y NO DEBERÁ marcar como completa una pestaña con algo
+  de eso pendiente.
+  > Hoy «Signos» decía «Tomados» con la talla de un menor de cinco años por
+  > tomar, y «Diagnósticos» «1 registrado» sin principal: las dos bloquean la
+  > firma (EN-217, EN-236). El índice dental no bloquea (EN-052), pero se dice
+  > en su marca porque después del alta ya no se registra. Una sección que
+  > pide atención vuelve a la barra aunque el médico la ocultara (D-A-017).
+- **EN-264** — La barra de pestañas DEBERÁ agrupar las secciones, en este
+  orden y con un separador entre grupos, en **Contexto** (historia, signos) ·
+  **Acto** (nota, diagnósticos) · **Órdenes y papeles** (receta, exámenes,
+  certificado, referencia) · **Reporte** (programas, ficha); y el orden que
+  el médico elija en «Ajustar las pestañas» DEBERÁ aplicarse dentro de su
+  grupo.
+  > Los rótulos de los grupos van en el nombre accesible de la barra y en los
+  > ajustes; en la barra, el separador. «Programas» pasa a Reporte: sus bloques
+  > son del RDACAA, como la ficha (`STATISTICAL`).
+- **EN-265** — SI a la atención no le aplica ningún bloque de programa
+  condicional —obstétrico, SIVAN o lactancia, suplementos— y no tiene nada
+  registrado en ninguno de sus bloques, ENTONCES la barra NO DEBERÁ mostrar
+  «Programas»; y DEBERÁ poder abrirse desde «Ajustar las pestañas» para esa
+  atención, para registrar una vacuna o, con la segunda llave, la prueba de
+  VIH.
+  > Las vacunas y la prueba de VIH no dependen de la edad ni del embarazo, así
+  > que «nada aplica» se lee sobre los bloques condicionales. Si las vacunas
+  > deben tener entrada propia en la barra lo decide el autor (plan
+  > `feat-f04-pestanas-honestas`, «Por decidir»).
+- **EN-266** — MIENTRAS la atención esté viva, su nota sin firmar y la sesión
+  tenga `record:sign` en la sede de la atención, SI algo impide firmar,
+  ENTONCES la cabecera fija DEBERÁ decir cuántas cosas faltan («Falta 1 para
+  firmar», «Faltan 3 para firmar»), y CUANDO se pulse DEBERÁ llevar a la
+  pestaña de lo que falta —si es más de una cosa, ofreciendo cada una con su
+  pestaña—; sin nada que impida firmar NO DEBERÁ mostrarse.
+  > Lo que impide firmar es lo mismo que la barra de cierre y el diálogo
+  > (EN-020, EN-217, EN-236, EN-240): una sola lista, `signChecklist`.
+- **EN-267** — CUANDO se pulse `Alt` (`Opción` en macOS) con un número del 1
+  al 9, el sistema DEBERÁ abrir la pestaña que ocupa esa posición en la barra;
+  y NO DEBERÁ interceptar la combinación con `Ctrl`, `Cmd` o `AltGr`, ni en
+  macOS mientras el foco esté en un campo de texto.
+  > En el teclado español de macOS `Opción+1`, `+2` y `+3` escriben `|`, `@` y
+  > `#`, y en Windows `AltGr` llega como `Ctrl+Alt`: interceptarlos dejaría de
+  > escribir un correo en la nota. Chrome y Firefox en Windows y macOS cambian
+  > de pestaña con `Ctrl`/`Cmd+número`, no con `Alt`. Cada pestaña anuncia su
+  > atajo (`aria-keyshortcuts`).
+- **EN-268** — El diálogo de firma DEBERÁ decir lo que falta en **un solo
+  aviso**, como lista, en la que lo que no impide firmar —el índice dental—
+  vaya señalado como tal; y sin nada pendiente NO DEBERÁ mostrar ningún aviso.
+  > Antes eran hasta seis avisos apilados. La lista es la de EN-266, más lo
+  > que sólo el diálogo sabe: la referencia que exige «Referido» (EN-105) y
+  > el principal que el servidor acaba de rechazar.
 
 ---
 
