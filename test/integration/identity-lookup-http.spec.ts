@@ -172,10 +172,10 @@ describe('proposing names by cedula, by HTTP', () => {
     expect(body.proposal).toMatchObject({
       source: 'SRI_RUC_REGISTRY',
       sourceName: 'DE LA TORRE ALBA LUIS FERNANDO',
-      familyName: 'DE LA TORRE',
-      secondFamilyName: 'ALBA',
-      givenName: 'LUIS',
-      secondGivenName: 'FERNANDO',
+      familyName: 'De la Torre',
+      secondFamilyName: 'Alba',
+      givenName: 'Luis',
+      secondGivenName: 'Fernando',
       birthDate: null,
       orderToReview: true,
     });
@@ -208,6 +208,7 @@ describe('proposing names by cedula, by HTTP', () => {
     const written = JSON.stringify(trail, (_k, v: unknown) => (typeof v === 'bigint' ? String(v) : v)); // prettier-ignore
     expect(written).not.toContain(IN_REGISTRY);
     expect(written).not.toContain('GUAMAN');
+    expect(written).not.toContain('Guaman');
   });
 
   it('IL-004 refuses an invalid cedula with 422 on the field, and asks nothing', async () => {

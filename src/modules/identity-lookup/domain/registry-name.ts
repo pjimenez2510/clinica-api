@@ -36,6 +36,25 @@ export function normaliseRegistryName(raw: string): string {
   return raw.trim().replace(/\s+/g, ' ');
 }
 
+/**
+ * IL-005. «DE LA TORRE» → «De la Torre», «ROSA» → «Rosa»: the case the
+ * register writes names in, so a proposed chart reads like a typed one in
+ * every list (ESTANDAR-UI §12.2: no capitals outside a field). Particles go
+ * lower case except at the start of the field. A missing accent stays
+ * missing: the registry does not have it, and reception reviews it.
+ */
+export function properCase(part: string | null): string | null {
+  if (part === null) return null;
+  return part
+    .split(' ')
+    .map((word, i) => {
+      const lower = word.toLocaleLowerCase('es-EC');
+      if (i > 0 && PARTICLES.has(word.toUpperCase())) return lower;
+      return lower.charAt(0).toLocaleUpperCase('es-EC') + lower.slice(1);
+    })
+    .join(' ');
+}
+
 /** The words of a name, with each run of particles joined to the next word. */
 function units(name: string): string[] {
   const result: string[] = [];
@@ -68,11 +87,14 @@ function units(name: string): string[] {
 export function splitRegistryName(raw: string): IdentityNames {
   const parts = units(normaliseRegistryName(raw));
   return {
-    familyName: parts[0] ?? null,
-    secondFamilyName: parts.length >= 3 ? parts[1]! : null,
-    givenName:
+    familyName: properCase(parts[0] ?? null),
+    secondFamilyName: properCase(parts.length >= 3 ? parts[1]! : null),
+    givenName: properCase(
       parts.length === 2 ? parts[1]! : parts.length >= 3 ? parts[2]! : null,
-    secondGivenName: parts.length >= 4 ? parts.slice(3).join(' ') : null,
+    ),
+    secondGivenName: properCase(
+      parts.length >= 4 ? parts.slice(3).join(' ') : null,
+    ),
   };
 }
 
@@ -85,5 +107,8 @@ export function splitPair(
   raw: string | null | undefined,
 ): [string | null, string | null] {
   const parts = units(normaliseRegistryName(raw ?? ''));
-  return [parts[0] ?? null, parts.length > 1 ? parts.slice(1).join(' ') : null];
+  return [
+    properCase(parts[0] ?? null),
+    properCase(parts.length > 1 ? parts.slice(1).join(' ') : null),
+  ];
 }

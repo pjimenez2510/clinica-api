@@ -76,10 +76,10 @@ describe('the provider adapter (local double)', () => {
     expect(finding).toEqual({
       source: 'PROVIDER',
       sourceName: 'DE LA TORRE QUISPE MARIA JOSE',
-      familyName: 'DE LA TORRE',
-      secondFamilyName: 'QUISPE',
-      givenName: 'MARIA',
-      secondGivenName: 'JOSE',
+      familyName: 'De la Torre',
+      secondFamilyName: 'Quispe',
+      givenName: 'Maria',
+      secondGivenName: 'Jose',
       birthDate: '1990-05-17', // fecha-fija: la misma del doble
       orderToReview: false,
     });

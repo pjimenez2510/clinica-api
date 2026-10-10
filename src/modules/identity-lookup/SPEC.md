@@ -154,7 +154,9 @@ marca los decide el navegador; el servidor devuelve la misma propuesta.
   devolver el nombre tal como viene y, además, repartido según el orden de la
   cédula ecuatoriana —primero los apellidos, luego los nombres, con las
   partículas («DE», «DEL», «DE LA», «DE LOS», «SAN», «Y») unidas a la palabra
-  que sigue— y DEBERÁ marcarla con **orden por revisar**; CUANDO venga de una
+  que sigue—, con mayúscula inicial y las partículas en minúscula salvo al
+  empezar el campo («De la Torre», «Rosa»), y DEBERÁ marcarla con **orden por
+  revisar**; CUANDO venga de una
   fuente que separa apellidos y nombres, NO DEBERÁ marcarla.
   > D-209 sigue pendiente: no se adivina sin decirlo. El catastro trae un solo
   > campo, y «DE LA TORRE ALBA MARIA JOSE» no se reparte sin una regla; la
