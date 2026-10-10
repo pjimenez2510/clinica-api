@@ -1,3 +1,4 @@
+import type { DataRequestParty } from './data-request-party';
 import type { ExportOmission } from './privacy.repository';
 
 /**
@@ -13,7 +14,7 @@ export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
   {
     section: 'clinical_record',
     reason:
-      'La historia clínica vigente (atenciones, diagnósticos, notas, signos vitales, alergias, antecedentes, recetas, órdenes, resultados, certificados y referencias) se entrega por otra vía mientras se decide su formato (D-083 §3). Si se corrigió algo de las atenciones, signos vitales, diagnósticos, datos de embarazo, lactancia o vacunas, alergias, antecedentes o avisos de resultados críticos, sus versiones anteriores sí van; las de los avisos, sin el nombre ni la nota de la persona avisada, y las de las vacunas, sin el grupo de riesgo (D-131.1, D-140.2, D-195).',
+      'La historia clínica vigente (atenciones, diagnósticos, notas, signos vitales, alergias, antecedentes, recetas, órdenes, resultados, certificados y referencias) no va en este archivo: se entrega como copia certificada en PDF, registrando la solicitud como copia de la historia clínica (D-083 §3, D-198). Si se corrigió algo de las atenciones, signos vitales, diagnósticos, datos de embarazo, lactancia o vacunas, alergias, antecedentes o avisos de resultados críticos, sus versiones anteriores sí van; las de los avisos, sin el nombre ni la nota de la persona avisada, y las de las vacunas, sin el grupo de riesgo (D-131.1, D-140.2, D-195).',
   },
   {
     section: 'sexual_orientation',
@@ -83,3 +84,45 @@ export function answerProposal(omissions: readonly ExportOmission[]): string {
 
 /** PD-040, PD-042. Only these rights are answered with the data itself. */
 export const EXPORTABLE_RIGHTS = new Set(['ACCESS', 'PORTABILITY']);
+
+/**
+ * PD-056. To whom the copy is handed, as the answer says it: the holder, or
+ * the third party with their name (PD-052 makes it required for a copy).
+ */
+function recipientOf(party: DataRequestParty, name: string | null): string {
+  const named = (role: string) => (name ? `${role}, ${name}` : role);
+  switch (party) {
+    case 'HOLDER':
+      return 'al paciente';
+    case 'REPRESENTATIVE':
+      return named('a su representante legal');
+    case 'ATTORNEY':
+      return named('a su apoderado');
+    case 'AUTHORIZED_PERSON':
+      return named('a la persona que autorizó');
+    case 'AUTHORITY':
+      return name
+        ? `a la autoridad que la pide, ${name}`
+        : 'a la autoridad que la pide';
+    case 'DECEASED_RELATIVE':
+      return named('al familiar del paciente fallecido');
+  }
+}
+
+/**
+ * PD-056 (D-198 §1, D-188 §3). The answer proposed for a request of the copy
+ * of the clinical record: that its delivery is authorised, to whom, what the
+ * copy carries (DOC-118) and what it does not —the violence screening, which
+ * leaves only after a professional reviews it—. Editable, like PD-049.
+ */
+export function clinicalRecordCopyProposal(facts: {
+  requestedBy: DataRequestParty;
+  requesterName: string | null;
+}): string {
+  return [
+    `Se autoriza la entrega de la copia certificada de la historia clínica, en PDF, ${recipientOf(facts.requestedBy, facts.requesterName)}.`,
+    'Lleva cada atención con nota de consulta firmada: la nota, los signos vitales, los diagnósticos, la receta, los exámenes pedidos y los certificados.',
+    'No lleva el tamizaje de violencia, que sólo se entrega después de que lo revise un profesional.',
+    'Quien la recibe responde de su confidencialidad.',
+  ].join('\n');
+}

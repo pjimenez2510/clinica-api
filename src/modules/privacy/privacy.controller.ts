@@ -209,7 +209,7 @@ export class PrivacyController {
     return { items: items.map(requestResponse) };
   }
 
-  /** PD-030 to PD-032, PD-037. */
+  /** PD-030 to PD-032, PD-037, PD-052 to PD-054. */
   @Post('patients/:patientId/requests')
   @RequirePermission('patient:data-requests', 'global')
   @HttpCode(HttpStatus.CREATED)
@@ -225,6 +225,10 @@ export class PrivacyController {
         patientId,
         right: dto.right,
         requestedBy: dto.requestedBy,
+        requesterName: dto.requesterName,
+        requesterDocument: dto.requesterDocument,
+        clinicalRecordCopy: dto.clinicalRecordCopy,
+        documentsChecked: dto.documentsChecked,
         description: dto.description,
         receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : undefined,
       },
@@ -396,6 +400,7 @@ function requestResponse(entry: DataRequestEntry): DataRequestResponse {
   return {
     ...entry,
     receivedAt: entry.receivedAt.toISOString(),
+    dueAt: entry.dueAt.toISOString(),
     registeredAt: entry.registeredAt.toISOString(),
     answer: entry.answer && answer(entry.answer),
     previousAnswers: entry.previousAnswers.map(answer),

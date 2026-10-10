@@ -1,5 +1,6 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 
+import type { DataRequestParty } from './data-request-party';
 import type { DataSubjectRight } from './legal-due-date';
 
 /** Who acts, so the trail can say so. */
@@ -18,6 +19,7 @@ export interface StaffName {
 export const CONSENT_MEDIA = ['SIGNED_PAPER', 'ON_SCREEN'] as const;
 export type ConsentMedium = (typeof CONSENT_MEDIA)[number];
 
+/** PD-010. Who grants a consent. Who presents a request is wider (PD-052). */
 export const DATA_SUBJECT_PARTIES = ['HOLDER', 'REPRESENTATIVE'] as const;
 export type DataSubjectParty = (typeof DATA_SUBJECT_PARTIES)[number];
 
@@ -33,7 +35,8 @@ export type DataRequestOutcome = (typeof DATA_REQUEST_OUTCOMES)[number];
  * A merged chart names its survivor so the screen can open the right one.
  */
 export type ChartLookup =
-  | { status: 'active' }
+  /** PD-052. `deceased`: the chart records the patient's death. */
+  | { status: 'active'; deceased: boolean }
   | { status: 'missing' }
   | { status: 'merged'; survivingMrn: string };
 
@@ -153,9 +156,18 @@ export interface DataRequestView {
   patientId: string;
   patient: { mrn: string; fullName: string };
   right: DataSubjectRight;
-  requestedBy: DataSubjectParty;
+  requestedBy: DataRequestParty;
+  /** PD-052. Who presents it, when it is not the holder. */
+  requesterName: string | null;
+  requesterDocument: string | null;
+  /** PD-053. It asks for the copy of the clinical record. */
+  clinicalRecordCopy: boolean;
+  documentsChecked: boolean;
   description: string;
   receivedAt: Date;
+  /** PD-054. The instant it is due. */
+  dueAt: Date;
+  /** PD-054. The clinical date of the last day on time. */
   dueOn: ClinicalDate;
   registeredAt: Date;
   registeredBy: StaffName;
@@ -171,11 +183,16 @@ export interface DataRequestView {
 export interface NewDataRequest {
   patientId: string;
   right: DataSubjectRight;
-  requestedBy: DataSubjectParty;
+  requestedBy: DataRequestParty;
+  requesterName: string | null;
+  requesterDocument: string | null;
+  clinicalRecordCopy: boolean;
+  documentsChecked: boolean;
   description: string;
   /** Absent = now, as the base reads it (`DEFAULT now()`). */
   receivedAt?: Date;
-  dueOn: ClinicalDate;
+  /** PD-054. */
+  dueAt: Date;
 }
 
 export type AnswerResult =
@@ -237,6 +254,14 @@ export interface ExportOmission {
   reason: string;
 }
 
+/** PD-049, PD-056. What the proposed answer is written from. */
+export interface ProposalFacts {
+  right: DataSubjectRight;
+  requestedBy: DataRequestParty;
+  requesterName: string | null;
+  clinicalRecordCopy: boolean;
+}
+
 export interface DataSubjectRequestRepository {
   chartOf(patientId: string): Promise<ChartLookup>;
   /** Holidays of the WHOLE clinic in the range, as `YYYY-MM-DD`. */
@@ -281,16 +306,20 @@ export interface DataSubjectRequestRepository {
     now: Date,
   ): Promise<CorrectAnswerResult>;
   find(requestId: string): Promise<DataRequestView | null>;
-  /** PD-049. Only the right: nothing of the chart nor of what was asked. */
-  rightOf(requestId: string): Promise<DataSubjectRight | null>;
+  /**
+   * PD-049, PD-055, PD-056. Only what the proposal needs: the right, who
+   * presents it and their name, and whether it asks for the copy — nothing
+   * of the chart nor of what was asked.
+   */
+  proposalFactsOf(requestId: string): Promise<ProposalFacts | null>;
   /** PD-036. */
   requestsOf(patientId: string): Promise<DataRequestView[]>;
   /**
-   * PD-035, PD-051. Unanswered, earliest due first, one page at a time;
-   * `dueBefore` keeps only those due before that day (the overdue ones).
+   * PD-035, PD-051, PD-054. Unanswered, earliest due first, one page at a
+   * time; `dueBy` keeps only those due at or before that instant (overdue).
    */
   open(
-    filter: { right?: DataSubjectRight; dueBefore?: ClinicalDate },
+    filter: { right?: DataSubjectRight; dueBy?: Date },
     page: { page: number; pageSize: number },
   ): Promise<{ items: DataRequestView[]; total: number }>;
   /**

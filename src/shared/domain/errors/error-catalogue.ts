@@ -1410,6 +1410,10 @@ export const DOMAIN_ERROR_CODES = [
   //     `patient_consent_corrected_once`.
   //   * `DATA_REQUEST_NOT_ANSWERED` (409) — PD-047. Se rectifica la respuesta
   //     de una solicitud que todavía no tiene ninguna: se responde.
+  //   * `DATA_REQUEST_PARTY_NOT_ALLOWED`, `DATA_REQUEST_PATIENT_NOT_DECEASED`,
+  //     `CLINICAL_RECORD_COPY_INVALID` (422) — PD-052, PD-053. Quién presenta
+  //     la copia de la historia clínica y con qué (A.M. 5216 art. 28).
+  'CLINICAL_RECORD_COPY_INVALID',
   'CONSENT_ALREADY_CORRECTED',
   'CONSENT_NOT_FOUND',
   'CONSENT_TEXT_INVALID',
@@ -1420,6 +1424,8 @@ export const DOMAIN_ERROR_CODES = [
   'DATA_REQUEST_ALREADY_ANSWERED',
   'DATA_REQUEST_NOT_ANSWERED',
   'DATA_REQUEST_NOT_FOUND',
+  'DATA_REQUEST_PARTY_NOT_ALLOWED',
+  'DATA_REQUEST_PATIENT_NOT_DECEASED',
   'DATA_REQUEST_RECEIVED_IN_FUTURE',
   'DATA_SUBJECT_NOT_FOUND',
 ] as const;

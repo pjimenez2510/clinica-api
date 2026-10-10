@@ -24,10 +24,12 @@ export async function chartLookup(
 ): Promise<ChartLookup> {
   const chart = await db.patient.findUnique({
     where: { id: patientId },
-    select: { mergedIntoId: true },
+    select: { mergedIntoId: true, deceasedAt: true },
   });
   if (!chart) return { status: 'missing' };
-  if (!chart.mergedIntoId) return { status: 'active' };
+  if (!chart.mergedIntoId) {
+    return { status: 'active', deceased: chart.deceasedAt !== null };
+  }
   const survivor = await db.patient.findUniqueOrThrow({
     where: { id: chart.mergedIntoId },
     select: { mrn: true },

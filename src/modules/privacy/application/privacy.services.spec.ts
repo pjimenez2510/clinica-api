@@ -3,18 +3,25 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   addDays,
   clinicalDateOf,
+  startOfClinicalDay,
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
-import { answerProposal, EXPORT_OMISSIONS } from '../domain/data-export';
-import { legalDueDate } from '../domain/legal-due-date';
 import {
+  answerProposal,
+  clinicalRecordCopyProposal,
+  EXPORT_OMISSIONS,
+} from '../domain/data-export';
+import { lastDayOnTime, legalDueDate } from '../domain/legal-due-date';
+import {
+  ClinicalRecordCopyInvalidError,
   ConsentTextInvalidError,
   ConsentTextNotPublishedError,
   ConsentTextOutdatedError,
   DataExportNotApplicableError,
   DataRequestAlreadyAnsweredError,
   DataRequestNotFoundError,
+  DataRequestPatientNotDeceasedError,
   DataRequestReceivedInFutureError,
   DataSubjectNotFoundError,
 } from '../domain/privacy.errors';
@@ -58,8 +65,14 @@ function requestView(
     patient: { mrn: 'HC0000000001', fullName: 'Guamán María' },
     right: 'ACCESS',
     requestedBy: 'HOLDER',
+    requesterName: null,
+    requesterDocument: null,
+    clinicalRecordCopy: false,
+    documentsChecked: false,
     description: 'Copia',
     receivedAt: NOW,
+    // The end of today: due, not yet overdue.
+    dueAt: startOfClinicalDay(addDays(TODAY, 1)),
     dueOn: TODAY,
     registeredAt: NOW,
     registeredBy: { id: 'u-1', fullName: 'Gabriela Mera' },
@@ -75,18 +88,27 @@ function requestRepository(
   overrides: Partial<DataSubjectRequestRepository> = {},
 ): DataSubjectRequestRepository {
   return {
-    chartOf: vi.fn().mockResolvedValue({ status: 'active' }),
+    chartOf: vi.fn().mockResolvedValue({ status: 'active', deceased: false }),
     clinicWideHolidays: vi.fn().mockResolvedValue(new Set()),
     register: vi.fn((request: NewDataRequest) =>
       Promise.resolve(
-        requestView({ right: request.right, dueOn: request.dueOn }),
+        requestView({
+          right: request.right,
+          requestedBy: request.requestedBy,
+          requesterName: request.requesterName,
+          requesterDocument: request.requesterDocument,
+          clinicalRecordCopy: request.clinicalRecordCopy,
+          documentsChecked: request.documentsChecked,
+          dueAt: request.dueAt,
+          dueOn: lastDayOnTime(request.dueAt),
+        }),
       ),
     ),
     answer: vi.fn(),
     edit: vi.fn(),
     correctAnswer: vi.fn(),
     find: vi.fn().mockResolvedValue(null),
-    rightOf: vi.fn().mockResolvedValue(null),
+    proposalFactsOf: vi.fn().mockResolvedValue(null),
     requestsOf: vi.fn().mockResolvedValue([]),
     open: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     exportChart: vi.fn(),
@@ -257,14 +279,19 @@ describe('DataSubjectRequestsService', () => {
       requestRepository({
         open: vi.fn().mockResolvedValue({
           items: [
-            requestView({ id: 'late', dueOn: yesterday }),
-            requestView({ id: 'today', dueOn: TODAY }),
+            requestView({
+              id: 'late',
+              dueAt: startOfClinicalDay(TODAY),
+              dueOn: yesterday,
+            }),
+            requestView({ id: 'today' }),
           ],
           total: 2,
         }),
         requestsOf: vi.fn().mockResolvedValue([
           requestView({
             id: 'answered-late',
+            dueAt: startOfClinicalDay(TODAY),
             dueOn: yesterday,
             answer: {
               outcome: 'GRANTED',
@@ -338,10 +365,15 @@ describe('la propuesta de respuesta (D-164.2)', () => {
       const answer = vi.fn();
       const exportChart = vi.fn();
       const find = vi.fn();
-      const rightOf = vi.fn().mockResolvedValue(right);
+      const proposalFactsOf = vi.fn().mockResolvedValue({
+        right,
+        requestedBy: 'HOLDER',
+        requesterName: null,
+        clinicalRecordCopy: false,
+      });
       const audit = { record: vi.fn() };
       const service = new DataSubjectRequestsService(
-        requestRepository({ rightOf, find, answer, exportChart }),
+        requestRepository({ proposalFactsOf, find, answer, exportChart }),
         audit,
       );
 
@@ -359,7 +391,12 @@ describe('la propuesta de respuesta (D-164.2)', () => {
   it('PD-049 otro derecho es DATA_EXPORT_NOT_APPLICABLE', async () => {
     const service = newRequestsService(
       requestRepository({
-        rightOf: vi.fn().mockResolvedValue('RECTIFICATION'),
+        proposalFactsOf: vi.fn().mockResolvedValue({
+          right: 'RECTIFICATION',
+          requestedBy: 'HOLDER',
+          requesterName: null,
+          clinicalRecordCopy: false,
+        }),
       }),
     );
     await expect(service.answerProposal('r-1')).rejects.toBeInstanceOf(
@@ -476,5 +513,122 @@ describe('corregir en privacidad (D-127)', () => {
         NOW,
       ),
     ).rejects.toMatchObject({ code: 'DATA_REQUEST_NOT_ANSWERED' });
+  });
+});
+
+describe('la copia de la historia clínica (D-198 §1)', () => {
+  const copyOf = {
+    patientId: 'p-1',
+    right: 'ACCESS' as const,
+    clinicalRecordCopy: true,
+    documentsChecked: true,
+    description: 'Copia de la historia clínica',
+  };
+
+  it('PD-054 EN-033 la copia vence a las 48 horas de recibida, y no a los quince días', async () => {
+    const service = newRequestsService(requestRepository());
+    const receivedAt = new Date(NOW.getTime() - 60 * 60 * 1000);
+
+    const created = await service.register(
+      {
+        ...copyOf,
+        requestedBy: 'ATTORNEY',
+        requesterName: 'Ana Pérez',
+        requesterDocument: '1710034065',
+        receivedAt,
+      },
+      WHO,
+      NOW,
+    );
+
+    expect(created.dueAt.getTime()).toBe(
+      receivedAt.getTime() + 48 * 60 * 60 * 1000,
+    );
+    expect(created).toMatchObject({
+      requestedBy: 'ATTORNEY',
+      requesterName: 'Ana Pérez',
+      clinicalRecordCopy: true,
+      isOverdue: false,
+    });
+  });
+
+  it('PD-052 el familiar de un paciente vivo se rechaza con DATA_REQUEST_PATIENT_NOT_DECEASED sin escribir', async () => {
+    const register = vi.fn();
+    const service = newRequestsService(requestRepository({ register }));
+    const relative = {
+      ...copyOf,
+      requestedBy: 'DECEASED_RELATIVE' as const,
+      requesterName: 'Luis Guamán',
+      requesterDocument: '0102030405',
+    };
+
+    await expect(service.register(relative, WHO, NOW)).rejects.toBeInstanceOf(
+      DataRequestPatientNotDeceasedError,
+    );
+    expect(register).not.toHaveBeenCalled();
+
+    // Control positivo: con la ficha del fallecido, sí.
+    const deceased = newRequestsService(
+      requestRepository({
+        chartOf: vi
+          .fn()
+          .mockResolvedValue({ status: 'active', deceased: true }),
+      }),
+    );
+    await expect(deceased.register(relative, WHO, NOW)).resolves.toMatchObject({
+      requestedBy: 'DECEASED_RELATIVE',
+    });
+  });
+
+  it('PD-053 editar una copia a otro derecho se rechaza con CLINICAL_RECORD_COPY_INVALID antes del repositorio', async () => {
+    const edit = vi.fn();
+    const service = newRequestsService(
+      requestRepository({
+        find: vi
+          .fn()
+          .mockResolvedValue(requestView({ clinicalRecordCopy: true })),
+        edit,
+      }),
+    );
+    await expect(
+      service.edit('r-1', { right: 'RECTIFICATION' }, WHO, NOW),
+    ).rejects.toBeInstanceOf(ClinicalRecordCopyInvalidError);
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  it('PD-055 un tercero no recibe la exportación JSON del titular', async () => {
+    const exportChart = vi.fn();
+    const service = newRequestsService(
+      requestRepository({
+        find: vi
+          .fn()
+          .mockResolvedValue(
+            requestView({ requestedBy: 'AUTHORITY', clinicalRecordCopy: true }),
+          ),
+        exportChart,
+      }),
+    );
+    await expect(service.export('r-1', WHO, NOW)).rejects.toBeInstanceOf(
+      DataExportNotApplicableError,
+    );
+    expect(exportChart).not.toHaveBeenCalled();
+  });
+
+  it('PD-056 la propuesta de una copia dice a quién se entrega, qué lleva y que no lleva el tamizaje', async () => {
+    const facts = {
+      right: 'ACCESS' as const,
+      requestedBy: 'ATTORNEY' as const,
+      requesterName: 'Ana Pérez',
+      clinicalRecordCopy: true,
+    };
+    const service = newRequestsService(
+      requestRepository({
+        proposalFactsOf: vi.fn().mockResolvedValue(facts),
+      }),
+    );
+    const proposal = await service.answerProposal('r-1');
+    expect(proposal).toBe(clinicalRecordCopyProposal(facts));
+    expect(proposal).toContain('a su apoderado, Ana Pérez');
+    expect(proposal).toContain('No lleva el tamizaje de violencia');
   });
 });
