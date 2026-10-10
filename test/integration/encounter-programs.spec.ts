@@ -336,6 +336,195 @@ describe('EN-092 EN-097 el SIVAN contra la base, con la edad congelada', () => {
   });
 });
 
+describe('EN-260 la lactancia de la mujer de 10 a 49 años, en la columna 52 de su fila', () => {
+  const create = (
+    prisma: PrismaClient,
+    scene: Awaited<ReturnType<typeof anAttention>>,
+    answer: { exclusiveBreastfeeding?: boolean; complementaryFeeding?: boolean } = {}, // prettier-ignore
+  ) =>
+    prisma.encounterNutrition.create({
+      data: {
+        encounterId: scene.encounter.id,
+        motherBreastfeeding: true,
+        ...answer,
+        recordedById: scene.author.id,
+        recordedAt: new Date(),
+      },
+    });
+
+  /** The age the database froze, asserted: no bound is tested by luck. */
+  async function woman(
+    prisma: PrismaClient,
+    years: number,
+    sex: 'MALE' | 'FEMALE' = 'FEMALE',
+  ) {
+    // prettier-ignore
+    const scene = await anAttention(prisma, { age: { years, months: 3 }, sex });
+    const frozen = await prisma.encounter.findUniqueOrThrow({ where: { id: scene.encounter.id } }); // prettier-ignore
+    expect(frozen.ageYears).toBe(years);
+    return scene;
+  }
+
+  it('EN-260 la BASE rechaza la lactancia a los 9 y a los 50 años, en un hombre, o con las preguntas del lactante; a los 10 y a los 49, entra', async () => {
+    const prisma = db();
+    const nine = await woman(prisma, 9);
+    const fifty = await woman(prisma, 50);
+    const man = await woman(prisma, 30, 'MALE');
+    const withInfantQuestion = await woman(prisma, 30);
+
+    expect(await problemFrom(create(prisma, nine))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, fifty))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, man))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, withInfantQuestion, { exclusiveBreastfeeding: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, withInfantQuestion, { complementaryFeeding: false }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await prisma.encounterNutrition.count()).toBe(0);
+
+    // Positive control: both ends of the range, with only column 52.
+    await create(prisma, await woman(prisma, 10));
+    await create(prisma, await woman(prisma, 49));
+    await create(prisma, withInfantQuestion);
+    expect(await prisma.encounterNutrition.count()).toBe(3);
+  });
+});
+
+describe('EN-096 los suplementos contra la base, por la población de cada casilla', () => {
+  type Supplements = {
+    micronutrientPowder?: boolean;
+    vitaminA?: boolean;
+    ironSyrup?: boolean;
+    ironFolicAcid?: boolean;
+  };
+  const create = (
+    prisma: PrismaClient,
+    scene: Awaited<ReturnType<typeof anAttention>>,
+    answer: Supplements,
+  ) =>
+    prisma.encounterSupplement.create({
+      data: {
+        encounterId: scene.encounter.id,
+        ...answer,
+        recordedById: scene.author.id,
+        recordedAt: new Date(),
+      },
+    });
+
+  /** The age the database froze, in completed months, asserted. */
+  async function aged(
+    prisma: PrismaClient,
+    totalMonths: number,
+    sex: 'MALE' | 'FEMALE' = 'FEMALE',
+  ) {
+    // prettier-ignore
+    const years = Math.floor(totalMonths / 12);
+    const months = totalMonths % 12;
+    const scene = await anAttention(prisma, { age: { years, months }, sex });
+    const frozen = await prisma.encounter.findUniqueOrThrow({ where: { id: scene.encounter.id } }); // prettier-ignore
+    expect([frozen.ageYears, frozen.ageMonths]).toEqual([years, months]);
+    return scene;
+  }
+
+  it('EN-096 las chispas de 6 a 24 meses, la vitamina A de 6 a 59 y el hierro en jarabe de 24 a 59: fuera, la BASE las rechaza', async () => {
+    const prisma = db();
+    const five = await aged(prisma, 5);
+    const twentyFive = await aged(prisma, 25);
+    const twentyThree = await aged(prisma, 23);
+    const sixty = await aged(prisma, 60);
+
+    expect(await problemFrom(create(prisma, five, { micronutrientPowder: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, five, { vitaminA: false }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, twentyFive, { micronutrientPowder: false }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, twentyThree, { ironSyrup: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, sixty, { vitaminA: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, sixty, { ironSyrup: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await prisma.encounterSupplement.count()).toBe(0);
+
+    // Positive controls: the bounds themselves.
+    await create(prisma, await aged(prisma, 6), { micronutrientPowder: true, vitaminA: true }); // prettier-ignore
+    await create(prisma, await aged(prisma, 24), { micronutrientPowder: false, vitaminA: true, ironSyrup: true }); // prettier-ignore
+    await create(prisma, await aged(prisma, 59), { vitaminA: false, ironSyrup: false }); // prettier-ignore
+    expect(await prisma.encounterSupplement.count()).toBe(3);
+  });
+
+  it('EN-096 EN-260 el hierro con ácido fólico, a la embarazada y a la que dijo estar lactando; sin ninguno de los dos, no', async () => {
+    const prisma = db();
+    const neither = await anAttention(prisma, { age: { years: 28 } });
+    const saidNo = await anAttention(prisma, { age: { years: 28 } });
+    await prisma.encounterNutrition.create({ data: { encounterId: saidNo.encounter.id, motherBreastfeeding: false, recordedById: saidNo.author.id, recordedAt: new Date() } }); // prettier-ignore
+
+    expect(await problemFrom(create(prisma, neither, { ironFolicAcid: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, saidNo, { ironFolicAcid: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await prisma.encounterSupplement.count()).toBe(0);
+
+    // Positive controls: pregnant on the chart that day; lactating by her own answer.
+    const expecting = await anAttention(prisma, { age: { years: 28 } });
+    await pregnant(prisma, expecting, -90, 150);
+    await create(prisma, expecting, { ironFolicAcid: true });
+    const lactating = await anAttention(prisma, { age: { years: 28 } });
+    await prisma.encounterNutrition.create({ data: { encounterId: lactating.encounter.id, motherBreastfeeding: true, recordedById: lactating.author.id, recordedAt: new Date() } }); // prettier-ignore
+    await create(prisma, lactating, { ironFolicAcid: false });
+    expect(await prisma.encounterSupplement.count()).toBe(2);
+  });
+
+  it('EN-096 EN-260 la lactancia no pasa a «no» con el hierro con ácido fólico registrado; quitado el suplemento, o embarazada, sí', async () => {
+    const prisma = db();
+    const lactating = async () => {
+      const scene = await anAttention(prisma, { age: { years: 28 } });
+      const recordedAt = new Date();
+      await prisma.encounterNutrition.create({ data: { encounterId: scene.encounter.id, motherBreastfeeding: true, recordedById: scene.author.id, recordedAt } }); // prettier-ignore
+      await prisma.encounterSupplement.create({ data: { encounterId: scene.encounter.id, ironFolicAcid: true, recordedById: scene.author.id, recordedAt } }); // prettier-ignore
+      return { scene, recordedAt };
+    };
+    const saysNo = (scene: Awaited<ReturnType<typeof anAttention>>, at: Date) =>
+      prisma.encounterNutrition.update({ where: { encounterId: scene.encounter.id }, data: { motherBreastfeeding: false, editedById: scene.author.id, editedAt: new Date(at.getTime() + 2000) } }); // prettier-ignore
+
+    const a = await lactating();
+    expect(await problemFrom(saysNo(a.scene, a.recordedAt))).toMatchObject(invalid('motherBreastfeeding')); // prettier-ignore
+
+    // Positive controls: the supplement removed first; or she is pregnant.
+    await prisma.encounterSupplement.update({ where: { encounterId: a.scene.encounter.id }, data: { ironFolicAcid: null, editedById: a.scene.author.id, editedAt: new Date(a.recordedAt.getTime() + 1000) } }); // prettier-ignore
+    await saysNo(a.scene, a.recordedAt);
+    const b = await lactating();
+    await pregnant(prisma, b.scene, -90, 150);
+    await saysNo(b.scene, b.recordedAt);
+    expect(await prisma.encounterNutrition.count({ where: { motherBreastfeeding: false } })).toBe(2); // prettier-ignore
+  });
+
+  it('EN-096 EN-249 la BASE no escribe los suplementos con la atención de alta, y quien los registró no cambia', async () => {
+    const prisma = db();
+    const closed = await aged(prisma, 30);
+    await discharge(prisma, closed.encounter.id);
+    await expect(create(prisma, closed, { vitaminA: true })).rejects.toThrow(/program_block_frozen/); // prettier-ignore
+
+    // Positive control: live, it goes in; its author does not move.
+    const live = await aged(prisma, 30);
+    const recordedAt = new Date();
+    await prisma.encounterSupplement.create({ data: { encounterId: live.encounter.id, vitaminA: true, recordedById: live.author.id, recordedAt } }); // prettier-ignore
+    const other = await createUser(prisma);
+    expect(await problemFrom(prisma.encounterSupplement.update({ where: { encounterId: live.encounter.id }, data: { vitaminA: false, recordedById: other.id, editedById: other.id, editedAt: new Date(recordedAt.getTime() + 1000) } }))).toMatchObject({ code: 'VALIDATION_FAILED' }); // prettier-ignore
+    expect(await prisma.encounterSupplement.count()).toBe(1);
+  });
+
+  it('EN-096 EN-249 se corrige con su versión y su sello, sólo con la atención viva, y nunca se borra', async () => {
+    const prisma = db();
+    const scene = await aged(prisma, 30);
+    const recordedAt = new Date();
+    await prisma.encounterSupplement.create({ data: { encounterId: scene.encounter.id, vitaminA: true, recordedById: scene.author.id, recordedAt } }); // prettier-ignore
+    const where = { encounterId: scene.encounter.id };
+
+    await expect(prisma.encounterSupplement.update({ where, data: { vitaminA: false } })).rejects.toThrow(/record_version_change_is_stamped/); // prettier-ignore
+    await expect(prisma.encounterSupplement.delete({ where })).rejects.toThrow(/program_block_immutable/); // prettier-ignore
+
+    // Positive control: stamped, it goes in and the previous row is kept.
+    await prisma.encounterSupplement.update({ where, data: { vitaminA: false, editedById: scene.author.id, editedAt: new Date(recordedAt.getTime() + 1000) } }); // prettier-ignore
+    const versions = await prisma.recordVersion.findMany({ where: { resourceType: 'encounter_supplement', resourceId: scene.encounter.id } }); // prettier-ignore
+    expect(versions).toHaveLength(1);
+    expect(versions[0]!.data).toMatchObject({ vitamin_a: true });
+
+    await discharge(prisma, scene.encounter.id);
+    await expect(prisma.encounterSupplement.update({ where, data: { vitaminA: true, editedById: scene.author.id, editedAt: new Date(recordedAt.getTime() + 2000) } })).rejects.toThrow(/program_block_frozen/); // prettier-ignore
+  });
+});
+
 describe('EN-090 EN-093 la fecha clínica es la de Guayaquil, también a las 21:30', () => {
   /**
    * An attention yesterday at 21:30 in Guayaquil is already today in UTC
@@ -379,7 +568,7 @@ describe('EN-090 EN-093 la fecha clínica es la de Guayaquil, también a las 21:
     });
     await prisma.$executeRaw`
       INSERT INTO encounter_vaccination (encounter_id, doses, recorded_by_id, recorded_at)
-      VALUES (${scene.encounter.id}::uuid, '[{"code":"55","dose":"SINGLE"}]'::jsonb, ${scene.author.id}::uuid, ${new Date()})`; // prettier-ignore
+      VALUES (${scene.encounter.id}::uuid, '[{"code":"55","dose":"SINGLE","riskGroup":null}]'::jsonb, ${scene.author.id}::uuid, ${new Date()})`; // prettier-ignore
     expect(await prisma.encounterVaccination.count()).toBe(1);
   });
 });
@@ -396,7 +585,7 @@ describe('EN-249 cada bloque tiene su guarda en la base', () => {
 
     const writes = (scene: typeof live) => [
       () => prisma.encounterObstetric.create({ data: { encounterId: scene.encounter.id, ...OBSTETRIC, recordedById: scene.author.id, recordedAt: new Date() } }), // prettier-ignore
-      () => prisma.encounterVaccination.create({ data: { encounterId: scene.encounter.id, doses: [{ code: '55', dose: 'SINGLE' }], recordedById: scene.author.id, recordedAt: new Date() } }), // prettier-ignore
+      () => prisma.encounterVaccination.create({ data: { encounterId: scene.encounter.id, doses: [{ code: '55', dose: 'SINGLE', riskGroup: null }], recordedById: scene.author.id, recordedAt: new Date() } }), // prettier-ignore
       () => prisma.encounterHivTest.create({ data: { encounterId: scene.encounter.id, reason: 'VOLUNTARY', screeningDevice: 'ELISA', screeningResult: 'NON_REACTIVE', recordedById: scene.author.id, recordedAt: new Date() } }), // prettier-ignore
     ];
     for (const write of writes(closed)) {
@@ -418,12 +607,13 @@ describe('EN-093 las vacunas contra la base, con el catálogo VACCINE', () => {
     prisma: PrismaClient,
     scene: Awaited<ReturnType<typeof anAttention>>,
     doses: unknown,
-    riskGroup: string | null = null,
   ) =>
     prisma.$executeRaw`
-      INSERT INTO encounter_vaccination (encounter_id, doses, risk_group, recorded_by_id, recorded_at)
+      INSERT INTO encounter_vaccination (encounter_id, doses, recorded_by_id, recorded_at)
       VALUES (${scene.encounter.id}::uuid, ${JSON.stringify(doses)}::jsonb,
-              ${riskGroup}::vaccine_risk_group, ${scene.author.id}::uuid, ${new Date()})`;
+              ${scene.author.id}::uuid, ${new Date()})`;
+  /** A dose as the API writes it: the risk group inside, `null` when none. */
+  const given = (code: string, dose: string, riskGroup: string | null = null) => ({ code, dose, riskGroup }); // prettier-ignore
 
   it('EN-093 siembra las 19 vacunas del instructivo con su columna por código', async () => {
     const prisma = db();
@@ -445,55 +635,70 @@ describe('EN-093 las vacunas contra la base, con el catálogo VACCINE', () => {
     await seedRdacaa(prisma);
     const scene = await anAttention(prisma);
 
-    expect(await problemFrom(create(prisma, scene, [{ code: '99', dose: 'FIRST' }]))).toMatchObject(invalid('doses')); // prettier-ignore
-    expect(await problemFrom(create(prisma, scene, [{ code: '55', dose: 'FIRST' }, { code: '55', dose: 'SECOND' }]))).toMatchObject(invalid('doses')); // prettier-ignore
-    expect(await problemFrom(create(prisma, scene, [{ code: '55', dose: 'EIGHTH' }]))).toMatchObject(invalid('doses')); // prettier-ignore
+    expect(await problemFrom(create(prisma, scene, [given('99', 'FIRST')]))).toMatchObject(invalid('doses')); // prettier-ignore
+    expect(await problemFrom(create(prisma, scene, [given('55', 'FIRST'), given('55', 'SECOND')]))).toMatchObject(invalid('doses')); // prettier-ignore
+    expect(await problemFrom(create(prisma, scene, [given('55', 'EIGHTH')]))).toMatchObject(invalid('doses')); // prettier-ignore
     expect(await problemFrom(create(prisma, scene, { code: '55' }))).toMatchObject(invalid('doses')); // prettier-ignore
+    // The old shape, without the dose's own risk group, or a group outside the catalogue.
+    expect(await problemFrom(create(prisma, scene, [{ code: '55', dose: 'SINGLE' }]))).toMatchObject(invalid('doses')); // prettier-ignore
+    expect(await problemFrom(create(prisma, scene, [given('67', 'FIRST', 'ASTRONAUT')]))).toMatchObject(invalid('doses')); // prettier-ignore
     expect(await prisma.encounterVaccination.count()).toBe(0);
 
     // Positive control: BCG and pentavalente, which ask for no risk group.
-    await create(prisma, scene, [
-      { code: '55', dose: 'SINGLE' },
-      { code: '60', dose: 'FIRST' },
-    ]);
+    await create(prisma, scene, [given('55', 'SINGLE'), given('60', 'FIRST')]);
     expect(await prisma.encounterVaccination.count()).toBe(1);
   });
 
-  it('EN-093 la BASE hace cumplir el grupo de riesgo de cada vacuna: lo exige, lo acota a los suyos y no lo admite donde no se pide', async () => {
+  it('EN-093 la BASE hace cumplir el grupo de riesgo de cada dosis: lo exige, lo acota a los de su vacuna y no lo admite donde no se pide', async () => {
     const prisma = db();
     await seedRdacaa(prisma);
-    const dT = [{ code: '67', dose: 'SECOND' }];
     const a = await anAttention(prisma);
 
-    expect(await problemFrom(create(prisma, a, dT))).toMatchObject(invalid('riskGroup')); // prettier-ignore
-    expect(await problemFrom(create(prisma, a, dT, 'TRAVELLER'))).toMatchObject(invalid('riskGroup')); // prettier-ignore
-    expect(await problemFrom(create(prisma, a, [{ code: '55', dose: 'SINGLE' }], 'OTHER'))).toMatchObject(invalid('riskGroup')); // prettier-ignore
-    // Together, the group has to fit every constrained vaccine: SR admits
-    // travellers, dT does not.
-    expect(await problemFrom(create(prisma, a, [...dT, { code: '69', dose: 'SINGLE' }], 'TRAVELLER'))).toMatchObject(invalid('riskGroup')); // prettier-ignore
+    expect(await problemFrom(create(prisma, a, [given('67', 'SECOND')]))).toMatchObject(invalid('doses')); // prettier-ignore
+    expect(await problemFrom(create(prisma, a, [given('67', 'SECOND', 'TRAVELLER')]))).toMatchObject(invalid('doses')); // prettier-ignore
+    expect(await problemFrom(create(prisma, a, [given('55', 'SINGLE', 'OTHER')]))).toMatchObject(invalid('doses')); // prettier-ignore
+    // Each dose with its own: SR as a traveller beside a dT without a group.
+    expect(await problemFrom(create(prisma, a, [given('67', 'SECOND'), given('69', 'SINGLE', 'TRAVELLER')]))).toMatchObject(invalid('doses')); // prettier-ignore
     expect(await prisma.encounterVaccination.count()).toBe(0);
 
-    // Positive controls: each with one of its own.
-    await create(prisma, a, [...dT, { code: '69', dose: 'SINGLE' }], 'AGES_AT_RISK'); // prettier-ignore
+    // Positive controls: each dose with one of its own vaccine.
+    await create(prisma, a, [given('67', 'SECOND', 'AGES_AT_RISK'), given('69', 'SINGLE', 'TRAVELLER')]); // prettier-ignore
     const b = await anAttention(prisma);
-    await create(prisma, b, [{ code: '70', dose: 'FIRST' }], 'HEALTH_WORKER');
+    await create(prisma, b, [given('70', 'FIRST', 'HEALTH_WORKER')]);
     const c = await anAttention(prisma);
-    await create(prisma, c, dT, 'PREGNANT');
+    await create(prisma, c, [given('67', 'FIRST', 'PREGNANT')]);
     expect(await prisma.encounterVaccination.count()).toBe(3);
+  });
+
+  it('EN-093 D-195.8 a la trabajadora de salud se le registran dT adulto y HB adulto en la misma atención, cada dosis con su grupo', async () => {
+    const prisma = db();
+    await seedRdacaa(prisma);
+    const worker = await anAttention(prisma);
+    // No group fits both: one per dose is the only way they go together.
+    await create(prisma, worker, [given('67', 'FIRST', 'AGES_AT_RISK'), given('70', 'FIRST', 'HEALTH_WORKER')]); // prettier-ignore
+    const row = await prisma.encounterVaccination.findUniqueOrThrow({ where: { encounterId: worker.encounter.id } }); // prettier-ignore
+    expect(row.doses).toEqual([
+      { code: '67', dose: 'FIRST', riskGroup: 'AGES_AT_RISK' },
+      { code: '70', dose: 'FIRST', riskGroup: 'HEALTH_WORKER' },
+    ]);
+    // The attention carries no risk group of its own any more.
+    const [column] = await prisma.$queryRaw<{ n: bigint }[]>`
+      SELECT count(*) AS n FROM information_schema.columns
+       WHERE table_name = 'encounter_vaccination' AND column_name = 'risk_group'`;
+    expect(column!.n).toBe(0n);
   });
 
   it('EN-093 la BASE no admite embarazada ni puérpera en un hombre; en una mujer, sí', async () => {
     const prisma = db();
     await seedRdacaa(prisma);
     const man = await anAttention(prisma, { sex: 'MALE' });
-    const influenza = [{ code: '73', dose: 'SINGLE' }];
 
-    expect(await problemFrom(create(prisma, man, influenza, 'PREGNANT'))).toMatchObject(invalid('riskGroup')); // prettier-ignore
-    expect(await problemFrom(create(prisma, man, influenza, 'POSTPARTUM'))).toMatchObject(invalid('riskGroup')); // prettier-ignore
+    expect(await problemFrom(create(prisma, man, [given('73', 'SINGLE', 'PREGNANT')]))).toMatchObject(invalid('doses')); // prettier-ignore
+    expect(await problemFrom(create(prisma, man, [given('73', 'SINGLE', 'POSTPARTUM')]))).toMatchObject(invalid('doses')); // prettier-ignore
 
-    await create(prisma, man, influenza, 'CHRONIC_DISEASE');
+    await create(prisma, man, [given('73', 'SINGLE', 'CHRONIC_DISEASE')]);
     const woman = await anAttention(prisma);
-    await create(prisma, woman, influenza, 'POSTPARTUM');
+    await create(prisma, woman, [given('73', 'SINGLE', 'POSTPARTUM')]);
     expect(await prisma.encounterVaccination.count()).toBe(2);
   });
 
@@ -507,9 +712,9 @@ describe('EN-093 las vacunas contra la base, con el catálogo VACCINE', () => {
       data: { validTo: scene.cal.plus(0) },
     });
 
-    expect(await problemFrom(create(prisma, scene, [{ code: '55', dose: 'SINGLE' }]))).toMatchObject(invalid('doses')); // prettier-ignore
+    expect(await problemFrom(create(prisma, scene, [given('55', 'SINGLE')]))).toMatchObject(invalid('doses')); // prettier-ignore
     // Positive control: one still in force.
-    await create(prisma, scene, [{ code: '56', dose: 'SINGLE' }]);
+    await create(prisma, scene, [given('56', 'SINGLE')]);
     expect(await prisma.encounterVaccination.count()).toBe(1);
   });
 });
@@ -569,6 +774,19 @@ describe('EN-094 EN-095 la prueba de VIH contra la base', () => {
     // Positive control: the instructivo's own example, the second result blank.
     await create(prisma, scene, reactive);
     expect(await prisma.encounterHivTest.count()).toBe(1);
+  });
+
+  it('EN-094 D-195.11 la BASE admite carga viral y CD4 con la primera prueba no reactiva (infección aguda, recién nacido expuesto), y acota su rango', async () => {
+    const prisma = db();
+    const scene = await anAttention(prisma);
+
+    expect(await problemFrom(create(prisma, scene, { viralLoad: -1 }))).toMatchObject(invalid('viralLoad')); // prettier-ignore
+    expect(await prisma.encounterHivTest.count()).toBe(0);
+
+    // Positive control: the first test non-reactive, with no confirmation.
+    await create(prisma, scene, { viralLoad: 250_000, cd4: 820 });
+    const row = await prisma.encounterHivTest.findUniqueOrThrow({ where: { encounterId: scene.encounter.id } }); // prettier-ignore
+    expect([row.screeningResult, row.viralLoad, row.cd4]).toEqual(['NON_REACTIVE', 250_000, 820]); // prettier-ignore
   });
 
   it('EN-095 EN-249 la corrección archiva la anterior en su propia tabla y NUNCA en record_version; sin sello, no entra', async () => {

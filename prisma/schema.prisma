@@ -2828,6 +2828,7 @@ model Encounter {
   obstetric           EncounterObstetric?
   nutrition           EncounterNutrition?
   vaccination         EncounterVaccination?
+  supplement          EncounterSupplement?
   hivTest             EncounterHivTest?
   violenceScreening   ViolenceScreening?
   priorityGroups      EncounterPriorityGroup[]
@@ -3024,6 +3025,7 @@ model EncounterObstetric {
 /// an infant of 8 completed months or less by the FROZEN age. Column 52
 /// always; 53 from 0 to 5 months and 54 from 6 to 8, each blank outside its
 /// band (`trg_encounter_nutrition_applies`). Versioned as block G (EN-249).
+/// EN-260: for a woman of 10 to 49, only column 52 — her own lactation.
 model EncounterNutrition {
   encounterId String    @id @map("encounter_id") @db.Uuid
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
@@ -3042,16 +3044,17 @@ model EncounterNutrition {
 
 /// EN-093. Block I of the RDACAA (columns 55 to 74): the vaccines given in the
 /// attention, by their `VACCINE` catalogue code (the form's column), with
-/// their dose, and ONE risk group, as column 74. The instructivo's coherence
+/// their dose, and the risk group OF EACH DOSE (D-195.8). The instructivo's coherence
 /// rules are `trg_encounter_vaccination_valid`'s. The doses live in the row
 /// (`jsonb`) so a correction archives them whole in `record_version` (EN-249).
 model EncounterVaccination {
   encounterId String    @id @map("encounter_id") @db.Uuid
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
 
-  /// `[{ "code": "67", "dose": "FIRST" }]`.
-  doses     Json              @db.JsonB
-  riskGroup VaccineRiskGroup? @map("risk_group")
+  /// `[{ "code": "67", "dose": "FIRST", "riskGroup": "AGES_AT_RISK" }]`: the
+  /// risk group of EACH dose (D-195.8), `null` when its vaccine asks none.
+  /// `VaccineRiskGroup` is the type the trigger casts it to.
+  doses Json @db.JsonB
 
   recordedById String    @map("recorded_by_id") @db.Uuid
   recordedAt   DateTime  @map("recorded_at") @db.Timestamptz(6)
@@ -3059,6 +3062,27 @@ model EncounterVaccination {
   editedAt     DateTime? @map("edited_at") @db.Timestamptz(6)
 
   @@map("encounter_vaccination")
+}
+
+/// EN-096. Columns 105 to 108 of the RDACAA: whether micronutrient powder,
+/// vitamin A, iron syrup and iron with folic acid were prescribed, each only
+/// in its population (`trg_encounter_supplement_applies`) and optional. The
+/// screen proposes them from the prescription (EN-262). Versioned (EN-249).
+model EncounterSupplement {
+  encounterId String    @id @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  micronutrientPowder Boolean? @map("micronutrient_powder")
+  vitaminA            Boolean? @map("vitamin_a")
+  ironSyrup           Boolean? @map("iron_syrup")
+  ironFolicAcid       Boolean? @map("iron_folic_acid")
+
+  recordedById String    @map("recorded_by_id") @db.Uuid
+  recordedAt   DateTime  @map("recorded_at") @db.Timestamptz(6)
+  editedById   String?   @map("edited_by_id") @db.Uuid
+  editedAt     DateTime? @map("edited_at") @db.Timestamptz(6)
+
+  @@map("encounter_supplement")
 }
 
 /// EN-094, EN-095. Block J of the RDACAA (columns 75 to 82): the HIV test.

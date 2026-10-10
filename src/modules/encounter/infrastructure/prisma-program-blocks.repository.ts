@@ -11,8 +11,12 @@ import {
 import type { EncounterQuery } from '../domain/encounter.repository';
 import { acceptsNewClinicalContent } from '../domain/encounter-state';
 import {
-  riskGroupIsProtected,
+  keepProtectedRiskGroup,
   sameVaccination,
+  SUPPLEMENTS,
+  type PrescribedMedicine,
+  type SupplementAnswer,
+  type SupplementRecord,
   type NutritionAnswer,
   type NutritionRecord,
   type ObstetricAnswer,
@@ -54,9 +58,16 @@ const NUTRITION_SELECT = {
 
 const VACCINATION_SELECT = {
   doses: true,
-  riskGroup: true,
   ...STAMP,
 } satisfies Prisma.EncounterVaccinationSelect;
+
+const SUPPLEMENT_SELECT = {
+  micronutrientPowder: true,
+  vitaminA: true,
+  ironSyrup: true,
+  ironFolicAcid: true,
+  ...STAMP,
+} satisfies Prisma.EncounterSupplementSelect;
 
 type ObstetricRow = Prisma.EncounterObstetricGetPayload<{
   select: typeof OBSTETRIC_SELECT;
@@ -88,6 +99,32 @@ export class PrismaProgramBlocksRepository implements ProgramBlocksRepository {
       select: { patient: { select: { sex: true } } },
     });
     return encounter.patient.sex;
+  }
+
+  async isLactating(encounterId: string): Promise<boolean> {
+    const [row] = await this.prisma.$queryRaw<{ lactating: boolean }[]>`
+      SELECT encounter_is_lactating(${encounterId}::uuid) AS "lactating"`;
+    return row?.lactating ?? false;
+  }
+
+  async prescribedMedicines(
+    encounterId: string,
+  ): Promise<PrescribedMedicine[]> {
+    // Issued or still a draft: the proposal is for what the doctor is writing
+    // too. An annulled or discarded prescription prescribes nothing.
+    const items = await this.prisma.prescriptionItem.findMany({
+      where: {
+        prescription: {
+          encounterId,
+          status: { notIn: ['CANCELLED', 'DISCARDED'] },
+        },
+      },
+      select: { dosageFormCode: true, concept: { select: { code: true } } },
+    });
+    return items.map((item) => ({
+      cnmbCode: item.concept?.code ?? null,
+      dosageFormCode: item.dosageFormCode,
+    }));
   }
 
   async vaccinesInForce(encounterId: string): Promise<VaccineOption[]> {
@@ -126,6 +163,46 @@ export class PrismaProgramBlocksRepository implements ProgramBlocksRepository {
       select: VACCINATION_SELECT,
     });
     return row && toVaccination(row);
+  }
+
+  async findSupplement(
+    query: EncounterQuery,
+  ): Promise<SupplementRecord | null> {
+    return this.prisma.encounterSupplement.findFirst({
+      where: { encounterId: query.encounterId, encounter: siteFilter(query.sites) }, // prettier-ignore
+      select: SUPPLEMENT_SELECT,
+    });
+  }
+
+  async saveSupplement(
+    query: EncounterQuery,
+    answer: SupplementAnswer,
+    authorId: string,
+  ): Promise<ProgramBlockSave<SupplementRecord>> {
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await lockLiveEncounter(tx, query);
+      const current = await tx.encounterSupplement.findUnique({
+        where: { encounterId: query.encounterId },
+        select: SUPPLEMENT_SELECT,
+      });
+      if (current === null) {
+        const created = await tx.encounterSupplement.create({
+          data: { encounterId: query.encounterId, ...answer, recordedById: authorId, recordedAt: now }, // prettier-ignore
+          select: SUPPLEMENT_SELECT,
+        });
+        return { record: created, outcome: 'CREATED' };
+      }
+      if (SUPPLEMENTS.every((box) => current[box] === answer[box])) {
+        return { record: current, outcome: 'UNCHANGED' };
+      }
+      const updated = await tx.encounterSupplement.update({
+        where: { encounterId: query.encounterId },
+        data: { ...answer, editedById: authorId, editedAt: nextStamp(current, now) }, // prettier-ignore
+        select: SUPPLEMENT_SELECT,
+      });
+      return { record: updated, outcome: 'UPDATED' };
+    });
   }
 
   async saveObstetric(
@@ -211,21 +288,19 @@ export class PrismaProgramBlocksRepository implements ProgramBlocksRepository {
       });
       const current = found && toVaccination(found);
 
-      // REQ-115. Without the second key nobody writes the risk group of an
-      // adult hepatitis B, nor replaces a vaccination that has one: they
-      // cannot see it, so they would be overwriting what they were not shown.
-      // Decided here, under the lock, against the row as it is now.
-      const touchesProtected =
-        riskGroupIsProtected(answer.doses.map((dose) => dose.code)) ||
-        (current !== null &&
-          riskGroupIsProtected(current.doses.map((dose) => dose.code)));
-      if (touchesProtected && !canWriteProtected) {
-        throw new ProtectedSectionRequiredError();
-      }
+      // REQ-115, EN-261. Without the second key nobody writes the risk group
+      // of an adult hepatitis B: the one already recorded, sent back as it
+      // was shown, keeps its group; removing it, another dose, a group or a
+      // new one is refused. Decided here, under the lock, against the row as
+      // it is now.
+      const effective = canWriteProtected
+        ? answer
+        : keepProtectedRiskGroup(answer, current);
+      if (effective === null) throw new ProtectedSectionRequiredError();
 
       const columns = {
-        doses: answer.doses.map(({ code, dose }) => ({ code, dose })),
-        riskGroup: answer.riskGroup,
+        // The three keys always, in this order: what the trigger admits.
+        doses: effective.doses.map(({ code, dose, riskGroup }) => ({ code, dose, riskGroup })), // prettier-ignore
       };
       if (current === null) {
         const created = await tx.encounterVaccination.create({
@@ -234,7 +309,7 @@ export class PrismaProgramBlocksRepository implements ProgramBlocksRepository {
         });
         return { record: toVaccination(created), outcome: 'CREATED' };
       }
-      if (sameVaccination(current, answer)) {
+      if (sameVaccination(current, effective)) {
         return { record: current, outcome: 'UNCHANGED' };
       }
       const updated = await tx.encounterVaccination.update({
@@ -315,7 +390,6 @@ function sameObstetric(current: ObstetricRecord, next: ObstetricAnswer) {
 function toVaccination(row: VaccinationRow): VaccinationRecord {
   return {
     doses: row.doses as unknown as VaccineDoseGiven[],
-    riskGroup: row.riskGroup,
     recordedAt: row.recordedAt,
     editedAt: row.editedAt,
   };

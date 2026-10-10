@@ -41,7 +41,13 @@ export interface VersionedTablePath {
    * D-140.2. Columns taken out of every version before it leaves: data about
    * SOMEBODY ELSE that the row happens to hold.
    */
-  redactedColumns?: readonly string[]; /**
+  redactedColumns?: readonly string[];
+  /**
+   * The same for a value INSIDE a `jsonb` column: each key of `column` is a
+   * list whose items lose `keys` (EN-093: the risk group of each dose).
+   */
+  redactedInLists?: Readonly<Record<string, readonly string[]>>;
+  /**
    * A versioned table that is nobody's personal data (a price): declared to
    * keep the map exhaustive, it reaches no chart by construction.
    */
@@ -92,11 +98,19 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
   },
   // REQ-115. The risk group can say «lives with HIV» or «sex worker» (the
   // adult hepatitis B, EN-093): out of every version that leaves, whatever
-  // the vaccine, so its absence tells nothing.
+  // the vaccine, so its absence tells nothing. Since D-195.8 it is each
+  // dose's (`doses[].riskGroup`); the versions archived before still carry
+  // the attention's `risk_group`, so both go.
   encounter_vaccination: {
     resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
     redactedColumns: ['risk_group'],
+    redactedInLists: { doses: ['riskGroup'] },
+  },
+  // EN-096. Whether supplements were prescribed: nothing about anybody else.
+  encounter_supplement: {
+    resourceIdsOf: standingEncountersOf,
+    omittedBecause: null,
   },
   encounter_diagnosis: {
     resourceIdsOf: (chartId) => Prisma.sql`
@@ -260,22 +274,36 @@ export async function recordVersionsOfChart(
     version: row.version,
     changedAt: row.changed_at.toISOString(),
     changedBy: nameOf(names, row.changed_by),
-    data: redact(
-      row.data,
-      VERSIONED_TABLES[row.resource_type]?.redactedColumns,
-    ),
+    data: redact(row.data, VERSIONED_TABLES[row.resource_type]),
   }));
 }
 
-/** D-140.2. The version without the columns about somebody else. */
-function redact(
-  data: unknown,
-  columns: readonly string[] | undefined,
-): unknown {
-  if (!columns || data === null || typeof data !== 'object') return data;
+/**
+ * D-140.2, REQ-115. The version without the columns about somebody else, nor
+ * the protected values inside its lists.
+ */
+function redact(data: unknown, path: VersionedTablePath | undefined): unknown {
+  if (!path || data === null || typeof data !== 'object') return data;
+  const columns = path.redactedColumns ?? [];
+  const inLists = path.redactedInLists ?? {};
   return Object.fromEntries(
-    Object.entries(data as Record<string, unknown>).filter(
-      ([column]) => !columns.includes(column),
-    ),
+    Object.entries(data as Record<string, unknown>)
+      .filter(([column]) => !columns.includes(column))
+      .map(([column, value]) => {
+        const keys = inLists[column];
+        if (!keys || !Array.isArray(value)) return [column, value];
+        return [
+          column,
+          value.map((item: unknown) =>
+            item !== null && typeof item === 'object'
+              ? Object.fromEntries(
+                  Object.entries(item as Record<string, unknown>).filter(
+                    ([key]) => !keys.includes(key),
+                  ),
+                )
+              : item,
+          ),
+        ];
+      }),
   );
 }

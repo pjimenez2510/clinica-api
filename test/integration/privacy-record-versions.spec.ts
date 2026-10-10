@@ -126,7 +126,7 @@ describe('privacy: lo que no sale de las versiones (D-140.2)', () => {
     expect(tables).toContain('patient_history');
   });
 
-  it('EN-095 EN-249 las versiones de una vacunación corregida salen sin el grupo de riesgo, que puede decir VIH', async () => {
+  it('EN-093 EN-095 EN-249 las versiones de una vacunación corregida salen sin el grupo de riesgo de ninguna dosis, que puede decir VIH', async () => {
     const prisma = db();
     await seedRdacaa(prisma);
     const scene = await aScene(prisma);
@@ -135,8 +135,7 @@ describe('privacy: lo que no sale de las versiones (D-140.2)', () => {
     await prisma.encounterVaccination.create({
       data: {
         encounterId: scene.encounter.id,
-        doses: [{ code: '70', dose: 'FIRST' }],
-        riskGroup: 'LIVING_WITH_HIV',
+        doses: [{ code: '70', dose: 'FIRST', riskGroup: 'LIVING_WITH_HIV' }],
         recordedById: author.id,
         recordedAt,
       },
@@ -145,7 +144,7 @@ describe('privacy: lo que no sale de las versiones (D-140.2)', () => {
     await prisma.encounterVaccination.update({
       where: { encounterId: scene.encounter.id },
       data: {
-        doses: [{ code: '70', dose: 'SECOND' }],
+        doses: [{ code: '70', dose: 'SECOND', riskGroup: 'LIVING_WITH_HIV' }],
         editedById: author.id,
         editedAt: new Date(recordedAt.getTime() + 1000),
       },
@@ -153,7 +152,7 @@ describe('privacy: lo que no sale de las versiones (D-140.2)', () => {
     const archived = await prisma.recordVersion.findFirstOrThrow({
       where: { resourceType: 'encounter_vaccination', resourceId: scene.encounter.id }, // prettier-ignore
     });
-    expect(archived.data).toMatchObject({ risk_group: 'LIVING_WITH_HIV' });
+    expect(archived.data).toMatchObject({ doses: [{ code: '70', dose: 'FIRST', riskGroup: 'LIVING_WITH_HIV' }] }); // prettier-ignore
 
     const exported = (
       await recordVersionsOfChart(prisma, scene.patient.id)
@@ -161,7 +160,7 @@ describe('privacy: lo que no sale de las versiones (D-140.2)', () => {
     expect(exported).toHaveLength(1);
     // Control positivo: las dosis sí salen.
     expect(exported[0]!.data).toMatchObject({ doses: [{ code: '70', dose: 'FIRST' }] }); // prettier-ignore
-    expect(exported[0]!.data).not.toHaveProperty('risk_group');
+    expect((exported[0]!.data as { doses: object[] }).doses[0]).not.toHaveProperty('riskGroup'); // prettier-ignore
     expect(JSON.stringify(exported)).not.toContain('LIVING_WITH_HIV');
   });
 
@@ -408,6 +407,8 @@ async function everyVersionedRowOf(
     encounter_obstetric: encounterId,
     encounter_nutrition: encounterId,
     encounter_vaccination: encounterId,
+    // EN-096. The supplements, the same way.
+    encounter_supplement: encounterId,
     encounter_diagnosis: diagnosis.id,
     encounter_procedure: procedure.id,
     critical_result_notice: notice.id,

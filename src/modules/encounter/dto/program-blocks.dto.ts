@@ -67,8 +67,8 @@ export class RecordObstetricDto extends createZodDto(recordObstetricSchema) {}
 
 export const recordNutritionSchema = z
   .object({
-    /** Column 52. */
-    motherBreastfeeding: yesNo('madre en período de lactancia'),
+    /** Column 52: the infant's mother, or the woman herself (EN-260). */
+    motherBreastfeeding: yesNo('período de lactancia'),
     /** Column 53, from 0 to 5 months; `null` otherwise. */
     exclusiveBreastfeeding: z.boolean().nullable().default(null),
     /** Column 54, from 6 to 8 months; `null` otherwise. */
@@ -87,6 +87,12 @@ const doseGivenSchema = z
       .string({ error: 'Elija la vacuna' })
       .regex(/^\d{1,3}$/, 'Elija la vacuna de la lista'),
     dose: z.enum(VACCINE_DOSES, { error: 'Elija la dosis' }),
+    /**
+     * Column 74, of THIS dose (D-195.8); `null` when its vaccine asks for
+     * none. Without the second key, an adult HB already recorded is sent back
+     * with `null` and keeps its group (EN-261).
+     */
+    riskGroup: z.enum(VACCINE_RISK_GROUPS).nullable().default(null),
   })
   .strict();
 
@@ -94,13 +100,32 @@ export const recordVaccinationSchema = z
   .object({
     /** Empty: corrected to «none given». */
     doses: z.array(doseGivenSchema).max(40),
-    /** Column 74; `null` when no vaccine of the attention asks for it. */
-    riskGroup: z.enum(VACCINE_RISK_GROUPS).nullable().default(null),
   })
   .strict();
 /** Body of PUT /encounters/:encounterId/programs/vaccination. */
 export class RecordVaccinationDto extends createZodDto(
   recordVaccinationSchema,
+) {}
+
+// ── Suplementos (EN-096) ────────────────────────────────────────────────────
+
+const supplementBox = z.boolean().nullable().default(null);
+
+export const recordSupplementsSchema = z
+  .object({
+    /** Column 105, from 6 to 24 months. */
+    micronutrientPowder: supplementBox,
+    /** Column 106, from 6 to 59 months. */
+    vitaminA: supplementBox,
+    /** Column 107, from 24 to 59 months. */
+    ironSyrup: supplementBox,
+    /** Column 108, pregnant or lactating women. */
+    ironFolicAcid: supplementBox,
+  })
+  .strict();
+/** Body of PUT /encounters/:encounterId/programs/supplements. */
+export class RecordSupplementsDto extends createZodDto(
+  recordSupplementsSchema,
 ) {}
 
 // ── Responses ───────────────────────────────────────────────────────────────
@@ -122,13 +147,31 @@ export const nutritionRecordSchema = recordNutritionSchema
 export class NutritionRecordDto extends createZodDto(nutritionRecordSchema) {}
 
 export const vaccinationRecordSchema = z.object({
-  doses: z.array(z.object({ code: z.string(), dose: z.enum(VACCINE_DOSES) })),
-  riskGroup: z.enum(VACCINE_RISK_GROUPS).nullable(),
+  doses: z.array(
+    z.object({
+      code: z.string(),
+      dose: z.enum(VACCINE_DOSES),
+      /** `null` too when withheld without the second key (REQ-115). */
+      riskGroup: z.enum(VACCINE_RISK_GROUPS).nullable(),
+    }),
+  ),
   ...stamp,
 });
 export class VaccinationRecordDto extends createZodDto(
   vaccinationRecordSchema,
 ) {}
+
+export const supplementRecordSchema = recordSupplementsSchema
+  .extend(stamp)
+  .required();
+export class SupplementRecordDto extends createZodDto(supplementRecordSchema) {}
+
+const supplementFlags = z.object({
+  micronutrientPowder: z.boolean(),
+  vitaminA: z.boolean(),
+  ironSyrup: z.boolean(),
+  ironFolicAcid: z.boolean(),
+});
 
 export const programsSheetSchema = z.object({
   /** `YYYY-MM-DD`, the attention's clinical date in America/Guayaquil. */
@@ -139,17 +182,43 @@ export const programsSheetSchema = z.object({
     record: obstetricRecordSchema.nullable(),
   }),
   nutrition: z.object({
-    /** EN-092. The infant's band by the frozen age; `null`: not asked. */
+    /**
+     * EN-092, EN-260. The infant's band by the frozen age, or
+     * `LACTATING_AGE_WOMAN` (only `motherBreastfeeding`, her own); `null`:
+     * not asked.
+     */
     band: z
-      .enum(['EXCLUSIVE_BREASTFEEDING', 'COMPLEMENTARY_FEEDING'])
+      .enum([
+        'EXCLUSIVE_BREASTFEEDING',
+        'COMPLEMENTARY_FEEDING',
+        'LACTATING_AGE_WOMAN',
+      ])
       .nullable(),
     record: nutritionRecordSchema.nullable(),
   }),
   vaccination: z.object({
     vaccines: z.array(z.object({ code: z.string(), display: z.string() })),
     record: vaccinationRecordSchema.nullable(),
-    /** REQ-115. The protected risk group, left out without the second key. */
+    /**
+     * REQ-115. The adult HB's risk group, left out without the second key;
+     * the other doses keep theirs.
+     */
     riskGroupWithheld: z.boolean(),
+  }),
+  supplements: z.object({
+    /** EN-096. Which boxes the attention's population reaches. */
+    applies: supplementFlags,
+    /**
+     * EN-262. What the prescriptions of the attention propose for each box,
+     * `null` where it does not apply. A proposal: nothing is saved with it.
+     */
+    proposed: z.object({
+      micronutrientPowder: z.boolean().nullable(),
+      vitaminA: z.boolean().nullable(),
+      ironSyrup: z.boolean().nullable(),
+      ironFolicAcid: z.boolean().nullable(),
+    }),
+    record: supplementRecordSchema.nullable(),
   }),
 });
 /** Response of GET /encounters/:encounterId/programs. */
@@ -159,3 +228,4 @@ export type ProgramsSheetResponse = z.infer<typeof programsSheetSchema>;
 export type ObstetricRecordResponse = z.infer<typeof obstetricRecordSchema>;
 export type NutritionRecordResponse = z.infer<typeof nutritionRecordSchema>;
 export type VaccinationRecordResponse = z.infer<typeof vaccinationRecordSchema>;
+export type SupplementRecordResponse = z.infer<typeof supplementRecordSchema>;
