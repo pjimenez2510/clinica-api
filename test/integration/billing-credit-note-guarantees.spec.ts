@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -9,7 +11,12 @@ import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import {
+  createEncounter,
+  createPatient,
+  createPractitioner,
+  createSite,
+} from './setup/fixtures';
 import {
   authoriseVoucher,
   insertVoucher,
@@ -662,6 +669,133 @@ describe('BI-214 lo acreditado vuelve a la cuenta una sola vez', () => {
 
     // Control positivo: con origen CORRECTION y el cargo que corrige.
     await insertCopy(accountId, charges[0]!);
+  });
+});
+
+describe('BI-214 la copia conserva el acto clínico de su original', () => {
+  /** An invoice of one procedure line, its act an identifier with no FK (BI-153). */
+  async function aProcedureInvoice() {
+    const practitioner = await createPractitioner(scene.prisma);
+    const encounter = await createEncounter(scene.prisma, {
+      siteId: scene.siteId,
+      practitionerId: practitioner.id,
+      patientId: scene.patientId,
+    });
+    const accountId = await anAccount();
+    const procedureId = randomUUID();
+    const [charge] = await scene.prisma.$queryRaw<{ id: string }[]>`
+      INSERT INTO "charge_item"
+        ("account_id", "billable_service_id", "encounter_id", "service_date",
+         "unit_amount", "service_display", "tax_sri_code", "tax_percentage",
+         "status", "origin", "encounter_procedure_id", "created_by_id", "updated_at")
+      VALUES (${accountId}::uuid, ${scene.serviceId}::uuid, ${encounter.id}::uuid,
+              ${clinicalDateOf(new Date())}::date, 30, 'Curación', '0', 0,
+              'BILLABLE', 'PROCEDURE', ${procedureId}::uuid, ${scene.userId}::uuid,
+              CURRENT_TIMESTAMP)
+      RETURNING "id"`;
+    const invoice = await scene.accounts.issueInvoice({
+      accountId,
+      siteId: scene.siteId,
+      emissionPointId: scene.emissionPointId,
+      paymentMethod: '01',
+      receiver: {
+        buyerIdentificationType: '05',
+        buyerIdentification: '1710034065',
+        buyerName: 'Guamán Andrade, María José',
+        buyerEmail: null,
+        isFinalConsumer: false,
+      },
+      issuedById: scene.userId,
+    });
+    await authoriseVoucher(scene.prisma, invoice.id);
+    await insertCreditNote(invoice.id, [charge!.id]);
+    return {
+      accountId,
+      encounterId: encounter.id,
+      procedureId,
+      chargeId: charge!.id,
+    };
+  }
+
+  function insertCopy(
+    scenario: { accountId: string; encounterId: string; chargeId: string },
+    act: {
+      encounterProcedureId: string | null;
+      serviceOrderItemId: string | null;
+    },
+  ) {
+    return scene.prisma.$executeRaw`
+      INSERT INTO "charge_item"
+        ("account_id", "billable_service_id", "encounter_id", "service_date",
+         "unit_amount", "service_display", "tax_sri_code", "tax_percentage",
+         "status", "origin", "corrects_charge_item_id", "encounter_procedure_id",
+         "service_order_item_id", "created_by_id", "updated_at")
+      VALUES (${scenario.accountId}::uuid, ${scene.serviceId}::uuid,
+              ${scenario.encounterId}::uuid, ${clinicalDateOf(new Date())}::date,
+              30, 'Curación', '0', 0, 'BILLABLE', 'CORRECTION',
+              ${scenario.chargeId}::uuid, ${act.encounterProcedureId}::uuid,
+              ${act.serviceOrderItemId}::uuid, ${scene.userId}::uuid,
+              CURRENT_TIMESTAMP)`;
+  }
+
+  it('BI-214 la base rechaza la copia que no nombra el acto de su original, o nombra otro; con el mismo, entra', async () => {
+    const scenario = await aProcedureInvoice();
+
+    expect(
+      await rejectionOf(
+        insertCopy(scenario, { encounterProcedureId: null, serviceOrderItemId: null }), // prettier-ignore
+      ),
+    ).toMatch(/charge_item_corrects_a_credited_charge/);
+    expect(
+      await rejectionOf(
+        insertCopy(scenario, { encounterProcedureId: randomUUID(), serviceOrderItemId: null }), // prettier-ignore
+      ),
+    ).toMatch(/charge_item_corrects_a_credited_charge/);
+    expect(
+      await rejectionOf(
+        insertCopy(scenario, { encounterProcedureId: scenario.procedureId, serviceOrderItemId: randomUUID() }), // prettier-ignore
+      ),
+    ).toMatch(
+      /charge_item_origin_names_its_act|charge_item_corrects_a_credited_charge/,
+    );
+
+    // Control positivo: el mismo acto que su original, aunque el original
+    // siga ocupando `charge_item_one_per_encounter_procedure`.
+    await insertCopy(scenario, {
+      encounterProcedureId: scenario.procedureId,
+      serviceOrderItemId: null,
+    });
+    const copy = await scene.prisma.chargeItem.findFirstOrThrow({
+      where: { correctsChargeItemId: scenario.chargeId },
+    });
+    expect(copy.encounterProcedureId).toBe(scenario.procedureId);
+
+    // Y cambiarle después el acto, tampoco.
+    expect(
+      await rejectionOf(
+        scene.prisma.$executeRaw`
+          UPDATE "charge_item" SET "encounter_procedure_id" = ${randomUUID()}::uuid
+           WHERE "id" = ${copy.id}::uuid`,
+      ),
+    ).toMatch(/charge_item_corrects_a_credited_charge/);
+  });
+
+  it('BI-154 BI-214 el índice del procedimiento sigue rechazando un segundo cargo derivado del mismo acto', async () => {
+    const scenario = await aProcedureInvoice();
+
+    expect(
+      await rejectionOf(
+        scene.prisma.$executeRaw`
+          INSERT INTO "charge_item"
+            ("account_id", "billable_service_id", "encounter_id", "service_date",
+             "unit_amount", "service_display", "tax_sri_code", "tax_percentage",
+             "status", "origin", "encounter_procedure_id", "created_by_id", "updated_at")
+          VALUES (${scenario.accountId}::uuid, ${scene.serviceId}::uuid,
+                  ${scenario.encounterId}::uuid, ${clinicalDateOf(new Date())}::date,
+                  30, 'Curación', '0', 0, 'BILLABLE', 'PROCEDURE',
+                  ${scenario.procedureId}::uuid, ${scene.userId}::uuid, CURRENT_TIMESTAMP)`,
+      ),
+    ).toMatch(/charge_item_one_per_encounter_procedure/);
   });
 });
 

@@ -84,6 +84,8 @@ const charge = (
   voidReason: null,
   invoiceId: null,
   correctsChargeItemId: null,
+  creditNote: null,
+  correctedNoteRejected: false,
   ...overrides,
 });
 
@@ -456,6 +458,33 @@ describe('BI-015, BI-074 los cargos de la cuenta', () => {
     expect(statement.totals.total.toString()).toBe('50.00');
     // The row is kept, never deleted: it is on the statement.
     expect(statement.charges).toHaveLength(4);
+  });
+
+  it('BI-074 lo acreditado por una nota de crédito no cuenta; su copia por facturar, sí', async () => {
+    const note = { id: 'note-1', documentNumber: '001-001-000000003', status: 'ISSUED' }; // prettier-ignore
+    const { service: accounts } = build({
+      accounts: {
+        listCharges: vi.fn().mockResolvedValue([
+          charge('original', 'BILLED', {
+            unitAmount: Money.parse('24.00'),
+            creditNote: note,
+          }),
+          charge('copy', 'BILLABLE', {
+            unitAmount: Money.parse('24.00'),
+            origin: 'CORRECTION',
+            correctsChargeItemId: 'original',
+          }),
+        ]),
+      },
+    });
+
+    const statement = await accounts.statement({
+      accountId: ACCOUNT,
+      siteId: SITE,
+    });
+
+    expect(statement.totals.total.toString()).toBe('24.00');
+    expect(statement.charges).toHaveLength(2);
   });
 
   it('BI-184 el total a facturar es sólo lo confirmado sin facturar: ni lo propuesto ni lo ya facturado', async () => {
@@ -854,6 +883,43 @@ describe('BI-236 el extracto dice el estado de la atención que se cierra con la
   });
 });
 
+describe('BI-203 BI-214 la consulta corregida tras una nota de crédito', () => {
+  it('BI-203 BI-214 compara la copia de la consulta, no el original acreditado', async () => {
+    const note = { id: 'note-1', documentNumber: '001-001-000000003', status: 'AUTHORISED' }; // prettier-ignore
+    const build_ = (copyService: string) =>
+      build({
+        accounts: {
+          findAccount: vi.fn().mockResolvedValue(account({ encounterId: 'encounter-1' })), // prettier-ignore
+          listCharges: vi.fn().mockResolvedValue([
+            charge('original', 'BILLED', {
+              origin: 'CONSULTATION',
+              billableServiceId: 'service-first',
+              creditNote: note,
+            }),
+            charge('copy', 'BILLED', {
+              origin: 'CORRECTION',
+              correctsChargeItemId: 'original',
+              billableServiceId: copyService,
+            }),
+          ]),
+          findEncounterActs: vi.fn().mockResolvedValue({ serviceTypeId: 'type-1', visitSequence: 'SUBSEQUENT', procedures: [] }), // prettier-ignore
+          findConsultationService: vi.fn().mockResolvedValue({ billableServiceId: 'service-subsequent', active: true }), // prettier-ignore
+        },
+      }).service.statement({ accountId: ACCOUNT, siteId: SITE });
+
+    // The copy was put right: nothing to say, although the credited original
+    // still names the old service.
+    expect(
+      (await build_('service-subsequent')).consultationOutdated,
+    ).toBeNull();
+    // Control: the copy still charging the old one is said, on the copy.
+    expect((await build_('service-first')).consultationOutdated).toEqual({
+      chargeId: 'copy',
+      billed: true,
+    });
+  });
+});
+
 describe('BI-243 el extracto dice los cargos de procedimiento que ya no corresponden a la atención', () => {
   const procedureLine = (status: ChargeStatus, procedureId: string) =>
     charge(`charge-${procedureId}`, status, {
@@ -944,6 +1010,26 @@ describe('BI-243 el extracto dice los cargos de procedimiento que ya no correspo
 
     expect(statement.proceduresOutdated).toEqual([
       { chargeId: 'charge-p-two', billed: false, reason: 'CHANGED' },
+    ]);
+  });
+  it('BI-243 BI-214 tras una nota de crédito señala la copia, que cobra, y no el original acreditado', async () => {
+    const credited = charge('charge-original', 'BILLED', {
+      origin: 'PROCEDURE',
+      encounterProcedureId: 'p-gone',
+      billableServiceId: 'service-suture',
+      creditNote: { id: 'note-1', documentNumber: '001-001-000000003', status: 'AUTHORISED' }, // prettier-ignore
+    });
+    const copy = charge('charge-copy', 'BILLABLE', {
+      origin: 'CORRECTION',
+      correctsChargeItemId: 'charge-original',
+      encounterProcedureId: 'p-gone',
+      billableServiceId: 'service-suture',
+    });
+
+    const statement = await statementWith([credited, copy], []);
+
+    expect(statement.proceduresOutdated).toEqual([
+      { chargeId: 'charge-copy', billed: false, reason: 'RETRACTED' },
     ]);
   });
 });

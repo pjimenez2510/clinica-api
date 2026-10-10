@@ -1,6 +1,7 @@
 import {
   BusinessRuleViolation,
   ConflictError,
+  ExternalServiceError,
   NotFoundError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
@@ -31,6 +32,35 @@ export class ElectronicVoucherNotRetriableError extends ConflictError {
 
   constructor() {
     super('Only RETURNED or NOT_AUTHORISED vouchers are retried');
+  }
+}
+
+/** SRI-096. Only what the SRI authorised is e-mailed: there is no RIDE to send. */
+export class ElectronicVoucherNotAuthorisedError extends ConflictError {
+  readonly code = 'SRI_VOUCHER_NOT_AUTHORISED';
+  override readonly userTitle =
+    'Ese comprobante todavía no está autorizado por el SRI: no se puede reenviar por correo';
+
+  constructor() {
+    super('Only AUTHORISED vouchers are e-mailed again');
+  }
+}
+
+/**
+ * SRI-096. The relay did not take the copy. Asked for with somebody in front
+ * of the desk, so it is said at once and NOT queued: a retry hours later would
+ * write to an address that may have been mistyped. Carries no address.
+ */
+export class VoucherResendFailedError extends ExternalServiceError {
+  readonly code = 'SRI_RESEND_FAILED';
+  readonly service = 'smtp';
+  readonly isRetryable = true;
+  override readonly userTitle =
+    'No se pudo enviar el correo. Revise la dirección o inténtelo de nuevo en un momento';
+
+  constructor(cause?: unknown) {
+    super('The voucher copy could not be e-mailed');
+    this.cause = cause;
   }
 }
 

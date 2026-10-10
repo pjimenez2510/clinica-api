@@ -14,9 +14,17 @@ import {
   type AttemptRecord,
   type ElectronicVoucherRepository,
   type VoucherQueue,
+  type DeliveryContext,
   type DeliveryStatus,
   type VoucherRecord,
 } from '../domain/electronic-voucher.repository';
+import {
+  ElectronicVoucherNotAuthorisedError,
+  ElectronicVoucherNotFoundError,
+  VoucherResendFailedError,
+} from '../domain/sri.errors';
+import { DomainError } from '../../../shared/domain/errors/domain-error';
+import { MailDeliveryFailedError } from '../../../shared/mail/mail.errors';
 import {
   SRI_CLOCK,
   SRI_SETTINGS,
@@ -182,43 +190,8 @@ export class VoucherDispatchService {
       return;
     }
 
-    // SRI-089. The credit note's e-mail is the invoice's, naming itself.
-    const named =
-      context.document === 'INVOICE'
-        ? { title: 'Factura electrónica', noun: 'la factura electrónica' }
-        : {
-            title: 'Nota de crédito electrónica',
-            noun: 'la nota de crédito electrónica',
-          };
     try {
-      const ride =
-        context.document === 'INVOICE'
-          ? await this.rides.issueRide(context.invoiceId, context.issuedById)
-          : await this.rides.issueCreditNoteRide(
-              context.creditNoteId,
-              context.issuedById,
-            );
-      await this.mailer.send({
-        to: context.buyerEmail,
-        subject: `${named.title} ${context.documentNumber} — ${context.establishmentName}`,
-        text:
-          `Estimado(a) ${context.buyerName}:\n\n` +
-          `Adjuntamos ${named.noun} ${context.documentNumber}, autorizada por el SRI, ` +
-          `en PDF (RIDE) y en XML.\n\nClave de acceso: ${voucher.accessKey}\n\n` +
-          `${context.establishmentName}`,
-        attachments: [
-          {
-            fileName: ride.fileName,
-            content: ride.content,
-            contentType: 'application/pdf',
-          },
-          {
-            fileName: `${voucher.accessKey}.xml`,
-            content: Buffer.from(voucher.authorisedXml, 'utf8'),
-            contentType: 'application/xml',
-          },
-        ],
-      });
+      await this.mailVoucher(voucher, context, context.buyerEmail);
     } catch (error) {
       const now = this.clock();
       // SRI-091. Three days of failing is the address: stop, and say so.
@@ -253,6 +226,99 @@ export class VoucherDispatchService {
     // SRI-075. Outside the try: the e-mail LEFT. A failure to note it must
     // not be taken for a failed e-mail and send it again.
     await this.recordDelivery(voucher, 'SENT', this.clock());
+  }
+
+  /**
+   * SRI-095. A copy of an authorised voucher to the address a person gave,
+   * at once. NOTHING IS RECORDED on the voucher: its delivery is the one to
+   * the buyer of the document (SRI-074, SRI-075), and the address belongs to
+   * no column — the receiver of an authorised invoice does not change
+   * (BI-084). A failure is the caller's to say, not the queue's to retry.
+   */
+  async mailCopy(
+    voucher: VoucherRecord,
+    to: string,
+    requesterId: string,
+  ): Promise<void> {
+    const context = await this.vouchers.deliveryContext(voucher.id);
+    if (!context) throw new ElectronicVoucherNotFoundError();
+    // SRI-096. A voided invoice keeps its authorised voucher: not sent again.
+    if (context.documentStatus !== 'AUTHORISED') {
+      throw new ElectronicVoucherNotAuthorisedError();
+    }
+    try {
+      // The RIDE composed for this copy is filed in the name of whoever asked
+      // for it, so its render and its PRINT row name the real actor — not
+      // the cashier who issued the invoice.
+      await this.mailVoucher(
+        voucher,
+        { ...context, issuedById: requesterId },
+        to,
+      );
+    } catch (error) {
+      // A RIDE that cannot be composed, or a relay that is not configured,
+      // says so with its own code; only the relay refusing is «revise».
+      if (
+        error instanceof DomainError &&
+        !(error instanceof MailDeliveryFailedError)
+      ) {
+        throw error;
+      }
+      this.logger.warn(
+        { err: error, voucher_id: voucher.id, error_code: 'SRI_RESEND_FAILED' },
+        'the copy of the authorised voucher could not be e-mailed',
+      );
+      throw new VoucherResendFailedError(error);
+    }
+  }
+
+  /**
+   * SRI-072, SRI-073, SRI-089. The RIDE and the authorisation document, to
+   * one address: the buyer's from the queue, another from «Reenviar».
+   */
+  private async mailVoucher(
+    voucher: VoucherRecord,
+    context: DeliveryContext,
+    to: string,
+  ): Promise<void> {
+    if (!voucher.authorisedXml) throw new VoucherResendFailedError();
+    const authorisedXml = voucher.authorisedXml;
+    // SRI-089. The credit note's e-mail is the invoice's, naming itself.
+    const named =
+      context.document === 'INVOICE'
+        ? { title: 'Factura electrónica', noun: 'la factura electrónica' }
+        : {
+            title: 'Nota de crédito electrónica',
+            noun: 'la nota de crédito electrónica',
+          };
+    const ride =
+      context.document === 'INVOICE'
+        ? await this.rides.issueRide(context.invoiceId, context.issuedById)
+        : await this.rides.issueCreditNoteRide(
+            context.creditNoteId,
+            context.issuedById,
+          );
+    await this.mailer.send({
+      to,
+      subject: `${named.title} ${context.documentNumber} — ${context.establishmentName}`,
+      text:
+        `Estimado(a) ${context.buyerName}:\n\n` +
+        `Adjuntamos ${named.noun} ${context.documentNumber}, autorizada por el SRI, ` +
+        `en PDF (RIDE) y en XML.\n\nClave de acceso: ${voucher.accessKey}\n\n` +
+        `${context.establishmentName}`,
+      attachments: [
+        {
+          fileName: ride.fileName,
+          content: ride.content,
+          contentType: 'application/pdf',
+        },
+        {
+          fileName: `${voucher.accessKey}.xml`,
+          content: Buffer.from(authorisedXml, 'utf8'),
+          contentType: 'application/xml',
+        },
+      ],
+    });
   }
 
   /**

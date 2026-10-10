@@ -89,6 +89,8 @@ const invoice: InvoiceView = {
   issuedById: 'user-1',
   paidTotal: Money.ZERO,
   creditedTotal: Money.ZERO,
+  creditNotes: [],
+  replacedBy: [],
 };
 
 /**
@@ -108,7 +110,9 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
       identifierIssuingCountry: 'ECU',
       identifierValue: '1710034065',
       fullName: 'Guamán Andrade, María José',
+      email: null,
     }),
+    recentInvoiceReceivers: vi.fn().mockResolvedValue([]),
     issueInvoice: vi.fn().mockResolvedValue(invoice),
     findInvoice: vi.fn().mockResolvedValue(invoice),
     listInvoices: vi.fn().mockResolvedValue({ items: [invoice], total: 1 }),
@@ -345,10 +349,12 @@ describe('BI-082, BI-087 el receptor propuesto', () => {
 
     await expect(
       invoicing.proposedReceiver({ accountId: ACCOUNT, siteId: SITE }),
-    ).resolves.toEqual({
-      identificationType: '05',
-      identification: '1710034065',
-      name: 'Guamán Andrade, María José',
+    ).resolves.toMatchObject({
+      receiver: {
+        identificationType: '05',
+        identification: '1710034065',
+        name: 'Guamán Andrade, María José',
+      },
     });
   });
 
@@ -368,7 +374,7 @@ describe('BI-082, BI-087 el receptor propuesto', () => {
       siteId: SITE,
     });
 
-    expect(proposal.identification).toBe('1710034065');
+    expect(proposal.receiver.identification).toBe('1710034065');
   });
 
   it('BI-082 propone una cédula que no emitió Ecuador como identificación del exterior (08)', async () => {
@@ -388,7 +394,7 @@ describe('BI-082, BI-087 el receptor propuesto', () => {
 
     await expect(
       invoicing.proposedReceiver({ accountId: ACCOUNT, siteId: SITE }),
-    ).resolves.toMatchObject({ identificationType: '08' });
+    ).resolves.toMatchObject({ receiver: { identificationType: '08' } });
   });
 
   it('BI-082 no propone nada cuando la ficha no tiene identificación oficial', async () => {
@@ -407,7 +413,11 @@ describe('BI-082, BI-087 el receptor propuesto', () => {
     // is paying, which BI-080 demands anyway.
     await expect(
       invoicing.proposedReceiver({ accountId: ACCOUNT, siteId: SITE }),
-    ).resolves.toEqual({});
+    ).resolves.toMatchObject({ receiver: {} });
+    expect(
+      (await invoicing.proposedReceiver({ accountId: ACCOUNT, siteId: SITE }))
+        .receiver,
+    ).toEqual({});
   });
 });
 

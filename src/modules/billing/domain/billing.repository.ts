@@ -1,7 +1,7 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type { ChargeStatus, DocumentTotals } from './charge';
 import type { ChargeOrigin, ServiceMatch } from './charge-proposal';
-import type { InvoiceReceiver, InvoiceStatus, PaymentMethod } from './invoice';
+import type { FrequentBuyer, InvoiceReceiver, InvoiceStatus, PaymentMethod } from './invoice'; // prettier-ignore
 import type { Money, Percentage, Quantity } from './money';
 import type { PatientIdentity } from './patient-identity';
 import type { PriceChange, PriceRow, ValidityPeriod } from './price-list';
@@ -490,6 +490,26 @@ export interface ChargeView {
   invoiceId: string | null;
   /** BI-214. On a CORRECTION line, the credited charge it bills again. */
   correctsChargeItemId: string | null;
+  /**
+   * BI-074, BI-260. The credit note the SRI did not reject that credited this
+   * line, or `null`. Read with the account's charges; a charge that a
+   * correction just touched is open, and an open charge is never credited.
+   */
+  creditNote: DocumentRef | null;
+  /**
+   * BI-074. On a CORRECTION line: the SRI rejected the note that credited its
+   * original, so the original is owed again and this copy, which cannot be
+   * billed meanwhile (BI-214), is not.
+   */
+  correctedNoteRejected: boolean;
+}
+
+/** BI-260. A credit note or an invoice, as another document names it. */
+export interface DocumentRef {
+  id: string;
+  /** D-185.1, BI-235. The printed number. */
+  documentNumber: string;
+  status: string;
 }
 
 /**
@@ -551,6 +571,8 @@ export interface AccountPatientIdentification {
   identifierValue: string | null;
   /** Filing order, as it is printed: «Guamán Andrade, María José». */
   fullName: string;
+  /** BI-270. The living chart's e-mail, offered and never applied. */
+  email: string | null;
 }
 
 /**
@@ -578,6 +600,13 @@ export interface InvoiceView {
   paidTotal: Money;
   /** BI-103. Its credit notes the SRI did not reject. */
   creditedTotal: Money;
+  /** BI-260. Its credit notes, oldest first — the rejected ones too, with their status. */
+  creditNotes: DocumentRef[];
+  /**
+   * BI-260. The invoices that bill again what those notes credited — the ones
+   * that billed the copies of BI-214 —, with the account they are in.
+   */
+  replacedBy: (DocumentRef & { accountId: string })[];
 }
 
 /** Everything an invoice needs, with the receiver ALREADY resolved (BI-080). */
@@ -841,6 +870,18 @@ export interface BillingAccountRepository {
 
   /** BI-082. */
   findAccountPatient(accountId: string): Promise<AccountPatientIdentification | null>; // prettier-ignore
+
+  /**
+   * BI-271. The receivers of the ISSUED or AUTHORISED invoices of this chart
+   * and the charts merged into it, at THIS site and not to Consumidor Final,
+   * newest first, at most `limit`. Distinct buyers are the domain's call
+   * (`frequentBuyers`); this only reads.
+   */
+  recentInvoiceReceivers(query: {
+    chartId: string;
+    siteId: string;
+    limit: number;
+  }): Promise<FrequentBuyer[]>;
 
   /**
    * BI-085. The emission point of THIS site, or `null`.

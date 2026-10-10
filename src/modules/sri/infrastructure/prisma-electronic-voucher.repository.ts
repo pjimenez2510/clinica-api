@@ -1044,6 +1044,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
             buyerEmail: true,
             buyerName: true,
             sequential: true,
+            status: true,
             emissionPoint: site,
           },
         },
@@ -1056,6 +1057,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
             buyerEmail: true,
             buyerName: true,
             sequential: true,
+            status: true,
             emissionPoint: site,
           },
         },
@@ -1066,6 +1068,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
     const { emissionPoint } = document;
     const common = {
       issuedById: document.issuedById,
+      documentStatus: document.status,
       buyerEmail: document.buyerEmail,
       buyerName: document.buyerName,
       // The document's OWN number: a credit note's comes from its own key.

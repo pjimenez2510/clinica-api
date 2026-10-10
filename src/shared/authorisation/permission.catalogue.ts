@@ -79,6 +79,16 @@ export const PERMISSION_CATALOGUE = [
     resource: 'patient',
     description: 'Registrar y corregir datos de pacientes',
   },
+  // PA-075, PA-076 (D-205 §4). The contact the cashier types on an invoice
+  // goes back to the chart without `patient:write`, which also changes names
+  // and identity documents. Its route accepts the three contact fields and
+  // nothing else: the schema fixes the list, not the caller.
+  {
+    code: 'patient:contact:write',
+    resource: 'patient',
+    description:
+      'Corregir el correo, el teléfono y la dirección de un paciente, sin tocar sus nombres ni sus documentos',
+  },
   // PA-052, D-030. Fusionar dos fichas y deshacer la fusión.
   //
   // ⚠️ NO LO TRAE NINGÚN ROL DE FÁBRICA, y ésa es la decisión, no un olvido.

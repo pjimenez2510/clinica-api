@@ -144,3 +144,14 @@ export class SriTransportFailureDto extends createZodDto(
 export type SriTransportFailureResponse = z.infer<
   typeof transportFailureSchema
 >;
+
+/**
+ * SRI-095. Body of POST /sri/vouchers/:voucherId/resend: where the copy goes,
+ * and nothing else. Strict, like every body that reaches a person's data.
+ */
+const resendVoucherSchema = z.strictObject({
+  email: z
+    .email('Ingrese un correo electrónico válido')
+    .max(320, 'El correo no puede superar 320 caracteres'),
+});
+export class ResendVoucherDto extends createZodDto(resendVoucherSchema) {}

@@ -10,6 +10,7 @@ import {
 import {
   FINAL_CONSUMER_IDENTIFICATION,
   type ReceiverContext,
+  frequentBuyers,
   nextSequential,
   proposeReceiver,
   resolveReceiver,
@@ -279,5 +280,67 @@ describe('BI-085 el secuencial del punto de emisión', () => {
     // Truncating silently would collide with the number issued a billion
     // documents ago, and the SRI would receive two vouchers under one key.
     expect(() => nextSequential('999999999')).toThrow(RangeError);
+  });
+});
+
+describe('BI-271 los compradores habituales del paciente', () => {
+  const receiver = (
+    identification: string,
+    name: string,
+    email: string | null = null,
+    identificationType: '04' | '05' | '06' = '05',
+  ) => ({ identificationType, identification, name, email });
+
+  it('BI-271 deja uno por documento, con el nombre y el correo de su factura más reciente', () => {
+    expect(
+      frequentBuyers(
+        [
+          receiver(
+            '0919176818',
+            'Guamán Pérez, Luis Alberto',
+            'luis@correo.ec',
+          ),
+          receiver('1104637283', 'Andrade Mora, Ana'),
+          receiver('0919176818', 'Guamán Pérez, Luis', 'viejo@correo.ec'),
+        ],
+        '1710034065',
+      ),
+    ).toEqual([
+      receiver('0919176818', 'Guamán Pérez, Luis Alberto', 'luis@correo.ec'),
+      receiver('1104637283', 'Andrade Mora, Ana'),
+    ]);
+  });
+
+  it('BI-271 el mismo número con otro tipo es otro comprador', () => {
+    expect(
+      frequentBuyers(
+        [
+          receiver('AB123', 'Uno', null, '06'),
+          receiver('AB123', 'Dos', null, '04'),
+        ],
+        null,
+      ),
+    ).toHaveLength(2);
+  });
+
+  it('BI-271 sin el propio paciente ni Consumidor Final, y como mucho cinco', () => {
+    const many = ['1', '2', '3', '4', '5', '6'].map((n) =>
+      receiver(`PAS00${n}`, `Pasaporte ${n}`, null, '06'),
+    );
+    const buyers = frequentBuyers(
+      [
+        receiver('1710034065', 'El paciente'),
+        receiver(FINAL_CONSUMER_IDENTIFICATION, 'CONSUMIDOR FINAL'),
+        ...many,
+      ],
+      '1710034065',
+    );
+    expect(buyers.map((buyer) => buyer.identification)).toEqual([
+      'PAS001',
+      'PAS002',
+      'PAS003',
+      'PAS004',
+      'PAS005',
+    ]);
   });
 });

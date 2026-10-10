@@ -280,7 +280,9 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
     // sedes que esta persona ya tiene asignadas, acotado por su alcance. La
     // alternativa —un `GET /billing/sites` propio— duplicaría la misma lectura
     // con otro nombre para no conceder un permiso que igualmente hace falta.
-    permissions: ['patient:read', 'site:read', 'billing:read', 'billing:write', 'billing:credit-note', 'catalog:read'], // prettier-ignore
+    // PA-076 (D-205 §4). The e-mail typed on the invoice goes back to the
+    // chart: only the contact, never names or documents (`patient:write`).
+    permissions: ['patient:read', 'patient:contact:write', 'site:read', 'billing:read', 'billing:write', 'billing:credit-note', 'catalog:read'], // prettier-ignore
   },
   {
     code: 'AUDITOR',
