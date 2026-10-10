@@ -297,7 +297,7 @@ describe('billing/B6 — reversing and closing', () => {
       ROSA,
     );
     const call = mocks.closeCashSession.mock.calls[0]![0] as {
-      closedAt: Date;
+      clock: () => Date;
     };
     expect(mocks.closeCashSession).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -306,6 +306,6 @@ describe('billing/B6 — reversing and closing', () => {
         note: null,
       }),
     );
-    expect(call.closedAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(call.clock().getTime()).toBeGreaterThanOrEqual(before);
   });
 });

@@ -1610,6 +1610,8 @@ es falsa, hay requisitos que cambian.
   > pendiente sí cambia después, y el cierre dice lo que había al cerrar.
   > El último cierre visto es lo que hace del cierre una acción de un solo
   > efecto: dos pestañas, o un doble clic, cerrarían dos veces el mismo turno.
+  > La pantalla lo envía tal como estaba al abrir «Cerrar caja», no releído.
+  > El turno vacío lo rechaza la aplicación bajo el candado, no la base (D-200.2).
 - **BI-253** — El sistema DEBERÁ serializar el cierre de un usuario y sede con
   las reversiones de esa misma caja, de modo que una reversión concurrente con
   el cierre **o entra en la foto o se rechaza** con `CASH_SESSION_CLOSED`; y un
@@ -1617,7 +1619,11 @@ es falsa, hay requisitos que cambian.
   turno siguiente**, nunca rechazado ni en los dos.
   > Un candado de transacción por (sede, usuario), `cash_drawer_lock`, que
   > toman el cierre antes de leer y la reversión antes de escribir. El cobro
-  > no lo necesita: nace sin cierre, y el cierre sólo marca los que leyó.
+  > no lo necesita: nace sin cierre, y el cierre sólo marca los que leyó. El
+  > instante del cierre se lee con el candado ya tomado, y un cobro con un
+  > instante posterior (el reloj de otra réplica) queda para el turno
+  > siguiente; si aun así el turno cambia bajo el cierre, se rechaza con
+  > `CASH_SESSION_CHANGED` y se vuelve a cerrar.
 - **BI-254** — CUANDO se cobre una factura que ya declara su forma de pago, el
   sistema DEBERÁ rechazar con `PAYMENT_METHOD_MISMATCH` un medio de otra forma
   de pago, y DEBERÁ rechazar igual cambiar la forma de pago de una devuelta

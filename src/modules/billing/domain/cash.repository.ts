@@ -79,7 +79,11 @@ export interface CashRepository {
    */
   closeCashSession(
     close: CashDrawerKey & {
-      closedAt: Date;
+      /**
+       * The application's clock, read UNDER the drawer's lock: a payment
+       * committed while the close waited is then not later than the close.
+       */
+      clock: () => Date;
       declaredCash: Money;
       /** BI-252. The last close the cashier saw; `null` if she saw none. */
       seenPreviousSessionId: string | null;

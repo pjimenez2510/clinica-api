@@ -184,7 +184,7 @@ export class PrismaCashRepository implements CashRepository {
 
   async closeCashSession(
     close: CashDrawerKey & {
-      closedAt: Date;
+      clock: () => Date;
       declaredCash: Money;
       seenPreviousSessionId: string | null;
       seenExpectedCash?: Money;
@@ -199,6 +199,9 @@ export class PrismaCashRepository implements CashRepository {
         // may: it is born open, and stays for the next turn.
         await tx.$executeRaw`
           SELECT cash_drawer_lock(${close.siteId}::uuid, ${close.userId}::uuid)`;
+        // The instant of the close, read now that the lock is held: what was
+        // committed while it waited is not later than it.
+        const closedAt = close.clock();
         const previous = await tx.cashSession.findFirst({
           where: { siteId: close.siteId, userId: close.userId },
           orderBy: { closedAt: 'desc' },
@@ -212,7 +215,9 @@ export class PrismaCashRepository implements CashRepository {
 
         const payments = (
           await tx.payment.findMany({
-            where: openTurnWhere(close),
+            // A payment stamped after the close (another API's clock) stays
+            // for the next turn instead of making the close fail.
+            where: { ...openTurnWhere(close), receivedAt: { lte: closedAt } },
             include: PAYMENT_INCLUDE,
           })
         ).map(toPaymentView);
@@ -229,14 +234,14 @@ export class PrismaCashRepository implements CashRepository {
         const pending = await pendingOf(tx, {
           ...close,
           since,
-          until: close.closedAt,
+          until: closedAt,
         });
 
         const session = await tx.cashSession.create({
           data: {
             siteId: close.siteId,
             userId: close.userId,
-            closedAt: close.closedAt,
+            closedAt,
             collectedTotal: summary.collectedTotal.toString(),
             expectedCash: summary.expectedCash.toString(),
             declaredCash: close.declaredCash.toString(),
@@ -437,6 +442,15 @@ export function translatePaymentRejection(error: unknown): unknown {
   if (/cash_session_after_the_last/.test(message)) {
     return new CashSessionAlreadyClosedError();
   }
+  // The turn moved under the close (a payment the summary did not see): she
+  // closes again on what is there now. The rule stays the trigger's.
+  if (
+    /payment_session_is_its_drawer|cash_session_matches_its_payments/.test(
+      message,
+    )
+  ) {
+    return new CashSessionChangedError();
+  }
   if (/payment_already_reversed/.test(message)) {
     return new PaymentAlreadyReversedError();
   }
@@ -447,7 +461,5 @@ export function translatePaymentRejection(error: unknown): unknown {
   if (/payment_site_is_its_invoices/.test(message)) {
     return new PaymentNotFoundError();
   }
-  // A cash session matching nothing is a bug of the summariser, not of the
-  // cashier: it goes up as it came.
   return error;
 }

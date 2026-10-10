@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { CashSessionClosedError } from '../../src/modules/billing/domain/billing.errors';
 import { summariseCashTurn } from '../../src/modules/billing/domain/cash';
 import { Money, Quantity } from '../../src/modules/billing/domain/money';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
@@ -420,7 +421,7 @@ describe('billing/B6 — what else the payment trigger refuses', () => {
     const session = await repository.closeCashSession({
       siteId: scene.siteId,
       userId: scene.userId,
-      closedAt: new Date(),
+      clock: () => new Date(),
       declaredCash: Money.parse('10.00'),
       seenPreviousSessionId: null,
       note: null,
@@ -692,6 +693,63 @@ describe('billing/B6 — the close of a turn, guaranteed by the database', () =>
     ).rejects.toThrowError(/cash_session_closed/);
   });
 
+  it('BI-253 a payment stamped after the instant of the close stays for the next turn instead of failing it (positive control: the earlier one is taken)', async () => {
+    const invoiceId = await anInvoice();
+    const repository = new PrismaCashRepository(
+      scene.prisma as unknown as PrismaService,
+    );
+    const closedAt = new Date();
+    const taken = await pay(invoiceId, '10.00', {
+      at: new Date(closedAt.getTime() - 1000),
+    });
+    // Another API's clock, a little ahead: committed before the close reads.
+    const ahead = await pay(invoiceId, '5.00', {
+      at: new Date(closedAt.getTime() + 5000),
+    });
+    const session = await repository.closeCashSession({
+      siteId: scene.siteId,
+      userId: scene.userId,
+      clock: () => closedAt,
+      declaredCash: Money.parse('10.00'),
+      seenPreviousSessionId: null,
+      note: null,
+      summarise: summariseCashTurn,
+    });
+    expect(session.collectedTotal.toString()).toBe('10.00');
+    const rows = await scene.prisma.payment.findMany({
+      where: { id: { in: [taken, ahead] } },
+      select: { id: true, cashSessionId: true },
+    });
+    expect(rows.find((row) => row.id === taken)?.cashSessionId).toBe(
+      session.id,
+    );
+    expect(rows.find((row) => row.id === ahead)?.cashSessionId).toBeNull();
+  });
+
+  it('BI-258 a close at 21:30 in Guayaquil is of that day there, although in UTC it is already the next', async () => {
+    const repository = new PrismaCashRepository(
+      scene.prisma as unknown as PrismaService,
+    );
+    const today = clinicalDateOf(new Date());
+    const evening = atWallClock(today, WallClockTime.of(21, 30, 0));
+    expect(evening.toISOString().slice(0, 10)).toBe(addDays(today, 1));
+    const id = await close(
+      { collected: '0', expectedCash: '0', lines: [] },
+      { closedAt: evening },
+    );
+    const key = { siteId: scene.siteId, userId: scene.userId };
+    const sameDay = await repository.listCashSessionsOfDay({
+      ...key,
+      day: today,
+    });
+    expect(sameDay.map((session) => session.id)).toEqual([id]);
+    const nextDay = await repository.listCashSessionsOfDay({
+      ...key,
+      day: addDays(today, 1),
+    });
+    expect(nextDay).toHaveLength(0);
+  });
+
   it('BI-253 a reversal racing the close is either in the photo or refused: with the close first, refused', async () => {
     const invoiceId = await anInvoice();
     const paid = await pay(invoiceId, '10.00');
@@ -733,7 +791,7 @@ describe('billing/B6 — the close of a turn, guaranteed by the database', () =>
     await new Promise((resolve) => setTimeout(resolve, 300));
     release();
     await closing;
-    await expect(reversing).rejects.toThrowError(/cerrado|closed/i);
+    await expect(reversing).rejects.toBeInstanceOf(CashSessionClosedError);
   });
 
   it('BI-253 with the reversal first, the close waits and leaves it out of the photo (positive control)', async () => {
@@ -760,7 +818,7 @@ describe('billing/B6 — the close of a turn, guaranteed by the database', () =>
     const closing = repository.closeCashSession({
       siteId: scene.siteId,
       userId: scene.userId,
-      closedAt: new Date(),
+      clock: () => new Date(),
       declaredCash: Money.parse('10.00'),
       seenPreviousSessionId: null,
       note: null,

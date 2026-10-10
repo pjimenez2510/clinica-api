@@ -195,8 +195,9 @@ export class CashService {
     return this.cash.closeCashSession({
       siteId: command.siteId,
       userId: requester.userId,
-      // The application's clock, as every instant the screen compares.
-      closedAt: new Date(),
+      // The application's clock, as every instant the screen compares; read
+      // by the repository once it holds the drawer's lock.
+      clock: () => new Date(),
       declaredCash: command.declaredCash,
       seenPreviousSessionId: command.previousSessionId,
       seenExpectedCash: command.seenExpectedCash,
