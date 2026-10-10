@@ -512,10 +512,14 @@ devuelva otra factura, editar su receptor y verla autorizada con la misma
 clave. Y contra PostgreSQL: que una nota de crédito no cambia, que una línea no
 se acredita dos veces y que una factura autorizada no cambia de receptor.
 
-**Cubre:** BI-091, BI-094, BI-095, BI-096, BI-097, BI-208 a BI-218, BI-234, BI-235.
+**Cubre:** BI-091, BI-094, BI-095, BI-096, BI-097, BI-208 a BI-218, BI-234, BI-235,
+BI-260, BI-261.
 
 **Solo servidor:** BI-095, BI-211, BI-212, BI-215, BI-217 (garantías de la base
 y una versión que ninguna pantalla enseña todavía).
+
+**Solo interfaz:** BI-261. El servidor sólo sirve lo de BI-260; cómo se lee el
+estado de la factura lo decide la pantalla.
 
 > **Lo que B15 no hace:** anular (BI-092, BI-093). Lo explica D-151.1.
 
@@ -1212,7 +1216,14 @@ es falsa, hay requisitos que cambian.
   > encadenarlos produce exactamente el sistema que retiene al médico esperando
   > a que un cajero termine, o al revés.
 - **BI-074** — El sistema DEBERÁ derivar el total de una cuenta de sus cargos no
-  anulados, y NO DEBERÁ almacenarlo como columna.
+  anulados, NO DEBERÁ contar en él un cargo acreditado por una nota de crédito
+  que el SRI no rechazó, y NO DEBERÁ almacenarlo como columna.
+  > **Enmienda del 10-10-2026 (D-205, revisión de producto):** tras una nota de
+  > crédito que vuelve a facturar, la cuenta decía $48 por $24: contaba el
+  > cargo original —sigue `BILLED`, BI-096— y su copia `CORRECTION`. Lo
+  > acreditado ya no se debe; lo que se debe es la copia. Con «Servicio no
+  > prestado» no hay copia y lo acreditado sale del total. Una nota rechazada
+  > por el SRI no acredita nada, como en el saldo de la factura (BI-103).
   > Un total almacenado es una segunda copia de una suma, y las dos copias
   > divergen: basta un cargo anulado en una transacción que no actualizó el
   > total. La suma de una cuenta se cuenta en decenas de filas, no en millones.
@@ -2506,14 +2517,17 @@ dos registros distintos.**
 - **BI-206** — Las listas de caja —los cargos de una cuenta y las facturas— NO
   DEBERÁN mostrar por defecto lo quitado, lo marcado «No se cobra» ni lo
   anulado; DEBERÁN decir cuántos hay en una línea discreta que los despliega
-  («2 quitados · Ver»).
+  («2 quitados · Ver»). Los cargos acreditados por una nota de crédito (BI-260)
+  DEBERÁN plegarse igual, en su propia línea («2 acreditados · Ver»), y al
+  desplegarse DEBERÁN verse tachados con «Acreditado con la NC» y su número.
   > Enmienda la nota de la tarjeta de la cuenta que los dejaba siempre a la
   > vista (FLUJO §8). El acto clínico sigue sin borrarse: lo quitado está a un
   > clic, con su estado, y no suma.
 - **BI-207** — Las acciones de cada fila de caja DEBERÁN ser botones de icono
   fijo por tipo —editar con lápiz, descargar o imprimir, quitar en rojo— que
   digan su nombre al pasar el ratón o al enfocarlos y lo anuncien al lector de
-  pantalla; y caja NO DEBERÁ mostrar avisos de sólo información.
+  pantalla; dos acciones distintas NO DEBERÁN compartir icono —«No se cobra» no
+  lleva la ✕ de «Quitar»—; y caja NO DEBERÁ mostrar avisos de sólo información.
   > «Hay muchos botones: editar, agregar, descargar… me confundo» y «estas
   > alertas de información no me agradan» (autor). Lo que importa se ve en la
   > fila, en un botón deshabilitado que dice por qué o bajo el campo.
@@ -2606,7 +2620,11 @@ dos registros distintos.**
   SI se intenta facturar ese cargo mientras la nota de crédito que acreditó el
   original no esté `AUTHORISED` ENTONCES el sistema DEBERÁ rechazarlo con
   `CORRECTION_AWAITS_CREDIT_NOTE`, y la base DEBERÁ rechazarlo por su cuenta
-  (`charge_item_correction_awaits_credit_note`).
+  (`charge_item_correction_awaits_credit_note`). La copia DEBERÁ conservar el
+  acto clínico del cargo que corrige —el mismo `encounter_procedure_id` y el
+  mismo `service_order_item_id`—, y la base DEBERÁ rechazar una copia que
+  nombre otro acto, o ninguno cuando el original lo nombraba
+  (`charge_item_corrects_a_credited_charge`).
   > **Revisión clínica, C1 (D-152.7):** sin la espera, una nota que el SRI no
   > autorizara dejaría el servicio en dos facturas válidas.
   > «Deja la cuenta lista para facturar de nuevo con lo corregido ya cargado»
@@ -2614,6 +2632,11 @@ dos registros distintos.**
   > otro cargo, con origen `CORRECTION`, que se edita en el sitio como
   > cualquiera (BI-197) antes de facturarlo. Si la atención ya tiene otra
   > cuenta abierta, la copia va a esa.
+  >
+  > **Enmienda del 10-10-2026 (D-205):** la copia perdía el acto clínico, y
+  > el procedimiento quitado después ya no se señalaba en ella (BI-243). Los índices de
+  > BI-154 dejan fuera a las copias: el acto ya lo ocupa su original, y la
+  > copia es una por cargo (`charge_item_one_correction_per_charge`).
 - **BI-215** — CUANDO cambie una cuenta —su pagador, su lista de precios, su
   estado—, la base DEBERÁ guardar la fila anterior entera en `record_version`
   con quién y cuándo, y DEBERÁ rechazar el cambio sin ese sello.
@@ -2641,7 +2664,10 @@ dos registros distintos.**
   > Hasta ahora `trg_invoice_immutable` solo congelaba lo autorizado o anulado,
   > y la forma de pago no cambiaba nunca (`trg_invoice_payment_method_permanent`).
 - **BI-218** — En la lista de facturas, la fila de una factura `AUTHORISED`
-  DEBERÁ ofrecer «Corregir», que abre un diálogo con sus líneas —todas
+  DEBERÁ reunir sus acciones en un menú «⋯» —Imprimir el RIDE, Descargar el
+  XML y, al final, separada y en rojo, «Anular con nota de crédito»— (con una
+  sola acción, el botón, sin menú; «Cobrar» queda fuera, a la vista).
+  «Anular con nota de crédito» abre un diálogo con sus líneas —todas
   marcadas—, el motivo de lista y el importe que se acredita; al emitir,
   DEBERÁ llevar a la cuenta con la emisión de la factura abierta y el receptor
   de la factura corregida propuesto, salvo con «Servicio no prestado». La fila
@@ -2651,6 +2677,30 @@ dos registros distintos.**
   su motivo, su estado ante el SRI y su RIDE.
   > Lo de pantalla de BI-208, BI-213 y BI-216, con los botones de
   > `ESTANDAR-UI.md` §9 ter. Sustituye al marcador vacío de `notas-credito.vue`.
+  > **Enmienda del 10-10-2026 (D-205):** el lápiz decía «Corregir» y no
+  > editaba nada; ahora la acción dice lo que hace ante el SRI y va última,
+  > como lo que quita algo en `CareActionsMenu`. El menú deja sitio a
+  > «Reenviar a otro correo» (`feat/f06-correo-ficha`).
+- **BI-260** — Cada cargo del extracto de una cuenta DEBERÁ decir la nota de
+  crédito no rechazada que lo acreditó —su id, su número impreso (BI-235) y su
+  estado— o `null`; y cada factura que devuelva la API DEBERÁ listar sus notas
+  de crédito no rechazadas, con id, número y estado, y las facturas que
+  vuelven a cobrar lo que esas notas acreditaron (las que facturan sus copias
+  de BI-214), con id, número y cuenta.
+  > D-205: «la nota de crédito no se ve en la cuenta: sólo en
+  > `/facturacion/notas-credito`». Derivado al leer, sin columna nueva: la
+  > línea de la nota y la copia ya nombran el cargo.
+- **BI-261** — La lista de facturas DEBERÁ decir el estado de cada una en una
+  sola columna —el del SRI mientras no esté autorizada o si la devolvió—; SI
+  notas de crédito no rechazadas acreditan su total entero, ENTONCES DEBERÁ
+  decir «Anulada con NC» y el número; SI acreditan una parte, «Acreditada en
+  parte con NC» y el número; con una nota aún sin autorizar, añadirá
+  «pendiente del SRI»; y DEBERÁ enlazar la factura que vuelve a cobrar lo
+  acreditado (BI-260).
+  > D-205: las columnas Estado y SRI decían las dos «Autorizada por el SRI», y
+  > la factura acreditada se leía igual que una cobrada (la queja de los
+  > usuarios de Xero; Stripe muestra el neto). La clave de acceso y la entrega
+  > por correo siguen bajo el estado.
 - **BI-233** — CUANDO alguien con `billing:read` en la sede pida sus facturas,
   el sistema DEBERÁ devolverlas por páginas (20, 50 o 100) con el total, de la
   más reciente a la más antigua, y DEBERÁ admitir filtrarlas por número
@@ -2714,9 +2764,14 @@ lo ve._
 - **BI-243** — SI el cargo de un procedimiento está **confirmado** o
   **facturado**, ENTONCES el sistema NO DEBERÁ cambiarlo por una corrección
   clínica; y el extracto de la cuenta DEBERÁ señalar (`proceduresOutdated`)
-  cada cargo de procedimiento no quitado que ya no corresponde a la atención
-  —el procedimiento se quitó, o cambió su prestación o su cantidad—, con si
-  está facturado, y la pantalla de caja DEBERÁ decirlo en la fila de ese cargo.
+  cada cargo de procedimiento no quitado ni acreditado —también la copia de
+  uno acreditado (BI-214), que nombra el mismo procedimiento— que ya no
+  corresponde a la atención —el procedimiento se quitó, o cambió su prestación
+  o su cantidad—, con si está facturado, y la pantalla de caja DEBERÁ decirlo
+  en la fila de ese cargo.
+  > **Enmienda del 10-10-2026 (D-205):** la copia es la línea que cobra, y el
+  > original acreditado ya no cobra nada: se señala la copia, no el original.
+  >
   > D-194.3. Derivado al leer, como `consultationOutdated` (BI-203): dice la
   > verdad pase lo que pase con el aviso. Un cargo confirmado lo corrige o lo
   > quita caja (BI-195, BI-197); uno facturado se corrige con la factura
@@ -3037,6 +3092,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 
 | Requisitos | Nivel de prueba obligatorio |
 | --- | --- |
+| BI-074, BI-214, BI-260 | **Integración contra PostgreSQL real** por HTTP: el total de la cuenta tras una nota que vuelve a facturar ($24, no $48), tras «Servicio no prestado» ($0) y con la nota rechazada por el SRI (control positivo: vuelve a contar); la copia que nombra otro acto la rechaza la base por SQL directo, y con el mismo entra |
 | BI-240 a BI-243 | **Integración contra PostgreSQL real** por HTTP, con la atención y la cuenta de verdad: corregir un procedimiento corrige su cargo propuesto y deja la versión; quitarlo lo quita; restaurarlo propone el nuevo; un cargo confirmado o facturado no cambia y el extracto lo señala. Unitario: el aviso nunca falla hacia la atención |
 | BI-001, BI-002 | Unitario con huso alterado + integración: un importe leído y reescrito no pierde centavos, y una vigencia que empieza a medianoche resuelve igual con el servidor en cualquier huso |
 | BI-003, BI-004, BI-120 a BI-122 | Seguridad dirigida sobre las rutas clínicas: **ninguna** de ellas exige dato económico. Se prueba llamando a las de `encounter` con la cuenta ausente, y falla si alguna responde 4xx por ese motivo |
