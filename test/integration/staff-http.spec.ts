@@ -10,7 +10,7 @@ import { afterAll, beforeEach, describe, expect, inject, it } from 'vitest';
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { seedBilling } from '../../prisma/seed-billing.mts';
 import { seedSpecialties } from '../../prisma/seed-specialties.mts';
-import { seedStaff } from '../../prisma/seed-staff.mts';
+import { SUNDAY_PERIODS, seedStaff } from '../../prisma/seed-staff.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
@@ -26,6 +26,7 @@ import {
   createPatient,
   createScheduleRule,
   createSite,
+  linkPractitionerToSite,
 } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
@@ -1814,6 +1815,51 @@ describe('el personal por HTTP', () => {
       expect(second.rules).toBe(0);
       expect(await prisma.durationException.count()).toBe(1);
       expect(await prisma.practitionerSpecialty.count()).toBe(2);
+    });
+
+    it('ST-042 la semilla no choca con la franja del domingo que el profesional ya tiene en OTRA sede', async () => {
+      // The author's base, 10-10-2026: an earlier run put medico@'s Sunday
+      // 09:00–13:00 in Norte, and the next one picked a different «first»
+      // site and hit `schedule_rule_no_overlap_across_sites`. The seed must
+      // read the practitioner's rules in every site, not just the one it picks.
+      await seededPractitionerAccounts();
+      const norte = await createSite(prisma, 'Sede Norte');
+      const doctor = await prisma.practitioner.findFirstOrThrow({
+        where: { user: { email: 'medico@clinica.ec' } },
+        select: { id: true },
+      });
+      const [closed, inForce] = SUNDAY_PERIODS;
+      const inForceFrom = inForce!.validFrom;
+      const closedFrom = closed!.validFrom;
+      await linkPractitionerToSite(prisma, doctor.id, norte.id);
+      await createScheduleRule(
+        prisma,
+        { practitionerId: doctor.id, siteId: norte.id },
+        { weekday: 7, startTime: '09:00', endTime: '13:00', validFrom: inForceFrom }, // prettier-ignore
+      );
+
+      const first = await seedStaff(prisma);
+
+      const sundayRules = (email: string) =>
+        prisma.practitionerScheduleRule.findMany({
+          where: { weekday: 7, practitioner: { user: { email } } },
+          select: { siteId: true, validFrom: true },
+          orderBy: { validFrom: 'asc' },
+        });
+      // Only the closed half-year, which overlaps nothing, was added for him.
+      expect(await sundayRules('medico@clinica.ec')).toEqual([
+        { siteId: siteId, validFrom: closedFrom },
+        { siteId: norte.id, validFrom: inForceFrom },
+      ]);
+      // Positive control: with nothing in the way the seed still writes both,
+      // in the OLDEST site — a stable choice, not whatever order rows come in.
+      expect(await sundayRules('admin@clinica.ec')).toEqual([
+        { siteId: siteId, validFrom: closedFrom },
+        { siteId: siteId, validFrom: inForceFrom },
+      ]);
+      expect(first.rules).toBe(3);
+
+      expect((await seedStaff(prisma)).rules).toBe(0);
     });
 
     it('SP-001 la semilla del catálogo ya NO escribe practitioner_specialty', async () => {
