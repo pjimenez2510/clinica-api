@@ -276,6 +276,11 @@ export const DOMAIN_ERROR_CODES = [
   // «Ecuador», y el tercero de una edad que se mueve sola con el calendario.
   'PEOPLE_REQUIRES_KICHWA_NATIONALITY',
   'SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE',
+  // PA-071, 10-10-2026. Column 8 carries the same note as column 7 («aplica a
+  // usuarios a partir de los 10 años de edad», instructivo p. 47), with the
+  // same derived age and the same field-level 422 on
+  // `genderIdentityConceptId`.
+  'GENDER_IDENTITY_BELOW_MINIMUM_AGE',
   // Grupos prioritarios del paciente (P3: PA-033..PA-042, D-026, D-027).
   //
   // Son cinco y no uno porque lo que hay que hacer es distinto en cada caso, y
