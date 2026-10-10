@@ -2262,11 +2262,45 @@ describe('el bloque K por HTTP', () => {
       expect(stored.performedAt.toISOString()).toBe(during.toISOString());
       expect(stored.recordedAt!.getTime()).toBeGreaterThan(endedAt!.getTime());
 
+      // D-201. La anotación tardía dice cuándo se tecleó y quién; la de la
+      // consulta, nada.
+      const { userId: doctorUserId } = await prisma.practitioner.findUniqueOrThrow({ where: { id: doctorPractitionerId } }); // prettier-ignore
+      const doctorUser = await prisma.user.findUniqueOrThrow({ where: { id: doctorUserId } }); // prettier-ignore
+      const lateEntry = { recordedAt: stored.recordedAt!.toISOString(), recordedBy: { id: doctorUser.id, name: `${doctorUser.firstName} ${doctorUser.lastName}` } }; // prettier-ignore
+      expect((late.body as { lateEntry: unknown }).lateEntry).toEqual(lateEntry); // prettier-ignore
+
+      // Quién y cuándo lo registró no cambian después, también desde psql.
+      await expect(
+        prisma.$executeRaw`UPDATE encounter_procedure SET recorded_by_id = NULL WHERE id = ${stored.id}::uuid`,
+      ).rejects.toThrow(/encounter_procedure_keeps_its_recorder/);
+      await expect(
+        prisma.$executeRaw`UPDATE encounter_procedure SET recorded_at = recorded_at + interval '1 minute' WHERE id = ${stored.id}::uuid`,
+      ).rejects.toThrow(/encounter_procedure_keeps_its_recorder/);
+      // Control positivo: corregir la nota sí, con su sello.
+      await patch(`/encounters/${encounterId}/procedures/${stored.id}`, doctorToken, { note: 'Tras el alta' }).expect(200); // prettier-ignore
+
       // La base lo garantiza también desde psql.
       await expect(
         prisma.$executeRaw`INSERT INTO encounter_procedure (encounter_id, concept_id, procedure_code, procedure_display, quantity, performed_at)
           SELECT encounter_id, concept_id, procedure_code, procedure_display, 1, ${new Date(endedAt!.getTime() + 60_000)} FROM encounter_procedure WHERE id = ${id}::uuid`,
       ).rejects.toThrow(/encounter_procedure_performed_within_encounter/);
+    });
+
+    it('EN-247 sólo lo registrado después del alta se lee como anotación tardía (D-201)', async () => {
+      const { encounterId, id } = await aProcedure();
+      const { conceptId } = await prisma.encounterProcedure.findUniqueOrThrow({ where: { id } }); // prettier-ignore
+      // The discharge comes after what was recorded during the attention, as
+      // signing the note does (`ended_at` is the signature's instant).
+      const dischargedAt = new Date();
+      await prisma.encounter.update({ where: { id: encounterId }, data: { status: 'DISCHARGED', endedAt: dischargedAt, dischargeCondition: 'ALIVE' } }); // prettier-ignore
+      const late = await post(`/encounters/${encounterId}/procedures`, doctorToken, { conceptId, quantity: 1, performedAt: dischargedAt.toISOString() }).expect(201); // prettier-ignore
+
+      const sheet = (await get(`/encounters/${encounterId}/procedures`, doctorToken).expect(200)).body as { items: { id: string; lateEntry: { recordedBy: { name: string } | null } | null }[] }; // prettier-ignore
+      const byId = new Map(
+        sheet.items.map((item) => [item.id, item.lateEntry]),
+      );
+      expect(byId.get(id)).toBeNull();
+      expect(byId.get((late.body as ProcedureBody).id)?.recordedBy?.name).toEqual(expect.any(String)); // prettier-ignore
     });
 
     it('EN-247 tras el alta, quien firma con el registro ACESS vencido no corrige un procedimiento (D-117.13)', async () => {

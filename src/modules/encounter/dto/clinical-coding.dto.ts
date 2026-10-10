@@ -533,6 +533,17 @@ export class ProcedureConsentDto extends createZodDto(
 /** EN-152. A procedure with the 024 that covers it, or `null`. */
 export const recordedProcedureSchema = procedureSchema.extend({
   consent: procedureConsentResponseSchema.nullable(),
+  /**
+   * EN-247 (D-201). Recorded after the discharge: when it was typed and by
+   * whom («Registrado el … por …, tras el alta»). `recordedBy` is `null` on
+   * rows older than the column; the whole object, for the ordinary procedure.
+   */
+  lateEntry: z
+    .object({
+      recordedAt: z.iso.datetime(),
+      recordedBy: personSchema.nullable(),
+    })
+    .nullable(),
 });
 /** Response of recording, correcting or restoring a procedure. */
 export class ProcedureDto extends createZodDto(recordedProcedureSchema) {}

@@ -630,6 +630,7 @@ export class ClinicalCodingService {
       quantity: request.quantity,
       performedAt: request.performedAt,
       note: request.note,
+      recordedById: requester.userId,
       consent:
         request.consent === undefined
           ? undefined

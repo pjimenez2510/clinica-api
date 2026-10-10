@@ -591,6 +591,13 @@ function toRecordedProcedureResponse(
     ...toProcedureResponse(procedure),
     consent:
       procedure.consent === null ? null : toConsentResponse(procedure.consent),
+    lateEntry:
+      procedure.lateEntry === null
+        ? null
+        : {
+            recordedAt: procedure.lateEntry.recordedAt.toISOString(),
+            recordedBy: procedure.lateEntry.recordedBy,
+          },
   };
 }
 

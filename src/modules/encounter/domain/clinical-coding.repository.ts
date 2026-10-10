@@ -164,6 +164,19 @@ export interface ProcedureView {
  */
 export interface RecordedProcedureView extends ProcedureView {
   consent: ProcedureConsentView | null;
+  /**
+   * EN-247 (D-201). A procedure recorded AFTER the discharge — `recorded_at`
+   * past the attention's end — is a late entry, and says so: when it was
+   * typed and by whom. `recordedBy` is `null` on rows older than
+   * `20261011110000`; the whole thing is `null` for the ordinary procedure.
+   */
+  lateEntry: ProcedureLateEntry | null;
+}
+
+/** EN-247 (D-201). «Registrado el <fecha> por <autor>, tras el alta». */
+export interface ProcedureLateEntry {
+  recordedAt: Date;
+  recordedBy: { id: string; name: string } | null;
 }
 
 /** EN-244. One version a correction replaced, with who and when. */
@@ -299,6 +312,8 @@ export interface NewProcedure {
   /** EN-034. WHEN it was performed, which is not when it was typed. */
   performedAt?: Date;
   note?: string;
+  /** EN-247 (D-201). Who types it: the late entry names its author. */
+  recordedById: string;
   /**
    * EN-152. The form 024 — signed, or the exception with its ground — when
    * the concept's service demands it. Checked against the requirement INSIDE

@@ -134,6 +134,7 @@ beforeEach(async () => {
 async function aProposedSuture() {
   const procedure = await scene.coding.addProcedure({
     encounterId: scene.encounterId,
+    recordedById: scene.doctorId,
     conceptId: scene.sutureConceptId,
     quantity: 2,
     performedAt: new Date(VISIT_STARTED_AT.getTime() + 30 * 60_000),
@@ -256,6 +257,7 @@ describe('el cargo sigue al procedimiento corregido (BI-240 a BI-243)', () => {
 
     const late = await scene.coding.addProcedure({
       encounterId: scene.encounterId,
+      recordedById: scene.doctorId,
       conceptId: scene.cureConceptId,
       quantity: 1,
       performedAt: new Date(VISIT_STARTED_AT.getTime() + 35 * 60_000),
