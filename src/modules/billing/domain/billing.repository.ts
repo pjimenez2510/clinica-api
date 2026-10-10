@@ -871,11 +871,16 @@ export interface BillingAccountRepository {
     invoiceId: string;
     siteId: string;
   }): Promise<InvoiceView | null>;
-  /** BI-133, BI-233. A page of the site's invoices, newest first, and the count. */
+  /**
+   * BI-133, BI-233. A page of the site's invoices, newest first, and the count.
+   * BI-259: `owed` keeps only those neither draft nor voided whose derived
+   * balance (BI-103) is above zero.
+   */
   listInvoices(query: {
     siteId: string;
     accountId?: string;
     filter: IssuedDocumentFilter;
+    owed?: boolean;
     page: number;
     pageSize: number;
   }): Promise<{ items: InvoiceView[]; total: number }>;

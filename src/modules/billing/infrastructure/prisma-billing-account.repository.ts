@@ -1205,6 +1205,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     siteId: string;
     accountId?: string;
     filter: IssuedDocumentFilter;
+    owed?: boolean;
     page: number;
     pageSize: number;
   }): Promise<{ items: InvoiceView[]; total: number }> {
@@ -1212,6 +1213,9 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       siteId: query.siteId,
       accountId: query.accountId,
       ...issuedDocumentWhere(query.filter),
+      ...(query.owed
+        ? { id: { in: await this.owedInvoiceIds(query.siteId) } }
+        : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.invoice.findMany({
@@ -1230,6 +1234,28 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       this.prisma.invoice.count({ where }),
     ]);
     return { items: rows.map(toInvoiceView), total };
+  }
+
+  /**
+   * BI-259. The site's invoices still owed: the balance derived as BI-103
+   * asks —and as `pendingOf` and the patient's balance derive it—, never
+   * stored. A credited-in-excess one (money in the patient's favour) is not
+   * owed. The ids go back into the paged query, so the other filters, the
+   * order and the count stay the ones of BI-233.
+   */
+  private async owedInvoiceIds(siteId: string): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT i."id"
+        FROM "invoice" i
+       WHERE i."site_id" = ${siteId}::uuid
+         AND i."status" NOT IN ('DRAFT', 'VOIDED')
+         AND i."total"
+             - COALESCE((SELECT SUM(c."amount") FROM "credit_note" c
+                          WHERE c."invoice_id" = i."id" AND c."status" <> 'REJECTED'), 0)
+             - COALESCE((SELECT SUM(p."amount") FROM "payment" p
+                          WHERE p."invoice_id" = i."id" AND p."reversed_at" IS NULL), 0)
+             > 0`;
+    return rows.map((row) => row.id);
   }
 }
 

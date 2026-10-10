@@ -500,6 +500,8 @@ export const issuedDocumentQueryShape = {
 export const invoiceQuerySchema = z.object({
   accountId: z.uuid().optional(),
   ...issuedDocumentQueryShape,
+  /** BI-259. Only those with a balance still owed (D-200.3). */
+  owed: explicitFlag,
 });
 /** Query of GET /billing/sites/:siteId/invoices. */
 export class InvoiceQueryDto extends createZodDto(invoiceQuerySchema) {}
