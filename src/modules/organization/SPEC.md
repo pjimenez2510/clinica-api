@@ -345,26 +345,26 @@ paso falta y lleva a su pantalla.
 
   | Paso | Permisos (leer · cambiar) | Hecho cuando |
   |---|---|---|
-  | Establecimiento | `site:read` · `site:manage` | está registrado y tiene RUC |
-  | Sedes y consultorios | `site:read` · `site:manage` | hay al menos una sede activa y todas las activas tienen su código de establecimiento del SRI |
+  | Establecimiento | `site:read` · `site:manage` | está registrado con lo que el SRI pide al emisor (SRI-008): RUC de 13 dígitos, dirección de la matriz y banderas fiscales revisadas (OR-031) |
+  | Sedes y consultorios | `site:read` · `site:manage` | hay al menos una sede activa y todas las activas tienen su código de establecimiento del SRI y un punto de emisión activo |
   | Cuentas del personal | `user:read` · `user:manage` | hay al menos una cuenta activa además de la de quien mira |
   | Especialidades y duraciones | `config:read` · `config:manage` | hay al menos una especialidad activa |
   | Profesionales | `staff:read` · `staff:manage` | hay al menos un profesional activo |
-  | Horarios | `staff:read` · `staff:manage` | hay al menos una regla de horario vigente |
+  | Horarios | `staff:read` · `staff:manage` | hay al menos una regla de horario activa que no ha terminado |
   | Prestaciones y precios | `billing:read` · `billing:price-manage` | hay al menos una prestación activa y todas tienen precio particular vigente hoy |
   | Firma electrónica | `config:manage` | hay un certificado activo y vigente hoy |
   | Texto de consentimiento | `patient:consent-text` | hay un texto publicado |
   | Exámenes _(opcional)_ | `catalog:manage` | hay al menos un examen; no cuenta en el total |
 
   Un paso que falta dice en una línea qué falta («Falta el RUC», «Falta el
-  precio de 3 prestaciones»). «Hoy» es el día de la clínica
+  precio de 3 prestaciones»); el opcional que falta dice «Opcional». «Hoy» es el día de la clínica
   (`America/Guayaquil`).
 - **OR-041** — La puesta en marcha NO DEBERÁ mostrar un paso salvo que la
   sesión tenga sus dos permisos, el de leer y el de cambiar, ni pedir sus
   datos sin ellos. La entrada «Puesta en marcha» sólo DEBERÁ aparecer CUANDO la
   sesión tenga al menos un paso así, y la ruta DEBERÁ exigir el permiso de
-  cambiar de alguno; SI no tiene ninguno, ENTONCES la ruta lleva a «Sin
-  permiso».
+  cambiar de alguno; SI no tiene ninguno, o ningún paso con los dos,
+  ENTONCES la ruta lleva a «Sin permiso».
   > Recepción, el médico y caja LEEN sedes o precios, pero no pueden arreglar
   > lo que falte: una lista de pendientes que no pueden atender es ruido
   > (ESTÁNDAR-UI §12.4).
