@@ -43,9 +43,27 @@ interface PaymentBody {
   cashDate: string;
   reference: string | null;
   reversal: { reason: string } | null;
+  closed: boolean;
+}
+interface TurnBody {
+  previousSession: { id: string; closedAt: string } | null;
+  payments: PaymentBody[];
+  lines: { methodName: string; amount: string }[];
+  collectedTotal: string;
+  expectedCash: string;
+  pendingCount: number;
+}
+interface SessionBody {
+  id: string;
+  previousClosedAt: string | null;
+  closedAt: string;
+  closedByName: string;
+  collectedTotal: string;
+  difference: string;
+  pendingCount: number;
 }
 
-describe('B6 cobros, saldo del paciente y cierre diario', () => {
+describe('B6 cobros, saldo del paciente y cierre por turno', () => {
   const db = useDatabase();
   let app: NestExpressApplication;
   let prisma: PrismaClient;
@@ -323,7 +341,7 @@ describe('B6 cobros, saldo del paciente y cierre diario', () => {
     expect((reread.body as InvoiceBody).balance).toBe(invoice.totals.total);
   });
 
-  it('BI-251 BI-105 BI-252 BI-104 caja del día, cierre con un dólar de menos, y después nada más de ese día', async () => {
+  it('BI-251 BI-105 BI-252 BI-104 BI-258 el turno abierto, el cierre con un dólar de menos, y cobrar después abre el turno siguiente', async () => {
     const paid = (await issue(await anAccount(), { paymentMethodId: cashId })).body as InvoiceBody; // prettier-ignore
     const owed = (await issue(await anAccount(), undefined, '20')).body as InvoiceBody; // prettier-ignore
     await api()
@@ -332,74 +350,123 @@ describe('B6 cobros, saldo del paciente y cierre diario', () => {
         amount: '5.00',
       }) // prettier-ignore
       .expect(201);
-    const today = clinicalDateOf(new Date());
 
-    const day = await api().get('/cash-sessions/day').expect(200);
-    const body = day.body as {
-      date: string;
-      lines: { methodName: string; amount: string }[];
-      expectedCash: string;
-      pendingCount: number;
-      session: unknown;
-    };
-    expect(body.date).toBe(today);
+    const turn = await api().get('/cash-sessions/open').expect(200);
+    const body = turn.body as TurnBody;
+    expect(body.previousSession).toBeNull();
     expect(body.lines.map((line) => line.methodName)).toEqual([
       'Efectivo del cajón',
       'Transferencia Pichincha',
     ]);
     expect(body.expectedCash).toBe(paid.totals.total);
     expect(body.pendingCount).toBe(1);
-    expect(body.session).toBeNull();
+    expect(body.payments.every((payment) => !payment.closed)).toBe(true);
 
     const short = (Number(paid.totals.total) - 1).toFixed(2);
-    const closed = await api()
-      .post('/cash-sessions/close', { date: today, declaredCash: short })
+    const morning = await api()
+      .post('/cash-sessions/close', {
+        declaredCash: short,
+        previousSessionId: null,
+      })
       .expect(201);
-    expect((closed.body as { difference: string }).difference).toBe('-1.00');
-    expect((closed.body as { closedByName: string }).closedByName).toBe('Rosa Cedeño'); // prettier-ignore
+    const first = morning.body as SessionBody;
+    expect(first.difference).toBe('-1.00');
+    expect(first.closedByName).toBe('Rosa Cedeño');
+    expect(first.previousClosedAt).toBeNull();
+    expect(first.pendingCount).toBe(1);
 
+    // The same turn, closed again from a stale screen: refused, nothing written.
     const again = await api()
-      .post('/cash-sessions/close', { date: today, declaredCash: '0.00' })
+      .post('/cash-sessions/close', {
+        declaredCash: '0.00',
+        previousSessionId: null,
+      })
       .expect(409);
     expect((again.body as { code: string }).code).toBe(
       'CASH_SESSION_ALREADY_CLOSED',
     );
+    // Nothing collected since: there is no turn to close.
+    const empty = await api()
+      .post('/cash-sessions/close', {
+        declaredCash: '0.00',
+        previousSessionId: first.id,
+      })
+      .expect(422);
+    expect((empty.body as { code: string }).code).toBe('CASH_SESSION_EMPTY');
 
-    const late = await api()
-      .post(`/invoices/${owed.id}/payments`, {
-        paymentMethodId: transferId,
-        amount: '1.00',
-      }) // prettier-ignore
+    // A closed payment is not reversed.
+    const [closedPayment] = await prisma.payment.findMany({ where: { invoiceId: paid.id } }); // prettier-ignore
+    const refused = await api()
+      .post(`/payments/${closedPayment!.id}/reversal`, {})
       .expect(409);
-    expect((late.body as { code: string }).code).toBe('CASH_SESSION_CLOSED');
+    expect((refused.body as { code: string }).code).toBe('CASH_SESSION_CLOSED');
 
-    // Control: the other cashier's drawer is still open that day.
-    await api(otraCaja.token)
+    // Closing does not stop collecting: the payment opens the next turn.
+    await api()
       .post(`/invoices/${owed.id}/payments`, {
         paymentMethodId: transferId,
         amount: '1.00',
       }) // prettier-ignore
       .expect(201);
+    const afternoon = (await api().get('/cash-sessions/open').expect(200))
+      .body as TurnBody;
+    expect(afternoon.previousSession?.id).toBe(first.id);
+    expect(afternoon.collectedTotal).toBe('1.00');
+    expect(afternoon.payments).toHaveLength(1);
+    // What it invoiced in the morning is not this turn's pending.
+    expect(afternoon.pendingCount).toBe(0);
 
-    const future = await api()
-      .post('/cash-sessions/close', {
-        date: addDays(today, 1),
-        declaredCash: '0.00',
-      }) // prettier-ignore
-      .expect(422);
-    expect((future.body as { code: string }).code).toBe(
-      'CASH_SESSION_DATE_IN_FUTURE',
-    );
+    const second = (
+      await api()
+        .post('/cash-sessions/close', {
+          declaredCash: '0.00',
+          previousSessionId: first.id,
+          expectedCash: '0.00',
+        })
+        .expect(201)
+    ).body as SessionBody;
+    expect(second.collectedTotal).toBe('1.00');
+    expect(second.previousClosedAt).toBe(first.closedAt);
+
+    const list = (await api().get('/cash-sessions').expect(200)).body as {
+      date: string;
+      sessions: SessionBody[];
+    };
+    expect(list.date).toBe(clinicalDateOf(new Date()));
+    expect(list.sessions.map((session) => session.id)).toEqual([
+      first.id,
+      second.id,
+    ]);
+    // Another cashier sees none of them.
+    const theirs = (await api(otraCaja.token).get('/cash-sessions').expect(200))
+      .body as { sessions: unknown[] };
+    expect(theirs.sessions).toHaveLength(0);
+    // Yesterday had none.
+    const yesterday = (
+      await api()
+        .get(`/cash-sessions?date=${addDays(clinicalDateOf(new Date()), -1)}`)
+        .expect(200)
+    ).body as { sessions: unknown[] };
+    expect(yesterday.sessions).toHaveLength(0);
   });
 
-  it('BI-247 emitir cobrado con la caja ya cerrada no emite: lo dice y no quema el secuencial', async () => {
-    const today = clinicalDateOf(new Date());
-    await api().post('/cash-sessions/close', { date: today, declaredCash: '0.00' }).expect(201); // prettier-ignore
+  it('BI-247 BI-104 emitir cobrado con la caja ya cerrada emite, y el cobro abre el turno siguiente', async () => {
+    await issue(await anAccount(), { paymentMethodId: cashId });
+    const first = (
+      await api()
+        .post('/cash-sessions/close', {
+          declaredCash: '0.00',
+          previousSessionId: null,
+        })
+        .expect(201)
+    ).body as SessionBody;
     const accountId = await anAccount();
-    const refused = await issue(accountId, { paymentMethodId: cashId });
-    expect(refused.status).toBe(409);
-    expect((refused.body as { code: string }).code).toBe('CASH_SESSION_CLOSED');
-    expect(await prisma.invoice.count({ where: { accountId } })).toBe(0);
+    const issued = await issue(accountId, { paymentMethodId: cashId });
+    expect(issued.status).toBe(201);
+    const turn = (await api().get('/cash-sessions/open').expect(200))
+      .body as TurnBody;
+    expect(turn.previousSession?.id).toBe(first.id);
+    expect(turn.collectedTotal).toBe((issued.body as InvoiceBody).totals.total);
   });
 
   it('BI-254 una factura que declara efectivo no se cobra por transferencia, ni se le cambia la forma de pago ya cobrada', async () => {
@@ -427,21 +494,20 @@ describe('B6 cobros, saldo del paciente y cierre diario', () => {
     );
   });
 
-  it('BI-255 el cierre con un efectivo esperado que ya no es el de la caja se rechaza; con el de verdad, se cierra', async () => {
+  it('BI-255 el cierre con un efectivo esperado que ya no es el del turno se rechaza; con el de verdad, se cierra', async () => {
     const paid = (await issue(await anAccount(), { paymentMethodId: cashId })).body as InvoiceBody; // prettier-ignore
-    const today = clinicalDateOf(new Date());
     const stale = await api()
       .post('/cash-sessions/close', {
-        date: today,
         declaredCash: '0.00',
+        previousSessionId: null,
         expectedCash: '0.00',
       }) // prettier-ignore
       .expect(409);
-    expect((stale.body as { code: string }).code).toBe('CASH_DAY_CHANGED');
+    expect((stale.body as { code: string }).code).toBe('CASH_SESSION_CHANGED');
     expect(await prisma.cashSession.count()).toBe(0);
     await api()
       .post('/cash-sessions/close', {
-        date: today,
+        previousSessionId: null,
         declaredCash: paid.totals.total,
         expectedCash: paid.totals.total,
       }) // prettier-ignore

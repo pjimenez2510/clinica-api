@@ -1267,24 +1267,31 @@ export class PaymentExceedsBalanceError extends BusinessRuleViolation {
   }
 }
 
-/** BI-104, BI-253. A closed cash day takes nothing more. */
+/**
+ * BI-104, BI-253. A payment already in a close is not reversed: that would
+ * change a photo that never changes. Undoing it is a refund (D-197.3).
+ */
 export class CashSessionClosedError extends ConflictError {
   readonly code = 'CASH_SESSION_CLOSED';
   override readonly userTitle =
-    'Su caja de ese día ya está cerrada: no admite más cobros ni reversiones';
+    'Ese cobro ya está en un cierre de caja: no se puede revertir';
 
   constructor() {
-    super('The cash session of that day is closed');
+    super('The payment is already in a closed cash session');
   }
 }
 
-/** BI-252. One close per user, site and day. */
+/**
+ * BI-252. The turn the cashier saw was closed meanwhile — another tab, or a
+ * second click.
+ */
 export class CashSessionAlreadyClosedError extends ConflictError {
   readonly code = 'CASH_SESSION_ALREADY_CLOSED';
-  override readonly userTitle = 'Esa caja ya está cerrada';
+  override readonly userTitle =
+    'Ese turno ya se cerró: revise los cierres de hoy';
 
   constructor() {
-    super('The cash session of that day was already closed');
+    super('The turn the cashier saw was already closed');
   }
 }
 
@@ -1292,8 +1299,8 @@ export class CashSessionAlreadyClosedError extends ConflictError {
  * BI-255. Money came in while the cashier was counting: the difference she
  * confirmed is not the one that would be written.
  */
-export class CashDayChangedError extends ConflictError {
-  readonly code = 'CASH_DAY_CHANGED';
+export class CashSessionChangedError extends ConflictError {
+  readonly code = 'CASH_SESSION_CHANGED';
   override readonly userTitle =
     'Entró otro cobro mientras contaba: revise el efectivo esperado y vuelva a cerrar';
 
@@ -1302,13 +1309,13 @@ export class CashDayChangedError extends ConflictError {
   }
 }
 
-/** BI-252. A day that has not come yet cannot be closed. */
-export class CashSessionDateInFutureError extends BusinessRuleViolation {
-  readonly code = 'CASH_SESSION_DATE_IN_FUTURE';
-  override readonly userTitle = 'No se puede cerrar la caja de un día que no ha llegado'; // prettier-ignore
+/** BI-252, D-200. A turn without payments has nothing to close. */
+export class CashSessionEmptyError extends BusinessRuleViolation {
+  readonly code = 'CASH_SESSION_EMPTY';
+  override readonly userTitle = 'No hay cobros desde el último cierre';
 
   constructor() {
-    super('Refusing to close a cash day still to come');
+    super('Refusing to close a turn without payments');
   }
 }
 

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
+import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 
 import type { BillingAccountRepository } from '../domain/billing.repository';
 import {
-  CashSessionDateInFutureError,
+  CashSessionClosedError,
   InvoiceNotFoundError,
   PaymentAlreadyReversedError,
   PaymentExceedsBalanceError,
@@ -35,6 +35,7 @@ function aPayment(overrides: Partial<PaymentView> = {}): PaymentView {
     receivedAt: now,
     receivedById: 'rosa',
     cashDate: clinicalDateOf(now),
+    cashSessionId: null,
     reversal: null,
     ...overrides,
   };
@@ -55,11 +56,12 @@ function build(overrides: Record<string, unknown> = {}) {
     recordPayment: vi.fn().mockResolvedValue(aPayment()),
     findPayment: vi.fn().mockResolvedValue(aPayment()),
     reversePayment: vi.fn().mockResolvedValue(aPayment()),
-    listDayPayments: vi.fn().mockResolvedValue([aPayment()]),
-    pendingOfDay: vi
+    listOpenTurnPayments: vi.fn().mockResolvedValue([aPayment()]),
+    findLastCashSession: vi.fn().mockResolvedValue(null),
+    pendingOfTurn: vi
       .fn()
       .mockResolvedValue({ total: Money.parse('40.00'), count: 1 }),
-    findCashSession: vi.fn().mockResolvedValue(null),
+    listCashSessionsOfDay: vi.fn().mockResolvedValue([]),
     closeCashSession: vi.fn().mockResolvedValue({}),
     patientBalance: vi.fn().mockResolvedValue(Money.ZERO),
     ...overrides,
@@ -221,51 +223,89 @@ describe('billing/B6 — reversing and closing', () => {
     ).rejects.toBeInstanceOf(PaymentAlreadyReversedError);
   });
 
-  it('BI-251 the day is today in Guayaquil by default, summarised, with what is still owed', async () => {
+  it('BI-104 a payment already in a close is not reversed: it says so before writing', async () => {
+    const { service, mocks } = build({
+      findPayment: vi
+        .fn()
+        .mockResolvedValue(aPayment({ cashSessionId: 'session-1' })),
+    });
+    await expect(
+      service.reverse(
+        { siteId: SITE, paymentId: 'payment-1', reason: 'x' },
+        ROSA,
+      ),
+    ).rejects.toBeInstanceOf(CashSessionClosedError);
+    expect(mocks.reversePayment).not.toHaveBeenCalled();
+  });
+
+  it('BI-251 the open turn is what no close took, since the last close, with what is still owed since then', async () => {
+    const lastClose = new Date(Date.now() - 60 * 60 * 1000);
+    const { service, mocks } = build({
+      findLastCashSession: vi
+        .fn()
+        .mockResolvedValue({ id: 'session-1', closedAt: lastClose }),
+    });
+    const turn = await service.openTurn({ siteId: SITE }, ROSA);
+    expect(mocks.listOpenTurnPayments).toHaveBeenCalledWith({
+      siteId: SITE,
+      userId: 'rosa',
+    });
+    expect(mocks.pendingOfTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        siteId: SITE,
+        userId: 'rosa',
+        since: lastClose,
+      }),
+    );
+    expect(turn.previousSession).toEqual({
+      id: 'session-1',
+      closedAt: lastClose,
+    });
+    expect(turn.summary.collectedTotal.toString()).toBe('10.00');
+    expect(turn.pending.total.toString()).toBe('40.00');
+  });
+
+  it('BI-251 before the first close the turn has no beginning, and what is owed counts from the start', async () => {
     const { service, mocks } = build();
-    const day = await service.day({ siteId: SITE }, ROSA);
-    expect(day.day).toBe(clinicalDateOf(new Date()));
-    expect(mocks.listDayPayments).toHaveBeenCalledWith({
+    const turn = await service.openTurn({ siteId: SITE }, ROSA);
+    expect(turn.previousSession).toBeNull();
+    expect(mocks.pendingOfTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ since: null }),
+    );
+  });
+
+  it('BI-258 the closes of a day are today in Guayaquil by default, of one’s own drawer', async () => {
+    const { service, mocks } = build();
+    await service.closesOfDay({ siteId: SITE }, ROSA);
+    expect(mocks.listCashSessionsOfDay).toHaveBeenCalledWith({
       siteId: SITE,
       userId: 'rosa',
       day: clinicalDateOf(new Date()),
     });
-    expect(day.summary.collectedTotal.toString()).toBe('10.00');
-    expect(day.pending.total.toString()).toBe('40.00');
-    expect(day.session).toBeNull();
   });
 
-  it('BI-252 a closed day shows what was pending when it closed, not now', async () => {
-    const { service } = build({
-      findCashSession: vi.fn().mockResolvedValue({
-        pendingTotal: Money.parse('5.00'),
-        pendingCount: 1,
-      }),
-    });
-    const day = await service.day({ siteId: SITE }, ROSA);
-    expect(day.pending.total.toString()).toBe('5.00');
-  });
-
-  it('BI-252 refuses to close a day still to come, and closes today with the cash counted', async () => {
+  it('BI-252 closes the open turn with the cash counted and the last close seen, at the application’s instant', async () => {
     const { service, mocks } = build();
-    const today = clinicalDateOf(new Date());
-    await expect(
-      service.close(
-        { siteId: SITE, day: addDays(today, 1), declaredCash: Money.ZERO },
-        ROSA,
-      ),
-    ).rejects.toBeInstanceOf(CashSessionDateInFutureError);
+    const before = Date.now();
     await service.close(
       {
         siteId: SITE,
-        day: today,
         declaredCash: Money.parse('9.00'),
+        previousSessionId: 'session-1',
         note: ' ',
       },
       ROSA,
     );
+    const call = mocks.closeCashSession.mock.calls[0]![0] as {
+      clock: () => Date;
+    };
     expect(mocks.closeCashSession).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'rosa', day: today, note: null }),
+      expect.objectContaining({
+        userId: 'rosa',
+        seenPreviousSessionId: 'session-1',
+        note: null,
+      }),
     );
+    expect(call.clock().getTime()).toBeGreaterThanOrEqual(before);
   });
 });

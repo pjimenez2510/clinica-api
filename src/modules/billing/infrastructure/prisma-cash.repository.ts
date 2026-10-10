@@ -2,20 +2,24 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { invoiceDocumentNumber } from '../../../shared/billing/document-number';
+import {
+  clinicalDayBounds,
+  type ClinicalDate,
+} from '../../../shared/domain/clinic-time';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type {
-  CashDayLine,
-  CashDaySummary,
+  CashLine,
   CashSessionView,
+  CashTurnSummary,
   PaymentView,
   PendingInvoices,
 } from '../domain/cash';
-import type { CashDayKey, CashRepository } from '../domain/cash.repository';
+import type { CashDrawerKey, CashRepository } from '../domain/cash.repository';
 import {
-  CashDayChangedError,
   CashSessionAlreadyClosedError,
+  CashSessionChangedError,
   CashSessionClosedError,
-  CashSessionDateInFutureError,
+  CashSessionEmptyError,
   InvoiceNotPayableError,
   PaymentAlreadyReversedError,
   PaymentExceedsBalanceError,
@@ -26,17 +30,17 @@ import type { PaymentMethod } from '../domain/invoice';
 import { Money } from '../domain/money';
 import { toClinicalDate } from '../domain/price-list';
 import { databaseMessageOf } from './prisma-billing-account.repository';
-import { asDateColumn } from './prisma-billing-catalogue.repository';
 
 /**
- * Payments and the daily close of cash (B6) over PostgreSQL.
+ * Payments and the close of a cash turn (B6) over PostgreSQL.
  *
- * Every rule that is a sum of money lives in the migration
- * `20261009130000_payment_and_cash_session`: the balance a payment cannot
- * exceed and the closed day are decided by `trg_payment_guard` under the
- * invoice's row lock and the day's advisory lock, and the close is checked
- * against its payments at commit. This adapter only writes, reads, and says
- * what a refusal MEANS.
+ * Every rule that is a sum of money lives in the migrations
+ * `20261009130000_payment_and_cash_session` and
+ * `20261010100000_cash_session_by_turn`: the balance a payment cannot exceed
+ * is decided by `trg_payment_guard` under the invoice's row lock, a closed
+ * payment by `trg_payment_only_reverses`, and the close is checked against
+ * the payments it took at commit. This adapter only writes, reads, takes the
+ * drawer's lock, and says what a refusal MEANS.
  */
 @Injectable()
 export class PrismaCashRepository implements CashRepository {
@@ -99,98 +103,145 @@ export class PrismaCashRepository implements CashRepository {
     now: Date;
   }): Promise<PaymentView> {
     try {
-      const row = await this.prisma.payment.update({
-        where: { id: reversal.paymentId },
-        include: PAYMENT_INCLUDE,
-        data: {
-          reversedAt: reversal.now,
-          reversedById: reversal.reversedById,
-          reversalReason: reversal.reason,
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        const owner = await tx.payment.findUniqueOrThrow({
+          where: { id: reversal.paymentId },
+          select: { siteId: true, receivedById: true },
+        });
+        // BI-253. The drawer's lock BEFORE the row's: a close holding it
+        // either took this payment already (and the trigger refuses) or
+        // waits for the reversal and leaves it out of the photo.
+        await tx.$executeRaw`
+          SELECT cash_drawer_lock(${owner.siteId}::uuid, ${owner.receivedById}::uuid)`;
+        const row = await tx.payment.update({
+          where: { id: reversal.paymentId },
+          include: PAYMENT_INCLUDE,
+          data: {
+            reversedAt: reversal.now,
+            reversedById: reversal.reversedById,
+            reversalReason: reversal.reason,
+          },
+        });
+        return toPaymentView(row);
       });
-      return toPaymentView(row);
     } catch (error) {
       throw translatePaymentRejection(error);
     }
   }
 
-  async listDayPayments(key: CashDayKey): Promise<PaymentView[]> {
+  async listOpenTurnPayments(key: CashDrawerKey): Promise<PaymentView[]> {
     const rows = await this.prisma.payment.findMany({
-      where: dayWhere(key),
+      where: openTurnWhere(key),
       include: PAYMENT_INCLUDE,
       orderBy: [{ receivedAt: 'asc' }, { id: 'asc' }],
     });
     return rows.map(toPaymentView);
   }
 
-  pendingOfDay(key: CashDayKey): Promise<PendingInvoices> {
+  async findLastCashSession(
+    key: CashDrawerKey,
+  ): Promise<CashSessionView | null> {
+    const [last, before] = await this.prisma.cashSession.findMany({
+      where: { siteId: key.siteId, userId: key.userId },
+      orderBy: { closedAt: 'desc' },
+      take: 2,
+      include: SESSION_INCLUDE,
+    });
+    return last ? toSessionView(last, before?.closedAt ?? null) : null;
+  }
+
+  pendingOfTurn(
+    key: CashDrawerKey & { since: Date | null; until: Date },
+  ): Promise<PendingInvoices> {
     return pendingOf(this.prisma, key);
   }
 
-  async findCashSession(key: CashDayKey): Promise<CashSessionView | null> {
-    const row = await this.prisma.cashSession.findUnique({
-      where: {
-        siteId_userId_cashDate: {
-          siteId: key.siteId,
-          userId: key.userId,
-          cashDate: asDateColumn(key.day),
-        },
-      },
-      include: SESSION_INCLUDE,
+  async listCashSessionsOfDay(
+    key: CashDrawerKey & { day: ClinicalDate },
+  ): Promise<CashSessionView[]> {
+    const { startsAt, endsAtExclusive } = clinicalDayBounds(key.day);
+    const drawer = { siteId: key.siteId, userId: key.userId };
+    const [rows, before] = await Promise.all([
+      this.prisma.cashSession.findMany({
+        where: { ...drawer, closedAt: { gte: startsAt, lt: endsAtExclusive } },
+        orderBy: { closedAt: 'asc' },
+        include: SESSION_INCLUDE,
+      }),
+      this.prisma.cashSession.findFirst({
+        where: { ...drawer, closedAt: { lt: startsAt } },
+        orderBy: { closedAt: 'desc' },
+        select: { closedAt: true },
+      }),
+    ]);
+    // BI-258. «Since when» is the close before it: derived, never stored.
+    let previous = before?.closedAt ?? null;
+    return rows.map((row) => {
+      const view = toSessionView(row, previous);
+      previous = row.closedAt;
+      return view;
     });
-    return row ? toSessionView(row) : null;
   }
 
   async closeCashSession(
-    close: CashDayKey & {
-      closedAt: Date;
+    close: CashDrawerKey & {
+      clock: () => Date;
       declaredCash: Money;
-      /** BI-255. The expected cash the cashier was shown, when she was. */
+      seenPreviousSessionId: string | null;
       seenExpectedCash?: Money;
       note: string | null;
-      summarise: (payments: readonly PaymentView[]) => CashDaySummary;
+      summarise: (payments: readonly PaymentView[]) => CashTurnSummary;
     },
   ): Promise<CashSessionView> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // BI-253. The day's lock FIRST: no payment of this drawer lands
-        // between what is read here and the photo written below.
+        // BI-253. The drawer's lock FIRST: no reversal of this drawer lands
+        // between what is read here and the photo written below. A payment
+        // may: it is born open, and stays for the next turn.
         await tx.$executeRaw`
-          SELECT cash_day_lock(${close.siteId}::uuid, ${close.userId}::uuid, ${close.day}::date)`;
-        const existing = await tx.cashSession.findUnique({
-          where: {
-            siteId_userId_cashDate: {
-              siteId: close.siteId,
-              userId: close.userId,
-              cashDate: asDateColumn(close.day),
-            },
-          },
-          select: { id: true },
+          SELECT cash_drawer_lock(${close.siteId}::uuid, ${close.userId}::uuid)`;
+        // The instant of the close, read now that the lock is held: what was
+        // committed while it waited is not later than it.
+        const closedAt = close.clock();
+        const previous = await tx.cashSession.findFirst({
+          where: { siteId: close.siteId, userId: close.userId },
+          orderBy: { closedAt: 'desc' },
+          select: { id: true, closedAt: true },
         });
-        if (existing) throw new CashSessionAlreadyClosedError();
+        // BI-252. The turn she saw is still the open one: a second tab or a
+        // second click does not close it twice.
+        if ((previous?.id ?? null) !== close.seenPreviousSessionId) {
+          throw new CashSessionAlreadyClosedError();
+        }
 
         const payments = (
           await tx.payment.findMany({
-            where: dayWhere(close),
+            // A payment stamped after the close (another API's clock) stays
+            // for the next turn instead of making the close fail.
+            where: { ...openTurnWhere(close), receivedAt: { lte: closedAt } },
             include: PAYMENT_INCLUDE,
           })
         ).map(toPaymentView);
+        if (payments.length === 0) throw new CashSessionEmptyError();
         const summary = close.summarise(payments);
         // BI-255. Under the lock: what she counted against is still what is.
         if (
           close.seenExpectedCash &&
           !close.seenExpectedCash.equals(summary.expectedCash)
         ) {
-          throw new CashDayChangedError();
+          throw new CashSessionChangedError();
         }
-        const pending = await pendingOf(tx, close);
+        const since = previous?.closedAt ?? null;
+        const pending = await pendingOf(tx, {
+          ...close,
+          since,
+          until: closedAt,
+        });
 
         const session = await tx.cashSession.create({
           data: {
             siteId: close.siteId,
             userId: close.userId,
-            cashDate: asDateColumn(close.day),
-            closedAt: close.closedAt,
+            closedAt,
             collectedTotal: summary.collectedTotal.toString(),
             expectedCash: summary.expectedCash.toString(),
             declaredCash: close.declaredCash.toString(),
@@ -209,7 +260,13 @@ export class PrismaCashRepository implements CashRepository {
           },
           include: SESSION_INCLUDE,
         });
-        return toSessionView(session);
+        // BI-252. Exactly the payments read under the lock, reversed ones
+        // included: the photo says what the turn had.
+        await tx.payment.updateMany({
+          where: { id: { in: payments.map((payment) => payment.id) } },
+          data: { cashSessionId: session.id },
+        });
+        return toSessionView(session, since);
       });
     } catch (error) {
       throw translatePaymentRejection(error);
@@ -238,10 +295,10 @@ export class PrismaCashRepository implements CashRepository {
 
 async function pendingOf(
   client: Pick<PrismaService, '$queryRaw'>,
-  key: CashDayKey,
+  key: CashDrawerKey & { since: Date | null; until: Date },
 ): Promise<PendingInvoices> {
-  // What this cashier issued that Guayaquil day, with its balance still
-  // owed: derived, as BI-103 asks, never stored.
+  // What this cashier issued during the turn, with its balance still owed:
+  // derived, as BI-103 asks, never stored.
   const [row] = await client.$queryRaw<
     { total: string | null; count: bigint }[]
   >`
@@ -257,7 +314,8 @@ async function pendingOf(
          WHERE i."site_id" = ${key.siteId}::uuid
            AND i."issued_by_id" = ${key.userId}::uuid
            AND i."status" NOT IN ('DRAFT', 'VOIDED')
-           AND (i."issued_at" AT TIME ZONE 'America/Guayaquil')::date = ${key.day}::date
+           AND (${key.since}::timestamptz IS NULL OR i."issued_at" > ${key.since}::timestamptz)
+           AND i."issued_at" <= ${key.until}::timestamptz
       ) AS b
      WHERE b."balance" > 0`;
   return {
@@ -266,11 +324,11 @@ async function pendingOf(
   };
 }
 
-function dayWhere(key: CashDayKey): Prisma.PaymentWhereInput {
+function openTurnWhere(key: CashDrawerKey): Prisma.PaymentWhereInput {
   return {
     siteId: key.siteId,
     receivedById: key.userId,
-    cashDate: asDateColumn(key.day),
+    cashSessionId: null,
   };
 }
 
@@ -313,6 +371,7 @@ function toPaymentView(row: PaymentRow): PaymentView {
     receivedAt: row.receivedAt,
     receivedById: row.receivedById,
     cashDate: toClinicalDate(row.cashDate),
+    cashSessionId: row.cashSessionId,
     reversal:
       row.reversedAt && row.reversedById
         ? {
@@ -333,8 +392,11 @@ type SessionRow = Prisma.CashSessionGetPayload<{
   include: typeof SESSION_INCLUDE;
 }>;
 
-function toSessionView(row: SessionRow): CashSessionView {
-  const lines: CashDayLine[] = row.lines.map((line) => ({
+function toSessionView(
+  row: SessionRow,
+  previousClosedAt: Date | null,
+): CashSessionView {
+  const lines: CashLine[] = row.lines.map((line) => ({
     paymentMethodId: line.paymentMethodId,
     methodName: line.methodName,
     sriCode: line.sriCode as PaymentMethod,
@@ -346,7 +408,7 @@ function toSessionView(row: SessionRow): CashSessionView {
     siteId: row.siteId,
     userId: row.userId,
     userName: `${row.user.firstName} ${row.user.lastName}`,
-    cashDate: toClinicalDate(row.cashDate),
+    previousClosedAt,
     closedAt: row.closedAt,
     lines,
     collectedTotal: Money.parse(row.collectedTotal),
@@ -376,11 +438,18 @@ export function translatePaymentRejection(error: unknown): unknown {
     return new PaymentExceedsBalanceError();
   }
   if (/cash_session_closed/.test(message)) return new CashSessionClosedError();
-  if (/cash_session_one_per_day/.test(message)) {
+  // Another close of the same drawer got in first: the turn she saw is gone.
+  if (/cash_session_after_the_last/.test(message)) {
     return new CashSessionAlreadyClosedError();
   }
-  if (/cash_session_date_in_future/.test(message)) {
-    return new CashSessionDateInFutureError();
+  // The turn moved under the close (a payment the summary did not see): she
+  // closes again on what is there now. The rule stays the trigger's.
+  if (
+    /payment_session_is_its_drawer|cash_session_matches_its_payments/.test(
+      message,
+    )
+  ) {
+    return new CashSessionChangedError();
   }
   if (/payment_already_reversed/.test(message)) {
     return new PaymentAlreadyReversedError();
@@ -392,7 +461,5 @@ export function translatePaymentRejection(error: unknown): unknown {
   if (/payment_site_is_its_invoices/.test(message)) {
     return new PaymentNotFoundError();
   }
-  // A cash session matching nothing is a bug of the summariser, not of the
-  // cashier: it goes up as it came.
   return error;
 }

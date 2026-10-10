@@ -347,11 +347,11 @@ de BI-155, que ya tiene su prueba de interfaz.
 > necesitando que `SELF_AUTHORISATION_DENIED` se mude de `modules/agenda` a
 > `shared/`, que es un cambio en otro módulo. `role_discount_limit` ya existe.
 
-### B6 — Caja: cobros y cierre diario _(P3)_
+### B6 — Caja: cobros y cierre por turno _(P3)_
 
 **Por qué es P3:** una clínica puede cobrar en efectivo y cuadrar a mano una
 semana; nada clínico se rompe. Pero sin esto el saldo pendiente de un paciente
-no existe como dato. **Cubre:** BI-100 a BI-105, BI-247 a BI-255.
+no existe como dato. **Cubre:** BI-100 a BI-105, BI-247 a BI-255, BI-258.
 **Solo servidor:** BI-100 (ya lo entregó B7), BI-103, BI-250 y BI-253: la fecha de caja
 la pone la base, el saldo se deriva en el servidor y la pantalla lo enseña tal
 cual llega, y la carrera entre un cobro y el cierre sólo se ve con dos
@@ -360,11 +360,12 @@ clientes a la vez.
 **Prueba independiente:** como caja, emitir una factura «Cobrado» con
 Efectivo y otra sin cobrar; cobrar la segunda en dos abonos con Transferencia;
 ver en la cuenta el saldo del paciente y en cada factura lo cobrado; revertir
-un abono con su motivo; abrir «Caja del día», cerrar declarando el efectivo
-contado con un dólar de menos y ver la diferencia registrada; intentar cobrar
-otra vez ese día y verlo rechazado. Y contra PostgreSQL: que un cobro no pasa
-del saldo, no se borra, no cambia salvo su reversión, y que el cierre no se
-edita y suma lo cobrado de verdad.
+un abono con su motivo; abrir «Caja», cerrar el turno declarando el efectivo
+contado sin el fondo de cambio con un dólar de menos y ver la diferencia
+registrada; cobrar otra factura y verla en el turno siguiente, y cerrarlo
+también: el día tiene dos cierres. Y contra PostgreSQL: que un cobro no pasa
+del saldo, no se borra, no cambia salvo su reversión, que un cobro cerrado ya
+no se revierte, y que el cierre no se edita y suma lo cobrado de verdad.
 
 > **Lo entregado (`feat/f06-cobros-cierre`, 09-10-2026).** `payment` y
 > `cash_session` con sus garantías en la base; el cobro al emitir y los abonos;
@@ -372,6 +373,13 @@ edita y suma lo cobrado de verdad.
 > reversión y el cierre. **Fuera, con su decisión (D-197):** cierres por turno,
 > la devolución de lo cobrado de una factura acreditada y la vista de cierres
 > de todos los cajeros.
+>
+> **Cierre por turno (`feat/f06-caja-por-turno`, D-197.4, aceptada el
+> 09-10-2026).** El cierre deja de ser «del día» y pasa a ser **del turno**:
+> abarca los cobros de quien cierra en la sede que aún no estaban en un
+> cierre, y cerrar no impide seguir cobrando —el cobro siguiente abre el turno
+> siguiente—. El conteo se rotula «sin el fondo de cambio» (D-197.1).
+> Enmienda BI-104, BI-105, BI-251 a BI-253 y BI-255; añade BI-258.
 
 ### B7 — Parametrización: qué se cambia sin desplegar _(P2)_
 
@@ -592,8 +600,16 @@ es falsa, hay requisitos que cambian.
 - **Un cargo nace de una atención.** La venta de mostrador sin atención —un
   insumo, una copia de la historia— existe en la vida real y aquí queda
   registrada como pregunta, no como supuesto. Ver BI-054.
-- **La clínica no fía a plazos.** Hay saldo pendiente, pero no hay plan de pagos,
-  ni intereses, ni gestión de cobranza.
+- **Se puede emitir sin cobrar y cobrar en abonos, pero no hay crédito
+  formal.** El diálogo de emitir trae marcado «Cobrado ahora»; desmarcado, la
+  factura queda con su saldo y se cobra después, entera o en abonos (BI-247,
+  BI-248, D-197.2). No hay plan de pagos, ni plazo, ni intereses, ni gestión
+  de cobranza. Emitir sin cobrar es legal: en servicios, el IVA nace con la
+  prestación o con el pago (LORTI art. 61). **Por confirmar fuera:** si la
+  factura emitida sin cobrar debe declarar el plazo (`pagos/pago/plazo`) lo
+  dice el contador, y sería un valor de la sede, no una pregunta al emitir; si
+  caja puede dar crédito a un **particular** sin autorización lo decide el
+  autor (hoy puede).
 - **El personal que factura no es el que fija los precios.** Es la
   recomendación de D-049 §2 y aquí es supuesto de diseño: son dos permisos
   distintos y ningún rol de fábrica lleva los dos.
@@ -1485,6 +1501,11 @@ es falsa, hay requisitos que cambian.
 > `reversal_reason`) y `cash_session` con `cash_session_line`, en
 > `prisma/migrations/20261009130000_payment_and_cash_session`. Los medios de
 > pago (`payment_method`) son de B7.
+>
+> **Por turno (`feat/f06-caja-por-turno`).** El cierre ya no es de una fecha:
+> `cash_session` pierde `cash_date` y cada cobro dice en qué cierre quedó
+> (`payment.cash_session_id`, vacío mientras su turno está abierto), en
+> `prisma/migrations/20261010100000_cash_session_by_turn`.
 
 - **BI-100** — El sistema DEBERÁ mantener los medios de pago como filas de una
   tabla administrable, y NO DEBERÁ representarlos como enumeración del código.
@@ -1507,11 +1528,25 @@ es falsa, hay requisitos que cambian.
   > admite vacío y lo rechaza en blanco.
 - **BI-103** — El sistema DEBERÁ derivar el saldo pendiente de una factura de sus
   cobros no revertidos y de sus notas de crédito, y NO DEBERÁ almacenarlo.
-- **BI-104** — El sistema DEBERÁ permitir cerrar la caja de un usuario en una
-  sede para una fecha, y CUANDO esté cerrada, DEBERÁ rechazar con
-  `CASH_SESSION_CLOSED` todo cobro o reversión con esa fecha y ese usuario.
-  > La fecha de una reversión es la del cobro que deshace: revertir el cobro
-  > de un día cerrado cambiaría un cierre que no se edita (BI-252).
+- **BI-104** — El sistema DEBERÁ permitir a un usuario cerrar su caja en una
+  sede en cualquier momento y tantas veces al día como turnos tenga; cada
+  cierre DEBERÁ abarcar los cobros de ese usuario en esa sede que aún no
+  estaban en un cierre, y el sistema NO DEBERÁ rechazar un cobro por haberse
+  cerrado la caja: el cobro siguiente DEBERÁ quedar en el turno siguiente.
+  CUANDO un cobro ya esté en un cierre, DEBERÁ rechazar su reversión con
+  `CASH_SESSION_CLOSED`.
+  > D-197.4 (aceptada el 09-10-2026): la sesión de caja va por instante, no por
+  > fecha, como en los puntos de venta (Square, Odoo): mañana y tarde con la
+  > misma persona son dos cierres. Antes, cerrar el día impedía cobrar hasta el
+  > día siguiente.
+  > **La reversión cuenta en el turno donde ocurre** (D-197.5): sólo se revierte
+  > un cobro de su turno abierto, así que el cobro y su reversión caen siempre
+  > en el mismo cierre, y una foto cerrada no cambia. Deshacer un cobro ya
+  > cerrado es una **devolución** (D-197.3, entrega propia), que contará en el
+  > turno en que el dinero sale del cajón.
+  > Un turno no se corta a medianoche: si nadie cerró ayer, el cierre de hoy
+  > abarca también lo de ayer y la pantalla lo dice («Turno abierto desde
+  > ayer, 17:40»). Ver D-200.
 - **BI-105** — CUANDO se cierre la caja, el sistema DEBERÁ presentar el total
   cobrado **desglosado por medio de pago** y el importe declarado por quien
   cierra, y DEBERÁ registrar la diferencia sin impedir el cierre.
@@ -1522,6 +1557,11 @@ es falsa, hay requisitos que cambian.
   > **Lo declarado es el efectivo contado** (D-197.1): se compara con el
   > efectivo esperado —lo cobrado con medios cuya forma de pago es `01`—, y lo
   > demás se presenta para cotejarlo con el datáfono o el banco.
+  > **Sin el fondo de cambio.** El esperado no lleva el sencillo con que abre
+  > la cajera, así que la pantalla DEBERÁ rotular el conteo «Efectivo cobrado
+  > (sin el fondo de cambio)»; si no, el cierre marcaría ese sencillo como
+  > sobrante cada turno. Si la clínica deja un fondo fijo, será un valor de la
+  > sede que se suma al esperado, no un dato más que teclear (D-197.1).
 - **BI-247** — CUANDO caja emita una factura indicando que se cobró —la opción
   que el diálogo trae marcada—, el sistema DEBERÁ registrar **en la misma
   transacción** un cobro por el total con el medio elegido; SI indica que no se
@@ -1548,28 +1588,42 @@ es falsa, hay requisitos que cambian.
   escribe la fila; el instante lo pone el reloj de la aplicación.
   > Un cobro de las 19:30 de Guayaquil es de ese día aunque en UTC ya sea el
   > siguiente: es el día en que el dinero entró al cajón.
-- **BI-251** — CUANDO caja abra «Caja del día» para una fecha, el sistema
-  DEBERÁ servir sus cobros de esa fecha en la sede, los revertidos aparte; el
-  total por medio de pago; el efectivo esperado; lo que facturó ese día y sigue
-  sin cobrar; y si ya cerró, el cierre. DEBERÁ permitirle revertir un cobro
-  **suyo** con motivo, y SI el cobro es de otra persona o de otra sede, DEBERÁ
-  responder `PAYMENT_NOT_FOUND`.
-- **BI-252** — CUANDO caja cierre, el sistema DEBERÁ guardar la foto del
-  cierre —total por medio de pago, efectivo esperado, efectivo contado, la
-  diferencia, lo pendiente, quién y cuándo—, y la base DEBERÁ: rechazar todo
-  cambio o borrado de la foto (`trg_cash_session_is_final`); admitir un solo
-  cierre por usuario, sede y fecha (`cash_session_one_per_day`,
-  `CASH_SESSION_ALREADY_CLOSED`); rechazar una fecha posterior a la del
-  instante del cierre (`CASH_SESSION_DATE_IN_FUTURE`); y comprobar que la foto
-  suma lo que de verdad se cobró (`cash_session_matches_its_payments`).
+- **BI-251** — CUANDO caja abra «Caja», el sistema DEBERÁ servir su **turno
+  abierto** en la sede: sus cobros aún sin cerrar, los revertidos aparte; el
+  total por medio de pago; el efectivo esperado; lo que facturó desde su
+  último cierre y sigue sin cobrar; y el instante de ese último cierre, o
+  ninguno. DEBERÁ permitirle revertir un cobro **suyo** del turno abierto con
+  motivo, y SI el cobro es de otra persona o de otra sede, DEBERÁ responder
+  `PAYMENT_NOT_FOUND`.
+- **BI-252** — CUANDO caja cierre su turno, el sistema DEBERÁ guardar la foto
+  del cierre —total por medio de pago, efectivo esperado, efectivo contado, la
+  diferencia, lo pendiente, quién y cuándo— y marcar en cada cobro del turno el
+  cierre que lo abarca; SI el turno no tiene cobros, DEBERÁ rechazarlo con
+  `CASH_SESSION_EMPTY`, y SI el último cierre que vio quien cierra ya no es el
+  último de su caja, con `CASH_SESSION_ALREADY_CLOSED`. La base DEBERÁ:
+  rechazar todo cambio o borrado de la foto (`trg_cash_session_is_final`);
+  rechazar todo cambio de un cobro ya cerrado, su reversión incluida, y que
+  un cobro pase a un cierre de otra persona, de otra sede o anterior a su
+  instante (`trg_payment_only_reverses`); y comprobar que la foto suma lo que
+  de verdad abarca (`cash_session_matches_its_payments`).
   > La foto se guarda aunque los cobros ya no puedan cambiar (BI-104): lo
   > pendiente sí cambia después, y el cierre dice lo que había al cerrar.
-- **BI-253** — El sistema DEBERÁ serializar el cierre de un usuario, sede y
-  fecha con los cobros y reversiones de esa misma caja, de modo que un cobro
-  concurrente con el cierre **o entra en la foto o se rechaza** con
-  `CASH_SESSION_CLOSED`.
-  > Un candado de transacción por (sede, usuario, fecha), `cash_day_lock`, que
-  > toman el cierre antes de leer y el disparador del cobro antes de escribir.
+  > El último cierre visto es lo que hace del cierre una acción de un solo
+  > efecto: dos pestañas, o un doble clic, cerrarían dos veces el mismo turno.
+  > La pantalla lo envía tal como estaba al abrir «Cerrar caja», no releído.
+  > El turno vacío lo rechaza la aplicación bajo el candado, no la base (D-200.2).
+- **BI-253** — El sistema DEBERÁ serializar el cierre de un usuario y sede con
+  las reversiones de esa misma caja, de modo que una reversión concurrente con
+  el cierre **o entra en la foto o se rechaza** con `CASH_SESSION_CLOSED`; y un
+  cobro concurrente con el cierre DEBERÁ **o entrar en la foto o quedar en el
+  turno siguiente**, nunca rechazado ni en los dos.
+  > Un candado de transacción por (sede, usuario), `cash_drawer_lock`, que
+  > toman el cierre antes de leer y la reversión antes de escribir. El cobro
+  > no lo necesita: nace sin cierre, y el cierre sólo marca los que leyó. El
+  > instante del cierre se lee con el candado ya tomado, y un cobro con un
+  > instante posterior (el reloj de otra réplica) queda para el turno
+  > siguiente; si aun así el turno cambia bajo el cierre, se rechaza con
+  > `CASH_SESSION_CHANGED` y se vuelve a cerrar.
 - **BI-254** — CUANDO se cobre una factura que ya declara su forma de pago, el
   sistema DEBERÁ rechazar con `PAYMENT_METHOD_MISMATCH` un medio de otra forma
   de pago, y DEBERÁ rechazar igual cambiar la forma de pago de una devuelta
@@ -1577,10 +1631,17 @@ es falsa, hay requisitos que cambian.
   > El comprobante le dice al SRI cómo se pagó; un abono por transferencia de
   > una factura que declara «sin sistema financiero» lo contradice (D-197.7).
 - **BI-255** — CUANDO caja cierre enviando el efectivo esperado que vio, el
-  sistema DEBERÁ rechazar el cierre con `CASH_DAY_CHANGED` SI, bajo el candado
-  de su caja, el efectivo esperado ya es otro.
+  sistema DEBERÁ rechazar el cierre con `CASH_SESSION_CHANGED` SI, bajo el
+  candado de su caja, el efectivo esperado de su turno ya es otro.
   > La diferencia que se graba es la que la cajera confirmó, no otra que trajo
   > un cobro de otra pestaña mientras contaba.
+- **BI-258** — CUANDO caja consulte los cierres de un día, el sistema DEBERÁ
+  servir los suyos en la sede cuyo instante de cierre cae ese día en
+  `America/Guayaquil`, en el orden en que cerró, cada uno con su foto (BI-252)
+  y el instante del cierre anterior, o ninguno si es el primero; y la pantalla
+  DEBERÁ mostrarlos bajo el turno abierto, hoy de entrada.
+  > Es donde se ve que la mañana cuadró y la tarde no. El cierre anterior es
+  > «desde cuándo» del turno, derivado y no guardado: un dato en un solo sitio.
 
 ## 12. El tarifario que se exhibe al público
 
@@ -2680,8 +2741,8 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `PAYMENT_EXCEEDS_BALANCE` | 422 | BI-101 |
 | `CASH_SESSION_CLOSED` | 409 | BI-104, BI-253 |
 | `CASH_SESSION_ALREADY_CLOSED` | 409 | BI-252 |
-| `CASH_DAY_CHANGED` | 409 | BI-255 |
-| `CASH_SESSION_DATE_IN_FUTURE` | 422 | BI-252 |
+| `CASH_SESSION_CHANGED` | 409 | BI-255 |
+| `CASH_SESSION_EMPTY` | 422 | BI-252 |
 | `PAYMENT_NOT_FOUND` | 404 | BI-251, BI-135 |
 | `PAYMENT_ALREADY_REVERSED` | 409 | BI-102 |
 | `PAYMENT_METHOD_INACTIVE` | 422 | BI-247, BI-248 |
@@ -2855,8 +2916,9 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `GET` | `/billing/sites/{siteId}/credit-notes` | `billing:read` | `param:siteId` | BI-218, BI-234 |
 | `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/resubmission` | `billing:write` | `param:siteId` | BI-216, BI-217 |
 | `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/payments` | `billing:write` | `param:siteId` | BI-101, BI-103, BI-104, BI-248, BI-250, BI-253, BI-254 |
-| `POST` | `/billing/sites/{siteId}/payments/{paymentId}/reversal` | `billing:write` | `param:siteId` | BI-102, BI-104, BI-251 |
-| `GET` | `/billing/sites/{siteId}/cash-sessions/day` | `billing:write` | `param:siteId` | BI-105, BI-251 |
+| `POST` | `/billing/sites/{siteId}/payments/{paymentId}/reversal` | `billing:write` | `param:siteId` | BI-102, BI-104, BI-251, BI-253 |
+| `GET` | `/billing/sites/{siteId}/cash-sessions/open` | `billing:write` | `param:siteId` | BI-105, BI-251 |
+| `GET` | `/billing/sites/{siteId}/cash-sessions?date=` | `billing:write` | `param:siteId` | BI-258 |
 | `POST` | `/billing/sites/{siteId}/cash-sessions/close` | `billing:write` | `param:siteId` | BI-104, BI-105, BI-252, BI-253, BI-255 |
 | `GET` | `/billing/discount-limits` | `settings:read` | `global` | BI-062, BI-141 |
 | `PUT` | `/billing/discount-limits/{roleId}` | `settings:manage` | `global` | BI-141, BI-142, BI-147 |
@@ -2940,7 +3002,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | BI-085 | Integración contra PostgreSQL real con dos clientes concurrentes: es SC-023, y el hueco en la numeración solo aparece bajo concurrencia |
 | BI-088, BI-096 | Integración contra PostgreSQL real: se factura, se anula y se vuelve a facturar el mismo cargo; y con nota de crédito, no |
 | BI-091 a BI-095, BI-097 | Unitario de dominio con reloj fijado (los plazos) + contrato HTTP |
-| BI-100 a BI-105, BI-247 a BI-255 | Unitario de dominio + integración contra PostgreSQL real: el tope del saldo, la reversión única, el `DELETE` y la foto del cierre **por SQL directo** con control positivo; la fecha de caja con un instante de la noche de Guayaquil; dos clientes a la vez para BI-101 y BI-253 |
+| BI-100 a BI-105, BI-247 a BI-255, BI-258 | Unitario de dominio + integración contra PostgreSQL real: el tope del saldo, la reversión única, el `DELETE`, el cobro cerrado y la foto del cierre **por SQL directo** con control positivo; la fecha de caja con un instante de la noche de Guayaquil; dos clientes a la vez para BI-101 y BI-253; dos cierres el mismo día por HTTP |
 | BI-110 a BI-115 | Seguridad dirigida **sin credenciales** + contrato HTTP: la ruta pública responde sin sesión, y ningún parámetro la desvía a otra lista de precios |
 | BI-130 a BI-135 | Seguridad dirigida + la prueba de rutas que recorre las que NestJS registró de verdad |
 | BI-140 a BI-147 | Integración + contrato HTTP por campo; BI-142 y BI-144 contra PostgreSQL real con control positivo |
