@@ -61,15 +61,17 @@ clínica para contar días hábiles. Nadie depende de este módulo.
 | **Consentimiento**     | Fila de `patient_consent`: quién lo otorgó, sobre qué versión, por qué medio, cuándo y ante quién. Nunca se modifica |
 | **Medio**              | `SIGNED_PAPER` (papel firmado) u `ON_SCREEN` (aceptado en pantalla)                                                  |
 | **Otorgante**          | `HOLDER` (el titular) o `REPRESENTATIVE` (su representante legal)                                                    |
+| **Quien la presenta**  | El otorgante, o un **tercero** (PD-052): `ATTORNEY` (apoderado), `AUTHORIZED_PERSON` (persona autorizada), `AUTHORITY` (autoridad judicial o de salud), `DECEASED_RELATIVE` (familiar del fallecido) |
+| **Copia de la historia** | Solicitud de acceso que pide la copia certificada de la historia clínica (A.M. 5216): vence a las 48 horas (PD-053, PD-054) |
 | **Solicitud**          | Fila de `data_subject_request`: un derecho ejercido sobre una ficha                                                  |
 | **Derecho**            | `ACCESS`, `RECTIFICATION`, `ERASURE`, `OBJECTION`, `PORTABILITY`, `SUSPENSION` (LOPDP arts. 13-17 y 19)              |
-| **Vencimiento**        | Fecha clínica en que vence la respuesta. Se fija al registrar y se guarda                                            |
+| **Vencimiento**        | Instante en que vence la respuesta (`dueAt`), y su fecha clínica (`dueOn`). Se fija al registrar y se guarda (PD-054) |
 | **Día hábil**          | Lunes a viernes que no es feriado de **toda** la clínica (`holiday.site_id IS NULL`), en `America/Guayaquil`         |
 | **Respondida**         | La solicitud tiene resultado, texto, instante y autor. Ya no cambia; su respuesta se rectifica (PD-047)              |
 | **Corrección**         | Consentimiento nuevo que sustituye a uno mal registrado (`supersedes_id`); el **vigente** es el que nadie sustituye  |
 | **Rectificada**        | Respuesta nueva enlazada a la que corrige (`data_subject_answer_correction`); la original queda                    |
 | **Versión**            | Fila anterior de una tabla versionada, en `record_version`, con quién la sustituyó y cuándo (EN-210)                 |
-| **Vencida**            | Sin responder y con su vencimiento anterior a la fecha clínica de hoy                                                |
+| **Vencida**            | Sin responder y con su vencimiento ya alcanzado (`dueAt` ≤ ahora; PD-054)                                            |
 | **Ficha y absorbidas** | La ficha pedida y las que se fusionaron en ella (PA-055): lo que leen PD-016, PD-036 y PD-040                        |
 
 ---
@@ -156,6 +158,31 @@ encontrar la versión anterior de una alergia corregida.
 **Solo servidor:** PD-048, la comparación del registro de tablas versionadas
 con los disparadores de la base.
 
+### D6 — La copia de la historia clínica, al titular o a un tercero (D-198 §1, D-188 §3) _(P1)_
+
+Se registra en la ficha que el titular, su representante, su apoderado, una
+persona autorizada, una autoridad o el familiar de un fallecido pide la copia
+de la historia clínica; vence a las 48 horas; quien la responde autoriza la
+entrega, y desde la solicitud atendida se descarga la copia certificada en PDF
+(DOC-118). El registro de la entrega es la solicitud (EN-033): no hay otra
+tabla.
+
+**Por qué es P1:** REQ-007 y el A.M. 5216 (arts. 28 a 33): la historia es del
+paciente y la copia se entrega en 48 horas. Sin esto la exportación decía «la
+historia clínica, por otra vía» y la vía no existía (D-164.1).
+**Prueba independiente:** registrar la copia pedida por un apoderado y ver el
+vencimiento a las 48 horas; ver rechazado un tercero sin copia, un familiar de
+un paciente vivo y una copia sin la casilla; responderla y descargar el PDF con
+la atención firmada y las filas `EXPORT`.
+**Cubre:** PD-052 a PD-057. El PDF es DOC-118 y DOC-119 (`documents` H13).
+
+**Solo servidor:** PD-055, PD-056. Que la exportación JSON no salga a un
+tercero y las frases de la propuesta y de `omitted`: la pantalla sólo las
+muestra.
+
+**Solo interfaz:** PD-057. Cómo se lee la fila y cuándo se ofrece la descarga;
+la mitad del servidor es PD-052 a PD-054 y DOC-118.
+
 ## Criterios de éxito
 
 - **SC-070** — De todo paciente con consentimiento se puede decir, sin abrir
@@ -238,8 +265,7 @@ con los disparadores de la base.
 ## 3. Las solicitudes del titular (REQ-113)
 
 - **PD-030** — CUANDO alguien con `patient:data-requests` registre una solicitud,
-  el sistema DEBERÁ guardar la ficha, el derecho, quién la presenta (`HOLDER` o
-  `REPRESENTATIVE`), qué pide (texto obligatorio, hasta 4 000 caracteres), el
+  el sistema DEBERÁ guardar la ficha, el derecho, quién la presenta (PD-052), qué pide (texto obligatorio, hasta 4 000 caracteres), el
   instante en que se recibió y quién la registró. Ficha inexistente o
   absorbida: como PD-015.
 - **PD-031** — El instante de recepción DEBERÁ ser el actual si no se indica;
@@ -251,6 +277,10 @@ con los disparadores de la base.
   > **Salvo al editarla (PD-046):** si cambian el derecho o la recepción de una
   > solicitud sin responder, el vencimiento se recalcula con la regla y los
   > feriados de ese momento (D-128.9).
+
+  > **Enmendado por PD-054:** la copia de la historia clínica vence a las 48
+  > horas, y todo vencimiento se guarda como instante (el de estas reglas, al
+  > final de su día).
 
   > **Regla decidida por el autor el 30-09-2026 (D-083 §1, opción A)**, a
   > ratificar por el asesor legal antes de producción: acceso, rectificación,
@@ -274,6 +304,9 @@ con los disparadores de la base.
   abiertas, el sistema DEBERÁ devolver las no respondidas de toda la clínica
   ordenadas por vencimiento, la más próxima primero, cada una marcando si está
   vencida según la fecha clínica de hoy.
+  > **Enmendado por PD-054:** vencida es `dueAt` ≤ ahora, y se ordena por
+  > `dueAt`: una copia de 48 horas recibida hoy vence antes que un acceso de
+  > 15 días recibido ayer.
 - **PD-051** — CUANDO alguien con `patient:data-requests` pida las solicitudes
   abiertas, el sistema DEBERÁ devolverlas por páginas (20, 50 o 100) con el
   total, y DEBERÁ admitir filtrarlas por derecho y pedir sólo las vencidas,
@@ -455,6 +488,90 @@ con los disparadores de la base.
   > las versiones de la historia clínica. Pendiente del autor: si esa parte la
   > prepara alguien con `record:read`.
 
+## 6. La copia de la historia clínica (REQ-007, A.M. 5216)
+
+- **PD-052** — CUANDO alguien con `patient:data-requests` registre una
+  solicitud, quien la presenta DEBERÁ ser el titular (`HOLDER`), su
+  representante legal (`REPRESENTATIVE`), su apoderado (`ATTORNEY`), una
+  persona que él autorizó (`AUTHORIZED_PERSON`), una autoridad judicial o de
+  salud (`AUTHORITY`) o, si el paciente falleció, su cónyuge o un familiar
+  hasta el segundo grado de consanguinidad o primero de afinidad
+  (`DECEASED_RELATIVE`); y CUANDO quien la presenta no sea el titular y pida la
+  copia de la historia clínica (PD-053), el sistema DEBERÁ guardar su nombre y
+  su cédula u oficio, obligatorios y de hasta 200 caracteres cada uno. SI
+  quien la presenta es uno de los cuatro terceros y no pide la copia, ENTONCES
+  DEBERÁ rechazarla con `DATA_REQUEST_PARTY_NOT_ALLOWED` (422); SI es
+  `DECEASED_RELATIVE` y la ficha no tiene fecha de fallecimiento, ENTONCES con
+  `DATA_REQUEST_PATIENT_NOT_DECEASED` (422); y SI falta el nombre o el
+  documento, con `CLINICAL_RECORD_COPY_INVALID` (422); sin escribir nada.
+  Quien otorga un consentimiento sigue siendo el titular o su representante
+  (PD-010).
+  > **D-198 §1 (investigación del 09-10-2026), aceptada por el autor.** El
+  > art. 28 del A.M. 5216 nombra a quién se entrega la copia: el usuario, su
+  > representante legal, apoderado o persona autorizada, las autoridades
+  > judiciales y de salud y, del fallecido, el cónyuge o el familiar. Entran
+  > en el **mismo registro**, no en otra tabla. Un tercero pide la copia de la
+  > historia, no ejerce los derechos de la LOPDP del titular. Los
+  > profesionales que atienden al paciente que el artículo también nombra ya
+  > la leen en el sistema con `record:read`.
+  >
+  > **Garantía de la base:** `data_subject_request_third_party_copy_only`,
+  > `data_subject_request_requester_named` y el enum `data_request_party`,
+  > propio de la solicitud (el del consentimiento sigue con dos valores).
+- **PD-053** — DONDE la solicitud sea de acceso, quien la registra DEBERÁ
+  poder marcar que pide la **copia de la historia clínica**, y el sistema
+  DEBERÁ exigir para ello la casilla «Recibí la solicitud firmada y la copia
+  de la cédula» y guardarla. SI se pide la copia con otro derecho, o sin la
+  casilla, ENTONCES DEBERÁ rechazarlo con `CLINICAL_RECORD_COPY_INVALID` (422)
+  sin escribir nada. Que sea copia, la casilla, quien la presenta, su nombre y
+  su documento NO DEBERÁN cambiar al editarla (PD-046), tampoco desde SQL; y
+  SI la edición cambia el derecho de una copia a otro que no es acceso,
+  ENTONCES DEBERÁ rechazarla con `CLINICAL_RECORD_COPY_INVALID`.
+  > El art. 28 pide la solicitud firmada y la copia de la cédula; la casilla
+  > deja escrito que quien la registra las tuvo en la mano (Reglamento LOPDP
+  > art. 12: la identidad se comprueba en el mostrador). **Garantía de la
+  > base:** `data_subject_request_copy_is_access` y
+  > `data_subject_request_copy_documents_checked`.
+- **PD-054** — CUANDO se registre o se edite una solicitud de copia de la
+  historia clínica, el sistema DEBERÁ fijar su vencimiento a las **48 horas**
+  del instante de recepción; el de las demás DEBERÁ ser el final, en
+  `America/Guayaquil`, del día que fija PD-032. Toda solicitud DEBERÁ
+  devolver su vencimiento como instante (`dueAt`) y como la fecha clínica del
+  último día a tiempo (`dueOn`); vencida es sin responder con `dueAt` anterior
+  o igual a ahora, y la lista de abiertas (PD-035, PD-051) DEBERÁ ordenarse y
+  filtrarse por `dueAt`.
+  > **D-198 §1.2:** A.M. 5216 art. 30, «en un plazo máximo de cuarenta y ocho
+  > (48) horas». **Al asesor legal:** que rigen las 48 horas aunque se tramite
+  > como acceso de la LOPDP. Las horas son corridas: el artículo no dice
+  > hábiles. **Garantía de la base:** `data_subject_request_due_after_receipt`
+  > (`due_at` > `received_at`); los vencimientos ya fijados pasan al final de
+  > su día sin moverse.
+- **PD-055** — SI quien presenta una solicitud de acceso o portabilidad es un
+  tercero (PD-052), ENTONCES la exportación JSON (PD-040) y su propuesta
+  (PD-049) DEBERÁN rechazarse con `DATA_EXPORT_NOT_APPLICABLE` (422) sin
+  escribir nada: un tercero recibe la copia de la historia (DOC-118), no la
+  ficha administrativa, los consentimientos ni las solicitudes del titular.
+- **PD-056** — CUANDO alguien con `patient:data-requests` pida la propuesta de
+  respuesta de una solicitud de copia de la historia clínica, el sistema
+  DEBERÁ devolver un párrafo que diga que se autoriza la entrega de la copia
+  certificada, a quién —quien la presentó y, si no es el titular, su
+  nombre—, qué lleva (cada atención con nota de consulta firmada) y qué no (el
+  tamizaje de violencia); sin escribir nada. Y en la exportación JSON el
+  motivo de `clinical_record` DEBERÁ decir que la historia clínica se entrega
+  como copia certificada en PDF registrando la solicitud como copia de la
+  historia clínica, y ya no «por otra vía».
+  > **D-164.1, resuelta por D-198 §1:** la vía es la copia certificada y el
+  > plazo, 48 horas. **D-188 §3:** el tamizaje no sale en ningún papel ni
+  > archivo del titular sin revisión humana; la copia no lo lleva y lo dice.
+- **PD-057** — CUANDO la ficha muestre sus solicitudes (PD-036), cada una
+  DEBERÁ decir quién la presentó —con su nombre si no es el titular—, si es
+  «Copia de la historia clínica» y su vencimiento, con la hora si es de copia;
+  y MIENTRAS una solicitud de copia tenga respuesta «Atendida» o «Atendida en
+  parte», DEBERÁ ofrecer «Descargar copia (PDF)» (DOC-118). Al registrarla, la
+  pantalla DEBERÁ ofrecer los seis que la presentan; con un tercero DEBERÁ
+  fijar el derecho en acceso y marcar la copia, y con la copia pedir el nombre,
+  el documento y la casilla.
+
 ---
 
 ## Códigos de error
@@ -473,6 +590,9 @@ con los disparadores de la base.
 | `CONSENT_NOT_FOUND`               | 404  | Se corrige un consentimiento que no existe o no es de la ficha (PD-044) |
 | `CONSENT_ALREADY_CORRECTED`       | 409  | Ese consentimiento ya tiene corrección (PD-044)                        |
 | `DATA_REQUEST_NOT_ANSWERED`       | 409  | Se rectifica la respuesta de una solicitud sin responder (PD-047)      |
+| `DATA_REQUEST_PARTY_NOT_ALLOWED`  | 422  | Un tercero presenta algo que no es la copia de la historia (PD-052)    |
+| `DATA_REQUEST_PATIENT_NOT_DECEASED` | 422 | El familiar del fallecido pide la copia de un paciente vivo (PD-052) |
+| `CLINICAL_RECORD_COPY_INVALID`    | 422  | Copia sin acceso, sin casilla o sin el nombre y documento (PD-052, PD-053) |
 
 `PATIENT_MERGED` es compartido (`shared/domain/errors`) y se reutiliza.
 `DATA_SUBJECT_NOT_FOUND` es propio y no `PATIENT_NOT_FOUND`: ese código lo
@@ -482,6 +602,9 @@ puede verla»).
 
 ## Notas de esquema
 
+- `20261010130000_privacy_clinical_record_copy` (PD-052 a PD-054): el enum
+  `data_request_party`, las columnas de la copia y de quien la presenta, y
+  `due_on` pasa a `due_at` (instante); los ya fijados, al final de su día.
 - Las tres tablas llevan disparadores que rechazan `DELETE` y `TRUNCATE`;
   `consent_text_version` y `patient_consent` también `UPDATE`;
   `data_subject_request` admite pasar de sin responder a respondida (PD-038) y,
@@ -505,16 +628,17 @@ puede verla»).
 | `GET`  | `/privacy/patients/:patientId/consents` | `patient:read`          | PD-016                         |
 | `POST` | `/privacy/patients/:patientId/consents` | `patient:write`         | PD-010 a PD-015, PD-017        |
 | `GET`  | `/privacy/patients/:patientId/requests` | `patient:data-requests` | PD-036                         |
-| `POST` | `/privacy/patients/:patientId/requests` | `patient:data-requests` | PD-030 a PD-032, PD-037        |
+| `POST` | `/privacy/patients/:patientId/requests` | `patient:data-requests` | PD-030 a PD-032, PD-037, PD-052 a PD-054 |
 | `GET`  | `/privacy/requests`                     | `patient:data-requests` | PD-035, PD-051                 |
 | `POST` | `/privacy/requests/:requestId/response` | `patient:data-requests` | PD-033, PD-034, PD-037, PD-038 |
-| `GET`  | `/privacy/requests/:requestId/export`   | `patient:data-requests` | PD-040 a PD-043, PD-048, PD-050 |
-| `GET`  | `/privacy/requests/:requestId/answer-proposal` | `patient:data-requests` | PD-049         |
+| `GET`  | `/privacy/requests/:requestId/export`   | `patient:data-requests` | PD-040 a PD-043, PD-048, PD-050, PD-055 |
+| `GET`  | `/privacy/requests/:requestId/answer-proposal` | `patient:data-requests` | PD-049, PD-055, PD-056 |
 | `POST` | `/privacy/patients/:patientId/consents/:consentId/correction` | `patient:write` | PD-044            |
 | `PATCH` | `/privacy/requests/:requestId`         | `patient:data-requests` | PD-046                         |
 | `POST` | `/privacy/requests/:requestId/response/correction` | `patient:data-requests` | PD-047             |
 
 Todas con alcance `global`: una ficha es una en todo el sistema (PA-051).
+La copia de la historia la compone `documents`: `GET /v1/documents/data-requests/:requestId/clinical-record` (DOC-118).
 
 ## Niveles de prueba
 

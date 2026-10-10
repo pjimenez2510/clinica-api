@@ -1222,10 +1222,14 @@ requisitos que cambian.
   > registro de la entrega es lo que protege a la clínica de «yo nunca la pedí» y
   > al paciente de «se la dimos a su cuñado».
   >
-  > **Falta esquema.** No hay ninguna tabla de entregas. La bitácora de accesos
-  > (`access_audit`) registra lecturas por parte del **personal**, no una entrega al
-  > titular, y confundirlas dejaría la entrega registrada como si un empleado
-  > hubiera consultado la ficha.
+  > **Enmendado por D-198 §1 (aceptada por el autor el 09-10-2026): el registro
+  > de la entrega es la solicitud de copia de la historia clínica de `privacy`**
+  > (PD-052 a PD-057), sin una segunda tabla: quién la pidió es quien la
+  > presenta —el titular o un tercero del A.M. 5216 art. 28, con su nombre y su
+  > documento—, quién la autorizó y cuándo es su respuesta, y la copia
+  > certificada en PDF (DOC-118) sólo sale de una solicitud atendida, con su
+  > fila `EXPORT` en la bitácora (DOC-119). La bitácora sola no bastaba: registra
+  > lecturas del **personal**, no una entrega al titular.
 - **EN-034** — El sistema DEBERÁ registrar la fecha y hora reales de la atención
   y NO DEBERÁ tomarlas del instante en que se teclea el registro.
   > El art. 5 pide que la historia se llene «de forma simultánea a la atención,
@@ -4735,7 +4739,7 @@ una.
 | Catálogos de **grupos prioritarios (14)** y **grupos vulnerables (16)** del RDACAA | `catalogSystemSchema`, `catalog_concept`, tabla nueva de vulnerables | EN-099 |
 | `REVERSE_REFERRAL` en `ReferralDirection`; anulación en `ReferralStatus` | enums | EN-100, EN-107 |
 | Interconsulta solicitada / recibida | `interconsultation` | EN-103 |
-| Registro de entrega de la historia al paciente | tabla nueva | EN-033 |
+| Registro de entrega de la historia al paciente | la solicitud de copia de `privacy` (D-198 §1) | EN-033 |
 | Motivo, autor e instante de la **suspensión** (`ON_HOLD`) | `encounter` | EN-128 |
 | Motivo, autor e **origen** de la interrupción —paciente o establecimiento— | `encounter` | EN-129 |
 | **Historial de estados** con el hecho que disparó cada cambio | tabla nueva | EN-133 |
