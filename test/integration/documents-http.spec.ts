@@ -2235,4 +2235,233 @@ describe('los documentos por HTTP', () => {
       expect(after.byteSize).toBeGreaterThan(before.byteSize);
     });
   });
+
+  describe('DOC-118 DOC-119 la copia certificada de la historia clínica (D-198 §1)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const copyOf = (requestId: string, token = adminToken) =>
+      get(`/documents/data-requests/${requestId}/clinical-record`, token);
+
+    async function signedNote(encounterId: string, reason: string) {
+      const chainId = randomUUID();
+      await prisma.clinicalNote.create({
+        data: {
+          id: chainId,
+          chainId,
+          encounterId,
+          formCode: '002',
+          formVersion: '1',
+          status: 'SIGNED',
+          content: {
+            motivoConsulta: reason,
+            antecedentes: 'Sin antecedentes de importancia',
+            enfermedadActual: 'Cuadro de inicio reciente',
+            revisionOrganosSistemas: 'Sin otros síntomas',
+            examenFisico: 'Sin hallazgos',
+            planTratamiento: 'Control',
+          },
+          authorId: practitionerId,
+          signedById: practitionerId,
+          signedAt: new Date(),
+          contentHash: 'b'.repeat(64),
+        },
+      });
+    }
+
+    /** The seeded attention signed, an older one on a chart merged into it, and an annulled one. */
+    async function aRecordWithHistory() {
+      const seeded = await prisma.encounter.findFirstOrThrow({
+        select: { id: true, patientId: true, startedAt: true },
+      });
+      await signedNote(seeded.id, 'Dolor de garganta de dos días');
+
+      const absorbed = await createPatient(prisma);
+      const older = await prisma.encounter.create({
+        data: {
+          siteId,
+          practitionerId,
+          patientId: absorbed.id,
+          startedAt: new Date(seeded.startedAt.getTime() - 30 * DAY),
+          careModality: 'MORBIDITY',
+          visitSequence: 'FIRST_TIME',
+        },
+      });
+      await signedNote(older.id, 'Control de presión arterial');
+      await prisma.patient.update({
+        where: { id: absorbed.id },
+        data: { mergedIntoId: seeded.patientId, mergedAt: new Date() },
+      });
+
+      const wrong = await prisma.encounter.create({
+        data: {
+          siteId,
+          practitionerId,
+          patientId: seeded.patientId,
+          startedAt: new Date(seeded.startedAt.getTime() - 10 * DAY),
+          careModality: 'MORBIDITY',
+          visitSequence: 'SUBSEQUENT',
+        },
+      });
+      await signedNote(wrong.id, 'Paciente equivocado');
+      const now = new Date();
+      await prisma.encounter.update({
+        where: { id: wrong.id },
+        data: { status: 'ENTERED_IN_ERROR', endedAt: now, enteredInErrorById: (await createUser(prisma)).id, enteredInErrorAt: now }, // prettier-ignore
+      });
+      return { patientId: seeded.patientId, absorbedId: absorbed.id };
+    }
+
+    async function copyRequest(patientId: string, body: object = {}) {
+      const response = await post(
+        `/privacy/patients/${patientId}/requests`,
+        adminToken,
+        {
+          right: 'ACCESS',
+          requestedBy: 'AUTHORITY',
+          requesterName: 'Juzgado Primero de lo Civil',
+          requesterDocument: 'Oficio 123',
+          clinicalRecordCopy: true,
+          documentsChecked: true,
+          description: 'Copia certificada de la historia clínica',
+          ...body,
+        },
+      ).expect(201);
+      return (response.body as { id: string }).id;
+    }
+
+    const answer = (requestId: string, outcome: string, path = 'response') =>
+      post(`/privacy/requests/${requestId}/${path}`, adminToken, {
+        outcome,
+        response: 'Respuesta',
+      }).expect(200);
+
+    async function copyText(requestId: string): Promise<string> {
+      const response = await copyOf(requestId)
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      expect(response.headers['content-type']).toContain('application/pdf');
+      expect(response.headers['cache-control']).toContain('no-store');
+      const proxy = await getDocumentProxy(
+        new Uint8Array(response.body as Buffer),
+      );
+      return (await extractText(proxy, { mergePages: true })).text.replace(
+        /\s+/g,
+        ' ',
+      );
+    }
+
+    it('DOC-118 EN-033 sin respuesta o denegada no sale; atendida, lleva CONFIDENCIAL, quién la pidió y la autorizó, y las atenciones de la ficha y su absorbida, sin la anulada', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId } = await aRecordWithHistory();
+      const requestId = await copyRequest(patientId);
+
+      const unanswered = await copyOf(requestId).expect(409);
+      expect((unanswered.body as Problem).code).toBe(
+        'CLINICAL_RECORD_COPY_NOT_AVAILABLE',
+      );
+      await answer(requestId, 'DENIED');
+      await copyOf(requestId).expect(409);
+      // PD-047. The standing answer is what authorises: a rectification grants it.
+      await answer(requestId, 'GRANTED', 'response/correction');
+
+      const text = await copyText(requestId);
+
+      expect(text).toContain('CONFIDENCIAL');
+      expect(text).toContain('COPIA CERTIFICADA DE LA HISTORIA CLÍNICA');
+      expect(text).toContain('Juzgado Primero de lo Civil');
+      expect(text).toContain('Oficio 123');
+      expect(text).toContain('custodio de la historia clínica');
+      expect(text).toContain('tamizaje de violencia');
+      const older = text.indexOf('Control de presión arterial');
+      const newer = text.indexOf('Dolor de garganta de dos días');
+      expect(older).toBeGreaterThan(-1);
+      expect(newer).toBeGreaterThan(older);
+      expect(text).not.toContain('Paciente equivocado');
+      expect(text).toContain('Amoxicilina');
+      await expect(prisma.documentRender.count()).resolves.toBe(0);
+    });
+
+    it('DOC-119 cada copia deja una fila EXPORT por ficha cuyas atenciones salen y otra de la solicitud', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId, absorbedId } = await aRecordWithHistory();
+      const requestId = await copyRequest(patientId);
+      await answer(requestId, 'GRANTED');
+
+      await copyText(requestId);
+
+      const rows = await prisma.accessAudit.findMany({
+        where: { action: 'EXPORT' },
+        select: { resourceType: true, resourceId: true },
+      });
+      expect(rows).toEqual(
+        expect.arrayContaining([
+          { resourceType: 'patient', resourceId: patientId },
+          { resourceType: 'patient', resourceId: absorbedId },
+          { resourceType: 'data_subject_request', resourceId: requestId },
+        ]),
+      );
+      expect(rows).toHaveLength(3);
+    });
+
+    it('DOC-119 si la bitácora no se puede escribir, no se entrega nada', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId } = await aRecordWithHistory();
+      const requestId = await copyRequest(patientId);
+      await answer(requestId, 'GRANTED');
+      await prisma.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION test_refuse_export() RETURNS TRIGGER
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.resource_type = 'data_subject_request' AND NEW.action = 'EXPORT' THEN
+            RAISE EXCEPTION 'trail unavailable (test)' USING ERRCODE = 'XX000';
+          END IF;
+          RETURN NEW;
+        END; $$`);
+      await prisma.$executeRawUnsafe(`
+        CREATE TRIGGER trg_test_refuse_export BEFORE INSERT ON access_audit
+        FOR EACH ROW EXECUTE FUNCTION test_refuse_export()`);
+      try {
+        const refused = await copyOf(requestId);
+        expect(refused.status).toBeGreaterThanOrEqual(500);
+        expect(refused.headers['content-type']).not.toContain(
+          'application/pdf',
+        );
+        // All or nothing: not even the chart's rows stayed.
+        await expect(
+          prisma.accessAudit.count({ where: { action: 'EXPORT' } }),
+        ).resolves.toBe(0);
+      } finally {
+        await prisma.$executeRawUnsafe(
+          'DROP TRIGGER trg_test_refuse_export ON access_audit',
+        );
+        await prisma.$executeRawUnsafe('DROP FUNCTION test_refuse_export()');
+      }
+    });
+
+    it('DOC-118 una solicitud que no es de copia no la da, una inexistente responde 404, y sin patient:data-requests es 403', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId } = await aRecordWithHistory();
+      const access = await copyRequest(patientId, {
+        requestedBy: 'HOLDER',
+        clinicalRecordCopy: false,
+        documentsChecked: false,
+      });
+      await answer(access, 'GRANTED');
+      const notCopy = await copyOf(access).expect(409);
+      expect((notCopy.body as Problem).code).toBe(
+        'CLINICAL_RECORD_COPY_NOT_AVAILABLE',
+      );
+
+      const missing = await copyOf(randomUUID()).expect(404);
+      expect((missing.body as Problem).code).toBe('DOCUMENT_SUBJECT_NOT_FOUND');
+
+      const requestId = await copyRequest(patientId);
+      await answer(requestId, 'GRANTED');
+      await copyOf(requestId, doctorToken).expect(403);
+    });
+  });
 });

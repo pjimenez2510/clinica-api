@@ -96,6 +96,21 @@ export class EncounterSummaryNotAvailableError extends ConflictError {
 }
 
 /**
+ * DOC-118. The request is not one for the copy of the clinical record, or its
+ * standing answer does not grant it: nobody authorised the delivery (EN-033).
+ * 409: the request exists; what is missing is the authorisation.
+ */
+export class ClinicalRecordCopyNotAvailableError extends ConflictError {
+  readonly code = 'CLINICAL_RECORD_COPY_NOT_AVAILABLE';
+  override readonly userTitle =
+    'La copia de la historia clínica se descarga cuando la solicitud de copia está atendida';
+
+  constructor() {
+    super('Clinical record copy not authorised by the request');
+  }
+}
+
+/**
  * DOC-037. No template version has been published for this class of document.
  *
  * 422 AND NOT 500: nothing is broken, a datum of the installation is missing,

@@ -4,7 +4,10 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 
-import { composeLayout } from '../domain/document-layout';
+import {
+  composeClinicalRecordCopyLayout,
+  composeLayout,
+} from '../domain/document-layout';
 import {
   DOCUMENT_RENDERER,
   type DocumentRenderer,
@@ -23,6 +26,7 @@ import {
   type StoredDocument,
 } from '../domain/document.repository';
 import {
+  ClinicalRecordCopyNotAvailableError,
   DocumentRenderNotFoundError,
   DocumentSubjectNotFoundError,
   DocumentSubjectNotIssuableError,
@@ -220,6 +224,77 @@ export class DocumentService {
       mimeType: 'application/pdf',
       sha256: sha256Of(content),
       fileName: `resumen-atencion-${clinicalDateOf(subject.data.startedAt)}.pdf`,
+    };
+  }
+
+  /**
+   * DOC-118, DOC-119 (D-198 §1). The certified copy of the clinical record a
+   * copy request of `privacy` authorised: composed now, never archived. The
+   * trail —one `EXPORT` per chart whose attentions leave and one naming the
+   * request— is written FIRST, in one transaction, and nothing is served if
+   * it cannot be.
+   *
+   * Not scoped by site, like the request (PA-051): the record is one.
+   */
+  async clinicalRecordCopy(
+    requestId: string,
+    requester: Requester,
+  ): Promise<RenderedDocument> {
+    const lookup = await this.sources.findClinicalRecordCopy(requestId);
+    if (lookup.status === 'missing') throw new DocumentSubjectNotFoundError();
+    if (lookup.status === 'not-available') {
+      throw new ClinicalRecordCopyNotAvailableError();
+    }
+    const { data } = lookup;
+
+    // The latest attention's letterhead; with none, the first active site's,
+    // as a template preview does (a global route takes no site).
+    const siteId = data.siteId ?? (await this.sources.firstActiveSiteId());
+    const context =
+      siteId === null ? null : await this.sources.contextForSite(siteId);
+    if (context === null) throw new DocumentSubjectNotFoundError();
+    const template = await this.documents.findCurrentTemplate(
+      templateKindOf('ENCOUNTER_SUMMARY'),
+    );
+    if (template === null) {
+      throw new DocumentTemplateNotPublishedError('ENCOUNTER_SUMMARY');
+    }
+
+    // Composed on demand: the clock is the instant it was produced.
+    const issuedAt = new Date();
+    const layout = composeClinicalRecordCopyLayout(
+      data,
+      context,
+      template,
+      issuedAt,
+    );
+    const content = await this.renderer.render(
+      layout,
+      { logo: context.establishment.logo, seal: null, signature: null },
+      {
+        title: layout.frame.title,
+        author: layout.frame.establishmentName,
+        createdAt: issuedAt,
+      },
+    );
+
+    // DOC-119, REQ-110. Before it is served, all or nothing.
+    await this.documents.recordDisclosures([
+      ...data.chartIds.map((chartId) => ({
+        ...disclosureOf(requester, chartId, 'EXPORT'),
+        resourceType: 'patient' as const,
+      })),
+      {
+        ...disclosureOf(requester, requestId, 'EXPORT'),
+        resourceType: 'data_subject_request' as const,
+      },
+    ]);
+
+    return {
+      content,
+      mimeType: 'application/pdf',
+      sha256: sha256Of(content),
+      fileName: `copia-historia-clinica-${clinicalDateOf(issuedAt)}.pdf`,
     };
   }
 

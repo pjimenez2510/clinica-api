@@ -325,6 +325,17 @@ export class PrismaDocumentRepository implements DocumentRepository {
     await this.prisma.accessAudit.create({ data: auditRow(disclosure) });
   }
 
+  async recordDisclosures(
+    disclosures: readonly DisclosureRecord[],
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      // One after another: a transaction is one connection.
+      for (const disclosure of disclosures) {
+        await tx.accessAudit.create({ data: auditRow(disclosure) });
+      }
+    });
+  }
+
   /**
    * Every artefact of one subject in scope, newest first, superseded ones
    * included; without their bytes.

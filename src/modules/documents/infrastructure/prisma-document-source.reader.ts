@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 
 import { invoiceDocumentNumber } from '../../../shared/billing/document-number';
 import {
+  chartScope,
   chartScopeRows,
   chartScopeSelect,
 } from '../../../shared/infrastructure/prisma/patient-chart-scope';
@@ -26,6 +27,8 @@ import type {
 import { DOCUMENT_VERIFICATION_BASE_URL } from '../domain/document-source';
 import type { VerificationFacts } from '../domain/document-verification';
 import type {
+  ClinicalRecordCopyLookup,
+  ClinicalRecordCopyPrintData,
   DocumentContext,
   DocumentSourceReader,
   DocumentSubject,
@@ -606,6 +609,125 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       establishmentName: nameOf(order.site),
       siteName: order.site.name,
       practitionerName: `${order.orderedBy.user.lastName} ${order.orderedBy.user.firstName}`,
+    };
+  }
+
+  // ── copy of the clinical record ───────────────────────────────────────────
+
+  /**
+   * DOC-118 (D-198 §1). The copy a request of `privacy` authorised, read from
+   * its table without importing the module (no module imports another).
+   *
+   * ONLY A COPY REQUEST WHOSE STANDING ANSWER GRANTS IT: the answer is the
+   * authorisation (EN-033), so a request unanswered, denied, or whose answer a
+   * rectification turned into a denial (PD-047) hands nothing over.
+   *
+   * THE CHART IN FORCE AND ITS ABSORBED ONES (PA-055): if the chart of the
+   * request was absorbed later, its attentions moved with the person. Every
+   * attention with a signed 002 and not annulled, oldest first, read through
+   * the SAME query the summary uses, so the copy never says something the
+   * summary of that attention would not.
+   */
+  async findClinicalRecordCopy(
+    requestId: string,
+  ): Promise<ClinicalRecordCopyLookup> {
+    const request = await this.prisma.dataSubjectRequest.findUnique({
+      where: { id: requestId },
+      select: {
+        patientId: true,
+        clinicalRecordCopy: true,
+        requestedBy: true,
+        requesterName: true,
+        requesterDocument: true,
+        receivedAt: true,
+        outcome: true,
+        answeredAt: true,
+        answeredBy: true,
+        answerCorrections: {
+          where: { correctedBy: null },
+          select: { outcome: true, answeredAt: true, answeredBy: true },
+        },
+      },
+    });
+    if (request === null) return { status: 'missing' };
+
+    // PD-047. The standing answer: the rectification nobody rectified, or the
+    // original when there is none.
+    const standing = request.answerCorrections[0] ?? {
+      outcome: request.outcome,
+      answeredAt: request.answeredAt,
+      answeredBy: request.answeredBy,
+    };
+    if (
+      !request.clinicalRecordCopy ||
+      (standing.outcome !== 'GRANTED' &&
+        standing.outcome !== 'PARTIALLY_GRANTED') ||
+      standing.answeredAt === null ||
+      standing.answeredBy === null
+    ) {
+      return { status: 'not-available' };
+    }
+
+    const written = await this.prisma.patient.findUniqueOrThrow({
+      where: { id: request.patientId },
+      select: { mergedIntoId: true },
+    });
+    // Merges never chain (PA-046): one hop is the whole resolution.
+    const rootId = written.mergedIntoId ?? request.patientId;
+    const charts = await this.prisma.patient.findMany({
+      where: { OR: [{ id: rootId }, { mergedIntoId: rootId }] },
+      select: { id: true },
+    });
+    const chartIds = [
+      rootId,
+      ...charts.map((chart) => chart.id).filter((id) => id !== rootId),
+    ];
+    const chart = await this.prisma.patient.findUniqueOrThrow({
+      where: { id: rootId },
+      select: { ...PATIENT_SELECT, sex: true },
+    });
+    const authoriser = await this.prisma.user.findUniqueOrThrow({
+      where: { id: standing.answeredBy },
+      select: { firstName: true, lastName: true },
+    });
+
+    const attentions = await this.prisma.encounter.findMany({
+      where: {
+        // PA-055: the person's whole scope, from the chart in force down.
+        ...chartScope(rootId),
+        status: { not: 'ENTERED_IN_ERROR' },
+        notes: { some: { formCode: '002', status: 'SIGNED' } },
+      },
+      orderBy: [{ startedAt: 'asc' }, { id: 'asc' }],
+      select: { id: true, site: { select: { id: true, name: true } } },
+    });
+    const encounters: ClinicalRecordCopyPrintData['encounters'][number][] = [];
+    // One after another: the copy is one request, and a pool of parallel
+    // reads for one paper would starve the screens that are being used.
+    for (const attention of attentions) {
+      const subject = await this.findEncounterSummary(attention.id, 'all');
+      if (subject?.kind !== 'ENCOUNTER_SUMMARY') continue;
+      if (subject.data.note === null) continue;
+      encounters.push({ ...subject.data, siteName: attention.site.name });
+    }
+
+    return {
+      status: 'ready',
+      data: {
+        requestId,
+        patient: toPatient(chart, null, null),
+        patientSex: chart.sex,
+        requestedBy: request.requestedBy,
+        requesterName: request.requesterName,
+        requesterDocument: request.requesterDocument,
+        receivedAt: request.receivedAt,
+        // Art. 5.d.i. Surnames first, like everybody else on paper.
+        authorisedBy: `${authoriser.lastName} ${authoriser.firstName}`,
+        authorisedAt: standing.answeredAt,
+        chartIds,
+        encounters,
+        siteId: attentions.at(-1)?.site.id ?? null,
+      },
     };
   }
 

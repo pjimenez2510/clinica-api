@@ -374,6 +374,42 @@ export interface ClinicalFormPrintData {
   sections: readonly { title: string; text: string }[];
 }
 
+/**
+ * DOC-118 (D-198 §1). The copy of the clinical record a request of `privacy`
+ * authorised: who asked, who authorised, and every attention with a signed
+ * 002 of the chart in force and of the charts merged into it, oldest first.
+ */
+export interface ClinicalRecordCopyPrintData {
+  requestId: string;
+  /** The chart in force, with no age: the cover is not one attention. */
+  patient: PatientIdentity;
+  patientSex: string;
+  /** PD-052. `HOLDER`, `REPRESENTATIVE` or one of the four third parties. */
+  requestedBy: string;
+  requesterName: string | null;
+  requesterDocument: string | null;
+  receivedAt: Date;
+  /** The standing answer (PD-047): who authorised the delivery, and when. */
+  authorisedBy: string;
+  authorisedAt: Date;
+  /** DOC-119. The charts whose attentions leave: the one in force first. */
+  chartIds: readonly string[];
+  /** Each attention as DOC-111 prints it, with the name of its site. */
+  encounters: readonly (EncounterSummaryPrintData & { siteName: string })[];
+  /**
+   * The site whose letterhead the copy wears: the latest attention's, or
+   * `null` when there is none (the caller takes the first active site).
+   */
+  siteId: string | null;
+}
+
+/** DOC-118. What a request id resolves to, before anything is composed. */
+export type ClinicalRecordCopyLookup =
+  | { status: 'missing' }
+  /** Not a copy request, or not answered `GRANTED`/`PARTIALLY_GRANTED`. */
+  | { status: 'not-available' }
+  | { status: 'ready'; data: ClinicalRecordCopyPrintData };
+
 export type DocumentSubject =
   | { kind: 'PRESCRIPTION'; data: PrescriptionPrintData }
   | { kind: 'SERVICE_ORDER'; data: ServiceOrderPrintData }
@@ -406,6 +442,11 @@ export interface DocumentSourceReader {
    * Not scoped: the code IS the credential, and the answer carries nobody.
    */
   findForVerification(code: string): Promise<VerificationFacts | null>;
+  /**
+   * DOC-118. The copy of the clinical record behind a request. Not scoped by
+   * site: the request is global (PA-051), and the record is one.
+   */
+  findClinicalRecordCopy(requestId: string): Promise<ClinicalRecordCopyLookup>;
 }
 
 export const DOCUMENT_SOURCE_READER = Symbol('DOCUMENT_SOURCE_READER');
