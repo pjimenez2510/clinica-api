@@ -25,6 +25,13 @@ import {
   type NutritionRecord,
   type ObstetricAnswer,
   type ObstetricRecord,
+  proposedSupplements,
+  supplementOutsidePopulation,
+  supplementsThatApply,
+  withholdProtectedRiskGroup,
+  type Supplement,
+  type SupplementAnswer,
+  type SupplementRecord,
   type VaccinationAnswer,
   type VaccinationRecord,
 } from '../domain/program-blocks';
@@ -55,11 +62,21 @@ export interface ProgramsSheet {
     vaccines: VaccineOption[];
     record: VaccinationRecord | null;
     /**
-     * REQ-115. The risk group of an adult hepatitis B, left out for whoever
-     * lacks the second key — whatever group it is, so the absence tells
-     * nothing beyond the vaccine everybody sees.
+     * REQ-115. The risk group of the adult hepatitis B dose, left out for
+     * whoever lacks the second key — whatever group it is, so the absence
+     * tells nothing beyond the vaccine everybody sees.
      */
     riskGroupWithheld: boolean;
+  };
+  /**
+   * EN-096, EN-262. Which boxes the population reaches, what the
+   * prescriptions of the attention propose for them (`null` where a box does
+   * not apply), and what was confirmed.
+   */
+  supplements: {
+    applies: Record<Supplement, boolean>;
+    proposed: SupplementAnswer;
+    record: SupplementRecord | null;
   };
 }
 
@@ -97,38 +114,87 @@ export class ProgramBlocksService {
   ): Promise<ProgramsSheet> {
     const encounter = await this.requireEncounter(encounterId, requester);
     const query = { encounterId: encounter.id, sites: requester.sites };
-    const [pregnant, vaccines, obstetric, nutrition, vaccination] =
-      await Promise.all([
-        this.blocks.isPregnant(encounter.id),
-        this.blocks.vaccinesInForce(encounter.id),
-        this.blocks.findObstetric(query),
-        this.blocks.findNutrition(query),
-        this.blocks.findVaccination(query),
-      ]);
+    const [
+      pregnant,
+      lactating,
+      sex,
+      vaccines,
+      medicines,
+      obstetric,
+      nutrition,
+      vaccination,
+      supplement,
+    ] = await Promise.all([
+      this.blocks.isPregnant(encounter.id),
+      this.blocks.isLactating(encounter.id),
+      this.blocks.patientSexOf(encounter.id),
+      this.blocks.vaccinesInForce(encounter.id),
+      this.blocks.prescribedMedicines(encounter.id),
+      this.blocks.findObstetric(query),
+      this.blocks.findNutrition(query),
+      this.blocks.findVaccination(query),
+      this.blocks.findSupplement(query),
+    ]);
+    const supplementsApply = supplementsThatApply(encounter, pregnant || lactating); // prettier-ignore
 
     const withheld =
       vaccination !== null &&
-      vaccination.riskGroup !== null &&
-      riskGroupIsProtected(vaccination.doses.map((dose) => dose.code)) &&
+      vaccination.doses.some(
+        (dose) => dose.riskGroup !== null && riskGroupIsProtected([dose.code]),
+      ) &&
       !holdsKeyAt(encounter.siteId);
 
-    if (obstetric || nutrition || vaccination) {
+    if (obstetric || nutrition || vaccination || supplement) {
       await this.trail(requester, encounter.id, 'READ');
     }
 
     return {
       clinicalDate: clinicalDateOf(encounter.startedAt),
       obstetric: { applies: pregnant, record: obstetric },
-      nutrition: { band: nutritionBandOf(encounter), record: nutrition },
+      nutrition: { band: nutritionBandOf(encounter, sex), record: nutrition },
       vaccination: {
         vaccines,
         record:
           vaccination && withheld
-            ? { ...vaccination, riskGroup: null }
+            ? withholdProtectedRiskGroup(vaccination)
             : vaccination,
         riskGroupWithheld: withheld,
       },
+      supplements: {
+        applies: supplementsApply,
+        proposed: proposedSupplements(supplementsApply, medicines),
+        record: supplement,
+      },
     };
+  }
+
+  /**
+   * EN-096, EN-249. The supplements of the attention, each only in its
+   * population: the children's by the frozen age, iron with folic acid with
+   * the pregnancy that day or her own «yes» to lactation. What the proposal
+   * said is not checked: «Sí» without a prescription is the MSP's programme.
+   */
+  async recordSupplements(
+    encounterId: string,
+    answer: SupplementAnswer,
+    requester: Requester,
+  ): Promise<SupplementRecord> {
+    const encounter = await this.requireLiveEncounter(encounterId, requester);
+    const [pregnant, lactating] = await Promise.all([
+      this.blocks.isPregnant(encounter.id),
+      this.blocks.isLactating(encounter.id),
+    ]);
+    const applies = supplementsThatApply(encounter, pregnant || lactating);
+    if (supplementOutsidePopulation(applies, answer) !== null) {
+      throw new ProgramBlockNotApplicableError('SUPPLEMENTS');
+    }
+    const saved = await this.blocks.saveSupplement(
+      { encounterId: encounter.id, sites: requester.sites },
+      answer,
+      requester.userId,
+    );
+    await this.trailSave(requester, encounter.id, saved.outcome);
+    return saved.record;
   }
 
   /** EN-090, EN-091, EN-249. Block G, only with the pregnancy on the chart that day. */
@@ -150,14 +216,20 @@ export class ProgramBlocksService {
     return saved.record;
   }
 
-  /** EN-092, EN-249. Block H, with the question of the frozen age's band. */
+  /**
+   * EN-092, EN-260, EN-249. Block H, with the question of the frozen age's
+   * band — or, for a woman of 10 to 49, only her own lactation.
+   */
   async recordNutrition(
     encounterId: string,
     answer: NutritionAnswer,
     requester: Requester,
   ): Promise<NutritionRecord> {
     const encounter = await this.requireLiveEncounter(encounterId, requester);
-    const band = nutritionBandOf(encounter);
+    const band = nutritionBandOf(
+      encounter,
+      await this.blocks.patientSexOf(encounter.id),
+    );
     const problem = band && nutritionProblem(band, answer);
     if (band === null || problem?.kind === 'notApplicable') {
       throw new ProgramBlockNotApplicableError('NUTRITION');
@@ -173,10 +245,12 @@ export class ProgramBlocksService {
   }
 
   /**
-   * EN-093, EN-249. Block I. Whether the risk group fits the vaccines, and
-   * every code is a vaccine in force that day, is the database's. Without
-   * the second key at the site, nothing that carries the protected risk
-   * group is written (the adapter, under the lock).
+   * EN-093, EN-249, EN-261. Block I. Whether each dose's risk group fits its
+   * vaccine, and every code is a vaccine in force that day, is the
+   * database's. Without the second key at the site, the adult HB already
+   * recorded is kept as it is and nothing else about it is written (the
+   * adapter, under the lock) — and the answer withholds its group as the
+   * read does.
    */
   async recordVaccination(
     encounterId: string,
@@ -185,14 +259,15 @@ export class ProgramBlocksService {
     holdsKeyAt: HoldsKeyAt,
   ): Promise<VaccinationRecord> {
     const encounter = await this.requireLiveEncounter(encounterId, requester);
+    const holdsKey = holdsKeyAt(encounter.siteId);
     const saved = await this.blocks.saveVaccination(
       { encounterId: encounter.id, sites: requester.sites },
       answer,
       requester.userId,
-      holdsKeyAt(encounter.siteId),
+      holdsKey,
     );
     await this.trailSave(requester, encounter.id, saved.outcome);
-    return saved.record;
+    return holdsKey ? saved.record : withholdProtectedRiskGroup(saved.record);
   }
 
   private async trailSave(

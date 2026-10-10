@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 
 import {
+  ConsentInformerNotAtSiteError,
   ConsentRepresentativeRequiredError,
   ConsentRequiredError,
   ConsentSignedAfterProcedureError,
@@ -53,6 +54,28 @@ export async function writtenConsentCovers(
 }
 
 /**
+ * EN-152, EN-153 (D-199.4). Who informed: the professional chosen or, when
+ * none is, the attention's own — an ACTIVE professional of the attention's
+ * site either way. Asked inside the write; the same predicate is
+ * `procedure_consent_informer_at_site`, the database's guarantee.
+ */
+export async function resolveInformer(
+  client: Client,
+  encounterId: string,
+  informedById: string | undefined,
+): Promise<string> {
+  const [row] = await client.$queryRaw<{ user_id: string | null }[]>`
+    SELECT u.id::text AS user_id
+      FROM encounter e
+      JOIN practitioner own ON own.id = e.practitioner_id
+      JOIN app_user u ON u.id = COALESCE(${informedById ?? null}::uuid, own.user_id)
+     WHERE e.id = ${encounterId}::uuid
+       AND procedure_consent_informer_at_site(e.id, u.id)`;
+  if (!row?.user_id) throw new ConsentInformerNotAtSiteError();
+  return row.user_id;
+}
+
+/**
  * EN-152. Writes the consent of a procedure just written in the same
  * transaction, after checking what the paper must say. `now` is the
  * application's clock: a signature without its instant is «ahora».
@@ -89,6 +112,14 @@ export async function insertProcedureConsent(
   }
   // A ground left blank is no exception at all: the 024 is still owed.
   if (problem === 'EXCEPTION_REASON_REQUIRED') throw new ConsentRequiredError();
+  const informedById =
+    consent.kind === 'SIGNED'
+      ? await resolveInformer(
+          client,
+          procedure.encounterId,
+          consent.informedById,
+        )
+      : undefined;
 
   await client.procedureConsent.create({
     data: {
@@ -106,9 +137,9 @@ export async function insertProcedureConsent(
                 ? consent.representative
                 : null,
             ),
-            // EN-152. Whoever records it is who informed: the professional at
-            // the chairside, the one whose signature the paper carries.
-            informedById: recordedById,
+            // D-199.4. Who intervenes informs — proposed, the attention's
+            // professional — which is not always who types it.
+            informedById,
             signedAt,
           }
         : {

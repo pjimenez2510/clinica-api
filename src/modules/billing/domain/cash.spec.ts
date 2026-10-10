@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 
-import { invoiceBalance, summariseCashDay, type PaymentView } from './cash';
+import { invoiceBalance, summariseCashTurn, type PaymentView } from './cash';
 import { Money } from './money';
 
 const now = new Date();
@@ -22,12 +22,13 @@ function aPayment(overrides: Partial<PaymentView> = {}): PaymentView {
     receivedAt: now,
     receivedById: 'rosa',
     cashDate: clinicalDateOf(now),
+    cashSessionId: null,
     reversal: null,
     ...overrides,
   };
 }
 
-describe('billing/B6 — the balance and the cash day', () => {
+describe('billing/B6 — the balance and the cash turn', () => {
   it('BI-103 derives the balance from the total, what was credited and what was paid', () => {
     expect(
       invoiceBalance({
@@ -49,7 +50,7 @@ describe('billing/B6 — the balance and the cash day', () => {
   });
 
   it('BI-105 adds the day by method, in the cashier order, and the cash expected is only the 01 methods', () => {
-    const summary = summariseCashDay([
+    const summary = summariseCashTurn([
       aPayment({
         paymentMethodId: 'transfer',
         paymentMethodName: 'Transferencia',
@@ -75,7 +76,7 @@ describe('billing/B6 — the balance and the cash day', () => {
   });
 
   it('BI-102 BI-251 a reversed payment counts nowhere', () => {
-    const summary = summariseCashDay([
+    const summary = summariseCashTurn([
       aPayment(),
       aPayment({ reversal: { at: now, byId: 'rosa', reason: 'Error' } }),
     ]);
@@ -84,7 +85,7 @@ describe('billing/B6 — the balance and the cash day', () => {
   });
 
   it('BI-252 an empty day closes at zero', () => {
-    const summary = summariseCashDay([]);
+    const summary = summariseCashTurn([]);
     expect(summary.lines).toEqual([]);
     expect(summary.collectedTotal.toString()).toBe('0.00');
     expect(summary.expectedCash.toString()).toBe('0.00');

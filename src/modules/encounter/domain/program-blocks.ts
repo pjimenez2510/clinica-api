@@ -10,7 +10,8 @@
  *  - G: the chart's PREGNANT record in force on the clinical date (EN-063's
  *    rule, read live until EN-099 has a catalogue, D-134.3 §2). The adapter
  *    answers it with the database's own `encounter_is_pregnant`.
- *  - H: the FROZEN age (EN-008) in completed months, 8 or less.
+ *  - H: the FROZEN age (EN-008) in completed months, 8 or less; or a woman
+ *    of 10 to 49, who is asked only her own lactation (EN-260).
  *  - I: always — «cuando se administre una vacuna» —, with the coherence of
  *    vaccine and risk group.
  *
@@ -126,16 +127,36 @@ export function weeksSinceLastMenstrualPeriod(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * EN-092. Which second question an infant takes, by the frozen age in
- * completed months: «sólo leche materna» from 0 to 5, «alimento sólido,
- * semisólido o suave» from 6 to 8. Older, or with no frozen age, the block
- * does not apply at all.
+ * EN-092, EN-260. Who takes block H, and with which questions:
+ *
+ *  - an infant, by the frozen age in completed months: «sólo leche materna»
+ *    from 0 to 5, «alimento sólido, semisólido o suave» from 6 to 8, and the
+ *    mother's lactation (column 52) always;
+ *  - a woman of 10 to 49 (the MSP's childbearing age), only column 52, her own
+ *    lactation, optional (D-195.3).
+ *
+ * Anybody else, or with no frozen age, the block does not apply at all.
  */
-export type NutritionBand = 'EXCLUSIVE_BREASTFEEDING' | 'COMPLEMENTARY_FEEDING';
+export type NutritionBand =
+  'EXCLUSIVE_BREASTFEEDING' | 'COMPLEMENTARY_FEEDING' | 'LACTATING_AGE_WOMAN';
 
-export function nutritionBandOf(age: FrozenAge): NutritionBand | null {
+/** EN-260. «Mujeres en edad fértil», in completed years. */
+export const LACTATING_AGE_YEARS = { min: 10, max: 49 } as const;
+
+export function nutritionBandOf(
+  age: FrozenAge,
+  sex: string,
+): NutritionBand | null {
   const { ageYears: years, ageMonths: months } = age;
-  if (years === null || months === null || years > 0) return null;
+  if (years === null || months === null) return null;
+  if (
+    sex === 'FEMALE' &&
+    years >= LACTATING_AGE_YEARS.min &&
+    years <= LACTATING_AGE_YEARS.max
+  ) {
+    return 'LACTATING_AGE_WOMAN';
+  }
+  if (years > 0) return null;
   if (months <= 5) return 'EXCLUSIVE_BREASTFEEDING';
   if (months <= 8) return 'COMPLEMENTARY_FEEDING';
   return null;
@@ -161,6 +182,13 @@ export function nutritionProblem(
   band: NutritionBand,
   answer: NutritionAnswer,
 ): { field: keyof NutritionAnswer; kind: 'required' | 'notApplicable' } | null {
+  if (band === 'LACTATING_AGE_WOMAN') {
+    if (answer.exclusiveBreastfeeding !== null)
+      return { field: 'exclusiveBreastfeeding', kind: 'notApplicable' };
+    if (answer.complementaryFeeding !== null)
+      return { field: 'complementaryFeeding', kind: 'notApplicable' };
+    return null;
+  }
   const own =
     band === 'EXCLUSIVE_BREASTFEEDING'
       ? 'exclusiveBreastfeeding'
@@ -264,39 +292,34 @@ export const FEMALE_ONLY_RISK_GROUPS: readonly VaccineRiskGroup[] = [
 /**
  * ⚠️ THE RISK GROUP OF AN ADULT HEPATITIS B IS PROTECTED DATA (REQ-115): two
  * of its five groups say «lives with HIV» and «sex worker». So whoever lacks
- * the second key reads no risk group of an attention with that vaccine —
- * whatever it is, so the absence tells nothing — and cannot write one.
+ * the second key reads no risk group of that dose — whatever it is, so the
+ * absence tells nothing — and cannot write one (EN-261).
  */
 export function riskGroupIsProtected(codes: readonly string[]): boolean {
   return codes.includes(VACCINE_CODES.ADULT_HEPATITIS_B);
 }
 
-/** EN-093. One vaccine given in the attention, by its catalogue code. */
+/**
+ * EN-093. One vaccine given in the attention, by its catalogue code, with the
+ * risk group of THIS dose (D-195.8): `null` when its vaccine asks for none.
+ */
 export interface VaccineDoseGiven {
   code: string;
   dose: VaccineDose;
+  riskGroup: VaccineRiskGroup | null;
 }
 
 export interface VaccinationAnswer {
   doses: VaccineDoseGiven[];
-  riskGroup: VaccineRiskGroup | null;
 }
 
 export type VaccinationRecord = VaccinationAnswer & BlockStamp;
 
-/**
- * The risk groups this set of vaccines admits together: the intersection of
- * each constrained vaccine's list, or `null` when none of them is
- * constrained (no risk group is asked).
- */
-export function admittedRiskGroups(
-  codes: readonly string[],
+/** The risk groups a vaccine admits, or `null` when it asks for none. */
+export function riskGroupsAdmittedBy(
+  code: string,
 ): readonly VaccineRiskGroup[] | null {
-  const constrained = codes.filter((code) => code in RISK_GROUPS_BY_VACCINE);
-  if (constrained.length === 0) return null;
-  return VACCINE_RISK_GROUPS.filter((group) =>
-    constrained.every((code) => RISK_GROUPS_BY_VACCINE[code]!.includes(group)),
-  );
+  return RISK_GROUPS_BY_VACCINE[code] ?? null;
 }
 
 export type VaccinationProblem =
@@ -307,9 +330,10 @@ export type VaccinationProblem =
   | 'RISK_GROUP_SEX';
 
 /**
- * EN-093. What is wrong with a vaccination, in the order the database checks
- * it (`trg_encounter_vaccination_valid`). Whether each code is a vaccine in
- * force on the clinical date is the adapter's and the database's.
+ * EN-093. What is wrong with a vaccination, dose by dose and in the order
+ * the database checks it (`trg_encounter_vaccination_valid`). Whether each
+ * code is a vaccine in force on the clinical date is the adapter's and the
+ * database's.
  */
 export function vaccinationProblem(
   answer: VaccinationAnswer,
@@ -317,30 +341,181 @@ export function vaccinationProblem(
 ): VaccinationProblem | null {
   const codes = answer.doses.map((dose) => dose.code);
   if (new Set(codes).size !== codes.length) return 'DUPLICATE_VACCINE';
-  const admitted = admittedRiskGroups(codes);
-  if (admitted === null) {
-    return answer.riskGroup === null ? null : 'RISK_GROUP_NOT_ASKED';
-  }
-  if (answer.riskGroup === null) return 'RISK_GROUP_REQUIRED';
-  if (!admitted.includes(answer.riskGroup)) return 'RISK_GROUP_NOT_ADMITTED';
-  if (
-    patientSex === 'MALE' &&
-    FEMALE_ONLY_RISK_GROUPS.includes(answer.riskGroup)
-  ) {
-    return 'RISK_GROUP_SEX';
+  for (const { code, riskGroup } of answer.doses) {
+    const admitted = riskGroupsAdmittedBy(code);
+    if (admitted === null) {
+      if (riskGroup !== null) return 'RISK_GROUP_NOT_ASKED';
+      continue;
+    }
+    if (riskGroup === null) return 'RISK_GROUP_REQUIRED';
+    if (!admitted.includes(riskGroup)) return 'RISK_GROUP_NOT_ADMITTED';
+    if (patientSex === 'MALE' && FEMALE_ONLY_RISK_GROUPS.includes(riskGroup)) {
+      return 'RISK_GROUP_SEX';
+    }
   }
   return null;
 }
 
-/** The same doses and risk group, whatever the order the doses came in. */
+/** REQ-115. The same vaccination with the adult HB's risk group left out. */
+export function withholdProtectedRiskGroup<T extends VaccinationAnswer>(
+  record: T,
+): T {
+  return {
+    ...record,
+    doses: record.doses.map((dose) =>
+      riskGroupIsProtected([dose.code]) ? { ...dose, riskGroup: null } : dose,
+    ),
+  };
+}
+
+/**
+ * EN-261 (D-195.9). What a save by somebody WITHOUT the second key may be,
+ * against the vaccination as it is now: the adult HB already recorded, sent
+ * back as it was shown to them — the same dose, its group empty — keeps the
+ * group it has, and anything else about it (removing it, another dose, a
+ * group, a new one) is `null`: refused, nothing written.
+ */
+export function keepProtectedRiskGroup(
+  answer: VaccinationAnswer,
+  current: VaccinationAnswer | null,
+): VaccinationAnswer | null {
+  const isHb = (dose: VaccineDoseGiven) => riskGroupIsProtected([dose.code]);
+  const sent = answer.doses.find(isHb);
+  const kept = current?.doses.find(isHb);
+  if (!sent && !kept) return answer;
+  if (!sent || !kept) return null;
+  if (sent.dose !== kept.dose || sent.riskGroup !== null) return null;
+  return {
+    ...answer,
+    doses: answer.doses.map((dose) => (isHb(dose) ? { ...kept } : dose)),
+  };
+}
+
+/** The same doses and risk groups, whatever the order the doses came in. */
 export function sameVaccination(
   a: VaccinationAnswer,
   b: VaccinationAnswer,
 ): boolean {
   const key = (answer: VaccinationAnswer) =>
     [...answer.doses]
-      .map((dose) => `${dose.code}:${dose.dose}`)
+      .map((dose) => `${dose.code}:${dose.dose}:${dose.riskGroup ?? ''}`)
       .sort()
       .join(',');
-  return a.riskGroup === b.riskGroup && key(a) === key(b);
+  return key(a) === key(b);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUPLEMENTOS — COLUMNAS 105 A 108 (EN-096, EN-262)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Columns 105 to 108, in the form's order. */
+export const SUPPLEMENTS = [
+  'micronutrientPowder',
+  'vitaminA',
+  'ironSyrup',
+  'ironFolicAcid',
+] as const;
+export type Supplement = (typeof SUPPLEMENTS)[number];
+
+/** EN-096. Each box, «si prescribe o no»; `null`: not answered. */
+export type SupplementAnswer = Record<Supplement, boolean | null>;
+export type SupplementRecord = SupplementAnswer & BlockStamp;
+
+/** EN-096. The children's boxes, in completed months of the frozen age. */
+export const SUPPLEMENT_AGE_MONTHS = {
+  micronutrientPowder: { min: 6, max: 24 },
+  vitaminA: { min: 6, max: 59 },
+  ironSyrup: { min: 24, max: 59 },
+} as const;
+
+/**
+ * EN-096. Which boxes the attention's population reaches: the children's by
+ * the frozen age, iron with folic acid by the pregnancy on the chart that day
+ * or her own «yes» to lactation (EN-260). The same bounds as
+ * `trg_encounter_supplement_applies`.
+ */
+export function supplementsThatApply(
+  age: FrozenAge,
+  pregnantOrLactating: boolean,
+): Record<Supplement, boolean> {
+  const months =
+    age.ageYears === null || age.ageMonths === null
+      ? null
+      : age.ageYears * 12 + age.ageMonths;
+  const within = (box: keyof typeof SUPPLEMENT_AGE_MONTHS) =>
+    months !== null &&
+    months >= SUPPLEMENT_AGE_MONTHS[box].min &&
+    months <= SUPPLEMENT_AGE_MONTHS[box].max;
+  return {
+    micronutrientPowder: within('micronutrientPowder'),
+    vitaminA: within('vitaminA'),
+    ironSyrup: within('ironSyrup'),
+    ironFolicAcid: pregnantOrLactating,
+  };
+}
+
+/** EN-096. The first box answered outside its population, or `null`. */
+export function supplementOutsidePopulation(
+  applies: Record<Supplement, boolean>,
+  answer: SupplementAnswer,
+): Supplement | null {
+  return SUPPLEMENTS.find((box) => answer[box] !== null && !applies[box]) ?? null; // prettier-ignore
+}
+
+/** A line of a prescription of the attention, as the proposal reads it. */
+export interface PrescribedMedicine {
+  /** The CNMB code of its concept; `null` outside the CNMB. */
+  cnmbCode: string | null;
+  /** The pharmaceutical form it was written with (`SYRUP`, `TABLET`, …). */
+  dosageFormCode: string | null;
+}
+
+/** The liquid oral forms of the CNMB: what makes iron a «jarabe». */
+const LIQUID_ORAL_FORMS = [
+  'ORAL_SUSPENSION',
+  'SYRUP',
+  'ORAL_SOLUTION',
+  'ORAL_DROPS',
+] as const;
+
+/**
+ * EN-262 (D-198.2). What counts for each box, by CNMB code — and form, for
+ * the syrup. ⚠️ A CLINICIAN CONFIRMS IT: changing it is a line here.
+ */
+export const SUPPLEMENT_MEDICINES: Readonly<
+  Record<Supplement, { codes: readonly string[]; forms?: readonly string[] }>
+> = {
+  /** Hierro, multivitaminas y minerales (polvo): las «chispas». */
+  micronutrientPowder: { codes: ['B03AE04'] },
+  /** Retinol, any presentation (the instructivo says «cápsula»). */
+  vitaminA: { codes: ['A11CA01'] },
+  /** Sulfato ferroso in a liquid form, not the tablet. */
+  ironSyrup: { codes: ['B03AA07'], forms: LIQUID_ORAL_FORMS },
+  /** Sales de hierro + ácido fólico. */
+  ironFolicAcid: { codes: ['B03AD'] },
+};
+
+/**
+ * EN-262. The proposal: «Sí» where a prescription of the attention carries a
+ * medicine that counts for the box, «No» where none does, and `null` where
+ * the box does not apply.
+ */
+export function proposedSupplements(
+  applies: Record<Supplement, boolean>,
+  medicines: readonly PrescribedMedicine[],
+): SupplementAnswer {
+  const counts = (box: Supplement) => {
+    const rule = SUPPLEMENT_MEDICINES[box];
+    return medicines.some(
+      (medicine) =>
+        medicine.cnmbCode !== null &&
+        rule.codes.includes(medicine.cnmbCode) &&
+        (rule.forms === undefined ||
+          (medicine.dosageFormCode !== null &&
+            rule.forms.includes(medicine.dosageFormCode))),
+    );
+  };
+  return Object.fromEntries(
+    SUPPLEMENTS.map((box) => [box, applies[box] ? counts(box) : null]),
+  ) as SupplementAnswer;
 }

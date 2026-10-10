@@ -30,7 +30,6 @@ import type {
 import {
   AccountClosedError,
   AccountNoChargeReasonRequiredError,
-  CashSessionClosedError,
   PaymentMethodInactiveError,
   AccountHasOpenChargesError,
   CorrectionAwaitsCreditNoteError,
@@ -1121,8 +1120,8 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         // BI-247. Collected at the desk: the payment of the whole total, in
         // the same transaction, so an invoice is never «cobrada» on the
         // screen and owed in the database. `trg_payment_guard` still checks
-        // the method, the balance and the cashier's day. A $0.00 invoice has
-        // nothing to collect.
+        // the method and the balance; it goes into the cashier's open turn.
+        // A $0.00 invoice has nothing to collect.
         if (issuance.payment && totals.total.isGreaterThan(Money.ZERO)) {
           await tx.payment.create({
             data: {
@@ -1294,11 +1293,10 @@ export function translateInvoiceRejection(error: unknown): unknown {
     return new InvoiceImmutableError('An invoice is never deleted');
   }
   // BI-247. The payment written with the issuance: its method was switched
-  // off meanwhile, or the cashier's day was closed.
+  // off meanwhile. A closed cash turn no longer refuses it (BI-104).
   if (/payment_method_inactive/.test(message)) {
     return new PaymentMethodInactiveError();
   }
-  if (/cash_session_closed/.test(message)) return new CashSessionClosedError();
   return error;
 }
 

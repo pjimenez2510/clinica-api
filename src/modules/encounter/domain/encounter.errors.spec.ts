@@ -45,6 +45,10 @@ import {
   ConsentRequiredError,
   ConsentSignedAfterProcedureError,
   ConsentWitnessRequiredError,
+  ConsentInformerNotAtSiteError,
+  ProcedureCorrectionRequiresSignatureError,
+  ProcedurePerformedAtRequiredError,
+  ProcedurePerformedOutsideEncounterError,
   DiagnosisPrimaryRequiredAfterDischargeError,
   DiagnosisPrimaryTakenError,
   DiagnosisPrincipalUseInvalidError,
@@ -132,6 +136,10 @@ const EVERY_ERROR: readonly DomainError[] = [
   new ConsentWitnessRequiredError(),
   new ConsentNotFoundError(),
   new ConsentNotRevocableError(),
+  new ProcedureCorrectionRequiresSignatureError(),
+  new ProcedurePerformedAtRequiredError(),
+  new ProcedurePerformedOutsideEncounterError(),
+  new ConsentInformerNotAtSiteError(),
   // EN-080. La tercera cara de la misma negativa: el concepto es del CNMB o
   // no lo es, y la frase tiene que nombrar la lista que hay que abrir. Con un
   // ternario, «todo lo que no es CIE-10» decía «el tarifario», y una alergia
@@ -325,6 +333,36 @@ describe('el contrato de errores de la atención', () => {
     const twice = new ConsentNotRevocableError();
     expect(twice.code).toBe('CONSENT_NOT_REVOCABLE');
     expect(twice).toBeInstanceOf(ConflictError);
+  });
+
+  it('EN-247 registrar, corregir o quitar un procedimiento tras el alta sin record:sign en la sede responde 403 que dice quién lo hace', () => {
+    const error = new ProcedureCorrectionRequiresSignatureError();
+    expect(error.code).toBe('PROCEDURE_CORRECTION_REQUIRES_SIGNATURE');
+    expect(error).toBeInstanceOf(ForbiddenError); // 403
+    expect(error.userTitle).toBe(
+      'La atención ya tiene el alta: corrige sus procedimientos quien firma historia clínica en esta sede',
+    );
+  });
+
+  it('EN-247 tras el alta la hora del procedimiento se pide y cae dentro de la atención: 422 por campo (D-201)', () => {
+    const missing = new ProcedurePerformedAtRequiredError();
+    expect(missing.code).toBe('PROCEDURE_PERFORMED_AT_REQUIRED');
+    expect(missing).toBeInstanceOf(ValidationError);
+    expect(missing.fieldErrors[0]?.field).toBe('performedAt');
+    const outside = new ProcedurePerformedOutsideEncounterError();
+    expect(outside.code).toBe('PROCEDURE_PERFORMED_OUTSIDE_ENCOUNTER');
+    expect(outside).toBeInstanceOf(ValidationError);
+    expect(outside.fieldErrors[0]?.field).toBe('performedAt');
+  });
+
+  it('EN-152 EN-153 quién informó, si no es un profesional activo de la sede, es 422 por campo (D-199.4)', () => {
+    const error = new ConsentInformerNotAtSiteError();
+    expect(error.code).toBe('CONSENT_INFORMER_NOT_AT_SITE');
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.fieldErrors[0]?.field).toBe('informedById');
+    expect(error.userTitle).toBe(
+      'Quien informó tiene que ser un profesional activo de esta sede',
+    );
   });
 
   it('EN-213 «Deshacer» lo que ya se deshizo, o lo que ya volvió a registrarse: 409 que manda a actualizar', () => {
@@ -794,7 +832,7 @@ describe('los errores de la referencia (EN-105, EN-107)', () => {
 });
 
 describe('los bloques de programa (EN-090, EN-092, EN-093)', () => {
-  it('EN-090 EN-092 responde 422 con su código, en el catálogo, y dice por qué no corresponde cada bloque', () => {
+  it('EN-090 EN-092 EN-096 EN-260 responde 422 con su código, en el catálogo, y dice por qué no corresponde cada bloque', () => {
     const obstetric = new ProgramBlockNotApplicableError('OBSTETRIC');
     const nutrition = new ProgramBlockNotApplicableError('NUTRITION');
 
@@ -805,7 +843,10 @@ describe('los bloques de programa (EN-090, EN-092, EN-093)', () => {
       'Esta atención no lleva datos obstétricos: la ficha no registra el embarazo en la fecha de la atención',
     );
     expect(nutrition.userTitle).toBe(
-      'Esta atención no lleva datos de lactancia: sólo se registran hasta los 8 meses de edad, con la pregunta de su edad',
+      'Esta atención no lleva datos de lactancia: se registran hasta los 8 meses de edad, con la pregunta de su edad, y en la mujer de 10 a 49 años sólo su propia lactancia',
+    );
+    expect(new ProgramBlockNotApplicableError('SUPPLEMENTS').userTitle).toBe(
+      'Ese suplemento no corresponde a esta atención: cada uno tiene su edad, y el hierro con ácido fólico es para la embarazada o la mujer lactante',
     );
   });
 

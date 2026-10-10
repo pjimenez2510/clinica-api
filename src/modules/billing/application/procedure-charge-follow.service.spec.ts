@@ -78,7 +78,7 @@ function build(overrides: Record<string, unknown> = {}) {
   return { service, mocks, logger };
 }
 
-const command = (change: 'EDITED' | 'RETRACTED' | 'RESTORED') => ({
+const command = (change: 'RECORDED' | 'EDITED' | 'RETRACTED' | 'RESTORED') => ({
   encounterId: 'encounter-1',
   siteId: SITE,
   changedById: 'doctor-1',
@@ -155,6 +155,25 @@ describe('BI-240 a BI-242 el cargo propuesto sigue al procedimiento', () => {
         .mockResolvedValue({ id: 'account-1' }),
     });
     await open.service.procedureChanged(command('RESTORED'));
+    expect(open.mocks.sendToCashier).toHaveBeenCalledWith({
+      siteId: SITE,
+      encounterId: 'encounter-1',
+      userId: 'doctor-1',
+    });
+  });
+
+  it('BI-242 propone el registrado tras el alta sólo con una cuenta abierta (D-194.1)', async () => {
+    const closed = build();
+    await closed.service.procedureChanged(command('RECORDED'));
+    expect(closed.mocks.sendToCashier).not.toHaveBeenCalled();
+    expect(closed.mocks.findProcedureCharge).not.toHaveBeenCalled();
+
+    const open = build({
+      findOpenAccountOfEncounter: vi
+        .fn()
+        .mockResolvedValue({ id: 'account-1' }),
+    });
+    await open.service.procedureChanged(command('RECORDED'));
     expect(open.mocks.sendToCashier).toHaveBeenCalledWith({
       siteId: SITE,
       encounterId: 'encounter-1',

@@ -1494,6 +1494,82 @@ export class ConsentRepresentativeRequiredError extends ValidationError {
   }
 }
 
+/**
+ * EN-247 (D-194.1, D-117.13). After the discharge a procedure is recorded,
+ * corrected or removed by whoever may sign the history at the attention's
+ * site — the rule of the diagnoses, with its own sentence because it names
+ * what is being corrected. A 403: the caller is what is wrong.
+ */
+export class ProcedureCorrectionRequiresSignatureError extends ForbiddenError {
+  readonly code = 'PROCEDURE_CORRECTION_REQUIRES_SIGNATURE';
+  override readonly userTitle =
+    'La atención ya tiene el alta: corrige sus procedimientos quien firma historia clínica en esta sede';
+
+  constructor() {
+    super('Correcting a procedure after the discharge requires record:sign');
+  }
+}
+
+/**
+ * EN-247 (D-201). After the discharge «ahora» is not when the procedure was
+ * done: the hour is asked, and it falls within the attention.
+ */
+export class ProcedurePerformedAtRequiredError extends ValidationError {
+  readonly code = 'PROCEDURE_PERFORMED_AT_REQUIRED';
+  override readonly userTitle =
+    'La atención ya tiene el alta: indique a qué hora se hizo el procedimiento';
+  override readonly fieldErrors = [
+    {
+      field: 'performedAt',
+      code: 'PROCEDURE_PERFORMED_AT_REQUIRED',
+      message: 'Indique a qué hora se hizo',
+    },
+  ];
+
+  constructor() {
+    super('A procedure recorded after the discharge states when it was done');
+  }
+}
+
+/** EN-247. Recorded after the discharge, it was done during the attention. */
+export class ProcedurePerformedOutsideEncounterError extends ValidationError {
+  readonly code = 'PROCEDURE_PERFORMED_OUTSIDE_ENCOUNTER';
+  override readonly userTitle =
+    'La hora del procedimiento tiene que estar dentro de la atención';
+  override readonly fieldErrors = [
+    {
+      field: 'performedAt',
+      code: 'PROCEDURE_PERFORMED_OUTSIDE_ENCOUNTER',
+      message: 'Elija una hora entre el inicio y el fin de la atención',
+    },
+  ];
+
+  constructor() {
+    super('The procedure was performed outside the attention');
+  }
+}
+
+/**
+ * EN-152, EN-153 (D-199.4). Who informed the patient is a professional of the
+ * attention's site: the one who intervenes, proposed, or another of the site.
+ */
+export class ConsentInformerNotAtSiteError extends ValidationError {
+  readonly code = 'CONSENT_INFORMER_NOT_AT_SITE';
+  override readonly userTitle =
+    'Quien informó tiene que ser un profesional activo de esta sede';
+  override readonly fieldErrors = [
+    {
+      field: 'informedById',
+      code: 'CONSENT_INFORMER_NOT_AT_SITE',
+      message: 'Elija un profesional activo de esta sede',
+    },
+  ];
+
+  constructor() {
+    super('The informer is not an active practitioner of the site');
+  }
+}
+
 /** EN-153. Nobody signs the refusal: the external witness does. */
 export class ConsentWitnessRequiredError extends ValidationError {
   readonly code = 'CONSENT_WITNESS_REQUIRED';
@@ -1672,13 +1748,15 @@ export class DentalIndexNotApplicableError extends BusinessRuleViolation {
 }
 
 /** EN-090, EN-092: the program blocks that apply only to a population. */
-export type PopulationBlock = 'OBSTETRIC' | 'NUTRITION';
+export type PopulationBlock = 'OBSTETRIC' | 'NUTRITION' | 'SUPPLEMENTS';
 
 const NOT_APPLICABLE_TITLES: Record<PopulationBlock, string> = {
   OBSTETRIC:
     'Esta atención no lleva datos obstétricos: la ficha no registra el embarazo en la fecha de la atención',
   NUTRITION:
-    'Esta atención no lleva datos de lactancia: sólo se registran hasta los 8 meses de edad, con la pregunta de su edad',
+    'Esta atención no lleva datos de lactancia: se registran hasta los 8 meses de edad, con la pregunta de su edad, y en la mujer de 10 a 49 años sólo su propia lactancia',
+  SUPPLEMENTS:
+    'Ese suplemento no corresponde a esta atención: cada uno tiene su edad, y el hierro con ácido fólico es para la embarazada o la mujer lactante',
 };
 
 /**

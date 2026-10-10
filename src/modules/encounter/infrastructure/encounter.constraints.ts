@@ -474,7 +474,7 @@ registerConstraintMeanings({
   encounter_nutrition_applies: {
     code: PROGRAM_NOT_APPLICABLE,
     field: 'encounterId',
-    message: 'Esta atención no lleva datos de lactancia: sólo se registran hasta los 8 meses de edad, con la pregunta de su edad', // prettier-ignore
+    message: 'Esta atención no lleva datos de lactancia: se registran hasta los 8 meses de edad, con la pregunta de su edad, y en la mujer de 10 a 49 años sólo su propia lactancia', // prettier-ignore
   },
   encounter_nutrition_exclusive_required: {
     code: 'VALIDATION_FAILED',
@@ -486,10 +486,20 @@ registerConstraintMeanings({
     field: 'complementaryFeeding',
     message: 'Indique si en las últimas 24 horas consumió alimento sólido, semisólido o suave', // prettier-ignore
   },
+  encounter_nutrition_supplement_depends: {
+    code: 'VALIDATION_FAILED',
+    field: 'motherBreastfeeding',
+    message: 'El hierro con ácido fólico de esta atención depende de la lactancia: quítelo primero de los suplementos', // prettier-ignore
+  },
+  encounter_supplement_applies: {
+    code: PROGRAM_NOT_APPLICABLE,
+    field: 'encounterId',
+    message: 'Ese suplemento no corresponde a esta atención: cada uno tiene su edad, y el hierro con ácido fólico es para la embarazada o la mujer lactante', // prettier-ignore
+  },
   encounter_vaccination_doses_shape: {
     code: 'VALIDATION_FAILED',
     field: 'doses',
-    message: 'Cada vacuna lleva su dosis',
+    message: 'Cada vacuna lleva su dosis y, si lo pide, su grupo de riesgo',
   },
   encounter_vaccination_vaccine_in_force: {
     code: 'VALIDATION_FAILED',
@@ -503,22 +513,22 @@ registerConstraintMeanings({
   },
   encounter_vaccination_risk_group_required: {
     code: 'VALIDATION_FAILED',
-    field: 'riskGroup',
-    message: 'Elija el grupo de riesgo: una de las vacunas lo pide',
+    field: 'doses',
+    message: 'Elija el grupo de riesgo de la vacuna: esa vacuna lo pide',
   },
   encounter_vaccination_risk_group_not_asked: {
     code: 'VALIDATION_FAILED',
-    field: 'riskGroup',
-    message: 'Ninguna de estas vacunas lleva grupo de riesgo: déjelo vacío',
+    field: 'doses',
+    message: 'Esa vacuna no lleva grupo de riesgo: déjelo vacío',
   },
   encounter_vaccination_risk_group_not_admitted: {
     code: 'VALIDATION_FAILED',
-    field: 'riskGroup',
-    message: 'Ese grupo de riesgo no corresponde a una de las vacunas aplicadas: elija uno que admitan todas', // prettier-ignore
+    field: 'doses',
+    message: 'Ese grupo de riesgo no corresponde a la vacuna: elija uno de los suyos', // prettier-ignore
   },
   encounter_vaccination_risk_group_sex: {
     code: 'VALIDATION_FAILED',
-    field: 'riskGroup',
+    field: 'doses',
     message: 'Embarazada y puérpera no corresponden a un paciente de sexo masculino', // prettier-ignore
   },
   /**
@@ -790,5 +800,30 @@ registerConstraintMeanings({
     code: 'CONSENT_NOT_REVOCABLE',
     field: 'consentId',
     message: 'Ese consentimiento ya se revocó. Actualice la lista',
+  },
+});
+
+/**
+ * EN-247, D-199.4 (revisión clínica de la rama, M1). The adapters ask each of
+ * these first under the attention's lock; what reaches here is a race —
+ * the chosen professional deactivated between the question and the insert —
+ * or a write from below the application.
+ */
+registerConstraintMeanings({
+  encounter_procedure_reported: {
+    code: 'ENCOUNTER_ALREADY_REPORTED',
+    field: 'encounterId',
+    message:
+      'La atención ya se reportó al RDACAA: la corrección no llegaría al Ministerio',
+  },
+  encounter_procedure_performed_within_encounter: {
+    code: 'PROCEDURE_PERFORMED_OUTSIDE_ENCOUNTER',
+    field: 'performedAt',
+    message: 'Elija una hora entre el inicio y el fin de la atención',
+  },
+  procedure_consent_informer_at_site: {
+    code: 'CONSENT_INFORMER_NOT_AT_SITE',
+    field: 'informedById',
+    message: 'Elija un profesional activo de esta sede',
   },
 });

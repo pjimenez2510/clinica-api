@@ -4,13 +4,16 @@ import type { PaymentMethod } from './invoice';
 import { Money } from './money';
 
 /**
- * THE MONEY THAT CAME IN (billing B6, BI-101 to BI-105, BI-247 to BI-253).
+ * THE MONEY THAT CAME IN (billing B6, BI-101 to BI-105, BI-247 to BI-258).
  *
- * Pure: what a balance is, and what a day of one cashier adds up to. Whether
- * a payment fits the balance and whether a day is closed is decided by the
- * DATABASE under its locks (`trg_payment_guard`); these functions only say
- * what the screen shows and what the close writes, and the database checks
- * the close against its payments (`trg_cash_session_matches_its_payments`).
+ * Pure: what a balance is, and what a turn of one cashier adds up to. A turn
+ * is the payments of one drawer — a user at a site — that are in no close
+ * yet (D-197.4): closing takes them, and the next payment opens the next
+ * turn. Whether a payment fits the balance and whether it is already closed
+ * is decided by the DATABASE under its locks (`trg_payment_guard`,
+ * `trg_payment_only_reverses`); these functions only say what the screen
+ * shows and what the close writes, and the database checks the close against
+ * its payments (`trg_cash_session_matches_its_payments`).
  */
 
 /**
@@ -45,12 +48,14 @@ export interface PaymentView {
   receivedById: string;
   /** BI-250. Written by the database. */
   cashDate: ClinicalDate;
+  /** BI-104, BI-252. The close that took it; `null` while its turn is open. */
+  cashSessionId: string | null;
   /** BI-102. The reason is optional (D-126). */
   reversal: { at: Date; byId: string; reason: string | null } | null;
 }
 
-/** What one method brought in that day. */
-export interface CashDayLine {
+/** What one method brought in during a turn. */
+export interface CashLine {
   paymentMethodId: string;
   methodName: string;
   sriCode: PaymentMethod;
@@ -58,21 +63,21 @@ export interface CashDayLine {
   amount: Money;
 }
 
-export interface CashDaySummary {
-  lines: CashDayLine[];
+export interface CashTurnSummary {
+  lines: CashLine[];
   collectedTotal: Money;
   /** BI-105. What should be in the drawer. */
   expectedCash: Money;
 }
 
 /**
- * BI-105, BI-251. The day by method, in the order the cashier sees the
+ * BI-105, BI-251. The turn by method, in the order the cashier sees the
  * methods; a reversed payment counts nowhere.
  */
-export function summariseCashDay(
+export function summariseCashTurn(
   payments: readonly PaymentView[],
-): CashDaySummary {
-  const byMethod = new Map<string, CashDayLine>();
+): CashTurnSummary {
+  const byMethod = new Map<string, CashLine>();
   const order = new Map<string, number>();
   for (const payment of payments) {
     if (payment.reversal) continue;
@@ -105,15 +110,16 @@ export function summariseCashDay(
   };
 }
 
-/** BI-252. The photo of a close, as it was written. */
+/** BI-252, BI-258. The photo of a close, as it was written. */
 export interface CashSessionView {
   id: string;
   siteId: string;
   userId: string;
   userName: string;
-  cashDate: ClinicalDate;
+  /** BI-258. The close before it in the same drawer: where the turn began. */
+  previousClosedAt: Date | null;
   closedAt: Date;
-  lines: CashDayLine[];
+  lines: CashLine[];
   collectedTotal: Money;
   expectedCash: Money;
   declaredCash: Money;
@@ -124,7 +130,7 @@ export interface CashSessionView {
   note: string | null;
 }
 
-/** BI-251. What the cashier invoiced that day and is still owed. */
+/** BI-251. What the cashier invoiced during the turn and is still owed. */
 export interface PendingInvoices {
   total: Money;
   count: number;

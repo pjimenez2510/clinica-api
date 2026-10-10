@@ -289,6 +289,24 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
     permissions: ['audit:read', 'catalog:read'],
   },
   {
+    // AU-059 (D-199.1). Las dos llaves de la dirección médica —qué prestaciones
+    // exigen el consentimiento 024 (A.M. 5316, anexo, punto 4: las aprueba «el
+    // director/a médico o la instancia responsable de temas de calidad») y
+    // anular certificados de otro profesional (D-105 §2)— y `billing:read`
+    // para abrir la ficha de la prestación donde va la marca. NACE SIN
+    // USUARIOS: quién dirige lo decide la clínica, que sólo lo asigna. Se suma
+    // al rol de médico; no lo sustituye.
+    code: 'DIRECCION_MEDICA',
+    name: 'Dirección médica',
+    description:
+      'Decide qué prestaciones exigen el consentimiento informado escrito (024) y anula certificados emitidos por otro profesional. Se asigna junto al rol de médico.',
+    permissions: [
+      'record:consent-rule',
+      'certificate:revoke-any',
+      'billing:read',
+    ],
+  },
+  {
     // AG-136. La pantalla colgada hacia la sala de espera. Lleva ESTE permiso y
     // ningún otro: sin `agenda:read`, su sesión no puede pedir la proyección
     // del personal aunque alguien cambie la dirección.

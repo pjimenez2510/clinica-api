@@ -18,6 +18,9 @@ import type {
   NutritionRecord,
   ObstetricAnswer,
   ObstetricRecord,
+  PrescribedMedicine,
+  SupplementAnswer,
+  SupplementRecord,
   VaccinationAnswer,
   VaccinationRecord,
 } from '../domain/program-blocks';
@@ -63,8 +66,28 @@ class FakeBlocks implements ProgramBlocksRepository {
   isPregnant() {
     return Promise.resolve(this.pregnant);
   }
+  sex = 'FEMALE';
+  lactating = false;
+  medicines: PrescribedMedicine[] = [];
+  supplement: SupplementRecord | null = null;
   patientSexOf() {
-    return Promise.resolve('FEMALE');
+    return Promise.resolve(this.sex);
+  }
+  isLactating() {
+    return Promise.resolve(this.lactating);
+  }
+  prescribedMedicines() {
+    return Promise.resolve(this.medicines);
+  }
+  findSupplement() {
+    return Promise.resolve(this.supplement);
+  }
+  saveSupplement(
+    _q: unknown,
+    answer: SupplementAnswer,
+  ): Promise<ProgramBlockSave<SupplementRecord>> {
+    this.supplement = { ...answer, ...stamp() };
+    return Promise.resolve({ record: this.supplement, outcome: 'CREATED' });
   }
   vaccinesInForce(): Promise<VaccineOption[]> {
     return Promise.resolve([{ code: '55', display: 'BCG' }]);
@@ -143,6 +166,7 @@ describe('ProgramBlocksService (EN-090 a EN-093)', () => {
   });
 
   it('EN-097 una atención sin bloques registrados no deja fila de bitácora; con uno, una', async () => {
+    blocks.sex = 'MALE';
     const empty = await service.programsOf('encounter-1', requester, () => true); // prettier-ignore
     expect(empty.obstetric).toEqual({ applies: false, record: null });
     expect(empty.nutrition.band).toBeNull();
@@ -175,6 +199,41 @@ describe('ProgramBlocksService (EN-090 a EN-093)', () => {
     expect(blocks.nutrition).toMatchObject(answer);
   });
 
+  it('EN-260 a la mujer de 10 a 49 años se le ofrece su lactancia, sin las preguntas del lactante; a un hombre, no', async () => {
+    const own = { motherBreastfeeding: true, exclusiveBreastfeeding: null, complementaryFeeding: null }; // prettier-ignore
+    expect((await service.programsOf('encounter-1', requester, () => true)).nutrition.band).toBe('LACTATING_AGE_WOMAN'); // prettier-ignore
+    await expect(service.recordNutrition('encounter-1', { ...own, exclusiveBreastfeeding: true }, requester)).rejects.toBeInstanceOf(ProgramBlockNotApplicableError); // prettier-ignore
+    await service.recordNutrition('encounter-1', own, requester);
+    expect(blocks.nutrition).toMatchObject(own);
+
+    blocks.sex = 'MALE';
+    expect((await service.programsOf('encounter-1', requester, () => true)).nutrition.band).toBeNull(); // prettier-ignore
+    await expect(service.recordNutrition('encounter-1', own, requester)).rejects.toBeInstanceOf(ProgramBlockNotApplicableError); // prettier-ignore
+  });
+
+  it('EN-262 propone los suplementos de la población desde la receta, y EN-096 rechaza el de otra población', async () => {
+    encounter = anEncounter({ ageYears: 3, ageMonths: 0 });
+    blocks.medicines = [{ cnmbCode: 'B03AA07', dosageFormCode: 'SYRUP' }];
+    const sheet = await service.programsOf('encounter-1', requester, () => true); // prettier-ignore
+    expect(sheet.supplements.applies).toEqual({ micronutrientPowder: false, vitaminA: true, ironSyrup: true, ironFolicAcid: false }); // prettier-ignore
+    expect(sheet.supplements.proposed).toEqual({ micronutrientPowder: null, vitaminA: false, ironSyrup: true, ironFolicAcid: null }); // prettier-ignore
+    expect(sheet.supplements.record).toBeNull();
+
+    const none = { micronutrientPowder: null, vitaminA: null, ironSyrup: null, ironFolicAcid: null }; // prettier-ignore
+    await expect(service.recordSupplements('encounter-1', { ...none, ironFolicAcid: true }, requester)).rejects.toBeInstanceOf(ProgramBlockNotApplicableError); // prettier-ignore
+    // «Sí» without a prescription is the MSP's programme: it goes in.
+    await service.recordSupplements('encounter-1', { ...none, vitaminA: true, ironSyrup: true }, requester); // prettier-ignore
+    expect(blocks.supplement).toMatchObject({
+      vitaminA: true,
+      ironSyrup: true,
+    });
+  });
+
+  it('EN-096 EN-260 a la mujer lactante se le ofrece el hierro con ácido fólico', async () => {
+    blocks.lactating = true;
+    expect((await service.programsOf('encounter-1', requester, () => true)).supplements.applies.ironFolicAcid).toBe(true); // prettier-ignore
+  });
+
   it('EN-249 con la atención de alta no se escribe ningún bloque; sin atención en el alcance, 404', async () => {
     blocks.pregnant = true;
     encounter = anEncounter({ status: 'DISCHARGED' });
@@ -184,17 +243,21 @@ describe('ProgramBlocksService (EN-090 a EN-093)', () => {
   });
 
   it('EN-093 sin la llave en la sede, el grupo del HB adulto no sale; con ella, sí; y la llave llega al guardado', async () => {
-    blocks.vaccination = { doses: [{ code: '70', dose: 'FIRST' }], riskGroup: 'LIVING_WITH_HIV', ...stamp() }; // prettier-ignore
+    blocks.vaccination = { doses: [{ code: '70', dose: 'FIRST', riskGroup: 'LIVING_WITH_HIV' }, { code: '67', dose: 'FIRST', riskGroup: 'AGES_AT_RISK' }], ...stamp() }; // prettier-ignore
 
     const without = await service.programsOf('encounter-1', requester, () => false); // prettier-ignore
-    expect(without.vaccination.record?.riskGroup).toBeNull();
+    expect(without.vaccination.record?.doses.map((dose) => dose.riskGroup)).toEqual([null, 'AGES_AT_RISK']); // prettier-ignore
     expect(without.vaccination.riskGroupWithheld).toBe(true);
 
     const withKey = await service.programsOf('encounter-1', requester, (site) => site === SITE); // prettier-ignore
-    expect(withKey.vaccination.record?.riskGroup).toBe('LIVING_WITH_HIV');
+    expect(withKey.vaccination.record?.doses[0]?.riskGroup).toBe(
+      'LIVING_WITH_HIV',
+    );
     expect(withKey.vaccination.riskGroupWithheld).toBe(false);
 
-    await service.recordVaccination('encounter-1', { doses: [], riskGroup: null }, requester, () => false); // prettier-ignore
+    // EN-261. The save's answer withholds it too.
+    const saved = await service.recordVaccination('encounter-1', blocks.vaccination, requester, () => false); // prettier-ignore
+    expect(saved.doses[0]?.riskGroup).toBeNull();
     expect(blocks.protectedWrites).toEqual([false]);
     // UNCHANGED leaves no trail row of a write.
     expect(trail.filter((entry) => entry.action !== 'READ')).toHaveLength(0);

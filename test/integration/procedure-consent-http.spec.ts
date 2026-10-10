@@ -104,22 +104,14 @@ describe('el consentimiento 024 por HTTP', () => {
 
     doctor = await signIn('MEDICO', 'medico@clinica.ec', '1710034065', siteId);
     adminToken = (await signIn('ADMIN', 'admin@clinica.ec', '1104637283', null)).token; // prettier-ignore
-    // D-199.1. No shipped role carries the key: the clinic makes one.
-    const direction = await prisma.role.create({
-      data: {
-        code: 'DIRECCION_MEDICA',
-        name: 'Dirección médica',
-        permissions: {
-          create: [
-            { permissionCode: 'record:consent-rule' },
-            { permissionCode: 'billing:read' },
-          ],
-        },
-      },
-    });
-    registry.invalidate();
+    // AU-059 (D-199.1). The shipped role carries the key: assigned, not made.
     directorToken = (
-      await signIn(direction.code, 'direccion@clinica.ec', '0926687856', null)
+      await signIn(
+        'DIRECCION_MEDICA',
+        'direccion@clinica.ec',
+        '0926687856',
+        null,
+      )
     ).token;
   });
 
@@ -359,6 +351,59 @@ describe('el consentimiento 024 por HTTP', () => {
     const sheet = await get(`/encounters/${encounterId}/procedures`, doctor.token).expect(200); // prettier-ignore
     expect((sheet.body as { items: unknown[]; refusals: unknown[] }).items).toEqual([]); // prettier-ignore
     expect((sheet.body as { refusals: unknown[] }).refusals).toHaveLength(1);
+  });
+
+  it('EN-152 EN-153 D-199.4 quién informó: sin decirlo, el profesional de la atención; elegido, otro activo de la sede; de otra sede, 422', async () => {
+    const encounterId = await openEncounter();
+    const marked = await aMarkedConcept();
+    const colleague = await prisma.practitioner.create({
+      data: {
+        user: { create: { email: 'colega@clinica.ec', firstName: 'Luis', lastName: 'Cedeño', passwordHash: 'not-a-real-hash' } }, // prettier-ignore
+        sites: { create: { siteId } },
+      },
+    });
+    const elsewhere = await prisma.practitioner.create({
+      data: {
+        user: { create: { email: 'lejos@clinica.ec', firstName: 'Rita', lastName: 'Mora', passwordHash: 'not-a-real-hash' } }, // prettier-ignore
+        sites: { create: { siteId: (await createSite(prisma)).id } },
+      },
+    });
+
+    const foreign = await send('post', `/encounters/${encounterId}/procedures`, doctor.token, {
+      conceptId: marked,
+      quantity: 1,
+      consent: { kind: 'SIGNED', signer: 'PATIENT', informedById: elsewhere.userId },
+    }); // prettier-ignore
+    expect(foreign.status).toBe(422);
+    expect((foreign.body as Problem).code).toBe('CONSENT_INFORMER_NOT_AT_SITE');
+    expect((foreign.body as Problem).errors?.[0]?.field).toBe('informedById');
+    expect(await prisma.encounterProcedure.count({ where: { encounterId } })).toBe(0); // prettier-ignore
+
+    const chosen = await send('post', `/encounters/${encounterId}/procedures`, doctor.token, {
+      conceptId: marked,
+      quantity: 1,
+      consent: { kind: 'SIGNED', signer: 'PATIENT', informedById: colleague.userId },
+    }).expect(201); // prettier-ignore
+    const consent = (chosen.body as ProcedureBody).consent as ConsentBody & { recordedBy: { id: string } }; // prettier-ignore
+    expect(consent.informedBy?.id).toBe(colleague.userId);
+    expect(consent.recordedBy.id).toBe(doctor.userId);
+
+    const refusal = await send('post', `/encounters/${encounterId}/procedure-refusals`, doctor.token, {
+      conceptId: marked,
+      signer: 'PATIENT',
+      informedById: colleague.userId,
+    }).expect(201); // prettier-ignore
+    expect(refusal.body).toMatchObject({
+      informedBy: { id: colleague.userId },
+    });
+    const foreignRefusal = await send('post', `/encounters/${encounterId}/procedure-refusals`, doctor.token, {
+      conceptId: marked,
+      signer: 'PATIENT',
+      informedById: elsewhere.userId,
+    }); // prettier-ignore
+    expect((foreignRefusal.body as Problem).code).toBe(
+      'CONSENT_INFORMER_NOT_AT_SITE',
+    );
   });
 
   it('EN-154 revoca un consentimiento firmado una vez; el original queda como estaba y la excepción no se revoca', async () => {

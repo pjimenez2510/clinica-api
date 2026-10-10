@@ -133,6 +133,11 @@ export const procedureConsentSchema = z.discriminatedUnion('kind', [
       error: 'Indique si firmó el paciente o su representante',
     }),
     representative: representativeSchema.nullish(),
+    /**
+     * D-199.4. The account of the professional who informed: absent, the
+     * attention's own. An active professional of the attention's site.
+     */
+    informedById: z.uuid('Elija quién informó').optional(),
     /** Absent means «ahora». Never after the procedure (EN-152). */
     signedAt: instant('La hora de la firma').optional(),
   }),
@@ -271,6 +276,11 @@ export const recordRefusalSchema = z.object({
         .max(20, 'El documento admite hasta 20 caracteres'),
     })
     .nullish(),
+  /**
+   * D-199.4. The account of the professional who informed: absent, the
+   * attention's own. An active professional of the attention's site.
+   */
+  informedById: z.uuid('Elija quién informó').optional(),
   // No instant travels: the refusal is recorded when it is expressed, with
   // the application's clock (a refusal «in the future» or years old is not
   // something the screen ever needs to say).

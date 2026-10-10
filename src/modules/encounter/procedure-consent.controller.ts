@@ -93,6 +93,7 @@ export class ProcedureConsentController {
         signer: dto.signer,
         representative: representativeOf(dto.representative),
         witness: dto.witness ?? null,
+        informedById: dto.informedById,
       },
       this.requester(req, 'record:write'),
     );

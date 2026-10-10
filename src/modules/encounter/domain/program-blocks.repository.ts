@@ -13,6 +13,9 @@ import type {
   NutritionRecord,
   ObstetricAnswer,
   ObstetricRecord,
+  PrescribedMedicine,
+  SupplementAnswer,
+  SupplementRecord,
   VaccinationAnswer,
   VaccinationRecord,
 } from './program-blocks';
@@ -41,8 +44,29 @@ export interface ProgramBlocksRepository {
    */
   isPregnant(encounterId: string): Promise<boolean>;
 
-  /** EN-093. The patient's sex, for the risk groups a man cannot have. */
+  /** EN-093, EN-260. The patient's sex: risk groups, and the woman's lactation. */
   patientSexOf(encounterId: string): Promise<string>;
+
+  /**
+   * EN-096, EN-260. The woman of 10 to 49 who answered «yes» to lactation in
+   * this attention — the database's own `encounter_is_lactating`.
+   */
+  isLactating(encounterId: string): Promise<boolean>;
+
+  /**
+   * EN-262. The lines of the attention's prescriptions that are not annulled
+   * nor discarded — issued or still a draft —, as the proposal reads them.
+   */
+  prescribedMedicines(encounterId: string): Promise<PrescribedMedicine[]>;
+
+  findSupplement(query: EncounterQuery): Promise<SupplementRecord | null>;
+
+  /** EN-096, EN-249. The supplements, the same way (`encounter_supplement_applies`). */
+  saveSupplement(
+    query: EncounterQuery,
+    answer: SupplementAnswer,
+    authorId: string,
+  ): Promise<ProgramBlockSave<SupplementRecord>>;
 
   /** EN-093. The vaccines in force on the attention's clinical date. */
   vaccinesInForce(encounterId: string): Promise<VaccineOption[]>;

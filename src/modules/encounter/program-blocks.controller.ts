@@ -27,6 +27,7 @@ import type {
   BlockStamp,
   NutritionRecord,
   ObstetricRecord,
+  SupplementRecord,
   VaccinationRecord,
 } from './domain/program-blocks';
 import {
@@ -35,8 +36,11 @@ import {
   ProgramsSheetDto,
   RecordNutritionDto,
   RecordObstetricDto,
+  RecordSupplementsDto,
   RecordVaccinationDto,
+  SupplementRecordDto,
   VaccinationRecordDto,
+  type SupplementRecordResponse,
   type NutritionRecordResponse,
   type ObstetricRecordResponse,
   type ProgramsSheetResponse,
@@ -44,8 +48,9 @@ import {
 } from './dto/program-blocks.dto';
 
 /**
- * EN-090 to EN-093, EN-097, EN-249. Blocks G (obstetric), H (SIVAN) and I
- * (vaccines) of the RDACAA form, under `programs`.
+ * EN-090 to EN-093, EN-096, EN-097, EN-249. Blocks G (obstetric), H (SIVAN)
+ * and I (vaccines) of the RDACAA form, and the supplements (columns 105 to
+ * 108), under `programs`.
  *
  * `'query'` site scope like the rest of the module: the attention is
  * addressed by its own id and the service narrows with the caller's resolved
@@ -122,7 +127,7 @@ export class ProgramBlocksController {
     );
   }
 
-  /** EN-093, EN-249. Records or corrects block I. */
+  /** EN-093, EN-249, EN-261. Records or corrects block I. */
   @Put('vaccination')
   @RequirePermission('vitals:write', 'query')
   @HttpCode(HttpStatus.OK)
@@ -137,11 +142,33 @@ export class ProgramBlocksController {
       await this.programs.recordVaccination(
         encounterId,
         {
-          doses: dto.doses.map(({ code, dose }) => ({ code, dose })),
-          riskGroup: dto.riskGroup,
+          doses: dto.doses.map(({ code, dose, riskGroup }) => ({ code, dose, riskGroup })), // prettier-ignore
         },
         this.requester(req, 'vitals:write'),
         this.holdsKeyAt(),
+      ),
+    );
+  }
+
+  /**
+   * EN-096, EN-249. Records or corrects the supplements: `record:write`,
+   * whoever prescribes.
+   */
+  @Put('supplements')
+  @RequirePermission('record:write', 'query')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Registrar los suplementos prescritos en la atención' }) // prettier-ignore
+  @ApiOkResponse({ type: SupplementRecordDto })
+  async recordSupplements(
+    @Param('encounterId', ParseUUIDPipe) encounterId: string,
+    @Body() dto: RecordSupplementsDto,
+    @Req() req: Request,
+  ): Promise<SupplementRecordResponse> {
+    return toSupplement(
+      await this.programs.recordSupplements(
+        encounterId,
+        { ...dto },
+        this.requester(req, 'record:write'),
       ),
     );
   }
@@ -181,10 +208,13 @@ function toNutrition(record: NutritionRecord): NutritionRecordResponse {
 
 function toVaccination(record: VaccinationRecord): VaccinationRecordResponse {
   return {
-    doses: record.doses.map(({ code, dose }) => ({ code, dose })),
-    riskGroup: record.riskGroup,
+    doses: record.doses.map(({ code, dose, riskGroup }) => ({ code, dose, riskGroup })), // prettier-ignore
     ...stampOf(record),
   };
+}
+
+function toSupplement(record: SupplementRecord): SupplementRecordResponse {
+  return { ...record, ...stampOf(record) };
 }
 
 function toSheet(sheet: ProgramsSheet): ProgramsSheetResponse {
@@ -203,6 +233,12 @@ function toSheet(sheet: ProgramsSheet): ProgramsSheetResponse {
       record:
         sheet.vaccination.record && toVaccination(sheet.vaccination.record),
       riskGroupWithheld: sheet.vaccination.riskGroupWithheld,
+    },
+    supplements: {
+      applies: sheet.supplements.applies,
+      proposed: sheet.supplements.proposed,
+      record:
+        sheet.supplements.record && toSupplement(sheet.supplements.record),
     },
   };
 }

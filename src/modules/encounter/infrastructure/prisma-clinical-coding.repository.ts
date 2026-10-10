@@ -17,6 +17,9 @@ import {
   DiagnosisSupportsMaternityRestError,
   EncounterAlreadyClosedError,
   EncounterAlreadyReportedError,
+  ProcedureCorrectionRequiresSignatureError,
+  ProcedurePerformedAtRequiredError,
+  ProcedurePerformedOutsideEncounterError,
   EncounterNotFoundError,
   PractitionerNotLicensedError,
   PractitionerProfileRequiredError,
@@ -898,7 +901,39 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
   async addProcedure(procedure: NewProcedure): Promise<RecordedProcedureView> {
     const now = new Date();
     const row = await this.prisma.$transaction(async (tx) => {
-      await requireEncounterInScope(tx, procedure.encounterId, procedure.sites);
+      // EN-247 (D-194.1). After the discharge too, by whoever may correct
+      // then (D-117.13), never once reported (D-117.16).
+      const status = await requireEncounterInScope(
+        tx,
+        procedure.encounterId,
+        procedure.sites,
+        acceptsDiagnosisCorrection,
+      );
+      await refuseCorrection(
+        tx,
+        procedure.encounterId,
+        status,
+        procedure,
+        'procedure',
+      );
+      // EN-247 (D-201). After the discharge «ahora» is not when it was done:
+      // the hour is stated, within the attention. The trigger
+      // `encounter_procedure_performed_within_encounter` is the guarantee.
+      if (hasDischarge(status)) {
+        if (procedure.performedAt === undefined) {
+          throw new ProcedurePerformedAtRequiredError();
+        }
+        const span = await tx.encounter.findUniqueOrThrow({
+          where: { id: procedure.encounterId },
+          select: { startedAt: true, endedAt: true },
+        });
+        if (
+          procedure.performedAt < span.startedAt ||
+          (span.endedAt !== null && procedure.performedAt > span.endedAt)
+        ) {
+          throw new ProcedurePerformedOutsideEncounterError();
+        }
+      }
 
       const concept = await conceptForEncounter(
         tx,
@@ -938,6 +973,8 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           // typing. Absent means «ahora», the ordinary case at the chairside —
           // the application's clock, which the 024's signature is compared to.
           performedAt: procedure.performedAt ?? now,
+          // BI-242. When it was typed, which caja compares to its close.
+          recordedAt: now,
           note: procedure.note,
           /**
            * ⚠️ `tariffAmount` IS ABSENT AND STAYS ABSENT (EN-051, D-049). What
@@ -1010,7 +1047,14 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
   async editProcedure(edit: ProcedureEdit): Promise<RecordedProcedureView> {
     const now = new Date();
     const row = await this.prisma.$transaction(async (tx) => {
-      await requireEncounterInScope(tx, edit.encounterId, edit.sites);
+      // EN-247. After the discharge too, asked again under the lock.
+      const status = await requireEncounterInScope(
+        tx,
+        edit.encounterId,
+        edit.sites,
+        acceptsDiagnosisCorrection,
+      );
+      await refuseCorrection(tx, edit.encounterId, status, edit, 'procedure');
       const current = await tx.encounterProcedure.findFirst({
         where: { id: edit.procedureId, encounterId: edit.encounterId },
         select: { ...PROCEDURE_SELECT },
@@ -1150,10 +1194,19 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
   async retractProcedure(retraction: ProcedureRetraction): Promise<void> {
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
-      await requireEncounterInScope(
+      // EN-247. After the discharge too, asked again under the lock.
+      const status = await requireEncounterInScope(
         tx,
         retraction.encounterId,
         retraction.sites,
+        acceptsDiagnosisCorrection,
+      );
+      await refuseCorrection(
+        tx,
+        retraction.encounterId,
+        status,
+        retraction,
+        'procedure',
       );
       const target = await tx.encounterProcedure.findFirst({
         where: {
@@ -1222,6 +1275,8 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           procedureDisplay: archived.procedureDisplay,
           quantity: archived.quantity,
           performedAt: archived.performedAt,
+          // Restoring is recording again (EN-246): caja sees it as new.
+          recordedAt: now,
           note: archived.note,
           // EN-051: carried back untouched, never read nor served.
           tariffAmount: archived.tariffAmount,
@@ -1440,6 +1495,8 @@ async function refuseCorrection(
     mayCorrectAfterDischarge?: boolean;
     afterDischargeRefusal?: AfterDischargeRefusal;
   },
+  // EN-247. The procedures' own sentence for the same rule.
+  subject: 'diagnosis' | 'procedure' = 'diagnosis',
 ): Promise<void> {
   // D-117.13: the same sentence the service gives when it saw the discharge.
   if (hasDischarge(status) && !authority.mayCorrectAfterDischarge) {
@@ -1449,7 +1506,9 @@ async function refuseCorrection(
     if (authority.afterDischargeRefusal === 'NO_PRACTITIONER_PROFILE') {
       throw new PractitionerProfileRequiredError();
     }
-    throw new DiagnosisCorrectionRequiresSignatureError();
+    throw subject === 'procedure'
+      ? new ProcedureCorrectionRequiresSignatureError()
+      : new DiagnosisCorrectionRequiresSignatureError();
   }
   const [row] = await tx.$queryRaw<{ reported: boolean }[]>`
     SELECT encounter_is_reported(${encounterId}::uuid) AS reported
