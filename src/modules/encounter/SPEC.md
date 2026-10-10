@@ -4856,8 +4856,8 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   certificado, referencia) · **Reporte** (programas, ficha); y el orden que
   el médico elija en «Ajustar las pestañas» DEBERÁ aplicarse dentro de su
   grupo.
-  > Los rótulos de los grupos van en el nombre accesible de la barra y en los
-  > ajustes; en la barra, el separador. «Programas» pasa a Reporte: sus bloques
+  > El nombre del grupo va en el nombre accesible de cada pestaña y en los
+  > ajustes; en la barra, sólo el separador. «Programas» pasa a Reporte: sus bloques
   > son del RDACAA, como la ficha (`STATISTICAL`).
 - **EN-265** — SI a la atención no le aplica ningún bloque de programa
   condicional —obstétrico, SIVAN o lactancia, suplementos— y no tiene nada
@@ -4889,9 +4889,10 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
 - **EN-268** — El diálogo de firma DEBERÁ decir lo que falta en **un solo
   aviso**, como lista, en la que lo que no impide firmar —el índice dental—
   vaya señalado como tal; y sin nada pendiente NO DEBERÁ mostrar ningún aviso.
-  > Antes eran hasta seis avisos apilados. La lista es la de EN-266, más lo
-  > que sólo el diálogo sabe: la referencia que exige «Referido» (EN-105) y
-  > el principal que el servidor acaba de rechazar.
+  > Antes eran hasta seis avisos apilados. La lista es la de EN-266, más el
+  > principal que el servidor acaba de rechazar. La referencia que exige
+  > «Referido» (EN-105) no entra: se dice pegada a esa opción, sólo al
+  > elegirla (EN-231).
 
 ---
 
