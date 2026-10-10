@@ -2253,8 +2253,10 @@ dos registros distintos.**
   > **D-159.1 y .5.** La marca la pone la clínica, sobre las prestaciones que
   > realiza, y no el médico caso por caso; en la ficha de la prestación y no
   > en el catálogo del tarifario, que se reimporta. La llave es un permiso
-  > propio que ningún rol de fábrica trae, como `certificate:revoke-any` (D-199.1). Lo que exige el 024 es
-  > EN-152, en `encounter`.
+  > propio que ningún rol de fábrica de los que tienen usuarios trae, como
+  > `certificate:revoke-any`: lo lleva el rol de fábrica «Dirección médica»,
+  > que nace sin usuarios (AU-059, D-199.1). Lo que exige el 024 es EN-152, en
+  > `encounter`.
   >
   > **Garantía de la base:** `billable_service_written_consent_states_who`
   > (marcada ⇒ con quién y cuándo),
@@ -2649,10 +2651,21 @@ lo ve._
   «Procedimiento quitado de la atención».
   > Se puede deshacer en caja como cualquier cargo quitado (BI-195), y BI-157
   > impide que el siguiente «Pasar a caja» lo vuelva a proponer.
-- **BI-242** — CUANDO se restaure un procedimiento (EN-246) y la atención tenga
-  una cuenta abierta, el sistema DEBERÁ proponer su cargo (BI-151, BI-152)
-  como lo haría al pasarla a caja; sin cuenta abierta, lo propone el siguiente
-  «Pasar a caja».
+- **BI-242** — CUANDO se restaure un procedimiento (EN-246) o se registre uno
+  nuevo (EN-050, EN-247) y la atención tenga una cuenta abierta, el sistema
+  DEBERÁ proponer su cargo (BI-151, BI-152) como lo haría al pasarla a caja;
+  sin cuenta abierta, lo propone el siguiente «Pasar a caja».
+  > **Registrar, desde el 09-10-2026 (D-194.1):** tras el alta el médico
+  > registra el procedimiento que faltaba, y caja ya puede tener la cuenta
+  > abierta (D-162); sin esto la línea no aparecía hasta otro «Pasar a caja».
+  > Es idempotente (BI-154): lo que ya tiene cargo no se propone dos veces.
+  >
+  > **Y con la cuenta ya liquidada** (revisión clínica de la rama, M1): lo
+  > pendiente de cobro (BI-181) DEBERÁ listar también la atención liquidada
+  > con un procedimiento registrado —o restaurado— **después** de abrirse la
+  > última cuenta liquidada, con prestación activa y sin cargo que lo nombre
+  > ni cargo manual de esa prestación, como el examen de BI-194. Lo compara
+  > `encounter_procedure.recorded_at`, el reloj de la aplicación.
   > El restaurado es una fila nueva (EN-246): su cargo es otro, y el quitado
   > sigue quitado (BI-157).
 - **BI-243** — SI el cargo de un procedimiento está **confirmado** o

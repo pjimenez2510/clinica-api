@@ -28,6 +28,7 @@ import {
   refusalById,
   representativeColumns,
   requiresWrittenConsent,
+  resolveInformer,
 } from './procedure-consent.records';
 
 /**
@@ -67,6 +68,12 @@ export class PrismaProcedureConsentRepository implements ProcedureConsentReposit
       if (concept === undefined || concept.system_code !== 'TARIFF') {
         throw new ConceptWrongCatalogueError('TARIFF');
       }
+      // D-199.4. Who informed, as in the signed consent.
+      const informedById = await resolveInformer(
+        tx,
+        request.encounterId,
+        refusal.informedById,
+      );
       const witness =
         refusal.signer === 'NONE' && refusal.witness !== null
           ? {
@@ -84,7 +91,7 @@ export class PrismaProcedureConsentRepository implements ProcedureConsentReposit
             refusal.signer === 'REPRESENTATIVE' ? refusal.representative : null,
           ),
           ...witness,
-          informedById: request.recordedById,
+          informedById,
           signedAt: now,
           recordedAt: now,
           recordedById: request.recordedById,

@@ -13,6 +13,7 @@ import {
   EncounterAlreadyClosedError,
   EncounterNotFoundError,
   PractitionerNotLicensedError,
+  ProcedureCorrectionRequiresSignatureError,
   ProcedureRetractionReasonRequiredError,
 } from '../domain/encounter.errors';
 import type {
@@ -801,7 +802,7 @@ describe('los casos de uso del bloque K', () => {
     expect(coding.performed).toHaveLength(1);
   });
 
-  it('EN-152 lleva el 024 firmado al repositorio con quien lo registra, que es quien informó', async () => {
+  it('EN-152 lleva el 024 firmado al repositorio con quien lo registra; quién informó viaja en el papel (D-199.4)', async () => {
     await service.recordProcedure(
       {
         encounterId: ENCOUNTER,
@@ -823,19 +824,44 @@ describe('los casos de uso del bloque K', () => {
     expect(sheet.refusals).toEqual([]);
   });
 
-  it('EN-009 rechaza registrar un procedimiento en una atención con alta clínica', async () => {
+  it('EN-247 EN-248 tras el alta registra un procedimiento quien firma historia en la sede, y avisa a caja; interrumpida, nadie', async () => {
     encounters.stored = anEncounter({
       status: 'DISCHARGED',
-      endedAt: new Date('2026-09-14T15:00:00Z'),
+      endedAt: new Date('2026-09-14T15:00:00Z'), // fecha-fija: sólo viaja en el doble
       dischargeCondition: 'ALIVE',
     });
 
     await expect(
       service.recordProcedure(
         { encounterId: ENCOUNTER, conceptId: CONCEPT, quantity: 1 },
+        { ...requester, signSites: [] },
+      ),
+    ).rejects.toBeInstanceOf(ProcedureCorrectionRequiresSignatureError);
+    expect(coding.performed).toHaveLength(0);
+
+    const recorded = await service.recordProcedure(
+      { encounterId: ENCOUNTER, conceptId: CONCEPT, quantity: 1 },
+      requester,
+    );
+    expect(coding.performed[0]).toMatchObject({
+      mayCorrectAfterDischarge: true,
+    });
+    expect(charges.procedureChanged).toHaveBeenCalledWith({
+      encounterId: ENCOUNTER,
+      siteId: SITE,
+      changedById: requester.userId,
+      procedureId: recorded.id,
+      change: 'RECORDED',
+    });
+
+    encounters.stored = anEncounter({ status: 'DISCONTINUED' });
+    await expect(
+      service.recordProcedure(
+        { encounterId: ENCOUNTER, conceptId: CONCEPT, quantity: 1 },
         requester,
       ),
     ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
+    expect(coding.performed).toHaveLength(1);
   });
 
   it('EN-050 deja constancia de quién registró y de quién leyó un procedimiento', async () => {
@@ -889,13 +915,81 @@ describe('los casos de uso del bloque K', () => {
     });
   });
 
-  it('EN-244 EN-245 EN-246 tras el alta no se corrige, no se quita ni se restaura (D-194.1)', async () => {
+  it('EN-244 EN-245 EN-247 tras el alta corrige y quita quien firma historia en la sede con registro vigente; restaurar, no (D-194.1)', async () => {
     encounters.stored = anEncounter({
       status: 'DISCHARGED',
       endedAt: new Date('2026-09-14T15:00:00Z'), // fecha-fija: sólo viaja en el doble
       dischargeCondition: 'ALIVE',
     });
+    const edit = { encounterId: ENCOUNTER, procedureId: 'p', quantity: 1 };
+    const retraction = {
+      encounterId: ENCOUNTER,
+      procedureId: 'p',
+      reason: 'Registrado por error',
+    };
+    await service.recordProcedure(
+      { encounterId: ENCOUNTER, conceptId: CONCEPT, quantity: 2 },
+      requester,
+    );
+    charges.procedureChanged.mockClear();
 
+    // Sin `record:sign` en la sede: nada se escribe ni se avisa.
+    const notSigner = { ...requester, signSites: [OTHER_SITE] };
+    await expect(service.editProcedure(edit, notSigner)).rejects.toBeInstanceOf(
+      ProcedureCorrectionRequiresSignatureError,
+    );
+    await expect(
+      service.retractProcedure(retraction, notSigner),
+    ).rejects.toBeInstanceOf(ProcedureCorrectionRequiresSignatureError);
+
+    // Con el registro ACESS vencido, tampoco (D-117.13).
+    encounters.identity = {
+      practitionerId: 'practitioner-1',
+      acessExpiresOn: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+    };
+    await expect(service.editProcedure(edit, requester)).rejects.toBeInstanceOf(
+      PractitionerNotLicensedError,
+    );
+    expect(coding.procedureEdits).toHaveLength(0);
+    expect(coding.procedureRetractions).toHaveLength(0);
+    expect(charges.procedureChanged).not.toHaveBeenCalled();
+
+    // Control positivo: quien firma en la sede con registro vigente.
+    encounters.identity = {
+      practitionerId: 'practitioner-1',
+      acessExpiresOn: null,
+    };
+    await service.editProcedure(edit, requester);
+    await service.retractProcedure(retraction, requester);
+    expect(coding.procedureEdits[0]).toMatchObject({
+      mayCorrectAfterDischarge: true,
+    });
+    expect(coding.procedureRetractions[0]).toMatchObject({
+      mayCorrectAfterDischarge: true,
+    });
+    expect(
+      charges.procedureChanged.mock.calls.map(([call]) => call.change),
+    ).toEqual(['EDITED', 'RETRACTED']);
+
+    // Restaurar es de la atención viva, como «Deshacer» un diagnóstico.
+    await expect(
+      service.restoreProcedure(ENCOUNTER, 'p', requester),
+    ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
+  });
+
+  it('EN-247 con la atención viva, quien no firma viaja al adaptador como «no corrige tras el alta», por si el alta llega antes del bloqueo', async () => {
+    await service.editProcedure(
+      { encounterId: ENCOUNTER, procedureId: 'p', quantity: 1 },
+      { ...requester, signSites: [] },
+    );
+    expect(coding.procedureEdits[0]).toMatchObject({
+      mayCorrectAfterDischarge: false,
+      afterDischargeRefusal: 'NOT_SIGNER',
+    });
+  });
+
+  it('EN-244 EN-245 interrumpida o anulada, nadie corrige ni quita', async () => {
+    encounters.stored = anEncounter({ status: 'ENTERED_IN_ERROR' });
     await expect(
       service.editProcedure(
         { encounterId: ENCOUNTER, procedureId: 'p', quantity: 1 },
@@ -904,18 +998,10 @@ describe('los casos de uso del bloque K', () => {
     ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
     await expect(
       service.retractProcedure(
-        {
-          encounterId: ENCOUNTER,
-          procedureId: 'p',
-          reason: 'Registrado por error',
-        },
+        { encounterId: ENCOUNTER, procedureId: 'p', reason: 'No se realizó' },
         requester,
       ),
     ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
-    await expect(
-      service.restoreProcedure(ENCOUNTER, 'p', requester),
-    ).rejects.toBeInstanceOf(EncounterAlreadyClosedError);
-    expect(charges.procedureChanged).not.toHaveBeenCalled();
   });
 
   it('EN-245 quitar un procedimiento exige motivo; con él lo archiva y avisa a caja', async () => {

@@ -3283,8 +3283,8 @@ programada._
   petición, y guardar atado a ese procedimiento, una de dos cosas:
   - el **consentimiento firmado** en papel: quién firmó —el paciente, o su
     representante con su nombre, su parentesco y, si se da, su documento—,
-    quién informó —el profesional que lo registra (D-199.4)— y cuándo se
-    firmó, que NO DEBERÁ ser posterior a cuando se realizó y que, sin decirse,
+    **quién informó** —el profesional que se elija, propuesto el de la
+    atención (D-199.4)— y cuándo se firmó, que NO DEBERÁ ser posterior a cuando se realizó y que, sin decirse,
     es la hora de la realización y nunca la de tecleo; o
   - la **excepción**: emergencia, o procedimiento inesperado durante otro, con
     su **fundamento escrito**, que nunca queda vacío.
@@ -3308,7 +3308,22 @@ programada._
   - SI se corrige a otro concepto un procedimiento con 024, ENTONCES el 024
     DEBERÁ seguir sirviéndose con él;
   - el consentimiento y la excepción DEBERÁN servirse con el procedimiento en
-    la atención, con quién lo registró y cuándo.
+    la atención, con quién lo registró y cuándo;
+  - quién informó DEBERÁ ser un **profesional activo de la sede** de la
+    atención; SI la petición no lo dice, ENTONCES DEBERÁ ser el profesional de
+    la atención; y SI el elegido no es un profesional activo de la sede,
+    ENTONCES DEBERÁ rechazarlo con `CONSENT_INFORMER_NOT_AT_SITE` (igual en
+    la negativa, EN-153).
+  > **D-199.4, aceptada por el autor el 09-10-2026** con la investigación: el
+  > literal a del anexo pide la firma *«del profesional de salud que realizará
+  > la intervención»* y el flujograma, que *«los profesionales de salud
+  > tratantes realizan el proceso de consentimiento informado»*: manda quién
+  > interviene, no quién teclea. Hasta aquí quien informaba era quien
+  > registraba; un residente o una enfermera con `record:write` atribuía la
+  > información a quien no la dio. La pantalla propone al profesional de la
+  > atención y deja elegir otro de la sede; se guarda el elegido
+  > (`informed_by_id`, que ya existía) y quien registra sigue en
+  > `recorded_by_id`. Sin cambio de esquema.
   > **D-159 (07-10-2026), puntos 1 a 3.** El 024 se firma **en papel** con el
   > texto que aprueba la clínica (el anexo del A.M. 5316 hace del contenido de
   > cada intervención un documento del establecimiento); el sistema registra
@@ -3338,7 +3353,7 @@ programada._
   > el disparador mira el alta y el cambio de concepto, no cada edición.
 - **EN-153** — CUANDO el paciente rechace una intervención del tarifario, el
   sistema DEBERÁ registrar la **negativa** con la intervención, su instante, su
-  autor (quien la registra) y quién informó, y quién se negó: el paciente o su
+  autor (quien la registra) y quién informó (como en EN-152, D-199.4), y quién se negó: el paciente o su
   representante firmando, o nadie —el paciente no quiere firmar—, y entonces
   el **nombre y el documento del testigo externo**; y NO DEBERÁ registrar el
   procedimiento ni cambiar el estado de la atención. Además:
@@ -3354,6 +3369,11 @@ programada._
   > paciente»*. El testigo es el del literal h: *«firma y número de cédula de
   > ciudadanía del testigo (si el paciente no quiere suscribir el
   > documento)»*; el documento se pide sin validar su dígito (D-199.2).
+  > **D-199.2, aceptada el 09-10-2026:** el apartado «Negativa a un
+  > consentimiento informado» pide un *«testigo externo al establecimiento de
+  > salud»*, así que la pantalla rotula el campo «Testigo (no trabaja en la
+  > clínica)», sin otra regla. **Por confirmar fuera** (asesor legal): que el
+  > pasaporte vale donde el anexo dice «cédula de ciudadanía».
   >
   > **Garantía de la base:** `procedure_consent_refusal_states_who` (quién se
   > negó, con el testigo cuando no firma nadie) y la inmutabilidad de
@@ -4504,15 +4524,17 @@ diagnóstico (EN-180, EN-212, EN-213): se edita en su fila con la versión
 anterior guardada, y se quita archivándolo, nunca borrándolo._
 
 - **EN-244** — MIENTRAS la atención admita contenido clínico nuevo (`OPEN` u
-  `ON_HOLD`), CUANDO el médico corrija un procedimiento, el sistema DEBERÁ
+  `ON_HOLD`) o tenga el alta (EN-247), CUANDO el médico corrija un
+  procedimiento, el sistema DEBERÁ
   cambiar en la misma fila lo que se envía —el **concepto del tarifario** (y
   con él el código y la descripción copiados, EN-050), la **cantidad** y la
   **nota**— y DEBERÁ guardar la versión anterior entera en `record_version`,
   con quién la sustituyó y cuándo; y DEBERÁ exponer esas versiones, de la más
   reciente a la más antigua, a quien puede leer los procedimientos de la
   atención. Además:
-  - SI la atención no admite contenido clínico nuevo, ENTONCES DEBERÁ
-    rechazarlo con `ENCOUNTER_ALREADY_CLOSED` (D-194.1);
+  - SI la atención está interrumpida o anulada, ENTONCES DEBERÁ rechazarlo
+    con `ENCOUNTER_ALREADY_CLOSED`; tras el alta valen las negativas de
+    EN-247 (D-194.1);
   - SI el concepto nuevo no es del tarifario, ENTONCES DEBERÁ rechazarlo con
     `CONCEPT_WRONG_CATALOGUE`, como al registrarlo;
   - SI el procedimiento no es de esa atención, ENTONCES DEBERÁ rechazarlo con
@@ -4527,8 +4549,9 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   >
   > **Nada se corrige sin cambiar algo:** una edición que no cambia nada no
   > deja versión.
-- **EN-245** — MIENTRAS la atención admita contenido clínico nuevo, CUANDO el
-  médico quite un procedimiento con un **motivo**, el sistema DEBERÁ
+- **EN-245** — MIENTRAS la atención admita contenido clínico nuevo o tenga el
+  alta (EN-247), CUANDO el médico quite un procedimiento con un **motivo**, el
+  sistema DEBERÁ
   **archivarlo** en `encounter_procedure_retraction` —la fila entera, con quién
   lo quitó, cuándo y por qué— y retirarlo de la atención, de modo que **deje
   de contar** en todo lo que lee los procedimientos: la lista, el acto clínico
@@ -4563,20 +4586,72 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > como única escritura del archivo marcarlo restaurado una vez, hacia un
   > procedimiento vivo de la misma atención y el mismo concepto
   > (`encounter_procedure_retraction_restored_as_itself`).
-- **EN-247** — MIENTRAS la atención tenga el alta, esté interrumpida o anulada,
-  la pantalla NO DEBERÁ ofrecer corregir, quitar ni restaurar un procedimiento,
-  y DEBERÁ decirlo en una línea bajo la lista; y MIENTRAS admita contenido
-  nuevo, cada fila DEBERÁ ofrecer «Editar» (en la fila, EN-227) y «Quitar»
-  (con el motivo, en una confirmación), y cada quitado «Restaurar».
-  > **D-194.1, construido así mientras decide:** tras el alta los
-  > procedimientos no se corrigen, como no se registran (EN-009). La
-  > recomendación es la de los diagnósticos (EN-212, D-117.13): corregir tras
-  > el alta con `record:sign` y registro ACESS vigente, porque el RDACAA lee
-  > las columnas 95 a 100 de la atención y no la nota.
-- **EN-248** — CUANDO se corrija, se quite o se restaure un procedimiento, el
-  sistema DEBERÁ avisar a `billing`, después de su propia transacción, para que
-  el cargo que nació de él siga a la atención (BI-240 a BI-243), y el aviso
-  NO DEBERÁ fallar nunca hacia la atención.
+- **EN-247** — MIENTRAS la atención tenga el alta (`DISCHARGED` o
+  `COMPLETED`), el médico DEBERÁ poder **registrar** un procedimiento nuevo
+  (EN-050, EN-152), **corregirlo** (EN-244) y **quitarlo** (EN-245), con las
+  mismas reglas que antes del alta y además:
+  - SI quien lo hace no tiene `record:sign` en la sede de la atención,
+    ENTONCES DEBERÁ rechazarlo con `PROCEDURE_CORRECTION_REQUIRES_SIGNATURE`;
+    SI no tiene ficha profesional, con `PRACTITIONER_PROFILE_REQUIRED`; y SI
+    su registro ACESS no está vigente, con `PRACTITIONER_NOT_LICENSED`
+    (D-117.13);
+  - SI la atención ya se reportó al RDACAA (`reported_at`, EN-111), ENTONCES
+    DEBERÁ rechazarlo con `ENCOUNTER_ALREADY_REPORTED` (D-117.16);
+  - al **registrar**, la petición DEBERÁ decir **a qué hora se hizo**
+    (`performedAt`) —tras el alta «ahora» no es la hora del acto—: SI falta,
+    ENTONCES DEBERÁ rechazarlo con `PROCEDURE_PERFORMED_AT_REQUIRED`; y SI no
+    cae entre el inicio y el fin de la atención, con
+    `PROCEDURE_PERFORMED_OUTSIDE_ENCOUNTER` (D-201). La firma del 024, sin
+    decirse, es esa misma hora (EN-152), y la fecha de servicio del cargo
+    también (BI-197);
+  - **restaurar** un quitado (EN-246) sigue siendo sólo de la atención abierta
+    o suspendida, como «Deshacer» un diagnóstico (EN-213): tras el alta se
+    registra de nuevo; y la **negativa** (EN-153) y la **revocación** del 024
+    (EN-154) también, porque se registran cuando el paciente las expresa
+    (D-199.3).
+
+  Y la pantalla, a quien escribe en la historia:
+  - MIENTRAS la atención admita contenido nuevo, cada fila DEBERÁ ofrecer
+    «Editar» (en la fila, EN-227) y «Quitar» (con el motivo, en una
+    confirmación), y cada quitado «Restaurar»;
+  - MIENTRAS tenga el alta, DEBERÁ ofrecer «Registrar procedimiento»,
+    «Editar» y «Quitar» sólo a quien tiene `record:sign` en la sede, con
+    **una confirmación** que dice que la atención ya tiene el alta (D-126.2):
+    el guardar de la fila confirma, y la confirmación de quitar lo dice;
+  - MIENTRAS esté interrumpida o anulada —o tenga el alta y quien mira no
+    firme en la sede—, NO DEBERÁ ofrecer ninguna de esas acciones y DEBERÁ
+    decirlo en una línea bajo la lista.
+  > **D-194.1, aceptada por el autor el 09-10-2026** con la investigación
+  > (HL7 FHIR R4, `EventStatus`: `entered-in-error` y `not-done` valen
+  > también tras el cierre). Es la regla de los diagnósticos (EN-212, EN-215,
+  > D-117.13) porque el RDACAA lee las columnas 95 a 100 de estas filas y no
+  > de la nota, y porque caja propone el cargo **después** del alta (D-162):
+  > es entonces cuando el médico ve en la cuenta que puso dos exodoncias y fue
+  > una. Hasta el 09-10-2026 los procedimientos no se corregían tras el alta.
+  >
+  > **El servicio decide y el adaptador vuelve a preguntar bajo el bloqueo de
+  > la atención** (EN-212, M6): un alta que llega entre las dos lecturas se
+  > rechaza allí con la misma frase.
+  >
+  > **La hora, revisión clínica de la rama (G1):** registrado el 12-10 el
+  > procedimiento de una atención del 09-10, «ahora» ponía en la historia, en
+  > la firma del 024 y en el precio del cargo un día que no fue. La pantalla
+  > propone la hora del alta, editable (D-201, por confirmar con el autor).
+  >
+  > **Garantía de la base:** `trg_encounter_procedure_admits_unreported`
+  > (`encounter_procedure_reported`) rechaza registrar, corregir o archivar un
+  > procedimiento de una atención reportada, también desde `psql`; y
+  > `encounter_procedure_performed_within_encounter`, al registrar en una
+  > atención que ya terminó, que la hora caiga dentro de ella. Lo que la
+  > base **no** garantiza: `record:sign` y la licencia (no conoce la sesión),
+  > ni el estado (lo rechaza el servicio, como al registrar).
+- **EN-248** — CUANDO se registre, se corrija, se quite o se restaure un
+  procedimiento, el sistema DEBERÁ avisar a `billing`, después de su propia
+  transacción, para que el cargo que nació de él siga a la atención (BI-240 a
+  BI-243), y el aviso NO DEBERÁ fallar nunca hacia la atención.
+  > **Registrar avisa desde el 09-10-2026 (D-194.1):** tras el alta caja ya
+  > puede tener la cuenta abierta, y el procedimiento registrado entonces
+  > tiene que llegar a ella sin otro «Pasar a caja» (BI-242).
   > `encounter` no importa `billing`: avisa por el puerto
   > `PROCEDURE_CHARGE_SYNC` de `shared/billing`, como la consulta
   > (`CONSULTATION_REPRICER`, BI-203). Lo clínico ya está guardado; lo que
@@ -4612,12 +4687,16 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `PROCEDURE_NOT_FOUND` | 404 | El procedimiento no existe o no es de esa atención | EN-244, EN-245, EN-246 |
 | `PROCEDURE_RETRACTION_REASON_REQUIRED` | 422 | Quitar un procedimiento sin motivo, o con uno en blanco; campo `reason` | EN-245 |
 | `PROCEDURE_NOT_RESTORABLE` | 409 | Restaurar un procedimiento que ya se restauró | EN-246 |
+| `PROCEDURE_PERFORMED_AT_REQUIRED` | 422 | Registrar un procedimiento tras el alta sin decir a qué hora se hizo; campo `performedAt` (D-201) | EN-247 |
+| `PROCEDURE_PERFORMED_OUTSIDE_ENCOUNTER` | 422 | La hora del procedimiento registrado tras el alta no cae dentro de la atención; campo `performedAt` | EN-247 |
+| `PROCEDURE_CORRECTION_REQUIRES_SIGNATURE` | 403 | Registrar, corregir o quitar un procedimiento de una atención con el alta sin `record:sign` en su sede (D-194.1, D-117.13) | EN-247 |
 | `CONSENT_024_REQUIRED` | 422 | El procedimiento exige el consentimiento 024 y no llega firmado ni con excepción | EN-152 |
 | `CONSENT_SIGNED_AFTER_PROCEDURE` | 422 | La firma del 024 es posterior a la realización | EN-152 |
 | `CONSENT_REPRESENTATIVE_REQUIRED` | 422 | Firma, niega o revoca un representante sin nombre ni parentesco | EN-152 a EN-154 |
 | `CONSENT_WITNESS_REQUIRED` | 422 | Negativa sin firma y sin testigo | EN-153 |
 | `PROCEDURE_CONSENT_NOT_FOUND` | 404 | El consentimiento no es de esa atención | EN-154 |
 | `CONSENT_NOT_REVOCABLE` | 409 | Revocar una excepción, una negativa o un consentimiento ya revocado | EN-154 |
+| `CONSENT_INFORMER_NOT_AT_SITE` | 422 | Quien informó, elegido para el 024 o la negativa, no es un profesional activo de la sede de la atención; campo `informedById` (D-199.4) | EN-152, EN-153 |
 | `DIAGNOSIS_PRIMARY_TAKEN` | 409 | Segundo diagnóstico principal. Lo arbitra `encounter_diagnosis_one_primary`; el adaptador lee el rango en uso dentro de la misma transacción para que el rechazo sea una frase, así que el código llega por **las dos vías** | EN-043 |
 | `DIAGNOSIS_CONCEPT_NOT_IN_FORCE` | 422 | El código CIE-10 no estaba vigente en la fecha de la atención. **Lo emite el adaptador**, no el mapeo de constraints: `trg_diagnosis_concept_in_force` levanta `integrity_constraint_violation` desde PL/pgSQL, así que el nombre del disparador nunca viaja al cliente | EN-042 |
 | `VITALS_OUT_OF_RANGE` | 422 | Medida fuera de rango. Del mapeo de constraints: `encounter_vitals_ranges_*`, una por medida (D-058). **Por campo**, señalando cuál y diciendo el rango | EN-062 |
@@ -4813,14 +4892,14 @@ que es global: una atención ocurre en un sitio.
 | `PUT` | `/encounters/:id/triage` | `nursing:write` | EN-148, EN-149 *(sólo DONDE la capacidad esté habilitada)* |
 | `POST` | `/encounters/:id/diagnoses` | `record:write` *(tras el alta, además `record:sign`)* | EN-040 a EN-049, **EN-215** |
 | `GET` | `/encounters/:id/diagnoses` | `record:read` | EN-043, EN-046, EN-047 |
-| `POST` | `/encounters/:id/procedures` | `record:write` | EN-050, EN-151, **EN-152** *(con su consentimiento o su excepción)* |
+| `POST` | `/encounters/:id/procedures` | `record:write` *(tras el alta, además `record:sign`)* | EN-050, EN-151, **EN-152** *(con su consentimiento o su excepción)*, **EN-247**, EN-248 |
 | `GET` | `/encounters/:id/procedures` | `record:read` | EN-050, **EN-245** *(con los quitados aparte)*, **EN-152** a **EN-154** *(consentimiento, negativas y revocación)* |
-| `PATCH` | `/encounters/:id/procedures/:procedureId` | `record:write` | **EN-244**, EN-248 |
+| `PATCH` | `/encounters/:id/procedures/:procedureId` | `record:write` *(tras el alta, además `record:sign`)* | **EN-244**, **EN-247**, EN-248 |
 | `GET` | `/encounters/:id/procedures/:procedureId/versions` | `record:read` | **EN-244** |
-| `POST` | `/encounters/:id/procedures/:procedureId/retract` | `record:write` | **EN-245**, EN-248 |
+| `POST` | `/encounters/:id/procedures/:procedureId/retract` | `record:write` *(tras el alta, además `record:sign`)* | **EN-245**, **EN-247**, EN-248 |
 | `POST` | `/encounters/:id/procedures/:procedureId/restore` | `record:write` | **EN-246**, EN-248 |
 | `GET` | `/encounters/:id/procedure-consent-requirement?conceptId=` | `record:read` | **EN-152** |
-| `POST` | `/encounters/:id/procedure-refusals` | `record:write` | **EN-153** |
+| `POST` | `/encounters/:id/procedure-refusals` | `record:write` | **EN-153** *(con quién informó, D-199.4)* |
 | `POST` | `/encounters/:id/procedure-consents/:consentId/revoke` | `record:write` | **EN-154** |
 | `GET` | `/patients/:id/allergies` | `record:read` | EN-080 a EN-083, **EN-087** |
 | `POST` | `/patients/:id/allergies` | `background:write` | EN-080, EN-086, **EN-164** |

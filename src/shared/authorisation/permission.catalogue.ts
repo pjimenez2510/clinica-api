@@ -312,7 +312,8 @@ export const PERMISSION_CATALOGUE = [
     // CER-040, D-105 §2. «La dirección médica» anula un certificado que emitió
     // otro profesional. Un PERMISO y no un rol: los roles los arma cada clínica
     // (D-101 corregida), y en una de una sola persona esa persona lo es todo.
-    // Ningún rol de fábrica lo trae: la clínica lo concede a quien dirija.
+    // Lo trae sólo el rol de fábrica «Dirección médica», sin usuarios (AU-059):
+    // la clínica lo asigna a quien dirija.
     code: 'certificate:revoke-any',
     resource: 'record',
     description:
@@ -322,9 +323,9 @@ export const PERMISSION_CATALOGUE = [
     // BI-256, D-159.1, D-199.1. «La dirección médica» decide qué prestaciones
     // exigen el consentimiento informado escrito (formulario 024): el anexo
     // del A.M. 5316 deja la aprobación de cada contenido al director médico
-    // o a la instancia de calidad. Como `certificate:revoke-any`, ningún rol
-    // de fábrica lo trae —ni `MEDICO`, porque la barrera no la pone quien
-    // decidiría saltarla—: la clínica lo concede a quien dirija.
+    // o a la instancia de calidad. Como `certificate:revoke-any`, sólo lo trae
+    // el rol de fábrica «Dirección médica», sin usuarios (AU-059) —nunca
+    // `MEDICO`, porque la barrera no la pone quien decidiría saltarla—.
     code: 'record:consent-rule',
     resource: 'record',
     description:

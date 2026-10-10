@@ -24,3 +24,31 @@ describe('CER-038 D-101 quién corrige en la ficha los datos que pide el reposo'
     expect(permissionsOf('CAJA')).not.toContain('patient:write');
   });
 });
+
+/**
+ * D-199.1. Las dos llaves de la dirección médica —qué prestaciones exigen el
+ * 024 y anular certificados ajenos— vienen en un rol propio de fábrica, que
+ * nace sin usuarios: la clínica sólo lo asigna a quien dirige.
+ */
+describe('AU-059 el rol de fábrica «Dirección médica»', () => {
+  it('AU-059 lleva record:consent-rule, certificate:revoke-any y billing:read, y nada más', () => {
+    const role = DEFAULT_ROLES.find((each) => each.code === 'DIRECCION_MEDICA');
+    expect(role?.name).toBe('Dirección médica');
+    expect([...(role?.permissions ?? [])].sort()).toEqual([
+      'billing:read',
+      'certificate:revoke-any',
+      'record:consent-rule',
+    ]);
+  });
+
+  it('AU-059 control: ningún otro rol de fábrica lleva sus dos llaves', () => {
+    const others = DEFAULT_ROLES.filter(
+      (each) => each.code !== 'DIRECCION_MEDICA',
+    );
+    for (const role of others) {
+      expect(role.permissions).not.toContain('record:consent-rule');
+      expect(role.permissions).not.toContain('certificate:revoke-any');
+    }
+    expect(others.length).toBeGreaterThan(0);
+  });
+});

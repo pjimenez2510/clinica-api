@@ -35,8 +35,10 @@ async function anAttention(prisma: PrismaClient) {
     practitionerId: practitioner.id,
     patientId: patient.id,
   });
-  const user = await createUser(prisma);
-  return { encounter, user };
+  // D-199.4. The attention's own professional: who informs by default, and
+  // an account like any other for the rest of the rows.
+  const user = { id: practitioner.userId };
+  return { encounter, user, site, practitioner };
 }
 
 /** A tariff concept, and — when `marked` — a service that demands the 024. */
@@ -636,5 +638,52 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
         data: { procedureConceptId: other.id, tariffCode: other.code },
       }),
     ).rejects.toThrow(/billable_service_exam_not_tied/);
+  });
+
+  it('EN-152 EN-153 D-199.4 la BASE admite como quien informó al profesional de la atención o a uno activo de su sede; a nadie más', async () => {
+    const prisma = db();
+    const { encounter, user, site } = await anAttention(prisma);
+    const concept = await aConcept(prisma, user, false);
+    const procedure = await prisma.encounterProcedure.create({ data: procedureData(encounter, concept) }); // prettier-ignore
+    const refusal = (
+      informedById: string,
+    ): Prisma.ProcedureConsentUncheckedCreateInput => ({
+      // prettier-ignore
+      encounterId: encounter.id,
+      conceptId: concept.id,
+      kind: 'REFUSED',
+      signer: 'PATIENT',
+      informedById,
+      signedAt: new Date(),
+      recordedAt: new Date(),
+      recordedById: user.id,
+    });
+
+    // Ni una cuenta sin ficha profesional, ni un profesional de otra sede.
+    const clerk = await createUser(prisma);
+    const elsewhere = await createPractitioner(prisma);
+    await prisma.practitionerSite.create({ data: { practitionerId: elsewhere.id, siteId: (await createSite(prisma)).id } }); // prettier-ignore
+    for (const informer of [clerk.id, elsewhere.userId]) {
+      await expect(
+        prisma.procedureConsent.create({ data: { ...signedConsent(procedure, user.id), informedById: informer } }), // prettier-ignore
+      ).rejects.toThrow(/procedure_consent_informer_at_site/);
+      await expect(
+        prisma.procedureConsent.create({ data: refusal(informer) }),
+      ).rejects.toThrow(/procedure_consent_informer_at_site/);
+    }
+
+    // Uno de la sede, pero desactivado: tampoco.
+    const colleague = await createPractitioner(prisma);
+    await prisma.practitionerSite.create({ data: { practitionerId: colleague.id, siteId: site.id } }); // prettier-ignore
+    await prisma.practitioner.update({ where: { id: colleague.id }, data: { active: false } }); // prettier-ignore
+    await expect(
+      prisma.procedureConsent.create({ data: refusal(colleague.userId) }),
+    ).rejects.toThrow(/procedure_consent_informer_at_site/);
+
+    // Control positivo: activo en la sede, y el de la atención.
+    await prisma.practitioner.update({ where: { id: colleague.id }, data: { active: true } }); // prettier-ignore
+    await prisma.procedureConsent.create({ data: refusal(colleague.userId) });
+    await prisma.procedureConsent.create({ data: signedConsent(procedure, user.id) }); // prettier-ignore
+    expect(await prisma.procedureConsent.count({ where: { encounterId: encounter.id } })).toBe(2); // prettier-ignore
   });
 });

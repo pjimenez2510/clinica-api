@@ -256,7 +256,7 @@ describe('el certificado medico por HTTP', () => {
    * con dígito verificador calculado (`app_user_cedula_valid`).
    */
   async function signIn(
-    roleCode: string,
+    roleCode: string | readonly string[],
     email: string,
     cedula: string,
     withPractitioner = true,
@@ -278,12 +278,12 @@ describe('el certificado medico por HTTP', () => {
     const practitioner = withPractitioner
       ? await prisma.practitioner.create({ data: { userId: user.id } })
       : undefined;
-    const role = await prisma.role.findUniqueOrThrow({
-      where: { code: roleCode },
-    });
-    await prisma.userRoleGrant.create({
-      data: { userId: user.id, roleId: role.id, siteId },
-    });
+    for (const code of typeof roleCode === 'string' ? [roleCode] : roleCode) {
+      const role = await prisma.role.findUniqueOrThrow({ where: { code } });
+      await prisma.userRoleGrant.create({
+        data: { userId: user.id, roleId: role.id, siteId },
+      });
+    }
 
     const response = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
@@ -760,18 +760,10 @@ describe('el certificado medico por HTTP', () => {
       }),
     ).toEqual({ revokedAt: null, revokedById: null, revocationReason: null });
 
-    // «Dirección médica» no es un rol de fábrica: la clínica arma uno.
-    const direction = await prisma.role.create({
-      data: { code: 'DIRECCION_MEDICA', name: 'Dirección médica' },
-    });
-    await prisma.rolePermission.createMany({
-      data: ['record:read', 'record:write', 'certificate:revoke-any'].map(
-        (permissionCode) => ({ roleId: direction.id, permissionCode }),
-      ),
-    });
-    registry.invalidate();
+    // AU-059 (D-199.1). El rol de fábrica «Dirección médica», sumado al de
+    // médico: la clínica sólo lo asigna.
     const director = await signIn(
-      'DIRECCION_MEDICA',
+      ['MEDICO', 'DIRECCION_MEDICA'],
       'direccion@clinica.ec',
       '0923456784',
     );
@@ -1655,16 +1647,8 @@ describe('el certificado medico por HTTP', () => {
     );
     expect(await stateOf(id)).toEqual(untouched);
 
-    const direction = await prisma.role.create({
-      data: { code: 'DIRECCION_MEDICA', name: 'Dirección médica' },
-    });
-    await prisma.rolePermission.createMany({
-      data: ['record:read', 'record:write', 'certificate:revoke-any'].map(
-        (permissionCode) => ({ roleId: direction.id, permissionCode }),
-      ),
-    });
-    registry.invalidate();
-    const director = await signIn('DIRECCION_MEDICA', 'direccion@clinica.ec', '0923456784'); // prettier-ignore
+    // AU-059. El rol de fábrica, sumado al de médico.
+    const director = await signIn(['MEDICO', 'DIRECCION_MEDICA'], 'direccion@clinica.ec', '0923456784'); // prettier-ignore
 
     // CER-039: el nuevo sale a nombre de la dirección, que no atendió.
     const withoutReason = await correct(id, director.token, body).expect(422);

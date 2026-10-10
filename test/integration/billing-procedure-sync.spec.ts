@@ -153,7 +153,7 @@ async function aProposedSuture() {
 
 const changed = (
   procedureId: string,
-  change: 'EDITED' | 'RETRACTED' | 'RESTORED',
+  change: 'RECORDED' | 'EDITED' | 'RETRACTED' | 'RESTORED',
 ) =>
   scene.follow.procedureChanged({
     encounterId: scene.encounterId,
@@ -245,6 +245,56 @@ describe('el cargo sigue al procedimiento corregido (BI-240 a BI-243)', () => {
       [procedure.id, 'CANCELLED'],
       [restored.id, 'PLANNED'],
     ]);
+  });
+
+  it('BI-242 EN-247 tras el alta, con la cuenta abierta, el procedimiento registrado propone su cargo una vez, y corregirlo lo sigue (D-194.1)', async () => {
+    const { accountId } = await aProposedSuture();
+    await scene.prisma.encounter.update({
+      where: { id: scene.encounterId },
+      data: { status: 'DISCHARGED', endedAt: new Date(VISIT_STARTED_AT.getTime() + 40 * 60_000), dischargeCondition: 'ALIVE' }, // prettier-ignore
+    });
+
+    const late = await scene.coding.addProcedure({
+      encounterId: scene.encounterId,
+      conceptId: scene.cureConceptId,
+      quantity: 1,
+      performedAt: new Date(VISIT_STARTED_AT.getTime() + 35 * 60_000),
+      sites: 'all',
+      mayCorrectAfterDischarge: true,
+    });
+    await changed(late.id, 'RECORDED');
+    await changed(late.id, 'RECORDED');
+
+    const lines = () =>
+      scene.prisma.chargeItem.findMany({
+        where: { accountId, encounterProcedureId: late.id },
+        select: { status: true, quantity: true },
+      });
+    expect((await lines()).map((line) => [line.status, line.quantity.toString()])).toEqual([['PLANNED', '1']]); // prettier-ignore
+
+    await scene.coding.editProcedure({
+      encounterId: scene.encounterId,
+      procedureId: late.id,
+      quantity: 3,
+      editedById: scene.doctorId,
+      sites: 'all',
+      mayCorrectAfterDischarge: true,
+    });
+    await changed(late.id, 'EDITED');
+    expect((await lines()).map((line) => [line.status, line.quantity.toString()])).toEqual([['PLANNED', '3']]); // prettier-ignore
+
+    // Control: sin la autoridad tras el alta, el adaptador no escribe.
+    await expect(
+      scene.coding.editProcedure({
+        encounterId: scene.encounterId,
+        procedureId: late.id,
+        quantity: 2,
+        editedById: scene.doctorId,
+        sites: 'all',
+      }),
+    ).rejects.toMatchObject({
+      code: 'PROCEDURE_CORRECTION_REQUIRES_SIGNATURE',
+    });
   });
 
   it('BI-243 el cargo confirmado no cambia y el extracto dice que ya no corresponde; el restaurado no se cobra dos veces', async () => {

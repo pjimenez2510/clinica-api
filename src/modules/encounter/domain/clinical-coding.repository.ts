@@ -185,7 +185,10 @@ export interface RetractedProcedureView {
   reason: string;
 }
 
-/** EN-244. A correction in place: only what is present changes. */
+/**
+ * EN-244, EN-247. A correction in place: only what is present changes. After
+ * the discharge, by whoever may correct the coding (D-194.1, D-117.13).
+ */
 export interface ProcedureEdit {
   encounterId: string;
   procedureId: string;
@@ -195,15 +198,24 @@ export interface ProcedureEdit {
   note?: string | null;
   editedById: string;
   sites: SiteScopeFilter;
+  /** EN-247. Asked again under the attention's lock; absent is «no». */
+  mayCorrectAfterDischarge?: boolean;
+  afterDischargeRefusal?: AfterDischargeRefusal;
 }
 
-/** EN-245. Removing a procedure: archived whole, with who, when and why. */
+/**
+ * EN-245, EN-247. Removing a procedure: archived whole, with who, when and
+ * why. After the discharge, by whoever may correct the coding.
+ */
 export interface ProcedureRetraction {
   encounterId: string;
   procedureId: string;
   reason: string;
   retractedById: string;
   sites: SiteScopeFilter;
+  /** EN-247. Asked again under the attention's lock; absent is «no». */
+  mayCorrectAfterDischarge?: boolean;
+  afterDischargeRefusal?: AfterDischargeRefusal;
 }
 
 /** EN-246. Bringing a removed procedure back, as a new row. */
@@ -294,10 +306,16 @@ export interface NewProcedure {
    */
   consent?: {
     paper: ProcedureConsentInput;
-    /** Who records it, and so who informed the patient (EN-152). */
+    /** Who records it (EN-152). Who informed travels in the paper (D-199.4). */
     recordedById: string;
   };
   sites: SiteScopeFilter;
+  /**
+   * EN-247 (D-194.1). After the discharge a new procedure is a correction of
+   * the coding: asked again under the attention's lock. Absent is «no».
+   */
+  mayCorrectAfterDischarge?: boolean;
+  afterDischargeRefusal?: AfterDischargeRefusal;
 }
 
 /**

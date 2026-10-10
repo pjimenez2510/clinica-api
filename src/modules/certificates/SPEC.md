@@ -571,8 +571,10 @@ PR-030).
 
   > **D-105 §2 y D-101 corregida.** «Dirección médica» **no es un rol**: los
   > roles los arma cada clínica (en una de una sola persona, esa persona lo
-  > hace todo). Es un permiso del catálogo que **ningún rol de fábrica trae**
-  > salvo el de desarrollo; la clínica lo concede a quien dirija. La sede es la
+  > hace todo). Es un permiso del catálogo que **ningún rol de fábrica con
+  > usuarios trae** salvo el de desarrollo; lo lleva el rol de fábrica
+  > «Dirección médica», sin usuarios (AU-059, D-199.1), y la clínica lo asigna
+  > a quien dirija o concede el permiso a otro rol. La sede es la
   > del certificado (`sitesFor('certificate:revoke-any')`), no cualquiera.
 
 - **CER-041** — SI el reposo empieza **después del día siguiente a la

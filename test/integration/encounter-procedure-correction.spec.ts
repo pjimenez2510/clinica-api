@@ -256,4 +256,45 @@ describe('corregir y quitar un procedimiento deja rastro (EN-244 a EN-246)', () 
     const archived = await prisma.encounterProcedureRetraction.findUniqueOrThrow({ where: { id: old.id } }); // prettier-ignore
     expect(archived.tariffAmount?.toString()).toBe('12.5');
   });
+
+  it('EN-247 la BASE rechaza registrar, corregir o archivar un procedimiento de una atención reportada al RDACAA (D-117.16)', async () => {
+    const prisma = db();
+    const { encounter, concept, procedure, user } =
+      await anEncounterWithAProcedure(prisma);
+    const insert = () => prisma.$executeRaw`
+      INSERT INTO encounter_procedure
+        (encounter_id, concept_id, procedure_code, procedure_display, quantity, performed_at)
+      VALUES (${encounter.id}::uuid, ${concept.id}::uuid, ${concept.code},
+              ${concept.display}, 1, ${encounter.startedAt})`;
+    const stampedEdit = () => prisma.$executeRaw`
+      UPDATE encounter_procedure
+         SET quantity = quantity + 1, edited_by_id = ${user.id}::uuid,
+             edited_at = ${new Date()}
+       WHERE id = ${procedure.id}::uuid`;
+
+    // Control positivo: sin reportar, las tres entran.
+    await insert();
+    await stampedEdit();
+    const other = await prisma.encounterProcedure.findFirstOrThrow({
+      where: { encounterId: encounter.id, id: { not: procedure.id } },
+    });
+    await archive(prisma, other.id, user.id);
+    await remove(prisma, other.id);
+
+    await prisma.encounter.update({
+      where: { id: encounter.id },
+      data: { reportedAt: new Date() },
+    });
+    await expect(insert()).rejects.toThrow(/encounter_procedure_reported/);
+    await expect(stampedEdit()).rejects.toThrow(/encounter_procedure_reported/);
+    await expect(archive(prisma, procedure.id, user.id)).rejects.toThrow(
+      /encounter_procedure_reported/,
+    );
+    expect(
+      await prisma.encounterProcedure.findMany({
+        where: { encounterId: encounter.id },
+        select: { id: true, quantity: true },
+      }),
+    ).toEqual([{ id: procedure.id, quantity: 3 }]);
+  });
 });

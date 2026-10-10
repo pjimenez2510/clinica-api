@@ -160,6 +160,47 @@ describe('roles are data, permissions are a contract', () => {
     ).toEqual([]);
   });
 
+  it('AU-059 la sincronización crea «Dirección médica» con sus tres permisos y sin ninguna cuenta', async () => {
+    const prisma = db();
+    const result = await syncAuthorisation(prisma);
+
+    expect(result.rolesCreated).toContain('DIRECCION_MEDICA');
+    const role = await prisma.role.findUniqueOrThrow({
+      where: { code: 'DIRECCION_MEDICA' },
+      select: {
+        name: true,
+        isSystem: true,
+        permissions: { select: { permissionCode: true } },
+        _count: { select: { grants: true } },
+      },
+    });
+    expect(role.name).toBe('Dirección médica');
+    expect(role.isSystem).toBe(true);
+    expect(role.permissions.map((each) => each.permissionCode).sort()).toEqual([
+      'billing:read',
+      'certificate:revoke-any',
+      'record:consent-rule',
+    ]);
+    expect(role._count.grants).toBe(0);
+
+    // Control: lo que la clínica edite del rol, una segunda sincronización
+    // no lo reescribe.
+    const stored = await prisma.role.findUniqueOrThrow({ where: { code: 'DIRECCION_MEDICA' } }); // prettier-ignore
+    await prisma.rolePermission.deleteMany({ where: { roleId: stored.id, permissionCode: 'billing:read' } }); // prettier-ignore
+    const again = await syncAuthorisation(prisma);
+    expect(again.rolesCreated).not.toContain('DIRECCION_MEDICA');
+    expect(
+      (
+        await prisma.rolePermission.findMany({
+          where: { roleId: stored.id },
+          select: { permissionCode: true },
+        })
+      )
+        .map((each) => each.permissionCode)
+        .sort(),
+    ).toEqual(['certificate:revoke-any', 'record:consent-rule']);
+  });
+
   it('AU-035 keeps `user:reset-mfa` out of every shipped role definition', () => {
     // La mitad que no necesita base de datos, y la que falla primero si
     // alguien lo añade a DEFAULT_ROLES «para que el administrador pueda».
