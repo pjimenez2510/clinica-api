@@ -375,6 +375,28 @@ el PDF y lo abre (PD-057).
 
 ---
 
+### H14 — La copia como la del HCAM: resultados, portada, alcance y tamizaje (D-203 §2 a §6) _(P1, 10-10-2026)_
+
+La copia lleva los resultados de laboratorio e imagen y las notas de evolución;
+la portada dice «fiel copia del original», quién la entrega con el espacio de
+su firma y sello, el total de páginas, el alcance y el «Recibí conforme» de
+quien la retira; «Atendida en parte» entrega sólo su periodo; y el tamizaje va
+sólo si el visto bueno lo incluye.
+
+**Prueba independiente:** autorizar en parte una copia de una persona con dos
+atenciones en días distintos y descargar sólo la del periodo, con «Del … al …»
+en la portada; ver en una atención con un examen informado el valor y su
+unidad, y el de una nota 005; leer «fiel copia del original», «Total de
+páginas: N» igual a las páginas del PDF y «Recibí conforme»; con el visto bueno
+que incluye el tamizaje, verlo; sin él, no.
+
+**Cubre:** DOC-120 a DOC-123.
+
+**Solo servidor:** DOC-120 a DOC-123. El PDF lo compone el servidor; la
+pantalla sólo lo pide (PD-057).
+
+---
+
 ## Criterios de éxito
 
 - **SC-060** — **Cero documentos entregados que no estén guardados.** Se mide
@@ -1324,6 +1346,50 @@ solo PDF, completo, generado al momento._
   servir nada.
   > Como la exportación (PD-043): la bitácora dice de quién salieron los datos
   > y por qué solicitud (Reglamento LOPDP art. 15).
+
+
+- **DOC-120** — La portada de la copia (DOC-118) DEBERÁ decir que es **fiel
+  copia del original** que custodia el establecimiento y reproduce lo que lleva;
+  nombrar al **responsable de la entrega** —quien la autorizó (la respuesta
+  vigente)— con un recuadro para su **firma y sello** a mano; el **total de
+  páginas** del PDF; el **alcance** —«Historia clínica completa» o «Del
+  <fecha> al <fecha>»—; el parentesco del familiar; los documentos recibidos
+  de quien la presenta (PD-064); y un recuadro **«Recibí conforme»** —nombre,
+  cédula, firma y fecha de quien la retira— con la declaración de que asume la
+  responsabilidad del cuidado y manejo de la información que recibe, guarda su
+  confidencialidad y no la divulga. La certificación NO DEBERÁ decir que
+  reproduce lo que no lleva.
+  > **D-203 §4 (aceptada), enmienda DOC-118.** A.M. 5216 arts. 28 y 32; el
+  > formulario SGC-DC-FR-022 del HCAM anota el funcionario responsable de
+  > entregar la fiel copia, su firma, el total de páginas y la fecha; y su
+  > declaración de confidencialidad. La copia **digital** se firmaría
+  > electrónicamente (Ley de Comercio Electrónico art. 14, D-177.1): fuera de
+  > esta entrega. Las palabras exactas, **al asesor legal**.
+- **DOC-121** — Cada atención de la copia DEBERÁ llevar, además de lo de
+  DOC-111, sus **resultados** de laboratorio e imagen —de los exámenes de sus
+  órdenes emitidas, el informe vigente a la fecha de la autorización, no
+  anulado, con cada valor, su unidad, su referencia y su marca de anormal, y la
+  conclusión—, y sus **notas de evolución** (formulario 005) firmadas y en pie,
+  con su fecha; SI un informe se corrigió después de la autorización, ENTONCES
+  DEBERÁ decir que se corrigió y que la corrección no va en esa copia. La
+  portada ya NO DEBERÁ decir que no lleva los resultados ni las notas de
+  evolución.
+  > **D-203 §4 (aceptada).** A.M. 5216 art. 7: son documentos de salud los
+  > «resultados de exámenes de laboratorio, imagenología y otros
+  > procedimientos». Lo que se autorizó, y no lo que vino después (D-203 §3).
+- **DOC-122** — CUANDO la respuesta vigente de la copia sea «Atendida en parte»
+  con su periodo (PD-059), el sistema DEBERÁ servirla con sólo las atenciones
+  cuya fecha clínica de inicio cae en él; «Atendida», la completa. Cada
+  descarga, cuantas veces se pida y sin caducidad, DEBERÁ llevar lo mismo —lo
+  autorizado al instante de la respuesta— y dejar sus filas de DOC-119.
+  > **D-203 §2 y §3 (aceptadas), enmienda DOC-118:** «Atendida en parte» ya
+  > habilita la descarga.
+- **DOC-123** — MIENTRAS el visto bueno de la solicitud (PD-061) **incluya el
+  tamizaje**, cada atención de la copia que lo tenga DEBERÁ llevar el tamizaje
+  de violencia (bloque F): resultado, tipos, instrumento, acción tomada y si se
+  notificó a la autoridad; sin ese visto bueno NO DEBERÁ llevarlo, y la portada
+  DEBERÁ decir cuál de los dos.
+  > **D-203 §6 (aceptada), D-188 §3:** sólo tras revisión humana.
 
 ---
 
