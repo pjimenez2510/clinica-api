@@ -5,6 +5,7 @@ import type { ResolvedResult } from './result-value';
 import type {
   CriticalNoticeTarget,
   CriticalWait,
+  HeldRole,
   UnmatchedWait,
 } from './safety-deadline';
 import type { SiteScopeFilter } from './service-order.repository';
@@ -302,6 +303,8 @@ export interface FlaggedResultEntry {
    * an unmatched result (D-050 §4).
    */
   orderedBy: { id: string; name: string };
+  /** ORD-167. The ACCOUNT behind `orderedBy`, whom a notice can be due to. */
+  orderedByUserId: string;
 }
 
 /**
@@ -356,6 +359,8 @@ export interface CriticalWorklistEntry extends FlaggedResultEntry {
   noticeTarget: CriticalNoticeTarget;
   /** ORD-065. The escalation is due and the site named nobody. */
   escalationMissing: boolean;
+  /** ORD-167. The notice is due to the account reading the worklist. */
+  dueToRequester: boolean;
 }
 
 /** ORD-040, ORD-046. An unmatched result with who answers for it, and by when. */
@@ -660,6 +665,13 @@ export interface DiagnosticReportRepository {
     siteIds: readonly string[],
     at: Date,
   ): Promise<ReadonlySet<string>>;
+
+  /**
+   * ORD-167. The roles this account holds NOW, each at its site or at every
+   * site (`siteId: null`). Revoked grants, inactive roles and an inactive
+   * account hold nothing, and are filtered in the query.
+   */
+  heldRoles(userId: string): Promise<readonly HeldRole[]>;
 }
 
 /** Injection token. The application never names the adapter. */

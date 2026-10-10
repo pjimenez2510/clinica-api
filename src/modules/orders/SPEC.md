@@ -467,6 +467,21 @@ está vivo.
 la cuenta del menú y cuándo se relee la cola; lo que publica el servidor es
 ORD-164, y el canal y sus latidos son AU-054 a AU-058 en `auth`.
 
+### E21 — El aviso de un crítico, a quien le toca _(P1, 10-10-2026)_
+
+D-205 §2, resuelta por el autor: el aviso emergente salta sólo a quien le toca
+avisar —el destino que ya calcula la cola (ORD-065, ORD-068)—, y dice de qué
+paciente es a quien tiene permiso de verlo. Lo decide el servidor; la
+pantalla no lo deduce.
+
+**Prueba independiente:** con un potasio crítico de una orden del médico A en
+horario, la sesión de A recibe el aviso «Valor crítico de <paciente>» con la
+determinación y el botón lleva a esa orden; la de recepción y la del médico B,
+con la misma cola abierta, no reciben nada. Vencido el plazo con guardia
+designada, el aviso salta a quien tiene el rol de guardia en esa sede, y deja
+de tocar a A.
+**Cubre:** ORD-167, ORD-168. **Solo servidor:** ORD-167. **Solo interfaz:** ORD-168.
+
 ### Fuera de las ocho
 
 **Transcripción masiva y gráficas de evolución.** Se transcribe **solo lo que se
@@ -2382,6 +2397,8 @@ AU-058; aquí, qué publica `orders` y qué hace la pantalla con ello._
   > D-187 §4: sólo el crítico enseña algo; el resto refresca en silencio. El
   > toast no dice qué ni de quién porque una pantalla de mostrador la ve
   > cualquiera que pase; la cola, a un clic, sí.
+  > **Enmendado por ORD-168 (D-205 §2, 10-10-2026):** el toast sale sólo a
+  > la sesión a la que toca avisar (ORD-167) y nombra al paciente.
 - **ORD-166** — MIENTRAS el canal esté abierto y su bus no esté sordo
   (AU-058), la interfaz NO DEBERÁ pedir la cola de críticos cada minuto:
   DEBERÁ releerla al llegar el plazo de aviso más próximo de sus filas
@@ -2402,6 +2419,43 @@ AU-058; aquí, qué publica `orders` y qué hace la pantalla con ello._
   > clínica de la rama, G2 y G3)*. Lo que cambia sólo con la hora —la sede
   > que cierra y pasa el aviso a la guardia (ORD-068)— se ve a los 5 minutos
   > como mucho: D-190.
+
+---
+
+## 21. El aviso de un crítico, a quien le toca (D-205 §2)
+
+_Resuelta por el autor el 10-10-2026. Enmienda ORD-165 en el aviso emergente;
+la cola y su cuenta en el menú siguen como están._
+
+- **ORD-167** — Cada entrada de la cola de críticos DEBERÁ decir si el aviso
+  toca **a la sesión que la lee** (`dueToRequester`): CUANDO el aviso toca al
+  médico que pidió (`ORDERING_PRACTITIONER`) o al paciente (`PATIENT`), si
+  quien lee es quien pidió la orden; CUANDO toca al rol de guardia
+  (`ON_CALL_ROLE`), si quien lee tiene ese rol con una asignación vigente —sin
+  revocar, de un rol activo y una cuenta activa— en la sede de la entrada o en
+  todas; y en cualquier otro caso NO DEBERÁ marcarla.
+  > El destino es el de ORD-065 y ORD-068, calculado con el mismo instante que
+  > el resto de la cola: cambia con el plazo vencido o la sede que cierra, y
+  > la pantalla se entera al releer (ORD-166). **«Al paciente» no tiene
+  > sesión**: lo llama, de forma provisional, quien pidió la orden —tras su
+  > autoaviso (ORD-146) es quien sabe y debe avisar—; quién más debe
+  > enterarse cuando la sede está cerrada y sin guardia queda preguntado al
+  > autor en el plan `fix-f07-aviso-critico-destino`. Las revocaciones y las
+  > cuentas inactivas se filtran en la consulta, como `authoriserPermissions`
+  > de agenda.
+- **ORD-168** — CUANDO la cola releída traiga un valor que **toca a esta
+  sesión** (ORD-167) y antes no le tocaba, la interfaz DEBERÁ avisar con un
+  toast, y SI la sesión tiene `patient:read` ENTONCES DEBERÁ nombrar al
+  paciente —nombre completo— y la determinación, y llevar a la orden de ese
+  valor; SI no tiene el permiso, o la ficha no se puede leer, ENTONCES DEBERÁ
+  avisar igual, sin nombre, y llevar a la cola. CUANDO lleguen varios a la
+  vez, DEBERÁ ser un único aviso con cuántos son, que lleva a la cola. Una
+  sesión a la que no le toca ningún valor NO DEBERÁ ver aviso alguno.
+  > **Enmienda ORD-165** («sin nombrar al paciente ni el valor»): el aviso ya
+  > no lo ve cualquiera que pase por un mostrador, sólo quien tiene que
+  > avisar. Nombrarlo exige leer la ficha, y esa lectura deja su fila en la
+  > bitácora (PA-022): es un acceso real. El valor no viaja en el aviso: está
+  > en la orden, a un clic, junto al nombre.
 
 ---
 

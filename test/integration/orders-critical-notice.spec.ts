@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
@@ -26,6 +28,12 @@ import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
  * by whatever bypasses the application.
  */
 const db = useDatabase();
+
+/**
+ * An account id with no row behind it: the worklist asks which roles it holds
+ * (ORD-167), and `user_role_grant.user_id` is a uuid.
+ */
+const SOMEONE = randomUUID();
 
 const silentAudit: AccessAuditRecorder = { record: () => Promise.resolve() };
 
@@ -68,7 +76,7 @@ async function criticalGlucoseIn(
   now: Date,
 ) {
   const { reports, orders } = serviceOf(prisma);
-  const requester: Requester = { userId: 'user-1', sites: 'all' };
+  const requester: Requester = { userId: SOMEONE, sites: 'all' };
 
   const order = await placeIssued(orders, {
     encounterId: scene.encounter.id,
@@ -487,7 +495,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const scene = await aCriticalGlucose(prisma, now);
     await siteInHours(prisma, scene, isoWeekday);
     const { reports } = serviceOf(prisma);
-    const requester: Requester = { userId: 'user-1', sites: 'all' };
+    const requester: Requester = { userId: SOMEONE, sites: 'all' };
 
     // 60 min de fábrica y el resultado tiene 60: aún dentro, a quien pidió.
     const [onTime] = await reports.critical(requester, now);
@@ -567,12 +575,70 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     expect(notice.afterHours).toBe(true);
   });
 
+  it('ORD-167 el aviso toca a quien pidió y, vencido, a quien tiene la guardia vigente en la sede; a nadie más', async () => {
+    const prisma = db();
+    const { now, isoWeekday } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    await siteInHours(prisma, scene, isoWeekday);
+    const { reports } = serviceOf(prisma);
+    const other = await createSite(prisma);
+    const orderer: Requester = { userId: scene.practitioner.userId, sites: 'all' }; // prettier-ignore
+    const reader = async (userId: string) =>
+      (await reports.critical({ userId, sites: 'all' }, now))[0]?.dueToRequester; // prettier-ignore
+
+    // En plazo: a quien pidió (control positivo), y a otra cuenta no.
+    const colleague = await createUser(prisma);
+    expect(await reader(orderer.userId)).toBe(true);
+    expect(await reader(colleague.id)).toBe(false);
+
+    // Vencido con guardia: el rol, vigente en la sede o en todas, sí.
+    const role = await prisma.role.create({
+      data: { code: 'GUARDIA_CLINICA', name: 'Responsable clínico de guardia' },
+    });
+    await prisma.siteParameter.update({
+      where: { siteId: scene.site.id },
+      data: { criticalNoticeWithinMinutes: 30, criticalEscalationRoleId: role.id }, // prettier-ignore
+    });
+    const here = await createUser(prisma);
+    const everywhere = await createUser(prisma);
+    const elsewhere = await createUser(prisma);
+    const revoked = await createUser(prisma);
+    const inactive = await createUser(prisma);
+    await prisma.userRoleGrant.createMany({
+      data: [
+        { userId: here.id, roleId: role.id, siteId: scene.site.id },
+        { userId: everywhere.id, roleId: role.id, siteId: null },
+        { userId: elsewhere.id, roleId: role.id, siteId: other.id },
+        { userId: revoked.id, roleId: role.id, siteId: scene.site.id },
+        { userId: inactive.id, roleId: role.id, siteId: scene.site.id },
+      ],
+    });
+    await prisma.user.update({ where: { id: inactive.id }, data: { active: false } }); // prettier-ignore
+    // Revoked after it was granted: `user_role_grant_revocation_order`.
+    await prisma.userRoleGrant.updateMany({ where: { userId: revoked.id }, data: { revokedAt: new Date() } }); // prettier-ignore
+
+    expect((await reports.critical(orderer, now))[0]?.noticeTarget).toBe('ON_CALL_ROLE'); // prettier-ignore
+    expect(await reader(here.id)).toBe(true);
+    expect(await reader(everywhere.id)).toBe(true);
+    expect(await reader(elsewhere.id)).toBe(false);
+    expect(await reader(revoked.id)).toBe(false);
+    expect(await reader(inactive.id)).toBe(false);
+    // Escalado, deja de tocar a quien pidió.
+    expect(await reader(orderer.userId)).toBe(false);
+
+    // Un rol desactivado no lo tiene nadie; reactivado, vuelve.
+    await prisma.role.update({ where: { id: role.id }, data: { active: false } }); // prettier-ignore
+    expect(await reader(here.id)).toBe(false);
+    await prisma.role.update({ where: { id: role.id }, data: { active: true } }); // prettier-ignore
+    expect(await reader(here.id)).toBe(true);
+  });
+
   it('ORD-046 da a cada resultado sin orden su responsable y su plazo, de fábrica quien pidió con 24 h', async () => {
     const prisma = db();
     const { now } = clinicNoon();
     const scene = await aScene(prisma);
     const { reports, orders } = serviceOf(prisma);
-    const requester: Requester = { userId: 'user-1', sites: 'all' };
+    const requester: Requester = { userId: SOMEONE, sites: 'all' };
     const observedAt = new Date(now.getTime() - 2 * 3_600_000);
 
     const order = await placeIssued(orders, {
@@ -625,7 +691,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const { now } = clinicNoon();
     const scene = await aScene(prisma);
     const { reports, orders } = serviceOf(prisma);
-    const requester: Requester = { userId: 'user-1', sites: 'all' };
+    const requester: Requester = { userId: SOMEONE, sites: 'all' };
 
     const order = await placeIssued(orders, {
       encounterId: scene.encounter.id,
@@ -678,7 +744,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const { now } = clinicNoon();
     const older = await aCriticalGlucose(prisma, new Date(now.getTime() - 3_600_000)); // prettier-ignore
     const { reports, orders } = serviceOf(prisma);
-    const requester: Requester = { userId: 'user-1', sites: 'all' };
+    const requester: Requester = { userId: SOMEONE, sites: 'all' };
     const order = await placeIssued(orders, {
       encounterId: older.encounter.id,
       category: 'LABORATORY',
@@ -912,7 +978,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const { now } = clinicNoon();
     const scene = await aScene(prisma);
     const { reports, orders } = serviceOf(prisma);
-    const requester: Requester = { userId: 'user-1', sites: 'all' };
+    const requester: Requester = { userId: SOMEONE, sites: 'all' };
     const order = await placeIssued(orders, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
@@ -1058,7 +1124,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
         issuedAt: new Date(realNow.getTime() - 60_000),
         results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 95 }],
       },
-      { userId: 'user-1', sites: 'all' },
+      { userId: SOMEONE, sites: 'all' },
     );
     correction.then(
       () => (settled = true),

@@ -75,6 +75,7 @@ import {
 } from '../domain/abnormal-flag';
 import {
   criticalNoticeTarget,
+  noticeDueToRequester,
   criticalWait,
   unmatchedWait,
 } from '../domain/safety-deadline';
@@ -147,7 +148,7 @@ export interface RegisterReportRequest {
  *
  * ⚠️ NO `orderId`. The order is the one the result's own report belongs to, read
  * from the row and never taken from the request — the same rule ORD-001 applies
- * to `orderedById`. An order id in the request is a result somebody can file
+ * to `orderedByUserId`. An order id in the request is a result somebody can file
  * against another person's order.
  */
 export interface MatchResultRequest {
@@ -160,7 +161,7 @@ export interface MatchResultRequest {
  *
  * ⚠️ NO `notifiedById`. Who gave the notice is the session's account, read by
  * the caller and never taken from the request — the rule ORD-001 applies to
- * `orderedById`. A field there is a notice somebody can put in a colleague's
+ * `orderedByUserId`. A field there is a notice somebody can put in a colleague's
  * name.
  */
 export interface RecordNoticeRequest {
@@ -624,6 +625,8 @@ export class DiagnosticReportService {
     const inHours = await this.reports.sitesInHours(siteIds, now);
     // ORD-065, ORD-067. The correction chain behind each value.
     const chains = await this.reports.criticalChains(entries.map((e) => e.reportId)); // prettier-ignore
+    // ORD-167. Whom each notice is due to, judged for THIS account.
+    const roles = await this.reports.heldRoles(requester.userId);
 
     return entries.map((entry) => {
       const policy = policies.get(entry.siteId) ?? DEFAULT_POLICY;
@@ -657,6 +660,15 @@ export class DiagnosticReportService {
         afterHours,
         noticeTarget: due.target,
         escalationMissing: due.escalationMissing,
+        dueToRequester: noticeDueToRequester(
+          {
+            target: due.target,
+            siteId: entry.siteId,
+            orderedByUserId: entry.orderedByUserId,
+            escalationRoleId: role?.id ?? null,
+          },
+          { userId: requester.userId, roles },
+        ),
       };
     });
   }

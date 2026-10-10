@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   criticalNoticeTarget,
   criticalWait,
+  noticeDueToRequester,
   unmatchedWait,
 } from './safety-deadline';
 
@@ -67,5 +68,46 @@ describe('el plazo de las colas de seguridad', () => {
     }
     // Control positivo: sin autoaviso, el mismo estado toca al médico que pidió.
     expect(criticalNoticeTarget({ overdue: false, afterHours: false, hasOnCallRole: true, orderingUnanswered: false, dueToPatient: false })).toEqual({ target: 'ORDERING_PRACTITIONER', escalationMissing: false }); // prettier-ignore
+  });
+});
+
+describe('a qué sesión toca el aviso de un crítico (ORD-167)', () => {
+  const entry = {
+    siteId: 'site-a',
+    orderedByUserId: 'doctor-a',
+    escalationRoleId: 'on-call',
+  };
+  const doctorA = { userId: 'doctor-a', roles: [] };
+  const doctorB = { userId: 'doctor-b', roles: [] };
+  const onCallHere = { userId: 'nurse', roles: [{ roleId: 'on-call', siteId: 'site-a' }] }; // prettier-ignore
+  const onCallEverywhere = { userId: 'director', roles: [{ roleId: 'on-call', siteId: null }] }; // prettier-ignore
+  const onCallElsewhere = { userId: 'nurse-b', roles: [{ roleId: 'on-call', siteId: 'site-b' }] }; // prettier-ignore
+  const otherRoleHere = { userId: 'nurse-c', roles: [{ roleId: 'nursing', siteId: 'site-a' }] }; // prettier-ignore
+
+  it('ORD-167 al médico que pidió le toca él, y a otra cuenta no', () => {
+    const due = { ...entry, target: 'ORDERING_PRACTITIONER' as const };
+    expect(noticeDueToRequester(due, doctorA)).toBe(true);
+    expect(noticeDueToRequester(due, doctorB)).toBe(false);
+    // Tener el rol de guardia no basta mientras no toque a la guardia.
+    expect(noticeDueToRequester(due, onCallHere)).toBe(false);
+  });
+
+  it('ORD-167 a la guardia le toca a quien tiene ese rol en la sede o en todas, no en otra ni con otro rol', () => {
+    const due = { ...entry, target: 'ON_CALL_ROLE' as const };
+    expect(noticeDueToRequester(due, onCallHere)).toBe(true);
+    expect(noticeDueToRequester(due, onCallEverywhere)).toBe(true);
+    expect(noticeDueToRequester(due, onCallElsewhere)).toBe(false);
+    expect(noticeDueToRequester(due, otherRoleHere)).toBe(false);
+    // Escalado, deja de tocar a quien pidió.
+    expect(noticeDueToRequester(due, doctorA)).toBe(false);
+    // Sin rol de guardia en la sede, no toca a nadie por el rol.
+    expect(noticeDueToRequester({ ...due, escalationRoleId: null }, onCallHere)).toBe(false); // prettier-ignore
+  });
+
+  it('ORD-167 al paciente lo llama, de momento, quien pidió la orden', () => {
+    const due = { ...entry, target: 'PATIENT' as const };
+    expect(noticeDueToRequester(due, doctorA)).toBe(true);
+    expect(noticeDueToRequester(due, doctorB)).toBe(false);
+    expect(noticeDueToRequester(due, onCallHere)).toBe(false);
   });
 });
