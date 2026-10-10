@@ -22,6 +22,7 @@ import type { Request, Response } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { ALL_SITES } from '../../shared/authorisation/principal';
+import { parseClinicalDate } from '../../shared/domain/clinic-time';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -56,6 +57,7 @@ import {
   PublishConsentTextDto,
   RecordConsentDto,
   RegisterDataRequestDto,
+  ReviewCopyDto,
   type AnswerProposalResponse,
   type ConsentTextResponse,
   type DataRequestResponse,
@@ -228,6 +230,7 @@ export class PrivacyController {
         requestedBy: dto.requestedBy,
         requesterName: dto.requesterName,
         requesterDocument: dto.requesterDocument,
+        requesterRelationship: dto.requesterRelationship,
         clinicalRecordCopy: dto.clinicalRecordCopy,
         documentsChecked: dto.documentsChecked,
         description: dto.description,
@@ -243,7 +246,10 @@ export class PrivacyController {
   @RequirePermission('patient:data-requests', 'global')
   @ApiOperation({ summary: 'Solicitudes abiertas, por vencimiento' })
   @ApiOkResponse({ type: OpenRequestsPageDto })
-  async open(@Query() query: OpenRequestsQueryDto): Promise<{
+  async open(
+    @Query() query: OpenRequestsQueryDto,
+    @Req() req: Request,
+  ): Promise<{
     items: DataRequestResponse[];
     total: number;
     page: number;
@@ -260,6 +266,7 @@ export class PrivacyController {
         overdueOnly: query.overdue,
       },
       { page, pageSize },
+      this.requester(req),
     );
     return {
       items: items.map((entry) => ({
@@ -309,7 +316,16 @@ export class PrivacyController {
   ): Promise<DataRequestResponse> {
     const corrected = await this.requests.correctAnswer(
       requestId,
-      { outcome: dto.outcome, response: dto.response },
+      {
+        outcome: dto.outcome,
+        response: dto.response,
+        copyPeriod: dto.copyPeriod
+          ? {
+              from: parseClinicalDate(dto.copyPeriod.from),
+              to: parseClinicalDate(dto.copyPeriod.to),
+            }
+          : null,
+      },
       this.requester(req),
     );
     return requestResponse(corrected);
@@ -328,10 +344,59 @@ export class PrivacyController {
   ): Promise<DataRequestResponse> {
     const answered = await this.requests.answer(
       requestId,
-      { outcome: dto.outcome, response: dto.response },
+      {
+        outcome: dto.outcome,
+        response: dto.response,
+        copyPeriod: dto.copyPeriod
+          ? {
+              from: parseClinicalDate(dto.copyPeriod.from),
+              to: parseClinicalDate(dto.copyPeriod.to),
+            }
+          : null,
+      },
       this.requester(req),
     );
     return requestResponse(answered);
+  }
+
+  /**
+   * PD-061 (D-203 §5, §6). The professional's review of a copy. The guard
+   * asks for `record:protected`; the site is checked against the person's
+   * attentions in the service, with the shared rule of the key.
+   */
+  @Post('requests/:requestId/clinical-review')
+  @RequirePermission('record:protected', 'global')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Dar el visto bueno a una copia de la historia clínica' }) // prettier-ignore
+  @ApiOkResponse({ type: DataRequestDto })
+  async reviewCopy(
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Body() dto: ReviewCopyDto,
+    @Req() req: Request,
+  ): Promise<DataRequestResponse> {
+    return requestResponse(
+      await this.requests.reviewCopy(
+        requestId,
+        { reviewed: dto.reviewed, includesScreening: dto.includesScreening },
+        this.requester(req),
+      ),
+    );
+  }
+
+  /** PD-061, PD-062. The copies of a chart waiting for a professional. */
+  @Get('patients/:patientId/copy-reviews')
+  @RequirePermission('record:protected', 'global')
+  @ApiOperation({ summary: 'Copias de la historia clínica sin autorizar, para el visto bueno' }) // prettier-ignore
+  @ApiOkResponse({ type: DataRequestListDto })
+  async pendingCopies(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Req() req: Request,
+  ): Promise<{ items: DataRequestResponse[] }> {
+    const items = await this.requests.pendingCopiesOf(
+      patientId,
+      this.requester(req),
+    );
+    return { items: items.map(requestResponse) };
   }
 
   // --- D4 ----------------------------------------------------------------------
@@ -362,7 +427,7 @@ export class PrivacyController {
   @Get('requests/:requestId/export')
   @RequirePermission('patient:data-requests', 'global')
   @ApiOperation({ summary: 'Exportar los datos del paciente (JSON)' })
-  @ApiOkResponse({ description: 'Documento JSON `clinica.privacy.export` v1' })
+  @ApiOkResponse({ description: 'Documento JSON `clinica.privacy.export` v2' })
   async export(
     @Param('requestId', ParseUUIDPipe) requestId: string,
     @Req() req: Request,
@@ -380,10 +445,14 @@ export class PrivacyController {
   private requester(req: Request): Requester {
     // D-203 §1. The key of the record travels with every request; only the
     // copy of the clinical record asks for it.
-    const scope = this.currentUser.requirePrincipal().sitesFor('record:read');
+    const principal = this.currentUser.requirePrincipal();
+    const scope = principal.sitesFor('record:read');
+    const protectedScope = principal.sitesFor('record:protected');
     return {
       userId: this.currentUser.requireUserId(),
       recordScope: scope === ALL_SITES ? 'all' : scope,
+      // PD-061. The key of the professional's review.
+      protectedScope: protectedScope === ALL_SITES ? 'all' : protectedScope,
       ip: req.ip,
       userAgent: req.get('user-agent'),
     };
@@ -410,6 +479,10 @@ function requestResponse(entry: DataRequestEntry): DataRequestResponse {
   });
   return {
     ...entry,
+    review: entry.review && {
+      ...entry.review,
+      reviewedAt: entry.review.reviewedAt.toISOString(),
+    },
     receivedAt: entry.receivedAt.toISOString(),
     dueAt: entry.dueAt.toISOString(),
     registeredAt: entry.registeredAt.toISOString(),

@@ -1,7 +1,10 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type { RecordReadScope } from '../../../shared/domain/clinical-record-key';
 
-import type { DataRequestParty } from './data-request-party';
+import type {
+  DataRequestParty,
+  DataRequestRelationship,
+} from './data-request-party';
 import type { DataSubjectRight } from './legal-due-date';
 
 /** Who acts, so the trail can say so. */
@@ -12,6 +15,11 @@ export interface Requester {
    * the clinical record. Absent is none.
    */
   recordScope?: RecordReadScope;
+  /**
+   * PD-061 (D-203 §5). The caller's `record:protected` scope: the key to give
+   * the review of a copy. Absent is none.
+   */
+  protectedScope?: RecordReadScope;
   ip?: string;
   userAgent?: string;
 }
@@ -155,6 +163,32 @@ export interface DataRequestAnswer {
   answeredBy: StaffName;
   /** PD-047. Whether this answer rectifies an earlier one. */
   isCorrection: boolean;
+  /** PD-059. The period a copy answered «Atendida en parte» hands over. */
+  copyPeriod: CopyPeriod | null;
+}
+
+/**
+ * PD-059 (D-203 §2). What an authorisation of the copy hands over: the whole
+ * record («Atendida»), or the attentions of a period («Atendida en parte»).
+ */
+export interface CopyPeriod {
+  from: ClinicalDate;
+  to: ClinicalDate;
+}
+
+/** PD-061. A professional's review of a copy. */
+export interface CopyReviewView {
+  reviewedAt: Date;
+  reviewedBy: StaffName;
+  /** D-203 §6. The violence screening goes in the copy. */
+  includesScreening: boolean;
+}
+
+/** PD-059. An answer as it is given: the outcome, the text, the period. */
+export interface GivenAnswer {
+  outcome: DataRequestOutcome;
+  response: string;
+  copyPeriod: CopyPeriod | null;
 }
 
 export interface DataRequestView {
@@ -166,11 +200,25 @@ export interface DataRequestView {
   /** PD-052. Who presents it, when it is not the holder. */
   requesterName: string | null;
   requesterDocument: string | null;
+  /** PD-063. The relative's relationship with the deceased patient. */
+  requesterRelationship: DataRequestRelationship | null;
   /** PD-053. It asks for the copy of the clinical record. */
   clinicalRecordCopy: boolean;
   documentsChecked: boolean;
   description: string;
   receivedAt: Date;
+  /** PD-061. The professional's review, on a copy that has one. */
+  review: CopyReviewView | null;
+  /**
+   * PD-062. Granting this copy waits for the review: it is not the holder's
+   * and the record holds something sensitive. `false` once reviewed.
+   */
+  reviewRequired: boolean;
+  /**
+   * D-203 §1, §12. The sites where the person had a signed attention, on a
+   * copy: what the key is checked against. Internal — not part of a response.
+   */
+  copySites: readonly string[];
   /** PD-054. The instant it is due. */
   dueAt: Date;
   /** PD-054. The clinical date of the last day on time. */
@@ -192,6 +240,7 @@ export interface NewDataRequest {
   requestedBy: DataRequestParty;
   requesterName: string | null;
   requesterDocument: string | null;
+  requesterRelationship: DataRequestRelationship | null;
   clinicalRecordCopy: boolean;
   documentsChecked: boolean;
   description: string;
@@ -228,6 +277,26 @@ export type CorrectAnswerResult =
   | { status: 'missing' }
   | { status: 'not-answered' };
 
+export type ReviewCopyResult =
+  | { status: 'reviewed'; request: DataRequestView }
+  | { status: 'missing' }
+  | { status: 'already-reviewed' }
+  | { status: 'already-authorised' };
+
+/**
+ * D-203 §1, §5, §12. What a copy request is checked against before it is
+ * authorised or reviewed: who presents it, the sites where the person had a
+ * signed attention, whether the record holds something sensitive, and
+ * whether a professional already reviewed it.
+ */
+export interface CopyFacts {
+  clinicalRecordCopy: boolean;
+  requestedBy: DataRequestParty;
+  patientSites: string[];
+  sensitive: boolean;
+  reviewed: boolean;
+}
+
 /**
  * PD-048. One saved version of a row of the data subject's, as the export
  * hands it over: which table, which row, which version, the row as it was,
@@ -249,12 +318,18 @@ export interface ExportedVersion {
  */
 export interface DataExportDocument {
   format: 'clinica.privacy.export';
-  formatVersion: 1;
+  /** PD-066. v2 adds `deliveries`. */
+  formatVersion: 2;
   generatedAt: string;
   patient: Readonly<Record<string, unknown>>;
   identifiers: readonly Readonly<Record<string, unknown>>[];
   consents: readonly Readonly<Record<string, unknown>>[];
   requests: readonly Readonly<Record<string, unknown>>[];
+  /**
+   * PD-066 (D-203 §9). Every copy of the record that was authorised: to whom,
+   * of what class, when, what and why (LOPDP arts. 12.10 and 13).
+   */
+  deliveries: readonly Readonly<Record<string, unknown>>[];
   /** PD-048 (D-131.1). The saved versions of the subject's rows. */
   versions: readonly ExportedVersion[];
   omitted: readonly ExportOmission[];
@@ -288,7 +363,7 @@ export interface DataSubjectRequestRepository {
   /** PD-033, PD-037, PD-038. Answer, stamp and trail row in one transaction. */
   answer(
     requestId: string,
-    answer: { outcome: DataRequestOutcome; response: string },
+    answer: GivenAnswer,
     requester: Requester,
     now: Date,
   ): Promise<AnswerResult>;
@@ -312,10 +387,22 @@ export interface DataSubjectRequestRepository {
    */
   correctAnswer(
     requestId: string,
-    answer: { outcome: DataRequestOutcome; response: string },
+    answer: GivenAnswer,
     requester: Requester,
     now: Date,
   ): Promise<CorrectAnswerResult>;
+  /**
+   * PD-061. The review and its trail row, under the request's lock: once, and
+   * never after the standing answer authorised the copy.
+   */
+  reviewCopy(
+    requestId: string,
+    review: { includesScreening: boolean },
+    requester: Requester,
+    now: Date,
+  ): Promise<ReviewCopyResult>;
+  /** PD-061. The copies of a chart (and its absorbed ones) not authorised. */
+  pendingCopiesOf(patientId: string): Promise<DataRequestView[]>;
   find(requestId: string): Promise<DataRequestView | null>;
   /**
    * PD-049, PD-055, PD-056. Only what the proposal needs: the right, who
@@ -324,13 +411,19 @@ export interface DataSubjectRequestRepository {
    */
   proposalFactsOf(requestId: string): Promise<ProposalFacts | null>;
   /**
-   * D-203 §1. Whether the request asks for the copy of the record, and the
-   * sites where the person had a signed attention: what the key is checked
-   * against before answering it. `null` when the request does not exist.
+   * D-203 §1, §5. What the key and the review are checked against before a
+   * copy is authorised (`CopyFacts`). `null` when the request does not exist.
    */
-  copyKeyOf(
+  copyFactsOf(requestId: string): Promise<CopyFacts | null>;
+  /**
+   * PD-067. What the export of this request leaves out of the clinical
+   * versions for a caller with this `record:read` scope: the same line the
+   * file carries in `omitted`, so the proposal (PD-049) says it too.
+   */
+  clinicalOmissionOf(
     requestId: string,
-  ): Promise<{ clinicalRecordCopy: boolean; patientSites: string[] } | null>;
+    scope: RecordReadScope,
+  ): Promise<ExportOmission | null>;
   /** PD-036. */
   requestsOf(patientId: string): Promise<DataRequestView[]>;
   /**

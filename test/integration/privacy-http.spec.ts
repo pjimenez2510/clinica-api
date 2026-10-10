@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -23,7 +25,14 @@ import {
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite, createUser } from './setup/fixtures';
+import {
+  createDiagnosis,
+  createEncounter,
+  createPatient,
+  createPractitioner,
+  createSite,
+  createUser,
+} from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 const PASSWORD = 'el caballo come alfalfa';
@@ -306,6 +315,17 @@ describe('privacy por HTTP', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     throw new Error('No request ever waited on the lock under test');
+  }
+
+  /** Adds a permission to the officer's role; the registry reads it live. */
+  async function grantToOfficer(permissionCode: string): Promise<void> {
+    const role = await prisma.role.findUniqueOrThrow({
+      where: { code: 'PROTECCION_DATOS' },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: role.id, permissionCode },
+    });
+    registry.invalidate();
   }
 
   function trail(resourceType: string, resourceId: string, action: string) {
@@ -1476,7 +1496,7 @@ describe('privacy por HTTP', () => {
       };
       expect(document).toMatchObject({
         format: 'clinica.privacy.export',
-        formatVersion: 1,
+        formatVersion: 2,
       });
       expect(document.patient.mrn).toBe(survivor.mrn);
       expect(document.patient.mergedCharts.map((c) => c.mrn)).toEqual([
@@ -1499,6 +1519,9 @@ describe('privacy por HTTP', () => {
         'billing',
         'record_corrections',
         'access_log',
+        // PD-067. Without `record:read`, said even with nothing to leave out:
+        // its absence would tell whether the chart had clinical versions.
+        'clinical_versions',
       ]);
       expect(JSON.stringify(document)).not.toMatch(/sexualOrientation/);
     });
@@ -1605,6 +1628,9 @@ describe('privacy por HTTP', () => {
       });
       await merge(absorbed.id, survivor.id);
       const access = await requestFor(survivor.id, 'ACCESS');
+      // PD-067 (D-203 §10). The allergies are clinical: they leave with the
+      // key of the record, which this officer is given here.
+      await grantToOfficer('record:read');
 
       const response = await get(`/requests/${access.id}/export`).expect(200);
       const document = response.body as {
@@ -1852,6 +1878,7 @@ describe('privacy por HTTP', () => {
         requestedBy: 'DECEASED_RELATIVE',
         requesterName: 'Luis Guamán',
         requesterDocument: '0926687856',
+        requesterRelationship: 'CHILD',
       };
       const alive = await post(
         `/patients/${patient.id}/requests`,
@@ -1961,6 +1988,424 @@ describe('privacy por HTTP', () => {
       );
       expect(proposal.response).toContain('No lleva el tamizaje de violencia');
       expect(await prisma.accessAudit.count()).toBe(trail);
+    });
+  });
+
+  describe('D7 la copia como la del HCAM (D-203 §2 a §10 y §12)', () => {
+    const copy = {
+      right: 'ACCESS',
+      description: 'Copia de la historia clínica',
+      clinicalRecordCopy: true,
+      documentsChecked: true,
+    };
+    const byAttorney = {
+      ...copy,
+      requestedBy: 'ATTORNEY',
+      requesterName: 'Ana Pérez',
+      requesterDocument: '1710034065',
+    };
+    type CopyBody = RequestBody & {
+      canAuthorise: boolean;
+      reviewRequired: boolean;
+      review: { includesScreening: boolean; reviewedBy: { id: string } } | null;
+      answer: {
+        outcome: string;
+        copyPeriod: { from: string; to: string } | null;
+      } | null;
+      requesterRelationship: string | null;
+    };
+
+    let site: { id: string };
+    let doctor: { id: string };
+
+    /** An account with a role, granted at one site or at all of them. */
+    async function signInAs(
+      account: { email: string; cedula: string },
+      roleCode: string,
+      permissions: string[] | null,
+      siteId: string | null,
+    ): Promise<{ token: string; userId: string }> {
+      if (permissions) {
+        const role = await prisma.role.create({
+          data: { code: roleCode, name: roleCode },
+        });
+        await prisma.rolePermission.createMany({
+          data: permissions.map((permissionCode) => ({
+            roleId: role.id,
+            permissionCode,
+          })),
+        });
+        registry.invalidate();
+      }
+      const user = await prisma.user.create({
+        data: {
+          email: account.email,
+          firstName: 'Rosa',
+          lastName: 'Tapia',
+          cedula: account.cedula,
+          passwordHash: await argon2.hash(PASSWORD, {
+            type: argon2.argon2id,
+            memoryCost: PASSWORD_HASHING.memoryCost,
+            timeCost: PASSWORD_HASHING.timeCost,
+            parallelism: PASSWORD_HASHING.parallelism,
+          }),
+        },
+      });
+      const role = await prisma.role.findUniqueOrThrow({
+        where: { code: roleCode },
+      });
+      await prisma.userRoleGrant.create({
+        data: { userId: user.id, roleId: role.id, siteId },
+      });
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email: account.email, password: PASSWORD })
+        .expect(200);
+      return {
+        token: (response.body as { accessToken: string }).accessToken,
+        userId: user.id,
+      };
+    }
+
+    /** A person attended at `siteId`, with the 002 signed. */
+    async function attendedAt(siteId: string, patientId?: string) {
+      const patient = patientId
+        ? { id: patientId }
+        : await createPatient(prisma);
+      const encounter = await createEncounter(prisma, {
+        siteId,
+        practitionerId: doctor.id,
+        patientId: patient.id,
+        startedAt: new Date(Date.now() - 5 * DAY_MS),
+      });
+      const chainId = randomUUID();
+      await prisma.clinicalNote.create({
+        data: {
+          id: chainId,
+          chainId,
+          encounterId: encounter.id,
+          formCode: '002',
+          formVersion: '1',
+          status: 'SIGNED',
+          content: { motivoConsulta: 'Control' },
+          authorId: doctor.id,
+          signedById: doctor.id,
+          signedAt: new Date(Date.now() - 5 * DAY_MS),
+          contentHash: 'c'.repeat(64),
+        },
+      });
+      return { patientId: patient.id, encounterId: encounter.id };
+    }
+
+    beforeEach(async () => {
+      site = await createSite(prisma, 'Sede Norte');
+      doctor = await createPractitioner(prisma);
+    });
+
+    const custodian = () =>
+      signInAs(
+        { email: 'archivo@clinica.ec', cedula: '1710034073' },
+        'CUSTODIO',
+        ['patient:data-requests', 'record:read'],
+        site.id,
+      );
+    const physician = (siteId: string | null = site.id) =>
+      signInAs(
+        { email: 'medica@clinica.ec', cedula: '0926687864' },
+        'MEDICO',
+        null,
+        siteId,
+      );
+
+    it('PD-062 PD-061 PD-060 una copia para un apoderado con un diagnóstico sensible espera el visto bueno del médico; con él, se autoriza; la del titular no lo espera', async () => {
+      const { token: custodianToken } = await custodian();
+      const { token: doctorToken, userId: doctorUserId } = await physician();
+      const { patientId, encounterId } = await attendedAt(site.id);
+      await createDiagnosis(prisma, encounterId, 'B20');
+      const created = (
+        await post(
+          `/patients/${patientId}/requests`,
+          byAttorney,
+          custodianToken,
+        ).expect(201)
+      ).body as CopyBody;
+      expect(created).toMatchObject({ reviewRequired: true, canAuthorise: true, review: null }); // prettier-ignore
+
+      const granted = { outcome: 'GRANTED', response: 'Se autoriza' };
+      const waiting = await post(`/requests/${created.id}/response`, granted, custodianToken).expect(409); // prettier-ignore
+      expect(waiting.body as Problem).toMatchObject({
+        code: 'CLINICAL_RECORD_COPY_REVIEW_REQUIRED',
+      });
+      expect((waiting.body as Problem).title).not.toMatch(/VIH|B20|diagn/i);
+      await expect(
+        prisma.dataSubjectRequest.findUniqueOrThrow({
+          where: { id: created.id },
+        }),
+      ).resolves.toMatchObject({ outcome: null });
+
+      // El médico la ve en la ficha y da su visto bueno, con la casilla.
+      const pending = (
+        await get(`/patients/${patientId}/copy-reviews`, doctorToken).expect(
+          200,
+        )
+      ).body as { items: CopyBody[] };
+      expect(pending.items.map((item) => [item.id, item.reviewRequired])).toEqual([[created.id, true]]); // prettier-ignore
+      const unchecked = await post(`/requests/${created.id}/clinical-review`, { reviewed: false }, doctorToken).expect(422); // prettier-ignore
+      expect((unchecked.body as Problem).code).toBe(
+        'CLINICAL_RECORD_COPY_INVALID',
+      );
+      const reviewed =
+        (await post(`/requests/${created.id}/clinical-review`, { reviewed: true }, doctorToken).expect(200)) // prettier-ignore
+        .body as CopyBody;
+      expect(reviewed).toMatchObject({
+        reviewRequired: false,
+        review: { includesScreening: false, reviewedBy: { id: doctorUserId } },
+      });
+      expect(await trail('clinical_record_copy_review', created.id, 'CREATE')).toHaveLength(1); // prettier-ignore
+      const twice = await post(`/requests/${created.id}/clinical-review`, { reviewed: true }, doctorToken).expect(409); // prettier-ignore
+      expect((twice.body as Problem).code).toBe(
+        'CLINICAL_RECORD_COPY_ALREADY_REVIEWED',
+      );
+
+      // Control positivo: con el visto bueno, el custodio la autoriza.
+      await post(`/requests/${created.id}/response`, granted, custodianToken).expect(200); // prettier-ignore
+      // …y la del titular, en la misma historia, no espera a nadie.
+      const holder =
+        (await post(`/patients/${patientId}/requests`, { ...copy, requestedBy: 'HOLDER' }, custodianToken).expect(201)) // prettier-ignore
+        .body as CopyBody;
+      expect(holder.reviewRequired).toBe(false);
+      await post(`/requests/${holder.id}/response`, granted, custodianToken).expect(200); // prettier-ignore
+    });
+
+    it('PD-062 un tamizaje con signos y el representante legal también esperan el visto bueno; un apoderado sin nada sensible, no', async () => {
+      const { token: custodianToken } = await custodian();
+      const { patientId, encounterId } = await attendedAt(site.id);
+      const clear =
+        (await post(`/patients/${patientId}/requests`, byAttorney, custodianToken).expect(201)) // prettier-ignore
+        .body as CopyBody;
+      expect(clear.reviewRequired).toBe(false);
+
+      await prisma.violenceScreening.create({
+        data: {
+          encounterId,
+          result: 'SUSPECTED',
+          types: ['PHYSICAL'],
+          actionTaken: 'Derivada a trabajo social',
+          screenedById: doctor.id,
+          screenedAt: new Date(),
+        },
+      });
+      const representative = (
+        await post(
+          `/patients/${patientId}/requests`,
+          { ...copy, requestedBy: 'REPRESENTATIVE', requesterName: 'Luis Pérez', requesterDocument: '1710000025' }, // prettier-ignore
+          custodianToken,
+        ).expect(201)
+      ).body as CopyBody;
+      expect(representative.reviewRequired).toBe(true);
+      const refused = await post(`/requests/${representative.id}/response`, { outcome: 'GRANTED', response: 'Sí' }, custodianToken).expect(409); // prettier-ignore
+      expect((refused.body as Problem).code).toBe(
+        'CLINICAL_RECORD_COPY_REVIEW_REQUIRED',
+      );
+    });
+
+    it('PD-061 sin record:protected en la sede de la persona el visto bueno responde como a una solicitud inexistente; sin el permiso, 403', async () => {
+      const { token: custodianToken } = await custodian();
+      const elsewhere = await createSite(prisma, 'Sede Sur');
+      const { token: farDoctor } = await physician(elsewhere.id);
+      const { patientId } = await attendedAt(site.id);
+      const created =
+        (await post(`/patients/${patientId}/requests`, byAttorney, custodianToken).expect(201)) // prettier-ignore
+        .body as CopyBody;
+      const missing = (await post(`/requests/${randomUUID()}/clinical-review`, { reviewed: true }, farDoctor).expect(404)).body as Problem; // prettier-ignore
+      const far = (await post(`/requests/${created.id}/clinical-review`, { reviewed: true }, farDoctor).expect(404)).body as Problem; // prettier-ignore
+      expect([far.code, far.title]).toEqual([missing.code, missing.title]);
+      expect(
+        ((await get(`/patients/${patientId}/copy-reviews`, farDoctor).expect(200)).body as { items: unknown[] }).items, // prettier-ignore
+      ).toEqual([]);
+      await post(`/requests/${created.id}/clinical-review`, { reviewed: true }, deskToken).expect(403); // prettier-ignore
+      await expect(prisma.clinicalRecordCopyReview.count()).resolves.toBe(0);
+    });
+
+    it('PD-059 PD-060 sin record:read se deniega pero no se autoriza; «Atendida en parte» pide su periodo y lo guarda', async () => {
+      const { token: custodianToken } = await custodian();
+      const { patientId } = await attendedAt(site.id);
+      const first = (
+        await post(`/patients/${patientId}/requests`, byAttorney).expect(201)
+      ).body as CopyBody;
+      // El oficial de datos no tiene record:read: lo ve, no lo autoriza.
+      expect(first.canAuthorise).toBe(false);
+      const listed = (await get(`/patients/${patientId}/requests`).expect(200)).body as { items: CopyBody[] }; // prettier-ignore
+      expect(listed.items[0]!.canAuthorise).toBe(false);
+      const open = (await get('/requests?pageSize=100').expect(200)).body as { items: CopyBody[] }; // prettier-ignore
+      expect(
+        open.items.find((item) => item.id === first.id)!.canAuthorise,
+      ).toBe(false);
+      await post(`/requests/${first.id}/response`, { outcome: 'GRANTED', response: 'Sí' }).expect(404); // prettier-ignore
+      const denied =
+        (await post(`/requests/${first.id}/response`, { outcome: 'DENIED', response: 'Falta el poder' }).expect(200)) // prettier-ignore
+        .body as CopyBody;
+      expect(denied.answer?.outcome).toBe('DENIED');
+      // Y el custodio, con la llave, sí puede.
+      const seen = (await get(`/patients/${patientId}/requests`, custodianToken).expect(200)).body as { items: CopyBody[] }; // prettier-ignore
+      expect(seen.items[0]!.canAuthorise).toBe(true);
+
+      const second =
+        (await post(`/patients/${patientId}/requests`, byAttorney, custodianToken).expect(201)) // prettier-ignore
+        .body as CopyBody;
+      const today = clinicalDateOf(new Date());
+      const tooLong = await post(
+        `/requests/${second.id}/response`,
+        { outcome: 'PARTIALLY_GRANTED', response: 'En parte', copyPeriod: { from: addDays(today, -10), to: addDays(today, 1) } }, // prettier-ignore
+        custodianToken,
+      ).expect(422);
+      expect(tooLong.body as Problem).toMatchObject({
+        code: 'CLINICAL_RECORD_COPY_INVALID',
+        errors: [expect.objectContaining({ field: 'copyPeriod' })],
+      });
+      await post(`/requests/${second.id}/response`, { outcome: 'PARTIALLY_GRANTED', response: 'En parte' }, custodianToken).expect(422); // prettier-ignore
+      const period = { from: addDays(today, -10), to: today };
+      const partial =
+        (await post(`/requests/${second.id}/response`, { outcome: 'PARTIALLY_GRANTED', response: 'En parte', copyPeriod: period }, custodianToken).expect(200)) // prettier-ignore
+        .body as CopyBody;
+      expect(partial.answer).toMatchObject({ outcome: 'PARTIALLY_GRANTED', copyPeriod: period }); // prettier-ignore
+      // Rectificada a «Atendida», la copia completa: sin periodo.
+      const whole =
+        (await post(`/requests/${second.id}/response/correction`, { outcome: 'GRANTED', response: 'Completa' }, custodianToken).expect(200)) // prettier-ignore
+        .body as CopyBody;
+      expect(whole.answer).toMatchObject({
+        outcome: 'GRANTED',
+        copyPeriod: null,
+      });
+    });
+
+    it('PD-063 PD-065 el familiar dice su parentesco; «El paciente» con la ficha fallecida se rechaza y su representante no', async () => {
+      const patient = await createPatient(prisma);
+      await prisma.patient.update({
+        where: { id: patient.id },
+        data: { deceasedAt: new Date(Date.now() - DAY_MS) },
+      });
+      const relative = {
+        ...copy,
+        requestedBy: 'DECEASED_RELATIVE',
+        requesterName: 'Luis Guamán',
+        requesterDocument: '0926687856',
+      };
+      const before = await prisma.dataSubjectRequest.count();
+      const noKin = await post(`/patients/${patient.id}/requests`, relative).expect(422); // prettier-ignore
+      expect(noKin.body as Problem).toMatchObject({
+        code: 'CLINICAL_RECORD_COPY_INVALID',
+        errors: [expect.objectContaining({ field: 'requesterRelationship' })],
+      });
+      const holder = await post(`/patients/${patient.id}/requests`, { ...copy, requestedBy: 'HOLDER' }).expect(422); // prettier-ignore
+      expect((holder.body as Problem).code).toBe(
+        'DATA_REQUEST_PATIENT_DECEASED',
+      );
+      expect(await prisma.dataSubjectRequest.count()).toBe(before);
+
+      const kin =
+        (await post(`/patients/${patient.id}/requests`, { ...relative, requesterRelationship: 'STEPPARENT' }).expect(201)) // prettier-ignore
+        .body as CopyBody;
+      expect(kin.requesterRelationship).toBe('STEPPARENT');
+      await post(
+        `/patients/${patient.id}/requests`,
+        { ...copy, requestedBy: 'REPRESENTATIVE', requesterName: 'Ana Guamán', requesterDocument: '1710000025' }, // prettier-ignore
+      ).expect(201);
+    });
+
+    it('PD-066 la exportación v2 dice a quién se entregó cada copia, con su clase, alcance y propósito; de la autoridad sólo nombre y oficio', async () => {
+      const { token: custodianToken } = await custodian();
+      const { patientId } = await attendedAt(site.id);
+      const attorney = (await post(`/patients/${patientId}/requests`, byAttorney, custodianToken).expect(201)).body as CopyBody; // prettier-ignore
+      const authority = (
+        await post(
+          `/patients/${patientId}/requests`,
+          { ...copy, requestedBy: 'AUTHORITY', requesterName: 'Juzgado Primero', requesterDocument: 'Oficio 77', description: 'Proceso 0912-2026 por agresión' }, // prettier-ignore
+          custodianToken,
+        ).expect(201)
+      ).body as CopyBody;
+      const today = clinicalDateOf(new Date());
+      await post(`/requests/${attorney.id}/response`, { outcome: 'GRANTED', response: 'Sí' }, custodianToken).expect(200); // prettier-ignore
+      await post(
+        `/requests/${authority.id}/response`,
+        { outcome: 'PARTIALLY_GRANTED', response: 'En parte', copyPeriod: { from: addDays(today, -30), to: today } }, // prettier-ignore
+        custodianToken,
+      ).expect(200);
+      const access =
+        (await post(`/patients/${patientId}/requests`, { right: 'ACCESS', requestedBy: 'HOLDER', description: 'Mis datos' }).expect(201)) // prettier-ignore
+        .body as CopyBody;
+
+      const document = (await get(`/requests/${access.id}/export`).expect(200)).body as {
+        formatVersion: number;
+        deliveries: Record<string, unknown>[];
+        requests: { requestedBy: string; description: string | null }[];
+        versions: { table: string; data: Record<string, unknown> }[];
+      }; // prettier-ignore
+      expect(document.formatVersion).toBe(2);
+      expect(document.deliveries).toEqual([
+        expect.objectContaining({
+          recipientClass: 'ATTORNEY',
+          recipientName: 'Ana Pérez',
+          officialLetter: null,
+          scope: { kind: 'COMPLETE' },
+          purpose: 'Copia de la historia clínica',
+        }),
+        expect.objectContaining({
+          recipientClass: 'AUTHORITY',
+          recipientName: 'Juzgado Primero',
+          officialLetter: 'Oficio 77',
+          scope: { kind: 'PERIOD', from: addDays(today, -30), to: today },
+          purpose: null,
+        }),
+      ]);
+      const text = JSON.stringify(document);
+      // Ni el texto del oficio ni la cédula del apoderado, en ninguna parte.
+      expect(text).not.toContain('Proceso 0912-2026');
+      expect(text).not.toContain('1710034065');
+      expect(document.requests.find((r) => r.requestedBy === 'AUTHORITY')!.description).toBeNull(); // prettier-ignore
+      // Control positivo: las versiones de las solicitudes sí van (la respuesta las versiona).
+      expect(document.versions.filter((v) => v.table === 'data_subject_request')).toHaveLength(2); // prettier-ignore
+    });
+
+    it('PD-067 las versiones clínicas sólo de las sedes del record:read de quien exporta, y omitted lo dice', async () => {
+      const elsewhere = await createSite(prisma, 'Sede Sur');
+      const { patientId, encounterId: here } = await attendedAt(site.id);
+      const { encounterId: there } = await attendedAt(elsewhere.id, patientId);
+      const nurse = await createUser(prisma);
+      for (const encounterId of [here, there]) {
+        await prisma.encounter.update({
+          where: { id: encounterId },
+          data: { visitSequence: 'SUBSEQUENT', correctedById: nurse.id, correctedAt: new Date() }, // prettier-ignore
+        });
+      }
+      const access =
+        (await post(`/patients/${patientId}/requests`, { right: 'ACCESS', requestedBy: 'HOLDER', description: 'Mis datos' }).expect(201)) // prettier-ignore
+        .body as CopyBody;
+      type Export = {
+        versions: { table: string; resourceId: string }[];
+        omitted: { section: string; reason: string }[];
+      };
+      const clinical = (document: Export) =>
+        document.versions.filter((v) => v.table === 'encounter').map((v) => v.resourceId).sort(); // prettier-ignore
+
+      // Sin record:read: nada clínico, y lo dice.
+      const keyless = (await get(`/requests/${access.id}/export`).expect(200)).body as Export; // prettier-ignore
+      expect(clinical(keyless)).toEqual([]);
+      expect(keyless.omitted.find((o) => o.section === 'clinical_versions')?.reason).toContain('no tiene acceso a la historia clínica del paciente'); // prettier-ignore
+
+      // Con record:read en la sede norte: sólo la de esa sede, y lo dice.
+      const { token: custodianToken } = await custodian();
+      const scoped = (await get(`/requests/${access.id}/export`, custodianToken).expect(200)).body as Export; // prettier-ignore
+      expect(clinical(scoped)).toEqual([here]);
+      expect(scoped.omitted.find((o) => o.section === 'clinical_versions')?.reason).toContain('otras sedes'); // prettier-ignore
+
+      // Control positivo: con record:read en todas, las dos y sin omisión.
+      await grantToOfficer('record:read');
+      const whole = (await get(`/requests/${access.id}/export`).expect(200)).body as Export; // prettier-ignore
+      expect(clinical(whole)).toEqual([here, there].sort());
+      expect(whole.omitted.map((o) => o.section)).not.toContain(
+        'clinical_versions',
+      );
     });
   });
 });

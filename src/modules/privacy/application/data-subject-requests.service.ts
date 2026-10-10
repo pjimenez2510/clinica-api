@@ -8,6 +8,11 @@ import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 import { holdsRecordKey } from '../../../shared/domain/clinical-record-key';
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import {
+  authorisesDelivery,
+  copyNeedsReview,
+  copyPeriodOf,
+} from '../domain/clinical-record-copy';
+import {
   answerProposal,
   clinicalRecordCopyProposal,
   EXPORT_OMISSIONS,
@@ -17,6 +22,7 @@ import {
   isThirdParty,
   presentationOf,
   type DataRequestParty,
+  type DataRequestRelationship,
 } from '../domain/data-request-party';
 import {
   DUE_DATE_HORIZON_DAYS,
@@ -24,17 +30,21 @@ import {
   type DataSubjectRight,
 } from '../domain/legal-due-date';
 import {
+  ClinicalRecordCopyAlreadyReviewedError,
   ClinicalRecordCopyInvalidError,
+  ClinicalRecordCopyReviewRequiredError,
   DataExportNotApplicableError,
   DataRequestAlreadyAnsweredError,
   DataRequestNotAnsweredError,
   DataRequestNotFoundError,
+  DataRequestPatientDeceasedError,
   DataRequestPatientNotDeceasedError,
   DataRequestReceivedInFutureError,
   DataSubjectNotFoundError,
 } from '../domain/privacy.errors';
 import {
   DATA_SUBJECT_REQUEST_REPOSITORY,
+  type CopyPeriod,
   type DataExportDocument,
   type DataRequestOutcome,
   type DataRequestView,
@@ -45,9 +55,21 @@ import {
 /** PD-030, PD-033. */
 export const DATA_REQUEST_TEXT_MAX_LENGTH = 4_000;
 
-export interface DataRequestEntry extends DataRequestView {
+export interface DataRequestEntry extends Omit<DataRequestView, 'copySites'> {
   /** PD-035, PD-054. Unanswered and its deadline has been reached. */
   isOverdue: boolean;
+  /**
+   * PD-060 (D-203 §12). Whoever reads it may authorise it: always, unless it
+   * is a copy and they do not hold the key of the record for that person.
+   */
+  canAuthorise: boolean;
+}
+
+/** PD-059. An answer as the screen sends it. */
+export interface AnswerInput {
+  outcome: DataRequestOutcome;
+  response: string;
+  copyPeriod?: CopyPeriod | null;
 }
 
 /**
@@ -74,6 +96,7 @@ export class DataSubjectRequestsService {
       requestedBy: DataRequestParty;
       requesterName?: string | null;
       requesterDocument?: string | null;
+      requesterRelationship?: DataRequestRelationship | null;
       clinicalRecordCopy?: boolean;
       documentsChecked?: boolean;
       description: string;
@@ -91,6 +114,11 @@ export class DataSubjectRequestsService {
     if (presentation.requestedBy === 'DECEASED_RELATIVE' && !chart.deceased) {
       throw new DataRequestPatientNotDeceasedError();
     }
+    // PD-065 (D-203 §8). The holder of a deceased chart presents nothing; the
+    // last legal representative still may (LOPDP art. 27).
+    if (presentation.requestedBy === 'HOLDER' && chart.deceased) {
+      throw new DataRequestPatientDeceasedError();
+    }
 
     const receivedAt = input.receivedAt ?? now;
     const dueAt = await this.deadline(presentation, receivedAt);
@@ -106,30 +134,25 @@ export class DataSubjectRequestsService {
       },
       requester,
     );
-    return this.entry(created, now);
+    return this.entry(created, requester, now);
   }
 
-  /** PD-033, PD-034, PD-037, PD-038. */
+  /** PD-033, PD-034, PD-037, PD-038, PD-059, PD-062. */
   async answer(
     requestId: string,
-    answer: { outcome: DataRequestOutcome; response: string },
+    answer: AnswerInput,
     requester: Requester,
     now: Date = new Date(),
   ): Promise<DataRequestEntry> {
-    await this.assertRecordKey(requestId, requester);
-    const result = await this.requests.answer(
-      requestId,
-      answer,
-      requester,
-      now,
-    );
+    const given = await this.authorised(requestId, answer, requester, now);
+    const result = await this.requests.answer(requestId, given, requester, now);
     switch (result.status) {
       case 'missing':
         throw new DataRequestNotFoundError();
       case 'already-answered':
         throw new DataRequestAlreadyAnsweredError();
       case 'answered':
-        return this.entry(result.request, now);
+        return this.entry(result.request, requester, now);
     }
   }
 
@@ -184,7 +207,7 @@ export class DataSubjectRequestsService {
       case 'already-answered':
         throw new DataRequestAlreadyAnsweredError();
       case 'edited':
-        return this.entry(result.request, now);
+        return this.entry(result.request, requester, now);
     }
   }
 
@@ -195,14 +218,14 @@ export class DataSubjectRequestsService {
    */
   async correctAnswer(
     requestId: string,
-    answer: { outcome: DataRequestOutcome; response: string },
+    answer: AnswerInput,
     requester: Requester,
     now: Date = new Date(),
   ): Promise<DataRequestEntry> {
-    await this.assertRecordKey(requestId, requester);
+    const given = await this.authorised(requestId, answer, requester, now);
     const result = await this.requests.correctAnswer(
       requestId,
-      answer,
+      given,
       requester,
       now,
     );
@@ -212,7 +235,7 @@ export class DataSubjectRequestsService {
       case 'not-answered':
         throw new DataRequestNotAnsweredError();
       case 'corrected':
-        return this.entry(result.request, now);
+        return this.entry(result.request, requester, now);
     }
   }
 
@@ -239,13 +262,81 @@ export class DataSubjectRequestsService {
       ip: requester.ip,
       userAgent: requester.userAgent,
     });
-    return rows.map((row) => this.entry(row, now));
+    return rows.map((row) => this.entry(row, requester, now));
+  }
+
+  /**
+   * PD-061 (D-203 §5, §6). The professional's review of a copy: with the
+   * casilla, once, and before the copy is authorised; whether it includes the
+   * violence screening. The key is `record:protected` at a site where the
+   * person was attended — without it, as if the request did not exist.
+   */
+  async reviewCopy(
+    requestId: string,
+    review: { reviewed: boolean; includesScreening: boolean },
+    requester: Requester,
+    now: Date = new Date(),
+  ): Promise<DataRequestEntry> {
+    const facts = await this.requests.copyFactsOf(requestId);
+    if (
+      !facts ||
+      !facts.clinicalRecordCopy ||
+      !holdsRecordKey(requester.protectedScope ?? [], facts.patientSites)
+    ) {
+      throw new DataRequestNotFoundError();
+    }
+    if (review.reviewed !== true) {
+      throw new ClinicalRecordCopyInvalidError('reviewed');
+    }
+    const result = await this.requests.reviewCopy(
+      requestId,
+      { includesScreening: review.includesScreening },
+      requester,
+      now,
+    );
+    switch (result.status) {
+      case 'missing':
+        throw new DataRequestNotFoundError();
+      case 'already-reviewed':
+        throw new ClinicalRecordCopyAlreadyReviewedError();
+      case 'already-authorised':
+        throw new DataRequestAlreadyAnsweredError();
+      case 'reviewed':
+        return this.entry(result.request, requester, now);
+    }
+  }
+
+  /**
+   * PD-061. The copies of a chart a professional may review: not authorised
+   * yet, and only those whose person they hold `record:protected` for. Like
+   * every read of what a patient asked, it leaves its row (REQ-110).
+   */
+  async pendingCopiesOf(
+    patientId: string,
+    requester: Requester,
+    now: Date = new Date(),
+  ): Promise<DataRequestEntry[]> {
+    const chart = await this.requests.chartOf(patientId);
+    if (chart.status === 'missing') throw new DataSubjectNotFoundError();
+    const rows = (await this.requests.pendingCopiesOf(patientId)).filter(
+      (row) => holdsRecordKey(requester.protectedScope ?? [], row.copySites),
+    );
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'patient_data_requests',
+      resourceId: patientId,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    return rows.map((row) => this.entry(row, requester, now));
   }
 
   /** PD-035, PD-051. */
   async open(
     filter: { right?: DataSubjectRight; overdueOnly: boolean },
     page: { page: number; pageSize: number },
+    requester: Requester,
     now: Date = new Date(),
   ): Promise<{ items: DataRequestEntry[]; total: number }> {
     const { items, total } = await this.requests.open(
@@ -256,7 +347,10 @@ export class DataSubjectRequestsService {
       },
       page,
     );
-    return { items: items.map((row) => this.entry(row, now)), total };
+    return {
+      items: items.map((row) => this.entry(row, requester, now)),
+      total,
+    };
   }
 
   /** PD-040 to PD-043. */
@@ -306,7 +400,14 @@ export class DataSubjectRequestsService {
     ) {
       throw new DataExportNotApplicableError();
     }
-    return answerProposal(EXPORT_OMISSIONS);
+    // PD-067. The proposal says what THIS caller's file leaves out.
+    const clinical = await this.requests.clinicalOmissionOf(
+      requestId,
+      requester.recordScope ?? [],
+    );
+    return answerProposal(
+      clinical ? [...EXPORT_OMISSIONS, clinical] : EXPORT_OMISSIONS,
+    );
   }
 
   /** PD-032, PD-054. The legal deadline of a request received at an instant. */
@@ -326,11 +427,55 @@ export class DataSubjectRequestsService {
     return legalDeadline(request, receivedAt, holidays);
   }
 
-  private entry(row: DataRequestView, now: Date): DataRequestEntry {
+  private entry(
+    row: DataRequestView,
+    requester: Requester,
+    now: Date,
+  ): DataRequestEntry {
+    const { copySites, ...view } = row;
     return {
-      ...row,
+      ...view,
       isOverdue: row.answer === null && row.dueAt.getTime() <= now.getTime(),
+      canAuthorise:
+        !row.clinicalRecordCopy ||
+        holdsRecordKey(requester.recordScope ?? [], copySites),
     };
+  }
+
+  /**
+   * PD-059, PD-062 (D-203 §2, §5, §12). An answer as it may be saved: the
+   * period of a copy answered «Atendida en parte», checked against the day of
+   * the answer; and, when it hands the copy over, the key of the record —
+   * without it, as if the request did not exist — and the professional's
+   * review when the copy is not the holder's and the record is sensitive.
+   * «Denegada» hands nothing over and asks for neither.
+   */
+  private async authorised(
+    requestId: string,
+    answer: AnswerInput,
+    requester: Requester,
+    now: Date,
+  ): Promise<AnswerInput & { copyPeriod: CopyPeriod | null }> {
+    const facts = await this.requests.copyFactsOf(requestId);
+    if (!facts) throw new DataRequestNotFoundError();
+    if (facts.clinicalRecordCopy && authorisesDelivery(answer.outcome)) {
+      if (!holdsRecordKey(requester.recordScope ?? [], facts.patientSites)) {
+        throw new DataRequestNotFoundError();
+      }
+      if (
+        copyNeedsReview(facts.requestedBy, facts.sensitive) &&
+        !facts.reviewed
+      ) {
+        throw new ClinicalRecordCopyReviewRequiredError();
+      }
+    }
+    const copyPeriod = copyPeriodOf({
+      clinicalRecordCopy: facts.clinicalRecordCopy,
+      outcome: answer.outcome,
+      period: answer.copyPeriod,
+      answeredOn: clinicalDateOf(now),
+    });
+    return { ...answer, copyPeriod };
   }
 
   /**
@@ -344,7 +489,7 @@ export class DataSubjectRequestsService {
     requestId: string,
     requester: Requester,
   ): Promise<void> {
-    const key = await this.requests.copyKeyOf(requestId);
+    const key = await this.requests.copyFactsOf(requestId);
     if (!key) throw new DataRequestNotFoundError();
     if (
       key.clinicalRecordCopy &&

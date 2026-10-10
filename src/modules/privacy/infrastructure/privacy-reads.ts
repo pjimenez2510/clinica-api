@@ -145,6 +145,7 @@ export async function writeTrail(
       | 'consent_text_version'
       | 'patient_consent'
       | 'data_subject_request'
+      | 'clinical_record_copy_review'
       | 'patient';
     resourceId: string;
     action: 'CREATE' | 'UPDATE' | 'EXPORT';

@@ -14,6 +14,9 @@ import {
   DataRequestPatientNotDeceasedError,
   ConsentNotFoundError,
   DataRequestNotAnsweredError,
+  DataRequestPatientDeceasedError,
+  ClinicalRecordCopyReviewRequiredError,
+  ClinicalRecordCopyAlreadyReviewedError,
 } from './privacy.errors';
 
 /**
@@ -90,6 +93,35 @@ describe('los errores de la copia de la historia clínica (PD-052, PD-053)', () 
     expect(error.fieldErrors).toEqual([
       expect.objectContaining({ field: 'documentsChecked' }),
     ]);
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('PD-065 answers DATA_REQUEST_PATIENT_DECEASED as a 422 on who presents it', () => {
+    const error = new DataRequestPatientDeceasedError();
+    expect(error.code).toBe('DATA_REQUEST_PATIENT_DECEASED');
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.userTitle).toBe(
+      'La ficha registra el fallecimiento: la solicitud la presenta un familiar o quien fue su representante legal',
+    );
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('PD-062 answers CLINICAL_RECORD_COPY_REVIEW_REQUIRED as a 409 that does not say what the record holds', () => {
+    const error = new ClinicalRecordCopyReviewRequiredError();
+    expect(error.code).toBe('CLINICAL_RECORD_COPY_REVIEW_REQUIRED');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toBe(
+      'Esta copia necesita el visto bueno de un profesional antes de autorizarla: pídaselo desde la ficha del paciente',
+    );
+    expect(error.userTitle).not.toMatch(/violencia|VIH|tamizaje|diagn/i);
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('PD-061 answers CLINICAL_RECORD_COPY_ALREADY_REVIEWED as a 409', () => {
+    const error = new ClinicalRecordCopyAlreadyReviewedError();
+    expect(error.code).toBe('CLINICAL_RECORD_COPY_ALREADY_REVIEWED');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toBe('Esta copia ya tiene el visto bueno');
     expect(DOMAIN_ERROR_CODES).toContain(error.code);
   });
 });

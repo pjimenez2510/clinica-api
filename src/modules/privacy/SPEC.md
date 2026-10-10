@@ -755,6 +755,13 @@ puede verla»).
 
 ## Notas de esquema
 
+- `20261011120000_privacy_copy_adjustments` (PD-059, PD-061, PD-063): el
+  periodo de la copia «Atendida en parte» en la respuesta y en la
+  rectificación (`copy_from`, `copy_to`), el parentesco del familiar
+  (`data_request_relationship`), que el disparador de la solicitud congela, y
+  la tabla `clinical_record_copy_review`, de sólo inserción. Las reglas «la
+  copia en parte lleva periodo» y «el familiar lleva parentesco» nacen NOT
+  VALID: valen para toda fila nueva o modificada.
 - `20261010130000_privacy_clinical_record_copy` (PD-052 a PD-054): el enum
   `data_request_party`, las columnas de la copia y de quien la presenta, y
   `due_on` pasa a `due_at` (instante); los ya fijados, al final de su día.

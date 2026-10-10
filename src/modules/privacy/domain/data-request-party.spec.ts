@@ -26,6 +26,7 @@ describe('presentationOf — quién presenta la solicitud y qué pide', () => {
       requestedBy: 'ATTORNEY',
       requesterName: 'Ana Pérez',
       requesterDocument: '1710034065',
+      requesterRelationship: null,
     });
   });
 
@@ -116,5 +117,28 @@ describe('presentationOf — quién presenta la solicitud y qué pide', () => {
         requesterDocument: '1',
       }),
     ).toThrow(expect.objectContaining({ field: 'requesterName' }));
+  });
+
+  it('PD-063 el familiar dice su parentesco, y sólo él', () => {
+    const relative = {
+      ...copy,
+      requestedBy: 'DECEASED_RELATIVE' as const,
+      requesterName: 'Luis Pérez',
+      requesterDocument: '1710034065',
+    };
+    expect(
+      presentationOf({ ...relative, requesterRelationship: 'STEPCHILD' })
+        .requesterRelationship,
+    ).toBe('STEPCHILD');
+    expect(() => presentationOf(relative)).toThrow(
+      ClinicalRecordCopyInvalidError,
+    );
+    expect(() =>
+      presentationOf({
+        ...relative,
+        requestedBy: 'ATTORNEY',
+        requesterRelationship: 'SPOUSE',
+      }),
+    ).toThrow(ClinicalRecordCopyInvalidError);
   });
 });

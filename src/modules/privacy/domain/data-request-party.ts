@@ -24,6 +24,28 @@ export function isThirdParty(party: DataRequestParty): boolean {
   return party !== 'HOLDER' && party !== 'REPRESENTATIVE';
 }
 
+/**
+ * PD-063 (D-203 §7). The relative of a deceased patient, as the A.M. 5216
+ * (art. 28) admits them: the spouse or partner, up to the second degree of
+ * consanguinity, or the first of affinity — stepchildren and step-parents
+ * included (Código Civil art. 38).
+ */
+export const DATA_REQUEST_RELATIONSHIPS = [
+  'SPOUSE',
+  'PARTNER',
+  'PARENT',
+  'CHILD',
+  'SIBLING',
+  'GRANDPARENT',
+  'GRANDCHILD',
+  'PARENT_IN_LAW',
+  'CHILD_IN_LAW',
+  'STEPCHILD',
+  'STEPPARENT',
+] as const;
+export type DataRequestRelationship =
+  (typeof DATA_REQUEST_RELATIONSHIPS)[number];
+
 /** PD-052. What the name and the document of who presents it may be. */
 export const REQUESTER_FIELD_MAX_LENGTH = 200;
 
@@ -35,6 +57,8 @@ export interface RequestPresentation {
   documentsChecked: boolean;
   requesterName: string | null;
   requesterDocument: string | null;
+  /** PD-063. Only the relative's, and always theirs. */
+  requesterRelationship: DataRequestRelationship | null;
 }
 
 /**
@@ -53,6 +77,7 @@ export function presentationOf(input: {
   documentsChecked?: boolean;
   requesterName?: string | null;
   requesterDocument?: string | null;
+  requesterRelationship?: DataRequestRelationship | null;
 }): RequestPresentation {
   const clinicalRecordCopy = input.clinicalRecordCopy ?? false;
   // Who presents it is named only on a copy, and never the holder, whose
@@ -78,6 +103,12 @@ export function presentationOf(input: {
       throw new ClinicalRecordCopyInvalidError('requesterDocument');
     }
   }
+  // PD-063. The relative says how; nobody else says anything.
+  const relative = input.requestedBy === 'DECEASED_RELATIVE';
+  const requesterRelationship = input.requesterRelationship ?? null;
+  if (relative !== (requesterRelationship !== null)) {
+    throw new ClinicalRecordCopyInvalidError('requesterRelationship');
+  }
   if ((requesterName?.length ?? 0) > REQUESTER_FIELD_MAX_LENGTH) {
     throw new ClinicalRecordCopyInvalidError('requesterName');
   }
@@ -92,6 +123,7 @@ export function presentationOf(input: {
     documentsChecked: clinicalRecordCopy && input.documentsChecked === true,
     requesterName,
     requesterDocument,
+    requesterRelationship,
   };
 }
 
