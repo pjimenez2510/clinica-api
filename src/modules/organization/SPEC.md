@@ -97,6 +97,20 @@ banderas fiscales ya declaradas sin que pida la casilla.
 
 **Solo interfaz:** OR-036. **Solo servidor:** OR-033.
 
+### O5 — El menú agrupado y la puesta en marcha _(P2, 10-10-2026)_
+
+D-205 §5: el menú lateral en grupos rotulados, todos a la vista, y la portada
+de Administración como la lista de lo que falta para poner la clínica en
+marcha. Sin rutas nuevas: la lista se compone con lo que el servidor ya
+devuelve a cada pantalla.
+
+**Prueba independiente:** entrar con cada rol de la semilla y ver sólo los
+grupos que le tocan; en una base recién sembrada, la puesta en marcha dice qué
+paso falta y lleva a su pantalla.
+**Cubre:** OR-037 a OR-043.
+
+**Solo interfaz:** OR-037 a OR-043.
+
 ---
 
 ## Requisitos
@@ -295,6 +309,68 @@ banderas fiscales ya declaradas sin que pida la casilla.
   formulario cambie alguna de ellas; un guardado que no las toca NO DEBERÁ
   pedirla, y conserva la declaración (OR-031).
   > AD-11, «las banderas fiscales: la casilla sólo cuando cambian».
+
+### El menú agrupado y la puesta en marcha (REQ-118, REQ-042; D-205 §5)
+
+- **OR-037** — El menú lateral DEBERÁ mostrar sus entradas en grupos con
+  rótulo, todos desplegados y sin entradas que se pliegan, en este orden y con
+  estas entradas:
+
+  | Grupo | Entradas, en orden |
+  |---|---|
+  | Operación | Panel · Agenda · Pacientes · Tablero del día · Órdenes y resultados · Facturación · Sala de espera |
+  | Consulta y reportes | Catálogo CIE-10 · Inasistencia · Llegadas tardías · Bitácora y MSP |
+  | Administración · Clínica | Puesta en marcha · Establecimiento · Sedes y consultorios · Feriados y parámetros |
+  | Administración · Personas | Cuentas · Roles y permisos · Profesionales |
+  | Administración · Agenda | Especialidades y duraciones · Horarios |
+  | Administración · Atención | Plantilla de nota · Exámenes · Identidad de los documentos |
+  | Administración · Facturación | Prestaciones y precios · Caja: medios de pago e IVA · Firma electrónica |
+  | Administración · Privacidad | Texto de consentimiento · Solicitudes sobre datos |
+
+  Cada entrada conserva su permiso; «Órdenes y resultados», su cuenta de
+  críticos (ORD-165).
+  > El orden de Administración es el de puesta en marcha. «Funciones» (D-207
+  > §7) no existe todavía y no se reserva sitio.
+- **OR-038** — MIENTRAS la sesión no tenga el permiso de ninguna entrada de un
+  grupo, el menú NO DEBERÁ mostrar ese grupo ni su rótulo.
+  > Cerrado por defecto (REQ-118, ESTÁNDAR-UI §12.4): un rótulo sin entradas
+  > anuncia una sección que no se puede abrir.
+- **OR-039** — El menú DEBERÁ marcar activa sólo la entrada más específica que
+  contiene la ruta abierta, mirando todas las entradas de todos los grupos:
+  dentro de `/administracion/cuentas`, «Cuentas» y no «Puesta en marcha».
+- **OR-040** — CUANDO se abra Administración › Puesta en marcha
+  (`/administracion`), el sistema DEBERÁ listar los pasos en este orden, cada
+  uno con su enlace a su pantalla y con «Hecho» o «Falta» según lo que el
+  servidor ya devuelve, y arriba cuántos de los obligatorios están hechos:
+
+  | Paso | Permiso | Hecho cuando |
+  |---|---|---|
+  | Establecimiento | `site:read` | está registrado y tiene RUC |
+  | Sedes y consultorios | `site:read` | hay al menos una sede activa y todas las activas tienen su código de establecimiento del SRI |
+  | Cuentas del personal | `user:read` | hay al menos una cuenta activa además de la de quien mira |
+  | Especialidades y duraciones | `config:read` | hay al menos una especialidad activa |
+  | Profesionales | `staff:read` | hay al menos un profesional activo |
+  | Horarios | `staff:read` | hay al menos una regla de horario vigente |
+  | Prestaciones y precios | `billing:read` | hay al menos una prestación activa y todas tienen precio particular vigente hoy |
+  | Firma electrónica | `config:manage` | hay un certificado activo y vigente hoy |
+  | Texto de consentimiento | `patient:consent-text` | hay un texto publicado |
+  | Exámenes _(opcional)_ | `catalog:manage` | hay al menos un examen; no cuenta en el total |
+
+  Un paso que falta dice en una línea qué falta («Falta el RUC», «Falta el
+  precio de 3 prestaciones»). «Hoy» es el día de la clínica
+  (`America/Guayaquil`).
+- **OR-041** — La puesta en marcha NO DEBERÁ mostrar un paso cuyo permiso no
+  tiene la sesión, ni pedir sus datos. La entrada «Puesta en marcha» y la ruta
+  DEBERÁN exigir el permiso de al menos uno de los pasos; SI la sesión no tiene
+  ninguno, ENTONCES la entrada no aparece y la ruta lleva a «Sin permiso».
+- **OR-042** — SI no se pudo consultar lo que decide un paso, ENTONCES ese paso
+  DEBERÁ mostrarse «Sin comprobar», con «Reintentar», y NO DEBERÁ contarse como
+  hecho ni como falta; los demás pasos se muestran igual.
+- **OR-043** — El aviso flotante (`toast`) DEBERÁ aparecer por debajo de la
+  barra de la aplicación, sin tapar el botón del modo de color ni el del menú,
+  a 1280 y a 375 px.
+  > Visto en `evidencias/fix-f07-aviso-critico-destino/F-07-30…`: «Abrir» del
+  > aviso de un crítico caía sobre el botón del tema.
 
 ## Códigos de error
 
