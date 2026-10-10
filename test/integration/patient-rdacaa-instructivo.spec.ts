@@ -108,6 +108,7 @@ describe('las columnas del instructivo del RDACAA, contra la base', () => {
   let shuarId: string;
   let otavaloId: string;
   let heterosexualId: string;
+  let genderIdentityId: string;
 
   beforeEach(async () => {
     enableBigIntSerialisation();
@@ -290,6 +291,12 @@ describe('las columnas del instructivo del RDACAA, contra la base', () => {
       [{ code: '4', display: 'Heterosexual' }],
     )) as [string];
 
+    [genderIdentityId] = (await rows(
+      'GENDER_IDENTITY',
+      'Identidad de género (RDACAA, columna 8)',
+      [{ code: '1', display: 'Masculino' }],
+    )) as [string];
+
     await rows('COUNTRY', 'Países (ISO 3166-1)', [
       { code: 'ECU', display: 'Ecuador' },
       { code: 'VEN', display: 'Venezuela (República Bolivariana de)' },
@@ -467,6 +474,50 @@ describe('las columnas del instructivo del RDACAA, contra la base', () => {
 
     expect((refused.body as Problem).code).toBe(
       'SEXUAL_ORIENTATION_BELOW_MINIMUM_AGE',
+    );
+    expect(
+      await prisma.patientChangeHistory.count({
+        where: { patientId: chart.id },
+      }),
+    ).toBe(0);
+  });
+
+  // =========================================================================
+  // PA-071 · «Identidad de género», la columna 8
+  // =========================================================================
+
+  it('PA-071 rechaza la identidad de género de un paciente menor de diez años, y la admite en un adulto', async () => {
+    // Control positivo por el mismo camino: la misma alta con una fecha de
+    // adulto pasa, así que el 422 de abajo es la regla y no la ruta.
+    await registerPatient({ genderIdentityConceptId: genderIdentityId });
+
+    const refused = await register({
+      familyName: 'Guaman',
+      givenName: 'Pedro',
+      sex: 'MALE',
+      // Nacido hoy: cero años cumplidos, sea cual sea la hora en Guayaquil.
+      birthDate: today(),
+      genderIdentityConceptId: genderIdentityId,
+    }).expect(422);
+
+    const problem = refused.body as Problem;
+    expect(problem.code).toBe('GENDER_IDENTITY_BELOW_MINIMUM_AGE');
+    expect(problem.errors?.[0]).toMatchObject({
+      field: 'genderIdentityConceptId',
+    });
+    expect(problem.errors?.[0]?.message).not.toContain('Masculino');
+    expect(await prisma.patient.count()).toBe(1);
+  });
+
+  it('PA-071 rechaza mover la fecha de nacimiento por debajo del umbral en una ficha que ya la declara', async () => {
+    const chart = await registerPatient({
+      genderIdentityConceptId: genderIdentityId,
+    });
+
+    const refused = await correct(chart.id, { birthDate: today() }).expect(422);
+
+    expect((refused.body as Problem).code).toBe(
+      'GENDER_IDENTITY_BELOW_MINIMUM_AGE',
     );
     expect(
       await prisma.patientChangeHistory.count({
