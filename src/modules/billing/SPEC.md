@@ -528,6 +528,20 @@ una atención de A desde otra sesión: aparece sin recargar; la de la sede B no
 la despierta.
 **Cubre:** BI-238, BI-239. **Solo servidor:** BI-238. **Solo interfaz:** BI-239.
 
+### B18 — El correo de la ficha llega a la factura, y vuelve a la ficha _(P1, 10-10-2026)_
+
+D-205 §4, resuelta por el autor: un dato del paciente se escribe una vez.
+«Emitir factura» propone el correo de la ficha y los compradores que ya
+facturaron por el paciente; lo que caja escribe o corrige vuelve a la ficha
+con una casilla (PA-075). Emitir a Consumidor Final avisa una sola vez.
+**Prueba independiente:** con una ficha con correo, abrir «Emitir factura» y
+encontrarlo escrito; cambiarlo, emitir con «Actualizar la ficha del paciente»
+marcada y leer el correo nuevo en la ficha; en una segunda cuenta del mismo
+paciente, elegir el comprador de la primera factura y ver documento, nombre y
+correo rellenos.
+**Cubre:** BI-270 a BI-272. **Solo interfaz:** BI-272. Enmienda BI-201 (un solo
+aviso), cuya prueba de interfaz se amplía.
+
 ### B11 — Prestaciones con estructura _(P2)_
 
 La categoría de una prestación deja de ser texto libre y pasa a un catálogo
@@ -2453,7 +2467,8 @@ dos registros distintos.**
 - **BI-201** — CUANDO se emita una factura a Consumidor Final, el sistema
   DEBERÁ aceptarla con `finalConsumer.confirmed` verdadero y sin motivo, y la
   pantalla DEBERÁ pedir una sola confirmación que diga la consecuencia (el
-  paciente pierde la rebaja de gastos personales y la factura no se corrige).
+  paciente pierde la rebaja de gastos personales y la factura no se corrige),
+  y NO DEBERÁ repetirla en un aviso del formulario.
   > Inventario CA-7; enmienda BI-081, que pedía alerta, motivo, casilla y botón
   > rojo. El motivo nunca se guardó (no hay columna), así que pedirlo era un
   > rastro que no existía. La frase «desde 2026 no se puede anular» está por
@@ -2723,6 +2738,40 @@ lo ve._
   > (BI-208). Es la conciliación de cargos de cualquier ciclo de ingresos: lo
   > cobrado tiene que seguir respaldado por lo documentado.
 
+## 25. El correo de la ficha llega a la factura (D-205 §4)
+
+- **BI-270** — CUANDO alguien con `billing:read` en la sede pida el receptor
+  propuesto de una cuenta (BI-082), el sistema DEBERÁ devolver además el
+  identificador de la ficha del paciente y su correo —los de la ficha vigente
+  si la del paciente se unificó, como el documento—, y NO DEBERÁ aplicar ese
+  correo a la factura por sí mismo.
+  > Hasta aquí la pantalla fijaba el correo vacío (`receiver.ts`) y caja lo
+  > volvía a teclear en cada factura aunque la ficha lo tuviera.
+- **BI-271** — En esa misma propuesta, el sistema DEBERÁ devolver los
+  compradores habituales del paciente: los
+  receptores distintos, por tipo y número de identificación, de las facturas
+  emitidas o autorizadas de sus cuentas en esa sede —también las de las fichas
+  que se le unificaron—, de la factura más reciente a la más antigua, hasta
+  cinco, cada uno con el nombre y el correo de su última factura; sin el
+  documento del propio paciente, sin Consumidor Final y sin las facturas
+  anuladas o devueltas.
+  > Sólo la sede: `billing:read` se concede por sede, y un comprador de otra
+  > sede sería un dato que quien cobra aquí no puede leer. Anuladas y devueltas
+  > fuera porque lo más común es que se anularan o devolvieran por un dato
+  > del receptor mal puesto, y proponerlo otra vez lo repetiría.
+- **BI-272** — «Emitir factura» DEBERÁ sembrar el correo con el de la ficha y
+  ofrecer los compradores habituales como una elección que rellena documento,
+  número, nombre y correo. CUANDO el correo escrito no esté vacío, sea distinto
+  del de la ficha y quien emite tenga `patient:contact:write`, la pantalla
+  DEBERÁ ofrecer «Actualizar la ficha del paciente», marcada si el número del
+  receptor es el del paciente y desmarcada si no; al emitir con ella marcada
+  DEBERÁ guardar el correo en la ficha (PA-075) después de emitida la factura,
+  y SI eso falla, la factura DEBERÁ darse por emitida y el aviso decir que el
+  correo no quedó en la ficha.
+  > D-205 §4: «la página compone las dos llamadas» (ADR-011), como la consulta
+  > (`useEncounter.ts`). Desmarcada cuando paga otra persona —el padre por el
+  > hijo—: su correo no es el del paciente.
+
 ---
 
 ## Códigos de error nuevos
@@ -2951,7 +3000,7 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `GET` | `/billing/sites/{siteId}/encounters/awaiting-checkout` | `billing:read` | `param:siteId` | BI-181 a BI-183, BI-190 |
 | `POST` | `/billing/sites/{siteId}/accounts` | `billing:write` | `param:siteId` | BI-070, BI-121 |
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:read` | `param:siteId` | BI-074, BI-135, BI-192 |
-| `GET` | `/billing/sites/{siteId}/accounts/{accountId}/invoice-receiver` | `billing:read` | `param:siteId` | BI-082 |
+| `GET` | `/billing/sites/{siteId}/accounts/{accountId}/invoice-receiver` | `billing:read` | `param:siteId` | BI-082, BI-270, BI-271 |
 | `PATCH` | `/billing/sites/{siteId}/accounts/{accountId}` | `billing:write` | `param:siteId` | BI-033, BI-198 |
 | `POST` | `/billing/sites/{siteId}/accounts/{accountId}/close` | `billing:write` | `param:siteId` | BI-071, BI-072, **BI-236**, **BI-237** |
 | `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges` | `billing:write` | `param:siteId` | BI-015, BI-016, BI-047, BI-050 a BI-058 |
@@ -3069,6 +3118,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | BI-184 | Unitario de la pantalla (qué se ofrece) + recorrido F-06: facturar, añadir, facturar lo pendiente y cerrar |
 | BI-185 a BI-187 | Unitario de dominio + integración contra PostgreSQL real: la referencia `NOT NULL`, la clase conocida y el `RESTRICT` los garantiza la base |
 | BI-188, BI-189 | Integración contra la siembra real + contrato HTTP |
+| BI-270, BI-271 | Integración contra PostgreSQL real por HTTP: la ficha con correo, una ficha unificada que trae su comprador, y como controles una factura anulada, una a Consumidor Final, una de otra sede y una del propio paciente que no salen |
 | BI-232 | Integración contra la siembra real: las especialidades sembradas y la facturación sembrada, en los dos órdenes, contra las 22 especialidades reales del catálogo |
 
 ## Preguntas abiertas

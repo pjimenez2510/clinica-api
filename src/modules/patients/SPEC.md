@@ -248,6 +248,17 @@ el lápiz de su fila; abrir una ficha sin alergias registradas y verlo en ámbar
 **Cubre:** PA-067 a PA-069.
 **Solo interfaz:** PA-067, PA-068, PA-069.
 
+### P9 — El contacto que se corrige desde caja vuelve a la ficha _(P1, 10-10-2026)_
+
+D-205 §4, resuelta por el autor: el correo, el teléfono y la dirección que
+caja escribe o corrige quedan en la ficha, con un permiso acotado que no deja
+cambiar nombres ni documentos.
+**Prueba independiente:** con la cuenta de caja, corregir el correo de una
+ficha por la ruta de contacto y leerlo en la ficha con su fila de histórico;
+intentar con la misma cuenta cambiar el apellido y recibir el rechazo.
+**Cubre:** PA-075, PA-076. **Solo servidor:** PA-075, PA-076. Su pantalla es la
+de caja (BI-272, SRI-097), que cita su propio requisito.
+
 ## Criterios de éxito
 
 Medibles y sin nombrar tecnología. **No empiezan en `SC-001` a propósito**: los
@@ -2020,6 +2031,23 @@ Ningún requisito de esta sección lo altera._
   > anterior es un dato de la identificación, y la consecuencia de unificar es
   > el texto de la confirmación (D-126.2).
 
+## 11. El contacto que se corrige desde otra pantalla (D-205 §4)
+
+- **PA-075** — CUANDO alguien con `patient:contact:write` corrija el contacto
+  de una ficha (`PATCH /patients/:id/contact`), el sistema DEBERÁ cambiar sólo
+  el correo, el teléfono y la dirección de residencia, con las mismas reglas,
+  la misma bitácora y el mismo histórico que la corrección de la ficha
+  (PA-031); y SI el cuerpo trae cualquier otro campo, ENTONCES DEBERÁ
+  rechazarlo entero sin cambiar nada.
+  > D-205 §4: `patient:write` deja cambiar nombres y documentos, y caja no lo
+  > necesita para dejar el correo de la factura en la ficha. La ruta es propia
+  > para que el permiso estrecho no abra la corrección ancha: cerrado por
+  > defecto, la lista de campos la fija el esquema y no quien llama. Una ficha
+  > unificada se rechaza como en la corrección (`PATIENT_MERGED`).
+- **PA-076** — El permiso `patient:contact:write` DEBERÁ venir de fábrica en
+  el rol de caja, y NO DEBERÁ abrir `PATCH /patients/:id` ni ninguna otra
+  escritura de la ficha.
+
 ## Códigos de error
 
 Ya existen en `shared/domain/errors/error-catalogue.ts` y los emite este módulo:
@@ -2188,6 +2216,7 @@ Todas bajo `/api/v1/patients`, alcance `global` (PA-051):
 | `GET`   | `/patients/:id`                           | `patient:read`     | PA-022, PA-024, PA-054                          |
 | `POST`  | `/patients`                               | `patient:write`    | PA-001 a PA-014, PA-026 a PA-029, PA-053        |
 | `PATCH` | `/patients/:id`                           | `patient:write`    | PA-008, PA-009, PA-026 a PA-029, PA-031, PA-053, PA-065 |
+| `PATCH` | `/patients/:id/contact`                   | `patient:contact:write` | PA-075, PA-076                         |
 | `GET`   | `/patients/:id/change-history`            | `patient:read`     | PA-065                                          |
 | `POST`  | `/patients/:id/identifiers`               | `patient:write`    | PA-015                                          |
 | `GET`   | `/patients/:id/priority-groups`           | `patient:priority` | PA-033 a PA-040                                 |
@@ -2278,6 +2307,7 @@ prueba cite un ID inexistente; el día que este `SPEC.md` pase a `vigente`,
 | PA-049, PA-050, PA-051, PA-052 | Contrato HTTP + prueba de rutas: `route-authorisation.spec.ts` recorre las rutas que NestJS registró de verdad                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | PA-054                         | Contrato HTTP **e** integración contra PostgreSQL real: la ficha que absorbió a dos las **nombra** y la que no absorbió a nadie devuelve la lista **vacía** —ni el campo ausente ni `null`—; el listado **no** lo lleva, afirmado sobre la respuesta y no sobre el esquema; y tras fusionar A→B la ficha de B nombra a A, tras deshacer deja de nombrarla. La segunda mitad no la puede ver una prueba de contrato: depende de que el enlace se recorra hacia atrás en la base                                                                                                                           |
 | PA-055                         | Integración contra PostgreSQL real **y** prueba del mecanismo: fusionar A→B con un grupo prioritario vigente en A y comprobar que **desde B se ve** —y que la **prioridad calculada** de B pasa a prioritaria—, y que **al deshacer deja de verse** y vuelve a ser estándar. Un doble no puede demostrarlo: depende de que el enlace se recorra en la base. Y la garantía tiene su propia prueba —`patient-chart-scope.spec.ts` recorre el código real y falla ante una lectura ingenua—, comprobada **rompiéndola**: la lectura por `patient_id` desnudo se le da al analizador y se afirma que la caza |
+| PA-075, PA-076                 | Integración contra PostgreSQL real por HTTP con la sesión de caja sembrada: el correo cambia y deja su fila de histórico; el apellido en el mismo cuerpo se rechaza y nada cambia (control positivo: el mismo cuerpo sin el apellido pasa); `PATCH /patients/:id` sigue cerrado para caja |
 | PA-060                         | Integración contra PostgreSQL real: inscribir en A, fusionar A→B y comprobar que B tiene una equivalente **con la fecha de inscripción original** y que la de A sigue donde estaba; que deshacer la retira; que la superviviente que ya tenía una equivalente **no acaba con dos**; y la que demuestra el propósito, de extremo a extremo por la ruta de la lista de espera: tras la fusión la persona **conserva su puesto en la cola** frente a quien se inscribió después. Un doble no puede demostrar ninguna: dependen de `created_at` y del orden que la base devuelve |
 
 ## Preguntas abiertas
