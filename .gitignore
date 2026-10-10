@@ -66,3 +66,8 @@ arquitectura.mmd
 
 # SRI-024: the development master passphrase of the certificate store.
 .dev-secrets/
+
+# IL-009 (D-206): the real SRI RUC registry is personal data of third parties
+# and never goes into git. Only the invented sample does.
+/prisma/catastro/*
+!/prisma/catastro/sri-ruc-muestra.csv

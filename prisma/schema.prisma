@@ -6098,3 +6098,65 @@ model BoardViewField {
   @@id([roleId, field], map: "board_view_field_pkey")
   @@map("board_view_field")
 }
+
+// ===========================================================================
+// IDENTITY LOOKUP (D-206). Proposing a person's names from their cedula.
+//
+// Third-party data, none of it clinical: the reason each table exists and how
+// long it keeps what it keeps is in src/modules/identity-lookup/SPEC.md.
+// ===========================================================================
+
+/// IL-010. One switch for the whole clinic, off by default. Single row: the
+/// key can only be `true` (`identity_lookup_setting_single_row`). No row is OFF.
+model IdentityLookupSetting {
+  id                     Boolean  @id @default(true)
+  externalSourcesEnabled Boolean  @default(false) @map("external_sources_enabled")
+  /// The application's clock, always written by the application.
+  updatedAt              DateTime @map("updated_at") @db.Timestamptz(6)
+
+  @@map("identity_lookup_setting")
+}
+
+/// IL-009. One downloaded file of the SRI RUC registry, imported once: the
+/// SHA-256 is unique, which is what makes the import idempotent.
+model SriRucRegistryImport {
+  id           String                @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  fileSha256   String                @map("file_sha256") @db.Char(64)
+  fileName     String                @map("file_name") @db.VarChar(255)
+  rowsImported Int                   @map("rows_imported")
+  importedAt   DateTime              @map("imported_at") @db.Timestamptz(6)
+  entries      SriRucRegistryEntry[]
+
+  @@unique([fileSha256], map: "sri_ruc_registry_import_file_sha256_key")
+  @@map("sri_ruc_registry_import")
+}
+
+/// IL-009. A natural person of the registry: cedula and the name exactly as
+/// the registry writes it («APELLIDOS NOMBRES»). Nothing else is kept.
+model SriRucRegistryEntry {
+  cedula       String               @id @db.Char(10)
+  registryName String               @map("registry_name") @db.VarChar(300)
+  importId     String               @map("import_id") @db.Uuid
+  import       SriRucRegistryImport @relation(fields: [importId], references: [id], onDelete: Restrict)
+
+  @@index([importId])
+  @@map("sri_ruc_registry_entry")
+}
+
+/// IL-007. What the provider answered, for 30 days, keyed by the HMAC of the
+/// cedula. `identity_lookup_cache_lifetime` caps it at 90 days (D-206).
+model IdentityLookupCache {
+  cedulaDigest     String    @id @map("cedula_digest") @db.Char(64)
+  source           String    @db.VarChar(32)
+  familyName       String?   @map("family_name") @db.VarChar(100)
+  secondFamilyName String?   @map("second_family_name") @db.VarChar(100)
+  givenName        String?   @map("given_name") @db.VarChar(100)
+  secondGivenName  String?   @map("second_given_name") @db.VarChar(100)
+  sourceName       String    @map("source_name") @db.VarChar(300)
+  birthDate        DateTime? @map("birth_date") @db.Date
+  fetchedAt        DateTime  @map("fetched_at") @db.Timestamptz(6)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@map("identity_lookup_cache")
+}
