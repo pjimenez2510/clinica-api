@@ -312,6 +312,11 @@ export interface ElectronicVoucherRepository {
 export type DeliveryContext = {
   /** Whoever issued the document: the RIDE is filed in their name. */
   issuedById: string;
+  /**
+   * SRI-096. The DOCUMENT's own status (`AUTHORISED`, `VOIDED`…): a voided
+   * invoice keeps its authorised voucher, and is not sent out again.
+   */
+  documentStatus: string;
   buyerEmail: string | null;
   buyerName: string;
   /** `001-001-000000123`, the document's own. */

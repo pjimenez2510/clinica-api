@@ -2743,8 +2743,10 @@ lo ve._
 - **BI-270** — CUANDO alguien con `billing:read` en la sede pida el receptor
   propuesto de una cuenta (BI-082), el sistema DEBERÁ devolver además el
   identificador de la ficha del paciente y su correo —los de la ficha vigente
-  si la del paciente se unificó, como el documento—, y NO DEBERÁ aplicar ese
-  correo a la factura por sí mismo.
+  si la del paciente se unificó, como el documento— a quien tenga además
+  `patient:read`, y NO DEBERÁ aplicar ese correo a la factura por sí mismo.
+  > ADR-007: el administrador lee facturación y no historias; sin
+  > `patient:read` los dos campos vienen nulos.
   > Hasta aquí la pantalla fijaba el correo vacío (`receiver.ts`) y caja lo
   > volvía a teclear en cada factura aunque la ficha lo tuviera.
 - **BI-271** — En esa misma propuesta, el sistema DEBERÁ devolver los
@@ -2754,7 +2756,7 @@ lo ve._
   que se le unificaron—, de la factura más reciente a la más antigua, hasta
   cinco, cada uno con el nombre y el correo de su última factura; sin el
   documento del propio paciente, sin Consumidor Final y sin las facturas
-  anuladas o devueltas.
+  anuladas o devueltas; y sólo a quien emite en esa sede (`billing:write`).
   > Sólo la sede: `billing:read` se concede por sede, y un comprador de otra
   > sede sería un dato que quien cobra aquí no puede leer. Anuladas y devueltas
   > fuera porque lo más común es que se anularan o devolvieran por un dato

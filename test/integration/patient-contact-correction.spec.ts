@@ -120,14 +120,10 @@ describe('el contacto de la ficha desde caja (PA-075, PA-076)', () => {
       email: 'maria.guaman@correo.ec',
       phone: '0991234567',
       residenceAddressLine: 'Av. Amazonas y Colón',
-    }).expect(200);
+    }).expect(204);
 
-    expect(response.body).toMatchObject({
-      id: patientId,
-      email: 'maria.guaman@correo.ec',
-      phone: '0991234567',
-      residenceAddressLine: 'Av. Amazonas y Colón',
-    });
+    // PA-076: nothing of the chart comes back — the write is not a read.
+    expect(response.body).toEqual({});
     const stored = await prisma.patient.findUniqueOrThrow({
       where: { id: patientId },
       select: { email: true, phone: true, residenceAddressLine: true },
@@ -168,7 +164,7 @@ describe('el contacto de la ficha desde caja (PA-075, PA-076)', () => {
     // Positive control: the same body without the surname goes through.
     await patch(`/patients/${patientId}/contact`, {
       email: 'otra@correo.ec',
-    }).expect(200);
+    }).expect(204);
     expect(
       (
         await prisma.patient.findUniqueOrThrow({

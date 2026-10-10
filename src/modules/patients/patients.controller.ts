@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -244,15 +245,21 @@ export class PatientsController {
    * field however the body is written.
    */
   @Patch(':id/contact')
+  @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermission('patient:contact:write', 'global')
   @ApiOperation({ summary: 'Correct the contact of a patient record' })
-  @ApiOkResponse({ type: PatientDetailDto })
+  @ApiNoContentResponse()
   async correctContact(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CorrectPatientContactDto,
     @Req() req: Request,
-  ): Promise<PatientDetailResponse> {
-    const corrected = await this.patients.correct(
+  ): Promise<void> {
+    /**
+     * NO BODY BACK. The chart it would return carries names, documents and
+     * ethnicity, which `patient:contact:write` does not open (PA-076): a
+     * write permission must not become an unaudited read of the chart.
+     */
+    await this.patients.correct(
       id,
       {
         phone: dto.phone,
@@ -260,9 +267,9 @@ export class PatientsController {
         residenceAddressLine: dto.residenceAddressLine,
       },
       this.requester(req),
+      new Date(),
+      { contactOnly: true },
     );
-
-    return toDetailResponse(corrected);
   }
 
   /**

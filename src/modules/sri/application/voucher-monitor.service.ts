@@ -182,7 +182,7 @@ export class VoucherMonitorService
       throw new ElectronicVoucherNotAuthorisedError();
     }
 
-    await this.dispatch.mailCopy(voucher, email);
+    await this.dispatch.mailCopy(voucher, email, requester.userId);
 
     await this.audit.record({
       userId: requester.userId,

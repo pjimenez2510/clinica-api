@@ -2037,8 +2037,9 @@ Ningún requisito de esta sección lo altera._
   de una ficha (`PATCH /patients/:id/contact`), el sistema DEBERÁ cambiar sólo
   el correo, el teléfono y la dirección de residencia, con las mismas reglas,
   la misma bitácora y el mismo histórico que la corrección de la ficha
-  (PA-031); y SI el cuerpo trae cualquier otro campo, ENTONCES DEBERÁ
-  rechazarlo entero sin cambiar nada.
+  (PA-031), sin vaciar otros campos de la ficha y sin devolverla; y SI el
+  cuerpo trae cualquier otro campo, ENTONCES DEBERÁ rechazarlo entero sin
+  cambiar nada.
   > D-205 §4: `patient:write` deja cambiar nombres y documentos, y caja no lo
   > necesita para dejar el correo de la factura en la ficha. La ruta es propia
   > para que el permiso estrecho no abra la corrección ancha: cerrado por

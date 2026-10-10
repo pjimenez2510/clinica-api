@@ -466,6 +466,12 @@ export class PatientsService {
     asked: PatientCorrectionRequest,
     requester: Requester,
     now: Date = new Date(),
+    /**
+     * PA-075. From the contact route: the three contact fields only, so the
+     * normalisation that empties ethnicity on a foreign chart (PA-065) does
+     * not run — the narrow permission must not clear what it cannot write.
+     */
+    options: { contactOnly?: boolean } = {},
   ): Promise<PatientDetail> {
     /**
      * ⚠️ THIS READ FAILS EARLY; IT DOES NOT DECIDE ANYTHING.
@@ -498,12 +504,15 @@ export class PatientsService {
      * row in `patient_change_history` with the value it had.
      */
     const requested: PatientCorrectionRequest = { ...asked };
-    for (const field of fieldsForeignNationalityClears({
-      countryOfNationalityCode: resultingValue(state.values.countryOfNationalityCode, asked.countryOfNationalityCode), // prettier-ignore
-      ethnicityConceptId: resultingValue(state.values.ethnicityConceptId, asked.ethnicityConceptId), // prettier-ignore
-      nationalityConceptId: resultingValue(state.values.nationalityConceptId, asked.nationalityConceptId), // prettier-ignore
-      peopleConceptId: resultingValue(state.values.peopleConceptId, asked.peopleConceptId), // prettier-ignore
-    })) {
+    const clears = options.contactOnly
+      ? []
+      : fieldsForeignNationalityClears({
+          countryOfNationalityCode: resultingValue(state.values.countryOfNationalityCode, asked.countryOfNationalityCode), // prettier-ignore
+          ethnicityConceptId: resultingValue(state.values.ethnicityConceptId, asked.ethnicityConceptId), // prettier-ignore
+          nationalityConceptId: resultingValue(state.values.nationalityConceptId, asked.nationalityConceptId), // prettier-ignore
+          peopleConceptId: resultingValue(state.values.peopleConceptId, asked.peopleConceptId), // prettier-ignore
+        });
+    for (const field of clears) {
       requested[field] = null;
     }
 

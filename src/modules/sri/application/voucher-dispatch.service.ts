@@ -18,7 +18,13 @@ import {
   type DeliveryStatus,
   type VoucherRecord,
 } from '../domain/electronic-voucher.repository';
-import { VoucherResendFailedError } from '../domain/sri.errors';
+import {
+  ElectronicVoucherNotAuthorisedError,
+  ElectronicVoucherNotFoundError,
+  VoucherResendFailedError,
+} from '../domain/sri.errors';
+import { DomainError } from '../../../shared/domain/errors/domain-error';
+import { MailDeliveryFailedError } from '../../../shared/mail/mail.errors';
 import {
   SRI_CLOCK,
   SRI_SETTINGS,
@@ -229,12 +235,35 @@ export class VoucherDispatchService {
    * no column — the receiver of an authorised invoice does not change
    * (BI-084). A failure is the caller's to say, not the queue's to retry.
    */
-  async mailCopy(voucher: VoucherRecord, to: string): Promise<void> {
+  async mailCopy(
+    voucher: VoucherRecord,
+    to: string,
+    requesterId: string,
+  ): Promise<void> {
     const context = await this.vouchers.deliveryContext(voucher.id);
-    if (!context) throw new VoucherResendFailedError();
+    if (!context) throw new ElectronicVoucherNotFoundError();
+    // SRI-096. A voided invoice keeps its authorised voucher: not sent again.
+    if (context.documentStatus !== 'AUTHORISED') {
+      throw new ElectronicVoucherNotAuthorisedError();
+    }
     try {
-      await this.mailVoucher(voucher, context, to);
+      // The RIDE composed for this copy is filed in the name of whoever asked
+      // for it, so its render and its PRINT row name the real actor — not
+      // the cashier who issued the invoice.
+      await this.mailVoucher(
+        voucher,
+        { ...context, issuedById: requesterId },
+        to,
+      );
     } catch (error) {
+      // A RIDE that cannot be composed, or a relay that is not configured,
+      // says so with its own code; only the relay refusing is «revise».
+      if (
+        error instanceof DomainError &&
+        !(error instanceof MailDeliveryFailedError)
+      ) {
+        throw error;
+      }
       this.logger.warn(
         { err: error, voucher_id: voucher.id, error_code: 'SRI_RESEND_FAILED' },
         'the copy of the authorised voucher could not be e-mailed',

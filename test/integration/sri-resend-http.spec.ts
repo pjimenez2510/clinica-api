@@ -312,4 +312,34 @@ describe('reenviar un comprobante autorizado a otro correo (SRI-095, SRI-096)', 
     await resend(invoice.voucherId, { email: 'luis@correo.ec' }).expect(204);
     expect(mailer.sent).toHaveLength(1);
   });
+
+  it('SRI-096 el comprobante autorizado de una factura anulada no se reenvía (409)', async () => {
+    const invoice = await issueInvoice();
+    await authorise(invoice);
+    await prisma.$executeRaw`
+      UPDATE "invoice" SET "status" = 'VOIDED' WHERE "id" = ${invoice.id}::uuid`;
+
+    const refused = await resend(invoice.voucherId, { email: 'luis@correo.ec' }).expect(409); // prettier-ignore
+    expect((refused.body as Problem).code).toBe('SRI_VOUCHER_NOT_AUTHORISED');
+    expect(mailer.sent).toHaveLength(0);
+  });
+
+  it('SRI-095 el RIDE de la copia queda a nombre de quien la reenvía, no de quien emitió', async () => {
+    const invoice = await issueInvoice();
+    await authorise(invoice);
+    const colleague = await signIn('caja2@clinica.ec', 'CAJA', siteId, '0102030400'); // prettier-ignore
+    const colleagueId = (
+      await prisma.user.findUniqueOrThrow({
+        where: { email: 'caja2@clinica.ec' },
+      })
+    ).id;
+
+    await resend(invoice.voucherId, { email: 'luis@correo.ec' }, colleague).expect(204); // prettier-ignore
+
+    const renders = await prisma.$queryRaw<{ issued_by_id: string }[]>`
+      SELECT issued_by_id::text FROM document_render
+       WHERE invoice_id = ${invoice.id}::uuid
+       ORDER BY issued_at DESC LIMIT 1`;
+    expect(renders).toEqual([{ issued_by_id: colleagueId }]);
+  });
 });

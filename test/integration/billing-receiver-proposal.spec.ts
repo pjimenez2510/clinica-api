@@ -124,14 +124,18 @@ describe('la propuesta del receptor con el correo de la ficha (BI-270, BI-271)',
   });
 
   /** CAJA at BOTH sites, so the other site's invoice can be issued at all. */
-  async function signIn(): Promise<string> {
-    const email = 'caja@clinica.ec';
+  async function signIn(
+    email = 'caja@clinica.ec',
+    roleCode = 'CAJA',
+    cedula = '1710034065',
+    sites: (string | null)[] = [siteId, otherSiteId],
+  ): Promise<string> {
     const user = await prisma.user.create({
       data: {
         email,
         firstName: 'Rosa',
         lastName: 'Cedeño',
-        cedula: '1710034065',
+        cedula,
         passwordHash: await argon2.hash(PASSWORD, {
           type: argon2.argon2id,
           memoryCost: PASSWORD_HASHING.memoryCost,
@@ -141,9 +145,9 @@ describe('la propuesta del receptor con el correo de la ficha (BI-270, BI-271)',
       },
     });
     const role = await prisma.role.findUniqueOrThrow({
-      where: { code: 'CAJA' },
+      where: { code: roleCode },
     });
-    for (const site of [siteId, otherSiteId]) {
+    for (const site of sites) {
       await prisma.userRoleGrant.create({
         data: { userId: user.id, roleId: role.id, siteId: site },
       });
@@ -200,13 +204,16 @@ describe('la propuesta del receptor con el correo de la ficha (BI-270, BI-271)',
     email?: string,
   ) => ({ identificationType, identification, name, ...(email ? { email } : {}) }); // prettier-ignore
 
-  const proposalFor = async (accountId: string): Promise<Proposal> =>
+  const proposalFor = async (
+    accountId: string,
+    as = token,
+  ): Promise<Proposal> =>
     (
       await api()
         .get(
           `/api/v1/billing/sites/${siteId}/accounts/${accountId}/invoice-receiver`,
         )
-        .set('Authorization', `Bearer ${token}`)
+        .set('Authorization', `Bearer ${as}`)
         .expect(200)
     ).body as Proposal;
 
@@ -319,5 +326,32 @@ describe('la propuesta del receptor con el correo de la ficha (BI-270, BI-271)',
       'PAS003',
       'PAS002',
     ]);
+  });
+
+  it('BI-270 BI-271 quien sólo lee facturación no recibe el correo de la ficha ni los compradores (ADR-007)', async () => {
+    await prisma.patient.update({
+      where: { id: patientId },
+      data: { email: 'maria.guaman@correo.ec' },
+    });
+    const accountId = await openAccount(siteId, patientId);
+    await invoiceTo(siteId, accountId, buyer('05', FATHER_CEDULA, 'Guamán Pérez, Luis')); // prettier-ignore
+    // ADMIN holds `billing:read` clinic-wide and neither `patient:read` nor
+    // `billing:write` (default-roles.ts).
+    const adminToken = await signIn('admin@clinica.ec', 'ADMIN', '1712345675', [null]); // prettier-ignore
+
+    expect(await proposalFor(accountId, adminToken)).toMatchObject({
+      identification: PATIENT_CEDULA,
+      patientId: null,
+      email: null,
+      frequentBuyers: [],
+    });
+    // Positive control: caja, on the same account, gets all three.
+    expect(await proposalFor(accountId)).toMatchObject({
+      patientId,
+      email: 'maria.guaman@correo.ec',
+      frequentBuyers: [
+        expect.objectContaining({ identification: FATHER_CEDULA }),
+      ],
+    });
   });
 });

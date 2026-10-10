@@ -681,15 +681,20 @@ XML; el estado de la entrega y el correo de la factura no cambian.
   comprobante autorizado pida reenviarlo a una dirección de correo, el sistema
   DEBERÁ enviarle en el acto el RIDE en PDF y el XML autorizado, como SRI-072
   y SRI-073; NO DEBERÁ cambiar el comprobante, su entrega registrada ni el
-  correo del receptor del documento; y DEBERÁ dejar en la bitácora quién lo
-  reenvió.
+  correo del receptor del documento; DEBERÁ archivar el RIDE de la copia a
+  nombre de quien lo reenvía, y dejar en la bitácora quién lo reenvió.
+  > Revisión del 10-10-2026: el RIDE se archivaba a nombre de quien emitió la
+  > factura, y su fila PRINT nombraba a otra persona. La ruta lleva además un
+  > límite propio (10 por minuto).
+  >
   > La dirección no se guarda en el comprobante: el receptor de una factura
   > autorizada no se edita (BI-084). Que llegue a la ficha lo compone la
   > pantalla (BI-272, PA-075). A la bitácora va quién lo reenvió (`EXPORT`),
   > no la dirección: es un dato personal y
   > `access_audit` no admite valores de este recurso (PA-031).
-- **SRI-096** — SI el comprobante no está autorizado ENTONCES el sistema
-  DEBERÁ rechazar el reenvío con `SRI_VOUCHER_NOT_AUTHORISED`; SI está fuera
+- **SRI-096** — SI el comprobante no está autorizado, o su documento no lo
+  está (una factura anulada conserva su comprobante autorizado), ENTONCES el
+  sistema DEBERÁ rechazar el reenvío con `SRI_VOUCHER_NOT_AUTHORISED`; SI está fuera
   de las sedes de quien lo pide, con `SRI_VOUCHER_NOT_FOUND` (SRI-065); y SI
   el correo no sale, ENTONCES DEBERÁ responder `SRI_RESEND_FAILED` sin
   ponerlo en la cola ni cambiar nada.
@@ -699,7 +704,12 @@ XML; el estado de la entrega y el correo de la factura no cambian.
 - **SRI-097** — En la fila de una factura autorizada, quien tenga
   `billing:write` DEBERÁ encontrar «Reenviar a otro correo», con la dirección
   propuesta —la de la factura o, sin ella, la de la ficha— y la casilla
-  «Actualizar la ficha del paciente» con la regla de BI-272.
+  «Actualizar la ficha del paciente» cuando el correo sea nuevo para la ficha
+  y quien reenvía tenga `patient:contact:write`, DESMARCADA de entrada.
+  > Revisión clínica del 10-10-2026: «otro correo» es casi siempre de otra
+  > persona (el empleador, el contador). Con la regla de BI-272 la casilla
+  > salía marcada y la ficha quedaba con el correo de un tercero, al que irían
+  > las facturas siguientes. Queda para el autor confirmarlo (plan, D-205).
 
 ## 7. El certificado desde la administración
 

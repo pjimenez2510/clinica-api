@@ -594,13 +594,22 @@ export class BillingController {
       siteId,
     });
 
+    /**
+     * BI-270, BI-271, ADR-007. What `billing:read` alone does not open. The
+     * chart's id and e-mail are the CHART's: they go to whoever reads charts
+     * (`patient:read`), not to an administrator who only reads billing. The
+     * buyers of before serve only whoever issues here (`billing:write`).
+     */
+    const principal = this.currentUser.requirePrincipal();
+    const readsCharts = principal.can('patient:read');
+    const issuesHere = principal.canAtSite('billing:write', siteId);
     return {
       identificationType: proposal.receiver.identificationType ?? null,
       identification: proposal.receiver.identification ?? null,
       name: proposal.receiver.name ?? null,
-      patientId: proposal.patientId,
-      email: proposal.email,
-      frequentBuyers: proposal.frequentBuyers,
+      patientId: readsCharts ? proposal.patientId : null,
+      email: readsCharts ? proposal.email : null,
+      frequentBuyers: issuesHere ? proposal.frequentBuyers : [],
     };
   }
 

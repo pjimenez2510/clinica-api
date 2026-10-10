@@ -18,6 +18,7 @@ import {
   ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
@@ -127,6 +128,9 @@ export class SriVouchersController {
 
   /** SRI-095, SRI-096. A copy to another address; the voucher does not move. */
   @Post(':voucherId/resend')
+  // SRI-095. Sent with somebody at the desk: a handful a minute is plenty, and
+  // a script walking the site's vouchers to an outside address is not.
+  @Throttle({ short: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermission('billing:write', 'query')
   @ApiOperation({
