@@ -801,6 +801,37 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     });
     if (request === null) return { status: 'missing' };
 
+    const written = await this.prisma.patient.findUniqueOrThrow({
+      where: { id: request.patientId },
+      select: { mergedIntoId: true },
+    });
+    // Merges never chain (PA-046): one hop is the whole resolution.
+    const rootId = written.mergedIntoId ?? request.patientId;
+
+    // D-203 §1, decided by the author on 10-10-2026: the key is `record:read`
+    // at a site where the person had a signed attention, and the copy reaches
+    // the sites of that `record:read`, never all of them by the other
+    // permission. Checked FIRST, before anything about the answer: without
+    // the key the request answers as missing —whether it is answered, denied
+    // or not a copy at all—, like any clinical read.
+    const personSites = await this.prisma.encounter.findMany({
+      where: {
+        ...chartScope(rootId),
+        status: { not: 'ENTERED_IN_ERROR' },
+        notes: { some: { formCode: '002', status: 'SIGNED' } },
+      },
+      distinct: ['siteId'],
+      select: { siteId: true },
+    });
+    if (
+      !holdsRecordKey(
+        recordScope,
+        personSites.map((one) => one.siteId),
+      )
+    ) {
+      return { status: 'missing' };
+    }
+
     // PD-047. The standing answer: the rectification nobody rectified, or the
     // original when there is none.
     const standing = request.answerCorrections[0] ?? {
@@ -819,12 +850,6 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       return { status: 'not-available' };
     }
 
-    const written = await this.prisma.patient.findUniqueOrThrow({
-      where: { id: request.patientId },
-      select: { mergedIntoId: true },
-    });
-    // Merges never chain (PA-046): one hop is the whole resolution.
-    const rootId = written.mergedIntoId ?? request.patientId;
     const chart = await this.prisma.patient.findUniqueOrThrow({
       where: { id: rootId },
       select: { ...PATIENT_SELECT, sex: true },
@@ -854,17 +879,6 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         site: { select: { name: true } },
       },
     });
-    // D-203 §1, decided by the author on 10-10-2026: the key is `record:read`
-    // at a site where the person was attended, and the copy reaches the
-    // sites of that `record:read`, never all of them by the other permission.
-    // Without the key the request answers as missing, like any clinical read.
-    if (
-      !holdsRecordKey(recordScope, [
-        ...new Set(attentions.map((one) => one.siteId)),
-      ])
-    ) {
-      return { status: 'missing' };
-    }
     const reachable = attentions.filter((one) =>
       withinRecordScope(recordScope, one.siteId),
     );

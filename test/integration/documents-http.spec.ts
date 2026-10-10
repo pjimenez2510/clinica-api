@@ -2619,6 +2619,13 @@ describe('los documentos por HTTP', () => {
       // Control positivo: con la llave, la misma persona la autoriza…
       await answer(requestId, 'GRANTED');
       await copyOf(requestId).expect(200);
+      // …y sin ella nadie la rectifica (convertir una denegada en atendida).
+      const rectified = await post(
+        `/privacy/requests/${requestId}/response/correction`,
+        adminToken,
+        { outcome: 'GRANTED', response: 'Se autoriza' },
+      ).expect(404);
+      expect((rectified.body as Problem).code).toBe('DATA_REQUEST_NOT_FOUND');
       // …y sin ella, la descarga responde como a una solicitud que no existe.
       const refused = await copyOf(requestId, adminToken).expect(404);
       const missing = await copyOf(randomUUID(), adminToken).expect(404);
@@ -2647,19 +2654,63 @@ describe('los documentos por HTTP', () => {
       });
       await signedNote(there.id, 'Atendida en la sede sur');
       const requestId = await copyRequest(patient.id);
+      const missing = (await copyOf(randomUUID()).expect(404)).body as Problem;
 
+      // Sin responder, la descarga no dice «falta autorizarla»: no existe.
+      const unanswered = (await copyOf(requestId).expect(404)).body as Problem;
+      expect([unanswered.code, unanswered.title]).toEqual([
+        missing.code,
+        missing.title,
+      ]);
       const refused = await post(
         `/privacy/requests/${requestId}/response`,
         custodianToken,
         { outcome: 'GRANTED', response: 'Se autoriza' },
       ).expect(404);
       expect((refused.body as Problem).code).toBe('DATA_REQUEST_NOT_FOUND');
-      // Aunque otra persona con llave en todas la autorizase, ésta no la descarga.
+      // Aunque otra persona con llave la autorizase, ésta no la descarga, y
+      // no queda ninguna fila EXPORT.
       await prisma.dataSubjectRequest.update({
         where: { id: requestId },
         data: { outcome: 'GRANTED', response: 'Autorizada', answeredAt: new Date(), answeredBy: (await createUser(prisma)).id, changedBy: (await createUser(prisma)).id, changedAt: new Date() }, // prettier-ignore
       });
-      await copyOf(requestId).expect(404);
+      const exportsBefore = await prisma.accessAudit.count({
+        where: { action: 'EXPORT' },
+      });
+      const granted = (await copyOf(requestId).expect(404)).body as Problem;
+      expect([granted.code, granted.title]).toEqual([
+        missing.code,
+        missing.title,
+      ]);
+      await expect(
+        prisma.accessAudit.count({ where: { action: 'EXPORT' } }),
+      ).resolves.toBe(exportsBefore);
+
+      // Control positivo: la misma cuenta, con record:read también en la
+      // sede sur, la descarga.
+      const custodian = await prisma.user.findUniqueOrThrow({
+        where: { email: 'archivo@clinica.ec' },
+        select: { id: true },
+      });
+      const role = await prisma.role.findUniqueOrThrow({
+        where: { code: 'CUSTODIO_HISTORIA' },
+        select: { id: true },
+      });
+      await prisma.userRoleGrant.create({
+        data: { userId: custodian.id, roleId: role.id, siteId: elsewhere.id },
+      });
+      registry.invalidate();
+      // The grants travel with the session: a new one carries the new site.
+      custodianToken = (
+        (
+          await request(app.getHttpServer())
+            .post('/api/v1/auth/login')
+            .send({ email: 'archivo@clinica.ec', password: PASSWORD })
+            .expect(200)
+        ).body as { accessToken: string }
+      ).accessToken;
+      const text = await copyText(requestId);
+      expect(text).toContain('Atendida en la sede sur');
     });
 
     it('DOC-118 D-203 §1 la copia alcanza sólo las sedes de su record:read, y la portada dice que no lleva las de otras sedes', async () => {
