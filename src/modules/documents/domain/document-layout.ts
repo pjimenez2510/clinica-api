@@ -1700,12 +1700,12 @@ export function composeClinicalRecordCopyLayout(
       kind: 'note',
       lines: [
         {
-          label: 'Confidencial.',
-          text: 'Quien recibe esta copia responde de su custodia y de que no se difunda.',
+          label: 'Confidencial: ',
+          text: 'quien recibe esta copia responde de su custodia y de que no se difunda.',
         },
         {
-          label: 'No incluye',
-          text: 'el tamizaje de violencia: sólo se entrega después de que lo revise un profesional.',
+          label: 'No incluye: ',
+          text: 'el tamizaje de violencia, que sólo se entrega después de que lo revise un profesional.',
         },
       ],
     },
