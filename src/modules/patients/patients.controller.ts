@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -33,6 +34,7 @@ import type {
 } from './domain/patient.repository';
 import {
   AddIdentifierDto,
+  CorrectPatientContactDto,
   CorrectPatientDto,
   CreatePatientDto,
   OpenPatientDto,
@@ -232,6 +234,42 @@ export class PatientsController {
     const corrected = await this.patients.correct(id, dto, this.requester(req));
 
     return toDetailResponse(corrected);
+  }
+
+  /**
+   * PA-075, PA-076 (D-205 §4). The contact only, under its own narrow
+   * permission: what caja types on an invoice goes back to the chart.
+   *
+   * The SAME correction underneath —rules, trail and history (PA-031)— and a
+   * strict schema in front, so `patient:contact:write` cannot reach any other
+   * field however the body is written.
+   */
+  @Patch(':id/contact')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermission('patient:contact:write', 'global')
+  @ApiOperation({ summary: 'Correct the contact of a patient record' })
+  @ApiNoContentResponse()
+  async correctContact(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectPatientContactDto,
+    @Req() req: Request,
+  ): Promise<void> {
+    /**
+     * NO BODY BACK. The chart it would return carries names, documents and
+     * ethnicity, which `patient:contact:write` does not open (PA-076): a
+     * write permission must not become an unaudited read of the chart.
+     */
+    await this.patients.correct(
+      id,
+      {
+        phone: dto.phone,
+        email: dto.email,
+        residenceAddressLine: dto.residenceAddressLine,
+      },
+      this.requester(req),
+      new Date(),
+      { contactOnly: true },
+    );
   }
 
   /**

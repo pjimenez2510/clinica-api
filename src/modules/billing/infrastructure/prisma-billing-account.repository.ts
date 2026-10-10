@@ -60,6 +60,7 @@ import {
 } from '../domain/charge';
 import {
   type BuyerIdentificationType,
+  type FrequentBuyer,
   type InvoiceReceiver,
   type InvoiceStatus,
   type PaymentMethod,
@@ -911,6 +912,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       secondFamilyName: true,
       givenName: true,
       secondGivenName: true,
+      email: true,
       identifiers: {
         where: { use: 'OFFICIAL', patientMerged: false } as const,
         orderBy: { createdAt: 'asc' } as const,
@@ -953,7 +955,45 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       identifierValue: identifier?.value ?? null,
       // Filing order, which is how it is printed on the document.
       fullName: `${family}, ${given}`,
+      // BI-270. The LIVING chart's, like the identifier: an absorbed chart's
+      // e-mail is a datum the merge already decided against.
+      email: living.email,
     };
+  }
+
+  /**
+   * BI-271. Read through `chartScope`: an invoice of an absorbed chart keeps
+   * its account there (D-031), and its buyer is still this person's habit.
+   * ISSUED and AUTHORISED only — a voided or returned invoice is, most often,
+   * the wrong receiver being undone.
+   */
+  async recentInvoiceReceivers(query: {
+    chartId: string;
+    siteId: string;
+    limit: number;
+  }): Promise<FrequentBuyer[]> {
+    const rows = await this.prisma.invoice.findMany({
+      where: {
+        siteId: query.siteId,
+        status: { in: ['ISSUED', 'AUTHORISED'] },
+        isFinalConsumer: false,
+        account: chartScope(query.chartId),
+      },
+      orderBy: [{ issuedAt: 'desc' }, { id: 'desc' }],
+      take: query.limit,
+      select: {
+        buyerIdentificationType: true,
+        buyerIdentification: true,
+        buyerName: true,
+        buyerEmail: true,
+      },
+    });
+    return rows.map((row) => ({
+      identificationType: row.buyerIdentificationType as BuyerIdentificationType, // prettier-ignore
+      identification: row.buyerIdentification,
+      name: row.buyerName,
+      email: row.buyerEmail,
+    }));
   }
 
   async findEmissionPoint(query: {

@@ -1012,6 +1012,8 @@ describe('SRI-058, SRI-062 el monitor', () => {
         certificates as unknown as SigningCertificateService,
         () => NOW,
         f.settings,
+        // SRI-095 is proved over HTTP (sri-resend-http.spec.ts).
+        {} as unknown as VoucherDispatchService,
       ),
     };
   }

@@ -18,6 +18,7 @@ import {
   type VoucherStatusView,
 } from '../domain/electronic-voucher.repository';
 import {
+  ElectronicVoucherNotAuthorisedError,
   ElectronicVoucherNotFoundError,
   ElectronicVoucherNotRetriableError,
 } from '../domain/sri.errors';
@@ -34,6 +35,7 @@ import {
   needsAPerson,
 } from '../domain/voucher-lifecycle';
 
+import { VoucherDispatchService } from './voucher-dispatch.service';
 import {
   missingIssuerData,
   VoucherPreparationService,
@@ -82,6 +84,7 @@ export class VoucherMonitorService
     private readonly certificates: SigningCertificateService,
     @Inject(SRI_CLOCK) private readonly clock: SriClock,
     @Inject(SRI_SETTINGS) private readonly settings: SriSettings,
+    private readonly dispatch: VoucherDispatchService,
   ) {}
 
   /** SRI-061, SRI-062. People first, the queue's own work after. */
@@ -154,6 +157,41 @@ export class VoucherMonitorService
     });
 
     await this.signReopened(voucher, unsignedXml);
+  }
+
+  /**
+   * SRI-095, SRI-096. «Reenviar a otro correo»: the RIDE and the authorised
+   * XML to the address the cashier gives, in the requester's sites only.
+   *
+   * The trail says WHO sent it out (`EXPORT`: the document left the clinic)
+   * and nothing else — the address is a personal datum and `access_audit`
+   * takes no values for this resource. It is written once the e-mail left: a
+   * copy that never went was not an export.
+   */
+  async resendTo(
+    voucherId: string,
+    email: string,
+    requester: Requester,
+  ): Promise<void> {
+    const voucher = await this.vouchers.findByIdInSites(
+      voucherId,
+      requester.sites,
+    );
+    if (!voucher) throw new ElectronicVoucherNotFoundError();
+    if (voucher.status !== 'AUTHORISED' || !voucher.authorisedXml) {
+      throw new ElectronicVoucherNotAuthorisedError();
+    }
+
+    await this.dispatch.mailCopy(voucher, email, requester.userId);
+
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: VOUCHER_RESOURCE_TYPE,
+      resourceId: voucher.id,
+      action: 'EXPORT',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
   }
 
   /**

@@ -111,6 +111,49 @@ export function proposeReceiver(context: ReceiverContext): ReceiverRequest {
   };
 }
 
+/** BI-271. A receiver of an earlier invoice, as the screen offers it. */
+export interface FrequentBuyer {
+  identificationType: BuyerIdentificationType;
+  identification: string;
+  name: string;
+  email: string | null;
+}
+
+/** BI-271. How many earlier buyers are offered: a short choice, not a list. */
+export const FREQUENT_BUYERS_OFFERED = 5;
+
+/**
+ * BI-271. The distinct buyers of a patient's earlier invoices, newest first.
+ *
+ * `receivers` arrive NEWEST FIRST, so the first time a document appears is its
+ * latest invoice, and that one's name and e-mail are kept: a buyer who
+ * corrected their e-mail on the second invoice should not be offered the old
+ * one. Distinct by TYPE AND NUMBER — the same digits as a passport and as a
+ * RUC are two different people for the SRI.
+ *
+ * The patient's own document is not repeated (it is the main proposal,
+ * BI-082), and Consumidor Final is never offered as a habit (BI-081): it is
+ * recognised by its placeholder number too, as BI-213 does, in case a row ever
+ * carries it without the flag.
+ */
+export function frequentBuyers(
+  receivers: readonly FrequentBuyer[],
+  patientIdentification: string | null,
+): FrequentBuyer[] {
+  const seen = new Set<string>();
+  const buyers: FrequentBuyer[] = [];
+  for (const receiver of receivers) {
+    if (buyers.length === FREQUENT_BUYERS_OFFERED) break;
+    if (receiver.identification === FINAL_CONSUMER_IDENTIFICATION) continue;
+    if (receiver.identification === patientIdentification) continue;
+    const key = `${receiver.identificationType}:${receiver.identification}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    buyers.push(receiver);
+  }
+  return buyers;
+}
+
 /**
  * BI-080, BI-081, BI-087, BI-159. Turns what was sent into the receiver block, or
  * refuses.
