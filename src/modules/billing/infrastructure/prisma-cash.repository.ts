@@ -15,6 +15,7 @@ import type {
   PendingInvoices,
 } from '../domain/cash';
 import type { CashDrawerKey, CashRepository } from '../domain/cash.repository';
+import { INVOICE_BALANCE, INVOICE_CAN_OWE } from './invoice-balance.sql';
 import {
   CashSessionAlreadyClosedError,
   CashSessionChangedError,
@@ -278,17 +279,12 @@ export class PrismaCashRepository implements CashRepository {
     patientId: string;
   }): Promise<Money> {
     const [row] = await this.prisma.$queryRaw<{ balance: string | null }[]>`
-      SELECT SUM(i."total"
-                 - COALESCE((SELECT SUM(c."amount") FROM "credit_note" c
-                              WHERE c."invoice_id" = i."id" AND c."status" <> 'REJECTED'), 0)
-                 - COALESCE((SELECT SUM(p."amount") FROM "payment" p
-                              WHERE p."invoice_id" = i."id" AND p."reversed_at" IS NULL), 0)
-             )::text AS "balance"
+      SELECT SUM(${INVOICE_BALANCE})::text AS "balance"
         FROM "invoice" i
         JOIN "patient_account" a ON a."id" = i."account_id"
        WHERE i."site_id" = ${query.siteId}::uuid
          AND a."patient_id" = ${query.patientId}::uuid
-         AND i."status" NOT IN ('DRAFT', 'VOIDED')`;
+         AND ${INVOICE_CAN_OWE}`;
     return Money.parse(row?.balance ?? '0');
   }
 }
@@ -298,22 +294,17 @@ async function pendingOf(
   key: CashDrawerKey & { since: Date | null; until: Date },
 ): Promise<PendingInvoices> {
   // What this cashier issued during the turn, with its balance still owed:
-  // derived, as BI-103 asks, never stored.
+  // derived, as BI-103 asks (`INVOICE_BALANCE`), never stored.
   const [row] = await client.$queryRaw<
     { total: string | null; count: bigint }[]
   >`
     SELECT SUM(b."balance")::text AS "total", COUNT(*) AS "count"
       FROM (
-        SELECT i."total"
-               - COALESCE((SELECT SUM(c."amount") FROM "credit_note" c
-                            WHERE c."invoice_id" = i."id" AND c."status" <> 'REJECTED'), 0)
-               - COALESCE((SELECT SUM(p."amount") FROM "payment" p
-                            WHERE p."invoice_id" = i."id" AND p."reversed_at" IS NULL), 0)
-               AS "balance"
+        SELECT ${INVOICE_BALANCE} AS "balance"
           FROM "invoice" i
          WHERE i."site_id" = ${key.siteId}::uuid
            AND i."issued_by_id" = ${key.userId}::uuid
-           AND i."status" NOT IN ('DRAFT', 'VOIDED')
+           AND ${INVOICE_CAN_OWE}
            AND (${key.since}::timestamptz IS NULL OR i."issued_at" > ${key.since}::timestamptz)
            AND i."issued_at" <= ${key.until}::timestamptz
       ) AS b

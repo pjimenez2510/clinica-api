@@ -70,6 +70,7 @@ import { Money, Percentage, Quantity } from '../domain/money';
 import { toClinicalDate } from '../domain/price-list';
 import { asDateColumn } from './prisma-billing-catalogue.repository';
 import { writeBillingTrail } from './billing-trail.write';
+import { INVOICE_BALANCE, INVOICE_CAN_OWE } from './invoice-balance.sql';
 import type { BillingTrail } from '../domain/billing-trail';
 
 /**
@@ -1333,8 +1334,8 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
 
   /**
    * BI-259. The site's invoices still owed: the balance derived as BI-103
-   * asks —and as `pendingOf` and the patient's balance derive it—, never
-   * stored. A credited-in-excess one (money in the patient's favour) is not
+   * asks —`INVOICE_BALANCE`, the same one `pendingOf` and the patient's
+   * balance use—, never stored. A credited-in-excess one (money in the patient's favour) is not
    * owed. The ids go back into the paged query, so the other filters, the
    * order and the count stay the ones of BI-233.
    *
@@ -1355,13 +1356,8 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
          AND (${bounds.accountId}::uuid IS NULL OR i."account_id" = ${bounds.accountId}::uuid)
          AND (${bounds.issuedFrom}::timestamptz IS NULL OR i."issued_at" >= ${bounds.issuedFrom}::timestamptz)
          AND (${bounds.issuedBefore}::timestamptz IS NULL OR i."issued_at" < ${bounds.issuedBefore}::timestamptz)
-         AND i."status" NOT IN ('DRAFT', 'VOIDED')
-         AND i."total"
-             - COALESCE((SELECT SUM(c."amount") FROM "credit_note" c
-                          WHERE c."invoice_id" = i."id" AND c."status" <> 'REJECTED'), 0)
-             - COALESCE((SELECT SUM(p."amount") FROM "payment" p
-                          WHERE p."invoice_id" = i."id" AND p."reversed_at" IS NULL), 0)
-             > 0`;
+         AND ${INVOICE_CAN_OWE}
+         AND ${INVOICE_BALANCE} > 0`;
     return rows.map((row) => row.id);
   }
 }
