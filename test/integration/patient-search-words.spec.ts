@@ -77,4 +77,11 @@ describe('PA-070 búsqueda por varias palabras', () => {
     expect(page.items.map((p) => p.mrn)).toEqual(['HC0000000703']);
     expect(page.total).toBe(1);
   });
+
+  it('PA-070 un % o un _ tecleados son letras, no comodines', async () => {
+    // Control: «juan» solo sí encuentra a los dos Juan.
+    expect(await mrnsFor('juan')).toHaveLength(2);
+    expect(await mrnsFor('juan %')).toEqual([]);
+    expect(await mrnsFor('ju_n')).toEqual([]);
+  });
 });

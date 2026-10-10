@@ -2075,7 +2075,10 @@ Ningún requisito de esta sección lo altera._
   > umbral es **el mismo número** que el de la orientación sexual, en un solo
   > sitio. No cuenta para la ficha incompleta (PA-032): no es uno de los cuatro.
   > En el alta la edad aún no la ha calculado nadie y el campo se ofrece como
-  > el de la orientación sexual; decide el servidor.
+  > el de la orientación sexual; decide el servidor. Una ficha anterior de un
+  > menor de diez con identidad de género guardada no admite ninguna
+  > corrección hasta vaciarla —igual que PA-057—, y por eso la corrección la
+  > sigue enseñando si está guardada.
 - **PA-072** — El alta DEBERÁ empezar por el **número de documento**, con
   «Cédula» propuesta como tipo, y DEBERÁ registrar sin documento cuando el
   número quede vacío; el número DEBERÁ pedir teclado numérico sólo para la
@@ -2368,7 +2371,7 @@ prueba cite un ID inexistente; el día que este `SPEC.md` pase a `vigente`,
 | PA-055                         | Integración contra PostgreSQL real **y** prueba del mecanismo: fusionar A→B con un grupo prioritario vigente en A y comprobar que **desde B se ve** —y que la **prioridad calculada** de B pasa a prioritaria—, y que **al deshacer deja de verse** y vuelve a ser estándar. Un doble no puede demostrarlo: depende de que el enlace se recorra en la base. Y la garantía tiene su propia prueba —`patient-chart-scope.spec.ts` recorre el código real y falla ante una lectura ingenua—, comprobada **rompiéndola**: la lectura por `patient_id` desnudo se le da al analizador y se afirma que la caza |
 | PA-060                         | Integración contra PostgreSQL real: inscribir en A, fusionar A→B y comprobar que B tiene una equivalente **con la fecha de inscripción original** y que la de A sigue donde estaba; que deshacer la retira; que la superviviente que ya tenía una equivalente **no acaba con dos**; y la que demuestra el propósito, de extremo a extremo por la ruta de la lista de espera: tras la fusión la persona **conserva su puesto en la cola** frente a quien se inscribió después. Un doble no puede demostrar ninguna: dependen de `created_at` y del orden que la base devuelve |
 | PA-070                         | Integración contra PostgreSQL real: las dos órdenes de «nombre apellido» encuentran la ficha y una ficha con sólo una de las palabras **no** sale (control negativo); sin tildes en las dos direcciones. Sólo la base sabe qué guarda `search_name` |
-| PA-071                         | Unitario de dominio **con el huso alterado**, como PA-057 + contrato HTTP del `code`, el 422 y el campo señalado + integración: corregir la fecha de nacimiento de una ficha con identidad de género por debajo del umbral se rechaza sin escribir; y en la web, `rdacaa.spec.ts` sobre lo que se ofrece |
+| PA-071                         | Unitario de dominio sobre la fecha clínica, con la frontera del décimo cumpleaños + contrato HTTP del `code`, el 422 y el campo señalado + integración: corregir la fecha de nacimiento de una ficha con identidad de género por debajo del umbral se rechaza sin escribir; y en la web, `rdacaa.spec.ts` sobre lo que se ofrece |
 | PA-072, PA-073, PA-074         | Componente en el arnés de la web: el orden de los campos, el teclado, la ficha ofrecida, el resultado con documento y edad y el reparto de lo tecleado; y el recorrido F-01 en pantalla |
 
 ## Preguntas abiertas

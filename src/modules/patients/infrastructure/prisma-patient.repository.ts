@@ -329,10 +329,12 @@ const SORT_COLUMNS: Record<PatientSortField, readonly string[]> = {
  */
 function nameMatchesEveryWord(query: string): Prisma.Sql {
   const words = query.split(/\s+/).filter((word) => word !== '');
-  const fragments = (words.length > 0 ? words : ['']).map(
-    (word) =>
-      Prisma.sql`p.search_name LIKE immutable_unaccent(lower(${`%${word}%`}))`,
-  );
+  // `%`, `_` and `\` typed inside a word are letters, not wildcards: escaped
+  // with LIKE's default escape character.
+  const fragments = (words.length > 0 ? words : ['']).map((word) => {
+    const literal = word.replace(/[\\%_]/g, '\\$&');
+    return Prisma.sql`p.search_name LIKE immutable_unaccent(lower(${`%${literal}%`}))`;
+  });
   return Prisma.sql`(${Prisma.join(fragments, ' AND ')})`;
 }
 
