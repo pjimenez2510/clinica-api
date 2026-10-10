@@ -14,10 +14,10 @@ import { PrismaClient } from '@prisma/client';
  * offer. Bolting all of that onto either file would make it seed a module it
  * does not own; this one depends on both and says so.
  *
- * Idempotent: ACESS and MSP data are written with `update`, and every schedule
- * rule is looked up by (practitioner, site, weekday, start, validFrom) before
- * being created. Re-running never duplicates a rule — and it could not even if
- * it tried, because ST-042's EXCLUDE would refuse the second one.
+ * Idempotent: ACESS and MSP data are written with `update`, and a Sunday rule
+ * is only created when the practitioner has no rule overlapping its hours and
+ * validity in ANY site. Re-running never duplicates a rule, nor trips ST-042's
+ * EXCLUDE across sites when an earlier run put the Sunday somewhere else.
  *
  * Requires `pnpm db:seed` (accounts) and `pnpm db:seed:agenda` (sites and
  * practitioner profiles).
@@ -83,6 +83,25 @@ const ACESS = [
  * second time somebody changed the agenda one.
  */
 const SUNDAY = 7;
+
+/** The Sunday shift, as wall clock. */
+const SUNDAY_HOURS = { start: wallClock('09:00'), end: wallClock('13:00') };
+
+/**
+ * Two rules over the SAME hours of the same Sunday, one closed and one in
+ * force. They are legal precisely because their validity does not overlap
+ * (ST-041, ST-042), and together they are what the editing screen needs to be
+ * worth opening: a history to read and a current rule to change.
+ */
+export const SUNDAY_PERIODS: readonly {
+  validFrom: Date;
+  validTo: Date | null;
+}[] = [
+  // Closed six months ago: `validTo` is the LAST day it ruled.
+  { validFrom: new Date('2026-01-01T00:00:00Z'), validTo: new Date('2026-06-30T00:00:00Z') }, // prettier-ignore
+  // In force ever since.
+  { validFrom: new Date('2026-07-01T00:00:00Z'), validTo: null }, // prettier-ignore
+];
 
 /**
  * ST-008. The primary specialty of each seeded practitioner, by the account
@@ -190,7 +209,12 @@ export async function seedStaff(
   const practitioners = await prisma.practitioner.findMany({
     select: { id: true, sites: { select: { siteId: true } } },
   });
-  const sites = await prisma.site.findMany({ select: { id: true } });
+  // Oldest first (uuidv7 ids follow creation): the site the Sunday rules go
+  // to must not depend on the order PostgreSQL happens to return rows in.
+  const sites = await prisma.site.findMany({
+    select: { id: true },
+    orderBy: { id: 'asc' },
+  });
   if (sites.length === 0) {
     throw new Error('No sites found. Run `pnpm db:seed:agenda` first.');
   }
@@ -212,27 +236,20 @@ export async function seedStaff(
 
     const firstSite = sites[0]!;
 
-    /**
-     * Two rules over the SAME hours of the same Sunday, one closed and one in
-     * force. They are legal precisely because their validity does not overlap
-     * (ST-041, ST-042), and together they are what the editing screen needs to
-     * be worth opening: a history to read and a current rule to change.
-     */
-    const sundays = [
-      // Closed six months ago: `validTo` is the LAST day it ruled.
-      { validFrom: new Date('2026-01-01T00:00:00Z'), validTo: new Date('2026-06-30T00:00:00Z') }, // prettier-ignore
-      // In force ever since.
-      { validFrom: new Date('2026-07-01T00:00:00Z'), validTo: null }, // prettier-ignore
-    ];
-
-    for (const period of sundays) {
+    for (const period of SUNDAY_PERIODS) {
+      // ANY site, and any rule that overlaps — not the exact row this seed
+      // would write. ST-042 forbids the same hours in two sites, so a Sunday
+      // left in another site by an earlier run (or edited from the screen)
+      // means this one is already done. Inactive rules count too: one
+      // switched off from the screen is a decision, not a gap to refill.
       const existing = await prisma.practitionerScheduleRule.findFirst({
         where: {
           practitionerId: practitioner.id,
-          siteId: firstSite.id,
           weekday: SUNDAY,
-          startTime: wallClock('09:00'),
-          validFrom: period.validFrom,
+          startTime: { lt: SUNDAY_HOURS.end },
+          endTime: { gt: SUNDAY_HOURS.start },
+          ...(period.validTo ? { validFrom: { lte: period.validTo } } : {}),
+          OR: [{ validTo: null }, { validTo: { gte: period.validFrom } }],
         },
         select: { id: true },
       });
@@ -243,8 +260,8 @@ export async function seedStaff(
           practitionerId: practitioner.id,
           siteId: firstSite.id,
           weekday: SUNDAY,
-          startTime: wallClock('09:00'),
-          endTime: wallClock('13:00'),
+          startTime: SUNDAY_HOURS.start,
+          endTime: SUNDAY_HOURS.end,
           validFrom: period.validFrom,
           validTo: period.validTo,
         },
