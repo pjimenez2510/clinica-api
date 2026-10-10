@@ -243,6 +243,7 @@ async function issueInvoice(
       isFinalConsumer: false,
     },
     issuedById: userId,
+    trail: { userId: userId },
   });
 }
 

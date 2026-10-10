@@ -115,6 +115,7 @@ async function issue(accountId: string) {
       isFinalConsumer: false,
     },
     issuedById: context.userId,
+    trail: { userId: context.userId },
   });
 }
 

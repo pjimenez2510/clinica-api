@@ -2,10 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { IssuedDocumentFilter } from '../domain/document-search';
 
 import {
-  ACCESS_AUDIT_RECORDER,
-  type AccessAuditRecorder,
-} from '../../../shared/audit/access-audit.port';
-import {
   ELECTRONIC_VOUCHER_PREPARER,
   ELECTRONIC_VOUCHER_STATUS,
   type ElectronicVoucherPreparer,
@@ -36,8 +32,6 @@ import {
 } from '../domain/credit-note.repository';
 import type { Requester } from './service-catalogue.service';
 
-const CREDIT_NOTE_RESOURCE_TYPE = 'credit_note';
-
 /** SRI-088. The credit note with its electronic voucher's state beside it. */
 export type CreditNoteWithVoucher = CreditNoteView & {
   electronic: ElectronicVoucherSummary | null;
@@ -61,8 +55,6 @@ export class CreditNoteService {
   constructor(
     @Inject(CREDIT_NOTE_REPOSITORY)
     private readonly creditNotes: CreditNoteRepository,
-    @Inject(ACCESS_AUDIT_RECORDER)
-    private readonly audit: AccessAuditRecorder,
     @Inject(ELECTRONIC_VOUCHER_PREPARER)
     private readonly vouchers: ElectronicVoucherPreparer,
     @Inject(ELECTRONIC_VOUCHER_STATUS)
@@ -129,16 +121,8 @@ export class CreditNoteService {
       rebill: rebillsCreditedLines(command.reasonCode),
       issuedById: requester.userId,
       now,
-    });
-
-    // BI-132. Every credit note is answerable: who corrected which invoice.
-    await this.audit.record({
-      userId: requester.userId,
-      resourceType: CREDIT_NOTE_RESOURCE_TYPE,
-      resourceId: issued.creditNote.id,
-      action: 'CREATE',
-      ip: requester.ip,
-      userAgent: requester.userAgent,
+      // BI-132, BI-273. Who corrected which invoice, in the same transaction.
+      trail: requester,
     });
 
     // SRI-041, SRI-087. After the commit, and it never throws: the sweep

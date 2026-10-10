@@ -546,6 +546,17 @@ correo rellenos.
 **Cubre:** BI-270 a BI-272. **Solo interfaz:** BI-272. Enmienda BI-201 (un solo
 aviso), cuya prueba de interfaz se amplía.
 
+### B19 — La bitácora dice lo que pasó, y dos «enviar a caja» a la vez dan una cuenta _(P1, 10-10-2026)_
+
+Revisión de producto del 10-10-2026, punto 18. Sin cambio de pantalla: la
+entrada de bitácora de una factura o una nota de crédito se confirma con el
+documento o no existe, y dos cajeras que envían la misma atención a la vez
+trabajan sobre la misma cuenta en lugar de que una reciba un 409.
+**Prueba independiente:** emitir una factura cuyo cobro la base rechaza y no
+encontrar ni la factura ni su entrada en `access_audit`; pulsar «enviar a caja»
+dos veces a la vez y ver la misma cuenta en las dos respuestas.
+**Cubre:** BI-273, BI-274. **Solo servidor:** BI-273, BI-274.
+
 ### B11 — Prestaciones con estructura _(P2)_
 
 La categoría de una prestación deja de ser texto libre y pasa a un catálogo
@@ -2832,6 +2843,26 @@ lo ve._
   > (`useEncounter.ts`). Desmarcada cuando paga otra persona —el padre por el
   > hijo—: su correo no es el del paciente.
 
+## 26. Lo que garantiza la base, bajo concurrencia y en la bitácora (B19)
+
+- **BI-273** — CUANDO se emita una factura, se corrija el receptor de una
+  factura devuelta o se emita una nota de crédito, el sistema DEBERÁ escribir
+  su entrada de bitácora (BI-132) en la misma transacción que el documento, de
+  modo que la entrada exista si y sólo si el documento quedó confirmado.
+  > Antes la entrada se escribía después del commit por el registrador que
+  > «registra y no lanza»: si fallaba, la emisión quedaba sin quién la hizo.
+  > Es el patrón de `MFA_RESET` (AU-035) y de EN-075: una emisión que no puede
+  > dejar su entrada no ocurre. La bitácora vive en la misma base que la
+  > factura, así que eso no añade una forma nueva de fallar.
+- **BI-274** — CUANDO dos «enviar a caja» de la misma atención sin cuenta
+  abierta lleguen a la vez, el sistema DEBERÁ responder a los dos con la misma
+  cuenta, y NO DEBERÁ abrir una segunda ni duplicar un cargo.
+  > La garantía es `patient_account_one_open_per_encounter` (y los tres índices
+  > de BI-154 para los cargos); la aplicación sólo traduce el rechazo de la
+  > segunda en recuperar la cuenta que ganó, como pide BI-150. Abrir una cuenta
+  > a mano para una atención que ya tiene una sigue respondiendo
+  > `ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER`.
+
 ---
 
 ## Códigos de error nuevos
@@ -3179,6 +3210,8 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | BI-184 | Unitario de la pantalla (qué se ofrece) + recorrido F-06: facturar, añadir, facturar lo pendiente y cerrar |
 | BI-185 a BI-187 | Unitario de dominio + integración contra PostgreSQL real: la referencia `NOT NULL`, la clase conocida y el `RESTRICT` los garantiza la base |
 | BI-188, BI-189 | Integración contra la siembra real + contrato HTTP |
+| BI-273 | Integración contra PostgreSQL real: una emisión que la base rechaza después de escribir la entrada no deja ni factura ni entrada; una entrada que la base rechaza no deja ni factura ni nota de crédito; las confirmadas dejan una entrada con su id (control positivo) |
+| BI-274 | Integración contra PostgreSQL real: dos envíos a la vez que leen los dos «no hay cuenta» antes de insertar dan una cuenta y tres cargos; control positivo: la base rechaza una segunda cuenta abierta insertada por SQL directo |
 | BI-270, BI-271 | Integración contra PostgreSQL real por HTTP: la ficha con correo, una ficha unificada que trae su comprador, y como controles una factura anulada, una a Consumidor Final, una de otra sede y una del propio paciente que no salen |
 | BI-232 | Integración contra la siembra real: las especialidades sembradas y la facturación sembrada, en los dos órdenes, contra las 22 especialidades reales del catálogo |
 

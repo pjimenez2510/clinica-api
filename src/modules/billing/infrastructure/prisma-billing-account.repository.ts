@@ -69,6 +69,8 @@ import {
 import { Money, Percentage, Quantity } from '../domain/money';
 import { toClinicalDate } from '../domain/price-list';
 import { asDateColumn } from './prisma-billing-catalogue.repository';
+import { writeBillingTrail } from './billing-trail.write';
+import type { BillingTrail } from '../domain/billing-trail';
 
 /**
  * The account, the charge and the invoice, in PostgreSQL.
@@ -1141,6 +1143,16 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
           },
         });
 
+        // BI-273. The entry commits with the invoice: written before the
+        // charges are billed and the payment taken, so a refusal of either
+        // undoes it too.
+        await writeBillingTrail(tx, {
+          resourceType: 'invoice',
+          resourceId: invoice.id,
+          action: 'CREATE',
+          trail: issuance.trail,
+        });
+
         // BI-169. Each charge names the invoice that took it, in the same
         // statement that bills it (`charge_item_billed_carries_its_invoice`):
         // the voucher's lines are read through it.
@@ -1208,6 +1220,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     paymentMethod: PaymentMethod;
     changedById: string;
     now: Date;
+    trail: BillingTrail;
   }): Promise<InvoiceView | null> {
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -1233,6 +1246,13 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
             changedById: correction.changedById,
             changedAt: stampAfter(locked.changed_at, correction.now),
           },
+        });
+        // BI-273. Who corrected the receiver, with the correction.
+        await writeBillingTrail(tx, {
+          resourceType: 'invoice',
+          resourceId: row.id,
+          action: 'UPDATE',
+          trail: correction.trail,
         });
         return toInvoiceView(row);
       });

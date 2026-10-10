@@ -1,3 +1,4 @@
+import type { BillingTrail } from './billing-trail';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type { ChargeStatus, DocumentTotals } from './charge';
 import type { ChargeOrigin, ServiceMatch } from './charge-proposal';
@@ -672,6 +673,8 @@ export interface InvoiceIssuance {
     /** The application's clock (BI-250). */
     receivedAt: Date;
   };
+  /** BI-273. Written in the issuance's transaction. */
+  trail: BillingTrail;
 }
 
 /**
@@ -940,6 +943,8 @@ export interface BillingAccountRepository {
     paymentMethod: PaymentMethod;
     changedById: string;
     now: Date;
+    /** BI-273. Written in the correction's transaction. */
+    trail: BillingTrail;
   }): Promise<InvoiceView | null>;
 }
 
