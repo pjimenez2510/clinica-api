@@ -2365,7 +2365,14 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   >   vez y la leen los dos bloques (D-195.3, D-198.2).
   >
   > Fuera de su población cada casilla va vacía
-  > (`trg_encounter_supplement_applies`). **No es la receta**: la receta es
+  > (`trg_encounter_supplement_applies`), y la lactancia de la mujer no pasa a
+  > «no» con el hierro con ácido fólico registrado y sin embarazo
+  > (`encounter_nutrition_supplement_depends`): primero se quita el
+  > suplemento. **Límite:** el embarazo corregido en la ficha después no se
+  > comprueba aquí —`patients` no toca la atención—; la pantalla dice que la
+  > casilla ya no corresponde y la quita al guardar, y la exportación (H9)
+  > debe validarla otra vez (D-202.3). La lactante fuera de 10 a 49 años y
+  > los 24 meses, en D-202. **No es la receta**: la receta es
   > `prescription` y lleva dosis, vía y frecuencia; estas cuatro casillas dicen
   > si se prescribió, y la pantalla las **propone** desde ella (EN-262). Quien
   > registra es quien prescribe: `record:write`. Se corrige en su sitio con la
@@ -5088,6 +5095,7 @@ recomendación y lo de fuera sólo puede cambiar una lista o un mapeo de H9):
 | **D-195.12** | Columnas del bloque I: 55 a 73 y el grupo en la 74 (imagen) o «55 a la 70» (texto); y cuál grupo lleva la columna 74 si una atención tiene dos | Dirección Distrital, con la plantilla de carga | EN-093, H9 |
 | **D-195.11** | Que una carga viral o un CD4 con la primera prueba no reactiva es seguimiento real | Un clínico | EN-094 |
 | **D-198.2** | Qué presentaciones del CNMB cuentan para cada casilla de suplementos | Un clínico | EN-262 |
+| **D-202** | La lactante fuera de 10 a 49 años, los 24 meses de chispas y jarabe, y el embarazo corregido tras el suplemento | Un clínico; H9 | EN-096, EN-260 |
 
 **Cerradas el 20-08-2026**, y se dejan escritas para que nadie las reabra por
 inercia:

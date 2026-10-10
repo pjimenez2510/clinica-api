@@ -465,6 +465,45 @@ describe('EN-096 los suplementos contra la base, por la población de cada casil
     expect(await prisma.encounterSupplement.count()).toBe(2);
   });
 
+  it('EN-096 EN-260 la lactancia no pasa a «no» con el hierro con ácido fólico registrado; quitado el suplemento, o embarazada, sí', async () => {
+    const prisma = db();
+    const lactating = async () => {
+      const scene = await anAttention(prisma, { age: { years: 28 } });
+      const recordedAt = new Date();
+      await prisma.encounterNutrition.create({ data: { encounterId: scene.encounter.id, motherBreastfeeding: true, recordedById: scene.author.id, recordedAt } }); // prettier-ignore
+      await prisma.encounterSupplement.create({ data: { encounterId: scene.encounter.id, ironFolicAcid: true, recordedById: scene.author.id, recordedAt } }); // prettier-ignore
+      return { scene, recordedAt };
+    };
+    const saysNo = (scene: Awaited<ReturnType<typeof anAttention>>, at: Date) =>
+      prisma.encounterNutrition.update({ where: { encounterId: scene.encounter.id }, data: { motherBreastfeeding: false, editedById: scene.author.id, editedAt: new Date(at.getTime() + 2000) } }); // prettier-ignore
+
+    const a = await lactating();
+    expect(await problemFrom(saysNo(a.scene, a.recordedAt))).toMatchObject(invalid('motherBreastfeeding')); // prettier-ignore
+
+    // Positive controls: the supplement removed first; or she is pregnant.
+    await prisma.encounterSupplement.update({ where: { encounterId: a.scene.encounter.id }, data: { ironFolicAcid: null, editedById: a.scene.author.id, editedAt: new Date(a.recordedAt.getTime() + 1000) } }); // prettier-ignore
+    await saysNo(a.scene, a.recordedAt);
+    const b = await lactating();
+    await pregnant(prisma, b.scene, -90, 150);
+    await saysNo(b.scene, b.recordedAt);
+    expect(await prisma.encounterNutrition.count({ where: { motherBreastfeeding: false } })).toBe(2); // prettier-ignore
+  });
+
+  it('EN-096 EN-249 la BASE no escribe los suplementos con la atención de alta, y quien los registró no cambia', async () => {
+    const prisma = db();
+    const closed = await aged(prisma, 30);
+    await discharge(prisma, closed.encounter.id);
+    await expect(create(prisma, closed, { vitaminA: true })).rejects.toThrow(/program_block_frozen/); // prettier-ignore
+
+    // Positive control: live, it goes in; its author does not move.
+    const live = await aged(prisma, 30);
+    const recordedAt = new Date();
+    await prisma.encounterSupplement.create({ data: { encounterId: live.encounter.id, vitaminA: true, recordedById: live.author.id, recordedAt } }); // prettier-ignore
+    const other = await createUser(prisma);
+    expect(await problemFrom(prisma.encounterSupplement.update({ where: { encounterId: live.encounter.id }, data: { vitaminA: false, recordedById: other.id, editedById: other.id, editedAt: new Date(recordedAt.getTime() + 1000) } }))).toMatchObject({ code: 'VALIDATION_FAILED' }); // prettier-ignore
+    expect(await prisma.encounterSupplement.count()).toBe(1);
+  });
+
   it('EN-096 EN-249 se corrige con su versión y su sello, sólo con la atención viva, y nunca se borra', async () => {
     const prisma = db();
     const scene = await aged(prisma, 30);

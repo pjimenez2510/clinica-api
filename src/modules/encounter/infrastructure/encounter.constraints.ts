@@ -486,6 +486,11 @@ registerConstraintMeanings({
     field: 'complementaryFeeding',
     message: 'Indique si en las últimas 24 horas consumió alimento sólido, semisólido o suave', // prettier-ignore
   },
+  encounter_nutrition_supplement_depends: {
+    code: 'VALIDATION_FAILED',
+    field: 'motherBreastfeeding',
+    message: 'El hierro con ácido fólico de esta atención depende de la lactancia: quítelo primero de los suplementos', // prettier-ignore
+  },
   encounter_supplement_applies: {
     code: PROGRAM_NOT_APPLICABLE,
     field: 'encounterId',
