@@ -2371,8 +2371,9 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   > suplemento. **Límite:** el embarazo corregido en la ficha después no se
   > comprueba aquí —`patients` no toca la atención—; la pantalla dice que la
   > casilla ya no corresponde y la quita al guardar, y la exportación (H9)
-  > debe validarla otra vez (D-202.3). La lactante fuera de 10 a 49 años y
-  > los 24 meses, en D-202. **No es la receta**: la receta es
+  > la valida otra vez (EN-113, D-202.3). La lactante fuera de 10 a 49 años
+  > se pregunta si la ficha tiene un embarazo terminado hace tres meses o
+  > menos (EN-260, D-202.1); los 24 meses, en D-202.2. **No es la receta**: la receta es
   > `prescription` y lleva dosis, vía y frecuencia; estas cuatro casillas dicen
   > si se prescribió, y la pantalla las **propone** desde ella (EN-262). Quien
   > registra es quien prescribe: `record:write`. Se corrige en su sitio con la
@@ -2404,7 +2405,10 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   > disparadores (`*_guard`), como el del tamizaje; tras el alta no se corrigen,
   > como el CEO-D (EN-052).
 - **EN-260** — MIENTRAS la atención sea de una **mujer de 10 a 49 años** —sexo
-  femenino y edad congelada (EN-008)—, el sistema DEBERÁ ofrecer, optativa y
+  femenino y edad congelada (EN-008)— **o de una mujer de cualquier edad cuya
+  ficha tenga un embarazo terminado hace tres meses o menos** —el registro
+  PREGNANT con `ends_on` antes de la fecha clínica y no antes de tres meses
+  de calendario—, el sistema DEBERÁ ofrecer, optativa y
   sin exigirla, la pregunta **«¿está en período de lactancia?»** y guardarla
   como la columna 52 de su fila; y SI se registra fuera de esa población (y
   fuera de la del lactante, EN-092), o con las preguntas del lactante,
@@ -2417,6 +2421,18 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   > columna 52—, con las dos preguntas del lactante vacías; de 10 a 49 años es
   > la edad fértil del MSP. Un dato en un sitio: la lee también el hierro con
   > ácido fólico (EN-096). Sin responder no hay fila: nada la exige (EN-097).
+  >
+  > **D-202.1, aceptada por el autor el 10-10-2026** con la investigación: el
+  > MSP da el hierro con ácido fólico a la lactante «hasta los tres meses
+  > post-parto», sin edad (*Directrices de consejería para la suplementación
+  > con micronutrientes*, 2023); se mantiene el tramo de 10 a 49 y se pregunta
+  > además a la puérpera de cualquier edad. «Terminado hace tres meses o
+  > menos»: `ends_on` —el fin del embarazo, o la fecha probable de parto que
+  > ya pasó— en `[fecha clínica − 3 meses, fecha clínica)`, extremos según
+  > ese intervalo, también de una ficha absorbida, como `encounter_is_pregnant`.
+  > La base lo dice en `encounter_asks_lactation` (de `encounter_nutrition_applies`
+  > y de `encounter_is_lactating`, migración `20261011110000`). **Por confirmar
+  > fuera:** un clínico.
 - **EN-261** — CUANDO quien no tiene `record:protected` en la sede guarde las
   vacunas de una atención que ya lleva un **HB adulto**, el sistema DEBERÁ
   **conservar el grupo de riesgo guardado** de esa dosis si la reenvía sin
@@ -2708,6 +2724,16 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   > correcta: si admisión corrige una parroquia mal tecleada, la fila del mes que
   > viene sale bien. Lo que este requisito prohíbe es **recalcular lo que sí se
   > congeló**, que es SC-018.
+  >
+  > **La columna 108 se vuelve a validar (D-202.3, aceptada por el autor el
+  > 10-10-2026):** la exportación DEBERÁ comprobar el hierro con ácido fólico
+  > registrado contra la población **del día de la atención tal como la ficha
+  > la dice al exportar** —embarazo ese día o lactancia de EN-260— y, SI ya no
+  > la alcanza (el embarazo se corrigió en la ficha después de guardar el
+  > suplemento), ENTONCES DEBERÁ dejar la columna 108 **en blanco** y
+  > nombrarla en los avisos de la exportación, como hace con lo que falta
+  > (EN-115). Se escribe aquí porque `patients` no puede tocar la atención y
+  > la casilla guardada no se reescribe.
 - **EN-114** — La exportación DEBERÁ reducir el sexo del paciente al catálogo del
   formulario y aplicar la condición del ministerio de que **«intersexual» sólo se
   registra en menores de un año**, evaluada con la **edad de la atención**.
@@ -4717,7 +4743,16 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
     el guardar de la fila confirma, y la confirmación de quitar lo dice;
   - MIENTRAS esté interrumpida o anulada —o tenga el alta y quien mira no
     firme en la sede—, NO DEBERÁ ofrecer ninguna de esas acciones y DEBERÁ
-    decirlo en una línea bajo la lista.
+    decirlo en una línea bajo la lista;
+  - al **registrar** tras el alta, el campo de la hora DEBERÁ venir con la
+    **hora del alta** y decir, en el propio campo, que es una propuesta
+    —«Propuesta: la hora del alta; cámbiela si sabe la hora»— (D-201);
+  - y DONDE se lea un procedimiento registrado **después del alta**
+    (`recorded_at` posterior al fin de la atención), el sistema DEBERÁ decir
+    **«Registrado el <fecha> por <autor>, tras el alta»**, con quién lo
+    registró (`recorded_by_id`) y el día de `recorded_at` en
+    America/Guayaquil; sin autor guardado —lo registrado antes de
+    `20261011110000`— sólo la fecha (D-201).
   > **D-194.1, aceptada por el autor el 09-10-2026** con la investigación
   > (HL7 FHIR R4, `EventStatus`: `entered-in-error` y `not-done` valen
   > también tras el cierre). Es la regla de los diagnósticos (EN-212, EN-215,
@@ -4733,7 +4768,19 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > **La hora, revisión clínica de la rama (G1):** registrado el 12-10 el
   > procedimiento de una atención del 09-10, «ahora» ponía en la historia, en
   > la firma del 024 y en el precio del cargo un día que no fue. La pantalla
-  > propone la hora del alta, editable (D-201, por confirmar con el autor).
+  > propone la hora del alta, editable (D-201).
+  >
+  > **D-201, aceptada por el autor el 10-10-2026** con la investigación: la
+  > hora por defecto equivocada es el error más frecuente de los valores por
+  > defecto de la HCE (Pennsylvania Patient Safety Authority, 2013), así que el
+  > campo dice que es una propuesta; y la anotación tardía se identifica con
+  > su fecha y su autor (CMS, PIM cap. 3, §3.3.2.5). El autor sale de
+  > `encounter_procedure.recorded_by_id` (`20261011110000`), quien lo tecleó,
+  > con `recorded_at`: un registro tardío al que nadie responde no sirve. Hoy
+  > sólo la lista de procedimientos de la atención los lee; el resumen PDF
+  > (DOC-111) no lista procedimientos, y el día que los liste llevará la misma
+  > línea. **Por confirmar fuera:** un clínico, la hora de la firma del 024
+  > registrado tras el alta.
   >
   > **Garantía de la base:** `trg_encounter_procedure_admits_unreported`
   > (`encounter_procedure_reported`) rechaza registrar, corregir o archivar un
@@ -4805,7 +4852,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
 | `PERMISSION_DENIED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave: el de la guarda, sin código propio que nombre el dato. Al **leer** no se rechaza: se omite | EN-072 |
 | `PERMISSION_DENIED` | 403 | Lo mismo para el bloque de VIH, con el permiso de la guarda: **no hay** `HIV_DATA_RESTRICTED`, que nombraría el dato | EN-095 |
-| `PROGRAM_BLOCK_NOT_APPLICABLE` | 422 | Se registró un bloque de programa que la población de la atención no alcanza —obstétrico sin embarazo, SIVAN fuera del rango de edad, la pregunta del SIVAN de otro tramo, la lactancia fuera de la mujer de 10 a 49 años, o un suplemento fuera de su población—. Lo dicen el servicio y la base (`encounter_obstetric_applies`, `encounter_nutrition_applies`, `encounter_supplement_applies`) | EN-090, EN-092, EN-096, EN-097, EN-260 |
+| `PROGRAM_BLOCK_NOT_APPLICABLE` | 422 | Se registró un bloque de programa que la población de la atención no alcanza —obstétrico sin embarazo, SIVAN fuera del rango de edad, la pregunta del SIVAN de otro tramo, la lactancia fuera de la mujer de 10 a 49 años o de la puérpera de tres meses, o un suplemento fuera de su población—. Lo dicen el servicio y la base (`encounter_obstetric_applies`, `encounter_nutrition_applies`, `encounter_supplement_applies`) | EN-090, EN-092, EN-096, EN-097, EN-260 |
 | `CONFIRMATORY_TEST_WITHOUT_SCREENING` | 422 | Segunda prueba de VIH, o vía de transmisión, sin primera reactiva. Lo dicen el servicio y la base (`encounter_hiv_test_confirmation_needs_reactive`) | EN-094 |
 | `COUNTER_REFERRAL_WITHOUT_REFERRAL` | 422 | Contrarreferencia que no responde a una referencia o derivación viva del mismo paciente. Del mapeo de constraints: `referral_thread_coherence` | EN-102 |
 | `REFERRAL_ALREADY_ANSWERED` | 409 / 422 | Una segunda contrarreferencia viva (`referral_one_live_response`, 409), o anular una referencia que ya tiene la suya (`referral_answered_cannot_be_cancelled`, 422). Del mapeo de constraints | EN-102 |
@@ -5174,7 +5221,7 @@ recomendación y lo de fuera sólo puede cambiar una lista o un mapeo de H9):
 | **D-195.12** | Columnas del bloque I: 55 a 73 y el grupo en la 74 (imagen) o «55 a la 70» (texto); y cuál grupo lleva la columna 74 si una atención tiene dos | Dirección Distrital, con la plantilla de carga | EN-093, H9 |
 | **D-195.11** | Que una carga viral o un CD4 con la primera prueba no reactiva es seguimiento real | Un clínico | EN-094 |
 | **D-198.2** | Qué presentaciones del CNMB cuentan para cada casilla de suplementos | Un clínico | EN-262 |
-| **D-202** | La lactante fuera de 10 a 49 años, los 24 meses de chispas y jarabe, y el embarazo corregido tras el suplemento | Un clínico; H9 | EN-096, EN-260 |
+| **D-202** | Aceptada el 10-10-2026 (§1 la puérpera de ≤ 3 meses a cualquier edad, EN-260; §3 la exportación revalida la columna 108, EN-113). Por confirmar fuera: §1 y los 24 meses de chispas y jarabe (§2) | Un clínico | EN-096, EN-113, EN-260 |
 
 **Cerradas el 20-08-2026**, y se dejan escritas para que nadie las reabra por
 inercia:
