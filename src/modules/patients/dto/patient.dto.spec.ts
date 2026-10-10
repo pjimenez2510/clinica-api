@@ -6,6 +6,7 @@ import {
   createPatientSchema,
   searchPatientsSchema,
 } from './patient.dto';
+import { Cedula } from '../../../shared/domain/value-objects/cedula.vo';
 
 /**
  * The registration contract, exercised on the cases that actually walk in.
@@ -66,6 +67,35 @@ function daysFromToday(days: number): string {
 }
 
 describe('registering a patient', () => {
+  it('PA-011 accepts an Ecuadorian cedula exactly when the Cedula value object does', () => {
+    // One rule, one place: the form answers what `Cedula` answers, for every
+    // province code, both sides of the third-digit limit and every possible
+    // check digit — the right one and the nine wrong ones.
+    const accepts = (value: string) =>
+      createPatientSchema.safeParse({
+        ...BASE,
+        identifier: { type: 'CEDULA', issuingCountry: 'ECU', value },
+      }).success;
+
+    const candidates: string[] = [];
+    for (let province = 0; province <= 31; province += 1) {
+      for (const third of ['0', '5', '6', '9']) {
+        const base = `${String(province).padStart(2, '0')}${third}123456`;
+        for (let check = 0; check <= 9; check += 1) {
+          candidates.push(`${base}${check}`);
+        }
+      }
+    }
+    candidates.push('171003406', '17100340655', '17100340a5', ' 1710034065 ');
+
+    const disagreements = candidates.filter(
+      (value) => accepts(value) !== Cedula.isValid(value),
+    );
+    expect(disagreements).toEqual([]);
+    // Positive control: the sweep holds valid ones, not only refusals.
+    expect(candidates.filter(accepts).length).toBeGreaterThan(40);
+  });
+
   it('PA-011 accepts a valid Ecuadorian cedula', () => {
     const result = createPatientSchema.safeParse({
       ...BASE,
