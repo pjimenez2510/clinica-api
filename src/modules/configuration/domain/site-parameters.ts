@@ -127,6 +127,13 @@ export interface SiteParameters {
   unmatchedResultOwnerRoleId: string | null;
   /** ORD-046, D-050 §4. Hours an unmatched result may wait; 24 by default. */
   unmatchedResultDeadlineHours: number;
+  /**
+   * EN-272 (D-207 §1). The blood-pressure reference line the vitals charts
+   * draw, in mmHg. 140/90 by default; the value is a clinician's to confirm,
+   * which is why it is a parameter and not a constant.
+   */
+  bpReferenceSystolic: number;
+  bpReferenceDiastolic: number;
 }
 
 /** What the administrator may send; anything absent keeps its stored value. */
@@ -244,6 +251,23 @@ export const PARAMETER_RANGES = {
     describe: (min, max) =>
       `El plazo de los resultados sin orden va de ${min} a ${max} horas (una semana)`,
   },
+  /**
+   * EN-272. Mirrors `site_parameter_bp_reference_systolic_range` and
+   * `…_diastolic_range`. THE ENDS ARE OURS AND THE VALUE IS NOT (D-207 §1):
+   * outside them the line is no threshold any guideline draws.
+   */
+  bpReferenceSystolic: {
+    min: 100,
+    max: 200,
+    describe: (min, max) =>
+      `La línea de la tensión sistólica va de ${min} a ${max} mmHg`,
+  },
+  bpReferenceDiastolic: {
+    min: 60,
+    max: 120,
+    describe: (min, max) =>
+      `La línea de la tensión diastólica va de ${min} a ${max} mmHg`,
+  },
 } as const satisfies Record<string, Range>;
 
 /**
@@ -291,6 +315,9 @@ export const DEFAULT_SITE_PARAMETERS: SiteParameters = {
   /** D-050 §4: the ordering practitioner, with 24 hours. */
   unmatchedResultOwnerRoleId: null,
   unmatchedResultDeadlineHours: 24,
+  /** EN-272, D-207 §1 recommendation (ACC/AHA 2017 stage 2), pending a clinician. */
+  bpReferenceSystolic: 140,
+  bpReferenceDiastolic: 90,
 };
 
 /**
@@ -417,6 +444,28 @@ export function assertLeadWindowCoherent(result: SiteParameters): void {
       code: 'PARAM_OUT_OF_RANGE',
       message:
         'La antelación mínima no puede superar la máxima: la sede se quedaría sin ninguna hora reservable',
+    },
+  ]);
+}
+
+/**
+ * EN-272. The line has to read as one: a diastolic at or above the systolic
+ * is a pair typed the wrong way round. Mirrors
+ * `site_parameter_bp_reference_coherent`, and takes the RESULT for the same
+ * reason as the lead window — the two numbers can arrive in different
+ * requests.
+ */
+export function assertBpReferenceCoherent(
+  result: Pick<SiteParameters, 'bpReferenceSystolic' | 'bpReferenceDiastolic'>,
+): void {
+  if (result.bpReferenceDiastolic < result.bpReferenceSystolic) return;
+
+  throw new ParameterOutOfRangeError([
+    {
+      field: 'bpReferenceDiastolic',
+      code: 'PARAM_OUT_OF_RANGE',
+      message:
+        'La línea de la tensión diastólica tiene que quedar por debajo de la sistólica',
     },
   ]);
 }

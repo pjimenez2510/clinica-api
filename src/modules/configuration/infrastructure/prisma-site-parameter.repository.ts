@@ -50,6 +50,9 @@ const PARAMETER_SELECT = {
   criticalEscalationRoleId: true,
   unmatchedResultOwnerRoleId: true,
   unmatchedResultDeadlineHours: true,
+  // EN-272: la línea de referencia de la TA de las gráficas.
+  bpReferenceSystolic: true,
+  bpReferenceDiastolic: true,
 } satisfies Prisma.SiteParameterSelect;
 
 /**
@@ -136,6 +139,8 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
             criticalEscalationRoleId: patch.criticalEscalationRoleId,
             unmatchedResultOwnerRoleId: patch.unmatchedResultOwnerRoleId,
             unmatchedResultDeadlineHours: patch.unmatchedResultDeadlineHours,
+            bpReferenceSystolic: patch.bpReferenceSystolic,
+            bpReferenceDiastolic: patch.bpReferenceDiastolic,
           },
           select: PARAMETER_SELECT,
         });

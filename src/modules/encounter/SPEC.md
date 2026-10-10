@@ -582,6 +582,24 @@ marca «Falta peso y talla», la cabecera dice «Falta 1 para firmar» y lleva a
 **Cubre:** EN-263 a EN-268. **Solo interfaz:** EN-263, EN-264, EN-265, EN-266,
 EN-267, EN-268 (la API no cambia: las marcas leen lo que ya llega).
 
+### H16 — La evolución de los signos, en gráficas _(P2)_
+
+Revisión de producto del 10-10-2026, D-205 §6: el autor quiere ver cómo cambian
+el peso y la tensión arterial sin leer tomas una a una. Una mini tendencia de
+peso y TA en la cabecera de la consulta, con las tomas que ya llegan en el
+resumen, y una pestaña «Evolución» en la ficha con todos los signos de todas
+sus atenciones. La línea de referencia de la TA es un parámetro de sede: el
+valor lo confirma un clínico (D-207 §1).
+**Prueba independiente:** como médico, abrir la ficha de un paciente con tres
+atenciones con signos —una de ellas en la ficha que absorbió y otra anulada—:
+«Evolución» dibuja las dos válidas con su edad de ese día, la tabla dice los
+mismos valores y la TA lleva la línea de la sede; en la consulta, la cabecera
+dibuja la tendencia sin crecer.
+
+**Cubre:** EN-269 a EN-274. **Solo interfaz:** EN-273, EN-274 (leen
+`GET /patients/:id/vitals` y el resumen que ya llega). **Solo servidor:**
+EN-270, EN-271 (lo que se omite y la bitácora no se ven en una pantalla).
+
 ### Fuera de las nueve
 
 **EN-148 a EN-150** —el triaje— tampoco pertenecen a ninguna entrega, y por otro
@@ -4897,6 +4915,75 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > «Referido» (EN-105) no entra: se dice pegada a esa opción, sólo al
   > elegirla (EN-231).
 
+## 32. La evolución de los signos, en gráficas (D-205 §6)
+
+- **EN-269** — CUANDO se pida `GET /patients/:id/vitals` con `record:read`, el
+  sistema DEBERÁ devolver las tomas de signos de las atenciones de la ficha **y
+  de las fichas que absorbió** (alcance de ficha, PA-055), dentro del alcance
+  por sede de quien llama, cada una con **todas** las cifras de la toma —peso,
+  talla y su posición, perímetros cefálico y abdominal, IMC, TA sistólica y
+  diastólica, frecuencias cardiaca y respiratoria, temperatura, saturación,
+  hemoglobina medida y corregida—, su `measuredAt`, la atención y su sede, y la
+  **edad congelada** de la atención (EN-221); de la más reciente a la más
+  antigua, **acotadas a 100**, con el total que hay; y una fila sin ninguna
+  cifra —sólo el motivo de consulta— NO DEBERÁ servirse ni contarse.
+  > Acotada y no paginada, como el resumen (EN-159) y por lo mismo: un límite
+  > que pide el cliente es una extracción en bloque con una sola fila de
+  > bitácora. Cien tomas son veinticinco años de un crónico visto cada
+  > trimestre; el total dice si hay más. Sin el motivo de consulta (EN-163):
+  > es texto del paciente, no una cifra que se dibuje.
+- **EN-270** — Las tomas de una atención **anulada** (`ENTERED_IN_ERROR`) NO
+  DEBERÁN servirse ni contarse.
+  > Se anula la atención abierta al paciente equivocado (D-077): su peso es de
+  > otra persona, y en una gráfica sería un salto de doce kilos que nadie tuvo.
+- **EN-271** — CUANDO se lean las tomas, el sistema DEBERÁ dejar **una**
+  entrada de bitácora sobre la ficha (`patient_vitals_history`), y no una por
+  toma; SI la ficha no existe o la absorbió una fusión, ENTONCES DEBERÁ
+  responder `PATIENT_CHART_NOT_OPEN` sin servir nada ni dejar bitácora.
+  > Como los antecedentes (EN-085): se lee la vigente, y una fila por
+  > identificador adivinado llenaría el rastro de ruido (PA-024).
+- **EN-272** — Cada sede DEBERÁ tener una **línea de referencia de la TA**
+  —sistólica y diastólica— que se cambia en sus parámetros con
+  `settings:manage`, sin desplegar; NO DEBERÁ admitir una sistólica fuera de
+  100–200 mmHg, una diastólica fuera de 60–120 ni una diastólica igual o mayor
+  que la sistólica (`PARAM_OUT_OF_RANGE`, nombrando el campo); y la respuesta de
+  EN-269 DEBERÁ llevar la línea de **una** sede activa de su alcance —la de
+  sistólica más baja, con su diastólica—.
+  > **El valor no lo decide este sistema** (D-207 §1, por confirmar con un
+  > clínico): nace en 140/90, la etapa 2 del ACC/AHA 2017 (la recomendación de
+  > D-207 §1), precisamente porque se cambia sin desplegar. La más baja de
+  > las sedes, porque una gráfica tiene una sola línea y la más estricta señala
+  > de más y no de menos; en una clínica de una sede es la suya. El par, de
+  > una sola sede: el mínimo de cada columna por separado dibujaría uno que
+  > nadie configuró (130/90 y 140/80 darían 130/80). Una sede cerrada no
+  > cuenta. Quién fija la línea —hoy `settings:manage`, un rol sin acceso
+  > clínico— es D-214 §3.
+- **EN-273** — MIENTRAS la sesión tenga `record:read`, la ficha del paciente
+  DEBERÁ tener la pestaña «Evolución», que dibuje en el tiempo el peso, la TA
+  (sistólica y diastólica, con la línea de EN-272 sólo si todas sus tomas son
+  de los 18 años o más), el IMC, la talla acostado y la de pie en curvas
+  distintas, la hemoglobina corregida y la medida aparte, y las demás cifras
+  que tengan al menos una toma; cada gráfica DEBERÁ llevar al lado su **tabla
+  de valores** —fecha, edad de ese día y cifra— que lee un lector de pantalla;
+  sin ninguna toma DEBERÁ decirlo en un estado vacío, y con más de las que
+  llegan, cuántas se muestran de cuántas.
+  > La tabla no es un adorno de accesibilidad: una gráfica sin sus números
+  > obliga a adivinar el valor por la altura de un punto. La línea guardada es
+  > un umbral de adultos (D-207 §1); en un niño la hipertensión va por
+  > percentil (AAP 2017), y 118/78 bajo una línea de 140/90 se leería
+  > «normal» (D-214 §1). Talla acostado y de pie, aparte, por EN-064; la
+  > hemoglobina corregida, aparte de la medida, por EN-065 (D-214 §2).
+- **EN-274** — CUANDO la consulta tenga al menos **dos** tomas de peso o de TA
+  entre las anteriores del resumen (EN-159) —nunca de una atención anulada
+  (EN-270)— y la de la atención, la cabecera
+  fija DEBERÁ dibujar su tendencia en pequeño, con las cifras por escrito para
+  quien no ve la línea, sin crecer en alto; en el teléfono (menos de 640 px)
+  NO DEBERÁ dibujarla, y con menos de dos tomas NO DEBERÁ dibujar nada.
+  > Una tendencia de un punto no es una tendencia. Sin backend nuevo: son las
+  > cinco tomas que el resumen ya trae. En el teléfono la línea de datos de la
+  > cabecera fija ya se parte en dos y la tendencia sumaba una tercera; allí
+  > las tomas siguen en «Historia» y en la ficha.
+
 ---
 
 ## Códigos de error nuevos
@@ -5152,6 +5239,7 @@ que es global: una atención ocurre en un sitio.
 | `POST` | `/patients/:id/allergies/none-known/refuting-active` | `record:write` | **EN-226** |
 | `POST` | `/patients/:id/allergies/none-known/retract` | `background:write` | **EN-226** |
 | `GET` | `/patients/:id/history` | `record:read` | **EN-085** |
+| `GET` | `/patients/:id/vitals` | `record:read` | **EN-269** a **EN-272** |
 | `POST` | `/patients/:id/history` | `background:write` | **EN-085**, EN-164 |
 | `POST` | `/patients/:id/history/:historyId/refute` | `record:write` | **EN-085**, EN-164, **EN-224** |
 | `POST` | `/patients/:id/history/:historyId/reactivate` | `background:write` | **EN-224** |

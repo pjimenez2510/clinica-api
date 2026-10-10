@@ -78,6 +78,10 @@ describe('la superficie de configuración', () => {
      */
     expect(Object.keys(updateSiteParametersSchema.shape).sort()).toEqual([
       'allowPastBooking',
+      // EN-272 (D-207 §1): la línea de la TA de las gráficas. Dibujarla en
+      // otra cifra no deja de garantizar nada: la toma se guarda igual.
+      'bpReferenceDiastolic',
+      'bpReferenceSystolic',
       'cancelledRetention',
       // ORD-063, ORD-065 y, más abajo, ORD-046: la política de las colas de
       // resultados. Configurable porque D-050 la hizo de cada clínica, y nada
