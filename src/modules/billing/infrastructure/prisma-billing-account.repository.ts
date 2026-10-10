@@ -124,6 +124,31 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
   }
 
   /**
+   * BI-150, BI-274. Two «enviar a caja» of the same visit at the same second
+   * both read «no open account» and both insert; the index lets one through
+   * and refuses the other. The refused one answers with the winner instead
+   * of a 409, so both cashiers land on the same account.
+   *
+   * If the winner is gone by the time it is read (closed in between), the
+   * refusal is the honest answer and goes up untouched.
+   */
+  async openOrRecoverEncounterAccount(
+    account: NewAccount & { encounterId: string },
+  ): Promise<AccountView> {
+    try {
+      return await this.openAccount(account);
+    } catch (error) {
+      if (!isOpenAccountOfEncounterTaken(error)) throw error;
+      const winner = await this.findOpenAccountOfEncounter({
+        encounterId: account.encounterId,
+        siteId: account.siteId,
+      });
+      if (winner === null) throw error;
+      return winner;
+    }
+  }
+
+  /**
    * The chart a merged one was absorbed into, or the chart itself.
    *
    * ONE HOP AND NEVER A TREE: `trg_patient_merge_not_chained` refuses A→B→C in
@@ -1364,6 +1389,19 @@ export function translateChargeRejection(error: unknown): unknown {
   )
     ? new ActAlreadyChargedError()
     : error;
+}
+
+/**
+ * BI-274. Whether this is `patient_account_one_open_per_encounter` refusing
+ * a second open account of the visit — matched by name, like
+ * `translateChargeRejection`, since it arrives as a `P2002` naming the index.
+ */
+function isOpenAccountOfEncounterTaken(error: unknown): boolean {
+  return /patient_account_one_open_per_encounter/.test(
+    JSON.stringify((error as { meta?: unknown })?.meta ?? '').concat(
+      databaseMessageOf(error),
+    ),
+  );
 }
 
 /**

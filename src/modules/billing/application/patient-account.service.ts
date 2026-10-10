@@ -192,6 +192,23 @@ export class PatientAccountService {
     });
   }
 
+  /**
+   * BI-150, BI-274. The visit's account for «enviar a caja»: opened, or the
+   * one a simultaneous press opened first. `openAccount` keeps answering
+   * `ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER` to whoever asks to open a second.
+   */
+  async openOrRecoverEncounterAccount(command: {
+    siteId: string;
+    patientId: string;
+    encounterId: string;
+    payerId: string;
+  }): Promise<AccountView> {
+    return this.accounts.openOrRecoverEncounterAccount({
+      ...command,
+      priceListId: await this.resolvePriceList(command.payerId),
+    });
+  }
+
   /** BI-133. The cashier's list, and it audits NOTHING per row. */
   async listAccounts(query: {
     siteId: string;

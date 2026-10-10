@@ -121,6 +121,7 @@ function build(options: { ports?: Record<string, unknown> } = {}) {
     // The account side.
     findOpenAccountOfEncounter: vi.fn().mockResolvedValue(account()),
     openAccount: vi.fn().mockImplementation((data: NewAccount) => Promise.resolve(account(data))), // prettier-ignore
+    openOrRecoverEncounterAccount: vi.fn().mockImplementation((data: NewAccount) => Promise.resolve(account(data))), // prettier-ignore
     findAccount: vi.fn().mockResolvedValue(account()),
     listCharges: vi.fn().mockResolvedValue([]),
     listChargedActs: vi.fn().mockResolvedValue({
@@ -193,7 +194,7 @@ describe('BI-150 el paso de la consulta a la caja', () => {
 
     await press(service, 'payer-particular');
 
-    expect(mocks.openAccount).not.toHaveBeenCalled();
+    expect(mocks.openOrRecoverEncounterAccount).not.toHaveBeenCalled();
   });
 
   it('BI-150 abre la cuenta con el paciente DE LA ATENCIÓN, nunca con uno del cuerpo', async () => {
@@ -206,7 +207,7 @@ describe('BI-150 el paso de la consulta a la caja', () => {
 
     await press(service, 'payer-particular');
 
-    expect(mocks.openAccount).toHaveBeenCalledWith(
+    expect(mocks.openOrRecoverEncounterAccount).toHaveBeenCalledWith(
       expect.objectContaining({ patientId: 'patient-1', encounterId: ENCOUNTER }), // prettier-ignore
     );
   });
