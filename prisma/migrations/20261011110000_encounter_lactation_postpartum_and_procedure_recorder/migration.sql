@@ -32,7 +32,11 @@
 -- dice quién lo tecleó, con el reloj de la aplicación y la sesión del
 -- servicio. Nulo en lo registrado antes: ese dato no está en la fila y no se
 -- inventa (la bitácora lo tiene, y no es la historia). Los dos no cambian
--- después: lo que dicen es de quién responde de la fila.
+-- después: lo que dicen es de quién responde de la fila; y toda fila NUEVA
+-- los lleva (`encounter_procedure_recorded`), también desde psql. Al quitar,
+-- el archivo los guarda tal cual (`encounter_procedure_retraction_matches`):
+-- restaurar es registrar de nuevo (EN-246) y la fila restaurada es de quien
+-- la restaura, pero quién tecleó la original sigue en el archivo.
 --
 -- Ninguna fila guardada se toca, y ningún `now()`.
 -- Después: pnpm migrations:check && pnpm db:deploy
@@ -71,8 +75,12 @@ AS $$
       JOIN patient p ON p.id = e.patient_id
      WHERE e.id = p_encounter_id
        AND p.sex = 'FEMALE'
+       -- Without a frozen age nothing is asked, as in `nutritionBandOf`; and
+       -- an infant is asked the infant's questions even if a chart she
+       -- absorbed by mistake carries a pregnancy (the infant's band wins).
+       AND e.age_years IS NOT NULL
        AND (e.age_years BETWEEN 10 AND 49
-            OR encounter_is_postpartum(e.id))
+            OR (e.age_years >= 1 AND encounter_is_postpartum(e.id)))
   );
 $$;
 
@@ -189,3 +197,71 @@ CREATE TRIGGER "trg_encounter_procedure_keeps_its_recorder"
   BEFORE UPDATE ON "encounter_procedure"
   FOR EACH ROW
   EXECUTE FUNCTION encounter_procedure_keeps_its_recorder();
+
+-- Toda fila nueva dice quién la registró y cuándo.
+CREATE FUNCTION encounter_procedure_recorded()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.recorded_at IS NULL OR NEW.recorded_by_id IS NULL THEN
+    RAISE EXCEPTION
+      'encounter_procedure_recorded: a procedure is recorded with who typed it and when'
+      USING ERRCODE = 'integrity_constraint_violation',
+            HINT = 'EN-247.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "trg_encounter_procedure_recorded"
+  BEFORE INSERT ON "encounter_procedure"
+  FOR EACH ROW
+  EXECUTE FUNCTION encounter_procedure_recorded();
+
+-- El archivo de lo quitado guarda también quién lo registró y cuándo.
+ALTER TABLE "encounter_procedure_retraction"
+  ADD COLUMN "recorded_at" TIMESTAMPTZ(6),
+  ADD COLUMN "recorded_by_id" UUID,
+  ADD CONSTRAINT "encounter_procedure_retraction_recorded_by_id_fkey"
+    FOREIGN KEY ("recorded_by_id") REFERENCES "app_user"("id")
+    ON DELETE RESTRICT ON UPDATE CASCADE;
+
+CREATE OR REPLACE FUNCTION encounter_procedure_retraction_admits()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  live encounter_procedure%ROWTYPE;
+BEGIN
+  SELECT * INTO live FROM encounter_procedure WHERE id = NEW.id;
+  IF NOT FOUND
+     OR live.encounter_id IS DISTINCT FROM NEW.encounter_id
+     OR live.concept_id IS DISTINCT FROM NEW.concept_id
+     OR live.procedure_code IS DISTINCT FROM NEW.procedure_code
+     OR live.procedure_display IS DISTINCT FROM NEW.procedure_display
+     OR live.quantity IS DISTINCT FROM NEW.quantity
+     OR live.performed_at IS DISTINCT FROM NEW.performed_at
+     OR live.note IS DISTINCT FROM NEW.note
+     OR live.tariff_amount IS DISTINCT FROM NEW.tariff_amount
+     OR live.edited_by_id IS DISTINCT FROM NEW.edited_by_id
+     OR live.edited_at IS DISTINCT FROM NEW.edited_at
+     OR live.recorded_at IS DISTINCT FROM NEW.recorded_at
+     OR live.recorded_by_id IS DISTINCT FROM NEW.recorded_by_id THEN
+    RAISE EXCEPTION
+      'encounter_procedure_retraction_matches: the archive must be the procedure being removed, as it is'
+      USING ERRCODE = 'integrity_constraint_violation',
+            HINT = 'EN-245.';
+  END IF;
+
+  IF NEW.restored_at IS NOT NULL OR NEW.restored_by_id IS NOT NULL
+     OR NEW.restored_as_id IS NOT NULL THEN
+    RAISE EXCEPTION
+      'encounter_procedure_retraction_frozen: an archive is born not restored'
+      USING ERRCODE = 'integrity_constraint_violation',
+            HINT = 'EN-246.';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;

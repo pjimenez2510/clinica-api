@@ -2435,8 +2435,15 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   > ya pasó— en `[fecha clínica − 3 meses, fecha clínica)`, extremos según
   > ese intervalo, también de una ficha absorbida, como `encounter_is_pregnant`.
   > La base lo dice en `encounter_asks_lactation` (de `encounter_nutrition_applies`
-  > y de `encounter_is_lactating`, migración `20261011110000`). **Por confirmar
-  > fuera:** un clínico.
+  > y de `encounter_is_lactating`, migración `20261011110000`), sólo con edad
+  > congelada, y la lactante de 0 a 8 meses conserva sus preguntas aunque una
+  > ficha absorbida traiga un embarazo (la puérpera, de 1 año en adelante).
+  > **Límites:** el embarazo se lee en vivo, como el bloque G, así que corregido
+  > en la ficha después deja la respuesta guardada fuera de su población —la
+  > exportación la revalida (EN-113)—; y un registro PREGNANT cerrado por error
+  > cuenta como puerperio tres meses: la pregunta es optativa y sólo abre el
+  > hierro con ácido fólico si responde «sí». **Por confirmar fuera:** un
+  > clínico, con el puerperio que cuenta tras una pérdida o un registro erróneo.
 - **EN-261** — CUANDO quien no tiene `record:protected` en la sede guarde las
   vacunas de una atención que ya lleva un **HB adulto**, el sistema DEBERÁ
   **conservar el grupo de riesgo guardado** de esa dosis si la reenvía sin
@@ -2729,12 +2736,13 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   > viene sale bien. Lo que este requisito prohíbe es **recalcular lo que sí se
   > congeló**, que es SC-018.
   >
-  > **La columna 108 se vuelve a validar (D-202.3, aceptada por el autor el
-  > 10-10-2026):** la exportación DEBERÁ comprobar el hierro con ácido fólico
-  > registrado contra la población **del día de la atención tal como la ficha
-  > la dice al exportar** —embarazo ese día o lactancia de EN-260— y, SI ya no
-  > la alcanza (el embarazo se corrigió en la ficha después de guardar el
-  > suplemento), ENTONCES DEBERÁ dejar la columna 108 **en blanco** y
+  > **Las columnas 52 y 108 se vuelven a validar (D-202.3, aceptada por el
+  > autor el 10-10-2026):** la exportación DEBERÁ comprobar el hierro con ácido
+  > fólico registrado, y la lactancia de la mujer (columna 52 de su propia
+  > fila, EN-260), contra la población **del día de la atención tal como la
+  > ficha la dice al exportar** —embarazo ese día, mujer de 10 a 49 o
+  > puérpera— y, SI ya no la alcanza (el embarazo se corrigió en la ficha
+  > después de guardarla), ENTONCES DEBERÁ dejar esa columna **en blanco** y
   > nombrarla en los avisos de la exportación, como hace con lo que falta
   > (EN-115). Se escribe aquí porque `patients` no puede tocar la atención y
   > la casilla guardada no se reescribe.
@@ -4780,7 +4788,12 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > campo dice que es una propuesta; y la anotación tardía se identifica con
   > su fecha y su autor (CMS, PIM cap. 3, §3.3.2.5). El autor sale de
   > `encounter_procedure.recorded_by_id` (`20261011110000`), quien lo tecleó,
-  > con `recorded_at`: un registro tardío al que nadie responde no sirve. Hoy
+  > con `recorded_at`: un registro tardío al que nadie responde no sirve. Toda
+  > fila nueva los lleva (`encounter_procedure_recorded`), no cambian después
+  > (`encounter_procedure_keeps_its_recorder`) y el archivo de lo quitado los
+  > guarda tal cual; lo restaurado es de quien lo restaura (EN-246, sólo con
+  > la atención viva). «Tras el alta» es `recorded_at` posterior a `ended_at`,
+  > el instante de la firma que dio el alta, leído bajo el bloqueo. Hoy
   > sólo la lista de procedimientos de la atención los lee; el resumen PDF
   > (DOC-111) no lista procedimientos, y el día que los liste llevará la misma
   > línea. **Por confirmar fuera:** un clínico, la hora de la firma del 024

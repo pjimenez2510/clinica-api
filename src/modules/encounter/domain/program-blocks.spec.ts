@@ -103,6 +103,8 @@ describe('EN-092 EN-097 el SIVAN, por la edad congelada en meses cumplidos', () 
     expect(nutritionBandOf(age(52, 0), 'FEMALE', false)).toBeNull();
     expect(nutritionBandOf(age(52, 0), 'MALE', true)).toBeNull();
     expect(nutritionBandOf(age(null, null), 'FEMALE', true)).toBeNull();
+    // The infant's band wins over a pregnancy on a chart she absorbed.
+    expect(nutritionBandOf(age(0, 3), 'FEMALE', true)).toBe('EXCLUSIVE_BREASTFEEDING'); // prettier-ignore
   });
 
   it('EN-260 a la mujer no se le hacen las preguntas del lactante', () => {

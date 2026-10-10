@@ -157,7 +157,8 @@ export function nutritionBandOf(
   if (years === null || months === null) return null;
   const childbearingAge =
     years >= LACTATING_AGE_YEARS.min && years <= LACTATING_AGE_YEARS.max;
-  if (sex === 'FEMALE' && (childbearingAge || postpartum)) {
+  // An infant takes the infant's band, whatever a chart she absorbed says.
+  if (sex === 'FEMALE' && (childbearingAge || (postpartum && years >= 1))) {
     return 'LACTATING_AGE_WOMAN';
   }
   if (years > 0) return null;

@@ -904,7 +904,6 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
    * `encounter_procedure_consent_required` sees both at the commit.
    */
   async addProcedure(procedure: NewProcedure): Promise<RecordedProcedureView> {
-    const now = new Date();
     const row = await this.prisma.$transaction(async (tx) => {
       // EN-247 (D-194.1). After the discharge too, by whoever may correct
       // then (D-117.13), never once reported (D-117.16).
@@ -914,6 +913,9 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         procedure.sites,
         acceptsDiagnosisCorrection,
       );
+      // Read AFTER the attention's lock: a write that waited for a discharge
+      // is typed after it, and says so (`recorded_at`, D-201, BI-242).
+      const now = new Date();
       await refuseCorrection(
         tx,
         procedure.encounterId,
@@ -1234,10 +1236,12 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           ("id", "encounter_id", "concept_id", "procedure_code",
            "procedure_display", "quantity", "performed_at", "note",
            "tariff_amount", "edited_by_id", "edited_at",
+           "recorded_at", "recorded_by_id",
            "retracted_at", "retracted_by_id", "reason")
         SELECT "id", "encounter_id", "concept_id", "procedure_code",
                "procedure_display", "quantity", "performed_at", "note",
                "tariff_amount", "edited_by_id", "edited_at",
+               "recorded_at", "recorded_by_id",
                ${now}, ${retraction.retractedById}::uuid, ${retraction.reason}
           FROM "encounter_procedure"
          WHERE "id" = ${retraction.procedureId}::uuid

@@ -29,6 +29,7 @@ async function anEncounterWithAProcedure(prisma: PrismaClient) {
     patientId: patient.id,
   });
   const concept = await aTariffConcept(prisma);
+  const user = await createUser(prisma);
   const procedure = await prisma.encounterProcedure.create({
     data: {
       encounterId: encounter.id,
@@ -37,9 +38,10 @@ async function anEncounterWithAProcedure(prisma: PrismaClient) {
       procedureDisplay: concept.display,
       quantity: 2,
       performedAt: encounter.startedAt,
+      recordedAt: new Date(),
+      recordedById: user.id,
     },
   });
-  const user = await createUser(prisma);
   return { encounter, concept, procedure, user };
 }
 
@@ -54,9 +56,11 @@ function archive(
     INSERT INTO encounter_procedure_retraction
       (id, encounter_id, concept_id, procedure_code, procedure_display,
        quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+       recorded_at, recorded_by_id,
        retracted_at, retracted_by_id, reason)
     SELECT id, encounter_id, concept_id, procedure_code, procedure_display,
            quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+           recorded_at, recorded_by_id,
            ${new Date()}, ${removerId}::uuid, ${reason}
       FROM encounter_procedure WHERE id = ${procedureId}::uuid`;
 }
@@ -135,10 +139,11 @@ describe('corregir y quitar un procedimiento deja rastro (EN-244 a EN-246)', () 
       prisma.$executeRaw`
         INSERT INTO encounter_procedure_retraction
           (id, encounter_id, concept_id, procedure_code, procedure_display,
-           quantity, performed_at, note, retracted_at, retracted_by_id, reason,
+           quantity, performed_at, note, recorded_at, recorded_by_id,
+           retracted_at, retracted_by_id, reason,
            restored_at, restored_by_id, restored_as_id)
         SELECT id, encounter_id, concept_id, procedure_code, procedure_display,
-               quantity, performed_at, note, ${new Date()}, ${user.id}::uuid, 'x',
+               quantity, performed_at, note, recorded_at, recorded_by_id, ${new Date()}, ${user.id}::uuid, 'x',
                ${new Date()}, ${user.id}::uuid, id
           FROM encounter_procedure WHERE id = ${procedure.id}::uuid`,
     ).rejects.toThrow(/encounter_procedure_retraction_frozen/);
@@ -189,6 +194,8 @@ describe('corregir y quitar un procedimiento deja rastro (EN-244 a EN-246)', () 
         procedureDisplay: other.display,
         quantity: 2,
         performedAt: encounter.startedAt,
+        recordedAt: new Date(),
+        recordedById: user.id,
       },
     });
     const mark = (asId: string) => prisma.$executeRaw`
@@ -209,6 +216,8 @@ describe('corregir y quitar un procedimiento deja rastro (EN-244 a EN-246)', () 
         procedureDisplay: procedure.procedureDisplay,
         quantity: 2,
         performedAt: procedure.performedAt,
+        recordedAt: new Date(),
+        recordedById: user.id,
       },
     });
     await mark(back.id);
@@ -239,6 +248,8 @@ describe('corregir y quitar un procedimiento deja rastro (EN-244 a EN-246)', () 
         procedureDisplay: concept.display,
         performedAt: encounter.startedAt,
         tariffAmount: 12.5,
+        recordedAt: new Date(),
+        recordedById: user.id,
       },
     });
 
@@ -263,9 +274,10 @@ describe('corregir y quitar un procedimiento deja rastro (EN-244 a EN-246)', () 
       await anEncounterWithAProcedure(prisma);
     const insert = () => prisma.$executeRaw`
       INSERT INTO encounter_procedure
-        (encounter_id, concept_id, procedure_code, procedure_display, quantity, performed_at)
+        (encounter_id, concept_id, procedure_code, procedure_display, quantity, performed_at,
+         recorded_at, recorded_by_id)
       VALUES (${encounter.id}::uuid, ${concept.id}::uuid, ${concept.code},
-              ${concept.display}, 1, ${encounter.startedAt})`;
+              ${concept.display}, 1, ${encounter.startedAt}, ${new Date()}, ${user.id}::uuid)`;
     const stampedEdit = () => prisma.$executeRaw`
       UPDATE encounter_procedure
          SET quantity = quantity + 1, edited_by_id = ${user.id}::uuid,

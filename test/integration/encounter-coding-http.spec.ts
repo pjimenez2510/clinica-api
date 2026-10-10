@@ -2303,6 +2303,29 @@ describe('el bloque K por HTTP', () => {
       expect(byId.get((late.body as ProcedureBody).id)?.recordedBy?.name).toEqual(expect.any(String)); // prettier-ignore
     });
 
+    it('EN-247 EN-245 EN-246 quitar guarda en el archivo quién registró el procedimiento y cuándo; lo restaurado es de quien lo restaura; y la BASE no admite una fila sin autor', async () => {
+      const { encounterId, id } = await aProcedure();
+      const original = await prisma.encounterProcedure.findUniqueOrThrow({ where: { id } }); // prettier-ignore
+      expect(original.recordedById).not.toBeNull();
+      await post(`/encounters/${encounterId}/procedures/${id}/retract`, doctorToken, { reason: 'Registrado por error' }).expect(204); // prettier-ignore
+      const archived = await prisma.encounterProcedureRetraction.findUniqueOrThrow({ where: { id } }); // prettier-ignore
+      expect([archived.recordedById, archived.recordedAt?.toISOString()]).toEqual([original.recordedById, original.recordedAt?.toISOString()]); // prettier-ignore
+
+      const restored = await post(`/encounters/${encounterId}/procedures/${id}/restore`, doctorToken).expect(200); // prettier-ignore
+      const back = await prisma.encounterProcedure.findUniqueOrThrow({ where: { id: (restored.body as ProcedureBody).id } }); // prettier-ignore
+      const marked = await prisma.encounterProcedureRetraction.findUniqueOrThrow({ where: { id } }); // prettier-ignore
+      expect(back.recordedById).toBe(marked.restoredById);
+      expect(back.recordedAt!.getTime()).toBeGreaterThanOrEqual(archived.retractedAt.getTime()); // prettier-ignore
+
+      // La base: sin autor o sin instante, no entra; con los dos, sí.
+      const insert = (recordedAt: Date | null, recordedById: string | null) =>
+        prisma.$executeRaw`INSERT INTO encounter_procedure (encounter_id, concept_id, procedure_code, procedure_display, quantity, performed_at, recorded_at, recorded_by_id)
+          SELECT encounter_id, concept_id, procedure_code, procedure_display, 1, performed_at, ${recordedAt}, ${recordedById}::uuid FROM encounter_procedure WHERE id = ${back.id}::uuid`; // prettier-ignore
+      await expect(insert(new Date(), null)).rejects.toThrow(/encounter_procedure_recorded/); // prettier-ignore
+      await expect(insert(null, back.recordedById)).rejects.toThrow(/encounter_procedure_recorded/); // prettier-ignore
+      expect(await insert(new Date(), back.recordedById)).toBe(1);
+    });
+
     it('EN-247 tras el alta, quien firma con el registro ACESS vencido no corrige un procedimiento (D-117.13)', async () => {
       const { encounterId, id } = await aProcedure();
       await dischargeProcedureEncounter(encounterId);

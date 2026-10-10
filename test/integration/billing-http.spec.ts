@@ -18,7 +18,7 @@ import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import { createPatient, createSite, createUser } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -270,6 +270,8 @@ describe('la facturación por HTTP', () => {
           procedureDisplay: 'Sutura simple',
           quantity: 1,
           performedAt: new Date('2026-05-11T14:30:00Z'),
+          recordedAt: new Date(),
+          recordedById: (await createUser(prisma)).id,
         },
       });
 

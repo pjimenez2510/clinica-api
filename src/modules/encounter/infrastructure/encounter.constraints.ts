@@ -827,6 +827,11 @@ registerConstraintMeanings({
     field: 'procedureId',
     message: 'Quien registró el procedimiento, y cuándo, no cambia',
   },
+  encounter_procedure_recorded: {
+    code: 'VALIDATION_FAILED',
+    field: 'procedureId',
+    message: 'Todo procedimiento se registra con quién lo hizo y cuándo',
+  },
   encounter_procedure_recorder_has_instant: {
     code: 'VALIDATION_FAILED',
     field: 'procedureId',

@@ -455,6 +455,17 @@ describe('EN-260 la lactancia de la mujer de 10 a 49 años, en la columna 52 de 
     expect(await prisma.encounterNutrition.count()).toBe(3);
   });
 
+  it('EN-092 EN-260 la lactante de 3 meses cuya ficha absorbió un embarazo terminado sigue con las preguntas del lactante', async () => {
+    const prisma = db();
+    const infant = await anAttention(prisma, { age: { years: 0, months: 3 } });
+    const absorbed = await createPatient(prisma, { sex: 'FEMALE' });
+    await prisma.patient.update({ where: { id: absorbed.id }, data: { mergedIntoId: infant.patient.id, mergedAt: new Date() } }); // prettier-ignore
+    await ended(prisma, { ...infant, patient: absorbed }, infant.cal.plus(-30));
+    expect(await problemFrom(create(prisma, infant))).toMatchObject(invalid('exclusiveBreastfeeding')); // prettier-ignore
+    await create(prisma, infant, { exclusiveBreastfeeding: true });
+    expect(await prisma.encounterNutrition.count()).toBe(1);
+  });
+
   it('EN-096 EN-260 el hierro con ácido fólico, a la puérpera de 52 años que dijo estar lactando; sin decirlo, no', async () => {
     const prisma = db();
     const saidNothing = await woman(prisma, 52);
@@ -640,6 +651,41 @@ describe('EN-090 EN-093 la fecha clínica es la de Guayaquil, también a las 21:
     expect(await problemFrom(prisma.encounterObstetric.create({ data: data(startsToday) }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
     await prisma.encounterObstetric.create({ data: data(endedYesterday) });
     expect(await prisma.encounterObstetric.count()).toBe(1);
+  });
+
+  it('EN-260 la puérpera de 52 años se cuenta por el día local de la atención: el embarazo que termina ese día sigue siendo embarazo; el del día anterior, puerperio', async () => {
+    const prisma = db();
+    async function fiftyTwoLateLastNight() {
+      const today = calendar(new Date());
+      const startedAt = new Date(Date.UTC(today.year, today.month - 1, today.day, 2, 30)); // prettier-ignore
+      const local = calendar(startedAt);
+      expect(clinicalDateOf(startedAt)).toBe(today.iso(-1));
+      // 52 years and a month before the local day: away from her birthday.
+      const birthDate = new Date(Date.UTC(local.year - 52, local.month - 2, Math.min(local.day, 28))); // prettier-ignore
+      const site = await createSite(prisma);
+      const practitioner = await createPractitioner(prisma);
+      const patient = await createPatient(prisma, { sex: 'FEMALE', birthDate });
+      const encounter = await createEncounter(prisma, { siteId: site.id, practitionerId: practitioner.id, patientId: patient.id, startedAt }); // prettier-ignore
+      expect(encounter.ageYears).toBe(52);
+      return {
+        encounter,
+        patient,
+        author: await createUser(prisma),
+        cal: local,
+      };
+    }
+    const lactation = (scene: Awaited<ReturnType<typeof fiftyTwoLateLastNight>>) =>
+      prisma.encounterNutrition.create({ data: { encounterId: scene.encounter.id, motherBreastfeeding: true, recordedById: scene.author.id, recordedAt: new Date() } }); // prettier-ignore
+
+    const endsThatDay = await fiftyTwoLateLastNight();
+    await pregnant(prisma, endsThatDay, -200, 0);
+    expect(await problemFrom(lactation(endsThatDay))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+
+    // Positive control: ended the local day before.
+    const endedTheDayBefore = await fiftyTwoLateLastNight();
+    await pregnant(prisma, endedTheDayBefore, -200, -1);
+    await lactation(endedTheDayBefore);
+    expect(await prisma.encounterNutrition.count()).toBe(1);
   });
 
   it('EN-093 la vacuna retirada el día UTC sigue vigente el día local de la atención', async () => {

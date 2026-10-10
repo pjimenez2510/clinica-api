@@ -216,13 +216,14 @@ model User {
   criticalNoticesEdited CriticalResultNotice[] @relation("CriticalNoticeEditor")
 
   /// EN-212, D-127. The diagnoses this account edited last.
-  diagnosesEdited             EncounterDiagnosis[]           @relation("DiagnosisEditor")
-  diagnosesEditedThenRemoved  EncounterDiagnosisRetraction[] @relation("DiagnosisRetractionEditor")
-  proceduresEdited            EncounterProcedure[]           @relation("ProcedureEditor")
-  proceduresRecorded          EncounterProcedure[]           @relation("ProcedureRecorder")
-  proceduresEditedThenRemoved EncounterProcedureRetraction[] @relation("ProcedureRetractionEditor")
-  proceduresRetracted         EncounterProcedureRetraction[] @relation("ProcedureRetractor")
-  proceduresRestored          EncounterProcedureRetraction[] @relation("ProcedureRestorer")
+  diagnosesEdited               EncounterDiagnosis[]           @relation("DiagnosisEditor")
+  diagnosesEditedThenRemoved    EncounterDiagnosisRetraction[] @relation("DiagnosisRetractionEditor")
+  proceduresEdited              EncounterProcedure[]           @relation("ProcedureEditor")
+  proceduresRecorded            EncounterProcedure[]           @relation("ProcedureRecorder")
+  proceduresRecordedThenRemoved EncounterProcedureRetraction[] @relation("ProcedureRetractionRecorder")
+  proceduresEditedThenRemoved   EncounterProcedureRetraction[] @relation("ProcedureRetractionEditor")
+  proceduresRetracted           EncounterProcedureRetraction[] @relation("ProcedureRetractor")
+  proceduresRestored            EncounterProcedureRetraction[] @relation("ProcedureRestorer")
 
   /// EN-152 to EN-154 (D-159). The forms 024 this account recorded, the ones
   /// it informed, and the revocations it received.
@@ -3503,6 +3504,11 @@ model EncounterProcedureRetraction {
   editedById String?   @map("edited_by_id") @db.Uuid
   editedBy   User?     @relation("ProcedureRetractionEditor", fields: [editedById], references: [id], onDelete: Restrict)
   editedAt   DateTime? @map("edited_at") @db.Timestamptz(6)
+
+  /// EN-247 (D-201). Who recorded the removed row, and when, as it was.
+  recordedAt   DateTime? @map("recorded_at") @db.Timestamptz(6)
+  recordedById String?   @map("recorded_by_id") @db.Uuid
+  recordedBy   User?     @relation("ProcedureRetractionRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
 
   /// Set by the application, never `now()`: the e2e runs move its clock.
   retractedAt   DateTime @map("retracted_at") @db.Timestamptz(6)
