@@ -224,8 +224,11 @@ describe('ConsentService', () => {
 });
 
 const record = vi.fn().mockResolvedValue(undefined);
+/** DOC-122. The frozen copy is `documents`'; here, a marker. */
+const freezer = { freeze: vi.fn().mockResolvedValue({ frozen: true }) };
+
 function newRequestsService(repository: DataSubjectRequestRepository) {
-  return new DataSubjectRequestsService(repository, { record });
+  return new DataSubjectRequestsService(repository, { record }, freezer);
 }
 
 describe('DataSubjectRequestsService', () => {
@@ -395,6 +398,7 @@ describe('la propuesta de respuesta (D-164.2)', () => {
       const service = new DataSubjectRequestsService(
         requestRepository({ proposalFactsOf, find, answer, exportChart }),
         audit,
+        freezer,
       );
 
       await expect(service.answerProposal('r-1', WHO)).resolves.toBe(
@@ -478,6 +482,7 @@ describe('corregir en privacidad (D-127)', () => {
         edit,
       }),
       { record: vi.fn() },
+      freezer,
     );
 
     await service.edit('r-1', { receivedAt: received }, WHO, NOW);
@@ -496,6 +501,7 @@ describe('corregir en privacidad (D-127)', () => {
         edit,
       }),
       { record: vi.fn() },
+      freezer,
     );
     await expect(
       answeredService.edit('r-1', { description: 'x' }, WHO, NOW),
@@ -507,6 +513,7 @@ describe('corregir en privacidad (D-127)', () => {
         edit,
       }),
       { record: vi.fn() },
+      freezer,
     );
     await expect(
       openService.edit(
@@ -525,6 +532,7 @@ describe('corregir en privacidad (D-127)', () => {
         correctAnswer: vi.fn().mockResolvedValue({ status: 'not-answered' }),
       }),
       { record: vi.fn() },
+      freezer,
     );
     await expect(
       service.correctAnswer(
@@ -742,6 +750,7 @@ describe('D-203 §2, §5, §8, §12 autorizar, denegar y el visto bueno', () => 
       patientSites: ['norte'],
       sensitive: false,
       reviewed: false,
+      reviewSites: [],
       ...over,
     });
   const keyed = { ...WHO, recordScope: ['norte'] as string[] };
@@ -926,5 +935,135 @@ describe('D-203 §2, §5, §8, §12 autorizar, denegar y el visto bueno', () => 
       NOW,
     );
     expect(register).toHaveBeenCalledOnce();
+  });
+});
+
+describe('revisión clínica de la rama: lo congelado, quién ve el visto bueno y quién lo da', () => {
+  const facts = (over: object = {}) =>
+    vi.fn().mockResolvedValue({
+      clinicalRecordCopy: true,
+      requestedBy: 'ATTORNEY',
+      patientSites: ['norte'],
+      sensitive: false,
+      reviewed: false,
+      reviewSites: [],
+      ...over,
+    });
+
+  it('DOC-122 PD-062 autorizar congela la copia con el alcance de quien autoriza y la guarda con la respuesta, con la guarda del visto bueno', async () => {
+    freezer.freeze.mockClear();
+    const answer = vi
+      .fn()
+      .mockResolvedValue({ status: 'answered', request: requestView() });
+    const service = newRequestsService(
+      requestRepository({ copyFactsOf: facts(), answer }),
+    );
+    await service.answer(
+      'r-1',
+      { outcome: 'GRANTED', response: 'Sí' },
+      { ...WHO, recordScope: ['norte'] },
+      NOW,
+    );
+    expect(freezer.freeze).toHaveBeenCalledWith({
+      requestId: 'r-1',
+      recordScope: ['norte'],
+      authorisedAt: NOW,
+      authorisedById: WHO.userId,
+      copyPeriod: null,
+    });
+    expect(answer.mock.calls[0]?.[1]).toMatchObject({
+      snapshot: { frozen: true },
+      guardReview: true,
+    });
+
+    // «Denegada» no congela nada.
+    freezer.freeze.mockClear();
+    await service.answer(
+      'r-1',
+      { outcome: 'DENIED', response: 'No' },
+      { ...WHO, recordScope: [] },
+      NOW,
+    );
+    expect(freezer.freeze).not.toHaveBeenCalled();
+  });
+
+  it('PD-062 si bajo el candado ya no hay visto bueno que valga, CLINICAL_RECORD_COPY_REVIEW_REQUIRED', async () => {
+    const service = newRequestsService(
+      requestRepository({
+        copyFactsOf: facts(),
+        answer: vi.fn().mockResolvedValue({ status: 'review-required' }),
+        correctAnswer: vi.fn().mockResolvedValue({ status: 'review-required' }),
+      }),
+    );
+    const keyed = { ...WHO, recordScope: ['norte'] };
+    const granted = { outcome: 'GRANTED' as const, response: 'Sí' };
+    await expect(service.answer('r-1', granted, keyed, NOW)).rejects.toBeInstanceOf(ClinicalRecordCopyReviewRequiredError); // prettier-ignore
+    await expect(service.correctAnswer('r-1', granted, keyed, NOW)).rejects.toBeInstanceOf(ClinicalRecordCopyReviewRequiredError); // prettier-ignore
+  });
+
+  it('PD-062 que espera el visto bueno, o que lleva el tamizaje, sólo lo lee quien tiene una llave de esa historia', async () => {
+    const row = requestView({
+      clinicalRecordCopy: true,
+      requestedBy: 'ATTORNEY',
+      copySites: ['norte'],
+      reviewRequired: true,
+      review: {
+        reviewedAt: NOW,
+        reviewedBy: { id: 'u-2', fullName: 'Ana Torres' },
+        includesScreening: true,
+      },
+    });
+    const service = newRequestsService(
+      requestRepository({ requestsOf: vi.fn().mockResolvedValue([row]) }),
+    );
+    const [keyless] = await service.requestsOf('p-1', WHO, NOW);
+    expect(keyless).toMatchObject({ reviewRequired: false, review: null });
+    const [custodian] = await service.requestsOf(
+      'p-1',
+      { ...WHO, recordScope: ['norte'] },
+      NOW,
+    );
+    expect(custodian).toMatchObject({
+      reviewRequired: true,
+      review: { includesScreening: false },
+    });
+    const [doctor] = await service.requestsOf(
+      'p-1',
+      { ...WHO, protectedScope: ['norte'] },
+      NOW,
+    );
+    expect(doctor).toMatchObject({ review: { includesScreening: true } });
+  });
+
+  it('PD-061 quien da el visto bueno tiene record:protected en cada sede con algo sensible o con tamizaje', async () => {
+    const reviewCopy = vi
+      .fn()
+      .mockResolvedValue({ status: 'reviewed', request: requestView() });
+    const service = newRequestsService(
+      requestRepository({
+        copyFactsOf: facts({
+          patientSites: ['norte', 'sur'],
+          reviewSites: ['sur'],
+        }),
+        reviewCopy,
+      }),
+    );
+    const review = { reviewed: true, includesScreening: true };
+    await expect(
+      service.reviewCopy(
+        'r-1',
+        review,
+        { ...WHO, protectedScope: ['norte'] },
+        NOW,
+      ),
+    ).rejects.toBeInstanceOf(DataRequestNotFoundError);
+    expect(reviewCopy).not.toHaveBeenCalled();
+    await service.reviewCopy(
+      'r-1',
+      review,
+      { ...WHO, protectedScope: ['norte', 'sur'] },
+      NOW,
+    );
+    expect(reviewCopy).toHaveBeenCalledOnce();
   });
 });

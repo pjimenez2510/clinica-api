@@ -35,6 +35,7 @@ import { DOCUMENT_VERIFICATION_BASE_URL } from '../domain/document-source';
 import type { VerificationFacts } from '../domain/document-verification';
 import type {
   ClinicalRecordCopyLookup,
+  ClinicalRecordCopyPrintData,
   DocumentContext,
   DocumentSourceReader,
   DocumentSubject,
@@ -779,39 +780,100 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     requestId: string,
     recordScope: RecordReadScope,
   ): Promise<ClinicalRecordCopyLookup> {
-    // D-203 §1. No `record:read` anywhere: nothing to read, and nothing said.
-    if (recordScope !== 'all' && recordScope.length === 0) {
-      return { status: 'missing' };
+    const keyed = await this.copyRequestWithKey(requestId, recordScope);
+    if (keyed === null) return { status: 'missing' };
+    const { request, rootId } = keyed;
+
+    // PD-047. The standing answer: the rectification nobody rectified, or the
+    // original when there is none.
+    const correction = request.answerCorrections[0];
+    const standing = correction ?? {
+      id: null,
+      outcome: request.outcome,
+      answeredAt: request.answeredAt,
+      answeredBy: request.answeredBy,
+      copyFrom: request.copyFrom,
+      copyTo: request.copyTo,
+    };
+    // DOC-122 (D-203 §2). «Atendida» hands over the whole record; «Atendida
+    // en parte», the period its answer names — and without one, nothing.
+    const copyPeriod = periodOfDates(standing.copyFrom, standing.copyTo);
+    if (
+      !request.clinicalRecordCopy ||
+      !(
+        standing.outcome === 'GRANTED' ||
+        (standing.outcome === 'PARTIALLY_GRANTED' && copyPeriod !== null)
+      ) ||
+      standing.answeredAt === null ||
+      standing.answeredBy === null
+    ) {
+      return { status: 'not-available' };
     }
+
+    // DOC-122. What the answer froze, when it froze something: every download
+    // serves it. Copies authorised before the snapshot existed are composed
+    // as they stand (as the branch that built them did).
+    const snapshot = await this.prisma.clinicalRecordCopySnapshot.findFirst({
+      where: { requestId, correctionId: standing.id },
+      select: { data: true },
+    });
+    const data =
+      snapshot === null
+        ? await this.composeCopy(requestId, request, rootId, recordScope, {
+            answeredAt: standing.answeredAt,
+            answeredBy: standing.answeredBy,
+            copyPeriod,
+          })
+        : reviveCopy(snapshot.data);
+    return { status: 'ready', data: narrowedTo(data, recordScope, rootId) };
+  }
+
+  /**
+   * DOC-122 (revisión clínica del 10-10-2026). The print data of a copy as it
+   * stands NOW, to be frozen with the answer that authorises it: `privacy`
+   * saves it in the same transaction. `null` without the key.
+   */
+  async freezeClinicalRecordCopy(input: {
+    requestId: string;
+    recordScope: RecordReadScope;
+    authorisedAt: Date;
+    authorisedById: string;
+    copyPeriod: { from: string; to: string } | null;
+  }): Promise<ClinicalRecordCopyPrintData | null> {
+    const keyed = await this.copyRequestWithKey(
+      input.requestId,
+      input.recordScope,
+    );
+    if (keyed === null || !keyed.request.clinicalRecordCopy) return null;
+    return this.composeCopy(
+      input.requestId,
+      keyed.request,
+      keyed.rootId,
+      input.recordScope,
+      {
+        answeredAt: input.authorisedAt,
+        answeredBy: input.authorisedById,
+        copyPeriod: input.copyPeriod,
+      },
+    );
+  }
+
+  /**
+   * D-203 §1. The copy request and the chart in force, or `null` when it does
+   * not exist or the caller holds no key to the person's record: the refusal
+   * reveals nothing. Checked FIRST, before anything about the answer.
+   */
+  private async copyRequestWithKey(
+    requestId: string,
+    recordScope: RecordReadScope,
+  ) {
+    // No `record:read` anywhere: nothing to read, and nothing said.
+    if (recordScope !== 'all' && recordScope.length === 0) return null;
     const request = await this.prisma.dataSubjectRequest.findUnique({
       where: { id: requestId },
-      select: {
-        patientId: true,
-        clinicalRecordCopy: true,
-        requestedBy: true,
-        requesterName: true,
-        requesterDocument: true,
-        requesterRelationship: true,
-        receivedAt: true,
-        outcome: true,
-        answeredAt: true,
-        answeredBy: true,
-        copyFrom: true,
-        copyTo: true,
-        answerCorrections: {
-          where: { correctedBy: null },
-          select: {
-            outcome: true,
-            answeredAt: true,
-            answeredBy: true,
-            copyFrom: true,
-            copyTo: true,
-          },
-        },
-        copyReview: { select: { includesScreening: true } },
-      },
+      select: COPY_REQUEST_SELECT,
     });
-    if (request === null) return { status: 'missing' };
+    if (request === null) return null;
 
     const written = await this.prisma.patient.findUniqueOrThrow({
       where: { id: request.patientId },
@@ -823,9 +885,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     // D-203 §1, decided by the author on 10-10-2026: the key is `record:read`
     // at a site where the person had a signed attention, and the copy reaches
     // the sites of that `record:read`, never all of them by the other
-    // permission. Checked FIRST, before anything about the answer: without
-    // the key the request answers as missing —whether it is answered, denied
-    // or not a copy at all—, like any clinical read.
+    // permission.
     const personSites = await this.prisma.encounter.findMany({
       where: {
         ...chartScope(rootId),
@@ -841,40 +901,30 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         personSites.map((one) => one.siteId),
       )
     ) {
-      return { status: 'missing' };
+      return null;
     }
+    return { request, rootId };
+  }
 
-    // PD-047. The standing answer: the rectification nobody rectified, or the
-    // original when there is none.
-    const standing = request.answerCorrections[0] ?? {
-      outcome: request.outcome,
-      answeredAt: request.answeredAt,
-      answeredBy: request.answeredBy,
-      copyFrom: request.copyFrom,
-      copyTo: request.copyTo,
-    };
-    // DOC-122 (D-203 §2). «Atendida» hands over the whole record; «Atendida
-    // en parte», the period its answer names — and without one, nothing.
-    const copyPeriod =
-      standing.copyFrom && standing.copyTo
-        ? {
-            from: standing.copyFrom.toISOString().slice(0, 10),
-            to: standing.copyTo.toISOString().slice(0, 10),
-          }
-        : null;
-    if (
-      !request.clinicalRecordCopy ||
-      !(
-        standing.outcome === 'GRANTED' ||
-        (standing.outcome === 'PARTIALLY_GRANTED' && copyPeriod !== null)
-      ) ||
-      standing.answeredAt === null ||
-      standing.answeredBy === null
-    ) {
-      return { status: 'not-available' };
-    }
-    const authorisedAt = standing.answeredAt;
-
+  /**
+   * DOC-118, DOC-121, DOC-123. Every attention with a signed 002 of the chart
+   * in force and its absorbed ones (PA-055), started by the authorisation and
+   * within its period, as far as `recordScope` reaches; read through the SAME
+   * query the summary uses, so the copy never says something the summary of
+   * that attention would not.
+   */
+  private async composeCopy(
+    requestId: string,
+    request: CopyRequestRow,
+    rootId: string,
+    recordScope: RecordReadScope,
+    standing: {
+      answeredAt: Date;
+      answeredBy: string;
+      copyPeriod: { from: string; to: string } | null;
+    },
+  ): Promise<ClinicalRecordCopyPrintData> {
+    const { copyPeriod } = standing;
     const chart = await this.prisma.patient.findUniqueOrThrow({
       where: { id: rootId },
       select: { ...PATIENT_SELECT, sex: true },
@@ -884,17 +934,11 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       select: { firstName: true, lastName: true },
     });
 
-    // One statement for every attention, with the summary's own select: the
-    // copy never says something the summary of that attention would not.
     const attentions = await this.prisma.encounter.findMany({
       where: {
-        // PA-055: the person's whole scope, from the chart in force down.
         ...chartScope(rootId),
         status: { not: 'ENTERED_IN_ERROR' },
         notes: { some: { formCode: '002', status: 'SIGNED' } },
-        // What was authorised, and no more: every download of one request
-        // carries the record as it stood when it was authorised, never the
-        // attentions that came after (D-203 §3 decides whether it expires).
         startedAt: { lte: standing.answeredAt },
       },
       orderBy: [{ startedAt: 'asc' }, { id: 'asc' }],
@@ -914,53 +958,58 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       withinRecordScope(recordScope, one.siteId),
     );
     // DOC-121, DOC-123. Results, evolution notes and, with the review that
-    // includes it, the screening — as they stood when it was authorised.
-    const includesScreening = request.copyReview?.includesScreening === true;
+    // includes it, the screening — as they stand at the authorisation.
+    const includesScreening =
+      request.copyReviews[0]?.includesScreening === true;
     const extras = await copyExtrasOf(
       this.prisma,
       reachable.map((one) => one.id),
-      authorisedAt,
+      standing.answeredAt,
       includesScreening,
     );
-    // DOC-119. The charts whose attentions ACTUALLY leave, read from them —
-    // not from a second query a merge could change in between —, and the
-    // chart in force, whose identity the cover prints.
     const chartIds = [
       ...new Set([rootId, ...reachable.map((one) => one.patientId)]),
     ];
     const encounters = reachable
-      .map((attention) => ({
-        ...encounterSummaryOf(attention).data,
-        siteName: attention.site.name,
-        ...(extras.get(attention.id) ?? {
-          results: [],
-          evolutionNotes: [],
-          screening: null,
-        }),
-      }))
+      .map((attention) => {
+        const summary = encounterSummaryOf(attention).data;
+        return {
+          ...summary,
+          // Not printed on a summary (DOC-115): nothing to freeze of them.
+          practitioner: {
+            ...summary.practitioner,
+            seal: null,
+            signature: null,
+          },
+          chartId: attention.patientId,
+          siteName: attention.site.name,
+          ...(extras.get(attention.id) ?? {
+            results: [],
+            evolutionNotes: [],
+            screening: null,
+          }),
+        };
+      })
       .filter((encounter) => encounter.note !== null);
 
     return {
-      status: 'ready',
-      data: {
-        requestId,
-        patient: toPatient(chart, null, null),
-        patientSex: chart.sex,
-        requestedBy: request.requestedBy,
-        requesterName: request.requesterName,
-        requesterDocument: request.requesterDocument,
-        requesterRelationship: request.requesterRelationship,
-        receivedAt: request.receivedAt,
-        copyPeriod,
-        includesScreening,
-        // Art. 5.d.i. Surnames first, like everybody else on paper.
-        authorisedBy: `${authoriser.lastName} ${authoriser.firstName}`,
-        authorisedAt: standing.answeredAt,
-        chartIds,
-        encounters,
-        siteId: reachable.at(-1)?.siteId ?? null,
-        omitsOtherSites: reachable.length < inPeriod.length,
-      },
+      requestId,
+      patient: toPatient(chart, null, null),
+      patientSex: chart.sex,
+      requestedBy: request.requestedBy,
+      requesterName: request.requesterName,
+      requesterDocument: request.requesterDocument,
+      requesterRelationship: request.requesterRelationship,
+      receivedAt: request.receivedAt,
+      copyPeriod,
+      includesScreening,
+      // Art. 5.d.i. Surnames first, like everybody else on paper.
+      authorisedBy: `${authoriser.lastName} ${authoriser.firstName}`,
+      authorisedAt: standing.answeredAt,
+      chartIds,
+      encounters,
+      siteId: reachable.at(-1)?.siteId ?? null,
+      omitsOtherSites: reachable.length < inPeriod.length,
     };
   }
 
@@ -1721,4 +1770,105 @@ function frozenDiagnoses(
       ? [{ code: entry.code, display: entry.display }]
       : [],
   );
+}
+
+/** DOC-118. What the copy reads of its request. */
+const COPY_REQUEST_SELECT = {
+  patientId: true,
+  clinicalRecordCopy: true,
+  requestedBy: true,
+  requesterName: true,
+  requesterDocument: true,
+  requesterRelationship: true,
+  receivedAt: true,
+  outcome: true,
+  answeredAt: true,
+  answeredBy: true,
+  copyFrom: true,
+  copyTo: true,
+  answerCorrections: {
+    where: { correctedBy: null },
+    select: {
+      id: true,
+      outcome: true,
+      answeredAt: true,
+      answeredBy: true,
+      copyFrom: true,
+      copyTo: true,
+    },
+  },
+  // PD-061. The review that stands is the latest.
+  copyReviews: {
+    orderBy: { reviewedAt: 'desc' },
+    take: 1,
+    select: { includesScreening: true },
+  },
+} satisfies Prisma.DataSubjectRequestSelect;
+
+type CopyRequestRow = Prisma.DataSubjectRequestGetPayload<{
+  select: typeof COPY_REQUEST_SELECT;
+}>;
+
+/** PD-059. A `DATE` period as clinical dates. */
+function periodOfDates(
+  from: Date | null,
+  to: Date | null,
+): { from: string; to: string } | null {
+  return from && to
+    ? {
+        from: from.toISOString().slice(0, 10),
+        to: to.toISOString().slice(0, 10),
+      }
+    : null;
+}
+
+/** The instants of the frozen print data, by the name of their field. */
+const FROZEN_INSTANTS = new Set([
+  'receivedAt',
+  'authorisedAt',
+  'startedAt',
+  'signedAt',
+  'amendedAt',
+  'restFrom',
+  'restTo',
+  'issuedAt',
+  'correctedAfter',
+]);
+
+/**
+ * DOC-122. The frozen print data back as the layout reads it: its instants
+ * were written as ISO strings, and only the fields that are instants are
+ * read back as dates —a text never is, whatever it says—.
+ */
+function reviveCopy(data: Prisma.JsonValue): ClinicalRecordCopyPrintData {
+  return JSON.parse(JSON.stringify(data), (key, value: unknown) =>
+    FROZEN_INSTANTS.has(key) && typeof value === 'string'
+      ? new Date(value)
+      : value,
+  ) as ClinicalRecordCopyPrintData;
+}
+
+/**
+ * D-203 §1 at the download. A frozen copy reaches the sites of whoever
+ * AUTHORISED it; whoever downloads it holds the key too (checked before), and
+ * reads only the attentions of the sites of their own `record:read`: the
+ * cover says so when some stay out, and the trail names only the charts
+ * whose attentions leave (DOC-119).
+ */
+function narrowedTo(
+  data: ClinicalRecordCopyPrintData,
+  recordScope: RecordReadScope,
+  rootId: string,
+): ClinicalRecordCopyPrintData {
+  const encounters = data.encounters.filter((one) =>
+    withinRecordScope(recordScope, one.siteId),
+  );
+  if (encounters.length === data.encounters.length) return data;
+  return {
+    ...data,
+    encounters,
+    chartIds: [...new Set([rootId, ...encounters.map((one) => one.chartId)])],
+    siteId: encounters.at(-1)?.siteId ?? data.siteId,
+    omitsOtherSites: true,
+  };
 }

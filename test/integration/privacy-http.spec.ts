@@ -2177,6 +2177,54 @@ describe('privacy por HTTP', () => {
       await post(`/requests/${holder.id}/response`, granted, custodianToken).expect(200); // prettier-ignore
     });
 
+    it('PD-061 PD-062 un visto bueno anterior a algo sensible nuevo ya no vale: hace falta otro; y rectificar a «Atendida» también lo pide', async () => {
+      const { token: custodianToken } = await custodian();
+      const { token: doctorToken } = await physician();
+      const { patientId, encounterId } = await attendedAt(site.id);
+      await createDiagnosis(prisma, encounterId, 'C50.9');
+      const created =
+        (await post(`/patients/${patientId}/requests`, byAttorney, custodianToken).expect(201)) // prettier-ignore
+        .body as CopyBody;
+      await post(`/requests/${created.id}/clinical-review`, { reviewed: true }, doctorToken).expect(200); // prettier-ignore
+      // Después del visto bueno, otro diagnóstico sensible.
+      await createDiagnosis(prisma, encounterId, 'B20.9');
+      const granted = { outcome: 'GRANTED', response: 'Se autoriza' };
+      const stale = await post(`/requests/${created.id}/response`, granted, custodianToken).expect(409); // prettier-ignore
+      expect((stale.body as Problem).code).toBe(
+        'CLINICAL_RECORD_COPY_REVIEW_REQUIRED',
+      );
+      // Denegada, y luego rectificar a «Atendida» sin visto bueno nuevo: igual.
+      await post(`/requests/${created.id}/response`, { outcome: 'DENIED', response: 'Falta' }, custodianToken).expect(200); // prettier-ignore
+      await post(`/requests/${created.id}/response/correction`, granted, custodianToken).expect(409); // prettier-ignore
+      // Control positivo: un visto bueno nuevo, y se rectifica.
+      await post(`/requests/${created.id}/clinical-review`, { reviewed: true }, doctorToken).expect(200); // prettier-ignore
+      await post(`/requests/${created.id}/response/correction`, granted, custodianToken).expect(200); // prettier-ignore
+      await expect(
+        prisma.clinicalRecordCopySnapshot.count({
+          where: { requestId: created.id },
+        }),
+      ).resolves.toBe(1);
+    });
+
+    it('PD-060 PD-062 sin la llave se deniega pero no se rectifica a «Atendida», y no se lee si la copia espera el visto bueno', async () => {
+      const { patientId, encounterId } = await attendedAt(site.id);
+      await createDiagnosis(prisma, encounterId, 'B20.9');
+      const created = (
+        await post(`/patients/${patientId}/requests`, byAttorney).expect(201)
+      ).body as CopyBody;
+      // El oficial de datos no tiene llave: nada delata lo sensible.
+      expect(created).toMatchObject({ reviewRequired: false, review: null });
+      const open = (await get('/requests?pageSize=100').expect(200)).body as { items: CopyBody[] }; // prettier-ignore
+      expect(open.items.find((item) => item.id === created.id)!.reviewRequired).toBe(false); // prettier-ignore
+      await post(`/requests/${created.id}/response`, { outcome: 'DENIED', response: 'No' }).expect(200); // prettier-ignore
+      const rectified = await post(`/requests/${created.id}/response/correction`, { outcome: 'GRANTED', response: 'Sí' }).expect(404); // prettier-ignore
+      expect((rectified.body as Problem).code).toBe('DATA_REQUEST_NOT_FOUND');
+      // Control positivo: el custodio, con la llave, sí lo lee.
+      const { token: custodianToken } = await custodian();
+      const seen = (await get(`/patients/${patientId}/requests`, custodianToken).expect(200)).body as { items: CopyBody[] }; // prettier-ignore
+      expect(seen.items[0]!.reviewRequired).toBe(true);
+    });
+
     it('PD-062 un tamizaje con signos y el representante legal también esperan el visto bueno; un apoderado sin nada sensible, no', async () => {
       const { token: custodianToken } = await custodian();
       const { patientId, encounterId } = await attendedAt(site.id);

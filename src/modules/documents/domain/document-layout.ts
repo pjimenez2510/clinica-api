@@ -1686,6 +1686,7 @@ function copyExtraBlocks(encounter: CopyEncounterData): Block[] {
         report.issuedAt === null
           ? null
           : `informado el ${ecuadorianDate(report.issuedAt)}`,
+        report.partial ? 'informe parcial' : null,
       ]
         .filter(Boolean)
         .join(', ');

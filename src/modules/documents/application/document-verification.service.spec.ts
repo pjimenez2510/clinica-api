@@ -28,6 +28,10 @@ class FakeSources implements DocumentSourceReader {
     this.asked.push(code);
     return Promise.resolve(this.facts);
   }
+  freezeClinicalRecordCopy(): Promise<null> {
+    return Promise.resolve(null);
+  }
+
   findClinicalRecordCopy(): Promise<ClinicalRecordCopyLookup> {
     return Promise.resolve({ status: 'missing' });
   }

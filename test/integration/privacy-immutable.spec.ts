@@ -775,7 +775,7 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
       ).rejects.toThrow(/data_subject_request_only_answered_once/);
     });
 
-    it('PD-061 el visto bueno es uno por solicitud de copia, de sólo inserción', async () => {
+    it('PD-061 DOC-122 el visto bueno y lo congelado de una copia son de sólo inserción, y el visto bueno sólo de una copia', async () => {
       const prisma = db();
       const request = await copyRow(prisma);
       const review = (requestId: string) =>
@@ -786,19 +786,48 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
             reviewedBy: request.registeredBy,
           },
         });
-      await expect(review(request.id)).resolves.toBeTruthy();
-      await expect(review(request.id)).rejects.toThrow();
+      const given = await review(request.id);
       await expect(
         prisma.clinicalRecordCopyReview.update({
-          where: { requestId: request.id },
+          where: { id: given.id },
           data: { includesScreening: true },
         }),
       ).rejects.toThrow(/append-only/);
       await expect(
-        prisma.clinicalRecordCopyReview.delete({
-          where: { requestId: request.id },
+        prisma.clinicalRecordCopyReview.delete({ where: { id: given.id } }),
+      ).rejects.toThrow(/append-only/);
+      await expect(
+        prisma.$executeRawUnsafe(
+          'TRUNCATE clinical_record_copy_review CASCADE',
+        ),
+      ).rejects.toThrow(/append-only/);
+
+      const snapshot = await prisma.clinicalRecordCopySnapshot.create({
+        data: {
+          requestId: request.id,
+          data: { frozen: true },
+          frozenAt: new Date(),
+        },
+      });
+      // Una por respuesta: la original, otra vez, no.
+      await expect(
+        prisma.clinicalRecordCopySnapshot.create({
+          data: {
+            requestId: request.id,
+            data: { again: true },
+            frozenAt: new Date(),
+          },
+        }),
+      ).rejects.toThrow(
+        /Unique constraint failed on the fields: \(`request_id`, `correction_id`\)/,
+      );
+      await expect(
+        prisma.clinicalRecordCopySnapshot.update({
+          where: { id: snapshot.id },
+          data: { data: { changed: true } },
         }),
       ).rejects.toThrow(/append-only/);
+
       const plain = await copyRow(prisma, {
         requestedBy: 'HOLDER',
         requesterName: null,
@@ -809,6 +838,35 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
       await expect(review(plain.id)).rejects.toThrow(
         /clinical_record_copy_review_of_copy/,
       );
+    });
+
+    it('PD-063 una solicitud de familiar sin parentesco anterior a la regla se sigue respondiendo', async () => {
+      const prisma = db();
+      // Una fila de antes: el disparador de alta no corre si se desactiva.
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE data_subject_request DISABLE TRIGGER trg_data_subject_request_relationship_required',
+      );
+      let legacy: Awaited<ReturnType<typeof copyRow>>;
+      try {
+        legacy = await copyRow(prisma, { requestedBy: 'DECEASED_RELATIVE' });
+      } finally {
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE data_subject_request ENABLE TRIGGER trg_data_subject_request_relationship_required',
+        );
+      }
+      await expect(
+        prisma.dataSubjectRequest.update({
+          where: { id: legacy.id },
+          data: {
+            outcome: 'DENIED',
+            response: 'Falta el certificado de defunción',
+            answeredAt: new Date(),
+            answeredBy: legacy.registeredBy,
+            changedBy: legacy.registeredBy,
+            changedAt: new Date(legacy.registeredAt.getTime() + 1000),
+          },
+        }),
+      ).resolves.toMatchObject({ outcome: 'DENIED' });
     });
   });
 });

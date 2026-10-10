@@ -2375,7 +2375,12 @@ describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', ()
     { kind: 'ENCOUNTER_SUMMARY' }
   >;
   const earlier = new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000);
-  const none = { results: [], evolutionNotes: [], screening: null };
+  const none = {
+    chartId: 'p-1',
+    results: [],
+    evolutionNotes: [],
+    screening: null,
+  };
   const copy = (
     overrides: Partial<ClinicalRecordCopyPrintData> = {},
   ): ClinicalRecordCopyPrintData => ({
@@ -2490,6 +2495,7 @@ describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', ()
               {
                 orderNumber: 12,
                 issuedAt: earlier,
+                partial: true,
                 conclusion: 'Anemia leve',
                 values: [
                   {
@@ -2513,6 +2519,7 @@ describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', ()
     expect(text).toContain('10.2 g/dL');
     expect(text).toContain('12 – 16 g/dL');
     expect(text).toContain('Conclusión=Anemia leve');
+    expect(text).toContain('informe parcial');
     expect(text).toContain(
       'después de autorizada la copia; la corrección no va en ella',
     );

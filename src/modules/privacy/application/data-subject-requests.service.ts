@@ -5,7 +5,14 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
-import { holdsRecordKey } from '../../../shared/domain/clinical-record-key';
+import {
+  CLINICAL_RECORD_COPY_FREEZER,
+  type ClinicalRecordCopyFreezer,
+} from '../../../shared/documents/clinical-record-copy-freezer.port';
+import {
+  holdsRecordKey,
+  type RecordReadScope,
+} from '../../../shared/domain/clinical-record-key';
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import {
   authorisesDelivery,
@@ -49,6 +56,7 @@ import {
   type DataRequestOutcome,
   type DataRequestView,
   type DataSubjectRequestRepository,
+  type GivenAnswer,
   type Requester,
 } from '../domain/privacy.repository';
 
@@ -86,6 +94,8 @@ export class DataSubjectRequestsService {
     private readonly requests: DataSubjectRequestRepository,
     @Inject(ACCESS_AUDIT_RECORDER)
     private readonly audit: AccessAuditRecorder,
+    @Inject(CLINICAL_RECORD_COPY_FREEZER)
+    private readonly freezer: ClinicalRecordCopyFreezer,
   ) {}
 
   /** PD-030, PD-031, PD-032, PD-037, PD-052 to PD-054. */
@@ -151,6 +161,8 @@ export class DataSubjectRequestsService {
         throw new DataRequestNotFoundError();
       case 'already-answered':
         throw new DataRequestAlreadyAnsweredError();
+      case 'review-required':
+        throw new ClinicalRecordCopyReviewRequiredError();
       case 'answered':
         return this.entry(result.request, requester, now);
     }
@@ -234,6 +246,8 @@ export class DataSubjectRequestsService {
         throw new DataRequestNotFoundError();
       case 'not-answered':
         throw new DataRequestNotAnsweredError();
+      case 'review-required':
+        throw new ClinicalRecordCopyReviewRequiredError();
       case 'corrected':
         return this.entry(result.request, requester, now);
     }
@@ -281,7 +295,11 @@ export class DataSubjectRequestsService {
     if (
       !facts ||
       !facts.clinicalRecordCopy ||
-      !holdsRecordKey(requester.protectedScope ?? [], facts.patientSites)
+      !holdsReviewKey(
+        requester.protectedScope ?? [],
+        facts.patientSites,
+        facts.reviewSites,
+      )
     ) {
       throw new DataRequestNotFoundError();
     }
@@ -433,12 +451,30 @@ export class DataSubjectRequestsService {
     now: Date,
   ): DataRequestEntry {
     const { copySites, ...view } = row;
+    const canAuthorise =
+      !row.clinicalRecordCopy ||
+      holdsRecordKey(requester.recordScope ?? [], copySites);
+    const protectedKey =
+      row.clinicalRecordCopy &&
+      holdsRecordKey(requester.protectedScope ?? [], copySites);
+    // PD-062 (revisión clínica, A.M. 5216 art. 13). That a copy waits for a
+    // review —or that it carries the screening— says the record holds
+    // something sensitive: only whoever holds a key to that record reads it.
+    const seesReview = row.clinicalRecordCopy && (canAuthorise || protectedKey);
     return {
       ...view,
       isOverdue: row.answer === null && row.dueAt.getTime() <= now.getTime(),
-      canAuthorise:
-        !row.clinicalRecordCopy ||
-        holdsRecordKey(requester.recordScope ?? [], copySites),
+      canAuthorise,
+      reviewRequired: seesReview ? row.reviewRequired : false,
+      review:
+        seesReview && row.review
+          ? {
+              ...row.review,
+              includesScreening: protectedKey
+                ? row.review.includesScreening
+                : false,
+            }
+          : null,
     };
   }
 
@@ -455,10 +491,12 @@ export class DataSubjectRequestsService {
     answer: AnswerInput,
     requester: Requester,
     now: Date,
-  ): Promise<AnswerInput & { copyPeriod: CopyPeriod | null }> {
+  ): Promise<GivenAnswer> {
     const facts = await this.requests.copyFactsOf(requestId);
     if (!facts) throw new DataRequestNotFoundError();
-    if (facts.clinicalRecordCopy && authorisesDelivery(answer.outcome)) {
+    const delivers =
+      facts.clinicalRecordCopy && authorisesDelivery(answer.outcome);
+    if (delivers) {
       if (!holdsRecordKey(requester.recordScope ?? [], facts.patientSites)) {
         throw new DataRequestNotFoundError();
       }
@@ -475,7 +513,23 @@ export class DataSubjectRequestsService {
       period: answer.copyPeriod,
       answeredOn: clinicalDateOf(now),
     });
-    return { ...answer, copyPeriod };
+    if (!delivers) return { ...answer, copyPeriod };
+    // DOC-122. What it hands over, frozen now and saved with the answer; the
+    // review is checked again under the request's lock (PD-062).
+    const snapshot = await this.freezer.freeze({
+      requestId,
+      recordScope: requester.recordScope ?? [],
+      authorisedAt: now,
+      authorisedById: requester.userId,
+      copyPeriod,
+    });
+    if (snapshot === null) throw new DataRequestNotFoundError();
+    return {
+      ...answer,
+      copyPeriod,
+      snapshot,
+      guardReview: facts.requestedBy !== 'HOLDER',
+    };
   }
 
   /**
@@ -507,4 +561,21 @@ export class DataSubjectRequestsService {
     }
     return chart;
   }
+}
+
+/**
+ * PD-061 (revisión clínica del 10-10-2026). Whoever gives the review must be
+ * able to see what it approves: `record:protected` at every site where the
+ * person has something sensitive or a screening answered —what «Incluir el
+ * tamizaje» would hand over—; with none of those, at one site where the
+ * person was attended (the shared key).
+ */
+function holdsReviewKey(
+  scope: RecordReadScope,
+  patientSites: readonly string[],
+  reviewSites: readonly string[],
+): boolean {
+  if (scope === 'all') return true;
+  if (reviewSites.length === 0) return holdsRecordKey(scope, patientSites);
+  return reviewSites.every((site) => scope.includes(site));
 }

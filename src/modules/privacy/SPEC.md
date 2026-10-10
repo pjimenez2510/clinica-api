@@ -651,7 +651,9 @@ descarga y lee `omitted`.
   sospecha de violencia, abuso o abandono por quien la pide», el sistema DEBERÁ
   guardarlo —quién, cuándo y si **incluye el tamizaje de violencia** en la
   copia— con una fila `CREATE` de bitácora en la misma transacción. Un visto
-  bueno por solicitud y nunca se modifica; SI ya lo tiene, ENTONCES
+  bueno nunca se modifica; vale mientras no se registre algo sensible
+  (PD-062) después de él, y sólo entonces se da otro: el vigente es el
+  último; SI ya tiene uno que vale, ENTONCES
   `CLINICAL_RECORD_COPY_ALREADY_REVIEWED` (409); SI su respuesta vigente ya la
   autoriza, ENTONCES `DATA_REQUEST_ALREADY_ANSWERED` (409); SI falta la
   casilla, `CLINICAL_RECORD_COPY_INVALID` (422); y SI no existe, no es de copia
@@ -663,17 +665,26 @@ descarga y lee `omitted`.
   > por el paciente ante sospecha razonable de violencia, abuso o abandono por
   > esa persona, «a juicio profesional». La acción «Incluir el tamizaje en la
   > copia» es la misma pieza (D-188 §3: «sólo tras revisión humana»).
+  > **Revisión clínica de la rama (10-10-2026):** quien lo da DEBERÁ tener
+  > `record:protected` en **cada** sede donde la persona tiene algo sensible
+  > o un tamizaje respondido —lo que aprueba y lo que «Incluir el tamizaje»
+  > entregaría—; sin ninguna, en una sede donde fue atendida.
   > **Garantía de la base:** `clinical_record_copy_review` es de sólo
-  > inserción, una por solicitud, y sólo de una solicitud de copia.
+  > inserción y sólo de una solicitud de copia.
 - **PD-062** — SI se autoriza («Atendida» o «Atendida en parte», al responder
   o al rectificar) una copia que **no** presenta el titular y alguna atención
   no anulada de la persona tiene un **tamizaje con signos** (sospecha o
   confirmado) o un diagnóstico CIE-10 de Y07, T74, B20 a B24, A15 a A19 o C00
   a C97, sin visto bueno (PD-061), ENTONCES el sistema DEBERÁ rechazarlo con
   `CLINICAL_RECORD_COPY_REVIEW_REQUIRED` (409), cuyo texto pide el visto bueno
-  de un profesional sin decir qué hay en la historia, sin escribir nada; y cada
-  solicitud de copia DEBERÁ decir si lo necesita (`reviewRequired`) y el que
-  tiene (`review`).
+  de un profesional sin decir qué hay en la historia, sin escribir nada —y lo
+  vuelve a comprobar bajo el candado de la solicitud—; y cada solicitud de
+  copia DEBERÁ decir si lo necesita (`reviewRequired`) y el que tiene
+  (`review`) **sólo a quien tiene una llave de esa historia** (`record:read`
+  de PD-058 o `record:protected` en su sede), y si incluye el tamizaje sólo a
+  quien tiene `record:protected`: a cualquier otro, `false` y `null`.
+  > **Revisión clínica de la rama (10-10-2026):** que una copia espere el
+  > visto bueno dice que la historia tiene algo sensible (A.M. 5216 art. 13).
   > **D-203 §5 (aceptada).** A.M. 5216 art. 13 (VIH/SIDA, tuberculosis
   > activa, cáncer) y D-188 §3 (el tamizaje). El representante legal **sí** lo
   > necesita: es el caso que 164.502(g)(5) nombra (D-204 §1). La lista la fijan
@@ -719,7 +730,7 @@ descarga y lee `omitted`.
   atenciones, signos, índices dentales, embarazo, lactancia, vacunas,
   suplementos, diagnósticos, procedimientos y avisos de resultados críticos
   **sólo de las atenciones de las sedes del `record:read` de quien la genera**,
-  y las de alergias y antecedentes sólo si tiene la llave de PD-058; y SI deja
+  y sólo si tiene la llave de PD-058 —sin ella, ninguna versión clínica—; y SI deja
   fuera alguna, ENTONCES `omitted` DEBERÁ decirlo (`clinical_versions`): todas,
   sin `record:read` en la sede, o las de otras sedes.
   > **D-203 §10, decidida por el autor el 10-10-2026.** La misma regla de
@@ -758,6 +769,12 @@ puede verla»).
 
 ## Notas de esquema
 
+- `20261011120100_privacy_copy_snapshot` (DOC-122, PD-061, PD-063): la tabla
+  `clinical_record_copy_snapshot` —lo que la copia lleva al autorizarla, una
+  por respuesta, de sólo inserción; la escribe `privacy` con la respuesta y
+  la lee `documents`—; el visto bueno pasa a tener `id` (el vigente es el
+  último); y el parentesco obligatorio se comprueba al registrar con un
+  disparador, no con un CHECK NOT VALID que volvía a mirar cada UPDATE.
 - `20261011120000_privacy_copy_adjustments` (PD-059, PD-061, PD-063): el
   periodo de la copia «Atendida en parte» en la respuesta y en la
   rectificación (`copy_from`, `copy_to`), el parentesco del familiar

@@ -66,6 +66,7 @@ export async function copyExtrasOf(
         orderBy: { createdAt: 'asc' },
         select: {
           id: true,
+          status: true,
           issuedAt: true,
           conclusion: true,
           supersededBy: { select: { createdAt: true } },
@@ -95,6 +96,7 @@ export async function copyExtrasOf(
       extras.get(order.encounterId)?.results.push({
         orderNumber: order.number,
         issuedAt: report.issuedAt,
+        partial: report.status === 'PARTIAL',
         conclusion: report.conclusion?.trim() || null,
         values: report.results.map((result) => ({
           analyte: result.analyteDisplay,

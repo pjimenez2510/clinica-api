@@ -189,6 +189,17 @@ export interface GivenAnswer {
   outcome: DataRequestOutcome;
   response: string;
   copyPeriod: CopyPeriod | null;
+  /**
+   * DOC-122. What an authorised copy carries, frozen now and saved with the
+   * answer. Opaque here: `documents` composes it and reads it back.
+   */
+  snapshot?: unknown;
+  /**
+   * PD-062. The copy is not the holder's and hands the record over: the
+   * repository refuses it, under the request's lock, without a review that
+   * stands.
+   */
+  guardReview?: boolean;
 }
 
 export interface DataRequestView {
@@ -207,11 +218,12 @@ export interface DataRequestView {
   documentsChecked: boolean;
   description: string;
   receivedAt: Date;
-  /** PD-061. The professional's review, on a copy that has one. */
+  /** PD-061. The professional's latest review, on a copy that has one. */
   review: CopyReviewView | null;
   /**
    * PD-062. Granting this copy waits for the review: it is not the holder's
-   * and the record holds something sensitive. `false` once reviewed.
+   * and the record holds something sensitive, with no review that stands.
+   * Shown only to whoever holds a key to the record (the service).
    */
   reviewRequired: boolean;
   /**
@@ -258,7 +270,8 @@ export interface NewDataRequest {
 export type AnswerResult =
   | { status: 'answered'; request: DataRequestView }
   | { status: 'missing' }
-  | { status: 'already-answered' };
+  | { status: 'already-answered' }
+  | { status: 'review-required' };
 
 /** PD-046. What an edit changes; absent is «lo que ya había». */
 export interface DataRequestChanges {
@@ -275,7 +288,8 @@ export type EditRequestResult =
 export type CorrectAnswerResult =
   | { status: 'corrected'; request: DataRequestView }
   | { status: 'missing' }
-  | { status: 'not-answered' };
+  | { status: 'not-answered' }
+  | { status: 'review-required' };
 
 export type ReviewCopyResult =
   | { status: 'reviewed'; request: DataRequestView }
@@ -294,7 +308,13 @@ export interface CopyFacts {
   requestedBy: DataRequestParty;
   patientSites: string[];
   sensitive: boolean;
+  /** PD-061. A review stands: the latest, after the last sensitive datum. */
   reviewed: boolean;
+  /**
+   * PD-061 (revisión). Where whoever reviews must hold `record:protected`:
+   * the sites with something sensitive or with a screening answered.
+   */
+  reviewSites: string[];
 }
 
 /**

@@ -11,6 +11,10 @@ import {
   type RideIssuer,
 } from '../../shared/documents/ride-issuer.port';
 import { ANNULLED_DOCUMENT_ARCHIVER } from '../../shared/documents/annulled-document.port';
+import {
+  CLINICAL_RECORD_COPY_FREEZER,
+  type ClinicalRecordCopyFreezer,
+} from '../../shared/documents/clinical-record-copy-freezer.port';
 
 import { DocumentIdentityController } from './document-identity.controller';
 import { DocumentTemplatesController } from './document-templates.controller';
@@ -25,6 +29,7 @@ import { DocumentVerificationService } from './application/document-verification
 import { DOCUMENT_RENDERER, IMAGE_NORMALISER } from './domain/document-rendering.port'; // prettier-ignore
 import {
   DOCUMENT_SOURCE_READER,
+  type DocumentSourceReader,
   DOCUMENT_VERIFICATION_BASE_URL,
 } from './domain/document-source';
 import { DOCUMENT_REPOSITORY } from './domain/document.repository';
@@ -104,6 +109,20 @@ import { SharpImageNormaliser } from './infrastructure/sharp-image.normaliser';
     { provide: DOCUMENT_RENDERER, useClass: PdfKitDocumentRenderer },
     { provide: IMAGE_NORMALISER, useClass: SharpImageNormaliser },
     /**
+     * DOC-122. What `privacy` freezes with the answer that authorises a copy
+     * of the clinical record: the print data as it stands then, composed by
+     * the same reader that serves the download.
+     */
+    {
+      provide: CLINICAL_RECORD_COPY_FREEZER,
+      inject: [DOCUMENT_SOURCE_READER],
+      useFactory: (
+        reader: DocumentSourceReader,
+      ): ClinicalRecordCopyFreezer => ({
+        freeze: (input) => reader.freezeClinicalRecordCopy(input),
+      }),
+    },
+    /**
      * SRI-072, SRI-089. The RIDE `sri` attaches to the e-mail of an
      * authorised voucher —an invoice's or a credit note's—: emitted and FILED
      * here like any other (DOC-002), in the name of whoever issued the
@@ -155,7 +174,11 @@ import { SharpImageNormaliser } from './infrastructure/sharp-image.normaliser';
       useClass: AnnulledDocumentArchiverService,
     },
   ],
-  exports: [RIDE_ISSUER, ANNULLED_DOCUMENT_ARCHIVER],
+  exports: [
+    RIDE_ISSUER,
+    ANNULLED_DOCUMENT_ARCHIVER,
+    CLINICAL_RECORD_COPY_FREEZER,
+  ],
 })
 export class DocumentsModule implements NestModule {
   /**

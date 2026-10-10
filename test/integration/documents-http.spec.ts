@@ -2633,7 +2633,7 @@ describe('los documentos por HTTP', () => {
       expect(text).toContain('Hemoglobina');
       expect(text).toContain('10.2 g/dL');
       expect(text).toContain('Anemia leve');
-      expect(text).toContain('la corrección no va en ella');
+      // DOC-122. Frozen at the authorisation: the later correction is not there.
       expect(text).not.toContain('13.1');
       expect(text).not.toContain('Valor corregido');
       expect(text).toContain('Notas de evolución');
@@ -2737,6 +2737,78 @@ describe('los documentos por HTTP', () => {
       const text = await copyText(requestId);
       expect(text).toContain('Dolor de garganta de dos días');
       expect(text).not.toContain('Consulta posterior a la autorización');
+    });
+
+    it('DOC-122 lo autorizado queda congelado: un diagnóstico añadido y una nota enmendada después no cambian lo que se vuelve a descargar', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId } = await aRecordWithHistory();
+      const seeded = await prisma.encounter.findFirstOrThrow({
+        where: { patientId, status: { not: 'ENTERED_IN_ERROR' } },
+        orderBy: { startedAt: 'desc' },
+        select: { id: true },
+      });
+      const requestId = await copyRequest(patientId, {
+        requestedBy: 'HOLDER',
+        requesterName: null,
+        requesterDocument: null,
+      });
+      await answer(requestId, 'GRANTED');
+      const first = await copyText(requestId);
+
+      // After the authorisation: a diagnosis on an attention that was there,
+      // and the 002 amended.
+      await createDiagnosis(prisma, seeded.id, 'B20.9', 'Enfermedad por VIH');
+      const note = await prisma.clinicalNote.findFirstOrThrow({
+        where: { encounterId: seeded.id, formCode: '002', status: 'SIGNED' },
+        select: { id: true, chainId: true },
+      });
+      await prisma.clinicalNote.update({
+        where: { id: note.id },
+        data: { status: 'SUPERSEDED' },
+      });
+      await prisma.clinicalNote.create({
+        data: {
+          chainId: note.chainId,
+          version: 2,
+          encounterId: seeded.id,
+          formCode: '002',
+          formVersion: '1',
+          status: 'SIGNED',
+          content: { motivoConsulta: 'Nota enmendada después' },
+          authorId: practitionerId,
+          signedById: practitionerId,
+          signedAt: new Date(),
+          contentHash: 'e'.repeat(64),
+          supersedesId: note.id,
+          amendmentReason: 'Prueba',
+        },
+      });
+
+      const again = await copyText(requestId);
+      expect(again).not.toContain('B20.9');
+      expect(again).not.toContain('Nota enmendada después');
+      expect(again).toContain('Dolor de garganta de dos días');
+      expect(again.replace(/\d{2}\/\d{2}\/\d{4} · \d{2}:\d{2}/g, '')).toBe(
+        first.replace(/\d{2}\/\d{2}\/\d{4} · \d{2}:\d{2}/g, ''),
+      );
+      // Control positivo: el resumen de la atención, que se compone al
+      // momento, sí lo lleva.
+      const summary = await get(
+        `/documents/encounters/${seeded.id}/summary`,
+        doctorToken,
+      )
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      const proxy = await getDocumentProxy(
+        new Uint8Array(summary.body as Buffer),
+      );
+      const live = (await extractText(proxy, { mergePages: true })).text;
+      expect(live).toContain('B20.9');
     });
 
     it('DOC-118 la solicitud registrada en una ficha que después se unificó entrega la historia de la persona, con la ficha vigente en la portada', async () => {

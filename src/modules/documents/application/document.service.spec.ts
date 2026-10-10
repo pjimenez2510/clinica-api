@@ -362,6 +362,10 @@ class FakeSources implements DocumentSourceReader {
   }
 
   copy: ClinicalRecordCopyLookup = { status: 'missing' };
+  freezeClinicalRecordCopy(): Promise<null> {
+    return Promise.resolve(null);
+  }
+
   findClinicalRecordCopy(): Promise<ClinicalRecordCopyLookup> {
     return Promise.resolve(this.copy);
   }
@@ -1149,6 +1153,7 @@ describe('DOC-118 DOC-119 la copia certificada de la historia clínica', () => {
         {
           ...summary.data,
           siteName: 'Sede Norte',
+          chartId: 'chart-1',
           results: [],
           evolutionNotes: [],
           screening: null,

@@ -5976,8 +5976,10 @@ model DataSubjectRequest {
   changedAt          DateTime?           @map("changed_at") @db.Timestamptz(6)
 
   answerCorrections DataSubjectAnswerCorrection[]
-  /// PD-061. The professional's review of a copy.
-  copyReview        ClinicalRecordCopyReview?
+  /// PD-061. The professionals' reviews of a copy; the latest stands.
+  copyReviews       ClinicalRecordCopyReview[]
+  /// DOC-122. What each authorising answer froze.
+  copySnapshots     ClinicalRecordCopySnapshot[]
 
   @@index([patientId, receivedAt(sort: Desc)], map: "data_subject_request_by_patient")
   @@map("data_subject_request")
@@ -6000,6 +6002,7 @@ model DataSubjectAnswerCorrection {
   /// PD-059. As on the request.
   copyFrom    DateTime?                    @map("copy_from") @db.Date
   copyTo      DateTime?                    @map("copy_to") @db.Date
+  snapshots   ClinicalRecordCopySnapshot[]
 
   @@map("data_subject_answer_correction")
 }
@@ -6008,13 +6011,32 @@ model DataSubjectAnswerCorrection {
 /// `record:protected` on a request for the copy of the clinical record: one per
 /// request, insert-only, and whether it includes the violence screening.
 model ClinicalRecordCopyReview {
-  requestId         String             @id @map("request_id") @db.Uuid
+  id                String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  requestId         String             @map("request_id") @db.Uuid
   request           DataSubjectRequest @relation(fields: [requestId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "clinical_record_copy_review_request_fkey")
   includesScreening Boolean            @default(false) @map("includes_screening")
   reviewedAt        DateTime           @map("reviewed_at") @db.Timestamptz(6)
   reviewedBy        String             @map("reviewed_by") @db.Uuid
 
+  @@index([requestId, reviewedAt(sort: Desc)], map: "clinical_record_copy_review_by_request")
   @@map("clinical_record_copy_review")
+}
+
+/// DOC-122 (D-203 §3). What a copy carried when an answer authorised it: the
+/// print data, frozen in the same transaction as the answer. `correctionId`
+/// is the rectification that authorised it; `null`, the original answer.
+/// Written by `privacy`, read by `documents`. Insert-only.
+model ClinicalRecordCopySnapshot {
+  id           String                       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  requestId    String                       @map("request_id") @db.Uuid
+  request      DataSubjectRequest           @relation(fields: [requestId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "clinical_record_copy_snapshot_request_fkey")
+  correctionId String?                      @map("correction_id") @db.Uuid
+  correction   DataSubjectAnswerCorrection? @relation(fields: [correctionId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "clinical_record_copy_snapshot_correction_fkey")
+  data         Json                         @db.JsonB
+  frozenAt     DateTime                     @map("frozen_at") @db.Timestamptz(6)
+
+  @@unique([requestId, correctionId], map: "clinical_record_copy_snapshot_one_per_answer")
+  @@map("clinical_record_copy_snapshot")
 }
 
 /// EN-210, D-127. The PREVIOUS state of an edited row, written by the

@@ -384,6 +384,8 @@ export interface CopyResultReport {
   /** The order's number, when it has one. */
   orderNumber: number | null;
   issuedAt: Date | null;
+  /** ORD-119. Still partial: more values may come; the paper says so. */
+  partial: boolean;
   conclusion: string | null;
   values: readonly {
     analyte: string;
@@ -405,6 +407,8 @@ export interface CopyScreening {
 
 /** DOC-121. What one attention of the copy adds to its summary (DOC-111). */
 export interface CopyEncounterData extends EncounterSummaryPrintData {
+  /** DOC-119. The chart the attention is on: the trail names it. */
+  chartId: string;
   siteName: string;
   results: readonly CopyResultReport[];
   /** Form 005, signed and standing, oldest first. */
@@ -501,6 +505,17 @@ export interface DocumentSourceReader {
     requestId: string,
     recordScope: RecordReadScope,
   ): Promise<ClinicalRecordCopyLookup>;
+  /**
+   * DOC-122. The copy as it stands now, to be frozen with the answer that
+   * authorises it; `null` without the key.
+   */
+  freezeClinicalRecordCopy(input: {
+    requestId: string;
+    recordScope: RecordReadScope;
+    authorisedAt: Date;
+    authorisedById: string;
+    copyPeriod: { from: string; to: string } | null;
+  }): Promise<ClinicalRecordCopyPrintData | null>;
 }
 
 export const DOCUMENT_SOURCE_READER = Symbol('DOCUMENT_SOURCE_READER');

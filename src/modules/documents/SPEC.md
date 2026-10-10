@@ -1384,6 +1384,16 @@ solo PDF, completo, generado al momento._
   autorizado al instante de la respuesta— y dejar sus filas de DOC-119.
   > **D-203 §2 y §3 (aceptadas), enmienda DOC-118:** «Atendida en parte» ya
   > habilita la descarga.
+  >
+  > **Revisión clínica de la rama (10-10-2026):** lo autorizado se **congela**:
+  > la respuesta que autoriza guarda, en su misma transacción, los datos que
+  > la copia lleva en ese instante (`clinical_record_copy_snapshot`, a través
+  > del puerto compartido `shared/documents/clinical-record-copy-freezer.port.ts`),
+  > y cada descarga los sirve; un diagnóstico añadido, una nota enmendada o un
+  > tamizaje corregido después no cambian lo entregado. Quien descarga lee
+  > sólo las atenciones de las sedes de su `record:read`. No es el PDF: DOC-118
+  > sigue sin archivarlo. Las copias autorizadas antes de esta regla se
+  > componen como están.
 - **DOC-123** — MIENTRAS el visto bueno de la solicitud (PD-061) **incluya el
   tamizaje**, cada atención de la copia que lo tenga DEBERÁ llevar el tamizaje
   de violencia (bloque F): resultado, tipos, instrumento, acción tomada y si se

@@ -303,7 +303,10 @@ export async function recordVersionsOfChart(
   // One after another: a transaction is one connection.
   for (const [table, path] of Object.entries(VERSIONED_TABLES)) {
     if (path.omittedBecause !== null && !options.includeOmitted) continue;
-    if (path.clinical === 'person' && !holdsKey) continue;
+    // PD-067. Without the key, nothing clinical leaves —not even the versions
+    // of an attention at one of the caller's sites when the person's signed
+    // notes are all elsewhere—: `omitted` says «none», and it is true.
+    if (path.clinical !== undefined && !holdsKey) continue;
     if (
       path.clinical === 'encounter' &&
       sites !== 'all' &&
