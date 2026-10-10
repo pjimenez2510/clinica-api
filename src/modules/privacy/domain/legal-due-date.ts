@@ -1,6 +1,8 @@
 import {
   addDays,
+  clinicalDateOf,
   isoWeekdayOf,
+  startOfClinicalDay,
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
 
@@ -95,4 +97,48 @@ export function legalDueDate(
   if (rule.calendarDays === undefined) return day;
   const calendar = addDays(receivedOn, rule.calendarDays);
   return calendar < day ? calendar : day;
+}
+
+/**
+ * PD-054 (D-198 §1). A.M. 5216 art. 30: the copy of the clinical record is
+ * handed over «en un plazo máximo de cuarenta y ocho (48) horas». Running
+ * hours: the article does not say working ones.
+ *
+ * ⚠️ PENDING RATIFICATION by the legal adviser, like the rule above: that the
+ * 48 hours govern even when the copy is asked for as an access request.
+ */
+export const CLINICAL_RECORD_COPY_HOURS = 48;
+
+const MS_PER_HOUR = 60 * 60 * 1000;
+
+/**
+ * PD-054. The INSTANT a request is due: 48 hours after its receipt for the
+ * copy of the clinical record; for any other, the end —in Ecuador— of the day
+ * `legalDueDate` fixes, which is the same deadline the date always meant.
+ * Pure, like `legalDueDate`.
+ */
+export function legalDeadline(
+  request: { right: DataSubjectRight; clinicalRecordCopy: boolean },
+  receivedAt: Date,
+  clinicWideHolidays: ReadonlySet<string>,
+): Date {
+  if (request.clinicalRecordCopy) {
+    return new Date(
+      receivedAt.getTime() + CLINICAL_RECORD_COPY_HOURS * MS_PER_HOUR,
+    );
+  }
+  const dueOn = legalDueDate(
+    request.right,
+    clinicalDateOf(receivedAt),
+    clinicWideHolidays,
+  );
+  return startOfClinicalDay(addDays(dueOn, 1));
+}
+
+/**
+ * PD-054. The clinical date of the last day still on time: the deadline's own
+ * day, or the day before when it falls at midnight (the end of a day).
+ */
+export function lastDayOnTime(dueAt: Date): ClinicalDate {
+  return clinicalDateOf(new Date(dueAt.getTime() - 1));
 }

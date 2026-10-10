@@ -6,7 +6,10 @@ import {
   clinicalDateOf,
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
-import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
+import {
+  chartScope,
+  chartScopeOfSurvivor,
+} from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type {
   AnswerResult,
@@ -21,6 +24,7 @@ import type {
   EditRequestResult,
   ExportOmission,
   NewDataRequest,
+  ProposalFacts,
   Requester,
   StaffName,
 } from '../domain/privacy.repository';
@@ -39,7 +43,8 @@ import {
 } from './privacy-reads';
 import {
   DUE_DATE_HORIZON_DAYS,
-  legalDueDate,
+  lastDayOnTime,
+  legalDeadline,
   type DataSubjectRight,
 } from '../domain/legal-due-date';
 
@@ -72,12 +77,17 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           patientId: request.patientId,
           right: request.right,
           requestedBy: request.requestedBy,
+          requesterName: request.requesterName,
+          requesterDocument: request.requesterDocument,
+          clinicalRecordCopy: request.clinicalRecordCopy,
+          documentsChecked: request.documentsChecked,
           description: request.description,
-          // Absent = «ahora» as the BASE reads it, the same `now()` as
-          // `registered_at`: an application clock a few milliseconds ahead
-          // of the database's would otherwise trip the not-future CHECK.
+          // PD-054. Both on the application's clock, the one the deadline is
+          // computed with: «ahora» is the same instant for the receipt and
+          // the registration, so the not-future CHECK holds by construction.
           receivedAt: request.receivedAt,
-          dueOn: fromClinicalDate(request.dueOn),
+          registeredAt: request.registeredAt,
+          dueAt: request.dueAt,
           registeredBy: requester.userId,
         },
       });
@@ -177,15 +187,20 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
       const receivedAt = changes.receivedAt ?? current.received_at;
       if (data.right !== undefined || data.receivedAt !== undefined) {
         const receivedOn = clinicalDateOf(receivedAt);
-        const holidays = await clinicWideHolidaysIn(
-          tx,
-          receivedOn,
-          addDays(receivedOn, DUE_DATE_HORIZON_DAYS),
+        // PD-054. The copy's 48 hours are running hours: no holiday to read.
+        const holidays = current.clinical_record_copy
+          ? new Set<string>()
+          : await clinicWideHolidaysIn(
+              tx,
+              receivedOn,
+              addDays(receivedOn, DUE_DATE_HORIZON_DAYS),
+            );
+        const dueAt = legalDeadline(
+          { right, clinicalRecordCopy: current.clinical_record_copy },
+          receivedAt,
+          holidays,
         );
-        const dueOn = legalDueDate(right, receivedOn, holidays);
-        if (dueOn !== toClinicalDate(current.due_on)) {
-          data.dueOn = fromClinicalDate(dueOn);
-        }
+        if (dueAt.getTime() !== current.due_at.getTime()) data.dueAt = dueAt;
       }
       // Nothing to change is not an edit: no version of an identical row.
       if (Object.keys(data).length === 0) return { status: 'edited' } as const;
@@ -260,12 +275,45 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
     return { status: 'corrected', request: request! };
   }
 
-  async rightOf(requestId: string): Promise<DataSubjectRight | null> {
-    const row = await this.prisma.dataSubjectRequest.findUnique({
+  async proposalFactsOf(requestId: string): Promise<ProposalFacts | null> {
+    return this.prisma.dataSubjectRequest.findUnique({
       where: { id: requestId },
-      select: { right: true },
+      select: {
+        right: true,
+        requestedBy: true,
+        requesterName: true,
+        clinicalRecordCopy: true,
+      },
     });
-    return row?.right ?? null;
+  }
+
+  async copyKeyOf(
+    requestId: string,
+  ): Promise<{ clinicalRecordCopy: boolean; patientSites: string[] } | null> {
+    const request = await this.prisma.dataSubjectRequest.findUnique({
+      where: { id: requestId },
+      select: { patientId: true, clinicalRecordCopy: true },
+    });
+    if (!request) return null;
+    if (!request.clinicalRecordCopy) {
+      return { clinicalRecordCopy: false, patientSites: [] };
+    }
+    // The PERSON's sites, from the chart the request was written on up to
+    // the one in force and down to its absorbed ones (PA-055): those where
+    // a copy would carry a signed attention.
+    const attentions = await this.prisma.encounter.findMany({
+      where: {
+        ...chartScopeOfSurvivor(request.patientId),
+        status: { not: 'ENTERED_IN_ERROR' },
+        notes: { some: { formCode: '002', status: 'SIGNED' } },
+      },
+      distinct: ['siteId'],
+      select: { siteId: true },
+    });
+    return {
+      clinicalRecordCopy: true,
+      patientSites: attentions.map((one) => one.siteId),
+    };
   }
 
   async find(requestId: string): Promise<DataRequestView | null> {
@@ -286,20 +334,18 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
   }
 
   async open(
-    filter: { right?: DataSubjectRight; dueBefore?: ClinicalDate },
+    filter: { right?: DataSubjectRight; dueBy?: Date },
     page: { page: number; pageSize: number },
   ): Promise<{ items: DataRequestView[]; total: number }> {
     const where: Prisma.DataSubjectRequestWhereInput = {
       outcome: null,
       ...(filter.right ? { right: filter.right } : {}),
-      ...(filter.dueBefore
-        ? { dueOn: { lt: fromClinicalDate(filter.dueBefore) } }
-        : {}),
+      ...(filter.dueBy ? { dueAt: { lte: filter.dueBy } } : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.dataSubjectRequest.findMany({
         where,
-        orderBy: [{ dueOn: 'asc' }, { receivedAt: 'asc' }, { id: 'asc' }],
+        orderBy: [{ dueAt: 'asc' }, { receivedAt: 'asc' }, { id: 'asc' }],
         skip: (page.page - 1) * page.pageSize,
         take: page.pageSize,
       }),
@@ -417,6 +463,7 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           requestedBy: row.requestedBy,
           description: row.description,
           receivedAt: row.receivedAt.toISOString(),
+          // Format v1 says a date; the instant is the request's (PD-054).
           dueOn: row.dueOn,
           // PD-047. The answer that stands, and the ones it rectified.
           outcome: row.answer?.outcome ?? null,
@@ -468,9 +515,14 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
         patient: patients.get(row.patientId) ?? { mrn: '—', fullName: '—' },
         right: row.right,
         requestedBy: row.requestedBy,
+        requesterName: row.requesterName,
+        requesterDocument: row.requesterDocument,
+        clinicalRecordCopy: row.clinicalRecordCopy,
+        documentsChecked: row.documentsChecked,
         description: row.description,
         receivedAt: row.receivedAt,
-        dueOn: toClinicalDate(row.dueOn),
+        dueAt: row.dueAt,
+        dueOn: lastDayOnTime(row.dueAt),
         registeredAt: row.registeredAt,
         registeredBy: nameOf(staff, row.registeredBy),
         answer: answers.at(-1) ?? null,
@@ -551,7 +603,8 @@ async function lockRequest(
   right: DataRequestView['right'];
   description: string;
   received_at: Date;
-  due_on: Date;
+  due_at: Date;
+  clinical_record_copy: boolean;
   outcome: DataRequestOutcome | null;
   changed_at: Date | null;
 } | null> {
@@ -560,12 +613,14 @@ async function lockRequest(
       right: DataRequestView['right'];
       description: string;
       received_at: Date;
-      due_on: Date;
+      due_at: Date;
+      clinical_record_copy: boolean;
       outcome: DataRequestOutcome | null;
       changed_at: Date | null;
     }[]
   >`
-    SELECT "right", description, received_at, due_on, outcome, changed_at
+    SELECT "right", description, received_at, due_at, clinical_record_copy,
+           outcome, changed_at
       FROM data_subject_request
      WHERE id = ${requestId}::uuid
        FOR UPDATE`;

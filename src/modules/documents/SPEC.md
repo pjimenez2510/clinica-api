@@ -356,6 +356,23 @@ unificar sigue nombrando a la duplicada.
 **Solo servidor:** DOC-117. El PDF lo compone el servidor y la pantalla sólo
 lo pide y lo abre.
 
+### H13 — La copia certificada de la historia clínica (D-198 §1) _(P1, 09-10-2026)_
+
+Desde una solicitud de copia atendida (`privacy` D6), un PDF con la portada de
+la entrega y el resumen de cada atención firmada.
+
+**Prueba independiente:** responder «Atendida» una solicitud de copia de un
+paciente con dos atenciones firmadas (una en una ficha absorbida) y una
+anulada, descargar la copia y leer en el texto extraído CONFIDENCIAL, «COPIA
+CERTIFICADA», quién la pidió y quién la autorizó, las dos atenciones y no la
+anulada; ver una fila `EXPORT` por ficha y otra de la solicitud; pedirla sin
+responder y ver `CLINICAL_RECORD_COPY_NOT_AVAILABLE`.
+
+**Cubre:** DOC-118, DOC-119.
+
+**Solo servidor:** DOC-119. La bitácora antes de servir: la pantalla sólo pide
+el PDF y lo abre (PD-057).
+
 ---
 
 ## Criterios de éxito
@@ -1249,6 +1266,65 @@ solo PDF, completo, generado al momento._
   > Su autenticidad la prueba el código de verificación de la atención
   > (DOC-112).
 
+- **DOC-118** — CUANDO alguien con `patient:data-requests` y `record:read` (PD-058) pida la copia de
+  la historia clínica de una solicitud de copia (PD-053) cuya respuesta
+  vigente (PD-047) sea `GRANTED`, el sistema DEBERÁ
+  componer **al momento** un PDF/A con el marco común (DOC-080 a DOC-085) y la
+  plantilla vigente del resumen de la atención (DOC-113), titulado «COPIA
+  CERTIFICADA DE LA HISTORIA CLÍNICA», con CONFIDENCIAL **siempre**, que
+  lleve: una portada con el paciente de la ficha vigente; la solicitud —quién
+  la presentó, su nombre y documento si no es el titular, y cuándo se
+  recibió—; quién la autorizó y cuándo (la respuesta); que el establecimiento,
+  custodio de la historia, certifica que reproduce **lo que lleva** —la nota
+  de consulta vigente, los signos, los diagnósticos, la receta, los exámenes
+  pedidos y los certificados de cada atención con nota firmada—; que quien la
+  recibe responde de su confidencialidad; y lo que **no** lleva: el tamizaje
+  de violencia, los resultados de los exámenes, las atenciones sin nota de
+  consulta firmada, las notas de evolución, las referencias e interconsultas
+  y las versiones anteriores de una nota enmendada. Después, de la más
+  antigua a la más reciente, cada atención **con nota 002 firmada** de la
+  ficha vigente y de sus absorbidas **iniciada hasta el instante de la
+  autorización**, salvo las anuladas (`ENTERED_IN_ERROR`), con el contenido
+  de DOC-111 bajo su fecha y
+  su código de verificación (EN-219); y SI no hay ninguna, la línea que lo
+  dice. El sistema **NO DEBERÁ** guardar el PDF. SI la solicitud no existe,
+  ENTONCES DEBERÁ responder `DOCUMENT_SUBJECT_NOT_FOUND`; SI no es de copia o
+  su respuesta vigente no es «Atendida» —también «Atendida en parte» o una
+  autorización rectificada a «Denegada»—, ENTONCES
+  `CLINICAL_RECORD_COPY_NOT_AVAILABLE` (409). La ruta es
+  `GET /v1/documents/data-requests/<id>/clinical-record`. **La copia alcanza
+  las sedes del `record:read` de quien la pide** (D-203 §1): sólo las
+  atenciones de esas sedes, y SI la persona tuvo atenciones en otras, la
+  portada DEBERÁ decir que no lleva «las atenciones de otras sedes»; y SI no
+  tiene `record:read` en ninguna sede donde la persona tuvo una atención
+  firmada —o en ninguna, si no tuvo—, ENTONCES DEBERÁ responder
+  `DOCUMENT_SUBJECT_NOT_FOUND`, lo mismo que a una solicitud inexistente.
+  > **D-198 §1, aceptada por el autor el 09-10-2026:** A.M. 5216 art. 28
+  > (copia certificada), art. 32 (se informa a quien la recibe de su
+  > responsabilidad) y art. 33 («CONFIDENCIAL» en el margen superior). La
+  > respuesta es la autorización (EN-033): sin ella no sale. Las palabras de
+  > la certificación y quién la firma en nombre del custodio, **al asesor
+  > legal**. Quién la descarga lo decidió el autor el 10-10-2026 (D-203 §1):
+  > una persona, con `patient:data-requests` y `record:read` en la sede.
+  >
+  > **Revisión clínica de la rama (09-10-2026), D-203:** «Atendida en parte»
+  > no la habilita hasta que se decida qué parte (§2); cada descarga lleva lo
+  > que se autorizó y no lo que vino después (§3); la certificación dice lo
+  > que lleva, no «lo registrado» (§4, al asesor).
+  >
+  > **D-188 §3:** el tamizaje de violencia (bloque F) no va; el resumen
+  > tampoco lo lleva (DOC-111), y la portada lo dice.
+  >
+  > El membrete es el de la sede de la atención más reciente; sin atenciones,
+  > el de la primera sede activa. Cada atención dice su sede.
+- **DOC-119** — Antes de servir la copia, el sistema DEBERÁ dejar, en una
+  transacción, una fila `EXPORT` por cada ficha cuyas atenciones salen —la
+  vigente y sus absorbidas— y otra que nombra la solicitud
+  (`data_subject_request`); SI no se pueden escribir, ENTONCES **NO DEBERÁ**
+  servir nada.
+  > Como la exportación (PD-043): la bitácora dice de quién salieron los datos
+  > y por qué solicitud (Reglamento LOPDP art. 15).
+
 ---
 
 ## 6. Con qué se genera, y la trampa que hay que resolver
@@ -1373,6 +1449,7 @@ Por qué no se construye hoy:
 | `DOCUMENT_IMAGE_NOT_FOUND` | 404 | DOC-061. No hay logo, sello o firma puestos |
 | `DOCUMENT_VERIFICATION_NOT_FOUND` | 404 | DOC-096. Ningún documento con ese código. **El mismo cuerpo** para todos |
 | `ENCOUNTER_SUMMARY_NOT_AVAILABLE` | 409 | DOC-111. La atención no tiene nota 002 firmada, o está anulada: no hay nada que resumir |
+| `CLINICAL_RECORD_COPY_NOT_AVAILABLE` | 409 | DOC-118. La solicitud no es de copia de la historia clínica, o no está atendida: nadie autorizó la entrega |
 
 ## 9. Niveles de prueba
 

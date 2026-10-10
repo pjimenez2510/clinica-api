@@ -54,7 +54,7 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
           requestedBy: 'HOLDER',
           description: 'Copia de mis datos',
           receivedAt,
-          dueOn: receivedAt,
+          dueAt: new Date(receivedAt.getTime() + 24 * 60 * 60 * 1000),
           registeredBy: clerk.id,
         },
       }),
@@ -215,7 +215,7 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
           requestedBy: 'HOLDER',
           description: 'Copia',
           receivedAt,
-          dueOn: later,
+          dueAt: new Date(later.getTime() + 60 * 60 * 1000),
           registeredAt: now,
           registeredBy: clerk.id,
         },
@@ -239,10 +239,10 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
       changedBy: clerk.id,
       changedAt: answeredAt,
     };
-    const later = new Date(request.dueOn.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const later = new Date(request.dueAt.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     for (const change of [
-      { dueOn: later },
+      { dueAt: later },
       { right: 'ERASURE' as const },
       { receivedAt: new Date(request.receivedAt.getTime() - 60_000) },
     ]) {
@@ -277,7 +277,7 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
           requestedBy: 'HOLDER',
           description: 'Copia',
           receivedAt: now,
-          dueOn: now,
+          dueAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
           // Same instant on both sides: the base's own `now()` would race the
           // application clock in the not-future CHECK.
           registeredAt: now,
@@ -290,8 +290,12 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
       /data_subject_request_description_valid/,
     );
     await expect(
-      row({ dueOn: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000) }),
+      row({ dueAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000) }),
     ).rejects.toThrow(/data_subject_request_due_after_receipt/);
+    // PD-054. Due at the very instant it arrived is due at birth, too.
+    await expect(row({ dueAt: now })).rejects.toThrow(
+      /data_subject_request_due_after_receipt/,
+    );
     await expect(
       row({
         outcome: 'DENIED',
@@ -438,7 +442,7 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
         right: 'RECTIFICATION',
         description: 'Corregir el apellido',
         receivedAt: new Date(request.receivedAt.getTime() - 60_000),
-        dueOn: request.dueOn,
+        dueAt: request.dueAt,
         changedBy: clerk.id,
         changedAt: editedAt,
       },
@@ -571,5 +575,117 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
         },
       }),
     ).rejects.toThrow(/data_subject_answer_correction_follows/);
+  });
+
+  describe('la copia de la historia clínica (PD-052, PD-053, D-198 §1)', () => {
+    async function copyRow(
+      prisma: PrismaClient,
+      overrides: Record<string, unknown> = {},
+    ) {
+      const [patient, clerk] = await Promise.all([
+        createPatient(prisma),
+        createUser(prisma),
+      ]);
+      const now = new Date();
+      return prisma.dataSubjectRequest.create({
+        data: {
+          patientId: patient.id,
+          right: 'ACCESS',
+          requestedBy: 'ATTORNEY',
+          requesterName: 'Ana Pérez',
+          requesterDocument: '1710034065',
+          clinicalRecordCopy: true,
+          documentsChecked: true,
+          description: 'Copia de la historia clínica',
+          receivedAt: now,
+          dueAt: new Date(now.getTime() + 48 * 60 * 60 * 1000),
+          registeredAt: now,
+          registeredBy: clerk.id,
+          ...overrides,
+        },
+      });
+    }
+
+    it('PD-052 PD-053 EN-033 la base admite la copia de un apoderado con su nombre, su documento y la casilla', async () => {
+      await expect(copyRow(db())).resolves.toMatchObject({
+        requestedBy: 'ATTORNEY',
+        clinicalRecordCopy: true,
+      });
+    });
+
+    it('PD-052 la base rechaza un tercero que no pide la copia', async () => {
+      await expect(
+        copyRow(db(), { clinicalRecordCopy: false, documentsChecked: false }),
+      ).rejects.toThrow(/data_subject_request_third_party_copy_only/);
+    });
+
+    it('PD-052 la base rechaza la copia de quien no es el titular sin nombre o sin documento', async () => {
+      const prisma = db();
+      await expect(copyRow(prisma, { requesterName: null })).rejects.toThrow(
+        /data_subject_request_requester_named/,
+      );
+      await expect(
+        copyRow(prisma, {
+          requestedBy: 'REPRESENTATIVE',
+          requesterDocument: null,
+        }),
+      ).rejects.toThrow(/data_subject_request_requester_named/);
+      await expect(copyRow(prisma, { requesterName: '   ' })).rejects.toThrow(
+        /data_subject_request_requester_valid/,
+      );
+      // Control positivo: el titular no da nombre.
+      await expect(
+        copyRow(prisma, {
+          requestedBy: 'HOLDER',
+          requesterName: null,
+          requesterDocument: null,
+        }),
+      ).resolves.toBeTruthy();
+    });
+
+    it('PD-053 la base rechaza la copia con otro derecho o sin la casilla', async () => {
+      const prisma = db();
+      await expect(
+        copyRow(prisma, { requestedBy: 'HOLDER', right: 'PORTABILITY' }),
+      ).rejects.toThrow(/data_subject_request_copy_is_access/);
+      await expect(
+        copyRow(prisma, { documentsChecked: false }),
+      ).rejects.toThrow(/data_subject_request_copy_documents_checked/);
+    });
+
+    it('PD-053 editar una copia no cambia que sea copia, la casilla, ni el nombre o el documento de quien la presenta', async () => {
+      const prisma = db();
+      const request = await copyRow(prisma);
+      const changedBy = request.registeredBy;
+      let stamp = new Date(request.registeredAt.getTime() + 1000);
+      const edit = (data: Record<string, unknown>) => {
+        stamp = new Date(stamp.getTime() + 1000);
+        return prisma.dataSubjectRequest.update({
+          where: { id: request.id },
+          data: { ...data, changedBy, changedAt: stamp },
+        });
+      };
+
+      for (const change of [
+        { requesterName: 'Otra persona' },
+        { requesterDocument: '0102030405' },
+        { requestedBy: 'AUTHORIZED_PERSON' as const },
+      ]) {
+        await expect(edit(change)).rejects.toThrow(
+          /data_subject_request_only_answered_once/,
+        );
+      }
+      // Dejar de ser copia lo rechaza el disparador, y pasar a otro derecho, el CHECK.
+      await expect(
+        edit({ clinicalRecordCopy: false, requestedBy: 'HOLDER' }),
+      ).rejects.toThrow(/data_subject_request_only_answered_once/);
+      await expect(edit({ right: 'RECTIFICATION' })).rejects.toThrow(
+        /data_subject_request_copy_is_access/,
+      );
+      // Control positivo: lo que pide sí se edita.
+      await expect(
+        edit({ description: 'Copia de la historia clínica completa' }),
+      ).resolves.toBeTruthy();
+    });
   });
 });

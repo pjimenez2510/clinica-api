@@ -15,6 +15,7 @@ import { ANNULLED_DOCUMENT_ARCHIVER } from '../../shared/documents/annulled-docu
 import { DocumentIdentityController } from './document-identity.controller';
 import { DocumentTemplatesController } from './document-templates.controller';
 import { DocumentVerificationController } from './document-verification.controller';
+import { ClinicalRecordCopyController } from './clinical-record-copy.controller';
 import { DocumentsController } from './documents.controller';
 import { InvoiceDocumentsController } from './invoice-documents.controller';
 import { AnnulledDocumentArchiverService } from './application/annulled-document.archiver';
@@ -69,6 +70,7 @@ import { SharpImageNormaliser } from './infrastructure/sharp-image.normaliser';
 @Module({
   controllers: [
     DocumentsController,
+    ClinicalRecordCopyController,
     InvoiceDocumentsController,
     DocumentTemplatesController,
     DocumentIdentityController,

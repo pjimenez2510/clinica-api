@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DocumentVerificationNotFoundError } from '../domain/document.errors';
 import type {
   DocumentContext,
+  ClinicalRecordCopyLookup,
   DocumentSourceReader,
   DocumentSubject,
 } from '../domain/document-source';
@@ -26,6 +27,9 @@ class FakeSources implements DocumentSourceReader {
   findForVerification(code: string): Promise<VerificationFacts | null> {
     this.asked.push(code);
     return Promise.resolve(this.facts);
+  }
+  findClinicalRecordCopy(): Promise<ClinicalRecordCopyLookup> {
+    return Promise.resolve({ status: 'missing' });
   }
 }
 

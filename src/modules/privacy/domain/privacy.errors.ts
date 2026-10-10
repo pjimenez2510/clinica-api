@@ -161,3 +161,78 @@ export class DataRequestNotAnsweredError extends ConflictError {
     super('Data subject request has no answer to rectify');
   }
 }
+
+/**
+ * PD-052. A third party (A.M. 5216 art. 28) asks for the copy of the clinical
+ * record; the rights of the LOPDP are the holder's, or their representative's.
+ */
+export class DataRequestPartyNotAllowedError extends ValidationError {
+  readonly code = 'DATA_REQUEST_PARTY_NOT_ALLOWED';
+  override readonly userTitle =
+    'Un apoderado, una persona autorizada, una autoridad o un familiar sólo pueden pedir la copia de la historia clínica';
+
+  constructor() {
+    super('A third party only asks for the copy of the clinical record', {}, [
+      {
+        field: 'requestedBy',
+        code: 'DATA_REQUEST_PARTY_NOT_ALLOWED',
+        message: 'Sólo puede pedir la copia de la historia clínica',
+      },
+    ]);
+  }
+}
+
+/** PD-052. The relative asks for the copy of a deceased patient's record. */
+export class DataRequestPatientNotDeceasedError extends ValidationError {
+  readonly code = 'DATA_REQUEST_PATIENT_NOT_DECEASED';
+  override readonly userTitle =
+    'La ficha no registra el fallecimiento: un familiar sólo pide la copia de un paciente fallecido';
+
+  constructor() {
+    super('The relative of a living patient asks for the copy', {}, [
+      {
+        field: 'requestedBy',
+        code: 'DATA_REQUEST_PATIENT_NOT_DECEASED',
+        message: 'La ficha no registra el fallecimiento del paciente',
+      },
+    ]);
+  }
+}
+
+/** The fields of a copy request that `ClinicalRecordCopyInvalidError` names. */
+export type ClinicalRecordCopyField =
+  | 'clinicalRecordCopy'
+  | 'documentsChecked'
+  | 'requesterName'
+  | 'requesterDocument';
+
+const COPY_FIELD_MESSAGE: Readonly<Record<ClinicalRecordCopyField, string>> = {
+  clinicalRecordCopy: 'La copia de la historia clínica se pide como acceso',
+  documentsChecked:
+    'Marque que recibió la solicitud firmada y la copia de la cédula',
+  requesterName:
+    'Escriba el nombre de quien la presenta (hasta 200 caracteres)',
+  requesterDocument:
+    'Escriba la cédula u oficio de quien la presenta (hasta 200 caracteres)',
+};
+
+/**
+ * PD-052, PD-053. A request for the copy of the clinical record that the
+ * A.M. 5216 would not admit: not an access request, without the signed
+ * request and the cedula at hand, or without who presents it.
+ */
+export class ClinicalRecordCopyInvalidError extends ValidationError {
+  readonly code = 'CLINICAL_RECORD_COPY_INVALID';
+  override readonly userTitle: string;
+
+  constructor(readonly field: ClinicalRecordCopyField) {
+    super(`Invalid request for the copy of the clinical record: ${field}`, {}, [
+      {
+        field,
+        code: 'CLINICAL_RECORD_COPY_INVALID',
+        message: COPY_FIELD_MESSAGE[field],
+      },
+    ]);
+    this.userTitle = COPY_FIELD_MESSAGE[field];
+  }
+}

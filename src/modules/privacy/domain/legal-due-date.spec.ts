@@ -4,10 +4,11 @@ import {
   addDays,
   clinicalDateOf,
   isoWeekdayOf,
+  startOfClinicalDay,
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
 
-import { legalDueDate } from './legal-due-date';
+import { lastDayOnTime, legalDeadline, legalDueDate } from './legal-due-date';
 
 /**
  * Every date is derived from the clock and named by its weekday, so the
@@ -88,5 +89,61 @@ describe('legalDueDate — el horizonte de feriados', () => {
     // Control: with a week of holidays it still resolves.
     const week = new Set([1, 2, 3, 4, 5].map((d) => addDays(monday, d)));
     expect(legalDueDate('SUSPENSION', monday, week)).toBe(addDays(monday, 9));
+  });
+});
+
+describe('legalDeadline — el instante en que vence (PD-054)', () => {
+  it('PD-054 EN-033 la copia de la historia clínica vence a las 48 horas de recibida, a la misma hora', () => {
+    const received = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    expect(
+      legalDeadline(
+        { right: 'ACCESS', clinicalRecordCopy: true },
+        received,
+        NONE,
+      ).getTime(),
+    ).toBe(received.getTime() + 48 * 60 * 60 * 1000);
+  });
+
+  it('PD-054 las 48 horas son corridas: un feriado o un fin de semana no las alargan', () => {
+    const saturday = next(SATURDAY);
+    const received = startOfClinicalDay(saturday);
+    const holidays = new Set([saturday, addDays(saturday, 1)]);
+    expect(
+      legalDeadline(
+        { right: 'ACCESS', clinicalRecordCopy: true },
+        received,
+        holidays,
+      ).getTime(),
+    ).toBe(received.getTime() + 48 * 60 * 60 * 1000);
+  });
+
+  it('PD-054 PD-032 sin copia, vence al final del día que fija la regla, en America/Guayaquil', () => {
+    const monday = next(MONDAY);
+    // 21:00 in Ecuador is the next day in UTC: the day counted is Ecuador's.
+    const received = new Date(
+      startOfClinicalDay(monday).getTime() + 21 * 3600_000,
+    );
+    const deadline = legalDeadline(
+      { right: 'ACCESS', clinicalRecordCopy: false },
+      received,
+      NONE,
+    );
+    expect(deadline.getTime()).toBe(
+      startOfClinicalDay(addDays(monday, 15)).getTime(),
+    );
+    expect(lastDayOnTime(deadline)).toBe(addDays(monday, 14));
+  });
+
+  it('PD-054 el último día a tiempo de una copia es el día de su vencimiento', () => {
+    const monday = next(MONDAY);
+    const received = new Date(
+      startOfClinicalDay(monday).getTime() + 10 * 3600_000,
+    );
+    const deadline = legalDeadline(
+      { right: 'ACCESS', clinicalRecordCopy: true },
+      received,
+      NONE,
+    );
+    expect(lastDayOnTime(deadline)).toBe(addDays(monday, 2));
   });
 });
