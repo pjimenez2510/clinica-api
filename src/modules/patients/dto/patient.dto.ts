@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
+import { Cedula } from '../../../shared/domain/value-objects/cedula.vo';
 import { explicitFlag } from '../../../shared/http/query-flag';
 import {
   CORRECTABLE_PATIENT_FIELDS,
@@ -36,41 +37,15 @@ const IDENTIFIER_TYPE = z.enum([
 ]);
 
 /**
- * Ecuadorian cedula check digit, modulus 10.
+ * PA-011. The Ecuadorian cedula is checked by `Cedula` — the one definition of
+ * province, third digit and modulus-10 check digit, which the staff and
+ * account forms and the RUC already use.
  *
  * Validated HERE as well as in the database. The database constraint is the
  * guarantee — it is what stops a bad row arriving through an import or a
- * migration — but a receptionist deserves to be told which digit is wrong
+ * migration — but a receptionist deserves to be told the number is wrong
  * while the person is still standing at the desk, not after a 500.
  */
-function hasValidCedulaCheckDigit(value: string): boolean {
-  if (!/^\d{10}$/.test(value)) return false;
-
-  const province = Number(value.slice(0, 2));
-  // 01–24 are the provinces; 30 is used for citizens registered abroad.
-  if (province < 1 || (province > 24 && province !== 30)) return false;
-
-  /**
-   * THE THIRD DIGIT IS 0–5 FOR A PERSON.
-   *
-   * Six or more identifies a RUC — a public body or a company — which is not
-   * something a patient has. This rule was missing here while the database
-   * enforced it, so a RUC passed validation and came back as a raw constraint
-   * violation the receptionist could not act on.
-   */
-  if (Number(value[2]) >= 6) return false;
-
-  const digits = [...value].map(Number);
-  const total = digits.slice(0, 9).reduce((sum, digit, index) => {
-    if (index % 2 !== 0) return sum + digit;
-    const doubled = digit * 2;
-    return sum + (doubled > 9 ? doubled - 9 : doubled);
-  }, 0);
-
-  const check = (10 - (total % 10)) % 10;
-  return check === digits[9];
-}
-
 const identifierSchema = z
   .object({
     type: IDENTIFIER_TYPE,
@@ -90,7 +65,7 @@ const identifierSchema = z
     (identifier) =>
       identifier.type !== 'CEDULA' ||
       identifier.issuingCountry !== 'ECU' ||
-      hasValidCedulaCheckDigit(identifier.value),
+      Cedula.isValid(identifier.value),
     {
       // Only Ecuadorian cedulas carry this check digit. Applying it to a
       // Colombian document would reject a valid one.

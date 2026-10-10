@@ -138,6 +138,7 @@ describe('el código del punto de emisión queda fijo con el primer comprobante 
           isFinalConsumer: false,
         },
         issuedById: user.id,
+        trail: { userId: user.id },
       });
     };
     return {

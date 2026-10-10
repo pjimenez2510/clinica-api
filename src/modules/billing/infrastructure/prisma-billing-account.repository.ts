@@ -69,6 +69,12 @@ import {
 import { Money, Percentage, Quantity } from '../domain/money';
 import { toClinicalDate } from '../domain/price-list';
 import { asDateColumn } from './prisma-billing-catalogue.repository';
+import { writeBillingTrail } from './billing-trail.write';
+import {
+  INVOICE_BALANCE,
+  INVOICE_COUNTS_TOWARD_BALANCE,
+} from './invoice-balance.sql';
+import type { BillingTrail } from '../domain/billing-trail';
 
 /**
  * The account, the charge and the invoice, in PostgreSQL.
@@ -119,6 +125,31 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       include: ACCOUNT_INCLUDE,
     });
     return toAccountView(row);
+  }
+
+  /**
+   * BI-150, BI-274. Two «enviar a caja» of the same visit at the same second
+   * both read «no open account» and both insert; the index lets one through
+   * and refuses the other. The refused one answers with the winner instead
+   * of a 409, so both cashiers land on the same account.
+   *
+   * If the winner is gone by the time it is read (closed in between), the
+   * refusal is the honest answer and goes up untouched.
+   */
+  async openOrRecoverEncounterAccount(
+    account: NewAccount & { encounterId: string },
+  ): Promise<AccountView> {
+    try {
+      return await this.openAccount(account);
+    } catch (error) {
+      if (!isOpenAccountOfEncounterTaken(error)) throw error;
+      const winner = await this.findOpenAccountOfEncounter({
+        encounterId: account.encounterId,
+        siteId: account.siteId,
+      });
+      if (winner === null) throw error;
+      return winner;
+    }
   }
 
   /**
@@ -1141,6 +1172,16 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
           },
         });
 
+        // BI-273. The entry commits with the invoice: written before the
+        // charges are billed and the payment taken, so a refusal of either
+        // undoes it too.
+        await writeBillingTrail(tx, {
+          resourceType: 'invoice',
+          resourceId: invoice.id,
+          action: 'CREATE',
+          trail: issuance.trail,
+        });
+
         // BI-169. Each charge names the invoice that took it, in the same
         // statement that bills it (`charge_item_billed_carries_its_invoice`):
         // the voucher's lines are read through it.
@@ -1208,6 +1249,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     paymentMethod: PaymentMethod;
     changedById: string;
     now: Date;
+    trail: BillingTrail;
   }): Promise<InvoiceView | null> {
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -1233,6 +1275,13 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
             changedById: correction.changedById,
             changedAt: stampAfter(locked.changed_at, correction.now),
           },
+        });
+        // BI-273. Who corrected the receiver, with the correction.
+        await writeBillingTrail(tx, {
+          resourceType: 'invoice',
+          resourceId: row.id,
+          action: 'UPDATE',
+          trail: correction.trail,
         });
         return toInvoiceView(row);
       });
@@ -1288,8 +1337,8 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
 
   /**
    * BI-259. The site's invoices still owed: the balance derived as BI-103
-   * asks —and as `pendingOf` and the patient's balance derive it—, never
-   * stored. A credited-in-excess one (money in the patient's favour) is not
+   * asks —`INVOICE_BALANCE`, the same one `pendingOf` and the patient's
+   * balance use—, never stored. A credited-in-excess one (money in the patient's favour) is not
    * owed. The ids go back into the paged query, so the other filters, the
    * order and the count stay the ones of BI-233.
    *
@@ -1310,13 +1359,8 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
          AND (${bounds.accountId}::uuid IS NULL OR i."account_id" = ${bounds.accountId}::uuid)
          AND (${bounds.issuedFrom}::timestamptz IS NULL OR i."issued_at" >= ${bounds.issuedFrom}::timestamptz)
          AND (${bounds.issuedBefore}::timestamptz IS NULL OR i."issued_at" < ${bounds.issuedBefore}::timestamptz)
-         AND i."status" NOT IN ('DRAFT', 'VOIDED')
-         AND i."total"
-             - COALESCE((SELECT SUM(c."amount") FROM "credit_note" c
-                          WHERE c."invoice_id" = i."id" AND c."status" <> 'REJECTED'), 0)
-             - COALESCE((SELECT SUM(p."amount") FROM "payment" p
-                          WHERE p."invoice_id" = i."id" AND p."reversed_at" IS NULL), 0)
-             > 0`;
+         AND ${INVOICE_COUNTS_TOWARD_BALANCE}
+         AND ${INVOICE_BALANCE} > 0`;
     return rows.map((row) => row.id);
   }
 }
@@ -1344,6 +1388,19 @@ export function translateChargeRejection(error: unknown): unknown {
   )
     ? new ActAlreadyChargedError()
     : error;
+}
+
+/**
+ * BI-274. Whether this is `patient_account_one_open_per_encounter` refusing
+ * a second open account of the visit — matched by name, like
+ * `translateChargeRejection`, since it arrives as a `P2002` naming the index.
+ */
+function isOpenAccountOfEncounterTaken(error: unknown): boolean {
+  return /patient_account_one_open_per_encounter/.test(
+    JSON.stringify((error as { meta?: unknown })?.meta ?? '').concat(
+      databaseMessageOf(error),
+    ),
+  );
 }
 
 /**

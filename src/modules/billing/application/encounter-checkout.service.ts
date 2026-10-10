@@ -99,7 +99,8 @@ export class EncounterCheckoutService {
    *
    *   · The account. `patient_account_one_open_per_encounter` admits one open
    *     account per visit, so «open or recover» has one answer even when two
-   *     people press at the same second.
+   *     people press at the same second — and the one the index refused
+   *     recovers the winner instead of answering 409 (BI-274).
    *   · The charges. Each derived line names the act it came from, and three
    *     partial unique indexes refuse a second charge for the same act. The
    *     read of what is already charged is the comfortable half; the index is
@@ -198,7 +199,8 @@ export class EncounterCheckoutService {
 
     if (payerId === undefined) throw new PayerRequiredToOpenAccountError();
 
-    return this.patientAccounts.openAccount({
+    // BI-274. A press that loses the race to open it gets the winner's.
+    return this.patientAccounts.openOrRecoverEncounterAccount({
       siteId: acts.siteId,
       patientId: acts.patientId,
       encounterId: acts.encounterId,

@@ -668,6 +668,7 @@ export class BillingController {
   async issueInvoice(
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Body() dto: IssueInvoiceDto,
+    @Req() req: Request,
   ): Promise<InvoiceResponse> {
     const invoice = await this.invoicing.issueInvoice(
       {
@@ -683,7 +684,12 @@ export class BillingController {
             : Money.parse(dto.expectedTotal),
         payment: dto.payment,
       },
-      { userId: this.currentUser.requireUserId() },
+      // BI-132, BI-273: who, and from where, into the issuance's transaction.
+      {
+        userId: this.currentUser.requireUserId(),
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+      },
     );
 
     return toInvoiceResponse(invoice);
@@ -708,6 +714,7 @@ export class BillingController {
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
     @Body() dto: ResubmitInvoiceDto,
+    @Req() req: Request,
   ): Promise<InvoiceResponse> {
     return toInvoiceResponse(
       await this.invoicing.correctAndResend(
@@ -717,7 +724,12 @@ export class BillingController {
           receiver: dto.receiver,
           paymentMethod: dto.paymentMethod,
         },
-        { userId: this.currentUser.requireUserId() },
+        // BI-132, BI-273.
+        {
+          userId: this.currentUser.requireUserId(),
+          ip: req.ip,
+          userAgent: req.get('user-agent'),
+        },
       ),
     );
   }

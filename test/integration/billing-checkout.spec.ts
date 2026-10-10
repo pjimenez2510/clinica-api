@@ -297,6 +297,121 @@ describe('BI-150, BI-151 el costo sale de lo que realmente se hizo', () => {
   });
 });
 
+describe('BI-274 dos «enviar a caja» a la vez dan una cuenta', () => {
+  /**
+   * The race, made certain instead of hoped for: both presses read «this
+   * visit has no open account» BEFORE either inserts, which is exactly the
+   * interleaving two cashiers produce at the same second. Without it the
+   * first press usually finishes first and the test proves nothing.
+   */
+  function racingCheckout(): EncounterCheckoutService {
+    const asService = context.prisma as unknown as PrismaService;
+    let waiting = 0;
+    let release!: () => void;
+    const bothRead = new Promise<void>((resolve) => (release = resolve));
+
+    class RacingAccounts extends PrismaBillingAccountRepository {
+      override async findOpenAccountOfEncounter(
+        query: Parameters<
+          PrismaBillingAccountRepository['findOpenAccountOfEncounter']
+        >[0],
+      ) {
+        const found = await super.findOpenAccountOfEncounter(query);
+        waiting += 1;
+        if (waiting === 2) release();
+        await bothRead;
+        return found;
+      }
+    }
+
+    const accounts = new RacingAccounts(asService);
+    const catalogue = new PrismaBillingCatalogueRepository(asService);
+    return new EncounterCheckoutService(
+      new PrismaClinicalActsRepository(asService),
+      accounts,
+      catalogue,
+      new PatientAccountService(
+        accounts,
+        catalogue,
+        { record: () => Promise.resolve() },
+        new PrismaClinicalActsRepository(asService),
+      ),
+    );
+  }
+
+  it('BI-274 las dos pulsaciones responden con la MISMA cuenta y no duplican cargos', async () => {
+    await aSutureWasPerformed();
+    await aBloodCountWasOrdered();
+    const checkout = racingCheckout();
+    const pressWith = () =>
+      checkout.sendToCashier({
+        siteId: context.siteId,
+        encounterId: context.encounterId,
+        payerId: context.payerId,
+        userId: context.userId,
+      });
+
+    const [first, second] = await Promise.all([pressWith(), pressWith()]);
+
+    expect(second.statement.account.id).toBe(first.statement.account.id);
+    expect(
+      await context.prisma.patientAccount.count({
+        where: { encounterId: context.encounterId },
+      }),
+    ).toBe(1);
+    // Who wins each line is the database's call; together they raised the
+    // three, once each.
+    expect([...first.raisedChargeIds, ...second.raisedChargeIds].length).toBe(
+      3,
+    );
+    expect(
+      await context.prisma.chargeItem.count({
+        where: { encounterId: context.encounterId },
+      }),
+    ).toBe(3);
+  });
+
+  it('BI-274 la garantía es la base: rechaza una segunda cuenta abierta de la misma atención', async () => {
+    const first = await press();
+
+    // Positive control first: the same insert for a visit with NO open
+    // account goes through, so the refusal below is the index and not a
+    // malformed statement.
+    const otherEncounter = await context.prisma.encounter.create({
+      data: {
+        siteId: context.siteId,
+        practitionerId: (
+          await context.prisma.encounter.findUniqueOrThrow({
+            where: { id: context.encounterId },
+            select: { practitionerId: true },
+          })
+        ).practitionerId,
+        patientId: context.patientId,
+        startedAt: new Date(),
+        careModality: 'MORBIDITY',
+        visitSequence: 'FIRST_TIME',
+      },
+    });
+    const insertOpenAccount = (encounterId: string) =>
+      context.prisma.$executeRaw`
+        INSERT INTO "patient_account"
+          ("site_id", "patient_id", "encounter_id", "payer_id",
+           "price_list_id", "updated_at")
+        SELECT "site_id", "patient_id", ${encounterId}::uuid, "payer_id",
+               "price_list_id", ${new Date()}
+          FROM "patient_account" WHERE "id" = ${first.statement.account.id}::uuid`;
+
+    await expect(insertOpenAccount(otherEncounter.id)).resolves.toBe(1);
+    const refusal = await insertOpenAccount(context.encounterId).then(
+      () => null,
+      (error: unknown) =>
+        JSON.stringify((error as { meta?: unknown }).meta ?? '') +
+        String((error as { message?: unknown }).message),
+    );
+    expect(refusal).toMatch(/patient_account_one_open_per_encounter/);
+  });
+});
+
 describe('BI-193 el examen se cobra con la fecha de la atención', () => {
   it('BI-193 un borrador emitido al día siguiente se cobra con la fecha clínica de la atención', async () => {
     // ORD-098: la orden lleva el instante de su EMISIÓN. Emitida un día

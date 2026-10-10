@@ -149,6 +149,7 @@ async function anInvoice(): Promise<string> {
       isFinalConsumer: false,
     },
     issuedById: scene.userId,
+    trail: { userId: scene.userId },
   });
   return invoice.id;
 }

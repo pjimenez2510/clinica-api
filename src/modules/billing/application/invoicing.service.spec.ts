@@ -117,7 +117,6 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     findInvoice: vi.fn().mockResolvedValue(invoice),
     listInvoices: vi.fn().mockResolvedValue({ items: [invoice], total: 1 }),
     findPayer: vi.fn().mockResolvedValue(payer()),
-    record: vi.fn().mockResolvedValue(undefined),
     prepare: vi.fn().mockResolvedValue(undefined),
     prepareCreditNote: vi.fn().mockResolvedValue(undefined),
     summariesOf: vi.fn().mockResolvedValue(new Map()),
@@ -135,7 +134,6 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     service: new InvoicingService(
       mocks as unknown as BillingAccountRepository,
       mocks as unknown as BillingCatalogueRepository,
-      mocks,
       mocks,
       mocks,
       mocks,
@@ -157,6 +155,20 @@ const receiver = {
 };
 
 describe('BI-080 a BI-089 emitir la factura', () => {
+  it('BI-273 entrega quién y desde dónde al repositorio, que lo escribe en la transacción', async () => {
+    const { service: invoicing, mocks } = build();
+    const from = { userId: 'user-1', ip: '10.0.0.7', userAgent: 'caja' };
+
+    await invoicing.issueInvoice(
+      { accountId: ACCOUNT, siteId: SITE, emissionPointId: EMISSION_POINT, receiver, paymentMethod: '01' }, // prettier-ignore
+      from,
+    );
+
+    expect(mocks.issueInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({ trail: from }),
+    );
+  });
+
   it('BI-080 emite con el receptor declarado y lo pasa ya resuelto al adaptador', async () => {
     const { service: invoicing, mocks } = build();
 
@@ -249,14 +261,15 @@ describe('BI-080 a BI-089 emitir la factura', () => {
       requester,
     );
 
-    expect(mocks.record).toHaveBeenCalledWith({
-      userId: 'user-1',
-      resourceType: 'invoice',
-      resourceId: 'invoice-1',
-      action: 'CREATE',
-      ip: undefined,
-      userAgent: undefined,
+    // Identifiers only: who, and nothing of the chart (BI-007).
+    expect(mocks.issueInvoice.mock.calls[0]?.[0]).toMatchObject({
+      trail: { userId: 'user-1' },
     });
+    expect(
+      Object.keys(
+        (mocks.issueInvoice.mock.calls[0]?.[0] as { trail: object }).trail,
+      ),
+    ).toEqual(['userId']);
   });
 
   it('BI-090 BI-216 no expone ninguna operación que modifique una factura emitida, salvo corregir la que el SRI devolvió', () => {
@@ -454,8 +467,9 @@ describe('BI-216 SRI-090 corregir y reenviar la factura devuelta', () => {
       }),
     );
     expect(mocks.resendInvoice).toHaveBeenCalledWith('invoice-1');
-    expect(mocks.record).toHaveBeenCalledWith(
-      expect.objectContaining({ resourceId: 'invoice-1', action: 'UPDATE' }),
+    // BI-273. Who corrected it travels into the correction's transaction.
+    expect(mocks.correctRejectedInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({ trail: requester }),
     );
   });
 

@@ -730,6 +730,8 @@ describe('BI-003, BI-120 el cobro no bloquea la atención', () => {
       'consultationOutdated',
       'listAccounts',
       'openAccount',
+      // BI-274. «Enviar a caja» under a race; still money, never a gate.
+      'openOrRecoverEncounterAccount',
       'openStatement',
       'proceduresOutdated',
       'requireAccount',

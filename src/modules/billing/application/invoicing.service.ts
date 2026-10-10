@@ -3,10 +3,6 @@ import { PinoLogger } from 'nestjs-pino';
 import type { IssuedDocumentFilter } from '../domain/document-search';
 
 import {
-  ACCESS_AUDIT_RECORDER,
-  type AccessAuditRecorder,
-} from '../../../shared/audit/access-audit.port';
-import {
   ELECTRONIC_VOUCHER_PREPARER,
   ELECTRONIC_VOUCHER_RESENDER,
   ELECTRONIC_VOUCHER_STATUS,
@@ -49,8 +45,6 @@ import {
   resolveReceiver,
 } from '../domain/invoice';
 import type { Requester } from './service-catalogue.service';
-
-const INVOICE_RESOURCE_TYPE = 'invoice';
 
 /**
  * BI-271. Invoices read to find five distinct buyers. A family that always
@@ -114,8 +108,6 @@ export class InvoicingService {
     private readonly accounts: BillingAccountRepository,
     @Inject(BILLING_CATALOGUE_REPOSITORY)
     private readonly catalogue: BillingCatalogueRepository,
-    @Inject(ACCESS_AUDIT_RECORDER)
-    private readonly audit: AccessAuditRecorder,
     @Inject(ELECTRONIC_VOUCHER_PREPARER)
     private readonly vouchers: ElectronicVoucherPreparer,
     @Inject(ELECTRONIC_VOUCHER_STATUS)
@@ -191,6 +183,10 @@ export class InvoicingService {
       receiver,
       paymentMethod: command.paymentMethod,
       issuedById: requester.userId,
+      // BI-132, SC-022, BI-273. The trail of every issuance, written in its
+      // transaction — it is what makes «el 100 % de las facturas a
+      // Consumidor Final llevan registrado quién lo eligió» answerable.
+      trail: requester,
       expectedChargeIds: command.expectedChargeIds,
       expectedTotal: command.expectedTotal,
       payment: command.payment
@@ -201,21 +197,6 @@ export class InvoicingService {
             receivedAt: new Date(),
           }
         : undefined,
-    });
-
-    /**
-     * BI-132, SC-022. The trail of every issuance — and it is what makes «el
-     * 100 % de las facturas a Consumidor Final llevan registrado quién lo
-     * eligió» answerable at all, since the invoice row itself only records
-     * THAT it was chosen and not by whom.
-     */
-    await this.audit.record({
-      userId: requester.userId,
-      resourceType: INVOICE_RESOURCE_TYPE,
-      resourceId: invoice.id,
-      action: 'CREATE',
-      ip: requester.ip,
-      userAgent: requester.userAgent,
     });
 
     /**
@@ -311,19 +292,11 @@ export class InvoicingService {
       paymentMethod: command.paymentMethod,
       changedById: requester.userId,
       now: new Date(),
+      // BI-132, BI-273. Who corrected the receiver, in the same transaction.
+      trail: requester,
     });
     // Re-sent or answered by the SRI a moment earlier: not REJECTED any more.
     if (!corrected) throw new InvoiceNotEditableError();
-
-    // BI-132. Who corrected the receiver of which invoice.
-    await this.audit.record({
-      userId: requester.userId,
-      resourceType: INVOICE_RESOURCE_TYPE,
-      resourceId: invoice.id,
-      action: 'UPDATE',
-      ip: requester.ip,
-      userAgent: requester.userAgent,
-    });
 
     try {
       await this.resender.resendInvoice(invoice.id);

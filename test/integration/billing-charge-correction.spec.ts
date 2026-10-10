@@ -334,6 +334,7 @@ describe('BI-197 editar el cargo en el sitio', () => {
         isFinalConsumer: false,
       },
       issuedById: context.userId,
+      trail: { userId: context.userId },
       expectedChargeIds: [raised.id],
     });
 
@@ -497,6 +498,7 @@ describe('BI-195, BI-198, BI-184 lo que la revisión encontró', () => {
           isFinalConsumer: false,
         },
         issuedById: context.userId,
+        trail: { userId: context.userId },
         expectedChargeIds: [raised.id],
         expectedTotal: Money.parse(expectedTotal),
       });

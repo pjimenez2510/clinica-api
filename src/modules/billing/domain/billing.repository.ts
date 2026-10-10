@@ -1,3 +1,4 @@
+import type { BillingTrail } from './billing-trail';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type { ChargeStatus, DocumentTotals } from './charge';
 import type { ChargeOrigin, ServiceMatch } from './charge-proposal';
@@ -672,6 +673,8 @@ export interface InvoiceIssuance {
     /** The application's clock (BI-250). */
     receivedAt: Date;
   };
+  /** BI-273. Written in the issuance's transaction. */
+  trail: BillingTrail;
 }
 
 /**
@@ -681,6 +684,15 @@ export interface InvoiceIssuance {
 export interface BillingAccountRepository {
   /** BI-070, BI-121. */
   openAccount(account: NewAccount): Promise<AccountView>;
+  /**
+   * BI-150, BI-274. Opens the visit's account or, when
+   * `patient_account_one_open_per_encounter` refuses it because another
+   * request opened one a moment earlier, returns THAT one. The index is the
+   * guarantee; this only reads its refusal as «already open».
+   */
+  openOrRecoverEncounterAccount(
+    account: NewAccount & { encounterId: string },
+  ): Promise<AccountView>;
   /** BI-135. One account of one site, or `null` for anything else. */
   findAccount(query: {
     accountId: string;
@@ -940,6 +952,8 @@ export interface BillingAccountRepository {
     paymentMethod: PaymentMethod;
     changedById: string;
     now: Date;
+    /** BI-273. Written in the correction's transaction. */
+    trail: BillingTrail;
   }): Promise<InvoiceView | null>;
 }
 

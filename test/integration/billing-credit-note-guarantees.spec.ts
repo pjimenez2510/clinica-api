@@ -148,6 +148,7 @@ async function anInvoice(
           isFinalConsumer: false,
         },
     issuedById: scene.userId,
+    trail: { userId: scene.userId },
   });
   if (options.authorised !== false) {
     await authoriseVoucher(scene.prisma, invoice.id);
@@ -706,6 +707,7 @@ describe('BI-214 la copia conserva el acto clínico de su original', () => {
         isFinalConsumer: false,
       },
       issuedById: scene.userId,
+      trail: { userId: scene.userId },
     });
     await authoriseVoucher(scene.prisma, invoice.id);
     await insertCreditNote(invoice.id, [charge!.id]);

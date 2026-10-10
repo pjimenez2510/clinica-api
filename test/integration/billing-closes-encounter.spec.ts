@@ -156,6 +156,7 @@ async function anAccount(encounterId: string, charged: boolean) {
         isFinalConsumer: false,
       },
       issuedById: clinic.cashierId,
+      trail: { userId: clinic.cashierId },
     });
   }
   return account;

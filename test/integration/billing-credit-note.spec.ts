@@ -495,6 +495,24 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
     );
   });
 
+  it('BI-273 BI-132 por HTTP la entrada de la factura y la de la nota de crédito dicen quién y desde dónde', async () => {
+    const { invoiceId } = await anInvoice();
+
+    const response = await correct(invoiceId, {
+      reasonCode: 'RECEIVER_DATA',
+    }).set('User-Agent', 'caja-mostrador-1');
+    expect(response.status).toBe(201);
+    const noteId = (response.body as IssuedBody).creditNote.id;
+
+    const entry = await prisma.accessAudit.findFirstOrThrow({
+      where: { resourceType: 'credit_note', resourceId: noteId },
+    });
+    expect(entry.action).toBe('CREATE');
+    expect(entry.userAgent).toBe('caja-mostrador-1');
+    // The loopback the test client came from: an address, not NULL.
+    expect(entry.ip).toMatch(/127\.0\.0\.1|::1/);
+  });
+
   it('BI-209 «Otro» sin texto se rechaza en reasonText; con texto, el texto es el motivo', async () => {
     const { invoiceId } = await anInvoice();
 

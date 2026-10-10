@@ -1,3 +1,4 @@
+import type { BillingTrail } from './billing-trail';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type { IssuedDocumentFilter } from './document-search';
 
@@ -66,6 +67,8 @@ export interface CreditNoteIssuance {
   rebill: boolean;
   issuedById: string;
   now: Date;
+  /** BI-273. Written in the credit note's transaction. */
+  trail: BillingTrail;
 }
 
 export interface IssuedCreditNote {

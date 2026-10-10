@@ -33,6 +33,7 @@ import {
 import { Money, Percentage, Quantity } from '../domain/money';
 
 import { databaseMessageOf } from './prisma-billing-account.repository';
+import { writeBillingTrail } from './billing-trail.write';
 
 /** D-185.1, BI-235. The site's and the emission point's SRI codes. */
 const NUMBER_PARTS = {
@@ -230,6 +231,13 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
             },
           },
           include: CREDIT_NOTE_INCLUDE,
+        });
+        // BI-273. The entry commits with the credit note and its re-billing.
+        await writeBillingTrail(tx, {
+          resourceType: 'credit_note',
+          resourceId: created.id,
+          action: 'CREATE',
+          trail: issuance.trail,
         });
 
         let rebilledAccountId: string | null = null;
