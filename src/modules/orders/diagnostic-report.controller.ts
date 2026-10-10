@@ -651,6 +651,7 @@ function toCriticalResponse(
     afterHours: entry.afterHours,
     noticeTarget: entry.noticeTarget,
     escalationMissing: entry.escalationMissing,
+    dueToRequester: entry.dueToRequester,
   };
 }
 

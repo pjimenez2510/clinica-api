@@ -12,6 +12,7 @@ import {
   createPatient,
   createPractitioner,
   createSite,
+  createUser,
 } from './setup/fixtures';
 
 /**
@@ -205,4 +206,41 @@ export async function placeIssued(
 ): Promise<ServiceOrderView> {
   const draft = await orders.compose(order);
   return orders.issue({ orderId: draft.id, sites: order.sites });
+}
+
+/**
+ * ORD-065, ORD-167. The site's on-call role, as a site really has it: with
+ * `record:read` and somebody holding it. A role nobody can answer for is no
+ * on-call role at all, and the worklist does not escalate to it.
+ */
+export async function anOnCallRole(prisma: PrismaClient) {
+  await aRecordReadPermission(prisma);
+  const role = await prisma.role.create({
+    data: {
+      code: 'GUARDIA_CLINICA',
+      name: 'Responsable clínico de guardia',
+      permissions: { create: [{ permissionCode: 'record:read' }] },
+    },
+  });
+  const holder = await createUser(prisma);
+  await prisma.userRoleGrant.create({
+    data: { userId: holder.id, roleId: role.id, siteId: null },
+  });
+  return role;
+}
+
+/**
+ * The catalogue row of `record:read`, which the application writes on boot
+ * and these suites, built without the application, do not have.
+ */
+export async function aRecordReadPermission(prisma: PrismaClient) {
+  await prisma.permission.upsert({
+    where: { code: 'record:read' },
+    update: {},
+    create: {
+      code: 'record:read',
+      resource: 'record',
+      description: 'Leer la historia clínica',
+    },
+  });
 }

@@ -173,6 +173,13 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
   sitesInHours(): Promise<ReadonlySet<string>> {
     return Promise.resolve(new Set<string>());
   }
+  // ORD-167: against the database, in `orders-critical-notice.spec.ts`.
+  heldRoles(): Promise<never[]> {
+    return Promise.resolve([]);
+  }
+  staffedOnCall(): Promise<ReadonlySet<string>> {
+    return Promise.resolve(new Set<string>());
+  }
   // ORD-143, ORD-147: against the database, in `orders-notified-correction.spec.ts`.
   notifiedCorrectionOrders(): Promise<never[]> {
     return Promise.resolve([]);
