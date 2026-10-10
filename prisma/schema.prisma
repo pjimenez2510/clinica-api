@@ -5848,6 +5848,20 @@ enum DataSubjectParty {
   @@map("data_subject_party")
 }
 
+/// PD-052. Who presents a data subject request: the holder or their legal
+/// representative, or one of the third parties of A.M. 5216 art. 28, who only
+/// ask for the copy of the clinical record.
+enum DataRequestParty {
+  HOLDER
+  REPRESENTATIVE
+  ATTORNEY
+  AUTHORIZED_PERSON
+  AUTHORITY
+  DECEASED_RELATIVE
+
+  @@map("data_request_party")
+}
+
 /// LOPDP arts. 13 to 17 and 19.
 enum DataSubjectRight {
   ACCESS
@@ -5911,25 +5925,32 @@ model PatientConsent {
 /// PD-030..PD-038. A right exercised by the data subject. The only update the
 /// base admits is the answer, whole and once.
 model DataSubjectRequest {
-  id           String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  patientId    String              @map("patient_id") @db.Uuid
-  patient      Patient             @relation(fields: [patientId], references: [id], onDelete: Restrict)
-  right        DataSubjectRight
-  requestedBy  DataSubjectParty    @map("requested_by")
-  description  String              @db.Text
-  receivedAt   DateTime            @default(now()) @map("received_at") @db.Timestamptz(6)
-  /// PD-032. Clinical date, fixed on registration, never recomputed.
-  dueOn        DateTime            @map("due_on") @db.Date
-  registeredAt DateTime            @default(now()) @map("registered_at") @db.Timestamptz(6)
-  registeredBy String              @map("registered_by") @db.Uuid
-  outcome      DataRequestOutcome?
-  response     String?             @db.Text
-  answeredAt   DateTime?           @map("answered_at") @db.Timestamptz(6)
-  answeredBy   String?             @map("answered_by") @db.Uuid
+  id                 String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  patientId          String              @map("patient_id") @db.Uuid
+  patient            Patient             @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  right              DataSubjectRight
+  requestedBy        DataRequestParty    @map("requested_by")
+  /// PD-052. Who presents it, when it is not the holder and asks for the copy.
+  requesterName      String?             @map("requester_name") @db.Text
+  requesterDocument  String?             @map("requester_document") @db.Text
+  /// PD-053. An access request asking for the copy of the clinical record.
+  clinicalRecordCopy Boolean             @default(false) @map("clinical_record_copy")
+  /// PD-053. The signed request and the copy of the cedula were at hand.
+  documentsChecked   Boolean             @default(false) @map("documents_checked")
+  description        String              @db.Text
+  receivedAt         DateTime            @default(now()) @map("received_at") @db.Timestamptz(6)
+  /// PD-032, PD-054. The instant the answer is due, fixed on registration.
+  dueAt              DateTime            @map("due_at") @db.Timestamptz(6)
+  registeredAt       DateTime            @default(now()) @map("registered_at") @db.Timestamptz(6)
+  registeredBy       String              @map("registered_by") @db.Uuid
+  outcome            DataRequestOutcome?
+  response           String?             @db.Text
+  answeredAt         DateTime?           @map("answered_at") @db.Timestamptz(6)
+  answeredBy         String?             @map("answered_by") @db.Uuid
   /// PD-046. Who last edited it (or answered it) and when: the stamp every
   /// UPDATE carries so `record_version` archives the row it replaces.
-  changedBy    String?             @map("changed_by") @db.Uuid
-  changedAt    DateTime?           @map("changed_at") @db.Timestamptz(6)
+  changedBy          String?             @map("changed_by") @db.Uuid
+  changedAt          DateTime?           @map("changed_at") @db.Timestamptz(6)
 
   answerCorrections DataSubjectAnswerCorrection[]
 

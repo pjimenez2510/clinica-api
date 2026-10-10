@@ -302,7 +302,7 @@ async function everyVersionedRowOf(
       right: 'ACCESS',
       requestedBy: 'HOLDER',
       description: 'Copia',
-      dueOn: new Date(),
+      dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       registeredBy: author.id,
     },
   });

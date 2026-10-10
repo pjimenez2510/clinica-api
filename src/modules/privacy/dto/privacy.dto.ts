@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { explicitFlag } from '../../../shared/http/query-flag';
 
 import { DATA_REQUEST_TEXT_MAX_LENGTH } from '../application/data-subject-requests.service';
+import { DATA_REQUEST_PARTIES } from '../domain/data-request-party';
 import { DATA_SUBJECT_RIGHTS } from '../domain/legal-due-date';
 import {
   CONSENT_MEDIA,
@@ -55,14 +56,23 @@ export const correctConsentSchema = z.strictObject({
 });
 export class CorrectConsentDto extends createZodDto(correctConsentSchema) {}
 
-/** PD-030, PD-031. */
+/**
+ * PD-030, PD-031, PD-052, PD-053. Who presents it, their name and document,
+ * and whether it asks for the copy of the clinical record, only typed here:
+ * what the A.M. 5216 admits is the domain's rule (`presentationOf`), with its
+ * own codes.
+ */
 export const registerDataRequestSchema = z.strictObject({
   right: z.enum(DATA_SUBJECT_RIGHTS, {
     error: 'Indique el derecho que ejerce',
   }),
-  requestedBy: z.enum(DATA_SUBJECT_PARTIES, {
-    error: 'Indique si la presenta el titular o su representante',
+  requestedBy: z.enum(DATA_REQUEST_PARTIES, {
+    error: 'Indique quién presenta la solicitud',
   }),
+  requesterName: z.string().nullable().optional(),
+  requesterDocument: z.string().nullable().optional(),
+  clinicalRecordCopy: z.boolean().optional(),
+  documentsChecked: z.boolean().optional(),
   description: z
     .string({ error: 'Describa lo que pide el titular' })
     .trim()
@@ -197,11 +207,19 @@ export const dataRequestSchema = z.object({
   patientId: z.uuid(),
   patient: z.object({ mrn: z.string(), fullName: z.string() }),
   right: z.enum(DATA_SUBJECT_RIGHTS),
-  requestedBy: z.enum(DATA_SUBJECT_PARTIES),
+  requestedBy: z.enum(DATA_REQUEST_PARTIES),
+  /** PD-052. Who presents it, when it is not the holder. */
+  requesterName: z.string().nullable(),
+  requesterDocument: z.string().nullable(),
+  /** PD-053. It asks for the copy of the clinical record. */
+  clinicalRecordCopy: z.boolean(),
+  documentsChecked: z.boolean(),
   /** Null in the clinic-wide list of open requests (PD-035): see the route. */
   description: z.string().nullable(),
   receivedAt: z.iso.datetime(),
-  /** Clinical date, `YYYY-MM-DD`. */
+  /** PD-054. The instant it is due: 48 h for the copy, a day's end otherwise. */
+  dueAt: z.iso.datetime(),
+  /** PD-054. Clinical date of the last day on time, `YYYY-MM-DD`. */
   dueOn: z.iso.date(),
   isOverdue: z.boolean(),
   registeredAt: z.iso.datetime(),

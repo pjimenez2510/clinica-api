@@ -21,6 +21,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { ALL_SITES } from '../../shared/authorisation/principal';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -209,7 +210,7 @@ export class PrivacyController {
     return { items: items.map(requestResponse) };
   }
 
-  /** PD-030 to PD-032, PD-037. */
+  /** PD-030 to PD-032, PD-037, PD-052 to PD-054. */
   @Post('patients/:patientId/requests')
   @RequirePermission('patient:data-requests', 'global')
   @HttpCode(HttpStatus.CREATED)
@@ -225,6 +226,10 @@ export class PrivacyController {
         patientId,
         right: dto.right,
         requestedBy: dto.requestedBy,
+        requesterName: dto.requesterName,
+        requesterDocument: dto.requesterDocument,
+        clinicalRecordCopy: dto.clinicalRecordCopy,
+        documentsChecked: dto.documentsChecked,
         description: dto.description,
         receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : undefined,
       },
@@ -340,8 +345,14 @@ export class PrivacyController {
   @ApiOkResponse({ type: AnswerProposalDto })
   async answerProposal(
     @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Req() req: Request,
   ): Promise<AnswerProposalResponse> {
-    return { response: await this.requests.answerProposal(requestId) };
+    return {
+      response: await this.requests.answerProposal(
+        requestId,
+        this.requester(req),
+      ),
+    };
   }
 
   /**
@@ -367,8 +378,12 @@ export class PrivacyController {
   }
 
   private requester(req: Request): Requester {
+    // D-203 §1. The key of the record travels with every request; only the
+    // copy of the clinical record asks for it.
+    const scope = this.currentUser.requirePrincipal().sitesFor('record:read');
     return {
       userId: this.currentUser.requireUserId(),
+      recordScope: scope === ALL_SITES ? 'all' : scope,
       ip: req.ip,
       userAgent: req.get('user-agent'),
     };
@@ -396,6 +411,7 @@ function requestResponse(entry: DataRequestEntry): DataRequestResponse {
   return {
     ...entry,
     receivedAt: entry.receivedAt.toISOString(),
+    dueAt: entry.dueAt.toISOString(),
     registeredAt: entry.registeredAt.toISOString(),
     answer: entry.answer && answer(entry.answer),
     previousAnswers: entry.previousAnswers.map(answer),

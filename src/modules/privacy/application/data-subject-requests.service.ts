@@ -4,27 +4,32 @@ import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
-import {
-  addDays,
-  clinicalDateOf,
-  type ClinicalDate,
-} from '../../../shared/domain/clinic-time';
+import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
+import { holdsRecordKey } from '../../../shared/domain/clinical-record-key';
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import {
   answerProposal,
+  clinicalRecordCopyProposal,
   EXPORT_OMISSIONS,
   EXPORTABLE_RIGHTS,
 } from '../domain/data-export';
 import {
+  isThirdParty,
+  presentationOf,
+  type DataRequestParty,
+} from '../domain/data-request-party';
+import {
   DUE_DATE_HORIZON_DAYS,
-  legalDueDate,
+  legalDeadline,
   type DataSubjectRight,
 } from '../domain/legal-due-date';
 import {
+  ClinicalRecordCopyInvalidError,
   DataExportNotApplicableError,
   DataRequestAlreadyAnsweredError,
   DataRequestNotAnsweredError,
   DataRequestNotFoundError,
+  DataRequestPatientNotDeceasedError,
   DataRequestReceivedInFutureError,
   DataSubjectNotFoundError,
 } from '../domain/privacy.errors';
@@ -33,7 +38,6 @@ import {
   type DataExportDocument,
   type DataRequestOutcome,
   type DataRequestView,
-  type DataSubjectParty,
   type DataSubjectRequestRepository,
   type Requester,
 } from '../domain/privacy.repository';
@@ -42,7 +46,7 @@ import {
 export const DATA_REQUEST_TEXT_MAX_LENGTH = 4_000;
 
 export interface DataRequestEntry extends DataRequestView {
-  /** PD-035. Unanswered and its due date is before today's clinical date. */
+  /** PD-035, PD-054. Unanswered and its deadline has been reached. */
   isOverdue: boolean;
 }
 
@@ -62,12 +66,16 @@ export class DataSubjectRequestsService {
     private readonly audit: AccessAuditRecorder,
   ) {}
 
-  /** PD-030, PD-031, PD-032, PD-037. */
+  /** PD-030, PD-031, PD-032, PD-037, PD-052 to PD-054. */
   async register(
     input: {
       patientId: string;
       right: DataSubjectRight;
-      requestedBy: DataSubjectParty;
+      requestedBy: DataRequestParty;
+      requesterName?: string | null;
+      requesterDocument?: string | null;
+      clinicalRecordCopy?: boolean;
+      documentsChecked?: boolean;
       description: string;
       receivedAt?: Date;
     },
@@ -77,12 +85,25 @@ export class DataSubjectRequestsService {
     if (input.receivedAt && input.receivedAt.getTime() > now.getTime()) {
       throw new DataRequestReceivedInFutureError();
     }
-    await this.assertActiveChart(input.patientId);
+    // PD-052, PD-053. Who presents it and what for, as the A.M. 5216 admits.
+    const presentation = presentationOf(input);
+    const chart = await this.activeChart(input.patientId);
+    if (presentation.requestedBy === 'DECEASED_RELATIVE' && !chart.deceased) {
+      throw new DataRequestPatientNotDeceasedError();
+    }
 
-    const dueOn = await this.dueOn(input.right, input.receivedAt ?? now);
+    const receivedAt = input.receivedAt ?? now;
+    const dueAt = await this.deadline(presentation, receivedAt);
 
     const created = await this.requests.register(
-      { ...input, dueOn },
+      {
+        patientId: input.patientId,
+        description: input.description,
+        receivedAt,
+        registeredAt: now,
+        ...presentation,
+        dueAt,
+      },
       requester,
     );
     return this.entry(created, now);
@@ -95,6 +116,7 @@ export class DataSubjectRequestsService {
     requester: Requester,
     now: Date = new Date(),
   ): Promise<DataRequestEntry> {
+    await this.assertRecordKey(requestId, requester);
     const result = await this.requests.answer(
       requestId,
       answer,
@@ -136,6 +158,15 @@ export class DataSubjectRequestsService {
     const current = await this.requests.find(requestId);
     if (!current) throw new DataRequestNotFoundError();
     if (current.answer !== null) throw new DataRequestAlreadyAnsweredError();
+    // PD-053. Whether it asks for the copy never changes (the base refuses
+    // it), so reading it before the lock is safe: a copy stays an access.
+    if (
+      current.clinicalRecordCopy &&
+      changes.right !== undefined &&
+      changes.right !== 'ACCESS'
+    ) {
+      throw new ClinicalRecordCopyInvalidError('clinicalRecordCopy');
+    }
     // PD-031. Not after now, and not after it was registered: the base
     // repeats the second (`data_subject_request_received_not_future`).
     if (
@@ -168,6 +199,7 @@ export class DataSubjectRequestsService {
     requester: Requester,
     now: Date = new Date(),
   ): Promise<DataRequestEntry> {
+    await this.assertRecordKey(requestId, requester);
     const result = await this.requests.correctAnswer(
       requestId,
       answer,
@@ -219,8 +251,8 @@ export class DataSubjectRequestsService {
     const { items, total } = await this.requests.open(
       {
         ...(filter.right ? { right: filter.right } : {}),
-        // Overdue is «due before the clinic's today», the same test `entry` marks.
-        ...(filter.overdueOnly ? { dueBefore: clinicalDateOf(now) } : {}),
+        // Overdue is «its deadline has been reached», the test `entry` marks.
+        ...(filter.overdueOnly ? { dueBy: now } : {}),
       },
       page,
     );
@@ -235,7 +267,12 @@ export class DataSubjectRequestsService {
   ): Promise<DataExportDocument> {
     const request = await this.requests.find(requestId);
     if (!request) throw new DataRequestNotFoundError();
-    if (!EXPORTABLE_RIGHTS.has(request.right)) {
+    // PD-055. A third party is handed the copy of the record (DOC-118), not
+    // the holder's chart, consents and requests.
+    if (
+      !EXPORTABLE_RIGHTS.has(request.right) ||
+      isThirdParty(request.requestedBy)
+    ) {
       throw new DataExportNotApplicableError();
     }
     return this.requests.exportChart(
@@ -248,43 +285,81 @@ export class DataSubjectRequestsService {
   }
 
   /**
-   * PD-049 (D-164.2). The answer proposed for an access or portability
-   * request: what the export leaves out and why. Reads only the request's
-   * right — no data of the chart —, so it writes nothing, not even an audit
-   * row; what the data subject was told is recorded when the answer is saved.
+   * PD-049 (D-164.2), PD-055, PD-056. The answer proposed for an access or
+   * portability request: what the export leaves out and why; for the copy of
+   * the clinical record, what the copy carries and to whom it is handed.
+   * Reads only what the request says of itself — no data of the chart —, so
+   * it writes nothing, not even an audit row; what was answered is recorded
+   * when the answer is saved.
    */
-  async answerProposal(requestId: string): Promise<string> {
-    const right = await this.requests.rightOf(requestId);
-    if (!right) throw new DataRequestNotFoundError();
-    if (!EXPORTABLE_RIGHTS.has(right)) throw new DataExportNotApplicableError();
+  async answerProposal(
+    requestId: string,
+    requester: Requester,
+  ): Promise<string> {
+    await this.assertRecordKey(requestId, requester);
+    const facts = await this.requests.proposalFactsOf(requestId);
+    if (!facts) throw new DataRequestNotFoundError();
+    if (facts.clinicalRecordCopy) return clinicalRecordCopyProposal(facts);
+    if (
+      !EXPORTABLE_RIGHTS.has(facts.right) ||
+      isThirdParty(facts.requestedBy)
+    ) {
+      throw new DataExportNotApplicableError();
+    }
     return answerProposal(EXPORT_OMISSIONS);
   }
 
-  /** PD-032. The legal due date of a right received at an instant. */
-  private async dueOn(
-    right: DataSubjectRight,
+  /** PD-032, PD-054. The legal deadline of a request received at an instant. */
+  private async deadline(
+    request: { right: DataSubjectRight; clinicalRecordCopy: boolean },
     receivedAt: Date,
-  ): Promise<ClinicalDate> {
+  ): Promise<Date> {
+    // PD-054. Running hours: no holiday to read.
+    if (request.clinicalRecordCopy) {
+      return legalDeadline(request, receivedAt, new Set());
+    }
     const receivedOn = clinicalDateOf(receivedAt);
     const holidays = await this.requests.clinicWideHolidays(
       receivedOn,
       addDays(receivedOn, DUE_DATE_HORIZON_DAYS),
     );
-    return legalDueDate(right, receivedOn, holidays);
+    return legalDeadline(request, receivedAt, holidays);
   }
 
   private entry(row: DataRequestView, now: Date): DataRequestEntry {
     return {
       ...row,
-      isOverdue: row.answer === null && row.dueOn < clinicalDateOf(now),
+      isOverdue: row.answer === null && row.dueAt.getTime() <= now.getTime(),
     };
   }
 
-  private async assertActiveChart(patientId: string): Promise<void> {
+  /**
+   * D-203 §1, decided by the author on 10-10-2026. Answering a request for the
+   * copy of the clinical record IS authorising its delivery, so it asks for
+   * the key of the record: `record:read` at a site where the person was
+   * attended. Without it the request answers as if it did not exist, like
+   * every clinical read: the refusal does not say there is a record behind.
+   */
+  private async assertRecordKey(
+    requestId: string,
+    requester: Requester,
+  ): Promise<void> {
+    const key = await this.requests.copyKeyOf(requestId);
+    if (!key) throw new DataRequestNotFoundError();
+    if (
+      key.clinicalRecordCopy &&
+      !holdsRecordKey(requester.recordScope ?? [], key.patientSites)
+    ) {
+      throw new DataRequestNotFoundError();
+    }
+  }
+
+  private async activeChart(patientId: string): Promise<{ deceased: boolean }> {
     const chart = await this.requests.chartOf(patientId);
     if (chart.status === 'missing') throw new DataSubjectNotFoundError();
     if (chart.status === 'merged') {
       throw new PatientMergedError(chart.survivingMrn);
     }
+    return chart;
   }
 }
