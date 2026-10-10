@@ -67,7 +67,7 @@ function daysFromToday(days: number): string {
 }
 
 describe('registering a patient', () => {
-  it('PA-011 accepts an Ecuadorian cedula exactly when the Cedula value object does', () => {
+  it('PA-011 accepts an Ecuadorian cedula exactly when the Cedula value object does, and both follow the rule', () => {
     // One rule, one place: the form answers what `Cedula` answers, for every
     // province code, both sides of the third-digit limit and every possible
     // check digit — the right one and the nine wrong ones.
@@ -88,8 +88,20 @@ describe('registering a patient', () => {
     }
     candidates.push('171003406', '17100340655', '17100340a5', ' 1710034065 ');
 
+    // An oracle written apart from both, from the layout of the cedula and
+    // `cedulaFor`'s check digit: the DTO now calls `Cedula`, so comparing the
+    // two alone could not fail.
+    const oracle = (raw: string) => {
+      const value = raw.trim();
+      if (!/^\d{10}$/.test(value)) return false;
+      const province = Number(value.slice(0, 2));
+      if (province < 1 || (province > 24 && province !== 30)) return false;
+      return Number(value[2]) < 6 && cedulaFor(value.slice(0, 9)) === value;
+    };
     const disagreements = candidates.filter(
-      (value) => accepts(value) !== Cedula.isValid(value),
+      (value) =>
+        accepts(value) !== oracle(value) ||
+        Cedula.isValid(value) !== oracle(value),
     );
     expect(disagreements).toEqual([]);
     // Positive control: the sweep holds valid ones, not only refusals.

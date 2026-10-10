@@ -2861,7 +2861,10 @@ lo ve._
   > de BI-154 para los cargos); la aplicación sólo traduce el rechazo de la
   > segunda en recuperar la cuenta que ganó, como pide BI-150. Abrir una cuenta
   > a mano para una atención que ya tiene una sigue respondiendo
-  > `ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER`.
+  > `ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER`, y también la pulsación perdedora en
+  > el caso, de milisegundos, en que la cuenta ganadora se cerró antes de
+  > leerla. La pulsación perdedora recibe la cuenta con el pagador de la
+  > ganadora, como ya ocurría con una pulsación posterior (D-216, pendiente).
 
 ---
 
@@ -3210,9 +3213,9 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | BI-184 | Unitario de la pantalla (qué se ofrece) + recorrido F-06: facturar, añadir, facturar lo pendiente y cerrar |
 | BI-185 a BI-187 | Unitario de dominio + integración contra PostgreSQL real: la referencia `NOT NULL`, la clase conocida y el `RESTRICT` los garantiza la base |
 | BI-188, BI-189 | Integración contra la siembra real + contrato HTTP |
+| BI-270, BI-271 | Integración contra PostgreSQL real por HTTP: la ficha con correo, una ficha unificada que trae su comprador, y como controles una factura anulada, una a Consumidor Final, una de otra sede y una del propio paciente que no salen |
 | BI-273 | Integración contra PostgreSQL real: una emisión que la base rechaza después de escribir la entrada no deja ni factura ni entrada; una entrada que la base rechaza no deja ni factura ni nota de crédito; las confirmadas dejan una entrada con su id (control positivo) |
 | BI-274 | Integración contra PostgreSQL real: dos envíos a la vez que leen los dos «no hay cuenta» antes de insertar dan una cuenta y tres cargos; control positivo: la base rechaza una segunda cuenta abierta insertada por SQL directo |
-| BI-270, BI-271 | Integración contra PostgreSQL real por HTTP: la ficha con correo, una ficha unificada que trae su comprador, y como controles una factura anulada, una a Consumidor Final, una de otra sede y una del propio paciente que no salen |
 | BI-232 | Integración contra la siembra real: las especialidades sembradas y la facturación sembrada, en los dos órdenes, contra las 22 especialidades reales del catálogo |
 
 ## Preguntas abiertas

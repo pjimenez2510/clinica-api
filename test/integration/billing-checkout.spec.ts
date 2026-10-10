@@ -398,7 +398,7 @@ describe('BI-274 dos «enviar a caja» a la vez dan una cuenta', () => {
           ("site_id", "patient_id", "encounter_id", "payer_id",
            "price_list_id", "updated_at")
         SELECT "site_id", "patient_id", ${encounterId}::uuid, "payer_id",
-               "price_list_id", CURRENT_TIMESTAMP
+               "price_list_id", ${new Date()}
           FROM "patient_account" WHERE "id" = ${first.statement.account.id}::uuid`;
 
     await expect(insertOpenAccount(otherEncounter.id)).resolves.toBe(1);

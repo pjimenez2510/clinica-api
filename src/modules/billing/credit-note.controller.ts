@@ -8,7 +8,9 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiCreatedResponse,
   ApiOkResponse,
@@ -62,6 +64,7 @@ export class CreditNoteController {
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Param('invoiceId', ParseUUIDPipe) invoiceId: string,
     @Body() dto: IssueCreditNoteDto,
+    @Req() req: Request,
   ): Promise<IssuedCreditNoteResponse> {
     const issued = await this.creditNotes.issue(
       {
@@ -71,7 +74,12 @@ export class CreditNoteController {
         reasonCode: dto.reasonCode,
         reasonText: dto.reasonText,
       },
-      { userId: this.currentUser.requireUserId() },
+      // BI-132, BI-273: who, and from where, into the credit note's transaction.
+      {
+        userId: this.currentUser.requireUserId(),
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+      },
     );
     return {
       creditNote: toCreditNoteResponse(issued.creditNote),

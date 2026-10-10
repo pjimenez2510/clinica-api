@@ -15,7 +15,10 @@ import type {
   PendingInvoices,
 } from '../domain/cash';
 import type { CashDrawerKey, CashRepository } from '../domain/cash.repository';
-import { INVOICE_BALANCE, INVOICE_CAN_OWE } from './invoice-balance.sql';
+import {
+  INVOICE_BALANCE,
+  INVOICE_COUNTS_TOWARD_BALANCE,
+} from './invoice-balance.sql';
 import {
   CashSessionAlreadyClosedError,
   CashSessionChangedError,
@@ -284,7 +287,7 @@ export class PrismaCashRepository implements CashRepository {
         JOIN "patient_account" a ON a."id" = i."account_id"
        WHERE i."site_id" = ${query.siteId}::uuid
          AND a."patient_id" = ${query.patientId}::uuid
-         AND ${INVOICE_CAN_OWE}`;
+         AND ${INVOICE_COUNTS_TOWARD_BALANCE}`;
     return Money.parse(row?.balance ?? '0');
   }
 }
@@ -304,7 +307,7 @@ async function pendingOf(
           FROM "invoice" i
          WHERE i."site_id" = ${key.siteId}::uuid
            AND i."issued_by_id" = ${key.userId}::uuid
-           AND ${INVOICE_CAN_OWE}
+           AND ${INVOICE_COUNTS_TOWARD_BALANCE}
            AND (${key.since}::timestamptz IS NULL OR i."issued_at" > ${key.since}::timestamptz)
            AND i."issued_at" <= ${key.until}::timestamptz
       ) AS b

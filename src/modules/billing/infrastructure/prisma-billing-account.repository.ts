@@ -70,7 +70,10 @@ import { Money, Percentage, Quantity } from '../domain/money';
 import { toClinicalDate } from '../domain/price-list';
 import { asDateColumn } from './prisma-billing-catalogue.repository';
 import { writeBillingTrail } from './billing-trail.write';
-import { INVOICE_BALANCE, INVOICE_CAN_OWE } from './invoice-balance.sql';
+import {
+  INVOICE_BALANCE,
+  INVOICE_COUNTS_TOWARD_BALANCE,
+} from './invoice-balance.sql';
 import type { BillingTrail } from '../domain/billing-trail';
 
 /**
@@ -1356,7 +1359,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
          AND (${bounds.accountId}::uuid IS NULL OR i."account_id" = ${bounds.accountId}::uuid)
          AND (${bounds.issuedFrom}::timestamptz IS NULL OR i."issued_at" >= ${bounds.issuedFrom}::timestamptz)
          AND (${bounds.issuedBefore}::timestamptz IS NULL OR i."issued_at" < ${bounds.issuedBefore}::timestamptz)
-         AND ${INVOICE_CAN_OWE}
+         AND ${INVOICE_COUNTS_TOWARD_BALANCE}
          AND ${INVOICE_BALANCE} > 0`;
     return rows.map((row) => row.id);
   }

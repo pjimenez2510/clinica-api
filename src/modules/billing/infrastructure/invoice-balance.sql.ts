@@ -21,7 +21,7 @@ export const INVOICE_BALANCE = Prisma.sql`(
 )`;
 
 /**
- * BI-103. The invoices that can owe anything: a draft is not a document yet,
- * and a voided one owes nothing.
+ * BI-103. The invoices a balance counts — owed or in the patient's favour: a
+ * draft is not a document yet, and a voided one owes nothing.
  */
-export const INVOICE_CAN_OWE = Prisma.sql`i."status" NOT IN ('DRAFT', 'VOIDED')`;
+export const INVOICE_COUNTS_TOWARD_BALANCE = Prisma.sql`i."status" NOT IN ('DRAFT', 'VOIDED')`;

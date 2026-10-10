@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { seedBilling } from '../../prisma/seed-billing.mts';
 import type { BillingTrail } from '../../src/modules/billing/domain/billing-trail';
 import { Quantity } from '../../src/modules/billing/domain/money';
-import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
+import {
+  PrismaBillingAccountRepository,
+  databaseMessageOf,
+} from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
+import { PaymentMethodInactiveError } from '../../src/modules/billing/domain/billing.errors';
 import { PrismaCreditNoteRepository } from '../../src/modules/billing/infrastructure/prisma-credit-note.repository';
 import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -25,9 +29,8 @@ import { authoriseVoucher, insertVoucher } from './setup/sri-fixtures';
  *   · the database refuses the ENTRY → the document does not exist either
  *     (a committed document is never left without who issued it).
  *
- * The entry is refused through `access_audit.ip`, an `inet`: a value that is
- * not an address is the one way to make that insert fail without touching
- * the table. Each refusal has its positive control — the same call with a
+ * The entry is refused with a NUL byte in its user agent, which no text
+ * column admits: a way to make that insert fail without touching the table. Each refusal has its positive control — the same call with a
  * valid trail commits both.
  */
 const db = useDatabase();
@@ -99,9 +102,24 @@ beforeEach(async () => {
   };
 });
 
-/** `inet` refuses it, so the entry cannot be written. */
+/**
+ * PostgreSQL refuses a NUL byte in any text column, so the entry cannot be
+ * written. (An HTTP header can never carry one: Node's parser rejects it.)
+ */
 function unwritableTrail(): BillingTrail {
-  return { ...scene.trail, ip: 'not-an-address' };
+  return { ...scene.trail, userAgent: 'vitest\u0000' };
+}
+const NUL_REFUSED = /0x00|invalid byte sequence/;
+
+/** What PostgreSQL said, or `null` if the call went through. */
+function refusalOf(call: Promise<unknown>): Promise<string | null> {
+  return call.then(
+    () => null,
+    (error: unknown) =>
+      error instanceof PaymentMethodInactiveError
+        ? 'PAYMENT_METHOD_INACTIVE'
+        : databaseMessageOf(error),
+  );
 }
 
 async function anAccountWithACharge(): Promise<string> {
@@ -196,20 +214,54 @@ describe('BI-273 la bitácora de la factura se confirma con la factura', () => {
     // invoice and its entry inside the same transaction.
     const inactive = await aPaymentMethod(false);
 
-    await expect(
-      issue(accountId, { paymentMethodId: inactive }),
-    ).rejects.toBeDefined();
+    // Only `trg_payment_guard`, translated, says this — and it fires after
+    // the entry was written.
+    expect(
+      await refusalOf(issue(accountId, { paymentMethodId: inactive })),
+    ).toBe('PAYMENT_METHOD_INACTIVE');
 
     expect(await scene.prisma.invoice.count({ where: { accountId } })).toBe(0);
     expect(await entriesOf('invoice')).toEqual([]);
   });
 
+  it('BI-273 una IP que no es una dirección no cuesta la factura: la entrada queda sin ella', async () => {
+    const accountId = await anAccountWithACharge();
+
+    const invoice = await issue(accountId, {
+      trail: { ...scene.trail, ip: '10.0.0.7, 203.0.113.9' },
+    });
+
+    expect(await entriesOf('invoice')).toEqual([
+      {
+        resourceId: invoice.id,
+        action: 'CREATE',
+        ip: null,
+        userAgent: 'vitest',
+      },
+    ]);
+  });
+
+  it('BI-273 una IPv6 con zona se guarda sin la zona, que inet no admite', async () => {
+    const invoice = await issue(await anAccountWithACharge(), {
+      trail: { ...scene.trail, ip: 'fe80::1%en0' },
+    });
+
+    expect(await entriesOf('invoice')).toEqual([
+      {
+        resourceId: invoice.id,
+        action: 'CREATE',
+        ip: 'fe80::1',
+        userAgent: 'vitest',
+      },
+    ]);
+  });
+
   it('BI-273 una entrada que la base rechaza no deja factura', async () => {
     const accountId = await anAccountWithACharge();
 
-    await expect(
-      issue(accountId, { trail: unwritableTrail() }),
-    ).rejects.toBeDefined();
+    expect(
+      await refusalOf(issue(accountId, { trail: unwritableTrail() })),
+    ).toMatch(NUL_REFUSED);
 
     expect(await scene.prisma.invoice.count({ where: { accountId } })).toBe(0);
     expect(
@@ -241,7 +293,7 @@ describe('BI-273 la bitácora de la factura se confirma con la factura', () => {
         trail,
       });
 
-    await expect(correction(unwritableTrail())).rejects.toBeDefined();
+    expect(await refusalOf(correction(unwritableTrail()))).toMatch(NUL_REFUSED);
     expect(
       (
         await scene.prisma.invoice.findUniqueOrThrow({
@@ -297,7 +349,9 @@ describe('BI-273 la bitácora de la nota de crédito se confirma con la nota', (
   it('BI-273 una entrada que la base rechaza no deja nota de crédito ni vuelve a cobrar las líneas', async () => {
     const invoice = await anAuthorisedInvoice();
 
-    await expect(creditNote(invoice, unwritableTrail())).rejects.toBeDefined();
+    expect(await refusalOf(creditNote(invoice, unwritableTrail()))).toMatch(
+      NUL_REFUSED,
+    );
 
     expect(
       await scene.prisma.creditNote.count({

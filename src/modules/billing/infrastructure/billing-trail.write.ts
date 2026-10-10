@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 import type { Prisma } from '@prisma/client';
 
 import type { BillingTrail } from '../domain/billing-trail';
@@ -29,8 +31,21 @@ export async function writeBillingTrail(
       resourceType: entry.resourceType,
       resourceId: entry.resourceId,
       action: entry.action,
-      ip: entry.trail.ip,
+      ip: addressOrNull(entry.trail.ip),
       userAgent: entry.trail.userAgent?.slice(0, MAX_USER_AGENT),
     },
   });
+}
+
+/**
+ * `access_audit.ip` is an `inet`, which knows no IPv6 zone (`fe80::1%en0`)
+ * although Node's `isIP` accepts one: the zone names a local interface, not
+ * the client, and is dropped. Anything else that is not an address (a forged
+ * forwarded header) must not cost the clinic the invoice: the entry keeps who
+ * and what, and loses only where from. Never logged — the address is
+ * personal data (LOPDP).
+ */
+function addressOrNull(ip: string | undefined): string | null {
+  const address = ip?.split('%')[0];
+  return address !== undefined && isIP(address) !== 0 ? address : null;
 }
