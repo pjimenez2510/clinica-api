@@ -5221,11 +5221,13 @@ model PaymentMethod {
 }
 
 /// billing B6 (BI-101 to BI-104, BI-247 to BI-250). Money received against an
-/// invoice. Never deleted and never edited: the only change it admits is its
-/// reversal, once (`trg_payment_only_reverses`). `trg_payment_guard` writes
-/// `cashDate` (the Guayaquil date of `receivedAt`), refuses a payment beyond
-/// the invoice's balance and one into a closed cash day — none of which
-/// `schema.prisma` can express; see `20261009130000_payment_and_cash_session`.
+/// invoice. Never deleted and never edited: the only changes it admits are its
+/// reversal, once, while its turn is open, and being taken by the close of its
+/// drawer (`trg_payment_only_reverses`). `trg_payment_guard` writes `cashDate`
+/// (the Guayaquil date of `receivedAt`) and refuses a payment beyond the
+/// invoice's balance — none of which `schema.prisma` can express; see
+/// `20261009130000_payment_and_cash_session` and
+/// `20261010100000_cash_session_by_turn`.
 model Payment {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
@@ -5252,6 +5254,10 @@ model Payment {
   reversedBy     User?     @relation("PaymentReverser", fields: [reversedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "payment_reversed_by_fk")
   reversalReason String?   @map("reversal_reason") @db.VarChar(200)
 
+  /// BI-104, BI-252. The close that took it; NULL while its turn is open.
+  cashSessionId String?      @map("cash_session_id") @db.Uuid
+  cashSession   CashSession? @relation(fields: [cashSessionId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "payment_cash_session_fk")
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([invoiceId], map: "payment_by_invoice")
@@ -5259,10 +5265,11 @@ model Payment {
   @@map("payment")
 }
 
-/// billing B6 (BI-104, BI-105, BI-252). The daily close of one user's cash at
-/// one site: a photo that never changes (`trg_cash_session_is_final`) and
-/// that the database checks against the payments it summarises
-/// (`trg_cash_session_matches_its_payments`, deferred).
+/// billing B6 (BI-104, BI-105, BI-252, D-197.4). The close of one TURN of one
+/// user's cash at one site — the payments that were in no close yet —: a photo
+/// that never changes (`trg_cash_session_is_final`) and that the database
+/// checks against the payments it took (`trg_cash_session_matches_its_payments`,
+/// deferred). Several a day; «since when» is the previous close (BI-258).
 model CashSession {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
@@ -5271,7 +5278,6 @@ model CashSession {
   userId String @map("user_id") @db.Uuid
   user   User   @relation("CashSessionOwner", fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "cash_session_user_fk")
 
-  cashDate DateTime @map("cash_date") @db.Date
   closedAt DateTime @map("closed_at") @db.Timestamptz(6)
 
   collectedTotal Decimal @map("collected_total") @db.Decimal(12, 2)
@@ -5285,9 +5291,10 @@ model CashSession {
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  lines CashSessionLine[]
+  lines    CashSessionLine[]
+  payments Payment[]
 
-  @@unique([siteId, userId, cashDate], map: "cash_session_one_per_day")
+  @@index([siteId, userId, closedAt], map: "cash_session_by_drawer")
   @@map("cash_session")
 }
 

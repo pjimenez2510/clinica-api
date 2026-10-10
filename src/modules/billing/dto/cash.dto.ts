@@ -5,7 +5,7 @@ import { PAYMENT_METHODS } from '../domain/invoice';
 import { clinicalDateField, money } from './billing.dto';
 
 /**
- * Payments and the daily close of cash (B6). Every amount is a decimal string
+ * Payments and the close of a cash turn (B6). Every amount is a decimal string
  * (BI-001), and every message tells the cashier what to do (ADR-005).
  */
 
@@ -34,20 +34,27 @@ export const reversePaymentSchema = z.object({
 });
 export class ReversePaymentDto extends createZodDto(reversePaymentSchema) {}
 
-/** BI-251. Query of GET …/cash-sessions/day; today in Guayaquil by default. */
-export const cashDayQuerySchema = z.object({
+/** BI-258. Query of GET …/cash-sessions; today in Guayaquil by default. */
+export const cashSessionsQuerySchema = z.object({
   date: clinicalDateField('Indique una fecha válida').optional(),
 });
-export class CashDayQueryDto extends createZodDto(cashDayQuerySchema) {}
+export class CashSessionsQueryDto extends createZodDto(
+  cashSessionsQuerySchema,
+) {}
 
 /** BI-105, BI-252. Body of POST …/cash-sessions/close. */
 export const closeCashSessionSchema = z.object({
-  date: clinicalDateField('Indique una fecha válida'),
-  /** D-197.1. The cash counted in the drawer. */
+  /** D-197.1. The cash counted in the drawer, without the change float. */
   declaredCash: money('El efectivo contado'),
   /**
+   * BI-252. The last close the screen showed (`previousSession.id` of the
+   * open turn), `null` if there was none. If another close got in since,
+   * `CASH_SESSION_ALREADY_CLOSED` and nothing is closed twice.
+   */
+  previousSessionId: z.uuid('Indique el último cierre').nullable(),
+  /**
    * BI-255. The expected cash the screen showed. If a payment came in since,
-   * `CASH_DAY_CHANGED` and nothing is closed.
+   * `CASH_SESSION_CHANGED` and nothing is closed.
    */
   expectedCash: money('El efectivo esperado').optional(),
   note: z
@@ -75,6 +82,8 @@ const paymentResponseSchema = z.object({
   receivedAt: z.iso.datetime(),
   /** BI-250. The Guayaquil day it belongs to. */
   cashDate: z.iso.date(),
+  /** BI-104. `true` once a close took it: it can no longer be reversed. */
+  closed: z.boolean(),
   reversal: z
     .object({ at: z.iso.datetime(), reason: z.string().nullable() })
     .nullable(),
@@ -92,7 +101,8 @@ const cashLineSchema = z.object({
 
 const cashSessionResponseSchema = z.object({
   id: z.uuid(),
-  cashDate: z.iso.date(),
+  /** BI-258. The close before it: where the turn began. `null` if first. */
+  previousClosedAt: z.iso.datetime().nullable(),
   closedAt: z.iso.datetime(),
   closedByName: z.string(),
   lines: z.array(cashLineSchema),
@@ -108,18 +118,31 @@ const cashSessionResponseSchema = z.object({
 export class CashSessionDto extends createZodDto(cashSessionResponseSchema) {}
 export type CashSessionResponse = z.infer<typeof cashSessionResponseSchema>;
 
-const cashDayResponseSchema = z.object({
-  date: z.iso.date(),
+const cashTurnResponseSchema = z.object({
+  /** BI-251. The drawer's last close; `null` before the first. */
+  previousSession: z
+    .object({ id: z.uuid(), closedAt: z.iso.datetime() })
+    .nullable(),
   /** Reversed ones included, with their reversal. */
   payments: z.array(paymentResponseSchema),
   lines: z.array(cashLineSchema),
   collectedTotal: z.string(),
   expectedCash: z.string(),
-  /** What this cashier invoiced that day and is still owed. */
+  /** What this cashier invoiced during the turn and is still owed. */
   pendingTotal: z.string(),
   pendingCount: z.number().int(),
-  /** `null` while the day is open. */
-  session: cashSessionResponseSchema.nullable(),
 });
-export class CashDayDto extends createZodDto(cashDayResponseSchema) {}
-export type CashDayResponse = z.infer<typeof cashDayResponseSchema>;
+export class CashTurnDto extends createZodDto(cashTurnResponseSchema) {}
+export type CashTurnResponse = z.infer<typeof cashTurnResponseSchema>;
+
+const cashSessionListResponseSchema = z.object({
+  date: z.iso.date(),
+  /** BI-258. In the order they were closed. */
+  sessions: z.array(cashSessionResponseSchema),
+});
+export class CashSessionListDto extends createZodDto(
+  cashSessionListResponseSchema,
+) {}
+export type CashSessionListResponse = z.infer<
+  typeof cashSessionListResponseSchema
+>;

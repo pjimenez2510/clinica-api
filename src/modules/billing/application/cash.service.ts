@@ -10,7 +10,7 @@ import {
   type BillingAccountRepository,
 } from '../domain/billing.repository';
 import {
-  CashSessionDateInFutureError,
+  CashSessionClosedError,
   InvoiceNotFoundError,
   PaymentAlreadyReversedError,
   PaymentExceedsBalanceError,
@@ -21,9 +21,9 @@ import {
 } from '../domain/billing.errors';
 import {
   invoiceBalance,
-  summariseCashDay,
-  type CashDaySummary,
+  summariseCashTurn,
   type CashSessionView,
+  type CashTurnSummary,
   type PaymentView,
   type PendingInvoices,
 } from '../domain/cash';
@@ -34,19 +34,18 @@ import {
 import { Money } from '../domain/money';
 import type { Requester } from './service-catalogue.service';
 
-/** BI-251. One cashier's day, as «Caja del día» shows it. */
-export interface CashDay {
-  day: ClinicalDate;
+/** BI-251. One cashier's open turn, as «Caja» shows it. */
+export interface CashTurn {
+  /** The drawer's last close: where this turn began. `null` before the first. */
+  previousSession: { id: string; closedAt: Date } | null;
   payments: PaymentView[];
-  summary: CashDaySummary;
+  summary: CashTurnSummary;
   pending: PendingInvoices;
-  /** `null` while the day is open. */
-  session: CashSessionView | null;
 }
 
 /**
  * THE MONEY THAT CAME IN (billing B6): collecting an invoice, undoing a
- * payment, and closing the day.
+ * payment, and closing a turn (D-197.4).
  *
  * A service of its own and not more methods of `InvoicingService`: issuing a
  * document and receiving money change for different reasons — the SRI's
@@ -56,7 +55,7 @@ export interface CashDay {
  *
  * Every sum that a race could break — the balance, the closed day, the
  * photo — is the database's; what is here is what the screen needs before
- * asking: the default amount, whose payment it is, which day is today.
+ * asking: the default amount, whose payment it is, which turn is open.
  */
 @Injectable()
 export class CashService {
@@ -133,6 +132,8 @@ export class CashService {
       throw new PaymentNotFoundError();
     }
     if (payment.reversal) throw new PaymentAlreadyReversedError();
+    // BI-104. Closed, it is in a photo; undoing it is a refund (D-197.3).
+    if (payment.cashSessionId) throw new CashSessionClosedError();
     return this.cash.reversePayment({
       paymentId: payment.id,
       reversedById: requester.userId,
@@ -141,57 +142,66 @@ export class CashService {
     });
   }
 
-  /** BI-251. Today in Guayaquil when no day is asked for. */
-  async day(
-    query: { siteId: string; day?: ClinicalDate },
+  /** BI-251. The payments in no close yet, and since when. */
+  async openTurn(
+    query: { siteId: string },
     requester: Requester,
-  ): Promise<CashDay> {
-    const key = {
-      siteId: query.siteId,
-      userId: requester.userId,
-      day: query.day ?? clinicalDateOf(new Date()),
-    };
-    const [payments, pending, session] = await Promise.all([
-      this.cash.listDayPayments(key),
-      this.cash.pendingOfDay(key),
-      this.cash.findCashSession(key),
+  ): Promise<CashTurn> {
+    const key = { siteId: query.siteId, userId: requester.userId };
+    const [payments, previous] = await Promise.all([
+      this.cash.listOpenTurnPayments(key),
+      this.cash.findLastCashSession(key),
     ]);
+    const pending = await this.cash.pendingOfTurn({
+      ...key,
+      since: previous?.closedAt ?? null,
+      until: new Date(),
+    });
     return {
-      day: key.day,
+      previousSession: previous
+        ? { id: previous.id, closedAt: previous.closedAt }
+        : null,
       payments,
-      summary: summariseCashDay(payments),
-      pending: session
-        ? { total: session.pendingTotal, count: session.pendingCount }
-        : pending,
-      session,
+      summary: summariseCashTurn(payments),
+      pending,
     };
   }
 
-  /** BI-104, BI-105, BI-252, BI-253. */
-  async close(
+  /** BI-258. The closes of one Guayaquil day; today when none is asked for. */
+  closesOfDay(
+    query: { siteId: string; day?: ClinicalDate },
+    requester: Requester,
+  ): Promise<CashSessionView[]> {
+    return this.cash.listCashSessionsOfDay({
+      siteId: query.siteId,
+      userId: requester.userId,
+      day: query.day ?? clinicalDateOf(new Date()),
+    });
+  }
+
+  /** BI-104, BI-105, BI-252, BI-253, BI-255. */
+  close(
     command: {
       siteId: string;
-      day: ClinicalDate;
       declaredCash: Money;
+      /** BI-252. The last close the screen showed; `null` if none. */
+      previousSessionId: string | null;
       /** BI-255. */
       seenExpectedCash?: Money;
       note?: string | null;
     },
     requester: Requester,
   ): Promise<CashSessionView> {
-    const now = new Date();
-    if (command.day > clinicalDateOf(now)) {
-      throw new CashSessionDateInFutureError();
-    }
     return this.cash.closeCashSession({
       siteId: command.siteId,
       userId: requester.userId,
-      day: command.day,
-      closedAt: now,
+      // The application's clock, as every instant the screen compares.
+      closedAt: new Date(),
       declaredCash: command.declaredCash,
+      seenPreviousSessionId: command.previousSessionId,
       seenExpectedCash: command.seenExpectedCash,
       note: command.note?.trim() || null,
-      summarise: summariseCashDay,
+      summarise: summariseCashTurn,
     });
   }
 

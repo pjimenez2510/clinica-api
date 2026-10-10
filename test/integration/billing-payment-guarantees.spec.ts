@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
-import { summariseCashDay } from '../../src/modules/billing/domain/cash';
+import { summariseCashTurn } from '../../src/modules/billing/domain/cash';
 import { Money, Quantity } from '../../src/modules/billing/domain/money';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { PrismaCashRepository } from '../../src/modules/billing/infrastructure/prisma-cash.repository';
@@ -19,10 +19,10 @@ import { createPatient, createSite } from './setup/fixtures';
 import { authoriseVoucher } from './setup/sri-fixtures';
 
 /**
- * billing/B6: what the DATABASE guarantees about payments and the daily close
- * of cash — the balance a payment cannot exceed, the payment that is only
- * reversed and never edited or deleted, the closed day that takes nothing
- * more, and the close that is a photo of what was really collected.
+ * billing/B6: what the DATABASE guarantees about payments and the close of a
+ * cash turn — the balance a payment cannot exceed, the payment that is only
+ * reversed and never edited or deleted, the closed payment that changes no
+ * more, and the close that is a photo of what it really took (D-197.4).
  *
  * Every attempt goes in by raw SQL, underneath every layer, and each one has
  * its positive control: the same statement with what the guarantee admits
@@ -176,15 +176,11 @@ async function pay(
   return row!.id;
 }
 
-/** The clinic's date (YYYY-MM-DD) of an instant, from the shared helper. */
-const dayOf = (instant: Date) => clinicalDateOf(instant);
-
 /**
- * A close written by raw SQL in one transaction, header and lines, so the
- * deferred check looks at the end of it.
+ * A close written by raw SQL in one transaction — header, lines, and the
+ * payments it takes — so the deferred check looks at the end of it.
  */
 async function close(
-  day: string,
   totals: {
     collected: string;
     expectedCash: string;
@@ -196,15 +192,15 @@ async function close(
       amount: string;
     }[];
   },
-  options: { closedAt?: Date; userId?: string } = {},
+  options: { closedAt?: Date; userId?: string; takes?: string[] } = {},
 ): Promise<string> {
   return scene.prisma.$transaction(async (tx) => {
     const [row] = await tx.$queryRaw<{ id: string }[]>`
       INSERT INTO "cash_session"
-        ("site_id", "user_id", "cash_date", "closed_at", "collected_total",
+        ("site_id", "user_id", "closed_at", "collected_total",
          "expected_cash", "declared_cash", "pending_total", "pending_count")
       VALUES (${scene.siteId}::uuid, ${options.userId ?? scene.userId}::uuid,
-              ${day}::date, ${options.closedAt ?? new Date()},
+              ${options.closedAt ?? new Date()},
               ${totals.collected}::numeric, ${totals.expectedCash}::numeric,
               ${totals.declaredCash ?? totals.expectedCash}::numeric, 0, 0)
       RETURNING "id"`;
@@ -216,9 +212,21 @@ async function close(
         VALUES (${row!.id}::uuid, ${line.methodId}::uuid, 'Medio',
                 ${line.sriCode}, ${line.count}, ${line.amount}::numeric)`;
     }
+    for (const paymentId of options.takes ?? []) {
+      await tx.$executeRaw`
+        UPDATE "payment" SET "cash_session_id" = ${row!.id}::uuid
+         WHERE "id" = ${paymentId}::uuid`;
+    }
     return row!.id;
   });
 }
+
+const cashLine = (count: number, amount: string) => ({
+  methodId: scene.cashId,
+  sriCode: '01',
+  count,
+  amount,
+});
 
 describe('billing/B6 — the payment, guaranteed by the database', () => {
   it('BI-101 refuses a payment beyond the balance, and takes one up to it (positive control)', async () => {
@@ -391,37 +399,44 @@ describe('billing/B6 — what else the payment trigger refuses', () => {
     await expect(pay(invoiceId, '1.00')).resolves.toBeTypeOf('string');
   });
 
-  it('BI-253 a payment that got the lock first is in the photo the close writes', async () => {
+  it('BI-253 a payment still uncommitted when the close reads is not refused: it stays for the next turn', async () => {
     const invoiceId = await anInvoice();
     const repository = new PrismaCashRepository(
       scene.prisma as unknown as PrismaService,
     );
+    const first = await pay(invoiceId, '10.00');
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
+    let late = '';
     const paying = scene.prisma.$transaction(
       async (tx) => {
-        await pay(invoiceId, '12.00', { client: tx });
+        late = await pay(invoiceId, '12.00', { client: tx });
         await held;
       },
       { timeout: 20_000 },
     );
-    // The payment's trigger holds the day's lock: the close waits for it.
     await new Promise((resolve) => setTimeout(resolve, 300));
-    const closing = repository.closeCashSession({
+    // The close does not wait for the payment: it takes what is committed.
+    const session = await repository.closeCashSession({
       siteId: scene.siteId,
       userId: scene.userId,
-      day: dayOf(new Date()),
       closedAt: new Date(),
-      declaredCash: Money.parse('12.00'),
+      declaredCash: Money.parse('10.00'),
+      seenPreviousSessionId: null,
       note: null,
-      summarise: summariseCashDay,
+      summarise: summariseCashTurn,
     });
-    await new Promise((resolve) => setTimeout(resolve, 300));
     release();
     await paying;
-    const session = await closing;
-    expect(session.collectedTotal.toString()).toBe('12.00');
-    expect(session.difference.toString()).toBe('0.00');
+    expect(session.collectedTotal.toString()).toBe('10.00');
+    const rows = await scene.prisma.payment.findMany({
+      where: { id: { in: [first, late] } },
+      select: { id: true, cashSessionId: true },
+    });
+    expect(rows.find((row) => row.id === first)?.cashSessionId).toBe(
+      session.id,
+    );
+    expect(rows.find((row) => row.id === late)?.cashSessionId).toBeNull();
   });
 });
 
@@ -438,106 +453,205 @@ describe('billing/B6 — a reversal without a reason (D-126)', () => {
   });
 });
 
-describe('billing/B6 — the daily close, guaranteed by the database', () => {
-  it('BI-104 after the close, no payment nor reversal of that user that day; another user still collects (control)', async () => {
+describe('billing/B6 — the close of a turn, guaranteed by the database', () => {
+  it('BI-104 after a close the same cashier still collects, in the next turn; the closed payment is not reversed (control: the open one is)', async () => {
     const invoiceId = await anInvoice();
-    const now = new Date();
-    const today = dayOf(now);
-    const paid = await pay(invoiceId, '10.00');
-    await close(today, {
-      collected: '10.00',
-      expectedCash: '10.00',
-      lines: [
-        { methodId: scene.cashId, sriCode: '01', count: 1, amount: '10.00' },
-      ],
-    });
-    await expect(pay(invoiceId, '5.00')).rejects.toThrowError(
-      /cash_session_closed/,
-    );
-    await expect(
-      scene.prisma.$executeRaw`
-        UPDATE "payment" SET "reversed_at" = ${new Date()},
-               "reversed_by_id" = ${scene.userId}::uuid,
-               "reversal_reason" = 'Error'
-         WHERE "id" = ${paid}::uuid`,
-    ).rejects.toThrowError(/cash_session_closed/);
-    await expect(
-      pay(invoiceId, '5.00', { userId: scene.otherUserId }),
-    ).resolves.toBeTypeOf('string');
-  });
-
-  it('BI-252 one close per user, site and day; none of a day still to come (positive control: today)', async () => {
-    const now = new Date();
-    const empty = { collected: '0', expectedCash: '0', lines: [] };
-    await expect(
-      close(addDays(dayOf(now), 1), empty, { closedAt: now }),
-    ).rejects.toThrowError(/cash_session_date_in_future/);
-    await expect(
-      close(dayOf(now), empty, { closedAt: now }),
-    ).resolves.toBeTypeOf('string');
-    await expect(
-      close(dayOf(now), empty, { closedAt: now }),
-    ).rejects.toThrowError(/cash_session_one_per_day/);
-  });
-
-  it('BI-252 the close must add up to what was really collected, method by method (positive control)', async () => {
-    const invoiceId = await anInvoice();
-    await pay(invoiceId, '10.00');
-    await pay(invoiceId, '25.00', { methodId: scene.transferId });
-    const today = dayOf(new Date());
-    // Short of the transfer: refused.
-    await expect(
-      close(today, {
+    const closed = await pay(invoiceId, '10.00');
+    await close(
+      {
         collected: '10.00',
         expectedCash: '10.00',
-        lines: [
-          { methodId: scene.cashId, sriCode: '01', count: 1, amount: '10.00' },
-        ],
-      }),
+        lines: [cashLine(1, '10.00')],
+      },
+      { takes: [closed] },
+    );
+    const open = await pay(invoiceId, '5.00');
+    const reverse = (id: string) => scene.prisma.$executeRaw`
+      UPDATE "payment" SET "reversed_at" = ${new Date()},
+             "reversed_by_id" = ${scene.userId}::uuid,
+             "reversal_reason" = 'Error'
+       WHERE "id" = ${id}::uuid`;
+    await expect(reverse(closed)).rejects.toThrowError(/cash_session_closed/);
+    await expect(reverse(open)).resolves.toBe(1);
+  });
+
+  it('BI-104 two closes the same day for the same cashier, one after the other (positive control: an earlier one is refused)', async () => {
+    const invoiceId = await anInvoice();
+    const morning = await pay(invoiceId, '10.00');
+    const noon = new Date();
+    await close(
+      {
+        collected: '10.00',
+        expectedCash: '10.00',
+        lines: [cashLine(1, '10.00')],
+      },
+      { takes: [morning], closedAt: noon },
+    );
+    const afternoon = await pay(invoiceId, '20.00');
+    await expect(
+      close(
+        {
+          collected: '20.00',
+          expectedCash: '20.00',
+          lines: [cashLine(1, '20.00')],
+        },
+        { takes: [afternoon], closedAt: new Date(noon.getTime() - 1) },
+      ),
+    ).rejects.toThrowError(/cash_session_after_the_last/);
+    await expect(
+      close(
+        {
+          collected: '20.00',
+          expectedCash: '20.00',
+          lines: [cashLine(1, '20.00')],
+        },
+        { takes: [afternoon], closedAt: new Date(noon.getTime() + 1000) },
+      ),
+    ).resolves.toBeTypeOf('string');
+    const sessions = await scene.prisma.cashSession.count({
+      where: { siteId: scene.siteId, userId: scene.userId },
+    });
+    expect(sessions).toBe(2);
+  });
+
+  it('BI-252 a payment is born open and goes only to a close of its own drawer, not before its instant (positive control)', async () => {
+    const invoiceId = await anInvoice();
+    const now = new Date();
+    const sessionOf = (userId: string, closedAt: Date) =>
+      close(
+        { collected: '0', expectedCash: '0', lines: [] },
+        { userId, closedAt },
+      );
+    const other = await sessionOf(scene.otherUserId, now);
+    await expect(
+      scene.prisma.$queryRaw`
+        INSERT INTO "payment"
+          ("invoice_id", "site_id", "payment_method_id", "amount",
+           "received_at", "received_by_id", "cash_date", "cash_session_id")
+        VALUES (${invoiceId}::uuid, ${scene.siteId}::uuid, ${scene.cashId}::uuid,
+                1, ${now}, ${scene.otherUserId}::uuid, ${IGNORED_CASH_DATE}::date,
+                ${other}::uuid)`,
+    ).rejects.toThrowError(/payment_is_born_open/);
+
+    const paid = await pay(invoiceId, '10.00', { at: now });
+    const take = (sessionId: string) => scene.prisma.$executeRaw`
+      UPDATE "payment" SET "cash_session_id" = ${sessionId}::uuid
+       WHERE "id" = ${paid}::uuid`;
+    // Another cashier's close.
+    await expect(take(other)).rejects.toThrowError(
+      /payment_session_is_its_drawer/,
+    );
+    // Its own drawer, but closed before the payment came in.
+    const earlier = await sessionOf(
+      scene.userId,
+      new Date(now.getTime() - 60_000),
+    );
+    await expect(take(earlier)).rejects.toThrowError(
+      /payment_session_is_its_drawer/,
+    );
+    // Reversed and closed in the same statement.
+    await expect(
+      scene.prisma.$executeRaw`
+        UPDATE "payment" SET "cash_session_id" = ${earlier}::uuid,
+               "reversed_at" = ${new Date()}, "reversed_by_id" = ${scene.userId}::uuid
+         WHERE "id" = ${paid}::uuid`,
+    ).rejects.toThrowError(/payment cannot be modified/);
+    // Its own close, written with it: accepted.
+    await expect(
+      close(
+        {
+          collected: '10.00',
+          expectedCash: '10.00',
+          lines: [cashLine(1, '10.00')],
+        },
+        { takes: [paid], closedAt: new Date(now.getTime() + 1000) },
+      ),
+    ).resolves.toBeTypeOf('string');
+  });
+
+  it('BI-252 the close must add up to what it takes, method by method (positive control)', async () => {
+    const invoiceId = await anInvoice();
+    const cash = await pay(invoiceId, '10.00');
+    const transfer = await pay(invoiceId, '25.00', {
+      methodId: scene.transferId,
+    });
+    const takes = [cash, transfer];
+    // Short of the transfer: refused.
+    await expect(
+      close(
+        {
+          collected: '10.00',
+          expectedCash: '10.00',
+          lines: [cashLine(1, '10.00')],
+        },
+        { takes },
+      ),
     ).rejects.toThrowError(/cash_session_matches_its_payments/);
     // Cash claimed for the transfer: refused.
     await expect(
-      close(today, {
+      close(
+        {
+          collected: '35.00',
+          expectedCash: '35.00',
+          lines: [
+            cashLine(1, '10.00'),
+            {
+              methodId: scene.transferId,
+              sriCode: '01',
+              count: 1,
+              amount: '25.00',
+            },
+          ],
+        },
+        { takes },
+      ),
+    ).rejects.toThrowError(/cash_session_matches_its_payments/);
+    // The lines of both, but only the cash payment taken: refused.
+    await expect(
+      close(
+        {
+          collected: '35.00',
+          expectedCash: '10.00',
+          lines: [
+            cashLine(1, '10.00'),
+            {
+              methodId: scene.transferId,
+              sriCode: '20',
+              count: 1,
+              amount: '25.00',
+            },
+          ],
+        },
+        { takes: [cash] },
+      ),
+    ).rejects.toThrowError(/cash_session_matches_its_payments/);
+    // What it really was, with a dollar short in the drawer: accepted, and
+    // the difference is the database's.
+    const id = await close(
+      {
         collected: '35.00',
-        expectedCash: '35.00',
+        expectedCash: '10.00',
+        declaredCash: '9.00',
         lines: [
-          { methodId: scene.cashId, sriCode: '01', count: 1, amount: '10.00' },
+          cashLine(1, '10.00'),
           {
             methodId: scene.transferId,
-            sriCode: '01',
+            sriCode: '20',
             count: 1,
             amount: '25.00',
           },
         ],
-      }),
-    ).rejects.toThrowError(/cash_session_matches_its_payments/);
-    // What it really was, with a dollar short in the drawer: accepted, and
-    // the difference is the database's.
-    const id = await close(today, {
-      collected: '35.00',
-      expectedCash: '10.00',
-      declaredCash: '9.00',
-      lines: [
-        { methodId: scene.cashId, sriCode: '01', count: 1, amount: '10.00' },
-        {
-          methodId: scene.transferId,
-          sriCode: '20',
-          count: 1,
-          amount: '25.00',
-        },
-      ],
-    });
+      },
+      { takes },
+    );
     const [row] = await scene.prisma.$queryRaw<{ difference: string }[]>`
       SELECT "difference"::text AS "difference" FROM "cash_session" WHERE "id" = ${id}::uuid`;
     expect(row!.difference).toBe('-1.00');
   });
 
-  it('BI-252 a close and its lines never change nor go away, and no line is added afterwards', async () => {
-    const id = await close(dayOf(new Date()), {
-      collected: '0',
-      expectedCash: '0',
-      lines: [],
-    });
+  it('BI-252 a close and its lines never change nor go away; no line nor payment is added afterwards', async () => {
+    const invoiceId = await anInvoice();
+    const id = await close({ collected: '0', expectedCash: '0', lines: [] });
     await expect(
       scene.prisma
         .$executeRaw`UPDATE "cash_session" SET "declared_cash" = 5 WHERE "id" = ${id}::uuid`,
@@ -553,32 +667,114 @@ describe('billing/B6 — the daily close, guaranteed by the database', () => {
            "payment_count", "amount")
         VALUES (${id}::uuid, ${scene.cashId}::uuid, 'Efectivo', '01', 1, 10)`,
     ).rejects.toThrowError(/cash_session_matches_its_payments/);
+    const paid = await pay(invoiceId, '10.00', {
+      at: new Date(Date.now() - 60_000),
+    });
+    await expect(
+      scene.prisma.$executeRaw`
+        UPDATE "payment" SET "cash_session_id" = ${id}::uuid WHERE "id" = ${paid}::uuid`,
+    ).rejects.toThrowError(/cash_session_matches_its_payments/);
+    // A taken payment is not taken again by a later close.
+    const later = await close(
+      {
+        collected: '10.00',
+        expectedCash: '10.00',
+        lines: [cashLine(1, '10.00')],
+      },
+      { takes: [paid], closedAt: new Date(Date.now() + 1000) },
+    );
+    expect(later).toBeTypeOf('string');
+    await expect(
+      close(
+        { collected: '0', expectedCash: '0', lines: [] },
+        { takes: [paid], closedAt: new Date(Date.now() + 2000) },
+      ),
+    ).rejects.toThrowError(/cash_session_closed/);
   });
 
-  it('BI-253 a payment racing the close either is in the photo or is refused', async () => {
+  it('BI-253 a reversal racing the close is either in the photo or refused: with the close first, refused', async () => {
     const invoiceId = await anInvoice();
-    const today = dayOf(new Date());
-    // The close takes the day's lock first, the way the service does, and
-    // holds it while a payment tries to go in.
+    const paid = await pay(invoiceId, '10.00');
+    const repository = new PrismaCashRepository(
+      scene.prisma as unknown as PrismaService,
+    );
+    // The close takes the drawer's lock first, the way the repository does,
+    // and holds it while the reversal tries.
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
     const closing = scene.prisma.$transaction(
       async (tx) => {
-        await tx.$executeRaw`SELECT cash_day_lock(${scene.siteId}::uuid, ${scene.userId}::uuid, ${today}::date)`;
+        await tx.$executeRaw`SELECT cash_drawer_lock(${scene.siteId}::uuid, ${scene.userId}::uuid)`;
         await held;
-        await tx.$executeRaw`
+        const [row] = await tx.$queryRaw<{ id: string }[]>`
           INSERT INTO "cash_session"
-            ("site_id", "user_id", "cash_date", "closed_at", "collected_total",
+            ("site_id", "user_id", "closed_at", "collected_total",
              "expected_cash", "declared_cash", "pending_total", "pending_count")
-          VALUES (${scene.siteId}::uuid, ${scene.userId}::uuid, ${today}::date,
-                  ${new Date()}, 0, 0, 0, 0, 0)`;
+          VALUES (${scene.siteId}::uuid, ${scene.userId}::uuid, ${new Date()},
+                  10, 10, 10, 0, 0)
+          RETURNING "id"`;
+        await tx.$executeRaw`
+          INSERT INTO "cash_session_line"
+            ("cash_session_id", "payment_method_id", "method_name", "sri_code",
+             "payment_count", "amount")
+          VALUES (${row!.id}::uuid, ${scene.cashId}::uuid, 'Efectivo', '01', 1, 10)`;
+        await tx.$executeRaw`
+          UPDATE "payment" SET "cash_session_id" = ${row!.id}::uuid WHERE "id" = ${paid}::uuid`;
       },
       { timeout: 20_000 },
     );
-    const paying = pay(invoiceId, '10.00');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const reversing = repository.reversePayment({
+      paymentId: paid,
+      reversedById: scene.userId,
+      reason: null,
+      now: new Date(),
+    });
     await new Promise((resolve) => setTimeout(resolve, 300));
     release();
     await closing;
-    await expect(paying).rejects.toThrowError(/cash_session_closed/);
+    await expect(reversing).rejects.toThrowError(/cerrado|closed/i);
+  });
+
+  it('BI-253 with the reversal first, the close waits and leaves it out of the photo (positive control)', async () => {
+    const invoiceId = await anInvoice();
+    const kept = await pay(invoiceId, '10.00');
+    const undone = await pay(invoiceId, '7.00');
+    const repository = new PrismaCashRepository(
+      scene.prisma as unknown as PrismaService,
+    );
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const reversing = scene.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT cash_drawer_lock(${scene.siteId}::uuid, ${scene.userId}::uuid)`;
+        await tx.$executeRaw`
+          UPDATE "payment" SET "reversed_at" = ${new Date()},
+                 "reversed_by_id" = ${scene.userId}::uuid
+           WHERE "id" = ${undone}::uuid`;
+        await held;
+      },
+      { timeout: 20_000 },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const closing = repository.closeCashSession({
+      siteId: scene.siteId,
+      userId: scene.userId,
+      closedAt: new Date(),
+      declaredCash: Money.parse('10.00'),
+      seenPreviousSessionId: null,
+      note: null,
+      summarise: summariseCashTurn,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    release();
+    await reversing;
+    const session = await closing;
+    expect(session.collectedTotal.toString()).toBe('10.00');
+    const taken = await scene.prisma.payment.findMany({
+      where: { cashSessionId: session.id },
+      select: { id: true },
+    });
+    expect(taken.map((row) => row.id).sort()).toEqual([kept, undone].sort());
   });
 });
