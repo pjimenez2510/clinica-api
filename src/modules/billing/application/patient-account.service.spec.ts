@@ -974,4 +974,24 @@ describe('BI-243 el extracto dice los cargos de procedimiento que ya no correspo
       { chargeId: 'charge-p-two', billed: false, reason: 'CHANGED' },
     ]);
   });
+  it('BI-243 BI-214 tras una nota de crédito señala la copia, que cobra, y no el original acreditado', async () => {
+    const credited = charge('charge-original', 'BILLED', {
+      origin: 'PROCEDURE',
+      encounterProcedureId: 'p-gone',
+      billableServiceId: 'service-suture',
+      creditNote: { id: 'note-1', documentNumber: '001-001-000000003', status: 'AUTHORISED' }, // prettier-ignore
+    });
+    const copy = charge('charge-copy', 'BILLABLE', {
+      origin: 'CORRECTION',
+      correctsChargeItemId: 'charge-original',
+      encounterProcedureId: 'p-gone',
+      billableServiceId: 'service-suture',
+    });
+
+    const statement = await statementWith([credited, copy], []);
+
+    expect(statement.proceduresOutdated).toEqual([
+      { chargeId: 'charge-copy', billed: false, reason: 'RETRACTED' },
+    ]);
+  });
 });

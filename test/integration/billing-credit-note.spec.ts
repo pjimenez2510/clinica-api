@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -207,6 +209,11 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       encounterId?: string;
       /** B4: $3.00 off each line, applied by one user and authorised by another. */
       discounted?: boolean;
+      /**
+       * BI-214: the lines a procedure and an exam of the attention raised —
+       * the first line PROCEDURE, the second EXAM. Needs `encounterId`.
+       */
+      acts?: { encounterProcedureId: string; serviceOrderItemId: string };
     } = {},
   ) {
     const own = (options.site ?? 'own') === 'own';
@@ -236,6 +243,19 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
                 discountAuthorisedById: authoriser!.id,
                 discountAuthorisedAt: granted,
               }
+            : {}),
+          ...(options.acts
+            ? line === 0
+              ? {
+                  origin: 'PROCEDURE',
+                  encounterId: options.encounterId,
+                  encounterProcedureId: options.acts.encounterProcedureId,
+                }
+              : {
+                  origin: 'EXAM',
+                  encounterId: options.encounterId,
+                  serviceOrderItemId: options.acts.serviceOrderItemId,
+                }
             : {}),
           accountId: account.id,
           billableServiceId: serviceId,
@@ -1057,5 +1077,41 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       creditNotes: [],
       replacedBy: [],
     });
+  });
+
+  it('BI-214 la copia de un cargo de procedimiento o de examen nombra el mismo acto que su original', async () => {
+    const practitioner = await createPractitioner(prisma);
+    const encounter = await createEncounter(prisma, {
+      siteId,
+      practitionerId: practitioner.id,
+      patientId,
+    });
+    // Scalars with no foreign key (BI-153): any identifier names «the act».
+    const acts = {
+      encounterProcedureId: randomUUID(),
+      serviceOrderItemId: randomUUID(),
+    };
+    const { invoiceId, accountId } = await anInvoice({
+      settled: true,
+      encounterId: encounter.id,
+      acts,
+    });
+
+    await correct(invoiceId, { reasonCode: 'AMOUNT' }).expect(201);
+
+    const copies = await prisma.chargeItem.findMany({
+      where: { accountId, origin: 'CORRECTION' },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(
+      copies
+        .map((copy) => [copy.encounterProcedureId, copy.serviceOrderItemId])
+        .sort(),
+    ).toEqual(
+      [
+        [acts.encounterProcedureId, null],
+        [null, acts.serviceOrderItemId],
+      ].sort(),
+    );
   });
 });

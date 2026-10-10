@@ -487,18 +487,20 @@ export class PatientAccountService {
 
   /**
    * BI-243. Compares each standing procedure line with the procedure it names
-   * — or the one restored from it (EN-246) — as it is NOW.
+   * — or the one restored from it (EN-246) — as it is NOW. A credited line is
+   * not standing; its copy is (BI-214).
    */
   private async proceduresOutdated(
     account: AccountView,
     charges: readonly ChargeView[],
   ): Promise<AccountStatement['proceduresOutdated']> {
+    // A procedure line that still charges: its copy after a credit note names
+    // the same procedure (BI-214), and the credited original no longer does.
     const lines = charges.filter(
       (charge) =>
-        charge.origin === 'PROCEDURE' &&
+        (charge.origin === 'PROCEDURE' || charge.origin === 'CORRECTION') &&
         charge.encounterProcedureId !== null &&
-        charge.status !== 'CANCELLED' &&
-        charge.status !== 'NOT_BILLABLE',
+        countsTowardsTotal(charge),
     );
     if (lines.length === 0 || !account.encounterId) return [];
 
