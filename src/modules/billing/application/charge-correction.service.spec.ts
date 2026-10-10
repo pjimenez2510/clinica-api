@@ -58,6 +58,8 @@ const charge = (
   voidReason: null,
   invoiceId: null,
   correctsChargeItemId: null,
+  creditNote: null,
+  correctedNoteRejected: false,
   ...overrides,
 });
 
