@@ -11,6 +11,7 @@ import {
 } from '../domain/site-parameter.repository';
 import {
   assertAtomFitsStoredDurations,
+  assertBpReferenceCoherent,
   assertLeadWindowCoherent,
   assertParametersInRange,
   assertPermissionIsDeclared,
@@ -192,6 +193,17 @@ export class SiteParametersService {
       unmatchedResultDeadlineHours:
         patch.unmatchedResultDeadlineHours ??
         current.unmatchedResultDeadlineHours,
+      bpReferenceSystolic:
+        patch.bpReferenceSystolic ?? current.bpReferenceSystolic,
+      bpReferenceDiastolic:
+        patch.bpReferenceDiastolic ?? current.bpReferenceDiastolic,
+    });
+    // EN-272. Judged on the result, like the lead window above.
+    assertBpReferenceCoherent({
+      bpReferenceSystolic:
+        patch.bpReferenceSystolic ?? current.bpReferenceSystolic,
+      bpReferenceDiastolic:
+        patch.bpReferenceDiastolic ?? current.bpReferenceDiastolic,
     });
 
     const change = await this.repository.update(siteId, patch);

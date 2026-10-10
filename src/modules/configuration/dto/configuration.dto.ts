@@ -253,6 +253,9 @@ export const updateSiteParametersSchema = z
       .nullable()
       .optional(),
     unmatchedResultDeadlineHours: parameterSchema.optional(),
+    /** EN-272. mmHg; ranges and order are the domain's. */
+    bpReferenceSystolic: parameterSchema.optional(),
+    bpReferenceDiastolic: parameterSchema.optional(),
   })
   .refine((value) => Object.values(value).some((v) => v !== undefined), {
     message: 'Indique al menos un parámetro que cambiar',
@@ -288,6 +291,9 @@ export const siteParametersSchema = z.object({
   /** ORD-046, D-050 §4. `null` = quien pidió el examen. */
   unmatchedResultOwnerRoleId: z.uuid().nullable(),
   unmatchedResultDeadlineHours: z.number().int(),
+  /** EN-272. The blood-pressure line of the vitals charts, in mmHg. */
+  bpReferenceSystolic: z.number().int(),
+  bpReferenceDiastolic: z.number().int(),
 });
 /** Response of reading and saving a site's parameters: always the whole set. */
 export class SiteParametersDto extends createZodDto(siteParametersSchema) {}

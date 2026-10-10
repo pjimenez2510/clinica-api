@@ -52,6 +52,8 @@ const CURRENT: SiteParameterView = {
   criticalEscalationRoleId: null,
   unmatchedResultOwnerRoleId: null,
   unmatchedResultDeadlineHours: 24,
+  bpReferenceSystolic: 140,
+  bpReferenceDiastolic: 90,
 };
 
 interface Call {
@@ -439,6 +441,8 @@ describe('los parámetros de operación de una sede', () => {
       criticalEscalationRoleId: null,
       unmatchedResultOwnerRoleId: null,
       unmatchedResultDeadlineHours: 24,
+      bpReferenceSystolic: 140,
+      bpReferenceDiastolic: 90,
     });
     expect(recorded[0]?.after).toMatchObject({ overbookingCap: 4 });
   });

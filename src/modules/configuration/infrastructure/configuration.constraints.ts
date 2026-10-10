@@ -80,6 +80,23 @@ registerConstraintMeanings({
     field: 'unmatchedResultOwnerRoleId',
     message: 'El rol indicado no existe. Actualice la lista de roles',
   },
+  // EN-272. La línea de la TA, para la escritura que no pasa por el dominio.
+  site_parameter_bp_reference_systolic_range: {
+    code: 'PARAM_OUT_OF_RANGE',
+    field: 'bpReferenceSystolic',
+    message: 'La línea de la tensión sistólica va de 100 a 200 mmHg',
+  },
+  site_parameter_bp_reference_diastolic_range: {
+    code: 'PARAM_OUT_OF_RANGE',
+    field: 'bpReferenceDiastolic',
+    message: 'La línea de la tensión diastólica va de 60 a 120 mmHg',
+  },
+  site_parameter_bp_reference_coherent: {
+    code: 'PARAM_OUT_OF_RANGE',
+    field: 'bpReferenceDiastolic',
+    message:
+      'La línea de la tensión diastólica tiene que quedar por debajo de la sistólica',
+  },
   site_parameter_lead_window_coherent: {
     code: 'PARAM_OUT_OF_RANGE',
     field: 'minLeadMinutes',
