@@ -2737,5 +2737,48 @@ describe('los documentos por HTTP', () => {
       expect(text).not.toContain('Atendida en la sede sur');
       expect(text).toContain('las atenciones de otras sedes');
     });
+    it('DOC-118 DOC-119 PD-058 D-203 §1 la llave se encuentra por una ficha absorbida atendida en la sede, y de la absorbida atendida sólo en otra sede no sale ni su atención ni su fila EXPORT', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const elsewhere = await createSite(prisma, 'Sede Sur');
+      const survivor = await createPatient(prisma);
+      const here = await createPatient(prisma);
+      const there = await createPatient(prisma);
+      for (const [patientId, site, reason] of [
+        [here.id, siteId, 'Atendida aquí antes de unificar'],
+        [there.id, elsewhere.id, 'Atendida en la sede sur antes de unificar'],
+      ] as const) {
+        const encounter = await prisma.encounter.create({
+          data: {
+            siteId: site,
+            practitionerId,
+            patientId,
+            startedAt: new Date(Date.now() - 5 * DAY),
+            careModality: 'MORBIDITY',
+            visitSequence: 'FIRST_TIME',
+          },
+        });
+        await signedNote(encounter.id, reason);
+        await prisma.patient.update({
+          where: { id: patientId },
+          data: { mergedIntoId: survivor.id, mergedAt: new Date() },
+        });
+      }
+      const requestId = await copyRequest(survivor.id);
+
+      // copyKeyOf: la llave de la sede llega por la absorbida.
+      await answer(requestId, 'GRANTED');
+      const text = await copyText(requestId);
+      expect(text).toContain('Atendida aquí antes de unificar');
+      expect(text).not.toContain('Atendida en la sede sur antes de unificar');
+      expect(text).toContain('las atenciones de otras sedes');
+
+      const rows = await prisma.accessAudit.findMany({
+        where: { action: 'EXPORT', resourceType: 'patient' },
+        select: { resourceId: true },
+      });
+      expect(rows.map((row) => row.resourceId).sort()).toEqual(
+        [survivor.id, here.id].sort(),
+      );
+    });
   });
 });
