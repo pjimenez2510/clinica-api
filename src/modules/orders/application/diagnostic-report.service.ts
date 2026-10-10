@@ -75,6 +75,7 @@ import {
 } from '../domain/abnormal-flag';
 import {
   criticalNoticeTarget,
+  noticeDueToRequester,
   criticalWait,
   unmatchedWait,
 } from '../domain/safety-deadline';
@@ -147,7 +148,7 @@ export interface RegisterReportRequest {
  *
  * ⚠️ NO `orderId`. The order is the one the result's own report belongs to, read
  * from the row and never taken from the request — the same rule ORD-001 applies
- * to `orderedById`. An order id in the request is a result somebody can file
+ * to `orderedByUserId`. An order id in the request is a result somebody can file
  * against another person's order.
  */
 export interface MatchResultRequest {
@@ -160,7 +161,7 @@ export interface MatchResultRequest {
  *
  * ⚠️ NO `notifiedById`. Who gave the notice is the session's account, read by
  * the caller and never taken from the request — the rule ORD-001 applies to
- * `orderedById`. A field there is a notice somebody can put in a colleague's
+ * `orderedByUserId`. A field there is a notice somebody can put in a colleague's
  * name.
  */
 export interface RecordNoticeRequest {
@@ -624,6 +625,10 @@ export class DiagnosticReportService {
     const inHours = await this.reports.sitesInHours(siteIds, now);
     // ORD-065, ORD-067. The correction chain behind each value.
     const chains = await this.reports.criticalChains(entries.map((e) => e.reportId)); // prettier-ignore
+    // ORD-065. An on-call role nobody can answer for is no on-call role.
+    const staffed = await this.reports.staffedOnCall(onCallOf(siteIds, policies)); // prettier-ignore
+    // ORD-167. Whom each notice is due to, judged for THIS account.
+    const roles = entries.length > 0 ? await this.reports.heldRoles(requester.userId) : []; // prettier-ignore
 
     return entries.map((entry) => {
       const policy = policies.get(entry.siteId) ?? DEFAULT_POLICY;
@@ -639,7 +644,7 @@ export class DiagnosticReportService {
       const due = criticalNoticeTarget({
         overdue: wait.overdue,
         afterHours,
-        hasOnCallRole: role !== null,
+        hasOnCallRole: staffed.has(entry.siteId),
         orderingUnanswered: (chain?.orderingUnanswered ?? 0) > 0,
         // ORD-146, D-116 a. The practitioner who asked already knows.
         dueToPatient: chain?.selfNoticed ?? false,
@@ -657,6 +662,16 @@ export class DiagnosticReportService {
         afterHours,
         noticeTarget: due.target,
         escalationMissing: due.escalationMissing,
+        dueToRequester: noticeDueToRequester(
+          {
+            target: due.target,
+            escalationMissing: due.escalationMissing,
+            siteId: entry.siteId,
+            orderedByUserId: entry.orderedByUserId,
+            escalationRoleId: role?.id ?? null,
+          },
+          { userId: requester.userId, roles },
+        ),
       };
     });
   }
@@ -684,6 +699,7 @@ export class DiagnosticReportService {
     const siteIds = orders.map((order) => order.siteId);
     const policies = await this.reports.safetyPolicies(siteIds);
     const inHours = await this.reports.sitesInHours(siteIds, now);
+    const staffed = await this.reports.staffedOnCall(onCallOf(siteIds, policies)); // prettier-ignore
     const entries: CorrectionWorklistEntry[] = [];
     for (const order of orders) {
       const reports = all.filter((report) => report.serviceOrderId === order.orderId); // prettier-ignore
@@ -703,7 +719,7 @@ export class DiagnosticReportService {
           const due = criticalNoticeTarget({
             overdue: wait.overdue,
             afterHours,
-            hasOnCallRole: role !== null,
+            hasOnCallRole: staffed.has(order.siteId),
             orderingUnanswered: unanswered.some((n) => n.recipientKind === 'ORDERING_PRACTITIONER'), // prettier-ignore
             // ORD-153 (D-156.1): told to the patient, it is theirs to hear;
             // ORD-146: so it is once the practitioner who asked noted the
@@ -1277,4 +1293,17 @@ function withCorrections(
       return correction?.standing ? { ...result, correction } : result;
     }),
   }));
+}
+
+/**
+ * ORD-065, ORD-167. The on-call role each site names, for `staffedOnCall`.
+ */
+function onCallOf(
+  siteIds: readonly string[],
+  policies: ReadonlyMap<string, SafetyPolicy>,
+): { siteId: string; roleId: string }[] {
+  return [...new Set(siteIds)].flatMap((siteId) => {
+    const role = policies.get(siteId)?.criticalEscalationRole;
+    return role ? [{ siteId, roleId: role.id }] : [];
+  });
 }

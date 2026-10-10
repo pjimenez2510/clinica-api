@@ -106,3 +106,49 @@ export function criticalNoticeTarget(state: {
   }
   return { target: 'ORDERING_PRACTITIONER', escalationMissing: false };
 }
+
+/** ORD-167. A role somebody holds now: at one site, or at every site (`null`). */
+export interface HeldRole {
+  roleId: string;
+  siteId: string | null;
+}
+
+/**
+ * ORD-167 (D-205 §2). Whether the notice of this entry is due to the session
+ * reading the worklist — decided HERE, from the target ORD-065 and ORD-068
+ * already computed, so no screen has to work it out.
+ *
+ *  - ORDERING_PRACTITIONER: the account that placed the order.
+ *  - ON_CALL_ROLE: whoever holds the site's on-call role at that site, or at
+ *    every site. Escalated, it is no longer the ordering practitioner's.
+ *  - PATIENT: the patient has no session. The account that placed the
+ *    order — after their self-notice (ORD-146) they are the one who knows
+ *    and calls.
+ *  - ESCALATION MISSING (overdue or out of hours, and nobody holds the on-call
+ *    role): EVERY account that reads the entry, as before D-205. Provisional,
+ *    until the author answers D-208: a value due to an on-call nobody holds
+ *    must not reach nobody.
+ *
+ * `roles` must already exclude revoked grants, inactive roles and inactive
+ * accounts: that is the query's job, where it cannot be forgotten.
+ */
+export function noticeDueToRequester(
+  entry: {
+    target: CriticalNoticeTarget;
+    escalationMissing: boolean;
+    siteId: string;
+    orderedByUserId: string;
+    escalationRoleId: string | null;
+  },
+  requester: { userId: string; roles: readonly HeldRole[] },
+): boolean {
+  if (entry.escalationMissing) return true;
+  if (entry.target !== 'ON_CALL_ROLE') {
+    return entry.orderedByUserId === requester.userId;
+  }
+  return requester.roles.some(
+    (held) =>
+      held.roleId === entry.escalationRoleId &&
+      (held.siteId === null || held.siteId === entry.siteId),
+  );
+}
