@@ -47,6 +47,8 @@ import {
   ConsentWitnessRequiredError,
   ConsentInformerNotAtSiteError,
   ProcedureCorrectionRequiresSignatureError,
+  ProcedurePerformedAtRequiredError,
+  ProcedurePerformedOutsideEncounterError,
   DiagnosisPrimaryRequiredAfterDischargeError,
   DiagnosisPrimaryTakenError,
   DiagnosisPrincipalUseInvalidError,
@@ -135,6 +137,8 @@ const EVERY_ERROR: readonly DomainError[] = [
   new ConsentNotFoundError(),
   new ConsentNotRevocableError(),
   new ProcedureCorrectionRequiresSignatureError(),
+  new ProcedurePerformedAtRequiredError(),
+  new ProcedurePerformedOutsideEncounterError(),
   new ConsentInformerNotAtSiteError(),
   // EN-080. La tercera cara de la misma negativa: el concepto es del CNMB o
   // no lo es, y la frase tiene que nombrar la lista que hay que abrir. Con un
@@ -338,6 +342,17 @@ describe('el contrato de errores de la atención', () => {
     expect(error.userTitle).toBe(
       'La atención ya tiene el alta: corrige sus procedimientos quien firma historia clínica en esta sede',
     );
+  });
+
+  it('EN-247 tras el alta la hora del procedimiento se pide y cae dentro de la atención: 422 por campo (D-201)', () => {
+    const missing = new ProcedurePerformedAtRequiredError();
+    expect(missing.code).toBe('PROCEDURE_PERFORMED_AT_REQUIRED');
+    expect(missing).toBeInstanceOf(ValidationError);
+    expect(missing.fieldErrors[0]?.field).toBe('performedAt');
+    const outside = new ProcedurePerformedOutsideEncounterError();
+    expect(outside.code).toBe('PROCEDURE_PERFORMED_OUTSIDE_ENCOUNTER');
+    expect(outside).toBeInstanceOf(ValidationError);
+    expect(outside.fieldErrors[0]?.field).toBe('performedAt');
   });
 
   it('EN-152 EN-153 quién informó, si no es un profesional activo de la sede, es 422 por campo (D-199.4)', () => {

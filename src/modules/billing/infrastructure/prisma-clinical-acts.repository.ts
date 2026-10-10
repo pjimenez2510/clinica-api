@@ -345,7 +345,39 @@ function awaitingCheckout(siteId: string): Prisma.Sql {
       OR EXISTS (SELECT 1 FROM patient_account a
                   WHERE a.encounter_id = e.id AND a.status = 'OPEN')
       OR EXISTS (SELECT 1 ${examsIssuedAfterSettlement(Prisma.sql`e.id`)})
+      OR EXISTS (SELECT 1 ${proceduresRecordedAfterSettlement(Prisma.sql`e.id`)})
     )`;
+}
+
+/**
+ * BI-242 (EN-247, D-194.1). The FROM/WHERE of the visit's procedures recorded
+ * — or restored — AFTER the last settled account was opened, with an active
+ * service tied to their concept and no charge naming them in any status, nor
+ * a manual charge of that service in an account of the visit: the rule of
+ * the exams (BI-194). Since the discharge no longer closes the coding, the
+ * doctor may record the forgotten extraction once caja has settled; without
+ * this the visit never came back to caja. `recorded_at` is the application's
+ * clock, the same one that opened the account.
+ */
+function proceduresRecordedAfterSettlement(
+  encounterId: Prisma.Sql,
+): Prisma.Sql {
+  return Prisma.sql`
+      FROM encounter_procedure p
+      JOIN billable_service s ON s.procedure_concept_id = p.concept_id AND s.active
+     WHERE p.encounter_id = ${encounterId}
+       AND p.recorded_at > (SELECT max(a.opened_at) FROM patient_account a
+                             WHERE a.encounter_id = ${encounterId}
+                               AND a.status = 'SETTLED')
+       AND NOT EXISTS (SELECT 1 FROM charge_item c
+                        WHERE c.encounter_procedure_id = p.id)
+       AND NOT EXISTS (SELECT 1
+                         FROM charge_item c
+                         JOIN patient_account a ON a.id = c.account_id
+                        WHERE a.encounter_id = ${encounterId}
+                          AND c.origin = 'MANUAL'
+                          AND c.status <> 'CANCELLED'
+                          AND c.billable_service_id = s.id)`;
 }
 
 /** BI-194. How many exams issued after the last settlement nothing charged. */

@@ -183,9 +183,22 @@ describe('roles are data, permissions are a contract', () => {
     ]);
     expect(role._count.grants).toBe(0);
 
-    // Control: una segunda sincronización no lo duplica ni lo reescribe.
+    // Control: lo que la clínica edite del rol, una segunda sincronización
+    // no lo reescribe.
+    const stored = await prisma.role.findUniqueOrThrow({ where: { code: 'DIRECCION_MEDICA' } }); // prettier-ignore
+    await prisma.rolePermission.deleteMany({ where: { roleId: stored.id, permissionCode: 'billing:read' } }); // prettier-ignore
     const again = await syncAuthorisation(prisma);
     expect(again.rolesCreated).not.toContain('DIRECCION_MEDICA');
+    expect(
+      (
+        await prisma.rolePermission.findMany({
+          where: { roleId: stored.id },
+          select: { permissionCode: true },
+        })
+      )
+        .map((each) => each.permissionCode)
+        .sort(),
+    ).toEqual(['certificate:revoke-any', 'record:consent-rule']);
   });
 
   it('AU-035 keeps `user:reset-mfa` out of every shipped role definition', () => {

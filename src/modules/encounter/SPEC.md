@@ -4597,6 +4597,13 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
     (D-117.13);
   - SI la atención ya se reportó al RDACAA (`reported_at`, EN-111), ENTONCES
     DEBERÁ rechazarlo con `ENCOUNTER_ALREADY_REPORTED` (D-117.16);
+  - al **registrar**, la petición DEBERÁ decir **a qué hora se hizo**
+    (`performedAt`) —tras el alta «ahora» no es la hora del acto—: SI falta,
+    ENTONCES DEBERÁ rechazarlo con `PROCEDURE_PERFORMED_AT_REQUIRED`; y SI no
+    cae entre el inicio y el fin de la atención, con
+    `PROCEDURE_PERFORMED_OUTSIDE_ENCOUNTER` (D-201). La firma del 024, sin
+    decirse, es esa misma hora (EN-152), y la fecha de servicio del cargo
+    también (BI-197);
   - **restaurar** un quitado (EN-246) sigue siendo sólo de la atención abierta
     o suspendida, como «Deshacer» un diagnóstico (EN-213): tras el alta se
     registra de nuevo; y la **negativa** (EN-153) y la **revocación** del 024
@@ -4626,9 +4633,16 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > la atención** (EN-212, M6): un alta que llega entre las dos lecturas se
   > rechaza allí con la misma frase.
   >
-  > **Garantía de la base:** `trg_encounter_procedure_reported_admits`
+  > **La hora, revisión clínica de la rama (G1):** registrado el 12-10 el
+  > procedimiento de una atención del 09-10, «ahora» ponía en la historia, en
+  > la firma del 024 y en el precio del cargo un día que no fue. La pantalla
+  > propone la hora del alta, editable (D-201, por confirmar con el autor).
+  >
+  > **Garantía de la base:** `trg_encounter_procedure_admits_unreported`
   > (`encounter_procedure_reported`) rechaza registrar, corregir o archivar un
-  > procedimiento de una atención reportada, también desde `psql`. Lo que la
+  > procedimiento de una atención reportada, también desde `psql`; y
+  > `encounter_procedure_performed_within_encounter`, al registrar en una
+  > atención que ya terminó, que la hora caiga dentro de ella. Lo que la
   > base **no** garantiza: `record:sign` y la licencia (no conoce la sesión),
   > ni el estado (lo rechaza el servicio, como al registrar).
 - **EN-248** — CUANDO se registre, se corrija, se quite o se restaure un
@@ -4673,6 +4687,8 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `PROCEDURE_NOT_FOUND` | 404 | El procedimiento no existe o no es de esa atención | EN-244, EN-245, EN-246 |
 | `PROCEDURE_RETRACTION_REASON_REQUIRED` | 422 | Quitar un procedimiento sin motivo, o con uno en blanco; campo `reason` | EN-245 |
 | `PROCEDURE_NOT_RESTORABLE` | 409 | Restaurar un procedimiento que ya se restauró | EN-246 |
+| `PROCEDURE_PERFORMED_AT_REQUIRED` | 422 | Registrar un procedimiento tras el alta sin decir a qué hora se hizo; campo `performedAt` (D-201) | EN-247 |
+| `PROCEDURE_PERFORMED_OUTSIDE_ENCOUNTER` | 422 | La hora del procedimiento registrado tras el alta no cae dentro de la atención; campo `performedAt` | EN-247 |
 | `PROCEDURE_CORRECTION_REQUIRES_SIGNATURE` | 403 | Registrar, corregir o quitar un procedimiento de una atención con el alta sin `record:sign` en su sede (D-194.1, D-117.13) | EN-247 |
 | `CONSENT_024_REQUIRED` | 422 | El procedimiento exige el consentimiento 024 y no llega firmado ni con excepción | EN-152 |
 | `CONSENT_SIGNED_AFTER_PROCEDURE` | 422 | La firma del 024 es posterior a la realización | EN-152 |

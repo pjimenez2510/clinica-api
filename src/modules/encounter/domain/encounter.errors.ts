@@ -1511,6 +1511,45 @@ export class ProcedureCorrectionRequiresSignatureError extends ForbiddenError {
 }
 
 /**
+ * EN-247 (D-201). After the discharge «ahora» is not when the procedure was
+ * done: the hour is asked, and it falls within the attention.
+ */
+export class ProcedurePerformedAtRequiredError extends ValidationError {
+  readonly code = 'PROCEDURE_PERFORMED_AT_REQUIRED';
+  override readonly userTitle =
+    'La atención ya tiene el alta: indique a qué hora se hizo el procedimiento';
+  override readonly fieldErrors = [
+    {
+      field: 'performedAt',
+      code: 'PROCEDURE_PERFORMED_AT_REQUIRED',
+      message: 'Indique a qué hora se hizo',
+    },
+  ];
+
+  constructor() {
+    super('A procedure recorded after the discharge states when it was done');
+  }
+}
+
+/** EN-247. Recorded after the discharge, it was done during the attention. */
+export class ProcedurePerformedOutsideEncounterError extends ValidationError {
+  readonly code = 'PROCEDURE_PERFORMED_OUTSIDE_ENCOUNTER';
+  override readonly userTitle =
+    'La hora del procedimiento tiene que estar dentro de la atención';
+  override readonly fieldErrors = [
+    {
+      field: 'performedAt',
+      code: 'PROCEDURE_PERFORMED_OUTSIDE_ENCOUNTER',
+      message: 'Elija una hora entre el inicio y el fin de la atención',
+    },
+  ];
+
+  constructor() {
+    super('The procedure was performed outside the attention');
+  }
+}
+
+/**
  * EN-152, EN-153 (D-199.4). Who informed the patient is a professional of the
  * attention's site: the one who intervenes, proposed, or another of the site.
  */

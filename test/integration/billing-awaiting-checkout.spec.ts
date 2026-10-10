@@ -482,6 +482,34 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       expect(await rowOf(encounterId)).toBeUndefined();
     });
 
+    it('BI-242 EN-247 vuelve a listar la atención liquidada cuando el médico registra después un procedimiento que se cobra; lo registrado antes de liquidar, no', async () => {
+      const patient = await patientWithCedula();
+      const encounterId = await visit({ patientId: patient.id, status: 'DISCHARGED', endedAt: new Date(now.getTime() - HOUR_MS), written: true }); // prettier-ignore
+      const { startedAt } = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
+      const tariff = await prisma.catalogSystem.upsert({ where: { code: 'TARIFF' }, create: { code: 'TARIFF', name: 'Tarifario' }, update: {} }); // prettier-ignore
+      const suture = await prisma.catalogConcept.create({ data: { systemId: tariff.id, code: `SUT-${randomUUID().slice(0, 8)}`, display: 'Sutura simple', validFrom: windowStart } }); // prettier-ignore
+      await prisma.billableService.update({ where: { code: 'PROC-SUTURA' }, data: { procedureConceptId: suture.id, tariffCode: suture.code } }); // prettier-ignore
+      const aSuture = () =>
+        prisma.encounterProcedure.create({
+          // Recorded NOW, on the clock that also opens the accounts.
+          data: { encounterId, conceptId: suture.id, procedureCode: suture.code, procedureDisplay: suture.display, quantity: 1, performedAt: startedAt, recordedAt: new Date() }, // prettier-ignore
+        });
+      await aSuture();
+      await toCashier(encounterId);
+      await settle(encounterId);
+      // Control positivo: lo registrado antes de liquidar ya se cobró.
+      expect(await rowOf(encounterId)).toBeUndefined();
+
+      // Tras el alta y la liquidación, el médico registra la que faltaba.
+      await aSuture();
+      expect(await rowOf(encounterId)).toMatchObject({ account: null });
+
+      // Caja la pasa otra vez: la cuenta nueva la propone y deja de faltar.
+      await toCashier(encounterId);
+      await settle(encounterId);
+      expect(await rowOf(encounterId)).toBeUndefined();
+    });
+
     it('BI-194 D-138 no la trae de vuelta si caja ya cobró a mano esa prestación en una cuenta de la atención', async () => {
       const patient = await patientWithCedula();
       const encounterId = await visit({ patientId: patient.id, status: 'DISCHARGED', endedAt: new Date(now.getTime() - HOUR_MS), written: true }); // prettier-ignore

@@ -792,3 +792,28 @@ registerConstraintMeanings({
     message: 'Ese consentimiento ya se revocó. Actualice la lista',
   },
 });
+
+/**
+ * EN-247, D-199.4 (revisión clínica de la rama, M1). The adapters ask each of
+ * these first under the attention's lock; what reaches here is a race —
+ * the chosen professional deactivated between the question and the insert —
+ * or a write from below the application.
+ */
+registerConstraintMeanings({
+  encounter_procedure_reported: {
+    code: 'ENCOUNTER_ALREADY_REPORTED',
+    field: 'encounterId',
+    message:
+      'La atención ya se reportó al RDACAA: la corrección no llegaría al Ministerio',
+  },
+  encounter_procedure_performed_within_encounter: {
+    code: 'PROCEDURE_PERFORMED_OUTSIDE_ENCOUNTER',
+    field: 'performedAt',
+    message: 'Elija una hora entre el inicio y el fin de la atención',
+  },
+  procedure_consent_informer_at_site: {
+    code: 'CONSENT_INFORMER_NOT_AT_SITE',
+    field: 'informedById',
+    message: 'Elija un profesional activo de esta sede',
+  },
+});

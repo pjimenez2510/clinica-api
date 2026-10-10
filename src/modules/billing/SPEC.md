@@ -2598,6 +2598,13 @@ lo ve._
   > registra el procedimiento que faltaba, y caja ya puede tener la cuenta
   > abierta (D-162); sin esto la línea no aparecía hasta otro «Pasar a caja».
   > Es idempotente (BI-154): lo que ya tiene cargo no se propone dos veces.
+  >
+  > **Y con la cuenta ya liquidada** (revisión clínica de la rama, M1): lo
+  > pendiente de cobro (BI-181) DEBERÁ listar también la atención liquidada
+  > con un procedimiento registrado —o restaurado— **después** de abrirse la
+  > última cuenta liquidada, con prestación activa y sin cargo que lo nombre
+  > ni cargo manual de esa prestación, como el examen de BI-194. Lo compara
+  > `encounter_procedure.recorded_at`, el reloj de la aplicación.
   > El restaurado es una fila nueva (EN-246): su cargo es otro, y el quitado
   > sigue quitado (BI-157).
 - **BI-243** — SI el cargo de un procedimiento está **confirmado** o
