@@ -1786,6 +1786,19 @@ describe('privacy por HTTP', () => {
       expect(row.documentsChecked).toBe(true);
     });
 
+    it('PD-054 recibida «ahora», la recepción y el registro son el mismo instante del reloj de la aplicación y vence 48 horas después, al milisegundo', async () => {
+      const patient = await createPatient(prisma);
+      const created = (
+        await post(`/patients/${patient.id}/requests`, byAttorney).expect(201)
+      ).body as RequestBody & { dueAt: string; registeredAt: string };
+
+      expect(created.registeredAt).toBe(created.receivedAt);
+      expect(
+        new Date(created.dueAt).getTime() -
+          new Date(created.receivedAt).getTime(),
+      ).toBe(48 * HOUR_MS);
+    });
+
     it('PD-054 PD-035 la copia vencida hace una hora sale marcada y antes que un acceso de quince días recibido antes', async () => {
       const patient = await createPatient(prisma);
       const access = (

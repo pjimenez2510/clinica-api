@@ -91,13 +91,15 @@ export class DataSubjectRequestsService {
       throw new DataRequestPatientNotDeceasedError();
     }
 
-    const dueAt = await this.deadline(presentation, input.receivedAt ?? now);
+    const receivedAt = input.receivedAt ?? now;
+    const dueAt = await this.deadline(presentation, receivedAt);
 
     const created = await this.requests.register(
       {
         patientId: input.patientId,
         description: input.description,
-        receivedAt: input.receivedAt,
+        receivedAt,
+        registeredAt: now,
         ...presentation,
         dueAt,
       },

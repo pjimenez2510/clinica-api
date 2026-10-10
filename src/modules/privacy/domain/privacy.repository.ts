@@ -189,8 +189,13 @@ export interface NewDataRequest {
   clinicalRecordCopy: boolean;
   documentsChecked: boolean;
   description: string;
-  /** Absent = now, as the base reads it (`DEFAULT now()`). */
-  receivedAt?: Date;
+  /**
+   * When it arrived and when it was registered, both on the APPLICATION's
+   * clock: the 48 hours of a copy run from `receivedAt`, and a `now()` of the
+   * base would put the receipt a moment after the deadline was computed.
+   */
+  receivedAt: Date;
+  registeredAt: Date;
   /** PD-054. */
   dueAt: Date;
 }

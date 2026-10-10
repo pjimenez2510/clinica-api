@@ -79,10 +79,11 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           clinicalRecordCopy: request.clinicalRecordCopy,
           documentsChecked: request.documentsChecked,
           description: request.description,
-          // Absent = «ahora» as the BASE reads it, the same `now()` as
-          // `registered_at`: an application clock a few milliseconds ahead
-          // of the database's would otherwise trip the not-future CHECK.
+          // PD-054. Both on the application's clock, the one the deadline is
+          // computed with: «ahora» is the same instant for the receipt and
+          // the registration, so the not-future CHECK holds by construction.
           receivedAt: request.receivedAt,
+          registeredAt: request.registeredAt,
           dueAt: request.dueAt,
           registeredBy: requester.userId,
         },
