@@ -613,6 +613,88 @@ describe('choosing the RDACAA references from a catalogue', () => {
     expect(recorded.corrections).toEqual([]);
   });
 
+  /** `NOW` moved back by whole years: a birth date derived from the clock. */
+  const yearsBeforeNow = (years: number): Date => {
+    const date = new Date(NOW);
+    date.setUTCFullYear(date.getUTCFullYear() - years);
+    return date;
+  };
+
+  it('PA-071 refuses a gender identity on a chart under ten years of age', async () => {
+    const { service, recorded } = serviceWith({
+      concepts: {
+        [GENDER_IDENTITY]: aConcept({
+          id: GENDER_IDENTITY,
+          systemCode: 'GENDER_IDENTITY',
+        }),
+      },
+    });
+
+    await expect(
+      service.create(
+        aNewPatient({
+          birthDate: yearsBeforeNow(6),
+          genderIdentityConceptId: GENDER_IDENTITY,
+        }),
+        REQUESTER,
+        NOW,
+      ),
+    ).rejects.toMatchObject({
+      code: 'GENDER_IDENTITY_BELOW_MINIMUM_AGE',
+      fieldErrors: [
+        expect.objectContaining({ field: 'genderIdentityConceptId' }),
+      ],
+    });
+    expect(recorded.created).toEqual([]);
+  });
+
+  it('PA-071 refuses to move the birth date of a chart that already declares a gender identity', async () => {
+    const { service, recorded } = serviceWith({
+      correctionState: {
+        mergedIntoMrn: null,
+        values: { ...CURRENT_VALUES, genderIdentityConceptId: GENDER_IDENTITY },
+      },
+      concepts: {
+        [GENDER_IDENTITY]: aConcept({
+          id: GENDER_IDENTITY,
+          systemCode: 'GENDER_IDENTITY',
+        }),
+      },
+    });
+
+    await expect(
+      service.correct(
+        PATIENT,
+        { birthDate: yearsBeforeNow(6).toISOString().slice(0, 10) },
+        REQUESTER,
+        NOW,
+      ),
+    ).rejects.toMatchObject({ code: 'GENDER_IDENTITY_BELOW_MINIMUM_AGE' });
+    expect(recorded.corrections).toEqual([]);
+  });
+
+  it('PA-071 admits a gender identity from the tenth birthday', async () => {
+    const { service, recorded } = serviceWith({
+      concepts: {
+        [GENDER_IDENTITY]: aConcept({
+          id: GENDER_IDENTITY,
+          systemCode: 'GENDER_IDENTITY',
+        }),
+      },
+    });
+
+    await service.create(
+      aNewPatient({
+        birthDate: yearsBeforeNow(10),
+        genderIdentityConceptId: GENDER_IDENTITY,
+      }),
+      REQUESTER,
+      NOW,
+    );
+
+    expect(recorded.created[0]?.genderIdentityConceptId).toBe(GENDER_IDENTITY);
+  });
+
   it('PA-065 clears the ethnicity of a new chart whose country of nationality is not Ecuador, instead of refusing it', async () => {
     // D-128 (PA-13): the rule stays —column 12 only applies to Ecuadorians—
     // but the API applies it by emptying what does not apply, so whoever

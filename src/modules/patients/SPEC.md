@@ -248,6 +248,28 @@ el lápiz de su fila; abrir una ficha sin alergias registradas y verlo en ámbar
 **Cubre:** PA-067 a PA-069.
 **Solo interfaz:** PA-067, PA-068, PA-069.
 
+### P8 — Registrar empezando por la cédula, y encontrar por nombre en cualquier orden _(P1)_
+
+D-079 («la cédula primero», resuelta y por construir) y la revisión de producto
+del 10-10-2026 (D-205): en el mostrador se pide la cédula antes que nada, se
+busca por nombre como lo dice el paciente —«Pérez Juan» o «Juan Pérez»— y,
+cuando no aparece, se registra sin volver a teclear lo que ya se escribió. El
+alta desde la agenda es la misma que desde Pacientes (AG-113).
+
+**Por qué es P1:** cada búsqueda que no encuentra a quien sí está registrado
+acaba en un duplicado; y un alta que nace sin RDACAA ni consentimiento obliga a
+completarla otra vez en la ficha.
+**Prueba independiente:** registrar a «Juan Pérez» y encontrarlo tecleando
+«perez juan» y «juan perez», sin que salga «Juan Gómez»; desde la agenda,
+teclear un apellido que no existe, pulsar «Registrar» y ver el apellido ya
+puesto; teclear una cédula ya registrada en el alta y que se ofrezca su ficha.
+**Cubre:** PA-070 a PA-074.
+**Solo servidor:** PA-070. Que todas las palabras coincidan en cualquier orden
+es una consulta sobre `search_name`; la pantalla sólo envía lo tecleado.
+**Solo interfaz:** PA-072, PA-073, PA-074. El orden de los campos, lo que se
+pinta en cada resultado y lo que se pone al pasar de la búsqueda al alta lo
+decide el navegador; el servidor recibe la misma alta de siempre.
+
 ## Criterios de éxito
 
 Medibles y sin nombrar tecnología. **No empiezan en `SC-001` a propósito**: los
@@ -2020,6 +2042,76 @@ Ningún requisito de esta sección lo altera._
   > anterior es un dato de la identificación, y la consecuencia de unificar es
   > el texto de la confirmación (D-126.2).
 
+---
+
+## 11. La cédula primero y la búsqueda como se dice (D-079, D-205)
+
+- **PA-070** — CUANDO se busque con un texto de **varias palabras**, el sistema
+  DEBERÁ devolver las fichas cuyo nombre contenga **todas** las palabras, cada
+  una como fragmento sin tildes y **en cualquier orden**, y NO DEBERÁ devolver
+  una ficha a la que le falte alguna.
+  > «Pérez Juan» no encontraba a Juan Pérez: el texto entero se buscaba como un
+  > solo fragmento de `search_name`, que guarda nombres y luego apellidos. En el
+  > mostrador se dice primero el apellido —como lo imprime la cédula— y en el
+  > listado se lee primero el nombre, así que la mitad de las búsquedas
+  > fallaban y acababan en un duplicado. Cada palabra es un `LIKE '%…%'` sobre
+  > la misma columna y el mismo índice trigram (PA-016), unidas con `AND`: no
+  > hace falta columna ni índice nuevo. Una sola palabra sigue también buscando
+  > por documento (PA-018) y por historia (PA-019); varias palabras no son un
+  > documento ni una historia.
+- **PA-071** — **SI** la ficha que resultaría del alta o de la corrección
+  declara una **identidad de género** **y** la edad del paciente —derivada de
+  su fecha de nacimiento en la fecha clínica de `America/Guayaquil`, PA-030—
+  es menor de **diez años cumplidos**, **ENTONCES** el sistema DEBERÁ rechazar
+  la operación con `GENDER_IDENTITY_BELOW_MINIMUM_AGE` señalando el campo
+  `genderIdentityConceptId`, y NO DEBERÁ escribir nada; y la corrección de la
+  ficha NO DEBERÁ ofrecer el campo por debajo de esa edad, salvo que la ficha
+  ya lo tenga guardado.
+  > **Columna 8 del formulario**, instructivo RDACAA 2.0, págs. 46-47: *«Esta
+  > variable aplica a usuarios a partir de los 10 años de edad»*, la misma nota
+  > que la columna 7 (PA-057). Es un **suelo**: nadie rejuvenece, así que una
+  > ficha válida al escribirse lo sigue siendo, y por eso se comprueba al
+  > escribir y no al exportar (el argumento de PA-057 frente a PA-005). El
+  > umbral es **el mismo número** que el de la orientación sexual, en un solo
+  > sitio. No cuenta para la ficha incompleta (PA-032): no es uno de los cuatro.
+  > En el alta la edad aún no la ha calculado nadie y el campo se ofrece como
+  > el de la orientación sexual; decide el servidor. Una ficha anterior de un
+  > menor de diez con identidad de género guardada no admite ninguna
+  > corrección hasta vaciarla —igual que PA-057—, y por eso la corrección la
+  > sigue enseñando si está guardada.
+- **PA-072** — El alta DEBERÁ empezar por el **número de documento**, con
+  «Cédula» propuesta como tipo, y DEBERÁ registrar sin documento cuando el
+  número quede vacío; el número DEBERÁ pedir teclado numérico sólo para la
+  cédula; y CUANDO la cédula tecleada sea válida y la tenga ya una ficha
+  vigente, el formulario DEBERÁ ofrecer esa ficha —nombre, historia y edad—
+  en lugar de registrar otra.
+  > D-079, resuelta por el autor el 30-09-2026: la cédula primero y sin ser
+  > obligatoria (un recién nacido no tiene, PA-003). El tipo y el número siguen
+  > yendo juntos (PA-010): un número sin tipo se rechaza; un tipo propuesto sin
+  > número no es medio documento, es «sin documento». Un pasaporte lleva
+  > letras, y el teclado numérico del móvil no las tiene. La ficha que ya tiene
+  > la cédula se busca con la misma búsqueda por prefijo (PA-018) y se compara
+  > el número entero; el servidor sigue rechazando el duplicado con
+  > `PATIENT_IDENTIFIER_TAKEN` (PA-013), esto sólo evita llegar hasta ahí.
+  > Rellenar los nombres desde una fuente externa por la cédula es D-206,
+  > pendiente: no se construye.
+- **PA-073** — Cada resultado del buscador de pacientes DEBERÁ mostrar, además
+  del número de historia y el nombre, el **documento** y la **edad** que
+  calculó el servidor.
+  > Dos «María Guamán» sólo se distinguen por la cédula o la edad, y sin ellas
+  > quien reserva elige a ciegas. La edad es la de PA-030, nunca calculada en
+  > el navegador.
+- **PA-074** — CUANDO una búsqueda de paciente no encuentre a nadie, la
+  pantalla DEBERÁ ofrecer registrarlo **con lo tecleado ya puesto**: si es un
+  número, como número de documento; si es una sola palabra, como primer
+  apellido; y si son varias palabras, NO DEBERÁ repartirlas entre apellidos y
+  nombres, y DEBERÁ enseñar lo buscado junto a los nombres.
+  > «Juan Pérez» y «Pérez Juan» se teclean los dos (PA-070 encuentra
+  > cualquiera), y adivinar mal el orden pone un nombre en el apellido de una
+  > ficha que sale en recetas, certificados y el RDACAA. Si se reparten y cómo
+  > es **D-209**, pendiente del autor (revisión clínica del 10-10-2026); hasta
+  > entonces no se adivina.
+
 ## Códigos de error
 
 Ya existen en `shared/domain/errors/error-catalogue.ts` y los emite este módulo:
@@ -2279,6 +2371,9 @@ prueba cite un ID inexistente; el día que este `SPEC.md` pase a `vigente`,
 | PA-054                         | Contrato HTTP **e** integración contra PostgreSQL real: la ficha que absorbió a dos las **nombra** y la que no absorbió a nadie devuelve la lista **vacía** —ni el campo ausente ni `null`—; el listado **no** lo lleva, afirmado sobre la respuesta y no sobre el esquema; y tras fusionar A→B la ficha de B nombra a A, tras deshacer deja de nombrarla. La segunda mitad no la puede ver una prueba de contrato: depende de que el enlace se recorra hacia atrás en la base                                                                                                                           |
 | PA-055                         | Integración contra PostgreSQL real **y** prueba del mecanismo: fusionar A→B con un grupo prioritario vigente en A y comprobar que **desde B se ve** —y que la **prioridad calculada** de B pasa a prioritaria—, y que **al deshacer deja de verse** y vuelve a ser estándar. Un doble no puede demostrarlo: depende de que el enlace se recorra en la base. Y la garantía tiene su propia prueba —`patient-chart-scope.spec.ts` recorre el código real y falla ante una lectura ingenua—, comprobada **rompiéndola**: la lectura por `patient_id` desnudo se le da al analizador y se afirma que la caza |
 | PA-060                         | Integración contra PostgreSQL real: inscribir en A, fusionar A→B y comprobar que B tiene una equivalente **con la fecha de inscripción original** y que la de A sigue donde estaba; que deshacer la retira; que la superviviente que ya tenía una equivalente **no acaba con dos**; y la que demuestra el propósito, de extremo a extremo por la ruta de la lista de espera: tras la fusión la persona **conserva su puesto en la cola** frente a quien se inscribió después. Un doble no puede demostrar ninguna: dependen de `created_at` y del orden que la base devuelve |
+| PA-070                         | Integración contra PostgreSQL real: las dos órdenes de «nombre apellido» encuentran la ficha y una ficha con sólo una de las palabras **no** sale (control negativo); sin tildes en las dos direcciones. Sólo la base sabe qué guarda `search_name` |
+| PA-071                         | Unitario de dominio sobre la fecha clínica, con la frontera del décimo cumpleaños + contrato HTTP del `code`, el 422 y el campo señalado + integración: corregir la fecha de nacimiento de una ficha con identidad de género por debajo del umbral se rechaza sin escribir; y en la web, `rdacaa.spec.ts` sobre lo que se ofrece |
+| PA-072, PA-073, PA-074         | Componente en el arnés de la web: el orden de los campos, el teclado, la ficha ofrecida, el resultado con documento y edad y el reparto de lo tecleado; y el recorrido F-01 en pantalla |
 
 ## Preguntas abiertas
 

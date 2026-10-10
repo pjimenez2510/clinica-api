@@ -38,6 +38,7 @@ import type {
   SafetyWorklistQuery,
 } from '../domain/diagnostic-report.repository';
 import { chainKey } from '../domain/diagnostic-report.repository';
+import type { HeldRole } from '../domain/safety-deadline';
 import type { SiteScopeFilter } from '../domain/service-order.repository';
 
 /**
@@ -849,6 +850,55 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     return new Set(rows.map((row) => row.site_id));
   }
 
+  /**
+   * ORD-167. The roles this account holds now. Revoked grants, inactive roles
+   * and an inactive account are filtered IN THE QUERY, as agenda's
+   * `authoriserPermissions` does: a nurse who left the on-call rota, or the
+   * clinic, is not who the notice is due to.
+   */
+  async heldRoles(userId: string): Promise<readonly HeldRole[]> {
+    return this.prisma.userRoleGrant.findMany({
+      where: {
+        userId,
+        revokedAt: null,
+        user: { active: true },
+        role: { active: true },
+      },
+      select: { roleId: true, siteId: true },
+    });
+  }
+
+  /** ORD-065, ORD-167. Sites whose on-call role somebody can answer for. */
+  async staffedOnCall(
+    onCall: readonly { siteId: string; roleId: string }[],
+  ): Promise<ReadonlySet<string>> {
+    if (onCall.length === 0) return new Set();
+
+    const holders = await this.prisma.userRoleGrant.findMany({
+      where: {
+        roleId: { in: [...new Set(onCall.map((pair) => pair.roleId))] },
+        revokedAt: null,
+        user: { active: true },
+        role: {
+          active: true,
+          permissions: { some: { permissionCode: 'record:read' } },
+        },
+      },
+      select: { roleId: true, siteId: true },
+    });
+    return new Set(
+      onCall
+        .filter((pair) =>
+          holders.some(
+            (held) =>
+              held.roleId === pair.roleId &&
+              (held.siteId === null || held.siteId === pair.siteId),
+          ),
+        )
+        .map((pair) => pair.siteId),
+    );
+  }
+
   /** ORD-062. The notice of a critical value; never deleted (ORD-064). */
   async recordNotice(notice: NewCriticalNotice): Promise<CriticalNoticeView> {
     const row = await this.prisma.$transaction((tx) => writeNotice(tx, notice));
@@ -1366,6 +1416,7 @@ function toWorklistEntry(row: WorklistRow): FlaggedResultEntry {
       id: row.report.serviceOrder.orderedBy.id,
       name: `${row.report.serviceOrder.orderedBy.user.firstName} ${row.report.serviceOrder.orderedBy.user.lastName}`,
     },
+    orderedByUserId: row.report.serviceOrder.orderedBy.userId,
   };
 }
 
