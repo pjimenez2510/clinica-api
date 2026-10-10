@@ -1577,15 +1577,18 @@ es falsa, hay requisitos que cambian.
   el efectivo esperado, lo cobrado con medios de forma de pago `01`, el total
   cobrado ni la diferencia; sí las líneas de los demás medios, para cotejarlas.
   CUANDO salga del campo con un importe válido, DEBERÁ mostrarlos en el mismo
-  diálogo, sin otro paso, y mantenerlos a la vista hasta cerrarlo.
+  diálogo, sin otro paso, y mantenerlos a la vista hasta cerrarlo; y SI pide
+  cerrar sin haberlos visto (Enter, o «Cerrar caja» directamente desde el
+  campo), DEBERÁ mostrarlos en vez de cerrar, y cerrar a la siguiente.
   > «Require staff to count the cash total before comparing it with the
   > expected POS amount» (Shopify). Al salir del campo y no con la primera
   > tecla: si no, el esperado estaría a la vista antes de terminar de escribir.
   > Recontar tras ver la diferencia es legítimo; lo que se registra es lo que
   > se confirma.
-  > **No es un conteo sellado.** La pestaña sigue listando los cobros del turno,
-  > porque desde ahí se revierten (BI-251), y quien los sume sabe el esperado;
-  > lo que se evita es que el número a teclear esté escrito junto al campo. Un
+  > **No es un conteo sellado.** La pestaña no escribe lo cobrado en efectivo
+  > ni el total (BI-251), pero sigue listando los cobros del turno, porque
+  > desde ahí se revierten, y quien los sume sabe el esperado; lo que se evita
+  > es que el número a teclear esté escrito en la pantalla junto al conteo. Un
   > conteo sellado pediría quitar esa lista y que la API no sirviera el
   > esperado antes del cierre, y BI-255 lo necesita: fuera de esta entrega.
 - **BI-247** — CUANDO caja emita una factura indicando que se cobró —la opción
@@ -1618,8 +1621,10 @@ es falsa, hay requisitos que cambian.
   abierto** en la sede: sus cobros aún sin cerrar, los revertidos aparte; el
   total por medio de pago; el efectivo esperado; lo que facturó desde su
   último cierre y sigue sin cobrar; y el instante de ese último cierre, o
-  ninguno. La pantalla NO DEBERÁ rotular el efectivo esperado del turno
-  abierto: se ve al cerrar, tras contar (BI-105). DEBERÁ permitirle revertir un cobro **suyo** del turno abierto con
+  ninguno. La pantalla NO DEBERÁ mostrar del turno abierto el efectivo
+  esperado, lo cobrado con medios de forma de pago `01` ni el total cobrado
+  —que lo delataría por resta—: la línea del efectivo dice «Se cuenta al
+  cerrar», y lo demás se ve al cerrar, tras contar (BI-105). DEBERÁ permitirle revertir un cobro **suyo** del turno abierto con
   motivo, y SI el cobro es de otra persona o de otra sede, DEBERÁ responder
   `PAYMENT_NOT_FOUND`.
 - **BI-252** — CUANDO caja cierre su turno, el sistema DEBERÁ guardar la foto

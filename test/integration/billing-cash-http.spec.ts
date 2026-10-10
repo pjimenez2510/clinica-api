@@ -586,6 +586,20 @@ describe('B6 cobros, saldo del paciente y cierre por turno', () => {
       ids: [owed.id],
       total: 1,
     });
+    // With the search (by number) and with the day of issue.
+    const [owedRow] = await prisma.invoice.findMany({
+      where: { id: owed.id },
+      select: { sequential: true },
+    });
+    expect(await listed(`?owed=true&search=${owedRow!.sequential}`)).toEqual({
+      ids: [owed.id],
+      total: 1,
+    });
+    const today = clinicalDateOf(new Date());
+    expect(await listed(`?owed=true&from=${today}`)).toEqual({
+      ids: [partial.id, reversed.id].sort(),
+      total: 2,
+    });
     const page = await listed('?owed=true&page=2&pageSize=2');
     expect(page.total).toBe(3);
     expect(page.ids).toHaveLength(1);
