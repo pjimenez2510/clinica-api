@@ -592,9 +592,17 @@ export function toLine(charge: ChargeView): ChargeLine {
   };
 }
 
-/** BI-074. Which charges the account's total is derived from. */
+/**
+ * BI-074. Which charges the account's total is derived from: not removed, not
+ * «No se cobra», and not credited — once a credit note credited a line it is
+ * no longer owed; its copy (BI-214), if any, is what is owed.
+ */
 export function countsTowardsTotal(charge: ChargeView): boolean {
-  return charge.status !== 'CANCELLED' && charge.status !== 'NOT_BILLABLE';
+  return (
+    charge.status !== 'CANCELLED' &&
+    charge.status !== 'NOT_BILLABLE' &&
+    charge.creditNote === null
+  );
 }
 
 /**

@@ -84,6 +84,7 @@ const charge = (
   voidReason: null,
   invoiceId: null,
   correctsChargeItemId: null,
+  creditNote: null,
   ...overrides,
 });
 
@@ -456,6 +457,33 @@ describe('BI-015, BI-074 los cargos de la cuenta', () => {
     expect(statement.totals.total.toString()).toBe('50.00');
     // The row is kept, never deleted: it is on the statement.
     expect(statement.charges).toHaveLength(4);
+  });
+
+  it('BI-074 lo acreditado por una nota de crédito no cuenta; su copia por facturar, sí', async () => {
+    const note = { id: 'note-1', documentNumber: '001-001-000000003', status: 'ISSUED' }; // prettier-ignore
+    const { service: accounts } = build({
+      accounts: {
+        listCharges: vi.fn().mockResolvedValue([
+          charge('original', 'BILLED', {
+            unitAmount: Money.parse('24.00'),
+            creditNote: note,
+          }),
+          charge('copy', 'BILLABLE', {
+            unitAmount: Money.parse('24.00'),
+            origin: 'CORRECTION',
+            correctsChargeItemId: 'original',
+          }),
+        ]),
+      },
+    });
+
+    const statement = await accounts.statement({
+      accountId: ACCOUNT,
+      siteId: SITE,
+    });
+
+    expect(statement.totals.total.toString()).toBe('24.00');
+    expect(statement.charges).toHaveLength(2);
   });
 
   it('BI-184 el total a facturar es sólo lo confirmado sin facturar: ni lo propuesto ni lo ya facturado', async () => {
