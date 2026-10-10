@@ -33,6 +33,7 @@ import type {
 } from './domain/patient.repository';
 import {
   AddIdentifierDto,
+  CorrectPatientContactDto,
   CorrectPatientDto,
   CreatePatientDto,
   OpenPatientDto,
@@ -230,6 +231,36 @@ export class PatientsController {
      * El esquema ya rechazó cualquier clave que no esté en la lista.
      */
     const corrected = await this.patients.correct(id, dto, this.requester(req));
+
+    return toDetailResponse(corrected);
+  }
+
+  /**
+   * PA-075, PA-076 (D-205 §4). The contact only, under its own narrow
+   * permission: what caja types on an invoice goes back to the chart.
+   *
+   * The SAME correction underneath —rules, trail and history (PA-031)— and a
+   * strict schema in front, so `patient:contact:write` cannot reach any other
+   * field however the body is written.
+   */
+  @Patch(':id/contact')
+  @RequirePermission('patient:contact:write', 'global')
+  @ApiOperation({ summary: 'Correct the contact of a patient record' })
+  @ApiOkResponse({ type: PatientDetailDto })
+  async correctContact(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectPatientContactDto,
+    @Req() req: Request,
+  ): Promise<PatientDetailResponse> {
+    const corrected = await this.patients.correct(
+      id,
+      {
+        phone: dto.phone,
+        email: dto.email,
+        residenceAddressLine: dto.residenceAddressLine,
+      },
+      this.requester(req),
+    );
 
     return toDetailResponse(corrected);
   }

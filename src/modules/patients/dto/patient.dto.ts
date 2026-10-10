@@ -368,6 +368,30 @@ export const correctPatientSchema = z
 /** Body of PATCH /patients/:id. */
 export class CorrectPatientDto extends createZodDto(correctPatientSchema) {}
 
+/**
+ * PA-075. Body of PATCH /patients/:id/contact: the three contact fields and
+ * NOTHING ELSE. Strict, so a surname slipped into the body is a 422 for the
+ * whole request rather than a field silently dropped — or, worse, applied.
+ * The fields are the correction's own schemas, not copies of them.
+ */
+export const correctPatientContactSchema = z
+  .strictObject({
+    phone: correctableFields.phone,
+    email: correctableFields.email,
+    residenceAddressLine: correctableFields.residenceAddressLine,
+  })
+  .refine(
+    (body) =>
+      body.phone !== undefined ||
+      body.email !== undefined ||
+      body.residenceAddressLine !== undefined,
+    { error: 'Indique al menos un dato que corregir' },
+  );
+/** Body of PATCH /patients/:id/contact. */
+export class CorrectPatientContactDto extends createZodDto(
+  correctPatientContactSchema,
+) {}
+
 export const searchPatientsSchema = z.object({
   q: z.string().trim().max(120).optional(),
   page: z.coerce.number().int().min(1).default(1),
