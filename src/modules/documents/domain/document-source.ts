@@ -376,6 +376,48 @@ export interface ClinicalFormPrintData {
 }
 
 /**
+ * DOC-121 (D-203 §4). One report of an exam of the attention, as it stood when
+ * the copy was authorised: its values and its conclusion; and whether it was
+ * corrected afterwards — the correction is not part of what was authorised.
+ */
+export interface CopyResultReport {
+  /** The order's number, when it has one. */
+  orderNumber: number | null;
+  issuedAt: Date | null;
+  /** ORD-119. Still partial: more values may come; the paper says so. */
+  partial: boolean;
+  conclusion: string | null;
+  values: readonly {
+    analyte: string;
+    value: string;
+    reference: string | null;
+    abnormal: string | null;
+  }[];
+  correctedAfter: Date | null;
+}
+
+/** DOC-123 (D-203 §6). Block F, as recorded, when the review includes it. */
+export interface CopyScreening {
+  result: string;
+  types: readonly string[];
+  tool: string | null;
+  actionTaken: string | null;
+  reportedToAuthority: boolean;
+}
+
+/** DOC-121. What one attention of the copy adds to its summary (DOC-111). */
+export interface CopyEncounterData extends EncounterSummaryPrintData {
+  /** DOC-119. The chart the attention is on: the trail names it. */
+  chartId: string;
+  siteName: string;
+  results: readonly CopyResultReport[];
+  /** Form 005, signed and standing, oldest first. */
+  evolutionNotes: readonly { signedAt: Date; text: string }[];
+  /** `null` without the screening, or when the review does not include it. */
+  screening: CopyScreening | null;
+}
+
+/**
  * DOC-118 (D-198 §1). The copy of the clinical record a request of `privacy`
  * authorised: who asked, who authorised, and every attention with a signed
  * 002 of the chart in force and of the charts merged into it, oldest first.
@@ -389,14 +431,20 @@ export interface ClinicalRecordCopyPrintData {
   requestedBy: string;
   requesterName: string | null;
   requesterDocument: string | null;
+  /** PD-063. The relative's relationship with the deceased patient. */
+  requesterRelationship: string | null;
   receivedAt: Date;
+  /** DOC-122. `null` is the whole record; a period, «Atendida en parte». */
+  copyPeriod: { from: string; to: string } | null;
+  /** DOC-123. The review includes the violence screening. */
+  includesScreening: boolean;
   /** The standing answer (PD-047): who authorised the delivery, and when. */
   authorisedBy: string;
   authorisedAt: Date;
   /** DOC-119. The charts whose attentions leave: the one in force first. */
   chartIds: readonly string[];
   /** Each attention as DOC-111 prints it, with the name of its site. */
-  encounters: readonly (EncounterSummaryPrintData & { siteName: string })[];
+  encounters: readonly CopyEncounterData[];
   /**
    * D-203 §1. Attentions at sites beyond the caller's `record:read` were left
    * out: the cover says the copy does not carry those of other sites.
@@ -412,7 +460,7 @@ export interface ClinicalRecordCopyPrintData {
 /** DOC-118. What a request id resolves to, before anything is composed. */
 export type ClinicalRecordCopyLookup =
   | { status: 'missing' }
-  /** Not a copy request, or not answered `GRANTED`/`PARTIALLY_GRANTED`. */
+  /** Not a copy request, or its standing answer does not authorise it. */
   | { status: 'not-available' }
   | { status: 'ready'; data: ClinicalRecordCopyPrintData };
 
@@ -457,6 +505,17 @@ export interface DocumentSourceReader {
     requestId: string,
     recordScope: RecordReadScope,
   ): Promise<ClinicalRecordCopyLookup>;
+  /**
+   * DOC-122. The copy as it stands now, to be frozen with the answer that
+   * authorises it; `null` without the key.
+   */
+  freezeClinicalRecordCopy(input: {
+    requestId: string;
+    recordScope: RecordReadScope;
+    authorisedAt: Date;
+    authorisedById: string;
+    copyPeriod: { from: string; to: string } | null;
+  }): Promise<ClinicalRecordCopyPrintData | null>;
 }
 
 export const DOCUMENT_SOURCE_READER = Symbol('DOCUMENT_SOURCE_READER');

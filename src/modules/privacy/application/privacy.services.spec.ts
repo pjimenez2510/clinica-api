@@ -14,13 +14,16 @@ import {
 } from '../domain/data-export';
 import { lastDayOnTime, legalDueDate } from '../domain/legal-due-date';
 import {
+  ClinicalRecordCopyAlreadyReviewedError,
   ClinicalRecordCopyInvalidError,
+  ClinicalRecordCopyReviewRequiredError,
   ConsentTextInvalidError,
   ConsentTextNotPublishedError,
   ConsentTextOutdatedError,
   DataExportNotApplicableError,
   DataRequestAlreadyAnsweredError,
   DataRequestNotFoundError,
+  DataRequestPatientDeceasedError,
   DataRequestPatientNotDeceasedError,
   DataRequestReceivedInFutureError,
   DataSubjectNotFoundError,
@@ -67,8 +70,12 @@ function requestView(
     requestedBy: 'HOLDER',
     requesterName: null,
     requesterDocument: null,
+    requesterRelationship: null,
     clinicalRecordCopy: false,
     documentsChecked: false,
+    review: null,
+    reviewRequired: false,
+    copySites: [],
     description: 'Copia',
     receivedAt: NOW,
     // The end of today: due, not yet overdue.
@@ -97,6 +104,7 @@ function requestRepository(
           requestedBy: request.requestedBy,
           requesterName: request.requesterName,
           requesterDocument: request.requesterDocument,
+          requesterRelationship: request.requesterRelationship,
           clinicalRecordCopy: request.clinicalRecordCopy,
           documentsChecked: request.documentsChecked,
           dueAt: request.dueAt,
@@ -109,9 +117,16 @@ function requestRepository(
     correctAnswer: vi.fn(),
     find: vi.fn().mockResolvedValue(null),
     proposalFactsOf: vi.fn().mockResolvedValue(null),
-    copyKeyOf: vi
-      .fn()
-      .mockResolvedValue({ clinicalRecordCopy: false, patientSites: [] }),
+    copyFactsOf: vi.fn().mockResolvedValue({
+      clinicalRecordCopy: false,
+      requestedBy: 'HOLDER',
+      patientSites: [],
+      sensitive: false,
+      reviewed: false,
+    }),
+    reviewCopy: vi.fn(),
+    pendingCopiesOf: vi.fn().mockResolvedValue([]),
+    clinicalOmissionOf: vi.fn().mockResolvedValue(null),
     requestsOf: vi.fn().mockResolvedValue([]),
     open: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     exportChart: vi.fn(),
@@ -209,8 +224,11 @@ describe('ConsentService', () => {
 });
 
 const record = vi.fn().mockResolvedValue(undefined);
+/** DOC-122. The frozen copy is `documents`'; here, a marker. */
+const freezer = { freeze: vi.fn().mockResolvedValue({ frozen: true }) };
+
 function newRequestsService(repository: DataSubjectRequestRepository) {
-  return new DataSubjectRequestsService(repository, { record });
+  return new DataSubjectRequestsService(repository, { record }, freezer);
 }
 
 describe('DataSubjectRequestsService', () => {
@@ -302,6 +320,7 @@ describe('DataSubjectRequestsService', () => {
               answeredAt: NOW,
               answeredBy: { id: 'u-1', fullName: 'Gabriela Mera' },
               isCorrection: false,
+              copyPeriod: null,
             },
           }),
         ]),
@@ -311,6 +330,7 @@ describe('DataSubjectRequestsService', () => {
     const open = await service.open(
       { overdueOnly: false },
       { page: 1, pageSize: 20 },
+      WHO,
       NOW,
     );
     expect(open.items.map((r) => [r.id, r.isOverdue])).toEqual([
@@ -378,6 +398,7 @@ describe('la propuesta de respuesta (D-164.2)', () => {
       const service = new DataSubjectRequestsService(
         requestRepository({ proposalFactsOf, find, answer, exportChart }),
         audit,
+        freezer,
       );
 
       await expect(service.answerProposal('r-1', WHO)).resolves.toBe(
@@ -422,6 +443,7 @@ describe('corregir en privacidad (D-127)', () => {
     answeredAt: NOW,
     answeredBy: { id: 'u-1', fullName: 'Gabriela Mera' },
     isCorrection: false,
+    copyPeriod: null,
   };
 
   it('PD-044 traduce «no existe» y «ya corregido» a sus códigos', async () => {
@@ -460,6 +482,7 @@ describe('corregir en privacidad (D-127)', () => {
         edit,
       }),
       { record: vi.fn() },
+      freezer,
     );
 
     await service.edit('r-1', { receivedAt: received }, WHO, NOW);
@@ -478,6 +501,7 @@ describe('corregir en privacidad (D-127)', () => {
         edit,
       }),
       { record: vi.fn() },
+      freezer,
     );
     await expect(
       answeredService.edit('r-1', { description: 'x' }, WHO, NOW),
@@ -489,6 +513,7 @@ describe('corregir en privacidad (D-127)', () => {
         edit,
       }),
       { record: vi.fn() },
+      freezer,
     );
     await expect(
       openService.edit(
@@ -507,6 +532,7 @@ describe('corregir en privacidad (D-127)', () => {
         correctAnswer: vi.fn().mockResolvedValue({ status: 'not-answered' }),
       }),
       { record: vi.fn() },
+      freezer,
     );
     await expect(
       service.correctAnswer(
@@ -563,6 +589,7 @@ describe('la copia de la historia clínica (D-198 §1)', () => {
       requestedBy: 'DECEASED_RELATIVE' as const,
       requesterName: 'Luis Guamán',
       requesterDocument: '0102030405',
+      requesterRelationship: 'CHILD' as const,
     };
 
     await expect(service.register(relative, WHO, NOW)).rejects.toBeInstanceOf(
@@ -633,12 +660,39 @@ describe('la copia de la historia clínica (D-198 §1)', () => {
     expect(proposal).toBe(clinicalRecordCopyProposal(facts));
     expect(proposal).toContain('a su apoderado, Ana Pérez');
     expect(proposal).toContain('No lleva el tamizaje de violencia');
+    // DOC-121. Ya dice que lleva los resultados y las notas de evolución.
+    expect(proposal).toContain(
+      'los exámenes pedidos con sus resultados, las notas de evolución',
+    );
+  });
+
+  it('PD-056 DOC-123 con el visto bueno que incluye el tamizaje, la propuesta dice que lo lleva', async () => {
+    const service = newRequestsService(
+      requestRepository({
+        proposalFactsOf: vi.fn().mockResolvedValue({
+          right: 'ACCESS',
+          requestedBy: 'HOLDER',
+          requesterName: null,
+          clinicalRecordCopy: true,
+          includesScreening: true,
+        }),
+      }),
+    );
+    const proposal = await service.answerProposal('r-1', WHO);
+    expect(proposal).toContain('Lleva el tamizaje de violencia');
+    expect(proposal).not.toContain('No lleva el tamizaje');
   });
 });
 
 describe('D-203 §1 autorizar la copia pide la llave de la historia', () => {
   const copyKey = (patientSites: string[]) =>
-    vi.fn().mockResolvedValue({ clinicalRecordCopy: true, patientSites });
+    vi.fn().mockResolvedValue({
+      clinicalRecordCopy: true,
+      requestedBy: 'HOLDER',
+      patientSites,
+      sensitive: false,
+      reviewed: false,
+    });
   const granted = { outcome: 'GRANTED' as const, response: 'Se autoriza' };
 
   it('PD-058 PD-057 DOC-118 sin record:read en la sede del paciente, responder la copia es DATA_REQUEST_NOT_FOUND y no llega al repositorio', async () => {
@@ -646,7 +700,7 @@ describe('D-203 §1 autorizar la copia pide la llave de la historia', () => {
     const correctAnswer = vi.fn();
     const service = newRequestsService(
       requestRepository({
-        copyKeyOf: copyKey(['norte']),
+        copyFactsOf: copyKey(['norte']),
         answer,
         correctAnswer,
       }),
@@ -672,7 +726,7 @@ describe('D-203 §1 autorizar la copia pide la llave de la historia', () => {
       .fn()
       .mockResolvedValue({ status: 'answered', request: requestView() });
     const service = newRequestsService(
-      requestRepository({ copyKeyOf: copyKey(['norte']), answer }),
+      requestRepository({ copyFactsOf: copyKey(['norte']), answer }),
     );
     await service.answer(
       'r-1',
@@ -685,5 +739,331 @@ describe('D-203 §1 autorizar la copia pide la llave de la historia', () => {
     const plain = newRequestsService(requestRepository({ answer }));
     await plain.answer('r-1', granted, WHO, NOW);
     expect(answer).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('D-203 §2, §5, §8, §12 autorizar, denegar y el visto bueno', () => {
+  const facts = (over: object = {}) =>
+    vi.fn().mockResolvedValue({
+      clinicalRecordCopy: true,
+      requestedBy: 'ATTORNEY',
+      patientSites: ['norte'],
+      sensitive: false,
+      reviewed: false,
+      reviewSites: [],
+      ...over,
+    });
+  const keyed = { ...WHO, recordScope: ['norte'] as string[] };
+  const answered = vi
+    .fn()
+    .mockResolvedValue({ status: 'answered', request: requestView() });
+
+  it('PD-059 «Denegada» no pide la llave; «Atendida» sin ella es DATA_REQUEST_NOT_FOUND', async () => {
+    const answer = vi
+      .fn()
+      .mockResolvedValue({ status: 'answered', request: requestView() });
+    const service = newRequestsService(
+      requestRepository({ copyFactsOf: facts(), answer }),
+    );
+    await service.answer(
+      'r-1',
+      { outcome: 'DENIED', response: 'No' },
+      { ...WHO, recordScope: [] },
+      NOW,
+    );
+    expect(answer).toHaveBeenCalledOnce();
+    await expect(
+      service.answer(
+        'r-1',
+        { outcome: 'GRANTED', response: 'Sí' },
+        { ...WHO, recordScope: [] },
+        NOW,
+      ),
+    ).rejects.toBeInstanceOf(DataRequestNotFoundError);
+    expect(answer).toHaveBeenCalledOnce();
+  });
+
+  it('PD-059 «Atendida en parte» llega al repositorio con su periodo, y sin él se rechaza', async () => {
+    const answer = answered;
+    const service = newRequestsService(
+      requestRepository({ copyFactsOf: facts(), answer }),
+    );
+    const copyPeriod = { from: addDays(TODAY, -30), to: TODAY };
+    await service.answer(
+      'r-1',
+      { outcome: 'PARTIALLY_GRANTED', response: 'En parte', copyPeriod },
+      keyed,
+      NOW,
+    );
+    expect(answer.mock.calls.at(-1)?.[1]).toMatchObject({ copyPeriod });
+    await expect(
+      service.answer(
+        'r-1',
+        { outcome: 'PARTIALLY_GRANTED', response: 'En parte' },
+        keyed,
+        NOW,
+      ),
+    ).rejects.toBeInstanceOf(ClinicalRecordCopyInvalidError);
+  });
+
+  it('PD-062 una copia sensible para un tercero sin visto bueno es CLINICAL_RECORD_COPY_REVIEW_REQUIRED; con él, o del titular, se autoriza', async () => {
+    const answer = vi
+      .fn()
+      .mockResolvedValue({ status: 'answered', request: requestView() });
+    const granted = { outcome: 'GRANTED' as const, response: 'Sí' };
+    await expect(
+      newRequestsService(
+        requestRepository({ copyFactsOf: facts({ sensitive: true }), answer }),
+      ).answer('r-1', granted, keyed, NOW),
+    ).rejects.toBeInstanceOf(ClinicalRecordCopyReviewRequiredError);
+    await expect(
+      newRequestsService(
+        requestRepository({ copyFactsOf: facts({ sensitive: true }), answer }),
+      ).correctAnswer('r-1', granted, keyed, NOW),
+    ).rejects.toBeInstanceOf(ClinicalRecordCopyReviewRequiredError);
+    expect(answer).not.toHaveBeenCalled();
+
+    for (const over of [
+      { sensitive: true, reviewed: true },
+      { sensitive: true, requestedBy: 'HOLDER' },
+    ]) {
+      await newRequestsService(
+        requestRepository({ copyFactsOf: facts(over), answer }),
+      ).answer('r-1', granted, keyed, NOW);
+    }
+    expect(answer).toHaveBeenCalledTimes(2);
+  });
+
+  it('PD-060 cada solicitud dice si quien la mira puede autorizarla, por la llave de la persona', async () => {
+    const rows = [
+      requestView({ id: 'plain' }),
+      requestView({
+        id: 'mine',
+        clinicalRecordCopy: true,
+        copySites: ['norte'],
+      }),
+      requestView({
+        id: 'other',
+        clinicalRecordCopy: true,
+        copySites: ['sur'],
+      }),
+    ];
+    const service = newRequestsService(
+      requestRepository({ requestsOf: vi.fn().mockResolvedValue(rows) }),
+    );
+    const entries = await service.requestsOf('p-1', keyed, NOW);
+    expect(entries.map((e) => [e.id, e.canAuthorise])).toEqual([
+      ['plain', true],
+      ['mine', true],
+      ['other', false],
+    ]);
+    expect(entries[1]).not.toHaveProperty('copySites');
+  });
+
+  it('PD-061 el visto bueno pide record:protected en la sede y la casilla', async () => {
+    const reviewCopy = vi
+      .fn()
+      .mockResolvedValue({ status: 'reviewed', request: requestView() });
+    const service = newRequestsService(
+      requestRepository({ copyFactsOf: facts(), reviewCopy }),
+    );
+    const review = { reviewed: true, includesScreening: true };
+    await expect(
+      service.reviewCopy(
+        'r-1',
+        review,
+        { ...WHO, protectedScope: ['sur'] },
+        NOW,
+      ),
+    ).rejects.toBeInstanceOf(DataRequestNotFoundError);
+    await expect(
+      service.reviewCopy(
+        'r-1',
+        { ...review, reviewed: false },
+        { ...WHO, protectedScope: ['norte'] },
+        NOW,
+      ),
+    ).rejects.toBeInstanceOf(ClinicalRecordCopyInvalidError);
+    expect(reviewCopy).not.toHaveBeenCalled();
+    await service.reviewCopy(
+      'r-1',
+      review,
+      { ...WHO, protectedScope: ['norte'] },
+      NOW,
+    );
+    expect(reviewCopy.mock.calls[0]?.[1]).toEqual({ includesScreening: true });
+
+    for (const [status, error] of [
+      ['already-reviewed', ClinicalRecordCopyAlreadyReviewedError],
+      ['already-authorised', DataRequestAlreadyAnsweredError],
+      ['missing', DataRequestNotFoundError],
+    ] as const) {
+      await expect(
+        newRequestsService(
+          requestRepository({
+            copyFactsOf: facts(),
+            reviewCopy: vi.fn().mockResolvedValue({ status }),
+          }),
+        ).reviewCopy('r-1', review, { ...WHO, protectedScope: 'all' }, NOW),
+      ).rejects.toBeInstanceOf(error);
+    }
+  });
+
+  it('PD-065 «El paciente» con la ficha fallecida es DATA_REQUEST_PATIENT_DECEASED; el representante sigue admitido', async () => {
+    const register = vi.fn((request: NewDataRequest) =>
+      Promise.resolve(requestView({ requestedBy: request.requestedBy })),
+    );
+    const service = newRequestsService(
+      requestRepository({
+        chartOf: vi
+          .fn()
+          .mockResolvedValue({ status: 'active', deceased: true }),
+        register,
+      }),
+    );
+    const base = {
+      patientId: 'p-1',
+      right: 'ACCESS' as const,
+      description: 'x',
+    };
+    await expect(
+      service.register({ ...base, requestedBy: 'HOLDER' }, WHO, NOW),
+    ).rejects.toBeInstanceOf(DataRequestPatientDeceasedError);
+    await service.register(
+      { ...base, requestedBy: 'REPRESENTATIVE' },
+      WHO,
+      NOW,
+    );
+    expect(register).toHaveBeenCalledOnce();
+  });
+});
+
+describe('revisión clínica de la rama: lo congelado, quién ve el visto bueno y quién lo da', () => {
+  const facts = (over: object = {}) =>
+    vi.fn().mockResolvedValue({
+      clinicalRecordCopy: true,
+      requestedBy: 'ATTORNEY',
+      patientSites: ['norte'],
+      sensitive: false,
+      reviewed: false,
+      reviewSites: [],
+      ...over,
+    });
+
+  it('DOC-122 PD-062 autorizar congela la copia con el alcance de quien autoriza y la guarda con la respuesta, con la guarda del visto bueno', async () => {
+    freezer.freeze.mockClear();
+    const answer = vi
+      .fn()
+      .mockResolvedValue({ status: 'answered', request: requestView() });
+    const service = newRequestsService(
+      requestRepository({ copyFactsOf: facts(), answer }),
+    );
+    await service.answer(
+      'r-1',
+      { outcome: 'GRANTED', response: 'Sí' },
+      { ...WHO, recordScope: ['norte'] },
+      NOW,
+    );
+    expect(freezer.freeze).toHaveBeenCalledWith({
+      requestId: 'r-1',
+      recordScope: ['norte'],
+      authorisedAt: NOW,
+      authorisedById: WHO.userId,
+      copyPeriod: null,
+    });
+    expect(answer.mock.calls[0]?.[1]).toMatchObject({
+      snapshot: { frozen: true },
+      guardReview: true,
+    });
+
+    // «Denegada» no congela nada.
+    freezer.freeze.mockClear();
+    await service.answer(
+      'r-1',
+      { outcome: 'DENIED', response: 'No' },
+      { ...WHO, recordScope: [] },
+      NOW,
+    );
+    expect(freezer.freeze).not.toHaveBeenCalled();
+  });
+
+  it('PD-062 si bajo el candado ya no hay visto bueno que valga, CLINICAL_RECORD_COPY_REVIEW_REQUIRED', async () => {
+    const service = newRequestsService(
+      requestRepository({
+        copyFactsOf: facts(),
+        answer: vi.fn().mockResolvedValue({ status: 'review-required' }),
+        correctAnswer: vi.fn().mockResolvedValue({ status: 'review-required' }),
+      }),
+    );
+    const keyed = { ...WHO, recordScope: ['norte'] };
+    const granted = { outcome: 'GRANTED' as const, response: 'Sí' };
+    await expect(service.answer('r-1', granted, keyed, NOW)).rejects.toBeInstanceOf(ClinicalRecordCopyReviewRequiredError); // prettier-ignore
+    await expect(service.correctAnswer('r-1', granted, keyed, NOW)).rejects.toBeInstanceOf(ClinicalRecordCopyReviewRequiredError); // prettier-ignore
+  });
+
+  it('PD-062 que espera el visto bueno, o que lleva el tamizaje, sólo lo lee quien tiene una llave de esa historia', async () => {
+    const row = requestView({
+      clinicalRecordCopy: true,
+      requestedBy: 'ATTORNEY',
+      copySites: ['norte'],
+      reviewRequired: true,
+      review: {
+        reviewedAt: NOW,
+        reviewedBy: { id: 'u-2', fullName: 'Ana Torres' },
+        includesScreening: true,
+      },
+    });
+    const service = newRequestsService(
+      requestRepository({ requestsOf: vi.fn().mockResolvedValue([row]) }),
+    );
+    const [keyless] = await service.requestsOf('p-1', WHO, NOW);
+    expect(keyless).toMatchObject({ reviewRequired: false, review: null });
+    const [custodian] = await service.requestsOf(
+      'p-1',
+      { ...WHO, recordScope: ['norte'] },
+      NOW,
+    );
+    expect(custodian).toMatchObject({
+      reviewRequired: true,
+      review: { includesScreening: false },
+    });
+    const [doctor] = await service.requestsOf(
+      'p-1',
+      { ...WHO, protectedScope: ['norte'] },
+      NOW,
+    );
+    expect(doctor).toMatchObject({ review: { includesScreening: true } });
+  });
+
+  it('PD-061 quien da el visto bueno tiene record:protected en cada sede con algo sensible o con tamizaje', async () => {
+    const reviewCopy = vi
+      .fn()
+      .mockResolvedValue({ status: 'reviewed', request: requestView() });
+    const service = newRequestsService(
+      requestRepository({
+        copyFactsOf: facts({
+          patientSites: ['norte', 'sur'],
+          reviewSites: ['sur'],
+        }),
+        reviewCopy,
+      }),
+    );
+    const review = { reviewed: true, includesScreening: true };
+    await expect(
+      service.reviewCopy(
+        'r-1',
+        review,
+        { ...WHO, protectedScope: ['norte'] },
+        NOW,
+      ),
+    ).rejects.toBeInstanceOf(DataRequestNotFoundError);
+    expect(reviewCopy).not.toHaveBeenCalled();
+    await service.reviewCopy(
+      'r-1',
+      review,
+      { ...WHO, protectedScope: ['norte', 'sur'] },
+      NOW,
+    );
+    expect(reviewCopy).toHaveBeenCalledOnce();
   });
 });

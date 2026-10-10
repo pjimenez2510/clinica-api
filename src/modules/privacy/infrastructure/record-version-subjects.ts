@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import type { RecordReadScope } from '../../../shared/domain/clinical-record-key';
 import { chartScopeIds } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import type { ExportedVersion } from '../domain/privacy.repository';
 
@@ -34,7 +35,13 @@ export interface VersionedTablePath {
    * The `record_version.resource_id`s of the rows of this chart AND the ones
    * merged into it (PA-055): `chartScopeIds`, the shared scope.
    */
-  resourceIdsOf(chartId: string): Prisma.Sql;
+  resourceIdsOf(chartId: string, sites: RecordReadScope): Prisma.Sql;
+  /**
+   * PD-067 (D-203 §10). Clinical: its versions leave only from the sites of
+   * the caller's `record:read` (`encounter`, by the attention's site) or only
+   * with the key of the record (`person`, rows with no site of their own).
+   */
+  clinical?: 'encounter' | 'person';
   /** `null`: exported. Otherwise, why its versions do not leave. */
   omittedBecause: string | null;
   /**
@@ -52,6 +59,17 @@ export interface VersionedTablePath {
    * keep the map exhaustive, it reaches no chart by construction.
    */
   reachesNoPatient?: true;
+  /** A redaction that depends on the row itself (PD-066). */
+  redactRow?: (data: Record<string, unknown>) => Record<string, unknown>;
+}
+
+function omitKeys(
+  data: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(data).filter(([key]) => !keys.includes(key)),
+  );
 }
 
 const byPatientId =
@@ -64,26 +82,31 @@ const byPatientId =
  * error —«paciente equivocado»— holds another person's data, and neither its
  * versions nor those of what hangs from it leave with this person's export.
  */
-const standingEncountersOf = (chartId: string) => Prisma.sql`
+const standingEncountersOf = (chartId: string, sites: RecordReadScope) =>
+  Prisma.sql`
   SELECT id FROM encounter
    WHERE patient_id IN ${chartScopeIds(chartId)}
-     AND status <> 'ENTERED_IN_ERROR'`;
+     AND status <> 'ENTERED_IN_ERROR'
+     AND ${sites === 'all' ? Prisma.sql`true` : Prisma.sql`site_id = ANY(${[...sites]}::uuid[])`}`;
 
 export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
   // The attention itself (modality and first/subsequent, EN-212).
   encounter: {
     resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
+    clinical: 'encounter',
   },
   // One row per attention, archived by `encounter_id` (EN-210).
   encounter_vitals: {
     resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
+    clinical: 'encounter',
   },
   // EN-052. One row per attention, archived by `encounter_id` (EN-210).
   encounter_dental_index: {
     resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
+    clinical: 'encounter',
   },
   // EN-249. Blocks G, H and I of the RDACAA: one row per attention each,
   // archived by `encounter_id`. Block J (HIV) is NOT versioned here: it has
@@ -91,10 +114,12 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
   encounter_obstetric: {
     resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
+    clinical: 'encounter',
   },
   encounter_nutrition: {
     resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
+    clinical: 'encounter',
   },
   // REQ-115. The risk group can say «lives with HIV» or «sex worker» (the
   // adult hepatitis B, EN-093): out of every version that leaves, whatever
@@ -104,6 +129,7 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
   encounter_vaccination: {
     resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
+    clinical: 'encounter',
     redactedColumns: ['risk_group'],
     redactedInLists: { doses: ['riskGroup'] },
   },
@@ -111,53 +137,67 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
   encounter_supplement: {
     resourceIdsOf: standingEncountersOf,
     omittedBecause: null,
+    clinical: 'encounter',
   },
   encounter_diagnosis: {
-    resourceIdsOf: (chartId) => Prisma.sql`
+    resourceIdsOf: (chartId, sites) => Prisma.sql`
       SELECT d.id FROM encounter_diagnosis d
-       WHERE d.encounter_id IN (${standingEncountersOf(chartId)})`,
+       WHERE d.encounter_id IN (${standingEncountersOf(chartId, sites)})`,
     omittedBecause: null,
+    clinical: 'encounter',
   },
   // EN-244. A corrected procedure: the tariff code, how many times, the note.
   encounter_procedure: {
-    resourceIdsOf: (chartId) => Prisma.sql`
+    resourceIdsOf: (chartId, sites) => Prisma.sql`
       SELECT p.id FROM encounter_procedure p
-       WHERE p.encounter_id IN (${standingEncountersOf(chartId)})`,
+       WHERE p.encounter_id IN (${standingEncountersOf(chartId, sites)})`,
     omittedBecause: null,
+    clinical: 'encounter',
   },
   // Notice → result → report → order → attention. Who was told, and the note
   // about them (often a relative's name or number), are another person's
   // data: they do not leave (D-140.2).
   critical_result_notice: {
-    resourceIdsOf: (chartId) => Prisma.sql`
+    resourceIdsOf: (chartId, sites) => Prisma.sql`
       SELECT n.id FROM critical_result_notice n
         JOIN observation_result o ON o.id = n.observation_result_id
         JOIN diagnostic_report r ON r.id = o.report_id
         JOIN service_order s ON s.id = r.service_order_id
-       WHERE s.encounter_id IN (${standingEncountersOf(chartId)})`,
+       WHERE s.encounter_id IN (${standingEncountersOf(chartId, sites)})`,
     omittedBecause: null,
+    clinical: 'encounter',
     redactedColumns: ['recipient_name', 'note'],
   },
   patient_allergy: {
     resourceIdsOf: byPatientId('patient_allergy'),
     omittedBecause: null,
+    clinical: 'person',
   },
   patient_history: {
     resourceIdsOf: byPatientId('patient_history'),
     omittedBecause: null,
+    clinical: 'person',
   },
   patient_allergy_absence: {
     resourceIdsOf: byPatientId('patient_allergy_absence'),
     omittedBecause: null,
+    clinical: 'person',
   },
   patient_priority_group: {
     resourceIdsOf: byPatientId('patient_priority_group'),
     omittedBecause:
       'Los grupos prioritarios y su motivo tienen permiso propio (PA-042); tampoco salen sus versiones (D-083 §3).',
   },
+  // PD-066 (D-203 §9). Another person's cedula does not leave with this
+  // person's export; and of an authority, only its name and the number of its
+  // letter — never the text of what it asked.
   data_subject_request: {
     resourceIdsOf: byPatientId('data_subject_request'),
     omittedBecause: null,
+    redactRow: (data) =>
+      data.requested_by === 'AUTHORITY'
+        ? omitKeys(data, ['description'])
+        : omitKeys(data, ['requester_document']),
   },
   // AG-051, AG-162. The appointment moved or corrected in place. A version
   // from before the patient was corrected belongs to the patient booked BY
@@ -240,8 +280,18 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
 export async function recordVersionsOfChart(
   db: Db,
   chartId: string,
-  options: { includeOmitted?: boolean } = {},
+  options: {
+    includeOmitted?: boolean;
+    /**
+     * PD-067 (D-203 §10). The caller's `record:read` scope, and whether it
+     * holds the key of the person's record (`holdsRecordKey`). Absent: all.
+     */
+    recordScope?: RecordReadScope;
+    holdsKey?: boolean;
+  } = {},
 ): Promise<ExportedVersion[]> {
+  const sites = options.recordScope ?? 'all';
+  const holdsKey = options.holdsKey ?? true;
   const rows: {
     resource_type: string;
     resource_id: string;
@@ -253,13 +303,24 @@ export async function recordVersionsOfChart(
   // One after another: a transaction is one connection.
   for (const [table, path] of Object.entries(VERSIONED_TABLES)) {
     if (path.omittedBecause !== null && !options.includeOmitted) continue;
+    // PD-067. Without the key, nothing clinical leaves —not even the versions
+    // of an attention at one of the caller's sites when the person's signed
+    // notes are all elsewhere—: `omitted` says «none», and it is true.
+    if (path.clinical !== undefined && !holdsKey) continue;
+    if (
+      path.clinical === 'encounter' &&
+      sites !== 'all' &&
+      sites.length === 0
+    ) {
+      continue;
+    }
     rows.push(
       ...(await db.$queryRaw<typeof rows>`
         SELECT resource_type, resource_id::text AS resource_id, version, data,
                changed_by::text AS changed_by, changed_at
           FROM record_version
          WHERE resource_type = ${table}
-           AND resource_id IN (${path.resourceIdsOf(chartId)})
+           AND resource_id IN (${path.resourceIdsOf(chartId, sites)})
          ORDER BY resource_id, version`),
     );
   }
@@ -284,6 +345,9 @@ export async function recordVersionsOfChart(
  */
 function redact(data: unknown, path: VersionedTablePath | undefined): unknown {
   if (!path || data === null || typeof data !== 'object') return data;
+  if (path.redactRow) {
+    data = path.redactRow(data as Record<string, unknown>);
+  }
   const columns = path.redactedColumns ?? [];
   const inLists = path.redactedInLists ?? {};
   return Object.fromEntries(

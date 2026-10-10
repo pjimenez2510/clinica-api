@@ -4,7 +4,10 @@ import { z } from 'zod';
 import { explicitFlag } from '../../../shared/http/query-flag';
 
 import { DATA_REQUEST_TEXT_MAX_LENGTH } from '../application/data-subject-requests.service';
-import { DATA_REQUEST_PARTIES } from '../domain/data-request-party';
+import {
+  DATA_REQUEST_PARTIES,
+  DATA_REQUEST_RELATIONSHIPS,
+} from '../domain/data-request-party';
 import { DATA_SUBJECT_RIGHTS } from '../domain/legal-due-date';
 import {
   CONSENT_MEDIA,
@@ -71,6 +74,11 @@ export const registerDataRequestSchema = z.strictObject({
   }),
   requesterName: z.string().nullable().optional(),
   requesterDocument: z.string().nullable().optional(),
+  /** PD-063. The relative's relationship with the deceased patient. */
+  requesterRelationship: z
+    .enum(DATA_REQUEST_RELATIONSHIPS, { error: 'Elija el parentesco' })
+    .nullable()
+    .optional(),
   clinicalRecordCopy: z.boolean().optional(),
   documentsChecked: z.boolean().optional(),
   description: z
@@ -113,6 +121,11 @@ export const editDataRequestSchema = z.strictObject({
 });
 export class EditDataRequestDto extends createZodDto(editDataRequestSchema) {}
 
+const copyPeriodSchema = z.strictObject({
+  from: z.iso.date({ error: 'Indique desde qué fecha' }),
+  to: z.iso.date({ error: 'Indique hasta qué fecha' }),
+});
+
 /** PD-033. */
 export const answerDataRequestSchema = z.strictObject({
   outcome: z.enum(DATA_REQUEST_OUTCOMES, {
@@ -126,10 +139,22 @@ export const answerDataRequestSchema = z.strictObject({
       DATA_REQUEST_TEXT_MAX_LENGTH,
       `La respuesta no puede superar ${DATA_REQUEST_TEXT_MAX_LENGTH} caracteres`,
     ),
+  /**
+   * PD-059. The period a copy answered «Atendida en parte» hands over, as
+   * clinical dates; whether it may come is the domain's rule (`copyPeriodOf`).
+   */
+  copyPeriod: copyPeriodSchema.nullable().optional(),
 });
 export class AnswerDataRequestDto extends createZodDto(
   answerDataRequestSchema,
 ) {}
+
+/** PD-061. The professional's review: the casilla, and the screening. */
+export const reviewCopySchema = z.strictObject({
+  reviewed: z.boolean({ error: 'Marque que revisó la historia' }),
+  includesScreening: z.boolean().default(false),
+});
+export class ReviewCopyDto extends createZodDto(reviewCopySchema) {}
 
 // --- Responses ------------------------------------------------------------------
 
@@ -200,6 +225,15 @@ const answerSchema = z.object({
   answeredBy: staffNameSchema,
   /** PD-047. Whether this answer rectifies an earlier one. */
   isCorrection: z.boolean(),
+  /** PD-059. The period of a copy answered «Atendida en parte». */
+  copyPeriod: z.object({ from: z.iso.date(), to: z.iso.date() }).nullable(),
+});
+
+const reviewSchema = z.object({
+  reviewedAt: z.iso.datetime(),
+  reviewedBy: staffNameSchema,
+  /** D-203 §6. The violence screening goes in the copy. */
+  includesScreening: z.boolean(),
 });
 
 export const dataRequestSchema = z.object({
@@ -211,9 +245,17 @@ export const dataRequestSchema = z.object({
   /** PD-052. Who presents it, when it is not the holder. */
   requesterName: z.string().nullable(),
   requesterDocument: z.string().nullable(),
+  /** PD-063. The relative's relationship with the deceased patient. */
+  requesterRelationship: z.enum(DATA_REQUEST_RELATIONSHIPS).nullable(),
   /** PD-053. It asks for the copy of the clinical record. */
   clinicalRecordCopy: z.boolean(),
   documentsChecked: z.boolean(),
+  /** PD-060. Whoever reads it may authorise it (the key of the record). */
+  canAuthorise: z.boolean(),
+  /** PD-062. Granting it waits for a professional's review. */
+  reviewRequired: z.boolean(),
+  /** PD-061. The professional's review, if it has one. */
+  review: reviewSchema.nullable(),
   /** Null in the clinic-wide list of open requests (PD-035): see the route. */
   description: z.string().nullable(),
   receivedAt: z.iso.datetime(),

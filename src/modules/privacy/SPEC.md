@@ -183,6 +183,31 @@ muestra.
 **Solo interfaz:** PD-057. Cómo se lee la fila y cuándo se ofrece la descarga;
 la mitad del servidor es PD-052 a PD-054 y DOC-118.
 
+### D7 — La copia como la del HCAM: alcance, visto bueno de lo sensible, parentescos y a quién se entregó (D-203 §2 a §10 y §12) _(P1, 10-10-2026)_
+
+La respuesta de una copia guarda su alcance —completa o un periodo—; autorizar
+pide la llave de historias y denegar no; la API dice por solicitud si quien la
+mira puede autorizarla; si la copia es para otra persona y la historia tiene
+algo sensible, la autoriza sólo tras el visto bueno de un profesional con
+`record:protected`, que puede incluir el tamizaje; el familiar dice su
+parentesco y la casilla nombra lo que trae cada uno; el titular de una ficha
+fallecida ya no presenta solicitudes; y la exportación JSON v2 dice a quién se
+entregó cada copia y lleva lo clínico sólo de las sedes de quien la genera.
+
+**Por qué es P1:** D-203 §2 a §9, aceptadas por el autor el 10-10-2026, y §10
+y §12, decididas por él el mismo día: A.M. 5216 arts. 13, 28 y 32; LOPDP arts.
+12, 13 y 27; 45 CFR 164.502(g)(5), 164.508(c) y 164.528.
+**Prueba independiente:** responder «Atendida en parte» una copia con un
+periodo y descargar sólo ese periodo; denegarla sin `record:read`; ver
+rechazada la autorización de una copia para un apoderado con un tamizaje con
+signos hasta que un médico da su visto bueno; exportar el JSON v2 de un titular
+con su copia entregada a un apoderado y, sin `record:read`, sin las versiones
+clínicas y con `omitted` que lo dice.
+**Cubre:** PD-059 a PD-067. El PDF es DOC-120 a DOC-123 (`documents` H14).
+
+**Solo servidor:** PD-066, PD-067. Lo que lleva el JSON: la pantalla sólo lo
+descarga y lee `omitted`.
+
 ## Criterios de éxito
 
 - **SC-070** — De todo paciente con consentimiento se puede decir, sin abrir
@@ -563,6 +588,9 @@ la mitad del servidor es PD-052 a PD-054 y DOC-118.
   > **D-164.1, resuelta por D-198 §1:** la vía es la copia certificada y el
   > plazo, 48 horas. **D-188 §3:** el tamizaje no sale en ningún papel ni
   > archivo del titular sin revisión humana; la copia no lo lleva y lo dice.
+  > **Enmendado por DOC-121 y DOC-123 (D-203 §4, §6):** dice que lleva los
+  > resultados y las notas de evolución, y que lleva el tamizaje cuando el
+  > visto bueno (PD-061) lo incluye.
 - **PD-057** — CUANDO la ficha muestre sus solicitudes (PD-036), cada una
   DEBERÁ decir quién la presentó —con su nombre si no es el titular—, si es
   «Copia de la historia clínica» y su vencimiento, con la hora si es de copia;
@@ -592,6 +620,122 @@ la mitad del servidor es PD-052 a PD-054 y DOC-118.
   > `shared/domain/clinical-record-key.ts`, que leen `privacy` al responder y
   > `documents` al descargar.
 
+## 7. La copia como la del HCAM (D-203 §2 a §10 y §12)
+
+- **PD-059** — CUANDO alguien con `patient:data-requests` responda o rectifique
+  la respuesta de una solicitud de copia de la historia clínica, «Atendida»
+  DEBERÁ autorizar la copia **completa** y «Atendida en parte» DEBERÁ llevar un
+  **periodo** —fecha clínica desde y hasta, con desde ≤ hasta ≤ el día de la
+  respuesta en `America/Guayaquil`—, guardado con la respuesta; SI «Atendida en
+  parte» llega sin periodo o con uno inválido, o llega un periodo con otro
+  resultado o en una solicitud que no es de copia, ENTONCES DEBERÁ rechazarlo
+  con `CLINICAL_RECORD_COPY_INVALID` (422, campo `copyPeriod`) sin escribir
+  nada. «Denegada» NO DEBERÁ pedir la llave de PD-058; «Atendida» y «Atendida
+  en parte» sí, y sin ella DEBERÁN responder `DATA_REQUEST_NOT_FOUND` (404).
+  > **D-203 §2 (aceptada) y §12 (decidida por el autor el 10-10-2026).** El
+  > HCAM ofrece «Historia clínica completa / Epicrisis / Exámenes»; HIPAA
+  > 164.508(c) pide describir lo entregado de forma específica. **Garantía de
+  > la base:** `data_subject_request_copy_period_shape` y el disparador
+  > `data_subject_answer_correction_copy_period` (el periodo, sólo en una copia
+  > «Atendida en parte», y siempre en ella).
+- **PD-060** — CUANDO alguien con `patient:data-requests` pida las solicitudes
+  de una ficha (PD-036) o las abiertas (PD-035), cada una DEBERÁ decir si quien
+  la mira puede autorizarla (`canAuthorise`): `true` si no es de copia, y en
+  una copia sólo si tiene la llave de PD-058 para esa persona.
+  > **D-203 §12.** La pantalla ofrece «Responder» con «Atendida», la propuesta
+  > y «Descargar copia» según este dato, y no según `record:read` en cualquier
+  > sede; sin él, «Responder» sólo deja elegir «Denegada».
+- **PD-061** — CUANDO alguien con `record:protected` en una sede donde la
+  persona tuvo una atención firmada —en alguna, si no tuvo— dé el **visto
+  bueno** a una solicitud de copia, con la casilla «Revisé la historia y no hay
+  sospecha de violencia, abuso o abandono por quien la pide», el sistema DEBERÁ
+  guardarlo —quién, cuándo y si **incluye el tamizaje de violencia** en la
+  copia— con una fila `CREATE` de bitácora en la misma transacción. Un visto
+  bueno nunca se modifica; vale mientras no se registre algo sensible
+  (PD-062) después de él, y sólo entonces se da otro: el vigente es el
+  último; SI ya tiene uno que vale, ENTONCES
+  `CLINICAL_RECORD_COPY_ALREADY_REVIEWED` (409); SI su respuesta vigente ya la
+  autoriza, ENTONCES `DATA_REQUEST_ALREADY_ANSWERED` (409); SI falta la
+  casilla, `CLINICAL_RECORD_COPY_INVALID` (422); y SI no existe, no es de copia
+  o falta la llave, `DATA_REQUEST_NOT_FOUND` (404). CUANDO alguien con
+  `record:protected` pida las solicitudes de copia de una ficha, el sistema
+  DEBERÁ devolver, con la misma llave, las que no están autorizadas: quién la
+  presenta, cuándo vence, si necesita el visto bueno y el que tenga.
+  > **D-203 §5 y §6 (aceptadas).** 45 CFR 164.502(g)(5): negar a quien actúa
+  > por el paciente ante sospecha razonable de violencia, abuso o abandono por
+  > esa persona, «a juicio profesional». La acción «Incluir el tamizaje en la
+  > copia» es la misma pieza (D-188 §3: «sólo tras revisión humana»).
+  > **Revisión clínica de la rama (10-10-2026):** quien lo da DEBERÁ tener
+  > `record:protected` en **cada** sede donde la persona tiene algo sensible
+  > o un tamizaje respondido —lo que aprueba y lo que «Incluir el tamizaje»
+  > entregaría—; sin ninguna, en una sede donde fue atendida.
+  > **Garantía de la base:** `clinical_record_copy_review` es de sólo
+  > inserción y sólo de una solicitud de copia.
+- **PD-062** — SI se autoriza («Atendida» o «Atendida en parte», al responder
+  o al rectificar) una copia que **no** presenta el titular y alguna atención
+  no anulada de la persona tiene un **tamizaje con signos** (sospecha o
+  confirmado) o un diagnóstico CIE-10 de Y07, T74, B20 a B24, A15 a A19 o C00
+  a C97, sin visto bueno (PD-061), ENTONCES el sistema DEBERÁ rechazarlo con
+  `CLINICAL_RECORD_COPY_REVIEW_REQUIRED` (409), cuyo texto pide el visto bueno
+  de un profesional sin decir qué hay en la historia, sin escribir nada —y lo
+  vuelve a comprobar bajo el candado de la solicitud—; y cada solicitud de
+  copia DEBERÁ decir si lo necesita (`reviewRequired`) y el que tiene
+  (`review`) **sólo a quien tiene una llave de esa historia** (`record:read`
+  de PD-058 o `record:protected` en su sede), y si incluye el tamizaje sólo a
+  quien tiene `record:protected`: a cualquier otro, `false` y `null`.
+  > **Revisión clínica de la rama (10-10-2026):** que una copia espere el
+  > visto bueno dice que la historia tiene algo sensible (A.M. 5216 art. 13).
+  > **D-203 §5 (aceptada).** A.M. 5216 art. 13 (VIH/SIDA, tuberculosis
+  > activa, cáncer) y D-188 §3 (el tamizaje). El representante legal **sí** lo
+  > necesita: es el caso que 164.502(g)(5) nombra (D-204 §1). La lista la fijan
+  > un clínico y el asesor (D-203 §5, por confirmar fuera).
+- **PD-063** — CUANDO quien presenta una copia sea `DECEASED_RELATIVE`, el
+  sistema DEBERÁ guardar su **parentesco** de un catálogo cerrado —cónyuge,
+  conviviente o pareja en unión de hecho, padre o madre, hijo o hija, hermano o
+  hermana, abuelo o abuela, nieto o nieta, suegro o suegra, yerno o nuera,
+  hijastro o hijastra, padrastro o madrastra—, obligatorio sólo para él; SI
+  falta, o llega con otro que la presenta, ENTONCES `CLINICAL_RECORD_COPY_INVALID`
+  (422, campo `requesterRelationship`). NO DEBERÁ cambiar al editarla (PD-053).
+  > **D-203 §7 (aceptada).** A.M. 5216 art. 28 (segundo grado de
+  > consanguinidad, primero de afinidad); el art. 38 del Código Civil pone
+  > hijastro y padrastro en el primero de afinidad, y el 22 del A.M. nombra al
+  > conviviente. **Garantía de la base:** el enum `data_request_relationship` y
+  > `data_subject_request_relationship_only_relative`.
+- **PD-064** — CUANDO se registre una copia, la casilla de PD-053 DEBERÁ decir
+  lo que se recibe de quien la presenta: el titular, la solicitud firmada y su
+  cédula; el representante, la solicitud firmada, su cédula y la del paciente;
+  el apoderado, el poder y las cédulas; la persona autorizada, la autorización
+  firmada por el paciente y las cédulas del paciente y de quien retira; la
+  autoridad, el oficio; el familiar, su cédula y el certificado de defunción.
+  > **D-203 §7.** Como el formulario SGC-DC-FR-022 del HCAM. La casilla sigue
+  > siendo una (`documentsChecked`); su texto lo dice la pantalla y la portada
+  > de la copia (DOC-120).
+- **PD-065** — SI quien presenta una solicitud es el titular (`HOLDER`) y la
+  ficha registra el fallecimiento, ENTONCES el sistema DEBERÁ rechazarla con
+  `DATA_REQUEST_PATIENT_DECEASED` (422) sin escribir nada; el representante
+  legal (`REPRESENTATIVE`) DEBERÁ seguir admitido, y la pantalla NO DEBERÁ
+  ofrecer «El paciente» con la ficha fallecida.
+  > **D-203 §8 (aceptada).** LOPDP art. 27: los datos del menor o incapaz
+  > fallecidos los pide «quien hubiese sido su último representante legal».
+- **PD-066** — La exportación (PD-040) DEBERÁ ser el formato
+  `clinica.privacy.export` **v2**, cuyo `deliveries` liste cada copia de la
+  historia autorizada de la persona: cuándo se autorizó, la clase de quien la
+  recibió, su nombre y el parentesco si es familiar, el alcance —completa o el
+  periodo— y el propósito (lo que pidió); de una autoridad, sólo su nombre y el
+  número del oficio, y sin el texto de lo que pidió, tampoco en `requests` ni
+  en `versions`; y en `versions` de una solicitud, sin la cédula de un tercero.
+  > **D-203 §9 (aceptada).** LOPDP arts. 12 (num. 10, «los destinatarios y
+  > sus clases») y 13; 45 CFR 164.528 (fecha, destinatario, qué y propósito).
+- **PD-067** — La exportación DEBERÁ llevar en `versions` las versiones de
+  atenciones, signos, índices dentales, embarazo, lactancia, vacunas,
+  suplementos, diagnósticos, procedimientos y avisos de resultados críticos
+  **sólo de las atenciones de las sedes del `record:read` de quien la genera**,
+  y sólo si tiene la llave de PD-058 —sin ella, ninguna versión clínica—; y SI deja
+  fuera alguna, ENTONCES `omitted` DEBERÁ decirlo (`clinical_versions`): todas,
+  sin `record:read` en la sede, o las de otras sedes.
+  > **D-203 §10, decidida por el autor el 10-10-2026.** La misma regla de
+  > `shared/domain/clinical-record-key.ts`.
+
 ---
 
 ## Códigos de error
@@ -612,7 +756,10 @@ la mitad del servidor es PD-052 a PD-054 y DOC-118.
 | `DATA_REQUEST_NOT_ANSWERED`       | 409  | Se rectifica la respuesta de una solicitud sin responder (PD-047)      |
 | `DATA_REQUEST_PARTY_NOT_ALLOWED`  | 422  | Un tercero presenta algo que no es la copia de la historia (PD-052)    |
 | `DATA_REQUEST_PATIENT_NOT_DECEASED` | 422 | El familiar del fallecido pide la copia de un paciente vivo (PD-052) |
-| `CLINICAL_RECORD_COPY_INVALID`    | 422  | Copia sin acceso, sin casilla o sin el nombre y documento (PD-052, PD-053) |
+| `CLINICAL_RECORD_COPY_INVALID`    | 422  | Copia sin acceso, sin casilla o sin el nombre y documento (PD-052, PD-053, PD-059, PD-061, PD-063) |
+| `DATA_REQUEST_PATIENT_DECEASED`   | 422  | «El paciente» presenta una solicitud con la ficha fallecida (PD-065) |
+| `CLINICAL_RECORD_COPY_REVIEW_REQUIRED` | 409 | Autorizar una copia para otra persona sin el visto bueno que necesita (PD-062) |
+| `CLINICAL_RECORD_COPY_ALREADY_REVIEWED` | 409 | Segundo visto bueno de la misma copia (PD-061) |
 
 `PATIENT_MERGED` es compartido (`shared/domain/errors`) y se reutiliza.
 `DATA_SUBJECT_NOT_FOUND` es propio y no `PATIENT_NOT_FOUND`: ese código lo
@@ -622,6 +769,19 @@ puede verla»).
 
 ## Notas de esquema
 
+- `20261011120100_privacy_copy_snapshot` (DOC-122, PD-061, PD-063): la tabla
+  `clinical_record_copy_snapshot` —lo que la copia lleva al autorizarla, una
+  por respuesta, de sólo inserción; la escribe `privacy` con la respuesta y
+  la lee `documents`—; el visto bueno pasa a tener `id` (el vigente es el
+  último); y el parentesco obligatorio se comprueba al registrar con un
+  disparador, no con un CHECK NOT VALID que volvía a mirar cada UPDATE.
+- `20261011120000_privacy_copy_adjustments` (PD-059, PD-061, PD-063): el
+  periodo de la copia «Atendida en parte» en la respuesta y en la
+  rectificación (`copy_from`, `copy_to`), el parentesco del familiar
+  (`data_request_relationship`), que el disparador de la solicitud congela, y
+  la tabla `clinical_record_copy_review`, de sólo inserción. Las reglas «la
+  copia en parte lleva periodo» y «el familiar lleva parentesco» nacen NOT
+  VALID: valen para toda fila nueva o modificada.
 - `20261010130000_privacy_clinical_record_copy` (PD-052 a PD-054): el enum
   `data_request_party`, las columnas de la copia y de quien la presenta, y
   `due_on` pasa a `due_at` (instante); los ya fijados, al final de su día.
@@ -656,6 +816,8 @@ puede verla»).
 | `POST` | `/privacy/patients/:patientId/consents/:consentId/correction` | `patient:write` | PD-044            |
 | `PATCH` | `/privacy/requests/:requestId`         | `patient:data-requests` | PD-046                         |
 | `POST` | `/privacy/requests/:requestId/response/correction` | `patient:data-requests` | PD-047             |
+| `POST` | `/privacy/requests/:requestId/clinical-review` | `record:protected` | PD-061 |
+| `GET`  | `/privacy/patients/:patientId/copy-reviews` | `record:protected` | PD-061, PD-062 |
 
 Todas con alcance `global`: una ficha es una en todo el sistema (PA-051).
 La copia de la historia la compone `documents`: `GET /v1/documents/data-requests/:requestId/clinical-record` (DOC-118).

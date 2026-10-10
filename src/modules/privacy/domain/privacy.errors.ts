@@ -204,7 +204,10 @@ export type ClinicalRecordCopyField =
   | 'clinicalRecordCopy'
   | 'documentsChecked'
   | 'requesterName'
-  | 'requesterDocument';
+  | 'requesterDocument'
+  | 'requesterRelationship'
+  | 'copyPeriod'
+  | 'reviewed';
 
 const COPY_FIELD_MESSAGE: Readonly<Record<ClinicalRecordCopyField, string>> = {
   clinicalRecordCopy: 'La copia de la historia clínica se pide como acceso',
@@ -214,6 +217,11 @@ const COPY_FIELD_MESSAGE: Readonly<Record<ClinicalRecordCopyField, string>> = {
     'Escriba el nombre de quien la presenta (hasta 200 caracteres)',
   requesterDocument:
     'Escriba la cédula u oficio de quien la presenta (hasta 200 caracteres)',
+  requesterRelationship:
+    'Elija el parentesco del familiar con el paciente fallecido',
+  copyPeriod:
+    '«Atendida en parte» entrega un periodo: elija desde y hasta, sin pasar de hoy',
+  reviewed: 'Marque que revisó la historia antes de dar el visto bueno',
 };
 
 /**
@@ -234,5 +242,50 @@ export class ClinicalRecordCopyInvalidError extends ValidationError {
       },
     ]);
     this.userTitle = COPY_FIELD_MESSAGE[field];
+  }
+}
+
+/**
+ * PD-065 (D-203 §8). The holder of a chart that records the death does not
+ * present requests: the relative or the last legal representative do.
+ */
+export class DataRequestPatientDeceasedError extends ValidationError {
+  readonly code = 'DATA_REQUEST_PATIENT_DECEASED';
+  override readonly userTitle =
+    'La ficha registra el fallecimiento: la solicitud la presenta un familiar o quien fue su representante legal';
+
+  constructor() {
+    super('The holder of a deceased chart presents a request', {}, [
+      {
+        field: 'requestedBy',
+        code: 'DATA_REQUEST_PATIENT_DECEASED',
+        message: 'El paciente falleció: elija quién la presenta',
+      },
+    ]);
+  }
+}
+
+/**
+ * PD-062 (D-203 §5). The copy for somebody other than the holder needs a
+ * professional's review first. The title does NOT say why: whoever reads it
+ * may not hold `record:protected`, and the reason is in the record.
+ */
+export class ClinicalRecordCopyReviewRequiredError extends ConflictError {
+  readonly code = 'CLINICAL_RECORD_COPY_REVIEW_REQUIRED';
+  override readonly userTitle =
+    'Esta copia necesita el visto bueno de un profesional antes de autorizarla: pídaselo desde la ficha del paciente';
+
+  constructor() {
+    super('The copy needs the review of a professional before it is granted');
+  }
+}
+
+/** PD-061. A copy is reviewed once. */
+export class ClinicalRecordCopyAlreadyReviewedError extends ConflictError {
+  readonly code = 'CLINICAL_RECORD_COPY_ALREADY_REVIEWED';
+  override readonly userTitle = 'Esta copia ya tiene el visto bueno';
+
+  constructor() {
+    super('The copy already has its review');
   }
 }

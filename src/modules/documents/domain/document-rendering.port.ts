@@ -51,6 +51,11 @@ export interface DocumentRenderer {
     images: LayoutImages,
     metadata: DocumentMetadata,
   ): Promise<Buffer>;
+  /**
+   * DOC-120. How many pages a PDF this renderer produced has: what the cover
+   * of the copy of the clinical record says («Total de páginas»).
+   */
+  pageCountOf(pdf: Buffer): number;
 }
 
 export const DOCUMENT_RENDERER = Symbol('DOCUMENT_RENDERER');

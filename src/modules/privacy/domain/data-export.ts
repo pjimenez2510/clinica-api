@@ -14,7 +14,7 @@ export const EXPORT_OMISSIONS: readonly ExportOmission[] = [
   {
     section: 'clinical_record',
     reason:
-      'La historia clínica vigente (atenciones, diagnósticos, notas, signos vitales, alergias, antecedentes, recetas, órdenes, resultados, certificados y referencias) no va en este archivo: se entrega como copia certificada en PDF, registrando la solicitud como copia de la historia clínica (D-083 §3, D-198). Si se corrigió algo de las atenciones, signos vitales, diagnósticos, datos de embarazo, lactancia, vacunas o suplementos, alergias, antecedentes o avisos de resultados críticos, sus versiones anteriores sí van; las de los avisos, sin el nombre ni la nota de la persona avisada, y las de las vacunas, sin el grupo de riesgo (D-131.1, D-140.2, D-195).',
+      'La historia clínica vigente (atenciones, diagnósticos, notas, signos vitales, alergias, antecedentes, recetas, órdenes, resultados, certificados y referencias) no va en este archivo: se entrega como copia certificada en PDF, registrando la solicitud como copia de la historia clínica (D-083 §3, D-198). Si se corrigió algo de las atenciones, signos vitales, diagnósticos, datos de embarazo, lactancia, vacunas o suplementos, alergias, antecedentes o avisos de resultados críticos, sus versiones anteriores sí van, de las sedes donde quien genera el archivo puede abrir la historia clínica; las de los avisos, sin el nombre ni la nota de la persona avisada, y las de las vacunas, sin el grupo de riesgo (D-131.1, D-140.2, D-195, D-203 §10).',
   },
   {
     section: 'sexual_orientation',
@@ -110,19 +110,23 @@ function recipientOf(party: DataRequestParty, name: string | null): string {
 }
 
 /**
- * PD-056 (D-198 §1, D-188 §3). The answer proposed for a request of the copy
- * of the clinical record: that its delivery is authorised, to whom, what the
- * copy carries (DOC-118) and what it does not —the violence screening, which
- * leaves only after a professional reviews it—. Editable, like PD-049.
+ * PD-056 (D-198 §1, D-188 §3, D-203 §4, §6). The answer proposed for a request
+ * of the copy of the clinical record: that its delivery is authorised, to
+ * whom, what the copy carries (DOC-118, DOC-121) and whether it carries the
+ * violence screening —only when a professional's review includes it—.
+ * Editable, like PD-049.
  */
 export function clinicalRecordCopyProposal(facts: {
   requestedBy: DataRequestParty;
   requesterName: string | null;
+  includesScreening?: boolean;
 }): string {
   return [
     `Se autoriza la entrega de la copia certificada de la historia clínica, en PDF, ${recipientOf(facts.requestedBy, facts.requesterName)}.`,
-    'Lleva cada atención con nota de consulta firmada: la nota, los signos vitales, los diagnósticos, la receta, los exámenes pedidos y los certificados.',
-    'No lleva el tamizaje de violencia, que sólo se entrega después de que lo revise un profesional.',
+    'Lleva cada atención con nota de consulta firmada: la nota, los signos vitales, los diagnósticos, la receta, los exámenes pedidos con sus resultados, las notas de evolución y los certificados.',
+    facts.includesScreening === true
+      ? 'Lleva el tamizaje de violencia, con el visto bueno de un profesional.'
+      : 'No lleva el tamizaje de violencia, que sólo se entrega después de que lo revise un profesional.',
     'Quien la recibe responde de su confidencialidad.',
   ].join('\n');
 }

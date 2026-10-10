@@ -603,7 +603,7 @@ export const PERMISSION_CATALOGUE = [
     code: 'patient:data-requests',
     resource: 'patient',
     description:
-      'Registrar y responder las solicitudes de los pacientes sobre sus datos, exportar su ficha con las versiones corregidas de la historia clínica y descargar la copia certificada de la historia clínica, de todas las sedes, de una solicitud de copia atendida',
+      'Registrar y responder las solicitudes de los pacientes sobre sus datos y exportar su ficha. Con «Abrir la historia clínica» en la sede, además autorizar y descargar la copia de la historia y exportar lo clínico de esas sedes',
   },
 ] as const satisfies readonly CatalogueEntry[];
 

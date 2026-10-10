@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
+import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
 import { createPatient, createUser } from './setup/fixtures';
@@ -686,6 +687,186 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
       await expect(
         edit({ description: 'Copia de la historia clínica completa' }),
       ).resolves.toBeTruthy();
+    });
+
+    it('PD-059 la base guarda el periodo sólo en una copia «Atendida en parte», y lo exige en ella; la rectificación igual', async () => {
+      const prisma = db();
+      const request = await copyRow(prisma);
+      const answeredBy = request.registeredBy;
+      const day = (offset: number) =>
+        new Date(`${addDays(clinicalDateOf(new Date()), offset)}T00:00:00Z`);
+      const answer = (data: Record<string, unknown>) =>
+        prisma.dataSubjectRequest.update({
+          where: { id: request.id },
+          data: {
+            response: 'Respuesta',
+            answeredAt: new Date(),
+            answeredBy,
+            changedBy: answeredBy,
+            changedAt: new Date(request.registeredAt.getTime() + 1000),
+            ...data,
+          },
+        });
+      await expect(
+        answer({ outcome: 'GRANTED', copyFrom: day(-5), copyTo: day(0) }),
+      ).rejects.toThrow(/data_subject_request_copy_period_shape/);
+      await expect(answer({ outcome: 'PARTIALLY_GRANTED' })).rejects.toThrow(
+        /data_subject_request_copy_period_required/,
+      );
+      await expect(
+        answer({
+          outcome: 'PARTIALLY_GRANTED',
+          copyFrom: day(0),
+          copyTo: day(-5),
+        }),
+      ).rejects.toThrow(/data_subject_request_copy_period_shape/);
+      // Control positivo: el periodo ordenado, con «Atendida en parte».
+      await expect(
+        answer({
+          outcome: 'PARTIALLY_GRANTED',
+          copyFrom: day(-5),
+          copyTo: day(0),
+        }),
+      ).resolves.toMatchObject({ outcome: 'PARTIALLY_GRANTED' });
+
+      const correction = (data: Record<string, unknown>) =>
+        prisma.dataSubjectAnswerCorrection.create({
+          data: {
+            requestId: request.id,
+            response: 'Rectificada',
+            answeredAt: new Date(),
+            answeredBy,
+            outcome: 'PARTIALLY_GRANTED',
+            ...data,
+          },
+        });
+      await expect(correction({})).rejects.toThrow(
+        /data_subject_answer_correction_copy_period/,
+      );
+      await expect(
+        correction({ outcome: 'GRANTED', copyFrom: day(-1), copyTo: day(0) }),
+      ).rejects.toThrow(/data_subject_answer_correction_copy_period_shape/);
+      await expect(
+        correction({ copyFrom: day(-1), copyTo: day(0) }),
+      ).resolves.toBeTruthy();
+    });
+
+    it('PD-063 la base exige el parentesco al familiar, sólo a él, y no lo deja cambiar', async () => {
+      const prisma = db();
+      await expect(
+        copyRow(prisma, { requestedBy: 'DECEASED_RELATIVE' }),
+      ).rejects.toThrow(/data_subject_request_relationship_required/);
+      await expect(
+        copyRow(prisma, { requesterRelationship: 'SPOUSE' }),
+      ).rejects.toThrow(/data_subject_request_relationship_only_relative/);
+      const relative = await copyRow(prisma, {
+        requestedBy: 'DECEASED_RELATIVE',
+        requesterRelationship: 'STEPCHILD',
+      });
+      await expect(
+        prisma.dataSubjectRequest.update({
+          where: { id: relative.id },
+          data: {
+            requesterRelationship: 'SPOUSE',
+            changedBy: relative.registeredBy,
+            changedAt: new Date(relative.registeredAt.getTime() + 1000),
+          },
+        }),
+      ).rejects.toThrow(/data_subject_request_only_answered_once/);
+    });
+
+    it('PD-061 DOC-122 el visto bueno y lo congelado de una copia son de sólo inserción, y el visto bueno sólo de una copia', async () => {
+      const prisma = db();
+      const request = await copyRow(prisma);
+      const review = (requestId: string) =>
+        prisma.clinicalRecordCopyReview.create({
+          data: {
+            requestId,
+            reviewedAt: new Date(),
+            reviewedBy: request.registeredBy,
+          },
+        });
+      const given = await review(request.id);
+      await expect(
+        prisma.clinicalRecordCopyReview.update({
+          where: { id: given.id },
+          data: { includesScreening: true },
+        }),
+      ).rejects.toThrow(/append-only/);
+      await expect(
+        prisma.clinicalRecordCopyReview.delete({ where: { id: given.id } }),
+      ).rejects.toThrow(/append-only/);
+      await expect(
+        prisma.$executeRawUnsafe(
+          'TRUNCATE clinical_record_copy_review CASCADE',
+        ),
+      ).rejects.toThrow(/append-only/);
+
+      const snapshot = await prisma.clinicalRecordCopySnapshot.create({
+        data: {
+          requestId: request.id,
+          data: { frozen: true },
+          frozenAt: new Date(),
+        },
+      });
+      // Una por respuesta: la original, otra vez, no.
+      await expect(
+        prisma.clinicalRecordCopySnapshot.create({
+          data: {
+            requestId: request.id,
+            data: { again: true },
+            frozenAt: new Date(),
+          },
+        }),
+      ).rejects.toThrow(
+        /Unique constraint failed on the fields: \(`request_id`, `correction_id`\)/,
+      );
+      await expect(
+        prisma.clinicalRecordCopySnapshot.update({
+          where: { id: snapshot.id },
+          data: { data: { changed: true } },
+        }),
+      ).rejects.toThrow(/append-only/);
+
+      const plain = await copyRow(prisma, {
+        requestedBy: 'HOLDER',
+        requesterName: null,
+        requesterDocument: null,
+        clinicalRecordCopy: false,
+        documentsChecked: false,
+      });
+      await expect(review(plain.id)).rejects.toThrow(
+        /clinical_record_copy_review_of_copy/,
+      );
+    });
+
+    it('PD-063 una solicitud de familiar sin parentesco anterior a la regla se sigue respondiendo', async () => {
+      const prisma = db();
+      // Una fila de antes: el disparador de alta no corre si se desactiva.
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE data_subject_request DISABLE TRIGGER trg_data_subject_request_relationship_required',
+      );
+      let legacy: Awaited<ReturnType<typeof copyRow>>;
+      try {
+        legacy = await copyRow(prisma, { requestedBy: 'DECEASED_RELATIVE' });
+      } finally {
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE data_subject_request ENABLE TRIGGER trg_data_subject_request_relationship_required',
+        );
+      }
+      await expect(
+        prisma.dataSubjectRequest.update({
+          where: { id: legacy.id },
+          data: {
+            outcome: 'DENIED',
+            response: 'Falta el certificado de defunción',
+            answeredAt: new Date(),
+            answeredBy: legacy.registeredBy,
+            changedBy: legacy.registeredBy,
+            changedAt: new Date(legacy.registeredAt.getTime() + 1000),
+          },
+        }),
+      ).resolves.toMatchObject({ outcome: 'DENIED' });
     });
   });
 });

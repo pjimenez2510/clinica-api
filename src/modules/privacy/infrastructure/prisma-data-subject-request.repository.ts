@@ -7,13 +7,21 @@ import {
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
 import {
+  holdsRecordKey,
+  type RecordReadScope,
+} from '../../../shared/domain/clinical-record-key';
+import {
   chartScope,
   chartScopeOfSurvivor,
 } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
+import { SENSITIVE_CIE10_PATTERN } from '../domain/clinical-record-copy';
 import type {
   AnswerResult,
   ChartLookup,
+  CopyFacts,
+  CopyPeriod,
+  CopyReviewView,
   CorrectAnswerResult,
   DataExportDocument,
   DataRequestAnswer,
@@ -23,9 +31,11 @@ import type {
   DataSubjectRequestRepository,
   EditRequestResult,
   ExportOmission,
+  GivenAnswer,
   NewDataRequest,
   ProposalFacts,
   Requester,
+  ReviewCopyResult,
   StaffName,
 } from '../domain/privacy.repository';
 
@@ -50,7 +60,14 @@ import {
 
 import { recordVersionsOfChart } from './record-version-subjects';
 
-type RequestRow = Prisma.DataSubjectRequestGetPayload<object>;
+/** Every request is read with its latest review: the one that stands (PD-061). */
+const WITH_REVIEW = {
+  copyReviews: { orderBy: { reviewedAt: 'desc' }, take: 1 },
+} as const satisfies Prisma.DataSubjectRequestInclude;
+
+type RequestRow = Prisma.DataSubjectRequestGetPayload<{
+  include: typeof WITH_REVIEW;
+}>;
 
 @Injectable()
 export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRepository {
@@ -79,6 +96,7 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           requestedBy: request.requestedBy,
           requesterName: request.requesterName,
           requesterDocument: request.requesterDocument,
+          requesterRelationship: request.requesterRelationship,
           clinicalRecordCopy: request.clinicalRecordCopy,
           documentsChecked: request.documentsChecked,
           description: request.description,
@@ -90,6 +108,7 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           dueAt: request.dueAt,
           registeredBy: requester.userId,
         },
+        include: WITH_REVIEW,
       });
       await writeTrail(
         tx,
@@ -108,7 +127,7 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
 
   async answer(
     requestId: string,
-    answer: { outcome: DataRequestOutcome; response: string },
+    answer: GivenAnswer,
     requester: Requester,
     now: Date,
   ): Promise<AnswerResult> {
@@ -120,6 +139,11 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
       if (current.outcome !== null) {
         return { status: 'already-answered' } as const;
       }
+      // PD-062. Under the lock: a review given or a sensitive datum recorded
+      // meanwhile is what this answer is judged by.
+      if (answer.guardReview && (await reviewMissing(tx, requestId))) {
+        return { status: 'review-required' } as const;
+      }
       await tx.dataSubjectRequest.update({
         where: { id: requestId },
         data: {
@@ -127,12 +151,24 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           response: answer.response,
           answeredAt: now,
           answeredBy: requester.userId,
+          ...periodColumns(answer.copyPeriod),
           // PD-046: answering is an UPDATE like any other, stamped, so the
           // unanswered request stays as a version.
           changedBy: requester.userId,
           changedAt: stampAfter(current.changed_at, now),
         },
       });
+      // DOC-122. What it authorised, frozen with the answer.
+      if (answer.snapshot !== undefined) {
+        await tx.clinicalRecordCopySnapshot.create({
+          data: {
+            requestId,
+            correctionId: null,
+            data: answer.snapshot as Prisma.InputJsonValue,
+            frozenAt: now,
+          },
+        });
+      }
       await writeTrail(
         tx,
         {
@@ -232,7 +268,7 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
 
   async correctAnswer(
     requestId: string,
-    answer: { outcome: DataRequestOutcome; response: string },
+    answer: GivenAnswer,
     requester: Requester,
     now: Date,
   ): Promise<CorrectAnswerResult> {
@@ -244,11 +280,14 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
       if (current.outcome === null) {
         return { status: 'not-answered' } as const;
       }
+      if (answer.guardReview && (await reviewMissing(tx, requestId))) {
+        return { status: 'review-required' } as const;
+      }
       const standing = await tx.dataSubjectAnswerCorrection.findFirst({
         where: { requestId, correctedBy: null },
         select: { id: true },
       });
-      await tx.dataSubjectAnswerCorrection.create({
+      const correction = await tx.dataSubjectAnswerCorrection.create({
         data: {
           requestId,
           correctsId: standing?.id ?? null,
@@ -256,8 +295,20 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           response: answer.response,
           answeredAt: now,
           answeredBy: requester.userId,
+          ...periodColumns(answer.copyPeriod),
         },
+        select: { id: true },
       });
+      if (answer.snapshot !== undefined) {
+        await tx.clinicalRecordCopySnapshot.create({
+          data: {
+            requestId,
+            correctionId: correction.id,
+            data: answer.snapshot as Prisma.InputJsonValue,
+            frozenAt: now,
+          },
+        });
+      }
       await writeTrail(
         tx,
         {
@@ -276,49 +327,135 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
   }
 
   async proposalFactsOf(requestId: string): Promise<ProposalFacts | null> {
-    return this.prisma.dataSubjectRequest.findUnique({
+    const row = await this.prisma.dataSubjectRequest.findUnique({
       where: { id: requestId },
       select: {
         right: true,
         requestedBy: true,
         requesterName: true,
         clinicalRecordCopy: true,
+        copyReviews: {
+          orderBy: { reviewedAt: 'desc' },
+          take: 1,
+          select: { includesScreening: true },
+        },
       },
     });
+    if (!row) return null;
+    const { copyReviews, ...facts } = row;
+    return {
+      ...facts,
+      includesScreening: copyReviews[0]?.includesScreening === true,
+    };
   }
 
-  async copyKeyOf(
-    requestId: string,
-  ): Promise<{ clinicalRecordCopy: boolean; patientSites: string[] } | null> {
+  async copyFactsOf(requestId: string): Promise<CopyFacts | null> {
     const request = await this.prisma.dataSubjectRequest.findUnique({
       where: { id: requestId },
-      select: { patientId: true, clinicalRecordCopy: true },
+      select: { patientId: true, clinicalRecordCopy: true, requestedBy: true },
     });
     if (!request) return null;
     if (!request.clinicalRecordCopy) {
-      return { clinicalRecordCopy: false, patientSites: [] };
+      return {
+        clinicalRecordCopy: false,
+        requestedBy: request.requestedBy,
+        patientSites: [],
+        sensitive: false,
+        reviewed: false,
+        reviewSites: [],
+      };
     }
-    // The PERSON's sites, from the chart the request was written on up to
-    // the one in force and down to its absorbed ones (PA-055): those where
-    // a copy would carry a signed attention.
-    const attentions = await this.prisma.encounter.findMany({
-      where: {
-        ...chartScopeOfSurvivor(request.patientId),
-        status: { not: 'ENTERED_IN_ERROR' },
-        notes: { some: { formCode: '002', status: 'SIGNED' } },
-      },
-      distinct: ['siteId'],
-      select: { siteId: true },
-    });
+    const facts = await sensitiveFactsOf(this.prisma, request.patientId);
     return {
       clinicalRecordCopy: true,
-      patientSites: attentions.map((one) => one.siteId),
+      requestedBy: request.requestedBy,
+      patientSites: await copySitesOf(this.prisma, request.patientId),
+      sensitive: facts.sensitiveSites.length > 0,
+      reviewed: await reviewStands(this.prisma, requestId),
+      reviewSites: facts.reviewSites,
     };
+  }
+
+  async reviewCopy(
+    requestId: string,
+    review: { includesScreening: boolean },
+    requester: Requester,
+    now: Date,
+  ): Promise<ReviewCopyResult> {
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      // The request's lock orders the review against an answer and against a
+      // second review: of two, the second finds the first.
+      const current = await lockRequest(tx, requestId);
+      if (!current || !current.clinical_record_copy) {
+        return { status: 'missing' } as const;
+      }
+      const standing = await standingOutcome(tx, requestId, current.outcome);
+      if (standing === 'GRANTED' || standing === 'PARTIALLY_GRANTED') {
+        return { status: 'already-authorised' } as const;
+      }
+      // One that stands is enough; a new one only once something sensitive
+      // was recorded after it (PD-061).
+      if (await reviewStands(tx, requestId)) {
+        return { status: 'already-reviewed' } as const;
+      }
+      await tx.clinicalRecordCopyReview.create({
+        data: {
+          requestId,
+          includesScreening: review.includesScreening,
+          reviewedAt: now,
+          reviewedBy: requester.userId,
+        },
+      });
+      await writeTrail(
+        tx,
+        {
+          resourceType: 'clinical_record_copy_review',
+          resourceId: requestId,
+          action: 'CREATE',
+        },
+        requester,
+      );
+      return { status: 'reviewed' } as const;
+    });
+    if (outcome.status !== 'reviewed') return outcome;
+    const request = await this.find(requestId);
+    return { status: 'reviewed', request: request! };
+  }
+
+  async pendingCopiesOf(patientId: string): Promise<DataRequestView[]> {
+    const rows = await this.prisma.dataSubjectRequest.findMany({
+      where: { ...chartScope(patientId), clinicalRecordCopy: true },
+      orderBy: [{ dueAt: 'asc' }, { id: 'asc' }],
+      include: WITH_REVIEW,
+    });
+    const views = await this.views(this.prisma, rows);
+    // Not authorised yet: unanswered, denied, or rectified to a denial.
+    return views.filter(
+      (view) =>
+        view.answer === null ||
+        (view.answer.outcome !== 'GRANTED' &&
+          view.answer.outcome !== 'PARTIALLY_GRANTED'),
+    );
+  }
+
+  async clinicalOmissionOf(
+    requestId: string,
+    scope: RecordReadScope,
+  ): Promise<ExportOmission | null> {
+    const request = await this.prisma.dataSubjectRequest.findUnique({
+      where: { id: requestId },
+      select: { patient: { select: { id: true, mergedIntoId: true } } },
+    });
+    if (!request) return null;
+    const rootId = request.patient.mergedIntoId ?? request.patient.id;
+    const keyed = holdsRecordKey(scope, await copySitesOf(this.prisma, rootId));
+    return clinicalVersionsOmission(this.prisma, rootId, scope, keyed);
   }
 
   async find(requestId: string): Promise<DataRequestView | null> {
     const row = await this.prisma.dataSubjectRequest.findUnique({
       where: { id: requestId },
+      include: WITH_REVIEW,
     });
     if (!row) return null;
     const [view] = await this.views(this.prisma, [row]);
@@ -329,6 +466,7 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
     const rows = await this.prisma.dataSubjectRequest.findMany({
       where: chartScope(patientId),
       orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
+      include: WITH_REVIEW,
     });
     return this.views(this.prisma, rows);
   }
@@ -348,6 +486,7 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
         orderBy: [{ dueAt: 'asc' }, { receivedAt: 'asc' }, { id: 'asc' }],
         skip: (page.page - 1) * page.pageSize,
         take: page.pageSize,
+        include: WITH_REVIEW,
       }),
       this.prisma.dataSubjectRequest.count({ where }),
     ]);
@@ -393,10 +532,24 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
       const requestRows = await tx.dataSubjectRequest.findMany({
         where: chartScope(rootId),
         orderBy: { receivedAt: 'asc' },
+        include: WITH_REVIEW,
       });
       const requests = await this.views(tx, requestRows);
-      // PD-048 (D-131.1). The saved versions of the subject's rows.
-      const versions = await recordVersionsOfChart(tx, rootId);
+      // PD-048 (D-131.1). The saved versions of the subject's rows; PD-067
+      // (D-203 §10), the clinical ones only as far as the caller's
+      // `record:read` reaches, with the shared rule of the key.
+      const scope = requester.recordScope ?? [];
+      const keyed = holdsRecordKey(scope, await copySitesOf(tx, rootId));
+      const versions = await recordVersionsOfChart(tx, rootId, {
+        recordScope: scope,
+        holdsKey: keyed,
+      });
+      const clinicalOmission = await clinicalVersionsOmission(
+        tx,
+        rootId,
+        scope,
+        keyed,
+      );
       const concepts = await conceptsOf(tx, charts);
       const mrnOf = new Map(charts.map((chart) => [chart.id, chart.mrn]));
       const main = charts.find((chart) => chart.id === rootId)!;
@@ -428,7 +581,7 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
 
       return {
         format: 'clinica.privacy.export',
-        formatVersion: 1,
+        formatVersion: 2,
         generatedAt: now.toISOString(),
         patient: {
           ...exportedPatient(main, concepts),
@@ -461,7 +614,8 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           chart: mrnOf.get(row.patientId),
           right: row.right,
           requestedBy: row.requestedBy,
-          description: row.description,
+          // PD-066. Of an authority, never the text of what it asked.
+          description: row.requestedBy === 'AUTHORITY' ? null : row.description,
           receivedAt: row.receivedAt.toISOString(),
           // Format v1 says a date; the instant is the request's (PD-054).
           dueOn: row.dueOn,
@@ -475,8 +629,17 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
             answeredAt: previous.answeredAt.toISOString(),
           })),
         })),
+        // PD-066 (D-203 §9). Each copy of the record that was authorised.
+        deliveries: requests
+          .filter(
+            (row) =>
+              row.clinicalRecordCopy &&
+              (row.answer?.outcome === 'GRANTED' ||
+                row.answer?.outcome === 'PARTIALLY_GRANTED'),
+          )
+          .map((row) => deliveryOf(row, mrnOf.get(row.patientId))),
         versions,
-        omitted,
+        omitted: clinicalOmission ? [...omitted, clinicalOmission] : omitted,
       };
     });
   }
@@ -497,13 +660,42 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           row.changedBy,
         ]),
         ...corrections.map((row) => row.answeredBy),
+        ...rows.flatMap((row) =>
+          row.copyReviews.map((review) => review.reviewedBy),
+        ),
       ]),
       patientNames(
         db,
         rows.map((row) => row.patientId),
       ),
     ]);
+    // D-203 §1, §5. On a copy, the person's sites and whether the record holds
+    // something sensitive — one after another: `db` may be a transaction.
+    const copyFacts = new Map<
+      string,
+      { sites: string[]; sensitive: boolean }
+    >();
+    for (const row of rows) {
+      if (!row.clinicalRecordCopy) continue;
+      copyFacts.set(row.id, {
+        sites: await copySitesOf(db, row.patientId),
+        sensitive:
+          row.requestedBy !== 'HOLDER' &&
+          (await sensitiveFactsOf(db, row.patientId)).sensitiveSites.length >
+            0 &&
+          !(await reviewStands(db, row.id)),
+      });
+    }
     return rows.map((row) => {
+      const facts = copyFacts.get(row.id);
+      const latest = row.copyReviews[0];
+      const review: CopyReviewView | null = latest
+        ? {
+            reviewedAt: latest.reviewedAt,
+            reviewedBy: nameOf(staff, latest.reviewedBy),
+            includesScreening: latest.includesScreening,
+          }
+        : null;
       const answers = answerChain(
         row,
         corrections.filter((correction) => correction.requestId === row.id),
@@ -517,10 +709,14 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
         requestedBy: row.requestedBy,
         requesterName: row.requesterName,
         requesterDocument: row.requesterDocument,
+        requesterRelationship: row.requesterRelationship,
         clinicalRecordCopy: row.clinicalRecordCopy,
         documentsChecked: row.documentsChecked,
         description: row.description,
         receivedAt: row.receivedAt,
+        review,
+        reviewRequired: facts?.sensitive ?? false,
+        copySites: facts?.sites ?? [],
         dueAt: row.dueAt,
         dueOn: lastDayOnTime(row.dueAt),
         registeredAt: row.registeredAt,
@@ -547,6 +743,8 @@ function answerChain(
     response: string;
     answeredAt: Date;
     answeredBy: string;
+    copyFrom: Date | null;
+    copyTo: Date | null;
   }[],
   staff: Map<string, StaffName>,
 ): DataRequestAnswer[] {
@@ -560,6 +758,7 @@ function answerChain(
       answeredAt: row.answeredAt,
       answeredBy: nameOf(staff, row.answeredBy),
       isCorrection: false,
+      copyPeriod: periodOf(row.copyFrom, row.copyTo),
     },
   ];
   const next = new Map(corrections.map((c) => [c.correctsId, c]));
@@ -574,9 +773,218 @@ function answerChain(
       answeredAt: correction.answeredAt,
       answeredBy: nameOf(staff, correction.answeredBy),
       isCorrection: true,
+      copyPeriod: periodOf(correction.copyFrom, correction.copyTo),
     });
   }
   return chain;
+}
+
+/**
+ * PD-066 (D-203 §9; LOPDP arts. 12.10 and 13; 45 CFR 164.528). One delivery
+ * of the copy as the holder reads it: when it was authorised, to whom and of
+ * what class, what (the whole record or a period) and why. Of an authority,
+ * only its name and the number of its letter; of anybody else, never their
+ * cedula, which is another person's datum.
+ */
+function deliveryOf(
+  row: DataRequestView,
+  chart: string | undefined,
+): Record<string, unknown> {
+  const answer = row.answer!;
+  const authority = row.requestedBy === 'AUTHORITY';
+  return {
+    chart,
+    authorisedAt: answer.answeredAt.toISOString(),
+    recipientClass: row.requestedBy,
+    recipientName: row.requestedBy === 'HOLDER' ? null : row.requesterName,
+    recipientRelationship: row.requesterRelationship,
+    officialLetter: authority ? row.requesterDocument : null,
+    scope: answer.copyPeriod
+      ? {
+          kind: 'PERIOD',
+          from: answer.copyPeriod.from,
+          to: answer.copyPeriod.to,
+        }
+      : { kind: 'COMPLETE' },
+    purpose: authority ? null : row.description,
+  };
+}
+
+/**
+ * PD-067 (D-203 §10). What `omitted` says when clinical versions stayed out:
+ * all of them, without the key; or those of the sites beyond the caller's
+ * `record:read`, when the person was attended there. `null` when none did.
+ */
+async function clinicalVersionsOmission(
+  db: Db,
+  chartId: string,
+  scope: RecordReadScope,
+  keyed: boolean,
+): Promise<ExportOmission | null> {
+  if (scope === 'all') return null;
+  if (scope.length === 0 || !keyed) {
+    return {
+      section: 'clinical_versions',
+      reason:
+        'Las versiones anteriores de la historia clínica (atenciones, signos vitales, diagnósticos, procedimientos, embarazo, lactancia, vacunas, suplementos, alergias, antecedentes y avisos de resultados críticos) no van: quien generó este archivo no tiene acceso a la historia clínica del paciente (D-203 §10).',
+    };
+  }
+  const elsewhere = await db.encounter.findFirst({
+    where: {
+      ...chartScope(chartId),
+      status: { not: 'ENTERED_IN_ERROR' },
+      siteId: { notIn: [...scope] },
+    },
+    select: { id: true },
+  });
+  if (!elsewhere) return null;
+  return {
+    section: 'clinical_versions',
+    reason:
+      'Las versiones anteriores de las atenciones de otras sedes, con sus signos vitales, diagnósticos, procedimientos, datos de embarazo, lactancia, vacunas, suplementos y avisos de resultados críticos, no van: quien generó este archivo no tiene acceso a la historia clínica de esas sedes (D-203 §10).',
+  };
+}
+
+/** PD-059. The period columns of an answer. */
+function periodColumns(period: CopyPeriod | null): {
+  copyFrom: Date | null;
+  copyTo: Date | null;
+} {
+  return {
+    copyFrom: period && fromClinicalDate(period.from),
+    copyTo: period && fromClinicalDate(period.to),
+  };
+}
+
+/** PD-059. The period as the answer says it. */
+function periodOf(from: Date | null, to: Date | null): CopyPeriod | null {
+  return from && to
+    ? { from: toClinicalDate(from), to: toClinicalDate(to) }
+    : null;
+}
+
+/**
+ * D-203 §1. The PERSON's sites, from the chart the request was written on up
+ * to the one in force and down to its absorbed ones (PA-055): those where a
+ * copy would carry a signed attention.
+ */
+async function copySitesOf(db: Db, patientId: string): Promise<string[]> {
+  const attentions = await db.encounter.findMany({
+    where: {
+      ...chartScopeOfSurvivor(patientId),
+      status: { not: 'ENTERED_IN_ERROR' },
+      notes: { some: { formCode: '002', status: 'SIGNED' } },
+    },
+    distinct: ['siteId'],
+    select: { siteId: true },
+  });
+  return attentions.map((one) => one.siteId);
+}
+
+/**
+ * PD-061, PD-062 (D-203 §5, §6). What the record of the person holds that a
+ * copy for somebody else waits a professional's review for: the sites of the
+ * attentions that stand with a violence screening with signs or a diagnosis
+ * of the sensitive groups (`SENSITIVE_CIE10_PATTERN`), and when the last one
+ * was recorded; and `reviewSites`, where whoever reviews must hold
+ * `record:protected` —those, and the ones with any screening answered, which
+ * «Incluir el tamizaje» would hand over—.
+ */
+async function sensitiveFactsOf(
+  db: Db,
+  patientId: string,
+): Promise<{
+  sensitiveSites: string[];
+  reviewSites: string[];
+  latestAt: Date | null;
+}> {
+  const attentions = await db.encounter.findMany({
+    where: {
+      ...chartScopeOfSurvivor(patientId),
+      status: { not: 'ENTERED_IN_ERROR' },
+    },
+    select: { id: true },
+  });
+  if (attentions.length === 0) {
+    return { sensitiveSites: [], reviewSites: [], latestAt: null };
+  }
+  const ids = attentions.map((one) => one.id);
+  const rows = await db.$queryRaw<
+    { site_id: string; sensitive: boolean; at: Date }[]
+  >`
+    SELECT e.site_id::text AS site_id,
+           v.result IN ('SUSPECTED', 'CONFIRMED') AS sensitive,
+           v.screened_at AS at
+      FROM violence_screening v
+      JOIN encounter e ON e.id = v.encounter_id
+     WHERE v.encounter_id = ANY(${ids}::uuid[])
+       AND v.result <> 'NOT_APPLIED'
+    UNION ALL
+    SELECT e.site_id::text, true, greatest(d.recorded_at, coalesce(d.edited_at, d.recorded_at))
+      FROM encounter_diagnosis d
+      JOIN encounter e ON e.id = d.encounter_id
+     WHERE d.encounter_id = ANY(${ids}::uuid[])
+       AND upper(d.cie10_code) ~ ${SENSITIVE_CIE10_PATTERN}`;
+  const sensitive = rows.filter((row) => row.sensitive);
+  const latest = sensitive.reduce<Date | null>(
+    (max, row) => (max === null || row.at > max ? row.at : max),
+    null,
+  );
+  return {
+    sensitiveSites: [...new Set(sensitive.map((row) => row.site_id))],
+    reviewSites: [...new Set(rows.map((row) => row.site_id))],
+    latestAt: latest,
+  };
+}
+
+/**
+ * PD-062. Whether granting this copy waits for a review it does not have: the
+ * record holds something sensitive and no review stands.
+ */
+async function reviewMissing(db: Db, requestId: string): Promise<boolean> {
+  const request = await db.dataSubjectRequest.findUnique({
+    where: { id: requestId },
+    select: { patientId: true },
+  });
+  if (!request) return false;
+  const { sensitiveSites } = await sensitiveFactsOf(db, request.patientId);
+  return sensitiveSites.length > 0 && !(await reviewStands(db, requestId));
+}
+
+/**
+ * PD-061 (revisión del 10-10-2026). Whether the copy holds a review that still
+ * stands: the latest one, given after the last sensitive datum recorded. One
+ * given before something sensitive appeared did not see it.
+ */
+async function reviewStands(db: Db, requestId: string): Promise<boolean> {
+  const request = await db.dataSubjectRequest.findUnique({
+    where: { id: requestId },
+    select: {
+      patientId: true,
+      copyReviews: {
+        orderBy: { reviewedAt: 'desc' },
+        take: 1,
+        select: { reviewedAt: true },
+      },
+    },
+  });
+  const latest = request?.copyReviews[0];
+  if (!request || !latest) return false;
+  const { latestAt } = await sensitiveFactsOf(db, request.patientId);
+  return latestAt === null || latestAt <= latest.reviewedAt;
+}
+
+/** PD-047. The outcome that stands: the last rectification, or the original. */
+async function standingOutcome(
+  tx: Prisma.TransactionClient,
+  requestId: string,
+  original: DataRequestOutcome | null,
+): Promise<DataRequestOutcome | null> {
+  const standing = await tx.dataSubjectAnswerCorrection.findFirst({
+    where: { requestId, correctedBy: null },
+    select: { outcome: true },
+  });
+  return standing?.outcome ?? original;
 }
 
 /** The request under its row lock, with what the edit and the answer compare. */
