@@ -343,15 +343,15 @@ paso falta y lleva a su pantalla.
   uno con su enlace a su pantalla y con «Hecho» o «Falta» según lo que el
   servidor ya devuelve, y arriba cuántos de los obligatorios están hechos:
 
-  | Paso | Permiso | Hecho cuando |
+  | Paso | Permisos (leer · cambiar) | Hecho cuando |
   |---|---|---|
-  | Establecimiento | `site:read` | está registrado y tiene RUC |
-  | Sedes y consultorios | `site:read` | hay al menos una sede activa y todas las activas tienen su código de establecimiento del SRI |
-  | Cuentas del personal | `user:read` | hay al menos una cuenta activa además de la de quien mira |
-  | Especialidades y duraciones | `config:read` | hay al menos una especialidad activa |
-  | Profesionales | `staff:read` | hay al menos un profesional activo |
-  | Horarios | `staff:read` | hay al menos una regla de horario vigente |
-  | Prestaciones y precios | `billing:read` | hay al menos una prestación activa y todas tienen precio particular vigente hoy |
+  | Establecimiento | `site:read` · `site:manage` | está registrado y tiene RUC |
+  | Sedes y consultorios | `site:read` · `site:manage` | hay al menos una sede activa y todas las activas tienen su código de establecimiento del SRI |
+  | Cuentas del personal | `user:read` · `user:manage` | hay al menos una cuenta activa además de la de quien mira |
+  | Especialidades y duraciones | `config:read` · `config:manage` | hay al menos una especialidad activa |
+  | Profesionales | `staff:read` · `staff:manage` | hay al menos un profesional activo |
+  | Horarios | `staff:read` · `staff:manage` | hay al menos una regla de horario vigente |
+  | Prestaciones y precios | `billing:read` · `billing:price-manage` | hay al menos una prestación activa y todas tienen precio particular vigente hoy |
   | Firma electrónica | `config:manage` | hay un certificado activo y vigente hoy |
   | Texto de consentimiento | `patient:consent-text` | hay un texto publicado |
   | Exámenes _(opcional)_ | `catalog:manage` | hay al menos un examen; no cuenta en el total |
@@ -359,13 +359,19 @@ paso falta y lleva a su pantalla.
   Un paso que falta dice en una línea qué falta («Falta el RUC», «Falta el
   precio de 3 prestaciones»). «Hoy» es el día de la clínica
   (`America/Guayaquil`).
-- **OR-041** — La puesta en marcha NO DEBERÁ mostrar un paso cuyo permiso no
-  tiene la sesión, ni pedir sus datos. La entrada «Puesta en marcha» y la ruta
-  DEBERÁN exigir el permiso de al menos uno de los pasos; SI la sesión no tiene
-  ninguno, ENTONCES la entrada no aparece y la ruta lleva a «Sin permiso».
+- **OR-041** — La puesta en marcha NO DEBERÁ mostrar un paso salvo que la
+  sesión tenga sus dos permisos, el de leer y el de cambiar, ni pedir sus
+  datos sin ellos. La entrada «Puesta en marcha» sólo DEBERÁ aparecer CUANDO la
+  sesión tenga al menos un paso así, y la ruta DEBERÁ exigir el permiso de
+  cambiar de alguno; SI no tiene ninguno, ENTONCES la ruta lleva a «Sin
+  permiso».
+  > Recepción, el médico y caja LEEN sedes o precios, pero no pueden arreglar
+  > lo que falte: una lista de pendientes que no pueden atender es ruido
+  > (ESTÁNDAR-UI §12.4).
 - **OR-042** — SI no se pudo consultar lo que decide un paso, ENTONCES ese paso
-  DEBERÁ mostrarse «Sin comprobar», con «Reintentar», y NO DEBERÁ contarse como
-  hecho ni como falta; los demás pasos se muestran igual.
+  DEBERÁ mostrarse «Sin comprobar», con un «Reintentar» en la lista que vuelve
+  a pedir los que fallaron, y NO DEBERÁ contarse como hecho ni como falta; los
+  demás pasos se muestran igual.
 - **OR-043** — El aviso flotante (`toast`) DEBERÁ aparecer por debajo de la
   barra de la aplicación, sin tapar el botón del modo de color ni el del menú,
   a 1280 y a 375 px.
