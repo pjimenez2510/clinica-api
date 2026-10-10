@@ -879,6 +879,25 @@ enlace que no sirve y con un correo que no sale.
   > `record:sign` no lo recibe; se reparte desde Roles. `ADMIN` no firma la
   > 002 y no lo recibe (D-188 §1).
 
+- **AU-059** — El sistema DEBERÁ traer de fábrica el rol **«Dirección
+  médica»** (`DIRECCION_MEDICA`) con `record:consent-rule`,
+  `certificate:revoke-any` y `billing:read`, y ningún otro permiso; DEBERÁ
+  crearlo al sincronizar una base que no lo tenga, **sin concederlo a ninguna
+  cuenta**; y NINGÚN otro rol de fábrica DEBERÁ llevar `record:consent-rule`
+  ni `certificate:revoke-any`.
+  > **D-199.1, aceptada por el autor el 09-10-2026.** El anexo del A.M. 5316
+  > (punto 4) deja la aprobación de los contenidos del 024 al *«director/a
+  > médico o la instancia responsable de temas de calidad»*, y D-105 §2 le da
+  > la anulación de certificados ajenos. Las dos llaves existían como permisos
+  > que ningún rol traía: la clínica tenía que armar el rol a mano. Con el rol
+  > de fábrica sólo lo asigna. **Sin usuarios** porque quién dirige lo decide
+  > la clínica; y es un rol para **sumar** al de médico (`billing:read` abre
+  > la ficha de la prestación donde va la marca), no para sustituirlo.
+  >
+  > Los roles son datos (AU-030): sin migración, lo crea la sincronización de
+  > permisos como a los demás roles de fábrica, y la clínica lo edita o lo
+  > desactiva como cualquiera.
+
 ### Recuperación del segundo factor (REQ-154, D-014)
 
 - **AU-035** — CUANDO quien tenga el permiso `user:reset-mfa` lo pida sobre otra
