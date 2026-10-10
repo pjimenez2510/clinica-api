@@ -573,10 +573,11 @@ mejoran (sustituye a D-A-016). Las marcas dicen lo que de verdad falta, la
 barra se agrupa, «Programas» no aparece cuando nada aplica, la cabecera fija
 dice cuánto falta para firmar y lleva ahí, `Alt+1…9` cambia de pestaña y el
 diálogo de firma da un solo aviso.
-**Prueba independiente:** como médico, abrir la atención de un menor de cinco
-años con la toma sin talla: «Signos» marca «Falta talla», la cabecera dice
-«Falta 1 para firmar» y lleva a «Signos»; `Alt+2` abre la segunda pestaña; en un
-adulto sin embarazo «Programas» no está en la barra.
+**Prueba independiente:** como médico, abrir la atención de una gestante con
+la nota, el diagnóstico y el tamizaje listos y sin peso ni talla: «Signos»
+marca «Falta peso y talla», la cabecera dice «Falta 1 para firmar» y lleva a
+«Signos»; `Alt+3` abre la tercera pestaña; en un adulto sin embarazo
+«Programas» no está en la barra.
 
 **Cubre:** EN-263 a EN-268. **Solo interfaz:** EN-263, EN-264, EN-265, EN-266,
 EN-267, EN-268 (la API no cambia: las marcas leen lo que ya llega).
@@ -4861,15 +4862,17 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > son del RDACAA, como la ficha (`STATISTICAL`).
 - **EN-265** — SI a la atención no le aplica ningún bloque de programa
   condicional —obstétrico, SIVAN o lactancia, suplementos— y no tiene nada
-  registrado en ninguno de sus bloques, ENTONCES la barra NO DEBERÁ mostrar
+  registrado en sus bloques no restringidos, ENTONCES la barra NO DEBERÁ mostrar
   «Programas»; y DEBERÁ poder abrirse desde «Ajustar las pestañas» para esa
   atención, para registrar una vacuna o, con la segunda llave, la prueba de
   VIH.
   > Las vacunas y la prueba de VIH no dependen de la edad ni del embarazo, así
-  > que «nada aplica» se lee sobre los bloques condicionales. Si las vacunas
-  > deben tener entrada propia en la barra lo decide el autor (plan
-  > `feat-f04-pestanas-honestas`, «Por decidir»).
-- **EN-266** — MIENTRAS la atención esté viva, su nota sin firmar y la sesión
+  > que «nada aplica» se lee sobre los bloques condicionales. **La prueba de
+  > VIH no cuenta, ni registrada:** viaja aparte con la segunda llave
+  > (EN-095), y una pestaña que apareciera por ella se lo diría a quien no la
+  > tiene. Si las vacunas deben tener entrada propia en la barra lo decide el
+  > autor (D-209).
+- **EN-266** — MIENTRAS la atención esté viva y sin alta, su nota sin firmar y la sesión
   tenga `record:sign` en la sede de la atención, SI algo impide firmar,
   ENTONCES la cabecera fija DEBERÁ decir cuántas cosas faltan («Falta 1 para
   firmar», «Faltan 3 para firmar»), y CUANDO se pulse DEBERÁ llevar a la
