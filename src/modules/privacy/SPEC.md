@@ -567,7 +567,7 @@ la mitad del servidor es PD-052 a PD-054 y DOC-118.
   DEBERÁ decir quién la presentó —con su nombre si no es el titular—, si es
   «Copia de la historia clínica» y su vencimiento, con la hora si es de copia;
   y MIENTRAS una solicitud de copia tenga respuesta «Atendida» o «Atendida en
-  parte», DEBERÁ ofrecer «Descargar copia (PDF)» (DOC-118). Al registrarla, la
+  parte», DEBERÁ ofrecer «Descargar copia» (DOC-118). Al registrarla, la
   pantalla DEBERÁ ofrecer los seis que la presentan; con un tercero DEBERÁ
   fijar el derecho en acceso y marcar la copia, y con la copia pedir el nombre,
   el documento y la casilla.
