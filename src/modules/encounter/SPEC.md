@@ -441,7 +441,9 @@ gestación y riesgo obstétrico y comprobar que el bloque **se rechaza** si el
 grupo prioritario «Embarazadas» no está registrado en la atención —que es la
 condición literal del instructivo, p. 50—; y que el bloque de VIH exige la misma
 llave que el tamizaje de violencia.
-**Cubre:** EN-090 a EN-095, EN-097, EN-098, EN-249 (`feat/f04-bloques-programa`).
+**Cubre:** EN-090 a EN-095, EN-097, EN-098, EN-249 (`feat/f04-bloques-programa`);
+EN-260 y EN-261 —la lactancia de la mujer y el HB adulto que enfermería
+reenvía— (`feat/f04-rdacaa-ajustes`, D-195).
 
 EN-096 —los suplementos, columnas 105 a 108— y EN-099 —los grupos prioritarios y
 vulnerables de la atención, columnas 29 a 34— no son de los bloques G a J y
@@ -554,14 +556,15 @@ catálogo; la pantalla de diagnóstico no cambia, sólo lo que ofrece).
 ### H14 — Suplementos y grupos de la atención _(P2)_
 
 Lo que quedó de H7 fuera de los cuatro bloques: las cuatro casillas de
-suplementos (EN-096), que deberían derivarse de la receta, y los grupos
+suplementos (EN-096), propuestas desde la receta (EN-262, construidas en
+`feat/f04-rdacaa-ajustes`, D-198.2), y los grupos
 prioritarios y vulnerables **de la atención** con sus dos catálogos del
 instructivo (EN-099). Cuando EN-099 exista, `trg_encounter_obstetric_applies`
 pasa a leer el grupo de la atención y no el de la ficha (D-134.3 §2).
 **Prueba independiente:** registrar en una atención «embarazadas» y «personas
 con VIH» y comprobar que el segundo exige la segunda llave.
 
-**Cubre:** EN-096, EN-099.
+**Cubre:** EN-096, EN-099, EN-262.
 
 ### Fuera de las nueve
 
@@ -2221,6 +2224,11 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   > semanas de gestación de la misma fila (D-195.4). El tercer valor de cada
   > lista es el que un booleano perdería: «sin dato» y «no se hizo» no son
   > «negativo».
+  >
+  > **El tratamiento usa los códigos de la prueba** (numeral 1.8.2.3: «1. (+)
+  > 2. (-) 3. SD»), así que el enum es el mismo (`SyphilisResult`); lo que
+  > cambia es el rótulo en pantalla: **«Recibió (+)», «No recibió (−)», «Sin
+  > dato»** (D-195.13).
 - **EN-092** — MIENTRAS el paciente tenga **8 meses de edad o menos** —en meses
   cumplidos de la edad congelada (EN-008)—, el sistema DEBERÁ registrar los
   datos del **SIVAN**; y SI no los tiene, ENTONCES DEBERÁ rechazarlos con
@@ -2236,16 +2244,22 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   >
   > Cada pregunta, obligatoria en su tramo y vacía fuera de él
   > (`trg_encounter_nutrition_applies`). La madre lactante **como paciente**
-  > —el instructivo nombra también a las «madres en período de lactancia»— no
-  > se construye: el sistema no sabe quién lo está (D-195.3).
+  > —el instructivo nombra también a las «madres en período de lactancia»— es
+  > EN-260 (D-195.3).
 - **EN-093** — CUANDO se administre una vacuna, el sistema DEBERÁ registrar
   **cuál**, **qué dosis** y, para las vacunas que lo piden, a **qué grupo de
-  riesgo** pertenece el paciente; y SI el grupo no es uno que esa vacuna admite,
-  o falta cuando lo pide, ENTONCES DEBERÁ rechazarlo con `VALIDATION_FAILED`
-  sobre `riskGroup`.
+  riesgo** pertenece el paciente **en esa dosis**; y SI el grupo de una dosis
+  no es uno que su vacuna admite, o falta cuando lo pide, ENTONCES DEBERÁ
+  rechazarlo con `VALIDATION_FAILED` sobre `doses`.
   > Bloque I, columnas 55 a 74, tabla `encounter_vaccination`: una fila por
-  > atención con sus dosis y **un** grupo de riesgo, como la columna 74.
-  > Catálogos (instructivo, pp. 56 a 58 del PDF):
+  > atención con sus dosis, y **el grupo de riesgo dentro de cada dosis**
+  > (`doses[].riskGroup`), no uno por atención. Es la recomendación de D-195.8
+  > que el autor aceptó: en HL7 FHIR cada `Immunization` es una dosis y lleva
+  > su propia `programEligibility`, y una trabajadora de salud que recibe dT
+  > adulto («edades en riesgo») y HB adulto («personal de la salud») en la
+  > misma visita se registra en una sola atención. La columna 74 del formulario
+  > tiene un solo grupo: cuál lleva, o si la fila se parte, lo decide la
+  > exportación (H9). Catálogos (instructivo, pp. 56 a 58 del PDF):
   >
   > - **Vacunas** — catálogo `VACCINE` y no enum (el esquema cambia por acuerdo
   >   ministerial y no debe costar una migración), con el **número de su
@@ -2253,7 +2267,12 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   >   59 neumococo · 60 pentavalente · 61 SRP · 62 fiebre amarilla · 63 varicela ·
   >   64 bOPV · 65 DPT · 66 HPV · 67 dT adulto · 68 HB pediátrico · 69 SR ·
   >   70 HB adulto · 71 Dt pediátrico · 72 IPV · 73 influenza. Vigente en la
-  >   fecha clínica y sin repetir en la atención.
+  >   fecha clínica y sin repetir en la atención. La numeración es la de la
+  >   imagen del formulario (55 a 73, grupo en la 74), no la del texto («55 a la
+  >   70»): **por confirmar con la plantilla de carga del distrito antes de H9**
+  >   (D-195.12). La Tdap de la embarazada (esquema 2025) no tiene columna: se
+  >   añade como release del catálogo cuando el distrito diga cómo se reporta, y
+  >   hasta entonces va en la nota (D-195.6).
   > - **Dosis administradas** — 1 primera · 2 segunda · 3 tercera · 4 cuarta ·
   >   5 quinta · 6 sexta · **7 dosis única**.
   > - **Grupo de riesgo** — 1 edades en riesgo · 2 puérperas · 3 personal de la
@@ -2261,18 +2280,19 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   >   libertad · 6 personas con discapacidad · 7 personas viviendo con VIH ·
   >   8 trabajadores/as sexuales · 9 viajero · 10 otros grupos de riesgo, y
   >   **embarazadas**, que los criterios nombran y el catálogo impreso no
-  >   numera (D-195.1).
+  >   numera (D-195.1, confirmado en el instructivo; el código que use la
+  >   herramienta del distrito, **por confirmar con la Dirección Distrital**).
   >
   > **Las reglas de coherencia del instructivo las hace cumplir la base**
-  > (`trg_encounter_vaccination_valid`): dT adulto admite *edades en riesgo* y
-  > *embarazadas*; influenza, además, *puérperas*, *personal de la salud*,
-  > *enfermedades crónicas*, *privados de libertad* y *discapacidad*; HB
-  > —el HB adulto, D-195.2— *personal de la salud*, *privados de libertad*,
-  > *viviendo con VIH*, *trabajadores sexuales* y *otros*; SR y fiebre amarilla,
-  > *edades en riesgo* y *viajeros*. Con una de esas cinco el grupo es
-  > obligatorio y tiene que valer para todas las de la atención; sin ninguna, va
-  > vacío, como en el sistema del ministerio. *Embarazadas* y *puérperas* no
-  > valen para un hombre.
+  > (`trg_encounter_vaccination_valid`), dosis por dosis: dT adulto admite
+  > *edades en riesgo* y *embarazadas*; influenza, además, *puérperas*,
+  > *personal de la salud*, *enfermedades crónicas*, *privados de libertad* y
+  > *discapacidad*; HB —el HB adulto, D-195.2— *personal de la salud*,
+  > *privados de libertad*, *viviendo con VIH*, *trabajadores sexuales* y
+  > *otros*; SR y fiebre amarilla, *edades en riesgo* y *viajeros*. En una dosis
+  > de esas cinco vacunas el grupo es obligatorio; en las demás va vacío, como
+  > en el sistema del ministerio. *Embarazadas* y *puérperas* no valen para un
+  > hombre.
 - **EN-094** — CUANDO se realice una prueba de VIH, el sistema DEBERÁ registrar
   el **motivo**, la **prueba de tamizaje** y su resultado, la **prueba de
   confirmación** y su resultado, la **vía de transmisión**, la **carga viral** y
@@ -2303,6 +2323,13 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   > —«por la cual el usuario se contagió»— no se registra con la segunda prueba
   > no reactiva (`encounter_hiv_test_route_needs_infection`); con ella reactiva
   > o todavía sin resultado, sí, como el ejemplo del instructivo.
+  >
+  > **La carga viral y el CD4 se admiten con cualquier resultado**, también con
+  > la primera prueba no reactiva (D-195.11): la GPC de VIH del MSP (2019) manda
+  > carga viral «en el caso de sospecha de infección retroviral aguda, y
+  > resultado indeterminado», que es cuando la prueba rápida sale no reactiva, y
+  > en el recién nacido expuesto el diagnóstico es la carga viral; el CD4 no
+  > diagnostica y basta con no bloquearlo. **Por confirmar con un clínico.**
 - **EN-095** — El bloque de VIH DEBERÁ tener el **mismo régimen de acceso** que
   el tamizaje de violencia (EN-072), y NO DEBERÁ viajar en ningún listado, mensaje
   de error ni log.
@@ -2316,20 +2343,33 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   > **en la misma transacción** que la lectura o la escritura; las versiones
   > anteriores en `encounter_hiv_test_version`, **fuera** de `record_version`
   > (que la exportación al titular lee, como D-188 §3); y la ruta nombra la
-  > sección, no el contenido.
-- **EN-096** — El sistema DEBERÁ registrar la **prescripción de suplementos** de
-  la atención: hierro y micronutrientes en polvo, vitamina A, hierro en jarabe, y
-  hierro con ácido fólico.
-  > **Falta esquema.** Columnas 105 a 108, todas 1 sí / 2 no, con sus poblaciones
-  > (instructivo, pp. 67 y 68): micronutrientes en polvo de **6 a 24 meses**;
-  > vitamina A de **6 a 59 meses**; hierro en jarabe de **24 a 59 meses**; hierro con
-  > ácido fólico a **embarazadas y mujeres lactantes**.
+  > sección, no el contenido. Que la ruta y la bitácora digan que la atención
+  > tiene sección restringida es un **riesgo aceptado** (D-195.10): no llevan
+  > nombre ni resultado, sólo identificadores, y sólo administración las lee
+  > (A.M. 5216, art. 13).
+- **EN-096** — MIENTRAS la población de la atención lo alcance, el sistema
+  DEBERÁ registrar si se **prescribieron suplementos**: hierro, multivitaminas
+  y minerales en polvo (chispas), vitamina A, hierro en jarabe, y hierro con
+  ácido fólico, cada uno sí o no y optativo; y SI se registra uno fuera de su
+  población, ENTONCES DEBERÁ rechazarlo con `PROGRAM_BLOCK_NOT_APPLICABLE`.
+  > Columnas 105 a 108, todas 1 sí / 2 no, tabla `encounter_supplement`, con las
+  > poblaciones del instructivo (pp. 67 y 68, leídas el 09-10-2026), sobre la
+  > **edad congelada** de la atención en meses cumplidos (EN-008):
   >
-  > **No es la receta.** La receta es `prescription` y lleva dosis, vía y
-  > frecuencia; esto son cuatro casillas del reporte que dicen si se prescribió. Se
-  > registran aquí porque el ministerio las cuenta por atención, y **deberían
-  > derivarse** de la receta cuando `prescription` exista, para que no puedan
-  > contradecirla.
+  > - **Chispas** — de **6 a 24 meses**.
+  > - **Vitamina A** — de **6 a 59 meses**.
+  > - **Hierro en jarabe** — de **24 a 59 meses**.
+  > - **Hierro con ácido fólico** — mujeres **embarazadas** (el registro de la
+  >   ficha en la fecha clínica, la regla de EN-090) y **lactantes** (la
+  >   respuesta de EN-260 en la misma atención): la lactancia se pregunta una
+  >   vez y la leen los dos bloques (D-195.3, D-198.2).
+  >
+  > Fuera de su población cada casilla va vacía
+  > (`trg_encounter_supplement_applies`). **No es la receta**: la receta es
+  > `prescription` y lleva dosis, vía y frecuencia; estas cuatro casillas dicen
+  > si se prescribió, y la pantalla las **propone** desde ella (EN-262). Quien
+  > registra es quien prescribe: `record:write`. Se corrige en su sitio con la
+  > atención abierta o suspendida, versionada en `record_version` (EN-249).
 - **EN-097** — El sistema NO DEBERÁ exigir ningún bloque de programa a una
   atención cuya población no lo alcanza.
   > Es la regla general del instructivo: *«cuando la información solicitada no
@@ -2356,6 +2396,56 @@ Lo que el instructivo deja sin resolver está en **D-195**._
   > la exportación (EN-095). La guarda de estado y el rechazo del `DELETE` son
   > disparadores (`*_guard`), como el del tamizaje; tras el alta no se corrigen,
   > como el CEO-D (EN-052).
+- **EN-260** — MIENTRAS la atención sea de una **mujer de 10 a 49 años** —sexo
+  femenino y edad congelada (EN-008)—, el sistema DEBERÁ ofrecer, optativa y
+  sin exigirla, la pregunta **«¿está en período de lactancia?»** y guardarla
+  como la columna 52 de su fila; y SI se registra fuera de esa población (y
+  fuera de la del lactante, EN-092), o con las preguntas del lactante,
+  ENTONCES DEBERÁ rechazarlo con `PROGRAM_BLOCK_NOT_APPLICABLE`.
+  > D-195.3, aceptada el 09-10-2026 con la investigación: el instructivo dirige
+  > el bloque H a «usuarios menores o iguales a 8 meses de edad y madres en
+  > período de lactancia» y pide la columna 52 «cuando el profesional de salud
+  > pregunte a la madre si se encuentra o no en período de lactancia». La
+  > respuesta vive en `encounter_nutrition.mother_breastfeeding` —la misma
+  > columna 52—, con las dos preguntas del lactante vacías; de 10 a 49 años es
+  > la edad fértil del MSP. Un dato en un sitio: la lee también el hierro con
+  > ácido fólico (EN-096). Sin responder no hay fila: nada la exige (EN-097).
+- **EN-261** — CUANDO quien no tiene `record:protected` en la sede guarde las
+  vacunas de una atención que ya lleva un **HB adulto**, el sistema DEBERÁ
+  **conservar el grupo de riesgo guardado** de esa dosis si la reenvía sin
+  cambiarla —misma dosis y grupo vacío, el que se le mostró—; y SI la quita, le
+  cambia la dosis, le pone un grupo o añade un HB adulto nuevo, ENTONCES DEBERÁ
+  rechazarlo con `PROTECTED_SECTION_REQUIRED` sin tocar nada.
+  > D-195.9, aceptada el 09-10-2026. El HB adulto ya lo ve todo el que lee las
+  > vacunas —sólo su grupo, que puede decir «vive con VIH», es dato protegido
+  > (REQ-115)—, así que conservarlo no es un oráculo. Lo que se gana: enfermería
+  > registra otra vacuna en esa atención sin pedir la llave, y la pantalla le
+  > ofrece «Editar» con el HB adulto fijo. Registrar un HB adulto con grupo de
+  > riesgo sigue pidiendo la llave: que la clínica la conceda a quien vacuna con
+  > HB adulto a grupos de riesgo. Se decide bajo el bloqueo de la atención,
+  > contra la fila como está.
+- **EN-262** — CUANDO se abra la pestaña de programas, el sistema DEBERÁ
+  **proponer** cada suplemento de EN-096 que la población alcance —«Sí» si
+  una receta de la atención, emitida o en borrador, lleva un medicamento del
+  CNMB que cuenta para esa casilla, y «No» si no—, y DEBERÁ dejar que quien
+  registra lo corrija antes de guardar; la propuesta NO DEBERÁ impedir
+  registrar «Sí» sin receta.
+  > D-198.2, aceptada el 09-10-2026: propuesta Sí/No desde la receta que el
+  > médico corrige con un toque, porque el MSP entrega estos suplementos por
+  > programa, muchas veces sin la receta de la clínica. Qué cuenta para cada
+  > casilla, por código del CNMB (y forma, en el jarabe):
+  >
+  > - **Chispas** — `B03AE04` hierro, multivitaminas y minerales (polvo).
+  > - **Vitamina A** — `A11CA01` retinol, cualquier presentación.
+  > - **Hierro en jarabe** — `B03AA07` sulfato ferroso en forma líquida
+  >   (suspensión, jarabe, solución o gotas orales), no en tableta.
+  > - **Hierro con ácido fólico** — `B03AD` sales de hierro + ácido fólico.
+  >
+  > **Por confirmar con un clínico** qué presentaciones cuentan; cambiarlo es
+  > una línea de una lista (`SUPPLEMENT_MEDICINES`). No cuentan la receta
+  > anulada ni la descartada. Lo propuesto no se guarda solo: la casilla se
+  > guarda cuando quien prescribe la confirma; lo que la exportación (H9) haga
+  > con una atención sin confirmar es suyo.
 - **EN-099** — El sistema DEBERÁ registrar en **cada atención** los **grupos
   prioritarios** y los **grupos en situación de vulnerabilidad** que el paciente
   tenía ese día, hasta **tres de cada uno**.
@@ -4629,7 +4719,7 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 | `BMI_IS_DERIVED` | 422 | Se envió el IMC en la petición | EN-061 |
 | `PERMISSION_DENIED` | 403 | Se intentó **registrar** el tamizaje sin la segunda llave: el de la guarda, sin código propio que nombre el dato. Al **leer** no se rechaza: se omite | EN-072 |
 | `PERMISSION_DENIED` | 403 | Lo mismo para el bloque de VIH, con el permiso de la guarda: **no hay** `HIV_DATA_RESTRICTED`, que nombraría el dato | EN-095 |
-| `PROGRAM_BLOCK_NOT_APPLICABLE` | 422 | Se registró un bloque de programa que la población de la atención no alcanza —obstétrico sin embarazo, SIVAN fuera del rango de edad, o la pregunta del SIVAN de otro tramo—. Lo dicen el servicio y la base (`encounter_obstetric_applies`, `encounter_nutrition_applies`) | EN-090, EN-092, EN-097 |
+| `PROGRAM_BLOCK_NOT_APPLICABLE` | 422 | Se registró un bloque de programa que la población de la atención no alcanza —obstétrico sin embarazo, SIVAN fuera del rango de edad, la pregunta del SIVAN de otro tramo, la lactancia fuera de la mujer de 10 a 49 años, o un suplemento fuera de su población—. Lo dicen el servicio y la base (`encounter_obstetric_applies`, `encounter_nutrition_applies`, `encounter_supplement_applies`) | EN-090, EN-092, EN-096, EN-097, EN-260 |
 | `CONFIRMATORY_TEST_WITHOUT_SCREENING` | 422 | Segunda prueba de VIH, o vía de transmisión, sin primera reactiva. Lo dicen el servicio y la base (`encounter_hiv_test_confirmation_needs_reactive`) | EN-094 |
 | `COUNTER_REFERRAL_WITHOUT_REFERRAL` | 422 | Contrarreferencia que no responde a una referencia o derivación viva del mismo paciente. Del mapeo de constraints: `referral_thread_coherence` | EN-102 |
 | `REFERRAL_ALREADY_ANSWERED` | 409 / 422 | Una segunda contrarreferencia viva (`referral_one_live_response`, 409), o anular una referencia que ya tiene la suya (`referral_answered_cannot_be_cancelled`, 422). Del mapeo de constraints | EN-102 |
@@ -4731,7 +4821,8 @@ una.
 | ~~**SIVAN**~~ — `encounter_nutrition` | tabla nueva | EN-092 |
 | ~~**Vacunas**: catálogo, dosis, grupo de riesgo y sus reglas de coherencia~~ — `VACCINE`, `encounter_vaccination` | tablas y catálogo nuevos | EN-093 |
 | ~~**VIH**: motivo, dos pruebas, vía de transmisión, carga viral y CD4~~ — `encounter_hiv_test` | tabla nueva | EN-094 |
-| Prescripción de suplementos | `encounter` | EN-096 |
+| ~~Prescripción de suplementos~~ — `encounter_supplement` (`feat/f04-rdacaa-ajustes`) | tabla nueva | EN-096 |
+| ~~Grupo de riesgo por dosis~~ — `encounter_vaccination.doses[].riskGroup`, sin la columna `risk_group` (`feat/f04-rdacaa-ajustes`, D-195.8) | cambio de columna, sin relleno | EN-093 |
 | Catálogos de **grupos prioritarios (14)** y **grupos vulnerables (16)** del RDACAA | `catalogSystemSchema`, `catalog_concept`, tabla nueva de vulnerables | EN-099 |
 | `REVERSE_REFERRAL` en `ReferralDirection`; anulación en `ReferralStatus` | enums | EN-100, EN-107 |
 | Interconsulta solicitada / recibida | `interconsultation` | EN-103 |
@@ -4838,10 +4929,11 @@ que es global: una atención ocurre en un sitio.
 | `PATCH` | `/patients/:id/history/:historyId` | `record:write` | **EN-225** |
 | `GET` | `/patients/:id/history/:historyId/versions` | `record:read` | **EN-225** |
 | `GET` | `/encounters/:id/chart-summary` | `record:read` | EN-159 a EN-161 |
-| `GET` | `/encounters/:id/programs` | `record:read` | **EN-090**, **EN-092**, **EN-093**, **EN-097** |
+| `GET` | `/encounters/:id/programs` | `record:read` | **EN-090**, **EN-092**, **EN-093**, **EN-096**, **EN-097**, **EN-260**, **EN-262** |
 | `PUT` | `/encounters/:id/programs/obstetric` | `record:write` | **EN-090**, **EN-091**, **EN-249** |
-| `PUT` | `/encounters/:id/programs/nutrition` | `vitals:write` *(médico y enfermería, como la toma, D-195.5)* | **EN-092**, **EN-249** |
-| `PUT` | `/encounters/:id/programs/vaccination` | `vitals:write` *(D-195.5)* | **EN-093**, **EN-249** |
+| `PUT` | `/encounters/:id/programs/nutrition` | `vitals:write` *(médico y enfermería, como la toma, D-195.5)* | **EN-092**, **EN-249**, **EN-260** |
+| `PUT` | `/encounters/:id/programs/vaccination` | `vitals:write` *(D-195.5)* | **EN-093**, **EN-249**, **EN-261** |
+| `PUT` | `/encounters/:id/programs/supplements` | `record:write` *(quien prescribe)* | **EN-096**, **EN-249** |
 | `GET` | `/encounters/:id/programs/restricted` | `record:read` (+ `record:protected` en la sede para verlo; sin él, `200 {}`) | **EN-094**, **EN-095**, **EN-098** |
 | `PUT` | `/encounters/:id/programs/restricted` | `record:protected` + `record:write` | **EN-094**, **EN-095**, **EN-249** |
 | `GET` | `/encounters/:id/referrals` | `record:read` | EN-100 a EN-103 *(lo de la atención y las referencias del paciente que aún pueden responderse)* |
@@ -4976,7 +5068,8 @@ sobre pacientes inventados.
 
 ## Preguntas abiertas
 
-**Quedan dos.** Están **junto al requisito que bloquean**, que es donde bloquean
+**Quedan dos que bloquean**, más las confirmaciones de fuera de la tabla
+siguiente. Están **junto al requisito que bloquean**, que es donde bloquean
 algo, y registradas en `../../../../clinica-docs/DECISIONES-PENDIENTES.md` con su
 recomendación y sus consecuencias:
 
@@ -4984,6 +5077,17 @@ recomendación y sus consecuencias:
 | --- | --- | --- | --- |
 | **D-045** | **El formato de la exportación mensual**: RDACAA 2.0 o PRAS, y con qué layout | EN-112 | La entrega H9 entera. Bloqueante externo **#4** |
 | **D-047** | **El art. 10 identifica la HCU con la cédula y nosotros anclamos en el MRN.** Qué habría que verificar del A.M. 4934 | EN-002 | Nada. Si los 17 dígitos son obligatorios, es una fila más en `patient_identifier` |
+
+**Por confirmar fuera** (aceptadas por el autor el 09-10-2026; se construyó la
+recomendación y lo de fuera sólo puede cambiar una lista o un mapeo de H9):
+
+| # | Qué se confirma | Con quién | Dónde |
+| --- | --- | --- | --- |
+| **D-195.1** | El código con que la herramienta del distrito recibe el grupo «Embarazadas» de dT adulto e influenza | Dirección Distrital | EN-093, H9 |
+| **D-195.6** | Cómo se reporta la Tdap de la embarazada, que el formulario 2.0 no tiene; entonces, release del catálogo `VACCINE` | Dirección Distrital | EN-093 |
+| **D-195.12** | Columnas del bloque I: 55 a 73 y el grupo en la 74 (imagen) o «55 a la 70» (texto); y cuál grupo lleva la columna 74 si una atención tiene dos | Dirección Distrital, con la plantilla de carga | EN-093, H9 |
+| **D-195.11** | Que una carga viral o un CD4 con la primera prueba no reactiva es seguimiento real | Un clínico | EN-094 |
+| **D-198.2** | Qué presentaciones del CNMB cuentan para cada casilla de suplementos | Un clínico | EN-262 |
 
 **Cerradas el 20-08-2026**, y se dejan escritas para que nadie las reabra por
 inercia:
