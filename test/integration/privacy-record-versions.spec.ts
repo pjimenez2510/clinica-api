@@ -274,6 +274,8 @@ async function everyVersionedRowOf(
       procedureCode: concept.code,
       procedureDisplay: concept.display,
       performedAt: scene.encounter.startedAt,
+      recordedAt: new Date(),
+      recordedById: author.id,
     },
   });
   const allergy = await prisma.patientAllergy.create({

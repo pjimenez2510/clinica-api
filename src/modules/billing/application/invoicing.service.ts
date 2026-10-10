@@ -344,6 +344,7 @@ export class InvoicingService {
     siteId: string;
     accountId?: string;
     filter: IssuedDocumentFilter;
+    owed?: boolean;
     page: number;
     pageSize: number;
   }): Promise<{ items: InvoiceWithVoucher[]; total: number }> {

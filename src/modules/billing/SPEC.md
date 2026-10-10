@@ -351,7 +351,7 @@ de BI-155, que ya tiene su prueba de interfaz.
 
 **Por qué es P3:** una clínica puede cobrar en efectivo y cuadrar a mano una
 semana; nada clínico se rompe. Pero sin esto el saldo pendiente de un paciente
-no existe como dato. **Cubre:** BI-100 a BI-105, BI-247 a BI-255, BI-258.
+no existe como dato. **Cubre:** BI-100 a BI-105, BI-247 a BI-255, BI-258, BI-259.
 **Solo servidor:** BI-100 (ya lo entregó B7), BI-103, BI-250 y BI-253: la fecha de caja
 la pone la base, el saldo se deriva en el servidor y la pantalla lo enseña tal
 cual llega, y la carrera entre un cobro y el cierre sólo se ve con dos
@@ -380,6 +380,13 @@ no se revierte, y que el cierre no se edita y suma lo cobrado de verdad.
 > cierre, y cerrar no impide seguir cobrando —el cobro siguiente abre el turno
 > siguiente—. El conteo se rotula «sin el fondo de cambio» (D-197.1).
 > Enmienda BI-104, BI-105, BI-251 a BI-253 y BI-255; añade BI-258.
+>
+> **Cierre a ciegas y «Con saldo» (`feat/f06-caja-cierre-a-ciegas`, D-200.3 y
+> D-200.4, aceptadas el 10-10-2026).** El conteo se rotula «Efectivo contado
+> (sin el fondo de cambio)» y el esperado y la diferencia aparecen sólo al
+> salir del campo con lo contado; la pestaña deja de rotular el esperado del
+> turno. Facturas gana el conmutador «Con saldo». Enmienda BI-105 y BI-251;
+> añade BI-259. Sin esquema.
 
 ### B7 — Parametrización: qué se cambia sin desplegar _(P2)_
 
@@ -1558,10 +1565,32 @@ es falsa, hay requisitos que cambian.
   > efectivo esperado —lo cobrado con medios cuya forma de pago es `01`—, y lo
   > demás se presenta para cotejarlo con el datáfono o el banco.
   > **Sin el fondo de cambio.** El esperado no lleva el sencillo con que abre
-  > la cajera, así que la pantalla DEBERÁ rotular el conteo «Efectivo cobrado
+  > la cajera, así que la pantalla DEBERÁ rotular el conteo «Efectivo contado
   > (sin el fondo de cambio)»; si no, el cierre marcaría ese sencillo como
   > sobrante cada turno. Si la clínica deja un fondo fijo, será un valor de la
   > sede que se suma al esperado, no un dato más que teclear (D-197.1).
+  > «Contado», no «cobrado»: dice qué hacer, y «cobrado» invitaba a copiar el
+  > esperado (D-200.4, aceptada el 10-10-2026).
+
+  **A ciegas** (D-200.4): MIENTRAS quien cierra no haya escrito un importe
+  contado válido y salido del campo, la pantalla de cierre NO DEBERÁ mostrar
+  el efectivo esperado, lo cobrado con medios de forma de pago `01`, el total
+  cobrado ni la diferencia; sí las líneas de los demás medios, para cotejarlas.
+  CUANDO salga del campo con un importe válido, DEBERÁ mostrarlos en el mismo
+  diálogo, sin otro paso, y mantenerlos a la vista hasta cerrarlo; y SI pide
+  cerrar sin haberlos visto (Enter, o «Cerrar caja» directamente desde el
+  campo), DEBERÁ mostrarlos en vez de cerrar, y cerrar a la siguiente.
+  > «Require staff to count the cash total before comparing it with the
+  > expected POS amount» (Shopify). Al salir del campo y no con la primera
+  > tecla: si no, el esperado estaría a la vista antes de terminar de escribir.
+  > Recontar tras ver la diferencia es legítimo; lo que se registra es lo que
+  > se confirma.
+  > **No es un conteo sellado.** La pestaña no escribe lo cobrado en efectivo
+  > ni el total (BI-251), pero sigue listando los cobros del turno, porque
+  > desde ahí se revierten, y quien los sume sabe el esperado; lo que se evita
+  > es que el número a teclear esté escrito en la pantalla junto al conteo. Un
+  > conteo sellado pediría quitar esa lista y que la API no sirviera el
+  > esperado antes del cierre, y BI-255 lo necesita: fuera de esta entrega.
 - **BI-247** — CUANDO caja emita una factura indicando que se cobró —la opción
   que el diálogo trae marcada—, el sistema DEBERÁ registrar **en la misma
   transacción** un cobro por el total con el medio elegido; SI indica que no se
@@ -1592,7 +1621,10 @@ es falsa, hay requisitos que cambian.
   abierto** en la sede: sus cobros aún sin cerrar, los revertidos aparte; el
   total por medio de pago; el efectivo esperado; lo que facturó desde su
   último cierre y sigue sin cobrar; y el instante de ese último cierre, o
-  ninguno. DEBERÁ permitirle revertir un cobro **suyo** del turno abierto con
+  ninguno. La pantalla NO DEBERÁ mostrar del turno abierto el efectivo
+  esperado, lo cobrado con medios de forma de pago `01` ni el total cobrado
+  —que lo delataría por resta—: la línea del efectivo dice «Se cuenta al
+  cerrar», y lo demás se ve al cerrar, tras contar (BI-105). DEBERÁ permitirle revertir un cobro **suyo** del turno abierto con
   motivo, y SI el cobro es de otra persona o de otra sede, DEBERÁ responder
   `PAYMENT_NOT_FOUND`.
 - **BI-252** — CUANDO caja cierre su turno, el sistema DEBERÁ guardar la foto
@@ -1642,6 +1674,17 @@ es falsa, hay requisitos que cambian.
   DEBERÁ mostrarlos bajo el turno abierto, hoy de entrada.
   > Es donde se ve que la mañana cuadró y la tarde no. El cierre anterior es
   > «desde cuándo» del turno, derivado y no guardado: un dato en un solo sitio.
+- **BI-259** — CUANDO alguien con `billing:read` en la sede pida sus facturas
+  «con saldo», el sistema DEBERÁ devolver sólo las que no son borrador ni
+  están anuladas y cuyo saldo (BI-103) es mayor que cero, con los demás
+  filtros y la paginación de BI-233 y el total ya filtrado; y la pantalla
+  DEBERÁ ofrecerlo como el conmutador «Con saldo» de la lista de Facturas,
+  guardado en la dirección, que al encenderse abre las fechas a cualquier día.
+  > D-200.3 (aceptada el 10-10-2026): lo que se le debe a caja va en Facturas,
+  > donde se cobra, y no en «Caja», donde crecería sin fin con los convenios
+  > que pagan a 30 días. El turno sigue contando sólo lo suyo (BI-251).
+  > Una factura a favor del paciente (saldo negativo) no tiene saldo por
+  > cobrar: no sale.
 
 ## 12. El tarifario que se exhibe al público
 
@@ -2921,7 +2964,7 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}/repricing` | `billing:read` | `param:siteId` | BI-198 |
 | `POST` | `/billing/sites/{siteId}/accounts/{accountId}/charges/{chargeId}/discount` | `billing:write` | `param:siteId` | BI-060 a BI-066, BI-244, BI-246 |
 | `GET` | `/billing/sites/{siteId}/accounts/{accountId}/discount-policy` | `billing:write` | `param:siteId` | BI-062, BI-245 |
-| `GET` | `/billing/sites/{siteId}/invoices` | `billing:read` | `param:siteId` | BI-133, BI-135, BI-233 |
+| `GET` | `/billing/sites/{siteId}/invoices` | `billing:read` | `param:siteId` | BI-133, BI-135, BI-233, BI-259 |
 | `GET` | `/billing/sites/{siteId}/invoices/{invoiceId}` | `billing:read` | `param:siteId` | BI-135 |
 | `POST` | `/billing/sites/{siteId}/invoices` | `billing:write` | `param:siteId` | BI-080 a BI-089, BI-247 |
 | `POST` | `/billing/sites/{siteId}/invoices/{invoiceId}/void` | `invoice:void` | `param:siteId` | BI-092, BI-093, BI-096 |
@@ -3015,7 +3058,7 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | BI-085 | Integración contra PostgreSQL real con dos clientes concurrentes: es SC-023, y el hueco en la numeración solo aparece bajo concurrencia |
 | BI-088, BI-096 | Integración contra PostgreSQL real: se factura, se anula y se vuelve a facturar el mismo cargo; y con nota de crédito, no |
 | BI-091 a BI-095, BI-097 | Unitario de dominio con reloj fijado (los plazos) + contrato HTTP |
-| BI-100 a BI-105, BI-247 a BI-255, BI-258 | Unitario de dominio + integración contra PostgreSQL real: el tope del saldo, la reversión única, el `DELETE`, el cobro cerrado y la foto del cierre **por SQL directo** con control positivo; la fecha de caja con un instante de la noche de Guayaquil; dos clientes a la vez para BI-101 y BI-253; dos cierres el mismo día por HTTP |
+| BI-100 a BI-105, BI-247 a BI-255, BI-258, BI-259 | Unitario de dominio + integración contra PostgreSQL real: el tope del saldo, la reversión única, el `DELETE`, el cobro cerrado y la foto del cierre **por SQL directo** con control positivo; la fecha de caja con un instante de la noche de Guayaquil; dos clientes a la vez para BI-101 y BI-253; dos cierres el mismo día por HTTP; el filtro «con saldo» contra PostgreSQL con una cobrada, una acreditada del todo y una anulada como controles, y una con el cobro revertido y otra con un abono, dentro |
 | BI-110 a BI-115 | Seguridad dirigida **sin credenciales** + contrato HTTP: la ruta pública responde sin sesión, y ningún parámetro la desvía a otra lista de precios |
 | BI-130 a BI-135 | Seguridad dirigida + la prueba de rutas que recorre las que NestJS registró de verdad |
 | BI-140 a BI-147 | Integración + contrato HTTP por campo; BI-142 y BI-144 contra PostgreSQL real con control positivo |

@@ -38,7 +38,13 @@ async function anAttention(prisma: PrismaClient) {
   // D-199.4. The attention's own professional: who informs by default, and
   // an account like any other for the rest of the rows.
   const user = { id: practitioner.userId };
-  return { encounter, user, site, practitioner };
+  // EN-247. Who records the procedures of these scenes (`recorded_by_id`).
+  return {
+    encounter: { ...encounter, recorderId: practitioner.userId },
+    user,
+    site,
+    practitioner,
+  };
 }
 
 /** A tariff concept, and — when `marked` — a service that demands the 024. */
@@ -71,11 +77,13 @@ async function aConcept(
 }
 
 function procedureData(
-  encounter: { id: string; startedAt: Date },
+  encounter: { id: string; startedAt: Date; recorderId: string },
   concept: { id: string; code: string; display: string },
 ): Prisma.EncounterProcedureUncheckedCreateInput {
   return {
     encounterId: encounter.id,
+    recordedAt: new Date(),
+    recordedById: encounter.recorderId,
     conceptId: concept.id,
     procedureCode: concept.code,
     procedureDisplay: concept.display,
@@ -247,9 +255,11 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
         INSERT INTO encounter_procedure_retraction
           (id, encounter_id, concept_id, procedure_code, procedure_display,
            quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+           recorded_at, recorded_by_id,
            retracted_at, retracted_by_id, reason)
         SELECT id, encounter_id, concept_id, procedure_code, procedure_display,
                quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+               recorded_at, recorded_by_id,
                ${new Date()}, ${user.id}::uuid, 'Registrado por error'
           FROM encounter_procedure WHERE id = ${original.id}::uuid`;
       await tx.encounterProcedure.delete({ where: { id: original.id } });
@@ -504,9 +514,11 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
         INSERT INTO encounter_procedure_retraction
           (id, encounter_id, concept_id, procedure_code, procedure_display,
            quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+           recorded_at, recorded_by_id,
            retracted_at, retracted_by_id, reason)
         SELECT id, encounter_id, concept_id, procedure_code, procedure_display,
                quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+               recorded_at, recorded_by_id,
                ${new Date()}, ${user.id}::uuid, 'Registrado por error'
           FROM encounter_procedure WHERE id = ${original.id}::uuid`;
       await tx.encounterProcedure.delete({ where: { id: original.id } });

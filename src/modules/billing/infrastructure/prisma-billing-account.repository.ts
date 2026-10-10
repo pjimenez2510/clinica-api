@@ -1205,13 +1205,27 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
     siteId: string;
     accountId?: string;
     filter: IssuedDocumentFilter;
+    owed?: boolean;
     page: number;
     pageSize: number;
   }): Promise<{ items: InvoiceView[]; total: number }> {
+    const issued = issuedDocumentWhere(query.filter);
     const where: Prisma.InvoiceWhereInput = {
       siteId: query.siteId,
       accountId: query.accountId,
-      ...issuedDocumentWhere(query.filter),
+      ...issued,
+      ...(query.owed
+        ? {
+            id: {
+              in: await this.owedInvoiceIds({
+                siteId: query.siteId,
+                accountId: query.accountId ?? null,
+                issuedFrom: issued.issuedAt?.gte ?? null,
+                issuedBefore: issued.issuedAt?.lt ?? null,
+              }),
+            },
+          }
+        : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.invoice.findMany({
@@ -1230,6 +1244,40 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       this.prisma.invoice.count({ where }),
     ]);
     return { items: rows.map(toInvoiceView), total };
+  }
+
+  /**
+   * BI-259. The site's invoices still owed: the balance derived as BI-103
+   * asks —and as `pendingOf` and the patient's balance derive it—, never
+   * stored. A credited-in-excess one (money in the patient's favour) is not
+   * owed. The ids go back into the paged query, so the other filters, the
+   * order and the count stay the ones of BI-233.
+   *
+   * Bounded by the account and the days asked for, so only «Con saldo» of
+   * every day reads all the site's owed ones: what a clinic is owed at once
+   * (hundreds), far below what one `IN` carries.
+   */
+  private async owedInvoiceIds(bounds: {
+    siteId: string;
+    accountId: string | null;
+    issuedFrom: Date | null;
+    issuedBefore: Date | null;
+  }): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT i."id"
+        FROM "invoice" i
+       WHERE i."site_id" = ${bounds.siteId}::uuid
+         AND (${bounds.accountId}::uuid IS NULL OR i."account_id" = ${bounds.accountId}::uuid)
+         AND (${bounds.issuedFrom}::timestamptz IS NULL OR i."issued_at" >= ${bounds.issuedFrom}::timestamptz)
+         AND (${bounds.issuedBefore}::timestamptz IS NULL OR i."issued_at" < ${bounds.issuedBefore}::timestamptz)
+         AND i."status" NOT IN ('DRAFT', 'VOIDED')
+         AND i."total"
+             - COALESCE((SELECT SUM(c."amount") FROM "credit_note" c
+                          WHERE c."invoice_id" = i."id" AND c."status" <> 'REJECTED'), 0)
+             - COALESCE((SELECT SUM(p."amount") FROM "payment" p
+                          WHERE p."invoice_id" = i."id" AND p."reversed_at" IS NULL), 0)
+             > 0`;
+    return rows.map((row) => row.id);
   }
 }
 

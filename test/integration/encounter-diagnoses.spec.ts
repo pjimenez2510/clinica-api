@@ -12,6 +12,7 @@ import {
   createPatient,
   createPractitioner,
   createSite,
+  createUser,
 } from './setup/fixtures';
 
 /**
@@ -569,6 +570,7 @@ describe('los procedimientos de la atención', () => {
 
     const procedure = await codingOf(prisma).addProcedure({
       encounterId: encounter.id,
+      recordedById: (await createUser(prisma)).id,
       conceptId: service.id,
       quantity: 2,
       sites: [...sites],
@@ -591,6 +593,7 @@ describe('los procedimientos de la atención', () => {
     await expect(
       codingOf(prisma).addProcedure({
         encounterId: encounter.id,
+        recordedById: (await createUser(prisma)).id,
         conceptId: diagnosisConcept.id,
         quantity: 1,
         sites: [...sites],
@@ -624,6 +627,7 @@ describe('los procedimientos de la atención', () => {
 
     const procedure = await codingOf(prisma).addProcedure({
       encounterId: encounter.id,
+      recordedById: (await createUser(prisma)).id,
       conceptId: service.id,
       quantity: 1,
       sites: [...sites],
@@ -656,6 +660,7 @@ describe('los procedimientos de la atención', () => {
     const performedAt = new Date('2026-08-14T15:20:00Z');
     const procedure = await codingOf(prisma).addProcedure({
       encounterId: encounter.id,
+      recordedById: (await createUser(prisma)).id,
       conceptId: service.id,
       quantity: 1,
       performedAt,
@@ -688,6 +693,7 @@ describe('los procedimientos de la atención', () => {
 
     const procedure = await codingOf(prisma).addProcedure({
       encounterId: encounter.id,
+      recordedById: (await createUser(prisma)).id,
       conceptId: service.id,
       quantity: 1,
       sites: [...sites],

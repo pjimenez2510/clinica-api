@@ -69,6 +69,7 @@ import type {
   ProcedureRestoration,
   ProcedureRetraction,
   ProcedureVersionView,
+  ProcedureLateEntry,
   ProcedureView,
   RecordedProcedureView,
   RetractedProcedureView,
@@ -174,6 +175,10 @@ const PROCEDURE_SELECT = {
   performedAt: true,
   note: true,
   editedAt: true,
+  // EN-247 (D-201). Whether it is a late entry, and whose.
+  recordedAt: true,
+  recordedBy: { select: { id: true, firstName: true, lastName: true } },
+  encounter: { select: { endedAt: true } },
 } satisfies Prisma.EncounterProcedureSelect;
 
 /** The row `PROCEDURE_SELECT` yields — without `tariffAmount`, because the select omits it. */
@@ -899,7 +904,6 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
    * `encounter_procedure_consent_required` sees both at the commit.
    */
   async addProcedure(procedure: NewProcedure): Promise<RecordedProcedureView> {
-    const now = new Date();
     const row = await this.prisma.$transaction(async (tx) => {
       // EN-247 (D-194.1). After the discharge too, by whoever may correct
       // then (D-117.13), never once reported (D-117.16).
@@ -909,6 +913,9 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         procedure.sites,
         acceptsDiagnosisCorrection,
       );
+      // Read AFTER the attention's lock: a write that waited for a discharge
+      // is typed after it, and says so (`recorded_at`, D-201, BI-242).
+      const now = new Date();
       await refuseCorrection(
         tx,
         procedure.encounterId,
@@ -975,6 +982,8 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           performedAt: procedure.performedAt ?? now,
           // BI-242. When it was typed, which caja compares to its close.
           recordedAt: now,
+          // EN-247 (D-201). And by whom: a late entry names its author.
+          recordedById: procedure.recordedById,
           note: procedure.note,
           /**
            * ⚠️ `tariffAmount` IS ABSENT AND STAYS ABSENT (EN-051, D-049). What
@@ -1020,6 +1029,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
     return rows.map((row) => ({
       ...toProcedureView(row),
       consent: consents.get(row.id) ?? null,
+      lateEntry: lateEntryOf(row),
     }));
   }
 
@@ -1034,7 +1044,11 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
   /** One live procedure with the 024 that covers it. */
   private async withConsent(row: ProcedureRow): Promise<RecordedProcedureView> {
     const consents = await consentsByProcedure(this.prisma, row.encounterId, [row]); // prettier-ignore
-    return { ...toProcedureView(row), consent: consents.get(row.id) ?? null };
+    return {
+      ...toProcedureView(row),
+      consent: consents.get(row.id) ?? null,
+      lateEntry: lateEntryOf(row),
+    };
   }
 
   /**
@@ -1222,10 +1236,12 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           ("id", "encounter_id", "concept_id", "procedure_code",
            "procedure_display", "quantity", "performed_at", "note",
            "tariff_amount", "edited_by_id", "edited_at",
+           "recorded_at", "recorded_by_id",
            "retracted_at", "retracted_by_id", "reason")
         SELECT "id", "encounter_id", "concept_id", "procedure_code",
                "procedure_display", "quantity", "performed_at", "note",
                "tariff_amount", "edited_by_id", "edited_at",
+               "recorded_at", "recorded_by_id",
                ${now}, ${retraction.retractedById}::uuid, ${retraction.reason}
           FROM "encounter_procedure"
          WHERE "id" = ${retraction.procedureId}::uuid
@@ -1277,6 +1293,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           performedAt: archived.performedAt,
           // Restoring is recording again (EN-246): caja sees it as new.
           recordedAt: now,
+          recordedById: restoration.restoredById,
           note: archived.note,
           // EN-051: carried back untouched, never read nor served.
           tariffAmount: archived.tariffAmount,
@@ -1676,6 +1693,27 @@ function toProcedureView(row: ProcedureRow): ProcedureView {
     performedAt: row.performedAt,
     note: row.note,
     editedAt: row.editedAt,
+  };
+}
+
+/**
+ * EN-247 (D-201). Recorded after the attention ended: the late entry, with
+ * when it was typed and by whom. Before `recorded_at` existed nothing is
+ * known, and nothing is said.
+ */
+function lateEntryOf(row: ProcedureRow): ProcedureLateEntry | null {
+  const endedAt = row.encounter.endedAt;
+  if (row.recordedAt === null || endedAt === null) return null;
+  if (row.recordedAt <= endedAt) return null;
+  return {
+    recordedAt: row.recordedAt,
+    recordedBy:
+      row.recordedBy === null
+        ? null
+        : {
+            id: row.recordedBy.id,
+            name: `${row.recordedBy.firstName} ${row.recordedBy.lastName}`,
+          },
   };
 }
 

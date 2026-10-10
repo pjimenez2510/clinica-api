@@ -178,6 +178,7 @@ class FakeCoding implements ClinicalCodingRepository {
       note: procedure.note ?? null,
       editedAt: null,
       consent: null,
+      lateEntry: null,
     };
     this.procedures.push(view);
     return Promise.resolve(view);

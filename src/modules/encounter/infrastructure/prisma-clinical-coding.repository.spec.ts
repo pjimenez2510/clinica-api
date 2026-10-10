@@ -138,6 +138,9 @@ function prismaDouble(options: {
           quantity: data.quantity,
           performedAt: data.performedAt ?? new Date('2026-08-14T15:00:00Z'),
           note: data.note ?? null,
+          recordedAt: data.recordedAt,
+          recordedBy: null,
+          encounter: { endedAt: null },
         });
       },
     },
@@ -357,6 +360,7 @@ describe('el adaptador del bloque K', () => {
       prisma,
     ).addProcedure({
       encounterId: ENCOUNTER,
+      recordedById: 'user-1',
       conceptId: CONCEPT,
       quantity: 2,
       sites: [SITE],
@@ -378,6 +382,7 @@ describe('el adaptador del bloque K', () => {
     await expect(
       new PrismaClinicalCodingRepository(prisma).addProcedure({
         encounterId: ENCOUNTER,
+        recordedById: 'user-1',
         conceptId: CONCEPT,
         quantity: 1,
         sites: [SITE],
@@ -407,6 +412,7 @@ describe('el adaptador del bloque K', () => {
 
     await new PrismaClinicalCodingRepository(prisma).addProcedure({
       encounterId: ENCOUNTER,
+      recordedById: 'user-1',
       conceptId: CONCEPT,
       quantity: 1,
       sites: [SITE],

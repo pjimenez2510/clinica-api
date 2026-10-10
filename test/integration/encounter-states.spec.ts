@@ -1405,9 +1405,11 @@ describe('escribir un diagnóstico o un procedimiento se serializa con anular e 
     const prisma = db();
     const { ids, encounter } = await anAttendedAppointment(prisma);
     const conceptId = await aConcept(prisma, 'TARIFF', encounter.startedAt);
+    const recorder = await createUser(prisma);
     const procedure = (encounterId: string, siteId: string) => () =>
       coding(prisma).addProcedure({
         encounterId,
+        recordedById: recorder.id,
         conceptId,
         quantity: 1,
         sites: [siteId],

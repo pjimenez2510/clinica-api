@@ -52,6 +52,12 @@ export interface ProgramBlocksRepository {
    * this attention — the database's own `encounter_is_lactating`.
    */
   isLactating(encounterId: string): Promise<boolean>;
+  /**
+   * EN-260 (D-202.1). The chart has a PREGNANT record that ended three
+   * calendar months or less before the clinical date — the database's own
+   * `encounter_is_postpartum`.
+   */
+  isPostpartum(encounterId: string): Promise<boolean>;
 
   /**
    * EN-262. The lines of the attention's prescriptions that are not annulled

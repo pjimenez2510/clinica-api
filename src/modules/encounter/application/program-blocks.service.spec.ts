@@ -76,6 +76,10 @@ class FakeBlocks implements ProgramBlocksRepository {
   isLactating() {
     return Promise.resolve(this.lactating);
   }
+  postpartum = false;
+  isPostpartum() {
+    return Promise.resolve(this.postpartum);
+  }
   prescribedMedicines() {
     return Promise.resolve(this.medicines);
   }
@@ -209,6 +213,18 @@ describe('ProgramBlocksService (EN-090 a EN-093)', () => {
     blocks.sex = 'MALE';
     expect((await service.programsOf('encounter-1', requester, () => true)).nutrition.band).toBeNull(); // prettier-ignore
     await expect(service.recordNutrition('encounter-1', own, requester)).rejects.toBeInstanceOf(ProgramBlockNotApplicableError); // prettier-ignore
+  });
+
+  it('EN-260 a la puérpera de 52 años se le ofrece su lactancia; sin el embarazo terminado, no', async () => {
+    encounter = anEncounter({ ageYears: 52, ageMonths: 4 });
+    const own = { motherBreastfeeding: true, exclusiveBreastfeeding: null, complementaryFeeding: null }; // prettier-ignore
+    expect((await service.programsOf('encounter-1', requester, () => true)).nutrition.band).toBeNull(); // prettier-ignore
+    await expect(service.recordNutrition('encounter-1', own, requester)).rejects.toBeInstanceOf(ProgramBlockNotApplicableError); // prettier-ignore
+
+    blocks.postpartum = true;
+    expect((await service.programsOf('encounter-1', requester, () => true)).nutrition.band).toBe('LACTATING_AGE_WOMAN'); // prettier-ignore
+    await service.recordNutrition('encounter-1', own, requester);
+    expect(blocks.nutrition).toMatchObject(own);
   });
 
   it('EN-262 propone los suplementos de la población desde la receta, y EN-096 rechaza el de otra población', async () => {
