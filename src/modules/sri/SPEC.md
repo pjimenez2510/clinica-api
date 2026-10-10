@@ -685,7 +685,8 @@ XML; el estado de la entrega y el correo de la factura no cambian.
   reenvió.
   > La dirección no se guarda en el comprobante: el receptor de una factura
   > autorizada no se edita (BI-084). Que llegue a la ficha lo compone la
-  > pantalla (BI-272, PA-075). Tampoco va a la bitácora: es un dato personal y
+  > pantalla (BI-272, PA-075). A la bitácora va quién lo reenvió (`EXPORT`),
+  > no la dirección: es un dato personal y
   > `access_audit` no admite valores de este recurso (PA-031).
 - **SRI-096** — SI el comprobante no está autorizado ENTONCES el sistema
   DEBERÁ rechazar el reenvío con `SRI_VOUCHER_NOT_AUTHORISED`; SI está fuera
@@ -777,15 +778,15 @@ XML; el estado de la entrega y el correo de la factura no cambian.
 
 ## 8. Códigos de error nuevos
 
-| Código                      | Categoría | Cuándo                                                                                       |
-| --------------------------- | --------- | -------------------------------------------------------------------------------------------- |
-| `SRI_VOUCHER_NOT_FOUND`     | 404       | SRI-065. No existe o es de una sede fuera del alcance. **Uno solo para las dos**             |
-| `SRI_VOUCHER_NOT_RETRIABLE` | 409       | SRI-058. Solo se reintenta lo devuelto o no autorizado: lo demás ya está en manos de la cola |
-| `SRI_CERTIFICATE_INVALID`   | 422       | SRI-081. No es PKCS#12 con clave RSA, o la clave no lo abre                                  |
-| `SRI_CERTIFICATE_EXPIRED`   | 422       | SRI-033. Ya caducó, o todavía no es válido                                                   |
-| `SRI_CERTIFICATE_TOO_LARGE` | 422       | SRI-083                                                                                      |
-| `SRI_VOUCHER_NOT_AUTHORISED` | 409     | SRI-096. Sólo se reenvía por correo lo que el SRI autorizó                                   |
-| `SRI_RESEND_FAILED`         | 502       | SRI-096. El servidor de correo no aceptó el reenvío; no se reintenta                         |
+| Código                       | Categoría | Cuándo                                                                                       |
+| ---------------------------- | --------- | -------------------------------------------------------------------------------------------- |
+| `SRI_VOUCHER_NOT_FOUND`      | 404       | SRI-065. No existe o es de una sede fuera del alcance. **Uno solo para las dos**             |
+| `SRI_VOUCHER_NOT_RETRIABLE`  | 409       | SRI-058. Solo se reintenta lo devuelto o no autorizado: lo demás ya está en manos de la cola |
+| `SRI_CERTIFICATE_INVALID`    | 422       | SRI-081. No es PKCS#12 con clave RSA, o la clave no lo abre                                  |
+| `SRI_CERTIFICATE_EXPIRED`    | 422       | SRI-033. Ya caducó, o todavía no es válido                                                   |
+| `SRI_CERTIFICATE_TOO_LARGE`  | 422       | SRI-083                                                                                      |
+| `SRI_VOUCHER_NOT_AUTHORISED` | 409       | SRI-096. Sólo se reenvía por correo lo que el SRI autorizó                                   |
+| `SRI_RESEND_FAILED`          | 503       | SRI-096. El servidor de correo no aceptó el reenvío; no va a la cola                         |
 
 ## 9. La conexión real, que hace el autor
 
@@ -812,17 +813,17 @@ el autor quiera hacerlo:
 
 ## 10. Niveles de prueba
 
-| Requisito                                              | Nivel                                                                                                     |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| SRI-001 a SRI-004, SRI-010, SRI-011, SRI-013 a SRI-018 | Unitarias sobre el dominio: la clave y el XML son funciones puras; el XML se valida contra el XSD oficial |
-| SRI-005 a SRI-009, SRI-012, SRI-027, SRI-034, SRI-051  | **Integración contra PostgreSQL real, por SQL directo**, con control positivo                             |
-| SRI-020, SRI-021, SRI-031                              | Unitarias con un `.p12` que genera la prueba; la firma se **verifica** criptográficamente                 |
-| SRI-022 a SRI-026, SRI-028 a SRI-030, SRI-033          | Unitarias del servicio con puertos falsos e integración del repositorio                                   |
-| SRI-040 a SRI-059                                      | Integración: pg-boss real, PostgreSQL real y el doble del SRI por HTTP                                    |
-| SRI-060 a SRI-069, SRI-080 a SRI-084                   | Integración por HTTP (permiso, alcance, contrato) y e2e de la interfaz                                    |
-| SRI-070 a SRI-076, SRI-091                             | Unitarias sobre los bytes del RIDE; integración con un `Mailer` falso y e2e con Mailpit                   |
+| Requisito                                              | Nivel                                                                                                                                                                                                        |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| SRI-001 a SRI-004, SRI-010, SRI-011, SRI-013 a SRI-018 | Unitarias sobre el dominio: la clave y el XML son funciones puras; el XML se valida contra el XSD oficial                                                                                                    |
+| SRI-005 a SRI-009, SRI-012, SRI-027, SRI-034, SRI-051  | **Integración contra PostgreSQL real, por SQL directo**, con control positivo                                                                                                                                |
+| SRI-020, SRI-021, SRI-031                              | Unitarias con un `.p12` que genera la prueba; la firma se **verifica** criptográficamente                                                                                                                    |
+| SRI-022 a SRI-026, SRI-028 a SRI-030, SRI-033          | Unitarias del servicio con puertos falsos e integración del repositorio                                                                                                                                      |
+| SRI-040 a SRI-059                                      | Integración: pg-boss real, PostgreSQL real y el doble del SRI por HTTP                                                                                                                                       |
+| SRI-060 a SRI-069, SRI-080 a SRI-084                   | Integración por HTTP (permiso, alcance, contrato) y e2e de la interfaz                                                                                                                                       |
+| SRI-070 a SRI-076, SRI-091                             | Unitarias sobre los bytes del RIDE; integración con un `Mailer` falso y e2e con Mailpit                                                                                                                      |
 | SRI-095, SRI-096                                       | Integración por HTTP con PostgreSQL real y un `Mailer` que captura: adjuntos, la entrega y el correo de la factura sin cambiar, la fila de bitácora; el no autorizado, el de otra sede y el correo que falla |
-| SRI-085 a SRI-090                                      | Unitarias del XML contra el XSD oficial y de la firma; integración contra PostgreSQL (SRI-086 por SQL directo) y el doble del SRI; e2e del recorrido de caja |
+| SRI-085 a SRI-090                                      | Unitarias del XML contra el XSD oficial y de la firma; integración contra PostgreSQL (SRI-086 por SQL directo) y el doble del SRI; e2e del recorrido de caja                                                 |
 
 ## 11. Preguntas abiertas
 

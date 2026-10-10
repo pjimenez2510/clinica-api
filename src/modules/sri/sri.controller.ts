@@ -32,6 +32,7 @@ import type { CertificateSummary } from './domain/electronic-voucher.repository'
 import { ElectronicVoucherNotFoundError } from './domain/sri.errors';
 import {
   CertificateDto,
+  ResendVoucherDto,
   SriMonitorDto,
   SriTransportFailureDto,
   UploadCertificateDto,
@@ -120,6 +121,27 @@ export class SriVouchersController {
   ): Promise<void> {
     await this.monitorService.retry(
       voucherId,
+      this.requester(req, 'billing:write'),
+    );
+  }
+
+  /** SRI-095, SRI-096. A copy to another address; the voucher does not move. */
+  @Post(':voucherId/resend')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermission('billing:write', 'query')
+  @ApiOperation({
+    summary:
+      'Reenviar por correo el RIDE y el XML de un comprobante autorizado a otra dirección',
+  })
+  @ApiNoContentResponse()
+  async resend(
+    @Param('voucherId', ParseUUIDPipe) voucherId: string,
+    @Body() dto: ResendVoucherDto,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.monitorService.resendTo(
+      voucherId,
+      dto.email,
       this.requester(req, 'billing:write'),
     );
   }
