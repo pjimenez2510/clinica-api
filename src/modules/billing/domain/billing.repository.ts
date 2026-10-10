@@ -1,7 +1,7 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type { ChargeStatus, DocumentTotals } from './charge';
 import type { ChargeOrigin, ServiceMatch } from './charge-proposal';
-import type { InvoiceReceiver, InvoiceStatus, PaymentMethod } from './invoice';
+import type { FrequentBuyer, InvoiceReceiver, InvoiceStatus, PaymentMethod } from './invoice'; // prettier-ignore
 import type { Money, Percentage, Quantity } from './money';
 import type { PatientIdentity } from './patient-identity';
 import type { PriceChange, PriceRow, ValidityPeriod } from './price-list';
@@ -551,6 +551,8 @@ export interface AccountPatientIdentification {
   identifierValue: string | null;
   /** Filing order, as it is printed: «Guamán Andrade, María José». */
   fullName: string;
+  /** BI-270. The living chart's e-mail, offered and never applied. */
+  email: string | null;
 }
 
 /**
@@ -841,6 +843,18 @@ export interface BillingAccountRepository {
 
   /** BI-082. */
   findAccountPatient(accountId: string): Promise<AccountPatientIdentification | null>; // prettier-ignore
+
+  /**
+   * BI-271. The receivers of the ISSUED or AUTHORISED invoices of this chart
+   * and the charts merged into it, at THIS site and not to Consumidor Final,
+   * newest first, at most `limit`. Distinct buyers are the domain's call
+   * (`frequentBuyers`); this only reads.
+   */
+  recentInvoiceReceivers(query: {
+    chartId: string;
+    siteId: string;
+    limit: number;
+  }): Promise<FrequentBuyer[]>;
 
   /**
    * BI-085. The emission point of THIS site, or `null`.

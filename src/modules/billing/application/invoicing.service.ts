@@ -19,6 +19,7 @@ import {
 import {
   BILLING_ACCOUNT_REPOSITORY,
   BILLING_CATALOGUE_REPOSITORY,
+  type AccountPatientIdentification,
   type AccountView,
   type BillingAccountRepository,
   type BillingCatalogueRepository,
@@ -39,15 +40,33 @@ import {
 } from '../domain/billing.errors';
 import {
   type BuyerIdentificationType,
+  type FrequentBuyer,
   type PaymentMethod,
   type ReceiverContext,
   type ReceiverRequest,
+  frequentBuyers,
   proposeReceiver,
   resolveReceiver,
 } from '../domain/invoice';
 import type { Requester } from './service-catalogue.service';
 
 const INVOICE_RESOURCE_TYPE = 'invoice';
+
+/**
+ * BI-271. Invoices read to find five distinct buyers. A family that always
+ * pays the same way repeats one buyer on every invoice; fifty rows cover years
+ * of that without reading a patient's whole history.
+ */
+const RECEIVERS_READ_FOR_FREQUENT_BUYERS = 50;
+
+/** BI-082, BI-270, BI-271. What «Emitir factura» is offered, never applied. */
+export interface ReceiverProposal {
+  receiver: ReceiverRequest;
+  /** The LIVING chart, which is the one its contact is corrected on (PA-075). */
+  patientId: string | null;
+  email: string | null;
+  frequentBuyers: FrequentBuyer[];
+}
 
 import { Money } from '../domain/money';
 /**
@@ -334,9 +353,36 @@ export class InvoicingService {
   async proposedReceiver(query: {
     accountId: string;
     siteId: string;
-  }): Promise<ReceiverRequest> {
+  }): Promise<ReceiverProposal> {
     const account = await this.requireAccount(query);
-    return proposeReceiver(await this.receiverContext(account));
+    const patient = await this.accounts.findAccountPatient(account.id);
+    const receiver = proposeReceiver(
+      await this.receiverContext(account, patient),
+    );
+    if (patient === null) {
+      return { receiver, patientId: null, email: null, frequentBuyers: [] };
+    }
+
+    /**
+     * BI-270, BI-271 (D-205 §4). The chart's e-mail and the buyers who already
+     * paid for this patient HERE, so caja picks instead of typing. Read with
+     * room to spare —one buyer can hold many invoices— and made distinct by
+     * the domain.
+     */
+    const receivers = await this.accounts.recentInvoiceReceivers({
+      chartId: patient.patientId,
+      siteId: query.siteId,
+      limit: RECEIVERS_READ_FOR_FREQUENT_BUYERS,
+    });
+    return {
+      receiver,
+      patientId: patient.patientId,
+      email: patient.email,
+      frequentBuyers: frequentBuyers(
+        receivers,
+        receiver.identification ?? null,
+      ),
+    };
   }
 
   /** BI-133, BI-135, BI-233. */
@@ -393,8 +439,12 @@ export class InvoicingService {
    */
   private async receiverContext(
     account: AccountView,
+    known?: AccountPatientIdentification | null,
   ): Promise<ReceiverContext> {
-    const patient = await this.accounts.findAccountPatient(account.id);
+    const patient =
+      known === undefined
+        ? await this.accounts.findAccountPatient(account.id)
+        : known;
     const payer = await this.catalogue.findPayer(account.payerId);
 
     return {

@@ -1004,6 +1004,19 @@ const receiverProposalSchema = z.object({
   identificationType: z.enum(BUYER_IDENTIFICATION_TYPES).nullable(),
   identification: z.string().nullable(),
   name: z.string().nullable(),
+  /** BI-270. The living chart whose contact «Actualizar la ficha» corrects. */
+  patientId: z.uuid().nullable(),
+  /** BI-270. The chart's e-mail, offered and never applied by the server. */
+  email: z.string().nullable(),
+  /** BI-271. Who already paid for this patient at this site, newest first. */
+  frequentBuyers: z.array(
+    z.object({
+      identificationType: z.enum(BUYER_IDENTIFICATION_TYPES),
+      identification: z.string(),
+      name: z.string(),
+      email: z.string().nullable(),
+    }),
+  ),
 });
 /** Response of GET …/accounts/:accountId/invoice-receiver. The inferred type below is what the controller returns. */
 export class ReceiverProposalDto extends createZodDto(receiverProposalSchema) {}
