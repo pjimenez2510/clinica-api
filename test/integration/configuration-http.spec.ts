@@ -772,6 +772,10 @@ describe('la configuración por HTTP', () => {
         criticalEscalationRoleId: null,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
+        // EN-272: la línea de la TA de las gráficas, la recomendación de
+        // D-207 §1 hasta que un clínico la confirme.
+        bpReferenceSystolic: 140,
+        bpReferenceDiastolic: 90,
       });
     });
 
@@ -1114,6 +1118,59 @@ describe('la configuración por HTTP', () => {
       ).rejects.toThrow(/site_parameter_max_lead_days_range/);
     });
 
+    it('EN-272 guarda la línea de la TA y la rechaza fuera de rango o al revés, en la aplicación y en la base', async () => {
+      const site = await createSite();
+
+      // Control positivo: un par dentro de los extremos se guarda y se lee.
+      await put(`/sites/${site.id}/parameters`, {
+        bpReferenceSystolic: 130,
+        bpReferenceDiastolic: 80,
+      }).expect(200);
+      expect(
+        (await get(`/sites/${site.id}/parameters`).expect(200)).body,
+      ).toMatchObject({ bpReferenceSystolic: 130, bpReferenceDiastolic: 80 });
+
+      // La aplicación nombra el campo.
+      const outOfRange = await put(`/sites/${site.id}/parameters`, {
+        bpReferenceSystolic: 210,
+      }).expect(422);
+      expect((outOfRange.body as Problem).errors?.[0]?.field).toBe(
+        'bpReferenceSystolic',
+      );
+      // La diastólica de 120 con la sistólica guardada de 130 es válida; 130 no.
+      const reversed = await put(`/sites/${site.id}/parameters`, {
+        bpReferenceDiastolic: 120,
+        bpReferenceSystolic: 115,
+      }).expect(422);
+      expect((reversed.body as Problem).errors?.[0]?.field).toBe(
+        'bpReferenceDiastolic',
+      );
+
+      // Y la base, saltándose la aplicación entera.
+      await expect(
+        prisma.$executeRawUnsafe(
+          `UPDATE site_parameter SET bp_reference_systolic = 99 WHERE site_id = $1::uuid`,
+          site.id,
+        ),
+      ).rejects.toThrow(/site_parameter_bp_reference_systolic_range/);
+      await expect(
+        prisma.$executeRawUnsafe(
+          `UPDATE site_parameter SET bp_reference_diastolic = 125 WHERE site_id = $1::uuid`,
+          site.id,
+        ),
+      ).rejects.toThrow(/site_parameter_bp_reference_diastolic_range/);
+      await expect(
+        prisma.$executeRawUnsafe(
+          `UPDATE site_parameter SET bp_reference_diastolic = 120, bp_reference_systolic = 110 WHERE site_id = $1::uuid`,
+          site.id,
+        ),
+      ).rejects.toThrow(/site_parameter_bp_reference_coherent/);
+      // Lo rechazado no tocó lo guardado.
+      expect(
+        await prisma.siteParameter.findUnique({ where: { siteId: site.id } }),
+      ).toMatchObject({ bpReferenceSystolic: 130, bpReferenceDiastolic: 80 });
+    });
+
     it('CF-065 la base también rechaza una ventana de reserva incoherente', async () => {
       const site = await createSite();
 
@@ -1293,6 +1350,8 @@ describe('la configuración por HTTP', () => {
         criticalEscalationRoleId: null,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
+        bpReferenceSystolic: 140,
+        bpReferenceDiastolic: 90,
       };
 
       expect(row?.before).toEqual(defaults);
@@ -1416,6 +1475,10 @@ describe('la configuración por HTTP', () => {
         'criticalEscalationRoleId',
         'unmatchedResultOwnerRoleId',
         'unmatchedResultDeadlineHours',
+        // EN-272 (D-207 §1). Una línea en una gráfica, no un interruptor:
+        // la toma se guarda igual sea cual sea.
+        'bpReferenceSystolic',
+        'bpReferenceDiastolic',
         'createdAt',
         'updatedAt',
       ]);
@@ -1455,6 +1518,10 @@ describe('la configuración por HTTP', () => {
 
       expect(columns.map((column) => column.column_name)).toEqual([
         'allow_past_booking',
+        // EN-272 (D-207 §1). La línea de referencia de la TA en las gráficas
+        // de evolución: dibuja, no decide ni apaga nada.
+        'bp_reference_diastolic',
+        'bp_reference_systolic',
         'cancelled_retention',
         'created_at',
         // ORD-063, ORD-065 (D-050 §2, D-111). Un PLAZO y un rol al que escalar,

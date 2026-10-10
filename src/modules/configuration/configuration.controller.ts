@@ -284,6 +284,9 @@ export class ConfigurationController {
         criticalEscalationRoleId: dto.criticalEscalationRoleId,
         unmatchedResultOwnerRoleId: dto.unmatchedResultOwnerRoleId,
         unmatchedResultDeadlineHours: dto.unmatchedResultDeadlineHours,
+        // EN-272 (D-207 §1): la línea de la TA de las gráficas de evolución.
+        bpReferenceSystolic: dto.bpReferenceSystolic,
+        bpReferenceDiastolic: dto.bpReferenceDiastolic,
       },
       this.requester(req),
     );

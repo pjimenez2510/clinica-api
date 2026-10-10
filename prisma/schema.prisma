@@ -1526,6 +1526,12 @@ model SiteParameter {
   /// ORD-046, D-050 §4. Hours an unmatched result may wait; 24 by default.
   unmatchedResultDeadlineHours Int     @default(24) @map("unmatched_result_deadline_hours") @db.SmallInt
 
+  /// EN-272 (D-207 §1). The blood-pressure reference line the «Evolución» tab
+  /// draws. 140/90 by default and changeable without deploying: the value is
+  /// a clinician's to confirm. Ranges and order are `CHECK`s of the migration.
+  bpReferenceSystolic  Int @default(140) @map("bp_reference_systolic") @db.SmallInt
+  bpReferenceDiastolic Int @default(90) @map("bp_reference_diastolic") @db.SmallInt
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

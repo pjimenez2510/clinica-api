@@ -46,6 +46,10 @@ import { PatientAllergyController } from './patient-allergy.controller';
 import { NoKnownAllergiesService } from './application/no-known-allergies.service';
 import { PatientAllergyService } from './application/patient-allergy.service';
 import { PatientHistoryController } from './patient-history.controller';
+import { PatientVitalsController } from './patient-vitals.controller';
+import { VitalsHistoryService } from './application/vitals-history.service';
+import { VITALS_HISTORY_REPOSITORY } from './domain/vitals-history.repository';
+import { PrismaVitalsHistoryRepository } from './infrastructure/prisma-vitals-history.repository';
 import { PatientHistoryService } from './application/patient-history.service';
 import { PATIENT_HISTORY_REPOSITORY } from './domain/patient-history.repository';
 import { PrismaPatientHistoryRepository } from './infrastructure/prisma-patient-history.repository';
@@ -121,6 +125,7 @@ import { PrismaViolenceScreeningRepository } from './infrastructure/prisma-viole
     ReferralController,
     PatientAllergyController,
     PatientHistoryController,
+    PatientVitalsController,
     ChartSummaryController,
     NoteTemplateController,
   ],
@@ -139,6 +144,7 @@ import { PrismaViolenceScreeningRepository } from './infrastructure/prisma-viole
     NoKnownAllergiesService,
     PatientHistoryService,
     ChartSummaryService,
+    VitalsHistoryService,
     NoteTemplateService,
     BackgroundSnapshotReader,
     CurrentUserService,
@@ -184,6 +190,10 @@ import { PrismaViolenceScreeningRepository } from './infrastructure/prisma-viole
     {
       provide: CHART_SUMMARY_REPOSITORY,
       useClass: PrismaChartSummaryRepository,
+    },
+    {
+      provide: VITALS_HISTORY_REPOSITORY,
+      useClass: PrismaVitalsHistoryRepository,
     },
     {
       provide: NOTE_TEMPLATE_REPOSITORY,

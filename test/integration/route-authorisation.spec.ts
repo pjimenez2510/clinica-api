@@ -419,7 +419,7 @@ describe('every route declares its protection', () => {
     ).toEqual([]);
   });
 
-  it('PA-051 declara alcance global en todas las rutas del registro, y ninguna acota por sede', () => {
+  it('PA-051 EN-269 declara alcance global en todas las rutas del registro, y sólo las tomas de signos acotan por sede', () => {
     /**
      * ES UNA DECISIÓN, NO UN OLVIDO, y esta prueba es donde se lee. La persona
      * registrada en la sede norte es la misma que entra por la sur, y acotar el
@@ -434,7 +434,25 @@ describe('every route declares its protection', () => {
     const rutas = patientRoutes();
     expect(rutas.length).toBeGreaterThan(0);
 
+    /**
+     * EN-269: LA ÚNICA EXCEPCIÓN, Y ES LA REGLA DE ARRIBA APLICADA. Las tomas
+     * de signos no son de la ficha: son de cada ATENCIÓN, que ocurre en una
+     * sede —«lo que le ocurre» va acotado—, así que la ruta declara `query` y
+     * el manejador estrecha por las sedes de `record:read`, como
+     * `GET /encounters?patientId=`. La ficha sigue siendo global; la lista es
+     * exacta para que otra excepción sea una decisión escrita en un diff.
+     */
+    const SITE_SCOPED_UNDER_PATIENTS = ['PatientVitalsController.list'];
+    expect(
+      rutas
+        .filter((r) => r.siteScope !== 'global')
+        .map((r) => `${r.route} declara ${String(r.siteScope)}`),
+    ).toEqual(
+      SITE_SCOPED_UNDER_PATIENTS.map((route) => `${route} declara query`),
+    );
+
     const noGlobales = rutas
+      .filter((r) => !SITE_SCOPED_UNDER_PATIENTS.includes(r.route))
       .filter((r) => r.siteScope !== 'global')
       .map((r) => `${r.route} declara ${String(r.siteScope)}`);
     expect(noGlobales).toEqual([]);

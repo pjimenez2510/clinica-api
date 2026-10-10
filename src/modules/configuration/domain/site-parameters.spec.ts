@@ -5,6 +5,7 @@ import { PERMISSIONS } from '../../../shared/authorisation/permission.catalogue'
 import { UnknownPermissionError } from '../../../shared/domain/errors/permission.errors';
 import {
   assertAtomFitsStoredDurations,
+  assertBpReferenceCoherent,
   assertLeadWindowCoherent,
   assertParametersInRange,
   assertPermissionIsDeclared,
@@ -68,6 +69,8 @@ describe('los parámetros de operación de una sede', () => {
       criticalEscalationRoleId: null,
       unmatchedResultOwnerRoleId: null,
       unmatchedResultDeadlineHours: 24,
+      bpReferenceSystolic: 140,
+      bpReferenceDiastolic: 90,
     });
   });
 
@@ -176,6 +179,8 @@ describe('los parámetros de operación de una sede', () => {
         criticalEscalationRoleId: null,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
+        bpReferenceSystolic: 140,
+        bpReferenceDiastolic: 90,
       });
       expect.unreachable('debía rechazarse');
     } catch (error) {
@@ -204,6 +209,8 @@ describe('los parámetros de operación de una sede', () => {
         criticalEscalationRoleId: null,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
+        bpReferenceSystolic: 140,
+        bpReferenceDiastolic: 90,
       });
     }).not.toThrow();
   });
@@ -271,7 +278,38 @@ describe('los parámetros de operación de una sede', () => {
       // valor dentro del rango es de la clínica (D-050, D-111).
       'criticalNoticeWithinMinutes',
       'unmatchedResultDeadlineHours',
+      // EN-272: la línea de la TA. El valor es de un clínico (D-207 §1).
+      'bpReferenceSystolic',
+      'bpReferenceDiastolic',
     ]);
+  });
+
+  it('EN-272 la línea de la TA nace en 140/90, se acota y la diastólica queda por debajo', () => {
+    expect(DEFAULT_SITE_PARAMETERS.bpReferenceSystolic).toBe(140);
+    expect(DEFAULT_SITE_PARAMETERS.bpReferenceDiastolic).toBe(90);
+    expect(() => assertParametersInRange({ bpReferenceSystolic: 100, bpReferenceDiastolic: 60 })).not.toThrow(); // prettier-ignore
+    expect(() => assertParametersInRange({ bpReferenceSystolic: 200, bpReferenceDiastolic: 120 })).not.toThrow(); // prettier-ignore
+    for (const bpReferenceSystolic of [99, 201, 139.5]) {
+      expect(() => assertParametersInRange({ bpReferenceSystolic }), `${bpReferenceSystolic}`).toThrow(ParameterOutOfRangeError); // prettier-ignore
+    }
+    for (const bpReferenceDiastolic of [59, 121]) {
+      expect(() => assertParametersInRange({ bpReferenceDiastolic }), `${bpReferenceDiastolic}`).toThrow(ParameterOutOfRangeError); // prettier-ignore
+    }
+    expect(() => assertBpReferenceCoherent({ bpReferenceSystolic: 130, bpReferenceDiastolic: 80 })).not.toThrow(); // prettier-ignore
+    for (const bpReferenceDiastolic of [110, 120]) {
+      try {
+        assertBpReferenceCoherent({
+          bpReferenceSystolic: 110,
+          bpReferenceDiastolic,
+        });
+        expect.unreachable(`${bpReferenceDiastolic}`);
+      } catch (error) {
+        expect(error).toBeInstanceOf(ParameterOutOfRangeError);
+        expect(
+          (error as ParameterOutOfRangeError).fieldErrors?.[0]?.field,
+        ).toBe('bpReferenceDiastolic');
+      }
+    }
   });
 
   it('ORD-063 acota el plazo de aviso de los críticos, que siempre existe', () => {
