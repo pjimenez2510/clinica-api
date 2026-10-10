@@ -20,11 +20,13 @@ import {
   type RecordReadScope,
 } from '../../../shared/domain/clinical-record-key';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
+import { clinicalDateOf } from '../../../shared/domain/clinic-time';
 import {
   findStandingAllergyAbsence,
   toStandingAllergyAbsence,
 } from '../../../shared/infrastructure/clinical/standing-allergy-absence';
 import type { SiteScopeFilter } from '../domain/document-kind';
+import { copyExtrasOf } from './clinical-record-copy-extras';
 import type {
   AllowedImageMimeType,
   StoredImage,
@@ -789,14 +791,24 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         requestedBy: true,
         requesterName: true,
         requesterDocument: true,
+        requesterRelationship: true,
         receivedAt: true,
         outcome: true,
         answeredAt: true,
         answeredBy: true,
+        copyFrom: true,
+        copyTo: true,
         answerCorrections: {
           where: { correctedBy: null },
-          select: { outcome: true, answeredAt: true, answeredBy: true },
+          select: {
+            outcome: true,
+            answeredAt: true,
+            answeredBy: true,
+            copyFrom: true,
+            copyTo: true,
+          },
         },
+        copyReview: { select: { includesScreening: true } },
       },
     });
     if (request === null) return { status: 'missing' };
@@ -838,17 +850,30 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       outcome: request.outcome,
       answeredAt: request.answeredAt,
       answeredBy: request.answeredBy,
+      copyFrom: request.copyFrom,
+      copyTo: request.copyTo,
     };
+    // DOC-122 (D-203 §2). «Atendida» hands over the whole record; «Atendida
+    // en parte», the period its answer names — and without one, nothing.
+    const copyPeriod =
+      standing.copyFrom && standing.copyTo
+        ? {
+            from: standing.copyFrom.toISOString().slice(0, 10),
+            to: standing.copyTo.toISOString().slice(0, 10),
+          }
+        : null;
     if (
       !request.clinicalRecordCopy ||
-      // «Atendida en parte» does not hand over the whole copy: what «en
-      // parte» means for it is D-203 §2, and until then only «Atendida» does.
-      standing.outcome !== 'GRANTED' ||
+      !(
+        standing.outcome === 'GRANTED' ||
+        (standing.outcome === 'PARTIALLY_GRANTED' && copyPeriod !== null)
+      ) ||
       standing.answeredAt === null ||
       standing.answeredBy === null
     ) {
       return { status: 'not-available' };
     }
+    const authorisedAt = standing.answeredAt;
 
     const chart = await this.prisma.patient.findUniqueOrThrow({
       where: { id: rootId },
@@ -879,8 +904,23 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         site: { select: { name: true } },
       },
     });
-    const reachable = attentions.filter((one) =>
+    const inPeriod = attentions.filter(
+      (one) =>
+        copyPeriod === null ||
+        (clinicalDateOf(one.startedAt) >= copyPeriod.from &&
+          clinicalDateOf(one.startedAt) <= copyPeriod.to),
+    );
+    const reachable = inPeriod.filter((one) =>
       withinRecordScope(recordScope, one.siteId),
+    );
+    // DOC-121, DOC-123. Results, evolution notes and, with the review that
+    // includes it, the screening — as they stood when it was authorised.
+    const includesScreening = request.copyReview?.includesScreening === true;
+    const extras = await copyExtrasOf(
+      this.prisma,
+      reachable.map((one) => one.id),
+      authorisedAt,
+      includesScreening,
     );
     // DOC-119. The charts whose attentions ACTUALLY leave, read from them —
     // not from a second query a merge could change in between —, and the
@@ -892,6 +932,11 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       .map((attention) => ({
         ...encounterSummaryOf(attention).data,
         siteName: attention.site.name,
+        ...(extras.get(attention.id) ?? {
+          results: [],
+          evolutionNotes: [],
+          screening: null,
+        }),
       }))
       .filter((encounter) => encounter.note !== null);
 
@@ -904,14 +949,17 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         requestedBy: request.requestedBy,
         requesterName: request.requesterName,
         requesterDocument: request.requesterDocument,
+        requesterRelationship: request.requesterRelationship,
         receivedAt: request.receivedAt,
+        copyPeriod,
+        includesScreening,
         // Art. 5.d.i. Surnames first, like everybody else on paper.
         authorisedBy: `${authoriser.lastName} ${authoriser.firstName}`,
         authorisedAt: standing.answeredAt,
         chartIds,
         encounters,
         siteId: reachable.at(-1)?.siteId ?? null,
-        omitsOtherSites: reachable.length < attentions.length,
+        omitsOtherSites: reachable.length < inPeriod.length,
       },
     };
   }

@@ -129,6 +129,9 @@ export interface RenderedDocument {
  *  - IT DOES NOT INVENT A TEMPLATE (DOC-037). A template that exists only in
  *    the code is the version no row records.
  */
+/** DOC-120. At most this many paintings to print the copy's own page count. */
+const COPY_PAGE_COUNT_PASSES = 4;
+
 @Injectable()
 export class DocumentService {
   constructor(
@@ -266,21 +269,33 @@ export class DocumentService {
 
     // Composed on demand: the clock is the instant it was produced.
     const issuedAt = new Date();
-    const layout = composeClinicalRecordCopyLayout(
-      data,
-      context,
-      template,
-      issuedAt,
-    );
-    const content = await this.renderer.render(
-      layout,
-      { logo: context.establishment.logo, seal: null, signature: null },
-      {
-        title: layout.frame.title,
-        author: layout.frame.establishmentName,
-        createdAt: issuedAt,
-      },
-    );
+    // DOC-120. The cover says how many pages the PDF has, which is known only
+    // once it is painted: painted again with the count of the last pass until
+    // the count it prints is the count it has (the number's width can move a
+    // line, rarely a page).
+    let totalPages = 1;
+    let content: Buffer = Buffer.alloc(0);
+    for (let pass = 0; pass < COPY_PAGE_COUNT_PASSES; pass++) {
+      const layout = composeClinicalRecordCopyLayout(
+        data,
+        context,
+        template,
+        issuedAt,
+        totalPages,
+      );
+      content = await this.renderer.render(
+        layout,
+        { logo: context.establishment.logo, seal: null, signature: null },
+        {
+          title: layout.frame.title,
+          author: layout.frame.establishmentName,
+          createdAt: issuedAt,
+        },
+      );
+      const counted = this.renderer.pageCountOf(content);
+      if (counted === totalPages) break;
+      totalPages = counted;
+    }
 
     // DOC-119, REQ-110. Before it is served, all or nothing.
     await this.documents.recordDisclosures([

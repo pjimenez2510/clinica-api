@@ -8,6 +8,7 @@ import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 
 import {
   CLINICAL_RECORD_COPY_TITLE,
+  COPY_RECEIPT_DECLARATION,
   composeClinicalRecordCopyLayout,
   composeLayout,
 } from './document-layout';
@@ -2374,6 +2375,7 @@ describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', ()
     { kind: 'ENCOUNTER_SUMMARY' }
   >;
   const earlier = new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000);
+  const none = { results: [], evolutionNotes: [], screening: null };
   const copy = (
     overrides: Partial<ClinicalRecordCopyPrintData> = {},
   ): ClinicalRecordCopyPrintData => ({
@@ -2383,19 +2385,24 @@ describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', ()
     requestedBy: 'ATTORNEY',
     requesterName: 'Ana Pérez',
     requesterDocument: '0926687856',
+    requesterRelationship: null,
     receivedAt: now,
+    copyPeriod: null,
+    includesScreening: false,
     authorisedBy: 'Mera Gabriela',
     authorisedAt: now,
     chartIds: ['p-1'],
     encounters: [
       {
         ...summary.data,
+        ...none,
         startedAt: earlier,
         verificationCode: 'CODIGO-UNO',
         siteName: 'Sede Norte',
       },
       {
         ...summary.data,
+        ...none,
         verificationCode: 'CODIGO-DOS',
         siteName: 'Sede Centro',
       },
@@ -2404,13 +2411,18 @@ describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', ()
     omitsOtherSites: false,
     ...overrides,
   });
+  const textOfCopy = (data: ClinicalRecordCopyPrintData, pages = 3) =>
+    wholeText(
+      composeClinicalRecordCopyLayout(data, context, template, now, pages),
+    );
 
-  it('DOC-118 lleva CONFIDENCIAL, el título de copia certificada, sin QR propio, y la portada con quién la pidió y quién la autorizó', () => {
+  it('DOC-118 lleva CONFIDENCIAL, el título de copia certificada, sin QR propio, y la portada con quién la pidió', () => {
     const layout = composeClinicalRecordCopyLayout(
       copy(),
       context,
       { ...template, kind: 'ENCOUNTER_SUMMARY' },
       now,
+      3,
     );
     expect(layout.frame.title).toBe(CLINICAL_RECORD_COPY_TITLE);
     expect(layout.frame.confidential).toBe(true);
@@ -2419,29 +2431,136 @@ describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', ()
     const text = wholeText(layout);
     expect(text).toContain('Solicitada por=Su apoderado: Ana Pérez');
     expect(text).toContain('Cédula u oficio=0926687856');
-    expect(text).toContain('Autorizada por=Mera Gabriela');
-    expect(text).toContain(
-      'Centro de Especialidades Bahía, custodio de la historia clínica, certifica que esta copia reproduce, tal como constan en su sistema, la nota de consulta vigente',
-    );
-    // G4: it does not certify more than it carries.
     expect(text).not.toContain('reproduce lo registrado');
     expect(text).toContain('responde de su custodia');
   });
 
-  it('DOC-118 D-188 §3 dice que no lleva el tamizaje de violencia, ni los resultados, ni lo que no es la nota de consulta firmada', () => {
-    const text = wholeText(
-      composeClinicalRecordCopyLayout(copy(), context, template, now),
+  it('DOC-120 la portada dice fiel copia del original, el responsable con su recuadro de firma y sello, el total de páginas y el «Recibí conforme» del art. 32', () => {
+    const text = textOfCopy(copy(), 7);
+    expect(text).toContain(
+      'Centro de Especialidades Bahía, custodio de la historia clínica, certifica que esta es fiel copia del original que reposa en su sistema',
     );
+    expect(text).toContain('Total de páginas=7');
+    expect(text).toContain('RESPONSABLE DE LA ENTREGA');
+    expect(text).toContain('Nombre=Mera Gabriela');
+    expect(text).toContain('Firma y sello');
+    expect(text).toContain('RECIBÍ CONFORME');
+    expect(text).toContain(COPY_RECEIPT_DECLARATION);
+    expect(text).toContain('Firma de quien la retira');
+    expect(text).toContain('Alcance=Historia clínica completa');
+  });
+
+  it('DOC-120 PD-064 PD-063 nombra los documentos recibidos de cada tercero y el parentesco del familiar', () => {
+    expect(textOfCopy(copy())).toContain(
+      'Documentos recibidos=el poder y las copias de la cédula del apoderado y del paciente',
+    );
+    const relative = textOfCopy(
+      copy({
+        requestedBy: 'DECEASED_RELATIVE',
+        requesterName: 'Luis Pérez',
+        requesterRelationship: 'STEPCHILD',
+      }),
+    );
+    expect(relative).toContain(
+      'Solicitada por=Un familiar del paciente fallecido: Luis Pérez, hijastro o hijastra',
+    );
+    expect(relative).toContain(
+      'Documentos recibidos=la copia de la cédula del familiar y el certificado de defunción',
+    );
+  });
+
+  it('DOC-121 la portada ya no dice que no lleva los resultados ni las notas de evolución; DOC-123 sin el visto bueno dice que no lleva el tamizaje', () => {
+    const text = textOfCopy(copy());
     expect(text).toContain('No incluye');
     expect(text).toContain('el tamizaje de violencia');
-    expect(text).toContain('los resultados de los exámenes');
     expect(text).toContain('las atenciones sin nota de consulta firmada');
+    expect(text).not.toContain('los resultados de los exámenes;');
+    expect(text).not.toContain('las notas de evolución,');
+  });
+
+  it('DOC-121 cada atención lleva sus resultados con su referencia y marca, la conclusión, la corrección posterior y sus notas de evolución', () => {
+    const corrected = new Date(now.getTime() + 60_000);
+    const [first, second] = copy().encounters;
+    const text = textOfCopy(
+      copy({
+        encounters: [
+          {
+            ...first!,
+            results: [
+              {
+                orderNumber: 12,
+                issuedAt: earlier,
+                conclusion: 'Anemia leve',
+                values: [
+                  {
+                    analyte: 'Hemoglobina',
+                    value: '10.2 g/dL',
+                    reference: '12 – 16 g/dL',
+                    abnormal: 'Bajo',
+                  },
+                ],
+                correctedAfter: corrected,
+              },
+            ],
+            evolutionNotes: [{ signedAt: earlier, text: 'Mejora el dolor' }],
+          },
+          second!,
+        ],
+      }),
+    );
+    expect(text).toContain('Resultados de exámenes');
+    expect(text).toContain('Hemoglobina');
+    expect(text).toContain('10.2 g/dL');
+    expect(text).toContain('12 – 16 g/dL');
+    expect(text).toContain('Conclusión=Anemia leve');
+    expect(text).toContain(
+      'después de autorizada la copia; la corrección no va en ella',
+    );
+    expect(text).toContain('Notas de evolución');
+    expect(text).toContain('Mejora el dolor');
+  });
+
+  it('DOC-123 con el visto bueno que lo incluye, el tamizaje de la atención y la portada que lo dice', () => {
+    const [first, second] = copy().encounters;
+    const text = textOfCopy(
+      copy({
+        includesScreening: true,
+        encounters: [
+          {
+            ...first!,
+            screening: {
+              result: 'SUSPECTED',
+              types: ['PHYSICAL', 'PSYCHOLOGICAL'],
+              tool: 'HITS',
+              actionTaken: 'Referida a trabajo social',
+              reportedToAuthority: false,
+            },
+          },
+          second!,
+        ],
+      }),
+    );
+    expect(text).toContain('Tamizaje de violencia');
+    expect(text).toContain('Resultado=Sospecha');
+    expect(text).toContain('Tipos=física, psicológica');
+    expect(text).toContain('Acción tomada=Referida a trabajo social');
+    expect(text).toContain('lo incluye, con el visto bueno de un profesional');
+    expect(text).not.toContain('que sólo se entrega después de que lo revise');
+  });
+
+  it('DOC-122 «Atendida en parte» dice su periodo en el alcance y en lo que no incluye', () => {
+    const from = clinicalDateOf(earlier);
+    const to = clinicalDateOf(now);
+    const text = textOfCopy(copy({ copyPeriod: { from, to } }));
+    expect(text).toMatch(
+      /Alcance=Del \d{2}\/\d{2}\/\d{4} al \d{2}\/\d{2}\/\d{4}/,
+    );
+    expect(text).toContain('las de fuera del periodo autorizado');
+    expect(text).toContain('del periodo autorizado');
   });
 
   it('DOC-118 cada atención, en el orden dado, con su sede, su edad de ese día y su código de verificación; la persona se nombra una vez', () => {
-    const text = wholeText(
-      composeClinicalRecordCopyLayout(copy(), context, template, now),
-    );
+    const text = textOfCopy(copy());
     const first = text.indexOf('CODIGO-UNO');
     const second = text.indexOf('CODIGO-DOS');
     expect(first).toBeGreaterThan(-1);
@@ -2453,18 +2572,13 @@ describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', ()
   });
 
   it('DOC-118 sin atenciones firmadas lo dice en vez de dejar la copia vacía, y el titular sale sin nombre aparte', () => {
-    const text = wholeText(
-      composeClinicalRecordCopyLayout(
-        copy({
-          encounters: [],
-          requestedBy: 'HOLDER',
-          requesterName: null,
-          requesterDocument: null,
-        }),
-        context,
-        template,
-        now,
-      ),
+    const text = textOfCopy(
+      copy({
+        encounters: [],
+        requestedBy: 'HOLDER',
+        requesterName: null,
+        requesterDocument: null,
+      }),
     );
     expect(text).toContain(
       'La historia clínica no tiene atenciones con nota de consulta firmada.',
@@ -2474,18 +2588,9 @@ describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', ()
   });
 
   it('DOC-118 D-203 §1 con atenciones de sedes que no alcanza quien la emite, dice que no lleva las de otras sedes', () => {
-    const without = wholeText(
-      composeClinicalRecordCopyLayout(copy(), context, template, now),
+    expect(textOfCopy(copy())).not.toContain('las de otras sedes');
+    expect(textOfCopy(copy({ omitsOtherSites: true }))).toContain(
+      'las de otras sedes',
     );
-    expect(without).not.toContain('las atenciones de otras sedes');
-    const partial = wholeText(
-      composeClinicalRecordCopyLayout(
-        copy({ omitsOtherSites: true }),
-        context,
-        template,
-        now,
-      ),
-    );
-    expect(partial).toContain('las atenciones de otras sedes');
   });
 });

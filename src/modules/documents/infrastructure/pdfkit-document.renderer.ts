@@ -190,6 +190,18 @@ export class PdfKitDocumentRenderer implements DocumentRenderer {
    * Wraps every engine failure in `DocumentRenderFailedError`, the only error
    * the port admits.
    */
+  /**
+   * DOC-120. Read from the page tree PDFKit writes uncompressed: its
+   * `/Type /Pages` dictionary carries `/Count`, the number of pages.
+   */
+  pageCountOf(pdf: Buffer): number {
+    const match = /\/Type \/Pages[^>]*?\/Count (\d+)/s.exec(
+      pdf.toString('latin1'),
+    );
+    if (!match) throw new DocumentRenderFailedError(new Error('no page tree'));
+    return Number(match[1]);
+  }
+
   async render(
     layout: DocumentLayout,
     images: LayoutImages,

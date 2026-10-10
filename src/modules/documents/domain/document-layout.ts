@@ -26,6 +26,7 @@ import type {
   DocumentContext,
   DocumentSubject,
   ClinicalRecordCopyPrintData,
+  CopyEncounterData,
   EncounterSummaryPrintData,
   InvoiceLine,
   InvoicePrintData,
@@ -1611,34 +1612,210 @@ const REQUESTER_LABEL: Readonly<Record<string, string>> = {
   DECEASED_RELATIVE: 'Un familiar del paciente fallecido',
 };
 
+/** PD-063. The relative's relationship, as the cover says it. */
+const RELATIONSHIP_LABEL: Readonly<Record<string, string>> = {
+  SPOUSE: 'cónyuge',
+  PARTNER: 'conviviente o pareja en unión de hecho',
+  PARENT: 'padre o madre',
+  CHILD: 'hijo o hija',
+  SIBLING: 'hermano o hermana',
+  GRANDPARENT: 'abuelo o abuela',
+  GRANDCHILD: 'nieto o nieta',
+  PARENT_IN_LAW: 'suegro o suegra',
+  CHILD_IN_LAW: 'yerno o nuera',
+  STEPCHILD: 'hijastro o hijastra',
+  STEPPARENT: 'padrastro o madrastra',
+};
+
+/**
+ * PD-064, DOC-120 (D-203 §7). What the desk received from whoever presents it,
+ * as the HCAM's form SGC-DC-FR-022 lists it.
+ */
+export const DOCUMENTS_RECEIVED: Readonly<Record<string, string>> = {
+  HOLDER: 'la solicitud firmada y la copia de la cédula del paciente',
+  REPRESENTATIVE:
+    'la solicitud firmada por el representante legal y las copias de su cédula y de la del paciente',
+  ATTORNEY: 'el poder y las copias de la cédula del apoderado y del paciente',
+  AUTHORIZED_PERSON:
+    'la autorización firmada por el paciente y las copias de la cédula del paciente y de quien retira',
+  AUTHORITY: 'el oficio de la autoridad',
+  DECEASED_RELATIVE:
+    'la copia de la cédula del familiar y el certificado de defunción',
+};
+
+const SCREENING_RESULT_LABEL: Readonly<Record<string, string>> = {
+  NO_SIGNS: 'Sin signos',
+  SUSPECTED: 'Sospecha',
+  CONFIRMED: 'Confirmado',
+};
+
+const VIOLENCE_TYPE_LABEL: Readonly<Record<string, string>> = {
+  PHYSICAL: 'física',
+  PSYCHOLOGICAL: 'psicológica',
+  SEXUAL: 'sexual',
+  NEGLECT: 'negligencia o abandono',
+  ECONOMIC: 'económica',
+};
+
 /** DOC-118. The paper's title: the A.M. 5216 calls it a certified copy. */
 export const CLINICAL_RECORD_COPY_TITLE =
   'COPIA CERTIFICADA DE LA HISTORIA CLÍNICA';
 
 /**
- * DOC-118 (D-198 §1, A.M. 5216 arts. 28 to 33). The copy of the clinical
- * record handed to the holder or to a third party: a cover that says who asked
- * for it, who authorised it, that the establishment certifies it as custodian
- * and that whoever receives it answers for its confidentiality; then every
- * attention with a signed 002, oldest first, as its summary prints it (DOC-111)
- * with its own verification code.
+ * DOC-120 (A.M. 5216 art. 32, the HCAM's declaration). What whoever receives
+ * the copy signs they were told.
+ */
+export const COPY_RECEIPT_DECLARATION =
+  'Recibí conforme la copia de la historia clínica. Me informaron de la responsabilidad del cuidado y manejo de la información que recibo: guardaré su confidencialidad, no la divulgaré ni haré mal uso de ella y asumo la responsabilidad por su uso y destino.';
+
+/** A line to write on by hand. */
+const BLANK = '____________________';
+
+/**
+ * DOC-121, DOC-123. What an attention of the copy adds to its summary: the
+ * results of its exams as authorised, its evolution notes and, when the review
+ * includes it, the violence screening.
+ */
+function copyExtraBlocks(encounter: CopyEncounterData): Block[] {
+  const blocks: Block[] = [];
+  if (encounter.results.length > 0) {
+    blocks.push({ kind: 'heading', text: 'Resultados de exámenes' });
+    for (const report of encounter.results) {
+      const caption = [
+        report.orderNumber === null ? null : `Orden N.º ${report.orderNumber}`,
+        report.issuedAt === null
+          ? null
+          : `informado el ${ecuadorianDate(report.issuedAt)}`,
+      ]
+        .filter(Boolean)
+        .join(', ');
+      if (caption !== '') blocks.push({ kind: 'caption', text: caption });
+      if (report.values.length > 0) {
+        blocks.push({
+          kind: 'table',
+          columns: [
+            { header: 'Examen', width: 0.4 },
+            { header: 'Resultado', width: 0.25 },
+            { header: 'Referencia', width: 0.22 },
+            { header: 'Marca', width: 0.13 },
+          ],
+          rows: report.values.map((value) => [
+            value.analyte,
+            value.value,
+            value.reference ?? '—',
+            value.abnormal ?? '—',
+          ]),
+        });
+      }
+      if (report.conclusion !== null) {
+        blocks.push({
+          kind: 'fields',
+          columns: 1,
+          entries: [{ label: 'Conclusión', value: report.conclusion }],
+        });
+      }
+      if (report.correctedAfter !== null) {
+        blocks.push({
+          kind: 'paragraph',
+          text: `Este informe se corrigió el ${ecuadorianDate(report.correctedAfter)}, después de autorizada la copia; la corrección no va en ella.`,
+          emphasis: true,
+        });
+      }
+    }
+  }
+  if (encounter.evolutionNotes.length > 0) {
+    blocks.push({ kind: 'heading', text: 'Notas de evolución' });
+    blocks.push({
+      kind: 'fields',
+      columns: 1,
+      entries: encounter.evolutionNotes.map((note) => ({
+        label: ecuadorianDateAndMinute(note.signedAt),
+        value: note.text,
+      })),
+    });
+  }
+  if (encounter.screening !== null) {
+    const screening = encounter.screening;
+    blocks.push({ kind: 'heading', text: 'Tamizaje de violencia' });
+    blocks.push({
+      kind: 'fields',
+      columns: 2,
+      entries: [
+        {
+          label: 'Resultado',
+          value: SCREENING_RESULT_LABEL[screening.result] ?? '—',
+        },
+        ...(screening.types.length === 0
+          ? []
+          : [
+              {
+                label: 'Tipos',
+                value: screening.types
+                  .map((type) => VIOLENCE_TYPE_LABEL[type] ?? type)
+                  .join(', '),
+              },
+            ]),
+        ...(screening.tool === null
+          ? []
+          : [{ label: 'Instrumento', value: screening.tool }]),
+        {
+          label: 'Notificado a la autoridad',
+          value: screening.reportedToAuthority ? 'Sí' : 'No',
+        },
+        ...(screening.actionTaken === null
+          ? []
+          : [
+              {
+                label: 'Acción tomada',
+                value: screening.actionTaken,
+                span: 2,
+              },
+            ]),
+      ],
+    });
+  }
+  return blocks;
+}
+
+/** DOC-120, DOC-122. What the copy hands over, as the cover says it. */
+function scopeText(period: { from: string; to: string } | null): string {
+  if (period === null) return 'Historia clínica completa';
+  return `Del ${calendarDate(new Date(`${period.from}T00:00:00Z`))} al ${calendarDate(new Date(`${period.to}T00:00:00Z`))}`;
+}
+
+/**
+ * DOC-118, DOC-120 to DOC-123 (D-198 §1, D-203 §2 to §6, A.M. 5216 arts. 28
+ * to 33). The copy of the clinical record handed to the holder or to a third
+ * party, as the HCAM hands it: a cover that says it is a faithful copy of the
+ * original the establishment keeps, who asked for it and what they brought,
+ * what it hands over (the whole record or a period), who is responsible for
+ * the delivery with a box for their signature and seal, the total of pages,
+ * and the «Recibí conforme» of whoever takes it with the declaration of art.
+ * 32; then every attention with a signed 002, oldest first, as its summary
+ * prints it (DOC-111) with its results, its evolution notes and its own
+ * verification code.
  *
- * ⚠️ WITHOUT THE VIOLENCE SCREENING (D-188 §3), and the cover says so: block F
- * leaves no paper or file of the holder's without a professional's review. The
- * summary never carried it either.
+ * ⚠️ THE VIOLENCE SCREENING ONLY WITH THE REVIEW THAT INCLUDES IT (D-188 §3,
+ * D-203 §6), and the cover says which.
  *
- * No QR of its own: it is not archived, and each attention's code verifies
- * that attention (DOC-112).
+ * `totalPages` is the page count of the PDF itself: the service renders twice
+ * and passes the count of the first (DOC-120).
  */
 export function composeClinicalRecordCopyLayout(
   data: ClinicalRecordCopyPrintData,
   context: DocumentContext,
   template: DocumentTemplate,
   issuedAt: Date,
+  totalPages: number,
 ): DocumentLayout {
   const establishment =
     context.establishment.tradeName ?? context.establishment.name;
   const requester = REQUESTER_LABEL[data.requestedBy] ?? '—';
+  const relationship =
+    data.requesterRelationship === null
+      ? null
+      : (RELATIONSHIP_LABEL[data.requesterRelationship] ?? null);
+  const until = ecuadorianDate(data.authorisedAt);
 
   const cover: Block[] = [
     {
@@ -1648,6 +1825,7 @@ export function composeClinicalRecordCopyLayout(
         // D-078. The chart number on every printed document.
         { label: 'Historia clínica', value: data.patient.mrn },
         { label: 'Atenciones', value: String(data.encounters.length) },
+        { label: 'Total de páginas', value: String(totalPages) },
       ],
     },
     { kind: 'heading', text: 'Paciente' },
@@ -1673,10 +1851,14 @@ export function composeClinicalRecordCopyLayout(
       entries: [
         {
           label: 'Solicitada por',
-          value:
+          value: [
             data.requesterName === null
               ? requester
               : `${requester}: ${data.requesterName}`,
+            relationship,
+          ]
+            .filter(Boolean)
+            .join(', '),
         },
         ...(data.requesterDocument === null
           ? []
@@ -1685,7 +1867,11 @@ export function composeClinicalRecordCopyLayout(
           label: 'Solicitud recibida',
           value: ecuadorianDateAndMinute(data.receivedAt),
         },
-        { label: 'Autorizada por', value: data.authorisedBy },
+        {
+          label: 'Documentos recibidos',
+          value: DOCUMENTS_RECEIVED[data.requestedBy] ?? '—',
+        },
+        { label: 'Alcance', value: scopeText(data.copyPeriod) },
         {
           label: 'Autorizada el',
           value: ecuadorianDateAndMinute(data.authorisedAt),
@@ -1695,8 +1881,8 @@ export function composeClinicalRecordCopyLayout(
     {
       kind: 'paragraph',
       // What it certifies is what it carries, and no more (D-203 §4: the
-      // wording, with the legal adviser).
-      text: `${establishment}, custodio de la historia clínica, certifica que esta copia reproduce, tal como constan en su sistema, la nota de consulta vigente, los signos vitales, los diagnósticos, la receta, los exámenes pedidos y los certificados de cada atención con nota de consulta firmada hasta el ${ecuadorianDate(data.authorisedAt)}.`,
+      // exact words, with the legal adviser).
+      text: `${establishment}, custodio de la historia clínica, certifica que esta es fiel copia del original que reposa en su sistema: reproduce la nota de consulta vigente, los signos vitales, los diagnósticos, la receta, los exámenes pedidos con sus resultados, las notas de evolución y los certificados de cada atención con nota de consulta firmada${data.copyPeriod === null ? '' : ' del periodo autorizado'}, tal como constaban el ${until}.`,
     },
     {
       kind: 'note',
@@ -1707,8 +1893,44 @@ export function composeClinicalRecordCopyLayout(
         },
         {
           label: 'No incluye: ',
-          text: `el tamizaje de violencia, que sólo se entrega después de que lo revise un profesional; los resultados de los exámenes; las atenciones sin nota de consulta firmada${data.omitsOtherSites ? '; las atenciones de otras sedes' : ''}; las notas de evolución, las referencias e interconsultas, ni las versiones anteriores de una nota enmendada.`,
+          text: `${data.includesScreening ? '' : 'el tamizaje de violencia, que sólo se entrega después de que lo revise un profesional; '}las atenciones sin nota de consulta firmada${data.copyPeriod === null ? '' : ', las de fuera del periodo autorizado'}${data.omitsOtherSites ? ', las de otras sedes' : ''}; las referencias e interconsultas, ni las versiones anteriores de una nota enmendada.`,
         },
+        ...(data.includesScreening
+          ? [
+              {
+                label: 'Tamizaje de violencia: ',
+                text: 'lo incluye, con el visto bueno de un profesional.',
+              },
+            ]
+          : []),
+      ],
+    },
+    {
+      kind: 'boxes',
+      left: [
+        { kind: 'caption', text: 'RESPONSABLE DE LA ENTREGA' },
+        {
+          kind: 'fields',
+          columns: 1,
+          entries: [
+            { label: 'Nombre', value: data.authorisedBy },
+            { label: 'Fecha de entrega', value: BLANK },
+          ],
+        },
+        { kind: 'signature', caption: 'Firma y sello', image: null },
+      ],
+      right: [
+        { kind: 'caption', text: 'RECIBÍ CONFORME' },
+        { kind: 'paragraph', text: COPY_RECEIPT_DECLARATION },
+        {
+          kind: 'fields',
+          columns: 1,
+          entries: [
+            { label: 'Nombre', value: BLANK },
+            { label: 'Cédula', value: BLANK },
+          ],
+        },
+        { kind: 'signature', caption: 'Firma de quien la retira', image: null },
       ],
     },
   ];
@@ -1718,7 +1940,10 @@ export function composeClinicalRecordCopyLayout(
       ? [
           {
             kind: 'paragraph',
-            text: 'La historia clínica no tiene atenciones con nota de consulta firmada.',
+            text:
+              data.copyPeriod === null
+                ? 'La historia clínica no tiene atenciones con nota de consulta firmada.'
+                : 'El periodo autorizado no tiene atenciones con nota de consulta firmada.',
             emphasis: true,
           },
         ]
@@ -1731,6 +1956,7 @@ export function composeClinicalRecordCopyLayout(
           ...encounterSummaryBlocks(encounter, encounter.siteName, {
             withPatient: false,
           }),
+          ...copyExtraBlocks(encounter),
           {
             kind: 'fields',
             columns: 1,

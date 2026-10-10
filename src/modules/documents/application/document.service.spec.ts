@@ -380,6 +380,12 @@ class RecordingRenderer implements DocumentRenderer {
       Buffer.from(`pdf:${layout.frame.title}:${this.calls.length}`),
     );
   }
+
+  pageCountOf(): number {
+    return this.pages;
+  }
+
+  pages = 1;
 }
 
 class FakeNormaliser implements ImageNormaliser {
@@ -1132,11 +1138,22 @@ describe('DOC-118 DOC-119 la copia certificada de la historia clínica', () => {
       requestedBy: 'HOLDER',
       requesterName: null,
       requesterDocument: null,
+      requesterRelationship: null,
       receivedAt: new Date(),
+      copyPeriod: null,
+      includesScreening: false,
       authorisedBy: 'Mera Gabriela',
       authorisedAt: new Date(),
       chartIds: ['chart-1', 'absorbed-1'],
-      encounters: [{ ...summary.data, siteName: 'Sede Norte' }],
+      encounters: [
+        {
+          ...summary.data,
+          siteName: 'Sede Norte',
+          results: [],
+          evolutionNotes: [],
+          screening: null,
+        },
+      ],
       siteId: 'site-9',
       omitsOtherSites: false,
     },
@@ -1181,6 +1198,20 @@ describe('DOC-118 DOC-119 la copia certificada de la historia clínica', () => {
     ]);
     // Never archived.
     expect(repository.renders).toHaveLength(0);
+  });
+
+  it('DOC-120 la portada dice las páginas que tiene el PDF: se pinta otra vez con la cuenta hasta que coincide', async () => {
+    sources.copy = ready();
+    renderer.pages = 4;
+    await service.clinicalRecordCopy('request-1', requester);
+    const totals = renderer.calls.map(({ layout }) => {
+      const strip = layout.blocks.find((block) => block.kind === 'strip');
+      return strip?.kind === 'strip'
+        ? strip.entries.find((entry) => entry.label === 'Total de páginas')
+            ?.value
+        : undefined;
+    });
+    expect(totals).toEqual(['1', '4']);
   });
 
   it('DOC-119 si la bitácora no se puede escribir, no se sirve nada', async () => {

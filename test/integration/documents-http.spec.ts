@@ -2353,11 +2353,37 @@ describe('los documentos por HTTP', () => {
       return (response.body as { id: string }).id;
     }
 
-    const answer = (requestId: string, outcome: string, path = 'response') =>
+    const answer = (
+      requestId: string,
+      outcome: string,
+      path = 'response',
+      copyPeriod?: { from: string; to: string },
+    ) =>
       post(`/privacy/requests/${requestId}/${path}`, custodianToken, {
         outcome,
         response: 'Respuesta',
+        ...(copyPeriod ? { copyPeriod } : {}),
       }).expect(200);
+
+    /** PD-061. The doctor's review, with or without the screening. */
+    const review = (requestId: string, includesScreening: boolean) =>
+      post(`/privacy/requests/${requestId}/clinical-review`, doctorToken, {
+        reviewed: true,
+        includesScreening,
+      }).expect(200);
+
+    /** The PDF of a copy, as bytes. */
+    async function copyBytes(requestId: string): Promise<Buffer> {
+      const response = await copyOf(requestId)
+        .buffer()
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+      return response.body as Buffer;
+    }
 
     async function copyText(requestId: string): Promise<string> {
       const response = await copyOf(requestId)
@@ -2497,19 +2523,121 @@ describe('los documentos por HTTP', () => {
       await answer(requestId, 'GRANTED');
       await copyOf(requestId, doctorToken).expect(403);
     });
-    it('DOC-118 D-203 «Atendida en parte» no entrega la copia entera', async () => {
+    it('DOC-122 D-203 §2 «Atendida en parte» entrega sólo las atenciones de su periodo, y la portada lo dice', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId } = await aRecordWithHistory();
+      const seeded = await prisma.encounter.findFirstOrThrow({
+        where: { patientId, status: { not: 'ENTERED_IN_ERROR' } },
+        orderBy: { startedAt: 'desc' },
+        select: { startedAt: true },
+      });
+      const requestId = await copyRequest(patientId);
+      // From the day of the newest attention: the older one, 30 days before, stays out.
+      const from = clinicalDateOf(seeded.startedAt);
+      await answer(requestId, 'PARTIALLY_GRANTED', 'response', {
+        from,
+        to: clinicalDateOf(new Date()),
+      });
+
+      const text = await copyText(requestId);
+      expect(text).toContain('Dolor de garganta de dos días');
+      expect(text).not.toContain('Control de presión arterial');
+      expect(text).toContain(
+        `Alcance Del ${from.split('-').reverse().join('/')}`,
+      );
+      expect(text).toContain('las de fuera del periodo autorizado');
+      // Control positivo: rectificada a «Atendida», la completa.
+      await answer(requestId, 'GRANTED', 'response/correction');
+      const whole = await copyText(requestId);
+      expect(whole).toContain('Control de presión arterial');
+      expect(whole).toContain('Historia clínica completa');
+    });
+
+    it('DOC-120 la portada dice fiel copia del original, el responsable con su recuadro, el «Recibí conforme» y el total de páginas, que es el del PDF', async () => {
       await publishTemplate('ENCOUNTER_SUMMARY');
       const { patientId } = await aRecordWithHistory();
       const requestId = await copyRequest(patientId);
-      await answer(requestId, 'PARTIALLY_GRANTED');
+      await answer(requestId, 'GRANTED');
 
-      const partial = await copyOf(requestId).expect(409);
-      expect((partial.body as Problem).code).toBe(
-        'CLINICAL_RECORD_COPY_NOT_AVAILABLE',
+      const bytes = await copyBytes(requestId);
+      const proxy = await getDocumentProxy(new Uint8Array(bytes));
+      const text = (await extractText(proxy, { mergePages: true })).text.replace(/\s+/g, ' '); // prettier-ignore
+      expect(text).toContain('fiel copia del original');
+      expect(text).toContain('RESPONSABLE DE LA ENTREGA');
+      expect(text).toContain('Firma y sello');
+      expect(text).toContain('RECIBÍ CONFORME');
+      expect(text).toContain(
+        'responsabilidad del cuidado y manejo de la información',
       );
-      // Control positivo: la misma solicitud, rectificada a «Atendida», sí.
-      await answer(requestId, 'GRANTED', 'response/correction');
-      await copyOf(requestId).expect(200);
+      expect(text).toContain('Documentos recibidos el oficio de la autoridad');
+      expect(text).toContain(`TOTAL DE PÁGINAS ${proxy.numPages}`);
+    });
+
+    it('DOC-121 cada atención lleva los resultados que había al autorizar y sus notas de evolución; la corrección posterior sólo se anuncia', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId } = await aRecordWithHistory();
+      const seeded = await prisma.encounter.findFirstOrThrow({
+        where: { patientId, status: { not: 'ENTERED_IN_ERROR' } },
+        orderBy: { startedAt: 'desc' },
+        select: { id: true },
+      });
+      const system = await prisma.catalogSystem.upsert({
+        where: { code: 'TARIFARIO' },
+        create: { code: 'TARIFARIO', name: 'Tarifario' },
+        update: {},
+      });
+      const concept = await prisma.catalogConcept.create({
+        data: { systemId: system.id, code: 'EX-BH', display: 'Biometría hemática', validFrom: new Date(Date.now() - 400 * DAY) }, // prettier-ignore
+      });
+      const order = await prisma.serviceOrder.create({
+        data: { encounterId: seeded.id, siteId, orderedById: practitionerId, category: 'LABORATORY' }, // prettier-ignore
+      });
+      await prisma.serviceOrderItem.create({
+        data: { serviceOrderId: order.id, conceptId: concept.id, testCode: 'EX-BH', testDisplay: 'Biometría hemática' }, // prettier-ignore
+      });
+      await prisma.serviceOrder.update({
+        where: { id: order.id },
+        data: { status: 'ISSUED', requestedAt: new Date() },
+      });
+      const report = await prisma.diagnosticReport.create({
+        data: {
+          serviceOrderId: order.id,
+          status: 'FINAL',
+          conclusion: 'Anemia leve',
+          issuedAt: new Date(),
+          results: {
+            create: [{ analyteDisplay: 'Hemoglobina', valueNumeric: '10.2', unit: 'g/dL', referenceLow: '12', referenceHigh: '15.5', abnormalFlag: 'LOW' }], // prettier-ignore
+          },
+        },
+      });
+      const evolutionChain = randomUUID();
+      await prisma.clinicalNote.create({
+        data: { id: evolutionChain, chainId: evolutionChain, encounterId: seeded.id, formCode: '005', formVersion: '1', status: 'SIGNED', content: { evolucion: 'Tolera la vía oral' }, authorId: practitionerId, signedById: practitionerId, signedAt: new Date(), contentHash: 'd'.repeat(64) }, // prettier-ignore
+      });
+      const requestId = await copyRequest(patientId);
+      await answer(requestId, 'GRANTED');
+      // A correction recorded AFTER the authorisation: not what was authorised.
+      await prisma.diagnosticReport.create({
+        data: {
+          serviceOrderId: order.id,
+          status: 'CORRECTED',
+          conclusion: 'Valor corregido',
+          issuedAt: new Date(),
+          supersedesId: report.id,
+          results: { create: [{ analyteDisplay: 'Hemoglobina', valueNumeric: '13.1', unit: 'g/dL' }] }, // prettier-ignore
+        },
+      });
+
+      const text = await copyText(requestId);
+      expect(text).toContain('Resultados de exámenes');
+      expect(text).toContain('Hemoglobina');
+      expect(text).toContain('10.2 g/dL');
+      expect(text).toContain('Anemia leve');
+      expect(text).toContain('la corrección no va en ella');
+      expect(text).not.toContain('13.1');
+      expect(text).not.toContain('Valor corregido');
+      expect(text).toContain('Notas de evolución');
+      expect(text).toContain('Tolera la vía oral');
     });
 
     it('DOC-118 D-188 §3 un tamizaje con signos no sale en la copia, ni su acción ni sus tipos', async () => {
@@ -2530,6 +2658,16 @@ describe('los documentos por HTTP', () => {
         },
       });
       const requestId = await copyRequest(patientId);
+      // PD-062. For an authority, with signs in the screening: the doctor first.
+      const waiting = await post(
+        `/privacy/requests/${requestId}/response`,
+        custodianToken,
+        { outcome: 'GRANTED', response: 'Se autoriza' },
+      ).expect(409);
+      expect((waiting.body as Problem).code).toBe(
+        'CLINICAL_RECORD_COPY_REVIEW_REQUIRED',
+      );
+      await review(requestId, false);
       await answer(requestId, 'GRANTED');
 
       const text = await copyText(requestId);
@@ -2537,7 +2675,40 @@ describe('los documentos por HTTP', () => {
       expect(text).toContain('Dolor de garganta de dos días');
       expect(text).not.toContain('Derivada a trabajo social');
       expect(text).not.toContain('agresión');
-      expect(text).not.toMatch(/Física|PHYSICAL|SUSPECTED|Sospecha/);
+      expect(text).not.toMatch(/física|PHYSICAL|SUSPECTED|Sospecha/);
+      expect(text).toContain('el tamizaje de violencia, que sólo se entrega');
+    });
+
+    it('DOC-123 con el visto bueno que lo incluye, la copia lleva el tamizaje de la atención', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId } = await aRecordWithHistory();
+      const seeded = await prisma.encounter.findFirstOrThrow({
+        where: { patientId, status: { not: 'ENTERED_IN_ERROR' } },
+        orderBy: { startedAt: 'desc' },
+        select: { id: true },
+      });
+      await prisma.violenceScreening.create({
+        data: {
+          encounterId: seeded.id,
+          result: 'SUSPECTED',
+          types: ['PHYSICAL'],
+          actionTaken: 'Derivada a trabajo social',
+          screenedById: practitionerId,
+          screenedAt: new Date(),
+        },
+      });
+      const requestId = await copyRequest(patientId);
+      await review(requestId, true);
+      await answer(requestId, 'GRANTED');
+
+      const text = await copyText(requestId);
+      expect(text).toContain('Tamizaje de violencia');
+      expect(text).toContain('Sospecha');
+      expect(text).toContain('física');
+      expect(text).toContain('Derivada a trabajo social');
+      expect(text).toContain(
+        'lo incluye, con el visto bueno de un profesional',
+      );
     });
 
     it('DOC-118 cada descarga lleva lo que se autorizó: una atención posterior a la autorización no sale', async () => {
@@ -2735,7 +2906,7 @@ describe('los documentos por HTTP', () => {
       // Control positivo: la de su sede, sí.
       expect(text).toContain('Dolor de garganta de dos días');
       expect(text).not.toContain('Atendida en la sede sur');
-      expect(text).toContain('las atenciones de otras sedes');
+      expect(text).toContain('las de otras sedes');
     });
     it('DOC-118 DOC-119 PD-058 D-203 §1 la llave se encuentra por una ficha absorbida atendida en la sede, y de la absorbida atendida sólo en otra sede no sale ni su atención ni su fila EXPORT', async () => {
       await publishTemplate('ENCOUNTER_SUMMARY');
@@ -2770,7 +2941,7 @@ describe('los documentos por HTTP', () => {
       const text = await copyText(requestId);
       expect(text).toContain('Atendida aquí antes de unificar');
       expect(text).not.toContain('Atendida en la sede sur antes de unificar');
-      expect(text).toContain('las atenciones de otras sedes');
+      expect(text).toContain('las de otras sedes');
 
       const rows = await prisma.accessAudit.findMany({
         where: { action: 'EXPORT', resourceType: 'patient' },
