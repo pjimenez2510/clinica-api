@@ -385,6 +385,91 @@ describe('EN-260 la lactancia de la mujer de 10 a 49 años, en la columna 52 de 
     await create(prisma, withInfantQuestion);
     expect(await prisma.encounterNutrition.count()).toBe(3);
   });
+
+  /**
+   * D-202.1. `ends_on` days from the clinical date; `-1` is yesterday. The
+   * day three calendar months before the clinical date, as PostgreSQL
+   * subtracts `interval '3 months'`: the same day of the month, or the last
+   * one if that month is shorter.
+   */
+  function threeMonthsBefore(cal: {
+    year: number;
+    month: number;
+    day: number;
+  }) {
+    const first = new Date(Date.UTC(cal.year, cal.month - 1 - 3, 1));
+    const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate(); // prettier-ignore
+    return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(cal.day, lastDay))); // prettier-ignore
+  }
+  const DAY = 86_400_000;
+  async function ended(
+    prisma: PrismaClient,
+    scene: Awaited<ReturnType<typeof anAttention>>,
+    endsOn: Date,
+  ) {
+    await prisma.patientPriorityGroup.create({
+      data: {
+        patientId: scene.patient.id,
+        groupCode: 'PREGNANT',
+        startsOn: new Date(endsOn.getTime() - 200 * DAY),
+        endsOn,
+        origin: 'SELF_DECLARED',
+        recordedById: scene.author.id,
+      },
+    });
+  }
+
+  it('EN-260 la BASE pregunta la lactancia a la mujer de 52 años con un embarazo terminado hace tres meses o menos; un día más, todavía embarazada o sin embarazo, la rechaza', async () => {
+    const prisma = db();
+    const bound = (scene: Awaited<ReturnType<typeof anAttention>>) => threeMonthsBefore(scene.cal); // prettier-ignore
+
+    const withoutPregnancy = await woman(prisma, 52);
+    const oneDayTooLate = await woman(prisma, 52);
+    await ended(prisma, oneDayTooLate, new Date(bound(oneDayTooLate).getTime() - DAY)); // prettier-ignore
+    const stillPregnant = await woman(prisma, 52);
+    await ended(prisma, stillPregnant, stillPregnant.cal.plus(0));
+    const man = await woman(prisma, 52, 'MALE');
+    await ended(prisma, man, man.cal.plus(-10));
+    const withInfantQuestion = await woman(prisma, 52);
+    await ended(prisma, withInfantQuestion, withInfantQuestion.cal.plus(-10));
+
+    expect(await problemFrom(create(prisma, withoutPregnancy))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, oneDayTooLate))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, stillPregnant))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, man))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, withInfantQuestion, { exclusiveBreastfeeding: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await prisma.encounterNutrition.count()).toBe(0);
+
+    // Positive controls: the bound itself, yesterday, and a chart she absorbed.
+    const atTheBound = await woman(prisma, 52);
+    await ended(prisma, atTheBound, bound(atTheBound));
+    await create(prisma, atTheBound);
+    const yesterday = await woman(prisma, 9);
+    await ended(prisma, yesterday, yesterday.cal.plus(-1));
+    await create(prisma, yesterday);
+    const merged = await woman(prisma, 55);
+    const absorbed = await createPatient(prisma, { sex: 'FEMALE' });
+    await prisma.patient.update({ where: { id: absorbed.id }, data: { mergedIntoId: merged.patient.id, mergedAt: new Date() } }); // prettier-ignore
+    await ended(prisma, { ...merged, patient: absorbed }, merged.cal.plus(-30));
+    await create(prisma, merged);
+    expect(await prisma.encounterNutrition.count()).toBe(3);
+  });
+
+  it('EN-096 EN-260 el hierro con ácido fólico, a la puérpera de 52 años que dijo estar lactando; sin decirlo, no', async () => {
+    const prisma = db();
+    const saidNothing = await woman(prisma, 52);
+    await ended(prisma, saidNothing, saidNothing.cal.plus(-20));
+    const supplement = (scene: Awaited<ReturnType<typeof anAttention>>) =>
+      prisma.encounterSupplement.create({ data: { encounterId: scene.encounter.id, ironFolicAcid: true, recordedById: scene.author.id, recordedAt: new Date() } }); // prettier-ignore
+    expect(await problemFrom(supplement(saidNothing))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+
+    // Positive control: her own «yes», then the box.
+    const lactating = await woman(prisma, 52);
+    await ended(prisma, lactating, lactating.cal.plus(-20));
+    await create(prisma, lactating);
+    await supplement(lactating);
+    expect(await prisma.encounterSupplement.count()).toBe(1);
+  });
 });
 
 describe('EN-096 los suplementos contra la base, por la población de cada casilla', () => {

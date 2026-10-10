@@ -11,7 +11,8 @@
  *    rule, read live until EN-099 has a catalogue, D-134.3 §2). The adapter
  *    answers it with the database's own `encounter_is_pregnant`.
  *  - H: the FROZEN age (EN-008) in completed months, 8 or less; or a woman
- *    of 10 to 49, who is asked only her own lactation (EN-260).
+ *    of 10 to 49, or of any age three months after a pregnancy ended, who is
+ *    asked only her own lactation (EN-260, D-202.1).
  *  - I: always — «cuando se administre una vacuna» —, with the coherence of
  *    vaccine and risk group.
  *
@@ -133,7 +134,11 @@ export function weeksSinceLastMenstrualPeriod(
  *    from 0 to 5, «alimento sólido, semisólido o suave» from 6 to 8, and the
  *    mother's lactation (column 52) always;
  *  - a woman of 10 to 49 (the MSP's childbearing age), only column 52, her own
- *    lactation, optional (D-195.3).
+ *    lactation, optional (D-195.3);
+ *  - and a woman of ANY age whose chart has a pregnancy that ended three
+ *    months ago or less (`postpartum`, the database's `encounter_is_postpartum`):
+ *    the MSP gives iron with folic acid «hasta los tres meses post-parto»,
+ *    without an age (D-202.1). Same question, same band.
  *
  * Anybody else, or with no frozen age, the block does not apply at all.
  */
@@ -146,14 +151,13 @@ export const LACTATING_AGE_YEARS = { min: 10, max: 49 } as const;
 export function nutritionBandOf(
   age: FrozenAge,
   sex: string,
+  postpartum: boolean,
 ): NutritionBand | null {
   const { ageYears: years, ageMonths: months } = age;
   if (years === null || months === null) return null;
-  if (
-    sex === 'FEMALE' &&
-    years >= LACTATING_AGE_YEARS.min &&
-    years <= LACTATING_AGE_YEARS.max
-  ) {
+  const childbearingAge =
+    years >= LACTATING_AGE_YEARS.min && years <= LACTATING_AGE_YEARS.max;
+  if (sex === 'FEMALE' && (childbearingAge || postpartum)) {
     return 'LACTATING_AGE_WOMAN';
   }
   if (years > 0) return null;

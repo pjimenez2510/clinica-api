@@ -821,6 +821,18 @@ registerConstraintMeanings({
     field: 'performedAt',
     message: 'Elija una hora entre el inicio y el fin de la atención',
   },
+  /** EN-247 (D-201). Who typed a procedure, and when, stays. */
+  encounter_procedure_keeps_its_recorder: {
+    code: 'VALIDATION_FAILED',
+    field: 'procedureId',
+    message: 'Quien registró el procedimiento, y cuándo, no cambia',
+  },
+  encounter_procedure_recorder_has_instant: {
+    code: 'VALIDATION_FAILED',
+    field: 'procedureId',
+    message:
+      'Quien registró el procedimiento va con el instante en que lo hizo',
+  },
   procedure_consent_informer_at_site: {
     code: 'CONSENT_INFORMER_NOT_AT_SITE',
     field: 'informedById',

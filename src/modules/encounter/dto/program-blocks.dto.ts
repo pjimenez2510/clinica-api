@@ -184,8 +184,9 @@ export const programsSheetSchema = z.object({
   nutrition: z.object({
     /**
      * EN-092, EN-260. The infant's band by the frozen age, or
-     * `LACTATING_AGE_WOMAN` (only `motherBreastfeeding`, her own); `null`:
-     * not asked.
+     * `LACTATING_AGE_WOMAN` (only `motherBreastfeeding`, her own) — a woman
+     * of 10 to 49, or of any age three months after a pregnancy ended
+     * (D-202.1); `null`: not asked.
      */
     band: z
       .enum([

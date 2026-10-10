@@ -107,6 +107,12 @@ export class PrismaProgramBlocksRepository implements ProgramBlocksRepository {
     return row?.lactating ?? false;
   }
 
+  async isPostpartum(encounterId: string): Promise<boolean> {
+    const [row] = await this.prisma.$queryRaw<{ postpartum: boolean }[]>`
+      SELECT encounter_is_postpartum(${encounterId}::uuid) AS "postpartum"`;
+    return row?.postpartum ?? false;
+  }
+
   async prescribedMedicines(
     encounterId: string,
   ): Promise<PrescribedMedicine[]> {

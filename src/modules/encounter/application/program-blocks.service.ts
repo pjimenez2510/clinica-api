@@ -117,6 +117,7 @@ export class ProgramBlocksService {
     const [
       pregnant,
       lactating,
+      postpartum,
       sex,
       vaccines,
       medicines,
@@ -127,6 +128,7 @@ export class ProgramBlocksService {
     ] = await Promise.all([
       this.blocks.isPregnant(encounter.id),
       this.blocks.isLactating(encounter.id),
+      this.blocks.isPostpartum(encounter.id),
       this.blocks.patientSexOf(encounter.id),
       this.blocks.vaccinesInForce(encounter.id),
       this.blocks.prescribedMedicines(encounter.id),
@@ -151,7 +153,10 @@ export class ProgramBlocksService {
     return {
       clinicalDate: clinicalDateOf(encounter.startedAt),
       obstetric: { applies: pregnant, record: obstetric },
-      nutrition: { band: nutritionBandOf(encounter, sex), record: nutrition },
+      nutrition: {
+        band: nutritionBandOf(encounter, sex, postpartum),
+        record: nutrition,
+      },
       vaccination: {
         vaccines,
         record:
@@ -218,7 +223,8 @@ export class ProgramBlocksService {
 
   /**
    * EN-092, EN-260, EN-249. Block H, with the question of the frozen age's
-   * band — or, for a woman of 10 to 49, only her own lactation.
+   * band — or, for a woman of 10 to 49 or three months after a pregnancy
+   * ended (D-202.1), only her own lactation.
    */
   async recordNutrition(
     encounterId: string,
@@ -226,10 +232,11 @@ export class ProgramBlocksService {
     requester: Requester,
   ): Promise<NutritionRecord> {
     const encounter = await this.requireLiveEncounter(encounterId, requester);
-    const band = nutritionBandOf(
-      encounter,
-      await this.blocks.patientSexOf(encounter.id),
-    );
+    const [sex, postpartum] = await Promise.all([
+      this.blocks.patientSexOf(encounter.id),
+      this.blocks.isPostpartum(encounter.id),
+    ]);
+    const band = nutritionBandOf(encounter, sex, postpartum);
     const problem = band && nutritionProblem(band, answer);
     if (band === null || problem?.kind === 'notApplicable') {
       throw new ProgramBlockNotApplicableError('NUTRITION');

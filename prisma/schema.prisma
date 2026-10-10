@@ -219,6 +219,7 @@ model User {
   diagnosesEdited             EncounterDiagnosis[]           @relation("DiagnosisEditor")
   diagnosesEditedThenRemoved  EncounterDiagnosisRetraction[] @relation("DiagnosisRetractionEditor")
   proceduresEdited            EncounterProcedure[]           @relation("ProcedureEditor")
+  proceduresRecorded          EncounterProcedure[]           @relation("ProcedureRecorder")
   proceduresEditedThenRemoved EncounterProcedureRetraction[] @relation("ProcedureRetractionEditor")
   proceduresRetracted         EncounterProcedureRetraction[] @relation("ProcedureRetractor")
   proceduresRestored          EncounterProcedureRetraction[] @relation("ProcedureRestorer")
@@ -3460,7 +3461,12 @@ model EncounterProcedure {
   /// BI-242 (EN-247). When the row was recorded, by the application's clock:
   /// caja sees a procedure that arrived after its account was settled. Null
   /// on rows older than `20261010110100`.
-  recordedAt DateTime? @map("recorded_at") @db.Timestamptz(6)
+  recordedAt   DateTime? @map("recorded_at") @db.Timestamptz(6)
+  /// EN-247 (D-201). Who typed the row: the late entry says «Registrado el …
+  /// por …, tras el alta». Null on rows older than `20261011110000`; neither
+  /// changes afterwards (`trg_encounter_procedure_keeps_its_recorder`).
+  recordedById String?   @map("recorded_by_id") @db.Uuid
+  recordedBy   User?     @relation("ProcedureRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
 
   /// EN-244 (D-127). The STAMP of the last correction, demanded by
   /// `trg_encounter_procedure_record_version`, which archives the previous row
