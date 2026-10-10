@@ -1669,7 +1669,7 @@ export const COPY_RECEIPT_DECLARATION =
   'Recibí conforme la copia de la historia clínica. Me informaron de la responsabilidad del cuidado y manejo de la información que recibo: guardaré su confidencialidad, no la divulgaré ni haré mal uso de ella y asumo la responsabilidad por su uso y destino.';
 
 /** A line to write on by hand. */
-const BLANK = '____________________';
+const BLANK = '______________';
 
 /**
  * DOC-121, DOC-123. What an attention of the copy adds to its summary: the
