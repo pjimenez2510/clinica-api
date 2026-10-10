@@ -56,16 +56,34 @@ describe('EN-090 el bloque obstétrico: la FUM y las semanas', () => {
 
 describe('EN-092 EN-097 el SIVAN, por la edad congelada en meses cumplidos', () => {
   it('EN-092 de 0 a 5 meses pregunta por la leche materna, de 6 a 8 por el alimento sólido', () => {
-    expect(nutritionBandOf(age(0, 0))).toBe('EXCLUSIVE_BREASTFEEDING');
-    expect(nutritionBandOf(age(0, 5))).toBe('EXCLUSIVE_BREASTFEEDING');
-    expect(nutritionBandOf(age(0, 6))).toBe('COMPLEMENTARY_FEEDING');
-    expect(nutritionBandOf(age(0, 8))).toBe('COMPLEMENTARY_FEEDING');
+    expect(nutritionBandOf(age(0, 0), 'FEMALE')).toBe(
+      'EXCLUSIVE_BREASTFEEDING',
+    );
+    expect(nutritionBandOf(age(0, 5), 'MALE')).toBe('EXCLUSIVE_BREASTFEEDING');
+    expect(nutritionBandOf(age(0, 6), 'FEMALE')).toBe('COMPLEMENTARY_FEEDING');
+    expect(nutritionBandOf(age(0, 8), 'MALE')).toBe('COMPLEMENTARY_FEEDING');
   });
 
   it('EN-097 a los 9 meses, al año o sin edad congelada no se pide', () => {
-    expect(nutritionBandOf(age(0, 9))).toBeNull();
-    expect(nutritionBandOf(age(1, 0))).toBeNull();
-    expect(nutritionBandOf(age(null, null))).toBeNull();
+    expect(nutritionBandOf(age(0, 9), 'FEMALE')).toBeNull();
+    expect(nutritionBandOf(age(1, 0), 'FEMALE')).toBeNull();
+    expect(nutritionBandOf(age(null, null), 'FEMALE')).toBeNull();
+  });
+
+  it('EN-260 a la mujer de 10 a 49 años se le pregunta su propia lactancia; a los 9, a los 50 o a un hombre, no', () => {
+    expect(nutritionBandOf(age(10, 0), 'FEMALE')).toBe('LACTATING_AGE_WOMAN');
+    expect(nutritionBandOf(age(49, 11), 'FEMALE')).toBe('LACTATING_AGE_WOMAN');
+    expect(nutritionBandOf(age(9, 11), 'FEMALE')).toBeNull();
+    expect(nutritionBandOf(age(50, 0), 'FEMALE')).toBeNull();
+    expect(nutritionBandOf(age(30, 0), 'MALE')).toBeNull();
+    expect(nutritionBandOf(age(30, 0), 'INTERSEX')).toBeNull();
+  });
+
+  it('EN-260 a la mujer no se le hacen las preguntas del lactante', () => {
+    const own = { motherBreastfeeding: true, exclusiveBreastfeeding: null, complementaryFeeding: null }; // prettier-ignore
+    expect(nutritionProblem('LACTATING_AGE_WOMAN', own)).toBeNull();
+    expect(nutritionProblem('LACTATING_AGE_WOMAN', { ...own, exclusiveBreastfeeding: true })).toEqual({ field: 'exclusiveBreastfeeding', kind: 'notApplicable' }); // prettier-ignore
+    expect(nutritionProblem('LACTATING_AGE_WOMAN', { ...own, complementaryFeeding: false })).toEqual({ field: 'complementaryFeeding', kind: 'notApplicable' }); // prettier-ignore
   });
 
   it('EN-092 la pregunta del tramo es obligatoria y la del otro tramo no se admite', () => {

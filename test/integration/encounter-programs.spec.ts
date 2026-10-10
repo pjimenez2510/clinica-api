@@ -336,6 +336,57 @@ describe('EN-092 EN-097 el SIVAN contra la base, con la edad congelada', () => {
   });
 });
 
+describe('EN-260 la lactancia de la mujer de 10 a 49 años, en la columna 52 de su fila', () => {
+  const create = (
+    prisma: PrismaClient,
+    scene: Awaited<ReturnType<typeof anAttention>>,
+    answer: { exclusiveBreastfeeding?: boolean; complementaryFeeding?: boolean } = {}, // prettier-ignore
+  ) =>
+    prisma.encounterNutrition.create({
+      data: {
+        encounterId: scene.encounter.id,
+        motherBreastfeeding: true,
+        ...answer,
+        recordedById: scene.author.id,
+        recordedAt: new Date(),
+      },
+    });
+
+  /** The age the database froze, asserted: no bound is tested by luck. */
+  async function woman(
+    prisma: PrismaClient,
+    years: number,
+    sex: 'MALE' | 'FEMALE' = 'FEMALE',
+  ) {
+    // prettier-ignore
+    const scene = await anAttention(prisma, { age: { years, months: 3 }, sex });
+    const frozen = await prisma.encounter.findUniqueOrThrow({ where: { id: scene.encounter.id } }); // prettier-ignore
+    expect(frozen.ageYears).toBe(years);
+    return scene;
+  }
+
+  it('EN-260 la BASE rechaza la lactancia a los 9 y a los 50 años, en un hombre, o con las preguntas del lactante; a los 10 y a los 49, entra', async () => {
+    const prisma = db();
+    const nine = await woman(prisma, 9);
+    const fifty = await woman(prisma, 50);
+    const man = await woman(prisma, 30, 'MALE');
+    const withInfantQuestion = await woman(prisma, 30);
+
+    expect(await problemFrom(create(prisma, nine))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, fifty))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, man))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, withInfantQuestion, { exclusiveBreastfeeding: true }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await problemFrom(create(prisma, withInfantQuestion, { complementaryFeeding: false }))).toMatchObject(NOT_APPLICABLE); // prettier-ignore
+    expect(await prisma.encounterNutrition.count()).toBe(0);
+
+    // Positive control: both ends of the range, with only column 52.
+    await create(prisma, await woman(prisma, 10));
+    await create(prisma, await woman(prisma, 49));
+    await create(prisma, withInfantQuestion);
+    expect(await prisma.encounterNutrition.count()).toBe(3);
+  });
+});
+
 describe('EN-090 EN-093 la fecha clínica es la de Guayaquil, también a las 21:30', () => {
   /**
    * An attention yesterday at 21:30 in Guayaquil is already today in UTC

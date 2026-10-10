@@ -10,7 +10,8 @@
  *  - G: the chart's PREGNANT record in force on the clinical date (EN-063's
  *    rule, read live until EN-099 has a catalogue, D-134.3 §2). The adapter
  *    answers it with the database's own `encounter_is_pregnant`.
- *  - H: the FROZEN age (EN-008) in completed months, 8 or less.
+ *  - H: the FROZEN age (EN-008) in completed months, 8 or less; or a woman
+ *    of 10 to 49, who is asked only her own lactation (EN-260).
  *  - I: always — «cuando se administre una vacuna» —, with the coherence of
  *    vaccine and risk group.
  *
@@ -126,16 +127,36 @@ export function weeksSinceLastMenstrualPeriod(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * EN-092. Which second question an infant takes, by the frozen age in
- * completed months: «sólo leche materna» from 0 to 5, «alimento sólido,
- * semisólido o suave» from 6 to 8. Older, or with no frozen age, the block
- * does not apply at all.
+ * EN-092, EN-260. Who takes block H, and with which questions:
+ *
+ *  - an infant, by the frozen age in completed months: «sólo leche materna»
+ *    from 0 to 5, «alimento sólido, semisólido o suave» from 6 to 8, and the
+ *    mother's lactation (column 52) always;
+ *  - a woman of 10 to 49 (the MSP's childbearing age), only column 52, her own
+ *    lactation, optional (D-195.3).
+ *
+ * Anybody else, or with no frozen age, the block does not apply at all.
  */
-export type NutritionBand = 'EXCLUSIVE_BREASTFEEDING' | 'COMPLEMENTARY_FEEDING';
+export type NutritionBand =
+  'EXCLUSIVE_BREASTFEEDING' | 'COMPLEMENTARY_FEEDING' | 'LACTATING_AGE_WOMAN';
 
-export function nutritionBandOf(age: FrozenAge): NutritionBand | null {
+/** EN-260. «Mujeres en edad fértil», in completed years. */
+export const LACTATING_AGE_YEARS = { min: 10, max: 49 } as const;
+
+export function nutritionBandOf(
+  age: FrozenAge,
+  sex: string,
+): NutritionBand | null {
   const { ageYears: years, ageMonths: months } = age;
-  if (years === null || months === null || years > 0) return null;
+  if (years === null || months === null) return null;
+  if (
+    sex === 'FEMALE' &&
+    years >= LACTATING_AGE_YEARS.min &&
+    years <= LACTATING_AGE_YEARS.max
+  ) {
+    return 'LACTATING_AGE_WOMAN';
+  }
+  if (years > 0) return null;
   if (months <= 5) return 'EXCLUSIVE_BREASTFEEDING';
   if (months <= 8) return 'COMPLEMENTARY_FEEDING';
   return null;
@@ -161,6 +182,13 @@ export function nutritionProblem(
   band: NutritionBand,
   answer: NutritionAnswer,
 ): { field: keyof NutritionAnswer; kind: 'required' | 'notApplicable' } | null {
+  if (band === 'LACTATING_AGE_WOMAN') {
+    if (answer.exclusiveBreastfeeding !== null)
+      return { field: 'exclusiveBreastfeeding', kind: 'notApplicable' };
+    if (answer.complementaryFeeding !== null)
+      return { field: 'complementaryFeeding', kind: 'notApplicable' };
+    return null;
+  }
   const own =
     band === 'EXCLUSIVE_BREASTFEEDING'
       ? 'exclusiveBreastfeeding'

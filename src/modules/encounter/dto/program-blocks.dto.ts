@@ -67,8 +67,8 @@ export class RecordObstetricDto extends createZodDto(recordObstetricSchema) {}
 
 export const recordNutritionSchema = z
   .object({
-    /** Column 52. */
-    motherBreastfeeding: yesNo('madre en período de lactancia'),
+    /** Column 52: the infant's mother, or the woman herself (EN-260). */
+    motherBreastfeeding: yesNo('período de lactancia'),
     /** Column 53, from 0 to 5 months; `null` otherwise. */
     exclusiveBreastfeeding: z.boolean().nullable().default(null),
     /** Column 54, from 6 to 8 months; `null` otherwise. */
@@ -139,9 +139,17 @@ export const programsSheetSchema = z.object({
     record: obstetricRecordSchema.nullable(),
   }),
   nutrition: z.object({
-    /** EN-092. The infant's band by the frozen age; `null`: not asked. */
+    /**
+     * EN-092, EN-260. The infant's band by the frozen age, or
+     * `LACTATING_AGE_WOMAN` (only `motherBreastfeeding`, her own); `null`:
+     * not asked.
+     */
     band: z
-      .enum(['EXCLUSIVE_BREASTFEEDING', 'COMPLEMENTARY_FEEDING'])
+      .enum([
+        'EXCLUSIVE_BREASTFEEDING',
+        'COMPLEMENTARY_FEEDING',
+        'LACTATING_AGE_WOMAN',
+      ])
       .nullable(),
     record: nutritionRecordSchema.nullable(),
   }),

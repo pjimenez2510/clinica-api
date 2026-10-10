@@ -474,7 +474,7 @@ registerConstraintMeanings({
   encounter_nutrition_applies: {
     code: PROGRAM_NOT_APPLICABLE,
     field: 'encounterId',
-    message: 'Esta atención no lleva datos de lactancia: sólo se registran hasta los 8 meses de edad, con la pregunta de su edad', // prettier-ignore
+    message: 'Esta atención no lleva datos de lactancia: se registran hasta los 8 meses de edad, con la pregunta de su edad, y en la mujer de 10 a 49 años sólo su propia lactancia', // prettier-ignore
   },
   encounter_nutrition_exclusive_required: {
     code: 'VALIDATION_FAILED',

@@ -63,8 +63,9 @@ class FakeBlocks implements ProgramBlocksRepository {
   isPregnant() {
     return Promise.resolve(this.pregnant);
   }
+  sex = 'FEMALE';
   patientSexOf() {
-    return Promise.resolve('FEMALE');
+    return Promise.resolve(this.sex);
   }
   vaccinesInForce(): Promise<VaccineOption[]> {
     return Promise.resolve([{ code: '55', display: 'BCG' }]);
@@ -143,6 +144,7 @@ describe('ProgramBlocksService (EN-090 a EN-093)', () => {
   });
 
   it('EN-097 una atención sin bloques registrados no deja fila de bitácora; con uno, una', async () => {
+    blocks.sex = 'MALE';
     const empty = await service.programsOf('encounter-1', requester, () => true); // prettier-ignore
     expect(empty.obstetric).toEqual({ applies: false, record: null });
     expect(empty.nutrition.band).toBeNull();
@@ -173,6 +175,18 @@ describe('ProgramBlocksService (EN-090 a EN-093)', () => {
     encounter = anEncounter({ ageYears: 0, ageMonths: 4 });
     await service.recordNutrition('encounter-1', answer, requester);
     expect(blocks.nutrition).toMatchObject(answer);
+  });
+
+  it('EN-260 a la mujer de 10 a 49 años se le ofrece su lactancia, sin las preguntas del lactante; a un hombre, no', async () => {
+    const own = { motherBreastfeeding: true, exclusiveBreastfeeding: null, complementaryFeeding: null }; // prettier-ignore
+    expect((await service.programsOf('encounter-1', requester, () => true)).nutrition.band).toBe('LACTATING_AGE_WOMAN'); // prettier-ignore
+    await expect(service.recordNutrition('encounter-1', { ...own, exclusiveBreastfeeding: true }, requester)).rejects.toBeInstanceOf(ProgramBlockNotApplicableError); // prettier-ignore
+    await service.recordNutrition('encounter-1', own, requester);
+    expect(blocks.nutrition).toMatchObject(own);
+
+    blocks.sex = 'MALE';
+    expect((await service.programsOf('encounter-1', requester, () => true)).nutrition.band).toBeNull(); // prettier-ignore
+    await expect(service.recordNutrition('encounter-1', own, requester)).rejects.toBeInstanceOf(ProgramBlockNotApplicableError); // prettier-ignore
   });
 
   it('EN-249 con la atención de alta no se escribe ningún bloque; sin atención en el alcance, 404', async () => {

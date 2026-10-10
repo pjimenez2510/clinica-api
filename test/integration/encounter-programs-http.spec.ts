@@ -388,6 +388,25 @@ describe('los bloques de programa por HTTP, con sesiones reales (EN-090 a EN-093
       expect((await programs(baby, doctorToken)).nutrition.record).toMatchObject({ ...answer, complementaryFeeding: null }); // prettier-ignore
     });
 
+    it('EN-260 a la mujer de 30 años se le pregunta su lactancia, sola y de un toque; a un hombre de 30, no', async () => {
+      const woman = await openEncounter(
+        await aPatient({ years: 30 }, 'FEMALE'),
+      );
+      const man = await openEncounter(await aPatient({ years: 30 }, 'MALE'));
+
+      expect((await programs(woman, nurseToken)).nutrition).toEqual({ band: 'LACTATING_AGE_WOMAN', record: null }); // prettier-ignore
+      expect((await programs(man, nurseToken)).nutrition.band).toBeNull();
+
+      const refused = await send('put', `/encounters/${man}/programs/nutrition`, nurseToken, { motherBreastfeeding: true }).expect(422); // prettier-ignore
+      expect(refused.body).toMatchObject({ code: 'PROGRAM_BLOCK_NOT_APPLICABLE' }); // prettier-ignore
+      // Nor the infant's questions in her own row.
+      await send('put', `/encounters/${woman}/programs/nutrition`, nurseToken, { motherBreastfeeding: true, exclusiveBreastfeeding: true }).expect(422); // prettier-ignore
+
+      // Positive control: only column 52.
+      await send('put', `/encounters/${woman}/programs/nutrition`, doctorToken, { motherBreastfeeding: true }).expect(200); // prettier-ignore
+      expect((await programs(woman, doctorToken)).nutrition.record).toMatchObject({ motherBreastfeeding: true, exclusiveBreastfeeding: null, complementaryFeeding: null }); // prettier-ignore
+    });
+
     it('EN-092 sin la pregunta de su tramo se nombra el campo', async () => {
       const encounterId = await openEncounter(await aPatient({ months: 7 }));
       const refused = await send('put', `/encounters/${encounterId}/programs/nutrition`, nurseToken, { motherBreastfeeding: false }).expect(422); // prettier-ignore

@@ -97,9 +97,10 @@ export class ProgramBlocksService {
   ): Promise<ProgramsSheet> {
     const encounter = await this.requireEncounter(encounterId, requester);
     const query = { encounterId: encounter.id, sites: requester.sites };
-    const [pregnant, vaccines, obstetric, nutrition, vaccination] =
+    const [pregnant, sex, vaccines, obstetric, nutrition, vaccination] =
       await Promise.all([
         this.blocks.isPregnant(encounter.id),
+        this.blocks.patientSexOf(encounter.id),
         this.blocks.vaccinesInForce(encounter.id),
         this.blocks.findObstetric(query),
         this.blocks.findNutrition(query),
@@ -119,7 +120,7 @@ export class ProgramBlocksService {
     return {
       clinicalDate: clinicalDateOf(encounter.startedAt),
       obstetric: { applies: pregnant, record: obstetric },
-      nutrition: { band: nutritionBandOf(encounter), record: nutrition },
+      nutrition: { band: nutritionBandOf(encounter, sex), record: nutrition },
       vaccination: {
         vaccines,
         record:
@@ -150,14 +151,20 @@ export class ProgramBlocksService {
     return saved.record;
   }
 
-  /** EN-092, EN-249. Block H, with the question of the frozen age's band. */
+  /**
+   * EN-092, EN-260, EN-249. Block H, with the question of the frozen age's
+   * band — or, for a woman of 10 to 49, only her own lactation.
+   */
   async recordNutrition(
     encounterId: string,
     answer: NutritionAnswer,
     requester: Requester,
   ): Promise<NutritionRecord> {
     const encounter = await this.requireLiveEncounter(encounterId, requester);
-    const band = nutritionBandOf(encounter);
+    const band = nutritionBandOf(
+      encounter,
+      await this.blocks.patientSexOf(encounter.id),
+    );
     const problem = band && nutritionProblem(band, answer);
     if (band === null || problem?.kind === 'notApplicable') {
       throw new ProgramBlockNotApplicableError('NUTRITION');
