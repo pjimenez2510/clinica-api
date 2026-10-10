@@ -9,7 +9,7 @@ import { PrismaServiceOrderRepository } from '../../src/modules/orders/infrastru
 import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.port';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
-import { aScene, placeIssued } from './orders-fixtures';
+import { aScene, anOnCallRole, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import { createSite, createUser } from './setup/fixtures';
 import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
@@ -465,9 +465,7 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     const [late] = await ctx.reports.corrections(ctx.asNurse, later);
     expect(late).toMatchObject({ waitingMinutes: 61, overdue: true, afterHours: true, noticeTarget: 'PATIENT', escalationMissing: true, escalateTo: null }); // prettier-ignore
 
-    const role = await prisma.role.create({
-      data: { code: 'GUARDIA_CLINICA', name: 'Responsable clínico de guardia' },
-    });
+    const role = await anOnCallRole(prisma);
     await prisma.siteParameter.update({
       where: { siteId: ctx.scene.site.id },
       data: {
@@ -538,7 +536,7 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Ana Villacís', notifiedAt: minutesAgo(90) }, ctx.asNurse, new Date()); // prettier-ignore
     const fixed = (await correctTo(ctx, ctx.report.id, 95)).results[0]!;
     // Fuera de horario y con guardia: le toca a la guardia (control positivo).
-    const role = await prisma.role.create({ data: { code: 'GUARDIA_CLINICA', name: 'Responsable clínico de guardia' } }); // prettier-ignore
+    const role = await anOnCallRole(prisma);
     await prisma.siteParameter.update({ where: { siteId: ctx.scene.site.id }, data: { criticalEscalationRoleId: role.id } }); // prettier-ignore
     const [before] = await ctx.reports.corrections(ctx.asNurse, new Date());
     expect(before).toMatchObject({ patientRequired: false, noticeTarget: 'ON_CALL_ROLE' }); // prettier-ignore

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -35,6 +36,9 @@ import {
 } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
+
+/** An account id with no row behind it: `user_role_grant.user_id` is a uuid (ORD-167). */
+const SOMEONE = randomUUID();
 
 /**
  * ORD-004, ORD-133. The tariff concept a seeded exam names, under the exam's
@@ -669,7 +673,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
             issuedAt: new Date(Date.now() - 3_600_000),
             results: [{ analyteDefinitionId: analyte.id, valueNumeric }],
           },
-          { userId: 'user-1', sites: 'all' },
+          { userId: SOMEONE, sites: 'all' },
         );
         const row = await prisma.observationResult.findFirstOrThrow({ where: { reportId: report.id } }); // prettier-ignore
         return row.abnormalFlag;
@@ -749,7 +753,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       const practitioner = await createPractitioner(prisma);
       await aTariffConceptOf(prisma, 'EX-GLUCOSA-AYUNAS');
       const exam = await examCoded('EX-GLUCOSA-AYUNAS');
-      const requester = { userId: 'user-1', sites: 'all' as const };
+      const requester = { userId: SOMEONE, sites: 'all' as const };
       const issuedAt = () => new Date(Date.now() - 3_600_000);
 
       /** A glucose of `first` registered critical, the threshold raised to 500, then corrected to `corrected`. */
@@ -812,7 +816,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       const practitioner = await createPractitioner(prisma);
       await aTariffConceptOf(prisma, 'EX-GLUCOSA-AYUNAS');
       const exam = await examCoded('EX-GLUCOSA-AYUNAS');
-      const requester = { userId: 'user-1', sites: 'all' as const };
+      const requester = { userId: SOMEONE, sites: 'all' as const };
       const issuedAt = () => new Date(Date.now() - 3_600_000);
       await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
         ranges: [range({ low: 70, high: 100 }), range({ rangeKind: 'CRITICAL', low: 40, high: 400 })],
@@ -903,7 +907,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
           issuedAt: new Date(Date.now() - 3_600_000),
           results: [{ analyteDefinitionId: hb.id, valueNumeric }],
         },
-        { userId: 'user-1', sites: 'all' },
+        { userId: SOMEONE, sites: 'all' },
       );
     return { bh, hb, order, registerHb };
   }

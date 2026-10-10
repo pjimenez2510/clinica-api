@@ -73,6 +73,7 @@ describe('el plazo de las colas de seguridad', () => {
 
 describe('a qué sesión toca el aviso de un crítico (ORD-167)', () => {
   const entry = {
+    escalationMissing: false,
     siteId: 'site-a',
     orderedByUserId: 'doctor-a',
     escalationRoleId: 'on-call',
@@ -104,7 +105,17 @@ describe('a qué sesión toca el aviso de un crítico (ORD-167)', () => {
     expect(noticeDueToRequester({ ...due, escalationRoleId: null }, onCallHere)).toBe(false); // prettier-ignore
   });
 
-  it('ORD-167 al paciente lo llama, de momento, quien pidió la orden', () => {
+  it('ORD-167 sin guardia que lo atienda (vencido o fuera de horario), toca a toda cuenta que lee la cola', () => {
+    for (const target of ['ORDERING_PRACTITIONER', 'PATIENT'] as const) {
+      const missing = { ...entry, target, escalationMissing: true };
+      expect(noticeDueToRequester(missing, doctorB)).toBe(true);
+      expect(noticeDueToRequester(missing, doctorA)).toBe(true);
+      // Control positivo: con la escalada en regla, a otra cuenta no.
+      expect(noticeDueToRequester({ ...missing, escalationMissing: false }, doctorB)).toBe(false); // prettier-ignore
+    }
+  });
+
+  it('ORD-167 al paciente lo llama quien pidió la orden', () => {
     const due = { ...entry, target: 'PATIENT' as const };
     expect(noticeDueToRequester(due, doctorA)).toBe(true);
     expect(noticeDueToRequester(due, doctorB)).toBe(false);

@@ -121,10 +121,13 @@ export interface HeldRole {
  *  - ORDERING_PRACTITIONER: the account that placed the order.
  *  - ON_CALL_ROLE: whoever holds the site's on-call role at that site, or at
  *    every site. Escalated, it is no longer the ordering practitioner's.
- *  - PATIENT: the patient has no session. PROVISIONALLY the account that
- *    placed the order — after their self-notice (ORD-146) they are the one who
- *    knows and calls; what else should happen when the site is closed and has
- *    no on-call role is asked of the author (plan fix-f07-aviso-critico-destino).
+ *  - PATIENT: the patient has no session. The account that placed the
+ *    order — after their self-notice (ORD-146) they are the one who knows
+ *    and calls.
+ *  - ESCALATION MISSING (overdue or out of hours, and nobody holds the on-call
+ *    role): EVERY account that reads the entry, as before D-205. Provisional,
+ *    until the author answers D-208: a value due to an on-call nobody holds
+ *    must not reach nobody.
  *
  * `roles` must already exclude revoked grants, inactive roles and inactive
  * accounts: that is the query's job, where it cannot be forgotten.
@@ -132,12 +135,14 @@ export interface HeldRole {
 export function noticeDueToRequester(
   entry: {
     target: CriticalNoticeTarget;
+    escalationMissing: boolean;
     siteId: string;
     orderedByUserId: string;
     escalationRoleId: string | null;
   },
   requester: { userId: string; roles: readonly HeldRole[] },
 ): boolean {
+  if (entry.escalationMissing) return true;
   if (entry.target !== 'ON_CALL_ROLE') {
     return entry.orderedByUserId === requester.userId;
   }

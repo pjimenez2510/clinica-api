@@ -11,7 +11,12 @@ import type { Requester } from '../../src/modules/orders/application/service-ord
 import type { AccessAuditRecorder } from '../../src/shared/audit/access-audit.port';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
-import { placeIssued, aScene } from './orders-fixtures';
+import {
+  aRecordReadPermission,
+  anOnCallRole,
+  placeIssued,
+  aScene,
+} from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
@@ -522,9 +527,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     expect(lateNoRole?.noticeDueAt).toEqual(new Date(now.getTime() - 30 * 60_000)); // prettier-ignore
 
     // Con rol de guardia, vencido, le toca a la guardia.
-    const role = await prisma.role.create({
-      data: { code: 'GUARDIA_CLINICA', name: 'Responsable clínico de guardia' },
-    });
+    const role = await anOnCallRole(prisma);
     await prisma.siteParameter.update({
       where: { siteId: scene.site.id },
       data: { criticalEscalationRoleId: role.id },
@@ -550,9 +553,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     expect(closed).toMatchObject({ afterHours: true, noticeTarget: 'PATIENT' });
 
     // Con guardia, a la guardia aunque no haya vencido.
-    const role = await prisma.role.create({
-      data: { code: 'GUARDIA_CLINICA', name: 'Responsable clínico de guardia' },
-    });
+    const role = await anOnCallRole(prisma);
     await prisma.siteParameter.update({
       where: { siteId: scene.site.id },
       data: { criticalEscalationRoleId: role.id },
@@ -592,9 +593,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     expect(await reader(colleague.id)).toBe(false);
 
     // Vencido con guardia: el rol, vigente en la sede o en todas, sí.
-    const role = await prisma.role.create({
-      data: { code: 'GUARDIA_CLINICA', name: 'Responsable clínico de guardia' },
-    });
+    const role = await anOnCallRole(prisma);
     await prisma.siteParameter.update({
       where: { siteId: scene.site.id },
       data: { criticalNoticeWithinMinutes: 30, criticalEscalationRoleId: role.id }, // prettier-ignore
@@ -626,11 +625,57 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     // Escalado, deja de tocar a quien pidió.
     expect(await reader(orderer.userId)).toBe(false);
 
-    // Un rol desactivado no lo tiene nadie; reactivado, vuelve.
+    // Un rol desactivado no lo tiene nadie: la cola dice que falta guardia,
+    // y el aviso vuelve a toda cuenta que lee la cola (D-208, provisional).
     await prisma.role.update({ where: { id: role.id }, data: { active: false } }); // prettier-ignore
-    expect(await reader(here.id)).toBe(false);
+    expect((await reports.critical(orderer, now))[0]).toMatchObject({ noticeTarget: 'ORDERING_PRACTITIONER', escalationMissing: true }); // prettier-ignore
+    expect(await reader(colleague.id)).toBe(true);
+    // Control positivo: reactivado, vuelve a ser de la guardia y sólo de ella.
     await prisma.role.update({ where: { id: role.id }, data: { active: true } }); // prettier-ignore
     expect(await reader(here.id)).toBe(true);
+    expect(await reader(colleague.id)).toBe(false);
+  });
+
+  it('ORD-065 ORD-167 una guardia que nadie puede atender no es guardia: sin titular vigente o sin record:read, falta guardia y el aviso es de todos', async () => {
+    const prisma = db();
+    const { now, isoWeekday } = clinicNoon();
+    const scene = await aCriticalGlucose(prisma, now);
+    await siteInHours(prisma, scene, isoWeekday);
+    const { reports } = serviceOf(prisma);
+    const colleague = await createUser(prisma);
+    const role = await prisma.role.create({
+      data: { code: 'GUARDIA_SIN_COLA', name: 'Guardia sin la cola' },
+    });
+    await prisma.siteParameter.update({
+      where: { siteId: scene.site.id },
+      data: { criticalNoticeWithinMinutes: 30, criticalEscalationRoleId: role.id }, // prettier-ignore
+    });
+    const first = async () => (await reports.critical({ userId: colleague.id, sites: 'all' }, now))[0]; // prettier-ignore
+
+    // Nadie lo tiene.
+    expect(await first()).toMatchObject({ noticeTarget: 'ORDERING_PRACTITIONER', escalationMissing: true, dueToRequester: true }); // prettier-ignore
+
+    // Alguien lo tiene, pero el rol no lee la cola.
+    const holder = await createUser(prisma);
+    await prisma.userRoleGrant.create({ data: { userId: holder.id, roleId: role.id, siteId: scene.site.id } }); // prettier-ignore
+    expect(await first()).toMatchObject({ escalationMissing: true });
+
+    // Control positivo: con record:read, es de la guardia, y no del colega.
+    await aRecordReadPermission(prisma);
+    await prisma.rolePermission.create({ data: { roleId: role.id, permissionCode: 'record:read' } }); // prettier-ignore
+    expect(await first()).toMatchObject({ noticeTarget: 'ON_CALL_ROLE', escalationMissing: false, dueToRequester: false }); // prettier-ignore
+
+    // Su única asignación, revocada: otra vez sin guardia.
+    await prisma.userRoleGrant.updateMany({ where: { userId: holder.id }, data: { revokedAt: new Date() } }); // prettier-ignore
+    expect(await first()).toMatchObject({ escalationMissing: true });
+
+    // Un titular nuevo con la cuenta desactivada tampoco; activada, sí.
+    const away = await createUser(prisma);
+    await prisma.userRoleGrant.create({ data: { userId: away.id, roleId: role.id, siteId: null } }); // prettier-ignore
+    await prisma.user.update({ where: { id: away.id }, data: { active: false } }); // prettier-ignore
+    expect(await first()).toMatchObject({ escalationMissing: true });
+    await prisma.user.update({ where: { id: away.id }, data: { active: true } }); // prettier-ignore
+    expect(await first()).toMatchObject({ noticeTarget: 'ON_CALL_ROLE', escalationMissing: false }); // prettier-ignore
   });
 
   it('ORD-046 da a cada resultado sin orden su responsable y su plazo, de fábrica quien pidió con 24 h', async () => {
@@ -892,9 +937,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     const nurse = await createUser(prisma);
     const { reports } = serviceOf(prisma);
     const requester: Requester = { userId: nurse.id, sites: 'all' };
-    const role = await prisma.role.create({
-      data: { code: 'GUARDIA_CLINICA', name: 'Responsable clínico de guardia' },
-    });
+    const role = await anOnCallRole(prisma);
     await prisma.siteParameter.update({
       where: { siteId: scene.site.id },
       data: { criticalNoticeWithinMinutes: 120, criticalEscalationRoleId: role.id }, // prettier-ignore

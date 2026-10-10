@@ -672,6 +672,16 @@ export interface DiagnosticReportRepository {
    * account hold nothing, and are filtered in the query.
    */
   heldRoles(userId: string): Promise<readonly HeldRole[]>;
+
+  /**
+   * ORD-065, ORD-167. Which of these sites have somebody who can answer for
+   * the on-call role they name: an active account holding it, active, at that
+   * site or at every site, with `record:read` — without it the critical
+   * worklist cannot even be read. A role nobody holds escalates to nobody.
+   */
+  staffedOnCall(
+    onCall: readonly { siteId: string; roleId: string }[],
+  ): Promise<ReadonlySet<string>>;
 }
 
 /** Injection token. The application never names the adapter. */

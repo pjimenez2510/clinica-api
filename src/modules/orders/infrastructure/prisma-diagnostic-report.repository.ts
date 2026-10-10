@@ -868,6 +868,37 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     });
   }
 
+  /** ORD-065, ORD-167. Sites whose on-call role somebody can answer for. */
+  async staffedOnCall(
+    onCall: readonly { siteId: string; roleId: string }[],
+  ): Promise<ReadonlySet<string>> {
+    if (onCall.length === 0) return new Set();
+
+    const holders = await this.prisma.userRoleGrant.findMany({
+      where: {
+        roleId: { in: [...new Set(onCall.map((pair) => pair.roleId))] },
+        revokedAt: null,
+        user: { active: true },
+        role: {
+          active: true,
+          permissions: { some: { permissionCode: 'record:read' } },
+        },
+      },
+      select: { roleId: true, siteId: true },
+    });
+    return new Set(
+      onCall
+        .filter((pair) =>
+          holders.some(
+            (held) =>
+              held.roleId === pair.roleId &&
+              (held.siteId === null || held.siteId === pair.siteId),
+          ),
+        )
+        .map((pair) => pair.siteId),
+    );
+  }
+
   /** ORD-062. The notice of a critical value; never deleted (ORD-064). */
   async recordNotice(notice: NewCriticalNotice): Promise<CriticalNoticeView> {
     const row = await this.prisma.$transaction((tx) => writeNotice(tx, notice));
