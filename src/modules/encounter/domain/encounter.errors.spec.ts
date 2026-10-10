@@ -45,6 +45,8 @@ import {
   ConsentRequiredError,
   ConsentSignedAfterProcedureError,
   ConsentWitnessRequiredError,
+  ConsentInformerNotAtSiteError,
+  ProcedureCorrectionRequiresSignatureError,
   DiagnosisPrimaryRequiredAfterDischargeError,
   DiagnosisPrimaryTakenError,
   DiagnosisPrincipalUseInvalidError,
@@ -132,6 +134,8 @@ const EVERY_ERROR: readonly DomainError[] = [
   new ConsentWitnessRequiredError(),
   new ConsentNotFoundError(),
   new ConsentNotRevocableError(),
+  new ProcedureCorrectionRequiresSignatureError(),
+  new ConsentInformerNotAtSiteError(),
   // EN-080. La tercera cara de la misma negativa: el concepto es del CNMB o
   // no lo es, y la frase tiene que nombrar la lista que hay que abrir. Con un
   // ternario, «todo lo que no es CIE-10» decía «el tarifario», y una alergia
@@ -325,6 +329,25 @@ describe('el contrato de errores de la atención', () => {
     const twice = new ConsentNotRevocableError();
     expect(twice.code).toBe('CONSENT_NOT_REVOCABLE');
     expect(twice).toBeInstanceOf(ConflictError);
+  });
+
+  it('EN-247 registrar, corregir o quitar un procedimiento tras el alta sin record:sign en la sede responde 403 que dice quién lo hace', () => {
+    const error = new ProcedureCorrectionRequiresSignatureError();
+    expect(error.code).toBe('PROCEDURE_CORRECTION_REQUIRES_SIGNATURE');
+    expect(error).toBeInstanceOf(ForbiddenError); // 403
+    expect(error.userTitle).toBe(
+      'La atención ya tiene el alta: corrige sus procedimientos quien firma historia clínica en esta sede',
+    );
+  });
+
+  it('EN-152 EN-153 quién informó, si no es un profesional activo de la sede, es 422 por campo (D-199.4)', () => {
+    const error = new ConsentInformerNotAtSiteError();
+    expect(error.code).toBe('CONSENT_INFORMER_NOT_AT_SITE');
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.fieldErrors[0]?.field).toBe('informedById');
+    expect(error.userTitle).toBe(
+      'Quien informó tiene que ser un profesional activo de esta sede',
+    );
   });
 
   it('EN-213 «Deshacer» lo que ya se deshizo, o lo que ya volvió a registrarse: 409 que manda a actualizar', () => {

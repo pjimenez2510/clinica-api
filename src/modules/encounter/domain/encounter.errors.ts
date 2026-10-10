@@ -1494,6 +1494,43 @@ export class ConsentRepresentativeRequiredError extends ValidationError {
   }
 }
 
+/**
+ * EN-247 (D-194.1, D-117.13). After the discharge a procedure is recorded,
+ * corrected or removed by whoever may sign the history at the attention's
+ * site — the rule of the diagnoses, with its own sentence because it names
+ * what is being corrected. A 403: the caller is what is wrong.
+ */
+export class ProcedureCorrectionRequiresSignatureError extends ForbiddenError {
+  readonly code = 'PROCEDURE_CORRECTION_REQUIRES_SIGNATURE';
+  override readonly userTitle =
+    'La atención ya tiene el alta: corrige sus procedimientos quien firma historia clínica en esta sede';
+
+  constructor() {
+    super('Correcting a procedure after the discharge requires record:sign');
+  }
+}
+
+/**
+ * EN-152, EN-153 (D-199.4). Who informed the patient is a professional of the
+ * attention's site: the one who intervenes, proposed, or another of the site.
+ */
+export class ConsentInformerNotAtSiteError extends ValidationError {
+  readonly code = 'CONSENT_INFORMER_NOT_AT_SITE';
+  override readonly userTitle =
+    'Quien informó tiene que ser un profesional activo de esta sede';
+  override readonly fieldErrors = [
+    {
+      field: 'informedById',
+      code: 'CONSENT_INFORMER_NOT_AT_SITE',
+      message: 'Elija un profesional activo de esta sede',
+    },
+  ];
+
+  constructor() {
+    super('The informer is not an active practitioner of the site');
+  }
+}
+
 /** EN-153. Nobody signs the refusal: the external witness does. */
 export class ConsentWitnessRequiredError extends ValidationError {
   readonly code = 'CONSENT_WITNESS_REQUIRED';

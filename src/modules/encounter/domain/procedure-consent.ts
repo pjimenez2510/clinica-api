@@ -62,6 +62,11 @@ export type ProcedureConsentInput =
       kind: 'SIGNED';
       signer: ConsentSigner;
       representative: Representative | null;
+      /**
+       * D-199.4. The account of who informed — the professional who
+       * intervenes. Absent: the attention's professional.
+       */
+      informedById?: string;
       /** Absent means «ahora», the application's clock. */
       signedAt?: Date;
     }
@@ -77,6 +82,8 @@ export interface RefusalInput {
   signer: RefusalSigner;
   representative: Representative | null;
   witness: { name: string; document: string } | null;
+  /** D-199.4. As in the signed consent: absent, the attention's professional. */
+  informedById?: string;
 }
 
 /** EN-154. Who expressed the revocation. */

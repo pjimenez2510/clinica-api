@@ -37,6 +37,7 @@ import {
   EncounterNotFoundError,
   PractitionerNotLicensedError,
   PractitionerProfileRequiredError,
+  ProcedureCorrectionRequiresSignatureError,
   ProcedureRetractionReasonRequiredError,
 } from '../domain/encounter.errors';
 import {
@@ -607,14 +608,23 @@ export class ClinicalCodingService {
    */
   async recordProcedure(
     request: RecordProcedureRequest,
-    requester: Requester,
+    requester: CodingRequester,
   ): Promise<RecordedProcedureView> {
-    const encounter = await this.requireLiveEncounter(
+    // EN-247 (D-194.1). After the discharge the procedure that was missing is
+    // still recorded — the RDACAA reads these rows — by whoever corrects then.
+    const encounter = await this.requireCorrectableEncounter(
       request.encounterId,
       requester,
     );
+    const authority = await this.correctionAuthority(
+      encounter,
+      requester,
+      'procedure',
+    );
 
     const procedure = await this.coding.addProcedure({
+      mayCorrectAfterDischarge: authority.mayCorrectAfterDischarge,
+      afterDischargeRefusal: authority.afterDischargeRefusal,
       encounterId: encounter.id,
       conceptId: request.conceptId,
       quantity: request.quantity,
@@ -640,6 +650,14 @@ export class ClinicalCodingService {
       { site_id: encounter.siteId, action: 'PROCEDURE_RECORDED' },
       'procedure recorded',
     );
+    // BI-242. After the discharge caja may already hold the open account.
+    await this.procedureCharges.procedureChanged({
+      encounterId: encounter.id,
+      siteId: encounter.siteId,
+      changedById: requester.userId,
+      procedureId: procedure.id,
+      change: 'RECORDED',
+    });
 
     return procedure;
   }
@@ -675,18 +693,23 @@ export class ClinicalCodingService {
   }
 
   /**
-   * EN-244 (D-194.1). Corrects a procedure in place while the attention
-   * admits new content — the rule of recording it (EN-009). The previous row
-   * is the database's version. BI-240: `billing` follows the proposed charge,
-   * told after this transaction; the port never throws.
+   * EN-244, EN-247 (D-194.1). Corrects a procedure in place — also after the
+   * discharge, by whoever corrects the coding then (D-117.13). The previous
+   * row is the database's version. BI-240: `billing` follows the proposed
+   * charge, told after this transaction; the port never throws.
    */
   async editProcedure(
     request: EditProcedureRequest,
-    requester: Requester,
+    requester: CodingRequester,
   ): Promise<RecordedProcedureView> {
-    const encounter = await this.requireLiveEncounter(
+    const encounter = await this.requireCorrectableEncounter(
       request.encounterId,
       requester,
+    );
+    const authority = await this.correctionAuthority(
+      encounter,
+      requester,
+      'procedure',
     );
     const note = request.note === undefined ? undefined : request.note?.trim();
 
@@ -696,8 +719,8 @@ export class ClinicalCodingService {
       conceptId: request.conceptId,
       quantity: request.quantity,
       note: note === undefined ? undefined : note === '' ? null : note,
-      editedById: requester.userId,
       sites: requester.sites,
+      ...authority,
     });
 
     await this.audit.record({
@@ -750,14 +773,15 @@ export class ClinicalCodingService {
   }
 
   /**
-   * EN-245 (D-194.2). Takes a procedure off a live attention, archived with
-   * who, when and why. BI-241: a proposed charge goes with it.
+   * EN-245, EN-247 (D-194.1, D-194.2). Takes a procedure off the attention —
+   * also after the discharge, by whoever corrects the coding then — archived
+   * with who, when and why. BI-241: a proposed charge goes with it.
    */
   async retractProcedure(
     request: { encounterId: string; procedureId: string; reason?: string },
-    requester: Requester,
+    requester: CodingRequester,
   ): Promise<void> {
-    const encounter = await this.requireLiveEncounter(
+    const encounter = await this.requireCorrectableEncounter(
       request.encounterId,
       requester,
     );
@@ -765,6 +789,11 @@ export class ClinicalCodingService {
     if (reason === undefined || reason === '') {
       throw new ProcedureRetractionReasonRequiredError();
     }
+    const authority = await this.correctionAuthority(
+      encounter,
+      requester,
+      'procedure',
+    );
 
     await this.coding.retractProcedure({
       encounterId: encounter.id,
@@ -772,6 +801,8 @@ export class ClinicalCodingService {
       reason,
       retractedById: requester.userId,
       sites: requester.sites,
+      mayCorrectAfterDischarge: authority.mayCorrectAfterDischarge,
+      afterDischargeRefusal: authority.afterDischargeRefusal,
     });
 
     await this.audit.record({
@@ -797,8 +828,10 @@ export class ClinicalCodingService {
   }
 
   /**
-   * EN-246. Brings a removed procedure back as a new row, only while the
-   * attention is live. BI-242: with an open account its charge is proposed.
+   * EN-246, EN-247. Brings a removed procedure back as a new row, only while
+   * the attention is live — like «Deshacer» a diagnosis (EN-213): after the
+   * discharge it is recorded again. BI-242: with an open account its charge
+   * is proposed.
    */
   async restoreProcedure(
     encounterId: string,
@@ -860,10 +893,11 @@ export class ClinicalCodingService {
    * EN-009, EN-130. New clinical content goes into an attention that is still
    * live.
    *
-   * A PROCEDURE, and bringing back a removed diagnosis (EN-213), are new
-   * content: `DISCHARGED` refuses them. A NEW DIAGNOSIS after the discharge
-   * is not refused here since EN-215 (D-117.12): it is a correction of the
-   * coding the report reads, with its own rules (`correctionAuthority`).
+   * Bringing back a removed diagnosis (EN-213) or procedure (EN-246) is new
+   * content: `DISCHARGED` refuses it. A NEW DIAGNOSIS or PROCEDURE after the
+   * discharge is not refused here since EN-215 and EN-247 (D-117.12,
+   * D-194.1): it is a correction of the coding the report reads, with its
+   * own rules (`correctionAuthority`).
    */
   private async requireLiveEncounter(
     encounterId: string,
@@ -889,6 +923,8 @@ export class ClinicalCodingService {
   private async correctionAuthority(
     encounter: EncounterView,
     requester: CodingRequester,
+    // EN-247. The same rule, with the sentence that names what is corrected.
+    subject: 'diagnosis' | 'procedure' = 'diagnosis',
   ): Promise<CorrectionAuthority> {
     const signsHere =
       requester.signSites === 'all' ||
@@ -903,7 +939,9 @@ export class ClinicalCodingService {
 
     if (hasDischarge(encounter.status)) {
       if (refusal === 'NOT_SIGNER') {
-        throw new DiagnosisCorrectionRequiresSignatureError();
+        throw subject === 'procedure'
+          ? new ProcedureCorrectionRequiresSignatureError()
+          : new DiagnosisCorrectionRequiresSignatureError();
       }
       if (refusal === 'NO_PRACTITIONER_PROFILE') {
         throw new PractitionerProfileRequiredError();

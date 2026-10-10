@@ -1,6 +1,7 @@
 /**
  * EN-248, BI-240 to BI-243 (D-194.3). How `encounter` tells `billing` that a
- * procedure was corrected, removed or restored, without importing it.
+ * procedure was recorded, corrected, removed or restored, without importing
+ * it.
  *
  * The charge a procedure raised is `billing`'s (BI-151). While it is still a
  * PROPOSAL nobody looked at, it follows the procedure; once caja confirmed or
@@ -18,7 +19,8 @@ export interface ProcedureChargeSync {
     changedById: string;
     /** The procedure's id; for a restoration, the NEW row's. */
     procedureId: string;
-    change: 'EDITED' | 'RETRACTED' | 'RESTORED';
+    /** `RECORDED` (D-194.1): after the discharge the account may be open. */
+    change: 'RECORDED' | 'EDITED' | 'RETRACTED' | 'RESTORED';
   }): Promise<void>;
 }
 

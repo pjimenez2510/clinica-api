@@ -53,10 +53,12 @@ export class ProcedureChargeFollowService implements ProcedureChargeSync {
     siteId: string;
     changedById: string;
     procedureId: string;
-    change: 'EDITED' | 'RETRACTED' | 'RESTORED';
+    change: 'RECORDED' | 'EDITED' | 'RETRACTED' | 'RESTORED';
   }): Promise<void> {
     try {
-      if (command.change === 'RESTORED') {
+      // BI-242. A new row — restored, or recorded after the discharge — has
+      // no charge yet: with an open account it is proposed.
+      if (command.change === 'RESTORED' || command.change === 'RECORDED') {
         await this.proposeRestored(command);
         return;
       }
@@ -136,7 +138,9 @@ export class ProcedureChargeFollowService implements ProcedureChargeSync {
   }
 
   /**
-   * BI-242. The restored procedure is a new row: with an open account it is
+   * BI-242. The restored procedure — or one recorded after the discharge,
+   * when caja may already hold the account (D-194.1) — is a new row: with an
+   * open account it is
    * proposed as passing the visit to caja would, which is idempotent (BI-154)
    * and never re-proposes the line removed with the old row (BI-157).
    */

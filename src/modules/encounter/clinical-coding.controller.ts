@@ -364,6 +364,8 @@ export class ClinicalCodingController {
                   kind: 'SIGNED',
                   signer: dto.consent.signer,
                   representative: representativeOf(dto.consent.representative),
+                  // D-199.4. Absent: the attention's professional.
+                  informedById: dto.consent.informedById,
                   signedAt:
                     dto.consent.signedAt === undefined
                       ? undefined
@@ -371,7 +373,8 @@ export class ClinicalCodingController {
                 }
               : dto.consent,
       },
-      this.requester(req, 'record:write'),
+      // EN-247. After the discharge, recording is correcting the coding.
+      this.correctingRequester(req),
     );
     return toRecordedProcedureResponse(procedure);
   }
@@ -397,9 +400,10 @@ export class ClinicalCodingController {
   }
 
   /**
-   * EN-244 (D-127). Corrects a procedure in place: its tariff concept, how
-   * many times, its note. `record:write`, like recording it; only while the
-   * attention is live (D-194.1). A `PATCH`: only what travels changes.
+   * EN-244, EN-247 (D-127, D-194.1). Corrects a procedure in place: its
+   * tariff concept, how many times, its note. `record:write`, like recording
+   * it; after the discharge, also `record:sign` at the site (checked by the
+   * service). A `PATCH`: only what travels changes.
    */
   @Patch('procedures/:procedureId')
   @RequirePermission('record:write', 'query')
@@ -419,7 +423,7 @@ export class ClinicalCodingController {
         quantity: dto.quantity,
         note: dto.note,
       },
-      this.requester(req, 'record:write'),
+      this.correctingRequester(req),
     );
     return toRecordedProcedureResponse(procedure);
   }
@@ -460,7 +464,7 @@ export class ClinicalCodingController {
   ): Promise<void> {
     await this.coding.retractProcedure(
       { encounterId, procedureId, reason: dto.reason },
-      this.requester(req, 'record:write'),
+      this.correctingRequester(req),
     );
   }
 

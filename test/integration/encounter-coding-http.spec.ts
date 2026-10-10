@@ -2170,37 +2170,106 @@ describe('el bloque K por HTTP', () => {
       expect(await prisma.encounterProcedure.count({ where: { encounterId: other } })).toBe(0); // prettier-ignore
     });
 
-    it('EN-244 EN-245 EN-246 tras el alta no se corrige, no se quita ni se restaura: ENCOUNTER_ALREADY_CLOSED (D-194.1)', async () => {
-      const { encounterId, id } = await aProcedure();
-      const second = await post(
-        `/encounters/${encounterId}/procedures`,
-        doctorToken,
-        {
-          conceptId: (
-            await prisma.encounterProcedure.findUniqueOrThrow({ where: { id } })
-          ).conceptId,
-          quantity: 1,
+    /** A role that writes the history and does not sign it (a resident). */
+    async function aResident(): Promise<string> {
+      const role = await prisma.role.create({
+        data: {
+          code: 'RESIDENTE_PRUEBA',
+          name: 'Residente',
+          permissions: { create: [{ permissionCode: 'record:read' }, { permissionCode: 'record:write' }] }, // prettier-ignore
         },
-      ).expect(201);
-      const removedId = (second.body as ProcedureBody).id;
-      await post(`/encounters/${encounterId}/procedures/${removedId}/retract`, doctorToken, { reason: 'Registrado por error' }).expect(204); // prettier-ignore
+      });
+      registry.invalidate();
+      return (await signIn(role.code, 'residente@clinica.ec', '0102030400'))
+        .token;
+    }
+
+    async function dischargeProcedureEncounter(encounterId: string) {
       const encounter = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
       await prisma.encounter.update({
         where: { id: encounterId },
         data: { status: 'DISCHARGED', endedAt: new Date(encounter.startedAt.getTime() + 20 * 60_000), dischargeCondition: 'ALIVE' }, // prettier-ignore
       });
+    }
+
+    it('EN-247 tras el alta registra, corrige y quita quien firma historia en la sede; quien no firma, 403; restaurar, no (D-194.1)', async () => {
+      const { encounterId, id } = await aProcedure();
+      const { conceptId } = await prisma.encounterProcedure.findUniqueOrThrow({ where: { id } }); // prettier-ignore
+      const second = await post(`/encounters/${encounterId}/procedures`, doctorToken, { conceptId, quantity: 1 }).expect(201); // prettier-ignore
+      const removedId = (second.body as ProcedureBody).id;
+      await post(`/encounters/${encounterId}/procedures/${removedId}/retract`, doctorToken, { reason: 'Registrado por error' }).expect(204); // prettier-ignore
+      const resident = await aResident();
+      // Control positivo: con la atención viva, el residente corrige.
+      await patch(`/encounters/${encounterId}/procedures/${id}`, resident, { quantity: 3 }).expect(200); // prettier-ignore
+      await dischargeProcedureEncounter(encounterId);
+
+      for (const response of [
+        await post(`/encounters/${encounterId}/procedures`, resident, { conceptId, quantity: 1 }), // prettier-ignore
+        await patch(`/encounters/${encounterId}/procedures/${id}`, resident, { quantity: 1 }), // prettier-ignore
+        await post(`/encounters/${encounterId}/procedures/${id}/retract`, resident, { reason: 'Registrado por error' }), // prettier-ignore
+      ]) {
+        expect(response.status).toBe(403);
+        expect((response.body as Problem).code).toBe(
+          'PROCEDURE_CORRECTION_REQUIRES_SIGNATURE',
+        );
+      }
+      expect((await prisma.encounterProcedure.findUniqueOrThrow({ where: { id } })).quantity).toBe(3); // prettier-ignore
+
+      // Quien firma en la sede: corrige con su versión, registra y quita.
+      const corrected = await patch(`/encounters/${encounterId}/procedures/${id}`, doctorToken, { quantity: 1 }).expect(200); // prettier-ignore
+      expect((corrected.body as ProcedureBody).quantity).toBe(1);
+      const versions = await prisma.recordVersion.count({ where: { resourceType: 'encounter_procedure', resourceId: id } }); // prettier-ignore
+      expect(versions).toBe(2);
+      const late = await post(`/encounters/${encounterId}/procedures`, doctorToken, { conceptId, quantity: 2 }).expect(201); // prettier-ignore
+      await post(`/encounters/${encounterId}/procedures/${id}/retract`, doctorToken, { reason: 'No se realizó' }).expect(204); // prettier-ignore
+      const sheet = (await get(`/encounters/${encounterId}/procedures`, doctorToken).expect(200)).body as SheetBody; // prettier-ignore
+      expect(sheet.items.map((item) => item.id)).toEqual([(late.body as ProcedureBody).id]); // prettier-ignore
+      expect(sheet.retracted.map((item) => item.reason).sort()).toEqual(['No se realizó', 'Registrado por error']); // prettier-ignore
+
+      // Restaurar sigue siendo de la atención viva (EN-246, EN-247).
+      const restore = await post(`/encounters/${encounterId}/procedures/${removedId}/restore`, doctorToken).expect(409); // prettier-ignore
+      expect((restore.body as Problem).code).toBe('ENCOUNTER_ALREADY_CLOSED');
+    });
+
+    it('EN-247 la atención reportada al RDACAA no admite registrar, corregir ni quitar un procedimiento (D-117.16)', async () => {
+      const { encounterId, id } = await aProcedure();
+      const { conceptId } = await prisma.encounterProcedure.findUniqueOrThrow({ where: { id } }); // prettier-ignore
+      await dischargeProcedureEncounter(encounterId);
+      await prisma.encounter.update({ where: { id: encounterId }, data: { reportedAt: new Date() } }); // prettier-ignore
+
+      for (const response of [
+        await post(`/encounters/${encounterId}/procedures`, doctorToken, { conceptId, quantity: 1 }), // prettier-ignore
+        await patch(`/encounters/${encounterId}/procedures/${id}`, doctorToken, { quantity: 1 }), // prettier-ignore
+        await post(`/encounters/${encounterId}/procedures/${id}/retract`, doctorToken, { reason: 'Registrado por error' }), // prettier-ignore
+      ]) {
+        expect(response.status).toBe(409);
+        expect((response.body as Problem).code).toBe(
+          'ENCOUNTER_ALREADY_REPORTED',
+        );
+      }
+      expect(await prisma.encounterProcedure.count({ where: { encounterId } })).toBe(1); // prettier-ignore
+      expect((await prisma.encounterProcedure.findUniqueOrThrow({ where: { id } })).quantity).toBe(2); // prettier-ignore
+    });
+
+    it('EN-244 EN-245 interrumpida, ni quien firma corrige ni quita: ENCOUNTER_ALREADY_CLOSED', async () => {
+      const { encounterId, id } = await aProcedure();
+      const encounter = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
+      const at = new Date(encounter.startedAt.getTime() + 20 * 60_000);
+      const { userId } = await prisma.practitioner.findUniqueOrThrow({ where: { id: doctorPractitionerId } }); // prettier-ignore
+      await prisma.encounter.update({
+        where: { id: encounterId },
+        data: { status: 'DISCONTINUED', endedAt: at, discontinuedAt: at, discontinuedOrigin: 'PATIENT', discontinuedReason: 'Se fue', discontinuedById: userId }, // prettier-ignore
+      });
 
       for (const response of [
         await patch(`/encounters/${encounterId}/procedures/${id}`, doctorToken, { quantity: 1 }), // prettier-ignore
         await post(`/encounters/${encounterId}/procedures/${id}/retract`, doctorToken, { reason: 'Registrado por error' }), // prettier-ignore
-        await post(`/encounters/${encounterId}/procedures/${removedId}/restore`, doctorToken), // prettier-ignore
       ]) {
         expect(response.status).toBe(409);
         expect((response.body as Problem).code).toBe(
           'ENCOUNTER_ALREADY_CLOSED',
         );
       }
-      // Positive control: the procedure stands as it was.
       expect((await prisma.encounterProcedure.findUniqueOrThrow({ where: { id } })).quantity).toBe(2); // prettier-ignore
     });
   });

@@ -903,6 +903,13 @@ export const DOMAIN_ERROR_CODES = [
   'CONSENT_WITNESS_REQUIRED',
   'PROCEDURE_CONSENT_NOT_FOUND',
   'CONSENT_NOT_REVOCABLE',
+  //   * `PROCEDURE_CORRECTION_REQUIRES_SIGNATURE` (403) — EN-247 (D-194.1).
+  //     Tras el alta registra, corrige o quita un procedimiento quien firma
+  //     historia en la sede, como el diagnóstico (D-117.13).
+  'PROCEDURE_CORRECTION_REQUIRES_SIGNATURE',
+  //   * `CONSENT_INFORMER_NOT_AT_SITE` (422) — EN-152, EN-153 (D-199.4). Quien
+  //     informó el 024 o la negativa es un profesional activo de la sede.
+  'CONSENT_INFORMER_NOT_AT_SITE',
   //   * `VITALS_CORRECTION_REQUIRES_SIGNATURE` (403) — EN-228 (D-134.3). Tras
   //     el alta corrige la toma quien tiene `record:sign` en la sede.
   'VITALS_CORRECTION_REQUIRES_SIGNATURE',
