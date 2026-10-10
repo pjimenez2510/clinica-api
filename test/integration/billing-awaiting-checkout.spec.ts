@@ -492,7 +492,7 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       const aSuture = () =>
         prisma.encounterProcedure.create({
           // Recorded NOW, on the clock that also opens the accounts.
-          data: { encounterId, conceptId: suture.id, procedureCode: suture.code, procedureDisplay: suture.display, quantity: 1, performedAt: startedAt, recordedAt: new Date() }, // prettier-ignore
+          data: { encounterId, conceptId: suture.id, procedureCode: suture.code, procedureDisplay: suture.display, quantity: 1, performedAt: startedAt, recordedAt: new Date(), recordedById: authorId }, // prettier-ignore
         });
       await aSuture();
       await toCashier(encounterId);

@@ -197,6 +197,8 @@ async function aSutureWasPerformed(
       procedureDisplay: 'Sutura simple',
       quantity: 1,
       performedAt,
+      recordedAt: new Date(),
+      recordedById: context.userId,
     },
   });
   return procedure.id;
