@@ -16,10 +16,13 @@ import type {
  *
  * ⚠️ THROUGH `chartScope` AND NOT `patientId`. A merge re-points nothing
  * (D-031), so a read by the bare identifier would draw half a weight curve
- * the day admissions repairs a duplicate — and say nothing.
- * `patient-chart-scope.spec.ts` walks this file and fails the build if the
- * scope ever leaves the `where`. The filter hangs off `encounter`, which owns
- * the taking.
+ * the day admissions repairs a duplicate — and say nothing. The filter
+ * hangs off `encounter`, which owns the taking.
+ *
+ * ⚠️ `patient-chart-scope.spec.ts` DOES NOT GUARD THIS FILE: it scans the
+ * tables with a `patient_id` of their own, and `encounter_vitals` has none.
+ * What fails if the scope leaves the `where` is the integration test EN-269
+ * («…y de la que absorbió», `encounter-vitals-history.spec.ts`).
  */
 const TAKING_SELECT = {
   encounterId: true,
@@ -42,6 +45,22 @@ const TAKING_SELECT = {
     select: { siteId: true, ageYears: true, ageMonths: true, ageDays: true },
   },
 } satisfies Prisma.EncounterVitalsSelect;
+
+/** EN-269. The columns that are a figure: a taking has at least one. */
+const FIGURES = [
+  'weightKg',
+  'heightCm',
+  'headCircumferenceCm',
+  'abdominalCircumferenceCm',
+  'systolicBp',
+  'diastolicBp',
+  'heartRate',
+  'respiratoryRate',
+  'temperatureC',
+  'oxygenSaturation',
+  'hemoglobinGDl',
+  'hemoglobinCorrectedGDl',
+] as const satisfies readonly (keyof Prisma.EncounterVitalsWhereInput)[];
 
 type TakingRow = Prisma.EncounterVitalsGetPayload<{
   select: typeof TAKING_SELECT;
@@ -69,22 +88,33 @@ export class PrismaVitalsHistoryRepository implements VitalsHistoryRepository {
   }
 
   /**
-   * EN-272. The LOWEST line of the sites in scope, each figure on its own: a
-   * chart has one line, and the strictest one flags too much rather than too
-   * little. With one site — the common clinic — it is that site's.
+   * EN-272. THE PAIR OF ONE SITE: the active site in scope with the lowest
+   * systolic line, its diastolic with it. A chart has one line and the
+   * strictest flags too much rather than too little — but the minimum of each
+   * column on its own would draw a pair no site configured (130/90 and 140/80
+   * would become 130/80). A closed site's parameters are nobody's anymore and
+   * do not count. With one site — the common clinic — it is that site's.
    */
   async bloodPressureReference(
     sites: SiteScopeFilter,
   ): Promise<BloodPressureReference | null> {
-    const lowest = await this.prisma.siteParameter.aggregate({
-      where: sites === 'all' ? {} : { siteId: { in: [...sites] } },
-      _min: { bpReferenceSystolic: true, bpReferenceDiastolic: true },
+    const lowest = await this.prisma.siteParameter.findFirst({
+      where: {
+        site: { active: true },
+        ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
+      },
+      orderBy: [
+        { bpReferenceSystolic: 'asc' },
+        { bpReferenceDiastolic: 'asc' },
+      ],
+      select: { bpReferenceSystolic: true, bpReferenceDiastolic: true },
     });
-    const systolic = lowest._min.bpReferenceSystolic;
-    const diastolic = lowest._min.bpReferenceDiastolic;
-    return systolic === null || diastolic === null
+    return lowest === null
       ? null
-      : { systolic, diastolic };
+      : {
+          systolic: lowest.bpReferenceSystolic,
+          diastolic: lowest.bpReferenceDiastolic,
+        };
   }
 }
 
@@ -97,6 +127,9 @@ function takingsWhere(
   query: Omit<VitalsHistoryQuery, 'limit'>,
 ): Prisma.EncounterVitalsWhereInput {
   return {
+    // EN-269. A row with only the reason for the visit (EN-163) is no taking:
+    // it would spend a place of the hundred and a unit of «de 130».
+    OR: FIGURES.map((figure) => ({ [figure]: { not: null } })),
     encounter: {
       ...chartScope(query.patientId),
       ...(query.sites === 'all' ? {} : { siteId: { in: [...query.sites] } }),

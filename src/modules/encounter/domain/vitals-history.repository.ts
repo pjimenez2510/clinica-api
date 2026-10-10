@@ -66,8 +66,8 @@ export interface VitalsHistoryRepository {
   /** EN-269. How many there are in all, with the SAME predicate as the list. */
   countTakings(query: Omit<VitalsHistoryQuery, 'limit'>): Promise<number>;
   /**
-   * EN-272. The lowest line among the sites in scope; `null` only when the
-   * scope holds no site with parameters.
+   * EN-272. The pair of ONE active site in scope — the one with the lowest
+   * systolic line —; `null` only when the scope holds no active site.
    */
   bloodPressureReference(
     sites: SiteScopeFilter,

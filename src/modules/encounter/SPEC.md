@@ -4925,7 +4925,8 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   diastólica, frecuencias cardiaca y respiratoria, temperatura, saturación,
   hemoglobina medida y corregida—, su `measuredAt`, la atención y su sede, y la
   **edad congelada** de la atención (EN-221); de la más reciente a la más
-  antigua, **acotadas a 100**, con el total que hay.
+  antigua, **acotadas a 100**, con el total que hay; y una fila sin ninguna
+  cifra —sólo el motivo de consulta— NO DEBERÁ servirse ni contarse.
   > Acotada y no paginada, como el resumen (EN-159) y por lo mismo: un límite
   > que pide el cliente es una extracción en bloque con una sola fila de
   > bitácora. Cien tomas son veinticinco años de un crónico visto cada
@@ -4946,23 +4947,35 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   `settings:manage`, sin desplegar; NO DEBERÁ admitir una sistólica fuera de
   100–200 mmHg, una diastólica fuera de 60–120 ni una diastólica igual o mayor
   que la sistólica (`PARAM_OUT_OF_RANGE`, nombrando el campo); y la respuesta de
-  EN-269 DEBERÁ llevar la línea —la más baja de las sedes de su alcance—.
+  EN-269 DEBERÁ llevar la línea de **una** sede activa de su alcance —la de
+  sistólica más baja, con su diastólica—.
   > **El valor no lo decide este sistema** (D-207 §1, por confirmar con un
   > clínico): nace en 140/90, la etapa 2 del ACC/AHA 2017 (la recomendación de
   > D-207 §1), precisamente porque se cambia sin desplegar. La más baja de
   > las sedes, porque una gráfica tiene una sola línea y la más estricta señala
-  > de más y no de menos; en una clínica de una sede es la suya.
+  > de más y no de menos; en una clínica de una sede es la suya. El par, de
+  > una sola sede: el mínimo de cada columna por separado dibujaría uno que
+  > nadie configuró (130/90 y 140/80 darían 130/80). Una sede cerrada no
+  > cuenta. Quién fija la línea —hoy `settings:manage`, un rol sin acceso
+  > clínico— es D-214 §3.
 - **EN-273** — MIENTRAS la sesión tenga `record:read`, la ficha del paciente
   DEBERÁ tener la pestaña «Evolución», que dibuje en el tiempo el peso, la TA
-  (sistólica y diastólica, con la línea de EN-272), el IMC y las demás cifras
+  (sistólica y diastólica, con la línea de EN-272 sólo si todas sus tomas son
+  de los 18 años o más), el IMC, la talla acostado y la de pie en curvas
+  distintas, la hemoglobina corregida y la medida aparte, y las demás cifras
   que tengan al menos una toma; cada gráfica DEBERÁ llevar al lado su **tabla
   de valores** —fecha, edad de ese día y cifra— que lee un lector de pantalla;
   sin ninguna toma DEBERÁ decirlo en un estado vacío, y con más de las que
   llegan, cuántas se muestran de cuántas.
   > La tabla no es un adorno de accesibilidad: una gráfica sin sus números
-  > obliga a adivinar el valor por la altura de un punto.
+  > obliga a adivinar el valor por la altura de un punto. La línea guardada es
+  > un umbral de adultos (D-207 §1); en un niño la hipertensión va por
+  > percentil (AAP 2017), y 118/78 bajo una línea de 140/90 se leería
+  > «normal» (D-214 §1). Talla acostado y de pie, aparte, por EN-064; la
+  > hemoglobina corregida, aparte de la medida, por EN-065 (D-214 §2).
 - **EN-274** — CUANDO la consulta tenga al menos **dos** tomas de peso o de TA
-  entre las anteriores del resumen (EN-159) y la de la atención, la cabecera
+  entre las anteriores del resumen (EN-159) —nunca de una atención anulada
+  (EN-270)— y la de la atención, la cabecera
   fija DEBERÁ dibujar su tendencia en pequeño, con las cifras por escrito para
   quien no ve la línea, sin crecer en alto; en el teléfono (menos de 640 px)
   NO DEBERÁ dibujarla, y con menos de dos tomas NO DEBERÁ dibujar nada.

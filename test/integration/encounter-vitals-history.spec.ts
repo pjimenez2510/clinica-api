@@ -327,6 +327,65 @@ describe('la evolución de los signos por HTTP', () => {
     await expect(rows()).resolves.toBe(1);
   });
 
+  it('EN-271 una ficha que no existe responde lo mismo que una absorbida, sin bitácora', async () => {
+    const { survivor } = await theScene();
+    const missing = await vitalsOf('00000000-0000-7000-8000-000000000000').expect(409); // prettier-ignore
+    expect((missing.body as { code: string }).code).toBe(
+      'PATIENT_CHART_NOT_OPEN',
+    );
+    await expect(
+      prisma.accessAudit.count({
+        where: { resourceType: 'patient_vitals_history' },
+      }),
+    ).resolves.toBe(0);
+    // Control positivo: la vigente sí se lee y sí deja su fila.
+    await vitalsOf(survivor.id).expect(200);
+    await expect(
+      prisma.accessAudit.count({
+        where: { resourceType: 'patient_vitals_history' },
+      }),
+    ).resolves.toBe(1);
+  });
+
+  it('EN-269 acota a 100 tomas con el total de verdad, y una fila sin ninguna cifra no es una toma', async () => {
+    const patient = await createPatient(prisma);
+    const practitionerId = (await createPractitioner(prisma)).id;
+    const author = (await createUser(prisma)).id;
+    for (let index = 0; index < 101; index += 1) {
+      const encounter = await createEncounter(prisma, {
+        siteId,
+        practitionerId,
+        patientId: patient.id,
+        startedAt: new Date(Date.now() - (index + 2) * HOUR),
+      });
+      await prisma.encounterVitals.create({
+        data: { encounterId: encounter.id, weightKg: 70, recordedById: author },
+      });
+    }
+    // Sólo el motivo de consulta (EN-163): no dibuja nada, no cuenta.
+    const onlyComplaint = await createEncounter(prisma, {
+      siteId,
+      practitionerId,
+      patientId: patient.id,
+      startedAt: new Date(Date.now() - HOUR),
+    });
+    await prisma.encounterVitals.create({
+      data: {
+        encounterId: onlyComplaint.id,
+        presentingComplaint: 'Dolor de cabeza',
+        recordedById: author,
+      },
+    });
+
+    const body = (await vitalsOf(patient.id).expect(200))
+      .body as VitalsHistoryBody;
+    expect(body.items).toHaveLength(100);
+    expect(body.total).toBe(101);
+    expect(body.items.map((taking) => taking.encounterId)).not.toContain(
+      onlyComplaint.id,
+    );
+  });
+
   it('EN-272 trae la línea de la TA de la sede, la más baja si el alcance tiene varias', async () => {
     const { survivor } = await theScene();
 
@@ -359,6 +418,35 @@ describe('la evolución de los signos por HTTP', () => {
       .body as VitalsHistoryBody;
     expect(wide.bloodPressureReference).toEqual({
       systolic: 130,
+      diastolic: 80,
+    });
+
+    // El par es de UNA sede: con 130/85 en la otra y 140/80 en ésta, no se
+    // dibuja 130/80, que no configuró nadie.
+    await prisma.siteParameter.update({
+      where: { siteId: otherSiteId },
+      data: { bpReferenceDiastolic: 85 },
+    });
+    await prisma.siteParameter.update({
+      where: { siteId },
+      data: { bpReferenceDiastolic: 80 },
+    });
+    const pair = (await vitalsOf(survivor.id, clinicWide.token).expect(200))
+      .body as VitalsHistoryBody;
+    expect(pair.bloodPressureReference).toEqual({
+      systolic: 130,
+      diastolic: 85,
+    });
+
+    // Una sede cerrada ya no fija la línea de nadie.
+    await prisma.site.update({
+      where: { id: otherSiteId },
+      data: { active: false },
+    });
+    const closed = (await vitalsOf(survivor.id, clinicWide.token).expect(200))
+      .body as VitalsHistoryBody;
+    expect(closed.bloodPressureReference).toEqual({
+      systolic: 140,
       diastolic: 80,
     });
   });
