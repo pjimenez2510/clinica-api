@@ -513,6 +513,13 @@ describe('las columnas del instructivo del RDACAA, contra la base', () => {
     const chart = await registerPatient({
       genderIdentityConceptId: genderIdentityId,
     });
+    // Control positivo por el mismo camino: otra fecha de adulto sí se corrige
+    // y deja su fila, así que el cero de abajo es la regla.
+    await correct(chart.id, { birthDate: '1991-03-15' }).expect(200); // fecha-fija: fecha de nacimiento de adulto
+    const written = await prisma.patientChangeHistory.count({
+      where: { patientId: chart.id },
+    });
+    expect(written).toBeGreaterThan(0);
 
     const refused = await correct(chart.id, { birthDate: today() }).expect(422);
 
@@ -523,7 +530,7 @@ describe('las columnas del instructivo del RDACAA, contra la base', () => {
       await prisma.patientChangeHistory.count({
         where: { patientId: chart.id },
       }),
-    ).toBe(0);
+    ).toBe(written);
   });
 
   it('PA-058 no deja que la orientación sexual viaje en la ficha ni en el listado', async () => {
