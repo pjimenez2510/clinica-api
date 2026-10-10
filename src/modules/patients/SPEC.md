@@ -2103,13 +2103,14 @@ Ningún requisito de esta sección lo altera._
   > el navegador.
 - **PA-074** — CUANDO una búsqueda de paciente no encuentre a nadie, la
   pantalla DEBERÁ ofrecer registrarlo **con lo tecleado ya puesto**: si es un
-  número, como número de documento; si son palabras, como apellidos y nombres
-  en el orden de la cédula —primer apellido, segundo apellido, primer nombre,
-  segundo nombre—, editables antes de guardar.
-  > El orden es el de la cédula ecuatoriana y el del catastro del SRI
-  > («APELLIDOS NOMBRES»), que es como se dicta en el mostrador; con dos
-  > palabras, apellido y nombre. Si se tecleó al revés, se ve y se corrige en
-  > el mismo formulario: cambia lo que se escribe, no lo que se guarda sin ver.
+  número, como número de documento; si es una sola palabra, como primer
+  apellido; y si son varias palabras, NO DEBERÁ repartirlas entre apellidos y
+  nombres, y DEBERÁ enseñar lo buscado junto a los nombres.
+  > «Juan Pérez» y «Pérez Juan» se teclean los dos (PA-070 encuentra
+  > cualquiera), y adivinar mal el orden pone un nombre en el apellido de una
+  > ficha que sale en recetas, certificados y el RDACAA. Si se reparten y cómo
+  > es **D-209**, pendiente del autor (revisión clínica del 10-10-2026); hasta
+  > entonces no se adivina.
 
 ## Códigos de error
 
