@@ -240,7 +240,9 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
             now: issuance.now,
           });
           // BI-214. A new charge per credited line, the same frozen values,
-          // naming what it corrects. The original stays BILLED (BI-096).
+          // naming what it corrects and the clinical act the original named
+          // (`charge_item_corrects_a_credited_charge` demands the same one).
+          // The original stays BILLED (BI-096).
           await tx.chargeItem.createMany({
             data: charges.map((row) => ({
               accountId: rebilledAccountId!,
@@ -248,6 +250,8 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
               encounterId: row.encounterId,
               origin: 'CORRECTION',
               correctsChargeItemId: row.id,
+              encounterProcedureId: row.encounterProcedureId,
+              serviceOrderItemId: row.serviceOrderItemId,
               serviceDate: row.serviceDate,
               quantity: row.quantity,
               unitAmount: row.unitAmount,

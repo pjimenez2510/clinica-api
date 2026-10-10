@@ -89,6 +89,8 @@ const invoice: InvoiceView = {
   issuedById: 'user-1',
   paidTotal: Money.ZERO,
   creditedTotal: Money.ZERO,
+  creditNotes: [],
+  replacedBy: [],
 };
 
 /**

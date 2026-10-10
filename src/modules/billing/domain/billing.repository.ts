@@ -490,6 +490,26 @@ export interface ChargeView {
   invoiceId: string | null;
   /** BI-214. On a CORRECTION line, the credited charge it bills again. */
   correctsChargeItemId: string | null;
+  /**
+   * BI-074, BI-260. The credit note the SRI did not reject that credited this
+   * line, or `null`. Read with the account's charges; a charge that a
+   * correction just touched is open, and an open charge is never credited.
+   */
+  creditNote: DocumentRef | null;
+  /**
+   * BI-074. On a CORRECTION line: the SRI rejected the note that credited its
+   * original, so the original is owed again and this copy, which cannot be
+   * billed meanwhile (BI-214), is not.
+   */
+  correctedNoteRejected: boolean;
+}
+
+/** BI-260. A credit note or an invoice, as another document names it. */
+export interface DocumentRef {
+  id: string;
+  /** D-185.1, BI-235. The printed number. */
+  documentNumber: string;
+  status: string;
 }
 
 /**
@@ -578,6 +598,13 @@ export interface InvoiceView {
   paidTotal: Money;
   /** BI-103. Its credit notes the SRI did not reject. */
   creditedTotal: Money;
+  /** BI-260. Its credit notes, oldest first — the rejected ones too, with their status. */
+  creditNotes: DocumentRef[];
+  /**
+   * BI-260. The invoices that bill again what those notes credited — the ones
+   * that billed the copies of BI-214 —, with the account they are in.
+   */
+  replacedBy: (DocumentRef & { accountId: string })[];
 }
 
 /** Everything an invoice needs, with the receiver ALREADY resolved (BI-080). */

@@ -783,6 +783,16 @@ export type AwaitingCheckoutResponse = z.infer<typeof awaitingCheckoutSchema>;
 /** A person named on a line: id and display name, nothing else. */
 const personRefSchema = z.object({ id: z.uuid(), name: z.string() });
 
+/**
+ * BI-260. Another document as a line or an invoice names it: its id, its
+ * printed number (BI-235) and its status before the SRI.
+ */
+const documentRefSchema = z.object({
+  id: z.uuid(),
+  documentNumber: z.string(),
+  status: z.string(),
+});
+
 const chargeResponseSchema = z.object({
   id: z.uuid(),
   accountId: z.uuid(),
@@ -820,6 +830,11 @@ const chargeResponseSchema = z.object({
   invoiceId: z.uuid().nullable(),
   /** BI-214. «Corrección»: the credited charge this line bills again. */
   correctsChargeItemId: z.uuid().nullable(),
+  /**
+   * BI-074, BI-260. La nota de crédito no rechazada que la acreditó: la línea
+   * ya no cuenta en el total de la cuenta. `null` si nada la acreditó.
+   */
+  creditNote: documentRefSchema.nullable(),
   /** BI-058. Derived from the four frozen values above, never stored. */
   lineTotal: z.string(),
   lineTax: z.string(),
@@ -978,6 +993,10 @@ const invoiceResponseSchema = z.object({
   paidTotal: z.string(),
   /** BI-103. Credited by notes the SRI did not reject. */
   creditedTotal: z.string(),
+  /** BI-260. Sus notas de crédito con su estado —también las rechazadas, que no acreditan—, de la más antigua a la más reciente. */
+  creditNotes: z.array(documentRefSchema),
+  /** BI-260. Las facturas que vuelven a cobrar lo que esas notas acreditaron. */
+  replacedBy: z.array(documentRefSchema.extend({ accountId: z.uuid() })),
   /** BI-103. Total − credited − paid; negative is owed back to the patient. */
   balance: z.string(),
   /**
