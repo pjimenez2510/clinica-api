@@ -25,6 +25,7 @@ import {
   type NutritionRecord,
   type ObstetricAnswer,
   type ObstetricRecord,
+  withholdProtectedRiskGroup,
   type VaccinationAnswer,
   type VaccinationRecord,
 } from '../domain/program-blocks';
@@ -55,9 +56,9 @@ export interface ProgramsSheet {
     vaccines: VaccineOption[];
     record: VaccinationRecord | null;
     /**
-     * REQ-115. The risk group of an adult hepatitis B, left out for whoever
-     * lacks the second key — whatever group it is, so the absence tells
-     * nothing beyond the vaccine everybody sees.
+     * REQ-115. The risk group of the adult hepatitis B dose, left out for
+     * whoever lacks the second key — whatever group it is, so the absence
+     * tells nothing beyond the vaccine everybody sees.
      */
     riskGroupWithheld: boolean;
   };
@@ -109,8 +110,9 @@ export class ProgramBlocksService {
 
     const withheld =
       vaccination !== null &&
-      vaccination.riskGroup !== null &&
-      riskGroupIsProtected(vaccination.doses.map((dose) => dose.code)) &&
+      vaccination.doses.some(
+        (dose) => dose.riskGroup !== null && riskGroupIsProtected([dose.code]),
+      ) &&
       !holdsKeyAt(encounter.siteId);
 
     if (obstetric || nutrition || vaccination) {
@@ -125,7 +127,7 @@ export class ProgramBlocksService {
         vaccines,
         record:
           vaccination && withheld
-            ? { ...vaccination, riskGroup: null }
+            ? withholdProtectedRiskGroup(vaccination)
             : vaccination,
         riskGroupWithheld: withheld,
       },
@@ -180,10 +182,12 @@ export class ProgramBlocksService {
   }
 
   /**
-   * EN-093, EN-249. Block I. Whether the risk group fits the vaccines, and
-   * every code is a vaccine in force that day, is the database's. Without
-   * the second key at the site, nothing that carries the protected risk
-   * group is written (the adapter, under the lock).
+   * EN-093, EN-249, EN-261. Block I. Whether each dose's risk group fits its
+   * vaccine, and every code is a vaccine in force that day, is the
+   * database's. Without the second key at the site, the adult HB already
+   * recorded is kept as it is and nothing else about it is written (the
+   * adapter, under the lock) — and the answer withholds its group as the
+   * read does.
    */
   async recordVaccination(
     encounterId: string,
@@ -192,14 +196,15 @@ export class ProgramBlocksService {
     holdsKeyAt: HoldsKeyAt,
   ): Promise<VaccinationRecord> {
     const encounter = await this.requireLiveEncounter(encounterId, requester);
+    const holdsKey = holdsKeyAt(encounter.siteId);
     const saved = await this.blocks.saveVaccination(
       { encounterId: encounter.id, sites: requester.sites },
       answer,
       requester.userId,
-      holdsKeyAt(encounter.siteId),
+      holdsKey,
     );
     await this.trailSave(requester, encounter.id, saved.outcome);
-    return saved.record;
+    return holdsKey ? saved.record : withholdProtectedRiskGroup(saved.record);
   }
 
   private async trailSave(

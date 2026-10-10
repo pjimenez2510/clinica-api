@@ -489,7 +489,7 @@ registerConstraintMeanings({
   encounter_vaccination_doses_shape: {
     code: 'VALIDATION_FAILED',
     field: 'doses',
-    message: 'Cada vacuna lleva su dosis',
+    message: 'Cada vacuna lleva su dosis y, si lo pide, su grupo de riesgo',
   },
   encounter_vaccination_vaccine_in_force: {
     code: 'VALIDATION_FAILED',
@@ -503,22 +503,22 @@ registerConstraintMeanings({
   },
   encounter_vaccination_risk_group_required: {
     code: 'VALIDATION_FAILED',
-    field: 'riskGroup',
-    message: 'Elija el grupo de riesgo: una de las vacunas lo pide',
+    field: 'doses',
+    message: 'Elija el grupo de riesgo de la vacuna: esa vacuna lo pide',
   },
   encounter_vaccination_risk_group_not_asked: {
     code: 'VALIDATION_FAILED',
-    field: 'riskGroup',
-    message: 'Ninguna de estas vacunas lleva grupo de riesgo: déjelo vacío',
+    field: 'doses',
+    message: 'Esa vacuna no lleva grupo de riesgo: déjelo vacío',
   },
   encounter_vaccination_risk_group_not_admitted: {
     code: 'VALIDATION_FAILED',
-    field: 'riskGroup',
-    message: 'Ese grupo de riesgo no corresponde a una de las vacunas aplicadas: elija uno que admitan todas', // prettier-ignore
+    field: 'doses',
+    message: 'Ese grupo de riesgo no corresponde a la vacuna: elija uno de los suyos', // prettier-ignore
   },
   encounter_vaccination_risk_group_sex: {
     code: 'VALIDATION_FAILED',
-    field: 'riskGroup',
+    field: 'doses',
     message: 'Embarazada y puérpera no corresponden a un paciente de sexo masculino', // prettier-ignore
   },
   /**

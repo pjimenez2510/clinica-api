@@ -11,7 +11,7 @@ import {
 import type { EncounterQuery } from '../domain/encounter.repository';
 import { acceptsNewClinicalContent } from '../domain/encounter-state';
 import {
-  riskGroupIsProtected,
+  keepProtectedRiskGroup,
   sameVaccination,
   type NutritionAnswer,
   type NutritionRecord,
@@ -54,7 +54,6 @@ const NUTRITION_SELECT = {
 
 const VACCINATION_SELECT = {
   doses: true,
-  riskGroup: true,
   ...STAMP,
 } satisfies Prisma.EncounterVaccinationSelect;
 
@@ -211,21 +210,19 @@ export class PrismaProgramBlocksRepository implements ProgramBlocksRepository {
       });
       const current = found && toVaccination(found);
 
-      // REQ-115. Without the second key nobody writes the risk group of an
-      // adult hepatitis B, nor replaces a vaccination that has one: they
-      // cannot see it, so they would be overwriting what they were not shown.
-      // Decided here, under the lock, against the row as it is now.
-      const touchesProtected =
-        riskGroupIsProtected(answer.doses.map((dose) => dose.code)) ||
-        (current !== null &&
-          riskGroupIsProtected(current.doses.map((dose) => dose.code)));
-      if (touchesProtected && !canWriteProtected) {
-        throw new ProtectedSectionRequiredError();
-      }
+      // REQ-115, EN-261. Without the second key nobody writes the risk group
+      // of an adult hepatitis B: the one already recorded, sent back as it
+      // was shown, keeps its group; removing it, another dose, a group or a
+      // new one is refused. Decided here, under the lock, against the row as
+      // it is now.
+      const effective = canWriteProtected
+        ? answer
+        : keepProtectedRiskGroup(answer, current);
+      if (effective === null) throw new ProtectedSectionRequiredError();
 
       const columns = {
-        doses: answer.doses.map(({ code, dose }) => ({ code, dose })),
-        riskGroup: answer.riskGroup,
+        // The three keys always, in this order: what the trigger admits.
+        doses: effective.doses.map(({ code, dose, riskGroup }) => ({ code, dose, riskGroup })), // prettier-ignore
       };
       if (current === null) {
         const created = await tx.encounterVaccination.create({
@@ -234,7 +231,7 @@ export class PrismaProgramBlocksRepository implements ProgramBlocksRepository {
         });
         return { record: toVaccination(created), outcome: 'CREATED' };
       }
-      if (sameVaccination(current, answer)) {
+      if (sameVaccination(current, effective)) {
         return { record: current, outcome: 'UNCHANGED' };
       }
       const updated = await tx.encounterVaccination.update({
@@ -315,7 +312,6 @@ function sameObstetric(current: ObstetricRecord, next: ObstetricAnswer) {
 function toVaccination(row: VaccinationRow): VaccinationRecord {
   return {
     doses: row.doses as unknown as VaccineDoseGiven[],
-    riskGroup: row.riskGroup,
     recordedAt: row.recordedAt,
     editedAt: row.editedAt,
   };

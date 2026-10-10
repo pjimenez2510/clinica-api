@@ -122,7 +122,7 @@ export class ProgramBlocksController {
     );
   }
 
-  /** EN-093, EN-249. Records or corrects block I. */
+  /** EN-093, EN-249, EN-261. Records or corrects block I. */
   @Put('vaccination')
   @RequirePermission('vitals:write', 'query')
   @HttpCode(HttpStatus.OK)
@@ -137,8 +137,7 @@ export class ProgramBlocksController {
       await this.programs.recordVaccination(
         encounterId,
         {
-          doses: dto.doses.map(({ code, dose }) => ({ code, dose })),
-          riskGroup: dto.riskGroup,
+          doses: dto.doses.map(({ code, dose, riskGroup }) => ({ code, dose, riskGroup })), // prettier-ignore
         },
         this.requester(req, 'vitals:write'),
         this.holdsKeyAt(),
@@ -181,8 +180,7 @@ function toNutrition(record: NutritionRecord): NutritionRecordResponse {
 
 function toVaccination(record: VaccinationRecord): VaccinationRecordResponse {
   return {
-    doses: record.doses.map(({ code, dose }) => ({ code, dose })),
-    riskGroup: record.riskGroup,
+    doses: record.doses.map(({ code, dose, riskGroup }) => ({ code, dose, riskGroup })), // prettier-ignore
     ...stampOf(record),
   };
 }

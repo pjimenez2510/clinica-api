@@ -198,17 +198,21 @@ describe('ProgramBlocksService (EN-090 a EN-093)', () => {
   });
 
   it('EN-093 sin la llave en la sede, el grupo del HB adulto no sale; con ella, sí; y la llave llega al guardado', async () => {
-    blocks.vaccination = { doses: [{ code: '70', dose: 'FIRST' }], riskGroup: 'LIVING_WITH_HIV', ...stamp() }; // prettier-ignore
+    blocks.vaccination = { doses: [{ code: '70', dose: 'FIRST', riskGroup: 'LIVING_WITH_HIV' }, { code: '67', dose: 'FIRST', riskGroup: 'AGES_AT_RISK' }], ...stamp() }; // prettier-ignore
 
     const without = await service.programsOf('encounter-1', requester, () => false); // prettier-ignore
-    expect(without.vaccination.record?.riskGroup).toBeNull();
+    expect(without.vaccination.record?.doses.map((dose) => dose.riskGroup)).toEqual([null, 'AGES_AT_RISK']); // prettier-ignore
     expect(without.vaccination.riskGroupWithheld).toBe(true);
 
     const withKey = await service.programsOf('encounter-1', requester, (site) => site === SITE); // prettier-ignore
-    expect(withKey.vaccination.record?.riskGroup).toBe('LIVING_WITH_HIV');
+    expect(withKey.vaccination.record?.doses[0]?.riskGroup).toBe(
+      'LIVING_WITH_HIV',
+    );
     expect(withKey.vaccination.riskGroupWithheld).toBe(false);
 
-    await service.recordVaccination('encounter-1', { doses: [], riskGroup: null }, requester, () => false); // prettier-ignore
+    // EN-261. The save's answer withholds it too.
+    const saved = await service.recordVaccination('encounter-1', blocks.vaccination, requester, () => false); // prettier-ignore
+    expect(saved.doses[0]?.riskGroup).toBeNull();
     expect(blocks.protectedWrites).toEqual([false]);
     // UNCHANGED leaves no trail row of a write.
     expect(trail.filter((entry) => entry.action !== 'READ')).toHaveLength(0);

@@ -3049,9 +3049,10 @@ model EncounterVaccination {
   encounterId String    @id @map("encounter_id") @db.Uuid
   encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
 
-  /// `[{ "code": "67", "dose": "FIRST" }]`.
-  doses     Json              @db.JsonB
-  riskGroup VaccineRiskGroup? @map("risk_group")
+  /// `[{ "code": "67", "dose": "FIRST", "riskGroup": "AGES_AT_RISK" }]`: the
+  /// risk group of EACH dose (D-195.8), `null` when its vaccine asks none.
+  /// `VaccineRiskGroup` is the type the trigger casts it to.
+  doses Json @db.JsonB
 
   recordedById String    @map("recorded_by_id") @db.Uuid
   recordedAt   DateTime  @map("recorded_at") @db.Timestamptz(6)

@@ -271,7 +271,9 @@ describe('los bloques de programa por HTTP, con sesiones reales (EN-090 a EN-093
       };
       vaccination: {
         vaccines: { code: string; display: string }[];
-        record: { doses: unknown[]; riskGroup: string | null } | null;
+        record: {
+          doses: { code: string; dose: string; riskGroup: string | null }[];
+        } | null;
         riskGroupWithheld: boolean;
       };
     };
@@ -416,7 +418,7 @@ describe('los bloques de programa por HTTP, con sesiones reales (EN-090 a EN-093
   });
 
   describe('EN-093 las vacunas', () => {
-    it('EN-093 ofrece las 19 vacunas del día, y enfermería registra dT adulto con su grupo de riesgo', async () => {
+    it('EN-093 ofrece las 19 vacunas del día, y enfermería registra dT adulto con el grupo de riesgo de su dosis', async () => {
       const encounterId = await openEncounter(await aPatient({ years: 30 }));
       const sheet = await programs(encounterId, nurseToken);
       expect(sheet.vaccination.vaccines).toHaveLength(19);
@@ -426,19 +428,23 @@ describe('los bloques de programa por HTTP, con sesiones reales (EN-090 a EN-093
       });
 
       const url = `/encounters/${encounterId}/programs/vaccination`;
-      const refused = await send('put', url, nurseToken, { doses: [{ code: '67', dose: 'SECOND' }], riskGroup: 'TRAVELLER' }).expect(422); // prettier-ignore
-      expect(refused.body).toMatchObject({ code: 'VALIDATION_FAILED', errors: [expect.objectContaining({ field: 'riskGroup' })] }); // prettier-ignore
+      const refused = await send('put', url, nurseToken, { doses: [{ code: '67', dose: 'SECOND', riskGroup: 'TRAVELLER' }] }).expect(422); // prettier-ignore
+      expect(refused.body).toMatchObject({ code: 'VALIDATION_FAILED', errors: [expect.objectContaining({ field: 'doses' })] }); // prettier-ignore
+      // The attention-wide group of before is no longer part of the contract.
+      await send('put', url, nurseToken, { doses: [{ code: '67', dose: 'SECOND' }], riskGroup: 'AGES_AT_RISK' }).expect(422); // prettier-ignore
 
-      const saved = await send('put', url, nurseToken, { doses: [{ code: '67', dose: 'SECOND' }], riskGroup: 'AGES_AT_RISK' }).expect(200); // prettier-ignore
-      expect(saved.body).toMatchObject({ doses: [{ code: '67', dose: 'SECOND' }], riskGroup: 'AGES_AT_RISK' }); // prettier-ignore
+      const saved = await send('put', url, nurseToken, { doses: [{ code: '67', dose: 'SECOND', riskGroup: 'AGES_AT_RISK' }, { code: '55', dose: 'SINGLE' }] }).expect(200); // prettier-ignore
+      expect(saved.body).toMatchObject({ doses: [{ code: '67', dose: 'SECOND', riskGroup: 'AGES_AT_RISK' }, { code: '55', dose: 'SINGLE', riskGroup: null }] }); // prettier-ignore
     });
 
-    it('EN-093 EN-095 el grupo de riesgo del HB adulto: sin la llave ni se escribe ni se ve, sea cual sea; con ella, sí', async () => {
+    it('EN-093 EN-095 el grupo de riesgo del HB adulto: sin la llave ni se escribe ni se ve, sea cual sea; el de las demás dosis, sí', async () => {
       const withHiv = await openEncounter(await aPatient({ years: 30 }));
       const worker = await openEncounter(await aPatient({ years: 30 }));
       const hb = (riskGroup: string) => ({
-        doses: [{ code: '70', dose: 'FIRST' }],
-        riskGroup,
+        doses: [
+          { code: '70', dose: 'FIRST', riskGroup },
+          { code: '67', dose: 'FIRST', riskGroup: 'AGES_AT_RISK' },
+        ],
       });
 
       const refused = await send('put', `/encounters/${withHiv}/programs/vaccination`, nurseToken, hb('HEALTH_WORKER')).expect(403); // prettier-ignore
@@ -451,10 +457,13 @@ describe('los bloques de programa por HTTP, con sesiones reales (EN-090 a EN-093
       await send('put', `/encounters/${withHiv}/programs/vaccination`, doctorToken, hb('LIVING_WITH_HIV')).expect(200); // prettier-ignore
       await send('put', `/encounters/${worker}/programs/vaccination`, doctorToken, hb('HEALTH_WORKER')).expect(200); // prettier-ignore
 
-      // Without the key, the two read the same: no oracle.
+      // Without the key, the two read the same: no oracle. The dT's group is not protected.
       const a = (await programs(withHiv, nurseToken)).vaccination;
       const b = (await programs(worker, nurseToken)).vaccination;
-      expect(a.record?.riskGroup).toBeNull();
+      expect(a.record?.doses).toEqual([
+        { code: '70', dose: 'FIRST', riskGroup: null },
+        { code: '67', dose: 'FIRST', riskGroup: 'AGES_AT_RISK' },
+      ]);
       expect(a.riskGroupWithheld).toBe(true);
       expect({ ...a.record, recordedAt: null }).toEqual({
         ...b.record,
@@ -463,11 +472,58 @@ describe('los bloques de programa por HTTP, con sesiones reales (EN-090 a EN-093
       expect(JSON.stringify(a)).not.toMatch(/LIVING_WITH_HIV/);
 
       // With it, each its own.
-      expect((await programs(withHiv, doctorToken)).vaccination.record?.riskGroup).toBe('LIVING_WITH_HIV'); // prettier-ignore
+      expect((await programs(withHiv, doctorToken)).vaccination.record?.doses[0]?.riskGroup).toBe('LIVING_WITH_HIV'); // prettier-ignore
+    });
+  });
 
-      // Nor does the nurse overwrite what she was not shown.
-      await send('put', `/encounters/${withHiv}/programs/vaccination`, nurseToken, { doses: [{ code: '55', dose: 'SINGLE' }], riskGroup: null }).expect(403); // prettier-ignore
-      expect((await programs(withHiv, doctorToken)).vaccination.record?.riskGroup).toBe('LIVING_WITH_HIV'); // prettier-ignore
+  describe('EN-261 enfermería sin la llave y el HB adulto ya registrado', () => {
+    const HB = { code: '70', dose: 'FIRST' };
+
+    async function withAdultHb(): Promise<string> {
+      const encounterId = await openEncounter(await aPatient({ years: 30 }));
+      await send('put', `/encounters/${encounterId}/programs/vaccination`, doctorToken, { doses: [{ ...HB, riskGroup: 'LIVING_WITH_HIV' }] }).expect(200); // prettier-ignore
+      return encounterId;
+    }
+    const groupOf = async (encounterId: string) =>
+      (await programs(encounterId, doctorToken)).vaccination.record?.doses.find((dose) => dose.code === '70')?.riskGroup; // prettier-ignore
+
+    it('EN-261 reenviar el HB adulto igual y con el grupo vacío conserva el guardado, y enfermería añade otra vacuna', async () => {
+      const encounterId = await withAdultHb();
+      const url = `/encounters/${encounterId}/programs/vaccination`;
+
+      // What she was shown, plus influenza.
+      const saved = await send('put', url, nurseToken, { doses: [{ ...HB, riskGroup: null }, { code: '73', dose: 'SINGLE', riskGroup: 'HEALTH_WORKER' }] }).expect(200); // prettier-ignore
+      // Her answer withholds the group she cannot see, too.
+      expect(JSON.stringify(saved.body)).not.toContain('LIVING_WITH_HIV');
+      expect(await groupOf(encounterId)).toBe('LIVING_WITH_HIV');
+      expect((await programs(encounterId, doctorToken)).vaccination.record?.doses).toEqual([
+        { ...HB, riskGroup: 'LIVING_WITH_HIV' },
+        { code: '73', dose: 'SINGLE', riskGroup: 'HEALTH_WORKER' },
+      ]); // prettier-ignore
+    });
+
+    it('EN-261 sin la llave no se quita el HB adulto, no se le cambia la dosis ni se le pone grupo, ni se añade uno nuevo: 403 sin tocar nada', async () => {
+      const encounterId = await withAdultHb();
+      const url = `/encounters/${encounterId}/programs/vaccination`;
+      const before = await prisma.encounterVaccination.findUniqueOrThrow({ where: { encounterId } }); // prettier-ignore
+
+      for (const doses of [
+        [{ code: '73', dose: 'SINGLE', riskGroup: 'HEALTH_WORKER' }],
+        [{ ...HB, dose: 'SECOND', riskGroup: null }],
+        [{ ...HB, riskGroup: 'HEALTH_WORKER' }],
+      ]) {
+        const refused = await send('put', url, nurseToken, { doses }).expect(403); // prettier-ignore
+        expect(refused.body).toMatchObject({ code: 'PROTECTED_SECTION_REQUIRED' }); // prettier-ignore
+      }
+      const fresh = await openEncounter(await aPatient({ years: 30 }));
+      await send('put', `/encounters/${fresh}/programs/vaccination`, nurseToken, { doses: [{ ...HB, riskGroup: null }] }).expect(403); // prettier-ignore
+
+      expect(await prisma.encounterVaccination.findUniqueOrThrow({ where: { encounterId } })).toEqual(before); // prettier-ignore
+      expect(await prisma.recordVersion.count({ where: { resourceType: 'encounter_vaccination', resourceId: encounterId } })).toBe(0); // prettier-ignore
+
+      // Positive control: with the key, the doctor removes it.
+      await send('put', url, doctorToken, { doses: [{ code: '73', dose: 'SINGLE', riskGroup: 'HEALTH_WORKER' }] }).expect(200); // prettier-ignore
+      expect(await groupOf(encounterId)).toBeUndefined();
     });
   });
 

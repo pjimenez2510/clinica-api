@@ -292,39 +292,34 @@ export const FEMALE_ONLY_RISK_GROUPS: readonly VaccineRiskGroup[] = [
 /**
  * ⚠️ THE RISK GROUP OF AN ADULT HEPATITIS B IS PROTECTED DATA (REQ-115): two
  * of its five groups say «lives with HIV» and «sex worker». So whoever lacks
- * the second key reads no risk group of an attention with that vaccine —
- * whatever it is, so the absence tells nothing — and cannot write one.
+ * the second key reads no risk group of that dose — whatever it is, so the
+ * absence tells nothing — and cannot write one (EN-261).
  */
 export function riskGroupIsProtected(codes: readonly string[]): boolean {
   return codes.includes(VACCINE_CODES.ADULT_HEPATITIS_B);
 }
 
-/** EN-093. One vaccine given in the attention, by its catalogue code. */
+/**
+ * EN-093. One vaccine given in the attention, by its catalogue code, with the
+ * risk group of THIS dose (D-195.8): `null` when its vaccine asks for none.
+ */
 export interface VaccineDoseGiven {
   code: string;
   dose: VaccineDose;
+  riskGroup: VaccineRiskGroup | null;
 }
 
 export interface VaccinationAnswer {
   doses: VaccineDoseGiven[];
-  riskGroup: VaccineRiskGroup | null;
 }
 
 export type VaccinationRecord = VaccinationAnswer & BlockStamp;
 
-/**
- * The risk groups this set of vaccines admits together: the intersection of
- * each constrained vaccine's list, or `null` when none of them is
- * constrained (no risk group is asked).
- */
-export function admittedRiskGroups(
-  codes: readonly string[],
+/** The risk groups a vaccine admits, or `null` when it asks for none. */
+export function riskGroupsAdmittedBy(
+  code: string,
 ): readonly VaccineRiskGroup[] | null {
-  const constrained = codes.filter((code) => code in RISK_GROUPS_BY_VACCINE);
-  if (constrained.length === 0) return null;
-  return VACCINE_RISK_GROUPS.filter((group) =>
-    constrained.every((code) => RISK_GROUPS_BY_VACCINE[code]!.includes(group)),
-  );
+  return RISK_GROUPS_BY_VACCINE[code] ?? null;
 }
 
 export type VaccinationProblem =
@@ -335,9 +330,10 @@ export type VaccinationProblem =
   | 'RISK_GROUP_SEX';
 
 /**
- * EN-093. What is wrong with a vaccination, in the order the database checks
- * it (`trg_encounter_vaccination_valid`). Whether each code is a vaccine in
- * force on the clinical date is the adapter's and the database's.
+ * EN-093. What is wrong with a vaccination, dose by dose and in the order
+ * the database checks it (`trg_encounter_vaccination_valid`). Whether each
+ * code is a vaccine in force on the clinical date is the adapter's and the
+ * database's.
  */
 export function vaccinationProblem(
   answer: VaccinationAnswer,
@@ -345,30 +341,65 @@ export function vaccinationProblem(
 ): VaccinationProblem | null {
   const codes = answer.doses.map((dose) => dose.code);
   if (new Set(codes).size !== codes.length) return 'DUPLICATE_VACCINE';
-  const admitted = admittedRiskGroups(codes);
-  if (admitted === null) {
-    return answer.riskGroup === null ? null : 'RISK_GROUP_NOT_ASKED';
-  }
-  if (answer.riskGroup === null) return 'RISK_GROUP_REQUIRED';
-  if (!admitted.includes(answer.riskGroup)) return 'RISK_GROUP_NOT_ADMITTED';
-  if (
-    patientSex === 'MALE' &&
-    FEMALE_ONLY_RISK_GROUPS.includes(answer.riskGroup)
-  ) {
-    return 'RISK_GROUP_SEX';
+  for (const { code, riskGroup } of answer.doses) {
+    const admitted = riskGroupsAdmittedBy(code);
+    if (admitted === null) {
+      if (riskGroup !== null) return 'RISK_GROUP_NOT_ASKED';
+      continue;
+    }
+    if (riskGroup === null) return 'RISK_GROUP_REQUIRED';
+    if (!admitted.includes(riskGroup)) return 'RISK_GROUP_NOT_ADMITTED';
+    if (patientSex === 'MALE' && FEMALE_ONLY_RISK_GROUPS.includes(riskGroup)) {
+      return 'RISK_GROUP_SEX';
+    }
   }
   return null;
 }
 
-/** The same doses and risk group, whatever the order the doses came in. */
+/** REQ-115. The same vaccination with the adult HB's risk group left out. */
+export function withholdProtectedRiskGroup<T extends VaccinationAnswer>(
+  record: T,
+): T {
+  return {
+    ...record,
+    doses: record.doses.map((dose) =>
+      riskGroupIsProtected([dose.code]) ? { ...dose, riskGroup: null } : dose,
+    ),
+  };
+}
+
+/**
+ * EN-261 (D-195.9). What a save by somebody WITHOUT the second key may be,
+ * against the vaccination as it is now: the adult HB already recorded, sent
+ * back as it was shown to them — the same dose, its group empty — keeps the
+ * group it has, and anything else about it (removing it, another dose, a
+ * group, a new one) is `null`: refused, nothing written.
+ */
+export function keepProtectedRiskGroup(
+  answer: VaccinationAnswer,
+  current: VaccinationAnswer | null,
+): VaccinationAnswer | null {
+  const isHb = (dose: VaccineDoseGiven) => riskGroupIsProtected([dose.code]);
+  const sent = answer.doses.find(isHb);
+  const kept = current?.doses.find(isHb);
+  if (!sent && !kept) return answer;
+  if (!sent || !kept) return null;
+  if (sent.dose !== kept.dose || sent.riskGroup !== null) return null;
+  return {
+    ...answer,
+    doses: answer.doses.map((dose) => (isHb(dose) ? { ...kept } : dose)),
+  };
+}
+
+/** The same doses and risk groups, whatever the order the doses came in. */
 export function sameVaccination(
   a: VaccinationAnswer,
   b: VaccinationAnswer,
 ): boolean {
   const key = (answer: VaccinationAnswer) =>
     [...answer.doses]
-      .map((dose) => `${dose.code}:${dose.dose}`)
+      .map((dose) => `${dose.code}:${dose.dose}:${dose.riskGroup ?? ''}`)
       .sort()
       .join(',');
-  return a.riskGroup === b.riskGroup && key(a) === key(b);
+  return key(a) === key(b);
 }

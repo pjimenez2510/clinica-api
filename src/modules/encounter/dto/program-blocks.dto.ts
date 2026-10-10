@@ -87,6 +87,12 @@ const doseGivenSchema = z
       .string({ error: 'Elija la vacuna' })
       .regex(/^\d{1,3}$/, 'Elija la vacuna de la lista'),
     dose: z.enum(VACCINE_DOSES, { error: 'Elija la dosis' }),
+    /**
+     * Column 74, of THIS dose (D-195.8); `null` when its vaccine asks for
+     * none. Without the second key, an adult HB already recorded is sent back
+     * with `null` and keeps its group (EN-261).
+     */
+    riskGroup: z.enum(VACCINE_RISK_GROUPS).nullable().default(null),
   })
   .strict();
 
@@ -94,8 +100,6 @@ export const recordVaccinationSchema = z
   .object({
     /** Empty: corrected to «none given». */
     doses: z.array(doseGivenSchema).max(40),
-    /** Column 74; `null` when no vaccine of the attention asks for it. */
-    riskGroup: z.enum(VACCINE_RISK_GROUPS).nullable().default(null),
   })
   .strict();
 /** Body of PUT /encounters/:encounterId/programs/vaccination. */
@@ -122,8 +126,14 @@ export const nutritionRecordSchema = recordNutritionSchema
 export class NutritionRecordDto extends createZodDto(nutritionRecordSchema) {}
 
 export const vaccinationRecordSchema = z.object({
-  doses: z.array(z.object({ code: z.string(), dose: z.enum(VACCINE_DOSES) })),
-  riskGroup: z.enum(VACCINE_RISK_GROUPS).nullable(),
+  doses: z.array(
+    z.object({
+      code: z.string(),
+      dose: z.enum(VACCINE_DOSES),
+      /** `null` too when withheld without the second key (REQ-115). */
+      riskGroup: z.enum(VACCINE_RISK_GROUPS).nullable(),
+    }),
+  ),
   ...stamp,
 });
 export class VaccinationRecordDto extends createZodDto(
@@ -156,7 +166,10 @@ export const programsSheetSchema = z.object({
   vaccination: z.object({
     vaccines: z.array(z.object({ code: z.string(), display: z.string() })),
     record: vaccinationRecordSchema.nullable(),
-    /** REQ-115. The protected risk group, left out without the second key. */
+    /**
+     * REQ-115. The adult HB's risk group, left out without the second key;
+     * the other doses keep theirs.
+     */
     riskGroupWithheld: z.boolean(),
   }),
 });

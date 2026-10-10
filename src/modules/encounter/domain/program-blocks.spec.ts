@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  admittedRiskGroups,
+  keepProtectedRiskGroup,
   lastMenstrualPeriodProblem,
   nutritionBandOf,
   nutritionProblem,
   riskGroupIsProtected,
+  riskGroupsAdmittedBy,
   sameVaccination,
   vaccinationProblem,
   VACCINE_CODES,
   weeksSinceLastMenstrualPeriod,
+  withholdProtectedRiskGroup,
+  type VaccineDose,
+  type VaccineRiskGroup,
 } from './program-blocks';
 
 /** A clinical date and another, both derived from one instant, never typed. */
@@ -106,55 +110,76 @@ describe('EN-092 EN-097 el SIVAN, por la edad congelada en meses cumplidos', () 
   });
 });
 
-describe('EN-093 las vacunas y su grupo de riesgo', () => {
-  const dose = (code: string) => ({ code, dose: 'FIRST' as const });
+describe('EN-093 las vacunas y el grupo de riesgo de cada dosis', () => {
+  const given = (code: string, riskGroup: VaccineRiskGroup | null = null, dose: VaccineDose = 'FIRST') => ({ code, dose, riskGroup }); // prettier-ignore
+  const HB = VACCINE_CODES.ADULT_HEPATITIS_B;
 
-  it('EN-093 cada vacuna admite sus grupos, y juntas, los que admiten todas', () => {
-    expect(admittedRiskGroups([VACCINE_CODES.ADULT_DT])).toEqual([
-      'AGES_AT_RISK',
-      'PREGNANT',
-    ]);
-    expect(
-      admittedRiskGroups([VACCINE_CODES.ADULT_DT, VACCINE_CODES.INFLUENZA]),
-    ).toEqual(['AGES_AT_RISK', 'PREGNANT']);
-    expect(
-      admittedRiskGroups([
-        VACCINE_CODES.MEASLES_RUBELLA,
-        VACCINE_CODES.YELLOW_FEVER,
-      ]),
-    ).toEqual(['AGES_AT_RISK', 'TRAVELLER']);
+  it('EN-093 cada vacuna con regla admite sus grupos; las demás, ninguno', () => {
+    expect(riskGroupsAdmittedBy(VACCINE_CODES.ADULT_DT)).toEqual(['AGES_AT_RISK', 'PREGNANT']); // prettier-ignore
+    expect(riskGroupsAdmittedBy(VACCINE_CODES.MEASLES_RUBELLA)).toEqual(['AGES_AT_RISK', 'TRAVELLER']); // prettier-ignore
     // BCG and pentavalente ask for none.
-    expect(admittedRiskGroups(['55', '60'])).toBeNull();
+    expect(riskGroupsAdmittedBy('55')).toBeNull();
+    expect(riskGroupsAdmittedBy('60')).toBeNull();
   });
 
-  it('EN-093 sin vacuna que lo pida no lleva grupo; con una, lo exige y de los suyos', () => {
-    expect(vaccinationProblem({ doses: [dose('55')], riskGroup: null }, 'FEMALE')).toBeNull(); // prettier-ignore
-    expect(vaccinationProblem({ doses: [dose('55')], riskGroup: 'OTHER' }, 'FEMALE')).toBe('RISK_GROUP_NOT_ASKED'); // prettier-ignore
-    expect(vaccinationProblem({ doses: [dose(VACCINE_CODES.ADULT_DT)], riskGroup: null }, 'FEMALE')).toBe('RISK_GROUP_REQUIRED'); // prettier-ignore
-    expect(vaccinationProblem({ doses: [dose(VACCINE_CODES.ADULT_DT)], riskGroup: 'TRAVELLER' }, 'FEMALE')).toBe('RISK_GROUP_NOT_ADMITTED'); // prettier-ignore
-    expect(vaccinationProblem({ doses: [dose(VACCINE_CODES.ADULT_DT)], riskGroup: 'AGES_AT_RISK' }, 'FEMALE')).toBeNull(); // prettier-ignore
+  it('EN-093 sin regla la dosis no lleva grupo; con ella, lo exige y de los suyos', () => {
+    expect(vaccinationProblem({ doses: [given('55')] }, 'FEMALE')).toBeNull();
+    expect(vaccinationProblem({ doses: [given('55', 'OTHER')] }, 'FEMALE')).toBe('RISK_GROUP_NOT_ASKED'); // prettier-ignore
+    expect(vaccinationProblem({ doses: [given(VACCINE_CODES.ADULT_DT)] }, 'FEMALE')).toBe('RISK_GROUP_REQUIRED'); // prettier-ignore
+    expect(vaccinationProblem({ doses: [given(VACCINE_CODES.ADULT_DT, 'TRAVELLER')] }, 'FEMALE')).toBe('RISK_GROUP_NOT_ADMITTED'); // prettier-ignore
+    expect(vaccinationProblem({ doses: [given(VACCINE_CODES.ADULT_DT, 'AGES_AT_RISK')] }, 'FEMALE')).toBeNull(); // prettier-ignore
+  });
+
+  it('EN-093 D-195.8 dT adulto y HB adulto juntos, cada uno con su grupo', () => {
+    expect(vaccinationProblem({ doses: [given(VACCINE_CODES.ADULT_DT, 'AGES_AT_RISK'), given(HB, 'HEALTH_WORKER')] }, 'FEMALE')).toBeNull(); // prettier-ignore
   });
 
   it('EN-093 la misma vacuna dos veces no, y un hombre no es embarazada ni puérpera', () => {
-    expect(vaccinationProblem({ doses: [dose('55'), dose('55')], riskGroup: null }, 'FEMALE')).toBe('DUPLICATE_VACCINE'); // prettier-ignore
-    expect(vaccinationProblem({ doses: [dose(VACCINE_CODES.INFLUENZA)], riskGroup: 'POSTPARTUM' }, 'MALE')).toBe('RISK_GROUP_SEX'); // prettier-ignore
-    expect(vaccinationProblem({ doses: [dose(VACCINE_CODES.INFLUENZA)], riskGroup: 'HEALTH_WORKER' }, 'MALE')).toBeNull(); // prettier-ignore
+    expect(vaccinationProblem({ doses: [given('55'), given('55')] }, 'FEMALE')).toBe('DUPLICATE_VACCINE'); // prettier-ignore
+    expect(vaccinationProblem({ doses: [given(VACCINE_CODES.INFLUENZA, 'POSTPARTUM')] }, 'MALE')).toBe('RISK_GROUP_SEX'); // prettier-ignore
+    expect(vaccinationProblem({ doses: [given(VACCINE_CODES.INFLUENZA, 'HEALTH_WORKER')] }, 'MALE')).toBeNull(); // prettier-ignore
   });
 
   it('EN-093 el grupo del HB adulto es dato protegido; el del resto, no', () => {
-    expect(riskGroupIsProtected([VACCINE_CODES.ADULT_HEPATITIS_B])).toBe(true);
+    expect(riskGroupIsProtected([HB])).toBe(true);
     expect(riskGroupIsProtected([VACCINE_CODES.ADULT_DT, '68'])).toBe(false);
   });
 
-  it('EN-249 las mismas dosis en otro orden no son una corrección', () => {
-    const a = { doses: [dose('55'), dose('56')], riskGroup: null };
-    const b = { doses: [dose('56'), dose('55')], riskGroup: null };
-    expect(sameVaccination(a, b)).toBe(true);
-    expect(
-      sameVaccination(a, {
-        doses: [dose('55'), { code: '56', dose: 'SECOND' }],
-        riskGroup: null,
-      }),
-    ).toBe(false);
+  it('EN-093 sin la llave se retiene sólo el grupo del HB adulto', () => {
+    const record = { doses: [given(HB, 'LIVING_WITH_HIV'), given(VACCINE_CODES.ADULT_DT, 'AGES_AT_RISK')] }; // prettier-ignore
+    expect(withholdProtectedRiskGroup(record)).toEqual({ doses: [given(HB), given(VACCINE_CODES.ADULT_DT, 'AGES_AT_RISK')] }); // prettier-ignore
+  });
+
+  it('EN-249 las mismas dosis en otro orden no son una corrección; otra dosis u otro grupo, sí', () => {
+    const a = { doses: [given('55'), given('56')] };
+    expect(sameVaccination(a, { doses: [given('56'), given('55')] })).toBe(
+      true,
+    );
+    expect(sameVaccination(a, { doses: [given('55'), given('56', null, 'SECOND')] })).toBe(false); // prettier-ignore
+    expect(sameVaccination({ doses: [given(HB, 'OTHER')] }, { doses: [given(HB, 'SEX_WORKER')] })).toBe(false); // prettier-ignore
+  });
+});
+
+describe('EN-261 sin la llave, el HB adulto ya registrado se conserva o no se toca', () => {
+  const given = (code: string, riskGroup: VaccineRiskGroup | null = null, dose: VaccineDose = 'FIRST') => ({ code, dose, riskGroup }); // prettier-ignore
+  const HB = VACCINE_CODES.ADULT_HEPATITIS_B;
+  const current = { doses: [given(HB, 'LIVING_WITH_HIV')] };
+
+  it('EN-261 reenviado igual y con el grupo vacío, se le devuelve el grupo guardado', () => {
+    expect(keepProtectedRiskGroup({ doses: [given(HB), given('73', 'HEALTH_WORKER')] }, current)).toEqual({ doses: [given(HB, 'LIVING_WITH_HIV'), given('73', 'HEALTH_WORKER')] }); // prettier-ignore
+  });
+
+  it('EN-261 quitarlo, cambiarle la dosis, ponerle grupo o añadir uno nuevo se rechaza', () => {
+    expect(keepProtectedRiskGroup({ doses: [given('73', 'HEALTH_WORKER')] }, current)).toBeNull(); // prettier-ignore
+    expect(keepProtectedRiskGroup({ doses: [given(HB, null, 'SECOND')] }, current)).toBeNull(); // prettier-ignore
+    expect(keepProtectedRiskGroup({ doses: [given(HB, 'HEALTH_WORKER')] }, current)).toBeNull(); // prettier-ignore
+    expect(keepProtectedRiskGroup({ doses: [given(HB)] }, null)).toBeNull();
+    expect(keepProtectedRiskGroup({ doses: [given(HB)] }, { doses: [given('55')] })).toBeNull(); // prettier-ignore
+  });
+
+  it('EN-261 sin HB adulto en ninguno de los dos, la respuesta pasa tal cual', () => {
+    const answer = { doses: [given('55')] };
+    expect(keepProtectedRiskGroup(answer, null)).toEqual(answer);
+    expect(keepProtectedRiskGroup(answer, { doses: [given('56')] })).toEqual(answer); // prettier-ignore
   });
 });
