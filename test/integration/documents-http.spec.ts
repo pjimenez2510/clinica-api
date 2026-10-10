@@ -2238,7 +2238,32 @@ describe('los documentos por HTTP', () => {
 
   describe('DOC-118 DOC-119 la copia certificada de la historia clínica (D-198 §1)', () => {
     const DAY = 24 * 60 * 60 * 1000;
-    const copyOf = (requestId: string, token = adminToken) =>
+    /**
+     * D-203 §1. Whoever answers the data requests AND holds `record:read` at
+     * the seeded site: the one person who registers, authorises and downloads.
+     * The shipped ADMIN (`adminToken`) has the first and not the second.
+     */
+    let custodianToken: string;
+    beforeEach(async () => {
+      const role = await prisma.role.create({
+        data: { code: 'CUSTODIO_HISTORIA', name: 'Archivo de historias' },
+      });
+      await prisma.rolePermission.createMany({
+        data: ['patient:data-requests', 'record:read'].map(
+          (permissionCode) => ({ roleId: role.id, permissionCode }),
+        ),
+      });
+      registry.invalidate();
+      custodianToken = (
+        await signIn(
+          'CUSTODIO_HISTORIA',
+          'archivo@clinica.ec',
+          '1710000009',
+          false,
+        )
+      ).token;
+    });
+    const copyOf = (requestId: string, token = custodianToken) =>
       get(`/documents/data-requests/${requestId}/clinical-record`, token);
 
     async function signedNote(encounterId: string, reason: string) {
@@ -2329,7 +2354,7 @@ describe('los documentos por HTTP', () => {
     }
 
     const answer = (requestId: string, outcome: string, path = 'response') =>
-      post(`/privacy/requests/${requestId}/${path}`, adminToken, {
+      post(`/privacy/requests/${requestId}/${path}`, custodianToken, {
         outcome,
         response: 'Respuesta',
       }).expect(200);
@@ -2576,6 +2601,90 @@ describe('los documentos por HTTP', () => {
       expect(text).toContain(`Historia clínica ${survivor.mrn}`);
       expect(text).toContain('Control de presión arterial');
       expect(text).toContain('Dolor de garganta de dos días');
+    });
+    it('DOC-118 PD-058 D-203 §1 sin record:read no se autoriza ni se descarga, y la respuesta no dice si la solicitud existe', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId } = await aRecordWithHistory();
+      const requestId = await copyRequest(patientId);
+
+      // ADMIN de fábrica: patient:data-requests sin record:read.
+      const unanswered = await post(
+        `/privacy/requests/${requestId}/response`,
+        adminToken,
+        { outcome: 'GRANTED', response: 'Se autoriza' },
+      ).expect(404);
+      expect((unanswered.body as Problem).code).toBe('DATA_REQUEST_NOT_FOUND');
+      await get(`/privacy/requests/${requestId}/answer-proposal`, adminToken).expect(404); // prettier-ignore
+
+      // Control positivo: con la llave, la misma persona la autoriza…
+      await answer(requestId, 'GRANTED');
+      await copyOf(requestId).expect(200);
+      // …y sin ella, la descarga responde como a una solicitud que no existe.
+      const refused = await copyOf(requestId, adminToken).expect(404);
+      const missing = await copyOf(randomUUID(), adminToken).expect(404);
+      expect((refused.body as Problem).code).toBe('DOCUMENT_SUBJECT_NOT_FOUND');
+      expect((refused.body as Problem).code).toBe(
+        (missing.body as Problem).code,
+      );
+      expect((refused.body as Problem).title).toBe(
+        (missing.body as Problem).title,
+      );
+    });
+
+    it('DOC-118 PD-058 D-203 §1 con record:read en otra sede no hay llave: la persona atendida sólo en otra sede no se autoriza ni se descarga', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const elsewhere = await createSite(prisma, 'Sede Sur');
+      const patient = await createPatient(prisma);
+      const there = await prisma.encounter.create({
+        data: {
+          siteId: elsewhere.id,
+          practitionerId,
+          patientId: patient.id,
+          startedAt: new Date(Date.now() - 2 * DAY),
+          careModality: 'MORBIDITY',
+          visitSequence: 'FIRST_TIME',
+        },
+      });
+      await signedNote(there.id, 'Atendida en la sede sur');
+      const requestId = await copyRequest(patient.id);
+
+      const refused = await post(
+        `/privacy/requests/${requestId}/response`,
+        custodianToken,
+        { outcome: 'GRANTED', response: 'Se autoriza' },
+      ).expect(404);
+      expect((refused.body as Problem).code).toBe('DATA_REQUEST_NOT_FOUND');
+      // Aunque otra persona con llave en todas la autorizase, ésta no la descarga.
+      await prisma.dataSubjectRequest.update({
+        where: { id: requestId },
+        data: { outcome: 'GRANTED', response: 'Autorizada', answeredAt: new Date(), answeredBy: (await createUser(prisma)).id, changedBy: (await createUser(prisma)).id, changedAt: new Date() }, // prettier-ignore
+      });
+      await copyOf(requestId).expect(404);
+    });
+
+    it('DOC-118 D-203 §1 la copia alcanza sólo las sedes de su record:read, y la portada dice que no lleva las de otras sedes', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId } = await aRecordWithHistory();
+      const elsewhere = await createSite(prisma, 'Sede Sur');
+      const there = await prisma.encounter.create({
+        data: {
+          siteId: elsewhere.id,
+          practitionerId,
+          patientId,
+          startedAt: new Date(Date.now() - 3 * DAY),
+          careModality: 'MORBIDITY',
+          visitSequence: 'SUBSEQUENT',
+        },
+      });
+      await signedNote(there.id, 'Atendida en la sede sur');
+      const requestId = await copyRequest(patientId);
+      await answer(requestId, 'GRANTED');
+
+      const text = await copyText(requestId);
+      // Control positivo: la de su sede, sí.
+      expect(text).toContain('Dolor de garganta de dos días');
+      expect(text).not.toContain('Atendida en la sede sur');
+      expect(text).toContain('las atenciones de otras sedes');
     });
   });
 });

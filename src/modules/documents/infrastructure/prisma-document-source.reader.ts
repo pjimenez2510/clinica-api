@@ -14,6 +14,11 @@ import {
 } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { actFormSections } from '../../../shared/clinical/act-forms';
 import { FORM_002_BUILT_IN_SECTIONS } from '../../../shared/clinical/form-002';
+import {
+  holdsRecordKey,
+  withinRecordScope,
+  type RecordReadScope,
+} from '../../../shared/domain/clinical-record-key';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import {
   findStandingAllergyAbsence,
@@ -770,7 +775,12 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
    */
   async findClinicalRecordCopy(
     requestId: string,
+    recordScope: RecordReadScope,
   ): Promise<ClinicalRecordCopyLookup> {
+    // D-203 §1. No `record:read` anywhere: nothing to read, and nothing said.
+    if (recordScope !== 'all' && recordScope.length === 0) {
+      return { status: 'missing' };
+    }
     const request = await this.prisma.dataSubjectRequest.findUnique({
       where: { id: requestId },
       select: {
@@ -844,13 +854,27 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         site: { select: { name: true } },
       },
     });
+    // D-203 §1, decided by the author on 10-10-2026: the key is `record:read`
+    // at a site where the person was attended, and the copy reaches the
+    // sites of that `record:read`, never all of them by the other permission.
+    // Without the key the request answers as missing, like any clinical read.
+    if (
+      !holdsRecordKey(recordScope, [
+        ...new Set(attentions.map((one) => one.siteId)),
+      ])
+    ) {
+      return { status: 'missing' };
+    }
+    const reachable = attentions.filter((one) =>
+      withinRecordScope(recordScope, one.siteId),
+    );
     // DOC-119. The charts whose attentions ACTUALLY leave, read from them —
     // not from a second query a merge could change in between —, and the
     // chart in force, whose identity the cover prints.
     const chartIds = [
-      ...new Set([rootId, ...attentions.map((one) => one.patientId)]),
+      ...new Set([rootId, ...reachable.map((one) => one.patientId)]),
     ];
-    const encounters = attentions
+    const encounters = reachable
       .map((attention) => ({
         ...encounterSummaryOf(attention).data,
         siteName: attention.site.name,
@@ -872,7 +896,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         authorisedAt: standing.answeredAt,
         chartIds,
         encounters,
-        siteId: attentions.at(-1)?.siteId ?? null,
+        siteId: reachable.at(-1)?.siteId ?? null,
+        omitsOtherSites: reachable.length < attentions.length,
       },
     };
   }

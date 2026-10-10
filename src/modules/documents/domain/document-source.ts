@@ -1,3 +1,4 @@
+import type { RecordReadScope } from '../../../shared/domain/clinical-record-key';
 import type { StandingAllergyAbsence } from '../../../shared/clinical/allergy-history';
 import type { Form117 } from '../../../shared/domain/form-117/form-117';
 import type { DocumentKind, SiteScopeFilter } from './document-kind';
@@ -397,6 +398,11 @@ export interface ClinicalRecordCopyPrintData {
   /** Each attention as DOC-111 prints it, with the name of its site. */
   encounters: readonly (EncounterSummaryPrintData & { siteName: string })[];
   /**
+   * D-203 §1. Attentions at sites beyond the caller's `record:read` were left
+   * out: the cover says the copy does not carry those of other sites.
+   */
+  omitsOtherSites: boolean;
+  /**
    * The site whose letterhead the copy wears: the latest attention's, or
    * `null` when there is none (the caller takes the first active site).
    */
@@ -443,10 +449,14 @@ export interface DocumentSourceReader {
    */
   findForVerification(code: string): Promise<VerificationFacts | null>;
   /**
-   * DOC-118. The copy of the clinical record behind a request. Not scoped by
-   * site: the request is global (PA-051), and the record is one.
+   * DOC-118, D-203 §1. The copy of the clinical record behind a request, as
+   * far as the caller's `record:read` reaches: `missing` too when they hold
+   * no key to the person's record, so the refusal reveals nothing.
    */
-  findClinicalRecordCopy(requestId: string): Promise<ClinicalRecordCopyLookup>;
+  findClinicalRecordCopy(
+    requestId: string,
+    recordScope: RecordReadScope,
+  ): Promise<ClinicalRecordCopyLookup>;
 }
 
 export const DOCUMENT_SOURCE_READER = Symbol('DOCUMENT_SOURCE_READER');

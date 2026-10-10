@@ -10,6 +10,7 @@ import { ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { ALL_SITES } from '../../shared/authorisation/principal';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { DocumentService } from './application/document.service';
@@ -19,16 +20,18 @@ import { sendPdf } from './documents.controller';
  * DOC-118, DOC-119 (D-198 §1). The certified copy of the clinical record, from
  * the request of `privacy` that authorised it.
  *
- * ⚠️ `patient:data-requests` AND NOT `record:read`: the copy is handed over by
- * whoever answers the requests about a patient's data —the custodian's desk—,
- * like the export that already carries the clinical versions (PD-048). Whether
- * that desk should also hold `record:read` is D-140.2, with the legal adviser.
- * What keeps it narrow is the request: no copy leaves without a copy request
- * whose answer granted it (EN-033), and every one leaves its `EXPORT` rows.
- *
- * Global, like every route of `privacy` (PA-051): the record is one across
- * the sites.
+ * `patient:data-requests` AND THE KEY OF THE RECORD (D-203 §1, decided by the
+ * author on 10-10-2026): one person may register, authorise and download the
+ * copy, but only holding `record:read` at the patient's site, and the copy
+ * reaches the sites of that `record:read`. Without it the route answers as if
+ * the request did not exist. No copy leaves without a copy request whose
+ * answer granted it (EN-033), and every one leaves its `EXPORT` rows.
  */
+function recordScopeOf(currentUser: CurrentUserService): 'all' | string[] {
+  const scope = currentUser.requirePrincipal().sitesFor('record:read');
+  return scope === ALL_SITES ? 'all' : scope;
+}
+
 @ApiTags('documents')
 @Controller({ path: 'documents', version: '1' })
 export class ClinicalRecordCopyController {
@@ -48,8 +51,8 @@ export class ClinicalRecordCopyController {
   ): Promise<void> {
     const rendered = await this.documents.clinicalRecordCopy(requestId, {
       userId: this.currentUser.requireUserId(),
-      // The request is global: no site narrows what the copy reads.
-      sites: 'all',
+      // D-203 §1. The copy reaches the sites of the caller's `record:read`.
+      sites: recordScopeOf(this.currentUser),
       ip: req.ip,
       userAgent: req.get('user-agent'),
     });

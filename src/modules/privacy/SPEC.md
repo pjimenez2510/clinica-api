@@ -174,7 +174,7 @@ historia clínica, por otra vía» y la vía no existía (D-164.1).
 vencimiento a las 48 horas; ver rechazado un tercero sin copia, un familiar de
 un paciente vivo y una copia sin la casilla; responderla y descargar el PDF con
 la atención firmada y las filas `EXPORT`.
-**Cubre:** PD-052 a PD-057. El PDF es DOC-118 y DOC-119 (`documents` H13).
+**Cubre:** PD-052 a PD-058. El PDF es DOC-118 y DOC-119 (`documents` H13).
 
 **Solo servidor:** PD-055, PD-056. Que la exportación JSON no salga a un
 tercero y las frases de la propuesta y de `omitted`: la pantalla sólo las
@@ -570,9 +570,27 @@ la mitad del servidor es PD-052 a PD-054 y DOC-118.
   ofrecer «Descargar copia» (DOC-118); y a quien presenta la solicitud NO
   DEBERÁ ofrecerle «Un familiar (paciente fallecido)» si la ficha no registra
   el fallecimiento. Al registrarla, la
-  pantalla DEBERÁ ofrecer los seis que la presentan; con un tercero DEBERÁ
+  pantalla DEBERÁ ofrecer los seis que la presentan —el familiar, sólo con la
+  ficha que registra el fallecimiento—; y sin `record:read` NO DEBERÁ ofrecer
+  responder ni corregir la respuesta de una copia ni descargarla (PD-058); con un tercero DEBERÁ
   fijar el derecho en acceso y marcar la copia, y con la copia pedir el nombre,
   el documento y la casilla.
+
+- **PD-058** — CUANDO alguien con `patient:data-requests` responda una
+  solicitud de copia de la historia clínica, rectifique su respuesta o pida su
+  propuesta, el sistema DEBERÁ exigir además `record:read` en una sede donde
+  la persona —la ficha de la solicitud, la vigente y sus absorbidas— tuvo una
+  atención con nota 002 firmada, o en alguna sede si no tuvo ninguna; SI no lo
+  tiene, ENTONCES DEBERÁ responder `DATA_REQUEST_NOT_FOUND` (404), como a una
+  solicitud que no existe, sin escribir nada. Las demás solicitudes no lo
+  piden.
+  > **D-203 §1, decidida por el autor el 10-10-2026: «una persona, pero con
+  > permiso de historias».** La misma persona registra, autoriza y descarga la
+  > copia, sin segundo autorizador, pero sólo con `record:read` en la sede del
+  > paciente; las sedes que alcanza son las de su `record:read`, nunca todas
+  > (DOC-118). La regla vive en una función compartida,
+  > `shared/domain/clinical-record-key.ts`, que leen `privacy` al responder y
+  > `documents` al descargar.
 
 ---
 

@@ -5,6 +5,7 @@ import {
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
 import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
+import { holdsRecordKey } from '../../../shared/domain/clinical-record-key';
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import {
   answerProposal,
@@ -115,6 +116,7 @@ export class DataSubjectRequestsService {
     requester: Requester,
     now: Date = new Date(),
   ): Promise<DataRequestEntry> {
+    await this.assertRecordKey(requestId, requester);
     const result = await this.requests.answer(
       requestId,
       answer,
@@ -197,6 +199,7 @@ export class DataSubjectRequestsService {
     requester: Requester,
     now: Date = new Date(),
   ): Promise<DataRequestEntry> {
+    await this.assertRecordKey(requestId, requester);
     const result = await this.requests.correctAnswer(
       requestId,
       answer,
@@ -289,7 +292,11 @@ export class DataSubjectRequestsService {
    * it writes nothing, not even an audit row; what was answered is recorded
    * when the answer is saved.
    */
-  async answerProposal(requestId: string): Promise<string> {
+  async answerProposal(
+    requestId: string,
+    requester: Requester,
+  ): Promise<string> {
+    await this.assertRecordKey(requestId, requester);
     const facts = await this.requests.proposalFactsOf(requestId);
     if (!facts) throw new DataRequestNotFoundError();
     if (facts.clinicalRecordCopy) return clinicalRecordCopyProposal(facts);
@@ -324,6 +331,27 @@ export class DataSubjectRequestsService {
       ...row,
       isOverdue: row.answer === null && row.dueAt.getTime() <= now.getTime(),
     };
+  }
+
+  /**
+   * D-203 §1, decided by the author on 10-10-2026. Answering a request for the
+   * copy of the clinical record IS authorising its delivery, so it asks for
+   * the key of the record: `record:read` at a site where the person was
+   * attended. Without it the request answers as if it did not exist, like
+   * every clinical read: the refusal does not say there is a record behind.
+   */
+  private async assertRecordKey(
+    requestId: string,
+    requester: Requester,
+  ): Promise<void> {
+    const key = await this.requests.copyKeyOf(requestId);
+    if (!key) throw new DataRequestNotFoundError();
+    if (
+      key.clinicalRecordCopy &&
+      !holdsRecordKey(requester.recordScope ?? [], key.patientSites)
+    ) {
+      throw new DataRequestNotFoundError();
+    }
   }
 
   private async activeChart(patientId: string): Promise<{ deceased: boolean }> {

@@ -1,4 +1,5 @@
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import type { RecordReadScope } from '../../../shared/domain/clinical-record-key';
 
 import type { DataRequestParty } from './data-request-party';
 import type { DataSubjectRight } from './legal-due-date';
@@ -6,6 +7,11 @@ import type { DataSubjectRight } from './legal-due-date';
 /** Who acts, so the trail can say so. */
 export interface Requester {
   userId: string;
+  /**
+   * D-203 §1. The caller's `record:read` scope: the key to answer a copy of
+   * the clinical record. Absent is none.
+   */
+  recordScope?: RecordReadScope;
   ip?: string;
   userAgent?: string;
 }
@@ -317,6 +323,14 @@ export interface DataSubjectRequestRepository {
    * of the chart nor of what was asked.
    */
   proposalFactsOf(requestId: string): Promise<ProposalFacts | null>;
+  /**
+   * D-203 §1. Whether the request asks for the copy of the record, and the
+   * sites where the person had a signed attention: what the key is checked
+   * against before answering it. `null` when the request does not exist.
+   */
+  copyKeyOf(
+    requestId: string,
+  ): Promise<{ clinicalRecordCopy: boolean; patientSites: string[] } | null>;
   /** PD-036. */
   requestsOf(patientId: string): Promise<DataRequestView[]>;
   /**

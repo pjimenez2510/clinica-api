@@ -2401,6 +2401,7 @@ describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', ()
       },
     ],
     siteId: 's-1',
+    omitsOtherSites: false,
     ...overrides,
   });
 
@@ -2470,5 +2471,21 @@ describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', ()
     );
     expect(text).toContain('Solicitada por=El paciente');
     expect(text).not.toContain('Cédula u oficio');
+  });
+
+  it('DOC-118 D-203 §1 con atenciones de sedes que no alcanza quien la emite, dice que no lleva las de otras sedes', () => {
+    const without = wholeText(
+      composeClinicalRecordCopyLayout(copy(), context, template, now),
+    );
+    expect(without).not.toContain('las atenciones de otras sedes');
+    const partial = wholeText(
+      composeClinicalRecordCopyLayout(
+        copy({ omitsOtherSites: true }),
+        context,
+        template,
+        now,
+      ),
+    );
+    expect(partial).toContain('las atenciones de otras sedes');
   });
 });

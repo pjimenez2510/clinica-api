@@ -234,13 +234,17 @@ export class DocumentService {
    * request— is written FIRST, in one transaction, and nothing is served if
    * it cannot be.
    *
-   * Not scoped by site, like the request (PA-051): the record is one.
+   * D-203 §1: as far as the caller's `record:read` reaches (`requester.sites`
+   * is that scope), and nothing at all without it.
    */
   async clinicalRecordCopy(
     requestId: string,
     requester: Requester,
   ): Promise<RenderedDocument> {
-    const lookup = await this.sources.findClinicalRecordCopy(requestId);
+    const lookup = await this.sources.findClinicalRecordCopy(
+      requestId,
+      requester.sites,
+    );
     if (lookup.status === 'missing') throw new DocumentSubjectNotFoundError();
     if (lookup.status === 'not-available') {
       throw new ClinicalRecordCopyNotAvailableError();

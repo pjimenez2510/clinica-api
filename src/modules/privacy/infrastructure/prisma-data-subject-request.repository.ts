@@ -6,7 +6,10 @@ import {
   clinicalDateOf,
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
-import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
+import {
+  chartScope,
+  chartScopeOfSurvivor,
+} from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 import type {
   AnswerResult,
@@ -282,6 +285,35 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
         clinicalRecordCopy: true,
       },
     });
+  }
+
+  async copyKeyOf(
+    requestId: string,
+  ): Promise<{ clinicalRecordCopy: boolean; patientSites: string[] } | null> {
+    const request = await this.prisma.dataSubjectRequest.findUnique({
+      where: { id: requestId },
+      select: { patientId: true, clinicalRecordCopy: true },
+    });
+    if (!request) return null;
+    if (!request.clinicalRecordCopy) {
+      return { clinicalRecordCopy: false, patientSites: [] };
+    }
+    // The PERSON's sites, from the chart the request was written on up to
+    // the one in force and down to its absorbed ones (PA-055): those where
+    // a copy would carry a signed attention.
+    const attentions = await this.prisma.encounter.findMany({
+      where: {
+        ...chartScopeOfSurvivor(request.patientId),
+        status: { not: 'ENTERED_IN_ERROR' },
+        notes: { some: { formCode: '002', status: 'SIGNED' } },
+      },
+      distinct: ['siteId'],
+      select: { siteId: true },
+    });
+    return {
+      clinicalRecordCopy: true,
+      patientSites: attentions.map((one) => one.siteId),
+    };
   }
 
   async find(requestId: string): Promise<DataRequestView | null> {

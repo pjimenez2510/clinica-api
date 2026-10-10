@@ -1932,11 +1932,24 @@ describe('privacy por HTTP', () => {
       await get(`/requests/${holder.id}/export`).expect(200);
     });
 
-    it('PD-056 la propuesta de una copia dice a quién se entrega y que no lleva el tamizaje, y no escribe nada', async () => {
+    it('PD-056 PD-058 D-203 la propuesta de una copia pide la llave de la historia y dice a quién se entrega y que no lleva el tamizaje, y no escribe nada', async () => {
       const patient = await createPatient(prisma);
       const created = (
         await post(`/patients/${patient.id}/requests`, byAttorney).expect(201)
       ).body as RequestBody;
+      // D-203 §1. Sin record:read, la copia no se autoriza: ni su propuesta.
+      const keyless = await get(
+        `/requests/${created.id}/answer-proposal`,
+      ).expect(404);
+      expect((keyless.body as Problem).code).toBe('DATA_REQUEST_NOT_FOUND');
+      // Control positivo: la misma persona, con la llave de la historia.
+      const officerRole = await prisma.role.findUniqueOrThrow({
+        where: { code: 'PROTECCION_DATOS' },
+      });
+      await prisma.rolePermission.create({
+        data: { roleId: officerRole.id, permissionCode: 'record:read' },
+      });
+      registry.invalidate();
       const trail = await prisma.accessAudit.count();
 
       const proposal = (

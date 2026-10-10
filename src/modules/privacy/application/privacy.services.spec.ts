@@ -109,6 +109,9 @@ function requestRepository(
     correctAnswer: vi.fn(),
     find: vi.fn().mockResolvedValue(null),
     proposalFactsOf: vi.fn().mockResolvedValue(null),
+    copyKeyOf: vi
+      .fn()
+      .mockResolvedValue({ clinicalRecordCopy: false, patientSites: [] }),
     requestsOf: vi.fn().mockResolvedValue([]),
     open: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     exportChart: vi.fn(),
@@ -377,7 +380,7 @@ describe('la propuesta de respuesta (D-164.2)', () => {
         audit,
       );
 
-      await expect(service.answerProposal('r-1')).resolves.toBe(
+      await expect(service.answerProposal('r-1', WHO)).resolves.toBe(
         answerProposal(EXPORT_OMISSIONS),
       );
       // Only the right is read: not the request's view, with what was asked.
@@ -399,14 +402,14 @@ describe('la propuesta de respuesta (D-164.2)', () => {
         }),
       }),
     );
-    await expect(service.answerProposal('r-1')).rejects.toBeInstanceOf(
+    await expect(service.answerProposal('r-1', WHO)).rejects.toBeInstanceOf(
       DataExportNotApplicableError,
     );
   });
 
   it('PD-049 una solicitud inexistente es DATA_REQUEST_NOT_FOUND', async () => {
     const service = newRequestsService(requestRepository());
-    await expect(service.answerProposal('r-1')).rejects.toBeInstanceOf(
+    await expect(service.answerProposal('r-1', WHO)).rejects.toBeInstanceOf(
       DataRequestNotFoundError,
     );
   });
@@ -626,9 +629,61 @@ describe('la copia de la historia clínica (D-198 §1)', () => {
         proposalFactsOf: vi.fn().mockResolvedValue(facts),
       }),
     );
-    const proposal = await service.answerProposal('r-1');
+    const proposal = await service.answerProposal('r-1', WHO);
     expect(proposal).toBe(clinicalRecordCopyProposal(facts));
     expect(proposal).toContain('a su apoderado, Ana Pérez');
     expect(proposal).toContain('No lleva el tamizaje de violencia');
+  });
+});
+
+describe('D-203 §1 autorizar la copia pide la llave de la historia', () => {
+  const copyKey = (patientSites: string[]) =>
+    vi.fn().mockResolvedValue({ clinicalRecordCopy: true, patientSites });
+  const granted = { outcome: 'GRANTED' as const, response: 'Se autoriza' };
+
+  it('PD-058 PD-057 DOC-118 sin record:read en la sede del paciente, responder la copia es DATA_REQUEST_NOT_FOUND y no llega al repositorio', async () => {
+    const answer = vi.fn();
+    const correctAnswer = vi.fn();
+    const service = newRequestsService(
+      requestRepository({
+        copyKeyOf: copyKey(['norte']),
+        answer,
+        correctAnswer,
+      }),
+    );
+    for (const recordScope of [undefined, [], ['sur']] as const) {
+      const who = { ...WHO, recordScope };
+      await expect(
+        service.answer('r-1', granted, who, NOW),
+      ).rejects.toBeInstanceOf(DataRequestNotFoundError);
+      await expect(
+        service.correctAnswer('r-1', granted, who, NOW),
+      ).rejects.toBeInstanceOf(DataRequestNotFoundError);
+      await expect(service.answerProposal('r-1', who)).rejects.toBeInstanceOf(
+        DataRequestNotFoundError,
+      );
+    }
+    expect(answer).not.toHaveBeenCalled();
+    expect(correctAnswer).not.toHaveBeenCalled();
+  });
+
+  it('PD-058 control positivo: con record:read en la sede, la misma persona la responde; y una solicitud que no es copia no pide la llave', async () => {
+    const answer = vi
+      .fn()
+      .mockResolvedValue({ status: 'answered', request: requestView() });
+    const service = newRequestsService(
+      requestRepository({ copyKeyOf: copyKey(['norte']), answer }),
+    );
+    await service.answer(
+      'r-1',
+      granted,
+      { ...WHO, recordScope: ['norte'] },
+      NOW,
+    );
+    expect(answer).toHaveBeenCalledOnce();
+
+    const plain = newRequestsService(requestRepository({ answer }));
+    await plain.answer('r-1', granted, WHO, NOW);
+    expect(answer).toHaveBeenCalledTimes(2);
   });
 });

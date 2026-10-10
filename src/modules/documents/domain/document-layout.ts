@@ -1707,7 +1707,7 @@ export function composeClinicalRecordCopyLayout(
         },
         {
           label: 'No incluye: ',
-          text: 'el tamizaje de violencia, que sólo se entrega después de que lo revise un profesional; los resultados de los exámenes; las atenciones sin nota de consulta firmada; las notas de evolución, las referencias e interconsultas, ni las versiones anteriores de una nota enmendada.',
+          text: `el tamizaje de violencia, que sólo se entrega después de que lo revise un profesional; los resultados de los exámenes; las atenciones sin nota de consulta firmada${data.omitsOtherSites ? '; las atenciones de otras sedes' : ''}; las notas de evolución, las referencias e interconsultas, ni las versiones anteriores de una nota enmendada.`,
         },
       ],
     },

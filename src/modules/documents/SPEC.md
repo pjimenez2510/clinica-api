@@ -1266,7 +1266,7 @@ solo PDF, completo, generado al momento._
   > Su autenticidad la prueba el código de verificación de la atención
   > (DOC-112).
 
-- **DOC-118** — CUANDO alguien con `patient:data-requests` pida la copia de
+- **DOC-118** — CUANDO alguien con `patient:data-requests` y `record:read` (PD-058) pida la copia de
   la historia clínica de una solicitud de copia (PD-053) cuya respuesta
   vigente (PD-047) sea `GRANTED`, el sistema DEBERÁ
   componer **al momento** un PDF/A con el marco común (DOC-080 a DOC-085) y la
@@ -1292,15 +1292,20 @@ solo PDF, completo, generado al momento._
   su respuesta vigente no es «Atendida» —también «Atendida en parte» o una
   autorización rectificada a «Denegada»—, ENTONCES
   `CLINICAL_RECORD_COPY_NOT_AVAILABLE` (409). La ruta es
-  `GET /v1/documents/data-requests/<id>/clinical-record`, de alcance global
-  como la solicitud (PA-051): la historia es una en todas las sedes.
+  `GET /v1/documents/data-requests/<id>/clinical-record`. **La copia alcanza
+  las sedes del `record:read` de quien la pide** (D-203 §1): sólo las
+  atenciones de esas sedes, y SI la persona tuvo atenciones en otras, la
+  portada DEBERÁ decir que no lleva «las atenciones de otras sedes»; y SI no
+  tiene `record:read` en ninguna sede donde la persona tuvo una atención
+  firmada —o en ninguna, si no tuvo—, ENTONCES DEBERÁ responder
+  `DOCUMENT_SUBJECT_NOT_FOUND`, lo mismo que a una solicitud inexistente.
   > **D-198 §1, aceptada por el autor el 09-10-2026:** A.M. 5216 art. 28
   > (copia certificada), art. 32 (se informa a quien la recibe de su
   > responsabilidad) y art. 33 («CONFIDENCIAL» en el margen superior). La
   > respuesta es la autorización (EN-033): sin ella no sale. Las palabras de
   > la certificación y quién la firma en nombre del custodio, **al asesor
-  > legal**; quién la descarga (`patient:data-requests`, de fábrica ADMIN, sin
-  > `record:read`), con D-140.2.
+  > legal**. Quién la descarga lo decidió el autor el 10-10-2026 (D-203 §1):
+  > una persona, con `patient:data-requests` y `record:read` en la sede.
   >
   > **Revisión clínica de la rama (09-10-2026), D-203:** «Atendida en parte»
   > no la habilita hasta que se decida qué parte (§2); cada descarga lleva lo

@@ -1138,6 +1138,7 @@ describe('DOC-118 DOC-119 la copia certificada de la historia clínica', () => {
       chartIds: ['chart-1', 'absorbed-1'],
       encounters: [{ ...summary.data, siteName: 'Sede Norte' }],
       siteId: 'site-9',
+      omitsOtherSites: false,
     },
   });
 
