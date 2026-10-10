@@ -18,6 +18,7 @@ import {
   ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
@@ -32,6 +33,7 @@ import type { CertificateSummary } from './domain/electronic-voucher.repository'
 import { ElectronicVoucherNotFoundError } from './domain/sri.errors';
 import {
   CertificateDto,
+  ResendVoucherDto,
   SriMonitorDto,
   SriTransportFailureDto,
   UploadCertificateDto,
@@ -120,6 +122,30 @@ export class SriVouchersController {
   ): Promise<void> {
     await this.monitorService.retry(
       voucherId,
+      this.requester(req, 'billing:write'),
+    );
+  }
+
+  /** SRI-095, SRI-096. A copy to another address; the voucher does not move. */
+  @Post(':voucherId/resend')
+  // SRI-095. Sent with somebody at the desk: a handful a minute is plenty, and
+  // a script walking the site's vouchers to an outside address is not.
+  @Throttle({ short: { ttl: 60_000, limit: 10 } })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermission('billing:write', 'query')
+  @ApiOperation({
+    summary:
+      'Reenviar por correo el RIDE y el XML de un comprobante autorizado a otra dirección',
+  })
+  @ApiNoContentResponse()
+  async resend(
+    @Param('voucherId', ParseUUIDPipe) voucherId: string,
+    @Body() dto: ResendVoucherDto,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.monitorService.resendTo(
+      voucherId,
+      dto.email,
       this.requester(req, 'billing:write'),
     );
   }

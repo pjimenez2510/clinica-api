@@ -573,7 +573,9 @@ export class BillingController {
   }
 
   /**
-   * BI-082. What the screen OFFERS as receiver — never what it applies.
+   * BI-082, BI-270, BI-271. What the screen OFFERS as receiver — never what
+   * it applies: the patient's document, the chart's e-mail and the buyers who
+   * already paid for them here.
    *
    * A route of its own rather than a field of the account: BI-080 demands the
    * receiver be stated on issuance, and a proposal served inside the account
@@ -592,10 +594,22 @@ export class BillingController {
       siteId,
     });
 
+    /**
+     * BI-270, BI-271, ADR-007. What `billing:read` alone does not open. The
+     * chart's id and e-mail are the CHART's: they go to whoever reads charts
+     * (`patient:read`), not to an administrator who only reads billing. The
+     * buyers of before serve only whoever issues here (`billing:write`).
+     */
+    const principal = this.currentUser.requirePrincipal();
+    const readsCharts = principal.can('patient:read');
+    const issuesHere = principal.canAtSite('billing:write', siteId);
     return {
-      identificationType: proposal.identificationType ?? null,
-      identification: proposal.identification ?? null,
-      name: proposal.name ?? null,
+      identificationType: proposal.receiver.identificationType ?? null,
+      identification: proposal.receiver.identification ?? null,
+      name: proposal.receiver.name ?? null,
+      patientId: readsCharts ? proposal.patientId : null,
+      email: readsCharts ? proposal.email : null,
+      frequentBuyers: issuesHere ? proposal.frequentBuyers : [],
     };
   }
 
