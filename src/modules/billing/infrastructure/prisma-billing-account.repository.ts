@@ -1728,30 +1728,26 @@ function toInvoiceView(row: InvoiceRow): InvoiceView {
 
 /** BI-260. Each replacing invoice once, oldest first. */
 function replacementsOf(row: InvoiceRow): InvoiceView['replacedBy'] {
-  const byId = new Map<
-    string,
-    InvoiceView['replacedBy'][number] & { issuedAt: Date | null }
-  >();
-  for (const charge of row.chargeItems) {
-    for (const { invoice } of charge.correctedBy) {
-      if (!invoice || byId.has(invoice.id)) continue;
-      byId.set(invoice.id, {
-        id: invoice.id,
-        accountId: invoice.accountId,
-        documentNumber: invoiceDocumentNumber({
-          accessKey: invoice.accessKey,
-          establishmentCode: invoice.emissionPoint.site.sriEstablishmentCode,
-          emissionPointCode: invoice.emissionPoint.code,
-          sequential: invoice.sequential,
-        }),
-        status: invoice.status,
-        issuedAt: invoice.issuedAt,
-      });
-    }
-  }
-  return [...byId.values()]
+  const invoices = new Map(
+    row.chargeItems
+      .flatMap((charge) => charge.correctedBy)
+      .flatMap(({ invoice }) =>
+        invoice ? [[invoice.id, invoice] as const] : [],
+      ),
+  );
+  return [...invoices.values()]
     .sort((a, b) => (a.issuedAt?.getTime() ?? 0) - (b.issuedAt?.getTime() ?? 0))
-    .map(({ issuedAt: _issuedAt, ...ref }) => ref);
+    .map((invoice) => ({
+      id: invoice.id,
+      accountId: invoice.accountId,
+      documentNumber: invoiceDocumentNumber({
+        accessKey: invoice.accessKey,
+        establishmentCode: invoice.emissionPoint.site.sriEstablishmentCode,
+        emissionPointCode: invoice.emissionPoint.code,
+        sequential: invoice.sequential,
+      }),
+      status: invoice.status,
+    }));
 }
 
 /** BI-184. The same set of ids, in any order. */
