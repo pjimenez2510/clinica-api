@@ -4964,10 +4964,12 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
 - **EN-274** — CUANDO la consulta tenga al menos **dos** tomas de peso o de TA
   entre las anteriores del resumen (EN-159) y la de la atención, la cabecera
   fija DEBERÁ dibujar su tendencia en pequeño, con las cifras por escrito para
-  quien no ve la línea, sin crecer en alto ni desbordar a 375 px; con menos de
-  dos NO DEBERÁ dibujar nada.
+  quien no ve la línea, sin crecer en alto; en el teléfono (menos de 640 px)
+  NO DEBERÁ dibujarla, y con menos de dos tomas NO DEBERÁ dibujar nada.
   > Una tendencia de un punto no es una tendencia. Sin backend nuevo: son las
-  > cinco tomas que el resumen ya trae.
+  > cinco tomas que el resumen ya trae. En el teléfono la línea de datos de la
+  > cabecera fija ya se parte en dos y la tendencia sumaba una tercera; allí
+  > las tomas siguen en «Historia» y en la ficha.
 
 ---
 
