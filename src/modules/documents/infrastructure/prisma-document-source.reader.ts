@@ -801,7 +801,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     if (
       !request.clinicalRecordCopy ||
       // «Atendida en parte» does not hand over the whole copy: what «en
-      // parte» means for it is D-202 §2, and until then only «Atendida» does.
+      // parte» means for it is D-203 §2, and until then only «Atendida» does.
       standing.outcome !== 'GRANTED' ||
       standing.answeredAt === null ||
       standing.answeredBy === null
@@ -834,7 +834,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         notes: { some: { formCode: '002', status: 'SIGNED' } },
         // What was authorised, and no more: every download of one request
         // carries the record as it stood when it was authorised, never the
-        // attentions that came after (D-202 §3 decides whether it expires).
+        // attentions that came after (D-203 §3 decides whether it expires).
         startedAt: { lte: standing.answeredAt },
       },
       orderBy: [{ startedAt: 'asc' }, { id: 'asc' }],

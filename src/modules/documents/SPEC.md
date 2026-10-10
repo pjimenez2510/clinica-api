@@ -1302,7 +1302,7 @@ solo PDF, completo, generado al momento._
   > legal**; quién la descarga (`patient:data-requests`, de fábrica ADMIN, sin
   > `record:read`), con D-140.2.
   >
-  > **Revisión clínica de la rama (09-10-2026), D-202:** «Atendida en parte»
+  > **Revisión clínica de la rama (09-10-2026), D-203:** «Atendida en parte»
   > no la habilita hasta que se decida qué parte (§2); cada descarga lleva lo
   > que se autorizó y no lo que vino después (§3); la certificación dice lo
   > que lleva, no «lo registrado» (§4, al asesor).

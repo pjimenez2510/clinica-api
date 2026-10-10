@@ -1694,7 +1694,7 @@ export function composeClinicalRecordCopyLayout(
     },
     {
       kind: 'paragraph',
-      // What it certifies is what it carries, and no more (D-202 §4: the
+      // What it certifies is what it carries, and no more (D-203 §4: the
       // wording, with the legal adviser).
       text: `${establishment}, custodio de la historia clínica, certifica que esta copia reproduce, tal como constan en su sistema, la nota de consulta vigente, los signos vitales, los diagnósticos, la receta, los exámenes pedidos y los certificados de cada atención con nota de consulta firmada hasta el ${ecuadorianDate(data.authorisedAt)}.`,
     },

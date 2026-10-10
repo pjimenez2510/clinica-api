@@ -2472,7 +2472,7 @@ describe('los documentos por HTTP', () => {
       await answer(requestId, 'GRANTED');
       await copyOf(requestId, doctorToken).expect(403);
     });
-    it('DOC-118 D-202 «Atendida en parte» no entrega la copia entera', async () => {
+    it('DOC-118 D-203 «Atendida en parte» no entrega la copia entera', async () => {
       await publishTemplate('ENCOUNTER_SUMMARY');
       const { patientId } = await aRecordWithHistory();
       const requestId = await copyRequest(patientId);
