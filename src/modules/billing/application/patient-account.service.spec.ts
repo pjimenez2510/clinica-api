@@ -85,6 +85,7 @@ const charge = (
   invoiceId: null,
   correctsChargeItemId: null,
   creditNote: null,
+  correctedNoteRejected: false,
   ...overrides,
 });
 
@@ -879,6 +880,43 @@ describe('BI-236 el extracto dice el estado de la atención que se cierra con la
     expect(statement.encounterStatus).toBeNull();
     expect(statement.closesEncounter).toBe(false);
     expect(mocks.encounterStatusOf).not.toHaveBeenCalled();
+  });
+});
+
+describe('BI-203 BI-214 la consulta corregida tras una nota de crédito', () => {
+  it('BI-203 BI-214 compara la copia de la consulta, no el original acreditado', async () => {
+    const note = { id: 'note-1', documentNumber: '001-001-000000003', status: 'AUTHORISED' }; // prettier-ignore
+    const build_ = (copyService: string) =>
+      build({
+        accounts: {
+          findAccount: vi.fn().mockResolvedValue(account({ encounterId: 'encounter-1' })), // prettier-ignore
+          listCharges: vi.fn().mockResolvedValue([
+            charge('original', 'BILLED', {
+              origin: 'CONSULTATION',
+              billableServiceId: 'service-first',
+              creditNote: note,
+            }),
+            charge('copy', 'BILLED', {
+              origin: 'CORRECTION',
+              correctsChargeItemId: 'original',
+              billableServiceId: copyService,
+            }),
+          ]),
+          findEncounterActs: vi.fn().mockResolvedValue({ serviceTypeId: 'type-1', visitSequence: 'SUBSEQUENT', procedures: [] }), // prettier-ignore
+          findConsultationService: vi.fn().mockResolvedValue({ billableServiceId: 'service-subsequent', active: true }), // prettier-ignore
+        },
+      }).service.statement({ accountId: ACCOUNT, siteId: SITE });
+
+    // The copy was put right: nothing to say, although the credited original
+    // still names the old service.
+    expect(
+      (await build_('service-subsequent')).consultationOutdated,
+    ).toBeNull();
+    // Control: the copy still charging the old one is said, on the copy.
+    expect((await build_('service-first')).consultationOutdated).toEqual({
+      chargeId: 'copy',
+      billed: true,
+    });
   });
 });
 

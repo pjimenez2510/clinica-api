@@ -1550,6 +1550,12 @@ const CHARGE_INCLUDE = {
   discountAppliedBy: PERSON_NAME,
   discountAuthorisedBy: PERSON_NAME,
   creditNoteLine: CREDITING_NOTE,
+  // BI-074. A copy counts while the note that credited its original stands.
+  correctsChargeItem: {
+    select: {
+      creditNoteLine: { select: { creditNote: { select: { status: true } } } },
+    },
+  },
 } satisfies Prisma.ChargeItemInclude;
 type ChargeItemWithNames = Prisma.ChargeItemGetPayload<{
   include: typeof CHARGE_INCLUDE;
@@ -1585,7 +1591,10 @@ function toChargeView(
     Partial<
       Pick<
         ChargeItemWithNames,
-        'discountAppliedBy' | 'discountAuthorisedBy' | 'creditNoteLine'
+        | 'discountAppliedBy'
+        | 'discountAuthorisedBy'
+        | 'creditNoteLine'
+        | 'correctsChargeItem'
       >
     >,
 ): ChargeView {
@@ -1620,6 +1629,8 @@ function toChargeView(
     invoiceId: row.invoiceId,
     correctsChargeItemId: row.correctsChargeItemId,
     creditNote: creditingNoteOf(row.creditNoteLine),
+    correctedNoteRejected:
+      row.correctsChargeItem?.creditNoteLine?.creditNote.status === 'REJECTED',
   };
 }
 
@@ -1634,8 +1645,9 @@ const INVOICE_NUMBER_INCLUDE = {
   // BI-103, BI-249. What it was paid and credited, read with it: the balance
   // is derived on every read and never stored.
   payments: { where: { reversedAt: null }, select: { amount: true } },
+  // BI-103, BI-260. All of them: the rejected ones do not credit (the total
+  // below skips them) but the row says the SRI returned them.
   creditNotes: {
-    where: { status: { not: 'REJECTED' } },
     orderBy: { issuedAt: 'asc' },
     select: { id: true, amount: true, sequential: true, accessKey: true, status: true }, // prettier-ignore
   },
@@ -1709,7 +1721,9 @@ function toInvoiceView(row: InvoiceRow): InvoiceView {
     issuedById: row.issuedById,
     paidTotal: Money.sum(row.payments.map((p) => Money.parse(p.amount))),
     creditedTotal: Money.sum(
-      row.creditNotes.map((note) => Money.parse(note.amount)),
+      row.creditNotes
+        .filter((note) => note.status !== 'REJECTED')
+        .map((note) => Money.parse(note.amount)),
     ),
     // A credit note shares its invoice's emission point (BI-210).
     creditNotes: row.creditNotes.map((note) => ({
@@ -1731,6 +1745,13 @@ function replacementsOf(row: InvoiceRow): InvoiceView['replacedBy'] {
   const invoices = new Map(
     row.chargeItems
       .flatMap((charge) => charge.correctedBy)
+      // BI-260. A draft or a voided invoice replaces nothing.
+      .filter(
+        ({ invoice }) =>
+          invoice !== null &&
+          invoice.status !== 'DRAFT' &&
+          invoice.status !== 'VOIDED',
+      )
       .flatMap(({ invoice }) =>
         invoice ? [[invoice.id, invoice] as const] : [],
       ),

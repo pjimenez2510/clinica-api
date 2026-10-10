@@ -464,11 +464,11 @@ export class PatientAccountService {
     account: AccountView,
     charges: readonly ChargeView[],
   ): Promise<AccountStatement['consultationOutdated']> {
+    // A credited consultation no longer charges anything (BI-074); its copy
+    // does, and it is the consultation line now (BI-214).
     const line = charges.find(
       (charge) =>
-        charge.origin === 'CONSULTATION' &&
-        charge.status !== 'CANCELLED' &&
-        charge.status !== 'NOT_BILLABLE',
+        countsTowardsTotal(charge) && isConsultationLine(charge, charges),
     );
     if (!line || !account.encounterId) return null;
 
@@ -597,14 +597,37 @@ export function toLine(charge: ChargeView): ChargeLine {
 /**
  * BI-074. Which charges the account's total is derived from: not removed, not
  * «No se cobra», and not credited — once a credit note credited a line it is
- * no longer owed; its copy (BI-214), if any, is what is owed.
+ * no longer owed; its copy (BI-214), if any, is what is owed. If the SRI
+ * rejects that note, the original is owed again and the copy is not.
  */
 export function countsTowardsTotal(charge: ChargeView): boolean {
   return (
     charge.status !== 'CANCELLED' &&
     charge.status !== 'NOT_BILLABLE' &&
-    charge.creditNote === null
+    charge.creditNote === null &&
+    !charge.correctedNoteRejected
   );
+}
+
+/**
+ * BI-203, BI-214. The consultation's line: the CONSULTATION one, or a copy
+ * whose chain of corrections leads to it within the account. A copy that went
+ * to another open account of the visit is that account's consultation line.
+ */
+function isConsultationLine(
+  charge: ChargeView,
+  charges: readonly ChargeView[],
+): boolean {
+  const byId = new Map(charges.map((each) => [each.id, each]));
+  let current: ChargeView | undefined = charge;
+  for (let hops = 0; current && hops <= charges.length; hops += 1) {
+    if (current.origin === 'CONSULTATION') return true;
+    if (current.origin !== 'CORRECTION' || !current.correctsChargeItemId) {
+      return false;
+    }
+    current = byId.get(current.correctsChargeItemId);
+  }
+  return false;
 }
 
 /**

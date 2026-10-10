@@ -993,7 +993,7 @@ const invoiceResponseSchema = z.object({
   paidTotal: z.string(),
   /** BI-103. Credited by notes the SRI did not reject. */
   creditedTotal: z.string(),
-  /** BI-260. Sus notas de crédito no rechazadas, de la más antigua a la más reciente. */
+  /** BI-260. Sus notas de crédito con su estado —también las rechazadas, que no acreditan—, de la más antigua a la más reciente. */
   creditNotes: z.array(documentRefSchema),
   /** BI-260. Las facturas que vuelven a cobrar lo que esas notas acreditaron. */
   replacedBy: z.array(documentRefSchema.extend({ accountId: z.uuid() })),

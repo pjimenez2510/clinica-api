@@ -496,6 +496,12 @@ export interface ChargeView {
    * correction just touched is open, and an open charge is never credited.
    */
   creditNote: DocumentRef | null;
+  /**
+   * BI-074. On a CORRECTION line: the SRI rejected the note that credited its
+   * original, so the original is owed again and this copy, which cannot be
+   * billed meanwhile (BI-214), is not.
+   */
+  correctedNoteRejected: boolean;
 }
 
 /** BI-260. A credit note or an invoice, as another document names it. */
@@ -592,7 +598,7 @@ export interface InvoiceView {
   paidTotal: Money;
   /** BI-103. Its credit notes the SRI did not reject. */
   creditedTotal: Money;
-  /** BI-260. Those credit notes, oldest first. */
+  /** BI-260. Its credit notes, oldest first — the rejected ones too, with their status. */
   creditNotes: DocumentRef[];
   /**
    * BI-260. The invoices that bill again what those notes credited — the ones

@@ -997,6 +997,35 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
     ]);
   });
 
+  it('BI-074 si el SRI rechaza la nota que vuelve a facturar, se debe otra vez el original y no su copia', async () => {
+    const { invoiceId, accountId } = await anInvoice({ settled: true });
+    const created = await correct(invoiceId, {
+      reasonCode: 'RECEIVER_DATA',
+    }).expect(201);
+    // Control: standing, the copies are what is owed.
+    expect((await statementOf(accountId)).totals.total).toBe('60.00');
+
+    const noteId = (created.body as IssuedBody).creditNote.id;
+    await prisma.$executeRaw`
+      UPDATE "credit_note" SET "status" = 'REJECTED' WHERE "id" = ${noteId}::uuid`;
+    // The invoice stands again, and the copies wait (BI-214): $60, not $120.
+    expect((await statementOf(accountId)).totals.total).toBe('60.00');
+    // BI-260. The invoice still names the note, with what the SRI said, and
+    // it credits nothing (BI-103).
+    const listed = (
+      await api()
+        .get(`/api/v1/billing/sites/${siteId}/invoices`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200)
+    ).body as {
+      items: { id: string; creditedTotal: string; creditNotes: { id: string; status: string }[] }[]; // prettier-ignore
+    };
+    expect(listed.items.find((item) => item.id === invoiceId)).toMatchObject({
+      creditedTotal: '0.00',
+      creditNotes: [{ id: noteId, status: 'REJECTED' }],
+    });
+  });
+
   it('BI-260 la factura acreditada dice su nota de crédito y la factura que vuelve a cobrar lo acreditado', async () => {
     const { invoiceId, accountId } = await anInvoice({ settled: true });
     const created = await correct(invoiceId, {
@@ -1113,5 +1142,18 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
         [null, acts.serviceOrderItemId],
       ].sort(),
     );
+
+    // BI-243. The procedure is not in the attention (no such row): the copy,
+    // which charges it, is said; the credited original is not.
+    const procedureCopy = copies.find((copy) => copy.encounterProcedureId)!;
+    const statement = (
+      await api()
+        .get(`/api/v1/billing/sites/${siteId}/accounts/${accountId}`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200)
+    ).body as { proceduresOutdated: unknown[] };
+    expect(statement.proceduresOutdated).toEqual([
+      { chargeId: procedureCopy.id, billed: false, reason: 'RETRACTED' },
+    ]);
   });
 });

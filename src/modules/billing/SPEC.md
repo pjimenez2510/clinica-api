@@ -2684,7 +2684,8 @@ dos registros distintos.**
 - **BI-260** — Cada cargo del extracto de una cuenta DEBERÁ decir la nota de
   crédito no rechazada que lo acreditó —su id, su número impreso (BI-235) y su
   estado— o `null`; y cada factura que devuelva la API DEBERÁ listar sus notas
-  de crédito no rechazadas, con id, número y estado, y las facturas que
+  de crédito —también las rechazadas, que no acreditan (BI-103)—, con id,
+  número y estado, y las facturas que
   vuelven a cobrar lo que esas notas acreditaron (las que facturan sus copias
   de BI-214), con id, número y cuenta.
   > D-205: «la nota de crédito no se ve en la cuenta: sólo en
@@ -2695,7 +2696,9 @@ dos registros distintos.**
   notas de crédito no rechazadas acreditan su total entero, ENTONCES DEBERÁ
   decir «Anulada con NC» y el número; SI acreditan una parte, «Acreditada en
   parte con NC» y el número; con una nota aún sin autorizar, añadirá
-  «pendiente del SRI»; y DEBERÁ enlazar la factura que vuelve a cobrar lo
+  «pendiente del SRI»; SI el SRI rechazó una nota, ENTONCES DEBERÁ decir «NC …
+  devuelta por el SRI» y NO DEBERÁ ofrecer otra vez anularla (sus líneas siguen
+  tomadas, BI-211); y DEBERÁ enlazar la factura que vuelve a cobrar lo
   acreditado (BI-260).
   > D-205: las columnas Estado y SRI decían las dos «Autorizada por el SRI», y
   > la factura acreditada se leía igual que una cobrada (la queja de los

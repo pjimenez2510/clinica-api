@@ -44,6 +44,7 @@ const line = (overrides: Partial<ChargeView> = {}): ChargeView => ({
   invoiceId: null,
   correctsChargeItemId: null,
   creditNote: null,
+  correctedNoteRejected: false,
   ...overrides,
 });
 
