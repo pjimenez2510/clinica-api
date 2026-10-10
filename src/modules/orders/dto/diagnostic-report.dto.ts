@@ -393,6 +393,8 @@ export const criticalResultSchema = flaggedResultSchema.extend({
   noticeTarget: z.enum(['ORDERING_PRACTITIONER', 'ON_CALL_ROLE', 'PATIENT']),
   /** ORD-065. The escalation is due and the site named no on-call role. */
   escalationMissing: z.boolean(),
+  /** ORD-167. The notice is due to the account reading the worklist. */
+  dueToRequester: z.boolean(),
 });
 export const criticalResultListSchema = z.object({
   items: z.array(criticalResultSchema),
