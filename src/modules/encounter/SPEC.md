@@ -4871,7 +4871,7 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > VIH no cuenta, ni registrada:** viaja aparte con la segunda llave
   > (EN-095), y una pestaña que apareciera por ella se lo diría a quien no la
   > tiene. Si las vacunas deben tener entrada propia en la barra lo decide el
-  > autor (D-209).
+  > autor (D-210).
 - **EN-266** — MIENTRAS la atención esté viva y sin alta, su nota sin firmar y la sesión
   tenga `record:sign` en la sede de la atención, SI algo impide firmar,
   ENTONCES la cabecera fija DEBERÁ decir cuántas cosas faltan («Falta 1 para
