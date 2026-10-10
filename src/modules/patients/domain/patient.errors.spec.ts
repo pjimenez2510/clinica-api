@@ -9,6 +9,7 @@ import {
 
 import {
   AccessContextNotFoundError,
+  GenderIdentityBelowMinimumAgeError,
   MergeIntoSelfError,
   MergeNotFoundError,
   MergeUndoConflictError,
@@ -163,5 +164,19 @@ describe('el cierre de un grupo prioritario', () => {
       'Ese registro ya estaba cerrado. Se conserva el primer cierre',
     );
     expect(DOMAIN_ERROR_CODES).toContain('PRIORITY_GROUP_ALREADY_CLOSED');
+  });
+});
+
+describe('la identidad de género por debajo de la edad del instructivo', () => {
+  it('PA-071 answers GENDER_IDENTITY_BELOW_MINIMUM_AGE as a 422 on the gender identity field', () => {
+    const error = new GenderIdentityBelowMinimumAgeError();
+
+    expect(error.code).toBe('GENDER_IDENTITY_BELOW_MINIMUM_AGE');
+    expect(error).toBeInstanceOf(ValidationError); // 422
+    expect(error.userTitle).toBe(
+      'La identidad de género sólo se registra desde los 10 años de edad',
+    );
+    expect(error.fieldErrors?.[0]?.field).toBe('genderIdentityConceptId');
+    expect(DOMAIN_ERROR_CODES).toContain('GENDER_IDENTITY_BELOW_MINIMUM_AGE');
   });
 });

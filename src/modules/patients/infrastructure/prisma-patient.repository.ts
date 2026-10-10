@@ -312,6 +312,33 @@ const SORT_COLUMNS: Record<PatientSortField, readonly string[]> = {
 };
 
 /**
+ * PA-070. EVERY word as a fragment of the name, in any order.
+ *
+ * The whole text used to be ONE `LIKE '%…%'`, and `search_name` stores given
+ * names first with a space per empty part («juan  perez »): «Pérez Juan»
+ * found nobody, and neither did «Juan Pérez» — the double space where the
+ * second given name is missing broke it. At the desk the surname is said
+ * first, as the cedula prints it, so most searches by full name ended in a
+ * duplicate registration.
+ *
+ * One `LIKE` per word joined with `AND`, over the same column and the same
+ * trigram index as before (PA-016): no new column, no new index. The
+ * normalisation stays in the database (`immutable_unaccent`) for the reason
+ * PA-016 gives. An empty text never reaches here (the caller filters on
+ * `TRUE`), but it is still a single `LIKE '%%'` rather than an empty `AND`.
+ */
+function nameMatchesEveryWord(query: string): Prisma.Sql {
+  const words = query.split(/\s+/).filter((word) => word !== '');
+  // `%`, `_` and `\` typed inside a word are letters, not wildcards: escaped
+  // with LIKE's default escape character.
+  const fragments = (words.length > 0 ? words : ['']).map((word) => {
+    const literal = word.replace(/[\\%_]/g, '\\$&');
+    return Prisma.sql`p.search_name LIKE immutable_unaccent(lower(${`%${literal}%`}))`;
+  });
+  return Prisma.sql`(${Prisma.join(fragments, ' AND ')})`;
+}
+
+/**
  * The patient port over PostgreSQL. Search goes through raw SQL on the
  * generated `search_name` column; uniqueness, merge chains and immutability
  * are enforced by indexes and triggers, and this class translates their
@@ -345,7 +372,6 @@ export class PrismaPatientRepository implements PatientRepository {
    */
   async search(criteria: PatientSearchCriteria): Promise<PatientPage> {
     const query = criteria.query?.trim() ?? '';
-    const pattern = `%${query}%`;
     const offset = (criteria.page - 1) * criteria.pageSize;
 
     // `Prisma.sql` with placeholders: never string concatenation. The query is
@@ -466,9 +492,7 @@ export class PrismaPatientRepository implements PatientRepository {
      * of parameter`. Incluir sólo las condiciones que aplican evita el problema
      * y, de paso, no manda parámetros que no se van a usar.
      */
-    const condiciones: Prisma.Sql[] = [
-      Prisma.sql`p.search_name LIKE immutable_unaccent(lower(${pattern}))`,
-    ];
+    const condiciones: Prisma.Sql[] = [nameMatchesEveryWord(query)];
 
     if (mrnBuscado !== null) {
       condiciones.push(Prisma.sql`p.mrn = ${mrnBuscado}`);

@@ -17,6 +17,7 @@ import { fieldsForeignNationalityClears } from '../domain/ecuadorian-ethnicity';
 import { nationalityContradictsEthnicity } from '../domain/indigenous-nationality';
 import { peopleContradictsNationality } from '../domain/indigenous-people';
 import { sexualOrientationBelowMinimumAge } from '../domain/sexual-orientation';
+import { genderIdentityBelowMinimumAge } from '../domain/gender-identity';
 import {
   AccessContextNotFoundError,
   DuplicateIdentifierError,
@@ -25,6 +26,7 @@ import {
   PatientNotFoundError,
   PeopleRequiresKichwaNationalityError,
   SexualOrientationBelowMinimumAgeError,
+  GenderIdentityBelowMinimumAgeError,
 } from '../domain/patient.errors';
 import type { PatientCorrectionRequest } from '../domain/patient-corrections';
 import {
@@ -73,6 +75,7 @@ interface ConditionalChart {
   nationalityConceptId: string | null;
   peopleConceptId: string | null;
   sexualOrientationConceptId: string | null;
+  genderIdentityConceptId: string | null;
   /** Never null: `patient.birth_date` is `NOT NULL`. See `resultingBirthDate`. */
   birthDate: ClinicalDate;
 }
@@ -396,6 +399,7 @@ export class PatientsService {
         nationalityConceptId: input.nationalityConceptId ?? null,
         peopleConceptId: input.peopleConceptId ?? null,
         sexualOrientationConceptId: input.sexualOrientationConceptId ?? null,
+        genderIdentityConceptId: input.genderIdentityConceptId ?? null,
         /**
          * The column is a DATE and the controller parsed it at UTC midnight,
          * so the calendar day is its UTC slice — asking Ecuador here would
@@ -533,6 +537,7 @@ export class PatientsService {
         nationalityConceptId: resultingValue(state.values.nationalityConceptId, requested.nationalityConceptId), // prettier-ignore
         peopleConceptId: resultingValue(state.values.peopleConceptId, requested.peopleConceptId), // prettier-ignore
         sexualOrientationConceptId: resultingValue(state.values.sexualOrientationConceptId, requested.sexualOrientationConceptId), // prettier-ignore
+        genderIdentityConceptId: resultingValue(state.values.genderIdentityConceptId, requested.genderIdentityConceptId), // prettier-ignore
         /**
          * ⚠️ AND THE BIRTH DATE IS ONE OF THE INPUTS, which is what makes
          * PA-057 hold when it is the DATE that gets corrected rather than the
@@ -799,6 +804,11 @@ export class PatientsService {
     // read on the clinical date of Ecuador and never on the host's.
     if (sexualOrientationBelowMinimumAge(chart, today)) {
       throw new SexualOrientationBelowMinimumAgeError();
+    }
+
+    // PA-071, column 8: the same note and the same derived age as column 7.
+    if (genderIdentityBelowMinimumAge(chart, today)) {
+      throw new GenderIdentityBelowMinimumAgeError();
     }
   }
 

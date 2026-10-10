@@ -181,6 +181,28 @@ export class SexualOrientationBelowMinimumAgeError extends ValidationError {
 }
 
 /**
+ * PA-071. The chart declares a gender identity and the patient is under the
+ * age from which column 8 of the ministry's form asks the question. Same shape
+ * and the same two cautions as {@link SexualOrientationBelowMinimumAgeError}:
+ * the message names the threshold and neither the patient's birth date nor the
+ * value sent.
+ */
+export class GenderIdentityBelowMinimumAgeError extends ValidationError {
+  readonly code = 'GENDER_IDENTITY_BELOW_MINIMUM_AGE';
+  override readonly userTitle =
+    'La identidad de género sólo se registra desde los 10 años de edad';
+  constructor() {
+    super('Gender identity applies from the ministry minimum age onwards', {}, [
+      {
+        field: 'genderIdentityConceptId',
+        code: 'GENDER_IDENTITY_BELOW_MINIMUM_AGE',
+        message: 'Deje vacía la identidad de género, o revise la fecha de nacimiento', // prettier-ignore
+      },
+    ]);
+  }
+}
+
+/**
  * PA-013. Another live chart already holds this document. Thrown by the
  * service's courtesy check and, when two registrations race past it, by the
  * adapter translating `patient_identifier_active_unique` — one code for one
