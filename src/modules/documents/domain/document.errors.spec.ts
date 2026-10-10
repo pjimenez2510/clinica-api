@@ -5,6 +5,7 @@ import {
   NotFoundError,
 } from '../../../shared/domain/errors/domain-error';
 import {
+  ClinicalRecordCopyNotAvailableError,
   DocumentImageNotFoundError,
   DocumentVerificationNotFoundError,
   EncounterSummaryNotAvailableError,
@@ -37,6 +38,15 @@ describe('los errores nuevos de documents', () => {
     expect(error).toBeInstanceOf(ConflictError);
     expect(error.userTitle).toBe(
       'Esta atención todavía no tiene la nota firmada, o fue anulada: no hay resumen que descargar',
+    );
+  });
+
+  it('DOC-118 CLINICAL_RECORD_COPY_NOT_AVAILABLE es un 409 que dice que hace falta atender la solicitud', () => {
+    const error = new ClinicalRecordCopyNotAvailableError();
+    expect(error.code).toBe('CLINICAL_RECORD_COPY_NOT_AVAILABLE');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toBe(
+      'La copia de la historia clínica se descarga cuando la solicitud de copia está atendida',
     );
   });
 });

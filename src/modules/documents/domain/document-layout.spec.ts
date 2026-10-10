@@ -6,11 +6,16 @@ import {
 } from '../../../shared/domain/form-117/form-117';
 import { addDays, clinicalDateOf } from '../../../shared/domain/clinic-time';
 
-import { composeLayout } from './document-layout';
+import {
+  CLINICAL_RECORD_COPY_TITLE,
+  composeClinicalRecordCopyLayout,
+  composeLayout,
+} from './document-layout';
 import { sampleSubject } from './document-samples';
 import { TEAR_OFF_HEIGHT_MM, millimetresToPoints } from './page-layout';
 import type { DocumentTemplate } from './document-template';
 import type {
+  ClinicalRecordCopyPrintData,
   DocumentContext,
   DocumentSubject,
   PatientIdentity,
@@ -2359,5 +2364,128 @@ describe('DOC-111 el resumen de la atención', () => {
     expect(text).not.toContain('Receta');
     expect(text).not.toContain('Exámenes pedidos');
     expect(text).not.toContain('Certificados');
+  });
+});
+
+describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', () => {
+  const now = new Date();
+  const summary = sampleSubject('ENCOUNTER_SUMMARY', now) as Extract<
+    DocumentSubject,
+    { kind: 'ENCOUNTER_SUMMARY' }
+  >;
+  const earlier = new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000);
+  const copy = (
+    overrides: Partial<ClinicalRecordCopyPrintData> = {},
+  ): ClinicalRecordCopyPrintData => ({
+    requestId: 'r-1',
+    patient: { ...patient, ageYears: null, ageMonths: null },
+    patientSex: 'FEMALE',
+    requestedBy: 'ATTORNEY',
+    requesterName: 'Ana Pérez',
+    requesterDocument: '0926687856',
+    receivedAt: now,
+    authorisedBy: 'Mera Gabriela',
+    authorisedAt: now,
+    chartIds: ['p-1'],
+    encounters: [
+      {
+        ...summary.data,
+        startedAt: earlier,
+        verificationCode: 'CODIGO-UNO',
+        siteName: 'Sede Norte',
+      },
+      {
+        ...summary.data,
+        verificationCode: 'CODIGO-DOS',
+        siteName: 'Sede Centro',
+      },
+    ],
+    siteId: 's-1',
+    omitsOtherSites: false,
+    ...overrides,
+  });
+
+  it('DOC-118 lleva CONFIDENCIAL, el título de copia certificada, sin QR propio, y la portada con quién la pidió y quién la autorizó', () => {
+    const layout = composeClinicalRecordCopyLayout(
+      copy(),
+      context,
+      { ...template, kind: 'ENCOUNTER_SUMMARY' },
+      now,
+    );
+    expect(layout.frame.title).toBe(CLINICAL_RECORD_COPY_TITLE);
+    expect(layout.frame.confidential).toBe(true);
+    expect(layout.frame.footer.verification).toBeNull();
+
+    const text = wholeText(layout);
+    expect(text).toContain('Solicitada por=Su apoderado: Ana Pérez');
+    expect(text).toContain('Cédula u oficio=0926687856');
+    expect(text).toContain('Autorizada por=Mera Gabriela');
+    expect(text).toContain(
+      'Centro de Especialidades Bahía, custodio de la historia clínica, certifica que esta copia reproduce, tal como constan en su sistema, la nota de consulta vigente',
+    );
+    // G4: it does not certify more than it carries.
+    expect(text).not.toContain('reproduce lo registrado');
+    expect(text).toContain('responde de su custodia');
+  });
+
+  it('DOC-118 D-188 §3 dice que no lleva el tamizaje de violencia, ni los resultados, ni lo que no es la nota de consulta firmada', () => {
+    const text = wholeText(
+      composeClinicalRecordCopyLayout(copy(), context, template, now),
+    );
+    expect(text).toContain('No incluye');
+    expect(text).toContain('el tamizaje de violencia');
+    expect(text).toContain('los resultados de los exámenes');
+    expect(text).toContain('las atenciones sin nota de consulta firmada');
+  });
+
+  it('DOC-118 cada atención, en el orden dado, con su sede, su edad de ese día y su código de verificación; la persona se nombra una vez', () => {
+    const text = wholeText(
+      composeClinicalRecordCopyLayout(copy(), context, template, now),
+    );
+    const first = text.indexOf('CODIGO-UNO');
+    const second = text.indexOf('CODIGO-DOS');
+    expect(first).toBeGreaterThan(-1);
+    expect(second).toBeGreaterThan(first);
+    expect(text).toContain('Sede=Sede Norte');
+    expect(text).toContain('Código de verificación de la atención=CODIGO-UNO');
+    expect(text).toContain('Motivo de consulta=');
+    expect(text.match(/Apellidos y nombres=/g)).toHaveLength(1);
+  });
+
+  it('DOC-118 sin atenciones firmadas lo dice en vez de dejar la copia vacía, y el titular sale sin nombre aparte', () => {
+    const text = wholeText(
+      composeClinicalRecordCopyLayout(
+        copy({
+          encounters: [],
+          requestedBy: 'HOLDER',
+          requesterName: null,
+          requesterDocument: null,
+        }),
+        context,
+        template,
+        now,
+      ),
+    );
+    expect(text).toContain(
+      'La historia clínica no tiene atenciones con nota de consulta firmada.',
+    );
+    expect(text).toContain('Solicitada por=El paciente');
+    expect(text).not.toContain('Cédula u oficio');
+  });
+
+  it('DOC-118 D-203 §1 con atenciones de sedes que no alcanza quien la emite, dice que no lleva las de otras sedes', () => {
+    const without = wholeText(
+      composeClinicalRecordCopyLayout(copy(), context, template, now),
+    );
+    expect(without).not.toContain('las atenciones de otras sedes');
+    const partial = wholeText(
+      composeClinicalRecordCopyLayout(
+        copy({ omitsOtherSites: true }),
+        context,
+        template,
+        now,
+      ),
+    );
+    expect(partial).toContain('las atenciones de otras sedes');
   });
 });

@@ -1732,4 +1732,235 @@ describe('privacy por HTTP', () => {
       await get(`/requests/${access.id}/export`, deskToken).expect(403);
     });
   });
+
+  // --- D6 ------------------------------------------------------------------------
+
+  describe('D6 la copia de la historia clínica (D-198 §1, A.M. 5216)', () => {
+    const HOUR_MS = 60 * 60 * 1000;
+    const copy = {
+      right: 'ACCESS',
+      description: 'Copia de la historia clínica',
+      clinicalRecordCopy: true,
+      documentsChecked: true,
+    };
+    const byAttorney = {
+      ...copy,
+      requestedBy: 'ATTORNEY',
+      requesterName: 'Ana Pérez',
+      requesterDocument: '1710034065',
+    };
+
+    it('PD-052 PD-053 PD-054 EN-033 un apoderado pide la copia: se guarda quién es y vence a las 48 horas de recibida', async () => {
+      const patient = await createPatient(prisma);
+      const receivedAt = new Date(Date.now() - 2 * HOUR_MS);
+
+      const created = (
+        await post(`/patients/${patient.id}/requests`, {
+          ...byAttorney,
+          receivedAt: receivedAt.toISOString(),
+        }).expect(201)
+      ).body as RequestBody & {
+        dueAt: string;
+        requestedBy: string;
+        requesterName: string | null;
+        requesterDocument: string | null;
+        clinicalRecordCopy: boolean;
+      };
+
+      expect(new Date(created.dueAt).getTime()).toBe(
+        receivedAt.getTime() + 48 * HOUR_MS,
+      );
+      expect(created.dueOn).toBe(
+        clinicalDateOf(new Date(receivedAt.getTime() + 48 * HOUR_MS)),
+      );
+      expect(created).toMatchObject({
+        requestedBy: 'ATTORNEY',
+        requesterName: 'Ana Pérez',
+        requesterDocument: '1710034065',
+        clinicalRecordCopy: true,
+        isOverdue: false,
+      });
+      const row = await prisma.dataSubjectRequest.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      expect(row.documentsChecked).toBe(true);
+    });
+
+    it('PD-054 recibida «ahora», la recepción y el registro son el mismo instante del reloj de la aplicación y vence 48 horas después, al milisegundo', async () => {
+      const patient = await createPatient(prisma);
+      const created = (
+        await post(`/patients/${patient.id}/requests`, byAttorney).expect(201)
+      ).body as RequestBody & { dueAt: string; registeredAt: string };
+
+      expect(created.registeredAt).toBe(created.receivedAt);
+      expect(
+        new Date(created.dueAt).getTime() -
+          new Date(created.receivedAt).getTime(),
+      ).toBe(48 * HOUR_MS);
+    });
+
+    it('PD-054 PD-035 la copia vencida hace una hora sale marcada y antes que un acceso de quince días recibido antes', async () => {
+      const patient = await createPatient(prisma);
+      const access = (
+        await post(`/patients/${patient.id}/requests`, {
+          right: 'ACCESS',
+          requestedBy: 'HOLDER',
+          description: 'Mis datos',
+          receivedAt: new Date(Date.now() - 3 * DAY_MS).toISOString(),
+        }).expect(201)
+      ).body as RequestBody;
+      const late = (
+        await post(`/patients/${patient.id}/requests`, {
+          ...byAttorney,
+          receivedAt: new Date(Date.now() - 49 * HOUR_MS).toISOString(),
+        }).expect(201)
+      ).body as RequestBody;
+
+      const page = (await get('/requests?pageSize=100').expect(200)).body as {
+        items: RequestBody[];
+      };
+      const ids = page.items.map((item) => item.id);
+      expect(ids.indexOf(late.id)).toBeLessThan(ids.indexOf(access.id));
+      expect(page.items.find((item) => item.id === late.id)!.isOverdue).toBe(
+        true,
+      );
+      expect(page.items.find((item) => item.id === access.id)!.isOverdue).toBe(
+        false,
+      );
+
+      const overdue = (
+        await get('/requests?overdue=true&pageSize=100').expect(200)
+      ).body as { items: RequestBody[] };
+      expect(overdue.items.map((item) => item.id)).toContain(late.id);
+      expect(overdue.items.map((item) => item.id)).not.toContain(access.id);
+    });
+
+    it('PD-052 un tercero que no pide la copia y el familiar de un paciente vivo se rechazan nombrando por qué, sin escribir', async () => {
+      const patient = await createPatient(prisma);
+      const before = await prisma.dataSubjectRequest.count();
+
+      const notCopy = await post(`/patients/${patient.id}/requests`, {
+        ...byAttorney,
+        clinicalRecordCopy: false,
+      }).expect(422);
+      expect((notCopy.body as Problem).code).toBe(
+        'DATA_REQUEST_PARTY_NOT_ALLOWED',
+      );
+
+      const relative = {
+        ...copy,
+        requestedBy: 'DECEASED_RELATIVE',
+        requesterName: 'Luis Guamán',
+        requesterDocument: '0926687856',
+      };
+      const alive = await post(
+        `/patients/${patient.id}/requests`,
+        relative,
+      ).expect(422);
+      expect((alive.body as Problem).code).toBe(
+        'DATA_REQUEST_PATIENT_NOT_DECEASED',
+      );
+      expect(await prisma.dataSubjectRequest.count()).toBe(before);
+
+      // Control positivo: con el fallecimiento registrado en la ficha, sí.
+      await prisma.patient.update({
+        where: { id: patient.id },
+        data: { deceasedAt: new Date(Date.now() - DAY_MS) },
+      });
+      await post(`/patients/${patient.id}/requests`, relative).expect(201);
+    });
+
+    it('PD-053 la copia sin la casilla, con otro derecho o sin el documento de quien la presenta se rechaza nombrando el campo', async () => {
+      const patient = await createPatient(prisma);
+      for (const [body, field] of [
+        [{ ...byAttorney, documentsChecked: false }, 'documentsChecked'],
+        [
+          { ...byAttorney, requestedBy: 'HOLDER', right: 'PORTABILITY' },
+          'clinicalRecordCopy',
+        ],
+        [{ ...byAttorney, requesterDocument: '  ' }, 'requesterDocument'],
+      ] as const) {
+        const response = await post(
+          `/patients/${patient.id}/requests`,
+          body,
+        ).expect(422);
+        expect(response.body as Problem).toMatchObject({
+          code: 'CLINICAL_RECORD_COPY_INVALID',
+          errors: [expect.objectContaining({ field })],
+        });
+      }
+    });
+
+    it('PD-053 PD-054 editar la recepción de una copia mueve las 48 horas; pasarla a otro derecho se rechaza', async () => {
+      const patient = await createPatient(prisma);
+      const created = (
+        await post(`/patients/${patient.id}/requests`, byAttorney).expect(201)
+      ).body as RequestBody;
+      const earlier = new Date(Date.now() - 5 * HOUR_MS);
+
+      const edited = (
+        await patch(`/requests/${created.id}`, {
+          receivedAt: earlier.toISOString(),
+        }).expect(200)
+      ).body as RequestBody & { dueAt: string };
+      expect(new Date(edited.dueAt).getTime()).toBe(
+        earlier.getTime() + 48 * HOUR_MS,
+      );
+
+      const toOther = await patch(`/requests/${created.id}`, {
+        right: 'RECTIFICATION',
+      }).expect(422);
+      expect((toOther.body as Problem).code).toBe(
+        'CLINICAL_RECORD_COPY_INVALID',
+      );
+    });
+
+    it('PD-055 un tercero no recibe la exportación JSON; el titular que pide la copia, sí', async () => {
+      const patient = await createPatient(prisma);
+      const third = (
+        await post(`/patients/${patient.id}/requests`, byAttorney).expect(201)
+      ).body as RequestBody;
+      const refused = await get(`/requests/${third.id}/export`).expect(422);
+      expect((refused.body as Problem).code).toBe('DATA_EXPORT_NOT_APPLICABLE');
+
+      const holder = (
+        await post(`/patients/${patient.id}/requests`, {
+          ...copy,
+          requestedBy: 'HOLDER',
+        }).expect(201)
+      ).body as RequestBody;
+      await get(`/requests/${holder.id}/export`).expect(200);
+    });
+
+    it('PD-056 PD-058 D-203 la propuesta de una copia pide la llave de la historia y dice a quién se entrega y que no lleva el tamizaje, y no escribe nada', async () => {
+      const patient = await createPatient(prisma);
+      const created = (
+        await post(`/patients/${patient.id}/requests`, byAttorney).expect(201)
+      ).body as RequestBody;
+      // D-203 §1. Sin record:read, la copia no se autoriza: ni su propuesta.
+      const keyless = await get(
+        `/requests/${created.id}/answer-proposal`,
+      ).expect(404);
+      expect((keyless.body as Problem).code).toBe('DATA_REQUEST_NOT_FOUND');
+      // Control positivo: la misma persona, con la llave de la historia.
+      const officerRole = await prisma.role.findUniqueOrThrow({
+        where: { code: 'PROTECCION_DATOS' },
+      });
+      await prisma.rolePermission.create({
+        data: { roleId: officerRole.id, permissionCode: 'record:read' },
+      });
+      registry.invalidate();
+      const trail = await prisma.accessAudit.count();
+
+      const proposal = (
+        await get(`/requests/${created.id}/answer-proposal`).expect(200)
+      ).body as { response: string };
+
+      expect(proposal.response).toContain(
+        'Se autoriza la entrega de la copia certificada de la historia clínica, en PDF, a su apoderado, Ana Pérez.',
+      );
+      expect(proposal.response).toContain('No lleva el tamizaje de violencia');
+      expect(await prisma.accessAudit.count()).toBe(trail);
+    });
+  });
 });

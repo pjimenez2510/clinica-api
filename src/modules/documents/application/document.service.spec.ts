@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { DocumentIdentityService } from './document-identity.service';
 import { DocumentService, type Requester } from './document.service';
 import {
+  ClinicalRecordCopyNotAvailableError,
   DocumentRenderNotFoundError,
   DocumentSubjectNotFoundError,
   DocumentSubjectNotIssuableError,
@@ -16,6 +17,7 @@ import { CLINICAL_DOCUMENT_KINDS } from '../domain/document-kind';
 import type { DocumentKind } from '../domain/document-kind';
 import type { StoredImage, StoredImageSummary } from '../domain/document-image';
 import type {
+  ClinicalRecordCopyLookup,
   DocumentContext,
   DocumentSourceReader,
   DocumentSubject,
@@ -231,6 +233,14 @@ class FakeRepository implements DocumentRepository {
     return Promise.resolve();
   }
 
+  /** DOC-119. All or nothing: a failing trail writes no row and throws. */
+  failTrail = false;
+  recordDisclosures(disclosures: readonly DisclosureRecord[]): Promise<void> {
+    if (this.failTrail) return Promise.reject(new Error('trail refused'));
+    this.disclosures.push(...disclosures);
+    return Promise.resolve();
+  }
+
   listRendersOfSubject(
     subjectId: string,
     kind: DocumentKind,
@@ -349,6 +359,11 @@ class FakeSources implements DocumentSourceReader {
 
   findForVerification(): Promise<null> {
     return Promise.resolve(null);
+  }
+
+  copy: ClinicalRecordCopyLookup = { status: 'missing' };
+  findClinicalRecordCopy(): Promise<ClinicalRecordCopyLookup> {
+    return Promise.resolve(this.copy);
   }
 }
 
@@ -1100,5 +1115,90 @@ describe('DOC-111 el resumen de la atención', () => {
       Promise.reject(new Error('bitácora caída'));
 
     await expect(service.encounterSummary('encounter-1', requester)).rejects.toThrow('bitácora caída'); // prettier-ignore
+  });
+});
+
+describe('DOC-118 DOC-119 la copia certificada de la historia clínica', () => {
+  const summary = sampleSubject('ENCOUNTER_SUMMARY', new Date()) as Extract<
+    DocumentSubject,
+    { kind: 'ENCOUNTER_SUMMARY' }
+  >;
+  const ready = (): ClinicalRecordCopyLookup => ({
+    status: 'ready',
+    data: {
+      requestId: 'request-1',
+      patient: { ...summary.data.patient, ageYears: null, ageMonths: null },
+      patientSex: 'FEMALE',
+      requestedBy: 'HOLDER',
+      requesterName: null,
+      requesterDocument: null,
+      receivedAt: new Date(),
+      authorisedBy: 'Mera Gabriela',
+      authorisedAt: new Date(),
+      chartIds: ['chart-1', 'absorbed-1'],
+      encounters: [{ ...summary.data, siteName: 'Sede Norte' }],
+      siteId: 'site-9',
+      omitsOtherSites: false,
+    },
+  });
+
+  beforeEach(() => {
+    repository.templates = [
+      ...repository.templates,
+      { ...repository.templates[0]!, kind: 'ENCOUNTER_SUMMARY' },
+    ];
+  });
+
+  it('DOC-118 una solicitud que no existe es DOCUMENT_SUBJECT_NOT_FOUND; una sin autorizar, CLINICAL_RECORD_COPY_NOT_AVAILABLE, y no deja fila', async () => {
+    await expect(
+      service.clinicalRecordCopy('request-1', requester),
+    ).rejects.toBeInstanceOf(DocumentSubjectNotFoundError);
+
+    sources.copy = { status: 'not-available' };
+    await expect(
+      service.clinicalRecordCopy('request-1', requester),
+    ).rejects.toBeInstanceOf(ClinicalRecordCopyNotAvailableError);
+    expect(renderer.calls).toHaveLength(0);
+    expect(repository.disclosures).toHaveLength(0);
+  });
+
+  it('DOC-118 DOC-119 compone la copia con el membrete de la última atención y deja una fila EXPORT por ficha y otra de la solicitud', async () => {
+    sources.copy = ready();
+    const copy = await service.clinicalRecordCopy('request-1', requester);
+
+    expect(copy.mimeType).toBe('application/pdf');
+    expect(copy.fileName).toMatch(
+      /^copia-historia-clinica-\d{4}-\d{2}-\d{2}\.pdf$/,
+    );
+    expect(sources.contextSites).toEqual(['site-9']);
+    expect(renderer.calls[0]!.layout.frame.title).toBe(
+      'COPIA CERTIFICADA DE LA HISTORIA CLÍNICA',
+    );
+    expect(repository.disclosures).toEqual([
+      { userId: 'user-1', resourceId: 'chart-1', action: 'EXPORT', resourceType: 'patient' }, // prettier-ignore
+      { userId: 'user-1', resourceId: 'absorbed-1', action: 'EXPORT', resourceType: 'patient' }, // prettier-ignore
+      { userId: 'user-1', resourceId: 'request-1', action: 'EXPORT', resourceType: 'data_subject_request' }, // prettier-ignore
+    ]);
+    // Never archived.
+    expect(repository.renders).toHaveLength(0);
+  });
+
+  it('DOC-119 si la bitácora no se puede escribir, no se sirve nada', async () => {
+    sources.copy = ready();
+    repository.failTrail = true;
+    await expect(
+      service.clinicalRecordCopy('request-1', requester),
+    ).rejects.toThrow('trail refused');
+  });
+
+  it('DOC-118 sin atenciones toma el membrete de la primera sede activa', async () => {
+    const lookup = ready();
+    if (lookup.status !== 'ready') throw new Error('unreachable');
+    sources.copy = {
+      status: 'ready',
+      data: { ...lookup.data, encounters: [], siteId: null },
+    };
+    await service.clinicalRecordCopy('request-1', requester);
+    expect(sources.contextSites).toEqual(['site-1']);
   });
 });

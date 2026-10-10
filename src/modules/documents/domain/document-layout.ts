@@ -25,6 +25,7 @@ import type {
   CreditNotePrintData,
   DocumentContext,
   DocumentSubject,
+  ClinicalRecordCopyPrintData,
   EncounterSummaryPrintData,
   InvoiceLine,
   InvoicePrintData,
@@ -1413,19 +1414,15 @@ const CERTAINTY_LABEL: Readonly<Record<string, string>> = {
 };
 
 /**
- * DOC-111. The summary of an attention: one PDF for the patient and for the
- * doctor who receives it. No MSP form fixes it (searched: ESPECIFICACION and
- * Annex 1 of A.M. 00115-2021); it follows the approved frame (D-095) and the
- * order of the blocks of form 002. A block with nothing in it is not printed.
- *
- * Composed on demand and never archived: what it says is the attention as it
- * stands, and its code verifies the ATTENTION (DOC-112), not this file.
+ * DOC-111, DOC-118. What one attention prints: on its own summary, with the
+ * patient; inside the copy of the clinical record, whose cover names the
+ * person once, without.
  */
-export function composeEncounterSummaryLayout(
+function encounterSummaryBlocks(
   data: EncounterSummaryPrintData,
-  context: DocumentContext,
-  template: DocumentTemplate,
-): DocumentLayout {
+  siteName: string,
+  options: { withPatient: boolean },
+): Block[] {
   const section = (title: string, blocks: readonly Block[]): Block[] =>
     blocks.length === 0 ? [] : [{ kind: 'heading', text: title }, ...blocks];
 
@@ -1434,15 +1431,22 @@ export function composeEncounterSummaryLayout(
       kind: 'strip',
       entries: [
         { label: 'Fecha de la atención', value: ecuadorianDateAndMinute(data.startedAt) }, // prettier-ignore
-        { label: 'Sede', value: context.siteName },
-        // D-078. The chart number on every printed document.
-        { label: 'Historia clínica', value: data.patient.mrn },
+        { label: 'Sede', value: siteName },
+        // D-078. The chart number on every printed document; in the copy,
+        // the age that day (the cover names the person once).
+        options.withPatient
+          ? { label: 'Historia clínica', value: data.patient.mrn }
+          : { label: 'Edad', value: ageText(data.patient.ageYears, data.patient.ageMonths) ?? '—' }, // prettier-ignore
       ],
     },
-    { kind: 'heading', text: 'Paciente' },
-    patientBlock(data.patient, [
-      { label: 'Sexo', value: SEX_LABEL[data.patientSex] ?? '—' },
-    ]),
+    ...(options.withPatient
+      ? ([
+          { kind: 'heading', text: 'Paciente' },
+          patientBlock(data.patient, [
+            { label: 'Sexo', value: SEX_LABEL[data.patientSex] ?? '—' },
+          ]),
+        ] as Block[])
+      : []),
     { kind: 'heading', text: 'Atendido por' },
     prescriberBlock(data.practitioner),
     ...section(
@@ -1564,6 +1568,23 @@ export function composeEncounterSummaryLayout(
     // the attention's code proves it (DOC-112).
   ];
 
+  return blocks;
+}
+
+/**
+ * DOC-111. The summary of an attention: one PDF for the patient and for the
+ * doctor who receives it. No MSP form fixes it (searched: ESPECIFICACION and
+ * Annex 1 of A.M. 00115-2021); it follows the approved frame (D-095) and the
+ * order of the blocks of form 002. A block with nothing in it is not printed.
+ *
+ * Composed on demand and never archived: what it says is the attention as it
+ * stands, and its code verifies the ATTENTION (DOC-112), not this file.
+ */
+export function composeEncounterSummaryLayout(
+  data: EncounterSummaryPrintData,
+  context: DocumentContext,
+  template: DocumentTemplate,
+): DocumentLayout {
   return {
     frame: composeFrame(context, template, {
       kind: 'ENCOUNTER_SUMMARY',
@@ -1573,7 +1594,165 @@ export function composeEncounterSummaryLayout(
       confidential: true,
       verificationCode: data.verificationCode,
     }),
-    blocks,
+    blocks: encounterSummaryBlocks(data, context.siteName, {
+      withPatient: true,
+    }),
+    tearOff: null,
+  };
+}
+
+/** PD-052. Who presented the request, as the copy's cover says it. */
+const REQUESTER_LABEL: Readonly<Record<string, string>> = {
+  HOLDER: 'El paciente',
+  REPRESENTATIVE: 'Su representante legal',
+  ATTORNEY: 'Su apoderado',
+  AUTHORIZED_PERSON: 'Una persona autorizada por el paciente',
+  AUTHORITY: 'Una autoridad judicial o de salud',
+  DECEASED_RELATIVE: 'Un familiar del paciente fallecido',
+};
+
+/** DOC-118. The paper's title: the A.M. 5216 calls it a certified copy. */
+export const CLINICAL_RECORD_COPY_TITLE =
+  'COPIA CERTIFICADA DE LA HISTORIA CLÍNICA';
+
+/**
+ * DOC-118 (D-198 §1, A.M. 5216 arts. 28 to 33). The copy of the clinical
+ * record handed to the holder or to a third party: a cover that says who asked
+ * for it, who authorised it, that the establishment certifies it as custodian
+ * and that whoever receives it answers for its confidentiality; then every
+ * attention with a signed 002, oldest first, as its summary prints it (DOC-111)
+ * with its own verification code.
+ *
+ * ⚠️ WITHOUT THE VIOLENCE SCREENING (D-188 §3), and the cover says so: block F
+ * leaves no paper or file of the holder's without a professional's review. The
+ * summary never carried it either.
+ *
+ * No QR of its own: it is not archived, and each attention's code verifies
+ * that attention (DOC-112).
+ */
+export function composeClinicalRecordCopyLayout(
+  data: ClinicalRecordCopyPrintData,
+  context: DocumentContext,
+  template: DocumentTemplate,
+  issuedAt: Date,
+): DocumentLayout {
+  const establishment =
+    context.establishment.tradeName ?? context.establishment.name;
+  const requester = REQUESTER_LABEL[data.requestedBy] ?? '—';
+
+  const cover: Block[] = [
+    {
+      kind: 'strip',
+      entries: [
+        { label: 'Fecha de emisión', value: ecuadorianDateAndMinute(issuedAt) },
+        // D-078. The chart number on every printed document.
+        { label: 'Historia clínica', value: data.patient.mrn },
+        { label: 'Atenciones', value: String(data.encounters.length) },
+      ],
+    },
+    { kind: 'heading', text: 'Paciente' },
+    {
+      kind: 'fields',
+      columns: 4,
+      entries: [
+        {
+          label: 'Apellidos y nombres',
+          value: data.patient.fullName,
+          span: data.patient.identifier === null ? 3 : 2,
+        },
+        ...(data.patient.identifier === null
+          ? []
+          : [{ label: 'Documento', value: data.patient.identifier }]),
+        { label: 'Sexo', value: SEX_LABEL[data.patientSex] ?? '—' },
+      ],
+    },
+    { kind: 'heading', text: 'Entrega' },
+    {
+      kind: 'fields',
+      columns: 2,
+      entries: [
+        {
+          label: 'Solicitada por',
+          value:
+            data.requesterName === null
+              ? requester
+              : `${requester}: ${data.requesterName}`,
+        },
+        ...(data.requesterDocument === null
+          ? []
+          : [{ label: 'Cédula u oficio', value: data.requesterDocument }]),
+        {
+          label: 'Solicitud recibida',
+          value: ecuadorianDateAndMinute(data.receivedAt),
+        },
+        { label: 'Autorizada por', value: data.authorisedBy },
+        {
+          label: 'Autorizada el',
+          value: ecuadorianDateAndMinute(data.authorisedAt),
+        },
+      ],
+    },
+    {
+      kind: 'paragraph',
+      // What it certifies is what it carries, and no more (D-203 §4: the
+      // wording, with the legal adviser).
+      text: `${establishment}, custodio de la historia clínica, certifica que esta copia reproduce, tal como constan en su sistema, la nota de consulta vigente, los signos vitales, los diagnósticos, la receta, los exámenes pedidos y los certificados de cada atención con nota de consulta firmada hasta el ${ecuadorianDate(data.authorisedAt)}.`,
+    },
+    {
+      kind: 'note',
+      lines: [
+        {
+          label: 'Confidencial: ',
+          text: 'quien recibe esta copia responde de su custodia y de que no se difunda.',
+        },
+        {
+          label: 'No incluye: ',
+          text: `el tamizaje de violencia, que sólo se entrega después de que lo revise un profesional; los resultados de los exámenes; las atenciones sin nota de consulta firmada${data.omitsOtherSites ? '; las atenciones de otras sedes' : ''}; las notas de evolución, las referencias e interconsultas, ni las versiones anteriores de una nota enmendada.`,
+        },
+      ],
+    },
+  ];
+
+  const attentions: Block[] =
+    data.encounters.length === 0
+      ? [
+          {
+            kind: 'paragraph',
+            text: 'La historia clínica no tiene atenciones con nota de consulta firmada.',
+            emphasis: true,
+          },
+        ]
+      : data.encounters.flatMap((encounter): Block[] => [
+          { kind: 'rule' },
+          {
+            kind: 'title',
+            text: `Atención del ${ecuadorianDate(encounter.startedAt)}`,
+          },
+          ...encounterSummaryBlocks(encounter, encounter.siteName, {
+            withPatient: false,
+          }),
+          {
+            kind: 'fields',
+            columns: 1,
+            entries: [
+              {
+                label: 'Código de verificación de la atención',
+                value: encounter.verificationCode,
+              },
+            ],
+          },
+        ]);
+
+  return {
+    frame: composeFrame(context, template, {
+      kind: 'ENCOUNTER_SUMMARY',
+      title: CLINICAL_RECORD_COPY_TITLE,
+      reference: `Historia clínica ${data.patient.mrn}`,
+      // A.M. 5216 art. 33: «CONFIDENCIAL» in the top margin, always.
+      confidential: true,
+      verificationCode: null,
+    }),
+    blocks: [...cover, ...attentions],
     tearOff: null,
   };
 }

@@ -5,7 +5,7 @@ import { answerProposal, EXPORT_OMISSIONS } from './data-export';
 const DECISION_REFERENCE = /\((?:[A-Z]{1,3}-\d{2,3}[^)]*)\)/;
 
 describe('lo que el archivo no lleva, dicho al titular', () => {
-  it('PD-049 la propuesta dice que no es todo y una línea por sección, en el orden de omitted, sin referencias a decisiones', () => {
+  it('PD-049 PD-056 la propuesta dice que no es todo y una línea por sección, en el orden de omitted, sin referencias a decisiones; la historia, como copia certificada', () => {
     const lines = answerProposal(EXPORT_OMISSIONS).split('\n');
 
     expect(lines[0]).toBe('El archivo con sus datos no lo incluye todo:');
@@ -17,7 +17,10 @@ describe('lo que el archivo no lleva, dicho al titular', () => {
       expect(line).not.toMatch(/\s[.;,]/);
     });
     expect(lines[1]).toContain('La historia clínica');
-    expect(lines[1]).toContain('se entrega por otra vía');
+    expect(lines[1]).toContain(
+      'se entrega como copia certificada en PDF, registrando la solicitud como copia de la historia clínica.',
+    );
+    expect(lines[1]).not.toContain('por otra vía');
   });
 
   it('PD-049 cada motivo sale con sus palabras: lo que el archivo dice, menos la referencia', () => {

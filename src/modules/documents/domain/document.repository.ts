@@ -103,13 +103,22 @@ export interface DisclosureRecord {
   userId: string;
   /** The artefact or the subject, depending on which act is being recorded. */
   resourceId: string;
-  /** `PRINT` when a file leaves; `CREATE` when the archive gains a row. */
-  action: 'PRINT' | 'CREATE';
+  /**
+   * `PRINT` when a file leaves; `CREATE` when the archive gains a row;
+   * `EXPORT` when the copy of a clinical record is handed over (DOC-119).
+   */
+  action: 'PRINT' | 'CREATE' | 'EXPORT';
   /**
    * DOC-111. `encounter_summary` when what left is the summary of an
    * attention, whose id is `resourceId`; a document otherwise.
    */
-  resourceType?: 'document' | 'encounter_summary' | 'clinical_note';
+  resourceType?:
+    | 'document'
+    | 'encounter_summary'
+    | 'clinical_note'
+    // DOC-119. The chart whose data left, and the request that justified it.
+    | 'patient'
+    | 'data_subject_request';
   ip?: string;
   userAgent?: string;
 }
@@ -147,6 +156,12 @@ export interface DocumentRepository {
 
   /** DOC-091. A draft leaving the building. Nothing else is stored. */
   recordDisclosure(disclosure: DisclosureRecord): Promise<void>;
+
+  /**
+   * DOC-119. Several trail rows in ONE transaction: all of them, or none and
+   * it throws — and then nothing is served.
+   */
+  recordDisclosures(disclosures: readonly DisclosureRecord[]): Promise<void>;
 
   /** The artefacts of one subject, newest first. */
   listRendersOfSubject(

@@ -237,8 +237,8 @@ const EXEMPT: Record<string, string> = {
     'vigente sobre el texto vigente, para decir la consecuencia de publicar ' +
     'otro. No lee la historia de nadie: no hay ficha de la que partir, y ' +
     'una ficha y su absorbida cuentan como lo que son, dos filas.',
-  'src/modules/documents/infrastructure/prisma-document-source.reader.ts#findEncounterSummary':
-    'DOC-111. `certificates` se lee desde la ATENCIÓN, no desde la ficha: son ' +
+  'src/modules/documents/infrastructure/prisma-document-source.reader.ts#ENCOUNTER_SUMMARY_SELECT':
+    'DOC-111, DOC-118. `certificates` se lee desde la ATENCIÓN, no desde la ficha: son ' +
     'los certificados emitidos en esa visita (`medical_certificate.encounter_id`), ' +
     'lo que su resumen imprime. El nombre coincide con la relación de `Patient` ' +
     'y por eso el escáner la marca; resolver el alcance de la ficha traería ' +
