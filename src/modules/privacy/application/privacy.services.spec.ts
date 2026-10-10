@@ -652,6 +652,27 @@ describe('la copia de la historia clínica (D-198 §1)', () => {
     expect(proposal).toBe(clinicalRecordCopyProposal(facts));
     expect(proposal).toContain('a su apoderado, Ana Pérez');
     expect(proposal).toContain('No lleva el tamizaje de violencia');
+    // DOC-121. Ya dice que lleva los resultados y las notas de evolución.
+    expect(proposal).toContain(
+      'los exámenes pedidos con sus resultados, las notas de evolución',
+    );
+  });
+
+  it('PD-056 DOC-123 con el visto bueno que incluye el tamizaje, la propuesta dice que lo lleva', async () => {
+    const service = newRequestsService(
+      requestRepository({
+        proposalFactsOf: vi.fn().mockResolvedValue({
+          right: 'ACCESS',
+          requestedBy: 'HOLDER',
+          requesterName: null,
+          clinicalRecordCopy: true,
+          includesScreening: true,
+        }),
+      }),
+    );
+    const proposal = await service.answerProposal('r-1', WHO);
+    expect(proposal).toContain('Lleva el tamizaje de violencia');
+    expect(proposal).not.toContain('No lleva el tamizaje');
   });
 });
 

@@ -295,15 +295,22 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
   }
 
   async proposalFactsOf(requestId: string): Promise<ProposalFacts | null> {
-    return this.prisma.dataSubjectRequest.findUnique({
+    const row = await this.prisma.dataSubjectRequest.findUnique({
       where: { id: requestId },
       select: {
         right: true,
         requestedBy: true,
         requesterName: true,
         clinicalRecordCopy: true,
+        copyReview: { select: { includesScreening: true } },
       },
     });
+    if (!row) return null;
+    const { copyReview, ...facts } = row;
+    return {
+      ...facts,
+      includesScreening: copyReview?.includesScreening === true,
+    };
   }
 
   async copyFactsOf(requestId: string): Promise<CopyFacts | null> {

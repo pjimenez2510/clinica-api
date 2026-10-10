@@ -346,6 +346,8 @@ export interface ProposalFacts {
   requestedBy: DataRequestParty;
   requesterName: string | null;
   clinicalRecordCopy: boolean;
+  /** D-203 §6. The professional's review includes the screening. */
+  includesScreening: boolean;
 }
 
 export interface DataSubjectRequestRepository {

@@ -588,6 +588,9 @@ descarga y lee `omitted`.
   > **D-164.1, resuelta por D-198 §1:** la vía es la copia certificada y el
   > plazo, 48 horas. **D-188 §3:** el tamizaje no sale en ningún papel ni
   > archivo del titular sin revisión humana; la copia no lo lleva y lo dice.
+  > **Enmendado por DOC-121 y DOC-123 (D-203 §4, §6):** dice que lleva los
+  > resultados y las notas de evolución, y que lleva el tamizaje cuando el
+  > visto bueno (PD-061) lo incluye.
 - **PD-057** — CUANDO la ficha muestre sus solicitudes (PD-036), cada una
   DEBERÁ decir quién la presentó —con su nombre si no es el titular—, si es
   «Copia de la historia clínica» y su vencimiento, con la hora si es de copia;
