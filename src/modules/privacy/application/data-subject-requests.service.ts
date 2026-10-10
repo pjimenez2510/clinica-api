@@ -307,6 +307,10 @@ export class DataSubjectRequestsService {
     request: { right: DataSubjectRight; clinicalRecordCopy: boolean },
     receivedAt: Date,
   ): Promise<Date> {
+    // PD-054. Running hours: no holiday to read.
+    if (request.clinicalRecordCopy) {
+      return legalDeadline(request, receivedAt, new Set());
+    }
     const receivedOn = clinicalDateOf(receivedAt);
     const holidays = await this.requests.clinicWideHolidays(
       receivedOn,

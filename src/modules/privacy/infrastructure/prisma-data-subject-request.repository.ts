@@ -184,11 +184,14 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
       const receivedAt = changes.receivedAt ?? current.received_at;
       if (data.right !== undefined || data.receivedAt !== undefined) {
         const receivedOn = clinicalDateOf(receivedAt);
-        const holidays = await clinicWideHolidaysIn(
-          tx,
-          receivedOn,
-          addDays(receivedOn, DUE_DATE_HORIZON_DAYS),
-        );
+        // PD-054. The copy's 48 hours are running hours: no holiday to read.
+        const holidays = current.clinical_record_copy
+          ? new Set<string>()
+          : await clinicWideHolidaysIn(
+              tx,
+              receivedOn,
+              addDays(receivedOn, DUE_DATE_HORIZON_DAYS),
+            );
         const dueAt = legalDeadline(
           { right, clinicalRecordCopy: current.clinical_record_copy },
           receivedAt,

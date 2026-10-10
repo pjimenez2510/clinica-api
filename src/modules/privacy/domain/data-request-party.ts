@@ -43,8 +43,8 @@ export interface RequestPresentation {
  * the cedula at hand, and whoever is not the holder gives their name and
  * their cedula or official letter; a third party asks only for the copy.
  *
- * The name and the document come in trimmed; blank is absent. The holder's
- * own name is the chart's: whatever came is dropped.
+ * The name and the document come in trimmed; blank is absent. They are kept
+ * only on a copy presented by someone other than the holder.
  */
 export function presentationOf(input: {
   right: DataSubjectRight;
@@ -55,9 +55,11 @@ export function presentationOf(input: {
   requesterDocument?: string | null;
 }): RequestPresentation {
   const clinicalRecordCopy = input.clinicalRecordCopy ?? false;
-  const holder = input.requestedBy === 'HOLDER';
-  const requesterName = holder ? null : filled(input.requesterName);
-  const requesterDocument = holder ? null : filled(input.requesterDocument);
+  // Who presents it is named only on a copy, and never the holder, whose
+  // name is the chart's: whatever else came is dropped, as the base expects.
+  const named = clinicalRecordCopy && input.requestedBy !== 'HOLDER';
+  const requesterName = named ? filled(input.requesterName) : null;
+  const requesterDocument = named ? filled(input.requesterDocument) : null;
 
   if (isThirdParty(input.requestedBy) && !clinicalRecordCopy) {
     throw new DataRequestPartyNotAllowedError();
@@ -68,7 +70,7 @@ export function presentationOf(input: {
   if (clinicalRecordCopy && input.documentsChecked !== true) {
     throw new ClinicalRecordCopyInvalidError('documentsChecked');
   }
-  if (clinicalRecordCopy && !holder) {
+  if (named) {
     if (requesterName === null) {
       throw new ClinicalRecordCopyInvalidError('requesterName');
     }

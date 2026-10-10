@@ -2365,7 +2365,16 @@ describe('los documentos por HTTP', () => {
       );
       await answer(requestId, 'DENIED');
       await copyOf(requestId).expect(409);
-      // PD-047. The standing answer is what authorises: a rectification grants it.
+      // PD-047. The standing answer is what authorises: a rectification grants it…
+      await answer(requestId, 'GRANTED', 'response/correction');
+      await copyOf(requestId).expect(200);
+      // …and a second one, to «Denegada», takes it back: with a chain of two
+      // rectifications only the last stands.
+      await answer(requestId, 'DENIED', 'response/correction');
+      const revoked = await copyOf(requestId).expect(409);
+      expect((revoked.body as Problem).code).toBe(
+        'CLINICAL_RECORD_COPY_NOT_AVAILABLE',
+      );
       await answer(requestId, 'GRANTED', 'response/correction');
 
       const text = await copyText(requestId);
@@ -2462,6 +2471,111 @@ describe('los documentos por HTTP', () => {
       const requestId = await copyRequest(patientId);
       await answer(requestId, 'GRANTED');
       await copyOf(requestId, doctorToken).expect(403);
+    });
+    it('DOC-118 D-202 «Atendida en parte» no entrega la copia entera', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId } = await aRecordWithHistory();
+      const requestId = await copyRequest(patientId);
+      await answer(requestId, 'PARTIALLY_GRANTED');
+
+      const partial = await copyOf(requestId).expect(409);
+      expect((partial.body as Problem).code).toBe(
+        'CLINICAL_RECORD_COPY_NOT_AVAILABLE',
+      );
+      // Control positivo: la misma solicitud, rectificada a «Atendida», sí.
+      await answer(requestId, 'GRANTED', 'response/correction');
+      await copyOf(requestId).expect(200);
+    });
+
+    it('DOC-118 D-188 §3 un tamizaje con signos no sale en la copia, ni su acción ni sus tipos', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId } = await aRecordWithHistory();
+      const seeded = await prisma.encounter.findFirstOrThrow({
+        where: { patientId, status: { not: 'ENTERED_IN_ERROR' } },
+        select: { id: true },
+      });
+      await prisma.violenceScreening.create({
+        data: {
+          encounterId: seeded.id,
+          result: 'SUSPECTED',
+          types: ['PHYSICAL'],
+          actionTaken: 'Derivada a trabajo social por agresión de la pareja',
+          screenedById: practitionerId,
+          screenedAt: new Date(),
+        },
+      });
+      const requestId = await copyRequest(patientId);
+      await answer(requestId, 'GRANTED');
+
+      const text = await copyText(requestId);
+      // Control positivo: la atención sí está.
+      expect(text).toContain('Dolor de garganta de dos días');
+      expect(text).not.toContain('Derivada a trabajo social');
+      expect(text).not.toContain('agresión');
+      expect(text).not.toMatch(/Física|PHYSICAL|SUSPECTED|Sospecha/);
+    });
+
+    it('DOC-118 cada descarga lleva lo que se autorizó: una atención posterior a la autorización no sale', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const { patientId } = await aRecordWithHistory();
+      const requestId = await copyRequest(patientId);
+      await answer(requestId, 'GRANTED');
+      const authorisedAt = (
+        await prisma.dataSubjectRequest.findUniqueOrThrow({
+          where: { id: requestId },
+          select: { answeredAt: true },
+        })
+      ).answeredAt!;
+      const later = await prisma.encounter.create({
+        data: {
+          siteId,
+          practitionerId,
+          patientId,
+          startedAt: new Date(authorisedAt.getTime() + 60_000),
+          careModality: 'MORBIDITY',
+          visitSequence: 'SUBSEQUENT',
+        },
+      });
+      await signedNote(later.id, 'Consulta posterior a la autorización');
+
+      const text = await copyText(requestId);
+      expect(text).toContain('Dolor de garganta de dos días');
+      expect(text).not.toContain('Consulta posterior a la autorización');
+    });
+
+    it('DOC-118 la solicitud registrada en una ficha que después se unificó entrega la historia de la persona, con la ficha vigente en la portada', async () => {
+      await publishTemplate('ENCOUNTER_SUMMARY');
+      const seeded = await prisma.encounter.findFirstOrThrow({
+        select: { id: true, patientId: true, startedAt: true },
+      });
+      await signedNote(seeded.id, 'Dolor de garganta de dos días');
+      const duplicate = await createPatient(prisma);
+      const onDuplicate = await prisma.encounter.create({
+        data: {
+          siteId,
+          practitionerId,
+          patientId: duplicate.id,
+          startedAt: new Date(seeded.startedAt.getTime() - 20 * DAY),
+          careModality: 'MORBIDITY',
+          visitSequence: 'FIRST_TIME',
+        },
+      });
+      await signedNote(onDuplicate.id, 'Control de presión arterial');
+      const requestId = await copyRequest(duplicate.id);
+      await prisma.patient.update({
+        where: { id: duplicate.id },
+        data: { mergedIntoId: seeded.patientId, mergedAt: new Date() },
+      });
+      await answer(requestId, 'GRANTED');
+
+      const text = await copyText(requestId);
+      const survivor = await prisma.patient.findUniqueOrThrow({
+        where: { id: seeded.patientId },
+        select: { mrn: true },
+      });
+      expect(text).toContain(`Historia clínica ${survivor.mrn}`);
+      expect(text).toContain('Control de presión arterial');
+      expect(text).toContain('Dolor de garganta de dos días');
     });
   });
 });

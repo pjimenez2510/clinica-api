@@ -2420,17 +2420,21 @@ describe('la copia certificada de la historia clínica (DOC-118, D-198 §1)', ()
     expect(text).toContain('Cédula u oficio=0926687856');
     expect(text).toContain('Autorizada por=Mera Gabriela');
     expect(text).toContain(
-      'Centro de Especialidades Bahía, custodio de la historia clínica, certifica que esta copia reproduce lo registrado',
+      'Centro de Especialidades Bahía, custodio de la historia clínica, certifica que esta copia reproduce, tal como constan en su sistema, la nota de consulta vigente',
     );
+    // G4: it does not certify more than it carries.
+    expect(text).not.toContain('reproduce lo registrado');
     expect(text).toContain('responde de su custodia');
   });
 
-  it('DOC-118 D-188 §3 dice que no lleva el tamizaje de violencia', () => {
+  it('DOC-118 D-188 §3 dice que no lleva el tamizaje de violencia, ni los resultados, ni lo que no es la nota de consulta firmada', () => {
     const text = wholeText(
       composeClinicalRecordCopyLayout(copy(), context, template, now),
     );
     expect(text).toContain('No incluye');
     expect(text).toContain('el tamizaje de violencia');
+    expect(text).toContain('los resultados de los exámenes');
+    expect(text).toContain('las atenciones sin nota de consulta firmada');
   });
 
   it('DOC-118 cada atención, en el orden dado, con su sede, su edad de ese día y su código de verificación; la persona se nombra una vez', () => {

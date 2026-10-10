@@ -566,8 +566,10 @@ la mitad del servidor es PD-052 a PD-054 y DOC-118.
 - **PD-057** — CUANDO la ficha muestre sus solicitudes (PD-036), cada una
   DEBERÁ decir quién la presentó —con su nombre si no es el titular—, si es
   «Copia de la historia clínica» y su vencimiento, con la hora si es de copia;
-  y MIENTRAS una solicitud de copia tenga respuesta «Atendida» o «Atendida en
-  parte», DEBERÁ ofrecer «Descargar copia» (DOC-118). Al registrarla, la
+  y MIENTRAS una solicitud de copia tenga respuesta «Atendida», DEBERÁ
+  ofrecer «Descargar copia» (DOC-118); y a quien presenta la solicitud NO
+  DEBERÁ ofrecerle «Un familiar (paciente fallecido)» si la ficha no registra
+  el fallecimiento. Al registrarla, la
   pantalla DEBERÁ ofrecer los seis que la presentan; con un tercero DEBERÁ
   fijar el derecho en acceso y marcar la copia, y con la copia pedir el nombre,
   el documento y la casilla.

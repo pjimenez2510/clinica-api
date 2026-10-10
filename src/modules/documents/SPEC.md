@@ -1268,22 +1268,29 @@ solo PDF, completo, generado al momento._
 
 - **DOC-118** — CUANDO alguien con `patient:data-requests` pida la copia de
   la historia clínica de una solicitud de copia (PD-053) cuya respuesta
-  vigente (PD-047) sea `GRANTED` o `PARTIALLY_GRANTED`, el sistema DEBERÁ
+  vigente (PD-047) sea `GRANTED`, el sistema DEBERÁ
   componer **al momento** un PDF/A con el marco común (DOC-080 a DOC-085) y la
   plantilla vigente del resumen de la atención (DOC-113), titulado «COPIA
   CERTIFICADA DE LA HISTORIA CLÍNICA», con CONFIDENCIAL **siempre**, que
   lleve: una portada con el paciente de la ficha vigente; la solicitud —quién
   la presentó, su nombre y documento si no es el titular, y cuándo se
   recibió—; quién la autorizó y cuándo (la respuesta); que el establecimiento,
-  custodio de la historia, certifica que es copia de lo registrado; que quien
-  la recibe responde de su confidencialidad; y que no lleva el tamizaje de
-  violencia. Después, de la más antigua a la más reciente, cada atención
-  **con nota 002 firmada** de la ficha vigente y de sus absorbidas, salvo las
-  anuladas (`ENTERED_IN_ERROR`), con el contenido de DOC-111 bajo su fecha y
+  custodio de la historia, certifica que reproduce **lo que lleva** —la nota
+  de consulta vigente, los signos, los diagnósticos, la receta, los exámenes
+  pedidos y los certificados de cada atención con nota firmada—; que quien la
+  recibe responde de su confidencialidad; y lo que **no** lleva: el tamizaje
+  de violencia, los resultados de los exámenes, las atenciones sin nota de
+  consulta firmada, las notas de evolución, las referencias e interconsultas
+  y las versiones anteriores de una nota enmendada. Después, de la más
+  antigua a la más reciente, cada atención **con nota 002 firmada** de la
+  ficha vigente y de sus absorbidas **iniciada hasta el instante de la
+  autorización**, salvo las anuladas (`ENTERED_IN_ERROR`), con el contenido
+  de DOC-111 bajo su fecha y
   su código de verificación (EN-219); y SI no hay ninguna, la línea que lo
   dice. El sistema **NO DEBERÁ** guardar el PDF. SI la solicitud no existe,
   ENTONCES DEBERÁ responder `DOCUMENT_SUBJECT_NOT_FOUND`; SI no es de copia o
-  no tiene respuesta «Atendida» o «Atendida en parte», ENTONCES
+  su respuesta vigente no es «Atendida» —también «Atendida en parte» o una
+  autorización rectificada a «Denegada»—, ENTONCES
   `CLINICAL_RECORD_COPY_NOT_AVAILABLE` (409). La ruta es
   `GET /v1/documents/data-requests/<id>/clinical-record`, de alcance global
   como la solicitud (PA-051): la historia es una en todas las sedes.
@@ -1294,6 +1301,11 @@ solo PDF, completo, generado al momento._
   > la certificación y quién la firma en nombre del custodio, **al asesor
   > legal**; quién la descarga (`patient:data-requests`, de fábrica ADMIN, sin
   > `record:read`), con D-140.2.
+  >
+  > **Revisión clínica de la rama (09-10-2026), D-202:** «Atendida en parte»
+  > no la habilita hasta que se decida qué parte (§2); cada descarga lleva lo
+  > que se autorizó y no lo que vino después (§3); la certificación dice lo
+  > que lleva, no «lo registrado» (§4, al asesor).
   >
   > **D-188 §3:** el tamizaje de violencia (bloque F) no va; el resumen
   > tampoco lo lleva (DOC-111), y la portada lo dice.

@@ -28,7 +28,6 @@ import { DOCUMENT_VERIFICATION_BASE_URL } from '../domain/document-source';
 import type { VerificationFacts } from '../domain/document-verification';
 import type {
   ClinicalRecordCopyLookup,
-  ClinicalRecordCopyPrintData,
   DocumentContext,
   DocumentSourceReader,
   DocumentSubject,
@@ -360,6 +359,147 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * The `DocumentSourceReader` adapter: one read method per document kind, each
  * scoped by site in its `where`.
  */
+/**
+ * DOC-111, DOC-118. What the summary of an attention reads: one statement
+ * for one summary, and the same select for every attention of a copy.
+ */
+const ENCOUNTER_SUMMARY_SELECT = {
+  id: true,
+  siteId: true,
+  verificationCode: true,
+  status: true,
+  startedAt: true,
+  ageYears: true,
+  ageMonths: true,
+  // DOC-117. With the chart in force, and its sex: the summary is the
+  // attention as it stands, so the sex is read live, as before.
+  patient: {
+    select: {
+      ...PATIENT_SELECT,
+      sex: true,
+      mergedInto: { select: { ...PATIENT_SELECT, sex: true } },
+    },
+  },
+  practitioner: { select: PRACTITIONER_SELECT },
+  vitals: true,
+  // The current 002: one SIGNED per chain (an amendment supersedes the
+  // previous one), the newest if a clinic ever had two chains.
+  notes: {
+    where: { formCode: '002', status: 'SIGNED' },
+    orderBy: { signedAt: 'desc' },
+    take: 1,
+    select: {
+      content: true,
+      signedAt: true,
+      supersedesId: true,
+      signatureMethod: true,
+      template: { select: { sections: true } },
+    },
+  },
+  diagnoses: {
+    orderBy: { rank: 'asc' },
+    select: { ...DIAGNOSIS_SELECT, certainty: true },
+  },
+  prescriptions: {
+    where: { status: { in: ['ACTIVE', 'COMPLETED'] } },
+    orderBy: { issuedAt: 'asc' },
+    select: {
+      sequenceNumber: true,
+      items: {
+        select: {
+          genericName: true,
+          presentation: true,
+          concentration: true,
+          routeCode: true,
+          quantity: true,
+          doseText: true,
+          frequencyText: true,
+          durationDays: true,
+          instructions: true,
+          offFormulary: true,
+          offFormularyJustification: true,
+        },
+      },
+    },
+  },
+  serviceOrders: {
+    where: { status: 'ISSUED' },
+    orderBy: { requestedAt: 'asc' },
+    select: {
+      number: true,
+      items: {
+        where: { status: { not: 'CANCELLED' } },
+        orderBy: { createdAt: 'asc' },
+        select: { testDisplay: true },
+      },
+    },
+  },
+  certificates: {
+    where: { revokedAt: null },
+    orderBy: { issuedAt: 'asc' },
+    select: { number: true, type: true, restFrom: true, restTo: true },
+  },
+} satisfies Prisma.EncounterSelect;
+
+type EncounterSummaryRow = Prisma.EncounterGetPayload<{
+  select: typeof ENCOUNTER_SUMMARY_SELECT;
+}>;
+
+/** DOC-111. One row of `ENCOUNTER_SUMMARY_SELECT` as the summary prints it. */
+function encounterSummaryOf(
+  row: EncounterSummaryRow,
+): Extract<DocumentSubject, { kind: 'ENCOUNTER_SUMMARY' }> {
+  const note = row.notes[0];
+  const chart = chartOfRecord(row.patient);
+  return {
+    kind: 'ENCOUNTER_SUMMARY',
+    data: {
+      subjectId: row.id,
+      siteId: row.siteId,
+      verificationCode: row.verificationCode,
+      status: row.status,
+      startedAt: row.startedAt,
+      patient: toPatient(chart, row.ageYears, row.ageMonths),
+      patientSex: chart.sex,
+      practitioner: toPractitioner(row.practitioner),
+      vitals: row.vitals === null ? [] : vitalsOf(row.vitals),
+      note:
+        note?.signedAt == null
+          ? null
+          : {
+              signedAt: note.signedAt,
+              amendedAt: note.supersedesId === null ? null : note.signedAt,
+              // EN-156. NULL predates the column: the credential, too.
+              withoutCertificate: note.signatureMethod !== 'CERTIFICATE',
+              sections: noteSectionsOf(
+                note.content,
+                note.template?.sections ?? null,
+              ),
+            },
+      diagnoses: row.diagnoses.map((diagnosis) => ({
+        code: diagnosis.cie10Code,
+        display: diagnosis.cie10Display,
+        principal: diagnosis.rank === 1,
+        certainty: diagnosis.certainty,
+      })),
+      prescriptions: row.prescriptions.map((prescription) => ({
+        sequenceNumber: prescription.sequenceNumber,
+        lines: prescription.items.map((item) => ({
+          ...item,
+          quantity: item.quantity === null ? null : Number(item.quantity),
+        })),
+      })),
+      exams: row.serviceOrders.flatMap((order) =>
+        order.items.map((item) => ({
+          orderNumber: order.number,
+          display: item.testDisplay,
+        })),
+      ),
+      certificates: row.certificates,
+    },
+  };
+}
+
 @Injectable()
 export class PrismaDocumentSourceReader implements DocumentSourceReader {
   constructor(
@@ -660,8 +800,9 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     };
     if (
       !request.clinicalRecordCopy ||
-      (standing.outcome !== 'GRANTED' &&
-        standing.outcome !== 'PARTIALLY_GRANTED') ||
+      // «Atendida en parte» does not hand over the whole copy: what «en
+      // parte» means for it is D-202 §2, and until then only «Atendida» does.
+      standing.outcome !== 'GRANTED' ||
       standing.answeredAt === null ||
       standing.answeredBy === null
     ) {
@@ -674,14 +815,6 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     });
     // Merges never chain (PA-046): one hop is the whole resolution.
     const rootId = written.mergedIntoId ?? request.patientId;
-    const charts = await this.prisma.patient.findMany({
-      where: { OR: [{ id: rootId }, { mergedIntoId: rootId }] },
-      select: { id: true },
-    });
-    const chartIds = [
-      rootId,
-      ...charts.map((chart) => chart.id).filter((id) => id !== rootId),
-    ];
     const chart = await this.prisma.patient.findUniqueOrThrow({
       where: { id: rootId },
       select: { ...PATIENT_SELECT, sex: true },
@@ -691,25 +824,38 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
       select: { firstName: true, lastName: true },
     });
 
+    // One statement for every attention, with the summary's own select: the
+    // copy never says something the summary of that attention would not.
     const attentions = await this.prisma.encounter.findMany({
       where: {
         // PA-055: the person's whole scope, from the chart in force down.
         ...chartScope(rootId),
         status: { not: 'ENTERED_IN_ERROR' },
         notes: { some: { formCode: '002', status: 'SIGNED' } },
+        // What was authorised, and no more: every download of one request
+        // carries the record as it stood when it was authorised, never the
+        // attentions that came after (D-202 §3 decides whether it expires).
+        startedAt: { lte: standing.answeredAt },
       },
       orderBy: [{ startedAt: 'asc' }, { id: 'asc' }],
-      select: { id: true, site: { select: { id: true, name: true } } },
+      select: {
+        ...ENCOUNTER_SUMMARY_SELECT,
+        patientId: true,
+        site: { select: { name: true } },
+      },
     });
-    const encounters: ClinicalRecordCopyPrintData['encounters'][number][] = [];
-    // One after another: the copy is one request, and a pool of parallel
-    // reads for one paper would starve the screens that are being used.
-    for (const attention of attentions) {
-      const subject = await this.findEncounterSummary(attention.id, 'all');
-      if (subject?.kind !== 'ENCOUNTER_SUMMARY') continue;
-      if (subject.data.note === null) continue;
-      encounters.push({ ...subject.data, siteName: attention.site.name });
-    }
+    // DOC-119. The charts whose attentions ACTUALLY leave, read from them —
+    // not from a second query a merge could change in between —, and the
+    // chart in force, whose identity the cover prints.
+    const chartIds = [
+      ...new Set([rootId, ...attentions.map((one) => one.patientId)]),
+    ];
+    const encounters = attentions
+      .map((attention) => ({
+        ...encounterSummaryOf(attention).data,
+        siteName: attention.site.name,
+      }))
+      .filter((encounter) => encounter.note !== null);
 
     return {
       status: 'ready',
@@ -726,7 +872,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         authorisedAt: standing.answeredAt,
         chartIds,
         encounters,
-        siteId: attentions.at(-1)?.site.id ?? null,
+        siteId: attentions.at(-1)?.siteId ?? null,
       },
     };
   }
@@ -747,135 +893,10 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         id: subjectId,
         ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
       },
-      select: {
-        id: true,
-        siteId: true,
-        verificationCode: true,
-        status: true,
-        startedAt: true,
-        ageYears: true,
-        ageMonths: true,
-        // DOC-117. With the chart in force, and its sex: the summary is the
-        // attention as it stands, so the sex is read live, as before.
-        patient: {
-          select: {
-            ...PATIENT_SELECT,
-            sex: true,
-            mergedInto: { select: { ...PATIENT_SELECT, sex: true } },
-          },
-        },
-        practitioner: { select: PRACTITIONER_SELECT },
-        vitals: true,
-        // The current 002: one SIGNED per chain (an amendment supersedes the
-        // previous one), the newest if a clinic ever had two chains.
-        notes: {
-          where: { formCode: '002', status: 'SIGNED' },
-          orderBy: { signedAt: 'desc' },
-          take: 1,
-          select: {
-            content: true,
-            signedAt: true,
-            supersedesId: true,
-            signatureMethod: true,
-            template: { select: { sections: true } },
-          },
-        },
-        diagnoses: {
-          orderBy: { rank: 'asc' },
-          select: { ...DIAGNOSIS_SELECT, certainty: true },
-        },
-        prescriptions: {
-          where: { status: { in: ['ACTIVE', 'COMPLETED'] } },
-          orderBy: { issuedAt: 'asc' },
-          select: {
-            sequenceNumber: true,
-            items: {
-              select: {
-                genericName: true,
-                presentation: true,
-                concentration: true,
-                routeCode: true,
-                quantity: true,
-                doseText: true,
-                frequencyText: true,
-                durationDays: true,
-                instructions: true,
-                offFormulary: true,
-                offFormularyJustification: true,
-              },
-            },
-          },
-        },
-        serviceOrders: {
-          where: { status: 'ISSUED' },
-          orderBy: { requestedAt: 'asc' },
-          select: {
-            number: true,
-            items: {
-              where: { status: { not: 'CANCELLED' } },
-              orderBy: { createdAt: 'asc' },
-              select: { testDisplay: true },
-            },
-          },
-        },
-        certificates: {
-          where: { revokedAt: null },
-          orderBy: { issuedAt: 'asc' },
-          select: { number: true, type: true, restFrom: true, restTo: true },
-        },
-      },
+      select: ENCOUNTER_SUMMARY_SELECT,
     });
     if (row === null) return null;
-
-    const note = row.notes[0];
-    const chart = chartOfRecord(row.patient);
-    return {
-      kind: 'ENCOUNTER_SUMMARY',
-      data: {
-        subjectId: row.id,
-        siteId: row.siteId,
-        verificationCode: row.verificationCode,
-        status: row.status,
-        startedAt: row.startedAt,
-        patient: toPatient(chart, row.ageYears, row.ageMonths),
-        patientSex: chart.sex,
-        practitioner: toPractitioner(row.practitioner),
-        vitals: row.vitals === null ? [] : vitalsOf(row.vitals),
-        note:
-          note?.signedAt == null
-            ? null
-            : {
-                signedAt: note.signedAt,
-                amendedAt: note.supersedesId === null ? null : note.signedAt,
-                // EN-156. NULL predates the column: the credential, too.
-                withoutCertificate: note.signatureMethod !== 'CERTIFICATE',
-                sections: noteSectionsOf(
-                  note.content,
-                  note.template?.sections ?? null,
-                ),
-              },
-        diagnoses: row.diagnoses.map((diagnosis) => ({
-          code: diagnosis.cie10Code,
-          display: diagnosis.cie10Display,
-          principal: diagnosis.rank === 1,
-          certainty: diagnosis.certainty,
-        })),
-        prescriptions: row.prescriptions.map((prescription) => ({
-          sequenceNumber: prescription.sequenceNumber,
-          lines: prescription.items.map((item) => ({
-            ...item,
-            quantity: item.quantity === null ? null : Number(item.quantity),
-          })),
-        })),
-        exams: row.serviceOrders.flatMap((order) =>
-          order.items.map((item) => ({
-            orderNumber: order.number,
-            display: item.testDisplay,
-          })),
-        ),
-        certificates: row.certificates,
-      },
-    };
+    return encounterSummaryOf(row);
   }
 
   // ── prescription ─────────────────────────────────────────────────────────

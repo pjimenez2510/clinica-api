@@ -1694,7 +1694,9 @@ export function composeClinicalRecordCopyLayout(
     },
     {
       kind: 'paragraph',
-      text: `${establishment}, custodio de la historia clínica, certifica que esta copia reproduce lo registrado en su sistema a la fecha de emisión.`,
+      // What it certifies is what it carries, and no more (D-202 §4: the
+      // wording, with the legal adviser).
+      text: `${establishment}, custodio de la historia clínica, certifica que esta copia reproduce, tal como constan en su sistema, la nota de consulta vigente, los signos vitales, los diagnósticos, la receta, los exámenes pedidos y los certificados de cada atención con nota de consulta firmada hasta el ${ecuadorianDate(data.authorisedAt)}.`,
     },
     {
       kind: 'note',
@@ -1705,7 +1707,7 @@ export function composeClinicalRecordCopyLayout(
         },
         {
           label: 'No incluye: ',
-          text: 'el tamizaje de violencia, que sólo se entrega después de que lo revise un profesional.',
+          text: 'el tamizaje de violencia, que sólo se entrega después de que lo revise un profesional; los resultados de los exámenes; las atenciones sin nota de consulta firmada; las notas de evolución, las referencias e interconsultas, ni las versiones anteriores de una nota enmendada.',
         },
       ],
     },

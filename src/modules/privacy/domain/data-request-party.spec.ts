@@ -96,6 +96,17 @@ describe('presentationOf — quién presenta la solicitud y qué pide', () => {
     );
   });
 
+  it('PD-052 sin copia no se guarda quién la presenta: ni nombre ni documento, como espera la base', () => {
+    expect(
+      presentationOf({
+        right: 'ERASURE',
+        requestedBy: 'REPRESENTATIVE',
+        requesterName: 'a'.repeat(300),
+        requesterDocument: 'x',
+      }),
+    ).toMatchObject({ requesterName: null, requesterDocument: null });
+  });
+
   it('PD-052 un nombre de más de 200 caracteres se rechaza', () => {
     expect(() =>
       presentationOf({
