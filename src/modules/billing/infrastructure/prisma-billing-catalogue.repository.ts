@@ -287,7 +287,15 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
             active: true,
             referenceRanges: {
               where: { validTo: null },
-              orderBy: [{ rangeKind: 'desc' }, { sex: 'asc' }, { ageMinDays: 'asc' }], // prettier-ignore
+              // The SAME stable order as the exam catalogue's: the ranges
+              // editor compares its rows with these, and «all sexes» last
+              // here but first there made a saved form look unsaved.
+              orderBy: [
+                { rangeKind: 'desc' },
+                { sex: { sort: 'asc', nulls: 'first' } },
+                { ageMinDays: { sort: 'asc', nulls: 'first' } },
+                { validFrom: 'asc' },
+              ],
             },
           },
         },
