@@ -26,10 +26,12 @@ import { ALL_SITES } from '../../shared/authorisation/principal';
 import type { Permission } from '../../shared/authorisation/permission.catalogue';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
-import { SigningCertificateService } from './application/signing-certificate.service';
+import {
+  SigningCertificateService,
+  type CheckedCertificate,
+} from './application/signing-certificate.service';
 import { VoucherMonitorService } from './application/voucher-monitor.service';
 import type { Requester } from './application/voucher-monitor.service';
-import type { CertificateSummary } from './domain/electronic-voucher.repository';
 import { ElectronicVoucherNotFoundError } from './domain/sri.errors';
 import {
   CertificateDto,
@@ -42,7 +44,7 @@ import {
   type SriTransportFailureResponse,
 } from './dto/sri.dto';
 
-function toCertificate(summary: CertificateSummary): CertificateResponse {
+function toCertificate(summary: CheckedCertificate): CertificateResponse {
   return {
     id: summary.id,
     subject: summary.subject,
@@ -52,6 +54,8 @@ function toCertificate(summary: CertificateSummary): CertificateResponse {
     notAfter: summary.notAfter.toISOString(),
     active: summary.active,
     createdAt: summary.createdAt.toISOString(),
+    holderRuc: summary.holderRuc,
+    holderRucMatchesIssuer: summary.holderRucMatchesIssuer,
   };
 }
 

@@ -5737,6 +5737,9 @@ model SigningCertificate {
   serialNumber String   @map("serial_number") @db.VarChar(128)
   notBefore    DateTime @map("not_before") @db.Timestamptz(6)
   notAfter     DateTime @map("not_after") @db.Timestamptz(6)
+  /// SRI-102. The holder's RUC as the certificate states it; NULL when it
+  /// does not, or it could not be read.
+  holderRuc    String?  @map("holder_ruc") @db.VarChar(13)
 
   encryptedPkcs12   Bytes @map("encrypted_pkcs12")
   encryptedPassword Bytes @map("encrypted_password")

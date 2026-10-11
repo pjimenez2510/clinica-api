@@ -38,6 +38,10 @@ const certificateSchema = z.object({
   notAfter: z.iso.datetime(),
   active: z.boolean(),
   createdAt: z.iso.datetime(),
+  /** SRI-102. The holder's RUC as the certificate states it. */
+  holderRuc: z.string().nullable(),
+  /** SRI-102. `false`: not the establishment's; `null`: it could not tell. */
+  holderRucMatchesIssuer: z.boolean().nullable(),
 });
 export class CertificateDto extends createZodDto(certificateSchema) {}
 export type CertificateResponse = z.infer<typeof certificateSchema>;

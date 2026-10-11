@@ -52,10 +52,17 @@ try {
   process.exit(1);
 }
 
+// SRI-102. The holder's RUC goes in Security Data's extension: the issuer's
+// of this installation, or `--ruc=<13 dígitos>` to try the warning of a
+// certificate issued to somebody else.
+const rucArgument = process.argv
+  .find((argument) => argument.startsWith('--ruc='))
+  ?.slice('--ruc='.length);
 const p12 = createTestPkcs12({
   now: new Date(),
   validForDays: 730,
   commonName: 'FIRMANTE DE DESARROLLO',
+  ruc: rucArgument ?? process.env.SRI_ISSUER_RUC,
 });
 const upload = await fetch(`${api}/api/v1/sri/certificates`, {
   method: 'POST',

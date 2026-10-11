@@ -141,6 +141,7 @@ function certificate(
     serialNumber: '01',
     notBefore: new Date(NOW.getTime() - DAY),
     notAfter: new Date(NOW.getTime() + 365 * DAY),
+    holderRuc: null,
     active: true,
     createdAt: NOW,
     encryptedPkcs12: Buffer.from('sealed-p12'),
@@ -197,6 +198,7 @@ function fakes() {
         Promise.resolve({ ...certificate(), ...c }),
       ),
     list: vi.fn().mockResolvedValue([]),
+    issuerRucs: vi.fn().mockResolvedValue([]),
     recordOpening: vi.fn().mockImplementation(() => {
       order.push('opening');
       return Promise.resolve();
@@ -995,6 +997,7 @@ describe('SRI-080 a SRI-083 la carga del certificado', () => {
         serialNumber: '1',
         notBefore: new Date(NOW.getTime() - 2 * DAY),
         notAfter: new Date(NOW.getTime() - DAY),
+        holderRuc: null,
       }),
     });
     await expect(

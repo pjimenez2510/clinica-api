@@ -287,6 +287,37 @@ describe('SRI-022, SRI-081 la inspección del .p12', () => {
     );
   });
 
+  it('SRI-102 lee el RUC del titular de la extensión 3.11 de Security Data', () => {
+    const certificate = createTestPkcs12({ now: NOW, ruc: '0992339411001' });
+    expect(
+      inspector.inspect(certificate.pkcs12, certificate.password).holderRuc,
+    ).toBe('0992339411001');
+  });
+
+  it('SRI-102 sin la extensión, lee un RUC de 13 dígitos del sujeto', () => {
+    const certificate = createTestPkcs12({
+      now: NOW,
+      subjectSerialNumber: 'RUC0992339411001',
+    });
+    expect(
+      inspector.inspect(certificate.pkcs12, certificate.password).holderRuc,
+    ).toBe('0992339411001');
+  });
+
+  it('SRI-102 sin RUC en ninguna parte dice que no lo pudo leer, y una cédula no pasa por RUC', () => {
+    const withoutRuc = createTestPkcs12({ now: NOW });
+    const withCedula = createTestPkcs12({
+      now: NOW,
+      subjectSerialNumber: '1710034065',
+    });
+    expect(
+      inspector.inspect(withoutRuc.pkcs12, withoutRuc.password).holderRuc,
+    ).toBeNull();
+    expect(
+      inspector.inspect(withCedula.pkcs12, withCedula.password).holderRuc,
+    ).toBeNull();
+  });
+
   it('SRI-081 una clave equivocada y un fichero que no es PKCS#12 dan el mismo error', () => {
     const certificate = createTestPkcs12({ now: NOW });
     const wrongPassword = (() => {

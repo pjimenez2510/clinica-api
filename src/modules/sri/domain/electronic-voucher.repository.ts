@@ -373,6 +373,8 @@ export interface StoredCertificate {
   serialNumber: string;
   notBefore: Date;
   notAfter: Date;
+  /** SRI-102. As the certificate states it; `null` if it does not. */
+  holderRuc: string | null;
   active: boolean;
   createdAt: Date;
   encryptedPkcs12: Buffer;
@@ -394,6 +396,8 @@ export interface SigningCertificateRepository {
     },
   ): Promise<CertificateSummary>;
   list(): Promise<CertificateSummary[]>;
+  /** SRI-102. The establishment's RUC and every site's own, if any. */
+  issuerRucs(): Promise<string[]>;
   /** SRI-026. Throws if the row cannot be written: then nothing is signed. */
   recordOpening(certificateId: string, voucherId: string): Promise<void>;
 }

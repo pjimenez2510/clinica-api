@@ -22,7 +22,7 @@ import { createTestPkcs12 } from '../support/test-pkcs12';
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
-import { giveSiteAnIssuer } from './setup/sri-fixtures';
+import { giveSiteAnIssuer, TEST_ISSUER_RUC } from './setup/sri-fixtures';
 
 /**
  * SRI-058 to SRI-068, SRI-080 to SRI-083, SRI-060 over HTTP: the permission of
@@ -928,6 +928,55 @@ describe('el comprobante electrónico por HTTP', () => {
           where: { resourceType: 'signing_certificate', action: 'CREATE' },
         }),
       ).toBe(1);
+    });
+
+    it('SRI-102 un certificado de otro RUC se carga con aviso; el del establecimiento, sin él', async () => {
+      const foreign = await uploadCertificate(
+        createTestPkcs12({ now: new Date(), ruc: '0992339411001' }),
+      );
+      expect(foreign.status).toBe(201);
+      expect(foreign.body).toMatchObject({
+        active: true,
+        holderRuc: '0992339411001',
+        holderRucMatchesIssuer: false,
+      });
+
+      // Positive control: the establishment's own RUC carries no warning.
+      const own = await uploadCertificate(
+        createTestPkcs12({ now: new Date(), ruc: TEST_ISSUER_RUC }),
+      );
+      expect(own.body).toMatchObject({
+        holderRuc: TEST_ISSUER_RUC,
+        holderRucMatchesIssuer: true,
+      });
+
+      // Read back: the list says the same of each.
+      const listed = await api()
+        .get('/api/v1/sri/certificates')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(
+        (
+          listed.body as {
+            holderRuc: string;
+            holderRucMatchesIssuer: boolean;
+          }[]
+        )
+          .map((c) => [c.holderRuc, c.holderRucMatchesIssuer])
+          .sort(),
+      ).toEqual([
+        ['0992339411001', false],
+        [TEST_ISSUER_RUC, true],
+      ]);
+    });
+
+    it('SRI-102 un certificado sin RUC legible se carga y dice que no se pudo leer', async () => {
+      const response = await uploadCertificate();
+      expect(response.status).toBe(201);
+      expect(response.body).toMatchObject({
+        holderRuc: null,
+        holderRucMatchesIssuer: null,
+      });
     });
 
     it('SRI-080 cargar otro desactiva el anterior y lo conserva', async () => {
