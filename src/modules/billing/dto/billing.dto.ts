@@ -105,6 +105,8 @@ export const serviceQuerySchema = z.object({
     .number({ error: 'La página es un número' })
     .int('La página es un número entero')
     .min(1, 'La página empieza en 1')
+    // An OFFSET of millions is a scan of the whole table for nothing.
+    .max(10_000, 'Esa página no existe')
     .default(1),
   pageSize: z.coerce
     .number()

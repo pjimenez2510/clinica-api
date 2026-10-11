@@ -192,17 +192,27 @@ export class ServiceCodeInvoicedError extends ConflictError {
  */
 export class ServiceCodeOrderedError extends ConflictError {
   readonly code = 'EXAM_CODE_IN_USE';
-  override readonly userTitle =
-    'Ya se pidió en una orden con este código: no se puede cambiar';
+  override readonly userTitle: string;
 
-  constructor() {
+  /**
+   * `exam`: a procedure already ordered keeps being orderable (BI-284) — its
+   * order lines resolve their determinations and turnaround through it.
+   */
+  constructor(field: 'code' | 'exam' = 'code') {
     super('An order line already froze this code', {}, [
       {
-        field: 'code',
+        field,
         code: 'EXAM_CODE_IN_USE',
-        message: 'Ya pedido con este código',
+        message:
+          field === 'code'
+            ? 'Ya pedido con este código'
+            : 'Ya pedido en una orden',
       },
     ]);
+    this.userTitle =
+      field === 'code'
+        ? 'Ya se pidió en una orden con este código: no se puede cambiar'
+        : 'Ya se pidió en una orden: sigue pidiéndose';
   }
 }
 

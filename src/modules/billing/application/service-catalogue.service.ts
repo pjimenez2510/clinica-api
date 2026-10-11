@@ -306,10 +306,17 @@ export class ServiceCatalogueService {
       }
     }
 
+    // Only what CHANGES is validated again: the form sends the three fields on
+    // every correction, and renaming a consultation must not fail because its
+    // specialty was deactivated or a site's slot size changed since.
+    const was = current.consultation;
     const touchesConsultation =
-      correction.specialtyId !== undefined ||
-      correction.durationMinutes !== undefined ||
-      correction.visitKind !== undefined;
+      (correction.specialtyId !== undefined &&
+        correction.specialtyId !== was?.specialtyId) ||
+      (correction.durationMinutes !== undefined &&
+        correction.durationMinutes !== was?.durationMinutes) ||
+      (correction.visitKind !== undefined &&
+        (correction.visitKind ?? null) !== (was?.visitKind ?? null));
     if (touchesConsultation) {
       if (current.consultation === null) {
         throw new ServiceKindMismatchError('specialtyId');
@@ -330,6 +337,13 @@ export class ServiceCatalogueService {
         // BI-284. Only a procedure stops being ordered; an exam IS ordered.
         if (current.kind !== 'PROCEDURE') {
           throw new ServiceKindMismatchError('exam');
+        }
+        // Its order lines resolve their structure and turnaround through it.
+        if (
+          current.exam !== null &&
+          (await this.catalogue.codeWasOrdered(current.code))
+        ) {
+          throw new ServiceCodeOrderedError('exam');
         }
         update.exam = null;
       } else {

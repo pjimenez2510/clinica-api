@@ -833,6 +833,11 @@ async function linesOf(
   wanted: readonly NewOrderLine[],
 ) {
   const serviceIds = [...new Set(wanted.map((line) => line.serviceId))];
+  // BI-288. Held until this order commits: a delete of the same service waits
+  // and then finds the line (`trg_service_not_deleted_once_ordered`); one that
+  // got there first leaves nothing to read below, and the order is refused.
+  await tx.$queryRaw`
+    SELECT 1 FROM "service" WHERE "id" = ANY(${serviceIds}::uuid[]) FOR SHARE`;
   // BI-284. An orderable is an active service with an order extension.
   const services = await tx.service.findMany({
     where: { ...ORDERABLE, id: { in: serviceIds }, active: true },

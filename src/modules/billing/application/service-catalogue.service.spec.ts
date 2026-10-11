@@ -292,6 +292,26 @@ describe('BI-279 la consulta lleva especialidad, duración y visita', () => {
       catalogue.updateService('service-1', { durationMinutes: 40 }, requester),
     ).rejects.toBeInstanceOf(ServiceKindMismatchError);
   });
+
+  it('BI-279 renombrar una consulta que repite su especialidad, duración y visita no las vuelve a validar', async () => {
+    const { service: catalogue, mocks } = build();
+    const current = service.consultation!;
+
+    await catalogue.updateService(
+      'service-1',
+      {
+        name: 'Consulta renombrada',
+        specialtyId: current.specialtyId,
+        durationMinutes: current.durationMinutes,
+        visitKind: current.visitKind,
+      },
+      requester,
+    );
+
+    // A deactivated specialty or a new slot size elsewhere must not block a
+    // rename: nothing of the consultation changed.
+    expect(mocks.updateService.mock.calls[0]![1]).not.toHaveProperty('consultation'); // prettier-ignore
+  });
 });
 
 describe('BI-284 la extensión de orden', () => {
@@ -361,6 +381,18 @@ describe('BI-284 la extensión de orden', () => {
     mocks.findService.mockResolvedValueOnce({ ...procedureService, exam: examService.exam }); // prettier-ignore
     await catalogue.updateService('service-1', { exam: null }, requester);
     expect(mocks.updateService.mock.calls[1]![1]).toMatchObject({ exam: null });
+  });
+
+  it('BI-284 un procedimiento ya pedido en una orden no deja de pedirse: sus líneas perderían su estructura', async () => {
+    const { service: catalogue, mocks } = build({
+      findService: vi.fn().mockResolvedValue({ ...procedureService, exam: examService.exam }), // prettier-ignore
+    });
+    mocks.codeWasOrdered.mockResolvedValueOnce(true);
+
+    await expect(
+      catalogue.updateService('service-1', { exam: null }, requester),
+    ).rejects.toBeInstanceOf(ServiceCodeOrderedError);
+    expect(mocks.updateService).not.toHaveBeenCalled();
   });
 });
 

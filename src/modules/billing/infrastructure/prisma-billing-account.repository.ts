@@ -1577,8 +1577,8 @@ function priceOn(
 
 /**
  * BI-047, BI-297 (ADR-013). The price of a service on a day, for a list: its
- * own row in force, or —when the list is an agreement's and does not price
- * it— the self-pay list's. «Un convenio guarda excepciones» sobre el
+ * own row in force, or —when the list is a company agreement's or a private
+ * insurer's and does not price it— the self-pay list's. «Un convenio guarda excepciones» sobre el
  * particular: what it does not list, it charges at the self-pay price, and
  * `resolvedPriceId` keeps WHICH row that was, so the resolution stays
  * auditable. Neither in force → `null`, the caller's `PRICE_NOT_FOUND`.
@@ -1593,10 +1593,24 @@ async function priceInForce(
     where: priceOn(priceListId, serviceId, on),
   });
   if (own !== null) return own;
+  const list = await client.priceList.findUnique({
+    where: { id: priceListId },
+    select: { payer: { select: { kind: true } } },
+  });
+  // D-230. The public network settles by the SNS tariff: a self-pay amount on
+  // its claim is a figure it never agreed to. Only agreements and insurers
+  // fall back; the public network without its own price is refused.
+  if (!list || !INHERITS_SELF_PAY.has(list.payer.kind)) return null;
   const selfPay = await selfPayPriceListId(client);
   if (selfPay === null || selfPay === priceListId) return null;
   return client.price.findFirst({ where: priceOn(selfPay, serviceId, on) });
 }
+
+/** BI-297, D-230. The payer kinds whose missing price is the self-pay one. */
+const INHERITS_SELF_PAY: ReadonlySet<string> = new Set([
+  'COMPANY_AGREEMENT',
+  'PRIVATE_INSURANCE',
+]);
 
 async function findPriceOn(
   tx: Transaction,

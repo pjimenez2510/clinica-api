@@ -3067,9 +3067,13 @@ lo ve._
   > Enmienda BI-158: la consulta ya no se busca por el tipo de atención y su
   > «posición 0».
 - **BI-288** — CUANDO se borre un servicio, SI una cita, una lista de espera, un
-  cargo, una orden o un precio lo nombran, ENTONCES el sistema DEBERÁ
-  rechazarlo con `BILLABLE_SERVICE_IN_USE` y ofrecer desactivarlo (BI-012,
-  SP-025).
+  cargo, una línea de orden (por su código) o una publicación de precios lo
+  nombran, ENTONCES el sistema DEBERÁ rechazarlo con `BILLABLE_SERVICE_IN_USE`
+  y ofrecer desactivarlo (BI-012, SP-025); sus propios precios, que ningún
+  cargo congeló, se borran con él (todo servicio nace con uno, BI-280). La
+  línea de orden no tiene clave hacia el servicio: lo garantiza
+  `trg_service_not_deleted_once_ordered`, y quien emite la orden bloquea el
+  servicio hasta confirmarla.
 - **BI-289** — CUANDO se publiquen los precios en la pared, cada línea DEBERÁ
   llevar como grupo el **tipo** del servicio («Consultas», «Exámenes de
   laboratorio», …) en lugar de la categoría (BI-110).
@@ -3078,7 +3082,7 @@ lo ve._
   el antes y el después (BI-130, AD-10).
 
 - **BI-297** — CUANDO se resuelva el precio de un cargo en la lista de un
-  pagador que no es el particular, SI esa lista no tiene precio vigente para
+  convenio de empresa o de un seguro privado, SI esa lista no tiene precio vigente para
   el servicio en la fecha del servicio, ENTONCES el sistema DEBERÁ resolverlo
   con el precio vigente de la lista particular y guardar en el cargo la fila de
   la que salió (`resolved_price_id`); sólo SI tampoco hay precio particular
@@ -3086,6 +3090,8 @@ lo ve._
   > ADR-013: «un convenio guarda excepciones» sobre el particular, y la
   > columna del convenio en la lista dice «—» = «usa el particular». Sin esta
   > caída, ese «—» sería falso. Construido así mientras el autor decide (D-230).
+  > La red pública queda fuera: liquida por el Tarifario del SNS, y un importe
+  > particular en su planilla se glosaría; sin precio propio, `PRICE_NOT_FOUND`.
 
 ### La pantalla «Servicios» (sólo interfaz, D-227 §1, D-220)
 
@@ -3093,7 +3099,9 @@ lo ve._
   Administración · Facturación (`/administracion/servicios`), y las rutas
   anteriores —`precios`, `servicios-precios`, `prestaciones/:id`,
   `examenes` y `examenes/:id`— DEBERÁN llevar a ella (a la ficha cuando
-  nombran uno), no a una página inexistente.
+  nombran un servicio que conserva su id, `prestaciones/:id`; los exámenes
+  cambiaron de id con ADR-013 y llevan a la pestaña de exámenes), no a una
+  página inexistente.
 - **BI-292** — La lista DEBERÁ separar los servicios por tipo en pestañas
   (Todos · Consultas · Exámenes · Imagen · Procedimientos · Insumos · Otros),
   buscar por nombre o código paginando en el servidor (BI-282) con los filtros

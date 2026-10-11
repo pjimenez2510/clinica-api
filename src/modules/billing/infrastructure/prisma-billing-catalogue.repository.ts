@@ -549,7 +549,9 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
 
   /**
    * BI-012. Called only after `countReferencesToService` answered zero; the
-   * `RESTRICT` keys refuse it anyway if something slipped in between. A price
+   * `RESTRICT` keys and `trg_service_not_deleted_once_ordered` (an order line
+   * names its service by code, with no key) refuse it anyway if something
+   * slipped in between. A price
    * no charge froze goes with its service; one a charge froze would have made
    * the count non-zero.
    */

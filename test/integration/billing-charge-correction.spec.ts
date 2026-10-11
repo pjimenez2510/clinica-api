@@ -407,24 +407,27 @@ describe('BI-198 el pagador cambia con cargos y los re-tarifa', () => {
     expect(await versionsOf(kept.id)).toHaveLength(1);
   });
 
-  it('BI-198 BI-297 sin precio propio en la lista nueva, el pagador cambia y el cargo queda al precio particular', async () => {
+  it('BI-198 BI-297 sin precio en la lista de la red pública no cambia ni el pagador ni ningún cargo', async () => {
     const raised = await charge();
 
-    await context.accounts.changeAccountPayer({
-      accountId: context.accountId,
-      payerId: context.insurerId,
-      priceListId: context.insurerListId,
-      changedById: context.userId,
-      now: new Date(),
-    });
+    const rejection = await rejectionOf(
+      context.accounts.changeAccountPayer({
+        accountId: context.accountId,
+        payerId: context.insurerId,
+        priceListId: context.insurerListId,
+        changedById: context.userId,
+        now: new Date(),
+      }),
+    );
 
+    expect((rejection as { code?: string }).code).toBe('PRICE_NOT_FOUND');
     const account = await context.prisma.patientAccount.findUniqueOrThrow({
       where: { id: context.accountId },
     });
-    expect(account.payerId).toBe(context.insurerId);
-    const [line] = await context.accounts.listCharges(context.accountId);
-    expect(line?.unitAmount.toString()).toBe('30.00');
-    expect(line?.id).toBe(raised.id);
+    expect(account.payerId).not.toBe(context.insurerId);
+    const [unchanged] = await context.accounts.listCharges(context.accountId);
+    expect(unchanged?.unitAmount.toString()).toBe('30.00');
+    expect(await versionsOf(raised.id)).toHaveLength(0);
   });
 });
 

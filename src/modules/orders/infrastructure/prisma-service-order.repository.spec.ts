@@ -114,11 +114,16 @@ function prismaDouble(
     $queryRaw: (strings: TemplateStringsArray, ...values: unknown[]) => {
       const sql = strings.join('?');
       // The lock on the attention's row is its own call (the race with agenda's
-      // annulment); the tariff lookup is the one these tests read.
-      record(sql.includes('FOR UPDATE') ? '$queryRaw:lock' : '$queryRaw', {
-        sql,
-        values,
-      });
+      // annulment), and so is the one on the services (BI-288, the race with a
+      // delete); the tariff lookup is the one these tests read.
+      record(
+        sql.includes('FOR UPDATE')
+          ? '$queryRaw:lock'
+          : sql.includes('FOR SHARE')
+            ? '$queryRaw:service-lock'
+            : '$queryRaw',
+        { sql, values },
+      );
       return Promise.resolve(
         options.concepts ?? [
           { id: CONCEPT, concept_code: 'T-100', system_code: 'TARIFF', in_force: true }, // prettier-ignore
@@ -305,6 +310,17 @@ describe('el adaptador de la orden', () => {
     const lines = (data.items as { create: Record<string, unknown>[] }).create;
     expect(lines[0]).toMatchObject({ testCode: 'LAB-BH', conceptId: null });
     expect(callTo('$queryRaw')).toBeUndefined();
+  });
+
+  it('BI-288 bloquea los servicios pedidos antes de leerlos, para que un borrado espere a la orden', async () => {
+    const { repository, calls } = prismaDouble();
+
+    await repository.compose(aRequest);
+
+    const methods = calls.map((call) => call.method);
+    const lock = methods.indexOf('$queryRaw:service-lock');
+    expect(lock).toBeGreaterThanOrEqual(0);
+    expect(lock).toBeLessThan(methods.indexOf('service.findMany'));
   });
 
   it('ORD-005 bloquea la fila de la atención antes de leer su estado', async () => {

@@ -7,6 +7,7 @@ import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import '../../src/modules/billing/infrastructure/billing.constraints';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { PrismaBillingCatalogueRepository } from '../../src/modules/billing/infrastructure/prisma-billing-catalogue.repository';
+import { PriceNotFoundError } from '../../src/modules/billing/domain/billing.errors';
 import { planPriceChange } from '../../src/modules/billing/domain/price-list';
 import { Money, Quantity } from '../../src/modules/billing/domain/money';
 import { parseClinicalDate } from '../../src/shared/domain/clinic-time';
@@ -154,10 +155,20 @@ async function raiseTheTariff(): Promise<void> {
 }
 
 describe('BI-297 un convenio guarda sólo sus excepciones sobre el particular', () => {
-  async function agreementAccount(): Promise<string> {
-    const list = await context.prisma.priceList.findUniqueOrThrow({
-      where: { id: context.emptyPriceListId },
+  /** The seed's payer of that code, and its price list (no prices of its own). */
+  async function listOf(code: string) {
+    const payer = await context.prisma.payer.findUniqueOrThrow({
+      where: { code },
     });
+    return context.prisma.priceList.findFirstOrThrow({
+      where: { payerId: payer.id },
+    });
+  }
+
+  async function agreementAccount(
+    code = 'CONVENIO-EMPRESA-EJEMPLO',
+  ): Promise<string> {
+    const list = await listOf(code);
     const own = await context.prisma.patientAccount.findUniqueOrThrow({
       where: { id: context.accountId },
     });
@@ -204,9 +215,10 @@ describe('BI-297 un convenio guarda sólo sus excepciones sobre el particular', 
 
   it('BI-297 con precio propio en el convenio, el cargo toma el suyo (control)', async () => {
     const accountId = await agreementAccount();
+    const agreement = await listOf('CONVENIO-EMPRESA-EJEMPLO');
     const own = await context.prisma.price.create({
       data: {
-        priceListId: context.emptyPriceListId,
+        priceListId: agreement.id,
         serviceId: context.serviceId,
         amount: '12.00',
         validFrom: new Date(`${BEFORE_THE_RISE}T00:00:00Z`),
@@ -220,6 +232,23 @@ describe('BI-297 un convenio guarda sólo sus excepciones sobre el particular', 
     });
     expect(stored.unitAmount.toFixed(2)).toBe('12.00');
     expect(stored.resolvedPriceId).toBe(own.id);
+  });
+
+  it('BI-297 un seguro privado sin precio propio también toma el particular', async () => {
+    const charged = await chargeTo(await agreementAccount('SEGURO-PRIVADO-EJEMPLO')); // prettier-ignore
+
+    const stored = await context.prisma.chargeItem.findUniqueOrThrow({
+      where: { id: charged.id },
+    });
+    expect(stored.resolvedPriceId).not.toBeNull();
+  });
+
+  it('BI-297 la red pública NO toma el particular: sin precio propio se rechaza con PRICE_NOT_FOUND', async () => {
+    // The public network settles by the SNS tariff: a self-pay amount on its
+    // claim would be a figure it never agreed to (D-230).
+    await expect(
+      chargeTo(await agreementAccount('IESS')),
+    ).rejects.toBeInstanceOf(PriceNotFoundError);
   });
 });
 

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { useDatabase } from './setup/database';
 import {
+  createEncounter,
   createExamService,
   createPatient,
   createPractitioner,
@@ -236,6 +237,41 @@ describe('el catálogo único de servicios, en la base (B21)', () => {
       expect(
         await refusal(prisma.service.delete({ where: { id: booked.id } })),
       ).toContain('agenda_entry_service_fk');
+    });
+
+    it('BI-288 refuses deleting a service an order line names by its code, and deletes one nobody ordered', async () => {
+      // Control: nobody ordered it, so it goes.
+      const spare = await createExamService(prisma, {
+        code: 'LAB-SPARE',
+        name: 'Examen libre',
+      });
+      await prisma.service.delete({ where: { id: spare.id } });
+
+      // The order line names its service by CODE, with no key to it (ORD-002):
+      // only the trigger stands between a delete and an orphaned order.
+      const ordered = await createExamService(prisma, {
+        code: 'LAB-ORDERED',
+        name: 'Examen pedido',
+      });
+      const site = await createSite(prisma);
+      const practitioner = await createPractitioner(prisma);
+      const patient = await createPatient(prisma);
+      const encounter = await createEncounter(prisma, {
+        siteId: site.id,
+        practitionerId: practitioner.id,
+        patientId: patient.id,
+      });
+      const order = await prisma.serviceOrder.create({
+        data: { encounterId: encounter.id, siteId: site.id, orderedById: practitioner.id, category: 'LABORATORY' }, // prettier-ignore
+      });
+      await prisma.serviceOrderItem.create({
+        data: { serviceOrderId: order.id, testCode: 'LAB-ORDERED', testDisplay: 'Pedido' }, // prettier-ignore
+      });
+
+      expect(
+        await refusal(prisma.service.delete({ where: { id: ordered.id } })),
+      ).toContain('service_code_in_use');
+      expect(await prisma.service.count({ where: { id: ordered.id } })).toBe(1);
     });
   });
 
