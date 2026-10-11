@@ -187,16 +187,18 @@ model User {
   /// Money. Two lists over `charge_item` and not one, because raising a charge
   /// and authorising a discount above the role's ceiling are two acts by two
   /// people — the second pair of eyes only counts if it is a different pair.
-  chargeItemsCreated  ChargeItem[]        @relation("ChargeItemAuthor")
-  chargeItemsChanged  ChargeItem[]        @relation("ChargeItemChanger")
-  pricesChanged       Price[]             @relation("PriceChanger")
-  tariffsPublished    TariffPublication[] @relation("TariffPublisher")
-  discountsAuthorised ChargeItem[]        @relation("ChargeItemDiscountAuthoriser")
-  discountsApplied    ChargeItem[]        @relation("ChargeItemDiscountApplier")
-  invoicesIssued      Invoice[]           @relation("InvoiceIssuer")
-  creditNotesIssued   CreditNote[]        @relation("CreditNoteIssuer")
-  accountsChanged     PatientAccount[]    @relation("PatientAccountChanger")
-  invoicesChanged     Invoice[]           @relation("InvoiceChanger")
+  chargeItemsCreated  ChargeItem[]               @relation("ChargeItemAuthor")
+  chargeItemsChanged  ChargeItem[]               @relation("ChargeItemChanger")
+  pricesChanged       Price[]                    @relation("PriceChanger")
+  tariffsPublished    TariffPublication[]        @relation("TariffPublisher")
+  discountsAuthorised ChargeItem[]               @relation("ChargeItemDiscountAuthoriser")
+  discountsApplied    ChargeItem[]               @relation("ChargeItemDiscountApplier")
+  invoicesIssued      Invoice[]                  @relation("InvoiceIssuer")
+  voucherMailings     ElectronicVoucherMailing[]
+  creditNotesIssued   CreditNote[]               @relation("CreditNoteIssuer")
+  accountsChanged     PatientAccount[]           @relation("PatientAccountChanger")
+  invoicesChanged     Invoice[]                  @relation("InvoiceChanger")
+  creditNotesChanged  CreditNote[]               @relation("CreditNoteChanger")
 
   /// REQ-090. Who loaded each issuer certificate (SRI-082).
   signingCertificatesUploaded SigningCertificate[] @relation("SigningCertificateUploader")
@@ -1898,6 +1900,7 @@ model Patient {
   /// chart-scope guard): a paper names one chart on purpose.
   certificatesNamingIt  MedicalCertificate[]    @relation("CertificateChartOfRecord")
   serviceOrdersNamingIt ServiceOrder[]          @relation("ServiceOrderChartOfRecord")
+  invoicesNamingIt      Invoice[]               @relation("InvoiceChartOfRecord")
   certificates          MedicalCertificate[]    @relation("CertificatePatient")
   referrals             Referral[]
   mergesAsSource        PatientMerge[]          @relation("MergeSource")
@@ -4887,8 +4890,14 @@ model ChargeItem {
 model Invoice {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
-  accountId String         @map("account_id") @db.Uuid
-  account   PatientAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_account_fk")
+  accountId       String         @map("account_id") @db.Uuid
+  account         PatientAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_account_fk")
+  /// BI-302. The chart whose identity the RIDE prints: the one in force of
+  /// the account's chart when issued. Written by the database
+  /// (`a_invoice_freeze_chart_of_record`), never changed after. NOT NULL in
+  /// the database; optional here only so the insert may leave it out.
+  chartOfRecordId String?        @map("chart_of_record_id") @db.Uuid
+  chartOfRecord   Patient?       @relation("InvoiceChartOfRecord", fields: [chartOfRecordId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_chart_of_record_fk")
 
   siteId String @map("site_id") @db.Uuid
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_site_fk")
@@ -5022,10 +5031,19 @@ model CreditNote {
   taxTotal        Decimal @map("tax_total") @db.Decimal(12, 2)
   amount          Decimal @db.Decimal(12, 2)
 
-  /// ISSUED, AUTHORISED or REJECTED (DRAFT is never written). There is no
-  /// VOIDED: a credit note that was wrong is corrected by the documents that
-  /// follow it, never by unwinding this one.
+  /// ISSUED, AUTHORISED, REJECTED or WITHDRAWN (DRAFT is never written).
+  /// There is no VOIDED: a credit note that was wrong is corrected by the
+  /// documents that follow it, never by unwinding this one. WITHDRAWN (BI-304)
+  /// is a returned note a person gave up on: its lines are released.
   status String @default("ISSUED") @db.VarChar(24)
+
+  /// BI-304. Why the returned note was given up; set only with WITHDRAWN.
+  withdrawalReason String?   @map("withdrawal_reason") @db.VarChar(300)
+  /// BI-303, BI-304. Who changed its reason or gave it up, and when: the
+  /// previous row goes to `record_version`.
+  changedById      String?   @map("changed_by") @db.Uuid
+  changedBy        User?     @relation("CreditNoteChanger", fields: [changedById], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "credit_note_changed_by_fkey")
+  changedAt        DateTime? @map("changed_at") @db.Timestamptz(6)
 
   issuedById String    @map("issued_by_id") @db.Uuid
   issuedBy   User      @relation("CreditNoteIssuer", fields: [issuedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "credit_note_issued_by_fk")
@@ -5690,12 +5708,32 @@ model ElectronicVoucher {
 
   attempts ElectronicVoucherAttempt[]
   openings SigningCertificateOpening[]
+  mailings ElectronicVoucherMailing[]
 
   @@unique([invoiceId, accessKey], map: "electronic_voucher_invoice_key_pair")
   @@unique([creditNoteId, accessKey], map: "electronic_voucher_credit_note_key_pair")
   @@unique([id, accessKey], map: "electronic_voucher_id_key_pair")
   @@index([siteId, status], map: "electronic_voucher_by_site_status")
   @@map("electronic_voucher")
+}
+
+/// SRI-100 (D-213 §1). Each «Reenviar» that LEFT: to whom, by whom, when.
+/// Append-only (`electronic_voucher_mailing_append_only`), kept as long as
+/// the voucher (RESTRICT).
+model ElectronicVoucherMailing {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  voucherId String            @map("voucher_id") @db.Uuid
+  voucher   ElectronicVoucher @relation(fields: [voucherId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_mailing_voucher_fk")
+  sentById  String            @map("sent_by_id") @db.Uuid
+  sentBy    User              @relation(fields: [sentById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_mailing_sent_by_fk")
+  sentAt    DateTime          @map("sent_at") @db.Timestamptz(6)
+  recipient String            @db.VarChar(320)
+  toBuyer   Boolean           @map("to_buyer")
+
+  @@index([voucherId, sentAt], map: "electronic_voucher_mailing_by_voucher")
+  @@index([sentById, sentAt], map: "electronic_voucher_mailing_by_sender")
+  @@map("electronic_voucher_mailing")
 }
 
 /// SRI-051. Every call to the SRI and what it answered. Append-only.
@@ -5738,6 +5776,9 @@ model SigningCertificate {
   serialNumber String   @map("serial_number") @db.VarChar(128)
   notBefore    DateTime @map("not_before") @db.Timestamptz(6)
   notAfter     DateTime @map("not_after") @db.Timestamptz(6)
+  /// SRI-102. The holder's RUC as the certificate states it; NULL when it
+  /// does not, or it could not be read.
+  holderRuc    String?  @map("holder_ruc") @db.VarChar(13)
 
   encryptedPkcs12   Bytes @map("encrypted_pkcs12")
   encryptedPassword Bytes @map("encrypted_password")

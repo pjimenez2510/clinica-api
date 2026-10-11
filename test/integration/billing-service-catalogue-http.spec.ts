@@ -14,7 +14,14 @@ import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
-import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
+import {
+  addDays,
+  addMonths,
+  clinicalDateOf,
+  startOfClinicalDay,
+  type ClinicalDate,
+} from '../../src/shared/domain/clinic-time';
+import { PrismaBillingCatalogueRepository } from '../../src/modules/billing/infrastructure/prisma-billing-catalogue.repository';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -428,6 +435,53 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
     // Control: without the flag it is in its kind's place, not last.
     const plain = await list('pageSize=100');
     expect(plain.items.map((item) => item.code).at(-1)).not.toBe('LAB-BH');
+  });
+
+  it('BI-301 con un plazo, la revisión caducada vuelve a contar como pendiente en el orden de revisar', async () => {
+    const reviewer = await prisma.user.findFirstOrThrow();
+    const today = clinicalDateOf(new Date());
+    // Two reviews: one 13 months old, one from today.
+    const [old, fresh] = await Promise.all(
+      ['LAB-BH', 'LAB-GLUCOSA-AYUNAS'].map((code) =>
+        prisma.service.findUniqueOrThrow({ where: { code } }),
+      ),
+    );
+    await prisma.service.update({
+      where: { id: old!.id },
+      data: {
+        taxReviewedAt: startOfClinicalDay(addMonths(today, -13)),
+        taxReviewedById: reviewer.id,
+      },
+    });
+    await prisma.service.update({
+      where: { id: fresh!.id },
+      data: { taxReviewedAt: new Date(), taxReviewedById: reviewer.id },
+    });
+    const repository = new PrismaBillingCatalogueRepository(
+      prisma as unknown as PrismaService,
+    );
+    const order = async (taxReviewExpiredBefore: ClinicalDate | null) =>
+      (
+        await repository.listServices({
+          query: null,
+          kind: null,
+          specialtyId: null,
+          includeInactive: false,
+          forTaxReview: true,
+          taxReviewExpiredBefore,
+          page: 1,
+          pageSize: 200,
+          today,
+        })
+      ).items.map((item) => item.code);
+
+    // Off (the default): both reviewed ones go last.
+    const off = await order(null);
+    expect(off.slice(-2).sort()).toEqual(['LAB-BH', 'LAB-GLUCOSA-AYUNAS']);
+    // Twelve months: the old one is pending again, the fresh one stays last.
+    const on = await order(addMonths(today, -12));
+    expect(on.at(-1)).toBe('LAB-GLUCOSA-AYUNAS');
+    expect(on.indexOf('LAB-BH')).toBeLessThan(on.length - 2);
   });
 
   describe('BI-280 crear con su tipo y su precio', () => {

@@ -287,14 +287,14 @@ export function deliveryRetrySeconds(
   );
 }
 
-/** SRI-091. Past this, a failing e-mail is the address, not the server. */
+/** SRI-091. Past this, a refused address is given up. */
 const DELIVERY_GIVE_UP_MS = 72 * 3600 * 1000;
 
 /**
- * SRI-091. Whether a failed e-mail stops being retried: seventy-two hours or
- * more since the authorisation. Three days cover a mail server down over a
- * weekend; what still fails after that is an address the server refuses, and
- * every further try would issue another RIDE for nobody (D-158.3).
+ * SRI-091. Whether an e-mail whose ADDRESS the relay refuses stops being
+ * retried: seventy-two hours or more since the authorisation (D-158.3). The
+ * caller only asks for that refusal; a relay down or a RIDE that failed keeps
+ * being retried however long it lasts (SRI-098, D-167 §1).
  */
 export function deliveryGivesUp(authorisedAt: Date | null, now: Date): boolean {
   return (

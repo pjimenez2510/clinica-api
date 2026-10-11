@@ -779,6 +779,31 @@ describe('BI-023 BI-024 la revisión contable de la tarifa', () => {
     });
   });
 
+  it('BI-024 una ya revisada se vuelve a revisar: guarda la revisión nueva y deja la anterior en la bitácora', async () => {
+    const earlier = {
+      reviewedAt: new Date(Date.now() - 400 * 86_400_000),
+      reviewedById: 'accountant-0',
+      reviewedByName: 'Luis Andrade',
+    };
+    const { service: catalogue, mocks } = build({
+      ...withReview(),
+      findService: vi
+        .fn()
+        .mockResolvedValue({ ...service, taxReview: earlier }),
+    });
+
+    const result = await catalogue.markTaxReviewed('service-1', 'tax-0', reviewer); // prettier-ignore
+
+    expect(mocks.markTaxReviewed).toHaveBeenCalledTimes(1);
+    expect(result.taxReview).toEqual(reviewed);
+    const entry = mocks.record.mock.calls[0]?.[0] as AccessAuditEntry;
+    expect(entry.before).toMatchObject({
+      taxReviewedAt: earlier.reviewedAt.toISOString(),
+      taxReviewedById: 'accountant-0',
+    });
+    expect(entry.after).toMatchObject({ taxReviewedById: 'accountant-1' });
+  });
+
   it('BI-024 cambiar la tarifa la devuelve a pendiente, y la revisión anterior queda en la bitácora', async () => {
     const { service: catalogue, mocks } = build({
       findService: vi

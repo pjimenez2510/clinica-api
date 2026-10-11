@@ -179,6 +179,11 @@ export interface ServiceListFilter {
    * SRI code, then by name.
    */
   forTaxReview: boolean;
+  /**
+   * BI-301. Reviews of a day before this count as pending in that order;
+   * `null` while reviews do not expire (`TAX_REVIEW_VALID_MONTHS`).
+   */
+  taxReviewExpiredBefore: ClinicalDate | null;
   page: number;
   pageSize: number;
   /** The clinic's today, for «in force». */

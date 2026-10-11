@@ -36,6 +36,15 @@ export interface Uploader {
   userAgent?: string;
 }
 
+/**
+ * SRI-102. The certificate with what the screen warns about: whether its
+ * holder's RUC is the establishment's or a site's — `null` when the
+ * certificate does not say, or there is no issuer RUC to compare with.
+ */
+export type CheckedCertificate = CertificateSummary & {
+  holderRucMatchesIssuer: boolean | null;
+};
+
 /** SRI-032, SRI-063. What the monitor says about the certificate. */
 export interface CertificateHealth {
   active: CertificateSummary | null;
@@ -69,7 +78,7 @@ export class SigningCertificateService {
     file: Buffer,
     password: string,
     uploader: Uploader,
-  ): Promise<CertificateSummary> {
+  ): Promise<CheckedCertificate> {
     // SRI-083. Before a single byte is parsed.
     if (file.length > MAX_CERTIFICATE_BYTES) {
       throw new SigningCertificateTooLargeError();
@@ -106,11 +115,26 @@ export class SigningCertificateService {
     // request, and never two signers racing for the same voucher.
     await this.vouchers.unblockForCertificate();
 
-    return summary;
+    // SRI-102. Said, never refused: the accountant decides (D-215 §2).
+    const [checked] = await this.checked([summary]);
+    return checked!;
   }
 
-  list(): Promise<CertificateSummary[]> {
-    return this.certificates.list();
+  async list(): Promise<CheckedCertificate[]> {
+    return this.checked(await this.certificates.list());
+  }
+
+  private async checked(
+    certificates: CertificateSummary[],
+  ): Promise<CheckedCertificate[]> {
+    const issuerRucs = new Set(await this.certificates.issuerRucs());
+    return certificates.map((certificate) => ({
+      ...certificate,
+      holderRucMatchesIssuer:
+        certificate.holderRuc === null || issuerRucs.size === 0
+          ? null
+          : issuerRucs.has(certificate.holderRuc),
+    }));
   }
 
   /** SRI-032, SRI-063. */
@@ -125,6 +149,7 @@ export class SigningCertificateService {
       serialNumber: active.serialNumber,
       notBefore: active.notBefore,
       notAfter: active.notAfter,
+      holderRuc: active.holderRuc,
       active: active.active,
       createdAt: active.createdAt,
     };

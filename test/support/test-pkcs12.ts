@@ -22,6 +22,9 @@ export interface TestPkcs12 {
 
 let serial = 0;
 
+/** «OID — Objetos Identificadores Únicos de los Certificados», Security Data v9. */
+const SECURITY_DATA_RUC_OID = '1.3.6.1.4.1.37746.3.11';
+
 export function createTestPkcs12(options: {
   now: Date;
   /** Days from `now`; negative for a certificate already expired. */
@@ -29,6 +32,10 @@ export function createTestPkcs12(options: {
   validForDays?: number;
   password?: string;
   commonName?: string;
+  /** SRI-102. The holder's RUC, in Security Data's extension 3.11. */
+  ruc?: string;
+  /** SRI-102. The subject's `serialNumber`, where other CAs put it. */
+  subjectSerialNumber?: string;
 }): TestPkcs12 {
   const password = options.password ?? 'clave-de-prueba';
   const commonName = options.commonName ?? 'FIRMANTE DE PRUEBA';
@@ -61,8 +68,33 @@ export function createTestPkcs12(options: {
     { name: 'countryName', value: 'EC' },
     { name: 'organizationName', value: 'ENTIDAD DE PRUEBA' },
   ];
-  certificate.setSubject(subject);
   certificate.setIssuer(subject);
+  certificate.setSubject(
+    options.subjectSerialNumber
+      ? [
+          ...subject,
+          { name: 'serialNumber', value: options.subjectSerialNumber },
+        ]
+      : subject,
+  );
+  if (options.ruc) {
+    certificate.setExtensions([
+      {
+        id: SECURITY_DATA_RUC_OID,
+        // A UTF8String, as Security Data writes it.
+        value: forge.asn1
+          .toDer(
+            forge.asn1.create(
+              forge.asn1.Class.UNIVERSAL,
+              forge.asn1.Type.UTF8,
+              false,
+              options.ruc,
+            ),
+          )
+          .getBytes(),
+      },
+    ]);
+  }
   certificate.sign(forgePrivate, forge.md.sha256.create());
 
   const asn1 = forge.pkcs12.toPkcs12Asn1(

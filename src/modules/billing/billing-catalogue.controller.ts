@@ -1,3 +1,4 @@
+import { taxReviewPending } from './domain/tax-review';
 import {
   Body,
   Controller,
@@ -506,6 +507,8 @@ function toServiceResponse(service: ServiceView): ServiceResponse {
               name: service.taxReview.reviewedByName,
             },
           },
+    // BI-301. Never reviewed, or reviewed longer ago than the clinic's term.
+    taxReviewPending: taxReviewPending(service.taxReview, new Date()),
   };
 }
 

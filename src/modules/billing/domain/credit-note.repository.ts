@@ -48,7 +48,9 @@ export interface CreditNoteView {
   reason: string;
   receiver: InvoiceReceiver;
   totals: DocumentTotals;
-  status: 'ISSUED' | 'AUTHORISED' | 'REJECTED';
+  status: 'ISSUED' | 'AUTHORISED' | 'REJECTED' | 'WITHDRAWN';
+  /** BI-304. Why a returned note was given up; `null` otherwise. */
+  withdrawalReason: string | null;
   issuedAt: Date;
   lines: CreditNoteLineView[];
   /** The corrected invoice's series, for the list (BI-218). */
@@ -108,6 +110,35 @@ export interface CreditNoteRepository {
   findById(query: {
     id: string;
     siteId: string;
+  }): Promise<CreditNoteView | null>;
+
+  /**
+   * BI-303. The reason of a REJECTED note, stamped (the previous row goes to
+   * `record_version`) with its trail entry. `null` when it is not REJECTED
+   * any more under the lock.
+   */
+  correctRejected(correction: {
+    id: string;
+    siteId: string;
+    reasonCode: CreditNoteReasonCode;
+    reason: string;
+    changedById: string;
+    now: Date;
+    trail: BillingTrail;
+  }): Promise<CreditNoteView | null>;
+
+  /**
+   * BI-304. Gives up a REJECTED note: WITHDRAWN with its reason, its unbilled
+   * correction copies removed and its lines released, in one transaction.
+   * `null` when it is not REJECTED any more under the lock.
+   */
+  withdraw(withdrawal: {
+    id: string;
+    siteId: string;
+    reason: string;
+    withdrawnById: string;
+    now: Date;
+    trail: BillingTrail;
   }): Promise<CreditNoteView | null>;
 }
 export const CREDIT_NOTE_REPOSITORY = Symbol('CreditNoteRepository');

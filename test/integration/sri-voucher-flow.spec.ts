@@ -1,3 +1,4 @@
+import { MailDeliveryFailedError } from '../../src/shared/mail/mail.errors';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
@@ -869,15 +870,24 @@ describe('SRI-072 a SRI-076 la entrega al cliente', () => {
     expect((await voucherOf(invoice.id)).deliveryStatus).toBe('SENT');
   });
 
-  it('SRI-091 el correo que sigue fallando 72 horas después de la autorización queda «no se pudo enviar», y ni la cola ni el barrido lo reintentan', async () => {
+  it('SRI-091 SRI-098 la dirección que el servidor rechaza 72 horas después queda «no se pudo enviar», y ni la cola ni el barrido lo reintentan; el servidor caído, no', async () => {
     const { invoice, voucher } =
       await anAuthorisedVoucher('rebota@example.com');
-    mailer.failWith = new Error('550 mailbox unavailable');
     const { authorisedAt } = await voucherOf(invoice.id);
     if (!authorisedAt) throw new Error('the double did not authorise it');
     const at = (hours: number) => () =>
       new Date(authorisedAt.getTime() + hours * 3_600_000);
 
+    // SRI-098. Three days of the relay itself failing: still a retry.
+    mailer.failWith = new MailDeliveryFailedError(new Error('ECONNREFUSED'));
+    await dispatchAt(at(72)).run('DELIVER', voucher.id);
+    expect((await voucherOf(invoice.id)).deliveryStatus).toBe('FAILED');
+
+    // The address refused for good (a 5xx to RCPT TO).
+    mailer.failWith = new MailDeliveryFailedError(
+      new Error('550 5.1.1 mailbox unavailable'),
+      { recipientRejected: true },
+    );
     // Control: one hour short of the three days it is still a retry.
     await dispatchAt(at(71)).run('DELIVER', voucher.id);
     expect((await voucherOf(invoice.id)).deliveryStatus).toBe('FAILED');
