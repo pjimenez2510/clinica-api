@@ -372,27 +372,35 @@ describe('ORD-161 la orden nombra la ficha vigente al emitirse, con su sexo, y n
     ).rejects.toThrow(/service_order_chart_of_record_when_issued/);
   });
 
-  it('ORD-161 ORD-036 el resultado en esa atención se sigue clasificando con el sexo de la ficha de la atención (D-171.3, pendiente del autor)', async () => {
+  it('ORD-176 mientras dura la unificación, el resultado de esa atención se clasifica con el sexo de la vigente; deshecha, con el de su ficha', async () => {
     const prisma = db();
     const scene = await aMergedScene(prisma);
+    const hb = (orderId: string) =>
+      adapters(prisma).reports.register(
+        {
+          orderId,
+          performedById: null,
+          issuedAt: new Date(),
+          results: [
+            { analyteDefinitionId: scene.scene.hb.id, valueNumeric: 12.5 },
+          ],
+        },
+        requester,
+      );
     await scene.merge();
-    const after = await scene.issueAnother();
-    // Control positivo: la orden nombra a la vigente, un hombre.
-    expect((await scene.printed(after.id)).sex).toBe('MALE');
+    const during = await scene.issueAnother();
 
-    const report = await adapters(prisma).reports.register(
-      {
-        orderId: after.id,
-        performedById: null,
-        issuedAt: new Date(),
-        results: [
-          { analyteDefinitionId: scene.scene.hb.id, valueNumeric: 12.5 },
-        ],
-      },
-      requester,
-    );
-    // El rango de la mujer de la duplicada: cambiarlo es la decisión D-171.3.
-    expect(report.results[0]).toMatchObject({
+    // D-171 §3: la duplicada se registró «mujer»; la vigente es un hombre, y
+    // 12,5 g/dL en un hombre es baja.
+    expect((await hb(during.id)).results[0]).toMatchObject({
+      abnormalFlag: 'LOW',
+      referenceLow: 13,
+    });
+
+    // Control positivo: deshecha la unificación, vuelve el sexo de su ficha.
+    await scene.undo();
+    const after = await scene.issueAnother();
+    expect((await hb(after.id)).results[0]).toMatchObject({
       abnormalFlag: 'NORMAL',
       referenceLow: 12,
     });

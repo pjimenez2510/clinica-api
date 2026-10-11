@@ -321,7 +321,9 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
             patientId: true,
             ageInDays: true,
             ageEstimated: true,
-            patient: { select: { sex: true } },
+            patient: {
+              select: { sex: true, mergedInto: { select: { sex: true } } },
+            },
           },
         },
       },
@@ -332,7 +334,13 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     return {
       patientId: row.encounter.patientId,
       siteId: row.siteId,
-      sex: patient.sex,
+      /**
+       * ORD-176 (D-171 §3, por confirmar con un clínico). While the chart of
+       * the attention is merged into another, the SURVIVOR's sex: an absorbed
+       * chart is no longer corrected (PA-045), so a duplicate registered with
+       * the wrong sex keeps it. Merges do not chain (`trg_patient_merge_not_chained`).
+       */
+      sex: patient.mergedInto?.sex ?? patient.sex,
       /**
        * ORD-036, ORD-127. The WHOLE age in days the attention froze (EN-221),
        * and whether its birth date was an estimate. ⚠️ NOT `age_days`: that is
