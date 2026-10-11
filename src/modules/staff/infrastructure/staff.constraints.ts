@@ -14,8 +14,9 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
  *
  * TWO OF THEM ARRIVED FROM `specialties.constraints.ts` ON 13-08-2026 with the
  * endpoints they belong to: `practitioner_specialty_one_primary` (ST-008) and
- * `duration_exception_range` (ST-009). `service_type_duration_range` stayed
- * behind, because the base duration is still the catalogue's.
+ * `duration_exception_range` (ST-009). The consultation's own duration
+ * (`service_duration_range`, ADR-013) is registered by `billing`, which owns
+ * the service.
  */
 registerConstraintMeanings({
   // ST-042 (AG-106), THE guarantee of S2. The service does not check for an

@@ -20,8 +20,9 @@
  * answers them, the route `agenda` took for AG-027 and this module already
  * took for the patient chart and the practitioner.
  *
- * ⚠️ AND THERE IS NO METHOD THAT PRICES ANYTHING. `encounter_procedure` has a
- * `tariff_amount` column and it is NOT exposed here: what a procedure costs is
+ * ⚠️ AND THERE IS NO METHOD THAT PRICES ANYTHING. `encounter_procedure` had a
+ * `tariff_amount` column, never exposed and dropped on 11-10-2026 (D-218 §3):
+ * what a procedure costs is
  * `charge_item`, which belongs to `billing`, resolved from the price list of
  * the payer on the service date (EN-051, D-049). A clinical table that also
  * carries money is the separation EN-051 exists to keep — see the note on
@@ -116,8 +117,8 @@ export interface DiagnosisVersionView {
  * One procedure of block K.
  *
  * ⚠️ NO AMOUNT, AND THE ABSENCE IS THE REQUIREMENT (EN-051, D-049).
- * `encounter_procedure.tariff_amount` exists in the schema and nothing here
- * reads or writes it: freezing money inside a clinical table collides with the
+ * `encounter_procedure.tariff_amount` was dropped (D-218 §3) without anything
+ * here having read or written it: freezing money inside a clinical table collides with the
  * separation «lo clínico no es lo económico», which is what `billing` is built
  * on. What a procedure costs is a `charge_item` — resolved from the price list
  * of the attention's payer on the service date, with the resolved price row

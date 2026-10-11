@@ -102,7 +102,7 @@ function candidate(
     preferredFrom: PREFERRED_FROM,
     preferredTo: PREFERRED_TO,
     practitionerId: null,
-    serviceTypeId: null,
+    serviceId: null,
     contactAttempts: 0,
     lastContactedAt: null,
     lastOutcome: null,
@@ -123,7 +123,7 @@ function entryView(
     siteId: SITE,
     patientId: PATIENT,
     practitionerId: null,
-    serviceTypeId: null,
+    serviceId: null,
     preferredFrom: PREFERRED_FROM,
     preferredTo: PREFERRED_TO,
     status: 'WAITING',
@@ -163,7 +163,7 @@ function agendaEntry(
     emergencyAssessedAt: null,
     emergencyFlaggedAt: null,
     bookingChannel: 'PHONE',
-    serviceTypeId: 'service-general',
+    serviceId: 'service-general',
     createdById: RECEPTIONIST,
     rescheduledFromId: null,
     rescheduledToId: null,
@@ -202,7 +202,7 @@ function build(
           preferredFrom: entry.preferredFrom,
           preferredTo: entry.preferredTo,
           practitionerId: entry.practitionerId,
-          serviceTypeId: entry.serviceTypeId,
+          serviceId: entry.serviceId,
         }),
       );
     },
@@ -286,7 +286,7 @@ describe('WaitlistService', () => {
           preferredFrom: '2026-09-01',
           preferredTo: '2026-09-30',
           practitionerId: null,
-          serviceTypeId: null,
+          serviceId: null,
         },
       ]);
       expect(entry.status).toBe('WAITING');
@@ -301,11 +301,11 @@ describe('WaitlistService', () => {
         preferredFrom: d('2026-09-01'),
         preferredTo: d('2026-09-30'),
         practitionerId: PRACTITIONER,
-        serviceTypeId: 'service-general',
+        serviceId: 'service-general',
       });
 
       expect(recorded.enrolled[0]?.practitionerId).toBe(PRACTITIONER);
-      expect(recorded.enrolled[0]?.serviceTypeId).toBe('service-general');
+      expect(recorded.enrolled[0]?.serviceId).toBe('service-general');
     });
 
     it('AG-060 refuses to enrol a chart that was merged into another', async () => {
@@ -363,7 +363,7 @@ describe('WaitlistService', () => {
       // The slot comes from the released ROW and not from the query string, so
       // nobody can ask about an interval that never came free.
       expect(proposal.slot.practitionerId).toBe(PRACTITIONER);
-      expect(proposal.slot.serviceTypeId).toBe('service-general');
+      expect(proposal.slot.serviceId).toBe('service-general');
     });
 
     it('AG-061 resolves the day of the freed slot in Ecuador and not in the session zone', async () => {

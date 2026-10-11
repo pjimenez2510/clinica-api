@@ -15,7 +15,11 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
-import { createPatient, createSite } from './setup/fixtures';
+import {
+  createConsultation,
+  createPatient,
+  createSite,
+} from './setup/fixtures';
 import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { closeApp, listenForTests } from './setup/http-server';
 
@@ -618,14 +622,14 @@ describe('el bloque K por HTTP', () => {
         ),
       ).toEqual([]);
 
-      const [row] = await prisma.$queryRawUnsafe<
-        { tariff_amount: string | null }[]
-      >(
-        `SELECT tariff_amount::text AS tariff_amount
-           FROM encounter_procedure WHERE id = $1::uuid`,
-        (body as { id: string }).id,
-      );
-      expect(row?.tariff_amount).toBeNull();
+      // La fila SÍ se escribió (control positivo), y sin dónde guardar un
+      // importe: `tariff_amount` se retiró el 11-10-2026 (D-218 §3).
+      const stored = await prisma.encounterProcedure.findUniqueOrThrow({
+        where: { id: (body as { id: string }).id },
+      });
+      expect(
+        Object.keys(stored).filter((key) => /amount|price|tarif/i.test(key)),
+      ).toEqual([]);
     });
 
     it('EN-151 registra el procedimiento de rutina sin pedir consentimiento', async () => {
@@ -1598,8 +1602,10 @@ describe('el bloque K por HTTP', () => {
     it('EN-185 propone «primera vez» sólo cuando no hay ninguna atención que pueda ser del servicio', async () => {
       const specialty = await prisma.specialty.create({ data: { code: `PED-${siteId.slice(0, 8)}`, name: `Pediatría ${siteId}` } }); // prettier-ignore
       const other = await prisma.specialty.create({ data: { code: `DER-${siteId.slice(0, 8)}`, name: `Dermatología ${siteId}` } }); // prettier-ignore
-      const serviceType = await prisma.serviceType.create({ data: { specialtyId: specialty.id, name: 'Consulta', durationMinutes: 20 } }); // prettier-ignore
-      const otherType = await prisma.serviceType.create({ data: { specialtyId: other.id, name: 'Consulta', durationMinutes: 20 } }); // prettier-ignore
+      // ADR-013: the consultations are services, and two active ones do not
+      // share a name clinic-wide (BI-278).
+      const consultation = await createConsultation(prisma, { specialtyId: specialty.id, name: 'Consulta pediátrica' }); // prettier-ignore
+      const otherType = await createConsultation(prisma, { specialtyId: other.id, name: 'Consulta dermatológica' }); // prettier-ignore
       const now = Date.now();
       const anAppointment = (typeId: string, offsetDays: number) =>
         prisma.agendaEntry.create({
@@ -1609,12 +1615,12 @@ describe('el bloque K por HTTP', () => {
             siteId,
             practitionerId: doctorPractitionerId,
             patientId,
-            serviceTypeId: typeId,
+            serviceId: typeId,
             startsAt: new Date(now + offsetDays * DAY),
             endsAt: new Date(now + offsetDays * DAY + 20 * 60 * 1000),
           },
         });
-      const today = await anAppointment(serviceType.id, 1);
+      const today = await anAppointment(consultation.id, 1);
       const path = `/encounters/visit-sequence-proposal?agendaEntryId=${today.id}`;
 
       // Earlier only in another, KNOWN specialty: «primera vez» is certain.

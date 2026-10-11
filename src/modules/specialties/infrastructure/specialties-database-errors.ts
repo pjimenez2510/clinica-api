@@ -1,8 +1,5 @@
 import type { DomainError } from '../../../shared/domain/errors/domain-error';
-import {
-  ServiceTypeDuplicateError,
-  SpecialtyDuplicateError,
-} from '../domain/specialties.errors';
+import { SpecialtyDuplicateError } from '../domain/specialties.errors';
 
 /**
  * Reads which specialties constraint PostgreSQL raised, so the repository
@@ -86,7 +83,7 @@ function constraintNameOf(error: PrismaErrorLike): string | undefined {
 
 /**
  * The functional unique indexes of this module, each mapped to the domain
- * error whose code SP-006 and SP-026 fix. The migration
+ * error whose code SP-006 fixes. The migration
  * `20260812222827_configuration_specialties_and_durations` is where these
  * names are born; adding an index there without a line here means the client
  * gets a generic `DUPLICATE_VALUE` instead of the contracted code.
@@ -94,7 +91,6 @@ function constraintNameOf(error: PrismaErrorLike): string | undefined {
 const DUPLICATE_BY_CONSTRAINT: Record<string, () => DomainError> = {
   specialty_code_unique: () => new SpecialtyDuplicateError('code'),
   specialty_name_unique: () => new SpecialtyDuplicateError('name'),
-  service_type_name_unique_per_specialty: () => new ServiceTypeDuplicateError(),
 };
 
 /**
@@ -124,8 +120,7 @@ const RESTRICTED_DELETE =
  * Whether a DELETE was refused because rows still reference the target
  * (`ON DELETE RESTRICT`: SQLSTATE 23001, or 23503 for a plain FK). The
  * caller knows WHICH entity it was deleting, so it — not a name table —
- * picks between `SPECIALTY_IN_USE` and `SERVICE_TYPE_IN_USE` (SP-003,
- * SP-025). Only ever called in a delete's catch block: an INSERT's FK
+ * picks the «in use» code (SP-003). Only ever called in a delete's catch block: an INSERT's FK
  * failure would match the message too, but no insert path asks.
  */
 export function isForeignKeyRestriction(error: unknown): boolean {

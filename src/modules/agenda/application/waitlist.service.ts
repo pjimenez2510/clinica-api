@@ -52,12 +52,12 @@ export interface EnrolRequest {
   preferredTo: ClinicalDate;
   practitionerId?: string;
   /**
-   * AG-060. The clinic's own `service_type`, which is what
-   * `agenda_entry.service_type_id` names since C4 and what this column names
-   * since `waitlist_service_type_follows_agenda`. Absent means ANY type, so
-   * the entry is a wider match rather than a narrower one.
+   * AG-060. The consultation service (ADR-013), the same table
+   * `agenda_entry.service_id` names, so AG-061 can compare them. Absent means
+   * ANY consultation, so the entry is a wider match rather than a narrower
+   * one.
    */
-  serviceTypeId?: string;
+  serviceId?: string;
 }
 
 /** AG-065 to AG-067. The site whose open entries are swept and ranked. */
@@ -186,7 +186,7 @@ export class WaitlistService {
       preferredFrom: request.preferredFrom,
       preferredTo: request.preferredTo,
       practitionerId: request.practitionerId ?? null,
-      serviceTypeId: request.serviceTypeId ?? null,
+      serviceId: request.serviceId ?? null,
     });
 
     // AG-074. The site and the fact. No chart identifier, no dates, no name.
@@ -518,7 +518,7 @@ export class WaitlistService {
       practitionerId: released.practitionerId,
       // A released BLOCK fixes no type of attention, and an entry that demands
       // one is simply not satisfied by it.
-      serviceTypeId: released.serviceTypeId,
+      serviceId: released.serviceId,
       startsAt: released.startsAt,
       endsAt: released.endsAt,
     };

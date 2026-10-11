@@ -39,7 +39,7 @@ export function toEntryResponse(entry: AgendaEntryView): AgendaEntryResponse {
     emergencyAssessedAt: entry.emergencyAssessedAt?.toISOString() ?? null,
     emergencyFlaggedAt: entry.emergencyFlaggedAt?.toISOString() ?? null,
     bookingChannel: entry.bookingChannel,
-    serviceTypeId: entry.serviceTypeId,
+    serviceId: entry.serviceId,
     createdById: entry.createdById,
     // AG-051: both ends of the reschedule chain, so neither entry has to be
     // looked up to find out what happened to the other.

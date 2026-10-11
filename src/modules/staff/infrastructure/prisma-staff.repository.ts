@@ -287,14 +287,15 @@ export class PrismaStaffRepository implements StaffRepository {
   }
 
   /**
-   * ST-009. Only ACTIVE types of ACTIVE specialties: this listing feeds
-   * selection, not administration of the catalogue.
+   * ST-009. Only ACTIVE consultations of ACTIVE specialties (ADR-013): this
+   * listing feeds selection, not administration of the catalogue.
    */
   async listPractitionerDurations(
     practitionerId: string,
   ): Promise<readonly PractitionerDurationRow[]> {
-    const rows = await this.prisma.serviceType.findMany({
+    const rows = await this.prisma.service.findMany({
       where: {
+        kind: 'CONSULTATION',
         active: true,
         specialty: {
           active: true,
@@ -314,20 +315,28 @@ export class PrismaStaffRepository implements StaffRepository {
       orderBy: [{ specialty: { name: 'asc' } }, { name: 'asc' }],
     });
 
-    return rows.map((row) => ({
-      serviceTypeId: row.id,
-      serviceTypeName: row.name,
-      specialtyId: row.specialty.id,
-      specialtyName: row.specialty.name,
-      baseMinutes: row.durationMinutes,
-      exceptionMinutes: row.durationExceptions[0]?.durationMinutes ?? null,
-    }));
+    // `service_consultation_shape`: a consultation has both, always.
+    return rows.flatMap((row) =>
+      row.specialty === null || row.durationMinutes === null
+        ? []
+        : [
+            {
+              serviceId: row.id,
+              serviceName: row.name,
+              specialtyId: row.specialty.id,
+              specialtyName: row.specialty.name,
+              baseMinutes: row.durationMinutes,
+              exceptionMinutes:
+                row.durationExceptions[0]?.durationMinutes ?? null,
+            },
+          ],
+    );
   }
 
-  /** ST-009. Lets the service answer 404 for an unknown service type before writing an exception for it. */
-  async serviceTypeExists(id: string): Promise<boolean> {
-    const row = await this.prisma.serviceType.findUnique({
-      where: { id },
+  /** ST-009. Lets the service answer 404 for anything but an active consultation before writing an exception for it. */
+  async isActiveConsultation(id: string): Promise<boolean> {
+    const row = await this.prisma.service.findFirst({
+      where: { id, kind: 'CONSULTATION', active: true },
       select: { id: true },
     });
     return row !== null;
@@ -336,24 +345,24 @@ export class PrismaStaffRepository implements StaffRepository {
   /** ST-009. One statement; the composite key is the identity. */
   async upsertDurationException(
     practitionerId: string,
-    serviceTypeId: string,
+    serviceId: string,
     durationMinutes: number,
   ): Promise<void> {
     await this.prisma.durationException.upsert({
       where: {
-        practitionerId_serviceTypeId: { practitionerId, serviceTypeId },
+        practitionerId_serviceId: { practitionerId, serviceId },
       },
       update: { durationMinutes },
-      create: { practitionerId, serviceTypeId, durationMinutes },
+      create: { practitionerId, serviceId, durationMinutes },
     });
   }
 
   async deleteDurationException(
     practitionerId: string,
-    serviceTypeId: string,
+    serviceId: string,
   ): Promise<boolean> {
     const result = await this.prisma.durationException.deleteMany({
-      where: { practitionerId, serviceTypeId },
+      where: { practitionerId, serviceId },
     });
     return result.count > 0;
   }

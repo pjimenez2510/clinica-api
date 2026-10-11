@@ -4,7 +4,7 @@ import type { Principal } from '../../../shared/authorisation/principal';
 import { assertSitesInScope } from '../../../shared/authorisation/site-scope';
 import { resolveDuration } from '../../../shared/domain/duration-resolution';
 import {
-  ServiceTypeNotFoundError,
+  ConsultationNotFoundError,
   SpecialtyNotFoundError,
 } from '../../../shared/domain/errors/master-data.errors';
 import {
@@ -28,8 +28,8 @@ import { type Requester, StaffAuditTrail } from './staff-audit.trail';
 
 /** One row of the duration listing, with the D-010 hierarchy resolved (ST-009). */
 export interface PractitionerDurationView {
-  serviceTypeId: string;
-  serviceTypeName: string;
+  serviceId: string;
+  serviceName: string;
   specialtyId: string;
   specialtyName: string;
   baseMinutes: number;
@@ -181,7 +181,7 @@ export class PractitionerAssignmentsService {
   // --- Duration exceptions (ST-009) ------------------------------------------
 
   /**
-   * ST-009 as a listing: every service type the practitioner can serve, with
+   * ST-009 as a listing: every consultation the practitioner can serve, with
    * the duration already resolved through the SAME function the agenda uses.
    * The rule level is absent on purpose — a base duration always exists here,
    * and the schedule rule belongs to the booking, not to the file.
@@ -200,7 +200,7 @@ export class PractitionerAssignmentsService {
       resolvedMinutes:
         resolveDuration({
           exceptionMinutes: row.exceptionMinutes,
-          serviceTypeMinutes: row.baseMinutes,
+          serviceMinutes: row.baseMinutes,
         }) ?? row.baseMinutes,
     }));
   }
@@ -208,13 +208,13 @@ export class PractitionerAssignmentsService {
   /** ST-009. A PUT: setting it twice is the same exception, not two. */
   async setDurationException(
     practitionerId: string,
-    serviceTypeId: string,
+    serviceId: string,
     durationMinutes: number,
     requester: Requester,
   ): Promise<void> {
     await this.requirePractitioner(practitionerId);
-    if (!(await this.repository.serviceTypeExists(serviceTypeId))) {
-      throw new ServiceTypeNotFoundError();
+    if (!(await this.repository.isActiveConsultation(serviceId))) {
+      throw new ConsultationNotFoundError();
     }
 
     /**
@@ -224,7 +224,7 @@ export class PractitionerAssignmentsService {
      * `duration_exception_range` and still impossible to book.
      *
      * IT IS THE RUNG THAT WINS (SP-023), so leaving it out would make the
-     * guarantee cosmetic: every service type could tile the grid and one
+     * guarantee cosmetic: every consultation could tile the grid and one
      * doctor's override would still strand every appointment of theirs.
      */
     assertDurationFitsSlotAtom(
@@ -235,17 +235,17 @@ export class PractitionerAssignmentsService {
 
     const exceptionBefore = await this.currentException(
       practitionerId,
-      serviceTypeId,
+      serviceId,
     );
     await this.repository.upsertDurationException(
       practitionerId,
-      serviceTypeId,
+      serviceId,
       durationMinutes,
     );
     // ST-052. `null` before means there was no exception: this one is new.
     await this.trail.record('UPDATE', practitionerId, requester, {
-      before: { serviceTypeId, exceptionMinutes: exceptionBefore },
-      after: { serviceTypeId, exceptionMinutes: durationMinutes },
+      before: { serviceId, exceptionMinutes: exceptionBefore },
+      after: { serviceId, exceptionMinutes: durationMinutes },
     });
   }
 
@@ -256,41 +256,40 @@ export class PractitionerAssignmentsService {
    */
   async removeDurationException(
     practitionerId: string,
-    serviceTypeId: string,
+    serviceId: string,
     requester: Requester,
   ): Promise<void> {
     await this.requirePractitioner(practitionerId);
 
     const exceptionBefore = await this.currentException(
       practitionerId,
-      serviceTypeId,
+      serviceId,
     );
     const removed = await this.repository.deleteDurationException(
       practitionerId,
-      serviceTypeId,
+      serviceId,
     );
     if (removed) {
       await this.trail.record('UPDATE', practitionerId, requester, {
-        before: { serviceTypeId, exceptionMinutes: exceptionBefore },
-        after: { serviceTypeId, exceptionMinutes: null },
+        before: { serviceId, exceptionMinutes: exceptionBefore },
+        after: { serviceId, exceptionMinutes: null },
       });
     }
   }
 
   /**
-   * ST-052. The exception a practitioner holds for one service type, or `null`.
+   * ST-052. The exception a practitioner holds for one consultation, or `null`.
    * Read only so the trail can say what an edit replaced; nothing is decided
    * on it — the upsert and the delete are single statements either way.
    */
   private async currentException(
     practitionerId: string,
-    serviceTypeId: string,
+    serviceId: string,
   ): Promise<number | null> {
     const rows =
       await this.repository.listPractitionerDurations(practitionerId);
     return (
-      rows.find((row) => row.serviceTypeId === serviceTypeId)
-        ?.exceptionMinutes ?? null
+      rows.find((row) => row.serviceId === serviceId)?.exceptionMinutes ?? null
     );
   }
 

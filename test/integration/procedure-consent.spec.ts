@@ -8,10 +8,12 @@ import '../../src/modules/billing/infrastructure/billing.constraints';
 import { aTariffConcept } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import {
+  createConsultation,
   createEncounter,
   createExamService,
   createPatient,
   createPractitioner,
+  createService,
   createSite,
   createUser,
 } from './setup/fixtures';
@@ -47,33 +49,41 @@ async function anAttention(prisma: PrismaClient) {
   };
 }
 
-/** A tariff concept, and — when `marked` — a service that demands the 024. */
+/**
+ * A tariff concept and the PROCEDURE service that charges it, tied BY CODE
+ * (BI-286: `service.msp_code` is the concept's code) — and, when `marked`,
+ * demanding the 024.
+ */
 async function aConcept(
   prisma: PrismaClient,
   user: { id: string },
   marked: boolean,
 ) {
   const concept = await aTariffConcept(prisma);
-  const service = await createExamService(prisma, {
+  await createService(prisma, {
     code: `P-${concept.code}`,
     name: `Prestación ${concept.code}`,
     kind: 'PROCEDURE',
+    mspCode: concept.code,
   });
-  await prisma.billableService.update({
-    where: { id: service.id },
-    data: {
-      procedureConceptId: concept.id,
-      tariffCode: concept.code,
-      ...(marked
-        ? {
-            requiresWrittenConsent: true,
-            writtenConsentSetAt: new Date(),
-            writtenConsentSetById: user.id,
-          }
-        : {}),
-    },
-  });
+  if (marked) {
+    await prisma.service.updateMany({
+      where: { kind: 'PROCEDURE', mspCode: concept.code },
+      data: {
+        requiresWrittenConsent: true,
+        writtenConsentSetAt: new Date(),
+        writtenConsentSetById: user.id,
+      },
+    });
+  }
   return concept;
+}
+
+/** BI-286. The procedure service that charges `concept`, by its code. */
+function serviceOf(prisma: PrismaClient, concept: { code: string }) {
+  return prisma.service.findFirstOrThrow({
+    where: { kind: 'PROCEDURE', mspCode: concept.code },
+  });
 }
 
 function procedureData(
@@ -254,11 +264,11 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
       await tx.$executeRaw`
         INSERT INTO encounter_procedure_retraction
           (id, encounter_id, concept_id, procedure_code, procedure_display,
-           quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+           quantity, performed_at, note, edited_by_id, edited_at,
            recorded_at, recorded_by_id,
            retracted_at, retracted_by_id, reason)
         SELECT id, encounter_id, concept_id, procedure_code, procedure_display,
-               quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+               quantity, performed_at, note, edited_by_id, edited_at,
                recorded_at, recorded_by_id,
                ${new Date()}, ${user.id}::uuid, 'Registrado por error'
           FROM encounter_procedure WHERE id = ${original.id}::uuid`;
@@ -402,35 +412,30 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
     expect(await prisma.procedureConsent.findUniqueOrThrow({ where: { id: signed.id } })).toEqual(signed); // prettier-ignore
   });
 
-  it('BI-256 la BASE no admite la marca sin quién y cuándo, ni en una prestación que no ata un procedimiento', async () => {
+  it('BI-256 la BASE no admite la marca sin quién y cuándo, ni en un servicio que no es un procedimiento con su código', async () => {
     const prisma = db();
     const user = await createUser(prisma);
-    const service = await createExamService(prisma, { code: 'P-SIN', name: 'Sin atadura', kind: 'PROCEDURE' }); // prettier-ignore
+    const service = await createService(prisma, { code: 'P-SIN', name: 'Sin código', kind: 'PROCEDURE' }); // prettier-ignore
 
     await expect(
-      prisma.billableService.update({
+      prisma.service.update({
         where: { id: service.id },
         data: { requiresWrittenConsent: true, writtenConsentSetAt: new Date(), writtenConsentSetById: user.id }, // prettier-ignore
       }),
-    ).rejects.toThrow(/billable_service_written_consent_needs_a_procedure/);
+    ).rejects.toThrow(/service_written_consent_needs_a_procedure/);
 
     const concept = await aTariffConcept(prisma);
     await expect(
-      prisma.billableService.update({
+      prisma.service.update({
         where: { id: service.id },
-        data: {
-          procedureConceptId: concept.id,
-          tariffCode: concept.code,
-          requiresWrittenConsent: true,
-        },
+        data: { mspCode: concept.code, requiresWrittenConsent: true },
       }),
-    ).rejects.toThrow(/billable_service_written_consent_states_who/);
+    ).rejects.toThrow(/service_written_consent_states_who/);
 
-    await prisma.billableService.update({
+    await prisma.service.update({
       where: { id: service.id },
       data: {
-        procedureConceptId: concept.id,
-        tariffCode: concept.code,
+        mspCode: concept.code,
         requiresWrittenConsent: true,
         writtenConsentSetAt: new Date(),
         writtenConsentSetById: user.id,
@@ -513,19 +518,19 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
       await tx.$executeRaw`
         INSERT INTO encounter_procedure_retraction
           (id, encounter_id, concept_id, procedure_code, procedure_display,
-           quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+           quantity, performed_at, note, edited_by_id, edited_at,
            recorded_at, recorded_by_id,
            retracted_at, retracted_by_id, reason)
         SELECT id, encounter_id, concept_id, procedure_code, procedure_display,
-               quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+               quantity, performed_at, note, edited_by_id, edited_at,
                recorded_at, recorded_by_id,
                ${new Date()}, ${user.id}::uuid, 'Registrado por error'
           FROM encounter_procedure WHERE id = ${original.id}::uuid`;
       await tx.encounterProcedure.delete({ where: { id: original.id } });
     });
     // The mark is switched on afterwards.
-    await prisma.billableService.updateMany({
-      where: { procedureConceptId: concept.id },
+    await prisma.service.updateMany({
+      where: { kind: 'PROCEDURE', mspCode: concept.code },
       data: { requiresWrittenConsent: true, writtenConsentSetAt: new Date(), writtenConsentSetById: user.id }, // prettier-ignore
     });
 
@@ -549,107 +554,74 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
     ).rejects.toThrow(/encounter_procedure_consent_required/);
   });
 
-  it('BI-256 D-199.1 la BASE no deja cambiar ni borrar la atadura de una prestación marcada; desmarcada, sí', async () => {
+  it('BI-256 D-199.1 la BASE no deja cambiar el código ni borrar un servicio marcado; desmarcado, sí', async () => {
     const prisma = db();
     const user = await createUser(prisma);
     const concept = await aConcept(prisma, user, true);
     const other = await aTariffConcept(prisma);
-    const service = await prisma.billableService.findFirstOrThrow({ where: { procedureConceptId: concept.id } }); // prettier-ignore
+    const service = await serviceOf(prisma, concept);
 
     await expect(
-      prisma.billableService.update({ where: { id: service.id }, data: { procedureConceptId: other.id, tariffCode: other.code } }), // prettier-ignore
-    ).rejects.toThrow(/billable_service_written_consent_tie_locked/);
+      prisma.service.update({ where: { id: service.id }, data: { mspCode: other.code } }), // prettier-ignore
+    ).rejects.toThrow(/service_written_consent_code_locked/);
     await expect(
-      prisma.billableService.delete({ where: { id: service.id } }),
-    ).rejects.toThrow(/billable_service_written_consent_tie_locked/);
+      prisma.service.delete({ where: { id: service.id } }),
+    ).rejects.toThrow(/service_written_consent_code_locked/);
 
     // Control positivo: desmarcar y cambiar en la misma escritura.
-    await prisma.billableService.update({
+    await prisma.service.update({
       where: { id: service.id },
-      data: {
-        requiresWrittenConsent: false,
-        procedureConceptId: other.id,
-        tariffCode: other.code,
-      },
+      data: { requiresWrittenConsent: false, mspCode: other.code },
     });
   });
 
-  it('BI-257 la BASE no admite dos prestaciones atadas al mismo concepto', async () => {
+  it('BI-286 BI-257 la BASE no admite dos procedimientos activos con el mismo código', async () => {
     const prisma = db();
     const user = await createUser(prisma);
     const concept = await aConcept(prisma, user, false);
-    const second = await createExamService(prisma, { code: 'P-DOS', name: 'Biopsia (convenio)', kind: 'PROCEDURE' }); // prettier-ignore
+    const second = await createService(prisma, { code: 'P-DOS', name: 'Biopsia (convenio)', kind: 'PROCEDURE' }); // prettier-ignore
 
-    await expect(
-      prisma.billableService.update({ where: { id: second.id }, data: { procedureConceptId: concept.id, tariffCode: concept.code } }), // prettier-ignore
-    ).rejects.toThrow();
-    const raised = await prisma.billableService
-      .update({
-        where: { id: second.id },
-        data: { procedureConceptId: concept.id, tariffCode: concept.code },
-      })
+    const raised = await prisma.service
+      .update({ where: { id: second.id }, data: { mspCode: concept.code } })
       .then(
         () => undefined,
         (error: unknown) => error,
       );
+    // Prisma names the index by its columns; the constraint is what
+    // `extractDatabaseProblem` translates.
+    expect(String(raised)).toMatch(/Unique constraint failed on the fields: \(`msp_code`\)/); // prettier-ignore
     expect(extractDatabaseProblem(raised)?.code).toBe(
       'SERVICE_PROCEDURE_TAKEN',
     );
-    // Control positivo: a otro concepto, sí.
+    // Control positivo: con otro código, sí; y retirado el primero, también
+    // con el suyo (el índice es sólo de activos).
     const other = await aTariffConcept(prisma);
-    await prisma.billableService.update({ where: { id: second.id }, data: { procedureConceptId: other.id, tariffCode: other.code } }); // prettier-ignore
+    await prisma.service.update({ where: { id: second.id }, data: { mspCode: other.code } }); // prettier-ignore
+    const first = await serviceOf(prisma, concept);
+    await prisma.service.update({ where: { id: first.id }, data: { active: false } }); // prettier-ignore
+    await prisma.service.update({ where: { id: second.id }, data: { mspCode: concept.code } }); // prettier-ignore
   });
 
-  it('BI-257 D-179 la BASE no deja a una prestación atada con un código del tarifario distinto del de su procedimiento', async () => {
+  it('ORD-163 BI-284 la extensión de orden sólo cabe en un examen, imagen o procedimiento, y una por servicio', async () => {
     const prisma = db();
-    const concept = await aTariffConcept(prisma);
-    const service = await createExamService(prisma, { code: 'P-TAR', name: 'Biopsia', kind: 'PROCEDURE', tariffCode: '55555' }); // prettier-ignore
-
-    await expect(
-      prisma.billableService.update({ where: { id: service.id }, data: { procedureConceptId: concept.id } }), // prettier-ignore
-    ).rejects.toThrow(/billable_service_tariff_code_is_its_procedure/);
-    await prisma.billableService.update({
-      where: { id: service.id },
-      data: { procedureConceptId: concept.id, tariffCode: concept.code },
+    const specialty = await prisma.specialty.create({
+      data: { code: 'medicina-general', name: 'Medicina General' },
     });
-    const raised = await prisma.billableService
-      .update({ where: { id: service.id }, data: { tariffCode: '99999' } })
-      .then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-    expect(extractDatabaseProblem(raised)?.code).toBe(
-      'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
-    );
-    // Control positivo: desatada, el código se escribe a mano otra vez.
-    await prisma.billableService.update({
-      where: { id: service.id },
-      data: { procedureConceptId: null, tariffCode: '99999' },
-    });
-  });
+    const consultation = await createConsultation(prisma, { specialtyId: specialty.id, name: 'Control' }); // prettier-ignore
+    const exam = await createExamService(prisma, { code: 'EX-PROC', name: 'Examen de procedimiento', kind: 'PROCEDURE' }); // prettier-ignore
 
-  it('ORD-163 BI-257 la BASE no ata a un procedimiento la prestación de un examen, ni enlaza un examen a una prestación atada', async () => {
-    const prisma = db();
-    const user = await createUser(prisma);
-    const tiedConcept = await aConcept(prisma, user, false);
-    const tied = await prisma.billableService.findFirstOrThrow({ where: { procedureConceptId: tiedConcept.id } }); // prettier-ignore
-    const examService = await createExamService(prisma, { code: 'EX-PROC', name: 'Examen de procedimiento', kind: 'PROCEDURE' }); // prettier-ignore
-    const exam = (billableServiceId: string, code: string) =>
-      prisma.examDefinition.create({
-        data: { code, category: 'PROCEDURE', billableServiceId },
-      });
-
-    await expect(exam(tied.id, 'EX-A')).rejects.toThrow(
-      /exam_definition_service_not_tied/,
-    );
-    await exam(examService.id, 'EX-B');
-    const other = await aTariffConcept(prisma);
+    // Una consulta no se pide: no lleva extensión (`trg_service_exam_kind_admits`).
     await expect(
-      prisma.billableService.update({
-        where: { id: examService.id },
-        data: { procedureConceptId: other.id, tariffCode: other.code },
-      }),
-    ).rejects.toThrow(/billable_service_exam_not_tied/);
+      prisma.serviceExam.create({ data: { serviceId: consultation.id } }),
+    ).rejects.toThrow(/service_exam_kind_admits/);
+    // Y un servicio pedido tiene UNA extensión: el examen es el servicio.
+    await expect(
+      prisma.serviceExam.create({ data: { serviceId: exam.id } }),
+    ).rejects.toThrow();
+    // Control positivo: el procedimiento pedido sí la tiene.
+    await expect(
+      prisma.serviceExam.count({ where: { serviceId: exam.id } }),
+    ).resolves.toBe(1);
   });
 
   it('EN-152 EN-153 D-199.4 la BASE admite como quien informó al profesional de la atención o a uno activo de su sede; a nadie más', async () => {

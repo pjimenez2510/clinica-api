@@ -32,6 +32,7 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 
 import { useDatabase } from './setup/database';
 import {
+  createConsultation,
   createEncounter,
   createPatient,
   createRoom,
@@ -525,6 +526,52 @@ describe('editar en el sitio la cita y el bloqueo (D-127)', () => {
       );
       expect(body.items[0]!.replacedBy.id).toBe(userId);
       expect(JSON.stringify(body)).not.toContain('Dato de salud');
+    });
+
+    it('AG-168 una versión de antes de ADR-013 nombra un tipo que ya no existe: se sirve sin consulta', async () => {
+      const specialty = await prisma.specialty.create({
+        data: { code: 'cardiologia', name: 'Cardiología' },
+      });
+      const consultation = await createConsultation(prisma, { specialtyId: specialty.id, name: 'Control' }); // prettier-ignore
+      const entryId = await bookedEntry({ serviceId: consultation.id });
+      await edit(entryId, NEW_SLOT).expect(200);
+
+      // Lo que el disparador archivó antes del 11-10-2026: la misma fila, con
+      // `service_type_id` hacia una tabla que se borró. `record_version` es de
+      // sólo inserción, así que la versión antigua se AÑADE, no se reescribe.
+      const [archived] = await versionsOf(entryId);
+      const { service_id: serviceId, ...rest } = archived!.data as Record<string, unknown>; // prettier-ignore
+      expect(serviceId).toBe(consultation.id);
+      await prisma.recordVersion.create({
+        data: {
+          resourceType: 'agenda_entry',
+          resourceId: entryId,
+          version: 2,
+          data: { ...rest, service_type_id: '00000000-0000-4000-8000-0000000000ee' }, // prettier-ignore
+          changedById: archived!.changedById,
+          changedAt: new Date(archived!.changedAt.getTime() + 1_000),
+        },
+      });
+
+      const response = await withAuth(
+        api().get(`/api/v1/agenda/sites/${siteId}/entries/${entryId}/versions`),
+      ).expect(200);
+
+      const body = response.body as {
+        items: { version: number; serviceId: string | null }[];
+      };
+      expect(
+        body.items.map(({ version, serviceId: id }) => ({
+          version,
+          serviceId: id,
+        })),
+      ).toEqual([
+        // prettier-ignore
+        // La vieja: un identificador que no es de ningún servicio no se sirve.
+        { version: 2, serviceId: null },
+        // Control positivo: la que nombra `service_id` sí trae su consulta.
+        { version: 1, serviceId: consultation.id },
+      ]);
     });
 
     it('AG-071 responde 404 para la cita de otra sede y 403 por la URL ajena', async () => {

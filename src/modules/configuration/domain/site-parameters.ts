@@ -185,7 +185,7 @@ export const PARAMETER_RANGES = {
   /**
    * D-021. Mirrors `site_parameter_slot_atom_minutes_range`.
    *
-   * THE STEP OF 5 IS WHAT KEEPS THE DATABASE HONEST. `service_type_duration_range`
+   * THE STEP OF 5 IS WHAT KEEPS THE DATABASE HONEST. `service_duration_range`
    * and `duration_exception_range` demand multiples of 5, and a `CHECK` cannot
    * reach `site_parameter` to demand the multiple of the atom instead. With
    * the atom itself restricted to multiples of 5, that table-local rule stops
@@ -403,10 +403,10 @@ export function assertParametersInRange(patch: SiteParametersPatch): void {
  *
  * IT NAMES THE DURATIONS THAT DO NOT FIT, and that is the difference between
  * a refusal and an obstacle: «no puede ser 20» leaves an administrator
- * guessing which of forty service types is in the way.
+ * guessing which of forty consultations is in the way.
  *
  * `stored` is what the WHOLE clinic has configured, not this site's — a
- * service type has no site (see `clinicSlotAtom`).
+ * consultation has no site (see `clinicSlotAtom`).
  */
 export function assertAtomFitsStoredDurations(
   atom: number,

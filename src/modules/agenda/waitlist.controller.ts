@@ -117,10 +117,9 @@ export class WaitlistController {
       preferredFrom: dto.preferredFrom,
       preferredTo: dto.preferredTo,
       practitionerId: dto.practitionerId,
-      // AG-060. Omitirlo significa «cualquiera», y desde
-      // `waitlist_service_type_follows_agenda` fijarlo significa algo: es la
-      // misma tabla que nombra la cita, así que AG-061 puede compararlos.
-      serviceTypeId: dto.serviceTypeId,
+      // AG-060. Omitting it means «any»; set, it names the same table as the
+      // appointment (`service`, ADR-013), so AG-061 can compare them.
+      serviceId: dto.serviceId,
     });
 
     return toEntryResponse(entry);
@@ -174,7 +173,7 @@ export class WaitlistController {
         startsAt: proposal.slot.startsAt.toISOString(),
         endsAt: proposal.slot.endsAt.toISOString(),
         practitionerId: proposal.slot.practitionerId,
-        serviceTypeId: proposal.slot.serviceTypeId,
+        serviceId: proposal.slot.serviceId,
       },
       items: proposal.candidates.map(toCandidateResponse),
     };
@@ -271,7 +270,7 @@ function toEntryResponse(entry: WaitlistEntryView): WaitlistEntryResponse {
     siteId: entry.siteId,
     patientId: entry.patientId,
     practitionerId: entry.practitionerId,
-    serviceTypeId: entry.serviceTypeId,
+    serviceId: entry.serviceId,
     preferredFrom: entry.preferredFrom,
     preferredTo: entry.preferredTo,
     status: entry.status,
@@ -296,7 +295,7 @@ function toCandidateResponse(candidate: RankedCandidate): WaitlistCandidateDto {
     status: candidate.status,
     enrolledAt: candidate.enrolledAt.toISOString(),
     practitionerId: candidate.practitionerId,
-    serviceTypeId: candidate.serviceTypeId,
+    serviceId: candidate.serviceId,
     preferredFrom: candidate.preferredFrom,
     preferredTo: candidate.preferredTo,
     contactAttempts: candidate.contactAttempts,

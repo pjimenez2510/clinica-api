@@ -13,26 +13,6 @@ import { specialtyCodeFromName } from '../domain/specialty-code';
  * on the other side typed as `never`. Wording follows ADR-005.
  */
 
-/**
- * The FLOOR of SP-021, mirrored from the CHECK `service_type_duration_range`:
- * 5..240 in multiples of 5.
- *
- * NOT THE WHOLE RULE SINCE D-021 (14-08-2026). What SP-021 now demands is a
- * multiple of the site's slot atom, and neither this schema nor a `CHECK` can
- * answer it: the atom lives in `site_parameter`, so it takes a read.
- * `SpecialtiesService` does that and refuses with `DURATION_NOT_SLOT_MULTIPLE`
- * naming the atom. What survives here is the part that needs no read — and it
- * is not redundant: the atom's own range is 5..60 in steps of 5, so every
- * multiple of the atom is a multiple of 5, and a value this schema rejects
- * could never have fitted any grid.
- */
-const durationMinutesSchema = z
-  .number({ error: 'Indique la duración en minutos' })
-  .int('La duración debe ser un número entero de minutos')
-  .min(5, 'La duración mínima es de 5 minutos')
-  .max(240, 'La duración máxima es de 240 minutos')
-  .multipleOf(5, 'La duración debe ser un múltiplo de 5 minutos');
-
 const specialtyNameSchema = z
   .string({ error: 'Indique el nombre de la especialidad' })
   .trim()
@@ -54,12 +34,6 @@ const derivableSpecialtyNameSchema = specialtyNameSchema.refine(
   (name) => specialtyCodeFromName(name) !== '',
   { message: 'El nombre debe incluir letras o números' },
 );
-
-const serviceTypeNameSchema = z
-  .string({ error: 'Indique el nombre del tipo de atención' })
-  .trim()
-  .min(2, 'El nombre debe tener al menos 2 caracteres')
-  .max(120, 'El nombre no puede superar 120 caracteres');
 
 // --- Specialties (SP-001..SP-008) -----------------------------------------
 
@@ -118,78 +92,6 @@ export const specialtyListSchema = z.object({
 /** Response of GET /specialties. */
 export class SpecialtyListDto extends createZodDto(specialtyListSchema) {}
 
-// --- Service types (SP-020..SP-027) ----------------------------------------
-
-export const listServiceTypesQuerySchema = z.object({
-  includeInactive: explicitFlag,
-});
-/** Query of GET /specialties/:id/service-types. */
-export class ListServiceTypesQueryDto extends createZodDto(
-  listServiceTypesQuerySchema,
-) {}
-
-export const createServiceTypeSchema = z.object({
-  name: serviceTypeNameSchema,
-  durationMinutes: durationMinutesSchema,
-  /**
-   * SP-030. Its self-pay price from today, as decimal text (BI-001), or
-   * nothing: a type without a price proposes the consultation with «No hay
-   * precio vigente». Needs `billing:price-manage` (D-049).
-   */
-  price: z
-    .string()
-    .regex(
-      /^\d{1,10}(\.\d{1,2})?$/,
-      'El precio se escribe en dólares con dos decimales, por ejemplo 25.00',
-    ) // prettier-ignore
-    .nullable()
-    .default(null),
-});
-/** Body of POST /specialties/:id/service-types; the specialty is the route's. */
-export class CreateServiceTypeDto extends createZodDto(
-  createServiceTypeSchema,
-) {}
-
-export const updateServiceTypeSchema = z
-  .object({
-    name: serviceTypeNameSchema.optional(),
-    durationMinutes: durationMinutesSchema.optional(),
-    active: z.boolean({ error: 'Indique si el tipo está activo' }).optional(),
-  })
-  .refine(
-    (value) =>
-      value.name !== undefined ||
-      value.durationMinutes !== undefined ||
-      value.active !== undefined,
-    { message: 'Indique al menos un cambio: nombre, duración o estado' },
-  );
-/** Body of PATCH /specialties/service-types/:id. */
-export class UpdateServiceTypeDto extends createZodDto(
-  updateServiceTypeSchema,
-) {}
-
-export const serviceTypeSchema = z.object({
-  id: z.uuid(),
-  specialtyId: z.uuid(),
-  name: z.string(),
-  durationMinutes: z.number().int(),
-  active: z.boolean(),
-  /** SP-031. Its first service, born with it; changing its price is `billing`'s. */
-  billableServiceId: z.uuid().nullable(),
-  /** SP-030. That service's self-pay price in force today, as decimal text. */
-  price: z.string().nullable(),
-});
-/** Response of creating and updating a type of attention. */
-export class ServiceTypeDto extends createZodDto(serviceTypeSchema) {}
-
-export const serviceTypeListSchema = z.object({
-  items: z.array(serviceTypeSchema).readonly(),
-});
-/** Response of GET /specialties/:id/service-types. */
-export class ServiceTypeListDto extends createZodDto(serviceTypeListSchema) {}
-
 /** Response types inferred from the published schemas; see agenda.dto.ts. */
 export type SpecialtyResponse = z.infer<typeof specialtySchema>;
 export type SpecialtyListResponse = z.infer<typeof specialtyListSchema>;
-export type ServiceTypeResponse = z.infer<typeof serviceTypeSchema>;
-export type ServiceTypeListResponse = z.infer<typeof serviceTypeListSchema>;

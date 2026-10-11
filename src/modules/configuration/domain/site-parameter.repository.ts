@@ -62,14 +62,14 @@ export interface SiteParameterRepository {
    * changing the atom can be refused when it would strand one
    * (`assertAtomFitsStoredDurations`).
    *
-   * IT READS TABLES THIS MODULE DOES NOT OWN — `service_type` belongs to
-   * `specialties` and `duration_exception` to `staff` — and that is what a
-   * port is for. `sin-imports-entre-modulos` forbids importing their code, not
-   * reading rows through an adapter of our own; `agenda` already reads
-   * `service_type` and `practitioner_schedule_rule` the same way, for the same
-   * reason: the question is ours, the tables are theirs.
+   * IT READS TABLES THIS MODULE DOES NOT OWN — `service` belongs to
+   * `billing` (the consultations, ADR-013) and `duration_exception` to
+   * `staff` — and that is what a port is for. `sin-imports-entre-modulos`
+   * forbids importing their code, not reading rows through an adapter of our
+   * own; `agenda` already reads `service` and `practitioner_schedule_rule` the
+   * same way, for the same reason: the question is ours, the tables are theirs.
    *
-   * NOT SCOPED TO THE SITE, because durations are not: a service type has no
+   * NOT SCOPED TO THE SITE, because durations are not: a consultation has no
    * `site_id`. See `clinicSlotAtom`.
    */
   configuredDurations(): Promise<readonly number[]>;

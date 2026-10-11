@@ -25,7 +25,8 @@ import type {
   EditCommand,
   EditRead,
   EntryEdit,
-  AgendaServiceType,
+  AgendaConsultation,
+  ConsultationVisitKind,
   AgendaSite,
   AuthoriserPermissionsQuery,
   BlockingAppointment,
@@ -127,7 +128,7 @@ export const ENTRY_SELECT = {
   emergencyAssessedAt: true,
   emergencyFlaggedAt: true,
   bookingChannel: true,
-  serviceTypeId: true,
+  serviceId: true,
   createdById: true,
   // AG-051, the two directions of the reschedule chain. `rescheduledTo` is the
   // partial unique index read backwards, so it costs one indexed lookup and
@@ -158,7 +159,7 @@ export const ENTRY_SELECT = {
  * What availability reads of an entry: WHEN it is taken, and nothing about
  * WHO takes it (AG-074, SC-006).
  *
- * No `patient_id`, no `reason`, no `service_type`: the availability answer is
+ * No `patient_id`, no `reason`, no `service_id`: the availability answer is
  * "where are the holes", and a value that is never loaded cannot leak into a
  * response, a log or a support screenshot. Whoever needs to act on an entry
  * lists the day's agenda, which is a different route with its own scope check.
@@ -293,20 +294,40 @@ export class PrismaAgendaRepository implements AgendaRepository {
   }
 
   /**
-   * AG-112. The attention types the booking dialog offers, once a specialty is
-   * chosen.
+   * AG-112 (ADR-013). The consultation services the booking dialog offers,
+   * once a specialty is chosen: first visit, follow-up, then the ones that
+   * name neither, each group by name.
    *
    * ACTIVE ONLY, and no existence check on the specialty: an unknown id and a
-   * specialty with no active types are the same answer to this question — an
-   * empty dropdown — and a 404 here would make the screen distinguish a case
-   * it cannot act on either way. The ids it can send come from AG-111.
+   * specialty with no active consultations are the same answer to this
+   * question — an empty dropdown — and a 404 here would make the screen
+   * distinguish a case it cannot act on either way. The ids it can send come
+   * from AG-111.
    */
-  async listServiceTypes(specialtyId: string): Promise<AgendaServiceType[]> {
-    return this.prisma.serviceType.findMany({
-      where: { specialtyId, active: true },
-      select: { id: true, name: true, durationMinutes: true },
+  async listConsultations(specialtyId: string): Promise<AgendaConsultation[]> {
+    const rows = await this.prisma.service.findMany({
+      where: { kind: 'CONSULTATION', specialtyId, active: true },
+      select: { id: true, name: true, durationMinutes: true, visitKind: true },
       orderBy: { name: 'asc' },
     });
+    return rows
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        // `service_consultation_shape`: a consultation always has one.
+        durationMinutes: row.durationMinutes ?? 0,
+        visitKind: toVisitKind(row.visitKind),
+      }))
+      .sort((a, b) => VISIT_ORDER(a.visitKind) - VISIT_ORDER(b.visitKind));
+  }
+
+  /** SP-028. An active service of kind CONSULTATION, and nothing else. */
+  async isActiveConsultation(serviceId: string): Promise<boolean> {
+    const row = await this.prisma.service.findFirst({
+      where: { id: serviceId, kind: 'CONSULTATION', active: true },
+      select: { id: true },
+    });
+    return row !== null;
   }
 
   /**
@@ -568,34 +589,36 @@ export class PrismaAgendaRepository implements AgendaRepository {
    * database. An adapter that returned «the duration» would be a second,
    * silent copy of the hierarchy — and the one that no test names.
    *
-   * `active` IS NOT FILTERED. A deactivated type is not offered by the
-   * selection listing (SP-007's reasoning), but an appointment that already
-   * names one still has to resolve its minutes; refusing here would turn
-   * deactivating a type into breaking every screen that shows a booked one.
+   * `active` IS NOT FILTERED; the KIND is. A retired consultation is not
+   * offered by the selection listing, but an appointment that already names
+   * one still has to resolve its minutes; refusing here would turn retiring
+   * it into breaking every screen that shows a booked one. An exam or a
+   * procedure has no duration at all (`service_consultation_shape`), so it is
+   * answered as absent.
    */
   async durationSourcesFor(
     query: DurationSourcesQuery,
   ): Promise<StoredDurationSources | null> {
-    const [serviceType, exception] = await Promise.all([
-      this.prisma.serviceType.findUnique({
-        where: { id: query.serviceTypeId },
+    const [consultation, exception] = await Promise.all([
+      this.prisma.service.findFirst({
+        where: { id: query.serviceId, kind: 'CONSULTATION' },
         select: { durationMinutes: true },
       }),
       this.prisma.durationException.findUnique({
         where: {
-          practitionerId_serviceTypeId: {
+          practitionerId_serviceId: {
             practitionerId: query.practitionerId,
-            serviceTypeId: query.serviceTypeId,
+            serviceId: query.serviceId,
           },
         },
         select: { durationMinutes: true },
       }),
     ]);
-    if (!serviceType) return null;
+    if (consultation?.durationMinutes == null) return null;
 
     return {
       exceptionMinutes: exception?.durationMinutes ?? null,
-      serviceTypeMinutes: serviceType.durationMinutes,
+      serviceMinutes: consultation.durationMinutes,
     };
   }
 
@@ -887,7 +910,7 @@ export class PrismaAgendaRepository implements AgendaRepository {
               startsAt: booking.startsAt,
               endsAt: booking.endsAt,
               bookingChannel: booking.bookingChannel,
-              serviceTypeId: booking.serviceTypeId,
+              serviceId: booking.serviceId,
               reason: booking.reason,
               createdById: booking.createdById,
               /**
@@ -1336,7 +1359,7 @@ export class PrismaAgendaRepository implements AgendaRepository {
           startsAt: edit.startsAt,
           endsAt: edit.endsAt,
           practitionerId: edit.practitionerId,
-          serviceTypeId: edit.serviceTypeId,
+          serviceId: edit.serviceId,
           roomId: edit.roomId,
           reason: edit.reason,
           bookingChannel: edit.bookingChannel,
@@ -1409,8 +1432,28 @@ export class PrismaAgendaRepository implements AgendaRepository {
         changedBy: { select: { id: true, firstName: true, lastName: true } },
       },
     });
-    return versions.map((version) => {
-      const data = version.data as unknown as ArchivedEntry;
+    // ADR-013. A version archived before 11-10-2026 names `service_type_id`,
+    // a row that no longer exists; only an id that IS a service is served,
+    // and the rest is unknown rather than an id pointing at nothing.
+    const archived = versions.map(
+      (version) => version.data as unknown as ArchivedEntry,
+    );
+    const named = archived
+      .map((data) => data.service_id ?? data.service_type_id ?? null)
+      .filter((id): id is string => id !== null);
+    const known = new Set(
+      named.length === 0
+        ? []
+        : (
+            await this.prisma.service.findMany({
+              where: { id: { in: [...new Set(named)] } },
+              select: { id: true },
+            })
+          ).map((row) => row.id),
+    );
+    return versions.map((version, index) => {
+      const data = archived[index]!;
+      const serviceId = data.service_id ?? data.service_type_id ?? null;
       return {
         version: version.version,
         replacedAt: version.changedAt,
@@ -1422,7 +1465,8 @@ export class PrismaAgendaRepository implements AgendaRepository {
         endsAt: new Date(data.ends_at),
         practitionerId: data.practitioner_id,
         roomId: data.room_id,
-        serviceTypeId: data.service_type_id,
+        serviceId:
+          serviceId !== null && known.has(serviceId) ? serviceId : null,
         bookingChannel: data.booking_channel,
         patientId: data.patient_id,
         blocksCalendar: data.blocks_calendar,
@@ -1691,13 +1735,25 @@ async function lockLiveAttention(
   };
 }
 
+/** AG-112. First visit, follow-up, then neither. */
+const VISIT_ORDER = (kind: ConsultationVisitKind | null): number =>
+  kind === 'FIRST_VISIT' ? 0 : kind === 'FOLLOW_UP' ? 1 : 2;
+
+/** BI-279. The stored text, narrowed; `service_visit_kind_is_known` holds it. */
+function toVisitKind(raw: string | null): ConsultationVisitKind | null {
+  return raw === 'FIRST_VISIT' || raw === 'FOLLOW_UP' ? raw : null;
+}
+
 /** AG-168. The columns of an archived `agenda_entry` row this module reads. */
 interface ArchivedEntry {
   starts_at: string;
   ends_at: string;
   practitioner_id: string;
   room_id: string | null;
-  service_type_id: string | null;
+  /** Since 11-10-2026 (ADR-013). Absent from older versions. */
+  service_id?: string | null;
+  /** Before ADR-013: the dropped `service_type`, which resolves to nothing. */
+  service_type_id?: string | null;
   booking_channel: AgendaEntryVersion['bookingChannel'];
   patient_id: string | null;
   blocks_calendar: boolean;
@@ -1796,7 +1852,7 @@ export function toEntryView(row: {
   emergencyAssessedAt: Date | null;
   emergencyFlaggedAt: Date | null;
   bookingChannel: string | null;
-  serviceTypeId: string | null;
+  serviceId: string | null;
   createdById: string | null;
   overbookingReason: string | null;
   overbookingAuthorisedById: string | null;
@@ -1840,7 +1896,7 @@ export function toEntryView(row: {
     emergencyAssessedAt: row.emergencyAssessedAt,
     emergencyFlaggedAt: row.emergencyFlaggedAt,
     bookingChannel: row.bookingChannel as AgendaEntryView['bookingChannel'],
-    serviceTypeId: row.serviceTypeId,
+    serviceId: row.serviceId,
     createdById: row.createdById,
     // AG-051. `agenda_entry_one_reschedule_per_entry` is what makes reading
     // `[0]` honest: a second successor cannot exist, so this is not "the first

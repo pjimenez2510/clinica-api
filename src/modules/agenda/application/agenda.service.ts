@@ -31,7 +31,7 @@ import {
   planEmergencyCorrection,
   planEntryEdit,
 } from '../domain/entry-edit-policy';
-import { ServiceTypeNotFoundError } from '../../../shared/domain/errors/master-data.errors';
+import { ConsultationNotFoundError } from '../../../shared/domain/errors/master-data.errors';
 import { resolveDuration } from '../../../shared/domain/duration-resolution';
 import {
   type AgendaTransitionTarget,
@@ -156,8 +156,11 @@ export interface BookAppointmentRequest {
   endsAt: Date;
   /** Unvalidated: `checkBookingChannel` decides (AG-034). */
   bookingChannel: string;
-  /** SP-028: the service type recepción chose, left registered on the entry. */
-  serviceTypeId?: string;
+  /**
+   * SP-028: the consultation service recepción chose, left registered on the
+   * entry. Must be an ACTIVE service of kind CONSULTATION.
+   */
+  serviceId?: string;
   reason?: string;
   /**
    * AG-035, D-005. Present when the caller DECLARES an overbooking: the
@@ -214,8 +217,8 @@ export interface DurationProposalRequest {
   siteId: string;
   practitionerId: string;
   startsAt: Date;
-  /** Absent while recepción has not chosen a type: the third rung answers. */
-  serviceTypeId?: string;
+  /** Absent while recepción has not chosen a consultation: the third rung answers. */
+  serviceId?: string;
 }
 
 /**
@@ -261,7 +264,7 @@ export interface EditEntryRequest {
   /** AG-115. Who will attend it now. */
   practitionerId?: string;
   /** AG-115, SP-028. */
-  serviceTypeId?: string;
+  serviceId?: string;
   roomId?: string | null;
   /** The motive of the visit. Written, never served back (AG-072). */
   reason?: string | null;
@@ -551,15 +554,16 @@ export class AgendaService {
     });
 
     let stored = null;
-    if (request.serviceTypeId !== undefined) {
+    if (request.serviceId !== undefined) {
       stored = await this.agenda.durationSourcesFor({
         practitionerId: request.practitionerId,
-        serviceTypeId: request.serviceTypeId,
+        serviceId: request.serviceId,
       });
-      // A type that does not exist is a missing resource, not a duration of
-      // zero: answering the rule's minutes instead would quietly propose the
-      // wrong length for a type nobody has.
-      if (stored === null) throw new ServiceTypeNotFoundError();
+      // A consultation that does not exist (or is retired, or is not a
+      // consultation) is a missing resource, not a duration of zero:
+      // answering the site's minutes instead would quietly propose the wrong
+      // length for a visit nobody offers.
+      if (stored === null) throw new ConsultationNotFoundError();
     }
 
     return {
@@ -569,7 +573,7 @@ export class AgendaService {
       // today, and what makes «sin tipo» a case rather than an omission.
       minutes: resolveDuration({
         exceptionMinutes: stored?.exceptionMinutes,
-        serviceTypeMinutes: stored?.serviceTypeMinutes,
+        serviceMinutes: stored?.serviceMinutes,
         /**
          * SP-023's third rung, which D-021 moved from the rule to the site.
          * IT IS STILL GATED ON A RULE BEING OPEN: the site has an atom at
@@ -612,6 +616,13 @@ export class AgendaService {
     // AG-080 reports by channel and an invented value reports a lie.
     const bookingChannel = checkBookingChannel(request.bookingChannel);
 
+    // SP-028 (ADR-013). Before anything is read about the hour: the FK would
+    // take an exam or a retired consultation, so the kind and the state are
+    // asked here.
+    if (request.serviceId !== undefined) {
+      await this.requireActiveConsultation(request.serviceId);
+    }
+
     /**
      * AG-035, AG-039, AG-100, AG-101, AG-103. Everything the exception has to
      * satisfy is decided HERE, before the insert, and what comes back is the
@@ -647,7 +658,7 @@ export class AgendaService {
       // it produced is already in `startsAt`/`endsAt`, and that is what makes
       // SP-024 true without a line of code — the stored interval owes nothing
       // to what the type's base duration says tomorrow.
-      serviceTypeId: request.serviceTypeId,
+      serviceId: request.serviceId,
       reason: request.reason,
       createdById: requester.userId,
       // AG-035, AG-036: the three fields of the exception travel together, or
@@ -1115,11 +1126,21 @@ export class AgendaService {
       request.bookingChannel === undefined
         ? undefined
         : checkBookingChannel(request.bookingChannel);
+    // SP-028, AG-115. Only a consultation CHOSEN NOW is judged: sending back
+    // the one the appointment holds is not choosing it, and an appointment
+    // whose consultation was retired after booking must still be movable
+    // (SP-024 rules forwards).
+    if (
+      request.serviceId !== undefined &&
+      request.serviceId !== current.serviceId
+    ) {
+      await this.requireActiveConsultation(request.serviceId);
+    }
     const edit: EntryEdit = {
       startsAt: request.startsAt,
       endsAt: request.endsAt,
       practitionerId: request.practitionerId,
-      serviceTypeId: request.serviceTypeId,
+      serviceId: request.serviceId,
       roomId: request.roomId,
       reason: request.reason === undefined ? undefined : request.reason?.trim() || null, // prettier-ignore
       bookingChannel,
@@ -1712,15 +1733,23 @@ export class AgendaService {
   }
 
   /**
-   * AG-112. The attention types of one specialty, for the booking dialog.
+   * AG-112. The active consultation services of one specialty, for the
+   * booking dialog (ADR-013).
    *
    * THE SITE IS NOT A PARAMETER HERE, and that is not an oversight: a
-   * `service_type` has no site and never had one (SP-021), so there is nothing
+   * `service` has no site and never had one (SP-021), so there is nothing
    * to filter by. The site lives in the ROUTE so the guard can settle the
    * caller's scope before any pipe runs (AG-071), and passing it down would be
    * pretending it narrows something.
    */
-  async serviceTypesOf(specialtyId: string) {
-    return this.agenda.listServiceTypes(specialtyId);
+  async consultationsOf(specialtyId: string) {
+    return this.agenda.listConsultations(specialtyId);
+  }
+
+  /** SP-028. `CONSULTATION_NOT_FOUND` unless it is an active consultation. */
+  private async requireActiveConsultation(serviceId: string): Promise<void> {
+    if (!(await this.agenda.isActiveConsultation(serviceId))) {
+      throw new ConsultationNotFoundError();
+    }
   }
 }

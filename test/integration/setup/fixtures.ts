@@ -327,7 +327,13 @@ export async function createService(
   service: {
     code: string;
     name: string;
-    kind: 'CONSULTATION' | 'PROCEDURE' | 'LAB_EXAM' | 'IMAGING' | 'SUPPLY' | 'OTHER';
+    kind:
+      | 'CONSULTATION'
+      | 'PROCEDURE'
+      | 'LAB_EXAM'
+      | 'IMAGING'
+      | 'SUPPLY'
+      | 'OTHER';
     mspCode?: string | null;
     specialtyId?: string;
     durationMinutes?: number;
@@ -398,7 +404,10 @@ export async function createExamService(
 }
 
 /** SP-001. A specialty, by name. */
-export async function createSpecialty(prisma: PrismaClient, name = 'Cardiología') {
+export async function createSpecialty(
+  prisma: PrismaClient,
+  name = 'Cardiología',
+) {
   return prisma.specialty.create({
     data: { code: name.toUpperCase().slice(0, 64), name },
   });
@@ -500,4 +509,32 @@ export async function closeThroughCashier(
     );
   }
   return { encounter: closed, cashierId: cashier.id, closedAt };
+}
+
+/**
+ * BI-279 (ADR-013). A consultation: a service of kind CONSULTATION with its
+ * specialty, duration and visit, under a code no other call reuses. Its NAME
+ * must be unique among active services clinic-wide
+ * (`service_active_name_unique`), so two specialties cannot both have an
+ * active «Control»: the caller names them apart.
+ */
+export async function createConsultation(
+  prisma: PrismaClient,
+  consultation: {
+    specialtyId: string;
+    name: string;
+    durationMinutes?: number;
+    visitKind?: 'FIRST_VISIT' | 'FOLLOW_UP' | null;
+    active?: boolean;
+  },
+) {
+  return createService(prisma, {
+    code: `CONS-T${next()}`,
+    name: consultation.name,
+    kind: 'CONSULTATION',
+    specialtyId: consultation.specialtyId,
+    durationMinutes: consultation.durationMinutes ?? 20,
+    visitKind: consultation.visitKind ?? null,
+    active: consultation.active,
+  });
 }

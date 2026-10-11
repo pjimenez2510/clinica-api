@@ -18,6 +18,7 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 
 import { useDatabase } from './setup/database';
 import {
+  createConsultation,
   createPatient,
   createPractitioner,
   createScheduleRule,
@@ -92,7 +93,7 @@ interface WaitlistEntryBody {
   preferredFrom: string;
   preferredTo: string;
   practitionerId: string | null;
-  serviceTypeId: string | null;
+  serviceId: string | null;
 }
 
 interface CandidateBody {
@@ -240,23 +241,21 @@ describe('la lista de espera por HTTP', () => {
   }
 
   /**
-   * A type of attention out of the CLINIC's own catalogue (`service_type`,
-   * SP-020) — the table `agenda_entry.service_type_id` has named since C4.
+   * A consultation out of the CLINIC's own catalogue (`service` of kind
+   * CONSULTATION, ADR-013) — the table `agenda_entry.service_id` names.
    *
    * IT IS THE HALF OF AG-061 THAT COULD NOT BE PROVEN END TO END while
    * `waitlist_entry` still pointed at `catalog_concept`: two different tables
    * can never compare equal, so an enrolment that fixed a type could only be
    * refused by a foreign key.
    */
-  let serviceTypes = 0;
-  async function createServiceType(name: string) {
-    serviceTypes += 1;
+  let consultations = 0;
+  async function aConsultation(name: string) {
+    consultations += 1;
     const specialty = await prisma.specialty.create({
-      data: { code: `especialidad-${serviceTypes}`, name: `Especialidad ${serviceTypes}` }, // prettier-ignore
+      data: { code: `especialidad-${consultations}`, name: `Especialidad ${consultations}` }, // prettier-ignore
     });
-    return prisma.serviceType.create({
-      data: { specialtyId: specialty.id, name, durationMinutes: 20 },
-    });
+    return createConsultation(prisma, { specialtyId: specialty.id, name });
   }
 
   /**
@@ -272,7 +271,7 @@ describe('la lista de espera por HTTP', () => {
       blocksCalendar?: boolean;
       releasedAt?: Date | null;
       site?: string;
-      serviceTypeId?: string;
+      serviceId?: string;
       /** AG-061. When the freed hour is, measured against the clock. */
       startsAt?: Date;
     } = {},
@@ -301,11 +300,11 @@ describe('la lista de espera por HTTP', () => {
         releasedAt:
           overrides.releasedAt === undefined ? FREED_AT : overrides.releasedAt,
         /**
-         * EL TIPO DE ATENCIÓN DEL CUPO, cuando la prueba lo fija. Sin él, el
+         * LA CONSULTA DEL CUPO, cuando la prueba la fija. Sin él, el
          * cupo no fija ninguno —un bloqueo liberado, típicamente— y una
          * entrada que exige uno simplemente no queda satisfecha.
          */
-        serviceTypeId: overrides.serviceTypeId ?? null,
+        serviceId: overrides.serviceId ?? null,
       },
     });
   }
@@ -336,7 +335,7 @@ describe('la lista de espera por HTTP', () => {
       expect(entry.preferredTo).toBe(PREFERRED_TO);
       // Lo ÚNICO opcional de AG-060, y omitirlo significa «cualquiera».
       expect(entry.practitionerId).toBeNull();
-      expect(entry.serviceTypeId).toBeNull();
+      expect(entry.serviceId).toBeNull();
       expect(entry.contactAttempts).toBe(0);
       expect(entry.lastContactedAt).toBeNull();
     });
@@ -347,12 +346,12 @@ describe('la lista de espera por HTTP', () => {
       expect(entry.practitionerId).toBe(practitionerId);
     });
 
-    it('AG-060 keeps the service type when the enrolment fixes one', async () => {
-      const type = await createServiceType('Control');
+    it('AG-060 keeps the consultation when the enrolment fixes one', async () => {
+      const type = await aConsultation('Control');
 
-      const entry = await enrol({ serviceTypeId: type.id });
+      const entry = await enrol({ serviceId: type.id });
 
-      expect(entry.serviceTypeId).toBe(type.id);
+      expect(entry.serviceId).toBe(type.id);
     });
 
     it('AG-060 refuses an inverted preferred range by field', async () => {
@@ -418,13 +417,13 @@ describe('la lista de espera por HTTP', () => {
      * a otra tabla. Ésta es la prueba de que las dos partes hablan de lo
      * mismo.
      */
-    it('AG-061 refuses a slot of another service type when the entry fixes one', async () => {
-      const control = await createServiceType('Control');
-      const primeraVez = await createServiceType('Primera vez');
-      const demandsAnother = await enrol({ serviceTypeId: primeraVez.id });
-      const demandsThis = await enrol({ serviceTypeId: control.id });
+    it('AG-061 refuses a slot of another consultation when the entry fixes one', async () => {
+      const control = await aConsultation('Control');
+      const primeraVez = await aConsultation('Primera vez');
+      const demandsAnother = await enrol({ serviceId: primeraVez.id });
+      const demandsThis = await enrol({ serviceId: control.id });
 
-      const released = await releasedSlot({ serviceTypeId: control.id });
+      const released = await releasedSlot({ serviceId: control.id });
       const proposed = await candidatesFor(released.id);
 
       expect(proposed.map((c) => c.entryId)).toEqual([demandsThis.id]);
@@ -432,19 +431,19 @@ describe('la lista de espera por HTTP', () => {
     });
 
     it('AG-061 proposes an entry that fixes no type for a slot that does', async () => {
-      const control = await createServiceType('Control');
+      const control = await aConsultation('Control');
       // Omitirlo significa «cualquiera», no «ninguno» (AG-060).
       const anyType = await enrol();
 
-      const released = await releasedSlot({ serviceTypeId: control.id });
+      const released = await releasedSlot({ serviceId: control.id });
       const proposed = await candidatesFor(released.id);
 
       expect(proposed.map((c) => c.entryId)).toEqual([anyType.id]);
     });
 
     it('AG-061 refuses a released block, which fixes no type, to an entry that demands one', async () => {
-      const control = await createServiceType('Control');
-      const demandsOne = await enrol({ serviceTypeId: control.id });
+      const control = await aConsultation('Control');
+      const demandsOne = await enrol({ serviceId: control.id });
 
       const released = await releasedSlot();
       const proposed = await candidatesFor(released.id);

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LateArrivalRow } from '../domain/late-arrival-metric';
 
 import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
-import { ServiceTypeNotFoundError } from '../../../shared/domain/errors/master-data.errors';
+import { ConsultationNotFoundError } from '../../../shared/domain/errors/master-data.errors';
 import {
   BookingTooSoonError,
   InvalidBookingChannelError,
@@ -94,7 +94,8 @@ const PATIENT = '00000000-0000-4000-8000-000000000003';
 const USER = '00000000-0000-4000-8000-000000000004';
 const ROOM = '00000000-0000-4000-8000-000000000005';
 const OTHER_SITE = '00000000-0000-4000-8000-000000000006';
-const SERVICE_TYPE = '00000000-0000-4000-8000-000000000007';
+/** SP-028: an active consultation service (ADR-013). */
+const SERVICE = '00000000-0000-4000-8000-000000000007';
 /** AG-101, AG-103: quien AUTORIZA el sobrecupo, que nunca es `USER`. */
 const DOCTOR_USER = '00000000-0000-4000-8000-000000000008';
 /** AG-115: the practitioner an appointment can be MOVED TO. */
@@ -150,7 +151,7 @@ function anEntry(overrides: Partial<AgendaEntryView> = {}): AgendaEntryView {
     emergencyAssessedAt: null,
     emergencyFlaggedAt: null,
     bookingChannel: 'PHONE',
-    serviceTypeId: null,
+    serviceId: null,
     createdById: USER,
     // AG-051: an appointment booked directly and never moved.
     rescheduledFromId: null,
@@ -198,6 +199,8 @@ interface Recorded {
   holidayQueries: (HolidayQuery & { bookedSoFar: number })[];
   /** SP-023: which practitioner·type the proposal asked storage about. */
   durationSources: DurationSourcesQuery[];
+  /** SP-028: which services were asked whether they are active consultations. */
+  consultationQueries: string[];
   booked: NewBooking[];
   /** AG-037: the blocks written, and AG-038 what was asked before writing. */
   blocked: NewBlock[];
@@ -309,6 +312,8 @@ function repositoryDouble(
      * the double answers as an empty catalogue would.
      */
     durationSources?: StoredDurationSources | null;
+    /** SP-028: the active consultation services; `[SERVICE]` by default. */
+    activeConsultations?: readonly string[];
     /** AG-101: what the NAMED AUTHORISER holds at the site. */
     authoriserPermissions?: readonly string[];
     /** AG-100: how many overbookings that practitioner already has that day. */
@@ -330,6 +335,7 @@ function repositoryDouble(
     rooms: [],
     holidayQueries: [],
     durationSources: [],
+    consultationQueries: [],
     booked: [],
     blocked: [],
     blockingQueries: [],
@@ -345,7 +351,7 @@ function repositoryDouble(
     // their behaviour is proven against the real database in integration.
     listSites: () => Promise.resolve([]),
     listSchedulablePractitioners: () => Promise.resolve([]),
-    listServiceTypes: () => Promise.resolve([]),
+    listConsultations: () => Promise.resolve([]),
     noShowCounts: (query) => {
       recorded.noShowQueries.push(query);
       return Promise.resolve(overrides.noShowCounts ?? []);
@@ -423,6 +429,12 @@ function repositoryDouble(
       recorded.durationSources.push(query);
       return Promise.resolve(overrides.durationSources ?? null);
     },
+    isActiveConsultation: (serviceId) => {
+      recorded.consultationQueries.push(serviceId);
+      return Promise.resolve(
+        (overrides.activeConsultations ?? [SERVICE]).includes(serviceId),
+      );
+    },
     availabilityContextFor: (query) => {
       recorded.availability.push(query);
       return Promise.resolve({
@@ -459,7 +471,7 @@ function repositoryDouble(
         anEntry({
           bookingChannel: booking.bookingChannel,
           createdById: booking.createdById,
-          serviceTypeId: booking.serviceTypeId ?? null,
+          serviceId: booking.serviceId ?? null,
         }),
       );
     },
@@ -952,26 +964,39 @@ describe('booking an appointment', () => {
     expect(recorded.holidayQueries).toEqual([]);
   });
 
-  it('SP-028 deja el tipo de atención registrado en la cita', async () => {
+  it('SP-028 rechaza reservar con un servicio que no es una consulta activa, sin escribir nada', async () => {
+    // ADR-013. The FK points at any service — an exam, a retired consultation
+    // — so «is it a consultation on offer» is the application's to answer.
+    const { service, recorded } = serviceWith({ activeConsultations: [] });
+
+    await expect(
+      service.book({ ...aBooking(), serviceId: SERVICE }, REQUESTER),
+    ).rejects.toBeInstanceOf(ConsultationNotFoundError);
+    expect(recorded.consultationQueries).toEqual([SERVICE]);
+    expect(recorded.booked).toEqual([]);
+  });
+
+  it('SP-028 deja el servicio de consulta registrado en la cita', async () => {
     const { service, recorded } = serviceWith();
 
     const { entry } = await service.book(
-      { ...aBooking(), serviceTypeId: SERVICE_TYPE },
+      { ...aBooking(), serviceId: SERVICE },
       REQUESTER,
     );
 
-    expect(recorded.booked[0]?.serviceTypeId).toBe(SERVICE_TYPE);
-    expect(entry.serviceTypeId).toBe(SERVICE_TYPE);
+    expect(recorded.booked[0]?.serviceId).toBe(SERVICE);
+    expect(entry.serviceId).toBe(SERVICE);
   });
 
-  it('SP-028 reserva sin tipo cuando recepción no eligió ninguno', async () => {
+  it('SP-028 reserva sin servicio cuando recepción no eligió ninguno', async () => {
     // Not every booking has one: a block, a walk-in squeezed in at the
     // counter. Storing an invented type would report a lie in the statistics.
     const { service, recorded } = serviceWith();
 
     await service.book(aBooking(), REQUESTER);
 
-    expect(recorded.booked[0]?.serviceTypeId).toBeUndefined();
+    expect(recorded.booked[0]?.serviceId).toBeUndefined();
+    expect(recorded.consultationQueries).toEqual([]);
   });
 });
 
@@ -995,11 +1020,11 @@ describe('proposing the duration of an appointment', () => {
 
   it('SP-023 la excepción del médico gana a la duración base del tipo', async () => {
     const { service } = serviceWith({
-      durationSources: { exceptionMinutes: 40, serviceTypeMinutes: 30 },
+      durationSources: { exceptionMinutes: 40, serviceMinutes: 30 },
     });
 
     const proposal = await service.proposeDuration(
-      aProposal({ serviceTypeId: SERVICE_TYPE }),
+      aProposal({ serviceId: SERVICE }),
     );
 
     expect(proposal.minutes).toBe(40);
@@ -1007,11 +1032,11 @@ describe('proposing the duration of an appointment', () => {
 
   it('SP-023 sin excepción rige la duración base del especialidad·tipo', async () => {
     const { service } = serviceWith({
-      durationSources: { exceptionMinutes: null, serviceTypeMinutes: 30 },
+      durationSources: { exceptionMinutes: null, serviceMinutes: 30 },
     });
 
     const proposal = await service.proposeDuration(
-      aProposal({ serviceTypeId: SERVICE_TYPE }),
+      aProposal({ serviceId: SERVICE }),
     );
 
     expect(proposal.minutes).toBe(30);
@@ -1034,13 +1059,13 @@ describe('proposing the duration of an appointment', () => {
     // The exception of SP-022 belongs to ONE practitioner: asking without one
     // would hand another doctor's minutes to this booking.
     const { service, recorded } = serviceWith({
-      durationSources: { exceptionMinutes: 45, serviceTypeMinutes: 30 },
+      durationSources: { exceptionMinutes: 45, serviceMinutes: 30 },
     });
 
-    await service.proposeDuration(aProposal({ serviceTypeId: SERVICE_TYPE }));
+    await service.proposeDuration(aProposal({ serviceId: SERVICE }));
 
     expect(recorded.durationSources).toEqual([
-      { practitionerId: PRACTITIONER, serviceTypeId: SERVICE_TYPE },
+      { practitionerId: PRACTITIONER, serviceId: SERVICE },
     ]);
   });
 
@@ -1051,11 +1076,11 @@ describe('proposing the duration of an appointment', () => {
     // be saved any more, so the warning can never fire — and a warning that
     // never fires teaches people to skip the ones that do.
     const { service } = serviceWith({
-      durationSources: { exceptionMinutes: null, serviceTypeMinutes: 60 },
+      durationSources: { exceptionMinutes: null, serviceMinutes: 60 },
     });
 
     const proposal = await service.proposeDuration(
-      aProposal({ serviceTypeId: SERVICE_TYPE }),
+      aProposal({ serviceId: SERVICE }),
     );
 
     expect(proposal).toEqual({ minutes: 60 });
@@ -1074,14 +1099,14 @@ describe('proposing the duration of an appointment', () => {
     expect(proposal).toEqual({ minutes: null });
   });
 
-  it('SERVICE_TYPE_NOT_FOUND cuando el tipo elegido no existe', async () => {
+  it('SERVICE_NOT_FOUND cuando el tipo elegido no existe', async () => {
     // Falling through to the rule's minutes would propose a length for a type
     // nobody has, and recepción would book it without ever being told.
     const { service } = serviceWith({ durationSources: null });
 
     await expect(
-      service.proposeDuration(aProposal({ serviceTypeId: SERVICE_TYPE })),
-    ).rejects.toBeInstanceOf(ServiceTypeNotFoundError);
+      service.proposeDuration(aProposal({ serviceId: SERVICE })),
+    ).rejects.toBeInstanceOf(ConsultationNotFoundError);
   });
 });
 
@@ -1940,6 +1965,35 @@ describe('editing an appointment in place (D-127)', () => {
     expect(recorded.edits[0]?.edit.practitionerId).toBe(OTHER_PRACTITIONER);
   });
 
+  it('AG-115 refuses to change the appointment to a service that is not an active consultation', async () => {
+    const OTHER_SERVICE = '00000000-0000-4000-8000-000000000017';
+    const { service, recorded } = serviceWith({ activeConsultations: [SERVICE] }); // prettier-ignore
+
+    await expect(
+      service.editEntry(anEdit({ serviceId: OTHER_SERVICE }), REQUESTER),
+    ).rejects.toBeInstanceOf(ConsultationNotFoundError);
+    expect(recorded.edits).toEqual([]);
+
+    // Positive control: the active one goes through the same path.
+    await service.editEntry(anEdit({ serviceId: SERVICE }), REQUESTER);
+    expect(recorded.edits[0]?.edit.serviceId).toBe(SERVICE);
+  });
+
+  it('AG-115 keeps the consultation the appointment already had, even once it was retired', async () => {
+    // Sending back the value it holds is not choosing it again: moving the
+    // hour of an appointment must not fail because its consultation was
+    // deactivated after it was booked (SP-024: it rules forwards).
+    const { service, recorded } = serviceWith({
+      activeConsultations: [],
+      entry: anEntry({ id: 'entry-1', siteId: SITE, serviceId: SERVICE }),
+    });
+
+    await service.editEntry(anEdit({ serviceId: SERVICE }), REQUESTER);
+
+    expect(recorded.consultationQueries).toEqual([]);
+    expect(recorded.edits).toHaveLength(1);
+  });
+
   it('AG-162 corrects the motive of the visit without judging any schedule', async () => {
     const { service, recorded } = serviceWith();
 
@@ -2282,7 +2336,7 @@ describe('the versions of an appointment (AG-168)', () => {
       endsAt: EIGHT_TWENTY,
       practitionerId: PRACTITIONER,
       roomId: null,
-      serviceTypeId: null,
+      serviceId: null,
       bookingChannel: 'PHONE',
       patientId: PATIENT,
       blocksCalendar: true,
@@ -2549,8 +2603,8 @@ describe('las listas de referencia', () => {
     expect(asked).toEqual(['site-9']);
   });
 
-  it('AG-112 pide los tipos por especialidad y no por sede', async () => {
-    // La sede de la ruta AUTORIZA (AG-071) y no filtra: un `service_type` es
+  it('AG-112 pide las consultas por especialidad y no por sede', async () => {
+    // La sede de la ruta AUTORIZA (AG-071) y no filtra: un servicio es
     // de la clínica. Si algún día llegara hasta el repositorio sería porque
     // alguien creyó que acota, y acotar por ella daría listas distintas en
     // dos sedes para el mismo catálogo.
@@ -2558,18 +2612,28 @@ describe('las listas de referencia', () => {
     const spied = new AgendaService(
       {
         ...repositoryDouble().repository,
-        listServiceTypes: (...args) => {
+        listConsultations: (...args) => {
           asked.push(args);
           return Promise.resolve([
-            { id: 'st-1', name: 'Control', durationMinutes: 20 },
+            {
+              id: 'st-1',
+              name: 'Control',
+              durationMinutes: 20,
+              visitKind: 'FOLLOW_UP',
+            },
           ]);
         },
       },
       loggerDouble().logger,
     );
 
-    await expect(spied.serviceTypesOf('sp-1')).resolves.toEqual([
-      { id: 'st-1', name: 'Control', durationMinutes: 20 },
+    await expect(spied.consultationsOf('sp-1')).resolves.toEqual([
+      {
+        id: 'st-1',
+        name: 'Control',
+        durationMinutes: 20,
+        visitKind: 'FOLLOW_UP',
+      },
     ]);
     expect(asked).toEqual([['sp-1']]);
   });

@@ -199,7 +199,7 @@ export class AgendaController {
       // The schema refuses an instant with no offset, so `Date` reads it
       // without guessing a zone.
       startsAt: new Date(query.startsAt),
-      serviceTypeId: query.serviceTypeId,
+      serviceId: query.serviceId,
     });
   }
 
@@ -232,7 +232,7 @@ export class AgendaController {
         startsAt: new Date(dto.startsAt),
         endsAt: new Date(dto.endsAt),
         bookingChannel: dto.bookingChannel,
-        serviceTypeId: dto.serviceTypeId,
+        serviceId: dto.serviceId,
         reason: dto.reason,
         /**
          * AG-035, D-005. The exception is DECLARED or it does not exist: the
@@ -446,7 +446,7 @@ export class AgendaController {
           dto.startsAt === undefined ? undefined : new Date(dto.startsAt),
         endsAt: dto.endsAt === undefined ? undefined : new Date(dto.endsAt),
         practitionerId: dto.practitionerId,
-        serviceTypeId: dto.serviceTypeId,
+        serviceId: dto.serviceId,
         roomId: dto.roomId,
         reason: dto.reason,
         bookingChannel: dto.bookingChannel,
@@ -478,7 +478,7 @@ export class AgendaController {
         endsAt: version.endsAt.toISOString(),
         practitionerId: version.practitionerId,
         roomId: version.roomId,
-        serviceTypeId: version.serviceTypeId,
+        serviceId: version.serviceId,
         bookingChannel: version.bookingChannel,
         patientId: version.patientId,
         blocksCalendar: version.blocksCalendar,

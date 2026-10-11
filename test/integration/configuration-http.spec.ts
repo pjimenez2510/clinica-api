@@ -16,6 +16,8 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 
 import { useDatabase } from './setup/database';
 import {
+  createConsultation,
+  createExamService,
   createPatient,
   createPractitioner,
   createRoom,
@@ -1233,12 +1235,9 @@ describe('la configuración por HTTP', () => {
         const specialty = await prisma.specialty.create({
           data: { code: 'cardiologia', name: 'Cardiología' },
         });
-        await prisma.serviceType.createMany({
-          data: [
-            { specialtyId: specialty.id, name: 'Control', durationMinutes: 20 },
-            { specialtyId: specialty.id, name: 'Primera vez', durationMinutes: 30 }, // prettier-ignore
-          ],
-        });
+        // ADR-013: las consultas son servicios con su duración (BI-279).
+        await createConsultation(prisma, { specialtyId: specialty.id, name: 'Control', durationMinutes: 20 }); // prettier-ignore
+        await createConsultation(prisma, { specialtyId: specialty.id, name: 'Primera vez', durationMinutes: 30 }); // prettier-ignore
 
         const response = await put(`/sites/${site.id}/parameters`, {
           slotAtomMinutes: 20,
@@ -1248,7 +1247,7 @@ describe('la configuración por HTTP', () => {
         expect(problem.code).toBe('PARAM_OUT_OF_RANGE');
         expect(problem.errors?.[0]?.field).toBe('slotAtomMinutes');
         // NOMBRA LAS QUE ESTORBAN: «no puede ser 20» deja a quien administra
-        // adivinando cuál de cuarenta tipos de atención se lo impide.
+        // adivinando cuál de cuarenta consultas se lo impide.
         expect(problem.errors?.[0]?.message).toContain('30');
 
         // Y no escribió: la fila conserva el turno anterior.
@@ -1260,26 +1259,24 @@ describe('la configuración por HTTP', () => {
         ).resolves.toEqual({ slotAtomMinutes: 10 });
       });
 
-      it('D-021 la excepción de un médico cuenta igual que la duración base', async () => {
-        // Es el peldaño que gana en SP-023: mirar sólo `service_type` dejaría
+      it('D-021 la excepción de un médico cuenta igual que la duración de la consulta', async () => {
+        // Es el peldaño que gana en SP-023: mirar sólo las consultas dejaría
         // la mitad de las duraciones fuera de la comprobación.
         const site = await createSite();
         const practitioner = await createPractitioner(prisma);
         const specialty = await prisma.specialty.create({
           data: { code: 'cardiologia', name: 'Cardiología' },
         });
-        const type = await prisma.serviceType.create({
-          data: { specialtyId: specialty.id, name: 'Control', durationMinutes: 20 }, // prettier-ignore
-        });
+        const type = await createConsultation(prisma, { specialtyId: specialty.id, name: 'Control', durationMinutes: 20 }); // prettier-ignore
         await prisma.durationException.create({
           data: {
             practitionerId: practitioner.id,
-            serviceTypeId: type.id,
+            serviceId: type.id,
             durationMinutes: 30,
           },
         });
 
-        // 20 divide a la duración base y no a la excepción.
+        // 20 divide a la duración de la consulta y no a la excepción.
         await put(`/sites/${site.id}/parameters`, {
           slotAtomMinutes: 20,
         }).expect(422);
@@ -1290,13 +1287,29 @@ describe('la configuración por HTTP', () => {
         const specialty = await prisma.specialty.create({
           data: { code: 'cardiologia', name: 'Cardiología' },
         });
-        await prisma.serviceType.create({
-          data: { specialtyId: specialty.id, name: 'Control', durationMinutes: 30 }, // prettier-ignore
-        });
+        await createConsultation(prisma, { specialtyId: specialty.id, name: 'Control', durationMinutes: 30 }); // prettier-ignore
+        // Ni un examen ni un procedimiento tienen duración que estorbe
+        // (`service_consultation_shape`): sólo las consultas cuentan.
+        await createExamService(prisma, { code: 'LAB-HEM', name: 'Hemograma' });
 
         await put(`/sites/${site.id}/parameters`, {
           slotAtomMinutes: 15,
         }).expect(200);
+      });
+
+      it('CF-062 una consulta retirada sigue contando: reactivarla después no puede dejarla sin reservar', async () => {
+        const site = await createSite();
+        const specialty = await prisma.specialty.create({
+          data: { code: 'cardiologia', name: 'Cardiología' },
+        });
+        await createConsultation(prisma, { specialtyId: specialty.id, name: 'Control', durationMinutes: 30 }); // prettier-ignore
+        const retired = await createConsultation(prisma, { specialtyId: specialty.id, name: 'Control corto', durationMinutes: 20, active: false }); // prettier-ignore
+
+        await put(`/sites/${site.id}/parameters`, { slotAtomMinutes: 15 }).expect(422); // prettier-ignore
+
+        // Control positivo: sin la retirada, el mismo turno se admite.
+        await prisma.service.delete({ where: { id: retired.id } });
+        await put(`/sites/${site.id}/parameters`, { slotAtomMinutes: 15 }).expect(200); // prettier-ignore
       });
     });
 

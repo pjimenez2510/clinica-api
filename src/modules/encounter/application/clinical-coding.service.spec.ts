@@ -768,8 +768,8 @@ describe('los casos de uso del bloque K', () => {
 
   it('EN-051 no deja pasar ningún importe por esta frontera', async () => {
     /**
-     * ⚠️ LA AUSENCIA ES EL REQUISITO. `encounter_procedure.tariff_amount`
-     * existe en el esquema y nada de este módulo lo lee ni lo escribe: lo que
+     * ⚠️ LA AUSENCIA ES EL REQUISITO. `encounter_procedure.tariff_amount` se
+     * retiró del esquema el 11-10-2026 (D-218 §3), sin que nada lo leyera: lo que
      * cuesta el procedimiento es un `charge_item` de `billing`, resuelto por
      * la lista de precios del pagador en la fecha del servicio. Una fila
      * clínica que además lleva el dinero son dos registros en uno.

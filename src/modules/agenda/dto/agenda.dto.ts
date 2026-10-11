@@ -216,11 +216,11 @@ export const bookAppointmentSchema = z
      */
     bookingChannel: z.string({ error: 'Indique cómo se solicitó la cita' }),
     /**
-     * SP-028. `service_type.id` — the clinic's own type of attention with its
-     * base duration (SP-020), NOT a concept of the MSP clinical catalogue,
-     * which is what this field named until C4.
+     * SP-028. `service.id` of an ACTIVE consultation (ADR-013) — the clinic's
+     * own service with its duration (BI-279), NOT a concept of the MSP
+     * clinical catalogue. Anything else answers `CONSULTATION_NOT_FOUND`.
      */
-    serviceTypeId: z.uuid('Seleccione un tipo de atención válido').optional(),
+    serviceId: z.uuid('Seleccione una consulta válida').optional(),
     /**
      * Free text a receptionist types. It may carry a reason for the visit, which
      * is health data: it is stored, and it never reaches a log (AG-074).
@@ -499,8 +499,8 @@ export const agendaEntrySchema = z.object({
   emergencyAssessedAt: z.iso.datetime().nullable(),
   emergencyFlaggedAt: z.iso.datetime().nullable(),
   bookingChannel: BOOKING_CHANNEL.nullable(),
-  /** SP-028: the type recepción chose, `service_type.id`. */
-  serviceTypeId: z.uuid().nullable(),
+  /** SP-028: the consultation recepción chose, `service.id`. */
+  serviceId: z.uuid().nullable(),
   /**
    * NO `reason` IN THE RESPONSE (AG-072, AG-074, SC-006). It is accepted on
    * the way in and stored; it is not served back, because the day's list is
@@ -617,7 +617,7 @@ export const editEntrySchema = z
     startsAt: instant('La nueva hora de inicio').optional(),
     endsAt: instant('La nueva hora de fin').optional(),
     practitionerId: z.uuid('Seleccione un profesional válido').optional(),
-    serviceTypeId: z.uuid('Seleccione un tipo de atención válido').optional(),
+    serviceId: z.uuid('Seleccione una consulta válida').optional(),
     roomId: z
       .uuid('Seleccione un consultorio de la lista')
       .nullable()
@@ -719,7 +719,7 @@ export const agendaEntryVersionSchema = z.object({
   endsAt: z.iso.datetime(),
   practitionerId: z.uuid(),
   roomId: z.uuid().nullable(),
-  serviceTypeId: z.uuid().nullable(),
+  serviceId: z.uuid().nullable(),
   bookingChannel: BOOKING_CHANNEL.nullable(),
   patientId: z.uuid().nullable(),
   blocksCalendar: z.boolean(),
@@ -781,9 +781,9 @@ export const availabilitySlotSchema = z.object({
   /**
    * `practitioner_schedule_rule.service_type_concept_id`, a concept of the MSP
    * CLINICAL catalogue — and NOT the same thing as the appointment's
-   * `serviceTypeId`, which since C4 is the clinic's own `service_type`
-   * (SP-020). The two names differ because the two identities differ: sending
-   * this one as a booking's `serviceTypeId` would name a row of another table.
+   * `serviceId`, which is the clinic's own consultation service (BI-279,
+   * ADR-013). The two names differ because the two identities differ: sending
+   * this one as a booking's `serviceId` would name a row of another table.
    *
    * The column is not written by any route today (ST-04x never sets it), so
    * this is `null` on every slot. It was deliberately left alone in C4 — see
@@ -895,8 +895,8 @@ export const durationProposalQuerySchema = z.object({
    * open (AG-010, AG-106), which is SP-023's third rung.
    */
   startsAt: instant('La hora de inicio'),
-  /** Absent until recepción chooses a type: the rule's slot then answers. */
-  serviceTypeId: z.uuid('Seleccione un tipo de atención válido').optional(),
+  /** Absent until recepción chooses a consultation: the site's slot then answers. */
+  serviceId: z.uuid('Seleccione una consulta válida').optional(),
 });
 /** Query of GET /agenda/sites/:siteId/duration. */
 export class DurationProposalQueryDto extends createZodDto(
@@ -1013,8 +1013,9 @@ export class SchedulablePractitionersDto extends createZodDto(
 ) {}
 
 /**
- * AG-112. An attention type for the booking dialog: what to show, how long it
- * lasts in the catalogue, and the id the booking will carry (SP-028).
+ * AG-112 (ADR-013). A consultation service for the booking dialog: what to
+ * show, how long it lasts in the catalogue, which visit it names, and the id
+ * the booking will carry (SP-028).
  *
  * `durationMinutes` IS THE CATALOGUE'S BASE, not the appointment's duration.
  * The one that gets booked comes from `GET …/duration`, which applies SP-023
@@ -1022,18 +1023,20 @@ export class SchedulablePractitionersDto extends createZodDto(
  * here saves one request per option in a dropdown; it does not compute an end
  * time, and nothing in this response should be used to.
  */
-export const agendaServiceTypeSchema = z.object({
+export const agendaConsultationSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   durationMinutes: z.number().int().positive(),
+  /** BI-279. Only names the visit; the RDACAA's is computed (EN-215). */
+  visitKind: z.enum(['FIRST_VISIT', 'FOLLOW_UP']).nullable(),
 });
 
-export const agendaServiceTypesSchema = z.object({
-  items: z.array(agendaServiceTypeSchema).readonly(),
+export const agendaConsultationsSchema = z.object({
+  items: z.array(agendaConsultationSchema).readonly(),
 });
-/** Response of GET /agenda/sites/:siteId/specialties/:specialtyId/service-types. */
-export class AgendaServiceTypesDto extends createZodDto(
-  agendaServiceTypesSchema,
+/** Response of GET /agenda/sites/:siteId/specialties/:specialtyId/services. */
+export class AgendaConsultationsDto extends createZodDto(
+  agendaConsultationsSchema,
 ) {}
 
 /**
@@ -1147,8 +1150,8 @@ export type SchedulablePractitionersResponse = z.infer<
   typeof schedulablePractitionersSchema
 >;
 /** Likewise, for the attention types of a specialty. */
-export type AgendaServiceTypesResponse = z.infer<
-  typeof agendaServiceTypesSchema
+export type AgendaConsultationsResponse = z.infer<
+  typeof agendaConsultationsSchema
 >;
 
 // --- Lista de espera (E5: AG-060 a AG-067) ---------------------------------
@@ -1186,11 +1189,11 @@ export const enrolInWaitlistSchema = z
     ),
     practitionerId: z.uuid('Seleccione un profesional de la lista').optional(),
     /**
-     * AG-060, AG-061. EL MISMO CATÁLOGO QUE NOMBRA LA CITA: `service_type`,
-     * desde `waitlist_service_type_follows_agenda`.
+     * AG-060, AG-061. EL MISMO CATÁLOGO QUE NOMBRA LA CITA: el servicio de
+     * consulta (`waitlist_entry.service_id`, ADR-013).
      *
-     * La columna apuntaba a `catalog_concept` mientras
-     * `agenda_entry.service_type_id` apuntaba a `service_type` desde C4, y con
+     * La columna apuntaba a `catalog_concept` mientras la cita apuntaba a
+     * `service_type` desde C4, y con
      * dos tablas distintas la mitad de AG-061 que compara los dos tipos no
      * podía ser cierta nunca: el campo sólo habría servido para rechazar por
      * clave foránea todo identificador legítimo. Por eso no se admitió al
@@ -1199,7 +1202,7 @@ export const enrolInWaitlistSchema = z
      * OMITIRLO SIGNIFICA «CUALQUIERA», no «ninguno»: una entrada sin tipo
      * encaja en cualquier cupo del rango, y una que lo fija sólo en los suyos.
      */
-    serviceTypeId: z.uuid('Seleccione un tipo de atención válido').optional(),
+    serviceId: z.uuid('Seleccione una consulta válida').optional(),
   })
   .refine((value) => value.preferredTo >= value.preferredFrom, {
     // Inclusivo por los dos lados: «del 3 al 3» es un rango legítimo — la
@@ -1260,7 +1263,7 @@ export const waitlistEntrySchema = z.object({
   siteId: z.uuid(),
   patientId: z.uuid(),
   practitionerId: z.uuid().nullable(),
-  serviceTypeId: z.uuid().nullable(),
+  serviceId: z.uuid().nullable(),
   preferredFrom: z.iso.date(),
   preferredTo: z.iso.date(),
   status: WAITLIST_STATUS,
@@ -1290,7 +1293,7 @@ export const waitlistCandidateSchema = z.object({
   /** AG-061. La antigüedad de inscripción, que es el segundo criterio. */
   enrolledAt: z.iso.datetime(),
   practitionerId: z.uuid().nullable(),
-  serviceTypeId: z.uuid().nullable(),
+  serviceId: z.uuid().nullable(),
   preferredFrom: z.iso.date(),
   preferredTo: z.iso.date(),
   contactAttempts: z.number().int().nonnegative(),
@@ -1325,7 +1328,7 @@ export const waitlistCandidatesSchema = z.object({
     startsAt: z.iso.datetime(),
     endsAt: z.iso.datetime(),
     practitionerId: z.uuid(),
-    serviceTypeId: z.uuid().nullable(),
+    serviceId: z.uuid().nullable(),
   }),
   items: z.array(waitlistCandidateSchema).readonly(),
 });

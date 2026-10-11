@@ -64,12 +64,13 @@ export interface SpecialtyReference {
 }
 
 /**
- * One service type reachable by a practitioner, with the two upper levels of
- * the D-010 hierarchy side by side so the caller can resolve them (ST-009).
+ * One consultation service reachable by a practitioner (ADR-013), with the
+ * two upper levels of the D-010 hierarchy side by side so the caller can
+ * resolve them (ST-009).
  */
 export interface PractitionerDurationRow {
-  serviceTypeId: string;
-  serviceTypeName: string;
+  serviceId: string;
+  serviceName: string;
   specialtyId: string;
   specialtyName: string;
   baseMinutes: number;
@@ -166,24 +167,28 @@ export interface StaffRepository {
     items: readonly SpecialtyAssignment[],
   ): Promise<void>;
 
-  /** ST-009. The service types a practitioner's specialties offer. */
+  /** ST-009. The active consultations a practitioner's specialties offer. */
   listPractitionerDurations(
     practitionerId: string,
   ): Promise<readonly PractitionerDurationRow[]>;
 
-  serviceTypeExists(id: string): Promise<boolean>;
+  /**
+   * ST-009, SP-022. Whether `id` is an ACTIVE service of kind CONSULTATION:
+   * the FK of `duration_exception` admits any service.
+   */
+  isActiveConsultation(id: string): Promise<boolean>;
 
   /** ST-009. Insert or update, one statement: the pair is the identity. */
   upsertDurationException(
     practitionerId: string,
-    serviceTypeId: string,
+    serviceId: string,
     durationMinutes: number,
   ): Promise<void>;
 
   /** `false` when there was nothing to remove. */
   deleteDurationException(
     practitionerId: string,
-    serviceTypeId: string,
+    serviceId: string,
   ): Promise<boolean>;
 
   /** ST-007. */
@@ -202,7 +207,7 @@ export interface StaffRepository {
    * duration exception can be refused when it does not tile the grid.
    *
    * EVERY SITE AND NOT THE PRACTITIONER'S, and the difference is not academic:
-   * the exception hangs off a `service_type`, which has no site, and a doctor
+   * the exception hangs off a consultation `service`, which has no site, and a doctor
    * can be added to another site tomorrow without anybody revisiting their
    * exceptions. Validating against the sites they happen to work at today
    * would let that later assignment strand the exception silently. Which

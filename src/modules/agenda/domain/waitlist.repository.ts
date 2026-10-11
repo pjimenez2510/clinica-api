@@ -49,7 +49,7 @@ export interface NewWaitlistEntry {
   preferredFrom: ClinicalDate;
   preferredTo: ClinicalDate;
   practitionerId: string | null;
-  serviceTypeId: string | null;
+  serviceId: string | null;
 }
 
 /**
@@ -68,7 +68,7 @@ export interface WaitlistEntryView {
   siteId: string;
   patientId: string;
   practitionerId: string | null;
-  serviceTypeId: string | null;
+  serviceId: string | null;
   preferredFrom: ClinicalDate;
   preferredTo: ClinicalDate;
   status: WaitlistStatus;

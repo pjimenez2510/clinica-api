@@ -162,22 +162,24 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
   }
 
   /**
-   * D-021. The distinct durations the clinic has configured: the base of every
-   * service type and every per-practitioner exception.
+   * D-021, CF-062. The distinct durations the clinic has configured: that of
+   * every consultation service (ADR-013) and every per-practitioner
+   * exception.
    *
    * BOTH TABLES, and both belong to other modules — see the port. Missing
    * either one would make the refusal a half-truth: an exception of 30 minutes
    * is just as unbookable on a 20-minute grid as a base duration of 30, and
    * ST-009 is the rung that wins when it exists (SP-023).
    *
-   * INACTIVE ROWS COUNT. A deactivated service type keeps its duration and
-   * SP-004 promises the existing references stay intact, so reactivating it
-   * after the atom moved would produce exactly the unbookable configuration
-   * this refusal exists to prevent — silently, and much later.
+   * RETIRED CONSULTATIONS COUNT. A deactivated consultation keeps its
+   * duration and the appointments that name it, so reactivating it after the
+   * atom moved would produce exactly the unbookable configuration this
+   * refusal exists to prevent — silently, and much later.
    */
   async configuredDurations(): Promise<readonly number[]> {
-    const [types, exceptions] = await Promise.all([
-      this.prisma.serviceType.findMany({
+    const [consultations, exceptions] = await Promise.all([
+      this.prisma.service.findMany({
+        where: { kind: 'CONSULTATION', durationMinutes: { not: null } },
         distinct: ['durationMinutes'],
         select: { durationMinutes: true },
       }),
@@ -187,14 +189,19 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
       }),
     ]);
 
-    return [...types, ...exceptions].map((row) => row.durationMinutes);
+    return [
+      ...consultations.flatMap((row) =>
+        row.durationMinutes === null ? [] : [row.durationMinutes],
+      ),
+      ...exceptions.map((row) => row.durationMinutes),
+    ];
   }
 
   /**
    * AG-101, AU-033. Which of these codes the `permission` mirror actually has.
    *
    * IT READS `permission`, a table of `auth`, through this module's own
-   * adapter — the same route `configuredDurations` takes to `service_type`.
+   * adapter — the same route `configuredDurations` takes to `service`.
    * The alternative was letting the foreign key answer, and that answer
    * reaches a screen as «Datos inválidos» over a form where nothing is
    * invalid: the exact failure `PERMISSION_NOT_INSTALLED` was created for.

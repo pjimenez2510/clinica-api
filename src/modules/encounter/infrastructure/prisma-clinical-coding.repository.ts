@@ -107,10 +107,10 @@ import {
  * The order is the one `NOTE_ALREADY_SIGNED` set: database first as the rule,
  * application second as the explanation.
  *
- * ⚠️ NOTHING HERE TOUCHES `encounter_procedure.tariff_amount` (EN-051, D-049).
- * Money frozen inside a clinical table is the separation `billing` is built
- * on; the charge is `charge_item`, resolved from the price list of the payer
- * on the service date. The column is left where it is and not propagated.
+ * ⚠️ NO AMOUNT LIVES HERE (EN-051, D-049). `encounter_procedure.tariff_amount`
+ * and its copy in the retraction archive were dropped on 11-10-2026 (D-218
+ * §3): nothing ever read them. The charge is `charge_item`, resolved from the
+ * price list of the payer on the service date.
  */
 
 /** The catalogue a diagnosis has to come from (EN-040). */
@@ -161,9 +161,8 @@ type DiagnosisWithUseRow = Prisma.EncounterDiagnosisGetPayload<{
 }>;
 
 /**
- * ⚠️ `tariffAmount` IS NOT SELECTED, AND THAT IS THE REQUIREMENT (EN-051). A
- * value that is never loaded cannot leak into a response, a screen or an
- * invoice raised from the wrong side of the boundary.
+ * ⚠️ NO AMOUNT IS SELECTED, AND THAT IS THE REQUIREMENT (EN-051). The
+ * procedure row carries none since D-218 §3; what it costs is billing's.
  */
 const PROCEDURE_SELECT = {
   id: true,
@@ -181,7 +180,7 @@ const PROCEDURE_SELECT = {
   encounter: { select: { endedAt: true } },
 } satisfies Prisma.EncounterProcedureSelect;
 
-/** The row `PROCEDURE_SELECT` yields — without `tariffAmount`, because the select omits it. */
+/** The row `PROCEDURE_SELECT` yields. */
 type ProcedureRow = Prisma.EncounterProcedureGetPayload<{
   select: typeof PROCEDURE_SELECT;
 }>;
@@ -198,7 +197,7 @@ interface ConceptRow {
 
 /**
  * Block K over PostgreSQL. Each write checks scope and catalogue inside its
- * own transaction, and `tariff_amount` is never read (EN-051).
+ * own transaction, and no amount is ever written (EN-051).
  */
 @Injectable()
 export class PrismaClinicalCodingRepository implements ClinicalCodingRepository {
@@ -986,7 +985,7 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           recordedById: procedure.recordedById,
           note: procedure.note,
           /**
-           * ⚠️ `tariffAmount` IS ABSENT AND STAYS ABSENT (EN-051, D-049). What
+           * ⚠️ NO AMOUNT, AND NONE IS TO RETURN (EN-051, D-049). What
            * the procedure costs is a `charge_item` of `billing`, resolved from
            * the price list of the attention's payer on the service date. A
            * clinical row that also carried the money would be two records in
@@ -1235,12 +1234,12 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
         INSERT INTO "encounter_procedure_retraction"
           ("id", "encounter_id", "concept_id", "procedure_code",
            "procedure_display", "quantity", "performed_at", "note",
-           "tariff_amount", "edited_by_id", "edited_at",
+           "edited_by_id", "edited_at",
            "recorded_at", "recorded_by_id",
            "retracted_at", "retracted_by_id", "reason")
         SELECT "id", "encounter_id", "concept_id", "procedure_code",
                "procedure_display", "quantity", "performed_at", "note",
-               "tariff_amount", "edited_by_id", "edited_at",
+               "edited_by_id", "edited_at",
                "recorded_at", "recorded_by_id",
                ${now}, ${retraction.retractedById}::uuid, ${retraction.reason}
           FROM "encounter_procedure"
@@ -1295,8 +1294,6 @@ export class PrismaClinicalCodingRepository implements ClinicalCodingRepository 
           recordedAt: now,
           recordedById: restoration.restoredById,
           note: archived.note,
-          // EN-051: carried back untouched, never read nor served.
-          tariffAmount: archived.tariffAmount,
         },
         select: PROCEDURE_SELECT,
       });

@@ -82,7 +82,7 @@ describe('schedule rule invariants (migration 20260812174244)', () => {
     ).rejects.toThrow(/site_parameter_slot_atom_minutes_range/);
 
     // 7 is inside 5..60 and not a multiple of 5: the step is what keeps
-    // `service_type_duration_range` a consequence of the atom rather than a
+    // `service_duration_range` a consequence of the atom rather than a
     // leftover that contradicts it.
     await expect(
       prisma.siteParameter.update({

@@ -22,7 +22,7 @@ export interface DentalIndexSave {
 export interface DentalIndexRepository {
   /**
    * EN-203, EN-052. The code of the attention's specialty, by the rule the
-   * note template uses: its appointment's service type, else the
+   * note template uses: its appointment's consultation, else the
    * practitioner's primary specialty. `null` when it has none.
    */
   specialtyCodeOf(encounterId: string): Promise<string | null>;

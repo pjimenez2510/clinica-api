@@ -12,27 +12,27 @@ describe('resolveDuration (SP-023, D-010)', () => {
     expect(
       resolveDuration({
         exceptionMinutes: 45,
-        serviceTypeMinutes: 30,
+        serviceMinutes: 30,
         ruleSlotMinutes: 20,
       }),
     ).toBe(45);
   });
 
-  it('SP-023 sin excepción rige la duración base del especialidad·tipo', () => {
+  it('SP-023 sin excepción rige la duración del servicio de consulta', () => {
     expect(
       resolveDuration({
         exceptionMinutes: null,
-        serviceTypeMinutes: 30,
+        serviceMinutes: 30,
         ruleSlotMinutes: 20,
       }),
     ).toBe(30);
   });
 
-  it('SP-023 sin excepción ni tipo rigen los minutos de la regla de horario', () => {
+  it('SP-023 sin excepción ni consulta rigen los minutos de la regla de horario', () => {
     expect(
       resolveDuration({
         exceptionMinutes: null,
-        serviceTypeMinutes: null,
+        serviceMinutes: null,
         ruleSlotMinutes: 20,
       }),
     ).toBe(20);
@@ -42,7 +42,7 @@ describe('resolveDuration (SP-023, D-010)', () => {
     // The callers mix `undefined` (never loaded) and `null` (loaded, absent);
     // the hierarchy must not distinguish them or the agenda and the screen
     // would resolve differently depending on which repository answered.
-    expect(resolveDuration({ serviceTypeMinutes: 30 })).toBe(30);
+    expect(resolveDuration({ serviceMinutes: 30 })).toBe(30);
     expect(resolveDuration({ ruleSlotMinutes: 15 })).toBe(15);
   });
 
@@ -55,8 +55,8 @@ describe('resolveDuration (SP-023, D-010)', () => {
     // must be decided by presence, not truthiness: a bug upstream that
     // produced 0 should surface as 0 and fail the range check, not silently
     // fall through to the rule's minutes.
-    expect(
-      resolveDuration({ exceptionMinutes: 0, serviceTypeMinutes: 30 }),
-    ).toBe(0);
+    expect(resolveDuration({ exceptionMinutes: 0, serviceMinutes: 30 })).toBe(
+      0,
+    );
   });
 });

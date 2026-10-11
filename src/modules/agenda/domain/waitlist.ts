@@ -151,7 +151,7 @@ export interface WaitlistCandidate {
   /** `null` = any practitioner (AG-060). */
   practitionerId: string | null;
   /** `null` = any type of attention (AG-060). */
-  serviceTypeId: string | null;
+  serviceId: string | null;
   /** AG-066. Derived from `waitlist_contact_attempt`, never from a column. */
   contactAttempts: number;
   /** AG-064. Derived from the same trail: `max(attempted_at)`, or `null`. */
@@ -173,7 +173,7 @@ export interface FreedSlot {
   date: ClinicalDate;
   practitionerId: string;
   /** `null` when the freed entry fixed none — a released block, typically. */
-  serviceTypeId: string | null;
+  serviceId: string | null;
 }
 
 /**
@@ -199,10 +199,7 @@ export function isCompatibleWith(
   ) {
     return false;
   }
-  if (
-    entry.serviceTypeId !== null &&
-    entry.serviceTypeId !== slot.serviceTypeId
-  ) {
+  if (entry.serviceId !== null && entry.serviceId !== slot.serviceId) {
     // prettier-ignore
     return false;
   }
@@ -342,7 +339,7 @@ export interface RankedCandidate {
   status: WaitlistStatus;
   enrolledAt: Date;
   practitionerId: string | null;
-  serviceTypeId: string | null;
+  serviceId: string | null;
   preferredFrom: ClinicalDate;
   preferredTo: ClinicalDate;
   contactAttempts: number;
@@ -412,7 +409,7 @@ export function rankWaiting(
         status: entry.status,
         enrolledAt: entry.enrolledAt,
         practitionerId: entry.practitionerId,
-        serviceTypeId: entry.serviceTypeId,
+        serviceId: entry.serviceId,
         preferredFrom: entry.preferredFrom,
         preferredTo: entry.preferredTo,
         contactAttempts: entry.contactAttempts,
