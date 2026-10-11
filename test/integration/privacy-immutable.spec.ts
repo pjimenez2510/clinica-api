@@ -2,6 +2,8 @@ import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
+import { isSecondStandingAuthorization } from '../../src/modules/privacy/infrastructure/privacy-database-errors';
+
 import { useDatabase } from './setup/database';
 import { createPatient, createUser } from './setup/fixtures';
 
@@ -14,29 +16,52 @@ import { createPatient, createUser } from './setup/fixtures';
  * Every refusal comes with its POSITIVE CONTROL: the permitted write passes on
  * the same row, so a trigger that refused everything would fail here too.
  */
-describe('privacy: lo que prueba el consentimiento y las solicitudes no se reescribe', () => {
+describe('privacy: lo que prueba el aviso, las autorizaciones y las solicitudes no se reescribe', () => {
   const db = useDatabase();
 
   async function publish(prisma: PrismaClient, version: number, body: string) {
     const author = await createUser(prisma);
-    return prisma.consentTextVersion.create({
+    return prisma.privacyNoticeVersion.create({
       data: { version, body, publishedBy: author.id },
     });
   }
 
-  async function consentOn(prisma: PrismaClient, textVersionId: string) {
-    const [patient, clerk] = await Promise.all([
-      createPatient(prisma),
-      createUser(prisma),
-    ]);
-    return prisma.patientConsent.create({
+  /** PD-068. An authorization as the service writes it: the app's clock. */
+  async function authorize(
+    prisma: PrismaClient,
+    patientId: string,
+    purpose: 'REMINDERS' | 'MARKETING' | 'PHOTOS' | 'RESEARCH',
+    channel: 'WHATSAPP' | 'EMAIL' | null,
+  ) {
+    const clerk = await createUser(prisma);
+    return prisma.patientAuthorization.create({
       data: {
-        patientId: patient.id,
-        textVersionId,
-        medium: 'ON_SCREEN',
-        grantedBy: 'HOLDER',
+        patientId,
+        purpose,
+        channel,
+        recordedAt: new Date(),
         recordedBy: clerk.id,
       },
+    });
+  }
+
+  /**
+   * PD-071. Refused by `patient_authorization_one_standing`, read the way the
+   * repository reads it: the driver does not put the name in the message.
+   */
+  async function refusedAsSecondStanding(attempt: Promise<unknown>) {
+    const error = await attempt.then(
+      () => null,
+      (reason: unknown) => reason,
+    );
+    expect(error).not.toBeNull();
+    expect(isSecondStandingAuthorization(error)).toBe(true);
+  }
+
+  async function revoke(prisma: PrismaClient, authorizationId: string) {
+    const clerk = await createUser(prisma);
+    return prisma.patientAuthorizationRevocation.create({
+      data: { authorizationId, revokedAt: new Date(), revokedBy: clerk.id },
     });
   }
 
@@ -78,19 +103,19 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
     const first = await publish(prisma, 1, 'Texto original');
 
     await expect(
-      prisma.consentTextVersion.update({
+      prisma.privacyNoticeVersion.update({
         where: { id: first.id },
         data: { body: 'Texto reescrito' },
       }),
     ).rejects.toThrow(/append-only/);
     await expect(
-      prisma.consentTextVersion.delete({ where: { id: first.id } }),
+      prisma.privacyNoticeVersion.delete({ where: { id: first.id } }),
     ).rejects.toThrow(/append-only/);
     await expect(
-      prisma.$executeRawUnsafe('TRUNCATE consent_text_version CASCADE'),
+      prisma.$executeRawUnsafe('TRUNCATE privacy_notice_version CASCADE'),
     ).rejects.toThrow(/append-only/);
 
-    const stored = await prisma.consentTextVersion.findUniqueOrThrow({
+    const stored = await prisma.privacyNoticeVersion.findUniqueOrThrow({
       where: { id: first.id },
     });
     expect(stored.body).toBe('Texto original');
@@ -99,7 +124,7 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
   it('PD-004 la base rechaza un texto en blanco', async () => {
     const prisma = db();
     await expect(publish(prisma, 1, '   ')).rejects.toThrow(
-      /consent_text_version_body_valid/,
+      /privacy_notice_version_body_valid/,
     );
     // Positive control: the same number with real text is accepted.
     await expect(publish(prisma, 1, 'Texto')).resolves.toBeTruthy();
@@ -109,40 +134,186 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
     const prisma = db();
     const author = await createUser(prisma);
     const attempt = (body: string) =>
-      prisma.consentTextVersion.create({
+      prisma.privacyNoticeVersion.create({
         data: { version: 1, body, publishedBy: author.id },
       });
 
     const outcomes = await Promise.allSettled([attempt('A'), attempt('B')]);
 
     expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
-    expect(await prisma.consentTextVersion.count()).toBe(1);
+    expect(await prisma.privacyNoticeVersion.count()).toBe(1);
   });
 
-  it('PD-013 PD-014 un consentimiento no cambia ni se borra, y una versión nueva no lo toca', async () => {
+  it('PD-072 una autorización y su revocación no cambian ni se borran', async () => {
     const prisma = db();
-    const first = await publish(prisma, 1, 'Texto uno');
-    const consent = await consentOn(prisma, first.id);
-
-    await publish(prisma, 2, 'Texto dos');
+    const patient = await createPatient(prisma);
+    const granted = await authorize(prisma, patient.id, 'PHOTOS', null);
+    // Positive control: revoking is an INSERT, and it goes in.
+    await expect(revoke(prisma, granted.id)).resolves.toBeTruthy();
 
     await expect(
-      prisma.patientConsent.update({
-        where: { id: consent.id },
-        data: { medium: 'SIGNED_PAPER' },
+      prisma.patientAuthorization.update({
+        where: { id: granted.id },
+        data: { purpose: 'RESEARCH' },
       }),
     ).rejects.toThrow(/append-only/);
     await expect(
-      prisma.patientConsent.delete({ where: { id: consent.id } }),
+      prisma.patientAuthorization.delete({ where: { id: granted.id } }),
     ).rejects.toThrow(/append-only/);
+    await expect(
+      prisma.patientAuthorizationRevocation.update({
+        where: { authorizationId: granted.id },
+        data: { revokedAt: new Date(0) },
+      }),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      prisma.patientAuthorizationRevocation.delete({
+        where: { authorizationId: granted.id },
+      }),
+    ).rejects.toThrow(/append-only/);
+    // One revocation per authorization: its key.
+    await expect(revoke(prisma, granted.id)).rejects.toThrow(
+      /Unique constraint failed/,
+    );
 
-    const stored = await prisma.patientConsent.findUniqueOrThrow({
-      where: { id: consent.id },
-      include: { textVersion: true },
+    const stored = await prisma.patientAuthorization.findUniqueOrThrow({
+      where: { id: granted.id },
+      include: { revocation: true },
     });
-    expect(stored.medium).toBe('ON_SCREEN');
-    expect(stored.textVersion.version).toBe(1);
-    expect(stored.textVersion.body).toBe('Texto uno');
+    expect(stored.purpose).toBe('PHOTOS');
+    expect(stored.revocation).not.toBeNull();
+  });
+
+  it('PD-070 la base exige canal en recordatorios y publicidad, y ninguno en lo demás', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    await expect(
+      authorize(prisma, patient.id, 'REMINDERS', null),
+    ).rejects.toThrow(/patient_authorization_channel_matches_purpose/);
+    await expect(
+      authorize(prisma, patient.id, 'PHOTOS', 'EMAIL'),
+    ).rejects.toThrow(/patient_authorization_channel_matches_purpose/);
+    // Positive control.
+    await expect(
+      authorize(prisma, patient.id, 'REMINDERS', 'WHATSAPP'),
+    ).resolves.toBeTruthy();
+    await expect(
+      authorize(prisma, patient.id, 'PHOTOS', null),
+    ).resolves.toBeTruthy();
+  });
+
+  it('PD-071 una sola vigente por ficha, finalidad y canal; revocada, se vuelve a autorizar', async () => {
+    const prisma = db();
+    const [patient, other] = await Promise.all([
+      createPatient(prisma),
+      createPatient(prisma),
+    ]);
+    const first = await authorize(prisma, patient.id, 'REMINDERS', 'WHATSAPP');
+
+    await refusedAsSecondStanding(
+      authorize(prisma, patient.id, 'REMINDERS', 'WHATSAPP'),
+    );
+    // Positive controls: another channel, another purpose, another chart.
+    await expect(
+      authorize(prisma, patient.id, 'REMINDERS', 'EMAIL'),
+    ).resolves.toBeTruthy();
+    await expect(
+      authorize(prisma, patient.id, 'MARKETING', 'WHATSAPP'),
+    ).resolves.toBeTruthy();
+    await expect(
+      authorize(prisma, other.id, 'REMINDERS', 'WHATSAPP'),
+    ).resolves.toBeTruthy();
+    // Once revoked, the same one can be granted again.
+    await revoke(prisma, first.id);
+    await expect(
+      authorize(prisma, patient.id, 'REMINDERS', 'WHATSAPP'),
+    ).resolves.toBeTruthy();
+    // Without channel, NULL counts as equal: one standing «fotos».
+    await authorize(prisma, patient.id, 'PHOTOS', null);
+    await refusedAsSecondStanding(
+      authorize(prisma, patient.id, 'PHOTOS', null),
+    );
+  });
+
+  it('PD-071 la vigente es por persona: la base no deja otra igual en la superviviente si la absorbida ya la tiene', async () => {
+    const prisma = db();
+    const [survivor, absorbed, other] = await Promise.all([
+      createPatient(prisma),
+      createPatient(prisma),
+      createPatient(prisma),
+    ]);
+    await authorize(prisma, absorbed.id, 'MARKETING', 'EMAIL');
+    await prisma.patient.update({
+      where: { id: absorbed.id },
+      data: { mergedIntoId: survivor.id, mergedAt: new Date() },
+    });
+
+    await refusedAsSecondStanding(
+      authorize(prisma, survivor.id, 'MARKETING', 'EMAIL'),
+    );
+    // Positive controls: another chart, and another channel of the same person.
+    await expect(
+      authorize(prisma, other.id, 'MARKETING', 'EMAIL'),
+    ).resolves.toBeTruthy();
+    await expect(
+      authorize(prisma, survivor.id, 'MARKETING', 'WHATSAPP'),
+    ).resolves.toBeTruthy();
+  });
+
+  it('PD-071 dos autorizaciones iguales a la vez: gana la primera y la segunda se rechaza', async () => {
+    const prisma = db();
+    const patient = await createPatient(prisma);
+    const clerk = await createUser(prisma);
+    const attempt = () =>
+      prisma.patientAuthorization.create({
+        data: {
+          patientId: patient.id,
+          purpose: 'RESEARCH',
+          channel: null,
+          recordedAt: new Date(),
+          recordedBy: clerk.id,
+        },
+      });
+
+    // The first holds the chart's lock in an open transaction; the second
+    // is launched only once the first has inserted, so it must wait on the
+    // lock and then see the first.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let inserted!: () => void;
+    const firstIsIn = new Promise<void>((resolve) => (inserted = resolve));
+    const first = prisma.$transaction(async (tx) => {
+      const row = await tx.patientAuthorization.create({
+        data: {
+          patientId: patient.id,
+          purpose: 'RESEARCH',
+          channel: null,
+          recordedAt: new Date(),
+          recordedBy: clerk.id,
+        },
+      });
+      inserted();
+      await held;
+      return row;
+    });
+    await firstIsIn;
+    const second = attempt();
+    // The second is blocked on the lock: committing the first unblocks it.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    release();
+
+    const outcomes = await Promise.allSettled([first, second]);
+    expect(outcomes.map((o) => o.status)).toEqual(['fulfilled', 'rejected']);
+    expect(
+      isSecondStandingAuthorization(
+        (outcomes[1] as PromiseRejectedResult).reason,
+      ),
+    ).toBe(true);
+    expect(
+      await prisma.patientAuthorization.count({
+        where: { patientId: patient.id },
+      }),
+    ).toBe(1);
   });
 
   it('PD-038 una solicitud admite su respuesta una vez, entera, y nada más', async () => {
@@ -319,117 +490,41 @@ describe('privacy: lo que prueba el consentimiento y las solicitudes no se reesc
         await tx.$executeRawUnsafe(
           'SET LOCAL session_replication_role = replica',
         );
-        await tx.consentTextVersion.create({
+        await tx.privacyNoticeVersion.create({
           data: { version, body: 'Texto', publishedBy: author.id },
         });
       });
     await expect(insert(0)).rejects.toThrow(
-      /consent_text_version_number_positive/,
+      /privacy_notice_version_number_positive/,
     );
     await expect(insert(1)).resolves.toBeUndefined();
   });
 
-  it('PD-014 PD-038 la base rechaza vaciar de golpe consentimientos y solicitudes', async () => {
+  it('PD-072 PD-038 la base rechaza vaciar de golpe autorizaciones y solicitudes', async () => {
     const prisma = db();
-    const first = await publish(prisma, 1, 'Texto');
-    await consentOn(prisma, first.id);
+    const patient = await createPatient(prisma);
+    const granted = await authorize(prisma, patient.id, 'PHOTOS', null);
+    await revoke(prisma, granted.id);
     await openRequest(prisma);
 
     await expect(
-      prisma.$executeRawUnsafe('TRUNCATE patient_consent'),
+      prisma.$executeRawUnsafe('TRUNCATE patient_authorization_revocation'),
     ).rejects.toThrow(/append-only/);
+    // Referenced by the revocations: refused either way.
+    await expect(
+      prisma.$executeRawUnsafe('TRUNCATE patient_authorization'),
+    ).rejects.toThrow(/append-only|referenced in a foreign key constraint/);
     // Refused before the trigger even runs since PD-047: the rectified
     // answers point at it, and PostgreSQL does not truncate a referenced
     // table. Either way, nothing goes.
     await expect(
       prisma.$executeRawUnsafe('TRUNCATE data_subject_request'),
     ).rejects.toThrow(/append-only|referenced in a foreign key constraint/);
-    expect(await prisma.patientConsent.count()).toBe(1);
+    expect(await prisma.patientAuthorization.count()).toBe(1);
     expect(await prisma.dataSubjectRequest.count()).toBe(1);
   });
 
-  // --- D-127: corregir sin borrar (PD-044, PD-046, PD-047) --------------------
-
-  it('PD-044 corregir un consentimiento es una fila nueva que sustituye al original, que queda intacto; una sola vez', async () => {
-    const prisma = db();
-    const text = await publish(prisma, 1, 'Texto uno');
-    const original = await consentOn(prisma, text.id);
-    const clerk = await createUser(prisma);
-
-    // Control positivo: la corrección entra, enlazada al original.
-    const correction = await prisma.patientConsent.create({
-      data: {
-        patientId: original.patientId,
-        textVersionId: text.id,
-        medium: 'SIGNED_PAPER',
-        grantedBy: 'REPRESENTATIVE',
-        recordedBy: clerk.id,
-        supersedesId: original.id,
-      },
-    });
-    expect(correction.supersedesId).toBe(original.id);
-    // El original no se toca (PD-014 sigue).
-    const untouched = await prisma.patientConsent.findUniqueOrThrow({
-      where: { id: original.id },
-    });
-    expect(untouched).toMatchObject({
-      medium: 'ON_SCREEN',
-      grantedBy: 'HOLDER',
-    });
-    await expect(
-      prisma.patientConsent.update({
-        where: { id: original.id },
-        data: { medium: 'SIGNED_PAPER' },
-      }),
-    ).rejects.toThrow(/append-only/);
-
-    // Un original se corrige una vez: lo vigente es lo que nadie sustituye.
-    await expect(
-      prisma.patientConsent.create({
-        data: {
-          patientId: original.patientId,
-          textVersionId: text.id,
-          medium: 'ON_SCREEN',
-          grantedBy: 'HOLDER',
-          recordedBy: clerk.id,
-          supersedesId: original.id,
-        },
-      }),
-    ).rejects.toThrow(
-      /Unique constraint failed on the fields: \(`supersedes_id`\)/,
-    );
-  });
-
-  it('PD-044 la corrección es del mismo paciente y sobre el mismo texto que el original', async () => {
-    const prisma = db();
-    const first = await publish(prisma, 1, 'Texto uno');
-    const second = await publish(prisma, 2, 'Texto dos');
-    const original = await consentOn(prisma, first.id);
-    const [other, clerk] = await Promise.all([
-      createPatient(prisma),
-      createUser(prisma),
-    ]);
-    const correct = (patientId: string, textVersionId: string) =>
-      prisma.patientConsent.create({
-        data: {
-          patientId,
-          textVersionId,
-          medium: 'SIGNED_PAPER',
-          grantedBy: 'HOLDER',
-          recordedBy: clerk.id,
-          supersedesId: original.id,
-        },
-      });
-
-    await expect(correct(other.id, first.id)).rejects.toThrow(
-      /patient_consent_correction_matches/,
-    );
-    await expect(correct(original.patientId, second.id)).rejects.toThrow(
-      /patient_consent_correction_matches/,
-    );
-    // Control positivo.
-    await expect(correct(original.patientId, first.id)).resolves.toBeTruthy();
-  });
+  // --- D-127: corregir sin borrar (PD-046, PD-047) --------------------
 
   it('PD-046 una solicitud sin responder se edita con sello y deja su versión; ni el paciente ni quién la registró cambian', async () => {
     const prisma = db();

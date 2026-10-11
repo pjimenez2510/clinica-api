@@ -788,9 +788,9 @@ describe('las columnas del instructivo del RDACAA, contra la base', () => {
   });
 
   it('PA-059 sigue pidiendo la etnia mientras no haya país registrado', async () => {
-    // La rama que se pierde con facilidad, y la misma que D-037 escribió para
-    // la nacionalidad: mientras nadie haya hecho la pregunta, no se sabe si el
-    // campo hará falta.
+    // La rama que se pierde con facilidad: mientras nadie haya hecho la
+    // pregunta, no se sabe si el campo hará falta. La nacionalidad espera a la
+    // etnia (PA-032, enmendada en la ronda 4).
     const chart = await registerPatient({
       familyName: 'Sinpais',
       identifier: {
@@ -801,7 +801,7 @@ describe('las columnas del instructivo del RDACAA, contra la base', () => {
     });
 
     expect(chart.rdacaaMissingFields).toContain('ethnicityConceptId');
-    expect(chart.rdacaaMissingFields).toContain('nationalityConceptId');
+    expect(chart.rdacaaMissingFields).not.toContain('nationalityConceptId');
   });
 });
 

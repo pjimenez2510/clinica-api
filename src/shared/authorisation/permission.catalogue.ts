@@ -597,18 +597,18 @@ export const PERMISSION_CATALOGUE = [
     resource: 'admin',
     description: 'Consultar la bitácora de accesos',
   },
-  // Protección de datos (`privacy`, PD-001..PD-043). Dos permisos propios, que
-  // de fábrica trae `ADMIN` (D-083 §4). Registrar el consentimiento NO tiene
-  // permiso propio: es parte del alta en el mostrador y va con `patient:write`.
+  // Protección de datos (`privacy`, PD-001..PD-075). Dos permisos propios, que
+  // de fábrica trae `ADMIN` (D-083 §4). Registrar una autorización opcional
+  // (D-221 §3) NO tiene permiso propio: se hace en la ficha, en el mostrador, y
+  // va con `patient:write`.
   //
   // ⚠️ `patient:data-requests` INCLUYE EXPORTAR LA FICHA ENTERA en JSON (PD-040)
   // —con las versiones corregidas de la historia clínica (PD-048, D-140.2)—,
   // y la descripción lo dice para que nadie lo conceda sin saberlo.
   {
-    code: 'patient:consent-text',
+    code: 'privacy:notice',
     resource: 'patient',
-    description:
-      'Publicar versiones nuevas del texto de consentimiento de datos personales',
+    description: 'Publicar versiones nuevas del aviso de privacidad',
   },
   {
     code: 'patient:data-requests',

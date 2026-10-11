@@ -882,9 +882,9 @@ requisitos que cambian.
   > exactamente lo que la primera no permite.
 - **PA-032** — El sistema DEBERÁ señalar qué fichas no tienen completos los
   datos que el RDACAA exige, sin impedir que la ficha exista. **MIENTRAS** la
-  autoidentificación étnica de una ficha esté registrada y **no** sea
-  «Indígena», el sistema NO DEBERÁ contar `nationalityConceptId` entre los datos
-  que a esa ficha le faltan.
+  autoidentificación étnica de una ficha **no** esté registrada como
+  «Indígena» —esté vacía o sea otra—, el sistema NO DEBERÁ contar
+  `nationalityConceptId` entre los datos que a esa ficha le faltan.
   > **Resuelto por D-028 el 16-08-2026, recomendación aceptada: opcionales al
   > dar de alta y obligatorias al cerrar la primera atención**, con la ficha
   > marcada como incompleta mientras tanto. La norma las exige «en cada
@@ -917,12 +917,15 @@ requisitos que cambian.
   >   puede dejar en cero es un indicador que admisión aprende a ignorar, que es
   >   el mismo argumento por el que quedaron fuera la identidad de género y el
   >   país (PA-053).
-  > - **Etnia ausente** — **sigue contando**, y ésta es la rama que se pierde
-  >   con facilidad: mientras nadie haya hecho la pregunta, **no se sabe todavía
-  >   si el campo hará falta**. Dejar de pedirla ahí haría que la ficha se
-  >   leyera como completa y volviera a estar incompleta en cuanto alguien
-  >   registrara «Indígena» — el indicador retrocedería sin que nada del reporte
-  >   hubiera cambiado.
+  > - **Etnia ausente** — **no cuenta** (enmendado el 11-10-2026, ronda 4, a
+  >   pedido de la revisión de producto de `feat/f02-datos-faltantes`; antes
+  >   contaba). Se cuenta sólo lo que aplica según lo ya registrado: con la etnia
+  >   vacía la ficha decía «Faltan 3» y bajaba a «Falta 1» al elegir «Mestizo/a»,
+  >   un dato que nadie podía rellenar contado como si faltara. **La ficha no se
+  >   lee como completa**: la etnia vacía cuenta ella misma, y al registrar
+  >   «Indígena» se pide la nacionalidad: el indicador nunca se lee completo
+  >   sin ella. Lo que bloquee el cierre de la primera atención y el reporte
+  >   con este indicador es de `encounter` (EN-115, sin construir).
   >
   > **Y DESDE PA-059 HAY UNA CONDICIÓN ANTES QUE ÉSTAS TRES: EL PAÍS.** Si la
   > ficha declara un país de nacionalidad que no es Ecuador, el ministerio manda

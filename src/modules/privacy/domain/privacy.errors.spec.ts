@@ -9,10 +9,14 @@ import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogu
 
 import {
   ClinicalRecordCopyInvalidError,
-  ConsentAlreadyCorrectedError,
   DataRequestPartyNotAllowedError,
   DataRequestPatientNotDeceasedError,
-  ConsentNotFoundError,
+  PrivacyAuthorizationAlreadyGrantedError,
+  PrivacyAuthorizationAlreadyRevokedError,
+  PrivacyAuthorizationInvalidError,
+  PrivacyAuthorizationNotFoundError,
+  PrivacyNoticeInvalidError,
+  PrivacyNoticeVersionConflictError,
   DataRequestNotAnsweredError,
   DataRequestPatientDeceasedError,
   ClinicalRecordCopyReviewRequiredError,
@@ -25,24 +29,6 @@ import {
  * whoever is at the screen reads. None names a datum of the patient.
  */
 describe('los errores de corregir en privacidad', () => {
-  it('PD-044 answers CONSENT_NOT_FOUND as a 404 that says to refresh the list', () => {
-    const error = new ConsentNotFoundError();
-    expect(error.code).toBe('CONSENT_NOT_FOUND');
-    expect(error).toBeInstanceOf(NotFoundError);
-    expect(error.userTitle).toBe(
-      'No se encontró ese consentimiento en la ficha. Actualice la lista',
-    );
-  });
-
-  it('PD-044 answers CONSENT_ALREADY_CORRECTED as a 409 that points at the standing one', () => {
-    const error = new ConsentAlreadyCorrectedError();
-    expect(error.code).toBe('CONSENT_ALREADY_CORRECTED');
-    expect(error).toBeInstanceOf(ConflictError);
-    expect(error.userTitle).toBe(
-      'Ese consentimiento ya se corrigió. Actualice la lista y corrija el vigente',
-    );
-  });
-
   it('PD-047 answers DATA_REQUEST_NOT_ANSWERED as a 409 that says to answer it', () => {
     const error = new DataRequestNotAnsweredError();
     expect(error.code).toBe('DATA_REQUEST_NOT_ANSWERED');
@@ -52,13 +38,50 @@ describe('los errores de corregir en privacidad', () => {
     );
   });
 
-  it('PD-044 PD-047 registers the three codes in the frozen catalogue', () => {
-    for (const code of [
-      'CONSENT_ALREADY_CORRECTED',
-      'CONSENT_NOT_FOUND',
-      'DATA_REQUEST_NOT_ANSWERED',
-    ]) {
-      expect(DOMAIN_ERROR_CODES).toContain(code);
+  it('PD-047 registers its code in the frozen catalogue', () => {
+    expect(DOMAIN_ERROR_CODES).toContain('DATA_REQUEST_NOT_ANSWERED');
+  });
+});
+
+describe('los errores del aviso y de las autorizaciones (D-221)', () => {
+  it('PD-004 PRIVACY_NOTICE_INVALID es un 422 en el campo del texto', () => {
+    const error = new PrivacyNoticeInvalidError();
+    expect(error.code).toBe('PRIVACY_NOTICE_INVALID');
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.fieldErrors?.[0]?.field).toBe('body');
+    expect(error.userTitle).toBe(
+      'Escriba el aviso de privacidad (hasta 20 000 caracteres)',
+    );
+  });
+
+  it('PD-005 PRIVACY_NOTICE_VERSION_CONFLICT es un 409 que manda revisar la vigente', () => {
+    const error = new PrivacyNoticeVersionConflictError();
+    expect(error.code).toBe('PRIVACY_NOTICE_VERSION_CONFLICT');
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.userTitle).toBe(
+      'Otra persona publicó una versión del aviso al mismo tiempo. Revise la vigente antes de publicar',
+    );
+  });
+
+  it('PD-070 PRIVACY_AUTHORIZATION_INVALID es un 422 que nombra el teléfono o el correo', () => {
+    const error = new PrivacyAuthorizationInvalidError();
+    expect(error.code).toBe('PRIVACY_AUTHORIZATION_INVALID');
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.userTitle).toContain('ese teléfono o ese correo');
+  });
+
+  it('PD-071 PD-072 los conflictos y el 404 de una autorización', () => {
+    const granted = new PrivacyAuthorizationAlreadyGrantedError();
+    expect(granted.code).toBe('PRIVACY_AUTHORIZATION_ALREADY_GRANTED');
+    expect(granted).toBeInstanceOf(ConflictError);
+    const revoked = new PrivacyAuthorizationAlreadyRevokedError();
+    expect(revoked.code).toBe('PRIVACY_AUTHORIZATION_ALREADY_REVOKED');
+    expect(revoked).toBeInstanceOf(ConflictError);
+    const missing = new PrivacyAuthorizationNotFoundError();
+    expect(missing.code).toBe('PRIVACY_AUTHORIZATION_NOT_FOUND');
+    expect(missing).toBeInstanceOf(NotFoundError);
+    for (const error of [granted, revoked, missing]) {
+      expect(DOMAIN_ERROR_CODES).toContain(error.code);
     }
   });
 });

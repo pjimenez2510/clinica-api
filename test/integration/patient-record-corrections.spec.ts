@@ -2022,10 +2022,11 @@ describe('la ficha del RDACAA y su corrección, contra la base', () => {
     // selector de etnia vacío es exactamente lo que no se puede hacer.
     const created = await registerPatient();
 
+    // Sin la nacionalidad: con la etnia vacía no aplica todavía (PA-032,
+    // enmendada en la ronda 4).
     expect([...created.rdacaaMissingFields].sort()).toEqual([
       'ethnicityConceptId',
       'identifier',
-      'nationalityConceptId',
       'residenceParishConceptId',
     ]);
 
