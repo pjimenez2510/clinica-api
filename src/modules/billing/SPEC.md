@@ -638,6 +638,18 @@ propuesta por código (BI-287), la pared se agrupa por tipo (BI-289), la bitáco
 la consulta única por visita (BI-298); en pantalla sólo se ve el mensaje que el
 servidor devuelve.
 
+### B22 — Caja y SRI: lo que D-223 decidió _(P1, 11-10-2026)_
+
+D-172 §4, D-169 §2 (l), D-212 §2 y D-216 §1; lo del correo y la firma está en
+`sri/SPEC.md` S10.
+**Prueba independiente:** volver a revisar el IVA de un servicio revisado y ver
+la revisión nueva; unificar una ficha con su atención abierta, facturarla y
+leer en el RIDE la identidad de la vigente, y que deshacer la unificación no lo
+cambie; editar el motivo de una nota de crédito devuelta por el doble y verla
+autorizada, y desistir de otra y acreditar de nuevo sus líneas; dos «enviar a
+caja» con pagadores distintos y que la segunda diga cuál tiene la cuenta.
+**Cubre:** BI-024, BI-274, BI-301 a BI-305. **Solo servidor:** BI-301, BI-302.
+
 > **Sustituye** —retirados en su sitio, con su sustituto dicho—: BI-185 a
 > BI-188, BI-257, BI-275 a BI-277, y SP-020, SP-026, SP-030, SP-031, ORD-103,
 > ORD-108, ORD-109, ORD-162, ORD-163 y ORD-169 en sus módulos.
@@ -918,6 +930,11 @@ es falsa, hay requisitos que cambian.
   > y la revisión anterior se conserva en la bitácora (`access_audit`, con la
   > fila antes y después: quién la revisó, cuándo y qué tarifa tenía). Cambiar
   > el nombre o la categoría no toca la marca.
+  >
+  > **Enmienda del 11-10-2026 (D-172 §4, D-223):** marcar de nuevo una ya
+  > revisada («Volver a revisar») DEBERÁ guardar la revisión nueva —quién y
+  > cuándo— y dejar la anterior en la bitácora, como la primera; y la revisión
+  > caduca a los meses que diga BI-301.
 - **BI-025** — CUANDO cambie la tarifa de una prestación, el sistema NO DEBERÁ
   alterar la tarifa ni el importe de impuesto de ningún cargo ya registrado.
   > Es BI-051 aplicado al impuesto, y se dice aparte porque el impuesto es el
@@ -2984,8 +3001,8 @@ lo ve._
   > a mano para una atención que ya tiene una sigue respondiendo
   > `ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER`, y también la pulsación perdedora en
   > el caso, de milisegundos, en que la cuenta ganadora se cerró antes de
-  > leerla. La pulsación perdedora recibe la cuenta con el pagador de la
-  > ganadora, como ya ocurría con una pulsación posterior (D-216, pendiente).
+  > leerla. **Enmienda del 11-10-2026 (D-216 §1):** la pulsación perdedora
+  > recibe la cuenta sólo si pidió el mismo pagador o ninguno (BI-305).
 
 ## 27. Un solo catálogo de servicios (ADR-013, D-227 §1)
 
@@ -3203,6 +3220,57 @@ lo ve._
   Especialidades DEBERÁ listar sus consultas con enlace al servicio, sin
   editarlas, y el pagador NO DEBERÁ editar precios (D-227 §1).
 
+## 28. Caja y SRI: lo que D-223 decidió (11-10-2026)
+
+- **BI-301** — DONDE la clínica fije un plazo de vigencia de la revisión del
+  IVA, una revisión más antigua que ese plazo DEBERÁ contar como pendiente en
+  el listado (BI-023) y en la ficha del servicio; de fábrica NO DEBERÁ haber
+  plazo.
+  > D-172 §4: «si el contador lo quiere». El plazo vive en el dominio
+  > (`TAX_REVIEW_VALID_MONTHS`, `null`), apagado; encenderlo con 12 es cambiar
+  > ese valor. **Confirmar con:** contador.
+- **BI-302** — CUANDO se emita una factura, la base DEBERÁ fijar en ella la
+  ficha que nombra —la vigente de la ficha de su cuenta en ese instante,
+  `invoice.chart_of_record_id`— y NO DEBERÁ dejar que cambie después; y el
+  RIDE —al emitirse, al reimprimirse y el que va por correo— DEBERÁ imprimir
+  de esa ficha el nombre, la historia, y la dirección y el teléfono cuando el
+  comprador sea esa persona (DOC-076). Unificar o deshacer la unificación
+  después NO DEBERÁ cambiar qué ficha nombra.
+  > D-169 §2 (l), con el criterio de CER-057 y ORD-161: el RIDE de una atención
+  > de una ficha unificada salía con el nombre de la duplicada y sin cédula. La
+  > nota de crédito no imprime la ficha: sólo el receptor que copió de la
+  > factura (BI-210), así que no tiene nada que fijar.
+- **BI-303** — MIENTRAS una nota de crédito esté `REJECTED`, el sistema DEBERÁ
+  permitir a quien tenga `billing:credit-note` en su sede corregir su motivo
+  con las reglas de BI-209 y reenviarla en el mismo acto con la misma clave y
+  el mismo secuencial (SRI-103), guardando la fila anterior en
+  `record_version`; SI la nota está en otro estado ENTONCES DEBERÁ rechazarlo
+  con `CREDIT_NOTE_NOT_EDITABLE`, y la base DEBERÁ rechazar el cambio del
+  motivo de una nota que no esté `REJECTED`.
+  > D-212 §2: la salida normal, como la factura devuelta (BI-216). El receptor,
+  > las líneas y los importes son los de la factura que modifica y no se
+  > editan.
+- **BI-304** — MIENTRAS una nota de crédito esté `REJECTED`, quien tenga
+  `billing:credit-note` en su sede DEBERÁ poder desistir de ella con un motivo
+  (`WITHDRAWN`); y el sistema DEBERÁ, en la misma transacción y con versión,
+  liberar sus líneas —un cargo acreditado por una nota desistida admite otra
+  nota (`credit_note_line_one_per_charge` sólo cuenta las líneas vivas)— y
+  quitar los cargos por facturar que corregían esas líneas (BI-214) que no se
+  hayan facturado; y la base DEBERÁ rechazar que una nota desistida cambie de
+  estado o vuelva a contar.
+  > D-212 §2: «si el SRI la rechaza sin remedio». Lo decide una persona, no
+  > el sistema: el SRI no dice «sin remedio». **Confirmar con:** contador.
+  > Sin quitar las copias, la factura —que sigue valiendo entera— y las copias
+  > cobrarían dos veces lo mismo.
+- **BI-305** — CUANDO se pida «enviar a caja» una atención que ya tiene cuenta
+  abierta —también la pulsación que pierde la carrera de BI-274—, el sistema
+  DEBERÁ devolver esa cuenta sólo si no se pidió pagador o se pidió el suyo; y
+  SI se pidió otro, ENTONCES DEBERÁ responder
+  `ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER` con el pagador de la cuenta abierta, sin
+  tocarla.
+  > D-216 §1. Caja ve el pagador ya elegido y lo cambia con «Cambiar
+  > pagador» (BI-215) si hace falta, en vez de descubrirlo en el extracto.
+
 ---
 
 ## Códigos de error nuevos
@@ -3337,7 +3405,8 @@ registrados en `infrastructure/billing.constraints.ts`.
 | `INVALID_ACCOUNT_STATUS` | 422 | `patient_account_status_is_known` | BI-070 |
 | `ACCOUNT_CLOSURE_INCOHERENT` | 422 | `patient_account_closed_states_its_instant` | BI-071 |
 | `ACCOUNT_NO_CHARGE_REASON_REQUIRED` | 422 | `trg_patient_account_settled_states_why_unpaid`, `patient_account_no_charge_reason_not_blank` | BI-237 |
-| `ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER` | 409 | `patient_account_one_open_per_encounter` | BI-070 |
+| `ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER` | 409 | `patient_account_one_open_per_encounter` | BI-070, BI-305 |
+| `CREDIT_NOTE_NOT_EDITABLE` | 409 | — | BI-303, BI-304 |
 | `INVOICE_SEQUENTIAL_TAKEN` | 409 | `invoice_sequential_unique` | BI-085 |
 | `INVOICE_TOTAL_INCONSISTENT` | 422 | `invoice_total_is_consistent` | BI-058, BI-083 |
 | `FINAL_CONSUMER_IDENTIFICATION_REQUIRED` | 422 | `invoice_final_consumer_identification` | BI-081 |
@@ -3375,6 +3444,7 @@ duplicarse.
 | `billing:price-manage` | ya declarado | Administrar prestaciones, tarifas de impuesto, pagadores, listas de precios y sus vigencias | BI-046, BI-134 |
 | `billing:discount-override` | ya declarado | Autorizar un descuento por encima del límite de quien lo aplica | BI-063 |
 | `billing:credit-note` | ya declarado | Emitir notas de crédito | BI-091 |
+| `billing:voucher-mail` | **nuevo** (de fábrica a `CAJA` y `ADMIN`) | Reenviar o reintentar el correo de un comprobante autorizado | SRI-099 |
 | `invoice:void` | **nuevo** | Anular una factura dentro del plazo del SRI | BI-092 |
 | `tariff:publish` | declarado (de fábrica a `ADMIN`, con `billing:price-manage`: D-049) | Publicar el tarifario que se exhibe al público | BI-113 |
 | `settings:manage` | ya declarado | Asignar los límites de descuento por rol y administrar los medios de pago | BI-140, BI-141 |

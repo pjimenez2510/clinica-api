@@ -228,6 +228,18 @@ correo» a una dirección nueva y encontrar en Mailpit el correo con el PDF y el
 XML; el estado de la entrega y el correo de la factura no cambian.
 **Cubre:** SRI-095 a SRI-097. **Solo servidor:** SRI-096. **Solo interfaz:** SRI-097.
 
+### S10 — El correo que no se da por perdido sin motivo, y su registro _(P1, 11-10-2026)_
+
+D-223: D-167 §1 y §2, D-213 §1 y §4, D-212 §2 y D-215 §2.
+**Prueba independiente:** con el servidor de correo caído más de tres días, el
+comprobante sigue `FAILED` y el monitor lo avisa; con un buzón que el servidor
+rechaza (550), queda `UNDELIVERABLE`; «Reintentar el correo» a la dirección
+del comprador lo deja `SENT` y a otra no, y cada envío queda en
+`electronic_voucher_mailing`; una nota de crédito devuelta se edita y se
+reenvía con su clave; un certificado de otro RUC se carga con aviso.
+**Cubre:** SRI-091, SRI-095, SRI-098 a SRI-104. **Solo servidor:** SRI-100,
+SRI-101, SRI-104. **Solo interfaz:** SRI-099.
+
 ---
 
 ## Criterios de éxito
@@ -664,9 +676,11 @@ XML; el estado de la entrega y el correo de la factura no cambian.
 - **SRI-076** — DONDE la factura no tenga correo del receptor, el sistema NO
   DEBERÁ intentar la entrega y DEBERÁ exponerlo como «sin correo».
 - **SRI-091** — SI el correo de un comprobante sigue fallando setenta y dos
-  horas o más después de su autorización, ENTONCES el sistema DEBERÁ dejar de
-  reintentarlo, DEBERÁ anotarlo como «no se pudo enviar» (`UNDELIVERABLE`) y NO
-  DEBERÁ volver a intentarlo ni desde la cola ni desde el barrido; tampoco
+  horas o más después de su autorización **y el último fallo es un rechazo
+  permanente de la dirección** —el servidor de correo respondió 5xx al
+  destinatario (buzón o dominio inexistente)—, ENTONCES el sistema DEBERÁ dejar
+  de reintentarlo, DEBERÁ anotarlo como «no se pudo enviar» (`UNDELIVERABLE`) y
+  NO DEBERÁ volver a intentarlo ni desde la cola ni desde el barrido; tampoco
   DEBERÁ cambiar el estado del comprobante ni el de la factura.
   > D-158.3, resuelta por el autor el 07-10-2026. Una dirección que el servidor
   > de correo rechaza siempre se reintentaba sin tope, cada seis horas, y cada
@@ -674,24 +688,48 @@ XML; el estado de la entrega y el correo de la factura no cambian.
   > de correo caído un fin de semana; lo que sigue fallando después es la
   > dirección, y la fila de caja dice que se entregue el impreso.
   >
+  > **Enmienda del 11-10-2026 (D-167 §1, D-223):** la regla no miraba por qué
+  > fallaba, y una avería del correo de la clínica de más de tres días dejaba
+  > perdidos todos los comprobantes de esos días. Ahora sólo el rechazo
+  > permanente del destinatario da por perdido; lo demás es SRI-098.
+  >
   > «Correo enviado» significa que el servidor de correo lo aceptó, no que
   > llegó: un rebote posterior no se ve, ni antes ni ahora.
+- **SRI-098** — SI el correo de un comprobante falla setenta y dos horas o más
+  después de su autorización por cualquier otra causa —conexión, credenciales
+  del servidor, respuesta 4xx, servidor de correo sin configurar o RIDE que no
+  se pudo componer—, ENTONCES el sistema DEBERÁ seguir reintentándolo con el
+  tope de seis horas de SRI-074 y anotarlo `FAILED`; y el monitor DEBERÁ decir
+  cuántos comprobantes de las sedes de quien mira llevan tres días o más sin
+  poder enviarse así, y desde cuándo el más antiguo.
+  > D-167 §1. El aviso no nombra a nadie ni da direcciones: es la señal para
+  > quien administra de que el servidor de correo de la clínica falla.
 
 - **SRI-095** — CUANDO quien tenga `billing:write` en la sede de un
   comprobante autorizado pida reenviarlo a una dirección de correo, el sistema
   DEBERÁ enviarle en el acto el RIDE en PDF y el XML autorizado, como SRI-072
   y SRI-073; NO DEBERÁ cambiar el comprobante, su entrega registrada ni el
   correo del receptor del documento; DEBERÁ archivar el RIDE de la copia a
-  nombre de quien lo reenvía, y dejar en la bitácora quién lo reenvió.
+  nombre de quien lo reenvía, y dejar en la bitácora quién lo reenvió. CUANDO
+  la dirección sea la del receptor del documento —sin distinguir mayúsculas— y
+  la entrega registrada sea `FAILED`, `UNDELIVERABLE` o `PENDING`, el correo
+  que salió DEBERÁ anotar la entrega como `SENT`; a otra dirección, NO DEBERÁ
+  tocarla.
   > Revisión del 10-10-2026: el RIDE se archivaba a nombre de quien emitió la
   > factura, y su fila PRINT nombraba a otra persona. La ruta lleva además un
   > límite propio (10 por minuto).
+  >
+  > **Enmienda del 11-10-2026 (D-167 §2, D-213 §4):** un reenvío correcto a la
+  > dirección del comprador es la entrega que faltaba, y la fila de caja debe
+  > decirlo; a otra dirección, la entrega al comprador sigue sin hacerse. El
+  > permiso pasa a `billing:voucher-mail` (caja y administración, SRI-099).
   >
   > La dirección no se guarda en el comprobante: el receptor de una factura
   > autorizada no se edita (BI-084). Que llegue a la ficha lo compone la
   > pantalla (BI-272, PA-075). A la bitácora va quién lo reenvió (`EXPORT`),
   > no la dirección: es un dato personal y
-  > `access_audit` no admite valores de este recurso (PA-031).
+  > `access_audit` no admite valores de este recurso (PA-031). La dirección
+  > va a su tabla propia (SRI-100).
 - **SRI-096** — SI el comprobante no está autorizado, o su documento no lo
   está (una factura anulada conserva su comprobante autorizado), ENTONCES el
   sistema DEBERÁ rechazar el reenvío con `SRI_VOUCHER_NOT_AUTHORISED`; SI está fuera
@@ -710,6 +748,29 @@ XML; el estado de la entrega y el correo de la factura no cambian.
   > persona (el empleador, el contador). Con la regla de BI-272 la casilla
   > salía marcada y la ficha quedaba con el correo de un tercero, al que irían
   > las facturas siguientes. Queda para el autor confirmarlo (plan, D-205).
+- **SRI-099** — En la fila de una factura o nota de crédito autorizada cuyo
+  correo esté `FAILED` o `UNDELIVERABLE`, quien tenga `billing:voucher-mail`
+  DEBERÁ encontrar «Reintentar el correo», que reenvía en el acto (SRI-095) a
+  la dirección del comprador, propuesta y editable; y el sistema DEBERÁ exigir
+  `billing:voucher-mail` —que de fábrica tienen caja y administración— para
+  reenviar o reintentar, con el alcance por sede de SRI-065.
+  > D-167 §2. Administración no tiene `billing:write` (no cobra ni emite) y la
+  > decisión le da el reintento: un permiso propio, sólo para el correo.
+- **SRI-100** — CUANDO salga un reenvío (SRI-095), el sistema DEBERÁ guardar en
+  `electronic_voucher_mailing` el comprobante, quién lo pidió, cuándo, la
+  dirección y si era la del comprador; y la base DEBERÁ rechazar la
+  modificación y el borrado de esas filas
+  (`electronic_voucher_mailing_append_only`) y el de un comprobante con envíos.
+  > D-213 §1: saber a quién se comunicaron los datos del titular (LOPDP). Se
+  > guarda con el mismo plazo que el comprobante: no se purga mientras exista.
+  > **Confirmar con:** asesor legal (el plazo). Un correo que no salió no se
+  > guarda: no hubo comunicación.
+- **SRI-101** — SI quien pide un reenvío ya hizo, en el día de
+  `America/Guayaquil`, tantos como el tope diario (50), ENTONCES el sistema
+  DEBERÁ rechazarlo con `SRI_RESEND_DAILY_LIMIT` sin enviar nada; el tope de
+  10 por minuto sigue.
+  > D-213 §1. 50 al día es un valor de arranque: una caja atiende decenas de
+  > facturas, no cientos de reenvíos (D-235).
 
 ## 7. El certificado desde la administración
 
@@ -732,6 +793,18 @@ XML; el estado de la entrega y el correo de la factura no cambian.
   > Los suelta para el barrido siguiente (un minuto), no los firma dentro de la
   > petición de carga: 200 firmas con su derivación scrypt agotaban el tiempo
   > de la petición, y dos firmantes a la vez competían por el mismo comprobante.
+- **SRI-102** — CUANDO se cargue un certificado, el sistema DEBERÁ leer el RUC
+  de su titular —la extensión `1.3.6.1.4.1.37746.3.11` de Security Data o, sin
+  ella, un RUC de 13 dígitos en el sujeto— y guardarlo con el certificado; y
+  al cargarlo y al leer el estado de la firma DEBERÁ decir si ese RUC no es el
+  del establecimiento ni el de ninguna de sus sedes, o que no se pudo leer; y
+  NO DEBERÁ por ello rechazar la carga ni dejar de firmar.
+  > D-215 §2. Fuente: «OID — Objetos Identificadores Únicos de los
+  > Certificados», Security Data, v9 (07-07-2020): 3.11 es el RUC en los
+  > certificados de miembro de empresa, representante legal y persona natural
+  > con RUC. Los de otras entidades (BCE, ANF, Uanataca) no se verificaron:
+  > con ellos el aviso puede decir «no se pudo leer». **Confirmar con:**
+  > contador (si el certificado de un representante con otro RUC vale).
 
 ---
 
@@ -785,6 +858,16 @@ XML; el estado de la entrega y el correo de la factura no cambian.
   > D-093 B. La Nota 1 de la Ficha: los rechazados se reenvían «una vez
   > corregido el error motivo del rechazo sin generar nuevos números de clave
   > de acceso o secuenciales».
+- **SRI-103** — CUANDO caja corrija una nota de crédito `REJECTED` (BI-303), el
+  sistema DEBERÁ recomponer su XML con el motivo corregido **y la misma
+  clave**, firmarlo y enviarlo en el mismo acto, como SRI-090; y el monitor
+  DEBERÁ ofrecer «Editar» junto a «Reenviar» en las notas de crédito devueltas
+  o no autorizadas.
+  > D-212 §2. Lo único de la nota que no sale de la factura es el motivo: el
+  > receptor, las líneas y los importes son los de la factura que modifica.
+- **SRI-104** — MIENTRAS una nota de crédito esté desistida (`WITHDRAWN`,
+  BI-304), el sistema NO DEBERÁ reenviarla, ni desde el monitor ni desde la
+  cola, y el monitor NO DEBERÁ contarla entre lo que necesita a una persona.
 
 ## 8. Códigos de error nuevos
 
@@ -797,6 +880,7 @@ XML; el estado de la entrega y el correo de la factura no cambian.
 | `SRI_CERTIFICATE_TOO_LARGE`  | 422       | SRI-083                                                                                      |
 | `SRI_VOUCHER_NOT_AUTHORISED` | 409       | SRI-096. Sólo se reenvía por correo lo que el SRI autorizó                                   |
 | `SRI_RESEND_FAILED`          | 503       | SRI-096. El servidor de correo no aceptó el reenvío; no va a la cola                         |
+| `SRI_RESEND_DAILY_LIMIT`     | 429       | SRI-101. Quien pide ya hizo hoy los reenvíos del tope diario                                 |
 
 ## 9. La conexión real, que hace el autor
 
@@ -833,6 +917,10 @@ el autor quiera hacerlo:
 | SRI-060 a SRI-069, SRI-080 a SRI-084                   | Integración por HTTP (permiso, alcance, contrato) y e2e de la interfaz                                                                                                                                       |
 | SRI-070 a SRI-076, SRI-091                             | Unitarias sobre los bytes del RIDE; integración con un `Mailer` falso y e2e con Mailpit                                                                                                                      |
 | SRI-095, SRI-096                                       | Integración por HTTP con PostgreSQL real y un `Mailer` que captura: adjuntos, la entrega y el correo de la factura sin cambiar, la fila de bitácora; el no autorizado, el de otra sede y el correo que falla |
+| SRI-091, SRI-098                                       | Unitarias de la clasificación del fallo y del despacho; integración con un `Mailer` que falla como se le pide; e2e con Mailpit |
+| SRI-095, SRI-099 a SRI-101                             | Integración por HTTP con PostgreSQL real: la entrega `SENT` sólo a la dirección del comprador, la fila de envío, el disparador de sólo inserción por SQL directo con control positivo, el tope diario |
+| SRI-102                                                | Unitarias del inspector con un `.p12` que lleva la extensión; integración por HTTP de la carga y del estado               |
+| SRI-103, SRI-104                                       | Integración contra PostgreSQL y el doble del SRI                                                                            |
 | SRI-085 a SRI-090                                      | Unitarias del XML contra el XSD oficial y de la firma; integración contra PostgreSQL (SRI-086 por SQL directo) y el doble del SRI; e2e del recorrido de caja                                                 |
 
 ## 11. Preguntas abiertas
