@@ -545,6 +545,34 @@ describe('finding a newborn through their mother', () => {
   });
 });
 
+describe('reading only the charts a screen already names', () => {
+  const ID = (n: number) =>
+    `01a12b5a-92dc-7e4b-8ad0-${String(n).padStart(12, '0')}`;
+
+  it('PA-079 takes the chart ids as one comma-separated parameter', () => {
+    expect(
+      searchPatientsSchema.safeParse({ ids: `${ID(1)},${ID(2)}` }).data,
+    ).toMatchObject({ ids: [ID(1), ID(2)] });
+  });
+
+  it('PA-079 refuses the whole query when one id is malformed', () => {
+    expect(
+      searchPatientsSchema.safeParse({ ids: `${ID(1)},Guamán` }).success,
+    ).toBe(false);
+  });
+
+  it('PA-079 refuses more than 50 ids, and accepts exactly 50', () => {
+    const many = (count: number) =>
+      Array.from({ length: count }, (_, index) => ID(index + 1)).join(',');
+    expect(searchPatientsSchema.safeParse({ ids: many(50) }).success).toBe(
+      true,
+    );
+    expect(searchPatientsSchema.safeParse({ ids: many(51) }).success).toBe(
+      false,
+    );
+  });
+});
+
 describe('correcting a chart', () => {
   it('PA-031 accepts a correction of a single field and leaves the rest absent', () => {
     const result = correctPatientSchema.safeParse({ familyName: 'Guamán' });
