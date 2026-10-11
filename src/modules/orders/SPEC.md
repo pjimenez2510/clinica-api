@@ -303,12 +303,16 @@ que la clínica hace y el sistema no tiene se pide a mano o no se pide.
 **Prueba independiente:** crear un examen de laboratorio con dos analitos y sus
 rangos, cobrarlo con una prestación de laboratorio, pedirlo desde una atención;
 y ver rechazada la prestación de imagen.
-**Cubre:** ORD-103 a ORD-111.
+**Cubre:** ORD-103 a ORD-111, **ORD-169**.
 
 **Solo servidor:** ORD-110, ORD-111. Que un cambio del catálogo no altere un resultado ya
 registrado es una propiedad de lo que el resultado congela; en pantalla no hay
 nada que lo enseñe. La fila de `access_audit` de cada alta o corrección
 (ORD-111) se prueba contándola, como las de PR-090 a PR-093.
+
+**Solo interfaz:** ORD-169. La ficha no ofrece cambiar el tipo (fijado con la prestación,
+ORD-163) ni manda `billableServiceId`; el servidor ya rechaza la mezcla con ORD-108 y ORD-109.
+Se prueba en `clinica-web` (`ExamDataPanel.spec.ts`).
 
 ### E11 — La orden que se compone y se imprime sin dudas _(P1)_
 
@@ -1447,6 +1451,19 @@ desde la pantalla.
 - **ORD-109** — SI se cambia el tipo de un examen que tiene prestación de cobro
   a uno que no es la clase de esa prestación, ENTONCES el sistema DEBERÁ
   rechazarlo con `EXAM_SERVICE_KIND_MISMATCH`.
+
+- **ORD-169** — (Solo interfaz, corrección del defecto de ronda 3) La corrección
+  de la ficha de un examen NO DEBERÁ ofrecer cambiar su tipo ni enviar ningún
+  cambio de su prestación de cobro: el tipo quedó fijado con la prestación al
+  darlo de alta (ORD-163, D-179.1) y el `PATCH` ya no acepta `billableServiceId`
+  (ORD-108). De modo que una corrección de la ficha NUNCA DEBERÁ disparar
+  `EXAM_SERVICE_KIND_MISMATCH`.
+
+  > El panel anterior, al cambiar el tipo, mandaba `billableServiceId: null`
+  > —que `updateExamSchema` (`.strict()`) rechaza con un 400— y avisaba «Elija
+  > una del tipo nuevo en Cobro», una pantalla que no existe. Cómo se presenta
+  > —el tipo de sólo lectura con su porqué— lo fija ESTANDAR-UI §12.4 («no
+  > mostrar lo que no se puede»); aquí sólo se fija qué viaja y qué no.
 
 - **ORD-110** — Un cambio del catálogo NO DEBERÁ alterar ningún resultado ya
   registrado ni ninguna orden ya emitida: SI se renombra, cambia de tipo o de

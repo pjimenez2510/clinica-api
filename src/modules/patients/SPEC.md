@@ -281,6 +281,31 @@ intentar con la misma cuenta cambiar el apellido y recibir el rechazo.
 **Cubre:** PA-075, PA-076. **Solo servidor:** PA-075, PA-076. Su pantalla es la
 de caja (BI-272, SRI-097), que cita su propio requisito.
 
+### P10 — Los datos encadenados del RDACAA se corrigen juntos, y la parroquia se lee _(P1, 10-10-2026)_
+
+Revisión de producto del 10-10-2026 (D-205), ronda 3, puntos 1 y 2: en la
+ficha, la etnia, la nacionalidad indígena, el pueblo y el país se corrigen como
+un grupo con borrador común y **una sola corrección**, cumpliendo la cadena sin
+llevar a un 422 evitable; elegir el pueblo pone «Kichwa» sin pedirla; y la
+parroquia vuelve a leerse con su provincia y cantón en vez de sus seis dígitos
+(regresión de PA-028).
+
+**Por qué es P1:** la ficha es la pantalla que más abre recepción, y hasta hoy
+corregir el pueblo daba 422 `PEOPLE_REQUIRES_KICHWA_NATIONALITY` y la parroquia
+mostraba «090950» con la provincia vacía: dos datos del reporte mensual que no
+se podían arreglar desde la pantalla.
+**Prueba independiente:** con `patient:write`, en una ficha mestiza corregir la
+etnia a «Indígena», elegir un pueblo y comprobar que la nacionalidad queda
+«Kichwa» y que la corrección viaja en un solo PATCH; cambiar el país a uno
+extranjero y ver que la etnia, la nacionalidad y el pueblo se vacían con su
+aviso; y abrir una ficha con parroquia y leer «Pichincha · Quito · Calderón»,
+sin el código.
+**Cubre:** PA-077, PA-078.
+**Solo interfaz:** PA-077, PA-078. El servidor ya hace cumplir la cadena
+(PA-027, PA-056, PA-059) y vacía la etnia extranjera (PA-065); lo de esta
+entrega es qué ofrece y cómo lo agrupa la pantalla, y que no lleve a un rechazo
+evitable — y su prueba vive en `clinica-web`.
+
 ## Criterios de éxito
 
 Medibles y sin nombrar tecnología. **No empiezan en `SC-001` a propósito**: los
@@ -1155,6 +1180,41 @@ requisitos que cambian.
   > sitios que un día discrepan**. Vive junto a los otros dos escalones de la
   > cadena, en el servicio, con `ECUADOR_COUNTRY_CODE` como único sitio que lo
   > sabe.
+- **PA-077** — CUANDO alguien con `patient:write` corrija en la ficha la
+  autoidentificación étnica, la nacionalidad o pueblo indígena, el pueblo o el
+  país de nacionalidad, el sistema DEBERÁ editarlos como **un solo grupo con un
+  borrador común** —ofreciendo cada escalón sólo cuando el de arriba lo admite
+  (país ecuatoriano → etnia «Indígena» → nacionalidad «Kichwa» → pueblo)— y
+  DEBERÁ enviarlos en un **único** `PATCH /patients/:id`; y CUANDO un cambio del
+  borrador deje de admitir un escalón que la ficha tenía, DEBERÁ **vaciarlo en
+  el mismo borrador y en la misma corrección**, diciendo cuál se quitó, en lugar
+  de dejar guardar una combinación que el servidor rechaza.
+  > **Ronda 3 de la revisión del 10-10-2026 (D-205), punto 1. Solo interfaz.**
+  > El panel del RDACAA corregía la cadena **campo por campo** (el lápiz de
+  > PA-065): guardar el pueblo con la nacionalidad vacía daba 422
+  > `PEOPLE_REQUIRES_KICHWA_NATIONALITY`, y la nacionalidad sin etnia indígena,
+  > `NATIONALITY_REQUIRES_INDIGENOUS_ETHNICITY`. La cadena vive una sola vez en
+  > `modules/patients/rdacaa.ts` (`applicableCatalogFields`, `fieldsToClear`),
+  > que es lo que «Corregir ficha…» ya usaba; este panel pasa a leerla igual.
+  > **El servidor sigue siendo quien hace cumplir la regla** (PA-027, PA-056,
+  > PA-059) y quien vacía la etnia extranjera (PA-065): lo verificable aquí es
+  > que la pantalla mande una sola corrección y no deje armar una combinación
+  > que el servidor rechazaría. La regla general —«los campos encadenados se
+  > editan juntos»— sube a `ESTANDAR-UI` §12.
+- **PA-078** — CUANDO, con la etnia «Indígena» puesta en ese borrador, alguien
+  elija un **pueblo**, el sistema DEBERÁ poner la nacionalidad indígena en
+  «Kichwa» sin pedirla aparte —porque las dieciocho categorías de pueblo del
+  instructivo (`prisma/rdacaa/pueblos.csv`) son kichwa— y DEBERÁ resolver el
+  concepto «Kichwa» en la **pantalla que compone los catálogos** (ADR-011),
+  nunca dentro del módulo de la ficha.
+  > **Ronda 3 (D-205), punto 1. Solo interfaz.** Con un solo pueblo posible por
+  > nacionalidad kichwa, pedir «Kichwa» y luego el pueblo es un paso de más:
+  > quien registra elige el pueblo y la nacionalidad se rellena sola (usabilidad
+  > ante todo, D-205). El código de Kichwa es el `6` (`KICHWA_NATIONALITY_CODE`,
+  > columna 13 del instructivo); la pantalla ya conoce `catalogs` y `patients`
+  > —que no se importan entre sí (ADR-009 §1)— y es quien resuelve el `id` del
+  > concepto por su código para pasárselo al panel. Lo verificable es que la
+  > corrección que sale del panel lleve la nacionalidad Kichwa.
 
 ## 6. Grupos prioritarios (REQ-024, D-026, REQ-115)
 
