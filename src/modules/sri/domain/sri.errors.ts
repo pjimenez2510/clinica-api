@@ -66,6 +66,20 @@ export class VoucherResendFailedError extends ExternalServiceError {
 }
 
 /**
+ * SRI-099 (D-167 §2). Who does not issue in the site only re-sends an e-mail
+ * that did not go; the copies to other addresses are caja's.
+ */
+export class VoucherDeliveryNotFailedError extends ConflictError {
+  readonly code = 'SRI_RESEND_DELIVERY_NOT_FAILED';
+  override readonly userTitle =
+    'Ese comprobante ya se envió por correo: sólo caja lo reenvía a otra dirección';
+
+  constructor() {
+    super('Only a failed delivery is re-sent without billing:write');
+  }
+}
+
+/**
  * SRI-101. The person already e-mailed today the copies a day allows. Says
  * the number, so the cashier knows it is a rule and not a fault.
  */

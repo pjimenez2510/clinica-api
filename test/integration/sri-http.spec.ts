@@ -1042,6 +1042,57 @@ describe('el comprobante electrónico por HTTP', () => {
       expect((await credit()).status).toBe(201);
     });
 
+    it('BI-303 la base no deja que la corrección cruce «servicio no prestado» ni «datos del receptor», y sí entre importe y otro', async () => {
+      const { note } = await aReturnedCreditNote('AMOUNT');
+      const stamp = (await prisma.user.findFirstOrThrow()).id;
+      const correct = (reasonCode: string) =>
+        prisma.$executeRaw`
+          UPDATE "credit_note"
+             SET "reason_code" = ${reasonCode}, "reason" = ${reasonCode},
+                 "changed_by" = ${stamp}::uuid,
+                 "changed_at" = clock_timestamp()
+           WHERE "id" = ${note.id}::uuid`;
+
+      // Positive control: AMOUNT to OTHER, by the same statement, passes.
+      await correct('OTHER');
+      await expect(correct('SERVICE_NOT_PROVIDED')).rejects.toThrow(
+        /credit_note_immutable/,
+      );
+      await expect(correct('RECEIVER_DATA')).rejects.toThrow(
+        /credit_note_immutable/,
+      );
+    });
+
+    it('SRI-104 la base no deja que el comprobante de una nota desistida vuelva a salir', async () => {
+      const { note } = await aReturnedCreditNote();
+      const reopen = () =>
+        prisma.$executeRaw`
+          UPDATE "electronic_voucher" SET "status" = 'PREPARED'
+           WHERE "id" = ${note.electronic.voucherId}::uuid`;
+      await withdraw(note.id).expect(200);
+      await expect(reopen()).rejects.toThrow(
+        /electronic_voucher_withdrawn_note_stays/,
+      );
+
+      // Positive control: a returned (not withdrawn) note's voucher reopens.
+      const other = await aReturnedCreditNote();
+      await prisma.$executeRaw`
+        UPDATE "electronic_voucher" SET "status" = 'PREPARED'
+         WHERE "id" = ${other.note.electronic.voucherId}::uuid`;
+    });
+
+    it('BI-304 quién desistió queda: la base no deja reescribir su sello sin dejar versión', async () => {
+      const { note } = await aReturnedCreditNote();
+      await withdraw(note.id).expect(200);
+      const someoneElse = (await prisma.user.findFirstOrThrow()).id;
+      await expect(
+        prisma.$executeRaw`
+          UPDATE "credit_note" SET "changed_by" = ${someoneElse}::uuid,
+                 "changed_at" = clock_timestamp()
+           WHERE "id" = ${note.id}::uuid`,
+      ).rejects.toThrow(/credit_note_immutable/);
+    });
+
     it('BI-304 sólo se desiste de una devuelta, y la base no deja que una desistida vuelva', async () => {
       const { note } = await aReturnedCreditNote();
       await prisma.$executeRaw`UPDATE "credit_note" SET "status" = 'ISSUED' WHERE "id" = ${note.id}::uuid`;

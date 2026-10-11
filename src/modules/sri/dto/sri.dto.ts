@@ -71,6 +71,8 @@ const monitorRowSchema = z.object({
   creditNoteId: z.uuid().nullable(),
   /** SRI-088. For a credit note, the number of the invoice it modifies. */
   modifiedDocumentNumber: z.string().nullable(),
+  /** BI-303. The credit note's reason code; `null` for an invoice. */
+  creditNoteReasonCode: z.string().nullable(),
   voucherId: z.uuid().nullable(),
   siteId: z.uuid(),
   documentNumber: z.string(),

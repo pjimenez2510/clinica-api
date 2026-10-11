@@ -143,21 +143,26 @@ export class NodemailerMailer implements Mailer {
 }
 
 /**
- * SRI-091. Nodemailer says «every recipient was refused» with `EENVELOPE`
- * and the relay's reply code. Only a 5xx there is permanent: a 535 on the
- * login (`EAUTH`) is the clinic's relay, not the address, and a 4xx is
- * «try later» by definition (RFC 5321 §4.2.1).
+ * SRI-091. Nodemailer says «every recipient was refused» with `EENVELOPE`,
+ * the SMTP command and the relay's reply. Only a 5xx to `RCPT TO` is the
+ * ADDRESS — and not a 5.7.x, which is the relay's own policy (relay denied,
+ * sender not authorised). A refusal of `MAIL FROM`, a 535 on the login
+ * (`EAUTH`) and any 4xx are the clinic's relay or «try later» (RFC 5321
+ * §4.2.1, RFC 3463): retried, never given up (SRI-098).
  */
 export function recipientRejected(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
-  const { code, responseCode } = error as {
+  const { code, command, responseCode, response } = error as {
     code?: unknown;
+    command?: unknown;
     responseCode?: unknown;
+    response?: unknown;
   };
-  return (
-    code === 'EENVELOPE' &&
-    typeof responseCode === 'number' &&
-    responseCode >= 500 &&
-    responseCode < 600
+  if (code !== 'EENVELOPE' || command !== 'RCPT TO') return false;
+  if (typeof responseCode !== 'number') return false;
+  if (responseCode < 500 || responseCode >= 600) return false;
+  const enhanced = /\b5\.(\d{1,3})\.\d{1,3}\b/.exec(
+    typeof response === 'string' ? response : '',
   );
+  return enhanced === null || enhanced[1] !== '7';
 }

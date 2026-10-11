@@ -3245,13 +3245,16 @@ lo ve._
   con las reglas de BI-209 y reenviarla en el mismo acto con la misma clave y
   el mismo secuencial (SRI-103), guardando la fila anterior en
   `record_version`; SI la nota está en otro estado ENTONCES DEBERÁ rechazarlo
-  con `CREDIT_NOTE_NOT_EDITABLE`; SI el motivo nuevo pasa entre «Servicio no
-  prestado» y los que vuelven a facturar ENTONCES DEBERÁ rechazarlo con
+  con `CREDIT_NOTE_NOT_EDITABLE`; SI el motivo nuevo entra en «Servicio no
+  prestado» o en «Error en los datos del receptor», o sale de ellos, ENTONCES
+  DEBERÁ rechazarlo con
   `CREDIT_NOTE_REASON_KIND_FIXED`; y la base DEBERÁ rechazar el cambio del
   motivo de una nota que no esté `REJECTED`, y el que cruce esa frontera.
   > D-212 §2: la salida normal, como la factura devuelta (BI-216). El receptor,
   > las líneas y los importes son los de la factura que modifica y no se
-  > editan.
+  > editan. «Datos del receptor» es frontera porque al emitir deja la nota sin
+  > correo del receptor equivocado (D-152.8): cambiarlo cambiaría a quién se
+  > envía (revisión clínica, D-236).
 - **BI-304** — MIENTRAS una nota de crédito esté `REJECTED`, quien tenga
   `billing:credit-note` en su sede DEBERÁ poder desistir de ella con un motivo
   (`WITHDRAWN`; sin motivo, `CREDIT_NOTE_WITHDRAWAL_REASON_REQUIRED`); y el

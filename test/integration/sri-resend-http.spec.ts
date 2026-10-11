@@ -228,7 +228,7 @@ describe('reenviar un comprobante autorizado a otro correo (SRI-095, SRI-096)', 
       UPDATE "electronic_voucher"
          SET "status" = 'AUTHORISED',
              "authorisation_number" = "access_key",
-             "authorised_at" = CURRENT_TIMESTAMP - make_interval(hours => ${hoursAgo}::int),
+             "authorised_at" = ${new Date(Date.now() - hoursAgo * 3_600_000)}::timestamptz,
              "authorised_xml" = ${AUTHORISED_XML},
              "delivery_status" = ${delivery}::text,
              "delivered_at" = CASE WHEN ${delivery}::text = 'SENT' THEN CURRENT_TIMESTAMP END
@@ -390,6 +390,12 @@ describe('reenviar un comprobante autorizado a otro correo (SRI-095, SRI-096)', 
 
     await resend(invoice.voucherId, { email: 'maria@example.com' }, adminToken).expect(204); // prettier-ignore
     expect(await deliveryOf(invoice)).toBe('SENT');
+
+    // Administration does not issue: once the e-mail went, no more copies.
+    const sent = await resend(invoice.voucherId, { email: 'otro@correo.ec' }, adminToken).expect(409); // prettier-ignore
+    expect((sent.body as Problem).code).toBe('SRI_RESEND_DELIVERY_NOT_FAILED');
+    // Control: caja, who issues, still can.
+    await resend(invoice.voucherId, { email: 'otro@correo.ec' }).expect(204);
   });
 
   it('SRI-100 cada reenvío que sale queda guardado con su dirección; el que falla, no', async () => {

@@ -240,4 +240,31 @@ describe('BI-302 la factura fija la ficha que nombra al emitirse', () => {
     ).rejects.toThrow(/invoice_chart_of_record_frozen/);
     expect(await chartOf(invoiceId)).toBe(scene.duplicateId);
   });
+
+  it('BI-302 aunque quien emite mande otra ficha, la base escribe la de la cuenta', async () => {
+    const issued = await scene.prisma.invoice.findUniqueOrThrow({
+      where: { id: await invoiceTheDuplicate({ identification: '0102030400', name: 'Pilco, Rosa' }) }, // prettier-ignore
+    });
+    // The same row again, but naming the survivor: overwritten on insert.
+    const forged = await scene.prisma.invoice.create({
+      data: {
+        accountId: issued.accountId,
+        siteId: issued.siteId,
+        emissionPointId: issued.emissionPointId,
+        sequential: '000000999',
+        buyerIdentificationType: '05',
+        buyerIdentification: '0102030400',
+        buyerName: 'Pilco, Rosa',
+        subtotalTaxed: 0,
+        subtotalUntaxed: issued.total,
+        taxTotal: 0,
+        total: issued.total,
+        status: 'ISSUED',
+        issuedAt: issued.issuedAt,
+        issuedById: issued.issuedById,
+        chartOfRecordId: scene.survivorId,
+      },
+    });
+    expect(forged.chartOfRecordId).toBe(scene.duplicateId);
+  });
 });

@@ -153,10 +153,16 @@ export class SriVouchersController {
     @Body() dto: ResendVoucherDto,
     @Req() req: Request,
   ): Promise<void> {
+    // SRI-099 (D-167 §2). Who issues and collects re-sends any authorised
+    // voucher; administration only one whose e-mail did not go.
+    const issuing = this.currentUser
+      .requirePrincipal()
+      .sitesFor('billing:write');
     await this.monitorService.resendTo(
       voucherId,
       dto.email,
       this.requester(req, 'billing:voucher-mail'),
+      issuing === ALL_SITES ? 'all' : issuing,
     );
   }
 

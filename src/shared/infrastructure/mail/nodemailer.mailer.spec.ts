@@ -109,9 +109,51 @@ describe('el adaptador de correo', () => {
   });
 
   it.each([
-    ['un 550 al destinatario', { code: 'EENVELOPE', responseCode: 550 }, true],
-    ['un 553 al destinatario', { code: 'EENVELOPE', responseCode: 553 }, true],
-    ['un 451 al destinatario', { code: 'EENVELOPE', responseCode: 451 }, false],
+    [
+      'un 550 al destinatario',
+      {
+        code: 'EENVELOPE',
+        command: 'RCPT TO',
+        responseCode: 550,
+        response: '550 5.1.1 User unknown',
+      },
+      true,
+    ],
+    [
+      'un 550 sin código ampliado al destinatario',
+      {
+        code: 'EENVELOPE',
+        command: 'RCPT TO',
+        responseCode: 550,
+        response: '550 no such mailbox',
+      },
+      true,
+    ],
+    [
+      'un 451 al destinatario',
+      { code: 'EENVELOPE', command: 'RCPT TO', responseCode: 451 },
+      false,
+    ],
+    [
+      'un 554 5.7.1 de política del servidor',
+      {
+        code: 'EENVELOPE',
+        command: 'RCPT TO',
+        responseCode: 554,
+        response: '554 5.7.1 Relay access denied',
+      },
+      false,
+    ],
+    [
+      'un 553 al remitente',
+      {
+        code: 'EENVELOPE',
+        command: 'MAIL FROM',
+        responseCode: 553,
+        response: '553 5.7.1 Sender address rejected',
+      },
+      false,
+    ],
     ['un 535 al iniciar sesión', { code: 'EAUTH', responseCode: 535 }, false],
     ['sin conexión', { code: 'ESOCKET' }, false],
   ])(

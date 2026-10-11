@@ -753,7 +753,10 @@ SRI-101, SRI-104. **Solo interfaz:** SRI-099.
   DEBERÁ encontrar «Reintentar el correo», que reenvía en el acto (SRI-095) a
   la dirección del comprador, propuesta y editable; y el sistema DEBERÁ exigir
   `billing:voucher-mail` —que de fábrica tienen caja y administración— para
-  reenviar o reintentar, con el alcance por sede de SRI-065.
+  reenviar o reintentar, con el alcance por sede de SRI-065; y SI quien lo pide
+  no tiene `billing:write` en la sede y la entrega no es `FAILED`,
+  `UNDELIVERABLE` ni `NO_EMAIL`, ENTONCES DEBERÁ rechazarlo con
+  `SRI_RESEND_DELIVERY_NOT_FAILED`.
   > D-167 §2. Administración no tiene `billing:write` (no cobra ni emite) y la
   > decisión le da el reintento: un permiso propio, sólo para el correo.
   > El servidor admite igual el reenvío de una nota de crédito (SRI-095); su
@@ -870,6 +873,11 @@ SRI-101, SRI-104. **Solo interfaz:** SRI-099.
 - **SRI-104** — MIENTRAS una nota de crédito esté desistida (`WITHDRAWN`,
   BI-304), el sistema NO DEBERÁ reenviarla, ni desde el monitor ni desde la
   cola, y el monitor NO DEBERÁ contarla entre lo que necesita a una persona.
+  La base DEBERÁ rechazar que su comprobante cambie de estado
+  (`electronic_voucher_withdrawn_note_stays`), y reabrir un comprobante
+  DEBERÁ bloquear antes su documento y exigir que siga `REJECTED`.
+  > Revisión en contexto limpio: «Reenviar» y «Desistir» a la vez dejaban
+  > enviar al SRI una nota que la clínica ya no cuenta.
 
 ## 8. Códigos de error nuevos
 
@@ -883,6 +891,7 @@ SRI-101, SRI-104. **Solo interfaz:** SRI-099.
 | `SRI_VOUCHER_NOT_AUTHORISED` | 409       | SRI-096. Sólo se reenvía por correo lo que el SRI autorizó                                   |
 | `SRI_RESEND_FAILED`          | 503       | SRI-096. El servidor de correo no aceptó el reenvío; no va a la cola                         |
 | `SRI_RESEND_DAILY_LIMIT`     | 429       | SRI-101. Quien pide ya hizo hoy los reenvíos del tope diario                                 |
+| `SRI_RESEND_DELIVERY_NOT_FAILED` | 409   | SRI-099. Sin `billing:write`, sólo se reenvía un correo que no salió                         |
 
 ## 9. La conexión real, que hace el autor
 

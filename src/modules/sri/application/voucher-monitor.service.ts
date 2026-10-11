@@ -22,6 +22,7 @@ import {
   ElectronicVoucherNotAuthorisedError,
   ElectronicVoucherNotFoundError,
   ElectronicVoucherNotRetriableError,
+  VoucherDeliveryNotFailedError,
 } from '../domain/sri.errors';
 import {
   SRI_CLOCK,
@@ -188,6 +189,8 @@ export class VoucherMonitorService
     voucherId: string,
     email: string,
     requester: Requester,
+    /** SRI-099. Sites where the requester issues (`billing:write`). */
+    issuingSites: Requester['sites'],
   ): Promise<void> {
     const voucher = await this.vouchers.findByIdInSites(
       voucherId,
@@ -196,6 +199,18 @@ export class VoucherMonitorService
     if (!voucher) throw new ElectronicVoucherNotFoundError();
     if (voucher.status !== 'AUTHORISED' || !voucher.authorisedXml) {
       throw new ElectronicVoucherNotAuthorisedError();
+    }
+    // SRI-099 (D-167 §2). Without `billing:write` there, only the e-mail
+    // that did not go: not a way to send any RIDE anywhere.
+    const issues =
+      issuingSites === 'all' || issuingSites.includes(voucher.siteId);
+    if (
+      !issues &&
+      !['FAILED', 'UNDELIVERABLE', 'NO_EMAIL'].includes(
+        voucher.deliveryStatus ?? '',
+      )
+    ) {
+      throw new VoucherDeliveryNotFailedError();
     }
 
     await this.dispatch.mailCopy(voucher, email, requester.userId);

@@ -36,7 +36,6 @@ export interface Uploader {
   userAgent?: string;
 }
 
-/** SRI-032, SRI-063. What the monitor says about the certificate. */
 /**
  * SRI-102. The certificate with what the screen warns about: whether its
  * holder's RUC is the establishment's or a site's — `null` when the
@@ -46,6 +45,7 @@ export type CheckedCertificate = CertificateSummary & {
   holderRucMatchesIssuer: boolean | null;
 };
 
+/** SRI-032, SRI-063. What the monitor says about the certificate. */
 export interface CertificateHealth {
   active: CertificateSummary | null;
   aboutToExpire: boolean;

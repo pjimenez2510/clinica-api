@@ -196,6 +196,11 @@ export interface MonitorRow {
   creditNoteId: string | null;
   /** SRI-088. The number of the invoice a credit note modifies. */
   modifiedDocumentNumber: string | null;
+  /**
+   * BI-303. A credit note's reason code: which corrections its «Editar»
+   * admits; `null` for an invoice.
+   */
+  creditNoteReasonCode: string | null;
   voucherId: string | null;
   siteId: string;
   documentNumber: string;

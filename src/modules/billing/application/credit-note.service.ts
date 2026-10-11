@@ -29,6 +29,7 @@ import {
   creditNoteDeadline,
   isWithinCreditNoteWindow,
   rebillsCreditedLines,
+  reasonKindOf,
   resolveCreditNoteReason,
   selectCreditedCharges,
   type CreditNoteReasonCode,
@@ -171,10 +172,7 @@ export class CreditNoteService {
   ): Promise<CreditNoteWithVoucher> {
     const note = await this.requireNote(command);
     if (note.status !== 'REJECTED') throw new CreditNoteNotEditableError();
-    if (
-      rebillsCreditedLines(note.reasonCode) !==
-      rebillsCreditedLines(command.reasonCode)
-    ) {
+    if (reasonKindOf(note.reasonCode) !== reasonKindOf(command.reasonCode)) {
       throw new CreditNoteReasonKindFixedError();
     }
     const corrected = await this.creditNotes.correctRejected({
@@ -190,7 +188,14 @@ export class CreditNoteService {
     if (!corrected) throw new CreditNoteNotEditableError();
 
     try {
-      await this.resender.resendCreditNote(note.id);
+      // Not re-sent (an issuer datum missing, re-sent by somebody else a
+      // moment earlier): the note answers REJECTED and the screen says so.
+      if (!(await this.resender.resendCreditNote(note.id))) {
+        this.logger.warn(
+          { error_code: 'SRI_RESEND_SKIPPED' },
+          'the corrected credit note was not re-sent; it stays returned',
+        );
+      }
     } catch (error) {
       // The correction is committed and versioned; it stays returned, with
       // «Reenviar» at hand.

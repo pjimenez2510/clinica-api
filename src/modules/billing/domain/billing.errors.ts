@@ -713,17 +713,6 @@ export class BillingEncounterNotFoundError extends NotFoundError {
 }
 
 /**
- * BI-150. Opening the account of a visit needs to know WHO PAYS.
- *
- * ⚠️ AND THIS REFUSAL IS NOT A GATE ON CARE (Ley 77 art. 9, BI-003, BI-120).
- * Nothing clinical calls this route: the visit was received, treated and
- * discharged before anybody pressed «enviar a caja». What is refused here is
- * opening an ACCOUNT with no payer — `patient_account.payer_id` is NOT NULL
- * because the payer is what decides the price of everything that already
- * happened (BI-121) — and the answer is to ask at the counter, not to send a
- * patient away.
- */
-/**
  * BI-305 (D-216 §1). «Enviar a caja» asked for a payer, and the visit's open
  * account has another one — opened a second earlier by somebody else, or
  * before. Handing back that account would charge the visit to a payer nobody
@@ -745,6 +734,17 @@ export class AccountAlreadyOpenForEncounterError extends ConflictError {
   }
 }
 
+/**
+ * BI-150. Opening the account of a visit needs to know WHO PAYS.
+ *
+ * ⚠️ AND THIS REFUSAL IS NOT A GATE ON CARE (Ley 77 art. 9, BI-003, BI-120).
+ * Nothing clinical calls this route: the visit was received, treated and
+ * discharged before anybody pressed «enviar a caja». What is refused here is
+ * opening an ACCOUNT with no payer — `patient_account.payer_id` is NOT NULL
+ * because the payer is what decides the price of everything that already
+ * happened (BI-121) — and the answer is to ask at the counter, not to send a
+ * patient away.
+ */
 export class PayerRequiredToOpenAccountError extends ValidationError {
   readonly code = 'PAYER_REQUIRED_TO_OPEN_ACCOUNT';
   override readonly userTitle =
@@ -1145,7 +1145,7 @@ export class CreditNoteNotEditableError extends ConflictError {
 export class CreditNoteReasonKindFixedError extends ValidationError {
   readonly code = 'CREDIT_NOTE_REASON_KIND_FIXED';
   override readonly userTitle =
-    'Una nota de crédito no cambia entre «Servicio no prestado» y los motivos que vuelven a facturar: desista de ella y emita otra';
+    'Ese motivo cambiaría lo que la nota ya decidió (si vuelve a facturar, a quién se envía): desista de ella y emita otra';
 
   constructor() {
     super('The reason cannot move across SERVICE_NOT_PROVIDED', {}, [
