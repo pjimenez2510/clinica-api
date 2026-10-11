@@ -3134,10 +3134,13 @@ lo ve._
   > de la consulta, no dos consultas.
 
 - **BI-299** — CUANDO quien tiene `billing:price-manage` cree un servicio que
-  lleva extensión de orden (examen, imagen, o procedimiento que se pide) o
-  corrija la extensión de orden de un servicio (`exam` en la corrección), el
-  sistema DEBERÁ exigir **además** `catalog:manage` en toda la clínica, y lo
-  mismo para retirar (BI-288) un servicio con extensión de orden; SI no lo
+  lleva extensión de orden (examen, imagen, o procedimiento que se pide),
+  corrija la extensión de orden de un servicio (`exam` en la corrección), o
+  **cambie el nombre, el código o el estado activo** de un servicio que la
+  tiene, el sistema DEBERÁ exigir **además** `catalog:manage` en toda la
+  clínica, y lo mismo para retirar (BI-288) un servicio con extensión de
+  orden; un nombre, un código o un estado iguales a los guardados no cuentan
+  como cambio; SI no lo
   tiene en ninguna sede, ENTONCES DEBERÁ rechazarlo con `PERMISSION_DENIED`, y
   SI lo tiene sólo en alguna, con `SITE_SCOPE_DENIED`. Corregir el resto del
   servicio, o crear o retirar lo que no se pide en una orden, NO DEBERÁ
@@ -3146,6 +3149,11 @@ lo ve._
   > D-231, resuelta por el autor el 11-10-2026: la muestra, la preparación, el
   > ayuno y la entrega son una instrucción clínica al paciente, no un precio.
   > Con los roles de fábrica no cambia nada: `ADMIN` lleva los dos.
+  > D-233, resuelta por el autor el 11-10-2026: el nombre del examen es lo que
+  > el médico elige y encabeza la línea impresa, y la orden busca su muestra y
+  > su preparación por el código; quien sólo fija precios corrige el precio de
+  > un examen, nada más. La interfaz le enseña el nombre y el código sin dejarle
+  > cambiarlos, y no le ofrece «Desactivar» en un servicio con extensión de orden.
 
 - **BI-300** — La semilla DEBERÁ crear los pagadores de la red pública (IESS,
   ISSFA, ISSPOL, MSP) **inactivos**, y NO DEBERÁ cambiar el estado de un
@@ -3406,7 +3414,7 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | --- | --- | --- | --- | --- |
 | `GET` | `/billing/services` | `billing:read` | `global` | BI-010, BI-011, BI-014, BI-023 |
 | `POST` | `/billing/services` | `billing:price-manage` (y `catalog:manage` si lleva extensión de orden, BI-299) | `global` | BI-010 a BI-016, BI-299 |
-| `PATCH` | `/billing/services/{id}` | `billing:price-manage` (y `catalog:manage` si trae `exam`, BI-299) | `global` | BI-011 a BI-016, BI-025, BI-278 a BI-286, BI-299 |
+| `PATCH` | `/billing/services/{id}` | `billing:price-manage` (y `catalog:manage` si trae `exam`, o si cambia nombre, código o estado de un servicio con extensión de orden, BI-299) | `global` | BI-011 a BI-016, BI-025, BI-278 a BI-286, BI-299 |
 | `DELETE` | `/billing/services/{id}` | `billing:price-manage` (y `catalog:manage` si tiene extensión de orden, BI-299) | `global` | BI-012, BI-299 |
 | `POST` | `/billing/services/{id}/tax-review` | `billing:price-manage` | `global` | BI-024 |
 | `POST` | `/billing/services/{id}/written-consent` | `record:consent-rule` | `global` | BI-256 |

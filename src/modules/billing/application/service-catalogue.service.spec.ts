@@ -235,7 +235,12 @@ describe('BI-280 crear un servicio pide el tipo, lo de ese tipo y su precio', ()
     expect(mocks.createService).not.toHaveBeenCalled();
 
     await expect(
-      catalogue.updateService('service-1', { taxRateId: '' }, requester),
+      catalogue.updateService(
+        'service-1',
+        { taxRateId: '' },
+        requester,
+        noOrderKeyNeeded,
+      ),
     ).rejects.toBeInstanceOf(TaxRateRequiredError);
     expect(mocks.updateService).not.toHaveBeenCalled();
   });
@@ -324,16 +329,26 @@ describe('BI-279 la consulta lleva especialidad, duración y visita', () => {
   it('BI-298 corregir la visita o reactivar una consulta mira si ya hay otra; renombrarla, no', async () => {
     const { service: catalogue, mocks } = build();
 
-    await catalogue.updateService('service-1', { name: 'Otra' }, requester);
+    await catalogue.updateService(
+      'service-1',
+      { name: 'Otra' },
+      requester,
+      noOrderKeyNeeded,
+    );
     expect(mocks.findActiveConsultation).not.toHaveBeenCalled();
 
-    await catalogue.updateService('service-1', { visitKind: 'FOLLOW_UP' }, requester); // prettier-ignore
+    await catalogue.updateService('service-1', { visitKind: 'FOLLOW_UP' }, requester, noOrderKeyNeeded); // prettier-ignore
     expect(mocks.findActiveConsultation).toHaveBeenLastCalledWith('specialty-general', 'FOLLOW_UP', 'service-1'); // prettier-ignore
 
     mocks.findService.mockResolvedValueOnce({ ...service, active: false });
     mocks.findActiveConsultation.mockResolvedValueOnce({ id: 'other', name: 'X', specialtyName: 'Medicina General' }); // prettier-ignore
     await expect(
-      catalogue.updateService('service-1', { active: true }, requester),
+      catalogue.updateService(
+        'service-1',
+        { active: true },
+        requester,
+        noOrderKeyNeeded,
+      ),
     ).rejects.toBeInstanceOf(ConsultationDuplicateError);
   });
 
@@ -375,14 +390,19 @@ describe('BI-279 la consulta lleva especialidad, duración y visita', () => {
   it('BI-279 corregir la duración de una consulta vuelve a validar el turno; en un insumo se rechaza', async () => {
     const { service: catalogue, mocks } = build();
 
-    await catalogue.updateService('service-1', { durationMinutes: 40 }, requester); // prettier-ignore
+    await catalogue.updateService('service-1', { durationMinutes: 40 }, requester, noOrderKeyNeeded); // prettier-ignore
     expect(mocks.updateService.mock.calls[0]![1]).toMatchObject({
       consultation: { specialtyId: 'specialty-general', durationMinutes: 40, visitKind: 'FIRST_VISIT' }, // prettier-ignore
     });
 
     mocks.findService.mockResolvedValueOnce({ ...service, kind: 'SUPPLY', consultation: null }); // prettier-ignore
     await expect(
-      catalogue.updateService('service-1', { durationMinutes: 40 }, requester),
+      catalogue.updateService(
+        'service-1',
+        { durationMinutes: 40 },
+        requester,
+        noOrderKeyNeeded,
+      ),
     ).rejects.toBeInstanceOf(ServiceKindMismatchError);
   });
 
@@ -399,6 +419,7 @@ describe('BI-279 la consulta lleva especialidad, duración y visita', () => {
         visitKind: current.visitKind,
       },
       requester,
+      noOrderKeyNeeded,
     );
 
     // A deactivated specialty or a new slot size elsewhere must not block a
@@ -463,17 +484,57 @@ describe('BI-284 la extensión de orden', () => {
       findService: vi.fn().mockResolvedValue(examService),
     });
 
-    await catalogue.updateService('service-1', { exam: { turnaroundHours: 24, specimenType: undefined } }, requester); // prettier-ignore
+    await catalogue.updateService('service-1', { exam: { turnaroundHours: 24, specimenType: undefined } }, requester, noOrderKeyNeeded); // prettier-ignore
     expect(mocks.updateService.mock.calls[0]![1]).toMatchObject({ exam: { turnaroundHours: 24 } }); // prettier-ignore
     expect((mocks.updateService.mock.calls[0]![1] as { exam: object }).exam).not.toHaveProperty('specimenType'); // prettier-ignore
 
     await expect(
-      catalogue.updateService('service-1', { exam: null }, requester),
+      catalogue.updateService(
+        'service-1',
+        { exam: null },
+        requester,
+        noOrderKeyNeeded,
+      ),
     ).rejects.toBeInstanceOf(ServiceKindMismatchError);
 
     mocks.findService.mockResolvedValueOnce({ ...procedureService, exam: examService.exam }); // prettier-ignore
-    await catalogue.updateService('service-1', { exam: null }, requester);
+    await catalogue.updateService(
+      'service-1',
+      { exam: null },
+      requester,
+      noOrderKeyNeeded,
+    );
     expect(mocks.updateService.mock.calls[1]![1]).toMatchObject({ exam: null });
+  });
+
+  it('BI-299 renombrar, recodificar o desactivar un examen pide la llave del catálogo antes que nada; lo mismo sin cambio, o en una consulta, no (D-233)', async () => {
+    const { service: catalogue, mocks } = build({
+      findService: vi.fn().mockResolvedValue(examService),
+    });
+    const refused = new Error('catalog:manage');
+    const requireOrderKey = vi.fn(() => {
+      throw refused;
+    });
+
+    for (const correction of [
+      { name: `${examService.name} 2` },
+      { code: 'LAB-OTRO' },
+      { active: !examService.active },
+    ]) {
+      await expect(
+        catalogue.updateService('service-1', correction, requester, requireOrderKey), // prettier-ignore
+      ).rejects.toBe(refused);
+    }
+    expect(mocks.updateService).not.toHaveBeenCalled();
+    expect(mocks.hasInvoicedCharges).not.toHaveBeenCalled();
+    expect(mocks.codeWasOrdered).not.toHaveBeenCalled();
+
+    // What the form sends unchanged, and the rest of the exam, does not ask.
+    await catalogue.updateService('service-1', { name: examService.name, code: examService.code, active: examService.active, taxRateId: taxRate.id }, requester, requireOrderKey); // prettier-ignore
+    mocks.findService.mockResolvedValueOnce(service);
+    await catalogue.updateService('service-1', { name: 'Otra', active: false }, requester, requireOrderKey); // prettier-ignore
+    expect(requireOrderKey).toHaveBeenCalledTimes(3);
+    expect(mocks.updateService).toHaveBeenCalledTimes(2);
   });
 
   it('BI-284 un procedimiento ya pedido en una orden no deja de pedirse: sus líneas perderían su estructura', async () => {
@@ -483,7 +544,12 @@ describe('BI-284 la extensión de orden', () => {
     mocks.codeWasOrdered.mockResolvedValueOnce(true);
 
     await expect(
-      catalogue.updateService('service-1', { exam: null }, requester),
+      catalogue.updateService(
+        'service-1',
+        { exam: null },
+        requester,
+        noOrderKeyNeeded,
+      ),
     ).rejects.toBeInstanceOf(ServiceCodeOrderedError);
     expect(mocks.updateService).not.toHaveBeenCalled();
   });
@@ -493,13 +559,13 @@ describe('BI-281 BI-285 los códigos que ya salieron en papel no cambian', () =>
   it('BI-281 el código se corrige mientras nadie lo facturó ni lo pidió', async () => {
     const { service: catalogue, mocks } = build();
 
-    await catalogue.updateService('service-1', { code: 'CONS-MG-1' }, requester); // prettier-ignore
+    await catalogue.updateService('service-1', { code: 'CONS-MG-1' }, requester, noOrderKeyNeeded); // prettier-ignore
     expect(mocks.updateService.mock.calls[0]![1]).toMatchObject({ code: 'CONS-MG-1' }); // prettier-ignore
 
     mocks.hasInvoicedCharges.mockResolvedValueOnce(true);
-    await expect(catalogue.updateService('service-1', { code: 'CONS-MG-2' }, requester)).rejects.toBeInstanceOf(ServiceCodeInvoicedError); // prettier-ignore
+    await expect(catalogue.updateService('service-1', { code: 'CONS-MG-2' }, requester, noOrderKeyNeeded)).rejects.toBeInstanceOf(ServiceCodeInvoicedError); // prettier-ignore
     mocks.codeWasOrdered.mockResolvedValueOnce(true);
-    await expect(catalogue.updateService('service-1', { code: 'CONS-MG-2' }, requester)).rejects.toBeInstanceOf(ServiceCodeOrderedError); // prettier-ignore
+    await expect(catalogue.updateService('service-1', { code: 'CONS-MG-2' }, requester, noOrderKeyNeeded)).rejects.toBeInstanceOf(ServiceCodeOrderedError); // prettier-ignore
   });
 
   it('BI-285 el Código MSP es opcional y no cambia si el servicio ya se facturó', async () => {
@@ -507,13 +573,13 @@ describe('BI-281 BI-285 los códigos que ya salieron en papel no cambian', () =>
       findService: vi.fn().mockResolvedValue(examService),
     });
 
-    await catalogue.updateService('service-1', { mspCode: ' 360009 ' }, requester); // prettier-ignore
+    await catalogue.updateService('service-1', { mspCode: ' 360009 ' }, requester, noOrderKeyNeeded); // prettier-ignore
     expect(mocks.updateService.mock.calls[0]![1]).toMatchObject({ mspCode: '360009' }); // prettier-ignore
     // An exam's MSP code is nomenclature: it is not checked against the tariff.
     expect(mocks.isTariffProcedureCode).not.toHaveBeenCalled();
 
     mocks.hasInvoicedCharges.mockResolvedValueOnce(true);
-    await expect(catalogue.updateService('service-1', { mspCode: '360010' }, requester)).rejects.toBeInstanceOf(ServiceTariffCodeInvoicedError); // prettier-ignore
+    await expect(catalogue.updateService('service-1', { mspCode: '360010' }, requester, noOrderKeyNeeded)).rejects.toBeInstanceOf(ServiceTariffCodeInvoicedError); // prettier-ignore
   });
 });
 
@@ -592,7 +658,7 @@ describe('BI-290 la bitácora del catálogo', () => {
       updateService: vi.fn().mockResolvedValue({ ...service, name: 'Consulta general' }), // prettier-ignore
     });
 
-    await catalogue.updateService('service-1', { name: 'Consulta general' }, requester); // prettier-ignore
+    await catalogue.updateService('service-1', { name: 'Consulta general' }, requester, noOrderKeyNeeded); // prettier-ignore
 
     const entry = mocks.record.mock.calls[0]![0] as AccessAuditEntry;
     expect(entry).toMatchObject({
@@ -720,7 +786,7 @@ describe('BI-023 BI-024 la revisión contable de la tarifa', () => {
         .mockResolvedValue({ ...service, taxReview: reviewed }),
     });
 
-    await catalogue.updateService('service-1', { taxRateId: 'tax-15' }, requester); // prettier-ignore
+    await catalogue.updateService('service-1', { taxRateId: 'tax-15' }, requester, noOrderKeyNeeded); // prettier-ignore
 
     expect(mocks.updateService.mock.calls[0]?.[1]).toMatchObject({
       taxRateId: 'tax-15',
@@ -741,8 +807,8 @@ describe('BI-023 BI-024 la revisión contable de la tarifa', () => {
         .mockResolvedValue({ ...service, taxReview: reviewed }),
     });
 
-    await catalogue.updateService('service-1', { name: 'Consulta general' }, requester); // prettier-ignore
-    await catalogue.updateService('service-1', { taxRateId: 'tax-0' }, requester); // prettier-ignore
+    await catalogue.updateService('service-1', { name: 'Consulta general' }, requester, noOrderKeyNeeded); // prettier-ignore
+    await catalogue.updateService('service-1', { taxRateId: 'tax-0' }, requester, noOrderKeyNeeded); // prettier-ignore
 
     for (const [, update] of mocks.updateService.mock.calls) {
       expect(update).not.toHaveProperty('taxReview');
@@ -814,13 +880,13 @@ describe('BI-256 la marca «exige consentimiento 024» la pone la dirección mé
       }),
     });
     await expect(
-      catalogue.updateService('service-1', { mspCode: null }, requester), // prettier-ignore
+      catalogue.updateService('service-1', { mspCode: null }, requester, noOrderKeyNeeded), // prettier-ignore
     ).rejects.toBeInstanceOf(ServiceConsentTieLockedError);
     await expect(
-      catalogue.updateService('service-1', { mspCode: '10121' }, requester), // prettier-ignore
+      catalogue.updateService('service-1', { mspCode: '10121' }, requester, noOrderKeyNeeded), // prettier-ignore
     ).rejects.toBeInstanceOf(ServiceConsentTieLockedError);
     await expect(catalogue.deleteService('service-1', requester, noOrderKeyNeeded)).rejects.toBeInstanceOf(ServiceConsentTieLockedError); // prettier-ignore
     // Control positivo: renombrarla sí.
-    await expect(catalogue.updateService('service-1', { name: 'Biopsia' }, requester)).resolves.toBeDefined(); // prettier-ignore
+    await expect(catalogue.updateService('service-1', { name: 'Biopsia' }, requester, noOrderKeyNeeded)).resolves.toBeDefined(); // prettier-ignore
   });
 });
