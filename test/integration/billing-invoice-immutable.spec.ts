@@ -701,4 +701,3 @@ describe('BI-281 BI-285 lo que imprimió una factura emitida no cambia', () => {
     await recode((await aFreshService()).id, 'OTR-RENOMBRADO');
   });
 });
-

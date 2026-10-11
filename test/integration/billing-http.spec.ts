@@ -221,7 +221,7 @@ describe('la facturación por HTTP', () => {
     await api()
       .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
       .set('Authorization', `Bearer ${cashierToken}`)
-      .send({ serviceId: serviceId, serviceDate: '2026-05-11' })
+      .send({ serviceId, serviceDate: '2026-05-11' }) // fecha-fija: dentro de la vigencia sembrada (PRICE_FROM 2026-01-01)
       .expect(201);
   }
 
@@ -817,7 +817,7 @@ describe('la facturación por HTTP', () => {
         .post(`/api/v1/billing/payers/${payerId}/prices`)
         .set('Authorization', `Bearer ${cashierToken}`)
         .send({
-          serviceId: serviceId,
+          serviceId,
           amount: '35.00',
           effectiveFrom: '2026-07-01',
         })
@@ -831,7 +831,7 @@ describe('la facturación por HTTP', () => {
         .post(`/api/v1/billing/payers/${payerId}/prices`)
         .set('Authorization', `Bearer ${tariffToken}`)
         .send({
-          serviceId: serviceId,
+          serviceId,
           amount: '35.00',
           effectiveFrom: '2026-07-01',
         })
@@ -857,7 +857,7 @@ describe('la facturación por HTTP', () => {
       const response = await api()
         .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
         .set('Authorization', `Bearer ${cashierToken}`)
-        .send({ serviceId: serviceId, serviceDate: '2025-06-01' })
+        .send({ serviceId, serviceDate: '2025-06-01' }) // fecha-fija: antes de la vigencia sembrada, a propósito
         .expect(422);
 
       const problem = response.body as Problem;
@@ -875,8 +875,8 @@ describe('la facturación por HTTP', () => {
         .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
         .set('Authorization', `Bearer ${cashierToken}`)
         .send({
-          serviceId: serviceId,
-          serviceDate: '2026-05-11',
+          serviceId,
+          serviceDate: '2026-05-11', // fecha-fija: dentro de la vigencia sembrada
           quantity: 'dos',
         })
         .expect(422);
@@ -1177,7 +1177,7 @@ describe('la facturación por HTTP', () => {
       const response = await api()
         .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
         .set('Authorization', `Bearer ${cashierToken}`)
-        .send({ serviceId: serviceId, serviceDate: '2026-05-11' })
+        .send({ serviceId, serviceDate: '2026-05-11' }) // fecha-fija: dentro de la vigencia sembrada (PRICE_FROM 2026-01-01)
         .expect(409);
 
       expect((response.body as Problem).code).toBe('ACCOUNT_CLOSED');
@@ -1396,7 +1396,7 @@ describe('la facturación por HTTP', () => {
         .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
         .set('Authorization', `Bearer ${cashierToken}`)
         .send({
-          serviceId: serviceId,
+          serviceId,
           serviceDate: clinicalDateOf(new Date()),
         })
         .expect(201);

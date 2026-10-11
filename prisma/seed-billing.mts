@@ -306,12 +306,7 @@ const SELF_PAY_CODE = 'PARTICULAR';
  * category used to say, and it decides what structure the row admits.
  */
 type ServiceKind =
-  | 'CONSULTATION'
-  | 'PROCEDURE'
-  | 'LAB_EXAM'
-  | 'IMAGING'
-  | 'SUPPLY'
-  | 'OTHER';
+  'CONSULTATION' | 'PROCEDURE' | 'LAB_EXAM' | 'IMAGING' | 'SUPPLY' | 'OTHER';
 
 /**
  * BI-279. The consultation's base duration by visit, the one the specialty's
@@ -455,7 +450,10 @@ const SERVICES: SeedService[] = [
     kind: 'CONSULTATION',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '30.00',
-    consultation: { specialtyCode: 'medicina-general', visitKind: 'FIRST_VISIT' },
+    consultation: {
+      specialtyCode: 'medicina-general',
+      visitKind: 'FIRST_VISIT',
+    },
   },
   {
     code: 'CONS-MG-SUB',
@@ -487,7 +485,10 @@ const SERVICES: SeedService[] = [
     kind: 'CONSULTATION',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '45.00',
-    consultation: { specialtyCode: 'ginecologia-obstetricia', visitKind: 'FIRST_VISIT' },
+    consultation: {
+      specialtyCode: 'ginecologia-obstetricia',
+      visitKind: 'FIRST_VISIT',
+    },
   },
   {
     code: 'CONS-GIN-SUB',
@@ -495,7 +496,10 @@ const SERVICES: SeedService[] = [
     kind: 'CONSULTATION',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '30.00',
-    consultation: { specialtyCode: 'ginecologia-obstetricia', visitKind: 'FOLLOW_UP' },
+    consultation: {
+      specialtyCode: 'ginecologia-obstetricia',
+      visitKind: 'FOLLOW_UP',
+    },
   },
   {
     code: 'CONS-DER-PV',
@@ -519,7 +523,10 @@ const SERVICES: SeedService[] = [
     kind: 'CONSULTATION',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '50.00',
-    consultation: { specialtyCode: 'traumatologia-ortopedia', visitKind: 'FIRST_VISIT' },
+    consultation: {
+      specialtyCode: 'traumatologia-ortopedia',
+      visitKind: 'FIRST_VISIT',
+    },
   },
   {
     code: 'CONS-TRA-SUB',
@@ -527,7 +534,10 @@ const SERVICES: SeedService[] = [
     kind: 'CONSULTATION',
     taxSriCode: HEALTH_ZERO,
     selfPayAmount: '35.00',
-    consultation: { specialtyCode: 'traumatologia-ortopedia', visitKind: 'FOLLOW_UP' },
+    consultation: {
+      specialtyCode: 'traumatologia-ortopedia',
+      visitKind: 'FOLLOW_UP',
+    },
   },
 
   // BI-232 (D-161): la consulta de las demás especialidades del catálogo.
