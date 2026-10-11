@@ -35,6 +35,7 @@ import type {
   ReportQuery,
   ResultQuery,
   SafetyPolicy,
+  SiteAccount,
   SafetyWorklistQuery,
 } from '../domain/diagnostic-report.repository';
 import { chainKey } from '../domain/diagnostic-report.repository';
@@ -84,6 +85,7 @@ const NOTICE_SELECT = {
   selfNotice: true,
   namesOrderingPractitioner: true,
   callerName: true,
+  callerId: true,
   notifiedBy: { select: { id: true, firstName: true, lastName: true } },
   // ORD-120. The stamp of the last edit.
   editedAt: true,
@@ -868,6 +870,25 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     });
   }
 
+  /** ORD-175. The site's accounts that can be named as who made the call. */
+  async siteAccounts(siteId: string): Promise<SiteAccount[]> {
+    const users = await this.prisma.user.findMany({
+      where: {
+        active: true,
+        roleGrants: {
+          some: {
+            revokedAt: null,
+            role: { active: true },
+            OR: [{ siteId }, { siteId: null }],
+          },
+        },
+      },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }, { id: 'asc' }],
+    });
+    return users.map((user) => ({ id: user.id, name: fullName(user) }));
+  }
+
   /** ORD-065, ORD-167. Sites whose on-call role somebody can answer for. */
   async staffedOnCall(
     onCall: readonly { siteId: string; roleId: string }[],
@@ -1065,6 +1086,7 @@ async function rewriteNotice(
       selfNotice: edit.selfNotice,
       namesOrderingPractitioner: edit.namesOrderingPractitioner,
       callerName: edit.callerName,
+      callerId: edit.callerId,
       editedById: edit.editedById,
       editedAt: stamp,
     },
@@ -1106,6 +1128,7 @@ interface NoticeSnapshot {
   self_notice: boolean;
   names_ordering_practitioner?: boolean;
   caller_name?: string | null;
+  caller_id?: string | null;
   edited_by_id?: string | null;
   edited_at?: string | null;
 }
@@ -1136,6 +1159,7 @@ function noticeRowFromSnapshot(
     selfNotice: snapshot.self_notice,
     namesOrderingPractitioner: snapshot.names_ordering_practitioner ?? false,
     callerName: snapshot.caller_name ?? null,
+    callerId: snapshot.caller_id ?? null,
     notifiedBy: author(snapshot.notified_by_id),
     editedAt: snapshot.edited_at == null ? null : new Date(snapshot.edited_at),
     editedBy: snapshot.edited_by_id == null ? null : author(snapshot.edited_by_id), // prettier-ignore
@@ -1204,6 +1228,7 @@ async function writeNotice(
       selfNotice: notice.selfNotice,
       namesOrderingPractitioner: notice.namesOrderingPractitioner,
       callerName: notice.callerName,
+      callerId: notice.callerId,
     },
     select: NOTICE_SELECT,
   });
@@ -1388,6 +1413,7 @@ function toNoticeView(row: NoticeRow): CriticalNoticeView {
     selfNotice: row.selfNotice,
     namesOrderingPractitioner: row.namesOrderingPractitioner,
     callerName: row.callerName,
+    callerId: row.callerId,
     editedBy: row.editedBy === null ? null : personOf(row.editedBy),
     editedAt: row.editedAt,
   };

@@ -214,6 +214,8 @@ model User {
   /// ORD-062. The critical-value notices this account recorded having given.
   criticalNoticesGiven  CriticalResultNotice[] @relation("CriticalNoticeGiver")
   criticalNoticesEdited CriticalResultNotice[] @relation("CriticalNoticeEditor")
+  /// ORD-175. Notices whose call this account made, chosen from the site.
+  criticalNoticesCalled CriticalResultNotice[] @relation("CriticalNoticeCaller")
 
   /// EN-212, D-127. The diagnoses this account edited last.
   diagnosesEdited               EncounterDiagnosis[]           @relation("DiagnosisEditor")
@@ -4033,6 +4035,10 @@ model CriticalResultNotice {
   /// ORD-148, D-116 e. Who made the call when it was not the account that
   /// records it; `NULL` when it was (`critical_result_notice_caller_named`).
   callerName                String?               @map("caller_name") @db.VarChar(200)
+  /// ORD-175 (D-168 §4). The account that made the call, chosen from the
+  /// site's accounts; `null` when it was the recorder or the name was typed.
+  callerId                  String?               @map("caller_id") @db.Uuid
+  caller                    User?                 @relation("CriticalNoticeCaller", fields: [callerId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 

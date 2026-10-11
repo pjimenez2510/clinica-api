@@ -156,6 +156,8 @@ export const criticalNoticeSchema = z.object({
   namesOrderingPractitioner: z.boolean(),
   /** ORD-148. Who made the call, when it was not who recorded it (`notifiedBy`). */
   callerName: z.string().nullable(),
+  /** ORD-175. The account that made the call, when it was chosen from the site. */
+  callerId: z.uuid().nullable(),
   /** ORD-120. Who edited it last, and when; `null` if nobody did. */
   editedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
   editedAt: z.iso.datetime().nullable(),
@@ -181,6 +183,14 @@ export const criticalNoticeVersionListSchema = z.object({
 export class CriticalNoticeVersionListDto extends createZodDto(
   criticalNoticeVersionListSchema,
 ) {}
+
+/** ORD-175. The accounts of a result's site that can be named as the caller. */
+export const noticeCallerListSchema = z.object({
+  items: z.array(z.object({ id: z.uuid(), name: z.string() })),
+});
+/** Response of GET /orders/results/:resultId/notice-callers. */
+export class NoticeCallerListDto extends createZodDto(noticeCallerListSchema) {}
+export type NoticeCallerListResponse = z.infer<typeof noticeCallerListSchema>;
 
 /**
  * ORD-062. What recording a notice asks for.
@@ -222,6 +232,12 @@ const noticeFields = z.object({
     .max(200, 'El nombre no puede superar 200 caracteres')
     .nullable()
     .optional(),
+  /**
+   * ORD-175 (D-168 §4). The account of the site that made the call, chosen
+   * from `GET /orders/results/:resultId/notice-callers`. When given, its name
+   * is the caller's and `callerName` is ignored.
+   */
+  callerUserId: z.uuid('Elija una cuenta de la lista').nullable().optional(),
 });
 
 /** ORD-067. Nobody answered, so nobody repeated anything. */

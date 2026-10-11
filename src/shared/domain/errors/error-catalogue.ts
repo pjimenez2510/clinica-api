@@ -1299,6 +1299,10 @@ export const DOMAIN_ERROR_CODES = [
   //     se avisa ni se empareja; se trabaja el que lo sustituye.
   //   * `CRITICAL_READ_BACK_REQUIRED` (422) — un aviso hecho sin confirmar que
   //     quien lo recibió repitió el valor (D-111 §4).
+  // ORD-175 (D-168 §4). Quien llamó, escrito con menos de dos palabras, o
+  // una cuenta que no es de la sede del valor.
+  'CRITICAL_NOTICE_CALLER_INCOMPLETE',
+  'CRITICAL_NOTICE_CALLER_NOT_FOUND',
   'CRITICAL_READ_BACK_REQUIRED',
   'RESULT_SUPERSEDED',
   //   * `CRITICAL_NOTICE_NOT_FOUND` (404) — ORD-120. Se pide editar un aviso

@@ -36,6 +36,12 @@ const wordsOf = (name: string): string[] =>
   normalised(name).split(' ').filter(Boolean);
 
 /**
+ * ORD-175 (D-168 §4). How many words a typed name has once a leading courtesy
+ * title is set aside: «Dr. Pérez» has one, and names nobody.
+ */
+export const nameWordCount = (name: string): number => wordsOf(name).length;
+
+/**
  * ORD-147, ORD-157, ORD-174 (D-168 §4). Whether a typed name NAMES a person:
  * EVERY word of the person's name is in it, in any order —«Pérez Andrade
  * Juan», as the cédula writes it, names «Juan Pérez Andrade»—, ignoring case,

@@ -543,12 +543,12 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     const toMe = { ...toPatient, recipientKind: 'ORDERING_PRACTITIONER' as const, recipientName: 'Ana Villacís' }; // prettier-ignore
     const own = await ctx.reports.notify({ resultId: ctx.result.id, ...toMe }, ctx.asDoctor, now); // prettier-ignore
     expect(own.selfNotice).toBe(true);
-    // Control positivo: editado con quien llamó «Dr.», que no nombra a nadie, sigue siéndolo.
-    const titleOnly = await ctx.reports.editNotice({ resultId: ctx.result.id, noticeId: own.id, expectedEditedAt: null, ...toMe, callerName: 'Dr.' }, ctx.asDoctor, new Date()); // prettier-ignore
-    expect(titleOnly.selfNotice).toBe(true);
+    // Quien llamó «Dr.» no nombra a nadie: desde ORD-175 se rechaza, y el
+    // aviso sigue siendo autoaviso.
+    await expect(ctx.reports.editNotice({ resultId: ctx.result.id, noticeId: own.id, expectedEditedAt: null, ...toMe, callerName: 'Dr.' }, ctx.asDoctor, new Date())).rejects.toMatchObject({ code: 'CRITICAL_NOTICE_CALLER_INCOMPLETE' }); // prettier-ignore
     expect(await ctx.reports.critical(ctx.asNurse, new Date())).toHaveLength(1);
 
-    const edited = await ctx.reports.editNotice({ resultId: ctx.result.id, noticeId: own.id, expectedEditedAt: titleOnly.editedAt, ...toMe, callerName: 'Lcda. Rosa Pilco' }, ctx.asDoctor, new Date()); // prettier-ignore
+    const edited = await ctx.reports.editNotice({ resultId: ctx.result.id, noticeId: own.id, expectedEditedAt: null, ...toMe, callerName: 'Lcda. Rosa Pilco' }, ctx.asDoctor, new Date()); // prettier-ignore
     expect(edited.selfNotice).toBe(false);
     const stored = await prisma.criticalResultNotice.findUniqueOrThrow({ where: { id: own.id } }); // prettier-ignore
     expect(stored.selfNotice).toBe(false);

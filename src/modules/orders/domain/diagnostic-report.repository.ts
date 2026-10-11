@@ -144,6 +144,8 @@ export interface CriticalNoticeView {
   namesOrderingPractitioner: boolean;
   /** ORD-148. Who made the call, when it was not who recorded it. */
   callerName: string | null;
+  /** ORD-175. The account that made the call, when it was chosen from the site. */
+  callerId: string | null;
   /**
    * ORD-120. Who edited it last, and when; `null` on a notice nobody edited.
    * Who GAVE it (`notifiedBy`) never changes.
@@ -189,6 +191,8 @@ export interface CriticalNoticeEdit {
   selfNotice: boolean;
   namesOrderingPractitioner: boolean;
   callerName: string | null;
+  /** ORD-175. The account chosen as the caller, or `null`. */
+  callerId: string | null;
   /** The session's account: the stamp's «who». */
   editedById: string;
   /**
@@ -204,6 +208,12 @@ export interface CriticalNoticeEdit {
   expectedEditedAt: Date | null;
   sites: SiteScopeFilter;
   trail: { ip?: string; userAgent?: string };
+}
+
+/** ORD-175. An account of a site, as the caller of a notice is chosen. */
+export interface SiteAccount {
+  id: string;
+  name: string;
 }
 
 /** ORD-062. What recording a notice writes. */
@@ -223,6 +233,8 @@ export interface NewCriticalNotice {
   namesOrderingPractitioner: boolean;
   /** ORD-148. `null` when the account that records it made the call. */
   callerName: string | null;
+  /** ORD-175. The account chosen as the caller, or `null`. */
+  callerId: string | null;
   sites: SiteScopeFilter;
   /**
    * ORD-062, ORD-091. The trail row is written IN THE SAME TRANSACTION as the
@@ -627,6 +639,12 @@ export interface DiagnosticReportRepository {
 
   /** ORD-147. The name of an account, as a recipient would be written. */
   accountName(userId: string): Promise<string | undefined>;
+
+  /**
+   * ORD-175. The accounts of a site that can be named as who made the call:
+   * active, with a live grant of an active role at that site or at all.
+   */
+  siteAccounts(siteId: string): Promise<SiteAccount[]>;
 
   /**
    * ORD-062. Writes the notice of a critical value.

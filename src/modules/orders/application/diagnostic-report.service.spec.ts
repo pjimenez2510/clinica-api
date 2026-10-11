@@ -191,6 +191,10 @@ class FakeReports implements Partial<DiagnosticReportRepository> {
   accountName(): Promise<string | undefined> {
     return Promise.resolve(undefined);
   }
+  // ORD-175: against the database, in `orders-notice-caller.spec.ts`.
+  siteAccounts(): Promise<never[]> {
+    return Promise.resolve([]);
+  }
 
   /** ORD-043. The orphan result the queue is showing, or nothing. */
   orphan: MatchableResult | undefined = {

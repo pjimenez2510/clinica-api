@@ -114,6 +114,8 @@ describe('las rutas del módulo de órdenes', () => {
         // con el de leer el resultado.
         'PUT /orders/results/:resultId/notices/:noticeId → result:write',
         'GET /orders/results/:resultId/notices/:noticeId/versions → record:read',
+        // ORD-175. Quién pudo hacer la llamada, con el permiso de registrar el aviso.
+        'GET /orders/results/:resultId/notice-callers → result:write',
         'POST /orders/reports/:reportId/correct → result:write',
         // ORD-149. Lo que admite la corrección: lectura del catálogo y del informe.
         'GET /orders/reports/:reportId/analytes → record:read',

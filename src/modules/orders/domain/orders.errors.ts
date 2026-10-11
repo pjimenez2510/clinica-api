@@ -696,6 +696,50 @@ export class ResultSupersededError extends ValidationError {
 }
 
 /**
+ * ORD-175 (D-168 §4). Who made the call, typed, names nobody: fewer than two
+ * words once the courtesy title is set aside. «lab» or a lone surname served
+ * to judge the notice to oneself with somebody who does not exist.
+ */
+export class CriticalNoticeCallerIncompleteError extends ValidationError {
+  readonly code = 'CRITICAL_NOTICE_CALLER_INCOMPLETE';
+  override readonly userTitle =
+    'Escriba el nombre y el apellido de quien hizo la llamada, o elíjalo de la lista';
+  override readonly fieldErrors = [
+    {
+      field: 'callerName',
+      code: 'CRITICAL_NOTICE_CALLER_INCOMPLETE',
+      message: 'Nombre y apellido, o elíjalo de la lista',
+    },
+  ];
+
+  constructor() {
+    super('The typed caller has fewer than two words');
+  }
+}
+
+/**
+ * ORD-175. The account chosen as who made the call is not one of the site's:
+ * it does not exist, is inactive, or holds no live role there. One answer for
+ * all three, so it confirms nothing about another site's staff.
+ */
+export class CriticalNoticeCallerNotFoundError extends ValidationError {
+  readonly code = 'CRITICAL_NOTICE_CALLER_NOT_FOUND';
+  override readonly userTitle =
+    'Esa persona no aparece entre las cuentas de esta sede. Elija otra o escriba su nombre';
+  override readonly fieldErrors = [
+    {
+      field: 'callerUserId',
+      code: 'CRITICAL_NOTICE_CALLER_NOT_FOUND',
+      message: 'Elija una cuenta de esta sede',
+    },
+  ];
+
+  constructor() {
+    super('The chosen caller is not an active account of the site');
+  }
+}
+
+/**
  * ORD-066, D-111 §4. A notice given without confirming that the recipient
  * repeated the value back.
  *

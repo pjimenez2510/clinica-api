@@ -2810,7 +2810,7 @@ resuelto de quien llama.
 | `PUT` | `/exam-catalogue/analytes/:analyteId/ranges` | `catalog:manage` | ORD-106, ORD-107, ORD-111, ORD-112, ORD-113 |
 | `GET` | `/exam-catalogue/analytes/:analyteId/ranges/history` | `catalog:manage` | ORD-114 |
 | `GET` | `/orders/drafts/stale` | `record:read` | ORD-115 |
-| `GET` | `/orders/notice-callers?siteId=` | `result:write` | ORD-175 *(cuentas activas con rol vigente en la sede o en todas: id y nombre)* |
+| `GET` | `/orders/results/:resultId/notice-callers` | `result:write` | ORD-175 *(cuentas activas con rol vigente en la sede del valor o en todas: id y nombre)* |
 
 **`POST /orders/results/:resultId/match` lleva `result:write` y no
 `record:read`**: leer la cola es una lectura, pero emparejar ESCRIBE el

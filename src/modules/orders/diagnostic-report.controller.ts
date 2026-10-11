@@ -47,6 +47,7 @@ import {
   CriticalResultListDto,
   UnmatchedResultListDto,
   MatchResultDto,
+  NoticeCallerListDto,
   RecordNoticeDto,
   RegisterReportDto,
   WorklistQueryDto,
@@ -56,6 +57,7 @@ import {
   type CriticalNoticeVersionListResponse,
   type DiagnosticReportListResponse,
   type DiagnosticReportResponse,
+  type NoticeCallerListResponse,
   type CriticalResultListResponse,
   type UnmatchedResultListResponse,
 } from './dto/diagnostic-report.dto';
@@ -262,6 +264,7 @@ export class DiagnosticReportController {
         notifiedAt: dto.notifiedAt === undefined ? undefined : new Date(dto.notifiedAt), // prettier-ignore
         note: dto.note,
         callerName: dto.callerName,
+        callerUserId: dto.callerUserId,
       },
       this.requester(req, 'result:write'),
       new Date(),
@@ -301,11 +304,34 @@ export class DiagnosticReportController {
         notifiedAt: dto.notifiedAt === undefined ? undefined : new Date(dto.notifiedAt), // prettier-ignore
         note: dto.note,
         callerName: dto.callerName,
+        callerUserId: dto.callerUserId,
       },
       this.requester(req, 'result:write'),
       new Date(),
     );
     return toNoticeResponse(notice);
+  }
+
+  /**
+   * ORD-175 (D-168 §4). Who can be named as having made the call: the active
+   * accounts of the result's site. Same permission as recording the notice;
+   * the site is the result's, resolved inside the caller's scope.
+   */
+  @Get('results/:resultId/notice-callers')
+  @RequirePermission('result:write', 'query')
+  @ApiOperation({
+    summary: 'Listar las cuentas de la sede que pueden haber hecho la llamada',
+  })
+  @ApiOkResponse({ type: NoticeCallerListDto })
+  async noticeCallers(
+    @Param('resultId') resultId: string,
+    @Req() req: Request,
+  ): Promise<NoticeCallerListResponse> {
+    const items = await this.reports.noticeCallers(
+      resultId,
+      this.requester(req, 'result:write'),
+    );
+    return { items };
   }
 
   /**
@@ -631,6 +657,7 @@ function toNoticeResponse(notice: CriticalNoticeView): CriticalNoticeResponse {
     selfNotice: notice.selfNotice,
     namesOrderingPractitioner: notice.namesOrderingPractitioner,
     callerName: notice.callerName,
+    callerId: notice.callerId,
     editedBy: notice.editedBy,
     editedAt: notice.editedAt?.toISOString() ?? null,
   };
