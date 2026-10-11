@@ -182,6 +182,7 @@ especialidad principal eligiendo en el mismo diálogo cuál queda como principal
 - **ST-009** — El sistema DEBERÁ permitir una excepción de duración por
   profesional para un especialidad·tipo concreto, que es el primer nivel de la
   jerarquía de D-010.
+  > **Enmendado el 11-10-2026 (ADR-013).** La excepción es por servicio de consulta (`PUT …/duration-exceptions/:serviceId`).
 - **ST-010** — SI se intenta borrar un profesional con atenciones, citas o
   documentos firmados, ENTONCES el sistema DEBERÁ rechazarlo y ofrecer
   desactivarlo; toda mutación del perfil DEBERÁ quedar en la bitácora con autor,

@@ -138,6 +138,7 @@ alcance por sede sobre una escritura, y quien lo burla no usa la pantalla.
   > `PARAM_OUT_OF_RANGE` **nombrando las duraciones que estorban**. Se consultan
   > `service_type` y `duration_exception`, tablas de otros módulos, por un
   > puerto propio — igual que `agenda` lee `service_type`.
+  > **Enmendado el 11-10-2026 (ADR-013).** Las duraciones configuradas que el átomo debe dividir son las de los servicios de consulta y las excepciones por médico.
 - **CF-063** — El sistema NO DEBERÁ exponer como parámetro aquello cuya garantía
   se perdería al configurarlo: no-solapamiento, inmutabilidad del historial,
   cierre por defecto (REQ-146).

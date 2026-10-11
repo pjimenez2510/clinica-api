@@ -787,6 +787,7 @@ es falsa, hay requisitos que cambian.
   > tubería (AG-071): una ruta de agenda sin sede tendría que narrar su propio
   > alcance en el handler, y aquí no hay nada que narrar. El precio es que el
   > identificador de la sede no filtra nada, y se dice en voz alta.
+  > **Enmendado el 11-10-2026 (ADR-013).** Lista los **servicios de consulta** activos de la especialidad (`GET /agenda/sites/:siteId/specialties/:specialtyId/services`), con su visita.
 - **AG-012** — SI la duración solicitada no es múltiplo del **turno de la sede**
   (`site_parameter.slot_atom_minutes`, AG-094), ENTONCES el sistema DEBERÁ
   rechazar la reserva con `INVALID_SLOT_DURATION` indicando la duración
@@ -2271,6 +2272,7 @@ pasó de hora.
   > alguien seguir esperando es política de la clínica, no del código. Lo que
   > impide que una entrada espere para siempre es AG-065, que exige fecha máxima
   > y la base ya la hace obligatoria.
+  > **Enmendado el 11-10-2026 (ADR-013).** La lista de espera guarda el servicio de consulta (`waitlist_entry.service_id`).
 - **AG-061** — CUANDO se libere un cupo que ocupaba calendario, el sistema
   DEBERÁ proponer los candidatos de la lista de espera compatibles con ese cupo,
   ordenados por prioridad ascendente y, a igual prioridad, por antigüedad de
@@ -2322,6 +2324,7 @@ pasó de hora.
   > una fusión, y quien quiera saber qué toca una fusión lo busca en la
   > sección 7 de `patients`, donde ya están el documento de identidad (PA-043)
   > y la lectura por el enlace (PA-055). Aquí sólo se dice que ocurre.
+  > **Enmendado el 11-10-2026 (ADR-013).** Compara el servicio de consulta del cupo y el de la espera.
 - **AG-062** — El sistema DEBERÁ admitir prioridad 1 para los grupos de atención
   prioritaria del artículo 35 de la Constitución: adultos mayores, niñas, niños y
   adolescentes, mujeres embarazadas, personas con discapacidad, personas privadas
