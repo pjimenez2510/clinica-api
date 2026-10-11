@@ -64,7 +64,7 @@ import {
 import { resolveResult } from '../domain/result-value';
 import {
   isSelfNotice,
-  samePersonName,
+  namesPerson,
   selfNoticedByOrderer,
   type WorklistNotice,
 } from '../domain/notice-recipient';
@@ -853,7 +853,7 @@ export class DiagnosticReportService {
       afterHours: !inHours.has(result.siteId),
       selfNotice,
       // ORD-146. A recipient with the ordering practitioner's name.
-      namesOrderingPractitioner: samePersonName(request.recipientName, result.orderedByName), // prettier-ignore
+      namesOrderingPractitioner: namesPerson(request.recipientName, result.orderedByName), // prettier-ignore
       callerName: callerOf(request),
       sites: requester.sites,
       trail: { ip: requester.ip, userAgent: requester.userAgent },
@@ -952,7 +952,7 @@ export class DiagnosticReportService {
       readBackConfirmed: given ? true : null,
       afterHours: !inHours.has(result.siteId),
       selfNotice,
-      namesOrderingPractitioner: samePersonName(request.recipientName, result.orderedByName), // prettier-ignore
+      namesOrderingPractitioner: namesPerson(request.recipientName, result.orderedByName), // prettier-ignore
       callerName: callerOf(request),
       editedById: requester.userId,
       editedAt: now,

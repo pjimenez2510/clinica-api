@@ -31,24 +31,34 @@ function normalised(name: string): string {
     .trim();
 }
 
-/** The words of a normalised name, in a canonical order. */
-const wordsOf = (name: string): string =>
-  normalised(name).split(' ').filter(Boolean).sort().join(' ');
+/** The words of a normalised name. */
+const wordsOf = (name: string): string[] =>
+  normalised(name).split(' ').filter(Boolean);
 
 /**
- * ORD-147, ORD-157 (D-156.5). Whether two typed names are the same person's:
- * the SAME WORDS in any order —«Pérez Andrade Juan», as the cédula writes it,
- * is «Juan Pérez Andrade»—, ignoring case, accents, spacing and a leading
- * title. Every word counts as many times as it is written.
+ * ORD-147, ORD-157, ORD-174 (D-168 §4). Whether a typed name NAMES a person:
+ * EVERY word of the person's name is in it, in any order —«Pérez Andrade
+ * Juan», as the cédula writes it, names «Juan Pérez Andrade»—, ignoring case,
+ * accents, punctuation and a leading title, and each word as many times as
+ * the person's name has it. Words of more do not hide the person: «Carmen
+ * Salazar Pilco» names the account «Carmen Salazar». In doubt the value stays
+ * on the worklist, which is the safe error.
  *
- * ⚠️ NEVER BY PARTS. «Dr. Pérez» for «Juan Pérez» is not recognised on
- * purpose: matching a surname would give one person's notice to another
- * person with that surname, and the verdict decides whether a value stays on
- * the critical worklist.
+ * ⚠️ NEVER BY PARTS. «Dr. Salazar» for «Carmen Salazar» does not name her:
+ * matching a surname would give one person's notice to another person with
+ * that surname, and the verdict decides whether a value stays on the critical
+ * worklist.
  */
-export function samePersonName(a: string, b: string): boolean {
-  const left = wordsOf(a);
-  return left !== '' && left === wordsOf(b);
+export function namesPerson(written: string, person: string): boolean {
+  const wanted = wordsOf(person);
+  if (wanted.length === 0) return false;
+  const available = wordsOf(written);
+  for (const word of wanted) {
+    const at = available.indexOf(word);
+    if (at === -1) return false;
+    available.splice(at, 1);
+  }
+  return true;
 }
 
 /** ORD-062, ORD-147. What judging a notice to oneself needs. */
@@ -74,15 +84,15 @@ export interface SelfNoticeQuestion {
  * their own recipient told nobody anything.
  */
 export function isSelfNotice(question: SelfNoticeQuestion): boolean {
-  // A caller that is only a title («Dr.») names nobody: judged as if absent.
+  // A caller that is only a title («Dr.») names nobody: judged as if absent;
+  // and one whose name carries the account's is the account (ORD-174).
   const caller = question.callerName?.trim();
   if (
     caller &&
-    wordsOf(caller) !== '' &&
-    !samePersonName(caller, question.recorder.name)
+    wordsOf(caller).length > 0 &&
+    !namesPerson(caller, question.recorder.name)
   ) {
-    // prettier-ignore
-    return samePersonName(question.recipientName, caller);
+    return namesPerson(question.recipientName, caller);
   }
   if (
     question.recipientKind === 'ORDERING_PRACTITIONER' &&
@@ -90,7 +100,7 @@ export function isSelfNotice(question: SelfNoticeQuestion): boolean {
   ) {
     return true;
   }
-  return samePersonName(question.recipientName, question.recorder.name);
+  return namesPerson(question.recipientName, question.recorder.name);
 }
 
 /** ORD-062, ORD-146. A notice as the critical worklist judges it. */
