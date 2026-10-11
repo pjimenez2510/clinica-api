@@ -95,6 +95,8 @@ async function anAccount(
       userId: user.id,
       roleId,
       siteId,
+      // `user_role_grant_revocation_order`: revoked after it was granted.
+      grantedAt: new Date(Date.now() - 60_000),
       revokedAt: state.revoked ? new Date() : null,
     },
   });
