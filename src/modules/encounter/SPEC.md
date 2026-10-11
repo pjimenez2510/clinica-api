@@ -4979,7 +4979,8 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > clínico— es D-214 §3.
 - **EN-273** — MIENTRAS la sesión tenga `record:read`, la ficha del paciente
   DEBERÁ tener la pestaña «Evolución», con una gráfica por cada cifra elegida
-  (EN-277) que la dibuje en el tiempo con línea y puntos sobre un área suave:
+  (EN-277) que la dibuje en el tiempo con línea y puntos, sin relleno debajo,
+  y con la fecha de la última toma siempre en el eje:
   el peso, la TA (sistólica y diastólica, con la línea de EN-272
   **discontinua** sólo si todas sus tomas son de los 18 años o más), el IMC,
   la talla acostado y la de pie en curvas distintas, la hemoglobina
@@ -4995,6 +4996,12 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > es un umbral de adultos (D-207 §1); en un niño la hipertensión va por
   > percentil (AAP 2017), y 118/78 bajo una línea de 140/90 se leería
   > «normal» (D-214 §1). Talla acostado y de pie, aparte, por EN-064.
+  > **Sin relleno bajo la línea** (recorrido de la principal): en un signo
+  > vital sugiere una cantidad acumulada. La «banda de referencia como área
+  > suave» de D-226 §3 se pinta sólo donde el sistema tenga un rango de
+  > referencia del signo, y hoy no tiene ninguno: los `min`/`max` de captura
+  > (EN-062) cazan errores de tecleo, no son rangos normales. Queda la línea
+  > de la TA.
   > **Hemoglobina, una sola gráfica (D-214 §2, D-226 §3):** la corregida, que
   > es a la que se aplica el umbral de anemia, con la medida en el tooltip. La
   > base admite medida sin corregida y no al revés
