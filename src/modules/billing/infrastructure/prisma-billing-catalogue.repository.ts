@@ -421,7 +421,10 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
    * ⚠️ THE CATALOGUE OF EXAMS IS READ HERE AND NOT THROUGH `modules/orders`.
    * No module imports another; `exam_definition` is a table, and the question
    * billing asks of it — «what does this orderable cost» — is not the question
-   * `orders` asks. Its own service says so out loud: «AND IT SERVES NO PRICE».
+   * `orders` asks. Since D-179.1 an exam IS its billable service (it is created
+   * with one, `billable_service_id` is mandatory for an active exam, and its
+   * name and MSP code live on the service), so the price is simply the service's
+   * (BI-040), resolved on the service date like any other charge.
    *
    * A definition with no `billable_service_id` produces no entry, which the
    * derivation reports as `NO_BILLABLE_SERVICE`: the exam was ordered and
