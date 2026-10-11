@@ -449,6 +449,11 @@ export interface CorrectionWorklistEntry {
   proposedRecipient: NotifiedCorrection['proposedRecipient'];
   /** ORD-154. Unanswered calls about the corrected value. */
   noAnswerAttempts: number;
+  /**
+   * ORD-173 (D-168 §3). Overdue, or a call unanswered, and the patient still
+   * owed the correction: the site's on-call has to locate them.
+   */
+  locateViaOnCall: boolean;
   /** ORD-154 (D-156.2). The site's critical deadline, from `correctedAt`. */
   waitingMinutes: CriticalWait['waitingMinutes'];
   noticeDueAt: CriticalWait['dueAt'];

@@ -727,6 +727,13 @@ export class DiagnosticReportService {
             // call about it.
             dueToPatient: correction.missingRecipients.includes('PATIENT'),
           });
+          // ORD-173 (D-168 §3). The patient told the false value cannot be
+          // reached: the site's on-call finds them. It closes nothing — the
+          // notice to the patient still does.
+          const locate =
+            due.target === 'PATIENT' &&
+            correction.missingRecipients.includes('PATIENT') &&
+            (wait.overdue || unanswered.length > 0);
           entries.push({
             resultId: result.id,
             reportId: report.id,
@@ -753,7 +760,9 @@ export class DiagnosticReportService {
             escalateTo: role ? { roleId: role.id, name: role.name } : null,
             afterHours,
             noticeTarget: due.target,
-            escalationMissing: due.escalationMissing,
+            locateViaOnCall: locate,
+            escalationMissing:
+              due.escalationMissing || (locate && !staffed.has(order.siteId)),
           });
         }
       }

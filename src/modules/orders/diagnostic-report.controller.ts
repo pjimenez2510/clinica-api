@@ -603,6 +603,7 @@ function toCorrectionEntryResponse(
         }
       : null,
     noAnswerAttempts: entry.noAnswerAttempts,
+    locateViaOnCall: entry.locateViaOnCall,
     waitingMinutes: entry.waitingMinutes,
     noticeDueAt: entry.noticeDueAt.toISOString(),
     overdue: entry.overdue,

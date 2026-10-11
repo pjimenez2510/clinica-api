@@ -447,6 +447,29 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     expect(await ctx.reports.corrections(ctx.asNurse, new Date())).toEqual([]);
   });
 
+  it('ORD-173 vencida o sin respuesta de la paciente, la cola dice que la guardia la localice, sin cerrarla', async () => {
+    const prisma = db();
+    const ctx = await aCriticalGlucose(prisma);
+    await ctx.reports.notify({ resultId: ctx.result.id, ...toPatient, notifiedAt: minutesAgo(90) }, ctx.asNurse, new Date()); // prettier-ignore
+    const fixed = (await correctTo(ctx, ctx.report.id, 95)).results[0]!;
+
+    // Control positivo: en plazo y sin llamadas, todavía no.
+    const [fresh] = await ctx.reports.corrections(ctx.asNurse, new Date());
+    expect(fresh).toMatchObject({ noticeTarget: 'PATIENT', overdue: false, locateViaOnCall: false, escalationMissing: false }); // prettier-ignore
+
+    // Vencida y sin guardia: lo dice, y la entrada sigue ahí.
+    const later = new Date(fresh!.correctedAt.getTime() + 61 * 60_000);
+    const [overdue] = await ctx.reports.corrections(ctx.asNurse, later);
+    expect(overdue).toMatchObject({ resultId: fixed.id, noticeTarget: 'PATIENT', locateViaOnCall: true, escalationMissing: true }); // prettier-ignore
+
+    // Con guardia, la nombra; y una llamada sin respuesta basta, aun en plazo.
+    const role = await anOnCallRole(prisma);
+    await prisma.siteParameter.update({ where: { siteId: ctx.scene.site.id }, data: { criticalEscalationRoleId: role.id } }); // prettier-ignore
+    await ctx.reports.notify({ resultId: fixed.id, ...toPatient, outcome: 'NO_ANSWER', readBack: undefined }, ctx.asNurse, new Date()); // prettier-ignore
+    const [unanswered] = await ctx.reports.corrections(ctx.asNurse, new Date());
+    expect(unanswered).toMatchObject({ overdue: false, noticeTarget: 'PATIENT', locateViaOnCall: true, escalationMissing: false, escalateTo: { roleId: role.id } }); // prettier-ignore
+  });
+
   it('ORD-154 la cola de correcciones vence con el plazo de críticos de la sede y escala a la guardia, con las llamadas sin respuesta', async () => {
     const prisma = db();
     const ctx = await aCriticalGlucose(prisma);

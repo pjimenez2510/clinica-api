@@ -464,6 +464,8 @@ export const correctionResultSchema = z.object({
   proposedRecipient: proposedRecipientSchema.nullable(),
   /** ORD-154. Unanswered calls about the corrected value. */
   noAnswerAttempts: z.number().int(),
+  /** ORD-173. The site's on-call has to locate the patient; it closes nothing. */
+  locateViaOnCall: z.boolean(),
   /** ORD-154 (D-156.2). The site's critical deadline, from `correctedAt`. */
   waitingMinutes: z.number().int(),
   noticeDueAt: z.iso.datetime(),
@@ -473,7 +475,10 @@ export const correctionResultSchema = z.object({
   afterHours: z.boolean(),
   /** ORD-153, ORD-154. Whom the notice of the correction is due to now. */
   noticeTarget: z.enum(['ORDERING_PRACTITIONER', 'ON_CALL_ROLE', 'PATIENT']),
-  /** ORD-154. The escalation is due and the site named no on-call role. */
+  /**
+   * ORD-154, ORD-173. The escalation —or locating the patient— is due and the
+   * site has nobody on call.
+   */
   escalationMissing: z.boolean(),
 });
 export const correctionResultListSchema = z.object({
