@@ -748,7 +748,7 @@ SRI-101, SRI-104. **Solo interfaz:** SRI-099.
   > persona (el empleador, el contador). Con la regla de BI-272 la casilla
   > salía marcada y la ficha quedaba con el correo de un tercero, al que irían
   > las facturas siguientes. Queda para el autor confirmarlo (plan, D-205).
-- **SRI-099** — En la fila de una factura o nota de crédito autorizada cuyo
+- **SRI-099** — En la fila de una factura autorizada cuyo
   correo esté `FAILED` o `UNDELIVERABLE`, quien tenga `billing:voucher-mail`
   DEBERÁ encontrar «Reintentar el correo», que reenvía en el acto (SRI-095) a
   la dirección del comprador, propuesta y editable; y el sistema DEBERÁ exigir
@@ -756,6 +756,8 @@ SRI-101, SRI-104. **Solo interfaz:** SRI-099.
   reenviar o reintentar, con el alcance por sede de SRI-065.
   > D-167 §2. Administración no tiene `billing:write` (no cobra ni emite) y la
   > decisión le da el reintento: un permiso propio, sólo para el correo.
+  > El servidor admite igual el reenvío de una nota de crédito (SRI-095); su
+  > fila en «Notas de crédito» no ofrece todavía la acción.
 - **SRI-100** — CUANDO salga un reenvío (SRI-095), el sistema DEBERÁ guardar en
   `electronic_voucher_mailing` el comprobante, quién lo pidió, cuándo, la
   dirección y si era la del comprador; y la base DEBERÁ rechazar la
