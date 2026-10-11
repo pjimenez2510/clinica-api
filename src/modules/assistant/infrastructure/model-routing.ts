@@ -51,3 +51,15 @@ export const OPENAI_REASONING_EFFORT: Readonly<Record<ModelTier, string>> = {
   fast: 'none',
   quality: 'low',
 };
+
+/**
+ * AS-005. How much the Anthropic models reason, per tier. `claude-sonnet-5`
+ * reasons unless told otherwise, and writing a note against a schema is
+ * extraction, not a problem to solve: off is the condition in which it
+ * answers at all (E-044). `claude-haiku-4-5` takes no setting.
+ */
+export const ANTHROPIC_THINKING_DISABLED: Readonly<Record<ModelTier, boolean>> =
+  {
+    fast: false,
+    quality: true,
+  };

@@ -32,7 +32,13 @@ describe('the price table', () => {
     expect(gemini).toHaveLength(2);
     expect(gemini[1]!.inputPerMillion).toBe(gemini[0]!.inputPerMillion * 2);
     expect(gemini[1]!.outputPerMillion).toBe(gemini[0]!.outputPerMillion * 2);
-    expect(priceAt(LLM_PRICES, gemini[0]!.model, new Date(Date.parse(`${gemini[1]!.validFrom}T00:00:00Z`)))).toBe(gemini[1]); // prettier-ignore
+    expect(
+      priceAt(
+        LLM_PRICES,
+        gemini[0]!.model,
+        new Date(Date.parse(`${gemini[1]!.validFrom}T00:00:00Z`)),
+      ),
+    ).toBe(gemini[1]);
   });
 
   it('AS-016 refuses a table without the day a price was read', () => {
