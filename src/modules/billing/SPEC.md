@@ -3029,7 +3029,8 @@ lo ve._
   DEBERÁ rechazarlo con `VALIDATION_FAILED` nombrando el campo; SI el código
   ya existe, con `BILLABLE_SERVICE_CODE_DUPLICATE`; y SI no hay lista
   particular activa, con `PRICE_LIST_NOT_FOUND`.
-  > D-228 (construido así mientras el autor decide): el examen creado sin
+  > D-228, resuelta por el autor el 11-10-2026 (obligatorio, cero se admite, y
+  > la lista marca lo que no tiene precio vigente): el examen creado sin
   > precio quedaba «Sin precio» y el autor creyó que no se había creado.
   > Sustituye a SP-030 y ORD-162: ya no nace nada «detrás» de otra cosa.
 - **BI-281** — CUANDO se corrija el código de un servicio, SI ya está en un
@@ -3109,7 +3110,8 @@ lo ve._
   DEBERÁ rechazarlo con `PRICE_NOT_FOUND` (BI-047).
   > ADR-013: «un convenio guarda excepciones» sobre el particular, y la
   > columna del convenio en la lista dice «—» = «usa el particular». Sin esta
-  > caída, ese «—» sería falso. Construido así mientras el autor decide (D-230).
+  > caída, ese «—» sería falso. D-230, resuelta por el autor el 11-10-2026; por
+  > confirmar fuera con el contador.
   > La red pública queda fuera: liquida por el Tarifario del SNS, y un importe
   > particular en su planilla se glosaría; sin precio propio, `PRICE_NOT_FOUND`.
 
@@ -3121,9 +3123,9 @@ lo ve._
   visita es su propio caso; una desactivada no cuenta).
   > ADR-013: «una consulta por especialidad y visita». Dos «Primera vez» de
   > la misma especialidad devuelven la duda de cuál propone la agenda y cuál
-  > cobra caja (revisión de producto del 11-10-2026).
-
-### La pantalla «Servicios» (sólo interfaz, D-227 §1, D-220)
+  > cobra caja (revisión de producto del 11-10-2026). D-232, resuelta por el
+  > autor el 11-10-2026: dos precios para la misma visita serán una variante
+  > de la consulta, no dos consultas.
 
 - **BI-299** — CUANDO quien tiene `billing:price-manage` cree un servicio que
   lleva extensión de orden (examen, imagen, o procedimiento que se pide) o
@@ -3144,6 +3146,8 @@ lo ve._
   > firme con la red pública. Mientras estén inactivos, `worksWithPublicNetwork`
   > está apagada: la lista de Servicios no muestra sus columnas ni el diálogo el
   > «Código MSP» (BI-296). Las pruebas que cobran al IESS lo activan en su arreglo.
+
+### La pantalla «Servicios» (sólo interfaz, D-227 §1, D-220)
 
 - **BI-291** — El sistema DEBERÁ ofrecer una sola entrada «Servicios» en
   Administración · Facturación (`/administracion/servicios`), y las rutas
@@ -3177,7 +3181,9 @@ lo ve._
 - **BI-296** — En pantalla NO DEBERÁN aparecer «prestación», «categoría» ni
   «tarifario»: se dice «servicio», «tipo» y «Código MSP»; y el campo «Código
   MSP» DEBERÁ verse sólo DONDE la clínica trabaje con la red pública o el
-  SPPAT (D-218 §2; mientras no exista la pantalla «Funciones», D-229).
+  SPPAT (D-218 §2; mientras no exista la pantalla «Funciones», la señal es
+  tener un pagador activo de la red pública: D-229, resuelta el 11-10-2026, y
+  la semilla la deja apagada, BI-300).
   Especialidades DEBERÁ listar sus consultas con enlace al servicio, sin
   editarlas, y el pagador NO DEBERÁ editar precios (D-227 §1).
 
