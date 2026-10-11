@@ -40,6 +40,7 @@ import {
 } from '../domain/waitlist.repository';
 
 import type { Requester } from './agenda.service';
+import { ConsultationNotFoundError } from '../../../shared/domain/errors/master-data.errors';
 
 /**
  * AG-060. A patient waiting for a slot somewhere in a range of Ecuadorian
@@ -178,6 +179,16 @@ export class WaitlistService {
     // which is the same answer booking gives and says nothing about who exists.
     if (patient !== null && patient.mergedIntoMrn !== null) {
       throw new PatientMergedError(patient.mergedIntoMrn);
+    }
+
+    // AG-060 (ADR-013). What is waited for is a consultation on offer: the
+    // foreign key admits any service, and an exam in the queue could never
+    // become the appointment AG-061 proposes.
+    if (
+      request.serviceId !== undefined &&
+      !(await this.agenda.isActiveConsultation(request.serviceId))
+    ) {
+      throw new ConsultationNotFoundError();
     }
 
     const entry = await this.waitlist.enrolInWaitlist({
