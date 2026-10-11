@@ -1888,6 +1888,7 @@ model Patient {
   /// chart-scope guard): a paper names one chart on purpose.
   certificatesNamingIt  MedicalCertificate[]    @relation("CertificateChartOfRecord")
   serviceOrdersNamingIt ServiceOrder[]          @relation("ServiceOrderChartOfRecord")
+  invoicesNamingIt      Invoice[]               @relation("InvoiceChartOfRecord")
   certificates          MedicalCertificate[]    @relation("CertificatePatient")
   referrals             Referral[]
   mergesAsSource        PatientMerge[]          @relation("MergeSource")
@@ -4866,8 +4867,14 @@ model ChargeItem {
 model Invoice {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
-  accountId String         @map("account_id") @db.Uuid
-  account   PatientAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_account_fk")
+  accountId       String         @map("account_id") @db.Uuid
+  account         PatientAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_account_fk")
+  /// BI-302. The chart whose identity the RIDE prints: the one in force of
+  /// the account's chart when issued. Written by the database
+  /// (`a_invoice_freeze_chart_of_record`), never changed after. NOT NULL in
+  /// the database; optional here only so the insert may leave it out.
+  chartOfRecordId String?        @map("chart_of_record_id") @db.Uuid
+  chartOfRecord   Patient?       @relation("InvoiceChartOfRecord", fields: [chartOfRecordId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_chart_of_record_fk")
 
   siteId String @map("site_id") @db.Uuid
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "invoice_site_fk")
