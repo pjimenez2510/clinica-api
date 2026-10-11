@@ -4,7 +4,6 @@ import {
   closesCriticalWorklist,
   isSelfNotice,
   namesPerson,
-  selfNoticedByOrderer,
   type WorklistNotice,
 } from './notice-recipient';
 
@@ -118,8 +117,6 @@ describe('el cierre de la cola de críticos (ORD-146)', () => {
     const earlier = n({ recipientKind: 'ORDERING_PRACTITIONER', notifiedAt: at(90) }); // prettier-ignore
     expect(closesCriticalWorklist([earlier, ownNote], 'doctor')).toBe(true);
     const colleague = n({ selfNotice: true, notifiedById: 'colleague', notifiedAt: at(60) }); // prettier-ignore
-    expect(selfNoticedByOrderer([colleague], 'doctor')).toBe(false);
     expect(closesCriticalWorklist([colleague, n({ recipientKind: 'ORDERING_PRACTITIONER' })], 'doctor')).toBe(true); // prettier-ignore
-    expect(selfNoticedByOrderer([ownNote], 'doctor')).toBe(true);
   });
 });

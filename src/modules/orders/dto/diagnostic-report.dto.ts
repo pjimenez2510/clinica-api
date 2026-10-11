@@ -280,6 +280,19 @@ const toldValueSchema = z.object({
   observedAt: z.iso.datetime(),
 });
 
+/** ORD-171 (D-168 §2). The patient or their representative; a professional. */
+const RECIPIENT_GROUP = z.enum(['PATIENT', 'PRACTITIONER']);
+
+/**
+ * ORD-172. Who the notice of the correction is proposed to. On the worklist
+ * the name of a patient or relative is `null` (ORD-024): it is read in the
+ * order, whose reading is audited.
+ */
+const proposedRecipientSchema = z.object({
+  recipientKind: NOTICE_RECIPIENT,
+  recipientName: z.string().nullable(),
+});
+
 /** ORD-143. A standing value that corrects one somebody was told about. */
 export const notifiedCorrectionSchema = z.object({
   told: toldValueSchema,
@@ -290,6 +303,10 @@ export const notifiedCorrectionSchema = z.object({
   due: z.boolean(),
   /** ORD-153. It has to reach the patient or their representative. */
   patientRequired: z.boolean(),
+  /** ORD-171. The kinds of people told the false value still to be told. */
+  missingRecipients: z.array(RECIPIENT_GROUP),
+  /** ORD-172. Who to tell first: who heard the false value, patient first. */
+  proposedRecipient: proposedRecipientSchema.nullable(),
 });
 
 /** ORD-031 to ORD-038. One determination as a client reads it. */
@@ -441,6 +458,10 @@ export const correctionResultSchema = z.object({
   orderedBy: z.object({ id: z.uuid(), name: z.string() }),
   /** ORD-153. An earlier version was told to the patient or their representative. */
   patientRequired: z.boolean(),
+  /** ORD-171. The kinds of people told the false value still to be told. */
+  missingRecipients: z.array(RECIPIENT_GROUP),
+  /** ORD-172. Who to tell first; a patient's or relative's name stays in the order. */
+  proposedRecipient: proposedRecipientSchema.nullable(),
   /** ORD-154. Unanswered calls about the corrected value. */
   noAnswerAttempts: z.number().int(),
   /** ORD-154 (D-156.2). The site's critical deadline, from `correctedAt`. */

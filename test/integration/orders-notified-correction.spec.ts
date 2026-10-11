@@ -496,16 +496,19 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     expect((await ctx.reports.critical(ctx.asNurse, now)).map((e) => e.resultId)).toEqual([ctx.result.id]); // prettier-ignore
   });
 
-  it('ORD-157 el destinatario con las palabras del nombre de quien registra en otro orden es un autoaviso', async () => {
+  it('ORD-157 ORD-174 el destinatario con las palabras del nombre de quien registra, en otro orden o con una de más, es un autoaviso', async () => {
     const prisma = db();
     const ctx = await aCriticalGlucose(prisma);
     const now = new Date();
-    // La enfermera es Carmen Salazar; «Salazar Carmen», como en la cédula.
-    const own = await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, recipientName: 'Salazar Carmen' }, ctx.asNurse, now); // prettier-ignore
-    expect(own.selfNotice).toBe(true);
+    // La enfermera es Carmen Salazar; «Salazar Carmen», como en la cédula, y
+    // «Salazar Carmen Pilco», con una palabra de más (D-168 §4).
+    for (const recipientName of ['Salazar Carmen', 'Salazar Carmen Pilco']) {
+      const own = await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, recipientName }, ctx.asNurse, now); // prettier-ignore
+      expect(own.selfNotice).toBe(true);
+    }
     expect(await ctx.reports.critical(ctx.asNurse, now)).toHaveLength(1);
-    // Control positivo: con una palabra más, es otra persona.
-    const other = await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, recipientName: 'Salazar Carmen Pilco' }, ctx.asNurse, now); // prettier-ignore
+    // Control positivo: el nombre de otra persona no lo es.
+    const other = await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, recipientName: 'Lucía Toapanta' }, ctx.asNurse, now); // prettier-ignore
     expect(other.selfNotice).toBe(false);
     expect(await ctx.reports.critical(ctx.asNurse, now)).toEqual([]);
   });
@@ -529,11 +532,11 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     expect(await ctx.reports.critical(ctx.asNurse, new Date())).toEqual([]);
   });
 
-  it('ORD-154 ORD-146 tras el autoaviso de la corrección del médico que pidió, la cola de correcciones dice que toca al paciente', async () => {
+  it('ORD-154 ORD-171 tras el autoaviso de la corrección del médico que pidió, la cola sigue pidiendo a la guardia que oyó el 25, no al paciente', async () => {
     const prisma = db();
     const ctx = await aCriticalGlucose(prisma);
-    // Al médico que pidió se le avisó del 25 por otra persona: no toca al paciente por ORD-153.
-    await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Ana Villacís', notifiedAt: minutesAgo(90) }, ctx.asNurse, new Date()); // prettier-ignore
+    // A la guardia se le avisó del 25; a la paciente, no.
+    await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, notifiedAt: minutesAgo(90) }, ctx.asNurse, new Date()); // prettier-ignore
     const fixed = (await correctTo(ctx, ctx.report.id, 95)).results[0]!;
     // Fuera de horario y con guardia: le toca a la guardia (control positivo).
     const role = await anOnCallRole(prisma);
@@ -541,11 +544,14 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     const [before] = await ctx.reports.corrections(ctx.asNurse, new Date());
     expect(before).toMatchObject({ patientRequired: false, noticeTarget: 'ON_CALL_ROLE' }); // prettier-ignore
 
+    // El médico se anota la corrección: la guardia sigue sin saberlo, y llamar
+    // a la paciente sería una falsa alarma de un valor que nunca oyó.
     await ctx.reports.notify({ resultId: fixed.id, ...toPatient, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Yo' }, ctx.asDoctor, new Date()); // prettier-ignore
     const [after] = await ctx.reports.corrections(ctx.asNurse, new Date());
     expect(after).toMatchObject({
       resultId: fixed.id,
-      noticeTarget: 'PATIENT',
+      missingRecipients: ['PRACTITIONER'],
+      noticeTarget: 'ON_CALL_ROLE',
     });
   });
 });

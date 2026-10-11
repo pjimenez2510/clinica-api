@@ -2556,13 +2556,17 @@ clínico**; lo construido se cambia sin tocar datos._
   lleva su nombre), ENTONCES su propio autoaviso de la corrección DEBERÁ
   cerrarla; y SI todos los avisos anteriores fueron autoavisos de una misma
   cuenta, ENTONCES la cierra un autoaviso de esa cuenta o cualquier aviso que
-  no sea autoaviso, como en ORD-143.
+  no sea autoaviso, como en ORD-143. La cola de correcciones DEBERÁ decir que
+  el aviso toca **al paciente** SÓLO MIENTRAS le falte el aviso al paciente o a
+  su representante; si no, el destino es el de ORD-154 para el profesional.
   > **D-168 §2 y §5.** Con la paciente y la guardia avisadas del 25, la
   > guardia pudo pautar dextrosa: avisar a la hija no se lo cuenta. Y si sólo
   > el médico que pidió supo del 25 (la enfermera se lo dijo a él), su
   > constancia de la corrección basta: llamar al paciente sería una falsa
   > alarma sobre un valor que nunca oyó. **Enmienda ORD-143 y ORD-153**
-  > («basta el paciente o su representante»).
+  > («basta el paciente o su representante»), **y ORD-154** («al paciente …
+  > cuando el médico que pidió ya anotó la corrección como autoaviso»): el
+  > paciente que no oyó el 25 no recibe una llamada sobre el 95.
 
 - **ORD-172** — Cada entrada de la cola de correcciones, y la marca de la
   corrección en la lectura del informe, DEBERÁN decir a qué tipos de

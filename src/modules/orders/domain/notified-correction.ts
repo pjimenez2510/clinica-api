@@ -31,6 +31,20 @@ export interface StatedNotice {
   notifiedAt: Date;
   outcome: string;
   selfNotice: boolean;
+  /** ORD-146, ORD-174. The recipient carries the ordering practitioner's name. */
+  namesOrderingPractitioner: boolean;
+}
+
+/**
+ * ORD-171 (D-168 §2). The two kinds of people a false value can have reached:
+ * the patient or whoever answers for them, and a professional.
+ */
+export type RecipientGroup = 'PATIENT' | 'PRACTITIONER';
+
+/** ORD-172. Who the worklist proposes to tell: who heard the false value. */
+export interface ProposedRecipient {
+  recipientKind: string;
+  recipientName: string;
 }
 
 /** One value as a version of a report states it. */
@@ -79,6 +93,13 @@ export interface NotifiedCorrection {
    * representative: only a notice to one of the two closes it.
    */
   patientRequired: boolean;
+  /**
+   * ORD-171 (D-168 §2, §5). The kinds of people told the false value that
+   * have not yet been told of the correction; empty once it is closed.
+   */
+  missingRecipients: readonly RecipientGroup[];
+  /** ORD-172. Who to tell first: who heard the false value, patient first. */
+  proposedRecipient: ProposedRecipient | null;
 }
 
 const isCritical = (flag: AbnormalFlag | null): boolean =>
@@ -120,6 +141,76 @@ function readsDifferently(told: StatedResult, now: StatedResult): boolean {
   return !sameReading(told, now);
 }
 
+const groupOf = (notice: StatedNotice): RecipientGroup =>
+  toPatient(notice) ? 'PATIENT' : 'PRACTITIONER';
+
+/** ORD-146, ORD-174. Told to the practitioner who placed the order. */
+const toOrderer = (notice: StatedNotice): boolean =>
+  notice.recipientKind === 'ORDERING_PRACTITIONER' ||
+  notice.namesOrderingPractitioner;
+
+/**
+ * ORD-171 (D-168 §2, §5). Which kinds of people told the false value still
+ * have to hear of the correction, given the notices on the value now.
+ *
+ *  - Every earlier notice was a notice to oneself: only that account ever
+ *    knew. Its own notice of the correction closes it, and so does any notice
+ *    to somebody else (ORD-143).
+ *  - Every earlier notice that was not to oneself went to the practitioner
+ *    who placed the order (the nurse told them; the patient never heard): the
+ *    practitioner's own notice of the correction closes it, as does a notice
+ *    to a professional (§5).
+ *  - Otherwise each kind told —the patient or their representative; a
+ *    professional— needs a notice of the correction that is not a notice to
+ *    oneself: the on-call doctor who may have ordered dextrose is not told by
+ *    a call to the daughter (§2).
+ */
+function stillToTell(
+  earlier: readonly StatedNotice[],
+  now: readonly StatedNotice[],
+  orderedByUserId: string | undefined,
+): RecipientGroup[] {
+  const told = earlier.filter((notice) => !notice.selfNotice);
+  const toOthers = now.filter((notice) => !notice.selfNotice);
+  if (told.length === 0) {
+    const closed =
+      toOthers.length > 0 ||
+      now.some((notice) =>
+        earlier.every((n) => n.notifiedBy.id === notice.notifiedBy.id),
+      );
+    return closed ? [] : ['PRACTITIONER'];
+  }
+  if (
+    orderedByUserId !== undefined &&
+    told.every(toOrderer) &&
+    now.some((n) => n.selfNotice && n.notifiedBy.id === orderedByUserId)
+  ) {
+    return [];
+  }
+  const owed = new Set(told.map(groupOf));
+  for (const notice of toOthers) owed.delete(groupOf(notice));
+  return (['PATIENT', 'PRACTITIONER'] as const).filter((g) => owed.has(g));
+}
+
+/**
+ * ORD-172. The person to call first: the latest one told the false value of
+ * a kind still owed the correction, the patient's kind first.
+ */
+function proposal(
+  earlier: readonly StatedNotice[],
+  missing: readonly RecipientGroup[],
+): ProposedRecipient | null {
+  for (const group of missing) {
+    const last = earlier
+      .filter((notice) => !notice.selfNotice && groupOf(notice) === group)
+      .at(-1);
+    if (last) {
+      return { recipientKind: last.recipientKind, recipientName: last.recipientName }; // prettier-ignore
+    }
+  }
+  return null;
+}
+
 /** A report chain is bounded by construction; this only stops a corrupt one. */
 const MAX_CHAIN = 100;
 
@@ -140,16 +231,16 @@ const MAX_CHAIN = 100;
  * 25—, a later version that rewrites the 95 does not make it «already told»:
  * it carries the same pending correction, of the same 25.
  *
- * Closed by a notice given on the value to the patient or their
- * representative when an earlier one went to them (ORD-153); otherwise by
- * one that is not a notice to oneself; or
- * by one to oneself when every notice given before was too, BY THE SAME
- * ACCOUNT —only that practitioner ever knew, and their own record is the one
- * that matters; another colleague noting it for themselves tells them
- * nothing—.
+ * Closed when every kind of person told the false value has been told of
+ * the correction (ORD-171, `stillToTell`).
  */
 export function notifiedCorrections(
   versions: readonly StatedVersion[],
+  /**
+   * ORD-171 (D-168 §5). The account of the practitioner who placed the order.
+   * Without it, their own notice never closes a correction: the safe side.
+   */
+  orderedByUserId?: string,
 ): Map<string, NotifiedCorrection> {
   const byId = new Map(versions.map((version) => [version.id, version]));
   const found = new Map<string, NotifiedCorrection>();
@@ -194,17 +285,11 @@ export function notifiedCorrections(
       const patientRequired = earlierNotices.some(
         (notice) => toPatient(notice) && !notice.selfNotice,
       );
-      const closed = result.notices.some(
-        (notice) =>
-          given(notice) &&
-          (patientRequired
-            ? toPatient(notice) && !notice.selfNotice
-            : !notice.selfNotice ||
-              earlierNotices.every(
-                (n) => n.selfNotice && n.notifiedBy.id === notice.notifiedBy.id,
-              )),
+      const missingRecipients = stillToTell(
+        earlierNotices,
+        result.notices.filter(given),
+        orderedByUserId,
       );
-
       found.set(result.id, {
         resultId: result.id,
         told: inherited?.told ?? {
@@ -222,9 +307,11 @@ export function notifiedCorrections(
           inherited?.correctedAt ??
           last.version.supersededRecordedAt ??
           result.observedAt,
-        due: !closed,
+        due: missingRecipients.length > 0,
         standing: version.supersededById === null,
         patientRequired,
+        missingRecipients,
+        proposedRecipient: proposal(earlierNotices, missingRecipients),
       });
     }
   };

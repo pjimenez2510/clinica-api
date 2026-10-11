@@ -530,6 +530,14 @@ function toCorrectionResponse(
     correctedAt: correction.correctedAt.toISOString(),
     due: correction.due,
     patientRequired: correction.patientRequired,
+    missingRecipients: [...correction.missingRecipients],
+    proposedRecipient: correction.proposedRecipient
+      ? {
+          recipientKind: correction.proposedRecipient
+            .recipientKind as CriticalNoticeView['recipientKind'],
+          recipientName: correction.proposedRecipient.recipientName,
+        }
+      : null,
   };
 }
 
@@ -581,6 +589,19 @@ function toCorrectionEntryResponse(
     correctedAt: entry.correctedAt.toISOString(),
     orderedBy: entry.orderedBy,
     patientRequired: entry.patientRequired,
+    missingRecipients: [...entry.missingRecipients],
+    proposedRecipient: entry.proposedRecipient
+      ? {
+          recipientKind: entry.proposedRecipient
+            .recipientKind as CriticalNoticeView['recipientKind'],
+          // ORD-024: a patient's or relative's name is read in the order.
+          recipientName:
+            entry.proposedRecipient.recipientKind === 'PATIENT' ||
+            entry.proposedRecipient.recipientKind === 'REPRESENTATIVE'
+              ? null
+              : entry.proposedRecipient.recipientName,
+        }
+      : null,
     noAnswerAttempts: entry.noAnswerAttempts,
     waitingMinutes: entry.waitingMinutes,
     noticeDueAt: entry.noticeDueAt.toISOString(),

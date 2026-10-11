@@ -443,6 +443,10 @@ export interface CorrectionWorklistEntry {
   orderedBy: { id: string; name: string };
   /** ORD-153. An earlier version was told to the patient or their representative. */
   patientRequired: boolean;
+  /** ORD-171. The kinds of people told the false value still to be told. */
+  missingRecipients: NotifiedCorrection['missingRecipients'];
+  /** ORD-172. Who to tell first. */
+  proposedRecipient: NotifiedCorrection['proposedRecipient'];
   /** ORD-154. Unanswered calls about the corrected value. */
   noAnswerAttempts: number;
   /** ORD-154 (D-156.2). The site's critical deadline, from `correctedAt`. */

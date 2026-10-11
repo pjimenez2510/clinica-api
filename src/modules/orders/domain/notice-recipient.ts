@@ -119,19 +119,6 @@ const toOneselfByOrderer = (notice: WorklistNotice, orderer: string) =>
   notice.notifiedById === orderer;
 
 /**
- * ORD-146 (D-116 a). The practitioner who placed the order recorded a notice
- * to themselves: they know, and the notice is now due to the patient. Only
- * THEIR notice to themselves: a colleague noting it for themselves tells the
- * ordering practitioner nothing (revisión).
- */
-export function selfNoticedByOrderer(
-  notices: readonly WorklistNotice[],
-  ordererUserId: string,
-): boolean {
-  return notices.some((notice) => toOneselfByOrderer(notice, ordererUserId));
-}
-
-/**
  * ORD-062, ORD-146. Whether the notices of a critical value take it off the
  * worklist: a notice given that is not a notice to oneself — except one to
  * the practitioner who placed the order AFTER they had noted it themselves

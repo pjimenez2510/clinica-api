@@ -62,12 +62,7 @@ import {
   supersedingStatus,
 } from '../domain/service-order';
 import { resolveResult } from '../domain/result-value';
-import {
-  isSelfNotice,
-  namesPerson,
-  selfNoticedByOrderer,
-  type WorklistNotice,
-} from '../domain/notice-recipient';
+import { isSelfNotice, namesPerson } from '../domain/notice-recipient';
 import { notifiedCorrections } from '../domain/notified-correction';
 import type { AnalyteDefinition } from '../domain/analyte';
 import {
@@ -447,8 +442,11 @@ export class DiagnosticReportService {
     orderId: string,
     requester: Requester,
   ): Promise<DiagnosticReportView[]> {
+    // ORD-171 (D-168 §5). Who placed the order: their own notice can close it.
+    const order = await this.orders.byId({ orderId, sites: requester.sites });
     const reports = withCorrections(
       await this.reports.ofOrder(orderId, requester.sites),
+      order?.orderedByUserId,
     );
 
     await this.audit.record({
@@ -705,7 +703,7 @@ export class DiagnosticReportService {
     const entries: CorrectionWorklistEntry[] = [];
     for (const order of orders) {
       const reports = all.filter((report) => report.serviceOrderId === order.orderId); // prettier-ignore
-      const found = notifiedCorrections(reports);
+      const found = notifiedCorrections(reports, order.orderedByUserId);
       const policy = policies.get(order.siteId) ?? DEFAULT_POLICY;
       const role = policy.criticalEscalationRole;
       const afterHours = !inHours.has(order.siteId);
@@ -723,12 +721,11 @@ export class DiagnosticReportService {
             afterHours,
             hasOnCallRole: staffed.has(order.siteId),
             orderingUnanswered: unanswered.some((n) => n.recipientKind === 'ORDERING_PRACTITIONER'), // prettier-ignore
-            // ORD-153 (D-156.1): told to the patient, it is theirs to hear;
-            // ORD-146: so it is once the practitioner who asked noted the
-            // correction themselves — they already know.
-            dueToPatient:
-              correction.patientRequired ||
-              selfNoticedByOrderer(result.notices.map(asWorklistNotice), order.orderedByUserId), // prettier-ignore
+            // ORD-171 (D-168 §2, §5): the patient's to hear only while the
+            // patient or their representative, told the false value, has not
+            // been told of the correction. One who never heard it gets no
+            // call about it.
+            dueToPatient: correction.missingRecipients.includes('PATIENT'),
           });
           entries.push({
             resultId: result.id,
@@ -747,6 +744,8 @@ export class DiagnosticReportService {
             correctedAt: correction.correctedAt,
             orderedBy: order.orderedBy,
             patientRequired: correction.patientRequired,
+            missingRecipients: correction.missingRecipients,
+            proposedRecipient: correction.proposedRecipient,
             noAnswerAttempts: unanswered.length,
             waitingMinutes: wait.waitingMinutes,
             noticeDueAt: wait.dueAt,
@@ -1289,18 +1288,6 @@ function liveLine(
   return line !== undefined && live.has(line) ? line : null;
 }
 
-/** ORD-146. A recorded notice as the worklist rule reads it. */
-function asWorklistNotice(notice: CriticalNoticeView): WorklistNotice {
-  return {
-    outcome: notice.outcome,
-    selfNotice: notice.selfNotice,
-    recipientKind: notice.recipientKind,
-    namesOrderingPractitioner: notice.namesOrderingPractitioner,
-    notifiedById: notice.notifiedBy.id,
-    notifiedAt: notice.notifiedAt,
-  };
-}
-
 /** ORD-148. The caller's name, or `null` when it was who records it. */
 function callerOf(request: { callerName?: string | null }): string | null {
   return request.callerName?.trim() || null;
@@ -1312,8 +1299,9 @@ function callerOf(request: { callerName?: string | null }): string | null {
  */
 function withCorrections(
   reports: DiagnosticReportView[],
+  orderedByUserId: string | undefined,
 ): DiagnosticReportView[] {
-  const found = notifiedCorrections(reports);
+  const found = notifiedCorrections(reports, orderedByUserId);
   if (found.size === 0) return reports;
   return reports.map((report) => ({
     ...report,
