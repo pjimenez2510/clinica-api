@@ -86,3 +86,16 @@ process.env.SRI_ALLOW_REMOTE = 'false';
 process.env.SRI_RECEPTION_URL = '';
 process.env.SRI_AUTHORISATION_URL = '';
 process.env.SRI_SOFTWARE_PROVIDER_RUC = '';
+
+/**
+ * IL-008, D-206: NO PROVIDER in a spec that boots the application, whatever a
+ * developer's `.env` says — the provider adapter is tested against a local
+ * double in its own spec. The digest key is forced so the specs can compute
+ * the digest they expect in the trail.
+ */
+export const IDENTITY_LOOKUP_TEST_DIGEST_KEY =
+  'clave-del-digesto-de-las-pruebas-de-integracion';
+process.env.IDENTITY_PROVIDER_URL = '';
+process.env.IDENTITY_PROVIDER_API_KEY = '';
+process.env.IDENTITY_PROVIDER_ALLOW_REMOTE = 'false';
+process.env.IDENTITY_LOOKUP_DIGEST_KEY = IDENTITY_LOOKUP_TEST_DIGEST_KEY;

@@ -215,6 +215,33 @@ export const envSchema = z.object({
     .default('true')
     .transform((value) => value === 'true'),
 
+  /**
+   * IL-006, IL-002 (D-206). The HMAC key that turns a cedula into the digest
+   * the identity-lookup trail and cache store instead of the number. Absent:
+   * no external source is ever asked, whatever the switch says. At least 32
+   * characters: a short key makes the digest of a 10-digit number guessable.
+   */
+  IDENTITY_LOOKUP_DIGEST_KEY: z.preprocess(
+    emptyAsUndefined,
+    z.string().min(32).optional(),
+  ),
+  /**
+   * IL-008. The identity provider with a contract (Didit's database
+   * validation). Without BOTH the URL and the key the adapter does not exist,
+   * so nothing is called. A URL that is not local needs
+   * `IDENTITY_PROVIDER_ALLOW_REMOTE=true`, like the SRI: a copied `.env`
+   * never sends cedulas to a paid service by accident.
+   */
+  IDENTITY_PROVIDER_URL: z.preprocess(emptyAsUndefined, z.url().optional()),
+  IDENTITY_PROVIDER_API_KEY: z.preprocess(
+    emptyAsUndefined,
+    z.string().min(1).optional(),
+  ),
+  IDENTITY_PROVIDER_ALLOW_REMOTE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+
   /** Default site timezone. `Pacific/Galapagos` for the Galapagos islands. */
   DEFAULT_TIMEZONE: z
     .string()
@@ -331,6 +358,26 @@ export function validateEnv(raw: Record<string, unknown>): Env {
             code: 'custom',
             path: [key],
             message: `es el servidor del ambiente ${environmentOfHost} y SRI_ENVIRONMENT dice ${env.SRI_ENVIRONMENT}: los comprobantes de un ambiente no se autorizan en el otro`,
+          });
+        }
+      }
+      // IL-008. No process reaches a remote identity provider by accident,
+      // and none reaches it in clear.
+      const provider = env.IDENTITY_PROVIDER_URL;
+      if (provider !== undefined && !isLocalUrl(provider)) {
+        if (!env.IDENTITY_PROVIDER_ALLOW_REMOTE) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['IDENTITY_PROVIDER_URL'],
+            message:
+              'apunta a un servidor que no es local; declare IDENTITY_PROVIDER_ALLOW_REMOTE=true solo cuando el contrato y el asesor legal lo permitan',
+          });
+        }
+        if (new URL(provider).protocol !== 'https:') {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['IDENTITY_PROVIDER_URL'],
+            message: 'el proveedor de identidad solo se llama por https',
           });
         }
       }

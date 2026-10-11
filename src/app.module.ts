@@ -12,6 +12,7 @@ import { CatalogsModule } from './modules/catalogs/catalogs.module';
 import { CertificatesModule } from './modules/certificates/certificates.module';
 import { ConfigurationModule } from './modules/configuration/configuration.module';
 import { DocumentsModule } from './modules/documents/documents.module';
+import { IdentityLookupModule } from './modules/identity-lookup/identity-lookup.module';
 import { PrivacyModule } from './modules/privacy/privacy.module';
 import { EncounterModule } from './modules/encounter/encounter.module';
 import { OrdersModule } from './modules/orders/orders.module';
@@ -94,6 +95,7 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
     LiveEventsModule,
     AuthModule,
     PatientsModule,
+    IdentityLookupModule,
     AgendaModule,
     CatalogsModule,
     BillingModule,

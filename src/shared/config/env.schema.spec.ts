@@ -156,6 +156,50 @@ describe('validateEnv', () => {
     ).toThrow();
   });
 
+  describe('IL-008 the identity provider', () => {
+    const REMOTE = 'https://provider.example.com/v3/database-validation/';
+
+    it('IL-008 refuses a remote provider unless IDENTITY_PROVIDER_ALLOW_REMOTE says so, and accepts a local double', () => {
+      expect(() =>
+        validateEnv({ ...base, IDENTITY_PROVIDER_URL: REMOTE }),
+      ).toThrow(/IDENTITY_PROVIDER_ALLOW_REMOTE/);
+      expect(
+        validateEnv({
+          ...base,
+          IDENTITY_PROVIDER_ALLOW_REMOTE: 'true',
+          IDENTITY_PROVIDER_URL: REMOTE,
+        }).IDENTITY_PROVIDER_URL,
+      ).toBe(REMOTE);
+      expect(
+        validateEnv({
+          ...base,
+          IDENTITY_PROVIDER_URL:
+            'http://localhost:8601/v3/database-validation/',
+        }).IDENTITY_PROVIDER_ALLOW_REMOTE,
+      ).toBe(false);
+    });
+
+    it('IL-008 toward a remote provider, only https', () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          IDENTITY_PROVIDER_ALLOW_REMOTE: 'true',
+          IDENTITY_PROVIDER_URL: 'http://provider.example.com/v3/',
+        }),
+      ).toThrow(/https/);
+    });
+
+    it('IL-006 refuses a digest key too short to hide a ten-digit number', () => {
+      expect(() =>
+        validateEnv({ ...base, IDENTITY_LOOKUP_DIGEST_KEY: 'corta' }),
+      ).toThrow(/IDENTITY_LOOKUP_DIGEST_KEY/);
+      expect(
+        validateEnv({ ...base, IDENTITY_LOOKUP_DIGEST_KEY: 'x'.repeat(32) })
+          .IDENTITY_LOOKUP_DIGEST_KEY,
+      ).toHaveLength(32);
+    });
+  });
+
   describe('SRI-053 SRI-055 the SRI web service', () => {
     const PATH = '/comprobantes-electronicos-ws/RecepcionComprobantesOffline';
 
