@@ -3060,7 +3060,9 @@ lo ve._
   > electrocardiograma es un procedimiento que se pide como orden.
 - **BI-285** — El código MSP (`msp_code`) DEBERÁ ser opcional en todo servicio,
   NO DEBERÁ ser requisito para pedirlo (ORD-004) y DEBERÁ imprimirse en el RIDE
-  como «Cód. auxiliar» cuando exista (D-218 §1–§2).
+  como «Cód. auxiliar» cuando exista (D-218 §1–§2). SI se cambia el código MSP
+  de un servicio con cargos ya facturados, ENTONCES DEBERÁ rechazarlo con
+  `SERVICE_TARIFF_CODE_INVOICED`: el RIDE lo vuelve a leer (heredado de BI-257).
 - **BI-286** — DONDE el servicio sea un **procedimiento**, el sistema DEBERÁ
   atarlo al procedimiento registrado en la atención **por su código**: su
   `msp_code` es el código del concepto del tarifario que cobra, y caja
@@ -3241,14 +3243,14 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `TARIFF_PUBLICATION_EMPTY` | 409 | BI-111, BI-113 |
 | `SERVICE_CATEGORY_NOT_FOUND` | 404 | BI-185 |
 | `SERVICE_CATEGORY_INACTIVE` | 422 | BI-185 |
-| `SERVICE_KIND_MISMATCH` | 422 | BI-187 |
+| `SERVICE_KIND_MISMATCH` | 422 | BI-278, BI-279, BI-284 |
 | `SERVICE_NAMED_ELSEWHERE` | 409 | BI-187, ORD-163, SP-030 |
 | `SERVICE_NOT_A_PROCEDURE` | 422 | BI-256 |
-| `SERVICE_PROCEDURE_NOT_IN_TARIFF` | 422 | BI-257 |
+| `SERVICE_PROCEDURE_NOT_IN_TARIFF` | 422 | BI-286 |
 | `SERVICE_CONSENT_TIE_LOCKED` | 409 | BI-256 |
-| `SERVICE_PROCEDURE_TAKEN` | 409 | BI-257 |
+| `SERVICE_PROCEDURE_TAKEN` | 409 | BI-286 |
 | `SERVICE_TARIFF_CODE_FROM_PROCEDURE` | 409 | BI-257, D-179 |
-| `SERVICE_TARIFF_CODE_INVOICED` | 409 | BI-257 |
+| `SERVICE_TARIFF_CODE_INVOICED` | 409 | BI-285 |
 | `INVOICE_CHARGES_CHANGED` | 409 | BI-184 |
 
 **Se reutilizan, y no se declaran de nuevo:** `SELF_AUTHORISATION_DENIED`
@@ -3365,7 +3367,7 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | --- | --- | --- | --- | --- |
 | `GET` | `/billing/services` | `billing:read` | `global` | BI-010, BI-011, BI-014, BI-023 |
 | `POST` | `/billing/services` | `billing:price-manage` | `global` | BI-010 a BI-016 |
-| `PATCH` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-011 a BI-016, BI-025, **BI-257** |
+| `PATCH` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-011 a BI-016, BI-025, BI-278 a BI-286 |
 | `DELETE` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-012 |
 | `POST` | `/billing/services/{id}/tax-review` | `billing:price-manage` | `global` | BI-024 |
 | `POST` | `/billing/services/{id}/written-consent` | `record:consent-rule` | `global` | BI-256 |
