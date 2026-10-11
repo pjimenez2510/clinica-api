@@ -39,13 +39,21 @@ export const LIVE_EVENT_PERMISSION = {
    * ADDRESSED: it reaches only the sessions of its recipients (`userIds`).
    */
   'emergency-alerts': 'agenda:read',
+  /**
+   * AU-060. The assistant finished a draft, or a proposal, that someone asked
+   * for. ADDRESSED to whoever asked: `assistant:use` arrives with A3.
+   */
+  'assistant-draft': 'record:write',
+  'assistant-proposal': 'record:write',
 } as const satisfies Record<string, Permission>;
 
 export type LiveEventKind = keyof typeof LIVE_EVENT_PERMISSION;
 
-/** AG-182. The kinds that are said to their recipients, never to a site. */
+/** AG-182, AU-060. The kinds that are said to their recipients, never to a site. */
 const ADDRESSED_KINDS: ReadonlySet<LiveEventKind> = new Set([
   'emergency-alerts',
+  'assistant-draft',
+  'assistant-proposal',
 ]);
 
 /**

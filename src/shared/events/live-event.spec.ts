@@ -125,6 +125,7 @@ describe('el aviso en vivo', () => {
       'agenda:read',
       'billing:read',
       'record:read',
+      'record:write',
     ]);
   });
 
@@ -151,5 +152,30 @@ describe('el aviso en vivo', () => {
     expect(
       parseLiveEvent(JSON.stringify({ ...addressed, userIds: ['ana'] })),
     ).toBeNull();
+  });
+
+  it('AU-060: «borrador listo» y «propuesta lista» llegan sólo a sus destinatarios con `record:write` en la sede, y sin destinatarios a nadie', () => {
+    const doctor = new Principal('01990000-0000-7000-8000-0000000000d1', [
+      { roleCode: 'MEDICO', siteId: SITE_A, permissions: ['record:read', 'record:write'] }, // prettier-ignore
+    ]);
+    const colleague = new Principal('01990000-0000-7000-8000-0000000000d2', [
+      { roleCode: 'MEDICO', siteId: SITE_A, permissions: ['record:read', 'record:write'] }, // prettier-ignore
+    ]);
+    const readerOnly = new Principal('01990000-0000-7000-8000-0000000000d3', [
+      { roleCode: 'AUDITOR', siteId: SITE_A, permissions: ['record:read'] }, // prettier-ignore
+    ]);
+
+    for (const kind of ['assistant-draft', 'assistant-proposal'] as const) {
+      const toDoctor: LiveEvent = { kind, siteId: SITE_A, userIds: [doctor.userId] }; // prettier-ignore
+      expect(mayReceive(doctor, toDoctor)).toBe(true);
+      expect(mayReceive(colleague, toDoctor)).toBe(false);
+      expect(mayReceive(doctor, { ...toDoctor, siteId: SITE_B })).toBe(false);
+      expect(mayReceive(doctor, { kind, siteId: SITE_A })).toBe(false);
+      expect(
+        mayReceive(readerOnly, { kind, siteId: SITE_A, userIds: [readerOnly.userId] }), // prettier-ignore
+      ).toBe(false);
+      // AU-055: the kind and the site, nothing of the draft.
+      expect(parseLiveEvent(JSON.stringify({ ...toDoctor, draftId: SITE_B }))).toBeNull(); // prettier-ignore
+    }
   });
 });
