@@ -1011,6 +1011,17 @@ describe('el comprobante electrónico por HTTP', () => {
       });
       expect(copies).toEqual([{ status: 'CANCELLED' }]);
 
+      // A withdrawn note credits nothing and is no longer the invoice's
+      // (BI-103, BI-260): its total and balance are the invoice's own.
+      const after = await api()
+        .get(`/api/v1/billing/sites/${siteId}/invoices/${invoice.id}`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      expect(after.body).toMatchObject({
+        creditedTotal: '0.00',
+        creditNotes: [],
+      });
+
       // SRI-104. Out of the monitor, and not re-sent.
       const monitor = await api()
         .get('/api/v1/sri/vouchers')
