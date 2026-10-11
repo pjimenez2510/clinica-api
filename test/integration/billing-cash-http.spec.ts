@@ -7,6 +7,7 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
@@ -110,6 +111,7 @@ describe('B6 cobros, saldo del paciente y cierre por turno', () => {
     }
 
     await syncAuthorisation(prisma);
+    await seedSpecialties(prisma);
     await seedBilling(prisma);
     // The roles were written again: their ids changed under the cache.
     registry.invalidate();
@@ -123,7 +125,7 @@ describe('B6 cobros, saldo del paciente y cierre por turno', () => {
     const payer = await prisma.payer.findUniqueOrThrow({ where: { code: 'PARTICULAR' } }); // prettier-ignore
     payerId = payer.id;
     priceListId = (await prisma.priceList.findFirstOrThrow({ where: { payerId } })).id; // prettier-ignore
-    serviceId = (await prisma.billableService.findUniqueOrThrow({ where: { code: 'CONS-MG-PV' } })).id; // prettier-ignore
+    serviceId = (await prisma.service.findUniqueOrThrow({ where: { code: 'CONS-MG-PV' } })).id; // prettier-ignore
     emissionPointId = (
       await prisma.emissionPoint.create({
         data: { siteId, code: '001', description: 'Caja principal' },
@@ -183,7 +185,7 @@ describe('B6 cobros, saldo del paciente y cierre por turno', () => {
       prisma as unknown as PrismaService,
     ).addCharge({
       accountId: account.id,
-      billableServiceId: serviceId,
+      serviceId: serviceId,
       encounterId: null,
       serviceDate: clinicalDateOf(new Date()),
       quantity: Quantity.ONE,

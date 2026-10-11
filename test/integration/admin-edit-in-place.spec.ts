@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import '../../src/shared/http/record-version.constraints';
 import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 
@@ -36,12 +37,13 @@ async function problemFrom(operation: Promise<unknown>) {
 
 /** The seeded open-ended PARTICULAR price of a consultation. */
 async function aPrice(prisma: PrismaClient) {
+  await seedSpecialties(prisma);
   await seedBilling(prisma);
-  const service = await prisma.billableService.findUniqueOrThrow({
+  const service = await prisma.service.findUniqueOrThrow({
     where: { code: 'CONS-MG-PV' },
   });
   return prisma.price.findFirstOrThrow({
-    where: { billableServiceId: service.id, validTo: null },
+    where: { serviceId: service.id, validTo: null },
   });
 }
 
@@ -133,6 +135,10 @@ describe('access_audit: antes y después en administración (AD-10)', () => {
     ['exam_definition', 'ORD-142'],
     ['analyte_definition', 'ORD-142'],
     ['configuration', 'SP-029'],
+    // BI-290 (ADR-013). The catalogue's own; the old names stay admitted for
+    // the rows already written with them.
+    ['service', 'BI-290'],
+    ['service_exam', 'BI-290'],
   ])('%s admite el antes y el después (%s)', async (resourceType) => {
     await expect(insert(db(), resourceType)).resolves.toBe(1);
   });

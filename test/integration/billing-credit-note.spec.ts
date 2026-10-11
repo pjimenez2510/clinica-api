@@ -10,6 +10,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
@@ -108,6 +109,7 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       registry = app.get(RolePermissionRegistry);
     }
 
+    await seedSpecialties(prisma);
     await seedBilling(prisma);
     await syncAuthorisation(prisma);
     registry.invalidate();
@@ -119,7 +121,7 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
       await prisma.payer.findUniqueOrThrow({ where: { code: 'PARTICULAR' } })
     ).id;
     serviceId = (
-      await prisma.billableService.findUniqueOrThrow({
+      await prisma.service.findUniqueOrThrow({
         where: { code: 'CONS-MG-PV' },
       })
     ).id;
@@ -258,7 +260,7 @@ describe('BI-208 a BI-218 corregir una factura por HTTP', () => {
                 }
             : {}),
           accountId: account.id,
-          billableServiceId: serviceId,
+          serviceId: serviceId,
           serviceDate: new Date(`${today()}T00:00:00Z`),
           unitAmount: 30,
           serviceDisplay: 'Consulta de medicina general',

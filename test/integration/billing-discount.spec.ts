@@ -7,6 +7,7 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
@@ -93,6 +94,7 @@ describe('B4 descuentos con límite y con autorización', () => {
     }
 
     await syncAuthorisation(prisma);
+    await seedSpecialties(prisma);
     await seedBilling(prisma);
 
     // A role that can authorise and nothing else of caja's: what a clinic
@@ -125,7 +127,7 @@ describe('B4 descuentos con límite y con autorización', () => {
     const payer = await prisma.payer.findUniqueOrThrow({ where: { code: 'PARTICULAR' } }); // prettier-ignore
     const priceList = await prisma.priceList.findFirstOrThrow({ where: { payerId: payer.id } }); // prettier-ignore
     serviceId =
-      (await prisma.billableService.findUniqueOrThrow({ where: { code: 'CONS-MG-PV' } })) // prettier-ignore
+      (await prisma.service.findUniqueOrThrow({ where: { code: 'CONS-MG-PV' } })) // prettier-ignore
       .id;
     accountId = (
       await prisma.patientAccount.create({
@@ -176,7 +178,7 @@ describe('B4 descuentos con límite y con autorización', () => {
     const accounts = new PrismaBillingAccountRepository(prisma as unknown as PrismaService); // prettier-ignore
     const charge = await accounts.addCharge({
       accountId,
-      billableServiceId: serviceId,
+      serviceId: serviceId,
       encounterId: null,
       serviceDate: clinicalDateOf(new Date()),
       quantity: Quantity.ONE,
@@ -236,11 +238,11 @@ describe('B4 descuentos con límite y con autorización', () => {
       // An INSERT, so the CHECK is what answers and not the UPDATE trigger.
       const copy = (appliedBy: string | null, appliedAt: Date | null) =>
         prisma.$executeRaw`
-          INSERT INTO charge_item (account_id, billable_service_id, service_date, quantity,
+          INSERT INTO charge_item (account_id, service_id, service_date, quantity,
                  unit_amount, resolved_price_id, service_display, tax_sri_code, tax_percentage,
                  status, created_by_id, origin, updated_at,
                  discount_amount, discount_applied_by_id, discount_applied_at)
-          SELECT account_id, billable_service_id, service_date, quantity,
+          SELECT account_id, service_id, service_date, quantity,
                  unit_amount, resolved_price_id, service_display, tax_sri_code, tax_percentage,
                  status, created_by_id, origin, updated_at,
                  1.00, ${appliedBy}::uuid, ${appliedAt}
@@ -321,7 +323,7 @@ describe('B4 descuentos con límite y con autorización', () => {
   describe('lo que garantiza la base, también sobre la prestación', () => {
     it('BI-244 la base no deja cambiar la prestación de una línea con descuento ni con un acto nuevo, y sí sin descuento (control)', async () => {
       const { id } = await line();
-      const other = await prisma.billableService.findUniqueOrThrow({
+      const other = await prisma.service.findUniqueOrThrow({
         where: { code: 'CONS-DER-PV' },
       });
       await prisma.chargeItem.update({
@@ -339,7 +341,7 @@ describe('B4 descuentos con límite y con autorización', () => {
         prisma.chargeItem.update({
           where: { id },
           data: {
-            billableServiceId: other.id,
+            serviceId: other.id,
             discountAppliedAt: new Date(),
             changedById: caja.userId,
             changedAt: new Date(Date.now() + 1),
@@ -352,12 +354,12 @@ describe('B4 descuentos con límite y con autorización', () => {
         prisma.chargeItem.update({
           where: { id: plain.id },
           data: {
-            billableServiceId: other.id,
+            serviceId: other.id,
             changedById: caja.userId,
             changedAt: new Date(),
           },
         }),
-      ).resolves.toMatchObject({ billableServiceId: other.id });
+      ).resolves.toMatchObject({ serviceId: other.id });
     });
   });
 
@@ -592,7 +594,7 @@ describe('B4 descuentos con límite y con autorización', () => {
       await prisma.price.create({
         data: {
           priceListId: insurerList.id,
-          billableServiceId: serviceId,
+          serviceId: serviceId,
           amount: '22.00',
           // A year and more before today, from the clock.
           validFrom: new Date(new Date(Date.now() - 400 * 86_400_000).toISOString().slice(0, 10)), // prettier-ignore

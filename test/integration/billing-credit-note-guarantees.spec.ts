@@ -4,6 +4,7 @@ import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { Quantity } from '../../src/modules/billing/domain/money';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { composeAccessKey } from '../../src/modules/sri/domain/access-key';
@@ -53,6 +54,7 @@ let scene: Scene;
 
 beforeEach(async () => {
   const prisma = db();
+  await seedSpecialties(prisma);
   await seedBilling(prisma);
   const site = await createSite(prisma);
   const patient = await createPatient(prisma);
@@ -84,7 +86,7 @@ beforeEach(async () => {
       })
     ).id,
     serviceId: (
-      await prisma.billableService.findUniqueOrThrow({
+      await prisma.service.findUniqueOrThrow({
         where: { code: CONSULTATION },
       })
     ).id,
@@ -107,7 +109,7 @@ async function anAccount(): Promise<string> {
 async function aCharge(accountId: string): Promise<string> {
   const charge = await scene.accounts.addCharge({
     accountId,
-    billableServiceId: scene.serviceId,
+    serviceId: scene.serviceId,
     encounterId: null,
     // The clinic's today, from the clock: no date is written by hand.
     serviceDate: clinicalDateOf(new Date()),
@@ -568,7 +570,7 @@ describe('BI-214 lo acreditado vuelve a la cuenta una sola vez', () => {
   async function insertCopy(accountId: string, corrects: string) {
     await scene.prisma.$executeRaw`
       INSERT INTO "charge_item"
-        ("account_id", "billable_service_id", "service_date", "unit_amount",
+        ("account_id", "service_id", "service_date", "unit_amount",
          "service_display", "tax_sri_code", "tax_percentage", "status",
          "origin", "corrects_charge_item_id", "created_by_id", "updated_at")
       VALUES (${accountId}::uuid, ${scene.serviceId}::uuid, CURRENT_DATE, 30,
@@ -647,7 +649,7 @@ describe('BI-214 lo acreditado vuelve a la cuenta una sola vez', () => {
       await rejectionOf(
         scene.prisma.$executeRaw`
           INSERT INTO "charge_item"
-            ("account_id", "billable_service_id", "service_date", "unit_amount",
+            ("account_id", "service_id", "service_date", "unit_amount",
              "service_display", "tax_sri_code", "status", "origin",
              "created_by_id", "updated_at")
           VALUES (${accountId}::uuid, ${scene.serviceId}::uuid, CURRENT_DATE, 30,
@@ -659,7 +661,7 @@ describe('BI-214 lo acreditado vuelve a la cuenta una sola vez', () => {
       await rejectionOf(
         scene.prisma.$executeRaw`
           INSERT INTO "charge_item"
-            ("account_id", "billable_service_id", "service_date", "unit_amount",
+            ("account_id", "service_id", "service_date", "unit_amount",
              "service_display", "tax_sri_code", "status", "origin",
              "corrects_charge_item_id", "created_by_id", "updated_at")
           VALUES (${accountId}::uuid, ${scene.serviceId}::uuid, CURRENT_DATE, 30,
@@ -686,7 +688,7 @@ describe('BI-214 la copia conserva el acto clínico de su original', () => {
     const procedureId = randomUUID();
     const [charge] = await scene.prisma.$queryRaw<{ id: string }[]>`
       INSERT INTO "charge_item"
-        ("account_id", "billable_service_id", "encounter_id", "service_date",
+        ("account_id", "service_id", "encounter_id", "service_date",
          "unit_amount", "service_display", "tax_sri_code", "tax_percentage",
          "status", "origin", "encounter_procedure_id", "created_by_id", "updated_at")
       VALUES (${accountId}::uuid, ${scene.serviceId}::uuid, ${encounter.id}::uuid,
@@ -728,7 +730,7 @@ describe('BI-214 la copia conserva el acto clínico de su original', () => {
   ) {
     return scene.prisma.$executeRaw`
       INSERT INTO "charge_item"
-        ("account_id", "billable_service_id", "encounter_id", "service_date",
+        ("account_id", "service_id", "encounter_id", "service_date",
          "unit_amount", "service_display", "tax_sri_code", "tax_percentage",
          "status", "origin", "corrects_charge_item_id", "encounter_procedure_id",
          "service_order_item_id", "created_by_id", "updated_at")
@@ -789,7 +791,7 @@ describe('BI-214 la copia conserva el acto clínico de su original', () => {
       await rejectionOf(
         scene.prisma.$executeRaw`
           INSERT INTO "charge_item"
-            ("account_id", "billable_service_id", "encounter_id", "service_date",
+            ("account_id", "service_id", "encounter_id", "service_date",
              "unit_amount", "service_display", "tax_sri_code", "tax_percentage",
              "status", "origin", "encounter_procedure_id", "created_by_id", "updated_at")
           VALUES (${scenario.accountId}::uuid, ${scene.serviceId}::uuid,

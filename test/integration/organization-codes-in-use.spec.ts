@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { Quantity } from '../../src/modules/billing/domain/money';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { PrismaOrganizationRepository } from '../../src/modules/organization/infrastructure/prisma-organization.repository';
@@ -87,6 +88,7 @@ describe('el código MSP de la sede queda fijo con la primera atención (OR-034)
 describe('el código del punto de emisión queda fijo con el primer comprobante (OR-035)', () => {
   async function aPointThatCanIssue() {
     const prisma = db();
+    await seedSpecialties(prisma);
     await seedBilling(prisma);
     const site = await createSite(prisma);
     const patient = await createPatient(prisma);
@@ -97,7 +99,7 @@ describe('el código del punto de emisión queda fijo con el primer comprobante 
     const priceList = await prisma.priceList.findFirstOrThrow({
       where: { payerId: payer.id },
     });
-    const service = await prisma.billableService.findUniqueOrThrow({
+    const service = await prisma.service.findUniqueOrThrow({
       where: { code: 'CONS-MG-PV' },
     });
     const point = await prisma.emissionPoint.create({
@@ -115,7 +117,7 @@ describe('el código del punto de emisión queda fijo con el primer comprobante 
     const issue = async () => {
       await accounts.addCharge({
         accountId: account.id,
-        billableServiceId: service.id,
+        serviceId: service.id,
         encounterId: null,
         serviceDate: clinicalDateOf(new Date()),
         quantity: Quantity.ONE,

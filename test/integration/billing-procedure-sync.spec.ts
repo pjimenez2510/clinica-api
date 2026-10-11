@@ -3,6 +3,7 @@ import type { PinoLogger } from 'nestjs-pino';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import '../../src/modules/billing/infrastructure/billing.constraints';
 import { EncounterCheckoutService } from '../../src/modules/billing/application/encounter-checkout.service';
 import { PatientAccountService } from '../../src/modules/billing/application/patient-account.service';
@@ -53,6 +54,7 @@ beforeEach(async () => {
   const site = await createSite(prisma);
   const patient = await createPatient(prisma);
   const practitioner = await createPractitioner(prisma);
+  await seedSpecialties(prisma);
   await seedBilling(prisma);
 
   const encounter = await prisma.encounter.create({
@@ -82,13 +84,13 @@ beforeEach(async () => {
     });
   const suture = await conceptOf('SUT', 'Sutura simple');
   const cure = await conceptOf('CUR', 'Curación');
-  await prisma.billableService.update({
+  await prisma.service.update({
     where: { code: 'PROC-SUTURA' },
-    data: { procedureConceptId: suture.id, tariffCode: suture.code },
+    data: { mspCode: suture.code },
   });
-  await prisma.billableService.update({
+  await prisma.service.update({
     where: { code: 'PROC-CURACION' },
-    data: { procedureConceptId: cure.id, tariffCode: cure.code },
+    data: { mspCode: cure.code },
   });
 
   const doctor = await createUser(prisma);
@@ -181,9 +183,9 @@ describe('el cargo sigue al procedimiento corregido (BI-240 a BI-243)', () => {
 
     const after = await scene.prisma.chargeItem.findUniqueOrThrow({
       where: { id: charge.id },
-      include: { billableService: { select: { code: true } } },
+      include: { service: { select: { code: true } } },
     });
-    expect(after.billableService.code).toBe('PROC-CURACION');
+    expect(after.service.code).toBe('PROC-CURACION');
     expect(after.quantity.toString()).toBe('1');
     expect(after.status).toBe('PLANNED');
     expect(after.changedById).toBe(scene.doctorId);

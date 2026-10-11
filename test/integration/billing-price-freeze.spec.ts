@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import '../../src/modules/billing/infrastructure/billing.constraints';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { PrismaBillingCatalogueRepository } from '../../src/modules/billing/infrastructure/prisma-billing-catalogue.repository';
@@ -68,6 +69,7 @@ let context: Context;
 
 beforeEach(async () => {
   const prisma = db();
+  await seedSpecialties(prisma);
   await seedBilling(prisma);
 
   const site = await createSite(prisma);
@@ -87,7 +89,7 @@ beforeEach(async () => {
   const priceList = await prisma.priceList.findFirstOrThrow({
     where: { payerId: payer.id },
   });
-  const service = await prisma.billableService.findUniqueOrThrow({
+  const service = await prisma.service.findUniqueOrThrow({
     where: { code: SERVICE_CODE },
   });
   const institutional = await prisma.payer.findUniqueOrThrow({
@@ -125,7 +127,7 @@ beforeEach(async () => {
 async function charge(serviceDate = BEFORE_THE_RISE) {
   return context.accounts.addCharge({
     accountId: context.accountId,
-    billableServiceId: context.serviceId,
+    serviceId: context.serviceId,
     encounterId: null,
     serviceDate,
     quantity: Quantity.ONE,
@@ -163,7 +165,7 @@ describe('BI-050 el cargo congela el precio resuelto por la fecha del servicio',
 
     expect(stored.unitAmount.toFixed(2)).toBe('30.00');
     expect(stored.serviceDisplay).toBe(
-      'Consulta de medicina general, primera vez',
+      'Consulta de medicina general · Primera vez',
     );
     expect(stored.taxSriCode).toBe('0');
     expect(stored.taxPercentage?.toFixed(2)).toBe('0.00');
@@ -285,7 +287,7 @@ describe('BI-006, BI-042 lo que garantiza la base y no el código', () => {
       { column_name: string; data_type: string }[]
     >`
       SELECT "column_name", "data_type" FROM "information_schema"."columns"
-       WHERE "table_name" = 'billable_service'`;
+       WHERE "table_name" = 'service'`;
 
     expect(columns.filter((c) => c.data_type === 'numeric')).toEqual([]);
   });
@@ -295,7 +297,7 @@ describe('BI-006, BI-042 lo que garantiza la base y no el código', () => {
       .create({
         data: {
           priceListId: context.priceListId,
-          billableServiceId: context.serviceId,
+          serviceId: context.serviceId,
           amount: '99.00',
           validFrom: new Date('2026-03-01T00:00:00Z'),
           validTo: null,
@@ -330,7 +332,7 @@ describe('BI-006, BI-042 lo que garantiza la base y no el código', () => {
           client.price.create({
             data: {
               priceListId: context.emptyPriceListId,
-              billableServiceId: context.serviceId,
+              serviceId: context.serviceId,
               amount: '40.00',
               validFrom: new Date('2027-01-01T00:00:00Z'),
               validTo: null,
@@ -351,7 +353,7 @@ describe('BI-006, BI-042 lo que garantiza la base y no el código', () => {
       .create({
         data: {
           priceListId: context.emptyPriceListId,
-          billableServiceId: context.serviceId,
+          serviceId: context.serviceId,
           amount: '40.00',
           validFrom: new Date('2028-01-01T00:00:00Z'),
           validTo: new Date('2028-01-01T00:00:00Z'),
@@ -372,7 +374,7 @@ describe('BI-006, BI-042 lo que garantiza la base y no el código', () => {
       context.prisma.price.create({
         data: {
           priceListId: context.emptyPriceListId,
-          billableServiceId: context.serviceId,
+          serviceId: context.serviceId,
           amount: '0.00',
           validFrom: new Date('2029-01-01T00:00:00Z'),
         },
@@ -383,7 +385,7 @@ describe('BI-006, BI-042 lo que garantiza la base y no el código', () => {
       .create({
         data: {
           priceListId: context.emptyPriceListId,
-          billableServiceId: context.serviceId,
+          serviceId: context.serviceId,
           amount: '-1.00',
           validFrom: new Date('2030-01-01T00:00:00Z'),
         },
@@ -401,7 +403,7 @@ describe('BI-006, BI-042 lo que garantiza la base y no el código', () => {
     // eight-month-old invoice names has to keep existing.
     await charge();
 
-    const rejection = await context.prisma.billableService
+    const rejection = await context.prisma.service
       .delete({ where: { id: context.serviceId } })
       .then(() => null)
       .catch((error: unknown) => error);
@@ -439,7 +441,7 @@ describe('BI-006, BI-042 lo que garantiza la base y no el código', () => {
       .create({
         data: {
           accountId: context.accountId,
-          billableServiceId: context.serviceId,
+          serviceId: context.serviceId,
           serviceDate: new Date('2026-05-11T00:00:00Z'),
           quantity: '0',
           unitAmount: '30.00',
