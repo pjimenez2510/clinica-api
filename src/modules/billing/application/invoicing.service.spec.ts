@@ -122,6 +122,7 @@ function build(options: { accounts?: Record<string, unknown> } = {}) {
     summariesOf: vi.fn().mockResolvedValue(new Map()),
     summariesOfCreditNotes: vi.fn().mockResolvedValue(new Map()),
     resendInvoice: vi.fn().mockResolvedValue(true),
+    resendCreditNote: vi.fn().mockResolvedValue(true),
     correctRejectedInvoice: vi.fn(),
     findPaymentMethod: vi
       .fn()

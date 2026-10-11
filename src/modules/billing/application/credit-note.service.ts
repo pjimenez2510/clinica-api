@@ -1,10 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { IssuedDocumentFilter } from '../domain/document-search';
 
+import { PinoLogger } from 'nestjs-pino';
+
 import {
   ELECTRONIC_VOUCHER_PREPARER,
+  ELECTRONIC_VOUCHER_RESENDER,
   ELECTRONIC_VOUCHER_STATUS,
   type ElectronicVoucherPreparer,
+  type ElectronicVoucherResender,
   type ElectronicVoucherStatusReader,
   type ElectronicVoucherSummary,
 } from '../../../shared/billing/electronic-voucher.port';
@@ -14,6 +18,10 @@ import {
   CreditNoteFinalConsumerError,
   CreditNoteInvoiceNotAuthorisedError,
   CreditNoteInvoiceVoidedError,
+  CreditNoteNotEditableError,
+  CreditNoteNotFoundError,
+  CreditNoteReasonKindFixedError,
+  CreditNoteWithdrawalReasonRequiredError,
   CreditNoteWindowExpiredError,
   InvoiceNotFoundError,
 } from '../domain/billing.errors';
@@ -59,7 +67,12 @@ export class CreditNoteService {
     private readonly vouchers: ElectronicVoucherPreparer,
     @Inject(ELECTRONIC_VOUCHER_STATUS)
     private readonly voucherStatus: ElectronicVoucherStatusReader,
-  ) {}
+    @Inject(ELECTRONIC_VOUCHER_RESENDER)
+    private readonly resender: ElectronicVoucherResender,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(CreditNoteService.name);
+  }
 
   /**
    * BI-208. «Corregir»: the credit note for the chosen lines —all of them when
@@ -140,6 +153,103 @@ export class CreditNoteService {
       creditNote: withVoucher!,
       rebilledAccountId: issued.rebilledAccountId,
     };
+  }
+
+  /**
+   * BI-303, SRI-103. «Editar» on a credit note the SRI returned or did not
+   * authorise: its reason, with the rules of BI-209, and re-sent in the same
+   * act under the same key. Never across «Servicio no prestado» (BI-214).
+   */
+  async correctAndResend(
+    command: {
+      creditNoteId: string;
+      siteId: string;
+      reasonCode: CreditNoteReasonCode;
+      reasonText?: string | null;
+    },
+    requester: Requester,
+  ): Promise<CreditNoteWithVoucher> {
+    const note = await this.requireNote(command);
+    if (note.status !== 'REJECTED') throw new CreditNoteNotEditableError();
+    if (
+      rebillsCreditedLines(note.reasonCode) !==
+      rebillsCreditedLines(command.reasonCode)
+    ) {
+      throw new CreditNoteReasonKindFixedError();
+    }
+    const corrected = await this.creditNotes.correctRejected({
+      id: note.id,
+      siteId: command.siteId,
+      reasonCode: command.reasonCode,
+      reason: resolveCreditNoteReason(command.reasonCode, command.reasonText),
+      changedById: requester.userId,
+      now: new Date(),
+      trail: requester,
+    });
+    // Re-sent or answered by the SRI a moment earlier.
+    if (!corrected) throw new CreditNoteNotEditableError();
+
+    try {
+      await this.resender.resendCreditNote(note.id);
+    } catch (error) {
+      // The correction is committed and versioned; it stays returned, with
+      // «Reenviar» at hand.
+      this.logger.error(
+        { err: error, error_code: 'SRI_RESEND_FAILED' },
+        'the corrected credit note could not be re-sent; it stays returned',
+      );
+    }
+    return this.findOne(command);
+  }
+
+  /**
+   * BI-304. «Desistir»: a returned credit note nobody can fix is given up,
+   * its lines released and the copies that waited for it removed.
+   */
+  async withdraw(
+    command: { creditNoteId: string; siteId: string; reason: string },
+    requester: Requester,
+  ): Promise<CreditNoteWithVoucher> {
+    const reason = command.reason.replace(/\s+/g, ' ').trim();
+    if (reason === '' || reason.length > 300) {
+      throw new CreditNoteWithdrawalReasonRequiredError();
+    }
+    const note = await this.requireNote(command);
+    if (note.status !== 'REJECTED') throw new CreditNoteNotEditableError();
+    const withdrawn = await this.creditNotes.withdraw({
+      id: note.id,
+      siteId: command.siteId,
+      reason,
+      withdrawnById: requester.userId,
+      now: new Date(),
+      trail: requester,
+    });
+    if (!withdrawn) throw new CreditNoteNotEditableError();
+    const [withVoucher] = await this.withVouchers([withdrawn]);
+    return withVoucher!;
+  }
+
+  private async findOne(command: {
+    creditNoteId: string;
+    siteId: string;
+  }): Promise<CreditNoteWithVoucher> {
+    const [withVoucher] = await this.withVouchers([
+      await this.requireNote(command),
+    ]);
+    return withVoucher!;
+  }
+
+  /** BI-135. Another site's note answers like one that does not exist. */
+  private async requireNote(command: {
+    creditNoteId: string;
+    siteId: string;
+  }): Promise<CreditNoteView> {
+    const note = await this.creditNotes.findById({
+      id: command.creditNoteId,
+      siteId: command.siteId,
+    });
+    if (!note) throw new CreditNoteNotFoundError();
+    return note;
   }
 
   /** BI-218. A page of the site's credit notes, with their SRI state. */

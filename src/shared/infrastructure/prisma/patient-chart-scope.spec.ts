@@ -212,6 +212,10 @@ const CHART_LINKS: Record<
     resolution: 'exact',
     why: 'ORD-161. Por lo mismo que el 117: la ficha que la orden nombra, congelada con el sexo que imprime.', // prettier-ignore
   },
+  'invoice.chart_of_record_id': {
+    resolution: 'exact',
+    why: 'BI-302 (D-169.2 l). Por lo mismo que el 117 y la orden: la ficha que el RIDE nombra, fijada al emitir la factura.', // prettier-ignore
+  },
   'patient_merge.target_patient_id': {
     resolution: 'exact',
     why: 'Por lo mismo que `source_patient_id`: es la otra mitad de la pareja de filas que una fila del rastro nombra.', // prettier-ignore

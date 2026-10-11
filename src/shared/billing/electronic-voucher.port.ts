@@ -36,6 +36,8 @@ export const ELECTRONIC_VOUCHER_PREPARER = Symbol('ElectronicVoucherPreparer');
  */
 export interface ElectronicVoucherResender {
   resendInvoice(invoiceId: string): Promise<boolean>;
+  /** SRI-103. The same, for a credit note whose reason caja corrected. */
+  resendCreditNote(creditNoteId: string): Promise<boolean>;
 }
 export const ELECTRONIC_VOUCHER_RESENDER = Symbol('ElectronicVoucherResender');
 

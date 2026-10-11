@@ -149,6 +149,13 @@ export class VoucherMonitorService
     if (!isRetriableByAPerson(voucher.status)) {
       throw new ElectronicVoucherNotRetriableError();
     }
+    // SRI-104. A credit note a person gave up on is not sent again.
+    if (
+      (await this.vouchers.deliveryContext(voucher.id))?.documentStatus ===
+      'WITHDRAWN'
+    ) {
+      throw new ElectronicVoucherNotRetriableError();
+    }
 
     const unsignedXml = await this.preparation.recompose(voucher);
     if (unsignedXml === null) throw new ElectronicVoucherNotFoundError();
@@ -209,7 +216,19 @@ export class VoucherMonitorService
    * corrected it is in `billing`'s trail (the invoice's `UPDATE`).
    */
   async resendInvoice(invoiceId: string): Promise<boolean> {
-    const voucher = await this.vouchers.findByInvoice(invoiceId);
+    return this.resendCorrected(await this.vouchers.findByInvoice(invoiceId));
+  }
+
+  /** SRI-103. A returned credit note whose reason caja just corrected. */
+  async resendCreditNote(creditNoteId: string): Promise<boolean> {
+    return this.resendCorrected(
+      await this.vouchers.findByCreditNote(creditNoteId),
+    );
+  }
+
+  private async resendCorrected(
+    voucher: VoucherRecord | null,
+  ): Promise<boolean> {
     if (!voucher || !isRetriableByAPerson(voucher.status)) return false;
     const unsignedXml = await this.preparation.recompose(voucher);
     if (unsignedXml === null) return false;

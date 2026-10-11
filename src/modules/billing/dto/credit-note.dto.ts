@@ -30,6 +30,16 @@ export const issueCreditNoteSchema = z.object({
 /** Body of POST /billing/sites/:siteId/invoices/:invoiceId/credit-notes. */
 export class IssueCreditNoteDto extends createZodDto(issueCreditNoteSchema) {}
 
+/** BI-303. Body of PATCH /billing/sites/:siteId/credit-notes/:creditNoteId. */
+export class CorrectCreditNoteDto extends createZodDto(
+  issueCreditNoteSchema.omit({ chargeIds: true }),
+) {}
+
+/** BI-304. Body of POST …/credit-notes/:creditNoteId/withdrawal. */
+export class WithdrawCreditNoteDto extends createZodDto(
+  z.object({ reason: z.string().max(1000) }),
+) {}
+
 export const creditNoteQuerySchema = z.object({
   invoiceId: z.uuid().optional(),
   ...issuedDocumentQueryShape,
@@ -71,7 +81,9 @@ const creditNoteResponseSchema = z.object({
   buyerName: z.string(),
   buyerEmail: z.string().nullable(),
   totals: totalsSchema,
-  status: z.enum(['ISSUED', 'AUTHORISED', 'REJECTED']),
+  status: z.enum(['ISSUED', 'AUTHORISED', 'REJECTED', 'WITHDRAWN']),
+  /** BI-304. Why a returned note was given up. */
+  withdrawalReason: z.string().nullable(),
   issuedAt: z.iso.datetime(),
   lines: z.array(creditNoteLineSchema),
   electronic: electronicStateSchema.nullable(),

@@ -883,6 +883,171 @@ describe('el comprobante electrónico por HTTP', () => {
       ).toBe('ISSUED');
     });
 
+    /** An authorised invoice and its credit note, returned by the SRI. */
+    async function aReturnedCreditNote(reasonCode = 'AMOUNT') {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      await authorise(invoice);
+      const issued = await api()
+        .post(
+          `/api/v1/billing/sites/${siteId}/invoices/${invoice.id}/credit-notes`,
+        )
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ reasonCode })
+        .expect(201);
+      const note = (
+        issued.body as {
+          creditNote: {
+            id: string;
+            electronic: { voucherId: string; accessKey: string };
+          };
+          rebilledAccountId: string | null;
+        }
+      ).creditNote;
+      await prisma.$executeRaw`
+        UPDATE "electronic_voucher" SET "status" = 'RETURNED'
+         WHERE "id" = ${note.electronic.voucherId}::uuid`;
+      await prisma.$executeRaw`UPDATE "credit_note" SET "status" = 'REJECTED' WHERE "id" = ${note.id}::uuid`;
+      return { invoice, note };
+    }
+
+    const editNote = (noteId: string, body: object) =>
+      api()
+        .patch(`/api/v1/billing/sites/${siteId}/credit-notes/${noteId}`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(body);
+
+    const withdraw = (
+      noteId: string,
+      body: object = { reason: 'El SRI no reconoce la factura modificada' },
+    ) =>
+      // prettier-ignore
+      api()
+        .post(
+          `/api/v1/billing/sites/${siteId}/credit-notes/${noteId}/withdrawal`,
+        )
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(body);
+
+    it('BI-303 SRI-103 caja corrige el motivo de la nota devuelta, se firma con la misma clave y lo anterior queda en record_version', async () => {
+      const { note } = await aReturnedCreditNote();
+
+      const response = await editNote(note.id, {
+        reasonCode: 'OTHER',
+        reasonText: 'Descuento por pronto pago no aplicado',
+      });
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        id: note.id,
+        status: 'ISSUED',
+        reasonCode: 'OTHER',
+        reason: 'Descuento por pronto pago no aplicado',
+        electronic: { state: 'SIGNED', accessKey: note.electronic.accessKey },
+      });
+      const voucher = await prisma.electronicVoucher.findUniqueOrThrow({
+        where: { id: note.electronic.voucherId },
+      });
+      expect(voucher.accessKey).toBe(note.electronic.accessKey);
+      expect(voucher.signedXml).toContain(
+        '<motivo>Descuento por pronto pago no aplicado</motivo>',
+      );
+      const [version] = await prisma.recordVersion.findMany({
+        where: { resourceType: 'credit_note', resourceId: note.id },
+      });
+      expect(version!.data).toMatchObject({ reason_code: 'AMOUNT' });
+    });
+
+    it('BI-303 una nota que no está devuelta no se edita (409), no cambia entre «Servicio no prestado» y los demás, y la base rechaza su motivo', async () => {
+      const { note } = await aReturnedCreditNote();
+      const kind = await editNote(note.id, { reasonCode: 'SERVICE_NOT_PROVIDED' }); // prettier-ignore
+      expect(kind.status).toBe(422);
+      expect((kind.body as Problem).code).toBe('CREDIT_NOTE_REASON_KIND_FIXED');
+
+      await prisma.$executeRaw`UPDATE "credit_note" SET "status" = 'ISSUED' WHERE "id" = ${note.id}::uuid`;
+      const refused = await editNote(note.id, { reasonCode: 'RECEIVER_DATA' });
+      expect(refused.status).toBe(409);
+      expect((refused.body as Problem).code).toBe('CREDIT_NOTE_NOT_EDITABLE');
+      await expect(
+        prisma.$executeRaw`
+          UPDATE "credit_note" SET "reason" = 'Otro motivo'
+           WHERE "id" = ${note.id}::uuid`,
+      ).rejects.toThrow(/credit_note_immutable/);
+    });
+
+    it('BI-304 SRI-104 desistir de la nota devuelta libera sus líneas, quita las copias por facturar y ya no se reenvía', async () => {
+      const { invoice, note } = await aReturnedCreditNote('AMOUNT');
+      const credit = () =>
+        api()
+          .post(
+            `/api/v1/billing/sites/${siteId}/invoices/${invoice.id}/credit-notes`,
+          )
+          .set('Authorization', `Bearer ${cashierToken}`)
+          .send({ reasonCode: 'AMOUNT' });
+      // Control: while the note stands, its lines admit no other note.
+      const taken = await credit();
+      expect(taken.status).toBe(409);
+      expect((taken.body as Problem).code).toBe(
+        'CREDIT_NOTE_LINE_ALREADY_CREDITED',
+      );
+
+      const response = await withdraw(note.id);
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ id: note.id, status: 'WITHDRAWN' });
+
+      expect(
+        await prisma.creditNoteLine.count({ where: { creditNoteId: note.id } }),
+      ).toBe(0);
+      const versions = await prisma.recordVersion.findMany({
+        where: { resourceType: { in: ['credit_note', 'credit_note_line'] } },
+        select: { resourceType: true },
+      });
+      expect(versions.map((v) => v.resourceType).sort()).toEqual([
+        'credit_note',
+        'credit_note_line',
+      ]);
+      const copies = await prisma.chargeItem.findMany({
+        where: { correctsChargeItemId: { not: null } },
+        select: { status: true },
+      });
+      expect(copies).toEqual([{ status: 'CANCELLED' }]);
+
+      // SRI-104. Out of the monitor, and not re-sent.
+      const monitor = await api()
+        .get('/api/v1/sri/vouchers')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      expect(
+        (
+          monitor.body as { rows: { creditNoteId: string | null }[] }
+        ).rows.filter((row) => row.creditNoteId === note.id),
+      ).toEqual([]);
+      const retry = await api()
+        .post(`/api/v1/sri/vouchers/${note.electronic.voucherId}/retry`)
+        .set('Authorization', `Bearer ${cashierToken}`);
+      expect(retry.status).toBe(409);
+      expect((retry.body as Problem).code).toBe('SRI_VOUCHER_NOT_RETRIABLE');
+
+      // Released: the same lines take a new note, with a copy of their own.
+      expect((await credit()).status).toBe(201);
+    });
+
+    it('BI-304 sólo se desiste de una devuelta, y la base no deja que una desistida vuelva', async () => {
+      const { note } = await aReturnedCreditNote();
+      await prisma.$executeRaw`UPDATE "credit_note" SET "status" = 'ISSUED' WHERE "id" = ${note.id}::uuid`;
+      const refused = await withdraw(note.id);
+      expect(refused.status).toBe(409);
+      expect((refused.body as Problem).code).toBe('CREDIT_NOTE_NOT_EDITABLE');
+
+      // Positive control: returned again, it is withdrawn.
+      await prisma.$executeRaw`UPDATE "credit_note" SET "status" = 'REJECTED' WHERE "id" = ${note.id}::uuid`;
+      await withdraw(note.id).expect(200);
+      await expect(
+        prisma.$executeRaw`
+          UPDATE "credit_note" SET "status" = 'ISSUED'
+           WHERE "id" = ${note.id}::uuid`,
+      ).rejects.toThrow(/credit_note_immutable/);
+    });
+
     it('SRI-088 la lista de notas de crédito trae su estado electrónico', async () => {
       await uploadCertificate();
       const invoice = await issueInvoice();

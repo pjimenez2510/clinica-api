@@ -699,6 +699,11 @@ export const DOMAIN_ERROR_CODES = [
   // Corregir una factura (BI-091 a BI-097, BI-208 a BI-218, inventario CA-8
   // y CA-9). La nota de crédito es la única forma de corregir lo autorizado;
   // lo devuelto por el SRI se corrige y se reenvía con la misma clave.
+  // BI-303, BI-304 (D-212 §2).
+  'CREDIT_NOTE_NOT_EDITABLE',
+  'CREDIT_NOTE_NOT_FOUND',
+  'CREDIT_NOTE_REASON_KIND_FIXED',
+  'CREDIT_NOTE_WITHDRAWAL_REASON_REQUIRED',
   'CREDIT_NOTE_EXCEEDS_INVOICE',
   'CREDIT_NOTE_FINAL_CONSUMER',
   'CREDIT_NOTE_INVOICE_NOT_AUTHORISED',

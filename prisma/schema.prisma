@@ -198,6 +198,7 @@ model User {
   creditNotesIssued   CreditNote[]               @relation("CreditNoteIssuer")
   accountsChanged     PatientAccount[]           @relation("PatientAccountChanger")
   invoicesChanged     Invoice[]                  @relation("InvoiceChanger")
+  creditNotesChanged  CreditNote[]               @relation("CreditNoteChanger")
 
   /// REQ-090. Who loaded each issuer certificate (SRI-082).
   signingCertificatesUploaded SigningCertificate[] @relation("SigningCertificateUploader")
@@ -5008,10 +5009,19 @@ model CreditNote {
   taxTotal        Decimal @map("tax_total") @db.Decimal(12, 2)
   amount          Decimal @db.Decimal(12, 2)
 
-  /// ISSUED, AUTHORISED or REJECTED (DRAFT is never written). There is no
-  /// VOIDED: a credit note that was wrong is corrected by the documents that
-  /// follow it, never by unwinding this one.
+  /// ISSUED, AUTHORISED, REJECTED or WITHDRAWN (DRAFT is never written).
+  /// There is no VOIDED: a credit note that was wrong is corrected by the
+  /// documents that follow it, never by unwinding this one. WITHDRAWN (BI-304)
+  /// is a returned note a person gave up on: its lines are released.
   status String @default("ISSUED") @db.VarChar(24)
+
+  /// BI-304. Why the returned note was given up; set only with WITHDRAWN.
+  withdrawalReason String?   @map("withdrawal_reason") @db.VarChar(300)
+  /// BI-303, BI-304. Who changed its reason or gave it up, and when: the
+  /// previous row goes to `record_version`.
+  changedById      String?   @map("changed_by") @db.Uuid
+  changedBy        User?     @relation("CreditNoteChanger", fields: [changedById], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "credit_note_changed_by_fkey")
+  changedAt        DateTime? @map("changed_at") @db.Timestamptz(6)
 
   issuedById String    @map("issued_by_id") @db.Uuid
   issuedBy   User      @relation("CreditNoteIssuer", fields: [issuedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "credit_note_issued_by_fk")

@@ -868,6 +868,16 @@ export class InvoiceNotFoundError extends NotFoundError {
   }
 }
 
+/** BI-303, BI-304. Another site's credit note answers the same (BI-135). */
+export class CreditNoteNotFoundError extends NotFoundError {
+  readonly code = 'CREDIT_NOTE_NOT_FOUND';
+  override readonly userTitle = 'Esa nota de crédito no existe';
+
+  constructor() {
+    super('No credit note with that identifier in this site');
+  }
+}
+
 /** BI-080. The field is named so the screen can point at it. */
 export class InvoiceReceiverRequiredError extends ValidationError {
   readonly code = 'INVOICE_RECEIVER_REQUIRED';
@@ -1111,6 +1121,56 @@ export class CreditNoteLineNotInInvoiceError extends BusinessRuleViolation {
 
   constructor() {
     super('A credited charge is not a line of this invoice');
+  }
+}
+
+/**
+ * BI-303, BI-304. Only a credit note the SRI returned or did not authorise is
+ * corrected or given up: the others are the SRI's, or already given up.
+ */
+export class CreditNoteNotEditableError extends ConflictError {
+  readonly code = 'CREDIT_NOTE_NOT_EDITABLE';
+  override readonly userTitle =
+    'Sólo una nota de crédito devuelta o no autorizada por el SRI se corrige o se desiste';
+
+  constructor() {
+    super('The credit note is not REJECTED');
+  }
+}
+
+/**
+ * BI-303. «Servicio no prestado» decided at issue whether the credited lines
+ * came back to the account (BI-214); a correction cannot undo that.
+ */
+export class CreditNoteReasonKindFixedError extends ValidationError {
+  readonly code = 'CREDIT_NOTE_REASON_KIND_FIXED';
+  override readonly userTitle =
+    'Una nota de crédito no cambia entre «Servicio no prestado» y los motivos que vuelven a facturar: desista de ella y emita otra';
+
+  constructor() {
+    super('The reason cannot move across SERVICE_NOT_PROVIDED', {}, [
+      {
+        field: 'reasonCode',
+        code: 'CREDIT_NOTE_REASON_KIND_FIXED',
+        message: 'Elija un motivo del mismo tipo',
+      },
+    ]);
+  }
+}
+
+/** BI-304. Giving a note up says why. */
+export class CreditNoteWithdrawalReasonRequiredError extends ValidationError {
+  readonly code = 'CREDIT_NOTE_WITHDRAWAL_REASON_REQUIRED';
+  override readonly userTitle = 'Diga por qué desiste de la nota de crédito';
+
+  constructor() {
+    super('A withdrawal needs a reason', {}, [
+      {
+        field: 'reason',
+        code: 'CREDIT_NOTE_WITHDRAWAL_REASON_REQUIRED',
+        message: 'Escriba el motivo (hasta 300 caracteres)',
+      },
+    ]);
   }
 }
 
