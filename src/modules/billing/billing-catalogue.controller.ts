@@ -141,6 +141,7 @@ export class BillingCatalogueController {
       kind: query.kind ?? null,
       specialtyId: query.specialtyId ?? null,
       includeInactive: query.includeInactive,
+      forTaxReview: query.forTaxReview,
       page: query.page,
       pageSize: query.pageSize,
       today: clinicalDateOf(new Date()),

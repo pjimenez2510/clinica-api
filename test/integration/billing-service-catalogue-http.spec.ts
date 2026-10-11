@@ -260,6 +260,25 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
     });
   });
 
+  it('BI-023 en el orden de revisar el IVA, las pendientes primero y agrupadas por código del SRI', async () => {
+    const reviewed = await prisma.service.findUniqueOrThrow({
+      where: { code: 'LAB-BH' },
+    });
+    const reviewer = await prisma.user.findFirstOrThrow();
+    await prisma.service.update({
+      where: { id: reviewed.id },
+      data: { taxReviewedAt: new Date(), taxReviewedById: reviewer.id },
+    });
+
+    const page = await list('forTaxReview=true&pageSize=100');
+    const codes = page.items.map((item) => item.code);
+    // The reviewed one goes after every pending one.
+    expect(codes.at(-1)).toBe('LAB-BH');
+    // Control: without the flag it is in its kind's place, not last.
+    const plain = await list('pageSize=100');
+    expect(plain.items.map((item) => item.code).at(-1)).not.toBe('LAB-BH');
+  });
+
   describe('BI-280 crear con su tipo y su precio', () => {
     it('BI-279 BI-280 crea una consulta con su especialidad, su duración y su precio, y aparece una vez en la lista', async () => {
       const cardiology = await prisma.specialty.findFirstOrThrow({

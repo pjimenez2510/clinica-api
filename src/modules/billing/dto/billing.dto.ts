@@ -99,6 +99,8 @@ export const serviceQuerySchema = z.object({
   specialtyId: z.uuid('Seleccione una especialidad').optional(),
   /** BI-014. Deactivated services stay readable, on request. */
   includeInactive: explicitFlag,
+  /** BI-023. Pending tax reviews first, grouped by SRI code. */
+  forTaxReview: explicitFlag,
   page: z.coerce
     .number({ error: 'La página es un número' })
     .int('La página es un número entero')

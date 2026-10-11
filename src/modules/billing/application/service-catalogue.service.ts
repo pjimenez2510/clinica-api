@@ -161,6 +161,7 @@ export class ServiceCatalogueService {
     kind: ServiceKind | null;
     specialtyId: string | null;
     includeInactive: boolean;
+    forTaxReview: boolean;
     page: number;
     pageSize: number;
     today: ClinicalDate;

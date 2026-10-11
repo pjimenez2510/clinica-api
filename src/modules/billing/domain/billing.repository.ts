@@ -174,6 +174,11 @@ export interface ServiceListFilter {
   kind: ServiceKind | null;
   specialtyId: string | null;
   includeInactive: boolean;
+  /**
+   * BI-023. The order to review the tax rates in: pending first, grouped by
+   * SRI code, then by name.
+   */
+  forTaxReview: boolean;
   page: number;
   pageSize: number;
   /** The clinic's today, for «in force». */

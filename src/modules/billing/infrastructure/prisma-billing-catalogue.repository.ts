@@ -158,8 +158,11 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
       filter.kind === null
         ? acrossKinds
         : Prisma.join([...conditions, Prisma.sql`s.kind = ${filter.kind}`], ' AND '); // prettier-ignore
-    const order =
-      text === ''
+    const order = filter.forTaxReview
+      ? Prisma.sql`(s.tax_reviewed_at IS NULL) DESC,
+                   (SELECT t.sri_code::int FROM tax_rate t WHERE t.id = s.tax_rate_id),
+                   immutable_unaccent(lower(s.name)), s.code`
+      : text === ''
         ? Prisma.sql`array_position(${[...KIND_ORDER]}::varchar[], s.kind),
                      immutable_unaccent(lower(s.name)), s.code`
         : Prisma.sql`(lower(s.code) = lower(${text})) DESC,
