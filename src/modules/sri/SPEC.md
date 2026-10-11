@@ -247,7 +247,7 @@ SRI-101, SRI-104. **Solo interfaz:** SRI-099.
 **Prueba independiente:** con la cola en marcha, encolar un trabajo de otro
 módulo y un comprobante: cada uno lo atiende sólo su trabajador, y la
 integración entera del SRI sigue en verde.
-**Cubre:** SRI-105. **Solo servidor:** SRI-105.
+**Cubre:** SRI-105 a SRI-107. **Solo servidor:** SRI-105 a SRI-107.
 
 ---
 
@@ -896,6 +896,28 @@ integración entera del SRI sigue en verde.
   > `PLAN-ASISTENTE-IA.md` §4: una sola conexión, en la base de la clínica
   > (ADR-004), para el SRI y para los borradores del asistente. Dos módulos
   > que compartieran sin saberlo un nombre de cola se robarían los trabajos.
+  > *(Revisión en contexto limpio de la rama: un arranque fallido de pg-boss
+  > dejaba la conexión inservible hasta reiniciar y decía «declarada dos
+  > veces» en vez del error real; ahora el siguiente intento vuelve a
+  > arrancar. Y una cola que ya existe con otra política que la declarada
+  > falla al arrancar: SRI-057 sólo es estructural con `stately`.)*
+- **SRI-106** — Cada cola DEBERÁ declarar la forma de sus trabajos, y un
+  módulo sólo DEBERÁ poder encolar, atender, programar o dejar de atender en
+  las colas que declaró; SI un trabajo no tiene la forma de su cola ENTONCES
+  NO DEBERÁ encolarse, y si ya estaba en ella NO DEBERÁ llegar a su
+  trabajador. Los trabajos del SRI DEBERÁN llevar sólo el id del comprobante.
+  > Auditoría de seguridad de la rama: `pgboss.job` guarda en claro lo que se
+  > encola, fuera de la bitácora y de `record_version`. Que la forma sea un
+  > esquema obliga a encolar identificadores y no contenido clínico (el
+  > asistente encolará el id de su ejecución, no la transcripción).
+- **SRI-107** — CUANDO la aplicación arranque con `NODE_ENV=test`, la conexión
+  pg-boss compartida NO DEBERÁ arrancar; las pruebas que necesitan la cola
+  DEBERÁN construirla con la base de su contenedor.
+  > La suite de integración arranca `AppModule` con el `.env` del
+  > desarrollador a la vista: antes la protegía sólo `SRI_QUEUE_ENABLED=false`
+  > (`test/integration/setup/test-env.ts`), y el primer módulo con una cola
+  > propia que olvidara su interruptor habría creado `pgboss` y trabajos en
+  > la base del autor. Ahora no depende de acordarse.
 
 ## 8. Códigos de error nuevos
 

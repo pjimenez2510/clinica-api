@@ -13,6 +13,7 @@ import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
+import type { LiveEvent } from '../../src/shared/events/live-event';
 import {
   InProcessLiveEventBus,
   LiveEventBus,
@@ -170,7 +171,8 @@ describe('los avisos del asistente por el canal en vivo', () => {
   it('AU-060: «propuesta lista» sin destinatarios no llega a nadie; con ellos, sí', async () => {
     const doctor = await session('medico.norte@clinica.ec', 'MEDICO', siteA);
 
-    bus.publish({ kind: 'assistant-proposal', siteId: siteA });
+    // The type refuses it; a bug or a forged message is what could send it.
+    bus.publish({ kind: 'assistant-proposal', siteId: siteA } as LiveEvent);
     bus.publish({ kind: 'agenda', siteId: siteA });
     await until(() => ofKind(doctor.stream, 'agenda').length === 1);
     expect(ofKind(doctor.stream, 'assistant-proposal')).toHaveLength(0);

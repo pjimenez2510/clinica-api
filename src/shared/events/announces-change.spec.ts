@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ANNOUNCES_CHANGE_KEY,
   AnnounceChangeInterceptor,
+  AnnouncesChange,
 } from './announces-change';
 import type { LiveEvent } from './live-event';
 import { InProcessLiveEventBus } from './live-event-bus';
@@ -96,5 +97,16 @@ describe('AnnouncesChange', () => {
     await lastValueFrom(interceptor.intercept(context, inner));
 
     expect(heard).toHaveLength(2);
+  });
+
+  it('AU-060, AG-182: un tipo dirigido no se puede anunciar desde una ruta: el decorador no lo admite', () => {
+    // The route only knows its site; an addressed kind needs its addressees.
+    // `tsc` (in `verify`) fails if these lines stop being errors.
+    // @ts-expect-error — addressed kind
+    AnnouncesChange('assistant-draft');
+    // @ts-expect-error — addressed kind
+    AnnouncesChange('emergency-alerts');
+    // Control positivo: a site kind compiles.
+    expect(AnnouncesChange('agenda')).toBeTypeOf('function');
   });
 });

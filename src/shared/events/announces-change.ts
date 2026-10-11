@@ -10,7 +10,11 @@ import {
 import { Reflector } from '@nestjs/core';
 import { type Observable, tap } from 'rxjs';
 
-import { type LiveEventKind, liveEventSchema } from './live-event';
+import {
+  liveEventSchema,
+  type LiveEvent,
+  type SiteLiveEventKind,
+} from './live-event';
 import { LiveEventBus } from './live-event-bus';
 
 export const ANNOUNCES_CHANGE_KEY = 'live:announces-change';
@@ -30,7 +34,7 @@ export const ANNOUNCES_CHANGE_KEY = 'live:announces-change';
  * list (`getAllAndOverride`), and an empty list silences that handler.
  */
 export const AnnouncesChange = (
-  ...kinds: LiveEventKind[]
+  ...kinds: SiteLiveEventKind[]
 ): ClassDecorator & MethodDecorator =>
   applyDecorators(
     SetMetadata(ANNOUNCES_CHANGE_KEY, kinds),
@@ -57,10 +61,9 @@ export class AnnounceChangeInterceptor implements NestInterceptor {
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const kinds = this.reflector.getAllAndOverride<LiveEventKind[] | undefined>(
-      ANNOUNCES_CHANGE_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const kinds = this.reflector.getAllAndOverride<
+      SiteLiveEventKind[] | undefined
+    >(ANNOUNCES_CHANGE_KEY, [context.getHandler(), context.getClass()]);
     const request = context.switchToHttp().getRequest<{
       method?: string;
       params?: Record<string, string | undefined>;
@@ -86,7 +89,7 @@ export class AnnounceChangeInterceptor implements NestInterceptor {
           // The same validation as on the way in from Redis: a site that is
           // not a uuid is not an event (AU-055).
           const event = liveEventSchema.safeParse({ kind, siteId });
-          if (event.success) this.bus.publish(event.data);
+          if (event.success) this.bus.publish(event.data as LiveEvent);
         }
       }),
     );

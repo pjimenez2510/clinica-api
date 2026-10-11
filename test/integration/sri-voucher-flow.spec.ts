@@ -981,9 +981,9 @@ describe('SRI-040, SRI-057 la cola persistente', () => {
       deliveryStatus: 'SENT',
     });
     expect((await invoiceRow(invoice.id)).status).toBe('AUTHORISED');
-    await (await connection.instance()).offWork(QUEUE_NAMES.SEND);
-    await (await connection.instance()).offWork(QUEUE_NAMES.AUTHORISE);
-    await (await connection.instance()).offWork(QUEUE_NAMES.DELIVER);
+    for (const queue of Object.values((await sriQueues.handles()).steps)) {
+      await queue.offWork();
+    }
   }, 40_000);
 });
 

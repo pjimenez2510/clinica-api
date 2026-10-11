@@ -1114,14 +1114,19 @@ enlace que no sirve y con un correo que no sale.
   (`assistant-draft`) o una propuesta (`assistant-proposal`), el sistema
   DEBERÁ entregar el aviso sólo a los flujos de las personas a quienes va
   dirigido (`userIds`) y que tengan `record:write` en la sede del aviso; SI el
-  aviso no nombra destinatarios ENTONCES NO DEBERÁ llegar a nadie. Como todo
-  aviso (AU-055), DEBERÁ llevar sólo su tipo y su sede.
+  aviso no nombra destinatarios ENTONCES NO DEBERÁ poder publicarse ni llegar
+  a nadie. Como todo aviso (AU-055), DEBERÁ llevar sólo su tipo y su sede.
   > Dirigido y no a la sede: un borrador es de quien lo pidió, y despertar las
   > pantallas de todos los médicos de la sede sería ruido y, en una sede
   > pequeña, decir quién está consultando. `record:write` porque lo que la
   > pantalla relee al oírlo es contenido clínico por escribir; el permiso
   > `assistant:use` llega con A3 (`PLAN-ASISTENTE-IA.md` §7), que decidirá si
   > lo exige también aquí.
+  > Con `record:write` en `LIVE_EVENT_PERMISSION`, ese permiso solo ya abre
+  > el canal (AU-054 afinado). Con los roles de fábrica no cambia nada:
+  > quien lo tiene —`MEDICO`, `ADMIN`— tiene también `record:read`. Un rol
+  > propio con `record:write` y sin lectura abre el canal y oye sólo sus
+  > propios avisos del asistente (revisión de seguridad de la rama, B1).
 
 ## Códigos de error
 
