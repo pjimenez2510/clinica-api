@@ -581,6 +581,30 @@ PostgreSQL, que la base no admite una prestación sin categoría.
 (D-159)— y **BI-257** —la atadura al procedimiento desde la ficha—. **Solo servidor:** BI-186 (la base garantiza la
 categoría y la clase conocida).
 
+### B20 — Servicios y precios en un solo sitio _(P1, 10-10-2026)_
+
+Revisión de producto del 10-10-2026, ronda 3 punto 5 (D-217 §2). El precio ya
+es un dato único en la base (B1, `price_temporal_unique`); lo que cambia es la
+puerta de escritura. Una sola pantalla «Servicios y precios» —filas las
+prestaciones por clase, columnas Particular y cada pagador activo— ve y fija el
+precio sobre `setPrice`/`correctPrice`, que no cambian. Las cuatro puertas de
+hoy (Especialidades, alta de examen, la ficha de la prestación, la del pagador)
+pasan a enseñar el precio sin editarlo y a enlazar aquí; crear un tipo o un
+examen sigue pidiendo el precio particular una vez. Y se renombra lo que «tarifa»
+confundía: «Código MSP», «Precios en la pared», «IVA».
+
+**Prueba independiente (en `clinica-web`, por ser toda interfaz):** fijar el
+precio de una prestación en la columna de un pagador desde la pantalla única y
+verlo, sin control de edición y con enlace a ella, en la ficha de la prestación
+y en la del pagador; comprobar que el diálogo del tipo de atención ya no ofrece
+editar el precio al corregirlo y que ninguna de las pantallas tocadas dice
+«tarifario» ni «tarifa de impuesto».
+
+**Cubre:** BI-275 a BI-277. **Solo interfaz:** BI-275 a BI-277. El servidor de
+precios es el de B1 (BI-040 a BI-048) y B14 (BI-230); esta entrega no lo toca, y
+por eso sus tres criterios dejan el denominador del backend. D-218 (el código
+MSP como requisito, `tariff_amount`) queda **fuera**, pendiente del autor.
+
 > Las BI-003, BI-004, BI-007 y BI-130 a BI-135 **no son una entrega**: aplican a
 > todas. Una ruta de B1 sin permiso declarado no pasa la prueba de rutas, y una
 > pantalla de B6 que bloquee una atención por falta de pago es ilegal en B6
@@ -1031,6 +1055,41 @@ es falsa, hay requisitos que cambian.
   > «nadie podría explicar por qué» un cargo dice un importe distinto de su
   > fila, porque la fila anterior queda en `record_version` y el cargo congela
   > el suyo (BI-050). Lo garantiza `trg_price_record_version`.
+
+### Un dato, un sitio (D-217 §2, D-179)
+
+> El modelo ya guarda **un solo precio** por prestación × lista × vigencia
+> (BI-040 a BI-044); lo que cambia D-217 §2 es **desde dónde se escribe**. Hoy
+> se escribe desde cuatro puertas (Especialidades, alta de examen, la ficha de
+> la prestación y la del pagador); pasa a escribirse desde una sola pantalla, y
+> las demás lo enseñan sin editar. Nada de esto cambia el servidor —`setPrice`
+> (BI-044) y `correctPrice` (BI-230) siguen siendo la operación—, por eso las
+> tres viven **sólo en la interfaz** y su prueba está en `clinica-web`.
+
+- **BI-275** — El sistema DEBERÁ ofrecer una sola pantalla «Servicios y precios»
+  donde se vea y se fije el precio de cada prestación —la consulta de cada tipo
+  de atención, cada examen y cada procedimiento, filtrable por clase— en la
+  lista particular y en cada lista de pagador activa, sobre la misma `price`
+  (BI-040 a BI-044, BI-230).
+  > D-217 §2. Completa D-179 («un dato, un sitio») en la pantalla. Las columnas
+  > son Particular más una por lista de pagador activa; editar una celda abre
+  > «Fijar precio» (BI-044) o «Corregir precio» (BI-230), que ya existen.
+- **BI-276** — MIENTRAS exista la pantalla «Servicios y precios», las demás
+  vistas del precio de una prestación —los precios por pagador de su ficha, la
+  lista de precios de la ficha del pagador, el diálogo del tipo de atención al
+  corregirlo y la pestaña de cobro del examen— DEBERÁN mostrar el precio **sin
+  control de edición** y enlazar a «Servicios y precios»; CUANDO se crea un tipo
+  de atención o un examen, el sistema DEBERÁ pedir su precio particular una vez.
+  > D-217 §2. «Lo que caja propone para estas citas» se retira del diálogo del
+  > tipo de atención: era falso con un pagador que no es particular.
+- **BI-277** — El sistema DEBERÁ nombrar en pantalla el código del tarifario del
+  MSP «Código MSP», el precio que se exhibe al público «Precios en la pared» y
+  la tarifa del IVA del SRI «IVA», y NO DEBERÁ usar «tarifario» ni «tarifa de
+  impuesto» para nombrar ninguno de los tres ante quien usa el sistema.
+  > D-217 §2. «Tarifa» dejaba de distinguir tres cosas distintas: el código del
+  > MSP (nomenclatura, `billable_service.tariff_code`), la publicación pública
+  > (LOS art. 184) y la tarifa de impuesto del SRI. El dato y las rutas no
+  > cambian (eso es D-218, pendiente): sólo el rótulo que se lee.
 
 ## 6. El cargo: la pieza que congela
 
@@ -1976,7 +2035,8 @@ dos registros distintos.**
   cargos de la consulta, de los procedimientos registrados en la atención y de
   los exámenes pedidos en ella.
   > Las tres ataduras existen ya en el esquema y ninguna se inventa aquí:
-  > `billable_service.specialty_id` para la consulta (BI-158),
+  > el **tipo de atención de la cita** para la consulta (BI-158, SP-031;
+  > `billable_service.specialty_id` y `visit_sequence` se retiraron en D-179.3),
   > `billable_service.procedure_concept_id` para el procedimiento —la columna
   > dice literalmente *«so a charge can be raised from the encounter instead of
   > typed at the cashier»*— y `exam_definition.billable_service_id` para el
