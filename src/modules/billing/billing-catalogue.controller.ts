@@ -201,7 +201,7 @@ export class BillingCatalogueController {
     );
   }
 
-  /** BI-279, BI-281, BI-284 to BI-286, BI-025. */
+  /** BI-279, BI-281, BI-284 to BI-286, BI-025, BI-299. */
   @Patch('services/:serviceId')
   @RequirePermission('billing:price-manage', 'global')
   @ApiOperation({ summary: 'Corregir un servicio del catálogo' })
@@ -213,7 +213,9 @@ export class BillingCatalogueController {
     const requester = this.requireClinicWide('billing:price-manage');
     if (dto.exam !== undefined) this.requireOrderKey();
     return toServiceResponse(
-      await this.services.updateService(serviceId, { ...dto }, requester),
+      await this.services.updateService(serviceId, { ...dto }, requester, () =>
+        this.requireOrderKey(),
+      ),
     );
   }
 

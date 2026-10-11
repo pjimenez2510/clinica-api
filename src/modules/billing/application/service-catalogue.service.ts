@@ -267,13 +267,23 @@ export class ServiceCatalogueService {
    * ⚠️ AND THE CODES DO NOT MOVE ONCE THEY ARE ON PAPER (BI-281, BI-285): the
    * RIDE reprints the service's code and MSP code, and an order line froze
    * its code.
+   * ⚠️ AN EXAM'S NAME, CODE AND STATE ARE THE ORDER'S (BI-299, D-233): the
+   * doctor picks the exam by its name and the order prints its preparation by
+   * its code, so changing either —or retiring it from the list— takes the
+   * clinical catalogue's key too. Only a CHANGE counts: the form sends the
+   * name it shows on every correction.
    */
   async updateService(
     serviceId: string,
     correction: ServiceCorrection,
     requester: Requester,
+    requireOrderKey: () => void,
   ): Promise<ServiceView> {
     const current = await this.requireService(serviceId);
+    // Asked first, so a refused caller learns nothing more of the service.
+    if (current.exam !== null && touchesOrderIdentity(current, correction)) {
+      requireOrderKey();
+    }
     const update: ServiceUpdate = {
       name: correction.name,
       taxRateId: correction.taxRateId,
@@ -642,4 +652,17 @@ function stripUndefined<T extends object>(value: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(value).filter(([, field]) => field !== undefined),
   ) as Partial<T>;
+}
+
+/** BI-299 (D-233). The correction renames, recodes or (de)activates it. */
+function touchesOrderIdentity(
+  current: ServiceView,
+  correction: ServiceCorrection,
+): boolean {
+  const code = normalised(correction.code);
+  return (
+    (correction.name !== undefined && correction.name !== current.name) ||
+    (code !== null && code !== current.code) ||
+    (correction.active !== undefined && correction.active !== current.active)
+  );
 }
