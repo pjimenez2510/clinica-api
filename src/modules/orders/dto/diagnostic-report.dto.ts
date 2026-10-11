@@ -126,7 +126,8 @@ const NOTICE_RECIPIENT = z.enum([
   'PATIENT',
   'REPRESENTATIVE',
 ]);
-const NOTICE_CHANNEL = z.enum(['PHONE', 'IN_PERSON', 'VIDEO_CALL']);
+/** ORD-062, ORD-178: WhatsApp since D-207 §2. */
+const NOTICE_CHANNEL = z.enum(['PHONE', 'IN_PERSON', 'VIDEO_CALL', 'WHATSAPP']);
 /** ORD-067. `NO_ANSWER` is an attempt: recorded, and the value stays queued. */
 const NOTICE_OUTCOME = z.enum(['NOTIFIED', 'NO_ANSWER']);
 

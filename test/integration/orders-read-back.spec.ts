@@ -151,3 +151,18 @@ describe('ORD-177, el read-back por sede', () => {
     expect(await ctx.reports.readBackRequired(ctx.order.id, ctx.asNurse)).toBe(true); // prettier-ignore
   });
 });
+
+describe('ORD-178, el aviso en un clic', () => {
+  it('ORD-178 el aviso por WhatsApp se registra como cualquier otro medio', async () => {
+    const prisma = db();
+    const ctx = await aCriticalGlucose(prisma);
+
+    const notice = await ctx.reports.notify({ resultId: ctx.result.id, ...given, channel: 'WHATSAPP' }, ctx.asNurse, new Date()); // prettier-ignore
+
+    expect(notice).toMatchObject({ channel: 'WHATSAPP', outcome: 'NOTIFIED', callerName: null }); // prettier-ignore
+    const row = await prisma.criticalResultNotice.findUniqueOrThrow({ where: { id: notice.id } }); // prettier-ignore
+    expect(row.channel).toBe('WHATSAPP');
+    // Control positivo: sale de la cola como el aviso por teléfono.
+    expect(await ctx.reports.critical(ctx.asNurse, new Date())).toEqual([]);
+  });
+});

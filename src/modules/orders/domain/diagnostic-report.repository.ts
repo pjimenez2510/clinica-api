@@ -100,6 +100,8 @@ export const CRITICAL_NOTICE_CHANNELS = [
   'PHONE',
   'IN_PERSON',
   'VIDEO_CALL',
+  // ORD-178 (D-207 §2).
+  'WHATSAPP',
 ] as const;
 export type CriticalNoticeChannel = (typeof CRITICAL_NOTICE_CHANNELS)[number];
 

@@ -4081,6 +4081,8 @@ enum CriticalNoticeChannel {
   PHONE
   IN_PERSON
   VIDEO_CALL
+  /// ORD-178 (D-207 §2).
+  WHATSAPP
 }
 
 // ---------------------------------------------------------------------------
