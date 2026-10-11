@@ -580,9 +580,10 @@ asignada sigue leyéndose; intentar declarar «la consulta» de una especialidad
 sobre una prestación de clase insumo y recibir el rechazo; y contra
 PostgreSQL, que la base no admite una prestación sin categoría.
 
-**Cubre:** BI-185 a BI-189 y **BI-256** —la marca «exige consentimiento 024»
-(D-159)—. BI-185 a BI-188 y BI-257 se retiraron con ADR-013: la estructura del
-servicio es su tipo y su extensión de orden (B21, BI-278 a BI-286).
+**Cubre:** BI-189 y **BI-256** —la marca «exige consentimiento 024» (D-159)—.
+
+> Lo demás de esta entrega se retiró con ADR-013: la estructura del servicio es
+> su tipo y su extensión de orden, en B21.
 
 ### B20 — Servicios y precios en un solo sitio _(P1, 10-10-2026)_
 
@@ -603,9 +604,10 @@ y en la del pagador; comprobar que el diálogo del tipo de atención ya no ofrec
 editar el precio al corregirlo y que ninguna de las pantallas tocadas dice
 «tarifario» ni «tarifa de impuesto».
 
-**Cubre:** ninguno: **sustituida por B21 el 11-10-2026 (ADR-013).** BI-275 a
-BI-277 se retiraron (BI-291, BI-292 y BI-296 dicen lo que queda de ellos). El
-servidor de precios sigue siendo el de B1 (BI-040 a BI-048) y B14 (BI-230).
+**Cubre:** ninguno: **sustituida por B21 el 11-10-2026 (ADR-013).**
+
+> Sus tres requisitos se retiraron; la pantalla única de precios es la de B21.
+> El servidor de precios sigue siendo el de B1 y B14.
 
 ### B21 — Un solo catálogo de servicios _(P1, 11-10-2026)_
 

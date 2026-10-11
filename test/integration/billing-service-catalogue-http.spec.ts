@@ -223,6 +223,29 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
     });
   });
 
+  describe('BI-014 el servicio desactivado', () => {
+    it('BI-014 deja de ofrecerse en la lista y sólo vuelve cuando se piden los desactivados', async () => {
+      const service = await prisma.service.findUniqueOrThrow({
+        where: { code: 'LAB-TSH' },
+      });
+      // Control: active, it is offered.
+      expect((await list('q=LAB-TSH')).items.map((item) => item.id)).toContain(service.id); // prettier-ignore
+
+      await api()
+        .patch(`/api/v1/billing/services/${service.id}`)
+        .set('Authorization', manager)
+        .send({ active: false })
+        .expect(200);
+
+      expect((await list('q=LAB-TSH')).items.map((item) => item.id)).not.toContain(service.id); // prettier-ignore
+      expect(
+        (await list('q=LAB-TSH&includeInactive=true')).items.map(
+          (item) => item.id,
+        ),
+      ).toContain(service.id);
+    });
+  });
+
   describe('BI-282 buscar y paginar en el servidor', () => {
     it('BI-282 encuentra por el nombre sin tildes ni mayúsculas y por el código, con el exacto primero', async () => {
       const byName = await list('q=GLUCOSA%20en%20AYUNAS');
