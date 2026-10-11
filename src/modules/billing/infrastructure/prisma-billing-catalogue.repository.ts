@@ -141,9 +141,6 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
   async listServices(filter: ServiceListFilter): Promise<ServicePage> {
     const conditions: Prisma.Sql[] = [Prisma.sql`TRUE`];
     if (!filter.includeInactive) conditions.push(Prisma.sql`s.active`);
-    if (filter.kind !== null) {
-      conditions.push(Prisma.sql`s.kind = ${filter.kind}`);
-    }
     if (filter.specialtyId !== null) {
       conditions.push(Prisma.sql`s.specialty_id = ${filter.specialtyId}::uuid`);
     }
@@ -155,7 +152,12 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
         immutable_unaccent(lower(s.name)) LIKE immutable_unaccent(lower(${like}))
         OR lower(s.code) LIKE lower(${like}))`);
     }
-    const where = Prisma.join(conditions, ' AND ');
+    // BI-292. The tabs count everything but the kind; the page filters it too.
+    const acrossKinds = Prisma.join(conditions, ' AND ');
+    const where =
+      filter.kind === null
+        ? acrossKinds
+        : Prisma.join([...conditions, Prisma.sql`s.kind = ${filter.kind}`], ' AND '); // prettier-ignore
     const order =
       text === ''
         ? Prisma.sql`array_position(${[...KIND_ORDER]}::varchar[], s.kind),
@@ -165,13 +167,16 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
                         LIKE immutable_unaccent(lower(${startsWith}))) DESC,
                      immutable_unaccent(lower(s.name)), s.code`;
 
-    const [counted, page] = await Promise.all([
+    const [counted, page, byKind] = await Promise.all([
       this.prisma.$queryRaw<{ total: number }[]>`
         SELECT count(*)::int AS total FROM service s WHERE ${where}`,
       this.prisma.$queryRaw<{ id: string }[]>`
         SELECT s.id FROM service s WHERE ${where}
          ORDER BY ${order}
          LIMIT ${filter.pageSize} OFFSET ${(filter.page - 1) * filter.pageSize}`,
+      this.prisma.$queryRaw<{ kind: string; total: number }[]>`
+        SELECT s.kind, count(*)::int AS total FROM service s
+         WHERE ${acrossKinds} GROUP BY s.kind`,
     ]);
     const ids = page.map((row) => row.id);
     const [rows, prices] = await Promise.all([
@@ -192,6 +197,10 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
           prices: prices.get(row.id) ?? [],
         })),
       total: counted[0]?.total ?? 0,
+      kindCounts: byKind.map((row) => ({
+        kind: row.kind as ServiceKind,
+        total: row.total,
+      })),
       page: filter.page,
       pageSize: filter.pageSize,
     };

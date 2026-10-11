@@ -183,6 +183,11 @@ export interface ServiceListFilter {
 export interface ServicePage {
   items: ServiceListItem[];
   total: number;
+  /**
+   * BI-292. How many of each kind match the same text and filters, without
+   * the kind filter: what each tab says beside its name.
+   */
+  kindCounts: { kind: ServiceKind; total: number }[];
   page: number;
   pageSize: number;
 }

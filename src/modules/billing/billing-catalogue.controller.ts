@@ -29,6 +29,7 @@ import { ServiceCatalogueService } from './application/service-catalogue.service
 import type { Requester } from './application/service-catalogue.service';
 import type {
   PayerView,
+  ServiceKind,
   ServiceListItem,
   ServicePriceView,
   ServiceView,
@@ -131,6 +132,7 @@ export class BillingCatalogueController {
   async listServices(@Query() query: ServiceQueryDto): Promise<{
     items: ServiceListItemResponse[];
     total: number;
+    kindCounts: { kind: ServiceKind; total: number }[];
     page: number;
     pageSize: number;
   }> {

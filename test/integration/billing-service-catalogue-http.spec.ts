@@ -49,6 +49,7 @@ interface ListItem {
 interface Page {
   items: ListItem[];
   total: number;
+  kindCounts: { kind: string; total: number }[];
   page: number;
   pageSize: number;
 }
@@ -205,6 +206,12 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
       const exams = await list('kind=LAB_EXAM&pageSize=100');
       expect(exams.total).toBeGreaterThan(0);
       expect(exams.items.every((item) => item.kind === 'LAB_EXAM')).toBe(true);
+      // BI-292. The tabs count every kind with the same text, the kind aside.
+      const counts = new Map(
+        exams.kindCounts.map((row) => [row.kind, row.total]),
+      );
+      expect(counts.get('LAB_EXAM')).toBe(exams.total);
+      expect(counts.get('CONSULTATION')).toBeGreaterThan(0);
 
       const cardiology = await prisma.specialty.findFirstOrThrow({
         where: { code: 'cardiologia' },

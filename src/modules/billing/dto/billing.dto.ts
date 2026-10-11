@@ -715,6 +715,10 @@ export class ServiceListDto extends createZodDto(
   z.object({
     items: z.array(serviceListItemSchema),
     total: z.number().int(),
+    /** BI-292. Per kind, with the same text and filters: each tab's count. */
+    kindCounts: z.array(
+      z.object({ kind: z.enum(SERVICE_KINDS), total: z.number().int() }),
+    ),
     page: z.number().int(),
     pageSize: z.number().int(),
   }),
