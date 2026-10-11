@@ -240,7 +240,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     expect(codes).not.toContain('LAB-PERFIL-RENAL');
   });
 
-  it('ORD-103 el alta y la corrección del examen ya no viven aquí: se hacen como servicio', async () => {
+  it('el alta y la corrección del examen ya no viven en el catálogo de exámenes: se hacen como servicio (ADR-013)', async () => {
     const bh = await examCoded('LAB-BH');
 
     await get('/exam-catalogue/exams').expect(404);
@@ -956,7 +956,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     expect(report.results[0]?.analyteDisplay).toBe('Hemoglobina');
   });
 
-  it('ORD-103 sin catalog:manage no se ve ni se toca el catálogo administrado', async () => {
+  it('ORD-104 ORD-105 sin catalog:manage no se ve ni se toca el catálogo administrado', async () => {
     await prisma.role.create({
       data: {
         code: 'LECTOR',

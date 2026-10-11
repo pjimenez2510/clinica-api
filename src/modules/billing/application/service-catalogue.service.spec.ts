@@ -22,6 +22,7 @@ import {
   ServiceProcedureTakenError,
   ServiceTariffCodeInvoicedError,
   TaxRateNotFoundError,
+  TaxRateRequiredError,
   TaxReviewRateChangedError,
 } from '../domain/billing.errors';
 import type {
@@ -219,6 +220,54 @@ describe('BI-280 crear un servicio pide el tipo, lo de ese tipo y su precio', ()
     await expect(
       catalogue.createService({ ...newSupply, taxRateId: 'tax-x' }, requester),
     ).rejects.toBeInstanceOf(TaxRateNotFoundError);
+  });
+
+  it('BI-013 sin IVA que tomar no crea nada; corregir a «sin IVA» tampoco se admite', async () => {
+    const { service: catalogue, mocks } = build({
+      findHealthTaxRate: vi.fn().mockResolvedValue(null),
+    });
+
+    await expect(
+      catalogue.createService(newSupply, requester),
+    ).rejects.toBeInstanceOf(TaxRateRequiredError);
+    expect(mocks.createService).not.toHaveBeenCalled();
+
+    await expect(
+      catalogue.updateService('service-1', { taxRateId: '' }, requester),
+    ).rejects.toBeInstanceOf(TaxRateRequiredError);
+    expect(mocks.updateService).not.toHaveBeenCalled();
+  });
+
+  it('BI-005 el IVA no se deduce del nombre, del código ni del tipo: es el que se dice, o el de salud por defecto', async () => {
+    const general = { ...taxRate, id: 'tax-15', sriCode: '4', name: 'IVA 15%' };
+    const { service: catalogue, mocks } = build({
+      findTaxRate: vi.fn().mockResolvedValue(general),
+    });
+
+    // A name that «sounds» cosmetic gets no rate of its own from it…
+    await catalogue.createService(
+      {
+        ...newSupply,
+        kind: 'PROCEDURE',
+        name: 'Cirugía estética',
+        code: 'EST-1',
+      },
+      requester,
+    );
+    // …and one that «sounds» like health, with a rate said, keeps the one said.
+    await catalogue.createService(
+      {
+        ...newSupply,
+        name: 'Consulta de salud',
+        code: 'SALUD-1',
+        taxRateId: 'tax-15',
+      },
+      requester,
+    );
+
+    const calls = mocks.createService.mock.calls as [NewService][];
+    expect(calls[0]![0].taxRateId).toBe('tax-0');
+    expect(calls[1]![0].taxRateId).toBe('tax-15');
   });
 
   it('BI-280 sin lista particular activa no crea nada', async () => {

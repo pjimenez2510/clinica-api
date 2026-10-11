@@ -14,6 +14,7 @@ import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
+import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
@@ -164,6 +165,113 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
         .set('Authorization', as)
         .expect(200)
     ).body as Page;
+
+  describe('BI-189 los precios de un servicio en todas las listas', () => {
+    it('BI-189 sirve el precio de cada lista con su vigencia, y marca el vigente hoy en Ecuador', async () => {
+      const service = await prisma.service.findUniqueOrThrow({
+        where: { code: 'CONS-MG-PV' },
+      });
+      const agreement = await prisma.payer.findUniqueOrThrow({
+        where: { code: 'CONVENIO-EMPRESA-EJEMPLO' },
+      });
+      const list = await prisma.priceList.findFirstOrThrow({
+        where: { payerId: agreement.id },
+      });
+      // From the clock, never by hand: one that ended, one in force today.
+      const today = clinicalDateOf(new Date());
+      const day = (offset: number) =>
+        new Date(`${addDays(today, offset)}T00:00:00Z`);
+      const ended = await prisma.price.create({
+        data: { priceListId: list.id, serviceId: service.id, amount: '22.00', validFrom: day(-60), validTo: day(-30) }, // prettier-ignore
+      });
+      const current = await prisma.price.create({
+        // Starting TODAY in Ecuador: the boundary «vigente hoy» has to include.
+        data: { priceListId: list.id, serviceId: service.id, amount: '24.00', validFrom: day(0) }, // prettier-ignore
+      });
+
+      const { items } = (
+        await api()
+          .get(`/api/v1/billing/services/${service.id}/prices`)
+          .set('Authorization', manager)
+          .expect(200)
+      ).body as {
+        items: {
+          priceId: string;
+          amount: string;
+          validFrom: string;
+          validTo: string | null;
+          inForce: boolean;
+          payer: { kind: string };
+        }[];
+      };
+
+      const byId = new Map(items.map((item) => [item.priceId, item]));
+      expect(byId.get(ended.id)).toMatchObject({
+        amount: '22.00',
+        validFrom: addDays(today, -60),
+        validTo: addDays(today, -30),
+        inForce: false,
+      });
+      expect(byId.get(current.id)).toMatchObject({
+        amount: '24.00',
+        validTo: null,
+        inForce: true,
+      });
+      // Control: the self-pay list is there too, in force today.
+      expect(
+        items.find((item) => item.payer.kind === 'SELF_PAY' && item.inForce),
+      ).toMatchObject({ amount: '30.00' });
+    });
+  });
+
+  describe('BI-010 el catálogo se administra desde la aplicación', () => {
+    it('BI-010 un código propio no se repite: el segundo servicio con el mismo código se rechaza', async () => {
+      const supply = {
+        kind: 'SUPPLY',
+        code: 'INS-GUANTE-M',
+        selfPayAmount: '0.50',
+      };
+      // Control: the first one is created, active.
+      const first = await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', manager)
+        .send({ ...supply, name: 'Guantes talla M' })
+        .expect(201);
+      expect((first.body as { active: boolean }).active).toBe(true);
+
+      const twin = await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', manager)
+        .send({ ...supply, name: 'Guantes de nitrilo M' })
+        .expect(409);
+      expect((twin.body as Problem).code).toBe(
+        'BILLABLE_SERVICE_CODE_DUPLICATE',
+      );
+    });
+  });
+
+  describe('BI-014 el servicio desactivado', () => {
+    it('BI-014 deja de ofrecerse en la lista y sólo vuelve cuando se piden los desactivados', async () => {
+      const service = await prisma.service.findUniqueOrThrow({
+        where: { code: 'LAB-TSH' },
+      });
+      // Control: active, it is offered.
+      expect((await list('q=LAB-TSH')).items.map((item) => item.id)).toContain(service.id); // prettier-ignore
+
+      await api()
+        .patch(`/api/v1/billing/services/${service.id}`)
+        .set('Authorization', manager)
+        .send({ active: false })
+        .expect(200);
+
+      expect((await list('q=LAB-TSH')).items.map((item) => item.id)).not.toContain(service.id); // prettier-ignore
+      expect(
+        (await list('q=LAB-TSH&includeInactive=true')).items.map(
+          (item) => item.id,
+        ),
+      ).toContain(service.id);
+    });
+  });
 
   describe('BI-282 buscar y paginar en el servidor', () => {
     it('BI-282 encuentra por el nombre sin tildes ni mayúsculas y por el código, con el exacto primero', async () => {

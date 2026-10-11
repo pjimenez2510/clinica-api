@@ -303,16 +303,13 @@ que la clínica hace y el sistema no tiene se pide a mano o no se pide.
 **Prueba independiente:** crear un examen de laboratorio con dos analitos y sus
 rangos, cobrarlo con una prestación de laboratorio, pedirlo desde una atención;
 y ver rechazada la prestación de imagen.
-**Cubre:** ORD-103 a ORD-111, **ORD-169**.
+**Cubre:** ORD-103 a ORD-111. ORD-103, ORD-108, ORD-109 y ORD-169 se retiraron
+con ADR-013 (el examen es un servicio: BI-278, BI-280, BI-284).
 
 **Solo servidor:** ORD-110, ORD-111. Que un cambio del catálogo no altere un resultado ya
 registrado es una propiedad de lo que el resultado congela; en pantalla no hay
 nada que lo enseñe. La fila de `access_audit` de cada alta o corrección
 (ORD-111) se prueba contándola, como las de PR-090 a PR-093.
-
-**Solo interfaz:** ORD-169. La ficha no ofrece cambiar el tipo (fijado con la prestación,
-ORD-163) ni manda `billableServiceId`; el servidor ya rechaza la mezcla con ORD-108 y ORD-109.
-Se prueba en `clinica-web` (`ExamDataPanel.spec.ts`).
 
 ### E11 — La orden que se compone y se imprime sin dudas _(P1)_
 
@@ -1366,7 +1363,7 @@ clínica». El modelo ya existía (`exam_definition`, `exam_definition_analyte`,
 `analyte_definition`, `analyte_reference_range`); faltaba poder escribirlo
 desde la pantalla.
 
-- **ORD-103** — Con `catalog:manage`, el sistema DEBERÁ permitir dar de alta y
+- ~~ORD-103~~ — Con `catalog:manage`, el sistema DEBERÁ permitir dar de alta y
   corregir un examen —código, nombre, tipo, sección, muestra, preparación,
   tiempo de entrega, si lo hace un laboratorio externo y cuál, código del
   tarifario (que se guarda en su prestación, ORD-163)— y desactivarlo y reactivarlo; el código NO DEBERÁ cambiar una vez
@@ -1434,7 +1431,7 @@ desde la pantalla.
   ORD-036 elige el rango **más específico**; entre dos igual de específicos que
   se pisan no hay respuesta, y la bandera dependería del orden de las filas.
 
-- **ORD-108** — Con `catalog:manage`, el sistema DEBERÁ fijar la
+- ~~ORD-108~~ — Con `catalog:manage`, el sistema DEBERÁ fijar la
   **prestación de cobro** de un examen al darlo de alta (ORD-162), y SI la clase de la categoría de esa
   prestación (`billable_service_category.kind`) no es el tipo del examen,
   ENTONCES DEBERÁ rechazarlo con `EXAM_SERVICE_KIND_MISMATCH`; SI la
@@ -1451,14 +1448,14 @@ desde la pantalla.
   > después del alta: el examen y su prestación son la misma cosa (ORD-163),
   > y cambiarla le cambiaría el nombre al examen. El `PATCH` dejó de aceptar
   > `billableServiceId`.
-  > **Sustituido el 11-10-2026 por BI-284 (ADR-013), sin sucesor.** No hay prestación de cobro aparte: el examen es el servicio.
+  > **Sustituido el 11-10-2026 por BI-284 (ADR-013).** No hay prestación de cobro aparte: el examen es el servicio.
 
-- **ORD-109** — SI se cambia el tipo de un examen que tiene prestación de cobro
+- ~~ORD-109~~ — SI se cambia el tipo de un examen que tiene prestación de cobro
   a uno que no es la clase de esa prestación, ENTONCES el sistema DEBERÁ
   rechazarlo con `EXAM_SERVICE_KIND_MISMATCH`.
   > **Sustituido el 11-10-2026 (ADR-013), sin sucesor.** El tipo del servicio no cambia tras el alta (BI-278).
 
-- **ORD-169** — (Solo interfaz, corrección del defecto de ronda 3) La corrección
+- ~~ORD-169~~ — (Solo interfaz, corrección del defecto de ronda 3) La corrección
   de la ficha de un examen NO DEBERÁ ofrecer cambiar su tipo ni enviar ningún
   cambio de su prestación de cobro: el tipo quedó fijado con la prestación al
   darlo de alta (ORD-163, D-179.1) y el `PATCH` ya no acepta `billableServiceId`
@@ -2361,7 +2358,7 @@ _Aceptada por el autor el 07-10-2026. Hasta aquí el nombre y el código del
 tarifario se escribían en Exámenes, otra vez en Prestaciones y precios y otra
 en la pestaña de cobro, y nada obligaba a que coincidieran._
 
-- **ORD-162** — CUANDO se dé de alta un examen con `catalog:manage`, el
+- ~~ORD-162~~ — CUANDO se dé de alta un examen con `catalog:manage`, el
   sistema DEBERÁ crear en la misma transacción su prestación de cobro —con el
   código y el nombre del examen, su código del tarifario, la categoría y el
   IVA indicados y, si se indica, su precio en la lista particular vigente
@@ -2385,7 +2382,7 @@ en la pestaña de cobro, y nada obligaba a que coincidieran._
   > semilla. *(Revisión clínica de la rama: la primera versión dejaba elegir
   > el IVA sin el permiso y reescribía el nombre de la prestación existente.)*
   > **Sustituido el 11-10-2026 por BI-280 (ADR-013).**
-- **ORD-163** — El nombre y el código del tarifario de un examen DEBERÁN
+- ~~ORD-163~~ — El nombre y el código del tarifario de un examen DEBERÁN
   guardarse sólo en su prestación: el sistema DEBERÁ servirlos desde ella, y
   CUANDO se corrijan desde el examen DEBERÁ escribirlos en ella en la misma
   transacción. La **base** DEBERÁ exigir que todo examen tenga prestación
