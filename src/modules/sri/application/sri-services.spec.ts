@@ -4,6 +4,10 @@ import { InProcessLiveEventBus } from '../../../shared/events/live-event-bus';
 import { describe, expect, it, vi } from 'vitest';
 
 import { clinicalDateOf } from '../../../shared/domain/clinic-time';
+import {
+  MailDeliveryFailedError,
+  MailNotConfiguredError,
+} from '../../../shared/mail/mail.errors';
 import { composeAccessKey } from '../domain/access-key';
 import type {
   PreparationSource,
@@ -812,6 +816,11 @@ describe('SRI-091 el correo que tres días después sigue fallando', () => {
   function failingFor(
     hoursAgo: number,
     deliveryStatus: 'FAILED' | 'UNDELIVERABLE' | null,
+    // SRI-091. The relay refused the recipient for good (5xx), unless said.
+    error: unknown = new MailDeliveryFailedError(
+      new Error('550 mailbox unavailable'),
+      { recipientRejected: true },
+    ),
   ) {
     const f = fakes();
     f.vouchers.findById.mockResolvedValue(
@@ -832,7 +841,7 @@ describe('SRI-091 el correo que tres días después sigue fallando', () => {
       establishmentName: 'Clínica',
     });
     const mailer = {
-      send: vi.fn().mockRejectedValue(new Error('550 mailbox unavailable')),
+      send: vi.fn().mockRejectedValue(error),
     };
     const rides = {
       issueRide: vi.fn().mockResolvedValue({
@@ -888,6 +897,41 @@ describe('SRI-091 el correo que tres días después sigue fallando', () => {
     );
     expect(f.queue.schedule).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [
+      'el servidor de correo caído (sin respuesta)',
+      new MailDeliveryFailedError(new Error('ECONNREFUSED')),
+    ],
+    [
+      'un 4xx pasajero del servidor',
+      new MailDeliveryFailedError(new Error('451 try later')),
+    ],
+    ['el servidor de correo sin configurar', new MailNotConfiguredError()],
+    ['un RIDE que no se pudo componer', new Error('render failed')],
+  ])(
+    'SRI-098 a las 72 horas con %s sigue FAILED y se reintenta con el tope de seis horas',
+    async (_case, error) => {
+      const { f, dispatch } = failingFor(96, 'FAILED', error);
+      await dispatch.run('DELIVER', 'voucher-1');
+
+      expect(f.vouchers.recordDelivery).toHaveBeenCalledWith(
+        'voucher-1',
+        'FAILED',
+        NOW,
+      );
+      expect(f.vouchers.recordDelivery).not.toHaveBeenCalledWith(
+        'voucher-1',
+        'UNDELIVERABLE',
+        expect.anything(),
+      );
+      expect(f.queue.schedule).toHaveBeenCalledWith(
+        'DELIVER',
+        expect.objectContaining({ id: 'voucher-1' }),
+        6 * 3600,
+      );
+    },
+  );
 
   it('SRI-091 un DELIVER sobre uno que ya no se pudo enviar no lo vuelve a intentar', async () => {
     const { f, mailer, dispatch } = failingFor(80, 'UNDELIVERABLE');

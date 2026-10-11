@@ -80,7 +80,9 @@ export class NodemailerMailer implements Mailer {
         { err: error, error_code: 'MAIL_DELIVERY_FAILED' },
         'the SMTP server did not accept the message',
       );
-      throw new MailDeliveryFailedError(error);
+      throw new MailDeliveryFailedError(error, {
+        recipientRejected: recipientRejected(error),
+      });
     }
   }
 
@@ -138,4 +140,24 @@ export class NodemailerMailer implements Mailer {
   private isLoopback(host: string): boolean {
     return host === 'localhost' || host === '127.0.0.1' || host === '::1';
   }
+}
+
+/**
+ * SRI-091. Nodemailer says «every recipient was refused» with `EENVELOPE`
+ * and the relay's reply code. Only a 5xx there is permanent: a 535 on the
+ * login (`EAUTH`) is the clinic's relay, not the address, and a 4xx is
+ * «try later» by definition (RFC 5321 §4.2.1).
+ */
+export function recipientRejected(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const { code, responseCode } = error as {
+    code?: unknown;
+    responseCode?: unknown;
+  };
+  return (
+    code === 'EENVELOPE' &&
+    typeof responseCode === 'number' &&
+    responseCode >= 500 &&
+    responseCode < 600
+  );
 }

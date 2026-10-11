@@ -194,15 +194,21 @@ export class VoucherDispatchService {
       await this.mailVoucher(voucher, context, context.buyerEmail);
     } catch (error) {
       const now = this.clock();
-      // SRI-091. Three days of failing is the address: stop, and say so.
-      if (deliveryGivesUp(voucher.authorisedAt, now)) {
+      // SRI-091. Three days of the relay refusing the address: stop, and
+      // say so. Anything else (SRI-098) is the clinic's relay or the RIDE,
+      // and keeps being retried every six hours at most.
+      if (
+        error instanceof MailDeliveryFailedError &&
+        error.recipientRejected &&
+        deliveryGivesUp(voucher.authorisedAt, now)
+      ) {
         this.logger.warn(
           {
             err: error,
             voucher_id: voucher.id,
             error_code: 'SRI_DELIVERY_GIVEN_UP',
           },
-          'the authorised voucher could not be e-mailed for 72 hours; no more retries',
+          'the relay refused the address for 72 hours; no more retries',
         );
         await this.recordDelivery(voucher, 'UNDELIVERABLE', now);
         return;

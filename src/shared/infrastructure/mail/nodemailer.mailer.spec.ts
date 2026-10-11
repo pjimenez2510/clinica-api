@@ -3,7 +3,10 @@ import { PinoLogger } from 'nestjs-pino';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Env } from '../../config/env.schema';
-import { MailNotConfiguredError } from '../../mail/mail.errors';
+import {
+  MailDeliveryFailedError,
+  MailNotConfiguredError,
+} from '../../mail/mail.errors';
 
 import { NodemailerMailer } from './nodemailer.mailer';
 
@@ -104,4 +107,27 @@ describe('el adaptador de correo', () => {
       }),
     );
   });
+
+  it.each([
+    ['un 550 al destinatario', { code: 'EENVELOPE', responseCode: 550 }, true],
+    ['un 553 al destinatario', { code: 'EENVELOPE', responseCode: 553 }, true],
+    ['un 451 al destinatario', { code: 'EENVELOPE', responseCode: 451 }, false],
+    ['un 535 al iniciar sesión', { code: 'EAUTH', responseCode: 535 }, false],
+    ['sin conexión', { code: 'ESOCKET' }, false],
+  ])(
+    'SRI-091 SRI-098 distingue el rechazo permanente de la dirección: %s',
+    async (_case, failure, permanent) => {
+      sendMail.mockRejectedValueOnce(
+        Object.assign(new Error('relay said no'), failure),
+      );
+      const mailer = new NodemailerMailer(configWithout('localhost'), logger());
+
+      const error = await mailer.send(MESSAGE).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(MailDeliveryFailedError);
+      expect((error as MailDeliveryFailedError).recipientRejected).toBe(
+        permanent,
+      );
+    },
+  );
 });

@@ -96,7 +96,7 @@ export interface VoucherRecord {
   deliveryStatus: DeliveryStatus | null;
 }
 
-/** SRI-091. `UNDELIVERABLE`: still failing 72 h after the authorisation; never retried. */
+/** SRI-091. `UNDELIVERABLE`: the relay still refusing the address 72 h after the authorisation; never retried. */
 export type DeliveryStatus =
   'PENDING' | 'SENT' | 'NO_EMAIL' | 'FAILED' | 'UNDELIVERABLE';
 
