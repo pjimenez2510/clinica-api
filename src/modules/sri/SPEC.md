@@ -240,6 +240,15 @@ reenvía con su clave; un certificado de otro RUC se carga con aviso.
 **Cubre:** SRI-091, SRI-095, SRI-098 a SRI-104. **Solo servidor:** SRI-100,
 SRI-101, SRI-104. **Solo interfaz:** SRI-099.
 
+### S11 — La cola compartida con otros módulos _(P1, 11-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §4 y §7 A2: pg-boss deja de ser del SRI y pasa a
+`shared/`, para que el asistente encole sus borradores en la misma base.
+**Prueba independiente:** con la cola en marcha, encolar un trabajo de otro
+módulo y un comprobante: cada uno lo atiende sólo su trabajador, y la
+integración entera del SRI sigue en verde.
+**Cubre:** SRI-105. **Solo servidor:** SRI-105.
+
 ---
 
 ## Criterios de éxito
@@ -878,6 +887,15 @@ SRI-101, SRI-104. **Solo interfaz:** SRI-099.
   DEBERÁ bloquear antes su documento y exigir que siga `REJECTED`.
   > Revisión en contexto limpio: «Reenviar» y «Desistir» a la vez dejaban
   > enviar al SRI una nota que la clínica ya no cuenta.
+- **SRI-105** — La cola de SRI-040 DEBERÁ correr sobre la conexión pg-boss
+  compartida de `shared/`, con sus colas propias (`sri-*`): un trabajo que
+  otro módulo encole en la misma conexión NO DEBERÁ llegar a los trabajadores
+  del SRI, ni uno del SRI a los de otro módulo; SI dos colas se declaran con el
+  mismo nombre ENTONCES la segunda declaración DEBERÁ fallar al arrancar; y
+  `SRI_QUEUE_ENABLED=false` DEBERÁ apagar sólo las colas del SRI.
+  > `PLAN-ASISTENTE-IA.md` §4: una sola conexión, en la base de la clínica
+  > (ADR-004), para el SRI y para los borradores del asistente. Dos módulos
+  > que compartieran sin saberlo un nombre de cola se robarían los trabajos.
 
 ## 8. Códigos de error nuevos
 
