@@ -58,6 +58,14 @@ describe('reading a file of the SRI RUC registry', () => {
     });
   });
 
+  it('IL-009 drops a name field with control characters, digits or markup, and keeps a real one', () => {
+    const untyped = readHeader('NUMERO_RUC|RAZON_SOCIAL');
+    expect(readRow(`${CEDULA}001|MORA <b>ANA</b>`, untyped, isCedula)).toEqual({ skipped: 'NO_NAME' }); // prettier-ignore
+    expect(readRow(`${CEDULA}001|MORA ANA 2`, untyped, isCedula)).toEqual({ skipped: 'NO_NAME' }); // prettier-ignore
+    // A real name with a tilde, apostrophe or hyphen is kept.
+    expect(readRow(`${CEDULA}001|O'CONNOR MUÑOZ ANA-MARÍA`, untyped, isCedula)).toEqual({ kept: { cedula: CEDULA, registryName: "O'CONNOR MUÑOZ ANA-MARÍA" } }); // prettier-ignore
+  });
+
   it('IL-009 reads quoted fields with the delimiter and a doubled quote inside', () => {
     expect(splitLine('"A,B","C ""D""",E', ',')).toEqual(['A,B', 'C "D"', 'E']);
   });

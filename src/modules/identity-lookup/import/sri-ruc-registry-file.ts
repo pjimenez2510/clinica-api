@@ -35,6 +35,14 @@ const DELIMITERS = ['|', ';', '\t', ','] as const;
 /** `sri_ruc_registry_entry.registry_name` is a varchar(300). */
 const MAX_NAME_LENGTH = 300;
 
+/**
+ * IL-009. A name is letters (any script, with their combining marks), spaces
+ * and the few marks a name carries: apostrophe, hyphen, period. A row with a
+ * control character, a digit or markup is not a name — it is a malformed line
+ * or the wrong column — and is dropped.
+ */
+const NAME_CHARACTERS = /^[-\p{L}\p{M} '.·’]+$/u;
+
 export interface RegistryColumns {
   delimiter: string;
   ruc: number;
@@ -149,7 +157,13 @@ export function readRow(
   if (!isCedula(cedula)) return { skipped: 'INVALID_RUC' };
 
   const registryName = (fields[columns.name] ?? '').trim().replace(/\s+/g, ' ');
-  if (registryName === '' || registryName.length > MAX_NAME_LENGTH) {
+  if (
+    registryName === '' ||
+    registryName.length > MAX_NAME_LENGTH ||
+    !NAME_CHARACTERS.test(registryName)
+  ) {
+    // A control character or markup means a malformed row or the wrong column,
+    // not a name: dropped before it reaches the table (and, later, a chart).
     return { skipped: 'NO_NAME' };
   }
   return { kept: { cedula, registryName } };

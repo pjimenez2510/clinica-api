@@ -88,8 +88,12 @@ export class IdentityLookupService {
     try {
       for (const lookup of this.lookups) {
         if (budget.signal.aborted) break;
-        const finding = await this.ask(lookup, cedula, digest, lookedUpAt, budget.signal); // prettier-ignore
+        // IL-006: the trail entry is written BEFORE the source is asked, so a
+        // consultation always leaves a row even if what follows fails. The
+        // recorder logs and never throws (its port's contract), so this never
+        // turns a lookup into an error — IL-003.
         await this.record(lookup.source, digest, requester);
+        const finding = await this.ask(lookup, cedula, digest, lookedUpAt, budget.signal); // prettier-ignore
         if (finding) return { ...finding, lookedUpAt };
       }
       return null;
@@ -142,7 +146,9 @@ export class IdentityLookupService {
     const cacheable = lookup.source === 'PROVIDER';
     try {
       if (cacheable) {
-        const hit = await this.store.cached(digest, now);
+        // The cache read is on the budget too: a stalled database must not make
+        // the lookup outlast the 3-second ceiling (SC-088).
+        const hit = await withinBudget(this.store.cached(digest, now), signal);
         if (hit) return hit;
       }
       const finding = await withinBudget(lookup.findByCedula(cedula, signal), signal); // prettier-ignore

@@ -57,14 +57,30 @@ import { IdentityLookupController } from './identity-lookup.controller';
       useFactory: (
         config: ConfigService<Env, true>,
         registry: SriRucRegistryLookup,
-      ): IdentityLookup[] => {
-        const url = config.get('IDENTITY_PROVIDER_URL', { infer: true });
-        const key = config.get('IDENTITY_PROVIDER_API_KEY', { infer: true });
-        return url && key
-          ? [registry, new DiditIdentityLookup(url, key)]
-          : [registry];
-      },
+      ): IdentityLookup[] =>
+        configuredLookups(
+          {
+            providerUrl: config.get('IDENTITY_PROVIDER_URL', { infer: true }),
+            providerApiKey: config.get('IDENTITY_PROVIDER_API_KEY', { infer: true }), // prettier-ignore
+          },
+          registry,
+        ),
     },
   ],
 })
 export class IdentityLookupModule {}
+
+/**
+ * IL-008, D-206 §1. The ordered list of external sources: the imported
+ * registry, then the provider — and the provider ONLY when both its URL and
+ * its key are configured. A pure function so the order and the «no provider
+ * without credentials» rule are tested without booting NestJS.
+ */
+export function configuredLookups(
+  provider: { providerUrl?: string; providerApiKey?: string },
+  registry: IdentityLookup,
+): IdentityLookup[] {
+  return provider.providerUrl && provider.providerApiKey
+    ? [registry, new DiditIdentityLookup(provider.providerUrl, provider.providerApiKey)] // prettier-ignore
+    : [registry];
+}

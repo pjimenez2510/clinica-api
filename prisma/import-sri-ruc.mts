@@ -69,32 +69,24 @@ function encodingOf(file: string): 'utf8' | 'latin1' {
   }
 }
 
-/** Every natural person of the file, once per cedula (the first row wins). */
-async function entriesOf(
-  file: string,
-): Promise<{ entries: RegistryEntry[]; skipped: number }> {
-  const lines = createInterface({
-    input: createReadStream(file, { encoding: encodingOf(file) }),
-    crlfDelay: Infinity,
-  });
-  const byCedula = new Map<string, RegistryEntry>();
-  let columns: ReturnType<typeof readHeader> | null = null;
-  let skipped = 0;
-  for await (const line of lines) {
-    if (line.trim() === '') continue;
-    if (columns === null) {
-      columns = readHeader(line);
-      continue;
-    }
-    const outcome = readRow(line, columns, (digits) => cedulaProblem(digits) === null); // prettier-ignore
-    if ('kept' in outcome) {
-      if (!byCedula.has(outcome.kept.cedula))
-        byCedula.set(outcome.kept.cedula, outcome.kept); // prettier-ignore
-      else skipped++;
-    } else skipped++;
-  }
-  if (columns === null) readHeader('');
-  return { entries: [...byCedula.values()], skipped };
+type Tx = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
+
+/** Writes one batch of entries, newest file winning on a repeated cedula. */
+async function writeBatch(
+  tx: Tx,
+  importId: string,
+  batch: RegistryEntry[],
+): Promise<void> {
+  if (batch.length === 0) return;
+  await tx.$executeRaw`
+    INSERT INTO sri_ruc_registry_entry (cedula, registry_name, import_id)
+    SELECT cedula, registry_name, ${importId}::uuid
+    FROM unnest(${batch.map((e) => e.cedula)}::text[],
+                ${batch.map((e) => e.registryName)}::text[])
+      AS row(cedula, registry_name)
+    ON CONFLICT (cedula) DO UPDATE
+      SET registry_name = EXCLUDED.registry_name,
+          import_id = EXCLUDED.import_id`;
 }
 
 export async function importSriRucRegistry(
@@ -107,46 +99,91 @@ export async function importSriRucRegistry(
   });
   if (existing) return { status: 'unchanged', kept: 0, skipped: 0 };
 
-  const { entries, skipped } = await entriesOf(options.file);
+  const encoding = encodingOf(options.file);
+  let kept = 0;
+  let skipped = 0;
   await prisma.$transaction(
     async (tx) => {
+      // The version row first, with a placeholder count updated at the end.
       const version = await tx.sriRucRegistryImport.create({
         data: {
           fileSha256,
           fileName: basename(options.file).slice(0, 255),
-          rowsImported: entries.length,
+          rowsImported: 0,
           importedAt: options.now,
         },
       });
-      for (let i = 0; i < entries.length; i += BATCH) {
-        const batch = entries.slice(i, i + BATCH);
-        await tx.$executeRaw`
-          INSERT INTO sri_ruc_registry_entry (cedula, registry_name, import_id)
-          SELECT cedula, registry_name, ${version.id}::uuid
-          FROM unnest(${batch.map((e) => e.cedula)}::text[],
-                      ${batch.map((e) => e.registryName)}::text[])
-            AS row(cedula, registry_name)
-          ON CONFLICT (cedula) DO UPDATE
-            SET registry_name = EXCLUDED.registry_name,
-                import_id = EXCLUDED.import_id`;
+
+      // STREAMED AND WRITTEN IN BATCHES, so a province's file is never held
+      // whole in memory. Deduplication within the file (first row wins) is a
+      // `Set` of cedulas — ten characters each — not of whole rows.
+      const lines = createInterface({
+        input: createReadStream(options.file, { encoding }),
+        crlfDelay: Infinity,
+      });
+      const seen = new Set<string>();
+      let batch: RegistryEntry[] = [];
+      let columns: ReturnType<typeof readHeader> | null = null;
+      for await (const line of lines) {
+        if (line.trim() === '') continue;
+        if (columns === null) {
+          columns = readHeader(line);
+          continue;
+        }
+        const outcome = readRow(
+          line,
+          columns,
+          (d) => cedulaProblem(d) === null,
+        );
+        if (!('kept' in outcome) || seen.has(outcome.kept.cedula)) {
+          skipped++;
+          continue;
+        }
+        seen.add(outcome.kept.cedula);
+        batch.push(outcome.kept);
+        kept++;
+        if (batch.length >= BATCH) {
+          await writeBatch(tx, version.id, batch);
+          batch = [];
+        }
       }
+      if (columns === null) readHeader(''); // an empty file: refuse it the same way
+      await writeBatch(tx, version.id, batch);
+      await tx.sriRucRegistryImport.update({
+        where: { id: version.id },
+        data: { rowsImported: kept },
+      });
     },
     { timeout: 600_000, maxWait: 30_000 },
   );
-  return { status: 'imported', kept: entries.length, skipped };
+  return { status: 'imported', kept, skipped };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const file = process.argv[2] ? resolve(process.argv[2]) : SAMPLE_REGISTRY_FILE; // prettier-ignore
+  // IL-009: the file is ALWAYS named. The invented sample is loaded only by
+  // `db:seed:identity` (prisma/seed-identity.mts), which refuses production:
+  // a bare `db:import:sri-ruc` on a real database must never fill it with made
+  // up names for real cedulas.
+  const argument = process.argv[2];
+  if (!argument) {
+    console.error(
+      'Uso: pnpm db:import:sri-ruc <archivo.csv>\n' +
+        'Descargue el catastro de una provincia del sitio del SRI y pase su ruta.',
+    );
+    process.exit(64);
+  }
   const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
   });
   try {
-    const result = await importSriRucRegistry(prisma, { file, now: new Date() }); // prettier-ignore
+    const result = await importSriRucRegistry(prisma, {
+      file: resolve(argument),
+      now: new Date(),
+    });
     console.log(
       result.status === 'unchanged'
-        ? `${basename(file)} ya estaba importado: no cambió nada.`
-        : `Catastro ${basename(file)}: ${result.kept} personas naturales importadas, ${result.skipped} filas descartadas (sociedades, otros establecimientos, sin nombre o repetidas).`,
+        ? `${basename(argument)} ya estaba importado: no cambió nada.`
+        : `Catastro ${basename(argument)}: ${result.kept} personas naturales importadas, ${result.skipped} filas descartadas (sociedades, otros establecimientos, sin nombre o repetidas).`,
     );
   } finally {
     await prisma.$disconnect();

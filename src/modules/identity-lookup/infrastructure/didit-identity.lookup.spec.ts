@@ -89,9 +89,22 @@ describe('the provider adapter (local double)', () => {
     expect(seen[0]!.body).toEqual({ issuing_state: 'ECU', services: 'ecu_cedula', personal_number: CEDULA.toString() }); // prettier-ignore
   });
 
-  it('IL-001 answers null when the provider found nobody', async () => {
+  it('IL-001 answers null when the provider found nobody or did not fully match', async () => {
     reply = json(200, { status: 'Declined', match_type: 'no_match', source_data: {} }); // prettier-ignore
     expect(await new DiditIdentityLookup(url, KEY).findByCedula(CEDULA, new AbortController().signal)).toBeNull(); // prettier-ignore
+
+    reply = json(200, { match_type: 'partial_match', source_data: { last_name: 'MORA' } }); // prettier-ignore
+    expect(await new DiditIdentityLookup(url, KEY).findByCedula(CEDULA, new AbortController().signal)).toBeNull(); // prettier-ignore
+  });
+
+  it('IL-001 rejects a body answered for a different cedula', async () => {
+    reply = json(200, {
+      match_type: 'full_match',
+      source_data: { first_name: 'ANA', last_name: 'MORA', identification_number: '0926687856' }, // prettier-ignore
+    });
+    await expect(
+      new DiditIdentityLookup(url, KEY).findByCedula(CEDULA, new AbortController().signal), // prettier-ignore
+    ).rejects.toBeInstanceOf(ProviderAnswerError);
   });
 
   it('IL-003 throws on an error status, so the service moves on', async () => {

@@ -58,7 +58,7 @@ export class DiditIdentityLookup implements IdentityLookup {
     if (!response.ok)
       throw new ProviderAnswerError(`status ${response.status}`);
 
-    return toFinding((await response.json()) as unknown);
+    return toFinding((await response.json()) as unknown, cedula.toString());
   }
 }
 
@@ -67,19 +67,40 @@ export class ProviderAnswerError extends Error {
   override readonly name = 'ProviderAnswerError';
 }
 
-const text = (value: unknown): string | null =>
-  typeof value === 'string' && value.trim() !== '' ? value : null;
+/** A name field is at most this long; the schema caps the columns at 100/300. */
+const MAX_FIELD = 100;
 
-/** Maps Didit's body to the port's shape; `null` when it found nobody. */
-export function toFinding(body: unknown): IdentityFinding | null {
+const text = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() !== ''
+    ? value.trim().slice(0, MAX_FIELD)
+    : null;
+
+/**
+ * Maps Didit's body to the port's shape; `null` when it found nobody.
+ *
+ * ⚠️ ONLY A FULL MATCH FOR THE CEDULA WE ASKED. Anything short of
+ * `match_type: "full_match"` is `null` — a partial or fuzzy match is not a
+ * name to propose. And if the body carries an `identification_number`, it MUST
+ * be the one we asked: a provider that answers for a different cedula would
+ * otherwise put another person's name on the chart, cached for 30 days.
+ */
+export function toFinding(
+  body: unknown,
+  expectedCedula: string,
+): IdentityFinding | null {
   if (body === null || typeof body !== 'object') {
     throw new ProviderAnswerError('body is not an object');
   }
   const answer = body as Record<string, unknown>;
-  if (answer.match_type === 'no_match') return null;
+  if (answer.match_type !== 'full_match') return null;
   const data = answer.source_data;
   if (data === null || typeof data !== 'object') return null;
   const source = data as Record<string, unknown>;
+
+  const answered = text(source.identification_number);
+  if (answered !== null && answered !== expectedCedula) {
+    throw new ProviderAnswerError('identification number does not match');
+  }
 
   const lastName = text(source.last_name);
   const firstName = text(source.first_name);

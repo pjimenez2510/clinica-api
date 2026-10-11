@@ -25,14 +25,26 @@ export class PrismaIdentityLookupStore implements IdentityLookupStore {
    */
   setEnabled(enabled: boolean, at: Date): Promise<{ before: boolean }> {
     return this.prisma.$transaction(async (tx) => {
+      // The row is materialised first (OFF, the «no row» default), so the
+      // `FOR UPDATE` below has something to lock. Without this, two first-time
+      // writers both read «no row», both insert, and one hits the primary key
+      // with a 500 while neither waits for the other — their trail entries
+      // would not chain. `DO NOTHING` keeps the «no row = OFF» meaning.
+      await tx.$executeRaw`
+        INSERT INTO identity_lookup_setting (id, external_sources_enabled, updated_at)
+        VALUES (true, false, ${at})
+        ON CONFLICT (id) DO NOTHING`;
       const [current] = await tx.$queryRaw<{ enabled: boolean }[]>`
         SELECT external_sources_enabled AS enabled
         FROM identity_lookup_setting WHERE id FOR UPDATE`;
-      await tx.identityLookupSetting.upsert({
+      await tx.identityLookupSetting.update({
         where: { id: true },
-        create: { id: true, externalSourcesEnabled: enabled, updatedAt: at },
-        update: { externalSourcesEnabled: enabled, updatedAt: at },
+        data: { externalSourcesEnabled: enabled, updatedAt: at },
       });
+      // Turning the sources off drops every cached third-party name now, rather
+      // than keeping it until it expires or someone writes over it: minimisation
+      // (LOPDP), and the reason the switch is the right place to purge.
+      if (!enabled) await tx.identityLookupCache.deleteMany({});
       return { before: current?.enabled ?? false };
     });
   }

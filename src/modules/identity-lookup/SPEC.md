@@ -53,8 +53,8 @@ pacientes**, y por eso cada tabla lleva su motivo:
 
 | Tabla                    | Qué guarda                                                         | Por qué                                                                                                                                                                                                                                            | Cuánto                             |
 | ------------------------ | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `sri_ruc_registry_entry` | cédula y el nombre tal como lo publica el catastro                 | Es un dato abierto que el SRI publica para descargar; tenerlo local evita cualquier consulta a un tercero por cada paciente. Sólo personas naturales y **sólo** cédula y nombre: actividad, dirección y estado tributario se descartan al importar | Hasta la siguiente importación     |
-| `identity_lookup_cache`  | nombres, apellidos y fecha de nacimiento que devolvió el proveedor | Para no pagar ni repetir la consulta del mismo paciente en su primera semana (alta, cita, llegada)                                                                                                                                                 | **30 días**, y la vencida se borra |
+| `sri_ruc_registry_entry` | cédula y el nombre tal como lo publica el catastro                 | Es un dato abierto que el SRI publica para descargar; tenerlo local evita cualquier consulta a un tercero por cada paciente. Sólo personas naturales y **sólo** cédula y nombre: actividad, dirección y estado tributario se descartan al importar | Una cédula que reaparece en un archivo nuevo toma su nombre; **hoy nada se borra**. La caducidad y la supresión (ARCO) son **D-219** |
+| `identity_lookup_cache`  | nombres, apellidos y fecha de nacimiento que devolvió el proveedor | Para no pagar ni repetir la consulta del mismo paciente en su primera semana (alta, cita, llegada)                                                                                                                                                 | **30 días**; la vencida se borra al leerla o al escribir otra, y apagar el interruptor la vacía |
 | `access_audit`           | quién consultó, cuándo, qué fuente, y un HMAC de la cédula         | Responder «¿quién me buscó y dónde?» (derecho de acceso) sin guardar la cédula en claro                                                                                                                                                            | Como toda la bitácora              |
 
 La base legal es la de D-206 §3 —relación asistencial con el paciente
@@ -135,32 +135,42 @@ marca los decide el navegador; el servidor devuelve la misma propuesta.
   dato, ENTONCES DEBERÁ responder que no hay propuesta, con el mismo `200`.
   > La propia base va antes, y no aquí: es PA-072 en la pantalla. Un `404`
   > para «sin dato» haría de una ausencia normal un error que el navegador
-  > anunciaría en rojo; aquí no tener propuesta es lo corriente.
+  > anunciaría en rojo; aquí no tener propuesta es lo corriente. Del proveedor
+  > sólo se acepta una coincidencia **exacta** (`full_match`) y, si la respuesta
+  > trae el número, el mismo que se pidió: una coincidencia parcial o de otra
+  > cédula no es un nombre que proponer.
 - **IL-002** — MIENTRAS el interruptor esté **apagado** —que es como nace, y
   como queda si su fila no existe—, **o** falte `IDENTITY_LOOKUP_DIGEST_KEY`,
   el sistema NO DEBERÁ consultar ninguna fuente externa y DEBERÁ responder que
   no hay propuesta, sin escribir en la bitácora.
   > D-206 §3: se encienden cuando el asesor legal confirme. Una fila ausente
   > se lee como apagado: lo que no se declaró no se enciende (REQ-118).
-- **IL-003** — **SI** una fuente falla, o tarda más de **3 segundos**,
-  **ENTONCES** el sistema DEBERÁ pasar a la siguiente o responder que no hay
-  propuesta, y NO DEBERÁ responder con error ni repetir la consulta.
+- **IL-003** — **SI** una fuente falla, o **las fuentes juntas** tardan más de
+  **3 segundos**, **ENTONCES** el sistema DEBERÁ pasar a la siguiente o
+  responder que no hay propuesta, y NO DEBERÁ responder con error ni repetir la
+  consulta.
   > Nunca bloquea (D-206 §2): si no hay propuesta, se escribe a mano como
-  > siempre. El fallo queda en el log sin cédula ni nombre (REQ-116).
+  > siempre. El fallo queda en el log sin cédula ni nombre (REQ-116). El plazo
+  > de 3 s es **común a toda la cadena** —un presupuesto que arranca antes del
+  > catastro y abarca al proveedor—, para que la respuesta a la pantalla no pase
+  > de SC-088 aunque las dos fuentes tarden; si el catastro lo agota, el
+  > proveedor no se consulta.
 - **IL-004** — **SI** el número pedido no es una cédula ecuatoriana válida
   (`Cedula`, PA-011), **ENTONCES** el sistema DEBERÁ rechazarlo con `422`
   señalando el campo `cedula`, y NO DEBERÁ consultar ninguna fuente.
 - **IL-005** — CUANDO la propuesta venga del **catastro**, el sistema DEBERÁ
   devolver el nombre tal como viene y, además, repartido según el orden de la
   cédula ecuatoriana —primero los apellidos, luego los nombres, con las
-  partículas («DE», «DEL», «DE LA», «DE LOS», «SAN», «Y») unidas a la palabra
-  que sigue—, con mayúscula inicial y las partículas en minúscula salvo al
-  empezar el campo («De la Torre», «Rosa»), y DEBERÁ marcarla con **orden por
-  revisar**; CUANDO venga de una
+  partículas («DE», «DEL», «LA», «LAS», «LOS», «SAN», «SANTA», «Y», «DA»,
+  «DI», «VAN», «VON») unidas a la palabra que sigue—, con mayúscula inicial y
+  las partículas en minúscula salvo al empezar el campo («De la Torre»,
+  «Rosa»), y DEBERÁ marcarla con **orden por revisar**; CUANDO venga de una
   fuente que separa apellidos y nombres, NO DEBERÁ marcarla.
   > D-209 sigue pendiente: no se adivina sin decirlo. El catastro trae un solo
   > campo, y «DE LA TORRE ALBA MARIA JOSE» no se reparte sin una regla; la
-  > regla se aplica y la pantalla lo dice (IL-012).
+  > regla se aplica y la pantalla lo dice (IL-012). Un apellido compuesto sin
+  > partícula al principio («ESPINOSA DE LOS MONTEROS») se reparte como dos: la
+  > marca «revise el orden» lo cubre, y afinarlo es D-219.
 
 ### 2. La bitácora y la caché (D-206 §2)
 
@@ -213,7 +223,10 @@ marca los decide el navegador; el servidor devuelve la misma propuesta.
   recibir **una** cédula por petición y NO DEBERÁ admitir más de **20 por
   minuto** desde el mismo origen.
   > «Ninguna consulta en lote» (D-206): una por paciente presente. Veinte por
-  > minuto es holgado para un mostrador y corta un recorrido automático.
+  > minuto es holgado para un mostrador y corta un recorrido automático. El
+  > límite es **por IP**, que no corta a quien tenga sesión y use un script: un
+  > cupo por usuario y un tope durable por clínica —imprescindibles antes de
+  > encender el proveedor de pago— son **D-219**.
 
 ### 5. En el alta (Solo interfaz)
 
@@ -222,10 +235,17 @@ marca los decide el navegador; el servidor devuelve la misma propuesta.
   y nombres **vacíos** —y la fecha de nacimiento, si viene y está vacía— con
   una marca «Propuesto desde <fuente>; revíselo», y «revise el orden» si la
   propuesta lo lleva; NO DEBERÁ pisar lo que ya se tecleó; DEBERÁ dejar los
-  campos editables y ofrecer quitar lo propuesto; y CUANDO cambie la cédula,
-  DEBERÁ retirar lo propuesto que nadie tocó. Sin propuesta, nada cambia.
+  campos editables y ofrecer quitar lo propuesto; y CUANDO cambie la cédula
+  —o aparezca una ficha para ella (PA-072)—, DEBERÁ retirar **todo** lo que la
+  propuesta puso, lo corregido incluido. Sin propuesta, nada cambia.
   > El nombre propuesto nunca se guarda sin que recepción lo vea: se guarda
-  > con «Registrar», como cualquier otro campo.
+  > con «Registrar», como cualquier otro campo. Una propuesta es **de su
+  > cédula**: dejar bajo un número nuevo un apellido que se corrigió para otro
+  > es cómo una ficha acaba con el apellido de una persona y el nombre de otra
+  > —y esa ficha va en recetas, certificados y el RDACAA—. Una fecha de
+  > nacimiento sólo se propone si es un día real y no futuro (en
+  > `America/Guayaquil`), y al ponerla deja de estar «estimada» (PA-006);
+  > «Quitar» no vuelve a proponer para esa misma cédula.
 
 ## Códigos de error
 
@@ -262,14 +282,16 @@ de acceso de cualquier proxy, y la cédula de un tercero no tiene que estar ahí
 
 | Requisito                              | Nivel de prueba                                                                                                  |
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| IL-001, IL-002, IL-003, IL-006, IL-007 | Unitario del servicio con dobles y reloj inyectado + integración HTTP contra PostgreSQL (`identity-lookup-http`) |
-| IL-004, IL-011                         | Integración HTTP: el 422 con el campo y el 403 sin `patient:write`                                               |
+| IL-001, IL-002, IL-003, IL-006         | Unitario del servicio con dobles y reloj inyectado + integración HTTP contra PostgreSQL (`identity-lookup-http`) |
+| IL-004                                 | Integración HTTP: el 422 con el campo `cedula`                                                                   |
 | IL-005                                 | Unitario de dominio (`registry-name.spec.ts`)                                                                    |
-| IL-007, IL-009, IL-010 (base)          | Integración contra PostgreSQL (`identity-lookup-schema`), con control positivo                                   |
-| IL-008                                 | Unitario del adaptador contra un servidor HTTP local + `env.schema.spec.ts`                                      |
-| IL-009                                 | Unitario del lector del CSV + integración de la importación                                                      |
-| IL-010                                 | Integración HTTP con la bitácora de `configuration`                                                              |
-| IL-012                                 | Componente en el arnés de la web (`NewPatientForm.spec.ts`) y recorrido F-01                                     |
+| IL-007 (caché, vencimiento, purga)     | Integración del almacén real contra PostgreSQL (`identity-lookup-schema`, «the identity-lookup store»), con reloj inyectado y control positivo |
+| IL-008                                 | Unitario de la factoría `configuredLookups` (los tres casos) + del adaptador contra un servidor HTTP local + `env.schema.spec.ts` |
+| IL-009                                 | Unitario del lector del CSV + integración de la importación (idempotencia, Latin-1, CHECKs y FK con control positivo) |
+| IL-009, IL-010 (base)                  | Integración contra PostgreSQL (`identity-lookup-schema`), con control positivo                                   |
+| IL-010                                 | Integración HTTP con la bitácora de `configuration`; el interruptor apagado sin fila y el vaciado de la caché, en el almacén real |
+| IL-011                                 | Integración HTTP (una cédula por petición; 403 sin `patient:write`) + unitario de los metadatos de `@Throttle` (20/60 000) |
+| IL-012                                 | Componente en el arnés de la web (`NewPatientForm.spec.ts`: propone, no pisa, no mezcla al cambiar de cédula, fecha imposible, «estimada») y recorrido F-01 |
 
 ## Preguntas abiertas
 
