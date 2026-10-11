@@ -144,10 +144,16 @@ function readsDifferently(told: StatedResult, now: StatedResult): boolean {
 const groupOf = (notice: StatedNotice): RecipientGroup =>
   toPatient(notice) ? 'PATIENT' : 'PRACTITIONER';
 
-/** ORD-146, ORD-174. Told to the practitioner who placed the order. */
+/**
+ * ORD-146, ORD-171. Told to the practitioner who placed the order: by kind,
+ * or a professional whose name is theirs. ⚠️ Never a patient or a relative,
+ * whatever their name (revisión clínica G1: «Juan Carlos Pérez Andrade» is not
+ * the account «Juan Pérez»).
+ */
 const toOrderer = (notice: StatedNotice): boolean =>
   notice.recipientKind === 'ORDERING_PRACTITIONER' ||
-  notice.namesOrderingPractitioner;
+  (notice.recipientKind === 'OTHER_PRACTITIONER' &&
+    notice.namesOrderingPractitioner);
 
 /**
  * ORD-171 (D-168 §2, §5). Which kinds of people told the false value still
@@ -170,7 +176,11 @@ function stillToTell(
   now: readonly StatedNotice[],
   orderedByUserId: string | undefined,
 ): RecipientGroup[] {
-  const told = earlier.filter((notice) => !notice.selfNotice);
+  // A notice to the patient or a relative means they heard the value, even if
+  // their name contains the recorder's (revisión clínica G1): the safe side.
+  const told = earlier.filter(
+    (notice) => !notice.selfNotice || toPatient(notice),
+  );
   const toOthers = now.filter((notice) => !notice.selfNotice);
   if (told.length === 0) {
     const closed =
@@ -277,9 +287,20 @@ export function notifiedCorrections(
       const inherited = pending?.due === true ? pending : undefined;
       if (!inherited && !readsDifferently(last.result, result)) continue;
 
-      const earlierNotices = before
-        .flatMap(({ result: each }) => each.notices.filter(given))
-        .sort((a, b) => a.notifiedAt.getTime() - b.notifiedAt.getTime());
+      const allBefore = before.flatMap(({ result: each }) =>
+        each.notices.filter(given),
+      );
+      // Inherited: who heard the FALSE value is who the pending correction
+      // already named; what was said about the intermediate versions is the
+      // notice of the correction, and counts as such (revisión de código M1).
+      const earlierNotices = inherited
+        ? inherited.earlierNotices
+        : [...allBefore].sort(
+            (a, b) => a.notifiedAt.getTime() - b.notifiedAt.getTime(),
+          );
+      const ofTheCorrection = inherited
+        ? allBefore.filter((notice) => !inherited.earlierNotices.includes(notice)) // prettier-ignore
+        : [];
       // ORD-153 (D-156.1). The patient who heard of the 25 has to hear of
       // the 95: a call to the on-call doctor does not tell them.
       const patientRequired = earlierNotices.some(
@@ -287,7 +308,7 @@ export function notifiedCorrections(
       );
       const missingRecipients = stillToTell(
         earlierNotices,
-        result.notices.filter(given),
+        [...ofTheCorrection, ...result.notices.filter(given)],
         orderedByUserId,
       );
       found.set(result.id, {

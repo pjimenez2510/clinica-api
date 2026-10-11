@@ -456,6 +456,10 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     // Control positivo: en plazo y sin llamadas, todavía no.
     const [fresh] = await ctx.reports.corrections(ctx.asNurse, new Date());
     expect(fresh).toMatchObject({ noticeTarget: 'PATIENT', overdue: false, locateViaOnCall: false, escalationMissing: false }); // prettier-ignore
+    // Una llamada sin respuesta a un profesional no dice nada de la paciente.
+    await ctx.reports.notify({ resultId: fixed.id, ...onCall, outcome: 'NO_ANSWER', readBack: undefined }, ctx.asNurse, new Date()); // prettier-ignore
+    const [notHer] = await ctx.reports.corrections(ctx.asNurse, new Date());
+    expect(notHer?.locateViaOnCall).toBe(false);
 
     // Vencida y sin guardia: lo dice, y la entrada sigue ahí.
     const later = new Date(fresh!.correctedAt.getTime() + 61 * 60_000);

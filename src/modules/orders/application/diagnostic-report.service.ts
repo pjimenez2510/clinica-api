@@ -69,7 +69,7 @@ import { resolveResult } from '../domain/result-value';
 import {
   isSelfNotice,
   nameWordCount,
-  namesPerson,
+  namesOrderer,
 } from '../domain/notice-recipient';
 import { notifiedCorrections } from '../domain/notified-correction';
 import type { AnalyteDefinition } from '../domain/analyte';
@@ -345,6 +345,15 @@ export class DiagnosticReportService {
       .map((result) => result.analyteDisplay)
       .filter((display) => !brought.has(display));
     if (missing.length > 0) throw new ReportCorrectionIncompleteError(missing);
+    // ORD-170 (revisión clínica G2). What the corrected report did not say is
+    // a new value: it may not repeat one standing in another report.
+    const added = prepared.results.filter(
+      (result) =>
+        !previous.results.some(
+          (r) => r.analyteDisplay === result.analyteDisplay,
+        ),
+    );
+    await this.assertNothingStanding(previous.serviceOrderId, added, requester, previous.id); // prettier-ignore
 
     const { results } = prepared;
 
@@ -751,7 +760,12 @@ export class DiagnosticReportService {
           const locate =
             due.target === 'PATIENT' &&
             correction.missingRecipients.includes('PATIENT') &&
-            (wait.overdue || unanswered.length > 0);
+            (wait.overdue ||
+              unanswered.some(
+                (n) =>
+                  n.recipientKind === 'PATIENT' ||
+                  n.recipientKind === 'REPRESENTATIVE',
+              ));
           entries.push({
             resultId: result.id,
             reportId: report.id,
@@ -861,6 +875,7 @@ export class DiagnosticReportService {
       },
       orderedByUserId: result.orderedByUserId,
       callerName: caller.callerName,
+      callerUserId: caller.callerId,
     });
 
     // ORD-068. Out of hours at the moment of the CALL, not of the typing.
@@ -880,7 +895,7 @@ export class DiagnosticReportService {
       afterHours: !inHours.has(result.siteId),
       selfNotice,
       // ORD-146. A recipient with the ordering practitioner's name.
-      namesOrderingPractitioner: namesPerson(request.recipientName, result.orderedByName), // prettier-ignore
+      namesOrderingPractitioner: namesOrderer(request.recipientKind, request.recipientName, result.orderedByName), // prettier-ignore
       callerName: caller.callerName,
       callerId: caller.callerId,
       sites: requester.sites,
@@ -963,6 +978,7 @@ export class DiagnosticReportService {
       },
       orderedByUserId: result.orderedByUserId,
       callerName: caller.callerName,
+      callerUserId: caller.callerId,
     });
     // ORD-068. Out of hours at the moment of the CALL.
     const inHours = await this.reports.sitesInHours([result.siteId], notifiedAt); // prettier-ignore
@@ -979,7 +995,7 @@ export class DiagnosticReportService {
       readBackConfirmed: given ? request.readBack === true : null,
       afterHours: !inHours.has(result.siteId),
       selfNotice,
-      namesOrderingPractitioner: namesPerson(request.recipientName, result.orderedByName), // prettier-ignore
+      namesOrderingPractitioner: namesOrderer(request.recipientKind, request.recipientName, result.orderedByName), // prettier-ignore
       callerName: caller.callerName,
       callerId: caller.callerId,
       editedById: requester.userId,
@@ -1133,11 +1149,19 @@ export class DiagnosticReportService {
     orderId: string,
     results: readonly { analyteDisplay: string }[],
     requester: Requester,
+    /** The report a correction replaces: its values are not «another». */
+    replacing: string | null = null,
   ): Promise<void> {
+    if (results.length === 0) return;
     const reports = await this.reports.ofOrder(orderId, requester.sites);
     const standing = new Set(
       reports
-        .filter((r) => r.supersededById === null && r.status !== 'CANCELLED')
+        .filter(
+          (r) =>
+            r.id !== replacing &&
+            r.supersededById === null &&
+            r.status !== 'CANCELLED',
+        )
         .flatMap((r) => r.results.map((result) => result.analyteDisplay)),
     );
     if (results.some((result) => standing.has(result.analyteDisplay))) {

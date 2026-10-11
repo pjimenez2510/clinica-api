@@ -2534,7 +2534,10 @@ clínico**; lo construido se cambia sin tocar datos._
   y alguno de sus valores sea de una determinación que ya tiene valor en un
   informe **vigente** de la misma orden —ni sustituido ni anulado—, el sistema
   DEBERÁ rechazar el informe entero con `RESULT_ALREADY_REPORTED`; cambiar un
-  valor que ya está es la corrección de ese informe (ORD-050, ORD-119).
+  valor que ya está es la corrección de ese informe (ORD-050, ORD-119). Y
+  CUANDO se registre la corrección de un informe, el sistema DEBERÁ rechazar
+  igual la determinación que el informe sustituido no tenía y que tiene valor
+  en otro informe vigente de la orden.
   > **D-168 §1.** El 95 transcrito como informe nuevo junto al 25 avisado
   > dejaba dos valores vigentes sin cadena de corrección, y el 95 no entraba
   > en la cola de correcciones (ORD-143). Una determinación que aún no tiene
@@ -2545,6 +2548,9 @@ clínico**; lo construido se cambia sin tocar datos._
   > de correcciones las empareja— que otro informe vigente de la orden ya
   > tiene, bajo el bloqueo de la orden para que dos envíos a la vez no pasen
   > los dos. **Enmienda ORD-152**, que deja de ser sólo de interfaz.
+  > **Revisión clínica G2:** corregir el informe de la Hb añadiendo «glucosa
+  > 95» esquivaba la regla; lo que el informe sustituido ya decía se reescribe
+  > sin juzgarse (`20261024000005`).
 
 - **ORD-171** — Una corrección de un valor avisado (ORD-143) DEBERÁ salir de
   la cola SÓLO CUANDO, sobre el valor vigente, exista un aviso hecho a **cada
@@ -2581,7 +2587,8 @@ clínico**; lo construido se cambia sin tocar datos._
 
 - **ORD-173** — MIENTRAS a una corrección le falte el aviso al paciente o a
   su representante y esté **vencida** (ORD-154) o tenga sobre el valor
-  vigente un intento sin respuesta, cada entrada de la cola de correcciones
+  vigente un intento sin respuesta al paciente o a su representante, cada
+  entrada de la cola de correcciones
   DEBERÁ indicar que se escale a la guardia de la sede para **localizar al
   paciente**, con quién es la guardia —o que la sede no la designó—; y la
   indicación NO DEBERÁ cerrar la entrada.
@@ -2595,19 +2602,28 @@ clínico**; lo construido se cambia sin tocar datos._
   persona —sin tratamiento inicial, mayúsculas, tildes ni puntuación, ORD-157—
   estén en el nombre escrito, aunque éste lleve más: es autoaviso el aviso
   cuyo destinatario contiene el nombre de la cuenta que lo registra, o el de
-  quien llamó; quien llamó es la propia cuenta cuando su nombre contiene el
-  de la cuenta; y el destinatario es el médico que pidió (ORD-146) cuando
-  contiene su nombre.
+  quien llamó; y quien llamó es la propia cuenta cuando su nombre contiene el
+  de la cuenta. El destinatario lleva el nombre del médico que pidió (ORD-146)
+  SÓLO SI es un profesional con **las mismas palabras** (ORD-157), nunca por
+  contención ni siendo un paciente o un familiar; y un aviso al paciente o a
+  su representante DEBERÁ contar, para la corrección (ORD-171), como que el
+  paciente oyó el valor aunque se juzgue autoaviso.
   > **D-168 §4.** «Carmen Salazar Pilco» para la cuenta «Carmen Salazar»
   > esquivaba el autoaviso por una palabra de más. Ante la duda el valor se
   > queda en la cola, que es el error seguro. Un nombre a medias («Dr.
   > Salazar») sigue sin contener el de la cuenta y no la nombra.
+  > **Revisión clínica G1:** la contención aplicada al médico que pidió
+  > cerraba correcciones —«Juan Carlos Pérez Andrade», paciente, contiene a la
+  > cuenta «Juan Pérez»—: esa dirección cierra colas, y por eso sigue exacta y
+  > sólo para profesionales.
   > **Enmienda ORD-147, ORD-155 y ORD-157** (que exigían las mismas palabras).
 
 - **ORD-175** — CUANDO un aviso o un intento diga que llamó otra persona
   (ORD-148), el sistema DEBERÁ admitir quién llamó **elegido de las cuentas de
   la sede** —activas, con un rol vigente en la sede o en todas—, y entonces
-  guardar la cuenta y su nombre; o escrito, y entonces SI el nombre tiene
+  guardar la cuenta y su nombre —y SI es la cuenta del médico que pidió y el
+  destinatario es «el médico que pidió», ENTONCES el aviso DEBERÁ juzgarse
+  autoaviso—; o escrito, y entonces SI el nombre tiene
   menos de **dos palabras** sin el tratamiento inicial ENTONCES DEBERÁ
   rechazarlo con `CRITICAL_NOTICE_CALLER_INCOMPLETE`; SI la cuenta elegida no
   es de la sede, con `CRITICAL_NOTICE_CALLER_NOT_FOUND`. El sistema DEBERÁ
@@ -2657,8 +2673,8 @@ clínico**; lo construido se cambia sin tocar datos._
 - **ORD-179** — La sede DEBERÁ poder designar como guardia de críticos un
   **rol** o **una persona** (`critical_escalation_user_id`), nunca los dos; y
   CUANDO la escalada de ORD-065, ORD-068, ORD-154 u ORD-173 toque a la
-  guardia, con una persona designada el aviso DEBERÁ tocarle a ella
-  (`dueToRequester`, ORD-167) y la entrada DEBERÁ nombrarla; la sede **tiene
+  guardia, con una persona designada la entrada DEBERÁ nombrarla, y en la
+  cola de críticos el aviso DEBERÁ tocarle a ella (`dueToRequester`, ORD-167); la sede **tiene
   guardia** sólo SI esa cuenta está activa y tiene `record:read` vigente en
   la sede o en todas.
   > **D-207 §2.** Joint Commission pide una escalada **nominal**; un rol que

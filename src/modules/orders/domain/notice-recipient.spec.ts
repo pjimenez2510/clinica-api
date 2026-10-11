@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   closesCriticalWorklist,
   isSelfNotice,
+  namesOrderer,
   namesPerson,
   type WorklistNotice,
 } from './notice-recipient';
@@ -118,5 +119,23 @@ describe('el cierre de la cola de críticos (ORD-146)', () => {
     expect(closesCriticalWorklist([earlier, ownNote], 'doctor')).toBe(true);
     const colleague = n({ selfNotice: true, notifiedById: 'colleague', notifiedAt: at(60) }); // prettier-ignore
     expect(closesCriticalWorklist([colleague, n({ recipientKind: 'ORDERING_PRACTITIONER' })], 'doctor')).toBe(true); // prettier-ignore
+  });
+});
+
+describe('el médico que pidió, por su nombre (revisión clínica G1)', () => {
+  it('ORD-146 ORD-174 un profesional lleva el nombre del médico que pidió sólo con sus mismas palabras; un paciente, nunca', () => {
+    expect(namesOrderer('OTHER_PRACTITIONER', 'Dr. Pérez Juan', 'Juan Pérez')).toBe(true); // prettier-ignore
+    // Con una palabra de más es otra persona: esta dirección cierra colas.
+    expect(namesOrderer('OTHER_PRACTITIONER', 'Juan Pérez Andrade', 'Juan Pérez')).toBe(false); // prettier-ignore
+    for (const kind of ['PATIENT', 'REPRESENTATIVE']) {
+      expect(namesOrderer(kind, 'Juan Pérez', 'Juan Pérez')).toBe(false);
+    }
+  });
+
+  it('ORD-175 es autoaviso el aviso al médico que pidió cuya llamada hizo, elegida de la lista, la cuenta de ese médico', () => {
+    const question = { recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Dra. Salazar', recorder: NURSE, orderedByUserId: 'doctor', callerName: 'Carmen Salazar' }; // prettier-ignore
+    expect(isSelfNotice({ ...question, callerUserId: 'doctor' })).toBe(true);
+    // Control positivo: otra cuenta que llamó, no.
+    expect(isSelfNotice({ ...question, callerUserId: 'nurse-2' })).toBe(false);
   });
 });

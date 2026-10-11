@@ -180,4 +180,61 @@ describe('ORD-170, el informe que repite una determinación vigente', () => {
       }),
     ).toBe(1);
   });
+
+  it('ORD-170 la corrección de un informe no añade una determinación que tiene valor en otro informe vigente', async () => {
+    // Revisión clínica G2: la Hb en un informe, la glucosa 25 en el segundo
+    // envío; «corregir» el primero añadiendo la glucosa 95 dejaba dos vigentes.
+    const prisma = db();
+    const scene = await aReportedHaemoglobin(prisma);
+    await scene.reports.register(
+      {
+        orderId: scene.order.id,
+        performedById: null,
+        issuedAt: new Date(scene.issuedAt.getTime() + HOUR),
+        results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 25 }],
+      },
+      requester,
+    );
+    const correction = (
+      results: { analyteDefinitionId: string; valueNumeric: number }[],
+    ) =>
+      // prettier-ignore
+      scene.reports.correct(
+        { reportId: scene.first.id, performedById: null, issuedAt: new Date(scene.issuedAt.getTime() + HOUR), results }, // prettier-ignore
+        requester,
+      );
+
+    await expect(
+      correction([
+        { analyteDefinitionId: scene.hb.id, valueNumeric: 13 },
+        { analyteDefinitionId: scene.glu.id, valueNumeric: 95 },
+      ]),
+    ).rejects.toMatchObject({ code: 'RESULT_ALREADY_REPORTED' });
+    // Y la base, por un INSERT directo en una corrección del primero.
+    await expect(
+      prisma.$transaction(async (tx) => {
+        const [report] = await tx.$queryRaw<{ id: string }[]>`
+          INSERT INTO "diagnostic_report" ("service_order_id", "status", "issued_at", "supersedes_id", "updated_at")
+          VALUES (${scene.order.id}::uuid, 'CORRECTED', now(), ${scene.first.id}::uuid, now())
+          RETURNING "id"::text AS "id"`;
+        await tx.$executeRaw`
+          INSERT INTO "observation_result" ("report_id", "analyte_display", "value_numeric", "unit")
+          VALUES (${report?.id}::uuid, 'Glucosa en ayunas', 95, 'mg/dL')`;
+      }),
+    ).rejects.toThrow(/observation_result_one_standing_per_analyte/);
+    // Control positivo: la corrección que reescribe lo suyo entra.
+    await expect(
+      correction([{ analyteDefinitionId: scene.hb.id, valueNumeric: 9 }]),
+    ).resolves.toMatchObject({ supersedesId: scene.first.id });
+  });
+
+  it('ORD-170 un informe anulado no cuenta como vigente', async () => {
+    const prisma = db();
+    const scene = await aReportedHaemoglobin(prisma);
+    await prisma.$executeRaw`UPDATE "diagnostic_report" SET "status" = 'CANCELLED' WHERE "id" = ${scene.first.id}::uuid`; // prettier-ignore
+
+    await expect(
+      insertByHand(prisma, scene.order.id, 'Hemoglobina'),
+    ).resolves.toBeUndefined();
+  });
 });

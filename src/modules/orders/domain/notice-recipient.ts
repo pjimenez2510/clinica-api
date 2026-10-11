@@ -67,6 +67,28 @@ export function namesPerson(written: string, person: string): boolean {
   return true;
 }
 
+/**
+ * ORD-146 (revisión clínica G1). Whether a notice went to the practitioner who
+ * placed the order by NAME: a professional with exactly the same words. Not
+ * containment —this verdict closes worklists, so a word of more is somebody
+ * else— and never a patient or a relative, whatever they are called.
+ */
+export function namesOrderer(
+  recipientKind: string,
+  recipientName: string,
+  ordererName: string,
+): boolean {
+  if (
+    recipientKind !== 'ORDERING_PRACTITIONER' &&
+    recipientKind !== 'OTHER_PRACTITIONER'
+  ) {
+    return false;
+  }
+  const words = (name: string) => wordsOf(name).sort().join(' ');
+  const wanted = words(ordererName);
+  return wanted !== '' && words(recipientName) === wanted;
+}
+
 /** ORD-062, ORD-147. What judging a notice to oneself needs. */
 export interface SelfNoticeQuestion {
   recipientKind: string;
@@ -77,6 +99,8 @@ export interface SelfNoticeQuestion {
   orderedByUserId: string;
   /** ORD-148. Who made the call, when it was not the recorder. */
   callerName?: string | null;
+  /** ORD-175. The account that made the call, when chosen from the site. */
+  callerUserId?: string | null;
 }
 
 /**
@@ -90,6 +114,15 @@ export interface SelfNoticeQuestion {
  * their own recipient told nobody anything.
  */
 export function isSelfNotice(question: SelfNoticeQuestion): boolean {
+  // ORD-175 (revisión clínica M4). The ordering practitioner's own account made
+  // the call «to the practitioner who placed the order»: told nobody.
+  if (
+    question.recipientKind === 'ORDERING_PRACTITIONER' &&
+    question.callerUserId != null &&
+    question.callerUserId === question.orderedByUserId
+  ) {
+    return true;
+  }
   // A caller that is only a title («Dr.») names nobody: judged as if absent;
   // and one whose name carries the account's is the account (ORD-174).
   const caller = question.callerName?.trim();
