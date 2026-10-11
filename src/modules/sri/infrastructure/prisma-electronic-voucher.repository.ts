@@ -275,7 +275,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
             discountAmount: true,
             taxSriCode: true,
             taxPercentage: true,
-            billableService: { select: { code: true } },
+            service: { select: { code: true } },
           },
         },
       },
@@ -298,7 +298,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         email: row.buyerEmail,
       },
       lines: row.chargeItems.map((charge) => ({
-        code: charge.billableService.code,
+        code: charge.service.code,
         description: charge.serviceDisplay,
         quantity: charge.quantity.toFixed(3),
         unitPrice: amount(charge.unitAmount),

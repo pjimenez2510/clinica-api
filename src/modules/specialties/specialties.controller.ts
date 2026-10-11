@@ -22,7 +22,6 @@ import {
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
-import { assertClinicWideScope } from '../../shared/authorisation/site-scope';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -30,32 +29,28 @@ import {
   type Requester,
 } from './application/specialties.service';
 import {
-  CreateServiceTypeDto,
   CreateSpecialtyDto,
   // NO `import type` for parameter DTOs: with `type` the class is erased at
   // compile time, `design:paramtypes` emits `Object`, and Swagger documents
   // the endpoint WITHOUT its parameters — silently, end to end. See
   // catalogs.controller.ts.
-  ListServiceTypesQueryDto,
   ListSpecialtiesQueryDto,
-  ServiceTypeDto,
-  ServiceTypeListDto,
   SpecialtyDto,
   SpecialtyListDto,
-  UpdateServiceTypeDto,
   UpdateSpecialtyDto,
-  type ServiceTypeListResponse,
-  type ServiceTypeResponse,
   type SpecialtyListResponse,
   type SpecialtyResponse,
 } from './dto/specialties.dto';
 
 /**
- * The clinic's parametrisation: specialties, service types, durations (C1).
+ * The clinic's specialties (C1).
+ *
+ * The service types and their durations left on 11-10-2026 (ADR-013): a
+ * consultation is a service of kind CONSULTATION, listed by `billing`
+ * (`GET /billing/services?kind=CONSULTATION&specialtyId=`) and by the agenda.
  *
  * EVERY ROUTE DECLARES ITS PERMISSION, and every one is `'global'` — a
- * decision, not an omission: a specialty or a duration is the same at every
- * site, like a catalogue and unlike an appointment. What IS split is read
+ * decision, not an omission: a specialty is the same at every site, like a catalogue and unlike an appointment. What IS split is read
  * from write: `config:read` serves the selection screens, `config:manage` is
  * the administration permission of D-002 that every mutation demands.
  */
@@ -129,88 +124,7 @@ export class SpecialtiesController {
     await this.specialties.deleteSpecialty(id, this.requester(req));
   }
 
-  // --- Service types ----------------------------------------------------------
-
-  @Get(':id/service-types')
-  @RequirePermission('config:read', 'global')
-  @ApiOperation({ summary: 'List the service types of a specialty' })
-  @ApiOkResponse({ type: ServiceTypeListDto })
-  async listServiceTypes(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Query() query: ListServiceTypesQueryDto,
-  ): Promise<ServiceTypeListResponse> {
-    const items = await this.specialties.listServiceTypes(
-      id,
-      query.includeInactive,
-    );
-    return { items };
-  }
-
-  /** SP-020, SP-030. */
-  @Post(':id/service-types')
-  @RequirePermission('config:manage', 'global')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create a service type with its base duration' })
-  @ApiCreatedResponse({ type: ServiceTypeDto })
-  async createServiceType(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: CreateServiceTypeDto,
-    @Req() req: Request,
-  ): Promise<ServiceTypeResponse> {
-    // SP-030 (D-049). A price moves money: only with `billing:price-manage`
-    // over the whole clinic, checked before anything is written.
-    if (dto.price !== null) {
-      assertClinicWideScope(
-        this.currentUser.requirePrincipal(),
-        'billing:price-manage',
-      );
-    }
-    return this.specialties.createServiceType(
-      {
-        specialtyId: id,
-        name: dto.name,
-        durationMinutes: dto.durationMinutes,
-        price: dto.price,
-      },
-      this.requester(req),
-    );
-  }
-
-  /** SP-024: a duration change rules forwards; no appointment is touched. */
-  @Patch('service-types/:id')
-  @RequirePermission('config:manage', 'global')
-  @ApiOperation({ summary: 'Edit a service type' })
-  @ApiOkResponse({ type: ServiceTypeDto })
-  async updateServiceType(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateServiceTypeDto,
-    @Req() req: Request,
-  ): Promise<ServiceTypeResponse> {
-    return this.specialties.updateServiceType(
-      id,
-      {
-        name: dto.name,
-        durationMinutes: dto.durationMinutes,
-        active: dto.active,
-      },
-      this.requester(req),
-    );
-  }
-
-  /** SP-025: refused with `SERVICE_TYPE_IN_USE` when appointments reference it. */
-  @Delete('service-types/:id')
-  @RequirePermission('config:manage', 'global')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete an unreferenced service type' })
-  @ApiNoContentResponse()
-  async deleteServiceType(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: Request,
-  ): Promise<void> {
-    await this.specialties.deleteServiceType(id, this.requester(req));
-  }
-
-  /** Who is asking, for the trail (SP-002, SP-027). */
+  /** Who is asking, for the trail (SP-002). */
   private requester(req: Request): Requester {
     return {
       userId: this.currentUser.requireUserId(),

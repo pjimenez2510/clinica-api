@@ -17,6 +17,8 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { useDatabase } from './setup/database';
 import {
+  createConsultation,
+  createExamService,
   createPatient,
   createPractitioner,
   createRoom,
@@ -1205,11 +1207,10 @@ describe('la agenda por HTTP', () => {
       ).items;
     }
 
-    const serviceTypesOf = (specialtyId: string, site = siteId) =>
+    /** AG-112 (ADR-013): the consultations of a specialty. */
+    const consultationsOf = (specialtyId: string, site = siteId) =>
       request(app.getHttpServer())
-        .get(
-          `/api/v1/agenda/sites/${site}/specialties/${specialtyId}/service-types`,
-        )
+        .get(`/api/v1/agenda/sites/${site}/specialties/${specialtyId}/services`)
         .set('Authorization', `Bearer ${token}`);
 
     it('AG-107 lista solo las sedes del alcance de quien llama', async () => {
@@ -1308,50 +1309,47 @@ describe('la agenda por HTTP', () => {
       ).resolves.toBe(1);
     });
 
-    it('AG-112 lista los tipos de atención activos de la especialidad con su duración base', async () => {
-      const { cardiologia } = await createSpecialties();
-      await prisma.serviceType.createMany({
-        data: [
-          { specialtyId: cardiologia, name: 'Control', durationMinutes: 20 },
-          {
-            specialtyId: cardiologia,
-            name: 'Primera vez',
-            durationMinutes: 40,
-          },
-          {
-            specialtyId: cardiologia,
-            name: 'Retirado',
-            durationMinutes: 20,
-            active: false,
-          },
-        ],
-      });
+    it('AG-112 lista las consultas activas de la especialidad: primera vez, control y el resto, con su duración', async () => {
+      const { cardiologia, pediatria } = await createSpecialties();
+      // Creadas fuera de orden a propósito: el orden lo pone el servidor.
+      await createConsultation(prisma, { specialtyId: cardiologia, name: 'Control', durationMinutes: 20, visitKind: 'FOLLOW_UP' }); // prettier-ignore
+      await createConsultation(prisma, { specialtyId: cardiologia, name: 'Electrocardiograma con lectura', durationMinutes: 30 }); // prettier-ignore
+      await createConsultation(prisma, { specialtyId: cardiologia, name: 'Primera vez', durationMinutes: 40, visitKind: 'FIRST_VISIT' }); // prettier-ignore
+      await createConsultation(prisma, { specialtyId: cardiologia, name: 'Retirado', durationMinutes: 20, active: false }); // prettier-ignore
+      // De otra especialidad, y un servicio que no es consulta: no salen.
+      await createConsultation(prisma, { specialtyId: pediatria, name: 'Control pediátrico', durationMinutes: 20 }); // prettier-ignore
+      await createExamService(prisma, { code: 'LAB-ECG', name: 'Perfil lipídico' }); // prettier-ignore
 
-      const response = await serviceTypesOf(cardiologia).expect(200);
+      const response = await consultationsOf(cardiologia).expect(200);
 
       const body = response.body as {
         items: Record<string, unknown>[];
       };
-      // El desactivado no está: ofrecerlo sería ofrecer un rechazo (SP-004).
-      expect(body.items.map((item) => item.name)).toEqual([
-        'Control',
-        'Primera vez',
+      // El retirado no está: ofrecerlo sería ofrecer un rechazo (SP-004).
+      expect(body.items).toEqual([
+        { id: expect.any(String) as string, name: 'Primera vez', durationMinutes: 40, visitKind: 'FIRST_VISIT' }, // prettier-ignore
+        { id: expect.any(String) as string, name: 'Control', durationMinutes: 20, visitKind: 'FOLLOW_UP' }, // prettier-ignore
+        { id: expect.any(String) as string, name: 'Electrocardiograma con lectura', durationMinutes: 30, visitKind: null }, // prettier-ignore
       ]);
-      for (const item of body.items) {
-        expect(Object.keys(item).sort()).toEqual([
-          'durationMinutes',
-          'id',
-          'name',
-        ]);
-      }
-      expect(body.items[0]).toMatchObject({ durationMinutes: 20 });
-      expect(body.items[1]).toMatchObject({ durationMinutes: 40 });
+    });
+
+    it('AG-112 la ruta vieja de tipos de atención ya no existe', async () => {
+      const { cardiologia } = await createSpecialties();
+
+      await request(app.getHttpServer())
+        .get(
+          `/api/v1/agenda/sites/${siteId}/specialties/${cardiologia}/service-types`,
+        ) // prettier-ignore
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+      // Control positivo: la nueva, con la misma sesión y especialidad.
+      await consultationsOf(cardiologia).expect(200);
     });
 
     it('AG-112 rechaza la sede fuera del alcance con SITE_SCOPE_DENIED', async () => {
       const { cardiologia } = await createSpecialties();
 
-      const response = await serviceTypesOf(cardiologia, otherSiteId).expect(
+      const response = await consultationsOf(cardiologia, otherSiteId).expect(
         403,
       );
 
@@ -1363,7 +1361,7 @@ describe('la agenda por HTTP', () => {
 
       await request(app.getHttpServer())
         .get(
-          `/api/v1/agenda/sites/${siteId}/specialties/${cardiologia}/service-types`,
+          `/api/v1/agenda/sites/${siteId}/specialties/${cardiologia}/services`,
         )
         .expect(401);
     });
@@ -1372,8 +1370,8 @@ describe('la agenda por HTTP', () => {
      * EL DEFECTO QUE ESTA ENTREGA CIERRA, dicho como una sola prueba.
      *
      * El selector de especialidad y tipo se construyó en C4 contra
-     * `GET /specialties` y `GET /specialties/{id}/service-types`, las dos con
-     * `config:read`. El rol que reserva es `RECEPCION` y no lo tiene, así que
+     * `GET /specialties` y `GET /specialties/{id}/service-types` (esta última
+     * retirada con ADR-013), las dos con `config:read`. El rol que reserva es `RECEPCION` y no lo tiene, así que
      * el desplegable que se hizo PARA recepción era inalcanzable POR recepción
      * y fallaba en silencio.
      *
@@ -1386,22 +1384,12 @@ describe('la agenda por HTTP', () => {
     it('AG-111, AG-112 recepción arma el selector de reserva sin config:read', async () => {
       const { cardiologia } = await createSpecialties();
       await assign(practitionerId, cardiologia, { isPrimary: true });
-      await prisma.serviceType.create({
-        data: {
-          specialtyId: cardiologia,
-          name: 'Control',
-          durationMinutes: 20,
-        },
-      });
+      await createConsultation(prisma, { specialtyId: cardiologia, name: 'Control', durationMinutes: 20 }); // prettier-ignore
 
       // La puerta de administración sigue cerrada para quien reserva: es el
       // defecto, no un efecto colateral.
       await request(app.getHttpServer())
         .get('/api/v1/specialties?includeInactive=false')
-        .set('Authorization', `Bearer ${token}`)
-        .expect(403);
-      await request(app.getHttpServer())
-        .get(`/api/v1/specialties/${cardiologia}/service-types`)
         .set('Authorization', `Bearer ${token}`)
         .expect(403);
 
@@ -1413,18 +1401,19 @@ describe('la agenda por HTTP', () => {
         { id: cardiologia, name: 'Cardiología', isPrimary: true },
       ]);
 
-      const types = (await serviceTypesOf(cardiologia).expect(200)).body as {
+      const consultations = (await consultationsOf(cardiologia).expect(200))
+        .body as {
         items: { id: string; name: string; durationMinutes: number }[];
       };
-      expect(types.items.map((type) => type.name)).toEqual(['Control']);
+      expect(consultations.items.map((item) => item.name)).toEqual(['Control']);
 
       // Y lo elegido reserva de verdad: el selector no vale de nada si el
       // identificador que entrega no cabe en el POST (SP-028).
       const booked = await book(
-        anAppointment({ serviceTypeId: types.items[0]!.id }),
+        anAppointment({ serviceId: consultations.items[0]!.id }),
       ).expect(201);
-      expect((booked.body as { serviceTypeId: string }).serviceTypeId).toBe(
-        types.items[0]!.id,
+      expect((booked.body as { serviceId: string }).serviceId).toBe(
+        consultations.items[0]!.id,
       );
     });
   });
@@ -1434,13 +1423,14 @@ describe('la agenda por HTTP', () => {
    *
    * CONTRA POSTGRESQL DE VERDAD, y no contra un doble, porque lo que se
    * comprueba aquí es precisamente lo que un doble no puede demostrar: que
-   * `duration_exception` y `service_type` son las filas que alimentan los dos
-   * primeros peldaños, que la clave foránea de `agenda_entry.service_type_id`
-   * existe, y que el tipo queda de verdad EN LA FILA de la cita.
+   * `duration_exception` y `service.duration_minutes` son las filas que
+   * alimentan los dos primeros peldaños, que sólo una consulta activa entra
+   * en la cita, y que la consulta queda de verdad EN LA FILA de la cita
+   * (`agenda_entry.service_id`, ADR-013).
    */
-  describe('la duración resuelta y el tipo en la cita', () => {
-    /** «Control» de Cardiología, veinte minutos: encaja en la rejilla. */
-    async function createServiceType(durationMinutes = 20, name = 'Control') {
+  describe('la duración resuelta y la consulta en la cita', () => {
+    /** Una consulta de Cardiología; veinte minutos encajan en la rejilla. */
+    async function aConsultation(durationMinutes = 20, name = 'Control') {
       const specialty = await prisma.specialty.upsert({
         where: { id: SPECIALTY_ID },
         create: {
@@ -1450,8 +1440,10 @@ describe('la agenda por HTTP', () => {
         },
         update: {},
       });
-      return prisma.serviceType.create({
-        data: { specialtyId: specialty.id, name, durationMinutes },
+      return createConsultation(prisma, {
+        specialtyId: specialty.id,
+        name,
+        durationMinutes,
       });
     }
 
@@ -1466,46 +1458,46 @@ describe('la agenda por HTTP', () => {
         )
         .set('Authorization', `Bearer ${token}`);
 
-    it('SP-023 propone la duración base del especialidad·tipo cuando el médico no tiene excepción', async () => {
-      const type = await createServiceType(40, 'Primera vez');
+    it('SP-023 propone la duración de la consulta cuando el médico no tiene excepción', async () => {
+      const type = await aConsultation(40, 'Primera vez');
 
-      const response = await durationOf({ serviceTypeId: type.id }).expect(200);
+      const response = await durationOf({ serviceId: type.id }).expect(200);
 
-      // 40 y no 20: el peldaño del turno de la sede queda por debajo del tipo.
+      // 40 y no 20: el peldaño del turno de la sede queda por debajo de la consulta.
       expect(response.body).toEqual({ minutes: 40 });
     });
 
-    it('SP-023 la excepción del médico gana a la duración base, leída de duration_exception', async () => {
-      const type = await createServiceType(40, 'Primera vez');
+    it('SP-023 la excepción del médico gana a la duración de la consulta, leída de duration_exception', async () => {
+      const type = await aConsultation(40, 'Primera vez');
       await prisma.durationException.create({
         data: {
           practitionerId,
-          serviceTypeId: type.id,
+          serviceId: type.id,
           durationMinutes: 60,
         },
       });
 
-      const response = await durationOf({ serviceTypeId: type.id }).expect(200);
+      const response = await durationOf({ serviceId: type.id }).expect(200);
 
       expect(response.body).toEqual({ minutes: 60 });
     });
 
-    it('SP-023 la excepción es de UN médico: el otro sigue con la duración base', async () => {
-      const type = await createServiceType(40, 'Primera vez');
+    it('SP-023 la excepción es de UN médico: el otro sigue con la duración de la consulta', async () => {
+      const type = await aConsultation(40, 'Primera vez');
       await prisma.durationException.create({
         data: {
           practitionerId: secondPractitionerId,
-          serviceTypeId: type.id,
+          serviceId: type.id,
           durationMinutes: 60,
         },
       });
 
-      const response = await durationOf({ serviceTypeId: type.id }).expect(200);
+      const response = await durationOf({ serviceId: type.id }).expect(200);
 
       expect(response.body).toEqual({ minutes: 40 });
     });
 
-    it('SP-023 sin tipo elegido propone el turno de la sede', async () => {
+    it('SP-023 sin consulta elegida propone el turno de la sede', async () => {
       // D-021 movió el tercer peldaño de la regla a la sede. Sigue
       // condicionado a que HAYA una regla abierta a esa hora: la sede tiene
       // átomo a cualquier hora de la semana y proponer minutos para un domingo
@@ -1515,12 +1507,17 @@ describe('la agenda por HTTP', () => {
       expect(response.body).toEqual({ minutes: 20 });
     });
 
-    it('SERVICE_TYPE_NOT_FOUND cuando el tipo elegido no existe', async () => {
-      const response = await durationOf({
-        serviceTypeId: '00000000-0000-4000-8000-0000000000ff',
-      }).expect(404);
+    it('SP-028 CONSULTATION_NOT_FOUND al proponer la duración de lo que no es una consulta', async () => {
+      const exam = await createExamService(prisma, { code: 'LAB-HB', name: 'Hemoglobina' }); // prettier-ignore
 
-      expect((response.body as Problem).code).toBe('SERVICE_TYPE_NOT_FOUND');
+      for (const serviceId of [
+        '00000000-0000-4000-8000-0000000000ff',
+        exam.id,
+      ]) {
+        const response = await durationOf({ serviceId }).expect(404);
+        expect((response.body as Problem).code).toBe('CONSULTATION_NOT_FOUND');
+        expect((response.body as Problem).errors?.[0]?.field).toBe('serviceId');
+      }
     });
 
     it('AG-071 rechaza proponer una duración en una sede fuera de alcance', async () => {
@@ -1528,23 +1525,22 @@ describe('la agenda por HTTP', () => {
       expect((response.body as Problem).code).toBe('SITE_SCOPE_DENIED');
     });
 
-    it('SP-028 reserva con la duración resuelta y deja el tipo registrado en la cita', async () => {
-      const type = await createServiceType(40, 'Primera vez');
-      const { minutes } = (
-        await durationOf({ serviceTypeId: type.id }).expect(200)
-      ).body as { minutes: number };
+    it('SP-028 reserva con la duración resuelta y deja la consulta registrada en la cita', async () => {
+      const type = await aConsultation(40, 'Primera vez');
+      const { minutes } = (await durationOf({ serviceId: type.id }).expect(200))
+        .body as { minutes: number };
 
       const response = await book(
         anAppointment({
-          serviceTypeId: type.id,
+          serviceId: type.id,
           endsAt: new Date(
             new Date(FIRST_SLOT.startsAt).getTime() + minutes * 60_000,
           ).toISOString(),
         }),
       ).expect(201);
 
-      const created = response.body as { id: string; serviceTypeId: string };
-      expect(created.serviceTypeId).toBe(type.id);
+      const created = response.body as { id: string; serviceId: string };
+      expect(created.serviceId).toBe(type.id);
 
       // EN LA FILA, no sólo en la respuesta: es lo que SP-025 necesita para
       // poder rechazar el borrado, y lo que SP-028 llama «dejar el tipo
@@ -1552,7 +1548,7 @@ describe('la agenda por HTTP', () => {
       const stored = await prisma.agendaEntry.findUniqueOrThrow({
         where: { id: created.id },
       });
-      expect(stored.serviceTypeId).toBe(type.id);
+      expect(stored.serviceId).toBe(type.id);
       // 08:00–08:40 de Ecuador: la duración resuelta, no los veinte de la regla.
       expect(stored.endsAt.toISOString()).toBe('2026-09-14T13:40:00.000Z');
     });
@@ -1568,11 +1564,11 @@ describe('la agenda por HTTP', () => {
      * compuesto a mano sigue estando a un POST de distancia.
      */
     it('AG-012 rechaza un intervalo que no es múltiplo del turno de la sede', async () => {
-      const type = await createServiceType(20, 'Control');
+      const type = await aConsultation(20, 'Control');
 
       const response = await book(
         anAppointment({
-          serviceTypeId: type.id,
+          serviceId: type.id,
           // 08:00–08:30: media hora sobre una rejilla de veinte.
           endsAt: '2026-09-14T13:30:00Z',
         }),
@@ -1582,18 +1578,58 @@ describe('la agenda por HTTP', () => {
       expect((response.body as Problem).errors?.[0]?.field).toBe('endsAt');
     });
 
-    it('SP-028 rechaza un tipo de atención que no existe: la clave foránea es la garantía', async () => {
-      const response = await book(
-        anAppointment({
-          serviceTypeId: '00000000-0000-4000-8000-0000000000ff',
-        }),
-      ).expect(422);
+    it('SP-028 rechaza reservar con lo que no es una consulta activa: CONSULTATION_NOT_FOUND, sin escribir', async () => {
+      // ADR-013. `agenda_entry_service_fk` admite CUALQUIER servicio: un
+      // examen o una consulta retirada pasarían la clave foránea, así que la
+      // comprobación es de la aplicación, antes de escribir.
+      const exam = await createExamService(prisma, { code: 'LAB-GLU', name: 'Glucosa en ayunas' }); // prettier-ignore
+      const retired = await aConsultation(20, 'Control retirado');
+      await prisma.service.update({ where: { id: retired.id }, data: { active: false } }); // prettier-ignore
 
-      // Traducido del rechazo de PostgreSQL, igual que un paciente inexistente:
-      // la cita no se guarda apuntando a un tipo que no está, y nada se
-      // comprobó antes de escribir — la clave foránea es lo que arbitra.
-      expect((response.body as Problem).code).toBe('RELATED_RECORD_MISSING');
+      for (const serviceId of [
+        '00000000-0000-4000-8000-0000000000ff',
+        exam.id,
+        retired.id,
+      ]) {
+        // prettier-ignore
+        const response = await book(anAppointment({ serviceId })).expect(404);
+        const problem = response.body as Problem;
+        expect(problem.code).toBe('CONSULTATION_NOT_FOUND');
+        expect(problem.title).toBe(
+          'La consulta elegida no existe o ya no se ofrece. Actualice la lista e intente de nuevo',
+        );
+        expect(problem.errors?.[0]?.field).toBe('serviceId');
+      }
       await expect(prisma.agendaEntry.count()).resolves.toBe(0);
+
+      // Control positivo: la consulta activa, por la misma ruta.
+      const active = await aConsultation(20, 'Control');
+      await book(anAppointment({ serviceId: active.id })).expect(201);
+    });
+
+    it('SP-024 una consulta retirada después de reservar no impide mover la cita que la nombra', async () => {
+      const consultation = await aConsultation(20, 'Control');
+      const booked = (await book(anAppointment({ serviceId: consultation.id })).expect(201)).body as { id: string }; // prettier-ignore
+      await prisma.service.update({ where: { id: consultation.id }, data: { active: false } }); // prettier-ignore
+
+      // Reenviar la que ya tiene no es elegirla de nuevo (AG-115).
+      const moved = await request(app.getHttpServer())
+        .patch(`/api/v1/agenda/sites/${siteId}/entries/${booked.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ serviceId: consultation.id, reason: 'Control de presión' });
+      expect(moved.status).toBe(200);
+      expect((moved.body as { serviceId: string }).serviceId).toBe(consultation.id); // prettier-ignore
+
+      // Control negativo por la misma ruta: ELEGIR ahora una retirada distinta
+      // sí se rechaza.
+      const other = await aConsultation(20, 'Control antiguo');
+      await prisma.service.update({ where: { id: other.id }, data: { active: false } }); // prettier-ignore
+      const refused = await request(app.getHttpServer())
+        .patch(`/api/v1/agenda/sites/${siteId}/entries/${booked.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ serviceId: other.id })
+        .expect(404);
+      expect((refused.body as Problem).code).toBe('CONSULTATION_NOT_FOUND');
     });
   });
 });

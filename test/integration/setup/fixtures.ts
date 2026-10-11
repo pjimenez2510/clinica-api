@@ -317,25 +317,30 @@ export async function createIssuedPrescription(
 }
 
 /**
- * ORD-163 (D-179.1). The service an exam IS: its name and its tariff code live
- * there. Creates the category of `kind` and a 0 % rate the first time a test
- * asks, and reuses them after — `useDatabase` truncates both between tests.
+ * BI-278 (ADR-013). A service of the catalogue, with the 0 % rate created the
+ * first time a test asks and reused after — `useDatabase` truncates it
+ * between tests. A consultation needs its specialty and duration
+ * (`service_consultation_shape`); pass them.
  */
-export async function createExamService(
+export async function createService(
   prisma: PrismaClient,
   service: {
     code: string;
     name: string;
-    tariffCode?: string | null;
-    kind?: 'LABORATORY' | 'IMAGING' | 'PROCEDURE' | 'CONSULTATION';
+    kind:
+      | 'CONSULTATION'
+      | 'PROCEDURE'
+      | 'LAB_EXAM'
+      | 'IMAGING'
+      | 'SUPPLY'
+      | 'OTHER';
+    mspCode?: string | null;
+    specialtyId?: string;
+    durationMinutes?: number;
+    visitKind?: 'FIRST_VISIT' | 'FOLLOW_UP' | null;
+    active?: boolean;
   },
 ) {
-  const kind = service.kind ?? 'LABORATORY';
-  const category =
-    (await prisma.billableServiceCategory.findFirst({ where: { kind } })) ??
-    (await prisma.billableServiceCategory.create({
-      data: { name: `Categoría ${kind}`, kind },
-    }));
   const taxRate =
     (await prisma.taxRate.findFirst({ where: { sriCode: '0' } })) ??
     (await prisma.taxRate.create({
@@ -346,14 +351,65 @@ export async function createExamService(
         validFrom: new Date('2000-01-01T00:00:00Z'), // fecha-fija: vigente desde antes de toda prueba
       },
     }));
-  return prisma.billableService.create({
+  return prisma.service.create({
     data: {
       code: service.code,
       name: service.name,
-      tariffCode: service.tariffCode ?? null,
-      categoryId: category.id,
+      kind: service.kind,
+      mspCode: service.mspCode ?? null,
+      specialtyId: service.specialtyId ?? null,
+      durationMinutes: service.durationMinutes ?? null,
+      visitKind: service.visitKind ?? null,
+      active: service.active ?? true,
       taxRateId: taxRate.id,
     },
+  });
+}
+
+/**
+ * BI-284. An ordered service: the service and its order extension, which is
+ * what makes it orderable (ORD-010). Laboratory unless told otherwise; the
+ * extension's fields default to the table's.
+ */
+export async function createExamService(
+  prisma: PrismaClient,
+  service: {
+    code: string;
+    name: string;
+    mspCode?: string | null;
+    kind?: 'LAB_EXAM' | 'IMAGING' | 'PROCEDURE';
+    active?: boolean;
+    exam?: Partial<{
+      form010Section: string | null;
+      specimenType: string | null;
+      patientPreparation: string | null;
+      turnaroundHours: number | null;
+      requiresFasting: boolean;
+      fastingHours: number | null;
+      performedExternally: boolean;
+    }>;
+  },
+) {
+  const created = await createService(prisma, {
+    code: service.code,
+    name: service.name,
+    kind: service.kind ?? 'LAB_EXAM',
+    mspCode: service.mspCode,
+    active: service.active,
+  });
+  await prisma.serviceExam.create({
+    data: { serviceId: created.id, ...(service.exam ?? {}) },
+  });
+  return created;
+}
+
+/** SP-001. A specialty, by name. */
+export async function createSpecialty(
+  prisma: PrismaClient,
+  name = 'Cardiología',
+) {
+  return prisma.specialty.create({
+    data: { code: name.toUpperCase().slice(0, 64), name },
   });
 }
 
@@ -453,4 +509,32 @@ export async function closeThroughCashier(
     );
   }
   return { encounter: closed, cashierId: cashier.id, closedAt };
+}
+
+/**
+ * BI-279 (ADR-013). A consultation: a service of kind CONSULTATION with its
+ * specialty, duration and visit, under a code no other call reuses. Its NAME
+ * must be unique among active services clinic-wide
+ * (`service_active_name_unique`), so two specialties cannot both have an
+ * active «Control»: the caller names them apart.
+ */
+export async function createConsultation(
+  prisma: PrismaClient,
+  consultation: {
+    specialtyId: string;
+    name: string;
+    durationMinutes?: number;
+    visitKind?: 'FIRST_VISIT' | 'FOLLOW_UP' | null;
+    active?: boolean;
+  },
+) {
+  return createService(prisma, {
+    code: `CONS-T${next()}`,
+    name: consultation.name,
+    kind: 'CONSULTATION',
+    specialtyId: consultation.specialtyId,
+    durationMinutes: consultation.durationMinutes ?? 20,
+    visitKind: consultation.visitKind ?? null,
+    active: consultation.active,
+  });
 }

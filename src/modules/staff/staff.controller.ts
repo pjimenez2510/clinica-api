@@ -310,39 +310,39 @@ export class StaffController {
   }
 
   /** ST-009. A PUT: setting it twice is the same exception, not two. */
-  @Put('practitioners/:practitionerId/duration-exceptions/:serviceTypeId')
+  @Put('practitioners/:practitionerId/duration-exceptions/:serviceId')
   @RequirePermission('staff:manage', 'global')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Fijar una excepción de duración' })
   @ApiNoContentResponse()
   async setDurationException(
     @Param('practitionerId', ParseUUIDPipe) practitionerId: string,
-    @Param('serviceTypeId', ParseUUIDPipe) serviceTypeId: string,
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
     @Body() dto: SetDurationExceptionDto,
     @Req() req: Request,
   ): Promise<void> {
     await this.assignments.setDurationException(
       practitionerId,
-      serviceTypeId,
+      serviceId,
       dto.durationMinutes,
       this.requester(req),
     );
   }
 
   /** ST-009: back to the base duration. */
-  @Delete('practitioners/:practitionerId/duration-exceptions/:serviceTypeId')
+  @Delete('practitioners/:practitionerId/duration-exceptions/:serviceId')
   @RequirePermission('staff:manage', 'global')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Retirar una excepción de duración' })
   @ApiNoContentResponse()
   async removeDurationException(
     @Param('practitionerId', ParseUUIDPipe) practitionerId: string,
-    @Param('serviceTypeId', ParseUUIDPipe) serviceTypeId: string,
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
     @Req() req: Request,
   ): Promise<void> {
     await this.assignments.removeDurationException(
       practitionerId,
-      serviceTypeId,
+      serviceId,
       this.requester(req),
     );
   }

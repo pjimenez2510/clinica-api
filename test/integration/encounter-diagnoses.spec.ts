@@ -603,15 +603,13 @@ describe('los procedimientos de la atención', () => {
 
   it('EN-051 no escribe ningún importe en la fila clínica', async () => {
     /**
-     * ⚠️ `encounter_procedure.tariff_amount` EXISTE Y ESTE MÓDULO NO LO TOCA,
-     * y la ausencia es el requisito. Congelar un importe dentro de una tabla
+     * ⚠️ `encounter_procedure.tariff_amount` SE RETIRÓ el 11-10-2026 (D-218
+     * §3) sin que nada lo leyera, y la ausencia es el requisito. Congelar un importe dentro de una tabla
      * clínica choca con la separación «lo clínico no es lo económico» sobre la
      * que está construido `billing`: lo que cuesta el procedimiento es un
      * `charge_item`, resuelto por la lista de precios del pagador en la fecha
      * del servicio, y el Tarifario aporta la NOMENCLATURA — su alcance lo
      * estrechó el A.M. 0046-2017 a las relaciones dentro de la Red Pública.
-     *
-     * La columna queda como deuda declarada, no se propaga.
      */
     const prisma = db();
     const { encounter, sites } = await anEncounter(prisma);
@@ -633,14 +631,18 @@ describe('los procedimientos de la atención', () => {
       sites: [...sites],
     });
 
-    const [row] = await prisma.$queryRawUnsafe<
-      { tariff_amount: string | null }[]
-    >(
-      `SELECT tariff_amount::text AS tariff_amount
-         FROM encounter_procedure WHERE id = $1::uuid`,
-      procedure.id,
-    );
-    expect(row?.tariff_amount).toBeNull();
+    // Control positivo: el procedimiento SÍ quedó escrito, por este camino.
+    await expect(
+      prisma.encounterProcedure.count({ where: { id: procedure.id } }),
+    ).resolves.toBe(1);
+    // Y ni la fila clínica ni su archivo tienen dónde guardar un importe.
+    const money = await prisma.$queryRaw<{ column_name: string }[]>`
+      SELECT column_name FROM information_schema.columns
+       WHERE table_schema = current_schema()
+         AND table_name IN ('encounter_procedure', 'encounter_procedure_retraction')
+         AND column_name ~ '(amount|price|tariff)'
+    `;
+    expect(money).toEqual([]);
     expect(Object.keys(procedure)).not.toContain('tariffAmount');
   });
 

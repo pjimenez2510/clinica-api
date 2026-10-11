@@ -71,7 +71,7 @@ async function aDraft(prisma: PrismaClient) {
     encounterId: scene.encounter.id,
     category: 'LABORATORY',
     priority: 'ROUTINE',
-    lines: [{ examDefinitionId: scene.bh.id }],
+    lines: [{ serviceId: scene.bh.id }],
     sites: 'all',
   });
   return { scene, draft };
@@ -103,7 +103,7 @@ describe('ORD-100 un borrador no existe fuera de la pestaña', () => {
     expect(await hasClinicalAct(prisma, scene.encounter.id)).toBe(false);
 
     await issue(prisma, draft.id);
-    expect((await exams()).map((exam) => exam.testCode)).toEqual(['EX-BH']);
+    expect((await exams()).map((exam) => exam.testCode)).toEqual(['LAB-BH']);
     expect(await hasClinicalAct(prisma, scene.encounter.id)).toBe(true);
   });
 
@@ -165,13 +165,13 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
         orderId: draft.id,
         category: 'LABORATORY',
         priority: 'URGENT',
-        lines: [{ examDefinitionId: scene.glucose.id }],
+        lines: [{ serviceId: scene.glucose.id }],
         sites: 'all',
       });
 
     // Control positivo: en borrador, se reescribe.
     const rewritten = await rewrite();
-    expect(rewritten.items.map((item) => item.testCode)).toEqual(['EX-GLUCOSA-AYUNAS']); // prettier-ignore
+    expect(rewritten.items.map((item) => item.testCode)).toEqual(['LAB-GLUCOSA-AYUNAS']); // prettier-ignore
     await issue(prisma, draft.id);
 
     await expect(rewrite()).rejects.toMatchObject({ code: 'ORDER_NOT_DRAFT' });
@@ -187,25 +187,29 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
         encounterId: scene.encounter.id,
         category: 'IMAGING',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bh.id }],
+        lines: [{ serviceId: scene.bh.id }],
         sites: 'all',
       }),
     ).rejects.toMatchObject({ code: 'EXAM_CATEGORY_MISMATCH' });
     expect(await prisma.serviceOrder.count()).toBe(0);
   });
 
-  it('ORD-098 al emitir se vuelve a comprobar el examen: desactivado o de otro tipo, no sale', async () => {
+  it('ORD-098 al emitir se vuelve a comprobar el servicio: desactivado, no sale', async () => {
     const prisma = db();
     const { scene, draft } = await aDraft(prisma);
 
-    await prisma.examDefinition.update({ where: { id: scene.bh.id }, data: { active: false } }); // prettier-ignore
+    await prisma.service.update({ where: { id: scene.bh.id }, data: { active: false } }); // prettier-ignore
     await expect(issue(prisma, draft.id)).rejects.toMatchObject({ code: 'EXAM_NOT_ORDERABLE' }); // prettier-ignore
 
-    await prisma.examDefinition.update({ where: { id: scene.bh.id }, data: { active: true, category: 'IMAGING' } }); // prettier-ignore
-    await expect(issue(prisma, draft.id)).rejects.toMatchObject({ code: 'EXAM_CATEGORY_MISMATCH' }); // prettier-ignore
+    // BI-284. Sin extensión de orden tampoco: ya no es ordenable.
+    await prisma.service.update({ where: { id: scene.bh.id }, data: { active: true } }); // prettier-ignore
+    const extension = await prisma.serviceExam.findUniqueOrThrow({ where: { serviceId: scene.bh.id } }); // prettier-ignore
+    await prisma.serviceExam.delete({ where: { serviceId: scene.bh.id } });
+    await expect(issue(prisma, draft.id)).rejects.toMatchObject({ code: 'EXAM_NOT_ORDERABLE' }); // prettier-ignore
 
-    // Control positivo: con el examen como estaba, se emite.
-    await prisma.examDefinition.update({ where: { id: scene.bh.id }, data: { category: 'LABORATORY' } }); // prettier-ignore
+    // Control positivo: con el servicio como estaba, se emite. (El tipo no
+    // cambia tras el alta, `trg_service_kind_is_fixed`.)
+    await prisma.serviceExam.create({ data: extension });
     await expect(issue(prisma, draft.id)).resolves.toMatchObject({ status: 'ISSUED' }); // prettier-ignore
   });
 
@@ -289,7 +293,7 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
     await orders.discard({ orderId: other.id, sites: 'all', userId });
@@ -332,7 +336,7 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
     await expect(
       prisma.$executeRaw`
         INSERT INTO service_order_item (service_order_id, concept_id, test_code, test_display, status, completed_at)
-        VALUES (${draft.id}::uuid, ${scene.concept.id}::uuid, 'EX-BH', 'Biometría', 'COMPLETED', now())`,
+        VALUES (${draft.id}::uuid, ${scene.concept.id}::uuid, 'LAB-BH', 'Biometría', 'COMPLETED', now())`,
     ).rejects.toThrow(/service_order_item_frozen_once_issued/);
     await expect(
       prisma.$executeRaw`UPDATE service_order_item SET status = 'COMPLETED', completed_at = now() WHERE service_order_id = ${draft.id}::uuid`,
@@ -417,7 +421,7 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
       encounterId: scene.encounter.id,
       encounterStatus: 'DISCHARGED',
       canIssue: true,
-      items: [{ testCode: 'EX-BH' }],
+      items: [{ testCode: 'LAB-BH' }],
     });
     expect(entry?.patientName).toContain(scene.patient.familyName);
 
@@ -478,7 +482,7 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(appNow);
     try {
-      const draft = await adapters(prisma).orders.compose({ encounterId: scene.encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ examDefinitionId: scene.bh.id }], sites: 'all' }); // prettier-ignore
+      const draft = await adapters(prisma).orders.compose({ encounterId: scene.encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ serviceId: scene.bh.id }], sites: 'all' }); // prettier-ignore
       expect((await savedAt(prisma, draft.id)).getTime()).toBe(
         appNow.getTime(),
       );
@@ -500,13 +504,13 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     try {
       vi.setSystemTime(created);
-      const draft = await adapters(prisma).orders.compose({ encounterId: scene.encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ examDefinitionId: scene.bh.id }], sites: 'all' }); // prettier-ignore
+      const draft = await adapters(prisma).orders.compose({ encounterId: scene.encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ serviceId: scene.bh.id }], sites: 'all' }); // prettier-ignore
       // Control positivo: sin editarlo, pasadas 25 horas cuelga.
       expect(await stale(edited)).toHaveLength(1);
 
       // Editado a las 25 horas de crearlo.
       vi.setSystemTime(edited);
-      await adapters(prisma).orders.rewrite({ orderId: draft.id, category: 'LABORATORY', priority: 'URGENT', lines: [{ examDefinitionId: scene.bh.id }], sites: 'all' }); // prettier-ignore
+      await adapters(prisma).orders.rewrite({ orderId: draft.id, category: 'LABORATORY', priority: 'URGENT', lines: [{ serviceId: scene.bh.id }], sites: 'all' }); // prettier-ignore
 
       // Cinco minutos después de editarlo, no cuelga.
       expect(await stale(new Date(edited.getTime() + 5 * MINUTE_MS))).toEqual([]); // prettier-ignore

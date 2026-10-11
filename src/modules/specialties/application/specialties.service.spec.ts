@@ -1,31 +1,26 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
-import {
-  ServiceTypeNotFoundError,
-  SpecialtyNotFoundError,
-} from '../../../shared/domain/errors/master-data.errors';
-import { DurationNotSlotMultipleError } from '../../../shared/domain/errors/slot-atom.errors';
+import { SpecialtyNotFoundError } from '../../../shared/domain/errors/master-data.errors';
 import type {
   SpecialtiesRepository,
-  ServiceTypeView,
   SpecialtyView,
 } from '../domain/specialties.repository';
 import { SpecialtiesService, type Requester } from './specialties.service';
 
 /**
  * The rules that are the SERVICE's to enforce, against doubles of its port:
- * the specialty must exist before a service type hangs from it (SP-020), a
- * duration change touches nothing already booked (SP-024), and every mutation
- * leaves an audit entry (SP-002, SP-027). What the database guarantees —
- * duplicates, in-use, the CHECK — is exercised in
+ * the code is derived once (SP-009, SP-010) and every mutation leaves an
+ * audit entry (SP-002, SP-029). What the database guarantees — duplicates,
+ * in-use — is exercised in
  * `test/integration/specialties-http.spec.ts` against a real PostgreSQL,
  * because a double that returns what we programmed cannot prove an index
  * exists.
  *
  * WHAT IS NO LONGER HERE: everything about a PRACTITIONER. SP-005, SP-008 and
  * SP-022 are implemented by ST-008 and ST-009 in `staff` since 13-08-2026, and
- * their tests moved with them.
+ * their tests moved with them. Nor the service types (SP-020..SP-031): since
+ * ADR-013 a consultation is a service, administered by `billing`.
  */
 
 const REQUESTER: Requester = { userId: 'user-1', ip: '10.0.0.1' };
@@ -37,26 +32,11 @@ const SPECIALTY: SpecialtyView = {
   active: true,
 };
 
-const SERVICE_TYPE: ServiceTypeView = {
-  id: 'type-1',
-  specialtyId: SPECIALTY.id,
-  name: 'Control',
-  durationMinutes: 20,
-  active: true,
-  billableServiceId: 'service-1',
-  price: '25.00',
-};
-
 /** What each test may tune before calling the service. */
 interface Answers {
   findSpecialty: SpecialtyView | null;
-  findServiceType: ServiceTypeView | null;
   updateSpecialty: SpecialtyView | null;
-  updateServiceType: ServiceTypeView | null;
   deleteSpecialty: boolean;
-  deleteServiceType: boolean;
-  /** D-021: what each site dices its day into. */
-  siteSlotAtoms: number[];
 }
 
 /** Every call the double receives, in order: writes AND reads. */
@@ -95,43 +75,12 @@ function makeDouble(answers: Answers): {
       note('deleteSpecialty', id);
       return Promise.resolve(answers.deleteSpecialty);
     },
-    listServiceTypes: (specialtyId, includeInactive) => {
-      note('listServiceTypes', specialtyId, includeInactive);
-      return Promise.resolve([SERVICE_TYPE]);
-    },
-    findServiceType: (id) => {
-      note('findServiceType', id);
-      return Promise.resolve(answers.findServiceType);
-    },
-    createServiceType: (input) => {
-      note('createServiceType', input);
-      return Promise.resolve(SERVICE_TYPE);
-    },
-    updateServiceType: (id, patch) => {
-      note('updateServiceType', id, patch);
-      return Promise.resolve(answers.updateServiceType);
-    },
-    deleteServiceType: (id) => {
-      note('deleteServiceType', id);
-      return Promise.resolve(answers.deleteServiceType);
-    },
-    siteSlotAtoms: () => {
-      note('siteSlotAtoms');
-      return Promise.resolve(answers.siteSlotAtoms);
-    },
   };
 
   return { repository, calls };
 }
 
-const WRITE_METHODS = [
-  'createSpecialty',
-  'updateSpecialty',
-  'deleteSpecialty',
-  'createServiceType',
-  'updateServiceType',
-  'deleteServiceType',
-];
+const WRITE_METHODS = ['createSpecialty', 'updateSpecialty', 'deleteSpecialty'];
 
 describe('SpecialtiesService', () => {
   let answers: Answers;
@@ -142,12 +91,8 @@ describe('SpecialtiesService', () => {
   beforeEach(() => {
     answers = {
       findSpecialty: SPECIALTY,
-      findServiceType: SERVICE_TYPE,
       updateSpecialty: SPECIALTY,
-      updateServiceType: { ...SERVICE_TYPE, durationMinutes: 30, price: null },
       deleteSpecialty: true,
-      deleteServiceType: true,
-      siteSlotAtoms: [10],
     };
     const double = makeDouble(answers);
     calls = double.calls;
@@ -248,183 +193,6 @@ describe('SpecialtiesService', () => {
     });
   });
 
-  describe('tipos de atención', () => {
-    it('SP-020 crear un tipo exige que la especialidad exista', async () => {
-      answers.findSpecialty = null;
-
-      await expect(
-        service.createServiceType(
-          {
-            specialtyId: 'missing',
-            name: 'Control',
-            durationMinutes: 20,
-            price: null,
-          },
-          REQUESTER,
-        ),
-      ).rejects.toBeInstanceOf(SpecialtyNotFoundError);
-      expect(writes()).toEqual([]);
-    });
-
-    it('SP-024 cambiar una duración toca solo el tipo: ninguna otra escritura', async () => {
-      await service.updateServiceType(
-        'type-1',
-        { durationMinutes: 30 },
-        REQUESTER,
-      );
-
-      // The load-bearing assertion is the ABSENCE: the one write that ran is
-      // the service type's own update, so nothing already booked can have
-      // been altered by a duration change — it rules forwards only.
-      expect(writes()).toEqual([
-        {
-          method: 'updateServiceType',
-          args: ['type-1', { durationMinutes: 30 }],
-        },
-      ]);
-    });
-
-    it('SP-030 crea el tipo con su precio desde hoy en Ecuador y lo deja en la bitácora con su prestación', async () => {
-      // 03:00 UTC de cualquier día es aún el anterior en Guayaquil.
-      const now = new Date();
-      now.setUTCHours(3, 0, 0, 0);
-      const dayBefore = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10); // prettier-ignore
-      await service.createServiceType(
-        { specialtyId: SPECIALTY.id, name: 'Control', durationMinutes: 20, price: '25.00' }, // prettier-ignore
-        REQUESTER,
-        now,
-      );
-
-      expect(writes()).toEqual([
-        {
-          method: 'createServiceType',
-          args: [
-            {
-              specialtyId: SPECIALTY.id,
-              name: 'Control',
-              durationMinutes: 20,
-              price: '25.00',
-              today: dayBefore,
-            },
-          ],
-        },
-      ]);
-      expect(recorded[0]?.after).toMatchObject({
-        billableServiceId: 'service-1',
-      });
-    });
-
-    it('SP-027 toda mutación de tipos de atención deja bitácora', async () => {
-      await service.createServiceType(
-        {
-          specialtyId: SPECIALTY.id,
-          name: 'Control',
-          durationMinutes: 20,
-          price: null,
-        },
-        REQUESTER,
-      );
-      await service.updateServiceType('type-1', { durationMinutes: 30 }, REQUESTER); // prettier-ignore
-      await service.deleteServiceType('type-1', REQUESTER);
-
-      const configuration = recorded.filter(
-        (entry) => entry.resourceType === 'configuration',
-      );
-      expect(configuration.map((entry) => entry.action)).toEqual([
-        'CREATE',
-        'UPDATE',
-        'UPDATE',
-      ]);
-      // BI-231. The service born with the type is in billing's trail.
-      expect(
-        recorded.filter((entry) => entry.resourceType === 'billable_service'),
-      ).toEqual([
-        expect.objectContaining({ action: 'CREATE', resourceId: 'service-1' }),
-      ]);
-    });
-
-    /**
-     * SP-021 since D-021: the base duration has to tile the grid, and it is
-     * refused AT SAVE TIME rather than at the counter.
-     */
-    describe('SP-021 la duración es múltiplo del turno de la agenda', () => {
-      it('SP-021 rechaza al CREAR una duración que no es múltiplo, sin escribir', async () => {
-        const rejection = await service
-          .createServiceType(
-            {
-              specialtyId: SPECIALTY.id,
-              name: 'Control',
-              durationMinutes: 25,
-              price: null,
-            },
-            REQUESTER,
-          )
-          .catch((error: unknown) => error);
-
-        expect(rejection).toBeInstanceOf(DurationNotSlotMultipleError);
-        const failure = rejection as DurationNotSlotMultipleError;
-        expect(failure.fieldErrors?.[0]?.field).toBe('durationMinutes');
-        // NOMBRA EL ÁTOMO: es lo único que le dice a quien administra qué
-        // escribir en su lugar.
-        expect(failure.fieldErrors?.[0]?.message).toContain('10 minutos');
-        expect(writes()).toEqual([]);
-        expect(recorded).toEqual([]);
-      });
-
-      it('SP-021 rechaza al EDITAR una duración que no es múltiplo, sin escribir', async () => {
-        await expect(
-          service.updateServiceType(
-            'type-1',
-            { durationMinutes: 25 },
-            REQUESTER,
-          ),
-        ).rejects.toBeInstanceOf(DurationNotSlotMultipleError);
-        expect(writes()).toEqual([]);
-      });
-
-      it('SP-021 exige el múltiplo de TODAS las sedes, porque el tipo no es de ninguna', async () => {
-        // Sedes de 10 y de 15: sólo los múltiplos de 30 se pueden reservar en
-        // las dos, y un tipo de atención se puede dar en cualquiera.
-        answers.siteSlotAtoms = [10, 15];
-
-        await expect(
-          service.createServiceType(
-            {
-              specialtyId: SPECIALTY.id,
-              name: 'Control',
-              durationMinutes: 20,
-              price: null,
-            },
-            REQUESTER,
-          ),
-        ).rejects.toBeInstanceOf(DurationNotSlotMultipleError);
-
-        await expect(
-          service.createServiceType(
-            {
-              specialtyId: SPECIALTY.id,
-              name: 'Control',
-              durationMinutes: 30,
-              price: null,
-            },
-            REQUESTER,
-          ),
-        ).resolves.toBeDefined();
-      });
-
-      it('SP-021 no estorba a un cambio que no toca la duración', async () => {
-        // `undefined` significa «déjala como está», y una duración que ya
-        // estaba guardada no se vuelve inválida por renombrar el tipo.
-        await expect(
-          service.updateServiceType('type-1', { name: 'Control largo' }, REQUESTER), // prettier-ignore
-        ).resolves.toBeDefined();
-        expect(calls.filter((call) => call.method === 'siteSlotAtoms')).toEqual(
-          [],
-        );
-      });
-    });
-  });
-
   describe('bitácora con antes y después (SP-029)', () => {
     it('SP-029 records the specialty before and after a rename', async () => {
       answers.updateSpecialty = { ...SPECIALTY, name: 'Cardiología Clínica' };
@@ -452,21 +220,14 @@ describe('SpecialtiesService', () => {
       });
     });
 
-    it('SP-029 records the service type before and after a duration change', async () => {
-      await service.updateServiceType(
-        SERVICE_TYPE.id,
-        { durationMinutes: 30 },
-        REQUESTER,
-      );
+    it('SP-029 editing a specialty that does not exist answers 404, writes nothing and records nothing', async () => {
+      answers.findSpecialty = null;
 
-      expect(recorded[0]?.before).toEqual({
-        specialtyId: SPECIALTY.id,
-        name: 'Control',
-        durationMinutes: 20,
-        active: true,
-        billableServiceId: 'service-1',
-      });
-      expect(recorded[0]?.after).toMatchObject({ durationMinutes: 30 });
+      await expect(
+        service.updateSpecialty('ghost', { name: 'X' }, REQUESTER),
+      ).rejects.toBeInstanceOf(SpecialtyNotFoundError);
+      expect(writes()).toEqual([]);
+      expect(recorded).toEqual([]);
     });
 
     it('SP-029 a new specialty carries only the after half', async () => {
@@ -474,16 +235,6 @@ describe('SpecialtiesService', () => {
 
       expect(recorded[0]?.before).toBeUndefined();
       expect(recorded[0]?.after).toMatchObject({ name: 'Cardiología' });
-    });
-
-    it('SP-029 editing a service type that does not exist answers 404 and records nothing', async () => {
-      answers.findServiceType = null;
-
-      await expect(
-        service.updateServiceType('ghost', { name: 'X' }, REQUESTER),
-      ).rejects.toBeInstanceOf(ServiceTypeNotFoundError);
-      expect(writes()).toEqual([]);
-      expect(recorded).toEqual([]);
     });
   });
 });

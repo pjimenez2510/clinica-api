@@ -161,7 +161,7 @@ function toPublicationResponse(
   return {
     ...toSummaryResponse(publication),
     items: publication.lines.map((line) => ({
-      billableServiceId: line.billableServiceId,
+      serviceId: line.serviceId,
       code: line.code,
       name: line.name,
       categoryName: line.categoryName,
@@ -173,7 +173,7 @@ function toPublicationResponse(
 function toDifference(difference: TariffDifference) {
   const base = {
     kind: difference.kind,
-    billableServiceId: difference.billableServiceId,
+    serviceId: difference.serviceId,
     name: difference.name,
   };
   return difference.kind === 'PRICE_CHANGED'

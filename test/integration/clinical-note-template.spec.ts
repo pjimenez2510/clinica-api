@@ -13,6 +13,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { useDatabase } from './setup/database';
 import {
+  createConsultation,
   createEncounter,
   createPatient,
   createPractitioner,
@@ -219,7 +220,7 @@ describe('la plantilla de cada nota', () => {
 });
 
 describe('la especialidad de la atención', () => {
-  it('EN-203 con cita, la especialidad es la del tipo de la cita aunque el profesional tenga otra principal', async () => {
+  it('EN-203 con cita, la especialidad es la de la consulta de la cita aunque el profesional tenga otra principal', async () => {
     const prisma = db();
     const site = await createSite(prisma);
     const practitioner = await createPractitioner(prisma);
@@ -237,12 +238,11 @@ describe('la especialidad de la atención', () => {
         isPrimary: true,
       },
     });
-    const serviceType = await prisma.serviceType.create({
-      data: {
-        specialtyId: odontologia.id,
-        name: 'Primera vez',
-        durationMinutes: 30,
-      },
+    // ADR-013: the appointment's consultation is a service of the specialty.
+    const consultation = await createConsultation(prisma, {
+      specialtyId: odontologia.id,
+      name: 'Primera vez',
+      durationMinutes: 30,
     });
     const entry = await prisma.agendaEntry.create({
       data: {
@@ -251,7 +251,7 @@ describe('la especialidad de la atención', () => {
         siteId: site.id,
         practitionerId: practitioner.id,
         patientId: patient.id,
-        serviceTypeId: serviceType.id,
+        serviceId: consultation.id,
         ...hourSlot(9),
       },
     });

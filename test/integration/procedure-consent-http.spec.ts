@@ -16,7 +16,7 @@ import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.ser
 
 import { aTariffConcept } from './orders-fixtures';
 import { useDatabase } from './setup/database';
-import { createExamService, createPatient, createSite } from './setup/fixtures';
+import { createPatient, createService, createSite } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
 /**
@@ -37,7 +37,8 @@ interface Problem {
 
 interface ServiceBody {
   id: string;
-  procedureConcept: { id: string } | null;
+  /** BI-286: a procedure is tied to what is performed by this code. */
+  mspCode: string | null;
   writtenConsent: {
     required: boolean;
     setAt: string | null;
@@ -184,50 +185,45 @@ describe('el consentimiento 024 por HTTP', () => {
     return (response.body as { id: string }).id;
   }
 
-  /** A procedure-kind service and its tariff concept, untied. */
+  /**
+   * A procedure-kind service and its tariff concept, untied: the service has
+   * no MSP code yet (BI-286). Each one named after its concept, since two
+   * active services do not share a name (BI-278).
+   */
   async function aProcedureService() {
     const concept = await aTariffConcept(prisma);
-    const service = await createExamService(prisma, {
+    const service = await createService(prisma, {
       code: `P-${concept.code}`,
-      name: 'Biopsia de piel',
+      name: `Biopsia de piel ${concept.code}`,
       kind: 'PROCEDURE',
     });
     return { concept, service };
   }
 
-  /** BI-257 then BI-256, through the routes. */
+  /** BI-286 then BI-256, through the routes. */
   async function aMarkedConcept(): Promise<string> {
     const { concept, service } = await aProcedureService();
     // `billing:price-manage` is the ADMIN's; the tie is economic.
     await send('patch', `/billing/services/${service.id}`, adminToken, {
-      procedureConceptId: concept.id,
+      mspCode: concept.code,
     }).expect(200);
     await send('post', `/billing/services/${service.id}/written-consent`, directorToken, { required: true }).expect(200); // prettier-ignore
     return concept.id;
   }
 
-  it('BI-257 BI-256 la dirección médica marca la prestación atada a su procedimiento; quien administra precios, no', async () => {
+  it('BI-286 BI-256 la dirección médica marca el procedimiento atado por su código; quien administra precios, no', async () => {
     const { concept, service } = await aProcedureService();
 
-    // Sin atadura no hay a qué aplicar la marca.
+    // Sin código no hay procedimiento al que aplicar la marca.
     const untied = await send('post', `/billing/services/${service.id}/written-consent`, directorToken, { required: true }); // prettier-ignore
     expect(untied.status).toBe(422);
     expect((untied.body as Problem).code).toBe('SERVICE_NOT_A_PROCEDURE');
 
-    const tied = await send('patch', `/billing/services/${service.id}`, adminToken, { procedureConceptId: concept.id }); // prettier-ignore
+    // D-218 §3. Un dato, un sitio: el código MSP del servicio ES el del
+    // procedimiento que cobra; no hay otra atadura que mantener al día.
+    const tied = await send('patch', `/billing/services/${service.id}`, adminToken, { mspCode: concept.code }); // prettier-ignore
     expect(tied.status).toBe(200);
-    expect((tied.body as ServiceBody).procedureConcept?.id).toBe(concept.id);
-    // D-179. Un dato, un sitio: el código del tarifario es el del procedimiento.
-    expect((tied.body as { tariffCode: string | null }).tariffCode).toBe(
-      concept.code,
-    );
-    const retyped = await send('patch', `/billing/services/${service.id}`, adminToken, { tariffCode: '99999' }); // prettier-ignore
-    expect(retyped.status).toBe(409);
-    expect((retyped.body as Problem).code).toBe(
-      'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
-    );
-    // Control positivo: el formulario reenvía el mismo código, y pasa.
-    await send('patch', `/billing/services/${service.id}`, adminToken, { tariffCode: concept.code, name: 'Biopsia de piel' }).expect(200); // prettier-ignore
+    expect((tied.body as ServiceBody).mspCode).toBe(concept.code);
     expect((tied.body as ServiceBody).writtenConsent).toEqual({ required: false, setAt: null, setBy: null }); // prettier-ignore
 
     // ADMIN administra precios, pero la llave del 024 no es suya (D-199.1).
@@ -240,21 +236,19 @@ describe('el consentimiento 024 por HTTP', () => {
     expect(body.writtenConsent.setBy?.name).toBe('Ana Villacís');
     expect(body.writtenConsent.setAt).not.toBeNull();
 
-    // Marcada, ni se desata, ni se cambia, ni se borra con la llave de precios.
-    const untie = await send('patch', `/billing/services/${service.id}`, adminToken, { procedureConceptId: null }); // prettier-ignore
-    expect(untie.status).toBe(409);
-    expect((untie.body as Problem).code).toBe('SERVICE_CONSENT_TIE_LOCKED');
+    // Marcado, ni se le cambia el código ni se borra con la llave de precios.
     const other = await aTariffConcept(prisma);
-    const retie = await send('patch', `/billing/services/${service.id}`, adminToken, { procedureConceptId: other.id }); // prettier-ignore
+    const retie = await send('patch', `/billing/services/${service.id}`, adminToken, { mspCode: other.code }); // prettier-ignore
+    expect(retie.status).toBe(409);
     expect((retie.body as Problem).code).toBe('SERVICE_CONSENT_TIE_LOCKED');
     const removed = await request(app.getHttpServer())
       .delete(`/api/v1/billing/services/${service.id}`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect((removed.body as Problem).code).toBe('SERVICE_CONSENT_TIE_LOCKED');
 
-    // La bitácora tiene la prestación antes y después.
+    // La bitácora tiene el servicio antes y después (BI-290).
     const trail = await prisma.accessAudit.findMany({
-      where: { resourceType: 'billable_service', resourceId: service.id },
+      where: { resourceType: 'service', resourceId: service.id },
       orderBy: { occurredAt: 'asc' },
     });
     expect(trail.at(-1)?.after).toMatchObject({ requiresWrittenConsent: true });

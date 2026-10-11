@@ -260,6 +260,7 @@ rechaza con `SERVICE_TYPE_IN_USE`.
 
 - **SP-020** — El sistema DEBERÁ mantener tipos de atención por especialidad,
   cada uno con duración base en minutos.
+  > **Sustituido el 11-10-2026 por BI-279 (ADR-013).** El tipo de atención es ahora un **servicio de tipo consulta** (`service.kind = CONSULTATION`) con su especialidad, su duración y su visita; `service_type` se eliminó y se administra en «Servicios».
 - **SP-021** — El sistema DEBERÁ aceptar duraciones que sean **múltiplo del
   turno de la agenda de la sede** (CF-062), y DEBERÁ rechazar al guardar, por
   campo y nombrando ese turno, la que no lo sea.
@@ -304,6 +305,7 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   > y no contra las del profesional: la excepción cuelga de un `service_type`,
   > que no tiene sede, y a un médico se le puede añadir otra sede mañana sin que
   > nadie vuelva a mirar sus excepciones.
+  > **Enmendado el 11-10-2026 (ADR-013).** La excepción es por médico y **servicio de consulta** (`duration_exception.service_id`).
 - **SP-023** — CUANDO se necesite la duración de una cita, el sistema DEBERÁ
   resolverla en este orden: excepción del médico → duración base del
   especialidad·tipo → **turno de la agenda de la sede**.
@@ -312,15 +314,19 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   > que haya una regla abierta a esa hora**: la sede tiene átomo a cualquier
   > hora de la semana, y proponer diez minutos para un domingo que nadie trabaja
   > respondería a una pregunta distinta de la que hace la pantalla.
+  > **Enmendado el 11-10-2026 (ADR-013).** El segundo peldaño es la duración del servicio de consulta de la cita.
 - **SP-024** — CUANDO cambie una duración, el sistema NO DEBERÁ alterar citas ya
   reservadas: rige solo hacia adelante.
 - **SP-025** — SI se intenta borrar un tipo de atención referenciado por una
   cita, ENTONCES el sistema DEBERÁ rechazarlo con `SERVICE_TYPE_IN_USE` y
   ofrecer desactivarlo.
+  > **Enmendado el 11-10-2026 (ADR-013, BI-288).** El servicio de consulta referenciado por una cita no se borra: `BILLABLE_SERVICE_IN_USE` y se ofrece desactivarlo (`SERVICE_TYPE_IN_USE` se retiró con la tabla).
 - **SP-026** — El sistema DEBERÁ impedir dos tipos de atención con el mismo
   nombre dentro de una especialidad, con la garantía en la base.
+  > **Sustituido el 11-10-2026 por BI-278 (ADR-013).** Dos servicios activos no comparten nombre en toda la clínica (`service_active_name_unique`).
 - **SP-027** — Toda mutación de tipos y duraciones DEBERÁ quedar en la bitácora
   con autor, instante y valor anterior.
+  > **Enmendado el 11-10-2026 (ADR-013, BI-290).** Las consultas dejan su rastro como servicios (recurso `service`).
 - **SP-028** — CUANDO recepción elija especialidad y tipo al reservar, el
   sistema DEBERÁ proponer la duración resuelta según SP-023 y dejar el tipo
   registrado en la cita.
@@ -345,6 +351,7 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   > que sustituye a **D-020**: aquella decisión se quedaba en avisar de la
   > incoherencia en vez de impedirla, y un aviso que ya no puede dispararse sólo
   > enseña a saltarse los que sí.
+  > **Enmendado el 11-10-2026 (ADR-013).** Recepción elige especialidad y **servicio de consulta**; la cita guarda `agenda_entry.service_id`.
 
 - **SP-030** — CUANDO se cree un tipo de atención, el sistema DEBERÁ crear en
   la misma transacción su prestación de cobro —en una categoría activa de
@@ -368,6 +375,7 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   > (BI-041 a BI-048); este módulo sólo escribe el primero. El IVA por defecto
   > no es una clasificación fiscal: queda sin revisar, como el de la semilla
   > (D-A-006).
+  > **Sustituido el 11-10-2026 por BI-280 (ADR-013).** No nace una prestación detrás del tipo: la consulta **es** el servicio, y se crea con su precio en «Servicios».
 - **SP-031** — El sistema DEBERÁ admitir más de una prestación por tipo de
   atención, en orden (`service_type_billable_service.position`), y la primera
   DEBERÁ ser la que nace con el tipo, la que se renombra con él, la que
@@ -375,6 +383,7 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   > Como Cliniko («billable items» por tipo de cita): una consulta más un
   > procedimiento fijo. La pantalla no lo ofrece todavía; el modelo no habrá
   > que rehacerlo el día que se pida.
+  > **Sustituido el 11-10-2026 (ADR-013), sin sucesor.** Una cita reserva un servicio; si un día se cobra «consulta + procedimiento fijo», se decidirá entonces.
 
 ---
 

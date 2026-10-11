@@ -120,13 +120,10 @@ describe('las rutas del módulo de órdenes', () => {
         'POST /orders/:orderId/reports → result:write',
         'GET /orders/:orderId/reports → record:read',
         'GET /exams → catalog:read',
-        // ORD-103 a ORD-111. Administrar el catálogo, lectura incluida: la
-        // ficha enseña lo desactivado y con qué se cobra cada examen.
-        'GET /exam-catalogue/exams → catalog:manage',
-        'GET /exam-catalogue/exams/:examId → catalog:manage',
-        'POST /exam-catalogue/exams → catalog:manage',
-        'PATCH /exam-catalogue/exams/:examId → catalog:manage',
-        'PUT /exam-catalogue/exams/:examId/analytes → catalog:manage',
+        // ORD-104 a ORD-111. Administrar el catálogo, lectura incluida: la
+        // lista enseña lo desactivado. El examen se da de alta y se corrige
+        // como servicio, en facturación (ADR-013, BI-280); aquí, su estructura.
+        'PUT /exam-catalogue/exams/:serviceId/analytes → catalog:manage',
         'GET /exam-catalogue/analytes → catalog:manage',
         'POST /exam-catalogue/analytes → catalog:manage',
         'PATCH /exam-catalogue/analytes/:analyteId → catalog:manage',

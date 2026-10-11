@@ -19,6 +19,7 @@ import {
   createDiagnosis,
   createEncounter,
   createPatient,
+  createService,
   createUser,
 } from './setup/fixtures';
 import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
@@ -359,13 +360,19 @@ async function everyVersionedRowOf(
       ).id,
     },
   });
-  const service = await prisma.billableService.findUniqueOrThrow({
-    where: { code: 'CONS-MG-PV' },
-  });
+  // ADR-013: the seeded consultations need their specialties; any service
+  // will do for a charge, the same one for every patient of the test.
+  const service =
+    (await prisma.service.findUnique({ where: { code: 'PRIV-CUR' } })) ??
+    (await createService(prisma, {
+      code: 'PRIV-CUR',
+      name: 'Curación simple',
+      kind: 'OTHER',
+    }));
   const charge = await prisma.chargeItem.create({
     data: {
       accountId: account.id,
-      billableServiceId: service.id,
+      serviceId: service.id,
       serviceDate: new Date(scene.encounter.startedAt),
       unitAmount: 25,
       serviceDisplay: service.name,
@@ -493,7 +500,7 @@ async function aCriticalNotice(
     encounterId: scene.encounter.id,
     category: 'LABORATORY',
     priority: 'ROUTINE',
-    lines: [{ examDefinitionId: scene.glucose.id }],
+    lines: [{ serviceId: scene.glucose.id }],
     sites: 'all',
   });
   const report = await reports.register(

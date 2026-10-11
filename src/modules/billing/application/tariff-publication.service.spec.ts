@@ -19,7 +19,7 @@ const now = new Date();
 const today = clinicalDateOf(now);
 
 const candidate = (amount: string, overrides: Partial<TariffCandidate> = {}): TariffCandidate => ({
-  billableServiceId: 'service-1',
+  serviceId: 'service-1',
   code: 'CON-01',
   name: 'Consulta de medicina general',
   categoryName: 'Consultas',
@@ -30,7 +30,7 @@ const candidate = (amount: string, overrides: Partial<TariffCandidate> = {}): Ta
 }); // prettier-ignore
 
 const line = (amount: string): TariffLine => ({
-  billableServiceId: 'service-1',
+  serviceId: 'service-1',
   code: 'CON-01',
   name: 'Consulta de medicina general',
   categoryName: 'Consultas',

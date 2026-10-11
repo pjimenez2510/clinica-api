@@ -371,7 +371,7 @@ export class BillingController {
     const charge = await this.accounts.addCharge({
       accountId,
       siteId,
-      billableServiceId: dto.billableServiceId,
+      serviceId: dto.serviceId,
       encounterId: dto.encounterId ?? null,
       serviceDate: dto.serviceDate,
       quantity: Quantity.parse(dto.quantity),
@@ -501,7 +501,7 @@ export class BillingController {
         siteId,
         chargeId,
         changedById: this.currentUser.requireUserId(),
-        billableServiceId: dto.billableServiceId,
+        serviceId: dto.serviceId,
         serviceDate: dto.serviceDate,
         quantity:
           dto.quantity === undefined ? undefined : Quantity.parse(dto.quantity),
@@ -862,7 +862,7 @@ function toChargeResponse(charge: ChargeView): ChargeResponse {
   return {
     id: charge.id,
     accountId: charge.accountId,
-    billableServiceId: charge.billableServiceId,
+    serviceId: charge.serviceId,
     encounterId: charge.encounterId,
     serviceDate: charge.serviceDate,
     quantity: charge.quantity.toString(),

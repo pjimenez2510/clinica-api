@@ -9,11 +9,17 @@ import { PrismaPatientRepository } from '../../src/modules/patients/infrastructu
 import { addDays, clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
-import { placeIssued, aScene, aTariffConcept } from './orders-fixtures';
+import {
+  BH_MSP_CODE,
+  aScene,
+  aTariffConcept,
+  placeIssued,
+} from './orders-fixtures';
 import { attemptWhileAnnulled } from './setup/encounter-race';
 import { useDatabase } from './setup/database';
 import {
   closeThroughCashier,
+  createService,
   createPatient,
   createSite,
   createUser,
@@ -64,17 +70,14 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [
-        { examDefinitionId: scene.bh.id },
-        { examDefinitionId: scene.glucose.id },
-      ],
+      lines: [{ serviceId: scene.bh.id }, { serviceId: scene.glucose.id }],
       sites: 'all',
     });
 
     expect(order.items).toHaveLength(2);
     expect(order.items.map((item) => item.testCode).sort()).toEqual([
-      'EX-BH',
-      'EX-GLUCOSA-AYUNAS',
+      'LAB-BH',
+      'LAB-GLUCOSA-AYUNAS',
     ]);
     // ORD-001. Firmada por el profesional DE LA ATENCIÓN, no por un id enviado.
     expect(order.orderedById).toBe(scene.practitioner.id);
@@ -89,7 +92,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bh.id }],
+        lines: [{ serviceId: scene.bh.id }],
         sites: 'all',
       });
 
@@ -112,7 +115,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bh.id }],
+        lines: [{ serviceId: scene.bh.id }],
         sites: 'all',
       });
 
@@ -140,10 +143,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [
-        { examDefinitionId: scene.bh.id },
-        { examDefinitionId: scene.glucose.id },
-      ],
+      lines: [{ serviceId: scene.bh.id }, { serviceId: scene.glucose.id }],
       sites: 'all',
     });
 
@@ -166,10 +166,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [
-        { examDefinitionId: scene.bh.id },
-        { examDefinitionId: scene.glucose.id },
-      ],
+      lines: [{ serviceId: scene.bh.id }, { serviceId: scene.glucose.id }],
       sites: 'all',
     });
     const [first] = order.items;
@@ -199,7 +196,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
     const itemId = order.items[0]?.id ?? '';
@@ -215,7 +212,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
   it('ORD-003 rechaza la orden ENTERA si un examen está deshabilitado', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
-    await prisma.examDefinition.update({
+    await prisma.service.update({
       where: { id: scene.glucose.id },
       data: { active: false },
     });
@@ -225,10 +222,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [
-          { examDefinitionId: scene.bh.id },
-          { examDefinitionId: scene.glucose.id },
-        ],
+        lines: [{ serviceId: scene.bh.id }, { serviceId: scene.glucose.id }],
         sites: 'all',
       }),
     ).rejects.toMatchObject({ code: 'EXAM_NOT_ORDERABLE' });
@@ -238,7 +232,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     expect(await prisma.serviceOrderItem.count()).toBe(0);
   });
 
-  it('ORD-004 la línea toma la prestación del tarifario VIGENTE del examen, sin que el cliente la envíe', async () => {
+  it('ORD-004 la línea toma el concepto del tarifario VIGENTE del código MSP del servicio, sin que el cliente lo envíe', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
     const clinicalDay = clinicalDateOf(scene.encounter.startedAt);
@@ -251,7 +245,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       data: { validFrom: dateColumn(addDays(clinicalDay, -100)) },
     });
     await aTariffConcept(prisma, {
-      code: 'EX-BH',
+      code: BH_MSP_CODE,
       validFrom: dateColumn(addDays(clinicalDay, -400)),
       validTo: dateColumn(addDays(clinicalDay, -200)),
     });
@@ -260,65 +254,68 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
 
     expect(order.items[0]?.conceptId).toBe(scene.concept.id);
   });
 
-  it('ORD-004 rechaza un examen que no tiene prestación en el tarifario', async () => {
-    const prisma = db();
-    const scene = await aScene(prisma);
-    await prisma.billableService.update({
-      // ORD-163. The tariff code is the exam's service's.
-      where: { id: scene.bh.billableServiceId },
-      data: { tariffCode: null },
-    });
-
-    await expect(
-      placeIssued(ordersOf(prisma), {
+  /** ORD-004 (D-218 §1). Issues one blood count and returns its line. */
+  const orderBloodCount = async (
+    prisma: PrismaClient,
+    scene: Awaited<ReturnType<typeof aScene>>,
+  ) =>
+    (
+      await placeIssued(ordersOf(prisma), {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bh.id }],
+        lines: [{ serviceId: scene.bh.id }],
         sites: 'all',
-      }),
-    ).rejects.toMatchObject({ code: 'CATALOG_CONCEPT_NOT_FOUND' });
-    expect(await prisma.serviceOrder.count()).toBe(0);
+      })
+    ).items[0];
+
+  it('ORD-004 acepta sin concepto la línea de un servicio sin código MSP', async () => {
+    const prisma = db();
+    const scene = await aScene(prisma);
+    await prisma.service.update({
+      where: { id: scene.bh.id },
+      data: { mspCode: null },
+    });
+
+    const line = await orderBloodCount(prisma, scene);
+
+    expect(line).toMatchObject({ testCode: 'LAB-BH', conceptId: null });
+    const stored = await prisma.serviceOrderItem.findUniqueOrThrow({
+      where: { id: line?.id ?? '' },
+    });
+    expect(stored.conceptId).toBeNull();
   });
 
-  it('ORD-004 rechaza un examen cuyo código no está en el TARIFARIO aunque exista en otro catálogo', async () => {
+  it('ORD-004 un código MSP que sólo existe en otro catálogo no se toma por concepto del tarifario', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
     await aTariffConcept(prisma, { systemCode: 'CIE10', code: 'J020' });
-    await prisma.billableService.update({
-      // ORD-163. The tariff code is the exam's service's.
-      where: { id: scene.bh.billableServiceId },
-      data: { tariffCode: 'J020' },
+    await prisma.service.update({
+      where: { id: scene.bh.id },
+      data: { mspCode: 'J020' },
     });
 
     // La clave foránea apunta a `catalog_concept`, que guarda TODOS los
-    // catálogos: sin esta comprobación un código CIE-10 se pide como examen.
-    await expect(
-      placeIssued(ordersOf(prisma), {
-        encounterId: scene.encounter.id,
-        category: 'LABORATORY',
-        priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bh.id }],
-        sites: 'all',
-      }),
-    ).rejects.toMatchObject({ code: 'CATALOG_CONCEPT_NOT_FOUND' });
+    // catálogos: sin esta comprobación la línea citaría un código CIE-10.
+    const line = await orderBloodCount(prisma, scene);
+
+    expect(line?.conceptId).toBeNull();
   });
 
-  it('ORD-004 rechaza la prestación retirada antes del día de la atención', async () => {
+  it('ORD-004 un código MSP retirado antes del día de la atención deja la línea sin concepto', async () => {
     const prisma = db();
     const scene = await aScene(prisma);
     const clinicalDay = clinicalDateOf(scene.encounter.startedAt);
-    await prisma.billableService.update({
-      // ORD-163. The tariff code is the exam's service's.
-      where: { id: scene.bh.billableServiceId },
-      data: { tariffCode: 'T-RETIRADO' },
+    await prisma.service.update({
+      where: { id: scene.bh.id },
+      data: { mspCode: 'T-RETIRADO' },
     });
     await aTariffConcept(prisma, {
       code: 'T-RETIRADO',
@@ -328,15 +325,9 @@ describe('la orden de exámenes contra PostgreSQL', () => {
 
     // La vigencia se evalúa con `daterange @>` sobre una columna GENERADA, que
     // Prisma modela como `Unsupported`: no se puede ni expresar por el cliente.
-    await expect(
-      placeIssued(ordersOf(prisma), {
-        encounterId: scene.encounter.id,
-        category: 'LABORATORY',
-        priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bh.id }],
-        sites: 'all',
-      }),
-    ).rejects.toMatchObject({ code: 'CATALOG_CONCEPT_NOT_IN_FORCE' });
+    const line = await orderBloodCount(prisma, scene);
+
+    expect(line).toMatchObject({ testCode: 'LAB-BH', conceptId: null });
   });
 
   it('ORD-005 rechaza pedir exámenes en una atención ya cerrada', async () => {
@@ -347,7 +338,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bh.id }],
+        lines: [{ serviceId: scene.bh.id }],
         sites: 'all',
       });
     // Control positivo: con el alta dada todavía se pide.
@@ -378,7 +369,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bh.id }],
+        lines: [{ serviceId: scene.bh.id }],
         sites: [otherSite.id],
       }),
     ).rejects.toMatchObject({ code: 'ORDER_ENCOUNTER_NOT_FOUND' });
@@ -392,12 +383,12 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     // Issued at two known instants: the issue instant is frozen once issued
     // (`service_order_frozen_once_issued`), so it is set on the way out of
     // the draft, the only moment it can be.
-    const issuedAt = async (examDefinitionId: string, at: Date) => {
+    const issuedAt = async (serviceId: string, at: Date) => {
       const draft = await repository.compose({
         encounterId: scene.encounter.id,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId }],
+        lines: [{ serviceId }],
         sites: 'all',
       });
       await prisma.$executeRaw`
@@ -415,7 +406,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     expect(worklist.map((entry) => entry.orderId)).toEqual([old.id, fresh.id]);
     expect(worklist[0]?.ageing.waitingDays).toBe(10);
     expect(worklist[1]?.ageing.waitingDays).toBe(0);
-    // ORD-022. `EX-BH` promete cuatro horas: diez días después está vencida.
+    // ORD-022. `LAB-BH` promete cuatro horas: diez días después está vencida.
     expect(worklist[0]?.ageing.overdue).toBe(true);
     // Y el examen que no promete plazo contesta «no hay plazo», no «va bien».
     expect(worklist[1]?.ageing.overdue).toBeNull();
@@ -431,7 +422,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
     await repository.cancelItem({
@@ -460,22 +451,19 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [
-        { examDefinitionId: scene.bh.id },
-        { examDefinitionId: scene.glucose.id },
-      ],
+      lines: [{ serviceId: scene.bh.id }, { serviceId: scene.glucose.id }],
       sites: 'all',
     });
 
     const worklist = await repository.pending({
       sites: 'all',
-      examCode: 'EX-BH',
+      examCode: 'LAB-BH',
       now: new Date(),
       limit: 50,
     });
 
     expect(worklist).toHaveLength(1);
-    expect(worklist[0]?.testCode).toBe('EX-BH');
+    expect(worklist[0]?.testCode).toBe('LAB-BH');
   });
 
   /**
@@ -524,7 +512,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
         encounterId,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId: mother.bh.id }],
+        lines: [{ serviceId: mother.bh.id }],
         sites: 'all',
       });
     const mothers = await place(mother.encounter.id);
@@ -655,7 +643,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
     const survivor = await createPatient(prisma);
@@ -683,7 +671,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       now: new Date(),
       limit: 50,
     });
-    expect(worklist.map((row) => row.testCode)).toEqual(['EX-BH']);
+    expect(worklist.map((row) => row.testCode)).toEqual(['LAB-BH']);
 
     if (merged.status !== 'MERGED') return;
     const undone = await patients.undoMerge({
@@ -706,7 +694,7 @@ describe('la orden de exámenes contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
 
@@ -728,17 +716,32 @@ describe('la orden de exámenes contra PostgreSQL', () => {
     });
 
     expect(worklist).toHaveLength(1);
-    expect(worklist[0]?.testCode).toBe('EX-BH');
+    expect(worklist[0]?.testCode).toBe('LAB-BH');
   });
 
   it('ORD-010 publica el catálogo con su preparación y sus determinaciones en orden', async () => {
     const prisma = db();
-    await aScene(prisma);
+    const scene = await aScene(prisma);
+    // BI-284. A service with no order extension is never orderable.
+    await createService(prisma, {
+      code: 'CONS-GENERAL',
+      name: 'Consulta general',
+      kind: 'OTHER',
+    });
 
     const catalogue = await catalogueOf(prisma).active();
-    const bh = catalogue.find((exam) => exam.code === 'EX-BH');
+    const bh = catalogue.find((exam) => exam.code === 'LAB-BH');
 
+    expect(catalogue.map((exam) => exam.code).sort()).toEqual([
+      'LAB-BH',
+      'LAB-GLUCOSA-AYUNAS',
+    ]);
     expect(bh).toMatchObject({
+      // ORD-010 (BI-284). The orderable's id IS the service's.
+      id: scene.bh.id,
+      name: 'Biometría hemática completa',
+      category: 'LABORATORY',
+      mspCode: BH_MSP_CODE,
       form010Section: 'HEMATOLOGÍA',
       specimenType: 'Sangre total con EDTA',
       patientPreparation: 'No requiere ayuno.',

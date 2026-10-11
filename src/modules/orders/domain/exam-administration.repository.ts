@@ -3,89 +3,33 @@ import type {
   AnalyteValueType,
   ReferenceRange,
 } from './analyte';
-import type { ExamDefinitionView } from './exam-catalogue.repository';
-import type { ServiceOrderCategory } from './service-order';
-import type { ClinicalDate } from '../../../shared/domain/clinic-time';
+import type { OrderableExamView } from './exam-catalogue.repository';
 
 /**
- * The exam catalogue, WRITTEN (ORD-103 to ORD-111).
+ * The exam catalogue, WRITTEN (ORD-104 to ORD-111).
  *
  * A port of its own beside the read-only `ExamCatalogueRepository`: ordering
  * reads the catalogue every consultation, administering it writes it a few
  * times a year, and the two never share a transaction.
  *
- * ⚠️ IT READS `billable_service` AND IMPORTS NOTHING FROM `billing`. ORD-108
- * compares the exam's type with the class of the service it is charged with;
- * this module declares that fact (`ServiceKindView`) and its own adapter
- * answers it — no module imports another.
+ * ADR-013. The exam IS a service: its name, code, kind, MSP code and order
+ * extension are written by billing (BI-280, BI-284). What is left here is
+ * the structure of results of a service (ORD-105) and the analytes and their
+ * ranges (ORD-104, ORD-106).
  */
 
-/** ORD-108. The service an exam is charged with, as the catalogue shows it. */
-export interface ExamServiceView {
-  id: string;
-  code: string;
-  name: string;
-  categoryName: string;
-  /** `billable_service_category.kind`: CONSULTATION … OTHER. */
-  kind: string;
-  active: boolean;
-}
-
-/** ORD-103. One exam as the administration screen reads it. */
-export interface AdminExamView extends ExamDefinitionView {
+/** ORD-105. One ordered service as the structure screen reads it. */
+export interface AdminExamView extends OrderableExamView {
   active: boolean;
   externalLabCode: string | null;
-  /** ORD-163. Always one: the exam IS its service. */
-  billableService: ExamServiceView;
 }
 
-/** ORD-104. One analyte, with the exams that yield it. */
+/** ORD-104. One analyte, with the services that yield it. */
 export interface AdminAnalyteView extends AnalyteDefinition {
   loincCode: string | null;
   active: boolean;
   /** ORD-105. Correcting the analyte corrects every one of these. */
   usedBy: readonly { id: string; code: string; name: string }[];
-}
-
-/**
- * ORD-103. What an exam is written with, all but its immutable code.
- * `name` and `tariffCode` are written ON ITS SERVICE (ORD-163).
- */
-export interface ExamWrite {
-  name: string;
-  category: ServiceOrderCategory;
-  form010Section: string | null;
-  specimenType: string | null;
-  patientPreparation: string | null;
-  turnaroundHours: number | null;
-  /** ORD-129. «Pide ayuno» and its minimum hours. */
-  requiresFasting: boolean;
-  fastingHours: number | null;
-  performedExternally: boolean;
-  externalLabName: string | null;
-  externalLabCode: string | null;
-  tariffCode: string | null;
-  active: boolean;
-}
-
-/**
- * ORD-162. How a new exam is charged: a service born with it, or one that
- * already exists and charges no other exam.
- */
-export type ExamBilling =
-  | {
-      kind: 'NEW';
-      categoryId: string;
-      taxRateId: string;
-      /** Self-pay price from today (decimal text), or none. */
-      selfPayAmount: string | null;
-    }
-  | { kind: 'EXISTING'; billableServiceId: string };
-
-/** ORD-162. A category of the clinic's catalogue, as the check needs it. */
-export interface ServiceCategoryView {
-  kind: string;
-  active: boolean;
 }
 
 /** ORD-104. What an analyte is written with, all but its immutable code. */
@@ -106,68 +50,35 @@ export interface StructureEntry {
 }
 
 export interface ExamAdministrationRepository {
-  /** ORD-103. Every exam, active or not, with structure, ranges and service. */
-  exams(): Promise<AdminExamView[]>;
-  exam(id: string): Promise<AdminExamView | undefined>;
   /**
-   * ORD-162, ORD-163. The exam and, for a NEW billing, its service and first
-   * self-pay price from `today` — one transaction. With an EXISTING service
-   * the exam takes the service's name and tariff code; the service is not
-   * rewritten. `EXAM_CODE_DUPLICATE` comes from
-   * `exam_definition_code_unique`, `BILLABLE_SERVICE_CODE_DUPLICATE` from
-   * `billable_service_code_unique`, `EXAM_SERVICE_TAKEN` from
-   * `exam_definition_one_per_service`.
+   * ORD-105. The service by id WITH its order extension, active or not;
+   * `undefined` when there is no service or it has no extension.
    */
-  createExam(
-    code: string,
-    exam: ExamWrite,
-    billing: ExamBilling,
-    today: ClinicalDate,
-  ): Promise<AdminExamView>;
+  exam(serviceId: string): Promise<AdminExamView | undefined>;
   /**
-   * Writes only what changed: two tabs saving at once do not undo each other.
-   * `name` and `tariffCode` go to the exam's service, in the same transaction.
-   */
-  updateExam(
-    id: string,
-    patch: Partial<ExamWrite> & { code?: string },
-  ): Promise<AdminExamView>;
-  /**
-   * ORD-105. Replaces the exam's structure whole, in the order given. Refuses
-   * with `ANALYTE_NOT_FOUND`, inside the write, an analyte missing, or retired
-   * and not already in the structure (a retired analyte keeps being received).
+   * ORD-105. Replaces the service's structure whole, in the order given.
+   * Refuses with `ANALYTE_NOT_FOUND`, inside the write, an analyte missing, or
+   * retired and not already in the structure (a retired analyte keeps being
+   * received), and with `EXAM_DEFINITION_NOT_FOUND` a service without
+   * extension.
    */
   setStructure(
-    examId: string,
+    serviceId: string,
     entries: readonly StructureEntry[],
   ): Promise<AdminExamView>;
 
   /**
-   * ORD-110. How many ISSUED lines of the exam still wait for their result:
-   * their completeness is judged against the current structure (ORD-039).
+   * ORD-110. How many ISSUED lines of the service still wait for their
+   * result: their completeness is judged against the current structure
+   * (ORD-039). By the frozen code, which is the service's (ORD-002).
    */
-  pendingLines(examCode: string): Promise<number>;
+  pendingLines(serviceCode: string): Promise<number>;
 
   /**
    * ORD-110. Whether any result froze this analyte's name: results are tied
    * to their analyte by that name (ORD-031) and corrected by it (ORD-055).
    */
   analyteHasResults(analyteName: string): Promise<boolean>;
-
-  /** ORD-140. Whether any order line froze this exam code (ORD-002). */
-  examWasOrdered(examCode: string): Promise<boolean>;
-
-  /** ORD-108. The service by id, `undefined` when there is none. */
-  service(id: string): Promise<ExamServiceView | undefined>;
-
-  /** ORD-162. Whether an exam is already charged with this service. */
-  serviceIsTaken(serviceId: string): Promise<boolean>;
-
-  /** ORD-162. The category by id, `undefined` when there is none. */
-  serviceCategory(id: string): Promise<ServiceCategoryView | undefined>;
-
-  /** ORD-162. Whether the tax rate exists. */
-  taxRateExists(id: string): Promise<boolean>;
 
   analytes(): Promise<AdminAnalyteView[]>;
   analyte(id: string): Promise<AdminAnalyteView | undefined>;

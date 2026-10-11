@@ -23,16 +23,16 @@ const ITEM_STATUS = z.enum([
 ]);
 
 /**
- * ORD-002, ORD-004. One line of the request: the exam.
+ * ORD-002, ORD-004. One line of the request: the service (BI-284).
  *
- * ⚠️ NO `conceptId`. The tariff service is the exam's own
- * (`exam_definition.tariff_code`), resolved by the server on the clinical date
- * of the attention. `.strict()` so a client still sending one hears about it
- * instead of believing it chose the price.
+ * ⚠️ NO `conceptId`. The TARIFF concept, when there is one, comes from the
+ * service's MSP code, resolved by the server on the clinical date of the
+ * attention. `.strict()` so a client still sending one —or the old
+ * `examDefinitionId`— hears about it.
  */
 export const orderLineSchema = z
   .object({
-    examDefinitionId: z.uuid('Seleccione el examen en el catálogo'),
+    serviceId: z.uuid('Seleccione el examen en el catálogo'),
   })
   .strict();
 
@@ -77,7 +77,8 @@ export const orderItemSchema = z.object({
   /** ORD-002. Frozen when it was ordered, like the CIE-10 of a diagnosis. */
   testCode: z.string(),
   testDisplay: z.string(),
-  conceptId: z.uuid(),
+  /** ORD-004. `null` when the service had no MSP code in force that day. */
+  conceptId: z.uuid().nullable(),
   status: ITEM_STATUS,
   /** `null` means «no ha vuelto». It is what the whole worklist is built on. */
   completedAt: z.iso.datetime().nullable(),

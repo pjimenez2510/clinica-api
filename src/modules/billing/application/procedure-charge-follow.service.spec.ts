@@ -21,7 +21,7 @@ const SERVICE_DATE = parseClinicalDate('2026-05-11'); // fecha-fija: no reloj; s
 const charge = (status: ChargeStatus): ChargeView => ({
   id: 'charge-1',
   accountId: 'account-1',
-  billableServiceId: 'service-suture',
+  serviceId: 'service-suture',
   encounterId: 'encounter-1',
   serviceDate: SERVICE_DATE,
   quantity: Quantity.parse('2'),
@@ -58,11 +58,11 @@ function build(overrides: Record<string, unknown> = {}) {
     findOpenAccountOfEncounter: vi.fn().mockResolvedValue(null),
     voidCharge: vi.fn().mockResolvedValue(charge('CANCELLED')),
     editCharge: vi.fn().mockResolvedValue(charge('PLANNED')),
-    findServicesByProcedureConcept: vi.fn().mockResolvedValue(
-      new Map([['concept-cure', { billableServiceId: 'service-cure', active: true }]]), // prettier-ignore
+    findServicesByProcedureCode: vi.fn().mockResolvedValue(
+      new Map([['code-cure', { serviceId: 'service-cure', active: true }]]), // prettier-ignore
     ),
     findEncounterActs: vi.fn().mockResolvedValue({
-      procedures: [{ encounterProcedureId: 'procedure-1', conceptId: 'concept-cure', quantity: 1 }], // prettier-ignore
+      procedures: [{ encounterProcedureId: 'procedure-1', procedureCode: 'code-cure', quantity: 1 }], // prettier-ignore
     }),
     sendToCashier: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -98,7 +98,7 @@ describe('BI-240 a BI-242 el cargo propuesto sigue al procedimiento', () => {
       expect.objectContaining({
         chargeId: 'charge-1',
         changedById: 'doctor-1',
-        billableServiceId: 'service-cure',
+        serviceId: 'service-cure',
         quantity: Quantity.parse('1'),
       }),
     );
@@ -106,7 +106,7 @@ describe('BI-240 a BI-242 el cargo propuesto sigue al procedimiento', () => {
 
   it('BI-240 sin prestación activa para el concepto nuevo deja el cargo como estaba', async () => {
     const { service, mocks, logger } = build({
-      findServicesByProcedureConcept: vi.fn().mockResolvedValue(new Map()),
+      findServicesByProcedureCode: vi.fn().mockResolvedValue(new Map()),
     });
 
     await service.procedureChanged(command('EDITED'));

@@ -75,6 +75,7 @@ import {
   INVOICE_COUNTS_TOWARD_BALANCE,
 } from './invoice-balance.sql';
 import type { BillingTrail } from '../domain/billing-trail';
+import { selfPayPriceListId } from './self-pay-list';
 
 /**
  * The account, the charge and the invoice, in PostgreSQL.
@@ -258,7 +259,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         const price = await findPriceOn(tx, {
           priceListId: command.priceListId,
           payerId: command.payerId,
-          billableServiceId: charge.billableServiceId,
+          serviceId: charge.serviceId,
           serviceDate: charge.serviceDate,
         });
         const reopens =
@@ -309,13 +310,12 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
 
     return Promise.all(
       charges.map(async (charge) => {
-        const price = await this.prisma.price.findFirst({
-          where: priceOn(
-            query.priceListId,
-            charge.billableServiceId,
-            charge.serviceDate,
-          ),
-        });
+        const price = await priceInForce(
+          this.prisma,
+          query.priceListId,
+          charge.serviceId,
+          charge.serviceDate,
+        );
         return {
           chargeId: charge.id,
           unitAmount: price === null ? null : Money.parse(price.amount),
@@ -424,23 +424,21 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         select: { priceListId: true, payerId: true },
       });
 
-      const service = await tx.billableService.findUniqueOrThrow({
-        where: { id: command.billableServiceId },
+      const service = await tx.service.findUniqueOrThrow({
+        where: { id: command.serviceId },
         include: { taxRate: true },
       });
 
-      const price = await tx.price.findFirst({
-        where: {
-          priceListId: account.priceListId,
-          billableServiceId: command.billableServiceId,
-          validFrom: { lte: on },
-          OR: [{ validTo: null }, { validTo: { gt: on } }],
-        },
-      });
+      const price = await priceInForce(
+        tx,
+        account.priceListId,
+        command.serviceId,
+        on,
+      );
 
       if (price === null) {
         throw new PriceNotFoundError(
-          command.billableServiceId,
+          command.serviceId,
           account.payerId,
           command.serviceDate,
         );
@@ -450,7 +448,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         include: CHARGE_INCLUDE,
         data: {
           accountId: command.accountId,
-          billableServiceId: command.billableServiceId,
+          serviceId: command.serviceId,
           encounterId: command.encounterId,
           serviceDate: on,
           quantity: command.quantity.toString(),
@@ -700,7 +698,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
       });
       const price = await findPriceOn(tx, {
         ...account,
-        billableServiceId: current.billableServiceId,
+        serviceId: current.serviceId,
         serviceDate: current.serviceDate,
       });
 
@@ -741,14 +739,13 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         }
         requireOpen(current.status);
 
-        const billableServiceId =
-          command.billableServiceId ?? current.billableServiceId;
+        const serviceId = command.serviceId ?? current.serviceId;
         const serviceDate =
           command.serviceDate === undefined
             ? current.serviceDate
             : asDateColumn(command.serviceDate);
         const reresolve =
-          billableServiceId !== current.billableServiceId ||
+          serviceId !== current.serviceId ||
           serviceDate.getTime() !== current.serviceDate.getTime();
         const quantity = command.quantity?.toString();
 
@@ -774,17 +771,17 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
             where: { id: current.accountId },
             select: { priceListId: true, payerId: true },
           });
-          const service = await tx.billableService.findUniqueOrThrow({
-            where: { id: billableServiceId },
+          const service = await tx.service.findUniqueOrThrow({
+            where: { id: serviceId },
             include: { taxRate: true },
           });
           const price = await findPriceOn(tx, {
             ...account,
-            billableServiceId,
+            serviceId,
             serviceDate,
           });
           Object.assign(data, {
-            billableServiceId,
+            serviceId,
             serviceDate,
             unitAmount: price.amount.toFixed(2),
             resolvedPriceId: price.id,
@@ -1087,7 +1084,7 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         const charges = await tx.chargeItem.findMany({
           where: { accountId: issuance.accountId, status: 'BILLABLE' },
           orderBy: { createdAt: 'asc' },
-          include: { billableService: { select: { code: true, name: true } } },
+          include: { service: { select: { code: true, name: true } } },
         });
 
         if (charges.length === 0) throw new InvoiceHasNoItemsError();
@@ -1104,13 +1101,12 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
 
         // BI-171. Before the sequential is taken.
         const tooLong = charges.find(
-          (charge) =>
-            charge.billableService.code.length > MAX_VOUCHER_SERVICE_CODE,
+          (charge) => charge.service.code.length > MAX_VOUCHER_SERVICE_CODE,
         );
         if (tooLong) {
           throw new InvoiceServiceCodeTooLongError(
-            tooLong.billableService.name,
-            tooLong.billableService.code,
+            tooLong.service.name,
+            tooLong.service.code,
           );
         }
 
@@ -1568,36 +1564,72 @@ function requireOpen(status: string): void {
 /** BI-047. The half-open validity, spelled out as in `insertCharge`. */
 function priceOn(
   priceListId: string,
-  billableServiceId: string,
+  serviceId: string,
   on: Date,
 ): Prisma.PriceWhereInput {
   return {
     priceListId,
-    billableServiceId,
+    serviceId,
     validFrom: { lte: on },
     OR: [{ validTo: null }, { validTo: { gt: on } }],
   };
 }
+
+/**
+ * BI-047, BI-297 (ADR-013). The price of a service on a day, for a list: its
+ * own row in force, or —when the list is a company agreement's or a private
+ * insurer's and does not price it— the self-pay list's. «Un convenio guarda excepciones» sobre el
+ * particular: what it does not list, it charges at the self-pay price, and
+ * `resolvedPriceId` keeps WHICH row that was, so the resolution stays
+ * auditable. Neither in force → `null`, the caller's `PRICE_NOT_FOUND`.
+ */
+async function priceInForce(
+  client: Prisma.TransactionClient,
+  priceListId: string,
+  serviceId: string,
+  on: Date,
+) {
+  const own = await client.price.findFirst({
+    where: priceOn(priceListId, serviceId, on),
+  });
+  if (own !== null) return own;
+  const list = await client.priceList.findUnique({
+    where: { id: priceListId },
+    select: { payer: { select: { kind: true } } },
+  });
+  // D-230. The public network settles by the SNS tariff: a self-pay amount on
+  // its claim is a figure it never agreed to. Only agreements and insurers
+  // fall back; the public network without its own price is refused.
+  if (!list || !INHERITS_SELF_PAY.has(list.payer.kind)) return null;
+  const selfPay = await selfPayPriceListId(client);
+  if (selfPay === null || selfPay === priceListId) return null;
+  return client.price.findFirst({ where: priceOn(selfPay, serviceId, on) });
+}
+
+/** BI-297, D-230. The payer kinds whose missing price is the self-pay one. */
+const INHERITS_SELF_PAY: ReadonlySet<string> = new Set([
+  'COMPANY_AGREEMENT',
+  'PRIVATE_INSURANCE',
+]);
 
 async function findPriceOn(
   tx: Transaction,
   query: {
     priceListId: string;
     payerId: string;
-    billableServiceId: string;
+    serviceId: string;
     serviceDate: Date;
   },
 ) {
-  const price = await tx.price.findFirst({
-    where: priceOn(
-      query.priceListId,
-      query.billableServiceId,
-      query.serviceDate,
-    ),
-  });
+  const price = await priceInForce(
+    tx,
+    query.priceListId,
+    query.serviceId,
+    query.serviceDate,
+  );
   if (price === null) {
     throw new PriceNotFoundError(
-      query.billableServiceId,
+      query.serviceId,
       query.payerId,
       toClinicalDate(query.serviceDate),
     );
@@ -1698,7 +1730,7 @@ function toChargeView(
   return {
     id: row.id,
     accountId: row.accountId,
-    billableServiceId: row.billableServiceId,
+    serviceId: row.serviceId,
     encounterId: row.encounterId,
     serviceDate: toClinicalDate(row.serviceDate),
     quantity: Quantity.parse(row.quantity.toFixed(3)),

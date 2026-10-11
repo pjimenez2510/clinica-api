@@ -333,7 +333,7 @@ export class ChartSummaryService {
    * EN-185. EN-007 stands: an earlier attention in the service does NOT make
    * the consultation «subsecuente» — the patient may come for something new —
    * so with one on file nothing is proposed. Without any, «primera vez» is
-   * certain. An appointment with no service type has no specialty to compare,
+   * certain. An appointment with no consultation has no specialty to compare,
    * and nothing is proposed either.
    */
   async visitSequenceProposal(

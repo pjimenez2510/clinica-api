@@ -8,6 +8,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
@@ -50,7 +51,7 @@ interface Overview {
     version: number;
     differences: {
       kind: string;
-      billableServiceId: string;
+      serviceId: string;
       published: { amount: string } | null;
       current: { amount: string } | null;
     }[];
@@ -85,6 +86,7 @@ describe('el tarifario de la pared por HTTP', () => {
   });
 
   async function seed(): Promise<void> {
+    await seedSpecialties(prisma);
     await seedBilling(prisma);
     await syncAuthorisation(prisma);
     registry.invalidate();
@@ -97,7 +99,7 @@ describe('el tarifario de la pared por HTTP', () => {
     });
     agreementPayerId = agreement.id;
     agreementListId = agreement.priceLists[0]!.id;
-    serviceId = (await prisma.billableService.findUniqueOrThrow({ where: { code: 'CONS-MG-PV' } })).id; // prettier-ignore
+    serviceId = (await prisma.service.findUniqueOrThrow({ where: { code: 'CONS-MG-PV' } })).id; // prettier-ignore
 
     // Clinic-wide, as `assertClinicWideScope` demands for the tariff (D-023).
     adminToken = await signIn(prisma, app, 'admin@clinica.ec', 'ADMIN', null, '1710034065'); // prettier-ignore
@@ -124,14 +126,14 @@ describe('el tarifario de la pared por HTTP', () => {
     await api()
       .post(`/api/v1/billing/payers/${payerId}/prices`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ billableServiceId: serviceId, amount, effectiveFrom: today() })
+      .send({ serviceId: serviceId, amount, effectiveFrom: today() })
       .expect(201);
   }
   async function selfPayAmountToday(): Promise<string> {
     const day = new Date(`${today()}T00:00:00Z`);
     const row = await prisma.price.findFirstOrThrow({
       where: {
-        billableServiceId: serviceId,
+        serviceId: serviceId,
         priceList: { payerId: selfPayId },
         validFrom: { lte: day },
         OR: [{ validTo: null }, { validTo: { gt: day } }],
@@ -155,8 +157,8 @@ describe('el tarifario de la pared por HTTP', () => {
     expect(body.effectiveFrom).toBe(today());
     expect(body.establishmentName).toBe('Clínica de Pruebas S.A.');
     expect(body.items.length).toBeGreaterThan(0);
-    const consultation = body.items.find((item) =>
-      item.name.startsWith('Consulta de medicina general'),
+    const consultation = body.items.find(
+      (item) => item.name === 'Consulta de medicina general · Primera vez',
     );
     expect(consultation?.amount).toBe(await selfPayAmountToday());
 
@@ -234,7 +236,7 @@ describe('el tarifario de la pared por HTTP', () => {
     });
     const line = (finalAmount: string | null) => ({
       publicationId: next.id,
-      billableServiceId: serviceId,
+      serviceId: serviceId,
       serviceCode: 'CONS-MG-PV',
       serviceName: 'Consulta',
       categoryName: 'Consultas',
@@ -278,7 +280,7 @@ describe('el tarifario de la pared por HTTP', () => {
       await tx.tariffPublicationItem.create({
         data: {
           publicationId: old.id,
-          billableServiceId: serviceId,
+          serviceId: serviceId,
           serviceCode: 'CONS-MG-PV',
           serviceName: 'Consulta antigua',
           categoryName: 'Consultas',
@@ -336,8 +338,8 @@ describe('el tarifario de la pared por HTTP', () => {
       .get(`/api/v1/billing/tariff-publications/${first.id}`)
       .set('Authorization', `Bearer ${cashierToken}`)
       .expect(200);
-    const line = (kept.body as { items: { billableServiceId: string; amount: string }[] }).items.find(
-      (item) => item.billableServiceId === serviceId,
+    const line = (kept.body as { items: { serviceId: string; amount: string }[] }).items.find(
+      (item) => item.serviceId === serviceId,
     ); // prettier-ignore
     expect(line?.amount).toBe(old);
 
@@ -367,7 +369,7 @@ describe('el tarifario de la pared por HTTP', () => {
     expect(stale?.differences).toEqual([
       expect.objectContaining({
         kind: 'PRICE_CHANGED',
-        billableServiceId: serviceId,
+        serviceId: serviceId,
         published: expect.objectContaining({ amount: published }),
         current: expect.objectContaining({ amount: '43.10' }),
       }),
@@ -380,14 +382,14 @@ describe('el tarifario de la pared por HTTP', () => {
     expect(JSON.stringify((await wall().expect(200)).body)).toContain('43.10');
   });
 
-  it('BI-111 sin prestaciones activas con precio no publica un cartel vacío (TARIFF_PUBLICATION_EMPTY)', async () => {
+  it('BI-111 sin servicios activos con precio no publica un cartel vacío (TARIFF_PUBLICATION_EMPTY)', async () => {
     await publish().expect(201); // positive control: the same route publishes
-    await prisma.billableService.updateMany({ data: { active: false } });
+    await prisma.service.updateMany({ data: { active: false } });
 
     const refused = await publish().expect(409);
     expect((refused.body as Problem).code).toBe('TARIFF_PUBLICATION_EMPTY');
     expect((refused.body as Problem).title).toBe(
-      'No hay prestaciones activas con precio particular vigente que publicar',
+      'No hay servicios activos con precio particular vigente que publicar',
     );
     expect(await prisma.tariffPublication.count()).toBe(1);
   });

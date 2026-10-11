@@ -14,7 +14,8 @@ import {
 } from '../domain/invoice';
 import {
   PAYER_KINDS,
-  SERVICE_CATEGORY_KINDS,
+  SERVICE_KINDS,
+  VISIT_KINDS,
 } from '../domain/billing.repository';
 import {
   CHARGE_ORIGINS,
@@ -81,8 +82,42 @@ export const catalogueQuerySchema = z.object({
   /** BI-014. Deactivated services stay readable, on request. */
   includeInactive: explicitFlag,
 });
-/** Query of GET /billing/services and GET /billing/payers. */
+/** Query of GET /billing/payers. */
 export class CatalogueQueryDto extends createZodDto(catalogueQuerySchema) {}
+
+/** BI-282 (D-220 §3). The page sizes the list offers, and nothing else. */
+export const SERVICE_PAGE_SIZES = [20, 50, 100] as const;
+
+export const serviceQuerySchema = z.object({
+  /** Name or code, without accents or case. */
+  q: z.string().trim().max(120).optional(),
+  kind: z
+    .enum(SERVICE_KINDS, {
+      error: 'Tipos admitidos: CONSULTATION, PROCEDURE, LAB_EXAM, IMAGING, SUPPLY, OTHER', // prettier-ignore
+    })
+    .optional(),
+  specialtyId: z.uuid('Seleccione una especialidad').optional(),
+  /** BI-014. Deactivated services stay readable, on request. */
+  includeInactive: explicitFlag,
+  /** BI-023. Pending tax reviews first, grouped by SRI code. */
+  forTaxReview: explicitFlag,
+  page: z.coerce
+    .number({ error: 'La página es un número' })
+    .int('La página es un número entero')
+    .min(1, 'La página empieza en 1')
+    // An OFFSET of millions is a scan of the whole table for nothing.
+    .max(10_000, 'Esa página no existe')
+    .default(1),
+  pageSize: z.coerce
+    .number()
+    .refine(
+      (size) => (SERVICE_PAGE_SIZES as readonly number[]).includes(size),
+      'Muestre 20, 50 o 100 por página',
+    )
+    .default(20),
+});
+/** Query of GET /billing/services (BI-282). */
+export class ServiceQueryDto extends createZodDto(serviceQuerySchema) {}
 
 export const awaitingCheckoutQuerySchema = z.object({
   /** D-119. Also the ones older than seven days, still unsettled. */
@@ -93,46 +128,93 @@ export class AwaitingCheckoutQueryDto extends createZodDto(
   awaitingCheckoutQuerySchema,
 ) {}
 
+/** BI-284. The order extension of an exam, an imaging study or a procedure. */
+const orderExtensionSchema = z.object({
+  form010Section: z.string().trim().max(60).nullish(),
+  specimenType: z.string().trim().max(80).nullish(),
+  patientPreparation: z.string().trim().max(500).nullish(),
+  turnaroundHours: z
+    .number()
+    .int('Las horas de entrega son un número entero')
+    .min(1, 'Las horas de entrega empiezan en 1')
+    .max(32767)
+    .nullish(),
+  requiresFasting: z.boolean().optional(),
+  fastingHours: z
+    .number()
+    .int('Las horas de ayuno son un número entero')
+    .min(1, 'El ayuno va de 1 a 24 horas')
+    .max(24, 'El ayuno va de 1 a 24 horas')
+    .nullish(),
+  performedExternally: z.boolean().optional(),
+  externalLabName: z.string().trim().max(160).nullish(),
+  externalLabCode: z.string().trim().max(64).nullish(),
+});
+
+/** BI-171. The voucher's `codigoPrincipal` is mandatory and admits 25. */
+const serviceCode = z
+  .string()
+  .trim()
+  .min(1, 'Indique el código del servicio')
+  .max(
+    MAX_VOUCHER_SERVICE_CODE,
+    'El código admite hasta 25 caracteres, lo que acepta el SRI',
+  );
+
 /**
- * BI-006, BI-013. NO AMOUNT FIELD, AND THAT ABSENCE IS THE REQUIREMENT.
+ * BI-280. The kind first, then only what that kind carries; and its self-pay
+ * price, which is a row of the self-pay list and never a column of the
+ * service (BI-006).
  *
- * A price on a service breaks the first day an insurer pays differently. The
- * tax rate, by contrast, IS a property of the service and is required here —
- * and required again in the service layer, because a rule enforced only at the
- * transport boundary stops existing the moment a seed writes underneath it.
+ * The rest of «only what that kind carries» is the service's (BI-279,
+ * BI-284), not this schema's: a rule that lived only here would stop existing
+ * the moment a seed writes underneath it.
  */
 export const createServiceSchema = z.object({
-  // BI-171. The voucher's `codigoPrincipal` is mandatory and admits 25.
-  code: z
-    .string()
-    .trim()
-    .min(1, 'Indique el código de la prestación')
-    .max(
-      MAX_VOUCHER_SERVICE_CODE,
-      'El código admite hasta 25 caracteres, lo que acepta el SRI',
-    ),
-  name: z.string().trim().min(1, 'Indique el nombre de la prestación').max(200),
-  /** BI-185. A row of the catalogue, never free text. */
-  categoryId: z.uuid('Seleccione la categoría'),
-  /** BI-011. Nomenclature only: no amount is ever taken from the Tarifario. */
-  tariffCode: z.string().trim().max(32).nullish(),
-  taxRateId: z.uuid('Seleccione la tarifa de impuesto que aplica'),
+  kind: z.enum(SERVICE_KINDS, {
+    error: 'Elija el tipo: consulta, procedimiento, examen, imagen, insumo u otro', // prettier-ignore
+  }),
+  /** Proposed from the kind and the name when absent (BI-280). */
+  code: serviceCode.optional(),
+  name: z.string().trim().min(1, 'Escriba el nombre del servicio').max(200),
+  /** D-228. Required; zero is a price. */
+  selfPayAmount: money('El precio particular'),
+  /** BI-285. Nomenclature only; for a procedure, its tariff code (BI-286). */
+  mspCode: z.string().trim().max(32).nullish(),
+  /** Absent: the health-services rate (SRI code 0), unreviewed (D-A-006). */
+  taxRateId: z.uuid('Seleccione el IVA que aplica').optional(),
+  /** BI-279. Only on a consultation. */
+  specialtyId: z.uuid('Seleccione la especialidad').optional(),
+  durationMinutes: z
+    .number({ error: 'Escriba la duración en minutos' })
+    .int('La duración es un número entero de minutos')
+    .optional(),
+  visitKind: z
+    .enum(VISIT_KINDS, { error: 'Elija primera vez o control' })
+    .nullish(),
+  /** BI-284. On an exam or imaging study always; on a procedure, if ordered. */
+  exam: orderExtensionSchema.nullish(),
 });
 /** Body of POST /billing/services (`billing:price-manage`, clinic-wide). */
 export class CreateServiceDto extends createZodDto(createServiceSchema) {}
 
+/** A partial update; the kind is not here: it does not change (BI-278). */
 export const updateServiceSchema = z.object({
-  name: z.string().trim().min(1).max(200).optional(),
-  categoryId: z.uuid('Seleccione la categoría').optional(),
-  tariffCode: z.string().trim().max(32).nullish(),
-  taxRateId: z.uuid('Seleccione la tarifa de impuesto que aplica').optional(),
+  code: serviceCode.optional(),
+  name: z.string().trim().min(1, 'Escriba el nombre del servicio').max(200).optional(), // prettier-ignore
+  mspCode: z.string().trim().max(32).nullish(),
+  taxRateId: z.uuid('Seleccione el IVA que aplica').optional(),
   active: z.boolean().optional(),
-  /** BI-257. The tariff procedure it charges; `null` unties it. */
-  procedureConceptId: z
-    .uuid('Seleccione un procedimiento del tarifario')
+  specialtyId: z.uuid('Seleccione la especialidad').optional(),
+  durationMinutes: z
+    .number({ error: 'Escriba la duración en minutos' })
+    .int('La duración es un número entero de minutos')
+    .optional(),
+  visitKind: z
+    .enum(VISIT_KINDS, { error: 'Elija primera vez o control' })
     .nullish(),
-  // BI-187 (D-179.3). No `consultation` any more: a consultation service is
-  // born with its service type (SP-030) and tied from there.
+  /** BI-284. Fields to change; `null` stops a procedure being ordered. */
+  exam: orderExtensionSchema.partial().nullish(),
 });
 /** Body of PATCH /billing/services/:serviceId. */
 export class UpdateServiceDto extends createZodDto(updateServiceSchema) {}
@@ -178,7 +260,7 @@ export class UpdatePayerDto extends createZodDto(updatePayerSchema) {}
  * any other way.
  */
 export const setPriceSchema = z.object({
-  billableServiceId: z.uuid('Seleccione la prestación'),
+  serviceId: z.uuid('Seleccione el servicio'),
   amount: money('El precio'),
   effectiveFrom: clinicalDateField('Indique desde cuándo rige, en formato AAAA-MM-DD'), // prettier-ignore
 });
@@ -243,7 +325,7 @@ export class CloseAccountDto extends createZodDto(
 ) {}
 
 export const addChargeSchema = z.object({
-  billableServiceId: z.uuid('Seleccione la prestación'),
+  serviceId: z.uuid('Seleccione el servicio'),
   encounterId: z.uuid().nullish(),
   /**
    * BI-052. THE DATE OF THE ACT, not of the typing, and it is required rather
@@ -306,7 +388,7 @@ export class VoidChargeDto extends createZodDto(voidChargeSchema) {}
  */
 export const editChargeSchema = z
   .object({
-    billableServiceId: z.uuid('Seleccione la prestación').optional(),
+    serviceId: z.uuid('Seleccione el servicio').optional(),
     serviceDate: clinicalDateField('Indique la fecha del servicio en formato AAAA-MM-DD').optional(), // prettier-ignore
     quantity: z
       .string()
@@ -316,7 +398,7 @@ export const editChargeSchema = z
   .strict()
   .refine(
     (body) =>
-      body.billableServiceId !== undefined ||
+      body.serviceId !== undefined ||
       body.serviceDate !== undefined ||
       body.quantity !== undefined,
     { message: 'Indique qué cambia del cargo' },
@@ -546,61 +628,6 @@ export class ServicePriceListDto extends createZodDto(
 ) {}
 export type ServicePriceResponse = z.infer<typeof servicePriceSchema>;
 
-/** BI-188. An exam charged through the service. */
-const serviceExamSchema = z.object({
-  id: z.uuid(),
-  code: z.string(),
-  name: z.string(),
-  active: z.boolean(),
-});
-export class ServiceExamListDto extends createZodDto(
-  z.object({ items: z.array(serviceExamSchema) }),
-) {}
-export type ServiceExamResponse = z.infer<typeof serviceExamSchema>;
-
-/** BI-185, BI-186. One category of the catalogue, with its kind. */
-const serviceCategoryResponseSchema = z.object({
-  id: z.uuid(),
-  name: z.string(),
-  kind: z.enum(SERVICE_CATEGORY_KINDS),
-  active: z.boolean(),
-});
-export class ServiceCategoryDto extends createZodDto(
-  serviceCategoryResponseSchema,
-) {}
-export class ServiceCategoryListDto extends createZodDto(
-  z.object({ items: z.array(serviceCategoryResponseSchema) }),
-) {}
-export type ServiceCategoryResponse = z.infer<
-  typeof serviceCategoryResponseSchema
->;
-
-export const createServiceCategorySchema = z.object({
-  name: z.string().trim().min(1, 'Indique el nombre de la categoría').max(60),
-  kind: z.enum(SERVICE_CATEGORY_KINDS, {
-    error: 'Elija la clase: consulta, procedimiento, laboratorio, imagen, insumo u otro', // prettier-ignore
-  }),
-});
-/** Body of POST /billing/service-categories (`billing:price-manage`). */
-export class CreateServiceCategoryDto extends createZodDto(
-  createServiceCategorySchema,
-) {}
-
-/** BI-185, BI-187. The kind changes only if no service of it clashes. */
-export const updateServiceCategorySchema = z.object({
-  name: z.string().trim().min(1, 'Indique el nombre de la categoría').max(60).optional(), // prettier-ignore
-  active: z.boolean().optional(),
-  kind: z
-    .enum(SERVICE_CATEGORY_KINDS, {
-      error: 'Elija la clase: consulta, procedimiento, laboratorio, imagen, insumo u otro', // prettier-ignore
-    })
-    .optional(),
-});
-/** Body of PATCH /billing/service-categories/:categoryId. */
-export class UpdateServiceCategoryDto extends createZodDto(
-  updateServiceCategorySchema,
-) {}
-
 /** BI-024. The rate the reviewer saw: the review signs that one or none. */
 export const markTaxReviewedSchema = z.object({
   taxRateId: z.uuid({ error: 'Indique la tarifa que revisó' }),
@@ -617,24 +644,41 @@ export class MarkWrittenConsentDto extends createZodDto(
   markWrittenConsentSchema,
 ) {}
 
+const orderExtensionResponseSchema = z.object({
+  form010Section: z.string().nullable(),
+  specimenType: z.string().nullable(),
+  patientPreparation: z.string().nullable(),
+  turnaroundHours: z.number().int().nullable(),
+  requiresFasting: z.boolean(),
+  fastingHours: z.number().int().nullable(),
+  performedExternally: z.boolean(),
+  externalLabName: z.string().nullable(),
+  externalLabCode: z.string().nullable(),
+});
+
 const serviceResponseSchema = z.object({
   id: z.uuid(),
   code: z.string(),
   name: z.string(),
-  category: serviceCategoryResponseSchema,
-  /** BI-151, BI-187, BI-257. The procedure it charges, when it is one. */
-  procedureConcept: z
-    .object({ id: z.uuid(), code: z.string(), display: z.string() })
+  /** BI-278. Fixed once created. */
+  kind: z.enum(SERVICE_KINDS),
+  /** BI-279. Present exactly on a consultation. */
+  consultation: z
+    .object({
+      specialtyId: z.uuid(),
+      specialtyName: z.string(),
+      durationMinutes: z.number().int(),
+      visitKind: z.enum(VISIT_KINDS).nullable(),
+    })
     .nullable(),
-  tariffCode: z.string().nullable(),
+  /** BI-284. Present when it is ordered on a service order. */
+  exam: orderExtensionResponseSchema.nullable(),
+  /** BI-285. «Código MSP»; for a procedure, its tariff code (BI-286). */
+  mspCode: z.string().nullable(),
   taxRateId: z.uuid(),
   taxSriCode: z.string(),
   taxPercentage: z.string().nullable(),
   active: z.boolean(),
-  /** BI-158, BI-188, SP-031. The service types it charges for, when a consultation. */
-  serviceTypes: z.array(
-    z.object({ id: z.uuid(), name: z.string(), specialtyName: z.string() }),
-  ),
   /** BI-256. Whether its procedure demands the form 024, and who last set it. */
   writtenConsent: z.object({
     required: z.boolean(),
@@ -649,13 +693,77 @@ const serviceResponseSchema = z.object({
     })
     .nullable(),
 });
-/** One service, and the catalogue of GET /billing/services. */
+/** One service. */
 export class ServiceDto extends createZodDto(serviceResponseSchema) {}
-export class ServiceListDto extends createZodDto(
-  z.object({ items: z.array(serviceResponseSchema) }),
-) {}
 /** Return type of `toServiceResponse`, inferred from the published schema. */
 export type ServiceResponse = z.infer<typeof serviceResponseSchema>;
+
+/** BI-282. A price in force today in one list. */
+const currentPriceSchema = z.object({
+  priceListId: z.uuid(),
+  payerId: z.uuid(),
+  priceId: z.uuid(),
+  /** BI-001: a string, never a number. */
+  amount: z.string(),
+  validFrom: z.string(),
+});
+const serviceListItemSchema = serviceResponseSchema.extend({
+  /**
+   * BI-282. In force today, in the self-pay list and every active payer's.
+   * A list missing here has no price in force there.
+   */
+  prices: z.array(currentPriceSchema),
+});
+/** Response of GET /billing/services (BI-282): one page and the total. */
+export class ServiceListDto extends createZodDto(
+  z.object({
+    items: z.array(serviceListItemSchema),
+    total: z.number().int(),
+    /** BI-292. Per kind, with the same text and filters: each tab's count. */
+    kindCounts: z.array(
+      z.object({ kind: z.enum(SERVICE_KINDS), total: z.number().int() }),
+    ),
+    page: z.number().int(),
+    pageSize: z.number().int(),
+  }),
+) {}
+export type ServiceListItemResponse = z.infer<typeof serviceListItemSchema>;
+
+/** BI-283. One analyte of an ordered service, with its ranges in force. */
+const serviceAnalyteSchema = z.object({
+  id: z.uuid(),
+  code: z.string(),
+  name: z.string(),
+  unit: z.string().nullable(),
+  valueType: z.string(),
+  decimals: z.number().int().nullable(),
+  allowedValues: z.unknown(),
+  loincCode: z.string().nullable(),
+  active: z.boolean(),
+  position: z.number().int(),
+  isReflex: z.boolean(),
+  ranges: z.array(
+    z.object({
+      id: z.uuid(),
+      sex: z.string().nullable(),
+      ageMinDays: z.number().int().nullable(),
+      ageMaxDays: z.number().int().nullable(),
+      rangeKind: z.string(),
+      low: z.string().nullable(),
+      high: z.string().nullable(),
+      text: z.string().nullable(),
+    }),
+  ),
+});
+const serviceDetailSchema = serviceResponseSchema.extend({
+  /** BI-283. Its analytes in print order; empty when it is not ordered. */
+  analytes: z.array(serviceAnalyteSchema),
+  /** BI-189, BI-283. Its prices in every payer's list, every validity. */
+  prices: z.array(servicePriceSchema),
+});
+/** Response of GET /billing/services/:serviceId (BI-283). */
+export class ServiceDetailDto extends createZodDto(serviceDetailSchema) {}
+export type ServiceDetailResponse = z.infer<typeof serviceDetailSchema>;
 
 const payerResponseSchema = z.object({
   id: z.uuid(),
@@ -677,7 +785,7 @@ export type PayerResponse = z.infer<typeof payerResponseSchema>;
 
 const priceResponseSchema = z.object({
   id: z.uuid(),
-  billableServiceId: z.uuid(),
+  serviceId: z.uuid(),
   amount: z.string(),
   validFrom: z.string(),
   validTo: z.string().nullable(),
@@ -796,7 +904,7 @@ const documentRefSchema = z.object({
 const chargeResponseSchema = z.object({
   id: z.uuid(),
   accountId: z.uuid(),
-  billableServiceId: z.uuid(),
+  serviceId: z.uuid(),
   encounterId: z.uuid().nullable(),
   serviceDate: z.string(),
   quantity: z.string(),

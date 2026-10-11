@@ -58,7 +58,7 @@ export interface PlaceOrderRequest {
   category: ServiceOrderCategory;
   priority: ServiceOrderPriority;
   clinicalNoteText?: string;
-  lines: readonly { examDefinitionId: string }[];
+  lines: readonly { serviceId: string }[];
 }
 
 /** ORD-096. The draft's new content, addressed by the order. */
@@ -348,7 +348,7 @@ export class ServiceOrderService {
   private async checkOrderable(
     request: Pick<PlaceOrderRequest, 'category' | 'lines'>,
   ): Promise<void> {
-    const wanted = [...new Set(request.lines.map((line) => line.examDefinitionId))]; // prettier-ignore
+    const wanted = [...new Set(request.lines.map((line) => line.serviceId))];
     const orderable = await this.exams.activeByIds(wanted);
     if (orderable.length !== wanted.length) throw new ExamNotOrderableError();
     if (orderable.some((exam) => exam.category !== request.category)) {

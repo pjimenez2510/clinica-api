@@ -5,7 +5,7 @@ import { Principal } from '../../../shared/authorisation/principal';
 import { SiteScopeDeniedError } from '../../../shared/authorisation/site-scope';
 import { DurationNotSlotMultipleError } from '../../../shared/domain/errors/slot-atom.errors';
 import {
-  ServiceTypeNotFoundError,
+  ConsultationNotFoundError,
   SpecialtyNotFoundError,
 } from '../../../shared/domain/errors/master-data.errors';
 import {
@@ -57,7 +57,7 @@ interface Answers {
   specialties: PractitionerSpecialtyView[];
   durations: PractitionerDurationRow[];
   sites: PractitionerSiteView[];
-  serviceTypeExists: boolean;
+  isActiveConsultation: boolean;
   deleteDurationException: boolean;
   /** D-021: what each site dices its day into. */
   siteSlotAtoms: number[];
@@ -101,23 +101,20 @@ function makeDouble(answers: Answers): {
       note('listPractitionerDurations', practitionerId);
       return Promise.resolve(answers.durations);
     },
-    serviceTypeExists: (id: string) => {
-      note('serviceTypeExists', id);
-      return Promise.resolve(answers.serviceTypeExists);
+    isActiveConsultation: (id: string) => {
+      note('isActiveConsultation', id);
+      return Promise.resolve(answers.isActiveConsultation);
     },
     upsertDurationException: (
       practitionerId: string,
-      serviceTypeId: string,
+      serviceId: string,
       minutes: number,
     ) => {
-      note('upsertDurationException', practitionerId, serviceTypeId, minutes);
+      note('upsertDurationException', practitionerId, serviceId, minutes);
       return Promise.resolve();
     },
-    deleteDurationException: (
-      practitionerId: string,
-      serviceTypeId: string,
-    ) => {
-      note('deleteDurationException', practitionerId, serviceTypeId);
+    deleteDurationException: (practitionerId: string, serviceId: string) => {
+      note('deleteDurationException', practitionerId, serviceId);
       return Promise.resolve(answers.deleteDurationException);
     },
     listPractitionerSites: (practitionerId: string) => {
@@ -158,7 +155,7 @@ describe('PractitionerAssignmentsService', () => {
       specialties: [],
       durations: [],
       sites: [],
-      serviceTypeExists: true,
+      isActiveConsultation: true,
       deleteDurationException: true,
       siteSlotAtoms: [10],
     };
@@ -358,7 +355,7 @@ describe('PractitionerAssignmentsService', () => {
   });
 
   describe('excepciones de duración', () => {
-    it('ST-009/SP-022 fija la excepción tras comprobar profesional y tipo', async () => {
+    it('ST-009/SP-022 fija la excepción tras comprobar profesional y consulta', async () => {
       await service.setDurationException('prac-1', 'type-1', 40, REQUESTER);
 
       expect(writes()).toEqual([
@@ -387,7 +384,7 @@ describe('PractitionerAssignmentsService', () => {
     });
 
     it('SP-022 exige el múltiplo de TODAS las sedes, no de las del profesional', async () => {
-      // La excepción cuelga de un `service_type`, que no tiene sede, y a un
+      // La excepción cuelga de un servicio de consulta, que no tiene sede, y a un
       // médico se le puede añadir otra sede mañana sin que nadie vuelva a
       // mirar sus excepciones.
       answers.siteSlotAtoms = [10, 15];
@@ -400,12 +397,12 @@ describe('PractitionerAssignmentsService', () => {
       ).resolves.toBeUndefined();
     });
 
-    it('ST-009 rechaza la excepción sobre un tipo de atención inexistente', async () => {
-      answers.serviceTypeExists = false;
+    it('ST-009 rechaza la excepción sobre un servicio que no es una consulta activa', async () => {
+      answers.isActiveConsultation = false;
 
       await expect(
         service.setDurationException('prac-1', 'ghost', 45, REQUESTER),
-      ).rejects.toBeInstanceOf(ServiceTypeNotFoundError);
+      ).rejects.toBeInstanceOf(ConsultationNotFoundError);
       expect(writes()).toEqual([]);
     });
 
@@ -420,16 +417,16 @@ describe('PractitionerAssignmentsService', () => {
     it('ST-009/SP-023 el listado resuelve excepción → base con la función compartida', async () => {
       answers.durations = [
         {
-          serviceTypeId: 'type-1',
-          serviceTypeName: 'Control',
+          serviceId: 'type-1',
+          serviceName: 'Control',
           specialtyId: 'spec-1',
           specialtyName: 'Cardiología',
           baseMinutes: 20,
           exceptionMinutes: 45,
         },
         {
-          serviceTypeId: 'type-2',
-          serviceTypeName: 'Primera vez',
+          serviceId: 'type-2',
+          serviceName: 'Primera vez',
           specialtyId: 'spec-1',
           specialtyName: 'Cardiología',
           baseMinutes: 30,
@@ -460,8 +457,8 @@ describe('PractitionerAssignmentsService', () => {
       isPrimary,
     });
     const duration = (exceptionMinutes: number | null) => ({
-      serviceTypeId: 'type-1',
-      serviceTypeName: 'Control',
+      serviceId: 'type-1',
+      serviceName: 'Control',
       specialtyId: 'spec-1',
       specialtyName: 'Cardiología',
       baseMinutes: 20,
@@ -520,11 +517,11 @@ describe('PractitionerAssignmentsService', () => {
       await service.setDurationException('prac-1', 'type-1', 40, REQUESTER);
 
       expect(recorded[0]?.before).toEqual({
-        serviceTypeId: 'type-1',
+        serviceId: 'type-1',
         exceptionMinutes: 30,
       });
       expect(recorded[0]?.after).toEqual({
-        serviceTypeId: 'type-1',
+        serviceId: 'type-1',
         exceptionMinutes: 40,
       });
     });
@@ -535,11 +532,11 @@ describe('PractitionerAssignmentsService', () => {
       await service.removeDurationException('prac-1', 'type-1', REQUESTER);
 
       expect(recorded[0]?.before).toEqual({
-        serviceTypeId: 'type-1',
+        serviceId: 'type-1',
         exceptionMinutes: 30,
       });
       expect(recorded[0]?.after).toEqual({
-        serviceTypeId: 'type-1',
+        serviceId: 'type-1',
         exceptionMinutes: null,
       });
     });

@@ -136,7 +136,7 @@ const RE_ENROLLED_KEY = 'reEnrolledWaitlistEntryIds';
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * If the survivor ALREADY has an open enrolment stating the same site, the
- * same practitioner, the same service type and the same preferred range, no
+ * same practitioner, the same consultation service and the same preferred range, no
  * copy is made. Those five columns are the entire content of an enrolment
  * (AG-060), so two entries agreeing on all of them are the same request: any
  * slot compatible with one is compatible with the other, and both in the queue
@@ -162,13 +162,13 @@ export async function reEnrolOpenWaitlistEntries(
 ): Promise<string[]> {
   const created = await tx.$queryRaw<{ id: string }[]>`
     INSERT INTO waitlist_entry (
-      patient_id, site_id, practitioner_id, service_type_id,
+      patient_id, site_id, practitioner_id, service_id,
       preferred_from, preferred_to, created_at, updated_at
     )
     SELECT ${charts.survivingChartId}::uuid,
            waiting.site_id,
            waiting.practitioner_id,
-           waiting.service_type_id,
+           waiting.service_id,
            waiting.preferred_from,
            waiting.preferred_to,
            waiting.created_at,
@@ -183,7 +183,7 @@ export async function reEnrolOpenWaitlistEntries(
                 AND standing.status IN ${OPEN_STATUSES}
                 AND standing.site_id = waiting.site_id
                 AND standing.practitioner_id IS NOT DISTINCT FROM waiting.practitioner_id
-                AND standing.service_type_id IS NOT DISTINCT FROM waiting.service_type_id
+                AND standing.service_id IS NOT DISTINCT FROM waiting.service_id
                 AND standing.preferred_from = waiting.preferred_from
                 AND standing.preferred_to = waiting.preferred_to
            )

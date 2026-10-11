@@ -40,6 +40,7 @@ import {
 } from '../domain/waitlist.repository';
 
 import type { Requester } from './agenda.service';
+import { ConsultationNotFoundError } from '../../../shared/domain/errors/master-data.errors';
 
 /**
  * AG-060. A patient waiting for a slot somewhere in a range of Ecuadorian
@@ -52,12 +53,12 @@ export interface EnrolRequest {
   preferredTo: ClinicalDate;
   practitionerId?: string;
   /**
-   * AG-060. The clinic's own `service_type`, which is what
-   * `agenda_entry.service_type_id` names since C4 and what this column names
-   * since `waitlist_service_type_follows_agenda`. Absent means ANY type, so
-   * the entry is a wider match rather than a narrower one.
+   * AG-060. The consultation service (ADR-013), the same table
+   * `agenda_entry.service_id` names, so AG-061 can compare them. Absent means
+   * ANY consultation, so the entry is a wider match rather than a narrower
+   * one.
    */
-  serviceTypeId?: string;
+  serviceId?: string;
 }
 
 /** AG-065 to AG-067. The site whose open entries are swept and ranked. */
@@ -180,13 +181,23 @@ export class WaitlistService {
       throw new PatientMergedError(patient.mergedIntoMrn);
     }
 
+    // AG-060 (ADR-013). What is waited for is a consultation on offer: the
+    // foreign key admits any service, and an exam in the queue could never
+    // become the appointment AG-061 proposes.
+    if (
+      request.serviceId !== undefined &&
+      !(await this.agenda.isActiveConsultation(request.serviceId))
+    ) {
+      throw new ConsultationNotFoundError();
+    }
+
     const entry = await this.waitlist.enrolInWaitlist({
       siteId: request.siteId,
       patientId: request.patientId,
       preferredFrom: request.preferredFrom,
       preferredTo: request.preferredTo,
       practitionerId: request.practitionerId ?? null,
-      serviceTypeId: request.serviceTypeId ?? null,
+      serviceId: request.serviceId ?? null,
     });
 
     // AG-074. The site and the fact. No chart identifier, no dates, no name.
@@ -518,7 +529,7 @@ export class WaitlistService {
       practitionerId: released.practitionerId,
       // A released BLOCK fixes no type of attention, and an entry that demands
       // one is simply not satisfied by it.
-      serviceTypeId: released.serviceTypeId,
+      serviceId: released.serviceId,
       startsAt: released.startsAt,
       endsAt: released.endsAt,
     };

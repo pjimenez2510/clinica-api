@@ -1,9 +1,10 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 
 /**
- * EN-203. The specialty an attention is of: its appointment's service type,
- * or — without an appointment, or with one of no type — the practitioner's
- * primary specialty. `null` when neither says.
+ * EN-203. The specialty an attention is of: that of its appointment's
+ * consultation service (ADR-013), or — without an appointment, or with one
+ * that names no consultation — the practitioner's primary specialty. `null`
+ * when neither says.
  *
  * ONE STATEMENT OF THE RULE for every reader of this module: the note's
  * template (EN-203) and the dental index (EN-052) must agree on what an
@@ -18,7 +19,7 @@ export async function encounterSpecialty(
     select: {
       agendaEntry: {
         select: {
-          serviceType: {
+          service: {
             select: { specialty: { select: { id: true, code: true } } },
           },
         },
@@ -36,7 +37,7 @@ export async function encounterSpecialty(
   });
   if (!encounter) return null;
   return (
-    encounter.agendaEntry?.serviceType?.specialty ??
+    encounter.agendaEntry?.service?.specialty ??
     encounter.practitioner.specialties[0]?.specialty ??
     null
   );

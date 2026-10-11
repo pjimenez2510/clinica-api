@@ -155,7 +155,7 @@ describe('la edad congelada en la atención contra PostgreSQL', () => {
       encounterId: infant.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id }],
+      lines: [{ serviceId: scene.glucose.id }],
       sites: 'all',
     });
 
@@ -195,7 +195,7 @@ describe('la edad congelada en la atención contra PostgreSQL', () => {
       encounterId: later.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id }],
+      lines: [{ serviceId: scene.glucose.id }],
       sites: 'all',
     });
     const fresh = await service.reports.register(
@@ -259,10 +259,7 @@ describe('la edad congelada en la atención contra PostgreSQL', () => {
       encounterId: encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [
-        { examDefinitionId: scene.glucose.id },
-        { examDefinitionId: scene.bh.id },
-      ],
+      lines: [{ serviceId: scene.glucose.id }, { serviceId: scene.bh.id }],
       sites: 'all',
     });
 

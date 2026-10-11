@@ -4,27 +4,25 @@ import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
 import type { ReferenceRange } from '../domain/analyte';
 import {
   AnalyteUnitWithRangesError,
-  ExamCodeInUseError,
-  ExamServiceCategoryNotFoundError,
-  ExamServiceKindMismatchError,
-  ExamServiceTakenError,
-  ExamTaxRateNotFoundError,
+  ExamDefinitionNotFoundError,
+  ExamHasOpenOrdersError,
 } from '../domain/orders.errors';
 import type {
   AdminAnalyteView,
   AdminExamView,
   ExamAdministrationRepository,
-  ExamBilling,
-  ExamWrite,
 } from '../domain/exam-administration.repository';
 
 import { ExamAdministrationService } from './exam-administration.service';
 
 /**
- * ORD-142, against a double of the port: what the SERVICE hands to the trail.
- * Whether the base accepts a payload on `exam_definition` and
+ * ORD-105, ORD-142, against a double of the port: what the SERVICE hands to
+ * the trail. Whether the base accepts a payload on `service_exam` and
  * `analyte_definition` is the CHECK's business, and is exercised against a
  * real PostgreSQL in `test/integration/admin-edit-in-place.spec.ts`.
+ *
+ * The exam's own fields are the service's since ADR-013, written by billing
+ * (BI-280, BI-284): what is left here is its structure and its analytes.
  */
 const EDITOR = { userId: 'user-1', ip: '10.0.0.1' };
 
@@ -49,12 +47,12 @@ const ANALYTE: AdminAnalyteView = {
   ranges: [RANGE],
   loincCode: null,
   active: true,
-  usedBy: [{ id: 'exam-1', code: 'EX-GLU', name: 'Glucosa en ayunas' }],
+  usedBy: [{ id: 'service-glu', code: 'LAB-GLU', name: 'Glucosa en ayunas' }],
 };
 
 const EXAM: AdminExamView = {
-  id: 'exam-1',
-  code: 'EX-GLU',
+  id: 'service-glu',
+  code: 'LAB-GLU',
   name: 'Glucosa en ayunas',
   category: 'LABORATORY',
   form010Section: 'QUIMICA SANGUINEA',
@@ -63,18 +61,10 @@ const EXAM: AdminExamView = {
   turnaroundHours: 24,
   requiresFasting: true,
   fastingHours: 8,
-  tariffCode: null,
+  mspCode: null,
   performedExternally: false,
   externalLabName: null,
   externalLabCode: null,
-  billableService: {
-    id: 'service-glu',
-    code: 'EX-GLU',
-    name: 'Glucosa en ayunas',
-    categoryName: 'Laboratorio',
-    kind: 'LABORATORY',
-    active: true,
-  },
   active: true,
   analytes: [{ analyte: ANALYTE, position: 1, isReflex: false }],
 };
@@ -84,20 +74,11 @@ function build(overrides: Partial<Record<string, unknown>> = {}) {
   const repository = {
     exam: vi.fn().mockResolvedValue(EXAM),
     analyte: vi.fn().mockResolvedValue(ANALYTE),
-    createExam: vi.fn().mockResolvedValue(EXAM),
-    updateExam: vi.fn().mockResolvedValue(EXAM),
     setStructure: vi.fn().mockResolvedValue(EXAM),
     pendingLines: vi.fn().mockResolvedValue(0),
     analyteHasResults: vi.fn().mockResolvedValue(false),
-    examWasOrdered: vi.fn().mockResolvedValue(false),
     updateAnalyte: vi.fn().mockResolvedValue(ANALYTE),
     setRanges: vi.fn().mockResolvedValue(ANALYTE),
-    service: vi.fn().mockResolvedValue(undefined),
-    serviceIsTaken: vi.fn().mockResolvedValue(false),
-    serviceCategory: vi
-      .fn()
-      .mockResolvedValue({ kind: 'LABORATORY', active: true }),
-    taxRateExists: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
   const service = new ExamAdministrationService(
@@ -112,33 +93,52 @@ function build(overrides: Partial<Record<string, unknown>> = {}) {
   return { service, recorded };
 }
 
-describe('ExamAdministrationService · bitácora con antes y después (ORD-142)', () => {
-  it('ORD-142 records the exam before and after an edit', async () => {
-    const { service, recorded } = build({
-      updateExam: vi
-        .fn()
-        .mockResolvedValue({ ...EXAM, turnaroundHours: 48, fastingHours: 12 }),
-    });
+const POTASSIUM = { ...ANALYTE, id: 'analyte-k', code: 'K' };
+const WITH_POTASSIUM = [
+  { analyteDefinitionId: ANALYTE.id, isReflex: false },
+  { analyteDefinitionId: POTASSIUM.id, isReflex: true },
+];
 
-    await service.updateExam(
-      EXAM.id,
-      { turnaroundHours: 48, fastingHours: 12 },
-      EDITOR,
-    );
+describe('ExamAdministrationService · la estructura vive en el servicio (ORD-105)', () => {
+  it('ORD-105 fija la estructura sobre el servicio con extensión de orden', async () => {
+    const setStructure = vi.fn().mockResolvedValue(EXAM);
+    const { service } = build({ setStructure });
 
-    expect(recorded[0]).toMatchObject({
-      resourceType: 'exam_definition',
-      resourceId: EXAM.id,
-      action: 'UPDATE',
-      before: { code: 'EX-GLU', turnaroundHours: 24, fastingHours: 8 },
-      after: { code: 'EX-GLU', turnaroundHours: 48, fastingHours: 12 },
-    });
-    // The analytes are the structure's, audited by `setStructure`.
-    expect(recorded[0]?.before).not.toHaveProperty('analytes');
+    await service.setStructure(EXAM.id, WITH_POTASSIUM, EDITOR);
+
+    expect(setStructure).toHaveBeenCalledWith(EXAM.id, WITH_POTASSIUM);
   });
 
-  it('ORD-142 records the structure an exam had and the one it was given', async () => {
-    const POTASSIUM = { ...ANALYTE, id: 'analyte-k', code: 'K' };
+  it('ORD-105 un servicio sin extensión de orden se rechaza con EXAM_DEFINITION_NOT_FOUND, sin escribir', async () => {
+    const setStructure = vi.fn();
+    const { service, recorded } = build({
+      exam: vi.fn().mockResolvedValue(undefined),
+      setStructure,
+    });
+
+    await expect(
+      service.setStructure('service-consulta', WITH_POTASSIUM, EDITOR),
+    ).rejects.toBeInstanceOf(ExamDefinitionNotFoundError);
+    expect(setStructure).not.toHaveBeenCalled();
+    expect(recorded).toEqual([]);
+  });
+
+  it('ORD-110 cambiar las determinaciones con líneas esperando resultado se rechaza', async () => {
+    const setStructure = vi.fn();
+    const { service } = build({
+      pendingLines: vi.fn().mockResolvedValue(2),
+      setStructure,
+    });
+
+    await expect(
+      service.setStructure(EXAM.id, WITH_POTASSIUM, EDITOR),
+    ).rejects.toBeInstanceOf(ExamHasOpenOrdersError);
+    expect(setStructure).not.toHaveBeenCalled();
+  });
+});
+
+describe('ExamAdministrationService · bitácora con antes y después (ORD-142)', () => {
+  it('ORD-142 records the structure a service had and the one it was given, as service_exam', async () => {
     const { service, recorded } = build({
       setStructure: vi.fn().mockResolvedValue({
         ...EXAM,
@@ -149,24 +149,17 @@ describe('ExamAdministrationService · bitácora con antes y después (ORD-142)'
       }),
     });
 
-    await service.setStructure(
-      EXAM.id,
-      [
-        { analyteDefinitionId: ANALYTE.id, isReflex: false },
-        { analyteDefinitionId: POTASSIUM.id, isReflex: true },
-      ],
-      EDITOR,
-    );
+    await service.setStructure(EXAM.id, WITH_POTASSIUM, EDITOR);
 
+    expect(recorded[0]).toMatchObject({
+      resourceType: 'service_exam',
+      resourceId: EXAM.id,
+      action: 'UPDATE',
+    });
     expect(recorded[0]?.before).toEqual({
       analytes: [{ analyteDefinitionId: ANALYTE.id, isReflex: false }],
     });
-    expect(recorded[0]?.after).toEqual({
-      analytes: [
-        { analyteDefinitionId: ANALYTE.id, isReflex: false },
-        { analyteDefinitionId: POTASSIUM.id, isReflex: true },
-      ],
-    });
+    expect(recorded[0]?.after).toEqual({ analytes: WITH_POTASSIUM });
   });
 
   it('ORD-142 records the analyte before and after an edit, without its usage', async () => {
@@ -207,183 +200,9 @@ describe('ExamAdministrationService · bitácora con antes y después (ORD-142)'
     expect(recorded[0]?.before).toEqual({ ranges: [RANGE] });
     expect(recorded[0]?.after).toEqual({ ranges: [moved] });
   });
-
-  it('ORD-142 a new exam carries only the after half', async () => {
-    const { service, recorded } = build();
-
-    await service.createExam(
-      'EX-GLU',
-      {
-        name: EXAM.name,
-        category: 'LABORATORY',
-        form010Section: null,
-        specimenType: null,
-        patientPreparation: null,
-        turnaroundHours: null,
-        requiresFasting: false,
-        fastingHours: null,
-        performedExternally: false,
-        externalLabName: null,
-        externalLabCode: null,
-        tariffCode: null,
-        active: true,
-      },
-      NEW_BILLING,
-      EDITOR,
-    );
-
-    expect(recorded[0]).toMatchObject({ action: 'CREATE' });
-    expect(recorded[0]?.before).toBeUndefined();
-    expect(recorded[0]?.after).toMatchObject({ code: 'EX-GLU' });
-  });
 });
 
-const NEW_BILLING: ExamBilling = {
-  kind: 'NEW',
-  categoryId: 'category-lab',
-  taxRateId: 'rate-0',
-  selfPayAmount: '12.00',
-};
-
-const WRITE: ExamWrite = {
-  name: 'Perfil renal',
-  category: 'LABORATORY',
-  form010Section: null,
-  specimenType: null,
-  patientPreparation: null,
-  turnaroundHours: null,
-  requiresFasting: false,
-  fastingHours: null,
-  performedExternally: true,
-  externalLabName: null,
-  externalLabCode: null,
-  tariffCode: '360010',
-  active: true,
-};
-
-describe('ExamAdministrationService · un examen, una prestación (ORD-162, ORD-163)', () => {
-  it('ORD-162 crea el examen con su cobro y el precio desde hoy en Ecuador', async () => {
-    const createExam = vi.fn().mockResolvedValue(EXAM);
-    const { service } = build({ createExam });
-    // 02:00 UTC de cualquier día es todavía el día anterior en Guayaquil.
-    const now = new Date();
-    now.setUTCHours(2, 0, 0, 0);
-    const dayBefore = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10); // prettier-ignore
-
-    await service.createExam('EX-RENAL', WRITE, NEW_BILLING, EDITOR, now);
-
-    expect(createExam).toHaveBeenCalledWith(
-      'EX-RENAL',
-      WRITE,
-      NEW_BILLING,
-      dayBefore,
-    );
-  });
-
-  it('ORD-162 BI-231 la prestación que nace deja su rastro en la bitácora de facturación, con su IVA y su precio', async () => {
-    const { service, recorded } = build();
-
-    await service.createExam('EX-RENAL', WRITE, NEW_BILLING, EDITOR);
-
-    expect(recorded.map((entry) => entry.resourceType)).toEqual([
-      'exam_definition',
-      'billable_service',
-    ]);
-    expect(recorded[1]).toMatchObject({
-      resourceId: 'service-glu',
-      action: 'CREATE',
-      after: { taxRateId: 'rate-0', categoryId: 'category-lab', selfPayAmount: '12.00' }, // prettier-ignore
-    });
-  });
-
-  it('ORD-162 atarlo a una prestación existente no la reescribe ni deja rastro de facturación', async () => {
-    const { service, recorded } = build({
-      service: vi.fn().mockResolvedValue(EXAM.billableService),
-    });
-
-    await service.createExam('EX-RENAL', WRITE, { kind: 'EXISTING', billableServiceId: 'service-glu' }, EDITOR); // prettier-ignore
-
-    expect(recorded.map((entry) => entry.resourceType)).toEqual(['exam_definition']); // prettier-ignore
-  });
-
-  it('ORD-162 rechaza una categoría desactivada, de otra clase o un IVA que no existe, sin escribir', async () => {
-    const createExam = vi.fn();
-    const cases: [Record<string, unknown>, new () => Error][] = [
-      [{ serviceCategory: vi.fn().mockResolvedValue({ kind: 'LABORATORY', active: false }) }, ExamServiceCategoryNotFoundError], // prettier-ignore
-      [{ serviceCategory: vi.fn().mockResolvedValue(undefined) }, ExamServiceCategoryNotFoundError], // prettier-ignore
-      [{ serviceCategory: vi.fn().mockResolvedValue({ kind: 'IMAGING', active: true }) }, ExamServiceKindMismatchError], // prettier-ignore
-      [
-        { taxRateExists: vi.fn().mockResolvedValue(false) },
-        ExamTaxRateNotFoundError,
-      ],
-    ];
-    for (const [overrides, error] of cases) {
-      const { service } = build({ ...overrides, createExam });
-      await expect(
-        service.createExam('EX-RENAL', WRITE, NEW_BILLING, EDITOR),
-      ).rejects.toBeInstanceOf(error);
-    }
-    expect(createExam).not.toHaveBeenCalled();
-  });
-
-  it('ORD-163 una prestación existente que ya cobra otro examen se rechaza con EXAM_SERVICE_TAKEN', async () => {
-    const createExam = vi.fn();
-    const { service } = build({
-      createExam,
-      service: vi.fn().mockResolvedValue(EXAM.billableService),
-      serviceIsTaken: vi.fn().mockResolvedValue(true),
-    });
-
-    await expect(
-      service.createExam(
-        'EX-RENAL',
-        WRITE,
-        { kind: 'EXISTING', billableServiceId: 'service-glu' },
-        EDITOR,
-      ),
-    ).rejects.toBeInstanceOf(ExamServiceTakenError);
-    expect(createExam).not.toHaveBeenCalled();
-  });
-
-  it('ORD-109 cambiar el tipo a otra clase que la de su prestación se rechaza', async () => {
-    const updateExam = vi.fn();
-    const { service } = build({ updateExam });
-
-    await expect(
-      service.updateExam('exam-1', { category: 'IMAGING' }, EDITOR),
-    ).rejects.toBeInstanceOf(ExamServiceKindMismatchError);
-    expect(updateExam).not.toHaveBeenCalled();
-  });
-});
-
-describe('ExamAdministrationService · corregir en el sitio (ORD-140, ORD-141)', () => {
-  it('ORD-140 corrige el código de un examen que ninguna orden pidió', async () => {
-    const updateExam = vi
-      .fn()
-      .mockResolvedValue({ ...EXAM, code: 'EX-GLU-AY' });
-    const { service } = build({
-      examWasOrdered: vi.fn().mockResolvedValue(false),
-      updateExam,
-    });
-
-    await service.updateExam('exam-1', { code: 'EX-GLU-AY' }, EDITOR);
-
-    expect(updateExam).toHaveBeenCalledWith('exam-1', { code: 'EX-GLU-AY' });
-  });
-
-  it('ORD-140 el código de un examen ya pedido no cambia: EXAM_CODE_IN_USE, sin escribir', async () => {
-    const updateExam = vi.fn();
-    const { service } = build({
-      examWasOrdered: vi.fn().mockResolvedValue(true),
-      updateExam,
-    });
-
-    await expect(
-      service.updateExam('exam-1', { code: 'EX-GLU-AY' }, EDITOR),
-    ).rejects.toBeInstanceOf(ExamCodeInUseError);
-    expect(updateExam).not.toHaveBeenCalled();
-  });
-
+describe('ExamAdministrationService · corregir en el sitio (ORD-141)', () => {
   it('ORD-141 la unidad y sus rangos nuevos van juntos, en una sola escritura', async () => {
     const mmol: ReferenceRange = { ...RANGE, low: 3.9, high: 5.6 };
     const setRanges = vi

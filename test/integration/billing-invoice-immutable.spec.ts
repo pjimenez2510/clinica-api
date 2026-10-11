@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import '../../src/modules/billing/infrastructure/billing.constraints';
 import {
   PrismaBillingAccountRepository,
@@ -13,7 +14,6 @@ import { parseClinicalDate } from '../../src/shared/domain/clinic-time';
 import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
-import { aTariffConcept } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
 import { authoriseVoucher } from './setup/sri-fixtures';
@@ -69,6 +69,7 @@ const receiver = {
 
 beforeEach(async () => {
   const prisma = db();
+  await seedSpecialties(prisma);
   await seedBilling(prisma);
 
   const site = await createSite(prisma);
@@ -104,12 +105,12 @@ beforeEach(async () => {
     priceListId: priceList.id,
     emissionPointId: emissionPoint.id,
     serviceId: (
-      await prisma.billableService.findUniqueOrThrow({
+      await prisma.service.findUniqueOrThrow({
         where: { code: SERVICE_CODE },
       })
     ).id,
     supplyId: (
-      await prisma.billableService.findUniqueOrThrow({
+      await prisma.service.findUniqueOrThrow({
         where: { code: SUPPLY_CODE },
       })
     ).id,
@@ -128,10 +129,10 @@ async function anAccountReadyToInvoice(withSupply = false): Promise<string> {
     },
   });
 
-  const raise = (billableServiceId: string) =>
+  const raise = (serviceId: string) =>
     context.accounts.addCharge({
       accountId: account.id,
-      billableServiceId,
+      serviceId,
       encounterId: null,
       serviceDate: SERVICE_DATE,
       quantity: Quantity.ONE,
@@ -381,7 +382,7 @@ describe('BI-083, BI-086, BI-088, BI-089 lo que la factura copia y lo que rechaz
     const supplyPrice = await context.prisma.price.findFirstOrThrow({
       where: {
         priceListId: context.priceListId,
-        billableServiceId: context.supplyId,
+        serviceId: context.supplyId,
       },
     });
 
@@ -402,7 +403,7 @@ describe('BI-083, BI-086, BI-088, BI-089 lo que la factura copia y lo que rechaz
       UPDATE "price" SET "amount" = '999.00', "updated_at" = CURRENT_TIMESTAMP,
              "changed_by" = ${context.userId}::uuid, "changed_at" = ${new Date()}
        WHERE "price_list_id" = ${context.priceListId}::uuid
-         AND "billable_service_id" = ${context.serviceId}::uuid`;
+         AND "service_id" = ${context.serviceId}::uuid`;
 
     const stored = await context.prisma.invoice.findUniqueOrThrow({
       where: { id: invoice.id },
@@ -444,9 +445,9 @@ describe('BI-083, BI-086, BI-088, BI-089 lo que la factura copia y lo que rechaz
   it('BI-171 se niega a emitir si una prestación tiene un código que el SRI no acepta, y la nombra', async () => {
     // A catalogue code from before the 25-character limit (sri SRI-011).
     await context.prisma.$executeRaw`
-      UPDATE "billable_service" SET "code" = ${'C'.repeat(26)}
+      UPDATE "service" SET "code" = ${'C'.repeat(26)}
        WHERE "id" = ${context.serviceId}::uuid`;
-    const service = await context.prisma.billableService.findUniqueOrThrow({
+    const service = await context.prisma.service.findUniqueOrThrow({
       where: { id: context.serviceId },
     });
     const accountId = await anAccountReadyToInvoice();
@@ -464,7 +465,7 @@ describe('BI-083, BI-086, BI-088, BI-089 lo que la factura copia y lo que rechaz
 
     // Control: at 25 characters the same account is invoiced.
     await context.prisma.$executeRaw`
-      UPDATE "billable_service" SET "code" = ${'C'.repeat(25)}
+      UPDATE "service" SET "code" = ${'C'.repeat(25)}
        WHERE "id" = ${context.serviceId}::uuid`;
     await expect(issue(accountId)).resolves.toMatchObject({
       status: 'ISSUED',
@@ -646,35 +647,57 @@ describe('BI-159 la base rechaza un RUC o una cédula de receptor que el SRI no 
   );
 });
 
-describe('BI-257 D-179 atar no reescribe lo que dice una factura emitida', () => {
-  it('BI-257 la BASE rechaza atar a un procedimiento, con otro código, una prestación ya facturada; una sin facturar, sí', async () => {
+describe('BI-281 BI-285 lo que imprimió una factura emitida no cambia', () => {
+  async function aFreshService() {
+    const billed = await context.prisma.service.findUniqueOrThrow({
+      where: { id: context.serviceId },
+    });
+    return context.prisma.service.create({
+      data: {
+        code: 'OTR-SIN-FACTURA',
+        name: 'Sin facturar',
+        kind: 'OTHER',
+        taxRateId: billed.taxRateId,
+      },
+    });
+  }
+
+  it('BI-285 la BASE rechaza cambiar el Código MSP de un servicio ya facturado; el de uno sin facturar, sí', async () => {
     const accountId = await anAccountReadyToInvoice(true);
     await issue(accountId);
-    const concept = await aTariffConcept(context.prisma);
-    const tie = (id: string) =>
-      context.prisma.billableService.update({
+    const retag = (id: string) =>
+      context.prisma.service.update({
         where: { id },
-        data: { procedureConceptId: concept.id, tariffCode: concept.code },
+        data: { mspCode: '99999' },
       });
 
-    const raised = await tie(context.serviceId).then(
+    const raised = await retag(context.serviceId).then(
       () => undefined,
       (error: unknown) => error,
     );
-    expect(String(raised)).toMatch(/billable_service_tariff_code_invoiced/);
+    expect(String(raised)).toMatch(/service_msp_code_invoiced/);
     expect(extractDatabaseProblem(raised)?.code).toBe(
       'SERVICE_TARIFF_CODE_INVOICED',
     );
 
-    // Control positivo: una prestación sin cargos facturados se ata.
-    const fresh = await context.prisma.billableService.create({
-      data: {
-        code: 'PROC-SIN-FACTURA',
-        name: 'Sin facturar',
-        categoryId: (await context.prisma.billableService.findUniqueOrThrow({ where: { id: context.serviceId } })).categoryId, // prettier-ignore
-        taxRateId: (await context.prisma.billableService.findUniqueOrThrow({ where: { id: context.serviceId } })).taxRateId, // prettier-ignore
-      },
-    });
-    await tie(fresh.id);
+    // Control positivo: uno sin cargos facturados cambia.
+    await retag((await aFreshService()).id);
+  });
+
+  it('BI-281 la BASE rechaza cambiar el código de un servicio ya facturado; el de uno sin facturar, sí', async () => {
+    const accountId = await anAccountReadyToInvoice(true);
+    await issue(accountId);
+    const recode = (id: string, code: string) =>
+      context.prisma.service.update({ where: { id }, data: { code } });
+
+    const raised = await recode(context.serviceId, 'OTRO-CODIGO').then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(String(raised)).toMatch(/service_code_invoiced/);
+    expect(extractDatabaseProblem(raised)?.code).toBe('SERVICE_CODE_INVOICED');
+
+    // Control positivo: uno sin cargos facturados cambia de código.
+    await recode((await aFreshService()).id, 'OTR-RENOMBRADO');
   });
 });

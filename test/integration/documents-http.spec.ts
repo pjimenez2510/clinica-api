@@ -807,21 +807,17 @@ describe('los documentos por HTTP', () => {
         data: { code: 'EXAMENES-ORD126', name: 'Exámenes de la prueba' },
       });
       const exams = [
-        { code: 'EX-GLU-126', name: 'Glucosa en ayunas', section: 'BIOQUÍMICA', preparation: 'Ayuno de 8 a 12 horas. Puede beber agua.', fastingHours: 8 }, // prettier-ignore
-        { code: 'EX-BH-126', name: 'Biometría hemática completa', section: 'HEMATOLOGÍA', preparation: 'No requiere ayuno.', fastingHours: null }, // prettier-ignore
+        { code: 'LAB-GLU-126', name: 'Glucosa en ayunas', section: 'BIOQUÍMICA', preparation: 'Ayuno de 8 a 12 horas. Puede beber agua.', fastingHours: 8 }, // prettier-ignore
+        { code: 'LAB-BH-126', name: 'Biometría hemática completa', section: 'HEMATOLOGÍA', preparation: 'No requiere ayuno.', fastingHours: null }, // prettier-ignore
       ];
       const items = [];
       for (const exam of exams) {
-        await prisma.examDefinition.create({
-          data: {
-            code: exam.code,
-            // ORD-163. The name is the exam's service's.
-            billableServiceId: (
-              await createExamService(prisma, {
-                code: exam.code,
-                name: exam.name,
-              })
-            ).id,
+        // BI-284. The exam is a service; DOC-072 reads its order extension
+        // by the code the line froze.
+        await createExamService(prisma, {
+          code: exam.code,
+          name: exam.name,
+          exam: {
             form010Section: exam.section,
             patientPreparation: exam.preparation,
             // ORD-129. The fast is the exam's datum, read at print time.
@@ -2587,13 +2583,13 @@ describe('los documentos por HTTP', () => {
         update: {},
       });
       const concept = await prisma.catalogConcept.create({
-        data: { systemId: system.id, code: 'EX-BH', display: 'Biometría hemática', validFrom: new Date(Date.now() - 400 * DAY) }, // prettier-ignore
+        data: { systemId: system.id, code: 'MSP-BH', display: 'Biometría hemática', validFrom: new Date(Date.now() - 400 * DAY) }, // prettier-ignore
       });
       const order = await prisma.serviceOrder.create({
         data: { encounterId: seeded.id, siteId, orderedById: practitionerId, category: 'LABORATORY' }, // prettier-ignore
       });
       await prisma.serviceOrderItem.create({
-        data: { serviceOrderId: order.id, conceptId: concept.id, testCode: 'EX-BH', testDisplay: 'Biometría hemática' }, // prettier-ignore
+        data: { serviceOrderId: order.id, conceptId: concept.id, testCode: 'LAB-BH', testDisplay: 'Biometría hemática' }, // prettier-ignore
       });
       await prisma.serviceOrder.update({
         where: { id: order.id },

@@ -605,6 +605,31 @@ precios es el de B1 (BI-040 a BI-048) y B14 (BI-230); esta entrega no lo toca, y
 por eso sus tres criterios dejan el denominador del backend. D-218 (el código
 MSP como requisito, `tariff_amount`) queda **fuera**, pendiente del autor.
 
+### B21 — Un solo catálogo de servicios _(P1, 11-10-2026)_
+
+ADR-013 y D-227 §1, con D-220 §3 y D-218. Lo que la clínica ofrece y cobra
+vive en **una** tabla, `service`, con su **tipo** (`kind`): la consulta lleva
+especialidad, duración y visita; el examen, la imagen y el procedimiento que
+se pide como orden llevan su extensión de orden (`service_exam`) con sus
+determinaciones; el procedimiento se ata por su código. Se eliminan
+`service_type`, `service_type_billable_service`, `exam_definition`,
+`billable_service_category` y `encounter_procedure.tariff_amount`. El precio
+(`price`), los pagadores, el cargo congelado, las órdenes y el SRI no cambian
+de idea. Una sola pantalla, «Servicios», crea, busca, corrige y precia.
+
+**Prueba independiente:** crear una consulta (especialidad, visita, 30 min,
+25,00), un examen con sus determinaciones y un procedimiento desde
+`/administracion/servicios`; reservar una cita con la consulta y ver su
+duración propuesta; pedir el examen sin código MSP; pasar a caja y ver la
+consulta y el examen propuestos con su precio; agregar el procedimiento
+buscándolo por código. Contra PostgreSQL: la base rechaza una consulta sin
+especialidad, una extensión de orden sobre un insumo, dos consultas con el
+mismo nombre en una especialidad y dos procedimientos con el mismo código.
+
+**Cubre:** BI-278 a BI-298. **Solo interfaz:** BI-291 a BI-296. **Sustituye:**
+BI-185 a BI-188, BI-257, BI-275 a BI-277 (y SP-020, SP-026, SP-030, SP-031,
+ORD-103, ORD-108, ORD-109, ORD-162, ORD-163, ORD-169 en sus módulos).
+
 > Las BI-003, BI-004, BI-007 y BI-130 a BI-135 **no son una entrega**: aplican a
 > todas. Una ruta de B1 sin permiso declarado no pasa la prueba de rutas, y una
 > pantalla de B6 que bloquee una atención por falta de pago es ilegal en B6
@@ -782,6 +807,7 @@ es falsa, hay requisitos que cambian.
   > La misma regla que `SPECIALTY_IN_USE` y `SERVICE_TYPE_IN_USE`, y aquí es
   > además contable: la prestación que nombra una factura de hace ocho meses
   > tiene que seguir existiendo para que esa factura se pueda leer.
+  > **Enmendado el 11-10-2026 (BI-288).** También una cita, una lista de espera o una orden que nombran el servicio impiden borrarlo.
 - **BI-013** — El sistema DEBERÁ exigir una tarifa de impuesto en toda
   prestación, y SI se intenta crear o guardar una sin ella, ENTONCES DEBERÁ
   rechazarlo con `TAX_RATE_REQUIRED`.
@@ -1041,6 +1067,7 @@ es falsa, hay requisitos que cambian.
   > en caja tiene que poder decir si falta el precio, si el pagador es el que no
   > toca o si la fecha del servicio se tecleó mal. Un error que no distingue esas
   > tres cosas manda a alguien a buscar en el sitio equivocado.
+  > **Enmendado el 11-10-2026 (BI-297, ADR-013).** En la lista de un convenio, la falta de precio propio se resuelve con el particular; sólo sin ninguno de los dos se rechaza.
 - **BI-048** — El sistema DEBERÁ expresar todo precio en dólares de los Estados
   Unidos y NO DEBERÁ ofrecer conversión de moneda.
 - **BI-230** — El sistema DEBERÁ permitir corregir el **importe** de un precio
@@ -1074,6 +1101,7 @@ es falsa, hay requisitos que cambian.
   > D-217 §2. Completa D-179 («un dato, un sitio») en la pantalla. Las columnas
   > son Particular más una por lista de pagador activa; editar una celda abre
   > «Fijar precio» (BI-044) o «Corregir precio» (BI-230), que ya existen.
+  > **Sustituido el 11-10-2026 por BI-291 y BI-292 (ADR-013).** «Servicios y precios» y «Prestaciones y precios» se juntan en «Servicios».
 - **BI-276** — MIENTRAS exista la pantalla «Servicios y precios», las demás
   vistas del precio de una prestación —los precios por pagador de su ficha, la
   lista de precios de la ficha del pagador, el diálogo del tipo de atención al
@@ -1082,6 +1110,7 @@ es falsa, hay requisitos que cambian.
   de atención o un examen, el sistema DEBERÁ pedir su precio particular una vez.
   > D-217 §2. «Lo que caja propone para estas citas» se retira del diálogo del
   > tipo de atención: era falso con un pagador que no es particular.
+  > **Sustituido el 11-10-2026 por BI-292 a BI-294 (ADR-013).** Ya no hay otras puertas: el pagador y la especialidad no editan precios.
 - **BI-277** — El sistema DEBERÁ nombrar en pantalla el código del tarifario del
   MSP «Código MSP», el precio que se exhibe al público «Precios en la pared» y
   la tarifa del IVA del SRI «IVA», y NO DEBERÁ usar «tarifario» ni «tarifa de
@@ -1090,6 +1119,7 @@ es falsa, hay requisitos que cambian.
   > MSP (nomenclatura, `billable_service.tariff_code`), la publicación pública
   > (LOS art. 184) y la tarifa de impuesto del SRI. El dato y las rutas no
   > cambian (eso es D-218, pendiente): sólo el rótulo que se lee.
+  > **Sustituido el 11-10-2026 por BI-296 (ADR-013, D-218).** La columna pasa a llamarse `msp_code`.
 
 ## 6. El cargo: la pieza que congela
 
@@ -2125,6 +2155,7 @@ dos registros distintos.**
   > precio dependiera de cuál devolviera primero una consulta. Una atención sin
   > cita no tiene especialidad, y eso es una propuesta con una línea de menos
   > (BI-155), nunca una adivinanza.
+  > **Enmendado el 11-10-2026 (ADR-013, BI-287).** La consulta es el **servicio de la cita** (`agenda_entry.service_id`), no la «primera prestación» de su tipo de atención: el tipo de atención y su tabla puente se eliminaron.
 - **BI-232** — El catálogo de arranque DEBERÁ traer, para cada tipo de atención
   de arranque de cada especialidad («Primera vez» y «Control»), una prestación
   de consulta atada a él (SP-031), y NO DEBERÁ ponerles precio salvo a las que
@@ -2312,6 +2343,7 @@ dos registros distintos.**
   > «Catálogos en vez de texto libre» (autor). Una categoría desactivada deja de
   > ofrecerse, y las prestaciones que ya la llevan la siguen leyendo, como
   > BI-014 con la prestación.
+  > **Sustituido el 11-10-2026 por BI-278 (ADR-013).** `billable_service_category` se eliminó: el **tipo** del servicio es la clase.
 - **BI-186** — El sistema DEBERÁ guardar la categoría de cada prestación como
   referencia al catálogo y la clase de cada categoría como uno de `CONSULTATION`,
   `PROCEDURE`, `LABORATORY`, `IMAGING`, `SUPPLY` u `OTHER`; y la **base** DEBERÁ
@@ -2319,6 +2351,7 @@ dos registros distintos.**
   borrado de una categoría que alguna prestación usa.
   > Las clases de examen y procedimiento son las mismas que las de una orden
   > (`service_order_category`), para que una orden y su cobro hablen igual.
+  > **Sustituido el 11-10-2026 por BI-278 (ADR-013).**
 - **BI-187** — SI se cambia a una categoría de otra clase una prestación que
   cobra un tipo de atención (SP-030; la nueva no es `CONSULTATION`), que está atada a un concepto de procedimiento (la nueva no es
   `PROCEDURE`) o por la que se cobra un examen (la nueva no es el tipo de ese
@@ -2359,6 +2392,7 @@ dos registros distintos.**
   > —laboratorio, imagen o procedimiento— y la prestación con que se cobra es de
   > esa misma clase. Antes la regla admitía «laboratorio o imagen» para todo
   > examen, y un electrocardiograma no podía cobrarse como procedimiento.
+  > **Sustituido el 11-10-2026 por BI-278 y BI-279 (ADR-013).** El tipo no cambia tras el alta, así que no hay ataduras que proteger de un cambio de clase.
 - **BI-188** — CUANDO se consulte una prestación de clase `LABORATORY` o
   `IMAGING`, el sistema DEBERÁ servir los exámenes del catálogo de exámenes que
   se cobran con ella (desde D-179.1, a lo sumo uno, ORD-163), y de una de clase
@@ -2368,6 +2402,7 @@ dos registros distintos.**
   > estructura de resultados —analitos, unidades, rangos, críticos— es del
   > catálogo de exámenes y la construye su propia rama; aquí sólo se ve con qué
   > se cobra cada examen.
+  > **Sustituido el 11-10-2026 por BI-283 (ADR-013).** El examen ya no se cobra «con» una prestación: el servicio lleva su extensión de orden.
 - **BI-189** — CUANDO se consulte una prestación, el sistema DEBERÁ servir sus
   precios en las listas de todos los pagadores, con su vigencia `[desde,
   hasta)`, marcando el vigente en la fecha de hoy en Ecuador.
@@ -2402,6 +2437,7 @@ dos registros distintos.**
   > `billable_service_written_consent_needs_a_procedure` (marcada ⇒ ata un
   > concepto) y `billable_service_written_consent_tie_locked` (marcada ⇒ ni
   > se re-ata ni se borra).
+  > **Enmendado el 11-10-2026 (ADR-013, BI-286).** La marca se admite en un servicio de tipo procedimiento con código (`service_written_consent_needs_a_procedure`), y alcanza a todo procedimiento registrado con ese código.
 - **BI-257** — CUANDO quien tiene `billing:price-manage` ate una prestación de
   clase procedimiento a un concepto del tarifario, o la desate, el sistema
   DEBERÁ guardarlo y servirlo con la prestación, para que caja proponga su
@@ -2433,6 +2469,7 @@ dos registros distintos.**
   > Hasta aquí ninguna pantalla ni semilla escribía la atadura (BI-187): el
   > cargo del procedimiento nunca se proponía y la marca del 024 no tenía a
   > qué procedimiento aplicarse.
+  > **Sustituido el 11-10-2026 por BI-286 (ADR-013, D-218 §3).** Ya no hay `procedure_concept_id` ni código del tarifario aparte: el procedimiento se ata por su código, que es su Código MSP.
 
 ## 19. Lo que la orden de exámenes deja a caja
 
@@ -2926,6 +2963,184 @@ lo ve._
   > leerla. La pulsación perdedora recibe la cuenta con el pagador de la
   > ganadora, como ya ocurría con una pulsación posterior (D-216, pendiente).
 
+## 27. Un solo catálogo de servicios (ADR-013, D-227 §1)
+
+> **Por qué.** Lo que se vende estaba partido en tres entidades con tres
+> pantallas —el tipo de atención (`service_type`), el examen
+> (`exam_definition`) y la prestación (`billable_service` con su categoría)— y
+> la semilla traía dos filas para la misma consulta («Consulta de
+> anestesiología, primera vez» y «Anestesiología · Control»). Una cosa que se
+> vende = una fila = una ficha. Como Jane, SimplePractice, Medilink y Odoo.
+>
+> **Esquema.** `billable_service` pasa a llamarse `service`, y sus claves
+> foráneas (`price`, `charge_item`, `tariff_publication_item`) `service_id`.
+> `tariff_code` pasa a `msp_code`. `agenda_entry`, `waitlist_entry` y
+> `duration_exception` apuntan a `service_id`. Lo que ya estaba facturado no
+> cambia: el cargo congela nombre, precio e IVA (BI-060).
+
+- **BI-278** — El sistema DEBERÁ guardar cada cosa que la clínica ofrece y
+  cobra como una fila de `service` con código único, nombre, IVA, estado activo
+  y **tipo** —uno de `CONSULTATION`, `PROCEDURE`, `LAB_EXAM`, `IMAGING`,
+  `SUPPLY` u `OTHER`—; el tipo NO DEBERÁ cambiar después del alta, y la **base**
+  DEBERÁ rechazar un tipo desconocido (`service_kind_is_known`) y dos servicios
+  activos con el mismo nombre sin distinguir mayúsculas ni tildes
+  (`service_active_name_unique`); SI se crea o renombra con el nombre de otro
+  activo, ENTONCES DEBERÁ rechazarlo con `SERVICE_NAME_DUPLICATE`.
+  > El tipo sustituye a la categoría (BI-185 a BI-187): decía lo mismo que el
+  > «tipo» del examen y obligaba a mantener un catálogo para seis valores.
+  > Agrupar más fino, si se pide, será una etiqueta libre.
+- **BI-279** — DONDE el servicio sea una **consulta**, el sistema DEBERÁ
+  exigir su especialidad, su duración en minutos y su visita —primera vez
+  (`FIRST_VISIT`), control (`FOLLOW_UP`) o ninguna—, y DONDE no lo sea NO
+  DEBERÁ admitir ninguno de los tres (`service_consultation_shape`); la
+  duración DEBERÁ ser múltiplo del turno de la agenda de todas las sedes
+  (SP-021, `SLOT_DURATION_MISMATCH`) y estar entre 5 y 240
+  (`service_duration_range`). SI la especialidad no existe o está
+  desactivada, ENTONCES DEBERÁ rechazarlo con `SPECIALTY_NOT_FOUND`.
+  > Sustituye a SP-020 y SP-026: la consulta **es** el tipo de atención. Una
+  > especialidad puede tener varias consultas («Control prenatal» y «Control»),
+  > y el nombre las distingue (BI-278).
+- **BI-280** — CUANDO quien tiene `billing:price-manage` cree un servicio, el
+  sistema DEBERÁ exigir tipo, nombre y **precio particular** (cero se admite),
+  y DEBERÁ crear en la misma transacción el servicio, su precio en la lista
+  particular vigente desde hoy en Ecuador y, si es examen, imagen o
+  procedimiento que se pide, su extensión de orden (BI-284); DEBERÁ proponer el
+  código —prefijo del tipo y el nombre, sin repetir uno existente— cuando no
+  se traiga, y el IVA de servicios de salud (código SRI `0`) **sin revisar**
+  cuando no se traiga (D-A-006). SI el precio falta o es negativo, ENTONCES
+  DEBERÁ rechazarlo con `VALIDATION_FAILED` nombrando el campo; SI el código
+  ya existe, con `BILLABLE_SERVICE_CODE_DUPLICATE`; y SI no hay lista
+  particular activa, con `PRICE_LIST_NOT_FOUND`.
+  > D-228 (construido así mientras el autor decide): el examen creado sin
+  > precio quedaba «Sin precio» y el autor creyó que no se había creado.
+  > Sustituye a SP-030 y ORD-162: ya no nace nada «detrás» de otra cosa.
+- **BI-281** — CUANDO se corrija el código de un servicio, SI ya está en un
+  cargo facturado ENTONCES el sistema DEBERÁ rechazarlo con
+  `SERVICE_CODE_INVOICED` (la representación impresa lo vuelve a leer), y SI
+  una orden ya lo pidió, con `EXAM_CODE_IN_USE` (ORD-140,
+  `trg_service_code_fixed_once_ordered`).
+- **BI-282** — CUANDO se consulten los servicios (`GET /billing/services`), el
+  sistema DEBERÁ filtrarlos en el servidor por texto —en el nombre **o** el
+  código, sin distinguir mayúsculas ni tildes—, por tipo, por especialidad y
+  por activos o todos, y devolver la página pedida (`page`, `pageSize` de 20,
+  50 o 100) con el total; cada fila DEBERÁ llevar su precio vigente hoy en
+  Ecuador en la lista particular y en cada lista de pagador activa. SI
+  `pageSize` es otro, ENTONCES DEBERÁ rechazarlo con `VALIDATION_FAILED`.
+  > D-220 §3. La misma ruta sirve al selector («Agregar cargo»): primera
+  > página de 20 y el total, sin pedir más páginas. La matriz de precios deja
+  > de pedir una lista por pagador y cruzar en el cliente (D-224 §3, que queda
+  > sin objeto).
+- **BI-283** — CUANDO se consulte un servicio (`GET /billing/services/:id`), el
+  sistema DEBERÁ servir en una respuesta sus datos, su extensión de orden si la
+  tiene, sus determinaciones en orden con sus rangos vigentes por sexo y edad,
+  y sus precios por pagador con su vigencia (BI-189).
+- **BI-284** — DONDE el servicio sea `LAB_EXAM` o `IMAGING`, o `PROCEDURE`
+  marcado «se pide en una orden», el sistema DEBERÁ guardar su **extensión de
+  orden** (`service_exam`, una por servicio): sección del formulario 010,
+  muestra, preparación, ayuno y sus horas, tiempo de entrega y laboratorio
+  externo con su código; y la **base** DEBERÁ rechazar la extensión sobre otro
+  tipo (`trg_service_exam_kind_admits`). Sólo los servicios activos con
+  extensión DEBERÁN ofrecerse como pedibles (ORD-010), con la categoría de la
+  orden derivada del tipo: `LAB_EXAM` → laboratorio, `IMAGING` → imagen,
+  `PROCEDURE` → procedimiento (ORD-097).
+  > Sustituye a ORD-163: el examen ya no «tiene» una prestación, la **es**. El
+  > electrocardiograma es un procedimiento que se pide como orden.
+- **BI-285** — El código MSP (`msp_code`) DEBERÁ ser opcional en todo servicio,
+  NO DEBERÁ ser requisito para pedirlo (ORD-004) y DEBERÁ imprimirse en el RIDE
+  como «Cód. auxiliar» cuando exista (D-218 §1–§2).
+- **BI-286** — DONDE el servicio sea un **procedimiento**, el sistema DEBERÁ
+  atarlo al procedimiento registrado en la atención **por su código**: su
+  `msp_code` es el código del concepto del tarifario que cobra, y caja
+  DEBERÁ proponerlo para todo `encounter_procedure` con ese `procedure_code`,
+  de cualquier versión del tarifario (BI-151). SI otro procedimiento activo ya
+  lleva ese código, ENTONCES DEBERÁ rechazarlo con `SERVICE_PROCEDURE_TAKEN`
+  (`service_one_procedure_per_code`).
+  > D-218 §3. Sustituye a BI-257: `procedure_concept_id` cambiaba con cada
+  > edición del tarifario, y la marca del 024 (EN-152) ya comparaba por
+  > código. Un dato, un sitio: el código del procedimiento y el código MSP del
+  > servicio eran el mismo dato guardado dos veces
+  > (`billable_service_tariff_code_is_its_procedure`).
+- **BI-287** — CUANDO se pase una atención a caja, el sistema DEBERÁ proponer
+  como consulta el **servicio de la cita** (`agenda_entry.service_id`) si es
+  una consulta; SI la atención no nació de una cita con servicio, ENTONCES
+  DEBERÁ darla por no propuesta con `NO_BILLABLE_SERVICE` (BI-155).
+  > Enmienda BI-158: la consulta ya no se busca por el tipo de atención y su
+  > «posición 0».
+- **BI-288** — CUANDO se borre un servicio, SI una cita, una lista de espera, un
+  cargo, una línea de orden (por su código) o una publicación de precios lo
+  nombran, ENTONCES el sistema DEBERÁ rechazarlo con `BILLABLE_SERVICE_IN_USE`
+  y ofrecer desactivarlo (BI-012, SP-025); sus propios precios, que ningún
+  cargo congeló, se borran con él (todo servicio nace con uno, BI-280). La
+  línea de orden no tiene clave hacia el servicio: lo garantiza
+  `trg_service_not_deleted_once_ordered`, y quien emite la orden bloquea el
+  servicio hasta confirmarla.
+- **BI-289** — CUANDO se publiquen los precios en la pared, cada línea DEBERÁ
+  llevar como grupo el **tipo** del servicio («Consultas», «Exámenes de
+  laboratorio», …) en lugar de la categoría (BI-110).
+- **BI-290** — Toda alta, corrección, desactivación o borrado de un servicio, y
+  de su extensión de orden, DEBERÁ dejar en `access_audit` (recurso `service`)
+  el antes y el después (BI-130, AD-10).
+
+- **BI-297** — CUANDO se resuelva el precio de un cargo en la lista de un
+  convenio de empresa o de un seguro privado, SI esa lista no tiene precio vigente para
+  el servicio en la fecha del servicio, ENTONCES el sistema DEBERÁ resolverlo
+  con el precio vigente de la lista particular y guardar en el cargo la fila de
+  la que salió (`resolved_price_id`); sólo SI tampoco hay precio particular
+  DEBERÁ rechazarlo con `PRICE_NOT_FOUND` (BI-047).
+  > ADR-013: «un convenio guarda excepciones» sobre el particular, y la
+  > columna del convenio en la lista dice «—» = «usa el particular». Sin esta
+  > caída, ese «—» sería falso. Construido así mientras el autor decide (D-230).
+  > La red pública queda fuera: liquida por el Tarifario del SNS, y un importe
+  > particular en su planilla se glosaría; sin precio propio, `PRICE_NOT_FOUND`.
+
+- **BI-298** — CUANDO se cree una consulta, se corrija su especialidad o su
+  visita o se reactive, SI ya hay otra consulta activa de la misma
+  especialidad y la misma visita, ENTONCES el sistema DEBERÁ rechazarlo con
+  `CONSULTATION_DUPLICATE`, nombrando la que existe para que se edite; la base
+  lo garantiza con `service_one_consultation_per_visit` (una consulta sin
+  visita es su propio caso; una desactivada no cuenta).
+  > ADR-013: «una consulta por especialidad y visita». Dos «Primera vez» de
+  > la misma especialidad devuelven la duda de cuál propone la agenda y cuál
+  > cobra caja (revisión de producto del 11-10-2026).
+
+### La pantalla «Servicios» (sólo interfaz, D-227 §1, D-220)
+
+- **BI-291** — El sistema DEBERÁ ofrecer una sola entrada «Servicios» en
+  Administración · Facturación (`/administracion/servicios`), y las rutas
+  anteriores —`precios`, `servicios-precios`, `prestaciones/:id`,
+  `examenes` y `examenes/:id`— DEBERÁN llevar a ella (a la ficha cuando
+  nombran un servicio que conserva su id, `prestaciones/:id`; los exámenes
+  cambiaron de id con ADR-013 y llevan a la pestaña de exámenes), no a una
+  página inexistente.
+- **BI-292** — La lista DEBERÁ separar los servicios por tipo en pestañas
+  (Todos · Consultas · Exámenes · Imagen · Procedimientos · Insumos · Otros),
+  buscar por nombre o código paginando en el servidor (BI-282) con los filtros
+  en la dirección, mostrar el precio Particular y el de cada convenio activo
+  —«—» cuando el convenio usa el particular, dicho al pasar el cursor— y
+  editarlo en la celda (BI-044, BI-230), marcar los que no tienen precio, y
+  ofrecer «Publicar precios» (BI-110) en la misma pantalla.
+- **BI-293** — «Nuevo servicio» DEBERÁ pedir primero el tipo y luego sólo lo de
+  ese tipo, en un diálogo: consulta → especialidad, visita, duración y precio;
+  examen o imagen → nombre, muestra, ayuno y precio; procedimiento → nombre,
+  procedimiento del tarifario opcional, si se pide en una orden y precio;
+  insumo u otro → nombre y precio. El mismo diálogo DEBERÁ corregir los datos
+  (D-220 §1).
+- **BI-294** — La ficha del servicio DEBERÁ ser **una sola página** con sus
+  secciones a la vista: Datos · Precios por pagador con su historia · y, si
+  tiene extensión de orden, la extensión y sus **determinaciones con sus
+  rangos** normal y crítico por sexo y edad en la misma tabla, editables allí
+  (ORD-105, ORD-106).
+- **BI-295** — Todo selector de servicio («Agregar cargo» y cualquier otro)
+  DEBERÁ buscar en el servidor mientras se escribe (unos 250 ms) por nombre y
+  código sobre todo el catálogo, mostrar los 20 primeros con el tipo como
+  segunda línea y decir «Afine la búsqueda» si hay más, sin páginas (D-220 §3).
+- **BI-296** — En pantalla NO DEBERÁN aparecer «prestación», «categoría» ni
+  «tarifario»: se dice «servicio», «tipo» y «Código MSP»; y el campo «Código
+  MSP» DEBERÁ verse sólo DONDE la clínica trabaje con la red pública o el
+  SPPAT (D-218 §2; mientras no exista la pantalla «Funciones», D-229).
+  Especialidades DEBERÁ listar sus consultas con enlace al servicio, sin
+  editarlas, y el pagador NO DEBERÁ editar precios (D-227 §1).
+
 ---
 
 ## Códigos de error nuevos
@@ -2938,6 +3153,8 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `BILLABLE_SERVICE_CODE_DUPLICATE` | 409 | BI-010 |
 | `BILLABLE_SERVICE_IN_USE` | 409 | BI-012 |
 | `BILLABLE_SERVICE_INACTIVE` | 422 | BI-015 |
+| `SERVICE_CODE_INVOICED` | 409 | BI-281 |
+| `SERVICE_NAME_DUPLICATE` | 409 | BI-278 (lo produce `service_active_name_unique`: va en `billing.constraints.ts`, no en el catálogo) |
 | `TAX_RATE_REQUIRED` | 422 | BI-013 |
 | `TAX_RATE_NOT_FOUND` | 404 | BI-020 |
 | `TAX_RATE_IN_USE` | 409 | BI-026 |

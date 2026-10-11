@@ -29,7 +29,7 @@ const ADULT = d('1990-03-15');
 const SLOT: FreedSlot = {
   date: d('2026-09-14'),
   practitionerId: 'practitioner-p',
-  serviceTypeId: 'service-general',
+  serviceId: 'service-general',
 };
 
 let sequence = 0;
@@ -50,7 +50,7 @@ function waiting(
     preferredFrom: d('2026-09-01'),
     preferredTo: d('2026-09-30'),
     practitionerId: null,
-    serviceTypeId: null,
+    serviceId: null,
     contactAttempts: 0,
     lastContactedAt: null,
     lastOutcome: null,
@@ -96,14 +96,12 @@ describe('lista de espera', () => {
     });
 
     it('AG-061 refuses a slot of another service type when the entry fixes one', () => {
-      const entry = waiting({ serviceTypeId: 'service-paediatrics' });
+      const entry = waiting({ serviceId: 'service-paediatrics' });
 
       expect(isCompatibleWith(entry, SLOT)).toBe(false);
       // A released BLOCK frees an interval with no service type at all, and an
       // entry that demands one is not satisfied by it.
-      expect(isCompatibleWith(entry, { ...SLOT, serviceTypeId: null })).toBe(
-        false,
-      );
+      expect(isCompatibleWith(entry, { ...SLOT, serviceId: null })).toBe(false);
     });
   });
 

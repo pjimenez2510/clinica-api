@@ -32,7 +32,7 @@ const price = (
   validTo: string | null = null,
 ): PriceRow => ({
   id,
-  billableServiceId: 'service',
+  serviceId: 'service',
   amount: Money.parse(amount),
   validFrom: on(validFrom),
   validTo: validTo === null ? null : on(validTo),

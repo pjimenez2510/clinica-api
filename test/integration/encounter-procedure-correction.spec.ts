@@ -55,11 +55,11 @@ function archive(
   return prisma.$executeRaw`
     INSERT INTO encounter_procedure_retraction
       (id, encounter_id, concept_id, procedure_code, procedure_display,
-       quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+       quantity, performed_at, note, edited_by_id, edited_at,
        recorded_at, recorded_by_id,
        retracted_at, retracted_by_id, reason)
     SELECT id, encounter_id, concept_id, procedure_code, procedure_display,
-           quantity, performed_at, note, tariff_amount, edited_by_id, edited_at,
+           quantity, performed_at, note, edited_by_id, edited_at,
            recorded_at, recorded_by_id,
            ${new Date()}, ${removerId}::uuid, ${reason}
       FROM encounter_procedure WHERE id = ${procedureId}::uuid`;
@@ -236,7 +236,9 @@ describe('corregir y quitar un procedimiento deja rastro (EN-244 a EN-246)', () 
     ).rejects.toThrow(/encounter_procedure_retraction_frozen/);
   });
 
-  it('EN-245 EN-051 el archivo guarda también el importe heredado de la fila; sin él no entra', async () => {
+  it('EN-245 el archivo es la fila tal cual: sin quién y cuándo la registró no entra', async () => {
+    // EN-051 (D-218 §3): `tariff_amount` ya no está en ninguna de las dos
+    // tablas; lo que el archivo copia es la fila clínica, entera.
     const prisma = db();
     const { encounter, concept, user } =
       await anEncounterWithAProcedure(prisma);
@@ -247,7 +249,6 @@ describe('corregir y quitar un procedimiento deja rastro (EN-244 a EN-246)', () 
         procedureCode: concept.code,
         procedureDisplay: concept.display,
         performedAt: encounter.startedAt,
-        tariffAmount: 12.5,
         recordedAt: new Date(),
         recordedById: user.id,
       },
@@ -265,7 +266,8 @@ describe('corregir y quitar un procedimiento deja rastro (EN-244 a EN-246)', () 
 
     await archive(prisma, old.id, user.id);
     const archived = await prisma.encounterProcedureRetraction.findUniqueOrThrow({ where: { id: old.id } }); // prettier-ignore
-    expect(archived.tariffAmount?.toString()).toBe('12.5');
+    expect(archived.recordedById).toBe(user.id);
+    expect(archived.recordedAt).toEqual(old.recordedAt);
   });
 
   it('EN-247 la BASE rechaza registrar, corregir o archivar un procedimiento de una atención reportada al RDACAA (D-117.16)', async () => {

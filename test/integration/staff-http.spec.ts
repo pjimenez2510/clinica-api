@@ -23,6 +23,8 @@ import '../../src/modules/staff/infrastructure/staff.constraints';
 
 import { useDatabase } from './setup/database';
 import {
+  createConsultation,
+  createExamService,
   createPatient,
   createScheduleRule,
   createSite,
@@ -120,8 +122,7 @@ describe('el personal por HTTP', () => {
     }
 
     await syncAuthorisation(prisma);
-    // SP-030. A service type is born with its service: the consultation
-    // category and the 0 % rate it is created in come from the billing seed.
+    // The 0 % health rate every consultation is created with.
     await seedBilling(prisma);
     // The role→permission cache is indexed by id, and truncation recreates the
     // roles with fresh ids: without this every request answers 403.
@@ -244,17 +245,24 @@ describe('el personal por HTTP', () => {
     return response.body as { id: string };
   }
 
-  async function createServiceType(
+  /**
+   * ADR-013. A consultation service of the specialty, written to the table:
+   * it is administered in «Servicios» (`billing`), and what these tests are
+   * about is the exception that hangs off it.
+   */
+  async function aConsultation(
     specialtyId: string,
     name = 'Control',
     durationMinutes = 20,
   ): Promise<{ id: string }> {
-    const response = await request(app.getHttpServer())
-      .post(`/api/v1/specialties/${specialtyId}/service-types`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({ name, durationMinutes })
-      .expect(201);
-    return response.body as { id: string };
+    // BI-298. One per specialty and visit: the name says which visit it is.
+    const visitKind = /primera/i.test(name) ? 'FIRST_VISIT' : 'FOLLOW_UP';
+    return createConsultation(prisma, {
+      specialtyId,
+      name,
+      durationMinutes,
+      visitKind,
+    });
   }
 
   // --- The file ---------------------------------------------------------------
@@ -795,8 +803,8 @@ describe('el personal por HTTP', () => {
     it('ST-009/SP-022 fija, resuelve y retira una excepción de duración por profesional', async () => {
       const practitioner = await createPractitioner();
       const specialty = await createSpecialty();
-      const control = await createServiceType(specialty.id, 'Control', 20);
-      const primera = await createServiceType(specialty.id, 'Primera vez', 30);
+      const control = await aConsultation(specialty.id, 'Control', 20);
+      const primera = await aConsultation(specialty.id, 'Primera vez', 30);
       await put(`/practitioners/${practitioner.id}/specialties`, {
         items: [{ specialtyId: specialty.id, isPrimary: true }],
       }).expect(200);
@@ -814,7 +822,8 @@ describe('el personal por HTTP', () => {
       const items = (
         listed.body as {
           items: {
-            serviceTypeId: string;
+            serviceId: string;
+            serviceName: string;
             baseMinutes: number;
             exceptionMinutes: number | null;
             resolvedMinutes: number;
@@ -822,22 +831,23 @@ describe('el personal por HTTP', () => {
         }
       ).items;
       // With an exception the practitioner's own minutes rule (level 1)…
-      expect(
-        items.find((item) => item.serviceTypeId === control.id),
-      ).toMatchObject({
-        // prettier-ignore
-        baseMinutes: 20,
-        exceptionMinutes: 40,
-        resolvedMinutes: 40,
-      });
-      // …and without one the base of the specialty·type rules (level 2).
-      expect(
-        items.find((item) => item.serviceTypeId === primera.id),
-      ).toMatchObject({
-        // prettier-ignore
-        exceptionMinutes: null,
-        resolvedMinutes: 30,
-      });
+      expect(items.find((item) => item.serviceId === control.id)).toMatchObject(
+        {
+          // prettier-ignore
+          serviceName: 'Control',
+          baseMinutes: 20,
+          exceptionMinutes: 40,
+          resolvedMinutes: 40,
+        },
+      );
+      // …and without one the consultation's own duration rules (level 2).
+      expect(items.find((item) => item.serviceId === primera.id)).toMatchObject(
+        {
+          // prettier-ignore
+          exceptionMinutes: null,
+          resolvedMinutes: 30,
+        },
+      );
 
       await destroy(
         `/practitioners/${practitioner.id}/duration-exceptions/${control.id}`,
@@ -852,14 +862,14 @@ describe('el personal por HTTP', () => {
     it('ST-009/SP-022 el rango de la duración lo garantiza la base: 37 y 250 minutos se rechazan', async () => {
       const practitioner = await createPractitioner();
       const specialty = await createSpecialty();
-      const type = await createServiceType(specialty.id);
+      const type = await aConsultation(specialty.id);
 
       for (const minutes of [37, 250]) {
         // Straight SQL, dodging the DTO on purpose: a psql at two in the
         // morning is exactly what the CHECK exists for.
         await expect(
           prisma.$executeRaw`
-            INSERT INTO duration_exception (practitioner_id, service_type_id, duration_minutes)
+            INSERT INTO duration_exception (practitioner_id, service_id, duration_minutes)
             VALUES (${practitioner.id}::uuid, ${type.id}::uuid, ${minutes})
           `,
         ).rejects.toThrowError(/duration_exception_range/);
@@ -869,7 +879,7 @@ describe('el personal por HTTP', () => {
     it('ST-009 el espejo del rango responde por campo antes de llegar a la base', async () => {
       const practitioner = await createPractitioner();
       const specialty = await createSpecialty();
-      const type = await createServiceType(specialty.id);
+      const type = await aConsultation(specialty.id);
 
       const response = await put(
         `/practitioners/${practitioner.id}/duration-exceptions/${type.id}`,
@@ -890,7 +900,7 @@ describe('el personal por HTTP', () => {
     it('SP-022 rechaza una excepción que no es múltiplo del turno, sin escribirla', async () => {
       const practitioner = await createPractitioner();
       const specialty = await createSpecialty();
-      const type = await createServiceType(specialty.id);
+      const type = await aConsultation(specialty.id);
 
       const response = await put(
         `/practitioners/${practitioner.id}/duration-exceptions/${type.id}`,
@@ -906,14 +916,14 @@ describe('el personal por HTTP', () => {
     });
 
     it('SP-022 exige el múltiplo de TODAS las sedes, no de las del profesional', async () => {
-      // La excepción cuelga de un `service_type`, que no tiene sede, y a un
+      // La excepción cuelga de un servicio de consulta, que no tiene sede, y a un
       // médico se le puede añadir otra sede mañana sin que nadie vuelva a
       // mirar sus excepciones.
       const practitioner = await createPractitioner();
       const specialty = await createSpecialty();
-      // El tipo se crea ANTES de la segunda sede: con las dos rejillas ya
+      // La consulta se crea ANTES de la segunda sede: con las dos rejillas ya
       // puestas, sus 20 minutos tampoco se podrían guardar (SP-021).
-      const type = await createServiceType(specialty.id);
+      const type = await aConsultation(specialty.id);
 
       const south = await createSite(prisma, 'Sede Sur del átomo');
       await prisma.siteParameter.update({
@@ -934,6 +944,35 @@ describe('el personal por HTTP', () => {
       await put(
         `/practitioners/${practitioner.id}/duration-exceptions/${type.id}`,
         { durationMinutes: 30 },
+      ).expect(204);
+    });
+
+    it('ST-009 rechaza con CONSULTATION_NOT_FOUND una excepción sobre lo que no es una consulta activa', async () => {
+      const practitioner = await createPractitioner();
+      const specialty = await createSpecialty();
+      const consultation = await aConsultation(specialty.id);
+      // ADR-013: la clave foránea admite cualquier servicio; un examen o una
+      // consulta retirada no tienen duración que excepcionar en la agenda.
+      const exam = await createExamService(prisma, { code: 'LAB-HEM', name: 'Hemograma' }); // prettier-ignore
+      const retired = await createConsultation(prisma, { specialtyId: specialty.id, name: 'Control antiguo', active: false }); // prettier-ignore
+
+      for (const serviceId of [exam.id, retired.id]) {
+        const response = await put(
+          `/practitioners/${practitioner.id}/duration-exceptions/${serviceId}`,
+          { durationMinutes: 40 },
+        ).expect(404);
+        const problem = response.body as Problem;
+        expect(problem.code).toBe('CONSULTATION_NOT_FOUND');
+        expect(problem.title).toBe(
+          'La consulta elegida no existe o ya no se ofrece. Actualice la lista e intente de nuevo',
+        );
+      }
+      await expect(prisma.durationException.count()).resolves.toBe(0);
+
+      // Control positivo: la consulta activa, por la misma ruta.
+      await put(
+        `/practitioners/${practitioner.id}/duration-exceptions/${consultation.id}`,
+        { durationMinutes: 40 },
       ).expect(204);
     });
   });
@@ -1780,6 +1819,9 @@ describe('el personal por HTTP', () => {
     it('ST-008/ST-009 deja especialidad principal y excepción de duración, y es idempotente', async () => {
       await seededPractitionerAccounts();
       await seedSpecialties(prisma);
+      // ADR-013: the consultations the exception hangs off are the billing
+      // seed's, and they need the specialties to exist first.
+      await seedBilling(prisma);
 
       const first = await seedStaff(prisma);
       expect(first.habilitated).toBe(2);
@@ -1788,14 +1830,14 @@ describe('el personal por HTTP', () => {
       expect(first.durationExceptions).toBe(1);
 
       const exception = await prisma.durationException.findFirstOrThrow({
-        select: { durationMinutes: true, serviceType: { select: { name: true, durationMinutes: true } } }, // prettier-ignore
+        select: { durationMinutes: true, service: { select: { name: true, durationMinutes: true } } }, // prettier-ignore
       });
-      // Visiblemente distinta de la base (SP-020): así se lee de un vistazo la
-      // jerarquía de D-010 —excepción → base—.
+      // Visiblemente distinta de la de la consulta (BI-279): así se lee de un
+      // vistazo la jerarquía de D-010 —excepción → consulta—.
       expect(exception).toMatchObject({
         // D-021: múltiplo del turno de la sede, que nace en diez minutos.
         durationMinutes: 40,
-        serviceType: { name: 'Control', durationMinutes: 20 },
+        service: { name: 'Consulta de medicina general · Control', durationMinutes: 20 }, // prettier-ignore
       });
 
       // D-161: the development doctor is of general medicine, whose

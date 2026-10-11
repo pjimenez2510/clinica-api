@@ -363,7 +363,7 @@ describe('los parámetros de operación de una sede', () => {
 
     it('CF-065 rechaza un turno que no cae en el paso de cinco', () => {
       // 7 está dentro de 5..60 y no es múltiplo de 5. El paso es lo que
-      // mantiene `service_type_duration_range` como CONSECUENCIA de la regla
+      // mantiene `service_duration_range` como CONSECUENCIA de la regla
       // fina en vez de un resto que la contradice.
       expect(() => {
         assertParametersInRange({ slotAtomMinutes: 7 });

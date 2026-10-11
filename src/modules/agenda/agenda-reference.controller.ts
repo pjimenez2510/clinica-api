@@ -6,8 +6,8 @@ import { CurrentUserService } from '../../shared/authorisation/current-user.serv
 import { ALL_SITES } from '../../shared/authorisation/principal';
 import { AgendaService } from './application/agenda.service';
 import {
-  AgendaServiceTypesDto,
-  type AgendaServiceTypesResponse,
+  AgendaConsultationsDto,
+  type AgendaConsultationsResponse,
   AgendaSitesDto,
   type AgendaSitesResponse,
   SchedulablePractitionersDto,
@@ -78,17 +78,21 @@ export class AgendaReferenceController {
    *
    * THE SITE IS IN THE PATH so `param:siteId` is enforceable by the guard,
    * exactly like the practitioner list above. It authorises; it does not
-   * filter, because a `service_type` belongs to the clinic and not to a site.
+   * filter, because a `service` belongs to the clinic and not to a site.
+   *
+   * `/services` since 11-10-2026 (ADR-013): what is listed are the services
+   * of kind CONSULTATION of the specialty; `/service-types` went with its
+   * table.
    */
-  @Get('sites/:siteId/specialties/:specialtyId/service-types')
+  @Get('sites/:siteId/specialties/:specialtyId/services')
   @RequirePermission('agenda:read', 'param:siteId')
-  @ApiOperation({ summary: 'Tipos de atención de una especialidad' })
-  @ApiOkResponse({ type: AgendaServiceTypesDto })
-  async serviceTypes(
+  @ApiOperation({ summary: 'Consultas de una especialidad' })
+  @ApiOkResponse({ type: AgendaConsultationsDto })
+  async consultations(
     @Param('siteId', ParseUUIDPipe) _siteId: string,
     @Param('specialtyId', ParseUUIDPipe) specialtyId: string,
-  ): Promise<AgendaServiceTypesResponse> {
-    const items = await this.agenda.serviceTypesOf(specialtyId);
+  ): Promise<AgendaConsultationsResponse> {
+    const items = await this.agenda.consultationsOf(specialtyId);
     return { items };
   }
 }

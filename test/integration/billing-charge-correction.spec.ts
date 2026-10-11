@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import '../../src/modules/billing/infrastructure/billing.constraints';
 import '../../src/shared/http/record-version.constraints';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
@@ -56,6 +57,7 @@ const today = () => clinicalDateOf(new Date());
 
 beforeEach(async () => {
   const prisma = db();
+  await seedSpecialties(prisma);
   await seedBilling(prisma);
 
   const site = await createSite(prisma);
@@ -81,10 +83,10 @@ beforeEach(async () => {
   const insurerList = await prisma.priceList.findFirstOrThrow({
     where: { payerId: insurer.id },
   });
-  const general = await prisma.billableService.findUniqueOrThrow({
+  const general = await prisma.service.findUniqueOrThrow({
     where: { code: GENERAL },
   });
-  const dermatology = await prisma.billableService.findUniqueOrThrow({
+  const dermatology = await prisma.service.findUniqueOrThrow({
     where: { code: DERMATOLOGY },
   });
 
@@ -115,7 +117,7 @@ beforeEach(async () => {
 async function charge(status: 'PLANNED' | 'BILLABLE' = 'BILLABLE') {
   return context.accounts.addCharge({
     accountId: context.accountId,
-    billableServiceId: context.generalId,
+    serviceId: context.generalId,
     encounterId: null,
     serviceDate: today(),
     quantity: Quantity.ONE,
@@ -143,7 +145,7 @@ async function priceForInsurer(serviceId: string, amount: string) {
   await context.prisma.price.create({
     data: {
       priceListId: context.insurerListId,
-      billableServiceId: serviceId,
+      serviceId: serviceId,
       amount,
       validFrom: asDateColumn(addDays(today(), -400)),
     },
@@ -300,12 +302,12 @@ describe('BI-197 editar el cargo en el sitio', () => {
       chargeId: proposed.id,
       changedById: context.userId,
       now: new Date(),
-      billableServiceId: context.dermatologyId,
+      serviceId: context.dermatologyId,
       quantity: Quantity.parse('2'),
     });
 
     expect(edited.status).toBe('PLANNED');
-    expect(edited.billableServiceId).toBe(context.dermatologyId);
+    expect(edited.serviceId).toBe(context.dermatologyId);
     expect(edited.unitAmount.toString()).toBe('50.00');
     expect(edited.quantity.toString()).toBe('2.000');
     const [previous] = await versionsOf(proposed.id);
@@ -405,7 +407,7 @@ describe('BI-198 el pagador cambia con cargos y los re-tarifa', () => {
     expect(await versionsOf(kept.id)).toHaveLength(1);
   });
 
-  it('BI-198 sin precio en la lista nueva no cambia ni el pagador ni ningún cargo', async () => {
+  it('BI-198 BI-297 sin precio en la lista de la red pública no cambia ni el pagador ni ningún cargo', async () => {
     const raised = await charge();
 
     const rejection = await rejectionOf(

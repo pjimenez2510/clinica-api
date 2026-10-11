@@ -54,9 +54,9 @@ async function aPartialBloodCount(prisma: PrismaClient) {
   const scene = await aScene(prisma);
   // Una segunda determinación de la biometría, para que la hemoglobina sola
   // deje el informe parcial (como ORD-030).
-  await prisma.examDefinitionAnalyte.create({
+  await prisma.serviceExamAnalyte.create({
     data: {
-      examDefinitionId: scene.bh.id,
+      serviceId: scene.bh.id,
       analyteDefinitionId: scene.glu.id,
       position: 2,
     },
@@ -65,10 +65,7 @@ async function aPartialBloodCount(prisma: PrismaClient) {
     encounterId: scene.encounter.id,
     category: 'LABORATORY',
     priority: 'ROUTINE',
-    lines: [
-      { examDefinitionId: scene.bh.id },
-      { examDefinitionId: scene.glucose.id },
-    ],
+    lines: [{ serviceId: scene.bh.id }, { serviceId: scene.glucose.id }],
     sites: 'all',
   });
   const now = new Date();
@@ -84,7 +81,7 @@ async function aPartialBloodCount(prisma: PrismaClient) {
   );
   const line = (code: string) => order.items.find((i) => i.testCode === code)!; // prettier-ignore
   const userId = (await createUser(prisma)).id;
-  return { orders, order, userId, bh: line('EX-BH'), glucose: line('EX-GLUCOSA-AYUNAS') }; // prettier-ignore
+  return { orders, order, userId, bh: line('LAB-BH'), glucose: line('LAB-GLUCOSA-AYUNAS') }; // prettier-ignore
 }
 
 const statusOf = async (prisma: PrismaClient, id: string) =>
@@ -138,7 +135,7 @@ describe('ORD-131 un examen con algún resultado no se anula', () => {
     expect(await statusOf(prisma, bh.id)).toBe('REQUESTED');
     // La orden lo publica, para que la pantalla no ofrezca «Anular».
     const view = await orders.byId({ orderId: order.id, sites: 'all' });
-    expect(view?.items.map((item) => [item.testCode, item.hasResults])).toEqual([['EX-BH', true], ['EX-GLUCOSA-AYUNAS', false]]); // prettier-ignore
+    expect(view?.items.map((item) => [item.testCode, item.hasResults])).toEqual([['LAB-BH', true], ['LAB-GLUCOSA-AYUNAS', false]]); // prettier-ignore
     // Control positivo: la glucosa, sin resultados, sí se anula.
     await orders.cancelItem({ orderId: order.id, itemId: glucose.id, sites: 'all', cancelledById: userId }); // prettier-ignore
     expect(await statusOf(prisma, glucose.id)).toBe('CANCELLED');
@@ -152,7 +149,7 @@ describe('ORD-131 un examen con algún resultado no se anula', () => {
 
     expect(await statusOf(prisma, bh.id)).toBe('REQUESTED');
     expect(await statusOf(prisma, glucose.id)).toBe('CANCELLED');
-    expect(draft.items.map((item) => item.testCode)).toEqual(['EX-GLUCOSA-AYUNAS']); // prettier-ignore
+    expect(draft.items.map((item) => item.testCode)).toEqual(['LAB-GLUCOSA-AYUNAS']); // prettier-ignore
   });
 
   it('ORD-131 corregir una orden cuyas líneas pendientes tienen todas resultados se rechaza sin anular nada', async () => {
@@ -195,11 +192,11 @@ describe('ORD-131 corregir mientras llega un informe, contra PostgreSQL', () => 
       encounterId: source.order.encounterId,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: (await prisma.examDefinition.findUniqueOrThrow({ where: { code: 'EX-BH' } })).id }, { examDefinitionId: (await prisma.examDefinition.findUniqueOrThrow({ where: { code: 'EX-GLUCOSA-AYUNAS' } })).id }], // prettier-ignore
+      lines: [{ serviceId: (await prisma.service.findUniqueOrThrow({ where: { code: 'LAB-BH' } })).id }, { serviceId: (await prisma.service.findUniqueOrThrow({ where: { code: 'LAB-GLUCOSA-AYUNAS' } })).id }], // prettier-ignore
       sites: 'all',
     });
-    const bh = target.items.find((i) => i.testCode === 'EX-BH')!;
-    const glucose = target.items.find((i) => i.testCode === 'EX-GLUCOSA-AYUNAS')!; // prettier-ignore
+    const bh = target.items.find((i) => i.testCode === 'LAB-BH')!;
+    const glucose = target.items.find((i) => i.testCode === 'LAB-GLUCOSA-AYUNAS')!; // prettier-ignore
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
 

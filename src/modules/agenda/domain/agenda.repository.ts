@@ -131,14 +131,15 @@ export interface AgendaEntryView {
   emergencyFlaggedAt: Date | null;
   bookingChannel: BookingChannel | null;
   /**
-   * SP-028: the service type recepción chose, `service_type.id`.
+   * SP-028: the consultation recepción chose, `service.id` of a service of
+   * kind CONSULTATION (ADR-013; it was `service_type.id` until 11-10-2026).
    *
-   * It is the clinic's OWN master data (SP-020) and not a clinical concept of
-   * the MSP catalogue, which is what this column used to point at. Until C4 it
-   * could not be «el tipo registrado en la cita» that SP-028 asks for, and the
-   * database had nothing to refuse a delete over (SP-025).
+   * It is the clinic's OWN catalogue (BI-279) and not a clinical concept of
+   * the MSP catalogue, which is what this column pointed at before C4. The
+   * RESTRICT foreign key is what refuses deleting a service an appointment
+   * names (SP-025, BI-288).
    */
-  serviceTypeId: string | null;
+  serviceId: string | null;
   /**
    * NO `reason` HERE EITHER, deliberately. The reason for the visit is stored
    * (`NewBooking` carries it) and is never read back by this module: a listing
@@ -316,8 +317,12 @@ export interface NewBooking {
   endsAt: Date;
   /** AG-029. Validated by the domain before it gets here. */
   bookingChannel: BookingChannel;
-  /** SP-028: `service_type.id`. The FK refuses one that does not exist. */
-  serviceTypeId?: string;
+  /**
+   * SP-028: `service.id` of an ACTIVE consultation. The FK refuses one that
+   * does not exist; that it is a consultation on offer is checked before
+   * (`isActiveConsultation`), because the FK admits any kind of service.
+   */
+  serviceId?: string;
   reason?: string;
   /** AG-029: who booked it. */
   createdById: string;
@@ -625,7 +630,7 @@ export interface EntryEdit {
   startsAt?: Date;
   endsAt?: Date;
   practitionerId?: string;
-  serviceTypeId?: string | null;
+  serviceId?: string | null;
   roomId?: string | null;
   reason?: string | null;
   bookingChannel?: BookingChannel;
@@ -680,7 +685,7 @@ export interface AgendaEntryVersion {
   endsAt: Date;
   practitionerId: string;
   roomId: string | null;
-  serviceTypeId: string | null;
+  serviceId: string | null;
   bookingChannel: BookingChannel | null;
   patientId: string | null;
   blocksCalendar: boolean;
@@ -713,14 +718,14 @@ export interface EntryQuery {
 export interface StoredDurationSources {
   /** SP-022, the top rung: this practitioner's own minutes, or `null`. */
   exceptionMinutes: number | null;
-  /** SP-020, the middle rung: the base duration of the specialty·type. */
-  serviceTypeMinutes: number;
+  /** BI-279, the middle rung: `service.duration_minutes` of the consultation. */
+  serviceMinutes: number;
 }
 
-/** SP-023. One practitioner, one service type. */
+/** SP-023. One practitioner, one consultation service. */
 export interface DurationSourcesQuery {
   practitionerId: string;
-  serviceTypeId: string;
+  serviceId: string;
 }
 
 /** AG-107. A site the caller may schedule in: identifier and name, nothing else. */
@@ -732,7 +737,7 @@ export interface AgendaSite {
 /**
  * AG-111, SP-005, SP-008. One specialty a practitioner actually holds.
  *
- * The identifier is what the SERVICE TYPES hang off (AG-112), and `isPrimary`
+ * The identifier is what the CONSULTATIONS hang off (AG-112), and `isPrimary`
  * is what lets the booking dialog arrive with a choice already made instead of
  * asking a question whose answer is already stored.
  */
@@ -758,18 +763,26 @@ export interface SchedulablePractitioner {
   specialties: readonly AgendaSpecialty[];
 }
 
+/** BI-279. Which visit a consultation names; `null` names neither. */
+export type ConsultationVisitKind = 'FIRST_VISIT' | 'FOLLOW_UP';
+
 /**
- * AG-112. An attention type as the BOOKING screen needs it.
+ * AG-112. A consultation service as the BOOKING screen needs it (ADR-013).
  *
- * Three fields and no `active`: only the active ones are ever listed here, so
- * a flag that is always `true` would only invite a client to filter on it.
- * `specialtyId` is absent for the same reason — the caller named it in the URL.
+ * No `active`: only the active ones are ever listed here, so a flag that is
+ * always `true` would only invite a client to filter on it. `specialtyId` is
+ * absent for the same reason — the caller named it in the URL.
  */
-export interface AgendaServiceType {
+export interface AgendaConsultation {
   id: string;
   name: string;
-  /** SP-020. The catalogue's base duration, for the option's label. */
+  /** BI-279. The consultation's duration, for the option's label. */
   durationMinutes: number;
+  /**
+   * BI-279. First visit or follow-up, only to NAME it: first time or
+   * subsequent for the RDACAA is still computed from the patient (EN-215).
+   */
+  visitKind: ConsultationVisitKind | null;
 }
 
 /**
@@ -815,8 +828,18 @@ export interface AgendaRepository {
   listSchedulablePractitioners(
     siteId: string,
   ): Promise<SchedulablePractitioner[]>;
-  /** AG-112. The active attention types of one specialty, with their base duration. */
-  listServiceTypes(specialtyId: string): Promise<AgendaServiceType[]>;
+  /**
+   * AG-112. The active consultation services of one specialty: first visit,
+   * then follow-up, then the rest, each group by name.
+   */
+  listConsultations(specialtyId: string): Promise<AgendaConsultation[]>;
+  /**
+   * SP-028 (ADR-013). Whether `serviceId` is an ACTIVE service of kind
+   * CONSULTATION — what an appointment may be booked with. The FK of
+   * `agenda_entry.service_id` admits any service, so this is the one place
+   * the kind and the state are asked.
+   */
+  isActiveConsultation(serviceId: string): Promise<boolean>;
   /**
    * AG-080. Appointments of the window, counted by site, practitioner, channel
    * and status — the cube `summariseNoShow` reduces.
@@ -851,8 +874,9 @@ export interface AgendaRepository {
   /**
    * SP-023, SP-028: the two stored rungs of the duration hierarchy.
    *
-   * `null` when no such service type exists — the service turns that into
-   * `SERVICE_TYPE_NOT_FOUND`, because a proposal is a READ and a wrong id
+   * `null` when no consultation has that id (retired ones still answer: a
+   * booked appointment may name one) — the service turns that into
+   * `CONSULTATION_NOT_FOUND`, because a proposal is a READ and a wrong id
    * there is a missing resource, not a booking that a foreign key can refuse.
    */
   durationSourcesFor(

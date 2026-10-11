@@ -97,10 +97,10 @@ export class ProcedureChargeFollowService implements ProcedureChargeSync {
         (each) => each.encounterProcedureId === command.procedureId,
       );
       if (!procedure) return;
-      const services = await this.catalogue.findServicesByProcedureConcept([
-        procedure.conceptId,
+      const services = await this.catalogue.findServicesByProcedureCode([
+        procedure.procedureCode,
       ]);
-      const service = services.get(procedure.conceptId);
+      const service = services.get(procedure.procedureCode);
       if (!service || !service.active) {
         this.logger.warn(
           { site_id: command.siteId, action: 'PROCEDURE_CHARGE_NOT_FOLLOWED' },
@@ -109,8 +109,7 @@ export class ProcedureChargeFollowService implements ProcedureChargeSync {
         return;
       }
       const quantity = Quantity.parse(String(procedure.quantity));
-      const changesService =
-        service.billableServiceId !== charge.billableServiceId;
+      const changesService = service.serviceId !== charge.serviceId;
       const changesQuantity =
         quantity.thousandths !== charge.quantity.thousandths;
       if (!changesService && !changesQuantity) return;
@@ -120,9 +119,7 @@ export class ProcedureChargeFollowService implements ProcedureChargeSync {
         changedById: command.changedById,
         now,
         onlyIfStatus: 'PLANNED',
-        ...(changesService
-          ? { billableServiceId: service.billableServiceId }
-          : {}),
+        ...(changesService ? { serviceId: service.serviceId } : {}),
         ...(changesQuantity ? { quantity } : {}),
       });
     } catch (error) {

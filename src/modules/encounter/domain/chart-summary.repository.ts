@@ -162,7 +162,7 @@ export interface PriorDiagnosis {
 /** EN-185. The appointment about to be attended, within the caller's scope. */
 export interface AppointmentForProposal {
   patientId: string;
-  /** `null` when the appointment has no service type to tell the specialty. */
+  /** `null` when the appointment names no consultation to tell the specialty. */
   specialtyId: string | null;
 }
 
@@ -177,7 +177,7 @@ export interface SameServiceQuery {
 
 /**
  * EN-185. The latest earlier attention that is of the same specialty — or of
- * one nobody can tell, because without a service type it may well be.
+ * one nobody can tell, because without a consultation it may well be.
  */
 export interface PriorAttention {
   startedAt: Date;

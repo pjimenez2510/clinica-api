@@ -331,15 +331,12 @@ export const DOMAIN_ERROR_CODES = [
   // agenda. Lo responden TRES módulos —`specialties` por la duración base
   // (SP-021), `staff` por la excepción del médico (SP-022) y `configuration`
   // por el átomo mismo cuando se cambia (CF-062)— y por eso la clase vive en
-  // `shared/domain/errors`, como `SERVICE_TYPE_NOT_FOUND`. NO es
+  // `shared/domain/errors`, como `CONSULTATION_NOT_FOUND`. NO es
   // `PARAM_OUT_OF_RANGE`: 25 minutos sobre una rejilla de 10 está dentro del
   // rango 5..240 y aun así no se puede reservar, así que un cliente que
   // ramificara por el mismo código tendría que leer el texto en español para
   // saber qué corregir.
   'DURATION_NOT_SLOT_MULTIPLE',
-  // SP-030 (D-179.3). El tipo de atención nace con su prestación, y no hay
-  // categoría de consultas activa o IVA de salud donde crearla (422).
-  'CONSULTATION_BILLING_UNAVAILABLE',
   // Organización, O1 y O2 (ADR-011). Los duplicados y los «en uso» son 409 y
   // los produce la base —índices únicos y FK RESTRICT—: el adaptador los
   // traduce por nombre de constraint al código que la spec fija. «En uso»
@@ -403,9 +400,9 @@ export const DOMAIN_ERROR_CODES = [
   'PRIMARY_SPECIALTY_REQUIRED',
   'SCHEDULE_RULE_NOT_EDITABLE',
   'SCHEDULE_RULE_NOT_FOUND',
-  'SERVICE_TYPE_DUPLICATE',
-  'SERVICE_TYPE_IN_USE',
-  'SERVICE_TYPE_NOT_FOUND',
+  // ADR-013 (11-10-2026). `SERVICE_TYPE_*` se fueron con la tabla: la
+  // consulta es un servicio. Lo que no es una consulta activa responde esto.
+  'CONSULTATION_NOT_FOUND',
   'SPECIALTY_DUPLICATE',
   'SPECIALTY_INACTIVE',
   'SPECIALTY_IN_USE',
@@ -533,29 +530,27 @@ export const DOMAIN_ERROR_CODES = [
   'BILLABLE_SERVICE_INACTIVE',
   'BILLABLE_SERVICE_IN_USE',
   'BILLABLE_SERVICE_NOT_FOUND',
-  // La categoría como catálogo y su clase (BI-185, BI-187). Una categoría
-  // desactivada no se ofrece (422); la clase dice qué estructura admite la
-  // prestación, y «guantes» no puede ser la consulta de dermatología.
   // BI-184. La factura lleva lo que caja vio al emitir: si otra caja cambió
   // los cargos pendientes entretanto, 409 y se vuelve a mirar.
   'INVOICE_CHARGES_CHANGED',
-  'SERVICE_CATEGORY_INACTIVE',
-  'SERVICE_CATEGORY_NOT_FOUND',
+  // BI-278, BI-279, BI-284 (ADR-013). El tipo del servicio dice qué lleva: la
+  // especialidad y la duración son de una consulta, la extensión de orden de
+  // lo que se pide (422); y una consulta nace con las dos (422).
   'SERVICE_KIND_MISMATCH',
-  // D-179. El nombre y el tarifario de la prestación de un examen o de un
-  // tipo de atención se corrigen allí (409).
-  'SERVICE_NAMED_ELSEWHERE',
-  // BI-256, BI-257 (D-159). La marca del 024 necesita una prestación atada a
-  // un procedimiento, y ese procedimiento es del tarifario (422).
+  'CONSULTATION_INCOMPLETE',
+  // BI-298. Una consulta activa por especialidad y visita (409).
+  'CONSULTATION_DUPLICATE',
+  // BI-281. El código que ya salió en una factura no cambia (409).
+  'SERVICE_CODE_INVOICED',
+  // BI-256, BI-286 (D-159). La marca del 024 va en un procedimiento con su
+  // código, y ese código es del tarifario (422).
   'SERVICE_NOT_A_PROCEDURE',
   'SERVICE_PROCEDURE_NOT_IN_TARIFF',
-  // BI-256, BI-257: la atadura de una prestación marcada no se mueve, y un
-  // procedimiento lo cobra una sola prestación (409).
+  // BI-256, BI-286: el código de un procedimiento marcado no se mueve, y un
+  // procedimiento lo cobra un solo servicio (409).
   'SERVICE_CONSENT_TIE_LOCKED',
   'SERVICE_PROCEDURE_TAKEN',
-  // D-179: atada, el código del tarifario es el de su procedimiento (409).
-  'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
-  // BI-257: atar o desatar no reescribe el código que ya salió en facturas.
+  // BI-285: el Código MSP que ya salió en facturas no cambia.
   'SERVICE_TARIFF_CODE_INVOICED',
   'TAX_RATE_IN_USE',
   'TAX_RATE_NOT_FOUND',
@@ -1243,8 +1238,6 @@ export const DOMAIN_ERROR_CODES = [
   //   * `REFERENCE_RANGE_INVALID` y `REFERENCE_RANGE_OVERLAP` (422): un rango
   //     imposible, o dos igual de específicos que se pisan (ORD-036 no podría
   //     elegir).
-  //   * `EXAM_SERVICE_KIND_MISMATCH` (422) y `EXAM_SERVICE_NOT_FOUND` (404):
-  //     la prestación de cobro, de la clase del tipo del examen.
   //   * `ANALYTE_HAS_RESULTS` (409), `ANALYTE_UNIT_WITH_RANGES` (409) y
   //     `EXAM_HAS_OPEN_ORDERS` (409) — ORD-110: lo que ya se registró o se
   //     pidió no cambia por tocar el catálogo.
@@ -1255,19 +1248,9 @@ export const DOMAIN_ERROR_CODES = [
   'EXAM_CODE_IN_USE',
   'ANALYTE_NOT_FOUND',
   'EXAM_DEFINITION_NOT_FOUND',
-  'EXAM_SERVICE_KIND_MISMATCH',
-  'EXAM_SERVICE_NOT_FOUND',
-  // ─── Orders, E19 (D-179.1). Un examen, una prestación.
-  //   * `EXAM_SERVICE_TAKEN` (409) — ORD-162, ORD-163: la prestación ya cobra
-  //     otro examen (`exam_definition_one_per_service`).
-  //   * `EXAM_CODE_DUPLICATE` (409) — ORD-162: el examen nace con su
-  //     prestación, y su código se pregunta antes de escribirla.
-  //   * `EXAM_SERVICE_CATEGORY_NOT_FOUND` (422) y `EXAM_TAX_RATE_NOT_FOUND`
-  //     (422) — ORD-162: la categoría o el IVA de la prestación que nace.
-  'EXAM_SERVICE_TAKEN',
-  'EXAM_CODE_DUPLICATE',
-  'EXAM_SERVICE_CATEGORY_NOT_FOUND',
-  'EXAM_TAX_RATE_NOT_FOUND',
+  // E19 (D-179.1): EXAM_SERVICE_* , EXAM_CODE_DUPLICATE y
+  // EXAM_TAX_RATE_NOT_FOUND se retiraron con ADR-013 (ORD-108, ORD-162,
+  // ORD-163 sustituidos): el examen es el servicio y nace en facturación.
   'REFERENCE_RANGE_INVALID',
   'REFERENCE_RANGE_OVERLAP',
   // ─── Orders, E7 (ORD-043). Sacar un resultado huérfano de la cola.

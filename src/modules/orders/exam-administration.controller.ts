@@ -20,7 +20,6 @@ import {
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
-import { assertClinicWideScope } from '../../shared/authorisation/site-scope';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -36,28 +35,28 @@ import {
   AdminAnalyteDto,
   AdminAnalyteListDto,
   AdminExamDto,
-  AdminExamListDto,
   AnalyteRangesDto,
   CreateAnalyteDto,
-  CreateExamDto,
   ExamStructureDto,
   RangeHistoryDto,
   UpdateAnalyteDto,
-  UpdateExamDto,
   type AdminAnalyteListResponse,
   type AdminAnalyteResponse,
-  type AdminExamListResponse,
   type AdminExamResponse,
   type RangeHistoryResponse,
 } from './dto/exam-administration.dto';
 
 /**
- * The exam catalogue, administered by the clinic (ORD-103 to ORD-111).
+ * The exam catalogue, administered by the clinic (ORD-104 to ORD-111).
+ *
+ * ADR-013. An exam is a service: it is created, corrected and retired in
+ * billing (`POST/PATCH /billing/services`, BI-280, BI-284). Here only what an
+ * ordered service yields: its structure (ORD-105), the analytes and their
+ * ranges.
  *
  * `catalog:manage` on every route, reads included: this screen shows retired
- * exams and the service each is charged with, which ordering —`GET /exams`,
- * `catalog:read`— has no business seeing. Global scope: the catalogue is the
- * clinic's, not a site's.
+ * analytes, which ordering —`GET /exams`, `catalog:read`— has no business
+ * seeing. Global scope: the catalogue is the clinic's, not a site's.
  */
 @ApiTags('orders')
 @Controller({ path: 'exam-catalogue', version: '1' })
@@ -67,84 +66,22 @@ export class ExamAdministrationController {
     private readonly currentUser: CurrentUserService,
   ) {}
 
-  @Get('exams')
-  @RequirePermission('catalog:manage', 'global')
-  @ApiOperation({ summary: 'Listar el catálogo de exámenes, desactivados incluidos' }) // prettier-ignore
-  @ApiOkResponse({ type: AdminExamListDto })
-  async exams(): Promise<AdminExamListResponse> {
-    return { items: (await this.catalogue.exams()).map(toExamResponse) };
-  }
-
-  @Get('exams/:examId')
-  @RequirePermission('catalog:manage', 'global')
-  @ApiOperation({ summary: 'Ver la ficha de un examen del catálogo' })
-  @ApiOkResponse({ type: AdminExamDto })
-  async exam(
-    @Param('examId', ParseUUIDPipe) examId: string,
-  ): Promise<AdminExamResponse> {
-    const exam = await this.catalogue.exam(examId);
-    return {
-      ...toExamResponse(exam),
-      codeLocked: await this.catalogue.isExamCodeLocked(exam.code),
-    };
-  }
-
-  @Post('exams')
-  @RequirePermission('catalog:manage', 'global')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Dar de alta un examen en el catálogo' })
-  @ApiCreatedResponse({ type: AdminExamDto })
-  async createExam(
-    @Body() dto: CreateExamDto,
-    @Req() req: Request,
-  ): Promise<AdminExamResponse> {
-    const { code, billing, ...exam } = dto;
-    // ORD-162 (D-049). A NEW service is classified —its category, its tax
-    // rate (BI-005) and maybe its price—, which is billing's: only with
-    // `billing:price-manage` over the whole clinic, before anything is written.
-    if ('taxRateId' in billing) {
-      assertClinicWideScope(
-        this.currentUser.requirePrincipal(),
-        'billing:price-manage',
-      );
-    }
-    return toExamResponse(
-      await this.catalogue.createExam(
-        code,
-        exam,
-        'billableServiceId' in billing
-          ? { kind: 'EXISTING', billableServiceId: billing.billableServiceId }
-          : { kind: 'NEW', ...billing },
-        this.editor(req),
-      ),
-    );
-  }
-
-  @Patch('exams/:examId')
-  @RequirePermission('catalog:manage', 'global')
-  @ApiOperation({ summary: 'Corregir un examen del catálogo' })
-  @ApiOkResponse({ type: AdminExamDto })
-  async updateExam(
-    @Param('examId', ParseUUIDPipe) examId: string,
-    @Body() dto: UpdateExamDto,
-    @Req() req: Request,
-  ): Promise<AdminExamResponse> {
-    return toExamResponse(
-      await this.catalogue.updateExam(examId, dto, this.editor(req)),
-    );
-  }
-
-  @Put('exams/:examId/analytes')
+  /** ORD-105. The structure of a service with order extension (BI-284). */
+  @Put('exams/:serviceId/analytes')
   @RequirePermission('catalog:manage', 'global')
   @ApiOperation({ summary: 'Fijar las determinaciones del examen y su orden' })
   @ApiOkResponse({ type: AdminExamDto })
   async setStructure(
-    @Param('examId', ParseUUIDPipe) examId: string,
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
     @Body() dto: ExamStructureDto,
     @Req() req: Request,
   ): Promise<AdminExamResponse> {
     return toExamResponse(
-      await this.catalogue.setStructure(examId, dto.analytes, this.editor(req)),
+      await this.catalogue.setStructure(
+        serviceId,
+        dto.analytes,
+        this.editor(req),
+      ),
     );
   }
 
@@ -258,16 +195,8 @@ function toExamResponse(exam: AdminExamView): AdminExamResponse {
     performedExternally: exam.performedExternally,
     externalLabName: exam.externalLabName,
     externalLabCode: exam.externalLabCode,
-    tariffCode: exam.tariffCode,
+    mspCode: exam.mspCode,
     active: exam.active,
-    billableService: {
-      id: exam.billableService.id,
-      code: exam.billableService.code,
-      name: exam.billableService.name,
-      categoryName: exam.billableService.categoryName,
-      kind: exam.billableService.kind,
-      active: exam.billableService.active,
-    },
     analytes: exam.analytes.map((entry) => ({
       position: entry.position,
       isReflex: entry.isReflex,

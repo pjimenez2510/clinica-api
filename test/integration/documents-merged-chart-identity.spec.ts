@@ -108,7 +108,7 @@ async function theScene(prisma: PrismaClient) {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     },
   );
@@ -233,7 +233,7 @@ describe('DOC-117 lo que se imprime en la atención de una ficha unificada', () 
         encounterId: scene.encounterId,
         category: 'LABORATORY',
         priority: 'ROUTINE',
-        lines: [{ examDefinitionId: scene.bhId }],
+        lines: [{ serviceId: scene.bhId }],
         sites: 'all',
       },
     );

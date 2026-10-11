@@ -43,7 +43,7 @@ async function aDraftOrder(prisma: PrismaClient) {
     encounterId: scene.encounter.id,
     category: 'LABORATORY',
     priority: 'ROUTINE',
-    lines: [{ examDefinitionId: scene.bh.id }],
+    lines: [{ serviceId: scene.bh.id }],
     sites: 'all',
   });
   return { scene, draft };
@@ -147,7 +147,7 @@ describe('ORD-121 la orden congela sus diagnósticos al emitirse', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
     await orders.issue({ orderId: next.id, sites: 'all' });

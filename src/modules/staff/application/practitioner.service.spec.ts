@@ -103,7 +103,7 @@ function makeDouble(answers: Answers): {
     findSpecialtiesByIds: unused,
     replacePractitionerSpecialties: unused,
     listPractitionerDurations: unused,
-    serviceTypeExists: unused,
+    isActiveConsultation: unused,
     upsertDurationException: unused,
     deleteDurationException: unused,
     listPractitionerSites: unused,

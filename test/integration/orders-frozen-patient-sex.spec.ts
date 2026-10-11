@@ -69,7 +69,7 @@ async function aDraftOrder(prisma: PrismaClient) {
     encounterId: scene.encounter.id,
     category: 'LABORATORY',
     priority: 'ROUTINE',
-    lines: [{ examDefinitionId: scene.bh.id }],
+    lines: [{ serviceId: scene.bh.id }],
     sites: 'all',
   });
   return { scene, draft };
@@ -166,7 +166,7 @@ describe('ORD-158 la orden congela el sexo de la ficha al emitirse', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
     expect(await frozenSexOf(prisma, later.id)).toBe('MALE');
@@ -216,7 +216,7 @@ describe('ORD-036 el rango sigue el sexo de la ficha, no el que la orden congelÃ
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
 
@@ -313,7 +313,7 @@ describe('ORD-161 la orden nombra la ficha vigente al emitirse, con su sexo, y n
           encounterId: scene.encounter.id,
           category: 'LABORATORY',
           priority: 'ROUTINE',
-          lines: [{ examDefinitionId: scene.bh.id }],
+          lines: [{ serviceId: scene.bh.id }],
           sites: 'all',
         }),
     };
@@ -430,7 +430,7 @@ describe('ORD-161 la orden nombra la ficha vigente al emitirse, con su sexo, y n
       encounterId: scene.scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.scene.bh.id }],
+      lines: [{ serviceId: scene.scene.bh.id }],
       sites: 'all',
     });
     const nameOfDraft = async () =>

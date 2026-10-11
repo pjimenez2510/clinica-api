@@ -3,7 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   EXAM_CATALOGUE_REPOSITORY,
   type ExamCatalogueRepository,
-  type ExamDefinitionView,
+  type OrderableExamView,
 } from '../domain/exam-catalogue.repository';
 
 /**
@@ -17,8 +17,8 @@ import {
  * `catalog:manage`. A second, weaker way to create one here is how two
  * catalogues of the same thing start disagreeing.
  *
- * ⚠️ AND IT SERVES NO PRICE (ORD-002). `exam_definition.billable_service_id`
- * points at what the line is invoiced under; the AMOUNT lives in a price list,
+ * ⚠️ AND IT SERVES NO PRICE (ORD-002). The orderable IS a service (ADR-013,
+ * BI-284); the AMOUNT lives in a price list,
  * per payer, per period, and belongs to `billing`. Nothing here loads it, so
  * nothing here can leak it onto a clinical screen.
  *
@@ -38,10 +38,10 @@ export class ExamCatalogueService {
    *
    * The preparation travels because it is printed ON THE ORDER the patient
    * takes away: a fast nobody stated is a second extraction, and the eight to
-   * twelve hours of `EX-GLUCOSA-AYUNAS` are the difference between a result
+   * twelve hours of `LAB-GLUCOSA-AYUNAS` are the difference between a result
    * and a wasted morning.
    */
-  active(): Promise<ExamDefinitionView[]> {
+  active(): Promise<OrderableExamView[]> {
     return this.exams.active();
   }
 }

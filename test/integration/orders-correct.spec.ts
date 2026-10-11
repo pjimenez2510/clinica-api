@@ -65,10 +65,7 @@ async function anIssuedOrder(prisma: PrismaClient) {
       category: 'LABORATORY',
       priority: 'URGENT',
       clinicalNoteText: 'Control de anemia',
-      lines: [
-        { examDefinitionId: scene.bh.id },
-        { examDefinitionId: scene.glucose.id },
-      ],
+      lines: [{ serviceId: scene.bh.id }, { serviceId: scene.glucose.id }],
       sites: 'all',
     },
   );
@@ -207,7 +204,7 @@ describe('ORD-118 corregir una orden emitida', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
 

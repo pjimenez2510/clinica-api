@@ -61,7 +61,7 @@ const MOVING_FIELDS = [
   'startsAt',
   'endsAt',
   'practitionerId',
-  'serviceTypeId',
+  'serviceId',
   'bookingChannel',
   'patientId',
 ] as const satisfies readonly (keyof EntryEdit)[];

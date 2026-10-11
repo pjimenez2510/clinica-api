@@ -10,6 +10,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
@@ -117,6 +118,7 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       registry = app.get(RolePermissionRegistry);
     }
 
+    await seedSpecialties(prisma);
     await seedBilling(prisma);
     await syncAuthorisation(prisma);
     registry.invalidate();
@@ -437,7 +439,7 @@ describe('caja: lo pendiente de cobro (B10)', () => {
 
   describe('BI-194 el examen emitido después de cerrar la cuenta (D-130.4)', () => {
     /** An exam order of the visit, issued, with one line of `testCode`. */
-    async function anIssuedExam(encounterId: string, testCode = 'EX-BH') {
+    async function anIssuedExam(encounterId: string, testCode = 'LAB-BH') {
       const system = await prisma.catalogSystem.upsert({ where: { code: 'EXAMENES' }, create: { code: 'EXAMENES', name: 'Exámenes' }, update: {} }); // prettier-ignore
       const concept = await prisma.catalogConcept.create({ data: { systemId: system.id, code: `${testCode}-${randomUUID().slice(0, 8)}`, display: testCode, validFrom: windowStart } }); // prettier-ignore
       const order = await prisma.serviceOrder.create({
@@ -488,7 +490,7 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       const { startedAt } = await prisma.encounter.findUniqueOrThrow({ where: { id: encounterId } }); // prettier-ignore
       const tariff = await prisma.catalogSystem.upsert({ where: { code: 'TARIFF' }, create: { code: 'TARIFF', name: 'Tarifario' }, update: {} }); // prettier-ignore
       const suture = await prisma.catalogConcept.create({ data: { systemId: tariff.id, code: `SUT-${randomUUID().slice(0, 8)}`, display: 'Sutura simple', validFrom: windowStart } }); // prettier-ignore
-      await prisma.billableService.update({ where: { code: 'PROC-SUTURA' }, data: { procedureConceptId: suture.id, tariffCode: suture.code } }); // prettier-ignore
+      await prisma.service.update({ where: { code: 'PROC-SUTURA' }, data: { mspCode: suture.code } }); // prettier-ignore
       const aSuture = () =>
         prisma.encounterProcedure.create({
           // Recorded NOW, on the clock that also opens the accounts.
@@ -546,13 +548,12 @@ describe('caja: lo pendiente de cobro (B10)', () => {
       const line = await anIssuedExam(cancelled);
       await prisma.serviceOrderItem.update({ where: { id: line }, data: { status: 'CANCELLED', completedAt: now, cancelledById: authorId } }); // prettier-ignore
 
-      // Un examen que el catálogo no sabe cobrar: con la prestación desactivada
-      // (desde ORD-163 todo examen tiene la suya).
-      const echo = await prisma.examDefinition.findUniqueOrThrow({ where: { code: 'EX-ECO-ABDOMINAL' } }); // prettier-ignore
-      await prisma.billableService.update({ where: { id: echo.billableServiceId }, data: { active: false } }); // prettier-ignore
+      // Un examen que el catálogo no sabe cobrar: con su servicio desactivado
+      // (ADR-013: el examen ES su servicio).
+      await prisma.service.update({ where: { code: 'IMG-ECO-ABDOMINAL' }, data: { active: false } }); // prettier-ignore
       const inactive = await visit(ended(5));
       await account(inactive, patient.id, 'SETTLED');
-      await anIssuedExam(inactive, 'EX-ECO-ABDOMINAL');
+      await anIssuedExam(inactive, 'IMG-ECO-ABDOMINAL');
 
       // Emitido ANTES de abrir la cuenta que se liquidó: caja ya lo tuvo
       // delante (sin precio del día, lo cobró a mano; BI-155).

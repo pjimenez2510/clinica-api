@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { aScene } from './orders-fixtures';
 import { useDatabase } from './setup/database';
-import { createUser } from './setup/fixtures';
+import { createService, createUser } from './setup/fixtures';
 
 /**
  * The order in draft, against a real PostgreSQL (ORD-095 to ORD-099).
@@ -36,7 +36,7 @@ async function aDraft(prisma: PrismaClient, scene: Scene): Promise<string> {
 async function anItem(prisma: PrismaClient, scene: Scene, orderId: string) {
   await prisma.$executeRaw`
     INSERT INTO service_order_item (service_order_id, concept_id, test_code, test_display)
-    VALUES (${orderId}::uuid, ${scene.concept.id}::uuid, 'EX-BH', 'Biometría hemática completa')
+    VALUES (${orderId}::uuid, ${scene.concept.id}::uuid, 'LAB-BH', 'Biometría hemática completa')
   `;
 }
 
@@ -216,13 +216,28 @@ describe('ORD-095 a ORD-099 la orden en borrador contra PostgreSQL', () => {
     expect(await numberOf(prisma, order)).toBe(1);
   });
 
-  it('ORD-097 cada examen tiene tipo, y lo que ya había es de laboratorio', async () => {
+  it('ORD-097 sólo un examen, una imagen o un procedimiento se pide: la base no da extensión de orden a otro tipo', async () => {
     const prisma = db();
-    const scene = await aScene(prisma);
+    await aScene(prisma);
+    const supply = await createService(prisma, {
+      code: 'INS-GASA',
+      name: 'Gasa estéril',
+      kind: 'SUPPLY',
+    });
+    const imaging = await createService(prisma, {
+      code: 'IMG-RX-TORAX',
+      name: 'Radiografía de tórax',
+      kind: 'IMAGING',
+    });
 
-    const rows = await prisma.$queryRaw<{ category: string }[]>`
-      SELECT category::text FROM exam_definition WHERE id = ${scene.bh.id}::uuid`;
-
-    expect(rows[0]!.category).toBe('LABORATORY');
+    // BI-284 (`trg_service_exam_kind_admits`): el tipo del servicio es la
+    // categoría de la orden, y un insumo no tiene ninguna.
+    await expect(
+      prisma.serviceExam.create({ data: { serviceId: supply.id } }),
+    ).rejects.toThrow(/service_exam_kind_admits/);
+    // Control positivo: una imagen sí.
+    await expect(
+      prisma.serviceExam.create({ data: { serviceId: imaging.id } }),
+    ).resolves.toMatchObject({ serviceId: imaging.id });
   });
 });

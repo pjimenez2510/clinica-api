@@ -51,21 +51,35 @@ export interface TaxRateView {
   validTo: ClinicalDate | null;
 }
 
-/** A service, and NEVER an amount on it (BI-006). */
 /**
- * BI-186. The kinds a category can be: the three of a service order
- * (`service_order_category`) plus the consultation, a supply and anything else.
- * `billable_service_category_kind_is_known` holds the same list.
+ * BI-278 (ADR-013). What the clinic offers and charges, by kind; it replaced
+ * the category, and `service_kind_is_known` holds the same list. Fixed once
+ * created (`trg_service_kind_is_fixed`).
  */
-export const SERVICE_CATEGORY_KINDS = [
+export const SERVICE_KINDS = [
   'CONSULTATION',
   'PROCEDURE',
-  'LABORATORY',
+  'LAB_EXAM',
   'IMAGING',
   'SUPPLY',
   'OTHER',
 ] as const;
-export type ServiceCategoryKind = (typeof SERVICE_CATEGORY_KINDS)[number];
+export type ServiceKind = (typeof SERVICE_KINDS)[number];
+
+/** BI-279. What a consultation is called by: first time, follow-up or neither. */
+export const VISIT_KINDS = ['FIRST_VISIT', 'FOLLOW_UP'] as const;
+export type VisitKind = (typeof VISIT_KINDS)[number];
+
+/**
+ * BI-284. The kinds that admit an order extension —what is ordered on a
+ * service order— (`trg_service_exam_kind_admits`).
+ */
+export const ORDERABLE_KINDS = ['LAB_EXAM', 'IMAGING', 'PROCEDURE'] as const;
+
+/** BI-284. Whether a kind may carry an order extension. */
+export function isOrderableKind(kind: ServiceKind): boolean {
+  return (ORDERABLE_KINDS as readonly string[]).includes(kind);
+}
 
 /**
  * BI-189. One price of a service in one payer's list, with its validity. The
@@ -77,64 +91,138 @@ export interface ServicePriceView extends ValidityPeriod {
   amount: Money;
 }
 
+/** BI-279. A consultation's agenda data. */
+export interface ConsultationData {
+  specialtyId: string;
+  durationMinutes: number;
+  visitKind: VisitKind | null;
+}
+
 /**
- * BI-188. An exam of the exam catalogue charged through this service
- * (`exam_definition.billable_service_id`). Read only: the exam catalogue is
- * its own module's.
+ * BI-284. The order extension of an exam, an imaging study or a procedure
+ * that is ordered (`service_exam`).
  */
-export interface ServiceExamView {
+export interface OrderExtension {
+  form010Section: string | null;
+  specimenType: string | null;
+  patientPreparation: string | null;
+  turnaroundHours: number | null;
+  requiresFasting: boolean;
+  /** ORD-129. Only with a fast, 1–24. */
+  fastingHours: number | null;
+  performedExternally: boolean;
+  externalLabName: string | null;
+  externalLabCode: string | null;
+}
+
+/** A service, and NEVER an amount on it (BI-006). */
+export interface ServiceView {
   id: string;
   code: string;
   name: string;
-  /** ORD-108. The exam's type, which is the class its service must be. */
-  category: string;
-  active: boolean;
-}
-
-/** BI-185. One category of the clinic's catalogue of services. */
-export interface ServiceCategoryView {
-  id: string;
-  name: string;
-  /** Fixed once created: what structure its services admit (BI-187). */
-  kind: ServiceCategoryKind;
-  active: boolean;
-}
-
-export interface BillableServiceView {
-  id: string;
-  code: string;
-  name: string;
-  /** BI-185. The catalogue row, never free text. */
-  category: ServiceCategoryView;
-  /**
-   * BI-151, BI-187, BI-257. The procedure this service charges, when it is
-   * one: set from the service's sheet, only on a procedure-kind service.
-   */
-  procedureConcept: { id: string; code: string; display: string } | null;
+  /** BI-278. Fixed once created. */
+  kind: ServiceKind;
+  /** BI-279. Present exactly on a consultation. */
+  consultation: (ConsultationData & { specialtyName: string }) | null;
+  /** BI-284. Present when it is ordered on a service order. */
+  exam: OrderExtension | null;
   /**
    * BI-256 (D-159). Whether registering its procedure demands the signed form
    * 024 (EN-152), with who and when last changed it; `setAt` is `null` while
    * nobody ever touched it, which is «no lo exige».
    */
   writtenConsent: WrittenConsentRuleView;
-  /** MSP nomenclature only. No amount is ever taken from it (BI-011). */
-  tariffCode: string | null;
+  /**
+   * BI-285, BI-286. The MSP code: nomenclature only (no amount is ever taken
+   * from it, BI-011), and for a procedure the tie to what was performed.
+   */
+  mspCode: string | null;
   taxRateId: string;
   taxSriCode: string;
   taxPercentage: Percentage | null;
   active: boolean;
-  /**
-   * BI-158, BI-188, SP-031. The service types this service charges for, when
-   * it is a consultation; empty on almost every row. Set from Especialidades,
-   * never from here (SP-030).
-   */
-  serviceTypes: readonly ChargedServiceType[];
   /**
    * BI-022 to BI-024. Who checked the tax rate with accounting judgement, and
    * when; `null` is «pendiente de revisión». Every service is born pending
    * (D-172.1), and changing its rate makes it pending again (D-172.2).
    */
   taxReview: TaxReviewView | null;
+}
+
+/**
+ * BI-282. The price in force today of a service in one list: the self-pay
+ * list and every active payer's. A list missing from a row has no price in
+ * force there — for an agreement, «it charges the self-pay price».
+ */
+export interface CurrentPriceView {
+  priceListId: string;
+  payerId: string;
+  priceId: string;
+  amount: Money;
+  validFrom: ClinicalDate;
+}
+
+/** BI-282. A row of the paginated list: the service and its prices today. */
+export interface ServiceListItem extends ServiceView {
+  prices: CurrentPriceView[];
+}
+
+/** BI-282. The server-side filter: text on name or code, kind, specialty. */
+export interface ServiceListFilter {
+  /** Name or code, ignoring case and accents. */
+  query: string | null;
+  kind: ServiceKind | null;
+  specialtyId: string | null;
+  includeInactive: boolean;
+  /**
+   * BI-023. The order to review the tax rates in: pending first, grouped by
+   * SRI code, then by name.
+   */
+  forTaxReview: boolean;
+  page: number;
+  pageSize: number;
+  /** The clinic's today, for «in force». */
+  today: ClinicalDate;
+}
+
+export interface ServicePage {
+  items: ServiceListItem[];
+  total: number;
+  /**
+   * BI-292. How many of each kind match the same text and filters, without
+   * the kind filter: what each tab says beside its name.
+   */
+  kindCounts: { kind: ServiceKind; total: number }[];
+  page: number;
+  pageSize: number;
+}
+
+/** BI-283. One range of an analyte, in force. */
+export interface AnalyteRangeView {
+  id: string;
+  sex: string | null;
+  ageMinDays: number | null;
+  ageMaxDays: number | null;
+  rangeKind: string;
+  low: string | null;
+  high: string | null;
+  text: string | null;
+}
+
+/** BI-283. An analyte of an ordered service, in print order, with its ranges. */
+export interface ServiceAnalyteView {
+  id: string;
+  code: string;
+  name: string;
+  unit: string | null;
+  valueType: string;
+  decimals: number | null;
+  allowedValues: unknown;
+  loincCode: string | null;
+  active: boolean;
+  position: number;
+  isReflex: boolean;
+  ranges: AnalyteRangeView[];
 }
 
 /** BI-256. The 024 mark of a service, with who and when it last changed. */
@@ -198,41 +286,43 @@ export interface PriceListView {
 }
 
 /**
- * BI-010, BI-013. A new service: the tax rate is mandatory, and there is no
- * amount on it — prices live in the price lists (BI-006).
+ * BI-280. A new service with its first self-pay price, written in ONE
+ * transaction with its order extension when it has one. There is still no
+ * amount ON the service (BI-006): the price is a row of the self-pay list.
  */
-export interface NewBillableService {
+export interface NewService {
   code: string;
   name: string;
-  categoryId: string;
-  tariffCode: string | null;
+  kind: ServiceKind;
+  mspCode: string | null;
   taxRateId: string;
-}
-
-/** BI-188, SP-031. A service type a consultation service charges for. */
-export interface ChargedServiceType {
-  id: string;
-  name: string;
-  specialtyName: string;
+  consultation: ConsultationData | null;
+  exam: OrderExtension | null;
+  selfPay: { priceListId: string; amount: Money; validFrom: ClinicalDate };
 }
 
 /**
- * A partial update: an absent field is left alone. `code` is not here, so the
- * identifier a charge was raised against cannot be renamed.
+ * A partial update: an absent field is left alone. `kind` is not here: it is
+ * fixed once created (BI-278).
  */
-export interface BillableServiceUpdate {
+export interface ServiceUpdate {
+  code?: string;
   name?: string;
-  categoryId?: string;
-  tariffCode?: string | null;
+  mspCode?: string | null;
   taxRateId?: string;
   active?: boolean;
+  /** BI-279. Only on a consultation; each field partial. */
+  consultation?: Partial<ConsultationData>;
+  /**
+   * BI-284. The order extension: fields to change, created when missing on an
+   * orderable kind; `null` removes it (a procedure no longer ordered).
+   */
+  exam?: Partial<OrderExtension> | null;
   /**
    * BI-024. A review to record, or `null` to return the rate to pending;
    * absent leaves it alone. Written by the service, never taken from a body.
    */
   taxReview?: { reviewedAt: Date; reviewedById: string } | null;
-  /** BI-257. The procedure it charges; `null` unties it. */
-  procedureConceptId?: string | null;
   /** BI-256. Written by the service with who and when, never from a body. */
   writtenConsent?: { required: boolean; setAt: Date; setById: string };
 }
@@ -262,57 +352,49 @@ export interface PayerUpdate {
  * their price lists. Implemented by `PrismaBillingCatalogueRepository`.
  */
 export interface BillingCatalogueRepository {
-  /** BI-020, BI-021. The SRI's rates, as rows. */
-  /** BI-185. The categories, the inactive ones only when asked. */
-  listServiceCategories(filter: {
-    includeInactive: boolean;
-  }): Promise<ServiceCategoryView[]>;
-  findServiceCategory(categoryId: string): Promise<ServiceCategoryView | null>;
-  /** `billable_service_category_name_unique` refuses a repeated name. */
-  createServiceCategory(category: {
-    name: string;
-    kind: ServiceCategoryKind;
-  }): Promise<ServiceCategoryView>;
-  updateServiceCategory(
-    categoryId: string,
-    update: { name?: string; active?: boolean; kind?: ServiceCategoryKind },
-  ): Promise<ServiceCategoryView>;
   /**
-   * BI-187. How many of the category's services carry each kind of tie, and
-   * the types of the exams charged through them (ORD-108).
+   * BI-298. The active consultation of that specialty and visit other than
+   * `exceptId`, if any (a `null` visit is its own case).
    */
-  countCategoryTies(categoryId: string): Promise<{
-    consultations: number;
-    procedures: number;
-    examCategories: string[];
-  }>;
+  findActiveConsultation(
+    specialtyId: string,
+    visitKind: 'FIRST_VISIT' | 'FOLLOW_UP' | null,
+    exceptId: string | null,
+  ): Promise<{ id: string; name: string; specialtyName: string } | null>;
 
   /** BI-189. Every list's prices of the service, every validity. */
   listPricesAcrossPayers(serviceId: string): Promise<ServicePriceView[]>;
-  /** BI-188. The exams charged through the service. */
-  listExamsOfService(serviceId: string): Promise<ServiceExamView[]>;
 
+  /** BI-020, BI-021. The SRI's rates, as rows. */
   listTaxRates(): Promise<TaxRateView[]>;
   findTaxRate(taxRateId: string): Promise<TaxRateView | null>;
   /** BI-026. */
   countServicesUsingTaxRate(taxRateId: string): Promise<number>;
+  /** BI-280. The rate a new service takes when none is sent: code `0`. */
+  findHealthTaxRate(): Promise<TaxRateView | null>;
 
-  /** BI-010, BI-014, BI-023. */
-  listBillableServices(filter: {
-    includeInactive: boolean;
-  }): Promise<BillableServiceView[]>;
-  findBillableService(serviceId: string): Promise<BillableServiceView | null>;
-  createBillableService(service: NewBillableService): Promise<BillableServiceView>; // prettier-ignore
+  /**
+   * BI-282. One page of services, filtered and ordered IN THE DATABASE, with
+   * each row's prices in force today in every active list.
+   */
+  listServices(filter: ServiceListFilter): Promise<ServicePage>;
+  /** One service by id, active or not. */
+  findService(serviceId: string): Promise<ServiceView | null>;
+  /** BI-283. The analytes of an ordered service, with their ranges in force. */
+  listAnalytesOfService(serviceId: string): Promise<ServiceAnalyteView[]>;
+  /**
+   * BI-280. The service, its first self-pay price and its order extension,
+   * in ONE transaction: a service caja cannot price is the one the author
+   * believed was never created (D-228).
+   */
+  createService(service: NewService): Promise<ServiceView>;
   /**
    * A partial update. When it carries a `taxRateId` different from the one
    * stored, the tax review is cleared IN THE SAME TRANSACTION, whatever the
    * caller read before (BI-024, D-172.2): a review must never survive onto a
    * rate its author did not see.
    */
-  updateBillableService(
-    serviceId: string,
-    update: BillableServiceUpdate,
-  ): Promise<BillableServiceView>;
+  updateService(serviceId: string, update: ServiceUpdate): Promise<ServiceView>;
   /**
    * BI-024. Records the review ONLY IF the service still carries `taxRateId`,
    * in the same statement; `null` when it no longer does (or does not
@@ -323,51 +405,51 @@ export interface BillingCatalogueRepository {
     serviceId: string,
     taxRateId: string,
     review: { reviewedAt: Date; reviewedById: string },
-  ): Promise<BillableServiceView | null>;
-  /**
-   * BI-257. The code of a concept of the tariff catalogue still in force, or
-   * `null` when it is not one.
-   */
-  tariffConceptCode(conceptId: string): Promise<string | null>;
-  /** BI-257. Whether any charge of the service is already on an invoice. */
+  ): Promise<ServiceView | null>;
+  /** BI-281, BI-285. Whether any charge of the service is on an invoice. */
   hasInvoicedCharges(serviceId: string): Promise<boolean>;
-  /** BI-257. Whether another service already charges a concept of that code. */
-  procedureTakenByOther(conceptId: string, serviceId: string): Promise<boolean>;
+  /** BI-281. Whether an order line froze this code. */
+  codeWasOrdered(code: string): Promise<boolean>;
+  /** BI-286. Whether the code is a procedure of the tariff, of any edition. */
+  isTariffProcedureCode(code: string): Promise<boolean>;
+  /** BI-286. Whether another active procedure carries this code. */
+  procedureCodeTakenByOther(code: string, serviceId: string | null): Promise<boolean>; // prettier-ignore
+  /** BI-279. Whether the specialty exists and is active. */
+  specialtyIsActive(specialtyId: string): Promise<boolean>;
+  /** BI-279, SP-021. The slot atom of every site, to fit a duration. */
+  siteSlotAtoms(): Promise<readonly number[]>;
+  /** BI-280. The code taken by a service, to propose a free one. */
+  codesStartingWith(prefix: string): Promise<string[]>;
+  /** BI-280. The self-pay list (`payer.kind = 'SELF_PAY'`), clinic-wide. */
+  findSelfPayPriceList(): Promise<PriceListView | null>;
   /**
-   * BI-012. Deletes ONLY when nothing references it; the caller has already
-   * refused when it does. The count and the delete are asked separately on
-   * purpose — the `RESTRICT` foreign keys are the real guarantee, and this
-   * pair only turns their rejection into a sentence.
+   * BI-012, BI-288. Deletes ONLY when nothing references it; the caller has
+   * already refused when it does. The count and the delete are asked
+   * separately on purpose — the `RESTRICT` foreign keys are the real
+   * guarantee, and this pair only turns their rejection into a sentence.
    */
   countReferencesToService(serviceId: string): Promise<number>;
-  deleteBillableService(serviceId: string): Promise<void>;
+  deleteService(serviceId: string): Promise<void>;
 
   /**
-   * BI-158, SP-031. THE SERVICE THAT IS «THE CONSULTATION» of a service type:
-   * its first (`position` 0). `service_type_billable_service_one_per_position`
-   * makes it at most one row, so the proposal never has to pick.
+   * BI-287. THE SERVICE THAT IS «THE CONSULTATION» of an appointment: the one
+   * it booked, if it is a consultation, active or not.
    */
-  findConsultationService(serviceTypeId: string): Promise<ServiceMatch | null>;
+  findConsultationService(serviceId: string): Promise<ServiceMatch | null>;
 
   /**
-   * BI-151. `catalog_concept.id` → the service that charges for that
-   * procedure, for a whole visit AT ONCE.
-   *
-   * A map and not a lookup per row: twelve procedures must not be twelve round
-   * trips while a patient waits at the counter.
+   * BI-286, BI-151. A procedure's code → the procedure service that carries
+   * it, for a whole visit AT ONCE. A map and not a lookup per row: twelve
+   * procedures must not be twelve round trips while a patient waits at the
+   * counter.
    */
-  findServicesByProcedureConcept(
-    conceptIds: readonly string[],
+  findServicesByProcedureCode(
+    codes: readonly string[],
   ): Promise<Map<string, ServiceMatch>>;
 
   /**
-   * BI-151. `exam_definition.code` → the service the definition already points
-   * at through `billable_service_id`.
-   *
-   * ⚠️ THE JOIN IS BY CODE, and it is the code the order line FROZE
-   * (`service_order_item.test_code`). Reading it back through the order's
-   * catalogue concept would answer a different question — the concept is the
-   * nomenclature of what was asked for, and what is charged is the orderable.
+   * BI-151, BI-284. The code an order line FROZE (`service_order_item.test_code`)
+   * → the service with that code: the exam IS its service (ADR-013).
    */
   findServicesByExamCode(
     codes: readonly string[],
@@ -386,7 +468,7 @@ export interface BillingCatalogueRepository {
   /** BI-041, BI-042. Every price of one service in one list, newest first. */
   listPricesOfService(
     priceListId: string,
-    billableServiceId: string,
+    serviceId: string,
   ): Promise<PriceRow[]>;
   listPricesOfList(priceListId: string): Promise<PriceRow[]>;
   /**
@@ -397,7 +479,7 @@ export interface BillingCatalogueRepository {
    */
   applyPriceChange(
     priceListId: string,
-    billableServiceId: string,
+    serviceId: string,
     change: PriceChange,
   ): Promise<PriceRow>;
   /** BI-230. One price row with the list it belongs to, or `null`. */
@@ -460,7 +542,7 @@ export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 export interface ChargeView {
   id: string;
   accountId: string;
-  billableServiceId: string;
+  serviceId: string;
   encounterId: string | null;
   serviceDate: ClinicalDate;
   quantity: Quantity;
@@ -533,7 +615,7 @@ export interface NewAccount {
  */
 export interface NewCharge {
   accountId: string;
-  billableServiceId: string;
+  serviceId: string;
   encounterId: string | null;
   serviceDate: ClinicalDate;
   quantity: Quantity;
@@ -634,7 +716,7 @@ export interface ChargeEdit extends ChargeStamp {
   onlyIfStatus?: ChargeStatus;
   quantity?: Quantity;
   serviceDate?: ClinicalDate;
-  billableServiceId?: string;
+  serviceId?: string;
 }
 
 /** BI-198. An open line and what it would cost under another list. */

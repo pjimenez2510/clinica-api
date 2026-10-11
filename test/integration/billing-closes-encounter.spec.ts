@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import '../../src/modules/billing/infrastructure/billing.constraints';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { Quantity } from '../../src/modules/billing/domain/money';
@@ -48,6 +49,7 @@ let clinic: Clinic;
 
 beforeEach(async () => {
   const prisma = db();
+  await seedSpecialties(prisma);
   await seedBilling(prisma);
   const site = await createSite(prisma);
   const practitioner = await createPractitioner(prisma);
@@ -73,7 +75,7 @@ beforeEach(async () => {
     payerId: payer.id,
     priceListId: priceList.id,
     serviceId: (
-      await prisma.billableService.findUniqueOrThrow({
+      await prisma.service.findUniqueOrThrow({
         where: { code: 'CONS-MG-PV' },
       })
     ).id,
@@ -133,7 +135,7 @@ async function anAccount(encounterId: string, charged: boolean) {
   if (charged) {
     await clinic.accounts.addCharge({
       accountId: account.id,
-      billableServiceId: clinic.serviceId,
+      serviceId: clinic.serviceId,
       encounterId,
       serviceDate: clinicalDateOf(new Date()),
       quantity: Quantity.ONE,

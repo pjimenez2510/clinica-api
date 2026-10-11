@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { CashSessionClosedError } from '../../src/modules/billing/domain/billing.errors';
 import { summariseCashTurn } from '../../src/modules/billing/domain/cash';
 import { Money, Quantity } from '../../src/modules/billing/domain/money';
@@ -66,6 +67,7 @@ async function aUser(prisma: PrismaClient, name: string): Promise<string> {
 
 beforeEach(async () => {
   const prisma = db();
+  await seedSpecialties(prisma);
   await seedBilling(prisma);
   const site = await createSite(prisma);
   const patient = await createPatient(prisma);
@@ -89,7 +91,7 @@ beforeEach(async () => {
       })
     ).id,
     serviceId: (
-      await prisma.billableService.findUniqueOrThrow({
+      await prisma.service.findUniqueOrThrow({
         where: { code: CONSULTATION },
       })
     ).id,
@@ -125,7 +127,7 @@ async function anInvoice(): Promise<string> {
   for (let i = 0; i < 2; i += 1) {
     await scene.accounts.addCharge({
       accountId: account.id,
-      billableServiceId: scene.serviceId,
+      serviceId: scene.serviceId,
       encounterId: null,
       serviceDate: clinicalDateOf(new Date()),
       quantity: Quantity.ONE,

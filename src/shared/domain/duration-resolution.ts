@@ -2,7 +2,8 @@
  * How long an appointment should last — the D-010 contract, in one function.
  *
  * SP-023 fixes the order: the practitioner's own exception wins, then the
- * base duration of the specialty·type, then the minutes of the schedule rule.
+ * duration of the consultation service (ADR-013: what was the specialty·type),
+ * then the slot atom of the site.
  * It is trivial arithmetic ON PURPOSE: the value of having it here is that
  * the agenda (SP-028), the administration screen and every test resolve the
  * duration through the SAME function, so the proposal recepción sees and the
@@ -23,10 +24,10 @@
  * this source has no opinion.
  */
 export interface DurationSources {
-  /** The practitioner's own exception for this specialty·type, if any. */
+  /** The practitioner's own exception for this consultation, if any. */
   exceptionMinutes?: number | null;
-  /** The base duration of the service type, if one applies. */
-  serviceTypeMinutes?: number | null;
+  /** `service.duration_minutes` of the consultation, if one applies. */
+  serviceMinutes?: number | null;
   /** The slot minutes of the schedule rule in force, the last resort. */
   ruleSlotMinutes?: number | null;
 }
@@ -41,7 +42,7 @@ export interface DurationSources {
 export function resolveDuration(sources: DurationSources): number | null {
   return (
     sources.exceptionMinutes ??
-    sources.serviceTypeMinutes ??
+    sources.serviceMinutes ??
     sources.ruleSlotMinutes ??
     null
   );

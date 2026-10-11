@@ -83,7 +83,7 @@ async function anOrderedBloodCount(
     encounterId: scene.encounter.id,
     category: 'LABORATORY',
     priority: 'ROUTINE',
-    lines: [{ examDefinitionId: scene.bh.id }],
+    lines: [{ serviceId: scene.bh.id }],
     sites: 'all',
   });
 
@@ -156,7 +156,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: she.bh.id }],
+      lines: [{ serviceId: she.bh.id }],
       sites: 'all',
     });
     const his = await women.reports.register(
@@ -312,7 +312,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: otherEncounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: mine.bh.id }],
+      lines: [{ serviceId: mine.bh.id }],
       sites: 'all',
     });
 
@@ -443,7 +443,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id }], // prettier-ignore
+      lines: [{ serviceId: scene.glucose.id }], // prettier-ignore
       sites: 'all',
     });
 
@@ -488,7 +488,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id }], // prettier-ignore
+      lines: [{ serviceId: scene.glucose.id }], // prettier-ignore
       sites: 'all',
     });
 
@@ -565,8 +565,8 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     const prisma = db();
     const scene = await anOrderedBloodCount(prisma);
     // The blood count promises a second, non-reflex determination here.
-    await prisma.examDefinitionAnalyte.create({
-      data: { examDefinitionId: scene.bh.id, analyteDefinitionId: scene.glu.id, position: 2 }, // prettier-ignore
+    await prisma.serviceExamAnalyte.create({
+      data: { serviceId: scene.bh.id, analyteDefinitionId: scene.glu.id, position: 2 }, // prettier-ignore
     });
     const { reports, store } = serviceOf(prisma);
     const issuedAt = new Date(Date.now() - 2 * 3_600_000);
@@ -616,8 +616,8 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
   it('ORD-119 editar un parcial cambiando un valor que ya decía lo deja CORREGIDO, no en silencio', async () => {
     const prisma = db();
     const scene = await anOrderedBloodCount(prisma);
-    await prisma.examDefinitionAnalyte.create({
-      data: { examDefinitionId: scene.bh.id, analyteDefinitionId: scene.glu.id, position: 2 }, // prettier-ignore
+    await prisma.serviceExamAnalyte.create({
+      data: { serviceId: scene.bh.id, analyteDefinitionId: scene.glu.id, position: 2 }, // prettier-ignore
     });
     const { reports } = serviceOf(prisma);
     const issuedAt = new Date(Date.now() - 2 * 3_600_000);
@@ -645,8 +645,8 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
   it('ORD-119 un parcial editado que sigue incompleto queda PARCIAL aunque cambie un valor; completarlo cambiando la conclusión lo deja CORREGIDO', async () => {
     const prisma = db();
     const scene = await anOrderedBloodCount(prisma);
-    await prisma.examDefinitionAnalyte.create({
-      data: { examDefinitionId: scene.bh.id, analyteDefinitionId: scene.glu.id, position: 2 }, // prettier-ignore
+    await prisma.serviceExamAnalyte.create({
+      data: { serviceId: scene.bh.id, analyteDefinitionId: scene.glu.id, position: 2 }, // prettier-ignore
     });
     const { reports, store } = serviceOf(prisma);
     const issuedAt = new Date(Date.now() - 2 * 3_600_000);
@@ -693,7 +693,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
     const partial = await reports.register(
@@ -939,7 +939,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id }],
+      lines: [{ serviceId: scene.glucose.id }],
       sites: 'all',
     });
     const original = await reports.register(
@@ -990,9 +990,9 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     const { reports, orders } = serviceOf(prisma);
 
     // Se añade una segunda determinación no refleja a la biometría.
-    await prisma.examDefinitionAnalyte.create({
+    await prisma.serviceExamAnalyte.create({
       data: {
-        examDefinitionId: scene.bh.id,
+        serviceId: scene.bh.id,
         analyteDefinitionId: scene.glu.id,
         position: 2,
       },
@@ -1001,7 +1001,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
 
@@ -1062,13 +1062,10 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [
-        { examDefinitionId: scene.bh.id },
-        { examDefinitionId: scene.glucose.id },
-      ],
+      lines: [{ serviceId: scene.bh.id }, { serviceId: scene.glucose.id }],
       sites: 'all',
     });
-    const glucoseLine = order.items.find((i) => i.testCode === 'EX-GLUCOSA-AYUNAS')!; // prettier-ignore
+    const glucoseLine = order.items.find((i) => i.testCode === 'LAB-GLUCOSA-AYUNAS')!; // prettier-ignore
     const canceller = await createUser(prisma);
     await orders.cancelItem({
       orderId: order.id,
@@ -1150,14 +1147,11 @@ describe('ORD-124 la anulación y el informe, a la vez, contra PostgreSQL', () =
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [
-        { examDefinitionId: scene.bh.id },
-        { examDefinitionId: scene.glucose.id },
-      ],
+      lines: [{ serviceId: scene.bh.id }, { serviceId: scene.glucose.id }],
       sites: 'all',
     });
     const line = (code: string) => order.items.find((i) => i.testCode === code)!; // prettier-ignore
-    return { scene, order, bh: line('EX-BH'), glucose: line('EX-GLUCOSA-AYUNAS') }; // prettier-ignore
+    return { scene, order, bh: line('LAB-BH'), glucose: line('LAB-GLUCOSA-AYUNAS') }; // prettier-ignore
   }
 
   it('ORD-124 la base no deja colgar un resultado de una línea anulada; de una viva, sí (control positivo)', async () => {

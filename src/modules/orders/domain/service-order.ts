@@ -3,7 +3,7 @@ import type { AbnormalFlag } from './analyte';
 /**
  * The ORDERABLE half: what the doctor asks for and what the invoice charges.
  *
- * One `exam_definition` is ONE line on the order and ONE line on the invoice,
+ * One ordered `service` is ONE line on the order and ONE line on the invoice,
  * and it yields many `analyte_definition`s. See `analyte.ts` for the other
  * half, and the SPEC's opening section for why the distinction decides the
  * whole design.
@@ -183,7 +183,7 @@ export function supersedingStatus(
  *
  * ⚠️ REFLEX ANALYTES DO NOT COUNT, and that is the requirement rather than an
  * optimisation. A reflex analyte is only produced when another comes back
- * positive — `exam_definition_analyte.is_reflex` — so counting it would leave
+ * positive — `service_exam_analyte.is_reflex` — so counting it would leave
  * every complete blood count with a reflex differential permanently pending,
  * and a worklist that is permanently wrong is a worklist people stop reading.
  *
@@ -205,7 +205,7 @@ export function isLineComplete(
   const required = expected.filter((analyte) => !analyte.isReflex);
   /**
    * AN EXAM THAT DECLARES NO ANALYTE IS NEVER COMPLETED BY THIS RULE, and the
-   * `false` is deliberate. `exam_definition_analyte` is what makes a result
+   * `false` is deliberate. `service_exam_analyte` is what makes a result
    * checkable at all; an exam with an empty list is a catalogue row somebody
    * has not finished, and auto-completing its line would take it off the
    * worklist without anybody having seen a value. It stays visible instead —

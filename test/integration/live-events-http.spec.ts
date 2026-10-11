@@ -114,7 +114,7 @@ describe('el canal de avisos en vivo por HTTP', () => {
     siteA = (await createSite(prisma, 'Sede Norte')).id;
     siteB = (await createSite(prisma, 'Sede Sur')).id;
     const exams = await seedExams(prisma);
-    await aTariffConcept(prisma, { code: 'EX-GLUCOSA-AYUNAS' });
+    await aTariffConcept(prisma, { code: 'MSP-GLUCOSA-AYUNAS' });
     glucoseAnalyteId = exams.glu.id;
     glucoseExamId = exams.glucose.id;
   }
@@ -174,7 +174,7 @@ describe('el canal de avisos en vivo por HTTP', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({
         category: 'LABORATORY',
-        items: [{ examDefinitionId: glucoseExamId }],
+        items: [{ serviceId: glucoseExamId }],
       })
       .expect(201);
     const id = (order.body as { id: string }).id;

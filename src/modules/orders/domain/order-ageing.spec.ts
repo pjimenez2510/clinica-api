@@ -30,7 +30,7 @@ describe('el envejecimiento de una orden pendiente', () => {
   });
 
   it('ORD-022 marca vencida la línea que pasó el plazo comprometido', () => {
-    // `EX-BH` promete cuatro horas en la siembra real.
+    // `LAB-BH` promete cuatro horas en la siembra real.
     const fiveHoursLater = new Date('2026-09-16T06:00:00Z');
     const threeHoursLater = new Date('2026-09-16T04:00:00Z');
 

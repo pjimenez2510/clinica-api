@@ -359,7 +359,7 @@ export class PatientAccountService {
   async addCharge(command: {
     accountId: string;
     siteId: string;
-    billableServiceId: string;
+    serviceId: string;
     encounterId: string | null;
     serviceDate: ClinicalDate;
     quantity: Quantity;
@@ -367,9 +367,7 @@ export class PatientAccountService {
   }): Promise<ChargeView> {
     const account = await this.requireOpenAccount(command);
 
-    const service = await this.catalogue.findBillableService(
-      command.billableServiceId,
-    );
+    const service = await this.catalogue.findService(command.serviceId);
     if (!service) throw new BillableServiceNotFoundError();
     // BI-014, BI-015. A deactivated service is not offered for new charges and
     // keeps showing on the ones that already name it — which is why this
@@ -378,7 +376,7 @@ export class PatientAccountService {
 
     return this.accounts.addCharge({
       accountId: account.id,
-      billableServiceId: command.billableServiceId,
+      serviceId: command.serviceId,
       encounterId: command.encounterId,
       serviceDate: command.serviceDate,
       quantity: command.quantity,
@@ -496,7 +494,7 @@ export class PatientAccountService {
     const key = acts === null ? null : consultationKeyOf(acts);
     if (key === null) return null;
     const service = await this.catalogue.findConsultationService(key);
-    if (!service || service.billableServiceId === line.billableServiceId) {
+    if (!service || service.serviceId === line.serviceId) {
       return null;
     }
     return { chargeId: line.id, billed: line.status === 'BILLED' };
@@ -533,8 +531,8 @@ export class PatientAccountService {
         if (!byId.has(former)) byId.set(former, procedure);
       }
     }
-    const services = await this.catalogue.findServicesByProcedureConcept([
-      ...new Set(procedures.map((procedure) => procedure.conceptId)),
+    const services = await this.catalogue.findServicesByProcedureCode([
+      ...new Set(procedures.map((procedure) => procedure.procedureCode)),
     ]);
 
     const outdated: AccountStatement['proceduresOutdated'] = [];
@@ -545,12 +543,12 @@ export class PatientAccountService {
         outdated.push({ chargeId: line.id, billed, reason: 'RETRACTED' });
         continue;
       }
-      const service = services.get(procedure.conceptId);
+      const service = services.get(procedure.procedureCode);
       const quantity = Quantity.parse(String(procedure.quantity));
-      // A concept with no service to charge it is not what the line charges.
+      // A code with no service to charge it is not what the line charges.
       if (
         service === undefined ||
-        service.billableServiceId !== line.billableServiceId ||
+        service.serviceId !== line.serviceId ||
         quantity.thousandths !== line.quantity.thousandths
       ) {
         outdated.push({ chargeId: line.id, billed, reason: 'CHANGED' });

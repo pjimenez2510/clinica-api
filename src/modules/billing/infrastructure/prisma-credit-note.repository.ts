@@ -150,7 +150,7 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
         const charges = await tx.chargeItem.findMany({
           where: { id: { in: [...issuance.chargeIds] } },
           include: {
-            billableService: { select: { code: true } },
+            service: { select: { code: true } },
             creditNoteLine: { select: { id: true } },
           },
           orderBy: { createdAt: 'asc' },
@@ -218,7 +218,7 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
             lines: {
               create: lines.map((line) => ({
                 chargeItemId: line.row.id,
-                serviceCode: line.row.billableService.code,
+                serviceCode: line.row.service.code,
                 description: line.row.serviceDisplay,
                 quantity: line.row.quantity,
                 unitAmount: line.row.unitAmount,
@@ -254,7 +254,7 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
           await tx.chargeItem.createMany({
             data: charges.map((row) => ({
               accountId: rebilledAccountId!,
-              billableServiceId: row.billableServiceId,
+              serviceId: row.serviceId,
               encounterId: row.encounterId,
               origin: 'CORRECTION',
               correctsChargeItemId: row.id,

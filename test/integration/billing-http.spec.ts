@@ -9,6 +9,7 @@ import { afterAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
@@ -104,6 +105,7 @@ describe('la facturación por HTTP', () => {
   });
 
   async function seed(): Promise<void> {
+    await seedSpecialties(prisma);
     await seedBilling(prisma);
     await syncAuthorisation(prisma);
     // The role→permission cache is indexed by id, and truncating recreates the
@@ -121,7 +123,7 @@ describe('la facturación por HTTP', () => {
       await prisma.payer.findUniqueOrThrow({ where: { code: 'PARTICULAR' } })
     ).id;
     serviceId = (
-      await prisma.billableService.findUniqueOrThrow({
+      await prisma.service.findUniqueOrThrow({
         where: { code: 'CONS-MG-PV' },
       })
     ).id;
@@ -219,7 +221,7 @@ describe('la facturación por HTTP', () => {
     await api()
       .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
       .set('Authorization', `Bearer ${cashierToken}`)
-      .send({ billableServiceId: serviceId, serviceDate: '2026-05-11' })
+      .send({ serviceId, serviceDate: '2026-05-11' }) // fecha-fija: dentro de la vigencia sembrada (PRICE_FROM 2026-01-01)
       .expect(201);
   }
 
@@ -258,9 +260,9 @@ describe('la facturación por HTTP', () => {
           validFrom: new Date('2020-01-01'),
         },
       });
-      await prisma.billableService.update({
+      await prisma.service.update({
         where: { code: 'PROC-SUTURA' },
-        data: { procedureConceptId: concept.id, tariffCode: concept.code },
+        data: { mspCode: concept.code },
       });
       await prisma.encounterProcedure.create({
         data: {
@@ -815,7 +817,7 @@ describe('la facturación por HTTP', () => {
         .post(`/api/v1/billing/payers/${payerId}/prices`)
         .set('Authorization', `Bearer ${cashierToken}`)
         .send({
-          billableServiceId: serviceId,
+          serviceId,
           amount: '35.00',
           effectiveFrom: '2026-07-01',
         })
@@ -829,7 +831,7 @@ describe('la facturación por HTTP', () => {
         .post(`/api/v1/billing/payers/${payerId}/prices`)
         .set('Authorization', `Bearer ${tariffToken}`)
         .send({
-          billableServiceId: serviceId,
+          serviceId,
           amount: '35.00',
           effectiveFrom: '2026-07-01',
         })
@@ -855,7 +857,7 @@ describe('la facturación por HTTP', () => {
       const response = await api()
         .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
         .set('Authorization', `Bearer ${cashierToken}`)
-        .send({ billableServiceId: serviceId, serviceDate: '2025-06-01' })
+        .send({ serviceId, serviceDate: '2025-06-01' }) // fecha-fija: antes de la vigencia sembrada, a propósito
         .expect(422);
 
       const problem = response.body as Problem;
@@ -873,8 +875,8 @@ describe('la facturación por HTTP', () => {
         .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
         .set('Authorization', `Bearer ${cashierToken}`)
         .send({
-          billableServiceId: serviceId,
-          serviceDate: '2026-05-11',
+          serviceId,
+          serviceDate: '2026-05-11', // fecha-fija: dentro de la vigencia sembrada
           quantity: 'dos',
         })
         .expect(422);
@@ -1175,7 +1177,7 @@ describe('la facturación por HTTP', () => {
       const response = await api()
         .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
         .set('Authorization', `Bearer ${cashierToken}`)
-        .send({ billableServiceId: serviceId, serviceDate: '2026-05-11' })
+        .send({ serviceId, serviceDate: '2026-05-11' }) // fecha-fija: dentro de la vigencia sembrada (PRICE_FROM 2026-01-01)
         .expect(409);
 
       expect((response.body as Problem).code).toBe('ACCOUNT_CLOSED');
@@ -1184,7 +1186,7 @@ describe('la facturación por HTTP', () => {
   describe('BI-023 BI-024 la revisión contable de la tarifa, por HTTP', () => {
     interface ServiceBody {
       id: string;
-      tariffCode: string | null;
+      mspCode: string | null;
       taxRateId: string;
       taxReview: {
         reviewedAt: string;
@@ -1207,17 +1209,15 @@ describe('la facturación por HTTP', () => {
       expect(seeded.length).toBeGreaterThan(0);
       expect(seeded.every((one) => one.taxReview === null)).toBe(true);
 
-      const category = await prisma.billableServiceCategory.findFirstOrThrow({
-        where: { kind: 'PROCEDURE' },
-      });
       const created = await api()
         .post('/api/v1/billing/services')
         .set('Authorization', `Bearer ${tariffToken}`)
         .send({
+          kind: 'PROCEDURE',
           code: 'PROC-ALTA-NUEVA',
-          name: 'Curación simple',
-          categoryId: category.id,
+          name: 'Curación con apósito',
           taxRateId: seeded[0]!.taxRateId,
+          selfPayAmount: '15.00',
         })
         .expect(201);
       expect((created.body as ServiceBody).taxReview).toBeNull();
@@ -1230,7 +1230,7 @@ describe('la facturación por HTTP', () => {
       const before = Date.now();
 
       const seen = (
-        await prisma.billableService.findUniqueOrThrow({
+        await prisma.service.findUniqueOrThrow({
           where: { id: serviceId },
         })
       ).taxRateId;
@@ -1248,7 +1248,7 @@ describe('la facturación por HTTP', () => {
       const reviewedAt = new Date(review.reviewedAt).getTime();
       expect(reviewedAt).toBeGreaterThanOrEqual(before);
       expect(reviewedAt).toBeLessThanOrEqual(Date.now());
-      const row = await prisma.billableService.findUniqueOrThrow({
+      const row = await prisma.service.findUniqueOrThrow({
         where: { id: serviceId },
       });
       expect(row.taxReviewedById).toBe(reviewer.id);
@@ -1273,7 +1273,7 @@ describe('la facturación por HTTP', () => {
 
       // D-172.2: the review the new rate cleared is still in the trail.
       const trail = await prisma.accessAudit.findMany({
-        where: { resourceType: 'billable_service', resourceId: serviceId },
+        where: { resourceType: 'service', resourceId: serviceId },
         orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
       });
       expect(trail.at(-1)!.before).toMatchObject({
@@ -1288,7 +1288,7 @@ describe('la facturación por HTTP', () => {
         where: { sriCode: '4', validTo: null },
       });
       const current = (
-        await prisma.billableService.findUniqueOrThrow({
+        await prisma.service.findUniqueOrThrow({
           where: { id: serviceId },
         })
       ).taxRateId;
@@ -1301,13 +1301,13 @@ describe('la facturación por HTTP', () => {
         .send({ taxRateId: general.id })
         .expect(409);
       expect((stale.body as Problem).code).toBe('TAX_REVIEW_RATE_CHANGED');
-      const untouched = await prisma.billableService.findUniqueOrThrow({
+      const untouched = await prisma.service.findUniqueOrThrow({
         where: { id: serviceId },
       });
       expect(untouched.taxReviewedAt).toBeNull();
       expect(
         await prisma.accessAudit.count({
-          where: { resourceType: 'billable_service', resourceId: serviceId },
+          where: { resourceType: 'service', resourceId: serviceId },
         }),
       ).toBe(0);
 
@@ -1324,7 +1324,7 @@ describe('la facturación por HTTP', () => {
         .set('Authorization', `Bearer ${cashierToken}`)
         .send({
           taxRateId: (
-            await prisma.billableService.findUniqueOrThrow({
+            await prisma.service.findUniqueOrThrow({
               where: { id: serviceId },
             })
           ).taxRateId,
@@ -1332,7 +1332,7 @@ describe('la facturación por HTTP', () => {
         .expect(403);
 
       expect((response.body as Problem).code).toBe('PERMISSION_DENIED');
-      const row = await prisma.billableService.findUniqueOrThrow({
+      const row = await prisma.service.findUniqueOrThrow({
         where: { id: serviceId },
       });
       expect(row.taxReviewedAt).toBeNull();
@@ -1344,38 +1344,36 @@ describe('la facturación por HTTP', () => {
       });
 
       await expect(
-        prisma.$executeRaw`UPDATE billable_service SET tax_reviewed_at = ${new Date()} WHERE id = ${serviceId}::uuid`,
-      ).rejects.toThrowError(/billable_service_tax_review_names_who_and_when/);
+        prisma.$executeRaw`UPDATE service SET tax_reviewed_at = ${new Date()} WHERE id = ${serviceId}::uuid`,
+      ).rejects.toThrowError(/service_tax_review_names_who_and_when/);
       await expect(
-        prisma.$executeRaw`UPDATE billable_service SET tax_reviewed_by_id = ${reviewer.id}::uuid WHERE id = ${serviceId}::uuid`,
-      ).rejects.toThrowError(/billable_service_tax_review_names_who_and_when/);
+        prisma.$executeRaw`UPDATE service SET tax_reviewed_by_id = ${reviewer.id}::uuid WHERE id = ${serviceId}::uuid`,
+      ).rejects.toThrowError(/service_tax_review_names_who_and_when/);
       await expect(
-        prisma.$executeRaw`UPDATE billable_service SET tax_reviewed_at = ${new Date()}, tax_reviewed_by_id = ${reviewer.id}::uuid WHERE id = ${serviceId}::uuid`,
+        prisma.$executeRaw`UPDATE service SET tax_reviewed_at = ${new Date()}, tax_reviewed_by_id = ${reviewer.id}::uuid WHERE id = ${serviceId}::uuid`,
       ).resolves.toBe(1);
     });
 
-    it('BI-011 el código del tarifario nacional se guarda como nomenclatura y no pone ningún precio', async () => {
+    it('BI-011 BI-285 el Código MSP se guarda como nomenclatura y el precio es el de la lista, no el del tarifario', async () => {
       const updated = await api()
         .patch(`/api/v1/billing/services/${serviceId}`)
         .set('Authorization', `Bearer ${tariffToken}`)
-        .send({ tariffCode: '99203' })
+        .send({ mspCode: '99203' })
         .expect(200);
-      expect((updated.body as ServiceBody).tariffCode).toBe('99203');
+      expect((updated.body as ServiceBody).mspCode).toBe('99203');
 
-      // A service with a tariff code and no price in the payer's list has no
-      // price: nothing is taken from the national tariff.
-      const category = await prisma.billableServiceCategory.findFirstOrThrow({
-        where: { kind: 'PROCEDURE' },
-      });
+      // A service with an MSP code charges what ITS list says: nothing is
+      // taken from the national tariff.
       const created = await api()
         .post('/api/v1/billing/services')
         .set('Authorization', `Bearer ${tariffToken}`)
         .send({
-          code: 'PROC-TARIFARIO',
-          name: 'Procedimiento con código del tarifario',
-          categoryId: category.id,
+          kind: 'OTHER',
+          code: 'OTR-TARIFARIO',
+          name: 'Servicio con Código MSP',
           taxRateId: (updated.body as ServiceBody).taxRateId,
-          tariffCode: '99203',
+          mspCode: '99203',
+          selfPayAmount: '7.00',
         })
         .expect(201);
       const accountId = await openAccount();
@@ -1383,11 +1381,11 @@ describe('la facturación por HTTP', () => {
         .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
         .set('Authorization', `Bearer ${cashierToken}`)
         .send({
-          billableServiceId: (created.body as ServiceBody).id,
+          serviceId: (created.body as ServiceBody).id,
           serviceDate: clinicalDateOf(new Date()),
         })
-        .expect(422);
-      expect((charge.body as Problem).code).toBe('PRICE_NOT_FOUND');
+        .expect(201);
+      expect((charge.body as { unitAmount: string }).unitAmount).toBe('7.00');
     });
   });
 
@@ -1398,7 +1396,7 @@ describe('la facturación por HTTP', () => {
         .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
         .set('Authorization', `Bearer ${cashierToken}`)
         .send({
-          billableServiceId: serviceId,
+          serviceId,
           serviceDate: clinicalDateOf(new Date()),
         })
         .expect(201);

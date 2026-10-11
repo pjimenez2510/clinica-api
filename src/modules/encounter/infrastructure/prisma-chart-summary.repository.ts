@@ -175,19 +175,19 @@ export class PrismaChartSummaryRepository implements ChartSummaryRepository {
       },
       select: {
         patientId: true,
-        serviceType: { select: { specialtyId: true } },
+        service: { select: { specialtyId: true } },
       },
     });
     if (entry?.patientId == null) return null;
     return {
       patientId: entry.patientId,
-      specialtyId: entry.serviceType?.specialtyId ?? null,
+      specialtyId: entry.service?.specialtyId ?? null,
     };
   }
 
   /**
    * EN-185. An attention with no appointment, or an appointment with no
-   * service type, MAY be of the same specialty, so it counts against
+   * consultation service, MAY be of the same specialty, so it counts against
    * certainty: «primera vez» is proposed only when every earlier attention is
    * known to be of another one.
    */
@@ -202,7 +202,7 @@ export class PrismaChartSummaryRepository implements ChartSummaryRepository {
       orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
       select: {
         startedAt: true,
-        agendaEntry: { select: { serviceType: { select: { specialtyId: true } } } }, // prettier-ignore
+        agendaEntry: { select: { service: { select: { specialtyId: true } } } }, // prettier-ignore
         diagnoses: {
           where: { rank: 1 },
           select: { cie10Code: true, cie10Display: true },
@@ -214,7 +214,7 @@ export class PrismaChartSummaryRepository implements ChartSummaryRepository {
     return {
       startedAt: row.startedAt,
       sameSpecialty:
-        row.agendaEntry?.serviceType?.specialtyId === query.specialtyId,
+        row.agendaEntry?.service?.specialtyId === query.specialtyId,
       principal:
         principal === undefined
           ? null
@@ -284,8 +284,8 @@ function possiblyInService(
       {
         OR: [
           { agendaEntryId: null },
-          { agendaEntry: { serviceTypeId: null } },
-          { agendaEntry: { serviceType: { specialtyId: query.specialtyId } } },
+          { agendaEntry: { serviceId: null } },
+          { agendaEntry: { service: { specialtyId: query.specialtyId } } },
         ],
       },
     ],

@@ -393,8 +393,9 @@ describe('el adaptador del bloque K', () => {
 
   it('EN-051 no incluye ninguna columna de dinero en el INSERT del procedimiento', async () => {
     /**
-     * ⚠️ LA AUSENCIA ES EL REQUISITO. `encounter_procedure.tariff_amount`
-     * existe y este adaptador no la nombra: lo que cuesta el procedimiento es
+     * ⚠️ LA AUSENCIA ES EL REQUISITO. `encounter_procedure.tariff_amount` se
+     * retiró el 11-10-2026 (D-218 §3) y nada debe volver a traer un importe
+     * a esta fila: lo que cuesta el procedimiento es
      * un `charge_item` de `billing`, resuelto por la lista de precios del
      * pagador en la fecha del servicio. Una fila clínica que además lleve el
      * dinero son dos registros en uno, y el hecho clínico no cambia porque el

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { useDatabase } from './setup/database';
 import {
+  createConsultation,
   createPatient,
   createPractitioner,
   createSite,
@@ -85,18 +86,15 @@ async function anAppointmentFor(
 }
 
 /**
- * Un tipo de atención de la clínica: `service_type`, el catálogo PROPIO
- * (SP-020, D-010), que es a donde `agenda_entry.service_type_id` apunta desde
- * C4. La comparación de AG-061 sólo significa algo si la inscripción nombra
- * filas de esta misma tabla.
+ * Una consulta de la clínica: un `service` de tipo CONSULTATION (ADR-013),
+ * que es a donde `agenda_entry.service_id` apunta. La comparación de AG-061
+ * sólo significa algo si la inscripción nombra filas de esta misma tabla.
  */
-async function createServiceType(prisma: PrismaClient, name = 'Control') {
+async function aConsultation(prisma: PrismaClient, name = 'Control') {
   const specialty = await prisma.specialty.create({
     data: { code: `cardiologia${next()}`, name: `Cardiología ${next()}` },
   });
-  return prisma.serviceType.create({
-    data: { specialtyId: specialty.id, name, durationMinutes: 20 },
-  });
+  return createConsultation(prisma, { specialtyId: specialty.id, name });
 }
 
 /**
@@ -154,7 +152,7 @@ describe('waitlist entry invariants (migration 20260819125906)', () => {
       expect(entry.status).toBe('WAITING');
       // Profesional y tipo de servicio son lo ÚNICO opcional de AG-060.
       expect(entry.practitionerId).toBeNull();
-      expect(entry.serviceTypeId).toBeNull();
+      expect(entry.serviceId).toBeNull();
     });
 
     /**
@@ -215,7 +213,8 @@ describe('waitlist entry invariants (migration 20260819125906)', () => {
     });
 
     /**
-     * AG-060, AG-061. LA COLUMNA APUNTA A `service_type`, Y ES LA MITAD DE
+     * AG-060, AG-061. LA COLUMNA APUNTA A LA MISMA TABLA QUE LA CITA
+     * (`service` desde ADR-013; `service_type` antes), Y ES LA MITAD DE
      * AG-061 QUE NO SE PODÍA CUMPLIR.
      *
      * Nació en `clinical_core` como `service_type_concept_id` hacia
@@ -225,31 +224,31 @@ describe('waitlist entry invariants (migration 20260819125906)', () => {
      * la cita que libera el cupo, así que el campo sólo podía rechazar por
      * clave foránea todo identificador legítimo.
      */
-    it('AG-060 admite una entrada que fija el tipo de atención de la clínica', async () => {
+    it('AG-060 admite una entrada que fija la consulta de la clínica', async () => {
       const { prisma, site, patient } = await waitingContext();
-      const type = await createServiceType(prisma);
+      const type = await aConsultation(prisma);
 
       const entry = await prisma.waitlistEntry.create({
         data: {
           patientId: patient.id,
           siteId: site.id,
-          serviceTypeId: type.id,
+          serviceId: type.id,
           preferredFrom: new Date('2026-09-01'),
           preferredTo: new Date('2026-09-30'),
         },
       });
 
-      expect(entry.serviceTypeId).toBe(type.id);
+      expect(entry.serviceId).toBe(type.id);
     });
 
-    it('AG-060 rechaza un tipo de atención que no es de `service_type`', async () => {
+    it('AG-060 rechaza una consulta que no es de `service`', async () => {
       const { prisma, site, patient } = await waitingContext();
       const concept = await createCatalogConcept(prisma);
 
       const rejection = await rejectionOf(
         prisma.$executeRaw`
           INSERT INTO waitlist_entry
-            (patient_id, site_id, service_type_id,
+            (patient_id, site_id, service_id,
              preferred_from, preferred_to, updated_at)
           VALUES (
             ${patient.id}::uuid, ${site.id}::uuid, ${concept.id}::uuid,
@@ -258,32 +257,32 @@ describe('waitlist entry invariants (migration 20260819125906)', () => {
         `,
       );
 
-      expect(rejection.message).toMatch(/service_type/);
+      expect(rejection.message).toMatch(/waitlist_entry_service_fk/);
     });
 
     /**
-     * SP-025 aplicado a la lista de espera: un tipo que alguien espera no se
-     * borra, igual que no se borra uno que una cita registró. `RESTRICT` en
+     * SP-025 aplicado a la lista de espera: una consulta que alguien espera no
+     * se borra, igual que no se borra una que una cita registró. `RESTRICT` en
      * los dos lados, porque la entrada dejaría de significar lo que dice.
      */
-    it('AG-060 rechaza borrar un tipo de atención que una entrada espera', async () => {
+    it('AG-060 rechaza borrar una consulta que una entrada espera', async () => {
       const { prisma, site, patient } = await waitingContext();
-      const type = await createServiceType(prisma);
+      const type = await aConsultation(prisma);
       await prisma.waitlistEntry.create({
         data: {
           patientId: patient.id,
           siteId: site.id,
-          serviceTypeId: type.id,
+          serviceId: type.id,
           preferredFrom: new Date('2026-09-01'),
           preferredTo: new Date('2026-09-30'),
         },
       });
 
       const rejection = await rejectionOf(
-        prisma.serviceType.delete({ where: { id: type.id } }),
+        prisma.service.delete({ where: { id: type.id } }),
       );
 
-      expect(rejection.message).toMatch(/waitlist_entry|foreign key/i);
+      expect(rejection.message).toMatch(/waitlist_entry_service_fk/);
     });
   });
 
@@ -310,7 +309,7 @@ describe('waitlist entry invariants (migration 20260819125906)', () => {
         'practitioner_id',
         'preferred_from',
         'preferred_to',
-        'service_type_id',
+        'service_id',
         'site_id',
         'status',
         'updated_at',

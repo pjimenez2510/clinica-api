@@ -1491,6 +1491,7 @@ requisitos que cambian.
   > lista de precios por pagador con vigencia, cargo con precio congelado, y
   > factura inmutable— no existen todavía. **D-049** las bloquea: sin la lista de
   > pagadores de la clínica no se puede modelar la tabla.
+  > **Cerrado el 11-10-2026 (D-218 §3).** `encounter_procedure.tariff_amount` (y su copia en `encounter_procedure_retraction`) se retiró: nunca se leyó. El precio lo congela el cargo (BI-060).
 - **EN-052** — El sistema DEBERÁ registrar los índices **CEO-D** y **CPO-D** de
   las atenciones odontológicas: dientes cariados, extraídos y obturados en
   pacientes de más de 6 meses y menos de 11 años; y cariados, perdidos y obturados
@@ -3520,6 +3521,7 @@ programada._
   > completo según su clase (CHECK por clase) y no admite `UPDATE`, `DELETE`
   > ni `TRUNCATE`. La marca puesta **después** no invalida lo ya registrado:
   > el disparador mira el alta y el cambio de concepto, no cada edición.
+  > **Enmendado el 11-10-2026 (BI-286).** «La prestación que cobra un concepto» es el servicio de tipo procedimiento cuyo código es el del procedimiento (`procedure_requires_written_consent` compara `service.msp_code` con el código del concepto registrado).
 - **EN-153** — CUANDO el paciente rechace una intervención del tarifario, el
   sistema DEBERÁ registrar la **negativa** con la intervención, su instante, su
   autor (quien la registra) y quién informó (como en EN-152, D-199.4), y quién se negó: el paciente o su
@@ -3968,6 +3970,7 @@ dejaba ver su atención._
   > tipo, la principal del profesional. La plantilla la elige el **servidor**: la pantalla no la
   > manda, porque una nota escrita con una plantilla y validada con otra es el
   > fallo que esto evita.
+  > **Enmendado el 11-10-2026 (ADR-013).** La especialidad es la del servicio de consulta de la cita.
 - **EN-204** — Cada nota DEBERÁ guardar la **versión de la plantilla** con la
   que se abrió, y el sistema DEBERÁ validarla y presentarla siempre con esa
   versión: publicar una nueva NO DEBERÁ alterar una nota firmada ni un

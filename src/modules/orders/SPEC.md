@@ -583,6 +583,7 @@ cuando la gráfica exista.
   `trg_diagnosis_concept_in_force`: un `::date` sobre un `timestamptz` a las
   21:00 cae al día siguiente, y el último día de vigencia de un código dejaría de
   poder usarse cinco horas antes de tiempo.
+  > **Enmendado el 11-10-2026 (D-218 §1, BI-285).** El código MSP **ya no es requisito** para pedir: la línea congela el código del **servicio** (`test_code = service.code`) y, sólo si el servicio tiene código MSP vigente en el TARIFF en la fecha clínica, su concepto (`service_order_item.concept_id`, ahora opcional). Ni `CATALOG_CONCEPT_NOT_FOUND` ni `CATALOG_CONCEPT_NOT_IN_FORCE` rechazan ya una línea.
 
 - **ORD-005** — SI la atención ya no admite contenido clínico nuevo, ENTONCES el
   sistema DEBERÁ rechazar la orden con `ORDER_ENCOUNTER_NOT_OPEN`.
@@ -661,6 +662,7 @@ cuando la gráfica exista.
 - **ORD-010** — El sistema DEBERÁ publicar el catálogo de ordenables activos con
   su sección del formulario 010A, su tipo de muestra, la preparación del paciente
   y su tiempo de entrega.
+  > **Enmendado el 11-10-2026 (BI-284).** Los ordenables son los servicios activos con extensión de orden; su identificador es el del servicio.
 
 - **ORD-011** — El catálogo DEBERÁ publicar, por cada ordenable, **los analitos
   que produce en su orden de impresión**, con su unidad, su tipo de valor y —para
@@ -1375,6 +1377,7 @@ desde la pantalla.
   informe de papel cita: cambiarlo dejaría órdenes apuntando a un código que ya
   no existe. Desactivado, deja de ofrecerse (ORD-003) y lo pedido antes se
   sigue leyendo.
+  > **Sustituido el 11-10-2026 por BI-280 y BI-284 (ADR-013).** El examen se da de alta, corrige y desactiva como servicio, en «Servicios»; su código es el del servicio (BI-281).
 
 - **ORD-104** — Con `catalog:manage`, el sistema DEBERÁ permitir dar de alta y
   corregir un analito —código, nombre, tipo de valor (`NUMERIC`, `CODED`,
@@ -1405,6 +1408,7 @@ desde la pantalla.
   Un analito es de todos los exámenes que lo usan —la glucosa del perfil y la
   de la glucosa en ayunas son la misma determinación—, así que corregirlo
   corrige los dos, y la pantalla lo dice.
+  > **Enmendado el 11-10-2026 (ADR-013).** La estructura se fija sobre el servicio (`service_exam_analyte`, `PUT /exam-catalogue/exams/:serviceId/analytes`); SI el servicio no tiene extensión de orden, ENTONCES DEBERÁ rechazarla con `EXAM_DEFINITION_NOT_FOUND`.
 
 - **ORD-106** — Con `catalog:manage`, el sistema DEBERÁ permitir fijar los
   **rangos** de un analito —de referencia y críticos, cada uno por sexo y por
@@ -1447,10 +1451,12 @@ desde la pantalla.
   > después del alta: el examen y su prestación son la misma cosa (ORD-163),
   > y cambiarla le cambiaría el nombre al examen. El `PATCH` dejó de aceptar
   > `billableServiceId`.
+  > **Sustituido el 11-10-2026 por BI-284 (ADR-013), sin sucesor.** No hay prestación de cobro aparte: el examen es el servicio.
 
 - **ORD-109** — SI se cambia el tipo de un examen que tiene prestación de cobro
   a uno que no es la clase de esa prestación, ENTONCES el sistema DEBERÁ
   rechazarlo con `EXAM_SERVICE_KIND_MISMATCH`.
+  > **Sustituido el 11-10-2026 (ADR-013), sin sucesor.** El tipo del servicio no cambia tras el alta (BI-278).
 
 - **ORD-169** — (Solo interfaz, corrección del defecto de ronda 3) La corrección
   de la ficha de un examen NO DEBERÁ ofrecer cambiar su tipo ni enviar ningún
@@ -1464,6 +1470,7 @@ desde la pantalla.
   > una del tipo nuevo en Cobro», una pantalla que no existe. Cómo se presenta
   > —el tipo de sólo lectura con su porqué— lo fija ESTANDAR-UI §12.4 («no
   > mostrar lo que no se puede»); aquí sólo se fija qué viaja y qué no.
+  > **Sustituido el 11-10-2026 (ADR-013), sin sucesor.** La ficha del servicio no ofrece cambiar su tipo.
 
 - **ORD-110** — Un cambio del catálogo NO DEBERÁ alterar ningún resultado ya
   registrado ni ninguna orden ya emitida: SI se renombra, cambia de tipo o de
@@ -2003,6 +2010,7 @@ renombrarlo rompe la completitud (ORD-039) y la corrección (ORD-055).
   > AD-11. Enmienda ORD-103 («el código no cambia una vez creado»): lo que
   > protege es la línea que lo congeló (ORD-002), y sin líneas no hay nada que
   > proteger.
+  > **Enmendado el 11-10-2026 (BI-281).** El código es el del servicio y lo protege `trg_service_code_fixed_once_ordered`.
 - **ORD-141** — El sistema DEBERÁ admitir en un solo `PATCH` del analito la
   unidad **y** sus rangos nuevos, y aplicarlos en una transacción: o cambian
   los dos o ninguno. Sin rangos en la petición, cambiar la unidad de un analito
@@ -2376,6 +2384,7 @@ en la pestaña de cobro, y nada obligaba a que coincidieran._
   > El IVA elegido queda **sin revisar** (D-A-006, BI-024), como el de la
   > semilla. *(Revisión clínica de la rama: la primera versión dejaba elegir
   > el IVA sin el permiso y reescribía el nombre de la prestación existente.)*
+  > **Sustituido el 11-10-2026 por BI-280 (ADR-013).**
 - **ORD-163** — El nombre y el código del tarifario de un examen DEBERÁN
   guardarse sólo en su prestación: el sistema DEBERÁ servirlos desde ella, y
   CUANDO se corrijan desde el examen DEBERÁ escribirlos en ella en la misma
@@ -2386,6 +2395,7 @@ en la pestaña de cobro, y nada obligaba a que coincidieran._
   > ella. Un perfil que la clínica factura junto es **un** examen con varias
   > determinaciones (ORD-105), no varios exámenes sobre una línea. Si la
   > clínica necesita otra cosa, D-181.
+  > **Sustituido el 11-10-2026 por BI-284 (ADR-013).** El nombre y el código son los del servicio porque el examen **es** el servicio; `exam_definition` se eliminó y su extensión es `service_exam` (una por servicio).
 
 ## 20. El crítico que llega solo (D-187)
 

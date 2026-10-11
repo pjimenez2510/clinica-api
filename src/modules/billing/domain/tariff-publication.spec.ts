@@ -8,6 +8,7 @@ import {
   tariffDifferences,
   tariffFinalAmount,
   tariffLinesOn,
+  serviceKindGroup,
 } from './tariff-publication';
 
 // The day derives from a clock, never written by hand.
@@ -16,7 +17,7 @@ const yesterday = addDays(today, -1);
 const tomorrow = addDays(today, 1);
 
 const candidate = (overrides: Partial<TariffCandidate> = {}): TariffCandidate => ({
-  billableServiceId: 'service-1',
+  serviceId: 'service-1',
   code: 'CON-01',
   name: 'Consulta de medicina general',
   categoryName: 'Consultas',
@@ -27,7 +28,7 @@ const candidate = (overrides: Partial<TariffCandidate> = {}): TariffCandidate =>
 }); // prettier-ignore
 
 const line = (overrides: Partial<TariffLine> = {}): TariffLine => ({
-  billableServiceId: 'service-1',
+  serviceId: 'service-1',
   code: 'CON-01',
   name: 'Consulta de medicina general',
   categoryName: 'Consultas',
@@ -47,21 +48,21 @@ describe('BI-111 lo que entra en el tarifario de la pared', () => {
   it('BI-111 no entra la desactivada ni la que no tiene precio vigente ese día', () => {
     const lines = tariffLinesOn(
       [
-        candidate({ billableServiceId: 'off', active: false }),
+        candidate({ serviceId: 'off', active: false }),
         candidate({
-          billableServiceId: 'future',
+          serviceId: 'future',
           prices: [{ amount: Money.parse('9.00'), validFrom: tomorrow, validTo: null }],
         }), // prettier-ignore
         candidate({
-          billableServiceId: 'ended',
+          serviceId: 'ended',
           prices: [{ amount: Money.parse('9.00'), validFrom: yesterday, validTo: today }],
         }), // prettier-ignore
-        candidate({ billableServiceId: 'unpriced', prices: [] }),
-        candidate({ billableServiceId: 'kept' }),
+        candidate({ serviceId: 'unpriced', prices: [] }),
+        candidate({ serviceId: 'kept' }),
       ],
       today,
     );
-    expect(lines.map((l) => l.billableServiceId)).toEqual(['kept']);
+    expect(lines.map((l) => l.serviceId)).toEqual(['kept']);
   });
 
   it('BI-111 toma el precio que rige ese día cuando la prestación tiene varios', () => {
@@ -83,9 +84,9 @@ describe('BI-111 lo que entra en el tarifario de la pared', () => {
   it('BI-114 ordena por categoría y luego por nombre, como se lee la hoja', () => {
     const lines = tariffLinesOn(
       [
-        candidate({ billableServiceId: 'b', name: 'Hemograma', categoryName: 'Laboratorio' }), // prettier-ignore
-        candidate({ billableServiceId: 'c', name: 'Ecografía', categoryName: 'Imagen' }), // prettier-ignore
-        candidate({ billableServiceId: 'a', name: 'Glucosa', categoryName: 'Laboratorio' }), // prettier-ignore
+        candidate({ serviceId: 'b', name: 'Hemograma', categoryName: 'Laboratorio' }), // prettier-ignore
+        candidate({ serviceId: 'c', name: 'Ecografía', categoryName: 'Imagen' }), // prettier-ignore
+        candidate({ serviceId: 'a', name: 'Glucosa', categoryName: 'Laboratorio' }), // prettier-ignore
       ],
       today,
     );
@@ -120,12 +121,12 @@ describe('BI-115 la publicación desactualizada', () => {
 
   it('BI-115 la que salió de la lista y la que entró se dicen por separado', () => {
     const differences = tariffDifferences(
-      [line({ billableServiceId: 'gone', name: 'Retirada' }), line()],
-      [line(), line({ billableServiceId: 'new', name: 'Nueva' })],
+      [line({ serviceId: 'gone', name: 'Retirada' }), line()],
+      [line(), line({ serviceId: 'new', name: 'Nueva' })],
     );
     expect(differences).toEqual([
-      { kind: 'WITHDRAWN', billableServiceId: 'gone', name: 'Retirada' },
-      { kind: 'ADDED', billableServiceId: 'new', name: 'Nueva' },
+      { kind: 'WITHDRAWN', serviceId: 'gone', name: 'Retirada' },
+      { kind: 'ADDED', serviceId: 'new', name: 'Nueva' },
     ]);
   });
 });
@@ -159,5 +160,16 @@ describe('BI-110 BI-113 el precio final con IVA que se exhibe (LODC art. 9, D-19
     expect(tariffFinalAmount(Money.parse('0.03'), fifteen).toString()).toBe(
       '0.03',
     );
+  });
+});
+
+describe('BI-289 cada línea de la pared se agrupa por el tipo del servicio', () => {
+  it('BI-289 nombra el grupo con el tipo, como lo lee el público, para los seis tipos', () => {
+    expect(serviceKindGroup('CONSULTATION')).toBe('Consultas');
+    expect(serviceKindGroup('LAB_EXAM')).toBe('Exámenes de laboratorio');
+    expect(serviceKindGroup('IMAGING')).toBe('Imagen');
+    expect(serviceKindGroup('PROCEDURE')).toBe('Procedimientos');
+    expect(serviceKindGroup('SUPPLY')).toBe('Insumos');
+    expect(serviceKindGroup('OTHER')).toBe('Otros');
   });
 });

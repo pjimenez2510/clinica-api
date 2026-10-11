@@ -79,7 +79,11 @@ export interface ServiceOrderItemView {
   /** ORD-002. Frozen at the moment of ordering, like the CIE-10 of a diagnosis. */
   testCode: string;
   testDisplay: string;
-  conceptId: string;
+  /**
+   * ORD-004 (D-218 §1). The TARIFF concept of the service's MSP code in force
+   * on the clinical date; `null` when it had none.
+   */
+  conceptId: string | null;
   status: ServiceOrderItemStatus;
   /** `null` means pending. It is what the partial index is built on. */
   completedAt: Date | null;
@@ -108,15 +112,16 @@ export interface NewServiceOrder {
 }
 
 /**
- * ORD-002, ORD-004. One line of the request: THE EXAM, and nothing else.
+ * ORD-002, ORD-004. One line of the request: THE SERVICE, and nothing else.
  *
- * The tariff service it is invoiced under is a property of the exam
- * (`exam_definition.tariff_code`) resolved in force on the attention's
- * clinical date inside the transaction. A client that could send it could
- * pair a blood count with the price of a glucose.
+ * Its TARIFF concept, when it has one, comes from the service's MSP code
+ * (`service.msp_code`) resolved in force on the attention's clinical date
+ * inside the transaction. A client that could send it could pair a blood
+ * count with the code of a glucose.
  */
 export interface NewOrderLine {
-  examDefinitionId: string;
+  /** ORD-010 (BI-284). An active service with an order extension. */
+  serviceId: string;
 }
 
 /** ORD-009. One order, by id, within the caller's scope. */

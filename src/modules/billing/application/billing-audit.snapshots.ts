@@ -1,8 +1,4 @@
-import type {
-  BillableServiceView,
-  PayerView,
-  ServiceCategoryView,
-} from '../domain/billing.repository';
+import type { PayerView, ServiceView } from '../domain/billing.repository';
 import type { PriceRow } from '../domain/price-list';
 
 /**
@@ -10,7 +6,7 @@ import type { PriceRow } from '../domain/price-list';
  * and what it left: the EDITABLE fields of each domain view, picked one by one.
  *
  * Picked rather than spread for two reasons. A view carries nested and derived
- * values — the category object, the tax rate's code and percentage read
+ * values — the specialty's name, the tax rate's code and percentage read
  * through a join — that are not what anybody edited. And `Money` and
  * `Percentage` hold `bigint`s, which `JSON.stringify` refuses outright: a
  * snapshot that carried one would make the audit INSERT fail, and since a
@@ -19,37 +15,34 @@ import type { PriceRow } from '../domain/price-list';
  * boundary in.
  *
  * `access_audit_payload_only_for_declared_resources` admits a payload on
- * `billable_service`, `billable_service_category`, `price` and `payer` since
- * `admin_edit_in_place`.
+ * `service`, `price` and `payer` (`service_catalogue`, BI-290).
  */
 export interface BillingChange {
   before?: Readonly<object>;
   after?: Readonly<object>;
 }
 
-/** BI-231. A billable service's editable fields (BI-011). */
-export function billableServiceSnapshot(view: BillableServiceView): object {
+/** BI-231, BI-290. A service's editable fields, its extension included. */
+export function serviceSnapshot(view: ServiceView): object {
   return {
     code: view.code,
     name: view.name,
-    categoryId: view.category.id,
-    tariffCode: view.tariffCode,
+    kind: view.kind,
+    mspCode: view.mspCode,
     taxRateId: view.taxRateId,
     active: view.active,
+    specialtyId: view.consultation?.specialtyId ?? null,
+    durationMinutes: view.consultation?.durationMinutes ?? null,
+    visitKind: view.consultation?.visitKind ?? null,
+    exam: view.exam === null ? null : { ...view.exam },
     // BI-024. The review travels with the row, so the one a rate change
     // clears is still readable here: who checked which rate, and when.
     taxReviewedAt: view.taxReview?.reviewedAt.toISOString() ?? null,
     taxReviewedById: view.taxReview?.reviewedById ?? null,
-    // BI-257, BI-256. The procedure it charges and its 024 mark, with who.
-    procedureConceptId: view.procedureConcept?.id ?? null,
+    // BI-256. Its 024 mark, with who.
     requiresWrittenConsent: view.writtenConsent.required,
     writtenConsentSetById: view.writtenConsent.setById,
   };
-}
-
-/** BI-231. A category's editable fields (BI-185). */
-export function serviceCategorySnapshot(view: ServiceCategoryView): object {
-  return { name: view.name, kind: view.kind, active: view.active };
 }
 
 /** BI-231. A payer's fields; `code` and `kind` name it to the reader. */
@@ -67,7 +60,7 @@ export function payerSnapshot(view: PayerView): object {
 /** BI-231. A price: the amount as its decimal string, and its validity. */
 export function priceSnapshot(row: PriceRow): object {
   return {
-    billableServiceId: row.billableServiceId,
+    serviceId: row.serviceId,
     amount: row.amount.toString(),
     validFrom: row.validFrom,
     validTo: row.validTo,

@@ -301,7 +301,7 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
     code: 'DIRECCION_MEDICA',
     name: 'Dirección médica',
     description:
-      'Decide qué prestaciones exigen el consentimiento informado escrito (024) y anula certificados emitidos por otro profesional. Se asigna junto al rol de médico.',
+      'Decide qué servicios exigen el consentimiento informado escrito (024) y anula certificados emitidos por otro profesional. Se asigna junto al rol de médico.',
     permissions: [
       'record:consent-rule',
       'certificate:revoke-any',

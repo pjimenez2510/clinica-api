@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
-import type {
-  ExamCatalogueRepository,
-  ExamDefinitionView,
+import {
+  orderCategoryOf,
+  type ExamCatalogueRepository,
+  type OrderableExamView,
 } from '../domain/exam-catalogue.repository';
 import type {
   AnalyteDefinition,
@@ -17,14 +18,18 @@ import type {
 /**
  * The two catalogues — orderable and resultable — as the domain reads them.
  *
- * ⚠️ READ-ONLY, and there is no write anywhere in this class: the clinic
- * writes the catalogue through `PrismaExamAdministrationRepository`
- * (ORD-103 to ORD-111), with `catalog:manage`, and ordering never does.
+ * ⚠️ READ-ONLY, and there is no write anywhere in this class: billing writes
+ * the service and its order extension (BI-280, BI-284), the structure is
+ * written through `PrismaExamAdministrationRepository` (ORD-105), and
+ * ordering never writes.
  *
- * ⚠️ AND NO AMOUNT IS EVER SELECTED (ORD-002). The exam's service is read for
- * its NAME and TARIFF CODE only (ORD-163), which are the exam's; the AMOUNT is
- * a price list, per payer, per period, in `billing`. A column that is never
- * loaded cannot reach a clinical screen.
+ * ADR-013. An orderable is a `service` with a `service_exam`: the exam has no
+ * row of its own, so its id, code, name and MSP code are the service's.
+ *
+ * ⚠️ AND NO AMOUNT IS EVER SELECTED (ORD-002). The service is read for its
+ * name, code, kind and MSP code; the AMOUNT is a price list, per payer, per
+ * period, in `billing`. A column that is never loaded cannot reach a clinical
+ * screen.
  */
 
 /**
@@ -72,38 +77,49 @@ export type AnalyteRow = Prisma.AnalyteDefinitionGetPayload<{
   select: typeof ANALYTE_SELECT;
 }>;
 
-/** An exam and its analytes, with its service's name and tariff code only. */
+/** A service with its order extension and analytes; never an amount. */
 export const EXAM_SELECT = {
   id: true,
   code: true,
-  // ORD-163. The exam's name and tariff code are its service's, and only the
-  // two of them are read here: never an amount (ORD-002).
-  billableService: { select: { name: true, tariffCode: true } },
-  category: true,
-  form010Section: true,
-  specimenType: true,
-  patientPreparation: true,
-  turnaroundHours: true,
-  requiresFasting: true,
-  fastingHours: true,
-  performedExternally: true,
-  externalLabName: true,
-  analytes: {
-    // ORD-011. STORED ORDER, never alphabetical: a laboratory report read out
-    // of order is a report nobody can scan.
-    orderBy: { position: 'asc' },
+  name: true,
+  kind: true,
+  mspCode: true,
+  active: true,
+  exam: {
     select: {
-      position: true,
-      isReflex: true,
-      analyteDefinition: { select: ANALYTE_SELECT },
+      form010Section: true,
+      specimenType: true,
+      patientPreparation: true,
+      turnaroundHours: true,
+      requiresFasting: true,
+      fastingHours: true,
+      performedExternally: true,
+      externalLabName: true,
+      externalLabCode: true,
+      analytes: {
+        // ORD-011. STORED ORDER, never alphabetical: a laboratory report read
+        // out of order is a report nobody can scan.
+        orderBy: { position: 'asc' },
+        select: {
+          position: true,
+          isReflex: true,
+          analyteDefinition: { select: ANALYTE_SELECT },
+        },
+      },
     },
   },
-} satisfies Prisma.ExamDefinitionSelect;
+} satisfies Prisma.ServiceSelect;
 
 /** The shape `EXAM_SELECT` produces. */
-export type ExamRow = Prisma.ExamDefinitionGetPayload<{
+export type ExamRow = Prisma.ServiceGetPayload<{
   select: typeof EXAM_SELECT;
 }>;
+
+/**
+ * BI-284. An orderable: a service with an order extension. The kinds that
+ * admit one are guarded by `trg_service_exam_kind_admits`.
+ */
+export const ORDERABLE = { exam: { isNot: null } } satisfies Prisma.ServiceWhereInput; // prettier-ignore
 
 /** The `ExamCatalogueRepository` adapter; it only reads. */
 @Injectable()
@@ -111,26 +127,23 @@ export class PrismaExamCatalogueRepository implements ExamCatalogueRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   /** ORD-010 to ORD-012. Everything orderable today. */
-  async active(): Promise<ExamDefinitionView[]> {
-    const rows = await this.prisma.examDefinition.findMany({
-      where: { active: true },
-      orderBy: [
-        { form010Section: 'asc' },
-        { billableService: { name: 'asc' } },
-      ],
+  async active(): Promise<OrderableExamView[]> {
+    const rows = await this.prisma.service.findMany({
+      where: { ...ORDERABLE, active: true },
+      orderBy: [{ exam: { form010Section: 'asc' } }, { name: 'asc' }],
       select: EXAM_SELECT,
     });
-    return rows.map(toExamView);
+    return toExamViews(rows);
   }
 
   /** ORD-003. Only the active ones: a short answer refuses the whole order. */
-  async activeByIds(ids: readonly string[]): Promise<ExamDefinitionView[]> {
+  async activeByIds(ids: readonly string[]): Promise<OrderableExamView[]> {
     if (ids.length === 0) return [];
-    const rows = await this.prisma.examDefinition.findMany({
-      where: { id: { in: [...ids] }, active: true },
+    const rows = await this.prisma.service.findMany({
+      where: { ...ORDERABLE, id: { in: [...ids] }, active: true },
       select: EXAM_SELECT,
     });
-    return rows.map(toExamView);
+    return toExamViews(rows);
   }
 
   /**
@@ -140,13 +153,13 @@ export class PrismaExamCatalogueRepository implements ExamCatalogueRepository {
    * that asked for it froze the code precisely so that resolving it later does
    * not depend on today's catalogue.
    */
-  async byCodes(codes: readonly string[]): Promise<ExamDefinitionView[]> {
+  async byCodes(codes: readonly string[]): Promise<OrderableExamView[]> {
     if (codes.length === 0) return [];
-    const rows = await this.prisma.examDefinition.findMany({
-      where: { code: { in: [...codes] } },
+    const rows = await this.prisma.service.findMany({
+      where: { ...ORDERABLE, code: { in: [...codes] } },
       select: EXAM_SELECT,
     });
-    return rows.map(toExamView);
+    return toExamViews(rows);
   }
 
   /**
@@ -182,23 +195,37 @@ export class PrismaExamCatalogueRepository implements ExamCatalogueRepository {
   }
 }
 
-/** Row to view, analytes in their stored position. */
-export function toExamView(row: ExamRow): ExamDefinitionView {
+/** Rows to views, dropping any the order cannot carry. */
+function toExamViews(rows: readonly ExamRow[]): OrderableExamView[] {
+  return rows.flatMap((row) => {
+    const view = toExamView(row);
+    return view ? [view] : [];
+  });
+}
+
+/**
+ * Row to view, analytes in their stored position. `undefined` for a service
+ * without extension or of a kind that is never ordered — which
+ * `trg_service_exam_kind_admits` already keeps from existing.
+ */
+export function toExamView(row: ExamRow): OrderableExamView | undefined {
+  const category = orderCategoryOf(row.kind);
+  if (!row.exam || !category) return undefined;
   return {
     id: row.id,
     code: row.code,
-    name: row.billableService.name,
-    category: row.category,
-    form010Section: row.form010Section,
-    specimenType: row.specimenType,
-    patientPreparation: row.patientPreparation,
-    turnaroundHours: row.turnaroundHours,
-    requiresFasting: row.requiresFasting,
-    fastingHours: row.fastingHours,
-    tariffCode: row.billableService.tariffCode,
-    performedExternally: row.performedExternally,
-    externalLabName: row.externalLabName,
-    analytes: row.analytes.map((entry) => ({
+    name: row.name,
+    category,
+    form010Section: row.exam.form010Section,
+    specimenType: row.exam.specimenType,
+    patientPreparation: row.exam.patientPreparation,
+    turnaroundHours: row.exam.turnaroundHours,
+    requiresFasting: row.exam.requiresFasting,
+    fastingHours: row.exam.fastingHours,
+    mspCode: row.mspCode,
+    performedExternally: row.exam.performedExternally,
+    externalLabName: row.exam.externalLabName,
+    analytes: row.exam.analytes.map((entry) => ({
       analyte: toAnalyte(entry.analyteDefinition),
       position: entry.position,
       isReflex: entry.isReflex,

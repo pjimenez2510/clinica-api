@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  ServiceTypeDuplicateError,
-  SpecialtyDuplicateError,
-} from '../domain/specialties.errors';
+import { SpecialtyDuplicateError } from '../domain/specialties.errors';
 import {
   duplicateErrorFrom,
   isForeignKeyRestriction,
@@ -51,21 +48,13 @@ describe('specialties database error translation', () => {
     expect(byName?.fieldErrors?.[0]?.field).toBe('name');
   });
 
-  it('SP-026 traduce service_type_name_unique_per_specialty a SERVICE_TYPE_DUPLICATE', () => {
-    const error = duplicateErrorFrom(
-      uniqueViolation('service_type_name_unique_per_specialty', 'index'),
-    );
-
-    expect(error).toBeInstanceOf(ServiceTypeDuplicateError);
-  });
-
   it('SP-006 deja pasar intacto un único ajeno: traducirlo mentiría sobre su causa', () => {
     expect(
       duplicateErrorFrom(uniqueViolation('patient_identifier_active', 'index')),
     ).toBeUndefined();
   });
 
-  it('SP-003/SP-025 reconoce el rechazo de una clave foránea RESTRICT tal como llega de Prisma 7', () => {
+  it('SP-003 reconoce el rechazo de una clave foránea RESTRICT tal como llega de Prisma 7', () => {
     // The REAL shape, captured against PostgreSQL 18 through the driver
     // adapter: `P2039`, an empty `meta`, and the SQLSTATE only in the text.
     const restricted = {
@@ -73,7 +62,7 @@ describe('specialties database error translation', () => {
       clientVersion: '7.9.1',
       meta: {},
       message:
-        'Database error. Code: `23001`. Message: `update or delete on table "specialty" violates RESTRICT setting of foreign key constraint "service_type_specialty_id_fkey" on table "service_type"`',
+        'Database error. Code: `23001`. Message: `update or delete on table "specialty" violates RESTRICT setting of foreign key constraint "service_specialty_fk" on table "service"`',
     };
 
     expect(isForeignKeyRestriction(restricted)).toBe(true);
@@ -85,7 +74,7 @@ describe('specialties database error translation', () => {
     const classic = prismaError({
       code: '23503',
       originalMessage:
-        'update or delete on table "specialty" violates foreign key constraint "service_type_specialty_id_fkey" on table "service_type"',
+        'update or delete on table "specialty" violates foreign key constraint "service_specialty_fk" on table "service"',
     });
 
     expect(isForeignKeyRestriction(classic)).toBe(true);

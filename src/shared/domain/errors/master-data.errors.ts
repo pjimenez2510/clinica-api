@@ -5,7 +5,7 @@ import { NotFoundError } from './domain-error';
  * modules must be able to refuse.
  *
  * WHY IN `shared` AND NOT IN `specialties`, since 13-08-2026. `specialties`
- * owns the specialty and the service type, and until today it also owned the
+ * owns the specialty (and owned the service type until ADR-013), and until then it also owned the
  * endpoints that assign them to a practitioner. ST-008 and ST-009 moved those
  * endpoints to `staff`, which now has to answer «that specialty does not
  * exist» with the SAME code — `code` is a public contract and changing the
@@ -33,13 +33,27 @@ export class SpecialtyNotFoundError extends NotFoundError {
   }
 }
 
-/** The service type does not exist. */
-export class ServiceTypeNotFoundError extends NotFoundError {
-  readonly code = 'SERVICE_TYPE_NOT_FOUND';
+/**
+ * SP-028, ST-009 (ADR-013). The service named as a consultation is not an
+ * ACTIVE service of kind CONSULTATION — absent, retired, or an exam or a
+ * procedure. Replaces `SERVICE_TYPE_NOT_FOUND`, which left with the table.
+ *
+ * WHY THE APPLICATION ANSWERS IT AND NOT A FOREIGN KEY: `agenda_entry_service_fk`
+ * points at `service`, every kind of it. That the row is a consultation, and
+ * an active one, is a rule over the referenced row a FK cannot state.
+ */
+export class ConsultationNotFoundError extends NotFoundError {
+  readonly code = 'CONSULTATION_NOT_FOUND';
   override readonly userTitle =
-    'El tipo de atención indicado no existe. Actualice la lista e intente de nuevo';
+    'La consulta elegida no existe o ya no se ofrece. Actualice la lista e intente de nuevo';
 
   constructor() {
-    super('Service type not found');
+    super('Consultation service not found', {}, [
+      {
+        field: 'serviceId',
+        code: 'CONSULTATION_NOT_FOUND',
+        message: 'Elija una consulta activa de la especialidad',
+      },
+    ]);
   }
 }

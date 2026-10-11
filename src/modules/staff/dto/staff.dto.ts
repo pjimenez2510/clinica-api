@@ -348,14 +348,15 @@ const durationMinutesSchema = z
 export const setDurationExceptionSchema = z.object({
   durationMinutes: durationMinutesSchema,
 });
-/** Body of PUT /staff/practitioners/:practitionerId/duration-exceptions/:serviceTypeId. */
+/** Body of PUT /staff/practitioners/:practitionerId/duration-exceptions/:serviceId (a consultation service). */
 export class SetDurationExceptionDto extends createZodDto(
   setDurationExceptionSchema,
 ) {}
 
 export const practitionerDurationSchema = z.object({
-  serviceTypeId: z.uuid(),
-  serviceTypeName: z.string(),
+  /** ADR-013: the consultation service (`service.kind = CONSULTATION`). */
+  serviceId: z.uuid(),
+  serviceName: z.string(),
   specialtyId: z.uuid(),
   specialtyName: z.string(),
   baseMinutes: z.number().int(),
@@ -395,7 +396,7 @@ const weekdaySchema = z
  * La rejilla dejó de ser un número por regla y es el átomo de la sede
  * (`site_parameter.slot_atom_minutes`), así que la pantalla de horarios tiene
  * un campo menos que decidir y no puede volver a desencajar con la duración de
- * un tipo de atención.
+ * una consulta.
  */
 export const createScheduleRuleSchema = z.object({
   /** ST-046: a rule belongs to exactly one site. */

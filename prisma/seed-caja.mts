@@ -89,18 +89,15 @@ async function main(): Promise<void> {
     },
   });
   // BI-192, ORD-115. A draft written while the visit was open, never issued.
-  // ORD-163. Its name and tariff code are its service's.
-  const glucoseRow = await prisma.examDefinition.findUnique({
-    where: { code: 'EX-GLUCOSA-AYUNAS' },
-    select: {
-      code: true,
-      billableService: { select: { name: true, tariffCode: true } },
-    },
+  // BI-284 (ADR-013). The exam IS its service: code, name and MSP code.
+  const glucoseRow = await prisma.service.findUnique({
+    where: { code: 'LAB-GLUCOSA-AYUNAS' },
+    select: { code: true, name: true, mspCode: true },
   });
   const glucose = glucoseRow && {
     code: glucoseRow.code,
-    name: glucoseRow.billableService.name,
-    tariffCode: glucoseRow.billableService.tariffCode,
+    name: glucoseRow.name,
+    tariffCode: glucoseRow.mspCode,
   };
   const [tariff] = glucose?.tariffCode
     ? await prisma.$queryRaw<{ id: string }[]>`

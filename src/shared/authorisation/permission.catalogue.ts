@@ -339,7 +339,7 @@ export const PERMISSION_CATALOGUE = [
     code: 'record:consent-rule',
     resource: 'record',
     description:
-      'Marcar qué prestaciones exigen el consentimiento informado escrito (formulario 024). Corresponde a la dirección médica',
+      'Marcar qué servicios exigen el consentimiento informado escrito (formulario 024). Corresponde a la dirección médica',
   },
   {
     code: 'vitals:write',

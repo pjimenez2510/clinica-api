@@ -19,8 +19,9 @@
  * IN `shared/domain` AND NOT IN A MODULE, AND WHICH PART OF IT IS HERE
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * THREE modules validate against the atom for their own reasons — `specialties`
- * for the base duration of a service type (SP-021), `staff` for the
+ * THREE modules validate against the atom for their own reasons — `billing`
+ * for the duration of a consultation service (SP-021, ADR-013; it was
+ * `specialties` and the service type until then), `staff` for the
  * per-practitioner exception (SP-022, ST-009), and `configuration` for the
  * atom itself when it is being changed (CF-062) — and
  * `dependency-cruiser`'s `sin-imports-entre-modulos` refuses an import from one
@@ -58,8 +59,8 @@ export function isSlotMultiple(minutes: number, atom: number): boolean {
  * THE DESIGN QUESTION THIS FUNCTION IS THE ANSWER TO
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * The atom belongs to a SITE (D-021) and a service type belongs to the CLINIC:
- * `service_type` has no `site_id` and never had one, because «Primera vez de
+ * The atom belongs to a SITE (D-021) and a consultation belongs to the CLINIC:
+ * `service` has no `site_id` (nor had `service_type` before it), because «Primera vez de
  * Cardiología» is the same visit wherever it is given. So a duration has to be
  * validated against something, and there were three candidates.
  *
@@ -91,7 +92,7 @@ export function isSlotMultiple(minutes: number, atom: number): boolean {
  *
  * `null` for an empty set: with no site there is no grid, so no duration can
  * fail to fit one. It is not a hole — the range CHECKs of
- * `service_type_duration_range` and `duration_exception_range` still hold —
+ * `service_duration_range` and `duration_exception_range` still hold —
  * and it is only reachable on a database with no sites at all.
  */
 export function clinicSlotAtom(atoms: readonly number[]): number | null {

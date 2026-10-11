@@ -15,6 +15,7 @@ import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+import { constraintMeaningOf } from '../../src/shared/http/constraint-meanings';
 
 import { DiagnosticReportService } from '../../src/modules/orders/application/diagnostic-report.service';
 import { PrismaDiagnosticReportRepository } from '../../src/modules/orders/infrastructure/prisma-diagnostic-report.repository';
@@ -30,6 +31,7 @@ import { aTariffConcept, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
 import {
   createEncounter,
+  createExamService,
   createPatient,
   createPractitioner,
   createSite,
@@ -41,15 +43,15 @@ import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 const SOMEONE = randomUUID();
 
 /**
- * ORD-004, ORD-133. The tariff concept a seeded exam names, under the exam's
- * `tariff_code` — the official one since the 2014 tariff (ORD-133).
+ * ORD-004, ORD-133. The tariff concept a seeded exam names, under its
+ * service's MSP code — the official one since the 2014 tariff (ORD-133).
  */
 async function aTariffConceptOf(prisma: PrismaClient, examCode: string) {
-  const exam = await prisma.examDefinition.findUniqueOrThrow({
+  const exam = await prisma.service.findUniqueOrThrow({
     where: { code: examCode },
-    select: { billableService: { select: { tariffCode: true } } },
+    select: { mspCode: true },
   });
-  return aTariffConcept(prisma, { code: exam.billableService.tariffCode! });
+  return aTariffConcept(prisma, { code: exam.mspCode! });
 }
 
 /**
@@ -58,10 +60,12 @@ async function aTariffConceptOf(prisma: PrismaClient, examCode: string) {
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Por HTTP, con una sesión de verdad que tiene `catalog:manage`, sobre la
- * siembra real de caja y exámenes: las categorías con su clase (BI-186) y los
- * exámenes `EX-BH`, `EX-RX-TORAX`, `EX-ECG`. Lo que garantiza la base —el
- * código único, el rango que no apunta a ningún resultado— se prueba contra
- * la base, con su control positivo.
+ * siembra real de caja y exámenes: los servicios con extensión de orden
+ * `LAB-BH`, `IMG-RX-TORAX`, `PROC-ECG` (ADR-013, BI-284). El examen se da de
+ * alta y se corrige como servicio en facturación (BI-280); aquí, su
+ * estructura, sus determinaciones y sus rangos. Lo que garantiza la base —el
+ * código congelado, el ayuno, el rango que no apunta a ningún resultado— se
+ * prueba contra la base, con su control positivo.
  */
 
 const PASSWORD = 'el caballo come alfalfa';
@@ -76,7 +80,7 @@ interface AdminExam {
   code: string;
   category: string;
   active: boolean;
-  billableService: { id: string; code: string; name: string; kind: string };
+  mspCode: string | null;
   analytes: { position: number; isReflex: boolean; analyte: { code: string } }[]; // prettier-ignore
 }
 interface AdminAnalyte {
@@ -91,25 +95,6 @@ interface AdminAnalyte {
   }[];
   usedBy: { code: string }[];
 }
-
-/**
- * ORD-162. `billing` is filled in `beforeEach`, once the seed has put the
- * laboratory category and the 0 % rate in the base.
- */
-const NEW_EXAM: Record<string, unknown> = {
-  code: 'EX-PERFIL-RENAL',
-  name: 'Perfil renal',
-  category: 'LABORATORY',
-  form010Section: 'BIOQUÍMICA',
-  specimenType: 'Suero',
-  patientPreparation: 'Ayuno de 8 horas.',
-  turnaroundHours: 6,
-  performedExternally: true,
-  externalLabName: null,
-  externalLabCode: null,
-  tariffCode: null,
-  active: true,
-};
 
 describe('el catálogo de exámenes, administrado (E10)', () => {
   const db = useDatabase();
@@ -147,23 +132,15 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
 
     await seedBilling(prisma);
     await syncAuthorisation(prisma);
-    NEW_EXAM.billing = {
-      categoryId: (await prisma.billableServiceCategory.findFirstOrThrow({ where: { kind: 'LABORATORY' } })).id, // prettier-ignore
-      taxRateId: (await prisma.taxRate.findFirstOrThrow({ where: { sriCode: '0', validTo: null } })).id, // prettier-ignore
-      selfPayAmount: null,
-    };
     await prisma.role.create({
       data: {
         code: 'CATALOGO',
         name: 'Catálogo',
         description: 'Mantiene los catálogos de la clínica.',
         permissions: {
-          // ORD-162 (D-049). Giving an exam its new service classifies it
-          // (category, tax rate): billing's permission, which this role has.
           create: [
             { permissionCode: 'catalog:manage' },
             { permissionCode: 'catalog:read' },
-            { permissionCode: 'billing:price-manage' },
           ],
         },
       },
@@ -215,10 +192,16 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
   const get = (path: string) =>
     api().get(`/api/v1${path}`).set('Authorization', `Bearer ${token}`);
 
-  const serviceCoded = (code: string) =>
-    prisma.billableService.findUniqueOrThrow({ where: { code } });
   const examCoded = (code: string) =>
-    prisma.examDefinition.findUniqueOrThrow({ where: { code } });
+    prisma.service.findUniqueOrThrow({ where: { code } });
+
+  /** BI-284. A service of its own with an order extension and no analytes. */
+  const aRenalProfile = () =>
+    createExamService(prisma, {
+      code: 'LAB-PERFIL-RENAL',
+      name: 'Perfil renal',
+      exam: { form010Section: 'BIOQUÍMICA', specimenType: 'Suero' },
+    });
 
   it('ORD-101 el catálogo que se lee al pedir publica el tipo de cada examen', async () => {
     const orderable = (await get('/exams').expect(200)).body as {
@@ -226,192 +209,96 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     };
     const byCode = new Map(orderable.items.map((e) => [e.code, e.category]));
 
-    expect(byCode.get('EX-BH')).toBe('LABORATORY');
-    expect(byCode.get('EX-RX-TORAX')).toBe('IMAGING');
-    expect(byCode.get('EX-ECG')).toBe('PROCEDURE');
+    expect(byCode.get('LAB-BH')).toBe('LABORATORY');
+    expect(byCode.get('IMG-RX-TORAX')).toBe('IMAGING');
+    expect(byCode.get('PROC-ECG')).toBe('PROCEDURE');
   });
 
-  it('ORD-103 ORD-111 da de alta un examen, lo lista con los desactivados y deja rastro', async () => {
-    const created = await send('post', '/exam-catalogue/exams', NEW_EXAM).expect(201); // prettier-ignore
-    const exam = created.body as AdminExam;
-    expect(exam).toMatchObject({ code: 'EX-PERFIL-RENAL', active: true });
-
-    await send('patch', `/exam-catalogue/exams/${exam.id}`, { active: false }).expect(200); // prettier-ignore
-    const list = (await get('/exam-catalogue/exams').expect(200)).body as { items: AdminExam[] }; // prettier-ignore
-    expect(list.items.find((e) => e.id === exam.id)?.active).toBe(false);
-    // Desactivado, ya no se ofrece al pedir (ORD-003); la lista lo conserva.
-    const orderable = (await get('/exams').expect(200)).body as { items: { id: string }[] }; // prettier-ignore
-    expect(orderable.items.map((e) => e.id)).not.toContain(exam.id);
-
-    const trail = await prisma.accessAudit.findMany({
-      where: { resourceType: 'exam_definition', resourceId: exam.id },
-      orderBy: { occurredAt: 'asc' },
-      select: { action: true },
+  it('ORD-010 los ordenables son los servicios activos con extensión de orden, con el id del servicio', async () => {
+    const bh = await examCoded('LAB-BH');
+    const retired = await aRenalProfile();
+    await prisma.service.update({
+      where: { id: retired.id },
+      data: { active: false },
     });
-    expect(trail.map((row) => row.action)).toEqual(['CREATE', 'UPDATE']);
+
+    const orderable = (await get('/exams').expect(200)).body as {
+      items: { id: string; code: string; name: string; tariffCode: string | null }[]; // prettier-ignore
+    };
+    const codes = orderable.items.map((e) => e.code);
+
+    // Control positivo: el servicio con extensión sale, con SU id y nombre.
+    expect(orderable.items.find((e) => e.code === 'LAB-BH')).toMatchObject({
+      id: bh.id,
+      name: bh.name,
+      // BI-285. La clave conserva su nombre; el valor es el código MSP.
+      tariffCode: bh.mspCode,
+    });
+    // Sin extensión (una química sin ficha de orden) o desactivado, no.
+    expect(await prisma.serviceExam.count({ where: { service: { code: 'LAB-QUIMICA' } } })).toBe(0); // prettier-ignore
+    expect(codes).not.toContain('LAB-QUIMICA');
+    expect(codes).not.toContain('LAB-PERFIL-RENAL');
   });
 
-  it('ORD-103 el código lo arbitra la base: otro examen con el mismo se rechaza', async () => {
-    // Control positivo: un código nuevo entra.
-    await send('post', '/exam-catalogue/exams', NEW_EXAM).expect(201);
+  it('ORD-103 el alta y la corrección del examen ya no viven aquí: se hacen como servicio', async () => {
+    const bh = await examCoded('LAB-BH');
 
-    const duplicate = await send('post', '/exam-catalogue/exams', NEW_EXAM).expect(409); // prettier-ignore
-    expect((duplicate.body as Problem).code).toBe('EXAM_CODE_DUPLICATE');
-
-    // ORD-140: también al corregirlo.
-    const bh = await examCoded('EX-BH');
-    const taken = await send('patch', `/exam-catalogue/exams/${bh.id}`, { code: NEW_EXAM.code }).expect(409); // prettier-ignore
-    expect((taken.body as Problem).code).toBe('EXAM_CODE_DUPLICATE');
+    await get('/exam-catalogue/exams').expect(404);
+    await get(`/exam-catalogue/exams/${bh.id}`).expect(404);
+    await send('post', '/exam-catalogue/exams', { code: 'LAB-X' }).expect(404);
+    await send('patch', `/exam-catalogue/exams/${bh.id}`, { name: 'X' }).expect(404); // prettier-ignore
   });
 
-  it('ORD-140 el código de un examen se corrige mientras ninguna orden lo pidió; después, EXAM_CODE_IN_USE', async () => {
-    const created = (await send('post', '/exam-catalogue/exams', NEW_EXAM).expect(201)).body as AdminExam; // prettier-ignore
-    // Control positivo: nadie lo pidió, el código se corrige.
-    const corrected = await send('patch', `/exam-catalogue/exams/${created.id}`, { code: 'EX-PERFIL-RENAL-2' }).expect(200); // prettier-ignore
-    expect((corrected.body as AdminExam).code).toBe('EX-PERFIL-RENAL-2');
-
-    expect((await get(`/exam-catalogue/exams/${created.id}`).expect(200)).body).toMatchObject({ codeLocked: false }); // prettier-ignore
-
+  it('ORD-140 el código de un servicio ya pedido no cambia: lo garantiza la base', async () => {
+    const unordered = await aRenalProfile();
     const { bh } = await anIssuedBloodCount();
-    expect((await get(`/exam-catalogue/exams/${bh.id}`).expect(200)).body).toMatchObject({ codeLocked: true }); // prettier-ignore
-    const refused = await send('patch', `/exam-catalogue/exams/${bh.id}`, { code: 'EX-OTRO' }).expect(409); // prettier-ignore
-    expect((refused.body as Problem).code).toBe('EXAM_CODE_IN_USE');
-    expect((await examCoded('EX-BH')).id).toBe(bh.id);
 
-    // La BASE también, aunque se salte el servicio; el no pedido sí cambia.
+    // La BASE, sin pasar por ninguna API.
     await expect(
-      prisma.$executeRaw`UPDATE "exam_definition" SET "code" = 'EX-RAW' WHERE "id" = ${bh.id}::uuid`,
-    ).rejects.toThrow(/exam_definition_code_in_use/);
+      prisma.$executeRaw`UPDATE "service" SET "code" = 'LAB-RAW' WHERE "id" = ${bh.id}::uuid`,
+    ).rejects.toThrow(/service_code_in_use/);
+    expect((await examCoded('LAB-BH')).id).toBe(bh.id);
+    // Control positivo: el que nadie pidió sí cambia.
     await expect(
-      prisma.$executeRaw`UPDATE "exam_definition" SET "code" = 'EX-PERFIL-RENAL-3' WHERE "id" = ${created.id}::uuid`,
+      prisma.$executeRaw`UPDATE "service" SET "code" = 'LAB-PERFIL-RENAL-2' WHERE "id" = ${unordered.id}::uuid`,
     ).resolves.toBe(1);
+    // Y la API lo dice con el código del contrato (orders.constraints.ts).
+    expect(constraintMeaningOf('service_code_in_use')).toMatchObject({
+      code: 'EXAM_CODE_IN_USE',
+      field: 'code',
+    });
   });
 
-  it('ORD-129 «Pide ayuno» y sus horas se guardan, se publican al pedir y la base no admite horas sin ayuno', async () => {
-    // Control positivo: con ayuno, las horas entran y se leen al pedir.
-    const created = await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, requiresFasting: true, fastingHours: 8 }).expect(201); // prettier-ignore
-    const exam = created.body as AdminExam & { requiresFasting: boolean; fastingHours: number | null }; // prettier-ignore
-    expect(exam).toMatchObject({ requiresFasting: true, fastingHours: 8 });
+  it('ORD-129 «Pide ayuno» y sus horas se publican al pedir y la base no admite horas sin ayuno', async () => {
+    // La semilla marca la glucosa con sus 8 horas, y se publican al pedir.
+    const glucose = await examCoded('LAB-GLUCOSA-AYUNAS');
     const orderable = (await get('/exams').expect(200)).body as { items: { id: string; requiresFasting: boolean; fastingHours: number | null }[] }; // prettier-ignore
-    expect(orderable.items.find((e) => e.id === exam.id)).toMatchObject({ requiresFasting: true, fastingHours: 8 }); // prettier-ignore
+    expect(orderable.items.find((e) => e.id === glucose.id)).toMatchObject({ requiresFasting: true, fastingHours: 8 }); // prettier-ignore
 
-    // Quitar el ayuno dejando las horas: lo rechaza la base, nombrando el campo.
-    const refused = await send('patch', `/exam-catalogue/exams/${exam.id}`, { requiresFasting: false }).expect(422); // prettier-ignore
-    expect((refused.body as Problem).code).toBe('EXAM_FASTING_HOURS_INVALID');
-    expect(JSON.stringify(refused.body)).toContain('fastingHours');
-    // Una edición que no lo menciona no lo toca.
-    await send('patch', `/exam-catalogue/exams/${exam.id}`, { name: 'Perfil renal completo' }).expect(200); // prettier-ignore
-    expect(await examCoded('EX-PERFIL-RENAL')).toMatchObject({ requiresFasting: true, fastingHours: 8 }); // prettier-ignore
-    // Quitarlo con sus horas, sí.
-    await send('patch', `/exam-catalogue/exams/${exam.id}`, { requiresFasting: false, fastingHours: null }).expect(200); // prettier-ignore
-
-    // La base, sin pasar por la API: 25 horas no.
+    const profile = await aRenalProfile();
+    // Control positivo: con ayuno, las horas entran.
     await expect(
-      prisma.$executeRaw`UPDATE "exam_definition" SET "requires_fasting" = true, "fasting_hours" = 25 WHERE "id" = ${exam.id}::uuid`,
-    ).rejects.toThrow(/exam_definition_fasting_hours_range/);
-    // Y la semilla marca la glucosa con sus 8 horas.
-    expect(await examCoded('EX-GLUCOSA-AYUNAS')).toMatchObject({ requiresFasting: true, fastingHours: 8 }); // prettier-ignore
-  });
-
-  it('ORD-162 ORD-163 el examen nace con su prestación: mismo código y nombre, su tarifario y sin precio', async () => {
-    const created = (await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, tariffCode: '360010' }).expect(201)).body as AdminExam & { name: string; tariffCode: string | null }; // prettier-ignore
-
-    const service = await serviceCoded('EX-PERFIL-RENAL');
-    expect(service).toMatchObject({ name: 'Perfil renal', tariffCode: '360010', taxReviewedAt: null }); // prettier-ignore
-    expect(created).toMatchObject({
-      name: 'Perfil renal',
-      tariffCode: '360010',
-    });
-    expect(created.billableService).toMatchObject({ id: service.id, kind: 'LABORATORY' }); // prettier-ignore
-    // Sin `billing:price-manage` no se pidió precio, y no hay ninguno.
-    expect(await prisma.price.count({ where: { billableServiceId: service.id } })).toBe(0); // prettier-ignore
-
-    // Corregir el nombre desde el examen lo corrige en la prestación (ORD-163).
-    await send('patch', `/exam-catalogue/exams/${created.id}`, { name: 'Perfil renal básico', tariffCode: null }).expect(200); // prettier-ignore
-    expect(await serviceCoded('EX-PERFIL-RENAL')).toMatchObject({ name: 'Perfil renal básico', tariffCode: null }); // prettier-ignore
-  });
-
-  it('ORD-162 sin billing:price-manage no nace ninguna prestación: SITE_SCOPE_DENIED y nada creado; con él, nace con su precio', async () => {
-    await prisma.role.create({
-      data: {
-        code: 'SOLO_CATALOGO',
-        name: 'Sólo catálogo',
-        description: 'Mantiene el catálogo de exámenes.',
-        permissions: { create: [{ permissionCode: 'catalog:manage' }] },
-      },
-    });
-    registry.invalidate();
-    const priced = token;
-    token = await signIn('solocatalogo@clinica.ec', 'SOLO_CATALOGO', '1710034065'); // prettier-ignore
-    const billing = { ...(NEW_EXAM.billing as object), selfPayAmount: '12.00' };
-    const refused = await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, billing }).expect(403); // prettier-ignore
-    expect((refused.body as Problem).code).toBe('SITE_SCOPE_DENIED');
-    const unpriced = await send('post', '/exam-catalogue/exams', NEW_EXAM).expect(403); // prettier-ignore
-    expect((unpriced.body as Problem).code).toBe('SITE_SCOPE_DENIED');
-    expect(await prisma.billableService.count({ where: { code: 'EX-PERFIL-RENAL' } })).toBe(0); // prettier-ignore
-
-    // Control positivo: con el permiso, el precio nace en la lista particular
-    // y la bitácora de facturación dice quién y con qué IVA (BI-231).
-    token = priced;
-    const created = (await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, billing }).expect(201)).body as AdminExam; // prettier-ignore
-    const price = await prisma.price.findFirstOrThrow({
-      where: { billableServiceId: created.billableService.id },
-      select: { amount: true, validTo: true, priceList: { select: { payer: { select: { kind: true } } } } }, // prettier-ignore
-    });
-    expect(price.amount.toFixed(2)).toBe('12.00');
-    expect(price.validTo).toBeNull();
-    expect(price.priceList.payer.kind).toBe('SELF_PAY');
-    const trail = await prisma.accessAudit.findFirstOrThrow({
-      where: { resourceType: 'billable_service', resourceId: created.billableService.id }, // prettier-ignore
-    });
-    expect(trail).toMatchObject({ action: 'CREATE', after: expect.objectContaining({ selfPayAmount: '12.00' }) }); // prettier-ignore
-  });
-
-  it('ORD-162 una categoría de otra clase se rechaza; una prestación existente sin examen se ata', async () => {
-    const imaging = await prisma.billableServiceCategory.findFirstOrThrow({ where: { kind: 'IMAGING' } }); // prettier-ignore
-    const billing = { ...(NEW_EXAM.billing as object), categoryId: imaging.id };
-    const refused = await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, billing }).expect(422); // prettier-ignore
-    expect((refused.body as Problem).code).toBe('EXAM_SERVICE_KIND_MISMATCH');
-
-    // Control positivo: «Química sanguínea» existe y ningún examen la cobra.
-    const free = await serviceCoded('LAB-QUIMICA');
-    const tied = (await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, billing: { billableServiceId: free.id } }).expect(201)).body as AdminExam & { name: string }; // prettier-ignore
-    expect(tied.billableService.id).toBe(free.id);
-    // La prestación existente no se reescribe: el examen toma su nombre.
-    expect(tied.name).toBe(free.name);
-    expect((await serviceCoded('LAB-QUIMICA')).name).toBe(free.name);
-  });
-
-  it('ORD-163 una prestación no cobra dos exámenes: EXAM_SERVICE_TAKEN, y la base lo garantiza', async () => {
-    const lab = await serviceCoded('LAB-BH');
-    const refused = await send('post', '/exam-catalogue/exams', { ...NEW_EXAM, billing: { billableServiceId: lab.id } }).expect(409); // prettier-ignore
-    expect((refused.body as Problem).code).toBe('EXAM_SERVICE_TAKEN');
-
-    // La base, sin pasar por la API; control positivo: la otra entra.
-    const glucose = await examCoded('EX-GLUCOSA-AYUNAS');
-    await expect(
-      prisma.$executeRaw`UPDATE "exam_definition" SET "billable_service_id" = ${lab.id}::uuid WHERE "id" = ${glucose.id}::uuid`,
-    ).rejects.toThrow(/exam_definition_one_per_service/);
-    const free = await serviceCoded('LAB-QUIMICA');
-    await expect(
-      prisma.$executeRaw`UPDATE "exam_definition" SET "billable_service_id" = ${free.id}::uuid WHERE "id" = ${glucose.id}::uuid`,
+      prisma.$executeRaw`UPDATE "service_exam" SET "requires_fasting" = true, "fasting_hours" = 8 WHERE "service_id" = ${profile.id}::uuid`,
     ).resolves.toBe(1);
+    // Horas sin ayuno, no.
     await expect(
-      prisma.$executeRaw`UPDATE "exam_definition" SET "billable_service_id" = NULL WHERE "id" = ${glucose.id}::uuid`,
-    ).rejects.toThrow(/null value|not-null/i);
+      prisma.$executeRaw`UPDATE "service_exam" SET "requires_fasting" = false WHERE "service_id" = ${profile.id}::uuid`,
+    ).rejects.toThrow(/service_exam_fasting_hours_needs_fasting/);
+    // 25 horas, tampoco.
+    await expect(
+      prisma.$executeRaw`UPDATE "service_exam" SET "fasting_hours" = 25 WHERE "service_id" = ${profile.id}::uuid`,
+    ).rejects.toThrow(/service_exam_fasting_hours_range/);
+    // Y la API lo dice con su código y su campo.
+    for (const constraint of [
+      'service_exam_fasting_hours_needs_fasting',
+      'service_exam_fasting_hours_range',
+    ]) {
+      expect(constraintMeaningOf(constraint)).toMatchObject({ code: 'EXAM_FASTING_HOURS_INVALID', field: 'fastingHours' }); // prettier-ignore
+    }
   });
 
-  it('ORD-109 un examen cobrado como laboratorio no pasa a imagen', async () => {
-    const bh = await examCoded('EX-BH');
-
-    const refused = await send('patch', `/exam-catalogue/exams/${bh.id}`, { category: 'IMAGING' }).expect(422); // prettier-ignore
-    expect((refused.body as Problem).code).toBe('EXAM_SERVICE_KIND_MISMATCH');
-    // Control positivo: lo que no toca el tipo ni la prestación se corrige.
-    await send('patch', `/exam-catalogue/exams/${bh.id}`, { turnaroundHours: 8 }).expect(200); // prettier-ignore
-  });
-
-  it('ORD-104 ORD-105 da de alta dos determinaciones y las pone en el examen, en su orden', async () => {
-    const exam = (await send('post', '/exam-catalogue/exams', NEW_EXAM).expect(201)).body as AdminExam; // prettier-ignore
+  it('ORD-104 ORD-105 ORD-111 da de alta dos determinaciones y las pone en el servicio, en su orden', async () => {
+    const exam = await aRenalProfile();
     const creatinine = (await send('post', '/exam-catalogue/analytes', {
       code: 'CREA', name: 'Creatinina', valueType: 'NUMERIC', unit: 'mg/dL',
       decimals: 2, allowedValues: null, loincCode: null, active: true,
@@ -428,6 +315,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       ],
     }).expect(200)).body as AdminExam; // prettier-ignore
 
+    expect(structured).toMatchObject({ id: exam.id, code: 'LAB-PERFIL-RENAL', category: 'LABORATORY', active: true }); // prettier-ignore
     expect(
       structured.analytes.map((a) => [a.position, a.analyte.code]),
     ).toEqual([
@@ -437,6 +325,42 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     // Y al pedir, el catálogo publica esas determinaciones (ORD-011).
     const orderable = (await get('/exams').expect(200)).body as { items: { id: string; analytes: { code: string }[] }[] }; // prettier-ignore
     expect(orderable.items.find((e) => e.id === exam.id)?.analytes.map((a) => a.code)).toEqual(['UREA', 'CREA']); // prettier-ignore
+    // La determinación dice qué servicios la usan.
+    const analyte = (await get('/exam-catalogue/analytes').expect(200)).body as { items: AdminAnalyte[] }; // prettier-ignore
+    expect(analyte.items.find((a) => a.code === 'UREA')?.usedBy.map((u) => u.code)).toEqual(['LAB-PERFIL-RENAL']); // prettier-ignore
+
+    // ORD-111, BI-290. La bitácora la nombra como extensión del servicio.
+    const trail = await prisma.accessAudit.findMany({
+      where: { resourceType: 'service_exam', resourceId: exam.id },
+      select: { action: true, after: true },
+    });
+    expect(trail).toEqual([
+      {
+        action: 'UPDATE',
+        after: {
+          analytes: [
+            { analyteDefinitionId: urea.id, isReflex: false },
+            { analyteDefinitionId: creatinine.id, isReflex: false },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it('ORD-105 un servicio sin extensión de orden no tiene estructura: EXAM_DEFINITION_NOT_FOUND', async () => {
+    const hb = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'HB' } }); // prettier-ignore
+    const body = {
+      analytes: [{ analyteDefinitionId: hb.id, isReflex: false }],
+    };
+    const chemistry = await examCoded('LAB-QUIMICA');
+
+    const refused = await send('put', `/exam-catalogue/exams/${chemistry.id}/analytes`, body).expect(404); // prettier-ignore
+    expect((refused.body as Problem).code).toBe('EXAM_DEFINITION_NOT_FOUND');
+    expect(await prisma.serviceExamAnalyte.count({ where: { serviceId: chemistry.id } })).toBe(0); // prettier-ignore
+
+    // Control positivo: con su extensión, la misma estructura entra.
+    await prisma.serviceExam.create({ data: { serviceId: chemistry.id } });
+    await send('put', `/exam-catalogue/exams/${chemistry.id}/analytes`, body).expect(200); // prettier-ignore
   });
 
   it('ORD-104 un numérico sin unidad y un codificado con una sola respuesta se rechazan, nombrando el campo', async () => {
@@ -457,14 +381,14 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
   });
 
   it('ORD-105 una determinación que no existe rechaza la estructura entera, y la anterior queda', async () => {
-    const bh = await examCoded('EX-BH');
-    const before = await prisma.examDefinitionAnalyte.count({ where: { examDefinitionId: bh.id } }); // prettier-ignore
+    const bh = await examCoded('LAB-BH');
+    const before = await prisma.serviceExamAnalyte.count({ where: { serviceId: bh.id } }); // prettier-ignore
 
     const refused = await send('put', `/exam-catalogue/exams/${bh.id}/analytes`, {
       analytes: [{ analyteDefinitionId: '00000000-0000-4000-8000-000000000999', isReflex: false }],
     }).expect(404); // prettier-ignore
     expect((refused.body as Problem).code).toBe('ANALYTE_NOT_FOUND');
-    expect(await prisma.examDefinitionAnalyte.count({ where: { examDefinitionId: bh.id } })).toBe(before); // prettier-ignore
+    expect(await prisma.serviceExamAnalyte.count({ where: { serviceId: bh.id } })).toBe(before); // prettier-ignore
   });
 
   it('ORD-106 ORD-107 fija los rangos por sexo y crítico, y rechaza dos que se pisan', async () => {
@@ -482,7 +406,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       ],
     }).expect(200)).body as AdminAnalyte; // prettier-ignore
     expect(saved.ranges).toHaveLength(3);
-    expect(saved.usedBy.map((e) => e.code)).toContain('EX-BH');
+    expect(saved.usedBy.map((e) => e.code)).toContain('LAB-BH');
 
     const overlap = await send('put', `/exam-catalogue/analytes/${hb.id}/ranges`, {
       ranges: [range({ low: 12, high: 17 }), range({ low: 11, high: 18 })],
@@ -663,7 +587,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
           encounterId: encounter.id,
           category: 'LABORATORY',
           priority: 'ROUTINE',
-          lines: [{ examDefinitionId: exam.id }],
+          lines: [{ serviceId: exam.id }],
           sites: 'all',
         });
         const report = await reports.register(
@@ -689,7 +613,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
           range({ rangeKind: 'CRITICAL', sex: 'MALE', high: 450 }),
         ],
       }).expect(200); // prettier-ignore
-      const flag = await flagsOf('EX-GLUCOSA-AYUNAS', 'GLU');
+      const flag = await flagsOf('LAB-GLUCOSA-AYUNAS', 'GLU');
 
       expect(await flag('MALE', 25)).toBe('CRITICAL_LOW'); // heredado del general
       expect(await flag('MALE', 420)).toBe('HIGH'); // su alto manda
@@ -711,7 +635,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
           range({ rangeKind: 'CRITICAL', ageMinDays: 0, ageMaxDays: 28, low: 30 }),
         ],
       }).expect(200); // prettier-ignore
-      const flag = await flagsOf('EX-GLUCOSA-AYUNAS', 'GLU');
+      const flag = await flagsOf('LAB-GLUCOSA-AYUNAS', 'GLU');
 
       // 32 años y 10 días: el resto de días de su edad es 10, y el rango
       // neonatal no es suyo. Con 35 queda por debajo del crítico de adulto.
@@ -725,7 +649,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       await send('put', `/exam-catalogue/analytes/${hb.id}/ranges`, {
         ranges: [range({ sex: 'MALE', low: 13, high: 17 })],
       }).expect(200); // prettier-ignore
-      const flag = await flagsOf('EX-BH', 'HB');
+      const flag = await flagsOf('LAB-BH', 'HB');
 
       expect(await flag('FEMALE', 14)).toBeNull();
       // Control positivo: el varón sí tiene con qué compararse.
@@ -751,8 +675,8 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       );
       const site = await createSite(prisma);
       const practitioner = await createPractitioner(prisma);
-      await aTariffConceptOf(prisma, 'EX-GLUCOSA-AYUNAS');
-      const exam = await examCoded('EX-GLUCOSA-AYUNAS');
+      await aTariffConceptOf(prisma, 'LAB-GLUCOSA-AYUNAS');
+      const exam = await examCoded('LAB-GLUCOSA-AYUNAS');
       const requester = { userId: SOMEONE, sites: 'all' as const };
       const issuedAt = () => new Date(Date.now() - 3_600_000);
 
@@ -760,7 +684,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       async function correctedAfterRaise(first: number, corrected: number) {
         const patient = await createPatient(prisma, { sex: 'FEMALE' });
         const encounter = await createEncounter(prisma, { siteId: site.id, practitionerId: practitioner.id, patientId: patient.id }); // prettier-ignore
-        const order = await placeIssued(orders, { encounterId: encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ examDefinitionId: exam.id }], sites: 'all' }); // prettier-ignore
+        const order = await placeIssued(orders, { encounterId: encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ serviceId: exam.id }], sites: 'all' }); // prettier-ignore
         const original = await reports.register({ orderId: order.id, performedById: null, issuedAt: issuedAt(), results: [{ analyteDefinitionId: glu.id, valueNumeric: first }] }, requester); // prettier-ignore
         expect(original.results[0]?.abnormalFlag).toBe('CRITICAL_HIGH');
         return { original, correct: () => reports.correct({ reportId: original.id, performedById: null, issuedAt: issuedAt(), results: [{ analyteDefinitionId: glu.id, valueNumeric: corrected }] }, requester) }; // prettier-ignore
@@ -814,8 +738,8 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       );
       const site = await createSite(prisma);
       const practitioner = await createPractitioner(prisma);
-      await aTariffConceptOf(prisma, 'EX-GLUCOSA-AYUNAS');
-      const exam = await examCoded('EX-GLUCOSA-AYUNAS');
+      await aTariffConceptOf(prisma, 'LAB-GLUCOSA-AYUNAS');
+      const exam = await examCoded('LAB-GLUCOSA-AYUNAS');
       const requester = { userId: SOMEONE, sites: 'all' as const };
       const issuedAt = () => new Date(Date.now() - 3_600_000);
       await send('put', `/exam-catalogue/analytes/${glu.id}/ranges`, {
@@ -824,7 +748,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
 
       const patient = await createPatient(prisma, { sex: 'FEMALE' });
       const encounter = await createEncounter(prisma, { siteId: site.id, practitionerId: practitioner.id, patientId: patient.id }); // prettier-ignore
-      const order = await placeIssued(orders, { encounterId: encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ examDefinitionId: exam.id }], sites: 'all' }); // prettier-ignore
+      const order = await placeIssued(orders, { encounterId: encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ serviceId: exam.id }], sites: 'all' }); // prettier-ignore
       const original = await reports.register({ orderId: order.id, performedById: null, issuedAt: issuedAt(), results: [{ analyteDefinitionId: glu.id, valueNumeric: 380 }] }, requester); // prettier-ignore
       expect(original.results[0]).toMatchObject({ abnormalFlag: 'HIGH', criticalHigh: 400 }); // prettier-ignore
 
@@ -845,7 +769,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
 
     it('ORD-114 un rango cerrado no cuenta: el resultado nuevo usa el que rige al registrarlo', async () => {
       const glu = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'GLU' } }); // prettier-ignore
-      const flag = await flagsOf('EX-GLUCOSA-AYUNAS', 'GLU');
+      const flag = await flagsOf('LAB-GLUCOSA-AYUNAS', 'GLU');
       // Control positivo: con el crítico de la siembra (400), 420 es crítico.
       expect(await flag('FEMALE', 420)).toBe('CRITICAL_HIGH');
 
@@ -880,7 +804,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       } as never, // prettier-ignore,
       new InProcessLiveEventBus(),
     );
-    // La siembra de caja ya trae `EX-BH` y `HB`: se pide ése.
+    // La siembra de caja ya trae `LAB-BH` y `HB`: se pide ése.
     const site = await createSite(prisma);
     const practitioner = await createPractitioner(prisma);
     const patient = await createPatient(prisma, { sex });
@@ -889,14 +813,14 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
       practitionerId: practitioner.id,
       patientId: patient.id,
     });
-    await aTariffConceptOf(prisma, 'EX-BH');
-    const bh = await examCoded('EX-BH');
+    await aTariffConceptOf(prisma, 'LAB-BH');
+    const bh = await examCoded('LAB-BH');
     const hb = await prisma.analyteDefinition.findUniqueOrThrow({ where: { code: 'HB' } }); // prettier-ignore
     const order = await placeIssued(orders, {
       encounterId: encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: bh.id }],
+      lines: [{ serviceId: bh.id }],
       sites: 'all',
     });
     const registerHb = (valueNumeric: number) =>
@@ -1007,8 +931,8 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
 
   it('ORD-110 con órdenes esperando resultado no cambian las determinaciones del examen; el orden sí', async () => {
     const { bh } = await anIssuedBloodCount();
-    const structure = await prisma.examDefinitionAnalyte.findMany({
-      where: { examDefinitionId: bh.id },
+    const structure = await prisma.serviceExamAnalyte.findMany({
+      where: { serviceId: bh.id },
       orderBy: { position: 'asc' },
       select: { analyteDefinitionId: true, isReflex: true },
     });
@@ -1044,7 +968,10 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     registry.invalidate();
     const reader = await signIn('lector@clinica.ec', 'LECTOR', '1710034065');
 
-    await api().get('/api/v1/exam-catalogue/exams').set('Authorization', `Bearer ${reader}`).expect(403); // prettier-ignore
-    await api().post('/api/v1/exam-catalogue/exams').set('Authorization', `Bearer ${reader}`).send(NEW_EXAM).expect(403); // prettier-ignore
+    const bh = await examCoded('LAB-BH');
+    await api().get('/api/v1/exam-catalogue/analytes').set('Authorization', `Bearer ${reader}`).expect(403); // prettier-ignore
+    await api().put(`/api/v1/exam-catalogue/exams/${bh.id}/analytes`).set('Authorization', `Bearer ${reader}`).send({ analytes: [] }).expect(403); // prettier-ignore
+    // Control positivo: el catálogo de pedir sí lo lee.
+    await api().get('/api/v1/exams').set('Authorization', `Bearer ${reader}`).expect(200); // prettier-ignore
   });
 });

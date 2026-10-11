@@ -35,7 +35,7 @@ import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 /** BI-010, BI-135. */
 export class BillableServiceNotFoundError extends NotFoundError {
   readonly code = 'BILLABLE_SERVICE_NOT_FOUND';
-  override readonly userTitle = 'Esa prestación no existe o ya no está disponible'; // prettier-ignore
+  override readonly userTitle = 'Ese servicio no existe o ya no está disponible'; // prettier-ignore
 
   constructor() {
     super('No billable service with that identifier');
@@ -51,174 +51,231 @@ export class BillableServiceNotFoundError extends NotFoundError {
 export class BillableServiceInUseError extends ConflictError {
   readonly code = 'BILLABLE_SERVICE_IN_USE';
   override readonly userTitle =
-    'Esa prestación ya se usó en cargos o precios: desactívela en lugar de borrarla';
+    'Ese servicio ya se usó en cargos, citas u órdenes: desactívelo en lugar de borrarlo';
 
   constructor() {
     super('Billable service is referenced by prices or charges');
   }
 }
 
-/** BI-185, BI-135. */
-export class ServiceCategoryNotFoundError extends NotFoundError {
-  readonly code = 'SERVICE_CATEGORY_NOT_FOUND';
-  override readonly userTitle = 'Esa categoría no existe o ya no está disponible'; // prettier-ignore
-
-  constructor() {
-    super('No service category with that identifier');
-  }
-}
-
 /**
- * BI-185. A deactivated category is no longer offered: the services that
- * already carry it keep it, new ones cannot take it.
- */
-export class ServiceCategoryInactiveError extends BusinessRuleViolation {
-  readonly code = 'SERVICE_CATEGORY_INACTIVE';
-  override readonly userTitle =
-    'Esa categoría está desactivada: elija otra o vuelva a activarla';
-
-  constructor() {
-    super('Service category is inactive', {}, [
-      {
-        field: 'categoryId',
-        code: 'SERVICE_CATEGORY_INACTIVE',
-        message: 'Seleccione una categoría activa',
-      },
-    ]);
-  }
-}
-
-/**
- * BI-187. The category's kind says what structure the service admits: only a
- * consultation is the consultation of a specialty (BI-158), and a service tied
- * to one — or to a procedure — cannot move to a category of another kind.
+ * BI-278, BI-279, BI-284. The kind of a service says what it carries: only a
+ * consultation has a specialty, a duration and a visit; only an exam, an
+ * imaging study or a procedure that is ordered has an order extension. And
+ * the kind does not change once created.
  */
 export class ServiceKindMismatchError extends BusinessRuleViolation {
   readonly code = 'SERVICE_KIND_MISMATCH';
   override readonly userTitle =
-    'Esa clase no admite lo que la prestación ya tiene atado (una especialidad, un procedimiento o exámenes)';
+    'Ese tipo de servicio no admite esos datos: la especialidad y la duración son de una consulta, y la muestra y el ayuno de un examen';
 
-  constructor() {
-    super('Service category kind does not admit that structure', {}, [
+  constructor(field = 'kind') {
+    super('The service kind does not admit that structure', {}, [
       {
-        field: 'categoryId',
+        field,
         code: 'SERVICE_KIND_MISMATCH',
-        message: 'Elija una categoría de la clase que corresponde',
+        message: 'No corresponde a este tipo de servicio',
       },
     ]);
   }
 }
 
 /**
- * BI-256, BI-257. The 024 mark reaches a procedure through the concept the
- * service charges; a service with no procedure has nothing to mark, and a
- * marked one cannot lose its procedure.
+ * BI-279. A consultation is of an active specialty, lasts some minutes, and
+ * is born with both.
+ */
+export class ConsultationIncompleteError extends BusinessRuleViolation {
+  readonly code = 'CONSULTATION_INCOMPLETE';
+  override readonly userTitle =
+    'Una consulta necesita su especialidad y su duración';
+
+  constructor(field: 'specialtyId' | 'durationMinutes') {
+    super('A consultation needs its specialty and its duration', {}, [
+      {
+        field,
+        code: 'CONSULTATION_INCOMPLETE',
+        message:
+          field === 'specialtyId'
+            ? 'Elija una especialidad activa'
+            : 'Escriba la duración en minutos',
+      },
+    ]);
+  }
+}
+
+/**
+ * BI-298 (ADR-013). One active consultation per specialty and visit: a second
+ * one would leave agenda and caja guessing which is meant. The title names
+ * the one that exists, so the person edits it instead.
+ */
+export class ConsultationDuplicateError extends ConflictError {
+  readonly code = 'CONSULTATION_DUPLICATE';
+  override readonly userTitle: string;
+
+  constructor(
+    specialtyName: string,
+    visitKind: 'FIRST_VISIT' | 'FOLLOW_UP' | null,
+  ) {
+    const visit =
+      visitKind === 'FIRST_VISIT'
+        ? ' · Primera vez'
+        : visitKind === 'FOLLOW_UP'
+          ? ' · Control'
+          : '';
+    // The field message IS the sentence: the screen announces a refusal by
+    // its first field error, and «Ya existe» without naming it says nothing.
+    const sentence = `Ya existe la consulta de ${specialtyName}${visit}: edítela`;
+    super('Another active consultation has this specialty and visit', {}, [
+      {
+        field: visitKind === null ? 'specialtyId' : 'visitKind',
+        code: 'CONSULTATION_DUPLICATE',
+        message: sentence,
+      },
+    ]);
+    this.userTitle = sentence;
+  }
+}
+
+/**
+ * BI-256, BI-286. The 024 mark reaches a procedure through the code the
+ * service carries; a service that is not a procedure with its code has
+ * nothing to mark.
  */
 export class ServiceNotAProcedureError extends BusinessRuleViolation {
   readonly code = 'SERVICE_NOT_A_PROCEDURE';
   override readonly userTitle =
-    'La marca del consentimiento 024 va en una prestación que cobra un procedimiento del tarifario';
+    'La marca del consentimiento 024 va en un procedimiento con su procedimiento del tarifario';
 
   constructor() {
-    super('The written-consent mark needs a service tied to a procedure', {}, [
+    super('The written-consent mark needs a procedure with its code', {}, [
       {
-        field: 'procedureConceptId',
+        field: 'mspCode',
         code: 'SERVICE_NOT_A_PROCEDURE',
-        message: 'Ate antes la prestación a su procedimiento del tarifario',
+        message: 'Elija antes el procedimiento del tarifario',
       },
     ]);
   }
 }
 
 /**
- * BI-256, D-199.1. A service that demands the 024 keeps its procedure: moving
- * or deleting it would move or remove the medical direction's mark with a
- * price manager's key. Unmarked first, then changed.
+ * BI-256, D-199.1. A service that demands the 024 keeps its procedure code:
+ * changing or deleting it would move or remove the medical direction's mark
+ * with a price manager's key. Unmarked first, then changed.
  */
 export class ServiceConsentTieLockedError extends ConflictError {
   readonly code = 'SERVICE_CONSENT_TIE_LOCKED';
   override readonly userTitle =
-    'Esta prestación exige el consentimiento 024: la dirección médica tiene que desmarcarla antes de cambiar su procedimiento o borrarla';
+    'Este servicio exige el consentimiento 024: la dirección médica tiene que desmarcarlo antes de cambiar su procedimiento o borrarlo';
 
   constructor() {
     super('A service demanding the form 024 keeps its procedure', {}, [
       {
-        field: 'procedureConceptId',
+        field: 'mspCode',
         code: 'SERVICE_CONSENT_TIE_LOCKED',
-        message: 'Desmárquela antes de cambiar el procedimiento',
+        message: 'Desmárquelo antes de cambiar el procedimiento',
       },
     ]);
   }
 }
 
 /**
- * BI-257, D-179. Tied to a procedure, the service's tariff code is that
- * procedure's: it changes by tying another, never typed apart.
- */
-export class ServiceTariffCodeFromProcedureError extends ConflictError {
-  readonly code = 'SERVICE_TARIFF_CODE_FROM_PROCEDURE';
-  override readonly userTitle =
-    'El código del tarifario lo da el procedimiento que cobra: cambie el procedimiento en Estructura';
-
-  constructor() {
-    super("The tariff code of a tied service is its procedure's", {}, [
-      {
-        field: 'tariffCode',
-        code: 'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
-        message: 'Lo da el procedimiento atado',
-      },
-    ]);
-  }
-}
-
-/**
- * BI-257, D-179. The RIDE reprints the service's tariff code, which no charge
- * freezes yet: tying or untying a service already invoiced would rewrite
- * what its issued invoices say.
+ * BI-285. The RIDE reprints the service's MSP code, which no charge freezes:
+ * changing it on a service already invoiced would rewrite what its issued
+ * invoices say.
  */
 export class ServiceTariffCodeInvoicedError extends ConflictError {
   readonly code = 'SERVICE_TARIFF_CODE_INVOICED';
   override readonly userTitle =
-    'Esta prestación ya salió en facturas con su código del tarifario: atarla o desatarla cambiaría lo que dicen. Cree otra prestación para el procedimiento';
+    'Este servicio ya salió en facturas con su Código MSP: cambiarlo cambiaría lo que dicen. Cree otro servicio';
 
   constructor() {
-    super('Tying would change the tariff code its invoices printed', {}, [
+    super('Changing it would change the MSP code its invoices printed', {}, [
       {
-        field: 'procedureConceptId',
+        field: 'mspCode',
         code: 'SERVICE_TARIFF_CODE_INVOICED',
-        message: 'Ya facturada con otro código del tarifario',
+        message: 'Ya facturado con este Código MSP',
       },
     ]);
   }
 }
 
-/** BI-257. One service per procedure: caja would otherwise pick one in silence. */
+/**
+ * BI-281. The RIDE reprints the service's code too (the voucher's
+ * `codigoPrincipal`): it does not change once invoiced.
+ */
+export class ServiceCodeInvoicedError extends ConflictError {
+  readonly code = 'SERVICE_CODE_INVOICED';
+  override readonly userTitle =
+    'Este servicio ya salió en facturas con su código: cambiarlo cambiaría lo que dicen';
+
+  constructor() {
+    super('Changing it would change the code its invoices printed', {}, [
+      {
+        field: 'code',
+        code: 'SERVICE_CODE_INVOICED',
+        message: 'Ya facturado con este código',
+      },
+    ]);
+  }
+}
+
+/**
+ * BI-281, ORD-140. An order line froze the code: changing it would leave the
+ * order naming a code that no longer exists.
+ */
+export class ServiceCodeOrderedError extends ConflictError {
+  readonly code = 'EXAM_CODE_IN_USE';
+  override readonly userTitle: string;
+
+  /**
+   * `exam`: a procedure already ordered keeps being orderable (BI-284) — its
+   * order lines resolve their determinations and turnaround through it.
+   */
+  constructor(field: 'code' | 'exam' = 'code') {
+    super('An order line already froze this code', {}, [
+      {
+        field,
+        code: 'EXAM_CODE_IN_USE',
+        message:
+          field === 'code'
+            ? 'Ya pedido con este código'
+            : 'Ya pedido en una orden',
+      },
+    ]);
+    this.userTitle =
+      field === 'code'
+        ? 'Ya se pidió en una orden con este código: no se puede cambiar'
+        : 'Ya se pidió en una orden: sigue pidiéndose';
+  }
+}
+
+/** BI-286. One procedure per code: caja would otherwise pick one in silence. */
 export class ServiceProcedureTakenError extends ConflictError {
   readonly code = 'SERVICE_PROCEDURE_TAKEN';
   override readonly userTitle =
-    'Otra prestación ya cobra ese procedimiento: cámbiela allí o elija otro';
+    'Otro servicio ya cobra ese procedimiento: cámbielo allí o elija otro';
 
   constructor() {
     super('Another service already charges that procedure', {}, [
       {
-        field: 'procedureConceptId',
+        field: 'mspCode',
         code: 'SERVICE_PROCEDURE_TAKEN',
-        message: 'Otra prestación ya cobra ese procedimiento',
+        message: 'Otro servicio ya cobra ese procedimiento',
       },
     ]);
   }
 }
 
-/** BI-257. A service charges a procedure of the tariff, never another catalogue. */
+/** BI-286. A procedure carries a code of the tariff, never one made up. */
 export class ServiceProcedureNotInTariffError extends BusinessRuleViolation {
   readonly code = 'SERVICE_PROCEDURE_NOT_IN_TARIFF';
   override readonly userTitle =
-    'Ese procedimiento no es del tarifario: búsquelo en el tarifario';
+    'Ese código no es de un procedimiento del tarifario: búsquelo en el tarifario';
 
   constructor() {
-    super('The procedure concept is not of the tariff catalogue', {}, [
+    super('The procedure code is not of the tariff catalogue', {}, [
       {
-        field: 'procedureConceptId',
+        field: 'mspCode',
         code: 'SERVICE_PROCEDURE_NOT_IN_TARIFF',
         message: 'Elija un procedimiento del tarifario',
       },
@@ -230,14 +287,14 @@ export class ServiceProcedureNotInTariffError extends BusinessRuleViolation {
 export class BillableServiceInactiveError extends BusinessRuleViolation {
   readonly code = 'BILLABLE_SERVICE_INACTIVE';
   override readonly userTitle =
-    'Esa prestación está desactivada y no se puede cobrar: elija otra o vuelva a activarla';
+    'Ese servicio está desactivado y no se puede cobrar: elija otro o vuelva a activarlo';
 
   constructor() {
     super('Billable service is inactive and cannot be charged', {}, [
       {
-        field: 'billableServiceId',
+        field: 'serviceId',
         code: 'BILLABLE_SERVICE_INACTIVE',
-        message: 'Seleccione una prestación activa',
+        message: 'Seleccione un servicio activo',
       },
     ]);
   }
@@ -253,7 +310,7 @@ export class BillableServiceInactiveError extends BusinessRuleViolation {
 export class TaxRateRequiredError extends ValidationError {
   readonly code = 'TAX_RATE_REQUIRED';
   override readonly userTitle =
-    'Indique la tarifa de impuesto de la prestación: el sistema no la deduce';
+    'Indique el IVA del servicio: el sistema no lo deduce';
 
   constructor() {
     super('A billable service must carry a tax rate', {}, [
@@ -280,7 +337,7 @@ export class TaxRateNotFoundError extends NotFoundError {
 export class TaxRateInUseError extends ConflictError {
   readonly code = 'TAX_RATE_IN_USE';
   override readonly userTitle =
-    'Esa tarifa la usan prestaciones del catálogo: cámbieselas antes de retirarla';
+    'Ese IVA lo usan servicios del catálogo: cámbieselo antes de retirarlo';
 
   constructor() {
     super('Tax rate is referenced by billable services');
@@ -295,7 +352,7 @@ export class TaxRateInUseError extends ConflictError {
 export class TaxReviewRateChangedError extends ConflictError {
   readonly code = 'TAX_REVIEW_RATE_CHANGED';
   override readonly userTitle =
-    'La tarifa de esta prestación cambió mientras la revisaba: vuelva a mirarla antes de marcarla revisada';
+    'El IVA de este servicio cambió mientras lo revisaba: vuelva a mirarlo antes de marcarlo revisado';
 
   constructor() {
     super('The tax rate is no longer the one the reviewer saw');
@@ -431,7 +488,7 @@ export class TariffPublicationNotFoundError extends NotFoundError {
 export class TariffPublicationEmptyError extends ConflictError {
   readonly code = 'TARIFF_PUBLICATION_EMPTY';
   override readonly userTitle =
-    'No hay prestaciones activas con precio particular vigente que publicar';
+    'No hay servicios activos con precio particular vigente que publicar';
 
   constructor() {
     super('No active service with a self-pay price in force');
@@ -508,22 +565,18 @@ export class PriceNegativeAmountError extends ValidationError {
 export class PriceNotFoundError extends BusinessRuleViolation {
   readonly code = 'PRICE_NOT_FOUND';
   override readonly userTitle =
-    'No hay precio vigente para esa prestación, ese pagador y esa fecha de servicio';
+    'No hay precio vigente para ese servicio, ese pagador y esa fecha de servicio';
 
-  constructor(
-    billableServiceId: string,
-    payerId: string,
-    serviceDate: ClinicalDate,
-  ) {
+  constructor(serviceId: string, payerId: string, serviceDate: ClinicalDate) {
     super(
       'No price in force for that service, payer and service date',
-      { billableServiceId, payerId, serviceDate },
+      { serviceId, payerId, serviceDate },
       [
         {
           field: 'serviceDate',
           code: 'PRICE_NOT_FOUND',
           message:
-            'Compruebe la fecha del servicio y el pagador de la cuenta, o fije el precio de esa prestación',
+            'Compruebe la fecha del servicio y el pagador de la cuenta, o fije el precio de ese servicio',
         },
       ],
     );
@@ -881,7 +934,7 @@ export class InvoiceServiceCodeTooLongError extends BusinessRuleViolation {
       serviceName,
       serviceCode,
     });
-    this.userTitle = `La prestación «${serviceName}» tiene el código ${serviceCode}, más largo de los 25 caracteres que acepta el SRI. Administración debe acortarlo en el catálogo antes de facturarla`;
+    this.userTitle = `El servicio «${serviceName}» tiene el código ${serviceCode}, más largo de los 25 caracteres que acepta el SRI. Administración debe acortarlo en el catálogo antes de facturarla`;
   }
 }
 
@@ -1090,33 +1143,6 @@ export class CorrectionAwaitsCreditNoteError extends ConflictError {
   }
 }
 
-/**
- * ORD-163, SP-030 (D-179). The service IS an exam, or is born with a service
- * type: its name (and, for an exam, its tariff code) is written there, once.
- * Changing it here would rename the exam the order freezes, without the exam
- * catalogue's trail (ORD-111), or leave it to be overwritten by the type.
- */
-export class ServiceNamedElsewhereError extends ConflictError {
-  readonly code = 'SERVICE_NAMED_ELSEWHERE';
-  override readonly userTitle =
-    'Esta prestación nace de un examen o de un tipo de atención: su nombre y su tarifario se corrigen allí';
-
-  constructor() {
-    super(
-      'Service name and tariff code are owned by its exam or service type',
-      {},
-      [
-        // prettier-ignore
-        {
-        field: 'name',
-        code: 'SERVICE_NAMED_ELSEWHERE',
-        message: 'Se corrige en Exámenes o en Especialidades',
-      },
-      ],
-    );
-  }
-}
-
 // ───────────────────────────────────────────────────────────────────────────
 // What the clinic changes without a deploy (BI-140 to BI-147)
 // ───────────────────────────────────────────────────────────────────────────
@@ -1231,7 +1257,7 @@ export class DiscountSelfAuthorisationDeniedError extends SelfAuthorisationDenie
 export class ChargeHasDiscountError extends ConflictError {
   readonly code = 'CHARGE_HAS_DISCOUNT';
   override readonly userTitle =
-    'Esta línea tiene un descuento: quítelo antes de cambiar la cantidad, la prestación, la fecha o el pagador';
+    'Esta línea tiene un descuento: quítelo antes de cambiar la cantidad, el servicio, la fecha o el pagador';
 
   constructor() {
     super('A discounted line keeps its amount until the discount is removed');

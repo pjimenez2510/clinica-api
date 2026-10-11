@@ -17,7 +17,7 @@ const ADMIN = 'user-admin';
 const line = (overrides: Partial<ChargeView> = {}): ChargeView => ({
   id: 'charge-1',
   accountId: 'account-1',
-  billableServiceId: 'service-1',
+  serviceId: 'service-1',
   encounterId: null,
   serviceDate: parseClinicalDate('2026-05-11'), // fecha-fija: no reloj; solo viaja
   quantity: Quantity.parse('2'),

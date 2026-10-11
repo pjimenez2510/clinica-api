@@ -2,7 +2,8 @@ import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 /**
- * The exam catalogue's administration contract (ORD-103 to ORD-111).
+ * The exam catalogue's administration contract (ORD-104 to ORD-111). The
+ * exam itself is a service, written by billing (ADR-013, BI-280).
  *
  * Wording follows ADR-005: what to do, in Spanish, without the norm.
  */
@@ -29,91 +30,6 @@ const CODE = z
   .max(32, 'El código no puede superar 32 caracteres')
   .regex(/^[A-Z0-9][A-Z0-9._-]*$/, 'Use mayúsculas, números, punto, guion o guion bajo, sin espacios'); // prettier-ignore
 
-/** ORD-103. The exam's writable fields. */
-const examFields = {
-  name: z
-    .string()
-    .trim()
-    .min(1, 'Escriba el nombre del examen')
-    .max(200, 'El nombre no puede superar 200 caracteres'),
-  category: CATEGORY,
-  form010Section: optionalText(60, 'La sección no puede superar 60 caracteres'),
-  specimenType: optionalText(80, 'La muestra no puede superar 80 caracteres'),
-  patientPreparation: optionalText(500, 'La preparación no puede superar 500 caracteres'), // prettier-ignore
-  turnaroundHours: z
-    .number()
-    .int('Escriba horas enteras')
-    .min(1, 'El tiempo de entrega es de al menos una hora')
-    .max(32000, 'El tiempo de entrega es demasiado largo')
-    .nullable(),
-  /** ORD-129. Hours only with a fast: the database refuses the pair otherwise. */
-  requiresFasting: z.boolean(),
-  fastingHours: z
-    .number()
-    .int('Escriba horas enteras')
-    .min(1, 'El ayuno es de al menos una hora')
-    .max(24, 'El ayuno no puede pasar de 24 horas')
-    .nullable(),
-  performedExternally: z.boolean(),
-  externalLabName: optionalText(160, 'El laboratorio no puede superar 160 caracteres'), // prettier-ignore
-  externalLabCode: optionalText(64, 'El código del laboratorio no puede superar 64 caracteres'), // prettier-ignore
-  /**
-   * ORD-004, ORD-163. The tariff code the order line resolves on the clinical
-   * date, kept on the exam's service (`billable_service.tariff_code`).
-   */
-  tariffCode: optionalText(32, 'El código del tarifario no puede superar 32 caracteres'), // prettier-ignore
-  active: z.boolean(),
-};
-
-/** BI-001. Money is decimal text, never a JSON number. */
-const MONEY = z
-  .string()
-  .regex(/^\d{1,10}(\.\d{1,2})?$/, 'El precio se escribe en dólares con dos decimales, por ejemplo 19.90'); // prettier-ignore
-
-/**
- * ORD-162. How the new exam is charged: a service born with it (category, tax
- * rate and, optionally, its self-pay price from today) or an existing one.
- */
-const billingSchema = z.union([
-  z
-    .object({
-      categoryId: z.uuid('Elija la categoría de la lista'),
-      taxRateId: z.uuid('Elija el IVA de la lista'),
-      selfPayAmount: MONEY.nullable().default(null),
-    })
-    .strict(),
-  z
-    .object({ billableServiceId: z.uuid('Elija la prestación de la lista') })
-    .strict(),
-]);
-
-export const createExamSchema = z
-  .object({
-    // ORD-162. The exam's code is also its service's: 25 is the SRI's limit
-    // for the main code of an invoice line (BI-171).
-    code: CODE.max(25, 'El código no puede superar 25 caracteres'),
-    ...examFields,
-    billing: billingSchema,
-    // ORD-129. Defaults on creation only: inside the PATCH's `.partial()` a
-    // default would reset the fast on every edit that leaves it out.
-    requiresFasting: examFields.requiresFasting.default(false),
-    fastingHours: examFields.fastingHours.default(null),
-  })
-  .strict();
-/** Body of POST /exam-catalogue/exams. */
-export class CreateExamDto extends createZodDto(createExamSchema) {}
-
-/**
- * ORD-103, ORD-140. Any subset. The code is among them, but the service
- * refuses it with `EXAM_CODE_IN_USE` once an order asked for the exam.
- */
-export const updateExamSchema = z
-  .object({ code: CODE, ...examFields })
-  .partial()
-  .strict();
-/** Body of PATCH /exam-catalogue/exams/:examId. */
-export class UpdateExamDto extends createZodDto(updateExamSchema) {}
-
 /** ORD-105. The structure, in printing order. */
 export const examStructureSchema = z
   .object({
@@ -135,7 +51,7 @@ export const examStructureSchema = z
       ),
   })
   .strict();
-/** Body of PUT /exam-catalogue/exams/:examId/analytes. */
+/** Body of PUT /exam-catalogue/exams/:serviceId/analytes. */
 export class ExamStructureDto extends createZodDto(examStructureSchema) {}
 
 /** ORD-104. The analyte's writable fields. */
@@ -249,20 +165,10 @@ export const adminAnalyteListSchema = z.object({
 /** Response of GET /exam-catalogue/analytes. */
 export class AdminAnalyteListDto extends createZodDto(adminAnalyteListSchema) {}
 
-const examServiceSchema = z.object({
-  id: z.uuid(),
-  code: z.string(),
-  name: z.string(),
-  categoryName: z.string(),
-  kind: z.string(),
-  active: z.boolean(),
-});
-
+/** ORD-105. One ordered service with its structure; `id` is the service's. */
 export const adminExamSchema = z.object({
   id: z.uuid(),
   code: z.string(),
-  /** ORD-140. Only when reading ONE exam: an order already froze the code. */
-  codeLocked: z.boolean().optional(),
   name: z.string(),
   category: CATEGORY,
   form010Section: z.string().nullable(),
@@ -274,10 +180,9 @@ export const adminExamSchema = z.object({
   performedExternally: z.boolean(),
   externalLabName: z.string().nullable(),
   externalLabCode: z.string().nullable(),
-  tariffCode: z.string().nullable(),
+  /** BI-285. The service's MSP code; never a price (ORD-002). */
+  mspCode: z.string().nullable(),
   active: z.boolean(),
-  /** ORD-108, ORD-163. Always one, by code, name and class; never a price (ORD-002). */
-  billableService: examServiceSchema,
   /** ORD-105. In printing order, each with its ranges (ORD-106). */
   analytes: z.array(
     z.object({
@@ -296,17 +201,10 @@ export const adminExamSchema = z.object({
     }),
   ),
 });
-/** One exam of the administration screen. */
+/** Response of PUT /exam-catalogue/exams/:serviceId/analytes. */
 export class AdminExamDto extends createZodDto(adminExamSchema) {}
 
-export const adminExamListSchema = z.object({
-  items: z.array(adminExamSchema),
-});
-/** Response of GET /exam-catalogue/exams. */
-export class AdminExamListDto extends createZodDto(adminExamListSchema) {}
-
 export type AdminExamResponse = z.infer<typeof adminExamSchema>;
-export type AdminExamListResponse = z.infer<typeof adminExamListSchema>;
 export type AdminAnalyteResponse = z.infer<typeof adminAnalyteSchema>;
 export type AdminAnalyteListResponse = z.infer<typeof adminAnalyteListSchema>;
 export type RangeHistoryResponse = z.infer<typeof rangeHistorySchema>;

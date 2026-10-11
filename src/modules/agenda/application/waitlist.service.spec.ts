@@ -36,6 +36,7 @@ import type {
 } from '../domain/waitlist.repository';
 
 import { WaitlistService } from './waitlist.service';
+import { ConsultationNotFoundError } from '../../../shared/domain/errors/master-data.errors';
 
 const d = parseClinicalDate;
 
@@ -102,7 +103,7 @@ function candidate(
     preferredFrom: PREFERRED_FROM,
     preferredTo: PREFERRED_TO,
     practitionerId: null,
-    serviceTypeId: null,
+    serviceId: null,
     contactAttempts: 0,
     lastContactedAt: null,
     lastOutcome: null,
@@ -123,7 +124,7 @@ function entryView(
     siteId: SITE,
     patientId: PATIENT,
     practitionerId: null,
-    serviceTypeId: null,
+    serviceId: null,
     preferredFrom: PREFERRED_FROM,
     preferredTo: PREFERRED_TO,
     status: 'WAITING',
@@ -163,7 +164,7 @@ function agendaEntry(
     emergencyAssessedAt: null,
     emergencyFlaggedAt: null,
     bookingChannel: 'PHONE',
-    serviceTypeId: 'service-general',
+    serviceId: 'service-general',
     createdById: RECEPTIONIST,
     rescheduledFromId: null,
     rescheduledToId: null,
@@ -202,7 +203,7 @@ function build(
           preferredFrom: entry.preferredFrom,
           preferredTo: entry.preferredTo,
           practitionerId: entry.practitionerId,
-          serviceTypeId: entry.serviceTypeId,
+          serviceId: entry.serviceId,
         }),
       );
     },
@@ -248,6 +249,9 @@ function build(
         overrides.agenda === undefined ? agendaEntry() : overrides.agenda,
       );
     },
+    // AG-060 (ADR-013): only an active consultation is waited for.
+    isActiveConsultation: (serviceId: string) =>
+      Promise.resolve(serviceId !== 'service-exam'),
     findPatientForBooking: () =>
       Promise.resolve(
         overrides.patient === undefined
@@ -269,7 +273,7 @@ function build(
 
 describe('WaitlistService', () => {
   describe('AG-060 · inscribir cuando no hay cupo', () => {
-    it('AG-060 enrols with site, chart and preferred range, leaving practitioner and service type open', async () => {
+    it('AG-060 enrols with site, chart and preferred range, leaving practitioner and consultation open', async () => {
       const { service, recorded } = build();
 
       const entry = await service.enrol({
@@ -286,13 +290,13 @@ describe('WaitlistService', () => {
           preferredFrom: '2026-09-01',
           preferredTo: '2026-09-30',
           practitionerId: null,
-          serviceTypeId: null,
+          serviceId: null,
         },
       ]);
       expect(entry.status).toBe('WAITING');
     });
 
-    it('AG-060 keeps the practitioner and the service type when the enrolment fixes them', async () => {
+    it('AG-060 keeps the practitioner and the consultation when the enrolment fixes them', async () => {
       const { service, recorded } = build();
 
       await service.enrol({
@@ -301,11 +305,27 @@ describe('WaitlistService', () => {
         preferredFrom: d('2026-09-01'),
         preferredTo: d('2026-09-30'),
         practitionerId: PRACTITIONER,
-        serviceTypeId: 'service-general',
+        serviceId: 'service-general',
       });
 
       expect(recorded.enrolled[0]?.practitionerId).toBe(PRACTITIONER);
-      expect(recorded.enrolled[0]?.serviceTypeId).toBe('service-general');
+      expect(recorded.enrolled[0]?.serviceId).toBe('service-general');
+    });
+
+    it('AG-060 refuses to enrol for a service that is not an active consultation, before writing', async () => {
+      const { service, recorded } = build();
+
+      await expect(
+        service.enrol({
+          siteId: SITE,
+          patientId: PATIENT,
+          // fecha-fija: the refusal comes before the range is read.
+          preferredFrom: d('2026-09-01'), // fecha-fija: idem
+          preferredTo: d('2026-09-30'), // fecha-fija: idem
+          serviceId: 'service-exam',
+        }),
+      ).rejects.toBeInstanceOf(ConsultationNotFoundError);
+      expect(recorded.enrolled).toEqual([]);
     });
 
     it('AG-060 refuses to enrol a chart that was merged into another', async () => {
@@ -363,7 +383,7 @@ describe('WaitlistService', () => {
       // The slot comes from the released ROW and not from the query string, so
       // nobody can ask about an interval that never came free.
       expect(proposal.slot.practitionerId).toBe(PRACTITIONER);
-      expect(proposal.slot.serviceTypeId).toBe('service-general');
+      expect(proposal.slot.serviceId).toBe('service-general');
     });
 
     it('AG-061 resolves the day of the freed slot in Ecuador and not in the session zone', async () => {

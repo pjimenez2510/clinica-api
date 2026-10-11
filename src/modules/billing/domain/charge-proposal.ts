@@ -18,12 +18,12 @@ import { Quantity } from './money';
  *
  * The three sources, and each one is a different question:
  *
- *   · THE CONSULTATION — «what kind of visit was this, and of which
- *     specialty». It has no clinical row of its own: the act IS the encounter.
- *   · THE PROCEDURES  — `encounter_procedure`, tied to a service through the
- *     catalogue concept both sides already name.
- *   · THE EXAMS       — `service_order_item`, tied through the code of the
- *     `exam_definition`, which is where `billable_service_id` already lives.
+ *   · THE CONSULTATION — the service the appointment booked (BI-287). It has
+ *     no clinical row of its own: the act IS the encounter.
+ *   · THE PROCEDURES  — `encounter_procedure`, tied to the procedure service
+ *     carrying its tariff code (BI-286).
+ *   · THE EXAMS       — `service_order_item`, tied through the code it froze:
+ *     the exam IS its service (BI-284).
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * ⚠️ THIS FILE IS PURE, AND THAT IS WHAT MAKES IT TESTABLE AT ALL
@@ -83,7 +83,7 @@ export type ProposalSkipReason = (typeof PROPOSAL_SKIP_REASONS)[number];
  * and frozen when the charge is written, in the same transaction (BI-050). */
 export interface ProposedCharge {
   origin: DerivedOrigin;
-  billableServiceId: string;
+  serviceId: string;
   serviceDate: ClinicalDate;
   quantity: Quantity;
   encounterProcedureId: string | null;
@@ -110,7 +110,7 @@ export interface ChargeProposal {
 
 /** The catalogue's answer for one act: which service, and whether it is alive. */
 export interface ServiceMatch {
-  billableServiceId: string;
+  serviceId: string;
   active: boolean;
 }
 
@@ -124,9 +124,9 @@ export interface ServiceMatch {
 export interface ChargeMapping {
   /** BI-158. The first service of the visit's type, or `null` if none is set. */
   consultation: ServiceMatch | null;
-  /** `catalog_concept.id` → the service that charges for that procedure. */
-  byProcedureConcept: ReadonlyMap<string, ServiceMatch>;
-  /** `exam_definition.code` → the service the definition points at. */
+  /** BI-286. A procedure's tariff code → the procedure service carrying it. */
+  byProcedureCode: ReadonlyMap<string, ServiceMatch>;
+  /** BI-284. An order line's frozen code → the service with that code. */
   byExamCode: ReadonlyMap<string, ServiceMatch>;
 }
 
@@ -212,7 +212,7 @@ export function proposeCharges(
 
     proposed.push({
       origin,
-      billableServiceId: match.billableServiceId,
+      serviceId: match.serviceId,
       serviceDate,
       quantity,
       encounterProcedureId: line.encounterProcedureId,
@@ -222,14 +222,14 @@ export function proposeCharges(
 
   // ── The consultation ──────────────────────────────────────────────────
   //
-  // `serviceTypeId === null` and «the type charges nothing» collapse into the
+  // `serviceId === null` and «not a consultation» collapse into the
   // same answer, NO_BILLABLE_SERVICE, and deliberately: from the cashier's side
   // both mean «the system cannot tell you what this visit costs, type it», and
   // splitting them would offer a distinction nobody can act on differently.
   take(
     'CONSULTATION',
     {},
-    acts.serviceTypeId === null ? null : mapping.consultation,
+    acts.serviceId === null ? null : mapping.consultation,
     charged.consultation,
     acts.serviceDate,
     ONE,
@@ -240,7 +240,7 @@ export function proposeCharges(
     take(
       'PROCEDURE',
       { procedureId: procedure.encounterProcedureId },
-      mapping.byProcedureConcept.get(procedure.conceptId) ?? null,
+      mapping.byProcedureCode.get(procedure.procedureCode) ?? null,
       charged.encounterProcedureIds.has(procedure.encounterProcedureId) ||
         // BI-242. Restored: the line of the row it came back from, if it
         // still stands, already charges it.
@@ -257,7 +257,7 @@ export function proposeCharges(
   // ⚠️ ORDERED, NOT RESULTED. What the clinic sold is the request — the
   // patient took the order and the specimen was drawn — and waiting for the
   // report to charge would leave every external laboratory line uncharged
-  // forever (`exam_definition.performed_externally` defaults to true). A test
+  // forever (`service_exam.performed_externally` defaults to true). A test
   // that was never done is CANCELLED on the order, and that is the line this
   // does not propose.
   for (const exam of acts.exams) {
@@ -290,9 +290,10 @@ function quantityOf(quantity: number): Quantity {
 }
 
 /**
- * BI-158 (D-179.3). Which service type a visit asks the catalogue for. First
- * time or subsequent does not enter: the type is what is charged.
+ * BI-287 (ADR-013). Which service a visit asks the catalogue for as its
+ * consultation: the one its appointment booked. First time or subsequent does
+ * not enter: the service is what is charged.
  */
 export function consultationKeyOf(acts: EncounterActs): string | null {
-  return acts.serviceTypeId;
+  return acts.serviceId;
 }
