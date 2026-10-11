@@ -66,6 +66,7 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
   let registry: RolePermissionRegistry;
   let manager: string;
   let cashier: string;
+  let pricer: string;
 
   beforeEach(async () => {
     enableBigIntSerialisation();
@@ -105,6 +106,20 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
           create: [
             { permissionCode: 'billing:read' },
             { permissionCode: 'billing:price-manage' },
+            // BI-299 (D-231): what an exam's order prints is clinical.
+            { permissionCode: 'catalog:manage' },
+          ],
+        },
+      },
+    });
+    await prisma.role.create({
+      data: {
+        code: 'PRECIOS',
+        name: 'Sólo fija precios',
+        permissions: {
+          create: [
+            { permissionCode: 'billing:read' },
+            { permissionCode: 'billing:price-manage' },
           ],
         },
       },
@@ -119,6 +134,7 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
     registry.invalidate();
     manager = await signIn('tarifario@clinica.ec', 'TARIFARIO', '0919176818');
     cashier = await signIn('lector@clinica.ec', 'LECTOR', '1710034065');
+    pricer = await signIn('precios@clinica.ec', 'PRECIOS', '1104637283');
   });
 
   afterAll(async () => {
@@ -543,6 +559,152 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
         .set('Authorization', manager)
         .send({ kind: 'SUPPLY', name: 'Algodón', selfPayAmount: '1.00' })
         .expect(201);
+    });
+
+    it('BI-299 crear un examen, o corregir lo que su orden imprime, exige además catalog:manage; el precio y el nombre no', async () => {
+      const exam = {
+        kind: 'LAB_EXAM',
+        name: 'Ferritina',
+        selfPayAmount: '9.00',
+        exam: { specimenType: 'Suero' },
+      };
+      const refused = await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', pricer)
+        .send(exam)
+        .expect(403);
+      expect(refused.body as Problem).toMatchObject({
+        code: 'PERMISSION_DENIED',
+      });
+      // Control: the same body, with both keys.
+      const created = (
+        await api()
+          .post('/api/v1/billing/services')
+          .set('Authorization', manager)
+          .send(exam)
+          .expect(201)
+      ).body as ListItem;
+
+      // A procedure ordered in an order carries the extension too.
+      await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', pricer)
+        .send({
+          kind: 'PROCEDURE',
+          name: 'Espirometría',
+          selfPayAmount: '30.00',
+          mspCode: null,
+          exam: {},
+        }) // prettier-ignore
+        .expect(403);
+
+      const preparation = { exam: { patientPreparation: 'Ayuno de 8 horas.' } };
+      const correction = await api()
+        .patch(`/api/v1/billing/services/${created.id}`)
+        .set('Authorization', pricer)
+        .send(preparation)
+        .expect(403);
+      expect(correction.body as Problem).toMatchObject({
+        code: 'PERMISSION_DENIED',
+      });
+      await api()
+        .patch(`/api/v1/billing/services/${created.id}`)
+        .set('Authorization', manager)
+        .send(preparation)
+        .expect(200);
+
+      // Without `exam`, the price manager still corrects the exam and creates
+      // what is not ordered.
+      await api()
+        .patch(`/api/v1/billing/services/${created.id}`)
+        .set('Authorization', pricer)
+        .send({ name: 'Ferritina sérica' })
+        .expect(200);
+      await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', pricer)
+        .send({ kind: 'SUPPLY', name: 'Gasa', selfPayAmount: '0.50' })
+        .expect(201);
+
+      // Retiring it takes the order with it: the same two keys.
+      const retire = await api()
+        .delete(`/api/v1/billing/services/${created.id}`)
+        .set('Authorization', pricer)
+        .expect(403);
+      expect((retire.body as Problem).code).toBe('PERMISSION_DENIED');
+      await api()
+        .delete(`/api/v1/billing/services/${created.id}`)
+        .set('Authorization', manager)
+        .expect(204);
+    });
+
+    it('BI-299 quitar la orden a un procedimiento también exige catalog:manage, y en toda la clínica', async () => {
+      const ordered = (
+        await api()
+          .post('/api/v1/billing/services')
+          .set('Authorization', manager)
+          .send({
+            kind: 'PROCEDURE',
+            name: 'Espirometría simple',
+            selfPayAmount: '30.00',
+            exam: {},
+          }) // prettier-ignore
+          .expect(201)
+      ).body as ListItem;
+      await api()
+        .patch(`/api/v1/billing/services/${ordered.id}`)
+        .set('Authorization', pricer)
+        .send({ exam: null })
+        .expect(403);
+
+      // The clinical key at one site only is not the catalogue's key.
+      const site = await createSite(prisma);
+      const local = await prisma.role.create({
+        data: {
+          code: 'CATALOGO_SEDE',
+          name: 'Catálogo de una sede',
+          permissions: { create: [{ permissionCode: 'catalog:manage' }] },
+        },
+      });
+      const pricerUser = await prisma.user.findUniqueOrThrow({
+        where: { email: 'precios@clinica.ec' },
+      });
+      await prisma.userRoleGrant.create({
+        data: { userId: pricerUser.id, roleId: local.id, siteId: site.id },
+      });
+      registry.invalidate();
+      // The grants travel in the session: a new one, with the site's key.
+      const login = await api()
+        .post('/api/v1/auth/login')
+        .send({ email: 'precios@clinica.ec', password: PASSWORD })
+        .expect(200);
+      const siteScoped = `Bearer ${(login.body as { accessToken: string }).accessToken}`;
+      const scoped = await api()
+        .patch(`/api/v1/billing/services/${ordered.id}`)
+        .set('Authorization', siteScoped)
+        .send({ exam: null });
+      expect(scoped.status).toBe(403);
+      expect((scoped.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      for (const attempt of [
+        api()
+          .post('/api/v1/billing/services')
+          .set('Authorization', siteScoped)
+          .send({ kind: 'IMAGING', name: 'Radiografía de tórax', selfPayAmount: '20.00' }), // prettier-ignore
+        api()
+          .delete(`/api/v1/billing/services/${ordered.id}`)
+          .set('Authorization', siteScoped),
+      ]) {
+        const refused = await attempt;
+        expect(refused.status).toBe(403);
+        expect((refused.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      }
+
+      // Control: both keys clinic-wide.
+      await api()
+        .patch(`/api/v1/billing/services/${ordered.id}`)
+        .set('Authorization', manager)
+        .send({ exam: null })
+        .expect(200);
     });
   });
 

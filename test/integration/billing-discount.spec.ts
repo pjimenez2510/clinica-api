@@ -589,7 +589,8 @@ describe('B4 descuentos con límite y con autorización', () => {
     it('BI-244 con una línea rebajada el pagador no cambia; quitado el descuento, sí (control)', async () => {
       const { id } = await line();
       await discount(id, { percentage: '5' }).expect(200);
-      const insurer = await prisma.payer.findUniqueOrThrow({ where: { code: 'IESS' } }); // prettier-ignore
+      // BI-300: the seed leaves the public network inactive; this clinic works with it.
+      const insurer = await prisma.payer.update({ where: { code: 'IESS' }, data: { active: true } }); // prettier-ignore
       const insurerList = await prisma.priceList.findFirstOrThrow({ where: { payerId: insurer.id } }); // prettier-ignore
       await prisma.price.create({
         data: {

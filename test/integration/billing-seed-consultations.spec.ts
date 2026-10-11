@@ -3,15 +3,16 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
 import { seedSpecialties } from '../../prisma/seed-specialties.mts';
+import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
 
 /**
- * BI-232 (D-161), BI-279 (ADR-013). The starting catalogue brings, for EVERY
+ * BI-232 (D-228), BI-279 (ADR-013). The starting catalogue brings, for EVERY
  * specialty, its two consultations —«Primera vez» at 30 minutes and «Control»
  * at 20— as services named «Consulta de <especialidad> · Primera vez /
- * Control», ONE per specialty and visit, and prices only those that had a
- * starting price. Against the real seeds, not a fixture: what is checked is
+ * Control», ONE per specialty and visit, each with its self-pay price (D-228:
+ * the price is required on creation, so the seed gives one too). Against the real seeds, not a fixture: what is checked is
  * what a clinic installs.
  */
 const db = useDatabase();
@@ -62,18 +63,72 @@ describe('BI-232 BI-279 las consultas del catálogo de arranque', () => {
     );
   });
 
-  it('BI-232 la de cardiología nace sin precio en ninguna lista, y la de medicina general con el suyo (control)', async () => {
+  it('BI-232 toda consulta sembrada nace con precio particular, y ninguna en la lista del IESS (control)', async () => {
     await seedSpecialties(prisma);
     await seedBilling(prisma);
 
+    const pricesIn = async (payerCode: string) =>
+      prisma.price.findMany({
+        where: {
+          priceList: { payer: { code: payerCode } },
+          service: { kind: 'CONSULTATION' },
+        },
+        select: { amount: true, service: { select: { code: true } } },
+      });
+    const selfPay = await pricesIn('PARTICULAR');
     const seeded = await consultations();
-    const prices = (code: string) =>
-      seeded
-        .filter((row) => row.specialty?.code === code)
-        .map((row) => row._count.prices);
 
-    expect(prices('cardiologia')).toEqual([0, 0]);
-    expect(prices('medicina-general')).toEqual([1, 1]);
+    expect(selfPay.map((row) => row.service.code).sort()).toEqual(
+      seeded.map((row) => row.code).sort(),
+    );
+    for (const row of selfPay) {
+      expect(Number(row.amount), row.service.code).toBeGreaterThan(0);
+    }
+    expect(await pricesIn('IESS')).toEqual([]);
+  });
+
+  it('BI-232 resembrar pone precio desde hoy a la consulta que nació sin él, y no toca la que la clínica ya preció (control)', async () => {
+    await seedSpecialties(prisma);
+    await seedBilling(prisma);
+    const priceOf = (code: string) =>
+      prisma.price.findMany({
+        where: {
+          service: { code },
+          priceList: { payer: { code: 'PARTICULAR' } },
+        },
+        select: { amount: true, validFrom: true },
+      });
+    // An installation seeded before: cardiology without a price, and
+    // dermatology repriced by the clinic.
+    await prisma.price.deleteMany({
+      where: { service: { code: 'CONS-CAR-PV' } },
+    });
+    const seeded = await prisma.price.findFirstOrThrow({
+      where: { service: { code: 'CONS-DER-PV' } },
+    });
+    await prisma.price.delete({ where: { id: seeded.id } });
+    await prisma.price.create({
+      data: {
+        priceListId: seeded.priceListId,
+        serviceId: seeded.serviceId,
+        amount: '61.00',
+        validFrom: seeded.validFrom,
+      },
+    });
+
+    await seedBilling(prisma);
+
+    expect(
+      (await priceOf('CONS-CAR-PV')).map((row) => row.amount.toString()),
+    ).toEqual(['50']);
+    expect(
+      (await priceOf('CONS-DER-PV')).map((row) => row.amount.toString()),
+    ).toEqual(['61']);
+    // From TODAY in Ecuador: backwards it would price care left unpriced.
+    const [late] = await priceOf('CONS-CAR-PV');
+    expect(late!.validFrom.toISOString().slice(0, 10)).toBe(
+      clinicalDateOf(new Date()),
+    );
   });
 
   it('BI-279 sembrar facturación antes que especialidades no crea consultas sin especialidad, y la siguiente corrida sí', async () => {

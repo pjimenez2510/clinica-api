@@ -458,7 +458,8 @@ export const PERMISSION_CATALOGUE = [
   {
     code: 'catalog:manage',
     resource: 'catalog',
-    description: 'Cargar y versionar catálogos',
+    description:
+      'Cargar y versionar catálogos; con la de precios, lo que imprime la orden de un examen (BI-299)',
   },
   {
     code: 'config:read',

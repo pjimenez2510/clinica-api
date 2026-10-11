@@ -630,7 +630,7 @@ buscándolo por código. Contra PostgreSQL: la base rechaza una consulta sin
 especialidad, una extensión de orden sobre un insumo, dos consultas con el
 mismo nombre en una especialidad y dos procedimientos con el mismo código.
 
-**Cubre:** BI-278 a BI-298. **Solo interfaz:** BI-291 a BI-296.
+**Cubre:** BI-278 a BI-300. **Solo interfaz:** BI-291 a BI-296.
 **Solo servidor:** BI-281, BI-283, BI-287, BI-289, BI-290, BI-298. Son garantías y
 lecturas del servidor: el código que ya salió en papel no cambia (BI-281), la
 ficha sirve las determinaciones con sus rangos (BI-283), caja recibe la
@@ -2170,8 +2170,20 @@ dos registros distintos.**
   > **Enmendado el 11-10-2026 (ADR-013, BI-287).** La consulta es el **servicio de la cita** (`agenda_entry.service_id`), no la «primera prestación» de su tipo de atención: el tipo de atención y su tabla puente se eliminaron.
 - **BI-232** — El catálogo de arranque DEBERÁ traer, para cada tipo de atención
   de arranque de cada especialidad («Primera vez» y «Control»), una prestación
-  de consulta atada a él (SP-031), y NO DEBERÁ ponerles precio salvo a las que
-  ya lo traían.
+  de consulta atada a él (SP-031), y DEBERÁ ponerle a cada una precio en la
+  lista particular.
+  > **Enmendado el 11-10-2026 (D-228; decisión del autor en
+  > `fix/decisiones-catalogo`).** Antes decía «NO DEBERÁ ponerles precio salvo
+  > a las que ya lo traían» (D-161). Con el precio particular obligatorio al
+  > crear (D-228), una consulta sembrada «Sin precio» era la única que la
+  > pantalla no permite crear; la semilla trae precios **de ejemplo**, en la
+  > línea de los ya sembrados, que la clínica corrige en Servicios. Como todo
+  > precio de la semilla, se pone sólo donde la consulta **no tiene ningún
+  > precio** en la lista particular. En una instalación sembrada antes,
+  > resembrar pone precio a las consultas que nacieron sin él (es lo que se
+  > pidió), **vigente desde hoy en Ecuador** y no desde el inicio de la semilla
+  > —hacia atrás cobraría atenciones que se dejaron sin precio—, lo anuncia al
+  > terminar, y no toca las que la clínica ya preció.
   > **Enmendado el 07-10-2026 (D-179.3):** la atadura es al tipo de atención,
   > no a la especialidad y la secuencia. Las prestaciones de arranque conservan
   > su código (`CONS-MG-PV`, `CONS-MG-SUB`…): «primera vez» va con el tipo
@@ -3023,7 +3035,8 @@ lo ve._
   DEBERÁ rechazarlo con `VALIDATION_FAILED` nombrando el campo; SI el código
   ya existe, con `BILLABLE_SERVICE_CODE_DUPLICATE`; y SI no hay lista
   particular activa, con `PRICE_LIST_NOT_FOUND`.
-  > D-228 (construido así mientras el autor decide): el examen creado sin
+  > D-228, resuelta por el autor el 11-10-2026 (obligatorio, cero se admite, y
+  > la lista marca lo que no tiene precio vigente): el examen creado sin
   > precio quedaba «Sin precio» y el autor creyó que no se había creado.
   > Sustituye a SP-030 y ORD-162: ya no nace nada «detrás» de otra cosa.
 - **BI-281** — CUANDO se corrija el código de un servicio, SI ya está en un
@@ -3103,7 +3116,8 @@ lo ve._
   DEBERÁ rechazarlo con `PRICE_NOT_FOUND` (BI-047).
   > ADR-013: «un convenio guarda excepciones» sobre el particular, y la
   > columna del convenio en la lista dice «—» = «usa el particular». Sin esta
-  > caída, ese «—» sería falso. Construido así mientras el autor decide (D-230).
+  > caída, ese «—» sería falso. D-230, resuelta por el autor el 11-10-2026; por
+  > confirmar fuera con el contador.
   > La red pública queda fuera: liquida por el Tarifario del SNS, y un importe
   > particular en su planilla se glosaría; sin precio propio, `PRICE_NOT_FOUND`.
 
@@ -3115,7 +3129,31 @@ lo ve._
   visita es su propio caso; una desactivada no cuenta).
   > ADR-013: «una consulta por especialidad y visita». Dos «Primera vez» de
   > la misma especialidad devuelven la duda de cuál propone la agenda y cuál
-  > cobra caja (revisión de producto del 11-10-2026).
+  > cobra caja (revisión de producto del 11-10-2026). D-232, resuelta por el
+  > autor el 11-10-2026: dos precios para la misma visita serán una variante
+  > de la consulta, no dos consultas.
+
+- **BI-299** — CUANDO quien tiene `billing:price-manage` cree un servicio que
+  lleva extensión de orden (examen, imagen, o procedimiento que se pide) o
+  corrija la extensión de orden de un servicio (`exam` en la corrección), el
+  sistema DEBERÁ exigir **además** `catalog:manage` en toda la clínica, y lo
+  mismo para retirar (BI-288) un servicio con extensión de orden; SI no lo
+  tiene en ninguna sede, ENTONCES DEBERÁ rechazarlo con `PERMISSION_DENIED`, y
+  SI lo tiene sólo en alguna, con `SITE_SCOPE_DENIED`. Corregir el resto del
+  servicio, o crear o retirar lo que no se pide en una orden, NO DEBERÁ
+  exigirlo. La interfaz DEBERÁ ocultar a quien no lo
+  tiene los tipos y los campos que lo exigen.
+  > D-231, resuelta por el autor el 11-10-2026: la muestra, la preparación, el
+  > ayuno y la entrega son una instrucción clínica al paciente, no un precio.
+  > Con los roles de fábrica no cambia nada: `ADMIN` lleva los dos.
+
+- **BI-300** — La semilla DEBERÁ crear los pagadores de la red pública (IESS,
+  ISSFA, ISSPOL, MSP) **inactivos**, y NO DEBERÁ cambiar el estado de un
+  pagador que ya existe.
+  > D-229 §2, resuelta por el autor el 11-10-2026: la clínica los activa cuando
+  > firme con la red pública. Mientras estén inactivos, `worksWithPublicNetwork`
+  > está apagada: la lista de Servicios no muestra sus columnas ni el diálogo el
+  > «Código MSP» (BI-296). Las pruebas que cobran al IESS lo activan en su arreglo.
 
 ### La pantalla «Servicios» (sólo interfaz, D-227 §1, D-220)
 
@@ -3151,7 +3189,9 @@ lo ve._
 - **BI-296** — En pantalla NO DEBERÁN aparecer «prestación», «categoría» ni
   «tarifario»: se dice «servicio», «tipo» y «Código MSP»; y el campo «Código
   MSP» DEBERÁ verse sólo DONDE la clínica trabaje con la red pública o el
-  SPPAT (D-218 §2; mientras no exista la pantalla «Funciones», D-229).
+  SPPAT (D-218 §2; mientras no exista la pantalla «Funciones», la señal es
+  tener un pagador activo de la red pública: D-229, resuelta el 11-10-2026, y
+  la semilla la deja apagada, BI-300).
   Especialidades DEBERÁ listar sus consultas con enlace al servicio, sin
   editarlas, y el pagador NO DEBERÁ editar precios (D-227 §1).
 
@@ -3365,9 +3405,9 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | Método | Ruta | Permiso | Alcance | Requisitos |
 | --- | --- | --- | --- | --- |
 | `GET` | `/billing/services` | `billing:read` | `global` | BI-010, BI-011, BI-014, BI-023 |
-| `POST` | `/billing/services` | `billing:price-manage` | `global` | BI-010 a BI-016 |
-| `PATCH` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-011 a BI-016, BI-025, BI-278 a BI-286 |
-| `DELETE` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-012 |
+| `POST` | `/billing/services` | `billing:price-manage` (y `catalog:manage` si lleva extensión de orden, BI-299) | `global` | BI-010 a BI-016, BI-299 |
+| `PATCH` | `/billing/services/{id}` | `billing:price-manage` (y `catalog:manage` si trae `exam`, BI-299) | `global` | BI-011 a BI-016, BI-025, BI-278 a BI-286, BI-299 |
+| `DELETE` | `/billing/services/{id}` | `billing:price-manage` (y `catalog:manage` si tiene extensión de orden, BI-299) | `global` | BI-012, BI-299 |
 | `POST` | `/billing/services/{id}/tax-review` | `billing:price-manage` | `global` | BI-024 |
 | `POST` | `/billing/services/{id}/written-consent` | `record:consent-rule` | `global` | BI-256 |
 | `GET` | `/billing/services/{id}/prices` | `billing:read` | `global` | BI-189 |
