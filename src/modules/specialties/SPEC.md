@@ -258,7 +258,7 @@ rechaza con `SERVICE_TYPE_IN_USE`.
 
 ### Tipos de atención y duraciones (REQ-150, D-010)
 
-- **SP-020** — El sistema DEBERÁ mantener tipos de atención por especialidad,
+- ~~SP-020~~ — El sistema DEBERÁ mantener tipos de atención por especialidad,
   cada uno con duración base en minutos.
   > **Sustituido el 11-10-2026 por BI-279 (ADR-013).** El tipo de atención es ahora un **servicio de tipo consulta** (`service.kind = CONSULTATION`) con su especialidad, su duración y su visita; `service_type` se eliminó y se administra en «Servicios».
 - **SP-021** — El sistema DEBERÁ aceptar duraciones que sean **múltiplo del
@@ -321,7 +321,7 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   cita, ENTONCES el sistema DEBERÁ rechazarlo con `SERVICE_TYPE_IN_USE` y
   ofrecer desactivarlo.
   > **Enmendado el 11-10-2026 (ADR-013, BI-288).** El servicio de consulta referenciado por una cita no se borra: `BILLABLE_SERVICE_IN_USE` y se ofrece desactivarlo (`SERVICE_TYPE_IN_USE` se retiró con la tabla).
-- **SP-026** — El sistema DEBERÁ impedir dos tipos de atención con el mismo
+- ~~SP-026~~ — El sistema DEBERÁ impedir dos tipos de atención con el mismo
   nombre dentro de una especialidad, con la garantía en la base.
   > **Sustituido el 11-10-2026 por BI-278 (ADR-013).** Dos servicios activos no comparten nombre en toda la clínica (`service_active_name_unique`).
 - **SP-027** — Toda mutación de tipos y duraciones DEBERÁ quedar en la bitácora
@@ -353,7 +353,7 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   > enseña a saltarse los que sí.
   > **Enmendado el 11-10-2026 (ADR-013).** Recepción elige especialidad y **servicio de consulta**; la cita guarda `agenda_entry.service_id`.
 
-- **SP-030** — CUANDO se cree un tipo de atención, el sistema DEBERÁ crear en
+- ~~SP-030~~ — CUANDO se cree un tipo de atención, el sistema DEBERÁ crear en
   la misma transacción su prestación de cobro —en una categoría activa de
   clase `CONSULTATION`, con el IVA de servicios de salud (código SRI `0`) sin
   revisar y nombrada «<especialidad> · <tipo>»— y, si se indica un precio, su
@@ -376,7 +376,7 @@ rechaza con `SERVICE_TYPE_IN_USE`.
   > no es una clasificación fiscal: queda sin revisar, como el de la semilla
   > (D-A-006).
   > **Sustituido el 11-10-2026 por BI-280 (ADR-013).** No nace una prestación detrás del tipo: la consulta **es** el servicio, y se crea con su precio en «Servicios».
-- **SP-031** — El sistema DEBERÁ admitir más de una prestación por tipo de
+- ~~SP-031~~ — El sistema DEBERÁ admitir más de una prestación por tipo de
   atención, en orden (`service_type_billable_service.position`), y la primera
   DEBERÁ ser la que nace con el tipo, la que se renombra con él, la que
   muestra la pantalla y la que caja propone (BI-158).

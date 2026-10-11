@@ -575,7 +575,7 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
     });
   });
 
-  it('BI-286 BI-257 la BASE no admite dos procedimientos activos con el mismo código', async () => {
+  it('BI-286 la BASE no admite dos procedimientos activos con el mismo código', async () => {
     const prisma = db();
     const user = await createUser(prisma);
     const concept = await aConcept(prisma, user, false);
@@ -602,7 +602,7 @@ describe('el consentimiento 024 lo garantiza la base (EN-152 a EN-154, BI-256)',
     await prisma.service.update({ where: { id: second.id }, data: { mspCode: concept.code } }); // prettier-ignore
   });
 
-  it('ORD-163 BI-284 la extensión de orden sólo cabe en un examen, imagen o procedimiento, y una por servicio', async () => {
+  it('BI-284 la extensión de orden sólo cabe en un examen, imagen o procedimiento, y una por servicio', async () => {
     const prisma = db();
     const specialty = await prisma.specialty.create({
       data: { code: 'medicina-general', name: 'Medicina General' },

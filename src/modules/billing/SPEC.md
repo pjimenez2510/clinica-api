@@ -321,12 +321,15 @@ vuelve**; y comprobar contra PostgreSQL que el segundo cargo del mismo acto lo
 rechaza la BASE y no una lectura previa.
 
 **Cubre:** BI-150 a BI-158, BI-180, BI-232, y da ruta por fin a BI-055, BI-056 y BI-059.
-**Solo servidor:** BI-180, BI-156, BI-232. BI-180 cambia qué propone el
+**Solo servidor:** BI-180, BI-156, BI-232, BI-158. BI-180 cambia qué propone el
 servidor, no la pantalla: caja muestra la propuesta que recibe, y sin acto
 clínico la recibe vacía. BI-156, desde D-162: lo que obliga es que el servidor
 no encadene el cierre y el paso a caja, y la pantalla ofrece caja tras el alta
 a propósito. BI-232 es lo que trae la semilla; en pantalla se ve como el motivo
-de BI-155, que ya tiene su prueba de interfaz.
+de BI-155, que ya tiene su prueba de interfaz. BI-158, desde ADR-013: la consulta que se propone
+es el servicio de la cita, y eso lo resuelve el servidor al pasar a caja; la
+pantalla que enseñaba qué prestación cobraba cada tipo de atención se retiró
+con el tipo de atención.
 
 > **BI-156 se declara de servidor (D-162, resuelta por el autor el
 > 07-10-2026).** Caja **no** pasa a caja una atención en curso por ahora: el
@@ -577,9 +580,9 @@ asignada sigue leyéndose; intentar declarar «la consulta» de una especialidad
 sobre una prestación de clase insumo y recibir el rechazo; y contra
 PostgreSQL, que la base no admite una prestación sin categoría.
 
-**Cubre:** BI-185 a BI-189, **BI-256** —la marca «exige consentimiento 024»
-(D-159)— y **BI-257** —la atadura al procedimiento desde la ficha—. **Solo servidor:** BI-186 (la base garantiza la
-categoría y la clase conocida).
+**Cubre:** BI-185 a BI-189 y **BI-256** —la marca «exige consentimiento 024»
+(D-159)—. BI-185 a BI-188 y BI-257 se retiraron con ADR-013: la estructura del
+servicio es su tipo y su extensión de orden (B21, BI-278 a BI-286).
 
 ### B20 — Servicios y precios en un solo sitio _(P1, 10-10-2026)_
 
@@ -600,10 +603,9 @@ y en la del pagador; comprobar que el diálogo del tipo de atención ya no ofrec
 editar el precio al corregirlo y que ninguna de las pantallas tocadas dice
 «tarifario» ni «tarifa de impuesto».
 
-**Cubre:** BI-275 a BI-277. **Solo interfaz:** BI-275 a BI-277. El servidor de
-precios es el de B1 (BI-040 a BI-048) y B14 (BI-230); esta entrega no lo toca, y
-por eso sus tres criterios dejan el denominador del backend. D-218 (el código
-MSP como requisito, `tariff_amount`) queda **fuera**, pendiente del autor.
+**Cubre:** ninguno: **sustituida por B21 el 11-10-2026 (ADR-013).** BI-275 a
+BI-277 se retiraron (BI-291, BI-292 y BI-296 dicen lo que queda de ellos). El
+servidor de precios sigue siendo el de B1 (BI-040 a BI-048) y B14 (BI-230).
 
 ### B21 — Un solo catálogo de servicios _(P1, 11-10-2026)_
 
@@ -626,9 +628,18 @@ buscándolo por código. Contra PostgreSQL: la base rechaza una consulta sin
 especialidad, una extensión de orden sobre un insumo, dos consultas con el
 mismo nombre en una especialidad y dos procedimientos con el mismo código.
 
-**Cubre:** BI-278 a BI-298. **Solo interfaz:** BI-291 a BI-296. **Sustituye:**
-BI-185 a BI-188, BI-257, BI-275 a BI-277 (y SP-020, SP-026, SP-030, SP-031,
-ORD-103, ORD-108, ORD-109, ORD-162, ORD-163, ORD-169 en sus módulos).
+**Cubre:** BI-278 a BI-298. **Solo interfaz:** BI-291 a BI-296.
+**Solo servidor:** BI-281, BI-283, BI-287 a BI-290, BI-298. Son garantías y
+lecturas del servidor: el código que ya salió en papel no cambia (BI-281), la
+ficha sirve las determinaciones con sus rangos (BI-283), caja recibe la
+propuesta por código (BI-287), el borrado se rechaza (BI-288; la pantalla sólo
+ofrece desactivar), la pared se agrupa por tipo (BI-289), la bitácora (BI-290) y
+la consulta única por visita (BI-298); en pantalla sólo se ve el mensaje que el
+servidor devuelve.
+
+> **Sustituye** —retirados en su sitio, con su sustituto dicho—: BI-185 a
+> BI-188, BI-257, BI-275 a BI-277, y SP-020, SP-026, SP-030, SP-031, ORD-103,
+> ORD-108, ORD-109, ORD-162, ORD-163 y ORD-169 en sus módulos.
 
 > Las BI-003, BI-004, BI-007 y BI-130 a BI-135 **no son una entrega**: aplican a
 > todas. Una ruta de B1 sin permiso declarado no pasa la prueba de rutas, y una
@@ -1093,7 +1104,7 @@ es falsa, hay requisitos que cambian.
 > (BI-044) y `correctPrice` (BI-230) siguen siendo la operación—, por eso las
 > tres viven **sólo en la interfaz** y su prueba está en `clinica-web`.
 
-- **BI-275** — El sistema DEBERÁ ofrecer una sola pantalla «Servicios y precios»
+- ~~BI-275~~ — El sistema DEBERÁ ofrecer una sola pantalla «Servicios y precios»
   donde se vea y se fije el precio de cada prestación —la consulta de cada tipo
   de atención, cada examen y cada procedimiento, filtrable por clase— en la
   lista particular y en cada lista de pagador activa, sobre la misma `price`
@@ -1102,7 +1113,7 @@ es falsa, hay requisitos que cambian.
   > son Particular más una por lista de pagador activa; editar una celda abre
   > «Fijar precio» (BI-044) o «Corregir precio» (BI-230), que ya existen.
   > **Sustituido el 11-10-2026 por BI-291 y BI-292 (ADR-013).** «Servicios y precios» y «Prestaciones y precios» se juntan en «Servicios».
-- **BI-276** — MIENTRAS exista la pantalla «Servicios y precios», las demás
+- ~~BI-276~~ — MIENTRAS exista la pantalla «Servicios y precios», las demás
   vistas del precio de una prestación —los precios por pagador de su ficha, la
   lista de precios de la ficha del pagador, el diálogo del tipo de atención al
   corregirlo y la pestaña de cobro del examen— DEBERÁN mostrar el precio **sin
@@ -1111,7 +1122,7 @@ es falsa, hay requisitos que cambian.
   > D-217 §2. «Lo que caja propone para estas citas» se retira del diálogo del
   > tipo de atención: era falso con un pagador que no es particular.
   > **Sustituido el 11-10-2026 por BI-292 a BI-294 (ADR-013).** Ya no hay otras puertas: el pagador y la especialidad no editan precios.
-- **BI-277** — El sistema DEBERÁ nombrar en pantalla el código del tarifario del
+- ~~BI-277~~ — El sistema DEBERÁ nombrar en pantalla el código del tarifario del
   MSP «Código MSP», el precio que se exhibe al público «Precios en la pared» y
   la tarifa del IVA del SRI «IVA», y NO DEBERÁ usar «tarifario» ni «tarifa de
   impuesto» para nombrar ninguno de los tres ante quien usa el sistema.
@@ -2334,7 +2345,7 @@ dos registros distintos.**
 
 > Revisión de usabilidad del autor, 04-10-2026. Ver B11.
 
-- **BI-185** — El sistema DEBERÁ mantener las categorías de prestación como un
+- ~~BI-185~~ — El sistema DEBERÁ mantener las categorías de prestación como un
   catálogo administrable —nombre único sin distinguir mayúsculas, clase y estado
   activo—, y DEBERÁ exigir que toda prestación apunte a una categoría del
   catálogo; SI se asigna a una prestación una categoría desactivada, ENTONCES
@@ -2344,7 +2355,7 @@ dos registros distintos.**
   > ofrecerse, y las prestaciones que ya la llevan la siguen leyendo, como
   > BI-014 con la prestación.
   > **Sustituido el 11-10-2026 por BI-278 (ADR-013).** `billable_service_category` se eliminó: el **tipo** del servicio es la clase.
-- **BI-186** — El sistema DEBERÁ guardar la categoría de cada prestación como
+- ~~BI-186~~ — El sistema DEBERÁ guardar la categoría de cada prestación como
   referencia al catálogo y la clase de cada categoría como uno de `CONSULTATION`,
   `PROCEDURE`, `LABORATORY`, `IMAGING`, `SUPPLY` u `OTHER`; y la **base** DEBERÁ
   rechazar una prestación sin categoría, una categoría con otra clase y el
@@ -2352,7 +2363,7 @@ dos registros distintos.**
   > Las clases de examen y procedimiento son las mismas que las de una orden
   > (`service_order_category`), para que una orden y su cobro hablen igual.
   > **Sustituido el 11-10-2026 por BI-278 (ADR-013).**
-- **BI-187** — SI se cambia a una categoría de otra clase una prestación que
+- ~~BI-187~~ — SI se cambia a una categoría de otra clase una prestación que
   cobra un tipo de atención (SP-030; la nueva no es `CONSULTATION`), que está atada a un concepto de procedimiento (la nueva no es
   `PROCEDURE`) o por la que se cobra un examen (la nueva no es el tipo de ese
   examen, ORD-108), ENTONCES DEBERÁ rechazarlo igual. La clase de una categoría
@@ -2393,7 +2404,7 @@ dos registros distintos.**
   > esa misma clase. Antes la regla admitía «laboratorio o imagen» para todo
   > examen, y un electrocardiograma no podía cobrarse como procedimiento.
   > **Sustituido el 11-10-2026 por BI-278 y BI-279 (ADR-013).** El tipo no cambia tras el alta, así que no hay ataduras que proteger de un cambio de clase.
-- **BI-188** — CUANDO se consulte una prestación de clase `LABORATORY` o
+- ~~BI-188~~ — CUANDO se consulte una prestación de clase `LABORATORY` o
   `IMAGING`, el sistema DEBERÁ servir los exámenes del catálogo de exámenes que
   se cobran con ella (desde D-179.1, a lo sumo uno, ORD-163), y de una de clase
   `CONSULTATION`, los tipos de atención que cobra (SP-031) (`exam_definition.billable_service_id`), y NO DEBERÁ
@@ -2438,7 +2449,7 @@ dos registros distintos.**
   > concepto) y `billable_service_written_consent_tie_locked` (marcada ⇒ ni
   > se re-ata ni se borra).
   > **Enmendado el 11-10-2026 (ADR-013, BI-286).** La marca se admite en un servicio de tipo procedimiento con código (`service_written_consent_needs_a_procedure`), y alcanza a todo procedimiento registrado con ese código.
-- **BI-257** — CUANDO quien tiene `billing:price-manage` ate una prestación de
+- ~~BI-257~~ — CUANDO quien tiene `billing:price-manage` ate una prestación de
   clase procedimiento a un concepto del tarifario, o la desate, el sistema
   DEBERÁ guardarlo y servirlo con la prestación, para que caja proponga su
   cargo (BI-151) y la marca de BI-256 lo alcance. Además:
