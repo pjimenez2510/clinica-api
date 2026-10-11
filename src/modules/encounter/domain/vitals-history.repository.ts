@@ -49,6 +49,11 @@ export interface VitalsTaking {
   oxygenSaturation: number | null;
   hemoglobinGDl: number | null;
   hemoglobinCorrectedGDl: number | null;
+  /**
+   * EN-275. The attention belongs to a chart the asked one ABSORBED: its age
+   * was frozen with the duplicate's birth date, which may have been wrong.
+   */
+  fromMergedChart: boolean;
 }
 
 /** EN-272. The blood-pressure line the charts draw, in mmHg. */
@@ -72,6 +77,13 @@ export interface VitalsHistoryRepository {
   bloodPressureReference(
     sites: SiteScopeFilter,
   ): Promise<BloodPressureReference | null>;
+  /**
+   * EN-276. Whether a taking of the SAME predicate exists at a site outside
+   * `sites` — only whether, never which nor how many (EN-121).
+   */
+  hasTakingsOutsideScope(
+    query: Omit<VitalsHistoryQuery, 'limit'>,
+  ): Promise<boolean>;
 }
 
 export const VITALS_HISTORY_REPOSITORY = Symbol('VitalsHistoryRepository');

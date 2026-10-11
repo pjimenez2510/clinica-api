@@ -32,6 +32,8 @@ export const vitalsTakingSchema = z.object({
   oxygenSaturation: z.number().int().nullable(),
   hemoglobinGDl: z.number().nullable(),
   hemoglobinCorrectedGDl: z.number().nullable(),
+  /** EN-275. The attention is of a chart this one absorbed (D-214 §6). */
+  fromMergedChart: z.boolean(),
 });
 
 export const vitalsHistorySchema = z.object({
@@ -48,6 +50,11 @@ export const vitalsHistorySchema = z.object({
   bloodPressureReference: z
     .object({ systolic: z.number().int(), diastolic: z.number().int() })
     .nullable(),
+  /**
+   * EN-276. Takings exist at sites outside the caller's scope: whether, never
+   * how many (EN-121, D-214 §5).
+   */
+  hasTakingsOutsideScope: z.boolean(),
 });
 /** Response of GET /patients/:patientId/vitals. */
 export class VitalsHistoryDto extends createZodDto(vitalsHistorySchema) {}

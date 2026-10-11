@@ -46,6 +46,7 @@ const aTaking = (): VitalsTaking => ({
   oxygenSaturation: 98,
   hemoglobinGDl: null,
   hemoglobinCorrectedGDl: null,
+  fromMergedChart: false,
 });
 
 class FakeTakings implements VitalsHistoryRepository {
@@ -64,6 +65,15 @@ class FakeTakings implements VitalsHistoryRepository {
 
   bloodPressureReference(): Promise<{ systolic: number; diastolic: number }> {
     return Promise.resolve({ systolic: 140, diastolic: 90 });
+  }
+
+  outside: Omit<VitalsHistoryQuery, 'limit'>[] = [];
+  outsideAnswer = true;
+  hasTakingsOutsideScope(
+    query: Omit<VitalsHistoryQuery, 'limit'>,
+  ): Promise<boolean> {
+    this.outside.push(query);
+    return Promise.resolve(this.outsideAnswer);
   }
 }
 
@@ -106,6 +116,22 @@ describe('la evolución de los signos de una ficha', () => {
       bloodPressureReference: { systolic: 140, diastolic: 90 },
     });
     expect(history.items).toHaveLength(1);
+  });
+
+  it('EN-276 pregunta por las tomas fuera del alcance con la misma ficha y las mismas sedes, y con la clínica entera ni pregunta', async () => {
+    const history = await service.forChart('patient-1', requester);
+    expect(history.hasTakingsOutsideScope).toBe(true);
+    expect(takings.outside).toEqual([
+      { patientId: 'patient-1', sites: ['site-north'] },
+    ]);
+
+    takings.outside = [];
+    const wide = await service.forChart('patient-1', {
+      ...requester,
+      sites: 'all',
+    });
+    expect(wide.hasTakingsOutsideScope).toBe(false);
+    expect(takings.outside).toEqual([]);
   });
 
   it('EN-271 deja UNA entrada de bitácora sobre la ficha, no una por toma', async () => {
