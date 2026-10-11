@@ -428,8 +428,8 @@ describe('las especialidades por HTTP', () => {
 
     it('SP-025 la base no deja borrar una consulta que una cita nombra; sin citas se borra y sus excepciones mueren con ella', async () => {
       const specialty = await createSpecialty();
-      const booked = await createConsultation(prisma, { specialtyId: specialty.id, name: 'Control' }); // prettier-ignore
-      const free = await createConsultation(prisma, { specialtyId: specialty.id, name: 'Primera vez' }); // prettier-ignore
+      const booked = await createConsultation(prisma, { specialtyId: specialty.id, name: 'Control', visitKind: 'FOLLOW_UP' }); // prettier-ignore
+      const free = await createConsultation(prisma, { specialtyId: specialty.id, name: 'Primera vez', visitKind: 'FIRST_VISIT' }); // prettier-ignore
       const appointment = await bookAppointmentWith(booked.id);
       await prisma.durationException.create({
         data: { practitionerId, serviceId: free.id, durationMinutes: 40 },

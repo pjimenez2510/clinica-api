@@ -255,7 +255,14 @@ describe('el personal por HTTP', () => {
     name = 'Control',
     durationMinutes = 20,
   ): Promise<{ id: string }> {
-    return createConsultation(prisma, { specialtyId, name, durationMinutes });
+    // BI-298. One per specialty and visit: the name says which visit it is.
+    const visitKind = /primera/i.test(name) ? 'FIRST_VISIT' : 'FOLLOW_UP';
+    return createConsultation(prisma, {
+      specialtyId,
+      name,
+      durationMinutes,
+      visitKind,
+    });
   }
 
   // --- The file ---------------------------------------------------------------

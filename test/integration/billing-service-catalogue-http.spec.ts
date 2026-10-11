@@ -292,7 +292,9 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
           name: 'Consulta de cardiología · Control prenatal',
           specialtyId: cardiology.id,
           durationMinutes: 20,
-          visitKind: 'FOLLOW_UP',
+          // The seed has its «Primera vez» and «Control» (BI-298): one
+          // without visit is still free.
+          visitKind: null,
           selfPayAmount: '25.00',
         })
         .expect(201);
@@ -303,6 +305,44 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
       const found = await list('q=control%20prenatal');
       expect(found.items).toHaveLength(1);
       expect(found.items[0]!.prices.map((price) => price.amount)).toEqual(['25.00']); // prettier-ignore
+    });
+
+    it('BI-298 una segunda «Control» de cardiología se rechaza con 409 nombrando la que existe', async () => {
+      const cardiology = await prisma.specialty.findFirstOrThrow({
+        where: { code: 'cardiologia' },
+      });
+      const twin = {
+        kind: 'CONSULTATION',
+        name: 'Control cardiológico',
+        specialtyId: cardiology.id,
+        durationMinutes: 20,
+        visitKind: 'FOLLOW_UP',
+        selfPayAmount: '25.00',
+      };
+
+      const refused = await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', manager)
+        .send(twin)
+        .expect(409);
+      const problem = refused.body as Problem;
+      expect(problem.code).toBe('CONSULTATION_DUPLICATE');
+      expect(problem.errors?.[0]?.message).toBe(
+        `Ya existe la consulta de ${cardiology.name} · Control: edítela`,
+      );
+
+      // Control: the same request as a first visit of a specialty of its own.
+      const other = await prisma.specialty.create({
+        data: {
+          code: 'cardiologia-pediatrica',
+          name: 'Cardiología pediátrica',
+        },
+      });
+      await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', manager)
+        .send({ ...twin, specialtyId: other.id })
+        .expect(201);
     });
 
     it('BI-280 exige el precio particular; cero vale (D-228)', async () => {

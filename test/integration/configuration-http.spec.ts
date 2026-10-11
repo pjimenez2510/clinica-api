@@ -1236,8 +1236,8 @@ describe('la configuración por HTTP', () => {
           data: { code: 'cardiologia', name: 'Cardiología' },
         });
         // ADR-013: las consultas son servicios con su duración (BI-279).
-        await createConsultation(prisma, { specialtyId: specialty.id, name: 'Control', durationMinutes: 20 }); // prettier-ignore
-        await createConsultation(prisma, { specialtyId: specialty.id, name: 'Primera vez', durationMinutes: 30 }); // prettier-ignore
+        await createConsultation(prisma, { specialtyId: specialty.id, name: 'Control', durationMinutes: 20, visitKind: 'FOLLOW_UP' }); // prettier-ignore
+        await createConsultation(prisma, { specialtyId: specialty.id, name: 'Primera vez', durationMinutes: 30, visitKind: 'FIRST_VISIT' }); // prettier-ignore
 
         const response = await put(`/sites/${site.id}/parameters`, {
           slotAtomMinutes: 20,
