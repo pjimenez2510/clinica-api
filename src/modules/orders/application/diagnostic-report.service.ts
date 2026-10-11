@@ -21,6 +21,7 @@ import {
   type ExpectedAnalytes,
   type OrderPatient,
   type ReportedResult,
+  type OnCall,
   type SafetyPolicy,
   type SiteAccount,
   type UnmatchedWorklistEntry,
@@ -95,6 +96,7 @@ import type { Requester } from './service-order.service';
 const DEFAULT_POLICY: SafetyPolicy = {
   criticalNoticeWithinMinutes: 60,
   criticalEscalationRole: null,
+  criticalEscalationUser: null,
   unmatchedResultOwnerRole: null,
   unmatchedResultDeadlineHours: 24,
   criticalReadBackRequired: false,
@@ -672,6 +674,7 @@ export class DiagnosticReportService {
         noticeDueAt: wait.dueAt,
         overdue: wait.overdue,
         escalateTo: role ? { roleId: role.id, name: role.name } : null,
+        escalateToPerson: personOf(policy),
         afterHours,
         noticeTarget: due.target,
         escalationMissing: due.escalationMissing,
@@ -682,6 +685,7 @@ export class DiagnosticReportService {
             siteId: entry.siteId,
             orderedByUserId: entry.orderedByUserId,
             escalationRoleId: role?.id ?? null,
+            escalationUserId: policy.criticalEscalationUser?.id ?? null,
           },
           { userId: requester.userId, roles },
         ),
@@ -772,6 +776,7 @@ export class DiagnosticReportService {
             noticeDueAt: wait.dueAt,
             overdue: wait.overdue,
             escalateTo: role ? { roleId: role.id, name: role.name } : null,
+            escalateToPerson: personOf(policy),
             afterHours,
             noticeTarget: due.target,
             locateViaOnCall: locate,
@@ -1401,14 +1406,27 @@ function withCorrections(
 }
 
 /**
- * ORD-065, ORD-167. The on-call role each site names, for `staffedOnCall`.
+ * ORD-065, ORD-167, ORD-179. Whom each site names as its on-call —a role or
+ * a person—, for `staffedOnCall`.
  */
 function onCallOf(
   siteIds: readonly string[],
   policies: ReadonlyMap<string, SafetyPolicy>,
-): { siteId: string; roleId: string }[] {
-  return [...new Set(siteIds)].flatMap((siteId) => {
-    const role = policies.get(siteId)?.criticalEscalationRole;
+): OnCall[] {
+  return [...new Set(siteIds)].flatMap((siteId): OnCall[] => {
+    const policy = policies.get(siteId);
+    if (policy?.criticalEscalationUser) {
+      return [{ siteId, userId: policy.criticalEscalationUser.id }];
+    }
+    const role = policy?.criticalEscalationRole;
     return role ? [{ siteId, roleId: role.id }] : [];
   });
+}
+
+/** ORD-179. The on-call person a site names, as the worklists show it. */
+function personOf(
+  policy: SafetyPolicy,
+): { userId: string; name: string } | null {
+  const person = policy.criticalEscalationUser;
+  return person ? { userId: person.id, name: person.name } : null;
 }

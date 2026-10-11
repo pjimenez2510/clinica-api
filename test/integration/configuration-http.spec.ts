@@ -772,6 +772,7 @@ describe('la configuración por HTTP', () => {
         cancelledRetention: 'NEVER',
         criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
+        criticalEscalationUserId: null,
         criticalReadBackRequired: false,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
@@ -807,6 +808,7 @@ describe('la configuración por HTTP', () => {
         cancelledRetention: 'NEVER',
         criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
+        criticalEscalationUserId: null,
         criticalReadBackRequired: false,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
@@ -1363,6 +1365,7 @@ describe('la configuración por HTTP', () => {
         cancelledRetention: 'NEVER',
         criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
+        criticalEscalationUserId: null,
         criticalReadBackRequired: false,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
@@ -1489,6 +1492,8 @@ describe('la configuración por HTTP', () => {
         // resultados; la justificación, en la prueba de columnas de abajo.
         'criticalNoticeWithinMinutes',
         'criticalEscalationRoleId',
+        // ORD-179 (D-207 §2): la guardia nominal.
+        'criticalEscalationUserId',
         // ORD-177 (D-207 §2): el read-back, ajuste de la sede.
         'criticalReadBackRequired',
         'unmatchedResultOwnerRoleId',
@@ -1547,6 +1552,9 @@ describe('la configuración por HTTP', () => {
         // constancia del aviso, y la constancia es inmutable por disparador.
         // Vacíos de fábrica: la cola dice «sin plazo» en vez de inventarlo.
         'critical_escalation_role_id',
+        // ORD-179 (D-207 §2). Una PERSONA a la que escalar en vez de un rol:
+        // lo mismo que el rol, decide a quién, no si hay constancia.
+        'critical_escalation_user_id',
         'critical_notice_within_minutes',
         // ORD-177 (D-207 §2, por confirmar con un clínico). El read-back es un
         // PASO del aviso que la sede elige, no una de las tres garantías de

@@ -34,6 +34,7 @@ import type {
   OrderPatient,
   ReportQuery,
   ResultQuery,
+  OnCall,
   SafetyPolicy,
   SiteAccount,
   SafetyWorklistQuery,
@@ -801,6 +802,9 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         siteId: true,
         criticalNoticeWithinMinutes: true,
         criticalEscalationRole: { select: { id: true, name: true } },
+        criticalEscalationUser: {
+          select: { id: true, firstName: true, lastName: true },
+        },
         unmatchedResultOwnerRole: { select: { id: true, name: true } },
         unmatchedResultDeadlineHours: true,
         criticalReadBackRequired: true,
@@ -813,6 +817,12 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         {
           criticalNoticeWithinMinutes: row.criticalNoticeWithinMinutes,
           criticalEscalationRole: row.criticalEscalationRole,
+          criticalEscalationUser: row.criticalEscalationUser
+            ? {
+                id: row.criticalEscalationUser.id,
+                name: fullName(row.criticalEscalationUser),
+              }
+            : null,
           unmatchedResultOwnerRole: row.unmatchedResultOwnerRole,
           unmatchedResultDeadlineHours: row.unmatchedResultDeadlineHours,
           criticalReadBackRequired: row.criticalReadBackRequired,
@@ -899,15 +909,23 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     return users.map((user) => ({ id: user.id, name: fullName(user) }));
   }
 
-  /** ORD-065, ORD-167. Sites whose on-call role somebody can answer for. */
-  async staffedOnCall(
-    onCall: readonly { siteId: string; roleId: string }[],
-  ): Promise<ReadonlySet<string>> {
+  /**
+   * ORD-065, ORD-167, ORD-179. Sites whose on-call somebody can answer for:
+   * an active account holding `record:read`, through a live grant of an
+   * active role, at that site or at all — any holder of the on-call role, or
+   * the on-call person themselves.
+   */
+  async staffedOnCall(onCall: readonly OnCall[]): Promise<ReadonlySet<string>> {
     if (onCall.length === 0) return new Set();
+    const roleIds = onCall.flatMap((each) => ('roleId' in each ? [each.roleId] : [])); // prettier-ignore
+    const userIds = onCall.flatMap((each) => ('userId' in each ? [each.userId] : [])); // prettier-ignore
 
     const holders = await this.prisma.userRoleGrant.findMany({
       where: {
-        roleId: { in: [...new Set(onCall.map((pair) => pair.roleId))] },
+        OR: [
+          { roleId: { in: [...new Set(roleIds)] } },
+          { userId: { in: [...new Set(userIds)] } },
+        ],
         revokedAt: null,
         user: { active: true },
         role: {
@@ -915,14 +933,16 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
           permissions: { some: { permissionCode: 'record:read' } },
         },
       },
-      select: { roleId: true, siteId: true },
+      select: { roleId: true, userId: true, siteId: true },
     });
     return new Set(
       onCall
         .filter((pair) =>
           holders.some(
             (held) =>
-              held.roleId === pair.roleId &&
+              ('roleId' in pair
+                ? held.roleId === pair.roleId
+                : held.userId === pair.userId) &&
               (held.siteId === null || held.siteId === pair.siteId),
           ),
         )

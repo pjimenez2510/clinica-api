@@ -210,6 +210,13 @@ export interface CriticalNoticeEdit {
   trail: { ip?: string; userAgent?: string };
 }
 
+/**
+ * ORD-065, ORD-167, ORD-179. Whom a site names as its on-call for critical
+ * values: a role, or a person (D-207 §2) — never both.
+ */
+export type OnCall =
+  { siteId: string; roleId: string } | { siteId: string; userId: string };
+
 /** ORD-175. An account of a site, as the caller of a notice is chosen. */
 export interface SiteAccount {
   id: string;
@@ -327,6 +334,8 @@ export interface SafetyPolicy {
   /** ORD-063. Always set: 60 by default, changeable, not removable (D-111 §1). */
   criticalNoticeWithinMinutes: number;
   criticalEscalationRole: { id: string; name: string } | null;
+  /** ORD-179 (D-207 §2). A person as the on-call, instead of a role. */
+  criticalEscalationUser: { id: string; name: string } | null;
   /** `null`: the practitioner who placed the order (D-050 §4). */
   unmatchedResultOwnerRole: { id: string; name: string } | null;
   unmatchedResultDeadlineHours: number;
@@ -367,6 +376,8 @@ export interface CriticalWorklistEntry extends FlaggedResultEntry {
   overdue: CriticalWait['overdue'];
   /** The site's on-call role, when it names one. */
   escalateTo: { roleId: string; name: string } | null;
+  /** ORD-179. The person the site names as its on-call, when it names one. */
+  escalateToPerson: { userId: string; name: string } | null;
   /** ORD-068. The site is out of hours now. */
   afterHours: boolean;
   /** ORD-065, ORD-068. Whom the notice is due to now. */
@@ -478,6 +489,8 @@ export interface CorrectionWorklistEntry {
   overdue: CriticalWait['overdue'];
   /** The site's on-call role, when it names one. */
   escalateTo: { roleId: string; name: string } | null;
+  /** ORD-179. The person the site names as its on-call, when it names one. */
+  escalateToPerson: { userId: string; name: string } | null;
   /** ORD-068. The site is out of hours now. */
   afterHours: boolean;
   /** ORD-153, ORD-154. Whom the notice of the correction is due to now. */
@@ -712,9 +725,7 @@ export interface DiagnosticReportRepository {
    * site or at every site, with `record:read` — without it the critical
    * worklist cannot even be read. A role nobody holds escalates to nobody.
    */
-  staffedOnCall(
-    onCall: readonly { siteId: string; roleId: string }[],
-  ): Promise<ReadonlySet<string>>;
+  staffedOnCall(onCall: readonly OnCall[]): Promise<ReadonlySet<string>>;
 }
 
 /** Injection token. The application never names the adapter. */

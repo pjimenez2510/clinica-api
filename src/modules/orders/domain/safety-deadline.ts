@@ -139,12 +139,17 @@ export function noticeDueToRequester(
     siteId: string;
     orderedByUserId: string;
     escalationRoleId: string | null;
+    /** ORD-179 (D-207 §2). The on-call person, when the site names one. */
+    escalationUserId?: string | null;
   },
   requester: { userId: string; roles: readonly HeldRole[] },
 ): boolean {
   if (entry.escalationMissing) return true;
   if (entry.target !== 'ON_CALL_ROLE') {
     return entry.orderedByUserId === requester.userId;
+  }
+  if (entry.escalationUserId) {
+    return entry.escalationUserId === requester.userId;
   }
   return requester.roles.some(
     (held) =>

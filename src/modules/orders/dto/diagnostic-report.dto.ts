@@ -412,6 +412,8 @@ export const criticalResultSchema = flaggedResultSchema.extend({
   noticeDueAt: z.iso.datetime(),
   overdue: z.boolean(),
   escalateTo: z.object({ roleId: z.uuid(), name: z.string() }).nullable(),
+  /** ORD-179. The person the site names as its on-call, when it names one. */
+  escalateToPerson: z.object({ userId: z.uuid(), name: z.string() }).nullable(),
   /** ORD-065. The chain's first critical version, which the deadline runs from. */
   firstObservedAt: z.iso.datetime(),
   /** ORD-065. Who placed the order: the first to tell, by name. */
@@ -493,6 +495,8 @@ export const correctionResultSchema = z.object({
   noticeDueAt: z.iso.datetime(),
   overdue: z.boolean(),
   escalateTo: z.object({ roleId: z.uuid(), name: z.string() }).nullable(),
+  /** ORD-179. The person the site names as its on-call, when it names one. */
+  escalateToPerson: z.object({ userId: z.uuid(), name: z.string() }).nullable(),
   /** ORD-068. The site is out of hours now. */
   afterHours: z.boolean(),
   /** ORD-153, ORD-154. Whom the notice of the correction is due to now. */

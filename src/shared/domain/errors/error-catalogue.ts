@@ -1327,6 +1327,9 @@ export const DOMAIN_ERROR_CODES = [
   // ─── Configuration (ORD-046, ORD-065). El rol que responde de una cola de
   //   resultados tiene que poder trabajarla: `record:read` y `result:write`.
   'ROLE_CANNOT_WORK_RESULTS',
+  // ORD-179 (D-207 §2). La persona de guardia de críticos no puede atender la
+  // cola en esa sede: cuenta inactiva o sin ver la historia y registrar.
+  'PERSON_CANNOT_WORK_RESULTS',
   // ─── Documents, H1 a H4 (DOC-012, DOC-014, DOC-037, DOC-050 a DOC-053).
   // El documento imprimible y el artefacto que queda.
   //
