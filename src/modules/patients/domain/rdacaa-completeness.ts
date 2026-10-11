@@ -103,15 +103,18 @@ export interface RdacaaChart {
  * argument that kept gender identity (PA-032) and the country (PA-053) out of
  * it. D-037, resolved on 17-08-2026, option A.
  *
- * ⚠️ A MISSING ETHNICITY STILL DEMANDS IT, and that is the half that is easy to
- * lose: until somebody has asked the question, nobody knows whether the field
- * applies. Dropping it there would let a chart read as complete and then start
- * missing the nationality the moment «Indígena» is recorded — the indicator
- * would go backwards without anything changing about the report.
+ * ⚠️ A MISSING ETHNICITY DOES NOT DEMAND IT (PA-032 amended in round 4, at
+ * the request of the product review of `feat/f02-datos-faltantes`; D-037
+ * counted it until then). Only what applies to what is already recorded
+ * counts: with no ethnicity the chart said «Faltan 3» and dropped to 1 on
+ * choosing «Mestizo/a». The chart still does not read as complete — the
+ * missing ethnicity counts itself — and recording «Indígena» brings the
+ * nationality back: the indicator never reads complete without it. (What
+ * blocks the first close and the report on this indicator is `encounter`'s,
+ * EN-115, not built yet.)
  */
 function nationalityIsDemanded(chart: RdacaaChart): boolean {
   if (!ethnicityIsDemanded(chart)) return false;
-  if (chart.ethnicityConceptId === null) return true;
   return isIndigenousEthnicity(chart.ethnicityCode);
 }
 

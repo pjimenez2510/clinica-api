@@ -1132,8 +1132,8 @@ es falsa, hay requisitos que cambian.
   >
   > **Enmendado el 10-10-2026 (D-205, `feat/f01-cedula-primero`):** el alta
   > desde la reserva DEBERÁ pedir **lo mismo que desde Pacientes** —los datos
-  > del RDACAA y, al final, el consentimiento de datos (PD-010)—, opcionales
-  > igual que allí; nacía sin ellos y obligaba a completarlos después en la
+  > del RDACAA (el consentimiento de datos, PD-010, se retiró con D-221)—,
+  > opcionales igual que allí; nacía sin ellos y obligaba a completarlos después en la
   > ficha. Y CUANDO el buscador de la reserva no encuentre a nadie, «Registrar»
   > DEBERÁ abrir este mismo paso con lo tecleado ya puesto (PA-074); CUANDO la
   > cédula tecleada en el alta ya sea de una ficha vigente, elegirla DEBERÁ

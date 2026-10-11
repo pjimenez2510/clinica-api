@@ -3,7 +3,7 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import type {
   ChartLookup,
-  ConsentTextView,
+  PrivacyNoticeView,
   Requester,
   StaffName,
 } from '../domain/privacy.repository';
@@ -17,7 +17,7 @@ export type Db = PrismaClient | Prisma.TransactionClient;
  * (ADR-011; same pattern as `documents/infrastructure/prisma-document-source.reader.ts`).
  */
 
-/** PD-015. */
+/** PD-075. */
 export async function chartLookup(
   db: Db,
   patientId: string,
@@ -106,20 +106,20 @@ export async function patientNames(
   );
 }
 
-export const CONSENT_TEXT_SELECT = {
+export const NOTICE_SELECT = {
   id: true,
   version: true,
   body: true,
   publishedAt: true,
   publishedBy: true,
-} satisfies Prisma.ConsentTextVersionSelect;
+} satisfies Prisma.PrivacyNoticeVersionSelect;
 
-export function toTextView(
-  row: Prisma.ConsentTextVersionGetPayload<{
-    select: typeof CONSENT_TEXT_SELECT;
+export function toNoticeView(
+  row: Prisma.PrivacyNoticeVersionGetPayload<{
+    select: typeof NOTICE_SELECT;
   }>,
   names: Map<string, StaffName>,
-): ConsentTextView {
+): PrivacyNoticeView {
   return {
     id: row.id,
     version: row.version,
@@ -131,9 +131,9 @@ export function toTextView(
 
 /**
  * One row of `access_audit`, written INSIDE the caller's transaction (PD-006,
- * PD-017, PD-037, PD-043). Not through `AccessAuditRecorder`: its contract is
- * to log and never throw, and these acts must fail closed — a consent or an
- * export with no trail row must not exist. Same as `resetMfa` (AU-035).
+ * PD-037, PD-043, PD-074). Not through `AccessAuditRecorder`: its contract is
+ * to log and never throw, and these acts must fail closed — an authorization
+ * or an export with no trail row must not exist. Same as `resetMfa` (AU-035).
  *
  * Identifiers only, never `before`/`after`: the base refuses a payload for
  * these resource types (`access_audit_payload_only_for_declared_resources`).
@@ -142,8 +142,9 @@ export async function writeTrail(
   tx: Prisma.TransactionClient,
   entry: {
     resourceType:
-      | 'consent_text_version'
-      | 'patient_consent'
+      | 'privacy_notice_version'
+      | 'patient_authorization'
+      | 'patient_authorization_revocation'
       | 'data_subject_request'
       | 'clinical_record_copy_review'
       | 'patient';

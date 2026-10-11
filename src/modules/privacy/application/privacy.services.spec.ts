@@ -6,7 +6,6 @@ import {
   startOfClinicalDay,
   type ClinicalDate,
 } from '../../../shared/domain/clinic-time';
-import { PatientMergedError } from '../../../shared/domain/errors/patient-merged.error';
 import {
   answerProposal,
   clinicalRecordCopyProposal,
@@ -17,47 +16,25 @@ import {
   ClinicalRecordCopyAlreadyReviewedError,
   ClinicalRecordCopyInvalidError,
   ClinicalRecordCopyReviewRequiredError,
-  ConsentTextInvalidError,
-  ConsentTextNotPublishedError,
-  ConsentTextOutdatedError,
   DataExportNotApplicableError,
   DataRequestAlreadyAnsweredError,
   DataRequestNotFoundError,
   DataRequestPatientDeceasedError,
   DataRequestPatientNotDeceasedError,
   DataRequestReceivedInFutureError,
-  DataSubjectNotFoundError,
 } from '../domain/privacy.errors';
 import type {
-  ConsentRepository,
   DataRequestView,
   DataSubjectRequestRepository,
   NewDataRequest,
   Requester,
 } from '../domain/privacy.repository';
 
-import { ConsentService } from './consent.service';
 import { DataSubjectRequestsService } from './data-subject-requests.service';
 
 const WHO: Requester = { userId: 'u-1' };
 const NOW = new Date();
 const TODAY = clinicalDateOf(NOW);
-
-function consentRepository(
-  overrides: Partial<ConsentRepository> = {},
-): ConsentRepository {
-  return {
-    chartOf: vi.fn().mockResolvedValue({ status: 'active' }),
-    currentText: vi.fn().mockResolvedValue(null),
-    texts: vi.fn().mockResolvedValue([]),
-    currentVersionConsents: vi.fn().mockResolvedValue(0),
-    correct: vi.fn(),
-    publish: vi.fn(),
-    record: vi.fn(),
-    consentsOf: vi.fn().mockResolvedValue([]),
-    ...overrides,
-  };
-}
 
 function requestView(
   overrides: Partial<DataRequestView> = {},
@@ -133,95 +110,6 @@ function requestRepository(
     ...overrides,
   };
 }
-
-describe('ConsentService', () => {
-  it('PD-004 rechaza un texto en blanco o de más de 20 000 caracteres sin llegar al repositorio', async () => {
-    const publish = vi.fn();
-    const service = new ConsentService(consentRepository({ publish }));
-
-    for (const body of [' \n ', 'x'.repeat(20_001)]) {
-      await expect(service.publish(body, WHO)).rejects.toBeInstanceOf(
-        ConsentTextInvalidError,
-      );
-    }
-    expect(publish).not.toHaveBeenCalled();
-  });
-
-  it('PD-001 sin texto publicado, no hay vigente y eso no es un error', async () => {
-    const service = new ConsentService(consentRepository());
-    await expect(service.currentText()).resolves.toBeNull();
-  });
-
-  it('PD-012 consentir una versión que no existe es CONSENT_TEXT_NOT_PUBLISHED', async () => {
-    const service = new ConsentService(
-      consentRepository({
-        record: vi.fn().mockResolvedValue({ status: 'unknown-version' }),
-      }),
-    );
-    await expect(
-      service.record(
-        {
-          patientId: 'p-1',
-          textVersionId: 't-1',
-          medium: 'ON_SCREEN',
-          grantedBy: 'HOLDER',
-        },
-        WHO,
-      ),
-    ).rejects.toBeInstanceOf(ConsentTextNotPublishedError);
-  });
-
-  it('PD-012 una versión desfasada se rechaza nombrando la vigente', async () => {
-    const service = new ConsentService(
-      consentRepository({
-        record: vi
-          .fn()
-          .mockResolvedValue({ status: 'outdated', currentVersion: 3 }),
-      }),
-    );
-    const attempt = service.record(
-      {
-        patientId: 'p-1',
-        textVersionId: 't-1',
-        medium: 'ON_SCREEN',
-        grantedBy: 'HOLDER',
-      },
-      WHO,
-    );
-    await expect(attempt).rejects.toBeInstanceOf(ConsentTextOutdatedError);
-    await expect(attempt).rejects.toMatchObject({ currentVersion: 3 });
-  });
-
-  it('PD-015 no escribe sobre una ficha inexistente ni sobre una absorbida', async () => {
-    const consent = {
-      patientId: 'p-1',
-      textVersionId: 't-1',
-      medium: 'ON_SCREEN' as const,
-      grantedBy: 'HOLDER' as const,
-    };
-    const recordOnMissing = vi.fn();
-    const missing = consentRepository({
-      chartOf: vi.fn().mockResolvedValue({ status: 'missing' }),
-      record: recordOnMissing,
-    });
-    await expect(
-      new ConsentService(missing).record(consent, WHO),
-    ).rejects.toBeInstanceOf(DataSubjectNotFoundError);
-
-    const recordOnMerged = vi.fn();
-    const merged = consentRepository({
-      chartOf: vi
-        .fn()
-        .mockResolvedValue({ status: 'merged', survivingMrn: 'HC0000000002' }),
-      record: recordOnMerged,
-    });
-    await expect(
-      new ConsentService(merged).record(consent, WHO),
-    ).rejects.toBeInstanceOf(PatientMergedError);
-    expect(recordOnMissing).not.toHaveBeenCalled();
-    expect(recordOnMerged).not.toHaveBeenCalled();
-  });
-});
 
 const record = vi.fn().mockResolvedValue(undefined);
 /** DOC-122. The frozen copy is `documents`'; here, a marker. */
@@ -445,28 +333,6 @@ describe('corregir en privacidad (D-127)', () => {
     isCorrection: false,
     copyPeriod: null,
   };
-
-  it('PD-044 traduce «no existe» y «ya corregido» a sus códigos', async () => {
-    for (const [status, code] of [
-      ['missing', 'CONSENT_NOT_FOUND'],
-      ['already-corrected', 'CONSENT_ALREADY_CORRECTED'],
-    ] as const) {
-      const service = new ConsentService(
-        consentRepository({ correct: vi.fn().mockResolvedValue({ status }) }),
-      );
-      await expect(
-        service.correct(
-          {
-            patientId: 'p-1',
-            consentId: 'c-1',
-            medium: 'SIGNED_PAPER',
-            grantedBy: 'HOLDER',
-          },
-          WHO,
-        ),
-      ).rejects.toMatchObject({ code });
-    }
-  });
 
   it('PD-046 no calcula el vencimiento con lo leído antes del candado: pasa sólo lo que cambia y lo recalcula el repositorio', async () => {
     const received = new Date(NOW.getTime() - 2 * 86_400_000);

@@ -14,7 +14,6 @@ import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
 import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/role-permission.registry';
 import { legalDueDate } from '../../src/modules/privacy/domain/legal-due-date';
-import { CONSENT_TEXT_LOCK } from '../../src/modules/privacy/infrastructure/prisma-consent.repository';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import {
   addDays,
@@ -57,21 +56,15 @@ interface TextBody {
   publishedBy: { id: string; fullName: string };
 }
 
-interface ConsentBody {
+interface AuthorizationBody {
   id: string;
   patientId: string;
-  textVersion: TextBody;
-  isCurrentVersion: boolean;
-  /** PD-044. The consent this one corrects, and whether another corrects it. */
-  supersedesId: string | null;
-  isSuperseded: boolean;
-  medium: string;
-  grantedBy: string;
+  purpose: string;
+  channel: string | null;
   recordedAt: string;
   recordedBy: { id: string; fullName: string };
-  /** PD-044. Who TOOK the consent and when: the original's, on a correction. */
-  takenAt: string;
-  takenBy: { id: string; fullName: string };
+  revokedAt: string | null;
+  revokedBy: { id: string; fullName: string } | null;
 }
 
 interface AnswerBody {
@@ -101,14 +94,15 @@ interface RequestBody {
 
 /**
  * The privacy module over HTTP, with real sessions against a real PostgreSQL
- * (PD1 to PD4). The guarantees that are the base's alone — immutability, the
- * consecutive version — are in `privacy-immutable.spec.ts`.
+ * (D1, D3, D4, D8). The guarantees that are the base's alone — immutability,
+ * the consecutive version, one standing authorization — are in
+ * `privacy-immutable.spec.ts`.
  *
  * TWO ACCOUNTS. The officer holds the two privacy permissions through a role
  * created here, with exactly the two plus `patient:read`/`patient:write` —
  * the shipped ADMIN carries the two but not `patient:read` (D-083 §4, D-098
  * §6), and its own describe pins what that lets it do. The desk holds
- * the shipped RECEPCION role, which is what proves the consent rides on
+ * the shipped RECEPCION role, which is what proves the authorizations ride on
  * `patient:write` and the rest is closed to it.
  */
 describe('privacy por HTTP', () => {
@@ -157,7 +151,7 @@ describe('privacy por HTTP', () => {
       data: [
         'patient:read',
         'patient:write',
-        'patient:consent-text',
+        'privacy:notice',
         'patient:data-requests',
         // Only for PD-040's real merge: the export must follow PA-043's move
         // of the documents, which only the real merge performs.
@@ -241,7 +235,7 @@ describe('privacy por HTTP', () => {
   }
 
   async function publish(body: string): Promise<TextBody> {
-    const response = await post('/consent-texts', { body }).expect(201);
+    const response = await post('/notices', { body }).expect(201);
     return response.body as TextBody;
   }
 
@@ -289,28 +283,17 @@ describe('privacy por HTTP', () => {
    * has reached the point the race is about. A condition polled, not a sleep;
    * bounded, so a request that never blocks fails the test instead of hanging.
    */
-  async function untilSomeoneWaitsOnALock(
-    kind: 'consent-text-advisory' | 'row-or-unique',
-  ): Promise<void> {
+  async function untilSomeoneWaitsOnALock(): Promise<void> {
     for (let attempt = 0; attempt < 500; attempt += 1) {
       // In THIS database only, and on the lock the race is about: the server
       // is shared with other sessions' databases, whose waits would otherwise
       // count as ours.
-      const [row] =
-        kind === 'consent-text-advisory'
-          ? await prisma.$queryRaw<{ waiting: bigint }[]>`
-              SELECT count(*) AS waiting
-                FROM pg_locks l JOIN pg_stat_activity a USING (pid)
-               WHERE NOT l.granted
-                 AND a.datname = current_database()
-                 AND l.locktype = 'advisory'
-                 AND l.objid = ${CONSENT_TEXT_LOCK}`
-          : await prisma.$queryRaw<{ waiting: bigint }[]>`
-              SELECT count(*) AS waiting
-                FROM pg_locks l JOIN pg_stat_activity a USING (pid)
-               WHERE NOT l.granted
-                 AND a.datname = current_database()
-                 AND l.locktype = 'transactionid'`;
+      const [row] = await prisma.$queryRaw<{ waiting: bigint }[]>`
+        SELECT count(*) AS waiting
+          FROM pg_locks l JOIN pg_stat_activity a USING (pid)
+         WHERE NOT l.granted
+           AND a.datname = current_database()
+           AND l.locktype = 'transactionid'`;
       if (Number(row!.waiting) > 0) return;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
@@ -335,7 +318,7 @@ describe('privacy por HTTP', () => {
   }
 
   describe('D-083 §4 qué roles de fábrica traen los permisos de privacy', () => {
-    it('PD-002 PD-030 ADMIN recibe patient:consent-text y patient:data-requests al sincronizar; RECEPCION, ninguno', async () => {
+    it('PD-002 PD-030 ADMIN recibe privacy:notice y patient:data-requests al sincronizar; RECEPCION, ninguno', async () => {
       const held = async (code: string) =>
         (
           await prisma.rolePermission.findMany({
@@ -346,15 +329,12 @@ describe('privacy por HTTP', () => {
 
       const admin = await held('ADMIN');
       expect(admin).toEqual(
-        expect.arrayContaining([
-          'patient:consent-text',
-          'patient:data-requests',
-        ]),
+        expect.arrayContaining(['privacy:notice', 'patient:data-requests']),
       );
       const desk = await held('RECEPCION');
-      expect(desk).not.toContain('patient:consent-text');
+      expect(desk).not.toContain('privacy:notice');
       expect(desk).not.toContain('patient:data-requests');
-      // Control: RECEPCION does hold what records the consent (PD-010).
+      // Control: RECEPCION does hold what records an authorization (PD-068).
       expect(desk).toContain('patient:write');
     });
 
@@ -397,12 +377,13 @@ describe('privacy por HTTP', () => {
     });
   });
 
-  // --- PD1 -----------------------------------------------------------------------
+  // --- D1 ------------------------------------------------------------------------
 
-  describe('PD1 el texto del consentimiento', () => {
-    it('PD-001 PD-002 publicar crea la versión siguiente, que pasa a ser la vigente, y la anterior sigue igual', async () => {
-      const first = await publish('Texto uno');
-      const second = await publish('Texto dos');
+  describe('D1 el aviso de privacidad', () => {
+    it('PD-001 PD-002 publicar crea la versión siguiente, que encabeza la lista, y la anterior sigue igual', async () => {
+      await get('/notices').expect(200, { items: [] });
+      const first = await publish('Aviso uno');
+      const second = await publish('Aviso dos');
 
       expect([first.version, second.version]).toEqual([1, 2]);
       expect(second.publishedBy).toEqual({
@@ -410,68 +391,39 @@ describe('privacy por HTTP', () => {
         fullName: 'Gabriela Mera',
       });
 
-      const current = await get('/consent-texts/current', deskToken).expect(
-        200,
-      );
-      expect((current.body as { current: TextBody }).current.version).toBe(2);
-
-      const all = await get('/consent-texts').expect(200);
+      const all = await get('/notices').expect(200);
       const items = (all.body as { items: TextBody[] }).items;
       expect(items.map((t) => [t.version, t.body])).toEqual([
-        [2, 'Texto dos'],
-        [1, 'Texto uno'],
+        [2, 'Aviso dos'],
+        [1, 'Aviso uno'],
       ]);
     });
 
-    it('PD-001 sin texto publicado, el vigente es null y no un error', async () => {
-      const response = await get('/consent-texts/current', deskToken).expect(
-        200,
-      );
-      expect(response.body).toEqual({ current: null });
-    });
-
-    it('PD-012 consentir una versión que no existe es CONSENT_TEXT_NOT_PUBLISHED', async () => {
-      await publish('Texto uno');
-      const patient = await createPatient(prisma);
-      const response = await post(
-        `/patients/${patient.id}/consents`,
-        {
-          textVersionId: crypto.randomUUID(),
-          medium: 'ON_SCREEN',
-          grantedBy: 'HOLDER',
-        },
-        deskToken,
-      ).expect(404);
-      expect((response.body as Problem).code).toBe(
-        'CONSENT_TEXT_NOT_PUBLISHED',
-      );
-    });
-
-    it('PD-004 un texto en blanco o demasiado largo se rechaza sin publicar nada', async () => {
+    it('PD-004 un aviso en blanco o demasiado largo se rechaza sin publicar nada', async () => {
       for (const body of ['   ', 'x'.repeat(20_001)]) {
-        const response = await post('/consent-texts', { body }).expect(422);
-        expect((response.body as Problem).code).toBe('CONSENT_TEXT_INVALID');
+        const response = await post('/notices', { body }).expect(422);
+        expect((response.body as Problem).code).toBe('PRIVACY_NOTICE_INVALID');
       }
-      expect(await prisma.consentTextVersion.count()).toBe(0);
+      expect(await prisma.privacyNoticeVersion.count()).toBe(0);
       // Positive control: the limit itself is accepted.
-      await post('/consent-texts', { body: 'x'.repeat(20_000) }).expect(201);
+      await post('/notices', { body: 'x'.repeat(20_000) }).expect(201);
     });
 
-    it('PD-005 si otra escritura gana el número mientras se publica, la publicación recibe CONSENT_TEXT_VERSION_CONFLICT y no escribe nada', async () => {
-      await publish('Texto uno');
+    it('PD-005 si otra escritura gana el número mientras se publica, la publicación recibe PRIVACY_NOTICE_VERSION_CONFLICT y no escribe nada', async () => {
+      await publish('Aviso uno');
       const author = await createUser(prisma);
 
       // Another writer holds version 2, uncommitted, while the request runs.
       let response: request.Response | undefined;
       await prisma.$transaction(
         async (tx) => {
-          await tx.consentTextVersion.create({
+          await tx.privacyNoticeVersion.create({
             data: { version: 2, body: 'El otro', publishedBy: author.id },
           });
-          const inFlight = post('/consent-texts', { body: 'Este' }).then(
+          const inFlight = post('/notices', { body: 'Este' }).then(
             (r) => (response = r),
           );
-          await untilSomeoneWaitsOnALock('row-or-unique');
+          await untilSomeoneWaitsOnALock();
           void inFlight;
         },
         { timeout: 20_000 },
@@ -483,24 +435,24 @@ describe('privacy por HTTP', () => {
 
       expect(response!.status).toBe(409);
       expect((response!.body as Problem).code).toBe(
-        'CONSENT_TEXT_VERSION_CONFLICT',
+        'PRIVACY_NOTICE_VERSION_CONFLICT',
       );
-      const versions = await prisma.consentTextVersion.findMany({
+      const versions = await prisma.privacyNoticeVersion.findMany({
         orderBy: { version: 'asc' },
         select: { version: true, body: true },
       });
       expect(versions).toEqual([
-        { version: 1, body: 'Texto uno' },
+        { version: 1, body: 'Aviso uno' },
         { version: 2, body: 'El otro' },
       ]);
       // Control: once nobody holds the number, the same publication goes in.
-      await post('/consent-texts', { body: 'Este' }).expect(201);
+      await post('/notices', { body: 'Este' }).expect(201);
     });
 
     it('PD-005 dos publicaciones desde la aplicación a la vez se ordenan: las dos salen, con números seguidos', async () => {
       const [a, b] = await Promise.all([
-        post('/consent-texts', { body: 'A' }),
-        post('/consent-texts', { body: 'B' }),
+        post('/notices', { body: 'A' }),
+        post('/notices', { body: 'B' }),
       ]);
       expect([a.status, b.status]).toEqual([201, 201]);
       expect(
@@ -508,454 +460,286 @@ describe('privacy por HTTP', () => {
       ).toEqual([1, 2]);
     });
 
-    it('PD-012 un consentimiento que llega mientras se publica una versión nueva espera y se rechaza: no queda ligado a la superada', async () => {
-      const first = await publish('Texto uno');
-      const patient = await createPatient(prisma);
-      const author = await createUser(prisma);
-
-      let response: request.Response | undefined;
-      await prisma.$transaction(
-        async (tx) => {
-          // What `publish` does: the exclusive lock, then the next version.
-          await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CONSENT_TEXT_LOCK}::bigint)`;
-          await tx.consentTextVersion.create({
-            data: { version: 2, body: 'Texto dos', publishedBy: author.id },
-          });
-          const inFlight = post(
-            `/patients/${patient.id}/consents`,
-            {
-              textVersionId: first.id,
-              medium: 'ON_SCREEN',
-              grantedBy: 'HOLDER',
-            },
-            deskToken,
-          ).then((r) => (response = r));
-          await untilSomeoneWaitsOnALock('consent-text-advisory');
-          void inFlight;
-        },
-        { timeout: 20_000 },
-      );
-      await new Promise<void>((resolve) => {
-        const check = () => (response ? resolve() : setImmediate(check));
-        check();
-      });
-
-      expect(response!.status).toBe(409);
-      expect((response!.body as Problem).code).toBe('CONSENT_TEXT_OUTDATED');
-      expect(await prisma.patientConsent.count()).toBe(0);
-    });
-
-    it('PD-012 el instante del consentimiento y el de la publicación siguen el orden del bloqueo, no el del BEGIN', async () => {
-      const first = await publish('Texto uno');
-      const patient = await createPatient(prisma);
-      const author = await createUser(prisma);
-
-      await prisma.$transaction(async (tx) => {
-        // The publication BEGINS first…
-        await tx.$queryRaw`SELECT 1`;
-        // …a consent is recorded and committed meanwhile…
-        await post(
-          `/patients/${patient.id}/consents`,
-          {
-            textVersionId: first.id,
-            medium: 'SIGNED_PAPER',
-            grantedBy: 'HOLDER',
-          },
-          deskToken,
-        ).expect(201);
-        // …and then the publication takes the lock and inserts.
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CONSENT_TEXT_LOCK}::bigint)`;
-        await tx.consentTextVersion.create({
-          data: { version: 2, body: 'Texto dos', publishedBy: author.id },
-        });
-      });
-
-      const consent = await prisma.patientConsent.findFirstOrThrow();
-      const second = await prisma.consentTextVersion.findUniqueOrThrow({
-        where: { version: 2 },
-      });
-      // With `now()` the version would carry its BEGIN, before the consent.
-      expect(second.publishedAt.getTime()).toBeGreaterThan(
-        consent.recordedAt.getTime(),
-      );
-    });
-
     it('PD-006 la publicación deja su fila en la bitácora, y sin bitácora no se publica', async () => {
-      const text = await publish('Texto con rastro');
-      const rows = await trail('consent_text_version', text.id, 'CREATE');
+      const text = await publish('Aviso con rastro');
+      const rows = await trail('privacy_notice_version', text.id, 'CREATE');
       expect(rows).toHaveLength(1);
       expect(rows[0]!.userId).toBe(officerId);
       expect(rows[0]!.before).toBeNull();
 
-      const restore = await refuseTrail('consent_text_version', 'CREATE');
+      const restore = await refuseTrail('privacy_notice_version', 'CREATE');
       try {
-        await post('/consent-texts', { body: 'Sin rastro' }).expect(500);
+        await post('/notices', { body: 'Sin rastro' }).expect(500);
       } finally {
         await restore();
       }
-      expect(await prisma.consentTextVersion.count()).toBe(1);
+      expect(await prisma.privacyNoticeVersion.count()).toBe(1);
     });
 
-    it('PD-045 la lista de textos dice cuántas fichas consintieron la versión vigente, que es la consecuencia de publicar otra', async () => {
-      const first = await publish('Texto uno');
-      const [a, b] = [await createPatient(prisma), await createPatient(prisma)];
-      for (const patient of [a, b]) {
-        await post(
-          `/patients/${patient.id}/consents`,
-          { textVersionId: first.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
-          deskToken,
-        ).expect(201);
-      }
-      // Una corrección no es otro paciente: sigue siendo uno.
-      const [ofA] = (
-        (await get(`/patients/${a.id}/consents`, deskToken).expect(200))
-          .body as { items: ConsentBody[] }
-      ).items;
-      await post(
-        `/patients/${a.id}/consents/${ofA!.id}/correction`,
-        { medium: 'SIGNED_PAPER', grantedBy: 'HOLDER' },
-        deskToken,
-      ).expect(201);
-
-      const before = await get('/consent-texts').expect(200);
-      expect(
-        (before.body as { currentVersionConsents: number })
-          .currentVersionConsents,
-      ).toBe(2);
-
-      // Tras publicar, ninguno está sobre la vigente.
-      await publish('Texto dos');
-      const after = await get('/consent-texts').expect(200);
-      expect(
-        (after.body as { currentVersionConsents: number })
-          .currentVersionConsents,
-      ).toBe(0);
-    });
-
-    it('PD-002 recepción no administra el texto: cerrado por defecto', async () => {
-      await get('/consent-texts', deskToken).expect(403);
-      await post('/consent-texts', { body: 'Intento' }, deskToken).expect(403);
+    it('PD-002 recepción no administra el aviso: cerrado por defecto', async () => {
+      await get('/notices', deskToken).expect(403);
+      await post('/notices', { body: 'Intento' }, deskToken).expect(403);
     });
   });
 
-  // --- PD2 -----------------------------------------------------------------------
+  // --- D8 ------------------------------------------------------------------------
 
-  describe('PD2 el consentimiento del paciente', () => {
-    it('PD-010 PD-011 recepción registra el consentimiento; el instante y el autor son del servidor', async () => {
-      const text = await publish('Texto uno');
+  describe('D8 las autorizaciones opcionales', () => {
+    async function chartWithContact() {
       const patient = await createPatient(prisma);
+      return prisma.patient.update({
+        where: { id: patient.id },
+        data: { phone: '0991234567', email: 'paciente@example.com' },
+      });
+    }
+
+    const grant = (patientId: string, body: object, auth = deskToken) =>
+      post(`/patients/${patientId}/authorizations`, body, auth);
+
+    it('PD-068 PD-069 PD-073 recepción autoriza recordatorios por WhatsApp; el instante y el autor son del servidor', async () => {
+      const patient = await chartWithContact();
       const before = Date.now();
 
-      const response = await post(
-        `/patients/${patient.id}/consents`,
-        { textVersionId: text.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
-        deskToken,
-      ).expect(201);
-      const consent = response.body as ConsentBody;
-
-      expect(consent).toMatchObject({
+      const response = await grant(patient.id, {
+        purpose: 'REMINDERS',
+        channel: 'WHATSAPP',
+      }).expect(201);
+      const granted = response.body as AuthorizationBody;
+      expect(granted).toMatchObject({
         patientId: patient.id,
-        medium: 'ON_SCREEN',
-        grantedBy: 'HOLDER',
-        isCurrentVersion: true,
-        recordedBy: { id: deskId },
-        textVersion: { version: 1, body: 'Texto uno' },
+        purpose: 'REMINDERS',
+        channel: 'WHATSAPP',
+        recordedBy: { id: deskId, fullName: 'Gabriela Mera' },
+        revokedAt: null,
+        revokedBy: null,
       });
-      expect(Date.parse(consent.recordedAt)).toBeGreaterThanOrEqual(
-        before - 1000,
+      expect(Date.parse(granted.recordedAt)).toBeGreaterThanOrEqual(before);
+
+      const list = await get(
+        `/patients/${patient.id}/authorizations`,
+        deskToken,
+      ).expect(200);
+      expect((list.body as { items: AuthorizationBody[] }).items).toEqual([
+        granted,
+      ]);
+    });
+
+    it('PD-069 el cliente no puede mandar el instante ni el autor', async () => {
+      const patient = await chartWithContact();
+      await grant(patient.id, {
+        purpose: 'PHOTOS',
+        recordedAt: new Date(0).toISOString(),
+        recordedBy: officerId,
+      }).expect(422);
+      expect(await prisma.patientAuthorization.count()).toBe(0);
+      // Positive control: without them, it goes in.
+      await grant(patient.id, { purpose: 'PHOTOS' }).expect(201);
+    });
+
+    it('PD-070 sin teléfono no se autoriza por WhatsApp, y el canal tiene que casar con la finalidad', async () => {
+      const bare = await createPatient(prisma);
+      for (const body of [
+        { purpose: 'REMINDERS', channel: 'WHATSAPP' },
+        { purpose: 'MARKETING', channel: 'EMAIL' },
+        { purpose: 'REMINDERS' },
+        { purpose: 'RESEARCH', channel: 'EMAIL' },
+      ]) {
+        const response = await grant(bare.id, body).expect(422);
+        expect((response.body as Problem).code).toBe(
+          'PRIVACY_AUTHORIZATION_INVALID',
+        );
+      }
+      expect(await prisma.patientAuthorization.count()).toBe(0);
+      // Positive control: with the phone, the same one goes in.
+      const patient = await chartWithContact();
+      await grant(patient.id, {
+        purpose: 'REMINDERS',
+        channel: 'WHATSAPP',
+      }).expect(201);
+    });
+
+    it('PD-071 PD-072 la segunda vigente se rechaza; revocada, sigue en la lista con quién y cuándo, y se vuelve a autorizar', async () => {
+      const patient = await chartWithContact();
+      const first = (
+        await grant(patient.id, {
+          purpose: 'MARKETING',
+          channel: 'EMAIL',
+        }).expect(201)
+      ).body as AuthorizationBody;
+
+      const again = await grant(patient.id, {
+        purpose: 'MARKETING',
+        channel: 'EMAIL',
+      }).expect(409);
+      expect((again.body as Problem).code).toBe(
+        'PRIVACY_AUTHORIZATION_ALREADY_GRANTED',
       );
-    });
 
-    it('PD-011 el cliente no puede mandar el instante ni el autor', async () => {
-      const text = await publish('Texto uno');
-      const patient = await createPatient(prisma);
-
-      await post(
-        `/patients/${patient.id}/consents`,
-        {
-          textVersionId: text.id,
-          medium: 'SIGNED_PAPER',
-          grantedBy: 'HOLDER',
-          recordedAt: new Date(Date.now() - DAY_MS).toISOString(),
-          recordedBy: officerId,
-        },
-        deskToken,
-      ).expect(422);
-      expect(await prisma.patientConsent.count()).toBe(0);
-    });
-
-    it('PD-012 consentir una versión que ya no es la vigente se rechaza sin escribir nada', async () => {
-      const first = await publish('Texto uno');
-      await publish('Texto dos');
-      const patient = await createPatient(prisma);
-
-      const response = await post(
-        `/patients/${patient.id}/consents`,
-        { textVersionId: first.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
-        deskToken,
-      ).expect(409);
-      expect((response.body as Problem).code).toBe('CONSENT_TEXT_OUTDATED');
-      expect(await prisma.patientConsent.count()).toBe(0);
-    });
-
-    it('PD-013 PD-016 una versión nueva no cambia lo ya consentido, y la lista lo dice', async () => {
-      const first = await publish('Texto uno');
-      const patient = await createPatient(prisma);
-      await post(
-        `/patients/${patient.id}/consents`,
-        {
-          textVersionId: first.id,
-          medium: 'SIGNED_PAPER',
-          grantedBy: 'REPRESENTATIVE',
-        },
-        deskToken,
-      ).expect(201);
-
-      await publish('Texto dos');
-
-      const list = await get(
-        `/patients/${patient.id}/consents`,
-        deskToken,
-      ).expect(200);
-      const [only] = (list.body as { items: ConsentBody[] }).items;
-      expect(only).toMatchObject({
-        medium: 'SIGNED_PAPER',
-        grantedBy: 'REPRESENTATIVE',
-        isCurrentVersion: false,
-        textVersion: { version: 1, body: 'Texto uno' },
-      });
-    });
-
-    it('PD-015 ficha inexistente o absorbida: no se registra nada', async () => {
-      const text = await publish('Texto uno');
-      const { survivor, absorbed } = await mergedPair();
-      await merge(absorbed.id, survivor.id);
-      const body = {
-        textVersionId: text.id,
-        medium: 'ON_SCREEN',
-        grantedBy: 'HOLDER',
-      };
-
-      const missing = await post(
-        `/patients/${crypto.randomUUID()}/consents`,
-        body,
-        deskToken,
-      ).expect(404);
-      expect((missing.body as Problem).code).toBe('DATA_SUBJECT_NOT_FOUND');
-
-      const merged = await post(
-        `/patients/${absorbed.id}/consents`,
-        body,
-        deskToken,
-      ).expect(409);
-      expect((merged.body as Problem).code).toBe('PATIENT_MERGED');
-      expect(await prisma.patientConsent.count()).toBe(0);
-    });
-
-    it('PD-016 la ficha superviviente muestra el consentimiento firmado en la absorbida', async () => {
-      const text = await publish('Texto uno');
-      const { survivor, absorbed } = await mergedPair();
-      await post(
-        `/patients/${absorbed.id}/consents`,
-        { textVersionId: text.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
-        deskToken,
-      ).expect(201);
-      await merge(absorbed.id, survivor.id);
-
-      const list = await get(
-        `/patients/${survivor.id}/consents`,
-        deskToken,
-      ).expect(200);
-      const items = (list.body as { items: ConsentBody[] }).items;
-      expect(items.map((c) => c.patientId)).toEqual([absorbed.id]);
-    });
-
-    it('PD-044 «Corregir» registra en un paso un consentimiento que sustituye al equivocado, sin motivo; el original queda y la lista dice cuál vale', async () => {
-      const text = await publish('Texto uno');
-      const patient = await createPatient(prisma);
-      const original = (
+      const revoked = (
         await post(
-          `/patients/${patient.id}/consents`,
-          { textVersionId: text.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
+          `/patients/${patient.id}/authorizations/${first.id}/revocation`,
+          {},
           deskToken,
         ).expect(201)
-      ).body as ConsentBody;
-      // Una versión nueva entre medias no impide corregir: la corrección es
-      // sobre el texto que se consintió, no sobre el vigente.
-      await publish('Texto dos');
+      ).body as AuthorizationBody;
+      expect(revoked.revokedBy).toEqual({
+        id: deskId,
+        fullName: 'Gabriela Mera',
+      });
+      expect(revoked.revokedAt).not.toBeNull();
 
-      const corrected = await post(
-        `/patients/${patient.id}/consents/${original.id}/correction`,
-        { medium: 'SIGNED_PAPER', grantedBy: 'REPRESENTATIVE' },
+      const twice = await post(
+        `/patients/${patient.id}/authorizations/${first.id}/revocation`,
+        {},
+        deskToken,
+      ).expect(409);
+      expect((twice.body as Problem).code).toBe(
+        'PRIVACY_AUTHORIZATION_ALREADY_REVOKED',
+      );
+
+      await grant(patient.id, {
+        purpose: 'MARKETING',
+        channel: 'EMAIL',
+      }).expect(201);
+      const list = (
+        await get(`/patients/${patient.id}/authorizations`, deskToken).expect(
+          200,
+        )
+      ).body as { items: AuthorizationBody[] };
+      expect(list.items.map((a) => a.revokedAt === null)).toEqual([
+        true,
+        false,
+      ]);
+    });
+
+    it('PD-072 una autorización de otra ficha no existe para esta', async () => {
+      const [a, b] = [await chartWithContact(), await chartWithContact()];
+      const ofA = (await grant(a.id, { purpose: 'PHOTOS' }).expect(201))
+        .body as AuthorizationBody;
+      const response = await post(
+        `/patients/${b.id}/authorizations/${ofA.id}/revocation`,
+        {},
+        deskToken,
+      ).expect(404);
+      expect((response.body as Problem).code).toBe(
+        'PRIVACY_AUTHORIZATION_NOT_FOUND',
+      );
+      // Positive control: through its own chart, it is revoked.
+      await post(
+        `/patients/${a.id}/authorizations/${ofA.id}/revocation`,
+        {},
         deskToken,
       ).expect(201);
-      const correction = corrected.body as ConsentBody;
-      expect(correction).toMatchObject({
-        supersedesId: original.id,
-        isSuperseded: false,
-        medium: 'SIGNED_PAPER',
-        grantedBy: 'REPRESENTATIVE',
-        recordedBy: { id: deskId },
-        textVersion: { version: 1, body: 'Texto uno' },
-      });
+    });
 
-      const list = await get(
-        `/patients/${patient.id}/consents`,
+    it('PD-075 ficha inexistente o absorbida: no se registra nada; la superviviente lista y revoca la de la absorbida', async () => {
+      const missing = await grant(randomUUID(), { purpose: 'PHOTOS' }).expect(
+        404,
+      );
+      expect((missing.body as Problem).code).toBe('DATA_SUBJECT_NOT_FOUND');
+
+      const { survivor, absorbed } = await mergedPair();
+      const ofAbsorbed = (
+        await grant(absorbed.id, { purpose: 'RESEARCH' }).expect(201)
+      ).body as AuthorizationBody;
+      await merge(absorbed.id, survivor.id);
+
+      const merged = await grant(absorbed.id, { purpose: 'PHOTOS' }).expect(
+        409,
+      );
+      expect((merged.body as Problem).code).toBe('PATIENT_MERGED');
+
+      const list = (
+        await get(`/patients/${survivor.id}/authorizations`, deskToken).expect(
+          200,
+        )
+      ).body as { items: AuthorizationBody[] };
+      expect(list.items.map((a) => a.id)).toEqual([ofAbsorbed.id]);
+      await post(
+        `/patients/${survivor.id}/authorizations/${ofAbsorbed.id}/revocation`,
+        {},
         deskToken,
-      ).expect(200);
-      const items = (list.body as { items: ConsentBody[] }).items;
-      expect(items.map((c) => [c.id, c.isSuperseded])).toEqual([
-        [correction.id, false],
-        [original.id, true],
-      ]);
-      // El original, intacto.
-      expect(items[1]).toMatchObject({
-        medium: 'ON_SCREEN',
-        grantedBy: 'HOLDER',
-      });
+      ).expect(201);
+      expect(await prisma.patientAuthorization.count()).toBe(1);
+    });
+
+    it('PD-071 PD-072 tras una fusión la persona tiene una sola vigente: la superviviente no autoriza otra igual, y revocar quita todas las iguales que trajo la fusión', async () => {
+      const { survivor, absorbed } = await mergedPair();
+      // Both duplicates got the same one at the desk before anybody noticed.
+      for (const chart of [survivor, absorbed]) {
+        await grant(chart.id, { purpose: 'PHOTOS' }).expect(201);
+      }
+      await merge(absorbed.id, survivor.id);
+
+      // A third one on the survivor is refused: the person already has it.
+      const again = await grant(survivor.id, { purpose: 'PHOTOS' }).expect(409);
+      expect((again.body as Problem).code).toBe(
+        'PRIVACY_AUTHORIZATION_ALREADY_GRANTED',
+      );
+      // Positive control: another purpose goes in.
+      await grant(survivor.id, { purpose: 'RESEARCH' }).expect(201);
+
+      const before = (
+        await get(`/patients/${survivor.id}/authorizations`, deskToken).expect(
+          200,
+        )
+      ).body as { items: AuthorizationBody[] };
+      const photos = before.items.filter((a) => a.purpose === 'PHOTOS');
+      expect(photos).toHaveLength(2);
+
+      // Revoking one revokes the person's «fotos», not half of it.
+      await post(
+        `/patients/${survivor.id}/authorizations/${photos[0]!.id}/revocation`,
+        {},
+        deskToken,
+      ).expect(201);
+      const after = (
+        await get(`/patients/${survivor.id}/authorizations`, deskToken).expect(
+          200,
+        )
+      ).body as { items: AuthorizationBody[] };
       expect(
-        await trail('patient_consent', correction.id, 'CREATE'),
+        after.items.filter(
+          (a) => a.purpose === 'PHOTOS' && a.revokedAt === null,
+        ),
+      ).toHaveLength(0);
+      expect(
+        after.items.filter(
+          (a) => a.purpose === 'RESEARCH' && a.revokedAt === null,
+        ),
       ).toHaveLength(1);
     });
 
-    it('PD-044 la corrección conserva quién tomó el consentimiento y cuándo, del original; quién la registró es quien corrige', async () => {
-      const text = await publish('Texto uno');
-      const patient = await createPatient(prisma);
-      const original = (
-        await post(
-          `/patients/${patient.id}/consents`,
-          { textVersionId: text.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
-          deskToken,
-        ).expect(201)
-      ).body as ConsentBody;
-      // Control: en el original, quien lo tomó es quien lo registró.
-      expect(original.takenBy).toMatchObject({ id: deskId });
-      expect(original.takenAt).toBe(original.recordedAt);
-
-      const first = (
-        await post(
-          `/patients/${patient.id}/consents/${original.id}/correction`,
-          { medium: 'SIGNED_PAPER', grantedBy: 'HOLDER' },
-        ).expect(201)
-      ).body as ConsentBody;
-      // Y una corrección de la corrección sigue llevando al original.
-      const second = (
-        await post(`/patients/${patient.id}/consents/${first.id}/correction`, {
-          medium: 'SIGNED_PAPER',
-          grantedBy: 'REPRESENTATIVE',
-        }).expect(201)
-      ).body as ConsentBody;
-
-      for (const correction of [first, second]) {
-        expect(correction.recordedBy).toMatchObject({ id: officerId });
-        expect(correction.takenBy).toMatchObject({ id: deskId });
-        expect(correction.takenAt).toBe(original.recordedAt);
-      }
-    });
-
-    it('PD-044 un consentimiento ya corregido no se corrige otra vez, y uno que no es de la ficha no existe', async () => {
-      const text = await publish('Texto uno');
-      const patient = await createPatient(prisma);
-      const other = await createPatient(prisma);
-      const original = (
-        await post(
-          `/patients/${patient.id}/consents`,
-          { textVersionId: text.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
-          deskToken,
-        ).expect(201)
-      ).body as ConsentBody;
-      const body = { medium: 'SIGNED_PAPER', grantedBy: 'HOLDER' };
-
-      const elsewhere = await post(
-        `/patients/${other.id}/consents/${original.id}/correction`,
-        body,
-        deskToken,
-      ).expect(404);
-      expect((elsewhere.body as Problem).code).toBe('CONSENT_NOT_FOUND');
-
-      // Control positivo: la primera corrección entra.
+    it('PD-074 registrar y revocar dejan su fila en la bitácora, y sin bitácora no se escribe', async () => {
+      const patient = await chartWithContact();
+      const granted = (
+        await grant(patient.id, { purpose: 'PHOTOS' }).expect(201)
+      ).body as AuthorizationBody;
+      expect(
+        await trail('patient_authorization', granted.id, 'CREATE'),
+      ).toHaveLength(1);
       await post(
-        `/patients/${patient.id}/consents/${original.id}/correction`,
-        body,
+        `/patients/${patient.id}/authorizations/${granted.id}/revocation`,
+        {},
         deskToken,
       ).expect(201);
-      const again = await post(
-        `/patients/${patient.id}/consents/${original.id}/correction`,
-        body,
-        deskToken,
-      ).expect(409);
-      expect((again.body as Problem).code).toBe('CONSENT_ALREADY_CORRECTED');
-      expect(await prisma.patientConsent.count()).toBe(2);
-    });
+      expect(
+        await trail('patient_authorization_revocation', granted.id, 'CREATE'),
+      ).toHaveLength(1);
 
-    it('PD-044 dos correcciones del mismo consentimiento a la vez: gana una, y es la que quedó en la base', async () => {
-      const text = await publish('Texto uno');
-      const patient = await createPatient(prisma);
-      const original = (
-        await post(
-          `/patients/${patient.id}/consents`,
-          { textVersionId: text.id, medium: 'ON_SCREEN', grantedBy: 'HOLDER' },
-          deskToken,
-        ).expect(201)
-      ).body as ConsentBody;
-      const path = `/patients/${patient.id}/consents/${original.id}/correction`;
-
-      const [paper, representative] = await Promise.all([
-        post(path, { medium: 'SIGNED_PAPER', grantedBy: 'HOLDER' }, deskToken),
-        post(
-          path,
-          { medium: 'ON_SCREEN', grantedBy: 'REPRESENTATIVE' },
-          deskToken,
-        ),
-      ]);
-      const statuses = [paper.status, representative.status].sort();
-      expect(statuses).toEqual([201, 409]);
-      const winner = paper.status === 201 ? paper : representative;
-      const loser = paper.status === 201 ? representative : paper;
-      expect((loser.body as Problem).code).toBe('CONSENT_ALREADY_CORRECTED');
-
-      const stored = await prisma.patientConsent.findMany({
-        where: { supersedesId: original.id },
-      });
-      expect(stored.map((row) => row.id)).toEqual([
-        (winner.body as ConsentBody).id,
-      ]);
-    });
-
-    it('PD-017 el consentimiento deja su fila en la bitácora, y sin bitácora no se registra', async () => {
-      const text = await publish('Texto uno');
-      const patient = await createPatient(prisma);
-      const body = {
-        textVersionId: text.id,
-        medium: 'ON_SCREEN',
-        grantedBy: 'HOLDER',
-      };
-
-      const created = await post(
-        `/patients/${patient.id}/consents`,
-        body,
-        deskToken,
-      ).expect(201);
-      const rows = await trail(
-        'patient_consent',
-        (created.body as ConsentBody).id,
-        'CREATE',
-      );
-      expect(rows.map((r) => r.userId)).toEqual([deskId]);
-
-      const restore = await refuseTrail('patient_consent', 'CREATE');
+      const restore = await refuseTrail('patient_authorization', 'CREATE');
       try {
-        await post(`/patients/${patient.id}/consents`, body, deskToken).expect(
-          500,
-        );
+        await grant(patient.id, { purpose: 'RESEARCH' }).expect(500);
       } finally {
         await restore();
       }
-      expect(await prisma.patientConsent.count()).toBe(1);
+      expect(
+        await prisma.patientAuthorization.count({
+          where: { purpose: 'RESEARCH' },
+        }),
+      ).toBe(0);
     });
   });
-
-  // --- PD3 -----------------------------------------------------------------------
 
   describe('PD3 las solicitudes del titular', () => {
     const register = (
@@ -1470,14 +1254,13 @@ describe('privacy por HTTP', () => {
     }
 
     it('PD-040 PD-041 exporta en JSON la ficha y su absorbida, con lo que no incluye declarado', async () => {
-      const text = await publish('Texto consentido');
       const { survivor, absorbed } = await mergedPair();
       await prisma.patientIdentifier.create({
         data: { patientId: absorbed.id, type: 'PASSPORT', value: 'AB12345' },
       });
       await post(
-        `/patients/${absorbed.id}/consents`,
-        { textVersionId: text.id, medium: 'SIGNED_PAPER', grantedBy: 'HOLDER' },
+        `/patients/${absorbed.id}/authorizations`,
+        { purpose: 'PHOTOS' },
         deskToken,
       ).expect(201);
       await merge(absorbed.id, survivor.id);
@@ -1490,13 +1273,13 @@ describe('privacy por HTTP', () => {
       const document = response.body as Record<string, unknown> & {
         patient: Record<string, unknown> & { mergedCharts: { mrn: string }[] };
         identifiers: { chart: string; value: string }[];
-        consents: { text: string; textVersion: number }[];
+        authorizations: { purpose: string; revokedAt: string | null }[];
         requests: { right: string }[];
         omitted: { section: string }[];
       };
       expect(document).toMatchObject({
         format: 'clinica.privacy.export',
-        formatVersion: 2,
+        formatVersion: 3,
       });
       expect(document.patient.mrn).toBe(survivor.mrn);
       expect(document.patient.mergedCharts.map((c) => c.mrn)).toEqual([
@@ -1505,8 +1288,14 @@ describe('privacy por HTTP', () => {
       expect(document.identifiers).toEqual([
         expect.objectContaining({ chart: absorbed.mrn, value: 'AB12345' }),
       ]);
-      expect(document.consents).toEqual([
-        expect.objectContaining({ textVersion: 1, text: 'Texto consentido' }),
+      expect(document.authorizations).toEqual([
+        expect.objectContaining({
+          chart: absorbed.mrn,
+          purpose: 'PHOTOS',
+          recordedBy: 'Gabriela Mera',
+          revokedAt: null,
+          revokedBy: null,
+        }),
       ]);
       expect(document.requests.map((r) => r.right)).toEqual(['ACCESS']);
       expect(document.omitted.map((o) => o.section)).toEqual([
@@ -2389,7 +2178,7 @@ describe('privacy por HTTP', () => {
         requests: { requestedBy: string; description: string | null }[];
         versions: { table: string; data: Record<string, unknown> }[];
       }; // prettier-ignore
-      expect(document.formatVersion).toBe(2);
+      expect(document.formatVersion).toBe(3);
       expect(document.deliveries).toEqual([
         expect.objectContaining({
           recipientClass: 'ATTORNEY',

@@ -5,7 +5,7 @@ import {
 } from '../../../shared/domain/errors/domain-error';
 
 /**
- * PD-015, PD-030. The chart does not exist.
+ * PD-030, PD-075. The chart does not exist.
  *
  * Its own code and not `PATIENT_NOT_FOUND`: that one belongs to `patients`, a
  * code is declared by one class only, and no module imports another. The
@@ -23,58 +23,77 @@ export class DataSubjectNotFoundError extends NotFoundError {
 }
 
 /** PD-004. */
-export class ConsentTextInvalidError extends ValidationError {
-  readonly code = 'CONSENT_TEXT_INVALID';
+export class PrivacyNoticeInvalidError extends ValidationError {
+  readonly code = 'PRIVACY_NOTICE_INVALID';
   override readonly userTitle =
-    'Escriba el texto del consentimiento (hasta 20 000 caracteres)';
+    'Escriba el aviso de privacidad (hasta 20 000 caracteres)';
 
   constructor() {
-    super('Consent text is blank or too long', {}, [
+    super('Privacy notice is blank or too long', {}, [
       {
         field: 'body',
-        code: 'CONSENT_TEXT_INVALID',
-        message:
-          'Escriba el texto del consentimiento (hasta 20 000 caracteres)',
+        code: 'PRIVACY_NOTICE_INVALID',
+        message: 'Escriba el aviso de privacidad (hasta 20 000 caracteres)',
       },
     ]);
   }
 }
 
 /** PD-005. Somebody else published the same number first. */
-export class ConsentTextVersionConflictError extends ConflictError {
-  readonly code = 'CONSENT_TEXT_VERSION_CONFLICT';
+export class PrivacyNoticeVersionConflictError extends ConflictError {
+  readonly code = 'PRIVACY_NOTICE_VERSION_CONFLICT';
   override readonly userTitle =
-    'Otra persona publicó una versión del texto al mismo tiempo. Revise la vigente antes de publicar';
+    'Otra persona publicó una versión del aviso al mismo tiempo. Revise la vigente antes de publicar';
 
   constructor() {
-    super('Concurrent consent text publication');
-  }
-}
-
-/** There is no current text yet, or the version sent does not exist. */
-export class ConsentTextNotPublishedError extends NotFoundError {
-  readonly code = 'CONSENT_TEXT_NOT_PUBLISHED';
-  override readonly userTitle =
-    'Todavía no hay un texto de consentimiento publicado. Pida a administración que lo publique';
-
-  constructor() {
-    super('No consent text version published');
+    super('Concurrent privacy notice publication');
   }
 }
 
 /**
- * PD-012. The version the patient was shown is no longer the current one: what
- * is recorded must be what was shown, so the screen has to show the new one.
+ * PD-070. The purpose and the channel do not go together, or the chart lacks
+ * the phone or the email the authorization would write to.
  */
-export class ConsentTextOutdatedError extends ConflictError {
-  readonly code = 'CONSENT_TEXT_OUTDATED';
+export class PrivacyAuthorizationInvalidError extends ValidationError {
+  readonly code = 'PRIVACY_AUTHORIZATION_INVALID';
   override readonly userTitle =
-    'Se publicó una versión nueva del texto de consentimiento. Muéstresela al paciente y regístrelo de nuevo';
+    'Esa autorización no se puede registrar: los recordatorios y la publicidad van por WhatsApp o por correo, y la ficha necesita ese teléfono o ese correo';
 
-  constructor(readonly currentVersion: number) {
-    super('Consent text version is not the current one', {
-      currentVersion,
-    });
+  constructor() {
+    super('Authorization purpose, channel or contact do not match');
+  }
+}
+
+/** PD-071. One standing per chart, purpose and channel. */
+export class PrivacyAuthorizationAlreadyGrantedError extends ConflictError {
+  readonly code = 'PRIVACY_AUTHORIZATION_ALREADY_GRANTED';
+  override readonly userTitle =
+    'El paciente ya tiene esa autorización vigente. Actualice la ficha';
+
+  constructor() {
+    super('Authorization already standing');
+  }
+}
+
+/** PD-072. The authorization does not exist, or is not this chart's. */
+export class PrivacyAuthorizationNotFoundError extends NotFoundError {
+  readonly code = 'PRIVACY_AUTHORIZATION_NOT_FOUND';
+  override readonly userTitle =
+    'No se encontró esa autorización en la ficha. Actualice la ficha';
+
+  constructor() {
+    super('Patient authorization not found');
+  }
+}
+
+/** PD-072. A revocation is recorded once. */
+export class PrivacyAuthorizationAlreadyRevokedError extends ConflictError {
+  readonly code = 'PRIVACY_AUTHORIZATION_ALREADY_REVOKED';
+  override readonly userTitle =
+    'Esa autorización ya estaba revocada. Actualice la ficha';
+
+  constructor() {
+    super('Patient authorization already revoked');
   }
 }
 
@@ -123,31 +142,6 @@ export class DataExportNotApplicableError extends ValidationError {
 
   constructor() {
     super('Export requested for a right other than access or portability');
-  }
-}
-
-/** PD-044. The consent to correct does not exist, or is not this chart's. */
-export class ConsentNotFoundError extends NotFoundError {
-  readonly code = 'CONSENT_NOT_FOUND';
-  override readonly userTitle =
-    'No se encontró ese consentimiento en la ficha. Actualice la lista';
-
-  constructor() {
-    super('Patient consent not found');
-  }
-}
-
-/**
- * PD-044. The consent was already corrected: what stands is the correction,
- * and that is the one to correct. The original is never rewritten.
- */
-export class ConsentAlreadyCorrectedError extends ConflictError {
-  readonly code = 'CONSENT_ALREADY_CORRECTED';
-  override readonly userTitle =
-    'Ese consentimiento ya se corrigió. Actualice la lista y corrija el vigente';
-
-  constructor() {
-    super('Patient consent already superseded by a correction');
   }
 }
 
