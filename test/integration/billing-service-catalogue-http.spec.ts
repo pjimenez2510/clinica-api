@@ -55,7 +55,7 @@ interface Page {
 }
 interface Problem {
   code: string;
-  errors?: { field: string; code: string }[];
+  errors?: { field: string; code: string; message?: string }[];
 }
 
 describe('el catálogo de servicios por HTTP (B21)', () => {
