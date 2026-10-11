@@ -663,6 +663,53 @@ describe('privacy por HTTP', () => {
       expect(await prisma.patientAuthorization.count()).toBe(1);
     });
 
+    it('PD-071 PD-072 tras una fusión la persona tiene una sola vigente: la superviviente no autoriza otra igual, y revocar quita todas las iguales que trajo la fusión', async () => {
+      const { survivor, absorbed } = await mergedPair();
+      // Both duplicates got the same one at the desk before anybody noticed.
+      for (const chart of [survivor, absorbed]) {
+        await grant(chart.id, { purpose: 'PHOTOS' }).expect(201);
+      }
+      await merge(absorbed.id, survivor.id);
+
+      // A third one on the survivor is refused: the person already has it.
+      const again = await grant(survivor.id, { purpose: 'PHOTOS' }).expect(409);
+      expect((again.body as Problem).code).toBe(
+        'PRIVACY_AUTHORIZATION_ALREADY_GRANTED',
+      );
+      // Positive control: another purpose goes in.
+      await grant(survivor.id, { purpose: 'RESEARCH' }).expect(201);
+
+      const before = (
+        await get(`/patients/${survivor.id}/authorizations`, deskToken).expect(
+          200,
+        )
+      ).body as { items: AuthorizationBody[] };
+      const photos = before.items.filter((a) => a.purpose === 'PHOTOS');
+      expect(photos).toHaveLength(2);
+
+      // Revoking one revokes the person's «fotos», not half of it.
+      await post(
+        `/patients/${survivor.id}/authorizations/${photos[0]!.id}/revocation`,
+        {},
+        deskToken,
+      ).expect(201);
+      const after = (
+        await get(`/patients/${survivor.id}/authorizations`, deskToken).expect(
+          200,
+        )
+      ).body as { items: AuthorizationBody[] };
+      expect(
+        after.items.filter(
+          (a) => a.purpose === 'PHOTOS' && a.revokedAt === null,
+        ),
+      ).toHaveLength(0);
+      expect(
+        after.items.filter(
+          (a) => a.purpose === 'RESEARCH' && a.revokedAt === null,
+        ),
+      ).toHaveLength(1);
+    });
+
     it('PD-074 registrar y revocar dejan su fila en la bitácora, y sin bitácora no se escribe', async () => {
       const patient = await chartWithContact();
       const granted = (
@@ -1245,7 +1292,9 @@ describe('privacy por HTTP', () => {
         expect.objectContaining({
           chart: absorbed.mrn,
           purpose: 'PHOTOS',
+          recordedBy: 'Gabriela Mera',
           revokedAt: null,
+          revokedBy: null,
         }),
       ]);
       expect(document.requests.map((r) => r.right)).toEqual(['ACCESS']);

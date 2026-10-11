@@ -109,7 +109,9 @@ export interface RdacaaChart {
  * counts: with no ethnicity the chart said «Faltan 3» and dropped to 1 on
  * choosing «Mestizo/a». The chart still does not read as complete — the
  * missing ethnicity counts itself — and recording «Indígena» brings the
- * nationality back, so neither the first close nor the report can go without.
+ * nationality back: the indicator never reads complete without it. (What
+ * blocks the first close and the report on this indicator is `encounter`'s,
+ * EN-115, not built yet.)
  */
 function nationalityIsDemanded(chart: RdacaaChart): boolean {
   if (!ethnicityIsDemanded(chart)) return false;

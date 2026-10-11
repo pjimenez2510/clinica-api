@@ -1892,7 +1892,7 @@ model Patient {
   mergesAsSource        PatientMerge[]          @relation("MergeSource")
   mergesAsTarget        PatientMerge[]          @relation("MergeTarget")
   accounts              PatientAccount[]
-  /// `privacy`, PD-016, PD-036: read through `chartScope` like the rest of the person's history.
+  /// `privacy`, PD-073, PD-036: read through `chartScope` like the rest of the person's history.
   authorizations        PatientAuthorization[]
   dataSubjectRequests   DataSubjectRequest[]
 

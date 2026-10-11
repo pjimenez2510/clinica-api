@@ -923,8 +923,9 @@ requisitos que cambian.
   >   vacía la ficha decía «Faltan 3» y bajaba a «Falta 1» al elegir «Mestizo/a»,
   >   un dato que nadie podía rellenar contado como si faltara. **La ficha no se
   >   lee como completa**: la etnia vacía cuenta ella misma, y al registrar
-  >   «Indígena» se pide la nacionalidad, así que el cierre de la primera
-  >   atención y el reporte siguen sin poder salir sin ella.
+  >   «Indígena» se pide la nacionalidad: el indicador nunca se lee completo
+  >   sin ella. Lo que bloquee el cierre de la primera atención y el reporte
+  >   con este indicador es de `encounter` (EN-115, sin construir).
   >
   > **Y DESDE PA-059 HAY UNA CONDICIÓN ANTES QUE ÉSTAS TRES: EL PAÍS.** Si la
   > ficha declara un país de nacionalidad que no es Ecuador, el ministerio manda

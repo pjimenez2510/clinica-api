@@ -104,28 +104,44 @@ export class PrismaAuthorizationRepository implements AuthorizationRepository {
           where: { id: authorizationId, ...chartScope(patientId) },
           select: {
             id: true,
+            purpose: true,
+            channel: true,
             revocation: { select: { authorizationId: true } },
           },
         });
         if (!found) return { status: 'missing' as const };
         if (found.revocation) return { status: 'already-revoked' as const };
 
-        await tx.patientAuthorizationRevocation.create({
-          data: {
-            authorizationId: found.id,
-            revokedAt: now,
-            revokedBy: requester.userId,
+        // PD-072. The PERSON withdraws it: every standing one with this
+        // purpose and channel in the chart and its absorbed ones goes — two
+        // duplicates merged may each have brought one (PD-071).
+        const standing = await tx.patientAuthorization.findMany({
+          where: {
+            ...chartScope(patientId),
+            purpose: found.purpose,
+            channel: found.channel,
+            revocation: null,
           },
+          select: { id: true },
         });
-        await writeTrail(
-          tx,
-          {
-            resourceType: 'patient_authorization_revocation',
-            resourceId: found.id,
-            action: 'CREATE',
-          },
-          requester,
-        );
+        for (const { id } of standing) {
+          await tx.patientAuthorizationRevocation.create({
+            data: {
+              authorizationId: id,
+              revokedAt: now,
+              revokedBy: requester.userId,
+            },
+          });
+          await writeTrail(
+            tx,
+            {
+              resourceType: 'patient_authorization_revocation',
+              resourceId: id,
+              action: 'CREATE',
+            },
+            requester,
+          );
+        }
         const row = await tx.patientAuthorization.findUniqueOrThrow({
           where: { id: found.id },
           select: AUTHORIZATION_SELECT,

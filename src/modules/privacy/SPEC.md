@@ -306,7 +306,7 @@ la fila de bitácora.
 - **PD-030** — CUANDO alguien con `patient:data-requests` registre una solicitud,
   el sistema DEBERÁ guardar la ficha, el derecho, quién la presenta (PD-052), qué pide (texto obligatorio, hasta 4 000 caracteres), el
   instante en que se recibió y quién la registró. Ficha inexistente o
-  absorbida: como PD-015.
+  absorbida: como PD-075.
 - **PD-031** — El instante de recepción DEBERÁ ser el actual si no se indica;
   SI se indica uno futuro, ENTONCES el sistema DEBERÁ rechazarlo con
   `DATA_REQUEST_RECEIVED_IN_FUTURE` (422).
@@ -372,7 +372,8 @@ la fila de bitácora.
   una solicitud de acceso o de portabilidad, el sistema DEBERÁ devolver un
   documento JSON descargable con: el formato y su versión, el instante, la
   ficha administrativa, sus documentos de identidad con su vigencia, sus
-  autorizaciones opcionales con su revocación (PD-073) y las solicitudes; de la ficha
+  autorizaciones opcionales con cuándo y quién las registró y, si se
+  revocaron, cuándo y quién (PD-073), y las solicitudes; de la ficha
   **vigente** —la superviviente, si la ficha de la solicitud se absorbió
   después— y de todas sus absorbidas.
 - **PD-041** — El documento DEBERÁ declarar en `omitted` cada sección que no
@@ -700,7 +701,8 @@ la fila de bitácora.
   > **D-203 §8 (aceptada).** LOPDP art. 27: los datos del menor o incapaz
   > fallecidos los pide «quien hubiese sido su último representante legal».
 - **PD-066** — La exportación (PD-040) DEBERÁ ser el formato
-  `clinica.privacy.export` **v2**, cuyo `deliveries` liste cada copia de la
+  `clinica.privacy.export` **v3** (v2 trajo `deliveries`; v3 cambia
+  `consents` por `authorizations`, D-221), cuyo `deliveries` liste cada copia de la
   historia autorizada de la persona: cuándo se autorizó, la clase de quien la
   recibió, su nombre y el parentesco si es familiar, el alcance —completa o el
   periodo— y el propósito (lo que pidió); de una autoridad, sólo su nombre y el
@@ -734,17 +736,21 @@ la fila de bitácora.
   teléfono, o es `EMAIL` y no tiene correo, ENTONCES el sistema DEBERÁ
   rechazarla con `PRIVACY_AUTHORIZATION_INVALID` (422) sin escribir nada: se
   autoriza junto al dato por el que se escribirá.
-- **PD-071** — SI la ficha ya tiene una autorización vigente con la misma
-  finalidad y el mismo canal, ENTONCES el sistema DEBERÁ rechazar la nueva con
-  `PRIVACY_AUTHORIZATION_ALREADY_GRANTED` (409) sin escribir nada, también
-  cuando dos llegan a la vez.
+- **PD-071** — SI la ficha —o una de sus absorbidas— ya tiene una
+  autorización vigente con la misma finalidad y el mismo canal, ENTONCES el
+  sistema DEBERÁ rechazar la nueva con `PRIVACY_AUTHORIZATION_ALREADY_GRANTED`
+  (409) sin escribir nada, también cuando dos llegan a la vez: una vigente por
+  **persona**, no por fila de `patient`.
   > **Garantía de la base:** `trg_patient_authorization_one_standing`, que
-  > ordena las altas de una misma ficha con un bloqueo y rechaza la segunda
-  > vigente.
+  > ordena las altas de una misma persona con un bloqueo sobre su ficha raíz y
+  > rechaza la segunda vigente en la ficha y sus absorbidas
+  > (`20261023100100`). Vale en READ COMMITTED, el nivel de toda la API.
 - **PD-072** — CUANDO alguien con `patient:write` revoque una autorización
   vigente de la ficha —o de sus absorbidas—, el sistema DEBERÁ registrar la
   revocación con el instante y el autor de PD-069, sin cambiar la
-  autorización. SI no existe o no es de la ficha, ENTONCES DEBERÁ responder
+  autorización, y DEBERÁ revocar con ella toda otra vigente de la misma
+  finalidad y canal en la ficha y sus absorbidas (las que dos duplicados
+  traen al fusionarse). SI no existe o no es de la ficha, ENTONCES DEBERÁ responder
   `PRIVACY_AUTHORIZATION_NOT_FOUND` (404); SI ya está revocada, ENTONCES
   `PRIVACY_AUTHORIZATION_ALREADY_REVOKED` (409). Ninguna autorización ni
   revocación DEBERÁ poder modificarse ni borrarse, tampoco desde SQL.
@@ -799,6 +805,10 @@ puede verla»).
 
 ## Notas de esquema
 
+- `20261023100100_privacy_authorization_one_standing_per_person` (PD-071,
+  revisión de la ronda 4): la vigente única es por persona —la ficha y sus
+  absorbidas—, con el bloqueo sobre la ficha raíz; y la pista de
+  `privacy_insert_only` vale para todas las tablas que guarda.
 - `20261023100000_privacy_notice_and_authorizations` (D-221): la tabla
   `consent_text_version` pasa a `privacy_notice_version` con sus filas, su
   disparador y su número único; `patient_consent`, sus disparadores y los enums

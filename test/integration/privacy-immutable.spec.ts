@@ -235,6 +235,31 @@ describe('privacy: lo que prueba el aviso, las autorizaciones y las solicitudes 
     );
   });
 
+  it('PD-071 la vigente es por persona: la base no deja otra igual en la superviviente si la absorbida ya la tiene', async () => {
+    const prisma = db();
+    const [survivor, absorbed, other] = await Promise.all([
+      createPatient(prisma),
+      createPatient(prisma),
+      createPatient(prisma),
+    ]);
+    await authorize(prisma, absorbed.id, 'MARKETING', 'EMAIL');
+    await prisma.patient.update({
+      where: { id: absorbed.id },
+      data: { mergedIntoId: survivor.id, mergedAt: new Date() },
+    });
+
+    await refusedAsSecondStanding(
+      authorize(prisma, survivor.id, 'MARKETING', 'EMAIL'),
+    );
+    // Positive controls: another chart, and another channel of the same person.
+    await expect(
+      authorize(prisma, other.id, 'MARKETING', 'EMAIL'),
+    ).resolves.toBeTruthy();
+    await expect(
+      authorize(prisma, survivor.id, 'MARKETING', 'WHATSAPP'),
+    ).resolves.toBeTruthy();
+  });
+
   it('PD-071 dos autorizaciones iguales a la vez: gana la primera y la segunda se rechaza', async () => {
     const prisma = db();
     const patient = await createPatient(prisma);

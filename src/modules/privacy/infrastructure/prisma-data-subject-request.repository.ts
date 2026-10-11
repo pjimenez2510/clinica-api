@@ -525,6 +525,14 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
         orderBy: [{ recordedAt: 'asc' }, { id: 'asc' }],
         include: { revocation: true },
       });
+      // PD-073: who recorded and who revoked each one, by name.
+      const authorizationStaff = await staffNames(
+        tx,
+        authorizations.flatMap((row) => [
+          row.recordedBy,
+          row.revocation?.revokedBy ?? null,
+        ]),
+      );
       const requestRows = await tx.dataSubjectRequest.findMany({
         where: chartScope(rootId),
         orderBy: { receivedAt: 'asc' },
@@ -602,7 +610,11 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           purpose: row.purpose,
           channel: row.channel,
           recordedAt: row.recordedAt.toISOString(),
+          recordedBy: nameOf(authorizationStaff, row.recordedBy).fullName,
           revokedAt: row.revocation?.revokedAt.toISOString() ?? null,
+          revokedBy: row.revocation
+            ? nameOf(authorizationStaff, row.revocation.revokedBy).fullName
+            : null,
         })),
         requests: requests.map((row) => ({
           chart: mrnOf.get(row.patientId),
