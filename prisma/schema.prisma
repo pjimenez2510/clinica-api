@@ -175,7 +175,7 @@ model User {
   emergencyAlertsReceived        AgendaEmergencyAlert[]       @relation("EmergencyAlertRecipient")
   emergencyAlertsRaised          AgendaEmergencyAlert[]       @relation("EmergencyAlertRaiser")
   chargeItemsVoided              ChargeItem[]                 @relation("ChargeVoider")
-  billableServicesTaxReviewed    BillableService[]            @relation("TaxRateReviewer")
+  servicesTaxReviewed            Service[]                    @relation("TaxRateReviewer")
   paymentMethodsUpdated          PaymentMethod[]              @relation("PaymentMethodUpdater")
   discountLimitsUpdated          RoleDiscountLimit[]          @relation("DiscountLimitUpdater")
   agendaEntriesEmergencyAssessed AgendaEntry[]                @relation("EmergencyAssessor")
@@ -227,11 +227,11 @@ model User {
 
   /// EN-152 to EN-154 (D-159). The forms 024 this account recorded, the ones
   /// it informed, and the revocations it received.
-  procedureConsentsRecorded   ProcedureConsent[]           @relation("ProcedureConsentRecorder")
-  procedureConsentsInformed   ProcedureConsent[]           @relation("ProcedureConsentInformer")
-  procedureConsentsRevoked    ProcedureConsentRevocation[] @relation("ProcedureConsentRevoker")
+  procedureConsentsRecorded ProcedureConsent[]           @relation("ProcedureConsentRecorder")
+  procedureConsentsInformed ProcedureConsent[]           @relation("ProcedureConsentInformer")
+  procedureConsentsRevoked  ProcedureConsentRevocation[] @relation("ProcedureConsentRevoker")
   /// BI-256. The services this account last marked or unmarked as needing a 024.
-  billableServicesConsentRule BillableService[]            @relation("WrittenConsentRuleSetter")
+  servicesConsentRule       Service[]                    @relation("WrittenConsentRuleSetter")
 
   /// EN-210, D-127. The versions this account replaced by editing.
   recordVersionsChanged RecordVersion[] @relation("RecordVersionChanger")
@@ -1147,7 +1147,6 @@ model CatalogConcept {
   serviceOrderItems       ServiceOrderItem[]
   observationResults      ObservationResult[]            @relation("ObservationAnalyte")
   allergies               PatientAllergy[]
-  billableServices        BillableService[]
 
   @@index([systemId, code])
   @@index([parentId])
@@ -1634,7 +1633,8 @@ model Specialty {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   practitioners      PractitionerSpecialty[]
-  serviceTypes       ServiceType[]
+  /// BI-279. Its consultations.
+  services           Service[]
   /// encounter H8. The destination specialty of a referral or interconsultation.
   referrals          Referral[]
   interconsultations Interconsultation[]
@@ -1663,71 +1663,21 @@ model PractitionerSpecialty {
   @@map("practitioner_specialty")
 }
 
-/// Attention type within a specialty, with its base duration (SP-020). The
-/// 5..240-in-multiples-of-5 range is a CHECK in the manual migration (SP-021).
-model ServiceType {
-  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
-
-  specialtyId String    @map("specialty_id") @db.Uuid
-  specialty   Specialty @relation(fields: [specialtyId], references: [id], onDelete: Restrict)
-
-  name            String @db.VarChar(120)
-  durationMinutes Int    @map("duration_minutes") @db.SmallInt
-
-  active Boolean @default(true)
-
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  durationExceptions DurationException[]
-  /// SP-025. Declared so the `RESTRICT` foreign key is visible from this side
-  /// too: a type nobody booked can be deleted, one an appointment names cannot.
-  agendaEntries      AgendaEntry[]
-  /// AG-060. The same `RESTRICT`, for the people still waiting for that type:
-  /// deleting it would leave them waiting for something that no longer exists.
-  waitlistEntries    WaitlistEntry[]
-  /// SP-030, SP-031. What is charged for this type, in order.
-  billableServices   ServiceTypeBillableService[]
-
-  @@map("service_type")
-}
-
-/// SP-031 (D-179.3). The services a service type charges for, in order. The
-/// one at `position` 0 is born with the type, renamed with it and proposed by
-/// caja (BI-158). One row per position
-/// (`service_type_billable_service_one_per_position`, in the migration).
-model ServiceTypeBillableService {
-  serviceTypeId String      @map("service_type_id") @db.Uuid
-  serviceType   ServiceType @relation(fields: [serviceTypeId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "service_type_billable_service_type_fk")
-
-  billableServiceId String          @map("billable_service_id") @db.Uuid
-  billableService   BillableService @relation(fields: [billableServiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "service_type_billable_service_service_fk")
-
-  position Int @default(0) @db.SmallInt
-
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  @@id([serviceTypeId, billableServiceId])
-  @@unique([serviceTypeId, position], map: "service_type_billable_service_one_per_position")
-  @@index([billableServiceId], map: "service_type_billable_service_by_service")
-  @@map("service_type_billable_service")
-}
-
-/// One practitioner's own duration for one service type (D-007, SP-022): the
-/// top of the resolution hierarchy, above the specialty·type base.
+/// One practitioner's own duration for one consultation (D-007, SP-022): the
+/// top of the resolution hierarchy, above the consultation's own.
 model DurationException {
   practitionerId String       @map("practitioner_id") @db.Uuid
   practitioner   Practitioner @relation(fields: [practitionerId], references: [id], onDelete: Cascade)
 
-  serviceTypeId String      @map("service_type_id") @db.Uuid
-  serviceType   ServiceType @relation(fields: [serviceTypeId], references: [id], onDelete: Cascade)
+  serviceId String  @map("service_id") @db.Uuid
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "duration_exception_service_fk")
 
   durationMinutes Int @map("duration_minutes") @db.SmallInt
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@id([practitionerId, serviceTypeId])
+  @@id([practitionerId, serviceId])
   @@map("duration_exception")
 }
 
@@ -2482,11 +2432,11 @@ model AgendaEntry {
   /// AG-129. Whom its emergency call notified.
   emergencyAlerts      AgendaEmergencyAlert[]
 
-  /// SP-028: el tipo de atención que recepción eligió al reservar, y con el
-  /// que se resolvió la duración (SP-023). `RESTRICT` es lo que produce
-  /// SP-025 — borrar un tipo con citas se rechaza en la base, no en TypeScript.
-  serviceTypeId String?      @map("service_type_id") @db.Uuid
-  serviceType   ServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
+  /// SP-028: la consulta que recepción eligió al reservar, y con la que se
+  /// resolvió la duración (SP-023). `RESTRICT` es lo que produce SP-025 y
+  /// BI-288 — borrar un servicio con citas se rechaza en la base.
+  serviceId String?  @map("service_id") @db.Uuid
+  service   Service? @relation(fields: [serviceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_entry_service_fk")
 
   reason String? @db.VarChar(512)
 
@@ -2583,12 +2533,11 @@ model WaitlistEntry {
   practitioner   Practitioner? @relation(fields: [practitionerId], references: [id], onDelete: Restrict)
 
   /// AG-060, AG-061. `service_type` Y NO `catalog_concept`, desde
-  /// `waitlist_service_type_follows_agenda`: es la MISMA tabla que
-  /// `agenda_entry.service_type_id` nombra desde C4, y sin eso la mitad de
-  /// AG-061 que compara los dos tipos no podía ser cierta nunca. NULL
+  /// La MISMA tabla que `agenda_entry.service_id`, y sin eso la mitad de
+  /// AG-061 que compara las dos consultas no podría ser cierta. NULL
   /// significa «cualquiera», no «ninguno».
-  serviceTypeId String?      @map("service_type_id") @db.Uuid
-  serviceType   ServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: Restrict)
+  serviceId String?  @map("service_id") @db.Uuid
+  service   Service? @relation(fields: [serviceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "waitlist_entry_service_fk")
 
   /// AG-060. Between which dates the appointment is of any use to the patient.
   ///
@@ -3459,9 +3408,6 @@ model EncounterProcedure {
 
   quantity Int @default(1) @db.SmallInt
 
-  /// Frozen tariff amount. Money is always Decimal(12,2), never Float.
-  tariffAmount Decimal? @map("tariff_amount") @db.Decimal(12, 2)
-
   performedAt DateTime @default(now()) @map("performed_at") @db.Timestamptz(6)
   note        String?  @db.Text
 
@@ -3504,8 +3450,6 @@ model EncounterProcedureRetraction {
   quantity         Int      @db.SmallInt
   performedAt      DateTime @map("performed_at") @db.Timestamptz(6)
   note             String?  @db.Text
-  /// EN-051. Archived as it was, so an old row does not lose it.
-  tariffAmount     Decimal? @map("tariff_amount") @db.Decimal(12, 2)
 
   editedById String?   @map("edited_by_id") @db.Uuid
   editedBy   User?     @relation("ProcedureRetractionEditor", fields: [editedById], references: [id], onDelete: Restrict)
@@ -3937,9 +3881,12 @@ model ServiceOrderItem {
   serviceOrderId String       @map("service_order_id") @db.Uuid
   serviceOrder   ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
 
-  conceptId String         @map("concept_id") @db.Uuid
-  concept   CatalogConcept @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+  /// ORD-004 (D-218 §1). The TARIFF concept of the service's MSP code in
+  /// force on the clinical date, when it has one: no longer a condition.
+  conceptId String?         @map("concept_id") @db.Uuid
+  concept   CatalogConcept? @relation(fields: [conceptId], references: [id], onDelete: Restrict)
 
+  /// ORD-002, BI-284. The SERVICE's code, frozen.
   testCode    String @map("test_code") @db.VarChar(32)
   testDisplay String @map("test_display") @db.VarChar(240)
 
@@ -4339,7 +4286,7 @@ model Interconsultation {
 // day an insurer pays differently, and it breaks again when prices rise and
 // every past invoice silently changes with them. So:
 //
-//   1. `BillableService` — what the clinic knows how to do. NO PRICE.
+//   1. `Service` — what the clinic offers and charges (ADR-013). NO PRICE.
 //   2. `PriceList` + `Price` — a price per service PER PAYER, over a validity
 //      range that cannot overlap, guaranteed by PostgreSQL rather than by code.
 //   3. `ChargeItem` — this patient, this encounter, this service, with the
@@ -4423,69 +4370,46 @@ model TaxRate {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  billableServices BillableService[]
+  services Service[]
 
   @@map("tax_rate")
 }
 
-/// BI-185, BI-186. The categories of the billable services, administered by
-/// the clinic. Deactivated and never deleted while a service uses one
-/// (`billable_service_category_fk` is RESTRICT).
-///
-/// `billable_service_category_name_unique` is UNIQUE on `lower(name)` and
-/// `billable_service_category_kind_is_known` bounds `kind`: both live in the
-/// migration, because schema.prisma cannot say either.
-model BillableServiceCategory {
-  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
-
-  name String @db.VarChar(60)
-  /// CONSULTATION, PROCEDURE, LABORATORY, IMAGING, SUPPLY or OTHER. Text and not
-  /// an enum, like `visit_sequence`: the economic catalogue evolves without a
-  /// type of the clinical schema. Not editable once created.
-  kind String @db.VarChar(16)
-
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  services BillableService[]
-
-  @@map("billable_service_category")
-}
-
 /// What the clinic knows how to do — and WITHOUT A PRICE, which is the point.
-model BillableService {
+model Service {
   id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
-  code String @unique(map: "billable_service_code_unique") @db.VarChar(32)
+  code String @unique(map: "service_code_unique") @db.VarChar(32)
   name String @db.VarChar(200)
 
-  /// BI-185, BI-186. A row of the clinic's catalogue, never free text: free
-  /// text gave «Laboratorio», «laboratorio» and «Lab.» in the same report, and
-  /// the category's KIND says what structure the service admits (BI-187).
-  categoryId String                  @map("category_id") @db.Uuid
-  category   BillableServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_category_fk")
+  /// BI-278 (ADR-013). CONSULTATION, PROCEDURE, LAB_EXAM, IMAGING, SUPPLY or
+  /// OTHER (`service_kind_is_known`). Text and not an enum, like
+  /// `visit_sequence`. Fixed once created (`trg_service_kind_is_fixed`): it
+  /// decides what structure the row has and what may point at it.
+  kind String @db.VarChar(16)
 
-  /// The MSP tariff code, when the service has one. NOMENCLATURE ONLY — the
+  /// BI-279. A consultation's agenda data, present exactly when
+  /// kind = CONSULTATION (`service_consultation_shape`). The duration is the
+  /// second rung of SP-023; `visitKind` is FIRST_VISIT, FOLLOW_UP or NULL and
+  /// only names the consultation — first time or subsequent for the RDACAA is
+  /// still computed from the patient (EN-215).
+  specialtyId     String?    @map("specialty_id") @db.Uuid
+  specialty       Specialty? @relation(fields: [specialtyId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "service_specialty_fk")
+  durationMinutes Int?       @map("duration_minutes") @db.SmallInt
+  visitKind       String?    @map("visit_kind") @db.VarChar(16)
+
+  /// The MSP tariff code («Código MSP»), when the service has one (BI-285).
+  /// Optional, never a condition to order (D-218 §1), and for a PROCEDURE the
+  /// tie to what was performed (BI-286, `service_one_procedure_per_code`).
+  /// NOMENCLATURE ONLY — the
   /// Tarifario does NOT set what a private patient is charged, its scope having
   /// been narrowed by A.M. 0046-2017 to dealings inside the public network. It
   /// is kept because it is what makes billing TO that network possible.
-  tariffCode String? @map("tariff_code") @db.VarChar(32)
+  mspCode String? @map("msp_code") @db.VarChar(32)
 
   /// D-A-006: the rate is a property OF THE SERVICE, and editable.
   taxRateId String  @map("tax_rate_id") @db.Uuid
-  taxRate   TaxRate @relation(fields: [taxRateId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_tax_rate_fk")
-
-  /// Ties the service to what actually happened, so a charge can be raised from
-  /// the encounter instead of typed at the cashier. Optional because a service
-  /// may be no procedure at all — a room fee, a supply.
-  procedureConceptId String?         @map("procedure_concept_id") @db.Uuid
-  procedureConcept   CatalogConcept? @relation(fields: [procedureConceptId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_procedure_fk")
-
-  /// BI-158, SP-031 (D-179.3). The service types this service charges for;
-  /// a consultation is born with its type and is not tied to a specialty by
-  /// hand any more.
-  serviceTypes ServiceTypeBillableService[]
+  taxRate   TaxRate @relation(fields: [taxRateId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "service_tax_rate_fk")
 
   active    Boolean  @default(true)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -4494,8 +4418,11 @@ model BillableService {
   prices                 Price[]
   chargeItems            ChargeItem[]
   tariffPublicationItems TariffPublicationItem[]
-  /// ORD-163. At most one (`exam_definition_one_per_service`).
-  examDefinitions        ExamDefinition[]
+  /// BI-284. Present when it is ordered (exam, imaging, orderable procedure).
+  exam                   ServiceExam?
+  agendaEntries          AgendaEntry[]
+  waitlistEntries        WaitlistEntry[]
+  durationExceptions     DurationException[]
   /// WHO CHECKED THIS RATE, which is the whole point of D-A-006.
   ///
   /// The seed ships a DEFAULT: 0% for health services (LRTI art. 56.2), the
@@ -4509,20 +4436,72 @@ model BillableService {
   /// inspection asks about.
   taxReviewedAt          DateTime?               @map("tax_reviewed_at") @db.Timestamptz(6)
   taxReviewedById        String?                 @map("tax_reviewed_by_id") @db.Uuid
-  taxReviewedBy          User?                   @relation("TaxRateReviewer", fields: [taxReviewedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_tax_reviewer_fk")
+  taxReviewedBy          User?                   @relation("TaxRateReviewer", fields: [taxReviewedById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "service_tax_reviewer_fk")
 
   /// BI-256 (D-159.1, .5). «Exige consentimiento 024»: put by the clinic's
   /// medical direction on the services it performs, OFF by default, with who
   /// and when it last changed. Read by `procedure_requires_written_consent`,
-  /// which is what EN-152 asks. Only a service tied to a procedure concept
-  /// may carry it (`billable_service_written_consent_needs_a_procedure`).
+  /// which is what EN-152 asks. Only a PROCEDURE with its code may carry it
+  /// (`service_written_consent_needs_a_procedure`).
   requiresWrittenConsent Boolean   @default(false) @map("requires_written_consent")
   writtenConsentSetAt    DateTime? @map("written_consent_set_at") @db.Timestamptz(6)
   writtenConsentSetById  String?   @map("written_consent_set_by_id") @db.Uuid
-  writtenConsentSetBy    User?     @relation("WrittenConsentRuleSetter", fields: [writtenConsentSetById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "billable_service_written_consent_setter_fk")
+  writtenConsentSetBy    User?     @relation("WrittenConsentRuleSetter", fields: [writtenConsentSetById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "service_written_consent_setter_fk")
 
-  @@index([categoryId, name], map: "billable_service_by_category")
-  @@map("billable_service")
+  @@index([kind, name], map: "service_by_kind")
+  @@map("service")
+}
+
+/// BI-284 (ADR-013). What an ordered service needs on the order: the section
+/// of MSP form 010A (A.M. 00002393 art. 42 binds the private sector too), the
+/// specimen, the preparation and fast printed on the order (ORD-129), the
+/// turnaround (ORD-022) and who performs it (external is the realistic case,
+/// D-A-012). Only on LAB_EXAM, IMAGING or PROCEDURE
+/// (`trg_service_exam_kind_admits`).
+model ServiceExam {
+  serviceId String  @id @map("service_id") @db.Uuid
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "service_exam_service_fk")
+
+  form010Section     String? @map("form_010_section") @db.VarChar(60)
+  specimenType       String? @map("specimen_type") @db.VarChar(80)
+  patientPreparation String? @map("patient_preparation") @db.VarChar(500)
+  turnaroundHours    Int?    @map("turnaround_hours") @db.SmallInt
+
+  /// ORD-129 (D-137). Hours only with a fast
+  /// (`service_exam_fasting_hours_needs_fasting`), 1–24.
+  requiresFasting Boolean @default(false) @map("requires_fasting")
+  fastingHours    Int?    @map("fasting_hours") @db.SmallInt
+
+  performedExternally Boolean @default(true) @map("performed_externally")
+  externalLabName     String? @map("external_lab_name") @db.VarChar(160)
+  externalLabCode     String? @map("external_lab_code") @db.VarChar(64)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  analytes ServiceExamAnalyte[]
+
+  @@map("service_exam")
+}
+
+/// ORD-105. The analytes an ordered service produces, in printing order.
+model ServiceExamAnalyte {
+  serviceId String      @map("service_id") @db.Uuid
+  exam      ServiceExam @relation(fields: [serviceId], references: [serviceId], onDelete: Cascade, onUpdate: NoAction, map: "service_exam_analyte_exam_fk")
+
+  analyteDefinitionId String            @map("analyte_definition_id") @db.Uuid
+  analyteDefinition   AnalyteDefinition @relation(fields: [analyteDefinitionId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "service_exam_analyte_analyte_fk")
+
+  /// The order they are printed and displayed in. Stored, because a laboratory
+  /// report read in alphabetical order is a report nobody can scan.
+  position Int @db.SmallInt
+
+  /// A reflex analyte is only produced when another comes back positive, so it
+  /// is expected to be missing and its absence is not an incomplete result.
+  isReflex Boolean @default(false) @map("is_reflex")
+
+  @@id([serviceId, analyteDefinitionId])
+  @@map("service_exam_analyte")
 }
 
 /// A set of prices belonging to one payer. Self-pay is a payer like any other,
@@ -4596,8 +4575,8 @@ model TariffPublicationItem {
   publication   TariffPublication @relation(fields: [publicationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "tariff_publication_item_publication_fk")
 
   /// To compare with what is in force (BI-115); what is shown is the copy.
-  billableServiceId String          @map("billable_service_id") @db.Uuid
-  billableService   BillableService @relation(fields: [billableServiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "tariff_publication_item_service_fk")
+  serviceId String  @map("service_id") @db.Uuid
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "tariff_publication_item_service_fk")
 
   serviceCode   String   @map("service_code") @db.VarChar(32)
   serviceName   String   @map("service_name") @db.VarChar(200)
@@ -4611,7 +4590,7 @@ model TariffPublicationItem {
   /// demands it on every new one.
   finalAmount   Decimal? @map("final_amount") @db.Decimal(12, 2)
 
-  @@unique([publicationId, billableServiceId], map: "tariff_publication_item_service_unique")
+  @@unique([publicationId, serviceId], map: "tariff_publication_item_service_unique")
   @@map("tariff_publication_item")
 }
 
@@ -4622,8 +4601,8 @@ model Price {
   priceListId String    @map("price_list_id") @db.Uuid
   priceList   PriceList @relation(fields: [priceListId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "price_list_fk")
 
-  billableServiceId String          @map("billable_service_id") @db.Uuid
-  billableService   BillableService @relation(fields: [billableServiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "price_service_fk")
+  serviceId String  @map("service_id") @db.Uuid
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "price_service_fk")
 
   /// Decimal, never Float. Money in binary floating point is a defect waiting
   /// for the invoice that is off by a cent.
@@ -4733,8 +4712,8 @@ model ChargeItem {
   accountId String         @map("account_id") @db.Uuid
   account   PatientAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_account_fk")
 
-  billableServiceId String          @map("billable_service_id") @db.Uuid
-  billableService   BillableService @relation(fields: [billableServiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_service_fk")
+  serviceId String  @map("service_id") @db.Uuid
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "charge_item_service_fk")
 
   /// Where it came from clinically. Optional because not every charge is a
   /// procedure and not every procedure is charged.
@@ -5122,7 +5101,7 @@ model AnalyteDefinition {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   referenceRanges AnalyteReferenceRange[]
-  exams           ExamDefinitionAnalyte[]
+  exams           ServiceExamAnalyte[]
 
   @@map("analyte_definition")
 }
@@ -5166,76 +5145,6 @@ model AnalyteReferenceRange {
 
   @@index([analyteDefinitionId], map: "analyte_reference_range_by_analyte")
   @@map("analyte_reference_range")
-}
-
-/// The orderable: what the doctor asks for and what the invoice charges. One
-/// of these yields many `AnalyteDefinition`s.
-model ExamDefinition {
-  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
-
-  code String @unique(map: "exam_definition_code_unique") @db.VarChar(32)
-
-  /// ORD-097, ORD-101. An order only carries exams of its own category.
-  category ServiceOrderCategory @default(LABORATORY)
-
-  /// The section of MSP form 010A this belongs to, so that a compliant order
-  /// can be printed. That form binds the private sector too:
-  /// A.M. 00002393 art. 42.
-  form010Section String? @map("form_010_section") @db.VarChar(60)
-
-  /// What the patient must do beforehand, printed on the order itself.
-  specimenType       String? @map("specimen_type") @db.VarChar(80)
-  patientPreparation String? @map("patient_preparation") @db.VarChar(500)
-  turnaroundHours    Int?    @map("turnaround_hours") @db.SmallInt
-
-  /// ORD-129 (D-137). Whether the exam asks for a fast, and its MINIMUM hours
-  /// (1–24, optional): the order's highlighted line comes from here, not from
-  /// how the preparation is worded. Hours only with a fast
-  /// (`exam_definition_fasting_hours_needs_fasting`).
-  requiresFasting Boolean @default(false) @map("requires_fasting")
-  fastingHours    Int?    @map("fasting_hours") @db.SmallInt
-
-  /// Which lab performs it. External is the realistic case (D-A-012), so it is
-  /// the default rather than the exception.
-  performedExternally Boolean @default(true) @map("performed_externally")
-  externalLabName     String? @map("external_lab_name") @db.VarChar(160)
-  externalLabCode     String? @map("external_lab_code") @db.VarChar(64)
-
-  /// ORD-162, ORD-163 (D-179.1). The service this exam IS: its NAME and its
-  /// TARIFF CODE (ORD-004) live there and nowhere else. Required, and one
-  /// service charges at most one exam (`exam_definition_one_per_service`, in
-  /// the migration). The price is not here either: a price list, per payer.
-  billableServiceId String          @unique(map: "exam_definition_one_per_service") @map("billable_service_id") @db.Uuid
-  billableService   BillableService @relation(fields: [billableServiceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "exam_definition_service_fk")
-
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  analytes ExamDefinitionAnalyte[]
-
-  @@map("exam_definition")
-}
-
-/// Which analytes an exam yields — the relation without which a result has
-/// nothing to be validated against.
-model ExamDefinitionAnalyte {
-  examDefinitionId String         @map("exam_definition_id") @db.Uuid
-  examDefinition   ExamDefinition @relation(fields: [examDefinitionId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "exam_definition_analyte_exam_fk")
-
-  analyteDefinitionId String            @map("analyte_definition_id") @db.Uuid
-  analyteDefinition   AnalyteDefinition @relation(fields: [analyteDefinitionId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "exam_definition_analyte_analyte_fk")
-
-  /// The order they are printed and displayed in. Stored, because a laboratory
-  /// report read in alphabetical order is a report nobody can scan.
-  position Int @db.SmallInt
-
-  /// A reflex analyte is only produced when another comes back positive, so it
-  /// is expected to be missing and its absence is not an incomplete result.
-  isReflex Boolean @default(false) @map("is_reflex")
-
-  @@id([examDefinitionId, analyteDefinitionId])
-  @@map("exam_definition_analyte")
 }
 
 /// BI-100, BI-144. A way the clinic gets paid, under its own name, and the
@@ -5961,37 +5870,37 @@ model PatientConsent {
 /// PD-030..PD-038. A right exercised by the data subject. The only update the
 /// base admits is the answer, whole and once.
 model DataSubjectRequest {
-  id                 String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  patientId          String              @map("patient_id") @db.Uuid
-  patient            Patient             @relation(fields: [patientId], references: [id], onDelete: Restrict)
-  right              DataSubjectRight
-  requestedBy        DataRequestParty    @map("requested_by")
+  id                    String                   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  patientId             String                   @map("patient_id") @db.Uuid
+  patient               Patient                  @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  right                 DataSubjectRight
+  requestedBy           DataRequestParty         @map("requested_by")
   /// PD-052. Who presents it, when it is not the holder and asks for the copy.
-  requesterName      String?             @map("requester_name") @db.Text
-  requesterDocument  String?             @map("requester_document") @db.Text
+  requesterName         String?                  @map("requester_name") @db.Text
+  requesterDocument     String?                  @map("requester_document") @db.Text
   /// PD-063. Only the relative of a deceased patient, and always for them.
   requesterRelationship DataRequestRelationship? @map("requester_relationship")
   /// PD-053. An access request asking for the copy of the clinical record.
-  clinicalRecordCopy Boolean             @default(false) @map("clinical_record_copy")
+  clinicalRecordCopy    Boolean                  @default(false) @map("clinical_record_copy")
   /// PD-053. The signed request and the copy of the cedula were at hand.
-  documentsChecked   Boolean             @default(false) @map("documents_checked")
-  description        String              @db.Text
-  receivedAt         DateTime            @default(now()) @map("received_at") @db.Timestamptz(6)
+  documentsChecked      Boolean                  @default(false) @map("documents_checked")
+  description           String                   @db.Text
+  receivedAt            DateTime                 @default(now()) @map("received_at") @db.Timestamptz(6)
   /// PD-032, PD-054. The instant the answer is due, fixed on registration.
-  dueAt              DateTime            @map("due_at") @db.Timestamptz(6)
-  registeredAt       DateTime            @default(now()) @map("registered_at") @db.Timestamptz(6)
-  registeredBy       String              @map("registered_by") @db.Uuid
-  outcome            DataRequestOutcome?
-  response           String?             @db.Text
-  answeredAt         DateTime?           @map("answered_at") @db.Timestamptz(6)
-  answeredBy         String?             @map("answered_by") @db.Uuid
+  dueAt                 DateTime                 @map("due_at") @db.Timestamptz(6)
+  registeredAt          DateTime                 @default(now()) @map("registered_at") @db.Timestamptz(6)
+  registeredBy          String                   @map("registered_by") @db.Uuid
+  outcome               DataRequestOutcome?
+  response              String?                  @db.Text
+  answeredAt            DateTime?                @map("answered_at") @db.Timestamptz(6)
+  answeredBy            String?                  @map("answered_by") @db.Uuid
   /// PD-059. The period a copy answered «Atendida en parte» hands over.
-  copyFrom           DateTime?           @map("copy_from") @db.Date
-  copyTo             DateTime?           @map("copy_to") @db.Date
+  copyFrom              DateTime?                @map("copy_from") @db.Date
+  copyTo                DateTime?                @map("copy_to") @db.Date
   /// PD-046. Who last edited it (or answered it) and when: the stamp every
   /// UPDATE carries so `record_version` archives the row it replaces.
-  changedBy          String?             @map("changed_by") @db.Uuid
-  changedAt          DateTime?           @map("changed_at") @db.Timestamptz(6)
+  changedBy             String?                  @map("changed_by") @db.Uuid
+  changedAt             DateTime?                @map("changed_at") @db.Timestamptz(6)
 
   answerCorrections DataSubjectAnswerCorrection[]
   /// PD-061. The professionals' reviews of a copy; the latest stands.

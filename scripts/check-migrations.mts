@@ -48,15 +48,19 @@ const PROTECTED = [
   'patient_absorbed_charts',
   'access_audit_occurred_brin',
   'agenda_entry_daily_agenda',
-  // Índice PARCIAL (`WHERE service_type_id IS NOT NULL`): sin él, cada intento
-  // de borrar un tipo de atención recorre `agenda_entry` entera para decidir
-  // SP-025. Prisma no puede describir el predicado, así que lo lee como
-  // sobrante.
-  'agenda_entry_by_service_type',
-  // Su gemelo en la lista de espera (`WHERE service_type_id IS NOT NULL`):
-  // borrar un tipo de atención tiene que decidir también si alguien lo espera
-  // (AG-060). Prisma no puede describir el predicado.
-  'waitlist_entry_by_service_type',
+  // Índice PARCIAL (`WHERE service_id IS NOT NULL`): sin él, cada intento de
+  // borrar un servicio recorre `agenda_entry` entera para decidir SP-025 y
+  // BI-288. Prisma no puede describir el predicado, así que lo lee como
+  // sobrante. Sustituye a `agenda_entry_by_service_type` (ADR-013).
+  'agenda_entry_by_service',
+  // Su gemelo en la lista de espera (`WHERE service_id IS NOT NULL`): borrar
+  // un servicio tiene que decidir también si alguien lo espera (AG-060).
+  'waitlist_entry_by_service',
+  // BI-278 y BI-286: únicos PARCIALES (sólo activos; sólo procedimientos con
+  // código). Sin ellos vuelven las consultas duplicadas y caja propondría en
+  // silencio uno de dos procedimientos con el mismo código.
+  'service_active_name_unique',
+  'service_one_procedure_per_code',
   // Índice único PARCIAL (`WHERE rescheduled_from_id IS NOT NULL`): es a la vez
   // la garantía de que una cita se reprograma UNA sola vez (AG-050) y el índice
   // con el que se recorre la cadena hacia adelante (AG-051). Prisma no puede
