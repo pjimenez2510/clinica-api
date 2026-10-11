@@ -838,6 +838,22 @@ describe('choosing the RDACAA references from a catalogue', () => {
     expect(recorded.audit).toHaveLength(1);
   });
 
+  it('PA-079 lists charts by id without an access row per chart', async () => {
+    // The day board asks every few seconds; a row per chart and poll would
+    // bury the openings PA-022 exists to account for.
+    const { service, recorded } = serviceWith({});
+
+    await service.search({
+      page: 1,
+      pageSize: 50,
+      includeMerged: false,
+      ids: [PATIENT],
+      sortBy: 'name',
+      sortDirection: 'asc',
+    });
+    expect(recorded.audit).toEqual([]);
+  });
+
   it('PA-058 does not audit a read of a chart that does not exist', async () => {
     // Same criterion as the 404 of PA-024: nothing was disclosed, and a row per
     // guessed identifier would let anybody fill the trail with noise.

@@ -306,6 +306,26 @@ sin el código.
 entrega es qué ofrece y cómo lo agrupa la pantalla, y que no lleve a un rechazo
 evitable — y su prueba vive en `clinica-web`.
 
+### P11 — Lo que falta de la ficha se completa donde se ve _(P1, 11-10-2026)_
+
+Revisión de producto del 10 y 11-10-2026 (D-205, puntos 10 y 11) y D-A-017:
+recepción completa los datos que faltan desde el tablero del día sin ir a la
+ficha, y la ficha deja de apilar dos avisos ámbar debajo de la banda: la banda
+lleva los mismos chips que la de la consulta.
+
+**Por qué es P1:** completar la etnia o la parroquia exigía salir del tablero,
+abrir la ficha, «Editar ficha» y buscar el campo entre todos; y a 375 px los dos
+avisos de la ficha ocupaban casi media pantalla.
+**Prueba independiente:** con recepción, en el tablero de hoy, una fila con
+«Faltan 2 datos» abre un panel con sólo esos dos campos; elegir la parroquia la
+guarda y el chip pasa a «Falta 1 dato» sin recargar. Con el médico, la ficha
+de un paciente sin alergias registradas enseña en la banda «Alergias sin
+registrar» y «Completar la ficha», y ningún aviso debajo.
+**Cubre:** PA-079 a PA-081.
+**Solo interfaz:** PA-080, PA-081. Lo que falta lo dice el servidor
+(PA-032) y se escribe con las rutas que ya existen (PA-015, PA-031); lo de estas
+dos es dónde y cómo lo enseña la pantalla, y su prueba vive en `clinica-web`.
+
 ## Criterios de éxito
 
 Medibles y sin nombrar tecnología. **No empiezan en `SC-001` a propósito**: los
@@ -2201,6 +2221,41 @@ Ningún requisito de esta sección lo altera._
   el rol de caja, y NO DEBERÁ abrir `PATCH /patients/:id` ni ninguna otra
   escritura de la ficha.
 
+## 13. Lo que falta de la ficha, donde se ve (D-205, D-A-017)
+
+- **PA-079** — CUANDO alguien con `patient:read` consulte el registro con `ids`
+  (`GET /patients?ids=<id>,<id>`, hasta 50), el sistema DEBERÁ devolver sólo
+  esas fichas, cada una con lo que le falta para el RDACAA (PA-032), y NO
+  DEBERÁ dejar una fila de bitácora por ficha; y SI alguno no es un
+  identificador válido o pasan de 50, ENTONCES DEBERÁ rechazar la consulta
+  entera con 400.
+  > Es lo que deja al tablero del día decir «Faltan N datos» en cada fila sin
+  > abrir una ficha por paciente: abrir una ficha deja su fila de acceso (PA-022)
+  > y el tablero se consulta cada pocos segundos. El listado ya lleva
+  > `rdacaaMissingFields` (PA-032) y no se audita por ficha; aquí sólo se le
+  > añade el filtro. `agenda` no puede calcular qué falta —no importa de
+  > `patients` (ADR-011)—, así que la página compone las dos lecturas.
+- **PA-080** — CUANDO a la ficha de una cita del tablero del día le falte algún
+  dato que el RDACAA exige (PA-032), la fila DEBERÁ decirlo con «Falta 1 dato» o
+  «Faltan N datos» junto al paciente; y CUANDO quien lo vea tenga
+  `patient:write` y lo pulse, DEBERÁ abrir un panel lateral con sólo esos
+  campos, editables en el sitio con las mismas rutas que la ficha (PA-015,
+  PA-031), y la marca DEBERÁ cambiar en cuanto se guarde, sin recargar.
+  > D-A-017 §4 y §5: lo estadístico es cola de recepción, no del médico, y se
+  > completa donde se descubre que falta. Sin `patient:write` la marca se lee y
+  > no abre nada. No bloquea ninguna acción de la fila.
+- **PA-081** — MIENTRAS se vea la ficha de un paciente, la banda del paciente
+  DEBERÁ llevar sus alertas en chips, como la banda de la consulta: con
+  `record:read`, las alergias activas una a una con su gravedad, o «Sin
+  alergias conocidas», o «Alergias sin registrar» (D-A-018), que lleva a la
+  pestaña de alergias; y SI a la ficha le falta algo para el RDACAA, ENTONCES
+  «Completar la ficha», que con `patient:write` abre el mismo panel de PA-080.
+  Debajo de la banda NO DEBERÁ haber aviso de alergias ni de ficha incompleta.
+  > Revisión de producto del 11-10-2026: los dos avisos ámbar apilados ocupaban
+  > casi media pantalla a 375 px. La alergia no se esconde: cambia de forma y
+  > sigue a la vista desde cualquier pestaña (D-A-018). Y ya no se dice
+  > «antes de cerrar la atención», porque nada lo bloquea (D-A-017).
+
 ## Códigos de error
 
 Ya existen en `shared/domain/errors/error-catalogue.ts` y los emite este módulo:
@@ -2465,6 +2520,8 @@ prueba cite un ID inexistente; el día que este `SPEC.md` pase a `vigente`,
 | PA-070                         | Integración contra PostgreSQL real: las dos órdenes de «nombre apellido» encuentran la ficha y una ficha con sólo una de las palabras **no** sale (control negativo); sin tildes en las dos direcciones. Sólo la base sabe qué guarda `search_name` |
 | PA-071                         | Unitario de dominio sobre la fecha clínica, con la frontera del décimo cumpleaños + contrato HTTP del `code`, el 422 y el campo señalado + integración: corregir la fecha de nacimiento de una ficha con identidad de género por debajo del umbral se rechaza sin escribir; y en la web, `rdacaa.spec.ts` sobre lo que se ofrece |
 | PA-072, PA-073, PA-074         | Componente en el arnés de la web: el orden de los campos, el teclado, la ficha ofrecida, el resultado con documento y edad y el reparto de lo tecleado; y el recorrido F-01 en pantalla |
+| PA-079                         | Integración contra PostgreSQL real del repositorio: `ids` de dos fichas devuelve exactamente esas dos con lo que les falta (control positivo: sin `ids` sale el registro entero) y la absorbida no sale aunque se pida; contrato del DTO: 50 se aceptan, 51 o uno mal formado se rechazan; y unitaria del servicio: el listado por `ids` no escribe bitácora (la ruta del listado no llama al registrador, PA-023) |
+| PA-080, PA-081                 | Componente en el arnés de la web y recorrido F-02 en pantalla: la marca, el panel con sólo lo que falta, la marca que cambia al guardar; la banda de la ficha con sus chips y sin avisos debajo |
 
 ## Preguntas abiertas
 

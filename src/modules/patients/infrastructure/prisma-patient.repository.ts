@@ -421,6 +421,15 @@ export class PrismaPatientRepository implements PatientRepository {
         ? Prisma.empty
         : Prisma.sql`AND p.mother_patient_id IN ${chartScopeIds(criteria.motherId)}`;
     /**
+     * PA-079. The charts a screen already names. A bare id and not
+     * `chartScopeIds`: the caller asks for these charts, and an absorbed one
+     * stays out through `matches` like anywhere else in the listing.
+     */
+    const idsFilter =
+      criteria.ids === undefined
+        ? Prisma.empty
+        : Prisma.sql`AND p.id IN (${Prisma.join(criteria.ids.map((id) => Prisma.sql`${id}::uuid`))})`;
+    /**
      * EL DOCUMENTO SE BUSCA POR PREFIJO, con un mínimo de cuatro dígitos.
      *
      * Coincidencia exacta era demasiado rígida: en el mostrador se teclean los
@@ -515,7 +524,7 @@ export class PrismaPatientRepository implements PatientRepository {
     const rows = await this.prisma.$queryRaw<{ id: string }[]>`
       SELECT p.id
       FROM patient p
-      WHERE (${matches}) AND ${filter} ${motherFilter}
+      WHERE (${matches}) AND ${filter} ${motherFilter} ${idsFilter}
       ORDER BY ${Prisma.raw(orderBy)}
       LIMIT ${criteria.pageSize} OFFSET ${offset}
     `;
@@ -523,7 +532,7 @@ export class PrismaPatientRepository implements PatientRepository {
     const [{ count }] = await this.prisma.$queryRaw<[{ count: bigint }]>`
       SELECT count(*) AS count
       FROM patient p
-      WHERE (${matches}) AND ${filter} ${motherFilter}
+      WHERE (${matches}) AND ${filter} ${motherFilter} ${idsFilter}
     `;
 
     // The ids come from SQL; the ROWS come back through Prisma so the shape

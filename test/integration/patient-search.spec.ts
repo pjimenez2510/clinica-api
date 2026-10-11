@@ -364,6 +364,51 @@ describe('búsqueda y ordenación de pacientes', () => {
     expect(listado.total).toBe(APELLIDOS.length + 1);
   });
 
+  it('PA-079 devuelve sólo las fichas pedidas por id, con lo que a cada una le falta', async () => {
+    const prisma = db();
+    const idOf = (familyName: string) =>
+      prisma.patient.findFirstOrThrow({
+        where: { familyName },
+        select: { id: true },
+      });
+    const bravo = await idOf('Bravo');
+    const naupa = await idOf('Ñaupa');
+
+    // Control positivo: sin el filtro, el mismo camino trae el registro entero.
+    const todo = await repository.search(criteria('name', 'asc'));
+    expect(todo.total).toBe(APELLIDOS.length);
+
+    const pedidas = await repository.search({
+      ...criteria('name', 'asc'),
+      ids: [naupa.id, bravo.id],
+    });
+
+    expect(pedidas.total).toBe(2);
+    expect(pedidas.items.map((p) => p.familyName)).toEqual(['Bravo', 'Ñaupa']);
+    // PA-032 en cada fila: Ñaupa tiene cédula y Bravo no.
+    const missing = new Map(
+      pedidas.items.map((p) => [p.familyName, p.rdacaaMissingFields]),
+    );
+    expect(missing.get('Bravo')).toContain('identifier');
+    expect(missing.get('Ñaupa')).not.toContain('identifier');
+  });
+
+  it('PA-079 no trae la ficha absorbida aunque se pida por su id', async () => {
+    const { total } = await repository.search({
+      ...criteria('name', 'asc'),
+      ids: [fusionadaId],
+    });
+    expect(total).toBe(0);
+
+    // Control positivo: el mismo id, pidiendo las fusionadas, sí sale.
+    const conFusionadas = await repository.search({
+      ...criteria('name', 'asc'),
+      ids: [fusionadaId],
+      includeMerged: true,
+    });
+    expect(conFusionadas.total).toBe(1);
+  });
+
   it('PA-018 no busca por documento con menos de cuatro caracteres', async () => {
     // Un prefijo corto sobre documentos convierte el buscador en un oráculo
     // para enumerar el registro.

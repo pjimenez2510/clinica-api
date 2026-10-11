@@ -86,6 +86,8 @@ export class PatientsController {
       // PA-009. Un filtro más, no una búsqueda aparte: al recién nacido se le
       // encuentra por su madre porque no hay otra cosa que teclear.
       motherId: dto.motherId,
+      // PA-079. The day board names the charts whose gaps it shows.
+      ids: dto.ids,
       sortBy: dto.sortBy,
       sortDirection: dto.sortDirection,
     });
