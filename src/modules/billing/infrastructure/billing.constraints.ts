@@ -32,6 +32,13 @@ registerConstraintMeanings({
   },
   // ── The catalogue itself (BI-278 to BI-285) ─────────────────────────────
   // What the service checks first and the database keeps under concurrency.
+  // BI-298. Behind the service's own check, which names the existing one.
+  service_one_consultation_per_visit: {
+    code: 'CONSULTATION_DUPLICATE',
+    field: 'visitKind',
+    message:
+      'Ya existe una consulta activa de esa especialidad y visita: edítela',
+  },
   service_active_name_unique: {
     code: 'SERVICE_NAME_DUPLICATE',
     field: 'name',

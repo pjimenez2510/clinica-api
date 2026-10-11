@@ -38,6 +38,22 @@ function insertService(
       FROM tax_rate WHERE sri_code = '0' LIMIT 1`;
 }
 
+/** A consultation by raw SQL, so the refusal names the index (BI-298). */
+function insertConsultation(
+  prisma: PrismaClient,
+  row: {
+    code: string;
+    name: string;
+    specialtyId: string;
+    visitKind: string | null;
+  },
+): Promise<number> {
+  return prisma.$executeRaw`
+    INSERT INTO service (code, name, kind, tax_rate_id, specialty_id, duration_minutes, visit_kind, updated_at)
+    SELECT ${row.code}, ${row.name}, 'CONSULTATION', id, ${row.specialtyId}::uuid, 30, ${row.visitKind}, now()
+      FROM tax_rate WHERE sri_code = '0' LIMIT 1`;
+}
+
 /** The message of a rejected statement, constraint name included. */
 async function refusal(statement: Promise<unknown>): Promise<string> {
   try {
@@ -191,6 +207,52 @@ describe('el catálogo único de servicios, en la base (B21)', () => {
           }),
         ),
       ).toContain('service_consultation_shape');
+    });
+
+    it('BI-298 refuses a second active consultation of the same specialty and visit, but takes the other visit or one beside a retired twin', async () => {
+      await consultation();
+      // Control: the other visit of the same specialty is its own consultation.
+      await consultation({
+        code: 'CONS-CAR-SUB',
+        name: 'Consulta de cardiología · Control',
+        visitKind: 'FOLLOW_UP',
+      });
+
+      expect(
+        await refusal(
+          insertConsultation(prisma, {
+            code: 'CONS-CAR-PV2',
+            name: 'Cardiología primera vez bis',
+            specialtyId,
+            visitKind: 'FIRST_VISIT',
+          }),
+        ),
+      ).toContain('service_one_consultation_per_visit');
+
+      // Control: a retired twin does not count, so its replacement is taken.
+      await prisma.service.updateMany({
+        where: { code: 'CONS-CAR-PV' },
+        data: { active: false },
+      });
+      await consultation({ code: 'CONS-CAR-PV2', name: 'Cardiología primera vez bis' }); // prettier-ignore
+      // And bringing the retired one back would make two: refused.
+      expect(
+        await refusal(
+          prisma.$executeRaw`UPDATE service SET active = true WHERE code = 'CONS-CAR-PV'`,
+        ),
+      ).toContain('service_one_consultation_per_visit');
+    });
+
+    it('BI-298 counts a consultation without visit as its own case', async () => {
+      await consultation({ code: 'CONS-CAR-X', name: 'Consulta de cardiología', visitKind: null }); // prettier-ignore
+      // Control: beside it, the visits are still free.
+      await consultation();
+
+      expect(
+        await refusal(
+          insertConsultation(prisma, { code: 'CONS-CAR-Y', name: 'Otra de cardiología', specialtyId, visitKind: null }), // prettier-ignore
+        ),
+      ).toContain('service_one_consultation_per_visit');
     });
 
     it('BI-279 keeps the duration between 5 and 240 in steps of 5', async () => {

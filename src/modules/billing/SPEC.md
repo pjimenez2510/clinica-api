@@ -626,7 +626,7 @@ buscándolo por código. Contra PostgreSQL: la base rechaza una consulta sin
 especialidad, una extensión de orden sobre un insumo, dos consultas con el
 mismo nombre en una especialidad y dos procedimientos con el mismo código.
 
-**Cubre:** BI-278 a BI-297. **Solo interfaz:** BI-291 a BI-296. **Sustituye:**
+**Cubre:** BI-278 a BI-298. **Solo interfaz:** BI-291 a BI-296. **Sustituye:**
 BI-185 a BI-188, BI-257, BI-275 a BI-277 (y SP-020, SP-026, SP-030, SP-031,
 ORD-103, ORD-108, ORD-109, ORD-162, ORD-163, ORD-169 en sus módulos).
 
@@ -3092,6 +3092,16 @@ lo ve._
   > caída, ese «—» sería falso. Construido así mientras el autor decide (D-230).
   > La red pública queda fuera: liquida por el Tarifario del SNS, y un importe
   > particular en su planilla se glosaría; sin precio propio, `PRICE_NOT_FOUND`.
+
+- **BI-298** — CUANDO se cree una consulta, se corrija su especialidad o su
+  visita o se reactive, SI ya hay otra consulta activa de la misma
+  especialidad y la misma visita, ENTONCES el sistema DEBERÁ rechazarlo con
+  `CONSULTATION_DUPLICATE`, nombrando la que existe para que se edite; la base
+  lo garantiza con `service_one_consultation_per_visit` (una consulta sin
+  visita es su propio caso; una desactivada no cuenta).
+  > ADR-013: «una consulta por especialidad y visita». Dos «Primera vez» de
+  > la misma especialidad devuelven la duda de cuál propone la agenda y cuál
+  > cobra caja (revisión de producto del 11-10-2026).
 
 ### La pantalla «Servicios» (sólo interfaz, D-227 §1, D-220)
 

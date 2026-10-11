@@ -33,6 +33,7 @@ import { CODE_PREFIXES, proposeServiceCode } from '../domain/service-code';
 import {
   BillableServiceInUseError,
   BillableServiceNotFoundError,
+  ConsultationDuplicateError,
   ConsultationIncompleteError,
   PriceListNotFoundError,
   ServiceCodeInvoicedError,
@@ -212,6 +213,7 @@ export class ServiceCatalogueService {
       durationMinutes: request.durationMinutes,
       visitKind: request.visitKind,
     });
+    if (consultation !== null) await this.assertNoTwin(consultation, null);
     const exam = this.extensionOf(request.kind, request.exam);
     const mspCode = normalised(request.mspCode);
     if (request.kind === 'PROCEDURE' && mspCode !== null) {
@@ -317,11 +319,12 @@ export class ServiceCatalogueService {
         correction.durationMinutes !== was?.durationMinutes) ||
       (correction.visitKind !== undefined &&
         (correction.visitKind ?? null) !== (was?.visitKind ?? null));
+    let corrected: ConsultationData | null = null;
     if (touchesConsultation) {
       if (current.consultation === null) {
         throw new ServiceKindMismatchError('specialtyId');
       }
-      update.consultation = await this.consultationOf('CONSULTATION', {
+      corrected = await this.consultationOf('CONSULTATION', {
         specialtyId: correction.specialtyId ?? current.consultation.specialtyId,
         durationMinutes:
           correction.durationMinutes ?? current.consultation.durationMinutes,
@@ -329,7 +332,13 @@ export class ServiceCatalogueService {
           correction.visitKind === undefined
             ? current.consultation.visitKind
             : correction.visitKind,
-      }).then((data) => data ?? undefined);
+      });
+      update.consultation = corrected ?? undefined;
+    }
+    // BI-298. A changed specialty or visit, or a consultation coming back.
+    const reactivated = correction.active === true && !current.active;
+    if (current.consultation !== null && (corrected !== null || reactivated)) {
+      await this.assertNoTwin(corrected ?? current.consultation, serviceId);
     }
 
     if (correction.exam !== undefined) {
@@ -481,6 +490,21 @@ export class ServiceCatalogueService {
    * SP-021. The duration fits the slot atom of EVERY site —the consultation
    * has no site—, and the specialty is active.
    */
+  /** BI-298. One active consultation per specialty and visit. */
+  private async assertNoTwin(
+    consultation: { specialtyId: string; visitKind: VisitKind | null },
+    exceptId: string | null,
+  ): Promise<void> {
+    const twin = await this.catalogue.findActiveConsultation(
+      consultation.specialtyId,
+      consultation.visitKind,
+      exceptId,
+    );
+    if (twin !== null) {
+      throw new ConsultationDuplicateError(twin.specialtyName, consultation.visitKind); // prettier-ignore
+    }
+  }
+
   private async consultationOf(
     kind: ServiceKind,
     data: {

@@ -352,6 +352,16 @@ export interface PayerUpdate {
  * their price lists. Implemented by `PrismaBillingCatalogueRepository`.
  */
 export interface BillingCatalogueRepository {
+  /**
+   * BI-298. The active consultation of that specialty and visit other than
+   * `exceptId`, if any (a `null` visit is its own case).
+   */
+  findActiveConsultation(
+    specialtyId: string,
+    visitKind: 'FIRST_VISIT' | 'FOLLOW_UP' | null,
+    exceptId: string | null,
+  ): Promise<{ id: string; name: string; specialtyName: string } | null>;
+
   /** BI-189. Every list's prices of the service, every validity. */
   listPricesAcrossPayers(serviceId: string): Promise<ServicePriceView[]>;
 

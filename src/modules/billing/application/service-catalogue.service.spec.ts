@@ -10,6 +10,7 @@ import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
 import {
   BillableServiceInUseError,
   BillableServiceNotFoundError,
+  ConsultationDuplicateError,
   ConsultationIncompleteError,
   PriceListNotFoundError,
   ServiceCodeInvoicedError,
@@ -116,6 +117,7 @@ function build(overrides: Record<string, unknown> = {}) {
     isTariffProcedureCode: vi.fn().mockResolvedValue(true),
     procedureCodeTakenByOther: vi.fn().mockResolvedValue(false),
     specialtyIsActive: vi.fn().mockResolvedValue(true),
+    findActiveConsultation: vi.fn().mockResolvedValue(null),
     siteSlotAtoms: vi.fn().mockResolvedValue([10]),
     codesStartingWith: vi.fn().mockResolvedValue([]),
     findSelfPayPriceList: vi.fn().mockResolvedValue({
@@ -242,6 +244,42 @@ describe('BI-279 la consulta lleva especialidad, duración y visita', () => {
       durationMinutes: 20,
       visitKind: 'FOLLOW_UP',
     });
+  });
+
+  it('BI-298 una segunda consulta activa de la misma especialidad y visita se rechaza nombrando la que existe', async () => {
+    const { service: catalogue, mocks } = build();
+    mocks.findActiveConsultation.mockResolvedValueOnce({
+      id: 'service-existing',
+      name: 'Consulta de cardiología · Control',
+      specialtyName: 'Cardiología',
+    });
+
+    const refusal = await catalogue
+      .createService(newConsultation, requester)
+      .catch((error: unknown) => error);
+
+    expect(refusal).toBeInstanceOf(ConsultationDuplicateError);
+    expect((refusal as ConsultationDuplicateError).userTitle).toBe(
+      'Ya existe la consulta de Cardiología · Control: edítela',
+    );
+    expect(mocks.findActiveConsultation).toHaveBeenCalledWith('specialty-cardiology', 'FOLLOW_UP', null); // prettier-ignore
+    expect(mocks.createService).not.toHaveBeenCalled();
+  });
+
+  it('BI-298 corregir la visita o reactivar una consulta mira si ya hay otra; renombrarla, no', async () => {
+    const { service: catalogue, mocks } = build();
+
+    await catalogue.updateService('service-1', { name: 'Otra' }, requester);
+    expect(mocks.findActiveConsultation).not.toHaveBeenCalled();
+
+    await catalogue.updateService('service-1', { visitKind: 'FOLLOW_UP' }, requester); // prettier-ignore
+    expect(mocks.findActiveConsultation).toHaveBeenLastCalledWith('specialty-general', 'FOLLOW_UP', 'service-1'); // prettier-ignore
+
+    mocks.findService.mockResolvedValueOnce({ ...service, active: false });
+    mocks.findActiveConsultation.mockResolvedValueOnce({ id: 'other', name: 'X', specialtyName: 'Medicina General' }); // prettier-ignore
+    await expect(
+      catalogue.updateService('service-1', { active: true }, requester),
+    ).rejects.toBeInstanceOf(ConsultationDuplicateError);
   });
 
   it('BI-279 una consulta sin especialidad, sin duración o con una especialidad desactivada se rechaza', async () => {

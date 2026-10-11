@@ -488,6 +488,30 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
   }
 
   /** BI-279. */
+  async findActiveConsultation(
+    specialtyId: string,
+    visitKind: 'FIRST_VISIT' | 'FOLLOW_UP' | null,
+    exceptId: string | null,
+  ): Promise<{ id: string; name: string; specialtyName: string } | null> {
+    const found = await this.prisma.service.findFirst({
+      where: {
+        kind: 'CONSULTATION',
+        active: true,
+        specialtyId,
+        visitKind,
+        ...(exceptId === null ? {} : { id: { not: exceptId } }),
+      },
+      select: { id: true, name: true, specialty: { select: { name: true } } },
+    });
+    return found === null
+      ? null
+      : {
+          id: found.id,
+          name: found.name,
+          specialtyName: found.specialty?.name ?? '',
+        };
+  }
+
   async specialtyIsActive(specialtyId: string): Promise<boolean> {
     const found = await this.prisma.specialty.count({
       where: { id: specialtyId, active: true },

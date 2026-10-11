@@ -538,6 +538,8 @@ export const DOMAIN_ERROR_CODES = [
   // lo que se pide (422); y una consulta nace con las dos (422).
   'SERVICE_KIND_MISMATCH',
   'CONSULTATION_INCOMPLETE',
+  // BI-298. Una consulta activa por especialidad y visita (409).
+  'CONSULTATION_DUPLICATE',
   // BI-281. El código que ya salió en una factura no cambia (409).
   'SERVICE_CODE_INVOICED',
   // BI-256, BI-286 (D-159). La marca del 024 va en un procedimiento con su

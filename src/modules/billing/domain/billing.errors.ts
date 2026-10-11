@@ -104,6 +104,36 @@ export class ConsultationIncompleteError extends BusinessRuleViolation {
 }
 
 /**
+ * BI-298 (ADR-013). One active consultation per specialty and visit: a second
+ * one would leave agenda and caja guessing which is meant. The title names
+ * the one that exists, so the person edits it instead.
+ */
+export class ConsultationDuplicateError extends ConflictError {
+  readonly code = 'CONSULTATION_DUPLICATE';
+  override readonly userTitle: string;
+
+  constructor(
+    specialtyName: string,
+    visitKind: 'FIRST_VISIT' | 'FOLLOW_UP' | null,
+  ) {
+    super('Another active consultation has this specialty and visit', {}, [
+      {
+        field: visitKind === null ? 'specialtyId' : 'visitKind',
+        code: 'CONSULTATION_DUPLICATE',
+        message: 'Ya existe esa consulta',
+      },
+    ]);
+    const visit =
+      visitKind === 'FIRST_VISIT'
+        ? ' · Primera vez'
+        : visitKind === 'FOLLOW_UP'
+          ? ' · Control'
+          : '';
+    this.userTitle = `Ya existe la consulta de ${specialtyName}${visit}: edítela`;
+  }
+}
+
+/**
  * BI-256, BI-286. The 024 mark reaches a procedure through the code the
  * service carries; a service that is not a procedure with its code has
  * nothing to mark.
