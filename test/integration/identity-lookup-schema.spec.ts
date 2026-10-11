@@ -91,7 +91,7 @@ describe('the identity-lookup tables', () => {
     expect(rows.find((r) => r.cedula === '1701000034')?.registryName).toBe('MUÑOZ ARÉVALO ANA'); // prettier-ignore
   });
 
-  it('IL-009 refuses two versions with the same SHA-256 in the base, not only in the script', async () => {
+  it('IL-009 refuses two versions with the same SHA256 in the base, not only in the script', async () => {
     const data = { fileSha256: 'd'.repeat(64), fileName: 'a.csv', rowsImported: 0, importedAt: now }; // prettier-ignore
     await prisma.sriRucRegistryImport.create({ data });
     expect(await refusal(prisma.sriRucRegistryImport.create({ data }))).toMatch(/Unique|unique|P2002/); // prettier-ignore
@@ -126,7 +126,7 @@ describe('the identity-lookup tables', () => {
     expect(await refusal(entry(now, 'f'.repeat(64)))).toContain('identity_lookup_cache_lifetime'); // prettier-ignore
   });
 
-  it('IL-007 refuses a digest that is not a SHA-256 in hex: a cedula cannot sneak in as the key', async () => {
+  it('IL-007 refuses a digest that is not a SHA256 in hex: a cedula cannot sneak in as the key', async () => {
     expect(
       await refusal(
         prisma.identityLookupCache.create({
