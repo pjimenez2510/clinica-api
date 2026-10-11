@@ -50,12 +50,7 @@ describe('what the RDACAA still needs from a chart', () => {
         nationalityConceptId: null,
         residenceParishConceptId: null,
       }),
-    ).toEqual([
-      'identifier',
-      'ethnicityConceptId',
-      'nationalityConceptId',
-      'residenceParishConceptId',
-    ]);
+    ).toEqual(['identifier', 'ethnicityConceptId', 'residenceParishConceptId']);
   });
 
   it('PA-032 does NOT count gender identity as missing', () => {
@@ -123,10 +118,11 @@ describe('what the RDACAA still needs from a chart', () => {
     ).toEqual([]);
   });
 
-  it('PA-032 still asks for the nationality while the ethnicity is missing', () => {
-    // Nobody has asked the question yet, so nobody knows whether the field
-    // applies. Dropping it here would let a chart look complete and then need
-    // the nationality the moment somebody records «Indígena».
+  it('PA-032 does NOT ask for the nationality while the ethnicity is missing', () => {
+    // Enmendada en la ronda 4: se cuenta sólo lo que aplica según lo ya
+    // registrado. «Faltan 3» que bajaba a 1 al elegir «Mestizo/a» contaba un
+    // dato que nadie podía rellenar. The chart does not read as complete: the
+    // ethnicity counts itself, and «Indígena» brings the nationality back.
     expect(
       rdacaaMissingFields({
         ...complete,
@@ -134,7 +130,14 @@ describe('what the RDACAA still needs from a chart', () => {
         ethnicityCode: null,
         nationalityConceptId: null,
       }),
-    ).toEqual(['ethnicityConceptId', 'nationalityConceptId']);
+    ).toEqual(['ethnicityConceptId']);
+    expect(
+      rdacaaMissingFields({
+        ...complete,
+        ethnicityCode: INDIGENOUS_ETHNICITY_CODE,
+        nationalityConceptId: null,
+      }),
+    ).toEqual(['nationalityConceptId']);
   });
 
   it('PA-032 names only the ethnicity when it is missing and the nationality is there', () => {
@@ -185,12 +188,10 @@ describe('what the RDACAA still needs from a chart', () => {
 
   it('PA-059 still asks for the ethnicity while no country has been recorded', () => {
     /**
-     * ⚠️ THE BRANCH THAT IS EASY TO LOSE, and the same one D-037 wrote down for
-     * the nationality: until somebody has asked the question, nobody knows
-     * whether the field applies. Dropping it here would let a chart read as
-     * complete and start missing the ethnicity the moment a country of `ECU` is
-     * recorded — the indicator would go backwards with nothing about the report
-     * having changed.
+     * ⚠️ THE BRANCH THAT IS EASY TO LOSE: until somebody has asked the
+     * question, nobody knows whether the field applies. Dropping it here would
+     * let a chart read as complete with no ethnicity at all. The nationality
+     * waits for the ethnicity (PA-032, amended in round 4).
      */
     expect(
       rdacaaMissingFields({
@@ -200,7 +201,7 @@ describe('what the RDACAA still needs from a chart', () => {
         ethnicityCode: null,
         nationalityConceptId: null,
       }),
-    ).toEqual(['ethnicityConceptId', 'nationalityConceptId']);
+    ).toEqual(['ethnicityConceptId']);
   });
 
   it('PA-059 asks an Ecuadorian chart for everything it is missing', () => {
@@ -214,6 +215,6 @@ describe('what the RDACAA still needs from a chart', () => {
         ethnicityCode: null,
         nationalityConceptId: null,
       }),
-    ).toEqual(['ethnicityConceptId', 'nationalityConceptId']);
+    ).toEqual(['ethnicityConceptId']);
   });
 });
