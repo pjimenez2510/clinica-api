@@ -175,17 +175,24 @@ export class CreditNoteService {
     if (reasonKindOf(note.reasonCode) !== reasonKindOf(command.reasonCode)) {
       throw new CreditNoteReasonKindFixedError();
     }
-    const corrected = await this.creditNotes.correctRejected({
-      id: note.id,
-      siteId: command.siteId,
-      reasonCode: command.reasonCode,
-      reason: resolveCreditNoteReason(command.reasonCode, command.reasonText),
-      changedById: requester.userId,
-      now: new Date(),
-      trail: requester,
-    });
-    // Re-sent or answered by the SRI a moment earlier.
-    if (!corrected) throw new CreditNoteNotEditableError();
+    const reason = resolveCreditNoteReason(
+      command.reasonCode,
+      command.reasonText,
+    );
+    // The same reason is no correction: nothing is versioned, it is re-sent.
+    if (reason !== note.reason || command.reasonCode !== note.reasonCode) {
+      const corrected = await this.creditNotes.correctRejected({
+        id: note.id,
+        siteId: command.siteId,
+        reasonCode: command.reasonCode,
+        reason,
+        changedById: requester.userId,
+        now: new Date(),
+        trail: requester,
+      });
+      // Re-sent or answered by the SRI a moment earlier.
+      if (!corrected) throw new CreditNoteNotEditableError();
+    }
 
     try {
       // Not re-sent (an issuer datum missing, re-sent by somebody else a
