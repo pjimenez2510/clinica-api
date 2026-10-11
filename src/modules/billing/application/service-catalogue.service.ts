@@ -1,3 +1,4 @@
+import { taxReviewExpiredBefore } from '../domain/tax-review';
 import { Inject, Injectable } from '@nestjs/common';
 
 import {
@@ -167,7 +168,10 @@ export class ServiceCatalogueService {
     pageSize: number;
     today: ClinicalDate;
   }): Promise<ServicePage> {
-    return this.catalogue.listServices(filter);
+    return this.catalogue.listServices({
+      ...filter,
+      taxReviewExpiredBefore: taxReviewExpiredBefore(new Date()),
+    });
   }
 
   /** BI-283. The service's card in one answer. */

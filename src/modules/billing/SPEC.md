@@ -3245,19 +3245,24 @@ lo ve._
   con las reglas de BI-209 y reenviarla en el mismo acto con la misma clave y
   el mismo secuencial (SRI-103), guardando la fila anterior en
   `record_version`; SI la nota está en otro estado ENTONCES DEBERÁ rechazarlo
-  con `CREDIT_NOTE_NOT_EDITABLE`, y la base DEBERÁ rechazar el cambio del
-  motivo de una nota que no esté `REJECTED`.
+  con `CREDIT_NOTE_NOT_EDITABLE`; SI el motivo nuevo pasa entre «Servicio no
+  prestado» y los que vuelven a facturar ENTONCES DEBERÁ rechazarlo con
+  `CREDIT_NOTE_REASON_KIND_FIXED`; y la base DEBERÁ rechazar el cambio del
+  motivo de una nota que no esté `REJECTED`, y el que cruce esa frontera.
   > D-212 §2: la salida normal, como la factura devuelta (BI-216). El receptor,
   > las líneas y los importes son los de la factura que modifica y no se
   > editan.
 - **BI-304** — MIENTRAS una nota de crédito esté `REJECTED`, quien tenga
   `billing:credit-note` en su sede DEBERÁ poder desistir de ella con un motivo
-  (`WITHDRAWN`); y el sistema DEBERÁ, en la misma transacción y con versión,
-  liberar sus líneas —un cargo acreditado por una nota desistida admite otra
-  nota (`credit_note_line_one_per_charge` sólo cuenta las líneas vivas)— y
-  quitar los cargos por facturar que corregían esas líneas (BI-214) que no se
-  hayan facturado; y la base DEBERÁ rechazar que una nota desistida cambie de
-  estado o vuelva a contar.
+  (`WITHDRAWN`; sin motivo, `CREDIT_NOTE_WITHDRAWAL_REASON_REQUIRED`); y el
+  sistema DEBERÁ, en la misma transacción, quitar los cargos por facturar que
+  corregían sus líneas (BI-214) y liberar sus líneas —se borran y se archivan
+  enteras en `record_version`, así que el cargo admite otra nota
+  (`credit_note_line_one_per_charge`) y otra copia
+  (`charge_item_one_correction_per_charge` no cuenta las quitadas)—; y la base
+  DEBERÁ rechazar que una nota desistida cambie de estado, que se borre la
+  línea de una nota que no lo esté, y que una desistida cuente en lo acreditado
+  de su factura (BI-095).
   > D-212 §2: «si el SRI la rechaza sin remedio». Lo decide una persona, no
   > el sistema: el SRI no dice «sin remedio». **Confirmar con:** contador.
   > Sin quitar las copias, la factura —que sigue valiendo entera— y las copias
@@ -3407,6 +3412,9 @@ registrados en `infrastructure/billing.constraints.ts`.
 | `ACCOUNT_NO_CHARGE_REASON_REQUIRED` | 422 | `trg_patient_account_settled_states_why_unpaid`, `patient_account_no_charge_reason_not_blank` | BI-237 |
 | `ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER` | 409 | `patient_account_one_open_per_encounter` | BI-070, BI-305 |
 | `CREDIT_NOTE_NOT_EDITABLE` | 409 | — | BI-303, BI-304 |
+| `CREDIT_NOTE_NOT_FOUND` | 404 | — | BI-303, BI-304 |
+| `CREDIT_NOTE_REASON_KIND_FIXED` | 422 | `credit_note_immutable` | BI-303 |
+| `CREDIT_NOTE_WITHDRAWAL_REASON_REQUIRED` | 422 | `credit_note_withdrawal_says_why` | BI-304 |
 | `INVOICE_SEQUENTIAL_TAKEN` | 409 | `invoice_sequential_unique` | BI-085 |
 | `INVOICE_TOTAL_INCONSISTENT` | 422 | `invoice_total_is_consistent` | BI-058, BI-083 |
 | `FINAL_CONSUMER_IDENTIFICATION_REQUIRED` | 422 | `invoice_final_consumer_identification` | BI-081 |
