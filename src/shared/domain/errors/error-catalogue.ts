@@ -359,6 +359,8 @@ export const DOMAIN_ERROR_CODES = [
   'SRI_CERTIFICATE_INVALID',
   'SRI_CERTIFICATE_STORE_NOT_CONFIGURED',
   'SRI_CERTIFICATE_TOO_LARGE',
+  'SRI_RESEND_DAILY_LIMIT',
+  'SRI_RESEND_DELIVERY_NOT_FAILED',
   'SRI_RESEND_FAILED',
   'SRI_VOUCHER_NOT_AUTHORISED',
   'SRI_VOUCHER_NOT_FOUND',
@@ -624,6 +626,8 @@ export const DOMAIN_ERROR_CODES = [
   // cargo ya facturado (BI-198), y `ACCOUNT_HAS_OPEN_CHARGES` (409)
   // ENUMERA los cargos que impiden cerrar, con identificadores y sin nombres
   // de prestación (BI-007).
+  // BI-305. Also the database's code for the same fact (BI-070).
+  'ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER',
   'ACCOUNT_CLOSED',
   'ACCOUNT_HAS_BILLED_CHARGES',
   'ACCOUNT_HAS_OPEN_CHARGES',
@@ -696,6 +700,11 @@ export const DOMAIN_ERROR_CODES = [
   // Corregir una factura (BI-091 a BI-097, BI-208 a BI-218, inventario CA-8
   // y CA-9). La nota de crédito es la única forma de corregir lo autorizado;
   // lo devuelto por el SRI se corrige y se reenvía con la misma clave.
+  // BI-303, BI-304 (D-212 §2).
+  'CREDIT_NOTE_NOT_EDITABLE',
+  'CREDIT_NOTE_NOT_FOUND',
+  'CREDIT_NOTE_REASON_KIND_FIXED',
+  'CREDIT_NOTE_WITHDRAWAL_REASON_REQUIRED',
   'CREDIT_NOTE_EXCEEDS_INVOICE',
   'CREDIT_NOTE_FINAL_CONSUMER',
   'CREDIT_NOTE_INVOICE_NOT_AUTHORISED',
@@ -1200,6 +1209,9 @@ export const DOMAIN_ERROR_CODES = [
   'REPORT_ALREADY_CORRECTED',
   'REPORT_NOT_CORRECTABLE',
   'REPORT_NOT_FOUND',
+  // ORD-170 (D-168 §1). Un informe nuevo que repite una determinación con
+  // valor vigente: se corrige el informe vigente.
+  'RESULT_ALREADY_REPORTED',
   'RESULT_ANALYTE_UNKNOWN',
   'RESULT_CHART_UNMATCHED',
   'RESULT_FLAG_IS_DERIVED',
@@ -1296,6 +1308,10 @@ export const DOMAIN_ERROR_CODES = [
   //     se avisa ni se empareja; se trabaja el que lo sustituye.
   //   * `CRITICAL_READ_BACK_REQUIRED` (422) — un aviso hecho sin confirmar que
   //     quien lo recibió repitió el valor (D-111 §4).
+  // ORD-175 (D-168 §4). Quien llamó, escrito con menos de dos palabras, o
+  // una cuenta que no es de la sede del valor.
+  'CRITICAL_NOTICE_CALLER_INCOMPLETE',
+  'CRITICAL_NOTICE_CALLER_NOT_FOUND',
   'CRITICAL_READ_BACK_REQUIRED',
   'RESULT_SUPERSEDED',
   //   * `CRITICAL_NOTICE_NOT_FOUND` (404) — ORD-120. Se pide editar un aviso
@@ -1320,6 +1336,9 @@ export const DOMAIN_ERROR_CODES = [
   // ─── Configuration (ORD-046, ORD-065). El rol que responde de una cola de
   //   resultados tiene que poder trabajarla: `record:read` y `result:write`.
   'ROLE_CANNOT_WORK_RESULTS',
+  // ORD-179 (D-207 §2). La persona de guardia de críticos no puede atender la
+  // cola en esa sede: cuenta inactiva o sin ver la historia y registrar.
+  'PERSON_CANNOT_WORK_RESULTS',
   // ─── Documents, H1 a H4 (DOC-012, DOC-014, DOC-037, DOC-050 a DOC-053).
   // El documento imprimible y el artefacto que queda.
   //

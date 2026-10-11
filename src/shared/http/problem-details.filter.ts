@@ -18,6 +18,7 @@ import {
   ConflictError,
   DomainError,
   ExternalServiceError,
+  QuotaExceededError,
   ForbiddenError,
   NotFoundError,
   UnauthorizedError,
@@ -350,6 +351,12 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         status: HttpStatus.FORBIDDEN,
         slug: 'forbidden',
         title: 'Acceso denegado',
+      };
+    if (e instanceof QuotaExceededError)
+      return {
+        status: HttpStatus.TOO_MANY_REQUESTS,
+        slug: 'quota-exceeded',
+        title: 'Límite alcanzado',
       };
     if (e instanceof ExternalServiceError) {
       // A service that is down is 503 (retryable); a business rejection from

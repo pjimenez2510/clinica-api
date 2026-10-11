@@ -30,6 +30,9 @@ import {
   OrderItemNotPendingError,
   OrderNotFoundError,
   ReportAlreadyCorrectedError,
+  ResultAlreadyReportedError,
+  CriticalNoticeCallerIncompleteError,
+  CriticalNoticeCallerNotFoundError,
   ReportNotCorrectableError,
   ReportNotFoundError,
   ResultAlreadyMatchedError,
@@ -67,6 +70,9 @@ const EVERY_ERROR: readonly DomainError[] = [
   new OrderDraftOfAnotherPractitionerError(),
   new ExamCategoryMismatchError(),
   new ReportAlreadyCorrectedError(),
+  new ResultAlreadyReportedError(),
+  new CriticalNoticeCallerIncompleteError(),
+  new CriticalNoticeCallerNotFoundError(),
   new ReportNotCorrectableError('CANCELLED'),
   new ResultAnalyteUnknownError(),
   new ResultValueTypeMismatchError('HB', 'NUMERIC'),
@@ -168,6 +174,28 @@ describe('el contrato de errores de las órdenes', () => {
     expect(error.userTitle).toBe(
       'Este examen ya tiene resultados y no se anula. Edite el informe o pídalo de nuevo',
     );
+  });
+
+  it('ORD-170 el informe que repite una determinación vigente es un 409 que manda corregir', () => {
+    const error = new ResultAlreadyReportedError();
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.code).toBe('RESULT_ALREADY_REPORTED');
+    expect(error.userTitle).toBe(
+      'Esa determinación ya tiene un valor en un informe vigente de esta orden. Use la corrección del informe vigente',
+    );
+  });
+
+  it('ORD-175 quien llamó incompleto o de otra sede es un 422 que señala su campo', () => {
+    const incomplete = new CriticalNoticeCallerIncompleteError();
+    expect(incomplete).toBeInstanceOf(ValidationError);
+    expect(incomplete.code).toBe('CRITICAL_NOTICE_CALLER_INCOMPLETE');
+    expect(incomplete.fieldErrors?.[0]?.field).toBe('callerName');
+    expect(incomplete.userTitle).toBe('Escriba el nombre y el apellido de quien hizo la llamada, o elíjalo de la lista'); // prettier-ignore
+    const foreign = new CriticalNoticeCallerNotFoundError();
+    expect(foreign).toBeInstanceOf(ValidationError);
+    expect(foreign.code).toBe('CRITICAL_NOTICE_CALLER_NOT_FOUND');
+    expect(foreign.fieldErrors?.[0]?.field).toBe('callerUserId');
+    expect(foreign.userTitle).toBe('Esa persona no aparece entre las cuentas de esta sede. Elija otra o escriba su nombre'); // prettier-ignore
   });
 
   it('ORD-005 y ORD-008 son conflictos de estado, no de contenido', () => {

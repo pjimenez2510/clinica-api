@@ -105,6 +105,17 @@ describe('a qué sesión toca el aviso de un crítico (ORD-167)', () => {
     expect(noticeDueToRequester({ ...due, escalationRoleId: null }, onCallHere)).toBe(false); // prettier-ignore
   });
 
+  it('ORD-179 con una persona de guardia, el aviso escalado le toca a ella y no a quien tiene un rol', () => {
+    const due = { ...entry, target: 'ON_CALL_ROLE' as const, escalationRoleId: null, escalationUserId: 'lucia' }; // prettier-ignore
+    expect(noticeDueToRequester(due, { userId: 'lucia', roles: [] })).toBe(
+      true,
+    );
+    expect(noticeDueToRequester(due, onCallHere)).toBe(false);
+    expect(noticeDueToRequester(due, doctorA)).toBe(false);
+    // Control positivo: en plazo sigue tocando a quien pidió, no a la guardia.
+    expect(noticeDueToRequester({ ...due, target: 'ORDERING_PRACTITIONER' }, { userId: 'lucia', roles: [] })).toBe(false); // prettier-ignore
+  });
+
   it('ORD-167 sin guardia que lo atienda (vencido o fuera de horario), toca a toda cuenta que lee la cola', () => {
     for (const target of ['ORDERING_PRACTITIONER', 'PATIENT'] as const) {
       const missing = { ...entry, target, escalationMissing: true };

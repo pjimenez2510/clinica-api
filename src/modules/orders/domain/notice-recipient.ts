@@ -31,24 +31,62 @@ function normalised(name: string): string {
     .trim();
 }
 
-/** The words of a normalised name, in a canonical order. */
-const wordsOf = (name: string): string =>
-  normalised(name).split(' ').filter(Boolean).sort().join(' ');
+/** The words of a normalised name. */
+const wordsOf = (name: string): string[] =>
+  normalised(name).split(' ').filter(Boolean);
 
 /**
- * ORD-147, ORD-157 (D-156.5). Whether two typed names are the same person's:
- * the SAME WORDS in any order —«Pérez Andrade Juan», as the cédula writes it,
- * is «Juan Pérez Andrade»—, ignoring case, accents, spacing and a leading
- * title. Every word counts as many times as it is written.
- *
- * ⚠️ NEVER BY PARTS. «Dr. Pérez» for «Juan Pérez» is not recognised on
- * purpose: matching a surname would give one person's notice to another
- * person with that surname, and the verdict decides whether a value stays on
- * the critical worklist.
+ * ORD-175 (D-168 §4). How many words a typed name has once a leading courtesy
+ * title is set aside: «Dr. Pérez» has one, and names nobody.
  */
-export function samePersonName(a: string, b: string): boolean {
-  const left = wordsOf(a);
-  return left !== '' && left === wordsOf(b);
+export const nameWordCount = (name: string): number => wordsOf(name).length;
+
+/**
+ * ORD-147, ORD-157, ORD-174 (D-168 §4). Whether a typed name NAMES a person:
+ * EVERY word of the person's name is in it, in any order —«Pérez Andrade
+ * Juan», as the cédula writes it, names «Juan Pérez Andrade»—, ignoring case,
+ * accents, punctuation and a leading title, and each word as many times as
+ * the person's name has it. Words of more do not hide the person: «Carmen
+ * Salazar Pilco» names the account «Carmen Salazar». In doubt the value stays
+ * on the worklist, which is the safe error.
+ *
+ * ⚠️ NEVER BY PARTS. «Dr. Salazar» for «Carmen Salazar» does not name her:
+ * matching a surname would give one person's notice to another person with
+ * that surname, and the verdict decides whether a value stays on the critical
+ * worklist.
+ */
+export function namesPerson(written: string, person: string): boolean {
+  const wanted = wordsOf(person);
+  if (wanted.length === 0) return false;
+  const available = wordsOf(written);
+  for (const word of wanted) {
+    const at = available.indexOf(word);
+    if (at === -1) return false;
+    available.splice(at, 1);
+  }
+  return true;
+}
+
+/**
+ * ORD-146 (revisión clínica G1). Whether a notice went to the practitioner who
+ * placed the order by NAME: a professional with exactly the same words. Not
+ * containment —this verdict closes worklists, so a word of more is somebody
+ * else— and never a patient or a relative, whatever they are called.
+ */
+export function namesOrderer(
+  recipientKind: string,
+  recipientName: string,
+  ordererName: string,
+): boolean {
+  if (
+    recipientKind !== 'ORDERING_PRACTITIONER' &&
+    recipientKind !== 'OTHER_PRACTITIONER'
+  ) {
+    return false;
+  }
+  const words = (name: string) => wordsOf(name).sort().join(' ');
+  const wanted = words(ordererName);
+  return wanted !== '' && words(recipientName) === wanted;
 }
 
 /** ORD-062, ORD-147. What judging a notice to oneself needs. */
@@ -61,6 +99,8 @@ export interface SelfNoticeQuestion {
   orderedByUserId: string;
   /** ORD-148. Who made the call, when it was not the recorder. */
   callerName?: string | null;
+  /** ORD-175. The account that made the call, when chosen from the site. */
+  callerUserId?: string | null;
 }
 
 /**
@@ -74,15 +114,24 @@ export interface SelfNoticeQuestion {
  * their own recipient told nobody anything.
  */
 export function isSelfNotice(question: SelfNoticeQuestion): boolean {
-  // A caller that is only a title («Dr.») names nobody: judged as if absent.
+  // ORD-175 (revisión clínica M4). The ordering practitioner's own account made
+  // the call «to the practitioner who placed the order»: told nobody.
+  if (
+    question.recipientKind === 'ORDERING_PRACTITIONER' &&
+    question.callerUserId != null &&
+    question.callerUserId === question.orderedByUserId
+  ) {
+    return true;
+  }
+  // A caller that is only a title («Dr.») names nobody: judged as if absent;
+  // and one whose name carries the account's is the account (ORD-174).
   const caller = question.callerName?.trim();
   if (
     caller &&
-    wordsOf(caller) !== '' &&
-    !samePersonName(caller, question.recorder.name)
+    wordsOf(caller).length > 0 &&
+    !namesPerson(caller, question.recorder.name)
   ) {
-    // prettier-ignore
-    return samePersonName(question.recipientName, caller);
+    return namesPerson(question.recipientName, caller);
   }
   if (
     question.recipientKind === 'ORDERING_PRACTITIONER' &&
@@ -90,7 +139,7 @@ export function isSelfNotice(question: SelfNoticeQuestion): boolean {
   ) {
     return true;
   }
-  return samePersonName(question.recipientName, question.recorder.name);
+  return namesPerson(question.recipientName, question.recorder.name);
 }
 
 /** ORD-062, ORD-146. A notice as the critical worklist judges it. */
@@ -107,19 +156,6 @@ const toOneselfByOrderer = (notice: WorklistNotice, orderer: string) =>
   notice.outcome === 'NOTIFIED' &&
   notice.selfNotice &&
   notice.notifiedById === orderer;
-
-/**
- * ORD-146 (D-116 a). The practitioner who placed the order recorded a notice
- * to themselves: they know, and the notice is now due to the patient. Only
- * THEIR notice to themselves: a colleague noting it for themselves tells the
- * ordering practitioner nothing (revisión).
- */
-export function selfNoticedByOrderer(
-  notices: readonly WorklistNotice[],
-  ordererUserId: string,
-): boolean {
-  return notices.some((notice) => toOneselfByOrderer(notice, ordererUserId));
-}
 
 /**
  * ORD-062, ORD-146. Whether the notices of a critical value take it off the

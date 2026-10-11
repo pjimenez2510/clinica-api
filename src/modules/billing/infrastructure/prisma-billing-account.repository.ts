@@ -1775,8 +1775,10 @@ const INVOICE_NUMBER_INCLUDE = {
   // is derived on every read and never stored.
   payments: { where: { reversedAt: null }, select: { amount: true } },
   // BI-103, BI-260. All of them: the rejected ones do not credit (the total
-  // below skips them) but the row says the SRI returned them.
+  // below skips them) but the row says the SRI returned them. BI-304: a
+  // withdrawn one is no longer anything of the invoice's.
   creditNotes: {
+    where: { status: { not: 'WITHDRAWN' } },
     orderBy: { issuedAt: 'asc' },
     select: { id: true, amount: true, sequential: true, accessKey: true, status: true }, // prettier-ignore
   },

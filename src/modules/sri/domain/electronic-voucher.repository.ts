@@ -96,9 +96,25 @@ export interface VoucherRecord {
   deliveryStatus: DeliveryStatus | null;
 }
 
-/** SRI-091. `UNDELIVERABLE`: still failing 72 h after the authorisation; never retried. */
+/** SRI-091. `UNDELIVERABLE`: the relay still refusing the address 72 h after the authorisation; never retried. */
 export type DeliveryStatus =
   'PENDING' | 'SENT' | 'NO_EMAIL' | 'FAILED' | 'UNDELIVERABLE';
+
+/** SRI-100. A copy of a voucher that left, to whom and by whom. */
+export interface VoucherMailing {
+  voucherId: string;
+  sentById: string;
+  sentAt: Date;
+  recipient: string;
+  /** SRI-095. The document's buyer address: their delivery is now done. */
+  toBuyer: boolean;
+}
+
+/** SRI-098. What the monitor says about e-mails the relay keeps refusing. */
+export interface StalledDeliveries {
+  count: number;
+  oldestAuthorisedAt: Date | null;
+}
 
 export interface NewVoucher {
   document: VoucherDocument;
@@ -180,6 +196,11 @@ export interface MonitorRow {
   creditNoteId: string | null;
   /** SRI-088. The number of the invoice a credit note modifies. */
   modifiedDocumentNumber: string | null;
+  /**
+   * BI-303. A credit note's reason code: which corrections its «Editar»
+   * admits; `null` for an invoice.
+   */
+  creditNoteReasonCode: string | null;
   voucherId: string | null;
   siteId: string;
   documentNumber: string;
@@ -269,6 +290,25 @@ export interface ElectronicVoucherRepository {
   /** SRI-074 to SRI-076. Only the delivery columns move. */
   recordDelivery(id: string, status: DeliveryStatus, at: Date): Promise<void>;
 
+  /**
+   * SRI-100, SRI-095. One copy that LEFT, in one transaction: its row in
+   * `electronic_voucher_mailing` and, when it went to the buyer, the buyer's
+   * delivery noted `SENT` if it was still owed.
+   */
+  recordMailing(mailing: VoucherMailing): Promise<void>;
+
+  /** SRI-101. The copies `userId` e-mailed from `since` on. */
+  countMailingsSince(userId: string, since: Date): Promise<number>;
+
+  /**
+   * SRI-098. Authorised vouchers whose e-mail is still `FAILED` and were
+   * authorised at or before `authorisedBefore`, in the sites.
+   */
+  stalledDeliveries(
+    sites: readonly string[] | 'all',
+    authorisedBefore: Date,
+  ): Promise<StalledDeliveries>;
+
   /** SRI-084. Releases what waited for a certificate, for the sweep to sign. */
   unblockForCertificate(): Promise<number>;
 
@@ -338,6 +378,8 @@ export interface StoredCertificate {
   serialNumber: string;
   notBefore: Date;
   notAfter: Date;
+  /** SRI-102. As the certificate states it; `null` if it does not. */
+  holderRuc: string | null;
   active: boolean;
   createdAt: Date;
   encryptedPkcs12: Buffer;
@@ -359,6 +401,8 @@ export interface SigningCertificateRepository {
     },
   ): Promise<CertificateSummary>;
   list(): Promise<CertificateSummary[]>;
+  /** SRI-102. The establishment's RUC and every site's own, if any. */
+  issuerRucs(): Promise<string[]>;
   /** SRI-026. Throws if the row cannot be written: then nothing is signed. */
   recordOpening(certificateId: string, voucherId: string): Promise<void>;
 }

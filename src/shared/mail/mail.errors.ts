@@ -60,8 +60,16 @@ export class MailDeliveryFailedError extends ExternalServiceError {
   override readonly userTitle =
     'No se pudo enviar el correo. La cuenta quedó creada: vuelva a enviar la invitación cuando el servidor de correo responda';
 
-  constructor(cause?: unknown) {
+  /**
+   * SRI-091. The relay refused the RECIPIENT for good (a 5xx reply to it:
+   * mailbox or domain that does not exist). Everything else —no connection,
+   * bad relay credentials, a 4xx— may work on the next try.
+   */
+  readonly recipientRejected: boolean;
+
+  constructor(cause?: unknown, options?: { recipientRejected?: boolean }) {
     super('The SMTP server did not accept the message');
     this.cause = cause;
+    this.recipientRejected = options?.recipientRejected ?? false;
   }
 }

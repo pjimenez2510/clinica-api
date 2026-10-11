@@ -33,6 +33,7 @@ import {
 import { Money, Percentage, Quantity } from '../domain/money';
 
 import { databaseMessageOf } from './prisma-billing-account.repository';
+import type { BillingTrail } from '../domain/billing-trail';
 import { writeBillingTrail } from './billing-trail.write';
 
 /** D-185.1, BI-235. The site's and the emission point's SRI codes. */
@@ -323,6 +324,127 @@ export class PrismaCreditNoteRepository implements CreditNoteRepository {
     });
     return row ? toCreditNoteView(row) : null;
   }
+
+  async correctRejected(correction: {
+    id: string;
+    siteId: string;
+    reasonCode: CreditNoteReasonCode;
+    reason: string;
+    changedById: string;
+    now: Date;
+    trail: BillingTrail;
+  }): Promise<CreditNoteView | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await lockRejected(tx, correction);
+      if (!locked) return null;
+      const row = await tx.creditNote.update({
+        where: { id: correction.id },
+        include: CREDIT_NOTE_INCLUDE,
+        data: {
+          reasonCode: correction.reasonCode,
+          reason: correction.reason,
+          // BI-303: the previous reason is archived by the database.
+          changedById: correction.changedById,
+          changedAt: stampAfter(locked.changed_at, correction.now),
+        },
+      });
+      await writeBillingTrail(tx, {
+        resourceType: 'credit_note',
+        resourceId: row.id,
+        action: 'UPDATE',
+        trail: correction.trail,
+      });
+      return toCreditNoteView(row);
+    });
+  }
+
+  async withdraw(withdrawal: {
+    id: string;
+    siteId: string;
+    reason: string;
+    withdrawnById: string;
+    now: Date;
+    trail: BillingTrail;
+  }): Promise<CreditNoteView | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await lockRejected(tx, withdrawal);
+      if (!locked) return null;
+      const stamp = stampAfter(locked.changed_at, withdrawal.now);
+      await tx.creditNote.update({
+        where: { id: withdrawal.id },
+        data: {
+          status: 'WITHDRAWN',
+          withdrawalReason: withdrawal.reason,
+          changedById: withdrawal.withdrawnById,
+          changedAt: stamp,
+        },
+      });
+
+      // BI-214. The copies waiting for this note to be authorised would
+      // charge again what the invoice —still standing in full— charges.
+      // None can be billed: `charge_item_correction_awaits_credit_note`.
+      const lines = await tx.creditNoteLine.findMany({
+        where: { creditNoteId: withdrawal.id },
+        select: { chargeItemId: true },
+      });
+      const copies = await tx.chargeItem.findMany({
+        where: {
+          correctsChargeItemId: { in: lines.map((line) => line.chargeItemId) },
+          status: { not: 'CANCELLED' },
+        },
+        select: { id: true, changedAt: true },
+      });
+      for (const copy of copies) {
+        await tx.chargeItem.update({
+          where: { id: copy.id },
+          data: {
+            status: 'CANCELLED',
+            voidedAt: withdrawal.now,
+            voidedById: withdrawal.withdrawnById,
+            voidReason: 'Nota de crédito desistida',
+            changedById: withdrawal.withdrawnById,
+            changedAt: stampAfter(copy.changedAt, withdrawal.now),
+          },
+        });
+      }
+
+      // Released: archived whole by `credit_note_line_is_permanent`, with the
+      // stamp just written on the note.
+      await tx.creditNoteLine.deleteMany({
+        where: { creditNoteId: withdrawal.id },
+      });
+      await writeBillingTrail(tx, {
+        resourceType: 'credit_note',
+        resourceId: withdrawal.id,
+        action: 'UPDATE',
+        trail: withdrawal.trail,
+      });
+      const row = await tx.creditNote.findUniqueOrThrow({
+        where: { id: withdrawal.id },
+        include: CREDIT_NOTE_INCLUDE,
+      });
+      return toCreditNoteView(row);
+    });
+  }
+}
+
+/** D-127.2. The stamp has to move for `record_version_archive`. */
+function stampAfter(previous: Date | null, now: Date): Date {
+  return previous && previous >= now ? new Date(previous.getTime() + 1) : now;
+}
+
+/** BI-303, BI-304. The note, locked, only while it is REJECTED. */
+async function lockRejected(
+  tx: Prisma.TransactionClient,
+  query: { id: string; siteId: string },
+): Promise<{ changed_at: Date | null } | null> {
+  const [locked] = await tx.$queryRaw<{ changed_at: Date | null }[]>`
+    SELECT "changed_at" FROM "credit_note"
+     WHERE "id" = ${query.id}::uuid
+       AND "site_id" = ${query.siteId}::uuid
+       AND "status" = 'REJECTED'
+       FOR UPDATE`;
+  return locked ?? null;
 }
 
 /**
@@ -443,6 +565,7 @@ function toCreditNoteView(row: CreditNoteRow): CreditNoteView {
       total: Money.parse(row.amount),
     },
     status: row.status as CreditNoteView['status'],
+    withdrawalReason: row.withdrawalReason,
     issuedAt: row.issuedAt ?? row.createdAt,
     lines,
     invoiceSequential: row.invoice.sequential,

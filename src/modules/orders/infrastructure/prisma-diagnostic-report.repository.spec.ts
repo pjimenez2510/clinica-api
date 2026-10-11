@@ -159,6 +159,8 @@ const aReport = (overrides: Partial<NewReport> = {}): NewReport => ({
     {
       analyteId: 'analyte-1',
       analyteDisplay: 'Hemoglobina',
+      classifiedSex: 'FEMALE',
+      sexSpecificRanges: true,
       valueNumeric: 13.4,
       valueCode: null,
       valueText: null,

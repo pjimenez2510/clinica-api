@@ -112,6 +112,13 @@ export abstract class UnauthorizedError extends DomainError {}
 export abstract class ForbiddenError extends DomainError {}
 
 /**
+ * The caller used up a quota the domain sets (SRI-101: the voucher copies a
+ * person may e-mail in a day). Not the throttler's per-minute limit, which is
+ * transport: this one is a rule, with its own code.
+ */
+export abstract class QuotaExceededError extends DomainError {}
+
+/**
  * A third-party system failed (SRI, IESS, laboratory).
  *
  * `isRetryable` is the distinction that prevents two opposite bugs: retrying a

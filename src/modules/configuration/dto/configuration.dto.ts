@@ -247,6 +247,13 @@ export const updateSiteParametersSchema = z
       .uuid('Elija el rol al que se escala')
       .nullable()
       .optional(),
+    /** ORD-179 (D-207 §2). A person as the on-call; never with a role. */
+    criticalEscalationUserId: z
+      .uuid('Elija a la persona de guardia')
+      .nullable()
+      .optional(),
+    /** ORD-177 (D-207 §2). Whether a notice given needs the read-back. */
+    criticalReadBackRequired: z.boolean().optional(),
     /** ORD-046, D-050 §4. `null` = quien pidió el examen. */
     unmatchedResultOwnerRoleId: z
       .uuid('Elija el rol responsable')
@@ -288,6 +295,10 @@ export const siteParametersSchema = z.object({
   /** ORD-063. Siempre hay plazo: 60 de fábrica, cambiable (D-111 §1). */
   criticalNoticeWithinMinutes: z.number().int(),
   criticalEscalationRoleId: z.uuid().nullable(),
+  /** ORD-179. The person the site names as its on-call, or `null`. */
+  criticalEscalationUserId: z.uuid().nullable(),
+  /** ORD-177. Whether a notice given needs the read-back; off by default. */
+  criticalReadBackRequired: z.boolean(),
   /** ORD-046, D-050 §4. `null` = quien pidió el examen. */
   unmatchedResultOwnerRoleId: z.uuid().nullable(),
   unmatchedResultDeadlineHours: z.number().int(),

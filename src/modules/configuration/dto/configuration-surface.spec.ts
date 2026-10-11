@@ -88,7 +88,13 @@ describe('la superficie de configuración', () => {
       // deja de garantizarse por cambiarla: la constancia del aviso sigue
       // siendo inmutable y la cola sigue enseñando lo que no se avisó.
       'criticalEscalationRoleId',
+      // ORD-179 (D-207 §2): la guardia nominal; como el rol, decide a quién
+      // escala el aviso vencido, no si hay constancia.
+      'criticalEscalationUserId',
       'criticalNoticeWithinMinutes',
+      // ORD-177 (D-207 §2): el read-back, ajuste de la sede, apagado de
+      // fábrica. Encenderlo añade un paso; apagarlo no quita la constancia.
+      'criticalReadBackRequired',
       // AG-142 (E8): el umbral de llegada tardía y quién lo salta. Lo mismo
       // que el sobrecupo: la clínica elige el número y QUIÉN, no la garantía.
       'lateArrivalGraceMinutes',

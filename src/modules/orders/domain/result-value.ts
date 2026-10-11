@@ -64,6 +64,13 @@ export interface ResolvedResult {
   criticalHigh: number | null;
   /** ORD-035, ORD-038. Computed here; `null` means «nothing to compare against». */
   abnormalFlag: AbnormalFlag | null;
+  /**
+   * PA-082, ORD-176. The sex the value was classified with —the survivor's,
+   * on a merged chart— and whether the analyte has ranges by sex: what undoing
+   * a merge has to review.
+   */
+  classifiedSex: PatientProfile['sex'];
+  sexSpecificRanges: boolean;
 }
 
 /**
@@ -81,7 +88,12 @@ export function resolveResult(
   /** ORD-114, ORD-122. What the corrected version applied to this value. */
   applied?: CriticalLimits,
 ): ResolvedResult {
-  const frozen = { analyteId: analyte.id, analyteDisplay: analyte.name };
+  const frozen = {
+    analyteId: analyte.id,
+    analyteDisplay: analyte.name,
+    classifiedSex: patient.sex,
+    sexSpecificRanges: analyte.ranges.some((range) => range.sex !== null),
+  };
 
   if (analyte.valueType === 'NUMERIC') {
     const submittedValue = submitted.valueNumeric;

@@ -34,7 +34,9 @@ import type {
   OrderPatient,
   ReportQuery,
   ResultQuery,
+  OnCall,
   SafetyPolicy,
+  SiteAccount,
   SafetyWorklistQuery,
 } from '../domain/diagnostic-report.repository';
 import { chainKey } from '../domain/diagnostic-report.repository';
@@ -84,6 +86,7 @@ const NOTICE_SELECT = {
   selfNotice: true,
   namesOrderingPractitioner: true,
   callerName: true,
+  callerId: true,
   notifiedBy: { select: { id: true, firstName: true, lastName: true } },
   // ORD-120. The stamp of the last edit.
   editedAt: true,
@@ -256,6 +259,9 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
               criticalLow: result.criticalLow,
               criticalHigh: result.criticalHigh,
               abnormalFlag: result.abnormalFlag,
+              // PA-082, ORD-176. What the value was classified with.
+              classifiedSex: result.classifiedSex,
+              sexSpecificRanges: result.sexSpecificRanges,
               observedAt: report.issuedAt,
             })),
           },
@@ -319,7 +325,9 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
             patientId: true,
             ageInDays: true,
             ageEstimated: true,
-            patient: { select: { sex: true } },
+            patient: {
+              select: { sex: true, mergedInto: { select: { sex: true } } },
+            },
           },
         },
       },
@@ -330,7 +338,13 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     return {
       patientId: row.encounter.patientId,
       siteId: row.siteId,
-      sex: patient.sex,
+      /**
+       * ORD-176 (D-171 §3, por confirmar con un clínico). While the chart of
+       * the attention is merged into another, the SURVIVOR's sex: an absorbed
+       * chart is no longer corrected (PA-045), so a duplicate registered with
+       * the wrong sex keeps it. Merges do not chain (`trg_patient_merge_not_chained`).
+       */
+      sex: patient.mergedInto?.sex ?? patient.sex,
       /**
        * ORD-036, ORD-127. The WHOLE age in days the attention froze (EN-221),
        * and whether its birth date was an estimate. ⚠️ NOT `age_days`: that is
@@ -791,8 +805,12 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         siteId: true,
         criticalNoticeWithinMinutes: true,
         criticalEscalationRole: { select: { id: true, name: true } },
+        criticalEscalationUser: {
+          select: { id: true, firstName: true, lastName: true },
+        },
         unmatchedResultOwnerRole: { select: { id: true, name: true } },
         unmatchedResultDeadlineHours: true,
+        criticalReadBackRequired: true,
       },
     });
 
@@ -802,8 +820,15 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         {
           criticalNoticeWithinMinutes: row.criticalNoticeWithinMinutes,
           criticalEscalationRole: row.criticalEscalationRole,
+          criticalEscalationUser: row.criticalEscalationUser
+            ? {
+                id: row.criticalEscalationUser.id,
+                name: fullName(row.criticalEscalationUser),
+              }
+            : null,
           unmatchedResultOwnerRole: row.unmatchedResultOwnerRole,
           unmatchedResultDeadlineHours: row.unmatchedResultDeadlineHours,
+          criticalReadBackRequired: row.criticalReadBackRequired,
         },
       ]),
     );
@@ -868,15 +893,42 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
     });
   }
 
-  /** ORD-065, ORD-167. Sites whose on-call role somebody can answer for. */
-  async staffedOnCall(
-    onCall: readonly { siteId: string; roleId: string }[],
-  ): Promise<ReadonlySet<string>> {
+  /** ORD-175. The site's accounts that can be named as who made the call. */
+  async siteAccounts(siteId: string): Promise<SiteAccount[]> {
+    const users = await this.prisma.user.findMany({
+      where: {
+        active: true,
+        roleGrants: {
+          some: {
+            revokedAt: null,
+            role: { active: true },
+            OR: [{ siteId }, { siteId: null }],
+          },
+        },
+      },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }, { id: 'asc' }],
+    });
+    return users.map((user) => ({ id: user.id, name: fullName(user) }));
+  }
+
+  /**
+   * ORD-065, ORD-167, ORD-179. Sites whose on-call somebody can answer for:
+   * an active account holding `record:read`, through a live grant of an
+   * active role, at that site or at all — any holder of the on-call role, or
+   * the on-call person themselves.
+   */
+  async staffedOnCall(onCall: readonly OnCall[]): Promise<ReadonlySet<string>> {
     if (onCall.length === 0) return new Set();
+    const roleIds = onCall.flatMap((each) => ('roleId' in each ? [each.roleId] : [])); // prettier-ignore
+    const userIds = onCall.flatMap((each) => ('userId' in each ? [each.userId] : [])); // prettier-ignore
 
     const holders = await this.prisma.userRoleGrant.findMany({
       where: {
-        roleId: { in: [...new Set(onCall.map((pair) => pair.roleId))] },
+        OR: [
+          { roleId: { in: [...new Set(roleIds)] } },
+          { userId: { in: [...new Set(userIds)] } },
+        ],
         revokedAt: null,
         user: { active: true },
         role: {
@@ -884,14 +936,16 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
           permissions: { some: { permissionCode: 'record:read' } },
         },
       },
-      select: { roleId: true, siteId: true },
+      select: { roleId: true, userId: true, siteId: true },
     });
     return new Set(
       onCall
         .filter((pair) =>
           holders.some(
             (held) =>
-              held.roleId === pair.roleId &&
+              ('roleId' in pair
+                ? held.roleId === pair.roleId
+                : held.userId === pair.userId) &&
               (held.siteId === null || held.siteId === pair.siteId),
           ),
         )
@@ -1065,6 +1119,7 @@ async function rewriteNotice(
       selfNotice: edit.selfNotice,
       namesOrderingPractitioner: edit.namesOrderingPractitioner,
       callerName: edit.callerName,
+      callerId: edit.callerId,
       editedById: edit.editedById,
       editedAt: stamp,
     },
@@ -1106,6 +1161,7 @@ interface NoticeSnapshot {
   self_notice: boolean;
   names_ordering_practitioner?: boolean;
   caller_name?: string | null;
+  caller_id?: string | null;
   edited_by_id?: string | null;
   edited_at?: string | null;
 }
@@ -1136,6 +1192,7 @@ function noticeRowFromSnapshot(
     selfNotice: snapshot.self_notice,
     namesOrderingPractitioner: snapshot.names_ordering_practitioner ?? false,
     callerName: snapshot.caller_name ?? null,
+    callerId: snapshot.caller_id ?? null,
     notifiedBy: author(snapshot.notified_by_id),
     editedAt: snapshot.edited_at == null ? null : new Date(snapshot.edited_at),
     editedBy: snapshot.edited_by_id == null ? null : author(snapshot.edited_by_id), // prettier-ignore
@@ -1204,6 +1261,7 @@ async function writeNotice(
       selfNotice: notice.selfNotice,
       namesOrderingPractitioner: notice.namesOrderingPractitioner,
       callerName: notice.callerName,
+      callerId: notice.callerId,
     },
     select: NOTICE_SELECT,
   });
@@ -1388,6 +1446,7 @@ function toNoticeView(row: NoticeRow): CriticalNoticeView {
     selfNotice: row.selfNotice,
     namesOrderingPractitioner: row.namesOrderingPractitioner,
     callerName: row.callerName,
+    callerId: row.callerId,
     editedBy: row.editedBy === null ? null : personOf(row.editedBy),
     editedAt: row.editedAt,
   };

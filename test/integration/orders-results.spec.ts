@@ -900,19 +900,22 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     expect(orphan?.analyteDisplay).toBe('Glucosa en ayunas');
 
     // Un segundo informe de la MISMA orden no lo resuelve: nada lo empareja
-    // por su cuenta, ni siquiera cuando vuelve a llegar el mismo analito.
-    await reports.register(
-      {
-        orderId: scene.order.id,
-        performedById: null,
-        issuedAt: hoursAgo(2),
-        results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 90 }],
-      },
-      requester,
-    );
+    // por su cuenta. Y desde ORD-170 el mismo analito no vuelve a llegar como
+    // informe nuevo: se corrige el vigente.
+    await expect(
+      reports.register(
+        {
+          orderId: scene.order.id,
+          performedById: null,
+          issuedAt: hoursAgo(2),
+          results: [{ analyteDefinitionId: scene.glu.id, valueNumeric: 90 }],
+        },
+        requester,
+      ),
+    ).rejects.toMatchObject({ code: 'RESULT_ALREADY_REPORTED' });
     const still = await store.unmatched({ sites: 'all', limit: 50 });
     expect(still.map((entry) => entry.resultId)).toContain(orphan!.resultId);
-    expect(still).toHaveLength(2);
+    expect(still).toHaveLength(1);
     const stored = await prisma.observationResult.findMany({
       where: { analyteDisplay: 'Glucosa en ayunas' },
       select: { orderItemId: true },
@@ -926,7 +929,7 @@ describe('el resultado de laboratorio contra PostgreSQL', () => {
     );
     const after = await store.unmatched({ sites: 'all', limit: 50 });
     expect(after.map((entry) => entry.resultId)).not.toContain(orphan!.resultId); // prettier-ignore
-    expect(after).toHaveLength(1);
+    expect(after).toHaveLength(0);
   });
 
   it('ORD-054 registra la corrección en filas nuevas y recalcula la bandera con la misma regla', async () => {

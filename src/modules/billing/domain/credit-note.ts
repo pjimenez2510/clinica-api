@@ -69,6 +69,20 @@ export function rebillsCreditedLines(code: CreditNoteReasonCode): boolean {
 }
 
 /**
+ * BI-303 (D-152.8, D-236). What a correction of a returned note cannot cross:
+ * «Servicio no prestado» decided that nothing comes back to the account
+ * (BI-214), and «Error en los datos del receptor» that the wrong receiver is
+ * not e-mailed. Only «Error en el importe» and «Otro» move between them.
+ */
+export function reasonKindOf(
+  code: CreditNoteReasonCode,
+): 'NOT_PROVIDED' | 'RECEIVER' | 'OTHER' {
+  if (code === 'SERVICE_NOT_PROVIDED') return 'NOT_PROVIDED';
+  if (code === 'RECEIVER_DATA') return 'RECEIVER';
+  return 'OTHER';
+}
+
+/**
  * BI-094 (Res. NAC-DGERCGC25-00000014, art. 5; D-151.4). The last date, in
  * `America/Guayaquil`, on which an invoice issued on `issuedOn` admits a
  * credit note: «hasta dentro de doce (12) meses contados desde la fecha de

@@ -11,6 +11,7 @@ import type {
   NewCharge,
 } from '../domain/billing.repository';
 import {
+  AccountAlreadyOpenForEncounterError,
   ActAlreadyChargedError,
   BillingEncounterNotFoundError,
   PayerRequiredToOpenAccountError,
@@ -222,6 +223,57 @@ describe('BI-150 el paso de la consulta a la caja', () => {
     );
   });
 
+  it('BI-305 con la cuenta ya abierta con otro pagador responde ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER y dice cuál', async () => {
+    const { service, mocks } = build({
+      ports: {
+        findPayer: vi.fn().mockResolvedValue({
+          id: 'payer-particular',
+          code: 'PARTICULAR',
+          name: 'Particular',
+          kind: 'SELF_PAY',
+          ruc: null,
+          agreementReference: null,
+          agreementValidTo: null,
+          active: true,
+        }),
+      },
+    });
+
+    const refusal = await press(service, 'payer-iess').catch(
+      (error: unknown) => error,
+    );
+
+    expect(refusal).toBeInstanceOf(AccountAlreadyOpenForEncounterError);
+    expect((refusal as AccountAlreadyOpenForEncounterError).code).toBe(
+      'ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER',
+    );
+    expect(
+      (refusal as AccountAlreadyOpenForEncounterError).userTitle,
+    ).toContain('Particular');
+    expect(mocks.addCharge).not.toHaveBeenCalled();
+  });
+
+  it('BI-305 con el mismo pagador o sin pedir ninguno devuelve la cuenta abierta (control)', async () => {
+    const { service } = build();
+
+    await expect(press(service, 'payer-particular')).resolves.toBeDefined();
+    await expect(press(service)).resolves.toBeDefined();
+  });
+
+  it('BI-274 BI-305 la pulsación que pierde la carrera con otro pagador tampoco se lleva la cuenta ajena', async () => {
+    const { service } = build({
+      ports: {
+        findOpenAccountOfEncounter: vi.fn().mockResolvedValue(null),
+        // The other press opened it first, with Particular.
+        openOrRecoverEncounterAccount: vi.fn().mockResolvedValue(account()),
+      },
+    });
+
+    await expect(press(service, 'payer-iess')).rejects.toBeInstanceOf(
+      AccountAlreadyOpenForEncounterError,
+    );
+  });
+
   it('BI-135 responde igual ante una atención de otra sede que ante una inexistente', async () => {
     const { service } = build({
       ports: { findEncounterActs: vi.fn().mockResolvedValue(null) },
@@ -368,6 +420,8 @@ describe('BI-156 el cobro nunca reescribe ni condiciona lo clínico', () => {
       'chargedActs',
       'mappingFor',
       'raise',
+      // BI-305. Private: compares the payer asked for with the account's.
+      'samePayer',
       'sendToCashier',
     ]);
   });

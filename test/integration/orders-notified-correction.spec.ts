@@ -447,6 +447,33 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     expect(await ctx.reports.corrections(ctx.asNurse, new Date())).toEqual([]);
   });
 
+  it('ORD-173 vencida o sin respuesta de la paciente, la cola dice que la guardia la localice, sin cerrarla', async () => {
+    const prisma = db();
+    const ctx = await aCriticalGlucose(prisma);
+    await ctx.reports.notify({ resultId: ctx.result.id, ...toPatient, notifiedAt: minutesAgo(90) }, ctx.asNurse, new Date()); // prettier-ignore
+    const fixed = (await correctTo(ctx, ctx.report.id, 95)).results[0]!;
+
+    // Control positivo: en plazo y sin llamadas, todavía no.
+    const [fresh] = await ctx.reports.corrections(ctx.asNurse, new Date());
+    expect(fresh).toMatchObject({ noticeTarget: 'PATIENT', overdue: false, locateViaOnCall: false, escalationMissing: false }); // prettier-ignore
+    // Una llamada sin respuesta a un profesional no dice nada de la paciente.
+    await ctx.reports.notify({ resultId: fixed.id, ...onCall, outcome: 'NO_ANSWER', readBack: undefined }, ctx.asNurse, new Date()); // prettier-ignore
+    const [notHer] = await ctx.reports.corrections(ctx.asNurse, new Date());
+    expect(notHer?.locateViaOnCall).toBe(false);
+
+    // Vencida y sin guardia: lo dice, y la entrada sigue ahí.
+    const later = new Date(fresh!.correctedAt.getTime() + 61 * 60_000);
+    const [overdue] = await ctx.reports.corrections(ctx.asNurse, later);
+    expect(overdue).toMatchObject({ resultId: fixed.id, noticeTarget: 'PATIENT', locateViaOnCall: true, escalationMissing: true }); // prettier-ignore
+
+    // Con guardia, la nombra; y una llamada sin respuesta basta, aun en plazo.
+    const role = await anOnCallRole(prisma);
+    await prisma.siteParameter.update({ where: { siteId: ctx.scene.site.id }, data: { criticalEscalationRoleId: role.id } }); // prettier-ignore
+    await ctx.reports.notify({ resultId: fixed.id, ...toPatient, outcome: 'NO_ANSWER', readBack: undefined }, ctx.asNurse, new Date()); // prettier-ignore
+    const [unanswered] = await ctx.reports.corrections(ctx.asNurse, new Date());
+    expect(unanswered).toMatchObject({ overdue: false, noticeTarget: 'PATIENT', locateViaOnCall: true, escalationMissing: false, escalateTo: { roleId: role.id } }); // prettier-ignore
+  });
+
   it('ORD-154 la cola de correcciones vence con el plazo de críticos de la sede y escala a la guardia, con las llamadas sin respuesta', async () => {
     const prisma = db();
     const ctx = await aCriticalGlucose(prisma);
@@ -496,16 +523,19 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     expect((await ctx.reports.critical(ctx.asNurse, now)).map((e) => e.resultId)).toEqual([ctx.result.id]); // prettier-ignore
   });
 
-  it('ORD-157 el destinatario con las palabras del nombre de quien registra en otro orden es un autoaviso', async () => {
+  it('ORD-157 ORD-174 el destinatario con las palabras del nombre de quien registra, en otro orden o con una de más, es un autoaviso', async () => {
     const prisma = db();
     const ctx = await aCriticalGlucose(prisma);
     const now = new Date();
-    // La enfermera es Carmen Salazar; «Salazar Carmen», como en la cédula.
-    const own = await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, recipientName: 'Salazar Carmen' }, ctx.asNurse, now); // prettier-ignore
-    expect(own.selfNotice).toBe(true);
+    // La enfermera es Carmen Salazar; «Salazar Carmen», como en la cédula, y
+    // «Salazar Carmen Pilco», con una palabra de más (D-168 §4).
+    for (const recipientName of ['Salazar Carmen', 'Salazar Carmen Pilco']) {
+      const own = await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, recipientName }, ctx.asNurse, now); // prettier-ignore
+      expect(own.selfNotice).toBe(true);
+    }
     expect(await ctx.reports.critical(ctx.asNurse, now)).toHaveLength(1);
-    // Control positivo: con una palabra más, es otra persona.
-    const other = await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, recipientName: 'Salazar Carmen Pilco' }, ctx.asNurse, now); // prettier-ignore
+    // Control positivo: el nombre de otra persona no lo es.
+    const other = await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, recipientName: 'Lucía Toapanta' }, ctx.asNurse, now); // prettier-ignore
     expect(other.selfNotice).toBe(false);
     expect(await ctx.reports.critical(ctx.asNurse, now)).toEqual([]);
   });
@@ -517,23 +547,23 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     const toMe = { ...toPatient, recipientKind: 'ORDERING_PRACTITIONER' as const, recipientName: 'Ana Villacís' }; // prettier-ignore
     const own = await ctx.reports.notify({ resultId: ctx.result.id, ...toMe }, ctx.asDoctor, now); // prettier-ignore
     expect(own.selfNotice).toBe(true);
-    // Control positivo: editado con quien llamó «Dr.», que no nombra a nadie, sigue siéndolo.
-    const titleOnly = await ctx.reports.editNotice({ resultId: ctx.result.id, noticeId: own.id, expectedEditedAt: null, ...toMe, callerName: 'Dr.' }, ctx.asDoctor, new Date()); // prettier-ignore
-    expect(titleOnly.selfNotice).toBe(true);
+    // Quien llamó «Dr.» no nombra a nadie: desde ORD-175 se rechaza, y el
+    // aviso sigue siendo autoaviso.
+    await expect(ctx.reports.editNotice({ resultId: ctx.result.id, noticeId: own.id, expectedEditedAt: null, ...toMe, callerName: 'Dr.' }, ctx.asDoctor, new Date())).rejects.toMatchObject({ code: 'CRITICAL_NOTICE_CALLER_INCOMPLETE' }); // prettier-ignore
     expect(await ctx.reports.critical(ctx.asNurse, new Date())).toHaveLength(1);
 
-    const edited = await ctx.reports.editNotice({ resultId: ctx.result.id, noticeId: own.id, expectedEditedAt: titleOnly.editedAt, ...toMe, callerName: 'Lcda. Rosa Pilco' }, ctx.asDoctor, new Date()); // prettier-ignore
+    const edited = await ctx.reports.editNotice({ resultId: ctx.result.id, noticeId: own.id, expectedEditedAt: null, ...toMe, callerName: 'Lcda. Rosa Pilco' }, ctx.asDoctor, new Date()); // prettier-ignore
     expect(edited.selfNotice).toBe(false);
     const stored = await prisma.criticalResultNotice.findUniqueOrThrow({ where: { id: own.id } }); // prettier-ignore
     expect(stored.selfNotice).toBe(false);
     expect(await ctx.reports.critical(ctx.asNurse, new Date())).toEqual([]);
   });
 
-  it('ORD-154 ORD-146 tras el autoaviso de la corrección del médico que pidió, la cola de correcciones dice que toca al paciente', async () => {
+  it('ORD-154 ORD-171 tras el autoaviso de la corrección del médico que pidió, la cola sigue pidiendo a la guardia que oyó el 25, no al paciente', async () => {
     const prisma = db();
     const ctx = await aCriticalGlucose(prisma);
-    // Al médico que pidió se le avisó del 25 por otra persona: no toca al paciente por ORD-153.
-    await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Ana Villacís', notifiedAt: minutesAgo(90) }, ctx.asNurse, new Date()); // prettier-ignore
+    // A la guardia se le avisó del 25; a la paciente, no.
+    await ctx.reports.notify({ resultId: ctx.result.id, ...onCall, notifiedAt: minutesAgo(90) }, ctx.asNurse, new Date()); // prettier-ignore
     const fixed = (await correctTo(ctx, ctx.report.id, 95)).results[0]!;
     // Fuera de horario y con guardia: le toca a la guardia (control positivo).
     const role = await anOnCallRole(prisma);
@@ -541,11 +571,14 @@ describe('la corrección que llega a quien debe, a tiempo (ORD-153 a ORD-157, D-
     const [before] = await ctx.reports.corrections(ctx.asNurse, new Date());
     expect(before).toMatchObject({ patientRequired: false, noticeTarget: 'ON_CALL_ROLE' }); // prettier-ignore
 
+    // El médico se anota la corrección: la guardia sigue sin saberlo, y llamar
+    // a la paciente sería una falsa alarma de un valor que nunca oyó.
     await ctx.reports.notify({ resultId: fixed.id, ...toPatient, recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Yo' }, ctx.asDoctor, new Date()); // prettier-ignore
     const [after] = await ctx.reports.corrections(ctx.asNurse, new Date());
     expect(after).toMatchObject({
       resultId: fixed.id,
-      noticeTarget: 'PATIENT',
+      missingRecipients: ['PRACTITIONER'],
+      noticeTarget: 'ON_CALL_ROLE',
     });
   });
 });

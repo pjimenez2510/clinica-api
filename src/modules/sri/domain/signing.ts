@@ -11,6 +11,8 @@ export interface CertificateDescription {
   serialNumber: string;
   notBefore: Date;
   notAfter: Date;
+  /** SRI-102. The holder's RUC as the certificate states it, if it does. */
+  holderRuc: string | null;
 }
 
 /**

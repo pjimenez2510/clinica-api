@@ -421,7 +421,7 @@ cada uno con «Editar». Avisar al paciente de una glucosa de 25 y corregirla a
 venció con el plazo de críticos de la sede; un aviso al médico de guardia no
 la cierra y uno al paciente sí.
 
-**Cubre:** ORD-151 a ORD-157. **Solo interfaz:** ORD-151, ORD-152 (la API admite todavía el analito repetido, D-168).
+**Cubre:** ORD-151 a ORD-157. **Solo interfaz:** ORD-151. ORD-152 lo comprueba también la API desde ORD-170 (D-168 §1).
 **Solo servidor:** ORD-155, ORD-156, ORD-157.
 
 ### E18 — La orden guarda el sexo del día en que se emitió _(P1, 07-10-2026)_
@@ -482,6 +482,24 @@ cola abierta, ve la fila y no recibe aviso. Vencido el plazo con guardia
 atendida, el aviso salta a quien tiene el rol de guardia en esa sede, y deja
 de tocar a A; sin guardia que lo atienda, salta a todos.
 **Cubre:** ORD-167, ORD-168. **Solo servidor:** ORD-167. **Solo interfaz:** ORD-168.
+
+### E22 — Lo que el autor decidió sobre informes, correcciones avisadas y críticos _(P1, 11-10-2026)_
+
+D-168 §1 a §5, D-171 §3, D-207 §2 y D-208 §4, decididas por el autor el
+10-10-2026 en D-223 (§22).
+
+**Prueba independiente:** con un informe vigente, transcribir por la API otro
+con la misma glucosa responde `RESULT_ALREADY_REPORTED`, y la base lo rechaza
+también sin pasar por el servicio. Una glucosa de 25 avisada a la paciente y a
+la guardia, corregida a 95: avisar sólo a la hija no la cierra, la cola
+propone a la guardia que recibió el 25 y, vencida, dice que se localice a la
+paciente por la guardia. «Carmen Salazar Pilco» es autoaviso de la cuenta
+«Carmen Salazar». Con el read-back apagado en la sede, el aviso se guarda sin
+él; encendido, se rechaza sin él, también en la base. Una sede con guardia
+nominal manda el aviso vencido a esa persona.
+**Cubre:** ORD-170 a ORD-180. **Solo servidor:** ORD-171, ORD-173, ORD-174,
+ORD-176. **Solo interfaz:** ORD-180.
+**Confirmar con clínico:** ORD-176 (D-171 §3) y ORD-177 a ORD-179 (D-207 §2).
 
 ### Fuera de las ocho
 
@@ -824,6 +842,7 @@ cuando la gráfica exista.
 
   El sexo es el **actual de la ficha**, no el que la orden congeló para su
   cabecera (ORD-158): D-171.1, resuelta por el autor el 07-10-2026.
+  > **Enmendado por ORD-176 (D-171 §3, 11-10-2026):** en la atención de una ficha unificada, el sexo de la vigente.
 
 - **ORD-037** — El sistema DEBERÁ congelar en la fila el rango aplicado
   (`reference_low`, `reference_high`, `reference_text`).
@@ -1076,6 +1095,7 @@ cuando la gráfica exista.
   normalizar el retraso. La sede lo cambia en Parámetros, pero **no lo quita**:
   D-111 §1 lo hizo cambiable, no eliminable, y sin plazo no se escalaría nunca
   en horario (revisión clínica).
+  > **Enmendado por ORD-179 (D-207 §2, 11-10-2026):** la guardia puede ser una persona.
 
 - **ORD-064** — La constancia del aviso, y la del intento sin respuesta, NO
   DEBERÁN poder borrarse, ni cambiar **de qué valor es, quién avisó ni cuándo
@@ -1110,6 +1130,7 @@ cuando la gráfica exista.
   > **Enmendado por ORD-145 (D-116 b, 07-10-2026):** si una versión anterior
   > ya se avisó, el plazo corre desde la primera versión crítica posterior;
   > y por ORD-146 (D-116 a): tras un autoaviso, el aviso toca al paciente.
+  > **Enmendado por ORD-179 (D-207 §2, 11-10-2026):** con guardia nominal, escala a esa persona.
 
 - **ORD-066** — CUANDO se registra un aviso hecho, el sistema DEBERÁ exigir la
   confirmación de que quien lo recibió **repitió el valor** («read-back»), y SI
@@ -1119,6 +1140,7 @@ cuando la gráfica exista.
   comunicados de palabra (Joint Commission NPSG.02.03.01): el número que se
   dicta por teléfono es el que más se oye mal. La base lo garantiza también:
   `critical_result_notice_read_back` no deja guardar un aviso hecho sin ella.
+  > **Enmendado por ORD-177 (D-207 §2, 11-10-2026):** sólo donde la sede lo exige; apagado de fábrica.
 
 - **ORD-067** — CUANDO se registra un intento sin respuesta, el sistema DEBERÁ
   guardarlo con a quién se llamó, quién llamó, cuándo y por qué medio, y el
@@ -2096,6 +2118,7 @@ porque el 95 no es crítico y no entraba en ninguna cola._
   > sustituido y aplica esa función a sus informes, leídos de una vez. La
   > cola **no lleva el nombre** de un paciente o familiar avisado (ORD-024):
   > no se audita por entrada, y el nombre se lee en la orden.
+  > **Enmendado por ORD-171 y ORD-172 (D-168 §2 y §5, 11-10-2026):** se cierra con un aviso a cada tipo de destinatario que recibió el valor falso, y la cola propone a quién.
 
 - **ORD-144** — CUANDO se registre un aviso sobre un resultado **sin bandera
   crítica**, el sistema DEBERÁ admitirlo SÓLO SI el resultado es la versión
@@ -2159,6 +2182,7 @@ porque el 95 no es crítico y no entraba en ninguna cola._
   > cola sin que nadie más supiera. Un nombre escrito a medias («Dr. Pérez»
   > por «Juan Pérez») no se reconoce: comparar por partes atribuiría a una
   > persona el nombre de otra.
+  > **Enmendado por ORD-174 (D-168 §4, 11-10-2026):** basta que el nombre escrito contenga las palabras de la persona.
 
 - **ORD-148** — CUANDO se registre o edite un aviso o un intento, la pantalla
   DEBERÁ preguntar **quién hizo la llamada** —quien registra u otra persona,
@@ -2178,6 +2202,7 @@ porque el 95 no es crítico y no entraba en ninguna cola._
   > **Al editar, tampoco viene elegido** (revisión): `caller_name` vacío no
   > distingue «llamó quien registró» de una constancia anterior a la columna.
   > El `PUT` es el aviso entero: sin `callerName`, queda vacío.
+  > **Enmendado por ORD-175 y ORD-178 (D-168 §4, D-207 §2, 11-10-2026):** quien llamó se elige de las cuentas de la sede o lleva dos palabras; el aviso en un clic lo da quien registra.
 
 - **ORD-149** — CUANDO se corrija o edite un informe (ORD-050, ORD-119), el
   sistema DEBERÁ ofrecer y admitir **todas** las determinaciones del informe
@@ -2228,6 +2253,7 @@ a D-156.5, recomendación aceptada en todos los puntos._
   > misma glucosa transcrito como informe nuevo dejaba dos verdades vigentes
   > sin cadena de corrección, y la del 25 avisado nunca llegaba a la cola de
   > correcciones (ORD-143). La API todavía lo admite: D-168.
+  > **Enmendado por ORD-170 (D-168 §1, 11-10-2026):** la API también rechaza el analito repetido.
 
 - **ORD-153** — CUANDO alguna versión anterior de una determinación de la cola
   de correcciones (ORD-143) tenga un aviso hecho **al paciente o a su
@@ -2239,6 +2265,7 @@ a D-156.5, recomendación aceptada en todos los puntos._
   paciente o a su representante, la cierra cualquier aviso de ORD-143.
   > **D-156.1.** El paciente que supo del 25 quizá fue a urgencias; que la
   > enfermera avise al médico de guardia de que era 95 no se lo cuenta.
+  > **Enmendado por ORD-171 (D-168 §2, 11-10-2026):** el paciente es uno de los tipos que hay que avisar, no el único.
 
 - **ORD-154** — Cada entrada de la cola de correcciones DEBERÁ decir cuántos
   minutos lleva esperando desde que se registró la corrección, cuándo vence y
@@ -2254,6 +2281,7 @@ a D-156.5, recomendación aceptada en todos los puntos._
   > tratamiento que no necesita: el mismo plazo de la sede (60 minutos de
   > fábrica) y la misma escalada que el crítico. **Enmienda ORD-143** («sin
   > plazo»).
+  > **Enmendado por ORD-173 (D-168 §3, 11-10-2026):** vencida o sin respuesta del paciente, escalar a la guardia para localizarlo.
 
 - **ORD-155** — CUANDO un aviso diga que llamó otra persona (ORD-148) cuyo
   nombre no es el de la cuenta que lo registra, el sistema DEBERÁ juzgar el
@@ -2265,6 +2293,7 @@ a D-156.5, recomendación aceptada en todos los puntos._
   > a sí mismo: la enfermera sí le contó algo. **Enmienda ORD-147.** Las
   > constancias ya guardadas conservan el juicio con que se registraron
   > (`self_notice`); la edición las vuelve a juzgar.
+  > **Enmendado por ORD-174 (D-168 §4, 11-10-2026):** por contención.
 
 - **ORD-156** — CUANDO el valor de la última versión avisada de una
   determinación **no sea crítico** y ninguna corrección pendiente se herede
@@ -2285,6 +2314,7 @@ a D-156.5, recomendación aceptada en todos los puntos._
   > medias («Dr. Pérez») sigue sin reconocerse: atribuiría a una persona el
   > nombre de otra. **Enmienda ORD-147.**
 
+  > **Enmendado por ORD-174 (D-168 §4, 11-10-2026):** para el autoaviso basta la contención.
 
 ## 18. La orden guarda el sexo del día en que se emitió (D-163.1)
 
@@ -2351,6 +2381,7 @@ a D-156.5, recomendación aceptada en todos los puntos._
   > **Garantía de la base** (`20261008000000_paper_chart_of_record`):
   > `a_service_order_freeze_patient_sex` escribe ficha y sexo al emitir;
   > `service_order_chart_of_record_when_issued` y `service_order_guard_status`.
+  > **Enmendado por ORD-176 (D-171 §3, 11-10-2026):** el resultado se clasifica también con el sexo de la vigente.
 
 ## 19. Un examen, una prestación (D-179.1)
 
@@ -2488,6 +2519,178 @@ la cola y su cuenta en el menú siguen como están._
   > avisar. Nombrarlo exige leer la ficha, y esa lectura deja su fila en la
   > bitácora (PA-022): es un acceso real. El valor no viaja en el aviso: está
   > en la orden, a un clic, junto al nombre.
+  > **Enmendado por ORD-179 (D-207 §2, 11-10-2026):** la guardia nominal es la persona.
+  > **Enmendado por ORD-180 (D-208 §4, 11-10-2026):** también en la primera lectura, sin repetir lo que la pestaña ya avisó.
+
+---
+
+## 22. Lo que el autor decidió el 10-10-2026 sobre informes, correcciones y críticos (D-223)
+
+_D-168 §1 a §5, D-171 §3, D-207 §2 y D-208 §4: la recomendación aceptada en
+todos los puntos (D-223). D-171 §3 y D-207 §2 están **por confirmar con un
+clínico**; lo construido se cambia sin tocar datos._
+
+- **ORD-170** — CUANDO se registre un informe que no corrige a otro (ORD-030)
+  y alguno de sus valores sea de una determinación que ya tiene valor en un
+  informe **vigente** de la misma orden —ni sustituido ni anulado—, el sistema
+  DEBERÁ rechazar el informe entero con `RESULT_ALREADY_REPORTED`; cambiar un
+  valor que ya está es la corrección de ese informe (ORD-050, ORD-119). Y
+  CUANDO se registre la corrección de un informe, el sistema DEBERÁ rechazar
+  igual la determinación que el informe sustituido no tenía y que tiene valor
+  en otro informe vigente de la orden.
+  > **D-168 §1.** El 95 transcrito como informe nuevo junto al 25 avisado
+  > dejaba dos valores vigentes sin cadena de corrección, y el 95 no entraba
+  > en la cola de correcciones (ORD-143). Una determinación que aún no tiene
+  > valor sí entra en un segundo informe: es el segundo envío del laboratorio
+  > (ORD-152). **Garantía de la base:**
+  > `observation_result_one_standing_per_analyte` (disparador) rechaza el valor
+  > de una determinación —por `analyte_display`, el nombre con que la cadena
+  > de correcciones las empareja— que otro informe vigente de la orden ya
+  > tiene, bajo el bloqueo de la orden para que dos envíos a la vez no pasen
+  > los dos. **Enmienda ORD-152**, que deja de ser sólo de interfaz.
+  > **Revisión clínica G2:** corregir el informe de la Hb añadiendo «glucosa
+  > 95» esquivaba la regla; lo que el informe sustituido ya decía se reescribe
+  > sin juzgarse (`20261024000005`).
+
+- **ORD-171** — Una corrección de un valor avisado (ORD-143) DEBERÁ salir de
+  la cola SÓLO CUANDO, sobre el valor vigente, exista un aviso hecho a **cada
+  tipo de destinatario** que recibió de una versión anterior un aviso hecho
+  que no fue autoaviso: al paciente o a su representante, si se avisó a uno
+  de los dos; y a un profesional —el médico que pidió u otro—, con un aviso
+  que no sea autoaviso, si se avisó a alguno. SI todos esos avisos anteriores
+  fueron al médico que pidió el examen (por el tipo, o porque el destinatario
+  lleva su nombre), ENTONCES su propio autoaviso de la corrección DEBERÁ
+  cerrarla; y SI todos los avisos anteriores fueron autoavisos de una misma
+  cuenta, ENTONCES la cierra un autoaviso de esa cuenta o cualquier aviso que
+  no sea autoaviso, como en ORD-143. La cola de correcciones DEBERÁ decir que
+  el aviso toca **al paciente** SÓLO MIENTRAS le falte el aviso al paciente o a
+  su representante; si no, el destino es el de ORD-154 para el profesional.
+  > **D-168 §2 y §5.** Con la paciente y la guardia avisadas del 25, la
+  > guardia pudo pautar dextrosa: avisar a la hija no se lo cuenta. Y si sólo
+  > el médico que pidió supo del 25 (la enfermera se lo dijo a él), su
+  > constancia de la corrección basta: llamar al paciente sería una falsa
+  > alarma sobre un valor que nunca oyó. **Enmienda ORD-143 y ORD-153**
+  > («basta el paciente o su representante»), **y ORD-154** («al paciente …
+  > cuando el médico que pidió ya anotó la corrección como autoaviso»): el
+  > paciente que no oyó el 25 no recibe una llamada sobre el 95.
+
+- **ORD-172** — Cada entrada de la cola de correcciones, y la marca de la
+  corrección en la lectura del informe, DEBERÁN decir a qué tipos de
+  destinatario les falta el aviso (paciente o representante, profesional) y
+  **proponer** a quién avisar: el destinatario —tipo y nombre— del último
+  aviso hecho de una versión anterior a uno de los tipos que faltan, el
+  paciente o su representante primero.
+  > **D-168 §2.** «La cola propone primero a quien recibió el aviso»: es a
+  > quien hay que decirle que aquel valor no era cierto. La entrada no lleva
+  > el nombre (ORD-024); la lectura del informe sí, y el diálogo del aviso lo
+  > trae escrito.
+
+- **ORD-173** — MIENTRAS a una corrección le falte el aviso al paciente o a
+  su representante y esté **vencida** (ORD-154) o tenga sobre el valor
+  vigente un intento sin respuesta al paciente o a su representante, cada
+  entrada de la cola de correcciones
+  DEBERÁ indicar que se escale a la guardia de la sede para **localizar al
+  paciente**, con quién es la guardia —o que la sede no la designó—; y la
+  indicación NO DEBERÁ cerrar la entrada.
+  > **D-168 §3.** La corrección del 25 que no llega al paciente no puede
+  > quedarse «Vencida» sin que nadie haga nada; la guardia lo busca, pero la
+  > constancia que la cierra sigue siendo el aviso al paciente (ORD-171).
+  > **Enmienda ORD-154**, que la dejaba en «al paciente» sin escalar.
+
+- **ORD-174** — Para juzgar el **autoaviso** (ORD-147, ORD-155), un nombre
+  DEBERÁ contarse como el de una persona CUANDO **todas las palabras** de esa
+  persona —sin tratamiento inicial, mayúsculas, tildes ni puntuación, ORD-157—
+  estén en el nombre escrito, aunque éste lleve más: es autoaviso el aviso
+  cuyo destinatario contiene el nombre de la cuenta que lo registra, o el de
+  quien llamó; y quien llamó es la propia cuenta cuando su nombre contiene el
+  de la cuenta. El destinatario lleva el nombre del médico que pidió (ORD-146)
+  SÓLO SI es un profesional con **las mismas palabras** (ORD-157), nunca por
+  contención ni siendo un paciente o un familiar; y un aviso al paciente o a
+  su representante DEBERÁ contar, para la corrección (ORD-171), como que el
+  paciente oyó el valor aunque se juzgue autoaviso.
+  > **D-168 §4.** «Carmen Salazar Pilco» para la cuenta «Carmen Salazar»
+  > esquivaba el autoaviso por una palabra de más. Ante la duda el valor se
+  > queda en la cola, que es el error seguro. Un nombre a medias («Dr.
+  > Salazar») sigue sin contener el de la cuenta y no la nombra.
+  > **Revisión clínica G1:** la contención aplicada al médico que pidió
+  > cerraba correcciones —«Juan Carlos Pérez Andrade», paciente, contiene a la
+  > cuenta «Juan Pérez»—: esa dirección cierra colas, y por eso sigue exacta y
+  > sólo para profesionales.
+  > **Enmienda ORD-147, ORD-155 y ORD-157** (que exigían las mismas palabras).
+
+- **ORD-175** — CUANDO un aviso o un intento diga que llamó otra persona
+  (ORD-148), el sistema DEBERÁ admitir quién llamó **elegido de las cuentas de
+  la sede** —activas, con un rol vigente en la sede o en todas—, y entonces
+  guardar la cuenta y su nombre —y SI es la cuenta del médico que pidió y el
+  destinatario es «el médico que pidió», ENTONCES el aviso DEBERÁ juzgarse
+  autoaviso—; o escrito, y entonces SI el nombre tiene
+  menos de **dos palabras** sin el tratamiento inicial ENTONCES DEBERÁ
+  rechazarlo con `CRITICAL_NOTICE_CALLER_INCOMPLETE`; SI la cuenta elegida no
+  es de la sede, con `CRITICAL_NOTICE_CALLER_NOT_FOUND`. El sistema DEBERÁ
+  servir, con `result:write`, las cuentas de la sede que se pueden elegir.
+  > **D-168 §4.** «lab» o un solo apellido no nombran a nadie y servían para
+  > juzgar el autoaviso con otra persona. **Enmienda ORD-148.** **Garantía de
+  > la base:** `critical_result_notice.caller_id` apunta a `"user"`, y
+  > `critical_result_notice_caller_named` sigue sin dejar un nombre vacío.
+
+- **ORD-176** — MIENTRAS la ficha de la atención esté **unificada** en otra
+  (`merged_into_id`), el sistema DEBERÁ clasificar los valores que se
+  registren o corrijan en esa atención —rango de referencia y crítico,
+  ORD-036— con el sexo de la ficha **vigente**; la edad sigue siendo la que
+  congeló la atención (EN-221).
+  > **D-171 §3**, por confirmar con un clínico. La duplicada ya no se corrige
+  > (PA-045): si se registró con el sexo mal, sólo la vigente lo tiene bien.
+  > Yerra si la unificación fue equivocada, y por eso deshacerla avisa de los
+  > valores clasificados mientras tanto (PA de `patients`). **Enmienda
+  > ORD-036 y ORD-161** («el sexo de la ficha de la atención»).
+
+- **ORD-177** — DONDE la sede **exija el read-back**
+  (`site_parameter.critical_read_back_required`, apagado de fábrica), el
+  sistema DEBERÁ rechazar con `CRITICAL_READ_BACK_REQUIRED` el aviso hecho sin
+  la confirmación, como en ORD-066; y MIENTRAS la sede no lo exija, DEBERÁ
+  guardar el aviso hecho con o sin ella, diciendo si se confirmó.
+  > **D-207 §2**, por confirmar con un clínico. La Joint Commission
+  > (NPSG.02.03.01) deja a cada organización definir el procedimiento; un
+  > paso obligatorio en cada llamada que la clínica no pidió es lo que hace
+  > que se deje de registrar. **Enmienda ORD-066.** **Garantía de la base:**
+  > `critical_result_notice_read_back` admite el aviso hecho sin confirmar, y
+  > `trg_critical_result_notice_read_back_by_site` lo rechaza cuando la sede
+  > del valor lo exige.
+
+- **ORD-178** — El aviso de un valor crítico o de una corrección DEBERÁ poder
+  registrarse **en un clic**, eligiendo a quién —el paciente o el médico que
+  pidió, con su nombre ya escrito— y por qué medio —llamada, WhatsApp o en
+  persona—, con quien registra como quien avisó y el instante de ahora; y el
+  registro completo (otra persona, otro destinatario, otra hora, no contestó)
+  DEBERÁ seguir a un clic de distancia. El sistema DEBERÁ admitir el medio
+  `WHATSAPP`.
+  > **D-207 §2.** El diálogo largo (`RecordNoticeDialog.vue`, 617 líneas)
+  > preguntaba siete cosas por una llamada que ya ocurrió. **Enmienda
+  > ORD-148** en el camino corto: «quién hizo la llamada» es quien registra,
+  > porque es quien pulsa «Avisé a»; si fue otra persona, el registro
+  > completo lo pregunta como antes.
+
+- **ORD-179** — La sede DEBERÁ poder designar como guardia de críticos un
+  **rol** o **una persona** (`critical_escalation_user_id`), nunca los dos; y
+  CUANDO la escalada de ORD-065, ORD-068, ORD-154 u ORD-173 toque a la
+  guardia, con una persona designada la entrada DEBERÁ nombrarla, y en la
+  cola de críticos el aviso DEBERÁ tocarle a ella (`dueToRequester`, ORD-167); la sede **tiene
+  guardia** sólo SI esa cuenta está activa y tiene `record:read` vigente en
+  la sede o en todas.
+  > **D-207 §2.** Joint Commission pide una escalada **nominal**; un rol que
+  > tienen seis personas es un aviso que cada una cree que atiende otra.
+  > **Enmienda ORD-063, ORD-065 y ORD-167.** **Garantía de la base:**
+  > `site_parameter_one_escalation` no deja guardar rol y persona a la vez.
+
+- **ORD-180** — CUANDO la **primera** lectura de la cola en una pestaña
+  traiga valores que tocan a esta sesión (ORD-167), la interfaz DEBERÁ avisar
+  de ellos como en ORD-168 —al abrir sesión o recargar—, salvo los que esta
+  pestaña ya avisó, que DEBERÁ recordar mientras viva (`sessionStorage`); SI
+  ese almacenamiento no está disponible, ENTONCES DEBERÁ avisar igual.
+  > **D-208 §4.** El médico que entra después de llegar su crítico sólo veía
+  > la cuenta del menú. Recordar lo avisado por pestaña evita repetirlo en
+  > cada recarga; perder el recuerdo repite un aviso, que es el error seguro.
+  > **Enmienda ORD-168** («nunca en la primera lectura»).
 
 ---
 
@@ -2548,6 +2751,9 @@ contrato —`code`, estado y mensaje—.
 | `EXAM_HAS_OPEN_ORDERS` | 409 | Cambiar las determinaciones de un examen con órdenes esperando resultado | ORD-110 |
 | `ORDER_DRAFT_OF_ANOTHER_PRACTITIONER` | 403 | Corregir, emitir o descartar el borrador que firma otro profesional | ORD-096, D-123 |
 | `EXAM_CATEGORY_MISMATCH` | 422 | Un examen de la orden no es del tipo de la orden. Rechaza la orden **entera**, como ORD-003 | ORD-097 |
+| `RESULT_ALREADY_REPORTED` | 409 | Un informe que no corrige a otro trae una determinación que ya tiene valor en un informe vigente de la orden: se usa la corrección del informe vigente. Lo arbitra también `observation_result_one_standing_per_analyte` | ORD-170 |
+| `CRITICAL_NOTICE_CALLER_INCOMPLETE` | 422 | Quien llamó, escrito, tiene menos de dos palabras sin el tratamiento: no nombra a nadie | ORD-175 |
+| `CRITICAL_NOTICE_CALLER_NOT_FOUND` | 422 | La cuenta elegida como quien llamó no existe, está inactiva o no tiene rol en la sede del valor | ORD-175 |
 
 Se **reutilizan**, no se crean: `CATALOG_CONCEPT_NOT_FOUND` y
 `CATALOG_CONCEPT_NOT_IN_FORCE` de `shared/domain/errors`, que existen
@@ -2620,6 +2826,7 @@ resuelto de quien llama.
 | `PUT` | `/exam-catalogue/analytes/:analyteId/ranges` | `catalog:manage` | ORD-106, ORD-107, ORD-111, ORD-112, ORD-113 |
 | `GET` | `/exam-catalogue/analytes/:analyteId/ranges/history` | `catalog:manage` | ORD-114 |
 | `GET` | `/orders/drafts/stale` | `record:read` | ORD-115 |
+| `GET` | `/orders/results/:resultId/notice-callers` | `result:write` | ORD-175 *(cuentas activas con rol vigente en la sede del valor o en todas: id y nombre)* |
 
 **`POST /orders/results/:resultId/match` lleva `result:write` y no
 `record:read`**: leer la cola es una lectura, pero emparejar ESCRIBE el
@@ -2666,6 +2873,10 @@ columnas donde registrar quién lo decidió y por qué.
 | ORD-129 | Integración y unitario | Las dos restricciones de las horas, contra la base con control positivo; la línea destacada, unitaria sobre el compositor del PDF. |
 | ORD-131 | Integración | Que una línea con resultados no pase a anulada lo garantiza un disparador: se prueba contra la base con control positivo, y por el servicio la anulación y la corrección. |
 | ORD-132 | Unitario | La elección del umbral es pura: se prueba con los rangos de un recién nacido y una edad estimada. |
+| ORD-170, ORD-177, ORD-179 | Integración | Las tres tienen garantía de la base —el disparador del analito repetido bajo el bloqueo de la orden, el read-back que exige la sede y la guardia de uno solo—: contra PostgreSQL, por `INSERT`/`UPDATE` directo y por el servicio, con control positivo. |
+| ORD-171 a ORD-174 | Unitario e integración | El cierre por tipo, la propuesta, la escalada y la contención son funciones puras; que la cola los aplique a filas reales, con el reloj inyectado, contra la base. |
+| ORD-175, ORD-176 | Integración | La cuenta de la sede y el sexo de la vigente salen de la base (`user_role`, `merged_into_id`). |
+| ORD-178, ORD-180 | Interfaz | El aviso en un clic y el toast de la primera lectura son de la pantalla; el medio `WHATSAPP` se prueba además contra la base. |
 | Todos los códigos de error | Unitario | Contrato: `code`, categoría y mensaje. |
 
 ---

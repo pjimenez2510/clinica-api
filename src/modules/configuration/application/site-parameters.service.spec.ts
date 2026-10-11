@@ -50,6 +50,8 @@ const CURRENT: SiteParameterView = {
   cancelledRetention: 'NEVER',
   criticalNoticeWithinMinutes: 60,
   criticalEscalationRoleId: null,
+  criticalEscalationUserId: null,
+  criticalReadBackRequired: false,
   unmatchedResultOwnerRoleId: null,
   unmatchedResultDeadlineHours: 24,
   bpReferenceSystolic: 140,
@@ -91,6 +93,15 @@ class RepositoryDouble implements SiteParameterRepository {
   rolePermissions(roleId: string): Promise<readonly string[] | null> {
     this.calls.push({ method: 'rolePermissions', args: [roleId] });
     return Promise.resolve(this.rolesAnswer[roleId] ?? null);
+  }
+
+  personAnswer: Record<string, readonly string[]> = {};
+  personPermissions(
+    userId: string,
+    siteId: string,
+  ): Promise<readonly string[] | null> {
+    this.calls.push({ method: 'personPermissions', args: [userId, siteId] });
+    return Promise.resolve(this.personAnswer[userId] ?? null);
   }
 
   installedPermissions(codes: readonly string[]): Promise<readonly string[]> {
@@ -407,6 +418,26 @@ describe('los parámetros de operación de una sede', () => {
     expect(repository.calls.some((call) => call.method === 'update')).toBe(true); // prettier-ignore
   });
 
+  it('ORD-179 rechaza a una persona de guardia que no puede atender la cola en la sede, y no escribe nada', async () => {
+    repository.personAnswer = {
+      'user-caja': ['billing:write'],
+      'user-lucia': ['record:read', 'result:write'],
+    };
+    await expect(
+      service.update('site-1', { criticalEscalationUserId: 'user-caja' }, REQUESTER), // prettier-ignore
+    ).rejects.toMatchObject({
+      code: 'PERSON_CANNOT_WORK_RESULTS',
+      fieldErrors: [expect.objectContaining({ field: 'criticalEscalationUserId' })], // prettier-ignore
+    });
+    expect(repository.calls.some((call) => call.method === 'update')).toBe(false); // prettier-ignore
+    // Se pregunta por lo que puede EN ESTA sede.
+    expect(repository.calls.find((call) => call.method === 'personPermissions')?.args).toEqual(['user-caja', 'site-1']); // prettier-ignore
+
+    // Control positivo: quien ve la historia y registra resultados, sí.
+    await service.update('site-1', { criticalEscalationUserId: 'user-lucia', criticalEscalationRoleId: null }, REQUESTER); // prettier-ignore
+    expect(repository.calls.some((call) => call.method === 'update')).toBe(true); // prettier-ignore
+  });
+
   it('AG-101 no pregunta por el catálogo cuando el permiso no se toca', async () => {
     // Una lectura por cada guardado de las antelaciones es una consulta que no
     // decide nada.
@@ -439,6 +470,8 @@ describe('los parámetros de operación de una sede', () => {
       cancelledRetention: 'NEVER',
       criticalNoticeWithinMinutes: 60,
       criticalEscalationRoleId: null,
+      criticalEscalationUserId: null,
+      criticalReadBackRequired: false,
       unmatchedResultOwnerRoleId: null,
       unmatchedResultDeadlineHours: 24,
       bpReferenceSystolic: 140,

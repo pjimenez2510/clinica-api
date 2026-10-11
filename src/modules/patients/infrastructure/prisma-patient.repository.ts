@@ -60,6 +60,7 @@ import type {
   PatientDetail,
   PatientIdentifier,
   PatientMergeEvent,
+  ClassifiedWhileMerged,
   PatientMergeState,
   PatientPage,
   PatientRepository,
@@ -1570,6 +1571,72 @@ export class PrismaPatientRepository implements PatientRepository {
   // -------------------------------------------------------------------------
 
   /** PA-045. Who the chart is and whether it was absorbed. Opens nothing. */
+  /**
+   * PA-082 (D-171 §3). By ROW and not by a window of time: the sex each value
+   * was classified with is frozen on it (`classified_sex`), so the list does
+   * not vanish when the merge is undone, nor hide when the survivor's sex is
+   * corrected meanwhile, and leaves out what never depended on sex. Only the
+   * standing version —neither superseded nor annulled—. A table of `orders`,
+   * read here and not imported from there: modules do not import each other.
+   */
+  async classifiedWhileMerged(
+    sourcePatientId: string,
+  ): Promise<ClassifiedWhileMerged | null> {
+    const chart = await this.prisma.patient.findUnique({
+      where: { id: sourcePatientId },
+      select: { sex: true },
+    });
+    if (!chart) return null;
+
+    const rows = await this.prisma.observationResult.findMany({
+      where: {
+        sexSpecificRanges: true,
+        classifiedSex: { not: null },
+        NOT: { classifiedSex: chart.sex },
+        report: {
+          status: { not: 'CANCELLED' },
+          supersededBy: null,
+          serviceOrder: { encounter: { patientId: sourcePatientId } },
+        },
+      },
+      orderBy: [{ observedAt: 'desc' }, { id: 'desc' }],
+      select: {
+        id: true,
+        analyteDisplay: true,
+        valueNumeric: true,
+        valueCode: true,
+        valueText: true,
+        unit: true,
+        abnormalFlag: true,
+        classifiedSex: true,
+        observedAt: true,
+        report: {
+          select: {
+            serviceOrderId: true,
+            serviceOrder: { select: { siteId: true } },
+          },
+        },
+      },
+    });
+    return {
+      chartSex: chart.sex,
+      items: rows.map((row) => ({
+        resultId: row.id.toString(),
+        orderId: row.report.serviceOrderId,
+        siteId: row.report.serviceOrder.siteId,
+        analyteDisplay: row.analyteDisplay,
+        valueNumeric:
+          row.valueNumeric === null ? null : Number(row.valueNumeric),
+        valueCode: row.valueCode,
+        valueText: row.valueText,
+        unit: row.unit,
+        abnormalFlag: row.abnormalFlag,
+        classifiedSex: row.classifiedSex ?? '',
+        observedAt: row.observedAt,
+      })),
+    };
+  }
+
   async findMergeState(id: string): Promise<PatientMergeState | null> {
     const row = await this.prisma.patient.findUnique({
       where: { id },

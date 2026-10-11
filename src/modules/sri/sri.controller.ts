@@ -26,10 +26,12 @@ import { ALL_SITES } from '../../shared/authorisation/principal';
 import type { Permission } from '../../shared/authorisation/permission.catalogue';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
-import { SigningCertificateService } from './application/signing-certificate.service';
+import {
+  SigningCertificateService,
+  type CheckedCertificate,
+} from './application/signing-certificate.service';
 import { VoucherMonitorService } from './application/voucher-monitor.service';
 import type { Requester } from './application/voucher-monitor.service';
-import type { CertificateSummary } from './domain/electronic-voucher.repository';
 import { ElectronicVoucherNotFoundError } from './domain/sri.errors';
 import {
   CertificateDto,
@@ -42,7 +44,7 @@ import {
   type SriTransportFailureResponse,
 } from './dto/sri.dto';
 
-function toCertificate(summary: CertificateSummary): CertificateResponse {
+function toCertificate(summary: CheckedCertificate): CertificateResponse {
   return {
     id: summary.id,
     subject: summary.subject,
@@ -52,6 +54,8 @@ function toCertificate(summary: CertificateSummary): CertificateResponse {
     notAfter: summary.notAfter.toISOString(),
     active: summary.active,
     createdAt: summary.createdAt.toISOString(),
+    holderRuc: summary.holderRuc,
+    holderRucMatchesIssuer: summary.holderRucMatchesIssuer,
   };
 }
 
@@ -104,6 +108,11 @@ export class SriVouchersController {
           : null,
       },
       webServiceConfigured: view.webServiceConfigured,
+      deliveryStalled: {
+        count: view.deliveryStalled.count,
+        oldestAuthorisedAt:
+          view.deliveryStalled.oldestAuthorisedAt?.toISOString() ?? null,
+      },
     };
   }
 
@@ -132,7 +141,8 @@ export class SriVouchersController {
   // a script walking the site's vouchers to an outside address is not.
   @Throttle({ short: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermission('billing:write', 'query')
+  // SRI-099. Caja and administration: the e-mail only.
+  @RequirePermission('billing:voucher-mail', 'query')
   @ApiOperation({
     summary:
       'Reenviar por correo el RIDE y el XML de un comprobante autorizado a otra dirección',
@@ -143,10 +153,16 @@ export class SriVouchersController {
     @Body() dto: ResendVoucherDto,
     @Req() req: Request,
   ): Promise<void> {
+    // SRI-099 (D-167 §2). Who issues and collects re-sends any authorised
+    // voucher; administration only one whose e-mail did not go.
+    const issuing = this.currentUser
+      .requirePrincipal()
+      .sitesFor('billing:write');
     await this.monitorService.resendTo(
       voucherId,
       dto.email,
-      this.requester(req, 'billing:write'),
+      this.requester(req, 'billing:voucher-mail'),
+      issuing === ALL_SITES ? 'all' : issuing,
     );
   }
 

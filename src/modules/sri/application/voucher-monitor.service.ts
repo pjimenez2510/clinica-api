@@ -13,6 +13,7 @@ import {
   ELECTRONIC_VOUCHER_REPOSITORY,
   type ElectronicVoucherRepository,
   type MonitorRow,
+  type StalledDeliveries,
   type TransportFailureDetail,
   type VoucherRecord,
   type VoucherStatusView,
@@ -21,6 +22,7 @@ import {
   ElectronicVoucherNotAuthorisedError,
   ElectronicVoucherNotFoundError,
   ElectronicVoucherNotRetriableError,
+  VoucherDeliveryNotFailedError,
 } from '../domain/sri.errors';
 import {
   SRI_CLOCK,
@@ -46,6 +48,8 @@ import {
 } from './signing-certificate.service';
 
 const VOUCHER_RESOURCE_TYPE = 'electronic_voucher';
+/** SRI-098. A failed e-mail this old says the clinic's relay is down. */
+const STALLED_DELIVERY_MS = 72 * 3600 * 1000;
 
 export interface Requester {
   userId: string;
@@ -65,6 +69,8 @@ export interface MonitorView {
   certificate: CertificateHealth;
   /** SRI-054. The web service is not declared: vouchers wait signed. */
   webServiceConfigured: boolean;
+  /** SRI-098. E-mails failing three days on: the clinic's relay, not the SRI. */
+  deliveryStalled: StalledDeliveries;
 }
 
 /**
@@ -119,6 +125,10 @@ export class VoucherMonitorService
       rows,
       certificate: await this.certificates.health(),
       webServiceConfigured: this.sri.isConfigured(),
+      deliveryStalled: await this.vouchers.stalledDeliveries(
+        sites,
+        new Date(now.getTime() - STALLED_DELIVERY_MS),
+      ),
     };
   }
 
@@ -138,6 +148,13 @@ export class VoucherMonitorService
     );
     if (!voucher) throw new ElectronicVoucherNotFoundError();
     if (!isRetriableByAPerson(voucher.status)) {
+      throw new ElectronicVoucherNotRetriableError();
+    }
+    // SRI-104. A credit note a person gave up on is not sent again.
+    if (
+      (await this.vouchers.deliveryContext(voucher.id))?.documentStatus ===
+      'WITHDRAWN'
+    ) {
       throw new ElectronicVoucherNotRetriableError();
     }
 
@@ -172,6 +189,8 @@ export class VoucherMonitorService
     voucherId: string,
     email: string,
     requester: Requester,
+    /** SRI-099. Sites where the requester issues (`billing:write`). */
+    issuingSites: Requester['sites'],
   ): Promise<void> {
     const voucher = await this.vouchers.findByIdInSites(
       voucherId,
@@ -180,6 +199,18 @@ export class VoucherMonitorService
     if (!voucher) throw new ElectronicVoucherNotFoundError();
     if (voucher.status !== 'AUTHORISED' || !voucher.authorisedXml) {
       throw new ElectronicVoucherNotAuthorisedError();
+    }
+    // SRI-099 (D-167 §2). Without `billing:write` there, only the e-mail
+    // that did not go: not a way to send any RIDE anywhere.
+    const issues =
+      issuingSites === 'all' || issuingSites.includes(voucher.siteId);
+    if (
+      !issues &&
+      !['FAILED', 'UNDELIVERABLE', 'NO_EMAIL'].includes(
+        voucher.deliveryStatus ?? '',
+      )
+    ) {
+      throw new VoucherDeliveryNotFailedError();
     }
 
     await this.dispatch.mailCopy(voucher, email, requester.userId);
@@ -200,7 +231,19 @@ export class VoucherMonitorService
    * corrected it is in `billing`'s trail (the invoice's `UPDATE`).
    */
   async resendInvoice(invoiceId: string): Promise<boolean> {
-    const voucher = await this.vouchers.findByInvoice(invoiceId);
+    return this.resendCorrected(await this.vouchers.findByInvoice(invoiceId));
+  }
+
+  /** SRI-103. A returned credit note whose reason caja just corrected. */
+  async resendCreditNote(creditNoteId: string): Promise<boolean> {
+    return this.resendCorrected(
+      await this.vouchers.findByCreditNote(creditNoteId),
+    );
+  }
+
+  private async resendCorrected(
+    voucher: VoucherRecord | null,
+  ): Promise<boolean> {
     if (!voucher || !isRetriableByAPerson(voucher.status)) return false;
     const unsignedXml = await this.preparation.recompose(voucher);
     if (unsignedXml === null) return false;

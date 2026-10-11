@@ -815,6 +815,38 @@ export const patientMergeSchema = z.object({
 /** Response of a merge and of its undo. */
 export class PatientMergeDto extends createZodDto(patientMergeSchema) {}
 
+/**
+ * PA-082 (D-171 §3). The chart's values classified with another sex while it
+ * was merged; those of sites the reader cannot read are only counted.
+ */
+export const classifiedWhileMergedSchema = z.object({
+  chartSex: SEX,
+  hiddenCount: z.number().int(),
+  items: z.array(
+    z.object({
+      resultId: z.string(),
+      orderId: z.uuid(),
+      analyteDisplay: z.string(),
+      valueNumeric: z.number().nullable(),
+      valueCode: z.string().nullable(),
+      valueText: z.string().nullable(),
+      unit: z.string().nullable(),
+      abnormalFlag: z
+        .enum(['LOW', 'HIGH', 'NORMAL', 'CRITICAL_LOW', 'CRITICAL_HIGH'])
+        .nullable(),
+      classifiedSex: SEX,
+      observedAt: z.iso.datetime(),
+    }),
+  ),
+});
+/** Response of GET /patients/:id/merge/classified-results. */
+export class ClassifiedWhileMergedDto extends createZodDto(
+  classifiedWhileMergedSchema,
+) {}
+export type ClassifiedWhileMergedResponse = z.infer<
+  typeof classifiedWhileMergedSchema
+>;
+
 // ---------------------------------------------------------------------------
 // Priority groups (P3: PA-033 to PA-042, D-026, D-027)
 // ---------------------------------------------------------------------------

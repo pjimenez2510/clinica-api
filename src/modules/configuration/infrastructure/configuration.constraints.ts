@@ -75,6 +75,19 @@ registerConstraintMeanings({
     field: 'criticalEscalationRoleId',
     message: 'El rol indicado no existe. Actualice la lista de roles',
   },
+  // ORD-179. La persona de guardia, por la clave foránea; y rol o persona,
+  // nunca los dos.
+  site_parameter_critical_escalation_user_id_fkey: {
+    code: 'USER_NOT_FOUND',
+    field: 'criticalEscalationUserId',
+    message: 'La persona indicada no existe. Actualice la lista',
+  },
+  site_parameter_one_escalation: {
+    code: 'PARAM_OUT_OF_RANGE',
+    field: 'criticalEscalationUserId',
+    message:
+      'La guardia es un rol o una persona, no los dos: quite el rol para nombrar a una persona',
+  },
   site_parameter_unmatched_result_owner_role_id_fkey: {
     code: 'ROLE_NOT_FOUND',
     field: 'unmatchedResultOwnerRoleId',

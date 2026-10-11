@@ -50,11 +50,14 @@ describe('los resultados por HTTP', () => {
   let doctorUserId: string;
   let patientId: string;
   let orderId: string;
+  let encounterId: string;
+  let glucoseExamId: string;
   let glucoseAnalyteId: string;
 
   beforeEach(async () => {
     enableBigIntSerialisation();
     prisma = db();
+    glucoses = 0;
 
     if (!app) {
       const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -136,13 +139,20 @@ describe('los resultados por HTTP', () => {
       .expect(200);
     token = (login.body as { accessToken: string }).accessToken;
 
-    const order = await post(`/encounters/${encounter.id}/orders`, {
+    encounterId = encounter.id;
+    glucoseExamId = exams.glucose.id;
+    orderId = await anIssuedGlucoseOrder();
+  }
+
+  /** ORD-098. Composed as a draft; a result only comes back for an issued one. */
+  async function anIssuedGlucoseOrder(): Promise<string> {
+    const order = await post(`/encounters/${encounterId}/orders`, {
       category: 'LABORATORY',
-      items: [{ serviceId: exams.glucose.id }],
+      items: [{ serviceId: glucoseExamId }],
     }).expect(201);
-    orderId = (order.body as { id: string }).id;
-    // ORD-098. Composed as a draft; a result only comes back for an issued one.
-    await post(`/orders/${orderId}/issue`, {}).expect(200);
+    const id = (order.body as { id: string }).id;
+    await post(`/orders/${id}/issue`, {}).expect(200);
+    return id;
   }
 
   const post = (path: string, body: object) =>
@@ -162,8 +172,16 @@ describe('los resultados por HTTP', () => {
       .get(`/api/v1${path}`)
       .set('Authorization', `Bearer ${token}`);
 
+  /**
+   * A critical glucose. The first on the scene's order, each later one on an
+   * order of its own: a second report with the same determination is
+   * `RESULT_ALREADY_REPORTED` (ORD-170).
+   */
+  let glucoses = 0;
   async function criticalGlucose(): Promise<string> {
-    const report = await post(`/orders/${orderId}/reports`, {
+    glucoses += 1;
+    const target = glucoses === 1 ? orderId : await anIssuedGlucoseOrder();
+    const report = await post(`/orders/${target}/reports`, {
       issuedAt: new Date(Date.now() - 3_600_000).toISOString(),
       results: [{ analyteDefinitionId: glucoseAnalyteId, valueNumeric: 25 }],
     }).expect(201);
@@ -247,8 +265,9 @@ describe('los resultados por HTTP', () => {
     expect((await get('/orders/results/corrections').expect(200)).body).toEqual({ items: [] }); // prettier-ignore
   });
 
-  it('ORD-066 un aviso sin read-back responde 422 nombrando el campo', async () => {
+  it('ORD-066 ORD-177 con la sede que lo exige, un aviso sin read-back responde 422 nombrando el campo', async () => {
     const resultId = await criticalGlucose();
+    await prisma.siteParameter.updateMany({ data: { criticalReadBackRequired: true } }); // prettier-ignore
 
     const response = await post(`/orders/results/${resultId}/notices`, {
       outcome: 'NOTIFIED',
@@ -348,7 +367,8 @@ describe('los resultados por HTTP', () => {
     }).expect(201);
     const notice = created.body as { id: string; notifiedAt: string };
 
-    // ORD-066: editar no levanta el read-back.
+    // ORD-066, ORD-177: con la sede que lo exige, editar no levanta el read-back.
+    await prisma.siteParameter.updateMany({ data: { criticalReadBackRequired: true } }); // prettier-ignore
     const refused = await put(
       `/orders/results/${resultId}/notices/${notice.id}`,
       {
