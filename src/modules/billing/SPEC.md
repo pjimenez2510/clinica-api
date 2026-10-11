@@ -631,11 +631,10 @@ especialidad, una extensión de orden sobre un insumo, dos consultas con el
 mismo nombre en una especialidad y dos procedimientos con el mismo código.
 
 **Cubre:** BI-278 a BI-298. **Solo interfaz:** BI-291 a BI-296.
-**Solo servidor:** BI-281, BI-283, BI-287 a BI-290, BI-298. Son garantías y
+**Solo servidor:** BI-281, BI-283, BI-287, BI-289, BI-290, BI-298. Son garantías y
 lecturas del servidor: el código que ya salió en papel no cambia (BI-281), la
 ficha sirve las determinaciones con sus rangos (BI-283), caja recibe la
-propuesta por código (BI-287), el borrado se rechaza (BI-288; la pantalla sólo
-ofrece desactivar), la pared se agrupa por tipo (BI-289), la bitácora (BI-290) y
+propuesta por código (BI-287), la pared se agrupa por tipo (BI-289), la bitácora (BI-290) y
 la consulta única por visita (BI-298); en pantalla sólo se ve el mensaje que el
 servidor devuelve.
 
@@ -2145,12 +2144,12 @@ dos registros distintos.**
   > Quitar una línea fue la decisión de una persona; un sistema que la
   > deshiciera al siguiente clic estaría cobrando lo que alguien decidió no
   > cobrar.
-- **BI-158** — El sistema DEBERÁ resolver qué prestación es la consulta a
-  partir del **tipo de atención de la cita** de la que nació la atención
-  —su primera prestación (SP-031)—, y NO DEBERÁ deducirlo del código ni del
-  nombre de la prestación, ni de primera vez o subsecuente. SI la atención no
-  nació de una cita con tipo, o el tipo no tiene prestación, ENTONCES DEBERÁ
-  dar la consulta por no propuesta con `NO_BILLABLE_SERVICE` (BI-155).
+- **BI-158** — El sistema DEBERÁ resolver qué servicio es la consulta a
+  partir del **servicio de la cita** de la que nació la atención
+  (`agenda_entry.service_id`, BI-287), y NO DEBERÁ deducirlo del código ni del
+  nombre del servicio, ni de primera vez o subsecuente. SI la atención no
+  nació de una cita con consulta, ENTONCES DEBERÁ dar la consulta por no
+  propuesta con `NO_BILLABLE_SERVICE` (BI-155).
   > **Enmendado el 07-10-2026 (D-179.3).** Decía «a partir de la especialidad
   > de la atención y su tipo de visita», con la prestación marcada a mano con
   > `billable_service.specialty_id` y `visit_sequence`, que se retiraron. El

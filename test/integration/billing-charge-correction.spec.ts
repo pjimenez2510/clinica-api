@@ -431,6 +431,30 @@ describe('BI-198 el pagador cambia con cargos y los re-tarifa', () => {
   });
 });
 
+describe('BI-014 el servicio desactivado sigue en lo que ya lo nombra', () => {
+  it('BI-014 un cargo ya hecho sigue nombrando su servicio después de desactivarlo', async () => {
+    const raised = await charge();
+    const service = await context.prisma.service.findUniqueOrThrow({
+      where: { id: context.generalId },
+    });
+
+    await context.prisma.service.update({
+      where: { id: context.generalId },
+      data: { active: false },
+    });
+
+    const [line] = await context.accounts.listCharges(context.accountId);
+    expect(line?.id).toBe(raised.id);
+    expect(line?.serviceDisplay).toContain(service.name);
+    // Control: it really is retired now.
+    await expect(
+      context.prisma.service.findUniqueOrThrow({
+        where: { id: context.generalId },
+      }),
+    ).resolves.toMatchObject({ active: false });
+  });
+});
+
 describe('BI-195, BI-198, BI-184 lo que la revisión encontró', () => {
   it('BI-195 no devuelve un cargo anulado antes de esta entrega: no tiene versión y ya se registró otro', async () => {
     const raised = await charge();

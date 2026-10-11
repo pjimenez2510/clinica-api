@@ -269,12 +269,15 @@ describe('las especialidades por HTTP', () => {
       expect((response.body as { code: string }).code).toBe('cardiologia');
     });
 
-    it('SP-010 renombrar NO mueve el código, ni siquiera al corregir una tilde', async () => {
+    it('SP-010 renombrar NO mueve el código, ni con un nombre que derivaría otro', async () => {
       const created = await createSpecialty('Ginecologia y Obstetricia');
       expect(created.code).toBe('ginecologia-obstetricia');
 
+      // A name that would DERIVE ANOTHER code («obstetricia-ginecologia»):
+      // with only a tilde changed, re-deriving would give the same code and
+      // this test could not fail.
       const renamed = await patch(`/${created.id}`, {
-        name: 'Ginecología y Obstetricia',
+        name: 'Obstetricia y Ginecología',
       }).expect(200);
 
       // Si el código se volviera a derivar aquí, esta fila cambiaría de
@@ -486,7 +489,7 @@ describe('las especialidades por HTTP', () => {
       expect(trail[1]?.after).toMatchObject({ durationMinutes: 30 });
     });
 
-    it('SP-010 BI-280 la especialidad no crea servicios detrás, y renombrarla no renombra sus consultas ni recalcula nada de ellas', async () => {
+    it('la especialidad no crea servicios detrás, y renombrarla no renombra sus consultas (ADR-013)', async () => {
       const before = await prisma.service.count();
       const specialty = await createSpecialty('Ginecologia');
       await expect(prisma.service.count()).resolves.toBe(before);
@@ -506,7 +509,7 @@ describe('las especialidades por HTTP', () => {
       await expect(prisma.service.count()).resolves.toBe(before + 1);
     });
 
-    it('BI-287 la cita nombra UN servicio y no queda tabla de prestaciones por tipo', async () => {
+    it('la cita nombra UN servicio y no queda tabla de prestaciones por tipo (ADR-013)', async () => {
       const tables = await prisma.$queryRaw<{ table_name: string }[]>`
         SELECT table_name FROM information_schema.tables
          WHERE table_schema = current_schema()

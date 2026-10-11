@@ -240,7 +240,7 @@ describe('el catálogo de exámenes, administrado (E10)', () => {
     expect(codes).not.toContain('LAB-PERFIL-RENAL');
   });
 
-  it('BI-280 BI-284 el alta y la corrección del examen ya no viven en el catálogo de exámenes: se hacen como servicio', async () => {
+  it('el alta y la corrección del examen ya no viven en el catálogo de exámenes: se hacen como servicio (ADR-013)', async () => {
     const bh = await examCoded('LAB-BH');
 
     await get('/exam-catalogue/exams').expect(404);

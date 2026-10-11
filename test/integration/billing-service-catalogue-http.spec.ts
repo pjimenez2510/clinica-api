@@ -185,7 +185,8 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
         data: { priceListId: list.id, serviceId: service.id, amount: '22.00', validFrom: day(-60), validTo: day(-30) }, // prettier-ignore
       });
       const current = await prisma.price.create({
-        data: { priceListId: list.id, serviceId: service.id, amount: '24.00', validFrom: day(-30) }, // prettier-ignore
+        // Starting TODAY in Ecuador: the boundary «vigente hoy» has to include.
+        data: { priceListId: list.id, serviceId: service.id, amount: '24.00', validFrom: day(0) }, // prettier-ignore
       });
 
       const { items } = (
@@ -220,6 +221,32 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
       expect(
         items.find((item) => item.payer.kind === 'SELF_PAY' && item.inForce),
       ).toMatchObject({ amount: '30.00' });
+    });
+  });
+
+  describe('BI-010 el catálogo se administra desde la aplicación', () => {
+    it('BI-010 un código propio no se repite: el segundo servicio con el mismo código se rechaza', async () => {
+      const supply = {
+        kind: 'SUPPLY',
+        code: 'INS-GUANTE-M',
+        selfPayAmount: '0.50',
+      };
+      // Control: the first one is created, active.
+      const first = await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', manager)
+        .send({ ...supply, name: 'Guantes talla M' })
+        .expect(201);
+      expect((first.body as { active: boolean }).active).toBe(true);
+
+      const twin = await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', manager)
+        .send({ ...supply, name: 'Guantes de nitrilo M' })
+        .expect(409);
+      expect((twin.body as Problem).code).toBe(
+        'BILLABLE_SERVICE_CODE_DUPLICATE',
+      );
     });
   });
 

@@ -1448,7 +1448,7 @@ desde la pantalla.
   > después del alta: el examen y su prestación son la misma cosa (ORD-163),
   > y cambiarla le cambiaría el nombre al examen. El `PATCH` dejó de aceptar
   > `billableServiceId`.
-  > **Sustituido el 11-10-2026 por BI-284 (ADR-013), sin sucesor.** No hay prestación de cobro aparte: el examen es el servicio.
+  > **Sustituido el 11-10-2026 por BI-284 (ADR-013).** No hay prestación de cobro aparte: el examen es el servicio.
 
 - ~~ORD-109~~ — SI se cambia el tipo de un examen que tiene prestación de cobro
   a uno que no es la clase de esa prestación, ENTONCES el sistema DEBERÁ

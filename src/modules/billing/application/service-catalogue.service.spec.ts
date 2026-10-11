@@ -557,18 +557,6 @@ describe('BI-288 retirar un servicio', () => {
     expect(entry).toMatchObject({ resourceType: 'service', before: { code: 'CONS-MG-PV' } }); // prettier-ignore
   });
 
-  it('BI-010 corregir un servicio inexistente responde 404 antes de tocar nada', async () => {
-    const { service: catalogue, mocks } = build({
-      findService: vi.fn().mockResolvedValue(null),
-    });
-
-    await expect(
-      catalogue.updateService('missing', { name: 'Otro' }, requester),
-    ).rejects.toBeInstanceOf(BillableServiceNotFoundError);
-    expect(mocks.updateService).not.toHaveBeenCalled();
-    expect(mocks.record).not.toHaveBeenCalled();
-  });
-
   it('BI-288 responde 404 ante un servicio inexistente antes de tocar nada', async () => {
     const { service: catalogue, mocks } = build({
       findService: vi.fn().mockResolvedValue(null),
