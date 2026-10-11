@@ -99,6 +99,17 @@ export interface SiteParameterRepository {
    * reason as `installedPermissions`.
    */
   rolePermissions(roleId: string): Promise<readonly string[] | null>;
+
+  /**
+   * ORD-179. What a person may do at a site: the permissions of the active
+   * roles they hold through live grants there or at all; empty for an
+   * inactive account, `null` for one that does not exist (left to the
+   * foreign key).
+   */
+  personPermissions(
+    userId: string,
+    siteId: string,
+  ): Promise<readonly string[] | null>;
 }
 
 export const SITE_PARAMETER_REPOSITORY = Symbol('SiteParameterRepository');

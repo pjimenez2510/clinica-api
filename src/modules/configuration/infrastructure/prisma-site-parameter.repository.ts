@@ -48,6 +48,8 @@ const PARAMETER_SELECT = {
   // ORD-046, ORD-063, ORD-065: la política de las colas de resultados.
   criticalNoticeWithinMinutes: true,
   criticalEscalationRoleId: true,
+  criticalEscalationUserId: true,
+  criticalReadBackRequired: true,
   unmatchedResultOwnerRoleId: true,
   unmatchedResultDeadlineHours: true,
   // EN-272: la línea de referencia de la TA de las gráficas.
@@ -137,6 +139,8 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
             // `null` clears a role (quien pidió); `undefined` leaves alone.
             criticalNoticeWithinMinutes: patch.criticalNoticeWithinMinutes,
             criticalEscalationRoleId: patch.criticalEscalationRoleId,
+            criticalEscalationUserId: patch.criticalEscalationUserId,
+            criticalReadBackRequired: patch.criticalReadBackRequired,
             unmatchedResultOwnerRoleId: patch.unmatchedResultOwnerRoleId,
             unmatchedResultDeadlineHours: patch.unmatchedResultDeadlineHours,
             bpReferenceSystolic: patch.bpReferenceSystolic,
@@ -222,5 +226,38 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
       select: { permissions: { select: { permissionCode: true } } },
     });
     return role ? role.permissions.map((p) => p.permissionCode) : null;
+  }
+
+  async personPermissions(
+    userId: string,
+    siteId: string,
+  ): Promise<readonly string[] | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        active: true,
+        roleGrants: {
+          where: {
+            revokedAt: null,
+            role: { active: true },
+            OR: [{ siteId }, { siteId: null }],
+          },
+          select: {
+            role: {
+              select: { permissions: { select: { permissionCode: true } } },
+            },
+          },
+        },
+      },
+    });
+    if (!user) return null;
+    if (!user.active) return [];
+    return [
+      ...new Set(
+        user.roleGrants.flatMap((grant) =>
+          grant.role.permissions.map((p) => p.permissionCode),
+        ),
+      ),
+    ];
   }
 }

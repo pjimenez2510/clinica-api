@@ -47,6 +47,7 @@ import {
   CriticalResultListDto,
   UnmatchedResultListDto,
   MatchResultDto,
+  NoticeCallerListDto,
   RecordNoticeDto,
   RegisterReportDto,
   WorklistQueryDto,
@@ -56,6 +57,7 @@ import {
   type CriticalNoticeVersionListResponse,
   type DiagnosticReportListResponse,
   type DiagnosticReportResponse,
+  type NoticeCallerListResponse,
   type CriticalResultListResponse,
   type UnmatchedResultListResponse,
 } from './dto/diagnostic-report.dto';
@@ -262,6 +264,7 @@ export class DiagnosticReportController {
         notifiedAt: dto.notifiedAt === undefined ? undefined : new Date(dto.notifiedAt), // prettier-ignore
         note: dto.note,
         callerName: dto.callerName,
+        callerUserId: dto.callerUserId,
       },
       this.requester(req, 'result:write'),
       new Date(),
@@ -301,11 +304,34 @@ export class DiagnosticReportController {
         notifiedAt: dto.notifiedAt === undefined ? undefined : new Date(dto.notifiedAt), // prettier-ignore
         note: dto.note,
         callerName: dto.callerName,
+        callerUserId: dto.callerUserId,
       },
       this.requester(req, 'result:write'),
       new Date(),
     );
     return toNoticeResponse(notice);
+  }
+
+  /**
+   * ORD-175 (D-168 §4). Who can be named as having made the call: the active
+   * accounts of the result's site. Same permission as recording the notice;
+   * the site is the result's, resolved inside the caller's scope.
+   */
+  @Get('results/:resultId/notice-callers')
+  @RequirePermission('result:write', 'query')
+  @ApiOperation({
+    summary: 'Listar las cuentas de la sede que pueden haber hecho la llamada',
+  })
+  @ApiOkResponse({ type: NoticeCallerListDto })
+  async noticeCallers(
+    @Param('resultId') resultId: string,
+    @Req() req: Request,
+  ): Promise<NoticeCallerListResponse> {
+    const items = await this.reports.noticeCallers(
+      resultId,
+      this.requester(req, 'result:write'),
+    );
+    return { items };
   }
 
   /**
@@ -446,11 +472,13 @@ export class DiagnosticReportController {
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Req() req: Request,
   ): Promise<DiagnosticReportListResponse> {
-    const items = await this.reports.ofOrder(
-      orderId,
-      this.requester(req, 'record:read'),
-    );
-    return { items: items.map(toReportResponse) };
+    const requester = this.requester(req, 'record:read');
+    const items = await this.reports.ofOrder(orderId, requester);
+    return {
+      items: items.map(toReportResponse),
+      // ORD-177. Whether the notice recorded from this order needs the read-back.
+      readBackRequired: await this.reports.readBackRequired(orderId, requester),
+    };
   }
 
   /** Who is asking, for the site scope and for the access trail. */
@@ -530,6 +558,14 @@ function toCorrectionResponse(
     correctedAt: correction.correctedAt.toISOString(),
     due: correction.due,
     patientRequired: correction.patientRequired,
+    missingRecipients: [...correction.missingRecipients],
+    proposedRecipient: correction.proposedRecipient
+      ? {
+          recipientKind: correction.proposedRecipient
+            .recipientKind as CriticalNoticeView['recipientKind'],
+          recipientName: correction.proposedRecipient.recipientName,
+        }
+      : null,
   };
 }
 
@@ -581,11 +617,27 @@ function toCorrectionEntryResponse(
     correctedAt: entry.correctedAt.toISOString(),
     orderedBy: entry.orderedBy,
     patientRequired: entry.patientRequired,
+    missingRecipients: [...entry.missingRecipients],
+    proposedRecipient: entry.proposedRecipient
+      ? {
+          recipientKind: entry.proposedRecipient
+            .recipientKind as CriticalNoticeView['recipientKind'],
+          // ORD-024: a patient's or relative's name is read in the order.
+          recipientName:
+            entry.proposedRecipient.recipientKind === 'PATIENT' ||
+            entry.proposedRecipient.recipientKind === 'REPRESENTATIVE'
+              ? null
+              : entry.proposedRecipient.recipientName,
+        }
+      : null,
     noAnswerAttempts: entry.noAnswerAttempts,
+    locateViaOnCall: entry.locateViaOnCall,
+    readBackRequired: entry.readBackRequired,
     waitingMinutes: entry.waitingMinutes,
     noticeDueAt: entry.noticeDueAt.toISOString(),
     overdue: entry.overdue,
     escalateTo: entry.escalateTo,
+    escalateToPerson: entry.escalateToPerson,
     afterHours: entry.afterHours,
     noticeTarget: entry.noticeTarget,
     escalationMissing: entry.escalationMissing,
@@ -609,6 +661,7 @@ function toNoticeResponse(notice: CriticalNoticeView): CriticalNoticeResponse {
     selfNotice: notice.selfNotice,
     namesOrderingPractitioner: notice.namesOrderingPractitioner,
     callerName: notice.callerName,
+    callerId: notice.callerId,
     editedBy: notice.editedBy,
     editedAt: notice.editedAt?.toISOString() ?? null,
   };
@@ -643,6 +696,7 @@ function toCriticalResponse(
     noticeDueAt: entry.noticeDueAt.toISOString(),
     overdue: entry.overdue,
     escalateTo: entry.escalateTo,
+    escalateToPerson: entry.escalateToPerson,
     firstObservedAt: entry.firstObservedAt.toISOString(),
     orderedBy: entry.orderedBy,
     noAnswerAttempts: entry.noAnswerAttempts,
@@ -652,6 +706,7 @@ function toCriticalResponse(
     noticeTarget: entry.noticeTarget,
     escalationMissing: entry.escalationMissing,
     dueToRequester: entry.dueToRequester,
+    readBackRequired: entry.readBackRequired,
   };
 }
 

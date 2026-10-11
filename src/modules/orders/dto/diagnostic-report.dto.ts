@@ -126,7 +126,8 @@ const NOTICE_RECIPIENT = z.enum([
   'PATIENT',
   'REPRESENTATIVE',
 ]);
-const NOTICE_CHANNEL = z.enum(['PHONE', 'IN_PERSON', 'VIDEO_CALL']);
+/** ORD-062, ORD-178: WhatsApp since D-207 §2. */
+const NOTICE_CHANNEL = z.enum(['PHONE', 'IN_PERSON', 'VIDEO_CALL', 'WHATSAPP']);
 /** ORD-067. `NO_ANSWER` is an attempt: recorded, and the value stays queued. */
 const NOTICE_OUTCOME = z.enum(['NOTIFIED', 'NO_ANSWER']);
 
@@ -156,6 +157,8 @@ export const criticalNoticeSchema = z.object({
   namesOrderingPractitioner: z.boolean(),
   /** ORD-148. Who made the call, when it was not who recorded it (`notifiedBy`). */
   callerName: z.string().nullable(),
+  /** ORD-175. The account that made the call, when it was chosen from the site. */
+  callerId: z.uuid().nullable(),
   /** ORD-120. Who edited it last, and when; `null` if nobody did. */
   editedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
   editedAt: z.iso.datetime().nullable(),
@@ -181,6 +184,14 @@ export const criticalNoticeVersionListSchema = z.object({
 export class CriticalNoticeVersionListDto extends createZodDto(
   criticalNoticeVersionListSchema,
 ) {}
+
+/** ORD-175. The accounts of a result's site that can be named as the caller. */
+export const noticeCallerListSchema = z.object({
+  items: z.array(z.object({ id: z.uuid(), name: z.string() })),
+});
+/** Response of GET /orders/results/:resultId/notice-callers. */
+export class NoticeCallerListDto extends createZodDto(noticeCallerListSchema) {}
+export type NoticeCallerListResponse = z.infer<typeof noticeCallerListSchema>;
 
 /**
  * ORD-062. What recording a notice asks for.
@@ -222,6 +233,12 @@ const noticeFields = z.object({
     .max(200, 'El nombre no puede superar 200 caracteres')
     .nullable()
     .optional(),
+  /**
+   * ORD-175 (D-168 §4). The account of the site that made the call, chosen
+   * from `GET /orders/results/:resultId/notice-callers`. When given, its name
+   * is the caller's and `callerName` is ignored.
+   */
+  callerUserId: z.uuid('Elija una cuenta de la lista').nullable().optional(),
 });
 
 /** ORD-067. Nobody answered, so nobody repeated anything. */
@@ -280,6 +297,19 @@ const toldValueSchema = z.object({
   observedAt: z.iso.datetime(),
 });
 
+/** ORD-171 (D-168 §2). The patient or their representative; a professional. */
+const RECIPIENT_GROUP = z.enum(['PATIENT', 'PRACTITIONER']);
+
+/**
+ * ORD-172. Who the notice of the correction is proposed to. On the worklist
+ * the name of a patient or relative is `null` (ORD-024): it is read in the
+ * order, whose reading is audited.
+ */
+const proposedRecipientSchema = z.object({
+  recipientKind: NOTICE_RECIPIENT,
+  recipientName: z.string().nullable(),
+});
+
 /** ORD-143. A standing value that corrects one somebody was told about. */
 export const notifiedCorrectionSchema = z.object({
   told: toldValueSchema,
@@ -290,6 +320,10 @@ export const notifiedCorrectionSchema = z.object({
   due: z.boolean(),
   /** ORD-153. It has to reach the patient or their representative. */
   patientRequired: z.boolean(),
+  /** ORD-171. The kinds of people told the false value still to be told. */
+  missingRecipients: z.array(RECIPIENT_GROUP),
+  /** ORD-172. Who to tell first: who heard the false value, patient first. */
+  proposedRecipient: proposedRecipientSchema.nullable(),
 });
 
 /** ORD-031 to ORD-038. One determination as a client reads it. */
@@ -347,6 +381,8 @@ export class DiagnosticReportDto extends createZodDto(diagnosticReportSchema) {}
 
 export const diagnosticReportListSchema = z.object({
   items: z.array(diagnosticReportSchema),
+  /** ORD-177. The order's site asks for the read-back on a notice given. */
+  readBackRequired: z.boolean(),
 });
 /** Response of GET /orders/:orderId/reports. */
 export class DiagnosticReportListDto extends createZodDto(
@@ -377,6 +413,8 @@ export const criticalResultSchema = flaggedResultSchema.extend({
   noticeDueAt: z.iso.datetime(),
   overdue: z.boolean(),
   escalateTo: z.object({ roleId: z.uuid(), name: z.string() }).nullable(),
+  /** ORD-179. The person the site names as its on-call, when it names one. */
+  escalateToPerson: z.object({ userId: z.uuid(), name: z.string() }).nullable(),
   /** ORD-065. The chain's first critical version, which the deadline runs from. */
   firstObservedAt: z.iso.datetime(),
   /** ORD-065. Who placed the order: the first to tell, by name. */
@@ -395,6 +433,8 @@ export const criticalResultSchema = flaggedResultSchema.extend({
   escalationMissing: z.boolean(),
   /** ORD-167. The notice is due to the account reading the worklist. */
   dueToRequester: z.boolean(),
+  /** ORD-177. The site asks for the read-back on a notice given. */
+  readBackRequired: z.boolean(),
 });
 export const criticalResultListSchema = z.object({
   items: z.array(criticalResultSchema),
@@ -441,18 +481,31 @@ export const correctionResultSchema = z.object({
   orderedBy: z.object({ id: z.uuid(), name: z.string() }),
   /** ORD-153. An earlier version was told to the patient or their representative. */
   patientRequired: z.boolean(),
+  /** ORD-171. The kinds of people told the false value still to be told. */
+  missingRecipients: z.array(RECIPIENT_GROUP),
+  /** ORD-172. Who to tell first; a patient's or relative's name stays in the order. */
+  proposedRecipient: proposedRecipientSchema.nullable(),
   /** ORD-154. Unanswered calls about the corrected value. */
   noAnswerAttempts: z.number().int(),
+  /** ORD-173. The site's on-call has to locate the patient; it closes nothing. */
+  locateViaOnCall: z.boolean(),
+  /** ORD-177. The site asks for the read-back on a notice given. */
+  readBackRequired: z.boolean(),
   /** ORD-154 (D-156.2). The site's critical deadline, from `correctedAt`. */
   waitingMinutes: z.number().int(),
   noticeDueAt: z.iso.datetime(),
   overdue: z.boolean(),
   escalateTo: z.object({ roleId: z.uuid(), name: z.string() }).nullable(),
+  /** ORD-179. The person the site names as its on-call, when it names one. */
+  escalateToPerson: z.object({ userId: z.uuid(), name: z.string() }).nullable(),
   /** ORD-068. The site is out of hours now. */
   afterHours: z.boolean(),
   /** ORD-153, ORD-154. Whom the notice of the correction is due to now. */
   noticeTarget: z.enum(['ORDERING_PRACTITIONER', 'ON_CALL_ROLE', 'PATIENT']),
-  /** ORD-154. The escalation is due and the site named no on-call role. */
+  /**
+   * ORD-154, ORD-173. The escalation —or locating the patient— is due and the
+   * site has nobody on call.
+   */
   escalationMissing: z.boolean(),
 });
 export const correctionResultListSchema = z.object({

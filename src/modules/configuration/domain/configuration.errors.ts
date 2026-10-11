@@ -130,3 +130,30 @@ export class RoleCannotWorkResultsError extends ValidationError {
     );
   }
 }
+
+/**
+ * ORD-179 (D-207 §2). The person named as the site's on-call for critical
+ * values cannot work the queue there: an inactive account, or one without
+ * `record:read` and `result:write` at that site or at all. An on-call who
+ * cannot open the queue looks like an on-call and is nobody.
+ */
+export class PersonCannotWorkResultsError extends ValidationError {
+  readonly code = 'PERSON_CANNOT_WORK_RESULTS';
+  override readonly userTitle =
+    'Esa persona no puede atender la cola de críticos en esta sede: necesita una cuenta activa que vea la historia clínica y registre resultados aquí. Elija otra o concédale esos permisos';
+
+  constructor(missing: readonly string[]) {
+    super(
+      `Person lacks ${missing.join(', ')} at the site to work the critical worklist`,
+      {},
+      [
+        {
+          field: 'criticalEscalationUserId',
+          code: 'PERSON_CANNOT_WORK_RESULTS',
+          message:
+            'Elija a alguien que vea la historia clínica y registre resultados en esta sede',
+        },
+      ],
+    );
+  }
+}

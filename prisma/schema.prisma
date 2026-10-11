@@ -214,8 +214,12 @@ model User {
   documentImagesUploaded         DocumentImage[]        @relation("DocumentImageUploader")
 
   /// ORD-062. The critical-value notices this account recorded having given.
-  criticalNoticesGiven  CriticalResultNotice[] @relation("CriticalNoticeGiver")
-  criticalNoticesEdited CriticalResultNotice[] @relation("CriticalNoticeEditor")
+  criticalNoticesGiven    CriticalResultNotice[] @relation("CriticalNoticeGiver")
+  criticalNoticesEdited   CriticalResultNotice[] @relation("CriticalNoticeEditor")
+  /// ORD-175. Notices whose call this account made, chosen from the site.
+  criticalNoticesCalled   CriticalResultNotice[] @relation("CriticalNoticeCaller")
+  /// ORD-179. Sites that name this account as their on-call for critical values.
+  criticalEscalationSites SiteParameter[]        @relation("CriticalEscalationUser")
 
   /// EN-212, D-127. The diagnoses this account edited last.
   diagnosesEdited               EncounterDiagnosis[]           @relation("DiagnosisEditor")
@@ -1520,6 +1524,13 @@ model SiteParameter {
   /// ORD-063, ORD-065. The role an overdue critical value is escalated to.
   criticalEscalationRoleId    String? @map("critical_escalation_role_id") @db.Uuid
   criticalEscalationRole      Role?   @relation("CriticalEscalationRole", fields: [criticalEscalationRoleId], references: [id], onDelete: Restrict)
+  /// ORD-179 (D-207 §2). A PERSON as the site's on-call for critical values,
+  /// instead of a role; never both (`site_parameter_one_escalation`).
+  criticalEscalationUserId    String? @map("critical_escalation_user_id") @db.Uuid
+  criticalEscalationUser      User?   @relation("CriticalEscalationUser", fields: [criticalEscalationUserId], references: [id], onDelete: Restrict)
+  /// ORD-177 (D-207 §2). Whether a notice given needs the read-back; off by
+  /// default, enforced by `trg_critical_result_notice_read_back_by_site`.
+  criticalReadBackRequired    Boolean @default(false) @map("critical_read_back_required")
 
   /// ORD-046, D-050 §4. NULL = the practitioner who placed the order.
   unmatchedResultOwnerRoleId   String? @map("unmatched_result_owner_role_id") @db.Uuid
@@ -3983,6 +3994,11 @@ model ObservationResult {
 
   abnormalFlag AbnormalFlag? @map("abnormal_flag")
 
+  /// PA-082, ORD-176. The sex the value was classified with, and whether its
+  /// analyte has ranges by sex: what undoing a merge has to review.
+  classifiedSex     PatientSex? @map("classified_sex")
+  sexSpecificRanges Boolean     @default(false) @map("sex_specific_ranges")
+
   observedAt DateTime @default(now()) @map("observed_at") @db.Timestamptz(6)
 
   /// ORD-062. The notices given of this value; any one takes it off the
@@ -4036,6 +4052,10 @@ model CriticalResultNotice {
   /// ORD-148, D-116 e. Who made the call when it was not the account that
   /// records it; `NULL` when it was (`critical_result_notice_caller_named`).
   callerName                String?               @map("caller_name") @db.VarChar(200)
+  /// ORD-175 (D-168 §4). The account that made the call, chosen from the
+  /// site's accounts; `null` when it was the recorder or the name was typed.
+  callerId                  String?               @map("caller_id") @db.Uuid
+  caller                    User?                 @relation("CriticalNoticeCaller", fields: [callerId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -4069,6 +4089,8 @@ enum CriticalNoticeChannel {
   PHONE
   IN_PERSON
   VIDEO_CALL
+  /// ORD-178 (D-207 §2).
+  WHATSAPP
 }
 
 // ---------------------------------------------------------------------------

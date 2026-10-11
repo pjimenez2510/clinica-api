@@ -21,6 +21,7 @@ const notice = (overrides: Partial<StatedNotice> = {}): StatedNotice => ({
   notifiedAt: minutesAgo(90),
   outcome: 'NOTIFIED',
   selfNotice: false,
+  namesOrderingPractitioner: false,
   ...overrides,
 });
 
@@ -74,6 +75,11 @@ describe('la corrección de un valor avisado', () => {
       due: true,
       standing: true,
       patientRequired: true,
+      missingRecipients: ['PATIENT'],
+      proposedRecipient: {
+        recipientKind: 'PATIENT',
+        recipientName: 'Rosa Chicaiza',
+      },
     });
     // La versión que avisó no corrige nada.
     expect(found.has('a')).toBe(false);
@@ -195,8 +201,10 @@ describe('la corrección de un valor avisado', () => {
   });
 
   it('ORD-143 el autoaviso de otra cuenta no cierra la corrección que sólo anotó el médico que pidió', () => {
+    // La nota del médico para sí: un aviso a un PACIENTE nunca es «sólo el
+    // médico lo supo» (ORD-171, revisión clínica G1).
     const own = (id: string) =>
-      notice({ selfNotice: true, notifiedBy: { id } });
+      notice({ recipientKind: 'ORDERING_PRACTITIONER', selfNotice: true, notifiedBy: { id } }); // prettier-ignore
     const other = notifiedCorrections(
       chain([glucose('a', 25, { notices: [own('doctor')] })], [glucose('b', 95, { notices: [own('colleague')] })]), // prettier-ignore
     );
@@ -282,5 +290,134 @@ describe('la corrección que tiene que llegar a quien se avisó (D-156)', () => 
     expect(notifiedCorrections(chain(...told, [glucose('c', 97, { abnormalFlag: null })])).has('c')).toBe(true); // prettier-ignore
     expect(notifiedCorrections(chain(...told, [glucose('c', 97)])).has('c')).toBe(true); // prettier-ignore
     expect(notifiedCorrections(chain(...told, [glucose('c', 95, { abnormalFlag: null })])).has('c')).toBe(false); // prettier-ignore
+  });
+});
+
+describe('la corrección llega a cada tipo de persona que recibió el valor falso (D-168)', () => {
+  const daughter = notice({ recipientKind: 'REPRESENTATIVE', recipientName: 'Hija' }); // prettier-ignore
+  const onCall = notice({ recipientKind: 'OTHER_PRACTITIONER', recipientName: 'Dra. Lucía Guardia' }); // prettier-ignore
+  const toPatient = notice({ recipientKind: 'PATIENT', recipientName: 'Rosa Chicaiza' }); // prettier-ignore
+
+  it('ORD-171 con la paciente y la guardia avisadas, avisar sólo a la hija no la cierra; avisar también a un profesional sí', () => {
+    const open = notifiedCorrections(
+      chain(
+        [glucose('a', 25, { notices: [toPatient, onCall] })],
+        [glucose('b', 95, { notices: [daughter] })],
+      ),
+      'doctor',
+    );
+    expect(open.get('b')).toMatchObject({ due: true, missingRecipients: ['PRACTITIONER'] }); // prettier-ignore
+    // Control positivo: con el aviso a la guardia, se cierra.
+    const closed = notifiedCorrections(
+      chain(
+        [glucose('a', 25, { notices: [toPatient, onCall] })],
+        [glucose('b', 95, { notices: [daughter, onCall] })],
+      ),
+      'doctor',
+    );
+    expect(closed.get('b')).toMatchObject({ due: false, missingRecipients: [] }); // prettier-ignore
+    // El autoaviso de quien registra no cuenta como el profesional.
+    const self = notifiedCorrections(
+      chain(
+        [glucose('a', 25, { notices: [toPatient, onCall] })],
+        [glucose('b', 95, { notices: [daughter, notice({ recipientKind: 'OTHER_PRACTITIONER', selfNotice: true })] })], // prettier-ignore
+      ),
+      'doctor',
+    );
+    expect(self.get('b')?.due).toBe(true);
+  });
+
+  it('ORD-171 si todo lo anterior fue al médico que pidió, su propio aviso de la corrección la cierra', () => {
+    // D-168 §5: la enfermera avisó del 25 al médico; la paciente nunca lo oyó.
+    const toOrderer = notice({ recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Dr. Juan Pérez' }); // prettier-ignore
+    const byName = notice({ recipientKind: 'OTHER_PRACTITIONER', namesOrderingPractitioner: true }); // prettier-ignore
+    const own = (id: string) =>
+      notice({ recipientKind: 'ORDERING_PRACTITIONER', selfNotice: true, notifiedBy: { id } }); // prettier-ignore
+    for (const earlier of [toOrderer, byName]) {
+      const closed = notifiedCorrections(
+        chain(
+          [glucose('a', 25, { notices: [earlier] })],
+          [glucose('b', 95, { notices: [own('doctor')] })],
+        ),
+        'doctor',
+      );
+      expect(closed.get('b')?.due).toBe(false);
+    }
+    // Control positivo: el autoaviso de otra cuenta no la cierra, y con la
+    // paciente avisada antes tampoco basta el del médico.
+    const colleague = notifiedCorrections(
+      chain([glucose('a', 25, { notices: [toOrderer] })], [glucose('b', 95, { notices: [own('colleague')] })]), // prettier-ignore
+      'doctor',
+    );
+    expect(colleague.get('b')?.due).toBe(true);
+    const patientToo = notifiedCorrections(
+      chain([glucose('a', 25, { notices: [toOrderer, toPatient] })], [glucose('b', 95, { notices: [own('doctor')] })]), // prettier-ignore
+      'doctor',
+    );
+    expect(patientToo.get('b')).toMatchObject({ due: true, missingRecipients: ['PATIENT', 'PRACTITIONER'] }); // prettier-ignore
+  });
+
+  it('ORD-172 propone a quien recibió el aviso, el paciente primero', () => {
+    const both = notifiedCorrections(
+      chain(
+        [glucose('a', 25, { notices: [onCall, toPatient] })],
+        [glucose('b', 95)],
+      ),
+      'doctor',
+    );
+    expect(both.get('b')).toMatchObject({
+      missingRecipients: ['PATIENT', 'PRACTITIONER'],
+      proposedRecipient: { recipientKind: 'PATIENT', recipientName: 'Rosa Chicaiza' }, // prettier-ignore
+    });
+    // Con la paciente ya avisada de la corrección, propone a la guardia.
+    const onlyOnCall = notifiedCorrections(
+      chain(
+        [glucose('a', 25, { notices: [onCall, toPatient] })],
+        [glucose('b', 95, { notices: [toPatient] })],
+      ),
+      'doctor',
+    );
+    expect(onlyOnCall.get('b')?.proposedRecipient).toEqual({
+      recipientKind: 'OTHER_PRACTITIONER',
+      recipientName: 'Dra. Lucía Guardia',
+    });
+  });
+
+  it('ORD-171 un aviso a la paciente cuenta siempre como que la paciente oyó el valor falso, aunque su nombre contenga el del médico o el de quien registra', () => {
+    // Revisión clínica G1: «Juan Carlos Pérez Andrade» contiene «Juan Pérez».
+    const toPatientNamedLikeDoctor = notice({ recipientKind: 'PATIENT', recipientName: 'Juan Carlos Pérez Andrade', namesOrderingPractitioner: true }); // prettier-ignore
+    const toPatientJudgedSelf = notice({ recipientKind: 'PATIENT', recipientName: 'María José Pérez Andrade', selfNotice: true }); // prettier-ignore
+    const own = notice({ recipientKind: 'ORDERING_PRACTITIONER', selfNotice: true, notifiedBy: { id: 'doctor' } }); // prettier-ignore
+    for (const earlier of [toPatientNamedLikeDoctor, toPatientJudgedSelf]) {
+      const found = notifiedCorrections(
+        chain([glucose('a', 25, { notices: [earlier] })], [glucose('b', 95, { notices: [own] })]), // prettier-ignore
+        'doctor',
+      );
+      expect(found.get('b')).toMatchObject({ due: true, missingRecipients: ['PATIENT'] }); // prettier-ignore
+    }
+  });
+
+  it('ORD-171 lo avisado de una corrección intermedia no cuenta como aviso del valor falso', () => {
+    // Revisión de código M1: 25 a la paciente y a la guardia; 95 sólo a la
+    // paciente; el laboratorio reescribe el 95 al corregir otra cosa.
+    const found = notifiedCorrections(
+      chain(
+        [glucose('a', 25, { notices: [toPatient, onCall] })],
+        [glucose('b', 95, { notices: [{ ...toPatient }] })],
+        [glucose('c', 95)],
+      ),
+      'doctor',
+    );
+    expect(found.get('c')).toMatchObject({ due: true, told: { valueNumeric: 25 }, missingRecipients: ['PRACTITIONER'] }); // prettier-ignore
+    // Control positivo: avisada también la guardia sobre el 95, se cierra.
+    const closed = notifiedCorrections(
+      chain(
+        [glucose('a', 25, { notices: [toPatient, onCall] })],
+        [glucose('b', 95, { notices: [{ ...toPatient }] })],
+        [glucose('c', 95, { notices: [{ ...onCall }] })],
+      ),
+      'doctor',
+    );
+    expect(closed.get('c')?.due).toBe(false);
   });
 });

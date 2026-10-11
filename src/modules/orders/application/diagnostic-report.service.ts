@@ -21,7 +21,9 @@ import {
   type ExpectedAnalytes,
   type OrderPatient,
   type ReportedResult,
+  type OnCall,
   type SafetyPolicy,
+  type SiteAccount,
   type UnmatchedWorklistEntry,
   chainKey,
 } from '../domain/diagnostic-report.repository';
@@ -46,6 +48,9 @@ import {
   ReportAlreadyCorrectedError,
   ReportCorrectionIncompleteError,
   ReportIssuedInFutureError,
+  ResultAlreadyReportedError,
+  CriticalNoticeCallerIncompleteError,
+  CriticalNoticeCallerNotFoundError,
   ReportNotCorrectableError,
   ReportNotFoundError,
   ResultAlreadyMatchedError,
@@ -63,9 +68,8 @@ import {
 import { resolveResult } from '../domain/result-value';
 import {
   isSelfNotice,
-  samePersonName,
-  selfNoticedByOrderer,
-  type WorklistNotice,
+  nameWordCount,
+  namesOrderer,
 } from '../domain/notice-recipient';
 import { notifiedCorrections } from '../domain/notified-correction';
 import type { AnalyteDefinition } from '../domain/analyte';
@@ -92,8 +96,10 @@ import type { Requester } from './service-order.service';
 const DEFAULT_POLICY: SafetyPolicy = {
   criticalNoticeWithinMinutes: 60,
   criticalEscalationRole: null,
+  criticalEscalationUser: null,
   unmatchedResultOwnerRole: null,
   unmatchedResultDeadlineHours: 24,
+  criticalReadBackRequired: false,
 };
 
 /**
@@ -181,6 +187,11 @@ export interface RecordNoticeRequest {
    * records it; absent when it was.
    */
   callerName?: string | null;
+  /**
+   * ORD-175 (D-168 §4). The account of the site that made the call, chosen
+   * from the list; its name is taken from the account, not from the request.
+   */
+  callerUserId?: string | null;
 }
 
 /**
@@ -271,6 +282,7 @@ export class DiagnosticReportService {
     // deadline runs from; a future one would hide it as «dentro del plazo».
     if (request.issuedAt > now) throw new ReportIssuedInFutureError();
     const prepared = await this.prepare(request.orderId, request.results, requester); // prettier-ignore
+    await this.assertNothingStanding(request.orderId, prepared.results, requester); // prettier-ignore
 
     const report = await this.reports.register(
       {
@@ -333,6 +345,15 @@ export class DiagnosticReportService {
       .map((result) => result.analyteDisplay)
       .filter((display) => !brought.has(display));
     if (missing.length > 0) throw new ReportCorrectionIncompleteError(missing);
+    // ORD-170 (revisión clínica G2). What the corrected report did not say is
+    // a new value: it may not repeat one standing in another report.
+    const added = prepared.results.filter(
+      (result) =>
+        !previous.results.some(
+          (r) => r.analyteDisplay === result.analyteDisplay,
+        ),
+    );
+    await this.assertNothingStanding(previous.serviceOrderId, added, requester, previous.id); // prettier-ignore
 
     const { results } = prepared;
 
@@ -445,8 +466,11 @@ export class DiagnosticReportService {
     orderId: string,
     requester: Requester,
   ): Promise<DiagnosticReportView[]> {
+    // ORD-171 (D-168 §5). Who placed the order: their own notice can close it.
+    const order = await this.orders.byId({ orderId, sites: requester.sites });
     const reports = withCorrections(
       await this.reports.ofOrder(orderId, requester.sites),
+      order?.orderedByUserId,
     );
 
     await this.audit.record({
@@ -659,6 +683,7 @@ export class DiagnosticReportService {
         noticeDueAt: wait.dueAt,
         overdue: wait.overdue,
         escalateTo: role ? { roleId: role.id, name: role.name } : null,
+        escalateToPerson: personOf(policy),
         afterHours,
         noticeTarget: due.target,
         escalationMissing: due.escalationMissing,
@@ -669,9 +694,11 @@ export class DiagnosticReportService {
             siteId: entry.siteId,
             orderedByUserId: entry.orderedByUserId,
             escalationRoleId: role?.id ?? null,
+            escalationUserId: policy.criticalEscalationUser?.id ?? null,
           },
           { userId: requester.userId, roles },
         ),
+        readBackRequired: policy.criticalReadBackRequired,
       };
     });
   }
@@ -703,7 +730,7 @@ export class DiagnosticReportService {
     const entries: CorrectionWorklistEntry[] = [];
     for (const order of orders) {
       const reports = all.filter((report) => report.serviceOrderId === order.orderId); // prettier-ignore
-      const found = notifiedCorrections(reports);
+      const found = notifiedCorrections(reports, order.orderedByUserId);
       const policy = policies.get(order.siteId) ?? DEFAULT_POLICY;
       const role = policy.criticalEscalationRole;
       const afterHours = !inHours.has(order.siteId);
@@ -721,13 +748,24 @@ export class DiagnosticReportService {
             afterHours,
             hasOnCallRole: staffed.has(order.siteId),
             orderingUnanswered: unanswered.some((n) => n.recipientKind === 'ORDERING_PRACTITIONER'), // prettier-ignore
-            // ORD-153 (D-156.1): told to the patient, it is theirs to hear;
-            // ORD-146: so it is once the practitioner who asked noted the
-            // correction themselves — they already know.
-            dueToPatient:
-              correction.patientRequired ||
-              selfNoticedByOrderer(result.notices.map(asWorklistNotice), order.orderedByUserId), // prettier-ignore
+            // ORD-171 (D-168 §2, §5): the patient's to hear only while the
+            // patient or their representative, told the false value, has not
+            // been told of the correction. One who never heard it gets no
+            // call about it.
+            dueToPatient: correction.missingRecipients.includes('PATIENT'),
           });
+          // ORD-173 (D-168 §3). The patient told the false value cannot be
+          // reached: the site's on-call finds them. It closes nothing — the
+          // notice to the patient still does.
+          const locate =
+            due.target === 'PATIENT' &&
+            correction.missingRecipients.includes('PATIENT') &&
+            (wait.overdue ||
+              unanswered.some(
+                (n) =>
+                  n.recipientKind === 'PATIENT' ||
+                  n.recipientKind === 'REPRESENTATIVE',
+              ));
           entries.push({
             resultId: result.id,
             reportId: report.id,
@@ -745,14 +783,20 @@ export class DiagnosticReportService {
             correctedAt: correction.correctedAt,
             orderedBy: order.orderedBy,
             patientRequired: correction.patientRequired,
+            missingRecipients: correction.missingRecipients,
+            proposedRecipient: correction.proposedRecipient,
             noAnswerAttempts: unanswered.length,
             waitingMinutes: wait.waitingMinutes,
             noticeDueAt: wait.dueAt,
             overdue: wait.overdue,
             escalateTo: role ? { roleId: role.id, name: role.name } : null,
+            escalateToPerson: personOf(policy),
             afterHours,
             noticeTarget: due.target,
-            escalationMissing: due.escalationMissing,
+            locateViaOnCall: locate,
+            readBackRequired: policy.criticalReadBackRequired,
+            escalationMissing:
+              due.escalationMissing || (locate && !staffed.has(order.siteId)),
           });
         }
       }
@@ -798,12 +842,11 @@ export class DiagnosticReportService {
     });
     if (!result) throw new ResultNotFoundError();
     await this.assertNotifiable(result, requester);
-    // ORD-066, D-111 §4. A notice given carries the read-back; an attempt has
-    // nobody who could have repeated anything.
+    const caller = await this.callerOf(request, result.siteId);
+    // ORD-066, ORD-177 (D-207 §2). A notice given carries the read-back where
+    // the site asks for it; an attempt has nobody who repeated anything.
     const given = request.outcome === 'NOTIFIED';
-    if (given && request.readBack !== true) {
-      throw new CriticalReadBackRequiredError();
-    }
+    await this.assertReadBack(given, request.readBack, result.siteId);
 
     const notifiedAt = request.notifiedAt ?? now;
     if (notifiedAt > now || notifiedAt < result.observedAt) {
@@ -831,7 +874,8 @@ export class DiagnosticReportService {
         name: (await this.reports.accountName(requester.userId)) ?? '',
       },
       orderedByUserId: result.orderedByUserId,
-      callerName: callerOf(request),
+      callerName: caller.callerName,
+      callerUserId: caller.callerId,
     });
 
     // ORD-068. Out of hours at the moment of the CALL, not of the typing.
@@ -847,12 +891,13 @@ export class DiagnosticReportService {
       notifiedAt,
       note: request.note ?? null,
       outcome: request.outcome,
-      readBackConfirmed: given ? true : null,
+      readBackConfirmed: given ? request.readBack === true : null,
       afterHours: !inHours.has(result.siteId),
       selfNotice,
       // ORD-146. A recipient with the ordering practitioner's name.
-      namesOrderingPractitioner: samePersonName(request.recipientName, result.orderedByName), // prettier-ignore
-      callerName: callerOf(request),
+      namesOrderingPractitioner: namesOrderer(request.recipientKind, request.recipientName, result.orderedByName), // prettier-ignore
+      callerName: caller.callerName,
+      callerId: caller.callerId,
       sites: requester.sites,
       trail: { ip: requester.ip, userAgent: requester.userAgent },
     });
@@ -904,6 +949,7 @@ export class DiagnosticReportService {
     if (current.notifiedBy.id !== requester.userId) {
       throw new CriticalNoticeOfAnotherUserError();
     }
+    const caller = await this.callerOf(request, result.siteId);
     // D-133.1. An unanswered attempt stays one; the answered call is a new
     // notice. The adapter judges the version under the lock, so this reading
     // cannot be stale by the time the row is written.
@@ -912,10 +958,8 @@ export class DiagnosticReportService {
       throw new CriticalNoticeNoAnswerStaysError();
     }
 
-    // ORD-066. Editing does not lift the read-back.
-    if (given && request.readBack !== true) {
-      throw new CriticalReadBackRequiredError();
-    }
+    // ORD-066, ORD-177. Editing does not lift the read-back the site asks for.
+    await this.assertReadBack(given, request.readBack, result.siteId);
 
     const notifiedAt = request.notifiedAt ?? current.notifiedAt;
     if (notifiedAt > now || notifiedAt < result.observedAt) {
@@ -933,7 +977,8 @@ export class DiagnosticReportService {
         name: current.notifiedBy.name,
       },
       orderedByUserId: result.orderedByUserId,
-      callerName: callerOf(request),
+      callerName: caller.callerName,
+      callerUserId: caller.callerId,
     });
     // ORD-068. Out of hours at the moment of the CALL.
     const inHours = await this.reports.sitesInHours([result.siteId], notifiedAt); // prettier-ignore
@@ -947,11 +992,12 @@ export class DiagnosticReportService {
       notifiedAt,
       note: request.note ?? null,
       outcome: request.outcome,
-      readBackConfirmed: given ? true : null,
+      readBackConfirmed: given ? request.readBack === true : null,
       afterHours: !inHours.has(result.siteId),
       selfNotice,
-      namesOrderingPractitioner: samePersonName(request.recipientName, result.orderedByName), // prettier-ignore
-      callerName: callerOf(request),
+      namesOrderingPractitioner: namesOrderer(request.recipientKind, request.recipientName, result.orderedByName), // prettier-ignore
+      callerName: caller.callerName,
+      callerId: caller.callerId,
       editedById: requester.userId,
       editedAt: now,
       expectedEditedAt: request.expectedEditedAt,
@@ -967,6 +1013,22 @@ export class DiagnosticReportService {
     this.announceCriticalQueue(result.siteId);
 
     return notice;
+  }
+
+  /**
+   * ORD-175. The accounts of the result's site that can be named as who made
+   * the call. Not audited: names of staff, nothing of the patient.
+   */
+  async noticeCallers(
+    resultId: string,
+    requester: Requester,
+  ): Promise<SiteAccount[]> {
+    const result = await this.reports.resultById({
+      resultId,
+      sites: requester.sites,
+    });
+    if (!result) throw new ResultNotFoundError();
+    return this.reports.siteAccounts(result.siteId);
   }
 
   /**
@@ -1016,6 +1078,94 @@ export class DiagnosticReportService {
     const reports = await this.reports.ofOrder(result.orderId, requester.sites);
     if (!notifiedCorrections(reports).has(result.resultId)) {
       throw new ResultNotCriticalError();
+    }
+  }
+
+  /**
+   * ORD-066, ORD-177 (D-207 §2). A notice given without the read-back is
+   * refused only where the site asks for it; off by default.
+   */
+  private async assertReadBack(
+    given: boolean,
+    readBack: boolean | undefined,
+    siteId: string,
+  ): Promise<void> {
+    if (!given || readBack === true) return;
+    const policy = (await this.reports.safetyPolicies([siteId])).get(siteId);
+    if (policy?.criticalReadBackRequired) {
+      throw new CriticalReadBackRequiredError();
+    }
+  }
+
+  /**
+   * ORD-177. Whether the site of an order asks for the read-back, for the
+   * screen that records a notice from the order's reports.
+   */
+  async readBackRequired(
+    orderId: string,
+    requester: Requester,
+  ): Promise<boolean> {
+    const order = await this.orders.byId({ orderId, sites: requester.sites });
+    if (!order) throw new OrderNotFoundError();
+    const policy = (await this.reports.safetyPolicies([order.siteId])).get(order.siteId); // prettier-ignore
+    return policy?.criticalReadBackRequired ?? false;
+  }
+
+  /**
+   * ORD-175 (D-168 §4). Who made the call, when it was not who records it:
+   * an account of the result's site —its name from the account—, or a name
+   * typed with at least two words once a courtesy title is set aside.
+   */
+  private async callerOf(
+    request: { callerName?: string | null; callerUserId?: string | null },
+    siteId: string,
+  ): Promise<{ callerName: string | null; callerId: string | null }> {
+    if (request.callerUserId) {
+      const account = (await this.reports.siteAccounts(siteId)).find(
+        (each) => each.id === request.callerUserId,
+      );
+      if (!account) throw new CriticalNoticeCallerNotFoundError();
+      return { callerName: account.name, callerId: account.id };
+    }
+    const typed = request.callerName?.trim() || null;
+    if (typed !== null && nameWordCount(typed) < 2) {
+      throw new CriticalNoticeCallerIncompleteError();
+    }
+    return { callerName: typed, callerId: null };
+  }
+
+  /**
+   * ORD-170 (D-168 §1). A new report carries no determination that already
+   * has a value on a STANDING report of the order —neither superseded nor
+   * annulled—: changing it is the correction of that report, which chains
+   * the two values and puts a told one on the worklist (ORD-143). What has no
+   * value yet still comes in a second report (ORD-152).
+   *
+   * Judged by name, as the chain of corrections pairs values. The service
+   * answers with the sentence; `observation_result_one_standing_per_analyte`
+   * holds it at the write, under the order's lock.
+   */
+  private async assertNothingStanding(
+    orderId: string,
+    results: readonly { analyteDisplay: string }[],
+    requester: Requester,
+    /** The report a correction replaces: its values are not «another». */
+    replacing: string | null = null,
+  ): Promise<void> {
+    if (results.length === 0) return;
+    const reports = await this.reports.ofOrder(orderId, requester.sites);
+    const standing = new Set(
+      reports
+        .filter(
+          (r) =>
+            r.id !== replacing &&
+            r.supersededById === null &&
+            r.status !== 'CANCELLED',
+        )
+        .flatMap((r) => r.results.map((result) => result.analyteDisplay)),
+    );
+    if (results.some((result) => standing.has(result.analyteDisplay))) {
+      throw new ResultAlreadyReportedError();
     }
   }
 
@@ -1260,31 +1410,15 @@ function liveLine(
   return line !== undefined && live.has(line) ? line : null;
 }
 
-/** ORD-146. A recorded notice as the worklist rule reads it. */
-function asWorklistNotice(notice: CriticalNoticeView): WorklistNotice {
-  return {
-    outcome: notice.outcome,
-    selfNotice: notice.selfNotice,
-    recipientKind: notice.recipientKind,
-    namesOrderingPractitioner: notice.namesOrderingPractitioner,
-    notifiedById: notice.notifiedBy.id,
-    notifiedAt: notice.notifiedAt,
-  };
-}
-
-/** ORD-148. The caller's name, or `null` when it was who records it. */
-function callerOf(request: { callerName?: string | null }): string | null {
-  return request.callerName?.trim() || null;
-}
-
 /**
  * ORD-143. The reports of one order, each standing value marked with the
  * correction of a notified value it is, if any.
  */
 function withCorrections(
   reports: DiagnosticReportView[],
+  orderedByUserId: string | undefined,
 ): DiagnosticReportView[] {
-  const found = notifiedCorrections(reports);
+  const found = notifiedCorrections(reports, orderedByUserId);
   if (found.size === 0) return reports;
   return reports.map((report) => ({
     ...report,
@@ -1296,14 +1430,27 @@ function withCorrections(
 }
 
 /**
- * ORD-065, ORD-167. The on-call role each site names, for `staffedOnCall`.
+ * ORD-065, ORD-167, ORD-179. Whom each site names as its on-call —a role or
+ * a person—, for `staffedOnCall`.
  */
 function onCallOf(
   siteIds: readonly string[],
   policies: ReadonlyMap<string, SafetyPolicy>,
-): { siteId: string; roleId: string }[] {
-  return [...new Set(siteIds)].flatMap((siteId) => {
-    const role = policies.get(siteId)?.criticalEscalationRole;
+): OnCall[] {
+  return [...new Set(siteIds)].flatMap((siteId): OnCall[] => {
+    const policy = policies.get(siteId);
+    if (policy?.criticalEscalationUser) {
+      return [{ siteId, userId: policy.criticalEscalationUser.id }];
+    }
+    const role = policy?.criticalEscalationRole;
     return role ? [{ siteId, roleId: role.id }] : [];
   });
+}
+
+/** ORD-179. The on-call person a site names, as the worklists show it. */
+function personOf(
+  policy: SafetyPolicy,
+): { userId: string; name: string } | null {
+  const person = policy.criticalEscalationUser;
+  return person ? { userId: person.id, name: person.name } : null;
 }

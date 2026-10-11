@@ -16,6 +16,7 @@ import {
 } from '../domain/patient.errors';
 import {
   PATIENT_REPOSITORY,
+  type ClassifiedWhileMerged,
   type PatientMergeEvent,
   type PatientRepository,
 } from '../domain/patient.repository';
@@ -185,6 +186,40 @@ export class PatientMergeService {
    * own — and «is this merge undone?» is answered by the link rather than
    * guessed from dates.
    */
+  /**
+   * PA-082 (D-171 §3). The chart's values classified with another sex while
+   * it was merged —before or after undoing, the list is the same—. Values
+   * are laboratory results: only those of the sites where the reader holds
+   * `record:read` travel; the rest are counted. Audited per order, as the
+   * reading of its reports is (`diagnostic_report`).
+   */
+  async classifiedWhileMerged(
+    sourcePatientId: string,
+    requester: Requester,
+    sites: 'all' | readonly string[],
+  ): Promise<ClassifiedWhileMerged & { hiddenCount: number }> {
+    const read = await this.patients.classifiedWhileMerged(sourcePatientId);
+    if (!read) throw new PatientNotFoundError();
+    const visible = read.items.filter(
+      (item) => sites === 'all' || sites.includes(item.siteId),
+    );
+    for (const orderId of new Set(visible.map((item) => item.orderId))) {
+      await this.audit.record({
+        userId: requester.userId,
+        resourceType: 'diagnostic_report',
+        resourceId: orderId,
+        action: 'READ',
+        ip: requester.ip,
+        userAgent: requester.userAgent,
+      });
+    }
+    return {
+      chartSex: read.chartSex,
+      items: visible,
+      hiddenCount: read.items.length - visible.length,
+    };
+  }
+
   async undo(
     input: { sourcePatientId: string; reason?: string | null },
     requester: Requester,

@@ -100,6 +100,8 @@ export const CRITICAL_NOTICE_CHANNELS = [
   'PHONE',
   'IN_PERSON',
   'VIDEO_CALL',
+  // ORD-178 (D-207 §2).
+  'WHATSAPP',
 ] as const;
 export type CriticalNoticeChannel = (typeof CRITICAL_NOTICE_CHANNELS)[number];
 
@@ -144,6 +146,8 @@ export interface CriticalNoticeView {
   namesOrderingPractitioner: boolean;
   /** ORD-148. Who made the call, when it was not who recorded it. */
   callerName: string | null;
+  /** ORD-175. The account that made the call, when it was chosen from the site. */
+  callerId: string | null;
   /**
    * ORD-120. Who edited it last, and when; `null` on a notice nobody edited.
    * Who GAVE it (`notifiedBy`) never changes.
@@ -189,6 +193,8 @@ export interface CriticalNoticeEdit {
   selfNotice: boolean;
   namesOrderingPractitioner: boolean;
   callerName: string | null;
+  /** ORD-175. The account chosen as the caller, or `null`. */
+  callerId: string | null;
   /** The session's account: the stamp's «who». */
   editedById: string;
   /**
@@ -204,6 +210,19 @@ export interface CriticalNoticeEdit {
   expectedEditedAt: Date | null;
   sites: SiteScopeFilter;
   trail: { ip?: string; userAgent?: string };
+}
+
+/**
+ * ORD-065, ORD-167, ORD-179. Whom a site names as its on-call for critical
+ * values: a role, or a person (D-207 §2) — never both.
+ */
+export type OnCall =
+  { siteId: string; roleId: string } | { siteId: string; userId: string };
+
+/** ORD-175. An account of a site, as the caller of a notice is chosen. */
+export interface SiteAccount {
+  id: string;
+  name: string;
 }
 
 /** ORD-062. What recording a notice writes. */
@@ -223,6 +242,8 @@ export interface NewCriticalNotice {
   namesOrderingPractitioner: boolean;
   /** ORD-148. `null` when the account that records it made the call. */
   callerName: string | null;
+  /** ORD-175. The account chosen as the caller, or `null`. */
+  callerId: string | null;
   sites: SiteScopeFilter;
   /**
    * ORD-062, ORD-091. The trail row is written IN THE SAME TRANSACTION as the
@@ -315,9 +336,13 @@ export interface SafetyPolicy {
   /** ORD-063. Always set: 60 by default, changeable, not removable (D-111 §1). */
   criticalNoticeWithinMinutes: number;
   criticalEscalationRole: { id: string; name: string } | null;
+  /** ORD-179 (D-207 §2). A person as the on-call, instead of a role. */
+  criticalEscalationUser: { id: string; name: string } | null;
   /** `null`: the practitioner who placed the order (D-050 §4). */
   unmatchedResultOwnerRole: { id: string; name: string } | null;
   unmatchedResultDeadlineHours: number;
+  /** ORD-177 (D-207 §2). A notice given needs the read-back; off by default. */
+  criticalReadBackRequired: boolean;
 }
 
 /** ORD-060, ORD-065. A critical value with how long it has waited. */
@@ -353,6 +378,8 @@ export interface CriticalWorklistEntry extends FlaggedResultEntry {
   overdue: CriticalWait['overdue'];
   /** The site's on-call role, when it names one. */
   escalateTo: { roleId: string; name: string } | null;
+  /** ORD-179. The person the site names as its on-call, when it names one. */
+  escalateToPerson: { userId: string; name: string } | null;
   /** ORD-068. The site is out of hours now. */
   afterHours: boolean;
   /** ORD-065, ORD-068. Whom the notice is due to now. */
@@ -361,6 +388,8 @@ export interface CriticalWorklistEntry extends FlaggedResultEntry {
   escalationMissing: boolean;
   /** ORD-167. The notice is due to the account reading the worklist. */
   dueToRequester: boolean;
+  /** ORD-177. The site asks for the read-back on a notice given. */
+  readBackRequired: boolean;
 }
 
 /** ORD-040, ORD-046. An unmatched result with who answers for it, and by when. */
@@ -443,14 +472,27 @@ export interface CorrectionWorklistEntry {
   orderedBy: { id: string; name: string };
   /** ORD-153. An earlier version was told to the patient or their representative. */
   patientRequired: boolean;
+  /** ORD-171. The kinds of people told the false value still to be told. */
+  missingRecipients: NotifiedCorrection['missingRecipients'];
+  /** ORD-172. Who to tell first. */
+  proposedRecipient: NotifiedCorrection['proposedRecipient'];
   /** ORD-154. Unanswered calls about the corrected value. */
   noAnswerAttempts: number;
+  /**
+   * ORD-173 (D-168 §3). Overdue, or a call unanswered, and the patient still
+   * owed the correction: the site's on-call has to locate them.
+   */
+  locateViaOnCall: boolean;
+  /** ORD-177. The site asks for the read-back on a notice given. */
+  readBackRequired: boolean;
   /** ORD-154 (D-156.2). The site's critical deadline, from `correctedAt`. */
   waitingMinutes: CriticalWait['waitingMinutes'];
   noticeDueAt: CriticalWait['dueAt'];
   overdue: CriticalWait['overdue'];
   /** The site's on-call role, when it names one. */
   escalateTo: { roleId: string; name: string } | null;
+  /** ORD-179. The person the site names as its on-call, when it names one. */
+  escalateToPerson: { userId: string; name: string } | null;
   /** ORD-068. The site is out of hours now. */
   afterHours: boolean;
   /** ORD-153, ORD-154. Whom the notice of the correction is due to now. */
@@ -620,6 +662,12 @@ export interface DiagnosticReportRepository {
   accountName(userId: string): Promise<string | undefined>;
 
   /**
+   * ORD-175. The accounts of a site that can be named as who made the call:
+   * active, with a live grant of an active role at that site or at all.
+   */
+  siteAccounts(siteId: string): Promise<SiteAccount[]>;
+
+  /**
    * ORD-062. Writes the notice of a critical value.
    *
    * The scope is judged again where the row lands, as `match` does: between
@@ -679,9 +727,7 @@ export interface DiagnosticReportRepository {
    * site or at every site, with `record:read` — without it the critical
    * worklist cannot even be read. A role nobody holds escalates to nobody.
    */
-  staffedOnCall(
-    onCall: readonly { siteId: string; roleId: string }[],
-  ): Promise<ReadonlySet<string>>;
+  staffedOnCall(onCall: readonly OnCall[]): Promise<ReadonlySet<string>>;
 }
 
 /** Injection token. The application never names the adapter. */

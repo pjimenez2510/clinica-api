@@ -1209,6 +1209,9 @@ export const DOMAIN_ERROR_CODES = [
   'REPORT_ALREADY_CORRECTED',
   'REPORT_NOT_CORRECTABLE',
   'REPORT_NOT_FOUND',
+  // ORD-170 (D-168 §1). Un informe nuevo que repite una determinación con
+  // valor vigente: se corrige el informe vigente.
+  'RESULT_ALREADY_REPORTED',
   'RESULT_ANALYTE_UNKNOWN',
   'RESULT_CHART_UNMATCHED',
   'RESULT_FLAG_IS_DERIVED',
@@ -1305,6 +1308,10 @@ export const DOMAIN_ERROR_CODES = [
   //     se avisa ni se empareja; se trabaja el que lo sustituye.
   //   * `CRITICAL_READ_BACK_REQUIRED` (422) — un aviso hecho sin confirmar que
   //     quien lo recibió repitió el valor (D-111 §4).
+  // ORD-175 (D-168 §4). Quien llamó, escrito con menos de dos palabras, o
+  // una cuenta que no es de la sede del valor.
+  'CRITICAL_NOTICE_CALLER_INCOMPLETE',
+  'CRITICAL_NOTICE_CALLER_NOT_FOUND',
   'CRITICAL_READ_BACK_REQUIRED',
   'RESULT_SUPERSEDED',
   //   * `CRITICAL_NOTICE_NOT_FOUND` (404) — ORD-120. Se pide editar un aviso
@@ -1329,6 +1336,9 @@ export const DOMAIN_ERROR_CODES = [
   // ─── Configuration (ORD-046, ORD-065). El rol que responde de una cola de
   //   resultados tiene que poder trabajarla: `record:read` y `result:write`.
   'ROLE_CANNOT_WORK_RESULTS',
+  // ORD-179 (D-207 §2). La persona de guardia de críticos no puede atender la
+  // cola en esa sede: cuenta inactiva o sin ver la historia y registrar.
+  'PERSON_CANNOT_WORK_RESULTS',
   // ─── Documents, H1 a H4 (DOC-012, DOC-014, DOC-037, DOC-050 a DOC-053).
   // El documento imprimible y el artefacto que queda.
   //

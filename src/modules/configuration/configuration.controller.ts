@@ -282,6 +282,10 @@ export class ConfigurationController {
         // (D-050 §2 y §4). En los roles, `null` es un valor: quien pidió.
         criticalNoticeWithinMinutes: dto.criticalNoticeWithinMinutes,
         criticalEscalationRoleId: dto.criticalEscalationRoleId,
+        // ORD-179 (D-207 §2): la guardia nominal, en vez de un rol.
+        criticalEscalationUserId: dto.criticalEscalationUserId,
+        // ORD-177 (D-207 §2): el read-back, un ajuste de la sede.
+        criticalReadBackRequired: dto.criticalReadBackRequired,
         unmatchedResultOwnerRoleId: dto.unmatchedResultOwnerRoleId,
         unmatchedResultDeadlineHours: dto.unmatchedResultDeadlineHours,
         // EN-272 (D-207 §1): la línea de la TA de las gráficas de evolución.

@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   closesCriticalWorklist,
   isSelfNotice,
-  samePersonName,
-  selfNoticedByOrderer,
+  namesOrderer,
+  namesPerson,
   type WorklistNotice,
 } from './notice-recipient';
 
@@ -13,16 +13,16 @@ const NURSE = { userId: 'nurse', name: 'María Quishpe' };
 
 describe('el destinatario de un aviso', () => {
   it('ORD-147 reconoce el mismo nombre sin mayúsculas, tildes, espacios ni tratamiento inicial', () => {
-    expect(samePersonName('  dr. juan  PEREZ andrade ', 'Juan Pérez Andrade')).toBe(true); // prettier-ignore
-    expect(samePersonName('Dra. María Quishpe', 'Maria Quishpe')).toBe(true);
-    expect(samePersonName('Lcda Maria Quishpe', 'María Quishpe')).toBe(true);
+    expect(namesPerson('  dr. juan  PEREZ andrade ', 'Juan Pérez Andrade')).toBe(true); // prettier-ignore
+    expect(namesPerson('Dra. María Quishpe', 'Maria Quishpe')).toBe(true);
+    expect(namesPerson('Lcda Maria Quishpe', 'María Quishpe')).toBe(true);
   });
 
   it('ORD-147 no reconoce un nombre a medias ni uno vacío', () => {
-    expect(samePersonName('Dr. Pérez', 'Juan Pérez Andrade')).toBe(false);
-    expect(samePersonName('Juan Pérez', 'Juan Pérez Andrade')).toBe(false);
-    expect(samePersonName('', '')).toBe(false);
-    expect(samePersonName('Dr.', 'Dr.')).toBe(false);
+    expect(namesPerson('Dr. Pérez', 'Juan Pérez Andrade')).toBe(false);
+    expect(namesPerson('Juan Pérez', 'Juan Pérez Andrade')).toBe(false);
+    expect(namesPerson('', '')).toBe(false);
+    expect(namesPerson('Dr.', 'Dr.')).toBe(false);
   });
 
   it('ORD-062 el aviso «al médico que pidió» que registra ese médico es un autoaviso, escriba el nombre que escriba', () => {
@@ -52,13 +52,36 @@ describe('el destinatario de un aviso', () => {
 
 describe('el nombre como conjunto de palabras y quien llamó (D-156)', () => {
   it('ORD-157 reconoce las mismas palabras en cualquier orden, como en la cédula', () => {
-    expect(samePersonName('Pérez Andrade Juan', 'Juan Pérez Andrade')).toBe(true); // prettier-ignore
-    expect(samePersonName('Dr. ANDRADE juan  perez', 'Juan Pérez Andrade')).toBe(true); // prettier-ignore
-    // Control positivo: con una palabra de más o de menos no es la misma persona.
-    expect(samePersonName('Pérez Juan', 'Juan Pérez Andrade')).toBe(false);
-    expect(samePersonName('Juan Juan Pérez', 'Juan Pérez')).toBe(false);
-    expect(samePersonName('Pérez Andrade', 'Juan Pérez Andrade')).toBe(false); // Con la coma de «apellidos, nombres» también.
-    expect(samePersonName('Pérez Andrade, Juan', 'Juan Pérez Andrade')).toBe(true); // prettier-ignore
+    expect(namesPerson('Pérez Andrade Juan', 'Juan Pérez Andrade')).toBe(true); // prettier-ignore
+    expect(namesPerson('Dr. ANDRADE juan  perez', 'Juan Pérez Andrade')).toBe(true); // prettier-ignore
+    // Con la coma de «apellidos, nombres» también.
+    expect(namesPerson('Pérez Andrade, Juan', 'Juan Pérez Andrade')).toBe(true); // prettier-ignore
+    // Control positivo: con una palabra de menos no la nombra.
+    expect(namesPerson('Pérez Juan', 'Juan Pérez Andrade')).toBe(false);
+    expect(namesPerson('Pérez Andrade', 'Juan Pérez Andrade')).toBe(false);
+  });
+
+  it('ORD-174 una palabra de más no esquiva el nombre: «Carmen Salazar Pilco» nombra a «Carmen Salazar»', () => {
+    // D-168 §4: ante la duda el valor se queda en la cola, el error seguro.
+    expect(namesPerson('Carmen Salazar Pilco', 'Carmen Salazar')).toBe(true);
+    expect(namesPerson('Lcda. Pilco Salazar, Carmen Elena', 'Carmen Salazar')).toBe(true); // prettier-ignore
+    // Cada palabra cuenta las veces que se escribe.
+    expect(namesPerson('Juan Juan Pérez', 'Juan Pérez')).toBe(true);
+    expect(namesPerson('Juan Pérez', 'Juan Juan Pérez')).toBe(false);
+    // Control positivo: un nombre a medias sigue sin contener a la persona.
+    expect(namesPerson('Dr. Salazar', 'Carmen Salazar')).toBe(false);
+  });
+
+  it('ORD-174 es autoaviso el destinatario que contiene el nombre de la cuenta, o el de quien llamó', () => {
+    const carmen = { userId: 'carmen', name: 'Carmen Salazar' };
+    const toHerself = { recipientKind: 'OTHER_PRACTITIONER', recipientName: 'Dra. Carmen Salazar Pilco', recorder: carmen, orderedByUserId: 'doctor' }; // prettier-ignore
+    expect(isSelfNotice(toHerself)).toBe(true);
+    // Quien llamó con su nombre completo es ella misma: se juzga con su cuenta.
+    expect(isSelfNotice({ ...toHerself, callerName: 'Carmen Salazar Pilco' })).toBe(true); // prettier-ignore
+    // Otra persona que llama y se nombra a sí misma como destinataria, con una palabra de más.
+    expect(isSelfNotice({ ...toHerself, recorder: NURSE, callerName: 'Carmen Salazar' })).toBe(true); // prettier-ignore
+    // Control positivo: a otra persona, no.
+    expect(isSelfNotice({ ...toHerself, recipientName: 'Ana Toapanta' })).toBe(false); // prettier-ignore
   });
 
   it('ORD-155 con quien llamó, que no es quien registra, el autoaviso se juzga con quien llamó', () => {
@@ -95,8 +118,24 @@ describe('el cierre de la cola de críticos (ORD-146)', () => {
     const earlier = n({ recipientKind: 'ORDERING_PRACTITIONER', notifiedAt: at(90) }); // prettier-ignore
     expect(closesCriticalWorklist([earlier, ownNote], 'doctor')).toBe(true);
     const colleague = n({ selfNotice: true, notifiedById: 'colleague', notifiedAt: at(60) }); // prettier-ignore
-    expect(selfNoticedByOrderer([colleague], 'doctor')).toBe(false);
     expect(closesCriticalWorklist([colleague, n({ recipientKind: 'ORDERING_PRACTITIONER' })], 'doctor')).toBe(true); // prettier-ignore
-    expect(selfNoticedByOrderer([ownNote], 'doctor')).toBe(true);
+  });
+});
+
+describe('el médico que pidió, por su nombre (revisión clínica G1)', () => {
+  it('ORD-146 ORD-174 un profesional lleva el nombre del médico que pidió sólo con sus mismas palabras; un paciente, nunca', () => {
+    expect(namesOrderer('OTHER_PRACTITIONER', 'Dr. Pérez Juan', 'Juan Pérez')).toBe(true); // prettier-ignore
+    // Con una palabra de más es otra persona: esta dirección cierra colas.
+    expect(namesOrderer('OTHER_PRACTITIONER', 'Juan Pérez Andrade', 'Juan Pérez')).toBe(false); // prettier-ignore
+    for (const kind of ['PATIENT', 'REPRESENTATIVE']) {
+      expect(namesOrderer(kind, 'Juan Pérez', 'Juan Pérez')).toBe(false);
+    }
+  });
+
+  it('ORD-175 es autoaviso el aviso al médico que pidió cuya llamada hizo, elegida de la lista, la cuenta de ese médico', () => {
+    const question = { recipientKind: 'ORDERING_PRACTITIONER', recipientName: 'Dra. Salazar', recorder: NURSE, orderedByUserId: 'doctor', callerName: 'Carmen Salazar' }; // prettier-ignore
+    expect(isSelfNotice({ ...question, callerUserId: 'doctor' })).toBe(true);
+    // Control positivo: otra cuenta que llamó, no.
+    expect(isSelfNotice({ ...question, callerUserId: 'nurse-2' })).toBe(false);
   });
 });
