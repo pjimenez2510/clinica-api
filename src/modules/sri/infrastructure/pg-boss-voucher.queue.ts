@@ -1,22 +1,17 @@
-import {
-  Injectable,
-  type OnApplicationBootstrap,
-  type OnApplicationShutdown,
-} from '@nestjs/common';
+import { Injectable, type OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
-import { PgBoss } from 'pg-boss';
+import type { PgBoss } from 'pg-boss';
 
 import type { Env } from '../../../shared/config/env.schema';
+import { PgBossConnection } from '../../../shared/infrastructure/queue/pg-boss.connection';
 import { VoucherDispatchService } from '../application/voucher-dispatch.service';
 import type { VoucherQueue } from '../domain/electronic-voucher.repository';
 import type { QueueStep } from '../domain/voucher-lifecycle';
 
 /**
- * SRI-040, SRI-057. The persistent queue: pg-boss, in the clinic's own
- * PostgreSQL (ADR-004), in schema `pgboss`, which pg-boss creates and migrates
- * itself — it is the library's state, not this system's model, and it is
- * deliberately outside `prisma/migrations`.
+ * SRI-040, SRI-057. The persistent queue: pg-boss, on the connection every
+ * module shares (`shared/infrastructure/queue`, SRI-105).
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * ONE QUEUE PER STEP, POLICY `stately`, THE ACCESS KEY AS `singletonKey`
@@ -44,66 +39,45 @@ interface StepJob {
   voucherId: string;
 }
 
-/** The pg-boss instance, started once and shared by the queue and the worker. */
+/**
+ * SRI-105. The SRI's queues on the shared connection, declared once for the
+ * sender and the worker, and the SRI's own switch: `SRI_QUEUE_ENABLED=false`
+ * stops these queues and no other module's.
+ */
 @Injectable()
-export class PgBossConnection implements OnApplicationShutdown {
-  private boss: PgBoss | null = null;
-  private starting: Promise<PgBoss> | null = null;
+export class SriQueues {
+  private ready: Promise<PgBoss> | null = null;
 
   constructor(
+    private readonly connection: PgBossConnection,
     private readonly config: ConfigService<Env, true>,
-    private readonly logger: PinoLogger,
-  ) {
-    this.logger.setContext(PgBossConnection.name);
-  }
+  ) {}
 
   get enabled(): boolean {
     return this.config.get('SRI_QUEUE_ENABLED', { infer: true });
   }
 
-  async instance(): Promise<PgBoss> {
-    if (this.boss) return this.boss;
-    this.starting ??= (async () => {
-      const boss = new PgBoss({
-        connectionString: this.config.get('DATABASE_URL', { infer: true }),
-        schema: 'pgboss',
-      });
-      // pg-boss emits its own operational errors (a lost connection, a failed
-      // maintenance pass); unheard, they would crash the process.
-      boss.on('error', (error) =>
-        this.logger.error(
-          { err: error, error_code: 'SRI_QUEUE_ERROR' },
-          'the voucher queue reported an error',
-        ),
-      );
-      await boss.start();
+  boss(): Promise<PgBoss> {
+    this.ready ??= (async () => {
+      let boss: PgBoss | null = null;
       for (const name of [...Object.values(QUEUE_NAMES), SWEEP_QUEUE]) {
-        if (!(await boss.getQueue(name))) {
-          await boss.createQueue(name, {
-            policy: name === SWEEP_QUEUE ? 'exclusive' : 'stately',
-            retryLimit: 3,
-            retryDelay: 30,
-            retryBackoff: true,
-          });
-        }
+        boss = await this.connection.declareQueue(name, {
+          policy: name === SWEEP_QUEUE ? 'exclusive' : 'stately',
+          retryLimit: 3,
+          retryDelay: 30,
+          retryBackoff: true,
+        });
       }
-      this.boss = boss;
-      return boss;
+      return boss!;
     })();
-    return this.starting;
-  }
-
-  async onApplicationShutdown(): Promise<void> {
-    await this.boss?.stop({ graceful: true, timeout: 10_000 });
-    this.boss = null;
-    this.starting = null;
+    return this.ready;
   }
 }
 
 @Injectable()
 export class PgBossVoucherQueue implements VoucherQueue {
   constructor(
-    private readonly connection: PgBossConnection,
+    private readonly queues: SriQueues,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(PgBossVoucherQueue.name);
@@ -115,8 +89,8 @@ export class PgBossVoucherQueue implements VoucherQueue {
     delaySeconds: number,
   ): Promise<void> {
     // Without a running queue the sweep is what picks the voucher up.
-    if (!this.connection.enabled) return;
-    const boss = await this.connection.instance();
+    if (!this.queues.enabled) return;
+    const boss = await this.queues.boss();
     await boss.send(
       QUEUE_NAMES[step],
       { voucherId: voucher.id } satisfies StepJob,
@@ -136,7 +110,7 @@ export class PgBossVoucherQueue implements VoucherQueue {
 @Injectable()
 export class SriQueueWorker implements OnApplicationBootstrap {
   constructor(
-    private readonly connection: PgBossConnection,
+    private readonly queues: SriQueues,
     private readonly dispatch: VoucherDispatchService,
     private readonly logger: PinoLogger,
   ) {
@@ -144,12 +118,12 @@ export class SriQueueWorker implements OnApplicationBootstrap {
   }
 
   async onApplicationBootstrap(): Promise<void> {
-    if (!this.connection.enabled) return;
+    if (!this.queues.enabled) return;
     await this.start();
   }
 
   async start(): Promise<void> {
-    const boss = await this.connection.instance();
+    const boss = await this.queues.boss();
     for (const [step, name] of Object.entries(QUEUE_NAMES) as [
       QueueStep,
       string,

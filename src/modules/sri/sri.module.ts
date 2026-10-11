@@ -37,8 +37,8 @@ import { AesGcmCertificateCipher } from './infrastructure/aes-gcm-certificate.ci
 import { EcSriXadesSigner } from './infrastructure/ec-sri-xades.signer';
 import { ForgePkcs12Inspector } from './infrastructure/forge-pkcs12.inspector';
 import {
-  PgBossConnection,
   PgBossVoucherQueue,
+  SriQueues,
   SriQueueWorker,
 } from './infrastructure/pg-boss-voucher.queue';
 import { PrismaElectronicVoucherRepository } from './infrastructure/prisma-electronic-voucher.repository';
@@ -67,7 +67,7 @@ import {
     VoucherMonitorService,
     SigningCertificateService,
     CurrentUserService,
-    PgBossConnection,
+    SriQueues,
     SriQueueWorker,
     {
       provide: ELECTRONIC_VOUCHER_PREPARER,
