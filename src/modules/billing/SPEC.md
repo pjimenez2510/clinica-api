@@ -626,7 +626,7 @@ buscándolo por código. Contra PostgreSQL: la base rechaza una consulta sin
 especialidad, una extensión de orden sobre un insumo, dos consultas con el
 mismo nombre en una especialidad y dos procedimientos con el mismo código.
 
-**Cubre:** BI-278 a BI-296. **Solo interfaz:** BI-291 a BI-296. **Sustituye:**
+**Cubre:** BI-278 a BI-297. **Solo interfaz:** BI-291 a BI-296. **Sustituye:**
 BI-185 a BI-188, BI-257, BI-275 a BI-277 (y SP-020, SP-026, SP-030, SP-031,
 ORD-103, ORD-108, ORD-109, ORD-162, ORD-163, ORD-169 en sus módulos).
 
@@ -1067,6 +1067,7 @@ es falsa, hay requisitos que cambian.
   > en caja tiene que poder decir si falta el precio, si el pagador es el que no
   > toca o si la fecha del servicio se tecleó mal. Un error que no distingue esas
   > tres cosas manda a alguien a buscar en el sitio equivocado.
+  > **Enmendado el 11-10-2026 (BI-297, ADR-013).** En la lista de un convenio, la falta de precio propio se resuelve con el particular; sólo sin ninguno de los dos se rechaza.
 - **BI-048** — El sistema DEBERÁ expresar todo precio en dólares de los Estados
   Unidos y NO DEBERÁ ofrecer conversión de moneda.
 - **BI-230** — El sistema DEBERÁ permitir corregir el **importe** de un precio
@@ -3075,6 +3076,16 @@ lo ve._
 - **BI-290** — Toda alta, corrección, desactivación o borrado de un servicio, y
   de su extensión de orden, DEBERÁ dejar en `access_audit` (recurso `service`)
   el antes y el después (BI-130, AD-10).
+
+- **BI-297** — CUANDO se resuelva el precio de un cargo en la lista de un
+  pagador que no es el particular, SI esa lista no tiene precio vigente para
+  el servicio en la fecha del servicio, ENTONCES el sistema DEBERÁ resolverlo
+  con el precio vigente de la lista particular y guardar en el cargo la fila de
+  la que salió (`resolved_price_id`); sólo SI tampoco hay precio particular
+  DEBERÁ rechazarlo con `PRICE_NOT_FOUND` (BI-047).
+  > ADR-013: «un convenio guarda excepciones» sobre el particular, y la
+  > columna del convenio en la lista dice «—» = «usa el particular». Sin esta
+  > caída, ese «—» sería falso. Construido así mientras el autor decide (D-230).
 
 ### La pantalla «Servicios» (sólo interfaz, D-227 §1, D-220)
 

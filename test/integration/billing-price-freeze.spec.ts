@@ -153,6 +153,76 @@ async function raiseTheTariff(): Promise<void> {
   );
 }
 
+describe('BI-297 un convenio guarda sólo sus excepciones sobre el particular', () => {
+  async function agreementAccount(): Promise<string> {
+    const list = await context.prisma.priceList.findUniqueOrThrow({
+      where: { id: context.emptyPriceListId },
+    });
+    const own = await context.prisma.patientAccount.findUniqueOrThrow({
+      where: { id: context.accountId },
+    });
+    const account = await context.prisma.patientAccount.create({
+      data: {
+        patientId: own.patientId,
+        siteId: own.siteId,
+        payerId: list.payerId,
+        priceListId: list.id,
+      },
+    });
+    return account.id;
+  }
+
+  const chargeTo = (accountId: string) =>
+    context.accounts.addCharge({
+      accountId,
+      serviceId: context.serviceId,
+      encounterId: null,
+      serviceDate: BEFORE_THE_RISE,
+      quantity: Quantity.ONE,
+      createdById: context.userId,
+      origin: 'MANUAL',
+      encounterProcedureId: null,
+      serviceOrderItemId: null,
+      status: 'BILLABLE',
+    });
+
+  it('BI-297 sin precio propio en el convenio, el cargo toma el particular y guarda de qué fila salió', async () => {
+    const accountId = await agreementAccount();
+    const selfPay = await context.prisma.price.findFirstOrThrow({
+      where: { priceListId: context.priceListId, serviceId: context.serviceId },
+      orderBy: { validFrom: 'asc' },
+    });
+
+    const charged = await chargeTo(accountId);
+
+    const stored = await context.prisma.chargeItem.findUniqueOrThrow({
+      where: { id: charged.id },
+    });
+    expect(stored.unitAmount.toFixed(2)).toBe(selfPay.amount.toFixed(2));
+    expect(stored.resolvedPriceId).toBe(selfPay.id);
+  });
+
+  it('BI-297 con precio propio en el convenio, el cargo toma el suyo (control)', async () => {
+    const accountId = await agreementAccount();
+    const own = await context.prisma.price.create({
+      data: {
+        priceListId: context.emptyPriceListId,
+        serviceId: context.serviceId,
+        amount: '12.00',
+        validFrom: new Date(`${BEFORE_THE_RISE}T00:00:00Z`),
+      },
+    });
+
+    const charged = await chargeTo(accountId);
+
+    const stored = await context.prisma.chargeItem.findUniqueOrThrow({
+      where: { id: charged.id },
+    });
+    expect(stored.unitAmount.toFixed(2)).toBe('12.00');
+    expect(stored.resolvedPriceId).toBe(own.id);
+  });
+});
+
 describe('BI-050 el cargo congela el precio resuelto por la fecha del servicio', () => {
   it('BI-050 copia importe, nombre, código y porcentaje de impuesto, y la fila de precio', async () => {
     const raised = await charge();

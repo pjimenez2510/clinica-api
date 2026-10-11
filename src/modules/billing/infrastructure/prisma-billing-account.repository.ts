@@ -75,6 +75,7 @@ import {
   INVOICE_COUNTS_TOWARD_BALANCE,
 } from './invoice-balance.sql';
 import type { BillingTrail } from '../domain/billing-trail';
+import { selfPayPriceListId } from './self-pay-list';
 
 /**
  * The account, the charge and the invoice, in PostgreSQL.
@@ -309,13 +310,12 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
 
     return Promise.all(
       charges.map(async (charge) => {
-        const price = await this.prisma.price.findFirst({
-          where: priceOn(
-            query.priceListId,
-            charge.serviceId,
-            charge.serviceDate,
-          ),
-        });
+        const price = await priceInForce(
+          this.prisma,
+          query.priceListId,
+          charge.serviceId,
+          charge.serviceDate,
+        );
         return {
           chargeId: charge.id,
           unitAmount: price === null ? null : Money.parse(price.amount),
@@ -429,14 +429,12 @@ export class PrismaBillingAccountRepository implements BillingAccountRepository 
         include: { taxRate: true },
       });
 
-      const price = await tx.price.findFirst({
-        where: {
-          priceListId: account.priceListId,
-          serviceId: command.serviceId,
-          validFrom: { lte: on },
-          OR: [{ validTo: null }, { validTo: { gt: on } }],
-        },
-      });
+      const price = await priceInForce(
+        tx,
+        account.priceListId,
+        command.serviceId,
+        on,
+      );
 
       if (price === null) {
         throw new PriceNotFoundError(
@@ -1577,6 +1575,29 @@ function priceOn(
   };
 }
 
+/**
+ * BI-047, BI-297 (ADR-013). The price of a service on a day, for a list: its
+ * own row in force, or —when the list is an agreement's and does not price
+ * it— the self-pay list's. «Un convenio guarda excepciones» sobre el
+ * particular: what it does not list, it charges at the self-pay price, and
+ * `resolvedPriceId` keeps WHICH row that was, so the resolution stays
+ * auditable. Neither in force → `null`, the caller's `PRICE_NOT_FOUND`.
+ */
+async function priceInForce(
+  client: Prisma.TransactionClient,
+  priceListId: string,
+  serviceId: string,
+  on: Date,
+) {
+  const own = await client.price.findFirst({
+    where: priceOn(priceListId, serviceId, on),
+  });
+  if (own !== null) return own;
+  const selfPay = await selfPayPriceListId(client);
+  if (selfPay === null || selfPay === priceListId) return null;
+  return client.price.findFirst({ where: priceOn(selfPay, serviceId, on) });
+}
+
 async function findPriceOn(
   tx: Transaction,
   query: {
@@ -1586,9 +1607,12 @@ async function findPriceOn(
     serviceDate: Date;
   },
 ) {
-  const price = await tx.price.findFirst({
-    where: priceOn(query.priceListId, query.serviceId, query.serviceDate),
-  });
+  const price = await priceInForce(
+    tx,
+    query.priceListId,
+    query.serviceId,
+    query.serviceDate,
+  );
   if (price === null) {
     throw new PriceNotFoundError(
       query.serviceId,
