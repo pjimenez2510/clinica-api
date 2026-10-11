@@ -319,8 +319,9 @@ describe('WaitlistService', () => {
         service.enrol({
           siteId: SITE,
           patientId: PATIENT,
-          preferredFrom: d('2026-09-01'),
-          preferredTo: d('2026-09-30'),
+          // fecha-fija: the refusal comes before the range is read.
+          preferredFrom: d('2026-09-01'), // fecha-fija: idem
+          preferredTo: d('2026-09-30'), // fecha-fija: idem
           serviceId: 'service-exam',
         }),
       ).rejects.toBeInstanceOf(ConsultationNotFoundError);

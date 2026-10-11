@@ -953,7 +953,7 @@ const WRONG_CATALOGUE_TITLE: Readonly<Record<ExpectedCatalogue, string>> = {
   CIE10:
     'Ese código no es un diagnóstico CIE-10. Búsquelo en el catálogo de diagnósticos',
   TARIFF:
-    'Ese código no es un procedimiento del tarifario. Búsquelo en el catálogo de prestaciones',
+    'Ese código no es un procedimiento. Búsquelo en el catálogo de servicios',
   CNMB: 'Ese código no es un medicamento del CNMB. Busque el principio activo en el cuadro de medicamentos',
 };
 

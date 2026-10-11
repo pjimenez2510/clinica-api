@@ -706,7 +706,7 @@ describe('el contrato de errores de la atención', () => {
     // diferencia.
     expect(asDiagnosis.code).toBe(asProcedure.code);
     expect(asDiagnosis.userTitle).toContain('catálogo de diagnósticos');
-    expect(asProcedure.userTitle).toContain('catálogo de prestaciones');
+    expect(asProcedure.userTitle).toContain('catálogo de servicios');
     expect(asDiagnosis.fieldErrors?.[0]?.field).toBe('conceptId');
   });
 
