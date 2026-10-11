@@ -60,6 +60,7 @@ import type {
   PatientDetail,
   PatientIdentifier,
   PatientMergeEvent,
+  ClassifiedWhileMerged,
   PatientMergeState,
   PatientPage,
   PatientRepository,
@@ -1570,6 +1571,59 @@ export class PrismaPatientRepository implements PatientRepository {
   // -------------------------------------------------------------------------
 
   /** PA-045. Who the chart is and whether it was absorbed. Opens nothing. */
+  /**
+   * PA-082 (D-171 §3). Reports written (`created_at`, the moment the value was
+   * classified) on the chart's attentions since `merged_at`: their values
+   * took the survivor's sex (ORD-176). A table of `orders`, read here and not
+   * imported from there: modules do not import each other.
+   */
+  async classifiedWhileMerged(
+    sourcePatientId: string,
+  ): Promise<ClassifiedWhileMerged | null> {
+    const chart = await this.prisma.patient.findUnique({
+      where: { id: sourcePatientId },
+      select: { sex: true, mergedAt: true, mergedInto: { select: { sex: true } } }, // prettier-ignore
+    });
+    if (!chart?.mergedAt || !chart.mergedInto) return null;
+
+    const rows = await this.prisma.observationResult.findMany({
+      where: {
+        report: {
+          createdAt: { gte: chart.mergedAt },
+          serviceOrder: { encounter: { patientId: sourcePatientId } },
+        },
+      },
+      orderBy: [{ observedAt: 'desc' }, { id: 'desc' }],
+      select: {
+        id: true,
+        analyteDisplay: true,
+        valueNumeric: true,
+        valueCode: true,
+        valueText: true,
+        unit: true,
+        abnormalFlag: true,
+        observedAt: true,
+        report: { select: { serviceOrderId: true } },
+      },
+    });
+    return {
+      sourceSex: chart.sex,
+      survivorSex: chart.mergedInto.sex,
+      items: rows.map((row) => ({
+        resultId: row.id.toString(),
+        orderId: row.report.serviceOrderId,
+        analyteDisplay: row.analyteDisplay,
+        valueNumeric:
+          row.valueNumeric === null ? null : Number(row.valueNumeric),
+        valueCode: row.valueCode,
+        valueText: row.valueText,
+        unit: row.unit,
+        abnormalFlag: row.abnormalFlag,
+        observedAt: row.observedAt,
+      })),
+    };
+  }
+
   async findMergeState(id: string): Promise<PatientMergeState | null> {
     const row = await this.prisma.patient.findUnique({
       where: { id },

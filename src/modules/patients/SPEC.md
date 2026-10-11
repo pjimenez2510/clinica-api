@@ -2010,6 +2010,19 @@ Ningún requisito de esta sección lo altera._
   > admitidos en `patient_change_history_field_known`
   > (`20261001070800_patient_employer_and_job_title`).
 
+- **PA-082** — ANTES de deshacer una fusión, el sistema DEBERÁ servir, con
+  `patient:merge`, los resultados de laboratorio registrados o corregidos en
+  atenciones de la ficha absorbida **mientras duró la fusión** —desde
+  `merged_at`—, cada uno con la determinación, el valor, la bandera, cuándo se
+  emitió y su orden, y el sexo de la ficha absorbida y el de la vigente; y la
+  lectura DEBERÁ dejar su fila en la bitácora.
+  > **D-171 §3**, decidida por el autor en D-223 y confirmada por la principal
+  > en D-237 §1: mientras dura la unificación esos valores se clasifican con
+  > el sexo de la vigente (ORD-176). Si la unificación fue un error, deshacerla
+  > no reclasifica nada —la bandera se congela al registrar (ORD-114)—, así que
+  > quien deshace tiene que saber qué revisar. La pantalla lo enseña en el
+  > diálogo de deshacer. Por confirmar con un clínico, como ORD-176.
+
 ## 8. Autorización y trazabilidad (REQ-118)
 
 - **PA-050** — El sistema NO DEBERÁ exponer ninguna ruta de este módulo sin
@@ -2436,6 +2449,7 @@ Todas bajo `/api/v1/patients`, alcance `global` (PA-051):
 | `POST`  | `/patients/:id/priority-groups/:recordId/close` | `patient:priority` | PA-037, PA-039                            |
 | `POST`  | `/patients/:id/merge`                     | `patient:merge`    | PA-043 a PA-046, PA-049, PA-052, PA-064         |
 | `POST`  | `/patients/:id/merge/undo`                | `patient:merge`    | PA-047, PA-048, PA-052, PA-064                  |
+| `GET`   | `/patients/:id/merge/classified-results`  | `patient:merge`    | PA-082                                          |
 
 La **prioridad calculada** (PA-041) no tiene ruta propia: viaja como el campo
 `priority` de toda respuesta que ya lleva un paciente —el listado y la ficha—,

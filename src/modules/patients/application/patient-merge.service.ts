@@ -16,6 +16,7 @@ import {
 } from '../domain/patient.errors';
 import {
   PATIENT_REPOSITORY,
+  type ClassifiedWhileMerged,
   type PatientMergeEvent,
   type PatientRepository,
 } from '../domain/patient.repository';
@@ -185,6 +186,28 @@ export class PatientMergeService {
    * own — and «is this merge undone?» is answered by the link rather than
    * guessed from dates.
    */
+  /**
+   * PA-082 (D-171 §3). What undoing would leave classified with the wrong
+   * sex if the merge was a mistake: the values filed on this chart while it
+   * was merged. Audited: they are laboratory values of a patient.
+   */
+  async classifiedWhileMerged(
+    sourcePatientId: string,
+    requester: Requester,
+  ): Promise<ClassifiedWhileMerged> {
+    const read = await this.patients.classifiedWhileMerged(sourcePatientId);
+    if (!read) throw new MergeNotFoundError();
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: 'patient',
+      resourceId: sourcePatientId,
+      action: 'READ',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
+    return read;
+  }
+
   async undo(
     input: { sourcePatientId: string; reason?: string | null },
     requester: Requester,

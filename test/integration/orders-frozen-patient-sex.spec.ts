@@ -406,6 +406,43 @@ describe('ORD-161 la orden nombra la ficha vigente al emitirse, con su sexo, y n
     });
   });
 
+  it('PA-082 antes de deshacer, se leen los resultados clasificados mientras duró la unificación, con los dos sexos', async () => {
+    const prisma = db();
+    const scene = await aMergedScene(prisma);
+    const hb = (orderId: string) =>
+      adapters(prisma).reports.register(
+        { orderId, performedById: null, issuedAt: new Date(), results: [{ analyteDefinitionId: scene.scene.hb.id, valueNumeric: 12.5 }] }, // prettier-ignore
+        requester,
+      );
+    // Control positivo: lo registrado ANTES de unificar no se lista.
+    const before = await hb(scene.beforeMerge.id);
+    await scene.merge();
+    const during = await scene.issueAnother();
+    const classified = await hb(during.id);
+    const desk = { userId: (await createUser(prisma)).id };
+    const trail: { action: string; resourceId: string }[] = [];
+    const reading = new PatientMergeService(
+      new PrismaPatientRepository(prisma as unknown as PrismaService),
+      { record: (entry) => { trail.push(entry); return Promise.resolve(); } }, // prettier-ignore
+      noopLogger as never,
+    );
+
+    const read = await reading.classifiedWhileMerged(scene.scene.patient.id, desk); // prettier-ignore
+
+    expect(read).toMatchObject({ sourceSex: 'FEMALE', survivorSex: 'MALE' });
+    expect(read.items.map((item) => item.resultId)).toEqual([classified.results[0]!.id]); // prettier-ignore
+    expect(read.items[0]).toMatchObject({ orderId: during.id, analyteDisplay: 'Hemoglobina', valueNumeric: 12.5, abnormalFlag: 'LOW' }); // prettier-ignore
+    expect(read.items.map((item) => item.resultId)).not.toContain(before.results[0]!.id); // prettier-ignore
+    // La lectura deja su fila en la bitácora.
+    expect(trail).toEqual([expect.objectContaining({ action: 'READ', resourceId: scene.scene.patient.id })]); // prettier-ignore
+
+    // Una ficha que no está unificada no tiene nada que leer.
+    await scene.undo();
+    await expect(
+      mergesOf(prisma).classifiedWhileMerged(scene.scene.patient.id, desk),
+    ).rejects.toMatchObject({ code: 'MERGE_NOT_FOUND' });
+  });
+
   it('ORD-161 ORD-026 la cola de pendientes nombra la misma ficha que el papel', async () => {
     const prisma = db();
     const scene = await aMergedScene(prisma);

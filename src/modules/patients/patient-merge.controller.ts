@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -18,6 +19,8 @@ import { PatientMergeService } from './application/patient-merge.service';
 import type { Requester } from './application/patients.service';
 import type { PatientMergeEvent } from './domain/patient.repository';
 import {
+  ClassifiedWhileMergedDto,
+  type ClassifiedWhileMergedResponse,
   MergePatientDto,
   PatientMergeDto,
   UndoPatientMergeDto,
@@ -119,6 +122,37 @@ export class PatientMergeController {
     );
 
     return toResponse(event);
+  }
+
+  /**
+   * PA-082 (D-171 §3). Before undoing: the laboratory values classified with
+   * the survivor's sex while this chart was merged. Same permission as undoing
+   * it; a chart that is not merged is `MERGE_NOT_FOUND`, like the undo.
+   */
+  @Get('classified-results')
+  @RequirePermission('patient:merge', 'global')
+  @ApiOperation({ summary: 'Values classified while this chart was merged' })
+  @ApiOkResponse({ type: ClassifiedWhileMergedDto })
+  async classifiedWhileMerged(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ): Promise<ClassifiedWhileMergedResponse> {
+    const read = await this.merges.classifiedWhileMerged(
+      id,
+      this.requester(req),
+    );
+    return {
+      ...read,
+      sourceSex: read.sourceSex as ClassifiedWhileMergedResponse['sourceSex'],
+      survivorSex:
+        read.survivorSex as ClassifiedWhileMergedResponse['survivorSex'],
+      items: read.items.map((item) => ({
+        ...item,
+        abnormalFlag:
+          item.abnormalFlag as ClassifiedWhileMergedResponse['items'][number]['abnormalFlag'],
+        observedAt: item.observedAt.toISOString(),
+      })),
+    };
   }
 
   /** Who is asking, for the access trail. See `PatientsController`. */

@@ -459,6 +459,27 @@ export interface AppliedCorrection {
  * thing `PATIENT_MERGED` is allowed to publish — an internal number, never a
  * name or a document.
  */
+/**
+ * PA-082 (D-171 §3). The laboratory values filed on the absorbed chart's
+ * attentions while it was merged —classified with the survivor's sex
+ * (ORD-176)—, for whoever is about to undo the merge.
+ */
+export interface ClassifiedWhileMerged {
+  sourceSex: string;
+  survivorSex: string;
+  items: {
+    resultId: string;
+    orderId: string;
+    analyteDisplay: string;
+    valueNumeric: number | null;
+    valueCode: string | null;
+    valueText: string | null;
+    unit: string | null;
+    abnormalFlag: string | null;
+    observedAt: Date;
+  }[];
+}
+
 export interface PatientMergeState {
   id: string;
   mrn: string;
@@ -978,6 +999,13 @@ export interface PatientRepository {
    * for ever, on the question of whether two clinical records are joined.
    */
   findOpenMerge(sourcePatientId: string): Promise<{ mergeId: string } | null>;
+  /**
+   * PA-082. The values filed on the chart's attentions since it was merged;
+   * `null` when the chart is not merged.
+   */
+  classifiedWhileMerged(
+    sourcePatientId: string,
+  ): Promise<ClassifiedWhileMerged | null>;
   /**
    * PA-047, PA-048. Undoes a merge: the chart becomes whole again and a NEW
    * row records who undid it, when and why.
