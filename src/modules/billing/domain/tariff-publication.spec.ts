@@ -8,6 +8,7 @@ import {
   tariffDifferences,
   tariffFinalAmount,
   tariffLinesOn,
+  serviceKindGroup,
 } from './tariff-publication';
 
 // The day derives from a clock, never written by hand.
@@ -159,5 +160,16 @@ describe('BI-110 BI-113 el precio final con IVA que se exhibe (LODC art. 9, D-19
     expect(tariffFinalAmount(Money.parse('0.03'), fifteen).toString()).toBe(
       '0.03',
     );
+  });
+});
+
+describe('BI-289 cada línea de la pared se agrupa por el tipo del servicio', () => {
+  it('BI-289 nombra el grupo con el tipo, como lo lee el público, para los seis tipos', () => {
+    expect(serviceKindGroup('CONSULTATION')).toBe('Consultas');
+    expect(serviceKindGroup('LAB_EXAM')).toBe('Exámenes de laboratorio');
+    expect(serviceKindGroup('IMAGING')).toBe('Imagen');
+    expect(serviceKindGroup('PROCEDURE')).toBe('Procedimientos');
+    expect(serviceKindGroup('SUPPLY')).toBe('Insumos');
+    expect(serviceKindGroup('OTHER')).toBe('Otros');
   });
 });
