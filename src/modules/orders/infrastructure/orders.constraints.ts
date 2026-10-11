@@ -52,6 +52,14 @@ registerConstraintMeanings({
     message:
       'Este examen ya tiene resultados y no se anula. Edite el informe o pídalo de nuevo',
   },
+  // ORD-170 (D-168 §1). Raised by `trg_observation_result_one_standing_per_analyte`
+  // only when a write passes the service's own check (two at once, a psql).
+  observation_result_one_standing_per_analyte: {
+    code: 'RESULT_ALREADY_REPORTED',
+    field: 'results',
+    message:
+      'Esa determinación ya tiene un valor en un informe vigente de esta orden. Use la corrección del informe vigente',
+  },
   analyte_definition_code_unique: {
     code: 'ANALYTE_CODE_DUPLICATE',
     field: 'code',

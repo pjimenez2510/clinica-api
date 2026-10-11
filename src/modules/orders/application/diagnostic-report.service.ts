@@ -46,6 +46,7 @@ import {
   ReportAlreadyCorrectedError,
   ReportCorrectionIncompleteError,
   ReportIssuedInFutureError,
+  ResultAlreadyReportedError,
   ReportNotCorrectableError,
   ReportNotFoundError,
   ResultAlreadyMatchedError,
@@ -271,6 +272,7 @@ export class DiagnosticReportService {
     // deadline runs from; a future one would hide it as «dentro del plazo».
     if (request.issuedAt > now) throw new ReportIssuedInFutureError();
     const prepared = await this.prepare(request.orderId, request.results, requester); // prettier-ignore
+    await this.assertNothingStanding(request.orderId, prepared.results, requester); // prettier-ignore
 
     const report = await this.reports.register(
       {
@@ -1016,6 +1018,33 @@ export class DiagnosticReportService {
     const reports = await this.reports.ofOrder(result.orderId, requester.sites);
     if (!notifiedCorrections(reports).has(result.resultId)) {
       throw new ResultNotCriticalError();
+    }
+  }
+
+  /**
+   * ORD-170 (D-168 §1). A new report carries no determination that already
+   * has a value on a STANDING report of the order —neither superseded nor
+   * annulled—: changing it is the correction of that report, which chains
+   * the two values and puts a told one on the worklist (ORD-143). What has no
+   * value yet still comes in a second report (ORD-152).
+   *
+   * Judged by name, as the chain of corrections pairs values. The service
+   * answers with the sentence; `observation_result_one_standing_per_analyte`
+   * holds it at the write, under the order's lock.
+   */
+  private async assertNothingStanding(
+    orderId: string,
+    results: readonly { analyteDisplay: string }[],
+    requester: Requester,
+  ): Promise<void> {
+    const reports = await this.reports.ofOrder(orderId, requester.sites);
+    const standing = new Set(
+      reports
+        .filter((r) => r.supersededById === null && r.status !== 'CANCELLED')
+        .flatMap((r) => r.results.map((result) => result.analyteDisplay)),
+    );
+    if (results.some((result) => standing.has(result.analyteDisplay))) {
+      throw new ResultAlreadyReportedError();
     }
   }
 

@@ -293,6 +293,25 @@ export class ReportAlreadyCorrectedError extends ConflictError {
 }
 
 /**
+ * ORD-170 (D-168 §1). A report that corrects nothing repeats a determination
+ * that already has a standing value on the order. Two standing values with no
+ * chain between them is the 25 and the 95 side by side, and the 95 never
+ * reaches the worklist of corrections (ORD-143): changing a value that is
+ * there is the correction of its report.
+ */
+export class ResultAlreadyReportedError extends ConflictError {
+  readonly code = 'RESULT_ALREADY_REPORTED';
+  override readonly userTitle =
+    'Esa determinación ya tiene un valor en un informe vigente de esta orden. Use la corrección del informe vigente';
+
+  constructor() {
+    super(
+      'A standing report of the order already holds a value of that analyte',
+    );
+  }
+}
+
+/**
  * ORD-053. A partial or an annulled report is not corrected.
  *
  * An annulled report asserts nothing, so there is nothing to correct. Since

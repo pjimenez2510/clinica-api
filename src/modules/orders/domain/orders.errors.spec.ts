@@ -30,6 +30,7 @@ import {
   OrderItemNotPendingError,
   OrderNotFoundError,
   ReportAlreadyCorrectedError,
+  ResultAlreadyReportedError,
   ReportNotCorrectableError,
   ReportNotFoundError,
   ResultAlreadyMatchedError,
@@ -67,6 +68,7 @@ const EVERY_ERROR: readonly DomainError[] = [
   new OrderDraftOfAnotherPractitionerError(),
   new ExamCategoryMismatchError(),
   new ReportAlreadyCorrectedError(),
+  new ResultAlreadyReportedError(),
   new ReportNotCorrectableError('CANCELLED'),
   new ResultAnalyteUnknownError(),
   new ResultValueTypeMismatchError('HB', 'NUMERIC'),
@@ -167,6 +169,15 @@ describe('el contrato de errores de las órdenes', () => {
     expect(error.code).toBe('ORDER_ITEM_HAS_RESULTS');
     expect(error.userTitle).toBe(
       'Este examen ya tiene resultados y no se anula. Edite el informe o pídalo de nuevo',
+    );
+  });
+
+  it('ORD-170 el informe que repite una determinación vigente es un 409 que manda corregir', () => {
+    const error = new ResultAlreadyReportedError();
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.code).toBe('RESULT_ALREADY_REPORTED');
+    expect(error.userTitle).toBe(
+      'Esa determinación ya tiene un valor en un informe vigente de esta orden. Use la corrección del informe vigente',
     );
   });
 

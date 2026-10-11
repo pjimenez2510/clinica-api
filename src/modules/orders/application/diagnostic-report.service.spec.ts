@@ -20,6 +20,7 @@ import type {
   MatchResultCommand,
   MatchableResult,
   NewReport,
+  ObservationView,
   OrderPatient,
   ReportQuery,
   ResultQuery,
@@ -250,7 +251,28 @@ const aReport = (
   supersededById: overrides.supersededById ?? null,
   supersededAt: overrides.supersededAt ?? null,
   supersededRecordedAt: overrides.supersededRecordedAt ?? null,
-  results: [],
+  results: overrides.results ?? [],
+});
+
+/** ORD-170. A standing value of one determination, as a report reads it. */
+const aValueOf = (analyteDisplay: string): ObservationView => ({
+  id: `result-${analyteDisplay}`,
+  orderItemId: ITEM_BH,
+  analyteConceptId: null,
+  analyteDisplay,
+  valueNumeric: 13,
+  valueText: null,
+  valueCode: null,
+  unit: 'g/dL',
+  referenceLow: null,
+  referenceHigh: null,
+  referenceText: null,
+  criticalLow: null,
+  criticalHigh: null,
+  abnormalFlag: 'NORMAL',
+  observedAt: aReport().issuedAt ?? new Date(0),
+  notices: [],
+  correction: null,
 });
 
 describe('el registro y la corrección de un resultado', () => {
@@ -361,6 +383,34 @@ describe('el registro y la corrección de un resultado', () => {
       analyteDisplay: 'Glucosa en ayunas',
       orderItemId: null,
     });
+  });
+
+  it('ORD-170 rechaza un informe nuevo que repite una determinación con valor vigente', async () => {
+    // D-168 §1. El 95 transcrito como informe nuevo junto al 25 dejaba dos
+    // valores vigentes sin cadena de corrección.
+    reports.existing.set('report-0', aReport({ results: [aValueOf('Hemoglobina')] })); // prettier-ignore
+
+    await expect(
+      service.register(
+        aRequest([{ analyteDefinitionId: HAEMOGLOBIN.id, valueNumeric: 9 }]),
+        requester,
+      ),
+    ).rejects.toMatchObject({ code: 'RESULT_ALREADY_REPORTED' });
+    expect(reports.written).toEqual([]);
+  });
+
+  it('ORD-170 admite en un segundo informe lo que aún no tiene valor vigente', async () => {
+    // Control positivo: el segundo envío del laboratorio (ORD-152), y un
+    // valor del informe ya sustituido o anulado, que no está vigente.
+    reports.existing.set('report-0', aReport({ results: [aValueOf('Glucosa en ayunas')] })); // prettier-ignore
+    reports.existing.set('report-old', aReport({ id: 'report-old', supersededById: 'report-0', results: [aValueOf('Hemoglobina')] })); // prettier-ignore
+    reports.existing.set('report-void', aReport({ id: 'report-void', status: 'CANCELLED', results: [aValueOf('Hemoglobina')] })); // prettier-ignore
+
+    await service.register(
+      aRequest([{ analyteDefinitionId: HAEMOGLOBIN.id, valueNumeric: 9 }]),
+      requester,
+    );
+    expect(reports.written).toHaveLength(1);
   });
 
   it('ORD-030 y ORD-039 derivan el estado del informe sin que nadie lo teclee', async () => {

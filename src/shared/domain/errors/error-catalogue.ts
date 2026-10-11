@@ -1200,6 +1200,9 @@ export const DOMAIN_ERROR_CODES = [
   'REPORT_ALREADY_CORRECTED',
   'REPORT_NOT_CORRECTABLE',
   'REPORT_NOT_FOUND',
+  // ORD-170 (D-168 §1). Un informe nuevo que repite una determinación con
+  // valor vigente: se corrige el informe vigente.
+  'RESULT_ALREADY_REPORTED',
   'RESULT_ANALYTE_UNKNOWN',
   'RESULT_CHART_UNMATCHED',
   'RESULT_FLAG_IS_DERIVED',
