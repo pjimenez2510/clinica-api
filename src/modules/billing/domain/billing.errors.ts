@@ -723,6 +723,28 @@ export class BillingEncounterNotFoundError extends NotFoundError {
  * happened (BI-121) — and the answer is to ask at the counter, not to send a
  * patient away.
  */
+/**
+ * BI-305 (D-216 §1). «Enviar a caja» asked for a payer, and the visit's open
+ * account has another one — opened a second earlier by somebody else, or
+ * before. Handing back that account would charge the visit to a payer nobody
+ * at this counter chose; the sentence names the one it has, so caja changes
+ * it with «Cambiar pagador» if it must.
+ *
+ * The same code as the database's `patient_account_one_open_per_encounter`,
+ * on purpose: it is the same fact said with what caja needs to act on it.
+ */
+export class AccountAlreadyOpenForEncounterError extends ConflictError {
+  readonly code = 'ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER';
+  override readonly userTitle: string;
+
+  constructor(openPayerName: string) {
+    super('The encounter already has an open account with another payer', {
+      openPayerName,
+    });
+    this.userTitle = `Esta atención ya tiene una cuenta abierta con ${openPayerName}. Si debe pagar otro, ábrala y use «Cambiar pagador»`;
+  }
+}
+
 export class PayerRequiredToOpenAccountError extends ValidationError {
   readonly code = 'PAYER_REQUIRED_TO_OPEN_ACCOUNT';
   override readonly userTitle =

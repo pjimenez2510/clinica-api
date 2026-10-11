@@ -625,6 +625,8 @@ export const DOMAIN_ERROR_CODES = [
   // cargo ya facturado (BI-198), y `ACCOUNT_HAS_OPEN_CHARGES` (409)
   // ENUMERA los cargos que impiden cerrar, con identificadores y sin nombres
   // de prestación (BI-007).
+  // BI-305. Also the database's code for the same fact (BI-070).
+  'ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER',
   'ACCOUNT_CLOSED',
   'ACCOUNT_HAS_BILLED_CHARGES',
   'ACCOUNT_HAS_OPEN_CHARGES',

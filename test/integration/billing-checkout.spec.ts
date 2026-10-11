@@ -368,6 +368,49 @@ describe('BI-274 dos «enviar a caja» a la vez dan una cuenta', () => {
     ).toBe(3);
   });
 
+  it('BI-305 dos pulsaciones a la vez con pagadores distintos: una abre la cuenta y la otra dice que ya está abierta', async () => {
+    const insurer = await context.prisma.payer.findUniqueOrThrow({
+      where: { code: 'SEGURO-PRIVADO-EJEMPLO' },
+    });
+    const checkout = racingCheckout();
+    const pressWith = (payerId: string) =>
+      checkout.sendToCashier({
+        siteId: context.siteId,
+        encounterId: context.encounterId,
+        payerId,
+        userId: context.userId,
+      });
+
+    const outcomes = await Promise.allSettled([
+      pressWith(context.payerId),
+      pressWith(insurer.id),
+    ]);
+
+    const won = outcomes.filter((o) => o.status === 'fulfilled');
+    const lost = outcomes.filter((o) => o.status === 'rejected');
+    expect(won).toHaveLength(1);
+    expect(lost).toHaveLength(1);
+    expect((lost[0] as PromiseRejectedResult).reason).toMatchObject({
+      code: 'ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER',
+    });
+    const accounts = await context.prisma.patientAccount.findMany({
+      where: { encounterId: context.encounterId },
+      select: { payerId: true },
+    });
+    expect(accounts).toHaveLength(1);
+    // The account keeps the winner's payer, and the refusal names it.
+    const winnerPayerId = accounts[0]!.payerId;
+    const winnerName = (
+      await context.prisma.payer.findUniqueOrThrow({
+        where: { id: winnerPayerId },
+      })
+    ).name;
+    expect(
+      ((lost[0] as PromiseRejectedResult).reason as { userTitle: string })
+        .userTitle,
+    ).toContain(winnerName);
+  });
+
   it('BI-274 la garantía es la base: rechaza una segunda cuenta abierta de la misma atención', async () => {
     const first = await press();
 

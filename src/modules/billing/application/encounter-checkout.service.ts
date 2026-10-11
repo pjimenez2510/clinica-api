@@ -10,6 +10,7 @@ import {
 import {
   ActAlreadyChargedError,
   BillingEncounterNotFoundError,
+  AccountAlreadyOpenForEncounterError,
   PayerRequiredToOpenAccountError,
   PriceNotFoundError,
 } from '../domain/billing.errors';
@@ -195,17 +196,37 @@ export class EncounterCheckoutService {
       encounterId: acts.encounterId,
       siteId: acts.siteId,
     });
-    if (existing !== null) return existing;
+    if (existing !== null) return this.samePayer(existing, payerId);
 
     if (payerId === undefined) throw new PayerRequiredToOpenAccountError();
 
-    // BI-274. A press that loses the race to open it gets the winner's.
-    return this.patientAccounts.openOrRecoverEncounterAccount({
-      siteId: acts.siteId,
-      patientId: acts.patientId,
-      encounterId: acts.encounterId,
+    // BI-274. A press that loses the race to open it gets the winner's —
+    // only if it asked for the same payer (BI-305).
+    return this.samePayer(
+      await this.patientAccounts.openOrRecoverEncounterAccount({
+        siteId: acts.siteId,
+        patientId: acts.patientId,
+        encounterId: acts.encounterId,
+        payerId,
+      }),
       payerId,
-    });
+    );
+  }
+
+  /**
+   * BI-305 (D-216 §1). The open account is the answer when nobody asked for
+   * a payer or asked for its own; asked for another, caja is told which one
+   * it has instead of finding out in the statement.
+   */
+  private async samePayer(
+    account: AccountView,
+    payerId: string | undefined,
+  ): Promise<AccountView> {
+    if (payerId === undefined || payerId === account.payerId) return account;
+    const payer = await this.catalogue.findPayer(account.payerId);
+    throw new AccountAlreadyOpenForEncounterError(
+      payer?.name ?? 'otro pagador',
+    );
   }
 
   /**
