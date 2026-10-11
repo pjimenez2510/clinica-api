@@ -160,7 +160,7 @@ export class PricingService {
   async setPrice(
     command: {
       payerId: string;
-      billableServiceId: string;
+      serviceId: string;
       amount: Money;
       effectiveFrom: ClinicalDate;
     },
@@ -169,19 +169,17 @@ export class PricingService {
     await this.requirePayer(command.payerId);
     const priceList = await this.requirePriceList(command.payerId);
 
-    const service = await this.catalogue.findBillableService(
-      command.billableServiceId,
-    );
+    const service = await this.catalogue.findService(command.serviceId);
     if (!service) throw new BillableServiceNotFoundError();
 
     const existing = await this.catalogue.listPricesOfService(
       priceList.id,
-      command.billableServiceId,
+      command.serviceId,
     );
 
     const opened = await this.catalogue.applyPriceChange(
       priceList.id,
-      command.billableServiceId,
+      command.serviceId,
       planPriceChange(
         priceInForceOn(existing, command.effectiveFrom),
         command.amount,

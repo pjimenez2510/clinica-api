@@ -2,6 +2,7 @@ import type { ClinicalDate } from '../../../shared/domain/clinic-time';
 import { lineTax } from './charge';
 import { Money, type Percentage, Quantity } from './money';
 import { type ValidityPeriod, isInForceOn } from './price-list';
+import type { ServiceKind } from './billing.repository';
 
 /**
  * THE TARIFF ON THE WALL (LOS art. 184, BI-110 to BI-115).
@@ -20,9 +21,27 @@ import { type ValidityPeriod, isInForceOn } from './price-list';
  * Pure: no clock, no storage. The day comes from the caller's clock.
  */
 
+/**
+ * BI-289 (ADR-013). The group a line is published under: the service's kind,
+ * as the public reads it. It replaced the category's name, which said the
+ * same thing in the clinic's own words.
+ */
+export function serviceKindGroup(kind: ServiceKind): string {
+  return SERVICE_KIND_GROUPS[kind];
+}
+
+const SERVICE_KIND_GROUPS: Record<ServiceKind, string> = {
+  CONSULTATION: 'Consultas',
+  PROCEDURE: 'Procedimientos',
+  LAB_EXAM: 'Exámenes de laboratorio',
+  IMAGING: 'Imagen',
+  SUPPLY: 'Insumos',
+  OTHER: 'Otros',
+};
+
 /** One line of the tariff, as published and as it would be published now. */
 export interface TariffLine {
-  billableServiceId: string;
+  serviceId: string;
   code: string;
   name: string;
   categoryName: string;
@@ -59,7 +78,7 @@ export function tariffFinalAmount(
 
 /** A service of the self-pay list with every validity of its price there. */
 export interface TariffCandidate {
-  billableServiceId: string;
+  serviceId: string;
   code: string;
   name: string;
   categoryName: string;
@@ -84,7 +103,7 @@ export function tariffLinesOn(
     const price = candidate.prices.find((row) => isInForceOn(row, day));
     if (price === undefined) continue;
     lines.push({
-      billableServiceId: candidate.billableServiceId,
+      serviceId: candidate.serviceId,
       code: candidate.code,
       name: candidate.name,
       categoryName: candidate.categoryName,
@@ -118,13 +137,13 @@ export function sortTariffLines<T extends TariffLine>(
 export type TariffDifference =
   | {
       kind: 'PRICE_CHANGED';
-      billableServiceId: string;
+      serviceId: string;
       name: string;
       published: Pick<TariffLine, 'amount' | 'taxPercentage'>;
       current: Pick<TariffLine, 'amount' | 'taxPercentage'>;
     }
-  | { kind: 'WITHDRAWN'; billableServiceId: string; name: string }
-  | { kind: 'ADDED'; billableServiceId: string; name: string };
+  | { kind: 'WITHDRAWN'; serviceId: string; name: string }
+  | { kind: 'ADDED'; serviceId: string; name: string };
 
 /**
  * BI-115. The differences between what was published and what would be
@@ -135,14 +154,14 @@ export function tariffDifferences(
   published: readonly TariffLine[],
   current: readonly TariffLine[],
 ): TariffDifference[] {
-  const now = new Map(current.map((line) => [line.billableServiceId, line]));
+  const now = new Map(current.map((line) => [line.serviceId, line]));
   const differences: TariffDifference[] = [];
 
   for (const line of published) {
-    const today = now.get(line.billableServiceId);
-    now.delete(line.billableServiceId);
+    const today = now.get(line.serviceId);
+    now.delete(line.serviceId);
     if (today === undefined) {
-      differences.push({ kind: 'WITHDRAWN', billableServiceId: line.billableServiceId, name: line.name }); // prettier-ignore
+      differences.push({ kind: 'WITHDRAWN', serviceId: line.serviceId, name: line.name }); // prettier-ignore
       continue;
     }
     if (
@@ -151,7 +170,7 @@ export function tariffDifferences(
     ) {
       differences.push({
         kind: 'PRICE_CHANGED',
-        billableServiceId: line.billableServiceId,
+        serviceId: line.serviceId,
         name: today.name,
         published: { amount: line.amount, taxPercentage: line.taxPercentage },
         current: { amount: today.amount, taxPercentage: today.taxPercentage },
@@ -159,7 +178,7 @@ export function tariffDifferences(
     }
   }
   for (const line of sortTariffLines([...now.values()])) {
-    differences.push({ kind: 'ADDED', billableServiceId: line.billableServiceId, name: line.name }); // prettier-ignore
+    differences.push({ kind: 'ADDED', serviceId: line.serviceId, name: line.name }); // prettier-ignore
   }
   return differences;
 }

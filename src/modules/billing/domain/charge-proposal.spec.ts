@@ -34,7 +34,7 @@ const acts = (overrides: Partial<EncounterActs> = {}): EncounterActs => ({
   status: 'DISCHARGED',
   serviceDate: VISIT_DATE,
   visitSequence: 'FIRST_TIME',
-  serviceTypeId: DERMATOLOGY,
+  serviceId: DERMATOLOGY,
   procedures: [],
   exams: [],
   clinicallyAttended: true,
@@ -42,13 +42,11 @@ const acts = (overrides: Partial<EncounterActs> = {}): EncounterActs => ({
 });
 
 const mapping = (overrides: Partial<ChargeMapping> = {}): ChargeMapping => ({
-  consultation: { billableServiceId: 'service-consultation', active: true },
-  byProcedureConcept: new Map([
-    ['concept-suture', { billableServiceId: 'service-suture', active: true }],
+  consultation: { serviceId: 'service-consultation', active: true },
+  byProcedureCode: new Map([
+    ['code-suture', { serviceId: 'service-suture', active: true }],
   ]),
-  byExamCode: new Map([
-    ['EX-BH', { billableServiceId: 'service-bh', active: true }],
-  ]),
+  byExamCode: new Map([['EX-BH', { serviceId: 'service-bh', active: true }]]),
   ...overrides,
 });
 
@@ -63,7 +61,7 @@ const nothingCharged = (
 
 const aSuture = {
   encounterProcedureId: 'procedure-1',
-  conceptId: 'concept-suture',
+  procedureCode: 'code-suture',
   serviceDate: PROCEDURE_DATE,
   quantity: 2,
 };
@@ -158,12 +156,12 @@ describe('BI-158 la consulta se resuelve por dato, nunca por el nombre', () => {
     // from. The answer is a proposal with one line missing — never a guess: a
     // wrong specialty is a wrong price on an invoice nobody can correct.
     const proposal = proposeCharges(
-      acts({ serviceTypeId: null }),
+      acts({ serviceId: null }),
       mapping(),
       nothingCharged(),
     );
 
-    expect(consultationKeyOf(acts({ serviceTypeId: null }))).toBeNull();
+    expect(consultationKeyOf(acts({ serviceId: null }))).toBeNull();
     expect(proposal.proposed).toEqual([]);
     expect(proposal.skipped).toEqual([
       expect.objectContaining({
@@ -194,7 +192,7 @@ describe('BI-155 lo que no se puede derivar se dice, y no bloquea el resto', () 
           aSuture,
           {
             encounterProcedureId: 'procedure-2',
-            conceptId: 'concept-nobody-mapped',
+            procedureCode: 'code-nobody-mapped',
             serviceDate: PROCEDURE_DATE,
             quantity: 1,
           },
@@ -220,7 +218,7 @@ describe('BI-155 lo que no se puede derivar se dice, y no bloquea el resto', () 
       acts({ exams: [aBloodCount] }),
       mapping({
         byExamCode: new Map([
-          ['EX-BH', { billableServiceId: 'service-bh', active: false }],
+          ['EX-BH', { serviceId: 'service-bh', active: false }],
         ]),
       }),
       nothingCharged(),

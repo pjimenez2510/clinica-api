@@ -24,7 +24,7 @@ const SERVICE_DATE = parseClinicalDate('2026-05-11');
 const resolution = (
   overrides: Partial<ChargeResolution> = {},
 ): ChargeResolution => ({
-  billableServiceId: 'service-1',
+  serviceId: 'service-1',
   serviceName: 'Consulta de medicina general, primera vez',
   serviceActive: true,
   priceId: 'price-1',

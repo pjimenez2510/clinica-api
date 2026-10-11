@@ -32,7 +32,7 @@ const charge = (
 ): ChargeView => ({
   id: 'charge-1',
   accountId: ACCOUNT,
-  billableServiceId: 'service-first-time',
+  serviceId: 'service-first-time',
   encounterId: 'encounter-1',
   serviceDate: SERVICE_DATE,
   quantity: Quantity.ONE,
@@ -77,17 +77,17 @@ function build(overrides: Record<string, unknown> = {}) {
         { chargeId: 'charge-1', unitAmount: Money.parse('22.00') },
       ]),
     findConsultationCharge: vi.fn().mockResolvedValue(charge('PLANNED')),
-    findBillableService: vi.fn().mockResolvedValue({ active: true }),
+    findService: vi.fn().mockResolvedValue({ active: true }),
     findPayer: vi.fn().mockResolvedValue({ id: 'payer-iess', active: true }),
     findPriceListOfPayer: vi.fn().mockResolvedValue({ id: 'list-iess' }),
     findConsultationService: vi.fn().mockResolvedValue({
-      billableServiceId: 'service-subsequent',
+      serviceId: 'service-subsequent',
       active: true,
     }),
     findEncounterActs: vi.fn().mockResolvedValue({
       encounterId: 'encounter-1',
       siteId: SITE,
-      serviceTypeId: 'service-type-1',
+      serviceId: 'service-type-1',
       visitSequence: 'SUBSEQUENT',
     }),
     ...overrides,
@@ -161,11 +161,11 @@ describe('BI-195, BI-196 deshacer y «No se cobra»', () => {
 describe('BI-197 editar el cargo', () => {
   it('BI-197 rechaza cambiar a una prestación inactiva', async () => {
     const { service, mocks } = build({
-      findBillableService: vi.fn().mockResolvedValue({ active: false }),
+      findService: vi.fn().mockResolvedValue({ active: false }),
     });
 
     await expect(
-      service.editCharge({ ...command, billableServiceId: 'service-2' }),
+      service.editCharge({ ...command, serviceId: 'service-2' }),
     ).rejects.toMatchObject({ code: 'BILLABLE_SERVICE_INACTIVE' });
     expect(mocks.editCharge).not.toHaveBeenCalled();
   });
@@ -176,7 +176,7 @@ describe('BI-197 editar el cargo', () => {
 
     await service.editCharge({ ...command, quantity });
 
-    expect(mocks.findBillableService).not.toHaveBeenCalled();
+    expect(mocks.findService).not.toHaveBeenCalled();
     expect(mocks.editCharge).toHaveBeenCalledWith(
       expect.objectContaining({ chargeId: 'charge-1', quantity }),
     );
@@ -234,7 +234,7 @@ describe('BI-203 la consulta se re-tarifa al corregir primera vez o subsecuente'
       expect.objectContaining({
         chargeId: 'charge-1',
         changedById: 'doctor-1',
-        billableServiceId: 'service-subsequent',
+        serviceId: 'service-subsequent',
       }),
     );
   });

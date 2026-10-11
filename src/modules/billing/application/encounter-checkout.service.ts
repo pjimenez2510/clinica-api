@@ -219,19 +219,19 @@ export class EncounterCheckoutService {
   private async mappingFor(acts: EncounterActs): Promise<ChargeMapping> {
     const consultationKey = consultationKeyOf(acts);
 
-    const [consultation, byProcedureConcept, byExamCode] = await Promise.all([
+    const [consultation, byProcedureCode, byExamCode] = await Promise.all([
       consultationKey === null
         ? Promise.resolve(null)
         : this.catalogue.findConsultationService(consultationKey),
-      this.catalogue.findServicesByProcedureConcept(
-        distinct(acts.procedures.map((procedure) => procedure.conceptId)),
+      this.catalogue.findServicesByProcedureCode(
+        distinct(acts.procedures.map((procedure) => procedure.procedureCode)),
       ),
       this.catalogue.findServicesByExamCode(
         distinct(acts.exams.map((exam) => exam.testCode)),
       ),
     ]);
 
-    return { consultation, byProcedureConcept, byExamCode };
+    return { consultation, byProcedureCode, byExamCode };
   }
 
   /** BI-154, BI-157. Sets, so the derivation asks in constant time per line. */
@@ -275,7 +275,7 @@ export class EncounterCheckoutService {
     try {
       const charge = await this.accounts.addCharge({
         accountId: account.id,
-        billableServiceId: line.billableServiceId,
+        serviceId: line.serviceId,
         encounterId: account.encounterId,
         serviceDate: line.serviceDate,
         quantity: line.quantity,

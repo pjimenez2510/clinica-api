@@ -45,8 +45,12 @@ export type VisitSequence = (typeof VISIT_SEQUENCES)[number];
  */
 export interface PerformedProcedure {
   encounterProcedureId: string;
-  /** `catalog_concept` of the procedure; the tie to a service goes through it. */
-  conceptId: string;
+  /**
+   * BI-286. `encounter_procedure.procedure_code`, the tariff code frozen when
+   * it was recorded: the procedure service with that code charges it, of any
+   * edition of the tariff.
+   */
+  procedureCode: string;
   serviceDate: ClinicalDate;
   /** `encounter_procedure.quantity`, a whole number of times it was done. */
   quantity: number;
@@ -60,14 +64,13 @@ export interface PerformedProcedure {
 /**
  * A test asked for during the visit — ONE LINE of a service order.
  *
- * The tie to what it costs is `exam_definition.billable_service_id`, and the
- * way from this line to that definition is the CODE, which is what
- * `service_order_item.test_code` freezes. Reading it back through the order's
- * catalogue concept would ask a different question.
+ * The tie to what it costs is the CODE `service_order_item.test_code` froze:
+ * the exam IS its service (ADR-013, BI-284). Reading it back through the
+ * order's catalogue concept would ask a different question.
  */
 export interface OrderedExam {
   serviceOrderItemId: string;
-  /** `exam_definition.code`, frozen on the order line as `test_code`. */
+  /** The service's `code`, frozen on the order line as `test_code`. */
   testCode: string;
   serviceDate: ClinicalDate;
   /** `CANCELLED` lines are not proposed: nobody did them. */
@@ -78,7 +81,7 @@ export interface OrderedExam {
  * A visit, seen from the money side: what decides WHAT to propose, and never
  * whether care may proceed.
  *
- * `serviceTypeId` is `null` more often than it looks — a walk-in has no
+ * `serviceId` is `null` more often than it looks — a walk-in has no
  * appointment to read it from — and that is a proposal with one line
  * missing, never an error: BI-155.
  */
@@ -92,8 +95,8 @@ export interface EncounterActs {
   serviceDate: ClinicalDate;
   /** RDACAA's first-time or subsequent: recorded, and no longer priced (BI-158). */
   visitSequence: VisitSequence;
-  /** BI-158. The appointment's service type, what is charged. `null` for a walk-in. */
-  serviceTypeId: string | null;
+  /** BI-287. The service the appointment booked, what is charged. `null` for a walk-in. */
+  serviceId: string | null;
   procedures: PerformedProcedure[];
   exams: OrderedExam[];
   /**

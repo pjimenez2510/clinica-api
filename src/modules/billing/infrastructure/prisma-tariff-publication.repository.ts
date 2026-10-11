@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
-import { selfPayPriceListId } from '../../../shared/infrastructure/prisma/catalogue-entry';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
 
 import { Money, Percentage } from '../domain/money';
@@ -9,9 +8,11 @@ import { toClinicalDate } from '../domain/price-list';
 import {
   type TariffCandidate,
   type TariffLine,
+  serviceKindGroup,
   sortTariffLines,
   tariffFinalAmount,
 } from '../domain/tariff-publication';
+import type { ServiceKind } from '../domain/billing.repository';
 import type {
   NewTariffPublication,
   TariffPublicationRepository,
@@ -19,6 +20,7 @@ import type {
   TariffPublicationView,
 } from '../domain/tariff-publication.repository';
 import { asDateColumn } from './prisma-billing-catalogue.repository';
+import { selfPayPriceListId } from './self-pay-list';
 
 /**
  * BI-110 to BI-115, in PostgreSQL.
@@ -87,7 +89,7 @@ export class PrismaTariffPublicationRepository implements TariffPublicationRepos
       await tx.tariffPublicationItem.createMany({
         data: lines.map((line) => ({
           publicationId: created.id,
-          billableServiceId: line.billableServiceId,
+          serviceId: line.serviceId,
           serviceCode: line.code,
           serviceName: line.name,
           categoryName: line.categoryName,
@@ -139,7 +141,7 @@ export class PrismaTariffPublicationRepository implements TariffPublicationRepos
         ...SUMMARY_SELECT,
         items: {
           select: {
-            billableServiceId: true,
+            serviceId: true,
             serviceCode: true,
             serviceName: true,
             categoryName: true,
@@ -156,7 +158,7 @@ export class PrismaTariffPublicationRepository implements TariffPublicationRepos
       const amount = Money.parse(item.amount);
       const taxPercentage = percentageOf(item.taxPercentage);
       return {
-        billableServiceId: item.billableServiceId,
+        serviceId: item.serviceId,
         code: item.serviceCode,
         name: item.serviceName,
         categoryName: item.categoryName,
@@ -217,14 +219,14 @@ async function readSelfPayTariff(
   const priceListId = await selfPayPriceListId(client);
   if (priceListId === null) return null;
 
-  const services = await client.billableService.findMany({
+  const services = await client.service.findMany({
     where: { prices: { some: { priceListId } } },
     select: {
       id: true,
       code: true,
       name: true,
       active: true,
-      category: { select: { name: true } },
+      kind: true,
       taxRate: { select: { percentage: true } },
       prices: {
         where: { priceListId },
@@ -236,10 +238,11 @@ async function readSelfPayTariff(
   return {
     priceListId,
     candidates: services.map((service) => ({
-      billableServiceId: service.id,
+      serviceId: service.id,
       code: service.code,
       name: service.name,
-      categoryName: service.category.name,
+      // BI-289. The group is the service's kind, as the public reads it.
+      categoryName: serviceKindGroup(service.kind as ServiceKind),
       active: service.active,
       taxPercentage: percentageOf(service.taxRate.percentage),
       prices: service.prices.map((price) => ({

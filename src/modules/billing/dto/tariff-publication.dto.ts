@@ -58,7 +58,7 @@ const publicationSummarySchema = z.object({
 const publicationSchema = publicationSummarySchema.extend({
   items: z.array(
     publishedPriceSchema.extend({
-      billableServiceId: z.uuid(),
+      serviceId: z.uuid(),
       code: z.string(),
       name: z.string(),
       categoryName: z.string(),
@@ -74,7 +74,7 @@ export type TariffPublicationResponse = z.infer<typeof publicationSchema>;
  */
 const differenceSchema = z.object({
   kind: z.enum(['PRICE_CHANGED', 'WITHDRAWN', 'ADDED']),
-  billableServiceId: z.uuid(),
+  serviceId: z.uuid(),
   name: z.string(),
   published: shownPriceSchema.nullable(),
   current: shownPriceSchema.nullable(),

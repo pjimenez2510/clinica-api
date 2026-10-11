@@ -28,16 +28,16 @@ import { PricingService } from './application/pricing.service';
 import { ServiceCatalogueService } from './application/service-catalogue.service';
 import type { Requester } from './application/service-catalogue.service';
 import type {
-  BillableServiceView,
   PayerView,
-  ServiceCategoryView,
+  ServiceListItem,
+  ServicePriceView,
+  ServiceView,
 } from './domain/billing.repository';
 import { Money } from './domain/money';
 import type { PriceRow } from './domain/price-list';
 import {
   CatalogueQueryDto,
   CreatePayerDto,
-  CreateServiceCategoryDto,
   CreateServiceDto,
   MarkTaxReviewedDto,
   MarkWrittenConsentDto,
@@ -45,24 +45,22 @@ import {
   PayerListDto,
   PriceDto,
   PriceListResponseDto,
-  ServiceCategoryDto,
-  ServiceCategoryListDto,
-  ServiceExamListDto,
+  ServiceDetailDto,
   ServicePriceListDto,
   ServiceDto,
   ServiceListDto,
+  ServiceQueryDto,
   CorrectPriceDto,
   CorrectedPriceDto,
   SetPriceDto,
   TaxRateDto,
   UpdatePayerDto,
-  UpdateServiceCategoryDto,
   UpdateServiceDto,
   type PayerResponse,
   type PriceListResponse,
   type PriceResponse,
-  type ServiceCategoryResponse,
-  type ServiceExamResponse,
+  type ServiceDetailResponse,
+  type ServiceListItemResponse,
   type ServicePriceResponse,
   type ServiceResponse,
   type TaxRateResponse,
@@ -121,46 +119,86 @@ export class BillingCatalogueController {
     };
   }
 
-  /** BI-010, BI-011, BI-014. */
+  /**
+   * BI-282 (D-220 §3). One page of the catalogue, filtered and ordered in the
+   * database, each row with its prices in force today in every active list.
+   * The selector («Agregar cargo») asks the same route for its first 20.
+   */
   @Get('services')
   @RequirePermission('billing:read', 'global')
-  @ApiOperation({ summary: 'Consultar el catálogo de prestaciones' })
+  @ApiOperation({ summary: 'Buscar en el catálogo de servicios, por páginas' })
   @ApiOkResponse({ type: ServiceListDto })
-  async listServices(
-    @Query() query: CatalogueQueryDto,
-  ): Promise<{ items: ServiceResponse[] }> {
-    const items = await this.services.listServices({
+  async listServices(@Query() query: ServiceQueryDto): Promise<{
+    items: ServiceListItemResponse[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const page = await this.services.listServices({
+      query: query.q ?? null,
+      kind: query.kind ?? null,
+      specialtyId: query.specialtyId ?? null,
       includeInactive: query.includeInactive,
+      page: query.page,
+      pageSize: query.pageSize,
+      today: clinicalDateOf(new Date()),
     });
-    return { items: items.map(toServiceResponse) };
+    return { ...page, items: page.items.map(toServiceListItemResponse) };
   }
 
-  /** BI-010 a BI-013. */
+  /** BI-283. The service's card: data, extension, analytes and prices. */
+  @Get('services/:serviceId')
+  @RequirePermission('billing:read', 'global')
+  @ApiOperation({ summary: 'Consultar la ficha de un servicio' })
+  @ApiOkResponse({ type: ServiceDetailDto })
+  async serviceDetail(
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
+  ): Promise<ServiceDetailResponse> {
+    const detail = await this.services.serviceDetail(
+      serviceId,
+      clinicalDateOf(new Date()),
+    );
+    return {
+      ...toServiceResponse(detail),
+      analytes: detail.analytes.map((analyte) => ({
+        ...analyte,
+        ranges: analyte.ranges.map((range) => ({ ...range })),
+      })),
+      prices: detail.prices.map(toServicePriceResponse),
+    };
+  }
+
+  /** BI-280. The kind first, then only what it carries, and its price. */
   @Post('services')
   @RequirePermission('billing:price-manage', 'global')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Crear una prestación del catálogo' })
+  @ApiOperation({ summary: 'Crear un servicio del catálogo con su precio particular' }) // prettier-ignore
   @ApiCreatedResponse({ type: ServiceDto })
   async createService(@Body() dto: CreateServiceDto): Promise<ServiceResponse> {
     const requester = this.requireClinicWide('billing:price-manage');
     return toServiceResponse(
       await this.services.createService(
         {
+          kind: dto.kind,
           code: dto.code,
           name: dto.name,
-          categoryId: dto.categoryId,
-          tariffCode: dto.tariffCode ?? null,
+          selfPayAmount: Money.parse(dto.selfPayAmount),
+          mspCode: dto.mspCode ?? null,
           taxRateId: dto.taxRateId,
+          specialtyId: dto.specialtyId,
+          durationMinutes: dto.durationMinutes,
+          visitKind: dto.visitKind,
+          exam: dto.exam,
         },
         requester,
       ),
     );
   }
 
-  /** BI-011, BI-014, BI-025. */
+  /** BI-279, BI-281, BI-284 to BI-286, BI-025. */
   @Patch('services/:serviceId')
   @RequirePermission('billing:price-manage', 'global')
-  @ApiOperation({ summary: 'Modificar una prestación del catálogo' })
+  @ApiOperation({ summary: 'Corregir un servicio del catálogo' })
   @ApiOkResponse({ type: ServiceDto })
   async updateService(
     @Param('serviceId', ParseUUIDPipe) serviceId: string,
@@ -168,18 +206,7 @@ export class BillingCatalogueController {
   ): Promise<ServiceResponse> {
     const requester = this.requireClinicWide('billing:price-manage');
     return toServiceResponse(
-      await this.services.updateService(
-        serviceId,
-        {
-          name: dto.name,
-          categoryId: dto.categoryId,
-          tariffCode: dto.tariffCode,
-          taxRateId: dto.taxRateId,
-          active: dto.active,
-          procedureConceptId: dto.procedureConceptId,
-        },
-        requester,
-      ),
+      await this.services.updateService(serviceId, { ...dto }, requester),
     );
   }
 
@@ -191,7 +218,7 @@ export class BillingCatalogueController {
   @Post('services/:serviceId/written-consent')
   @RequirePermission('record:consent-rule', 'global')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Marcar si una prestación exige el consentimiento informado escrito (024)' }) // prettier-ignore
+  @ApiOperation({ summary: 'Marcar si un servicio exige el consentimiento informado escrito (024)' }) // prettier-ignore
   @ApiOkResponse({ type: ServiceDto })
   async markWrittenConsent(
     @Param('serviceId', ParseUUIDPipe) serviceId: string,
@@ -208,7 +235,7 @@ export class BillingCatalogueController {
   }
 
   /**
-   * BI-024. «Revisé la tarifa de esta prestación»: who and when, from the
+   * BI-024. «Revisé el IVA de este servicio»: who and when, from the
    * session and the application's clock, of the rate in the body —the one
    * the reviewer saw—, or 409 `TAX_REVIEW_RATE_CHANGED` if it is no longer
    * the service's. Changing the rate afterwards makes it pending again
@@ -217,7 +244,7 @@ export class BillingCatalogueController {
   @Post('services/:serviceId/tax-review')
   @RequirePermission('billing:price-manage', 'global')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Marcar revisada la tarifa de impuesto de una prestación' }) // prettier-ignore
+  @ApiOperation({ summary: 'Marcar revisado el IVA de un servicio' }) // prettier-ignore
   @ApiOkResponse({ type: ServiceDto })
   async markTaxReviewed(
     @Param('serviceId', ParseUUIDPipe) serviceId: string,
@@ -232,7 +259,7 @@ export class BillingCatalogueController {
   /** BI-189. The service's prices in every payer's list, the one in force marked. */
   @Get('services/:serviceId/prices')
   @RequirePermission('billing:read', 'global')
-  @ApiOperation({ summary: 'Consultar los precios de una prestación en todas las listas' }) // prettier-ignore
+  @ApiOperation({ summary: 'Consultar los precios de un servicio en todas las listas' }) // prettier-ignore
   @ApiOkResponse({ type: ServicePriceListDto })
   async servicePrices(
     @Param('serviceId', ParseUUIDPipe) serviceId: string,
@@ -241,91 +268,20 @@ export class BillingCatalogueController {
       serviceId,
       clinicalDateOf(new Date()),
     );
-    return {
-      items: items.map((price) => ({
-        priceId: price.priceId,
-        payer: price.payer,
-        amount: price.amount.toString(),
-        validFrom: price.validFrom,
-        validTo: price.validTo,
-        inForce: price.inForce,
-      })),
-    };
-  }
-
-  /** BI-188. The exams of the exam catalogue charged through the service. */
-  @Get('services/:serviceId/exams')
-  @RequirePermission('billing:read', 'global')
-  @ApiOperation({ summary: 'Consultar los exámenes que se cobran con una prestación' }) // prettier-ignore
-  @ApiOkResponse({ type: ServiceExamListDto })
-  async serviceExams(
-    @Param('serviceId', ParseUUIDPipe) serviceId: string,
-  ): Promise<{ items: ServiceExamResponse[] }> {
-    return { items: await this.services.serviceExams(serviceId) };
+    return { items: items.map(toServicePriceResponse) };
   }
 
   /** BI-012. */
   @Delete('services/:serviceId')
   @RequirePermission('billing:price-manage', 'global')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Retirar una prestación que nadie ha usado' })
+  @ApiOperation({ summary: 'Retirar un servicio que nadie ha usado' })
   @ApiNoContentResponse()
   async deleteService(
     @Param('serviceId', ParseUUIDPipe) serviceId: string,
   ): Promise<void> {
     const requester = this.requireClinicWide('billing:price-manage');
     await this.services.deleteService(serviceId, requester);
-  }
-
-  /** BI-185. The categories, alphabetical; the inactive ones on request. */
-  @Get('service-categories')
-  @RequirePermission('billing:read', 'global')
-  @ApiOperation({ summary: 'Consultar las categorías de prestación' })
-  @ApiOkResponse({ type: ServiceCategoryListDto })
-  async listCategories(
-    @Query() query: CatalogueQueryDto,
-  ): Promise<{ items: ServiceCategoryResponse[] }> {
-    const items = await this.services.listCategories({
-      includeInactive: query.includeInactive,
-    });
-    return { items: items.map(toCategoryResponse) };
-  }
-
-  /** BI-185, BI-186. */
-  @Post('service-categories')
-  @RequirePermission('billing:price-manage', 'global')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Crear una categoría de prestación' })
-  @ApiCreatedResponse({ type: ServiceCategoryDto })
-  async createCategory(
-    @Body() dto: CreateServiceCategoryDto,
-  ): Promise<ServiceCategoryResponse> {
-    const requester = this.requireClinicWide('billing:price-manage');
-    return toCategoryResponse(
-      await this.services.createCategory(
-        { name: dto.name, kind: dto.kind },
-        requester,
-      ),
-    );
-  }
-
-  /** BI-185, BI-187. Renames, (de)activates or reclassifies when nothing clashes. */
-  @Patch('service-categories/:categoryId')
-  @RequirePermission('billing:price-manage', 'global')
-  @ApiOperation({ summary: 'Renombrar o desactivar una categoría de prestación' }) // prettier-ignore
-  @ApiOkResponse({ type: ServiceCategoryDto })
-  async updateCategory(
-    @Param('categoryId', ParseUUIDPipe) categoryId: string,
-    @Body() dto: UpdateServiceCategoryDto,
-  ): Promise<ServiceCategoryResponse> {
-    const requester = this.requireClinicWide('billing:price-manage');
-    return toCategoryResponse(
-      await this.services.updateCategory(
-        categoryId,
-        { name: dto.name, active: dto.active, kind: dto.kind },
-        requester,
-      ),
-    );
   }
 
   /** BI-030, BI-031. */
@@ -417,7 +373,7 @@ export class BillingCatalogueController {
   @RequirePermission('billing:price-manage', 'global')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Fijar el precio de una prestación desde una fecha',
+    summary: 'Fijar el precio de un servicio desde una fecha',
   })
   @ApiCreatedResponse({ type: PriceDto })
   async setPrice(
@@ -429,7 +385,7 @@ export class BillingCatalogueController {
       await this.pricing.setPrice(
         {
           payerId,
-          billableServiceId: dto.billableServiceId,
+          serviceId: dto.serviceId,
           // The string never becomes a number on the way in either: `Money`
           // parses the decimal text the DTO validated.
           amount: Money.parse(dto.amount),
@@ -480,20 +436,19 @@ export class BillingCatalogueController {
  * The service as served. The tax percentage leaves as a string (BI-001), and
  * there is still no amount on it (BI-006).
  */
-function toServiceResponse(service: BillableServiceView): ServiceResponse {
+function toServiceResponse(service: ServiceView): ServiceResponse {
   return {
     id: service.id,
     code: service.code,
     name: service.name,
-    category: toCategoryResponse(service.category),
-    procedureConcept: service.procedureConcept,
-    tariffCode: service.tariffCode,
+    kind: service.kind,
+    consultation: service.consultation && { ...service.consultation },
+    exam: service.exam && { ...service.exam },
+    mspCode: service.mspCode,
     taxRateId: service.taxRateId,
     taxSriCode: service.taxSriCode,
     taxPercentage: service.taxPercentage?.toString() ?? null,
     active: service.active,
-    // BI-188, SP-031. Which service types it charges for, read-only here.
-    serviceTypes: service.serviceTypes.map((type) => ({ ...type })),
     writtenConsent: {
       required: service.writtenConsent.required,
       setAt: service.writtenConsent.setAt?.toISOString() ?? null,
@@ -518,15 +473,33 @@ function toServiceResponse(service: BillableServiceView): ServiceResponse {
   };
 }
 
-/** BI-185. A category as served. */
-function toCategoryResponse(
-  category: ServiceCategoryView,
-): ServiceCategoryResponse {
+/** BI-282. A row of the list: the service and its prices in force today. */
+function toServiceListItemResponse(
+  item: ServiceListItem,
+): ServiceListItemResponse {
   return {
-    id: category.id,
-    name: category.name,
-    kind: category.kind,
-    active: category.active,
+    ...toServiceResponse(item),
+    prices: item.prices.map((price) => ({
+      priceListId: price.priceListId,
+      payerId: price.payerId,
+      priceId: price.priceId,
+      amount: price.amount.toString(),
+      validFrom: price.validFrom,
+    })),
+  };
+}
+
+/** BI-189. One price of the service in one payer's list. */
+function toServicePriceResponse(
+  price: ServicePriceView & { inForce: boolean },
+): ServicePriceResponse {
+  return {
+    priceId: price.priceId,
+    payer: price.payer,
+    amount: price.amount.toString(),
+    validFrom: price.validFrom,
+    validTo: price.validTo,
+    inForce: price.inForce,
   };
 }
 
@@ -548,7 +521,7 @@ function toPayerResponse(payer: PayerView): PayerResponse {
 function toPriceResponse(price: PriceRow): PriceResponse {
   return {
     id: price.id,
-    billableServiceId: price.billableServiceId,
+    serviceId: price.serviceId,
     // A STRING. `JSON.parse` would turn a number back into a float and lose
     // the cent this whole module exists to keep (BI-001).
     amount: price.amount.toString(),

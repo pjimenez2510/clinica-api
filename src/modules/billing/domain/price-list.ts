@@ -33,7 +33,7 @@ export interface ValidityPeriod {
 /** A price row, as this module reads it. */
 export interface PriceRow extends ValidityPeriod {
   id: string;
-  billableServiceId: string;
+  serviceId: string;
   amount: Money;
 }
 

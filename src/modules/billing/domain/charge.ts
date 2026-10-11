@@ -32,7 +32,7 @@ import { InvalidChargeQuantityError } from './billing.errors';
 
 /** Everything the resolution of a charge needs, already read. */
 export interface ChargeResolution {
-  billableServiceId: string;
+  serviceId: string;
   serviceName: string;
   serviceActive: boolean;
   /** The price row in force on `serviceDate`, from the account's payer list. */
@@ -45,7 +45,7 @@ export interface ChargeResolution {
 
 /** The frozen block, ready to be written and never read from elsewhere again. */
 export interface FrozenCharge {
-  billableServiceId: string;
+  serviceId: string;
   serviceDate: ClinicalDate;
   quantity: Quantity;
   unitAmount: Money;
@@ -71,7 +71,7 @@ export function freezeCharge(
   if (!quantity.isPositive()) throw new InvalidChargeQuantityError();
 
   return {
-    billableServiceId: resolution.billableServiceId,
+    serviceId: resolution.serviceId,
     serviceDate,
     quantity,
     unitAmount: resolution.unitAmount,

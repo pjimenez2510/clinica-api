@@ -1,30 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { parseClinicalDate } from '../../../shared/domain/clinic-time';
+import {
+  addDays,
+  clinicalDateOf,
+  parseClinicalDate,
+} from '../../../shared/domain/clinic-time';
+import { DurationNotSlotMultipleError } from '../../../shared/domain/errors/slot-atom.errors';
+import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
 import {
   BillableServiceInUseError,
   BillableServiceNotFoundError,
-  ServiceCategoryInactiveError,
-  ServiceKindMismatchError,
-  TaxRateNotFoundError,
-  TaxRateRequiredError,
-  TaxReviewRateChangedError,
-  ServiceNamedElsewhereError,
+  ConsultationIncompleteError,
+  PriceListNotFoundError,
+  ServiceCodeInvoicedError,
+  ServiceCodeOrderedError,
   ServiceConsentTieLockedError,
+  ServiceKindMismatchError,
   ServiceNotAProcedureError,
   ServiceProcedureNotInTariffError,
   ServiceProcedureTakenError,
-  ServiceTariffCodeFromProcedureError,
   ServiceTariffCodeInvoicedError,
+  TaxRateNotFoundError,
+  TaxReviewRateChangedError,
 } from '../domain/billing.errors';
 import type {
-  BillableServiceView,
   BillingCatalogueRepository,
-  ServiceCategoryView,
+  NewService,
+  ServiceView,
   TaxRateView,
 } from '../domain/billing.repository';
-import { Percentage } from '../domain/money';
-import type { AccessAuditEntry } from '../../../shared/audit/access-audit.port';
+import { Money, Percentage } from '../domain/money';
 
 import { ServiceCatalogueService } from './service-catalogue.service';
 
@@ -39,31 +44,23 @@ const taxRate: TaxRateView = {
   validTo: null,
 };
 
-const CONSULTATIONS: ServiceCategoryView = {
-  id: 'category-consultations',
-  name: 'Consultas',
-  kind: 'CONSULTATION',
-  active: true,
-};
-const SUPPLIES: ServiceCategoryView = {
-  id: 'category-supplies',
-  name: 'Insumos',
-  kind: 'SUPPLY',
-  active: true,
-};
-
-const service: BillableServiceView = {
+const service: ServiceView = {
   id: 'service-1',
   code: 'CONS-MG-PV',
-  name: 'Consulta de medicina general, primera vez',
-  category: CONSULTATIONS,
-  procedureConcept: null,
-  tariffCode: null,
+  name: 'Consulta de medicina general · Primera vez',
+  kind: 'CONSULTATION',
+  consultation: {
+    specialtyId: 'specialty-general',
+    specialtyName: 'Medicina General',
+    durationMinutes: 30,
+    visitKind: 'FIRST_VISIT',
+  },
+  exam: null,
+  mspCode: null,
   taxRateId: 'tax-0',
   taxSriCode: '0',
   taxPercentage: Percentage.ZERO,
   active: true,
-  serviceTypes: [],
   taxReview: null,
   writtenConsent: {
     required: false,
@@ -73,35 +70,64 @@ const service: BillableServiceView = {
   },
 };
 
+const procedureService: ServiceView = {
+  ...service,
+  code: 'PROC-BIOPSIA',
+  name: 'Biopsia de piel',
+  kind: 'PROCEDURE',
+  consultation: null,
+  mspCode: '10120',
+};
+
+const examService: ServiceView = {
+  ...service,
+  code: 'LAB-GLU',
+  name: 'Glucosa en ayunas',
+  kind: 'LAB_EXAM',
+  consultation: null,
+  exam: {
+    form010Section: 'BIOQUÍMICA',
+    specimenType: 'Suero',
+    patientPreparation: null,
+    turnaroundHours: 4,
+    requiresFasting: true,
+    fastingHours: 8,
+    performedExternally: true,
+    externalLabName: null,
+    externalLabCode: null,
+  },
+};
+
 /** The catalogue port as a double, with every mock held in a NAMED local. */
 function build(overrides: Record<string, unknown> = {}) {
   const mocks = {
     listTaxRates: vi.fn().mockResolvedValue([taxRate]),
     findTaxRate: vi.fn().mockResolvedValue(taxRate),
-    listBillableServices: vi.fn().mockResolvedValue([service]),
-    findBillableService: vi.fn().mockResolvedValue(service),
-    listExamsOfService: vi.fn().mockResolvedValue([]),
-    countCategoryTies: vi.fn().mockResolvedValue({
-      consultations: 0,
-      procedures: 0,
-      examCategories: [],
-    }),
-    updateServiceCategory: vi.fn().mockResolvedValue(SUPPLIES),
-    findServiceCategory: vi
-      .fn()
-      .mockImplementation((id: string) =>
-        Promise.resolve(
-          [CONSULTATIONS, SUPPLIES].find((c) => c.id === id) ?? null,
-        ),
-      ),
-    createBillableService: vi.fn().mockResolvedValue(service),
-    updateBillableService: vi.fn().mockResolvedValue(service),
+    findHealthTaxRate: vi.fn().mockResolvedValue(taxRate),
+    listServices: vi.fn(),
+    findService: vi.fn().mockResolvedValue(service),
+    listAnalytesOfService: vi.fn().mockResolvedValue([]),
+    listPricesAcrossPayers: vi.fn().mockResolvedValue([]),
+    createService: vi.fn().mockResolvedValue(service),
+    updateService: vi.fn().mockResolvedValue(service),
     markTaxReviewed: vi.fn().mockResolvedValue(service),
-    tariffConceptCode: vi.fn().mockResolvedValue('10120'),
-    procedureTakenByOther: vi.fn().mockResolvedValue(false),
     hasInvoicedCharges: vi.fn().mockResolvedValue(false),
+    codeWasOrdered: vi.fn().mockResolvedValue(false),
+    isTariffProcedureCode: vi.fn().mockResolvedValue(true),
+    procedureCodeTakenByOther: vi.fn().mockResolvedValue(false),
+    specialtyIsActive: vi.fn().mockResolvedValue(true),
+    siteSlotAtoms: vi.fn().mockResolvedValue([10]),
+    codesStartingWith: vi.fn().mockResolvedValue([]),
+    findSelfPayPriceList: vi.fn().mockResolvedValue({
+      id: 'list-self-pay',
+      name: 'Particular',
+      payerId: 'payer-self',
+      siteId: null,
+      publiclyListed: true,
+      active: true,
+    }),
     countReferencesToService: vi.fn().mockResolvedValue(0),
-    deleteBillableService: vi.fn().mockResolvedValue(undefined),
+    deleteService: vi.fn().mockResolvedValue(undefined),
     record: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -115,231 +141,363 @@ function build(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const newService = {
-  code: 'PROC-CURACION',
-  name: 'Curación simple',
-  categoryId: 'category-supplies',
-  tariffCode: null,
-  taxRateId: 'tax-0',
+/** What `createService` handed the port. */
+function created(mocks: ReturnType<typeof build>['mocks']): NewService {
+  return mocks.createService.mock.calls[0]![0] as NewService;
+}
+
+const newSupply = {
+  kind: 'SUPPLY' as const,
+  name: 'Gasa estéril',
+  selfPayAmount: Money.parse('1.50'),
+  mspCode: null,
 };
 
-describe('BI-005, BI-013 la tarifa de impuesto es un dato exigido, no deducido', () => {
-  it('BI-013 rechaza crear una prestación sin tarifa, desde el servicio y no desde el DTO', async () => {
-    // A `DEBERÁ` enforced only at the transport layer stops existing the moment
-    // a seed or a bulk import writes underneath it.
-    const { service: catalogue } = build();
+const newConsultation = {
+  kind: 'CONSULTATION' as const,
+  name: 'Consulta de cardiología · Control',
+  selfPayAmount: Money.parse('25.00'),
+  mspCode: null,
+  specialtyId: 'specialty-cardiology',
+  durationMinutes: 20,
+  visitKind: 'FOLLOW_UP' as const,
+};
 
-    await expect(
-      catalogue.createService({ ...newService, taxRateId: '' }, requester),
-    ).rejects.toBeInstanceOf(TaxRateRequiredError);
-  });
+describe('BI-280 crear un servicio pide el tipo, lo de ese tipo y su precio', () => {
+  it('BI-280 escribe el servicio y su precio particular desde hoy en Ecuador, en una sola operación', async () => {
+    const { service: catalogue, mocks } = build();
 
-  it('BI-020 rechaza una tarifa que no existe en el catálogo del SRI', async () => {
-    const { service: catalogue } = build({
-      findTaxRate: vi.fn().mockResolvedValue(null),
+    await catalogue.createService(newSupply, requester);
+
+    const written = created(mocks);
+    expect(written).toMatchObject({
+      kind: 'SUPPLY',
+      name: 'Gasa estéril',
+      consultation: null,
+      exam: null,
+      selfPay: { priceListId: 'list-self-pay' },
     });
-
-    await expect(
-      catalogue.createService(newService, requester),
-    ).rejects.toBeInstanceOf(TaxRateNotFoundError);
+    expect(written.selfPay.amount.toString()).toBe('1.50');
+    expect(written.selfPay.validFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it('BI-005 no deduce la tarifa de la categoría, del nombre ni del código', async () => {
-    // D-A-006: health services are 0% by LRTI art. 56.2, but the 0% depends on
-    // the PROVIDER and excludes cosmetic surgery. A rule that deduced «this is
-    // health, therefore 0%» would be right almost always and wrong exactly
-    // where there is an audit. So the rate travels through, untouched.
+  it('BI-280 admite cero como precio (D-228)', async () => {
     const { service: catalogue, mocks } = build();
 
     await catalogue.createService(
-      { ...newService, name: 'Toxina botulínica, aplicación estética', taxRateId: 'tax-15' }, // prettier-ignore
+      { ...newSupply, selfPayAmount: Money.parse('0.00') },
       requester,
     );
 
-    expect(mocks.createBillableService).toHaveBeenCalledWith(
-      expect.objectContaining({ taxRateId: 'tax-15' }),
-    );
+    expect(created(mocks).selfPay.amount.toString()).toBe('0.00');
   });
 
-  it('BI-006 no acepta ni escribe ningún importe en la fila de la prestación', async () => {
-    const { service: catalogue, mocks } = build();
+  it('BI-280 propone el código desde el tipo y el nombre, sin repetir uno tomado; el escrito se respeta', async () => {
+    const { service: catalogue, mocks } = build({
+      codesStartingWith: vi.fn().mockResolvedValue(['INS-GASA-ESTERIL']),
+    });
 
-    await catalogue.createService(newService, requester);
+    await catalogue.createService(newSupply, requester);
+    await catalogue.createService({ ...newSupply, code: ' MIA-01 ' }, requester); // prettier-ignore
 
-    const written: unknown = mocks.createBillableService.mock.calls[0]?.[0];
-    // The classic mistake, refused by the SHAPE: there is no amount key to set.
-    expect(Object.keys(written ?? {})).toEqual([
-      'code',
-      'name',
-      'categoryId',
-      'tariffCode',
-      'taxRateId',
-    ]);
+    expect(mocks.codesStartingWith).toHaveBeenCalledWith('INS');
+    expect((mocks.createService.mock.calls[0]![0] as NewService).code).toBe('INS-GASA-ESTERIL-2'); // prettier-ignore
+    expect((mocks.createService.mock.calls[1]![0] as NewService).code).toBe('MIA-01'); // prettier-ignore
+  });
+
+  it('BI-280 sin IVA indicado toma el de servicios de salud (código 0), sin revisar; con uno, exige que exista', async () => {
+    const { service: catalogue, mocks } = build({
+      findTaxRate: vi.fn().mockResolvedValue(null),
+    });
+
+    await catalogue.createService(newSupply, requester);
+    expect(created(mocks).taxRateId).toBe('tax-0');
+    expect(created(mocks)).not.toHaveProperty('taxReview');
+
+    await expect(
+      catalogue.createService({ ...newSupply, taxRateId: 'tax-x' }, requester),
+    ).rejects.toBeInstanceOf(TaxRateNotFoundError);
+  });
+
+  it('BI-280 sin lista particular activa no crea nada', async () => {
+    const { service: catalogue, mocks } = build({
+      findSelfPayPriceList: vi.fn().mockResolvedValue(null),
+    });
+
+    await expect(
+      catalogue.createService(newSupply, requester),
+    ).rejects.toBeInstanceOf(PriceListNotFoundError);
+    expect(mocks.createService).not.toHaveBeenCalled();
   });
 });
 
-describe('BI-012, BI-014 retirar una prestación', () => {
-  it('BI-012 se niega a borrar una prestación que ya usa un precio o un cargo', async () => {
-    // The service an eight-month-old invoice names has to keep existing for
-    // that invoice to be readable at all.
+describe('BI-279 la consulta lleva especialidad, duración y visita', () => {
+  it('BI-279 crea la consulta con su especialidad, su duración y su visita', async () => {
+    const { service: catalogue, mocks } = build();
+
+    await catalogue.createService(newConsultation, requester);
+
+    expect(created(mocks).consultation).toEqual({
+      specialtyId: 'specialty-cardiology',
+      durationMinutes: 20,
+      visitKind: 'FOLLOW_UP',
+    });
+  });
+
+  it('BI-279 una consulta sin especialidad, sin duración o con una especialidad desactivada se rechaza', async () => {
+    const { service: catalogue, mocks } = build();
+    const withoutSpecialty = { ...newConsultation, specialtyId: undefined };
+    const withoutDuration = { ...newConsultation, durationMinutes: undefined };
+
+    await expect(catalogue.createService(withoutSpecialty, requester)).rejects.toBeInstanceOf(ConsultationIncompleteError); // prettier-ignore
+    await expect(catalogue.createService(withoutDuration, requester)).rejects.toBeInstanceOf(ConsultationIncompleteError); // prettier-ignore
+    mocks.specialtyIsActive.mockResolvedValueOnce(false);
+    await expect(catalogue.createService(newConsultation, requester)).rejects.toBeInstanceOf(ConsultationIncompleteError); // prettier-ignore
+    expect(mocks.createService).not.toHaveBeenCalled();
+  });
+
+  it('BI-279 SP-021 la duración es múltiplo del turno de todas las sedes', async () => {
     const { service: catalogue, mocks } = build({
-      countReferencesToService: vi.fn().mockResolvedValue(3),
+      siteSlotAtoms: vi.fn().mockResolvedValue([10, 15]),
+    });
+
+    await expect(catalogue.createService(newConsultation, requester)).rejects.toBeInstanceOf(DurationNotSlotMultipleError); // prettier-ignore
+    // Control: 30 tiles 10 and 15.
+    await catalogue.createService({ ...newConsultation, durationMinutes: 30 }, requester); // prettier-ignore
+    expect(mocks.createService).toHaveBeenCalledTimes(1);
+  });
+
+  it('BI-279 lo que no es consulta no lleva especialidad, duración ni visita', async () => {
+    const { service: catalogue, mocks } = build();
+
+    await expect(
+      catalogue.createService({ ...newSupply, specialtyId: 'specialty-cardiology' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
+    await expect(
+      catalogue.createService({ ...newSupply, visitKind: 'FOLLOW_UP' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
+    expect(mocks.createService).not.toHaveBeenCalled();
+  });
+
+  it('BI-279 corregir la duración de una consulta vuelve a validar el turno; en un insumo se rechaza', async () => {
+    const { service: catalogue, mocks } = build();
+
+    await catalogue.updateService('service-1', { durationMinutes: 40 }, requester); // prettier-ignore
+    expect(mocks.updateService.mock.calls[0]![1]).toMatchObject({
+      consultation: { specialtyId: 'specialty-general', durationMinutes: 40, visitKind: 'FIRST_VISIT' }, // prettier-ignore
+    });
+
+    mocks.findService.mockResolvedValueOnce({ ...service, kind: 'SUPPLY', consultation: null }); // prettier-ignore
+    await expect(
+      catalogue.updateService('service-1', { durationMinutes: 40 }, requester),
+    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
+  });
+});
+
+describe('BI-284 la extensión de orden', () => {
+  it('BI-284 un examen nace siempre con su extensión, con los valores por defecto donde no se dicen', async () => {
+    const { service: catalogue, mocks } = build();
+
+    await catalogue.createService(
+      {
+        kind: 'LAB_EXAM',
+        name: 'Glucosa en ayunas',
+        selfPayAmount: Money.parse('4.00'),
+        mspCode: null,
+        exam: { specimenType: 'Suero', requiresFasting: true, fastingHours: 8 },
+      },
+      requester,
+    );
+
+    expect(created(mocks).exam).toEqual({
+      form010Section: null,
+      specimenType: 'Suero',
+      patientPreparation: null,
+      turnaroundHours: null,
+      requiresFasting: true,
+      fastingHours: 8,
+      performedExternally: true,
+      externalLabName: null,
+      externalLabCode: null,
+    });
+  });
+
+  it('BI-284 un procedimiento la lleva sólo si se pide en una orden; un insumo nunca', async () => {
+    const { service: catalogue, mocks } = build();
+    const procedure = {
+      kind: 'PROCEDURE' as const,
+      name: 'Curación',
+      selfPayAmount: Money.parse('15.00'),
+      mspCode: null,
+    };
+
+    await catalogue.createService(procedure, requester);
+    await catalogue.createService({ ...procedure, name: 'ECG', exam: {} }, requester); // prettier-ignore
+    expect(
+      (mocks.createService.mock.calls[0]![0] as NewService).exam,
+    ).toBeNull();
+    expect(
+      (mocks.createService.mock.calls[1]![0] as NewService).exam,
+    ).not.toBeNull();
+
+    await expect(
+      catalogue.createService({ ...newSupply, exam: {} }, requester),
+    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
+  });
+
+  it('BI-284 corregir cambia sólo los campos enviados; un examen no la pierde y un procedimiento sí', async () => {
+    const { service: catalogue, mocks } = build({
+      findService: vi.fn().mockResolvedValue(examService),
+    });
+
+    await catalogue.updateService('service-1', { exam: { turnaroundHours: 24, specimenType: undefined } }, requester); // prettier-ignore
+    expect(mocks.updateService.mock.calls[0]![1]).toMatchObject({ exam: { turnaroundHours: 24 } }); // prettier-ignore
+    expect((mocks.updateService.mock.calls[0]![1] as { exam: object }).exam).not.toHaveProperty('specimenType'); // prettier-ignore
+
+    await expect(
+      catalogue.updateService('service-1', { exam: null }, requester),
+    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
+
+    mocks.findService.mockResolvedValueOnce({ ...procedureService, exam: examService.exam }); // prettier-ignore
+    await catalogue.updateService('service-1', { exam: null }, requester);
+    expect(mocks.updateService.mock.calls[1]![1]).toMatchObject({ exam: null });
+  });
+});
+
+describe('BI-281 BI-285 los códigos que ya salieron en papel no cambian', () => {
+  it('BI-281 el código se corrige mientras nadie lo facturó ni lo pidió', async () => {
+    const { service: catalogue, mocks } = build();
+
+    await catalogue.updateService('service-1', { code: 'CONS-MG-1' }, requester); // prettier-ignore
+    expect(mocks.updateService.mock.calls[0]![1]).toMatchObject({ code: 'CONS-MG-1' }); // prettier-ignore
+
+    mocks.hasInvoicedCharges.mockResolvedValueOnce(true);
+    await expect(catalogue.updateService('service-1', { code: 'CONS-MG-2' }, requester)).rejects.toBeInstanceOf(ServiceCodeInvoicedError); // prettier-ignore
+    mocks.codeWasOrdered.mockResolvedValueOnce(true);
+    await expect(catalogue.updateService('service-1', { code: 'CONS-MG-2' }, requester)).rejects.toBeInstanceOf(ServiceCodeOrderedError); // prettier-ignore
+  });
+
+  it('BI-285 el Código MSP es opcional y no cambia si el servicio ya se facturó', async () => {
+    const { service: catalogue, mocks } = build({
+      findService: vi.fn().mockResolvedValue(examService),
+    });
+
+    await catalogue.updateService('service-1', { mspCode: ' 360009 ' }, requester); // prettier-ignore
+    expect(mocks.updateService.mock.calls[0]![1]).toMatchObject({ mspCode: '360009' }); // prettier-ignore
+    // An exam's MSP code is nomenclature: it is not checked against the tariff.
+    expect(mocks.isTariffProcedureCode).not.toHaveBeenCalled();
+
+    mocks.hasInvoicedCharges.mockResolvedValueOnce(true);
+    await expect(catalogue.updateService('service-1', { mspCode: '360010' }, requester)).rejects.toBeInstanceOf(ServiceTariffCodeInvoicedError); // prettier-ignore
+  });
+});
+
+describe('BI-286 el procedimiento se ata por su código', () => {
+  it('BI-286 el código de un procedimiento es del tarifario y no lo lleva otro procedimiento activo', async () => {
+    const { service: catalogue, mocks } = build();
+    const procedure = {
+      kind: 'PROCEDURE' as const,
+      name: 'Biopsia',
+      selfPayAmount: Money.parse('40.00'),
+      mspCode: '10120',
+    };
+
+    await catalogue.createService(procedure, requester);
+    expect(mocks.procedureCodeTakenByOther).toHaveBeenCalledWith('10120', null);
+
+    mocks.isTariffProcedureCode.mockResolvedValueOnce(false);
+    await expect(catalogue.createService(procedure, requester)).rejects.toBeInstanceOf(ServiceProcedureNotInTariffError); // prettier-ignore
+    mocks.procedureCodeTakenByOther.mockResolvedValueOnce(true);
+    await expect(catalogue.createService(procedure, requester)).rejects.toBeInstanceOf(ServiceProcedureTakenError); // prettier-ignore
+  });
+});
+
+describe('BI-288 retirar un servicio', () => {
+  it('BI-288 se niega a borrar un servicio que nombran cargos, citas u órdenes', async () => {
+    const { service: catalogue, mocks } = build({
+      countReferencesToService: vi.fn().mockResolvedValue(2),
     });
 
     await expect(
       catalogue.deleteService('service-1', requester),
     ).rejects.toBeInstanceOf(BillableServiceInUseError);
-    expect(mocks.deleteBillableService).not.toHaveBeenCalled();
+    expect(mocks.deleteService).not.toHaveBeenCalled();
   });
 
-  it('BI-012 la borra cuando nadie la ha usado todavía', async () => {
+  it('BI-288 lo borra cuando nadie lo ha usado, y deja en la bitácora lo que había', async () => {
     const { service: catalogue, mocks } = build();
+
     await catalogue.deleteService('service-1', requester);
-    expect(mocks.deleteBillableService).toHaveBeenCalledWith('service-1');
+
+    expect(mocks.deleteService).toHaveBeenCalledWith('service-1');
+    const entry = mocks.record.mock.calls[0]![0] as AccessAuditEntry;
+    expect(entry).toMatchObject({ resourceType: 'service', before: { code: 'CONS-MG-PV' } }); // prettier-ignore
   });
 
-  it('BI-010 responde 404 ante una prestación inexistente antes de tocar nada', async () => {
-    const { service: catalogue } = build({
-      findBillableService: vi.fn().mockResolvedValue(null),
+  it('BI-288 responde 404 ante un servicio inexistente antes de tocar nada', async () => {
+    const { service: catalogue, mocks } = build({
+      findService: vi.fn().mockResolvedValue(null),
     });
 
     await expect(
       catalogue.deleteService('missing', requester),
     ).rejects.toBeInstanceOf(BillableServiceNotFoundError);
-  });
-
-  it('BI-014 sirve las desactivadas sólo cuando se piden', async () => {
-    const { service: catalogue, mocks } = build();
-
-    await catalogue.listServices({ includeInactive: false });
-    expect(mocks.listBillableServices).toHaveBeenCalledWith({
-      includeInactive: false,
-    });
+    expect(mocks.countReferencesToService).not.toHaveBeenCalled();
   });
 });
 
-describe('BI-046, BI-132 la bitácora del catálogo', () => {
-  it('BI-046 registra quién creó la prestación, y desde BI-231 solo lo que dejó', async () => {
+describe('BI-290 la bitácora del catálogo', () => {
+  it('BI-290 registra el alta con lo que dejó, sin ningún importe en la fila', async () => {
     const { service: catalogue, mocks } = build();
 
-    await catalogue.createService(newService, requester);
+    await catalogue.createService(newSupply, requester);
 
-    expect(mocks.record).toHaveBeenCalledWith({
+    const entry = mocks.record.mock.calls[0]![0] as AccessAuditEntry;
+    expect(entry).toMatchObject({
       userId: 'user-1',
-      resourceType: 'billable_service',
-      resourceId: 'service-1',
+      resourceType: 'service',
       action: 'CREATE',
-      ip: undefined,
-      userAgent: undefined,
-      before: undefined,
-      after: expect.objectContaining({ code: 'CONS-MG-PV' }) as unknown,
+      after: { code: 'CONS-MG-PV', kind: 'CONSULTATION', specialtyId: 'specialty-general' }, // prettier-ignore
     });
+    expect(entry.after).not.toHaveProperty('amount');
   });
 
-  it('BI-231 records the service before and after an edit, amounts as strings', async () => {
+  it('BI-290 una corrección deja el antes y el después', async () => {
     const { service: catalogue, mocks } = build({
-      updateBillableService: vi.fn().mockResolvedValue({
-        ...service,
-        name: 'Consulta general',
-        taxRateId: 'tax-15',
-        taxPercentage: Percentage.parse('15'),
-      }),
+      updateService: vi.fn().mockResolvedValue({ ...service, name: 'Consulta general' }), // prettier-ignore
     });
 
-    await catalogue.updateService(
-      'service-1',
-      { name: 'Consulta general', taxRateId: 'tax-15' },
-      requester,
-    );
+    await catalogue.updateService('service-1', { name: 'Consulta general' }, requester); // prettier-ignore
 
-    const entry = mocks.record.mock.calls[0]?.[0] as AccessAuditEntry;
-    const common = {
-      code: 'CONS-MG-PV',
-      categoryId: CONSULTATIONS.id,
-      tariffCode: null,
-      active: true,
-      taxReviewedAt: null,
-      taxReviewedById: null,
-      procedureConceptId: null,
-      requiresWrittenConsent: false,
-      writtenConsentSetById: null,
-    };
-    expect(entry.before).toEqual({
-      ...common,
-      name: 'Consulta de medicina general, primera vez',
-      taxRateId: 'tax-0',
-    });
-    expect(entry.after).toEqual({
-      ...common,
-      name: 'Consulta general',
-      taxRateId: 'tax-15',
-    });
-    // `Money` and `Percentage` hold bigints: a snapshot carrying one would
-    // make the audit INSERT throw and the entry would be lost.
-    expect(() => JSON.stringify(entry)).not.toThrow();
-  });
-
-  it('BI-231 records the category before and after an edit', async () => {
-    const { service: catalogue, mocks } = build({
-      updateServiceCategory: vi
-        .fn()
-        .mockResolvedValue({ ...SUPPLIES, name: 'Insumos médicos' }),
-    });
-
-    await catalogue.updateCategory(
-      SUPPLIES.id,
-      { name: 'Insumos médicos' },
-      requester,
-    );
-
-    expect(mocks.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        resourceType: 'billable_service_category',
-        action: 'UPDATE',
-        before: { name: 'Insumos', kind: 'SUPPLY', active: true },
-        after: { name: 'Insumos médicos', kind: 'SUPPLY', active: true },
-      }),
-    );
-  });
-
-  it('BI-025 al cambiar la tarifa no toca ningún cargo ya registrado', async () => {
-    // BI-051 applied to tax, and said apart because tax is the field that most
-    // invites recomputation: it looks derived and it is not. The proof is the
-    // absence — this path writes to `billable_service` and to nothing else.
-    const { service: catalogue, mocks } = build();
-
-    await catalogue.updateService(
-      'service-1',
-      { taxRateId: 'tax-15' },
-      requester,
-    );
-
-    expect(mocks.updateBillableService).toHaveBeenCalledWith('service-1', {
-      name: undefined,
-      category: undefined,
-      tariffCode: undefined,
-      taxRateId: 'tax-15',
-      active: undefined,
-      // D-172.2: the new rate is nobody's review yet.
-      taxReview: null,
+    const entry = mocks.record.mock.calls[0]![0] as AccessAuditEntry;
+    expect(entry).toMatchObject({
+      action: 'UPDATE',
+      before: { name: 'Consulta de medicina general · Primera vez' },
+      after: { name: 'Consulta general' },
     });
   });
 });
 
-describe('BI-011 el código del tarifario nacional es nomenclatura', () => {
-  it('BI-011 guarda y borra el código del tarifario sin tomar de él ningún importe', async () => {
-    // The national tariff carries an amount for the public network; this
-    // clinic's price is in its own list. The update carries the code and
-    // nothing that could hold a price.
+describe('BI-283 la ficha en una respuesta', () => {
+  it('BI-283 trae las determinaciones sólo de lo que se pide, y los precios marcando el vigente', async () => {
+    const today = clinicalDateOf(new Date());
     const { service: catalogue, mocks } = build();
+    await catalogue.serviceDetail('service-1', today);
+    expect(mocks.listAnalytesOfService).not.toHaveBeenCalled();
 
-    await catalogue.updateService('service-1', { tariffCode: '99203' }, requester); // prettier-ignore
-    await catalogue.updateService('service-1', { tariffCode: null }, requester);
-
-    const updates = mocks.updateBillableService.mock.calls.map(
-      (call) => call[1] as unknown,
-    );
-    expect(updates).toEqual([{ tariffCode: '99203' }, { tariffCode: null }]);
+    mocks.findService.mockResolvedValueOnce(examService);
+    mocks.listPricesAcrossPayers.mockResolvedValueOnce([
+      {
+        priceId: 'price-1',
+        payer: { id: 'payer-self', name: 'Particular', kind: 'SELF_PAY' },
+        amount: Money.parse('4.00'),
+        validFrom: addDays(today, -30),
+        validTo: null,
+      },
+    ]);
+    const detail = await catalogue.serviceDetail('service-1', today);
+    expect(mocks.listAnalytesOfService).toHaveBeenCalledWith('service-1');
+    expect(detail.prices[0]!.inForce).toBe(true);
   });
 });
 
@@ -358,12 +516,12 @@ describe('BI-023 BI-024 la revisión contable de la tarifa', () => {
 
   // BI-022's other half —0 % when no rate is given— waits for D-172.1, so
   // this cites the review it shares with BI-024 and not BI-022 itself.
-  it('BI-024 una prestación nueva no nace revisada: nada en el alta escribe la revisión', async () => {
+  it('BI-024 un servicio nuevo no nace revisado: nada en el alta escribe la revisión', async () => {
     const { service: catalogue, mocks } = build(withReview());
 
-    await catalogue.createService(newService, requester);
+    await catalogue.createService(newSupply, requester);
 
-    expect(mocks.createBillableService.mock.calls[0]?.[0]).not.toHaveProperty(
+    expect(mocks.createService.mock.calls[0]?.[0]).not.toHaveProperty(
       'taxReview',
     );
     expect(mocks.markTaxReviewed).not.toHaveBeenCalled();
@@ -419,7 +577,7 @@ describe('BI-023 BI-024 la revisión contable de la tarifa', () => {
     const entry = mocks.record.mock.calls[0]?.[0] as AccessAuditEntry;
     expect(entry).toMatchObject({
       userId: 'accountant-1',
-      resourceType: 'billable_service',
+      resourceType: 'service',
       resourceId: 'service-1',
       action: 'UPDATE',
       before: { taxReviewedAt: null, taxReviewedById: null },
@@ -432,14 +590,14 @@ describe('BI-023 BI-024 la revisión contable de la tarifa', () => {
 
   it('BI-024 cambiar la tarifa la devuelve a pendiente, y la revisión anterior queda en la bitácora', async () => {
     const { service: catalogue, mocks } = build({
-      findBillableService: vi
+      findService: vi
         .fn()
         .mockResolvedValue({ ...service, taxReview: reviewed }),
     });
 
     await catalogue.updateService('service-1', { taxRateId: 'tax-15' }, requester); // prettier-ignore
 
-    expect(mocks.updateBillableService.mock.calls[0]?.[1]).toMatchObject({
+    expect(mocks.updateService.mock.calls[0]?.[1]).toMatchObject({
       taxRateId: 'tax-15',
       taxReview: null,
     });
@@ -453,7 +611,7 @@ describe('BI-023 BI-024 la revisión contable de la tarifa', () => {
 
   it('BI-024 cambiar el nombre, o guardar la misma tarifa, no toca la revisión (control)', async () => {
     const { service: catalogue, mocks } = build({
-      findBillableService: vi
+      findService: vi
         .fn()
         .mockResolvedValue({ ...service, taxReview: reviewed }),
     });
@@ -461,15 +619,15 @@ describe('BI-023 BI-024 la revisión contable de la tarifa', () => {
     await catalogue.updateService('service-1', { name: 'Consulta general' }, requester); // prettier-ignore
     await catalogue.updateService('service-1', { taxRateId: 'tax-0' }, requester); // prettier-ignore
 
-    for (const [, update] of mocks.updateBillableService.mock.calls) {
+    for (const [, update] of mocks.updateService.mock.calls) {
       expect(update).not.toHaveProperty('taxReview');
     }
   });
 
-  it('BI-024 marcar revisada una prestación inexistente responde 404 sin escribir', async () => {
+  it('BI-024 marcar revisado un servicio inexistente responde 404 sin escribir', async () => {
     const { service: catalogue, mocks } = build({
       ...withReview(),
-      findBillableService: vi.fn().mockResolvedValue(null),
+      findService: vi.fn().mockResolvedValue(null),
     });
 
     await expect(
@@ -479,177 +637,21 @@ describe('BI-023 BI-024 la revisión contable de la tarifa', () => {
   });
 });
 
-describe('BI-185, BI-187 la categoría es un catálogo y su clase manda', () => {
-  it('BI-185 no deja crear una prestación con una categoría desactivada', async () => {
-    const { service: catalogue } = build({
-      findServiceCategory: vi
-        .fn()
-        .mockResolvedValue({ ...SUPPLIES, active: false }),
-    });
-
-    await expect(
-      catalogue.createService(newService, requester),
-    ).rejects.toBeInstanceOf(ServiceCategoryInactiveError);
-  });
-
-  it('BI-187 rechaza pasar a una categoría de otra clase la prestación que cobra un tipo de atención', async () => {
-    const charging = {
-      ...service,
-      serviceTypes: [
-        { id: 'type-1', name: 'Control', specialtyName: 'Dermatología' },
-      ],
-    };
-    const { service: catalogue } = build({
-      findBillableService: vi.fn().mockResolvedValue(charging),
-    });
-
-    await expect(
-      catalogue.updateService('service-1', { categoryId: SUPPLIES.id }, requester), // prettier-ignore
-    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
-  });
-
-  it('BI-187 un procedimiento atado a su concepto no se pasa a otra clase', async () => {
-    const { service: catalogue } = build({
-      findBillableService: vi.fn().mockResolvedValue({
-        ...service,
-        category: {
-          ...CONSULTATIONS,
-          id: 'category-procedures',
-          kind: 'PROCEDURE',
-        },
-        procedureConcept: { id: 'c-1', code: 'SUTURA', display: 'Sutura' },
-      }),
-    });
-
-    await expect(
-      catalogue.updateService('service-1', { categoryId: SUPPLIES.id }, requester), // prettier-ignore
-    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
-  });
-});
-
-describe('ORD-163 SP-030 lo que nace con un examen o un tipo se corrige allí', () => {
-  it('ORD-163 SP-030 renombrar o cambiar el tarifario de la prestación de un tipo de atención se rechaza; su IVA, no', async () => {
-    const { service: catalogue } = build({
-      findBillableService: vi.fn().mockResolvedValue({
-        ...service,
-        serviceTypes: [{ id: 'type-1', name: 'Control', specialtyName: 'Dermatología' }], // prettier-ignore
-      }),
-    });
-
-    await expect(
-      catalogue.updateService('service-1', { name: 'Otra' }, requester),
-    ).rejects.toBeInstanceOf(ServiceNamedElsewhereError);
-    await expect(
-      catalogue.updateService('service-1', { tariffCode: '99' }, requester),
-    ).rejects.toBeInstanceOf(ServiceNamedElsewhereError);
-    // Control positivo: lo que es de facturación se sigue corrigiendo aquí.
-    await expect(
-      catalogue.updateService('service-1', { active: false }, requester),
-    ).resolves.toBeDefined();
-  });
-
-  it('ORD-163 la prestación de un examen no se renombra desde aquí', async () => {
-    const { service: catalogue } = build({
-      listExamsOfService: vi.fn().mockResolvedValue([{ id: 'e-1', code: 'EX-1', name: 'X', category: 'LABORATORY', active: true }]), // prettier-ignore
-    });
-
-    await expect(
-      catalogue.updateService('service-1', { name: 'Otra' }, requester),
-    ).rejects.toBeInstanceOf(ServiceNamedElsewhereError);
-  });
-});
-
-describe('BI-187 corregir siempre es posible', () => {
-  it('BI-187 una prestación que ya está en desajuste se puede desactivar', async () => {
-    // A migrated clinic: «Consulta externa» became OTHER with its consultation
-    // still tied to a specialty. Renaming or deactivating must not be refused.
-    const { service: catalogue } = build({
-      findBillableService: vi.fn().mockResolvedValue({
-        ...service,
-        category: { ...SUPPLIES, kind: 'OTHER' },
-        serviceTypes: [
-          { id: 'type-1', name: 'Control', specialtyName: 'Dermatología' },
-        ],
-      }),
-    });
-
-    await expect(
-      catalogue.updateService('service-1', { active: false }, requester), // prettier-ignore
-    ).resolves.toBeDefined();
-  });
-
-  it('BI-187 una prestación por la que se cobran exámenes no pasa a una clase que no es de examen', async () => {
-    const { service: catalogue } = build({
-      findBillableService: vi.fn().mockResolvedValue({
-        ...service,
-        category: { ...SUPPLIES, id: 'category-lab', kind: 'LABORATORY' },
-      }),
-      listExamsOfService: vi.fn().mockResolvedValue([
-        { id: 'e1', code: 'EX-BH', name: 'BH', category: 'LABORATORY', active: true }, // prettier-ignore
-      ]),
-    });
-
-    await expect(
-      catalogue.updateService('service-1', { categoryId: SUPPLIES.id }, requester), // prettier-ignore
-    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
-  });
-
-  it('BI-187 ORD-108 la prestación de un examen es de la clase de su tipo: un ECG se cobra como procedimiento, un hemograma no como imagen', async () => {
-    const { service: catalogue, mocks } = build();
-
-    mocks.countCategoryTies.mockResolvedValue({ consultations: 0, procedures: 0, examCategories: ['PROCEDURE'] }); // prettier-ignore
-    await expect(
-      catalogue.updateCategory(SUPPLIES.id, { kind: 'PROCEDURE' }, requester),
-    ).resolves.toBeDefined();
-
-    mocks.countCategoryTies.mockResolvedValue({ consultations: 0, procedures: 0, examCategories: ['LABORATORY'] }); // prettier-ignore
-    await expect(
-      catalogue.updateCategory(SUPPLIES.id, { kind: 'IMAGING' }, requester),
-    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
-  });
-
-  it('BI-187 la clase de una categoría se cambia si ninguna de sus prestaciones choca, y no si alguna sí', async () => {
-    const { service: catalogue, mocks } = build();
-
-    await catalogue.updateCategory(SUPPLIES.id, { kind: 'CONSULTATION' }, requester); // prettier-ignore
-    expect(mocks.updateServiceCategory).toHaveBeenCalledWith(SUPPLIES.id, {
-      kind: 'CONSULTATION',
-    });
-
-    mocks.countCategoryTies.mockResolvedValue({ consultations: 1, procedures: 0, examCategories: [] }); // prettier-ignore
-    await expect(
-      catalogue.updateCategory(SUPPLIES.id, { kind: 'OTHER' }, requester),
-    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
-  });
-});
-
-const PROCEDURES: ServiceCategoryView = {
-  id: 'category-procedures',
-  name: 'Procedimientos',
-  kind: 'PROCEDURE',
-  active: true,
-};
-const procedureService: BillableServiceView = {
-  ...service,
-  category: PROCEDURES,
-  procedureConcept: { id: 'c-1', code: '10120', display: 'Biopsia de piel' },
-};
-
 describe('BI-256 la marca «exige consentimiento 024» la pone la dirección médica', () => {
-  it('BI-256 marca con quién y cuándo, del reloj de la aplicación, y deja la prestación antes y después en la bitácora', async () => {
-    const marked: BillableServiceView = {
+  it('BI-256 marca con quién y cuándo, del reloj de la aplicación, y deja el servicio antes y después en la bitácora', async () => {
+    const marked: ServiceView = {
       ...procedureService,
       writtenConsent: { required: true, setAt: new Date(), setById: 'user-1', setByName: 'Ana Villacís' }, // prettier-ignore
     };
     const { service: catalogue, mocks } = build({
-      findBillableService: vi.fn().mockResolvedValue(procedureService),
-      updateBillableService: vi.fn().mockResolvedValue(marked),
+      findService: vi.fn().mockResolvedValue(procedureService),
+      updateService: vi.fn().mockResolvedValue(marked),
     });
     const before = Date.now();
 
     await expect(catalogue.markWrittenConsent('service-1', true, requester)).resolves.toBe(marked); // prettier-ignore
 
-    const [, update] = mocks.updateBillableService.mock.calls[0]!;
+    const [, update] = mocks.updateService.mock.calls[0]!;
     expect(update).toEqual({
       writtenConsent: {
         required: true,
@@ -660,14 +662,14 @@ describe('BI-256 la marca «exige consentimiento 024» la pone la dirección mé
     expect((update as { writtenConsent: { setAt: Date } }).writtenConsent.setAt.getTime()).toBeGreaterThanOrEqual(before); // prettier-ignore
     const entry = mocks.record.mock.calls[0]![0] as AccessAuditEntry;
     expect(entry).toMatchObject({
-      resourceType: 'billable_service',
+      resourceType: 'service',
       action: 'UPDATE',
       before: expect.objectContaining({ requiresWrittenConsent: false }),
       after: expect.objectContaining({ requiresWrittenConsent: true, writtenConsentSetById: 'user-1' }), // prettier-ignore
     });
   });
 
-  it('BI-256 rechaza marcar una prestación que no cobra un procedimiento; ponerla como ya está no escribe nada', async () => {
+  it('BI-256 rechaza marcar un servicio que no es un procedimiento con su código; ponerlo como ya está no escribe nada', async () => {
     const { service: catalogue, mocks } = build();
     await expect(
       catalogue.markWrittenConsent('service-1', true, requester),
@@ -675,133 +677,25 @@ describe('BI-256 la marca «exige consentimiento 024» la pone la dirección mé
 
     // Control positivo: desmarcar la que ya está apagada no es un cambio.
     await expect(catalogue.markWrittenConsent('service-1', false, requester)).resolves.toBe(service); // prettier-ignore
-    expect(mocks.updateBillableService).not.toHaveBeenCalled();
+    expect(mocks.updateService).not.toHaveBeenCalled();
     expect(mocks.record).not.toHaveBeenCalled();
   });
 
-  it('BI-256 D-199.1 la atadura de una prestación marcada no se desata, no se cambia ni se borra con la llave de precios', async () => {
+  it('BI-256 D-199.1 el código de un procedimiento marcado no se cambia, no se quita ni se borra con la llave de precios', async () => {
     const { service: catalogue } = build({
-      findBillableService: vi.fn().mockResolvedValue({
+      findService: vi.fn().mockResolvedValue({
         ...procedureService,
         writtenConsent: { required: true, setAt: new Date(), setById: 'user-1', setByName: 'Ana Villacís' }, // prettier-ignore
       }),
     });
     await expect(
-      catalogue.updateService('service-1', { procedureConceptId: null }, requester), // prettier-ignore
+      catalogue.updateService('service-1', { mspCode: null }, requester), // prettier-ignore
     ).rejects.toBeInstanceOf(ServiceConsentTieLockedError);
     await expect(
-      catalogue.updateService('service-1', { procedureConceptId: 'c-2' }, requester), // prettier-ignore
+      catalogue.updateService('service-1', { mspCode: '10121' }, requester), // prettier-ignore
     ).rejects.toBeInstanceOf(ServiceConsentTieLockedError);
     await expect(catalogue.deleteService('service-1', requester)).rejects.toBeInstanceOf(ServiceConsentTieLockedError); // prettier-ignore
     // Control positivo: renombrarla sí.
     await expect(catalogue.updateService('service-1', { name: 'Biopsia' }, requester)).resolves.toBeDefined(); // prettier-ignore
-  });
-
-  it('BI-257 un procedimiento lo cobra una sola prestación', async () => {
-    const { service: catalogue } = build({
-      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES }), // prettier-ignore
-      procedureTakenByOther: vi.fn().mockResolvedValue(true),
-    });
-    await expect(
-      catalogue.updateService('service-1', { procedureConceptId: 'c-1' }, requester), // prettier-ignore
-    ).rejects.toBeInstanceOf(ServiceProcedureTakenError);
-  });
-});
-
-describe('BI-257 la prestación de procedimiento se ata a su concepto desde la ficha', () => {
-  it('BI-257 ata una prestación de clase procedimiento a un concepto del tarifario', async () => {
-    const { service: catalogue, mocks } = build({
-      findBillableService: vi
-        .fn()
-        .mockResolvedValue({ ...service, category: PROCEDURES }),
-    });
-    await catalogue.updateService(
-      'service-1',
-      { procedureConceptId: 'c-1' },
-      requester,
-    );
-    expect(mocks.tariffConceptCode).toHaveBeenCalledWith('c-1');
-    // D-179. Atar escribe el código del tarifario: un dato, un sitio.
-    expect(mocks.updateBillableService).toHaveBeenCalledWith('service-1', { procedureConceptId: 'c-1', tariffCode: '10120' }); // prettier-ignore
-  });
-
-  it('BI-257 D-179 atada, el código del tarifario no se escribe aparte; atar uno distinto lo reemplaza', async () => {
-    const { service: catalogue, mocks } = build({
-      findBillableService: vi.fn().mockResolvedValue({
-        ...procedureService,
-        tariffCode: '10120',
-      }),
-    });
-    await expect(
-      catalogue.updateService('service-1', { tariffCode: '99999' }, requester),
-    ).rejects.toBeInstanceOf(ServiceTariffCodeFromProcedureError);
-    // Control positivo: el mismo código guardado otra vez no es un cambio.
-    await catalogue.updateService('service-1', { tariffCode: '10120', name: 'Biopsia' }, requester); // prettier-ignore
-    expect(mocks.updateBillableService).toHaveBeenCalledTimes(1);
-
-    const { service: typed, mocks: typedMocks } = build({
-      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES, tariffCode: '55555' }), // prettier-ignore
-    });
-    await typed.updateService('service-1', { procedureConceptId: 'c-1' }, requester); // prettier-ignore
-    expect(typedMocks.updateBillableService).toHaveBeenCalledWith('service-1', { procedureConceptId: 'c-1', tariffCode: '10120' }); // prettier-ignore
-  });
-
-  it('BI-257 D-179 atar con otro código tecleado se rechaza, desatar no deja el código del procedimiento, y una prestación facturada no cambia de código', async () => {
-    const { service: catalogue, mocks } = build({
-      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES }), // prettier-ignore
-    });
-    await expect(
-      catalogue.updateService('service-1', { procedureConceptId: 'c-1', tariffCode: '99999' }, requester), // prettier-ignore
-    ).rejects.toBeInstanceOf(ServiceTariffCodeFromProcedureError);
-
-    const { service: untie, mocks: untieMocks } = build({
-      findBillableService: vi.fn().mockResolvedValue({ ...procedureService, tariffCode: '10120' }), // prettier-ignore
-    });
-    await untie.updateService('service-1', { procedureConceptId: null }, requester); // prettier-ignore
-    expect(untieMocks.updateBillableService).toHaveBeenCalledWith('service-1', { procedureConceptId: null, tariffCode: null }); // prettier-ignore
-
-    const { service: invoiced } = build({
-      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES, tariffCode: '55555' }), // prettier-ignore
-      hasInvoicedCharges: vi.fn().mockResolvedValue(true),
-    });
-    await expect(
-      invoiced.updateService('service-1', { procedureConceptId: 'c-1' }, requester), // prettier-ignore
-    ).rejects.toBeInstanceOf(ServiceTariffCodeInvoicedError);
-    expect(mocks.updateBillableService).not.toHaveBeenCalled();
-  });
-
-  it('D-179 ORD-163 la prestación de un examen no se ata a un procedimiento: su tarifario es del examen', async () => {
-    const { service: catalogue } = build({
-      findBillableService: vi.fn().mockResolvedValue({ ...service, category: PROCEDURES }), // prettier-ignore
-      listExamsOfService: vi.fn().mockResolvedValue([{ id: 'e-1', category: 'PROCEDURE' }]), // prettier-ignore
-    });
-    await expect(
-      catalogue.updateService('service-1', { procedureConceptId: 'c-1' }, requester), // prettier-ignore
-    ).rejects.toBeInstanceOf(ServiceNamedElsewhereError);
-  });
-
-  it('BI-257 rechaza un concepto que no es del tarifario y la atadura en una prestación que no es de procedimiento', async () => {
-    const { service: catalogue } = build({
-      findBillableService: vi
-        .fn()
-        .mockResolvedValue({ ...service, category: PROCEDURES }),
-      tariffConceptCode: vi.fn().mockResolvedValue(null),
-    });
-    await expect(
-      catalogue.updateService(
-        'service-1',
-        { procedureConceptId: 'c-cie10' },
-        requester,
-      ),
-    ).rejects.toBeInstanceOf(ServiceProcedureNotInTariffError);
-
-    const { service: consultations } = build();
-    await expect(
-      consultations.updateService(
-        'service-1',
-        { procedureConceptId: 'c-1' },
-        requester,
-      ),
-    ).rejects.toBeInstanceOf(ServiceKindMismatchError);
   });
 });

@@ -12,38 +12,65 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
  * by PostgreSQL constraints, and this registration is their enumeration.
  */
 registerConstraintMeanings({
-  // ── The 024 mark (BI-256) ─────────────────────────────────────────────────
-  // The service refuses it first; this answers the mark and the untying
-  // landing at once, which only the database can arbitrate.
-  billable_service_written_consent_tie_locked: {
+  // ── The 024 mark (BI-256) and the procedure's code (BI-286) ──────────────
+  // The service refuses it first; this answers the mark and the change of
+  // code landing at once, which only the database can arbitrate.
+  service_written_consent_code_locked: {
     code: 'SERVICE_CONSENT_TIE_LOCKED',
-    field: 'procedureConceptId',
-    message: 'Desmárquela antes de cambiar el procedimiento',
+    field: 'mspCode',
+    message: 'Desmárquelo antes de cambiar el procedimiento',
   },
-  billable_service_tariff_code_is_its_procedure: {
-    code: 'SERVICE_TARIFF_CODE_FROM_PROCEDURE',
-    field: 'tariffCode',
-    message: 'El código del tarifario lo da el procedimiento que cobra',
-  },
-  billable_service_tariff_code_invoiced: {
-    code: 'SERVICE_TARIFF_CODE_INVOICED',
-    field: 'procedureConceptId',
-    message: 'Ya facturada con otro código del tarifario',
-  },
-  billable_service_exam_not_tied: {
-    code: 'SERVICE_NAMED_ELSEWHERE',
-    field: 'procedureConceptId',
-    message: 'Es la prestación de un examen: no cobra un procedimiento',
-  },
-  billable_service_one_per_procedure: {
-    code: 'SERVICE_PROCEDURE_TAKEN',
-    field: 'procedureConceptId',
-    message: 'Otra prestación ya cobra ese procedimiento',
-  },
-  billable_service_written_consent_needs_a_procedure: {
+  service_written_consent_needs_a_procedure: {
     code: 'SERVICE_NOT_A_PROCEDURE',
-    field: 'procedureConceptId',
-    message: 'Ate antes la prestación a su procedimiento del tarifario',
+    field: 'mspCode',
+    message: 'Elija antes el procedimiento del tarifario',
+  },
+  service_one_procedure_per_code: {
+    code: 'SERVICE_PROCEDURE_TAKEN',
+    field: 'mspCode',
+    message: 'Otro servicio ya cobra ese procedimiento',
+  },
+  // ── The catalogue itself (BI-278 to BI-285) ─────────────────────────────
+  // What the service checks first and the database keeps under concurrency.
+  service_active_name_unique: {
+    code: 'SERVICE_NAME_DUPLICATE',
+    field: 'name',
+    message: 'Ya hay un servicio activo con ese nombre',
+  },
+  service_consultation_shape: {
+    code: 'SERVICE_KIND_MISMATCH',
+    field: 'kind',
+    message: 'La especialidad y la duración son de una consulta, y la consulta las necesita', // prettier-ignore
+  },
+  service_duration_range: {
+    code: 'DURATION_NOT_SLOT_MULTIPLE',
+    field: 'durationMinutes',
+    message: 'La duración va de 5 a 240 minutos, de 5 en 5',
+  },
+  service_kind_is_fixed: {
+    code: 'SERVICE_KIND_MISMATCH',
+    field: 'kind',
+    message: 'El tipo de un servicio no cambia una vez creado',
+  },
+  service_exam_kind_admits: {
+    code: 'SERVICE_KIND_MISMATCH',
+    field: 'exam',
+    message: 'Sólo un examen, una imagen o un procedimiento se piden en una orden', // prettier-ignore
+  },
+  service_code_in_use: {
+    code: 'EXAM_CODE_IN_USE',
+    field: 'code',
+    message: 'Ya se pidió en una orden con este código',
+  },
+  service_code_invoiced: {
+    code: 'SERVICE_CODE_INVOICED',
+    field: 'code',
+    message: 'Ya facturado con este código',
+  },
+  service_msp_code_invoiced: {
+    code: 'SERVICE_TARIFF_CODE_INVOICED',
+    field: 'mspCode',
+    message: 'Ya facturado con este Código MSP',
   },
   // ── The payment methods (BI-146) ──────────────────────────────────────────
   // The service refuses the last one first; this answers two administrators
@@ -121,7 +148,7 @@ registerConstraintMeanings({
   // ── The tariff (BI-041, BI-042) ─────────────────────────────────────────
   //
   // ⚠️ THE GUARANTEE OF THE WHOLE MODULE, and it is not in TypeScript.
-  // `price_temporal_unique` is `UNIQUE (price_list_id, billable_service_id,
+  // `price_temporal_unique` is `UNIQUE (price_list_id, service_id,
   // valid_period WITHOUT OVERLAPS)`. Two administrators editing the tariff at
   // the same moment do not see each other, so a check between the SELECT and
   // the INSERT leaves exactly that window — and the duplicate price does not
@@ -131,7 +158,7 @@ registerConstraintMeanings({
   price_temporal_unique: {
     code: 'PRICE_PERIOD_OVERLAP',
     field: 'validFrom',
-    message: 'Esa prestación ya tiene un precio vigente en esas fechas: cierre la vigencia anterior antes de abrir otra', // prettier-ignore
+    message: 'Ese servicio ya tiene un precio vigente en esas fechas: cierre la vigencia anterior antes de abrir otra', // prettier-ignore
   },
   price_period_not_empty: {
     code: 'PRICE_PERIOD_EMPTY',
@@ -150,16 +177,10 @@ registerConstraintMeanings({
   },
 
   // ── The catalogue (BI-010, BI-030) ──────────────────────────────────────
-  // BI-185. Unique on `lower(name)`: «Laboratorio» and «laboratorio» are one.
-  billable_service_category_name_unique: {
-    code: 'SERVICE_CATEGORY_NAME_DUPLICATE',
-    field: 'name',
-    message: 'Ya existe una categoría con ese nombre',
-  },
-  billable_service_code_unique: {
+  service_code_unique: {
     code: 'BILLABLE_SERVICE_CODE_DUPLICATE',
     field: 'code',
-    message: 'Ya existe una prestación con ese código',
+    message: 'Ya existe un servicio con ese código',
   },
   // BI-036: the shape of a payer's RUC, the same as the site's. `Ruc` refuses
   // more than this long before the database is reached; this is what a path

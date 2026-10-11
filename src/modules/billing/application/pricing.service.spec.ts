@@ -49,7 +49,7 @@ const price = (
   validTo: string | null = null,
 ): PriceRow => ({
   id,
-  billableServiceId: 'service-1',
+  serviceId: 'service-1',
   amount: Money.parse(amount),
   validFrom: parseClinicalDate(validFrom),
   validTo: validTo === null ? null : parseClinicalDate(validTo),
@@ -76,7 +76,7 @@ function build(overrides: Record<string, unknown> = {}) {
       publiclyListed: true,
       active: true,
     }),
-    findBillableService: vi.fn().mockResolvedValue({ id: 'service-1', active: true }), // prettier-ignore
+    findService: vi.fn().mockResolvedValue({ id: 'service-1', active: true }), // prettier-ignore
     listPricesOfService: vi.fn().mockResolvedValue([]),
     listPricesOfList: vi.fn().mockResolvedValue([]),
     applyPriceChange: vi.fn().mockResolvedValue(price('new', '35.00', '2026-07-01')), // prettier-ignore
@@ -247,7 +247,7 @@ describe('BI-040, BI-044, BI-046 el tarifario', () => {
       pricing.setPrice(
         {
           payerId: 'payer-particular',
-          billableServiceId: 'service-1',
+          serviceId: 'service-1',
           amount: Money.parse('30.00'),
           effectiveFrom: parseClinicalDate('2026-01-01'),
         },
@@ -266,7 +266,7 @@ describe('BI-040, BI-044, BI-046 el tarifario', () => {
     await pricing.setPrice(
       {
         payerId: 'payer-particular',
-        billableServiceId: 'service-1',
+        serviceId: 'service-1',
         amount: Money.parse('35.00'),
         effectiveFrom: parseClinicalDate('2026-07-01'),
       },
@@ -288,7 +288,7 @@ describe('BI-040, BI-044, BI-046 el tarifario', () => {
     await pricing.setPrice(
       {
         payerId: 'payer-particular',
-        billableServiceId: 'service-1',
+        serviceId: 'service-1',
         amount: Money.parse('35.00'),
         effectiveFrom: parseClinicalDate('2026-07-01'),
       },
@@ -353,7 +353,7 @@ describe('BI-231 la bitácora con antes y después', () => {
     await pricing.setPrice(
       {
         payerId: 'payer-particular',
-        billableServiceId: 'service-1',
+        serviceId: 'service-1',
         amount: Money.parse('35.00'),
         effectiveFrom: today,
       },
@@ -366,7 +366,7 @@ describe('BI-231 la bitácora con antes y después', () => {
         action: 'CREATE',
         before: undefined,
         after: {
-          billableServiceId: 'service-1',
+          serviceId: 'service-1',
           amount: '35.00',
           validFrom: today,
           validTo: null,

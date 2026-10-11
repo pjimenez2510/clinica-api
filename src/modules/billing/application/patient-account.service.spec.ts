@@ -12,7 +12,7 @@ import {
 } from '../domain/billing.errors';
 import type {
   AccountView,
-  BillableServiceView,
+  ServiceView,
   BillingAccountRepository,
   BillingCatalogueRepository,
   ChargeView,
@@ -58,7 +58,7 @@ const charge = (
 ): ChargeView => ({
   id,
   accountId: ACCOUNT,
-  billableServiceId: 'service-1',
+  serviceId: 'service-1',
   encounterId: null,
   serviceDate: SERVICE_DATE,
   quantity: Quantity.ONE,
@@ -89,25 +89,23 @@ const charge = (
   ...overrides,
 });
 
-const service = (
-  overrides: Partial<BillableServiceView> = {},
-): BillableServiceView => ({
+const service = (overrides: Partial<ServiceView> = {}): ServiceView => ({
   id: 'service-1',
   code: 'CONS-MG-PV',
   name: 'Consulta de medicina general, primera vez',
-  category: {
-    id: 'category-consultations',
-    name: 'Consultas',
-    kind: 'CONSULTATION',
-    active: true,
+  kind: 'CONSULTATION',
+  consultation: {
+    specialtyId: 'specialty-general',
+    specialtyName: 'Medicina General',
+    durationMinutes: 30,
+    visitKind: 'FIRST_VISIT',
   },
-  procedureConcept: null,
-  tariffCode: null,
+  exam: null,
+  mspCode: null,
   taxRateId: 'tax-0',
   taxSriCode: '0',
   taxPercentage: Percentage.ZERO,
   active: true,
-  serviceTypes: [],
   taxReview: null,
   writtenConsent: {
     required: false,
@@ -156,7 +154,7 @@ function build(
     findCharge: vi.fn().mockResolvedValue(charge('charge-1', 'PLANNED')),
     confirmCharge: vi.fn().mockResolvedValue(charge('charge-1', 'BILLABLE')),
     voidCharge: vi.fn().mockResolvedValue(charge('charge-1', 'CANCELLED')),
-    findBillableService: vi.fn().mockResolvedValue(service()),
+    findService: vi.fn().mockResolvedValue(service()),
     findPayer: vi.fn().mockResolvedValue(payer()),
     findPriceListOfPayer: vi.fn().mockResolvedValue({
       id: 'list-particular',
@@ -170,11 +168,11 @@ function build(
     draftOrdersOf: vi.fn().mockResolvedValue([]),
     encounterStatusOf: vi.fn().mockResolvedValue({ status: 'DISCHARGED', hasDrafts: false }), // prettier-ignore
     findEncounterActs: vi.fn().mockResolvedValue({
-      serviceTypeId: 'service-type-1',
+      serviceId: 'service-type-1',
       visitSequence: 'SUBSEQUENT',
     }),
     findConsultationService: vi.fn().mockResolvedValue({
-      billableServiceId: 'service-subsequent',
+      serviceId: 'service-subsequent',
       active: true,
     }),
     ...options.accounts,
@@ -374,7 +372,7 @@ describe('BI-071, BI-072 cerrar la cuenta', () => {
       accounts.addCharge({
         accountId: ACCOUNT,
         siteId: SITE,
-        billableServiceId: 'service-1',
+        serviceId: 'service-1',
         encounterId: null,
         serviceDate: SERVICE_DATE,
         quantity: Quantity.ONE,
@@ -400,7 +398,7 @@ describe('BI-015, BI-074 los cargos de la cuenta', () => {
   it('BI-015 rechaza cobrar una prestación desactivada', async () => {
     const { service: accounts } = build({
       catalogue: {
-        findBillableService: vi.fn().mockResolvedValue(service({ active: false })), // prettier-ignore
+        findService: vi.fn().mockResolvedValue(service({ active: false })), // prettier-ignore
       },
     });
 
@@ -408,7 +406,7 @@ describe('BI-015, BI-074 los cargos de la cuenta', () => {
       accounts.addCharge({
         accountId: ACCOUNT,
         siteId: SITE,
-        billableServiceId: 'service-1',
+        serviceId: 'service-1',
         encounterId: null,
         serviceDate: SERVICE_DATE,
         quantity: Quantity.ONE,
@@ -423,7 +421,7 @@ describe('BI-015, BI-074 los cargos de la cuenta', () => {
     await accounts.addCharge({
       accountId: ACCOUNT,
       siteId: SITE,
-      billableServiceId: 'service-1',
+      serviceId: 'service-1',
       encounterId: 'encounter-1',
       serviceDate: SERVICE_DATE,
       quantity: Quantity.ONE,
@@ -524,7 +522,7 @@ describe('BI-015, BI-074 los cargos de la cuenta', () => {
 
     await accounts.statement({ accountId: ACCOUNT, siteId: SITE });
 
-    expect(mocks.findBillableService).not.toHaveBeenCalled();
+    expect(mocks.findService).not.toHaveBeenCalled();
     expect(mocks.findPriceListOfPayer).not.toHaveBeenCalled();
   });
 });
@@ -550,7 +548,7 @@ describe('BI-055, BI-056, BI-059, BI-152 caja revisa lo propuesto', () => {
     });
 
     expect(confirmed.status).toBe('BILLABLE');
-    expect(mocks.findBillableService).not.toHaveBeenCalled();
+    expect(mocks.findService).not.toHaveBeenCalled();
     expect(mocks.findPriceListOfPayer).not.toHaveBeenCalled();
   });
 
@@ -702,7 +700,7 @@ describe('BI-055, BI-056, BI-059, BI-152 caja revisa lo propuesto', () => {
     });
 
     expect(Object.keys(mocks)).not.toContain('deleteEncounterProcedure');
-    expect(mocks.findBillableService).not.toHaveBeenCalled();
+    expect(mocks.findService).not.toHaveBeenCalled();
   });
 });
 
@@ -753,7 +751,7 @@ describe('BI-003, BI-120 el cobro no bloquea la atención', () => {
       accounts.addCharge({
         accountId: ACCOUNT,
         siteId: SITE,
-        billableServiceId: 'service-1',
+        serviceId: 'service-1',
         encounterId: 'encounter-1',
         serviceDate: SERVICE_DATE,
         quantity: Quantity.ONE,
@@ -791,10 +789,10 @@ describe('BI-192 la cuenta avisa del borrador de orden sin emitir', () => {
 });
 
 describe('BI-203 el extracto dice la consulta que ya no corresponde a la atención', () => {
-  const consultation = (status: ChargeStatus, billableServiceId: string) =>
+  const consultation = (status: ChargeStatus, serviceId: string) =>
     charge('charge-consultation', status, {
       origin: 'CONSULTATION',
-      billableServiceId,
+      serviceId,
     });
 
   it('BI-203 la señala cuando la atención pasó a subsecuente y el cargo sigue en primera vez', async () => {
@@ -895,17 +893,17 @@ describe('BI-203 BI-214 la consulta corregida tras una nota de crédito', () => 
           listCharges: vi.fn().mockResolvedValue([
             charge('original', 'BILLED', {
               origin: 'CONSULTATION',
-              billableServiceId: 'service-first',
+              serviceId: 'service-first',
               creditNote: note,
             }),
             charge('copy', 'BILLED', {
               origin: 'CORRECTION',
               correctsChargeItemId: 'original',
-              billableServiceId: copyService,
+              serviceId: copyService,
             }),
           ]),
-          findEncounterActs: vi.fn().mockResolvedValue({ serviceTypeId: 'type-1', visitSequence: 'SUBSEQUENT', procedures: [] }), // prettier-ignore
-          findConsultationService: vi.fn().mockResolvedValue({ billableServiceId: 'service-subsequent', active: true }), // prettier-ignore
+          findEncounterActs: vi.fn().mockResolvedValue({ serviceId: 'type-1', visitSequence: 'SUBSEQUENT', procedures: [] }), // prettier-ignore
+          findConsultationService: vi.fn().mockResolvedValue({ serviceId: 'service-subsequent', active: true }), // prettier-ignore
         },
       }).service.statement({ accountId: ACCOUNT, siteId: SITE });
 
@@ -927,13 +925,13 @@ describe('BI-243 el extracto dice los cargos de procedimiento que ya no correspo
     charge(`charge-${procedureId}`, status, {
       origin: 'PROCEDURE',
       encounterProcedureId: procedureId,
-      billableServiceId: 'service-suture',
+      serviceId: 'service-suture',
     });
   const statementWith = async (
     lines: ChargeView[],
     procedures: {
       encounterProcedureId: string;
-      conceptId: string;
+      procedureCode: string;
       quantity: number;
       restoredFrom?: string[];
     }[],
@@ -942,17 +940,11 @@ describe('BI-243 el extracto dice los cargos de procedimiento que ya no correspo
       accounts: {
         findAccount: vi.fn().mockResolvedValue(account({ encounterId: 'encounter-1' })), // prettier-ignore
         listCharges: vi.fn().mockResolvedValue(lines),
-        findEncounterActs: vi.fn().mockResolvedValue({ serviceTypeId: null, procedures }), // prettier-ignore
-        findServicesByProcedureConcept: vi.fn().mockResolvedValue(
+        findEncounterActs: vi.fn().mockResolvedValue({ serviceId: null, procedures }), // prettier-ignore
+        findServicesByProcedureCode: vi.fn().mockResolvedValue(
           new Map([
-            [
-              'concept-suture',
-              { billableServiceId: 'service-suture', active: true },
-            ],
-            [
-              'concept-cure',
-              { billableServiceId: 'service-cure', active: true },
-            ],
+            ['code-suture', { serviceId: 'service-suture', active: true }],
+            ['code-cure', { serviceId: 'service-cure', active: true }],
           ]),
         ),
       },
@@ -969,7 +961,7 @@ describe('BI-243 el extracto dice los cargos de procedimiento que ya no correspo
       [
         {
           encounterProcedureId: 'p-changed',
-          conceptId: 'concept-cure',
+          procedureCode: 'code-cure',
           quantity: 1,
         },
       ],
@@ -992,18 +984,18 @@ describe('BI-243 el extracto dice los cargos de procedimiento que ya no correspo
       [
         {
           encounterProcedureId: 'p-two',
-          conceptId: 'concept-suture',
+          procedureCode: 'code-suture',
           quantity: 2,
         },
         {
           encounterProcedureId: 'p-same',
-          conceptId: 'concept-suture',
+          procedureCode: 'code-suture',
           quantity: 1,
         },
         // EN-246: restored from `p-old`, whose line still charges it.
         {
           encounterProcedureId: 'p-new',
-          conceptId: 'concept-suture',
+          procedureCode: 'code-suture',
           quantity: 1,
           restoredFrom: ['p-old'],
         },
@@ -1018,14 +1010,14 @@ describe('BI-243 el extracto dice los cargos de procedimiento que ya no correspo
     const credited = charge('charge-original', 'BILLED', {
       origin: 'PROCEDURE',
       encounterProcedureId: 'p-gone',
-      billableServiceId: 'service-suture',
+      serviceId: 'service-suture',
       creditNote: { id: 'note-1', documentNumber: '001-001-000000003', status: 'AUTHORISED' }, // prettier-ignore
     });
     const copy = charge('charge-copy', 'BILLABLE', {
       origin: 'CORRECTION',
       correctsChargeItemId: 'charge-original',
       encounterProcedureId: 'p-gone',
-      billableServiceId: 'service-suture',
+      serviceId: 'service-suture',
     });
 
     const statement = await statementWith([credited, copy], []);

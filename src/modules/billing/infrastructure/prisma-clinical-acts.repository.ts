@@ -90,11 +90,11 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
         status: true,
         startedAt: true,
         visitSequence: true,
-        agendaEntry: { select: { serviceTypeId: true } },
+        agendaEntry: { select: { serviceId: true } },
         procedures: {
           select: {
             id: true,
-            conceptId: true,
+            procedureCode: true,
             performedAt: true,
             quantity: true,
           },
@@ -125,11 +125,11 @@ export class PrismaClinicalActsRepository implements ClinicalActsRepository {
       status: row.status,
       serviceDate: clinicalDateOf(row.startedAt),
       visitSequence: row.visitSequence,
-      serviceTypeId: row.agendaEntry?.serviceTypeId ?? null,
+      serviceId: row.agendaEntry?.serviceId ?? null,
       clinicallyAttended,
       procedures: row.procedures.map((procedure): PerformedProcedure => ({
         encounterProcedureId: procedure.id,
-        conceptId: procedure.conceptId,
+        procedureCode: procedure.procedureCode,
         // The date it was PERFORMED, which on a visit that spans midnight is
         // not the date of the visit — and prices differently.
         serviceDate: clinicalDateOf(procedure.performedAt),
@@ -352,7 +352,7 @@ function awaitingCheckout(siteId: string): Prisma.Sql {
 /**
  * BI-242 (EN-247, D-194.1). The FROM/WHERE of the visit's procedures recorded
  * — or restored — AFTER the last settled account was opened, with an active
- * service tied to their concept and no charge naming them in any status, nor
+ * procedure service of their code (BI-286) and no charge naming them in any status, nor
  * a manual charge of that service in an account of the visit: the rule of
  * the exams (BI-194). Since the discharge no longer closes the coding, the
  * doctor may record the forgotten extraction once caja has settled; without
@@ -364,7 +364,7 @@ function proceduresRecordedAfterSettlement(
 ): Prisma.Sql {
   return Prisma.sql`
       FROM encounter_procedure p
-      JOIN billable_service s ON s.procedure_concept_id = p.concept_id AND s.active
+      JOIN service s ON s.kind = 'PROCEDURE' AND s.msp_code = p.procedure_code AND s.active
      WHERE p.encounter_id = ${encounterId}
        AND p.recorded_at > (SELECT max(a.opened_at) FROM patient_account a
                              WHERE a.encounter_id = ${encounterId}
@@ -377,7 +377,7 @@ function proceduresRecordedAfterSettlement(
                         WHERE a.encounter_id = ${encounterId}
                           AND c.origin = 'MANUAL'
                           AND c.status <> 'CANCELLED'
-                          AND c.billable_service_id = s.id)`;
+                          AND c.service_id = s.id)`;
 }
 
 /** BI-194. How many exams issued after the last settlement nothing charged. */
@@ -407,8 +407,7 @@ function examsIssuedAfterSettlement(encounterId: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`
       FROM service_order o
       JOIN service_order_item i ON i.service_order_id = o.id
-      JOIN exam_definition d ON d.code = i.test_code
-      JOIN billable_service s ON s.id = d.billable_service_id AND s.active
+      JOIN service s ON s.code = i.test_code AND s.active
      WHERE o.encounter_id = ${encounterId}
        AND o.status = 'ISSUED'
        AND i.status <> 'CANCELLED'
@@ -423,7 +422,7 @@ function examsIssuedAfterSettlement(encounterId: Prisma.Sql): Prisma.Sql {
                         WHERE a.encounter_id = ${encounterId}
                           AND c.origin = 'MANUAL'
                           AND c.status <> 'CANCELLED'
-                          AND c.billable_service_id = s.id)`;
+                          AND c.service_id = s.id)`;
 }
 
 /**

@@ -39,16 +39,16 @@ const EXPECTED: readonly [
   [errors.BillableServiceInUseError, 'BILLABLE_SERVICE_IN_USE', ConflictError],
   [errors.BillableServiceInactiveError, 'BILLABLE_SERVICE_INACTIVE', BusinessRuleViolation], // prettier-ignore
   [errors.InvoiceChargesChangedError, 'INVOICE_CHARGES_CHANGED', ConflictError],
-  [errors.ServiceCategoryNotFoundError, 'SERVICE_CATEGORY_NOT_FOUND', NotFoundError], // prettier-ignore
-  [errors.ServiceCategoryInactiveError, 'SERVICE_CATEGORY_INACTIVE', BusinessRuleViolation], // prettier-ignore
   [errors.ServiceKindMismatchError, 'SERVICE_KIND_MISMATCH', BusinessRuleViolation], // prettier-ignore
-  [errors.ServiceNamedElsewhereError, 'SERVICE_NAMED_ELSEWHERE', ConflictError], // prettier-ignore
-  // BI-256, BI-257 (D-159).
+  // BI-279, BI-281 (ADR-013).
+  [errors.ConsultationIncompleteError, 'CONSULTATION_INCOMPLETE', BusinessRuleViolation], // prettier-ignore
+  [errors.ServiceCodeInvoicedError, 'SERVICE_CODE_INVOICED', ConflictError],
+  [errors.ServiceCodeOrderedError, 'EXAM_CODE_IN_USE', ConflictError],
+  // BI-256, BI-286 (D-159).
   [errors.ServiceNotAProcedureError, 'SERVICE_NOT_A_PROCEDURE', BusinessRuleViolation], // prettier-ignore
   [errors.ServiceProcedureNotInTariffError, 'SERVICE_PROCEDURE_NOT_IN_TARIFF', BusinessRuleViolation], // prettier-ignore
   [errors.ServiceConsentTieLockedError, 'SERVICE_CONSENT_TIE_LOCKED', ConflictError], // prettier-ignore
   [errors.ServiceProcedureTakenError, 'SERVICE_PROCEDURE_TAKEN', ConflictError], // prettier-ignore
-  [errors.ServiceTariffCodeFromProcedureError, 'SERVICE_TARIFF_CODE_FROM_PROCEDURE', ConflictError], // prettier-ignore
   [errors.ServiceTariffCodeInvoicedError, 'SERVICE_TARIFF_CODE_INVOICED', ConflictError], // prettier-ignore
   [errors.TaxRateRequiredError, 'TAX_RATE_REQUIRED', ValidationError],
   [errors.TaxRateNotFoundError, 'TAX_RATE_NOT_FOUND', NotFoundError],
@@ -125,7 +125,7 @@ describe('el contrato de los errores de facturación', () => {
 
     expect(error.code).toBe('PRICE_NOT_FOUND');
     expect(error.params).toEqual({
-      billableServiceId: 'service-1',
+      serviceId: 'service-1',
       payerId: 'payer-1',
       serviceDate: '2026-05-11',
     });

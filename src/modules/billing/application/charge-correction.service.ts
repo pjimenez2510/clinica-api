@@ -103,18 +103,16 @@ export class ChargeCorrectionService implements ConsultationRepricer {
     command: ChargeCommand & {
       quantity?: Quantity;
       serviceDate?: ClinicalDate;
-      billableServiceId?: string;
+      serviceId?: string;
     },
   ): Promise<ChargeView> {
     const charge = await this.requireCharge(command);
 
     if (
-      command.billableServiceId !== undefined &&
-      command.billableServiceId !== charge.billableServiceId
+      command.serviceId !== undefined &&
+      command.serviceId !== charge.serviceId
     ) {
-      const service = await this.catalogue.findBillableService(
-        command.billableServiceId,
-      );
+      const service = await this.catalogue.findService(command.serviceId);
       if (!service) throw new BillableServiceNotFoundError();
       if (!service.active) throw new BillableServiceInactiveError();
     }
@@ -125,7 +123,7 @@ export class ChargeCorrectionService implements ConsultationRepricer {
       now: new Date(),
       quantity: command.quantity,
       serviceDate: command.serviceDate,
-      billableServiceId: command.billableServiceId,
+      serviceId: command.serviceId,
     });
   }
 
@@ -215,13 +213,13 @@ export class ChargeCorrectionService implements ConsultationRepricer {
         );
         return;
       }
-      if (service.billableServiceId === charge.billableServiceId) return;
+      if (service.serviceId === charge.serviceId) return;
 
       await this.accounts.editCharge({
         chargeId: charge.id,
         changedById: command.changedById,
         now: new Date(),
-        billableServiceId: service.billableServiceId,
+        serviceId: service.serviceId,
       });
     } catch (error) {
       this.logger.warn(

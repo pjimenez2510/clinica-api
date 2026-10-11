@@ -47,7 +47,7 @@ const acts = (overrides: Partial<EncounterActs> = {}): EncounterActs => ({
   status: 'DISCHARGED',
   serviceDate: VISIT_DATE,
   visitSequence: 'FIRST_TIME',
-  serviceTypeId: 'service-type-dermatology',
+  serviceId: 'service-type-dermatology',
   procedures: [],
   exams: [],
   clinicallyAttended: true,
@@ -80,7 +80,7 @@ const account = (overrides: Partial<AccountView> = {}): AccountView => ({
 const charge = (overrides: Partial<ChargeView> = {}): ChargeView => ({
   id: 'charge-1',
   accountId: 'account-1',
-  billableServiceId: 'service-consultation',
+  serviceId: 'service-consultation',
   encounterId: ENCOUNTER,
   serviceDate: VISIT_DATE,
   quantity: Quantity.ONE,
@@ -137,8 +137,8 @@ function build(options: { ports?: Record<string, unknown> } = {}) {
     // The catalogue side.
     findConsultationService: vi
       .fn()
-      .mockResolvedValue({ billableServiceId: 'service-consultation', active: true }), // prettier-ignore
-    findServicesByProcedureConcept: vi.fn().mockResolvedValue(new Map()),
+      .mockResolvedValue({ serviceId: 'service-consultation', active: true }), // prettier-ignore
+    findServicesByProcedureCode: vi.fn().mockResolvedValue(new Map()),
     findServicesByExamCode: vi.fn().mockResolvedValue(new Map()),
     findPayer: vi.fn().mockResolvedValue({
       id: 'payer-particular',
@@ -158,7 +158,7 @@ function build(options: { ports?: Record<string, unknown> } = {}) {
       publiclyListed: true,
       active: true,
     }),
-    findBillableService: vi.fn().mockResolvedValue(null),
+    findService: vi.fn().mockResolvedValue(null),
     ...options.ports,
   };
 
@@ -311,15 +311,15 @@ describe('BI-155 una línea sin precio no cuesta el resto de la visita', () => {
   it('BI-155 informa la línea sin precio vigente y sigue con las demás', async () => {
     const { service } = build({
       ports: {
-        findServicesByProcedureConcept: vi.fn().mockResolvedValue(
-          new Map([['concept-suture', { billableServiceId: 'service-suture', active: true }]]), // prettier-ignore
+        findServicesByProcedureCode: vi.fn().mockResolvedValue(
+          new Map([['code-suture', { serviceId: 'service-suture', active: true }]]), // prettier-ignore
         ),
         findEncounterActs: vi.fn().mockResolvedValue(
           acts({
             procedures: [
               {
                 encounterProcedureId: 'procedure-1',
-                conceptId: 'concept-suture',
+                procedureCode: 'code-suture',
                 serviceDate: VISIT_DATE,
                 quantity: 1,
               },
