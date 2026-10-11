@@ -215,16 +215,23 @@ describe('reenviar un comprobante autorizado a otro correo (SRI-095, SRI-096)', 
     return { id: body.id, voucherId: body.electronic.voucherId };
   }
 
-  /** As the SRI's answer and the first delivery leave it: authorised, sent. */
-  async function authorise(invoice: { id: string; voucherId: string }) {
+  /**
+   * As the SRI's answer and the first delivery leave it: authorised
+   * `hoursAgo` before the database's now, its e-mail `delivery`.
+   */
+  async function authorise(
+    invoice: { id: string; voucherId: string },
+    delivery: 'SENT' | 'FAILED' | 'UNDELIVERABLE' = 'SENT',
+    hoursAgo = 0,
+  ) {
     await prisma.$executeRaw`
       UPDATE "electronic_voucher"
          SET "status" = 'AUTHORISED',
              "authorisation_number" = "access_key",
-             "authorised_at" = CURRENT_TIMESTAMP,
+             "authorised_at" = CURRENT_TIMESTAMP - make_interval(hours => ${hoursAgo}::int),
              "authorised_xml" = ${AUTHORISED_XML},
-             "delivery_status" = 'SENT',
-             "delivered_at" = CURRENT_TIMESTAMP
+             "delivery_status" = ${delivery}::text,
+             "delivered_at" = CASE WHEN ${delivery}::text = 'SENT' THEN CURRENT_TIMESTAMP END
        WHERE "id" = ${invoice.voucherId}::uuid`;
     await prisma.$executeRaw`
       UPDATE "invoice" SET "status" = 'AUTHORISED', "authorised_at" = CURRENT_TIMESTAMP
@@ -346,5 +353,149 @@ describe('reenviar un comprobante autorizado a otro correo (SRI-095, SRI-096)', 
        WHERE invoice_id = ${invoice.id}::uuid
        ORDER BY issued_at DESC LIMIT 1`;
     expect(renders).toEqual([{ issued_by_id: colleagueId }]);
+  });
+
+  const deliveryOf = async (invoice: { voucherId: string }) =>
+    (
+      await prisma.electronicVoucher.findUniqueOrThrow({
+        where: { id: invoice.voucherId },
+      })
+    ).deliveryStatus;
+
+  it('SRI-095 SRI-099 reenviado bien a la dirección del comprador, el dado por perdido pasa a SENT', async () => {
+    const invoice = await issueInvoice();
+    await authorise(invoice, 'UNDELIVERABLE', 80);
+
+    // Control: to another address the buyer's delivery stays as it was.
+    await resend(invoice.voucherId, { email: 'contador@empresa.ec' }).expect(204); // prettier-ignore
+    expect(await deliveryOf(invoice)).toBe('UNDELIVERABLE');
+
+    // The buyer's own address, typed with other capitals.
+    await resend(invoice.voucherId, { email: 'Maria@Example.com' }).expect(204);
+    expect(await deliveryOf(invoice)).toBe('SENT');
+    expect(mailer.sent.map((m) => m.to)).toEqual([
+      'contador@empresa.ec',
+      'Maria@Example.com',
+    ]);
+  });
+
+  it('SRI-099 administración reintenta el correo con billing:voucher-mail, y quien no lo tiene no', async () => {
+    const invoice = await issueInvoice();
+    await authorise(invoice, 'FAILED');
+    const doctor = await signIn('medico@clinica.ec', 'MEDICO', siteId, '0102030418'); // prettier-ignore
+
+    const denied = await resend(invoice.voucherId, { email: 'maria@example.com' }, doctor).expect(403); // prettier-ignore
+    expect((denied.body as Problem).code).toBeDefined();
+    expect(mailer.sent).toHaveLength(0);
+
+    await resend(invoice.voucherId, { email: 'maria@example.com' }, adminToken).expect(204); // prettier-ignore
+    expect(await deliveryOf(invoice)).toBe('SENT');
+  });
+
+  it('SRI-100 cada reenvío que sale queda guardado con su dirección; el que falla, no', async () => {
+    const invoice = await issueInvoice();
+    await authorise(invoice);
+    const cashierId = (
+      await prisma.user.findUniqueOrThrow({
+        where: { email: 'caja@clinica.ec' },
+      })
+    ).id;
+
+    mailer.failWith = new Error('relay refused');
+    await resend(invoice.voucherId, { email: 'luis@correo.ec' }).expect(503);
+    mailer.failWith = null;
+    await resend(invoice.voucherId, { email: 'luis@correo.ec' }).expect(204);
+    await resend(invoice.voucherId, { email: 'maria@example.com' }).expect(204);
+
+    const rows = await prisma.$queryRaw<
+      { recipient: string; to_buyer: boolean; sent_by_id: string }[]
+    >`SELECT recipient, to_buyer, sent_by_id::text
+        FROM electronic_voucher_mailing
+       WHERE voucher_id = ${invoice.voucherId}::uuid
+       ORDER BY sent_at, id`;
+    expect(rows).toEqual([
+      { recipient: 'luis@correo.ec', to_buyer: false, sent_by_id: cashierId },
+      { recipient: 'maria@example.com', to_buyer: true, sent_by_id: cashierId },
+    ]);
+  });
+
+  it('SRI-100 la base no deja cambiar ni borrar un envío guardado', async () => {
+    const invoice = await issueInvoice();
+    await authorise(invoice);
+    await resend(invoice.voucherId, { email: 'luis@correo.ec' }).expect(204);
+
+    // Positive control: the table takes an insert by the same path the test
+    // then refuses to update.
+    await prisma.$executeRaw`
+      INSERT INTO electronic_voucher_mailing (voucher_id, sent_by_id, sent_at, recipient, to_buyer)
+      SELECT voucher_id, sent_by_id, sent_at, 'otra@correo.ec', false
+        FROM electronic_voucher_mailing
+       WHERE voucher_id = ${invoice.voucherId}::uuid LIMIT 1`;
+
+    await expect(
+      prisma.$executeRaw`
+        UPDATE electronic_voucher_mailing SET recipient = 'nadie@correo.ec'
+         WHERE voucher_id = ${invoice.voucherId}::uuid`,
+    ).rejects.toThrow(/electronic_voucher_mailing_append_only/);
+    await expect(
+      prisma.$executeRaw`
+        DELETE FROM electronic_voucher_mailing
+         WHERE voucher_id = ${invoice.voucherId}::uuid`,
+    ).rejects.toThrow(/electronic_voucher_mailing_append_only/);
+  });
+
+  it('SRI-101 pasado el tope diario de quien reenvía, responde SRI_RESEND_DAILY_LIMIT sin enviar', async () => {
+    const invoice = await issueInvoice();
+    await authorise(invoice);
+    const cashierId = (
+      await prisma.user.findUniqueOrThrow({
+        where: { email: 'caja@clinica.ec' },
+      })
+    ).id;
+    // 49 already today: the 50th still goes (positive control).
+    await prisma.$executeRaw`
+      INSERT INTO electronic_voucher_mailing (voucher_id, sent_by_id, sent_at, recipient, to_buyer)
+      SELECT ${invoice.voucherId}::uuid, ${cashierId}::uuid, CURRENT_TIMESTAMP, 'luis@correo.ec', false
+        FROM generate_series(1, 49)`;
+    await resend(invoice.voucherId, { email: 'luis@correo.ec' }).expect(204);
+
+    const refused = await resend(invoice.voucherId, { email: 'luis@correo.ec' }).expect(429); // prettier-ignore
+    expect((refused.body as Problem).code).toBe('SRI_RESEND_DAILY_LIMIT');
+    expect(mailer.sent).toHaveLength(1);
+
+    // Another person's quota is their own.
+    const colleague = await signIn('caja2@clinica.ec', 'CAJA', siteId, '0102030400'); // prettier-ignore
+    await resend(invoice.voucherId, { email: 'luis@correo.ec' }, colleague).expect(204); // prettier-ignore
+  });
+
+  it('SRI-098 el monitor cuenta los correos que llevan tres días fallando en las sedes de quien mira', async () => {
+    const stuck = await issueInvoice();
+    await authorise(stuck, 'FAILED', 80);
+    // Controls: failing for less than three days, and given up for good.
+    const recent = await issueInvoice();
+    await authorise(recent, 'FAILED', 70);
+    const givenUp = await issueInvoice();
+    await authorise(givenUp, 'UNDELIVERABLE', 90);
+
+    const mine = await api()
+      .get('/api/v1/sri/vouchers')
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .expect(200);
+    const stalled = (mine.body as { deliveryStalled: { count: number; oldestAuthorisedAt: string | null } }).deliveryStalled; // prettier-ignore
+    expect(stalled.count).toBe(1);
+    const authorisedAt = (
+      await prisma.electronicVoucher.findUniqueOrThrow({
+        where: { id: stuck.voucherId },
+      })
+    ).authorisedAt!;
+    expect(stalled.oldestAuthorisedAt).toBe(authorisedAt.toISOString());
+
+    const elsewhere = await api()
+      .get('/api/v1/sri/vouchers')
+      .set('Authorization', `Bearer ${otherCashierToken}`)
+      .expect(200);
+    expect(elsewhere.body).toMatchObject({
+      deliveryStalled: { count: 0, oldestAuthorisedAt: null },
+    });
   });
 });

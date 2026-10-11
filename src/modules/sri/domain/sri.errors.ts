@@ -3,6 +3,7 @@ import {
   ConflictError,
   ExternalServiceError,
   NotFoundError,
+  QuotaExceededError,
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
 
@@ -61,6 +62,20 @@ export class VoucherResendFailedError extends ExternalServiceError {
   constructor(cause?: unknown) {
     super('The voucher copy could not be e-mailed');
     this.cause = cause;
+  }
+}
+
+/**
+ * SRI-101. The person already e-mailed today the copies a day allows. Says
+ * the number, so the cashier knows it is a rule and not a fault.
+ */
+export class VoucherResendDailyLimitError extends QuotaExceededError {
+  readonly code = 'SRI_RESEND_DAILY_LIMIT';
+  override readonly userTitle: string;
+
+  constructor(limit: number) {
+    super('The daily limit of voucher copies was reached');
+    this.userTitle = `Ya reenvió hoy ${limit} comprobantes, el máximo diario por persona. Mañana podrá volver a hacerlo`;
   }
 }
 

@@ -187,16 +187,17 @@ model User {
   /// Money. Two lists over `charge_item` and not one, because raising a charge
   /// and authorising a discount above the role's ceiling are two acts by two
   /// people — the second pair of eyes only counts if it is a different pair.
-  chargeItemsCreated  ChargeItem[]        @relation("ChargeItemAuthor")
-  chargeItemsChanged  ChargeItem[]        @relation("ChargeItemChanger")
-  pricesChanged       Price[]             @relation("PriceChanger")
-  tariffsPublished    TariffPublication[] @relation("TariffPublisher")
-  discountsAuthorised ChargeItem[]        @relation("ChargeItemDiscountAuthoriser")
-  discountsApplied    ChargeItem[]        @relation("ChargeItemDiscountApplier")
-  invoicesIssued      Invoice[]           @relation("InvoiceIssuer")
-  creditNotesIssued   CreditNote[]        @relation("CreditNoteIssuer")
-  accountsChanged     PatientAccount[]    @relation("PatientAccountChanger")
-  invoicesChanged     Invoice[]           @relation("InvoiceChanger")
+  chargeItemsCreated  ChargeItem[]               @relation("ChargeItemAuthor")
+  chargeItemsChanged  ChargeItem[]               @relation("ChargeItemChanger")
+  pricesChanged       Price[]                    @relation("PriceChanger")
+  tariffsPublished    TariffPublication[]        @relation("TariffPublisher")
+  discountsAuthorised ChargeItem[]               @relation("ChargeItemDiscountAuthoriser")
+  discountsApplied    ChargeItem[]               @relation("ChargeItemDiscountApplier")
+  invoicesIssued      Invoice[]                  @relation("InvoiceIssuer")
+  voucherMailings     ElectronicVoucherMailing[]
+  creditNotesIssued   CreditNote[]               @relation("CreditNoteIssuer")
+  accountsChanged     PatientAccount[]           @relation("PatientAccountChanger")
+  invoicesChanged     Invoice[]                  @relation("InvoiceChanger")
 
   /// REQ-090. Who loaded each issuer certificate (SRI-082).
   signingCertificatesUploaded SigningCertificate[] @relation("SigningCertificateUploader")
@@ -5668,12 +5669,32 @@ model ElectronicVoucher {
 
   attempts ElectronicVoucherAttempt[]
   openings SigningCertificateOpening[]
+  mailings ElectronicVoucherMailing[]
 
   @@unique([invoiceId, accessKey], map: "electronic_voucher_invoice_key_pair")
   @@unique([creditNoteId, accessKey], map: "electronic_voucher_credit_note_key_pair")
   @@unique([id, accessKey], map: "electronic_voucher_id_key_pair")
   @@index([siteId, status], map: "electronic_voucher_by_site_status")
   @@map("electronic_voucher")
+}
+
+/// SRI-100 (D-213 §1). Each «Reenviar» that LEFT: to whom, by whom, when.
+/// Append-only (`electronic_voucher_mailing_append_only`), kept as long as
+/// the voucher (RESTRICT).
+model ElectronicVoucherMailing {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  voucherId String            @map("voucher_id") @db.Uuid
+  voucher   ElectronicVoucher @relation(fields: [voucherId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_mailing_voucher_fk")
+  sentById  String            @map("sent_by_id") @db.Uuid
+  sentBy    User              @relation(fields: [sentById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "electronic_voucher_mailing_sent_by_fk")
+  sentAt    DateTime          @map("sent_at") @db.Timestamptz(6)
+  recipient String            @db.VarChar(320)
+  toBuyer   Boolean           @map("to_buyer")
+
+  @@index([voucherId, sentAt], map: "electronic_voucher_mailing_by_voucher")
+  @@index([sentById, sentAt], map: "electronic_voucher_mailing_by_sender")
+  @@map("electronic_voucher_mailing")
 }
 
 /// SRI-051. Every call to the SRI and what it answered. Append-only.

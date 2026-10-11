@@ -13,6 +13,7 @@ import {
   ELECTRONIC_VOUCHER_REPOSITORY,
   type ElectronicVoucherRepository,
   type MonitorRow,
+  type StalledDeliveries,
   type TransportFailureDetail,
   type VoucherRecord,
   type VoucherStatusView,
@@ -46,6 +47,8 @@ import {
 } from './signing-certificate.service';
 
 const VOUCHER_RESOURCE_TYPE = 'electronic_voucher';
+/** SRI-098. A failed e-mail this old says the clinic's relay is down. */
+const STALLED_DELIVERY_MS = 72 * 3600 * 1000;
 
 export interface Requester {
   userId: string;
@@ -65,6 +68,8 @@ export interface MonitorView {
   certificate: CertificateHealth;
   /** SRI-054. The web service is not declared: vouchers wait signed. */
   webServiceConfigured: boolean;
+  /** SRI-098. E-mails failing three days on: the clinic's relay, not the SRI. */
+  deliveryStalled: StalledDeliveries;
 }
 
 /**
@@ -119,6 +124,10 @@ export class VoucherMonitorService
       rows,
       certificate: await this.certificates.health(),
       webServiceConfigured: this.sri.isConfigured(),
+      deliveryStalled: await this.vouchers.stalledDeliveries(
+        sites,
+        new Date(now.getTime() - STALLED_DELIVERY_MS),
+      ),
     };
   }
 

@@ -100,6 +100,22 @@ export interface VoucherRecord {
 export type DeliveryStatus =
   'PENDING' | 'SENT' | 'NO_EMAIL' | 'FAILED' | 'UNDELIVERABLE';
 
+/** SRI-100. A copy of a voucher that left, to whom and by whom. */
+export interface VoucherMailing {
+  voucherId: string;
+  sentById: string;
+  sentAt: Date;
+  recipient: string;
+  /** SRI-095. The document's buyer address: their delivery is now done. */
+  toBuyer: boolean;
+}
+
+/** SRI-098. What the monitor says about e-mails the relay keeps refusing. */
+export interface StalledDeliveries {
+  count: number;
+  oldestAuthorisedAt: Date | null;
+}
+
 export interface NewVoucher {
   document: VoucherDocument;
   siteId: string;
@@ -268,6 +284,25 @@ export interface ElectronicVoucherRepository {
 
   /** SRI-074 to SRI-076. Only the delivery columns move. */
   recordDelivery(id: string, status: DeliveryStatus, at: Date): Promise<void>;
+
+  /**
+   * SRI-100, SRI-095. One copy that LEFT, in one transaction: its row in
+   * `electronic_voucher_mailing` and, when it went to the buyer, the buyer's
+   * delivery noted `SENT` if it was still owed.
+   */
+  recordMailing(mailing: VoucherMailing): Promise<void>;
+
+  /** SRI-101. The copies `userId` e-mailed from `since` on. */
+  countMailingsSince(userId: string, since: Date): Promise<number>;
+
+  /**
+   * SRI-098. Authorised vouchers whose e-mail is still `FAILED` and were
+   * authorised at or before `authorisedBefore`, in the sites.
+   */
+  stalledDeliveries(
+    sites: readonly string[] | 'all',
+    authorisedBefore: Date,
+  ): Promise<StalledDeliveries>;
 
   /** SRI-084. Releases what waited for a certificate, for the sweep to sign. */
   unblockForCertificate(): Promise<number>;

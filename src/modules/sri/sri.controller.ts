@@ -104,6 +104,11 @@ export class SriVouchersController {
           : null,
       },
       webServiceConfigured: view.webServiceConfigured,
+      deliveryStalled: {
+        count: view.deliveryStalled.count,
+        oldestAuthorisedAt:
+          view.deliveryStalled.oldestAuthorisedAt?.toISOString() ?? null,
+      },
     };
   }
 
@@ -132,7 +137,8 @@ export class SriVouchersController {
   // a script walking the site's vouchers to an outside address is not.
   @Throttle({ short: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermission('billing:write', 'query')
+  // SRI-099. Caja and administration: the e-mail only.
+  @RequirePermission('billing:voucher-mail', 'query')
   @ApiOperation({
     summary:
       'Reenviar por correo el RIDE y el XML de un comprobante autorizado a otra dirección',
@@ -146,7 +152,7 @@ export class SriVouchersController {
     await this.monitorService.resendTo(
       voucherId,
       dto.email,
-      this.requester(req, 'billing:write'),
+      this.requester(req, 'billing:voucher-mail'),
     );
   }
 

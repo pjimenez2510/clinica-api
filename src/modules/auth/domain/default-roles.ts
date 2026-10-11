@@ -72,6 +72,9 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       // clínicas»— vale igual para la caja.
       'billing:read',
       'billing:price-manage',
+      // SRI-099 (D-167 §2). Re-sending a voucher whose e-mail failed: the
+      // e-mail only, never issuing or collecting.
+      'billing:voucher-mail',
       // BI-113. Publicar el tarifario de la pared va con quien fija los
       // precios (D-049: «flexible, el admin asigna»).
       'tariff:publish',
@@ -282,7 +285,7 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
     // con otro nombre para no conceder un permiso que igualmente hace falta.
     // PA-076 (D-205 §4). The e-mail typed on the invoice goes back to the
     // chart: only the contact, never names or documents (`patient:write`).
-    permissions: ['patient:read', 'patient:contact:write', 'site:read', 'billing:read', 'billing:write', 'billing:credit-note', 'catalog:read'], // prettier-ignore
+    permissions: ['patient:read', 'patient:contact:write', 'site:read', 'billing:read', 'billing:write', 'billing:credit-note', 'billing:voucher-mail', 'catalog:read'], // prettier-ignore
   },
   {
     code: 'AUDITOR',

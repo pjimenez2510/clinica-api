@@ -16,9 +16,11 @@ import {
   type MonitorRow,
   type NewVoucher,
   type PreparationSource,
+  type StalledDeliveries,
   type TransportFailureDetail,
   type VoucherRecord,
   type VoucherDocument,
+  type VoucherMailing,
   type VoucherStatusView,
 } from '../domain/electronic-voucher.repository';
 import {
@@ -651,6 +653,46 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         deliveredAt: status === 'SENT' ? at : null,
       },
     });
+  }
+
+  async recordMailing(mailing: VoucherMailing): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.electronicVoucherMailing.create({ data: mailing });
+      if (!mailing.toBuyer) return;
+      // SRI-095. Only a delivery still owed becomes SENT; NO_EMAIL had no
+      // buyer address to match, and SENT stays as it was.
+      await tx.electronicVoucher.updateMany({
+        where: {
+          id: mailing.voucherId,
+          status: 'AUTHORISED',
+          deliveryStatus: { in: ['PENDING', 'FAILED', 'UNDELIVERABLE'] },
+        },
+        data: { deliveryStatus: 'SENT', deliveredAt: mailing.sentAt },
+      });
+    });
+  }
+
+  async countMailingsSince(userId: string, since: Date): Promise<number> {
+    return this.prisma.electronicVoucherMailing.count({
+      where: { sentById: userId, sentAt: { gte: since } },
+    });
+  }
+
+  async stalledDeliveries(
+    sites: readonly string[] | 'all',
+    authorisedBefore: Date,
+  ): Promise<StalledDeliveries> {
+    const { _count, _min } = await this.prisma.electronicVoucher.aggregate({
+      where: {
+        ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
+        status: 'AUTHORISED',
+        deliveryStatus: 'FAILED',
+        authorisedAt: { lte: authorisedBefore },
+      },
+      _count: { _all: true },
+      _min: { authorisedAt: true },
+    });
+    return { count: _count._all, oldestAuthorisedAt: _min.authorisedAt };
   }
 
   async unblockForCertificate(): Promise<number> {

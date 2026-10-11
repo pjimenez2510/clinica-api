@@ -120,6 +120,11 @@ const monitorSchema = z.object({
     expired: z.boolean(),
   }),
   webServiceConfigured: z.boolean(),
+  /** SRI-098. E-mails still failing three days after their authorisation. */
+  deliveryStalled: z.object({
+    count: z.number().int(),
+    oldestAuthorisedAt: z.iso.datetime().nullable(),
+  }),
 });
 export class SriMonitorDto extends createZodDto(monitorSchema) {}
 export type SriMonitorResponse = z.infer<typeof monitorSchema>;

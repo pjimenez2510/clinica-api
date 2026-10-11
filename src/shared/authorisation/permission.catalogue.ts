@@ -451,6 +451,15 @@ export const PERMISSION_CATALOGUE = [
     description: 'Emitir notas de crédito para corregir una factura',
   },
   {
+    // SRI-099 (D-167 §2). Re-sending the RIDE of an authorised voucher by
+    // e-mail: caja, and administration —which neither issues nor collects,
+    // so it does not hold `billing:write`— when the clinic's mail failed.
+    code: 'billing:voucher-mail',
+    resource: 'billing',
+    description:
+      'Reenviar por correo el RIDE y el XML de un comprobante autorizado',
+  },
+  {
     code: 'catalog:read',
     resource: 'catalog',
     description: 'Consultar catálogos: CIE-10, medicamentos, tarifario',

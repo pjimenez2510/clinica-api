@@ -183,6 +183,11 @@ function fakes() {
     statusOfInvoices: vi.fn().mockResolvedValue([]),
     statusOfCreditNotes: vi.fn().mockResolvedValue([]),
     deliveryContext: vi.fn(),
+    recordMailing: vi.fn().mockResolvedValue(undefined),
+    countMailingsSince: vi.fn().mockResolvedValue(0),
+    stalledDeliveries: vi
+      .fn()
+      .mockResolvedValue({ count: 0, oldestAuthorisedAt: null }),
   };
   const certificates = {
     active: vi.fn().mockResolvedValue(certificate()),
