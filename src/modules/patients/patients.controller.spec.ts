@@ -426,6 +426,21 @@ describe('the patient record as it leaves the API', () => {
     expect(seen.search[0]).toMatchObject({ motherId: MOTHER });
   });
 
+  it('PA-079 passes the ids filter through to the register search', async () => {
+    const { controller, seen } = controllerWith(aDetail());
+
+    await controller.search({
+      page: 1,
+      pageSize: 20,
+      includeMerged: false,
+      ids: [MOTHER],
+      sortBy: 'name',
+      sortDirection: 'asc',
+    } as never);
+
+    expect(seen.search[0]).toMatchObject({ ids: [MOTHER] });
+  });
+
   it('PA-031 answers a correction with the chart as a later GET would return it', async () => {
     const { controller, seen } = controllerWith(aDetail());
 

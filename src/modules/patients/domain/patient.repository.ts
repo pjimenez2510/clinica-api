@@ -342,6 +342,11 @@ export interface PatientSearchCriteria {
    * because there is nothing else to type.
    */
   motherId?: string;
+  /**
+   * PA-079. Only these charts. Another filter, like the mother: it combines
+   * with the rest and still leaves the merged ones out.
+   */
+  ids?: readonly string[];
 }
 
 /** `total` counts every match, not just this page's items. */

@@ -384,6 +384,24 @@ export const searchPatientsSchema = z.object({
    */
   motherId: z.uuid().optional(),
   /**
+   * PA-079. Only these charts: the parameter repeated (`ids=a&ids=b`, what
+   * the web client sends) or one comma-separated value (`ids=a,b`).
+   *
+   * What lets the day board say «Faltan N datos» on each row without opening
+   * one chart per patient — an opening is audited (PA-022) and the board polls.
+   * Capped like `pageSize`: a caller cannot ask for the register in one go.
+   * One malformed id refuses the whole query rather than quietly dropping it.
+   */
+  ids: z
+    .preprocess(
+      (value) =>
+        typeof value === 'string'
+          ? value.split(',').map((id) => id.trim())
+          : value,
+      z.array(z.uuid()).min(1).max(50),
+    )
+    .optional(),
+  /**
    * Ordenación, como lista cerrada y no como nombre de columna.
    *
    * El valor acaba en un ORDER BY, donde PostgreSQL no admite parámetros, así
