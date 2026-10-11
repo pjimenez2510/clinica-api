@@ -262,6 +262,10 @@ describe('BI-279 la consulta lleva especialidad, duración y visita', () => {
     expect((refusal as ConsultationDuplicateError).userTitle).toBe(
       'Ya existe la consulta de Cardiología · Control: edítela',
     );
+    // What the screen shows: the first field error says the same.
+    expect(
+      (refusal as ConsultationDuplicateError).fieldErrors?.[0]?.message,
+    ).toBe('Ya existe la consulta de Cardiología · Control: edítela');
     expect(mocks.findActiveConsultation).toHaveBeenCalledWith('specialty-cardiology', 'FOLLOW_UP', null); // prettier-ignore
     expect(mocks.createService).not.toHaveBeenCalled();
   });

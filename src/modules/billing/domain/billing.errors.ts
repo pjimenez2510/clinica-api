@@ -116,20 +116,23 @@ export class ConsultationDuplicateError extends ConflictError {
     specialtyName: string,
     visitKind: 'FIRST_VISIT' | 'FOLLOW_UP' | null,
   ) {
-    super('Another active consultation has this specialty and visit', {}, [
-      {
-        field: visitKind === null ? 'specialtyId' : 'visitKind',
-        code: 'CONSULTATION_DUPLICATE',
-        message: 'Ya existe esa consulta',
-      },
-    ]);
     const visit =
       visitKind === 'FIRST_VISIT'
         ? ' · Primera vez'
         : visitKind === 'FOLLOW_UP'
           ? ' · Control'
           : '';
-    this.userTitle = `Ya existe la consulta de ${specialtyName}${visit}: edítela`;
+    // The field message IS the sentence: the screen announces a refusal by
+    // its first field error, and «Ya existe» without naming it says nothing.
+    const sentence = `Ya existe la consulta de ${specialtyName}${visit}: edítela`;
+    super('Another active consultation has this specialty and visit', {}, [
+      {
+        field: visitKind === null ? 'specialtyId' : 'visitKind',
+        code: 'CONSULTATION_DUPLICATE',
+        message: sentence,
+      },
+    ]);
+    this.userTitle = sentence;
   }
 }
 
