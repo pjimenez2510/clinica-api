@@ -21,8 +21,13 @@ import {
 import {
   ElectronicVoucherNotAuthorisedError,
   ElectronicVoucherNotFoundError,
+  VoucherResendDailyLimitError,
   VoucherResendFailedError,
 } from '../domain/sri.errors';
+import {
+  clinicalDateOf,
+  startOfClinicalDay,
+} from '../../../shared/domain/clinic-time';
 import { DomainError } from '../../../shared/domain/errors/domain-error';
 import { MailDeliveryFailedError } from '../../../shared/mail/mail.errors';
 import {
@@ -46,6 +51,9 @@ import {
 } from '../domain/voucher-lifecycle';
 
 import { VoucherPreparationService } from './voucher-preparation.service';
+
+/** SRI-101 (D-213 §1, D-235). Copies one person may e-mail in a day. */
+export const DAILY_RESEND_LIMIT = 50;
 
 /**
  * SRI-040 to SRI-057, SRI-072 to SRI-076. What each job of the queue does.
@@ -194,15 +202,21 @@ export class VoucherDispatchService {
       await this.mailVoucher(voucher, context, context.buyerEmail);
     } catch (error) {
       const now = this.clock();
-      // SRI-091. Three days of failing is the address: stop, and say so.
-      if (deliveryGivesUp(voucher.authorisedAt, now)) {
+      // SRI-091. Three days of the relay refusing the address: stop, and
+      // say so. Anything else (SRI-098) is the clinic's relay or the RIDE,
+      // and keeps being retried every six hours at most.
+      if (
+        error instanceof MailDeliveryFailedError &&
+        error.recipientRejected &&
+        deliveryGivesUp(voucher.authorisedAt, now)
+      ) {
         this.logger.warn(
           {
             err: error,
             voucher_id: voucher.id,
             error_code: 'SRI_DELIVERY_GIVEN_UP',
           },
-          'the authorised voucher could not be e-mailed for 72 hours; no more retries',
+          'the relay refused the address for 72 hours; no more retries',
         );
         await this.recordDelivery(voucher, 'UNDELIVERABLE', now);
         return;
@@ -230,10 +244,11 @@ export class VoucherDispatchService {
 
   /**
    * SRI-095. A copy of an authorised voucher to the address a person gave,
-   * at once. NOTHING IS RECORDED on the voucher: its delivery is the one to
-   * the buyer of the document (SRI-074, SRI-075), and the address belongs to
-   * no column — the receiver of an authorised invoice does not change
-   * (BI-084). A failure is the caller's to say, not the queue's to retry.
+   * at once, and the document it was about. Whether it settles the buyer's
+   * delivery is the caller's to record (SRI-100); the address belongs to no
+   * column of the voucher — the receiver of an authorised invoice does not
+   * change (BI-084). A failure is the caller's to say, not the queue's to
+   * retry.
    */
   async mailCopy(
     voucher: VoucherRecord,
@@ -245,6 +260,14 @@ export class VoucherDispatchService {
     // SRI-096. A voided invoice keeps its authorised voucher: not sent again.
     if (context.documentStatus !== 'AUTHORISED') {
       throw new ElectronicVoucherNotAuthorisedError();
+    }
+    // SRI-101. Counted on what LEFT today, in Ecuador.
+    const sentToday = await this.vouchers.countMailingsSince(
+      requesterId,
+      startOfClinicalDay(clinicalDateOf(this.clock())),
+    );
+    if (sentToday >= DAILY_RESEND_LIMIT) {
+      throw new VoucherResendDailyLimitError(DAILY_RESEND_LIMIT);
     }
     try {
       // The RIDE composed for this copy is filed in the name of whoever asked
@@ -270,6 +293,19 @@ export class VoucherDispatchService {
       );
       throw new VoucherResendFailedError(error);
     }
+    // SRI-100, SRI-095. Outside the try, like SRI-075: the copy LEFT. To
+    // whom, and whether it was the delivery the buyer was still owed.
+    const toBuyer =
+      context.buyerEmail !== null &&
+      context.buyerEmail.toLowerCase() === to.toLowerCase();
+    await this.vouchers.recordMailing({
+      voucherId: voucher.id,
+      sentById: requesterId,
+      sentAt: this.clock(),
+      recipient: to,
+      toBuyer,
+    });
+    if (toBuyer) this.announce(voucher);
   }
 
   /**

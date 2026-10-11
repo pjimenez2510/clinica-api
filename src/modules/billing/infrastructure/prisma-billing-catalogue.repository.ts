@@ -158,8 +158,15 @@ export class PrismaBillingCatalogueRepository implements BillingCatalogueReposit
       filter.kind === null
         ? acrossKinds
         : Prisma.join([...conditions, Prisma.sql`s.kind = ${filter.kind}`], ' AND '); // prettier-ignore
+    // BI-301. A review older than the clinic's term is pending again.
+    const pending =
+      filter.taxReviewExpiredBefore === null
+        ? Prisma.sql`s.tax_reviewed_at IS NULL`
+        : Prisma.sql`(s.tax_reviewed_at IS NULL
+             OR (s.tax_reviewed_at AT TIME ZONE 'America/Guayaquil')::date
+                < ${filter.taxReviewExpiredBefore}::date)`;
     const order = filter.forTaxReview
-      ? Prisma.sql`(s.tax_reviewed_at IS NULL) DESC,
+      ? Prisma.sql`(${pending}) DESC,
                    (SELECT t.sri_code::int FROM tax_rate t WHERE t.id = s.tax_rate_id),
                    immutable_unaccent(lower(s.name)), s.code`
       : text === ''

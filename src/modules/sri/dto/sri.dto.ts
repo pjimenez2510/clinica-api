@@ -38,6 +38,10 @@ const certificateSchema = z.object({
   notAfter: z.iso.datetime(),
   active: z.boolean(),
   createdAt: z.iso.datetime(),
+  /** SRI-102. The holder's RUC as the certificate states it. */
+  holderRuc: z.string().nullable(),
+  /** SRI-102. `false`: not the establishment's; `null`: it could not tell. */
+  holderRucMatchesIssuer: z.boolean().nullable(),
 });
 export class CertificateDto extends createZodDto(certificateSchema) {}
 export type CertificateResponse = z.infer<typeof certificateSchema>;
@@ -67,6 +71,8 @@ const monitorRowSchema = z.object({
   creditNoteId: z.uuid().nullable(),
   /** SRI-088. For a credit note, the number of the invoice it modifies. */
   modifiedDocumentNumber: z.string().nullable(),
+  /** BI-303. The credit note's reason code; `null` for an invoice. */
+  creditNoteReasonCode: z.string().nullable(),
   voucherId: z.uuid().nullable(),
   siteId: z.uuid(),
   documentNumber: z.string(),
@@ -120,6 +126,11 @@ const monitorSchema = z.object({
     expired: z.boolean(),
   }),
   webServiceConfigured: z.boolean(),
+  /** SRI-098. E-mails still failing three days after their authorisation. */
+  deliveryStalled: z.object({
+    count: z.number().int(),
+    oldestAuthorisedAt: z.iso.datetime().nullable(),
+  }),
 });
 export class SriMonitorDto extends createZodDto(monitorSchema) {}
 export type SriMonitorResponse = z.infer<typeof monitorSchema>;

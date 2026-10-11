@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   ParseUUIDPipe,
   Post,
   Query,
@@ -27,9 +28,12 @@ import {
   type CreditNoteWithVoucher,
 } from './application/credit-note.service';
 import {
+  CorrectCreditNoteDto,
+  CreditNoteDto,
   CreditNoteListDto,
   CreditNoteQueryDto,
   IssueCreditNoteDto,
+  WithdrawCreditNoteDto,
   IssuedCreditNoteDto,
   type CreditNoteResponse,
   type IssuedCreditNoteResponse,
@@ -84,6 +88,67 @@ export class CreditNoteController {
     return {
       creditNote: toCreditNoteResponse(issued.creditNote),
       rebilledAccountId: issued.rebilledAccountId,
+    };
+  }
+
+  /** BI-303, SRI-103. «Editar» the reason of a returned note, and re-send it. */
+  @Patch('credit-notes/:creditNoteId')
+  @AnnouncesChange('billing', 'sri')
+  @RequirePermission('billing:credit-note', 'param:siteId')
+  @ApiOperation({
+    summary:
+      'Corregir el motivo de una nota de crédito devuelta y reenviarla con su clave',
+  })
+  @ApiOkResponse({ type: CreditNoteDto })
+  async correct(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('creditNoteId', ParseUUIDPipe) creditNoteId: string,
+    @Body() dto: CorrectCreditNoteDto,
+    @Req() req: Request,
+  ): Promise<CreditNoteResponse> {
+    return toCreditNoteResponse(
+      await this.creditNotes.correctAndResend(
+        {
+          creditNoteId,
+          siteId,
+          reasonCode: dto.reasonCode,
+          reasonText: dto.reasonText,
+        },
+        this.requester(req),
+      ),
+    );
+  }
+
+  /** BI-304. «Desistir» of a returned note: its lines are released. */
+  @Post('credit-notes/:creditNoteId/withdrawal')
+  @AnnouncesChange('billing', 'sri')
+  @RequirePermission('billing:credit-note', 'param:siteId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Desistir de una nota de crédito devuelta: libera sus líneas y quita lo que esperaba',
+  })
+  @ApiOkResponse({ type: CreditNoteDto })
+  async withdraw(
+    @Param('siteId', ParseUUIDPipe) siteId: string,
+    @Param('creditNoteId', ParseUUIDPipe) creditNoteId: string,
+    @Body() dto: WithdrawCreditNoteDto,
+    @Req() req: Request,
+  ): Promise<CreditNoteResponse> {
+    return toCreditNoteResponse(
+      await this.creditNotes.withdraw(
+        { creditNoteId, siteId, reason: dto.reason },
+        this.requester(req),
+      ),
+    );
+  }
+
+  /** BI-132, BI-273: who, and from where, into the note's transaction. */
+  private requester(req: Request) {
+    return {
+      userId: this.currentUser.requireUserId(),
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
     };
   }
 
@@ -147,6 +212,7 @@ function toCreditNoteResponse(note: CreditNoteWithVoucher): CreditNoteResponse {
       total: note.totals.total.toString(),
     },
     status: note.status,
+    withdrawalReason: note.withdrawalReason,
     issuedAt: note.issuedAt.toISOString(),
     lines: note.lines.map((line) => ({
       chargeItemId: line.chargeItemId,

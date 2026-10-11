@@ -1431,17 +1431,15 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         buyerName: true,
         buyerEmail: true,
         paymentMethod: true,
-        // DOC-076 «Información adicional»: whom the attention was for.
-        account: {
+        // DOC-076 «Información adicional»: whom the attention was for —
+        // the chart the invoice fixed when issued (BI-302), not the
+        // account's, which a merge may have absorbed since.
+        chartOfRecord: {
           select: {
-            patient: {
-              select: {
-                ...PATIENT_SELECT,
-                mrn: true,
-                phone: true,
-                residenceAddressLine: true,
-              },
-            },
+            ...PATIENT_SELECT,
+            mrn: true,
+            phone: true,
+            residenceAddressLine: true,
           },
         },
         subtotalTaxed: true,
@@ -1478,7 +1476,9 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     // The buyer is the patient when the invoice carries the patient's own
     // official identifier: only then are their address and phone the
     // buyer's to print.
-    const patient = row.account.patient;
+    // NOT NULL in the database (BI-302); optional only in the client.
+    const patient = row.chartOfRecord;
+    if (patient === null) return null;
     const buyerIsPatient =
       patient.identifiers[0]?.value === row.buyerIdentification;
 

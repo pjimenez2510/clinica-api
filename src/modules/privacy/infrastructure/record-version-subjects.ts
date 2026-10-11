@@ -252,6 +252,37 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
       'buyer_email',
     ],
   },
+  // BI-303, BI-304 (D-212 §2). A returned credit note whose reason caja
+  // corrected, or that was given up: credit note → its invoice → account →
+  // patient, read from the archived row itself. Its receiver is the
+  // invoice's, maybe ANOTHER person (D-140.2), and does not leave.
+  credit_note: {
+    resourceIdsOf: (chartId) => Prisma.sql`
+      SELECT rv.resource_id AS id FROM record_version rv
+        JOIN invoice i ON i.id = (rv.data ->> 'invoice_id')::uuid
+        JOIN patient_account a ON a.id = i.account_id
+       WHERE rv.resource_type = 'credit_note'
+         AND a.patient_id IN ${chartScopeIds(chartId)}`,
+    omittedBecause: null,
+    redactedColumns: [
+      'buyer_identification_type',
+      'buyer_identification',
+      'buyer_name',
+      'buyer_email',
+    ],
+  },
+  // BI-304. The lines of a credit note given up: deleted, archived whole by
+  // `credit_note_line_is_permanent`. Line → the charge it credited → account
+  // → patient, from the archived row (the line itself no longer exists).
+  credit_note_line: {
+    resourceIdsOf: (chartId) => Prisma.sql`
+      SELECT rv.resource_id AS id FROM record_version rv
+        JOIN charge_item c ON c.id = (rv.data ->> 'charge_item_id')::uuid
+        JOIN patient_account a ON a.id = c.account_id
+       WHERE rv.resource_type = 'credit_note_line'
+         AND a.patient_id IN ${chartScopeIds(chartId)}`,
+    omittedBecause: null,
+  },
   // BI-230 (fix/administracion-sencilla). A price corrected in place is
   // configuration, nobody's personal data: declared so the map stays
   // exhaustive, with a path that reaches no chart.

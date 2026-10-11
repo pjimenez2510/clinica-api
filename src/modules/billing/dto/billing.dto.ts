@@ -685,13 +685,15 @@ const serviceResponseSchema = z.object({
     setAt: z.iso.datetime().nullable(),
     setBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
   }),
-  /** BI-022 to BI-024. Who checked the tax rate and when; `null` = pending. */
+  /** BI-022 to BI-024. Who checked the tax rate and when; `null` = never. */
   taxReview: z
     .object({
       reviewedAt: z.iso.datetime(),
       reviewedBy: z.object({ id: z.uuid(), name: z.string() }),
     })
     .nullable(),
+  /** BI-301. «Por revisar»: never reviewed, or the review expired. */
+  taxReviewPending: z.boolean(),
 });
 /** One service. */
 export class ServiceDto extends createZodDto(serviceResponseSchema) {}

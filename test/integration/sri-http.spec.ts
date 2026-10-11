@@ -22,7 +22,7 @@ import { createTestPkcs12 } from '../support/test-pkcs12';
 import { useDatabase } from './setup/database';
 import { createPatient, createSite } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
-import { giveSiteAnIssuer } from './setup/sri-fixtures';
+import { giveSiteAnIssuer, TEST_ISSUER_RUC } from './setup/sri-fixtures';
 
 /**
  * SRI-058 to SRI-068, SRI-080 to SRI-083, SRI-060 over HTTP: the permission of
@@ -883,6 +883,233 @@ describe('el comprobante electrónico por HTTP', () => {
       ).toBe('ISSUED');
     });
 
+    /** An authorised invoice and its credit note, returned by the SRI. */
+    async function aReturnedCreditNote(reasonCode = 'AMOUNT') {
+      await uploadCertificate();
+      const invoice = await issueInvoice();
+      await authorise(invoice);
+      const issued = await api()
+        .post(
+          `/api/v1/billing/sites/${siteId}/invoices/${invoice.id}/credit-notes`,
+        )
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ reasonCode })
+        .expect(201);
+      const note = (
+        issued.body as {
+          creditNote: {
+            id: string;
+            electronic: { voucherId: string; accessKey: string };
+          };
+          rebilledAccountId: string | null;
+        }
+      ).creditNote;
+      await prisma.$executeRaw`
+        UPDATE "electronic_voucher" SET "status" = 'RETURNED'
+         WHERE "id" = ${note.electronic.voucherId}::uuid`;
+      await prisma.$executeRaw`UPDATE "credit_note" SET "status" = 'REJECTED' WHERE "id" = ${note.id}::uuid`;
+      return { invoice, note };
+    }
+
+    const editNote = (noteId: string, body: object) =>
+      api()
+        .patch(`/api/v1/billing/sites/${siteId}/credit-notes/${noteId}`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(body);
+
+    const withdraw = (
+      noteId: string,
+      body: object = { reason: 'El SRI no reconoce la factura modificada' },
+    ) =>
+      // prettier-ignore
+      api()
+        .post(
+          `/api/v1/billing/sites/${siteId}/credit-notes/${noteId}/withdrawal`,
+        )
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(body);
+
+    it('BI-303 SRI-103 caja corrige el motivo de la nota devuelta, se firma con la misma clave y lo anterior queda en record_version', async () => {
+      const { note } = await aReturnedCreditNote();
+
+      const response = await editNote(note.id, {
+        reasonCode: 'OTHER',
+        reasonText: 'Descuento por pronto pago no aplicado',
+      });
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        id: note.id,
+        status: 'ISSUED',
+        reasonCode: 'OTHER',
+        reason: 'Descuento por pronto pago no aplicado',
+        electronic: { state: 'SIGNED', accessKey: note.electronic.accessKey },
+      });
+      const voucher = await prisma.electronicVoucher.findUniqueOrThrow({
+        where: { id: note.electronic.voucherId },
+      });
+      expect(voucher.accessKey).toBe(note.electronic.accessKey);
+      expect(voucher.signedXml).toContain(
+        '<motivo>Descuento por pronto pago no aplicado</motivo>',
+      );
+      const [version] = await prisma.recordVersion.findMany({
+        where: { resourceType: 'credit_note', resourceId: note.id },
+      });
+      expect(version!.data).toMatchObject({ reason_code: 'AMOUNT' });
+    });
+
+    it('BI-303 una nota que no está devuelta no se edita (409), no cambia entre «Servicio no prestado» y los demás, y la base rechaza su motivo', async () => {
+      const { note } = await aReturnedCreditNote();
+      const kind = await editNote(note.id, { reasonCode: 'SERVICE_NOT_PROVIDED' }); // prettier-ignore
+      expect(kind.status).toBe(422);
+      expect((kind.body as Problem).code).toBe('CREDIT_NOTE_REASON_KIND_FIXED');
+
+      await prisma.$executeRaw`UPDATE "credit_note" SET "status" = 'ISSUED' WHERE "id" = ${note.id}::uuid`;
+      const refused = await editNote(note.id, { reasonCode: 'RECEIVER_DATA' });
+      expect(refused.status).toBe(409);
+      expect((refused.body as Problem).code).toBe('CREDIT_NOTE_NOT_EDITABLE');
+      await expect(
+        prisma.$executeRaw`
+          UPDATE "credit_note" SET "reason" = 'Otro motivo'
+           WHERE "id" = ${note.id}::uuid`,
+      ).rejects.toThrow(/credit_note_immutable/);
+    });
+
+    it('BI-304 SRI-104 desistir de la nota devuelta libera sus líneas, quita las copias por facturar y ya no se reenvía', async () => {
+      const { invoice, note } = await aReturnedCreditNote('AMOUNT');
+      const credit = () =>
+        api()
+          .post(
+            `/api/v1/billing/sites/${siteId}/invoices/${invoice.id}/credit-notes`,
+          )
+          .set('Authorization', `Bearer ${cashierToken}`)
+          .send({ reasonCode: 'AMOUNT' });
+      // Control: while the note stands, its lines admit no other note.
+      const taken = await credit();
+      expect(taken.status).toBe(409);
+      expect((taken.body as Problem).code).toBe(
+        'CREDIT_NOTE_LINE_ALREADY_CREDITED',
+      );
+
+      const response = await withdraw(note.id);
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ id: note.id, status: 'WITHDRAWN' });
+
+      expect(
+        await prisma.creditNoteLine.count({ where: { creditNoteId: note.id } }),
+      ).toBe(0);
+      const versions = await prisma.recordVersion.findMany({
+        where: { resourceType: { in: ['credit_note', 'credit_note_line'] } },
+        select: { resourceType: true },
+      });
+      expect(versions.map((v) => v.resourceType).sort()).toEqual([
+        'credit_note',
+        'credit_note_line',
+      ]);
+      const copies = await prisma.chargeItem.findMany({
+        where: { correctsChargeItemId: { not: null } },
+        select: { status: true },
+      });
+      expect(copies).toEqual([{ status: 'CANCELLED' }]);
+
+      // A withdrawn note credits nothing and is no longer the invoice's
+      // (BI-103, BI-260): its total and balance are the invoice's own.
+      const after = await api()
+        .get(`/api/v1/billing/sites/${siteId}/invoices/${invoice.id}`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      expect(after.body).toMatchObject({
+        creditedTotal: '0.00',
+        creditNotes: [],
+      });
+
+      // SRI-104. Out of the monitor, and not re-sent.
+      const monitor = await api()
+        .get('/api/v1/sri/vouchers')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .expect(200);
+      expect(
+        (
+          monitor.body as { rows: { creditNoteId: string | null }[] }
+        ).rows.filter((row) => row.creditNoteId === note.id),
+      ).toEqual([]);
+      const retry = await api()
+        .post(`/api/v1/sri/vouchers/${note.electronic.voucherId}/retry`)
+        .set('Authorization', `Bearer ${cashierToken}`);
+      expect(retry.status).toBe(409);
+      expect((retry.body as Problem).code).toBe('SRI_VOUCHER_NOT_RETRIABLE');
+
+      // Released: the same lines take a new note, with a copy of their own.
+      expect((await credit()).status).toBe(201);
+    });
+
+    it('BI-303 la base no deja que la corrección cruce «servicio no prestado» ni «datos del receptor», y sí entre importe y otro', async () => {
+      const { note } = await aReturnedCreditNote('AMOUNT');
+      const stamp = (await prisma.user.findFirstOrThrow()).id;
+      const correct = (reasonCode: string) =>
+        prisma.$executeRaw`
+          UPDATE "credit_note"
+             SET "reason_code" = ${reasonCode}, "reason" = ${reasonCode},
+                 "changed_by" = ${stamp}::uuid,
+                 "changed_at" = clock_timestamp()
+           WHERE "id" = ${note.id}::uuid`;
+
+      // Positive control: AMOUNT to OTHER, by the same statement, passes.
+      await correct('OTHER');
+      await expect(correct('SERVICE_NOT_PROVIDED')).rejects.toThrow(
+        /credit_note_immutable/,
+      );
+      await expect(correct('RECEIVER_DATA')).rejects.toThrow(
+        /credit_note_immutable/,
+      );
+    });
+
+    it('SRI-104 la base no deja que el comprobante de una nota desistida vuelva a salir', async () => {
+      const { note } = await aReturnedCreditNote();
+      const reopen = () =>
+        prisma.$executeRaw`
+          UPDATE "electronic_voucher" SET "status" = 'PREPARED'
+           WHERE "id" = ${note.electronic.voucherId}::uuid`;
+      await withdraw(note.id).expect(200);
+      await expect(reopen()).rejects.toThrow(
+        /electronic_voucher_withdrawn_note_stays/,
+      );
+
+      // Positive control: a returned (not withdrawn) note's voucher reopens.
+      const other = await aReturnedCreditNote();
+      await prisma.$executeRaw`
+        UPDATE "electronic_voucher" SET "status" = 'PREPARED'
+         WHERE "id" = ${other.note.electronic.voucherId}::uuid`;
+    });
+
+    it('BI-304 quién desistió queda: la base no deja reescribir su sello sin dejar versión', async () => {
+      const { note } = await aReturnedCreditNote();
+      await withdraw(note.id).expect(200);
+      const someoneElse = (await prisma.user.findFirstOrThrow()).id;
+      await expect(
+        prisma.$executeRaw`
+          UPDATE "credit_note" SET "changed_by" = ${someoneElse}::uuid,
+                 "changed_at" = clock_timestamp()
+           WHERE "id" = ${note.id}::uuid`,
+      ).rejects.toThrow(/credit_note_immutable/);
+    });
+
+    it('BI-304 sólo se desiste de una devuelta, y la base no deja que una desistida vuelva', async () => {
+      const { note } = await aReturnedCreditNote();
+      await prisma.$executeRaw`UPDATE "credit_note" SET "status" = 'ISSUED' WHERE "id" = ${note.id}::uuid`;
+      const refused = await withdraw(note.id);
+      expect(refused.status).toBe(409);
+      expect((refused.body as Problem).code).toBe('CREDIT_NOTE_NOT_EDITABLE');
+
+      // Positive control: returned again, it is withdrawn.
+      await prisma.$executeRaw`UPDATE "credit_note" SET "status" = 'REJECTED' WHERE "id" = ${note.id}::uuid`;
+      await withdraw(note.id).expect(200);
+      await expect(
+        prisma.$executeRaw`
+          UPDATE "credit_note" SET "status" = 'ISSUED'
+           WHERE "id" = ${note.id}::uuid`,
+      ).rejects.toThrow(/credit_note_immutable/);
+    });
+
     it('SRI-088 la lista de notas de crédito trae su estado electrónico', async () => {
       await uploadCertificate();
       const invoice = await issueInvoice();
@@ -928,6 +1155,55 @@ describe('el comprobante electrónico por HTTP', () => {
           where: { resourceType: 'signing_certificate', action: 'CREATE' },
         }),
       ).toBe(1);
+    });
+
+    it('SRI-102 un certificado de otro RUC se carga con aviso; el del establecimiento, sin él', async () => {
+      const foreign = await uploadCertificate(
+        createTestPkcs12({ now: new Date(), ruc: '0992339411001' }),
+      );
+      expect(foreign.status).toBe(201);
+      expect(foreign.body).toMatchObject({
+        active: true,
+        holderRuc: '0992339411001',
+        holderRucMatchesIssuer: false,
+      });
+
+      // Positive control: the establishment's own RUC carries no warning.
+      const own = await uploadCertificate(
+        createTestPkcs12({ now: new Date(), ruc: TEST_ISSUER_RUC }),
+      );
+      expect(own.body).toMatchObject({
+        holderRuc: TEST_ISSUER_RUC,
+        holderRucMatchesIssuer: true,
+      });
+
+      // Read back: the list says the same of each.
+      const listed = await api()
+        .get('/api/v1/sri/certificates')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(
+        (
+          listed.body as {
+            holderRuc: string;
+            holderRucMatchesIssuer: boolean;
+          }[]
+        )
+          .map((c) => [c.holderRuc, c.holderRucMatchesIssuer])
+          .sort(),
+      ).toEqual([
+        ['0992339411001', false],
+        [TEST_ISSUER_RUC, true],
+      ]);
+    });
+
+    it('SRI-102 un certificado sin RUC legible se carga y dice que no se pudo leer', async () => {
+      const response = await uploadCertificate();
+      expect(response.status).toBe(201);
+      expect(response.body).toMatchObject({
+        holderRuc: null,
+        holderRucMatchesIssuer: null,
+      });
     });
 
     it('SRI-080 cargar otro desactiva el anterior y lo conserva', async () => {

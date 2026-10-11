@@ -59,8 +59,50 @@ export class ForgePkcs12Inspector implements Pkcs12Inspector {
       serialNumber: own.serialNumber,
       notBefore: own.validity.notBefore,
       notAfter: own.validity.notAfter,
+      holderRuc: holderRucOf(own),
     };
   }
+}
+
+/**
+ * SRI-102. «OID — Objetos Identificadores Únicos de los Certificados»,
+ * Security Data v9 (07-07-2020): 3.11 is the RUC of a company member, a legal
+ * representative and a natural person with one. Other Ecuadorian CAs were not
+ * verified; for them the subject is searched for a 13-digit RUC.
+ */
+const SECURITY_DATA_RUC_OID = '1.3.6.1.4.1.37746.3.11';
+
+/** A RUC: 13 digits ending in an establishment number, never a cédula. */
+const RUC = /(?<!\d)(\d{10}0\d{2})(?!\d)/;
+
+function holderRucOf(certificate: forge.pki.Certificate): string | null {
+  const extension = certificate.extensions.find(
+    (candidate: { id?: string }) => candidate.id === SECURITY_DATA_RUC_OID,
+  ) as { value?: string } | undefined;
+  const fromExtension = extension?.value && rucIn(decoded(extension.value));
+  if (fromExtension) return fromExtension;
+
+  for (const attribute of certificate.subject.attributes) {
+    const found = rucIn(String(attribute.value));
+    if (found) return found;
+  }
+  return null;
+}
+
+/** The extension's value is DER; its text is whatever string type it holds. */
+function decoded(der: string): string {
+  try {
+    const node = forge.asn1.fromDer(der);
+    return typeof node.value === 'string'
+      ? forge.util.decodeUtf8(node.value)
+      : '';
+  } catch {
+    return der;
+  }
+}
+
+function rucIn(text: string): string | null {
+  return RUC.exec(text)?.[1] ?? null;
 }
 
 function distinguishedName(

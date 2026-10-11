@@ -16,9 +16,11 @@ import {
   type MonitorRow,
   type NewVoucher,
   type PreparationSource,
+  type StalledDeliveries,
   type TransportFailureDetail,
   type VoucherRecord,
   type VoucherDocument,
+  type VoucherMailing,
   type VoucherStatusView,
 } from '../domain/electronic-voucher.repository';
 import {
@@ -505,6 +507,25 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
 
   async reopen(id: string, unsignedXml: string): Promise<boolean> {
     return this.prisma.$transaction(async (tx) => {
+      // SRI-104. The document first, locked and still returned: a credit
+      // note given up a moment ago (BI-304) is not reopened and sent.
+      const row = await tx.electronicVoucher.findUnique({
+        where: { id },
+        select: { id: true, invoiceId: true, creditNoteId: true },
+      });
+      if (!row) return false;
+      const document = documentOf(row);
+      const [returned] =
+        document.kind === 'INVOICE'
+          ? await tx.$queryRaw<{ id: string }[]>`
+              SELECT "id" FROM "invoice"
+               WHERE "id" = ${document.invoiceId}::uuid AND "status" = 'REJECTED'
+                 FOR UPDATE`
+          : await tx.$queryRaw<{ id: string }[]>`
+              SELECT "id" FROM "credit_note"
+               WHERE "id" = ${document.creditNoteId}::uuid AND "status" = 'REJECTED'
+                 FOR UPDATE`;
+      if (!returned) return false;
       const voucher = await tx.electronicVoucher.updateMany({
         where: { id, status: { in: ['RETURNED', 'NOT_AUTHORISED'] } },
         data: {
@@ -521,12 +542,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         },
       });
       if (voucher.count === 0) return false;
-      const row = await tx.electronicVoucher.findUniqueOrThrow({
-        where: { id },
-        select: { id: true, invoiceId: true, creditNoteId: true },
-      });
       // SRI-058. Back to ISSUED: it is not rejected while it is being re-sent.
-      const document = documentOf(row);
       if (document.kind === 'INVOICE') {
         await tx.invoice.updateMany({
           where: { id: document.invoiceId, status: 'REJECTED' },
@@ -645,12 +661,65 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
     at: Date,
   ): Promise<void> {
     await this.prisma.electronicVoucher.updateMany({
-      where: { id, status: 'AUTHORISED' },
+      where: {
+        id,
+        status: 'AUTHORISED',
+        // SRI-095. A queue attempt failing late does not undo the e-mail a
+        // person sent meanwhile.
+        ...(status === 'SENT'
+          ? {}
+          : {
+              OR: [
+                { deliveryStatus: null },
+                { deliveryStatus: { not: 'SENT' } },
+              ],
+            }),
+      },
       data: {
         deliveryStatus: status,
         deliveredAt: status === 'SENT' ? at : null,
       },
     });
+  }
+
+  async recordMailing(mailing: VoucherMailing): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.electronicVoucherMailing.create({ data: mailing });
+      if (!mailing.toBuyer) return;
+      // SRI-095. Only a delivery still owed becomes SENT; NO_EMAIL had no
+      // buyer address to match, and SENT stays as it was.
+      await tx.electronicVoucher.updateMany({
+        where: {
+          id: mailing.voucherId,
+          status: 'AUTHORISED',
+          deliveryStatus: { in: ['PENDING', 'FAILED', 'UNDELIVERABLE'] },
+        },
+        data: { deliveryStatus: 'SENT', deliveredAt: mailing.sentAt },
+      });
+    });
+  }
+
+  async countMailingsSince(userId: string, since: Date): Promise<number> {
+    return this.prisma.electronicVoucherMailing.count({
+      where: { sentById: userId, sentAt: { gte: since } },
+    });
+  }
+
+  async stalledDeliveries(
+    sites: readonly string[] | 'all',
+    authorisedBefore: Date,
+  ): Promise<StalledDeliveries> {
+    const { _count, _min } = await this.prisma.electronicVoucher.aggregate({
+      where: {
+        ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
+        status: 'AUTHORISED',
+        deliveryStatus: 'FAILED',
+        authorisedAt: { lte: authorisedBefore },
+      },
+      _count: { _all: true },
+      _min: { authorisedAt: true },
+    });
+    return { count: _count._all, oldestAuthorisedAt: _min.authorisedAt };
   }
 
   async unblockForCertificate(): Promise<number> {
@@ -816,6 +885,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
           buyerIdentification: true,
           issuedAt: true,
           amount: true,
+          reasonCode: true,
           emissionPoint: { select: MONITOR_POINT_SELECT },
           electronicVoucher: { select: MONITOR_VOUCHER_SELECT },
           invoice: {
@@ -866,6 +936,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         document: 'INVOICE',
         invoiceId: row.id,
         creditNoteId: null,
+        creditNoteReasonCode: null,
         modifiedDocumentNumber: null,
         siteId: row.siteId,
         documentNumber: invoiceDocumentNumber({
@@ -884,6 +955,7 @@ export class PrismaElectronicVoucherRepository implements ElectronicVoucherRepos
         document: 'CREDIT_NOTE',
         invoiceId: row.invoice.id,
         creditNoteId: row.id,
+        creditNoteReasonCode: row.reasonCode,
         modifiedDocumentNumber: invoiceDocumentNumber({
           accessKey: row.invoice.accessKey,
           establishmentCode:

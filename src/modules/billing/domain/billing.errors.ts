@@ -713,6 +713,28 @@ export class BillingEncounterNotFoundError extends NotFoundError {
 }
 
 /**
+ * BI-305 (D-216 §1). «Enviar a caja» asked for a payer, and the visit's open
+ * account has another one — opened a second earlier by somebody else, or
+ * before. Handing back that account would charge the visit to a payer nobody
+ * at this counter chose; the sentence names the one it has, so caja changes
+ * it with «Cambiar pagador» if it must.
+ *
+ * The same code as the database's `patient_account_one_open_per_encounter`,
+ * on purpose: it is the same fact said with what caja needs to act on it.
+ */
+export class AccountAlreadyOpenForEncounterError extends ConflictError {
+  readonly code = 'ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER';
+  override readonly userTitle: string;
+
+  constructor(openPayerName: string) {
+    super('The encounter already has an open account with another payer', {
+      openPayerName,
+    });
+    this.userTitle = `Esta atención ya tiene una cuenta abierta con ${openPayerName}. Si debe pagar otro, ábrala y use «Cambiar pagador»`;
+  }
+}
+
+/**
  * BI-150. Opening the account of a visit needs to know WHO PAYS.
  *
  * ⚠️ AND THIS REFUSAL IS NOT A GATE ON CARE (Ley 77 art. 9, BI-003, BI-120).
@@ -843,6 +865,16 @@ export class InvoiceNotFoundError extends NotFoundError {
 
   constructor() {
     super('No invoice with that identifier in this site');
+  }
+}
+
+/** BI-303, BI-304. Another site's credit note answers the same (BI-135). */
+export class CreditNoteNotFoundError extends NotFoundError {
+  readonly code = 'CREDIT_NOTE_NOT_FOUND';
+  override readonly userTitle = 'Esa nota de crédito no existe';
+
+  constructor() {
+    super('No credit note with that identifier in this site');
   }
 }
 
@@ -1089,6 +1121,56 @@ export class CreditNoteLineNotInInvoiceError extends BusinessRuleViolation {
 
   constructor() {
     super('A credited charge is not a line of this invoice');
+  }
+}
+
+/**
+ * BI-303, BI-304. Only a credit note the SRI returned or did not authorise is
+ * corrected or given up: the others are the SRI's, or already given up.
+ */
+export class CreditNoteNotEditableError extends ConflictError {
+  readonly code = 'CREDIT_NOTE_NOT_EDITABLE';
+  override readonly userTitle =
+    'Sólo una nota de crédito devuelta o no autorizada por el SRI se corrige o se desiste';
+
+  constructor() {
+    super('The credit note is not REJECTED');
+  }
+}
+
+/**
+ * BI-303. «Servicio no prestado» decided at issue whether the credited lines
+ * came back to the account (BI-214); a correction cannot undo that.
+ */
+export class CreditNoteReasonKindFixedError extends ValidationError {
+  readonly code = 'CREDIT_NOTE_REASON_KIND_FIXED';
+  override readonly userTitle =
+    'Ese motivo cambiaría lo que la nota ya decidió (si vuelve a facturar, a quién se envía): desista de ella y emita otra';
+
+  constructor() {
+    super('The reason cannot move across SERVICE_NOT_PROVIDED', {}, [
+      {
+        field: 'reasonCode',
+        code: 'CREDIT_NOTE_REASON_KIND_FIXED',
+        message: 'Elija un motivo del mismo tipo',
+      },
+    ]);
+  }
+}
+
+/** BI-304. Giving a note up says why. */
+export class CreditNoteWithdrawalReasonRequiredError extends ValidationError {
+  readonly code = 'CREDIT_NOTE_WITHDRAWAL_REASON_REQUIRED';
+  override readonly userTitle = 'Diga por qué desiste de la nota de crédito';
+
+  constructor() {
+    super('A withdrawal needs a reason', {}, [
+      {
+        field: 'reason',
+        code: 'CREDIT_NOTE_WITHDRAWAL_REASON_REQUIRED',
+        message: 'Escriba el motivo (hasta 300 caracteres)',
+      },
+    ]);
   }
 }
 

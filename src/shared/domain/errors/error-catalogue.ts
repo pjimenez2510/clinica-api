@@ -359,6 +359,8 @@ export const DOMAIN_ERROR_CODES = [
   'SRI_CERTIFICATE_INVALID',
   'SRI_CERTIFICATE_STORE_NOT_CONFIGURED',
   'SRI_CERTIFICATE_TOO_LARGE',
+  'SRI_RESEND_DAILY_LIMIT',
+  'SRI_RESEND_DELIVERY_NOT_FAILED',
   'SRI_RESEND_FAILED',
   'SRI_VOUCHER_NOT_AUTHORISED',
   'SRI_VOUCHER_NOT_FOUND',
@@ -624,6 +626,8 @@ export const DOMAIN_ERROR_CODES = [
   // cargo ya facturado (BI-198), y `ACCOUNT_HAS_OPEN_CHARGES` (409)
   // ENUMERA los cargos que impiden cerrar, con identificadores y sin nombres
   // de prestación (BI-007).
+  // BI-305. Also the database's code for the same fact (BI-070).
+  'ACCOUNT_ALREADY_OPEN_FOR_ENCOUNTER',
   'ACCOUNT_CLOSED',
   'ACCOUNT_HAS_BILLED_CHARGES',
   'ACCOUNT_HAS_OPEN_CHARGES',
@@ -696,6 +700,11 @@ export const DOMAIN_ERROR_CODES = [
   // Corregir una factura (BI-091 a BI-097, BI-208 a BI-218, inventario CA-8
   // y CA-9). La nota de crédito es la única forma de corregir lo autorizado;
   // lo devuelto por el SRI se corrige y se reenvía con la misma clave.
+  // BI-303, BI-304 (D-212 §2).
+  'CREDIT_NOTE_NOT_EDITABLE',
+  'CREDIT_NOTE_NOT_FOUND',
+  'CREDIT_NOTE_REASON_KIND_FIXED',
+  'CREDIT_NOTE_WITHDRAWAL_REASON_REQUIRED',
   'CREDIT_NOTE_EXCEEDS_INVOICE',
   'CREDIT_NOTE_FINAL_CONSUMER',
   'CREDIT_NOTE_INVOICE_NOT_AUTHORISED',

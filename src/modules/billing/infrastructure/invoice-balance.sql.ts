@@ -15,7 +15,7 @@ import { Prisma } from '@prisma/client';
 export const INVOICE_BALANCE = Prisma.sql`(
   i."total"
   - COALESCE((SELECT SUM(c."amount") FROM "credit_note" c
-               WHERE c."invoice_id" = i."id" AND c."status" <> 'REJECTED'), 0)
+               WHERE c."invoice_id" = i."id" AND c."status" NOT IN ('REJECTED', 'WITHDRAWN')), 0)
   - COALESCE((SELECT SUM(p."amount") FROM "payment" p
                WHERE p."invoice_id" = i."id" AND p."reversed_at" IS NULL), 0)
 )`;

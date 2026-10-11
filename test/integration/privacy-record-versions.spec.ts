@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
@@ -42,7 +43,10 @@ describe('privacy: las versiones guardadas llegan a su titular', () => {
         FROM pg_trigger t
         JOIN pg_class c ON c.oid = t.tgrelid
         JOIN pg_proc p ON p.oid = t.tgfoid
-       WHERE p.proname = 'record_version_archive'
+       -- The shared archiver, or a function of its own that writes there
+       -- (BI-304: \`credit_note_line_is_permanent\` archives a line it deletes).
+       WHERE (p.proname = 'record_version_archive'
+              OR p.prosrc LIKE '%INSERT INTO "record_version"%')
          AND NOT t.tgisinternal
        ORDER BY 1`;
     const archived = rows.map((row) => row.table_name);
@@ -430,6 +434,13 @@ async function everyVersionedRowOf(
     patient_account: account.id,
     invoice: invoice.id,
     waitlist_contact_attempt: call.id,
+    // BI-303, BI-304: reached through what the archived row names.
+    credit_note: randomUUID(),
+    credit_note_line: randomUUID(),
+  };
+  const archivedLinks: Record<string, Record<string, string>> = {
+    credit_note: { invoice_id: invoice.id },
+    credit_note_line: { charge_item_id: charge.id },
   };
   for (const [table, resourceId] of Object.entries(versioned)) {
     await prisma.recordVersion.create({
@@ -437,7 +448,7 @@ async function everyVersionedRowOf(
         resourceType: table,
         resourceId,
         version: 1,
-        data: { simulated: table },
+        data: { simulated: table, ...archivedLinks[table] },
         changedById: author.id,
         changedAt: new Date(),
       },

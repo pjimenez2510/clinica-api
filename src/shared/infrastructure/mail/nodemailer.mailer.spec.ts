@@ -3,7 +3,10 @@ import { PinoLogger } from 'nestjs-pino';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Env } from '../../config/env.schema';
-import { MailNotConfiguredError } from '../../mail/mail.errors';
+import {
+  MailDeliveryFailedError,
+  MailNotConfiguredError,
+} from '../../mail/mail.errors';
 
 import { NodemailerMailer } from './nodemailer.mailer';
 
@@ -104,4 +107,69 @@ describe('el adaptador de correo', () => {
       }),
     );
   });
+
+  it.each([
+    [
+      'un 550 al destinatario',
+      {
+        code: 'EENVELOPE',
+        command: 'RCPT TO',
+        responseCode: 550,
+        response: '550 5.1.1 User unknown',
+      },
+      true,
+    ],
+    [
+      'un 550 sin código ampliado al destinatario',
+      {
+        code: 'EENVELOPE',
+        command: 'RCPT TO',
+        responseCode: 550,
+        response: '550 no such mailbox',
+      },
+      true,
+    ],
+    [
+      'un 451 al destinatario',
+      { code: 'EENVELOPE', command: 'RCPT TO', responseCode: 451 },
+      false,
+    ],
+    [
+      'un 554 5.7.1 de política del servidor',
+      {
+        code: 'EENVELOPE',
+        command: 'RCPT TO',
+        responseCode: 554,
+        response: '554 5.7.1 Relay access denied',
+      },
+      false,
+    ],
+    [
+      'un 553 al remitente',
+      {
+        code: 'EENVELOPE',
+        command: 'MAIL FROM',
+        responseCode: 553,
+        response: '553 5.7.1 Sender address rejected',
+      },
+      false,
+    ],
+    ['un 535 al iniciar sesión', { code: 'EAUTH', responseCode: 535 }, false],
+    ['sin conexión', { code: 'ESOCKET' }, false],
+  ])(
+    'SRI-091 SRI-098 distingue el rechazo permanente de la dirección: %s',
+    async (_case, failure, permanent) => {
+      sendMail.mockRejectedValueOnce(
+        Object.assign(new Error('relay said no'), failure),
+      );
+      const mailer = new NodemailerMailer(configWithout('localhost'), logger());
+
+      const error = await mailer.send(MESSAGE).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(MailDeliveryFailedError);
+      expect((error as MailDeliveryFailedError).recipientRejected).toBe(
+        permanent,
+      );
+    },
+  );
 });

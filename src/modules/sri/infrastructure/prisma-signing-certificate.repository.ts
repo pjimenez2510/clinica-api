@@ -14,6 +14,7 @@ const SUMMARY_SELECT = {
   serialNumber: true,
   notBefore: true,
   notAfter: true,
+  holderRuc: true,
   active: true,
   createdAt: true,
 } as const;
@@ -64,6 +65,7 @@ export class PrismaSigningCertificateRepository implements SigningCertificateRep
           serialNumber: certificate.serialNumber,
           notBefore: certificate.notBefore,
           notAfter: certificate.notAfter,
+          holderRuc: certificate.holderRuc,
           encryptedPkcs12: new Uint8Array(certificate.encryptedPkcs12),
           encryptedPassword: new Uint8Array(certificate.encryptedPassword),
           kdfSalt: new Uint8Array(certificate.kdfSalt),
@@ -79,6 +81,20 @@ export class PrismaSigningCertificateRepository implements SigningCertificateRep
       orderBy: { createdAt: 'desc' },
       select: SUMMARY_SELECT,
     });
+  }
+
+  async issuerRucs(): Promise<string[]> {
+    const [establishments, sites] = await Promise.all([
+      this.prisma.establishment.findMany({
+        where: { ruc: { not: null } },
+        select: { ruc: true },
+      }),
+      this.prisma.site.findMany({
+        where: { ruc: { not: null } },
+        select: { ruc: true },
+      }),
+    ]);
+    return [...new Set([...establishments, ...sites].map((row) => row.ruc!))];
   }
 
   async recordOpening(certificateId: string, voucherId: string): Promise<void> {
