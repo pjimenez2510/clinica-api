@@ -526,6 +526,8 @@ describe('BI-284 la extensión de orden', () => {
       ).rejects.toBe(refused);
     }
     expect(mocks.updateService).not.toHaveBeenCalled();
+    expect(mocks.hasInvoicedCharges).not.toHaveBeenCalled();
+    expect(mocks.codeWasOrdered).not.toHaveBeenCalled();
 
     // What the form sends unchanged, and the rest of the exam, does not ask.
     await catalogue.updateService('service-1', { name: examService.name, code: examService.code, active: examService.active, taxRateId: taxRate.id }, requester, requireOrderKey); // prettier-ignore

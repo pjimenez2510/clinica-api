@@ -3152,8 +3152,8 @@ lo ve._
   > D-233, resuelta por el autor el 11-10-2026: el nombre del examen es lo que
   > el médico elige y encabeza la línea impresa, y la orden busca su muestra y
   > su preparación por el código; quien sólo fija precios corrige el precio de
-  > un examen, nada más. La interfaz no le ofrece el nombre, el código ni
-  > «Desactivar» en un servicio con extensión de orden.
+  > un examen, nada más. La interfaz le enseña el nombre y el código sin dejarle
+  > cambiarlos, y no le ofrece «Desactivar» en un servicio con extensión de orden.
 
 - **BI-300** — La semilla DEBERÁ crear los pagadores de la red pública (IESS,
   ISSFA, ISSPOL, MSP) **inactivos**, y NO DEBERÁ cambiar el estado de un

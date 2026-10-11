@@ -588,7 +588,7 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
         .expect(201);
     });
 
-    it('BI-299 crear un examen, o corregir lo que su orden imprime, exige además catalog:manage; el precio y el nombre no', async () => {
+    it('BI-299 crear un examen, o corregir lo que su orden imprime, exige además catalog:manage; el precio y lo que no se pide no', async () => {
       const exam = {
         kind: 'LAB_EXAM',
         name: 'Ferritina',
@@ -735,6 +735,10 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
         expect(refused.status).toBe(403);
         expect((refused.body as Problem).code).toBe('PERMISSION_DENIED');
       }
+      // Refused before anything is written.
+      expect(
+        await prisma.service.findUniqueOrThrow({ where: { id: exam.id } }),
+      ).toMatchObject({ name: 'Ferritina', code: exam.code, active: true });
       // The form sends the name it shows: the same name is not a rename.
       await api()
         .patch(path)
