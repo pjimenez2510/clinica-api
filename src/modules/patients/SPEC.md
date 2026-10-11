@@ -330,7 +330,7 @@ dos es dónde y cómo lo enseña la pantalla, y su prueba vive en `clinica-web`.
 
 Revisión de producto del 10-10-2026, D-226 §6.
 **Prueba independiente:** con el médico, a 375 px, la ficha enseña «Resumen»,
-«Consultas», «Evolución» y «Alergias» y un «Más» con las demás; elegir
+«Consultas» y «Evolución» y un «Más» con las demás; elegir
 «Prioridad» en «Más» la abre y el botón dice «Prioridad».
 **Cubre:** PA-083.
 **Solo interfaz:** PA-083 (no cambia nada de lo que sirve el servidor).
@@ -2268,12 +2268,13 @@ Ningún requisito de esta sección lo altera._
   > sigue a la vista desde cualquier pestaña (D-A-018). Y ya no se dice
   > «antes de cerrar la atención», porque nada lo bloquea (D-A-017).
 - **PA-083** — MIENTRAS la pantalla mida menos de 640 px, las pestañas de la
-  ficha NO DEBERÁN pintarse en más de una fila: DEBERÁN verse las cuatro
+  ficha NO DEBERÁN pintarse en más de una fila: DEBERÁN verse las tres
   primeras con nombre corto («Datos», «Docs», «Alergias»…) y el resto en un
   botón «Más» que las ofrezca con su marca; CUANDO la pestaña abierta esté en
   «Más», el botón DEBERÁ nombrarla.
-  > D-226 §6. Con ocho pestañas la barra ocupaba tres filas a 375 px y
-  > empujaba la ficha fuera de la pantalla. La marca (p. ej. «Ficha
+  > D-226 §6 («las 3–4 principales»). Con ocho pestañas la barra ocupaba tres
+  > filas a 375 px y empujaba la ficha fuera de la pantalla; con cuatro y
+  > «Más» tampoco cabían en una (recorrido del 11-10-2026), con tres sí. La marca (p. ej. «Ficha
   > provisional») viaja con su pestaña dentro del menú: esconderla sería
   > esconder un estado de la ficha.
 

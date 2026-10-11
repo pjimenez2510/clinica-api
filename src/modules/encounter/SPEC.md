@@ -5042,22 +5042,31 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   medida elegida sin tomas en el periodo DEBERÁ decirlo en su tarjeta.
   > D-226 §4. Que siga al usuario entre equipos sería una preferencia en el
   > servidor: no se construye sin que el autor lo pida. Una medida guardada
-  > que este paciente no tiene no se ofrece y no cuenta.
+  > que este paciente no tiene no se ofrece ni se pierde: sigue elegida para
+  > el siguiente. **Las dos hemoglobinas se eligen juntas** (revisión
+  > clínica): una toma de marzo sólo medida y una de enero corregida son la
+  > misma cifra, y elegir sólo la corregida enseñaría la de enero como
+  > «Última».
 - **EN-278** — Un punto de una toma de ficha unificada (EN-275) DEBERÁ pintarse
   distinto de los demás y su tooltip DEBERÁ decir «De una ficha unificada»; y
   CUANDO la respuesta diga que hay tomas fuera del alcance (EN-276), bajo las
   gráficas DEBERÁ leerse «Hay tomas en otras sedes que usted no atiende», sin
   cifras.
   > D-214 §6 y §5. Sin la tabla (D-226 §3), la marca va en el punto y en su
-  > tooltip, y en la tabla del lector de pantalla. **Confirmar con:** clínico
-  > (§5).
+  > tooltip, y en la tabla del lector de pantalla. Con alguna toma de tensión
+  > de ficha unificada **no se dibuja la línea de adultos** (EN-272): su edad
+  > pudo congelarse con la fecha de nacimiento equivocada del duplicado. Sin
+  > tomas en sus sedes y con tomas en otras, el estado vacío no dice «no hay
+  > signos» sino «No hay signos tomados en sus sedes», con la línea debajo.
+  > **Confirmar con:** clínico (§5).
 - **EN-279** — MIENTRAS la sesión tenga `record:read`, la atención DEBERÁ tener
   la pestaña «Evolución» en el grupo **Contexto**, tras Historia y Signos, con
   su `?seccion=evolucion`, su atajo `Alt+número` por posición (EN-267) y el
   mismo componente de gráficas que la ficha; y DEBERÁ pedir las tomas
   (EN-269) **sólo al abrirse**, nunca al entrar en la atención.
   > D-226 §5. Cada lectura deja una fila de bitácora (EN-271), y entrar en la
-  > consulta no es mirar la evolución. Su marca nunca pide atención: es una
+  > consulta no es mirar la evolución: aunque el médico la ponga primera,
+  > sin `?seccion=` la consulta no se abre por ella. Su marca nunca pide atención: es una
   > superficie de lectura, como Historia.
 - **EN-280** — MIENTRAS la pantalla mida menos de 640 px, las secciones de la
   atención DEBERÁN elegirse con un selector «Sección» agrupado en Contexto ·
