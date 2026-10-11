@@ -630,7 +630,7 @@ buscándolo por código. Contra PostgreSQL: la base rechaza una consulta sin
 especialidad, una extensión de orden sobre un insumo, dos consultas con el
 mismo nombre en una especialidad y dos procedimientos con el mismo código.
 
-**Cubre:** BI-278 a BI-299. **Solo interfaz:** BI-291 a BI-296.
+**Cubre:** BI-278 a BI-300. **Solo interfaz:** BI-291 a BI-296.
 **Solo servidor:** BI-281, BI-283, BI-287, BI-289, BI-290, BI-298. Son garantías y
 lecturas del servidor: el código que ya salió en papel no cambia (BI-281), la
 ficha sirve las determinaciones con sus rangos (BI-283), caja recibe la
@@ -2170,8 +2170,14 @@ dos registros distintos.**
   > **Enmendado el 11-10-2026 (ADR-013, BI-287).** La consulta es el **servicio de la cita** (`agenda_entry.service_id`), no la «primera prestación» de su tipo de atención: el tipo de atención y su tabla puente se eliminaron.
 - **BI-232** — El catálogo de arranque DEBERÁ traer, para cada tipo de atención
   de arranque de cada especialidad («Primera vez» y «Control»), una prestación
-  de consulta atada a él (SP-031), y NO DEBERÁ ponerles precio salvo a las que
-  ya lo traían.
+  de consulta atada a él (SP-031), y DEBERÁ ponerle a cada una precio en la
+  lista particular.
+  > **Enmendado el 11-10-2026 (D-228; decisión del autor en
+  > `fix/decisiones-catalogo`).** Antes decía «NO DEBERÁ ponerles precio salvo
+  > a las que ya lo traían» (D-161). Con el precio particular obligatorio al
+  > crear (D-228), una consulta sembrada «Sin precio» era la única que la
+  > pantalla no permite crear; la semilla trae precios **de ejemplo**, en la
+  > línea de los ya sembrados, que la clínica corrige en Servicios.
   > **Enmendado el 07-10-2026 (D-179.3):** la atadura es al tipo de atención,
   > no a la especialidad y la secuencia. Las prestaciones de arranque conservan
   > su código (`CONS-MG-PV`, `CONS-MG-SUB`…): «primera vez» va con el tipo
@@ -3130,6 +3136,14 @@ lo ve._
   > D-231, resuelta por el autor el 11-10-2026: la muestra, la preparación, el
   > ayuno y la entrega son una instrucción clínica al paciente, no un precio.
   > Con los roles de fábrica no cambia nada: `ADMIN` lleva los dos.
+
+- **BI-300** — La semilla DEBERÁ crear los pagadores de la red pública (IESS,
+  ISSFA, ISSPOL, MSP) **inactivos**, y NO DEBERÁ cambiar el estado de un
+  pagador que ya existe.
+  > D-229 §2, resuelta por el autor el 11-10-2026: la clínica los activa cuando
+  > firme con la red pública. Mientras estén inactivos, `worksWithPublicNetwork`
+  > está apagada: la lista de Servicios no muestra sus columnas ni el diálogo el
+  > «Código MSP» (BI-296). Las pruebas que cobran al IESS lo activan en su arreglo.
 
 - **BI-291** — El sistema DEBERÁ ofrecer una sola entrada «Servicios» en
   Administración · Facturación (`/administracion/servicios`), y las rutas

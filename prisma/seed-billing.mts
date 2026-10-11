@@ -236,6 +236,14 @@ interface SeedPayer {
 }
 
 /**
+ * BI-300 (D-229 §2). Whether a new payer is born active: the public network
+ * is not —the clinic switches it on when it signs with it—, everything else
+ * is. Only on creation; an existing payer keeps the state the clinic gave it.
+ */
+const bornActive = (payer: SeedPayer): boolean =>
+  payer.kind !== 'PUBLIC_NETWORK';
+
+/**
  * Los pagadores son una TABLA y no un enum porque este sistema no corre en una
  * sola clínica: los seguros privados y los convenios de empresa cambian de una
  * instalación a otra, y de un año al siguiente dentro de la misma.
@@ -323,10 +331,10 @@ interface SeedService {
   taxSriCode: string;
   /**
    * Precio de arranque de la lista PARTICULAR, en USD. Cadena, no `number`.
-   * Sin él, la prestación nace SIN PRECIO (BI-232): el precio es de la
-   * clínica, y caja ve «No hay precio vigente» hasta que administración lo fije.
+   * Todo servicio sembrado lo trae (BI-232, D-228): la pantalla no deja crear
+   * uno sin él, y la semilla tampoco.
    */
-  selfPayAmount?: string;
+  selfPayAmount: string;
   /**
    * BI-279, BI-287 (ADR-013). Si es una CONSULTA, su especialidad y su visita:
    * la duración sale de `CONSULTATION_MINUTES`. Es lo que la cita reserva y lo
@@ -342,14 +350,14 @@ interface SeedService {
 }
 
 /**
- * BI-232 (D-161, resuelta por el autor el 07-10-2026). Las especialidades de
- * `seed-specialties.mts` que no tienen consulta con precio de arranque, con su
- * abreviatura para el código y su nombre en minúscula para la prestación.
+ * BI-232. Las especialidades de `seed-specialties.mts` que no tienen consulta
+ * entre las de arriba, con su abreviatura para el código, su nombre en
+ * minúscula para el servicio y su precio particular («Primera vez», «Control»).
  *
- * SIN PRECIO, y es a propósito: una atención de cardiología llegaba a caja con
- * «No hay prestación que lo cobre» (hay que crearla y atarla); con la
- * prestación sembrada llega con «No hay precio vigente para ese día» (se fija
- * en un minuto). Inventar la tarifa de una especialidad no es de la semilla.
+ * LOS PRECIOS SON DE EJEMPLO, en la línea de los de arriba. Antes estas
+ * consultas nacían sin precio (D-161); con el precio particular obligatorio al
+ * crear (D-228), la semilla tampoco deja una sin él, y la clínica lo corrige
+ * en Servicios.
  *
  * El código cabe en los 25 caracteres del SRI (BI-171): `CONS-` + abreviatura
  * + `-SUB`. Se siembran sólo si la especialidad existe, como las cinco de arriba.
@@ -358,66 +366,122 @@ const OTHER_SPECIALTY_CONSULTATIONS: readonly {
   specialtyCode: string;
   abbreviation: string;
   name: string;
+  /** Self-pay price: first visit, follow-up. */
+  amounts: readonly [string, string];
 }[] = [
   {
     specialtyCode: 'medicina-familiar',
     abbreviation: 'MF',
     name: 'medicina familiar y comunitaria',
+    amounts: ['30.00', '20.00'],
   },
   {
     specialtyCode: 'medicina-interna',
     abbreviation: 'MI',
     name: 'medicina interna',
+    amounts: ['40.00', '28.00'],
   },
   {
     specialtyCode: 'cirugia-general',
     abbreviation: 'CG',
     name: 'cirugía general',
+    amounts: ['45.00', '30.00'],
   },
-  { specialtyCode: 'cardiologia', abbreviation: 'CAR', name: 'cardiología' },
-  { specialtyCode: 'psiquiatria', abbreviation: 'PSQ', name: 'psiquiatría' },
-  { specialtyCode: 'oftalmologia', abbreviation: 'OFT', name: 'oftalmología' },
+  {
+    specialtyCode: 'cardiologia',
+    abbreviation: 'CAR',
+    name: 'cardiología',
+    amounts: ['50.00', '35.00'],
+  },
+  {
+    specialtyCode: 'psiquiatria',
+    abbreviation: 'PSQ',
+    name: 'psiquiatría',
+    amounts: ['50.00', '35.00'],
+  },
+  {
+    specialtyCode: 'oftalmologia',
+    abbreviation: 'OFT',
+    name: 'oftalmología',
+    amounts: ['45.00', '30.00'],
+  },
   {
     specialtyCode: 'otorrinolaringologia',
     abbreviation: 'ORL',
     name: 'otorrinolaringología',
+    amounts: ['45.00', '30.00'],
   },
-  { specialtyCode: 'urologia', abbreviation: 'URO', name: 'urología' },
-  { specialtyCode: 'neurologia', abbreviation: 'NEU', name: 'neurología' },
+  {
+    specialtyCode: 'urologia',
+    abbreviation: 'URO',
+    name: 'urología',
+    amounts: ['45.00', '30.00'],
+  },
+  {
+    specialtyCode: 'neurologia',
+    abbreviation: 'NEU',
+    name: 'neurología',
+    amounts: ['50.00', '35.00'],
+  },
   {
     specialtyCode: 'endocrinologia',
     abbreviation: 'END',
     name: 'endocrinología',
+    amounts: ['50.00', '35.00'],
   },
   {
     specialtyCode: 'gastroenterologia',
     abbreviation: 'GAS',
     name: 'gastroenterología',
+    amounts: ['50.00', '35.00'],
   },
-  { specialtyCode: 'neumologia', abbreviation: 'NML', name: 'neumología' },
-  { specialtyCode: 'nefrologia', abbreviation: 'NEF', name: 'nefrología' },
-  { specialtyCode: 'reumatologia', abbreviation: 'REU', name: 'reumatología' },
+  {
+    specialtyCode: 'neumologia',
+    abbreviation: 'NML',
+    name: 'neumología',
+    amounts: ['45.00', '30.00'],
+  },
+  {
+    specialtyCode: 'nefrologia',
+    abbreviation: 'NEF',
+    name: 'nefrología',
+    amounts: ['50.00', '35.00'],
+  },
+  {
+    specialtyCode: 'reumatologia',
+    abbreviation: 'REU',
+    name: 'reumatología',
+    amounts: ['50.00', '35.00'],
+  },
   {
     specialtyCode: 'anestesiologia',
     abbreviation: 'ANE',
     name: 'anestesiología',
+    amounts: ['40.00', '28.00'],
   },
   {
     specialtyCode: 'medicina-emergencias',
     abbreviation: 'EME',
     name: 'medicina de emergencias y desastres',
+    amounts: ['35.00', '25.00'],
   },
-  { specialtyCode: 'odontologia', abbreviation: 'ODO', name: 'odontología' },
+  {
+    specialtyCode: 'odontologia',
+    abbreviation: 'ODO',
+    name: 'odontología',
+    amounts: ['30.00', '20.00'],
+  },
 ];
 
-const UNPRICED_CONSULTATIONS: SeedService[] =
+const OTHER_CONSULTATIONS: SeedService[] =
   OTHER_SPECIALTY_CONSULTATIONS.flatMap(
-    ({ specialtyCode, abbreviation, name }) => [
+    ({ specialtyCode, abbreviation, name, amounts }) => [
       {
         code: `CONS-${abbreviation}-PV`,
         name: `Consulta de ${name} · Primera vez`,
         kind: 'CONSULTATION',
         taxSriCode: HEALTH_ZERO,
+        selfPayAmount: amounts[0],
         consultation: { specialtyCode, visitKind: 'FIRST_VISIT' },
       },
       {
@@ -425,6 +489,7 @@ const UNPRICED_CONSULTATIONS: SeedService[] =
         name: `Consulta de ${name} · Control`,
         kind: 'CONSULTATION',
         taxSriCode: HEALTH_ZERO,
+        selfPayAmount: amounts[1],
         consultation: { specialtyCode, visitKind: 'FOLLOW_UP' },
       },
     ],
@@ -540,8 +605,8 @@ const SERVICES: SeedService[] = [
     },
   },
 
-  // BI-232 (D-161): la consulta de las demás especialidades del catálogo.
-  ...UNPRICED_CONSULTATIONS,
+  // BI-232: la consulta de las demás especialidades del catálogo.
+  ...OTHER_CONSULTATIONS,
 
   // ── Procedimientos ───────────────────────────────────────────────────────
   {
@@ -1270,8 +1335,8 @@ async function ensureTaxRate(tx: Client, rate: SeedTaxRate): Promise<string> {
  */
 async function ensurePayer(tx: Client, payer: SeedPayer): Promise<string> {
   const rows = await tx.$queryRaw<{ id: string }[]>`
-    INSERT INTO "payer" ("code", "name", "kind", "agreement_reference", "updated_at")
-    VALUES (${payer.code}, ${payer.name}, ${payer.kind}, ${payer.agreementReference}, CURRENT_TIMESTAMP)
+    INSERT INTO "payer" ("code", "name", "kind", "agreement_reference", "active", "updated_at")
+    VALUES (${payer.code}, ${payer.name}, ${payer.kind}, ${payer.agreementReference}, ${bornActive(payer)}, CURRENT_TIMESTAMP)
     ON CONFLICT ("code") DO UPDATE SET "updated_at" = "payer"."updated_at"
     RETURNING "id"`;
 
