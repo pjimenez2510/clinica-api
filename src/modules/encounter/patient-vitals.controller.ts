@@ -54,6 +54,7 @@ export class PatientVitalsController {
       })),
       total: history.total,
       bloodPressureReference: history.bloodPressureReference,
+      hasTakingsOutsideScope: history.hasTakingsOutsideScope,
     };
   }
 }
