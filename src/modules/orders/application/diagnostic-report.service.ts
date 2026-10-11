@@ -28,7 +28,7 @@ import {
 import {
   EXAM_CATALOGUE_REPOSITORY,
   type ExamCatalogueRepository,
-  type ExamDefinitionView,
+  type OrderableExamView,
 } from '../domain/exam-catalogue.repository';
 import {
   SERVICE_ORDER_REPOSITORY,
@@ -131,7 +131,7 @@ export interface RegisterReportRequest {
    * ORD-030. ⚠️ IT IS `null` TODAY, AND THAT IS HONEST RATHER THAN MISSING.
    * `diagnostic_report.performed_by_id` is a foreign key to `practitioner` —
    * OUR practitioners — and D-A-012 says the realistic case is an EXTERNAL
-   * laboratory: `exam_definition.performed_externally` defaults to `true`.
+   * laboratory: `service_exam.performed_externally` defaults to `true`.
    * Putting the transcriber there would claim a professional of this clinic
    * performed the analysis, which is a false attribution on a clinical
    * document. Who performed it is the laboratory, and there is no column for
@@ -1175,7 +1175,7 @@ export class DiagnosticReportService {
  */
 function matchAnalytesToLines(
   order: ServiceOrderView,
-  exams: readonly ExamDefinitionView[],
+  exams: readonly OrderableExamView[],
 ): Map<string, string> {
   const examByCode = new Map(exams.map((exam) => [exam.code, exam]));
   const lineOfAnalyte = new Map<string, string>();
@@ -1193,7 +1193,7 @@ function matchAnalytesToLines(
 /** ORD-039. What each line of the order still promises. */
 function expectedAnalytesOf(
   order: ServiceOrderView,
-  exams: readonly ExamDefinitionView[],
+  exams: readonly OrderableExamView[],
 ): ExpectedAnalytes[] {
   const examByCode = new Map(exams.map((exam) => [exam.code, exam]));
 

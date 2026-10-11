@@ -74,10 +74,7 @@ async function anIssuedOrder(prisma: PrismaClient) {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [
-        { examDefinitionId: scene.bh.id },
-        { examDefinitionId: scene.glucose.id },
-      ],
+      lines: [{ serviceId: scene.bh.id }, { serviceId: scene.glucose.id }],
       sites: 'all',
     },
   );

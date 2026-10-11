@@ -5,8 +5,10 @@ import { z } from 'zod';
  * ORD-010 to ORD-012. The catalogue of what can be ordered, as a client reads
  * it.
  *
- * ⚠️ NO PRICE (ORD-002). The exam points at what the line is invoiced under;
- * the amount lives in a price list, per payer, per period, and belongs to
+ * ADR-013, BI-284. Each orderable is a service with an order extension: its
+ * `id` and `code` are the service's.
+ *
+ * ⚠️ NO PRICE (ORD-002). The amount lives in a price list, per payer, per period, and belongs to
  * `billing`. A price on this response would be an economic fact travelling on a
  * clinical screen.
  */
@@ -30,7 +32,7 @@ export const examAnalyteSchema = z.object({
   isReflex: z.boolean(),
 });
 
-export const examDefinitionSchema = z.object({
+export const orderableExamSchema = z.object({
   id: z.uuid(),
   code: z.string(),
   name: z.string(),
@@ -45,27 +47,25 @@ export const examDefinitionSchema = z.object({
   requiresFasting: z.boolean(),
   fastingHours: z.number().int().nullable(),
   /**
-   * ORD-004. The tariff service the exam is invoiced under; `null` means it
-   * cannot be ordered yet. The server resolves the version in force — a client
-   * never sends it.
+   * ORD-004, BI-285. The service's MSP code, or `null`. Never a condition to
+   * order (D-218 §1): the server resolves the TARIFF version in force, when
+   * there is one, and a client never sends it. The key keeps its old name.
    */
   tariffCode: z.string().nullable(),
   performedExternally: z.boolean(),
   externalLabName: z.string().nullable(),
   analytes: z.array(examAnalyteSchema),
 });
-/** One exam; no route returns it alone, it is the row of `ExamDefinitionListDto`. */
-export class ExamDefinitionDto extends createZodDto(examDefinitionSchema) {}
+/** One orderable; no route returns it alone, it is the row of `OrderableExamListDto`. */
+export class OrderableExamDto extends createZodDto(orderableExamSchema) {}
 
-export const examDefinitionListSchema = z.object({
-  items: z.array(examDefinitionSchema),
+export const orderableExamListSchema = z.object({
+  items: z.array(orderableExamSchema),
 });
 /** Response of GET /exams. */
-export class ExamDefinitionListDto extends createZodDto(
-  examDefinitionListSchema,
+export class OrderableExamListDto extends createZodDto(
+  orderableExamListSchema,
 ) {}
 
 /** What the controller returns, inferred from the schema Swagger publishes. */
-export type ExamDefinitionListResponse = z.infer<
-  typeof examDefinitionListSchema
->;
+export type OrderableExamListResponse = z.infer<typeof orderableExamListSchema>;

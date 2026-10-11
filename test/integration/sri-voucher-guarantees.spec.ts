@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { PrismaBillingAccountRepository } from '../../src/modules/billing/infrastructure/prisma-billing-account.repository';
 import { Quantity } from '../../src/modules/billing/domain/money';
 import { parseClinicalDate } from '../../src/shared/domain/clinic-time';
@@ -42,6 +43,8 @@ let context: Context;
 
 beforeEach(async () => {
   const prisma = db();
+  // BI-279. `CONS-MG-PV` is a consultation of its specialty: seeded first.
+  await seedSpecialties(prisma);
   await seedBilling(prisma);
   const site = await createSite(prisma);
   const patient = await createPatient(prisma);
@@ -55,7 +58,7 @@ beforeEach(async () => {
   const emissionPoint = await prisma.emissionPoint.create({
     data: { siteId: site.id, code: '001' },
   });
-  const service = await prisma.billableService.findUniqueOrThrow({
+  const service = await prisma.service.findUniqueOrThrow({
     where: { code: 'CONS-MG-PV' },
   });
   context = {
@@ -88,7 +91,7 @@ async function anAccount(): Promise<string> {
 async function charge(accountId: string): Promise<string> {
   const created = await context.accounts.addCharge({
     accountId,
-    billableServiceId: context.serviceId,
+    serviceId: context.serviceId,
     encounterId: null,
     serviceDate: SERVICE_DATE,
     quantity: Quantity.ONE,

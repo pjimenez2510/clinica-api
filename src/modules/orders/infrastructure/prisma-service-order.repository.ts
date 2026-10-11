@@ -2,10 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
-import {
-  CatalogConceptNotFoundError,
-  CatalogConceptNotInForceError,
-} from '../../../shared/domain/errors/catalog-reference.errors';
 import { CLINIC_TIME_ZONE } from '../../../shared/domain/clinic-time';
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import {
@@ -26,6 +22,8 @@ import {
   STALE_DRAFT_AFTER_MS,
 } from '../domain/service-order';
 import { ageingOf } from '../domain/order-ageing';
+import { orderCategoryOf } from '../domain/exam-catalogue.repository';
+import { ORDERABLE } from './prisma-exam-catalogue.repository';
 import type {
   CancelOrderItem,
   CorrectedOrder,
@@ -63,7 +61,7 @@ import type {
  * screen.
  */
 
-/** The catalogue an order line has to be invoiced under (ORD-004). */
+/** The catalogue an order line's MSP code is resolved in, when it has one (ORD-004). */
 const TARIFF = 'TARIFF';
 
 /** One order line with its frozen code and display (ORD-002). */
@@ -216,20 +214,21 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
 
       /**
        * ORD-003 and ORD-097, AGAIN. The draft may have waited an hour, and the clinic may
-       * have disabled one of its exams meanwhile: a retired exam is not
-       * issued. By the frozen code, which is what the line keeps.
+       * have disabled one of its services meanwhile: a retired one is not
+       * issued. By the frozen code, which is the service's (ORD-002, BI-284).
        */
       const codes = [...new Set(draft.items.map((item) => item.testCode))];
-      const exams = await tx.examDefinition.findMany({
-        where: { code: { in: codes }, active: true },
-        select: { category: true },
+      const exams = await tx.service.findMany({
+        where: { ...ORDERABLE, code: { in: codes }, active: true },
+        select: { kind: true },
       });
       if (codes.length === 0 || exams.length !== codes.length) {
         throw new ExamNotOrderableError();
       }
-      // An exam reclassified while the draft waited is not issued under the
-      // wrong type: it would sit in the worklist under the wrong filter.
-      if (exams.some((exam) => exam.category !== draft.category)) {
+      // The kind is fixed once created (`trg_service_kind_is_fixed`); the
+      // check stays because a different category would sit in the worklist
+      // under the wrong filter.
+      if (exams.some((exam) => orderCategoryOf(exam.kind) !== draft.category)) {
         throw new ExamCategoryMismatchError();
       }
 
@@ -525,19 +524,19 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
     });
 
     /**
-     * ORD-022. The promised turnaround belongs to the DEFINITION, not to the
-     * line, so it is read once for every code on the page rather than per row.
-     * An exam retired since is still resolved — `test_code` was frozen for
-     * exactly this.
+     * ORD-022. The promised turnaround belongs to the SERVICE's order
+     * extension (BI-284), not to the line, so it is read once for every code
+     * on the page rather than per row. A service retired since is still
+     * resolved — `test_code` was frozen for exactly this.
      */
     const codes = [...new Set(rows.flatMap((r) => r.items.map((i) => i.testCode)))]; // prettier-ignore
     const turnaround = new Map<string, number | null>(
       (
-        await this.prisma.examDefinition.findMany({
+        await this.prisma.service.findMany({
           where: { code: { in: codes } },
-          select: { code: true, turnaroundHours: true },
+          select: { code: true, exam: { select: { turnaroundHours: true } } },
         })
-      ).map((exam) => [exam.code, exam.turnaroundHours]),
+      ).map((service) => [service.code, service.exam?.turnaroundHours ?? null]),
     );
 
     return rows.flatMap((order) =>
@@ -821,7 +820,7 @@ async function lockDraft(
 }
 
 /**
- * ORD-002 to ORD-004, ORD-097. The lines to write, from the exams named.
+ * ORD-002 to ORD-004, ORD-097. The lines to write, from the services named.
  *
  * The orderables are read again INSIDE the transaction: the service already
  * refused a retired one and this is not ceremony — a catalogue edit can land
@@ -833,43 +832,42 @@ async function linesOf(
   category: NewServiceOrder['category'],
   wanted: readonly NewOrderLine[],
 ) {
-  const examIds = [...new Set(wanted.map((line) => line.examDefinitionId))];
-  // ORD-004, ORD-163. The name and the tariff code are the exam's SERVICE's.
-  const exams = (
-    await tx.examDefinition.findMany({
-      where: { id: { in: examIds }, active: true },
-      select: {
-        id: true,
-        code: true,
-        category: true,
-        billableService: { select: { name: true, tariffCode: true } },
-      },
-    })
-  ).map(({ billableService, ...exam }) => ({ ...exam, ...billableService }));
-  if (exams.length !== examIds.length) throw new ExamNotOrderableError();
+  const serviceIds = [...new Set(wanted.map((line) => line.serviceId))];
+  // BI-284. An orderable is an active service with an order extension.
+  const services = await tx.service.findMany({
+    where: { ...ORDERABLE, id: { in: serviceIds }, active: true },
+    select: { id: true, code: true, name: true, kind: true, mspCode: true },
+  });
+  if (services.length !== serviceIds.length) throw new ExamNotOrderableError();
   // ORD-097. A blood count is not an imaging order, whatever the screen sent.
-  if (exams.some((exam) => exam.category !== category)) {
+  if (services.some((service) => orderCategoryOf(service.kind) !== category)) {
     throw new ExamCategoryMismatchError();
   }
-  const examById = new Map(exams.map((exam) => [exam.id, exam]));
-  const conceptByExam = await tariffConceptsInForce(tx, encounterId, exams);
+  const serviceById = new Map(services.map((service) => [service.id, service]));
+  const conceptByService = await tariffConceptsInForce(tx, encounterId, services); // prettier-ignore
 
   return wanted.map((line) => ({
-    conceptId: conceptByExam.get(line.examDefinitionId) ?? '',
+    // ORD-004 (D-218 §1). The TARIFF concept when there is one in force;
+    // none is no refusal.
+    conceptId: conceptByService.get(line.serviceId) ?? null,
     /**
-     * ORD-002. FROZEN HERE, from the definition read in this same
-     * transaction. In fifteen years the catalogue may have been migrated,
-     * pruned or reloaded and the order still has to say what was asked for —
-     * the same reason an invoice stores the price and not only the product id.
+     * ORD-002. FROZEN HERE, from the service read in this same transaction.
+     * In fifteen years the catalogue may have been migrated, pruned or
+     * reloaded and the order still has to say what was asked for — the same
+     * reason an invoice stores the price and not only the product id.
      */
-    testCode: examById.get(line.examDefinitionId)?.code ?? '',
-    testDisplay: examById.get(line.examDefinitionId)?.name ?? '',
+    testCode: serviceById.get(line.serviceId)?.code ?? '',
+    testDisplay: serviceById.get(line.serviceId)?.name ?? '',
   }));
 }
 
 /**
- * ORD-004. The tariff concept of each exam: the version of its service's
- * `tariff_code` (ORD-163) in force on the CLINICAL DATE of the attention.
+ * ORD-004 (D-218 §1, BI-285). The TARIFF concept of each service's MSP code
+ * in force on the CLINICAL DATE of the attention, WHEN THERE IS ONE. A
+ * service without MSP code, or whose code is absent from the tariff or not
+ * in force that day, has none — and its line is accepted without one: the
+ * MSP code is nomenclature for billing the public network, never a condition
+ * to order.
  *
  * ⚠️ RAW SQL BECAUSE OF ONE COLUMN. `catalog_concept.valid_period` is a
  * `daterange` generated by a manual migration, which Prisma models as
@@ -882,23 +880,23 @@ async function linesOf(
  * ⚠️ AND THE DATE IS RESOLVED IN `America/Guayaquil`. A bare `::date` over a
  * `timestamptz` uses the SESSION's zone, so an order placed at 20:00 on the
  * last day a tariff code was in force would be checked against the following
- * day and refused — the defect
- * `20260806040611_clinical_date_in_ecuador_timezone` exists to have fixed.
+ * day — the defect `20260806040611_clinical_date_in_ecuador_timezone` exists
+ * to have fixed.
  */
 async function tariffConceptsInForce(
   tx: Prisma.TransactionClient,
   encounterId: string,
-  exams: readonly { id: string; tariffCode: string | null }[],
+  services: readonly { id: string; mspCode: string | null }[],
 ): Promise<Map<string, string>> {
   const codes = [
     ...new Set(
-      exams.flatMap((exam) => (exam.tariffCode ? [exam.tariffCode] : [])),
+      services.flatMap((service) => (service.mspCode ? [service.mspCode] : [])),
     ),
   ];
-  const rows =
-    codes.length === 0
-      ? []
-      : await tx.$queryRaw<ConceptRow[]>`
+  const conceptByService = new Map<string, string>();
+  if (codes.length === 0) return conceptByService;
+
+  const rows = await tx.$queryRaw<ConceptRow[]>`
     SELECT cc."id"::text        AS id,
            cc."code"::text      AS concept_code,
            cs."code"::text      AS system_code,
@@ -912,33 +910,15 @@ async function tariffConceptsInForce(
      WHERE e."id" = ${encounterId}::uuid
   `;
 
-  const conceptByExam = new Map<string, string>();
-  for (const exam of exams) {
-    const versions = rows.filter((row) => row.concept_code === exam.tariffCode);
-    /**
-     * ORD-004. An exam with no tariff code and one whose code is not in the
-     * tariff answer the SAME refusal, `CATALOG_CONCEPT_NOT_FOUND` — the shared
-     * code, reused rather than reinvented. Only the TARIFF system is read, so
-     * a CIE-10 code that happens to match is not found either.
-     */
-    if (exam.tariffCode === null || versions.length === 0) {
-      throw CatalogConceptNotFoundError.byCode(
-        TARIFF,
-        exam.tariffCode ?? '—',
-        'items',
-      );
-    }
-    const inForce = versions.find((row) => row.in_force);
-    if (!inForce) {
-      throw new CatalogConceptNotInForceError(
-        exam.tariffCode,
-        'la fecha de la atención',
-        'items',
-      );
-    }
-    conceptByExam.set(exam.id, inForce.id);
+  for (const service of services) {
+    // Only the TARIFF system is read, so a CIE-10 code that happens to match
+    // is not taken for it.
+    const inForce = rows.find(
+      (row) => row.concept_code === service.mspCode && row.in_force,
+    );
+    if (inForce) conceptByService.set(service.id, inForce.id);
   }
-  return conceptByExam;
+  return conceptByService;
 }
 
 /**

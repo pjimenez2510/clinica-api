@@ -5,8 +5,8 @@ import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { ExamCatalogueService } from './application/exam-catalogue.service';
 import {
-  ExamDefinitionListDto,
-  type ExamDefinitionListResponse,
+  OrderableExamListDto,
+  type OrderableExamListResponse,
 } from './dto/exam-catalogue.dto';
 
 /**
@@ -18,9 +18,8 @@ import {
  * the handler does not perform, which is worse than saying «this is not
  * site-scoped» out loud.
  *
- * ⚠️ READ ONLY. Creating an exam or an analyte is `catalog:manage`, through the
- * versioned release mechanism this system already has. A second way to create
- * one here is how two catalogues of the same thing start disagreeing.
+ * ⚠️ READ ONLY. An orderable is a service of the one catalogue (ADR-013),
+ * created in billing (BI-280); its structure is `catalog:manage` (ORD-105).
  */
 @ApiTags('orders')
 @Controller({ path: 'exams', version: '1' })
@@ -34,8 +33,8 @@ export class ExamCatalogueController {
     summary:
       'Listar los exámenes que se pueden pedir y las determinaciones que devuelven',
   })
-  @ApiOkResponse({ type: ExamDefinitionListDto })
-  async active(): Promise<ExamDefinitionListResponse> {
+  @ApiOkResponse({ type: OrderableExamListDto })
+  async active(): Promise<OrderableExamListResponse> {
     const items = await this.exams.active();
 
     return {
@@ -50,7 +49,8 @@ export class ExamCatalogueController {
         turnaroundHours: exam.turnaroundHours,
         requiresFasting: exam.requiresFasting,
         fastingHours: exam.fastingHours,
-        tariffCode: exam.tariffCode,
+        // BI-285. The key keeps its name; the value is the service's MSP code.
+        tariffCode: exam.mspCode,
         performedExternally: exam.performedExternally,
         externalLabName: exam.externalLabName,
         analytes: exam.analytes.map((entry) => ({

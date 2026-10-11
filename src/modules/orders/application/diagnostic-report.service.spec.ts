@@ -26,7 +26,7 @@ import type {
 } from '../domain/diagnostic-report.repository';
 import type {
   ExamCatalogueRepository,
-  ExamDefinitionView,
+  OrderableExamView,
 } from '../domain/exam-catalogue.repository';
 import type {
   ServiceOrderRepository,
@@ -68,9 +68,9 @@ const patient: OrderPatient = {
   ageDays: 12_000,
 };
 
-const examBh: ExamDefinitionView = {
+const examBh: OrderableExamView = {
   id: 'exam-bh',
-  code: 'EX-BH',
+  code: 'LAB-BH',
   name: 'Biometría hemática completa',
   category: 'LABORATORY',
   form010Section: 'HEMATOLOGÍA',
@@ -79,7 +79,7 @@ const examBh: ExamDefinitionView = {
   turnaroundHours: 4,
   requiresFasting: false,
   fastingHours: null,
-  tariffCode: null,
+  mspCode: null,
   performedExternally: true,
   externalLabName: null,
   analytes: [
@@ -107,7 +107,7 @@ const anOrder = (): ServiceOrderView => ({
   items: [
     {
       id: ITEM_BH,
-      testCode: 'EX-BH',
+      testCode: 'LAB-BH',
       testDisplay: 'Biometría hemática completa',
       conceptId: 'concept-1',
       status: 'REQUESTED',
@@ -127,8 +127,8 @@ class FakeOrders implements Partial<ServiceOrderRepository> {
 class FakeCatalogue implements Partial<ExamCatalogueRepository> {
   known: AnalyteDefinition[] = [HAEMOGLOBIN, GLUCOSE, NITRITES];
 
-  byCodes(codes: readonly string[]): Promise<ExamDefinitionView[]> {
-    return Promise.resolve(codes.includes('EX-BH') ? [examBh] : []);
+  byCodes(codes: readonly string[]): Promise<OrderableExamView[]> {
+    return Promise.resolve(codes.includes('LAB-BH') ? [examBh] : []);
   }
   analytesByIds(ids: readonly string[]): Promise<AnalyteDefinition[]> {
     return Promise.resolve(this.known.filter((a) => ids.includes(a.id)));

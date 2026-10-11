@@ -39,7 +39,7 @@ import {
  * that drift, and the one that drifts is the one nobody re-checks.
  */
 
-/** A tariff concept, which is what `service_order_item.concept_id` demands. */
+/** A tariff concept, which `service_order_item.concept_id` names when there is one (ORD-004). */
 export async function aTariffConcept(
   prisma: PrismaClient,
   options: {
@@ -68,6 +68,10 @@ export async function aTariffConcept(
     },
   });
 }
+
+/** ORD-004, BI-285. The MSP codes of the two seeded exams. */
+export const BH_MSP_CODE = 'MSP-BH';
+export const GLUCOSE_MSP_CODE = 'MSP-GLUCOSA-AYUNAS';
 
 /**
  * The exam and its analytes, WITH THE VALUES OF THE REAL SEED: `HB` split by
@@ -131,42 +135,36 @@ export async function seedExams(prisma: PrismaClient) {
     },
   });
 
-  const bh = await prisma.examDefinition.create({
-    data: {
-      code: 'EX-BH',
-      // ORD-004, ORD-163. The tariff code the exam is ordered under, by code,
-      // on its service: the catalogue is versioned and the concept in force
-      // on the clinical date is resolved.
-      billableServiceId: (
-        await createExamService(prisma, {
-          code: 'LAB-BH',
-          name: 'Biometría hemática completa',
-          tariffCode: 'EX-BH',
-        })
-      ).id,
+  // BI-284 (ADR-013). The exam IS a service with an order extension; the
+  // line freezes the SERVICE's code. ORD-004: its MSP code resolves a TARIFF
+  // concept when one is in force, and is no condition to order.
+  const bh = await createExamService(prisma, {
+    code: 'LAB-BH',
+    name: 'Biometría hemática completa',
+    mspCode: BH_MSP_CODE,
+    exam: {
       form010Section: 'HEMATOLOGÍA',
       specimenType: 'Sangre total con EDTA',
       patientPreparation: 'No requiere ayuno.',
       turnaroundHours: 4,
-      analytes: { create: [{ analyteDefinitionId: hb.id, position: 1 }] },
     },
   });
+  await prisma.serviceExamAnalyte.create({
+    data: { serviceId: bh.id, analyteDefinitionId: hb.id, position: 1 },
+  });
 
-  const glucose = await prisma.examDefinition.create({
-    data: {
-      code: 'EX-GLUCOSA-AYUNAS',
-      billableServiceId: (
-        await createExamService(prisma, {
-          code: 'LAB-GLUCOSA-AYUNAS',
-          name: 'Glucosa en ayunas',
-          tariffCode: 'EX-GLUCOSA-AYUNAS',
-        })
-      ).id,
+  const glucose = await createExamService(prisma, {
+    code: 'LAB-GLUCOSA-AYUNAS',
+    name: 'Glucosa en ayunas',
+    mspCode: GLUCOSE_MSP_CODE,
+    exam: {
       form010Section: 'BIOQUÍMICA',
       patientPreparation: 'Ayuno de 8 a 12 horas.',
       // Deliberately WITHOUT a turnaround: ORD-022's third answer.
-      analytes: { create: [{ analyteDefinitionId: glu.id, position: 1 }] },
     },
+  });
+  await prisma.serviceExamAnalyte.create({
+    data: { serviceId: glucose.id, analyteDefinitionId: glu.id, position: 1 },
   });
 
   return { hb, glu, bh, glucose };
@@ -185,9 +183,9 @@ export async function aScene(
     patientId: patient.id,
   });
   const exams = await seedExams(prisma);
-  // ORD-004. One tariff service per exam, under the exam's tariff code.
-  const concept = await aTariffConcept(prisma, { code: 'EX-BH' });
-  await aTariffConcept(prisma, { code: 'EX-GLUCOSA-AYUNAS' });
+  // ORD-004. A TARIFF concept in force for each exam's MSP code.
+  const concept = await aTariffConcept(prisma, { code: BH_MSP_CODE });
+  await aTariffConcept(prisma, { code: GLUCOSE_MSP_CODE });
 
   return { site, practitioner, patient, encounter, ...exams, concept };
 }

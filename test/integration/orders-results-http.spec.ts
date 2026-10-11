@@ -127,7 +127,7 @@ describe('los resultados por HTTP', () => {
       patientId,
     });
     const exams = await seedExams(prisma);
-    await aTariffConcept(prisma, { code: 'EX-GLUCOSA-AYUNAS' });
+    await aTariffConcept(prisma, { code: 'MSP-GLUCOSA-AYUNAS' });
     glucoseAnalyteId = exams.glu.id;
 
     const login = await request(app.getHttpServer())
@@ -138,7 +138,7 @@ describe('los resultados por HTTP', () => {
 
     const order = await post(`/encounters/${encounter.id}/orders`, {
       category: 'LABORATORY',
-      items: [{ examDefinitionId: exams.glucose.id }],
+      items: [{ serviceId: exams.glucose.id }],
     }).expect(201);
     orderId = (order.body as { id: string }).id;
     // ORD-098. Composed as a draft; a result only comes back for an issued one.

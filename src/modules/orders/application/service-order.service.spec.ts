@@ -11,7 +11,7 @@ import type { Requester } from './service-order.service';
 import type { AnalyteDefinition } from '../domain/analyte';
 import type {
   ExamCatalogueRepository,
-  ExamDefinitionView,
+  OrderableExamView,
 } from '../domain/exam-catalogue.repository';
 import type {
   CorrectedOrder,
@@ -58,8 +58,8 @@ const anExam = (
   id: string,
   code: string,
   analytes: AnalyteDefinition[],
-  category: ExamDefinitionView['category'] = 'LABORATORY',
-): ExamDefinitionView => ({
+  category: OrderableExamView['category'] = 'LABORATORY',
+): OrderableExamView => ({
   id,
   code,
   name: `Examen ${code}`,
@@ -70,7 +70,7 @@ const anExam = (
   turnaroundHours: 4,
   requiresFasting: false,
   fastingHours: null,
-  tariffCode: null,
+  mspCode: null,
   performedExternally: true,
   externalLabName: null,
   analytes: analytes.map((analyte, index) => ({
@@ -81,25 +81,25 @@ const anExam = (
 });
 
 class FakeCatalogue implements ExamCatalogueRepository {
-  readonly exams = new Map<string, ExamDefinitionView>([
-    [EXAM_BH, anExam(EXAM_BH, 'EX-BH', [HAEMOGLOBIN])],
-    [EXAM_GLU, anExam(EXAM_GLU, 'EX-GLUCOSA-AYUNAS', [GLUCOSE])],
+  readonly exams = new Map<string, OrderableExamView>([
+    [EXAM_BH, anExam(EXAM_BH, 'LAB-BH', [HAEMOGLOBIN])],
+    [EXAM_GLU, anExam(EXAM_GLU, 'LAB-GLUCOSA-AYUNAS', [GLUCOSE])],
     [EXAM_RX, anExam(EXAM_RX, 'RX-TORAX', [], 'IMAGING')],
   ]);
   retired = new Set<string>();
 
-  active(): Promise<ExamDefinitionView[]> {
+  active(): Promise<OrderableExamView[]> {
     return Promise.resolve([...this.exams.values()]);
   }
-  activeByIds(ids: readonly string[]): Promise<ExamDefinitionView[]> {
+  activeByIds(ids: readonly string[]): Promise<OrderableExamView[]> {
     return Promise.resolve(
       ids
         .filter((id) => !this.retired.has(id))
         .map((id) => this.exams.get(id))
-        .filter((exam): exam is ExamDefinitionView => exam !== undefined),
+        .filter((exam): exam is OrderableExamView => exam !== undefined),
     );
   }
-  byCodes(codes: readonly string[]): Promise<ExamDefinitionView[]> {
+  byCodes(codes: readonly string[]): Promise<OrderableExamView[]> {
     return Promise.resolve(
       [...this.exams.values()].filter((exam) => codes.includes(exam.code)),
     );
@@ -192,7 +192,7 @@ const anOrder = (lines: number): ServiceOrderView => ({
   requestedAt: new Date('2026-09-15T13:00:00Z'),
   items: Array.from({ length: lines }, (_unused, index) => ({
     id: `item-${index}`,
-    testCode: 'EX-BH',
+    testCode: 'LAB-BH',
     testDisplay: 'Biometría hemática completa',
     conceptId: CONCEPT,
     status: 'REQUESTED' as const,
@@ -242,7 +242,7 @@ describe('la emisión y el seguimiento de una orden', () => {
     encounterId: ENCOUNTER,
     category: 'LABORATORY' as const,
     priority: 'ROUTINE' as const,
-    lines: [{ examDefinitionId: EXAM_BH }, { examDefinitionId: EXAM_GLU }],
+    lines: [{ serviceId: EXAM_BH }, { serviceId: EXAM_GLU }],
   };
 
   it('ORD-002 emite una línea por examen pedido', async () => {
@@ -301,7 +301,7 @@ describe('la emisión y el seguimiento de una orden', () => {
           orderId: 'order-1',
           category: 'LABORATORY',
           priority: 'ROUTINE',
-          lines: [{ examDefinitionId: EXAM_RX }],
+          lines: [{ serviceId: EXAM_RX }],
         },
         requester,
       ),
@@ -315,7 +315,7 @@ describe('la emisión y el seguimiento de una orden', () => {
         orderId: 'order-1',
         category: 'IMAGING',
         priority: 'URGENT',
-        lines: [{ examDefinitionId: EXAM_RX }],
+        lines: [{ serviceId: EXAM_RX }],
       },
       requester,
     );
@@ -377,7 +377,7 @@ describe('la emisión y el seguimiento de una orden', () => {
       orderId: 'order-1',
       category: 'LABORATORY' as const,
       priority: 'ROUTINE' as const,
-      lines: [{ examDefinitionId: EXAM_BH }],
+      lines: [{ serviceId: EXAM_BH }],
     };
 
     for (const attempt of [

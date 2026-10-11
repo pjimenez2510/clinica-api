@@ -35,31 +35,45 @@ const analyteRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const examRow = (analyte: Record<string, unknown>, isReflex = false) => ({
-  id: 'exam-1',
-  code: 'EX-BH',
-  // ORD-163. Name and tariff code are the service's.
-  billableService: { name: 'Biometría hemática completa', tariffCode: 'EX-BH' },
-  form010Section: 'HEMATOLOGÍA',
-  specimenType: 'Sangre total con EDTA',
-  patientPreparation: 'No requiere ayuno.',
-  turnaroundHours: 4,
-  performedExternally: true,
-  externalLabName: null,
-  analytes: [{ position: 1, isReflex, analyteDefinition: analyte }],
+// BI-284. The orderable IS the service, with its order extension.
+const examRow = (
+  analyte: Record<string, unknown>,
+  isReflex = false,
+  overrides: Record<string, unknown> = {},
+) => ({
+  id: 'service-1',
+  code: 'LAB-BH',
+  name: 'Biometría hemática completa',
+  kind: 'LAB_EXAM',
+  mspCode: '360010',
+  active: true,
+  exam: {
+    form010Section: 'HEMATOLOGÍA',
+    specimenType: 'Sangre total con EDTA',
+    patientPreparation: 'No requiere ayuno.',
+    turnaroundHours: 4,
+    requiresFasting: false,
+    fastingHours: null,
+    performedExternally: true,
+    externalLabName: null,
+    externalLabCode: null,
+    analytes: [{ position: 1, isReflex, analyteDefinition: analyte }],
+  },
+  ...overrides,
 });
 
 function prismaDouble(
   analyte: Record<string, unknown> = analyteRow(),
   isReflex = false,
+  serviceOverrides: Record<string, unknown> = {},
 ) {
   const calls: { method: string; args: unknown }[] = [];
 
   const prisma = {
-    examDefinition: {
+    service: {
       findMany: (args: unknown) => {
-        calls.push({ method: 'examDefinition.findMany', args });
-        return Promise.resolve([examRow(analyte, isReflex)]);
+        calls.push({ method: 'service.findMany', args });
+        return Promise.resolve([examRow(analyte, isReflex, serviceOverrides)]);
       },
     },
     analyteDefinition: {
@@ -96,10 +110,44 @@ describe('el adaptador del catálogo de exámenes', () => {
     expect(exam?.analytes[0]?.position).toBe(1);
   });
 
-  it('ORD-010 publica la prestación del tarifario de cada examen, o nada si no la tiene', async () => {
-    const [exam] = await prismaDouble().repository.active();
+  it('ORD-010 publica el servicio como ordenable: su id, su código, su nombre y la categoría de su tipo', async () => {
+    const { repository, calls } = prismaDouble();
 
-    expect(exam?.tariffCode).toBe('EX-BH');
+    const [exam] = await repository.active();
+
+    expect(exam).toMatchObject({
+      id: 'service-1',
+      code: 'LAB-BH',
+      name: 'Biometría hemática completa',
+      category: 'LABORATORY',
+      form010Section: 'HEMATOLOGÍA',
+    });
+    // Only services with an order extension, and only the active ones.
+    expect(calls[0]?.args).toMatchObject({
+      where: { exam: { isNot: null }, active: true },
+    });
+  });
+
+  it('ORD-004 publica el código MSP del servicio, o nada si no lo tiene', async () => {
+    const [withCode] = await prismaDouble().repository.active();
+    const [without] = await prismaDouble(analyteRow(), false, {
+      mspCode: null,
+    }).repository.active();
+
+    expect(withCode?.mspCode).toBe('360010');
+    expect(without?.mspCode).toBeNull();
+  });
+
+  it('ORD-097 la categoría de un estudio de imagen o un procedimiento sale de su tipo', async () => {
+    const [imaging] = await prismaDouble(analyteRow(), false, {
+      kind: 'IMAGING',
+    }).repository.active();
+    const [procedure] = await prismaDouble(analyteRow(), false, {
+      kind: 'PROCEDURE',
+    }).repository.active();
+
+    expect(imaging?.category).toBe('IMAGING');
+    expect(procedure?.category).toBe('PROCEDURE');
   });
 
   it('ORD-012 publica como reflejo el analito marcado is_reflex, y como no reflejo el que no', async () => {
@@ -132,13 +180,15 @@ describe('el adaptador del catálogo de exámenes', () => {
     // el examen, y la línea congeló el código justo para que resolverlo no
     // dependa del catálogo de hoy.
     const byId = prismaDouble();
-    await byId.repository.activeByIds(['exam-1']);
-    expect(byId.calls[0]?.args).toMatchObject({ where: { active: true } });
+    await byId.repository.activeByIds(['service-1']);
+    expect(byId.calls[0]?.args).toMatchObject({
+      where: { exam: { isNot: null }, active: true },
+    });
 
     const byCode = prismaDouble();
-    await byCode.repository.byCodes(['EX-BH']);
+    await byCode.repository.byCodes(['LAB-BH']);
     expect(byCode.calls[0]?.args).toMatchObject({
-      where: { code: { in: ['EX-BH'] } },
+      where: { exam: { isNot: null }, code: { in: ['LAB-BH'] } },
     });
     expect(
       (byCode.calls[0]?.args as { where: Record<string, unknown> }).where

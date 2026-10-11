@@ -2,37 +2,20 @@ import { registerConstraintMeanings } from '../../../shared/http/constraint-mean
 
 /**
  * What each constraint of the exam catalogue means to the person who hit it
- * (ORD-103, ORD-104). Imported for its side effect by `orders.module.ts`.
+ * (ORD-104, ORD-129, ORD-140). Imported for its side effect by
+ * `orders.module.ts`.
  *
- * The code is the one an order freezes on every line (ORD-002): two exams with
- * one code would make a paper report quote something ambiguous, and the
- * `UNIQUE` is what arbitrates two administrators typing at once — no read
- * first could.
+ * ADR-013. The exam is a service: its code's uniqueness is billing's
+ * (`service_code_unique`), but that it does not change once an order line
+ * froze it is this module's rule (ORD-140), raised by
+ * `trg_service_code_fixed_once_ordered` on whichever write tries.
  */
 registerConstraintMeanings({
-  // ORD-140. The service asks first; this answers the write that raced it.
-  exam_definition_code_in_use: {
+  // ORD-140, BI-281. The code of a service an order line already froze.
+  service_code_in_use: {
     code: 'EXAM_CODE_IN_USE',
     field: 'code',
     message: 'Hay órdenes que ya citan este código',
-  },
-  // ORD-163. One service charges at most one exam: the service asks first,
-  // this answers the write that raced it.
-  exam_definition_one_per_service: {
-    code: 'EXAM_SERVICE_TAKEN',
-    field: 'billableServiceId',
-    message: 'Esa prestación ya cobra otro examen',
-  },
-  // ORD-163, BI-257. A service that charges a procedure is not an exam's.
-  exam_definition_service_not_tied: {
-    code: 'EXAM_SERVICE_TAKEN',
-    field: 'billableServiceId',
-    message: 'Esa prestación ya cobra un procedimiento',
-  },
-  exam_definition_code_unique: {
-    code: 'EXAM_CODE_DUPLICATE',
-    field: 'code',
-    message: 'Ya hay un examen con ese código',
   },
   // ORD-104. A result is tied to its analyte by the name it froze (ORD-031),
   // so two active analytes with one name would be confused.
@@ -43,13 +26,13 @@ registerConstraintMeanings({
   },
   // ORD-129 (D-137). Hours of fast only on an exam that asks for one; the
   // range is also checked by the DTO, this answers whatever bypasses it.
-  exam_definition_fasting_hours_needs_fasting: {
+  service_exam_fasting_hours_needs_fasting: {
     code: 'EXAM_FASTING_HOURS_INVALID',
     field: 'fastingHours',
     message:
       'Marque «Pide ayuno» para indicar las horas, o deje las horas vacías',
   },
-  exam_definition_fasting_hours_range: {
+  service_exam_fasting_hours_range: {
     code: 'EXAM_FASTING_HOURS_INVALID',
     field: 'fastingHours',
     message: 'El ayuno es de 1 a 24 horas',

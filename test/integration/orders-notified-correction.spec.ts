@@ -72,7 +72,7 @@ async function aCriticalGlucose(
     encounterId: scene.encounter.id,
     category: 'LABORATORY',
     priority: 'ROUTINE',
-    lines: [{ examDefinitionId: scene.glucose.id }],
+    lines: [{ serviceId: scene.glucose.id }],
     sites: 'all',
   });
   const report = await reports.register(
@@ -409,10 +409,10 @@ describe('la corrección admite lo retirado (ORD-149)', () => {
     const replacement = await prisma.analyteDefinition.create({
       data: { code: 'GLU2', name: 'Glucosa basal', unit: 'mg/dL', valueType: 'NUMERIC', decimals: 0 }, // prettier-ignore
     });
-    await prisma.examDefinitionAnalyte.deleteMany({ where: { examDefinitionId: ctx.scene.glucose.id } }); // prettier-ignore
-    await prisma.examDefinitionAnalyte.create({ data: { examDefinitionId: ctx.scene.glucose.id, analyteDefinitionId: replacement.id, position: 1 } }); // prettier-ignore
+    await prisma.serviceExamAnalyte.deleteMany({ where: { serviceId: ctx.scene.glucose.id } }); // prettier-ignore
+    await prisma.serviceExamAnalyte.create({ data: { serviceId: ctx.scene.glucose.id, analyteDefinitionId: replacement.id, position: 1 } }); // prettier-ignore
     await prisma.analyteDefinition.update({ where: { id: ctx.scene.glu.id }, data: { active: false } }); // prettier-ignore
-    await prisma.examDefinition.update({ where: { id: ctx.scene.glucose.id }, data: { active: false } }); // prettier-ignore
+    await prisma.service.update({ where: { id: ctx.scene.glucose.id }, data: { active: false } }); // prettier-ignore
 
     const offered = await ctx.reports.correctionAnalytes(ctx.report.id, ctx.asNurse); // prettier-ignore
     expect(offered.map((a) => [a.analyte.id, a.examName])).toEqual([

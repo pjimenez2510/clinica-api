@@ -85,8 +85,11 @@ export interface AccessAuditEntry {
    * `resource_type` is not on the whitelist and whose payload is not null.
    * Since `admin_edit_in_place` (D-150, AD-10) the list is `'configuration'`
    * plus the administrative resources: `'staff'`, `'organization'`, `'auth'`,
-   * `'billable_service'`, `'billable_service_category'`, `'price'`, `'payer'`,
-   * `'exam_definition'` and `'analyte_definition'`. Clinical resource types
+   * `'price'`, `'payer'`, `'analyte_definition'`, `'payment_method'`,
+   * `'role_discount_limit'` and, since ADR-013 (BI-290), `'service'` and
+   * `'service_exam'`. The old `'billable_service'`,
+   * `'billable_service_category'` and `'exam_definition'` stay admitted only
+   * because rows already written carry them. Clinical resource types
    * are deliberately absent: this table exists to watch who reads a chart, it
    * is append-only and it is never purged, so a chart's contents landing in it
    * could never be corrected, minimised or removed.

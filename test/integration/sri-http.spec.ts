@@ -8,6 +8,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { syncAuthorisation } from '../../prisma/seed-authorisation.mts';
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { PASSWORD_HASHING } from '../../src/modules/auth/domain/password-hashing';
@@ -83,6 +84,10 @@ describe('el comprobante electrónico por HTTP', () => {
       registry = app.get(RolePermissionRegistry);
     }
 
+    // BI-279. `CONS-MG-PV` is a consultation of its specialty: seeded first.
+
+    await seedSpecialties(prisma);
+
     await seedBilling(prisma);
     await syncAuthorisation(prisma);
     registry.invalidate();
@@ -96,7 +101,7 @@ describe('el comprobante electrónico por HTTP', () => {
       await prisma.payer.findUniqueOrThrow({ where: { code: 'PARTICULAR' } })
     ).id;
     serviceId = (
-      await prisma.billableService.findUniqueOrThrow({
+      await prisma.service.findUniqueOrThrow({
         where: { code: 'CONS-MG-PV' },
       })
     ).id;
@@ -187,7 +192,7 @@ describe('el comprobante electrónico por HTTP', () => {
       .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
       .set('Authorization', `Bearer ${cashierToken}`)
       .send({
-        billableServiceId: serviceId,
+        serviceId,
         serviceDate: clinicalDateOf(new Date()),
       })
       .expect(201);
@@ -250,7 +255,7 @@ describe('el comprobante electrónico por HTTP', () => {
         .post(`/api/v1/billing/sites/${siteId}/accounts/${accountId}/charges`)
         .set('Authorization', `Bearer ${cashierToken}`)
         .send({
-          billableServiceId: serviceId,
+          serviceId,
           serviceDate: clinicalDateOf(new Date()),
         })
         .expect(201);

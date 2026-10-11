@@ -59,7 +59,7 @@ const anOrderRow = (items: unknown[] = []) => ({
 
 const anItemRow = (overrides: Record<string, unknown> = {}) => ({
   id: 'item-1',
-  testCode: 'EX-BH',
+  testCode: 'LAB-BH',
   testDisplay: 'Biometría hemática completa',
   conceptId: CONCEPT,
   status: 'REQUESTED',
@@ -102,11 +102,12 @@ function prismaDouble(
         );
       },
     },
-    examDefinition: {
+    // BI-284. The orderable is the service, with its kind and MSP code.
+    service: {
       findMany: (args: unknown) => {
-        record('examDefinition.findMany', args);
+        record('service.findMany', args);
         return Promise.resolve(
-          options.exams ?? [{ id: EXAM, code: 'EX-BH', name: 'Biometría hemática completa', tariffCode: 'T-100', category: 'LABORATORY' }], // prettier-ignore
+          options.exams ?? [{ id: EXAM, code: 'LAB-BH', name: 'Biometría hemática completa', mspCode: 'T-100', kind: 'LAB_EXAM' }], // prettier-ignore
         );
       },
     },
@@ -167,11 +168,11 @@ function prismaDouble(
   const prisma = {
     ...tx,
     $transaction: <T>(fn: (client: unknown) => Promise<T>) => fn(tx),
-    examDefinition: {
+    service: {
       findMany: (args: unknown) => {
-        record('examDefinition.findMany(outer)', args);
+        record('service.findMany(outer)', args);
         return Promise.resolve(
-          options.definitions ?? [{ code: 'EX-BH', turnaroundHours: 4 }],
+          options.definitions ?? [{ code: 'LAB-BH', exam: { turnaroundHours: 4 } }], // prettier-ignore
         );
       },
     },
@@ -200,7 +201,7 @@ const aRequest = {
   encounterId: ENCOUNTER,
   category: 'LABORATORY' as const,
   priority: 'ROUTINE' as const,
-  lines: [{ examDefinitionId: EXAM }],
+  lines: [{ serviceId: EXAM }],
   sites: 'all' as const,
 };
 
@@ -215,7 +216,7 @@ describe('el adaptador de la orden', () => {
     expect(data.orderedById).toBe(PRACTITIONER);
   });
 
-  it('ORD-002 congela el código y el nombre leídos de la definición', async () => {
+  it('ORD-002 congela el código y el nombre leídos del servicio', async () => {
     const { repository, callTo } = prismaDouble();
 
     await repository.compose(aRequest);
@@ -223,7 +224,7 @@ describe('el adaptador de la orden', () => {
     const data = (callTo('serviceOrder.create')?.args as { data: Record<string, unknown> }).data; // prettier-ignore
     const lines = (data.items as { create: Record<string, unknown>[] }).create;
     expect(lines[0]).toMatchObject({
-      testCode: 'EX-BH',
+      testCode: 'LAB-BH',
       testDisplay: 'Biometría hemática completa',
       conceptId: CONCEPT,
     });
@@ -256,13 +257,15 @@ describe('el adaptador de la orden', () => {
     await expect(repository.compose(aRequest)).rejects.toMatchObject({
       code: 'EXAM_NOT_ORDERABLE',
     });
-    expect((callTo('examDefinition.findMany')?.args as { where: { active: boolean } }).where.active).toBe(true); // prettier-ignore
+    expect(callTo('service.findMany')?.args).toMatchObject({
+      where: { active: true, exam: { isNot: null } },
+    });
     expect(callTo('serviceOrder.create')).toBeUndefined();
   });
 
   it('ORD-097 vuelve a comprobar el tipo DENTRO de la transacción, y no escribe nada', async () => {
     const { repository, callTo } = prismaDouble({
-      exams: [{ id: EXAM, code: 'RX-TORAX', name: 'Radiografía de tórax', tariffCode: 'T-100', category: 'IMAGING' }], // prettier-ignore
+      exams: [{ id: EXAM, code: 'RX-TORAX', name: 'Radiografía de tórax', mspCode: 'T-100', kind: 'IMAGING' }], // prettier-ignore
     });
 
     await expect(repository.compose(aRequest)).rejects.toMatchObject({
@@ -281,21 +284,27 @@ describe('el adaptador de la orden', () => {
     expect(data).not.toHaveProperty('number');
   });
 
-  it('ORD-004 rechaza igual el examen sin prestación y la prestación ausente del tarifario', async () => {
-    // Distinguirlos convertiría el endpoint en un oráculo del catálogo entero.
-    const absent = prismaDouble({ concepts: [] });
-    await expect(absent.repository.compose(aRequest)).rejects.toMatchObject({
-      code: 'CATALOG_CONCEPT_NOT_FOUND',
+  it('ORD-004 acepta la línea sin concepto cuando el código MSP no está en el tarifario', async () => {
+    const { repository, callTo } = prismaDouble({ concepts: [] });
+
+    await repository.compose(aRequest);
+
+    const data = (callTo('serviceOrder.create')?.args as { data: Record<string, unknown> }).data; // prettier-ignore
+    const lines = (data.items as { create: Record<string, unknown>[] }).create;
+    expect(lines[0]).toMatchObject({ testCode: 'LAB-BH', conceptId: null });
+  });
+
+  it('ORD-004 acepta la línea de un servicio sin código MSP, sin preguntar al tarifario', async () => {
+    const { repository, callTo } = prismaDouble({
+      exams: [{ id: EXAM, code: 'LAB-BH', name: 'Biometría hemática completa', mspCode: null, kind: 'LAB_EXAM' }], // prettier-ignore
     });
 
-    const withoutTariff = prismaDouble({
-      exams: [{ id: EXAM, code: 'EX-BH', name: 'Biometría hemática completa', tariffCode: null, category: 'LABORATORY' }], // prettier-ignore
-    });
-    await expect(
-      withoutTariff.repository.compose(aRequest),
-    ).rejects.toMatchObject({
-      code: 'CATALOG_CONCEPT_NOT_FOUND',
-    });
+    await repository.compose(aRequest);
+
+    const data = (callTo('serviceOrder.create')?.args as { data: Record<string, unknown> }).data; // prettier-ignore
+    const lines = (data.items as { create: Record<string, unknown>[] }).create;
+    expect(lines[0]).toMatchObject({ testCode: 'LAB-BH', conceptId: null });
+    expect(callTo('$queryRaw')).toBeUndefined();
   });
 
   it('ORD-005 bloquea la fila de la atención antes de leer su estado', async () => {
@@ -334,14 +343,16 @@ describe('el adaptador de la orden', () => {
     expect(lines[0]?.conceptId).toBe(CONCEPT);
   });
 
-  it('ORD-004 rechaza el concepto que no estaba vigente en la fecha de la atención', async () => {
-    const { repository } = prismaDouble({
+  it('ORD-004 un código MSP que no estaba vigente en la fecha de la atención deja la línea sin concepto', async () => {
+    const { repository, callTo } = prismaDouble({
       concepts: [{ id: CONCEPT, concept_code: 'T-100', system_code: 'TARIFF', in_force: false }], // prettier-ignore
     });
 
-    await expect(repository.compose(aRequest)).rejects.toMatchObject({
-      code: 'CATALOG_CONCEPT_NOT_IN_FORCE',
-    });
+    await repository.compose(aRequest);
+
+    const data = (callTo('serviceOrder.create')?.args as { data: Record<string, unknown> }).data; // prettier-ignore
+    const lines = (data.items as { create: Record<string, unknown>[] }).create;
+    expect(lines[0]?.conceptId).toBeNull();
   });
 
   it('ORD-004 resuelve la vigencia en America/Guayaquil y no en el huso de la sesión', async () => {
@@ -362,7 +373,7 @@ describe('el adaptador de la orden', () => {
     const order = await repository.byId({ orderId: 'order-1', sites: 'all' });
 
     expect(order).toMatchObject({ id: 'order-1', patientId: 'chart-1' });
-    expect(order?.items[0]?.testCode).toBe('EX-BH');
+    expect(order?.items[0]?.testCode).toBe('LAB-BH');
   });
 
   it('ORD-090 estrecha por las sedes del alcance, y no filtra cuando es total', async () => {
@@ -392,7 +403,7 @@ describe('el adaptador de la orden', () => {
       orderId: 'order-1',
       itemId: 'item-1',
       patientId: 'chart-1',
-      testCode: 'EX-BH',
+      testCode: 'LAB-BH',
     });
     expect(worklist[0]?.ageing.overdue).toBe(true);
     expect(worklist[0]?.ageing.waitingDays).toBe(10);
@@ -418,7 +429,7 @@ describe('el adaptador de la orden', () => {
 
     await repository.pending({
       sites: 'all',
-      examCode: 'EX-BH',
+      examCode: 'LAB-BH',
       chartId: 'chart-1',
       now: new Date(),
       limit: 50,
@@ -431,7 +442,7 @@ describe('el adaptador de la orden', () => {
     // El filtro va tanto al `some` que elige la orden como al `items` que se
     // trae: sin la segunda mitad, filtrar por examen devolvería la orden
     // entera y la cola enseñaría líneas que nadie pidió ver.
-    expect(args.select.items.where).toMatchObject({ testCode: 'EX-BH' });
+    expect(args.select.items.where).toMatchObject({ testCode: 'LAB-BH' });
     // Y la ficha se resuelve por el enlace de la fusión, nunca por id desnudo.
     expect(args.where.encounter).toEqual({
       patient: { OR: [{ id: 'chart-1' }, { mergedIntoId: 'chart-1' }] },

@@ -4,19 +4,41 @@ import type { ServiceOrderCategory } from './service-order';
 /**
  * The ORDERABLE catalogue, as ordering reads it.
  *
- * READ-ONLY HERE: the clinic writes the catalogue through
- * `ExamAdministrationRepository` (ORD-103 to ORD-111), with `catalog:manage`.
- * Retired exams are DISABLED, never deleted —historical orders reference
- * them— so `active` is an ordinary, permanent state of this catalogue.
+ * ADR-013, BI-284. An orderable IS a service of the clinic's one catalogue
+ * —LAB_EXAM, IMAGING or PROCEDURE— that carries an order extension
+ * (`service_exam`). Billing writes the service and its extension (BI-280);
+ * this module writes only its structure of results (ORD-105). Retired
+ * services are DISABLED, never deleted —historical orders reference them—
+ * so `active` is an ordinary, permanent state of this catalogue.
  */
 
-/** ORD-010 to ORD-012. One orderable, with what it yields. */
-export interface ExamDefinitionView {
+/**
+ * BI-284. The order category a service kind is ordered under. `undefined`
+ * for a kind that is never ordered (a consultation, a supply).
+ */
+export function orderCategoryOf(
+  kind: string,
+): ServiceOrderCategory | undefined {
+  switch (kind) {
+    case 'LAB_EXAM':
+      return 'LABORATORY';
+    case 'IMAGING':
+      return 'IMAGING';
+    case 'PROCEDURE':
+      return 'PROCEDURE';
+    default:
+      return undefined;
+  }
+}
+
+/** ORD-010 to ORD-012. One orderable service, with what it yields. */
+export interface OrderableExamView {
+  /** ORD-010 (BI-284). The SERVICE's id: there is no exam row of its own. */
   id: string;
-  /** `EX-BH`. The identity of the row, frozen onto every line that asks for it. */
+  /** `LAB-BH`. The service's code, frozen onto every line that asks for it. */
   code: string;
   name: string;
-  /** ORD-097, ORD-101. An order only carries exams of its own category. */
+  /** ORD-097, ORD-101. Derived from the service's kind (`orderCategoryOf`). */
   category: ServiceOrderCategory;
   /** ORD-010. The section of form 010A, so a compliant order can be printed. */
   form010Section: string | null;
@@ -28,10 +50,11 @@ export interface ExamDefinitionView {
   requiresFasting: boolean;
   fastingHours: number | null;
   /**
-   * ORD-004, ORD-010. The tariff service the exam is invoiced under. `null`
-   * means it cannot be ordered yet, and a screen can say so by its name.
+   * ORD-004, BI-285. The service's MSP code, when it has one. Never a
+   * condition to order (D-218 §1): with one in force on the clinical date the
+   * line keeps its TARIFF concept, without one it keeps none.
    */
-  tariffCode: string | null;
+  mspCode: string | null;
   performedExternally: boolean;
   externalLabName: string | null;
   analytes: readonly ExamAnalyteView[];
@@ -52,7 +75,7 @@ export interface ExamAnalyteView {
  */
 export interface ExamCatalogueRepository {
   /** ORD-010 to ORD-012. Every active orderable, with its determinations. */
-  active(): Promise<ExamDefinitionView[]>;
+  active(): Promise<OrderableExamView[]>;
 
   /**
    * ORD-003, ORD-039. The orderables named, by id, ACTIVE ONLY.
@@ -61,7 +84,7 @@ export interface ExamCatalogueRepository {
    * caller compares the counts and refuses the WHOLE order, because a request
    * for five exams that stores four is one nobody notices is short.
    */
-  activeByIds(ids: readonly string[]): Promise<ExamDefinitionView[]>;
+  activeByIds(ids: readonly string[]): Promise<OrderableExamView[]>;
 
   /**
    * ORD-039, ORD-040. The orderables named by CODE, active or not.
@@ -72,7 +95,7 @@ export interface ExamCatalogueRepository {
    * order placed last month must not depend on the catalogue of today. It is
    * the same reason the code is frozen on the line at all.
    */
-  byCodes(codes: readonly string[]): Promise<ExamDefinitionView[]>;
+  byCodes(codes: readonly string[]): Promise<OrderableExamView[]>;
 
   /**
    * ORD-042. The analytes named, by id, retired ones included: an order

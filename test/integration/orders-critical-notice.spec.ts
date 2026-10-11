@@ -87,7 +87,7 @@ async function criticalGlucoseIn(
     encounterId: scene.encounter.id,
     category: 'LABORATORY',
     priority: 'ROUTINE',
-    lines: [{ examDefinitionId: scene.glucose.id }],
+    lines: [{ serviceId: scene.glucose.id }],
     sites: 'all',
   });
   const report = await reports.register(
@@ -401,7 +401,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id }],
+      lines: [{ serviceId: scene.glucose.id }],
       sites: 'all',
     });
     const report = await reports.register(
@@ -690,7 +690,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.bh.id }],
+      lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
     await reports.register(
@@ -742,7 +742,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id }],
+      lines: [{ serviceId: scene.glucose.id }],
       sites: 'all',
     });
     const first = await reports.register(
@@ -794,7 +794,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       encounterId: older.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: older.glucose.id }],
+      lines: [{ serviceId: older.glucose.id }],
       sites: 'all',
     });
     const newer = await reports.register(
@@ -844,7 +844,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id }],
+      lines: [{ serviceId: scene.glucose.id }],
       sites: 'all',
     });
     const secondReport = await reports.register(
@@ -1026,7 +1026,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id }, { examDefinitionId: scene.bh.id }], // prettier-ignore
+      lines: [{ serviceId: scene.glucose.id }, { serviceId: scene.bh.id }], // prettier-ignore
       sites: 'all',
     });
     const first = await reports.register(
@@ -1196,7 +1196,7 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
       priority: 'ROUTINE',
-      lines: [{ examDefinitionId: scene.glucose.id }],
+      lines: [{ serviceId: scene.glucose.id }],
       sites: 'all',
     });
     const at = (hoursAgo: number) => new Date(now.getTime() - hoursAgo * 3_600_000); // prettier-ignore

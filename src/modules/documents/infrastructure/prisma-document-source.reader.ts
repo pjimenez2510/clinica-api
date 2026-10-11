@@ -1274,24 +1274,31 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
     if (row === null) return null;
 
     /**
-     * DOC-072. The specimen and the patient's preparation of each exam, by its
-     * FROZEN code: an exam retired since is still resolved, and one the
+     * DOC-072. The specimen and the patient's preparation of each exam, from
+     * the order extension (`service_exam`) of the service whose code the line
+     * FROZE (BI-284): a service retired since is still resolved, and one the
      * catalogue no longer has prints a dash rather than an invented specimen.
      */
     const exams = new Map(
       (
-        await this.prisma.examDefinition.findMany({
+        await this.prisma.service.findMany({
           where: { code: { in: row.items.map((item) => item.testCode) } },
           select: {
             code: true,
-            specimenType: true,
-            patientPreparation: true,
-            requiresFasting: true,
-            fastingHours: true,
-            form010Section: true,
+            exam: {
+              select: {
+                specimenType: true,
+                patientPreparation: true,
+                requiresFasting: true,
+                fastingHours: true,
+                form010Section: true,
+              },
+            },
           },
         })
-      ).map((exam) => [exam.code, exam]),
+      ).flatMap((service) =>
+        service.exam ? [[service.code, service.exam] as const] : [],
+      ),
     );
 
     return {
@@ -1461,7 +1468,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
             discountAmount: true,
             taxSriCode: true,
             taxPercentage: true,
-            billableService: { select: { code: true, tariffCode: true } },
+            service: { select: { code: true, mspCode: true } },
           },
         },
       },
@@ -1518,8 +1525,8 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
             .mul(charge.quantity)
             .sub(charge.discountAmount);
           return {
-            code: charge.billableService.code,
-            auxiliaryCode: charge.billableService.tariffCode,
+            code: charge.service.code,
+            auxiliaryCode: charge.service.mspCode,
             taxSriCode: charge.taxSriCode,
             taxPercentage: charge.taxPercentage?.toFixed(2) ?? null,
             // The FROZEN display, not the current catalogue name: the invoice
@@ -1679,7 +1686,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
             netAmount: true,
             // DOC-076. The MSP tariff code, as the invoice RIDE reads it.
             chargeItem: {
-              select: { billableService: { select: { tariffCode: true } } },
+              select: { service: { select: { mspCode: true } } },
             },
           },
         },
@@ -1723,7 +1730,7 @@ export class PrismaDocumentSourceReader implements DocumentSourceReader {
         },
         lines: row.lines.map((line) => ({
           code: line.serviceCode,
-          auxiliaryCode: line.chargeItem.billableService.tariffCode,
+          auxiliaryCode: line.chargeItem.service.mspCode,
           description: line.description,
           quantity: line.quantity.toFixed(2),
           unitPrice: money(line.unitAmount),

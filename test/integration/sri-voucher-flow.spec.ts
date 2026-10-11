@@ -15,6 +15,7 @@ import {
 } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
+import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { Quantity } from '../../src/modules/billing/domain/money';
 import { DocumentService } from '../../src/modules/documents/application/document.service';
 import { PdfKitDocumentRenderer } from '../../src/modules/documents/infrastructure/pdfkit-document.renderer';
@@ -182,6 +183,10 @@ beforeEach(async () => {
   );
   accounts = new PrismaBillingAccountRepository(service);
 
+  // BI-279. `CONS-MG-PV` is a consultation of its specialty: seeded first.
+
+  await seedSpecialties(prisma);
+
   await seedBilling(prisma);
   const site = await createSite(prisma);
   await giveSiteAnIssuer(prisma, site.id);
@@ -199,7 +204,7 @@ beforeEach(async () => {
     await prisma.emissionPoint.create({ data: { siteId, code: '001' } })
   ).id;
   serviceId = (
-    await prisma.billableService.findUniqueOrThrow({
+    await prisma.service.findUniqueOrThrow({
       where: { code: 'CONS-MG-PV' },
     })
   ).id;
@@ -220,7 +225,7 @@ async function issueInvoice(
   });
   await accounts.addCharge({
     accountId: account.id,
-    billableServiceId: serviceId,
+    serviceId,
     encounterId: null,
     serviceDate: clinicalDateOf(NOW()),
     quantity,

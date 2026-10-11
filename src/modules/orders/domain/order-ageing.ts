@@ -56,7 +56,7 @@ const MS_PER_HOUR = 3_600_000;
 /**
  * ORD-021, ORD-022. How long this line has been waiting, and against what.
  *
- * `turnaroundHours` comes from `exam_definition.turnaround_hours` and is
+ * `turnaroundHours` comes from `service_exam.turnaround_hours` and is
  * `null` for anything the catalogue has not committed to.
  *
  * ⚠️ THE DEADLINE IS COUNTED IN HOURS AND THE AGE IN DATES, on purpose. «Cuatro
