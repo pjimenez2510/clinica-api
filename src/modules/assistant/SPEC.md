@@ -47,10 +47,10 @@ depende de éste todavía.
 
 ## Por qué se guarda lo que se guarda (LOPDP)
 
-| Tabla         | Qué guarda                                                                                                       | Por qué                                                                                                                                     | Cuánto                                                                                 |
-| ------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `ai_run`      | proveedor, modelo, nivel, propósito, versión de prompt, resultado, tokens, costo, latencia, respaldo y su motivo | Contar el gasto (techo), medir proveedores (fase F) y responder qué proveedor recibió qué llamada. **Ningún texto**: ni prompt ni respuesta | Como la bitácora técnica; no identifica a nadie fuera de la atención que enlaza         |
-| `ai_exchange` | instrucciones, prompt **seudonimizado** y respuesta cruda de un intento                                          | Depurar y medir lo que el modelo hizo con lo que vio. Apagado de fábrica (`ASSISTANT_EXCHANGE_LOG`)                                          | **45 días tras firmar** la nota de su atención (D-239 §3); sin atención, ver D-241 §2 |
+| Tabla         | Qué guarda                                                                                                       | Por qué                                                                                                                                     | Cuánto                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `ai_run`      | proveedor, modelo, nivel, propósito, versión de prompt, resultado, tokens, costo, latencia, respaldo y su motivo | Contar el gasto (techo), medir proveedores (fase F) y responder qué proveedor recibió qué llamada. **Ningún texto**: ni prompt ni respuesta | Como la bitácora técnica; no identifica a nadie fuera de la atención que enlaza       |
+| `ai_exchange` | instrucciones, prompt **seudonimizado** y respuesta cruda de un intento                                          | Depurar y medir lo que el modelo hizo con lo que vio. Apagado de fábrica (`ASSISTANT_EXCHANGE_LOG`)                                         | **45 días tras firmar** la nota de su atención (D-239 §3); sin atención, ver D-241 §2 |
 
 Seudonimizar no es anonimizar (D-239 §1): por eso el texto sólo se guarda si
 alguien lo enciende, y caduca.
@@ -59,11 +59,11 @@ alguien lo enciende, y caduca.
 
 | Término                     | Significado exacto en este módulo                                                                                                  |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| **Petición**                | Lo que pide quien llama: nivel, propósito, versión de prompt, instrucciones, prompt seudonimizado y esquema de la respuesta         |
-| **Intento**                 | Una petición enviada a **un** proveedor. Una petición tiene uno o más intentos; cada uno es una fila de `ai_run`                    |
+| **Petición**                | Lo que pide quien llama: nivel, propósito, versión de prompt, instrucciones, prompt seudonimizado y esquema de la respuesta        |
+| **Intento**                 | Una petición enviada a **un** proveedor. Una petición tiene uno o más intentos; cada uno es una fila de `ai_run`                   |
 | **Cadena**                  | El orden de proveedores de D-239 §5: Gemini, después Anthropic, después OpenAI, menos los que no están configurados                |
 | **Respaldo**                | Pasar la misma petición al siguiente proveedor de la cadena                                                                        |
-| **Resultado**               | Cómo terminó un intento: `ok`, `invalid-answer`, `cut-off`, `refused`, `timeout`, `rate-limited`, `provider-error`, `cancelled`   |
+| **Resultado**               | Cómo terminó un intento: `ok`, `invalid-answer`, `cut-off`, `refused`, `timeout`, `rate-limited`, `provider-error`, `cancelled`    |
 | **Fallo de disponibilidad** | `timeout`, `rate-limited` o `provider-error`: el proveedor no pudo atender, no que la petición estuviera mal                       |
 | **Peor caso**               | Lo más que puede costar un intento antes de hacerlo: entrada contada a un token por cada dos caracteres y toda la salida permitida |
 | **Mes de gasto**            | El mes calendario en `America/Guayaquil` en que empezó el intento                                                                  |
@@ -248,11 +248,11 @@ una petición la responde el segundo y quedan dos filas en `ai_run` —la del
 
 ## Códigos de error nuevos
 
-| Código                               | Clase base             | HTTP      | Cuándo                                                                        |
-| ------------------------------------ | ---------------------- | --------- | ----------------------------------------------------------------------------- |
-| `ASSISTANT_NOT_CONFIGURED`           | `ExternalServiceError` | 502       | La cadena está vacía (AS-006)                                                 |
+| Código                               | Clase base             | HTTP      | Cuándo                                                                       |
+| ------------------------------------ | ---------------------- | --------- | ---------------------------------------------------------------------------- |
+| `ASSISTANT_NOT_CONFIGURED`           | `ExternalServiceError` | 502       | La cadena está vacía (AS-006)                                                |
 | `ASSISTANT_PROVIDER_FAILED`          | `ExternalServiceError` | 503 / 502 | Ningún proveedor respondió (reintentable, AS-007) o el modelo falló (AS-008) |
-| `ASSISTANT_SPENDING_CEILING_REACHED` | `QuotaExceededError`   | 429       | El techo del mes no admite el intento, o no hay techo (AS-017)                |
+| `ASSISTANT_SPENDING_CEILING_REACHED` | `QuotaExceededError`   | 429       | El techo del mes no admite el intento, o no hay techo (AS-017)               |
 
 ## Niveles de prueba
 
