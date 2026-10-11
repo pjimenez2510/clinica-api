@@ -60,6 +60,13 @@ registerConstraintMeanings({
     message:
       'Esa determinación ya tiene un valor en un informe vigente de esta orden. Use la corrección del informe vigente',
   },
+  // ORD-177 (D-207 §2). Raised by `trg_critical_result_notice_read_back_by_site`
+  // when a notice given without the read-back reaches a site that asks for it.
+  critical_result_notice_read_back_by_site: {
+    code: 'CRITICAL_READ_BACK_REQUIRED',
+    field: 'readBack',
+    message: 'Marque que la persona repitió el valor',
+  },
   analyte_definition_code_unique: {
     code: 'ANALYTE_CODE_DUPLICATE',
     field: 'code',

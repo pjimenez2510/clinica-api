@@ -803,6 +803,7 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
         criticalEscalationRole: { select: { id: true, name: true } },
         unmatchedResultOwnerRole: { select: { id: true, name: true } },
         unmatchedResultDeadlineHours: true,
+        criticalReadBackRequired: true,
       },
     });
 
@@ -814,6 +815,7 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
           criticalEscalationRole: row.criticalEscalationRole,
           unmatchedResultOwnerRole: row.unmatchedResultOwnerRole,
           unmatchedResultDeadlineHours: row.unmatchedResultDeadlineHours,
+          criticalReadBackRequired: row.criticalReadBackRequired,
         },
       ]),
     );

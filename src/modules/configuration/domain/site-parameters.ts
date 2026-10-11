@@ -121,6 +121,11 @@ export interface SiteParameters {
   /** ORD-063, ORD-065. The role an overdue critical value is escalated to. */
   criticalEscalationRoleId: string | null;
   /**
+   * ORD-177 (D-207 §2). A notice given needs the read-back. Off by default:
+   * each organisation defines the procedure (Joint Commission NPSG.02.03.01).
+   */
+  criticalReadBackRequired: boolean;
+  /**
    * ORD-046, D-050 §4. The role that answers for the unmatched-results queue;
    * `null` is the decided default — the practitioner who placed the order.
    */
@@ -312,6 +317,8 @@ export const DEFAULT_SITE_PARAMETERS: SiteParameters = {
   /** D-111 §1, decided by the author on 01-10-2026: sixty minutes. */
   criticalNoticeWithinMinutes: 60,
   criticalEscalationRoleId: null,
+  /** ORD-177, D-207 §2 (D-223): off; confirming it is a clinician's. */
+  criticalReadBackRequired: false,
   /** D-050 §4: the ordering practitioner, with 24 hours. */
   unmatchedResultOwnerRoleId: null,
   unmatchedResultDeadlineHours: 24,

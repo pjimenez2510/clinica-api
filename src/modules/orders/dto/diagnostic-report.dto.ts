@@ -380,6 +380,8 @@ export class DiagnosticReportDto extends createZodDto(diagnosticReportSchema) {}
 
 export const diagnosticReportListSchema = z.object({
   items: z.array(diagnosticReportSchema),
+  /** ORD-177. The order's site asks for the read-back on a notice given. */
+  readBackRequired: z.boolean(),
 });
 /** Response of GET /orders/:orderId/reports. */
 export class DiagnosticReportListDto extends createZodDto(
@@ -428,6 +430,8 @@ export const criticalResultSchema = flaggedResultSchema.extend({
   escalationMissing: z.boolean(),
   /** ORD-167. The notice is due to the account reading the worklist. */
   dueToRequester: z.boolean(),
+  /** ORD-177. The site asks for the read-back on a notice given. */
+  readBackRequired: z.boolean(),
 });
 export const criticalResultListSchema = z.object({
   items: z.array(criticalResultSchema),
@@ -482,6 +486,8 @@ export const correctionResultSchema = z.object({
   noAnswerAttempts: z.number().int(),
   /** ORD-173. The site's on-call has to locate the patient; it closes nothing. */
   locateViaOnCall: z.boolean(),
+  /** ORD-177. The site asks for the read-back on a notice given. */
+  readBackRequired: z.boolean(),
   /** ORD-154 (D-156.2). The site's critical deadline, from `correctedAt`. */
   waitingMinutes: z.number().int(),
   noticeDueAt: z.iso.datetime(),

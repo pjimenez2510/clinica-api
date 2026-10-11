@@ -89,6 +89,9 @@ describe('la superficie de configuración', () => {
       // siendo inmutable y la cola sigue enseñando lo que no se avisó.
       'criticalEscalationRoleId',
       'criticalNoticeWithinMinutes',
+      // ORD-177 (D-207 §2): el read-back, ajuste de la sede, apagado de
+      // fábrica. Encenderlo añade un paso; apagarlo no quita la constancia.
+      'criticalReadBackRequired',
       // AG-142 (E8): el umbral de llegada tardía y quién lo salta. Lo mismo
       // que el sobrecupo: la clínica elige el número y QUIÉN, no la garantía.
       'lateArrivalGraceMinutes',

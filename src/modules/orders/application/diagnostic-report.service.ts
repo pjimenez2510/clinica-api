@@ -97,6 +97,7 @@ const DEFAULT_POLICY: SafetyPolicy = {
   criticalEscalationRole: null,
   unmatchedResultOwnerRole: null,
   unmatchedResultDeadlineHours: 24,
+  criticalReadBackRequired: false,
 };
 
 /**
@@ -684,6 +685,7 @@ export class DiagnosticReportService {
           },
           { userId: requester.userId, roles },
         ),
+        readBackRequired: policy.criticalReadBackRequired,
       };
     });
   }
@@ -773,6 +775,7 @@ export class DiagnosticReportService {
             afterHours,
             noticeTarget: due.target,
             locateViaOnCall: locate,
+            readBackRequired: policy.criticalReadBackRequired,
             escalationMissing:
               due.escalationMissing || (locate && !staffed.has(order.siteId)),
           });
@@ -821,12 +824,10 @@ export class DiagnosticReportService {
     if (!result) throw new ResultNotFoundError();
     await this.assertNotifiable(result, requester);
     const caller = await this.callerOf(request, result.siteId);
-    // ORD-066, D-111 §4. A notice given carries the read-back; an attempt has
-    // nobody who could have repeated anything.
+    // ORD-066, ORD-177 (D-207 §2). A notice given carries the read-back where
+    // the site asks for it; an attempt has nobody who repeated anything.
     const given = request.outcome === 'NOTIFIED';
-    if (given && request.readBack !== true) {
-      throw new CriticalReadBackRequiredError();
-    }
+    await this.assertReadBack(given, request.readBack, result.siteId);
 
     const notifiedAt = request.notifiedAt ?? now;
     if (notifiedAt > now || notifiedAt < result.observedAt) {
@@ -870,7 +871,7 @@ export class DiagnosticReportService {
       notifiedAt,
       note: request.note ?? null,
       outcome: request.outcome,
-      readBackConfirmed: given ? true : null,
+      readBackConfirmed: given ? request.readBack === true : null,
       afterHours: !inHours.has(result.siteId),
       selfNotice,
       // ORD-146. A recipient with the ordering practitioner's name.
@@ -937,10 +938,8 @@ export class DiagnosticReportService {
       throw new CriticalNoticeNoAnswerStaysError();
     }
 
-    // ORD-066. Editing does not lift the read-back.
-    if (given && request.readBack !== true) {
-      throw new CriticalReadBackRequiredError();
-    }
+    // ORD-066, ORD-177. Editing does not lift the read-back the site asks for.
+    await this.assertReadBack(given, request.readBack, result.siteId);
 
     const notifiedAt = request.notifiedAt ?? current.notifiedAt;
     if (notifiedAt > now || notifiedAt < result.observedAt) {
@@ -972,7 +971,7 @@ export class DiagnosticReportService {
       notifiedAt,
       note: request.note ?? null,
       outcome: request.outcome,
-      readBackConfirmed: given ? true : null,
+      readBackConfirmed: given ? request.readBack === true : null,
       afterHours: !inHours.has(result.siteId),
       selfNotice,
       namesOrderingPractitioner: namesPerson(request.recipientName, result.orderedByName), // prettier-ignore
@@ -1059,6 +1058,36 @@ export class DiagnosticReportService {
     if (!notifiedCorrections(reports).has(result.resultId)) {
       throw new ResultNotCriticalError();
     }
+  }
+
+  /**
+   * ORD-066, ORD-177 (D-207 §2). A notice given without the read-back is
+   * refused only where the site asks for it; off by default.
+   */
+  private async assertReadBack(
+    given: boolean,
+    readBack: boolean | undefined,
+    siteId: string,
+  ): Promise<void> {
+    if (!given || readBack === true) return;
+    const policy = (await this.reports.safetyPolicies([siteId])).get(siteId);
+    if (policy?.criticalReadBackRequired) {
+      throw new CriticalReadBackRequiredError();
+    }
+  }
+
+  /**
+   * ORD-177. Whether the site of an order asks for the read-back, for the
+   * screen that records a notice from the order's reports.
+   */
+  async readBackRequired(
+    orderId: string,
+    requester: Requester,
+  ): Promise<boolean> {
+    const order = await this.orders.byId({ orderId, sites: requester.sites });
+    if (!order) throw new OrderNotFoundError();
+    const policy = (await this.reports.safetyPolicies([order.siteId])).get(order.siteId); // prettier-ignore
+    return policy?.criticalReadBackRequired ?? false;
   }
 
   /**

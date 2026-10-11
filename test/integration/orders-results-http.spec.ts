@@ -265,8 +265,9 @@ describe('los resultados por HTTP', () => {
     expect((await get('/orders/results/corrections').expect(200)).body).toEqual({ items: [] }); // prettier-ignore
   });
 
-  it('ORD-066 un aviso sin read-back responde 422 nombrando el campo', async () => {
+  it('ORD-066 ORD-177 con la sede que lo exige, un aviso sin read-back responde 422 nombrando el campo', async () => {
     const resultId = await criticalGlucose();
+    await prisma.siteParameter.updateMany({ data: { criticalReadBackRequired: true } }); // prettier-ignore
 
     const response = await post(`/orders/results/${resultId}/notices`, {
       outcome: 'NOTIFIED',
@@ -366,7 +367,8 @@ describe('los resultados por HTTP', () => {
     }).expect(201);
     const notice = created.body as { id: string; notifiedAt: string };
 
-    // ORD-066: editar no levanta el read-back.
+    // ORD-066, ORD-177: con la sede que lo exige, editar no levanta el read-back.
+    await prisma.siteParameter.updateMany({ data: { criticalReadBackRequired: true } }); // prettier-ignore
     const refused = await put(
       `/orders/results/${resultId}/notices/${notice.id}`,
       {

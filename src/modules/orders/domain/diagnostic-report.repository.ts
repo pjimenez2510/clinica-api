@@ -330,6 +330,8 @@ export interface SafetyPolicy {
   /** `null`: the practitioner who placed the order (D-050 §4). */
   unmatchedResultOwnerRole: { id: string; name: string } | null;
   unmatchedResultDeadlineHours: number;
+  /** ORD-177 (D-207 §2). A notice given needs the read-back; off by default. */
+  criticalReadBackRequired: boolean;
 }
 
 /** ORD-060, ORD-065. A critical value with how long it has waited. */
@@ -373,6 +375,8 @@ export interface CriticalWorklistEntry extends FlaggedResultEntry {
   escalationMissing: boolean;
   /** ORD-167. The notice is due to the account reading the worklist. */
   dueToRequester: boolean;
+  /** ORD-177. The site asks for the read-back on a notice given. */
+  readBackRequired: boolean;
 }
 
 /** ORD-040, ORD-046. An unmatched result with who answers for it, and by when. */
@@ -466,6 +470,8 @@ export interface CorrectionWorklistEntry {
    * owed the correction: the site's on-call has to locate them.
    */
   locateViaOnCall: boolean;
+  /** ORD-177. The site asks for the read-back on a notice given. */
+  readBackRequired: boolean;
   /** ORD-154 (D-156.2). The site's critical deadline, from `correctedAt`. */
   waitingMinutes: CriticalWait['waitingMinutes'];
   noticeDueAt: CriticalWait['dueAt'];

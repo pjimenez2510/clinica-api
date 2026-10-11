@@ -472,11 +472,13 @@ export class DiagnosticReportController {
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Req() req: Request,
   ): Promise<DiagnosticReportListResponse> {
-    const items = await this.reports.ofOrder(
-      orderId,
-      this.requester(req, 'record:read'),
-    );
-    return { items: items.map(toReportResponse) };
+    const requester = this.requester(req, 'record:read');
+    const items = await this.reports.ofOrder(orderId, requester);
+    return {
+      items: items.map(toReportResponse),
+      // ORD-177. Whether the notice recorded from this order needs the read-back.
+      readBackRequired: await this.reports.readBackRequired(orderId, requester),
+    };
   }
 
   /** Who is asking, for the site scope and for the access trail. */
@@ -630,6 +632,7 @@ function toCorrectionEntryResponse(
       : null,
     noAnswerAttempts: entry.noAnswerAttempts,
     locateViaOnCall: entry.locateViaOnCall,
+    readBackRequired: entry.readBackRequired,
     waitingMinutes: entry.waitingMinutes,
     noticeDueAt: entry.noticeDueAt.toISOString(),
     overdue: entry.overdue,
@@ -701,6 +704,7 @@ function toCriticalResponse(
     noticeTarget: entry.noticeTarget,
     escalationMissing: entry.escalationMissing,
     dueToRequester: entry.dueToRequester,
+    readBackRequired: entry.readBackRequired,
   };
 }
 

@@ -335,10 +335,12 @@ describe('la constancia del aviso de un valor crítico contra PostgreSQL', () =>
     expect(trail[0]).toMatchObject({ userId: nurse.id, action: 'CREATE' });
   });
 
-  it('ORD-066 un aviso hecho sin read-back se rechaza y no deja nada', async () => {
+  it('ORD-066 ORD-177 con la sede que lo exige, un aviso hecho sin read-back se rechaza y no deja nada', async () => {
     const prisma = db();
     const { now } = clinicNoon();
     const scene = await aCriticalGlucose(prisma, now);
+    // ORD-177 (D-207 §2): el read-back es un ajuste de la sede, apagado de fábrica.
+    await prisma.siteParameter.updateMany({ data: { criticalReadBackRequired: true } }); // prettier-ignore
     const nurse = await createUser(prisma);
     const { reports } = serviceOf(prisma);
     const requester: Requester = { userId: nurse.id, sites: 'all' };
@@ -1502,10 +1504,11 @@ describe('editar el aviso de un valor crítico (ORD-120)', () => {
     expect(await store.critical({ sites: 'all' })).toEqual([]);
   });
 
-  it('ORD-120 y ORD-066 al editar, el aviso hecho sigue exigiendo el read-back; un aviso que pasa a «no contestó» devuelve el valor a la cola', async () => {
+  it('ORD-120 ORD-066 ORD-177 al editar, el aviso hecho sigue exigiendo el read-back que pide la sede; un aviso que pasa a «no contestó» devuelve el valor a la cola', async () => {
     const prisma = db();
     const { now } = clinicNoon();
     const scene = await aCriticalGlucose(prisma, now);
+    await prisma.siteParameter.updateMany({ data: { criticalReadBackRequired: true } }); // prettier-ignore
     const nurse = await createUser(prisma);
     const { reports, store } = serviceOf(prisma);
     const requester: Requester = { userId: nurse.id, sites: 'all' };

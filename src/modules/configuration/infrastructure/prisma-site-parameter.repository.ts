@@ -48,6 +48,7 @@ const PARAMETER_SELECT = {
   // ORD-046, ORD-063, ORD-065: la política de las colas de resultados.
   criticalNoticeWithinMinutes: true,
   criticalEscalationRoleId: true,
+  criticalReadBackRequired: true,
   unmatchedResultOwnerRoleId: true,
   unmatchedResultDeadlineHours: true,
   // EN-272: la línea de referencia de la TA de las gráficas.
@@ -137,6 +138,7 @@ export class PrismaSiteParameterRepository implements SiteParameterRepository {
             // `null` clears a role (quien pidió); `undefined` leaves alone.
             criticalNoticeWithinMinutes: patch.criticalNoticeWithinMinutes,
             criticalEscalationRoleId: patch.criticalEscalationRoleId,
+            criticalReadBackRequired: patch.criticalReadBackRequired,
             unmatchedResultOwnerRoleId: patch.unmatchedResultOwnerRoleId,
             unmatchedResultDeadlineHours: patch.unmatchedResultDeadlineHours,
             bpReferenceSystolic: patch.bpReferenceSystolic,

@@ -772,6 +772,7 @@ describe('la configuración por HTTP', () => {
         cancelledRetention: 'NEVER',
         criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
+        criticalReadBackRequired: false,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
         // EN-272: la línea de la TA de las gráficas, la recomendación de
@@ -806,6 +807,7 @@ describe('la configuración por HTTP', () => {
         cancelledRetention: 'NEVER',
         criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
+        criticalReadBackRequired: false,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
       });
@@ -1361,6 +1363,7 @@ describe('la configuración por HTTP', () => {
         cancelledRetention: 'NEVER',
         criticalNoticeWithinMinutes: 60,
         criticalEscalationRoleId: null,
+        criticalReadBackRequired: false,
         unmatchedResultOwnerRoleId: null,
         unmatchedResultDeadlineHours: 24,
         bpReferenceSystolic: 140,
@@ -1486,6 +1489,8 @@ describe('la configuración por HTTP', () => {
         // resultados; la justificación, en la prueba de columnas de abajo.
         'criticalNoticeWithinMinutes',
         'criticalEscalationRoleId',
+        // ORD-177 (D-207 §2): el read-back, ajuste de la sede.
+        'criticalReadBackRequired',
         'unmatchedResultOwnerRoleId',
         'unmatchedResultDeadlineHours',
         // EN-272 (D-207 §1). Una línea en una gráfica, no un interruptor:
@@ -1543,6 +1548,12 @@ describe('la configuración por HTTP', () => {
         // Vacíos de fábrica: la cola dice «sin plazo» en vez de inventarlo.
         'critical_escalation_role_id',
         'critical_notice_within_minutes',
+        // ORD-177 (D-207 §2, por confirmar con un clínico). El read-back es un
+        // PASO del aviso que la sede elige, no una de las tres garantías de
+        // CF-063: apagado, el aviso se sigue registrando con quién, a quién,
+        // cuándo y si se confirmó, la constancia sigue inmutable y el valor
+        // sigue en su cola hasta que la hay.
+        'critical_read_back_required',
         // 20-08-2026. Las cuatro columnas del flujo de atención, y por qué
         // ninguna apaga una de las tres garantías que CF-063 nombra
         // —no-solapamiento, inmutabilidad del historial, cierre por defecto—:

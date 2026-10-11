@@ -189,6 +189,8 @@ export class SiteParametersService {
       // a value the site chose, and `??` would put back what the row had.
       criticalNoticeWithinMinutes: chosen(patch.criticalNoticeWithinMinutes, current.criticalNoticeWithinMinutes), // prettier-ignore
       criticalEscalationRoleId: chosen(patch.criticalEscalationRoleId, current.criticalEscalationRoleId), // prettier-ignore
+      criticalReadBackRequired:
+        patch.criticalReadBackRequired ?? current.criticalReadBackRequired,
       unmatchedResultOwnerRoleId: chosen(patch.unmatchedResultOwnerRoleId, current.unmatchedResultOwnerRoleId), // prettier-ignore
       unmatchedResultDeadlineHours:
         patch.unmatchedResultDeadlineHours ??
@@ -223,7 +225,9 @@ export class SiteParametersService {
     // at their next fallback tick.
     if (
       patch.criticalNoticeWithinMinutes !== undefined ||
-      patch.criticalEscalationRoleId !== undefined
+      patch.criticalEscalationRoleId !== undefined ||
+      // ORD-177. Whether one click records a notice: the open queues say it.
+      patch.criticalReadBackRequired !== undefined
     ) {
       this.liveEvents.publish({ kind: 'critical-results', siteId: change.after.siteId }); // prettier-ignore
     }
