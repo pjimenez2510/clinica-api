@@ -398,8 +398,15 @@ describe('búsqueda y ordenación de pacientes', () => {
       ...criteria('name', 'asc'),
       ids: [fusionadaId],
     });
-
     expect(total).toBe(0);
+
+    // Control positivo: el mismo id, pidiendo las fusionadas, sí sale.
+    const conFusionadas = await repository.search({
+      ...criteria('name', 'asc'),
+      ids: [fusionadaId],
+      includeMerged: true,
+    });
+    expect(conFusionadas.total).toBe(1);
   });
 
   it('PA-018 no busca por documento con menos de cuatro caracteres', async () => {

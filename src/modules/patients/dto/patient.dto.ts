@@ -384,7 +384,8 @@ export const searchPatientsSchema = z.object({
    */
   motherId: z.uuid().optional(),
   /**
-   * PA-079. Only these charts, as one comma-separated parameter.
+   * PA-079. Only these charts: the parameter repeated (`ids=a&ids=b`, what
+   * the web client sends) or one comma-separated value (`ids=a,b`).
    *
    * What lets the day board say «Faltan N datos» on each row without opening
    * one chart per patient — an opening is audited (PA-022) and the board polls.

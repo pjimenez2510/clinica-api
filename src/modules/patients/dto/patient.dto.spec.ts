@@ -555,6 +555,17 @@ describe('reading only the charts a screen already names', () => {
     ).toMatchObject({ ids: [ID(1), ID(2)] });
   });
 
+  it('PA-079 takes the parameter repeated, as the web client sends it', () => {
+    expect(
+      searchPatientsSchema.safeParse({ ids: [ID(1), ID(2)] }).data,
+    ).toMatchObject({ ids: [ID(1), ID(2)] });
+    expect(
+      searchPatientsSchema.safeParse({
+        ids: Array.from({ length: 51 }, (_, index) => ID(index + 1)),
+      }).success,
+    ).toBe(false);
+  });
+
   it('PA-079 refuses the whole query when one id is malformed', () => {
     expect(
       searchPatientsSchema.safeParse({ ids: `${ID(1)},Guamán` }).success,

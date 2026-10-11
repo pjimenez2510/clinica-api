@@ -426,7 +426,7 @@ export class PrismaPatientRepository implements PatientRepository {
      * stays out through `matches` like anywhere else in the listing.
      */
     const idsFilter =
-      criteria.ids === undefined || criteria.ids.length === 0
+      criteria.ids === undefined
         ? Prisma.empty
         : Prisma.sql`AND p.id IN (${Prisma.join(criteria.ids.map((id) => Prisma.sql`${id}::uuid`))})`;
     /**
