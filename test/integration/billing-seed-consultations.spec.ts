@@ -7,7 +7,7 @@ import { seedSpecialties } from '../../prisma/seed-specialties.mts';
 import { useDatabase } from './setup/database';
 
 /**
- * BI-232 (D-161), BI-279 (ADR-013). The starting catalogue brings, for EVERY
+ * BI-232 (D-228), BI-279 (ADR-013). The starting catalogue brings, for EVERY
  * specialty, its two consultations —«Primera vez» at 30 minutes and «Control»
  * at 20— as services named «Consulta de <especialidad> · Primera vez /
  * Control», ONE per specialty and visit, each with its self-pay price (D-228:
@@ -84,6 +84,45 @@ describe('BI-232 BI-279 las consultas del catálogo de arranque', () => {
       expect(Number(row.amount), row.service.code).toBeGreaterThan(0);
     }
     expect(await pricesIn('IESS')).toEqual([]);
+  });
+
+  it('BI-232 resembrar pone precio a la consulta que nació sin él, y no toca la que la clínica ya preció (control)', async () => {
+    await seedSpecialties(prisma);
+    await seedBilling(prisma);
+    const priceOf = (code: string) =>
+      prisma.price.findMany({
+        where: {
+          service: { code },
+          priceList: { payer: { code: 'PARTICULAR' } },
+        },
+        select: { amount: true },
+      });
+    // An installation seeded before: cardiology without a price, and
+    // dermatology repriced by the clinic.
+    await prisma.price.deleteMany({
+      where: { service: { code: 'CONS-CAR-PV' } },
+    });
+    const seeded = await prisma.price.findFirstOrThrow({
+      where: { service: { code: 'CONS-DER-PV' } },
+    });
+    await prisma.price.delete({ where: { id: seeded.id } });
+    await prisma.price.create({
+      data: {
+        priceListId: seeded.priceListId,
+        serviceId: seeded.serviceId,
+        amount: '61.00',
+        validFrom: seeded.validFrom,
+      },
+    });
+
+    await seedBilling(prisma);
+
+    expect(
+      (await priceOf('CONS-CAR-PV')).map((row) => row.amount.toString()),
+    ).toEqual(['50']);
+    expect(
+      (await priceOf('CONS-DER-PV')).map((row) => row.amount.toString()),
+    ).toEqual(['61']);
   });
 
   it('BI-279 sembrar facturación antes que especialidades no crea consultas sin especialidad, y la siguiente corrida sí', async () => {

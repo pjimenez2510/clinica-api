@@ -625,6 +625,73 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
         .set('Authorization', pricer)
         .send({ kind: 'SUPPLY', name: 'Gasa', selfPayAmount: '0.50' })
         .expect(201);
+
+      // Retiring it takes the order with it: the same two keys.
+      const retire = await api()
+        .delete(`/api/v1/billing/services/${created.id}`)
+        .set('Authorization', pricer)
+        .expect(403);
+      expect((retire.body as Problem).code).toBe('PERMISSION_DENIED');
+      await api()
+        .delete(`/api/v1/billing/services/${created.id}`)
+        .set('Authorization', manager)
+        .expect(204);
+    });
+
+    it('BI-299 quitar la orden a un procedimiento también exige catalog:manage, y en toda la clínica', async () => {
+      const ordered = (
+        await api()
+          .post('/api/v1/billing/services')
+          .set('Authorization', manager)
+          .send({
+            kind: 'PROCEDURE',
+            name: 'Espirometría simple',
+            selfPayAmount: '30.00',
+            exam: {},
+          }) // prettier-ignore
+          .expect(201)
+      ).body as ListItem;
+      await api()
+        .patch(`/api/v1/billing/services/${ordered.id}`)
+        .set('Authorization', pricer)
+        .send({ exam: null })
+        .expect(403);
+
+      // The clinical key at one site only is not the catalogue's key.
+      const site = await createSite(prisma);
+      const local = await prisma.role.create({
+        data: {
+          code: 'CATALOGO_SEDE',
+          name: 'Catálogo de una sede',
+          permissions: { create: [{ permissionCode: 'catalog:manage' }] },
+        },
+      });
+      const pricerUser = await prisma.user.findUniqueOrThrow({
+        where: { email: 'precios@clinica.ec' },
+      });
+      await prisma.userRoleGrant.create({
+        data: { userId: pricerUser.id, roleId: local.id, siteId: site.id },
+      });
+      registry.invalidate();
+      // The grants travel in the session: a new one, with the site's key.
+      const login = await api()
+        .post('/api/v1/auth/login')
+        .send({ email: 'precios@clinica.ec', password: PASSWORD })
+        .expect(200);
+      const siteScoped = `Bearer ${(login.body as { accessToken: string }).accessToken}`;
+      const scoped = await api()
+        .patch(`/api/v1/billing/services/${ordered.id}`)
+        .set('Authorization', siteScoped)
+        .send({ exam: null });
+      expect(scoped.status).toBe(403);
+      expect((scoped.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+
+      // Control: both keys clinic-wide.
+      await api()
+        .patch(`/api/v1/billing/services/${ordered.id}`)
+        .set('Authorization', manager)
+        .send({ exam: null })
+        .expect(200);
     });
   });
 

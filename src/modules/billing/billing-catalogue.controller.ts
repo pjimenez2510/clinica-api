@@ -35,6 +35,7 @@ import type {
   ServicePriceView,
   ServiceView,
 } from './domain/billing.repository';
+import { isOrderableKind } from './domain/billing.repository';
 import { Money } from './domain/money';
 import type { PriceRow } from './domain/price-list';
 import {
@@ -287,7 +288,9 @@ export class BillingCatalogueController {
     @Param('serviceId', ParseUUIDPipe) serviceId: string,
   ): Promise<void> {
     const requester = this.requireClinicWide('billing:price-manage');
-    await this.services.deleteService(serviceId, requester);
+    await this.services.deleteService(serviceId, requester, () =>
+      this.requireOrderKey(),
+    );
   }
 
   /** BI-030, BI-031. */
@@ -459,8 +462,8 @@ function carriesOrderExtension(
   kind: CreateServiceDto['kind'],
   exam: CreateServiceDto['exam'],
 ): boolean {
-  if (kind === 'LAB_EXAM' || kind === 'IMAGING') return true;
-  return kind === 'PROCEDURE' && exam !== undefined && exam !== null;
+  if (!isOrderableKind(kind)) return false;
+  return kind !== 'PROCEDURE' || (exam !== undefined && exam !== null);
 }
 
 /**

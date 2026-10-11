@@ -452,12 +452,18 @@ export class ServiceCatalogueService {
    * says so: the service an eight-month-old invoice, an appointment or an
    * order names has to keep existing for them to be readable.
    */
-  async deleteService(serviceId: string, requester: Requester): Promise<void> {
+  async deleteService(
+    serviceId: string,
+    requester: Requester,
+    requireOrderKey: () => void,
+  ): Promise<void> {
     const current = await this.requireService(serviceId);
     // D-199.1. Deleting it would remove the mark with a price manager's key.
     if (current.writtenConsent.required) {
       throw new ServiceConsentTieLockedError();
     }
+    // BI-299. Nor does that key alone remove what the order prints.
+    if (current.exam !== null) requireOrderKey();
     const references = await this.catalogue.countReferencesToService(serviceId);
     if (references > 0) throw new BillableServiceInUseError();
 

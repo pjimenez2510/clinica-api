@@ -2177,7 +2177,11 @@ dos registros distintos.**
   > a las que ya lo traían» (D-161). Con el precio particular obligatorio al
   > crear (D-228), una consulta sembrada «Sin precio» era la única que la
   > pantalla no permite crear; la semilla trae precios **de ejemplo**, en la
-  > línea de los ya sembrados, que la clínica corrige en Servicios.
+  > línea de los ya sembrados, que la clínica corrige en Servicios. Como todo
+  > precio de la semilla, se pone sólo donde la consulta **no tiene ningún
+  > precio** en la lista particular, vigente desde el inicio de la semilla: en
+  > una instalación sembrada antes, resembrar pone precio a las consultas que
+  > nacieron sin él (es lo que se pidió) y no toca las que la clínica ya preció.
   > **Enmendado el 07-10-2026 (D-179.3):** la atadura es al tipo de atención,
   > no a la especialidad y la secuencia. Las prestaciones de arranque conservan
   > su código (`CONS-MG-PV`, `CONS-MG-SUB`…): «primera vez» va con el tipo
@@ -3130,10 +3134,12 @@ lo ve._
 - **BI-299** — CUANDO quien tiene `billing:price-manage` cree un servicio que
   lleva extensión de orden (examen, imagen, o procedimiento que se pide) o
   corrija la extensión de orden de un servicio (`exam` en la corrección), el
-  sistema DEBERÁ exigir **además** `catalog:manage` en toda la clínica; SI no
-  lo tiene, ENTONCES DEBERÁ rechazarlo con `PERMISSION_DENIED` nombrando
-  `catalog:manage`. Corregir el resto del servicio, o crear lo que no se pide
-  en una orden, NO DEBERÁ exigirlo. La interfaz DEBERÁ ocultar a quien no lo
+  sistema DEBERÁ exigir **además** `catalog:manage` en toda la clínica, y lo
+  mismo para retirar (BI-288) un servicio con extensión de orden; SI no lo
+  tiene en ninguna sede, ENTONCES DEBERÁ rechazarlo con `PERMISSION_DENIED`, y
+  SI lo tiene sólo en alguna, con `SITE_SCOPE_DENIED`. Corregir el resto del
+  servicio, o crear o retirar lo que no se pide en una orden, NO DEBERÁ
+  exigirlo. La interfaz DEBERÁ ocultar a quien no lo
   tiene los tipos y los campos que lo exigen.
   > D-231, resuelta por el autor el 11-10-2026: la muestra, la preparación, el
   > ayuno y la entrega son una instrucción clínica al paciente, no un precio.
@@ -3399,7 +3405,7 @@ Todas bajo `/api/v1`. **Toda ruta declara su permiso y su alcance de sede**
 | `GET` | `/billing/services` | `billing:read` | `global` | BI-010, BI-011, BI-014, BI-023 |
 | `POST` | `/billing/services` | `billing:price-manage` (y `catalog:manage` si lleva extensión de orden, BI-299) | `global` | BI-010 a BI-016, BI-299 |
 | `PATCH` | `/billing/services/{id}` | `billing:price-manage` (y `catalog:manage` si trae `exam`, BI-299) | `global` | BI-011 a BI-016, BI-025, BI-278 a BI-286, BI-299 |
-| `DELETE` | `/billing/services/{id}` | `billing:price-manage` | `global` | BI-012 |
+| `DELETE` | `/billing/services/{id}` | `billing:price-manage` (y `catalog:manage` si tiene extensión de orden, BI-299) | `global` | BI-012, BI-299 |
 | `POST` | `/billing/services/{id}/tax-review` | `billing:price-manage` | `global` | BI-024 |
 | `POST` | `/billing/services/{id}/written-consent` | `record:consent-rule` | `global` | BI-256 |
 | `GET` | `/billing/services/{id}/prices` | `billing:read` | `global` | BI-189 |

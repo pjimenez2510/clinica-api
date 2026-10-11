@@ -1612,16 +1612,9 @@ export async function seedBilling(prisma: PrismaClient): Promise<void> {
         serviceIdByCode.set(service.code, serviceId);
         counts.services += 1;
 
-        // BI-232. Sin precio de arranque, sin precio: lo fija la clínica.
-        if (service.selfPayAmount !== undefined) {
-          await ensurePrice(
-            tx,
-            selfPayListId,
-            serviceId,
-            service.selfPayAmount,
-          );
-          counts.prices += 1;
-        }
+        // BI-232. Sólo donde no tiene ninguno: lo que la clínica ya preció no se toca.
+        await ensurePrice(tx, selfPayListId, serviceId, service.selfPayAmount);
+        counts.prices += 1;
       }
 
       // 6. Analitos, rangos, exámenes y su composición.

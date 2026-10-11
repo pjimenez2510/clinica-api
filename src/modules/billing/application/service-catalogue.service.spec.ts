@@ -36,6 +36,8 @@ import { Money, Percentage } from '../domain/money';
 import { ServiceCatalogueService } from './service-catalogue.service';
 
 const requester = { userId: 'user-1' };
+/** BI-299. The order key's check, which these services do not reach. */
+const noOrderKeyNeeded = (): void => undefined;
 
 const taxRate: TaxRateView = {
   id: 'tax-0',
@@ -542,7 +544,7 @@ describe('BI-288 retirar un servicio', () => {
     });
 
     await expect(
-      catalogue.deleteService('service-1', requester),
+      catalogue.deleteService('service-1', requester, noOrderKeyNeeded),
     ).rejects.toBeInstanceOf(BillableServiceInUseError);
     expect(mocks.deleteService).not.toHaveBeenCalled();
   });
@@ -550,7 +552,7 @@ describe('BI-288 retirar un servicio', () => {
   it('BI-288 lo borra cuando nadie lo ha usado, y deja en la bitácora lo que había', async () => {
     const { service: catalogue, mocks } = build();
 
-    await catalogue.deleteService('service-1', requester);
+    await catalogue.deleteService('service-1', requester, noOrderKeyNeeded);
 
     expect(mocks.deleteService).toHaveBeenCalledWith('service-1');
     const entry = mocks.record.mock.calls[0]![0] as AccessAuditEntry;
@@ -563,7 +565,7 @@ describe('BI-288 retirar un servicio', () => {
     });
 
     await expect(
-      catalogue.deleteService('missing', requester),
+      catalogue.deleteService('missing', requester, noOrderKeyNeeded),
     ).rejects.toBeInstanceOf(BillableServiceNotFoundError);
     expect(mocks.countReferencesToService).not.toHaveBeenCalled();
   });
@@ -817,7 +819,7 @@ describe('BI-256 la marca «exige consentimiento 024» la pone la dirección mé
     await expect(
       catalogue.updateService('service-1', { mspCode: '10121' }, requester), // prettier-ignore
     ).rejects.toBeInstanceOf(ServiceConsentTieLockedError);
-    await expect(catalogue.deleteService('service-1', requester)).rejects.toBeInstanceOf(ServiceConsentTieLockedError); // prettier-ignore
+    await expect(catalogue.deleteService('service-1', requester, noOrderKeyNeeded)).rejects.toBeInstanceOf(ServiceConsentTieLockedError); // prettier-ignore
     // Control positivo: renombrarla sí.
     await expect(catalogue.updateService('service-1', { name: 'Biopsia' }, requester)).resolves.toBeDefined(); // prettier-ignore
   });
