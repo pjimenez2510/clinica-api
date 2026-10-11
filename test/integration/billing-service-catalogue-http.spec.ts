@@ -66,6 +66,7 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
   let registry: RolePermissionRegistry;
   let manager: string;
   let cashier: string;
+  let pricer: string;
 
   beforeEach(async () => {
     enableBigIntSerialisation();
@@ -105,6 +106,20 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
           create: [
             { permissionCode: 'billing:read' },
             { permissionCode: 'billing:price-manage' },
+            // BI-299 (D-231): what an exam's order prints is clinical.
+            { permissionCode: 'catalog:manage' },
+          ],
+        },
+      },
+    });
+    await prisma.role.create({
+      data: {
+        code: 'PRECIOS',
+        name: 'Sólo fija precios',
+        permissions: {
+          create: [
+            { permissionCode: 'billing:read' },
+            { permissionCode: 'billing:price-manage' },
           ],
         },
       },
@@ -119,6 +134,7 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
     registry.invalidate();
     manager = await signIn('tarifario@clinica.ec', 'TARIFARIO', '0919176818');
     cashier = await signIn('lector@clinica.ec', 'LECTOR', '1710034065');
+    pricer = await signIn('precios@clinica.ec', 'PRECIOS', '1104637283');
   });
 
   afterAll(async () => {
@@ -542,6 +558,72 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
         .post('/api/v1/billing/services')
         .set('Authorization', manager)
         .send({ kind: 'SUPPLY', name: 'Algodón', selfPayAmount: '1.00' })
+        .expect(201);
+    });
+
+    it('BI-299 crear un examen, o corregir lo que su orden imprime, exige además catalog:manage; el precio y el nombre no', async () => {
+      const exam = {
+        kind: 'LAB_EXAM',
+        name: 'Ferritina',
+        selfPayAmount: '9.00',
+        exam: { specimenType: 'Suero' },
+      };
+      const refused = await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', pricer)
+        .send(exam)
+        .expect(403);
+      expect(refused.body as Problem).toMatchObject({
+        code: 'PERMISSION_DENIED',
+      });
+      // Control: the same body, with both keys.
+      const created = (
+        await api()
+          .post('/api/v1/billing/services')
+          .set('Authorization', manager)
+          .send(exam)
+          .expect(201)
+      ).body as ListItem;
+
+      // A procedure ordered in an order carries the extension too.
+      await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', pricer)
+        .send({
+          kind: 'PROCEDURE',
+          name: 'Espirometría',
+          selfPayAmount: '30.00',
+          mspCode: null,
+          exam: {},
+        }) // prettier-ignore
+        .expect(403);
+
+      const preparation = { exam: { patientPreparation: 'Ayuno de 8 horas.' } };
+      const correction = await api()
+        .patch(`/api/v1/billing/services/${created.id}`)
+        .set('Authorization', pricer)
+        .send(preparation)
+        .expect(403);
+      expect(correction.body as Problem).toMatchObject({
+        code: 'PERMISSION_DENIED',
+      });
+      await api()
+        .patch(`/api/v1/billing/services/${created.id}`)
+        .set('Authorization', manager)
+        .send(preparation)
+        .expect(200);
+
+      // Without `exam`, the price manager still corrects the exam and creates
+      // what is not ordered.
+      await api()
+        .patch(`/api/v1/billing/services/${created.id}`)
+        .set('Authorization', pricer)
+        .send({ name: 'Ferritina sérica' })
+        .expect(200);
+      await api()
+        .post('/api/v1/billing/services')
+        .set('Authorization', pricer)
+        .send({ kind: 'SUPPLY', name: 'Gasa', selfPayAmount: '0.50' })
         .expect(201);
     });
   });

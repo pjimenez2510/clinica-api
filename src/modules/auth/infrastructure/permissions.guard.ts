@@ -21,24 +21,11 @@ import { Principal } from '../../../shared/authorisation/principal';
 // SITE_SCOPE_DENIED is exactly the duplication a public contract cannot have:
 // clients branch on the code, and nothing stopped two of them existing.
 import { SiteScopeDeniedError } from '../../../shared/authorisation/site-scope';
+import { PermissionDeniedError } from '../../../shared/authorisation/permission-denied.error';
 
 import { RolePermissionRegistry } from './role-permission.registry';
 
 import type { AccessTokenClaims } from './token.service';
-
-/**
- * 403 for a permission the caller does not hold. See the constructor for why
- * the permission is named in the response.
- */
-export class PermissionDeniedError extends ForbiddenError {
-  readonly code = 'PERMISSION_DENIED';
-  constructor(permission: string) {
-    // The permission IS named. It is not a secret — the caller knows which
-    // endpoint they called — and hiding it only makes the failure harder to
-    // report. What is never named is who else holds it.
-    super(`Missing permission ${permission}`, { permission });
-  }
-}
 
 /**
  * AU-010. A route that declares no permission, or a permission without a site

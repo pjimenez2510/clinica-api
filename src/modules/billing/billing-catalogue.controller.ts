@@ -20,6 +20,7 @@ import {
 } from '@nestjs/swagger';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { PermissionDeniedError } from '../../shared/authorisation/permission-denied.error';
 import { assertClinicWideScope } from '../../shared/authorisation/site-scope';
 import { clinicalDateOf } from '../../shared/domain/clinic-time';
 import { RequirePermission } from '../../shared/http/auth.decorators';
@@ -179,6 +180,7 @@ export class BillingCatalogueController {
   @ApiCreatedResponse({ type: ServiceDto })
   async createService(@Body() dto: CreateServiceDto): Promise<ServiceResponse> {
     const requester = this.requireClinicWide('billing:price-manage');
+    if (carriesOrderExtension(dto.kind, dto.exam)) this.requireOrderKey();
     return toServiceResponse(
       await this.services.createService(
         {
@@ -208,6 +210,7 @@ export class BillingCatalogueController {
     @Body() dto: UpdateServiceDto,
   ): Promise<ServiceResponse> {
     const requester = this.requireClinicWide('billing:price-manage');
+    if (dto.exam !== undefined) this.requireOrderKey();
     return toServiceResponse(
       await this.services.updateService(serviceId, { ...dto }, requester),
     );
@@ -433,6 +436,31 @@ export class BillingCatalogueController {
     assertClinicWideScope(this.currentUser.requirePrincipal(), permission);
     return { userId: this.currentUser.requireUserId() };
   }
+
+  /**
+   * BI-299 (D-231). What an exam's order prints for the patient —specimen,
+   * preparation, fasting, turnaround— is a clinical instruction, not a price:
+   * it also takes the clinical catalogue's key, clinic-wide like the rest.
+   */
+  private requireOrderKey(): void {
+    const principal = this.currentUser.requirePrincipal();
+    if (!principal.can('catalog:manage')) {
+      throw new PermissionDeniedError('catalog:manage');
+    }
+    assertClinicWideScope(principal, 'catalog:manage');
+  }
+}
+
+/**
+ * BI-284. A new service carries an order extension when it is an exam or an
+ * imaging study, or a procedure sent with one.
+ */
+function carriesOrderExtension(
+  kind: CreateServiceDto['kind'],
+  exam: CreateServiceDto['exam'],
+): boolean {
+  if (kind === 'LAB_EXAM' || kind === 'IMAGING') return true;
+  return kind === 'PROCEDURE' && exam !== undefined && exam !== null;
 }
 
 /**
