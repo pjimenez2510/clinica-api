@@ -12,9 +12,15 @@ registerConstraintMeanings({
     field: 'receivedAt',
     message: 'La fecha de recepción no puede ser posterior a este momento',
   },
-  consent_text_version_body_valid: {
-    code: 'CONSENT_TEXT_INVALID',
+  privacy_notice_version_body_valid: {
+    code: 'PRIVACY_NOTICE_INVALID',
     field: 'body',
-    message: 'Escriba el texto del consentimiento (hasta 20 000 caracteres)',
+    message: 'Escriba el aviso de privacidad (hasta 20 000 caracteres)',
+  },
+  patient_authorization_channel_matches_purpose: {
+    code: 'PRIVACY_AUTHORIZATION_INVALID',
+    field: 'channel',
+    message:
+      'Los recordatorios y la publicidad van por WhatsApp o por correo; lo demás, sin canal',
   },
 });

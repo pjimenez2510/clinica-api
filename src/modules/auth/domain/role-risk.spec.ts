@@ -149,9 +149,9 @@ describe('AU-045 el rol que receta sin poder registrar alergias', () => {
   it('AU-045 ningún rol de fábrica tiene el hueco: ni ADMIN con sus permisos de datos del titular', () => {
     // Una advertencia que sale en la instalación recién montada es una que
     // nadie vuelve a leer. ADMIN incluido, con los códigos que trajo
-    // feat/datos-consentimiento-arco (patient:consent-text, patient:data-requests).
+    // feat/datos-consentimiento-arco (hoy privacy:notice, patient:data-requests).
     const admin = DEFAULT_ROLES.find((role) => role.code === 'ADMIN');
-    expect(admin?.permissions).toContain('patient:consent-text');
+    expect(admin?.permissions).toContain('privacy:notice');
 
     for (const role of DEFAULT_ROLES) {
       expect(

@@ -4,12 +4,24 @@
 **Fase:** 2 — Reporte al Estado y protección de datos · **Formato:** EARS, según ADR-010
 
 Lo que la Ley Orgánica de Protección de Datos Personales (LOPDP) obliga a poder
-**demostrar** sobre los datos de un paciente: que consintió, a qué texto, por
-qué medio y ante quién; y que cuando ejerció un derecho sobre sus datos, la
-clínica lo recibió, le respondió a tiempo y dejó rastro. La carga de la prueba
-del consentimiento es del responsable (Reglamento D.E. 904, art. 5), y el
-reglamento manda registrar «todas las solicitudes de ejercicio de derechos,
-incluyendo el detalle de la atención dada» (art. 15).
+**demostrar** sobre los datos de un paciente: qué aviso de privacidad tenía
+publicado la clínica y desde cuándo; qué autorizó el paciente **para lo que no
+es atenderlo** —recordatorios, publicidad, fotos, investigación, comunicar
+datos a terceros—, cuándo, ante quién y si lo revocó; y que cuando ejerció un
+derecho sobre sus datos, la clínica lo recibió, le respondió a tiempo y dejó
+rastro. El reglamento manda registrar «todas las solicitudes de ejercicio de
+derechos, incluyendo el detalle de la atención dada» (art. 15).
+
+> **D-221 (10-10-2026), por confirmar fuera con el asesor legal.** Atender no
+> necesita consentimiento: la LOPDP art. 31.1 lo exceptúa para el diagnóstico,
+> la asistencia y el tratamiento sanitarios, y el art. 30 deja a los
+> profesionales tratar los datos de salud de sus pacientes con deber de
+> confidencialidad. Por eso el alta ya no pide el «consentimiento de datos»
+> (PD-010 a PD-017, PD-044 y PD-045 quedan retirados) y el texto que lo
+> sostenía pasa a ser el **aviso de privacidad** que informa al titular (art.
+> 12). Lo que sí necesita autorización es lo que no es atender, y eso va por
+> separado (PD-068 a PD-075). El consentimiento informado del procedimiento
+> (formulario 024, D-199) es de `encounter` y no cambia.
 
 > **Cómo se lee.** `CUANDO` = disparador · `MIENTRAS` = estado que dura ·
 > `SI … ENTONCES` = comportamiento no deseado · `DONDE` = opcional · sin palabra
@@ -21,13 +33,13 @@ incluyendo el detalle de la atención dada» (art. 15).
 
 Este módulo **posee** tres cosas:
 
-- **El texto del consentimiento y sus versiones** (`consent_text_version`).
-  Hasta hoy `configuration/SPEC.md` y ADR-011 lo contaban entre los parámetros;
-  deja de serlo por la regla del propio ADR-011: en cuanto una fila lo
-  referencia —y cada consentimiento referencia la versión que se firmó— no es un
-  parámetro, pertenece a su dueño.
-- **El consentimiento de cada paciente** (`patient_consent`), ligado a la
-  versión exacta que se le mostró.
+- **El aviso de privacidad y sus versiones** (`privacy_notice_version`): un
+  solo texto que la clínica redacta con su asesor, publica (recepción, web,
+  pie de documentos) e imprime. Ningún paso del paciente lo exige (D-221 §2).
+- **Las autorizaciones opcionales de cada paciente**
+  (`patient_authorization`, `patient_authorization_revocation`): una por
+  finalidad ajena a la atención —y por canal, en recordatorios y publicidad—,
+  revocable, con quién la registró y cuándo (D-221 §3).
 - **Las solicitudes del titular** (`data_subject_request`): acceso,
   rectificación, eliminación, oposición, portabilidad y suspensión, con su
   vencimiento y su respuesta; y la **exportación** de los datos del paciente
@@ -57,10 +69,13 @@ clínica para contar días hábiles. Nadie depende de este módulo.
 
 | Término                | Significado exacto en este módulo                                                                                    |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **Texto vigente**      | La versión de número más alto. Una sola a la vez, sin borradores                                                     |
-| **Consentimiento**     | Fila de `patient_consent`: quién lo otorgó, sobre qué versión, por qué medio, cuándo y ante quién. Nunca se modifica |
-| **Medio**              | `SIGNED_PAPER` (papel firmado) u `ON_SCREEN` (aceptado en pantalla)                                                  |
-| **Otorgante**          | `HOLDER` (el titular) o `REPRESENTATIVE` (su representante legal)                                                    |
+| **Aviso vigente**      | La versión de número más alto del aviso de privacidad. Una sola a la vez, sin borradores                            |
+| **Autorización**       | Fila de `patient_authorization`: una finalidad (y su canal), cuándo y quién la registró. Nunca se modifica          |
+| **Finalidad**          | `REMINDERS` (recordatorios de citas), `MARKETING` (publicidad), `PHOTOS` (fotos), `RESEARCH` (investigación), `THIRD_PARTY_SHARING` (comunicar datos a terceros ajenos a la atención) |
+| **Canal**              | `WHATSAPP` o `EMAIL`. Sólo en `REMINDERS` y `MARKETING`, que se autorizan junto al teléfono o al correo          |
+| **Vigente (autorización)** | La que no tiene revocación. Una sola vigente por ficha, finalidad y canal                                       |
+| **Revocación**         | Fila de `patient_authorization_revocation`: cuándo y quién la registró. La autorización revocada no cambia         |
+| **Otorgante**          | `HOLDER` (el titular) o `REPRESENTATIVE` (su representante legal), quien presenta una solicitud (PD-052)          |
 | **Quien la presenta**  | El otorgante, o un **tercero** (PD-052): `ATTORNEY` (apoderado), `AUTHORIZED_PERSON` (persona autorizada), `AUTHORITY` (autoridad judicial o de salud), `DECEASED_RELATIVE` (familiar del fallecido) |
 | **Copia de la historia** | Solicitud de acceso que pide la copia certificada de la historia clínica (A.M. 5216): vence a las 48 horas (PD-053, PD-054) |
 | **Solicitud**          | Fila de `data_subject_request`: un derecho ejercido sobre una ficha                                                  |
@@ -68,23 +83,23 @@ clínica para contar días hábiles. Nadie depende de este módulo.
 | **Vencimiento**        | Instante en que vence la respuesta (`dueAt`), y su fecha clínica (`dueOn`). Se fija al registrar y se guarda (PD-054) |
 | **Día hábil**          | Lunes a viernes que no es feriado de **toda** la clínica (`holiday.site_id IS NULL`), en `America/Guayaquil`         |
 | **Respondida**         | La solicitud tiene resultado, texto, instante y autor. Ya no cambia; su respuesta se rectifica (PD-047)              |
-| **Corrección**         | Consentimiento nuevo que sustituye a uno mal registrado (`supersedes_id`); el **vigente** es el que nadie sustituye  |
 | **Rectificada**        | Respuesta nueva enlazada a la que corrige (`data_subject_answer_correction`); la original queda                    |
 | **Versión**            | Fila anterior de una tabla versionada, en `record_version`, con quién la sustituyó y cuándo (EN-210)                 |
 | **Vencida**            | Sin responder y con su vencimiento ya alcanzado (`dueAt` ≤ ahora; PD-054)                                            |
-| **Ficha y absorbidas** | La ficha pedida y las que se fusionaron en ella (PA-055): lo que leen PD-016, PD-036 y PD-040                        |
+| **Ficha y absorbidas** | La ficha pedida y las que se fusionaron en ella (PA-055): lo que leen PD-036, PD-040 y PD-073                        |
 
 ---
 
 ## Entregas priorizadas
 
-### D1 — El texto del consentimiento, versionado y administrado sin desplegar _(P1)_
+### D1 — El aviso de privacidad, versionado y publicado sin desplegar _(P1)_
 
-Administración publica un texto nuevo desde la pantalla; queda como versión
-siguiente y vigente, y las anteriores siguen ahí, sin cambiar.
+Administración publica un aviso nuevo desde la pantalla y lo imprime; queda
+como versión siguiente y vigente, y las anteriores siguen ahí, sin cambiar.
 
-**Por qué es P1:** sin texto no hay a qué consentir, y sin versión no se puede
-probar **qué** se consintió (Reglamento art. 5).
+**Por qué es P1:** el titular tiene derecho a ser informado (LOPDP art. 12), y
+sin versión no se puede probar **qué** aviso tenía publicado la clínica en una
+fecha (D-221 §2).
 **Prueba independiente:** publicar dos versiones y comprobar que la primera
 conserva su texto, que la segunda es la vigente, y que reescribir la primera
 contra la base se rechaza.
@@ -94,19 +109,11 @@ contra la base se rechaza.
 dos publicaciones y la fila de bitácora son garantías de almacenamiento que
 ninguna pantalla puede enseñar.
 
-### D2 — El consentimiento del paciente, tomado al registrarlo _(P1)_
+### ~~D2 — El consentimiento del paciente, tomado al registrarlo~~
 
-Recepción, al dar de alta al paciente (F-01) o después desde su ficha, registra
-el consentimiento con el medio y quién lo otorgó.
-
-**Por qué es P1:** es REQ-112 entero, y es la prueba que la SPDP pide primero.
-**Prueba independiente:** registrar el consentimiento sobre la versión 1,
-publicar la 2, y comprobar que el consentimiento sigue en la 1 con su texto.
-**Cubre:** PD-010 a PD-017.
-
-**Solo servidor:** PD-011, PD-013, PD-014, PD-017. Que el instante y el autor
-los ponga el servidor, que una versión nueva no toque lo consentido, que la
-fila no se pueda reescribir y que quede en la bitácora.
+**Retirada por D-221 §1 (10-10-2026).** El alta y la ficha ya no piden el
+consentimiento de datos: la atención no lo necesita (LOPDP art. 31.1). Sus
+requisitos (PD-010 a PD-017) quedan muertos; lo que no es atender va en D8.
 
 ### D3 — Las solicitudes del titular, con su vencimiento y su respuesta _(P1)_
 
@@ -143,17 +150,15 @@ la frase de `appointments` y `billing` en `omitted` (la pantalla ya dice
 
 ### D5 — Corregir sin borrar (D-127, D-128.8, D-128.9, D-131.1) _(P1)_
 
-Un consentimiento mal registrado se corrige, la solicitud se edita mientras no
-se responde, una respuesta dada se rectifica y la exportación lleva las
+La solicitud se edita mientras no se responde, una respuesta dada se rectifica y la exportación lleva las
 versiones guardadas.
 
 **Por qué es P1:** sin esto, lo mal registrado se arrastra o se tapa con otro
 registro que nadie enlaza; y las versiones de D-127 quedaban fuera del derecho
 de acceso.
-**Prueba independiente:** corregir un consentimiento y ver los dos, el vigente
-marcado; editar la fecha de recepción y ver el vencimiento nuevo; exportar y
+**Prueba independiente:** editar la fecha de recepción y ver el vencimiento nuevo; exportar y
 encontrar la versión anterior de una alergia corregida.
-**Cubre:** PD-044 a PD-048.
+**Cubre:** PD-046 a PD-048 (PD-044 y PD-045 retirados por D-221).
 
 **Solo servidor:** PD-048, la comparación del registro de tablas versionadas
 con los disparadores de la base.
@@ -208,11 +213,33 @@ clínicas y con `omitted` que lo dice.
 **Solo servidor:** PD-066, PD-067. Lo que lleva el JSON: la pantalla sólo lo
 descarga y lee `omitted`.
 
+### D8 — Las autorizaciones opcionales, donde se usan (D-221 §3) _(P1, 11-10-2026)_
+
+Recepción registra en la ficha, por separado y sólo si el paciente quiere, que
+autoriza recordatorios o publicidad por WhatsApp (junto al teléfono) o por
+correo (junto al correo), fotos, investigación o comunicar sus datos a
+terceros ajenos a la atención; y la revoca cuando el paciente lo pide. Cada
+una dice cuándo y quién la registró, y cuándo y quién la revocó.
+
+**Por qué es P1:** D-221 §3, decidida por el autor el 10-10-2026: lo que no es
+atender sí necesita el consentimiento del titular (LOPDP arts. 7, 8 y 21), y
+ha de poder retirarse sin afectar a la atención.
+**Prueba independiente:** autorizar recordatorios por WhatsApp a una ficha con
+teléfono, ver rechazada una segunda igual, revocarla, ver que la revocada
+sigue en la lista con su revocación y volver a autorizar.
+**Cubre:** PD-068 a PD-075.
+
+**Solo servidor:** PD-069, PD-072, PD-074. Que el instante y el autor los
+ponga el servidor, que la base no deje dos vigentes ni reescribir ninguna, y
+la fila de bitácora.
+
 ## Criterios de éxito
 
-- **SC-070** — De todo paciente con consentimiento se puede decir, sin abrir
-  papel, qué texto exacto consintió, cuándo, por qué medio, quién lo otorgó y
-  quién lo tomó.
+- ~~SC-070~~ — **Retirado por D-221 §1**: ya no se toma el consentimiento de
+  datos al registrar.
+- **SC-073** — De todo paciente se puede decir, sin abrir papel, qué
+  autorizaciones opcionales tiene vigentes y cuáles revocó, cuándo y ante
+  quién; y de toda fecha, qué aviso de privacidad tenía publicado la clínica.
 - **SC-071** — El 100 % de las solicitudes del titular tienen vencimiento
   desde el instante en que se registran, y la lista de abiertas muestra las
   vencidas antes que ninguna otra.
@@ -221,71 +248,58 @@ descarga y lee `omitted`.
 
 ## Supuestos
 
-- **El consentimiento no es condición para registrar ni atender** (LOPDP art.
-  31.1; D-083 §5). Por eso el alta de paciente no lo exige y su registro es
-  una operación aparte: un alta que se guardó y un consentimiento que falló no
-  deja una ficha a medias, deja una ficha «sin consentimiento».
-- **Hay un solo texto de consentimiento** para la clínica, no uno por sede ni
-  por finalidad. Si aparece un segundo propósito (telesalud, grabación), es
-  una columna más y una entrega.
+- **Atender no necesita consentimiento** (LOPDP art. 31.1; D-221 §1, que
+  modifica D-083 §5). El alta no lo pide, y las autorizaciones opcionales
+  nunca condicionan registrar, agendar ni atender.
+- **Hay un solo aviso de privacidad** para la clínica, no uno por sede.
+- **Una autorización mal registrada se revoca y se vuelve a registrar**: no
+  hay corrección aparte. Las dos filas quedan, y la revocación dice quién la
+  registró.
 - **Quien recibe la solicitud es personal de la clínica**, presencialmente o
   por escrito. El titular no la presenta en el sistema hasta el portal (Fase 3),
   y su identificación se comprueba en el mostrador (Reglamento art. 12).
 
 ---
 
-## 1. El texto del consentimiento (REQ-112)
+## 1. El aviso de privacidad (REQ-112, D-221 §2)
 
-- **PD-001** — El sistema DEBERÁ conservar cada versión del texto del
-  consentimiento con su número, su texto, el instante de publicación y quién
-  la publicó; los números DEBERÁN ser correlativos desde 1, y la vigente es la
-  de número más alto. MIENTRAS no haya ninguna publicada, pedir la vigente
-  DEBERÁ responder que no hay ninguna, sin error: registrar pacientes no
-  depende de ella.
-- **PD-002** — CUANDO alguien con `patient:consent-text` publique un texto, el
-  sistema DEBERÁ crear la versión siguiente, que DEBERÁ ser la vigente desde ese
-  instante, sin desplegar ni reiniciar nada.
+- **PD-001** — El sistema DEBERÁ conservar cada versión del aviso de
+  privacidad con su número, su texto, el instante de publicación y quién la
+  publicó; los números DEBERÁN ser correlativos desde 1, y la vigente es la de
+  número más alto. MIENTRAS no haya ninguna publicada, la lista DEBERÁ venir
+  vacía, sin error: registrar y atender pacientes no dependen de ella.
+- **PD-002** — CUANDO alguien con `privacy:notice` publique un aviso, el
+  sistema DEBERÁ crear la versión siguiente, que DEBERÁ ser la vigente desde
+  ese instante, sin desplegar ni reiniciar nada.
 - **PD-003** — Una versión publicada NO DEBERÁ poder modificarse ni borrarse,
   tampoco desde SQL: la base lo rechaza.
 - **PD-004** — SI el texto llega vacío, solo con espacios o con más de 20 000
   caracteres, ENTONCES el sistema DEBERÁ rechazarlo con
-  `CONSENT_TEXT_INVALID` sin publicar nada.
+  `PRIVACY_NOTICE_INVALID` sin publicar nada.
 - **PD-005** — SI dos publicaciones simultáneas reclaman el mismo número,
   ENTONCES el sistema DEBERÁ publicar solo una y responder a la otra
-  `CONSENT_TEXT_VERSION_CONFLICT` (409), sin escribir nada.
+  `PRIVACY_NOTICE_VERSION_CONFLICT` (409), sin escribir nada.
 - **PD-006** — Toda publicación DEBERÁ dejar una fila `CREATE` de
-  `consent_text_version` en la bitácora **en la misma transacción**: si la fila
-  no se puede escribir, la versión no se publica.
+  `privacy_notice_version` en la bitácora **en la misma transacción**: si la
+  fila no se puede escribir, la versión no se publica.
 
-## 2. El consentimiento del paciente (REQ-112)
+> **D-221 §2.** Era «el texto del consentimiento»; los requisitos no cambian
+> salvo el nombre, el permiso (`patient:consent-text` → `privacy:notice`) y
+> los códigos de error. La versión vigente ya no se pide aparte
+> (`GET /privacy/consent-texts/current` desaparece con el paso del alta que la
+> leía): la lista la trae primero.
 
-- **PD-010** — CUANDO alguien con `patient:write` registre el consentimiento
-  de una ficha, el sistema DEBERÁ guardar la ficha, la versión del texto, el
-  medio (`SIGNED_PAPER` u `ON_SCREEN`), el otorgante (`HOLDER` o
-  `REPRESENTATIVE`), el instante y quién lo tomó.
-- **PD-011** — El instante y quién lo tomó DEBERÁN ser los del servidor y la
-  sesión: el sistema NO DEBERÁ aceptarlos del cliente.
-- **PD-012** — SI la versión enviada no es la vigente en el instante de
-  registrar, ENTONCES el sistema DEBERÁ rechazarlo con `CONSENT_TEXT_OUTDATED`
-  (409) sin escribir nada: lo que se muestra al paciente es lo que se registra.
-  Registrar y publicar se ordenan entre sí (un bloqueo), y el instante de cada
-  fila es el de su escritura, no el de su transacción: ningún consentimiento
-  sobre una versión superada lleva un instante posterior a la publicación de
-  la que la superó.
-- **PD-013** — CUANDO se publique una versión nueva, los consentimientos ya
-  registrados NO DEBERÁN cambiar: siguen ligados a su versión y a su texto.
-- **PD-014** — Un consentimiento registrado NO DEBERÁ poder modificarse ni
-  borrarse, tampoco desde SQL.
-  > Sigue así con PD-044: corregir es una fila **nueva**, no un UPDATE.
-- **PD-015** — SI la ficha no existe, ENTONCES el sistema DEBERÁ responder
-  `DATA_SUBJECT_NOT_FOUND` (404); SI fue absorbida en una fusión, ENTONCES
-  `PATIENT_MERGED` (409) nombrando la superviviente, sin escribir nada.
-- **PD-016** — CUANDO alguien con `patient:read` pida los consentimientos de
-  una ficha, el sistema DEBERÁ devolverlos —los de la ficha y sus absorbidas—
-  del más reciente al más antiguo, cada uno con su versión, su texto y si esa
-  versión es la vigente.
-- **PD-017** — Todo registro de consentimiento DEBERÁ dejar una fila `CREATE`
-  de `patient_consent` en la bitácora en la misma transacción.
+## 2. ~~El consentimiento del paciente~~ (retirado por D-221 §1)
+
+- ~~PD-010~~ a ~~PD-017~~ — **Retirados por D-221 §1 (resuelta por el autor
+  el 10-10-2026).** Pedían registrar, al dar de alta o desde la ficha, el
+  consentimiento de datos sobre la versión vigente del texto, con su medio y
+  su otorgante, inmutable y con bitácora. Se retiraron porque atender no lo
+  necesita (LOPDP art. 31.1) y ninguna clínica lo pide en el mostrador. La
+  tabla `patient_consent` se elimina con ellos: no hay producción, y en
+  desarrollo no hay consentimiento de nadie que conservar (D-221 §1 manda
+  conservar los ya guardados en una instalación real; cuando la haya, esto
+  sería una migración que los archiva, no que los borra).
 
 ## 3. Las solicitudes del titular (REQ-113)
 
@@ -357,8 +371,8 @@ descarga y lee `omitted`.
 - **PD-040** — CUANDO alguien con `patient:data-requests` pida la exportación de
   una solicitud de acceso o de portabilidad, el sistema DEBERÁ devolver un
   documento JSON descargable con: el formato y su versión, el instante, la
-  ficha administrativa, sus documentos de identidad con su vigencia, los
-  consentimientos con el texto consentido y las solicitudes; de la ficha
+  ficha administrativa, sus documentos de identidad con su vigencia, sus
+  autorizaciones opcionales con su revocación (PD-073) y las solicitudes; de la ficha
   **vigente** —la superviviente, si la ficha de la solicitud se absorbió
   después— y de todas sus absorbidas.
 - **PD-041** — El documento DEBERÁ declarar en `omitted` cada sección que no
@@ -406,41 +420,11 @@ descarga y lee `omitted`.
 
 ## 5. Corregir sin borrar (D-126, D-127)
 
-- **PD-044** — CUANDO alguien con `patient:write` corrija un consentimiento de
-  la ficha —o de sus absorbidas— registrado con el medio o el otorgante
-  equivocados, el sistema DEBERÁ registrar, en un paso y sin motivo, un
-  consentimiento nuevo con el medio y el otorgante enviados, el **mismo**
-  paciente y la **misma** versión del texto que el original, que lo nombre
-  (`supersedesId`), con el instante y el autor de PD-011 y su fila `CREATE` en
-  la bitácora (PD-017); el original NO DEBERÁ cambiar, la lista de PD-016
-  DEBERÁ decir de cada uno si otro lo sustituye, y cada consentimiento DEBERÁ
-  decir quién lo **tomó** y cuándo (`takenBy`, `takenAt`): en una corrección,
-  los del primero de la cadena, y no los de quien corrige, que van en
-  `recordedBy`/`recordedAt`. SI el consentimiento no existe
-  o no es de la ficha, ENTONCES DEBERÁ responder `CONSENT_NOT_FOUND`; SI ya
-  tiene una corrección, ENTONCES `CONSENT_ALREADY_CORRECTED` (se corrige el
-  vigente).
-  > **D-128.8, PA-15 del inventario.** `POST
-  > /privacy/patients/:patientId/consents/:consentId/correction`. La versión
-  > del texto es la del original aunque haya otra vigente: se corrige cómo se
-  > registró, no qué se consintió. Ficha absorbida: `PATIENT_MERGED` (PD-015).
-  > **Garantía de la base:** `patient_consent_corrected_once` (único sobre
-  > `supersedes_id`) y `trg_patient_consent_correction_matches` (mismo paciente
-  > y texto); `trg_patient_consent_immutable` sigue. A confirmar por el asesor
-  > legal (D-128.8).
-- **PD-045** — CUANDO alguien con `patient:consent-text` pida las versiones
-  del texto, el sistema DEBERÁ decir cuántas fichas tienen un consentimiento
-  vigente sobre la versión vigente (`currentVersionConsents`): las que una
-  publicación nueva deja sobre una versión anterior.
-  > **PA-16 del inventario.** La pantalla pide **una** confirmación al
-  > publicar que dice la consecuencia con ese número. Una ficha con su
-  > corrección cuenta una vez.
-  >
-  > **La consecuencia es la de D-083 §6:** lo consentido sigue valiendo con
-  > la versión que se aceptó (PD-013) y no hace falta volver a pedirlo con
-  > cada versión, salvo que el texto nuevo añada una finalidad (LOPDP art.
-  > 8). La pantalla lo dice así, con el número, y no «habrá que volver a
-  > tomarlos».
+- ~~PD-044~~ — **Retirado por D-221 §1.** Corregía el medio o el otorgante de
+  un consentimiento con una fila nueva que lo sustituía.
+- ~~PD-045~~ — **Retirado por D-221 §1.** Contaba las fichas con consentimiento
+  sobre la versión vigente para avisar al publicar una nueva: el aviso de
+  privacidad no lo consiente nadie.
 - **PD-046** — CUANDO alguien con `patient:data-requests` edite una solicitud
   sin responder —derecho, qué pide o fecha de recepción—, el sistema DEBERÁ
   cambiarla en su fila, guardar la versión anterior con quién y cuándo
@@ -529,8 +513,6 @@ descarga y lee `omitted`.
   `DECEASED_RELATIVE` y la ficha no tiene fecha de fallecimiento, ENTONCES con
   `DATA_REQUEST_PATIENT_NOT_DECEASED` (422); y SI falta el nombre o el
   documento, con `CLINICAL_RECORD_COPY_INVALID` (422); sin escribir nada.
-  Quien otorga un consentimiento sigue siendo el titular o su representante
-  (PD-010).
   > **D-198 §1 (investigación del 09-10-2026), aceptada por el autor.** El
   > art. 28 del A.M. 5216 nombra a quién se entrega la copia: el usuario, su
   > representante legal, apoderado o persona autorizada, las autoridades
@@ -542,7 +524,7 @@ descarga y lee `omitted`.
   >
   > **Garantía de la base:** `data_subject_request_third_party_copy_only`,
   > `data_subject_request_requester_named` y el enum `data_request_party`,
-  > propio de la solicitud (el del consentimiento sigue con dos valores).
+  > propio de la solicitud.
 - **PD-053** — DONDE la solicitud sea de acceso, quien la registra DEBERÁ
   poder marcar que pide la **copia de la historia clínica**, y el sistema
   DEBERÁ exigir para ello la casilla «Recibí la solicitud firmada y la copia
@@ -575,7 +557,7 @@ descarga y lee `omitted`.
   tercero (PD-052), ENTONCES la exportación JSON (PD-040) y su propuesta
   (PD-049) DEBERÁN rechazarse con `DATA_EXPORT_NOT_APPLICABLE` (422) sin
   escribir nada: un tercero recibe la copia de la historia (DOC-118), no la
-  ficha administrativa, los consentimientos ni las solicitudes del titular.
+  ficha administrativa, las autorizaciones ni las solicitudes del titular.
 - **PD-056** — CUANDO alguien con `patient:data-requests` pida la propuesta de
   respuesta de una solicitud de copia de la historia clínica, el sistema
   DEBERÁ devolver un párrafo que diga que se autoriza la entrega de la copia
@@ -738,21 +720,69 @@ descarga y lee `omitted`.
 
 ---
 
+## 8. Las autorizaciones opcionales (REQ-112, D-221 §3)
+
+- **PD-068** — CUANDO alguien con `patient:write` registre una autorización de
+  una ficha, el sistema DEBERÁ guardar la ficha, la finalidad (`REMINDERS`,
+  `MARKETING`, `PHOTOS`, `RESEARCH` o `THIRD_PARTY_SHARING`), el canal
+  (`WHATSAPP` o `EMAIL`) cuando la finalidad es `REMINDERS` o `MARKETING`, el
+  instante y quién la registró.
+- **PD-069** — El instante y quién la registró —o la revocó— DEBERÁN ser los
+  del servidor y la sesión: el sistema NO DEBERÁ aceptarlos del cliente.
+- **PD-070** — SI la finalidad es `REMINDERS` o `MARKETING` y falta el canal,
+  o es otra y trae canal, o el canal es `WHATSAPP` y la ficha no tiene
+  teléfono, o es `EMAIL` y no tiene correo, ENTONCES el sistema DEBERÁ
+  rechazarla con `PRIVACY_AUTHORIZATION_INVALID` (422) sin escribir nada: se
+  autoriza junto al dato por el que se escribirá.
+- **PD-071** — SI la ficha ya tiene una autorización vigente con la misma
+  finalidad y el mismo canal, ENTONCES el sistema DEBERÁ rechazar la nueva con
+  `PRIVACY_AUTHORIZATION_ALREADY_GRANTED` (409) sin escribir nada, también
+  cuando dos llegan a la vez.
+  > **Garantía de la base:** `trg_patient_authorization_one_standing`, que
+  > ordena las altas de una misma ficha con un bloqueo y rechaza la segunda
+  > vigente.
+- **PD-072** — CUANDO alguien con `patient:write` revoque una autorización
+  vigente de la ficha —o de sus absorbidas—, el sistema DEBERÁ registrar la
+  revocación con el instante y el autor de PD-069, sin cambiar la
+  autorización. SI no existe o no es de la ficha, ENTONCES DEBERÁ responder
+  `PRIVACY_AUTHORIZATION_NOT_FOUND` (404); SI ya está revocada, ENTONCES
+  `PRIVACY_AUTHORIZATION_ALREADY_REVOKED` (409). Ninguna autorización ni
+  revocación DEBERÁ poder modificarse ni borrarse, tampoco desde SQL.
+  > **Garantía de la base:** la revocación tiene por clave la autorización
+  > (una por autorización) y las dos tablas rechazan `UPDATE`, `DELETE` y
+  > `TRUNCATE`. Volver a autorizar tras revocar es una fila nueva (PD-068).
+- **PD-073** — CUANDO alguien con `patient:read` pida las autorizaciones de una
+  ficha, el sistema DEBERÁ devolverlas —las de la ficha y sus absorbidas— de la
+  más reciente a la más antigua, cada una con su finalidad, su canal, cuándo y
+  quién (nombre) la registró y, si se revocó, cuándo y quién.
+- **PD-074** — Todo registro y toda revocación DEBERÁN dejar una fila `CREATE`
+  (de `patient_authorization` o de `patient_authorization_revocation`) en la
+  bitácora en la misma transacción.
+- **PD-075** — SI la ficha no existe, ENTONCES registrar, revocar o listar
+  DEBERÁ responder `DATA_SUBJECT_NOT_FOUND` (404); SI fue absorbida en una
+  fusión, ENTONCES registrar y revocar DEBERÁN responder `PATIENT_MERGED`
+  (409) nombrando la superviviente, sin escribir nada.
+
+> **Ninguna autorización condiciona registrar, agendar ni atender** (D-221
+> §3): son opcionales y el sistema no las pide en ningún paso. Que el envío de
+> recordatorios o publicidad las consulte es de la entrega que los envíe (hoy
+> no hay envío).
+
 ## Códigos de error
 
 | Código                            | HTTP | Cuándo                                                                 |
 | --------------------------------- | ---- | ---------------------------------------------------------------------- |
-| `DATA_SUBJECT_NOT_FOUND`          | 404  | La ficha no existe (PD-015, PD-030)                                    |
-| `CONSENT_TEXT_INVALID`            | 422  | Texto vacío o demasiado largo (PD-004)                                 |
-| `CONSENT_TEXT_VERSION_CONFLICT`   | 409  | Dos publicaciones a la vez (PD-005)                                    |
-| `CONSENT_TEXT_NOT_PUBLISHED`      | 404  | Se consiente sobre una versión que no existe (PD-012)                  |
-| `CONSENT_TEXT_OUTDATED`           | 409  | Se consiente una versión que ya no es la vigente (PD-012)              |
+| `DATA_SUBJECT_NOT_FOUND`          | 404  | La ficha no existe (PD-030, PD-075)                                    |
+| `PRIVACY_NOTICE_INVALID`          | 422  | Aviso vacío o demasiado largo (PD-004)                                 |
+| `PRIVACY_NOTICE_VERSION_CONFLICT` | 409  | Dos publicaciones a la vez (PD-005)                                    |
+| `PRIVACY_AUTHORIZATION_INVALID`   | 422  | Finalidad y canal que no casan, o sin el teléfono o el correo (PD-070) |
+| `PRIVACY_AUTHORIZATION_ALREADY_GRANTED` | 409 | Ya hay una vigente con esa finalidad y canal (PD-071)            |
+| `PRIVACY_AUTHORIZATION_NOT_FOUND` | 404  | Se revoca una autorización que no existe o no es de la ficha (PD-072) |
+| `PRIVACY_AUTHORIZATION_ALREADY_REVOKED` | 409 | Segunda revocación (PD-072)                                      |
 | `DATA_REQUEST_NOT_FOUND`          | 404  | La solicitud no existe                                                 |
 | `DATA_REQUEST_RECEIVED_IN_FUTURE` | 422  | Recepción futura (PD-031)                                              |
 | `DATA_REQUEST_ALREADY_ANSWERED`   | 409  | Segunda respuesta (PD-033)                                             |
 | `DATA_EXPORT_NOT_APPLICABLE`      | 422  | Exportar una solicitud que no es de acceso ni de portabilidad (PD-042) |
-| `CONSENT_NOT_FOUND`               | 404  | Se corrige un consentimiento que no existe o no es de la ficha (PD-044) |
-| `CONSENT_ALREADY_CORRECTED`       | 409  | Ese consentimiento ya tiene corrección (PD-044)                        |
 | `DATA_REQUEST_NOT_ANSWERED`       | 409  | Se rectifica la respuesta de una solicitud sin responder (PD-047)      |
 | `DATA_REQUEST_PARTY_NOT_ALLOWED`  | 422  | Un tercero presenta algo que no es la copia de la historia (PD-052)    |
 | `DATA_REQUEST_PATIENT_NOT_DECEASED` | 422 | El familiar del fallecido pide la copia de un paciente vivo (PD-052) |
@@ -768,6 +798,15 @@ a otro. Dice lo mismo, por la misma razón (no distingue «no existe» de «no
 puede verla»).
 
 ## Notas de esquema
+
+- `20261023100000_privacy_notice_and_authorizations` (D-221): la tabla
+  `consent_text_version` pasa a `privacy_notice_version` con sus filas, su
+  disparador y su número único; `patient_consent`, sus disparadores y los enums
+  `consent_medium` y `data_subject_party` se eliminan (PD-010 a PD-017
+  retirados); nacen `patient_authorization` y
+  `patient_authorization_revocation`, de sólo inserción, con el disparador de
+  una vigente por ficha, finalidad y canal; y el permiso `patient:consent-text`
+  pasa a `privacy:notice` con los roles que lo tenían.
 
 - `20261011120100_privacy_copy_snapshot` (DOC-122, PD-061, PD-063): la tabla
   `clinical_record_copy_snapshot` —lo que la copia lleva al autorizarla, una
@@ -786,12 +825,12 @@ puede verla»).
   `data_request_party`, las columnas de la copia y de quien la presenta, y
   `due_on` pasa a `due_at` (instante); los ya fijados, al final de su día.
 - Las tres tablas llevan disparadores que rechazan `DELETE` y `TRUNCATE`;
-  `consent_text_version` y `patient_consent` también `UPDATE`;
+  `consent_text_version` (hoy `privacy_notice_version`) también `UPDATE`;
   `data_subject_request` admite pasar de sin responder a respondida (PD-038) y,
   sin responder, editarse con sello (PD-046). `data_subject_answer_correction`
   es de solo inserción (PD-047). Todo en
   `20261006084539_privacy_corrections`, sin tocar filas guardadas.
-- `consent_text_version.version` es `UNIQUE`: es lo que arbitra PD-005.
+- `privacy_notice_version.version` es `UNIQUE`: es lo que arbitra PD-005.
 - La respuesta son cuatro columnas que van **todas o ninguna**
   (`data_subject_request_answer_complete`).
 - La bitácora no lleva contenido (`before`/`after`): la lista blanca de
@@ -802,18 +841,17 @@ puede verla»).
 
 | Método | Ruta                                    | Permiso                 | Requisitos                     |
 | ------ | --------------------------------------- | ----------------------- | ------------------------------ |
-| `GET`  | `/privacy/consent-texts/current`        | `patient:read`          | PD-001                         |
-| `GET`  | `/privacy/consent-texts`                | `patient:consent-text`  | PD-001, PD-045                 |
-| `POST` | `/privacy/consent-texts`                | `patient:consent-text`  | PD-002 a PD-006                |
-| `GET`  | `/privacy/patients/:patientId/consents` | `patient:read`          | PD-016                         |
-| `POST` | `/privacy/patients/:patientId/consents` | `patient:write`         | PD-010 a PD-015, PD-017        |
+| `GET`  | `/privacy/notices`                      | `privacy:notice`        | PD-001                         |
+| `POST` | `/privacy/notices`                      | `privacy:notice`        | PD-002 a PD-006                |
+| `GET`  | `/privacy/patients/:patientId/authorizations` | `patient:read`    | PD-073, PD-075                 |
+| `POST` | `/privacy/patients/:patientId/authorizations` | `patient:write`   | PD-068 a PD-071, PD-074, PD-075 |
+| `POST` | `/privacy/patients/:patientId/authorizations/:authorizationId/revocation` | `patient:write` | PD-069, PD-072, PD-074, PD-075 |
 | `GET`  | `/privacy/patients/:patientId/requests` | `patient:data-requests` | PD-036                         |
 | `POST` | `/privacy/patients/:patientId/requests` | `patient:data-requests` | PD-030 a PD-032, PD-037, PD-052 a PD-054 |
 | `GET`  | `/privacy/requests`                     | `patient:data-requests` | PD-035, PD-051                 |
 | `POST` | `/privacy/requests/:requestId/response` | `patient:data-requests` | PD-033, PD-034, PD-037, PD-038 |
 | `GET`  | `/privacy/requests/:requestId/export`   | `patient:data-requests` | PD-040 a PD-043, PD-048, PD-050, PD-055 |
 | `GET`  | `/privacy/requests/:requestId/answer-proposal` | `patient:data-requests` | PD-049, PD-055, PD-056 |
-| `POST` | `/privacy/patients/:patientId/consents/:consentId/correction` | `patient:write` | PD-044            |
 | `PATCH` | `/privacy/requests/:requestId`         | `patient:data-requests` | PD-046                         |
 | `POST` | `/privacy/requests/:requestId/response/correction` | `patient:data-requests` | PD-047             |
 | `POST` | `/privacy/requests/:requestId/clinical-review` | `record:protected` | PD-061 |
@@ -827,16 +865,21 @@ La copia de la historia la compone `documents`: `GET /v1/documents/data-requests
 | Requisitos                             | Nivel                                                                                   |
 | -------------------------------------- | --------------------------------------------------------------------------------------- |
 | PD-032 (regla de vencimiento)          | Unitaria, sobre la función pura con feriados de entrada; integración para que se guarde |
-| PD-003, PD-005, PD-013, PD-014, PD-038 | Integración contra PostgreSQL, con control positivo                                     |
-| PD-044, PD-046, PD-047, PD-048         | Integración contra PostgreSQL con control positivo, y HTTP                              |
-| PD-006, PD-017, PD-037, PD-043         | Integración: la fila de bitácora existe, y sin ella no se escribe ni se entrega nada    |
+| PD-003, PD-005, PD-038, PD-071, PD-072 | Integración contra PostgreSQL, con control positivo                                     |
+| PD-046, PD-047, PD-048                 | Integración contra PostgreSQL con control positivo, y HTTP                              |
+| PD-006, PD-037, PD-043, PD-074         | Integración: la fila de bitácora existe, y sin ella no se escribe ni se entrega nada    |
 | El resto                               | Integración HTTP con sesión real; y en pantalla, F-01 y F-08                            |
 
 ## Preguntas abiertas
 
 D-083 quedó resuelta por el autor el 30-09-2026 con las siete recomendaciones;
-`patient:consent-text` y `patient:data-requests` van al rol `ADMIN` de fábrica.
-Abiertas en **D-098**, sin bloquear lo construido: qué prueba basta para cada
-medio de consentimiento, qué cierres cuentan como inhábiles (PD-032), quién es
-el representante y cómo se verificó, la revocación junto al consentimiento, y
-lo que una respuesta de acceso debe contar.
+`privacy:notice` (antes `patient:consent-text`) y `patient:data-requests` van
+al rol `ADMIN` de fábrica. Abiertas en **D-098**, sin bloquear lo construido:
+qué cierres cuentan como inhábiles (PD-032), quién es el representante y cómo
+se verificó, y lo que una respuesta de acceso debe contar.
+
+**D-221 va «por confirmar fuera»** con el asesor legal (texto vigente de la
+LOPDP consolidada y su reglamento): si dice otra cosa, se reabre. Tampoco se
+registra **quién otorga** una autorización (el titular o su representante):
+D-221 §3 pide fecha y quién la registró, y la del menor la da quien lo
+representa en el mostrador.

@@ -1893,7 +1893,7 @@ model Patient {
   mergesAsTarget        PatientMerge[]          @relation("MergeTarget")
   accounts              PatientAccount[]
   /// `privacy`, PD-016, PD-036: read through `chartScope` like the rest of the person's history.
-  consents              PatientConsent[]
+  authorizations        PatientAuthorization[]
   dataSubjectRequests   DataSubjectRequest[]
 
   @@index([familyName, givenName])
@@ -5750,7 +5750,7 @@ model SigningCertificateOpening {
 }
 
 // ===========================================================================
-// PRIVACY (LOPDP) — module `privacy`, PD-001..PD-043
+// PRIVACY (LOPDP) — module `privacy`, PD-001..PD-075
 //
 // The relation to `patient` IS declared: PA-055 reads a person's history
 // through `chartScope`, which filters on it. The foreign keys to `app_user`
@@ -5760,19 +5760,23 @@ model SigningCertificateOpening {
 // tables are append-only by trigger.
 // ===========================================================================
 
-enum ConsentMedium {
-  SIGNED_PAPER
-  ON_SCREEN
+/// PD-068 (D-221 §3). What a patient may authorize that is not attending them.
+enum AuthorizationPurpose {
+  REMINDERS
+  MARKETING
+  PHOTOS
+  RESEARCH
+  THIRD_PARTY_SHARING
 
-  @@map("consent_medium")
+  @@map("authorization_purpose")
 }
 
-/// Who acts: the data subject or their legal representative.
-enum DataSubjectParty {
-  HOLDER
-  REPRESENTATIVE
+/// PD-068. The channel of reminders and marketing; none for the rest.
+enum AuthorizationChannel {
+  WHATSAPP
+  EMAIL
 
-  @@map("data_subject_party")
+  @@map("authorization_channel")
 }
 
 /// PD-052. Who presents a data subject request: the holder or their legal
@@ -5827,44 +5831,52 @@ enum DataRequestOutcome {
   @@map("data_request_outcome")
 }
 
-/// PD-001..PD-006. A published consent text. Consecutive version numbers
-/// (trigger `consent_text_version_is_next`), never rewritten. The current one
-/// is the highest version.
-model ConsentTextVersion {
+/// PD-001..PD-006 (D-221 §2). A published privacy notice. Consecutive version
+/// numbers (trigger `privacy_notice_version_is_next`), never rewritten. The
+/// current one is the highest version.
+model PrivacyNoticeVersion {
   id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  version     Int      @unique(map: "consent_text_version_number_unique")
+  version     Int      @unique(map: "privacy_notice_version_number_unique")
   body        String   @db.Text
-  /// DEFAULT statement_timestamp() in SQL (PD-012); `now()` here only tells
-  /// Prisma there is a default.
+  /// DEFAULT statement_timestamp() in SQL; `now()` here only tells Prisma
+  /// there is a default.
   publishedAt DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
   publishedBy String   @map("published_by") @db.Uuid
 
-  consents PatientConsent[]
-
-  @@map("consent_text_version")
+  @@map("privacy_notice_version")
 }
 
-/// PD-010..PD-017. A patient's consent, bound to the exact text version shown.
-model PatientConsent {
-  id            String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  patientId     String             @map("patient_id") @db.Uuid
-  patient       Patient            @relation(fields: [patientId], references: [id], onDelete: Restrict)
-  textVersionId String             @map("text_version_id") @db.Uuid
-  textVersion   ConsentTextVersion @relation(fields: [textVersionId], references: [id], onDelete: Restrict)
-  medium        ConsentMedium
-  grantedBy     DataSubjectParty   @map("granted_by")
-  recordedAt    DateTime           @default(now()) @map("recorded_at") @db.Timestamptz(6)
-  recordedBy    String             @map("recorded_by") @db.Uuid
-  /// PD-044. The consent this one corrects (medium or grantor recorded
-  /// wrong). The original stays untouched; the one nobody supersedes is the
-  /// one that stands. UNIQUE: an original is superseded once
-  /// (`patient_consent_corrected_once`).
-  supersedesId  String?            @unique(map: "patient_consent_corrected_once") @map("supersedes_id") @db.Uuid
-  supersedes    PatientConsent?    @relation("ConsentCorrection", fields: [supersedesId], references: [id], onDelete: Restrict)
-  supersededBy  PatientConsent?    @relation("ConsentCorrection")
+/// PD-068..PD-075 (D-221 §3). An optional authorization for something that is
+/// not attending the patient. Insert-only; it stands while it has no
+/// revocation, one standing per chart, purpose and channel
+/// (`trg_patient_authorization_one_standing`).
+model PatientAuthorization {
+  id         String                @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  patientId  String                @map("patient_id") @db.Uuid
+  patient    Patient               @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  purpose    AuthorizationPurpose
+  /// Only REMINDERS and MARKETING, and always for them
+  /// (`patient_authorization_channel_matches_purpose`).
+  channel    AuthorizationChannel?
+  /// The application's clock (PD-069).
+  recordedAt DateTime              @map("recorded_at") @db.Timestamptz(6)
+  recordedBy String                @map("recorded_by") @db.Uuid
 
-  @@index([patientId, recordedAt(sort: Desc)], map: "patient_consent_by_patient")
-  @@map("patient_consent")
+  revocation PatientAuthorizationRevocation?
+
+  @@index([patientId, recordedAt(sort: Desc)], map: "patient_authorization_by_patient")
+  @@map("patient_authorization")
+}
+
+/// PD-072. The revocation of an authorization: who recorded it and when. The
+/// authorization it revokes does not change.
+model PatientAuthorizationRevocation {
+  authorizationId String               @id @map("authorization_id") @db.Uuid
+  authorization   PatientAuthorization @relation(fields: [authorizationId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  revokedAt       DateTime             @map("revoked_at") @db.Timestamptz(6)
+  revokedBy       String               @map("revoked_by") @db.Uuid
+
+  @@map("patient_authorization_revocation")
 }
 
 /// PD-030..PD-038. A right exercised by the data subject. The only update the

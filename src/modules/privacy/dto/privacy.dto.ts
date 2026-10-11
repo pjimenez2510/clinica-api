@@ -10,54 +10,43 @@ import {
 } from '../domain/data-request-party';
 import { DATA_SUBJECT_RIGHTS } from '../domain/legal-due-date';
 import {
-  CONSENT_MEDIA,
-  DATA_REQUEST_OUTCOMES,
-  DATA_SUBJECT_PARTIES,
-} from '../domain/privacy.repository';
+  AUTHORIZATION_CHANNELS,
+  AUTHORIZATION_PURPOSES,
+} from '../domain/patient-authorization';
+import { DATA_REQUEST_OUTCOMES } from '../domain/privacy.repository';
 
 // --- Requests -------------------------------------------------------------------
 
 /**
  * PD-004. Only the type is checked here: the blank and the length are the
- * service's rule, with its own code, so the 422 says `CONSENT_TEXT_INVALID`
+ * service's rule, with its own code, so the 422 says `PRIVACY_NOTICE_INVALID`
  * and not a generic validation error.
  */
-export const publishConsentTextSchema = z.object({
-  body: z.string({ error: 'Escriba el texto del consentimiento' }),
+export const publishPrivacyNoticeSchema = z.object({
+  body: z.string({ error: 'Escriba el aviso de privacidad' }),
 });
-export class PublishConsentTextDto extends createZodDto(
-  publishConsentTextSchema,
+export class PublishPrivacyNoticeDto extends createZodDto(
+  publishPrivacyNoticeSchema,
 ) {}
 
 /**
- * PD-010, PD-011. No instant and no author: those are the server's. `strict`
- * so a client sending `recordedAt` is told, not silently ignored.
+ * PD-068, PD-069. The purpose and, for reminders and marketing, the channel.
+ * No instant and no author: those are the server's. `strict` so a client
+ * sending `recordedAt` is told, not silently ignored. Whether purpose and
+ * channel go together is the domain's rule (PD-070), with its own code.
  */
-export const recordConsentSchema = z.strictObject({
-  textVersionId: z.uuid('Indique la versión del texto que se mostró'),
-  medium: z.enum(CONSENT_MEDIA, {
-    error: 'Indique si se firmó en papel o se aceptó en pantalla',
+export const grantAuthorizationSchema = z.strictObject({
+  purpose: z.enum(AUTHORIZATION_PURPOSES, {
+    error: 'Indique qué autoriza el paciente',
   }),
-  grantedBy: z.enum(DATA_SUBJECT_PARTIES, {
-    error: 'Indique si lo otorga el titular o su representante',
-  }),
+  channel: z
+    .enum(AUTHORIZATION_CHANNELS, { error: 'Indique WhatsApp o correo' })
+    .nullable()
+    .default(null),
 });
-export class RecordConsentDto extends createZodDto(recordConsentSchema) {}
-
-/**
- * PD-044. «Corregir»: what was recorded wrong, and nothing else. No reason
- * (D-126), no text version (it is the original's) and no instant or author
- * (the server's). Strict, so anything else sent is said.
- */
-export const correctConsentSchema = z.strictObject({
-  medium: z.enum(CONSENT_MEDIA, {
-    error: 'Indique si se firmó en papel o se aceptó en pantalla',
-  }),
-  grantedBy: z.enum(DATA_SUBJECT_PARTIES, {
-    error: 'Indique si lo otorga el titular o su representante',
-  }),
-});
-export class CorrectConsentDto extends createZodDto(correctConsentSchema) {}
+export class GrantAuthorizationDto extends createZodDto(
+  grantAuthorizationSchema,
+) {}
 
 /**
  * PD-030, PD-031, PD-052, PD-053. Who presents it, their name and document,
@@ -160,62 +149,48 @@ export class ReviewCopyDto extends createZodDto(reviewCopySchema) {}
 
 const staffNameSchema = z.object({ id: z.uuid(), fullName: z.string() });
 
-export const consentTextSchema = z.object({
+export const privacyNoticeSchema = z.object({
   id: z.uuid(),
   version: z.int(),
   body: z.string(),
   publishedAt: z.iso.datetime(),
   publishedBy: staffNameSchema,
 });
-export class ConsentTextDto extends createZodDto(consentTextSchema) {}
-export type ConsentTextResponse = z.infer<typeof consentTextSchema>;
+export class PrivacyNoticeDto extends createZodDto(privacyNoticeSchema) {}
+export type PrivacyNoticeResponse = z.infer<typeof privacyNoticeSchema>;
 
-/** PD-001. `current` is null until the clinic publishes its first text. */
-export const currentConsentTextSchema = z.object({
-  current: consentTextSchema.nullable(),
+/** PD-001. Newest first: the current one leads; empty until the first. */
+export const privacyNoticeListSchema = z.object({
+  items: z.array(privacyNoticeSchema).readonly(),
 });
-export class CurrentConsentTextDto extends createZodDto(
-  currentConsentTextSchema,
+export class PrivacyNoticeListDto extends createZodDto(
+  privacyNoticeListSchema,
 ) {}
 
-export const consentTextListSchema = z.object({
-  items: z.array(consentTextSchema).readonly(),
-  /**
-   * PD-045. Charts with a standing consent on the current version: the ones
-   * publishing a new text leaves on an older one.
-   */
-  currentVersionConsents: z.int().nonnegative(),
-});
-export class ConsentTextListDto extends createZodDto(consentTextListSchema) {}
-
-export const patientConsentSchema = z.object({
+/** PD-073. An optional authorization, with its revocation if it has one. */
+export const patientAuthorizationSchema = z.object({
   id: z.uuid(),
+  /** The chart it was written against: an absorbed one after a merge. */
   patientId: z.uuid(),
-  textVersion: consentTextSchema,
-  isCurrentVersion: z.boolean(),
-  medium: z.enum(CONSENT_MEDIA),
-  grantedBy: z.enum(DATA_SUBJECT_PARTIES),
+  purpose: z.enum(AUTHORIZATION_PURPOSES),
+  channel: z.enum(AUTHORIZATION_CHANNELS).nullable(),
   recordedAt: z.iso.datetime(),
   recordedBy: staffNameSchema,
-  /** PD-044. The consent this one corrects, if it is a correction. */
-  supersedesId: z.uuid().nullable(),
-  /** PD-044. Another consent corrects this one: it no longer stands. */
-  isSuperseded: z.boolean(),
-  /**
-   * PD-044. Who took it and when: the original's on a correction, whose
-   * `recordedBy`/`recordedAt` say who corrected it and when.
-   */
-  takenAt: z.iso.datetime(),
-  takenBy: staffNameSchema,
+  revokedAt: z.iso.datetime().nullable(),
+  revokedBy: staffNameSchema.nullable(),
 });
-export class PatientConsentDto extends createZodDto(patientConsentSchema) {}
-export type PatientConsentResponse = z.infer<typeof patientConsentSchema>;
+export class PatientAuthorizationDto extends createZodDto(
+  patientAuthorizationSchema,
+) {}
+export type PatientAuthorizationResponse = z.infer<
+  typeof patientAuthorizationSchema
+>;
 
-export const patientConsentListSchema = z.object({
-  items: z.array(patientConsentSchema).readonly(),
+export const patientAuthorizationListSchema = z.object({
+  items: z.array(patientAuthorizationSchema).readonly(),
 });
-export class PatientConsentListDto extends createZodDto(
-  patientConsentListSchema,
+export class PatientAuthorizationListDto extends createZodDto(
+  patientAuthorizationListSchema,
 ) {}
 
 const answerSchema = z.object({

@@ -2,12 +2,12 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Development data for the privacy screens (PD-001..PD-043), so the desk can
- * take a consent by hand without an administrator publishing a text first.
+ * Development data for the privacy screens (PD-001..PD-075): a privacy notice
+ * already published, so «Aviso de privacidad» shows and prints something.
  *
- * ⚠️ THE TEXT IS A PLACEHOLDER AND SAYS SO. A consent text is a legal document
- * the clinic writes with its adviser; this one exists only so the desk has
- * something to show in development. It is published ONLY if no version exists
+ * ⚠️ THE TEXT IS A PLACEHOLDER AND SAYS SO. The privacy notice is a legal
+ * document the clinic writes with its adviser (D-221 §2); this one exists only
+ * so the screen has something to show in development. It is published ONLY if no version exists
  * yet: the table is append-only, and a seed that published on every run would
  * fill it with copies.
  *
@@ -31,15 +31,15 @@ async function main(): Promise<void> {
     select: { id: true },
   });
 
-  const published = await prisma.consentTextVersion.count();
+  const published = await prisma.privacyNoticeVersion.count();
   if (published === 0) {
-    await prisma.consentTextVersion.create({
+    await prisma.privacyNoticeVersion.create({
       data: {
         version: 1,
         body:
           'Texto de prueba de desarrollo, versión 1.\n\n' +
           'No es un texto legal: el texto real lo redacta la clínica con su ' +
-          'asesor y lo publica administración en «Texto de consentimiento».',
+          'asesor y lo publica administración en «Aviso de privacidad».',
         publishedBy: admin.id,
       },
     });
@@ -47,8 +47,8 @@ async function main(): Promise<void> {
 
   console.log(
     published === 0
-      ? 'Privacidad: publicado el texto de prueba (versión 1).'
-      : `Privacidad: ya hay ${published} versión(es) del texto; no se publica otra.`,
+      ? 'Privacidad: publicado el aviso de prueba (versión 1).'
+      : `Privacidad: ya hay ${published} versión(es) del aviso; no se publica otra.`,
   );
   await prisma.$disconnect();
 }

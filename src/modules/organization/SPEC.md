@@ -325,7 +325,7 @@ paso falta y lleva a su pantalla.
   | Administración · Agenda | Especialidades y duraciones · Horarios |
   | Administración · Atención | Plantilla de nota · Exámenes · Identidad de los documentos |
   | Administración · Facturación | Prestaciones y precios · Caja: medios de pago e IVA · Firma electrónica |
-  | Administración · Privacidad | Texto de consentimiento · Solicitudes sobre datos |
+  | Administración · Privacidad | Aviso de privacidad · Solicitudes sobre datos |
 
   Cada entrada conserva su permiso; «Órdenes y resultados», su cuenta de
   críticos (ORD-165).
@@ -353,7 +353,7 @@ paso falta y lleva a su pantalla.
   | Horarios | `staff:read` · `staff:manage` | hay al menos una regla de horario activa que no ha terminado |
   | Prestaciones y precios | `billing:read` · `billing:price-manage` | hay al menos una prestación activa y todas tienen precio particular vigente hoy |
   | Firma electrónica | `config:manage` | hay un certificado activo y vigente hoy |
-  | Texto de consentimiento | `patient:consent-text` | hay un texto publicado |
+  | Aviso de privacidad | `privacy:notice` | hay un aviso publicado (D-221 §2) |
   | Exámenes _(opcional)_ | `catalog:manage` | hay al menos un examen; no cuenta en el total |
 
   Un paso que falta dice en una línea qué falta («Falta el RUC», «Falta el

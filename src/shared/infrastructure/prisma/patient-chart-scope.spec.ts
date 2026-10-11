@@ -114,12 +114,13 @@ const HISTORY_TABLES: readonly string[] = [
   // listas y es correcto: cuelgan de la cuenta, no de la ficha, así que el
   // analizador no las ve y llegar a ellas ya pasa por aquí.
   'patient_account',
-  // 30-09-2026, con `privacy` (PD-016, PD-036, PD-040). El consentimiento que
-  // dio la persona y las solicitudes que presentó sobre sus datos son de la
-  // PERSONA: si firmó en la ficha que luego se absorbió, la superviviente
-  // tiene que seguir mostrándolo, y una exportación que leyera solo la
-  // superviviente entregaría la mitad (D-083 §3).
-  'patient_consent',
+  // 30-09-2026, con `privacy` (PD-036, PD-040, PD-073). Las autorizaciones
+  // que dio la persona (D-221 §3; antes, su consentimiento) y las solicitudes
+  // que presentó sobre sus datos son de la PERSONA: si autorizó en la ficha
+  // que luego se absorbió, la superviviente tiene que seguir mostrándolo, y
+  // una exportación que leyera solo la superviviente entregaría la mitad
+  // (D-083 §3).
+  'patient_authorization',
   'data_subject_request',
 ];
 
@@ -232,11 +233,6 @@ const CHART_LINKS: Record<
  * thing the stale-table check does for `HISTORY_TABLES` and `NOT_HISTORY`.
  */
 const EXEMPT: Record<string, string> = {
-  'src/modules/privacy/infrastructure/prisma-consent.repository.ts#currentVersionConsents':
-    'PD-045. Cuenta las fichas de TODA la clínica con un consentimiento ' +
-    'vigente sobre el texto vigente, para decir la consecuencia de publicar ' +
-    'otro. No lee la historia de nadie: no hay ficha de la que partir, y ' +
-    'una ficha y su absorbida cuentan como lo que son, dos filas.',
   'src/modules/documents/infrastructure/prisma-document-source.reader.ts#ENCOUNTER_SUMMARY_SELECT':
     'DOC-111, DOC-118. `certificates` se lee desde la ATENCIÓN, no desde la ficha: son ' +
     'los certificados emitidos en esa visita (`medical_certificate.encounter_id`), ' +

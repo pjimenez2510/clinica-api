@@ -1,10 +1,10 @@
 /**
- * The two ways PostgreSQL refuses a consent text publication that lost a race
- * (PD-005), translated to the code the SPEC fixes.
+ * The two ways PostgreSQL refuses a privacy notice publication that lost a
+ * race (PD-005), translated to the code the SPEC fixes.
  *
- *   - `consent_text_version_number_unique` (23505): both transactions computed
- *     the same next number and the second one waited for the first to commit.
- *   - `consent_text_version_is_next` (23514): the first one committed BEFORE
+ *   - `privacy_notice_version_number_unique` (23505): both transactions
+ *     computed the same next number and the second one waited for the first.
+ *   - `privacy_notice_version_is_next` (23514): the first one committed BEFORE
  *     the second one's trigger read the maximum, so the number it carries is
  *     no longer the next.
  *
@@ -38,12 +38,12 @@ function isPrismaError(exception: unknown): exception is PrismaErrorLike {
 }
 
 const LOST_RACE = new Map([
-  ['23505', 'consent_text_version_number_unique'],
-  ['23514', 'consent_text_version_is_next'],
+  ['23505', 'privacy_notice_version_number_unique'],
+  ['23514', 'privacy_notice_version_is_next'],
 ]);
 
 /** Whether `error` is PostgreSQL refusing a publication that lost PD-005's race. */
-export function isConsentTextRace(error: unknown): boolean {
+export function isPrivacyNoticeRace(error: unknown): boolean {
   if (!isPrismaError(error)) return false;
   const cause = error.meta?.driverAdapterError?.cause;
   const sqlState = cause?.code ?? cause?.originalCode;
@@ -59,20 +59,36 @@ export function isConsentTextRace(error: unknown): boolean {
   );
 }
 
-/**
- * PD-044. PostgreSQL refusing a second correction of the same consent
- * (`patient_consent_corrected_once`, 23505): the net under the row lock.
- */
-export function isConsentCorrectionRace(error: unknown): boolean {
+/** One SQLSTATE and one constraint, read the same way as above. */
+function refusedBy(
+  error: unknown,
+  sqlState: string,
+  constraint: string,
+): boolean {
   if (!isPrismaError(error)) return false;
   const cause = error.meta?.driverAdapterError?.cause;
-  const sqlState = cause?.code ?? cause?.originalCode;
-  if (sqlState !== '23505') return false;
+  const code = cause?.code ?? cause?.originalCode;
+  if (code !== sqlState) return false;
   const index = cause?.constraint?.index;
   const message = cause?.originalMessage;
   return (
-    index === 'patient_consent_corrected_once' ||
-    (typeof message === 'string' &&
-      message.includes('patient_consent_corrected_once'))
+    index === constraint ||
+    (typeof message === 'string' && message.includes(constraint))
   );
+}
+
+/**
+ * PD-071. The base refusing a second standing authorization with the same
+ * purpose and channel (`patient_authorization_one_standing`, 23505).
+ */
+export function isSecondStandingAuthorization(error: unknown): boolean {
+  return refusedBy(error, '23505', 'patient_authorization_one_standing');
+}
+
+/**
+ * PD-072. Two revocations of the same authorization at once: its key lets
+ * one through (`patient_authorization_revocation_pkey`, 23505).
+ */
+export function isAuthorizationRevocationRace(error: unknown): boolean {
+  return refusedBy(error, '23505', 'patient_authorization_revocation_pkey');
 }

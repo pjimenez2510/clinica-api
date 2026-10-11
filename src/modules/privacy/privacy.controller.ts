@@ -25,176 +25,146 @@ import { ALL_SITES } from '../../shared/authorisation/principal';
 import { parseClinicalDate } from '../../shared/domain/clinic-time';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
-import {
-  ConsentService,
-  type PatientConsentEntry,
-} from './application/consent.service';
+import { AuthorizationService } from './application/authorization.service';
 import {
   DataSubjectRequestsService,
   type DataRequestEntry,
 } from './application/data-subject-requests.service';
+import { PrivacyNoticeService } from './application/privacy-notice.service';
 import type {
-  ConsentTextView,
   DataExportDocument,
   DataRequestAnswer,
+  PatientAuthorizationView,
+  PrivacyNoticeView,
   Requester,
 } from './domain/privacy.repository';
 import {
   // NO `import type` for parameter DTOs: Swagger would lose the parameters.
   AnswerDataRequestDto,
   AnswerProposalDto,
-  ConsentTextDto,
-  ConsentTextListDto,
-  CorrectConsentDto,
-  CurrentConsentTextDto,
   DataRequestDto,
   DataRequestListDto,
   EditDataRequestDto,
+  GrantAuthorizationDto,
+  PatientAuthorizationDto,
+  PatientAuthorizationListDto,
+  PrivacyNoticeDto,
+  PrivacyNoticeListDto,
+  PublishPrivacyNoticeDto,
   OpenRequestsPageDto,
   OpenRequestsQueryDto,
-  PatientConsentDto,
-  PatientConsentListDto,
-  PublishConsentTextDto,
-  RecordConsentDto,
   RegisterDataRequestDto,
   ReviewCopyDto,
   type AnswerProposalResponse,
-  type ConsentTextResponse,
   type DataRequestResponse,
-  type PatientConsentResponse,
+  type PatientAuthorizationResponse,
+  type PrivacyNoticeResponse,
 } from './dto/privacy.dto';
 
 /**
- * The consent and the data subject's rights (LOPDP), PD-001..PD-043.
+ * The privacy notice, the optional authorizations and the data subject's
+ * rights (LOPDP), PD-001..PD-075.
  *
- * Every route is `global`: a chart is one in the whole system (PA-051), and a
- * consent text is the clinic's, not a site's.
+ * Every route is `global`: a chart is one in the whole system (PA-051), and
+ * the notice is the clinic's, not a site's.
  *
- * TWO PERMISSIONS OF ITS OWN, AND ONE BORROWED. Publishing the text
- * (`patient:consent-text`) and handling requests (`patient:data-requests`, which
- * includes exporting a whole chart) are new; recording a consent rides on
- * `patient:write`, because it is part of registering the patient at the desk
- * and reception already holds it. The shipped `ADMIN` role carries the new
- * two (D-083 §4).
+ * TWO PERMISSIONS OF ITS OWN, AND ONE BORROWED. Publishing the notice
+ * (`privacy:notice`) and handling requests (`patient:data-requests`, which
+ * includes exporting a whole chart) are this module's; recording an optional
+ * authorization rides on `patient:write`, because it is done on the chart at
+ * the desk and reception already holds it. The shipped `ADMIN` role carries
+ * the two (D-083 §4).
  */
 @ApiTags('privacy')
 @Controller({ path: 'privacy', version: '1' })
 export class PrivacyController {
   constructor(
-    private readonly consent: ConsentService,
+    private readonly notices: PrivacyNoticeService,
+    private readonly authorizations: AuthorizationService,
     private readonly requests: DataSubjectRequestsService,
     private readonly currentUser: CurrentUserService,
   ) {}
 
   // --- D1 ----------------------------------------------------------------------
 
-  /** PD-001. What the desk shows the patient before recording the consent. */
-  @Get('consent-texts/current')
-  @RequirePermission('patient:read', 'global')
-  @ApiOperation({ summary: 'Texto de consentimiento vigente' })
-  @ApiOkResponse({ type: CurrentConsentTextDto })
-  async currentText(): Promise<{ current: ConsentTextResponse | null }> {
-    const current = await this.consent.currentText();
-    return { current: current && textResponse(current) };
-  }
-
   /** PD-001. Every version, newest first. */
-  @Get('consent-texts')
-  @RequirePermission('patient:consent-text', 'global')
-  @ApiOperation({ summary: 'Versiones del texto de consentimiento' })
-  @ApiOkResponse({ type: ConsentTextListDto })
-  async texts(): Promise<{
-    items: ConsentTextResponse[];
-    currentVersionConsents: number;
-  }> {
-    return {
-      items: (await this.consent.texts()).map(textResponse),
-      // PD-045. What the screen says before publishing.
-      currentVersionConsents: await this.consent.currentVersionConsents(),
-    };
+  @Get('notices')
+  @RequirePermission('privacy:notice', 'global')
+  @ApiOperation({ summary: 'Versiones del aviso de privacidad' })
+  @ApiOkResponse({ type: PrivacyNoticeListDto })
+  async noticeVersions(): Promise<{ items: PrivacyNoticeResponse[] }> {
+    return { items: (await this.notices.versions()).map(noticeResponse) };
   }
 
   /** PD-002 to PD-006. */
-  @Post('consent-texts')
-  @RequirePermission('patient:consent-text', 'global')
+  @Post('notices')
+  @RequirePermission('privacy:notice', 'global')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Publicar una versión nueva del texto' })
-  @ApiCreatedResponse({ type: ConsentTextDto })
-  async publish(
-    @Body() dto: PublishConsentTextDto,
+  @ApiOperation({ summary: 'Publicar una versión nueva del aviso' })
+  @ApiCreatedResponse({ type: PrivacyNoticeDto })
+  async publishNotice(
+    @Body() dto: PublishPrivacyNoticeDto,
     @Req() req: Request,
-  ): Promise<ConsentTextResponse> {
-    return textResponse(
-      await this.consent.publish(dto.body, this.requester(req)),
+  ): Promise<PrivacyNoticeResponse> {
+    return noticeResponse(
+      await this.notices.publish(dto.body, this.requester(req)),
     );
   }
 
-  // --- D2 ----------------------------------------------------------------------
+  // --- D8 ----------------------------------------------------------------------
 
-  /** PD-016. */
-  @Get('patients/:patientId/consents')
+  /** PD-073, PD-075. */
+  @Get('patients/:patientId/authorizations')
   @RequirePermission('patient:read', 'global')
-  @ApiOperation({ summary: 'Consentimientos de un paciente' })
-  @ApiOkResponse({ type: PatientConsentListDto })
-  async consents(
+  @ApiOperation({ summary: 'Autorizaciones opcionales de un paciente' })
+  @ApiOkResponse({ type: PatientAuthorizationListDto })
+  async authorizationsOf(
     @Param('patientId', ParseUUIDPipe) patientId: string,
-  ): Promise<{ items: PatientConsentResponse[] }> {
-    const items = await this.consent.consentsOf(patientId);
-    return { items: items.map(consentResponse) };
+  ): Promise<{ items: PatientAuthorizationResponse[] }> {
+    const items = await this.authorizations.authorizationsOf(patientId);
+    return { items: items.map(authorizationResponse) };
   }
 
-  /** PD-010 to PD-015, PD-017. */
-  @Post('patients/:patientId/consents')
+  /** PD-068 to PD-071, PD-074, PD-075. */
+  @Post('patients/:patientId/authorizations')
   @RequirePermission('patient:write', 'global')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Registrar el consentimiento de un paciente' })
-  @ApiCreatedResponse({ type: PatientConsentDto })
-  async recordConsent(
+  @ApiOperation({ summary: 'Registrar una autorización opcional' })
+  @ApiCreatedResponse({ type: PatientAuthorizationDto })
+  async grantAuthorization(
     @Param('patientId', ParseUUIDPipe) patientId: string,
-    @Body() dto: RecordConsentDto,
+    @Body() dto: GrantAuthorizationDto,
     @Req() req: Request,
-  ): Promise<PatientConsentResponse> {
-    const recorded = await this.consent.record(
-      {
-        patientId,
-        textVersionId: dto.textVersionId,
-        medium: dto.medium,
-        grantedBy: dto.grantedBy,
-      },
+  ): Promise<PatientAuthorizationResponse> {
+    const granted = await this.authorizations.grant(
+      { patientId, purpose: dto.purpose, channel: dto.channel },
       this.requester(req),
+      new Date(),
     );
-    return consentResponse(recorded);
+    return authorizationResponse(granted);
+  }
+
+  /** PD-069, PD-072, PD-074, PD-075. */
+  @Post('patients/:patientId/authorizations/:authorizationId/revocation')
+  @RequirePermission('patient:write', 'global')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Revocar una autorización opcional' })
+  @ApiCreatedResponse({ type: PatientAuthorizationDto })
+  async revokeAuthorization(
+    @Param('patientId', ParseUUIDPipe) patientId: string,
+    @Param('authorizationId', ParseUUIDPipe) authorizationId: string,
+    @Req() req: Request,
+  ): Promise<PatientAuthorizationResponse> {
+    const revoked = await this.authorizations.revoke(
+      patientId,
+      authorizationId,
+      this.requester(req),
+      new Date(),
+    );
+    return authorizationResponse(revoked);
   }
 
   // --- D3 ----------------------------------------------------------------------
-
-  /**
-   * PD-044. «Corregir» a consent recorded with the wrong medium or grantor:
-   * a new consent that supersedes it, in one step. Same permission as
-   * recording one.
-   */
-  @Post('patients/:patientId/consents/:consentId/correction')
-  @RequirePermission('patient:write', 'global')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Corregir un consentimiento mal registrado' })
-  @ApiCreatedResponse({ type: PatientConsentDto })
-  async correctConsent(
-    @Param('patientId', ParseUUIDPipe) patientId: string,
-    @Param('consentId', ParseUUIDPipe) consentId: string,
-    @Body() dto: CorrectConsentDto,
-    @Req() req: Request,
-  ): Promise<PatientConsentResponse> {
-    const corrected = await this.consent.correct(
-      {
-        patientId,
-        consentId,
-        medium: dto.medium,
-        grantedBy: dto.grantedBy,
-      },
-      this.requester(req),
-    );
-    return consentResponse(corrected);
-  }
 
   /** PD-036. */
   @Get('patients/:patientId/requests')
@@ -459,16 +429,17 @@ export class PrivacyController {
   }
 }
 
-function textResponse(view: ConsentTextView): ConsentTextResponse {
+function noticeResponse(view: PrivacyNoticeView): PrivacyNoticeResponse {
   return { ...view, publishedAt: view.publishedAt.toISOString() };
 }
 
-function consentResponse(entry: PatientConsentEntry): PatientConsentResponse {
+function authorizationResponse(
+  view: PatientAuthorizationView,
+): PatientAuthorizationResponse {
   return {
-    ...entry,
-    textVersion: textResponse(entry.textVersion),
-    recordedAt: entry.recordedAt.toISOString(),
-    takenAt: entry.takenAt.toISOString(),
+    ...view,
+    recordedAt: view.recordedAt.toISOString(),
+    revokedAt: view.revokedAt?.toISOString() ?? null,
   };
 }
 

@@ -5,6 +5,11 @@ import type {
   DataRequestParty,
   DataRequestRelationship,
 } from './data-request-party';
+import type {
+  AuthorizationChannel,
+  AuthorizationPurpose,
+  ChartContact,
+} from './patient-authorization';
 import type { DataSubjectRight } from './legal-due-date';
 
 /** Who acts, so the trail can say so. */
@@ -30,13 +35,6 @@ export interface StaffName {
   fullName: string;
 }
 
-export const CONSENT_MEDIA = ['SIGNED_PAPER', 'ON_SCREEN'] as const;
-export type ConsentMedium = (typeof CONSENT_MEDIA)[number];
-
-/** PD-010. Who grants a consent. Who presents a request is wider (PD-052). */
-export const DATA_SUBJECT_PARTIES = ['HOLDER', 'REPRESENTATIVE'] as const;
-export type DataSubjectParty = (typeof DATA_SUBJECT_PARTIES)[number];
-
 export const DATA_REQUEST_OUTCOMES = [
   'GRANTED',
   'PARTIALLY_GRANTED',
@@ -45,7 +43,7 @@ export const DATA_REQUEST_OUTCOMES = [
 export type DataRequestOutcome = (typeof DATA_REQUEST_OUTCOMES)[number];
 
 /**
- * What a chart id resolves to before anything is written about it (PD-015).
+ * What a chart id resolves to before anything is written about it (PD-075).
  * A merged chart names its survivor so the screen can open the right one.
  */
 export type ChartLookup =
@@ -54,9 +52,10 @@ export type ChartLookup =
   | { status: 'missing' }
   | { status: 'merged'; survivingMrn: string };
 
-// --- D1, D2 ------------------------------------------------------------------
+// --- D1, D8 ------------------------------------------------------------------
 
-export interface ConsentTextView {
+/** PD-001. A published version of the privacy notice. */
+export interface PrivacyNoticeView {
   id: string;
   version: number;
   body: string;
@@ -64,95 +63,78 @@ export interface ConsentTextView {
   publishedBy: StaffName;
 }
 
-export interface PatientConsentView {
+export interface PrivacyNoticeRepository {
+  /** PD-001. Newest first; empty while nothing is published. */
+  versions(): Promise<PrivacyNoticeView[]>;
+  /**
+   * PD-002, PD-005, PD-006. The next version and its trail row, in one
+   * transaction. Throws `PrivacyNoticeVersionConflictError` on the race.
+   */
+  publish(body: string, requester: Requester): Promise<PrivacyNoticeView>;
+}
+
+export const PRIVACY_NOTICE_REPOSITORY = Symbol('PrivacyNoticeRepository');
+
+/** PD-068. An optional authorization as the chart shows it. */
+export interface PatientAuthorizationView {
   id: string;
   /** The chart the row was written against: an absorbed one after a merge. */
   patientId: string;
-  textVersion: ConsentTextView;
-  medium: ConsentMedium;
-  grantedBy: DataSubjectParty;
+  purpose: AuthorizationPurpose;
+  channel: AuthorizationChannel | null;
   recordedAt: Date;
   recordedBy: StaffName;
-  /** PD-044. The consent this one corrects, if it is a correction. */
-  supersedesId: string | null;
-  /** PD-044. Another consent corrects this one: it no longer stands. */
-  isSuperseded: boolean;
-  /**
-   * PD-044. Who TOOK the consent from the person and when: on an original,
-   * its own `recordedAt`/`recordedBy`; on a correction, the FIRST consent of
-   * the chain's. A correction fixes how it was written down, not who was at
-   * the desk that day.
-   */
-  takenAt: Date;
-  takenBy: StaffName;
+  /** PD-072. `null` while it stands. */
+  revokedAt: Date | null;
+  revokedBy: StaffName | null;
 }
 
-export interface NewConsent {
+export interface NewAuthorization {
   patientId: string;
-  textVersionId: string;
-  medium: ConsentMedium;
-  grantedBy: DataSubjectParty;
+  purpose: AuthorizationPurpose;
+  channel: AuthorizationChannel | null;
 }
 
-/**
- * The result of recording a consent. `outdated` is PD-012: the version sent is
- * not the current one, checked inside the same transaction as the INSERT.
- */
-export type RecordConsentResult =
-  | { status: 'recorded'; consent: PatientConsentView }
-  | { status: 'outdated'; currentVersion: number }
-  | { status: 'unknown-version' };
+export type GrantAuthorizationResult =
+  | { status: 'granted'; authorization: PatientAuthorizationView }
+  | { status: 'already-granted' };
 
-/**
- * PD-044. A consent recorded with the wrong medium or grantor, corrected: the
- * chart in the URL (its scope reaches the absorbed charts, PA-055) and what
- * the correction says. The text and the patient are the original's.
- */
-export interface ConsentCorrection {
-  patientId: string;
-  consentId: string;
-  medium: ConsentMedium;
-  grantedBy: DataSubjectParty;
-}
-
-export type CorrectConsentResult =
-  | { status: 'corrected'; consent: PatientConsentView }
+export type RevokeAuthorizationResult =
+  | { status: 'revoked'; authorization: PatientAuthorizationView }
   | { status: 'missing' }
-  | { status: 'already-corrected' };
+  | { status: 'already-revoked' };
 
-export interface ConsentRepository {
+export interface AuthorizationRepository {
   chartOf(patientId: string): Promise<ChartLookup>;
-  currentText(): Promise<ConsentTextView | null>;
-  texts(): Promise<ConsentTextView[]>;
+  /** PD-070. Of the chart itself, never of an absorbed one. */
+  contactOf(patientId: string): Promise<ChartContact>;
   /**
-   * PD-045. How many charts have a standing consent (not superseded) on the
-   * current version: the ones a new publication leaves on an older text.
+   * PD-068, PD-071, PD-074. The authorization and its trail row in one
+   * transaction; `already-granted` when the base refuses a second standing
+   * one (`patient_authorization_one_standing`).
    */
-  currentVersionConsents(): Promise<number>;
-  /**
-   * PD-044, PD-017. The correction and its trail row in one transaction,
-   * under the original's row lock: of two corrections, the second finds it
-   * already corrected.
-   */
-  correct(
-    correction: ConsentCorrection,
+  grant(
+    authorization: NewAuthorization,
     requester: Requester,
-  ): Promise<CorrectConsentResult>;
+    now: Date,
+  ): Promise<GrantAuthorizationResult>;
   /**
-   * PD-002, PD-005, PD-006. The next version and its trail row, in one
-   * transaction. Throws `ConsentTextVersionConflictError` on the race.
+   * PD-072, PD-074. The revocation and its trail row in one transaction, of
+   * an authorization of the chart or of its absorbed ones.
    */
-  publish(body: string, requester: Requester): Promise<ConsentTextView>;
-  /** PD-010..PD-014, PD-017. Consent and trail row in one transaction. */
-  record(
-    consent: NewConsent,
+  revoke(
+    patientId: string,
+    authorizationId: string,
     requester: Requester,
-  ): Promise<RecordConsentResult>;
-  /** PD-016. The chart and the charts merged into it, newest first. */
-  consentsOf(patientId: string): Promise<PatientConsentView[]>;
+    now: Date,
+  ): Promise<RevokeAuthorizationResult>;
+  /** PD-073. The chart and the charts merged into it, newest first. */
+  authorizationsOf(patientId: string): Promise<PatientAuthorizationView[]>;
 }
 
-export const CONSENT_REPOSITORY = Symbol('ConsentRepository');
+export type { ChartContact };
+
+export const AUTHORIZATION_REPOSITORY = Symbol('AuthorizationRepository');
 
 // --- D3, D4 ------------------------------------------------------------------
 
@@ -338,12 +320,12 @@ export interface ExportedVersion {
  */
 export interface DataExportDocument {
   format: 'clinica.privacy.export';
-  /** PD-066. v2 adds `deliveries`. */
-  formatVersion: 2;
+  /** PD-066. v2 adds `deliveries`; v3 `authorizations` for `consents` (D-221). */
+  formatVersion: 3;
   generatedAt: string;
   patient: Readonly<Record<string, unknown>>;
   identifiers: readonly Readonly<Record<string, unknown>>[];
-  consents: readonly Readonly<Record<string, unknown>>[];
+  authorizations: readonly Readonly<Record<string, unknown>>[];
   requests: readonly Readonly<Record<string, unknown>>[];
   /**
    * PD-066 (D-203 §9). Every copy of the record that was authorised: to whom,

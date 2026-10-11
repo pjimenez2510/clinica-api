@@ -40,7 +40,6 @@ import type {
 } from '../domain/privacy.repository';
 
 import {
-  CONSENT_TEXT_SELECT,
   chartIds,
   chartLookup,
   fromClinicalDate,
@@ -521,13 +520,10 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
         where: { patientId: { in: ids } },
         orderBy: { createdAt: 'asc' },
       });
-      const consents = await tx.patientConsent.findMany({
+      const authorizations = await tx.patientAuthorization.findMany({
         where: chartScope(rootId),
-        orderBy: { recordedAt: 'asc' },
-        include: {
-          textVersion: { select: CONSENT_TEXT_SELECT },
-          supersededBy: { select: { id: true } },
-        },
+        orderBy: [{ recordedAt: 'asc' }, { id: 'asc' }],
+        include: { revocation: true },
       });
       const requestRows = await tx.dataSubjectRequest.findMany({
         where: chartScope(rootId),
@@ -581,7 +577,8 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
 
       return {
         format: 'clinica.privacy.export',
-        formatVersion: 2,
+        // 3: `authorizations` instead of `consents` (D-221).
+        formatVersion: 3,
         generatedAt: now.toISOString(),
         patient: {
           ...exportedPatient(main, concepts),
@@ -598,17 +595,14 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
           validFrom: row.validFrom && toClinicalDate(row.validFrom),
           validTo: row.validTo && toClinicalDate(row.validTo),
         })),
-        consents: consents.map((row) => ({
+        // PD-040, PD-073. Every authorization, the revoked ones too: what
+        // the holder allowed and when they withdrew it.
+        authorizations: authorizations.map((row) => ({
           chart: mrnOf.get(row.patientId),
+          purpose: row.purpose,
+          channel: row.channel,
           recordedAt: row.recordedAt.toISOString(),
-          medium: row.medium,
-          grantedBy: row.grantedBy,
-          textVersion: row.textVersion.version,
-          text: row.textVersion.body,
-          // PD-044. A correction says it is one, and the corrected one says
-          // it no longer stands; both leave, nothing is hidden.
-          isCorrection: row.supersedesId !== null,
-          isSuperseded: row.supersededBy !== null,
+          revokedAt: row.revocation?.revokedAt.toISOString() ?? null,
         })),
         requests: requests.map((row) => ({
           chart: mrnOf.get(row.patientId),

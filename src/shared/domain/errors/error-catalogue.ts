@@ -1397,22 +1397,22 @@ export const DOMAIN_ERROR_CODES = [
   //     nota 002 firmada, o está anulada: no hay nada que resumir.
   'CLINICAL_RECORD_COPY_NOT_AVAILABLE',
   'ENCOUNTER_SUMMARY_NOT_AVAILABLE',
-  // Protección de datos (`privacy`, PD-001..PD-043).
+  // Protección de datos (`privacy`, PD-001..PD-075).
   //   * `DATA_SUBJECT_NOT_FOUND` (404) — la ficha no existe. Propio y no
   //     `PATIENT_NOT_FOUND`, que es de `patients`: un código lo declara una sola
   //     clase y ningún módulo importa a otro. Mismo mensaje, mismo porqué.
-  //   * `CONSENT_TEXT_OUTDATED` (409) — se consiente una versión que dejó de ser
-  //     la vigente: lo registrado debe ser lo que se mostró (PD-012).
-  //   * `CONSENT_TEXT_VERSION_CONFLICT` (409) — dos publicaciones a la vez; la
-  //     base deja pasar una (PD-005).
+  //   * `PRIVACY_NOTICE_INVALID` (422), `PRIVACY_NOTICE_VERSION_CONFLICT`
+  //     (409) — PD-004, PD-005. El aviso de privacidad (D-221 §2; antes
+  //     «texto de consentimiento», con los códigos `CONSENT_TEXT_*`).
+  //   * `PRIVACY_AUTHORIZATION_INVALID` (422),
+  //     `PRIVACY_AUTHORIZATION_ALREADY_GRANTED` (409),
+  //     `PRIVACY_AUTHORIZATION_NOT_FOUND` (404),
+  //     `PRIVACY_AUTHORIZATION_ALREADY_REVOKED` (409) — PD-070 a PD-072. Las
+  //     autorizaciones opcionales (D-221 §3); la segunda vigente la arbitra
+  //     `patient_authorization_one_standing`.
   //   * `DATA_REQUEST_ALREADY_ANSWERED` (409) — una respuesta es una sola
   //     (PD-033); la base tampoco admite otra (PD-038). Editar una respondida
   //     también lo responde (PD-046): su respuesta se rectifica (PD-047).
-  //   * `CONSENT_NOT_FOUND` (404) — PD-044. Se corrige un consentimiento que
-  //     no existe o no es de esa ficha (ni de sus absorbidas).
-  //   * `CONSENT_ALREADY_CORRECTED` (409) — PD-044. Ese consentimiento ya
-  //     tiene una corrección: se corrige la vigente. Lo arbitra
-  //     `patient_consent_corrected_once`.
   //   * `DATA_REQUEST_NOT_ANSWERED` (409) — PD-047. Se rectifica la respuesta
   //     de una solicitud que todavía no tiene ninguna: se responde.
   //   * `DATA_REQUEST_PARTY_NOT_ALLOWED`, `DATA_REQUEST_PATIENT_NOT_DECEASED`,
@@ -1426,12 +1426,6 @@ export const DOMAIN_ERROR_CODES = [
   'CLINICAL_RECORD_COPY_ALREADY_REVIEWED',
   'CLINICAL_RECORD_COPY_INVALID',
   'CLINICAL_RECORD_COPY_REVIEW_REQUIRED',
-  'CONSENT_ALREADY_CORRECTED',
-  'CONSENT_NOT_FOUND',
-  'CONSENT_TEXT_INVALID',
-  'CONSENT_TEXT_NOT_PUBLISHED',
-  'CONSENT_TEXT_OUTDATED',
-  'CONSENT_TEXT_VERSION_CONFLICT',
   'DATA_EXPORT_NOT_APPLICABLE',
   'DATA_REQUEST_ALREADY_ANSWERED',
   'DATA_REQUEST_NOT_ANSWERED',
@@ -1440,6 +1434,12 @@ export const DOMAIN_ERROR_CODES = [
   'DATA_REQUEST_PATIENT_DECEASED',
   'DATA_REQUEST_PATIENT_NOT_DECEASED',
   'DATA_REQUEST_RECEIVED_IN_FUTURE',
+  'PRIVACY_AUTHORIZATION_ALREADY_GRANTED',
+  'PRIVACY_AUTHORIZATION_ALREADY_REVOKED',
+  'PRIVACY_AUTHORIZATION_INVALID',
+  'PRIVACY_AUTHORIZATION_NOT_FOUND',
+  'PRIVACY_NOTICE_INVALID',
+  'PRIVACY_NOTICE_VERSION_CONFLICT',
   'DATA_SUBJECT_NOT_FOUND',
 ] as const;
 
