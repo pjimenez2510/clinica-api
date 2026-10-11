@@ -2816,6 +2816,8 @@ model Encounter {
   interconsultations  Interconsultation[]
   accounts            PatientAccount[]
   chargeItems         ChargeItem[]
+  /// AS-011. The calls to a language model made for this encounter.
+  aiRuns              AiRun[]
 
   /// `encounter_still_open_by_practitioner` is NOT here and cannot be: it is
   /// PARTIAL (`WHERE status IN ('OPEN','ON_HOLD')`), which is what keeps it
@@ -6143,4 +6145,62 @@ model IdentityLookupCache {
 
   @@index([expiresAt])
   @@map("identity_lookup_cache")
+}
+
+/// AS-011 (D-239 §5). One attempt to a language model provider: a request the
+/// fallback passes on is one row per provider tried, under one `request_id`.
+/// Numbers, names and codes only — no prompt, no answer, no provider message:
+/// that is what lets it be kept and counted (AS-017) without being clinical
+/// text. Its constraints (AS-012) live in the migration.
+model AiRun {
+  id               String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  requestId        String     @map("request_id") @db.Uuid
+  attempt          Int        @db.SmallInt
+  provider         String     @db.VarChar(16)
+  model            String     @db.VarChar(80)
+  tier             String     @db.VarChar(8)
+  purpose          String     @db.VarChar(40)
+  promptVersion    String     @map("prompt_version") @db.VarChar(40)
+  outcome          String     @db.VarChar(16)
+  httpStatus       Int?       @map("http_status") @db.SmallInt
+  inputTokens      Int?       @map("input_tokens")
+  outputTokens     Int?       @map("output_tokens")
+  cacheReadTokens  Int?       @map("cache_read_tokens")
+  cacheWriteTokens Int?       @map("cache_write_tokens")
+  reasoningTokens  Int?       @map("reasoning_tokens")
+  /// Null when the provider reported no tokens; the ceiling then counts
+  /// `worst_case_usd`, which an attempt always has.
+  costUsd          Decimal?   @map("cost_usd") @db.Decimal(14, 8)
+  worstCaseUsd     Decimal    @map("worst_case_usd") @db.Decimal(14, 8)
+  /// The day the price used started to apply (`llm-pricing.json`).
+  priceValidFrom   DateTime   @map("price_valid_from") @db.Date
+  latencyMs        Int        @map("latency_ms")
+  /// The application's clock, never `now()`.
+  startedAt        DateTime   @map("started_at") @db.Timestamptz(6)
+  /// The outcome of the attempt before, when this one is a fallback.
+  fallbackFrom     String?    @map("fallback_from") @db.VarChar(16)
+  encounterId      String?    @map("encounter_id") @db.Uuid
+  encounter        Encounter? @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+
+  exchange AiExchange?
+
+  @@unique([requestId, attempt])
+  /// AS-017. The month's spending is a range scan on this.
+  @@index([startedAt])
+  @@index([encounterId])
+  @@map("ai_run")
+}
+
+/// AS-014, AS-015 (D-239 §3). The text of one attempt — instructions, the
+/// pseudonymized prompt and the raw answer — kept only while
+/// `ASSISTANT_EXCHANGE_LOG` is on, and deleted 45 days after the encounter's
+/// note is signed. Pseudonymized is not anonymized: hence apart, and purged.
+model AiExchange {
+  aiRunId String  @id @map("ai_run_id") @db.Uuid
+  aiRun   AiRun   @relation(fields: [aiRunId], references: [id], onDelete: Cascade)
+  system  String
+  prompt  String
+  raw     String?
+
+  @@map("ai_exchange")
 }
