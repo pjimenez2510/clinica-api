@@ -137,6 +137,33 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
     pricer = await signIn('precios@clinica.ec', 'PRECIOS', '1104637283');
   });
 
+  /**
+   * The price manager, with `catalog:manage` granted at one site only. The
+   * grants travel in the session: a new one, with the site's key.
+   */
+  async function pricerWithCatalogueAtOneSite(): Promise<string> {
+    const site = await createSite(prisma);
+    const local = await prisma.role.create({
+      data: {
+        code: 'CATALOGO_SEDE',
+        name: 'Catálogo de una sede',
+        permissions: { create: [{ permissionCode: 'catalog:manage' }] },
+      },
+    });
+    const pricerUser = await prisma.user.findUniqueOrThrow({
+      where: { email: 'precios@clinica.ec' },
+    });
+    await prisma.userRoleGrant.create({
+      data: { userId: pricerUser.id, roleId: local.id, siteId: site.id },
+    });
+    registry.invalidate();
+    const login = await api()
+      .post('/api/v1/auth/login')
+      .send({ email: 'precios@clinica.ec', password: PASSWORD })
+      .expect(200);
+    return `Bearer ${(login.body as { accessToken: string }).accessToken}`;
+  }
+
   afterAll(async () => {
     await closeApp(app);
   });
@@ -561,7 +588,7 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
         .expect(201);
     });
 
-    it('BI-299 crear un examen, o corregir lo que su orden imprime, exige además catalog:manage; el precio y el nombre no', async () => {
+    it('BI-299 crear un examen, o corregir lo que su orden imprime, exige además catalog:manage; el precio y lo que no se pide no', async () => {
       const exam = {
         kind: 'LAB_EXAM',
         name: 'Ferritina',
@@ -613,13 +640,7 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
         .send(preparation)
         .expect(200);
 
-      // Without `exam`, the price manager still corrects the exam and creates
-      // what is not ordered.
-      await api()
-        .patch(`/api/v1/billing/services/${created.id}`)
-        .set('Authorization', pricer)
-        .send({ name: 'Ferritina sérica' })
-        .expect(200);
+      // Without `exam`, the price manager still creates what is not ordered.
       await api()
         .post('/api/v1/billing/services')
         .set('Authorization', pricer)
@@ -658,27 +679,7 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
         .expect(403);
 
       // The clinical key at one site only is not the catalogue's key.
-      const site = await createSite(prisma);
-      const local = await prisma.role.create({
-        data: {
-          code: 'CATALOGO_SEDE',
-          name: 'Catálogo de una sede',
-          permissions: { create: [{ permissionCode: 'catalog:manage' }] },
-        },
-      });
-      const pricerUser = await prisma.user.findUniqueOrThrow({
-        where: { email: 'precios@clinica.ec' },
-      });
-      await prisma.userRoleGrant.create({
-        data: { userId: pricerUser.id, roleId: local.id, siteId: site.id },
-      });
-      registry.invalidate();
-      // The grants travel in the session: a new one, with the site's key.
-      const login = await api()
-        .post('/api/v1/auth/login')
-        .send({ email: 'precios@clinica.ec', password: PASSWORD })
-        .expect(200);
-      const siteScoped = `Bearer ${(login.body as { accessToken: string }).accessToken}`;
+      const siteScoped = await pricerWithCatalogueAtOneSite();
       const scoped = await api()
         .patch(`/api/v1/billing/services/${ordered.id}`)
         .set('Authorization', siteScoped)
@@ -705,6 +706,95 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
         .set('Authorization', manager)
         .send({ exam: null })
         .expect(200);
+    });
+
+    it('BI-299 renombrar, recodificar o desactivar un examen exige catalog:manage; su precio y el nombre de una consulta no (D-233)', async () => {
+      const exam = (
+        await api()
+          .post('/api/v1/billing/services')
+          .set('Authorization', manager)
+          .send({
+            kind: 'LAB_EXAM',
+            name: 'Ferritina',
+            selfPayAmount: '9.00',
+            exam: {},
+          }) // prettier-ignore
+          .expect(201)
+      ).body as ListItem;
+      const path = `/api/v1/billing/services/${exam.id}`;
+
+      for (const correction of [
+        { name: 'Ferritina en ayunas' },
+        { code: 'LAB-FERRITINA-2' },
+        { active: false },
+      ]) {
+        const refused = await api()
+          .patch(path)
+          .set('Authorization', pricer)
+          .send(correction);
+        expect(refused.status).toBe(403);
+        expect((refused.body as Problem).code).toBe('PERMISSION_DENIED');
+      }
+      // Refused before anything is written.
+      expect(
+        await prisma.service.findUniqueOrThrow({ where: { id: exam.id } }),
+      ).toMatchObject({ name: 'Ferritina', code: exam.code, active: true });
+      // The form sends the name it shows: the same name is not a rename.
+      await api()
+        .patch(path)
+        .set('Authorization', pricer)
+        .send({ name: 'Ferritina', active: true })
+        .expect(200);
+
+      // Its price is still the price manager's.
+      const selfPay = await prisma.payer.findUniqueOrThrow({
+        where: { code: 'PARTICULAR' },
+      });
+      await api()
+        .post(`/api/v1/billing/payers/${selfPay.id}/prices`)
+        .set('Authorization', pricer)
+        .send({
+          serviceId: exam.id,
+          amount: '11.00',
+          effectiveFrom: addDays(clinicalDateOf(new Date()), 1),
+        })
+        .expect(201);
+      // And so is renaming what is not ordered.
+      const consultation = await prisma.service.findFirstOrThrow({
+        where: { kind: 'CONSULTATION' },
+      });
+      await api()
+        .patch(`/api/v1/billing/services/${consultation.id}`)
+        .set('Authorization', pricer)
+        .send({ name: `${consultation.name} (corregida)` })
+        .expect(200);
+
+      // The clinical key at one site only is not the catalogue's key.
+      const scoped = await api()
+        .patch(path)
+        .set('Authorization', await pricerWithCatalogueAtOneSite())
+        .send({ name: 'Ferritina en ayunas' });
+      expect(scoped.status).toBe(403);
+      expect((scoped.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+
+      // Control: both keys clinic-wide.
+      await api()
+        .patch(path)
+        .set('Authorization', manager)
+        .send({
+          name: 'Ferritina sérica',
+          code: 'LAB-FERRITINA-2',
+          active: false,
+        }) // prettier-ignore
+        .expect(200);
+      const stored = await prisma.service.findUniqueOrThrow({
+        where: { id: exam.id },
+      });
+      expect(stored).toMatchObject({
+        name: 'Ferritina sérica',
+        code: 'LAB-FERRITINA-2',
+        active: false,
+      });
     });
   });
 
