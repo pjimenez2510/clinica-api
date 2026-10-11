@@ -2,9 +2,9 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Seed for the SPECIALTIES module (C1): the specialty catalogue of D-008
- * with default service types, so the administration screen and the agenda
- * dialog have something real to offer from the first boot.
+ * Seed for the SPECIALTIES module (C1): the specialty catalogue of D-008, so
+ * the administration screen and the agenda dialog have something real to
+ * offer from the first boot.
  *
  * SP-001: the catalogue ships preloaded with the specialties recognised by
  * the MSP (Acuerdo Ministerial de especialidades médicas reconocidas en
@@ -13,8 +13,9 @@ import { PrismaClient } from '@prisma/client';
  * «Pediatría» meant it, and a deploy that put the old name back would be a
  * bug that looks like magic (same rule as `seed-authorisation.mts`).
  *
- * Each specialty gets two default service types (SP-020): «Primera vez» at
- * 30 minutes and «Control» at 20 — defaults, editable from the screen.
+ * Its consultations («Primera vez» at 30 minutes and «Control» at 20) are
+ * SERVICES since ADR-013 (BI-279): `seed-billing.mts` writes them, and the
+ * `db:seed:specialties` script runs it right after this one.
  *
  * WHAT IT NO LONGER DOES: assign a primary specialty to the seeded
  * practitioners. `practitioner_specialty` is a table of the STAFF module since
@@ -24,9 +25,9 @@ import { PrismaClient } from '@prisma/client';
  * nobody was writing at all.
  *
  * Chain: run AFTER `pnpm db:seed` (users). The `db:seed:specialties` script
- * runs the billing seed right after this one, so every specialty's
- * consultation gets linked (BI-232) whatever the order; this file does not
- * write billing's tables itself. Then `pnpm db:seed:staff` if you
+ * runs the billing seed right after this one, so every specialty gets its
+ * consultations (BI-232, BI-279); this file does not write billing's tables
+ * itself. Then `pnpm db:seed:staff` if you
  * want the seeded practitioners to have a specialty and a duration exception.
  */
 
@@ -72,59 +73,31 @@ const SPECIALTIES: readonly SeedSpecialty[] = [
   { code: 'odontologia', name: 'Odontología' },
 ];
 
-/** Default service types every specialty starts with (SP-020, D-007). */
-const DEFAULT_SERVICE_TYPES = [
-  { name: 'Primera vez', durationMinutes: 30 },
-  { name: 'Control', durationMinutes: 20 },
-] as const;
-
 /**
- * Creates each missing specialty (matched by code, case-insensitively) and its
- * missing default service types (matched by name within the specialty); never
+ * Creates each missing specialty (matched by code, case-insensitively); never
  * updates an existing row. Returns how many rows it created.
  */
 export async function seedSpecialties(prisma: PrismaClient): Promise<{
   specialtiesCreated: number;
-  serviceTypesCreated: number;
 }> {
   let specialtiesCreated = 0;
-  let serviceTypesCreated = 0;
 
   for (const specialty of SPECIALTIES) {
     // Matched by lower(code): the unique index `specialty_code_unique` is
     // functional, so Prisma's `upsert` cannot target it — find-then-create,
     // which is safe here because the seed is the only writer at seed time and
     // the index still arbitrates a race.
-    let row = await prisma.specialty.findFirst({
+    const existing = await prisma.specialty.findFirst({
       where: { code: { equals: specialty.code, mode: 'insensitive' } },
       select: { id: true },
     });
-    if (!row) {
-      row = await prisma.specialty.create({
-        data: specialty,
-        select: { id: true },
-      });
+    if (!existing) {
+      await prisma.specialty.create({ data: specialty });
       specialtiesCreated += 1;
-    }
-
-    for (const serviceType of DEFAULT_SERVICE_TYPES) {
-      const existing = await prisma.serviceType.findFirst({
-        where: {
-          specialtyId: row.id,
-          name: { equals: serviceType.name, mode: 'insensitive' },
-        },
-        select: { id: true },
-      });
-      if (!existing) {
-        await prisma.serviceType.create({
-          data: { specialtyId: row.id, ...serviceType },
-        });
-        serviceTypesCreated += 1;
-      }
     }
   }
 
-  return { specialtiesCreated, serviceTypesCreated };
+  return { specialtiesCreated };
 }
 
 /** Entry point for `pnpm db:seed:specialties`. */
@@ -143,9 +116,8 @@ async function main(): Promise<void> {
   try {
     const result = await seedSpecialties(prisma);
     console.log(
-      `Especialidades: ${result.specialtiesCreated} especialidades y ` +
-        `${result.serviceTypesCreated} tipos de atención creados ` +
-        `(${SPECIALTIES.length} especialidades en total).`,
+      `Especialidades: ${result.specialtiesCreated} creadas ` +
+        `(${SPECIALTIES.length} en total).`,
     );
   } finally {
     await prisma.$disconnect();

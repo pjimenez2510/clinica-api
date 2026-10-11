@@ -267,16 +267,13 @@ export async function importTariff(
   });
 
   const official = new Set(concepts.map((concept) => concept.code));
-  // ORD-163. The tariff code is the exam's SERVICE's.
+  // BI-285 (ADR-013). The MSP code of each active ordered service.
   const exams = (
-    await prisma.examDefinition.findMany({
-      where: { active: true, billableService: { tariffCode: { not: null } } },
-      select: { code: true, billableService: { select: { tariffCode: true } } },
+    await prisma.service.findMany({
+      where: { active: true, exam: { isNot: null }, mspCode: { not: null } },
+      select: { code: true, mspCode: true },
     })
-  ).map((exam) => ({
-    code: exam.code,
-    tariffCode: exam.billableService.tariffCode,
-  }));
+  ).map((exam) => ({ code: exam.code, tariffCode: exam.mspCode }));
   const kept = inForce
     .map((concept) => concept.code)
     .filter((code) => !official.has(code))

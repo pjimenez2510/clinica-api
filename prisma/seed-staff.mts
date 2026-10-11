@@ -139,13 +139,13 @@ const PRACTITIONER_PRIMARIES: readonly {
 const DURATION_EXCEPTIONS: readonly {
   email: string;
   specialtyCode: string;
-  serviceTypeName: string;
+  visitKind: 'FIRST_VISIT' | 'FOLLOW_UP';
   durationMinutes: number;
 }[] = [
   {
     email: 'medico@clinica.ec',
     specialtyCode: 'medicina-general',
-    serviceTypeName: 'Control',
+    visitKind: 'FOLLOW_UP',
     durationMinutes: 40,
   },
 ];
@@ -363,19 +363,24 @@ async function setDurationExceptions(prisma: PrismaClient): Promise<number> {
     });
     if (practises === 0) continue;
 
-    const serviceType = await prisma.serviceType.findFirst({
+    // SP-022 (ADR-013). The exception is on the specialty's consultation of
+    // that visit, the service the appointment books.
+    const consultation = await prisma.service.findFirst({
       where: {
+        kind: 'CONSULTATION',
         specialtyId,
-        name: { equals: exception.serviceTypeName, mode: 'insensitive' },
+        visitKind: exception.visitKind,
+        active: true,
       },
+      orderBy: { createdAt: 'asc' },
       select: { id: true },
     });
-    if (!serviceType) continue;
+    if (!consultation) continue;
 
     const { count } = await prisma.durationException.createMany({
       data: {
         practitionerId,
-        serviceTypeId: serviceType.id,
+        serviceId: consultation.id,
         durationMinutes: exception.durationMinutes,
       },
       skipDuplicates: true,
