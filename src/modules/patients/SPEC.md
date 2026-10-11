@@ -2010,18 +2010,28 @@ Ningún requisito de esta sección lo altera._
   > admitidos en `patient_change_history_field_known`
   > (`20261001070800_patient_employer_and_job_title`).
 
-- **PA-082** — ANTES de deshacer una fusión, el sistema DEBERÁ servir, con
-  `patient:merge`, los resultados de laboratorio registrados o corregidos en
-  atenciones de la ficha absorbida **mientras duró la fusión** —desde
-  `merged_at`—, cada uno con la determinación, el valor, la bandera, cuándo se
-  emitió y su orden, y el sexo de la ficha absorbida y el de la vigente; y la
-  lectura DEBERÁ dejar su fila en la bitácora.
+- **PA-082** — El sistema DEBERÁ servir, con `patient:merge`, antes y después
+  de deshacer una fusión, los resultados **vigentes** —ni sustituidos ni
+  anulados— de las atenciones de la ficha que se **clasificaron con un sexo
+  distinto del suyo** en una determinación con rangos por sexo (ORD-176), cada
+  uno con la determinación, el valor, la bandera, el sexo con que se
+  clasificó, cuándo se emitió y su orden; DEBERÁ servir los valores sólo de las
+  sedes donde quien lee tiene `record:read` y contar el resto; y la lectura
+  DEBERÁ dejar una fila en la bitácora por orden (`diagnostic_report`, como la
+  lectura de sus informes).
   > **D-171 §3**, decidida por el autor en D-223 y confirmada por la principal
   > en D-237 §1: mientras dura la unificación esos valores se clasifican con
-  > el sexo de la vigente (ORD-176). Si la unificación fue un error, deshacerla
-  > no reclasifica nada —la bandera se congela al registrar (ORD-114)—, así que
-  > quien deshace tiene que saber qué revisar. La pantalla lo enseña en el
-  > diálogo de deshacer. Por confirmar con un clínico, como ORD-176.
+  > el sexo de la vigente. Si la unificación fue un error, deshacerla no
+  > reclasifica nada —la bandera se congela al registrar (ORD-114)—, así que
+  > quien deshace tiene que saber qué revisar, también después.
+  > **Revisión clínica de la tarea 16:** leído por la ventana de `merged_at`
+  > y el sexo de hoy de la vigente, la lista desaparecía al deshacer, se
+  > escondía si la vigente se corregía durante la unificación y listaba una
+  > glucosa que no depende del sexo. Por eso cada resultado congela el sexo
+  > con que se clasificó y si su determinación tiene rangos por sexo
+  > (`observation_result.classified_sex`, `sex_specific_ranges`,
+  > `20261024000006`). Por confirmar con un clínico, como ORD-176; quién
+  > revisa esos valores es D-237 §9.
 
 ## 8. Autorización y trazabilidad (REQ-118)
 

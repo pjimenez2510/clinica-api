@@ -187,25 +187,37 @@ export class PatientMergeService {
    * guessed from dates.
    */
   /**
-   * PA-082 (D-171 §3). What undoing would leave classified with the wrong
-   * sex if the merge was a mistake: the values filed on this chart while it
-   * was merged. Audited: they are laboratory values of a patient.
+   * PA-082 (D-171 §3). The chart's values classified with another sex while
+   * it was merged —before or after undoing, the list is the same—. Values
+   * are laboratory results: only those of the sites where the reader holds
+   * `record:read` travel; the rest are counted. Audited per order, as the
+   * reading of its reports is (`diagnostic_report`).
    */
   async classifiedWhileMerged(
     sourcePatientId: string,
     requester: Requester,
-  ): Promise<ClassifiedWhileMerged> {
+    sites: 'all' | readonly string[],
+  ): Promise<ClassifiedWhileMerged & { hiddenCount: number }> {
     const read = await this.patients.classifiedWhileMerged(sourcePatientId);
-    if (!read) throw new MergeNotFoundError();
-    await this.audit.record({
-      userId: requester.userId,
-      resourceType: 'patient',
-      resourceId: sourcePatientId,
-      action: 'READ',
-      ip: requester.ip,
-      userAgent: requester.userAgent,
-    });
-    return read;
+    if (!read) throw new PatientNotFoundError();
+    const visible = read.items.filter(
+      (item) => sites === 'all' || sites.includes(item.siteId),
+    );
+    for (const orderId of new Set(visible.map((item) => item.orderId))) {
+      await this.audit.record({
+        userId: requester.userId,
+        resourceType: 'diagnostic_report',
+        resourceId: orderId,
+        action: 'READ',
+        ip: requester.ip,
+        userAgent: requester.userAgent,
+      });
+    }
+    return {
+      chartSex: read.chartSex,
+      items: visible,
+      hiddenCount: read.items.length - visible.length,
+    };
   }
 
   async undo(

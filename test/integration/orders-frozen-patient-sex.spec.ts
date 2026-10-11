@@ -406,41 +406,62 @@ describe('ORD-161 la orden nombra la ficha vigente al emitirse, con su sexo, y n
     });
   });
 
-  it('PA-082 antes de deshacer, se leen los resultados clasificados mientras duró la unificación, con los dos sexos', async () => {
+  it('PA-082 la historia dice qué valores suyos están clasificados con otro sexo por su rango, también corregida la vigente y después de deshacer', async () => {
     const prisma = db();
     const scene = await aMergedScene(prisma);
-    const hb = (orderId: string) =>
-      adapters(prisma).reports.register(
-        { orderId, performedById: null, issuedAt: new Date(), results: [{ analyteDefinitionId: scene.scene.hb.id, valueNumeric: 12.5 }] }, // prettier-ignore
+    const { orders, reports } = adapters(prisma);
+    const register = (
+      orderId: string,
+      analyteDefinitionId: string,
+      value: number,
+    ) =>
+      // prettier-ignore
+      reports.register(
+        { orderId, performedById: null, issuedAt: new Date(), results: [{ analyteDefinitionId, valueNumeric: value }] }, // prettier-ignore
         requester,
       );
-    // Control positivo: lo registrado ANTES de unificar no se lista.
-    const before = await hb(scene.beforeMerge.id);
+    // Control positivo: lo registrado ANTES de unificar es de su propio sexo.
+    const before = await register(scene.beforeMerge.id, scene.scene.hb.id, 12.5); // prettier-ignore
     await scene.merge();
     const during = await scene.issueAnother();
-    const classified = await hb(during.id);
+    const hb = await register(during.id, scene.scene.hb.id, 12.5);
+    // Corregida durante la unificación: sólo la versión vigente cuenta (m1).
+    const fixed = await reports.correct(
+      { reportId: hb.id, performedById: null, issuedAt: new Date(), results: [{ analyteDefinitionId: scene.scene.hb.id, valueNumeric: 12.6 }] }, // prettier-ignore
+      requester,
+    );
+    // La glucosa no tiene rangos por sexo: no cambió nada (M2).
+    const glucoseOrder = await placeIssued(orders, { encounterId: scene.scene.encounter.id, category: 'LABORATORY', priority: 'ROUTINE', lines: [{ serviceId: scene.scene.glucose.id }], sites: 'all' }); // prettier-ignore
+    await register(glucoseOrder.id, scene.scene.glu.id, 92);
+    // La vigente se corrige a mujer durante la unificación (G2): lo ya
+    // clasificado como hombre sigue estándolo.
+    await prisma.patient.update({ where: { id: scene.survivor.id }, data: { sex: 'FEMALE' } }); // prettier-ignore
+
     const desk = { userId: (await createUser(prisma)).id };
-    const trail: { action: string; resourceId: string }[] = [];
+    const trail: { action: string; resourceType: string; resourceId: string }[] = []; // prettier-ignore
     const reading = new PatientMergeService(
       new PrismaPatientRepository(prisma as unknown as PrismaService),
       { record: (entry) => { trail.push(entry); return Promise.resolve(); } }, // prettier-ignore
       noopLogger as never,
     );
+    const read = () => reading.classifiedWhileMerged(scene.scene.patient.id, desk, 'all'); // prettier-ignore
 
-    const read = await reading.classifiedWhileMerged(scene.scene.patient.id, desk); // prettier-ignore
+    const merged = await read();
+    expect(merged).toMatchObject({ chartSex: 'FEMALE', hiddenCount: 0 });
+    expect(merged.items).toEqual([
+      expect.objectContaining({ resultId: fixed.results[0]!.id, orderId: during.id, analyteDisplay: 'Hemoglobina', valueNumeric: 12.6, classifiedSex: 'MALE', abnormalFlag: 'LOW' }), // prettier-ignore
+    ]);
+    expect(merged.items.map((item) => item.resultId)).not.toContain(before.results[0]!.id); // prettier-ignore
+    // La lectura deja su fila por orden, como la lectura de sus informes.
+    expect(trail).toEqual([expect.objectContaining({ action: 'READ', resourceType: 'diagnostic_report', resourceId: during.id })]); // prettier-ignore
 
-    expect(read).toMatchObject({ sourceSex: 'FEMALE', survivorSex: 'MALE' });
-    expect(read.items.map((item) => item.resultId)).toEqual([classified.results[0]!.id]); // prettier-ignore
-    expect(read.items[0]).toMatchObject({ orderId: during.id, analyteDisplay: 'Hemoglobina', valueNumeric: 12.5, abnormalFlag: 'LOW' }); // prettier-ignore
-    expect(read.items.map((item) => item.resultId)).not.toContain(before.results[0]!.id); // prettier-ignore
-    // La lectura deja su fila en la bitácora.
-    expect(trail).toEqual([expect.objectContaining({ action: 'READ', resourceId: scene.scene.patient.id })]); // prettier-ignore
-
-    // Una ficha que no está unificada no tiene nada que leer.
+    // Deshecha la unificación, sigue ahí (G1): esos valores siguen mal.
     await scene.undo();
-    await expect(
-      mergesOf(prisma).classifiedWhileMerged(scene.scene.patient.id, desk),
-    ).rejects.toMatchObject({ code: 'MERGE_NOT_FOUND' });
+    expect((await read()).items.map((item) => item.resultId)).toEqual([fixed.results[0]!.id]); // prettier-ignore
+
+    // M3: lo de una sede que quien lee no ve, sólo se cuenta.
+    const elsewhere = await reading.classifiedWhileMerged(scene.scene.patient.id, desk, [crypto.randomUUID()]); // prettier-ignore
+    expect(elsewhere).toMatchObject({ items: [], hiddenCount: 1 });
   });
 
   it('ORD-161 ORD-026 la cola de pendientes nombra la misma ficha que el papel', async () => {

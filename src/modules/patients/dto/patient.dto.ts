@@ -816,12 +816,12 @@ export const patientMergeSchema = z.object({
 export class PatientMergeDto extends createZodDto(patientMergeSchema) {}
 
 /**
- * PA-082 (D-171 §3). The values classified with the survivor's sex while the
- * chart was merged, for the undo dialog.
+ * PA-082 (D-171 §3). The chart's values classified with another sex while it
+ * was merged; those of sites the reader cannot read are only counted.
  */
 export const classifiedWhileMergedSchema = z.object({
-  sourceSex: SEX,
-  survivorSex: SEX,
+  chartSex: SEX,
+  hiddenCount: z.number().int(),
   items: z.array(
     z.object({
       resultId: z.string(),
@@ -834,6 +834,7 @@ export const classifiedWhileMergedSchema = z.object({
       abnormalFlag: z
         .enum(['LOW', 'HIGH', 'NORMAL', 'CRITICAL_LOW', 'CRITICAL_HIGH'])
         .nullable(),
+      classifiedSex: SEX,
       observedAt: z.iso.datetime(),
     }),
   ),

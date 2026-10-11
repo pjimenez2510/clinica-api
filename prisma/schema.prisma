@@ -3991,6 +3991,11 @@ model ObservationResult {
 
   abnormalFlag AbnormalFlag? @map("abnormal_flag")
 
+  /// PA-082, ORD-176. The sex the value was classified with, and whether its
+  /// analyte has ranges by sex: what undoing a merge has to review.
+  classifiedSex     PatientSex? @map("classified_sex")
+  sexSpecificRanges Boolean     @default(false) @map("sex_specific_ranges")
+
   observedAt DateTime @default(now()) @map("observed_at") @db.Timestamptz(6)
 
   /// ORD-062. The notices given of this value; any one takes it off the

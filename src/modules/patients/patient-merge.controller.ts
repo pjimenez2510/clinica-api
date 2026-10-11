@@ -13,6 +13,7 @@ import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { ALL_SITES } from '../../shared/authorisation/principal';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import { PatientMergeService } from './application/patient-merge.service';
@@ -125,31 +126,39 @@ export class PatientMergeController {
   }
 
   /**
-   * PA-082 (D-171 §3). Before undoing: the laboratory values classified with
-   * the survivor's sex while this chart was merged. Same permission as undoing
-   * it; a chart that is not merged is `MERGE_NOT_FOUND`, like the undo.
+   * PA-082 (D-171 §3). The chart's values classified with another sex while
+   * it was merged, before and after undoing. Same permission as undoing it;
+   * the values themselves only of the sites where the reader holds
+   * `record:read` (revisión clínica, M3).
    */
   @Get('classified-results')
   @RequirePermission('patient:merge', 'global')
-  @ApiOperation({ summary: 'Values classified while this chart was merged' })
+  @ApiOperation({ summary: 'Values classified with another sex while merged' })
   @ApiOkResponse({ type: ClassifiedWhileMergedDto })
   async classifiedWhileMerged(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request,
   ): Promise<ClassifiedWhileMergedResponse> {
+    const scope = this.currentUser.requirePrincipal().sitesFor('record:read');
     const read = await this.merges.classifiedWhileMerged(
       id,
       this.requester(req),
+      scope === ALL_SITES ? 'all' : scope,
     );
+    type Item = ClassifiedWhileMergedResponse['items'][number];
     return {
-      ...read,
-      sourceSex: read.sourceSex as ClassifiedWhileMergedResponse['sourceSex'],
-      survivorSex:
-        read.survivorSex as ClassifiedWhileMergedResponse['survivorSex'],
+      chartSex: read.chartSex as ClassifiedWhileMergedResponse['chartSex'],
+      hiddenCount: read.hiddenCount,
       items: read.items.map((item) => ({
-        ...item,
-        abnormalFlag:
-          item.abnormalFlag as ClassifiedWhileMergedResponse['items'][number]['abnormalFlag'],
+        resultId: item.resultId,
+        orderId: item.orderId,
+        analyteDisplay: item.analyteDisplay,
+        valueNumeric: item.valueNumeric,
+        valueCode: item.valueCode,
+        valueText: item.valueText,
+        unit: item.unit,
+        abnormalFlag: item.abnormalFlag as Item['abnormalFlag'],
+        classifiedSex: item.classifiedSex as Item['classifiedSex'],
         observedAt: item.observedAt.toISOString(),
       })),
     };

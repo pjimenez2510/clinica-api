@@ -259,6 +259,9 @@ export class PrismaDiagnosticReportRepository implements DiagnosticReportReposit
               criticalLow: result.criticalLow,
               criticalHigh: result.criticalHigh,
               abnormalFlag: result.abnormalFlag,
+              // PA-082, ORD-176. What the value was classified with.
+              classifiedSex: result.classifiedSex,
+              sexSpecificRanges: result.sexSpecificRanges,
               observedAt: report.issuedAt,
             })),
           },

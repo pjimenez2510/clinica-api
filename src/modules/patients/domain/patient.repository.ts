@@ -460,22 +460,24 @@ export interface AppliedCorrection {
  * name or a document.
  */
 /**
- * PA-082 (D-171 §3). The laboratory values filed on the absorbed chart's
- * attentions while it was merged —classified with the survivor's sex
- * (ORD-176)—, for whoever is about to undo the merge.
+ * PA-082 (D-171 §3). The standing laboratory values of a chart's attentions
+ * classified with a sex that is not the chart's, in an analyte with ranges by
+ * sex —filed while it was merged (ORD-176)—, for whoever undoes or reviews
+ * the merge. Read by row, so it survives the undo.
  */
 export interface ClassifiedWhileMerged {
-  sourceSex: string;
-  survivorSex: string;
+  chartSex: string;
   items: {
     resultId: string;
     orderId: string;
+    siteId: string;
     analyteDisplay: string;
     valueNumeric: number | null;
     valueCode: string | null;
     valueText: string | null;
     unit: string | null;
     abnormalFlag: string | null;
+    classifiedSex: string;
     observedAt: Date;
   }[];
 }
@@ -1000,8 +1002,8 @@ export interface PatientRepository {
    */
   findOpenMerge(sourcePatientId: string): Promise<{ mergeId: string } | null>;
   /**
-   * PA-082. The values filed on the chart's attentions since it was merged;
-   * `null` when the chart is not merged.
+   * PA-082. The chart's standing values classified with another sex, in an
+   * analyte with ranges by sex; `null` when the chart does not exist.
    */
   classifiedWhileMerged(
     sourcePatientId: string,
