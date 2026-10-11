@@ -1415,15 +1415,31 @@ async function ensurePrice(
   priceListId: string,
   serviceId: string,
   amount: string,
-): Promise<void> {
-  await tx.$executeRaw`
+  validFrom: string,
+): Promise<boolean> {
+  const inserted = await tx.$executeRaw`
     INSERT INTO "price" ("price_list_id", "service_id", "amount", "valid_from", "updated_at")
     SELECT ${priceListId}::uuid, ${serviceId}::uuid, ${money(amount)}::decimal(12, 2),
-           ${PRICE_FROM}::date, CURRENT_TIMESTAMP
+           ${validFrom}::date, CURRENT_TIMESTAMP
      WHERE NOT EXISTS (
        SELECT 1 FROM "price"
         WHERE "price_list_id" = ${priceListId}::uuid
           AND "service_id" = ${serviceId}::uuid)`;
+  return inserted > 0;
+}
+
+/** Whether the service is already in the catalogue, before this run touches it. */
+async function serviceExists(tx: Client, code: string): Promise<boolean> {
+  const rows = await tx.$queryRaw<{ found: boolean }[]>`
+    SELECT EXISTS (SELECT 1 FROM "service" WHERE "code" = ${code}) AS "found"`;
+  return rows[0]!.found;
+}
+
+/** Today in Ecuador, as `YYYY-MM-DD`: never the session's zone. */
+function todayInEcuador(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Guayaquil',
+  }).format(new Date());
 }
 
 /** The analyte by `code`, created if missing; same no-op `ON CONFLICT` as `ensureService`. */
@@ -1525,6 +1541,8 @@ const RENAMED_SERVICE_CODES: readonly (readonly [string, string])[] = [
 export async function seedBilling(prisma: PrismaClient): Promise<void> {
   // Filas GARANTIZADAS, no filas insertadas: en la segunda ejecución los
   // números son los mismos y eso es exactamente lo que se quiere poder leer.
+  /** BI-232. Services that existed without a price and got the example one today. */
+  const pricedLate: string[] = [];
   const counts = {
     taxRates: 0,
     payers: 0,
@@ -1599,6 +1617,7 @@ export async function seedBilling(prisma: PrismaClient): Promise<void> {
       const selfPayListId = priceListIdByPayerCode.get(SELF_PAY_CODE)!;
       const serviceIdByCode = new Map<string, string>();
       for (const service of SERVICES) {
+        const existed = await serviceExists(tx, service.code);
         const taxRateId = taxRateIdByCode.get(service.taxSriCode);
         if (!taxRateId) {
           throw new Error(
@@ -1612,8 +1631,17 @@ export async function seedBilling(prisma: PrismaClient): Promise<void> {
         serviceIdByCode.set(service.code, serviceId);
         counts.services += 1;
 
-        // BI-232. Sólo donde no tiene ninguno: lo que la clínica ya preció no se toca.
-        await ensurePrice(tx, selfPayListId, serviceId, service.selfPayAmount);
+        // BI-232. Sólo donde no tiene ninguno: lo que la clínica ya preció no
+        // se toca. A un servicio que ya existía sin precio, el de ejemplo rige
+        // desde HOY: hacia atrás cobraría atenciones que se dejaron sin precio.
+        const priced = await ensurePrice(
+          tx,
+          selfPayListId,
+          serviceId,
+          service.selfPayAmount,
+          existed ? todayInEcuador() : PRICE_FROM,
+        );
+        if (priced && existed) pricedLate.push(service.code);
         counts.prices += 1;
       }
 
@@ -1691,6 +1719,13 @@ export async function seedBilling(prisma: PrismaClient): Promise<void> {
       '     Salud 0% (LRTI art. 56.2) · insumos y estética 15% (art. 55 y art. 191 RLRTI).\n' +
       '     Revíselas prestación por prestación con criterio contable antes de facturar.',
   );
+  if (pricedLate.length > 0) {
+    console.log(
+      `  ⚠️ ${pricedLate.length} servicios que ya existían sin precio reciben un precio particular DE EJEMPLO desde hoy:\n` +
+        `     ${pricedLate.join(', ')}\n` +
+        '     Corríjalos en Servicios antes de cobrarlos.',
+    );
+  }
 }
 
 /** Entry point when run on its own; `seed.mts` calls `seedBilling` with its own client. */

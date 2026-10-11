@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { seedBilling } from '../../prisma/seed-billing.mts';
 import { seedSpecialties } from '../../prisma/seed-specialties.mts';
+import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
 
@@ -86,7 +87,7 @@ describe('BI-232 BI-279 las consultas del catálogo de arranque', () => {
     expect(await pricesIn('IESS')).toEqual([]);
   });
 
-  it('BI-232 resembrar pone precio a la consulta que nació sin él, y no toca la que la clínica ya preció (control)', async () => {
+  it('BI-232 resembrar pone precio desde hoy a la consulta que nació sin él, y no toca la que la clínica ya preció (control)', async () => {
     await seedSpecialties(prisma);
     await seedBilling(prisma);
     const priceOf = (code: string) =>
@@ -95,7 +96,7 @@ describe('BI-232 BI-279 las consultas del catálogo de arranque', () => {
           service: { code },
           priceList: { payer: { code: 'PARTICULAR' } },
         },
-        select: { amount: true },
+        select: { amount: true, validFrom: true },
       });
     // An installation seeded before: cardiology without a price, and
     // dermatology repriced by the clinic.
@@ -123,6 +124,11 @@ describe('BI-232 BI-279 las consultas del catálogo de arranque', () => {
     expect(
       (await priceOf('CONS-DER-PV')).map((row) => row.amount.toString()),
     ).toEqual(['61']);
+    // From TODAY in Ecuador: backwards it would price care left unpriced.
+    const [late] = await priceOf('CONS-CAR-PV');
+    expect(late!.validFrom.toISOString().slice(0, 10)).toBe(
+      clinicalDateOf(new Date()),
+    );
   });
 
   it('BI-279 sembrar facturación antes que especialidades no crea consultas sin especialidad, y la siguiente corrida sí', async () => {

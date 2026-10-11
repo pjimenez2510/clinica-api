@@ -458,12 +458,13 @@ export class ServiceCatalogueService {
     requireOrderKey: () => void,
   ): Promise<void> {
     const current = await this.requireService(serviceId);
+    // BI-299. That key alone does not remove what the order prints; asked
+    // first, so a refused caller learns nothing more of the service.
+    if (current.exam !== null) requireOrderKey();
     // D-199.1. Deleting it would remove the mark with a price manager's key.
     if (current.writtenConsent.required) {
       throw new ServiceConsentTieLockedError();
     }
-    // BI-299. Nor does that key alone remove what the order prints.
-    if (current.exam !== null) requireOrderKey();
     const references = await this.catalogue.countReferencesToService(serviceId);
     if (references > 0) throw new BillableServiceInUseError();
 

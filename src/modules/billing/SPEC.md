@@ -2179,9 +2179,11 @@ dos registros distintos.**
   > pantalla no permite crear; la semilla trae precios **de ejemplo**, en la
   > línea de los ya sembrados, que la clínica corrige en Servicios. Como todo
   > precio de la semilla, se pone sólo donde la consulta **no tiene ningún
-  > precio** en la lista particular, vigente desde el inicio de la semilla: en
-  > una instalación sembrada antes, resembrar pone precio a las consultas que
-  > nacieron sin él (es lo que se pidió) y no toca las que la clínica ya preció.
+  > precio** en la lista particular. En una instalación sembrada antes,
+  > resembrar pone precio a las consultas que nacieron sin él (es lo que se
+  > pidió), **vigente desde hoy en Ecuador** y no desde el inicio de la semilla
+  > —hacia atrás cobraría atenciones que se dejaron sin precio—, lo anuncia al
+  > terminar, y no toca las que la clínica ya preció.
   > **Enmendado el 07-10-2026 (D-179.3):** la atadura es al tipo de atención,
   > no a la especialidad y la secuencia. Las prestaciones de arranque conservan
   > su código (`CONS-MG-PV`, `CONS-MG-SUB`…): «primera vez» va con el tipo

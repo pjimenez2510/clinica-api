@@ -685,6 +685,19 @@ describe('el catálogo de servicios por HTTP (B21)', () => {
         .send({ exam: null });
       expect(scoped.status).toBe(403);
       expect((scoped.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      for (const attempt of [
+        api()
+          .post('/api/v1/billing/services')
+          .set('Authorization', siteScoped)
+          .send({ kind: 'IMAGING', name: 'Radiografía de tórax', selfPayAmount: '20.00' }), // prettier-ignore
+        api()
+          .delete(`/api/v1/billing/services/${ordered.id}`)
+          .set('Authorization', siteScoped),
+      ]) {
+        const refused = await attempt;
+        expect(refused.status).toBe(403);
+        expect((refused.body as Problem).code).toBe('SITE_SCOPE_DENIED');
+      }
 
       // Control: both keys clinic-wide.
       await api()
