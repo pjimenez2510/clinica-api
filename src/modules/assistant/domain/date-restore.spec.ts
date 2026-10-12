@@ -13,7 +13,7 @@ describe('unshiftDates (AS-091)', () => {
     ['27/03/2026', 12, '15/03/2026'],
     ['27-03-2026', 12, '15-03-2026'],
     ['27.03.2026', 12, '15.03.2026'],
-    ['2026-03-27', 12, '2026-03-15'],
+    ['2026-03-27', 12, '2026-03-15'], // fecha-fija: texto que el seudonimizador desplaza, no un instante
     ['el 27 de marzo de 2026', 12, 'el 15 de marzo de 2026'],
     ['el 27 de marzo', 12, 'el 15 de marzo'],
     ['EL 27 DE MARZO', 12, 'EL 15 DE MARZO'],

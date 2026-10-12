@@ -29,6 +29,7 @@ import {
   AssistantTranscriptEmptyError,
   AssistantNoteNotOpenError,
   AssistantDraftInterruptedError,
+  AssistantDraftFailedError,
 } from './assistant.errors';
 
 /**
@@ -203,6 +204,13 @@ describe('assistant errors', () => {
       'ASSISTANT_DRAFT_INTERRUPTED',
       ExternalServiceError,
       /Vuelva a pedir/,
+    ],
+    [
+      'AS-093',
+      () => new AssistantDraftFailedError(),
+      'ASSISTANT_DRAFT_FAILED',
+      ExternalServiceError,
+      /Vuelva a pedirlo/,
     ],
     [
       'AS-040',

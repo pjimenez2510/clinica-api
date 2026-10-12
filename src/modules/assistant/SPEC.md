@@ -1025,6 +1025,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_TRANSCRIPT_EMPTY`         | `ValidationError`      | 422       | No hay transcripción de la que redactar el borrador (AS-086) |
 | `ASSISTANT_NOTE_NOT_OPEN`            | `ConflictError`        | 409       | La atención no tiene la nota 002 abierta en borrador (AS-086, AS-094) |
 | `ASSISTANT_DRAFT_INTERRUPTED`        | `ExternalServiceError` | 503       | La API se reinició mientras redactaba el borrador (AS-093) |
+| `ASSISTANT_DRAFT_FAILED`             | `ExternalServiceError` | 503       | El borrador falló por algo que no es del médico: la base, un fallo (AS-093) |
 
 ## Niveles de prueba
 

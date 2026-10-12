@@ -45,7 +45,7 @@ describe('el asistente apagado (AS-026)', () => {
 
   const ENCOUNTER = '0190a2b4-0000-7000-8000-000000000001';
 
-  it('AS-026 answers 404 without a session, with a malformed id and to a body that does not validate', async () => {
+  it('AS-026 AS-086 answers 404 without a session, with a malformed id and to a body that does not validate', async () => {
     const server = app.getHttpServer();
     await request(server).get(`/api/v1/encounters/${ENCOUNTER}/assistant/diagnoses`).expect(404); // prettier-ignore
     await request(server).post('/api/v1/encounters/no-es-un-uuid/assistant/diagnoses/read').expect(404); // prettier-ignore
@@ -57,6 +57,10 @@ describe('el asistente apagado (AS-026)', () => {
       .expect(404);
     await request(server).get(`/api/v1/encounters/${ENCOUNTER}/assistant/listening`).expect(404); // prettier-ignore
     await request(server).post(`/api/v1/encounters/${ENCOUNTER}/assistant/listening/ticket`).expect(404); // prettier-ignore
+    // AS-086, AS-094, AS-096. The draft of the note, the same.
+    await request(server).get(`/api/v1/encounters/${ENCOUNTER}/assistant/note-draft`).expect(404); // prettier-ignore
+    await request(server).post(`/api/v1/encounters/${ENCOUNTER}/assistant/note-draft`).expect(404); // prettier-ignore
+    await request(server).post(`/api/v1/encounters/${ENCOUNTER}/assistant/note-draft/sections/${ENCOUNTER}/accept`).send({}).expect(404); // prettier-ignore
     // Control: a route of the same API, outside the assistant, still asks for a session.
     await request(server).get(`/api/v1/encounters/${ENCOUNTER}/diagnoses`).expect(401); // prettier-ignore
   });

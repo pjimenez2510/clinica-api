@@ -52,9 +52,9 @@ const COMPLETE_002 = {
 };
 
 describe('la plantilla de serie', () => {
-  it('DOC-111 los títulos de la 002 de serie son los que imprime el resumen de la atención', () => {
+  it('DOC-111 los títulos de la 002 de serie son los que imprime el resumen de la atención, y AS-088 la ayuda la que lee el borrador', () => {
     expect(
-      builtInTemplate('002').sections.map(({ key, title }) => ({ key, title })),
+      builtInTemplate('002').sections.map(({ key, title, help }) => ({ key, title, help })), // prettier-ignore
     ).toEqual(FORM_002_BUILT_IN_SECTIONS);
   });
 

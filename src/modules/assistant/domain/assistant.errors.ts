@@ -371,3 +371,19 @@ export class AssistantDraftInterruptedError extends ExternalServiceError {
     super('The draft was interrupted by a restart');
   }
 }
+
+/**
+ * AS-093. The draft failed for something that is not the physician's to know
+ * (the database, a bug): the screen says so and offers «Volver a pedir».
+ */
+export class AssistantDraftFailedError extends ExternalServiceError {
+  readonly code = 'ASSISTANT_DRAFT_FAILED';
+  readonly service = 'assistant-draft';
+  readonly isRetryable = true;
+  override readonly userTitle =
+    'No se pudo redactar el borrador. Vuelva a pedirlo';
+
+  constructor() {
+    super('The draft could not be written');
+  }
+}

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { ListeningNotOpenError } from '../domain/assistant.errors';
 import {
@@ -22,6 +22,10 @@ import {
   type RecognizedSegment,
   type SpeechRecognizer,
 } from './speech-recognizer.port';
+import {
+  TRANSCRIPT_OBSERVER,
+  type TranscriptObserver,
+} from './transcript-observer.port';
 
 /**
  * The channel that captures, as the service sees it: the browser on the other
@@ -114,6 +118,11 @@ export class ListeningService {
     @Inject(SPEECH_RECOGNIZER) private readonly recognizer: SpeechRecognizer,
     @Inject(LISTENING_STORE) private readonly store: ListeningStore,
     @Inject(LISTENING_CLOCK) private readonly now: ListeningClock,
+    // AS-087. The draft of the note, told when the transcript grows and when
+    // the physician stops; never awaited.
+    @Optional()
+    @Inject(TRANSCRIPT_OBSERVER)
+    private readonly observer?: TranscriptObserver,
   ) {}
 
   /**
@@ -221,7 +230,11 @@ export class ListeningService {
   ): Promise<{ offsetMs: number }> {
     return this.inTurn(encounterId, async () => {
       const live = this.live.get(encounterId);
-      if (live?.channel === channel) return this.finish(live, 'STOPPED', null);
+      if (live?.channel === channel) {
+        const stopped = await this.finish(live, 'STOPPED', null);
+        this.observer?.listeningStopped(encounterId);
+        return stopped;
+      }
       if (live) throw new ListeningNotOpenError();
       return this.stopWritten(encounterId);
     });
@@ -448,6 +461,8 @@ export class ListeningService {
     }
     live.unstored = live.unstored.slice(pending.length);
     for (const kept of pending) live.channel.onSegment(kept);
+    const upToMs = Math.max(...pending.map((kept) => kept.endMs));
+    if (pending.length > 0) this.observer?.transcriptGrew(live.encounterId, upToMs); // prettier-ignore
     return true;
   }
 
