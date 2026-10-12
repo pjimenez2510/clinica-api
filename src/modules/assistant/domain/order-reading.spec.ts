@@ -4,6 +4,7 @@ import {
   backedExams,
   blockOf,
   offeredCandidates,
+  spanIn,
   type ReadExam,
 } from './order-reading';
 import { decisionOf, type SuggestionView } from './suggestion';
@@ -47,6 +48,7 @@ describe('the sentence that asks for an exam (AS-103)', () => {
         quote: 'Se solicita biometría hemática y glucosa en ayunas.',
         candidates: [1, 2],
         origin: { kind: 'note', section: 'plan' },
+        named: null, // «examen» is not in the sentence: no title
       },
     ]);
   });
@@ -166,6 +168,7 @@ describe('the sentence that asks for an exam (AS-103)', () => {
         quote: 'Le voy a pedir una ecografía abdominal para ver la vesícula.',
         candidates: [5],
         origin: { kind: 'transcript', fromMs: 4_000, toMs: 12_000 },
+        named: null,
       },
     ]);
   });
@@ -221,5 +224,34 @@ describe('the distance of an accepted exam (AS-109, AS-022)', () => {
   it('AS-109 choosing any of the candidates is «tal cual» (0) and keeps which one; an exam that was not proposed is «con cambios» (1)', () => {
     expect(decisionOf(suggestion, { outcome: 'accept', recordId: 'o1', saved: 'LAB-GLUCOSA-AYUNAS' })).toEqual({ status: 'ACCEPTED', distance: 0, record: { kind: 'service_order', id: 'o1' }, acceptedCode: 'LAB-GLUCOSA-AYUNAS' }); // prettier-ignore
     expect(decisionOf(suggestion, { outcome: 'accept', recordId: 'o1', saved: 'LAB-EMO' }).distance).toBe(1); // prettier-ignore
+  });
+});
+
+describe('the words that name each exam (AS-115)', () => {
+  it('AS-115 cuts the physician’s own words out of the sentence shown, without case or accents, as whole words', () => {
+    const text =
+      'Se solicita  biometría hemática, GLUCOSA en ayunas y radiografía de tórax.';
+    const span = (words: string) => {
+      const at = spanIn(text, words);
+      return at && text.replace(/\s+/g, ' ').slice(at.start, at.start + at.length); // prettier-ignore
+    };
+    expect(span('glucosa en ayunas')).toBe('GLUCOSA en ayunas');
+    expect(span('Biometria Hematica')).toBe('biometría hemática');
+    // Not there, part of a word, or too short to mean anything: no title.
+    expect(span('hemograma')).toBeNull();
+    expect(span('ayun')).toBeNull();
+    expect(span('de')).toBeNull();
+  });
+
+  it('AS-115 a line said aloud keeps where it was named in its stretch, and no word of it', () => {
+    const transcript = [{ startMs: 0, endMs: 5_000, text: 'Le voy a pedir una ecografía abdominal.' }]; // prettier-ignore
+    const backed = backedExams({
+      read: [{ requested: 'ecografía abdominal', quote: 'pedir una ecografía abdominal', candidates: [5] }], // prettier-ignore
+      cleared: transcript[0]!.text,
+      sections: [],
+      transcript,
+      restore: (t) => t,
+    });
+    expect(backed.kept[0]!.named).toEqual({ start: 19, length: 19 });
   });
 });

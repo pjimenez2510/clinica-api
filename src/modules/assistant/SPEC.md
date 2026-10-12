@@ -1235,9 +1235,12 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 
 - **AS-115** — La pestaña Exámenes DEBERÁ mostrar, a quien tiene el permiso y
   con el asistente encendido, «Proponer exámenes» y, debajo de «Propuesta del
-  asistente» y «Revise cada examen antes de añadirlo», cada línea con borde
-  punteado: la frase y de dónde sale (la sección de la nota o el minuto de la
-  conversación), y sus candidatos con su nombre y su tipo, cada uno con
+  asistente» y «Revise cada examen antes de añadirlo», dentro del borde
+  punteado, cada oración una vez, con de dónde sale (la nota o el minuto de
+  la conversación) y las palabras que nombran cada examen marcadas; debajo,
+  cada examen que pide, titulado con esas palabras de la propia oración
+  (`named`, el lugar donde el servidor las encontró; nunca el texto del
+  modelo), y sus candidatos con su nombre y su tipo, cada uno con
   «Aceptar» —que lo añade a la orden en borrador de su tipo, la abierta o una
   nueva, y la guarda sin emitirla— y la línea con «Descartar». Sin el permiso
   o con el asistente apagado NO DEBERÁ mostrar nada de esto; en modo

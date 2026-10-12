@@ -16,7 +16,7 @@ import { noteText } from './problem-coding.prompts';
  * is the system's own, not the patient's text: it travels with `withContext`.
  */
 
-export const EXAMS_PROMPT_VERSION = 'd3-exams-1';
+export const EXAMS_PROMPT_VERSION = 'd3-exams-2';
 export const EXAMS_PURPOSE = 'order-exams';
 export const EXAMS_MAX_TOKENS = 2_000;
 
@@ -30,7 +30,7 @@ Devuelve los exámenes de laboratorio y de imagen que la consulta PIDE hacer aho
 Reglas:
 - Solo lo que se pide hacer. Un examen que solo se menciona (un resultado que el paciente trae, uno que ya se hizo, uno que no hace falta, uno que se pedirá en otra consulta) no se devuelve.
 - Cada examen lleva en "quote" una frase COPIADA LITERALMENTE de la nota o de la conversación que lo pide, sin el nombre de la sección y sin cambiar ni una palabra.
-- "requested" es el examen tal como se pidió («biometría hemática», «eco de abdomen»).
+- "requested" son las palabras de esa frase que nombran el examen, copiadas literalmente («biometría hemática», «eco de abdomen»).
 - "candidates" son los números del catálogo que corresponden a ese examen, del más al menos probable, como mucho 5. Usa solo números del catálogo. Si ninguno corresponde, deja la lista vacía: es la respuesta correcta más a menudo de lo que parece, y es preferible a proponer un examen equivocado.
 - Un examen por elemento: «biometría y glucosa» son dos, con la misma frase.
 - Si la consulta no pide ningún examen, devuelve la lista vacía. Es una respuesta válida.

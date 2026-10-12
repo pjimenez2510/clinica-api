@@ -43,6 +43,45 @@ export interface BackedExam extends ReadExam {
   /** The note's or the conversation's own sentence (P2). */
   quote: string;
   origin: ExamOrigin;
+  /** Where the words that name the exam are in the text shown (`shownText`). */
+  named: NamedSpan | null;
+}
+
+/** AS-115. The words that name an exam, by place in the text shown: no text. */
+export interface NamedSpan {
+  start: number;
+  length: number;
+}
+
+/** The text as the screen shows it: one space between words. */
+export function shownText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * AS-115 (product walk of 12-10-2026). Where `words` are in `text` as shown,
+ * without case or accents, or null: the title of an exam is the physician's
+ * own words cut out of the sentence, never the model's text.
+ */
+export function spanIn(text: string, words: string): NamedSpan | null {
+  // Character by character, each keeping its length: an index in the folded
+  // text is the same index in the text shown.
+  const fold = (value: string) =>
+    [...value]
+      .map((char) => {
+        const plain = char.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase(); // prettier-ignore
+        return plain.length === char.length ? plain : '?'.repeat(char.length);
+      })
+      .join('');
+  const shown = shownText(text);
+  const wanted = fold(shownText(words));
+  if (wanted.length < 3) return null;
+  const whole = new RegExp(
+    `(^|[^\\p{L}\\p{N}])${wanted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`,
+    'u',
+  ).exec(fold(shown));
+  if (!whole) return null;
+  return { start: whole.index + whole[1]!.length, length: wanted.length };
 }
 
 /** One segment of the transcript (AS-056), in order of start. */
@@ -151,11 +190,17 @@ export function backedExams(input: {
       ? { kind: 'note', section: inNote.section }
       : stretchOf(quote, input.transcript);
     if (!origin) continue;
+    const requested = input.restore(exam.requested).trim();
+    const shown =
+      origin.kind === 'note'
+        ? located.sentence
+        : spokenIn(origin, input.transcript);
     kept.push({
-      requested: input.restore(exam.requested).trim(),
+      requested,
       quote: located.sentence,
       candidates: exam.candidates,
       origin,
+      named: spanIn(shown, requested),
     });
   }
 
@@ -236,6 +281,11 @@ export interface OrderProposal {
   /** The note's sentence; null when it was said in the conversation. */
   quote: string | null;
   origin: ExamOrigin;
+  /**
+   * AS-115. Where the physician named the exam in the text shown: a place,
+   * not words — for the conversation, no text is kept (AS-058).
+   */
+  named: NamedSpan | null;
   candidates: ExamCandidate[];
   /** The candidates' codes, in order: what AS-022's distance reads. */
   codes: string[];

@@ -33,6 +33,13 @@ const lineSchema = z.object({
   /** The note's or the conversation's own sentence (P2). */
   quote: z.string(),
   origin: originSchema,
+  /**
+   * AS-115. Where, in `quote`, the physician named the exam: the screen cuts
+   * the title out of the sentence and marks it. Null when it was not found.
+   */
+  named: z
+    .object({ start: z.number().int(), length: z.number().int() })
+    .nullable(),
   /** AS-104, AS-105. Up to five; none shows only the sentence. */
   candidates: z.array(candidateSchema),
   status: z.enum([

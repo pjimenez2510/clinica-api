@@ -32,11 +32,13 @@ import {
   backedExams,
   blockOf,
   offeredCandidates,
+  shownText,
   spokenIn,
   stillAsked,
   type CandidateBlock,
   type ExamCandidate,
   type ExamOrigin,
+  type NamedSpan,
   type OrderProposal,
   type SpokenSegment,
 } from '../domain/order-reading';
@@ -89,6 +91,8 @@ export interface ExamLineView {
   id: string;
   quote: string;
   origin: ExamOrigin;
+  /** AS-115. Where the physician named the exam in `quote`. */
+  named: NamedSpan | null;
   candidates: ExamCandidateView[];
   status: SuggestionStatus;
   /** The order it went to, once linked. */
@@ -230,6 +234,7 @@ export class OrderProposalService {
         // AS-058 (review G2). The conversation's sentence is not kept.
         quote: exam.origin.kind === 'note' ? exam.quote : null,
         origin: exam.origin,
+        named: exam.named,
         candidates,
         codes,
         orderedAtReading: codes.filter((code) => ordered.includes(code)),
@@ -375,6 +380,11 @@ export class OrderProposalService {
     return {
       lines: shown.map((suggestion) => {
         const proposal = proposalOf(suggestion);
+        const quote = shownText(
+          proposal.origin.kind === 'transcript'
+            ? spokenIn(proposal.origin, transcript)
+            : (proposal.quote ?? ''),
+        );
         // AS-106. Only what the catalogue still orders, as it names it now.
         const candidates = proposal.candidates.flatMap((stored) => {
           const exam = now.get(stored.serviceId);
@@ -393,10 +403,12 @@ export class OrderProposalService {
         return {
           id: suggestion.id,
           // AS-106. Said aloud: read back from its stretch, never stored.
-          quote:
-            proposal.origin.kind === 'transcript'
-              ? spokenIn(proposal.origin, transcript)
-              : (proposal.quote ?? ''),
+          quote,
+          named:
+            proposal.named &&
+            proposal.named.start + proposal.named.length <= quote.length
+              ? proposal.named
+              : null,
           origin: proposal.origin,
           candidates,
           status: suggestion.status,
