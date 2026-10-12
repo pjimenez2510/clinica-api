@@ -258,10 +258,13 @@ prueban con esos números.
 - **SC-090** — Ninguna fila de `ai_run`, línea de log ni mensaje de error del
   módulo contiene texto del prompt, de las instrucciones ni de la respuesta.
 - **SC-091** — En el set simulado (`eval/casos/nota.json`, 10 consultas
-  inventadas, 105 hechos), el borrador del producto trae **0 secciones
-  inventadas** —ninguna fuera de la plantilla ni ninguna cuyas frases sean
-  todas «Nadie lo dijo»— y **≥ 95 %** de los hechos esperados (E-049:
-  105/108), con el proveedor principal.
+  inventadas, 105 hechos) y en el reservado (`eval/casos/nota-reservada.json`,
+  8 consultas que no se usan para ajustar el prompt), el borrador del producto
+  trae **0 secciones inventadas** —ninguna fuera de la plantilla ni ninguna
+  cuyas frases sean todas «Nadie lo dijo»— y **≥ 95 %** de los hechos
+  esperados de las secciones que escribe (E-049: 105/108), con el proveedor
+  principal. Los hechos de diagnóstico se informan aparte: el borrador no
+  escribe diagnósticos (D-249 §2 y §10).
 - **SC-092** — En esa misma corrida, el **p90** de lo que tarda un borrador es
   **≤ 15 s** (plan §5).
 
