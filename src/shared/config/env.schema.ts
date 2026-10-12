@@ -291,6 +291,27 @@ export const envSchema = z.object({
     z.coerce.number().positive().optional(),
   ),
   /**
+   * AS-026 (D-244 §3). Whether the assistant answers at all in this
+   * installation. Off, every assistant route answers 404 as if it did not
+   * exist. The per-site switch arrives with A3; until then, this and the
+   * permission `assistant:use`.
+   */
+  ASSISTANT_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  /**
+   * AS-029. The demonstration mode: the only chain is the fake provider with
+   * the script of the repository, and the pseudonymizer is a fake too. It
+   * exists so the walks and a presentation show the screen without A5 and
+   * without a model. Refused in production, beside the remote switch and
+   * beside any real key (`validateEnv`): with it on there is no road out.
+   */
+  ASSISTANT_FAKE_PROVIDER: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  /**
    * AS-014 (D-239 §3). Keeps the pseudonymized prompt and the raw answer of
    * every attempt in `ai_exchange`, purged 45 days after the note is signed.
    * Off unless declared.
@@ -482,6 +503,30 @@ export function validateEnv(raw: Record<string, unknown>): Env {
             code: 'custom',
             path: ['IDENTITY_PROVIDER_URL'],
             message: 'el proveedor de identidad solo se llama por https',
+          });
+        }
+      }
+      // AS-029. The fake pseudonymizer clears nothing, so the demonstration
+      // mode must leave no road to a provider: not in production, not with
+      // the remote switch, not with a key that a later change could use.
+      if (env.ASSISTANT_FAKE_PROVIDER) {
+        const roads = [
+          env.NODE_ENV === 'production' && 'NODE_ENV=production',
+          env.ASSISTANT_ALLOW_REMOTE && 'ASSISTANT_ALLOW_REMOTE=true',
+          env.ASSISTANT_GEMINI_API_KEY !== undefined &&
+            'ASSISTANT_GEMINI_API_KEY',
+          env.ASSISTANT_ANTHROPIC_API_KEY !== undefined &&
+            'ASSISTANT_ANTHROPIC_API_KEY',
+          env.ASSISTANT_OPENAI_API_KEY !== undefined &&
+            'ASSISTANT_OPENAI_API_KEY',
+          // The fake clears nothing but names: kept text would be the note.
+          env.ASSISTANT_EXCHANGE_LOG && 'ASSISTANT_EXCHANGE_LOG=true',
+        ].filter((road): road is string => road !== false);
+        if (roads.length > 0) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['ASSISTANT_FAKE_PROVIDER'],
+            message: `el modo de demostración no admite un camino a un proveedor real (${roads.join(', ')}): apáguelo o quite eso`,
           });
         }
       }

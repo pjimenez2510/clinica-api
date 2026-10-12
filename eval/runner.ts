@@ -113,9 +113,12 @@ export class TaggingStore implements AiRunStore {
    */
   unrecorded = false;
 
-  async record(run: AiRunRecord, exchange: AiExchangeRecord | null) {
+  async record(
+    run: AiRunRecord,
+    exchange: AiExchangeRecord | null,
+  ): Promise<string> {
     try {
-      await this.inner.record(run, exchange);
+      return await this.inner.record(run, exchange);
     } catch (error) {
       this.unrecorded = true;
       throw error;

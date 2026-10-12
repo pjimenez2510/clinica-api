@@ -3,15 +3,22 @@ import { describe, expect, it } from 'vitest';
 import {
   ConflictError,
   ExternalServiceError,
+  ForbiddenError,
   NotFoundError,
-  ValidationError,
   QuotaExceededError,
+  ValidationError,
 } from '../../../shared/domain/errors/domain-error';
 import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogue';
 
 import {
+  AssistantEncounterClosedError,
+  AssistantEncounterNotFoundError,
+  AssistantNoteEmptyError,
   AssistantNotConfiguredError,
+  AssistantNotEncounterOwnerError,
+  AssistantProposalNotKeptError,
   AssistantSpendingCeilingReachedError,
+  SuggestionDiagnosisMismatchError,
   LlmCallFailed,
   SuggestionAlreadyDecidedError,
   SuggestionInvalidError,
@@ -111,5 +118,64 @@ describe('assistant errors', () => {
     expect(error.received.raw).toBe(prompt);
     expect(Object.keys(error)).not.toContain('received');
     expect(JSON.stringify(error)).not.toContain(prompt);
+  });
+
+  it.each([
+    [
+      'AS-039',
+      () => new AssistantEncounterNotFoundError(),
+      'ASSISTANT_ENCOUNTER_NOT_FOUND',
+      NotFoundError,
+      /no existe en las sedes/,
+    ],
+    [
+      'AS-039',
+      () => new AssistantNotEncounterOwnerError(),
+      'ASSISTANT_NOT_ENCOUNTER_OWNER',
+      ForbiddenError,
+      /profesional de la atención/,
+    ],
+    [
+      'AS-039',
+      () => new AssistantEncounterClosedError(),
+      'ASSISTANT_ENCOUNTER_CLOSED',
+      ConflictError,
+      /ya no admite/,
+    ],
+    [
+      'AS-028',
+      () => new AssistantNoteEmptyError(),
+      'ASSISTANT_NOTE_EMPTY',
+      ValidationError,
+      /nota/,
+    ],
+    [
+      'AS-037',
+      () => new SuggestionDiagnosisMismatchError(),
+      'SUGGESTION_DIAGNOSIS_MISMATCH',
+      ValidationError,
+      /diagnóstico/,
+    ],
+    [
+      'AS-040',
+      () => new AssistantProposalNotKeptError(),
+      'ASSISTANT_PROPOSAL_NOT_KEPT',
+      ExternalServiceError,
+      /Vuelva a pedir/,
+    ],
+  ] as const)(
+    '%s answers its code, its category and a sentence for the user',
+    (_id, make, code, base, title) => {
+      const error = make();
+
+      expect(error.code).toBe(code);
+      expect(error).toBeInstanceOf(base);
+      expect(error.userTitle).toMatch(title);
+      expect(DOMAIN_ERROR_CODES).toContain(error.code);
+    },
+  );
+
+  it('AS-040 a proposal that could not be kept may be asked for again', () => {
+    expect(new AssistantProposalNotKeptError().isRetryable).toBe(true);
   });
 });

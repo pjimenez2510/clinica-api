@@ -67,6 +67,16 @@ export const DOMAIN_ERROR_CODES = [
   'SUGGESTION_ALREADY_DECIDED',
   'SUGGESTION_INVALID',
   'SUGGESTION_NOT_FOUND',
+  // AS-028, AS-036, AS-037, AS-039, AS-040 (D1): la atención fuera de alcance,
+  // de otro profesional o cerrada; la nota vacía; el diagnóstico de otra
+  // atención; y la propuesta sin su intento registrado.
+  'ASSISTANT_ENCOUNTER_NOT_FOUND',
+  'ASSISTANT_NOT_ENCOUNTER_OWNER',
+  'ASSISTANT_ENCOUNTER_CLOSED',
+  'ASSISTANT_NOTE_EMPTY',
+  'SUGGESTION_DIAGNOSIS_MISMATCH',
+  'ASSISTANT_PROPOSAL_NOT_KEPT',
+  'ASSISTANT_READING_IN_PROGRESS',
   // AS-006, AS-007, AS-008, AS-017 (D-239): el asistente sin proveedor
   // configurado (502), ningún proveedor respondió o la respuesta no sirvió
   // (503 reintentable / 502), y el techo de gasto del mes (429).

@@ -194,6 +194,80 @@ describe('validateEnv', () => {
     });
   });
 
+  describe('AS-026 AS-029 the assistant switch and its demonstration mode', () => {
+    it('AS-026 AS-029 are born off', () => {
+      const env = validateEnv(base);
+
+      expect(env.ASSISTANT_ENABLED).toBe(false);
+      expect(env.ASSISTANT_FAKE_PROVIDER).toBe(false);
+    });
+
+    it('AS-026 only `true` turns the assistant on', () => {
+      expect(
+        validateEnv({ ...base, ASSISTANT_ENABLED: 'true' }).ASSISTANT_ENABLED,
+      ).toBe(true);
+      expect(() => validateEnv({ ...base, ASSISTANT_ENABLED: 'yes' })).toThrow(
+        /ASSISTANT_ENABLED/,
+      );
+    });
+
+    it('AS-029 accepts the demonstration mode in development with no road to a provider', () => {
+      const env = validateEnv({ ...base, ASSISTANT_FAKE_PROVIDER: 'true' });
+
+      expect(env.ASSISTANT_FAKE_PROVIDER).toBe(true);
+    });
+
+    it('AS-029 refuses the demonstration mode in production', () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          NODE_ENV: 'production',
+          TRUST_PROXY_HOPS: '1',
+          WEB_BASE_URL: 'https://clinica.example.ec',
+          ASSISTANT_FAKE_PROVIDER: 'true',
+        }),
+      ).toThrow(/ASSISTANT_FAKE_PROVIDER/);
+    });
+
+    it('AS-029 refuses the demonstration mode beside the exchange log, which would keep the note', () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          ASSISTANT_FAKE_PROVIDER: 'true',
+          ASSISTANT_EXCHANGE_LOG: 'true',
+        }),
+      ).toThrow(/ASSISTANT_FAKE_PROVIDER/);
+      // Control: the log alone, without the demonstration, is accepted.
+      expect(() =>
+        validateEnv({ ...base, ASSISTANT_EXCHANGE_LOG: 'true' }),
+      ).not.toThrow();
+    });
+
+    it('AS-029 refuses the demonstration mode beside the remote switch', () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          ASSISTANT_FAKE_PROVIDER: 'true',
+          ASSISTANT_ALLOW_REMOTE: 'true',
+        }),
+      ).toThrow(/ASSISTANT_FAKE_PROVIDER/);
+    });
+
+    it('AS-029 refuses the demonstration mode beside any real provider key', () => {
+      for (const key of [
+        'ASSISTANT_GEMINI_API_KEY',
+        'ASSISTANT_ANTHROPIC_API_KEY',
+        'ASSISTANT_OPENAI_API_KEY',
+      ]) {
+        expect(() =>
+          validateEnv({ ...base, ASSISTANT_FAKE_PROVIDER: 'true', [key]: 'k' }),
+        ).toThrow(/ASSISTANT_FAKE_PROVIDER/);
+        // Control: the same key without the demonstration mode is accepted.
+        expect(() => validateEnv({ ...base, [key]: 'k' })).not.toThrow();
+      }
+    });
+  });
+
   describe('AS-031 AS-032 the local pseudonymizer, clinica-ai', () => {
     const SECRET = 'a'.repeat(64);
 

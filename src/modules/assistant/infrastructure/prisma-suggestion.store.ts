@@ -6,7 +6,14 @@ import type {
   NewSuggestion,
   SuggestionStore,
 } from '../application/suggestion.store';
-import { SuggestionNotFoundError } from '../domain/assistant.errors';
+import {
+  acceptsNewContent,
+  type CodingEncounterStatus,
+} from '../../../shared/clinical/coding-context.port';
+import {
+  AssistantEncounterClosedError,
+  SuggestionNotFoundError,
+} from '../domain/assistant.errors';
 import type {
   SiteScopeFilter,
   SuggestionDecision,
@@ -64,10 +71,18 @@ export class PrismaSuggestionStore implements SuggestionStore {
     const rows = await this.prisma.$transaction(async (tx) => {
       // Out of scope reads as absent: no telling «exists elsewhere».
       const encounters = [...new Set(suggestions.map((each) => each.encounterId))]; // prettier-ignore
-      const inScope = await tx.encounter.count({
-        where: { id: { in: encounters }, ...siteFilter(sites) },
-      });
-      if (inScope !== encounters.length) throw new SuggestionNotFoundError();
+      // AS-039. Locked, so a signature or a close from another tab waits for
+      // this insert or is seen by it: a reading of up to 90 s keeps nothing
+      // on an attention that no longer takes new clinical content.
+      const locked = await tx.$queryRaw<{ status: CodingEncounterStatus }[]>`
+        SELECT status::text AS status FROM encounter
+         WHERE id = ANY(${encounters}::uuid[])
+           ${sites === 'all' ? Prisma.empty : Prisma.sql`AND site_id = ANY(${[...sites]}::uuid[])`}
+         FOR UPDATE`;
+      if (locked.length !== encounters.length) throw new SuggestionNotFoundError(); // prettier-ignore
+      if (!locked.every(({ status }) => acceptsNewContent(status))) {
+        throw new AssistantEncounterClosedError();
+      }
       const created: SuggestionRow[] = [];
       for (const suggestion of suggestions) {
         created.push(

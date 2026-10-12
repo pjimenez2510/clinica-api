@@ -80,11 +80,11 @@ class MemoryStore implements AiRunStore {
   purges = 0;
   failing = false;
   constructor(private readonly spent = 0) {}
-  record(run: AiRunRecord, exchange: AiExchangeRecord | null): Promise<void> {
+  record(run: AiRunRecord, exchange: AiExchangeRecord | null): Promise<string> {
     if (this.failing) return Promise.reject(new Error(`insert failed: ${PROMPT}`)); // prettier-ignore
     this.runs.push(run);
     if (exchange) this.exchanges.push(exchange);
-    return Promise.resolve();
+    return Promise.resolve(`run-${this.runs.length}`);
   }
   spentSince(): Promise<number> {
     return Promise.resolve(
@@ -174,7 +174,7 @@ describe('RoutingLlmClient', () => {
     expect(store.runs).toEqual([]);
   });
 
-  it('AS-007 AS-011 with the principal answering 503, the fallback answers and both attempts are recorded', async () => {
+  it('AS-007 AS-011 AS-036 with the principal answering 503, the fallback answers, both attempts are recorded and the answer names the row that answered', async () => {
     const gemini = new ScriptedProvider('gemini', {
       kind: 'status',
       status: 503,
@@ -189,6 +189,7 @@ describe('RoutingLlmClient', () => {
       provider: 'anthropic',
       model: 'anthropic-quality',
       requestId: 'request-1',
+      runId: 'run-2',
     });
     expect(anthropic.calls[0]!.prompt).toBe(PROMPT);
     expect(store.runs).toMatchObject([
@@ -385,6 +386,8 @@ describe('RoutingLlmClient', () => {
     const result = await client.generate(request());
 
     expect(result.value).toEqual({ summary: 'Dolor torácico opresivo' });
+    // AS-036. No row, so no id for a proposal to link to.
+    expect(result.runId).toBeNull();
     expect(warn).toHaveBeenCalled();
     expect(JSON.stringify(warn.mock.calls)).not.toContain(PROMPT);
   });
