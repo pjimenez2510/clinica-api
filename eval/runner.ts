@@ -37,7 +37,7 @@ export interface CallKey {
   caseId: string;
   provider: ProviderName;
   arm: Arm;
-  role: 'answer' | 'judge';
+  role: 'answer' | 'judge' | 'follow-up';
 }
 
 export interface Attempt extends Omit<CallKey, 'provider'> {
@@ -267,11 +267,21 @@ export async function runEvaluation(options: RunOptions): Promise<RunOutcome> {
                           request,
                         )
                       ).value;
+              const followUp: Ask = async (request) =>
+                (
+                  await ask(
+                    provider,
+                    { ...key, role: 'follow-up' },
+                    item,
+                    request,
+                  )
+                ).value;
               ({ shown, scores } = await task.evaluate(
                 item,
                 arm,
                 value,
                 judgeAsk,
+                followUp,
               ));
             }
             calls.push({

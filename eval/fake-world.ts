@@ -14,7 +14,11 @@ import {
   FakeLlmProvider,
 } from '../src/modules/assistant/infrastructure/fake-llm.provider.ts';
 
-import type { NoteCase, PrescriptionCase } from './cases.ts';
+import type {
+  NoteCase,
+  PrescriptionCase,
+  PrescriptionNoteCase,
+} from './cases.ts';
 import type { Catalogues } from './catalogue.ts';
 import type { CallKey } from './runner.ts';
 import { seeded } from './stats.ts';
@@ -149,6 +153,12 @@ export class FakeWorld {
         );
       case 'note':
         return answer(this.note(item as NoteCase, right));
+      case 'receta-nota':
+        return answer(
+          key.role === 'follow-up'
+            ? this.choices(item as PrescriptionNoteCase, request.prompt, right)
+            : this.lines(item as PrescriptionNoteCase),
+        );
     }
   }
 
@@ -195,6 +205,63 @@ export class FakeWorld {
       cnmbCode: right ? e.cnmbCode : 'ZZ99',
       presentation: index === undefined || index < 0 ? null : index + 1,
       ...schedule,
+    };
+  }
+
+  /**
+   * AS-079. Each sentence of the Plan as a line, named by its first word, its
+   * strength read off the sentence: the distractors find no candidate.
+   */
+  private lines(item: PrescriptionNoteCase) {
+    return {
+      lines: item.plan
+        .split(/(?<=\.)\s+/)
+        .map((sentence) => sentence.replace(/\.$/, '').trim())
+        .filter((sentence) => sentence !== '')
+        .map((quote) => {
+          const strength = /(\d+(?:[.,]\d+)?\s*(?:mg|mcg|g)(?:\/\d+\s*mL)?)/i.exec(quote); // prettier-ignore
+          return {
+            drug: quote.split(/[\s,]+/)[0] ?? quote,
+            strength: strength ? strength[1] : null,
+            form: null,
+            doseAmount: null,
+            doseUnit: null,
+            route: null,
+            frequency: null,
+            frequencyText: null,
+            durationDays: null,
+            instructions: null,
+            quote,
+          };
+        }),
+    };
+  }
+
+  /**
+   * AS-079. Right: the candidate the case expects, in its presentation;
+   * wrong: none. Read from the numbered candidates the prompt carries.
+   */
+  private choices(item: PrescriptionNoteCase, prompt: string, right: boolean) {
+    const blocks = prompt.split(/^Para la línea /m).slice(1);
+    return {
+      choices: blocks.map((block) => {
+        const line = Number(/^(\d+):/.exec(block)?.[1]);
+        if (!right) return { line, medicine: null, presentation: null };
+        const medicines = block.split(/^\s+(?=\d+\. )/m).slice(1);
+        for (const [index, text] of medicines.entries()) {
+          const code = /\(([A-Z0-9]+)\)/.exec(text)?.[1];
+          const expected = item.expected.find((each) => each.cnmbCode === code);
+          if (!expected) continue;
+          const presentations = [...text.matchAll(/^\s+(\d+)\) .* · (.+)$/gm)];
+          const match = presentations.find(([, , c]) => c === expected.concentration); // prettier-ignore
+          return {
+            line,
+            medicine: index + 1,
+            presentation: match ? Number(match[1]) : null,
+          };
+        }
+        return { line, medicine: null, presentation: null };
+      }),
     };
   }
 

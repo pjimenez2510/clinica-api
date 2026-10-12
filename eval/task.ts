@@ -47,7 +47,7 @@ export interface EvalCase {
  * returns as `shown` is what a physician would see, kept in the result.
  */
 export interface EvalTask<Case extends EvalCase, Value> {
-  name: 'cie10' | 'cie10-problema' | 'prescription' | 'note';
+  name: 'cie10' | 'cie10-problema' | 'prescription' | 'receta-nota' | 'note';
   title: string;
   arms: readonly Arm[];
   /** EV-7. The version of each arm's prompt, stored with every result. */
@@ -55,11 +55,18 @@ export interface EvalTask<Case extends EvalCase, Value> {
   metrics: readonly Metric[];
   /** PLAN-ASISTENTE-IA §5: the p90 the answer must stay under. */
   latencyBudgetMs: number;
+  /**
+   * How many calls one answer takes: a task measured as a product runs it
+   * may ask the SAME provider again (`followUp`), and the estimate counts it.
+   */
+  callsPerAnswer?: number;
   request(item: Case, arm: Arm): LlmRequest<z.ZodType<Value>>;
   evaluate(
     item: Case,
     arm: Arm,
     value: Value,
     judge: Ask | null,
+    /** The provider being measured, asked again (role `follow-up`). */
+    followUp?: Ask,
   ): Promise<{ shown: unknown; scores: Scores }>;
 }
