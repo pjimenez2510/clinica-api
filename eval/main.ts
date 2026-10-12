@@ -220,7 +220,11 @@ export async function runFromArgs(
   if (wanted.includes('cie10-problema')) {
     const own = inventedCie10Cases(invented.cie10.cases.slice(0, limit));
     const fromCodiEsp = sampled?.cases ?? [];
-    const task = cie10ByProblemTask(catalogues, [...own, ...fromCodiEsp]);
+    const task = cie10ByProblemTask(
+      catalogues,
+      [...own, ...fromCodiEsp],
+      codiesp?.rows ?? [],
+    );
     add(task, [...own, ...fromCodiEsp]);
     casesMeta.push({
       task: 'cie10-problema',

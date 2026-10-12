@@ -33,7 +33,13 @@ const CASES = [
   item('a', ['J02.9']),
   item('b', ['I10.X']),
   item('c', ['I10.X']),
-  item('d', ['N39.0'], 'codiesp'),
+  item('codiesp-S0001-1', ['N39.0'], 'codiesp'),
+];
+/** The corpus: N39.0 is coded in another article too, I10 only in S0001. */
+const CORPUS = [
+  { article: 'S0001', phrase: 'infección urinaria', code: 'n39.0' },
+  { article: 'S0002', phrase: 'itu', code: 'n39.0' },
+  { article: 'S0001', phrase: 'hta', code: 'i10' },
 ];
 
 describe('cie10-problema (AS-042)', () => {
@@ -77,8 +83,21 @@ describe('cie10-problema (AS-042)', () => {
     const a = await task.evaluate(CASES[0]!, 'D', { codes: ['J02.9'] }, null);
     expect(a.scores.baselineRecall5).toBe(0);
     expect(a.scores.gainOverBaseline).toBe(1);
-    // d's source is CodiEsp: the invented set's codes do not count for it.
+    // CodiEsp's baseline is its whole corpus less the case's own article.
     const d = await task.evaluate(CASES[3]!, 'D', { codes: [] }, null);
     expect(d.scores.baselineRecall5).toBe(0);
+    const withCorpus = cie10ByProblemTask(catalogues, CASES, CORPUS);
+    const found = await withCorpus.evaluate(
+      CASES[3]!,
+      'D',
+      { codes: [] },
+      null,
+    );
+    // N39.0 is in S0002 as well: the clinic codes it, without this patient.
+    expect(found.scores.baselineRecall5).toBe(1);
+    const alone = cie10ByProblemTask(catalogues, CASES, CORPUS.filter((row) => row.article === 'S0001')); // prettier-ignore
+    const none = await alone.evaluate(CASES[3]!, 'D', { codes: [] }, null);
+    // Only its own article had it: leaving it out leaves nothing.
+    expect(none.scores.baselineRecall5).toBe(0);
   });
 });

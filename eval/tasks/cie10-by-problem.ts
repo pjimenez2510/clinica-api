@@ -8,7 +8,8 @@ import {
 } from '../../src/modules/assistant/application/problem-coding.prompts.ts';
 import { candidateCodes } from '../../src/shared/clinical/cie10-lookup.port.ts';
 import { caseText } from '../case-text.ts';
-import { formatCode, type Catalogues } from '../catalogue.ts';
+import type { CodiEspRow } from '../cases.ts';
+import { formatCode, toWhoCode, type Catalogues } from '../catalogue.ts';
 import type { EvalTask } from '../task.ts';
 
 import type { Cie10EvalCase } from './cie10.ts';
@@ -36,25 +37,44 @@ type CodesAnswer = z.infer<typeof codesAnswer>;
 export function cie10ByProblemTask(
   catalogues: Catalogues,
   cases: readonly Cie10EvalCase[],
+  codiesp: readonly CodiEspRow[] = [],
 ): EvalTask<Cie10EvalCase, CodesAnswer> {
   const { cie10 } = catalogues;
-  // Within each source: the invented set is not CodiEsp's clinic.
-  const frequency = new Map<string, Map<string, number>>();
-  for (const item of cases) {
-    const counts = frequency.get(item.origin) ?? new Map<string, number>();
-    for (const code of item.codes) counts.set(code, (counts.get(code) ?? 0) + 1); // prettier-ignore
-    frequency.set(item.origin, counts);
+  // AS-027. «What the clinic codes most»: for CodiEsp, the whole corpus —
+  // every phrase of train and dev, in the WHO list — less the case's own
+  // article, which is the patient being coded (leave one article out); for
+  // the invented set, the set itself less the case. Counted inside a sample
+  // of 60 phrases nothing repeats, and the baseline would read 0 for want of
+  // a clinic, not for want of skill.
+  const corpus = new Map<string, number>();
+  const byArticle = new Map<string, Map<string, number>>();
+  for (const row of codiesp) {
+    const code = toWhoCode(row.code, cie10);
+    if (code === null) continue;
+    corpus.set(code, (corpus.get(code) ?? 0) + 1);
+    const own = byArticle.get(row.article) ?? new Map<string, number>();
+    own.set(code, (own.get(code) ?? 0) + 1);
+    byArticle.set(row.article, own);
   }
-  const baselineOf = (item: Cie10EvalCase): string[] => {
-    const own = new Set(item.codes);
-    return [...(frequency.get(item.origin) ?? [])]
-      .map(
-        ([code, times]) => [code, own.has(code) ? times - 1 : times] as const,
-      )
+  const invented = new Map<string, number>();
+  for (const item of cases) {
+    if (item.origin !== 'invented') continue;
+    for (const code of item.codes) invented.set(code, (invented.get(code) ?? 0) + 1); // prettier-ignore
+  }
+  const top = (counts: Iterable<readonly [string, number]>): string[] =>
+    [...counts]
       .filter(([, times]) => times > 0)
       .sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
       .slice(0, SHOWN)
       .map(([code]) => code);
+  const baselineOf = (item: Cie10EvalCase): string[] => {
+    if (item.origin === 'invented') {
+      const own = new Set(item.codes);
+      return top([...invented].map(([code, times]) => [code, own.has(code) ? times - 1 : times] as const)); // prettier-ignore
+    }
+    const article = articleOf(item.id);
+    const own = byArticle.get(article) ?? new Map<string, number>();
+    return top([...corpus].map(([code, times]) => [code, times - (own.get(code) ?? 0)] as const)); // prettier-ignore
   };
   const resolve = (written: string): string | null =>
     candidateCodes(written).find((form) => cie10.has(form)) ?? null;
@@ -138,4 +158,9 @@ export function cie10ByProblemTask(
       });
     },
   };
+}
+
+/** `codiesp-<article>-<n>` (codiEspCases) → the article, which has dashes too. */
+function articleOf(id: string): string {
+  return id.replace(/^codiesp-/, '').replace(/-\d+$/, '');
 }

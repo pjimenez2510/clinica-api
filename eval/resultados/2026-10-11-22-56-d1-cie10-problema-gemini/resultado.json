@@ -1,0 +1,7929 @@
+{
+  "label": "d1-cie10-problema-gemini",
+  "ledger": "/Users/pjimenez/.clinica-eval/gasto",
+  "fake": false,
+  "startedAt": "2026-10-11 22:56:48",
+  "finishedAt": "2026-10-11 23:04:09",
+  "commit": "f9ea2611+cambios",
+  "seed": 42,
+  "ceilingUsd": 0.5,
+  "providers": [
+    {
+      "name": "gemini",
+      "model": "gemini-3.8-flash"
+    }
+  ],
+  "withoutKey": [
+    "openai"
+  ],
+  "judge": null,
+  "tasks": [
+    {
+      "name": "cie10-problema",
+      "promptVersions": {
+        "A": "d1-codes-1",
+        "D": "d1-codes-1"
+      }
+    }
+  ],
+  "catalogues": [
+    {
+      "file": "cie10-oms-deis-2026-08.xlsx",
+      "sha256": "0d5e19d5d68856aee9379cc91ec16ac931cbfb60dcd06575dec5089cc0a5a75a"
+    },
+    {
+      "file": "cnmb-2026.xlsx",
+      "sha256": "e968d14c9fa3896e7e5cfcb2eb9717b2cde25a7483387ce7f5ced3d62dbdf2e1"
+    },
+    {
+      "file": "llm-pricing.json",
+      "sha256": "9af59d090989ecccfb55aaf1e1d0682a2388e58c51ff0306be16caa4d5464557"
+    }
+  ],
+  "cases": [
+    {
+      "task": "cie10-problema",
+      "source": "cie10-propios.json",
+      "sha256": "e85307a4b2c69421b0bfecb47b7ede84f812d2f57c3eb734f9d361204067ae29",
+      "n": 45
+    },
+    {
+      "task": "cie10-problema",
+      "source": "CodiEsp",
+      "sha256": "a2164fc9d513c019d1d5f092b889228146412f5681e96a97cbe6a7e213c43608",
+      "n": 60
+    }
+  ],
+  "codiesp": {
+    "sha256": "a2164fc9d513c019d1d5f092b889228146412f5681e96a97cbe6a7e213c43608",
+    "rows": 11129,
+    "withoutEquivalent": 1245,
+    "sample": 60
+  },
+  "stopped": null,
+  "calls": [
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-01",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J00.X",
+        "J06.9",
+        "J39.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-01",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J00.X",
+        "J06.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-02",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I10.X",
+        "Z09.8",
+        "Z09.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-02",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I10.X",
+        "Z09.8",
+        "Z09.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-03",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "E11.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-03",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "E11.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-04",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N30.0",
+        "N30.9",
+        "N39.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-04",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N39.0",
+        "N30.0",
+        "N30.9",
+        "N34.1",
+        "N34.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-05",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J03.9",
+        "J03.0",
+        "J03.8",
+        "J35.0",
+        "J02.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-05",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J03.9",
+        "J03.0",
+        "J03.8",
+        "J06.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-06",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "A08.4",
+        "A08.3",
+        "A09.0",
+        "A09.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-06",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "A08.4",
+        "A08.3",
+        "A09.0",
+        "A09.X",
+        "A09.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0.2,
+        "inventedShown": 0.2
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-07",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K29.7",
+        "K29.1",
+        "K29.5",
+        "K29.6",
+        "K29.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-07",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K29.7",
+        "K29.6",
+        "K29.5",
+        "K29.1",
+        "K29.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-08",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J20.9",
+        "J20.8",
+        "J20.0",
+        "J20.1",
+        "J20.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-08",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J20.9",
+        "J20.8",
+        "J20.0",
+        "J20.1",
+        "J20.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-09",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "M54.5",
+        "M54.9",
+        "M53.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-09",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "M54.5",
+        "M54.9",
+        "M53.8",
+        "M53.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-10",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "G44.2",
+        "R51.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-10",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "G44.2",
+        "R51.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-11",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J45.9",
+        "J45.0",
+        "J45.1",
+        "J45.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-11",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J45.9",
+        "J45.0",
+        "J45.1",
+        "J45.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-12",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "E78.0",
+        "E78.2",
+        "E78.4",
+        "E78.5",
+        "E78.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-12",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "E78.0",
+        "E78.2",
+        "E78.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-13",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "E66.9",
+        "E66.0",
+        "E66.8",
+        "E66.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-13",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "E66.9",
+        "E66.0",
+        "E66.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-14",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K59.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-14",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K59.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-15",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B35.4",
+        "B35.9",
+        "B35.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-15",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B35.4",
+        "B35.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-16",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "H10.9",
+        "H10.0",
+        "H10.1",
+        "H10.2",
+        "H10.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-16",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "H10.9",
+        "H10.0",
+        "H10.1",
+        "H10.2",
+        "H10.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-17",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "H66.9",
+        "H66.0",
+        "H65.0",
+        "H65.1",
+        "H67.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-17",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "H66.9",
+        "H66.0",
+        "H65.0",
+        "H65.1",
+        "H67.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-18",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J01.9",
+        "J01.0",
+        "J01.1",
+        "J01.2",
+        "J01.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-18",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J01.9",
+        "J01.0",
+        "J01.1",
+        "J01.4",
+        "J01.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-19",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "F41.1",
+        "F41.9",
+        "F41.8",
+        "F41.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-19",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "F41.1",
+        "F41.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-20",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "F32.9",
+        "F32.0",
+        "F32.1",
+        "F32.2",
+        "F33.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-20",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "F32.9",
+        "F32.0",
+        "F32.1",
+        "F32.2",
+        "F32.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-21",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "G43.9",
+        "G43.0",
+        "G43.1",
+        "G43.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-21",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "G43.9",
+        "G43.0",
+        "G43.1",
+        "G43.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-22",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N30.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-22",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N30.0",
+        "N30.9",
+        "N39.0",
+        "N30.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-23",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B86.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-23",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B86.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-24",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "D50.9",
+        "D50.8",
+        "D50.0",
+        "D64.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-24",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "D50.9",
+        "D50.8",
+        "D50.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-25",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K21.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-25",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K21.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-26",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "M17.9",
+        "M17.1",
+        "M17.0",
+        "M17.5",
+        "M19.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-26",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "M17.9",
+        "M17.1",
+        "M17.0",
+        "M17.5",
+        "M17.3"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-27",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "E03.9",
+        "E03.8",
+        "E03.1",
+        "E03.0",
+        "E02.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-27",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "E03.9",
+        "E03.8",
+        "E03.1",
+        "E89.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-28",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J18.9",
+        "J18.0",
+        "J15.9",
+        "J13.X",
+        "J18.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-28",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J18.9",
+        "J18.0",
+        "J15.9",
+        "J18.1",
+        "J13.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-29",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R50.9",
+        "R50.2",
+        "R50.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-29",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R50.9",
+        "R50.2",
+        "R50.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-30",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "S93.4"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-30",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "S93.4"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-31",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B37.3",
+        "N77.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-31",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B37.3",
+        "N77.1",
+        "B37.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-32",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J06.9",
+        "J06.8",
+        "J00.X",
+        "J02.9",
+        "J03.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-32",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J06.9",
+        "J06.8",
+        "J00.X",
+        "J02.9",
+        "J03.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-33",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K30.X",
+        "F45.3"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-33",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K30.X",
+        "F45.3"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-34",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I83.9",
+        "I83.2",
+        "I83.0",
+        "I83.1",
+        "I87.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-34",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I83.9",
+        "I83.0",
+        "I83.1",
+        "I83.2",
+        "I87.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-35",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R42.X",
+        "H81.9",
+        "H81.1",
+        "H81.3",
+        "H81.4"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-35",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R42.X",
+        "H81.9",
+        "H81.3",
+        "H81.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-36",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J02.9",
+        "J02.8",
+        "J02.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-36",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J02.9",
+        "J02.0",
+        "J02.8",
+        "J00.X",
+        "J06.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-37",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N40.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-37",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N40.X",
+        "D29.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-38",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K80.2",
+        "K80.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-38",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K80.2",
+        "K80.8",
+        "K80.5"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-39",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I48.0",
+        "I48.1",
+        "I48.2",
+        "I48.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-39",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I48.0",
+        "I48.9",
+        "I48.1",
+        "I48.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-40",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I50.9",
+        "I50.0",
+        "I50.1",
+        "I11.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0.2,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-40",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I50.9",
+        "I50.0",
+        "I50.1",
+        "I11.0",
+        "I50.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0.2,
+        "inventedShown": 0.2
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-41",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J44.9",
+        "J44.8",
+        "J44.1",
+        "J44.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-41",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "J44.9",
+        "J44.8",
+        "J44.0",
+        "J44.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-42",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "G47.0",
+        "F51.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-42",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "G47.0",
+        "F51.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-43",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "L70.0",
+        "L70.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-43",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "L70.0",
+        "L70.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-44",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B01.9",
+        "B01.8",
+        "B01.2",
+        "B01.0",
+        "B01.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-44",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B01.9",
+        "B01.8",
+        "B01.2",
+        "B01.0",
+        "B01.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-45",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "A90.X",
+        "A97.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0.5,
+        "inventedShown": 0.5
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-45",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 0,
+        "invented": 1,
+        "inventedShown": null
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0376-78922009000100011-1-2919",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N48.8",
+        "N48.9",
+        "R22.9",
+        "D29.0",
+        "C60.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0376-78922009000100011-1-2919",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N48.8",
+        "N48.9",
+        "R22.9",
+        "D29.0",
+        "C60.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000100010-2-423",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "M54.5",
+        "M54.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000100010-2-423",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "M54.5",
+        "M54.9",
+        "M54.4",
+        "M54.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082007000500016-1-7428",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K92.1",
+        "K92.2",
+        "K52.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0.25,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082007000500016-1-7428",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K92.1",
+        "K92.2",
+        "A09.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000900012-1-6023",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I10.X",
+        "I15.9",
+        "I15.0",
+        "I15.8",
+        "I15.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 1,
+        "gainOverBaseline": 0,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000900012-1-6023",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I10.X",
+        "I15.9",
+        "I15.8",
+        "I15.0",
+        "I15.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 1,
+        "gainOverBaseline": 0,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000100010-2-420",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "D30.0",
+        "N28.1",
+        "D41.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000100010-2-420",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "D30.0",
+        "N28.1",
+        "D41.0",
+        "Q61.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-57352007000200017-1-1253",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "F05.9",
+        "F22.0",
+        "F05.0",
+        "F22.9",
+        "F29.X"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 0,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-57352007000200017-1-1253",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "F05.9",
+        "F05.0",
+        "F05.8",
+        "F22.0",
+        "F29.X"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 0,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912007000200007-3-6374",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R34.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912007000200007-3-6374",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R34.X",
+        "N17.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1699-695X2016000200009-1-8399",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "M21.7",
+        "R27.8",
+        "R27.0",
+        "G11.9",
+        "Q74.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1699-695X2016000200009-1-8399",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R27.8",
+        "M21.7",
+        "R27.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000200013-1-471",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "F17.2",
+        "Z72.0",
+        "F17.1",
+        "T65.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000200013-1-471",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "F17.2",
+        "Z72.0",
+        "F17.1",
+        "F17.9",
+        "F17.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1134-80462005000300004-1-7858",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K26.9",
+        "K26.7",
+        "K26.3",
+        "K26.5",
+        "K26.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1134-80462005000300004-1-7858",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K26.9",
+        "K26.7",
+        "K26.3",
+        "K27.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000100019-1-8344",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "C78.5",
+        "C18.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000100019-1-8344",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "C78.5",
+        "C18.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992006000800007-1-2169",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B34.0",
+        "B97.0",
+        "A08.2",
+        "B30.0",
+        "J12.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992006000800007-1-2169",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B97.0",
+        "B34.0",
+        "A08.2",
+        "B30.0",
+        "J12.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912009000900008-1-6444",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "Z92.6",
+        "Z51.1",
+        "Z92.8",
+        "Z85.9"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912009000900008-1-6444",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "Z51.1",
+        "Z92.6",
+        "Z08.2"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142008000100008-1-5873",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "D41.4",
+        "D30.3",
+        "D48.1",
+        "C67.9",
+        "N32.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142008000100008-1-5873",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "D41.4",
+        "D30.3",
+        "D48.1",
+        "C67.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952014000200018-1-1562",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "A41.9",
+        "A41.8",
+        "P36.9",
+        "O85.X",
+        "R65.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952014000200018-1-1562",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "A41.9",
+        "A41.8",
+        "P36.9",
+        "O85.X",
+        "R57.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062005000700013-1-753",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N48.3"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062005000700013-1-753",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N48.3"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0365-66912003000600010-1-6915",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R74.0",
+        "R74.8",
+        "R74.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0365-66912003000600010-1-6915",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R74.0",
+        "R74.8",
+        "R74.9",
+        "K76.8",
+        "K76.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-76322015000100011-1-5158",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "F98.5",
+        "F80.8",
+        "F80.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-76322015000100011-1-5158",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "F98.5"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 0,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912006000100005-1-6350",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "E86.X",
+        "P74.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912006000100005-1-6350",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "E86.X",
+        "P74.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1137-66272009000300015-1-4742",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "G83.2",
+        "G83.3",
+        "R29.8",
+        "G83.9",
+        "R20.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1137-66272009000300015-1-4742",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "G83.2",
+        "G83.3",
+        "R29.8",
+        "G83.9",
+        "R20.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082007000400015-1-3325",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K56.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082007000400015-1-3325",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K56.2",
+        "K56.6"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-76322015000100014-1-5193",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B00.9",
+        "B02.9",
+        "A60.9",
+        "A60.0",
+        "B00.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-76322015000100014-1-5193",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B00.9",
+        "B02.9",
+        "B00.1",
+        "A60.9",
+        "A60.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0378-48352005000500005-1-3091",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R50.9",
+        "R50.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 1,
+        "gainOverBaseline": 0,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0378-48352005000500005-1-3091",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R50.9",
+        "R50.8",
+        "A49.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 1,
+        "gainOverBaseline": 0,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1134-80462009000500006-1-4448",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R82.3",
+        "D59.6",
+        "D59.5"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1134-80462009000500006-1-4448",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R82.3",
+        "D59.5",
+        "D59.6"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062009000600012-1-1002",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R59.0",
+        "R59.9",
+        "L04.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062009000600012-1-1002",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R59.0",
+        "L04.0",
+        "R59.9",
+        "R59.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000700016-1-6262",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N17.9",
+        "N28.9",
+        "N18.9",
+        "S37.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000700016-1-6262",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N28.9",
+        "N17.9",
+        "S37.0",
+        "N19.X",
+        "N18.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-05582008000300005-1-3865",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "Q85.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-05582008000300005-1-3865",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "Q85.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082009000200011-1-7508",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R04.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082009000200011-1-7508",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R04.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082005001000014-1-3245",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K59.0",
+        "K59.9",
+        "K59.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082005001000014-1-3245",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K59.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142007000300011-1-256",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I49.9",
+        "R00.8",
+        "I49.8",
+        "R00.0",
+        "R00.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142007000300011-1-256",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I49.9",
+        "R00.8",
+        "R00.0",
+        "R00.1",
+        "R00.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082008000500014-1-3512",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K55.9",
+        "K55.0",
+        "K55.1",
+        "K55.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082008000500014-1-3512",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K55.9",
+        "K55.0",
+        "K55.1",
+        "K55.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952014000500020-1-1593",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "Q61.3",
+        "Q61.2",
+        "Q61.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952014000500020-1-1593",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "Q61.3",
+        "Q61.2",
+        "Q61.1",
+        "Q61.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952011000400013-1-6501",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "F32.9",
+        "F33.9",
+        "F41.2",
+        "F32.8",
+        "F99.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952011000400013-1-6501",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "F32.9",
+        "F33.9",
+        "F41.2",
+        "F32.8",
+        "F06.3"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1137-66272014000100021-1-8115",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R59.9",
+        "R59.1",
+        "R59.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 1,
+        "gainOverBaseline": 0,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1137-66272014000100021-1-8115",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R59.9",
+        "R59.1",
+        "R59.0",
+        "I88.9",
+        "L04.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 1,
+        "gainOverBaseline": 0,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952012000200030-1-6556",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N23.X",
+        "R10.4",
+        "R10.3",
+        "M54.5",
+        "N10.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952012000200030-1-6556",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "N23.X",
+        "R10.4",
+        "R10.2",
+        "R10.3"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062006000300014-1-821",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R31.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062006000300014-1-821",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R31.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000400012-1-6228",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R50.9",
+        "R50.8",
+        "R50.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 1,
+        "gainOverBaseline": 0,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000400012-1-6228",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R50.9",
+        "R50.8",
+        "A09.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 1,
+        "gainOverBaseline": 0,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0.3333333333333333,
+        "inventedShown": 0.3333333333333333
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S2254-28842013000300009-1-8482",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I51.9",
+        "I25.9",
+        "I42.9",
+        "I11.9",
+        "Q24.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S2254-28842013000300009-1-8482",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I51.9",
+        "I25.9",
+        "I11.9",
+        "I50.9",
+        "Q24.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992004001100006-1-1971",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "M85.2",
+        "M85.8",
+        "M89.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992004001100006-1-1971",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "M85.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-16112014000300032-1-6699",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R57.2",
+        "A41.9",
+        "R57.8",
+        "R57.9"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 0,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-16112014000300032-1-6699",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R57.2",
+        "A41.9",
+        "R57.8",
+        "R57.9"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 0,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952011000100019-1-1349",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "M60.9",
+        "M60.8",
+        "M60.0",
+        "M33.2",
+        "M33.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952011000100019-1-1349",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "M60.9",
+        "M60.8",
+        "M33.2",
+        "M33.9",
+        "M60.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952014000500020-1-1589",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K42.9",
+        "K42.0",
+        "K42.1",
+        "Q79.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952014000500020-1-1589",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K42.9",
+        "K42.0",
+        "K42.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0365-66912007000700009-1-7029",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "H33.3",
+        "H33.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0365-66912007000700009-1-7029",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "H33.3",
+        "H33.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-05582007000500006-1-3837",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "D11.9",
+        "D11.0",
+        "D11.7"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-05582007000500006-1-3837",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "D11.9",
+        "D11.0",
+        "D11.7"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912010000400009-1-6461",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I61.4",
+        "I61.9",
+        "I62.9",
+        "S06.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912010000400009-1-6461",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I61.4",
+        "I61.8",
+        "S06.8",
+        "I62.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082008000900014-1-7473",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "C15.9",
+        "C15.5",
+        "C15.8",
+        "C15.4",
+        "C15.3"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082008000900014-1-7473",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "C15.9",
+        "C15.5",
+        "C15.8",
+        "C15.4",
+        "C15.3"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1699-695X2014000300011-1-5530",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "L85.8",
+        "Q84.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1699-695X2014000300011-1-5530",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "L85.8",
+        "Q84.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082009000500015-1-7531",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R63.4",
+        "E46.X",
+        "R64.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082009000500015-1-7531",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R63.4",
+        "E46.X",
+        "R64.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000100006-1-5397",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "G44.2",
+        "R51.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000100006-1-5397",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "G44.2",
+        "R51.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000500016-1-6234",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B95.6",
+        "A49.0",
+        "B95.7",
+        "A41.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000500016-1-6234",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "B95.6",
+        "A49.0",
+        "A41.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992007000300005-1-2228",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "Z87.8",
+        "F17.2"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992007000300005-1-2228",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "Z86.4",
+        "F17.2",
+        "Z72.0"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 0,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000400012-1-6217",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "C67.9",
+        "D09.0",
+        "D41.4",
+        "C67.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000400012-1-6217",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "C67.9",
+        "C67.8",
+        "D09.0",
+        "D41.4",
+        "C67.0"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000100019-1-8342",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 1,
+        "gainOverBaseline": -1,
+        "hit1": 0,
+        "category5": 0,
+        "invented": null,
+        "inventedShown": null
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000100019-1-8342",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R69.X"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 1,
+        "gainOverBaseline": 0,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912008000100008-1-1162",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I21.9",
+        "I25.2",
+        "I21.0",
+        "I21.1",
+        "I22.9"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912008000100008-1-1162",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I21.9",
+        "I25.2",
+        "I21.0",
+        "I21.1",
+        "I22.9"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000400002-1-5429",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K01.0",
+        "K01.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000400002-1-5429",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "K01.0",
+        "K01.1"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992005001200010-1-6778",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "C86.0",
+        "C84.4",
+        "C84.5",
+        "C85.7",
+        "C85.9"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992005001200010-1-6778",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "C86.0",
+        "C84.5",
+        "C85.7",
+        "C84.4",
+        "C85.9"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-13752006000200009-1-4977",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I51.9",
+        "I25.9",
+        "I51.8",
+        "I42.9",
+        "Q24.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-13752006000200009-1-4977",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "I51.9",
+        "I25.9",
+        "I51.8",
+        "I42.9",
+        "I11.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142008000300011-1-5878",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R59.9",
+        "R59.1",
+        "R59.0",
+        "I88.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 1,
+        "gainOverBaseline": 0,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142008000300011-1-5878",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R59.9",
+        "R59.1",
+        "R59.0",
+        "I88.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 1,
+        "gainOverBaseline": 0,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-76322015000300009-1-5207",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R25.2",
+        "G82.1",
+        "G82.4",
+        "G80.0",
+        "M62.8"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-76322015000300009-1-5207",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R25.8",
+        "G80.0",
+        "G81.1",
+        "G82.1",
+        "G82.4"
+      ],
+      "scores": {
+        "recall5": 0,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 0,
+        "hit1": 0,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992004000600005-1-1913",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "A",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R74.0",
+        "R74.8",
+        "K76.8",
+        "K76.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992004000600005-1-1913",
+      "origin": "codiesp",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        "R74.0",
+        "R74.8",
+        "R94.5",
+        "K76.9"
+      ],
+      "scores": {
+        "recall5": 1,
+        "baselineRecall5": 0,
+        "gainOverBaseline": 1,
+        "hit1": 1,
+        "category5": 1,
+        "invented": 0,
+        "inventedShown": 0
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-01",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2318,
+      "costUsd": 0.00023475,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-01",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2338,
+      "costUsd": 0.0002085,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-02",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1351,
+      "costUsd": 0.0002325,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-02",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1799,
+      "costUsd": 0.0002325,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-03",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2195,
+      "costUsd": 0.00017925,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-03",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1771,
+      "costUsd": 0.00017925,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-04",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3676,
+      "costUsd": 0.00109125,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-04",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1255,
+      "costUsd": 0.000285,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-05",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2672,
+      "costUsd": 0.000285,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-05",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 4200,
+      "costUsd": 0.00025875,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-06",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1735,
+      "costUsd": 0.00025725,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-06",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 4600,
+      "costUsd": 0.001791,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-07",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1478,
+      "costUsd": 0.00028275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-07",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1312,
+      "costUsd": 0.00028275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-08",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1288,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-08",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1702,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-09",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1439,
+      "costUsd": 0.00023175000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-09",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2751,
+      "costUsd": 0.00085425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-10",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1718,
+      "costUsd": 0.0002085,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-10",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2868,
+      "costUsd": 0.00057975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-11",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2098,
+      "costUsd": 0.000258,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-11",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1579,
+      "costUsd": 0.000258,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-12",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1957,
+      "costUsd": 0.00028575,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-12",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1698,
+      "costUsd": 0.00023325,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-13",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1576,
+      "costUsd": 0.0002565,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-13",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2817,
+      "costUsd": 0.00023024999999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-14",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1434,
+      "costUsd": 0.00017999999999999998,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-14",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2156,
+      "costUsd": 0.00017999999999999998,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-15",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2219,
+      "costUsd": 0.0007034999999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-15",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2410,
+      "costUsd": 0.000456,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-16",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1963,
+      "costUsd": 0.0002835,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-16",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2204,
+      "costUsd": 0.0002835,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-17",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1765,
+      "costUsd": 0.0003555,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-17",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2450,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-18",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1769,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-18",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3189,
+      "costUsd": 0.0010905,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-19",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1657,
+      "costUsd": 0.000258,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-19",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1821,
+      "costUsd": 0.0002055,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-20",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2122,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-20",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1551,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-21",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2140,
+      "costUsd": 0.0006922499999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-21",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1620,
+      "costUsd": 0.00025725,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-22",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3139,
+      "costUsd": 0.00017925,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-22",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1928,
+      "costUsd": 0.0007229999999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-23",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1610,
+      "costUsd": 0.0001785,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-23",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2582,
+      "costUsd": 0.0007485,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-24",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1789,
+      "costUsd": 0.0002595,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-24",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1666,
+      "costUsd": 0.00057825,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-25",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2362,
+      "costUsd": 0.0001815,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-25",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1526,
+      "costUsd": 0.00055275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-26",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3672,
+      "costUsd": 0.00108225,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-26",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 4878,
+      "costUsd": 0.0002835,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-27",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1936,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-27",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1648,
+      "costUsd": 0.000258,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-28",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1894,
+      "costUsd": 0.00028724999999999996,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-28",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3517,
+      "costUsd": 0.00028724999999999996,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-29",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3015,
+      "costUsd": 0.00092175,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-29",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1983,
+      "costUsd": 0.00085425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-30",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2262,
+      "costUsd": 0.00017700000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-30",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1591,
+      "costUsd": 0.00017700000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-31",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2978,
+      "costUsd": 0.0002055,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-31",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1954,
+      "costUsd": 0.00023175000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-32",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2798,
+      "costUsd": 0.00128775,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-32",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2754,
+      "costUsd": 0.0009577499999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-33",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2577,
+      "costUsd": 0.0002055,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-33",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1955,
+      "costUsd": 0.0002055,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-34",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1640,
+      "costUsd": 0.000285,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-34",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3073,
+      "costUsd": 0.00098625,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-35",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1418,
+      "costUsd": 0.00028275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-35",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3384,
+      "costUsd": 0.0009052499999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-36",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2260,
+      "costUsd": 0.0008092500000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-36",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1500,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-37",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1920,
+      "costUsd": 0.00017775,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-37",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2628,
+      "costUsd": 0.000954,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-38",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1724,
+      "costUsd": 0.0002085,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-38",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1541,
+      "costUsd": 0.00023475,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-39",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1969,
+      "costUsd": 0.00025725,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-39",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1679,
+      "costUsd": 0.00025725,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-40",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1615,
+      "costUsd": 0.000285,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-40",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1815,
+      "costUsd": 0.000285,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-41",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3027,
+      "costUsd": 0.0007815,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-41",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1538,
+      "costUsd": 0.0002565,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-42",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1678,
+      "costUsd": 0.00020475000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-42",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1346,
+      "costUsd": 0.00020475000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-43",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3289,
+      "costUsd": 0.00046725,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-43",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2778,
+      "costUsd": 0.0004935,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-44",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1741,
+      "costUsd": 0.0002835,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-44",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1720,
+      "costUsd": 0.0002835,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-45",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1377,
+      "costUsd": 0.00020775,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "cie10-45",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1303,
+      "costUsd": 0.0001815,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0376-78922009000100011-1-2919",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2602,
+      "costUsd": 0.00028275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0376-78922009000100011-1-2919",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1847,
+      "costUsd": 0.00028275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000100010-2-423",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1649,
+      "costUsd": 0.00020475000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000100010-2-423",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2397,
+      "costUsd": 0.00025725,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082007000500016-1-7428",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2086,
+      "costUsd": 0.00024525,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082007000500016-1-7428",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1838,
+      "costUsd": 0.000234,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000900012-1-6023",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2170,
+      "costUsd": 0.0002835,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000900012-1-6023",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1912,
+      "costUsd": 0.0002835,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000100010-2-420",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2677,
+      "costUsd": 0.00093675,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000100010-2-420",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3309,
+      "costUsd": 0.00105675,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-57352007000200017-1-1253",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3353,
+      "costUsd": 0.001584,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-57352007000200017-1-1253",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3985,
+      "costUsd": 0.0015314999999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912007000200007-3-6374",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2820,
+      "costUsd": 0.0008767499999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912007000200007-3-6374",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1575,
+      "costUsd": 0.0002055,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1699-695X2016000200009-1-8399",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3784,
+      "costUsd": 0.00133425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1699-695X2016000200009-1-8399",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2471,
+      "costUsd": 0.00023175000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000200013-1-471",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 4225,
+      "costUsd": 0.0002565,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142009000200013-1-471",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1726,
+      "costUsd": 0.000354,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1134-80462005000300004-1-7858",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1521,
+      "costUsd": 0.000285,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1134-80462005000300004-1-7858",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2637,
+      "costUsd": 0.0011175,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000100019-1-8344",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1840,
+      "costUsd": 0.0002055,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000100019-1-8344",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1575,
+      "costUsd": 0.0002055,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992006000800007-1-2169",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2698,
+      "costUsd": 0.00028275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992006000800007-1-2169",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1743,
+      "costUsd": 0.00028275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912009000900008-1-6444",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1745,
+      "costUsd": 0.0002595,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912009000900008-1-6444",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1668,
+      "costUsd": 0.00023325,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142008000100008-1-5873",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1991,
+      "costUsd": 0.00028875,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142008000100008-1-5873",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1455,
+      "costUsd": 0.00026250000000000004,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952014000200018-1-1562",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1742,
+      "costUsd": 0.00028275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952014000200018-1-1562",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2648,
+      "costUsd": 0.0010665,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062005000700013-1-753",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2061,
+      "costUsd": 0.0001785,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062005000700013-1-753",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1454,
+      "costUsd": 0.0001785,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0365-66912003000600010-1-6915",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1265,
+      "costUsd": 0.000234,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0365-66912003000600010-1-6915",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1445,
+      "costUsd": 0.00028649999999999997,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-76322015000100011-1-5158",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1898,
+      "costUsd": 0.00022200000000000003,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-76322015000100011-1-5158",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1359,
+      "costUsd": 0.00018075,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912006000100005-1-6350",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1785,
+      "costUsd": 0.00020475000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912006000100005-1-6350",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1575,
+      "costUsd": 0.00020475000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1137-66272009000300015-1-4742",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1575,
+      "costUsd": 0.00028649999999999997,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1137-66272009000300015-1-4742",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1704,
+      "costUsd": 0.00028649999999999997,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082007000400015-1-3325",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1388,
+      "costUsd": 0.00017999999999999998,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082007000400015-1-3325",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2509,
+      "costUsd": 0.0006225,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-76322015000100014-1-5193",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2889,
+      "costUsd": 0.00028275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-76322015000100014-1-5193",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3090,
+      "costUsd": 0.001014,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0378-48352005000500005-1-3091",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1587,
+      "costUsd": 0.000204,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0378-48352005000500005-1-3091",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1453,
+      "costUsd": 0.00023024999999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1134-80462009000500006-1-4448",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2323,
+      "costUsd": 0.00023100000000000003,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1134-80462009000500006-1-4448",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1449,
+      "costUsd": 0.00023100000000000003,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062009000600012-1-1002",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3053,
+      "costUsd": 0.00090525,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062009000600012-1-1002",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1892,
+      "costUsd": 0.000324,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000700016-1-6262",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1388,
+      "costUsd": 0.00025725,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000700016-1-6262",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3758,
+      "costUsd": 0.0012585,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-05582008000300005-1-3865",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1487,
+      "costUsd": 0.00017925,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-05582008000300005-1-3865",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1423,
+      "costUsd": 0.0001755,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082009000200011-1-7508",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1569,
+      "costUsd": 0.0001785,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082009000200011-1-7508",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1646,
+      "costUsd": 0.0001785,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082005001000014-1-3245",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1802,
+      "costUsd": 0.00057975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082005001000014-1-3245",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1556,
+      "costUsd": 0.0001785,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142007000300011-1-256",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1883,
+      "costUsd": 0.0002835,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142007000300011-1-256",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1626,
+      "costUsd": 0.0002835,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082008000500014-1-3512",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2509,
+      "costUsd": 0.000993,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082008000500014-1-3512",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2396,
+      "costUsd": 0.0007980000000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952014000500020-1-1593",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1498,
+      "costUsd": 0.00023325,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952014000500020-1-1593",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2127,
+      "costUsd": 0.0007845,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952011000400013-1-6501",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1822,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952011000400013-1-6501",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1568,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1137-66272014000100021-1-8115",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1327,
+      "costUsd": 0.00023100000000000003,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1137-66272014000100021-1-8115",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2565,
+      "costUsd": 0.00075975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952012000200030-1-6556",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1927,
+      "costUsd": 0.00028575,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952012000200030-1-6556",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1516,
+      "costUsd": 0.00024450000000000003,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062006000300014-1-821",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1844,
+      "costUsd": 0.0001785,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062006000300014-1-821",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1383,
+      "costUsd": 0.0001785,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000400012-1-6228",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2072,
+      "costUsd": 0.000219,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000400012-1-6228",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1523,
+      "costUsd": 0.00023024999999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S2254-28842013000300009-1-8482",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2080,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S2254-28842013000300009-1-8482",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1738,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992004001100006-1-1971",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2540,
+      "costUsd": 0.001017,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992004001100006-1-1971",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1678,
+      "costUsd": 0.00017700000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-16112014000300032-1-6699",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1401,
+      "costUsd": 0.00025725,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-16112014000300032-1-6699",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1894,
+      "costUsd": 0.00024225,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952011000100019-1-1349",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1752,
+      "costUsd": 0.00028275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952011000100019-1-1349",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1455,
+      "costUsd": 0.00028275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952014000500020-1-1589",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2553,
+      "costUsd": 0.0008047499999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0211-69952014000500020-1-1589",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2388,
+      "costUsd": 0.0007934999999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0365-66912007000700009-1-7029",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1355,
+      "costUsd": 0.00020625,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0365-66912007000700009-1-7029",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1681,
+      "costUsd": 0.00020625,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-05582007000500006-1-3837",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1684,
+      "costUsd": 0.00023625000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-05582007000500006-1-3837",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1986,
+      "costUsd": 0.00023625000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912010000400009-1-6461",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2632,
+      "costUsd": 0.00077625,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912010000400009-1-6461",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2203,
+      "costUsd": 0.00025875,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082008000900014-1-7473",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1507,
+      "costUsd": 0.000285,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082008000900014-1-7473",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1564,
+      "costUsd": 0.000285,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1699-695X2014000300011-1-5530",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1162,
+      "costUsd": 0.0002055,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1699-695X2014000300011-1-5530",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1540,
+      "costUsd": 0.0002055,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082009000500015-1-7531",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1739,
+      "costUsd": 0.000234,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1130-01082009000500015-1-7531",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1513,
+      "costUsd": 0.000234,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000100006-1-5397",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1646,
+      "costUsd": 0.0002055,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000100006-1-5397",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1914,
+      "costUsd": 0.0002055,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000500016-1-6234",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1351,
+      "costUsd": 0.00025725,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000500016-1-6234",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3265,
+      "costUsd": 0.0010035,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992007000300005-1-2228",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2296,
+      "costUsd": 0.00020475000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992007000300005-1-2228",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3641,
+      "costUsd": 0.00136725,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000400012-1-6217",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2815,
+      "costUsd": 0.0008595,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-48062007000400012-1-6217",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1501,
+      "costUsd": 0.00028575,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000100019-1-8342",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1779,
+      "costUsd": 0.00015675000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000100019-1-8342",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3673,
+      "costUsd": 0.0007905,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912008000100008-1-1162",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2751,
+      "costUsd": 0.000282,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0210-56912008000100008-1-1162",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2051,
+      "costUsd": 0.000282,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000400002-1-5429",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1916,
+      "costUsd": 0.00020775,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1698-69462006000400002-1-5429",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2839,
+      "costUsd": 0.000879,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992005001200010-1-6778",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3273,
+      "costUsd": 0.0012074999999999998,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992005001200010-1-6778",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3310,
+      "costUsd": 0.00135,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-13752006000200009-1-4977",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2211,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-13752006000200009-1-4977",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1640,
+      "costUsd": 0.00028425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142008000300011-1-5878",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2572,
+      "costUsd": 0.0008572499999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0004-06142008000300011-1-5878",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2195,
+      "costUsd": 0.00066975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-76322015000300009-1-5207",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1568,
+      "costUsd": 0.0002835,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S1139-76322015000300009-1-5207",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1196,
+      "costUsd": 0.0002835,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992004000600005-1-1913",
+      "provider": "gemini",
+      "arm": "A",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1818,
+      "costUsd": 0.0002595,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "cie10-problema",
+      "caseId": "codiesp-S0212-71992004000600005-1-1913",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1687,
+      "costUsd": 0.00024450000000000003,
+      "model": "gemini-3.8-flash"
+    }
+  ]
+}
