@@ -343,6 +343,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_NOT_CONFIGURED`           | `ExternalServiceError` | 502       | La cadena está vacía (AS-006)                                                |
 | `ASSISTANT_PROVIDER_FAILED`          | `ExternalServiceError` | 503 / 502 | Ningún proveedor respondió (reintentable, AS-007) o el modelo falló (AS-008) |
 | `SUGGESTION_ALREADY_DECIDED`         | `ConflictError`        | 409       | La propuesta ya se aceptó o se descartó (AS-023)                             |
+| `SUGGESTION_NOT_FOUND`               | `NotFoundError`        | 404       | La propuesta que se decide no existe (AS-023)                                |
 | `ASSISTANT_SPENDING_CEILING_REACHED` | `QuotaExceededError`   | 429       | El techo del mes no admite el intento, o no hay techo (AS-017)               |
 
 ## Niveles de prueba
