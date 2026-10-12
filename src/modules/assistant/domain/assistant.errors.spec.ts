@@ -23,6 +23,8 @@ import {
   SuggestionAlreadyDecidedError,
   SuggestionInvalidError,
   SuggestionNotFoundError,
+  ListeningNotOpenError,
+  ListeningUnavailableError,
 } from './assistant.errors';
 
 /**
@@ -157,6 +159,20 @@ describe('assistant errors', () => {
       /diagnóstico/,
     ],
     [
+      'AS-048',
+      () => new ListeningUnavailableError('no-voice-detection'),
+      'ASSISTANT_LISTENING_UNAVAILABLE',
+      ExternalServiceError,
+      /detector de voz/,
+    ],
+    [
+      'AS-049',
+      () => new ListeningNotOpenError(),
+      'ASSISTANT_LISTENING_NOT_OPEN',
+      ConflictError,
+      /Escuchar/,
+    ],
+    [
       'AS-040',
       () => new AssistantProposalNotKeptError(),
       'ASSISTANT_PROPOSAL_NOT_KEPT',
@@ -172,6 +188,22 @@ describe('assistant errors', () => {
       expect(error).toBeInstanceOf(base);
       expect(error.userTitle).toMatch(title);
       expect(DOMAIN_ERROR_CODES).toContain(error.code);
+    },
+  );
+
+  it.each([
+    ['no-recognizer', /no está instalado/],
+    ['no-voice-detection', /detector de voz/],
+    ['unreachable', /no responde/],
+    ['busy', /ocupado/],
+  ] as const)(
+    'AS-048 says why %s cannot listen, and the reason is a code',
+    (reason, title) => {
+      const error = new ListeningUnavailableError(reason);
+
+      expect(error.reason).toBe(reason);
+      expect(error.userTitle).toMatch(title);
+      expect(error.message).toBe(`clinica-ai cannot listen: ${reason}`);
     },
   );
 

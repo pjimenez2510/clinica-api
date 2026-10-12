@@ -86,6 +86,11 @@ export const DOMAIN_ERROR_CODES = [
   // AS-033: el seudonimizador local (clinica-ai) no respondió (503
   // reintentable) o respondió fuera de contrato (502).
   'ASSISTANT_PSEUDONYMIZER_FAILED',
+  // AS-048, AS-049 (C1): clinica-ai no puede escuchar —sin reconocedor, sin
+  // detector de voz, caído u ocupado— (503), y una orden o una trama en un
+  // canal sin escucha abierta (409).
+  'ASSISTANT_LISTENING_UNAVAILABLE',
+  'ASSISTANT_LISTENING_NOT_OPEN',
   'INVALID_AGENDA_TRANSITION',
   'NO_SHOW_BEFORE_START',
   // Agenda, E8 (AG-116, AG-117, AG-122, AG-125, AG-127, AG-128). Los
