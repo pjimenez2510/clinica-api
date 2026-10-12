@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { z } from 'zod';
 
+import { pruneToAllowlist } from '../../../shared/observability/log-privacy';
 import type { AccessAuditRecorder } from '../../../shared/audit/access-audit.port';
 import type {
   Cie10Entry,
@@ -294,6 +295,13 @@ describe('DiagnosisProposalService', () => {
       expect(logged).not.toContain(text);
     }
     expect(logged).toContain('"problems":1');
+    // The counts survive the log's allowlist: what reaches disk says them.
+    expect(pruneToAllowlist(log.mock.calls[0]![0])).toEqual({
+      problems: 1,
+      problems_without_quote: 1,
+      codes_written: 4,
+      codes_shown: 2,
+    });
   });
 
   it('AS-025 AS-040 without a pseudonymizer fails closed: no model, nothing kept', async () => {
