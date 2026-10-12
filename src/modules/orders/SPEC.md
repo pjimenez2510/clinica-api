@@ -2694,6 +2694,20 @@ clínico**; lo construido se cambia sin tocar datos._
 
 ---
 
+## 23. Corregir y emitir sobre lo que se vio (A1, REQ-175)
+
+- **ORD-181** — CUANDO se corrija (ORD-096) o se emita (ORD-098) una orden en
+  borrador, la petición DEBERÁ traer en `If-Match` la revisión de la orden
+  que leyó quien la hace. SI es otra, el sistema DEBERÁ rechazarla con
+  `RECORD_CHANGED` (412) sin escribir ni tomar número; SI falta, con
+  `REVISION_REQUIRED` (428). Toda orden servida DEBERÁ traer su `revision`.
+  > Lo mismo que PR-121: el laboratorio recibe lo que se emitió.
+- **ORD-182** — CADA VEZ que se actualice una orden en borrador, la base
+  DEBERÁ poner su `revision` en la anterior más uno, mande lo que mande quien
+  escribe; la de una orden que ya no es borrador NO DEBERÁ cambiar.
+
+---
+
 ## Códigos de error nuevos
 
 Todos entran en `shared/domain/errors/error-catalogue.ts` con su prueba de

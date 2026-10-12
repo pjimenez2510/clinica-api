@@ -1448,6 +1448,23 @@ expone lo que hace falta._
   > además, los dudosos —tramadol, tapentadol, tiopental, hidrato de cloral—:
   > el lado seguro, porque marcar de más sólo manda al talonario de la ACESS.
 
+## 14. Corregir y emitir sobre lo que se vio (A1, REQ-175)
+
+- **PR-121** — CUANDO se corrija (PR-100) o se emita (PR-005) un borrador de
+  receta, la petición DEBERÁ traer en `If-Match` la revisión de la receta que
+  leyó quien la hace. SI es otra, el sistema DEBERÁ rechazarla con
+  `RECORD_CHANGED` (412) sin escribir ni tomar número; SI falta, con
+  `REVISION_REQUIRED` (428). Toda receta servida DEBERÁ traer su `revision`.
+  > Emitir sella el contenido del servidor: el número, las líneas y las
+  > indicaciones que se imprimen. Si otra pestaña corrigió el borrador, quien
+  > emite firmaría lo que no vio. Descartar y recuperar no la piden: se
+  > deshacen con un clic (D-126) y no sellan nada.
+- **PR-122** — CADA VEZ que se actualice una receta en borrador, la base
+  DEBERÁ poner su `revision` en la anterior más uno, mande lo que mande quien
+  escribe; la de una receta que ya no es borrador NO DEBERÁ cambiar.
+  > Las líneas se reescriben enteras (PR-100) en la misma transacción que el
+  > `UPDATE` de la receta, y es ése el que sube la revisión.
+
 ---
 
 ## Códigos de error nuevos
