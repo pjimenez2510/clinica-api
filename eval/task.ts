@@ -47,7 +47,7 @@ export interface EvalCase {
  * returns as `shown` is what a physician would see, kept in the result.
  */
 export interface EvalTask<Case extends EvalCase, Value> {
-  name: 'cie10' | 'prescription' | 'note';
+  name: 'cie10' | 'cie10-problema' | 'prescription' | 'note';
   title: string;
   arms: readonly Arm[];
   /** EV-7. The version of each arm's prompt, stored with every result. */

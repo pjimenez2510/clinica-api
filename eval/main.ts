@@ -40,6 +40,7 @@ import {
 } from './runner.ts';
 import type { EvalCase } from './task.ts';
 import { cie10Task, codiEspCases, inventedCie10Cases } from './tasks/cie10.ts';
+import { cie10ByProblemTask } from './tasks/cie10-by-problem.ts';
 import { JUDGE_PROMPT_VERSION, noteTask } from './tasks/note.ts';
 import { prescriptionTask } from './tasks/prescription.ts';
 
@@ -49,7 +50,7 @@ export const USAGE = `Arnés de evaluación del asistente (PLAN-ASISTENTE-IA §5
   pnpm eval -- --codiesp <carpeta train_dev> corrida real con las claves del .env
 
 Opciones:
-  --tareas cie10,receta,nota   qué tareas (por defecto, las tres)
+  --tareas cie10,receta,nota   qué tareas (por defecto, las tres); cie10-problema mide D1 (AS-042)
   --codiesp <carpeta>          CodiEsp train_dev (CC BY 4.0, Zenodo 3837305); sin ella, la CIE-10 usa sólo el set propio
   --muestra <n>                frases de CodiEsp (por defecto 200)
   --casos <n>                  como mucho n casos de cada set propio (por defecto, todos)
@@ -63,7 +64,7 @@ Opciones:
 `;
 
 type Env = Record<string, string | undefined>;
-type TaskKey = 'cie10' | 'receta' | 'nota';
+type TaskKey = 'cie10' | 'cie10-problema' | 'receta' | 'nota';
 
 export interface Dependencies {
   env: Env;
@@ -165,7 +166,7 @@ export async function runFromArgs(
   }
   const wanted = values.tareas.split(',').map((t) => t.trim()) as TaskKey[];
   const unknown = wanted.filter(
-    (t) => !['cie10', 'receta', 'nota'].includes(t),
+    (t) => !['cie10', 'cie10-problema', 'receta', 'nota'].includes(t),
   );
   if (unknown.length > 0)
     throw new Error(`Tarea desconocida: ${unknown.join(', ')}`);
@@ -211,6 +212,28 @@ export async function runFromArgs(
         source: 'CodiEsp',
         sha256: codiesp.sha256,
         n: sampled.cases.length,
+      });
+    }
+  }
+  // AS-042 (D1). The product's prompt and barrier against the baseline, on
+  // the same cases as `cie10`; the baseline counts within each source.
+  if (wanted.includes('cie10-problema')) {
+    const own = inventedCie10Cases(invented.cie10.cases.slice(0, limit));
+    const fromCodiEsp = sampled?.cases ?? [];
+    const task = cie10ByProblemTask(catalogues, [...own, ...fromCodiEsp]);
+    add(task, [...own, ...fromCodiEsp]);
+    casesMeta.push({
+      task: 'cie10-problema',
+      source: 'cie10-propios.json',
+      sha256: invented.cie10.sha256,
+      n: own.length,
+    });
+    if (codiesp && sampled) {
+      casesMeta.push({
+        task: 'cie10-problema',
+        source: 'CodiEsp',
+        sha256: codiesp.sha256,
+        n: fromCodiEsp.length,
       });
     }
   }

@@ -1,0 +1,141 @@
+import type { z } from 'zod';
+
+import {
+  CODES_INSTRUCTIONS,
+  CODES_PROMPT_VERSION,
+  codesAnswer,
+  problemLine,
+} from '../../src/modules/assistant/application/problem-coding.prompts.ts';
+import { candidateCodes } from '../../src/shared/clinical/cie10-lookup.port.ts';
+import { caseText } from '../case-text.ts';
+import { formatCode, type Catalogues } from '../catalogue.ts';
+import type { EvalTask } from '../task.ts';
+
+import type { Cie10EvalCase } from './cie10.ts';
+
+/** The physician gets five (AS-035), the baseline too (AS-027). */
+const SHOWN = 5;
+
+type CodesAnswer = z.infer<typeof codesAnswer>;
+
+/**
+ * AS-042 (D1). «Proponer por problema» measured as the product runs it: the
+ * prompt of `problem-coding.prompts.ts` and the barrier of AS-035
+ * (`candidateCodes` against the WHO catalogue: exact, or a category through
+ * its `.X`), against the baseline of AS-027 — what is coded most, with no
+ * model. CodiEsp has no patient history, so the baseline here is its
+ * frequency alone, counted without the case's own codes (leave one out).
+ *
+ * ⚠️ AS-035 REPAIRS ONE FORMAT AND `cie10` (A6) DOES NOT: `I10` is shown as
+ * `I10.X` here. That is what the physician would see, so it is what this task
+ * measures; A6's arm D measures the catalogue without the repair.
+ *
+ * Arm A is the model's answer as written; arm D is what the screen shows.
+ * `invented` counts what the model wrote in both; `inventedShown` must be 0.
+ */
+export function cie10ByProblemTask(
+  catalogues: Catalogues,
+  cases: readonly Cie10EvalCase[],
+): EvalTask<Cie10EvalCase, CodesAnswer> {
+  const { cie10 } = catalogues;
+  // Within each source: the invented set is not CodiEsp's clinic.
+  const frequency = new Map<string, Map<string, number>>();
+  for (const item of cases) {
+    const counts = frequency.get(item.origin) ?? new Map<string, number>();
+    for (const code of item.codes) counts.set(code, (counts.get(code) ?? 0) + 1); // prettier-ignore
+    frequency.set(item.origin, counts);
+  }
+  const baselineOf = (item: Cie10EvalCase): string[] => {
+    const own = new Set(item.codes);
+    return [...(frequency.get(item.origin) ?? [])]
+      .map(
+        ([code, times]) => [code, own.has(code) ? times - 1 : times] as const,
+      )
+      .filter(([, times]) => times > 0)
+      .sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
+      .slice(0, SHOWN)
+      .map(([code]) => code);
+  };
+  const resolve = (written: string): string | null =>
+    candidateCodes(written).find((form) => cie10.has(form)) ?? null;
+
+  return {
+    name: 'cie10-problema',
+    title: 'CIE-10 por problema (D1) frente a la línea base',
+    arms: ['A', 'D'],
+    promptVersions: { A: CODES_PROMPT_VERSION, D: CODES_PROMPT_VERSION },
+    latencyBudgetMs: 5_000,
+    metrics: [
+      { key: 'recall5', label: 'R@5', kind: 'binary', primary: true },
+      { key: 'baselineRecall5', label: 'R@5 de la línea base', kind: 'binary' },
+      {
+        key: 'gainOverBaseline',
+        label: 'R@5 menos el de la línea base (por caso)',
+        kind: 'mean',
+        primary: true,
+      },
+      { key: 'hit1', label: 'Acierto@1', kind: 'binary' },
+      { key: 'category5', label: 'Categoría en las 5 (3 caracteres)', kind: 'binary' }, // prettier-ignore
+      {
+        key: 'invented',
+        label: 'Códigos inexistentes escritos (por caso)',
+        kind: 'mean',
+        lowerIsBetter: true,
+      },
+      {
+        key: 'inventedShown',
+        label: 'Códigos inexistentes mostrados (por caso)',
+        kind: 'mean',
+        lowerIsBetter: true,
+        primary: true,
+      },
+    ],
+    request(item) {
+      return {
+        tier: 'quality',
+        purpose: 'eval-cie10-problema',
+        promptVersion: CODES_PROMPT_VERSION,
+        system: CODES_INSTRUCTIONS,
+        prompt: caseText(problemLine(item.phrase)),
+        answer: codesAnswer,
+        maxTokens: 1500,
+      };
+    },
+    evaluate(item, arm, value) {
+      const written = value.codes.slice(0, SHOWN);
+      // AS-035. The barrier of the product: resolved, deduplicated, or gone.
+      const shown =
+        arm === 'D'
+          ? [...new Set(written.map(resolve).filter((c) => c !== null))]
+          : written.map(formatCode);
+      const right = new Set(item.codes);
+      const categories = new Set(item.codes.map((code) => code.slice(0, 3)));
+      const recall5 = shown.some((code) => right.has(code)) ? 1 : 0;
+      const baselineRecall5 = baselineOf(item).some((code) => right.has(code))
+        ? 1
+        : 0;
+      const missing = (codes: readonly string[]) =>
+        codes.length === 0
+          ? null
+          : codes.filter((code) => resolve(code) === null).length /
+            codes.length;
+      return Promise.resolve({
+        shown,
+        scores: {
+          recall5,
+          baselineRecall5,
+          gainOverBaseline: recall5 - baselineRecall5,
+          hit1: shown[0] !== undefined && right.has(shown[0]) ? 1 : 0,
+          category5: shown.some((code) => categories.has(code.slice(0, 3)))
+            ? 1
+            : 0,
+          invented: missing(written),
+          inventedShown:
+            shown.length === 0
+              ? null
+              : shown.filter((code) => !cie10.has(code)).length / shown.length,
+        },
+      });
+    },
+  };
+}

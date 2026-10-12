@@ -141,6 +141,7 @@ export class FakeWorld {
       return answer(this.verdicts(request.prompt, profile.right));
     switch (key.task) {
       case 'cie10':
+      case 'cie10-problema':
         return answer(this.cie10(item as Cie10EvalCase, key.arm, right));
       case 'prescription':
         return answer(
