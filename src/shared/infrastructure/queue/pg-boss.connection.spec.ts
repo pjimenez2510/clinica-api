@@ -14,7 +14,7 @@ import { PgBossConnection } from './pg-boss.connection';
  */
 function stubBoss(existing: Record<string, string> = {}) {
   const queues = new Map(Object.entries(existing));
-  const sent: { name: string; data: unknown }[] = [];
+  const sent: { name: string; data: unknown; options?: unknown }[] = [];
   const handlers = new Map<string, (jobs: Job<unknown>[]) => Promise<void>>();
   const boss = {
     on: () => undefined,
@@ -28,8 +28,8 @@ function stubBoss(existing: Record<string, string> = {}) {
       queues.set(name, options.policy);
       return Promise.resolve();
     },
-    send: (name: string, data: unknown) => {
-      sent.push({ name, data });
+    send: (name: string, data: unknown, options: unknown) => {
+      sent.push({ name, data, options });
       return Promise.resolve('job-id');
     },
     work: (
@@ -101,8 +101,13 @@ describe('la conexión pg-boss compartida', () => {
     ]);
   });
 
-  it('SRI-105: un arranque fallido no deja la conexión inservible; el siguiente intento arranca y declara la misma cola', async () => {
+  it('SRI-105: un arranque fallido no deja la conexión inservible: para lo que llegó a arrancar, y el siguiente intento arranca y declara la misma cola', async () => {
     const { boss, queues } = stubBoss();
+    let stopped = 0;
+    (boss as unknown as { stop: () => Promise<void> }).stop = () => {
+      stopped += 1;
+      return Promise.resolve();
+    };
     const connection = connectionOver(boss, {
       starts: [
         () => Promise.reject(new Error('ECONNREFUSED')),
@@ -113,6 +118,7 @@ describe('la conexión pg-boss compartida', () => {
     await expect(
       connection.declareQueue('sri-send', draft, { policy: 'stately' }),
     ).rejects.toThrow('ECONNREFUSED');
+    expect(stopped).toBe(1);
     await connection.declareQueue('sri-send', draft, { policy: 'stately' });
     expect(queues.get('sri-send')).toBe('stately');
   });
@@ -137,8 +143,14 @@ describe('la conexión pg-boss compartida', () => {
       { policy: 'standard' },
     );
 
-    await queue.send({ runId: RUN });
-    expect(sent).toEqual([{ name: 'assistant-draft', data: { runId: RUN } }]);
+    await queue.send({ runId: RUN }, { singletonKey: 'k', startAfter: 30 });
+    expect(sent).toEqual([
+      {
+        name: 'assistant-draft',
+        data: { runId: RUN },
+        options: { singletonKey: 'k', startAfter: 30 },
+      },
+    ]);
 
     for (const bad of [
       { runId: RUN, transcript: 'paciente refiere dolor' },
@@ -200,7 +212,8 @@ describe('la conexión pg-boss compartida', () => {
     const shutdown = connection.onApplicationShutdown();
     finishStart();
     await shutdown;
-    await declaring.catch(() => undefined);
+    // The declaration in flight does not hand out a handle on a stopped boss.
+    await expect(declaring).rejects.toThrow(/stopped/);
 
     expect(stopped).toBe(1);
     await expect(

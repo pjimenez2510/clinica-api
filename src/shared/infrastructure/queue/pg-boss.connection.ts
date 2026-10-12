@@ -79,6 +79,9 @@ export class PgBossConnection implements OnApplicationShutdown {
     this.declared.add(name);
     try {
       const boss = await this.instance();
+      // A shutdown that arrived while pg-boss was starting: no handle on a
+      // stopped instance.
+      if (this.stopped) throw new Error('the job queue is stopped');
       const existing = await boss.getQueue(name);
       if (!existing) {
         await boss.createQueue(name, options);
@@ -126,20 +129,24 @@ export class PgBossConnection implements OnApplicationShutdown {
     }
     if (this.boss) return Promise.resolve(this.boss);
     this.starting ??= (async () => {
-      const boss = this.create();
-      // pg-boss emits its own operational errors (a lost connection, a failed
-      // maintenance pass); unheard, they would crash the process.
-      boss.on('error', (error) =>
-        this.logger.error(
-          { err: error, error_code: 'JOB_QUEUE_ERROR' },
-          'the job queue reported an error',
-        ),
-      );
+      let boss: PgBoss | null = null;
       try {
+        boss = this.create();
+        // pg-boss emits its own operational errors (a lost connection, a
+        // failed maintenance pass); unheard, they would crash the process.
+        boss.on('error', (error) =>
+          this.logger.error(
+            { err: error, error_code: 'JOB_QUEUE_ERROR' },
+            'the job queue reported an error',
+          ),
+        );
         await boss.start();
       } catch (error) {
-        // Not cached: the next declaration tries again.
+        // Not cached: the next declaration tries again. And what started
+        // halfway —a pool, its timers— is stopped, as pg-boss asks, so each
+        // retry does not leave one more behind.
         this.starting = null;
+        await boss?.stop({ graceful: false }).catch(() => undefined);
         throw error;
       }
       this.boss = boss;

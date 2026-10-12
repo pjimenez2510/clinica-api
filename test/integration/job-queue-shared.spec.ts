@@ -146,7 +146,8 @@ describe('la cola de trabajos compartida', () => {
     await db().$executeRawUnsafe(
       `INSERT INTO pgboss.job (name, data) VALUES ('sri-sweep', NULL)`,
     );
-    await until(() => sweeps.count === 1, 15_000);
+    // `>= 1`: the minute's cron may add its own.
+    await until(() => sweeps.count >= 1, 15_000);
 
     await new PgBossVoucherQueue(sriQueues, silentLogger).schedule(
       'SEND',
