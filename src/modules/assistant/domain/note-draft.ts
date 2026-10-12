@@ -205,7 +205,7 @@ export function shownSections<S extends StoredDraftSection>(
 }
 
 /** A marker the model was never given is not a citation (SigmAI `sourceRefOf`). */
-function lineOf(
+export function lineOf(
   source: string | null,
   markers: ReadonlyMap<string, TranscriptLine>,
 ): TranscriptLine | null {

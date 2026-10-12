@@ -12,7 +12,12 @@ import {
  * that is a judgement on the content, and the database cannot read it.
  */
 export type SuggestionKind =
-  'note-section' | 'diagnosis' | 'prescription-item' | 'order-item';
+  | 'note-section'
+  | 'diagnosis'
+  | 'prescription-item'
+  | 'order-item'
+  /** AS-121. A question «Para completar la nota»: discarded, never accepted. */
+  | 'note-question';
 
 export type SuggestionStatus =
   'PROPOSED' | 'ACCEPTED' | 'ACCEPTED_WITH_CHANGES' | 'DISCARDED';
@@ -124,7 +129,9 @@ export interface SuggestionDecision {
   acceptedCode?: string;
 }
 
-const RECORD_OF: Readonly<Record<SuggestionKind, SuggestionRecord['kind']>> = {
+const RECORD_OF: Readonly<
+  Record<Exclude<SuggestionKind, 'note-question'>, SuggestionRecord['kind']>
+> = {
   'note-section': 'clinical_note',
   diagnosis: 'encounter_diagnosis',
   'prescription-item': 'prescription',
@@ -145,6 +152,10 @@ export function decisionOf(
   }
   if (verdict.outcome === 'discard') {
     return { status: 'DISCARDED', distance: null, record: null };
+  }
+  // AS-121. A question is not a datum of the record: the base refuses it too.
+  if (suggestion.kind === 'note-question') {
+    throw new SuggestionInvalidError('a question is not accepted');
   }
   const distance = distanceOf(suggestion, verdict.saved);
   return {
