@@ -32,6 +32,9 @@ import {
   PrescriptionProposalReadingDto,
 } from './dto/prescription-proposal.dto';
 
+/** AS-076. Proposing a receta writes toward one: the prescriber's permission. */
+const PRESCRIBING = ['prescription:write'] as const;
+
 /**
  * AS-063 to AS-076. The receta the assistant proposes in Receta.
  *
@@ -64,7 +67,7 @@ export class AssistantPrescriptionController {
   ): Promise<PrescriptionProposalOverviewDto> {
     this.requireEnabled();
     return toResponse(
-      await this.proposals.overview(encounterId, assistantRequester(this.currentUser, req)), // prettier-ignore
+      await this.proposals.overview(encounterId, assistantRequester(this.currentUser, req, PRESCRIBING)), // prettier-ignore
     );
   }
 
@@ -81,7 +84,7 @@ export class AssistantPrescriptionController {
     @Req() req: Request,
   ): Promise<PrescriptionProposalReadingDto> {
     this.requireEnabled();
-    const reading = await this.proposals.read(encounterId, assistantRequester(this.currentUser, req)); // prettier-ignore
+    const reading = await this.proposals.read(encounterId, assistantRequester(this.currentUser, req, PRESCRIBING)); // prettier-ignore
     return {
       ...toResponse(reading),
       found: reading.found,
@@ -103,7 +106,7 @@ export class AssistantPrescriptionController {
     this.requireEnabled();
     const items = await this.proposals.confirm(
       { encounterId, suggestionIds: dto.suggestionIds },
-      assistantRequester(this.currentUser, req),
+      assistantRequester(this.currentUser, req, PRESCRIBING),
     );
     return { items };
   }
@@ -123,7 +126,7 @@ export class AssistantPrescriptionController {
     return toResponse(
       await this.proposals.link(
         { encounterId, prescriptionId: dto.prescriptionId, lines: dto.lines },
-        assistantRequester(this.currentUser, req),
+        assistantRequester(this.currentUser, req, PRESCRIBING),
       ),
     );
   }
@@ -143,7 +146,7 @@ export class AssistantPrescriptionController {
     return toResponse(
       await this.proposals.discard(
         { encounterId, suggestionId },
-        assistantRequester(this.currentUser, req),
+        assistantRequester(this.currentUser, req, PRESCRIBING),
       ),
     );
   }

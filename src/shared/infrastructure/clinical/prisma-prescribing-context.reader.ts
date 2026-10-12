@@ -55,7 +55,8 @@ export class PrismaPrescribingContextReader implements PrescribingContextReader 
         code: row.code,
         display: row.display,
         presentations: presentationsOf(attributes.presentations),
-        controlled: attributes.controlled === true,
+        // PR-070. The issue's own criterion (`->> 'controlled' = 'true'`).
+        controlled: String(attributes.controlled) === 'true',
       };
     });
   }

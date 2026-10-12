@@ -4,7 +4,9 @@ import {
   allergyVerdictOf,
   backedLines,
   blockOf,
+  backedFields,
   canonicalLine,
+  chosenIsWritten,
   cnmbSearchName,
   cuadroStrength,
   knownCodes,
@@ -285,5 +287,117 @@ describe('a combination’s strength as the cuadro writes it (AS-066)', () => {
     expect(presentationFor(combination, { form: null, strength: '500/125 mg' })?.concentration).toBe('500 mg + 125 mg'); // prettier-ignore
     // Control: another combination is still not this one.
     expect(presentationFor(combination, { form: null, strength: '875/125 mg' })).toBeNull(); // prettier-ignore
+  });
+});
+
+describe('a dose by weight never escapes (AS-068, D-084 §5 — clinical review G1)', () => {
+  it.each([
+    '15 mg/kg/día',
+    '15 mg/kilo cada 6 horas',
+    '15 mg/kilo/dosis',
+    '10 mg x kg',
+    '15 mg/kgr',
+    '0.1 mg/k cada 8 horas',
+    '100 mg/m2sc',
+    '1,5 mg/m² SC',
+    '1,5 mg/m²',
+    '20 mg por kilo de peso',
+    'según superficie corporal',
+    '2 gotas por kilo',
+  ])('AS-068 «%s» is a dose by weight', (text) => {
+    expect(writtenByWeight(text)).toBe(true);
+  });
+
+  it.each([
+    'Amoxicilina 500 mg cada 8 horas',
+    '250 mg/5 mL cada 8 horas',
+    'Losartán 50 mg diario',
+    'Peso 70 kg',
+  ])(
+    // prettier-ignore
+    'AS-068 control: «%s» is not',
+    (text) => {
+      expect(writtenByWeight(text)).toBe(false);
+    },
+  );
+
+  it('AS-068 a dose by weight written in ANOTHER sentence of the note empties a dose in mg, not one in tablets', () => {
+    const note =
+      'Paracetamol jarabe 160 mg/5 mL cada 6 horas por 3 días. Dosis 15 mg/kg.';
+    const inMilligrams = backed({ strength: '160 mg/5 mL', doseAmount: 15, doseUnit: 'MILLIGRAM', quote: 'Paracetamol jarabe 160 mg/5 mL cada 6 horas por 3 días' }); // prettier-ignore
+    expect(
+      proposedFields(inMilligrams, null, note).fields.doseAmount,
+    ).toBeNull();
+    // Control: a tablet is counted, not weighed.
+    expect(proposedFields(backed(), null, note).fields.doseAmount).toBe(1);
+  });
+});
+
+describe('every field backed by its sentence (AS-063 — clinical review G2)', () => {
+  const NOTE_TEXT =
+    'Amoxicilina 500 mg cada 8 horas por 7 días. Ibuprofeno 400 mg cada 8 horas por 3 días.';
+  const sentence = 'Amoxicilina 500 mg cada 8 horas por 7 días.';
+
+  it('AS-063 a medicine the sentence does not name is no line', () => {
+    expect(backedFields(read({ drug: 'ibuprofeno' }), sentence, NOTE_TEXT)).toBeNull(); // prettier-ignore
+    expect(backedFields(read(), sentence, NOTE_TEXT)).not.toBeNull();
+  });
+
+  it('AS-063 each figure the sentence does not write is emptied; what it writes stays', () => {
+    const line = backedFields(read({ doseAmount: 2, durationDays: 10, strength: '875 mg' }), sentence, NOTE_TEXT)!; // prettier-ignore
+    expect([line.doseAmount, line.durationDays, line.strength]).toEqual([null, null, null]); // prettier-ignore
+    const said = backedFields(read({ doseAmount: 1 }), 'Amoxicilina 500 mg, una tableta cada 8 horas por una semana.', NOTE_TEXT)!; // prettier-ignore
+    expect([said.doseAmount, said.durationDays, said.strength]).toEqual([1, 7, '500 mg']); // prettier-ignore
+  });
+
+  it('AS-063 «una vez por semana» never backs a daily frequency (methotrexate)', () => {
+    const weekly =
+      'Metotrexato 2,5 mg, 3 tabletas una vez por semana por 4 semanas.';
+    expect(backedFields(read({ drug: 'metotrexato', strength: '2,5 mg', doseAmount: 3, frequency: 'ONCE_DAILY', durationDays: 28 }), weekly, weekly)!.frequency).toBeNull(); // prettier-ignore
+    expect(backedFields(read({ drug: 'metotrexato', strength: '2,5 mg', doseAmount: 3, frequency: 'ONCE_WEEKLY' }), weekly, weekly)!.frequency).toBe('ONCE_WEEKLY'); // prettier-ignore
+    // Control: «cada 8 horas» is backed, «cada 12» is not.
+    expect(backedFields(read(), sentence, NOTE_TEXT)!.frequency).toBe('EVERY_8_HOURS'); // prettier-ignore
+    expect(backedFields(read({ frequency: 'EVERY_12_HOURS' }), sentence, NOTE_TEXT)!.frequency).toBeNull(); // prettier-ignore
+  });
+
+  it('AS-063 free text the note does not write is not carried to the receta', () => {
+    const line = backedFields(read({ instructions: 'tomar 2 tabletas cada 4 horas', frequencyText: 'después de comer' }), sentence, NOTE_TEXT)!; // prettier-ignore
+    expect([line.instructions, line.frequencyText]).toEqual([null, null]);
+    const noted = backedFields(read({ instructions: 'por 7 días' }), sentence, NOTE_TEXT)!; // prettier-ignore
+    expect(noted.instructions).toBe('por 7 días');
+  });
+
+  it('AS-063 what the note suspends, already gives or is allergic to is no line', () => {
+    const note = [{ key: 'plan', text: 'Se suspende el ibuprofeno 400 mg cada 8 horas. Ya toma metformina 850 mg cada 12 horas. Alérgico a amoxicilina 500 mg.' }]; // prettier-ignore
+    const { kept, dropped } = backedLines({
+      read: [
+        read({ drug: 'ibuprofeno', strength: '400 mg', quote: 'ibuprofeno 400 mg cada 8 horas' }), // prettier-ignore
+        read({ drug: 'metformina', strength: '850 mg', quote: 'metformina 850 mg cada 12 horas' }), // prettier-ignore
+        read({ drug: 'amoxicilina', quote: 'amoxicilina 500 mg' }),
+      ],
+      cleared: note[0]!.text,
+      sections: note,
+      restore: (text) => text,
+    });
+    expect([kept.length, dropped]).toEqual([0, 3]);
+  });
+
+  it('AS-063 a decimal written with a point does not cut the sentence', () => {
+    const note = [{ key: 'plan', text: 'Warfarina 2.5 mg, una tableta diaria por 30 días.' }]; // prettier-ignore
+    const { kept } = backedLines({
+      read: [read({ drug: 'warfarina', strength: '2.5 mg', frequency: 'ONCE_DAILY', durationDays: 30, quote: 'Warfarina 2.5 mg, una tableta diaria por 30 días' })], // prettier-ignore
+      cleared: note[0]!.text,
+      sections: note,
+      restore: (text) => text,
+    });
+    expect(kept[0]).toMatchObject({ strength: '2.5 mg', frequency: 'ONCE_DAILY', durationDays: 30 }); // prettier-ignore
+  });
+});
+
+describe('the medicine chosen is the one written (AS-064 — clinical review m3)', () => {
+  it('AS-064 a plain amoxicillin is not the combination; a salt in the name does not stop the right one', () => {
+    expect(chosenIsWritten('Amoxicilina + ácido clavulánico', 'Amoxicilina 500 mg cada 8 horas')).toBe(false); // prettier-ignore
+    expect(chosenIsWritten('Amoxicilina + ácido clavulánico', 'Amoxicilina con ácido clavulánico 500/125 mg')).toBe(true); // prettier-ignore
+    expect(chosenIsWritten('Levotiroxina sódica', 'Levotiroxina 50 mcg en ayunas')).toBe(true); // prettier-ignore
   });
 });

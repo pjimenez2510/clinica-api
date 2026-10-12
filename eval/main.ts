@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
@@ -376,7 +377,10 @@ export async function runFromArgs(
 
   const meta: RunMetadata = {
     label,
-    ledger: world ? 'propio de la corrida falsa' : ledgerDir,
+    // A versioned result names no local account: the home folder as «~».
+    ledger: world
+      ? 'propio de la corrida falsa'
+      : ledgerDir.replace(homedir(), '~'),
     fake: world !== null,
     startedAt: clinicStamp(startedAt),
     finishedAt: clinicStamp(deps.now()),

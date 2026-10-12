@@ -16,6 +16,12 @@ import type { ProposalRequester } from './application/diagnosis-proposal.service
 export function assistantRequester(
   currentUser: CurrentUserService,
   req: Request,
+  /**
+   * AS-076. What writing also needs for this function: the receta asks
+   * `prescription:write` too — whoever may not prescribe does not send the
+   * note out to have a receta proposed (clinical review m7).
+   */
+  alsoToWrite: readonly Permission[] = [],
 ): ProposalRequester {
   const principal = currentUser.requirePrincipal();
   const sites = (permission: Permission) => {
@@ -28,7 +34,10 @@ export function assistantRequester(
   return {
     userId: currentUser.requireUserId(),
     readSites: within('record:read'),
-    writeSites: within('record:write'),
+    writeSites: alsoToWrite.reduce(
+      (scope, permission) => intersect(scope, sites(permission)),
+      within('record:write'),
+    ),
     ip: req.ip,
     userAgent: req.get('user-agent'),
   };

@@ -488,4 +488,75 @@ describe('la receta propuesta por HTTP (AS-063 a AS-077)', () => {
     expect((refused.body as Problem).code).toBe('ASSISTANT_NOTE_EMPTY');
     expect(await prisma.aiRun.count()).toBe(0);
   });
+
+  it('AS-076 an attention of another site is one that does not exist, and a closed one admits nothing new', async () => {
+    const elsewhere = (await createSite(prisma, 'Sede Sur')).id;
+    const other = await createEncounter(prisma, { siteId: elsewhere, practitionerId: doctor.practitionerId, patientId }); // prettier-ignore
+    const absent = await post(other.id, '/read', doctor.token).expect(404);
+    expect((absent.body as Problem).code).toBe('ASSISTANT_ENCOUNTER_NOT_FOUND');
+    await get(other.id, doctor.token).expect(404);
+
+    // Control: in its own site the same request reads.
+    const [line] = await readLines();
+    await prisma.$executeRaw`UPDATE encounter SET status = 'DISCHARGED', ended_at = ${new Date()}, "dischargeCondition" = 'ALIVE' WHERE id = ${encounterId}::uuid`; // prettier-ignore
+    for (const [path, body] of [
+      ['/read', {}],
+      ['/confirm', { suggestionIds: [line!.id] }],
+      [`/${line!.id}/discard`, {}],
+    ] as const) {
+      // prettier-ignore
+      const closed = await post(encounterId, path, doctor.token, body).expect(409);
+      expect((closed.body as Problem).code).toBe('ASSISTANT_ENCOUNTER_CLOSED');
+    }
+    expect(await prisma.aiSuggestion.count({ where: { status: 'PROPOSED' } })).toBe(2); // prettier-ignore
+  });
+
+  it('AS-076 another doctor neither confirms nor links, and nothing is decided', async () => {
+    const [line] = await readLines();
+    const draft = await prisma.prescription.create({ data: { encounterId, siteId, prescriberId: doctor.practitionerId } }); // prettier-ignore
+
+    const confirm = await post(encounterId, '/confirm', secondDoctor.token, { suggestionIds: [line!.id] }).expect(403); // prettier-ignore
+    expect((confirm.body as Problem).code).toBe(
+      'ASSISTANT_NOT_ENCOUNTER_OWNER',
+    );
+    await post(encounterId, '/link', secondDoctor.token, { prescriptionId: draft.id, lines: [{ suggestionId: line!.id, line: 1 }] }).expect(403); // prettier-ignore
+    expect((await prisma.aiSuggestion.findUniqueOrThrow({ where: { id: line!.id } })).status).toBe('PROPOSED'); // prettier-ignore
+  });
+
+  it('AS-065 PR-070 a controlled medicine is proposed with its reason and cannot be confirmed', async () => {
+    await prisma.catalogConcept.update({ where: { id: amoxicillinId }, data: { attributes: { substances: ['dci:amoxicilina'], controlled: true, presentations: [{ form: 'TABLET', forms: ['TABLET'], concentration: '500 mg', label: 'Sólido oral', route: 'O - Oral' }] } } }); // prettier-ignore
+    const [line] = await readLines();
+
+    expect(line).toMatchObject({ block: 'controlled' });
+    const refused = await post(encounterId, '/confirm', doctor.token, { suggestionIds: [line!.id] }).expect(422); // prettier-ignore
+    expect((refused.body as Problem).code).toBe(
+      'ASSISTANT_PRESCRIPTION_LINE_NOT_READY',
+    );
+  });
+
+  it('AS-074 a link that cannot be made leaves none made: a repeated line, or a line of another medicine', async () => {
+    const [line] = await readLines();
+    const paracetamol = await cnmb('N02BE01', 'Paracetamol', [
+      'dci:paracetamol',
+    ]);
+    const draft = await prisma.prescription.create({
+      data: {
+        encounterId,
+        siteId,
+        prescriberId: doctor.practitionerId,
+        items: { create: [{ conceptId: amoxicillinId, genericName: 'Amoxicilina', presentation: 'Tableta', concentration: '500 mg', dosageFormCode: 'TABLET', doseAmount: 1, doseUnitCode: 'TABLET', doseText: '1 tableta', routeCode: 'ORAL', frequencyCode: 'EVERY_8_HOURS', frequencyText: 'Cada 8 horas', durationDays: 7, quantity: 21 }, { conceptId: paracetamol.id, genericName: 'Paracetamol', presentation: 'Tableta', concentration: '500 mg', dosageFormCode: 'TABLET', doseAmount: 1, doseUnitCode: 'TABLET', doseText: '1 tableta', routeCode: 'ORAL', frequencyCode: 'EVERY_8_HOURS', frequencyText: 'Cada 8 horas', durationDays: 3, quantity: 9 }] }, // prettier-ignore
+      },
+    });
+
+    const repeated = await post(encounterId, '/link', doctor.token, { prescriptionId: draft.id, lines: [{ suggestionId: line!.id, line: 1 }, { suggestionId: line!.id, line: 2 }] }).expect(422); // prettier-ignore
+    expect((repeated.body as Problem).code).toBe('SUGGESTION_INVALID');
+    const other = await post(encounterId, '/link', doctor.token, { prescriptionId: draft.id, lines: [{ suggestionId: line!.id, line: 2 }] }).expect(422); // prettier-ignore
+    expect((other.body as Problem).code).toBe(
+      'SUGGESTION_PRESCRIPTION_MISMATCH',
+    );
+    expect((await prisma.aiSuggestion.findUniqueOrThrow({ where: { id: line!.id } })).status).toBe('PROPOSED'); // prettier-ignore
+
+    // Control: its own medicine's line links.
+    await post(encounterId, '/link', doctor.token, { prescriptionId: draft.id, lines: [{ suggestionId: line!.id, line: 1 }] }).expect(200); // prettier-ignore
+  });
 });

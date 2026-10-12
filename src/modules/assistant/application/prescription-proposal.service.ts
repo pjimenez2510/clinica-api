@@ -46,6 +46,8 @@ import {
   AssistantProposalNotKeptError,
   AssistantReadingInProgressError,
   PseudonymizerFailedError,
+  SuggestionAlreadyDecidedError,
+  SuggestionInvalidError,
   SuggestionNotFoundError,
   SuggestionPrescriptionMismatchError,
 } from '../domain/assistant.errors';
@@ -54,6 +56,7 @@ import {
   backedLines,
   blockOf,
   canonicalLine,
+  chosenIsWritten,
   cnmbSearchName,
   knownCodes,
   presentationFor,
@@ -94,6 +97,7 @@ import {
   MAPPING_PROMPT_VERSION,
   MAPPING_PURPOSE,
   mappingAnswer,
+  MOST_LINES,
   vocabularyContext,
   writtenLines,
 } from './prescription-reading.prompts';
@@ -212,7 +216,7 @@ export class PrescriptionProposalService {
     requester: ProposalRequester,
   ): Promise<PrescriptionOverview> {
     const encounter = await this.encounterFor(encounterId, requester.readSites);
-    const overview = await this.overviewOf(encounter, requester.readSites);
+    const overview = await this.overviewOf(encounter, requester);
     await this.trail(encounter, requester);
     return overview;
   }
@@ -289,7 +293,7 @@ export class PrescriptionProposalService {
     if (read.runId === null) throw new AssistantProposalNotKeptError();
 
     const backed = backedLines({
-      read: read.value.lines.map(knownCodes),
+      read: read.value.lines.slice(0, MOST_LINES).map(knownCodes),
       cleared: cleared.cleared,
       sections: note.sections,
       restore: (text) => restorePlaceholders(text, cleared.replacements),
@@ -306,13 +310,17 @@ export class PrescriptionProposalService {
 
     const proposals = backed.kept.map((line, at): PrescriptionProposal => {
       const choice = chosen[at];
-      const medicine = choice?.medicine ?? null;
+      // m3. The medicine chosen is the one the sentence writes, or none.
+      const medicine =
+        choice && chosenIsWritten(choice.medicine.display, line.quote)
+          ? choice.medicine
+          : null;
       const presentation = presentationFor(choice?.presentation, {
         form: line.form,
         strength: line.strength,
       });
       const { fields, unsaid, doseByWeight } = medicine
-        ? proposedFields(line, presentation)
+        ? proposedFields(line, presentation, noteText(note.sections))
         : { fields: unchosen(), unsaid: [], doseByWeight: false };
       return {
         quote: line.quote,
@@ -357,7 +365,7 @@ export class PrescriptionProposalService {
     );
 
     return {
-      ...(await this.overviewOf(encounter, requester.readSites)),
+      ...(await this.overviewOf(encounter, requester)),
       found: proposals.length,
       dropped: backed.dropped,
     };
@@ -497,17 +505,35 @@ export class PrescriptionProposalService {
   ): Promise<PrescriptionOverview> {
     const encounter = await this.ownLiveEncounter(input.encounterId, requester);
     const stored = await this.suggestions.ofEncounter(encounter.id, writer(requester), 'prescription-item'); // prettier-ignore
+    // Everything is checked before anything is written: one link that cannot
+    // be made leaves none made (reviews of 12-10-2026).
+    const ids = input.lines.map((each) => each.suggestionId);
+    const lines = input.lines.map((each) => each.line);
+    if (
+      new Set(ids).size !== ids.length ||
+      new Set(lines).size !== lines.length
+    ) {
+      throw new SuggestionInvalidError('lines');
+    }
+    const shown = await this.shownOf(encounter, stored);
     const saved = await Promise.all(
       input.lines.map(async ({ suggestionId, line }) => {
-        if (!stored.some((each) => each.id === suggestionId)) {
-          throw new SuggestionNotFoundError();
+        const suggestion = shown.find((each) => each.id === suggestionId);
+        if (!suggestion) throw new SuggestionNotFoundError();
+        if (suggestion.status !== 'PROPOSED') {
+          throw new SuggestionAlreadyDecidedError();
         }
         const written = await this.prescribing.prescriptionLine(
           encounter.id,
           input.prescriptionId,
           line,
         );
-        if (!written) throw new SuggestionPrescriptionMismatchError();
+        // The line saved is of THIS proposal's medicine: a line of another
+        // one is not the proposal's doing, and would spoil phase F.
+        const medicine = proposalOf(suggestion).medicine;
+        if (!written || !medicine || written.conceptId !== medicine.conceptId) {
+          throw new SuggestionPrescriptionMismatchError();
+        }
         return { suggestionId, text: savedText(written) };
       }),
     );
@@ -518,7 +544,7 @@ export class PrescriptionProposalService {
       );
     }
     await this.trail(encounter, requester);
-    return this.overviewOf(encounter, requester.readSites);
+    return this.overviewOf(encounter, requester);
   }
 
   /** AS-075. The physician says no to a line. */
@@ -533,17 +559,18 @@ export class PrescriptionProposalService {
     }
     await this.suggestions.discard(input.suggestionId, writer(requester));
     await this.trail(encounter, requester);
-    return this.overviewOf(encounter, requester.readSites);
+    return this.overviewOf(encounter, requester);
   }
 
   /** AS-069, AS-072. The current reading, with its checks made now. */
   private async overviewOf(
     encounter: CodingEncounter,
-    sites: 'all' | readonly string[],
+    requester: ProposalRequester,
   ): Promise<PrescriptionOverview> {
+    // Read with the sites where the requester reads the history (AS-076).
     const stored = await this.suggestions.ofEncounter(
       encounter.id,
-      { userId: '', sites },
+      { userId: requester.userId, sites: requester.readSites },
       'prescription-item',
     );
     const shown = await this.shownOf(encounter, stored);

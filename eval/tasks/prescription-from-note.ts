@@ -15,6 +15,7 @@ import { withContext } from '../../src/modules/assistant/application/llm-client.
 import { noteText } from '../../src/modules/assistant/application/problem-coding.prompts.ts';
 import {
   backedLines,
+  chosenIsWritten,
   cnmbSearchName,
   knownCodes,
   presentationFor,
@@ -180,8 +181,8 @@ export function prescriptionFromNoteTask(
           answer: mappingAnswer,
           maxTokens: 1_000,
         });
-        // The second call failed: nothing is shown, as in the product.
-        if (answer === null) return { shown: null, scores: nothingShown(item) };
+        // The second call failed: the case was not answered (availability).
+        if (answer === null) return { shown: null, scores: {}, unanswered: true }; // prettier-ignore
         choices = answer.choices;
       }
 
@@ -191,7 +192,10 @@ export function prescriptionFromNoteTask(
           choice?.medicine == null
             ? undefined
             : candidates[at]?.[choice.medicine - 1];
-        if (!medicine) return [];
+        // m3. As the product: the medicine chosen is the one the sentence writes.
+        if (!medicine || !chosenIsWritten(medicine.display, line.quote)) {
+          return [];
+        }
         const chosen = presentationFor(
           choice?.presentation == null
             ? undefined
@@ -239,17 +243,5 @@ function scoresOf(
     all: mapped === lines && left.length === 0 ? 1 : 0,
     extra: left.length,
     outsideCnmb: shown.filter((each) => !inCuadro.has(each.code)).length,
-  };
-}
-
-/** A failed second call shows nothing: every expected line is missed. */
-function nothingShown(item: PrescriptionNoteCase): Scores {
-  const lines = item.expected.length;
-  return {
-    mapping: lines === 0 ? null : 0,
-    medicine: lines === 0 ? null : 0,
-    all: lines === 0 ? 1 : 0,
-    extra: 0,
-    outsideCnmb: 0,
   };
 }

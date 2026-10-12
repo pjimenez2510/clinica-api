@@ -26,6 +26,7 @@ import {
   AssistantNotEncounterOwnerError,
   AssistantPrescriptionLineNotReadyError,
   AssistantReadingInProgressError,
+  SuggestionInvalidError,
   SuggestionPrescriptionMismatchError,
 } from '../domain/assistant.errors';
 import type { PrescriptionProposal } from '../domain/prescription-reading';
@@ -561,5 +562,24 @@ describe('PrescriptionProposalService — allergies, confirm and link', () => {
       { userId: DOCTOR, sites: 'all' },
     );
     await expect(service.link({ encounterId: 'enc-1', prescriptionId: 'rx-1', lines: [{ suggestionId: 'sug-1', line: 4 }] }, requester())).rejects.toBeInstanceOf(SuggestionPrescriptionMismatchError); // prettier-ignore
+  });
+
+  it('AS-074 nothing is linked unless every link can be: repeated ids or lines, or a line of another medicine', async () => {
+    const amoxicillinLine: PrescribedLine = { conceptId: 'c-amox', dosageFormCode: 'TABLET', concentration: '500 mg', routeCode: 'ORAL', doseAmount: 1, doseUnitCode: 'TABLET', frequencyCode: 'EVERY_8_HOURS', frequencyText: 'Cada 8 horas', durationDays: 7, quantity: 21 }; // prettier-ignore
+    const { service, store } = await readWith({
+      prescribingReader: prescribing({
+        prescriptionLine: (_e, _p, line) =>
+          Promise.resolve(line === 1 ? amoxicillinLine : { ...amoxicillinLine, conceptId: 'c-paracetamol' }), // prettier-ignore
+      }),
+    });
+    const link = (lines: { suggestionId: string; line: number }[]) =>
+      service.link({ encounterId: 'enc-1', prescriptionId: 'rx-1', lines }, requester()); // prettier-ignore
+
+    await expect(link([{ suggestionId: 'sug-1', line: 1 }, { suggestionId: 'sug-1', line: 2 }])).rejects.toBeInstanceOf(SuggestionInvalidError); // prettier-ignore
+    await expect(link([{ suggestionId: 'sug-1', line: 2 }])).rejects.toBeInstanceOf(SuggestionPrescriptionMismatchError); // prettier-ignore
+    expect(store.raw.accept).not.toHaveBeenCalled();
+    // Control: the line of its own medicine links.
+    await link([{ suggestionId: 'sug-1', line: 1 }]);
+    expect(store.raw.accept).toHaveBeenCalledTimes(1);
   });
 });

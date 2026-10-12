@@ -68,5 +68,13 @@ export interface EvalTask<Case extends EvalCase, Value> {
     judge: Ask | null,
     /** The provider being measured, asked again (role `follow-up`). */
     followUp?: Ask,
-  ): Promise<{ shown: unknown; scores: Scores }>;
+  ): Promise<{
+    shown: unknown;
+    scores: Scores;
+    /**
+     * A follow-up did not answer: the case was not answered, and counts in
+     * availability, not in quality.
+     */
+    unanswered?: true;
+  }>;
 }

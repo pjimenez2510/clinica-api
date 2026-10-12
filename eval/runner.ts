@@ -276,13 +276,15 @@ export async function runEvaluation(options: RunOptions): Promise<RunOutcome> {
                     request,
                   )
                 ).value;
-              ({ shown, scores } = await task.evaluate(
+              const result = await task.evaluate(
                 item,
                 arm,
                 value,
                 judgeAsk,
                 followUp,
-              ));
+              );
+              ({ shown, scores } = result);
+              if (result.unanswered) scores = null;
             }
             calls.push({
               task: task.name,
@@ -290,7 +292,7 @@ export async function runEvaluation(options: RunOptions): Promise<RunOutcome> {
               origin: item.origin,
               provider: provider.name,
               arm,
-              answered: value !== null,
+              answered: value !== null && scores !== null,
               failure,
               requests,
               shown,

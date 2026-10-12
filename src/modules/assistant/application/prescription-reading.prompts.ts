@@ -68,25 +68,25 @@ const code = <T extends string>(codes: readonly T[]) =>
   z.enum(codes as [T, ...T[]]).nullable();
 
 export const linesAnswer = z.object({
-  lines: z
-    .array(
-      z.object({
-        drug: z.string().min(2).max(120),
-        strength: z.string().max(60).nullable(),
-        // Text, checked against the list afterwards (`knownCodes`): Gemini
-        // answers 400 to an enum this long in the schema (measured 12-10-2026).
-        form: z.string().max(40).nullable(),
-        doseAmount: z.number().positive().max(10_000).nullable(),
-        doseUnit: code(DOSE_UNIT_CODES),
-        route: code(MEDICATION_ROUTE_CODES),
-        frequency: code(FREQUENCY_CODES),
-        frequencyText: z.string().max(160).nullable(),
-        durationDays: z.number().int().positive().max(365).nullable(),
-        instructions: z.string().max(300).nullable(),
-        quote: z.string().min(1).max(300),
-      }),
-    )
-    .max(MOST_LINES),
+  lines: z.array(
+    z.object({
+      drug: z.string().min(2).max(120),
+      strength: z.string().max(60).nullable(),
+      // Text, checked against the list afterwards (`knownCodes`): Gemini
+      // answers 400 to an enum this long in the schema (measured 12-10-2026).
+      form: z.string().max(40).nullable(),
+      doseAmount: z.number().positive().max(10_000).nullable(),
+      doseUnit: code(DOSE_UNIT_CODES),
+      route: code(MEDICATION_ROUTE_CODES),
+      frequency: code(FREQUENCY_CODES),
+      frequencyText: z.string().max(160).nullable(),
+      durationDays: z.number().int().positive().max(365).nullable(),
+      instructions: z.string().max(300).nullable(),
+      quote: z.string().min(1).max(300),
+    }),
+  ),
+  // No bound here: an eleventh line must not fail the whole reading; the
+  // service keeps the first MOST_LINES (code review of 12-10-2026).
 });
 
 /**
@@ -125,15 +125,13 @@ Reglas:
 Responde solo con JSON: {"choices": [{"line": 1, "medicine": 1, "presentation": 1}]}`;
 
 export const mappingAnswer = z.object({
-  choices: z
-    .array(
-      z.object({
-        line: z.number().int().positive(),
-        medicine: z.number().int().positive().nullable(),
-        presentation: z.number().int().positive().nullable(),
-      }),
-    )
-    .max(MOST_LINES),
+  choices: z.array(
+    z.object({
+      line: z.number().int().positive(),
+      medicine: z.number().int().positive().nullable(),
+      presentation: z.number().int().positive().nullable(),
+    }),
+  ),
 });
 
 /**

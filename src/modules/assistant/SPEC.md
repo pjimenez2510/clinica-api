@@ -662,7 +662,12 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > que se suspende— no es una línea. Las listas cerradas de la receta
   > (PR-101, PR-102: forma, unidad, vía y frecuencia) van al modelo como
   > catálogo del sistema (`withContext`): lo que no es de la lista queda vacío.
-  > Al modelo NO se le pide calcular nada (SigmAI `READING`).
+  > Al modelo NO se le pide calcular nada (SigmAI `READING`). Lo que el
+  > modelo lee no se muestra como «dicho» sin que la frase lo respalde
+  > (revisión clínica del 12-10-2026, G2): un campo inventado vacío pide al
+  > médico que lo escriba; uno inventado lleno se firmaría. La forma vuelve
+  > como texto y se comprueba contra la lista: Gemini rechaza esa enumeración
+  > en el esquema.
 - **AS-064** — Para cada línea el sistema DEBERÁ buscar en el CNMB vigente en
   la fecha clínica de la atención hasta **5** medicamentos por su principio
   activo o su nombre (sin tildes ni mayúsculas), con sus presentaciones
@@ -704,7 +709,13 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   ni de la superficie corporal (D-084 §5), ni leer el peso del paciente para
   esta función: SI la nota escribe la dosis por peso («mg/kg», «por kilo»),
   ENTONCES la línea DEBERÁ quedar sin dosis ni cantidad, con el motivo
-  `dose-by-weight` para que el médico la escriba.
+  `dose-by-weight` para que el médico la escriba; y SI la nota escribe una
+  dosis por peso en cualquier otra oración, ENTONCES ninguna dosis en
+  miligramos, microgramos, gramos, unidades o mililitros DEBERÁ tomarse de
+  ella.
+  > Las formas de escribirlo que se reconocen (revisión clínica G1): «mg/kg»,
+  > «mg/kilo», «mg x kg», «mg/kgr», «mg/k», «por kilo», «mg/m²», «m2sc» y
+  > «superficie corporal».
   > Si el cálculo de dosis convierte el sistema en dispositivo médico ante
   > ARCSA es D-084 §5, del asesor legal.
 
@@ -774,13 +785,16 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   SI la receta no es de la atención o la línea no existe, ENTONCES DEBERÁ
   rechazarlo con `SUGGESTION_PRESCRIPTION_MISMATCH` (422).
   > Lo guardado lo lee el servidor, no lo dice quien llama (AS-022): así la
-  > fase F mide lo que el médico corrigió. Si el enlace falla, la receta queda
+  > fase F mide lo que el médico corrigió. La línea DEBERÁ ser del
+  > medicamento de la propuesta, y todo se comprueba antes de escribir nada:
+  > una propuesta o una línea repetida (`SUGGESTION_INVALID`), una ya
+  > decidida o de otra lectura no enlazan ninguna. Si el enlace falla, la receta queda
   > guardada (fue el acto del médico) y la tarjeta lo dice.
 - **AS-075** — CUANDO el profesional descarte una propuesta, el sistema DEBERÁ
   dejarla «descartada» con quién y cuándo, y NO DEBERÁ volver a mostrarla.
 - **AS-076** — Proponer, confirmar, enlazar y descartar DEBERÁN exigir lo de
-  AS-039: el profesional de la atención, `assistant:use` y `record:write` en
-  su sede, la atención viva; una atención de otra sede DEBERÁ responderse como
+  AS-039: el profesional de la atención, `assistant:use`, `record:write` y
+  `prescription:write` en su sede, la atención viva; una atención de otra sede DEBERÁ responderse como
   inexistente. Ver la propuesta DEBERÁ exigir `record:read`.
 
 ### 19. Fallos, privacidad y medida
@@ -798,15 +812,21 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   DEBERÁ dejar su fila `EXPORT` en la bitácora.
   > PR-094: el nombre de un medicamento es un diagnóstico dicho de otra forma.
   > El error de AS-073 nombra las líneas por su número, nunca por su nombre.
+  > La excepción es `ai_exchange`, sólo si se enciende (AS-014): guarda el
+  > prompt seudonimizado y la respuesta, medicamentos incluidos, y se purga
+  > a los 45 días (D-239 §3).
 - **AS-079** — El arnés de evaluación DEBERÁ medir, sobre un set propio de
   notas inventadas con su receta esperada contra el CNMB, el **acierto del
   mapeo** (medicamento y presentación del cuadro) del camino del producto
-  —leer, buscar, elegir y la barrera—, con su intervalo, el F1 por campo y
-  cuántos medicamentos fuera del CNMB se habrían mostrado, que DEBERÁ ser
-  **cero**; fuera del verify, con el modelo, las versiones de prompt y la del
-  cuadro.
+  —leer, buscar, elegir y la barrera—, con su intervalo, los medicamentos de
+  más y cuántos medicamentos fuera del CNMB se habrían mostrado, que DEBERÁ ser
+  **cero**; la latencia sumando las dos llamadas de cada caso; fuera del
+  verify, con el modelo, las versiones de prompt y la del cuadro.
   > Umbral para encender (P7): más de 73,2 % (E-072). Sólo casos inventados
-  > (EV-1).
+  > (EV-1). El F1 por campo (forma, vía, dosis, frecuencia, duración) lo mide
+  > la tarea `receta` de A6 sobre dictados con la receta entera esperada; el
+  > set de notas de esta tarea sólo trae el medicamento y la presentación
+  > esperados.
 
 ### 20. En la pestaña Receta
 
