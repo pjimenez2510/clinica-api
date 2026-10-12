@@ -18,6 +18,7 @@ import { extractDatabaseProblem } from '../../src/shared/http/database-problem';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
+import { withReadRevision } from './setup/read-revision';
 import {
   createDiagnosis,
   createPatient,
@@ -260,17 +261,36 @@ describe('la atención por HTTP', () => {
     ...overrides,
   });
 
+  // EN-281. Writes on a draft carry the revision a screen would have just read.
   const post = (path: string, token: string, body?: object) =>
-    request(app.getHttpServer())
-      .post(`/api/v1${path}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send(body ?? {});
+    withReadRevision(
+      prisma,
+      path,
+      request(app.getHttpServer())
+        .post(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body ?? {}),
+    );
+
+  const patch = (path: string, token: string, body: object) =>
+    withReadRevision(
+      prisma,
+      path,
+      request(app.getHttpServer())
+        .patch(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body),
+    );
 
   const put = (path: string, token: string, body: object) =>
-    request(app.getHttpServer())
-      .put(`/api/v1${path}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send(body);
+    withReadRevision(
+      prisma,
+      path,
+      request(app.getHttpServer())
+        .put(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body),
+    );
 
   const get = (path: string, token: string) =>
     request(app.getHttpServer())
@@ -1309,11 +1329,9 @@ describe('la atención por HTTP', () => {
       ).expect(422);
 
       // Control positivo: con una de sus opciones, firma.
-      await request(app.getHttpServer())
-        .patch(`/api/v1/encounters/${encounterId}/notes/${note.id}`)
-        .set('Authorization', `Bearer ${doctorToken}`)
-        .send({ content: { ...COMPLETE_002, extra1: 'Caries' } })
-        .expect(200);
+      await patch(`/encounters/${encounterId}/notes/${note.id}`, doctorToken, {
+        content: { ...COMPLETE_002, extra1: 'Caries' },
+      }).expect(200);
       await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${note.id}/sign`,
@@ -1322,6 +1340,114 @@ describe('la atención por HTTP', () => {
           dischargeCondition: 'ALIVE',
         },
       ).expect(200);
+    });
+  });
+
+  describe('la nota que dos pestañas no pisan (EN-281, EN-282)', () => {
+    /** Two tabs: each request names, by hand, the revision its tab read. */
+    const tab = (
+      method: 'patch' | 'post',
+      path: string,
+      revision: string | null,
+      body: object,
+    ) => {
+      const call = request(app.getHttpServer())
+        [method](`/api/v1${path}`)
+        .set('Authorization', `Bearer ${doctorToken}`);
+      if (revision !== null) call.set('If-Match', revision);
+      return call.send(body);
+    };
+
+    async function aDraft() {
+      const encounterId = await openEncounter();
+      const draft = await post(
+        `/encounters/${encounterId}/notes`,
+        doctorToken,
+        {
+          formCode: '002',
+          content: COMPLETE_002,
+        },
+      ).expect(201);
+      const note = draft.body as NoteBody & { revision: number };
+      return { encounterId, note, path: `/encounters/${encounterId}/notes/${note.id}` }; // prettier-ignore
+    }
+
+    it('EN-281 dos escrituras con la misma revisión: la segunda recibe 412 RECORD_CHANGED y no pisa a la primera', async () => {
+      const { note, path } = await aDraft();
+      expect(note.revision).toBe(1);
+
+      // Control positivo: la primera pestaña guarda y la revisión sube.
+      const first = await tab('patch', path, '"1"', {
+        content: { ...COMPLETE_002, planTratamiento: 'De la primera pestaña' },
+      }).expect(200);
+      expect((first.body as { revision: number }).revision).toBe(2);
+
+      const second = await tab('patch', path, '"1"', {
+        content: { ...COMPLETE_002, planTratamiento: 'De la segunda pestaña' },
+      }).expect(412);
+      expect(second.headers['content-type']).toMatch(
+        /application\/problem\+json/,
+      );
+      expect(second.body).toMatchObject({
+        status: 412,
+        code: 'RECORD_CHANGED',
+        title: 'Otra persona cambió esto; recargue',
+      });
+
+      const stored = await prisma.clinicalNote.findUniqueOrThrow({
+        where: { id: note.id },
+      });
+      expect(stored.content).toMatchObject({
+        planTratamiento: 'De la primera pestaña',
+      });
+      expect(stored.revision).toBe(2);
+    });
+
+    it('EN-281 sin If-Match, o con uno que no es una revisión, 428 REVISION_REQUIRED sin escribir', async () => {
+      const { note, path } = await aDraft();
+
+      for (const revision of [null, '*', 'W/"1"', '1']) {
+        const refused = await tab('patch', path, revision, {
+          content: { ...COMPLETE_002, planTratamiento: 'Sin revisión' },
+        }).expect(428);
+        expect(refused.body).toMatchObject({
+          status: 428,
+          code: 'REVISION_REQUIRED',
+          title: 'Recargue la página y vuelva a intentarlo',
+        });
+      }
+      const stored = await prisma.clinicalNote.findUniqueOrThrow({
+        where: { id: note.id },
+      });
+      expect(stored.content).toEqual(COMPLETE_002);
+      expect(stored.revision).toBe(1);
+    });
+
+    it('EN-282 firmar desde la pestaña que no vio lo último: 412, sin firmar ni dar el alta; con la revisión vigente, firma', async () => {
+      const { encounterId, path } = await aDraft();
+      await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
+
+      await tab('patch', path, '"1"', {
+        content: { ...COMPLETE_002, planTratamiento: 'Lo último' },
+      }).expect(200);
+
+      const refused = await tab('post', `${path}/sign`, '"1"', {
+        dischargeCondition: 'ALIVE',
+      }).expect(412);
+      expect(refused.body).toMatchObject({ code: 'RECORD_CHANGED' });
+      const open = await get(`/encounters/${encounterId}`, doctorToken).expect(200); // prettier-ignore
+      expect(open.body).toMatchObject({ status: 'OPEN' });
+
+      await tab('post', `${path}/sign`, null, { dischargeCondition: 'ALIVE' }).expect(428); // prettier-ignore
+
+      // Control positivo.
+      const signed = await tab('post', `${path}/sign`, '"2"', {
+        dischargeCondition: 'ALIVE',
+      }).expect(200);
+      expect(signed.body).toMatchObject({
+        status: 'SIGNED',
+        content: expect.objectContaining({ planTratamiento: 'Lo último' }),
+      });
     });
   });
 
@@ -1508,15 +1634,11 @@ describe('la atención por HTTP', () => {
       expect((refused.body as Problem).code).toBe('NOTE_CONTENT_INCOMPLETE');
 
       // Control positivo: con una línea escrita, la misma nota se firma.
-      await request(app.getHttpServer())
-        .patch(
-          `/api/v1/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}`,
-        )
-        .set('Authorization', `Bearer ${doctorToken}`)
-        .send({
-          content: { ...COMPLETE_002, antecedentes: 'Niega antecedentes' },
-        })
-        .expect(200);
+      await patch(
+        `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}`,
+        doctorToken,
+        { content: { ...COMPLETE_002, antecedentes: 'Niega antecedentes' } },
+      ).expect(200);
       await createDiagnosis(prisma, encounterId, 'J00'); // EN-020
       await post(
         `/encounters/${encounterId}/notes/${(draft.body as NoteBody).id}/sign`,
@@ -1552,17 +1674,13 @@ describe('la atención por HTTP', () => {
       ]);
 
       // The one click: the draft carries the statement, and it signs.
-      await request(app.getHttpServer())
-        .patch(`/api/v1/encounters/${encounterId}/notes/${noteId}`)
-        .set('Authorization', `Bearer ${doctorToken}`)
-        .send({
-          content: {
-            ...COMPLETE_002,
-            antecedentes: '',
-            backgroundDenied: true,
-          },
-        })
-        .expect(200);
+      await patch(`/encounters/${encounterId}/notes/${noteId}`, doctorToken, {
+        content: {
+          ...COMPLETE_002,
+          antecedentes: '',
+          backgroundDenied: true,
+        },
+      }).expect(200);
       await sign().expect(200);
 
       const stored = await prisma.clinicalNote.findUniqueOrThrow({
@@ -2205,11 +2323,11 @@ describe('la atención por HTTP', () => {
         { dischargeCondition: 'ALIVE' },
       ).expect(200);
 
-      const response = await request(app.getHttpServer())
-        .patch(`/api/v1/encounters/${encounterId}/notes/${noteId}`)
-        .set('Authorization', `Bearer ${doctorToken}`)
-        .send({ content: { ...COMPLETE_002, planTratamiento: 'Otro' } })
-        .expect(409);
+      const response = await patch(
+        `/encounters/${encounterId}/notes/${noteId}`,
+        doctorToken,
+        { content: { ...COMPLETE_002, planTratamiento: 'Otro' } },
+      ).expect(409);
 
       const problem = response.body as Problem;
       expect(problem.code).toBe('NOTE_ALREADY_SIGNED');

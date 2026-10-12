@@ -151,6 +151,11 @@ export const clinicalNoteSchema = z.object({
   /** EN-024. Constant across every version of the same note. */
   chainId: z.uuid(),
   version: z.number().int(),
+  /**
+   * EN-281. The revision to send back in `If-Match` when editing or signing
+   * the draft. Changes with every write of the draft (EN-283).
+   */
+  revision: z.number().int().positive(),
   /** EN-021. The MSP form number, as data. */
   formCode: z.string(),
   formVersion: z.string(),

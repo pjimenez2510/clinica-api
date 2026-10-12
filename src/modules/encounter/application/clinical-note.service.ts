@@ -52,6 +52,7 @@ import {
   EncounterNotFoundError,
   PractitionerProfileRequiredError,
 } from '../domain/encounter.errors';
+import { assertRevision } from '../../../shared/domain/errors/record-changed.error';
 import { acceptsNewClinicalContent } from '../domain/encounter-state';
 import { assertLicensedOn } from '../domain/practitioner-licence';
 import type { DischargeCondition } from '../domain/encounter';
@@ -89,6 +90,8 @@ export interface DraftNoteRequest {
 export interface SignNoteRequest {
   encounterId: string;
   noteId: string;
+  /** EN-282. The revision the signer saw (`If-Match`). */
+  revision: number;
   /**
    * EN-009, EN-130. How the attention ended, asked for at the SIGNATURE.
    *
@@ -252,7 +255,13 @@ export class ClinicalNoteService {
    * doctor they lack permissions when what happened is that the note is signed.
    */
   async updateDraft(
-    request: { encounterId: string; noteId: string; content: NoteContent },
+    request: {
+      encounterId: string;
+      noteId: string;
+      content: NoteContent;
+      /** EN-281. The revision the writer read (`If-Match`). */
+      revision: number;
+    },
     requester: Requester,
   ): Promise<NoteWithTemplate> {
     const updated = await this.notes.updateDraft(
@@ -262,7 +271,11 @@ export class ClinicalNoteService {
         sites: requester.sites,
       },
       draftContent(request.content),
-      (note) => assertEditable(note.status),
+      (note) => {
+        // Signed first: «ya está firmada» says more than «cambió».
+        assertEditable(note.status);
+        assertRevision(note.revision, request.revision);
+      },
     );
 
     await this.audit.record({
@@ -325,6 +338,8 @@ export class ClinicalNoteService {
         // EN-023. A note that is not a draft is not signable, and the answer
         // says so instead of naming a trigger.
         assertEditable(note.status);
+        // EN-282. Nobody signs a text they did not see.
+        assertRevision(note.revision, request.revision);
         this.assertEncounterAcceptsContent(encounter);
 
         const form = requireForm(note.formCode, note.formVersion);
