@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -31,13 +32,18 @@ export class FileAiRunStore implements AiRunStore {
     this.file = join(dir, 'intentos.jsonl');
   }
 
+  /**
+   * Every line carries its own id: `feat/ia-d1-cie10` makes `record` answer
+   * the id of the row (`Promise<string>`), and then this returns `id`.
+   */
   record(run: AiRunRecord, exchange: AiExchangeRecord | null): Promise<void> {
     if (exchange !== null) {
       throw new Error(
         'El arnés no guarda texto: corra con el registro de intercambios apagado',
       );
     }
-    appendFileSync(this.file, `${JSON.stringify(run)}\n`);
+    const id = randomUUID();
+    appendFileSync(this.file, `${JSON.stringify({ id, ...run })}\n`);
     this.recorded.push(run);
     return Promise.resolve();
   }
