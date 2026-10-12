@@ -600,6 +600,22 @@ dibuja la tendencia sin crecer.
 `GET /patients/:id/vitals` y el resumen que ya llega). **Solo servidor:**
 EN-270, EN-271 (lo que se omite y la bitácora no se ven en una pantalla).
 
+### H17 — La evolución que se elige, en la ficha y en la consulta, y las pestañas en el teléfono _(P2)_
+
+Revisión de producto del 10-10-2026, D-226 §3–§6, con D-214 §2, §5 y §6 (D-223).
+Las gráficas pasan al Chart de shadcn-vue como el ejemplo «Area Chart -
+Interactive», sin la tabla lateral; se elige qué medidas y qué periodo ver; la
+evolución entra en la consulta; y en el teléfono las pestañas no se apilan.
+**Prueba independiente:** como médico, abrir la ficha de un paciente con tomas:
+peso, IMC y tensión con la línea 140/90 discontinua; tocar un punto dice valor,
+fecha y edad; elegir «6 meses» y «Temperatura», recargar y sigue; en la
+consulta, «Evolución» enseña lo mismo; a 375 px la consulta elige la sección en
+un selector con sus marcas.
+
+**Cubre:** EN-273, EN-275 a EN-280. **Solo interfaz:** EN-273, EN-277, EN-279,
+EN-280 (leen `GET /patients/:id/vitals` tal como llega). **Solo servidor:**
+ninguno (EN-275 y EN-276 se ven en EN-278).
+
 ### Fuera de las nueve
 
 **EN-148 a EN-150** —el triaje— tampoco pertenecen a ninguna entrega, y por otro
@@ -4962,20 +4978,37 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > cuenta. Quién fija la línea —hoy `settings:manage`, un rol sin acceso
   > clínico— es D-214 §3.
 - **EN-273** — MIENTRAS la sesión tenga `record:read`, la ficha del paciente
-  DEBERÁ tener la pestaña «Evolución», que dibuje en el tiempo el peso, la TA
-  (sistólica y diastólica, con la línea de EN-272 sólo si todas sus tomas son
-  de los 18 años o más), el IMC, la talla acostado y la de pie en curvas
-  distintas, la hemoglobina corregida y la medida aparte, y las demás cifras
-  que tengan al menos una toma; cada gráfica DEBERÁ llevar al lado su **tabla
-  de valores** —fecha, edad de ese día y cifra— que lee un lector de pantalla;
-  sin ninguna toma DEBERÁ decirlo en un estado vacío, y con más de las que
-  llegan, cuántas se muestran de cuántas.
-  > La tabla no es un adorno de accesibilidad: una gráfica sin sus números
-  > obliga a adivinar el valor por la altura de un punto. La línea guardada es
-  > un umbral de adultos (D-207 §1); en un niño la hipertensión va por
+  DEBERÁ tener la pestaña «Evolución», con una gráfica por cada cifra elegida
+  (EN-277) que la dibuje en el tiempo con línea y puntos, sin relleno debajo,
+  y con la fecha de la última toma siempre en el eje:
+  el peso, la TA (sistólica y diastólica, con la línea de EN-272
+  **discontinua** sólo si todas sus tomas son de los 18 años o más), el IMC,
+  la talla acostado y la de pie en curvas distintas, la hemoglobina
+  **corregida** —con la medida de esa toma en su tooltip— y las demás cifras
+  que tengan al menos una toma; CUANDO se pase o se toque un punto, su tooltip
+  DEBERÁ decir la cifra, la fecha y la edad de ese día; los mismos valores
+  DEBERÁN llegar a un lector de pantalla como tabla, sin pintarse al lado; sin
+  ninguna toma DEBERÁ decirlo en un estado vacío, y con más de las que llegan,
+  cuántas se muestran de cuántas.
+  > **D-226 §3 quita la tabla lateral** «Fecha · Edad · Valor»: el valor y la
+  > fecha salen en el tooltip. Los números no se pierden para quien no ve la
+  > curva: la tabla sigue en el árbol accesible (`sr-only`). La línea guardada
+  > es un umbral de adultos (D-207 §1); en un niño la hipertensión va por
   > percentil (AAP 2017), y 118/78 bajo una línea de 140/90 se leería
-  > «normal» (D-214 §1). Talla acostado y de pie, aparte, por EN-064; la
-  > hemoglobina corregida, aparte de la medida, por EN-065 (D-214 §2).
+  > «normal» (D-214 §1). Talla acostado y de pie, aparte, por EN-064.
+  > **Sin relleno bajo la línea** (recorrido de la principal): en un signo
+  > vital sugiere una cantidad acumulada. La «banda de referencia como área
+  > suave» de D-226 §3 se pinta sólo donde el sistema tenga un rango de
+  > referencia del signo, y hoy no tiene ninguno: los `min`/`max` de captura
+  > (EN-062) cazan errores de tecleo, no son rangos normales. Queda la línea
+  > de la TA.
+  > **Hemoglobina, una sola gráfica (D-214 §2, D-226 §3):** la corregida, que
+  > es a la que se aplica el umbral de anemia, con la medida en el tooltip. La
+  > base admite medida sin corregida y no al revés
+  > (`encounter_vitals_corrected_needs_hemoglobin`): esas tomas no se mezclan
+  > en la curva de la corregida —la medida en Quito diría «normal» a un niño
+  > anémico— y van en una gráfica aparte, «Hemoglobina sin corregir», sólo si
+  > existen. **Confirmar con:** clínico.
 - **EN-274** — CUANDO la consulta tenga al menos **dos** tomas de peso o de TA
   entre las anteriores del resumen (EN-159) —nunca de una atención anulada
   (EN-270)— y la de la atención, la cabecera
@@ -4986,6 +5019,71 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > cinco tomas que el resumen ya trae. En el teléfono la línea de datos de la
   > cabecera fija ya se parte en dos y la tendencia sumaba una tercera; allí
   > las tomas siguen en «Historia» y en la ficha.
+
+
+## 33. La evolución que se elige, también en la consulta, y las pestañas en el teléfono (D-226 §3–§6, D-214 §2, §5 y §6)
+
+- **EN-275** — CUANDO se sirvan las tomas (EN-269), cada una DEBERÁ decir si
+  su atención es de una ficha que la pedida **absorbió** (`fromMergedChart`).
+  > D-214 §6: la edad de esa toma se congeló con la fecha de nacimiento del
+  > duplicado, que pudo estar mal. Lo que cambia es cómo se lee el punto, no
+  > si se dibuja: sigue siendo el peso de la misma persona (PA-055).
+- **EN-276** — La respuesta de EN-269 DEBERÁ decir si existen tomas válidas
+  —con alguna cifra, de una atención no anulada, de la ficha o de las que
+  absorbió— en sedes **fuera del alcance** de quien llama
+  (`hasTakingsOutsideScope`), sin servirlas ni contarlas; con alcance de todas
+  las sedes DEBERÁ ser `false`.
+  > D-214 §5 (D-223): la curva une los puntos de las sedes de quien mira sin
+  > decir que faltan otros, y un hueco de un año se leería como un año sin
+  > medir. Revelar que **existen**, sin cuántas ni dónde, lo aceptó el autor;
+  > la cifra seguiría siendo EN-121. El predicado es el de EN-269 y EN-270
+  > sin el filtro de sede: una fila sólo con el motivo de consulta o de una
+  > atención anulada no es una toma que falte.
+- **EN-277** — Encima de las gráficas de evolución DEBERÁ haber un selector de
+  **medidas** —sólo las que el paciente tiene; por defecto peso, IMC y
+  tensión de entre ellas, y si no tiene ninguna de las tres, la primera que
+  tenga— y uno de **periodo** —3 meses · 6 meses · 1 año · Todo, contado
+  hacia atrás desde hoy; por defecto Todo—; lo elegido DEBERÁ recordarse por
+  usuario en ese navegador, en la ficha y en la consulta por igual, y SI lo
+  guardado no se puede leer, ENTONCES DEBERÁ usarse lo de por defecto; una
+  medida elegida sin tomas en el periodo DEBERÁ decirlo en su tarjeta.
+  > D-226 §4. Que siga al usuario entre equipos sería una preferencia en el
+  > servidor: no se construye sin que el autor lo pida. Una medida guardada
+  > que este paciente no tiene no se ofrece ni se pierde: sigue elegida para
+  > el siguiente. **Las dos hemoglobinas se eligen juntas** (revisión
+  > clínica): una toma de marzo sólo medida y una de enero corregida son la
+  > misma cifra, y elegir sólo la corregida enseñaría la de enero como
+  > «Última».
+- **EN-278** — Un punto de una toma de ficha unificada (EN-275) DEBERÁ pintarse
+  distinto de los demás y su tooltip DEBERÁ decir «De una ficha unificada»; y
+  CUANDO la respuesta diga que hay tomas fuera del alcance (EN-276), bajo las
+  gráficas DEBERÁ leerse «Hay tomas en otras sedes que usted no atiende», sin
+  cifras.
+  > D-214 §6 y §5. Sin la tabla (D-226 §3), la marca va en el punto y en su
+  > tooltip, y en la tabla del lector de pantalla. Con alguna toma de tensión
+  > de ficha unificada **no se dibuja la línea de adultos** (EN-272): su edad
+  > pudo congelarse con la fecha de nacimiento equivocada del duplicado. Sin
+  > tomas en sus sedes y con tomas en otras, el estado vacío no dice «no hay
+  > signos» sino «No hay signos tomados en sus sedes», con la línea debajo.
+  > **Confirmar con:** clínico (§5).
+- **EN-279** — MIENTRAS la sesión tenga `record:read`, la atención DEBERÁ tener
+  la pestaña «Evolución» en el grupo **Contexto**, tras Historia y Signos, con
+  su `?seccion=evolucion`, su atajo `Alt+número` por posición (EN-267) y el
+  mismo componente de gráficas que la ficha; y DEBERÁ pedir las tomas
+  (EN-269) **sólo al abrirse**, nunca al entrar en la atención.
+  > D-226 §5. Cada lectura deja una fila de bitácora (EN-271), y entrar en la
+  > consulta no es mirar la evolución: aunque el médico la ponga primera,
+  > sin `?seccion=` la consulta no se abre por ella. Su marca nunca pide atención: es una
+  > superficie de lectura, como Historia.
+- **EN-280** — MIENTRAS la pantalla mida menos de 640 px, las secciones de la
+  atención DEBERÁN elegirse con un selector «Sección» agrupado en Contexto ·
+  Acto · Órdenes y papeles · Reporte, con la marca de estado de cada una, y
+  NO DEBERÁN pintarse como pestañas en varias filas ni en una barra que haya
+  que desplazar.
+  > D-226 §6. Sustituye la barra desplazable del pie (30-09-2026): con once
+  > secciones, lo que quedaba fuera sólo se anunciaba con una flecha. En el
+  > selector se ven todas a la vez con su estado, y la que pide atención lo
+  > dice con palabra.
 
 ---
 

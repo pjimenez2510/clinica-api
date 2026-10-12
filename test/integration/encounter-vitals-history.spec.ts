@@ -50,6 +50,7 @@ interface TakingBody {
   systolicBp: number | null;
   diastolicBp: number | null;
   bmi: number | null;
+  fromMergedChart: boolean;
 }
 
 interface VitalsHistoryBody {
@@ -57,6 +58,7 @@ interface VitalsHistoryBody {
   items: TakingBody[];
   total: number;
   bloodPressureReference: { systolic: number; diastolic: number } | null;
+  hasTakingsOutsideScope: boolean;
 }
 
 describe('la evolución de los signos por HTTP', () => {
@@ -449,6 +451,105 @@ describe('la evolución de los signos por HTTP', () => {
       systolic: 140,
       diastolic: 80,
     });
+  });
+
+  it('EN-275 cada toma dice si viene de la ficha que se absorbió', async () => {
+    const { survivor, kept, ofDuplicate } = await theScene();
+
+    const body = (await vitalsOf(survivor.id).expect(200))
+      .body as VitalsHistoryBody;
+    const byEncounter = new Map(
+      body.items.map((taking) => [taking.encounterId, taking.fromMergedChart]),
+    );
+    expect(byEncounter.get(ofDuplicate)).toBe(true);
+    // Control positivo: la toma propia de la superviviente no se marca.
+    expect(byEncounter.get(kept)).toBe(false);
+  });
+
+  it('EN-276 dice que hay tomas en sedes que quien llama no atiende, sin servirlas ni contarlas, y no a quien tiene la clínica entera', async () => {
+    const { survivor, elsewhere } = await theScene();
+
+    const local = (await vitalsOf(survivor.id).expect(200))
+      .body as VitalsHistoryBody;
+    expect(local.hasTakingsOutsideScope).toBe(true);
+    expect(local.total).toBe(2);
+    expect(local.items.map((taking) => taking.encounterId)).not.toContain(
+      elsewhere.id,
+    );
+
+    const clinicWide = await signIn(
+      'MEDICO',
+      'direccion@clinica.ec',
+      '1104637283',
+      { siteId: null },
+    );
+    const wide = (await vitalsOf(survivor.id, clinicWide.token).expect(200))
+      .body as VitalsHistoryBody;
+    expect(wide.hasTakingsOutsideScope).toBe(false);
+  });
+
+  it('EN-276 una toma anulada o sin cifras en otra sede no es una toma que falte, y una con cifra sí', async () => {
+    const patient = await createPatient(prisma);
+    const clinicWide = await signIn(
+      'MEDICO',
+      'direccion@clinica.ec',
+      '1104637283',
+      { siteId: null },
+    );
+    const author = (await createUser(prisma)).id;
+
+    // Anulada en la otra sede, por quien la atiende.
+    const opened = await send('post', '/encounters', clinicWide.token, {
+      siteId: otherSiteId,
+      practitionerId: clinicWide.practitionerId,
+      patientId: patient.id,
+      startedAt: new Date(Date.now() - 3 * HOUR).toISOString(),
+      careModality: 'MORBIDITY',
+      visitSequence: 'FIRST_TIME',
+    }).expect(201);
+    const annulled = (opened.body as { id: string }).id;
+    await send('put', `/encounters/${annulled}/vitals`, clinicWide.token, {
+      weightKg: 90,
+    }).expect(200);
+    await send(
+      'post',
+      `/encounters/${annulled}/enter-in-error`,
+      clinicWide.token,
+      { reason: 'Se abrió a otro paciente' },
+    ).expect(200);
+    // Sólo el motivo de consulta, en la otra sede.
+    const onlyComplaint = await createEncounter(prisma, {
+      siteId: otherSiteId,
+      practitionerId: (await createPractitioner(prisma)).id,
+      patientId: patient.id,
+      startedAt: new Date(Date.now() - 2 * HOUR),
+    });
+    await prisma.encounterVitals.create({
+      data: {
+        encounterId: onlyComplaint.id,
+        presentingComplaint: 'Dolor de cabeza',
+        recordedById: author,
+      },
+    });
+
+    const none = (await vitalsOf(patient.id).expect(200))
+      .body as VitalsHistoryBody;
+    expect(none.hasTakingsOutsideScope).toBe(false);
+
+    // Control positivo: una toma con cifra en la otra sede sí cuenta.
+    const valid = await createEncounter(prisma, {
+      siteId: otherSiteId,
+      practitionerId: (await createPractitioner(prisma)).id,
+      patientId: patient.id,
+      startedAt: new Date(Date.now() - HOUR),
+    });
+    await prisma.encounterVitals.create({
+      data: { encounterId: valid.id, temperatureC: 37.2, recordedById: author },
+    });
+    const some = (await vitalsOf(patient.id).expect(200))
+      .body as VitalsHistoryBody;
+    expect(some.hasTakingsOutsideScope).toBe(true);
+    expect(some.total).toBe(0);
   });
 
   it('EN-269 recepción, sin `record:read`, no lee los signos', async () => {
