@@ -46,6 +46,8 @@ describe('If-Match (EN-281, PR-121, ORD-181)', () => {
     const error = new RecordChangedError();
     expect(error).toBeInstanceOf(PreconditionFailedError);
     expect(error.code).toBe('RECORD_CHANGED');
-    expect(error.userTitle).toBe('Otra persona cambió esto; recargue');
+    expect(error.userTitle).toBe(
+      'Esto cambió en otra pestaña o lo cambió otra persona. Recargue para ver lo guardado',
+    );
   });
 });

@@ -243,7 +243,8 @@ describe('los resultados por HTTP', () => {
     }).expect(412);
     expect(stale.body).toMatchObject({
       code: 'RECORD_CHANGED',
-      title: 'Otra persona cambió esto; recargue',
+      title:
+        'Esto cambió en otra pestaña o lo cambió otra persona. Recargue para ver lo guardado',
     });
     await tab('post', `/orders/${id}/issue`, `"${read}"`, {}).expect(412);
     await tab('post', `/orders/${id}/issue`, null, {}).expect(428);

@@ -5122,12 +5122,20 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > En la base y no en la aplicación: un `psql`, una importación o el
   > asistente también invalidan lo que otra pestaña leyó. Lo firmado lo
   > congelan sus propios disparadores, y la revisión no los toca.
-- **EN-284** — CUANDO guardar o firmar la nota responda `RECORD_CHANGED`, la
-  pantalla DEBERÁ dejar de guardar sola y decir «Otra persona cambió esto;
-  recargue» con un botón «Recargar», que DEBERÁ traer la nota del servidor.
+- **EN-284** — CUANDO guardar o firmar la nota responda `RECORD_CHANGED`, o
+  llegue del servidor una revisión más nueva con algo escrito aquí sin
+  guardar, la pantalla DEBERÁ dejar de guardar sola, bloquear las casillas y
+  decir «Esta nota cambió en otra pestaña o la cambió otra persona», con lo
+  escrito aquí y no guardado a la vista, un botón «Copiar» y un botón
+  «Recargar», que DEBERÁ traer la nota del servidor; y SI la nota se firmó en
+  otro sitio con algo escrito aquí sin guardar, DEBERÁ decirlo y dejar ese
+  texto a la vista para copiarlo. Nada escrito aquí DEBERÁ perderse en
+  silencio.
   > Seguir guardando cada segundo y medio repetiría el mismo rechazo con cada
   > frase. Recargar pierde lo escrito en esta pestaña después del último
-  > guardado: es lo que el aviso pide, y lo otro sería pisar a la otra.
+  > guardado: por eso se dice y se ofrece copiarlo antes. Casi siempre es el
+  > mismo médico con dos pestañas, no otra persona: el mensaje lo dice así
+  > (recorrido de la principal, 11-10-2026).
 
 ---
 

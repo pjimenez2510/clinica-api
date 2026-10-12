@@ -12,7 +12,8 @@ import { PreconditionFailedError } from './domain-error';
  */
 export class RecordChangedError extends PreconditionFailedError {
   readonly code = 'RECORD_CHANGED';
-  override readonly userTitle = 'Otra persona cambió esto; recargue';
+  override readonly userTitle =
+    'Esto cambió en otra pestaña o lo cambió otra persona. Recargue para ver lo guardado';
 
   constructor() {
     super('The draft changed after it was read');

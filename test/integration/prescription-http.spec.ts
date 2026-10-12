@@ -1218,7 +1218,8 @@ describe('la receta por HTTP', () => {
     }).expect(412);
     expect(rewriteRefused.body).toMatchObject({
       code: 'RECORD_CHANGED',
-      title: 'Otra persona cambió esto; recargue',
+      title:
+        'Esto cambió en otra pestaña o lo cambió otra persona. Recargue para ver lo guardado',
     });
     const issueRefused = await tab('post', `/prescriptions/${id}/issue`, '"1"', {}).expect(412); // prettier-ignore
     expect(issueRefused.body).toMatchObject({ code: 'RECORD_CHANGED' });

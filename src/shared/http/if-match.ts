@@ -63,7 +63,8 @@ export function ApiIfMatch(): MethodDecorator {
     }),
     ApiResponse({
       status: 412,
-      description: 'Otra persona cambió esto (`RECORD_CHANGED`).',
+      description:
+        'Esto cambió en otra pestaña o lo cambió otra persona (`RECORD_CHANGED`).',
       content: { 'application/problem+json': { schema: PROBLEM } },
     }),
     ApiResponse({

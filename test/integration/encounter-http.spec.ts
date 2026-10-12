@@ -1391,7 +1391,8 @@ describe('la atención por HTTP', () => {
       expect(second.body).toMatchObject({
         status: 412,
         code: 'RECORD_CHANGED',
-        title: 'Otra persona cambió esto; recargue',
+        title:
+          'Esto cambió en otra pestaña o lo cambió otra persona. Recargue para ver lo guardado',
       });
 
       const stored = await prisma.clinicalNote.findUniqueOrThrow({
