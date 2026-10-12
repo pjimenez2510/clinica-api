@@ -327,6 +327,36 @@ describe('ClinicaAiPseudonymizer, third review', () => {
   });
 });
 
+describe('ClinicaAiPseudonymizer, fourth review', () => {
+  it('AS-030 refuses an answer that still carries an id, a telephone or an email', async () => {
+    for (const text of [
+      'Paciente [NOMBRE_1], cédula 1714567893, refiere',
+      'Paciente [NOMBRE_1], RUC 1714567893001',
+      'Llamar al 0987654321',
+      'Escribir a alguien@ejemplo.test',
+    ]) {
+      const error = await failure(
+        adapter(answering(200, { ...ANSWER, text })).pseudonymize(INPUT),
+      );
+
+      expect((error as PseudonymizerFailedError).outcome).toBe(
+        'invalid-answer',
+      );
+    }
+  });
+
+  it('AS-030 lets the numbers of a consultation through', async () => {
+    const text =
+      'Plaquetas 250000, leucocitos 12500, TA 120/80, [TELEFONO_1], [ID_1]';
+
+    const result = await adapter(
+      answering(200, { ...ANSWER, text }),
+    ).pseudonymize(INPUT);
+
+    expect(result.cleared).toBe(text);
+  });
+});
+
 describe('pseudonymizerFor', () => {
   it('AS-031 without a secret it is the missing one, which refuses before any request', async () => {
     const fetcher = vi.fn();

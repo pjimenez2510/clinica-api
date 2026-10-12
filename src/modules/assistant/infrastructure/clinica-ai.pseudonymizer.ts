@@ -98,7 +98,10 @@ export class ClinicaAiPseudonymizer implements Pseudonymizer {
 
     // Defence in depth: whatever answers on the port, a name the caller asked
     // to take out must not be in what comes back.
-    if (carriesAName(answer.data.text, input)) {
+    if (
+      carriesAName(answer.data.text, input) ||
+      carriesAnIdentifier(answer.data.text)
+    ) {
       throw new PseudonymizerFailedError('invalid-answer', response.status);
     }
 
@@ -158,6 +161,18 @@ function carriesAName(cleared: string, input: PseudonymizeInput): boolean {
     .flatMap((name) => fold(name).split(/[^\p{L}\p{N}]+/u))
     .filter((word) => word.length >= 3 && !CONNECTORS.has(word))
     .some((word) => answer.includes(` ${word} `));
+}
+
+/**
+ * AS-030. What no cleared text may still hold, whatever answered on the port:
+ * an email, a cédula or a mobile (ten digits), a RUC (thirteen). The numbers of
+ * a consultation are shorter.
+ */
+const IDENTIFIER =
+  /[\w.+-]+@[\w-]+(?:\.[\w-]+)+|(?<!\d)(?:\d{13}|\d{10})(?!\d)/u;
+
+function carriesAnIdentifier(cleared: string): boolean {
+  return IDENTIFIER.test(cleared);
 }
 
 function parseJson(body: string): unknown {
