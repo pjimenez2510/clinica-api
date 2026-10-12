@@ -46,6 +46,11 @@ export interface VitalsHistory {
   total: number;
   /** EN-272. The line the blood-pressure chart draws. */
   bloodPressureReference: BloodPressureReference | null;
+  /**
+   * EN-276. There are takings at sites the caller does not cover. Said, not
+   * counted: the figure would still be EN-121's to withhold (D-214 §5).
+   */
+  hasTakingsOutsideScope: boolean;
 }
 
 /**
@@ -83,11 +88,16 @@ export class VitalsHistoryService {
     }
 
     const query = { patientId: chart.id, sites: requester.sites };
-    const [items, total, bloodPressureReference] = await Promise.all([
-      this.takings.takings({ ...query, limit: VITALS_HISTORY_LIMIT }),
-      this.takings.countTakings(query),
-      this.takings.bloodPressureReference(requester.sites),
-    ]);
+    const [items, total, bloodPressureReference, hasTakingsOutsideScope] =
+      await Promise.all([
+        this.takings.takings({ ...query, limit: VITALS_HISTORY_LIMIT }),
+        this.takings.countTakings(query),
+        this.takings.bloodPressureReference(requester.sites),
+        // EN-276. With the whole clinic in scope there is no «outside».
+        requester.sites === 'all'
+          ? Promise.resolve(false)
+          : this.takings.hasTakingsOutsideScope(query),
+      ]);
 
     await this.audit.record({
       userId: requester.userId,
@@ -98,6 +108,12 @@ export class VitalsHistoryService {
       userAgent: requester.userAgent,
     });
 
-    return { patientId: chart.id, items, total, bloodPressureReference };
+    return {
+      patientId: chart.id,
+      items,
+      total,
+      bloodPressureReference,
+      hasTakingsOutsideScope,
+    };
   }
 }

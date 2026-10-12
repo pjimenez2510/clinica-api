@@ -42,7 +42,13 @@ const TAKING_SELECT = {
   hemoglobinGDl: true,
   hemoglobinCorrectedGDl: true,
   encounter: {
-    select: { siteId: true, ageYears: true, ageMonths: true, ageDays: true },
+    select: {
+      siteId: true,
+      patientId: true,
+      ageYears: true,
+      ageMonths: true,
+      ageDays: true,
+    },
   },
 } satisfies Prisma.EncounterVitalsSelect;
 
@@ -77,7 +83,7 @@ export class PrismaVitalsHistoryRepository implements VitalsHistoryRepository {
       orderBy: [{ measuredAt: 'desc' }, { encounterId: 'desc' }],
       take: query.limit,
     });
-    return rows.map(toTaking);
+    return rows.map((row) => toTaking(row, query.patientId));
   }
 
   /** The same `where` as the list, so «100 de 130» always reconciles. */
@@ -85,6 +91,22 @@ export class PrismaVitalsHistoryRepository implements VitalsHistoryRepository {
     query: Omit<VitalsHistoryQuery, 'limit'>,
   ): Promise<number> {
     return this.prisma.encounterVitals.count({ where: takingsWhere(query) });
+  }
+
+  /**
+   * EN-276. The list's predicate with the site filter turned inside out: a
+   * row with only the reason for the visit, or of an annulled attention, is
+   * no taking that is missing from the curve.
+   */
+  async hasTakingsOutsideScope(
+    query: Omit<VitalsHistoryQuery, 'limit'>,
+  ): Promise<boolean> {
+    if (query.sites === 'all') return false;
+    const found = await this.prisma.encounterVitals.findFirst({
+      where: takingsWhere(query, 'outside'),
+      select: { encounterId: true },
+    });
+    return found !== null;
   }
 
   /**
@@ -125,21 +147,28 @@ export class PrismaVitalsHistoryRepository implements VitalsHistoryRepository {
  */
 function takingsWhere(
   query: Omit<VitalsHistoryQuery, 'limit'>,
+  where: 'inside' | 'outside' = 'inside',
 ): Prisma.EncounterVitalsWhereInput {
+  const sites =
+    query.sites === 'all'
+      ? {}
+      : where === 'inside'
+        ? { siteId: { in: [...query.sites] } }
+        : { siteId: { notIn: [...query.sites] } };
   return {
     // EN-269. A row with only the reason for the visit (EN-163) is no taking:
     // it would spend a place of the hundred and a unit of «de 130».
     OR: FIGURES.map((figure) => ({ [figure]: { not: null } })),
     encounter: {
       ...chartScope(query.patientId),
-      ...(query.sites === 'all' ? {} : { siteId: { in: [...query.sites] } }),
+      ...sites,
       status: { not: 'ENTERED_IN_ERROR' },
     },
   };
 }
 
 /** `Decimal` out, plain numbers in; `null` stays `null` and means «no consta». */
-function toTaking(row: TakingRow): VitalsTaking {
+function toTaking(row: TakingRow, chartId: string): VitalsTaking {
   const decimal = (value: Prisma.Decimal | null): number | null =>
     value === null ? null : value.toNumber();
 
@@ -164,5 +193,7 @@ function toTaking(row: TakingRow): VitalsTaking {
     oxygenSaturation: row.oxygenSaturation,
     hemoglobinGDl: decimal(row.hemoglobinGDl),
     hemoglobinCorrectedGDl: decimal(row.hemoglobinCorrectedGDl),
+    // EN-275. `chartScope` reads the absorbed charts too; theirs are marked.
+    fromMergedChart: row.encounter.patientId !== chartId,
   };
 }
