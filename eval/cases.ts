@@ -107,7 +107,7 @@ export function loadCaseFile<K extends Kind>(
   return {
     file: path,
     sha256: sha256(content),
-    cases: parsed.data.cases as z.infer<(typeof SCHEMAS)[K]>[],
+    cases: parsed.data.cases,
   };
 }
 

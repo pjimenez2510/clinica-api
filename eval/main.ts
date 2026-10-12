@@ -9,7 +9,6 @@ import {
   worstCaseOf,
 } from '../src/modules/assistant/domain/pricing.ts';
 import { spendingMonthStart } from '../src/modules/assistant/domain/spending.ts';
-import type { ProviderName } from '../src/modules/assistant/domain/llm-outcome.ts';
 import { DEFAULT_MAX_TOKENS } from '../src/modules/assistant/application/llm-client.port.ts';
 import { LLM_PRICES } from '../src/modules/assistant/infrastructure/llm-pricing.ts';
 
@@ -62,7 +61,8 @@ type TaskKey = 'cie10' | 'receta' | 'nota';
 export interface Dependencies {
   env: Env;
   now: () => Date;
-  log: (line: string) => void;
+  /** What the author reads in the terminal: counts, figures and paths, never case text. */
+  print: (line: string) => void;
   /** Where the ledger lives: the shared one, or a test's own. */
   ledgerDir?: string;
   fetcher?: typeof fetch;
@@ -121,7 +121,7 @@ export async function runFromArgs(
     },
   });
   if (values.ayuda) {
-    deps.log(USAGE);
+    deps.print(USAGE);
     return null;
   }
   const seed = Number(values.semilla);
@@ -269,7 +269,7 @@ export async function runFromArgs(
     }
   }
   const spent = await store.spentSince(spendingMonthStart(clock()));
-  deps.log(
+  deps.print(
     `${calls} llamadas (sin reintentos); peor caso ${worst.toFixed(2)} USD; techo ${ceilingUsd ?? 'ninguno'} USD al mes; gastado este mes en el registro del arnés: ${spent.toFixed(2)} USD`,
   );
   if (values.estimar) return null;
@@ -283,7 +283,7 @@ export async function runFromArgs(
     backoffMs: 2_000,
     beforeCall: world?.beforeCall,
     sleep: world?.sleep,
-    log: deps.log,
+    log: deps.print,
   });
 
   const meta: RunMetadata = {
@@ -299,7 +299,7 @@ export async function runFromArgs(
     judge:
       judge && wanted.includes('nota')
         ? {
-            name: judge.name as ProviderName,
+            name: judge.name,
             model: judge.model,
             promptVersion: JUDGE_PROMPT_VERSION,
           }
@@ -327,7 +327,7 @@ export async function runFromArgs(
     tasks.map((t) => t.task),
     casesById,
   );
-  deps.log(`Resultado en ${folder}`);
+  deps.print(`Resultado en ${folder}`);
   return folder;
 }
 
@@ -338,7 +338,7 @@ if (process.argv[1]?.endsWith(join('eval', 'main.ts'))) {
   runFromArgs(process.argv.slice(2), {
     env: process.env,
     now: () => new Date(),
-    log: (line) => process.stdout.write(`${line}\n`),
+    print: (line) => process.stdout.write(`${line}\n`),
   }).catch((error: unknown) => {
     process.stderr.write(
       `${error instanceof Error ? error.message : String(error)}\n`,

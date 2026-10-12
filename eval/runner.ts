@@ -18,7 +18,6 @@ import type { ProviderName } from '../src/modules/assistant/domain/llm-outcome.t
 import type { Arm, Ask, EvalCase, EvalTask, Scores } from './task.ts';
 
 // The runner holds tasks of different cases and answers side by side.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyTask = EvalTask<any, any>;
 
 export interface MeasuredProvider {
@@ -210,12 +209,12 @@ export async function runEvaluation(options: RunOptions): Promise<RunOutcome> {
               arm,
               role: 'answer',
             };
-            const { value, failure, requests } = await ask(
-              provider,
-              key,
-              item,
-              task.request(item, arm),
-            );
+            const asked: {
+              value: unknown;
+              failure: string | null;
+              requests: number;
+            } = await ask(provider, key, item, task.request(item, arm));
+            const { value, failure, requests } = asked;
             let shown: unknown = null;
             let scores: Scores | null = null;
             if (value !== null) {

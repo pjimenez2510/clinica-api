@@ -100,6 +100,10 @@ const UNIT_SYNONYMS: Readonly<Record<string, string>> = {
 /** EV-6. Values compared without case, accents, spaces or the decimal comma. */
 export function normal(field: Field, value: unknown): string | null {
   if (value === null || value === undefined) return null;
+  const text =
+    typeof value === 'string' || typeof value === 'number'
+      ? String(value)
+      : JSON.stringify(value);
   switch (field) {
     case 'dose': {
       const { amount, unit } = value as { amount: number; unit: string };
@@ -108,11 +112,11 @@ export function normal(field: Field, value: unknown): string | null {
     }
     case 'everyHours':
     case 'days':
-      return String(value);
+      return text;
     case 'concentration':
-      return fold(String(value)).replace(/\s+/g, '').replace(/,/g, '.');
+      return fold(text).replace(/\s+/g, '').replace(/,/g, '.');
     default:
-      return fold(String(value)).replace(/\s+/g, ' ').trim();
+      return fold(text).replace(/\s+/g, ' ').trim();
   }
 }
 

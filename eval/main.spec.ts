@@ -28,7 +28,7 @@ describe('a run of the harness', () => {
     const folder = await runFromArgs(['--', '--falso', '--salida', out], {
       env: {},
       now: () => now,
-      log: (line) => lines.push(line),
+      print: (line) => lines.push(line),
       ledgerDir: scratch('ledger'),
     });
 
@@ -40,7 +40,12 @@ describe('a run of the harness', () => {
     ]);
     const result = JSON.parse(
       readFileSync(join(folder!, 'resultado.json'), 'utf8'),
-    );
+    ) as {
+      commit: string;
+      catalogues: { sha256: string }[];
+      cases: { sha256: string }[];
+      calls: unknown[];
+    };
     expect(result).toMatchObject({
       label: 'falso',
       fake: true,
@@ -117,7 +122,7 @@ describe('a run of the harness', () => {
           ASSISTANT_MONTHLY_SPEND_CEILING_USD: '100',
         },
         now: () => new Date(),
-        log: () => undefined,
+        print: () => undefined,
         ledgerDir: scratch('ledger'),
       }),
     ).rejects.toThrow(/ASSISTANT_ALLOW_REMOTE/);
@@ -132,7 +137,7 @@ describe('a run of the harness', () => {
       {
         env: {},
         now: () => new Date(),
-        log: (line) => lines.push(line),
+        print: (line) => lines.push(line),
         ledgerDir: scratch('ledger'),
       },
     );
