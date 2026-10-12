@@ -39,11 +39,8 @@ export class FileAiRunStore implements AiRunStore {
     this.file = join(dir, 'intentos.jsonl');
   }
 
-  /**
-   * Every line carries its own id: `feat/ia-d1-cie10` makes `record` answer
-   * the id of the row (`Promise<string>`), and then this returns `id`.
-   */
-  record(run: AiRunRecord, exchange: AiExchangeRecord | null): Promise<void> {
+  /** Every line carries its own id, which `record` answers (AS-036). */
+  record(run: AiRunRecord, exchange: AiExchangeRecord | null): Promise<string> {
     if (exchange !== null) {
       throw new Error(
         'El arnés no guarda texto: corra con el registro de intercambios apagado',
@@ -52,7 +49,7 @@ export class FileAiRunStore implements AiRunStore {
     const id = randomUUID();
     appendFileSync(this.file, `${JSON.stringify({ id, ...run })}\n`);
     this.recorded.push(run);
-    return Promise.resolve();
+    return Promise.resolve(id);
   }
 
   /** Every attempt the ledger holds, from every run. */

@@ -16,8 +16,8 @@ export class PrismaAiRunStore implements AiRunStore {
   async record(
     run: AiRunRecord,
     exchange: AiExchangeRecord | null,
-  ): Promise<void> {
-    await this.prisma.aiRun.create({
+  ): Promise<string> {
+    const { id } = await this.prisma.aiRun.create({
       data: {
         ...run,
         priceValidFrom: new Date(`${run.priceValidFrom}T00:00:00Z`),
@@ -33,7 +33,9 @@ export class PrismaAiRunStore implements AiRunStore {
             }
           : {}),
       },
+      select: { id: true },
     });
+    return id;
   }
 
   /**

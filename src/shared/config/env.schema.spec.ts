@@ -194,6 +194,149 @@ describe('validateEnv', () => {
     });
   });
 
+  describe('AS-026 AS-029 the assistant switch and its demonstration mode', () => {
+    it('AS-026 AS-029 are born off', () => {
+      const env = validateEnv(base);
+
+      expect(env.ASSISTANT_ENABLED).toBe(false);
+      expect(env.ASSISTANT_FAKE_PROVIDER).toBe(false);
+    });
+
+    it('AS-026 only `true` turns the assistant on', () => {
+      expect(
+        validateEnv({ ...base, ASSISTANT_ENABLED: 'true' }).ASSISTANT_ENABLED,
+      ).toBe(true);
+      expect(() => validateEnv({ ...base, ASSISTANT_ENABLED: 'yes' })).toThrow(
+        /ASSISTANT_ENABLED/,
+      );
+    });
+
+    it('AS-029 accepts the demonstration mode in development with no road to a provider', () => {
+      const env = validateEnv({ ...base, ASSISTANT_FAKE_PROVIDER: 'true' });
+
+      expect(env.ASSISTANT_FAKE_PROVIDER).toBe(true);
+    });
+
+    it('AS-029 refuses the demonstration mode in production', () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          NODE_ENV: 'production',
+          TRUST_PROXY_HOPS: '1',
+          WEB_BASE_URL: 'https://clinica.example.ec',
+          ASSISTANT_FAKE_PROVIDER: 'true',
+        }),
+      ).toThrow(/ASSISTANT_FAKE_PROVIDER/);
+    });
+
+    it('AS-029 refuses the demonstration mode beside the exchange log, which would keep the note', () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          ASSISTANT_FAKE_PROVIDER: 'true',
+          ASSISTANT_EXCHANGE_LOG: 'true',
+        }),
+      ).toThrow(/ASSISTANT_FAKE_PROVIDER/);
+      // Control: the log alone, without the demonstration, is accepted.
+      expect(() =>
+        validateEnv({ ...base, ASSISTANT_EXCHANGE_LOG: 'true' }),
+      ).not.toThrow();
+    });
+
+    it('AS-029 refuses the demonstration mode beside the remote switch', () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          ASSISTANT_FAKE_PROVIDER: 'true',
+          ASSISTANT_ALLOW_REMOTE: 'true',
+        }),
+      ).toThrow(/ASSISTANT_FAKE_PROVIDER/);
+    });
+
+    it('AS-029 refuses the demonstration mode beside any real provider key', () => {
+      for (const key of [
+        'ASSISTANT_GEMINI_API_KEY',
+        'ASSISTANT_ANTHROPIC_API_KEY',
+        'ASSISTANT_OPENAI_API_KEY',
+      ]) {
+        expect(() =>
+          validateEnv({ ...base, ASSISTANT_FAKE_PROVIDER: 'true', [key]: 'k' }),
+        ).toThrow(/ASSISTANT_FAKE_PROVIDER/);
+        // Control: the same key without the demonstration mode is accepted.
+        expect(() => validateEnv({ ...base, [key]: 'k' })).not.toThrow();
+      }
+    });
+  });
+
+  describe('AS-031 AS-032 the local pseudonymizer, clinica-ai', () => {
+    const SECRET = 'a'.repeat(64);
+
+    it('AS-031 is born without it: no secret, no service', () => {
+      const env = validateEnv(base);
+
+      expect(env.ASSISTANT_AI_SERVICE_SECRET).toBeUndefined();
+      expect(env.ASSISTANT_AI_SERVICE_URL).toBe('http://127.0.0.1:8100');
+      expect(env.ASSISTANT_AI_SERVICE_TIMEOUT_MS).toBe(10_000);
+      expect(
+        validateEnv({ ...base, ASSISTANT_AI_SERVICE_SECRET: '' })
+          .ASSISTANT_AI_SERVICE_SECRET,
+      ).toBeUndefined();
+    });
+
+    it('AS-031 refuses to start with a secret shorter than 32 characters', () => {
+      expect(() =>
+        validateEnv({ ...base, ASSISTANT_AI_SERVICE_SECRET: 'corto' }),
+      ).toThrow(/ASSISTANT_AI_SERVICE_SECRET/);
+      expect(
+        validateEnv({ ...base, ASSISTANT_AI_SERVICE_SECRET: SECRET })
+          .ASSISTANT_AI_SERVICE_SECRET,
+      ).toBe(SECRET);
+    });
+
+    it('AS-032 accepts only this machine, over http or https', () => {
+      for (const url of [
+        'http://127.0.0.1:8100',
+        'http://localhost:8100',
+        'http://[::1]:8100',
+        'https://127.0.0.1:8443/ia/',
+      ]) {
+        expect(
+          validateEnv({ ...base, ASSISTANT_AI_SERVICE_URL: url })
+            .ASSISTANT_AI_SERVICE_URL,
+        ).toBe(url);
+      }
+      for (const url of [
+        'http://192.168.1.20:8100',
+        'http://ia.clinica.lan',
+        'http://clinica.test:8100',
+        'https://ia.clinica.lan',
+        'ftp://127.0.0.1/ia',
+      ]) {
+        expect(() =>
+          validateEnv({ ...base, ASSISTANT_AI_SERVICE_URL: url }),
+        ).toThrow(/ASSISTANT_AI_SERVICE_URL/);
+      }
+    });
+
+    it('AS-032 reaches another machine only when told, and then only over https', () => {
+      const remote = { ...base, ASSISTANT_AI_SERVICE_ALLOW_REMOTE: 'true' };
+
+      expect(
+        validateEnv({
+          ...remote,
+          ASSISTANT_AI_SERVICE_URL: 'https://ia.clinica.lan',
+        }).ASSISTANT_AI_SERVICE_URL,
+      ).toBe('https://ia.clinica.lan');
+      expect(() =>
+        validateEnv({
+          ...remote,
+          ASSISTANT_AI_SERVICE_URL: 'http://ia.clinica.lan',
+        }),
+      ).toThrow(/ASSISTANT_AI_SERVICE_URL/);
+      expect(validateEnv(base).ASSISTANT_AI_SERVICE_ALLOW_REMOTE).toBe(false);
+    });
+  });
+
   describe('IL-008 the identity provider', () => {
     const REMOTE = 'https://provider.example.com/v3/database-validation/';
 

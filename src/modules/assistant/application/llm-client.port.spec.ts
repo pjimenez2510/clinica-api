@@ -14,6 +14,16 @@ import {
 
 const SOURCE_ROOT = join(process.cwd(), 'src');
 const PORT_FILE = 'src/modules/assistant/application/llm-client.port.ts';
+/**
+ * AS-029. The demonstration mode's fake pseudonymizer mints the brand too,
+ * and is allowed by name: the mode has no road to a provider (`validateEnv`
+ * refuses it beside the remote switch, any key or production), so what it
+ * clears never leaves the machine. Any other file is an offender.
+ */
+const DEMO_PSEUDONYMIZER_FILE =
+  'src/modules/assistant/infrastructure/demo/demo.pseudonymizer.ts';
+const PSEUDONYMIZER_FILE =
+  'src/modules/assistant/infrastructure/clinica-ai.pseudonymizer.ts';
 
 /** Every production `.ts` file under `src/`: specs mint test values freely. */
 function productionSources(directory = SOURCE_ROOT): string[] {
@@ -61,10 +71,15 @@ describe('LlmClient port', () => {
     expect([leaked, plain]).toHaveLength(2);
   });
 
-  it('AS-001 lets no production file mint PseudonymizedText by a cast, except withContext', () => {
+  it('AS-001 AS-029 AS-030 lets no production file mint PseudonymizedText by a cast, except withContext, the clinica-ai adapter and the demonstration fake', () => {
     const offenders = productionSources()
       .map((path) => relative(process.cwd(), path))
-      .filter((path) => path !== PORT_FILE)
+      .filter(
+        (path) =>
+          path !== PORT_FILE &&
+          path !== PSEUDONYMIZER_FILE &&
+          path !== DEMO_PSEUDONYMIZER_FILE,
+      )
       .filter((path) => {
         const source = readFileSync(join(process.cwd(), path), 'utf8');
         return (
@@ -86,6 +101,18 @@ describe('LlmClient port', () => {
     const port = readFileSync(join(process.cwd(), PORT_FILE), 'utf8');
     expect(port).toMatch(/as PseudonymizedText/);
     expect(port).toMatch(/as SystemInstruction/);
+    const demo = readFileSync(join(process.cwd(), DEMO_PSEUDONYMIZER_FILE), 'utf8'); // prettier-ignore
+    expect(demo).toMatch(/as PseudonymizedText/);
+    // AS-030. The adapter casts only the text that came back from clinica-ai
+    // in the shape of its contract, and nothing else.
+    const adapter = readFileSync(
+      join(process.cwd(), PSEUDONYMIZER_FILE),
+      'utf8',
+    );
+    expect(adapter.match(/as PseudonymizedText/g)).toEqual([
+      'as PseudonymizedText',
+    ]);
+    expect(adapter).toMatch(/cleared: answer\.data\.text as PseudonymizedText/);
   });
 
   it('AS-001 withContext appends system-composed text to cleared text and keeps the brand', () => {

@@ -105,6 +105,48 @@ decidir otra vez se rechaza.
 **Solo servidor:** AS-020 a AS-024. Sin pantalla ni ruta: el permiso
 `assistant:use` es de A3, y la pantalla de la fase B/C.
 
+### E3 — CIE-10 propuesto por problema _(D1, 11-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §7 D1 y §3 («Problemas y CIE-10»): al abrir
+Diagnósticos el médico ve, sin modelo, lo que este paciente ya tuvo y lo que la
+clínica codifica más; con «Proponer por problema», el modelo lee la nota, nombra
+los problemas con la frase que los dice y escribe sus códigos, y el sistema
+**sólo muestra los que existen en el catálogo OMS** (P5). Nada se registra sin
+que el médico lo acepte: aceptar abre el mismo diálogo de «Registrar
+diagnóstico» con el código puesto (P1).
+
+**Por qué va así:** sin catálogo, un modelo acierta un tercio de los códigos
+(Soroush, NEJM AI 2024); SigmAI midió que la línea base historial + frecuencia
+llega a R@5 33,6 % sin leer nada (doc 17) y que el modelo escribiendo los
+códigos sin lista, validados después, es lo que mejor funciona (D-083, T-162).
+El reordenador local (−8,8 puntos) y el índice de la OPS (copyright) no se
+traen.
+**Prueba independiente:** con el seudonimizador y el proveedor falsos, una
+nota que dice «odinofagia de tres días» da el problema con esa cita y el código
+J02.9 con su nombre del catálogo; un código que el modelo inventa (`J02.7`) no
+aparece; el médico acepta J02.9 y la propuesta queda «aceptada» enlazada al
+diagnóstico registrado.
+**Cubre:** AS-025 a AS-029, AS-035 a AS-044.
+**Solo servidor:** AS-025 (el puerto; la pantalla lo ve como AS-040), AS-041
+(lo que no llega al log) y AS-042 (el arnés de evaluación, fuera del verify).
+**Solo interfaz:** AS-043, AS-044. Son la tarjeta de la propuesta y su fallo
+en la pestaña Diagnósticos; la mitad del servidor es AS-027, AS-028, AS-035 y
+AS-040, que ya se prueban con esos números.
+### E5 — El seudonimizador local, `clinica-ai` _(A5, 11-10-2026)_
+
+P4 del plan: al proveedor sólo va texto seudonimizado, y el seudonimizador corre
+en la máquina de la clínica (`clinica-ai`, su `SPEC.md` con `CAI-###`). Aquí,
+el adaptador HTTP que implementa el puerto `Pseudonymizer` (AS-025) con el
+secreto compartido. Hasta esta entrega el puerto sólo tenía
+`MissingPseudonymizer`, que falla cerrado.
+
+**Prueba independiente:** con un `fetch` falso que responde como `clinica-ai`,
+una nota sale como `PseudonymizedText` con su mapa; sin secreto, con una URL
+que no es de esta máquina por `http`, o con el servicio caído, nada sale y el
+error no lleva una palabra de la nota.
+**Cubre:** AS-030 a AS-034.
+**Solo servidor:** AS-030 a AS-034. Esta entrega no tiene pantalla.
+
 ## Criterios de éxito
 
 - **SC-089** — Con `ASSISTANT_ALLOW_REMOTE` distinto de `true`, el número de
@@ -347,6 +389,225 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > La fila no guarda secretos —ni claves ni texto seudonimizado—: sólo lo
   > que el médico vio en pantalla y su fuente.
 
+### 8. El seudonimizador y la puerta del asistente (P4, D-244 §3)
+
+- **AS-025** — El sistema DEBERÁ obtener todo texto de un paciente que vaya a
+  un proveedor a través del puerto `Pseudonymizer`, que devuelve el texto como
+  `PseudonymizedText` junto con los reemplazos que hizo; y SI la instalación no
+  tiene seudonimizador, ENTONCES toda función que lo necesite DEBERÁ fallar con
+  `ASSISTANT_NOT_CONFIGURED` sin ninguna petición de red ni fila en `ai_run`.
+  > El adaptador HTTP es de A5 (`clinica-ai`); hasta que exista, producción
+  > no tiene seudonimizador y «Proponer por problema» falla cerrado (decidido
+  > por la principal el 11-10-2026: nada de un «paso directo» de desarrollo).
+  > El contrato es el de `sigmai-ai` (`/v1/privacy/pseudonymize`): texto,
+  > sujeto, nombres del paciente y del personal → texto con marcadores,
+  > reemplazos y días de desplazamiento de las fechas.
+- **AS-026** — MIENTRAS `ASSISTANT_ENABLED` no sea `true`, toda ruta del
+  asistente DEBERÁ responder 404 como si no existiera; y con él, DEBERÁ exigir
+  el permiso `assistant:use`, que el rol `MEDICO` trae de fábrica.
+  > D-244 §3: el interruptor por sede llega con A3; hasta entonces la
+  > instalación y la cuenta. Un 404 y no un 403 sin interruptor: la pantalla no
+  > debe enseñar nada de IA en una instalación que no lo encendió. El 404 lo
+  > da un middleware, ANTES de la sesión, el permiso y las pipes (revisión del
+  > 11-10-2026: un guarda llegaba tarde y el 401/403/400 delataba la ruta). Y
+  > `assistant:use` se cruza con las sedes de `record:read`/`record:write`: una
+  > sede donde se escribe sin el asistente no lo tiene. C1 iba a
+  > traer el permiso; D1 llegó antes (D-244 §3 lo previó: «la primera entrega
+  > que tenga rutas»).
+
+- **AS-029** — DONDE `ASSISTANT_FAKE_PROVIDER` sea `true`, el sistema DEBERÁ
+  usar como única cadena el proveedor falso con el guion del repositorio y un
+  seudonimizador falso; DEBERÁ negarse a arrancar si además `NODE_ENV` es
+  `production`, `ASSISTANT_ALLOW_REMOTE` es `true` o hay alguna clave de
+  proveedor real; DEBERÁ registrar en `ai_run` el proveedor `fake`, y cada
+  propuesta DEBERÁ decir que es de demostración.
+  > Aprobado por la principal el 11-10-2026 para el recorrido y la
+  > presentación sin A5: con el modo encendido no existe ningún camino a la
+  > red, así que el seudonimizador falso no puede dejar salir nada. En
+  > pantalla: «Propuesta de demostración (sin modelo)»; nadie debe tomar una
+  > respuesta del guion por una del modelo. Apagado de fábrica.
+
+### 9. La línea base, sin modelo (plan §3)
+
+- **AS-027** — CUANDO alguien con `record:read` en la sede pida las propuestas
+  de CIE-10 de una atención, el sistema DEBERÁ devolver hasta **5** códigos
+  sin llamar a ningún modelo: primero los que ya se registraron a este paciente
+  en otras atenciones —su historia y las que absorbió (`chartScope`, PA-055),
+  en las sedes donde quien pide lee la historia, el alcance de EN-184—,
+  de más usado a menos y, a igualdad, el más reciente; después los que la
+  clínica más registra; sin los que esta atención ya tiene, y sólo los
+  seleccionables (cuatro caracteres) vigentes en su fecha clínica. Cada uno
+  DEBERÁ decir de dónde viene (`history` o `frequency`) y, si es de la historia,
+  cuántas veces y la última fecha.
+  > SigmAI, doc 17: historial + frecuencia es el brazo de R@5 33,6 %, y aquí
+  > mejora solo con el uso porque toda atención firmada tiene código. Una
+  > lectura de la historia: queda en la bitácora como las demás (EN-047).
+
+### 10. Problemas y códigos del modelo (D-083 de SigmAI, P2, P5)
+
+- **AS-028** — CUANDO el profesional de la atención pida «Proponer por
+  problema» en una atención viva, el sistema DEBERÁ seudonimizar el texto de su
+  nota de consulta (las secciones con texto, con su nombre), pedir al modelo los
+  problemas de la consulta, cada uno con la frase literal de la nota que lo
+  dice, y DEBERÁ descartar todo problema cuya frase no esté en la nota; y SI la
+  nota no tiene texto, ENTONCES DEBERÁ rechazarlo con `ASSISTANT_NOTE_EMPTY`
+  sin llamar a nadie.
+  > Mientras no haya transcripción (C1), la fuente es la nota escrita (plan de
+  > la rama). La frase se compara con el texto seudonimizado y, devueltos los
+  > marcadores, con la nota, sin distinguir mayúsculas, tildes ni espacios y
+  > como palabras enteras: un problema sin frase es un problema que nadie
+  > escribió (RC-21 de SigmAI). La frase tiene al menos dos palabras y ocho
+  > caracteres; una que la nota niega justo antes («niega dolor torácico»,
+  > «sin fiebre») no respalda nada (D-245 §5); se muestra la oración de la
+  > nota que la contiene, no la copia del modelo; y al mostrar las propuestas
+  > se vuelve a buscar en la nota de ahora: la que ya no está no se muestra.
+  > Un problema cuyo nombre lleva una fecha se descarta: el seudonimizador la
+  > desplazó. Al seudonimizador van los nombres del paciente, de sus contactos
+  > (D-246 §2) y del profesional; si lo que devuelve trae aún una cédula, un
+  > RUC, un móvil, un correo o un número de historia, la lectura falla
+  > cerrada.
+  > Una frase con una fecha que el seudonimizador desplazó no está en la nota
+  > y se descarta: nunca se muestra con la fecha cambiada.
+- **AS-035** — Para cada problema el modelo DEBERÁ escribir hasta 5 códigos
+  CIE-10, y el sistema DEBERÁ mostrar sólo los que resuelva en el catálogo
+  OMS vigente en la fecha clínica de la atención: el código exacto, con o sin
+  punto, o —si el modelo escribió una categoría de tres caracteres— la
+  subcategoría `.X` de esa categoría cuando el catálogo la tiene. Un código
+  que no resuelve NO DEBERÁ mostrarse nunca, y el nombre que se muestra DEBERÁ
+  ser el del catálogo, no el que escribió el modelo.
+  > El catálogo OMS va a cuatro caracteres (`fix/catalogos-oficiales`):
+  > J02.9, I10.X. Una categoría con varias subcategorías (J02 → J02.0, J02.8,
+  > J02.9) no se completa por su cuenta: elegir el cuarto carácter es
+  > codificar, y eso lo hace el médico (D-245 §2). Un problema que se queda sin
+  > códigos se muestra igual, con su frase, para que el médico lo busque.
+- **AS-036** — CUANDO el modelo responda, el sistema DEBERÁ guardar cada
+  problema como una propuesta de `ai_suggestion` de clase `diagnosis`, en
+  estado «propuesta», con el intento de `ai_run` que respondió, el problema,
+  su frase, sus códigos resueltos y su fuente (la sección de la nota); y la
+  lectura nueva DEBERÁ sustituir en pantalla a las propuestas sin decidir de la
+  anterior, sin borrar ninguna.
+  > AS-023 de A1: una propuesta no se borra. Se muestran las de la última
+  > lectura que no se descartaron y cuya oración la nota aún dice; las de una
+  > lectura vieja quedan en la tabla como estaban y no se muestran (lo que se
+  > aceptó de ellas ya está en la lista de diagnósticos). Una lectura que no
+  > propone nada lo dice (`found: 0`) y deja las anteriores como estaban.
+
+### 11. Aceptar y descartar (P1)
+
+- **AS-037** — CUANDO el profesional acepte una propuesta con el diagnóstico
+  que registró desde ella, el sistema DEBERÁ comprobar que ese diagnóstico es
+  de la misma atención y está vigente, y DEBERÁ dejar la propuesta «aceptada»
+  si su código es uno de los propuestos o «aceptada con cambios» si eligió
+  otro, enlazada al diagnóstico, con quién y cuándo; el asistente NO DEBERÁ
+  registrar ningún diagnóstico por su cuenta.
+  > El diagnóstico se registra por su ruta de siempre (EN-040…EN-049), con sus
+  > marcas del RDACAA; aceptar sólo enlaza. Distancia (AS-022): 0 con un código
+  > propuesto, 1 con otro. «Desde ella» quiere decir registrado después de la
+  > propuesta y no enlazado ya a otra: un diagnóstico anterior no es obra de
+  > la propuesta, y dos propuestas sobre uno solo lo contarían dos veces.
+  > La base lo garantiza también: `ai_suggestion_one_per_diagnosis`, índice
+  > único parcial sobre el diagnóstico enlazado (sólo para esa clase).
+- **AS-038** — CUANDO el profesional descarte una propuesta, el sistema DEBERÁ
+  dejarla «descartada» con quién y cuándo, y NO DEBERÁ volver a mostrarla.
+- **AS-039** — Proponer, aceptar y descartar DEBERÁN exigir que quien lo pide
+  sea el profesional de la atención, con `record:write` en su sede, y que la
+  atención siga viva; SI no lo es, ENTONCES el sistema DEBERÁ rechazarlo sin
+  llamar al modelo ni tocar nada, y una atención de otra sede DEBERÁ
+  responderse como inexistente (EN-121).
+  > SigmAI M-02: cualquier médico podía pedir el asistente en la atención de
+  > otro. Leer la línea base sigue siendo de quien puede leer la atención.
+  > D-245 §1.
+
+### 12. Fallos y privacidad
+
+- **AS-040** — SI el seudonimizador o el proveedor fallan, se acaba el plazo o
+  el techo de gasto no admite el intento, ENTONCES la lectura DEBERÁ fallar con
+  el código del error, sin guardar nada y sin tocar las propuestas que ya
+  había, y la línea base DEBERÁ seguir respondiendo.
+  > En pantalla, el motivo y «Volver a pedir» (AS-044). El plazo de la lectura
+  > es de 90 s, como en SigmAI (`NAMING_LIMIT_MS`); el primer fallo corta las
+  > llamadas que siguen en vuelo. Una lectura a la vez por atención
+  > (`ASSISTANT_READING_IN_PROGRESS`) y seis por minuto: cada una paga una
+  > llamada por problema. Si la atención se cerró mientras el modelo
+  > respondía, no se guarda nada. El almacén lo comprueba con la atención bloqueada
+  > (`FOR UPDATE`) en la misma transacción que guarda.
+- **AS-041** — Ninguna línea de log, fila de `ai_run` ni mensaje de error de
+  esta función DEBERÁ contener la nota, los problemas ni sus frases; y el texto
+  de la nota DEBERÁ ir al modelo delimitado como dato, con la instrucción de no
+  seguir órdenes que contenga.
+  > AS-018 sigue valiendo; aquí se prueba con una nota con un nombre y una
+  > orden dentro («ignora lo anterior…»). La nota va entre `<nota>` y
+  > `</nota>`, con esas marcas rotas si la nota las escribía; el problema, en
+  > una línea entre «». Leer la nota para mandarla deja su fila en la
+  > bitácora (`EXPORT`, EN-122), y las respuestas que llevan la historia, la
+  > suya (`READ`).
+
+### 13. Medir antes de encender (P7)
+
+- **AS-042** — El arnés de evaluación DEBERÁ medir, sobre CodiEsp y sobre el
+  set propio de consultas inventadas, el R@5 a cuatro y a tres caracteres de la
+  línea base y de «Proponer por problema», y cuántos códigos inexistentes se
+  habrían mostrado, que DEBERÁ ser **cero**; y DEBERÁ correr fuera del verify,
+  escribiendo el resultado con el modelo, la versión del prompt y la del
+  catálogo.
+  > CodiEsp (CC-BY 4.0) viene en CIE-10-CM, que extiende la de la OMS: su
+  > código se compara truncado a la subcategoría de cuatro caracteres. Sus
+  > casos clínicos son públicos y no son pacientes de la clínica: el arnés vive
+  > fuera de `src/` y no pasa por el seudonimizador. Lo que mide es el paso
+  > de los códigos —la frase del experto como problema—, con el prompt y la
+  > barrera del producto; nombrar los problemas desde una nota no tiene aún
+  > un set con referencia y queda para la fase F. La línea base de CodiEsp es
+  > la frecuencia de todo el corpus sin el artículo del caso; la del set
+  > propio no aplica (sin historia, cada código aparece una vez). Que no se
+  > muestre un código inexistente lo garantiza la barrera contra la base
+  > (AS-035, integración); el arnés cuenta lo que el modelo escribió.
+
+### 14. En la pestaña Diagnósticos
+
+- **AS-043** — La pestaña Diagnósticos DEBERÁ mostrar la línea base como
+  códigos que se registran con un clic en «Registrar diagnóstico» con el código
+  puesto, y cada propuesta del modelo con borde punteado, «Propuesta», su
+  problema, su frase y sus códigos, con «Aceptar» —que abre ese diálogo con el
+  código puesto y, al guardar, la enlaza— y «Descartar»; y sin el permiso o
+  con el asistente apagado NO DEBERÁ mostrar nada de esto.
+  > Estándar de propuestas de SigmAI (`18-ESTANDAR-UI.md` §6 bis): borde
+  > punteado, «Aceptar» escribe, «Descartar»; la procedencia una vez por grupo.
+- **AS-044** — MIENTRAS la lectura está en curso la pestaña DEBERÁ decirlo y
+  seguir usable; y SI falla, ENTONCES DEBERÁ decir el motivo con «Volver a
+  pedir», sin quitar la línea base ni las propuestas que ya había.
+### 15. El seudonimizador local (A5)
+
+- **AS-030** — CUANDO se pida seudonimizar un texto, el adaptador DEBERÁ
+  enviarlo a `POST /v1/privacy/pseudonymize` de `clinica-ai` con la cabecera
+  `Authorization: Bearer <ASSISTANT_AI_SERVICE_SECRET>`, y DEBERÁ devolver el
+  texto como `PseudonymizedText` sólo si la respuesta cumple el contrato
+  (`text`, `replacements[]` con `placeholder`, `original` y `kind`,
+  `date_shift_days` entero) y no contiene ninguna palabra de tres letras o más
+  de los `names` enviados (sin mayúsculas ni acentos). Es el único sitio,
+  además de `withContext`, que convierte un texto en `PseudonymizedText`
+  (AS-001).
+- **AS-031** — SI `ASSISTANT_AI_SERVICE_SECRET` no está declarado, ENTONCES la
+  instalación DEBERÁ usar `MissingPseudonymizer` (AS-025), que rechaza sin
+  ninguna petición de red; y SI está declarado con menos de 32 caracteres,
+  ENTONCES la API NO DEBERÁ arrancar.
+- **AS-032** — SI `ASSISTANT_AI_SERVICE_URL` apunta a una máquina que no es
+  esta (`localhost`, `127.0.0.1`, `::1`) sin `ASSISTANT_AI_SERVICE_ALLOW_REMOTE=true`,
+  o a otra máquina por algo que no sea `https`, o no es `http`/`https`,
+  ENTONCES la API NO DEBERÁ arrancar: el texto viaja sin seudonimizar.
+- **AS-033** — SI el servicio no responde en `ASSISTANT_AI_SERVICE_TIMEOUT_MS`,
+  responde con un estado de error, o su respuesta no cumple el contrato,
+  ENTONCES el adaptador DEBERÁ lanzar `ASSISTANT_PSEUDONYMIZER_FAILED`
+  —reintentable sólo si el servicio no estaba disponible (red, plazo, 5xx)— y
+  NO DEBERÁ devolver el texto ni parte de él. El adaptador NO DEBERÁ seguir
+  una redirección: un 3xx es un rechazo. CUANDO quien llama cancele, el
+  adaptador DEBERÁ abandonar la petición.
+- **AS-034** — El mensaje, la serialización y el log de un fallo del adaptador
+  NO DEBERÁN contener el texto enviado, los nombres, ni el mapa de
+  sustituciones ni el cuerpo que devolvió el servicio.
+  > SigmAI A-03 (26 sitios registraban la transcripción en `error.message`).
+  > El mapa es lo más sensible que existe aquí: dice qué nombre hay detrás de
+  > cada marcador.
+
 ---
 
 ## Códigos de error nuevos
@@ -359,6 +620,14 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `SUGGESTION_NOT_FOUND`               | `NotFoundError`        | 404       | La propuesta, o su atención, no existe o está fuera del alcance (AS-021)     |
 | `SUGGESTION_INVALID`                 | `ValidationError`      | 422       | Fuentes que no son un lugar conocido, o aceptar sin nada guardado (AS-020)   |
 | `ASSISTANT_SPENDING_CEILING_REACHED` | `QuotaExceededError`   | 429       | El techo del mes no admite el intento, o no hay techo (AS-017)               |
+| `ASSISTANT_NOTE_EMPTY`               | `ValidationError`      | 422       | La nota de la atención no tiene texto del que leer problemas (AS-028)        |
+| `ASSISTANT_NOT_ENCOUNTER_OWNER`      | `ForbiddenError`       | 403       | Quien pide no es el profesional de la atención (AS-039)                      |
+| `SUGGESTION_DIAGNOSIS_MISMATCH`      | `ValidationError`      | 422       | El diagnóstico con que se acepta no es de esa atención o no está (AS-037)   |
+| `ASSISTANT_ENCOUNTER_NOT_FOUND`      | `NotFoundError`        | 404       | La atención no existe o es de una sede fuera del alcance (AS-039, EN-121)    |
+| `ASSISTANT_ENCOUNTER_CLOSED`         | `ConflictError`        | 409       | La atención ya no admite contenido clínico nuevo (AS-039)                    |
+| `ASSISTANT_PROPOSAL_NOT_KEPT`        | `ExternalServiceError` | 503       | El modelo respondió pero su intento no quedó en `ai_run` (AS-036, AS-040)    |
+| `ASSISTANT_READING_IN_PROGRESS`      | `ConflictError`        | 409       | Ya hay una lectura de esa atención en curso (AS-040)                         |
+| `ASSISTANT_PSEUDONYMIZER_FAILED`     | `ExternalServiceError` | 503 / 502 | `clinica-ai` no respondió (reintentable) o respondió fuera de contrato (AS-033) |
 
 ## Niveles de prueba
 
@@ -371,6 +640,11 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-020 a AS-024 (la base)              | Integración contra PostgreSQL, con control positivo                  |
 | AS-022 (el cálculo)                    | Unitario del dominio                                                 |
 | AS-013, AS-016, AS-018, AS-019         | Unitario (AS-018 sobre `pruneToAllowlist`)                           |
+| AS-025, AS-028, AS-035, AS-036, AS-039, AS-040, AS-041 | Unitario con seudonimizador y proveedor falsos |
+| AS-026, AS-027, AS-036, AS-037, AS-038 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-042 | Arnés (`eval/`), fuera del verify |
+| AS-043, AS-044 | Componente de la pestaña y recorrido F-04 |
+| AS-030 a AS-034                        | Unitario con `fetch` falso; AS-031 y AS-032 sobre `env.schema`; prueba manual contra `clinica-ai` en marcha |
 
 ## Preguntas abiertas
 

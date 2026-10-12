@@ -1,0 +1,26 @@
+{
+  "about": "AS-029. Guion del modo de demostración: lo que el proveedor falso contesta, sin modelo. Datos inventados. Cada problema se nombra si la nota contiene su frase; los códigos incluyen uno que no existe en la CIE-10 OMS (J02.7) para que se vea que la barrera no lo muestra.",
+  "problems": [
+    { "phrase": "odinofagia", "problem": "FARINGITIS AGUDA" },
+    { "phrase": "dolor de garganta", "problem": "FARINGITIS AGUDA" },
+    {
+      "phrase": "150/95",
+      "problem": "HIPERTENSIÓN ARTERIAL SIN DIAGNÓSTICO PREVIO"
+    },
+    {
+      "phrase": "tensión alta",
+      "problem": "HIPERTENSIÓN ARTERIAL SIN DIAGNÓSTICO PREVIO"
+    },
+    { "phrase": "ardor al orinar", "problem": "INFECCIÓN DE VÍAS URINARIAS" },
+    { "phrase": "disuria", "problem": "INFECCIÓN DE VÍAS URINARIAS" },
+    { "phrase": "dolor lumbar", "problem": "LUMBALGIA" },
+    { "phrase": "glucosa", "problem": "HIPERGLUCEMIA" }
+  ],
+  "codes": {
+    "FARINGITIS AGUDA": ["J02.9", "J02.7", "J02.8", "J03.9"],
+    "HIPERTENSIÓN ARTERIAL SIN DIAGNÓSTICO PREVIO": ["I10", "R03.0"],
+    "INFECCIÓN DE VÍAS URINARIAS": ["N39.0", "N30.0"],
+    "LUMBALGIA": ["M54.5"],
+    "HIPERGLUCEMIA": ["R73.9", "E11.9"]
+  }
+}

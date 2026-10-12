@@ -291,6 +291,27 @@ export const envSchema = z.object({
     z.coerce.number().positive().optional(),
   ),
   /**
+   * AS-026 (D-244 §3). Whether the assistant answers at all in this
+   * installation. Off, every assistant route answers 404 as if it did not
+   * exist. The per-site switch arrives with A3; until then, this and the
+   * permission `assistant:use`.
+   */
+  ASSISTANT_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  /**
+   * AS-029. The demonstration mode: the only chain is the fake provider with
+   * the script of the repository, and the pseudonymizer is a fake too. It
+   * exists so the walks and a presentation show the screen without A5 and
+   * without a model. Refused in production, beside the remote switch and
+   * beside any real key (`validateEnv`): with it on there is no road out.
+   */
+  ASSISTANT_FAKE_PROVIDER: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  /**
    * AS-014 (D-239 §3). Keeps the pseudonymized prompt and the raw answer of
    * every attempt in `ai_exchange`, purged 45 days after the note is signed.
    * Off unless declared.
@@ -299,6 +320,31 @@ export const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+  /**
+   * AS-032. Where the local pseudonymizer, `clinica-ai`, answers. It receives
+   * clinical text before it is cleared: this machine only, unless
+   * `ASSISTANT_AI_SERVICE_ALLOW_REMOTE` says otherwise, and then over TLS.
+   */
+  ASSISTANT_AI_SERVICE_URL: z.url().default('http://127.0.0.1:8100'),
+  ASSISTANT_AI_SERVICE_ALLOW_REMOTE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  /**
+   * AS-031. The secret `clinica-ai` holds as `CLINICA_AI_SHARED_SECRET`.
+   * Without it there is no pseudonymizer and the assistant fails closed.
+   */
+  ASSISTANT_AI_SERVICE_SECRET: z.preprocess(
+    emptyAsUndefined,
+    z.string().min(32).optional(),
+  ),
+  /** AS-033. How long one call to `clinica-ai` may take. */
+  ASSISTANT_AI_SERVICE_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(120_000)
+    .default(10_000),
 
   /** Default site timezone. `Pacific/Galapagos` for the Galapagos islands. */
   DEFAULT_TIMEZONE: z
@@ -361,6 +407,11 @@ export function isLocalUrl(value: string): boolean {
   );
 }
 
+/** AS-032. This machine and nothing else: no `.test` or `.localhost` names. */
+function isLoopbackUrl(url: URL): boolean {
+  return ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+}
+
 /**
  * Validates and returns the configuration. Throws with a readable message when
  * it fails: a raw `ZodError` is unreadable at 3am during a deployment.
@@ -419,6 +470,22 @@ export function validateEnv(raw: Record<string, unknown>): Env {
           });
         }
       }
+      // AS-032. Clinical text not yet pseudonymized travels to clinica-ai: to
+      // this machine; to another only when declared, and only over TLS.
+      const service = new URL(env.ASSISTANT_AI_SERVICE_URL);
+      const local = isLoopbackUrl(service);
+      if (
+        !['http:', 'https:'].includes(service.protocol) ||
+        (!local && !env.ASSISTANT_AI_SERVICE_ALLOW_REMOTE) ||
+        (!local && service.protocol !== 'https:')
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['ASSISTANT_AI_SERVICE_URL'],
+          message:
+            'el seudonimizador recibe la nota sin seudonimizar: sólo en esta máquina (localhost, 127.0.0.1, ::1); en otra, sólo con ASSISTANT_AI_SERVICE_ALLOW_REMOTE=true y por https',
+        });
+      }
       // IL-008. No process reaches a remote identity provider by accident,
       // and none reaches it in clear.
       const provider = env.IDENTITY_PROVIDER_URL;
@@ -436,6 +503,30 @@ export function validateEnv(raw: Record<string, unknown>): Env {
             code: 'custom',
             path: ['IDENTITY_PROVIDER_URL'],
             message: 'el proveedor de identidad solo se llama por https',
+          });
+        }
+      }
+      // AS-029. The fake pseudonymizer clears nothing, so the demonstration
+      // mode must leave no road to a provider: not in production, not with
+      // the remote switch, not with a key that a later change could use.
+      if (env.ASSISTANT_FAKE_PROVIDER) {
+        const roads = [
+          env.NODE_ENV === 'production' && 'NODE_ENV=production',
+          env.ASSISTANT_ALLOW_REMOTE && 'ASSISTANT_ALLOW_REMOTE=true',
+          env.ASSISTANT_GEMINI_API_KEY !== undefined &&
+            'ASSISTANT_GEMINI_API_KEY',
+          env.ASSISTANT_ANTHROPIC_API_KEY !== undefined &&
+            'ASSISTANT_ANTHROPIC_API_KEY',
+          env.ASSISTANT_OPENAI_API_KEY !== undefined &&
+            'ASSISTANT_OPENAI_API_KEY',
+          // The fake clears nothing but names: kept text would be the note.
+          env.ASSISTANT_EXCHANGE_LOG && 'ASSISTANT_EXCHANGE_LOG=true',
+        ].filter((road): road is string => road !== false);
+        if (roads.length > 0) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['ASSISTANT_FAKE_PROVIDER'],
+            message: `el modo de demostración no admite un camino a un proveedor real (${roads.join(', ')}): apáguelo o quite eso`,
           });
         }
       }

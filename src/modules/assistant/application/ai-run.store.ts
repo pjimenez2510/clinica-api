@@ -45,7 +45,8 @@ export interface AiExchangeRecord {
 }
 
 export interface AiRunStore {
-  record(run: AiRunRecord, exchange: AiExchangeRecord | null): Promise<void>;
+  /** Answers the id of the row, which a proposal of the answer links to (AS-036). */
+  record(run: AiRunRecord, exchange: AiExchangeRecord | null): Promise<string>;
   /** AS-017. What the attempts since `from` cost, each unknown cost at its worst case. */
   spentSince(from: Date): Promise<number>;
   /** AS-015. Deletes the exchanges past their 45 days; answers how many. */

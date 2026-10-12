@@ -119,6 +119,11 @@ export interface LlmAnswer<Value> {
   model: string;
   /** The `request_id` of its rows in `ai_run`. */
   requestId: string;
+  /**
+   * AS-036. The id of the `ai_run` row of the attempt that answered, which a
+   * proposal links to; null when that row could not be written (AS-013).
+   */
+  runId: string | null;
 }
 
 /** The one door to a language model (AS-001 … AS-019). */

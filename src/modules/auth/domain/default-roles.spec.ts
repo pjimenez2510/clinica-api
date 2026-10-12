@@ -52,3 +52,20 @@ describe('AU-059 el rol de fábrica «Dirección médica»', () => {
     expect(others.length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * AS-026, D-244 §3. Until the per-site switch of A3, the assistant answers to
+ * the installation's `ASSISTANT_ENABLED` and to this permission. Who attends
+ * carries it from the factory; nobody who does not diagnose does.
+ */
+describe('AS-026 quién trae el asistente de fábrica', () => {
+  it('AS-026 el médico trae assistant:use', () => {
+    expect(permissionsOf('MEDICO')).toContain('assistant:use');
+  });
+
+  it('AS-026 control: enfermería, recepción y caja no lo traen', () => {
+    for (const code of ['ENFERMERIA', 'RECEPCION', 'CAJA']) {
+      expect(permissionsOf(code)).not.toContain('assistant:use');
+    }
+  });
+});

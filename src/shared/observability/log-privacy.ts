@@ -105,6 +105,15 @@ export const ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'limit',
   'retries',
   'cache_hit',
+  /**
+   * AS-041. How a reading of «Proponer por problema» went, in counts only:
+   * the problems kept and dropped, and the codes the model wrote against the
+   * ones the WHO barrier let through. Never a problem, a phrase or a code.
+   */
+  'assistant_problems',
+  'assistant_problems_without_quote',
+  'assistant_codes_written',
+  'assistant_codes_shown',
 
   // Errors
   'type',

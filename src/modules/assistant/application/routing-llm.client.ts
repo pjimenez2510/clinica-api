@@ -147,8 +147,8 @@ export class RoutingLlmClient implements LlmClient {
 
       try {
         const answer = await provider.generate({ ...request, maxTokens, signal }); // prettier-ignore
-        await keep({ outcome: 'ok', httpStatus: 200, ...answer });
-        return { value: answer.value, provider: provider.name, model, requestId }; // prettier-ignore
+        const runId = await keep({ outcome: 'ok', httpStatus: 200, ...answer });
+        return { value: answer.value, provider: provider.name, model, requestId, runId }; // prettier-ignore
       } catch (error) {
         let failed =
           error instanceof LlmCallFailed
@@ -228,7 +228,7 @@ export class RoutingLlmClient implements LlmClient {
       previous: LlmOutcome | null;
       settled: Settled;
     },
-  ): Promise<void> {
+  ): Promise<string | null> {
     const { settled } = attempt;
     const reported =
       settled.inputTokens !== undefined || settled.outputTokens !== undefined;
@@ -246,8 +246,9 @@ export class RoutingLlmClient implements LlmClient {
         ? 0
         : // AS-017. Absent is not zero: it may have been billed, so its worst case.
           null;
+    let runId: string;
     try {
-      await this.options.store.record(
+      runId = await this.options.store.record(
         {
           requestId: attempt.requestId,
           attempt: attempt.attempt,
@@ -290,10 +291,11 @@ export class RoutingLlmClient implements LlmClient {
         },
         'assistant attempt not recorded',
       );
-      return;
+      return null;
     }
     // AS-015. After writing text, the old text goes — outside the answer's path.
     if (this.options.exchangeLog) void this.purge();
+    return runId;
   }
 
   /** AS-015. A failed purge says so and is retried by the next one. */

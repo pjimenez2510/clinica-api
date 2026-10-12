@@ -19,6 +19,7 @@ import {
   requiresDischargeCondition,
 } from './encounter-state';
 import type { EncounterStatus } from './encounter';
+import { acceptsNewContent } from '../../../shared/clinical/coding-context.port';
 
 /**
  * The attention's state machine of SPEC §11, exhaustively and in both
@@ -238,6 +239,12 @@ describe('la máquina de estados de la atención', () => {
       'OPEN',
       'ON_HOLD',
     ]);
+  });
+
+  it('AS-039 el asistente lee «viva» con el mismo predicado que la atención, en todos los estados', () => {
+    for (const status of STATES) {
+      expect(acceptsNewContent(status)).toBe(acceptsNewClinicalContent(status));
+    }
   });
 });
 

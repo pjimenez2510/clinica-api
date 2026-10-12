@@ -3,24 +3,53 @@ import { randomUUID } from 'node:crypto';
 import {
   Inject,
   Logger,
+  type MiddlewareConsumer,
   Module,
+  type NestModule,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
+import { CurrentUserService } from '../../shared/authorisation/current-user.service';
+import { CIE10_LOOKUP } from '../../shared/clinical/cie10-lookup.port';
+import { CODING_CONTEXT_READER } from '../../shared/clinical/coding-context.port';
 import type { Env } from '../../shared/config/env.schema';
+import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
+import { PrismaCie10Lookup } from '../../shared/infrastructure/clinical/prisma-cie10.lookup';
+import { PrismaCodingContextReader } from '../../shared/infrastructure/clinical/prisma-coding-context.reader';
 
 import { AI_RUN_STORE, type AiRunStore } from './application/ai-run.store';
+import {
+  ASSISTANT_DEMO,
+  DIAGNOSIS_PROPOSAL_CLOCK,
+  DiagnosisProposalService,
+} from './application/diagnosis-proposal.service';
 import { LLM_CLIENT, type LlmClient } from './application/llm-client.port';
+import {
+  PSEUDONYMIZER,
+  type Pseudonymizer,
+} from './application/pseudonymizer.port';
 import { RoutingLlmClient } from './application/routing-llm.client';
+import {
+  ASSISTANT_ENABLED,
+  AssistantDiagnosisController,
+} from './assistant-diagnosis.controller';
+import { AssistantSwitchMiddleware } from './assistant-switch.middleware';
 import {
   SUGGESTION_CLOCK,
   SuggestionService,
 } from './application/suggestion.service';
 import { SUGGESTION_STORE } from './application/suggestion.store';
+import {
+  DEMO_PRICES,
+  DemoLlmProvider,
+} from './infrastructure/demo/demo-llm.provider';
+import { DemoPseudonymizer } from './infrastructure/demo/demo.pseudonymizer';
 import { LLM_PRICES } from './infrastructure/llm-pricing';
 import { PrismaAiRunStore } from './infrastructure/prisma-ai-run.store';
+import { pseudonymizerFor } from './infrastructure/clinica-ai.pseudonymizer';
 import { PrismaSuggestionStore } from './infrastructure/prisma-suggestion.store';
 import { buildProviderChain } from './infrastructure/provider-chain';
 
@@ -29,13 +58,14 @@ import { buildProviderChain } from './infrastructure/provider-chain';
  * language model: configuration decides which providers exist (AS-006), the
  * routing walks them (D-239 §5), and `ai_run` keeps every attempt.
  *
- * No controller: nothing here answers HTTP yet. Whoever exposes a route
- * declares its permission (REQ-118, A3).
+ * Its one controller is the CIE-10 of Diagnósticos (D1), behind
+ * `ASSISTANT_ENABLED` and `assistant:use` (AS-026, D-244 §3).
  */
 /** AS-015. Once a day: the retention is counted in days. */
 const PURGE_EVERY_MS = 86_400_000;
 
 @Module({
+  controllers: [AssistantDiagnosisController],
   providers: [
     { provide: AI_RUN_STORE, useClass: PrismaAiRunStore },
     // AS-020 to AS-024. The provenance of each proposal.
@@ -45,36 +75,51 @@ const PURGE_EVERY_MS = 86_400_000;
     {
       provide: LLM_CLIENT,
       inject: [ConfigService, AI_RUN_STORE],
-      useFactory: (
-        config: ConfigService<Env, true>,
-        store: AiRunStore,
-      ): LlmClient =>
-        new RoutingLlmClient({
-          providers: buildProviderChain({
-            allowRemote: config.get('ASSISTANT_ALLOW_REMOTE', { infer: true }),
-            keys: {
-              gemini: config.get('ASSISTANT_GEMINI_API_KEY', { infer: true }),
-              anthropic: config.get('ASSISTANT_ANTHROPIC_API_KEY', { infer: true }), // prettier-ignore
-              openai: config.get('ASSISTANT_OPENAI_API_KEY', { infer: true }),
-            },
-          }),
-          store,
-          prices: LLM_PRICES,
-          ceilingUsd: config.get('ASSISTANT_MONTHLY_SPEND_CEILING_USD', { infer: true }), // prettier-ignore
-          timeoutMs: config.get('ASSISTANT_PROVIDER_TIMEOUT_MS', { infer: true }), // prettier-ignore
-          exchangeLog: config.get('ASSISTANT_EXCHANGE_LOG', { infer: true }),
-          clock: () => new Date(),
-          newRequestId: randomUUID,
-        }),
+      useFactory: buildLlmClient,
     },
+    // AS-025, AS-029, AS-031. clinica-ai with its shared secret; without it,
+    // MissingPseudonymizer: fails closed. The demonstration mode has its fake.
+    {
+      provide: PSEUDONYMIZER,
+      inject: [ConfigService],
+      useFactory: buildPseudonymizer,
+    },
+    // AS-027, AS-028, AS-035. What the assistant reads, through `shared/`.
+    { provide: CODING_CONTEXT_READER, useClass: PrismaCodingContextReader },
+    { provide: CIE10_LOOKUP, useClass: PrismaCie10Lookup },
+    { provide: ACCESS_AUDIT_RECORDER, useClass: PrismaAccessAuditRecorder },
+    { provide: DIAGNOSIS_PROPOSAL_CLOCK, useValue: () => new Date() },
+    {
+      provide: ASSISTANT_DEMO,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>): boolean =>
+        config.get('ASSISTANT_FAKE_PROVIDER', { infer: true }) === true,
+    },
+    {
+      provide: ASSISTANT_ENABLED,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>): boolean =>
+        config.get('ASSISTANT_ENABLED', { infer: true }) === true,
+    },
+    DiagnosisProposalService,
+    CurrentUserService,
   ],
-  exports: [LLM_CLIENT, SuggestionService],
+  exports: [LLM_CLIENT, SuggestionService, PSEUDONYMIZER],
 })
-export class AssistantModule implements OnModuleInit, OnModuleDestroy {
+export class AssistantModule
+  implements NestModule, OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(AssistantModule.name);
   private timer: NodeJS.Timeout | undefined;
 
   constructor(@Inject(AI_RUN_STORE) private readonly store: AiRunStore) {}
+
+  /** AS-026. The switch answers before the session and the permission do. */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(AssistantSwitchMiddleware)
+      .forRoutes(AssistantDiagnosisController);
+  }
 
   /**
    * AS-015. The purge runs at boot and then once a day, whether the exchange
@@ -105,4 +150,50 @@ export class AssistantModule implements OnModuleInit, OnModuleDestroy {
       );
     }
   }
+}
+
+type Config = ConfigService<Env, true>;
+
+/**
+ * AS-006, AS-029. The one door to a model. In the demonstration mode the only
+ * provider is the script, priced at zero; `validateEnv` has already refused
+ * that mode with any road to a real provider.
+ */
+export function buildLlmClient(config: Config, store: AiRunStore): LlmClient {
+  const demo = config.get('ASSISTANT_FAKE_PROVIDER', { infer: true });
+  const ceiling = config.get('ASSISTANT_MONTHLY_SPEND_CEILING_USD', { infer: true }); // prettier-ignore
+  return new RoutingLlmClient({
+    providers: demo
+      ? [new DemoLlmProvider()]
+      : buildProviderChain({
+          allowRemote: config.get('ASSISTANT_ALLOW_REMOTE', { infer: true }),
+          keys: {
+            gemini: config.get('ASSISTANT_GEMINI_API_KEY', { infer: true }),
+            anthropic: config.get('ASSISTANT_ANTHROPIC_API_KEY', { infer: true }), // prettier-ignore
+            openai: config.get('ASSISTANT_OPENAI_API_KEY', { infer: true }),
+          },
+        }),
+    store,
+    prices: demo ? DEMO_PRICES : LLM_PRICES,
+    // The script costs nothing; a ceiling of zero still admits it.
+    ceilingUsd: demo ? (ceiling ?? 0) : ceiling,
+    timeoutMs: config.get('ASSISTANT_PROVIDER_TIMEOUT_MS', { infer: true }),
+    exchangeLog: config.get('ASSISTANT_EXCHANGE_LOG', { infer: true }),
+    clock: () => new Date(),
+    newRequestId: randomUUID,
+  });
+}
+
+/**
+ * AS-025, AS-029, AS-031. The demonstration's fake, or clinica-ai —
+ * `MissingPseudonymizer` while it has no shared secret.
+ */
+export function buildPseudonymizer(config: Config): Pseudonymizer {
+  return config.get('ASSISTANT_FAKE_PROVIDER', { infer: true })
+    ? new DemoPseudonymizer()
+    : pseudonymizerFor({
+        url: config.get('ASSISTANT_AI_SERVICE_URL', { infer: true }),
+        secret: config.get('ASSISTANT_AI_SERVICE_SECRET', { infer: true }),
+        timeoutMs: config.get('ASSISTANT_AI_SERVICE_TIMEOUT_MS', { infer: true }), // prettier-ignore
+      });
 }

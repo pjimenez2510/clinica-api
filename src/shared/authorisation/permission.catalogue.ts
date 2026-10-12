@@ -293,6 +293,15 @@ export const PERMISSION_CATALOGUE = [
     resource: 'record',
     description: 'Firmar notas clínicas y certificados',
   },
+  // AS-026, D-244 §3. The assistant proposes; it never writes or signs (P1).
+  // Every assistant route asks for this AND for the record permission of what
+  // it touches: `assistant:use` alone opens nothing of the history.
+  {
+    code: 'assistant:use',
+    resource: 'record',
+    description:
+      'Usar el asistente de IA en la atención: pedir propuestas y aceptarlas o descartarlas. No registra ni firma nada por sí mismo',
+  },
   // EN-072, REQ-115. The second key of the record: block F of form 002, the
   // violence screening. `record:read` opens the attention; this opens what the
   // attention says about violence, and is ALSO what lets somebody record it.
