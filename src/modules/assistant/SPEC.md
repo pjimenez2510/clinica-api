@@ -433,6 +433,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > la rama). La frase se compara con el texto seudonimizado y, devueltos los
   > marcadores, con la nota, sin distinguir mayúsculas, tildes ni espacios: un
   > problema sin frase es un problema que nadie escribió (RC-21 de SigmAI).
+  > Una frase con una fecha que el seudonimizador desplazó no está en la nota
+  > y se descarta: nunca se muestra con la fecha cambiada.
 - **AS-035** — Para cada problema el modelo DEBERÁ escribir hasta 5 códigos
   CIE-10, y el sistema DEBERÁ mostrar sólo los que resuelva en el catálogo
   OMS vigente en la fecha clínica de la atención: el código exacto, con o sin

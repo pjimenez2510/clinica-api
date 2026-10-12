@@ -37,7 +37,12 @@ export interface Replacement {
 export interface Pseudonymized {
   cleared: PseudonymizedText;
   replacements: readonly Replacement[];
-  /** Dates are moved by this many days; an answer that quotes one is moved back. */
+  /**
+   * Dates are moved by this many days. Nothing moves them back yet: a quote
+   * of D1 that carries a moved date is not in the note, so it is dropped
+   * (AS-028), never shown with the wrong date. Whoever shows a dated phrase
+   * (C2) moves it back first.
+   */
   dateShiftDays: number;
 }
 
