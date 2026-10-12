@@ -15,6 +15,7 @@ import { withContext } from '../../src/modules/assistant/application/llm-client.
 import { noteText } from '../../src/modules/assistant/application/problem-coding.prompts.ts';
 import {
   backedLines,
+  cnmbSearchName,
   knownCodes,
   presentationFor,
 } from '../../src/modules/assistant/domain/prescription-reading.ts';
@@ -162,7 +163,7 @@ export function prescriptionFromNoteTask(
         restore: (text) => text,
       });
       const candidates = backed.kept.map((line) =>
-        searchLikeTheProduct(line.drug, catalogues.cnmb),
+        searchLikeTheProduct(cnmbSearchName(line.drug), catalogues.cnmb),
       );
       let choices: z.infer<typeof mappingAnswer>['choices'] = [];
       if (candidates.some((each) => each.length > 0)) {

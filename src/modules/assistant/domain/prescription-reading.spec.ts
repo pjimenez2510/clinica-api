@@ -5,6 +5,7 @@ import {
   backedLines,
   blockOf,
   canonicalLine,
+  cnmbSearchName,
   knownCodes,
   presentationFor,
   proposedFields,
@@ -260,5 +261,15 @@ describe('the codes the model wrote (AS-063)', () => {
 
     expect([line.form, line.doseUnit, line.route, line.frequency]).toEqual([null, 'TABLET', null, 'EVERY_8_HOURS']); // prettier-ignore
     expect(knownCodes({ ...read(), form: 'toString' }).form).toBeNull();
+  });
+});
+
+describe('the name the cuadro is searched by (AS-064)', () => {
+  it('AS-064 a combination written «con», «y» or «/» is searched as the cuadro writes it, with «+»', () => {
+    expect(cnmbSearchName('amoxicilina con ácido clavulánico')).toBe('amoxicilina + ácido clavulánico'); // prettier-ignore
+    expect(cnmbSearchName('Telmisartán y amlodipino')).toBe('Telmisartán + amlodipino'); // prettier-ignore
+    expect(cnmbSearchName('sulfametoxazol/trimetoprima')).toBe('sulfametoxazol + trimetoprima'); // prettier-ignore
+    // Control: a plain name is searched as written.
+    expect(cnmbSearchName('Amoxicilina')).toBe('Amoxicilina');
   });
 });

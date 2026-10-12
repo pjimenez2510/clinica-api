@@ -54,6 +54,7 @@ import {
   backedLines,
   blockOf,
   canonicalLine,
+  cnmbSearchName,
   knownCodes,
   presentationFor,
   proposedFields,
@@ -298,7 +299,7 @@ export class PrescriptionProposalService {
     const candidates = await Promise.all(
       backed.kept.map(
         (line) =>
-        this.prescribing.searchCnmb(line.drug, encounter.clinicalDate, CANDIDATES), // prettier-ignore
+        this.prescribing.searchCnmb(cnmbSearchName(line.drug), encounter.clinicalDate, CANDIDATES), // prettier-ignore
       ),
     );
     const chosen = await this.choose(backed.kept, candidates, clear, signal, encounter.id); // prettier-ignore

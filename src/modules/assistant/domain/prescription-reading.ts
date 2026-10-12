@@ -121,6 +121,18 @@ export function backedLines(input: {
   return { kept, dropped: input.read.length - kept.length };
 }
 
+/**
+ * AS-064. The name the cuadro is searched by: a combination written «con» or
+ * «y» is written «+» in the cuadro («Amoxicilina + ácido clavulánico»), so
+ * the search would find nothing (measured 12-10-2026, AS-079).
+ */
+export function cnmbSearchName(drug: string): string {
+  return drug
+    .replace(/\s+(?:con|y|más|mas)\s+/gi, ' + ')
+    .replace(/\s*\/\s*/g, ' + ')
+    .trim();
+}
+
 /** PR-115. A presentation of the cuadro, as the reader gives it. */
 export interface Presentation {
   form: string;
