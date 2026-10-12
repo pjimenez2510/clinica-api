@@ -71,9 +71,7 @@ async function anEncounterWithNote(prisma: PrismaClient) {
 }
 
 const PROPOSAL = { section: 'motivoConsulta', text: 'Cefalea de tres días' };
-const SOURCES = [
-  { kind: 'transcript' as const, fromMs: 12_000, toMs: 18_500 },
-];
+const SOURCES = [{ kind: 'transcript' as const, fromMs: 12_000, toMs: 18_500 }];
 
 async function propose(
   prisma: PrismaClient,

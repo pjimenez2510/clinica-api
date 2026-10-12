@@ -507,7 +507,12 @@ describe('los casos de uso de la nota clínica', () => {
 
   it('EN-027 firma registrando quién, cuándo y el resumen del contenido', async () => {
     const signed = await service.sign(
-      { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' },
+      {
+        encounterId: ENCOUNTER,
+        noteId: 'note-1',
+        revision: 1,
+        dischargeCondition: 'ALIVE',
+      },
       requester,
     );
 
@@ -539,7 +544,12 @@ describe('los casos de uso de la nota clínica', () => {
     ];
 
     const signed = await service.sign(
-      { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' },
+      {
+        encounterId: ENCOUNTER,
+        noteId: 'note-1',
+        revision: 1,
+        dischargeCondition: 'ALIVE',
+      },
       requester,
     );
 
@@ -569,7 +579,12 @@ describe('los casos de uso de la nota clínica', () => {
     ];
 
     const signed = await service.sign(
-      { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' },
+      {
+        encounterId: ENCOUNTER,
+        noteId: 'note-1',
+        revision: 1,
+        dischargeCondition: 'ALIVE',
+      },
       requester,
     );
 
@@ -679,7 +694,12 @@ describe('los casos de uso de la nota clínica', () => {
 
   it('EN-130 da el alta clínica al firmar la nota de consulta externa', async () => {
     await service.sign(
-      { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' },
+      {
+        encounterId: ENCOUNTER,
+        noteId: 'note-1',
+        revision: 1,
+        dischargeCondition: 'ALIVE',
+      },
       requester,
     );
 
@@ -689,7 +709,12 @@ describe('los casos de uso de la nota clínica', () => {
 
   it('AG-179, BI-238 firmar el alta avisa a la agenda, a la sala y a caja de la sede de la atención', async () => {
     await service.sign(
-      { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' },
+      {
+        encounterId: ENCOUNTER,
+        noteId: 'note-1',
+        revision: 1,
+        dischargeCondition: 'ALIVE',
+      },
       requester,
     );
 
@@ -706,7 +731,10 @@ describe('los casos de uso de la nota clínica', () => {
 
     heard.length = 0;
     await expect(
-      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1 }, requester),
+      service.sign(
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1 },
+        requester,
+      ),
     ).rejects.toBeInstanceOf(DischargeConditionRequiredError);
     expect(heard).toEqual([]);
   });
@@ -718,7 +746,10 @@ describe('los casos de uso de la nota clínica', () => {
      * the four admitted values, before the note has been written.
      */
     await expect(
-      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1 }, requester),
+      service.sign(
+        { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1 },
+        requester,
+      ),
     ).rejects.toBeInstanceOf(DischargeConditionRequiredError);
   });
 
@@ -730,7 +761,10 @@ describe('los casos de uso de la nota clínica', () => {
       content: { evolucion: 'Se retira el vendaje sin incidencias' },
     });
 
-    await service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1 }, requester);
+    await service.sign(
+      { encounterId: ENCOUNTER, noteId: 'note-1', revision: 1 },
+      requester,
+    );
 
     expect(notes.signature?.dischargesTheEncounter).toBe(false);
     expect(notes.signature?.dischargeCondition).toBeNull();

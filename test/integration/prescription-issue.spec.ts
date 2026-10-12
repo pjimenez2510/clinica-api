@@ -838,11 +838,7 @@ describe('la receta contra PostgreSQL', () => {
     );
 
     const outcome = await attemptWhileAnnulled(prisma, encounter.id, () =>
-      service.issue(
-        draft.prescription.id,
-        draft.prescription.revision,
-        who,
-      ),
+      service.issue(draft.prescription.id, draft.prescription.revision, who),
     );
 
     expect(outcome).toMatchObject({
