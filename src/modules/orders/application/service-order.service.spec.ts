@@ -176,6 +176,7 @@ class FakeOrders implements ServiceOrderRepository {
 
 const anOrder = (lines: number): ServiceOrderView => ({
   id: 'order-1',
+  revision: 1,
   encounterId: ENCOUNTER,
   siteId: SITE,
   patientId: 'chart-1',
@@ -299,6 +300,7 @@ describe('la emisión y el seguimiento de una orden', () => {
       service.rewrite(
         {
           orderId: 'order-1',
+          revision: 1,
           category: 'LABORATORY',
           priority: 'ROUTINE',
           lines: [{ serviceId: EXAM_RX }],
@@ -313,6 +315,7 @@ describe('la emisión y el seguimiento de una orden', () => {
     await service.rewrite(
       {
         orderId: 'order-1',
+        revision: 1,
         category: 'IMAGING',
         priority: 'URGENT',
         lines: [{ serviceId: EXAM_RX }],
@@ -328,9 +331,11 @@ describe('la emisión y el seguimiento de una orden', () => {
   });
 
   it('ORD-098 emite con el alcance de quien llama y deja constancia sin nombrar el examen', async () => {
-    await service.issue('order-1', requester);
+    await service.issue('order-1', 1, requester);
 
-    expect(orders.issued).toEqual([{ orderId: 'order-1', sites: [SITE] }]);
+    expect(orders.issued).toEqual([
+      { orderId: 'order-1', revision: 1, sites: [SITE] },
+    ]);
     const calls = (logger.info as unknown as { mock: { calls: unknown[][] } })
       .mock.calls;
     expect(calls[0]?.[0]).toEqual({
@@ -375,13 +380,14 @@ describe('la emisión y el seguimiento de una orden', () => {
     const colleague = { ...requester, userId: 'user-2' };
     const rewrite = {
       orderId: 'order-1',
+      revision: 1,
       category: 'LABORATORY' as const,
       priority: 'ROUTINE' as const,
       lines: [{ serviceId: EXAM_BH }],
     };
 
     for (const attempt of [
-      service.issue('order-1', colleague),
+      service.issue('order-1', 1, colleague),
       service.discard('order-1', colleague),
       service.rewrite(rewrite, colleague),
     ]) {

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
+import { assertRevision } from '../../../shared/domain/errors/record-changed.error';
 import { CLINIC_TIME_ZONE } from '../../../shared/domain/clinic-time';
 import { chartScope } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import {
@@ -31,6 +32,7 @@ import type {
   DraftRewrite,
   NewOrderLine,
   NewServiceOrder,
+  DraftIssue,
   OrderCorrection,
   OrderQuery,
   PendingOrderEntry,
@@ -85,6 +87,7 @@ const ORDER_SELECT = {
   orderedById: true,
   // D-123. Who may correct, issue or discard the draft: the signer's account.
   orderedBy: { select: { userId: true } },
+  revision: true,
   number: true,
   status: true,
   discardedAt: true,
@@ -181,7 +184,9 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
    */
   async rewrite(request: DraftRewrite): Promise<ServiceOrderView> {
     const row = await this.prisma.$transaction(async (tx) => {
-      const draft = await lockDraft(tx, request);
+      const draft = await lockDraft(tx, request, {
+        revision: request.revision,
+      });
       const lines = await linesOf(tx, draft.encounterId, request.category, request.lines); // prettier-ignore
 
       await tx.serviceOrderItem.deleteMany({
@@ -208,9 +213,9 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
    * instant is the issue's own, because the worklist ages from it (ORD-021)
    * and the cashier charges on its date.
    */
-  async issue(query: OrderQuery): Promise<ServiceOrderView> {
+  async issue(query: DraftIssue): Promise<ServiceOrderView> {
     const row = await this.prisma.$transaction(async (tx) => {
-      const draft = await lockDraft(tx, query);
+      const draft = await lockDraft(tx, query, { revision: query.revision });
 
       /**
        * ORD-003 and ORD-097, AGAIN. The draft may have waited an hour, and the clinic may
@@ -789,7 +794,11 @@ export class PrismaServiceOrderRepository implements ServiceOrderRepository {
 async function lockDraft(
   tx: Prisma.TransactionClient,
   query: OrderQuery,
-  options: { evenIfClosed?: boolean } = {},
+  options: {
+    evenIfClosed?: boolean;
+    /** ORD-181. Compared on the locked row when the act seals what was read. */
+    revision?: number;
+  } = {},
 ) {
   const found = await tx.serviceOrder.findFirst({
     where: { id: query.orderId, ...siteFilter(query.sites) },
@@ -806,12 +815,17 @@ async function lockDraft(
       id: true,
       encounterId: true,
       status: true,
+      revision: true,
       category: true,
       encounter: { select: { status: true } },
       items: { select: { testCode: true } },
     },
   });
   if (order.status !== 'DRAFT') throw new OrderNotDraftError();
+  // ORD-181. Another tab's correction is neither overwritten nor issued blind.
+  if (options.revision !== undefined) {
+    assertRevision(order.revision, options.revision);
+  }
   // ORD-005. A draft in an attention that was closed meanwhile stays a draft.
   if (!options.evenIfClosed && !admitsNewOrders(order.encounter.status)) {
     throw new OrderEncounterNotOpenError(order.encounter.status);
@@ -958,6 +972,7 @@ function toOrderView(row: OrderRow): ServiceOrderView {
     patientId: row.encounter.patientId,
     orderedById: row.orderedById,
     orderedByUserId: row.orderedBy.userId,
+    revision: row.revision,
     number: row.number,
     status: row.status,
     discardedAt: row.discardedAt,

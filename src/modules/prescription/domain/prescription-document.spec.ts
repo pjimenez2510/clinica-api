@@ -21,6 +21,7 @@ const source = (
     encounterId: 'encounter-1',
     prescriberId: 'practitioner-1',
     status: 'ACTIVE',
+    revision: 2,
     issuedAt: ISSUED_AT,
     verificationCode: 'A1B2C3D4E5F60718',
     sequenceNumber: 120,

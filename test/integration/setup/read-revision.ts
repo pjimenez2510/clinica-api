@@ -31,6 +31,20 @@ const DRAFT_PATHS: readonly [
   [/\/orders\/([0-9a-f-]{36})(?:\/issue)?$/, 'service_order'],
 ];
 
+/** The revision a draft has now: what a screen that just read it holds. */
+export async function revisionNow(
+  prisma: PrismaClient,
+  table: 'clinical_note' | 'prescription' | 'service_order',
+  id: string,
+): Promise<number> {
+  const [row] = await prisma.$queryRawUnsafe<{ revision: number }[]>(
+    `SELECT revision FROM "${table}" WHERE id = $1::uuid`,
+    id,
+  );
+  if (!row) throw new Error(`No ${table} ${id}`);
+  return row.revision;
+}
+
 async function currentRevision(
   prisma: PrismaClient,
   path: string,

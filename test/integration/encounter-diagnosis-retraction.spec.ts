@@ -580,8 +580,11 @@ describe('quitar un diagnóstico deja rastro (EN-180 a EN-183)', () => {
     const prisma = db();
     await anEncounterWithDiagnoses(prisma);
 
+    // CASCADE, as with `clinical_note`: `ai_suggestion` references the table
+    // (AS-021), and without it PostgreSQL refuses for the foreign key before
+    // the guard under test gets to speak.
     await expect(
-      prisma.$executeRawUnsafe('TRUNCATE TABLE encounter_diagnosis'),
+      prisma.$executeRawUnsafe('TRUNCATE TABLE encounter_diagnosis CASCADE'),
     ).rejects.toThrow(/frozen/);
     expect(await prisma.encounterDiagnosis.count()).toBe(2);
   });

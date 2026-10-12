@@ -13,6 +13,7 @@ import { PrismaAllergyAbsenceReader } from '../../src/shared/infrastructure/clin
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
+import { revisionNow } from './setup/read-revision';
 import { createPatient, createSite, createUser } from './setup/fixtures';
 
 /**
@@ -381,7 +382,11 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
       { line: 1, allergyId: expect.any(String), match: 'EXACT' },
     ]);
     await expect(
-      service.issue(composed.prescription.id, who),
+      service.issue(
+        composed.prescription.id,
+        await revisionNow(prisma, 'prescription', composed.prescription.id),
+        who,
+      ),
     ).rejects.toMatchObject({ code: 'ALLERGY_CONTRAINDICATION' });
 
     // Positive control: losartán, which the development cuadro also had,
@@ -398,7 +403,11 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
     );
     expect(other.allergyAlerts).toEqual([]);
     await expect(
-      service.issue(other.prescription.id, who),
+      service.issue(
+        other.prescription.id,
+        await revisionNow(prisma, 'prescription', other.prescription.id),
+        who,
+      ),
     ).resolves.toMatchObject({ status: 'ACTIVE' });
     expect(development.losartan.id).not.toBe((await official(prisma, 'C09CA01')).id); // prettier-ignore
   });
@@ -452,7 +461,11 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
       );
       expect(composed.allergyAlerts, code).toHaveLength(1);
       await expect(
-        service.issue(composed.prescription.id, who),
+        service.issue(
+          composed.prescription.id,
+          await revisionNow(prisma, 'prescription', composed.prescription.id),
+          who,
+        ),
       ).rejects.toMatchObject({ code: 'ALLERGY_CONTRAINDICATION' });
     }
 
@@ -466,7 +479,11 @@ describe('the official CNMB (PR-114 to PR-116)', () => {
       who,
     );
     await expect(
-      service.issue(other.prescription.id, who),
+      service.issue(
+        other.prescription.id,
+        await revisionNow(prisma, 'prescription', other.prescription.id),
+        who,
+      ),
     ).resolves.toMatchObject({ status: 'ACTIVE' });
   });
 

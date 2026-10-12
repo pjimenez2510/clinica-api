@@ -5,6 +5,7 @@ import type {
   AnnulledDocument,
   AnnulledDocumentArchiver,
 } from '../../../shared/documents/annulled-document.port';
+import { RecordChangedError } from '../../../shared/domain/errors/record-changed.error';
 import type {
   AccessAuditEntry,
   AccessAuditRecorder,
@@ -102,6 +103,7 @@ const aPrescription = (
   encounterId: ENCOUNTER,
   prescriberId: PRACTITIONER,
   status: 'DRAFT',
+  revision: 1,
   issuedAt: null,
   verificationCode: null,
   sequenceNumber: null,
@@ -140,6 +142,7 @@ const aPrescription = (
 
 const aSnapshot = (overrides: Partial<IssueSnapshot> = {}): IssueSnapshot => ({
   status: 'DRAFT',
+  revision: 1,
   warningSigns: 'Fiebre mayor de 39 °C o dificultad para respirar',
   nonPharmacologicalAdvice: 'Abundantes líquidos y reposo relativo',
   items: aPrescription().items.map((item) => ({
@@ -409,7 +412,11 @@ describe('el servicio de recetas', () => {
 
   it('PR-100 reescribe el borrador como acto del prescriptor de la sesión, con las alertas y la bitácora', async () => {
     const rewritten = await service.rewrite(
-      { prescriptionId: 'prescription-1', items: composeRequest.items },
+      {
+        prescriptionId: 'prescription-1',
+        revision: 1,
+        items: composeRequest.items,
+      },
       requester,
     );
 
@@ -426,7 +433,7 @@ describe('el servicio de recetas', () => {
     repository.prescriber = null;
 
     await expect(
-      service.rewrite({ prescriptionId: 'prescription-1', items: composeRequest.items }, requester), // prettier-ignore
+      service.rewrite({ prescriptionId: 'prescription-1', revision: 1, items: composeRequest.items }, requester), // prettier-ignore
     ).rejects.toMatchObject({ code: 'PRESCRIBER_PROFILE_REQUIRED' });
     expect(repository.rewritten).toBeUndefined();
   });
@@ -513,7 +520,9 @@ describe('el servicio de recetas', () => {
 
     // The refusal names the allergy by its id, so the screen can offer to
     // refute it even when its concept is not the line's (PR-112).
-    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+    await expect(
+      service.issue(PRESCRIPTION, 1, requester),
+    ).rejects.toMatchObject({
       code: 'ALLERGY_CONTRAINDICATION',
       fieldErrors: expect.arrayContaining([
         expect.objectContaining({ field: 'items.0.conceptId' }),
@@ -547,7 +556,7 @@ describe('el servicio de recetas', () => {
       ],
       substanceKeys: repository.keys,
     });
-    const issued = await service.issue(PRESCRIPTION, requester);
+    const issued = await service.issue(PRESCRIPTION, 1, requester);
     expect(issued.status).toBe('ACTIVE');
   });
 
@@ -564,7 +573,9 @@ describe('el servicio de recetas', () => {
       ],
     });
 
-    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+    await expect(
+      service.issue(PRESCRIPTION, 1, requester),
+    ).rejects.toMatchObject({
       code: 'ALLERGY_CONTRAINDICATION',
     });
   });
@@ -572,20 +583,49 @@ describe('el servicio de recetas', () => {
   it('PR-063 no interrumpe con una alergia refutada, que el puerto ya no devuelve', async () => {
     repository.snapshot = aSnapshot({ allergies: [] });
 
-    await expect(service.issue(PRESCRIPTION, requester)).resolves.toMatchObject(
-      {
-        status: 'ACTIVE',
-      },
-    );
+    await expect(
+      service.issue(PRESCRIPTION, 1, requester),
+    ).resolves.toMatchObject({
+      status: 'ACTIVE',
+    });
   });
 
   it('PR-005 rechaza emitir lo que ya no es un borrador, diciendo en qué estado está', async () => {
     repository.snapshot = aSnapshot({ status: 'ACTIVE' });
 
-    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+    await expect(
+      service.issue(PRESCRIPTION, 1, requester),
+    ).rejects.toMatchObject({
       code: 'PRESCRIPTION_NOT_EDITABLE',
       params: { status: 'ACTIVE' },
     });
+  });
+
+  it('PR-121 rechaza emitir sobre una revisión que ya no es la vigente, sin tomar número', async () => {
+    repository.snapshot = aSnapshot({ revision: 3 });
+
+    await expect(
+      service.issue(PRESCRIPTION, 2, requester),
+    ).rejects.toBeInstanceOf(RecordChangedError);
+    // Control positivo: con la revisión vigente, emite.
+    await expect(
+      service.issue(PRESCRIPTION, 3, requester),
+    ).resolves.toMatchObject({
+      status: 'ACTIVE',
+    });
+  });
+
+  it('PR-121 la corrección del borrador lleva al adaptador la revisión que se leyó', async () => {
+    await service.rewrite(
+      {
+        prescriptionId: 'prescription-1',
+        revision: 7,
+        items: composeRequest.items,
+      },
+      requester,
+    );
+
+    expect(repository.rewritten).toMatchObject({ revision: 7 });
   });
 
   it('PR-034 rechaza emitir sin registro ACESS, que es lo que va impreso', async () => {
@@ -599,7 +639,9 @@ describe('el servicio de recetas', () => {
       },
     });
 
-    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+    await expect(
+      service.issue(PRESCRIPTION, 1, requester),
+    ).rejects.toMatchObject({
       code: 'PRESCRIBER_NOT_LICENSED',
     });
   });
@@ -619,7 +661,9 @@ describe('el servicio de recetas', () => {
       },
     });
 
-    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+    await expect(
+      service.issue(PRESCRIPTION, 1, requester),
+    ).rejects.toMatchObject({
       code: 'PRESCRIBER_NOT_LICENSED',
     });
   });
@@ -643,7 +687,7 @@ describe('el servicio de recetas', () => {
       });
 
       await expect(
-        service.issue(PRESCRIPTION, requester),
+        service.issue(PRESCRIPTION, 1, requester),
       ).resolves.toMatchObject({ status: 'ACTIVE' });
     } finally {
       vi.useRealTimers();
@@ -653,7 +697,9 @@ describe('el servicio de recetas', () => {
   it('PR-021 rechaza emitir cuando la sede no tiene ciudad que imprimir', async () => {
     repository.snapshot = aSnapshot({ cityOfPrescription: null });
 
-    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+    await expect(
+      service.issue(PRESCRIPTION, 1, requester),
+    ).rejects.toMatchObject({
       code: 'PRESCRIPTION_ESTABLISHMENT_INCOMPLETE',
     });
   });
@@ -661,14 +707,18 @@ describe('el servicio de recetas', () => {
   it('PR-095 rechaza emitir sin diagnóstico en la atención, nombrando el campo (art. 5.b.iii)', async () => {
     repository.snapshot = aSnapshot({ diagnosisCount: 0 });
 
-    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+    await expect(
+      service.issue(PRESCRIPTION, 1, requester),
+    ).rejects.toMatchObject({
       code: 'PRESCRIPTION_DIAGNOSIS_REQUIRED',
       fieldErrors: [expect.objectContaining({ field: 'diagnosis' })],
     });
 
     // Control positivo: con un diagnóstico, emite.
     repository.snapshot = aSnapshot({ diagnosisCount: 1 });
-    await expect(service.issue(PRESCRIPTION, requester)).resolves.toBeDefined();
+    await expect(
+      service.issue(PRESCRIPTION, 1, requester),
+    ).resolves.toBeDefined();
   });
 
   it('PR-032 rechaza emitir con una línea incompleta, antes de mirar la alergia', async () => {
@@ -688,7 +738,9 @@ describe('el servicio de recetas', () => {
       ],
     });
 
-    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+    await expect(
+      service.issue(PRESCRIPTION, 1, requester),
+    ).rejects.toMatchObject({
       code: 'PRESCRIPTION_ITEM_INCOMPLETE',
     });
   });
@@ -700,17 +752,19 @@ describe('el servicio de recetas', () => {
       prescriber: { ...aSnapshot().prescriber, contactPhone: null },
     });
 
-    await expect(service.issue(PRESCRIPTION, requester)).rejects.toMatchObject({
+    await expect(
+      service.issue(PRESCRIPTION, 1, requester),
+    ).rejects.toMatchObject({
       code: 'PRESCRIBER_CONTACT_REQUIRED',
     });
 
     // Control positivo: el mismo prescriptor con su teléfono emite.
     repository.snapshot = aSnapshot();
-    await expect(service.issue(PRESCRIPTION, requester)).resolves.toMatchObject(
-      {
-        status: 'ACTIVE',
-      },
-    );
+    await expect(
+      service.issue(PRESCRIPTION, 1, requester),
+    ).resolves.toMatchObject({
+      status: 'ACTIVE',
+    });
   });
 
   it('PR-038 PR-039 rechaza emitir sin signos de alarma ni recomendaciones, nombrando los dos campos', async () => {
@@ -720,7 +774,7 @@ describe('el servicio de recetas', () => {
     });
 
     const refusal = await service
-      .issue(PRESCRIPTION, requester)
+      .issue(PRESCRIPTION, 1, requester)
       .catch((error: unknown) => error);
 
     expect(refusal).toMatchObject({ code: 'PRESCRIPTION_ITEM_INCOMPLETE' });
@@ -732,7 +786,7 @@ describe('el servicio de recetas', () => {
   });
 
   it('PR-020 emite con un código de verificación, y nunca con uno secuencial', async () => {
-    const issued = await service.issue(PRESCRIPTION, requester);
+    const issued = await service.issue(PRESCRIPTION, 1, requester);
 
     expect(issued.status).toBe('ACTIVE');
     expect(issued.issuedAt).not.toBeNull();
@@ -757,7 +811,7 @@ describe('el servicio de recetas', () => {
     const archiveCalls = vi.spyOn(failing, 'archiveAnnulled');
     const offline = new PrescriptionService(repository, allergyReader, { record: () => Promise.resolve() }, { setContext: vi.fn(), info: vi.fn() } as unknown as PinoLogger, failing, absenceReader); // prettier-ignore
 
-    const issued = await offline.issue(PRESCRIPTION, requester);
+    const issued = await offline.issue(PRESCRIPTION, 1, requester);
 
     expect(issued.status).toBe('ACTIVE');
     expect(archiveCalls).not.toHaveBeenCalled();
@@ -957,7 +1011,7 @@ describe('el servicio de recetas', () => {
 
   it('PR-093 deja una fila de bitácora al componer, al emitir, al descartar y al anular', async () => {
     await service.compose(composeRequest, requester);
-    await service.issue(PRESCRIPTION, requester);
+    await service.issue(PRESCRIPTION, 1, requester);
     await service.discard(PRESCRIPTION, null, requester);
     repository.snapshot = aSnapshot({ status: 'ACTIVE' });
     await service.cancel(PRESCRIPTION, 'Pérdida', requester);

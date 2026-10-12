@@ -101,6 +101,11 @@ export const serviceOrderSchema = z.object({
   patientId: z.uuid(),
   orderedById: z.uuid(),
   /**
+   * ORD-181. The revision to send back in `If-Match` when correcting or
+   * issuing the draft. Changes with every write of the draft (ORD-182).
+   */
+  revision: z.number().int().positive(),
+  /**
    * ORD-006, ORD-098. Consecutive per site; assigned by the database when the
    * order is issued. `null` while it is a draft.
    */

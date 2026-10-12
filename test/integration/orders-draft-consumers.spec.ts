@@ -14,6 +14,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { aScene } from './orders-fixtures';
 import { useDatabase } from './setup/database';
+import { revisionNow } from './setup/read-revision';
 import { closeThroughCashier } from './setup/fixtures';
 import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 
@@ -77,8 +78,12 @@ async function aDraft(prisma: PrismaClient) {
   return { scene, draft };
 }
 
-const issue = (prisma: PrismaClient, orderId: string) =>
-  adapters(prisma).orders.issue({ orderId, sites: 'all' });
+const issue = async (prisma: PrismaClient, orderId: string) =>
+  adapters(prisma).orders.issue({
+    orderId,
+    revision: await revisionNow(prisma, 'service_order', orderId),
+    sites: 'all',
+  });
 
 describe('ORD-100 un borrador no existe fuera de la pestaña', () => {
   it('ORD-100 no sale en la cola de pendientes; emitido, sí', async () => {
@@ -163,6 +168,7 @@ describe('ORD-096 a ORD-099 las transiciones del borrador', () => {
     const rewrite = () =>
       orders.rewrite({
         orderId: draft.id,
+        revision: draft.revision,
         category: 'LABORATORY',
         priority: 'URGENT',
         lines: [{ serviceId: scene.glucose.id }],
@@ -510,7 +516,7 @@ describe('D-123.6 el borrador que nadie emitió no se pierde de vista', () => {
 
       // Editado a las 25 horas de crearlo.
       vi.setSystemTime(edited);
-      await adapters(prisma).orders.rewrite({ orderId: draft.id, category: 'LABORATORY', priority: 'URGENT', lines: [{ serviceId: scene.bh.id }], sites: 'all' }); // prettier-ignore
+      await adapters(prisma).orders.rewrite({ orderId: draft.id, revision: await revisionNow(prisma, 'service_order', draft.id), category: 'LABORATORY', priority: 'URGENT', lines: [{ serviceId: scene.bh.id }], sites: 'all' }); // prettier-ignore
 
       // Cinco minutos después de editarlo, no cuelga.
       expect(await stale(new Date(edited.getTime() + 5 * MINUTE_MS))).toEqual([]); // prettier-ignore

@@ -50,6 +50,8 @@ export interface ServiceOrderView {
   orderedById: string;
   /** D-123. The signer's account: only it corrects, issues or discards a draft. */
   orderedByUserId: string;
+  /** ORD-181, ORD-182. Raised by the database on every write of the draft. */
+  revision: number;
   /**
    * ORD-006, ORD-098. Assigned by `service_order_number_assigned` when the
    * order is ISSUED, never by the code; `null` while it is a draft.
@@ -136,6 +138,13 @@ export interface OrderQuery {
  */
 export interface DraftRewrite extends Omit<NewServiceOrder, 'encounterId'> {
   orderId: string;
+  /** ORD-181. The revision the writer read (`If-Match`). */
+  revision: number;
+}
+
+/** ORD-098, ORD-181. Issuing the draft whose revision the issuer saw. */
+export interface DraftIssue extends OrderQuery {
+  revision: number;
 }
 
 /** ORD-099. Discarding a draft, and who does it. */
@@ -257,7 +266,7 @@ export interface ServiceOrderRepository {
    * instant is the issue's. ORD-003 and ORD-005 are checked again, inside the
    * transaction.
    */
-  issue(query: OrderQuery): Promise<ServiceOrderView>;
+  issue(query: DraftIssue): Promise<ServiceOrderView>;
 
   /** ORD-099. Discards a draft, keeping the row with who and when. */
   discard(request: DraftDiscard): Promise<ServiceOrderView>;

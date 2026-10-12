@@ -39,6 +39,7 @@ export function toPrescriptionResponse(
     id: prescription.id,
     encounterId: prescription.encounterId,
     prescriberId: prescription.prescriberId,
+    revision: prescription.revision,
     status: prescription.status,
     issuedAt: prescription.issuedAt?.toISOString() ?? null,
     verificationCode: prescription.verificationCode,

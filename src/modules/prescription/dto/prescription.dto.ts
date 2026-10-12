@@ -411,6 +411,11 @@ export const prescriptionSchema = z.object({
   encounterId: z.uuid(),
   prescriberId: z.uuid(),
   status: PRESCRIPTION_STATUS,
+  /**
+   * PR-121. The revision to send back in `If-Match` when correcting or
+   * issuing the draft. Changes with every write of the draft (PR-122).
+   */
+  revision: z.number().int().positive(),
   issuedAt: z.iso.datetime().nullable(),
   /** PR-020. The pharmacy's check code, NOT the sequential number of art. 5.a.i. */
   verificationCode: z.string().nullable(),
