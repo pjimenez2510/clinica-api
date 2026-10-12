@@ -206,7 +206,7 @@ function choicesIn(prompt: string) {
  * prompt brought. A name the catalogue does not have gives no number.
  */
 function examsIn(prompt: string) {
-  const [consultation = '', catalogue = ''] = prompt.split('### Catálogo de exámenes de la clínica'); // prettier-ignore
+  const [consultation = '', catalogue = ''] = prompt.split('<catalogo>');
   const numbers = new Map(
     [...catalogue.matchAll(/^(\d+)\. (.+) · \S+$/gm)].map(
       ([, number, name]) => [name!.trim(), Number(number)] as const,
@@ -221,7 +221,10 @@ function examsIn(prompt: string) {
     names: string[];
     invented?: number;
   }[]) {
-    const at = new RegExp(`(^|[^\\p{L}])${phrase}`, 'u').exec(lower);
+    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const at = new RegExp(`(^|[^\\p{L}])${escaped}(?![\\p{L}])`, 'u').exec(
+      lower,
+    );
     if (!at || seen.has(requested)) continue;
     seen.add(requested);
     const start = at.index + at[1]!.length;

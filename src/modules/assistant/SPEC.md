@@ -1096,14 +1096,23 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   cada uno con la frase literal de la nota o de la conversación que lo pide y
   hasta 5 candidatos del catálogo ordenable (AS-104). DEBERÁ descartar toda
   línea cuya frase no esté en la nota ni en la transcripción con las reglas de
-  AS-028 (palabras enteras, sin negación delante) y toda línea con una de las
-  palabras que dicen que el examen no se pide hoy —«resultado», «reporta»,
-  «trae», «previo», «realizado», «ya», «tiene»— justo antes de la frase o
-  dentro de ella; y SI ni la nota ni la transcripción
+  AS-028 (palabras enteras, sin negación delante) y toda línea cuya oración
+  diga que el examen no se pide hoy: en cualquier parte de la oración, una
+  condición o una visita posterior («si no mejora», «si persiste», «próximo
+  control», «no requiere», «no es necesaria», «de ser necesario»); y en la
+  cláusula de la frase (entre comas, dos puntos o punto y coma), un resultado
+  o un examen hecho («trae», «reporta», «reportada», «resultado de», «previo»,
+  «anterior», «realizado», «ya tiene»), también después de las palabras
+  citadas; y SI ni la nota ni la transcripción
   tienen texto, ENTONCES DEBERÁ rechazarlo con `ASSISTANT_NOTE_EMPTY` sin
   llamar a nadie.
   > Un examen que sólo se menciona —un resultado que el paciente trae, uno que
-  > se hizo antes, uno que no hace falta— no es una línea. La frase de la
+  > se hizo antes, uno que no hace falta— no es una línea, aunque el modelo
+  > cite sólo su nombre (revisión clínica del 12-10-2026, G1). La cláusula y
+  > no la oración para el resultado: «Trae EMO normal, se solicita
+  > urocultivo» pide el urocultivo; «ya que tiene fiebre» no es «ya tiene».
+  > El precio: «Por resultado de la tira, se pide urocultivo» se pierde si el
+  > médico no lo separa con una coma; lo escribe él. La frase de la
   > conversación lleva su tramo (`transcript`, `fromMs`–`toMs`, AS-020); la de
   > la nota, su sección. La transcripción no distingue quién habla (D-249 §2):
   > lo que pide el paciente también se propone, y no entra en la orden sin el
@@ -1133,15 +1142,20 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   en la transcripción. Una línea cuya frase sale de la conversación DEBERÁ
   mostrarse sólo al profesional de la atención.
   > AS-056: la transcripción la ve sólo el profesional de la atención; su
-  > frase en otra pantalla sería verla por otra puerta (D-247 §3).
+  > frase en otra pantalla sería verla por otra puerta (D-247 §3). Su frase
+  > se lee de los segmentos de su tramo al mostrarla (AS-107); cuando la
+  > purga los borra (AS-057), la línea deja de mostrarse.
 
 ### 31. Guardar, añadir y enlazar (P1, D-243 §5)
 
 - **AS-107** — CUANDO el modelo responda, el sistema DEBERÁ guardar cada línea
   respaldada como una propuesta de `ai_suggestion` de clase `order-item`, en
-  estado «propuesta», con el intento de `ai_run` que la leyó, la frase, su
-  fuente (la nota, o el tramo de la conversación) y sus candidatos con los
-  códigos del catálogo; y la lectura nueva DEBERÁ sustituir en pantalla a las
+  estado «propuesta», con el intento de `ai_run` que la leyó, su fuente (la
+  nota, o el tramo de la conversación), sus candidatos con los códigos del
+  catálogo y los que ya estaban en una orden viva al leer; la frase DEBERÁ
+  guardarse sólo si es de la nota, y NO DEBERÁ guardarse ni la frase de la
+  conversación (AS-058) ni el examen como lo nombró el modelo; y la lectura
+  nueva DEBERÁ sustituir en pantalla a las
   propuestas sin decidir de la anterior, sin borrar ninguna (AS-036). Una
   lectura que no propone nada DEBERÁ decirlo (`found: 0`) y dejar las
   anteriores como estaban.
@@ -1156,7 +1170,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   propuesta, el sistema DEBERÁ enlazar la propuesta a esa orden, leyendo la
   orden guardada: DEBERÁ ser de la misma atención y no estar descartada, tener
   una línea sin anular de ese servicio, y el servicio DEBERÁ ser uno de los
-  candidatos de la propuesta y no la respuesta de otra propuesta en esa orden;
+  candidatos de la propuesta, no estar ya en una orden viva cuando se leyó
+  y no ser la respuesta de otra propuesta en esa orden;
   la propuesta queda «aceptada» con distancia 0 (AS-022: elegir entre
   candidatos, como un diagnóstico). SI algo de eso no se cumple, ENTONCES
   DEBERÁ rechazarlo con `SUGGESTION_ORDER_MISMATCH` (422) sin enlazar ninguna;
@@ -1166,8 +1181,14 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   exactamente en una propuesta de examen aceptada
   (`ai_suggestion_accepted_code_of_an_accepted_exam`) y NO DEBERÁ admitir dos
   propuestas aceptadas con el mismo examen en la misma orden
-  (`ai_suggestion_one_per_ordered_exam`).
-  > Todo se comprueba antes de escribir nada. Si el enlace falla, la orden
+  (`ai_suggestion_one_per_ordered_exam`, que responde también con
+  `SUGGESTION_ORDER_MISMATCH`), ni un código que no sea candidato de la
+  propuesta y línea viva de esa orden
+  (`ai_suggestion_accepted_code_of_its_order`).
+  > Un examen ya pedido antes de la lectura es obra del médico: la fase F no
+  > debe contarlo como del asistente (revisión clínica M2). La orden puede
+  > estar ya emitida: el médico pudo emitirla en otra pestaña entre guardar
+  > y enlazar. Todo se comprueba antes de escribir nada. Si el enlace falla, la orden
   > queda guardada (fue el acto del médico) y la tarjeta lo dice. Cualquier
   > candidato es «tal cual»: sin `accepted_code` nada diría qué línea es obra
   > de la propuesta, y dos líneas de una misma frase («biometría y glucosa»)
@@ -1193,16 +1214,20 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   esta función DEBERÁ contener la nota, la transcripción, las frases ni el
   nombre de ningún examen; la nota y la conversación DEBERÁN ir al modelo
   delimitadas como dato, con la instrucción de no seguir órdenes que
-  contengan; y leerlas para mandarlas DEBERÁ dejar su fila `EXPORT` en la
-  bitácora.
+  contengan, y con sus marcas —`<nota>`, `<conversacion>`, `<catalogo>`,
+  con o sin tilde, y una cabecera `#` a inicio de línea— rotas si las
+  escriben; el catálogo DEBERÁ ir entre `<catalogo>` y `</catalogo>`; y
+  leerlas para mandarlas DEBERÁ dejar su fila `EXPORT` en la bitácora.
   > Un examen pedido dice un diagnóstico de otra forma (PR-094). La excepción
   > es `ai_exchange`, sólo si se enciende (AS-014).
 - **AS-114** — El arnés de evaluación DEBERÁ medir, sobre un set propio de
   notas inventadas con los exámenes que piden y un catálogo inventado de
   clínica, el camino del producto —leer, elegir y la barrera—: qué parte de
   los exámenes pedidos tiene el correcto entre sus candidatos (umbral para
-  encender: **≥ 90 %**, D-250 §3), cuántos tienen el correcto en primer lugar,
-  las líneas de más por caso, la latencia p90 (presupuesto 5 s) y cuántos
+  encender: **≥ 90 %**, D-250 §3), las líneas con candidatos para algo que
+  nadie pidió o que la clínica no tiene (umbral: **≤ 0,05 por caso**),
+  cuántos tienen el correcto en primer lugar, la latencia p90 (presupuesto
+  5 s) y cuántos
   exámenes fuera del catálogo se habrían mostrado, que DEBERÁ ser **cero**;
   fuera del verify, con el modelo, la versión del prompt y la del catálogo.
 

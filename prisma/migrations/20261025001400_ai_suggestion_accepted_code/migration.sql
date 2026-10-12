@@ -16,6 +16,10 @@
 --    rechaza toda escritura sobre una propuesta decidida).
 -- 2. Un examen de una orden responde por UNA propuesta, como un diagnóstico
 --    (`ai_suggestion_one_per_diagnosis`).
+-- 3. El código aceptado es uno de los candidatos de la propuesta y una línea
+--    sin anular de la orden enlazada (revisión de seguridad del 12-10-2026):
+--    sin esto, una escritura directa podría marcar como obra de la propuesta
+--    un examen que no propuso.
 BEGIN;
 
 ALTER TABLE "ai_suggestion" ADD COLUMN "accepted_code" VARCHAR(32);
@@ -29,5 +33,32 @@ ALTER TABLE "ai_suggestion" ADD CONSTRAINT "ai_suggestion_accepted_code_of_an_ac
 CREATE UNIQUE INDEX "ai_suggestion_one_per_ordered_exam"
   ON "ai_suggestion" ("service_order_id", "accepted_code")
   WHERE "service_order_id" IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION ai_suggestion_accepted_code_of_its_order()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW."accepted_code" IS NULL OR OLD."status" <> 'PROPOSED' THEN
+    RETURN NEW;
+  END IF;
+  IF NOT (NEW."proposal" -> 'codes' ? NEW."accepted_code")
+     OR NOT EXISTS (
+       SELECT 1 FROM "service_order_item"
+        WHERE "service_order_id" = NEW."service_order_id"
+          AND "test_code" = NEW."accepted_code"
+          AND "status" <> 'CANCELLED') THEN
+    RAISE EXCEPTION 'ai_suggestion_accepted_code_of_its_order: the accepted exam is not a candidate on a live line of the order'
+      USING ERRCODE = 'check_violation',
+            CONSTRAINT = 'ai_suggestion_accepted_code_of_its_order',
+            HINT = 'AS-109. El examen aceptado es un candidato de la propuesta y una línea viva de la orden.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "ai_suggestion_accepted_code_of_its_order"
+  BEFORE UPDATE ON "ai_suggestion"
+  FOR EACH ROW EXECUTE FUNCTION ai_suggestion_accepted_code_of_its_order();
 
 COMMIT;

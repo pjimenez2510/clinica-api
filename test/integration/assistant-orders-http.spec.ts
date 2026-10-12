@@ -341,6 +341,26 @@ describe('los exámenes propuestos por HTTP (AS-103 a AS-112)', () => {
     await link(right, [{ suggestionId: bh!.id, serviceId: services['LAB-BH'] }]).expect(200); // prettier-ignore
   });
 
+  it('AS-109 a discarded order, an exam ordered before the reading, or a decided proposal do not link', async () => {
+    const before = await draftWith('LABORATORY', [services['LAB-BH']!]);
+    const [bh] = await readLines();
+    // Ordered by hand before the reading: the physician's, not the proposal's.
+    const mine = await post(encounterId, '/link', doctor.token, { serviceOrderId: before, lines: [{ suggestionId: bh!.id, serviceId: services['LAB-BH'] }] }).expect(422); // prettier-ignore
+    expect((mine.body as Problem).code).toBe('SUGGESTION_ORDER_MISMATCH');
+
+    const [, rx] = await readLines();
+    const imaging = await draftWith('IMAGING', [services['IMG-RX-TORAX']!]);
+    await prisma.serviceOrder.update({ where: { id: imaging }, data: { status: 'DISCARDED', discardedAt: new Date(), discardedById: doctor.userId } }); // prettier-ignore
+    const discarded = await post(encounterId, '/link', doctor.token, { serviceOrderId: imaging, lines: [{ suggestionId: rx!.id, serviceId: services['IMG-RX-TORAX'] }] }).expect(422); // prettier-ignore
+    expect((discarded.body as Problem).code).toBe('SUGGESTION_ORDER_MISMATCH');
+
+    // Control: a live imaging draft links, and then the same proposal is decided.
+    const live = await draftWith('IMAGING', [services['IMG-RX-TORAX']!]);
+    await post(encounterId, '/link', doctor.token, { serviceOrderId: live, lines: [{ suggestionId: rx!.id, serviceId: services['IMG-RX-TORAX'] }] }).expect(200); // prettier-ignore
+    const again = await post(encounterId, '/link', doctor.token, { serviceOrderId: live, lines: [{ suggestionId: rx!.id, serviceId: services['IMG-RX-TORAX'] }] }).expect(409); // prettier-ignore
+    expect((again.body as Problem).code).toBe('SUGGESTION_ALREADY_DECIDED');
+  });
+
   it('AS-110 AS-111 only the attention’s own doctor reads, links or discards; the discarded line is not shown again', async () => {
     const [bh] = await readLines();
     const orderId = await draftWith('LABORATORY', [services['LAB-BH']!]);
@@ -399,6 +419,9 @@ describe('los exámenes propuestos por HTTP (AS-103 a AS-112)', () => {
     });
     const kept = await prisma.aiSuggestion.findFirstOrThrow({ where: { encounterId: quiet.id } }); // prettier-ignore
     expect(kept.sources).toEqual([{ kind: 'transcript', fromMs: 6_000, toMs: 11_000 }]); // prettier-ignore
+    // AS-058 (review G2). No row outside the transcript holds what was said.
+    const said = await prisma.aiSuggestion.findMany();
+    expect(JSON.stringify(said)).not.toMatch(/le voy a pedir|me duele/i);
 
     // AS-056. Another doctor who reads the attention does not see the conversation.
     const theirs = await get(quiet.id, secondDoctor.token).expect(200);

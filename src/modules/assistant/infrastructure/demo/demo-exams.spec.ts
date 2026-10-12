@@ -21,7 +21,7 @@ describe('the demonstration script (AS-029)', () => {
   it('AS-103 asks for the exams the consultation says, quoting their sentence, with the numbers of the catalogue it was given', async () => {
     const provider = new DemoLlmProvider();
     const prompt = withContext(
-      '<nota>\n## Plan\nSe solicita biometría hemática y radiografía de tórax. Perfil tiroideo en el control.\n</nota>' as PseudonymizedText, // prettier-ignore
+      '<nota>\n## Plan\nSe solicita biometría hemática y radiografía de tórax. Perfil tiroideo también.\n</nota>' as PseudonymizedText, // prettier-ignore
       catalogueContext(CATALOGUE),
     );
 
@@ -38,7 +38,7 @@ describe('the demonstration script (AS-029)', () => {
       { requested: 'biometría hemática', quote: 'biometría hemática y radiografía de tórax', candidates: [3, 999] }, // prettier-ignore
       { requested: 'radiografía de tórax', quote: 'radiografía de tórax', candidates: [2] }, // prettier-ignore
       // Not in the catalogue: no number, the barrier shows only its sentence.
-      { requested: 'perfil tiroideo', quote: 'Perfil tiroideo en el control', candidates: [] }, // prettier-ignore
+      { requested: 'perfil tiroideo', quote: 'Perfil tiroideo también', candidates: [] }, // prettier-ignore
     ]);
   });
 });

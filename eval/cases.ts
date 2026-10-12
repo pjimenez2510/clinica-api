@@ -186,7 +186,11 @@ export function loadExamCatalogue(dir = CASES_DIR) {
   return {
     file,
     sha256: sha256(content),
-    exams: exams.map((exam) => ({ serviceId: exam.code, ...exam })),
+    // In the reader's order (by name): the numbers the model sees are the
+    // product's (code review of 12-10-2026, 4).
+    exams: exams
+      .map((exam) => ({ serviceId: exam.code, ...exam }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es') || a.code.localeCompare(b.code)), // prettier-ignore
   };
 }
 

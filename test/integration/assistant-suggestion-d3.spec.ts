@@ -4,6 +4,7 @@ import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
 import { SuggestionService } from '../../src/modules/assistant/application/suggestion.service';
+import { SuggestionOrderMismatchError } from '../../src/modules/assistant/domain/assistant.errors';
 import { GEMINI_MODELS } from '../../src/modules/assistant/infrastructure/model-routing';
 import { PrismaSuggestionStore } from '../../src/modules/assistant/infrastructure/prisma-suggestion.store';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
@@ -92,7 +93,7 @@ async function twoProposals(
 }
 
 describe('the exam an accepted proposal was chosen as (AS-109)', () => {
-  it('AS-109 accepting keeps the chosen code; the same exam of the same order cannot answer for a second proposal, another exam can', async () => {
+  it('AS-109 accepting keeps the chosen code; the same exam of the same order cannot answer for a second proposal (SUGGESTION_ORDER_MISMATCH), another exam can', async () => {
     const prisma = db();
     const world = await anAttentionWithAnOrder(prisma);
     const { service, proposed } = await twoProposals(prisma, world);
@@ -103,7 +104,7 @@ describe('the exam an accepted proposal was chosen as (AS-109)', () => {
 
     await expect(
       service.accept({ suggestionId: proposed[1]!.id, recordId: world.order.id, saved: 'LAB-BH' }, who), // prettier-ignore
-    ).rejects.toThrow(/Unique constraint|ai_suggestion_one_per_ordered_exam/);
+    ).rejects.toBeInstanceOf(SuggestionOrderMismatchError);
     const refused = await prisma.aiSuggestion.findUniqueOrThrow({ where: { id: proposed[1]!.id } }); // prettier-ignore
     expect(refused.status).toBe('PROPOSED');
 
@@ -112,7 +113,7 @@ describe('the exam an accepted proposal was chosen as (AS-109)', () => {
     expect(second).toMatchObject({ status: 'ACCEPTED', acceptedCode: 'LAB-GLUCOSA-AYUNAS' }); // prettier-ignore
   });
 
-  it('AS-109 the database refuses an accepted exam without its code, and a code on anything else', async () => {
+  it('AS-109 the database refuses an accepted exam without its code, a code on anything else, and a code that is not a candidate on a live line of that order', async () => {
     const prisma = db();
     const world = await anAttentionWithAnOrder(prisma);
     const { proposed } = await twoProposals(prisma, world);
@@ -130,6 +131,23 @@ describe('the exam an accepted proposal was chosen as (AS-109)', () => {
         data: { status: 'DISCARDED', acceptedCode: 'LAB-BH', ...decided },
       }),
     ).rejects.toThrow(/ai_suggestion_accepted_code_of_an_accepted_exam/);
+
+    // An exam that is not a candidate, or not a live line of the order.
+    await expect(
+      prisma.aiSuggestion.update({
+        where: { id: proposed[0]!.id },
+        data: { status: 'ACCEPTED', distance: 0, serviceOrderId: world.order.id, acceptedCode: 'LAB-EMO', ...decided }, // prettier-ignore
+      }),
+    ).rejects.toThrow(/ai_suggestion_accepted_code_of_its_order/);
+    const other = await prisma.serviceOrder.create({
+      data: { encounterId: world.encounter.id, siteId: world.order.siteId, orderedById: world.order.orderedById, category: 'LABORATORY', items: { create: [{ testCode: 'LAB-GLUCOSA-AYUNAS', testDisplay: 'Glucosa en ayunas' }] } }, // prettier-ignore
+    });
+    await expect(
+      prisma.aiSuggestion.update({
+        where: { id: proposed[0]!.id },
+        data: { status: 'ACCEPTED', distance: 0, serviceOrderId: other.id, acceptedCode: 'LAB-BH', ...decided }, // prettier-ignore
+      }),
+    ).rejects.toThrow(/ai_suggestion_accepted_code_of_its_order/);
 
     // Positive control: the same acceptance with its code goes through.
     const accepted = await prisma.aiSuggestion.update({

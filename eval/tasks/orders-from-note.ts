@@ -3,14 +3,13 @@ import type { z } from 'zod';
 import { withContext } from '../../src/modules/assistant/application/llm-client.port.ts';
 import {
   catalogueContext,
-  conversationText,
+  consultationText,
   EXAMS_INSTRUCTIONS,
   EXAMS_MAX_TOKENS,
   EXAMS_PROMPT_VERSION,
   examsAnswer,
   MOST_EXAMS,
 } from '../../src/modules/assistant/application/order-reading.prompts.ts';
-import { noteText } from '../../src/modules/assistant/application/problem-coding.prompts.ts';
 import {
   backedExams,
   offeredCandidates,
@@ -39,10 +38,11 @@ function segmentsOf(item: ExamNoteCase) {
  *
  * The primary metric is the one the physician uses: of the exams the
  * consultation asks for, how many have the RIGHT one among the five
- * candidates of a line shown (umbral ≥ 90 %, D-250 §3). The right one first
- * is counted apart; so are the lines shown that offer exams nobody asked for,
- * and the candidates outside the catalogue — none by construction (a
- * candidate is a number offered), counted to prove it.
+ * candidates of a line shown (umbral ≥ 90 %, D-250 §3), and the lines
+ * shown that offer exams for something nobody asked for or the clinic does
+ * not have (umbral ≤ 0,05 por caso). The right one first is counted apart;
+ * the candidates outside the catalogue are none by construction (a
+ * candidate is a number offered) and are counted only to prove it.
  */
 export function ordersFromNoteTask(
   catalogue: readonly OrderableExam[],
@@ -70,10 +70,14 @@ export function ordersFromNoteTask(
       },
       { key: 'all', label: 'Orden entera cubierta, sin líneas de más', kind: 'binary' }, // prettier-ignore
       {
+        // The real risk of «0 inexistentes»: an exam the clinic does not
+        // have, or one nobody asked for, offered with a substitute of the
+        // catalogue (code review of 12-10-2026, 4). Umbral ≤ 0,05 (AS-114).
         key: 'extra',
         label: 'Líneas con candidatos que nadie pidió (por caso)',
         kind: 'mean',
         lowerIsBetter: true,
+        primary: true,
       },
       {
         key: 'outsideCatalogue',
@@ -84,12 +88,10 @@ export function ordersFromNoteTask(
       },
     ],
     request(item) {
-      const consultation = [
-        noteText([{ label: 'Plan', text: item.plan }]),
-        conversationText(segmentsOf(item)),
-      ]
-        .filter((part) => part !== '')
-        .join('\n\n');
+      const consultation = consultationText(
+        [{ label: 'Plan', text: item.plan }],
+        segmentsOf(item),
+      );
       return {
         tier: 'quality',
         purpose: 'eval-examenes-nota',

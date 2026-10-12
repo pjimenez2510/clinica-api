@@ -87,6 +87,51 @@ describe('the sentence that asks for an exam (AS-103)', () => {
     expect(backed.kept).toHaveLength(1);
   });
 
+  it('AS-103 what denies the exam AFTER the quoted words, or anywhere as a condition or a later visit, backs nothing (review G1)', () => {
+    const cases = [
+      ['Biometría hemática previa normal.', 'Biometría hemática'],
+      ['Ecografía abdominal previa sin hallazgos.', 'Ecografía abdominal'],
+      ['Glucosa en ayunas reportada en 110 mg/dL.', 'Glucosa en ayunas'],
+      ['Biometría hemática: no requiere por ahora.', 'Biometría hemática'],
+      [
+        'Se le explicó que la radiografía de tórax no es necesaria.',
+        'radiografía de tórax',
+      ],
+      [
+        'Si no mejora en 48 horas, radiografía de tórax.',
+        'radiografía de tórax',
+      ],
+      [
+        'Si persiste la fiebre, solicitar biometría hemática.',
+        'solicitar biometría hemática',
+      ],
+      ['Perfil lipídico en el próximo control.', 'Perfil lipídico'],
+      ['Ecografía abdominal anterior sin cambios.', 'Ecografía abdominal'],
+    ] as const;
+    for (const [text, quote] of cases) {
+      const backed = backedExams({ read: [read(quote)], cleared: text, sections: plan(text), transcript: [], restore: (t) => t }); // prettier-ignore
+      expect(backed.kept, text).toEqual([]);
+    }
+  });
+
+  it('AS-103 a request that only shares a word with a denial is kept: «ya que tiene», and the clause after a result (review 3)', () => {
+    const asked = [
+      [
+        'Se solicita biometría hemática ya que tiene fiebre.',
+        'biometría hemática',
+      ],
+      [
+        'Trae EMO normal, se solicita urocultivo con antibiograma.',
+        'urocultivo con antibiograma',
+      ],
+      ['Glucosa en ayunas y control con resultados.', 'Glucosa en ayunas'],
+    ] as const;
+    for (const [text, quote] of asked) {
+      const backed = backedExams({ read: [read(quote)], cleared: text, sections: plan(text), transcript: [], restore: (t) => t }); // prettier-ignore
+      expect(backed.kept, text).toHaveLength(1);
+    }
+  });
+
   it('AS-103 a sentence that is not in the note, or is too short to mean anything, backs nothing', () => {
     const text = 'Se solicita biometría hemática.';
     const run = (quote: string) =>

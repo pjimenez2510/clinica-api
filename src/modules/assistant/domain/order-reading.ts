@@ -53,40 +53,82 @@ export interface SpokenSegment {
 }
 
 /**
- * AS-103. Words that say the exam is NOT asked for today: a result brought
- * or reported, one done before, one the patient already has. Before the
- * sentence (with the general negations of AS-028) or inside it. Folded.
+ * AS-103 (clinical review of 12-10-2026, G1). What says the exam is NOT
+ * asked for today, read over the WHOLE sentence and not only before the
+ * phrase: the model may quote «biometría hemática» out of «Biometría
+ * hemática previa normal». Folded.
+ *
+ * In the whole sentence: a condition, a later visit, or that it is not
+ * needed — «Si no mejora en 48 horas, radiografía de tórax» asks for nothing
+ * today, whatever comma splits it.
  */
-const NOT_ASKED = new Set([
-  'resultado',
-  'resultados',
-  'reporta',
-  'reporte',
-  'trae',
-  'trajo',
-  'previo',
-  'previa',
-  'previos',
-  'previas',
-  'realizado',
-  'realizada',
-  'realizo',
-  'ya',
-  'tiene',
-]);
+const NOT_TODAY: readonly RegExp[] = [
+  /\bsi (?:no |persiste|empeora|continua|hay |aparece)/,
+  /\b(?:proximo|siguiente|otro) control\b/,
+  /\b(?:proxima|proximo|siguiente) (?:consulta|cita|visita)\b/,
+  /\bde ser necesario\b/,
+  /\ben caso de\b/,
+  /\bno (?:requiere|amerita|es necesari[oa]|hace falta|se (?:solicita|pide))\b/,
+  /\bsin necesidad de\b/,
+];
 
-const words = (text: string) =>
-  foldText(text)
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter(Boolean);
+/**
+ * In the clause of the phrase (between commas, colons or semicolons): a
+ * result brought or reported, an exam done before, one the patient has.
+ * Only the clause, so «Trae EMO normal, se solicita urocultivo» still asks
+ * for the urocultivo — and «ya que tiene fiebre» is not «ya tiene» (code
+ * review of 12-10-2026, 3).
+ */
+const NOT_ASKED: readonly RegExp[] = [
+  /\b(?:trae|trajo|reporta|reportad[oa]s?|informa)\b/,
+  /\bresultados? (?:de|del)\b/,
+  /\bprevi[oa]s?\b/,
+  /\banterior(?:es)?\b/,
+  /\brealizad[oa]s?\b/,
+  /\bya (?:tiene|trae|cuenta con|se (?:hizo|realizo|tomo))\b/,
+];
+
+/**
+ * AS-103. Whether the sentence that holds the phrase says the exam is not
+ * asked for today: anywhere in the sentence for a condition or a later
+ * visit; in the phrase's own clause for a result or a past exam.
+ */
+export function deniedIn(sentence: string, quote: string): boolean {
+  const folded = foldText(sentence);
+  if (NOT_TODAY.some((pattern) => pattern.test(folded))) return true;
+  const at = folded.indexOf(foldText(quote));
+  const from = at < 0 ? 0 : at;
+  const to = at < 0 ? folded.length : at + foldText(quote).length;
+  const start = Math.max(...[',', ':', ';'].map((mark) => folded.lastIndexOf(mark, from - 1))) + 1; // prettier-ignore
+  const ends = [',', ':', ';']
+    .map((mark) => folded.indexOf(mark, to))
+    .filter((index) => index >= 0);
+  const clause = folded.slice(start, ends.length > 0 ? Math.min(...ends) : undefined); // prettier-ignore
+  return NOT_ASKED.some((pattern) => pattern.test(clause));
+}
+
+/** The note's sentence, or the conversation's, that holds the phrase and asks. */
+function locatedAsking(
+  quote: string,
+  sections: readonly { key: string; text: string }[],
+): ReturnType<typeof locateQuote> {
+  const located = locateQuote(quote, sections);
+  return located && !deniedIn(located.sentence, quote) ? located : null;
+}
+
+/** Segments joined with spaces: a sentence said across two of them is one. */
+function talkOf(transcript: readonly SpokenSegment[]) {
+  const spoken = transcript.map((each) => each.text.trim()).join(' ');
+  return spoken === '' ? [] : [{ key: 'transcript', text: spoken }];
+}
 
 /**
  * AS-103. Keeps the exams whose sentence is in the cleared text the model
  * read AND, with the placeholders put back, in the note or in the
- * conversation as whole words, neither denied before it nor said to be a
- * result, a past exam or one the patient has. The note is searched first.
- * What is kept carries its own sentence and where it is; the rest is
- * dropped, and counted.
+ * conversation as whole words, not denied before it (AS-028) nor said in
+ * its sentence to be a result, a past exam, a condition or for later
+ * (`deniedIn`). The note is searched first. What is kept carries its own
+ * sentence and where it is; the rest is dropped, and counted.
  */
 export function backedExams(input: {
   read: readonly ReadExam[];
@@ -96,17 +138,14 @@ export function backedExams(input: {
   restore: (text: string) => string;
 }): { kept: BackedExam[]; dropped: number } {
   const cleared = foldText(input.cleared);
-  // Segments joined with spaces: a sentence said across two of them is one.
-  const spoken = input.transcript.map((each) => each.text.trim()).join(' ');
-  const talk = spoken === '' ? [] : [{ key: 'transcript', text: spoken }];
+  const talk = talkOf(input.transcript);
   const kept: BackedExam[] = [];
 
   for (const exam of input.read) {
     if (!cleared.includes(foldText(exam.quote))) continue;
     const quote = input.restore(exam.quote).trim();
-    if (words(quote).some((word) => NOT_ASKED.has(word))) continue;
-    const inNote = locateQuote(quote, input.sections, NOT_ASKED);
-    const located = inNote ?? locateQuote(quote, talk, NOT_ASKED);
+    const inNote = locatedAsking(quote, input.sections);
+    const located = inNote ?? locatedAsking(quote, talk);
     if (!located) continue;
     const origin: ExamOrigin | null = inNote
       ? { kind: 'note', section: inNote.section }
@@ -185,31 +224,55 @@ export function blockOf(
   return ordered.has(candidate.code) ? 'in-order' : null;
 }
 
-/** AS-107. What an `order-item` proposal keeps. */
+/**
+ * AS-107 (clinical review G2, AS-058). What an `order-item` proposal keeps.
+ * A sentence of the NOTE is kept, as D1 and D2 keep theirs; one of the
+ * CONVERSATION is not — no row outside `transcript_segment` holds its text,
+ * which the purge deletes (AS-057) and this table never would. It is read
+ * back from its stretch when shown (`spokenIn`). Nor is the exam as the
+ * model named it: nobody sees it (AS-104, minimisation).
+ */
 export interface OrderProposal {
-  requested: string;
-  quote: string;
+  /** The note's sentence; null when it was said in the conversation. */
+  quote: string | null;
   origin: ExamOrigin;
   candidates: ExamCandidate[];
   /** The candidates' codes, in order: what AS-022's distance reads. */
   codes: string[];
+  /**
+   * AS-109 (review M2). The candidates already on a live order of the
+   * attention when it was read: the physician ordered them, not the
+   * proposal, so they never link to it.
+   */
+  orderedAtReading: string[];
   /** AS-029. Written by the fake of the demonstration mode, not by a model. */
   demo: boolean;
 }
 
 /**
- * AS-106. Whether the sentence of a proposal is still said: in the note as
- * it is now, or in the conversation. The rule of AS-103, at showing time.
+ * AS-106. The text of the conversation in a stretch, as the transcript holds
+ * it now: empty once the purge took it (AS-057).
  */
-export function stillSaid(
+export function spokenIn(
+  origin: { fromMs: number; toMs: number },
+  transcript: readonly SpokenSegment[],
+): string {
+  return transcript
+    .filter(
+      (each) => each.startMs >= origin.fromMs && each.endMs <= origin.toMs,
+    ) // prettier-ignore
+    .map((each) => each.text.trim())
+    .filter((text) => text !== '')
+    .join(' ');
+}
+
+/**
+ * AS-106. Whether a sentence of the note is still said, and still asks: the
+ * rule of AS-103, at showing time.
+ */
+export function stillAsked(
   quote: string,
   sections: readonly { key: string; text: string }[],
-  transcript: readonly SpokenSegment[],
 ): boolean {
-  const spoken = transcript.map((each) => each.text.trim()).join(' ');
-  const talk = spoken === '' ? [] : [{ key: 'transcript', text: spoken }];
-  return (
-    locateQuote(quote, sections, NOT_ASKED) !== null ||
-    locateQuote(quote, talk, NOT_ASKED) !== null
-  );
+  return locatedAsking(quote, sections) !== null;
 }

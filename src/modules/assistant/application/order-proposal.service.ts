@@ -32,7 +32,8 @@ import {
   backedExams,
   blockOf,
   offeredCandidates,
-  stillSaid,
+  spokenIn,
+  stillAsked,
   type CandidateBlock,
   type ExamCandidate,
   type ExamOrigin,
@@ -54,7 +55,7 @@ import { LISTENING_STORE, type ListeningStore } from './listening.store';
 import { LLM_CLIENT, withContext, type LlmClient } from './llm-client.port';
 import {
   catalogueContext,
-  conversationText,
+  consultationText,
   EXAMS_INSTRUCTIONS,
   EXAMS_MAX_TOKENS,
   EXAMS_PROMPT_VERSION,
@@ -62,7 +63,6 @@ import {
   examsAnswer,
   MOST_EXAMS,
 } from './order-reading.prompts';
-import { noteText } from './problem-coding.prompts';
 import {
   PSEUDONYMIZER,
   type Pseudonymizer,
@@ -172,7 +172,10 @@ export class OrderProposalService {
     if (sections.length === 0 && spoken.length === 0) {
       throw new AssistantNoteEmptyError();
     }
-    const catalogue = await this.ordering.orderableExams();
+    const [catalogue, ordered] = await Promise.all([
+      this.ordering.orderableExams(),
+      this.ordering.orderedCodes(encounter.id),
+    ]);
 
     // EN-122. The consultation leaves for a provider: who asked, first.
     await this.audit.record({
@@ -186,12 +189,7 @@ export class OrderProposalService {
 
     const signal = AbortSignal.timeout(ORDER_READING_LIMIT_MS);
     const people = await this.context.people(encounter.id);
-    const text = [
-      sections.length > 0 ? noteText(sections) : '',
-      conversationText(spoken),
-    ]
-      .filter((part) => part !== '')
-      .join('\n\n');
+    const text = consultationText(sections, spoken);
     const cleared = await this.pseudonymizer.pseudonymize(
       { text, subject: encounter.patientId, names: people.patient, staff: people.staff }, // prettier-ignore
       signal,
@@ -227,12 +225,14 @@ export class OrderProposalService {
       const candidates = offeredCandidates(exam.candidates, catalogue).map(
         candidateOf,
       );
+      const codes = candidates.map((each) => each.code);
       return {
-        requested: exam.requested,
-        quote: exam.quote,
+        // AS-058 (review G2). The conversation's sentence is not kept.
+        quote: exam.origin.kind === 'note' ? exam.quote : null,
         origin: exam.origin,
         candidates,
-        codes: candidates.map((each) => each.code),
+        codes,
+        orderedAtReading: codes.filter((code) => ordered.includes(code)),
         demo: this.demo,
       };
     });
@@ -294,7 +294,7 @@ export class OrderProposalService {
       throw new SuggestionInvalidError('lines');
     }
     const stored = await this.suggestions.ofEncounter(encounter.id, writer(requester), 'order-item'); // prettier-ignore
-    const shown = await this.shownOf(encounter, stored, requester);
+    const { shown } = await this.shownOf(encounter, stored, requester);
     const saved = await this.ordering.orderCodes(encounter.id, input.serviceOrderId); // prettier-ignore
     if (saved === null) throw new SuggestionOrderMismatchError();
     // The exams of that order other proposals already answer for.
@@ -313,13 +313,17 @@ export class OrderProposalService {
       if (suggestion.status !== 'PROPOSED') {
         throw new SuggestionAlreadyDecidedError();
       }
-      const candidate = proposalOf(suggestion).candidates.find(
+      const proposal = proposalOf(suggestion);
+      const candidate = proposal.candidates.find(
         (each) => each.serviceId === serviceId,
       );
+      // Review M2: an exam already ordered when it was read is the
+      // physician's doing, not the proposal's.
       if (
         !candidate ||
         !saved.includes(candidate.code) ||
-        taken.has(candidate.code)
+        taken.has(candidate.code) ||
+        proposal.orderedAtReading.includes(candidate.code)
       ) {
         throw new SuggestionOrderMismatchError();
       }
@@ -360,7 +364,7 @@ export class OrderProposalService {
       { userId: requester.userId, sites: requester.readSites },
       'order-item',
     );
-    const [shown, catalogue, ordered] = await Promise.all([
+    const [{ shown, transcript }, catalogue, ordered] = await Promise.all([
       this.shownOf(encounter, stored, requester),
       this.ordering.orderableExams(),
       this.ordering.orderedCodes(encounter.id),
@@ -388,7 +392,11 @@ export class OrderProposalService {
         });
         return {
           id: suggestion.id,
-          quote: proposal.quote,
+          // AS-106. Said aloud: read back from its stretch, never stored.
+          quote:
+            proposal.origin.kind === 'transcript'
+              ? spokenIn(proposal.origin, transcript)
+              : (proposal.quote ?? ''),
           origin: proposal.origin,
           candidates,
           status: suggestion.status,
@@ -407,14 +415,15 @@ export class OrderProposalService {
 
   /**
    * AS-106, AS-107. The lines of the latest reading, less the discarded,
-   * whose sentence is still said. One said in the conversation is shown only
-   * to the attention's professional, who alone sees the transcript (AS-056).
+   * whose sentence is still said and still asks. One said in the
+   * conversation is shown only to the attention's professional, who alone
+   * sees the transcript (AS-056), and only while the transcript has it.
    */
   private async shownOf(
     encounter: CodingEncounter,
     stored: readonly SuggestionView[],
     requester: ProposalRequester,
-  ): Promise<SuggestionView[]> {
+  ): Promise<{ shown: SuggestionView[]; transcript: SpokenSegment[] }> {
     const own = encounter.practitionerUserId === requester.userId;
     const [note, transcript] = await Promise.all([
       this.context.consultationNote(encounter.id),
@@ -423,12 +432,15 @@ export class OrderProposalService {
         : Promise.resolve<SpokenSegment[]>([]),
     ]);
     const sections = note?.sections ?? [];
-    return currentReading(stored).filter((suggestion) => {
+    const shown = currentReading(stored).filter((suggestion) => {
       const { quote, origin } = suggestion.proposal as Partial<OrderProposal>;
-      if (typeof quote !== 'string') return false;
-      if (origin?.kind === 'transcript' && !own) return false;
-      return stillSaid(quote, sections, transcript);
+      if (origin?.kind === 'transcript') {
+        // AS-056: only its professional; and gone once the purge took it.
+        return own && spokenIn(origin, transcript) !== '';
+      }
+      return typeof quote === 'string' && stillAsked(quote, sections);
     });
+    return { shown, transcript };
   }
 
   private async trail(
