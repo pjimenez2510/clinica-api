@@ -169,6 +169,9 @@ export const DEFAULT_ROLES: readonly DefaultRole[] = [
       'result:write',
       'record:write',
       'record:sign',
+      // AS-026, D-244 §3. The assistant in the consultation; who attends asks
+      // for its proposals and decides them.
+      'assistant:use',
       // EN-072, EN-240, D-188. The violence screening of block F: whoever
       // signs the discharge has to be able to answer it. Only `MEDICO` by
       // default — not `ADMIN`, not `ENFERMERIA` — until D-188 says otherwise.
