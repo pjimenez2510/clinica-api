@@ -973,7 +973,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   «Nadie lo dijo» y el p50 y el p90 de lo que tarda; DEBERÁ correr fuera del
   verify y DEBERÁ detenerse antes de un intento que haga pasar a su proveedor
   del tope de `--tope-proveedor` en el registro.
-  > D-241: 0,50 USD por proveedor en las pruebas. SC-091 y SC-092.
+  > D-241: 2 USD por proveedor en total en las pruebas, en el registro
+  > compartido del arnés. SC-091 y SC-092.
 - **AS-099** — DONDE `ASSISTANT_FAKE_PROVIDER` sea `true`, el proveedor de
   demostración DEBERÁ redactar desde el guion —cada línea que contiene una
   frase del guion va a su sección con su marcador, más una frase sin marcador
