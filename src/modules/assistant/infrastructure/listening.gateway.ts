@@ -12,6 +12,7 @@ import { HttpAdapterHost } from '@nestjs/core';
 import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
 
+import { ASSISTANT_ENABLED } from '../assistant-diagnosis.controller';
 import { DomainError } from '../../../shared/domain/errors/domain-error';
 import {
   ListeningAccess,
@@ -38,8 +39,6 @@ const LONGEST_TIMER_MS = 2_147_483_647;
 
 export const LISTENING_GATEWAY_OPTIONS = Symbol('LISTENING_GATEWAY_OPTIONS');
 export interface ListeningGatewayOptions {
-  /** AS-026, AS-046. `ASSISTANT_ENABLED`. */
-  enabled: boolean;
   /** AS-046. `CORS_ORIGINS`: the browsers that may open the channel. */
   origins: readonly string[];
   helloWaitMs?: number;
@@ -97,6 +96,8 @@ export class ListeningGateway
     private readonly listening: ListeningService,
     @Inject(LISTENING_GATEWAY_OPTIONS)
     private readonly options: ListeningGatewayOptions,
+    /** AS-026, AS-046. The same switch as the routes. */
+    @Inject(ASSISTANT_ENABLED) private readonly enabled: boolean,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -126,7 +127,7 @@ export class ListeningGateway
     if (path !== LISTENING_PATH || !this.server) return;
 
     // AS-026, AS-046. Off: the answer of a route that does not exist.
-    if (!this.options.enabled) return refuse(socket, 404, 'Not Found');
+    if (!this.enabled) return refuse(socket, 404, 'Not Found');
     // AS-046. A browser page of another origin never opens it. A client
     // without `Origin` is not a browser, and still needs a ticket.
     const origin = request.headers.origin;

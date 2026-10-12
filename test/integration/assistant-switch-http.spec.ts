@@ -1,11 +1,16 @@
+import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { WebSocket } from 'ws';
 
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 import { ASSISTANT_ENABLED } from '../../src/modules/assistant/assistant-diagnosis.controller';
+import { LISTENING_PATH } from '../../src/modules/assistant/infrastructure/listening.gateway';
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
@@ -51,7 +56,21 @@ describe('el asistente apagado (AS-026)', () => {
       ) // prettier-ignore
       .send({})
       .expect(404);
+    await request(server).get(`/api/v1/encounters/${ENCOUNTER}/assistant/listening`).expect(404); // prettier-ignore
+    await request(server).post(`/api/v1/encounters/${ENCOUNTER}/assistant/listening/ticket`).expect(404); // prettier-ignore
     // Control: a route of the same API, outside the assistant, still asks for a session.
     await request(server).get(`/api/v1/encounters/${ENCOUNTER}/diagnoses`).expect(401); // prettier-ignore
+  });
+
+  it('AS-046 answers 404 to opening the audio channel', async () => {
+    const { port } = (app.getHttpServer() as Server).address() as AddressInfo;
+    const socket = new WebSocket(`ws://127.0.0.1:${port}${LISTENING_PATH}`);
+
+    await expect(
+      new Promise((resolve, reject) => {
+        socket.once('open', resolve);
+        socket.once('error', reject);
+      }),
+    ).rejects.toThrow(/404/);
   });
 });

@@ -136,7 +136,6 @@ const PURGE_EVERY_MS = 86_400_000;
       provide: LISTENING_GATEWAY_OPTIONS,
       inject: [ConfigService],
       useFactory: (config: ConfigService<Env, true>) => ({
-        enabled: config.get('ASSISTANT_ENABLED', { infer: true }) === true,
         origins: config.get('CORS_ORIGINS', { infer: true }),
       }),
     },
