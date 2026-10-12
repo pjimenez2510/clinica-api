@@ -134,6 +134,14 @@ describe('the sentence that asks for an exam (AS-103)', () => {
     }
   });
 
+  it('AS-103 a quote of the whole sentence is judged by the clause of the words that name the exam (measured 12-10-2026)', () => {
+    const text = 'Trae EMO normal, se solicita urocultivo con antibiograma.';
+    const run = (requested: string) =>
+      backedExams({ read: [{ requested, quote: text.slice(0, -1), candidates: [1] }], cleared: text, sections: plan(text), transcript: [], restore: (t) => t }).kept; // prettier-ignore
+    expect(run('urocultivo con antibiograma')).toHaveLength(1);
+    expect(run('EMO')).toEqual([]);
+  });
+
   it('AS-103 a sentence that is not in the note, or is too short to mean anything, backs nothing', () => {
     const text = 'Se solicita biometría hemática.';
     const run = (quote: string) =>

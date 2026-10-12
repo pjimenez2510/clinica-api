@@ -132,12 +132,24 @@ const NOT_ASKED: readonly RegExp[] = [
  * asked for today: anywhere in the sentence for a condition or a later
  * visit; in the phrase's own clause for a result or a past exam.
  */
-export function deniedIn(sentence: string, quote: string): boolean {
+export function deniedIn(
+  sentence: string,
+  quote: string,
+  /**
+   * The words that name the exam: when the sentence has them, THEIR clause
+   * is judged — a quote of the whole «Trae EMO normal, se solicita
+   * urocultivo» names the urocultivo after the comma (measured 12-10-2026).
+   */
+  named?: string,
+): boolean {
   const folded = foldText(sentence);
   if (NOT_TODAY.some((pattern) => pattern.test(folded))) return true;
-  const at = folded.indexOf(foldText(quote));
+  const focus = [named, quote]
+    .map((words) => (words ? foldText(words) : ''))
+    .find((words) => words.length >= 3 && folded.includes(words));
+  const at = focus ? folded.indexOf(focus) : -1;
   const from = at < 0 ? 0 : at;
-  const to = at < 0 ? folded.length : at + foldText(quote).length;
+  const to = at < 0 ? folded.length : at + focus!.length;
   const start = Math.max(...[',', ':', ';'].map((mark) => folded.lastIndexOf(mark, from - 1))) + 1; // prettier-ignore
   const ends = [',', ':', ';']
     .map((mark) => folded.indexOf(mark, to))
@@ -150,9 +162,10 @@ export function deniedIn(sentence: string, quote: string): boolean {
 function locatedAsking(
   quote: string,
   sections: readonly { key: string; text: string }[],
+  named?: string,
 ): ReturnType<typeof locateQuote> {
   const located = locateQuote(quote, sections);
-  return located && !deniedIn(located.sentence, quote) ? located : null;
+  return located && !deniedIn(located.sentence, quote, named) ? located : null;
 }
 
 /** Segments joined with spaces: a sentence said across two of them is one. */
@@ -183,14 +196,14 @@ export function backedExams(input: {
   for (const exam of input.read) {
     if (!cleared.includes(foldText(exam.quote))) continue;
     const quote = input.restore(exam.quote).trim();
-    const inNote = locatedAsking(quote, input.sections);
-    const located = inNote ?? locatedAsking(quote, talk);
+    const requested = input.restore(exam.requested).trim();
+    const inNote = locatedAsking(quote, input.sections, requested);
+    const located = inNote ?? locatedAsking(quote, talk, requested);
     if (!located) continue;
     const origin: ExamOrigin | null = inNote
       ? { kind: 'note', section: inNote.section }
       : stretchOf(quote, input.transcript);
     if (!origin) continue;
-    const requested = input.restore(exam.requested).trim();
     const shown =
       origin.kind === 'note'
         ? located.sentence
