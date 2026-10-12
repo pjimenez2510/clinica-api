@@ -1,12 +1,12 @@
 {
-  "label": "d2-receta-nota-gemini",
-  "ledger": "/Users/pjimenez/.clinica-eval/gasto",
+  "label": "d2-receta-nota-gemini-final",
+  "ledger": "~/.clinica-eval/gasto",
   "fake": false,
-  "startedAt": "2026-10-12 08:20:32",
-  "finishedAt": "2026-10-12 08:24:51",
-  "commit": "f192ac94",
+  "startedAt": "2026-10-12 08:54:16",
+  "finishedAt": "2026-10-12 08:57:53",
+  "commit": "dfd523af",
   "seed": 42,
-  "ceilingUsd": 0.78,
+  "ceilingUsd": 0.81,
   "providers": [
     {
       "name": "gemini",
@@ -614,13 +614,13 @@
       "shown": [
         {
           "code": "J01CA04",
-          "concentration": "250 mg/5 mL"
+          "concentration": null
         }
       ],
       "scores": {
-        "mapping": 1,
+        "mapping": 0,
         "medicine": 1,
-        "all": 1,
+        "all": 0,
         "extra": 0,
         "outsideCnmb": 0
       }
@@ -984,8 +984,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 5956,
-      "costUsd": 0.0013065000000000002,
+      "latencyMs": 2915,
+      "costUsd": 0.001389,
       "model": "gemini-3.8-flash"
     },
     {
@@ -997,8 +997,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 6863,
-      "costUsd": 0.00046499999999999997,
+      "latencyMs": 2393,
+      "costUsd": 0.00046425,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1010,8 +1010,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2589,
-      "costUsd": 0.00138825,
+      "latencyMs": 2476,
+      "costUsd": 0.00138075,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1023,8 +1023,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2563,
-      "costUsd": 0.00064275,
+      "latencyMs": 1946,
+      "costUsd": 0.0005715,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1036,7 +1036,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3398,
+      "latencyMs": 3808,
       "costUsd": 0.00132225,
       "model": "gemini-3.8-flash"
     },
@@ -1049,8 +1049,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3277,
-      "costUsd": 0.000924,
+      "latencyMs": 2062,
+      "costUsd": 0.00035775,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1062,8 +1062,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2235,
-      "costUsd": 0.001299,
+      "latencyMs": 3203,
+      "costUsd": 0.001389,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1075,8 +1075,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 8995,
-      "costUsd": 0.0030134999999999997,
+      "latencyMs": 2607,
+      "costUsd": 0.000744,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1088,7 +1088,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3588,
+      "latencyMs": 2697,
       "costUsd": 0.00138975,
       "model": "gemini-3.8-flash"
     },
@@ -1101,8 +1101,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 4276,
-      "costUsd": 0.00081825,
+      "latencyMs": 3211,
+      "costUsd": 0.0008294999999999999,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1114,8 +1114,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3409,
-      "costUsd": 0.0014152499999999998,
+      "latencyMs": 2249,
+      "costUsd": 0.00142275,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1127,8 +1127,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 4604,
-      "costUsd": 0.0014609999999999998,
+      "latencyMs": 3810,
+      "costUsd": 0.0007297499999999999,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1140,8 +1140,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2956,
-      "costUsd": 0.00138075,
+      "latencyMs": 12199,
+      "costUsd": 0.0013995000000000001,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1153,8 +1153,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2258,
-      "costUsd": 0.00036899999999999997,
+      "latencyMs": 3048,
+      "costUsd": 0.0008489999999999999,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1166,8 +1166,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3454,
-      "costUsd": 0.0013012499999999999,
+      "latencyMs": 3187,
+      "costUsd": 0.0015037499999999999,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1179,8 +1179,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1955,
-      "costUsd": 0.00037349999999999997,
+      "latencyMs": 1673,
+      "costUsd": 0.00035099999999999997,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1192,8 +1192,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2869,
-      "costUsd": 0.00129,
+      "latencyMs": 2398,
+      "costUsd": 0.0015,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1205,8 +1205,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2508,
-      "costUsd": 0.00035549999999999997,
+      "latencyMs": 3867,
+      "costUsd": 0.000768,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1218,7 +1218,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2648,
+      "latencyMs": 2313,
       "costUsd": 0.001368,
       "model": "gemini-3.8-flash"
     },
@@ -1231,8 +1231,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2342,
-      "costUsd": 0.00033825,
+      "latencyMs": 3043,
+      "costUsd": 0.0008745000000000001,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1244,8 +1244,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3230,
-      "costUsd": 0.00152475,
+      "latencyMs": 2094,
+      "costUsd": 0.00132225,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1257,8 +1257,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2670,
-      "costUsd": 0.00033674999999999997,
+      "latencyMs": 1538,
+      "costUsd": 0.00033749999999999996,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1270,7 +1270,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3333,
+      "latencyMs": 1759,
       "costUsd": 0.00138975,
       "model": "gemini-3.8-flash"
     },
@@ -1283,8 +1283,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3272,
-      "costUsd": 0.00080025,
+      "latencyMs": 2555,
+      "costUsd": 0.0009090000000000001,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1296,7 +1296,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3588,
+      "latencyMs": 2391,
       "costUsd": 0.0013177500000000001,
       "model": "gemini-3.8-flash"
     },
@@ -1309,8 +1309,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2039,
-      "costUsd": 0.00043575,
+      "latencyMs": 3902,
+      "costUsd": 0.000957,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1322,8 +1322,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3496,
-      "costUsd": 0.001503,
+      "latencyMs": 3690,
+      "costUsd": 0.0014954999999999999,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1335,8 +1335,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2898,
-      "costUsd": 0.000354,
+      "latencyMs": 1357,
+      "costUsd": 0.00033224999999999997,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1348,8 +1348,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2978,
-      "costUsd": 0.0013065000000000002,
+      "latencyMs": 2285,
+      "costUsd": 0.0015202500000000001,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1361,8 +1361,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 10106,
-      "costUsd": 0.00079575,
+      "latencyMs": 1649,
+      "costUsd": 0.00034199999999999996,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1374,8 +1374,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3287,
-      "costUsd": 0.0013815000000000001,
+      "latencyMs": 2848,
+      "costUsd": 0.0015315,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1387,8 +1387,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2528,
-      "costUsd": 0.0003825,
+      "latencyMs": 3627,
+      "costUsd": 0.00082425,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1400,7 +1400,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2813,
+      "latencyMs": 1996,
       "costUsd": 0.001359,
       "model": "gemini-3.8-flash"
     },
@@ -1413,8 +1413,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2586,
-      "costUsd": 0.0007005,
+      "latencyMs": 2550,
+      "costUsd": 0.0007455,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1426,8 +1426,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3080,
-      "costUsd": 0.0013852500000000002,
+      "latencyMs": 2101,
+      "costUsd": 0.0013215000000000002,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1439,8 +1439,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1476,
-      "costUsd": 0.0003525,
+      "latencyMs": 1496,
+      "costUsd": 0.00032925,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1452,8 +1452,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2417,
-      "costUsd": 0.001302,
+      "latencyMs": 2822,
+      "costUsd": 0.00138075,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1465,8 +1465,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1781,
-      "costUsd": 0.00035625,
+      "latencyMs": 2154,
+      "costUsd": 0.00073125,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1478,8 +1478,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3461,
-      "costUsd": 0.00143775,
+      "latencyMs": 1963,
+      "costUsd": 0.00142275,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1491,8 +1491,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1924,
-      "costUsd": 0.0003345,
+      "latencyMs": 1698,
+      "costUsd": 0.00035775,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1504,8 +1504,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2320,
-      "costUsd": 0.0015397499999999999,
+      "latencyMs": 2537,
+      "costUsd": 0.00139725,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1517,8 +1517,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2377,
-      "costUsd": 0.0007815000000000001,
+      "latencyMs": 2427,
+      "costUsd": 0.0003765,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1530,8 +1530,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2966,
-      "costUsd": 0.0014872499999999999,
+      "latencyMs": 3492,
+      "costUsd": 0.00162225,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1543,7 +1543,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1967,
+      "latencyMs": 2270,
       "costUsd": 0.00041999999999999996,
       "model": "gemini-3.8-flash"
     },
@@ -1556,8 +1556,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2881,
-      "costUsd": 0.0015495,
+      "latencyMs": 2513,
+      "costUsd": 0.00135075,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1569,7 +1569,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1546,
+      "latencyMs": 2459,
       "costUsd": 0.00043125,
       "model": "gemini-3.8-flash"
     },
@@ -1582,8 +1582,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3737,
-      "costUsd": 0.0014565,
+      "latencyMs": 2439,
+      "costUsd": 0.001449,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1595,8 +1595,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2422,
-      "costUsd": 0.0006247500000000001,
+      "latencyMs": 2098,
+      "costUsd": 0.00036225,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1608,8 +1608,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2920,
-      "costUsd": 0.00141825,
+      "latencyMs": 2016,
+      "costUsd": 0.0013695,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1621,8 +1621,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 5590,
-      "costUsd": 0.00046725,
+      "latencyMs": 2620,
+      "costUsd": 0.00102075,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1634,8 +1634,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2736,
-      "costUsd": 0.00140625,
+      "latencyMs": 2267,
+      "costUsd": 0.0013275,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1647,8 +1647,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2865,
-      "costUsd": 0.00033375,
+      "latencyMs": 1775,
+      "costUsd": 0.00035625,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1660,8 +1660,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2741,
-      "costUsd": 0.00141825,
+      "latencyMs": 2328,
+      "costUsd": 0.0013395,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1673,8 +1673,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3564,
-      "costUsd": 0.0011625,
+      "latencyMs": 3068,
+      "costUsd": 0.00091875,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1686,7 +1686,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 6183,
+      "latencyMs": 2664,
       "costUsd": 0.00141675,
       "model": "gemini-3.8-flash"
     },
@@ -1699,7 +1699,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2124,
+      "latencyMs": 2144,
       "costUsd": 0.00043875,
       "model": "gemini-3.8-flash"
     },
@@ -1712,7 +1712,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3653,
+      "latencyMs": 3345,
       "costUsd": 0.00199425,
       "model": "gemini-3.8-flash"
     },
@@ -1725,7 +1725,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2746,
+      "latencyMs": 2643,
       "costUsd": 0.000531,
       "model": "gemini-3.8-flash"
     },
@@ -1738,7 +1738,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3431,
+      "latencyMs": 3876,
       "costUsd": 0.00198825,
       "model": "gemini-3.8-flash"
     },
@@ -1751,7 +1751,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2885,
+      "latencyMs": 2257,
       "costUsd": 0.00048975,
       "model": "gemini-3.8-flash"
     },
@@ -1764,8 +1764,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2764,
-      "costUsd": 0.001509,
+      "latencyMs": 3260,
+      "costUsd": 0.001389,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1777,8 +1777,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2078,
-      "costUsd": 0.00040725,
+      "latencyMs": 2409,
+      "costUsd": 0.000609,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1790,8 +1790,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2623,
-      "costUsd": 0.00151125,
+      "latencyMs": 3104,
+      "costUsd": 0.00130875,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1803,7 +1803,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2121,
+      "latencyMs": 2281,
       "costUsd": 0.00037349999999999997,
       "model": "gemini-3.8-flash"
     },
@@ -1816,8 +1816,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2299,
-      "costUsd": 0.00152475,
+      "latencyMs": 2411,
+      "costUsd": 0.00139725,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1829,8 +1829,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3733,
-      "costUsd": 0.00202425,
+      "latencyMs": 2997,
+      "costUsd": 0.002028,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1842,8 +1842,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2662,
-      "costUsd": 0.00045975,
+      "latencyMs": 1999,
+      "costUsd": 0.00042225,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1855,8 +1855,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3559,
-      "costUsd": 0.00136875,
+      "latencyMs": 2667,
+      "costUsd": 0.0012975,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1868,8 +1868,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3300,
-      "costUsd": 0.000993,
+      "latencyMs": 2414,
+      "costUsd": 0.000858,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1881,8 +1881,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3179,
-      "costUsd": 0.00129,
+      "latencyMs": 2057,
+      "costUsd": 0.001305,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1894,8 +1894,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3645,
-      "costUsd": 0.0012165000000000001,
+      "latencyMs": 2183,
+      "costUsd": 0.00035325,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1907,7 +1907,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3509,
+      "latencyMs": 4558,
       "costUsd": 0.00137025,
       "model": "gemini-3.8-flash"
     },
@@ -1920,7 +1920,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 5148,
+      "latencyMs": 2116,
       "costUsd": 0.00037799999999999997,
       "model": "gemini-3.8-flash"
     },
@@ -1933,7 +1933,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2704,
+      "latencyMs": 2753,
       "costUsd": 0.0013515,
       "model": "gemini-3.8-flash"
     },
@@ -1946,8 +1946,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2471,
-      "costUsd": 0.000441,
+      "latencyMs": 1905,
+      "costUsd": 0.0004635,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1959,8 +1959,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2252,
-      "costUsd": 0.0014594999999999999,
+      "latencyMs": 3189,
+      "costUsd": 0.0013245,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1972,8 +1972,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 5771,
-      "costUsd": 0.00237825,
+      "latencyMs": 7952,
+      "costUsd": 0.0040095,
       "model": "gemini-3.8-flash"
     },
     {
@@ -1985,7 +1985,7 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 4012,
+      "latencyMs": 2489,
       "costUsd": 0.0014287500000000001,
       "model": "gemini-3.8-flash"
     },
@@ -1998,8 +1998,8 @@
       "measured": "gemini",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3194,
-      "costUsd": 0.0003405,
+      "latencyMs": 1615,
+      "costUsd": 0.000363,
       "model": "gemini-3.8-flash"
     }
   ]

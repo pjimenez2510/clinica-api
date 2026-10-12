@@ -1,12 +1,12 @@
 {
-  "label": "d2-receta-nota-sonnet",
-  "ledger": "/Users/pjimenez/.clinica-eval/gasto",
+  "label": "d2-receta-nota-sonnet-final",
+  "ledger": "~/.clinica-eval/gasto",
   "fake": false,
-  "startedAt": "2026-10-12 08:27:05",
-  "finishedAt": "2026-10-12 08:28:31",
-  "commit": "ea47e57f+cambios",
+  "startedAt": "2026-10-12 08:58:10",
+  "finishedAt": "2026-10-12 08:59:22",
+  "commit": "dfd523af+cambios",
   "seed": 42,
-  "ceilingUsd": 0.94,
+  "ceilingUsd": 1.09,
   "providers": [
     {
       "name": "anthropic",
@@ -521,7 +521,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3398,
+      "latencyMs": 3151,
       "costUsd": 0.008534,
       "model": "claude-sonnet-5"
     },
@@ -534,7 +534,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2048,
+      "latencyMs": 1297,
       "costUsd": 0.002612,
       "model": "claude-sonnet-5"
     },
@@ -547,8 +547,8 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2410,
-      "costUsd": 0.008511999999999999,
+      "latencyMs": 2007,
+      "costUsd": 0.008472,
       "model": "claude-sonnet-5"
     },
     {
@@ -560,8 +560,8 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1551,
-      "costUsd": 0.002504,
+      "latencyMs": 1132,
+      "costUsd": 0.002506,
       "model": "claude-sonnet-5"
     },
     {
@@ -573,7 +573,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2340,
+      "latencyMs": 2056,
       "costUsd": 0.008506,
       "model": "claude-sonnet-5"
     },
@@ -586,8 +586,8 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2135,
-      "costUsd": 0.002356,
+      "latencyMs": 1070,
+      "costUsd": 0.002326,
       "model": "claude-sonnet-5"
     },
     {
@@ -599,7 +599,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3471,
+      "latencyMs": 2076,
       "costUsd": 0.008464000000000001,
       "model": "claude-sonnet-5"
     },
@@ -612,8 +612,8 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1506,
-      "costUsd": 0.002244,
+      "latencyMs": 1354,
+      "costUsd": 0.002214,
       "model": "claude-sonnet-5"
     },
     {
@@ -625,8 +625,8 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2016,
-      "costUsd": 0.008490000000000001,
+      "latencyMs": 1982,
+      "costUsd": 0.00853,
       "model": "claude-sonnet-5"
     },
     {
@@ -638,7 +638,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1637,
+      "latencyMs": 1422,
       "costUsd": 0.002326,
       "model": "claude-sonnet-5"
     },
@@ -651,7 +651,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2935,
+      "latencyMs": 2816,
       "costUsd": 0.008617999999999999,
       "model": "claude-sonnet-5"
     },
@@ -664,7 +664,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1485,
+      "latencyMs": 1416,
       "costUsd": 0.002226,
       "model": "claude-sonnet-5"
     },
@@ -677,7 +677,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3041,
+      "latencyMs": 2093,
       "costUsd": 0.00861,
       "model": "claude-sonnet-5"
     },
@@ -690,7 +690,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1487,
+      "latencyMs": 1289,
       "costUsd": 0.002312,
       "model": "claude-sonnet-5"
     },
@@ -703,7 +703,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3860,
+      "latencyMs": 1985,
       "costUsd": 0.008444,
       "model": "claude-sonnet-5"
     },
@@ -716,7 +716,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1438,
+      "latencyMs": 1155,
       "costUsd": 0.002304,
       "model": "claude-sonnet-5"
     },
@@ -729,7 +729,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2491,
+      "latencyMs": 2399,
       "costUsd": 0.008409999999999999,
       "model": "claude-sonnet-5"
     },
@@ -742,7 +742,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1303,
+      "latencyMs": 1131,
       "costUsd": 0.002258,
       "model": "claude-sonnet-5"
     },
@@ -755,7 +755,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2405,
+      "latencyMs": 1940,
       "costUsd": 0.008558,
       "model": "claude-sonnet-5"
     },
@@ -768,7 +768,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1487,
+      "latencyMs": 1521,
       "costUsd": 0.002284,
       "model": "claude-sonnet-5"
     },
@@ -781,7 +781,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2224,
+      "latencyMs": 2759,
       "costUsd": 0.008511999999999999,
       "model": "claude-sonnet-5"
     },
@@ -794,8 +794,8 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1399,
-      "costUsd": 0.002262,
+      "latencyMs": 1530,
+      "costUsd": 0.002232,
       "model": "claude-sonnet-5"
     },
     {
@@ -807,7 +807,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2252,
+      "latencyMs": 2109,
       "costUsd": 0.008617999999999999,
       "model": "claude-sonnet-5"
     },
@@ -820,7 +820,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1232,
+      "latencyMs": 982,
       "costUsd": 0.00224,
       "model": "claude-sonnet-5"
     },
@@ -833,7 +833,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2529,
+      "latencyMs": 2188,
       "costUsd": 0.008524,
       "model": "claude-sonnet-5"
     },
@@ -846,7 +846,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1664,
+      "latencyMs": 1433,
       "costUsd": 0.00252,
       "model": "claude-sonnet-5"
     },
@@ -859,7 +859,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2312,
+      "latencyMs": 1568,
       "costUsd": 0.008422,
       "model": "claude-sonnet-5"
     },
@@ -872,7 +872,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2930,
+      "latencyMs": 1173,
       "costUsd": 0.002248,
       "model": "claude-sonnet-5"
     },
@@ -885,7 +885,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3298,
+      "latencyMs": 2157,
       "costUsd": 0.008518,
       "model": "claude-sonnet-5"
     },
@@ -898,7 +898,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3028,
+      "latencyMs": 1527,
       "costUsd": 0.002288,
       "model": "claude-sonnet-5"
     },
@@ -911,7 +911,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1958,
+      "latencyMs": 1815,
       "costUsd": 0.008534,
       "model": "claude-sonnet-5"
     },
@@ -924,7 +924,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1301,
+      "latencyMs": 1435,
       "costUsd": 0.00234,
       "model": "claude-sonnet-5"
     },
@@ -937,7 +937,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1959,
+      "latencyMs": 2752,
       "costUsd": 0.008408,
       "model": "claude-sonnet-5"
     },
@@ -950,7 +950,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1096,
+      "latencyMs": 1692,
       "costUsd": 0.002262,
       "model": "claude-sonnet-5"
     },
@@ -963,7 +963,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2559,
+      "latencyMs": 2179,
       "costUsd": 0.008602,
       "model": "claude-sonnet-5"
     },
@@ -976,7 +976,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1110,
+      "latencyMs": 1483,
       "costUsd": 0.002248,
       "model": "claude-sonnet-5"
     },
@@ -989,7 +989,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 3667,
+      "latencyMs": 2495,
       "costUsd": 0.008486,
       "model": "claude-sonnet-5"
     },
@@ -1002,7 +1002,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1420,
+      "latencyMs": 1375,
       "costUsd": 0.002258,
       "model": "claude-sonnet-5"
     },
@@ -1015,7 +1015,7 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 2215,
+      "latencyMs": 2692,
       "costUsd": 0.008728,
       "model": "claude-sonnet-5"
     },
@@ -1028,8 +1028,8 @@
       "measured": "anthropic",
       "outcome": "ok",
       "httpStatus": 200,
-      "latencyMs": 1543,
-      "costUsd": 0.0022660000000000002,
+      "latencyMs": 1432,
+      "costUsd": 0.002236,
       "model": "claude-sonnet-5"
     }
   ]
