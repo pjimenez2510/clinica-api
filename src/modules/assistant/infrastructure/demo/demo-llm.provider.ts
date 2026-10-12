@@ -5,6 +5,7 @@ import type {
   LlmRequest,
   ProviderAnswer,
 } from '../../application/llm-client.port';
+import { DRAFT_PURPOSE } from '../../application/note-draft.prompts';
 import {
   CODES_PURPOSE,
   PROBLEMS_PURPOSE,
@@ -84,6 +85,7 @@ export class DemoLlmProvider implements LlmProvider {
 
   private answerFor(purpose: string, prompt: string): unknown {
     if (purpose === PROBLEMS_PURPOSE) return { problems: problemsIn(prompt) };
+    if (purpose === DRAFT_PURPOSE) return { sections: draftOf(prompt) };
     if (purpose === CODES_PURPOSE) {
       const problem = /«(.+)»/.exec(prompt)?.[1] ?? '';
       const codes = (script.codes as Record<string, string[]>)[problem] ?? [];
@@ -109,4 +111,36 @@ function problemsIn(text: string): { problem: string; quote: string }[] {
     named.set(problem, (end > 0 ? rest.slice(0, end) : rest).trim());
   }
   return [...named].map(([problem, quote]) => ({ problem, quote }));
+}
+
+type DraftAnswer = { section: string; segments: { text: string; source: string | null }[] }; // prettier-ignore
+
+/**
+ * AS-099. The draft of the script: each line of the conversation that holds
+ * a phrase of the script gives that phrase's sentence to its section, with
+ * the line's marker, when the template has the section; and one sentence with
+ * no marker, so the screen shows «Nadie lo dijo».
+ */
+function draftOf(prompt: string): DraftAnswer[] {
+  const keys = new Set(
+    [...prompt.matchAll(/^- (\w+) · /gm)].map((match) => match[1]!),
+  );
+  const said = [...prompt.matchAll(/^\[(L\d+)\] (.*)$/gm)].map((match) => ({
+    marker: match[1]!,
+    text: match[2]!.toLowerCase(),
+  }));
+  const sections = new Map<string, DraftAnswer['segments']>();
+  for (const { phrase, section, text } of script.draft.lines) {
+    const line = said.find((each) => each.text.includes(phrase));
+    if (!line || !keys.has(section)) continue;
+    const segments = sections.get(section) ?? [];
+    if (segments.some((segment) => segment.text === text)) continue;
+    sections.set(section, [...segments, { text, source: line.marker }]);
+  }
+  const last = [...sections.keys()].at(-1);
+  if (last !== undefined) {
+    const home = sections.has('planTratamiento') ? 'planTratamiento' : last;
+    sections.get(home)!.push({ text: script.draft.unsaid.text, source: null });
+  }
+  return [...sections].map(([section, segments]) => ({ section, segments }));
 }

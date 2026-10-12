@@ -1,8 +1,14 @@
 {
-  "about": "AS-029. Guion del modo de demostración: lo que el proveedor falso contesta, sin modelo. Datos inventados. Cada problema se nombra si la nota contiene su frase; los códigos incluyen uno que no existe en la CIE-10 OMS (J02.7) para que se vea que la barrera no lo muestra.",
+  "about": "AS-029. Guion del modo de demostración: lo que el proveedor falso contesta, sin modelo. Datos inventados. Cada problema se nombra si la nota contiene su frase; los códigos incluyen uno que no existe en la CIE-10 OMS (J02.7) para que se vea que la barrera no lo muestra. El borrador de la nota (AS-099): cada línea de la conversación que contiene una frase va a su sección con su marcador; la frase de «unsaid» no lleva marcador, para que se vea «Nadie lo dijo».",
   "problems": [
-    { "phrase": "odinofagia", "problem": "FARINGITIS AGUDA" },
-    { "phrase": "dolor de garganta", "problem": "FARINGITIS AGUDA" },
+    {
+      "phrase": "odinofagia",
+      "problem": "FARINGITIS AGUDA"
+    },
+    {
+      "phrase": "dolor de garganta",
+      "problem": "FARINGITIS AGUDA"
+    },
     {
       "phrase": "150/95",
       "problem": "HIPERTENSIÓN ARTERIAL SIN DIAGNÓSTICO PREVIO"
@@ -11,10 +17,22 @@
       "phrase": "tensión alta",
       "problem": "HIPERTENSIÓN ARTERIAL SIN DIAGNÓSTICO PREVIO"
     },
-    { "phrase": "ardor al orinar", "problem": "INFECCIÓN DE VÍAS URINARIAS" },
-    { "phrase": "disuria", "problem": "INFECCIÓN DE VÍAS URINARIAS" },
-    { "phrase": "dolor lumbar", "problem": "LUMBALGIA" },
-    { "phrase": "glucosa", "problem": "HIPERGLUCEMIA" }
+    {
+      "phrase": "ardor al orinar",
+      "problem": "INFECCIÓN DE VÍAS URINARIAS"
+    },
+    {
+      "phrase": "disuria",
+      "problem": "INFECCIÓN DE VÍAS URINARIAS"
+    },
+    {
+      "phrase": "dolor lumbar",
+      "problem": "LUMBALGIA"
+    },
+    {
+      "phrase": "glucosa",
+      "problem": "HIPERGLUCEMIA"
+    }
   ],
   "codes": {
     "FARINGITIS AGUDA": ["J02.9", "J02.7", "J02.8", "J03.9"],
@@ -22,5 +40,47 @@
     "INFECCIÓN DE VÍAS URINARIAS": ["N39.0", "N30.0"],
     "LUMBALGIA": ["M54.5"],
     "HIPERGLUCEMIA": ["R73.9", "E11.9"]
+  },
+  "draft": {
+    "lines": [
+      {
+        "phrase": "me duele la garganta",
+        "section": "motivoConsulta",
+        "text": "Dolor de garganta."
+      },
+      {
+        "phrase": "tres días",
+        "section": "enfermedadActual",
+        "text": "Odinofagia de tres días de evolución, con fiebre."
+      },
+      {
+        "phrase": "paracetamol",
+        "section": "enfermedadActual",
+        "text": "Ha tomado paracetamol 500 mg cada 8 horas para la fiebre."
+      },
+      {
+        "phrase": "temperatura",
+        "section": "examenFisico",
+        "text": "Se revisa la garganta y se toma la temperatura."
+      },
+      {
+        "phrase": "control en",
+        "section": "planTratamiento",
+        "text": "Control en 15 días."
+      },
+      {
+        "phrase": "ardor al orinar",
+        "section": "motivoConsulta",
+        "text": "Ardor al orinar."
+      },
+      {
+        "phrase": "dolor lumbar",
+        "section": "enfermedadActual",
+        "text": "Dolor lumbar."
+      }
+    ],
+    "unsaid": {
+      "text": "Acudir antes si la fiebre no cede."
+    }
   }
 }
