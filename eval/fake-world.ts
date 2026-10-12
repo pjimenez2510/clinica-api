@@ -156,6 +156,8 @@ export class FakeWorld {
         return answer(this.note(item as NoteCase, right));
       case 'draft':
         return answer(this.draft(item as NoteCase, right));
+      case 'questions':
+        return answer(this.questions(right));
       case 'receta-nota':
         return answer(
           key.role === 'follow-up'
@@ -326,6 +328,20 @@ export class FakeWorld {
    * AS-098. The draft in the product's template: each fact on the first line,
    * and, when wrong, half of them and a section nobody said.
    */
+  /**
+   * AS-126. Right: two questions, each on a line it was given; wrong: one
+   * more on a line it never was, which the barrier drops.
+   */
+  private questions(right: boolean) {
+    const backed = [
+      { text: '¿Desde cuándo?', source: 'L1', section: 'enfermedadActual' },
+      { text: '¿Toma algún medicamento?', source: 'L2', section: null },
+    ];
+    return {
+      questions: right ? backed : [...backed, { text: '¿Fuma?', source: 'L99', section: null }], // prettier-ignore
+    };
+  }
+
   private draft(item: NoteCase, right: boolean) {
     const into: Record<string, string> = {
       motivo: 'motivoConsulta',
