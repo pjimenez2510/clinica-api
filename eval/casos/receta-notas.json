@@ -1,0 +1,448 @@
+{
+  "description": "Notas de consulta inventadas para medir «Proponer la receta» (D2, AS-079): la sección Plan con lo recetado, y lo que la receta debe proponer contra el CNMB 2026 (código y concentración del cuadro; null cuando la concentración escrita no está en el cuadro y la línea debe quedar sin presentación). Incluye distractores: lo que se suspende, lo que ya toma, una alergia y medicamentos fuera del cuadro (naproxeno, ranitidina). Ningún paciente; debe confirmarlas un médico o un farmacéutico antes de decidir con ellas.",
+  "cases": [
+    {
+      "id": "receta-nota-01",
+      "origin": "invented",
+      "plan": "Amoxicilina 500 mg, una tableta cada 8 horas por 7 días.",
+      "expected": [
+        {
+          "cnmbCode": "J01CA04",
+          "concentration": "500 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-02",
+      "origin": "invented",
+      "plan": "Paracetamol 500 mg, una tableta cada 6 horas por 3 días.",
+      "expected": [
+        {
+          "cnmbCode": "N02BE01",
+          "concentration": "500 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-03",
+      "origin": "invented",
+      "plan": "Ibuprofeno 400 mg cada 8 horas por 5 días, después de comer.",
+      "expected": [
+        {
+          "cnmbCode": "M01AE01",
+          "concentration": "400 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-04",
+      "origin": "invented",
+      "plan": "Losartán 50 mg, una tableta una vez al día por 30 días.",
+      "expected": [
+        {
+          "cnmbCode": "C09CA01",
+          "concentration": "50 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-05",
+      "origin": "invented",
+      "plan": "Enalapril 10 mg, una tableta cada 12 horas por 30 días.",
+      "expected": [
+        {
+          "cnmbCode": "C09AA02",
+          "concentration": "10 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-06",
+      "origin": "invented",
+      "plan": "Metformina 850 mg, una tableta cada 12 horas con las comidas por 30 días.",
+      "expected": [
+        {
+          "cnmbCode": "A10BA02",
+          "concentration": "850 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-07",
+      "origin": "invented",
+      "plan": "Omeprazol 20 mg, una cápsula en ayunas por 14 días.",
+      "expected": [
+        {
+          "cnmbCode": "A02BC01",
+          "concentration": "20 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-08",
+      "origin": "invented",
+      "plan": "Azitromicina 500 mg, una tableta diaria por 3 días.",
+      "expected": [
+        {
+          "cnmbCode": "J01FA10",
+          "concentration": "500 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-09",
+      "origin": "invented",
+      "plan": "Loratadina 10 mg, una tableta al día por 10 días.",
+      "expected": [
+        {
+          "cnmbCode": "R06AX13",
+          "concentration": "10 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-10",
+      "origin": "invented",
+      "plan": "Salbutamol inhalador, dos inhalaciones cada 6 horas por 7 días.",
+      "expected": [
+        {
+          "cnmbCode": "R03AC02",
+          "concentration": "0,1 mg/dosis"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-11",
+      "origin": "invented",
+      "plan": "Cefalexina 500 mg, una tableta cada 6 horas por 7 días.",
+      "expected": [
+        {
+          "cnmbCode": "J01DB01",
+          "concentration": "500 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-12",
+      "origin": "invented",
+      "plan": "Nitrofurantoína 100 mg, una tableta cada 6 horas por 5 días.",
+      "expected": [
+        {
+          "cnmbCode": "J01XE01",
+          "concentration": "100 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-13",
+      "origin": "invented",
+      "plan": "Metronidazol 500 mg tabletas, una cada 8 horas por 7 días.",
+      "expected": [
+        {
+          "cnmbCode": "P01AB01",
+          "concentration": "500 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-14",
+      "origin": "invented",
+      "plan": "Prednisona 20 mg, una tableta diaria por 5 días.",
+      "expected": [
+        {
+          "cnmbCode": "H02AB07",
+          "concentration": "20 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-15",
+      "origin": "invented",
+      "plan": "Atorvastatina 20 mg, una tableta en la noche por 30 días.",
+      "expected": [
+        {
+          "cnmbCode": "C10AA05",
+          "concentration": "20 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-16",
+      "origin": "invented",
+      "plan": "Diclofenaco 50 mg, una tableta cada 8 horas por 3 días.",
+      "expected": [
+        {
+          "cnmbCode": "M01AB05",
+          "concentration": "50 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-17",
+      "origin": "invented",
+      "plan": "Fluconazol 150 mg, una tableta en dosis única.",
+      "expected": [
+        {
+          "cnmbCode": "J02AC01",
+          "concentration": "150 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-18",
+      "origin": "invented",
+      "plan": "Levotiroxina 50 mcg, una tableta en ayunas por 30 días.",
+      "expected": [
+        {
+          "cnmbCode": "H03AA01",
+          "concentration": "50 mcg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-19",
+      "origin": "invented",
+      "plan": "Furosemida 40 mg, una tableta en la mañana por 7 días.",
+      "expected": [
+        {
+          "cnmbCode": "C03CA01",
+          "concentration": "40 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-20",
+      "origin": "invented",
+      "plan": "Metoclopramida 10 mg, una tableta cada 8 horas antes de las comidas por 3 días.",
+      "expected": [
+        {
+          "cnmbCode": "A03FA01",
+          "concentration": "10 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-21",
+      "origin": "invented",
+      "plan": "Ondansetrón 8 mg, una tableta cada 12 horas por 2 días.",
+      "expected": [
+        {
+          "cnmbCode": "A04AA01",
+          "concentration": "8 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-22",
+      "origin": "invented",
+      "plan": "Amoxicilina con ácido clavulánico 500 mg + 125 mg, una tableta cada 8 horas por 7 días.",
+      "expected": [
+        {
+          "cnmbCode": "J01CR02",
+          "concentration": "500 mg + 125 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-23",
+      "origin": "invented",
+      "plan": "Paracetamol jarabe 160 mg/5 mL, 5 mL cada 6 horas por 3 días.",
+      "expected": [
+        {
+          "cnmbCode": "N02BE01",
+          "concentration": "160 mg/5 mL"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-24",
+      "origin": "invented",
+      "plan": "Ibuprofeno suspensión 200 mg/5 mL, 5 mL cada 8 horas por 3 días.",
+      "expected": [
+        {
+          "cnmbCode": "M01AE01",
+          "concentration": "200 mg/5 mL"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-25",
+      "origin": "invented",
+      "plan": "Amoxicilina suspensión 250 mg/5 mL, 5 mL cada 8 horas por 7 días.",
+      "expected": [
+        {
+          "cnmbCode": "J01CA04",
+          "concentration": "250 mg/5 mL"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-26",
+      "origin": "invented",
+      "plan": "Loratadina jarabe 5 mg/5 mL, 5 mL una vez al día por 5 días.",
+      "expected": [
+        {
+          "cnmbCode": "R06AX13",
+          "concentration": "5 mg/5 mL"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-27",
+      "origin": "invented",
+      "plan": "Clotrimazol crema al 1%, aplicar cada 12 horas en la zona afectada por 14 días.",
+      "expected": [
+        {
+          "cnmbCode": "D01AC01",
+          "concentration": "1%"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-28",
+      "origin": "invented",
+      "plan": "Metronidazol óvulos vaginales de 500 mg, uno cada noche por 7 días.",
+      "expected": [
+        {
+          "cnmbCode": "G01AF01",
+          "concentration": "500 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-29",
+      "origin": "invented",
+      "plan": "Enalapril 20 mg, una tableta cada día por 30 días. Paracetamol 500 mg, una tableta cada 8 horas si hay dolor, por 3 días.",
+      "expected": [
+        {
+          "cnmbCode": "C09AA02",
+          "concentration": "20 mg"
+        },
+        {
+          "cnmbCode": "N02BE01",
+          "concentration": "500 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-30",
+      "origin": "invented",
+      "plan": "Losartán 100 mg, una tableta diaria por 30 días. Atorvastatina 40 mg, una tableta en la noche por 30 días.",
+      "expected": [
+        {
+          "cnmbCode": "C09CA01",
+          "concentration": "100 mg"
+        },
+        {
+          "cnmbCode": "C10AA05",
+          "concentration": "40 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-31",
+      "origin": "invented",
+      "plan": "Se suspende el ibuprofeno por la gastritis. Paracetamol 500 mg, una tableta cada 8 horas por 3 días.",
+      "expected": [
+        {
+          "cnmbCode": "N02BE01",
+          "concentration": "500 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-32",
+      "origin": "invented",
+      "plan": "Refiere alergia a la penicilina. Azitromicina 500 mg, una tableta diaria por 3 días.",
+      "expected": [
+        {
+          "cnmbCode": "J01FA10",
+          "concentration": "500 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-33",
+      "origin": "invented",
+      "plan": "Naproxeno 550 mg, una tableta cada 12 horas por 5 días.",
+      "expected": []
+    },
+    {
+      "id": "receta-nota-34",
+      "origin": "invented",
+      "plan": "Ranitidina 150 mg, una tableta cada 12 horas por 14 días. Omeprazol 20 mg, una cápsula en ayunas por 14 días.",
+      "expected": [
+        {
+          "cnmbCode": "A02BC01",
+          "concentration": "20 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-35",
+      "origin": "invented",
+      "plan": "Ya toma metformina desde hace dos años. Se agrega enalapril 5 mg, una tableta diaria por 30 días.",
+      "expected": [
+        {
+          "cnmbCode": "C09AA02",
+          "concentration": "5 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-36",
+      "origin": "invented",
+      "plan": "Prednisona 5 mg, una tableta cada mañana por 10 días.",
+      "expected": [
+        {
+          "cnmbCode": "H02AB07",
+          "concentration": "5 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-37",
+      "origin": "invented",
+      "plan": "Azitromicina suspensión 200 mg/5 mL, 5 mL una vez al día por 3 días.",
+      "expected": [
+        {
+          "cnmbCode": "J01FA10",
+          "concentration": "200 mg/5 mL"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-38",
+      "origin": "invented",
+      "plan": "Amoxicilina tabletas, una cada 8 horas por 7 días.",
+      "expected": [
+        {
+          "cnmbCode": "J01CA04",
+          "concentration": "500 mg"
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-39",
+      "origin": "invented",
+      "plan": "Paracetamol 1 g, cada 8 horas por 2 días.",
+      "expected": [
+        {
+          "cnmbCode": "N02BE01",
+          "concentration": null
+        }
+      ]
+    },
+    {
+      "id": "receta-nota-40",
+      "origin": "invented",
+      "plan": "Salbutamol para nebulizar 5 mg/mL, 0,5 mL en 3 mL de solución salina cada 6 horas por 5 días.",
+      "expected": [
+        {
+          "cnmbCode": "R03AC02",
+          "concentration": "5 mg/mL"
+        }
+      ]
+    }
+  ]
+}

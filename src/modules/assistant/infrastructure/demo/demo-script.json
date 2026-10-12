@@ -1,5 +1,5 @@
 {
-  "about": "AS-029. Guion del modo de demostración: lo que el proveedor falso contesta, sin modelo. Datos inventados. Cada problema se nombra si la nota contiene su frase; los códigos incluyen uno que no existe en la CIE-10 OMS (J02.7) para que se vea que la barrera no lo muestra. El borrador de la nota (AS-099): cada línea de la conversación que contiene una frase va a su sección con su marcador; la frase de «unsaid» no lleva marcador, para que se vea «Nadie lo dijo».",
+  "about": "AS-029. Guion del modo de demostración: lo que el proveedor falso contesta, sin modelo. Datos inventados. Cada problema se nombra si la nota contiene su frase; los códigos incluyen uno que no existe en la CIE-10 OMS (J02.7) para que se vea que la barrera no lo muestra. Receta (D2): cada medicamento se lee si la nota contiene su nombre; la concentración, la dosis, la frecuencia y la duración se toman de la propia frase. «Jarabe de miel con limón» no está en el CNMB, para que se vea que la barrera no muestra ningún nombre fuera del cuadro. El borrador de la nota (AS-099): cada línea de la conversación que contiene una frase va a su sección con su marcador; la frase de «unsaid» no lleva marcador, para que se vea «Nadie lo dijo».",
   "problems": [
     {
       "phrase": "odinofagia",
@@ -41,6 +41,32 @@
     "LUMBALGIA": ["M54.5"],
     "HIPERGLUCEMIA": ["R73.9", "E11.9"]
   },
+  "medicines": [
+    {
+      "phrase": "amoxicilina",
+      "drug": "amoxicilina"
+    },
+    {
+      "phrase": "paracetamol",
+      "drug": "paracetamol"
+    },
+    {
+      "phrase": "ibuprofeno",
+      "drug": "ibuprofeno"
+    },
+    {
+      "phrase": "losartán",
+      "drug": "losartán"
+    },
+    {
+      "phrase": "losartan",
+      "drug": "losartán"
+    },
+    {
+      "phrase": "jarabe de miel",
+      "drug": "jarabe de miel con limón"
+    }
+  ],
   "draft": {
     "lines": [
       {

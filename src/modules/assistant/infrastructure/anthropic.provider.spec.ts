@@ -8,7 +8,7 @@ import {
   type PseudonymizedText,
 } from '../application/llm-client.port';
 
-import { AnthropicProvider } from './anthropic.provider';
+import { AnthropicProvider, anthropicSchema } from './anthropic.provider';
 
 const PROMPT = 'Persona_1 con dolor torácico';
 const answer = z.object({ code: z.string(), reason: z.string() });
@@ -193,5 +193,30 @@ describe('the Anthropic provider', () => {
 
     expect(client.baseURL).toBe('https://api.anthropic.com');
     expect(client.logLevel).toBe('off');
+  });
+
+  it('AS-003 leaves out the bounds the provider refuses (400 «maxItems is not supported»), keeping the rest of the schema', () => {
+    const schema = z.toJSONSchema(
+      z.object({
+        lines: z.array(z.object({ dose: z.number().positive().max(10), name: z.string().min(2).max(9) })).max(10), // prettier-ignore
+      }),
+      { io: 'output' },
+    );
+
+    const sent = JSON.stringify(anthropicSchema(schema));
+
+    for (const key of [
+      'maxItems',
+      'maxLength',
+      'minLength',
+      'maximum',
+      'exclusiveMinimum',
+    ]) {
+      expect(sent).not.toContain(`"${key}"`);
+    }
+    expect(anthropicSchema(schema)).toMatchObject({
+      type: 'object',
+      properties: { lines: { type: 'array', items: { type: 'object', properties: { dose: { type: 'number' }, name: { type: 'string' } } } } }, // prettier-ignore
+    });
   });
 });

@@ -86,6 +86,13 @@ export const DOMAIN_ERROR_CODES = [
   // AS-033: el seudonimizador local (clinica-ai) no respondió (503
   // reintentable) o respondió fuera de contrato (502).
   'ASSISTANT_PSEUDONYMIZER_FAILED',
+  // AS-070, AS-071, AS-073, AS-074 (D2): las alergias que no se pudieron
+  // comprobar (503), la línea con alergia exacta (409), la línea que ya no se
+  // puede añadir (422) y la receta de otra atención al enlazar (422).
+  'ASSISTANT_ALLERGY_CHECK_FAILED',
+  'ASSISTANT_ALLERGY_CONTRAINDICATION',
+  'ASSISTANT_PRESCRIPTION_LINE_NOT_READY',
+  'SUGGESTION_PRESCRIPTION_MISMATCH',
   // AS-048, AS-049 (C1): clinica-ai no puede escuchar —sin reconocedor, sin
   // detector de voz o caído— (503), y una orden o una trama en un
   // canal sin escucha abierta (409).

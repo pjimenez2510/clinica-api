@@ -138,12 +138,6 @@ export class AssistantDiagnosisController {
     if (!this.enabled) throw new NotFoundException();
   }
 
-  /**
-   * AS-026, AS-039. Where the requester may use the assistant AND read or
-   * write the history: `'query'` only checks `assistant:use` at some site, so
-   * a site where they write but have no assistant is cut here (A3's per-site
-   * switch will narrow the same list).
-   */
   private requester(req: Request): ProposalRequester {
     const principal = this.currentUser.requirePrincipal();
     return {

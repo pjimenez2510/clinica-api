@@ -1,0 +1,528 @@
+Magaldrato con simeticona (Hidróxido de Al y Mg)
+Omeprazol
+Atropina
+Butilescopolamina (N-butilbromuro de hioscina)
+Metoclopramida
+Ondansetrón
+Aprepitant
+Lactulosa
+Macrogol (polietilenglicol) en combinaciones
+Glicerol
+Nistatina
+Carbón medicinal (activado)
+Sales de rehidratación oral
+Loperamida
+Mesalazina
+Sulfasalazina
+Multienzimas (lipasa, proteasa, amilasa)
+Insulina Ultrarápida (asparta)
+Insulina Ultrarápida (lispro)
+Insulina humana (acción rápida)
+Insulina humana NPH (acción intermedia)
+Insulina glargina
+Metformina
+Gliclazida
+Dapagliflozina
+Empagliflozina
+Multivitaminas y otros minerales, incluido combinaciones
+Retinol (Vitamina A)
+Calcitriol
+Tiamina (Vitamina B1)
+Complejo B
+Ácido ascórbico (Vitamina C)
+Piridoxina (Vitamina B6)
+Combinaciones de vitaminas compatibles con NPT
+Carbonato de calcio
+Gluconato de calcio
+Sulfato de Zinc
+Warfarina
+Enoxaparina
+Heparina (no fraccionada)
+Clopidogrel
+Ticagrelor
+Tirofibán
+Ácido acetilsalicílico
+Alteplasa
+Estreptoquinasa
+Apixaban
+Rivaroxaban
+Ácido tranexámico
+Fitomenadiona
+Fibrinógeno Humano (Factor I)
+Factor de coagulación IX plasmático / Factor de coagulación IX recombinante
+Factor de coagulación IX, II, VII y X, en combinación (complejo de Protrombina Humana)
+Factor de coagulación VIII plasmático / Factor de coagulación VIII recombinante
+Factor de von Willebrand F(vW) + factor VIII de la coagulación (FVIII).
+Eltrombopag
+Emicizumab
+Sulfato ferroso
+Hierro sacarato (complejo de sacarosa e hidróxido de hierro III)
+Sales de hierro + ácido fólico
+Hierro, multivitaminas y minerales
+Ácido fólico
+Eritropoyetina (epoetina)
+Agentes de gelatina
+Albúmina humana
+Aminoácidos
+Carbohidratos (dextrosa en agua)
+Emulsiones grasas (lípidos)
+Electrolitos con carbohidratos (dextrosa en solución salina)
+Manitol
+Cloruro de sodio
+Combinaciones (lactato de Ringer)
+Soluciones hipertónicas (diálisis peritoneal)
+Bicarbonato de sodio
+Cloruro de potasio
+Cloruro de sodio
+Sulfato de magnesio (heptahidratado)
+Oligoelementos
+Digoxina
+Amiodarona
+Dobutamina
+Dopamina
+Efedrina
+Epinefrina (adrenalina)
+Norepinefrina
+Levosimendán
+Dinitrato de isosorbida
+Mononitrato de isosorbida
+Trinitrato de glicerilo (nitroglicerina)
+Alprostadil
+Adenosina
+Metildopa (levógira)
+Doxazosina
+Hidralazina
+Nitroprusiato sódico
+Clortalidona
+Furosemida
+Espironolactona
+Finerenona
+Polidocanol
+Propranolol
+Atenolol
+Carvedilol
+Labetalol
+Amlodipina
+Nifedipina
+Nimodipina
+Diltiazem
+Enalapril
+Losartán
+Telmisartán + amlodipino
+Atorvastatina
+Simvastatina
+Gemfibrozilo
+Zinc + Nistatina
+Clotrimazol
+Terbinafina
+Griseofulvina
+Terbinafina
+Zinc
+Urea (carbamida)
+Trolamina
+Lidocaína
+Alquitrán de hulla
+Calcipotriol + betametasona dipropionato
+Ácido fusídico
+Sulfadiazina de plata
+Hidrocortisona
+Betametasona
+Adapaleno
+Isotretinoina
+Peróxido de benzoilo
+Clindamicina
+Eritromicina
+Clindamicina
+Clotrimazol
+Metronidazol
+Ergometrina
+Metilergometrina
+Misoprostol
+Cabergolina
+Estradiol valerato + noretisterona enantato
+Levonorgestrel + etinilestradiol
+Levonorgestrel
+Levonorgestrel
+Testosterona
+Estradiol
+Estriol
+Progesterona
+Medroxiprogesterona + estrógenos conjugados
+Clomifeno
+Mifepristona
+Sildenafilo
+Darifenacina
+Tamsulosina
+Dutasterida
+Tirotropina alfa
+Somatropina
+Desmopresina
+Terlipresina
+Vasopresina (Argipresina)
+Oxitocina
+Octreotida
+Fludrocortisona
+Betametasona
+Dexametasona
+Hidrocortisona / Hidrocortisona, succinato sódico
+Metilprednisolona, acetato / Metilprednisolona, succinato
+Prednisolona
+Prednisona
+Levotiroxina sódica
+Tiamazol (metimazol)
+Glucagón
+Paricalcitol
+Doxiciclina
+Tigeciclina
+Amoxicilina
+Ampicilina
+Bencilpenicilina (Penicilina G cristalina)
+Bencilpenicilina benzatínica (Penicilina G benzatínica)
+Dicloxacilina
+Oxacilina
+Amoxicilina + ácido clavulánico
+Ampicilina + sulbactam
+Piperacilina + tazobactam
+Sultamicilina
+Cefalexina
+Cefazolina
+Cefuroxima
+Cefotaxima
+Ceftazidima
+Ceftazidima + avibactam
+Ceftriaxona
+Cefepima
+Imipenem + cilastatina
+Meropenem
+Sulfadiazina
+Cotrimoxazol (Sulfametoxazol + Trimetoprim)
+Azitromicina
+Claritromicina
+Eritromicina
+Espiramicina
+Clindamicina
+Estreptomicina
+Amikacina
+Gentamicina
+Tobramicina
+Ciprofloxacina
+Levofloxacina
+Vancomicina
+Colistina
+Metronidazol
+Nitrofurantoína
+Fosfomicina
+Linezolid
+Anfotericina B
+Fluconazol
+Itraconazol
+Voriconazol
+Caspofungina
+Capreomicina
+Cicloserina
+Rifampicina
+Isoniazida
+Etionamida
+Bedaquilina
+Delamanid
+Etambutol
+Pirazinamida
+Pretomanida
+Etambutol + Isoniazida
+Rifampicina + isoniazida
+Rifampicina + pirazinamida + etambutol + isoniazida
+Rifampicina + pirazinamida + isoniazida
+Clofazimina
+Dapsona
+Aciclovir
+Valganciclovir
+Darunavir
+Ritonavir
+Abacavir
+Lamivudina
+Tenofovir disoproxil fumarato
+Zidovudina
+Efavirenz
+Nevirapina
+Oseltamivir
+Dolutegravir sódico
+Raltegravir
+Glecaprevir + pibrentasvir
+Ledipasvir + sofosbuvir
+Ribavirina
+Sofosbuvir
+Sofosbuvir + velpatasvir
+Sofosbuvir+ velpatasvir + voxilaprevir
+Lamivudina + abacavir
+Lopinavir + ritonavir
+Tenofovir disoproxil fumarato + emtricitabina
+Tenofovir disoproxil fumarato+ emtricitabina + efavirenz
+Zidovudina + lamivudina
+Diftérica antitoxina
+Suero antiofídico polivalente
+Tetánica antitoxina
+Inmunoglobulina humana normal para administración extravascular
+Inmunoglobulina humana normal para administración intravascular
+Inmunoglobulina anti D (rh)
+Inmunoglobulina antihepatitis B
+Inmunoglobulina antirrábica
+Inmunoglobulina antitetánica
+Vacuna antimeningococo
+Toxoide diftérico tetánico + vacuna pertussis (Vacuna triple DPT)
+Vacuna antineumococo (polisacárido y conjugado)
+Toxoide tetánico
+Toxoide tetánico, combinaciones con toxoide diftérico
+Vacuna BCG antituberculosa
+Vacuna de la influenza inactivado y separado, o antígeno superficial
+Vacuna antihepatitis A
+Vacuna antihepatitis B
+Vacuna sarampión, virus vivo atenuado combinado con la vacuna contra la rubéola
+Vacuna triple viral (parotiditis-sarampión- rubéola)
+Vacuna antipoliomielítica (tOPV)
+Vacuna poliomielitis, inactivado, virus entero, trivalente
+Vacuna poliomielitis, virus vivo atenuado, bivalente (bOPV)
+Vacuna antirrábica, virus completo inactivado
+Vacuna antirotavirus, virus vivo atenuado
+Vacuna varicela, virus vivo atenuado
+Vacuna antiamarílica, virus vivo atenuado
+Vacuna pentavalente viral (difteria - haemophilus influenzae B - pertussis - tétanos - hepatitis B )
+Bendamustina
+Ciclofosfamida
+Clorambucilo
+Ifosfamida
+Melfalán
+Dacarbazina
+Temozolomida
+Metotrexato
+Pemetrexed
+Fludarabina
+Mercaptopurina
+Tioguanina
+Azacitidina
+Capecitabina
+Citarabina
+Fluorouracilo
+Gemcitabina
+Vinblastina
+Vincristina
+Vinorelbina
+Etopósido
+Docetaxel
+Paclitaxel
+Irinotecán
+Dactinomicina
+Daunorubicina
+Doxorubicina
+Epirubicina
+Idarubicina
+Mitoxantrona
+Bleomicina
+Mitomicina
+Asciminib
+Imatinib
+Nilotinib
+Afatinib
+Osimertinib
+Vemurafenib
+Alectinib
+Ribociclib
+Everólimus
+Ruxolitinib
+Axitinib
+Ibrutinib
+Lenvatinib
+Sorafenib
+Sunitinib
+Rituximab
+Pertuzumab
+Trastuzumab
+Trastuzumab deruxtecan
+Trastuzumab emtansina
+Cetuximab
+Pembrolizumab
+Bevacizumab
+Blinatumomab
+Carboplatino
+Cisplatino
+Oxaliplatino
+Procarbazina
+Ácido trans-retinoico (Tretinoína)
+Bortezomib
+Olaparib
+Asparaginasa
+Hidroxicarbamida (hidroxiurea)
+Leuprorelina
+Triptorelina
+Fulvestrant
+Tamoxifeno
+Apalutamida
+Bicalutamida
+Darolutamida
+Enzalutamida
+Flutamida
+Exemestano
+Letrozol
+Filgrastim
+Pegfilgrastim
+Interferón alfa 2b
+Interferón beta 1a
+Interferón beta 1b
+Peginterferón alfa 2b
+Vacuna BCG
+Inmunoglobulina antitimocítica (conejo)
+Inmunoglobulina antitimocítica (equina )
+Micofenolato
+Adalimumab
+Etanercept
+Infliximab
+Basiliximab
+Guselkumab
+Secukinumab
+Tocilizumab
+Ciclosporina
+Tacrolimus
+Tofacitinib
+Ocrelizumab
+Ofatumumab
+Vedolizumab
+Everolimus
+Sirolimus
+Leflunomida
+Azatioprina
+Lenalidomida
+Metotrexato
+Pirfenidona
+Talidomida
+Diclofenaco
+Ketorolaco
+Ibuprofeno
+Penicilamina
+Suxametonio
+Bromuro de rocuronio
+Pancuronio
+Toxina botulínica
+Dantroleno
+Alopurinol
+Colchicina
+Ácido alendrónico (alendronato sódico)
+Ácido zoledrónico
+Sevoflurano
+Tiopental sódico
+Fentanilo
+Remifentanilo
+Propofol
+Bupivacaína (sin epinefrina)
+Bupivacaína hiperbárica
+Lidocaína
+Lidocaína con epinefrina
+Codeína
+Hidromorfona
+Morfina
+Oxicodona
+Buprenorfina
+Tapentadol
+Tramadol
+Ácido acetilsalicílico
+Paracetamol
+Fenobarbital
+Fenitoína
+Clonazepam
+Carbamazepina
+Ácido valproico (sal sódica)
+Gabapentina
+Lamotrigina
+Levetiracetam
+Topiramato
+Biperideno
+Levodopa + carbidopa
+Cabergolina
+Selegilina
+Clorpromazina
+Levomepromazina
+Haloperidol
+Quetiapina
+Litio, carbonato
+Paliperidona
+Risperidona
+Alprazolam
+Clobazam
+Diazepam
+Lorazepam
+Hidrato de cloral
+Midazolam
+Dexmedetomidina
+Amitriptilina
+Fluoxetina
+Sertralina
+Cafeína
+Neostigmina
+Piridostigmina
+Disulfiram
+Metadona
+Metronidazol
+Tinidazol
+Cloroquina
+Hidroxicloroquina
+Primaquina
+Quinina
+Pirimetamina
+Artesunato
+Arteméter + lumefantrina
+Benznidazol
+Antimoniato de meglumina
+Miltefosina
+Praziquantel
+Albendazol
+Ivermectina
+Permetrina
+Mometasona
+Epinefrina (adrenalina) racémica
+Indacaterol
+Salbutamol
+Salmeterol + fluticasona
+Beclometasona
+Fluticasona
+Bromuro de ipratropio
+Bromuro de tiotropio
+Aminofilina
+Acetilcisteína
+Dornasa alfa (desoxirribonucleasa)
+Difenhidramina
+Dimenhidrinato
+Loratadina
+Fosfolípidos naturales (surfactante pulmonar)
+Cloranfenicol
+Eritromicina
+Tobramicina
+Aciclovir
+Ciprofloxacina
+Dexametasona
+Fluorometolona
+Prednisolona
+Diclofenaco
+Dexametasona + tobramicina
+Acetazolamida
+Timolol
+Latanoprost
+Atropina
+Tropicamida
+Olopatadina
+Anestésico local oftálmico
+Aflibercept
+Lágrimas artificiales y otros preparados inertes
+Acetilcisteína
+Dimercaprol
+Flumazenil
+Fomepizol
+Hidroxocobalamina (Vitamina B12)
+Naloxona
+Pralidoxima
+Protamina
+Sugammadex
+Deferasirox
+Amifostina
+Dexrazoxano
+Folinato cálcico (leucovorina)
+Mesna
+Fórmulas para nutrición enteral
+Agua para inyección / Agua para irrigación

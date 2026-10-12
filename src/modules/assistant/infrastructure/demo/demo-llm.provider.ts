@@ -7,6 +7,10 @@ import type {
 } from '../../application/llm-client.port';
 import { DRAFT_PURPOSE } from '../../application/note-draft.prompts';
 import {
+  LINES_PURPOSE,
+  MAPPING_PURPOSE,
+} from '../../application/prescription-reading.prompts';
+import {
   CODES_PURPOSE,
   PROBLEMS_PURPOSE,
 } from '../../application/problem-coding.prompts';
@@ -91,6 +95,8 @@ export class DemoLlmProvider implements LlmProvider {
       const codes = (script.codes as Record<string, string[]>)[problem] ?? [];
       return { codes };
     }
+    if (purpose === LINES_PURPOSE) return { lines: linesIn(noteOf(prompt)) };
+    if (purpose === MAPPING_PURPOSE) return { choices: choicesIn(prompt) };
     return {};
   }
 }
@@ -143,4 +149,84 @@ function draftOf(prompt: string): DraftAnswer[] {
     sections.get(home)!.push({ text: script.draft.unsaid.text, source: null });
   }
   return [...sections].map(([section, segments]) => ({ section, segments }));
+}
+
+/** The note of a prompt: what is between <nota> and </nota>, not the lists after it. */
+function noteOf(prompt: string): string {
+  return /<nota>([\s\S]*?)<\/nota>/.exec(prompt)?.[1] ?? prompt;
+}
+
+/**
+ * AS-029, AS-063. The receta of the script: each medicine whose name the
+ * note writes, quoted to the end of its sentence, its fields read from that
+ * sentence with a few plain patterns. Nothing calculated, like the prompt
+ * asks of a model.
+ */
+function linesIn(text: string) {
+  const lower = text.toLowerCase();
+  const seen = new Set<string>();
+  const lines = [];
+  for (const { phrase, drug } of script.medicines) {
+    const at = lower.indexOf(phrase.toLowerCase());
+    if (at < 0 || seen.has(drug)) continue;
+    seen.add(drug);
+    const rest = text.slice(at, at + QUOTE_REACH * 2);
+    const end = rest.search(/[.;\n]/);
+    const quote = (end > 0 ? rest.slice(0, end) : rest).trim();
+    const folded = quote.toLowerCase();
+    const strength = /(\d+(?:[.,]\d+)?)\s*(mg|mcg|g)\b/.exec(folded);
+    const hours = /cada\s+(4|6|8|12)\s+horas/.exec(folded)?.[1];
+    const days = /por\s+(\d+)\s+d[ií]as/.exec(folded)?.[1];
+    const tablets = /\b(una|1|dos|2)\s+tabletas?\b/.exec(folded)?.[1];
+    lines.push({
+      drug,
+      strength: strength ? `${strength[1]} ${strength[2]}` : null,
+      form: /tableta/.test(folded) ? 'TABLET' : null,
+      doseAmount: tablets ? (/(dos|2)/.test(tablets) ? 2 : 1) : null,
+      doseUnit: tablets ? 'TABLET' : null,
+      route: null,
+      frequency: hours
+        ? `EVERY_${hours}_HOURS`
+        : /una vez al d[ií]a|cada d[ií]a/.test(folded)
+          ? 'ONCE_DAILY'
+          : null,
+      frequencyText: null,
+      durationDays: days ? Number(days) : null,
+      instructions: null,
+      quote,
+    });
+  }
+  return lines;
+}
+
+/**
+ * AS-029, AS-064. The script's choice: the first candidate of each line, in
+ * the presentation whose concentration is the one written, else none.
+ */
+function choicesIn(prompt: string) {
+  const written = [
+    ...prompt.matchAll(
+      /^(\d+)\. Medicamento: «[^»]*» · Concentración: «([^»]*)»/gm,
+    ),
+  ];
+  return written.map(([, line, strength]) => {
+    const block =
+      new RegExp(
+        `Para la línea ${line}:\\n([\\s\\S]*?)(?=\\nPara la línea|$)`,
+      ).exec(prompt)?.[1] ?? '';
+    if (!/^\s+1\. /m.test(block)) {
+      return { line: Number(line), medicine: null, presentation: null };
+    }
+    const first = block.split(/\n\s+2\. /)[0] ?? '';
+    const presentations = [...first.matchAll(/^\s+(\d+)\) .* · (.+)$/gm)];
+    const match = presentations.find(
+      ([, , concentration]) =>
+        concentration?.replace(/\s+/g, '') === strength?.replace(/\s+/g, ''),
+    );
+    return {
+      line: Number(line),
+      medicine: 1,
+      presentation: match ? Number(match[1]) : null,
+    };
+  });
 }

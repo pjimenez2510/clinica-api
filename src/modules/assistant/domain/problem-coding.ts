@@ -88,6 +88,8 @@ const escapeRegExp = (text: string) =>
 export function locateQuote(
   quote: string,
   sections: readonly { key: string; text: string }[],
+  /** Words that deny it besides the general ones (the receta's, AS-063). */
+  denials: ReadonlySet<string> = new Set(),
 ): LocatedQuote | null {
   const folded = foldText(quote);
   if (
@@ -101,7 +103,8 @@ export function locateQuote(
     'u',
   );
   for (const section of sections) {
-    for (const sentence of section.text.split(/(?<=[.;!?\n])/)) {
+    // A point between figures is a decimal («2.5 mg»), not a sentence end.
+    for (const sentence of section.text.split(/(?<=[;!?\n]|\.(?!\d))/)) {
       const plain = foldText(sentence);
       const match = whole.exec(plain);
       if (!match) continue;
@@ -110,7 +113,9 @@ export function locateQuote(
         .split(/[^\p{L}\p{N}]+/u)
         .filter(Boolean)
         .slice(-NEGATION_REACH);
-      if (before.some((word) => NEGATIONS.has(word))) return null;
+      if (before.some((word) => NEGATIONS.has(word) || denials.has(word))) {
+        return null;
+      }
       return { section: section.key, sentence: sentence.trim() };
     }
   }
