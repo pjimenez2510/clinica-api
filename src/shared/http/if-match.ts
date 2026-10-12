@@ -41,6 +41,18 @@ export function revisionFrom(header: string | undefined): number {
   return revision;
 }
 
+/** RFC 9457, as `problem-details.filter.ts` writes it; the client reads `code`. */
+const PROBLEM = {
+  type: 'object',
+  required: ['type', 'title', 'status', 'code'],
+  properties: {
+    type: { type: 'string' },
+    title: { type: 'string' },
+    status: { type: 'integer' },
+    code: { type: 'string', enum: ['RECORD_CHANGED', 'REVISION_REQUIRED'] },
+  },
+} satisfies NonNullable<Parameters<typeof ApiHeader>[0]['schema']>;
+
 /** Documents the header in OpenAPI, so the generated client must send it. */
 export function ApiIfMatch(): MethodDecorator {
   return applyDecorators(
@@ -52,10 +64,12 @@ export function ApiIfMatch(): MethodDecorator {
     ApiResponse({
       status: 412,
       description: 'Otra persona cambió esto (`RECORD_CHANGED`).',
+      content: { 'application/problem+json': { schema: PROBLEM } },
     }),
     ApiResponse({
       status: 428,
       description: 'Falta `If-Match` (`REVISION_REQUIRED`).',
+      content: { 'application/problem+json': { schema: PROBLEM } },
     }),
   );
 }

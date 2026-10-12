@@ -8,6 +8,7 @@ import type {
 } from '../application/suggestion.store';
 import { SuggestionNotFoundError } from '../domain/assistant.errors';
 import type {
+  SiteScopeFilter,
   SuggestionDecision,
   SuggestionKind,
   SuggestionRecord,
@@ -58,41 +59,67 @@ export class PrismaSuggestionStore implements SuggestionStore {
   async propose(
     suggestions: readonly NewSuggestion[],
     proposedAt: Date,
+    sites: SiteScopeFilter,
   ): Promise<SuggestionView[]> {
-    const rows = await this.prisma.$transaction(
-      suggestions.map((suggestion) =>
-        this.prisma.aiSuggestion.create({
-          data: {
-            encounterId: suggestion.encounterId,
-            aiRunId: suggestion.aiRunId,
-            kind: suggestion.kind,
-            proposal: suggestion.proposal as Prisma.InputJsonObject,
-            sources: suggestion.sources,
-            proposedAt,
-          },
-          select: SUGGESTION_SELECT,
-        }),
-      ),
-    );
+    const rows = await this.prisma.$transaction(async (tx) => {
+      // Out of scope reads as absent: no telling «exists elsewhere».
+      const encounters = [...new Set(suggestions.map((each) => each.encounterId))]; // prettier-ignore
+      const inScope = await tx.encounter.count({
+        where: { id: { in: encounters }, ...siteFilter(sites) },
+      });
+      if (inScope !== encounters.length) throw new SuggestionNotFoundError();
+      const created: SuggestionRow[] = [];
+      for (const suggestion of suggestions) {
+        created.push(
+          await tx.aiSuggestion.create({
+            data: {
+              encounterId: suggestion.encounterId,
+              aiRunId: suggestion.aiRunId,
+              kind: suggestion.kind,
+              proposal: suggestion.proposal as Prisma.InputJsonObject,
+              sources: suggestion.sources,
+              proposedAt,
+            },
+            select: SUGGESTION_SELECT,
+          }),
+        );
+      }
+      return created;
+    });
     return rows.map(toView);
   }
 
   async decide(
-    suggestionId: string,
+    query: {
+      suggestionId: string;
+      sites: SiteScopeFilter;
+      recordId: string | null;
+    },
     stamp: { decidedBy: string; decidedAt: Date },
-    decide: (suggestion: SuggestionView) => SuggestionDecision,
+    decide: (
+      suggestion: SuggestionView,
+      saved: string | null,
+    ) => SuggestionDecision,
   ): Promise<SuggestionView> {
+    const { suggestionId } = query;
     const row = await this.prisma.$transaction(async (tx) => {
       // AS-023. Two decisions at once queue here; the second reads the first.
       const [locked] = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM "ai_suggestion" WHERE id = ${suggestionId}::uuid FOR UPDATE`;
       if (!locked) throw new SuggestionNotFoundError();
 
-      const current = await tx.aiSuggestion.findUniqueOrThrow({
-        where: { id: suggestionId },
+      const current = await tx.aiSuggestion.findFirst({
+        where: { id: suggestionId, encounter: siteFilter(query.sites) },
         select: SUGGESTION_SELECT,
       });
-      const decision = decide(toView(current));
+      // Out of scope reads as absent: no telling «exists elsewhere».
+      if (!current) throw new SuggestionNotFoundError();
+      const view = toView(current);
+      const saved =
+        query.recordId === null
+          ? null
+          : await savedIn(tx, view, query.recordId);
+      const decision = decide(view, saved);
 
       return tx.aiSuggestion.update({
         where: { id: suggestionId },
@@ -114,15 +141,57 @@ export class PrismaSuggestionStore implements SuggestionStore {
 
   async listOfEncounter(
     encounterId: string,
+    sites: SiteScopeFilter,
     kind?: SuggestionKind,
   ): Promise<SuggestionView[]> {
     const rows = await this.prisma.aiSuggestion.findMany({
-      where: { encounterId, ...(kind ? { kind } : {}) },
+      where: {
+        encounterId,
+        encounter: siteFilter(sites),
+        ...(kind ? { kind } : {}),
+      },
       orderBy: [{ proposedAt: 'asc' }, { id: 'asc' }],
       select: SUGGESTION_SELECT,
     });
     return rows.map(toView);
   }
+}
+
+const siteFilter = (sites: SiteScopeFilter) =>
+  sites === 'all' ? {} : { siteId: { in: [...sites] } };
+
+/**
+ * AS-022. What the linked record holds for the proposed field, read in the
+ * deciding transaction: the note's section (empty when it has none) or the
+ * diagnosis' code. `null` for a line of a receta or an order, which has no
+ * identity of its own yet (D-243 §5). A record that is not there yields `''`,
+ * and the database refuses the link anyway.
+ */
+async function savedIn(
+  tx: Prisma.TransactionClient,
+  suggestion: SuggestionView,
+  recordId: string,
+): Promise<string | null> {
+  if (suggestion.kind === 'note-section') {
+    const note = await tx.clinicalNote.findUnique({
+      where: { id: recordId },
+      select: { content: true },
+    });
+    const section = suggestion.proposal.section;
+    const text =
+      typeof section === 'string'
+        ? (note?.content as Record<string, unknown> | null)?.[section]
+        : undefined;
+    return typeof text === 'string' ? text : '';
+  }
+  if (suggestion.kind === 'diagnosis') {
+    const diagnosis = await tx.encounterDiagnosis.findUnique({
+      where: { id: recordId },
+      select: { cie10Code: true },
+    });
+    return diagnosis?.cie10Code ?? '';
+  }
+  return null;
 }
 
 function toView(row: SuggestionRow): SuggestionView {

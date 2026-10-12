@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { SuggestionAlreadyDecidedError } from './assistant.errors';
 import {
+  SuggestionAlreadyDecidedError,
+  SuggestionInvalidError,
+} from './assistant.errors';
+import {
+  EDIT_DISTANCE_LIMIT,
   decisionOf,
   normalisedEditDistance,
+  validSources,
   type SuggestionView,
 } from './suggestion';
 
@@ -122,6 +127,33 @@ describe('a suggestion of the assistant (AS-021 to AS-023)', () => {
       expect(() =>
         decisionOf(proposed({ status }), { outcome: 'discard' }),
       ).toThrow(SuggestionAlreadyDecidedError);
+    }
+  });
+
+  it('AS-022 past its limit the distance does not compute the matrix: equal is 0, different is 1', () => {
+    const long = 'a'.repeat(EDIT_DISTANCE_LIMIT + 1);
+    expect(normalisedEditDistance(long, long)).toBe(0);
+    expect(normalisedEditDistance(long, `${long}b`)).toBe(1);
+  });
+
+  it('AS-020 a source is a stretch of the conversation or a datum of a known table, nothing else', () => {
+    const id = '0190f0b4-1c2d-7e3f-8a4b-5c6d7e8f9a0b';
+    expect(
+      validSources([
+        { kind: 'transcript', fromMs: 0, toMs: 1_000 },
+        { kind: 'chart', table: 'patient_allergy', id },
+      ]),
+    ).toHaveLength(2);
+    for (const sources of [
+      'minuto 3',
+      [{ kind: 'chart', table: 'app_user', id }],
+      [{ kind: 'chart', table: 'patient_allergy', id: '1; DROP' }],
+      [{ kind: 'transcript', fromMs: 5, toMs: 1 }],
+      [{ kind: 'transcript', fromMs: 0.5, toMs: 1 }],
+      [{ kind: 'transcript', fromMs: 0, toMs: 1, text: 'dicho' }],
+      [null],
+    ]) {
+      expect(() => validSources(sources)).toThrow(SuggestionInvalidError);
     }
   });
 });

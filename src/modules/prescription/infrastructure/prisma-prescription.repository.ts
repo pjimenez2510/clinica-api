@@ -2,7 +2,10 @@ import { admitsPrescribing } from '../domain/prescription';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { assertRevision } from '../../../shared/domain/errors/record-changed.error';
+import {
+  assertRevision,
+  RecordChangedError,
+} from '../../../shared/domain/errors/record-changed.error';
 
 import { chartScopeOfSurvivor } from '../../../shared/infrastructure/prisma/patient-chart-scope';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
@@ -521,7 +524,14 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
        * verification codes.
        */
       const updated = await tx.prescription.updateMany({
-        where: { id: query.prescriptionId, status: 'DRAFT' },
+        // PR-121. And on the revision judged: a writer that skipped the
+        // attention's lock (SQL, an import) does not get its lines issued
+        // unseen.
+        where: {
+          id: query.prescriptionId,
+          status: 'DRAFT',
+          revision: view.revision,
+        },
         data: {
           status: 'ACTIVE',
           issuedAt: plan.issuedAt,
@@ -529,9 +539,9 @@ export class PrismaPrescriptionRepository implements PrescriptionRepository {
         },
       });
       if (updated.count === 0) {
-        throw new PrescriptionNotEditableError(
-          await currentStatus(tx, query.prescriptionId),
-        );
+        const status = await currentStatus(tx, query.prescriptionId);
+        if (status === 'DRAFT') throw new RecordChangedError();
+        throw new PrescriptionNotEditableError(status);
       }
 
       return tx.prescription.findUniqueOrThrow({

@@ -3364,8 +3364,6 @@ model EncounterDiagnosis {
   /// printed the previous one (`encounter_diagnosis_edit_admits`).
   editReason String? @map("edit_reason") @db.VarChar(500)
 
-  aiSuggestions AiSuggestion[]
-
   @@index([encounterId])
   @@index([cie10Code, recordedAt])
   @@map("encounter_diagnosis")
@@ -6263,14 +6261,17 @@ model AiSuggestion {
   /// AS-022. Normalised edit distance between the proposal and what was saved.
   distance    Decimal?  @db.Decimal(5, 4)
 
-  clinicalNoteId       String?             @map("clinical_note_id") @db.Uuid
-  clinicalNote         ClinicalNote?       @relation(fields: [clinicalNoteId], references: [id], onDelete: Restrict)
-  encounterDiagnosisId String?             @map("encounter_diagnosis_id") @db.Uuid
-  encounterDiagnosis   EncounterDiagnosis? @relation(fields: [encounterDiagnosisId], references: [id], onDelete: Restrict)
-  prescriptionId       String?             @map("prescription_id") @db.Uuid
-  prescription         Prescription?       @relation(fields: [prescriptionId], references: [id], onDelete: Restrict)
-  serviceOrderId       String?             @map("service_order_id") @db.Uuid
-  serviceOrder         ServiceOrder?       @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  clinicalNoteId       String?       @map("clinical_note_id") @db.Uuid
+  clinicalNote         ClinicalNote? @relation(fields: [clinicalNoteId], references: [id], onDelete: Restrict)
+  /// No foreign key, on purpose: removing a diagnosis deletes its row and
+  /// keeps the same id in `encounter_diagnosis_retraction` (EN-180). The
+  /// trigger checks it exists, in this attention, when the proposal is
+  /// accepted (D-243 §3).
+  encounterDiagnosisId String?       @map("encounter_diagnosis_id") @db.Uuid
+  prescriptionId       String?       @map("prescription_id") @db.Uuid
+  prescription         Prescription? @relation(fields: [prescriptionId], references: [id], onDelete: Restrict)
+  serviceOrderId       String?       @map("service_order_id") @db.Uuid
+  serviceOrder         ServiceOrder? @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
 
   /// The application's clock, never `now()`.
   proposedAt DateTime  @map("proposed_at") @db.Timestamptz(6)

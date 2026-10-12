@@ -6,9 +6,11 @@ import { describe, expect, it } from 'vitest';
 import { useDatabase } from './setup/database';
 import {
   createEncounter,
+  createIssuedPrescription,
   createPatient,
   createPractitioner,
   createSite,
+  createUser,
 } from './setup/fixtures';
 
 /**
@@ -163,5 +165,48 @@ describe('draft revision (record revision)', () => {
       data: { status: 'DRAFT', discardedAt: null, discardedById: null },
     });
     expect(await revisionOf(prisma, 'service_order', draft.id)).toBe(4);
+  });
+
+  it('PR-122 an issued receta keeps its revision when it is annulled: the freezing trigger sees the row unchanged', async () => {
+    const prisma = db();
+    const { encounter, practitionerId } = await anEncounter(prisma);
+    const issued = await createIssuedPrescription(prisma, {
+      encounterId: encounter.id,
+      prescriberId: practitionerId,
+      siteId: encounter.siteId,
+    });
+    const revision = await revisionOf(prisma, 'prescription', issued.id);
+
+    await prisma.prescription.update({
+      where: { id: issued.id },
+      data: {
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        cancelledById: (await createUser(prisma)).id,
+        cancelReason: 'Pérdida',
+      },
+    });
+    expect(await revisionOf(prisma, 'prescription', issued.id)).toBe(revision);
+  });
+
+  it('EN-283 a signed note keeps its revision when an amendment supersedes it', async () => {
+    const prisma = db();
+    const note = await aDraftNote(prisma);
+    await prisma.clinicalNote.update({
+      where: { id: note.id },
+      data: {
+        status: 'SIGNED',
+        signedById: note.authorId,
+        signedAt: new Date(),
+        contentHash: 'a'.repeat(64),
+      },
+    });
+    const revision = await revisionOf(prisma, 'clinical_note', note.id);
+
+    await prisma.clinicalNote.update({
+      where: { id: note.id },
+      data: { status: 'SUPERSEDED' },
+    });
+    expect(await revisionOf(prisma, 'clinical_note', note.id)).toBe(revision);
   });
 });

@@ -1,4 +1,7 @@
-import { SuggestionAlreadyDecidedError } from './assistant.errors';
+import {
+  SuggestionAlreadyDecidedError,
+  SuggestionInvalidError,
+} from './assistant.errors';
 
 /**
  * AS-020 to AS-024. A proposal of the assistant and what whoever received it
@@ -21,6 +24,60 @@ export type SuggestionStatus =
 export type SuggestionSource =
   | { kind: 'transcript'; fromMs: number; toMs: number }
   | { kind: 'chart'; table: string; id: string };
+
+/** The caller's resolved site scope, never a site they named. */
+export type SiteScopeFilter = 'all' | readonly string[];
+
+/**
+ * AS-020. The tables a chart source may name: what the chart shows. A closed
+ * list, so a source never names an arbitrary table — whoever resolves one to
+ * point at it (phase B/C) reads it with the patient's scope, never by
+ * interpolating `table`.
+ */
+export const CHART_SOURCE_TABLES = [
+  'patient_allergy',
+  'patient_history',
+  'encounter_vitals',
+  'encounter_diagnosis',
+  'clinical_note',
+  'prescription',
+  'service_order',
+  'observation_result',
+] as const;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * AS-020. The sources as the assistant sent them, checked one by one:
+ * a stretch of the conversation (`fromMs ≤ toMs`, whole non-negative
+ * milliseconds) or a datum of the chart (a known table and a uuid).
+ */
+export function validSources(sources: unknown): SuggestionSource[] {
+  if (!Array.isArray(sources)) throw new SuggestionInvalidError('sources');
+  return sources.map((source: unknown) => {
+    const each = (source ?? {}) as Record<string, unknown>;
+    if (
+      each.kind === 'transcript' &&
+      Number.isSafeInteger(each.fromMs) &&
+      Number.isSafeInteger(each.toMs) &&
+      (each.fromMs as number) >= 0 &&
+      (each.fromMs as number) <= (each.toMs as number) &&
+      Object.keys(each).length === 3
+    ) {
+      return { kind: 'transcript', fromMs: each.fromMs as number, toMs: each.toMs as number }; // prettier-ignore
+    }
+    if (
+      each.kind === 'chart' &&
+      (CHART_SOURCE_TABLES as readonly unknown[]).includes(each.table) &&
+      typeof each.id === 'string' &&
+      UUID.test(each.id) &&
+      Object.keys(each).length === 3
+    ) {
+      return { kind: 'chart', table: each.table as string, id: each.id };
+    }
+    throw new SuggestionInvalidError('source');
+  });
+}
 
 /** The record an accepted proposal became, by the table that holds it. */
 export interface SuggestionRecord {
@@ -46,7 +103,9 @@ export interface SuggestionView {
 
 /**
  * What the doctor did. `saved` is what was finally written for the field:
- * the text of the section or line, or the CIE-10 code of the diagnosis.
+ * the text of the section or line, or the CIE-10 code of the diagnosis —
+ * READ FROM THE RECORD by the adapter for a section and a diagnosis (AS-022),
+ * so a caller cannot make a changed one look «tal cual».
  */
 export type SuggestionVerdict =
   | { outcome: 'accept'; recordId: string; saved: string }
@@ -110,13 +169,20 @@ function proposedCodes(proposal: Readonly<Record<string, unknown>>): string[] {
 }
 
 /**
+ * Past this length the quadratic comparison would hold the event loop for
+ * seconds; a section that long is either the same text (0) or not (1).
+ */
+export const EDIT_DISTANCE_LIMIT = 4_000;
+
+/**
  * AS-022. Levenshtein distance divided by the length of the longer text,
  * rounded to the four decimals the column keeps — and never rounded down to 0
  * when the texts differ, which would turn «con cambios» into «tal cual».
  */
 export function normalisedEditDistance(a: string, b: string): number {
+  if (a === b) return 0;
   const longer = Math.max(a.length, b.length);
-  if (longer === 0) return 0;
+  if (longer > EDIT_DISTANCE_LIMIT) return 1;
   let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i += 1) {
     const current = [i];

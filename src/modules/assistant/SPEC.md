@@ -299,10 +299,18 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   en `ai_suggestion` con su atención, el intento de `ai_run` que lo produjo,
   su clase (`note-section`, `diagnosis`, `prescription-item`, `order-item`),
   lo propuesto, sus fuentes y el instante del reloj de la aplicación, en
-  estado `PROPOSED`. SI las fuentes no son una lista, o lo propuesto no es un
-  objeto, la base DEBERÁ rechazarlo.
+  estado `PROPOSED`. SI las fuentes no son una lista de lugares conocidos —un
+  tramo de la conversación (`fromMs ≤ toMs`) o un dato de la ficha en una
+  tabla de la lista cerrada, con su uuid—, el sistema DEBERÁ rechazarlo con
+  `SUGGESTION_INVALID` sin guardar ninguna; SI lo propuesto no es un objeto, o
+  el intento no es uno que respondió (`ok`) en ESA atención, la base DEBERÁ
+  rechazarlo. Una atención fuera del alcance de sedes de quien llama no
+  existe para él (`SUGGESTION_NOT_FOUND`).
   > P2: cada frase dice de dónde sale. La fuente es una lista y no un texto
-  > para que la pantalla la pueda señalar (minuto, dato de la ficha).
+  > para que la pantalla la pueda señalar (minuto, dato de la ficha). Quien la
+  > resuelva para señalarla (fase B/C) la lee con el alcance del paciente y
+  > nunca interpola `table`. El intento de otra atención llevaría «de dónde
+  > salió» a la conversación de otro paciente (revisión del 11-10-2026).
 - **AS-021** — CUANDO quien decide acepte una propuesta —tal cual
   (`ACCEPTED`) o con cambios (`ACCEPTED_WITH_CHANGES`)—, el sistema DEBERÁ
   enlazarla a **un** registro guardado del tipo de su clase (nota,
@@ -310,13 +318,18 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   Una propuesta `PROPOSED` o `DISCARDED` NO DEBERÁ enlazar a ninguno. La base
   DEBERÁ rechazar cualquier otra combinación, un registro de otra atención, y
   quién sin cuándo o cuándo sin quién.
-  > Un FK por destino y no un par tipo+id: así la base garantiza que el
+  > Una columna por destino y no un par tipo+id: así la base garantiza que el
   > registro existe. «De la misma atención» cierra el enlace a la nota de
-  > otro paciente.
+  > otro paciente. El diagnóstico va SIN clave foránea: quitarlo lo borra y
+  > guarda el mismo id en su retiro (EN-180); el disparador comprueba que
+  > existe al aceptar, y después el id lleva a su retiro (D-243 §3).
 - **AS-022** — La distancia DEBERÁ ser 0 en una aceptada tal cual, mayor que
   0 y como mucho 1 en una aceptada con cambios, y nula en una propuesta o
   descartada; la DEBERÁ calcular el sistema, no quien llama, comparando lo
-  propuesto con lo guardado.
+  propuesto con lo que el registro enlazado guarda —la sección de la nota, el
+  código del diagnóstico—, leído en la misma transacción que decide. Sólo una
+  línea de receta u orden, que aún no tiene identidad propia, toma lo
+  guardado de quien llama (D-243 §5).
   > Es lo que la fase F mide: cuánto corrige el médico lo que el modelo
   > escribe. Si la distancia es 0, la aceptación es «tal cual» aunque quien
   > llame diga «con cambios».
@@ -343,7 +356,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_NOT_CONFIGURED`           | `ExternalServiceError` | 502       | La cadena está vacía (AS-006)                                                |
 | `ASSISTANT_PROVIDER_FAILED`          | `ExternalServiceError` | 503 / 502 | Ningún proveedor respondió (reintentable, AS-007) o el modelo falló (AS-008) |
 | `SUGGESTION_ALREADY_DECIDED`         | `ConflictError`        | 409       | La propuesta ya se aceptó o se descartó (AS-023)                             |
-| `SUGGESTION_NOT_FOUND`               | `NotFoundError`        | 404       | La propuesta que se decide no existe (AS-023)                                |
+| `SUGGESTION_NOT_FOUND`               | `NotFoundError`        | 404       | La propuesta, o su atención, no existe o está fuera del alcance (AS-021)     |
+| `SUGGESTION_INVALID`                 | `ValidationError`      | 422       | Fuentes que no son un lugar conocido, o aceptar sin nada guardado (AS-020)   |
 | `ASSISTANT_SPENDING_CEILING_REACHED` | `QuotaExceededError`   | 429       | El techo del mes no admite el intento, o no hay techo (AS-017)               |
 
 ## Niveles de prueba
