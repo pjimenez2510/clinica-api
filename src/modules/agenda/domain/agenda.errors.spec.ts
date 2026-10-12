@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogue';
 import {
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+  WallClockTime,
+} from '../../../shared/domain/clinic-time';
+import {
   BusinessRuleViolation,
   ConflictError,
   ForbiddenError,
@@ -23,6 +29,7 @@ import {
   InvalidBookingChannelError,
   InvalidSlotDurationError,
   BoardNoteNeedsAPatientError,
+  BoardNoteNotTodayError,
   BoardViewRoleNotFoundError,
   NoShowUndoExpiredError,
   AppointmentFromWaitlistError,
@@ -241,6 +248,15 @@ describe('the transition errors (E2)', () => {
     expect(error.code).toBe('BOARD_NOTE_NEEDS_A_PATIENT');
     expect(error).toBeInstanceOf(ConflictError); // 409
     expect(error.userTitle).toContain('no de un bloqueo');
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AG-184 BOARD_NOTE_NOT_TODAY is a 409 that says where the note can go', () => {
+    const error = new BoardNoteNotTodayError();
+
+    expect(error.code).toBe('BOARD_NOTE_NOT_TODAY');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toContain('citas de hoy');
     expect(DOMAIN_ERROR_CODES).toContain(error.code);
   });
 
@@ -507,6 +523,23 @@ describe('the booking window errors (AG-031 to AG-033)', () => {
 
     expect(error.fieldErrors?.[0]?.message).toContain('y 2 más');
     expect(error.params.blockingCount).toBe(7);
+  });
+
+  it('AG-038 gives each hour its day when the appointments fall on more than one day', () => {
+    // A week of leave: «08:00, 09:00» would not say of which day.
+    const today = clinicalDateOf(new Date());
+    const error = new BlockOverlapsAppointmentsError([
+      { id: 'entry-a', startsAt: atWallClock(today, WallClockTime.parse('08:00')) }, // prettier-ignore
+      { id: 'entry-b', startsAt: atWallClock(addDays(today, 1), WallClockTime.parse('09:00')) }, // prettier-ignore
+    ]);
+
+    const message = error.fieldErrors?.[0]?.message ?? '';
+    const [, first, second] =
+      /^Hay 2 citas dentro de ese intervalo: (\S+ \d{2}\/\d{2}) 08:00, (\S+ \d{2}\/\d{2}) 09:00$/.exec(message) ?? []; // prettier-ignore
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(first).not.toBe(second);
+    expect(first).toContain(`${today.slice(8, 10)}/${today.slice(5, 7)}`);
   });
 
   it('AG-038 says «una cita» in the singular', () => {

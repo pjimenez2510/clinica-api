@@ -22,7 +22,12 @@ import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/ro
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaClinicalNoteRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-note.repository';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
-import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
+import {
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+  WallClockTime,
+} from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
 import {
@@ -598,6 +603,117 @@ describe('las transiciones de estado de la cita por HTTP', () => {
    * LIBERAR Y NO BORRAR, por lo mismo que AG-050 en la reprogramación: la
    * fila es la prueba de que ese intervalo estuvo cerrado.
    */
+  /**
+   * AG-186, AG-038 (D-207 §8). Leave of several days: ONE block from the
+   * first day at 00:00 to the day after the last, and its refusal naming the
+   * appointments of any site with their day.
+   */
+  describe('el bloqueo de varios días (AG-186)', () => {
+    /** Monday of the week after the file's clock, in Guayaquil. */
+    const nextMonday = addDays(clinicalDateOf(ON_THE_DAY), 7);
+    const midnight = (offsetDays: number) =>
+      atWallClock(
+        addDays(nextMonday, offsetDays),
+        WallClockTime.parse('00:00'),
+      );
+    const slotsOn = async (from: number, to: number) =>
+      (
+        (
+          await request(app.getHttpServer())
+            .get(
+              `/api/v1/agenda/sites/${siteId}/availability?practitionerId=${practitionerId}&from=${addDays(nextMonday, from)}&to=${addDays(nextMonday, to)}`,
+            )
+            .set('Authorization', `Bearer ${token}`)
+            .expect(200)
+        ).body as { slots: { startsAt: string }[] }
+      ).slots.map((slot) => clinicalDateOf(new Date(slot.startsAt)));
+
+    beforeEach(async () => {
+      // Tuesday to Saturday too (Monday is the file's rule).
+      for (const weekday of [2, 3, 4, 5, 6]) {
+        await createScheduleRule(
+          prisma,
+          { practitionerId, siteId },
+          { weekday, startTime: '08:00', endTime: '12:00' },
+        );
+      }
+    });
+
+    it('AG-186 un solo bloqueo de lunes a viernes quita los cupos de los cinco días, deja el sábado, y se quita y se deshace entero', async () => {
+      // Control: before the block, the six days offer slots.
+      expect(new Set(await slotsOn(0, 5)).size).toBe(6);
+
+      const created = await block({
+        startsAt: midnight(0).toISOString(),
+        endsAt: midnight(5).toISOString(),
+        reason: 'Vacaciones',
+      }).expect(201);
+      const blockId = (created.body as EntryBody).id;
+
+      expect(new Set(await slotsOn(0, 5))).toEqual(
+        new Set([addDays(nextMonday, 5)]),
+      );
+      expect(
+        await prisma.agendaEntry.count({
+          where: { practitionerId, kind: 'BLOCK' },
+        }),
+      ).toBe(1);
+
+      await releaseBlock(blockId).expect(200);
+      expect(new Set(await slotsOn(0, 5)).size).toBe(6);
+      await restoreBlock(blockId).expect(200);
+      expect(new Set(await slotsOn(0, 5))).toEqual(
+        new Set([addDays(nextMonday, 5)]),
+      );
+    });
+
+    it('AG-038 la semana con citas en dos sedes se rechaza enumerándolas con su día, sin nombrar la otra sede', async () => {
+      await linkPractitionerToSite(prisma, practitionerId, otherSiteId);
+      await createScheduleRule(
+        prisma,
+        { practitionerId, siteId: otherSiteId },
+        { weekday: 3, startTime: '14:00', endTime: '18:00' },
+      );
+      const monday = atWallClock(nextMonday, WallClockTime.parse('08:00'));
+      await bookedEntry({
+        startsAt: monday.toISOString(),
+        endsAt: new Date(monday.getTime() + 20 * 60_000).toISOString(),
+      });
+      const wednesday = atWallClock(
+        addDays(nextMonday, 2),
+        WallClockTime.parse('15:00'),
+      );
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          siteId: otherSiteId,
+          practitionerId,
+          patientId: (await createPatient(prisma)).id,
+          startsAt: wednesday,
+          endsAt: new Date(wednesday.getTime() + 20 * 60_000),
+          status: 'BOOKED',
+          bookingChannel: 'PHONE',
+        },
+      });
+
+      const refused = await block({
+        startsAt: midnight(0).toISOString(),
+        endsAt: midnight(5).toISOString(),
+      }).expect(409);
+
+      const problem = refused.body as Problem;
+      expect(problem.code).toBe('BLOCK_OVERLAPS_APPOINTMENTS');
+      const message = problem.errors?.[0]?.message ?? '';
+      expect(message).toMatch(/^Hay 2 citas dentro de ese intervalo: \S+ \d{2}\/\d{2} 08:00, \S+ \d{2}\/\d{2} 15:00$/); // prettier-ignore
+      expect(message).not.toContain('Sede Sur');
+      // Control: a block of Thursday and Friday, with nothing inside, passes.
+      await block({
+        startsAt: midnight(3).toISOString(),
+        endsAt: midnight(5).toISOString(),
+      }).expect(201);
+    });
+  });
+
   describe('deshacer un bloqueo', () => {
     it('AG-114 libera el intervalo: el cupo vuelve a ser reservable y la fila sigue ahí', async () => {
       const blocked = await block().expect(201);
@@ -1459,6 +1575,262 @@ describe('las transiciones de estado de la cita por HTTP', () => {
           where: { agendaEntryId: entryId },
         }),
       ).toBe(1);
+    });
+
+    /** Another practitioner of the clinic, with a rule of their own. */
+    async function colleague(rule: {
+      site: string;
+      weekday?: number;
+      startTime: string;
+      endTime: string;
+      validTo?: Date;
+    }): Promise<{ id: string; userId: string }> {
+      const other = await createPractitioner(prisma);
+      await linkPractitionerToSite(prisma, other.id, rule.site);
+      await createScheduleRule(
+        prisma,
+        { practitionerId: other.id, siteId: rule.site },
+        {
+          weekday: rule.weekday ?? 1,
+          startTime: rule.startTime,
+          endTime: rule.endTime,
+          ...(rule.validTo ? { validTo: rule.validTo } : {}),
+        },
+      );
+      return other;
+    }
+
+    it('AG-129 avisa además a quien tiene horario en la sede en ese instante, y no a quien lo tiene a otra hora, en otra sede o con un bloqueo encima', async () => {
+      const doctor = await prisma.practitioner.findUniqueOrThrow({
+        where: { id: practitionerId },
+      });
+      // The file's clock is Monday 11:20 in Guayaquil.
+      const onDuty = await colleague({ site: siteId, startTime: '08:00', endTime: '12:00' }); // prettier-ignore
+      const afternoon = await colleague({ site: siteId, startTime: '14:00', endTime: '18:00' }); // prettier-ignore
+      const elsewhere = await colleague({ site: otherSiteId, startTime: '08:00', endTime: '12:00' }); // prettier-ignore
+      // The same rule as `onDuty`: the block over the instant is the only
+      // difference, which is what makes `onDuty` this case's control.
+      const onLeave = await colleague({ site: siteId, startTime: '08:00', endTime: '12:00' }); // prettier-ignore
+      // Another weekday, and a rule that ended yesterday (Guayaquil).
+      const tuesdays = await colleague({ site: siteId, weekday: 2, startTime: '08:00', endTime: '12:00' }); // prettier-ignore
+      const expired = await colleague({
+        site: siteId,
+        startTime: '08:00',
+        endTime: '12:00',
+        validTo: new Date(
+          `${addDays(clinicalDateOf(ON_THE_DAY), -1)}T00:00:00Z`,
+        ),
+      });
+      await block({
+        practitionerId: onLeave.id,
+        startsAt: new Date(ON_THE_DAY.getTime() - 60 * 60_000).toISOString(),
+        endsAt: new Date(ON_THE_DAY.getTime() + 60 * 60_000).toISOString(),
+      }).expect(201);
+
+      const entryId = await bookedEntry();
+      await transition(entryId, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+
+      const alerts = await prisma.agendaEmergencyAlert.findMany({
+        where: { agendaEntryId: entryId },
+      });
+      expect(alerts.map((alert) => alert.recipientId).sort()).toEqual(
+        [doctor.userId, onDuty.userId].sort(),
+      );
+      // One instant for all of them: the arrival's.
+      expect(new Set(alerts.map((alert) => alert.alertedAt.getTime())).size).toBe(1); // prettier-ignore
+      // AG-183 (G1): both were on duty here.
+      expect(alerts.every((alert) => alert.onDuty)).toBe(true);
+      for (const absent of [afternoon, elsewhere, onLeave, tuesdays, expired]) {
+        expect(alerts.some((alert) => alert.recipientId === absent.userId)).toBe(false); // prettier-ignore
+      }
+    });
+
+    it('AG-129 sin nadie con horario en la sede a esa hora, el aviso va sólo al profesional de la cita', async () => {
+      const doctor = await prisma.practitioner.findUniqueOrThrow({
+        where: { id: practitionerId },
+      });
+      const entryId = await bookedEntry();
+      // Booked inside the rule; the rule then stops being in force.
+      await prisma.practitionerScheduleRule.updateMany({
+        where: { practitionerId },
+        data: { active: false },
+      });
+      await colleague({ site: siteId, startTime: '14:00', endTime: '18:00' });
+
+      await transition(entryId, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+
+      const alerts = await prisma.agendaEmergencyAlert.findMany({
+        where: { agendaEntryId: entryId },
+      });
+      expect(alerts.map((alert) => alert.recipientId)).toEqual([doctor.userId]);
+      // AG-183 (G1): told, but not on duty at the site.
+      expect(alerts[0]?.onDuty).toBe(false);
+    });
+
+    it('AG-173 la llegada en emergencia sobre la cita de mañana la mueve a hoy en el mismo acto, sin calendario y con su versión, aunque el profesional tenga otra cita a esa hora', async () => {
+      // Tuesday 6 January, 08:00 in Guayaquil: the day after the file's clock.
+      await createScheduleRule(
+        prisma,
+        { practitionerId, siteId },
+        { weekday: 2, startTime: '08:00', endTime: '12:00' },
+      );
+      const tomorrow = new Date(Date.parse(PAST_SLOT.startsAt) + 24 * 60 * 60_000); // prettier-ignore
+      const entryId = await bookedEntry({
+        startsAt: tomorrow.toISOString(),
+        endsAt: new Date(tomorrow.getTime() + 20 * 60_000).toISOString(),
+      });
+      // The doctor is busy right now, on the calendar.
+      const other = await createPatient(prisma);
+      await bookedEntry({
+        patientId: other.id,
+        startsAt: ON_THE_DAY.toISOString(),
+        endsAt: new Date(ON_THE_DAY.getTime() + 20 * 60_000).toISOString(),
+      });
+
+      // Control: an ordinary arrival on it is still refused, and moves nothing.
+      const refused = await transition(entryId, { to: 'CHECKED_IN', emergency: false }).expect(409); // prettier-ignore
+      expect((refused.body as Problem).code).toBe('ARRIVAL_NOT_ON_APPOINTMENT_DAY'); // prettier-ignore
+
+      const response = await transition(entryId, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      const body = response.body as {
+        status: string;
+        startsAt: string;
+        endsAt: string;
+        blocksCalendar: boolean;
+        emergencyMovedAt: string | null;
+      };
+      expect(body).toMatchObject({
+        status: 'CHECKED_IN',
+        startsAt: ON_THE_DAY.toISOString(),
+        endsAt: new Date(ON_THE_DAY.getTime() + 20 * 60_000).toISOString(),
+        blocksCalendar: false,
+        emergencyMovedAt: ON_THE_DAY.toISOString(),
+      });
+
+      const stored = await prisma.agendaEntry.findUniqueOrThrow({
+        where: { id: entryId },
+      });
+      expect(stored.overbookingAuthorisedById).toBeNull();
+      expect(stored.editedById).toBe(userId);
+      expect(stored.emergencyFlaggedAt).toEqual(ON_THE_DAY);
+      // AG-051: the row as it was —tomorrow, on the calendar— is the version.
+      const versions = await prisma.recordVersion.findMany({
+        where: { resourceType: 'agenda_entry', resourceId: entryId },
+      });
+      expect(versions).toHaveLength(1);
+      expect(versions[0]?.data).toMatchObject({ starts_at: tomorrow.toISOString().replace('.000Z', '+00:00'), blocks_calendar: true }); // prettier-ignore
+      // AG-129 in the same transaction.
+      expect(
+        await prisma.agendaEmergencyAlert.count({ where: { agendaEntryId: entryId } }), // prettier-ignore
+      ).toBe(1);
+    });
+
+    it('AG-173 la base sólo admite una cita sin calendario y sin autorizador cuando la movió una emergencia', async () => {
+      const entryId = await bookedEntry();
+      await expect(
+        prisma.$executeRaw`
+          UPDATE agenda_entry
+             SET blocks_calendar = false, edited_by_id = ${userId}::uuid, edited_at = ${new Date(ON_THE_DAY.getTime() + 1000)}
+           WHERE id = ${entryId}::uuid`,
+      ).rejects.toThrow(/agenda_entry_overbooking_coherence/);
+      // Control positivo: el mismo UPDATE con `emergency_moved_at`, sí.
+      await prisma.$executeRaw`
+        UPDATE agenda_entry
+           SET blocks_calendar = false, emergency_moved_at = ${ON_THE_DAY}, edited_by_id = ${userId}::uuid, edited_at = ${new Date(ON_THE_DAY.getTime() + 2000)}
+         WHERE id = ${entryId}::uuid`;
+      // And a calendar row can never carry the mark.
+      await expect(
+        prisma.$executeRaw`
+          UPDATE agenda_entry
+             SET blocks_calendar = true, edited_by_id = ${userId}::uuid, edited_at = ${new Date(ON_THE_DAY.getTime() + 3000)}
+           WHERE id = ${entryId}::uuid`,
+      ).rejects.toThrow(/agenda_entry_overbooking_coherence/);
+    });
+
+    it('AG-175 la banda no trae el aviso de una emergencia corregida a «no» con el paciente aún en sala', async () => {
+      const corrected = await bookedEntry();
+      const still = await bookedEntry({
+        startsAt: PAST_SLOT.endsAt,
+        endsAt: new Date(Date.parse(PAST_SLOT.endsAt) + 20 * 60_000).toISOString(), // prettier-ignore
+      });
+      await transition(corrected, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      await transition(still, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      await request(app.getHttpServer())
+        .patch(`/api/v1/agenda/sites/${siteId}/entries/${corrected}/emergency`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ emergency: false })
+        .expect(200);
+      const doctorToken = await signInAsThePractitioner();
+
+      const items = ((await mine(doctorToken).expect(200)).body as { items: { agendaEntryId: string }[] }).items; // prettier-ignore
+      // Control positivo: la que sigue calificada, sí.
+      expect(items.map((item) => item.agendaEntryId)).toEqual([still]);
+    });
+
+    it('AG-173 la cita movida por emergencia no gasta el tope de sobrecupos del día (AG-100)', async () => {
+      await createScheduleRule(
+        prisma,
+        { practitionerId, siteId },
+        { weekday: 2, startTime: '08:00', endTime: '12:00' },
+      );
+      await prisma.siteParameter.update({
+        where: { siteId },
+        data: { overbookingCap: 1 },
+      });
+      const tomorrow = new Date(Date.parse(PAST_SLOT.startsAt) + 24 * 60 * 60_000); // prettier-ignore
+      const moved = await bookedEntry({
+        startsAt: tomorrow.toISOString(),
+        endsAt: new Date(tomorrow.getTime() + 20 * 60_000).toISOString(),
+      });
+      await transition(moved, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+
+      // The one overbooking of the day still fits: the moved one did not count.
+      const authoriser = await prisma.user.create({
+        data: { email: `autoriza-${Date.now()}@clinica.ec`, firstName: 'Iván', lastName: 'Mora', passwordHash: 'not-a-real-hash' }, // prettier-ignore
+      });
+      const medico = await prisma.role.findUniqueOrThrow({ where: { code: 'MEDICO' } }); // prettier-ignore
+      await prisma.userRoleGrant.create({ data: { userId: authoriser.id, roleId: medico.id, siteId } }); // prettier-ignore
+      registry.invalidate();
+      const other = await createPatient(prisma);
+      const overbook = () =>
+        book({
+          patientId: other.id,
+          overbooking: true,
+          overbookingAuthorisedById: authoriser.id,
+          overbookingReason: 'Urgencia',
+        });
+      await overbook().expect(201);
+      // Control: the cap is real — a second one is refused.
+      const third = await createPatient(prisma);
+      const refused = await book({
+        patientId: third.id,
+        startsAt: PAST_SLOT.endsAt,
+        endsAt: new Date(Date.parse(PAST_SLOT.endsAt) + 20 * 60_000).toISOString(), // prettier-ignore
+        overbooking: true,
+        overbookingAuthorisedById: authoriser.id,
+        overbookingReason: 'Urgencia',
+      }).expect(409);
+      expect((refused.body as Problem).code).toBe('OVERBOOKING_LIMIT_REACHED');
+    });
+
+    it('AG-175 la banda no trae el aviso de una cita que ya salió de la sala; el detalle sigue diciendo a quién se avisó', async () => {
+      const waiting = await bookedEntry();
+      const gone = await bookedEntry({
+        startsAt: PAST_SLOT.endsAt,
+        endsAt: new Date(Date.parse(PAST_SLOT.endsAt) + 20 * 60_000).toISOString(), // prettier-ignore
+      });
+      await transition(waiting, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      await transition(gone, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      const cancelled = await transition(gone, { to: 'CANCELLED' }).expect(200);
+      const doctorToken = await signInAsThePractitioner();
+
+      const items = ((await mine(doctorToken).expect(200)).body as { items: { agendaEntryId: string }[] }).items; // prettier-ignore
+      // Control positivo: la que sigue en sala, sí.
+      expect(items.map((item) => item.agendaEntryId)).toEqual([waiting]);
+      expect(
+        (cancelled.body as { entry?: { emergencyAlerts: unknown[] }; emergencyAlerts?: unknown[] }).entry?.emergencyAlerts ?? // prettier-ignore
+          (cancelled.body as { emergencyAlerts: unknown[] }).emergencyAlerts,
+      ).toHaveLength(1);
     });
   });
 

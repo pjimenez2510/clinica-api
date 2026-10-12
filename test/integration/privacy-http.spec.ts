@@ -1315,6 +1315,57 @@ describe('privacy por HTTP', () => {
       expect(JSON.stringify(document)).not.toMatch(/sexualOrientation/);
     });
 
+    it('PD-076 la exportación lleva la nota vigente del tablero de cada cita suya, sin quién la escribió, y no la de otra persona', async () => {
+      const patient = await createPatient(prisma);
+      const stranger = await createPatient(prisma);
+      const site = await createSite(prisma);
+      const practitioner = await createPractitioner(prisma);
+      const writer = await createUser(prisma);
+      const startsAt = new Date();
+      const writtenAt = new Date(startsAt.getTime() - 5 * 60_000);
+      const appointment = (
+        patientId: string,
+        offsetMinutes: number,
+        note: string,
+      ) =>
+        prisma.agendaEntry.create({
+          data: {
+            kind: 'APPOINTMENT',
+            siteId: site.id,
+            practitionerId: practitioner.id,
+            patientId,
+            startsAt: new Date(startsAt.getTime() + offsetMinutes * 60_000),
+            endsAt: new Date(
+              startsAt.getTime() + (offsetMinutes + 20) * 60_000,
+            ),
+            status: 'BOOKED',
+            bookingChannel: 'PHONE',
+            boardNote: note,
+            boardNoteById: writer.id,
+            boardNoteAt: writtenAt,
+          },
+        });
+      await appointment(patient.id, 0, 'Espera a su hija');
+      // Control: the other person's note is on the same board, and stays there.
+      await appointment(stranger.id, 30, 'Viene en silla de ruedas');
+      const access = await requestFor(patient.id, 'ACCESS');
+
+      const response = await get(`/requests/${access.id}/export`).expect(200);
+      const document = response.body as {
+        boardNotes: Record<string, unknown>[];
+      };
+
+      expect(document.boardNotes).toEqual([
+        {
+          chart: patient.mrn,
+          appointmentStartsAt: startsAt.toISOString(),
+          note: 'Espera a su hija',
+          writtenAt: writtenAt.toISOString(),
+        },
+      ]);
+      expect(JSON.stringify(document)).not.toContain('silla de ruedas');
+    });
+
     it('PD-040 PD-043 una solicitud registrada en una ficha que luego se fusiona exporta la superviviente, con los documentos que la fusión le pasó', async () => {
       const { survivor, absorbed } = await mergedPair();
       await prisma.patientIdentifier.create({

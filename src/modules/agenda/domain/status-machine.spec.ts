@@ -18,6 +18,7 @@ import type { AgendaEntryStatus, TransitionRead } from './agenda.repository';
 import {
   type AgendaTransitionTarget,
   assertArrivalOnAppointmentDay,
+  planArrivalDay,
   assertNoShowNotBeforeStart,
   assertTransition,
   effectsOf,
@@ -216,6 +217,78 @@ describe('AG-173 the arrival belongs to the appointment day', () => {
   });
 });
 
+/**
+ * AG-173 enmendado (D-170 §5). An arrival called an emergency on another
+ * day's appointment moves it to today instead of being refused.
+ */
+describe('AG-173 the emergency moves the appointment of another day to today', () => {
+  const today = clinicalDateOf(new Date());
+  const at = (date: typeof today, hhmm: string) =>
+    atWallClock(date, WallClockTime.parse(hhmm));
+  const userId = 'user-1';
+
+  it("AG-173 moves tomorrow's appointment to the minute of the arrival, keeping its length, off the calendar and stamped", () => {
+    const startsAt = at(addDays(today, 1), '09:00');
+    const endsAt = new Date(startsAt.getTime() + 30 * 60_000);
+    // 10:07:42 — the move starts on the minute, not on the second.
+    const now = new Date(at(today, '10:07').getTime() + 42_000);
+
+    const move = planArrivalDay({ startsAt, endsAt }, now, true, userId);
+
+    expect(move).toEqual({
+      startsAt: at(today, '10:07'),
+      endsAt: at(today, '10:37'),
+      blocksCalendar: false,
+      overbookingAuthorisedById: null,
+      overbookingReason: null,
+      emergencyMovedAt: now,
+      editedById: userId,
+      editedAt: now,
+    });
+  });
+
+  it("AG-173 moves yesterday's appointment too, and moves nothing on the appointment day", () => {
+    const now = at(today, '10:00');
+    const yesterday = at(addDays(today, -1), '18:00');
+    expect(
+      planArrivalDay(
+        {
+          startsAt: yesterday,
+          endsAt: new Date(yesterday.getTime() + 20 * 60_000),
+        },
+        now,
+        true,
+        userId,
+      )?.startsAt,
+    ).toEqual(now);
+    // Control: today's appointment, even called an emergency, stays put.
+    const sameDay = at(today, '08:00');
+    expect(
+      planArrivalDay(
+        {
+          startsAt: sameDay,
+          endsAt: new Date(sameDay.getTime() + 20 * 60_000),
+        },
+        now,
+        true,
+        userId,
+      ),
+    ).toBeNull();
+  });
+
+  it('AG-173 still refuses an ordinary arrival on another day', () => {
+    const startsAt = at(addDays(today, 1), '09:00');
+    expect(() =>
+      planArrivalDay(
+        { startsAt, endsAt: new Date(startsAt.getTime() + 20 * 60_000) },
+        at(today, '10:00'),
+        false,
+        userId,
+      ),
+    ).toThrow(ArrivalNotOnAppointmentDayError);
+  });
+});
+
 describe('the effects of each arrival', () => {
   const now = new Date('2026-09-14T13:05:00Z');
 
@@ -289,6 +362,7 @@ describe('deshacer un bloqueo (AG-114)', () => {
     kind: 'BLOCK',
     status: 'BLOCKED',
     startsAt: new Date('2026-09-14T13:00:00Z'),
+    endsAt: new Date(now.getTime() + 15 * 60_000),
     releasedAt: null,
     noShowAt: null,
     checkedInAt: null,
@@ -335,6 +409,7 @@ describe('volver a cerrar un bloqueo quitado (AG-154)', () => {
     kind: 'BLOCK',
     status: 'CANCELLED',
     startsAt: new Date(),
+    endsAt: new Date(),
     releasedAt: new Date(),
     noShowAt: null,
     checkedInAt: null,
@@ -378,6 +453,7 @@ describe('la atención manda sobre la cita (AG-045, AG-148)', () => {
     kind: 'APPOINTMENT',
     status: 'CHECKED_IN',
     startsAt: now,
+    endsAt: now,
     releasedAt: null,
     noShowAt: null,
     checkedInAt: null,

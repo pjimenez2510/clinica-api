@@ -59,6 +59,8 @@ interface StaffRow {
   stateSince: string | null;
   minutesInState: number | null;
   latenessMinutes: number | null;
+  emergencyNeedsInPersonNotice: boolean;
+  boardNoteEditable: boolean;
 }
 
 interface StaffBoard {
@@ -749,6 +751,174 @@ describe('el tablero del día por HTTP (E9)', () => {
 
       await put(`/agenda/sites/${siteId}/entries/${entry.id}/board-note`, nurseToken, { boardNote: 'x'.repeat(120) }).expect(200); // prettier-ignore
       await put(`/agenda/sites/${siteId}/entries/${entry.id}/board-note`, nurseToken, { boardNote: 'x'.repeat(121) }).expect(422); // prettier-ignore
+    });
+  });
+
+  describe('AG-184 AG-185 la nota sólo hoy, con bitácora y sin versión', () => {
+    it('AG-184 en una cita de ayer o cerrada se rechaza con BOARD_NOTE_NOT_TODAY sin escribir nada; hoy y abierta, sí', async () => {
+      const open = await appointment(9 * 60, { status: 'CHECKED_IN' });
+      const yesterday = await appointment(9 * 60 - 24 * 60, { boardNote: 'Antigua' }); // prettier-ignore
+      const closed = await appointment(8 * 60, { status: 'NO_SHOW' });
+
+      // Control positivo: la de hoy, abierta, por la misma ruta.
+      await put(`/agenda/sites/${siteId}/entries/${open.id}/board-note`, nurseToken, { boardNote: 'Pasa a curación' }).expect(200); // prettier-ignore
+
+      for (const entry of [yesterday, closed]) {
+        const refused = await put(`/agenda/sites/${siteId}/entries/${entry.id}/board-note`, nurseToken, { boardNote: 'Tarde' }).expect(409); // prettier-ignore
+        expect((refused.body as Problem).code).toBe('BOARD_NOTE_NOT_TODAY');
+        const after = await prisma.agendaEntry.findUniqueOrThrow({ where: { id: entry.id } }); // prettier-ignore
+        expect(after.boardNote).toBe(entry.boardNote);
+        expect(after.boardNoteAt).toBeNull();
+        expect(await prisma.accessAudit.count({ where: { resourceId: entry.id } })).toBe(0); // prettier-ignore
+      }
+
+      // The board says, row by row, where the field may be offered.
+      const board = (await get(`/agenda/sites/${siteId}/board?date=${today}`, receptionToken).expect(200)).body as StaffBoard; // prettier-ignore
+      const editable = Object.fromEntries(board.items.map((row) => [row.id, row.boardNoteEditable])); // prettier-ignore
+      expect(editable[open.id]).toBe(true);
+      expect(editable[closed.id]).toBe(false);
+    });
+
+    it('AG-185 cada escritura deja una fila de bitácora sin el contenido, también al vaciarla', async () => {
+      const entry = await appointment(9 * 60);
+
+      await put(`/agenda/sites/${siteId}/entries/${entry.id}/board-note`, nurseToken, { boardNote: 'Espera a su hija' }).expect(200); // prettier-ignore
+      await put(`/agenda/sites/${siteId}/entries/${entry.id}/board-note`, receptionToken, { boardNote: '' }).expect(200); // prettier-ignore
+
+      const trail = await prisma.accessAudit.findMany({
+        where: {
+          resourceType: 'agenda_entry_board_note',
+          resourceId: entry.id,
+        },
+        orderBy: { id: 'asc' },
+      });
+      expect(trail).toHaveLength(2);
+      expect(trail.map((row) => row.action)).toEqual(['UPDATE', 'UPDATE']);
+      expect(trail[0]?.userId).not.toBe(trail[1]?.userId);
+      // Without the content: nothing in the row repeats what was written.
+      expect(JSON.stringify(trail, (_, value: unknown) => (typeof value === 'bigint' ? value.toString() : value))).not.toContain('hija'); // prettier-ignore
+    });
+
+    it('AG-185 corregir el paciente vacía la nota y deja también su fila de bitácora', async () => {
+      const entry = await appointment(9 * 60);
+      await put(`/agenda/sites/${siteId}/entries/${entry.id}/board-note`, nurseToken, { boardNote: 'Espera a su hija' }).expect(200); // prettier-ignore
+      const other = await createPatient(prisma);
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/agenda/sites/${siteId}/entries/${entry.id}`)
+        .set('Authorization', `Bearer ${receptionToken}`)
+        .send({ patientId: other.id })
+        .expect(200);
+
+      const after = await prisma.agendaEntry.findUniqueOrThrow({ where: { id: entry.id } }); // prettier-ignore
+      expect(after.boardNote).toBeNull();
+      // One row for the nurse's note, one for the clearing by the correction.
+      expect(
+        await prisma.accessAudit.count({
+          where: {
+            resourceType: 'agenda_entry_board_note',
+            resourceId: entry.id,
+          },
+        }),
+      ).toBe(2);
+    });
+
+    it('AG-185 la versión que archiva una edición de la cita no lleva la nota, y sí su sello', async () => {
+      const entry = await appointment(9 * 60);
+      await put(`/agenda/sites/${siteId}/entries/${entry.id}/board-note`, nurseToken, { boardNote: 'Espera a su hija' }).expect(200); // prettier-ignore
+      const editor = await createUser(prisma);
+
+      // An edit of the appointment (AG-051): the hour moves, stamped.
+      await prisma.agendaEntry.update({
+        where: { id: entry.id },
+        data: {
+          startsAt: at(10 * 60),
+          endsAt: at(10 * 60 + 20),
+          editedById: editor.id,
+          editedAt: new Date(),
+        },
+      });
+
+      const versions = await prisma.recordVersion.findMany({
+        where: { resourceType: 'agenda_entry', resourceId: entry.id },
+      });
+      expect(versions).toHaveLength(1);
+      const data = versions[0]!.data as Record<string, unknown>;
+      // Control: the version IS the row as it was.
+      expect(data.starts_at).toBeDefined();
+      expect(data.board_note_at).not.toBeNull();
+      expect(Object.keys(data)).not.toContain('board_note');
+    });
+  });
+
+  describe('AG-183 la emergencia sin «Enterado» a los 2 minutos', () => {
+    /** An emergency in the waiting room, with one notice `alertedMinutesAgo`. */
+    async function emergency(
+      minutes: number,
+      alertedMinutesAgo: number,
+      acknowledged = false,
+      /** AG-183 (G1). Extra notice to someone NOT on duty here, acknowledged. */
+      offDutySaw = false,
+    ) {
+      const entry = await appointment(minutes, { status: 'CHECKED_IN' });
+      const flaggedAt = new Date(Date.now() - (alertedMinutesAgo + 1) * MINUTE);
+      const assessor = await createUser(prisma);
+      await prisma.agendaEntry.update({
+        where: { id: entry.id },
+        data: {
+          emergencyAssessedAt: flaggedAt,
+          emergencyAssessedById: assessor.id,
+          emergencyFlaggedAt: flaggedAt,
+          emergencyFlaggedById: assessor.id,
+          // Correcting the call is stamped (AG-132).
+          editedById: assessor.id,
+          editedAt: flaggedAt,
+        },
+      });
+      const recipient = await createUser(prisma);
+      const alertedAt = new Date(Date.now() - alertedMinutesAgo * MINUTE);
+      await prisma.agendaEmergencyAlert.create({
+        data: {
+          agendaEntryId: entry.id,
+          siteId,
+          recipientId: recipient.id,
+          raisedById: assessor.id,
+          alertedAt,
+          acknowledgedAt: acknowledged ? alertedAt : null,
+          onDuty: true,
+        },
+      });
+      if (offDutySaw) {
+        const elsewhere = await createUser(prisma);
+        await prisma.agendaEmergencyAlert.create({
+          data: {
+            agendaEntryId: entry.id,
+            siteId,
+            recipientId: elsewhere.id,
+            raisedById: assessor.id,
+            alertedAt,
+            acknowledgedAt: alertedAt,
+            onDuty: false,
+          },
+        });
+      }
+      return entry;
+    }
+
+    it('AG-183 el tablero marca la fila pasados 2 minutos sin «Enterado», no antes, y no si alguien lo marcó', async () => {
+      const overdue = await emergency(9 * 60, 3);
+      const recent = await emergency(10 * 60, 1);
+      const seen = await emergency(11 * 60, 3, true);
+      // G1: only someone not on duty here saw it — the mark stays.
+      const seenElsewhere = await emergency(12 * 60, 3, false, true);
+
+      const board = (await get(`/agenda/sites/${siteId}/board?date=${today}`, receptionToken).expect(200)).body as StaffBoard; // prettier-ignore
+      const mark = Object.fromEntries(board.items.map((row) => [row.id, row.emergencyNeedsInPersonNotice])); // prettier-ignore
+
+      expect(mark[overdue.id]).toBe(true);
+      expect(mark[recent.id]).toBe(false);
+      expect(mark[seen.id]).toBe(false);
+      expect(mark[seenElsewhere.id]).toBe(true);
     });
   });
 

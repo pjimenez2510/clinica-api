@@ -158,6 +158,7 @@ function anEntry(overrides: Partial<AgendaEntryView> = {}): AgendaEntryView {
     rescheduledToId: null,
     attention: null,
     lateAdmission: null,
+    emergencyMovedAt: null,
     emergencyAlerts: [],
     ...overrides,
   };
@@ -234,6 +235,7 @@ function aTransitionRead(
     kind: 'APPOINTMENT',
     status: 'BOOKED',
     startsAt: EIGHT,
+    endsAt: new Date(EIGHT.getTime() + 20 * 60_000),
     releasedAt: null,
     noShowAt: null,
     checkedInAt: null,

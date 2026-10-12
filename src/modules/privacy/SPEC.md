@@ -142,11 +142,12 @@ inter-operable y de lectura mecánica», y el art. 13 que el acceso se atienda.
 que salen los documentos de las dos, que la bitácora tiene la fila `EXPORT`, y
 que si esa fila no se puede escribir no sale nada; y que al responder la
 solicitud de acceso el texto llega propuesto con lo que el archivo no lleva.
-**Cubre:** PD-040 a PD-043, PD-049, PD-050.
+**Cubre:** PD-040 a PD-043, PD-049, PD-050, PD-076.
 
-**Solo servidor:** PD-043, PD-050. Que la exportación escriba la bitácora, y
-la frase de `appointments` y `billing` en `omitted` (la pantalla ya dice
-«vigentes»).
+**Solo servidor:** PD-043, PD-050, PD-076. Que la exportación escriba la
+bitácora, la frase de `appointments` y `billing` en `omitted` (la pantalla ya
+dice «vigentes»), y la nota del tablero dentro del JSON que se descarga
+(ninguna pantalla lo lee: el archivo es la entrega).
 
 ### D5 — Corregir sin borrar (D-127, D-128.8, D-128.9, D-131.1) _(P1)_
 
@@ -418,6 +419,20 @@ la fila de bitácora.
   > dice que salen recortadas: se dice así, que es lo que el archivo lleva de
   > verdad, en condicional: depende de que en esa ficha se haya corregido
   > algo. A confirmar por el autor (D-166.1).
+- **PD-076** — La exportación DEBERÁ llevar en `boardNotes` la nota corta
+  vigente del tablero (AG-176) de cada cita de las fichas de la persona que la
+  tenga —el texto, la hora de la cita y cuándo se escribió—, y NO DEBERÁ
+  llevar quién la escribió ni las notas ya borradas o reemplazadas.
+  > **D-176 §3b (D-223, 10-10-2026, `feat/d223-agenda-recepcion`). Confirmar
+  > con el asesor legal antes de usarlo con pacientes reales.** La nota es
+  > dato personal del paciente («espera a su hija») y el derecho de acceso
+  > (LOPDP art. 13) la alcanza; antes salía fuera, como el motivo de consulta.
+  > La vigente y no las anteriores, porque el sistema no las guarda (AG-185):
+  > la bitácora dice que se escribió, no qué. Sin quién la escribió, por lo
+  > mismo que la versión de la cita: lo que se le debe al titular es lo que se
+  > dijo de él, y el nombre del personal está en la bitácora de la clínica.
+  > Es un campo nuevo del mismo formato v3: quien lee v3 sin conocerlo no
+  > pierde nada.
 
 ## 5. Corregir sin borrar (D-126, D-127)
 
@@ -877,6 +892,7 @@ La copia de la historia la compone `documents`: `GET /v1/documents/data-requests
 | PD-032 (regla de vencimiento)          | Unitaria, sobre la función pura con feriados de entrada; integración para que se guarde |
 | PD-003, PD-005, PD-038, PD-071, PD-072 | Integración contra PostgreSQL, con control positivo                                     |
 | PD-046, PD-047, PD-048                 | Integración contra PostgreSQL con control positivo, y HTTP                              |
+| PD-076                                 | Integración contra PostgreSQL: la nota vigente sale y la de otra persona no (control)   |
 | PD-006, PD-037, PD-043, PD-074         | Integración: la fila de bitácora existe, y sin ella no se escribe ni se entrega nada    |
 | El resto                               | Integración HTTP con sesión real; y en pantalla, F-01 y F-08                            |
 

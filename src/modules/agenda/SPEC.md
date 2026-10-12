@@ -167,7 +167,8 @@ comprobar que el cupo original quedó libre y ambas entradas se referencian.
 **Por qué es P3:** son la vía documentada para romper la regla; sin ellos el
 personal la rompe por fuera del sistema. **Cubre:** AG-035 a AG-039, AG-100,
 AG-101, AG-103, AG-114, AG-151, AG-152, **AG-154** —quitar un bloqueo sin
-confirmación y con «Deshacer» (D-126, `fix/menos-preguntas`)—.
+confirmación y con «Deshacer» (D-126, `fix/menos-preguntas`)— y **AG-186**
+—el bloqueo de varios días (D-207 §8, `feat/d223-agenda-recepcion`)—.
 **Solo servidor:** AG-152. El diálogo de bloqueo ya enumera lo que el servidor
 devuelve con `BLOCK_OVERLAPS_APPOINTMENTS` (AG-038); AG-152 añade el sobrecupo
 a esa lista y la pantalla no cambia.
@@ -366,7 +367,7 @@ porque se actúa sobre él.
 subió** y que el recuento propio sí; y registrar una llegada sin calificación de
 emergencia y comprobar que se rechaza.
 **Cubre:** AG-116 a AG-120, AG-128 a AG-132, AG-140, AG-141, AG-142,
-AG-173 a AG-175.
+AG-173 a AG-175, AG-183.
 
 **Solo servidor:** AG-132, AG-140. La inmutabilidad del registro de la
 calificación son dos disparadores de PostgreSQL, por la misma razón que AG-005;
@@ -400,9 +401,9 @@ estado de paciente pasó a `IN_PREPARATION` **sin que nadie lo teclee**, que el
 tablero lo ordena por hora de la cita, que el tiempo en el estado actual lo
 calcula el servidor, y que la proyección `PUBLIC` de esa misma fila no lleva
 nombre completo ni nota corta.
-**Cubre:** AG-121 a AG-127, AG-133 a AG-139, AG-176, AG-177.
+**Cubre:** AG-121 a AG-127, AG-133 a AG-139, AG-176, AG-177, AG-184, AG-185.
 
-**Solo servidor:** AG-122, AG-123, AG-126, AG-139. Que un estado NO se pueda teclear se
+**Solo servidor:** AG-122, AG-123, AG-126, AG-139, AG-185. Que un estado NO se pueda teclear se
 demuestra por la ausencia de ruta —una pantalla no puede enseñar un botón que no
 existe—; que la espera entre pasos no tenga estado propio es que el servidor no
 lo cambia, y la pantalla sólo repite el estado y los minutos que recibe; el
@@ -1085,6 +1086,15 @@ es falsa, hay requisitos que cambian.
   > `INSERT`; lo que no puede es dejar pasar el solapamiento, porque entonces
   > responde la base con `PRACTITIONER_SLOT_TAKEN`. Esta comprobación mejora el
   > mensaje, no sustituye al control.
+  >
+  > **Enmendado el 11-10-2026 (D-207 §8, D-223, `feat/d223-agenda-recepcion`).**
+  > El sistema DEBERÁ enumerar las citas que ocupan calendario del profesional
+  > **en cualquier sede** —sin nombrar la otra (AG-107)—, porque el `EXCLUDE`
+  > por profesional no mira la sede y unas vacaciones las pisan todas; antes
+  > sólo enumeraba las de la sede del bloqueo y las de otra salían como un
+  > `PRACTITIONER_SLOT_TAKEN` sin horas. Y CUANDO esas citas caigan en más de un
+  > día de Guayaquil, cada hora DEBERÁ ir con su día («lun 12/10 08:00»): en una
+  > semana de vacaciones, «08:00, 09:00» no dice de qué día.
 - **AG-039** — MIENTRAS la sede tenga el sobrecupo deshabilitado (AG-094), el
   sistema NO DEBERÁ admitir ninguna entrada con `blocks_calendar = false` y
   DEBERÁ rechazarla con `OVERBOOKING_NOT_ALLOWED`.
@@ -1217,6 +1227,30 @@ es falsa, hay requisitos que cambian.
   > **D-085 §7 (01-10-2026), el camino inverso de D-069.** Un sobrecupo no
   > ocupa calendario, así que el `EXCLUDE` no lo ve: las vacaciones puestas
   > después caían encima de un paciente que viene igual.
+- **AG-186** — CUANDO se bloquee la agenda de un profesional por días enteros
+  —desde un día hasta otro de `America/Guayaquil`, ambos incluidos—, el sistema
+  DEBERÁ cerrarlos con **un solo** bloqueo, de las 00:00 del primer día a las
+  00:00 del día siguiente al último, con las garantías de AG-037, AG-038 y
+  AG-152, y DEBERÁ quitarlo y deshacerlo como uno (AG-114, AG-154); y la
+  pantalla DEBERÁ ofrecer ese rango («Varios días») sin pedir horas ni
+  consultorio, y mostrarlo en cada día que cubre.
+  > **D-207 §8 (D-223, 10-10-2026): priorizar los bloqueos.** Es lo primero que
+  > pide un consultorio —vacaciones, congreso, baja— y hasta ahora sólo se
+  > podía bloquear un día con sus horas: una semana eran cinco bloqueos a mano,
+  > y quitarla, cinco deshacer.
+  >
+  > **Una fila y no una por día**, porque es un solo hecho: quitar las
+  > vacaciones es un clic (AG-114) y «Deshacer» las devuelve enteras (AG-154).
+  > La base ya lo admitía —un bloqueo es un intervalo y los `EXCLUDE` no miran
+  > su duración—, el listado del día y la disponibilidad leen por solape
+  > (AG-017) y la semana reparte la fila en cada día que toca (AG-178); lo que
+  > faltaba era poder pedirlo. Las noches y el domingo quedan dentro: no ofrecen
+  > cupo de todos modos, y partir el bloqueo por horario lo rompería el día que
+  > el horario cambie.
+  >
+  > **Sin consultorio**, porque una ausencia es de la persona: un bloqueo de
+  > varios días que se llevara el consultorio lo dejaría cerrado para quien lo
+  > cubre. Editar uno de varios días cambia sus días (AG-164).
 
 ## 5. Estados de la cita
 
@@ -1454,6 +1488,30 @@ convertiría la ruta en un oráculo de identificadores (AG-071).
   > se registra ahí. El mensaje lo dice. El día es el de la clínica, nunca el de
   > la sesión (AG-001): una cita de las 19:30 de Guayaquil es del mismo día
   > aunque en UTC ya sea mañana.
+  >
+  > **Enmendado el 11-10-2026 (D-170 §5, D-223, `feat/d223-agenda-recepcion`).**
+  > SI la llegada sobre la cita de otro día se califica como emergencia
+  > (AG-128), ENTONCES el sistema NO DEBERÁ rechazarla: DEBERÁ mover **la
+  > misma** cita a hoy —empieza en el minuto de la llegada, con su duración, su
+  > profesional y su consultorio—, sin ocupar calendario y sin autorización de
+  > sobrecupo (`agenda_entry.emergency_moved_at`), guardando la fila anterior en
+  > `record_version` con el sello de edición (AG-051), y DEBERÁ hacerlo en la
+  > misma transacción que la llegada, la calificación y el aviso (AG-129). La
+  > pantalla DEBERÁ ofrecer sobre esa cita «Llegada en emergencia», con la
+  > calificación ya en «sí» y diciendo que la cita pasa a hoy; la llegada no
+  > calificada como emergencia sigue rechazada.
+  > Mientras se busca hueco no consta la calificación que pide el art. 10, y
+  > el sobrecupo que hacía falta no lo puede autorizar recepción. **Sin ocupar
+  > calendario** porque un paciente en emergencia se recibe aunque el
+  > profesional tenga a otro a esa hora (art. 8), y ocupándolo el `EXCLUDE`
+  > lo rechazaría justo entonces. **No es un sobrecupo**: no cuenta en su tope
+  > (AG-100), no pide autorizador (AG-101) y no se rechaza con el sobrecupo
+  > apagado (AG-039); `agenda_entry_overbooking_coherence` admite la fila sin
+  > calendario y sin autorizador **sólo** con `emergency_moved_at`. La
+  > corrección posterior de la calificación a «no» (AG-132) no lo deshace: la
+  > cita se movió porque así se calificó, y la versión lo cuenta. Ni la
+  > ventana, ni la antelación, ni el horario ni el feriado se comprueban
+  > (AG-115): la ley no espera al horario.
 - **AG-120** — MIENTRAS el retraso de llegada de una cita supere el umbral de la
   sede y quien solicita la transición no tenga el permiso que la sede configura
   para admitirla (AG-142), el sistema DEBERÁ rechazar el paso a `IN_PROGRESS`
@@ -1857,6 +1915,21 @@ reclame, esa fila es la diferencia entre un incidente y una imputación penal.
   > «Se avisó a…» a una cuenta que no puede verla es el aviso que no existió.
   > Qué pasa si nadie marca «Enterado», y que el aviso en pantalla no sustituye
   > el traspaso en persona, es D-170.4.
+  >
+  > **Enmendado el 11-10-2026 (D-170 §1, D-223, `feat/d223-agenda-recepcion`).**
+  > «El profesional de turno» DEBERÁ ser el profesional de la cita **y** cada
+  > profesional con horario en la sede en el instante del aviso —con una regla
+  > de horario activa de esa sede, vigente ese día de Guayaquil, de ese día de
+  > la semana y cuya franja contiene la hora de Guayaquil del aviso, y sin un
+  > bloqueo suyo vigente que cubra ese instante—, con una fila por destinatario
+  > y ninguno repetido; SI ninguno tiene horario, ENTONCES el aviso DEBERÁ ir al
+  > de la cita. A una cuenta desactivada no se le escribe.
+  > Sale de las reglas de horario que ya existen: una lista de «responsables
+  > de emergencias» por sede falla el día que nadie la mantiene. El instante
+  > es el del reloj de la aplicación, el mismo de la llegada (nunca `now()` de
+  > PostgreSQL). **Los feriados no se descuentan**: quien tiene horario un
+  > feriado y recibe el aviso sin estar es avisar de más, y avisar de más es
+  > el lado seguro; las vacaciones sí, porque son un bloqueo suyo (AG-186).
 - **AG-130** — La calificación de emergencia NO DEBERÁ admitir grados ni
   niveles, NO DEBERÁ alterar por sí sola el orden de la agenda ni la prioridad
   de la lista de espera, y NO DEBERÁ exigir ningún permiso distinto del que
@@ -1961,6 +2034,42 @@ reclame, esa fila es la diferencia entre un incidente y una imputación penal.
   > propios es `agenda:read`, que tiene todo profesional agendable. **No se
   > filtran por sede**: el aviso es de la cuenta, y un médico que atiende en
   > una sede donde su rol no está concedido no vería el que se le mandó.
+  >
+  > **Enmendado el 11-10-2026 (D-170 §6, D-223, `feat/d223-agenda-recepcion`).**
+  > La banda DEBERÁ enseñar sólo los avisos de citas aún `CHECKED_IN` o
+  > `IN_PROGRESS` y todavía calificadas como emergencia; los demás sin
+  > «Enterado» —una cita ya cerrada, una corregida a «no», la de ayer— NO
+  > DEBERÁN salir en ella, y la salida de la cita o la corrección DEBERÁN
+  > avisar a esos destinatarios en el acto (AG-182),
+  > y el detalle de la cita DEBERÁ seguir diciendo a quién se avisó y si lo
+  > vio. Un aviso que ya no pide acción y no se va enseña a ignorar la banda.
+- **AG-183** — MIENTRAS una cita esté `CHECKED_IN` con la llegada calificada
+  como emergencia (AG-128) y ninguno de sus avisos (AG-129) a quien tenía
+  horario en la sede al recibirlo (`agenda_emergency_alert.on_duty`) esté
+  marcado «Enterado» —o no se escribió ninguno—, pasados **2 minutos** desde el primer
+  aviso —o, sin aviso, desde la calificación—, el tablero del día DEBERÁ marcar
+  esa fila para avisar en persona, con el reloj de la aplicación; y la
+  pantalla de llegada DEBERÁ decir, junto a quién se avisó, que el aviso en
+  pantalla no sustituye avisar en persona.
+  > **D-170 §4 (D-223, 10-10-2026).** Si el médico no tiene la aplicación
+  > abierta, nadie se entera: el aviso se queda rojo en una pantalla que nadie
+  > mira. La Ley 77 (art. 8) exige el traspaso en persona, y quien puede
+  > hacerlo es el mostrador, que mira el tablero todo el día.
+  >
+  > **Basta un «Enterado» de alguien con horario en la sede**: ése ya lo sabe
+  > y está ahí. El del profesional de la cita que no tiene horario en la sede
+  > (trabaja en otra, está de vacaciones) no cuenta: el aviso le llega, pero
+  > no es el traspaso en persona (revisión clínica G1; qué «Enterado» basta es
+  > D-242). El «Enterado» avisa al tablero de su sede en el acto (AG-182), y
+  > la pantalla enciende la marca sola al cumplirse el plazo, con su reloj
+  > corregido al del servidor: con el canal en vivo abierto nada relee el
+  > tablero sólo porque pasa el tiempo. **Sólo en sala**: en `IN_PROGRESS` ya lo atiende un
+  > profesional, y después no queda a quién llevarlo (AG-174). Los 2 minutos
+  > son la decisión, no un parámetro (§10): un aviso cuyo plazo se puede alargar
+  > es el que el día del incidente estaba en diez. El servidor calcula la
+  > marca en cada lectura (`emergencyNeedsInPersonNotice`), como el tiempo en
+  > el estado (AG-135), y el tablero se refresca solo (AG-180). El procedimiento
+  > escrito de la clínica va en su guía, no en la pantalla.
 
 ## 5 quater. El tablero del día
 
@@ -2162,6 +2271,40 @@ pasó de hora.
   >
   > **Corregir el paciente de la cita la vacía** (AG-162): la nota era de la
   > otra persona. Se sella con quien corrigió la cita.
+  >
+  > **Enmendado el 11-10-2026 (D-176 §3b y §3c, D-223,
+  > `feat/d223-agenda-recepcion`):** sólo en citas de hoy y abiertas (AG-184),
+  > fuera del archivado de versiones y con su fila en la bitácora (AG-185), y
+  > en la exportación al titular (PD-076).
+- **AG-184** — SI se escribe la nota corta de una cita cuyo día en
+  `America/Guayaquil` no es el de hoy, o que está cerrada —`FULFILLED`,
+  `CANCELLED`, `NO_SHOW`, `LEFT_WITHOUT_BEING_SEEN` o `ENTERED_IN_ERROR`—,
+  ENTONCES el sistema DEBERÁ rechazarlo con `BOARD_NOTE_NOT_TODAY` (409) sin
+  escribir nada; el tablero DEBERÁ decir en cada fila si su nota se puede
+  escribir (`boardNoteEditable`), y la pantalla NO DEBERÁ ofrecer el campo
+  donde no.
+  > **D-176 §3c (D-223, 10-10-2026).** La nota es para el tablero del día
+  > («pasa a curación»); escrita en una cita de hace meses o en una ya cerrada
+  > no la lee nadie con quien sirva, y es texto libre sobre una persona que
+  > se queda. Hoy y abierta se deciden con el reloj de la aplicación y el día
+  > de Guayaquil (AG-001), en el servidor; la pantalla sólo repite lo que él
+  > dice en la fila.
+- **AG-185** — CUANDO se escriba la nota corta (AG-176) —también para
+  vaciarla, y también cuando la vacía corregir el paciente de la cita
+  (AG-162)—, el sistema DEBERÁ dejar una fila en `access_audit` con quién,
+  cuándo y la cita, **sin el contenido**, en la misma transacción que la
+  escritura; y la versión que archiva una edición de la cita (AG-051) NO
+  DEBERÁ llevar la nota.
+  > **D-176 §3b (D-223, 10-10-2026). Confirmar con el asesor legal antes de
+  > usarlo con pacientes reales.** Antes, escribirla no dejaba rastro —el
+  > sello sólo dice quién escribió la última, no quién escribió lo que otro
+  > borró— y una edición de la cita guardaba la nota vigente en
+  > `record_version` para siempre. La bitácora contesta «quién escribió en la
+  > nota de esta cita» sin guardar lo escrito; la versión deja de conservar un
+  > texto libre que nadie pidió conservar (minimización). Las versiones ya
+  > archivadas pierden la nota en la misma migración. El sello de la nota
+  > (`board_note_by_id`, `board_note_at`) sí sigue en la versión: no es
+  > contenido.
 
 ## 6. Reprogramación
 
@@ -2922,6 +3065,7 @@ Entran en `shared/domain/errors/error-catalogue.ts` (regla de ADR-008 §1):
 | `APPOINTMENT_FROM_WAITLIST`            | 409    | AG-063, AG-162 |
 | `WAITLIST_NO_CONTACT_ATTEMPT`          | 409    | AG-064         |
 | `BOARD_NOTE_NEEDS_A_PATIENT`           | 409    | AG-176         |
+| `BOARD_NOTE_NOT_TODAY`                 | 409    | AG-184         |
 | `BOARD_VIEW_ROLE_NOT_FOUND`            | 404    | AG-138         |
 | `WAITLIST_CONTACT_OF_ANOTHER`          | 403    | AG-064         |
 | `WAITLIST_CONTACT_CHANGED`             | 409    | AG-064         |
@@ -3175,6 +3319,11 @@ falla si un requisito no tiene prueba o si una prueba cita un ID inexistente.
 | AG-146 a AG-149                                 | Integración contra PostgreSQL real con control positivo: la cita y la atención se mueven en la misma transacción y la fila de historial existe; una prueba reproduce la captura del autor                        |
 | AG-150                                          | Contrato HTTP + prueba de interfaz: el menú de una cita con atención viva no ofrece lo que AG-045 rechaza                                                                                                        |
 | AG-151                                          | Integración contra PostgreSQL real: los cuatro casos rechazados y, como control positivo, el sobrecupo encima de una cita de la misma sede admitido                                                              |
+| AG-129 (enmendado), AG-183                      | Integración contra PostgreSQL real con el reloj de la aplicación inyectado: avisa a quien tiene horario en la sede a esa hora y no a quien lo tiene en otra sede, a otra hora o con un bloqueo encima (control positivo: el mismo profesional sin bloqueo sí); sin nadie con horario, al de la cita; la marca del tablero aparece a los 2 min y no a 1 min 59 s, y se va con un «Enterado» + unitario de dominio |
+| AG-173 (enmendado)                              | Integración contra PostgreSQL real: la cita de mañana calificada como emergencia queda hoy, sin calendario y sin autorizador, con su versión en `record_version`, aunque el profesional tenga otra cita a esa hora; `agenda_entry_overbooking_coherence` sigue rechazando la fila sin calendario, sin autorizador y sin `emergency_moved_at` (control) + unitario de dominio |
+| AG-175 (enmendado)                              | Integración: la banda no trae el aviso de una cita ya `FULFILLED` y sí el de una `CHECKED_IN` |
+| AG-184, AG-185                                  | Integración contra PostgreSQL real: la nota de una cita de ayer o cerrada se rechaza sin escribir; la de hoy deja una fila en `access_audit` sin contenido; una edición de la cita archiva una versión sin `board_note` (control: con `board_note_at`) |
+| AG-186                                          | Integración contra PostgreSQL real: un bloqueo de lunes a viernes quita los cupos de los cinco días y deja libres el sábado; con citas dentro en dos sedes, el rechazo las enumera con su día + unitario de interfaz del diálogo |
 
 ## Preguntas abiertas
 

@@ -170,6 +170,7 @@ function agendaEntry(
     rescheduledToId: null,
     attention: null,
     lateAdmission: null,
+    emergencyMovedAt: null,
     emergencyAlerts: [],
     ...overrides,
   };

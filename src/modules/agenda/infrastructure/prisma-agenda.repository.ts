@@ -144,12 +144,15 @@ export const ENTRY_SELECT = {
   // AG-120. Who let it in past the threshold: the name, never the account.
   lateAdmissionAt: true,
   lateAdmissionBy: { select: { firstName: true, lastName: true } },
+  // AG-173. Off the calendar because an emergency moved it, not overbooked.
+  emergencyMovedAt: true,
   // AG-129. Whom the emergency call notified. A handful of rows at most.
   emergencyAlerts: {
     orderBy: { alertedAt: 'asc' },
     select: {
       alertedAt: true,
       acknowledgedAt: true,
+      onDuty: true,
       recipient: { select: { firstName: true, lastName: true } },
     },
   },
@@ -1093,6 +1096,9 @@ export class PrismaAgendaRepository implements AgendaRepository {
         siteId: query.siteId,
         practitionerId: query.practitionerId,
         blocksCalendar: false,
+        // AG-173: an emergency moved to today is off the calendar and is
+        // not an overbooking; it does not spend the site's cap (AG-100).
+        emergencyMovedAt: null,
         releasedAt: null,
         startsAt: { gte: query.from, lt: query.untilExclusive },
       },
@@ -1169,15 +1175,13 @@ export class PrismaAgendaRepository implements AgendaRepository {
         releasedAt: null,
         startsAt: { lt: query.endsAt },
         endsAt: { gt: query.startsAt },
-        OR: [
-          // AG-038: the appointments of this site.
-          { siteId: query.siteId, blocksCalendar: true },
-          // AG-152 (D-085 §7): an overbooking of the practitioner AT ANY SITE.
-          // It occupies no calendar, so the EXCLUDE never sees it; without
-          // this the holidays land on top of a patient who comes anyway — the
-          // reverse of D-069.
-          { blocksCalendar: false },
-        ],
+        // AT ANY SITE, on the calendar or off it, and the site is never named
+        // (AG-107). AG-038 enmendado (D-207 §8): the practitioner `EXCLUDE`
+        // ignores the site, so a week of leave is refused by the
+        // appointments of every site, and without them here those came back
+        // as a bare `PRACTITIONER_SLOT_TAKEN`. AG-152 (D-085 §7): an
+        // overbooking occupies no calendar and the EXCLUDE never sees it;
+        // without it the holidays land on a patient who comes anyway.
       },
       orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
       select: { id: true, startsAt: true, endsAt: true },
@@ -1405,6 +1409,21 @@ export class PrismaAgendaRepository implements AgendaRepository {
         throw new AgendaEntryNotEditableError(current.status);
       }
 
+      // AG-185. Correcting the patient cleared the board note above: that is
+      // a write of the note too, and it leaves its trail row, without the
+      // content, in this same transaction.
+      if (edit.patientId !== undefined && edit.patientId !== row.patientId) {
+        await tx.accessAudit.create({
+          data: {
+            occurredAt: command.at,
+            userId: command.editedById,
+            resourceType: 'agenda_entry_board_note',
+            resourceId: command.entryId,
+            action: 'UPDATE',
+          },
+        });
+      }
+
       if (edit.emergencyAlert) {
         await raiseEmergencyAlert(tx, command.entryId, edit.emergencyAlert);
       }
@@ -1514,6 +1533,7 @@ async function applyStatusChange(
       kind: true,
       status: true,
       startsAt: true,
+      endsAt: true,
       releasedAt: true,
       noShowAt: true,
       // AG-120. The delay and the emergency that exempts it.
@@ -1544,6 +1564,7 @@ async function applyStatusChange(
     kind: row.kind,
     status: fromStatus,
     startsAt: row.startsAt,
+    endsAt: row.endsAt,
     releasedAt: row.releasedAt,
     noShowAt: row.noShowAt,
     checkedInAt: row.checkedInAt,
@@ -1653,14 +1674,20 @@ async function applyStatusChange(
 }
 
 /**
- * AG-129 (D-170.1). The notice of an emergency arrival, in the transaction of
+ * AG-129 (D-170 §1). The notice of an emergency arrival, in the transaction of
  * the call: no row, no notice; no notice, no row.
  *
- * WHOM IT REACHES IS D-170.1, AND UNTIL THE CLINIC DECIDES IT IS THE
- * PRACTITIONER OF THE APPOINTMENT — who will receive the patient, and the one
- * professional the system knows for certain is expecting them. One row per
- * recipient, so widening it (everyone with a schedule at the site right now,
- * the recommendation) is more rows and no new shape.
+ * WHOM IT REACHES: the practitioner of the appointment AND everyone with a
+ * schedule at the site at the instant of the notice — an active rule of this
+ * site, in force that Guayaquil day, of that weekday, whose span holds the
+ * Guayaquil time, with no live block of theirs covering the instant. One row
+ * per recipient, none repeated. A deactivated account gets no row: a row
+ * addressed to it would make the detail say «Se avisó a…» to nobody.
+ *
+ * THE INSTANT IS THE APPLICATION'S (`raise.at`, the arrival's clock), turned
+ * into Guayaquil wall time here; never PostgreSQL's `now()`, which the walks
+ * cannot move. Holidays are not discounted: telling someone who has a rule on
+ * a holiday is telling too many, which is the safe side.
  */
 async function raiseEmergencyAlert(
   tx: Prisma.TransactionClient,
@@ -1674,18 +1701,50 @@ async function raiseEmergencyAlert(
       practitioner: { select: { userId: true, user: { select: { active: true } } } }, // prettier-ignore
     },
   });
-  // A deactivated account sees nothing: a row addressed to it would make the
-  // detail say «Se avisó a…» to nobody. Without a row the screen says that
-  // nobody in the system was told, and to tell them in person.
-  if (!entry.practitioner.user.active) return;
-  await tx.agendaEmergencyAlert.create({
-    data: {
+  const onSchedule = await tx.$queryRaw<{ user_id: string }[]>`
+    WITH here AS (
+      SELECT (${raise.at}::timestamptz AT TIME ZONE 'America/Guayaquil') AS wall
+    )
+    SELECT DISTINCT p.user_id::text AS user_id
+      FROM practitioner_schedule_rule r
+      JOIN practitioner p ON p.id = r.practitioner_id
+      JOIN app_user u ON u.id = p.user_id
+      CROSS JOIN here
+     WHERE r.site_id = ${entry.siteId}::uuid
+       AND r.active
+       AND p.active
+       AND u.active
+       AND r.weekday = EXTRACT(ISODOW FROM here.wall)
+       AND r.valid_from <= here.wall::date
+       AND (r.valid_to IS NULL OR r.valid_to >= here.wall::date)
+       AND r.start_time <= here.wall::time
+       AND here.wall::time < r.end_time
+       AND NOT EXISTS (
+         SELECT 1 FROM agenda_entry b
+          WHERE b.practitioner_id = p.id
+            AND b.kind = 'BLOCK'
+            AND b.released_at IS NULL
+            AND b.starts_at <= ${raise.at}::timestamptz
+            AND b.ends_at > ${raise.at}::timestamptz
+       )`;
+
+  // AG-183 (G1): who was on duty is kept on each row; the practitioner of
+  // the appointment is told even when not at the site, but their «Enterado»
+  // is not the in-person handover.
+  const onDuty = new Set(onSchedule.map((row) => row.user_id));
+  const recipients = new Set(onDuty);
+  if (entry.practitioner.user.active) recipients.add(entry.practitioner.userId);
+  if (recipients.size === 0) return;
+
+  await tx.agendaEmergencyAlert.createMany({
+    data: [...recipients].map((recipientId) => ({
       agendaEntryId,
       siteId: entry.siteId,
-      recipientId: entry.practitioner.userId,
+      recipientId,
       raisedById: raise.raisedById,
       alertedAt: raise.at,
-    },
+      onDuty: onDuty.has(recipientId),
+    })),
   });
 }
 
@@ -1861,9 +1920,11 @@ export function toEntryView(row: {
   encounters: { status: string }[];
   lateAdmissionAt: Date | null;
   lateAdmissionBy: { firstName: string; lastName: string } | null;
+  emergencyMovedAt: Date | null;
   emergencyAlerts: {
     alertedAt: Date;
     acknowledgedAt: Date | null;
+    onDuty: boolean;
     recipient: { firstName: string; lastName: string };
   }[];
 }): AgendaEntryView {
@@ -1917,12 +1978,14 @@ export function toEntryView(row: {
             at: row.lateAdmissionAt,
           }
         : null,
+    emergencyMovedAt: row.emergencyMovedAt,
     // AG-129. Whom it notified, by name.
     emergencyAlerts: row.emergencyAlerts.map((alert) => ({
       recipientName:
         `${alert.recipient.firstName} ${alert.recipient.lastName}`.trim(),
       alertedAt: alert.alertedAt,
       acknowledgedAt: alert.acknowledgedAt,
+      onDuty: alert.onDuty,
     })),
   };
 }

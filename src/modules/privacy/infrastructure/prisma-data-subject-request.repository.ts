@@ -539,6 +539,18 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
         include: WITH_REVIEW,
       });
       const requests = await this.views(tx, requestRows);
+      // PD-076 (D-176 §3b). The note the board holds today about each of the
+      // subject's appointments; earlier ones are not kept anywhere (AG-185).
+      const boardNotes = await tx.agendaEntry.findMany({
+        where: { ...chartScope(rootId), boardNote: { not: null } },
+        orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
+        select: {
+          patientId: true,
+          startsAt: true,
+          boardNote: true,
+          boardNoteAt: true,
+        },
+      });
       // PD-048 (D-131.1). The saved versions of the subject's rows; PD-067
       // (D-203 §10), the clinical ones only as far as the caller's
       // `record:read` reaches, with the shared rule of the key.
@@ -634,6 +646,14 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
             response: previous.response,
             answeredAt: previous.answeredAt.toISOString(),
           })),
+        })),
+        // PD-076. Without who wrote it: what the holder is owed is what was
+        // said about them; the author is in the clinic's own trail.
+        boardNotes: boardNotes.map((row) => ({
+          chart: row.patientId ? mrnOf.get(row.patientId) : undefined,
+          appointmentStartsAt: row.startsAt.toISOString(),
+          note: row.boardNote,
+          writtenAt: row.boardNoteAt?.toISOString() ?? null,
         })),
         // PD-066 (D-203 §9). Each copy of the record that was authorised.
         deliveries: requests

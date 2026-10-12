@@ -13,6 +13,7 @@ import type { BoardField } from '../../../shared/domain/board-fields';
 import {
   AgendaEntryNotFoundError,
   BoardNoteNeedsAPatientError,
+  BoardNoteNotTodayError,
   BoardViewRoleNotFoundError,
 } from '../domain/agenda.errors';
 import {
@@ -23,7 +24,9 @@ import {
   type SiteScopeFilter,
 } from '../domain/agenda.repository';
 import {
+  boardNoteEditable,
   isPresentToday,
+  needsInPersonNotice,
   latenessMinutes,
   minutesInState,
   normaliseBoardNote,
@@ -58,6 +61,10 @@ export interface StaffBoardRow {
   stateSince: Date | null;
   minutesInState: number | null;
   latenessMinutes: number | null;
+  /** AG-183. Nobody acknowledged the emergency in two minutes. */
+  emergencyNeedsInPersonNotice: boolean;
+  /** AG-184. Whether the note of this row can be written now. */
+  boardNoteEditable: boolean;
 }
 
 export interface StaffBoard {
@@ -162,6 +169,9 @@ export class BoardService {
           latenessMinutes: shows('LATENESS')
             ? latenessMinutes(subject, now)
             : null,
+          // AG-183: beside the «Emergencia» mark, which no view removes.
+          emergencyNeedsInPersonNotice: needsInPersonNotice(row.entry, now),
+          boardNoteEditable: boardNoteEditable(row.entry, now),
         };
       }),
     };
@@ -221,21 +231,28 @@ export class BoardService {
    */
   async setBoardNote(
     request: { siteId: string; entryId: string; boardNote: string | null },
-    writer: { userId: string },
+    writer: { userId: string; ip?: string; userAgent?: string },
   ): Promise<{
     boardNote: string | null;
     boardNoteStamp: { byName: string; at: Date };
   }> {
+    // The application's clock, like every instant the screen shows; and
+    // AG-184's «today» is its Guayaquil day, never the session's.
+    const at = new Date();
+    const { startsAt, endsAtExclusive } = clinicalDayBounds(clinicalDateOf(at));
     const outcome = await this.board.setBoardNote({
       siteId: request.siteId,
       entryId: request.entryId,
       boardNote: normaliseBoardNote(request.boardNote),
       writtenById: writer.userId,
-      // The application's clock, like every instant the screen shows.
-      at: new Date(),
+      at,
+      today: { from: startsAt, untilExclusive: endsAtExclusive },
+      ip: writer.ip,
+      userAgent: writer.userAgent,
     });
     if (outcome.kind === 'NOT_FOUND') throw new AgendaEntryNotFoundError();
     if (outcome.kind === 'BLOCK') throw new BoardNoteNeedsAPatientError();
+    if (outcome.kind === 'NOT_TODAY') throw new BoardNoteNotTodayError();
     return {
       boardNote: outcome.boardNote,
       boardNoteStamp: outcome.boardNoteStamp,

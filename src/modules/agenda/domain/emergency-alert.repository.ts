@@ -26,7 +26,8 @@ export interface PendingEmergencyAlert {
 export interface EmergencyAlertRepository {
   /**
    * The recipient's notices not yet acknowledged, oldest first, at any site:
-   * they are addressed to the account, whatever its grants.
+   * they are addressed to the account, whatever its grants. Only those whose
+   * appointment is still `CHECKED_IN` or `IN_PROGRESS` (AG-175, D-170 §6).
    */
   pendingFor(recipientId: string): Promise<PendingEmergencyAlert[]>;
   /**

@@ -49,6 +49,13 @@ export const staffBoardRowSchema = agendaEntrySchema.extend({
   minutesInState: z.number().int().nullable(),
   /** AG-134, AG-118. Minutes late, before or at arrival; `null` when not late. */
   latenessMinutes: z.number().int().nullable(),
+  /**
+   * AG-183 (D-170 §4). Una emergencia en sala sin «Enterado» de nadie a los
+   * 2 minutos: avisar en persona. Calculado con el reloj de la aplicación.
+   */
+  emergencyNeedsInPersonNotice: z.boolean(),
+  /** AG-184 (D-176 §3c). Si la nota de esta fila se puede escribir: hoy y abierta. */
+  boardNoteEditable: z.boolean(),
 });
 
 export const staffBoardSchema = z.object({

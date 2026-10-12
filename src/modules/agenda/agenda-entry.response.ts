@@ -54,11 +54,14 @@ export function toEntryResponse(entry: AgendaEntryView): AgendaEntryResponse {
           at: entry.lateAdmission.at.toISOString(),
         }
       : null,
+    // AG-173: moved to today by an emergency, which is not an overbooking.
+    emergencyMovedAt: entry.emergencyMovedAt?.toISOString() ?? null,
     // AG-129: whom the emergency call notified.
     emergencyAlerts: entry.emergencyAlerts.map((alert) => ({
       recipientName: alert.recipientName,
       alertedAt: alert.alertedAt.toISOString(),
       acknowledgedAt: alert.acknowledgedAt?.toISOString() ?? null,
+      onDuty: alert.onDuty,
     })),
   };
 }

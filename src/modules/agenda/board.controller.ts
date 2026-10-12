@@ -99,6 +99,8 @@ export class BoardController {
         stateSince: row.stateSince?.toISOString() ?? null,
         minutesInState: row.minutesInState,
         latenessMinutes: row.latenessMinutes,
+        emergencyNeedsInPersonNotice: row.emergencyNeedsInPersonNotice,
+        boardNoteEditable: row.boardNoteEditable,
       })),
     };
   }
@@ -164,10 +166,16 @@ export class BoardController {
     @Param('siteId', ParseUUIDPipe) siteId: string,
     @Param('entryId', ParseUUIDPipe) entryId: string,
     @Body() dto: SetBoardNoteDto,
+    @Req() req: Request,
   ): Promise<BoardNoteResponse> {
     const result = await this.board.setBoardNote(
       { siteId, entryId, boardNote: dto.boardNote },
-      { userId: this.currentUser.requireUserId() },
+      // AG-185: the trail row says from where, like every other.
+      {
+        userId: this.currentUser.requireUserId(),
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+      },
     );
     return {
       boardNote: result.boardNote,
