@@ -245,10 +245,15 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   intento supere `ASSISTANT_MONTHLY_SPEND_CEILING_USD`, el sistema NO DEBERÁ
   hacer el intento y DEBERÁ fallar con `ASSISTANT_SPENDING_CEILING_REACHED`; y
   MIENTRAS el techo no esté configurado, NO DEBERÁ hacer ningún intento
-  remoto. Un intento sin tokens informados —también una respuesta válida sin
-  ellos— DEBERÁ contar por su peor caso, y los intentos en curso DEBERÁN contar
-  por su peor caso mientras duran.
-  > Cerrado por defecto: el monto es del autor (D-241 §1). El techo se mira
+  remoto. Un intento que el proveedor rechazó con un estado HTTP de error, o
+  que no llegó a él, DEBERÁ contar **0**; uno que terminó por el plazo o por
+  una cancelación a mitad de respuesta, o una respuesta válida, sin tokens
+  informados, DEBERÁ contar por su peor caso; y los intentos en curso DEBERÁN
+  contar por su peor caso mientras duran.
+  > Cerrado por defecto: el monto lo fija la instalación; el autor decidió
+  > **100 USD al mes** (D-241 §1). Una petición rechazada no se cobra, y
+  > contarla por su peor caso vaciaba el techo con los 503 de Gemini (D-241 §9,
+  > 11-10-2026); lo que el proveedor pudo empezar a escribir sí. El techo se mira
   > antes de **cada** intento, también de un respaldo, porque cada proveedor
   > cobra distinto. La reserva de lo que está en curso vive en el proceso: con
   > varias instancias de la API haría falta en la base (D-241 §8).
