@@ -148,12 +148,13 @@ export function decisionOf(
 }
 
 /**
- * AS-022. A diagnosis is a choice among codes: 0 when the saved code is one
- * of those proposed, 1 when it is not (a nearby code is not «almost right»).
- * Everything else is text: the edit distance to `proposal.text`.
+ * AS-022, AS-109. A diagnosis and an exam are a choice among codes: 0 when
+ * the saved code is one of those proposed, 1 when it is not (a nearby code
+ * is not «almost right»). Everything else is text: the edit distance to
+ * `proposal.text`.
  */
 function distanceOf(suggestion: SuggestionView, saved: string): number {
-  if (suggestion.kind === 'diagnosis') {
+  if (suggestion.kind === 'diagnosis' || suggestion.kind === 'order-item') {
     return proposedCodes(suggestion.proposal).includes(saved.trim()) ? 0 : 1;
   }
   const text = suggestion.proposal.text;

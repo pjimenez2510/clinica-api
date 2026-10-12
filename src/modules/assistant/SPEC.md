@@ -465,6 +465,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   código del diagnóstico—, leído en la misma transacción que decide. Sólo una
   línea de receta u orden, que aún no tiene identidad propia, toma lo
   guardado de quien llama (D-243 §5).
+  > Un examen, como un diagnóstico, es una elección entre candidatos: 0 si
+  > lo guardado es uno de ellos (AS-109).
   > Es lo que la fase F mide: cuánto corrige el médico lo que el modelo
   > escribe. Si la distancia es 0, la aceptación es «tal cual» aunque quien
   > llame diga «con cambios».
@@ -1094,9 +1096,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   cada uno con la frase literal de la nota o de la conversación que lo pide y
   hasta 5 candidatos del catálogo ordenable (AS-104). DEBERÁ descartar toda
   línea cuya frase no esté en la nota ni en la transcripción con las reglas de
-  AS-028 (palabras enteras, sin negación delante) y sin una de las palabras que
-  dicen que el examen no se pide hoy —«resultado», «reporta», «trae», «previo»,
-  «realizado», «control de»— justo antes; y SI ni la nota ni la transcripción
+  AS-028 (palabras enteras, sin negación delante) y toda línea con una de las
+  palabras que dicen que el examen no se pide hoy —«resultado», «reporta»,
+  «trae», «previo», «realizado», «ya», «tiene»— justo antes de la frase o
+  dentro de ella; y SI ni la nota ni la transcripción
   tienen texto, ENTONCES DEBERÁ rechazarlo con `ASSISTANT_NOTE_EMPTY` sin
   llamar a nadie.
   > Un examen que sólo se menciona —un resultado que el paciente trae, uno que
