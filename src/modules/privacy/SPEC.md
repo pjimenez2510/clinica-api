@@ -144,9 +144,10 @@ que si esa fila no se puede escribir no sale nada; y que al responder la
 solicitud de acceso el texto llega propuesto con lo que el archivo no lleva.
 **Cubre:** PD-040 a PD-043, PD-049, PD-050, PD-076.
 
-**Solo servidor:** PD-043, PD-050. Que la exportación escriba la bitácora, y
-la frase de `appointments` y `billing` en `omitted` (la pantalla ya dice
-«vigentes»).
+**Solo servidor:** PD-043, PD-050, PD-076. Que la exportación escriba la
+bitácora, la frase de `appointments` y `billing` en `omitted` (la pantalla ya
+dice «vigentes»), y la nota del tablero dentro del JSON que se descarga
+(ninguna pantalla lo lee: el archivo es la entrega).
 
 ### D5 — Corregir sin borrar (D-127, D-128.8, D-128.9, D-131.1) _(P1)_
 
