@@ -49,6 +49,7 @@ interface Settled extends Partial<TokenUsage> {
   outcome: LlmOutcome;
   httpStatus: number | null;
   raw: string | null;
+  neverSent?: boolean;
 }
 
 /**
@@ -229,19 +230,22 @@ export class RoutingLlmClient implements LlmClient {
     },
   ): Promise<void> {
     const { settled } = attempt;
-    // AS-017. Absent is not zero: an attempt with no figures costs its worst case.
-    const costUsd =
-      settled.inputTokens === undefined && settled.outputTokens === undefined
-        ? null
-        : costOf(
-            {
-              inputTokens: settled.inputTokens ?? 0,
-              outputTokens: settled.outputTokens ?? 0,
-              cacheReadTokens: settled.cacheReadTokens,
-              cacheWriteTokens: settled.cacheWriteTokens,
-            },
-            attempt.price,
-          );
+    const reported =
+      settled.inputTokens !== undefined || settled.outputTokens !== undefined;
+    const costUsd = reported
+      ? costOf(
+          {
+            inputTokens: settled.inputTokens ?? 0,
+            outputTokens: settled.outputTokens ?? 0,
+            cacheReadTokens: settled.cacheReadTokens,
+            cacheWriteTokens: settled.cacheWriteTokens,
+          },
+          attempt.price,
+        )
+      : notBilled(settled)
+        ? 0
+        : // AS-017. Absent is not zero: it may have been billed, so its worst case.
+          null;
     try {
       await this.options.store.record(
         {
@@ -310,4 +314,16 @@ export class RoutingLlmClient implements LlmClient {
 
 function cancelled(provider: ProviderName, model: string): LlmCallFailed {
   return new LlmCallFailed(provider, 'cancelled', { model, raw: null });
+}
+
+/**
+ * AS-017 (D-241 §9). An attempt the provider refused with an HTTP error, or
+ * one that never reached it (`neverSent`: refused connection, unknown host,
+ * TLS), was not billed: it counts 0. Anything else without figures — the
+ * routing's deadline, a cancel or a connection cut after sending, an error
+ * nobody classified — may have been billed, and counts its worst case.
+ */
+function notBilled(settled: Settled): boolean {
+  if (settled.httpStatus !== null) return settled.httpStatus >= 400;
+  return settled.neverSent === true;
 }

@@ -13,6 +13,7 @@ import { strictJsonSchema } from './json-schema';
 import { OPENAI_MODELS, OPENAI_REASONING_EFFORT } from './model-routing';
 import {
   outcomeOfStatus,
+  neverSent,
   outcomeOfThrown,
   parseJson,
 } from './provider-outcome';
@@ -59,12 +60,14 @@ export class OpenAiProvider implements LlmProvider {
       raw: string | null,
       status?: number,
       usage?: Usage,
+      notSent = false,
     ) =>
       new LlmCallFailed(this.name, outcome, {
         model,
         raw,
         status,
         ...(usage ? tokensOf(usage) : {}),
+        ...(notSent ? { neverSent: true } : {}),
       });
     const { schema, strict } = strictJsonSchema(
       z.toJSONSchema(request.answer, { io: 'output' }),
@@ -94,9 +97,21 @@ export class OpenAiProvider implements LlmProvider {
           },
         }),
       });
+    } catch (cause) {
+      throw failed(
+        outcomeOfThrown(cause, request.signal),
+        null,
+        undefined,
+        undefined,
+        neverSent(cause),
+      );
+    }
+    // Apart from the request: the provider answered, and a body cut while
+    // reading it keeps its status — a 200 cut here may already be billed.
+    try {
       raw = await response.text();
     } catch (cause) {
-      throw failed(outcomeOfThrown(cause, request.signal), null);
+      throw failed(outcomeOfThrown(cause, request.signal), null, response.status); // prettier-ignore
     }
 
     if (!response.ok) {
