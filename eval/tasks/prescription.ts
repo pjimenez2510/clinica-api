@@ -213,18 +213,26 @@ export function prescriptionTask(
     title: 'Receta dictada',
     arms: ['A', 'D'],
     promptVersions: PRESCRIPTION_PROMPT_VERSIONS,
+    latencyBudgetMs: 5_000,
     metrics: [
       ...PRESCRIPTION_FIELDS.map(([key, label]) => ({
         key,
         label: `${label} correcta`,
         kind: 'binary' as const,
+        primary: key === 'concentration',
       })),
-      { key: 'all', label: 'Receta completa correcta', kind: 'binary' },
+      {
+        key: 'all',
+        label: 'Receta completa correcta',
+        kind: 'binary',
+        primary: true,
+      },
       {
         key: 'outsideCnmb',
         label: 'Medicamento fuera del CNMB',
         kind: 'binary',
         lowerIsBetter: true,
+        primary: true,
       },
       {
         key: 'empty',

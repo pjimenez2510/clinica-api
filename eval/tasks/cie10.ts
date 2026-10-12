@@ -97,15 +97,17 @@ export function cie10Task(
     title: 'CIE-10 por problema',
     arms: ['A', 'D'],
     promptVersions: CIE10_PROMPT_VERSIONS,
+    latencyBudgetMs: 5_000,
     metrics: [
-      { key: 'hit1', label: 'Acierto@1', kind: 'binary' },
-      { key: 'recall5', label: 'R@5', kind: 'binary' },
+      { key: 'hit1', label: 'Acierto@1', kind: 'binary', primary: true },
+      { key: 'recall5', label: 'R@5', kind: 'binary', primary: true },
       { key: 'category1', label: 'Categoría@1 (3 caracteres)', kind: 'binary' },
       {
         key: 'invented',
         label: 'Códigos inexistentes mostrados (por caso)',
         kind: 'mean',
         lowerIsBetter: true,
+        primary: true,
       },
       {
         key: 'empty',

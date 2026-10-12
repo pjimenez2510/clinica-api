@@ -136,6 +136,7 @@ export function noteTask(): EvalTask<NoteCase, NoteAnswer> {
     title: 'Nota de la consulta',
     arms: ['D'],
     promptVersions: NOTE_PROMPT_VERSIONS,
+    latencyBudgetMs: 15_000,
     metrics: [
       {
         key: 'inventedSections',
@@ -148,18 +149,21 @@ export function noteTask(): EvalTask<NoteCase, NoteAnswer> {
         label: 'Frases sin línea de origen (por caso)',
         kind: 'mean',
         lowerIsBetter: true,
+        primary: true,
       },
       {
         key: 'omission',
         label: 'Hechos omitidos (juez sin validar)',
         kind: 'mean',
         lowerIsBetter: true,
+        primary: true,
       },
       {
         key: 'invention',
         label: 'Frases sin respaldo (juez sin validar)',
         kind: 'mean',
         lowerIsBetter: true,
+        primary: true,
       },
       { key: 'judged', label: 'Notas juzgadas', kind: 'binary' },
     ],
@@ -191,16 +195,12 @@ export function noteTask(): EvalTask<NoteCase, NoteAnswer> {
       };
       let verdict: { omitted: number; unsupported: number } | null = null;
       if (judge !== null) {
-        try {
-          verdict = readVerdicts(
-            await judge(judgeRequest(item, value)),
-            item.facts.length,
-            segments.length,
-          );
-        } catch {
-          // A judge that failed leaves the note unjudged; it is counted.
-          verdict = null;
-        }
+        const verdicts = await judge(judgeRequest(item, value));
+        // A judge that gave no valid answer leaves the note unjudged; it is counted.
+        verdict =
+          verdicts === null
+            ? null
+            : readVerdicts(verdicts, item.facts.length, segments.length);
       }
       return {
         shown: value,

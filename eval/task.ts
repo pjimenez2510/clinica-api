@@ -21,15 +21,20 @@ export interface Metric {
   kind: 'binary' | 'mean';
   /** True when higher is worse (invention, omission): only for the report. */
   lowerIsBetter?: boolean;
+  /** Compared between arms and between providers, case by case. */
+  primary?: boolean;
 }
 
 /** What one answer scored, per metric. Null: the metric does not apply to this case. */
 export type Scores = Record<string, number | null>;
 
-/** Asks a model on behalf of a task: the judge of the note. */
+/**
+ * Asks a model on behalf of a task: the judge of the note. Null when the
+ * model gave no valid answer; it throws only to end the run (the ceiling).
+ */
 export type Ask = <Shape extends z.ZodType>(
   request: LlmRequest<Shape>,
-) => Promise<z.infer<Shape>>;
+) => Promise<z.infer<Shape> | null>;
 
 export interface EvalCase {
   id: string;
@@ -48,6 +53,8 @@ export interface EvalTask<Case extends EvalCase, Value> {
   /** EV-7. The version of each arm's prompt, stored with every result. */
   promptVersions: Readonly<Partial<Record<Arm, string>>>;
   metrics: readonly Metric[];
+  /** PLAN-ASISTENTE-IA §5: the p90 the answer must stay under. */
+  latencyBudgetMs: number;
   request(item: Case, arm: Arm): LlmRequest<z.ZodType<Value>>;
   evaluate(
     item: Case,

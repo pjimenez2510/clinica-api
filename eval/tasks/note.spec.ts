@@ -61,8 +61,8 @@ describe('note task', () => {
     expect(scores.judged).toBe(1);
   });
 
-  it('leaves the note unjudged when the judge fails or skips a verdict', async () => {
-    const failing = (() => Promise.reject(new Error('503'))) as unknown as Ask;
+  it('leaves the note unjudged when the judge does not answer or skips a verdict', async () => {
+    const failing = (() => Promise.resolve(null)) as unknown as Ask;
     expect(
       (await noteTask().evaluate(item, 'D', note, failing)).scores,
     ).toMatchObject({
