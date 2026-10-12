@@ -54,6 +54,7 @@ import {
   backedLines,
   blockOf,
   canonicalLine,
+  knownCodes,
   presentationFor,
   proposedFields,
   type AllergyVerdict,
@@ -287,7 +288,7 @@ export class PrescriptionProposalService {
     if (read.runId === null) throw new AssistantProposalNotKeptError();
 
     const backed = backedLines({
-      read: read.value.lines,
+      read: read.value.lines.map(knownCodes),
       cleared: cleared.cleared,
       sections: note.sections,
       restore: (text) => restorePlaceholders(text, cleared.replacements),

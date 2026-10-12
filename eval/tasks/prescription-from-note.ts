@@ -15,6 +15,7 @@ import { withContext } from '../../src/modules/assistant/application/llm-client.
 import { noteText } from '../../src/modules/assistant/application/problem-coding.prompts.ts';
 import {
   backedLines,
+  knownCodes,
   presentationFor,
 } from '../../src/modules/assistant/domain/prescription-reading.ts';
 import type { CnmbMedicine as CuadroMedicine } from '../../src/modules/catalogs/import/cnmb.ts';
@@ -155,7 +156,7 @@ export function prescriptionFromNoteTask(
     async evaluate(item, _arm, value, _judge, followUp) {
       const sections = [{ key: 'plan', text: item.plan }];
       const backed = backedLines({
-        read: value.lines,
+        read: value.lines.map(knownCodes),
         cleared: item.plan,
         sections,
         restore: (text) => text,

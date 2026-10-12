@@ -18,6 +18,9 @@ import {
 } from '../../../shared/clinical/allergy-match';
 import {
   DOSAGE_FORMS,
+  DOSE_UNITS,
+  FREQUENCIES,
+  MEDICATION_ROUTES,
   matchingPresentations,
   type DosageForm,
   type DoseUnit,
@@ -42,6 +45,39 @@ export interface ReadLine {
   durationDays: number | null;
   instructions: string | null;
   quote: string;
+}
+
+/** A line as the model answered it: the codes still unchecked text. */
+export type AnsweredLine = Omit<
+  ReadLine,
+  'form' | 'doseUnit' | 'route' | 'frequency'
+> & {
+  // prettier-ignore
+  form: string | null;
+  doseUnit: string | null;
+  route: string | null;
+  frequency: string | null;
+};
+
+const isKeyOf = <T extends object>(
+  table: T,
+  value: string | null,
+): value is Extract<keyof T, string> =>
+  // prettier-ignore
+  value !== null && Object.hasOwn(table, value);
+
+/**
+ * AS-063. Every code the model wrote checked against the receta's closed
+ * lists (PR-101, PR-102): what is not of the list is empty, never guessed.
+ */
+export function knownCodes(line: AnsweredLine): ReadLine {
+  return {
+    ...line,
+    form: isKeyOf(DOSAGE_FORMS, line.form) ? line.form : null,
+    doseUnit: isKeyOf(DOSE_UNITS, line.doseUnit) ? line.doseUnit : null,
+    route: isKeyOf(MEDICATION_ROUTES, line.route) ? line.route : null,
+    frequency: isKeyOf(FREQUENCIES, line.frequency) ? line.frequency : null,
+  };
 }
 
 /** A line whose phrase the note does contain, with the originals put back. */

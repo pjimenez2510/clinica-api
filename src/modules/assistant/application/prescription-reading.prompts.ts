@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 import {
-  DOSAGE_FORM_CODES,
   DOSAGE_FORMS,
   DOSE_UNIT_CODES,
   DOSE_UNITS,
@@ -74,7 +73,9 @@ export const linesAnswer = z.object({
       z.object({
         drug: z.string().min(2).max(120),
         strength: z.string().max(60).nullable(),
-        form: code(DOSAGE_FORM_CODES),
+        // Text, checked against the list afterwards (`knownCodes`): Gemini
+        // answers 400 to an enum this long in the schema (measured 12-10-2026).
+        form: z.string().max(40).nullable(),
         doseAmount: z.number().positive().max(10_000).nullable(),
         doseUnit: code(DOSE_UNIT_CODES),
         route: code(MEDICATION_ROUTE_CODES),

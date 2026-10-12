@@ -5,6 +5,7 @@ import {
   backedLines,
   blockOf,
   canonicalLine,
+  knownCodes,
   presentationFor,
   proposedFields,
   totalOf,
@@ -250,5 +251,14 @@ describe('the allergy rule and what blocks a line (AS-065, AS-069, AS-071)', () 
     // Control: the class informs and the line goes (AS-071).
     expect(blockOf(proposal(), { prescribed: none, allergy: 'class' })).toBeNull(); // prettier-ignore
     expect(blockOf(proposal(), { prescribed: none, allergy: 'none' })).toBeNull(); // prettier-ignore
+  });
+});
+
+describe('the codes the model wrote (AS-063)', () => {
+  it('AS-063 keeps a code of the receta’s lists and empties anything else, never guessing', () => {
+    const line = knownCodes({ ...read(), form: 'COMPRIMIDO', doseUnit: 'TABLET', route: 'oral', frequency: 'EVERY_8_HOURS' }); // prettier-ignore
+
+    expect([line.form, line.doseUnit, line.route, line.frequency]).toEqual([null, 'TABLET', null, 'EVERY_8_HOURS']); // prettier-ignore
+    expect(knownCodes({ ...read(), form: 'toString' }).form).toBeNull();
   });
 });
