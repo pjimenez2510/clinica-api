@@ -163,10 +163,9 @@ describe('ClinicaAiSpeechRecognizer', () => {
       ).open(listener().events),
     ).rejects.toMatchObject({ reason: 'no-recognizer' });
     await expect(
-      recognizer(fake, (() =>
-        Promise.reject(new TypeError('fetch failed'))) as typeof fetch).open(
-        listener().events,
-      ),
+      recognizer(fake, () =>
+        Promise.reject(new TypeError('fetch failed')),
+      ).open(listener().events),
     ).rejects.toMatchObject({ reason: 'unreachable' });
     expect(fake.sockets).toHaveLength(0);
   });

@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import type { Server } from 'node:http';
 
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
@@ -129,7 +128,7 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
       configureApp(app);
       await listenForTests(app);
       registry = app.get(RolePermissionRegistry);
-      const { port } = (app.getHttpServer() as Server).address() as AddressInfo;
+      const { port } = app.getHttpServer().address() as AddressInfo;
       wsBase = `ws://127.0.0.1:${port}`;
     }
 

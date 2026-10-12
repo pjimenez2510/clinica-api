@@ -101,8 +101,12 @@ export class ListeningAccess {
     if (!pending) return null;
     this.pending.delete(ticket);
     if (pending.expiresAt <= this.now()) return null;
-    const { expiresAt: _expiresAt, ...grant } = pending;
-    return grant;
+    return {
+      encounterId: pending.encounterId,
+      userId: pending.userId,
+      writeSites: pending.writeSites,
+      tokenExpiresAt: pending.tokenExpiresAt,
+    };
   }
 
   /**

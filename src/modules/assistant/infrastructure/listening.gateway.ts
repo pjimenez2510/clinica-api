@@ -112,7 +112,7 @@ export class ListeningGateway
       maxPayload: 4 + MAX_FRAME_BYTES,
     });
     http.on('upgrade', (request: IncomingMessage, socket: Duplex, head) =>
-      this.upgrade(request, socket, head as Buffer),
+      this.upgrade(request, socket, head),
     );
   }
 

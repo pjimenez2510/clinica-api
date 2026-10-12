@@ -1,4 +1,3 @@
-import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -63,7 +62,7 @@ describe('el asistente apagado (AS-026)', () => {
   });
 
   it('AS-046 answers 404 to opening the audio channel', async () => {
-    const { port } = (app.getHttpServer() as Server).address() as AddressInfo;
+    const { port } = app.getHttpServer().address() as AddressInfo;
     const socket = new WebSocket(`ws://127.0.0.1:${port}${LISTENING_PATH}`);
 
     await expect(
