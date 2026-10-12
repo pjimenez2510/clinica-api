@@ -19,6 +19,8 @@ import {
   DomainError,
   ExternalServiceError,
   QuotaExceededError,
+  PreconditionFailedError,
+  PreconditionRequiredError,
   ForbiddenError,
   NotFoundError,
   UnauthorizedError,
@@ -333,6 +335,18 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         status: HttpStatus.CONFLICT,
         slug: 'conflict',
         title: 'Conflicto con el estado actual',
+      };
+    if (e instanceof PreconditionFailedError)
+      return {
+        status: HttpStatus.PRECONDITION_FAILED,
+        slug: 'precondition-failed',
+        title: 'La versión ya no es la vigente',
+      };
+    if (e instanceof PreconditionRequiredError)
+      return {
+        status: HttpStatus.PRECONDITION_REQUIRED,
+        slug: 'precondition-required',
+        title: 'Falta la versión que se leyó',
       };
     if (e instanceof BusinessRuleViolation)
       return {

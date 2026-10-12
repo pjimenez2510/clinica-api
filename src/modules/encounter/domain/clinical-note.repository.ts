@@ -35,6 +35,12 @@ export interface ClinicalNoteView {
   /** EN-024. Constant across every version; version 1 sets it to its own id. */
   chainId: string;
   version: number;
+  /**
+   * EN-281, EN-283. Raised by the database on every write of the draft; the
+   * writer's `If-Match` is compared with it. Not `version`, which is the
+   * amendment's number.
+   */
+  revision: number;
   /** EN-021. The MSP form number, as DATA. */
   formCode: string;
   formVersion: string;

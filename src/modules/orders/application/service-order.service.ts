@@ -64,6 +64,8 @@ export interface PlaceOrderRequest {
 /** ORD-096. The draft's new content, addressed by the order. */
 export type RewriteOrderRequest = Omit<PlaceOrderRequest, 'encounterId'> & {
   orderId: string;
+  /** ORD-181. The revision the writer read (`If-Match`). */
+  revision: number;
 };
 
 /** ORD-020 to ORD-025, ORD-081. What the pending worklist is asked for. */
@@ -182,6 +184,7 @@ export class ServiceOrderService {
 
     const order = await this.orders.rewrite({
       orderId: request.orderId,
+      revision: request.revision,
       category: request.category,
       priority: request.priority,
       clinicalNoteText: request.clinicalNoteText,
@@ -204,10 +207,16 @@ export class ServiceOrderService {
   /** ORD-098. Issues a draft: from here it has its number and is frozen. */
   async issue(
     orderId: string,
+    /** ORD-181. The revision the issuer saw (`If-Match`). */
+    revision: number,
     requester: Requester,
   ): Promise<ServiceOrderView> {
     await this.assertSigner(orderId, requester);
-    const order = await this.orders.issue({ orderId, sites: requester.sites });
+    const order = await this.orders.issue({
+      orderId,
+      revision,
+      sites: requester.sites,
+    });
 
     this.logger.info(
       {

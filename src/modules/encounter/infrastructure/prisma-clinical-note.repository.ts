@@ -48,6 +48,7 @@ const NOTE_SELECT = {
   encounterId: true,
   chainId: true,
   version: true,
+  revision: true,
   formCode: true,
   formVersion: true,
   templateId: true,
@@ -230,6 +231,10 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
    * the write leaves this one matching zero rows — and the refusal is
    * `NOTE_ALREADY_SIGNED`, which is what EN-023 asks for, instead of the
    * trigger's `insufficient_privilege` coming out as «no tiene permisos».
+   *
+   * EN-281. Conditioned on the REVISION read too: a write by another tab in
+   * between leaves this one matching zero rows, and `decide` — handed the row
+   * as it now is — answers `RECORD_CHANGED`.
    */
   async updateDraft(
     query: NoteQuery,
@@ -252,11 +257,11 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
       }
 
       const updated = await tx.clinicalNote.updateMany({
-        where: { id: note.id, status: 'DRAFT' },
+        where: { id: note.id, status: 'DRAFT', revision: note.revision },
         data: { content: content as Prisma.InputJsonObject },
       });
       if (updated.count === 0) {
-        // Somebody signed it under us. Re-read and let the policy speak.
+        // Somebody signed it or wrote it under us. Re-read and let the policy speak.
         decide(await requireNote(tx, query));
       }
 
@@ -335,7 +340,8 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
       const plan = decide(note, encounter);
 
       const signed = await tx.clinicalNote.updateMany({
-        where: { id: note.id, status: 'DRAFT' },
+        // EN-282. And on the revision the signer saw.
+        where: { id: note.id, status: 'DRAFT', revision: note.revision },
         data: {
           status: 'SIGNED',
           content: plan.content as Prisma.InputJsonValue,
@@ -345,8 +351,8 @@ export class PrismaClinicalNoteRepository implements ClinicalNoteRepository {
         },
       });
       if (signed.count === 0) {
-        // Signed by somebody else between the read and the write: re-read and
-        // let the policy answer about the row as it now is.
+        // Signed or written by somebody else between the read and the write:
+        // re-read and let the policy answer about the row as it now is.
         decide(await requireNote(tx, query), encounter);
       }
 
@@ -693,6 +699,7 @@ function toNoteView(row: NoteRow): ClinicalNoteView {
     encounterId: row.encounterId,
     chainId: row.chainId,
     version: row.version,
+    revision: row.revision,
     formCode: row.formCode,
     formVersion: row.formVersion,
     templateId: row.templateId,

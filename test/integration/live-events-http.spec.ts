@@ -177,10 +177,11 @@ describe('el canal de avisos en vivo por HTTP', () => {
         items: [{ serviceId: glucoseExamId }],
       })
       .expect(201);
-    const id = (order.body as { id: string }).id;
+    const { id, revision } = order.body as { id: string; revision: number };
     await request(app.getHttpServer())
       .post(`/api/v1/orders/${id}/issue`)
       .set('Authorization', `Bearer ${token}`)
+      .set('If-Match', `"${revision}"`)
       .send({})
       .expect(200);
     return id;

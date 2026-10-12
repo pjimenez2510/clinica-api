@@ -1,0 +1,599 @@
+{
+  "description": "Consultas inventadas para el arnés (ningún paciente), con los hechos que la nota debe conservar. Secciones: motivo, enfermedad_actual, antecedentes, examen_fisico, diagnostico, plan. Los hechos los escribió el desarrollador; debe revisarlos un médico antes de usar el juez para decidir.",
+  "cases": [
+    {
+      "id": "nota-01",
+      "origin": "invented",
+      "lines": [
+        "Médico: Buenos días, ¿qué le trae por aquí?",
+        "Paciente: Doctor, tengo dolor de garganta desde hace tres días y fiebre en las noches.",
+        "Médico: ¿Ha tenido tos o moco?",
+        "Paciente: Un poquito de moco, tos casi no.",
+        "Médico: ¿Es alérgico a algún medicamento?",
+        "Paciente: No, a ninguno.",
+        "Médico: Vamos a revisar. Temperatura de 38,2. Las amígdalas están rojas y con placas blancas, ganglios del cuello inflamados.",
+        "Médico: Es una amigdalitis bacteriana. Le voy a dar amoxicilina de quinientos cada ocho horas por diez días y paracetamol para la fiebre.",
+        "Médico: Si no mejora en tres días, regrese."
+      ],
+      "facts": [
+        {
+          "section": "motivo",
+          "fact": "dolor de garganta"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "tres días de evolución"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "fiebre nocturna"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "niega alergias a medicamentos"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "temperatura 38,2"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "amígdalas eritematosas con exudado blanquecino"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "adenopatías cervicales"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "amigdalitis bacteriana"
+        },
+        {
+          "section": "plan",
+          "fact": "amoxicilina 500 mg cada 8 horas por 10 días"
+        },
+        {
+          "section": "plan",
+          "fact": "paracetamol para la fiebre"
+        },
+        {
+          "section": "plan",
+          "fact": "regresar si no mejora en tres días"
+        }
+      ]
+    },
+    {
+      "id": "nota-02",
+      "origin": "invented",
+      "lines": [
+        "Médico: Cuénteme, ¿cómo ha estado con la presión?",
+        "Paciente: Bien, doctor, me la tomo en la casa y sale ciento treinta sobre ochenta y cinco.",
+        "Médico: ¿Sigue tomando el losartán?",
+        "Paciente: Sí, el de cincuenta todas las mañanas.",
+        "Médico: ¿Dolor de cabeza, mareos, hinchazón de pies?",
+        "Paciente: No, nada de eso.",
+        "Médico: Su papá tenía diabetes, ¿verdad?",
+        "Paciente: Sí, y mi mamá era hipertensa.",
+        "Médico: Presión aquí de 128 sobre 82, frecuencia 72. Peso 81 kilos.",
+        "Médico: Hipertensión controlada. Seguimos con el losartán igual, menos sal, caminar media hora diaria, y control en tres meses con exámenes de colesterol y glucosa."
+      ],
+      "facts": [
+        {
+          "section": "motivo",
+          "fact": "control de hipertensión"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "presión en casa 130/85"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "sin cefalea, mareo ni edema"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "toma losartán 50 mg cada mañana"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "padre diabético y madre hipertensa"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "presión arterial 128/82"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "peso 81 kg"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "hipertensión arterial controlada"
+        },
+        {
+          "section": "plan",
+          "fact": "continuar losartán 50 mg"
+        },
+        {
+          "section": "plan",
+          "fact": "dieta baja en sal y caminar 30 minutos al día"
+        },
+        {
+          "section": "plan",
+          "fact": "control en tres meses con colesterol y glucosa"
+        }
+      ]
+    },
+    {
+      "id": "nota-03",
+      "origin": "invented",
+      "lines": [
+        "Médico: ¿Qué le pasa al niño?",
+        "Familiar: Tiene diarrea desde ayer, como seis veces, y vomitó dos veces.",
+        "Médico: ¿Ha tenido fiebre? ¿Hay sangre en las heces?",
+        "Familiar: Fiebre poquita anoche, sangre no.",
+        "Médico: ¿Está tomando líquidos? ¿Orina normal?",
+        "Familiar: Toma poco pero sí orina.",
+        "Médico: Peso 14 kilos, temperatura 37,8. Mucosas un poco secas, llanto con lágrimas, abdomen blando, ruidos aumentados.",
+        "Médico: Es una gastroenteritis con deshidratación leve. Suero oral en tomas pequeñas después de cada deposición, seguir comiendo, y paracetamol si hay fiebre.",
+        "Médico: Si hay sangre, vómito que no para o no orina, a emergencia."
+      ],
+      "facts": [
+        {
+          "section": "motivo",
+          "fact": "diarrea"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "seis deposiciones desde ayer"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "dos vómitos"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "sin sangre en heces"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "peso 14 kg"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "temperatura 37,8"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "mucosas semihúmedas"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "gastroenteritis con deshidratación leve"
+        },
+        {
+          "section": "plan",
+          "fact": "sales de rehidratación oral después de cada deposición"
+        },
+        {
+          "section": "plan",
+          "fact": "signos de alarma para acudir a emergencia"
+        }
+      ]
+    },
+    {
+      "id": "nota-04",
+      "origin": "invented",
+      "lines": [
+        "Médico: Buenas tardes, ¿en qué le ayudo?",
+        "Paciente: Me arde al orinar desde hace dos días y voy al baño a cada rato.",
+        "Médico: ¿Fiebre, dolor en la espalda?",
+        "Paciente: No, fiebre no. Solo molestia abajo del ombligo.",
+        "Médico: ¿Está embarazada o podría estarlo?",
+        "Paciente: No, uso implante.",
+        "Médico: ¿Le ha pasado antes?",
+        "Paciente: Una vez el año pasado.",
+        "Médico: Abdomen blando, dolor leve en hipogastrio, puño percusión negativa.",
+        "Médico: Es una cistitis. Nitrofurantoína de cien cada seis horas por siete días, tomar bastante agua, y un examen de orina si no mejora."
+      ],
+      "facts": [
+        {
+          "section": "motivo",
+          "fact": "disuria"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "dos días de evolución"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "polaquiuria"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "sin fiebre ni dolor lumbar"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "usa implante anticonceptivo"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "episodio similar hace un año"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "dolor leve en hipogastrio"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "puño percusión negativa"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "cistitis aguda"
+        },
+        {
+          "section": "plan",
+          "fact": "nitrofurantoína 100 mg cada 6 horas por 7 días"
+        },
+        {
+          "section": "plan",
+          "fact": "examen de orina si no mejora"
+        }
+      ]
+    },
+    {
+      "id": "nota-05",
+      "origin": "invented",
+      "lines": [
+        "Médico: ¿Qué le pasó en el tobillo?",
+        "Paciente: Me lo doblé jugando fútbol ayer en la tarde.",
+        "Médico: ¿Pudo caminar después?",
+        "Paciente: Sí, cojeando, pero sí.",
+        "Médico: ¿Alguna enfermedad o medicamento?",
+        "Paciente: No, ninguna.",
+        "Médico: Tobillo derecho hinchado por fuera, dolor al tocar el ligamento, sin dolor en el hueso, puede apoyar.",
+        "Médico: Es un esguince leve de tobillo. Hielo veinte minutos tres veces al día, vendaje, pie elevado e ibuprofeno de cuatrocientos cada ocho horas por cinco días.",
+        "Médico: No hace falta radiografía por ahora."
+      ],
+      "facts": [
+        {
+          "section": "motivo",
+          "fact": "dolor de tobillo derecho"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "torcedura jugando fútbol ayer"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "pudo caminar cojeando"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "sin enfermedades ni medicamentos"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "edema lateral del tobillo derecho"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "sin dolor óseo, apoyo posible"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "esguince leve de tobillo"
+        },
+        {
+          "section": "plan",
+          "fact": "hielo, vendaje y elevación"
+        },
+        {
+          "section": "plan",
+          "fact": "ibuprofeno 400 mg cada 8 horas por 5 días"
+        },
+        {
+          "section": "plan",
+          "fact": "sin radiografía por ahora"
+        }
+      ]
+    },
+    {
+      "id": "nota-06",
+      "origin": "invented",
+      "lines": [
+        "Médico: Cuénteme del azúcar, ¿cómo va?",
+        "Paciente: La glucosa en ayunas me salió ciento cuarenta la semana pasada.",
+        "Médico: ¿Está tomando la metformina?",
+        "Paciente: A veces se me olvida la de la noche.",
+        "Médico: ¿Mucha sed, orina mucho, ha bajado de peso?",
+        "Paciente: Sed un poco.",
+        "Médico: ¿Algún problema en los pies?",
+        "Paciente: Me hormiguean a veces.",
+        "Médico: Peso 88 kilos, presión 132 sobre 84. Pies con sensibilidad disminuida en la punta de los dedos, pulsos presentes.",
+        "Médico: Diabetes tipo dos mal controlada con posible neuropatía. Reforzar la toma de la metformina, pedir hemoglobina glicosilada y función renal, y referir a nutrición."
+      ],
+      "facts": [
+        {
+          "section": "motivo",
+          "fact": "control de diabetes"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "glucosa en ayunas 140"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "olvida la dosis nocturna de metformina"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "parestesias en pies"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "toma metformina"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "peso 88 kg"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "sensibilidad disminuida en dedos de los pies"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "diabetes tipo 2 mal controlada"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "posible neuropatía"
+        },
+        {
+          "section": "plan",
+          "fact": "hemoglobina glicosilada y función renal"
+        },
+        {
+          "section": "plan",
+          "fact": "referencia a nutrición"
+        }
+      ]
+    },
+    {
+      "id": "nota-07",
+      "origin": "invented",
+      "lines": [
+        "Médico: Hola, ¿qué tiene?",
+        "Paciente: Dolor de cabeza fuerte, de un solo lado, con náusea, desde esta mañana.",
+        "Médico: ¿Le molesta la luz?",
+        "Paciente: Sí, mucho.",
+        "Médico: ¿Le ha pasado antes?",
+        "Paciente: Sí, desde joven, dos veces al mes más o menos.",
+        "Médico: ¿Debilidad, problemas para hablar, fiebre?",
+        "Paciente: No.",
+        "Médico: Examen neurológico normal, sin rigidez de nuca, presión 118 sobre 76.",
+        "Médico: Es una crisis de migraña. Ibuprofeno de cuatrocientos ahora y cada ocho horas si hace falta, cuarto oscuro, y llevar un diario de dolores. Si cambia el tipo de dolor, regrese."
+      ],
+      "facts": [
+        {
+          "section": "motivo",
+          "fact": "cefalea"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "hemicránea con náusea desde la mañana"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "fotofobia"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "episodios similares desde joven, dos al mes"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "sin déficit neurológico ni fiebre"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "examen neurológico normal"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "sin rigidez de nuca"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "migraña"
+        },
+        {
+          "section": "plan",
+          "fact": "ibuprofeno 400 mg"
+        },
+        {
+          "section": "plan",
+          "fact": "diario de cefaleas"
+        },
+        {
+          "section": "plan",
+          "fact": "regresar si cambia el dolor"
+        }
+      ]
+    },
+    {
+      "id": "nota-08",
+      "origin": "invented",
+      "lines": [
+        "Médico: ¿Qué le trae, señora?",
+        "Paciente: Tos con flema verde desde hace cinco días y me falta el aire al caminar.",
+        "Médico: ¿Fiebre?",
+        "Paciente: Sí, de treinta y ocho y medio.",
+        "Médico: ¿Fuma?",
+        "Paciente: Fumé veinte años, lo dejé hace dos.",
+        "Médico: Saturación 93 por ciento, frecuencia respiratoria 22, temperatura 38,4. Crepitantes en la base del pulmón derecho.",
+        "Médico: Sospecho una neumonía. Vamos a pedir una radiografía de tórax y un hemograma; empezamos amoxicilina con ácido clavulánico y control en cuarenta y ocho horas.",
+        "Médico: Si le falta más el aire, a emergencia."
+      ],
+      "facts": [
+        {
+          "section": "motivo",
+          "fact": "tos productiva"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "cinco días de evolución"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "disnea de esfuerzo"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "fiebre 38,5"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "exfumadora de 20 años, dejó hace dos"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "saturación 93 %"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "crepitantes en base derecha"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "sospecha de neumonía"
+        },
+        {
+          "section": "plan",
+          "fact": "radiografía de tórax y hemograma"
+        },
+        {
+          "section": "plan",
+          "fact": "amoxicilina con ácido clavulánico"
+        },
+        {
+          "section": "plan",
+          "fact": "control en 48 horas"
+        }
+      ]
+    },
+    {
+      "id": "nota-09",
+      "origin": "invented",
+      "lines": [
+        "Médico: ¿Cómo ha dormido?",
+        "Paciente: Mal, doctor, me despierto a las tres de la mañana y ya no me duermo, desde hace dos meses.",
+        "Médico: ¿Algo le preocupa?",
+        "Paciente: El trabajo, me siento nervioso todo el día.",
+        "Médico: ¿Ha perdido el interés en las cosas o ha pensado en hacerse daño?",
+        "Paciente: No, eso no.",
+        "Médico: ¿Toma café o alcohol?",
+        "Paciente: Tres cafés al día.",
+        "Médico: Paciente orientado, ansioso, sin signos de depresión mayor.",
+        "Médico: Insomnio con ansiedad. Higiene del sueño, sin café después del mediodía, y referencia a psicología. Control en un mes."
+      ],
+      "facts": [
+        {
+          "section": "motivo",
+          "fact": "insomnio"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "despertar precoz desde hace dos meses"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "nerviosismo por el trabajo"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "niega ideas de autolesión"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "tres cafés al día"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "orientado y ansioso"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "insomnio con ansiedad"
+        },
+        {
+          "section": "plan",
+          "fact": "higiene del sueño y sin café por la tarde"
+        },
+        {
+          "section": "plan",
+          "fact": "referencia a psicología"
+        },
+        {
+          "section": "plan",
+          "fact": "control en un mes"
+        }
+      ]
+    },
+    {
+      "id": "nota-10",
+      "origin": "invented",
+      "lines": [
+        "Médico: ¿Qué le pasa en la piel?",
+        "Paciente: Me pica mucho, sobre todo en la noche, entre los dedos y en la cintura.",
+        "Médico: ¿Alguien más en la casa tiene picazón?",
+        "Paciente: Mi hijo también.",
+        "Médico: ¿Desde cuándo?",
+        "Paciente: Unas dos semanas.",
+        "Médico: Pápulas y surcos entre los dedos de las manos y en la cintura, con lesiones de rascado.",
+        "Médico: Es escabiosis. Permetrina crema en todo el cuerpo esta noche y repetir en una semana; tratar a toda la familia y lavar la ropa de cama con agua caliente."
+      ],
+      "facts": [
+        {
+          "section": "motivo",
+          "fact": "prurito"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "prurito nocturno de dos semanas"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "hijo con la misma picazón"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "pápulas y surcos interdigitales y en la cintura"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "lesiones de rascado"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "escabiosis"
+        },
+        {
+          "section": "plan",
+          "fact": "permetrina crema, repetir en una semana"
+        },
+        {
+          "section": "plan",
+          "fact": "tratar a los convivientes"
+        },
+        {
+          "section": "plan",
+          "fact": "lavar ropa de cama con agua caliente"
+        }
+      ]
+    }
+  ]
+}

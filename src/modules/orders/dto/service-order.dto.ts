@@ -101,6 +101,11 @@ export const serviceOrderSchema = z.object({
   patientId: z.uuid(),
   orderedById: z.uuid(),
   /**
+   * ORD-181. The revision to send back in `If-Match` when correcting or
+   * issuing the draft. Changes with every write of the draft (ORD-182).
+   */
+  revision: z.number().int().positive(),
+  /**
    * ORD-006, ORD-098. Consecutive per site; assigned by the database when the
    * order is issued. `null` while it is a draft.
    */
@@ -250,6 +255,8 @@ export type PendingOrderListResponse = z.infer<typeof pendingOrderListSchema>;
 /** ORD-115. A draft its signer left behind in an attention no longer open. */
 export const staleDraftSchema = z.object({
   orderId: z.uuid(),
+  /** ORD-181. What `If-Match` carries when it is issued from this list. */
+  revision: z.number().int().positive(),
   encounterId: z.uuid(),
   encounterStatus: z.enum(['OPEN', 'ON_HOLD', 'DISCHARGED', 'COMPLETED', 'DISCONTINUED', 'ENTERED_IN_ERROR']), // prettier-ignore
   encounterStartedAt: z.iso.datetime(),

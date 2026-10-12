@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -17,6 +18,7 @@ import type { Request } from 'express';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { ALL_SITES } from '../../shared/authorisation/principal';
 import { RequirePermission } from '../../shared/http/auth.decorators';
+import { ApiIfMatch, revisionFrom } from '../../shared/http/if-match';
 import type { Permission } from '../../shared/authorisation/permission.catalogue';
 
 import { ServiceOrderService } from './application/service-order.service';
@@ -158,15 +160,20 @@ export class ServiceOrderController {
   @Put(':orderId')
   @RequirePermission('record:write', 'query')
   @ApiOperation({ summary: 'Corregir una orden en borrador' })
+  @ApiIfMatch()
   @ApiOkResponse({ type: ServiceOrderDto })
   async rewrite(
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() dto: PlaceOrderDto,
+    @Headers('if-match') ifMatch: string | undefined,
     @Req() req: Request,
   ): Promise<ServiceOrderResponse> {
+    // ORD-181. Read before anything else: a write without it is refused whole.
+    const revision = revisionFrom(ifMatch);
     const order = await this.orders.rewrite(
       {
         orderId,
+        revision,
         category: dto.category,
         priority: dto.priority,
         clinicalNoteText: dto.clinicalNoteText,
@@ -182,13 +189,18 @@ export class ServiceOrderController {
   @RequirePermission('record:write', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Emitir una orden en borrador' })
+  @ApiIfMatch()
   @ApiOkResponse({ type: ServiceOrderDto })
   async issue(
     @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Headers('if-match') ifMatch: string | undefined,
     @Req() req: Request,
   ): Promise<ServiceOrderResponse> {
+    // ORD-181. Issuing seals the server's draft: the issuer says which one.
+    const revision = revisionFrom(ifMatch);
     const order = await this.orders.issue(
       orderId,
+      revision,
       this.requester(req, 'record:write'),
     );
     return toOrderResponse(order);
@@ -306,6 +318,7 @@ export function toOrderResponse(order: ServiceOrderView): ServiceOrderResponse {
     siteId: order.siteId,
     patientId: order.patientId,
     orderedById: order.orderedById,
+    revision: order.revision,
     number: order.number,
     status: order.status,
     discardedAt: order.discardedAt?.toISOString() ?? null,
