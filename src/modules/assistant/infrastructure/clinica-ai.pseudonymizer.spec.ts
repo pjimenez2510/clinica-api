@@ -262,6 +262,40 @@ describe('ClinicaAiPseudonymizer, after the review', () => {
   });
 });
 
+describe('ClinicaAiPseudonymizer, second review', () => {
+  it('AS-030 does not refuse a month the date shift wrote, nor a connector of a name', async () => {
+    const cases: [string[], string][] = [
+      [
+        ['Julio Quishpe'],
+        '[NOMBRE_1] [NOMBRE_2] control el 17 de julio de 2025',
+      ],
+      [['Ana dos Santos'], '[NOMBRE_1] dos [NOMBRE_2] toma dos tabletas'],
+      [['Mayo Van Berg'], '[NOMBRE_1] van [NOMBRE_2] desde mayo'],
+    ];
+
+    for (const [names, text] of cases) {
+      const result = await adapter(
+        answering(200, { ...ANSWER, text }),
+      ).pseudonymize({
+        ...INPUT,
+        names,
+      });
+
+      expect(result.cleared).toBe(text);
+    }
+  });
+
+  it('AS-030 sees each half of a hyphenated surname', async () => {
+    const error = await failure(
+      adapter(
+        answering(200, { ...ANSWER, text: 'Paciente Toapanta refiere' }),
+      ).pseudonymize({ ...INPUT, names: ['Pérez-Toapanta'] }),
+    );
+
+    expect((error as PseudonymizerFailedError).outcome).toBe('invalid-answer');
+  });
+});
+
 describe('pseudonymizerFor', () => {
   it('AS-031 without a secret it is the missing one, which refuses before any request', async () => {
     const fetcher = vi.fn();

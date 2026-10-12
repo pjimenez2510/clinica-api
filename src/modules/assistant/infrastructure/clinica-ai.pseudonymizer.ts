@@ -114,8 +114,22 @@ function withTrailingSlash(url: string): string {
   return url.endsWith('/') ? url : `${url}/`;
 }
 
-/** Words that join a name and name nobody: «María de los Ángeles». */
-const CONNECTORS = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e']);
+/**
+ * Words that join a name and name nobody: «María de los Ángeles», «Ana dos
+ * Santos». The same list as `CONNECTORS` in clinica-ai (`privacy/rules.py`):
+ * the service leaves these, so finding one is no sign of a leak.
+ */
+const CONNECTORS = new Set([
+  'de', 'del', 'la', 'las', 'los', 'y', 'e', 'da', 'do', 'dos', 'van', 'von',
+]); // prettier-ignore
+/**
+ * The date shift writes month names that were not in the note: a patient
+ * called Julio would otherwise have every shifted date refused (second review).
+ */
+const MONTHS = new Set([
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
+  'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre',
+]); // prettier-ignore
 
 function fold(value: string): string {
   return value
@@ -132,8 +146,10 @@ function fold(value: string): string {
 function carriesAName(cleared: string, input: PseudonymizeInput): boolean {
   const answer = ` ${fold(cleared).replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
   return (input.names ?? [])
-    .flatMap((name) => fold(name).split(/\s+/))
-    .filter((word) => word.length >= 3 && !CONNECTORS.has(word))
+    .flatMap((name) => fold(name).split(/[^\p{L}\p{N}]+/u))
+    .filter(
+      (word) => word.length >= 3 && !CONNECTORS.has(word) && !MONTHS.has(word),
+    )
     .some((word) => answer.includes(` ${word} `));
 }
 
