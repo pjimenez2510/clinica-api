@@ -12,6 +12,7 @@ import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogu
 
 import {
   AssistantAllergyCheckFailedError,
+  AssistantDraftCancelledError,
   AssistantAllergyContraindicationError,
   AssistantPrescriptionLineNotReadyError,
   SuggestionPrescriptionMismatchError,
@@ -224,6 +225,13 @@ describe('assistant errors', () => {
       'ASSISTANT_DRAFT_RETRY_LIMIT',
       QuotaExceededError,
       /falló tres veces/,
+    ],
+    [
+      'AS-147',
+      () => new AssistantDraftCancelledError(),
+      'ASSISTANT_DRAFT_CANCELLED',
+      ConflictError,
+      /volver a pedirlo/,
     ],
     [
       'AS-040',

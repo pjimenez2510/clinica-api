@@ -498,3 +498,18 @@ export class AssistantDraftRetryLimitError extends QuotaExceededError {
     super('The draft of this stretch failed too many times');
   }
 }
+
+/**
+ * AS-143, AS-147. The draft was stopped before it finished: the note was
+ * signed, or the physician stopped waiting for it. Nothing it returns is kept;
+ * it can be asked for again while the note is open.
+ */
+export class AssistantDraftCancelledError extends ConflictError {
+  readonly code = 'ASSISTANT_DRAFT_CANCELLED';
+  override readonly userTitle =
+    'Se dejó de esperar este borrador. Puede volver a pedirlo mientras la nota siga abierta';
+
+  constructor() {
+    super('The draft was cancelled before it finished');
+  }
+}
