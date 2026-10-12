@@ -1,0 +1,404 @@
+{
+  "description": "Set reservado del borrador (SC-091): consultas inventadas (ningún paciente), escritas el 12-10-2026 antes de ajustar el prompt c2-draft-3 y nunca usadas para ajustarlo. Mismo formato y secciones que nota.json. Los hechos los escribió el desarrollador; debe revisarlos un médico antes de usar el juez para decidir.",
+  "cases": [
+    {
+      "id": "reservada-01",
+      "origin": "invented",
+      "lines": [
+        "Médico: Buenas tardes, cuénteme qué le pasa al niño.",
+        "Madre: Doctora, desde ayer tiene diarrea, unas seis veces al día, y vomitó dos veces anoche.",
+        "Médico: ¿Ha tenido fiebre? ¿La diarrea tiene sangre?",
+        "Madre: Fiebre de 37,8 en la mañana. Sangre no, es aguadita.",
+        "Médico: ¿Está tomando líquidos y orinando?",
+        "Madre: Toma poquito, pero sí orina.",
+        "Médico: Pesa 14 kilos. Está activo, mucosas un poco secas, abdomen blando, ruidos aumentados, sin dolor a la palpación.",
+        "Médico: Es una gastroenteritis aguda con deshidratación leve. Le damos suero oral a cucharaditas después de cada deposición, zinc por diez días, y que siga comiendo normal.",
+        "Médico: Si ve sangre en las heces, si no orina en seis horas o si está muy decaído, venga a emergencia."
+      ],
+      "facts": [
+        { "section": "motivo", "fact": "diarrea y vómito" },
+        {
+          "section": "enfermedad_actual",
+          "fact": "diarrea desde ayer, unas seis deposiciones al día"
+        },
+        { "section": "enfermedad_actual", "fact": "dos vómitos" },
+        { "section": "enfermedad_actual", "fact": "temperatura 37,8" },
+        { "section": "enfermedad_actual", "fact": "heces líquidas sin sangre" },
+        { "section": "examen_fisico", "fact": "peso 14 kg" },
+        { "section": "examen_fisico", "fact": "mucosas algo secas" },
+        {
+          "section": "examen_fisico",
+          "fact": "abdomen blando, depresible, no doloroso"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "gastroenteritis aguda con deshidratación leve"
+        },
+        {
+          "section": "plan",
+          "fact": "sales de rehidratación oral tras cada deposición"
+        },
+        { "section": "plan", "fact": "zinc por diez días" },
+        {
+          "section": "plan",
+          "fact": "signos de alarma: sangre en heces, no orinar en seis horas, decaimiento"
+        }
+      ]
+    },
+    {
+      "id": "reservada-02",
+      "origin": "invented",
+      "lines": [
+        "Médico: Siéntese, ¿qué le trae hoy?",
+        "Paciente: Me duele la parte baja de la espalda desde el lunes, cuando levanté unos sacos de cemento.",
+        "Médico: ¿El dolor baja a la pierna? ¿Se le duerme algo?",
+        "Paciente: No baja, solo aquí en la cintura. Nada dormido.",
+        "Médico: ¿Ha tenido problemas para orinar o fiebre?",
+        "Paciente: No, nada de eso.",
+        "Médico: ¿Toma alguna medicación?",
+        "Paciente: Solo para la presión, losartán.",
+        "Médico: Contractura de los músculos lumbares, Lasègue negativo a los dos lados, fuerza y reflejos normales.",
+        "Médico: Es una lumbalgia mecánica. Ibuprofeno de cuatrocientos cada ocho horas con comida por cinco días, calor local, y nada de cargar peso por dos semanas.",
+        "Médico: Si se le duerme la pierna o no puede orinar, venga de inmediato."
+      ],
+      "facts": [
+        { "section": "motivo", "fact": "dolor lumbar" },
+        {
+          "section": "enfermedad_actual",
+          "fact": "inicio tras levantar sacos de cemento"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "sin irradiación a la pierna ni adormecimiento"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "niega síntomas urinarios y fiebre"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "hipertensión en tratamiento con losartán"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "contractura paravertebral lumbar"
+        },
+        { "section": "examen_fisico", "fact": "Lasègue negativo bilateral" },
+        { "section": "examen_fisico", "fact": "fuerza y reflejos normales" },
+        { "section": "diagnostico", "fact": "lumbalgia mecánica" },
+        {
+          "section": "plan",
+          "fact": "ibuprofeno 400 mg cada 8 horas con comida por 5 días"
+        },
+        {
+          "section": "plan",
+          "fact": "calor local y no cargar peso por dos semanas"
+        },
+        {
+          "section": "plan",
+          "fact": "volver de inmediato si adormecimiento de la pierna o retención urinaria"
+        }
+      ]
+    },
+    {
+      "id": "reservada-03",
+      "origin": "invented",
+      "lines": [
+        "Médico: Buenos días, ¿en qué le ayudo?",
+        "Paciente: Me arde al orinar desde hace dos días y voy al baño a cada rato.",
+        "Médico: ¿Ha tenido fiebre o dolor en la espalda, a los lados?",
+        "Paciente: Fiebre no, la espalda tampoco. Solo abajo, en el vientre.",
+        "Médico: ¿Puede estar embarazada? ¿Cuándo fue su última regla?",
+        "Paciente: No, me vino hace dos semanas y me cuido con pastillas.",
+        "Médico: ¿Alergia a algún medicamento?",
+        "Paciente: Sí, a la penicilina, me salen ronchas.",
+        "Médico: Temperatura 36,7. Dolor leve al palpar sobre el pubis, puño percusión negativa a los dos lados.",
+        "Médico: Es una cistitis no complicada. Nitrofurantoína de cien cada doce horas por cinco días, tomar bastante agua, y un examen de orina con cultivo antes de empezar."
+      ],
+      "facts": [
+        { "section": "motivo", "fact": "ardor al orinar" },
+        { "section": "enfermedad_actual", "fact": "dos días de evolución" },
+        { "section": "enfermedad_actual", "fact": "polaquiuria" },
+        {
+          "section": "enfermedad_actual",
+          "fact": "dolor en hipogastrio, sin fiebre ni dolor lumbar"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "alergia a la penicilina (urticaria)"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "anticoncepción oral, niega embarazo"
+        },
+        { "section": "examen_fisico", "fact": "temperatura 36,7" },
+        { "section": "examen_fisico", "fact": "dolor suprapúbico leve" },
+        {
+          "section": "examen_fisico",
+          "fact": "puño percusión negativa bilateral"
+        },
+        { "section": "diagnostico", "fact": "cistitis no complicada" },
+        {
+          "section": "plan",
+          "fact": "nitrofurantoína 100 mg cada 12 horas por 5 días"
+        },
+        {
+          "section": "plan",
+          "fact": "elemental y microscópico de orina con urocultivo"
+        }
+      ]
+    },
+    {
+      "id": "reservada-04",
+      "origin": "invented",
+      "lines": [
+        "Médico: Pase, don Jorge. ¿Cómo ha estado de la presión?",
+        "Paciente: Más o menos, doctor. En la farmacia me la tomaron y estaba en ciento cincuenta.",
+        "Médico: ¿Está tomando el enalapril todos los días?",
+        "Paciente: Sí, el de veinte en la mañana. Pero me da una tos seca que no se me quita.",
+        "Médico: ¿Dolor de cabeza, dolor de pecho, se le hinchan los pies?",
+        "Paciente: Nada de eso.",
+        "Médico: ¿Fuma?",
+        "Paciente: Dejé hace cinco años.",
+        "Médico: Presión 152 sobre 94, pulso 78. Corazón rítmico sin soplos, pulmones limpios, sin edema en las piernas.",
+        "Médico: Hipertensión no controlada y tos por el enalapril. Lo cambiamos a losartán de cincuenta una vez al día, que controle la sal, y pedimos creatinina y potasio. Control en un mes con el registro de la presión."
+      ],
+      "facts": [
+        { "section": "motivo", "fact": "control de hipertensión" },
+        {
+          "section": "enfermedad_actual",
+          "fact": "presión de 150 medida en farmacia"
+        },
+        { "section": "enfermedad_actual", "fact": "tos seca persistente" },
+        {
+          "section": "enfermedad_actual",
+          "fact": "niega cefalea, dolor torácico y edemas"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "toma enalapril 20 mg en la mañana"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "exfumador desde hace cinco años"
+        },
+        { "section": "examen_fisico", "fact": "presión arterial 152/94" },
+        {
+          "section": "examen_fisico",
+          "fact": "pulmones limpios, sin edema de miembros inferiores"
+        },
+        {
+          "section": "diagnostico",
+          "fact": "hipertensión arterial no controlada"
+        },
+        { "section": "diagnostico", "fact": "tos por enalapril" },
+        {
+          "section": "plan",
+          "fact": "cambiar a losartán 50 mg una vez al día"
+        },
+        { "section": "plan", "fact": "creatinina y potasio" },
+        {
+          "section": "plan",
+          "fact": "control en un mes con registro de presión"
+        }
+      ]
+    },
+    {
+      "id": "reservada-05",
+      "origin": "invented",
+      "lines": [
+        "Médico: Hola, ¿qué te pasó?",
+        "Paciente: Jugando fútbol el sábado me doblé el tobillo derecho hacia adentro.",
+        "Médico: ¿Pudiste caminar después?",
+        "Paciente: Sí, cojeando. Se hinchó bastante.",
+        "Médico: ¿Te has torcido ese tobillo antes?",
+        "Paciente: Una vez, hace dos años.",
+        "Médico: Tobillo derecho con edema y equimosis en la parte de afuera, dolor al tocar el ligamento de adelante. No duele en el borde de atrás del maléolo ni en la base del quinto metatarsiano.",
+        "Médico: Es un esguince de tobillo grado dos. No hace falta radiografía. Hielo veinte minutos tres veces al día, vendaje elástico, pie en alto, paracetamol si duele, y a los diez días empezamos ejercicios."
+      ],
+      "facts": [
+        { "section": "motivo", "fact": "trauma de tobillo derecho" },
+        {
+          "section": "enfermedad_actual",
+          "fact": "inversión del tobillo jugando fútbol"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "pudo caminar cojeando, con hinchazón"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "esguince previo del mismo tobillo hace dos años"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "edema y equimosis lateral del tobillo derecho"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "dolor sobre el ligamento peroneoastragalino anterior"
+        },
+        {
+          "section": "examen_fisico",
+          "fact": "sin dolor en maléolo posterior ni en la base del quinto metatarsiano"
+        },
+        { "section": "diagnostico", "fact": "esguince de tobillo grado II" },
+        { "section": "plan", "fact": "no requiere radiografía" },
+        { "section": "plan", "fact": "hielo, vendaje elástico y elevación" },
+        { "section": "plan", "fact": "paracetamol si hay dolor" },
+        {
+          "section": "plan",
+          "fact": "ejercicios de rehabilitación a los diez días"
+        }
+      ]
+    },
+    {
+      "id": "reservada-06",
+      "origin": "invented",
+      "lines": [
+        "Médico: ¿Qué tiene la nena?",
+        "Padre: Desde anoche llora y se jala la oreja izquierda, y tuvo fiebre de 38,5.",
+        "Médico: ¿Ha estado con gripe estos días?",
+        "Padre: Sí, con moco desde la semana pasada.",
+        "Médico: ¿Cuántos años tiene? ¿Tiene las vacunas al día?",
+        "Padre: Tiene tres años, y sí, todas las vacunas.",
+        "Médico: ¿Es alérgica a algo?",
+        "Padre: No que sepamos.",
+        "Médico: Pesa 15 kilos. Oído izquierdo con la membrana roja y abombada; el derecho normal. Garganta un poco roja.",
+        "Médico: Es una otitis media aguda izquierda. Amoxicilina en suspensión, siete mililitros y medio cada doce horas por diez días, e ibuprofeno para el dolor y la fiebre. Control en tres días si sigue con fiebre."
+      ],
+      "facts": [
+        { "section": "motivo", "fact": "otalgia izquierda y fiebre" },
+        {
+          "section": "enfermedad_actual",
+          "fact": "desde anoche, se jala la oreja izquierda"
+        },
+        { "section": "enfermedad_actual", "fact": "fiebre de 38,5" },
+        {
+          "section": "enfermedad_actual",
+          "fact": "rinorrea desde la semana pasada"
+        },
+        { "section": "antecedentes", "fact": "tres años, vacunas completas" },
+        { "section": "antecedentes", "fact": "sin alergias conocidas" },
+        { "section": "examen_fisico", "fact": "peso 15 kg" },
+        {
+          "section": "examen_fisico",
+          "fact": "membrana timpánica izquierda eritematosa y abombada"
+        },
+        { "section": "diagnostico", "fact": "otitis media aguda izquierda" },
+        {
+          "section": "plan",
+          "fact": "amoxicilina suspensión 7,5 ml cada 12 horas por 10 días"
+        },
+        { "section": "plan", "fact": "ibuprofeno para dolor y fiebre" },
+        {
+          "section": "plan",
+          "fact": "control en tres días si persiste la fiebre"
+        }
+      ]
+    },
+    {
+      "id": "reservada-07",
+      "origin": "invented",
+      "lines": [
+        "Médico: Buenas, ¿qué le pasa?",
+        "Paciente: Me falta el aire desde ayer y silbo del pecho. Soy asmático.",
+        "Médico: ¿Qué usa para el asma?",
+        "Paciente: El salbutamol cuando me da, pero esta semana lo he usado como cinco veces al día.",
+        "Médico: ¿Algo lo desencadenó?",
+        "Paciente: Estuvimos limpiando la bodega, había mucho polvo.",
+        "Médico: ¿Puede hablar frases completas?",
+        "Paciente: Sí, pero me canso.",
+        "Médico: Frecuencia respiratoria 24, saturación 94 por ciento. Sibilancias espiratorias en los dos campos, sin tiraje.",
+        "Médico: Es una crisis asmática moderada. Le damos salbutamol con inhalocámara, cuatro puffs cada veinte minutos por una hora, y prednisona de cuarenta por cinco días. Luego empezamos un inhalador de mantenimiento con corticoide.",
+        "Médico: Si los labios se ponen morados o no puede hablar, a emergencia."
+      ],
+      "facts": [
+        { "section": "motivo", "fact": "disnea y sibilancias" },
+        { "section": "enfermedad_actual", "fact": "desde ayer" },
+        {
+          "section": "enfermedad_actual",
+          "fact": "uso de salbutamol unas cinco veces al día esta semana"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "desencadenado por polvo al limpiar"
+        },
+        { "section": "antecedentes", "fact": "asma" },
+        { "section": "examen_fisico", "fact": "frecuencia respiratoria 24" },
+        { "section": "examen_fisico", "fact": "saturación 94 %" },
+        {
+          "section": "examen_fisico",
+          "fact": "sibilancias espiratorias bilaterales sin tiraje"
+        },
+        { "section": "diagnostico", "fact": "crisis asmática moderada" },
+        {
+          "section": "plan",
+          "fact": "salbutamol con inhalocámara 4 puffs cada 20 minutos por una hora"
+        },
+        { "section": "plan", "fact": "prednisona 40 mg por 5 días" },
+        {
+          "section": "plan",
+          "fact": "iniciar corticoide inhalado de mantenimiento"
+        },
+        {
+          "section": "plan",
+          "fact": "signos de alarma: cianosis o no poder hablar"
+        }
+      ]
+    },
+    {
+      "id": "reservada-08",
+      "origin": "invented",
+      "lines": [
+        "Médico: Buenos días, ¿cómo va el embarazo?",
+        "Paciente: Bien, doctora. Ya tengo veintiocho semanas. Solo me duelen un poco las piernas en la tarde.",
+        "Médico: ¿Siente que el bebé se mueve?",
+        "Paciente: Sí, bastante.",
+        "Médico: ¿Dolor de cabeza fuerte, ve lucecitas, se le hinchó la cara?",
+        "Paciente: No, nada de eso.",
+        "Médico: ¿Está tomando el hierro y el ácido fólico?",
+        "Paciente: El ácido fólico sí; el hierro me estriñe y lo dejé.",
+        "Médico: Presión 110 sobre 70, altura uterina 27 centímetros, frecuencia cardiaca fetal 142. Edema leve en los tobillos.",
+        "Médico: Embarazo de veintiocho semanas que va bien. Retomar el hierro con jugo de naranja y más fibra para el estreñimiento, hacemos la prueba de tolerancia a la glucosa y la hemoglobina, y control en cuatro semanas."
+      ],
+      "facts": [
+        { "section": "motivo", "fact": "control prenatal" },
+        { "section": "enfermedad_actual", "fact": "28 semanas de gestación" },
+        {
+          "section": "enfermedad_actual",
+          "fact": "dolor leve en piernas por la tarde"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "percibe movimientos fetales"
+        },
+        {
+          "section": "enfermedad_actual",
+          "fact": "niega cefalea, fosfenos y edema facial"
+        },
+        {
+          "section": "antecedentes",
+          "fact": "suspendió el hierro por estreñimiento; toma ácido fólico"
+        },
+        { "section": "examen_fisico", "fact": "presión arterial 110/70" },
+        { "section": "examen_fisico", "fact": "altura uterina 27 cm" },
+        { "section": "examen_fisico", "fact": "frecuencia cardiaca fetal 142" },
+        { "section": "examen_fisico", "fact": "edema leve de tobillos" },
+        {
+          "section": "diagnostico",
+          "fact": "embarazo de 28 semanas de evolución normal"
+        },
+        {
+          "section": "plan",
+          "fact": "retomar el hierro con jugo de naranja y fibra"
+        },
+        {
+          "section": "plan",
+          "fact": "prueba de tolerancia oral a la glucosa y hemoglobina"
+        },
+        { "section": "plan", "fact": "control en cuatro semanas" }
+      ]
+    }
+  ]
+}

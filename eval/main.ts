@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { Logger } from '@nestjs/common';
@@ -66,9 +66,28 @@ Opciones:
   --salida <carpeta>           por defecto eval/resultados
   --estimar                    sólo dice cuántas llamadas y el peor caso de gasto, sin llamar
   --tope-proveedor <usd>       lo más que cada proveedor puede llevar gastado en el registro, contando el intento (D-241)
+  --set-borrador <nota|reservado>  casos del borrador: nota.json (por defecto) o nota-reservada.json, que no se usa para ajustar el prompt
+  --revision <carpeta>         escribe, fuera del repositorio, cada frase del borrador y cada hecho con el veredicto del juez, para revisarlo a mano
 `;
 
 type Env = Record<string, string | undefined>;
+
+/**
+ * SC-091. The manual review of the judge is case text: it goes to a folder
+ * outside the repository, one JSON line per judged draft, never into the
+ * result (EV-7).
+ */
+function reviewWriter(dir: string | undefined) {
+  if (dir === undefined) return undefined;
+  const folder = resolve(dir);
+  const inside = relative(process.cwd(), folder);
+  if (!inside.startsWith('..') && !inside.startsWith('/')) {
+    throw new Error('--revision: la carpeta tiene que estar fuera del repositorio');
+  }
+  mkdirSync(folder, { recursive: true });
+  const file = join(folder, 'revision.jsonl');
+  return (entry: object) => appendFileSync(file, `${JSON.stringify(entry)}\n`);
+}
 type TaskKey =
   'cie10' | 'cie10-problema' | 'receta' | 'receta-nota' | 'nota' | 'borrador';
 
@@ -166,6 +185,8 @@ export async function runFromArgs(
       },
       estimar: { type: 'boolean', default: false },
       'tope-proveedor': { type: 'string' },
+      'set-borrador': { type: 'string', default: 'nota' },
+      revision: { type: 'string' },
       ayuda: { type: 'boolean', default: false },
     },
   });
@@ -297,14 +318,20 @@ export async function runFromArgs(
     });
   }
 
-  // AS-098 (C2). The product's writer on the same invented consultations.
+  // AS-098 (C2). The product's writer on the same invented consultations,
+  // or on the held-out ones the prompt was never tuned on (SC-091).
   if (wanted.includes('borrador')) {
-    const own = invented.note.cases.slice(0, limit);
-    add(draftTask(catalogues), own);
+    const heldOut = values['set-borrador'] === 'reservado';
+    if (!heldOut && values['set-borrador'] !== 'nota') {
+      throw new Error('--set-borrador: nota o reservado');
+    }
+    const set = heldOut ? invented.noteHeldOut : invented.note;
+    const own = set.cases.slice(0, limit);
+    add(draftTask(catalogues, { review: reviewWriter(values.revision) }), own);
     casesMeta.push({
       task: 'draft',
-      source: 'nota.json',
-      sha256: invented.note.sha256,
+      source: heldOut ? 'nota-reservada.json' : 'nota.json',
+      sha256: set.sha256,
       n: own.length,
     });
   }

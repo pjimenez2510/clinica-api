@@ -50,6 +50,17 @@ export function heardCase(item: NoteCase): TranscriptLine[] {
 type DraftAnswer = z.infer<ReturnType<typeof draftRequest>['answer']>;
 
 /**
+ * SC-091. What a person needs to check the judge by hand: each phrase of the
+ * draft and each expected fact with its verdict. It is case text, so it never
+ * goes into the result (EV-7): `--revision` writes it outside the repository.
+ */
+export interface DraftReview {
+  caseId: string;
+  phrases: { section: string; text: string; unsaid: boolean; supported: boolean | null }[]; // prettier-ignore
+  facts: { section: string; fact: string; present: boolean | null }[];
+}
+
+/**
  * AS-098. The draft of the note (C2) measured with the product's own code:
  * the lexicon, the request, the reading of the answer with its line or
  * «Nadie lo dijo». No pseudonymizer: the cases are invented (EV-2).
@@ -63,6 +74,7 @@ type DraftAnswer = z.infer<ReturnType<typeof draftRequest>['answer']>;
  */
 export function draftTask(
   catalogues: Catalogues,
+  options: { review?: (entry: DraftReview) => void } = {},
 ): EvalTask<NoteCase, DraftAnswer> {
   const lexicon: Lexicon = buildLexicon({
     targets: catalogues.cnmb.map((medicine) => medicine.display),
@@ -130,6 +142,21 @@ export function draftTask(
             ? null
             : readVerdicts(verdicts, item.facts.length, phrases.length);
         present = verdict === null ? null : item.facts.length - verdict.omitted;
+        options.review?.({
+          caseId: item.id,
+          phrases: sections.flatMap((section) =>
+            section.phrases.map((phrase) => ({
+              section: section.section,
+              text: phrase.text,
+              unsaid: phrase.unsaid,
+              supported: verdict === null ? null : (verdicts?.segments.find((v) => v.n === phrases.indexOf(phrase) + 1)?.supported ?? null), // prettier-ignore
+            })),
+          ),
+          facts: item.facts.map((fact, i) => ({
+            ...fact,
+            present: verdict === null ? null : (verdicts?.facts.find((v) => v.n === i + 1)?.present ?? null), // prettier-ignore
+          })),
+        });
       }
       return {
         // Counts only: what the result keeps is never the case's text (EV-7).

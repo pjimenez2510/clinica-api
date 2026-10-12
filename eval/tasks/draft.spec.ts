@@ -81,6 +81,32 @@ describe('draft task (AS-098)', () => {
     });
   });
 
+  it('SC-091 hands each fact and phrase with its verdict to the manual review, and nothing to the result', async () => {
+    const review = vi.fn();
+    const reviewed = draftTask(loadCatalogues(), { review });
+    const judge = vi.fn(() =>
+      Promise.resolve(
+        verdicts(
+          item.facts.map((_, i) => i !== 0),
+          1,
+        ),
+      ),
+    ) as unknown as Ask;
+
+    await reviewed.evaluate(
+      item,
+      'D',
+      { sections: [{ section: 'motivoConsulta', segments: [{ text: 'Dolor de garganta', source: 'L2' }] }] }, // prettier-ignore
+      judge,
+    );
+
+    expect(review).toHaveBeenCalledWith({
+      caseId: item.id,
+      phrases: [{ section: 'motivoConsulta', text: 'Dolor de garganta.', unsaid: false, supported: true }], // prettier-ignore
+      facts: item.facts.map((fact, i) => ({ ...fact, present: i !== 0 })),
+    });
+  });
+
   it('SC-091 a draft every section of which somebody said has no invented one', async () => {
     const { scores } = await task.evaluate(
       item,
