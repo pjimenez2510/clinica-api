@@ -33,6 +33,8 @@ import { PrismaPatientAllergyRepository } from '../../src/modules/encounter/infr
 import { PrismaPatientHistoryRepository } from '../../src/modules/encounter/infrastructure/prisma-patient-history.repository';
 import { PrismaActiveAllergyReader } from '../../src/shared/infrastructure/clinical/prisma-active-allergy.reader';
 import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
+import type { AssistantAtSigning } from '../../src/shared/clinical/assistant-at-signing.port';
+
 import { useDatabase } from './setup/database';
 
 /** EN-206. The real readers behind the snapshot every signature freezes. */
@@ -63,6 +65,12 @@ import {
  * refused everything.
  */
 const db = useDatabase();
+
+/** AS-143. The assistant is not what these tests look at: it is told, and does nothing. */
+const quietAssistant: AssistantAtSigning = {
+  activity: () => Promise.resolve({ listening: false, drafting: false }),
+  signed: () => Promise.resolve(),
+};
 
 async function anAttendedAppointment(prisma: PrismaClient) {
   const site = await createSite(prisma);
@@ -244,6 +252,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       backgroundOf(prisma),
       quietLogger,
       new InProcessLiveEventBus(),
+      quietAssistant,
     );
 
   const notesOf = (prisma: PrismaClient) =>
@@ -548,6 +557,7 @@ describe('anular e interrumpir mueven la cita en la misma transacción', () => {
       backgroundOf(prisma),
       quietLogger,
       new InProcessLiveEventBus(),
+      quietAssistant,
     );
 
     const outcome = await recording.discontinue(
@@ -1452,6 +1462,7 @@ describe('escribir un diagnóstico o un procedimiento se serializa con anular e 
       backgroundOf(prisma),
       quietLogger,
       new InProcessLiveEventBus(),
+      quietAssistant,
     );
 
     const [diagnosis, exit] = await Promise.allSettled([
@@ -1557,6 +1568,7 @@ describe('una nota con solo blancos no es acto clínico, en la base igual que en
       backgroundOf(prisma),
       quietLogger,
       new InProcessLiveEventBus(),
+      quietAssistant,
     );
 
     await exits.discontinue(
@@ -1613,6 +1625,7 @@ describe('una nota con solo blancos no es acto clínico, en la base igual que en
       backgroundOf(prisma),
       quietLogger,
       new InProcessLiveEventBus(),
+      quietAssistant,
     );
 
     await exits.discontinue(

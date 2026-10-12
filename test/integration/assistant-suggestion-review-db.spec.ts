@@ -216,6 +216,9 @@ describe('ai_suggestion_review (AS-145)', () => {
     await expect(
       prisma.aiSuggestionReview.delete({ where: { suggestionId: section.id } }),
     ).rejects.toThrow(/ai_suggestion_review_is_kept/);
+    await expect(
+      prisma.$executeRawUnsafe('TRUNCATE ai_suggestion_review'),
+    ).rejects.toThrow(/insert-only/);
     expect(
       await prisma.aiSuggestionReview.count({
         where: { suggestionId: section.id },

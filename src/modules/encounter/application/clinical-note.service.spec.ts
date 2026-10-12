@@ -18,6 +18,8 @@ import {
   DischargeConditionRequiredError,
   EncounterAlreadyClosedError,
   NoteAlreadySignedError,
+  NoteSignWhileDraftingError,
+  NoteSignWhileListeningError,
   AnthropometryPendingError,
   NoteContentIncompleteError,
   NoteNotAmendableError,
@@ -25,6 +27,10 @@ import {
   PractitionerProfileRequiredError,
   UnknownClinicalFormError,
 } from '../domain/encounter.errors';
+import type {
+  AssistantActivity,
+  AssistantAtSigning,
+} from '../../../shared/clinical/assistant-at-signing.port';
 import { contentHashOf } from '../domain/clinical-note';
 import type {
   AmendmentDraft,
@@ -292,9 +298,23 @@ describe('los casos de uso de la nota clínica', () => {
   let audit: AccessAuditRecorder & { entries: AccessAuditEntry[] };
   let service: ClinicalNoteService;
   let heard: LiveEvent[];
+  /** AS-140 to AS-143. What the assistant says it is doing, and the signatures it was told of. */
+  let assistant: AssistantAtSigning & {
+    now: AssistantActivity;
+    told: string[];
+  };
 
   beforeEach(() => {
     heard = [];
+    assistant = {
+      now: { listening: false, drafting: false },
+      told: [],
+      activity: () => Promise.resolve(assistant.now),
+      signed: (encounterId) => {
+        assistant.told.push(encounterId);
+        return Promise.resolve();
+      },
+    };
     const liveEvents = new InProcessLiveEventBus();
     liveEvents.subscribe((event) => heard.push(event));
     notes = new FakeNotes();
@@ -332,6 +352,7 @@ describe('los casos de uso de la nota clínica', () => {
       templates as unknown as NoteTemplateRepository,
       logger,
       liveEvents,
+      assistant,
     );
   });
 
@@ -503,6 +524,41 @@ describe('los casos de uso de la nota clínica', () => {
       (refusal as AnthropometryPendingError).fieldErrors?.map((e) => e.field),
     ).toEqual(['weightKg', 'heightCm']);
     expect(notes.stored.status).toBe('DRAFT');
+  });
+
+  it('AS-140 no firma mientras el asistente escucha la consulta, y la nota sigue en borrador', async () => {
+    assistant.now = { listening: true, drafting: false };
+
+    await expect(
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(NoteSignWhileListeningError);
+    expect(notes.stored.status).toBe('DRAFT');
+    expect(assistant.told).toEqual([]);
+  });
+
+  it('AS-141 no firma mientras se redacta el borrador de la nota', async () => {
+    assistant.now = { listening: false, drafting: true };
+
+    await expect(
+      service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, requester), // prettier-ignore
+    ).rejects.toBeInstanceOf(NoteSignWhileDraftingError);
+    expect(notes.stored.status).toBe('DRAFT');
+  });
+
+  it('AS-143 firmada la 002, avisa al asistente una vez, después de guardar la firma', async () => {
+    await service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1, dischargeCondition: 'ALIVE' }, requester); // prettier-ignore
+
+    expect(assistant.told).toEqual([ENCOUNTER]);
+    expect(notes.stored.status).toBe('SIGNED');
+  });
+
+  it('AS-143 una nota que no da el alta no detiene al asistente', async () => {
+    notes.stored = aNote({ formCode: '005', content: { evolucion: 'Curación de la herida.' } }); // prettier-ignore
+
+    await service.sign({ encounterId: ENCOUNTER, noteId: 'note-1', revision: 1 }, requester); // prettier-ignore
+
+    expect(notes.stored.status).toBe('SIGNED');
+    expect(assistant.told).toEqual([]);
   });
 
   it('EN-027 firma registrando quién, cuándo y el resumen del contenido', async () => {

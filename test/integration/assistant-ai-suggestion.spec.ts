@@ -308,7 +308,9 @@ describe('ai_suggestion (assistant)', () => {
       prisma.aiSuggestion.delete({ where: { id: suggestion.id } }),
     ).rejects.toThrow(/ai_suggestion_is_kept/);
     await expect(
-      prisma.$executeRawUnsafe('TRUNCATE ai_suggestion'),
+      // CASCADE: `ai_suggestion_review` (E1) points here, and a plain
+      // TRUNCATE would be refused by its foreign key before any trigger.
+      prisma.$executeRawUnsafe('TRUNCATE ai_suggestion CASCADE'),
     ).rejects.toThrow(/insert-only/);
   });
 

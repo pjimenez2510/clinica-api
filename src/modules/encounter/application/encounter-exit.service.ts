@@ -7,6 +7,10 @@ import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
 } from '../../../shared/audit/access-audit.port';
+import {
+  ASSISTANT_AT_SIGNING,
+  type AssistantAtSigning,
+} from '../../../shared/clinical/assistant-at-signing.port';
 import { contentHashOf, type NoteContent } from '../domain/clinical-note';
 import { withBackgroundSnapshot } from '../domain/background-snapshot';
 import { BackgroundSnapshotReader } from './background-snapshot.reader';
@@ -97,6 +101,9 @@ export class EncounterExitService {
     private readonly logger: PinoLogger,
     /** AG-179, BI-238. Where «this site's day changed» is said. */
     private readonly liveEvents: LiveEventBus,
+    /** AS-142, AS-143. The interruption signs: the assistant is told after. */
+    @Inject(ASSISTANT_AT_SIGNING)
+    private readonly assistant: AssistantAtSigning,
   ) {
     this.logger.setContext(EncounterExitService.name);
   }
@@ -281,6 +288,10 @@ export class EncounterExitService {
       });
     }
 
+    // AS-142, AS-143. Not refused while the assistant listens or drafts —it
+    // is the way out of a consultation that cannot go on (D-252 §1)—, but
+    // what it had running stops and its proposals are reviewed. Never throws.
+    await this.assistant.signed(discontinued.id);
     announceEncounterChange(this.liveEvents, discontinued.siteId, { ended: true }); // prettier-ignore
 
     return { encounter: discontinued, unsignedEmptyNoteIds };

@@ -94,8 +94,10 @@ CREATE TRIGGER "ai_suggestion_review_is_kept"
   BEFORE UPDATE OR DELETE ON "ai_suggestion_review"
   FOR EACH ROW EXECUTE FUNCTION ai_suggestion_review_is_kept();
 
+-- The same refusal as `ai_suggestion_never_truncated`: a TRUNCATE … CASCADE
+-- of the proposals reaches this table too, and says the same.
 CREATE TRIGGER "ai_suggestion_review_never_truncated"
   BEFORE TRUNCATE ON "ai_suggestion_review"
-  FOR EACH STATEMENT EXECUTE FUNCTION ai_suggestion_review_is_kept();
+  FOR EACH STATEMENT EXECUTE FUNCTION record_version_insert_only();
 
 COMMIT;
