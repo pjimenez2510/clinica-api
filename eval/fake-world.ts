@@ -15,6 +15,7 @@ import {
 } from '../src/modules/assistant/infrastructure/fake-llm.provider.ts';
 
 import type {
+  ExamNoteCase,
   NoteCase,
   PrescriptionCase,
   PrescriptionNoteCase,
@@ -161,7 +162,34 @@ export class FakeWorld {
             ? this.choices(item as PrescriptionNoteCase, request.prompt, right)
             : this.lines(item as PrescriptionNoteCase),
         );
+      case 'examenes-nota':
+        return answer(this.exams(item as ExamNoteCase, request.prompt, right));
     }
+  }
+
+  /**
+   * AS-114. Right: each exam asked for with its number in the catalogue the
+   * prompt carries, quoting the last sentence that asks; wrong: the same
+   * lines with no candidate (an abstention).
+   */
+  private exams(item: ExamNoteCase, prompt: string, right: boolean) {
+    const catalogue = prompt.split('### Catálogo de exámenes de la clínica')[1] ?? ''; // prettier-ignore
+    const numbers = [...catalogue.matchAll(/^(\d+)\. /gm)].map(([, n]) => Number(n)); // prettier-ignore
+    const sentences = [
+      ...item.plan.split(/(?<=\.)\s+/),
+      ...(item.conversation ?? []),
+    ]
+      .map((sentence) => sentence.replace(/\.$/, '').trim())
+      .filter((sentence) => sentence.split(' ').length >= 2);
+    const quote = sentences[sentences.length - 1] ?? item.plan;
+    return {
+      exams: item.expected.map((code, at) => ({
+        requested: code,
+        quote,
+        // The fake does not read names: the case's position stands for it.
+        candidates: right ? [numbers[at] ?? 1] : [],
+      })),
+    };
   }
 
   private cie10(item: Cie10EvalCase, arm: 'A' | 'D', right: boolean) {

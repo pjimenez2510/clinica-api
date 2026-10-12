@@ -18,6 +18,7 @@ import { ALLERGY_ABSENCE_READER } from '../../shared/clinical/allergy-absence.po
 import { CODING_CONTEXT_READER } from '../../shared/clinical/coding-context.port';
 import { NOTE_DRAFT_CONTEXT_READER } from '../../shared/clinical/note-draft-context.port';
 import { SURVIVING_CHART_ALLERGY_READER } from '../../shared/clinical/patient-allergy.port';
+import { ORDERING_CONTEXT_READER } from '../../shared/clinical/ordering-context.port';
 import { PRESCRIBING_CONTEXT_READER } from '../../shared/clinical/prescribing-context.port';
 import type { Env } from '../../shared/config/env.schema';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
@@ -25,6 +26,7 @@ import { PrismaCie10Lookup } from '../../shared/infrastructure/clinical/prisma-c
 import { PrismaActiveAllergyReader } from '../../shared/infrastructure/clinical/prisma-active-allergy.reader';
 import { PrismaCodingContextReader } from '../../shared/infrastructure/clinical/prisma-coding-context.reader';
 import { PrismaNoteDraftContextReader } from '../../shared/infrastructure/clinical/prisma-note-draft-context.reader';
+import { PrismaOrderingContextReader } from '../../shared/infrastructure/clinical/prisma-ordering-context.reader';
 import { PrismaPrescribingContextReader } from '../../shared/infrastructure/clinical/prisma-prescribing-context.reader';
 import { PrismaAllergyAbsenceReader } from '../../shared/infrastructure/clinical/standing-allergy-absence';
 
@@ -44,7 +46,9 @@ import {
   ASSISTANT_ENABLED,
   AssistantDiagnosisController,
 } from './assistant-diagnosis.controller';
+import { AssistantOrdersController } from './assistant-orders.controller';
 import { AssistantPrescriptionController } from './assistant-prescription.controller';
+import { OrderProposalService } from './application/order-proposal.service';
 import { PrescriptionProposalService } from './application/prescription-proposal.service';
 import { AssistantListeningController } from './assistant-listening.controller';
 import { AssistantNoteDraftController } from './assistant-note-draft.controller';
@@ -97,8 +101,8 @@ import { buildProviderChain } from './infrastructure/provider-chain';
  * language model: configuration decides which providers exist (AS-006), the
  * routing walks them (D-239 §5), and `ai_run` keeps every attempt.
  *
- * Its controllers are the CIE-10 of Diagnósticos (D1) and the receta of
- * Receta (D2), behind
+ * Its controllers are the CIE-10 of Diagnósticos (D1), the receta of
+ * Receta (D2) and the exams of Exámenes (D3), behind
  * `ASSISTANT_ENABLED` and `assistant:use` (AS-026, D-244 §3).
  */
 /** AS-015. Once a day: the retention is counted in days. */
@@ -110,6 +114,7 @@ const PURGE_EVERY_MS = 86_400_000;
     AssistantListeningController,
     AssistantNoteDraftController,
     AssistantPrescriptionController,
+    AssistantOrdersController,
   ],
   providers: [
     { provide: AI_RUN_STORE, useClass: PrismaAiRunStore },
@@ -154,6 +159,10 @@ const PURGE_EVERY_MS = 86_400_000;
     { provide: SURVIVING_CHART_ALLERGY_READER, useClass: PrismaActiveAllergyReader }, // prettier-ignore
     { provide: ALLERGY_ABSENCE_READER, useClass: PrismaAllergyAbsenceReader },
     PrescriptionProposalService,
+    // AS-103 to AS-113 (D3). The exams: the clinic's orderable catalogue and
+    // the orders of the attention, read; the order is written by `orders`.
+    { provide: ORDERING_CONTEXT_READER, useClass: PrismaOrderingContextReader }, // prettier-ignore
+    OrderProposalService,
     CurrentUserService,
     // AS-045 to AS-058. The listening (C1).
     { provide: LISTENING_STORE, useClass: PrismaListeningStore },
@@ -202,6 +211,7 @@ export class AssistantModule
         AssistantListeningController,
         AssistantNoteDraftController,
         AssistantPrescriptionController,
+        AssistantOrdersController,
       );
   }
 

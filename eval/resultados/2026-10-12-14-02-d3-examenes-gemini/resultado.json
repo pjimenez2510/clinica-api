@@ -1,0 +1,1861 @@
+{
+  "label": "d3-examenes-gemini",
+  "ledger": "~/.clinica-eval/gasto",
+  "fake": false,
+  "startedAt": "2026-10-12 14:02:44",
+  "finishedAt": "2026-10-12 14:04:31",
+  "commit": "6e74a3a9",
+  "seed": 42,
+  "ceilingUsd": 1.24,
+  "providers": [
+    {
+      "name": "gemini",
+      "model": "gemini-3.8-flash"
+    }
+  ],
+  "withoutKey": [
+    "openai"
+  ],
+  "judge": null,
+  "tasks": [
+    {
+      "name": "examenes-nota",
+      "promptVersions": {
+        "D": "d3-exams-2"
+      }
+    }
+  ],
+  "catalogues": [
+    {
+      "file": "cie10-oms-deis-2026-08.xlsx",
+      "sha256": "0d5e19d5d68856aee9379cc91ec16ac931cbfb60dcd06575dec5089cc0a5a75a"
+    },
+    {
+      "file": "cnmb-2026.xlsx",
+      "sha256": "e968d14c9fa3896e7e5cfcb2eb9717b2cde25a7483387ce7f5ced3d62dbdf2e1"
+    },
+    {
+      "file": "llm-pricing.json",
+      "sha256": "9af59d090989ecccfb55aaf1e1d0682a2388e58c51ff0306be16caa4d5464557"
+    }
+  ],
+  "cases": [
+    {
+      "task": "examenes-nota",
+      "source": "examenes-notas.json",
+      "sha256": "f10bb20f455e9f6688e06a0f370ccf2d7f983b14af4f22adf2eeb83b1b2a200e",
+      "n": 50
+    },
+    {
+      "task": "examenes-nota",
+      "source": "catalogo-examenes.json",
+      "sha256": "e19979daac7ac1fb5d10dd9f3d95d35e0d544930617a6b074dcf862425888855",
+      "n": 62
+    }
+  ],
+  "codiesp": null,
+  "stopped": null,
+  "calls": [
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-01",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-BH"
+        ],
+        [
+          "LAB-GLUCOSA-AYUNAS"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-02",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-BH"
+        ],
+        [
+          "LAB-EMO"
+        ],
+        [
+          "LAB-UROCULTIVO"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-03",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-RX-TORAX"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-04",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-ECO-ABDOMINAL"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-05",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-BH"
+        ],
+        [
+          "LAB-PCR"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-06",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-PERFIL-LIP"
+        ],
+        [
+          "LAB-GLUCOSA-AYUNAS"
+        ],
+        [
+          "LAB-HBA1C"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-07",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-TSH"
+        ],
+        [
+          "LAB-T4L"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-08",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-ECO-OBST"
+        ],
+        [
+          "LAB-GRUPO"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-09",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-VIH"
+        ],
+        [
+          "LAB-VDRL"
+        ],
+        [
+          "LAB-HBSAG"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-10",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-RX-COLUMNA-LUMBAR"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-11",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-EMO"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-12",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-HBA1C"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-13",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [],
+      "scores": {
+        "recall": null,
+        "first": null,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-14",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [],
+      "scores": {
+        "recall": null,
+        "first": null,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-15",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-COPRO"
+        ],
+        [
+          "LAB-SANGRE-OCULTA"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-16",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-H-PYLORI"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-17",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-CREAT"
+        ],
+        [
+          "LAB-UREA"
+        ],
+        [
+          "LAB-MICROALB"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-18",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-TGO-TGP"
+        ],
+        [
+          "LAB-BILIRR"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-19",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-AMILASA"
+        ],
+        [
+          "LAB-LIPASA"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-20",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-ECO-TIROIDES"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-21",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-MAMOGRAFIA"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-22",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-PSA"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-23",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-ECO-PROSTATA"
+        ],
+        [
+          "LAB-PSA"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-24",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-BHCG"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-25",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-ECO-TRANSV",
+          "IMG-ECO-PELVICA"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-26",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-DENGUE"
+        ],
+        [
+          "LAB-BH"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-27",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-GOTA-GRUESA"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-28",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-BACILOSCOPIA"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-29",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-CULTIVO-FARINGEO"
+        ],
+        [
+          "LAB-ASTO"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-30",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-FERRITINA"
+        ],
+        [
+          "LAB-HIERRO"
+        ],
+        [
+          "LAB-B12"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-31",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-RX-RODILLA"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-32",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-DOPPLER-MMII"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-33",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-TAC-CRANEO"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-34",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [],
+        []
+      ],
+      "scores": {
+        "recall": null,
+        "first": null,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-35",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [],
+      "scores": {
+        "recall": null,
+        "first": null,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-36",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-ELECTROLITOS"
+        ],
+        [
+          "LAB-CALCIO"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-37",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-AC-URICO"
+        ],
+        [
+          "LAB-FR"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-38",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-TP-TTP"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-39",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-BH"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-40",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-ECO-RENAL"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-41",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-RX-TOBILLO"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-42",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-ECO-MAMARIA"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-43",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-VITD"
+        ],
+        [
+          "LAB-CALCIO"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-44",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "IMG-RX-SENOS"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-45",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-CTOG"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-46",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-BH"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-47",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-PCR"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-48",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [],
+      "scores": {
+        "recall": null,
+        "first": null,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-49",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [],
+      "scores": {
+        "recall": 0,
+        "first": 0,
+        "all": 0,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-50",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        [
+          "LAB-HBA1C"
+        ]
+      ],
+      "scores": {
+        "recall": 1,
+        "first": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCatalogue": 0
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-01",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2150,
+      "costUsd": 0.0014272500000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-02",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1870,
+      "costUsd": 0.001542,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-03",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2106,
+      "costUsd": 0.00123975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-04",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1850,
+      "costUsd": 0.00113325,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-05",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1526,
+      "costUsd": 0.0013349999999999998,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-06",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2157,
+      "costUsd": 0.00167925,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-07",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1912,
+      "costUsd": 0.00140025,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-08",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2225,
+      "costUsd": 0.0014107500000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-09",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2053,
+      "costUsd": 0.0015975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-10",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1991,
+      "costUsd": 0.00123975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-11",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1351,
+      "costUsd": 0.00113475,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-12",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2418,
+      "costUsd": 0.001245,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-13",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1985,
+      "costUsd": 0.0010485000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-14",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2031,
+      "costUsd": 0.00105075,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-15",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1960,
+      "costUsd": 0.001431,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-16",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1771,
+      "costUsd": 0.0012442500000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-17",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2078,
+      "costUsd": 0.0015855,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-18",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1858,
+      "costUsd": 0.001359,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-19",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1667,
+      "costUsd": 0.0014047500000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-20",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1409,
+      "costUsd": 0.0011489999999999998,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-21",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1764,
+      "costUsd": 0.001212,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-22",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1793,
+      "costUsd": 0.0011865,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-23",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2623,
+      "costUsd": 0.001347,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-24",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1684,
+      "costUsd": 0.0012330000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-25",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1859,
+      "costUsd": 0.001155,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-26",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1690,
+      "costUsd": 0.00147525,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-27",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3491,
+      "costUsd": 0.00124275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-28",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1796,
+      "costUsd": 0.0012607500000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-29",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1874,
+      "costUsd": 0.0014107500000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-30",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2265,
+      "costUsd": 0.00160425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-31",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1735,
+      "costUsd": 0.0011580000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-32",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1752,
+      "costUsd": 0.00123975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-33",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2568,
+      "costUsd": 0.00117975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-34",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1980,
+      "costUsd": 0.001392,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-35",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1423,
+      "costUsd": 0.00105075,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-36",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2206,
+      "costUsd": 0.0013664999999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-37",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1608,
+      "costUsd": 0.0013830000000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-38",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2324,
+      "costUsd": 0.00123675,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-39",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1708,
+      "costUsd": 0.00128175,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-40",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2454,
+      "costUsd": 0.0012615,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-41",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2057,
+      "costUsd": 0.0012667499999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-42",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1989,
+      "costUsd": 0.00119325,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-43",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 6326,
+      "costUsd": 0.0013545,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-44",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1820,
+      "costUsd": 0.00123675,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-45",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1667,
+      "costUsd": 0.0012667499999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-46",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1689,
+      "costUsd": 0.00125175,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-47",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1457,
+      "costUsd": 0.0011970000000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-48",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3955,
+      "costUsd": 0.002013,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-49",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 4229,
+      "costUsd": 0.001272,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "examenes-nota",
+      "caseId": "examenes-nota-50",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2192,
+      "costUsd": 0.001245,
+      "model": "gemini-3.8-flash"
+    }
+  ]
+}

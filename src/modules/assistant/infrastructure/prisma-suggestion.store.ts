@@ -24,6 +24,8 @@ import type {
   SuggestionView,
 } from '../domain/suggestion';
 
+import { suggestionErrorFrom } from './suggestion-database-errors';
+
 const SUGGESTION_SELECT = {
   id: true,
   encounterId: true,
@@ -37,6 +39,7 @@ const SUGGESTION_SELECT = {
   encounterDiagnosisId: true,
   prescriptionId: true,
   serviceOrderId: true,
+  acceptedCode: true,
   proposedAt: true,
   decidedBy: true,
   decidedAt: true,
@@ -136,20 +139,28 @@ export class PrismaSuggestionStore implements SuggestionStore {
           : await savedIn(tx, view, query.recordId);
       const decision = decide(view, saved);
 
-      return tx.aiSuggestion.update({
-        where: { id: suggestionId },
-        data: {
-          status: decision.status,
-          distance: decision.distance,
-          ...(decision.record
-            ? { [COLUMN_OF[decision.record.kind]]: decision.record.id }
-            : {}),
-          // AS-024. The stamp `record_version_archive` demands.
-          decidedBy: stamp.decidedBy,
-          decidedAt: stamp.decidedAt,
-        },
-        select: SUGGESTION_SELECT,
-      });
+      return tx.aiSuggestion
+        .update({
+          where: { id: suggestionId },
+          data: {
+            status: decision.status,
+            distance: decision.distance,
+            ...(decision.record
+              ? { [COLUMN_OF[decision.record.kind]]: decision.record.id }
+              : {}),
+            // AS-109. Which exam: the database requires it on an accepted one.
+            ...(decision.acceptedCode !== undefined
+              ? { acceptedCode: decision.acceptedCode }
+              : {}),
+            // AS-024. The stamp `record_version_archive` demands.
+            decidedBy: stamp.decidedBy,
+            decidedAt: stamp.decidedAt,
+          },
+          select: SUGGESTION_SELECT,
+        })
+        .catch((error: unknown) => {
+          throw suggestionErrorFrom(error) ?? error;
+        });
     });
     return toView(row);
   }
@@ -221,6 +232,7 @@ function toView(row: SuggestionRow): SuggestionView {
     status: row.status as SuggestionStatus,
     distance: row.distance === null ? null : Number(row.distance),
     record: recordOf(row),
+    acceptedCode: row.acceptedCode,
     proposedAt: row.proposedAt,
     decidedBy: row.decidedBy,
     decidedAt: row.decidedAt,

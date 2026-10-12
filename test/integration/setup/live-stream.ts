@@ -6,6 +6,8 @@
 export interface StreamEvent {
   type: string;
   data: string;
+  /** Nest numbers every message it is not given an id for. */
+  id: string;
 }
 
 export interface OpenStream {
@@ -47,7 +49,11 @@ export async function openLiveStream(
               .split('\n')
               .find((line) => line.startsWith(`${name}: `))
               ?.slice(name.length + 2) ?? '';
-          events.push({ type: field('event'), data: field('data') });
+          events.push({
+            type: field('event'),
+            data: field('data'),
+            id: field('id'),
+          });
         }
       }
     } catch {

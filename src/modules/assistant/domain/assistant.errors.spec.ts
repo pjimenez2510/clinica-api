@@ -15,6 +15,7 @@ import {
   AssistantAllergyContraindicationError,
   AssistantPrescriptionLineNotReadyError,
   SuggestionPrescriptionMismatchError,
+  SuggestionOrderMismatchError,
   AssistantEncounterClosedError,
   AssistantEncounterNotFoundError,
   AssistantNoteEmptyError,
@@ -295,6 +296,15 @@ describe('assistant errors', () => {
 
     expect(error).toBeInstanceOf(ValidationError);
     expect(error.code).toBe('SUGGESTION_PRESCRIPTION_MISMATCH');
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AS-109 answers SUGGESTION_ORDER_MISMATCH as a 422', () => {
+    const error = new SuggestionOrderMismatchError();
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.code).toBe('SUGGESTION_ORDER_MISMATCH');
+    expect(error.userTitle).toContain('Recargue la atención');
     expect(DOMAIN_ERROR_CODES).toContain(error.code);
   });
 });

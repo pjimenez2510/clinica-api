@@ -17,6 +17,7 @@ import { LLM_PRICES } from '../src/modules/assistant/infrastructure/llm-pricing.
 
 import {
   CASES_DIR,
+  loadExamCatalogue,
   loadInventedCases,
   readCodiEsp,
   verifyCodiEsp,
@@ -46,6 +47,7 @@ import { JUDGE_PROMPT_VERSION, noteTask } from './tasks/note.ts';
 import { prescriptionTask } from './tasks/prescription.ts';
 import { draftTask } from './tasks/draft.ts';
 import { EVAL_PROVIDER_CAP_USD, ProviderCapStore } from './ledger.ts';
+import { ordersFromNoteTask } from './tasks/orders-from-note.ts';
 import { prescriptionFromNoteTask } from './tasks/prescription-from-note.ts';
 
 export const USAGE = `Arnés de evaluación del asistente (PLAN-ASISTENTE-IA §5, D-239 §5)
@@ -54,7 +56,7 @@ export const USAGE = `Arnés de evaluación del asistente (PLAN-ASISTENTE-IA §5
   pnpm eval -- --codiesp <carpeta train_dev> corrida real con las claves del .env
 
 Opciones:
-  --tareas cie10,receta,nota   qué tareas (por defecto, las tres); cie10-problema mide D1 (AS-042), receta-nota mide D2 (AS-079), borrador mide C2 (AS-098)
+  --tareas cie10,receta,nota   qué tareas (por defecto, las tres); cie10-problema mide D1 (AS-042), receta-nota mide D2 (AS-079), borrador mide C2 (AS-098), examenes-nota mide D3 (AS-114)
   --codiesp <carpeta>          CodiEsp train_dev (CC BY 4.0, Zenodo 3837305); sin ella, la CIE-10 usa sólo el set propio
   --muestra <n>                frases de CodiEsp (por defecto 200)
   --casos <n>                  como mucho n casos de cada set propio (por defecto, todos)
@@ -89,7 +91,13 @@ function reviewWriter(dir: string | undefined) {
   return (entry: object) => appendFileSync(file, `${JSON.stringify(entry)}\n`);
 }
 type TaskKey =
-  'cie10' | 'cie10-problema' | 'receta' | 'receta-nota' | 'nota' | 'borrador';
+  | 'cie10'
+  | 'cie10-problema'
+  | 'receta'
+  | 'receta-nota'
+  | 'examenes-nota'
+  | 'nota'
+  | 'borrador';
 
 export interface Dependencies {
   env: Env;
@@ -209,6 +217,7 @@ export async function runFromArgs(
         'cie10-problema',
         'receta',
         'receta-nota',
+        'examenes-nota',
         'nota',
         'borrador',
       ].includes(t),
@@ -305,6 +314,24 @@ export async function runFromArgs(
       source: 'receta-notas.json',
       sha256: invented.prescriptionNote.sha256,
       n: own.length,
+    });
+  }
+  // AS-114 (D3). The product's call and barriers over notes and talk.
+  if (wanted.includes('examenes-nota')) {
+    const own = invented.examNote.cases.slice(0, limit);
+    const exams = loadExamCatalogue(CASES_DIR);
+    add(ordersFromNoteTask(exams.exams), own);
+    casesMeta.push({
+      task: 'examenes-nota',
+      source: 'examenes-notas.json',
+      sha256: invented.examNote.sha256,
+      n: own.length,
+    });
+    casesMeta.push({
+      task: 'examenes-nota',
+      source: 'catalogo-examenes.json',
+      sha256: exams.sha256,
+      n: exams.exams.length,
     });
   }
   if (wanted.includes('nota')) {

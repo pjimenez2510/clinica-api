@@ -52,6 +52,7 @@ export interface EvalTask<Case extends EvalCase, Value> {
     | 'cie10-problema'
     | 'prescription'
     | 'receta-nota'
+    | 'examenes-nota'
     | 'note'
     | 'draft';
   title: string;

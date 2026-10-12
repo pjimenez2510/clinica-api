@@ -6,6 +6,7 @@ import type {
   ProviderAnswer,
 } from '../../application/llm-client.port';
 import { DRAFT_PURPOSE } from '../../application/note-draft.prompts';
+import { EXAMS_PURPOSE } from '../../application/order-reading.prompts';
 import {
   LINES_PURPOSE,
   MAPPING_PURPOSE,
@@ -97,6 +98,7 @@ export class DemoLlmProvider implements LlmProvider {
     }
     if (purpose === LINES_PURPOSE) return { lines: linesIn(noteOf(prompt)) };
     if (purpose === MAPPING_PURPOSE) return { choices: choicesIn(prompt) };
+    if (purpose === EXAMS_PURPOSE) return { exams: examsIn(prompt) };
     return {};
   }
 }
@@ -229,4 +231,47 @@ function choicesIn(prompt: string) {
       presentation: match ? Number(match[1]) : null,
     };
   });
+}
+
+/**
+ * AS-029, AS-103. The exams of the script: each one whose phrase the note
+ * or the conversation says —in its own sentence, as a physician would
+ * underline it—, with the numbers its names have in the catalogue the
+ * prompt brought. A name the catalogue does not have gives no number.
+ */
+function examsIn(prompt: string) {
+  const [consultation = '', catalogue = ''] = prompt.split('<catalogo>');
+  const numbers = new Map(
+    [...catalogue.matchAll(/^(\d+)\. (.+) · \S+$/gm)].map(
+      ([, number, name]) => [name!.trim(), Number(number)] as const,
+    ),
+  );
+  const lower = consultation.toLowerCase();
+  const seen = new Set<string>();
+  const exams = [];
+  for (const { phrase, requested, names, invented } of script.exams as {
+    phrase: string;
+    requested: string;
+    names: string[];
+    invented?: number;
+  }[]) {
+    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const at = new RegExp(`(^|[^\\p{L}])${escaped}(?![\\p{L}])`, 'u').exec(
+      lower,
+    );
+    if (!at || seen.has(requested)) continue;
+    seen.add(requested);
+    const start = at.index + at[1]!.length;
+    const rest = consultation.slice(start, start + QUOTE_REACH * 2);
+    const end = rest.search(/[.;\n]/);
+    exams.push({
+      requested,
+      quote: (end > 0 ? rest.slice(0, end) : rest).trim(),
+      candidates: [
+        ...names.flatMap((name) => numbers.get(name) ?? []),
+        ...(invented ? [invented] : []),
+      ],
+    });
+  }
+  return exams;
 }
