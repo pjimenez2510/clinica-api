@@ -282,6 +282,38 @@ describe('el canal de avisos en vivo por HTTP', () => {
     await until(() => ofKind(stream, 'critical-results').length === 1);
   });
 
+  it('AU-057: el navegador reconecta con Last-Event-ID y el preflight CORS lo admite; una cabecera no declarada, no', async () => {
+    // Why the browser sends it at all: Nest numbers every message, so the
+    // first `ready` already leaves an id, and every reconnection after a cut
+    // —the token expiring, AU-057— carries it. Refused by the preflight, the
+    // library retried forever and the channel never came back.
+    const doctor = await account('medico.norte@clinica.ec', 'MEDICO', siteA);
+    const stream = await openStream(doctor.token);
+    await until(() => stream.events.length >= 1);
+    expect(stream.events[0]?.id).not.toBe('');
+
+    const preflight = (headers: string) =>
+      request(app.getHttpServer())
+        .options('/api/v1/events')
+        .set('Origin', 'http://localhost:3001')
+        .set('Access-Control-Request-Method', 'GET')
+        .set('Access-Control-Request-Headers', headers);
+
+    const reconnect = await preflight('last-event-id,authorization');
+    const allowed = (
+      reconnect.headers['access-control-allow-headers'] ?? ''
+    ).toLowerCase();
+    // Control positivo: the header every request sends is in the same list.
+    expect(allowed).toContain('authorization');
+    expect(allowed).toContain('last-event-id');
+
+    // Control negativo: the list is closed, not the request's headers echoed.
+    const undeclared = await preflight('x-not-declared');
+    expect(
+      (undeclared.headers['access-control-allow-headers'] ?? '').toLowerCase(),
+    ).not.toContain('x-not-declared');
+  });
+
   it('AU-057: cerrar la sesión corta el canal en el latido siguiente', async () => {
     const north = await account('medico.norte@clinica.ec', 'MEDICO', siteA);
     const stream = await openStream(north.token);
