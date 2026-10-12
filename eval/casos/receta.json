@@ -1,0 +1,545 @@
+{
+  "description": "Recetas dictadas como las diría un médico, inventadas para el arnés (ningún paciente). La receta esperada la escribió el desarrollador contra el CNMB 2026 (código, forma y concentración del cuadro); debe confirmarla un farmacéutico o un médico antes de usarla para decidir.",
+  "cases": [
+    {
+      "id": "receta-01",
+      "origin": "invented",
+      "dictation": "Amoxicilina de quinientos, una tableta cada ocho horas por siete días.",
+      "expected": {
+        "substance": "Amoxicilina",
+        "cnmbCode": "J01CA04",
+        "form": "TABLET",
+        "concentration": "500 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 8,
+        "days": 7
+      }
+    },
+    {
+      "id": "receta-02",
+      "origin": "invented",
+      "dictation": "Le dejo paracetamol de quinientos miligramos, una tableta cada ocho horas si hay dolor o fiebre, por tres días.",
+      "expected": {
+        "substance": "Paracetamol",
+        "cnmbCode": "N02BE01",
+        "form": "TABLET",
+        "concentration": "500 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 8,
+        "days": 3
+      }
+    },
+    {
+      "id": "receta-03",
+      "origin": "invented",
+      "dictation": "Ibuprofeno cuatrocientos, una tableta cada ocho horas después de comer, cinco días.",
+      "expected": {
+        "substance": "Ibuprofeno",
+        "cnmbCode": "M01AE01",
+        "form": "TABLET",
+        "concentration": "400 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 8,
+        "days": 5
+      }
+    },
+    {
+      "id": "receta-04",
+      "origin": "invented",
+      "dictation": "Losartán de cincuenta, una tableta al día, uso continuo.",
+      "expected": {
+        "substance": "Losartán",
+        "cnmbCode": "C09CA01",
+        "form": "TABLET",
+        "concentration": "50 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 24,
+        "days": null
+      }
+    },
+    {
+      "id": "receta-05",
+      "origin": "invented",
+      "dictation": "Enalapril de diez miligramos, una tableta cada doce horas, continuo.",
+      "expected": {
+        "substance": "Enalapril",
+        "cnmbCode": "C09AA02",
+        "form": "TABLET",
+        "concentration": "10 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 12,
+        "days": null
+      }
+    },
+    {
+      "id": "receta-06",
+      "origin": "invented",
+      "dictation": "Omeprazol de veinte, una tableta en ayunas una vez al día por catorce días.",
+      "expected": {
+        "substance": "Omeprazol",
+        "cnmbCode": "A02BC01",
+        "form": "TABLET",
+        "concentration": "20 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 24,
+        "days": 14
+      }
+    },
+    {
+      "id": "receta-07",
+      "origin": "invented",
+      "dictation": "Atorvastatina de veinte miligramos, una tableta en la noche, de forma continua.",
+      "expected": {
+        "substance": "Atorvastatina",
+        "cnmbCode": "C10AA05",
+        "form": "TABLET",
+        "concentration": "20 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 24,
+        "days": null
+      }
+    },
+    {
+      "id": "receta-08",
+      "origin": "invented",
+      "dictation": "Azitromicina de quinientos, una tableta diaria por tres días.",
+      "expected": {
+        "substance": "Azitromicina",
+        "cnmbCode": "J01FA10",
+        "form": "TABLET",
+        "concentration": "500 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 24,
+        "days": 3
+      }
+    },
+    {
+      "id": "receta-09",
+      "origin": "invented",
+      "dictation": "Loratadina diez miligramos, una tableta al día por cinco días.",
+      "expected": {
+        "substance": "Loratadina",
+        "cnmbCode": "R06AX13",
+        "form": "TABLET",
+        "concentration": "10 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 24,
+        "days": 5
+      }
+    },
+    {
+      "id": "receta-10",
+      "origin": "invented",
+      "dictation": "Prednisona de veinte, una tableta en la mañana por cinco días.",
+      "expected": {
+        "substance": "Prednisona",
+        "cnmbCode": "H02AB07",
+        "form": "TABLET",
+        "concentration": "20 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 24,
+        "days": 5
+      }
+    },
+    {
+      "id": "receta-11",
+      "origin": "invented",
+      "dictation": "Nitrofurantoína de cien, una tableta cada seis horas por siete días.",
+      "expected": {
+        "substance": "Nitrofurantoína",
+        "cnmbCode": "J01XE01",
+        "form": "TABLET",
+        "concentration": "100 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 6,
+        "days": 7
+      }
+    },
+    {
+      "id": "receta-12",
+      "origin": "invented",
+      "dictation": "Diclofenaco de cincuenta, una tableta cada doce horas por tres días.",
+      "expected": {
+        "substance": "Diclofenaco",
+        "cnmbCode": "M01AB05",
+        "form": "TABLET",
+        "concentration": "50 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 12,
+        "days": 3
+      }
+    },
+    {
+      "id": "receta-13",
+      "origin": "invented",
+      "dictation": "Cefalexina quinientos miligramos, una tableta cada seis horas por diez días.",
+      "expected": {
+        "substance": "Cefalexina",
+        "cnmbCode": "J01DB01",
+        "form": "TABLET",
+        "concentration": "500 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 6,
+        "days": 10
+      }
+    },
+    {
+      "id": "receta-14",
+      "origin": "invented",
+      "dictation": "Fluconazol de ciento cincuenta, una sola tableta, dosis única.",
+      "expected": {
+        "substance": "Fluconazol",
+        "cnmbCode": "J02AC01",
+        "form": "TABLET",
+        "concentration": "150 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": null,
+        "days": 1
+      }
+    },
+    {
+      "id": "receta-15",
+      "origin": "invented",
+      "dictation": "Metronidazol de quinientos por boca, una tableta cada ocho horas por siete días.",
+      "expected": {
+        "substance": "Metronidazol",
+        "cnmbCode": "P01AB01",
+        "form": "TABLET",
+        "concentration": "500 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 8,
+        "days": 7
+      }
+    },
+    {
+      "id": "receta-16",
+      "origin": "invented",
+      "dictation": "Albendazol de cuatrocientos, una tableta, dosis única.",
+      "expected": {
+        "substance": "Albendazol",
+        "cnmbCode": "P02CA03",
+        "form": "TABLET",
+        "concentration": "400 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": null,
+        "days": 1
+      }
+    },
+    {
+      "id": "receta-17",
+      "origin": "invented",
+      "dictation": "Ondansetrón de cuatro miligramos, una tableta cada ocho horas si hay náusea, por dos días.",
+      "expected": {
+        "substance": "Ondansetrón",
+        "cnmbCode": "A04AA01",
+        "form": "TABLET",
+        "concentration": "4 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 8,
+        "days": 2
+      }
+    },
+    {
+      "id": "receta-18",
+      "origin": "invented",
+      "dictation": "Dexametasona de cuatro, una tableta al día por tres días.",
+      "expected": {
+        "substance": "Dexametasona",
+        "cnmbCode": "H02AB02",
+        "form": "TABLET",
+        "concentration": "4 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 24,
+        "days": 3
+      }
+    },
+    {
+      "id": "receta-19",
+      "origin": "invented",
+      "dictation": "Ácido fólico de un miligramo, una tableta diaria por treinta días.",
+      "expected": {
+        "substance": "Ácido fólico",
+        "cnmbCode": "B03BB01",
+        "form": "TABLET",
+        "concentration": "1 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": 24,
+        "days": 30
+      }
+    },
+    {
+      "id": "receta-20",
+      "origin": "invented",
+      "dictation": "Ivermectina de seis miligramos, dos tabletas en una sola toma.",
+      "expected": {
+        "substance": "Ivermectina",
+        "cnmbCode": "P02CF01",
+        "form": "TABLET",
+        "concentration": "6 mg",
+        "dose": {
+          "amount": 2,
+          "unit": "tableta"
+        },
+        "route": "oral",
+        "everyHours": null,
+        "days": 1
+      }
+    },
+    {
+      "id": "receta-21",
+      "origin": "invented",
+      "dictation": "Amoxicilina en suspensión de doscientos cincuenta en cinco mililitros, cinco mililitros cada ocho horas por siete días.",
+      "expected": {
+        "substance": "Amoxicilina",
+        "cnmbCode": "J01CA04",
+        "form": "POWDER_FOR_ORAL_SUSPENSION",
+        "concentration": "250 mg/5 mL",
+        "dose": {
+          "amount": 5,
+          "unit": "mL"
+        },
+        "route": "oral",
+        "everyHours": 8,
+        "days": 7
+      }
+    },
+    {
+      "id": "receta-22",
+      "origin": "invented",
+      "dictation": "Paracetamol jarabe de ciento sesenta en cinco, siete mililitros cada seis horas si tiene fiebre, por tres días.",
+      "expected": {
+        "substance": "Paracetamol",
+        "cnmbCode": "N02BE01",
+        "form": "ORAL_SUSPENSION",
+        "concentration": "160 mg/5 mL",
+        "dose": {
+          "amount": 7,
+          "unit": "mL"
+        },
+        "route": "oral",
+        "everyHours": 6,
+        "days": 3
+      }
+    },
+    {
+      "id": "receta-23",
+      "origin": "invented",
+      "dictation": "Ibuprofeno suspensión de doscientos en cinco mililitros, cuatro mililitros cada ocho horas por tres días.",
+      "expected": {
+        "substance": "Ibuprofeno",
+        "cnmbCode": "M01AE01",
+        "form": "ORAL_SUSPENSION",
+        "concentration": "200 mg/5 mL",
+        "dose": {
+          "amount": 4,
+          "unit": "mL"
+        },
+        "route": "oral",
+        "everyHours": 8,
+        "days": 3
+      }
+    },
+    {
+      "id": "receta-24",
+      "origin": "invented",
+      "dictation": "Azitromicina suspensión de doscientos en cinco, cinco mililitros al día por tres días.",
+      "expected": {
+        "substance": "Azitromicina",
+        "cnmbCode": "J01FA10",
+        "form": "POWDER_FOR_ORAL_SUSPENSION",
+        "concentration": "200 mg/5 mL",
+        "dose": {
+          "amount": 5,
+          "unit": "mL"
+        },
+        "route": "oral",
+        "everyHours": 24,
+        "days": 3
+      }
+    },
+    {
+      "id": "receta-25",
+      "origin": "invented",
+      "dictation": "Albendazol suspensión de veinte miligramos por mililitro, veinte mililitros, una sola dosis.",
+      "expected": {
+        "substance": "Albendazol",
+        "cnmbCode": "P02CA03",
+        "form": "ORAL_SUSPENSION",
+        "concentration": "20 mg/mL",
+        "dose": {
+          "amount": 20,
+          "unit": "mL"
+        },
+        "route": "oral",
+        "everyHours": null,
+        "days": 1
+      }
+    },
+    {
+      "id": "receta-26",
+      "origin": "invented",
+      "dictation": "Paracetamol en gotas de cien miligramos por mililitro, uno punto cinco mililitros cada seis horas si hay fiebre, dos días.",
+      "expected": {
+        "substance": "Paracetamol",
+        "cnmbCode": "N02BE01",
+        "form": "ORAL_DROPS",
+        "concentration": "100 mg/mL",
+        "dose": {
+          "amount": 1.5,
+          "unit": "mL"
+        },
+        "route": "oral",
+        "everyHours": 6,
+        "days": 2
+      }
+    },
+    {
+      "id": "receta-27",
+      "origin": "invented",
+      "dictation": "Salbutamol inhalador, dos inhalaciones cada seis horas por cinco días.",
+      "expected": {
+        "substance": "Salbutamol",
+        "cnmbCode": "R03AC02",
+        "form": "INHALER",
+        "concentration": "0,1 mg/dosis",
+        "dose": {
+          "amount": 2,
+          "unit": "inhalación"
+        },
+        "route": "inhalatoria",
+        "everyHours": 6,
+        "days": 5
+      }
+    },
+    {
+      "id": "receta-28",
+      "origin": "invented",
+      "dictation": "Clotrimazol crema al uno por ciento, aplicar en la lesión cada doce horas por catorce días.",
+      "expected": {
+        "substance": "Clotrimazol",
+        "cnmbCode": "D01AC01",
+        "form": "CREAM",
+        "concentration": "1%",
+        "dose": {
+          "amount": 1,
+          "unit": "aplicación"
+        },
+        "route": "tópica",
+        "everyHours": 12,
+        "days": 14
+      }
+    },
+    {
+      "id": "receta-29",
+      "origin": "invented",
+      "dictation": "Permetrina crema al uno por ciento, aplicar en todo el cuerpo una vez, y repetir en una semana.",
+      "expected": {
+        "substance": "Permetrina",
+        "cnmbCode": "P03AC04",
+        "form": "CREAM",
+        "concentration": "1%",
+        "dose": {
+          "amount": 1,
+          "unit": "aplicación"
+        },
+        "route": "tópica",
+        "everyHours": null,
+        "days": 1
+      }
+    },
+    {
+      "id": "receta-30",
+      "origin": "invented",
+      "dictation": "Paracetamol supositorio de trescientos, un supositorio cada seis horas si hay fiebre, por dos días.",
+      "expected": {
+        "substance": "Paracetamol",
+        "cnmbCode": "N02BE01",
+        "form": "SUPPOSITORY",
+        "concentration": "300 mg",
+        "dose": {
+          "amount": 1,
+          "unit": "supositorio"
+        },
+        "route": "rectal",
+        "everyHours": 6,
+        "days": 2
+      }
+    }
+  ]
+}

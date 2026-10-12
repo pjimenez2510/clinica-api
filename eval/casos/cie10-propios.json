@@ -1,0 +1,275 @@
+{
+  "description": "Problemas escritos como los anota un médico, inventados para el arnés (ningún paciente). El código esperado es la CIE-10 OMS de 4 caracteres; lo propuso el desarrollador y debe confirmarlo un codificador antes de usarlo para decidir.",
+  "cases": [
+    {
+      "id": "cie10-01",
+      "origin": "invented",
+      "phrase": "resfriado común de 3 días",
+      "code": "J00.X"
+    },
+    {
+      "id": "cie10-02",
+      "origin": "invented",
+      "phrase": "HTA esencial en control",
+      "code": "I10.X"
+    },
+    {
+      "id": "cie10-03",
+      "origin": "invented",
+      "phrase": "DM2 sin complicaciones",
+      "code": "E11.9"
+    },
+    {
+      "id": "cie10-04",
+      "origin": "invented",
+      "phrase": "IVU baja no complicada",
+      "code": "N39.0"
+    },
+    {
+      "id": "cie10-05",
+      "origin": "invented",
+      "phrase": "amigdalitis aguda",
+      "code": "J03.9"
+    },
+    {
+      "id": "cie10-06",
+      "origin": "invented",
+      "phrase": "EDA probablemente viral",
+      "code": "A08.4"
+    },
+    {
+      "id": "cie10-07",
+      "origin": "invented",
+      "phrase": "gastritis",
+      "code": "K29.7"
+    },
+    {
+      "id": "cie10-08",
+      "origin": "invented",
+      "phrase": "bronquitis aguda",
+      "code": "J20.9"
+    },
+    {
+      "id": "cie10-09",
+      "origin": "invented",
+      "phrase": "lumbalgia mecánica",
+      "code": "M54.5"
+    },
+    {
+      "id": "cie10-10",
+      "origin": "invented",
+      "phrase": "cefalea tensional sin signos de alarma",
+      "code": "R51.X"
+    },
+    {
+      "id": "cie10-11",
+      "origin": "invented",
+      "phrase": "asma bronquial",
+      "code": "J45.9"
+    },
+    {
+      "id": "cie10-12",
+      "origin": "invented",
+      "phrase": "hipercolesterolemia",
+      "code": "E78.0"
+    },
+    {
+      "id": "cie10-13",
+      "origin": "invented",
+      "phrase": "obesidad",
+      "code": "E66.9"
+    },
+    {
+      "id": "cie10-14",
+      "origin": "invented",
+      "phrase": "estreñimiento crónico",
+      "code": "K59.0"
+    },
+    {
+      "id": "cie10-15",
+      "origin": "invented",
+      "phrase": "tiña corporal",
+      "code": "B35.4"
+    },
+    {
+      "id": "cie10-16",
+      "origin": "invented",
+      "phrase": "conjuntivitis",
+      "code": "H10.9"
+    },
+    {
+      "id": "cie10-17",
+      "origin": "invented",
+      "phrase": "otitis media aguda",
+      "code": "H66.9"
+    },
+    {
+      "id": "cie10-18",
+      "origin": "invented",
+      "phrase": "sinusitis aguda",
+      "code": "J01.9"
+    },
+    {
+      "id": "cie10-19",
+      "origin": "invented",
+      "phrase": "ansiedad generalizada",
+      "code": "F41.1"
+    },
+    {
+      "id": "cie10-20",
+      "origin": "invented",
+      "phrase": "episodio depresivo",
+      "code": "F32.9"
+    },
+    {
+      "id": "cie10-21",
+      "origin": "invented",
+      "phrase": "migraña",
+      "code": "G43.9"
+    },
+    {
+      "id": "cie10-22",
+      "origin": "invented",
+      "phrase": "cistitis aguda",
+      "code": "N30.0"
+    },
+    {
+      "id": "cie10-23",
+      "origin": "invented",
+      "phrase": "escabiosis",
+      "code": "B86.X"
+    },
+    {
+      "id": "cie10-24",
+      "origin": "invented",
+      "phrase": "anemia ferropénica",
+      "code": "D50.9"
+    },
+    {
+      "id": "cie10-25",
+      "origin": "invented",
+      "phrase": "ERGE sin esofagitis",
+      "code": "K21.9"
+    },
+    {
+      "id": "cie10-26",
+      "origin": "invented",
+      "phrase": "gonartrosis",
+      "code": "M17.9"
+    },
+    {
+      "id": "cie10-27",
+      "origin": "invented",
+      "phrase": "hipotiroidismo",
+      "code": "E03.9"
+    },
+    {
+      "id": "cie10-28",
+      "origin": "invented",
+      "phrase": "neumonía adquirida en la comunidad",
+      "code": "J18.9"
+    },
+    {
+      "id": "cie10-29",
+      "origin": "invented",
+      "phrase": "fiebre sin foco",
+      "code": "R50.9"
+    },
+    {
+      "id": "cie10-30",
+      "origin": "invented",
+      "phrase": "esguince de tobillo",
+      "code": "S93.4"
+    },
+    {
+      "id": "cie10-31",
+      "origin": "invented",
+      "phrase": "candidiasis vaginal",
+      "code": "B37.3"
+    },
+    {
+      "id": "cie10-32",
+      "origin": "invented",
+      "phrase": "IRA alta",
+      "code": "J06.9"
+    },
+    {
+      "id": "cie10-33",
+      "origin": "invented",
+      "phrase": "dispepsia funcional",
+      "code": "K30.X"
+    },
+    {
+      "id": "cie10-34",
+      "origin": "invented",
+      "phrase": "várices de miembros inferiores",
+      "code": "I83.9"
+    },
+    {
+      "id": "cie10-35",
+      "origin": "invented",
+      "phrase": "mareo",
+      "code": "R42.X"
+    },
+    {
+      "id": "cie10-36",
+      "origin": "invented",
+      "phrase": "faringitis aguda",
+      "code": "J02.9"
+    },
+    {
+      "id": "cie10-37",
+      "origin": "invented",
+      "phrase": "hiperplasia prostática benigna",
+      "code": "N40.X"
+    },
+    {
+      "id": "cie10-38",
+      "origin": "invented",
+      "phrase": "colelitiasis sin colecistitis",
+      "code": "K80.2"
+    },
+    {
+      "id": "cie10-39",
+      "origin": "invented",
+      "phrase": "fibrilación auricular",
+      "code": "I48.9"
+    },
+    {
+      "id": "cie10-40",
+      "origin": "invented",
+      "phrase": "insuficiencia cardíaca",
+      "code": "I50.9"
+    },
+    {
+      "id": "cie10-41",
+      "origin": "invented",
+      "phrase": "EPOC",
+      "code": "J44.9"
+    },
+    {
+      "id": "cie10-42",
+      "origin": "invented",
+      "phrase": "insomnio",
+      "code": "G47.0"
+    },
+    {
+      "id": "cie10-43",
+      "origin": "invented",
+      "phrase": "acné vulgar",
+      "code": "L70.0"
+    },
+    {
+      "id": "cie10-44",
+      "origin": "invented",
+      "phrase": "varicela",
+      "code": "B01.9"
+    },
+    {
+      "id": "cie10-45",
+      "origin": "invented",
+      "phrase": "dengue sin signos de alarma",
+      "code": "A97.0"
+    }
+  ]
+}
