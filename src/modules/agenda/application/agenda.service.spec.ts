@@ -761,7 +761,20 @@ describe('booking an appointment', () => {
     // With no row the minimum lead is zero, so the window lets this through
     // and the booking is refused further down for a reason that has nothing to
     // do with the window — which is what proves the fallback ran at all.
-    const { service } = serviceWith({ siteParameters: null });
+    // No rules at all, so that reason is the same on every day of the week:
+    // with `RULE` in force, a Monday morning lands inside it and the booking
+    // fails on its zero duration instead.
+    const { service } = serviceWith({
+      siteParameters: null,
+      context: {
+        practitioner: {
+          practitionerId: PRACTITIONER,
+          schedulable: true,
+          siteIds: [SITE],
+        },
+        rules: [],
+      },
+    });
     const soon = new Date(Date.now() + 5 * 60_000);
 
     const rejection = await service
