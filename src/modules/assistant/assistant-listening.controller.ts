@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -50,6 +51,8 @@ export class AssistantListeningController {
   // A ticket per (re)connection: sixty a minute is a flaky network, not more.
   @Throttle({ long: { ttl: 60_000, limit: 60 } })
   @HttpCode(HttpStatus.OK)
+  // Neither the ticket nor the transcript is kept by a cache on the way.
+  @Header('Cache-Control', 'no-store')
   @ApiOperation({ summary: 'Vale para abrir la escucha de la atención' })
   @ApiOkResponse({ type: ListeningTicketDto })
   async ticket(
@@ -66,6 +69,7 @@ export class AssistantListeningController {
   /** AS-056. The listening and what it heard, to its professional only. */
   @Get()
   @RequirePermission('assistant:use', 'query')
+  @Header('Cache-Control', 'no-store')
   @ApiOperation({ summary: 'La escucha de la atención y su transcripción' })
   @ApiOkResponse({ type: ListeningDto })
   async read(

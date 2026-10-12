@@ -235,12 +235,12 @@ describe('ClinicaAiSpeechRecognizer', () => {
     expect(fake.sockets[0]?.readyState).toBe(fake.sockets[0]?.CLOSED);
   });
 
-  it('AS-053: send() refuses once the recognition is closed, keeping nothing', async () => {
+  it('AS-053 AS-055: send() answers false once the recognition is closed, keeping nothing', async () => {
     const fake = await fakeClinicaAi((socket) => socket.close(1011));
     const heard = listener();
     const session = await recognizer(fake).open(heard.events);
     await until(() => heard.ended.length > 0);
 
-    expect(() => session.send(frame(0))).toThrow(/not open/);
+    expect(session.send(frame(0))).toBe(false);
   });
 });

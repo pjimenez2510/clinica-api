@@ -651,7 +651,16 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   ENTONCES DEBERÁ rechazarlo con `ASSISTANT_NOT_ENCOUNTER_OWNER` (403); SI la
   atención no existe o es de una sede fuera de su alcance, con
   `ASSISTANT_ENCOUNTER_NOT_FOUND` (404); y SI ya no admite contenido, con
-  `ASSISTANT_ENCOUNTER_CLOSED` (409).
+  `ASSISTANT_ENCOUNTER_CLOSED` (409). DEBERÁ preguntarlo otra vez al iniciar o
+  reanudar y, mientras el canal está abierto, al menos cada **5 s**; y SI la
+  atención deja de admitir contenido —firmada con su alta, anulada,
+  interrumpida— con la escucha abierta, ENTONCES DEBERÁ detenerla, decírselo
+  al canal (`stopped` con el código) y cerrarlo con **4409**, sin guardar nada
+  más en ella.
+  > Revisión del 12-10-2026 (grave): firmar el alta con la escucha abierta la
+  > dejaba grabando, sin control en pantalla, en la atención cerrada — lo que
+  > dijera el siguiente paciente habría quedado en la historia del anterior
+  > (D-247 §7).
   > SigmAI M-02: cualquier médico escuchaba la consulta de otro. El vale se
   > pide por HTTP para que decidan los guardas de siempre (sesión, permiso,
   > sede, interruptor) y no una copia de ellos en el canal de audio. La misma
@@ -661,14 +670,19 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   desconocido, caducó o ya se usó, ENTONCES el sistema DEBERÁ cerrar el canal
   con el código **4401** sin haber atendido nada. SI el navegador declara un
   `Origin` que no está en `CORS_ORIGINS`, ENTONCES DEBERÁ rechazar la apertura
-  con 403; y MIENTRAS `ASSISTANT_ENABLED` no sea `true`, DEBERÁ responder a la
-  apertura con 404, como a una ruta que no existe.
+  con 403; MIENTRAS `ASSISTANT_ENABLED` no sea `true`, DEBERÁ responder a la
+  apertura con 404, como a una ruta que no existe; y DEBERÁ responder 404 y
+  cerrar la apertura de cualquier otra ruta, y 429 a más de **20** canales sin
+  vale de una misma dirección.
+  > Con un oyente de `upgrade`, Node deja de cerrar las aperturas que nadie
+  > atiende: quedaban abiertas para siempre (auditoría del 12-10-2026).
   > SigmAI ponía el token en la URL (`?token=`), que acaba en los registros de
   > acceso de cualquier proxy. Un navegador no puede poner cabeceras en un
   > WebSocket; el vale de un solo uso, pedido con la cabecera
   > `Authorization` de siempre, lo resuelve sin un segundo camino de entrada.
-- **AS-047** — CUANDO caduque el token de acceso con que se pidió el vale, el
-  sistema DEBERÁ cerrar el canal con **4401**, igual que un corte (AS-051).
+- **AS-047** — CUANDO caduque el token de acceso con que se pidió el vale, o
+  pasen **15 min** desde que se abrió el canal, lo que llegue antes, el
+  sistema DEBERÁ cerrarlo con **4401**, igual que un corte (AS-051).
   > Una sesión revocada o un permiso retirado dejan de escuchar en lo que dura
   > un token, sin que el canal tenga que preguntar a `auth`. La pantalla pide
   > otro vale —con el token renovado— y sigue sin perder nada (AS-060).
@@ -693,8 +707,15 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   responder el reloj donde quedó y NO DEBERÁ volver a cero; cada trama DEBERÁ
   llevar su inicio en ese reloj. CUANDO llegue una trama, el sistema DEBERÁ
   descartar la parte que ya había recibido —la que acaba en el reloj o antes— y
-  reenviar a `clinica-ai` sólo lo nuevo; y DEBERÁ guardar el reloj al menos cada
-  **5 s** de audio.
+  reenviar a `clinica-ai` sólo lo nuevo; DEBERÁ descartar una trama que empiece
+  más de **2 s** por delante del reloj, y el audio que pase en más de **75 s**
+  al tiempo transcurrido desde que la captura empezó o se reanudó; y DEBERÁ
+  guardar el reloj al menos cada **5 s** de audio, sin pisar una pausa ya
+  escrita.
+  > Una trama muy adelantada movería el reloj por delante de todo lo real que
+  > viene después; el audio más rápido que el habla sólo haría cola en whisper
+  > para todas las consultas. Los 75 s cubren lo que la pantalla guarda
+  > mientras reconecta (AS-060).
   > El reloj es de la consulta, no de la conexión (SigmAI RC-09). Que la parte
   > repetida se descarte es lo que deja a la pantalla reenviar sin miedo lo que
   > no sabe si llegó (AS-060).
@@ -733,11 +754,15 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > pasar del computador al teléfono.
 - **AS-055** — SI `clinica-ai` falla, cierra el canal sin terminar o no termina
   en 90 s, ENTONCES el sistema DEBERÁ dejar la sesión `PAUSED` con el motivo
-  `recognizer-failed` y decírselo al navegador; SI lo cierra por su tope de
-  duración o de inactividad (1001) mientras se escucha, ENTONCES DEBERÁ
-  reabrirlo con el mismo reloj sin pausar; y SI guardar segmentos falla **3**
-  veces seguidas, ENTONCES DEBERÁ pausar con el motivo `store-failed` en vez de
-  seguir acumulando.
+  `recognizer-failed` y decírselo al navegador, también cuando escribir la
+  pausa falle; SI lo cierra por su tope de duración o de inactividad (1001)
+  mientras se escucha, ENTONCES DEBERÁ abrir otro con la siguiente trama, con el
+  mismo reloj y sin pausar; y SI guardar segmentos falla **3** veces seguidas,
+  ENTONCES DEBERÁ pausar con el motivo `store-failed` en vez de seguir
+  acumulando, y lo que no pudo guardar DEBERÁ intentarlo otra vez al pausar o
+  detener.
+  > Reabrir sólo con audio: un canal mudo no ocupa una de las 16 escuchas de
+  > `clinica-ai` (auditoría del 12-10-2026).
 
 ### 18. La transcripción y su purga (D-239 §3)
 
@@ -810,6 +835,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_PSEUDONYMIZER_FAILED`     | `ExternalServiceError` | 503 / 502 | `clinica-ai` no respondió (reintentable) o respondió fuera de contrato (AS-033) |
 | `ASSISTANT_LISTENING_UNAVAILABLE`    | `ExternalServiceError` | 503       | `clinica-ai` no puede escuchar: sin reconocedor, sin detector de voz o caído (AS-048) |
 | `ASSISTANT_LISTENING_NOT_OPEN`       | `ConflictError`        | 409       | Una orden de pausar o una trama sin escucha abierta en ese canal (AS-049) |
+| `ASSISTANT_LISTENING_FAILED`         | `ExternalServiceError` | 503       | Una orden de la escucha falló por algo que no es del médico: la base, un fallo (AS-058) |
 
 ## Niveles de prueba
 

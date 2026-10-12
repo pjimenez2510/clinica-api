@@ -23,6 +23,7 @@ import {
   type ListeningChannel,
 } from '../application/listening.service';
 import {
+  ListeningFailedError,
   ListeningNotOpenError,
   ListeningUnavailableError,
 } from '../domain/assistant.errors';
@@ -34,14 +35,28 @@ export const LISTENING_PATH = '/api/v1/assistant/listening';
 const HELLO_WAIT_MS = 5_000;
 /** AS-046, AS-047. The channel is not, or no longer, of a valid session. */
 export const SESSION_REFUSED = 4401;
-/** The longest a `setTimeout` waits (2^31 − 1 ms). */
-const LONGEST_TIMER_MS = 2_147_483_647;
+/**
+ * AS-047. A channel lives, at most, this long; then the browser asks for a
+ * new ticket — the guards decide again — and resumes on the same clock. It
+ * bounds what a revoked session or permission keeps, whatever the token's TTL.
+ */
+const LONGEST_CHANNEL_MS = 15 * 60_000;
+/**
+ * AS-059 (D-247 §7). How often a channel asks whether its attention still
+ * takes content: signed with its discharge or annulled, the listening stops.
+ */
+const LIVE_CHECK_MS = 5_000;
+/** Channels without a ticket yet, per address: what one client may hold open. */
+const UNTICKETED_PER_ADDRESS = 20;
+/** AS-059. The listening stopped because the attention was closed. */
+export const ATTENTION_CLOSED = 4409;
 
 export const LISTENING_GATEWAY_OPTIONS = Symbol('LISTENING_GATEWAY_OPTIONS');
 export interface ListeningGatewayOptions {
   /** AS-046. `CORS_ORIGINS`: the browsers that may open the channel. */
   origins: readonly string[];
   helloWaitMs?: number;
+  liveCheckMs?: number;
 }
 
 const helloSchema = z.object({ type: z.literal('hello'), ticket: z.string() });
@@ -56,6 +71,7 @@ const commandSchema = z.discriminatedUnion('type', [
 
 interface Connection {
   socket: WebSocket;
+  address: string;
   grant: ListeningGrant | null;
   channel: ListeningChannel;
   /** Messages are handled one after another: a stop never overtakes its start. */
@@ -88,6 +104,7 @@ export class ListeningGateway
 {
   private readonly logger = new Logger(ListeningGateway.name);
   private readonly connections = new Set<Connection>();
+  private readonly unticketed = new Map<string, number>();
   private server: WebSocketServer | null = null;
 
   constructor(
@@ -122,9 +139,16 @@ export class ListeningGateway
     this.server?.close();
   }
 
+  /**
+   * With a listener on `upgrade`, Node no longer closes the upgrades nobody
+   * takes, nor watches their socket for errors: this one answers every one.
+   */
   private upgrade(request: IncomingMessage, socket: Duplex, head: Buffer) {
+    socket.on('error', () => socket.destroy());
     const path = new URL(request.url ?? '/', 'http://api').pathname;
-    if (path !== LISTENING_PATH || !this.server) return;
+    if (path !== LISTENING_PATH || !this.server) {
+      return refuse(socket, 404, 'Not Found');
+    }
 
     // AS-026, AS-046. Off: the answer of a route that does not exist.
     if (!this.enabled) return refuse(socket, 404, 'Not Found');
@@ -135,14 +159,20 @@ export class ListeningGateway
       return refuse(socket, 403, 'Forbidden');
     }
 
+    const address = request.socket.remoteAddress ?? 'unknown';
+    if ((this.unticketed.get(address) ?? 0) >= UNTICKETED_PER_ADDRESS) {
+      return refuse(socket, 429, 'Too Many Requests');
+    }
     this.server.handleUpgrade(request, socket, head, (ws) =>
-      this.connected(ws),
+      this.connected(ws, address),
     );
   }
 
-  private connected(socket: WebSocket): void {
+  private connected(socket: WebSocket, address: string): void {
+    this.unticketed.set(address, (this.unticketed.get(address) ?? 0) + 1);
     const connection: Connection = {
       socket,
+      address,
       grant: null,
       channel: {
         onSegment: (segment) => send(socket, { type: 'segment', ...segment }),
@@ -162,15 +192,21 @@ export class ListeningGateway
       }, this.options.helloWaitMs ?? HELLO_WAIT_MS),
     );
 
+    // Every message is handled, and its failure answered, in its turn: a
+    // rejection left on the queue would skip the rest — the pause on close
+    // among them — and, unhandled, end the process.
     socket.on('message', (data: Buffer, binary: boolean) => {
-      connection.queue = connection.queue.then(() =>
-        this.onMessage(connection, data, binary),
-      );
+      connection.queue = connection.queue
+        .then(() => this.onMessage(connection, data, binary))
+        .catch((error: unknown) => this.answerError(connection, error));
     });
     socket.on('close', () => {
-      for (const timer of connection.timers) clearTimeout(timer);
+      for (const timer of connection.timers) clearInterval(timer);
       this.connections.delete(connection);
-      if (!connection.grant) return;
+      if (!connection.grant) {
+        this.forgetUnticketed(connection);
+        return;
+      }
       // AS-051. A channel that goes away without pausing pauses its listening,
       // after the recogniser handed over what it held.
       connection.queue = connection.queue.then(() =>
@@ -194,20 +230,25 @@ export class ListeningGateway
     if (!connection.grant) return this.hello(connection, data, binary);
 
     const { encounterId } = connection.grant;
+    if (!binary) {
+      return this.command(connection, connection.grant, data.toString('utf8'));
+    }
+    if (data.length <= 4) return;
     try {
-      if (binary) {
-        if (data.length <= 4) return;
-        await this.listening.receive(encounterId, connection.channel, {
-          offsetMs: data.readUInt32LE(0),
-          pcm: data.subarray(4),
-        });
-        return;
-      }
-      await this.command(connection, connection.grant, data.toString('utf8'));
+      await this.listening.receive(encounterId, connection.channel, {
+        offsetMs: data.readUInt32LE(0),
+        pcm: data.subarray(4),
+      });
     } catch (error) {
-      // AS-054. Frames of a channel that lost the capture are dropped quietly.
-      if (binary && error instanceof ListeningNotOpenError) return;
-      this.answerError(connection, error);
+      // AS-054, AS-055. A frame is never answered on its own: one of a
+      // channel that lost the capture is dropped, and a listening that cannot
+      // go on pauses itself and says so once.
+      if (!(error instanceof ListeningNotOpenError)) {
+        this.logger.warn(
+          { error_code: errorName(error), dependency: 'listening' },
+          'a frame of the listening could not be handled',
+        );
+      }
     }
   }
 
@@ -220,14 +261,21 @@ export class ListeningGateway
       return;
     }
     connection.grant = grant;
+    this.forgetUnticketed(connection);
 
-    // AS-047. The channel lives as long as the token the ticket was asked with.
+    // AS-047. The channel lives as long as the token the ticket was asked
+    // with, and never longer than LONGEST_CHANNEL_MS.
     const left = grant.tokenExpiresAt.getTime() - Date.now();
     connection.timers.push(
       setTimeout(
         () => connection.socket.close(SESSION_REFUSED, 'sesión vencida'),
-        Math.min(Math.max(left, 0), LONGEST_TIMER_MS),
+        Math.min(Math.max(left, 0), LONGEST_CHANNEL_MS),
       ),
+      setInterval(() => {
+        connection.queue = connection.queue
+          .then(() => this.checkAttention(connection, grant))
+          .catch(() => undefined);
+      }, this.options.liveCheckMs ?? LIVE_CHECK_MS),
     );
 
     const session = await this.listening.sessionOf(grant.encounterId);
@@ -274,19 +322,52 @@ export class ListeningGateway
     }
   }
 
+  /**
+   * AS-059 (D-247 §7). The attention was signed with its discharge, annulled
+   * or interrupted, or left the requester's reach: the listening stops
+   * —whatever channel holds it— and this channel is told and closed. A
+   * failure to ask (the database) is not a closed attention: next round.
+   */
+  private async checkAttention(
+    connection: Connection,
+    grant: ListeningGrant,
+  ): Promise<void> {
+    try {
+      await this.access.confirm(grant);
+      return;
+    } catch (error) {
+      if (!(error instanceof DomainError)) return;
+      const { offsetMs } = await this.listening.close(grant.encounterId);
+      send(connection.socket, {
+        type: 'stopped',
+        offsetMs,
+        reason: error.code,
+      });
+      connection.socket.close(ATTENTION_CLOSED, 'atención cerrada');
+    }
+  }
+
+  private forgetUnticketed(connection: Connection): void {
+    const left = (this.unticketed.get(connection.address) ?? 1) - 1;
+    if (left > 0) this.unticketed.set(connection.address, left);
+    else this.unticketed.delete(connection.address);
+  }
+
   /** AS-058. The screen gets a code to word; the log a code, never a sentence. */
   private answerError(connection: Connection, error: unknown): void {
-    const code =
-      error instanceof DomainError ? error.code : 'ASSISTANT_LISTENING_FAILED';
+    const known = error instanceof DomainError ? error : new ListeningFailedError(); // prettier-ignore
     if (!(error instanceof DomainError)) {
       this.logger.warn(
-        {
-          error_code: error instanceof Error ? error.name : 'unknown',
-          dependency: 'listening',
-        },
+        { error_code: errorName(error), dependency: 'listening' },
         'a listening command failed',
       );
     }
+    // A ticket accepted with a channel that could not even say `ready`.
+    if (!connection.grant) {
+      connection.socket.close(1011, 'no disponible');
+      return;
+    }
+    const code = known.code;
     send(connection.socket, {
       type: 'error',
       code,
@@ -294,6 +375,10 @@ export class ListeningGateway
         error instanceof ListeningUnavailableError ? error.reason : undefined,
     });
   }
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : 'unknown';
 }
 
 function send(socket: WebSocket, message: Record<string, unknown>): void {
@@ -313,5 +398,6 @@ function parse(raw: Buffer | string): unknown {
 function refuse(socket: Duplex, status: number, text: string): void {
   socket.end(
     `HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+    () => socket.destroy(),
   );
 }

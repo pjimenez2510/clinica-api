@@ -70,12 +70,13 @@ class SentenceRecognizer implements SpeechRecognizer {
     };
     return Promise.resolve({
       send: (frame) => {
-        if (!open) throw new Error('the recognition is not open');
+        if (!open) return false;
         if (SENTENCES.includes(frame.offsetMs)) confirm();
         held = {
           startMs: held?.startMs ?? frame.offsetMs,
           endMs: frame.offsetMs + frame.pcm.length / BYTES_PER_MS,
         };
+        return true;
       },
       end: () => {
         confirm();
@@ -122,7 +123,7 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
         .overrideProvider(SPEECH_RECOGNIZER)
         .useValue(recognizer)
         .overrideProvider(LISTENING_GATEWAY_OPTIONS)
-        .useValue({ origins: [ORIGIN], helloWaitMs: 300 })
+        .useValue({ origins: [ORIGIN], helloWaitMs: 300, liveCheckMs: 200 })
         .compile();
       app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false }); // prettier-ignore
       configureApp(app);
@@ -313,6 +314,18 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
       expect(await silent.closing).toBe(4401);
     });
 
+    it('AS-046 answers 404 and closes an upgrade to any other path, which stays open otherwise', async () => {
+      const socket = new WebSocket(`${wsBase}/api/v1/encounters`);
+      await expect(
+        new Promise((resolve, reject) => {
+          socket.once('open', resolve);
+          socket.once('error', reject);
+        }),
+      ).rejects.toThrow(/404/);
+      // Control: the API still answers its routes.
+      await request(app.getHttpServer()).get(url(encounterId)).expect(401);
+    });
+
     it('AS-046 refuses a browser page of another origin before opening', async () => {
       await expect(channel('https://otro-sitio.example')).rejects.toThrow(
         /403/,
@@ -349,6 +362,24 @@ describe('la escucha por HTTP y por su canal (AS-045 a AS-057)', () => {
         code: 'ASSISTANT_ENCOUNTER_CLOSED',
       });
       expect(await prisma.listeningSession.count()).toBe(0);
+    });
+  });
+
+  describe('la atención se cierra con la escucha abierta (AS-045, D-247 §7)', () => {
+    it('AS-045 discharging the attention stops the listening, tells the channel and keeps nothing more in it', async () => {
+      const ch = await listening();
+      ch.speak(0, SENTENCES[1]!);
+      await expect.poll(async () => (await prisma.listeningSession.findUnique({ where: { encounterId } }))?.state).toBe('LISTENING'); // prettier-ignore
+
+      await discharge(encounterId);
+
+      expect(await ch.next('stopped')).toMatchObject({ type: 'stopped', reason: 'ASSISTANT_ENCOUNTER_CLOSED' }); // prettier-ignore
+      expect(await ch.closing).toBe(4409);
+      const session = await prisma.listeningSession.findUnique({ where: { encounterId } }); // prettier-ignore
+      expect(session?.state).toBe('STOPPED');
+      // What was said before the discharge was kept, and nothing after it.
+      const kept = await prisma.transcriptSegment.findMany({ where: { encounterId } }); // prettier-ignore
+      expect(kept.map((s) => s.startMs)).toEqual([0]);
     });
   });
 

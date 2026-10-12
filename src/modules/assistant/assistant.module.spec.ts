@@ -42,6 +42,7 @@ function transcripts(purge: () => Promise<number> = () => Promise.resolve(0)) {
   const store: ListeningStore = {
     find: vi.fn(),
     save: vi.fn(),
+    advance: vi.fn(),
     append: vi.fn(),
     transcript: vi.fn(),
     purge: purgeTranscripts,

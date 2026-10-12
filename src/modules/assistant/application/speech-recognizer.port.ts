@@ -24,9 +24,10 @@ export interface RecognizerEvents {
 export interface RecognitionSession {
   /**
    * Hands a frame over and forgets it: nothing is buffered beyond the call
-   * (AS-053). Throws when the recognition is no longer open.
+   * (AS-053). `false` when the recognition is closing or closed: how it ended
+   * arrives by `onEnded`, and the frame is not counted as heard.
    */
-  send(frame: AudioFrame): void;
+  send(frame: AudioFrame): boolean;
   /**
    * AS-050. Asks the recogniser to finish what it holds and waits until every
    * segment was handed over; rejects when it went away or took too long.

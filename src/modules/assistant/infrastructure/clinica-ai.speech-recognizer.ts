@@ -176,13 +176,13 @@ async function listen(
   });
 
   return {
-    send(frame: AudioFrame): void {
-      if (socket.readyState !== WebSocket.OPEN || ended) {
-        throw new Error('the recognition is not open');
-      }
+    send(frame: AudioFrame): boolean {
+      // CLOSING after a 1001 too: `close` decides what follows (AS-055).
+      if (socket.readyState !== WebSocket.OPEN || ended) return false;
       const header = Buffer.alloc(4);
       header.writeUInt32LE(frame.offsetMs, 0);
       socket.send(Buffer.concat([header, frame.pcm]));
+      return true;
     },
 
     end(): Promise<void> {

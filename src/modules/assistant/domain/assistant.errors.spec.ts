@@ -23,6 +23,7 @@ import {
   SuggestionAlreadyDecidedError,
   SuggestionInvalidError,
   SuggestionNotFoundError,
+  ListeningFailedError,
   ListeningNotOpenError,
   ListeningUnavailableError,
 } from './assistant.errors';
@@ -164,6 +165,13 @@ describe('assistant errors', () => {
       'ASSISTANT_LISTENING_UNAVAILABLE',
       ExternalServiceError,
       /detector de voz/,
+    ],
+    [
+      'AS-058',
+      () => new ListeningFailedError(),
+      'ASSISTANT_LISTENING_FAILED',
+      ExternalServiceError,
+      /Vuelva a intentarlo/,
     ],
     [
       'AS-049',

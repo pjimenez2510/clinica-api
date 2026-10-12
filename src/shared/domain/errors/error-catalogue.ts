@@ -91,6 +91,9 @@ export const DOMAIN_ERROR_CODES = [
   // canal sin escucha abierta (409).
   'ASSISTANT_LISTENING_UNAVAILABLE',
   'ASSISTANT_LISTENING_NOT_OPEN',
+  // AS-058: una orden de la escucha falló por algo que no es del médico (la
+  // base, un fallo): 503, reintentable.
+  'ASSISTANT_LISTENING_FAILED',
   'INVALID_AGENDA_TRANSITION',
   'NO_SHOW_BEFORE_START',
   // Agenda, E8 (AG-116, AG-117, AG-122, AG-125, AG-127, AG-128). Los

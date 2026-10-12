@@ -40,6 +40,21 @@ export interface ListeningChannel {
 const PERSIST_EVERY_MS = 5_000;
 /** AS-055. Segments the store may refuse in a row before the listening pauses. */
 const UNSTORED_LIMIT = 3;
+/**
+ * AS-049. How far ahead of the clock a frame may start. The browser's frames
+ * follow each other; one far ahead is a fault, and taking it would move the
+ * clock past everything real that comes after (or past the integer column).
+ */
+const MAX_AHEAD_MS = 2_000;
+/**
+ * AS-049, AS-060. How much audio beyond the time elapsed since the capture
+ * (re)started is accepted: what the browser held while it reconnected (up to
+ * 60 s) and a margin. Audio faster than speech would only queue whisper for
+ * every consultation.
+ */
+const BACKLOG_MS = 75_000;
+/** The process is going down: how long the recogniser has to hand over. */
+const SHUTDOWN_WAIT_MS = 2_000;
 
 export const LISTENING_CLOCK = Symbol('LISTENING_CLOCK');
 export type ListeningClock = () => Date;
@@ -48,10 +63,18 @@ interface Live {
   encounterId: string;
   userId: string;
   channel: ListeningChannel;
-  recognition: RecognitionSession;
+  /**
+   * `null` once `clinica-ai` closed it for its own limits (AS-055): a new one
+   * is opened with the next frame, so a silent channel does not hold one of
+   * its places for ever.
+   */
+  recognition: RecognitionSession | null;
   /** AS-049. The end of the last audio forwarded: what the server received. */
   offsetMs: number;
   persistedMs: number;
+  /** AS-049. Where the clock and the wall clock were when the capture (re)started. */
+  capturedFromMs: number;
+  capturedSince: number;
   device: string;
   startedAt: Date;
   /** What was handed to the store, in order: ending waits for the last line. */
@@ -110,6 +133,7 @@ export class ListeningService {
           already.channel.onTakenOver();
           already.channel = channel;
           already.device = device;
+          this.restartCapture(already);
           await this.write(already, 'LISTENING', null);
         }
         return { offsetMs: already.offsetMs };
@@ -121,9 +145,11 @@ export class ListeningService {
         encounterId,
         userId,
         channel,
-        recognition: undefined as unknown as RecognitionSession,
+        recognition: null,
         offsetMs,
         persistedMs: offsetMs,
+        capturedFromMs: offsetMs,
+        capturedSince: this.now().getTime(),
         device,
         startedAt: stored?.startedAt ?? this.now(),
         keeping: Promise.resolve(),
@@ -150,29 +176,25 @@ export class ListeningService {
   ): Promise<void> {
     const live = this.live.get(encounterId);
     if (live?.channel !== channel) throw new ListeningNotOpenError();
-    if (live.reopening) await live.reopening;
-    if (this.live.get(encounterId) !== live) throw new ListeningNotOpenError();
 
     const unheard = unheardPart(frame, live.offsetMs);
-    if (!unheard) return;
+    if (!unheard || !this.plausible(live, unheard)) return;
 
-    try {
-      live.recognition.send(unheard);
-    } catch {
-      this.quietly(
-        this.suspend(encounterId, 'recognizer-failed'),
-        encounterId,
-        'the listening could not be suspended after the recogniser went away',
-      );
-      return;
-    }
+    const recognition = await this.recognitionOf(live);
+    if (!recognition || this.live.get(encounterId) !== live) return;
+    // `false`: it is closing; how it ended decides (AS-055), and the browser
+    // resends what was not heard.
+    if (!recognition.send(unheard)) return;
+
     live.offsetMs = Math.max(
       live.offsetMs,
       frameEndMs(unheard.offsetMs, unheard.pcm),
     );
-
     if (live.offsetMs - live.persistedMs >= PERSIST_EVERY_MS) {
-      await this.write(live, 'LISTENING', null);
+      live.persistedMs = live.offsetMs;
+      // Only over a listening that is still LISTENING: a pause that wrote
+      // itself meanwhile is not overwritten (AS-050).
+      await this.store.advance(encounterId, live.offsetMs, this.now());
     }
   }
 
@@ -201,17 +223,20 @@ export class ListeningService {
       const live = this.live.get(encounterId);
       if (live?.channel === channel) return this.finish(live, 'STOPPED', null);
       if (live) throw new ListeningNotOpenError();
+      return this.stopWritten(encounterId);
+    });
+  }
 
-      const stored = await this.store.find(encounterId);
-      if (stored && stored.state !== 'STOPPED') {
-        await this.store.save({
-          ...stored,
-          state: 'STOPPED',
-          reason: null,
-          updatedAt: this.now(),
-        });
-      }
-      return { offsetMs: stored?.offsetMs ?? 0 };
+  /**
+   * AS-059 (D-247 §7). The attention no longer takes content — signed with
+   * its discharge, annulled, interrupted —: whatever channel holds it, the
+   * listening stops, and nothing more is written into the closed attention.
+   */
+  close(encounterId: string): Promise<{ offsetMs: number }> {
+    return this.inTurn(encounterId, async () => {
+      const live = this.live.get(encounterId);
+      if (live) return this.finish(live, 'STOPPED', null);
+      return this.stopWritten(encounterId);
     });
   }
 
@@ -224,9 +249,7 @@ export class ListeningService {
     const held = [...this.live.values()].filter(
       (live) => live.channel === channel,
     );
-    await Promise.all(
-      held.map((live) => this.suspend(live.encounterId, 'device-lost')),
-    );
+    await Promise.all(held.map((live) => this.suspend(live, 'device-lost')));
   }
 
   /** AS-056. The listening as the screen shows it: what is live is fresher. */
@@ -250,29 +273,75 @@ export class ListeningService {
     return this.store.transcript(encounterId);
   }
 
-  /** The process is going down: nothing more is heard, the clock is kept. */
+  /**
+   * The process is going down. The recogniser gets a moment to hand over the
+   * sentence it holds, then the listening is written down paused.
+   */
   async shutdown(): Promise<void> {
     await Promise.all(
       [...this.live.values()].map(async (live) => {
-        live.recognition.abort();
         this.live.delete(live.encounterId);
+        await settleWithin(live.recognition?.end(), SHUTDOWN_WAIT_MS);
+        live.recognition?.abort();
         await live.keeping;
         await this.write(live, 'PAUSED', 'device-lost').catch(() => undefined);
       }),
     );
   }
 
-  /** AS-051, AS-055. The listening pauses itself and says why. */
+  /** AS-049. A frame that starts far ahead, or audio faster than speech, is dropped. */
+  private plausible(live: Live, frame: AudioFrame): boolean {
+    if (frame.offsetMs > live.offsetMs + MAX_AHEAD_MS) return false;
+    const elapsed = this.now().getTime() - live.capturedSince;
+    const sent = frameEndMs(frame.offsetMs, frame.pcm) - live.capturedFromMs;
+    return sent <= elapsed + BACKLOG_MS;
+  }
+
+  private restartCapture(live: Live): void {
+    live.capturedFromMs = live.offsetMs;
+    live.capturedSince = this.now().getTime();
+  }
+
+  /** AS-055. The recognition, reopened with the frame that needs it. */
+  private async recognitionOf(live: Live): Promise<RecognitionSession | null> {
+    if (live.recognition) return live.recognition;
+    live.reopening ??= this.recognizer
+      .open(this.eventsOf(live))
+      .then((recognition) => {
+        // Stopped or shut down meanwhile: nobody would close it.
+        if (this.live.get(live.encounterId) !== live) recognition.abort();
+        else live.recognition = recognition;
+      })
+      .finally(() => {
+        live.reopening = null;
+      });
+    try {
+      await live.reopening;
+    } catch {
+      this.quietly(
+        this.suspend(live, 'recognizer-failed'),
+        live.encounterId,
+        'the listening could not be suspended after reopening failed',
+      );
+    }
+    return live.recognition;
+  }
+
+  /**
+   * AS-051, AS-055. This listening —and not one that took its place in the
+   * meantime— pauses itself and says why, even when writing it down fails.
+   */
   private suspend(
-    encounterId: string,
+    live: Live,
     reason: PauseReason,
   ): Promise<{ offsetMs: number } | null> {
-    return this.inTurn(encounterId, async () => {
-      const live = this.live.get(encounterId);
-      if (!live) return null;
-      const answer = await this.finish(live, 'PAUSED', reason);
-      live.channel.onPaused(reason, answer.offsetMs);
-      return answer;
+    return this.inTurn(live.encounterId, async () => {
+      if (this.live.get(live.encounterId) !== live) return null;
+      try {
+        return await this.finish(live, 'PAUSED', reason);
+      } finally {
+        live.channel.onPaused(reason, live.offsetMs);
+      }
     });
   }
 
@@ -281,11 +350,11 @@ export class ListeningService {
     state: ListeningState,
     reason: PauseReason | null,
   ): Promise<{ offsetMs: number }> {
-    if (live.reopening) await live.reopening.catch(() => undefined);
     // Nothing more is accepted: frames that arrive while it ends are refused.
     this.live.delete(live.encounterId);
+    if (live.reopening) await live.reopening.catch(() => undefined);
     try {
-      await live.recognition.end();
+      await live.recognition?.end();
     } catch {
       // The tail is what could not be recognised; the pause says so.
       if (state === 'PAUSED') reason ??= 'recognizer-failed';
@@ -295,8 +364,26 @@ export class ListeningService {
       );
     }
     await live.keeping;
+    // AS-050. What the store refused before is tried once more: «every
+    // segment is kept» holds for the lines of a passing blip too.
+    if (live.unstored.length > 0) await this.keepHeld(live);
     await this.write(live, state, reason);
     return { offsetMs: live.offsetMs };
+  }
+
+  private async stopWritten(
+    encounterId: string,
+  ): Promise<{ offsetMs: number }> {
+    const stored = await this.store.find(encounterId);
+    if (stored && stored.state !== 'STOPPED') {
+      await this.store.save({
+        ...stored,
+        state: 'STOPPED',
+        reason: null,
+        updatedAt: this.now(),
+      });
+    }
+    return { offsetMs: stored?.offsetMs ?? 0 };
   }
 
   private eventsOf(live: Live) {
@@ -308,36 +395,19 @@ export class ListeningService {
 
   /**
    * AS-055. `clinica-ai` closed the recognition by itself. For its own limits
-   * (idle, three hours) a new one continues on the same clock; anything else
-   * pauses the listening with its reason.
+   * (idle, three hours) the next frame opens a new one on the same clock;
+   * anything else pauses the listening with its reason.
    */
   private recognitionEnded(live: Live, how: RecognitionEnd): void {
     if (this.live.get(live.encounterId) !== live) return;
-
+    live.recognition = null;
     if (how === 'failed') {
       this.quietly(
-        this.suspend(live.encounterId, 'recognizer-failed'),
+        this.suspend(live, 'recognizer-failed'),
         live.encounterId,
         'the listening could not be suspended after the recogniser failed',
       );
-      return;
     }
-
-    live.reopening = this.recognizer
-      .open(this.eventsOf(live))
-      .then((recognition) => {
-        live.recognition = recognition;
-      })
-      .finally(() => {
-        live.reopening = null;
-      });
-    live.reopening.catch(() => {
-      this.quietly(
-        this.suspend(live.encounterId, 'recognizer-failed'),
-        live.encounterId,
-        'the listening could not be suspended after reopening failed',
-      );
-    });
   }
 
   /**
@@ -346,32 +416,39 @@ export class ListeningService {
    * refused goes first with the next one; three refusals in a row pause.
    */
   private keep(live: Live, segment: RecognizedSegment): void {
+    live.unstored.push(segment);
     live.keeping = live.keeping.then(async () => {
-      const pending = [...live.unstored, segment];
-      try {
-        await this.store.append(live.encounterId, pending, this.now());
-        live.unstored = [];
-      } catch {
-        live.unstored = pending;
-        this.logger.warn(
-          {
-            encounter_id: live.encounterId,
-            count: pending.length,
-            error_code: 'transcript-store',
-          },
-          'a transcript segment could not be kept and waits for the next one',
+      if (live.unstored.length === 0) return;
+      if (await this.keepHeld(live)) return;
+      if (live.unstored.length >= UNSTORED_LIMIT) {
+        this.quietly(
+          this.suspend(live, 'store-failed'),
+          live.encounterId,
+          'the listening could not be suspended after the store refused',
         );
-        if (live.unstored.length >= UNSTORED_LIMIT) {
-          this.quietly(
-            this.suspend(live.encounterId, 'store-failed'),
-            live.encounterId,
-            'the listening could not be suspended after the store refused',
-          );
-        }
-        return;
       }
-      for (const kept of pending) live.channel.onSegment(kept);
     });
+  }
+
+  /** Keeps what is held, in order; `false` when the store refused it. */
+  private async keepHeld(live: Live): Promise<boolean> {
+    const pending = [...live.unstored];
+    try {
+      await this.store.append(live.encounterId, pending, this.now());
+    } catch {
+      this.logger.warn(
+        {
+          encounter_id: live.encounterId,
+          count: pending.length,
+          error_code: 'transcript-store',
+        },
+        'a transcript segment could not be kept and waits for the next one',
+      );
+      return false;
+    }
+    live.unstored = live.unstored.slice(pending.length);
+    for (const kept of pending) live.channel.onSegment(kept);
+    return true;
   }
 
   private async write(
@@ -419,4 +496,20 @@ export class ListeningService {
       );
     });
   }
+}
+
+/** Waits for `work` at most `ms`, whatever it does. */
+async function settleWithin(
+  work: Promise<unknown> | undefined,
+  ms: number,
+): Promise<void> {
+  if (!work) return;
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    work.catch(() => undefined),
+    new Promise((resolve) => {
+      timer = setTimeout(resolve, ms);
+    }),
+  ]);
+  clearTimeout(timer);
 }

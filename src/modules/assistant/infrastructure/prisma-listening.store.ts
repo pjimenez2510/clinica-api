@@ -45,6 +45,17 @@ export class PrismaListeningStore implements ListeningStore {
     });
   }
 
+  async advance(
+    encounterId: string,
+    offsetMs: number,
+    at: Date,
+  ): Promise<void> {
+    await this.prisma.listeningSession.updateMany({
+      where: { encounterId, state: 'LISTENING', offsetMs: { lt: offsetMs } },
+      data: { offsetMs, updatedAt: at },
+    });
+  }
+
   /** AS-052. A start already kept is left as it was: never twice. */
   async append(
     encounterId: string,
@@ -73,10 +84,11 @@ export class PrismaListeningStore implements ListeningStore {
   }
 
   /**
-   * AS-057 (D-239 §3, D-247 §2). 45 days after the first signature of the
-   * attention's note; and, signed or not, 90 days after the segment was kept.
-   * Every segment precedes the first signature: the listening only opens on
-   * an attention that takes new content (AS-045).
+   * AS-057 (D-239 §3, D-247 §2 and §8). 45 days after the first signature of
+   * the attention's note; and, signed or not, 90 days after the segment was
+   * kept. A note signed without discharge leaves the attention open and the
+   * listening may go on: those later segments count from the same first
+   * signature (D-247 §8, recommendation awaiting the author).
    */
   purge(now: Date): Promise<number> {
     const { retention, maximum } = transcriptPurgeCutoffs(now);

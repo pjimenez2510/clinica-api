@@ -25,6 +25,11 @@ export interface ListeningStore {
   /** Writes the listening down, replacing the one the attention had. */
   save(listening: StoredListening): Promise<void>;
   /**
+   * AS-049. Moves the clock of a listening that is still `LISTENING`, and
+   * nothing else: a pause written meanwhile is not overwritten.
+   */
+  advance(encounterId: string, offsetMs: number, at: Date): Promise<void>;
+  /**
    * AS-052. Keeps what the recogniser confirmed; a segment already kept (same
    * attention, same start) is left as it was, never duplicated.
    */

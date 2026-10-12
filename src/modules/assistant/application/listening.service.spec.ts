@@ -52,14 +52,17 @@ class FakeRecognition implements RecognitionSession {
 
   constructor(private readonly events: RecognizerEvents) {}
 
-  send(frame: { offsetMs: number; pcm: Buffer }): void {
-    if (this.closed) throw new Error('the recognition is not open');
+  closing = false;
+
+  send(frame: { offsetMs: number; pcm: Buffer }): boolean {
+    if (this.closed || this.closing) return false;
     const ms = frame.pcm.length / BYTES_PER_MS;
     this.frames.push({ offsetMs: frame.offsetMs, ms });
     this.held = {
       startMs: this.held?.startMs ?? frame.offsetMs,
       endMs: frame.offsetMs + ms,
     };
+    return true;
   }
 
   /** The window closes: what it held is one confirmed segment. */
@@ -91,12 +94,24 @@ class MemoryStore implements ListeningStore {
   readonly segments: TranscriptLine[] = [];
   refuse = 0;
   readonly saves: StoredListening[] = [];
+  refuseSave = false;
+
+  advance(_e: string, offsetMs: number): Promise<void> {
+    if (
+      this.session?.state === 'LISTENING' &&
+      this.session.offsetMs < offsetMs
+    ) {
+      this.session = { ...this.session, offsetMs };
+    }
+    return Promise.resolve();
+  }
 
   find(): Promise<StoredListening | null> {
     return Promise.resolve(this.session);
   }
 
   save(listening: StoredListening): Promise<void> {
+    if (this.refuseSave) return Promise.reject(new Error('database down'));
     this.session = listening;
     this.saves.push(listening);
     return Promise.resolve();
@@ -154,6 +169,7 @@ function setup() {
     recognizer,
     store,
     service,
+    now: () => new Date(clock),
     tick: (ms: number) => {
       clock += ms;
     },
@@ -185,7 +201,7 @@ afterEach(() => {
 
 describe('ListeningService', () => {
   it('AS-049: starts on the clock written down, never from zero', async () => {
-    const { service, store } = setup();
+    const { service, store, now } = setup();
     store.session = {
       encounterId: ENCOUNTER,
       state: 'PAUSED',
@@ -193,8 +209,8 @@ describe('ListeningService', () => {
       reason: 'device-lost',
       device: 'computador',
       startedBy: USER,
-      startedAt: new Date(0),
-      updatedAt: new Date(0),
+      startedAt: now(),
+      updatedAt: now(),
     };
 
     const answer = await service.start(
@@ -222,7 +238,8 @@ describe('ListeningService', () => {
     const forwarded = recognizer.current.frames;
     expect(forwarded).toHaveLength(51);
     expect(forwarded.at(-1)).toEqual({ offsetMs: 5_000, ms: 50 });
-    expect(store.saves.length - savesAtStart).toBe(1);
+    // The clock moves by `advance`, which never overwrites a pause.
+    expect(store.saves.length - savesAtStart).toBe(0);
     expect(store.session?.offsetMs).toBe(5_000);
   });
 
@@ -350,7 +367,7 @@ describe('ListeningService', () => {
     expect(ch.paused).toEqual(['recognizer-failed']);
   });
 
-  it('AS-055: a recogniser closed for its own limits is reopened on the same clock without pausing', async () => {
+  it('AS-055: a recogniser closed for its own limits is reopened with the next frame, on the same clock, without pausing', async () => {
     const { service, recognizer, store } = setup();
     const ch = channel();
     await service.start(ENCOUNTER, USER, 'computador', ch.events);
@@ -443,5 +460,114 @@ describe('ListeningService', () => {
       service.start(ENCOUNTER, USER, 'computador', channel().events),
     ).rejects.toThrow('cannot listen');
     expect(store.session).toBeNull();
+  });
+
+  it('AS-055: a silent channel does not hold clinica-ai: closed for idleness, nothing is reopened until audio comes', async () => {
+    const { service, recognizer, store } = setup();
+    await service.start(ENCOUNTER, USER, 'computador', channel().events);
+
+    recognizer.current.endByItself('expired');
+    await flush();
+
+    expect(recognizer.sessions).toHaveLength(1);
+    expect(store.session?.state).toBe('LISTENING');
+  });
+
+  it('AS-055: a frame that meets the recognition closing is not heard and does not pause', async () => {
+    const { service, recognizer, store } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    recognizer.current.closing = true;
+
+    await speak(service, ch.events, 0, 100);
+
+    expect(ch.paused).toEqual([]);
+    expect(store.session?.state).toBe('LISTENING');
+    // Not heard: the browser's resend from the clock covers it.
+    expect((await service.sessionOf(ENCOUNTER))?.offsetMs).toBe(0);
+  });
+
+  it('AS-054 AS-051: after a take-over, the old channel going away does not pause the new one', async () => {
+    const { service, store } = setup();
+    const desk = channel();
+    const phone = channel();
+    await service.start(ENCOUNTER, USER, 'computador', desk.events);
+    await service.start(ENCOUNTER, USER, 'teléfono', phone.events);
+
+    await service.disconnected(desk.events);
+
+    expect(store.session?.state).toBe('LISTENING');
+    expect(phone.paused).toEqual([]);
+    await speak(service, phone.events, 0, 100);
+  });
+
+  it('AS-050: a line the store refused once is kept when the physician pauses', async () => {
+    const { service, recognizer, store } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    store.refuse = 1;
+    await speak(service, ch.events, 0, 100);
+    recognizer.current.confirm();
+    await flush();
+    expect(store.segments).toEqual([]);
+
+    await service.pause(ENCOUNTER, ch.events);
+
+    expect(store.segments.map((s) => s.startMs)).toEqual([0]);
+    expect(ch.heard.map((s) => s.startMs)).toEqual([0]);
+  });
+
+  it('AS-055: a pause the system makes is told to the channel even when writing it down fails', async () => {
+    const { service, recognizer, store } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    store.refuseSave = true;
+
+    recognizer.current.endByItself('failed');
+    await flush();
+    await flush();
+
+    expect(ch.paused).toEqual(['recognizer-failed']);
+    await expect(
+      service.receive(ENCOUNTER, ch.events, frame(0)),
+    ).rejects.toBeInstanceOf(ListeningNotOpenError);
+  });
+
+  it('AS-049: a frame far ahead of the clock is dropped, and does not move it', async () => {
+    const { service, recognizer } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+
+    await service.receive(ENCOUNTER, ch.events, frame(3_000_000_000));
+    await speak(service, ch.events, 0, 200);
+
+    expect(recognizer.current.frames.map((f) => f.offsetMs)).toEqual([0, 100]);
+  });
+
+  it('AS-049: audio faster than speech, beyond what a reconnection holds, is dropped', async () => {
+    const { service, recognizer } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+
+    // 80 s of audio in no time: the backlog a reconnection may resend is 75 s.
+    await speak(service, ch.events, 0, 80_000);
+
+    expect(recognizer.current.frames.at(-1)?.offsetMs).toBe(74_900);
+  });
+
+  it('AS-045: an attention closed while it is listened to stops the listening, whatever channel holds it', async () => {
+    const { service, recognizer, store } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await speak(service, ch.events, 0, 300);
+
+    await service.close(ENCOUNTER);
+
+    expect(store.session).toMatchObject({ state: 'STOPPED', offsetMs: 300 });
+    expect(store.segments.map((s) => s.startMs)).toEqual([0]);
+    expect(recognizer.current.closed).toBe(true);
+    await expect(
+      service.receive(ENCOUNTER, ch.events, frame(300)),
+    ).rejects.toBeInstanceOf(ListeningNotOpenError);
   });
 });

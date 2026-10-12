@@ -319,3 +319,20 @@ export class ListeningNotOpenError extends ConflictError {
     super('No listening is open on this channel');
   }
 }
+
+/**
+ * AS-058. A command of the listening failed for a reason that is not the
+ * physician's to know (the database, a bug): the screen says it could not,
+ * and the log keeps the error's name, never what was said.
+ */
+export class ListeningFailedError extends ExternalServiceError {
+  readonly code = 'ASSISTANT_LISTENING_FAILED';
+  readonly service = 'listening';
+  readonly isRetryable = true;
+  override readonly userTitle =
+    'No se pudo usar la escucha. Vuelva a intentarlo';
+
+  constructor() {
+    super('A listening command failed');
+  }
+}
