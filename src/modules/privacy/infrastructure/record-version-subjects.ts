@@ -300,6 +300,17 @@ export const VERSIONED_TABLES: Readonly<Record<string, VersionedTablePath>> = {
        WHERE w.patient_id IN ${chartScopeIds(chartId)}`,
     omittedBecause: null,
   },
+  // AS-024. A proposal of the assistant, archived when it is decided: what it
+  // proposed about this patient and where it came from. Whether it leaves with
+  // an access request is the author's (D-243 §1); closed until then.
+  ai_suggestion: {
+    resourceIdsOf: (chartId, sites) => Prisma.sql`
+      SELECT s.id FROM ai_suggestion s
+       WHERE s.encounter_id IN (${standingEncountersOf(chartId, sites)})`,
+    omittedBecause:
+      'Las propuestas del asistente y lo que se hizo con ellas no van en este archivo hasta que se decida (D-243 §1).',
+    clinical: 'encounter',
+  },
 };
 
 /**

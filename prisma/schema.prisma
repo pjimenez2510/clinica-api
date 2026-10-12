@@ -247,6 +247,8 @@ model User {
   paymentsReversed Payment[]     @relation("PaymentReverser")
   cashSessions     CashSession[] @relation("CashSessionOwner")
 
+  aiSuggestionsDecided AiSuggestion[] @relation("AiSuggestionDecidedBy")
+
   @@index([email])
   @@map("app_user")
 }
@@ -2438,12 +2440,12 @@ model AgendaEntry {
   /// fuera de toda lectura por ser dato de salud (AG-036, AG-072, AG-074). Una
   /// nota de tablero compartiendo esa columna devolvería un diagnóstico a una
   /// pantalla que da a la sala de espera.
-  boardNote     String?   @map("board_note") @db.VarChar(120)
+  boardNote        String?   @map("board_note") @db.VarChar(120)
   /// AG-176. Who wrote the note last, and when — also when the write cleared
   /// it. Its own stamp and not `edited_by_id`: annotating is not editing.
-  boardNoteById String?   @map("board_note_by_id") @db.Uuid
-  boardNoteBy   User?     @relation("BoardNoteWriter", fields: [boardNoteById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_entry_board_note_by_fk")
-  boardNoteAt   DateTime? @map("board_note_at") @db.Timestamptz(6)
+  boardNoteById    String?   @map("board_note_by_id") @db.Uuid
+  boardNoteBy      User?     @relation("BoardNoteWriter", fields: [boardNoteById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_entry_board_note_by_fk")
+  boardNoteAt      DateTime? @map("board_note_at") @db.Timestamptz(6)
   /// AG-173 (D-170 §5). When an arrival called an emergency moved this
   /// appointment from another day to today. The one other reason, besides an
   /// authorised overbooking, for a row not to occupy the calendar
@@ -2826,6 +2828,7 @@ model Encounter {
   chargeItems         ChargeItem[]
   /// AS-011. The calls to a language model made for this encounter.
   aiRuns              AiRun[]
+  aiSuggestions       AiSuggestion[]
 
   /// `encounter_still_open_by_practitioner` is NOT here and cannot be: it is
   /// PARTIAL (`WHERE status IN ('OPEN','ON_HOLD')`), which is what keeps it
@@ -3361,6 +3364,8 @@ model EncounterDiagnosis {
   /// printed the previous one (`encounter_diagnosis_edit_admits`).
   editReason String? @map("edit_reason") @db.VarChar(500)
 
+  aiSuggestions AiSuggestion[]
+
   @@index([encounterId])
   @@index([cie10Code, recordedAt])
   @@map("encounter_diagnosis")
@@ -3652,6 +3657,13 @@ model ClinicalNote {
 
   /// EN-229. `clinical_note_one_002_chain_per_encounter`, a partial UNIQUE
   /// on (encounter_id) of the 002's version 1 rows, lives in SQL only.
+
+  /// EN-283, PR-122, ORD-182. Raised by `draft_revision_counts_writes` on every
+  /// UPDATE of a draft, whatever the writer sends; frozen afterwards. The
+  /// writer's `If-Match` is compared with it (EN-281, PR-121, ORD-181).
+  revision      Int            @default(1)
+  aiSuggestions AiSuggestion[]
+
   @@index([encounterId, formCode])
   @@index([chainId, version])
   @@map("clinical_note")
@@ -3762,6 +3774,12 @@ model Prescription {
   cancelledById String?   @map("cancelled_by_id") @db.Uuid
   cancelledBy   User?     @relation("PrescriptionCanceller", fields: [cancelledById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "prescription_cancelled_by_fk")
   cancelReason  String?   @map("cancel_reason") @db.VarChar(500)
+
+  /// EN-283, PR-122, ORD-182. Raised by `draft_revision_counts_writes` on every
+  /// UPDATE of a draft, whatever the writer sends; frozen afterwards. The
+  /// writer's `If-Match` is compared with it (EN-281, PR-121, ORD-181).
+  revision      Int            @default(1)
+  aiSuggestions AiSuggestion[]
 
   @@unique([siteId, sequenceNumber], map: "prescription_site_number_unique")
   @@index([encounterId])
@@ -3892,6 +3910,12 @@ model ServiceOrder {
 
   /// DOC-003. The archived exam request as it was handed to the patient.
   documentRenders DocumentRender[]
+
+  /// EN-283, PR-122, ORD-182. Raised by `draft_revision_counts_writes` on every
+  /// UPDATE of a draft, whatever the writer sends; frozen afterwards. The
+  /// writer's `If-Match` is compared with it (EN-281, PR-121, ORD-181).
+  revision      Int            @default(1)
+  aiSuggestions AiSuggestion[]
 
   @@unique([siteId, number], map: "service_order_site_number_unique")
   @@index([encounterId])
@@ -6192,6 +6216,8 @@ model AiRun {
 
   exchange AiExchange?
 
+  suggestions AiSuggestion[]
+
   @@unique([requestId, attempt])
   /// AS-017. The month's spending is a range scan on this.
   @@index([startedAt])
@@ -6211,4 +6237,48 @@ model AiExchange {
   raw     String?
 
   @@map("ai_exchange")
+}
+
+/// AS-020 to AS-024. One proposal of the assistant, where it comes from (the
+/// `ai_run` attempt and its `sources`) and what whoever decided did with it.
+/// Accepted ⇔ exactly one record of its kind, of the same attention
+/// (`ai_suggestion_accepted_links_its_record`,
+/// `ai_suggestion_record_in_its_encounter`); decided once, never rewritten
+/// nor deleted (`ai_suggestion_decided_once`); the proposed row archived in
+/// `record_version` when decided.
+model AiSuggestion {
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  aiRunId     String    @map("ai_run_id") @db.Uuid
+  aiRun       AiRun     @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  /// `note-section`, `diagnosis`, `prescription-item`, `order-item`.
+  kind        String    @db.VarChar(24)
+  proposal    Json      @db.JsonB
+  /// P2: a list of where each part comes from (a minute of the conversation,
+  /// a datum of the chart).
+  sources     Json      @db.JsonB
+  /// `PROPOSED`, `ACCEPTED`, `ACCEPTED_WITH_CHANGES`, `DISCARDED`.
+  status      String    @default("PROPOSED") @db.VarChar(24)
+  /// AS-022. Normalised edit distance between the proposal and what was saved.
+  distance    Decimal?  @db.Decimal(5, 4)
+
+  clinicalNoteId       String?             @map("clinical_note_id") @db.Uuid
+  clinicalNote         ClinicalNote?       @relation(fields: [clinicalNoteId], references: [id], onDelete: Restrict)
+  encounterDiagnosisId String?             @map("encounter_diagnosis_id") @db.Uuid
+  encounterDiagnosis   EncounterDiagnosis? @relation(fields: [encounterDiagnosisId], references: [id], onDelete: Restrict)
+  prescriptionId       String?             @map("prescription_id") @db.Uuid
+  prescription         Prescription?       @relation(fields: [prescriptionId], references: [id], onDelete: Restrict)
+  serviceOrderId       String?             @map("service_order_id") @db.Uuid
+  serviceOrder         ServiceOrder?       @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+
+  /// The application's clock, never `now()`.
+  proposedAt DateTime  @map("proposed_at") @db.Timestamptz(6)
+  decidedBy  String?   @map("decided_by") @db.Uuid
+  decider    User?     @relation("AiSuggestionDecidedBy", fields: [decidedBy], references: [id], onDelete: Restrict)
+  decidedAt  DateTime? @map("decided_at") @db.Timestamptz(6)
+
+  @@index([encounterId])
+  @@index([aiRunId])
+  @@map("ai_suggestion")
 }
