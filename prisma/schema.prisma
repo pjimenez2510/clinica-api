@@ -249,6 +249,7 @@ model User {
 
   aiSuggestionsDecided AiSuggestion[]     @relation("AiSuggestionDecidedBy")
   listeningsStarted    ListeningSession[]
+  noteDraftsRequested  NoteDraft[]
 
   @@index([email])
   @@map("app_user")
@@ -2832,6 +2833,7 @@ model Encounter {
   aiSuggestions       AiSuggestion[]
   listeningSession    ListeningSession?
   transcriptSegments  TranscriptSegment[]
+  noteDrafts          NoteDraft[]
 
   /// `encounter_still_open_by_practitioner` is NOT here and cannot be: it is
   /// PARTIAL (`WHERE status IN ('OPEN','ON_HOLD')`), which is what keeps it
@@ -6218,6 +6220,7 @@ model AiRun {
   exchange AiExchange?
 
   suggestions AiSuggestion[]
+  noteDrafts  NoteDraft[]
 
   @@unique([requestId, attempt])
   /// AS-017. The month's spending is a range scan on this.
@@ -6321,4 +6324,31 @@ model TranscriptSegment {
   @@unique([encounterId, startMs], map: "transcript_segment_once")
   @@index([createdAt])
   @@map("transcript_segment")
+}
+
+/// C2. Each draft of the consultation note asked for, by the stretch of the
+/// transcript it covers (AS-086). Its sections are `ai_suggestion` rows; this
+/// table holds no text (AS-095). `note_draft_one_in_flight`, a partial unique
+/// index on `encounter_id` of the queued and running ones, lives in SQL only.
+model NoteDraft {
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  /// The end of the last segment the draft reads, in the listening's clock.
+  upToMs      Int       @map("up_to_ms")
+  /// `QUEUED`, `RUNNING`, `DONE`, `FAILED`.
+  status      String    @db.VarChar(16)
+  /// The error code of a failed draft, and only of one.
+  failureCode String?   @map("failure_code") @db.VarChar(64)
+  requestedBy String    @map("requested_by") @db.Uuid
+  requester   User      @relation(fields: [requestedBy], references: [id], onDelete: Restrict)
+  aiRunId     String?   @map("ai_run_id") @db.Uuid
+  aiRun       AiRun?    @relation(fields: [aiRunId], references: [id], onDelete: Restrict)
+  /// The application's clock, never `now()`.
+  requestedAt DateTime  @map("requested_at") @db.Timestamptz(6)
+  startedAt   DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  @@unique([encounterId, upToMs], map: "note_draft_once_per_stretch")
+  @@map("note_draft")
 }
