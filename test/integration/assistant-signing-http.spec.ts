@@ -102,7 +102,7 @@ function heldPseudonymizer(): { held: Pseudonymizer; release: () => void } {
       pseudonymize: (input, signal) =>
         new Promise((resolve, reject) => {
           signal?.addEventListener('abort', () => reject(new Error('aborted')));
-          void gate.then(() => resolve(demo.pseudonymize(input, signal)));
+          void gate.then(() => resolve(demo.pseudonymize(input)));
         }),
     },
   };
