@@ -63,7 +63,7 @@ class ScriptedProvider implements LlmProvider {
     }
     if (this.reply.kind === 'status') {
       const status = this.reply.status;
-      const outcome = status === 429 ? 'rate-limited' : status >= 500 ? 'provider-error' : 'refused'; // prettier-ignore
+      const outcome = status === 429 ? 'rate-limited' : status >= 500 || [401, 403, 404].includes(status) ? 'provider-error' : 'refused'; // prettier-ignore
       throw new LlmCallFailed(this.name, outcome, { model, raw: `echo ${PROMPT}`, status }); // prettier-ignore
     }
     const parsed = request.answer.safeParse(JSON.parse(this.reply.text));
@@ -432,29 +432,106 @@ describe('RoutingLlmClient', () => {
     expect(gemini.calls).toHaveLength(0);
   });
 
-  it('AS-017 refuses the attempt whose worst case would pass the ceiling, also on a fallback', async () => {
+  it('AS-017 refuses the attempt whose worst case would pass the ceiling, also on a fallback after a deadline', async () => {
     // The worst case of this request is ~0.005 USD (1 000 output tokens at 5 USD/M).
     const exact = routing(
       [new ScriptedProvider('gemini', { kind: 'answer', text: RAW })],
       { store: new MemoryStore(0.0449), ceilingUsd: 0.05 },
     );
-    const anthropic = new ScriptedProvider('anthropic', { kind: 'answer', text: RAW }); // prettier-ignore
+    const second = new ScriptedProvider('anthropic', { kind: 'answer', text: RAW }); // prettier-ignore
     const fallback = routing(
-      [
-        new ScriptedProvider('gemini', { kind: 'status', status: 503 }),
-        anthropic,
-      ],
-      { store: new MemoryStore(0.0449), ceilingUsd: 0.05 },
+      [new ScriptedProvider('gemini', { kind: 'hang' }), second],
+      { store: new MemoryStore(0.0449), ceilingUsd: 0.05, timeoutMs: 20 },
     );
 
     // Positive control: just under the ceiling, the call is made.
     expect((await exact.client.generate(request())).provider).toBe('gemini');
-    // The failed attempt reported no tokens: it counts at its worst case, and
-    // the fallback no longer fits.
+    // D-241 §9: an attempt cut by the deadline may have been billed, so it
+    // counts at its worst case, and the fallback no longer fits.
     await failure(fallback.client.generate(request()), AssistantSpendingCeilingReachedError); // prettier-ignore
-    expect(anthropic.calls).toHaveLength(0);
-    expect(fallback.store.runs[0]).toMatchObject({ costUsd: null });
-    expect(fallback.store.runs[0]!.worstCaseUsd).toBeGreaterThan(0);
+    expect(second.calls).toHaveLength(0);
+    expect(fallback.store.runs[0]).toMatchObject({ outcome: 'timeout', costUsd: null }); // prettier-ignore
+  });
+
+  it.each([
+    ['503', { kind: 'status', status: 503 } as const, 'provider-error'],
+    ['429', { kind: 'status', status: 429 } as const, 'rate-limited'],
+    ['401', { kind: 'status', status: 401 } as const, 'provider-error'],
+    // D-241 §9 says «estado HTTP de error»: the provider's own 504 is one.
+    ['504', { kind: 'status', status: 504 } as const, 'provider-error'],
+  ])(
+    'AS-017 an attempt the provider rejected with %s counts nothing, and the fallback still fits',
+    async (_status, reply, outcome) => {
+      const second = new ScriptedProvider('anthropic', { kind: 'answer', text: RAW }); // prettier-ignore
+      const { client, store } = routing(
+        [new ScriptedProvider('gemini', reply), second],
+        { store: new MemoryStore(0.0449), ceilingUsd: 0.05 },
+      );
+
+      const result = await client.generate(request());
+
+      // D-241 §9: a rejected request is not billed.
+      expect(result.provider).toBe('anthropic');
+      expect(store.runs[0]).toMatchObject({ outcome, costUsd: 0 });
+      // Positive control: the answered attempt counts what it really cost.
+      expect(store.runs[1]!.costUsd).toBeCloseTo((100 * 1 + 20 * 5) / 1_000_000, 12); // prettier-ignore
+    },
+  );
+
+  it('AS-017 a provider that could not be reached counts nothing; a cancel mid-answer counts its worst case', async () => {
+    class Unreachable extends ScriptedProvider {
+      override generate(): never {
+        throw new LlmCallFailed('gemini', 'provider-error', { model: 'gemini-quality', raw: null, neverSent: true }); // prettier-ignore
+      }
+    }
+    const unreachable = routing([
+      new Unreachable('gemini', { kind: 'hang' }),
+      new ScriptedProvider('anthropic', { kind: 'answer', text: RAW }),
+    ]);
+    const cancelledProvider = new ScriptedProvider('gemini', { kind: 'hang' });
+    const cancelled = routing([cancelledProvider]);
+    const controller = new AbortController();
+
+    await unreachable.client.generate(request());
+    const pending = cancelled.client.generate(request(controller.signal));
+    // Mid-answer: the provider was already called when the cancel came.
+    await vi.waitFor(() => expect(cancelledProvider.calls).toHaveLength(1));
+    controller.abort();
+    await failure(pending, LlmCallFailed);
+
+    expect(unreachable.store.runs[0]).toMatchObject({ outcome: 'provider-error', httpStatus: null, costUsd: 0 }); // prettier-ignore
+    expect(cancelled.store.runs[0]).toMatchObject({ outcome: 'cancelled', costUsd: null }); // prettier-ignore
+  });
+
+  it('AS-017 a connection cut after sending, an unclassified error and a 200 without figures count their worst case', async () => {
+    class CutAfterSending extends ScriptedProvider {
+      override generate(): never {
+        // A reset after the request went out: no `neverSent`, may be billed.
+        throw new LlmCallFailed('gemini', 'provider-error', { model: 'gemini-quality', raw: null }); // prettier-ignore
+      }
+    }
+    class Broken extends ScriptedProvider {
+      override generate(): never {
+        throw new TypeError('a bug after the answer arrived');
+      }
+    }
+    const cut = routing([new CutAfterSending('gemini', { kind: 'hang' })]);
+    const broken = routing([new Broken('gemini', { kind: 'hang' })]);
+    const noFigures = routing([
+      new ScriptedProvider(
+        'gemini',
+        { kind: 'answer', text: RAW },
+        {} as never,
+      ),
+    ]);
+
+    await failure(cut.client.generate(request()), LlmCallFailed);
+    await failure(broken.client.generate(request()), LlmCallFailed);
+    await noFigures.client.generate(request());
+
+    expect(cut.store.runs[0]).toMatchObject({ outcome: 'provider-error', costUsd: null }); // prettier-ignore
+    expect(broken.store.runs[0]).toMatchObject({ outcome: 'provider-error', costUsd: null }); // prettier-ignore
+    expect(noFigures.store.runs[0]).toMatchObject({ outcome: 'ok', httpStatus: 200, costUsd: null }); // prettier-ignore
   });
 
   it('AS-018 the lines for an unpriced model and an unrecorded attempt carry only allowed keys and no text', async () => {

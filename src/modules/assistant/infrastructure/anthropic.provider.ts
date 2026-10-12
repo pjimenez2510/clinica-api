@@ -12,7 +12,12 @@ import {
 
 import { ANTHROPIC_MODELS, ANTHROPIC_THINKING_DISABLED } from './model-routing';
 import { strictJsonSchema } from './json-schema';
-import { abortOutcome, outcomeOfStatus, parseJson } from './provider-outcome';
+import {
+  abortOutcome,
+  neverSent,
+  outcomeOfStatus,
+  parseJson,
+} from './provider-outcome';
 
 /** Where the provider lives. Fixed, so `ANTHROPIC_BASE_URL` cannot redirect the text. */
 const BASE_URL = 'https://api.anthropic.com';
@@ -169,5 +174,9 @@ function failureOf(
       status,
     });
   }
-  return new LlmCallFailed('anthropic', 'provider-error', { model, raw: null });
+  return new LlmCallFailed('anthropic', 'provider-error', {
+    model,
+    raw: null,
+    ...(neverSent(cause) ? { neverSent: true } : {}),
+  });
 }

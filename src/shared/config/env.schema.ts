@@ -282,8 +282,9 @@ export const envSchema = z.object({
     .default(60_000),
   /**
    * AS-017 (D-241 §1). The most the installation spends on providers in a
-   * calendar month in America/Guayaquil. NO DEFAULT on purpose: the amount
-   * is the author's, and without it no remote attempt is made.
+   * calendar month in America/Guayaquil. The author set 100 USD, written in
+   * `.env.example`; NO DEFAULT here on purpose: an installation that does not
+   * declare it makes no remote attempt.
    */
   ASSISTANT_MONTHLY_SPEND_CEILING_USD: z.preprocess(
     emptyAsUndefined,

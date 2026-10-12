@@ -52,6 +52,13 @@ export interface FailedAttempt extends Partial<TokenUsage> {
   model: string;
   raw: string | null;
   status?: number;
+  /**
+   * AS-017 (D-241 §9). The request never reached the provider: the connection
+   * was refused, the name did not resolve, TLS failed. Only then does a
+   * failure without a status count 0; a connection cut after sending may have
+   * been billed.
+   */
+  neverSent?: boolean;
 }
 
 /**
