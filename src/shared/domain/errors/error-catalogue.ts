@@ -56,6 +56,12 @@ export const DOMAIN_ERROR_CODES = [
   'BOARD_VIEW_ROLE_NOT_FOUND',
   // AG-063: la cita que salió de la lista de espera no cambia de paciente.
   'APPOINTMENT_FROM_WAITLIST',
+  // AS-006, AS-007, AS-008, AS-017 (D-239): el asistente sin proveedor
+  // configurado (502), ningún proveedor respondió o la respuesta no sirvió
+  // (503 reintentable / 502), y el techo de gasto del mes (429).
+  'ASSISTANT_NOT_CONFIGURED',
+  'ASSISTANT_PROVIDER_FAILED',
+  'ASSISTANT_SPENDING_CEILING_REACHED',
   'INVALID_AGENDA_TRANSITION',
   'NO_SHOW_BEFORE_START',
   // Agenda, E8 (AG-116, AG-117, AG-122, AG-125, AG-127, AG-128). Los

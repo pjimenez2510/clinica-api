@@ -67,6 +67,7 @@
     "db:seed:identity": "node --env-file=.env --experimental-strip-types prisma/seed-identity.mts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.129.0",
     "@nestjs/common": "^11.1.28",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.28",

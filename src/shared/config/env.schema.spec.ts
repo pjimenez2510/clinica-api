@@ -156,6 +156,44 @@ describe('validateEnv', () => {
     ).toThrow();
   });
 
+  describe('AS-006 AS-017 the assistant', () => {
+    it('AS-006 is born closed: no remote provider, no exchange log, no ceiling', () => {
+      const env = validateEnv(base);
+
+      expect(env.ASSISTANT_ALLOW_REMOTE).toBe(false);
+      expect(env.ASSISTANT_EXCHANGE_LOG).toBe(false);
+      expect(env.ASSISTANT_MONTHLY_SPEND_CEILING_USD).toBeUndefined();
+      expect(env.ASSISTANT_GEMINI_API_KEY).toBeUndefined();
+      expect(env.ASSISTANT_PROVIDER_TIMEOUT_MS).toBe(60_000);
+    });
+
+    it('AS-006 reads an empty key as not declared, and only `true` opens the remote switch', () => {
+      const env = validateEnv({
+        ...base,
+        ASSISTANT_GEMINI_API_KEY: '',
+        ASSISTANT_ALLOW_REMOTE: 'true',
+      });
+
+      expect(env.ASSISTANT_GEMINI_API_KEY).toBeUndefined();
+      expect(env.ASSISTANT_ALLOW_REMOTE).toBe(true);
+      expect(() =>
+        validateEnv({ ...base, ASSISTANT_ALLOW_REMOTE: 'yes' }),
+      ).toThrow(/ASSISTANT_ALLOW_REMOTE/);
+    });
+
+    it('AS-017 accepts a positive monthly ceiling and refuses zero or a negative one', () => {
+      expect(
+        validateEnv({ ...base, ASSISTANT_MONTHLY_SPEND_CEILING_USD: '50' })
+          .ASSISTANT_MONTHLY_SPEND_CEILING_USD,
+      ).toBe(50);
+      for (const value of ['0', '-1', 'mucho']) {
+        expect(() =>
+          validateEnv({ ...base, ASSISTANT_MONTHLY_SPEND_CEILING_USD: value }),
+        ).toThrow(/ASSISTANT_MONTHLY_SPEND_CEILING_USD/);
+      }
+    });
+  });
+
   describe('IL-008 the identity provider', () => {
     const REMOTE = 'https://provider.example.com/v3/database-validation/';
 

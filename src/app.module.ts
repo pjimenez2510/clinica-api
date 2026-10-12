@@ -6,6 +6,7 @@ import { ClsModule } from 'nestjs-cls';
 import { LoggerModule } from 'nestjs-pino';
 
 import { AgendaModule } from './modules/agenda/agenda.module';
+import { AssistantModule } from './modules/assistant/assistant.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { CatalogsModule } from './modules/catalogs/catalogs.module';
@@ -96,6 +97,7 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
     AuthModule,
     PatientsModule,
     IdentityLookupModule,
+    AssistantModule,
     AgendaModule,
     CatalogsModule,
     BillingModule,

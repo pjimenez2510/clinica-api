@@ -242,6 +242,63 @@ export const envSchema = z.object({
     .default('false')
     .transform((value) => value === 'true'),
 
+  /**
+   * AS-006 (D-239 §1). Whether this installation may call a remote language
+   * model provider at all. Every provider is remote, so `false` means no
+   * adapter is built, whatever keys are present: a copied `.env` never sends
+   * a word out. Only `true` opens it, like `SRI_ALLOW_REMOTE`.
+   */
+  ASSISTANT_ALLOW_REMOTE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  /**
+   * AS-006. One key per provider of the chain (D-239 §5). A provider without
+   * its key is left out of the chain. Never committed: they live in the
+   * `.env` of the installation only.
+   */
+  ASSISTANT_GEMINI_API_KEY: z.preprocess(
+    emptyAsUndefined,
+    z.string().min(1).optional(),
+  ),
+  ASSISTANT_ANTHROPIC_API_KEY: z.preprocess(
+    emptyAsUndefined,
+    z.string().min(1).optional(),
+  ),
+  ASSISTANT_OPENAI_API_KEY: z.preprocess(
+    emptyAsUndefined,
+    z.string().min(1).optional(),
+  ),
+  /**
+   * AS-007. How long one attempt may take before the request passes to the
+   * next provider («espera larga», D-239 §5). Technical, not clinical: the
+   * caller may give up sooner with its own signal.
+   */
+  ASSISTANT_PROVIDER_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(600_000)
+    .default(60_000),
+  /**
+   * AS-017 (D-241 §1). The most the installation spends on providers in a
+   * calendar month in America/Guayaquil. NO DEFAULT on purpose: the amount
+   * is the author's, and without it no remote attempt is made.
+   */
+  ASSISTANT_MONTHLY_SPEND_CEILING_USD: z.preprocess(
+    emptyAsUndefined,
+    z.coerce.number().positive().optional(),
+  ),
+  /**
+   * AS-014 (D-239 §3). Keeps the pseudonymized prompt and the raw answer of
+   * every attempt in `ai_exchange`, purged 45 days after the note is signed.
+   * Off unless declared.
+   */
+  ASSISTANT_EXCHANGE_LOG: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+
   /** Default site timezone. `Pacific/Galapagos` for the Galapagos islands. */
   DEFAULT_TIMEZONE: z
     .string()
