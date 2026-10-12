@@ -47,16 +47,23 @@ const ABBREVIATED = new RegExp(
   'gi',
 );
 const IN_WORDS = new RegExp(
-  String.raw`\b(\d{1,2}) de (${MONTH_NAME})(?: de (\d{4}))?\b`,
+  String.raw`\b(\d{1,2}) de (${MONTH_NAME})(?:( del? )(\d{4}))?\b`,
   'gi',
 );
 const MONTH_YEAR_IN_WORDS = new RegExp(
-  String.raw`(?<!\d de )\b(${MONTH_NAME}) de (\d{4})\b`,
+  String.raw`(?<!\d de )\b(${MONTH_NAME})( del? )(\d{4})\b`,
   'gi',
 );
-/** «FUM: 15/03», as the service writes a day and month a date word announces. */
+/** The words the service takes as announcing a date (`_DATE_WORD`), in short. */
+const DATE_WORD = String.raw`\b(?:FUM|FUR|FPP|FN|nacimiento|naci[oó]|ingres[oó]|egres[oó]|alta)\b[^\d\n]{0,20}?`;
+/** «FUM: 15/03», a day and month a date word announces. */
 const DAY_MONTH_SAID = new RegExp(
-  String.raw`(\b(?:FUM|FUR|FPP|FN)\b\s*[:=]?\s*)(\d{2})([/-])(\d{2})${ALONE_AFTER}`,
+  String.raw`(${DATE_WORD})(\d{1,2})([/-])(\d{1,2})${ALONE_AFTER}`,
+  'gi',
+);
+/** «FUM: 10/2026», a month and year a date word announces (moved from the 15th). */
+const MONTH_YEAR_SAID = new RegExp(
+  String.raw`(${DATE_WORD})(\d{1,2})/(\d{4})${ALONE_AFTER}`,
   'gi',
 );
 
@@ -83,18 +90,23 @@ export function unshiftDates(text: string, shiftDays: number): string {
         return [pad(date.getUTCDate()), cased, date.getUTCFullYear()].join(sep);
       }) ?? whole;
     })
-    .replace(IN_WORDS, (whole, day: string, name: string, year: string | undefined) => {
+    .replace(IN_WORDS, (whole, day: string, name: string, of: string | undefined, year: string | undefined) => {
       const date = moved(year ? +year : ANY_YEAR, monthOf(name), +day, back);
       return format(date, (real) => {
-        const out = `${real.getUTCDate()} de ${MONTHS[real.getUTCMonth()]}${year ? ` de ${real.getUTCFullYear()}` : ''}`; // prettier-ignore
+        const out = `${real.getUTCDate()} de ${MONTHS[real.getUTCMonth()]}${year ? `${of}${real.getUTCFullYear()}` : ''}`; // prettier-ignore
         return whole === whole.toUpperCase() ? out.toUpperCase() : out;
       }) ?? whole;
     })
-    .replace(MONTH_YEAR_IN_WORDS, (whole, name: string, year: string) =>
+    .replace(MONTH_YEAR_IN_WORDS, (whole, name: string, of: string, year: string) =>
       format(moved(+year, monthOf(name), 15, back), (real) => {
-        const out = `${MONTHS[real.getUTCMonth()]} de ${real.getUTCFullYear()}`;
+        const out = `${MONTHS[real.getUTCMonth()]}${of}${real.getUTCFullYear()}`;
         return whole === whole.toUpperCase() ? out.toUpperCase() : out;
       }) ?? whole,
+    ) // prettier-ignore
+    .replace(MONTH_YEAR_SAID, (whole, anchor: string, month: string, year: string) =>
+      format(moved(+year, +month, 15, back), (date) =>
+        `${anchor}${pad(date.getUTCMonth() + 1)}/${date.getUTCFullYear()}`,
+      ) ?? whole,
     ) // prettier-ignore
     .replace(DAY_MONTH_SAID, (whole, anchor: string, day: string, sep: string, month: string) =>
       format(moved(ANY_YEAR, +month, +day, back), (date) =>
@@ -103,27 +115,42 @@ export function unshiftDates(text: string, shiftDays: number): string {
     ); // prettier-ignore
 }
 
+/**
+ * Every form of date `clinica-ai` moves (`privacy/dates.py`), and more: a
+ * day and month or a month and year of one or two digits, anchored or not,
+ * and «del» before the year. Ante la duda, a date: a phrase with one that was
+ * not said is marked, never passed.
+ */
 const ANY_DATE = new RegExp(
   [
-    String.raw`${ALONE_BEFORE}\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}${ALONE_AFTER}`,
-    String.raw`${ALONE_BEFORE}\d{4}[/.-]\d{1,2}[/.-]\d{1,2}${ALONE_AFTER}`,
+    String.raw`${ALONE_BEFORE}\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}${ALONE_AFTER}`,
     String.raw`${ALONE_BEFORE}\d{1,2}[/-](?:${ABBREVIATIONS.join('|')})[/-]\d{2,4}${ALONE_AFTER}`, // prettier-ignore
-    String.raw`\b\d{1,2} de ${MONTH_NAME}(?: de \d{4})?\b`,
-    String.raw`\b${MONTH_NAME} de \d{4}\b`,
+    String.raw`\b\d{1,2} de ${MONTH_NAME}(?: del? \d{4})?\b`,
+    String.raw`\b${MONTH_NAME} del? \d{4}\b`,
+    String.raw`${ALONE_BEFORE}\d{1,2}/\d{4}${ALONE_AFTER}`,
+    String.raw`${ALONE_BEFORE}\d{1,2}[/-]\d{1,2}${ALONE_AFTER}`,
   ].join('|'),
   'gi',
 );
 
+/** A date as a comparable token: folded, «del» as «de», no leading zeros, one separator. */
+function normalised(date: string): string {
+  return fold(date)
+    .replace(/\bdel\b/g, 'de')
+    .replace(/[/.-]/g, '/')
+    .replace(/\b0+(\d)/g, '$1');
+}
+
 /**
- * AS-089. The dates of a phrase that are not in what was said, as the phrase
- * writes them. Compared without case or accents, as written: a draft that
- * rewrites «15 de marzo» as «15/03» is flagged too, which is the safe side.
+ * AS-089. The dates of a phrase that are not, whole, among the dates of what
+ * was said — as the phrase writes them. A date rewritten in another form
+ * («15 de marzo» as «15/03») is marked too: the safe side.
  */
 export function datesNotSaid(phrase: string, said: string): string[] {
-  const heard = fold(said);
+  const heard = new Set([...said.matchAll(ANY_DATE)].map((match) => normalised(match[0]))); // prettier-ignore
   return [...phrase.matchAll(ANY_DATE)]
     .map((match) => match[0])
-    .filter((date) => !heard.includes(fold(date)));
+    .filter((date) => !heard.has(normalised(date)));
 }
 
 function fold(text: string): string {

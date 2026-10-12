@@ -43,6 +43,14 @@ export class PrismaNoteDraftStore implements NoteDraftStore {
     return row ? toStored(row) : null;
   }
 
+  async doneIds(encounterId: string) {
+    const rows = await this.prisma.noteDraft.findMany({
+      where: { encounterId, status: 'DONE' },
+      select: { id: true },
+    });
+    return rows.map(({ id }) => id);
+  }
+
   async inFlight(encounterId: string) {
     const row = await this.prisma.noteDraft.findFirst({
       where: { encounterId, status: { in: IN_FLIGHT } },
@@ -73,12 +81,18 @@ export class PrismaNoteDraftStore implements NoteDraftStore {
     }
   }
 
-  async requeue(id: string, requestedBy: string, at: Date) {
+  async requeue(
+    id: string,
+    requestedBy: string,
+    at: Date,
+    maxAttempts: number,
+  ) {
     try {
       const { count } = await this.prisma.noteDraft.updateMany({
-        where: { id, status: 'FAILED' },
+        where: { id, status: 'FAILED', attempts: { lt: maxAttempts } },
         data: {
           status: 'QUEUED',
+          attempts: { increment: 1 },
           failureCode: null,
           requestedBy,
           requestedAt: at,
@@ -103,10 +117,11 @@ export class PrismaNoteDraftStore implements NoteDraftStore {
   }
 
   async succeed(id: string, aiRunId: string, at: Date) {
-    await this.prisma.noteDraft.updateMany({
+    const { count } = await this.prisma.noteDraft.updateMany({
       where: { id, status: 'RUNNING' },
       data: { status: 'DONE', aiRunId, finishedAt: at },
     });
+    return count === 1;
   }
 
   async fail(id: string, code: string, at: Date) {
@@ -141,6 +156,7 @@ function toStored(row: Prisma.NoteDraftGetPayload<object>): StoredNoteDraft {
     // `note_draft_status_known` admits only these.
     status: row.status as NoteDraftStatus,
     failureCode: row.failureCode,
+    attempts: row.attempts,
     requestedBy: row.requestedBy,
     aiRunId: row.aiRunId,
     requestedAt: row.requestedAt,

@@ -28,25 +28,19 @@ describe('correctLine (AS-092)', () => {
     );
   });
 
-  it('corrects a word one edit away from a principle', () => {
-    expect(correctLine('Le receto amoxicilna.', lexicon).text).toBe(
-      'Le receto amoxicilina.',
-    );
+  it('never corrects a single word towards a principle, however close: a right word changed is a wrong drug', () => {
+    const line = 'Le receto amoxicilna y metamizol.';
+    expect(correctLine(line, buildLexicon({ targets: ['Amoxicilina', 'Metimazol'], protectedWords: [] }))).toEqual({ text: line, changes: 0 }); // prettier-ignore
+  });
+
+  it('joins only into a principle written letter for letter: «lo tío» never becomes «litio»', () => {
+    const line = 'Lo tío vino y es socio.';
+    expect(correctLine(line, buildLexicon({ targets: ['Litio', 'Sodio'], protectedWords: [] })).text).toBe(line); // prettier-ignore
   });
 
   it('never touches a protected word, however close to another', () => {
     const line = 'Tiene sarna y asma, como otros pacientes.';
     expect(correctLine(line, lexicon)).toEqual({ text: line, changes: 0 });
-  });
-
-  it('leaves a word that is equally close to two principles', () => {
-    // «prednisolna» is one edit from prednisona and one from prednisolona.
-    const tied = buildLexicon({
-      targets: ['Prednisona', 'Prednisolona'],
-      protectedWords: [],
-    });
-    const line = 'Toma prednisolna.';
-    expect(correctLine(line, tied).text).toBe(line);
   });
 
   it('does not join two words when the second is a word the clinic writes', () => {

@@ -30,6 +30,7 @@ import {
   AssistantNoteNotOpenError,
   AssistantDraftInterruptedError,
   AssistantDraftFailedError,
+  AssistantDraftRetryLimitError,
 } from './assistant.errors';
 
 /**
@@ -211,6 +212,13 @@ describe('assistant errors', () => {
       'ASSISTANT_DRAFT_FAILED',
       ExternalServiceError,
       /Vuelva a pedirlo/,
+    ],
+    [
+      'AS-093',
+      () => new AssistantDraftRetryLimitError(),
+      'ASSISTANT_DRAFT_RETRY_LIMIT',
+      QuotaExceededError,
+      /falló tres veces/,
     ],
     [
       'AS-040',

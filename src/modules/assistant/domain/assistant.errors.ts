@@ -387,3 +387,17 @@ export class AssistantDraftFailedError extends ExternalServiceError {
     super('The draft could not be written');
   }
 }
+
+/**
+ * AS-093. «Volver a pedir» on a stretch that already failed three times:
+ * each try paid a call. A new stretch, once the transcript grows, starts over.
+ */
+export class AssistantDraftRetryLimitError extends QuotaExceededError {
+  readonly code = 'ASSISTANT_DRAFT_RETRY_LIMIT';
+  override readonly userTitle =
+    'Este borrador falló tres veces. Siga escribiendo la nota; se volverá a pedir cuando haya más conversación';
+
+  constructor() {
+    super('The draft of this stretch failed too many times');
+  }
+}

@@ -12,6 +12,9 @@ CREATE TABLE "note_draft" (
   "up_to_ms"     INTEGER      NOT NULL,
   "status"       VARCHAR(16)  NOT NULL,
   "failure_code" VARCHAR(64),
+  -- AS-093. How many times this stretch was asked for: «Volver a pedir» on
+  -- a stretch that keeps failing pays a call each time, so it has a ceiling.
+  "attempts"     SMALLINT     NOT NULL DEFAULT 1,
   "requested_by" UUID         NOT NULL,
   -- The attempt that answered (AS-020): the proposals cite the same one.
   "ai_run_id"    UUID,
@@ -34,7 +37,8 @@ CREATE TABLE "note_draft" (
     CHECK ("status" IS NOT NULL AND "status" IN ('QUEUED', 'RUNNING', 'DONE', 'FAILED')),
   -- AS-093. A failure always says why, and only a failure does.
   CONSTRAINT "note_draft_failure_has_code"
-    CHECK (("status" = 'FAILED') = ("failure_code" IS NOT NULL)),
+    CHECK (("status" = 'FAILED') = ("failure_code" IS NOT NULL AND "failure_code" <> '')),
+  CONSTRAINT "note_draft_attempts_positive" CHECK ("attempts" BETWEEN 1 AND 3),
   CONSTRAINT "note_draft_timeline_coherent" CHECK (
     ("status" = 'QUEUED'  AND "started_at" IS NULL AND "finished_at" IS NULL AND "ai_run_id" IS NULL)
     OR ("status" = 'RUNNING' AND "started_at" IS NOT NULL AND "finished_at" IS NULL AND "ai_run_id" IS NULL)

@@ -876,16 +876,21 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   `ASSISTANT_TRANSCRIPT_EMPTY`; SI la nota no está abierta en borrador, con
   `ASSISTANT_NOTE_NOT_OPEN`; y quién, dónde y la atención viva, como AS-039.
   La base DEBERÁ rechazar un segundo borrador en curso de la misma atención y
-  dos borradores del mismo tramo; y la instalación DEBERÁ redactar como mucho
-  **4** a la vez.
+  dos borradores del mismo tramo; la instalación DEBERÁ redactar como mucho
+  **4** a la vez; y SI el tramo ya falló **3** veces, ENTONCES DEBERÁ
+  rechazar volver a pedirlo con `ASSISTANT_DRAFT_RETRY_LIMIT` sin llamar a
+  nadie.
   > SigmAI R-02: un solo trabajo a la vez para todas las consultas. Aquí, uno
   > a la vez por atención —un proveedor lento no recibe dos veces las mismas
-  > palabras— y cuatro atenciones a la vez (D-249 §6).
+  > palabras— y cuatro atenciones a la vez (D-249 §6). El tope de intentos
+  > cierra el bucle de «Volver a pedir» sobre un tramo que falla siempre: cada
+  > intento pagaba una llamada (auditoría del 12-10-2026).
 - **AS-087** — MIENTRAS se escucha, CUANDO lo transcrito pase en **3 minutos**
   del reloj de la conversación el tramo del último borrador pedido, y CUANDO
-  el médico detenga la escucha, el sistema DEBERÁ pedir el borrador por su
-  cuenta, a nombre del profesional y con las reglas de AS-086; pausar NO
-  DEBERÁ pedirlo, y sin nota abierta NO DEBERÁ pedir nada.
+  el médico detenga la escucha —también tras una pausa—, el sistema DEBERÁ
+  pedir el borrador por su cuenta, a nombre del profesional y con las reglas
+  de AS-086; pausar NO DEBERÁ pedirlo; y sin nota abierta, o si quien abrió la
+  escucha no es el profesional de la atención, NO DEBERÁ pedir nada.
   > Minutos de conversación, no de reloj de pared (D-249 §3). Un fallo al
   > pedirlo no toca la escucha: se queda en el log, sin texto.
 
@@ -898,37 +903,47 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   sección de la que la conversación no habló NO DEBERÁ aparecer.
   > La plantilla la escribe la clínica, no el paciente: va al modelo como
   > contexto (`withContext`), con las instrucciones fijas. Lo que la ficha ya
-  > sabe no se copia (D-249 §1); un diagnóstico dicho va como primera frase de
-  > «Plan de tratamiento» (D-249 §2).
+  > sabe no se copia (D-249 §1), ni un diagnóstico: va en Diagnósticos, y la
+  > transcripción no dice quién habla (D-249 §2).
 - **AS-089** — Cada frase DEBERÁ llevar el inicio de la línea de la
   transcripción que la respalda, sólo de las que se dieron al modelo; SI una
   frase no lleva marcador, lleva uno que no se le dio, o lleva una fecha que,
   devuelta, no está en la transcripción, ENTONCES DEBERÁ guardarse marcada
-  «Nadie lo dijo» (`unsaid`), nunca con una fuente inventada; y las fuentes de
-  la propuesta DEBERÁN ser los tramos (`fromMs`, `toMs`) de las líneas citadas.
+  «Nadie lo dijo» (`unsaid`), nunca con una fuente inventada; las fuentes de
+  la propuesta DEBERÁN ser los tramos (`fromMs`, `toMs`) de las líneas
+  citadas; y el texto que «Aceptar» copia en la nota DEBERÁ ser sólo el de las
+  frases que alguien dijo.
   > SigmAI `sourceRefOf`: un marcador que no se dio no es una cita. La pantalla
-  > lo muestra marcado, no lo esconde.
+  > lo muestra marcado, no lo esconde; pero no se copia: una vez en la casilla
+  > perdía la marca antes de la firma (revisión clínica del 12-10-2026,
+  > D-249 §7). Una fecha cuenta como dicha sólo si es, entera, una de las
+  > fechas de lo dicho («5 de marzo» no es «15 de marzo»).
 - **AS-090** — CUANDO el modelo responda, el sistema DEBERÁ guardar cada
   sección como una propuesta `note-section` de `ai_suggestion` con su intento,
   su sección, su texto, sus frases con su fuente y el borrador al que
-  pertenece, y dejar el borrador listo; las secciones sin decidir del borrador
-  nuevo DEBERÁN sustituir en pantalla a las del anterior sin borrar ninguna
-  (AS-023); y una sección igual a otra ya aceptada o descartada NO DEBERÁ
-  volver a mostrarse.
+  pertenece, y dejar el borrador listo; en pantalla DEBERÁ estar, por
+  sección, la propuesta más reciente de los borradores listos —un borrador
+  nuevo que omite una sección no esconde la que espera—, ninguna si la más
+  reciente se descartó, y ninguna si dice lo mismo que otra ya decidida; sin
+  borrar ninguna (AS-023). Una propuesta nueva de una sección aceptada antes
+  DEBERÁ decir qué texto se aceptó, para sustituirlo y no añadirlo dos veces.
 - **AS-091** — Antes de guardar, el sistema DEBERÁ devolver al texto los nombres
   que el seudonimizador quitó y mover de vuelta las fechas que desplazó
   (`dateShiftDays`); y NO DEBERÁ mandar al proveedor la fecha de la atención.
   > Pendiente desde D1 (AS-025): una fecha desplazada no puede ser lo que el
   > médico firma. La fecha de hoy delataría el desplazamiento (D-246 §4).
 - **AS-092** — Antes de seudonimizar, el sistema DEBERÁ corregir en el texto que
-  va al modelo las palabras que el reconocedor partió o deformó y que quedan a
-  una edición —dos desde 8 letras— de un principio activo del CNMB («para
-  acetamol» → «paracetamol»), sólo si la palabra no es del vocabulario
-  protegido (las palabras de la CIE-10 y las que la clínica escribe en sus
-  notas) y sin empate; y la transcripción guardada NO DEBERÁ cambiar.
-  > SigmAI `lexicon.ts`; D-247 §4 y D-249 §5. «Sarna» no se vuelve «asma»:
-  > sólo se corrige hacia un principio activo, y nunca lo que la clínica ya
-  > escribe.
+  va al modelo una palabra que el reconocedor partió en dos cuando, unida, es
+  letra por letra un principio activo del CNMB («para acetamol» →
+  «paracetamol»), y sólo si la segunda mitad no es del vocabulario protegido
+  (las palabras de la CIE-10 y las que la clínica escribe en sus notas); NO
+  DEBERÁ cambiar ninguna otra palabra; y la transcripción guardada NO DEBERÁ
+  cambiar.
+  > SigmAI `lexicon.ts`; D-247 §4 y D-249 §5. SigmAI corregía además una
+  > palabra a una o dos ediciones de un principio: con el CNMB real eso volvía
+  > «metamizol» en «metimazol» y «un litro» en «un litio», y el borrador lo
+  > escribía como dicho (revisión clínica del 12-10-2026). Una palabra mal oída
+  > la lee y la corrige el médico; una bien oída cambiada, no.
 
 ### 22. Fallos, aceptar y privacidad
 
@@ -939,7 +954,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   arranque, un borrador que quedó en curso DEBERÁ quedar fallido con
   `ASSISTANT_DRAFT_INTERRUPTED`.
   > En pantalla, el motivo y «Volver a pedir» (AS-100). El respaldo de A4
-  > actúa antes (AS-007).
+  > actúa antes (AS-007). Un fallo de la base al empezar a redactar deja el
+  > borrador fallido, nunca un rechazo sin capturar en el proceso.
 - **AS-094** — CUANDO el profesional acepte una sección con la nota en que la
   guardó, el sistema DEBERÁ comprobar que es la nota 002 en borrador de esa
   atención y enlazar la propuesta con la distancia leída de esa sección
@@ -961,9 +977,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   código—, su tramo, cuánto de la transcripción queda sin redactar y las
   secciones vigentes (AS-090) con sus frases, fuentes, marcas y si son de
   demostración; a cualquier otro, lo de AS-039.
-- **AS-097** — CUANDO un borrador termine, listo o fallido, el sistema DEBERÁ
-  publicar `assistant-draft` dirigido al profesional de la atención, sin
-  contenido (AU-055, AU-060).
+- **AS-097** — CUANDO un borrador se ponga en cola o termine, listo o fallido,
+  y CUANDO se acepte o descarte una sección, el sistema DEBERÁ publicar
+  `assistant-draft` dirigido a quien lo pidió o decidió, sin contenido
+  (AU-055, AU-060).
 
 ### 23. Medir y demostrar
 
@@ -972,7 +989,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   secciones inventadas, los hechos esperados (juez sin validar), las frases
   «Nadie lo dijo» y el p50 y el p90 de lo que tarda; DEBERÁ correr fuera del
   verify y DEBERÁ detenerse antes de un intento que haga pasar a su proveedor
-  del tope de `--tope-proveedor` en el registro.
+  del tope de `--tope-proveedor` en el registro, que en una corrida real vale
+  2 USD si no se dice otro.
   > D-241: 2 USD por proveedor en total en las pruebas, en el registro
   > compartido del arnés. SC-091 y SC-092.
 - **AS-099** — DONDE `ASSISTANT_FAKE_PROVIDER` sea `true`, el proveedor de
@@ -992,11 +1010,14 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   marcado» una vez por sección; y «Aceptar» y «Descartar» por sección. SI el
   borrador responde 404, ENTONCES NO DEBERÁ mostrar nada de esto.
 - **AS-101** — CUANDO el médico acepte una sección, la pantalla DEBERÁ escribir
-  su texto en esa sección de la nota —en una vacía, tal cual; en una con
-  texto, a elegir «Reemplazar» o «Añadir al final»—, guardarla con `If-Match`
-  y sólo después enlazar la propuesta; y SI el guardado responde que otra
-  persona cambió la nota, ENTONCES NO DEBERÁ enlazarla y DEBERÁ decirlo
-  (EN-284).
+  su texto en esa sección de la nota —en una vacía, tal cual; en una que ya
+  tiene lo aceptado antes, en su lugar («Actualizar»); en una con texto del
+  médico, «Añadir» al final o «Reemplazar» tras confirmarlo—, guardarla con
+  `If-Match` y sólo después enlazar la propuesta; SI el guardado responde que
+  otra persona cambió la nota, ENTONCES NO DEBERÁ enlazarla y DEBERÁ decirlo
+  (EN-284); SI el guardado falla por otra causa, ENTONCES DEBERÁ devolver la
+  sección a lo que tenía; y SI lo que falla es el enlace, el siguiente
+  «Aceptar» DEBERÁ sólo enlazar, sin escribir el texto otra vez.
 - **AS-102** — CUANDO llegue `assistant-draft`, la pantalla DEBERÁ releer el
   borrador sin recargar la página ni tocar lo que el médico está escribiendo.
 
@@ -1027,6 +1048,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_NOTE_NOT_OPEN`            | `ConflictError`        | 409       | La atención no tiene la nota 002 abierta en borrador (AS-086, AS-094) |
 | `ASSISTANT_DRAFT_INTERRUPTED`        | `ExternalServiceError` | 503       | La API se reinició mientras redactaba el borrador (AS-093) |
 | `ASSISTANT_DRAFT_FAILED`             | `ExternalServiceError` | 503       | El borrador falló por algo que no es del médico: la base, un fallo (AS-093) |
+| `ASSISTANT_DRAFT_RETRY_LIMIT`        | `QuotaExceededError`   | 429       | «Volver a pedir» sobre un tramo que ya falló tres veces (AS-093) |
 
 ## Niveles de prueba
 

@@ -1,7 +1,16 @@
 /**
  * AS-092 (D-247 §4, D-249 §5). What the recogniser heard, corrected against
- * the CNMB before the model reads it — copied from SigmAI
- * `modules/transcription/lexicon.ts`.
+ * the CNMB before the model reads it — adapted from SigmAI
+ * `modules/transcription/lexicon.ts`, and narrowed after the clinical review
+ * of 12-10-2026: ONLY A WORD THE RECOGNISER SPLIT IN TWO IS JOINED, and only
+ * when the joined word IS an active principle of the CNMB, letter for letter
+ * (a letter repeated at the seam counts once: «para acetamol» → «paracetamol»).
+ *
+ * SigmAI also corrected a word one or two edits away from a principle. Against
+ * the real CNMB that turned «metamizol» into «metimazol», «cefixima» into
+ * «cefepima» and «un litro» into «un litio»: a drug said right became another
+ * drug, and the draft wrote it as said. A wrong word left alone is something
+ * the physician reads and fixes; a right word changed is not.
  *
  * Speech recognition turns a word it does not know into words it does:
  * whisper wrote «para acetamol» in E-031, SigmAI saw «los artán» and
@@ -53,8 +62,6 @@ const NOT_VOCABULARY = new Set([
 export interface Lexicon {
   /** Never corrected, whatever they look like. */
   readonly protectedWords: ReadonlySet<string>;
-  /** What a token may become, bucketed by first letter and length. */
-  readonly targets: ReadonlyMap<string, readonly string[]>;
   /** The CNMB's spelling of each target, accents included. */
   readonly spelling: ReadonlyMap<string, string>;
 }
@@ -68,7 +75,6 @@ export function buildLexicon(input: {
   for (const word of input.protectedWords) {
     for (const each of wordsOf(word)) protectedWords.add(fold(each));
   }
-  const targets = new Map<string, string[]>();
   const spelling = new Map<string, string>();
   for (const name of input.targets) {
     for (const word of wordsOf(name)) {
@@ -76,11 +82,9 @@ export function buildLexicon(input: {
       if (term.length < MIN_LENGTH || NOT_VOCABULARY.has(term)) continue;
       if (spelling.has(term)) continue;
       spelling.set(term, word.toLocaleLowerCase('es'));
-      const bucket = bucketOf(term);
-      targets.set(bucket, [...(targets.get(bucket) ?? []), term]);
     }
   }
-  return { protectedWords, targets, spelling };
+  return { protectedWords, spelling };
 }
 
 /**
@@ -92,16 +96,7 @@ export function correctLine(
   lexicon: Lexicon,
 ): { text: string; changes: number } {
   let changes = 0;
-  const rejoined = rejoin(line, lexicon, () => (changes += 1));
-  const text = rejoined.replace(/[\p{L}\p{M}]+/gu, (word) => {
-    const key = fold(word);
-    if (key.length < MIN_LENGTH || lexicon.protectedWords.has(key)) return word;
-    if (lexicon.spelling.has(key)) return word;
-    const better = nearest(key, lexicon);
-    if (!better) return word;
-    changes += 1;
-    return matchCase(word, lexicon.spelling.get(better) ?? better);
-  });
+  const text = rejoin(line, lexicon, () => (changes += 1));
   return { text, changes };
 }
 
@@ -123,15 +118,14 @@ function rejoin(line: string, lexicon: Lexicon, changed: () => void): string {
       continue;
     }
     const tail = fold(second);
-    const joined = fold(first + second);
+    const joined = seamless(fold(first), tail);
     const better =
       tail.length >= 3 &&
       !lexicon.protectedWords.has(tail) &&
       !lexicon.spelling.has(tail) &&
-      joined.length >= MIN_LENGTH
-        ? lexicon.spelling.has(joined)
-          ? joined
-          : nearest(joined, lexicon)
+      joined.length >= MIN_LENGTH &&
+      lexicon.spelling.has(joined)
+        ? joined
         : null;
     if (better) {
       changed();
@@ -144,47 +138,9 @@ function rejoin(line: string, lexicon: Lexicon, changed: () => void): string {
   return out.join('');
 }
 
-/** The one nearest target, within one edit (two from 8 letters); none on a tie. */
-function nearest(key: string, lexicon: Lexicon): string | null {
-  const allowed = key.length >= 8 ? 2 : 1;
-  let best: string | null = null;
-  let bestDistance = allowed + 1;
-  let tied = false;
-  for (let length = key.length - allowed; length <= key.length + allowed; length += 1) {
-    for (const candidate of lexicon.targets.get(`${key[0]}${length}`) ?? []) {
-      const distance = within(key, candidate, allowed);
-      if (distance === null) continue;
-      if (distance < bestDistance) {
-        [best, bestDistance, tied] = [candidate, distance, false];
-      } else if (distance === bestDistance && candidate !== best) {
-        tied = true;
-      }
-    }
-  } // prettier-ignore
-  return tied ? null : best;
-}
-
-/** Levenshtein, abandoned as soon as the words are further than `allowed`. */
-function within(a: string, b: string, allowed: number): number | null {
-  if (Math.abs(a.length - b.length) > allowed) return null;
-  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
-  for (let row = 1; row <= a.length; row += 1) {
-    const current = [row];
-    let least = row;
-    for (let column = 1; column <= b.length; column += 1) {
-      const value = Math.min(
-        previous[column - 1]! + (a[row - 1] === b[column - 1] ? 0 : 1),
-        previous[column]! + 1,
-        current[column - 1]! + 1,
-      );
-      current.push(value);
-      least = Math.min(least, value);
-    }
-    if (least > allowed) return null;
-    previous = current;
-  }
-  const distance = previous[b.length]!;
-  return distance <= allowed ? distance : null;
+/** Two halves as one word, the letter repeated at the seam once. */
+function seamless(first: string, second: string): string {
+  return first.at(-1) === second[0] ? first + second.slice(1) : first + second;
 }
 
 function wordsOf(text: string): string[] {
@@ -208,8 +164,4 @@ function matchCase(original: string, replacement: string): string {
 
 function fold(value: string): string {
   return value.toLocaleLowerCase('es').normalize('NFD').replace(/[̀-ͯ]/g, '');
-}
-
-function bucketOf(term: string): string {
-  return `${term[0]}${term.length}`;
 }

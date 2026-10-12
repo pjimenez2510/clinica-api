@@ -17,8 +17,25 @@ const { values } = parseArgs({
   options: { api: { type: 'string', default: process.env.API_URL } },
 });
 const api = values.api?.replace(/\/$/, '');
-if (!api || new URL(api).port === '3000') {
-  console.error('Uso: pnpm demo:note-draft --api http://localhost:<puerto de la rama> (nunca :3000)'); // prettier-ignore
+/**
+ * Only this branch's own development API: http, on this machine, on the port
+ * of this worktree's `.env` — never the author's :3000 nor anything else
+ * (security review of 12-10-2026: a list of one forbidden port let an https
+ * API through).
+ */
+function isThisBranchApi(url: string | undefined): boolean {
+  if (!url || process.env.NODE_ENV === 'production') return false;
+  const target = new URL(url);
+  return (
+    target.protocol === 'http:' &&
+    ['localhost', '127.0.0.1', '[::1]'].includes(target.hostname) &&
+    target.port !== '' &&
+    target.port !== '3000' &&
+    target.port === process.env.PORT
+  );
+}
+if (!isThisBranchApi(api)) {
+  console.error('Uso: pnpm demo:note-draft [--api http://localhost:<PORT del .env de la rama>]; nunca :3000 ni otra máquina'); // prettier-ignore
   process.exit(2);
 }
 

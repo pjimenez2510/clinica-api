@@ -44,7 +44,7 @@ import { cie10ByProblemTask } from './tasks/cie10-by-problem.ts';
 import { JUDGE_PROMPT_VERSION, noteTask } from './tasks/note.ts';
 import { prescriptionTask } from './tasks/prescription.ts';
 import { draftTask } from './tasks/draft.ts';
-import { ProviderCapStore } from './ledger.ts';
+import { EVAL_PROVIDER_CAP_USD, ProviderCapStore } from './ledger.ts';
 
 export const USAGE = `Arnés de evaluación del asistente (PLAN-ASISTENTE-IA §5, D-239 §5)
 
@@ -314,10 +314,15 @@ export async function runFromArgs(
     (p) => !filter || filter.includes(p.name),
   );
   if (measured.length === 0) throw new Error('Ningún proveedor que medir');
+  // D-241 (author, 12-10-2026): 2 USD per provider IN TOTAL across every
+  // delivery, in the shared ledger. A real run always has it; the flag only
+  // lowers or raises it on purpose.
   const providerCap =
-    values['tope-proveedor'] === undefined
-      ? undefined
-      : positiveAmount('--tope-proveedor', values['tope-proveedor']);
+    values['tope-proveedor'] !== undefined
+      ? positiveAmount('--tope-proveedor', values['tope-proveedor'])
+      : world
+        ? undefined
+        : EVAL_PROVIDER_CAP_USD;
   // AS-098, D-241. Each provider's client checks its own total in the
   // shared ledger besides the month's ceiling.
   const optionsFor = (name: string) => ({

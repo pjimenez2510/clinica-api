@@ -1,6 +1,9 @@
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
+import { PrismaNoteDraftStore } from '../../src/modules/assistant/infrastructure/prisma-note-draft.store';
+import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+
 import { useDatabase } from './setup/database';
 import {
   createEncounter,
@@ -178,5 +181,60 @@ describe('note_draft (AS-086)', () => {
         (column.data_type === 'character varying' && (column.length ?? 0) > 64),
     );
     expect(texts).toEqual([]);
+  });
+
+  it('AS-093 refuses an empty code, a queued draft that started, a running one that finished, and a fourth attempt', async () => {
+    const prisma = db();
+    const { encounter, userId } = await anAttention(prisma);
+    const draft = await prisma.noteDraft.create({ data: queued(encounter.id, userId) }); // prettier-ignore
+
+    await expect(
+      prisma.noteDraft.update({ where: { id: draft.id }, data: { status: 'FAILED', failureCode: '', finishedAt: new Date() } }), // prettier-ignore
+    ).rejects.toThrow(/note_draft_failure_has_code/);
+    await expect(
+      prisma.noteDraft.update({ where: { id: draft.id }, data: { startedAt: new Date() } }), // prettier-ignore
+    ).rejects.toThrow(/note_draft_timeline_coherent/);
+    await expect(
+      prisma.noteDraft.update({ where: { id: draft.id }, data: { status: 'RUNNING', startedAt: new Date(), finishedAt: new Date() } }), // prettier-ignore
+    ).rejects.toThrow(/note_draft_timeline_coherent/);
+    await expect(
+      prisma.noteDraft.update({
+        where: { id: draft.id },
+        data: { attempts: 4 },
+      }),
+    ).rejects.toThrow(/note_draft_attempts_positive/);
+    // Positive control: the same row goes on to run, by the same road.
+    await prisma.noteDraft.update({ where: { id: draft.id }, data: { status: 'RUNNING', startedAt: new Date(), attempts: 3 } }); // prettier-ignore
+  });
+
+  it('AS-086 AS-093 the store puts a failed stretch back in the queue only under its ceiling and with nothing else in flight', async () => {
+    const prisma = db();
+    const store = new PrismaNoteDraftStore(prisma as unknown as PrismaService);
+    const { encounter, userId } = await anAttention(prisma);
+    const at = new Date();
+    const first = (await store.queue({ encounterId: encounter.id, upToMs: 60_000, requestedBy: userId, at }))!; // prettier-ignore
+    await store.start(first.id, at);
+    await store.fail(first.id, 'ASSISTANT_PROVIDER_FAILED', at);
+
+    // Positive control: alone, it goes back, one attempt more.
+    const again = await store.requeue(first.id, userId, at, 3);
+    expect(again).toMatchObject({
+      status: 'QUEUED',
+      attempts: 2,
+      failureCode: null,
+    });
+    await store.start(first.id, at);
+    await store.fail(first.id, 'ASSISTANT_PROVIDER_FAILED', at);
+
+    // Another stretch in flight: the partial unique index refuses, and the store says null.
+    const other = await store.queue({ encounterId: encounter.id, upToMs: 240_000, requestedBy: userId, at }); // prettier-ignore
+    expect(other).not.toBeNull();
+    expect(await store.requeue(first.id, userId, at, 3)).toBeNull();
+
+    // At its ceiling it does not go back.
+    await store.start(other!.id, at);
+    await store.fail(other!.id, 'ASSISTANT_PROVIDER_FAILED', at);
+    expect(await store.requeue(first.id, userId, at, 2)).toBeNull();
+    expect(await store.doneIds(encounter.id)).toEqual([]);
   });
 });

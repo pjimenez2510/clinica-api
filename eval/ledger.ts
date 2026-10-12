@@ -77,6 +77,9 @@ export class FileAiRunStore implements AiRunStore {
   }
 }
 
+/** D-241. What each provider may have spent in the ledger, in total, before a real attempt. */
+export const EVAL_PROVIDER_CAP_USD = 2;
+
 /**
  * AS-098, D-241. A provider's own cap on top of the month's ceiling: as much
  * as the provider may have spent IN TOTAL in the shared ledger, counting the

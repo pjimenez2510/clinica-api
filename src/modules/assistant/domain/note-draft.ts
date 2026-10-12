@@ -35,7 +35,11 @@ export interface DraftPhrase {
 export interface DraftSection {
   section: string;
   title: string;
-  /** What «Aceptar» writes into the note: the phrases, one after another. */
+  /**
+   * What «Aceptar» writes into the note: the phrases somebody said, one after
+   * another. A «Nadie lo dijo» is shown, never copied (clinical review of
+   * 12-10-2026: once in the box it lost its mark before the signature).
+   */
   text: string;
   phrases: DraftPhrase[];
   sources: SuggestionSource[];
@@ -62,15 +66,33 @@ export function conversationOf(lines: readonly TranscriptLine[]): {
   const body = lines.map((line, index) => {
     const marker = `L${index + 1}`;
     markers.set(marker, line);
-    const text = line.text
-      .replace(/[\r\n]+/g, ' ')
-      .replace(/<\s*\/?\s*conversacion\s*>/gi, '‹conversacion›');
+    const text = neutralised(line.text.replace(/[\r\n]+/g, ' '));
     return `[${marker}] ${text}`;
   });
   return {
     text: ['<conversacion>', ...body, '</conversacion>'].join('\n'),
     markers,
   };
+}
+
+/**
+ * AS-095. What could pass for the marks of the data or for the template,
+ * broken: also with an accent or in full width («</conversación>»,
+ * «＜/conversacion＞»), compared folded (security review of 12-10-2026).
+ */
+function neutralised(text: string): string {
+  const folded = text
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const marks = [...folded.matchAll(/<\s*\/?\s*conversacion\s*>/g)];
+  let out = text;
+  // NFKD keeps one character per letter here except the accents it drops:
+  // map back by rebuilding from the folded string where a mark was found.
+  if (marks.length > 0) {
+    out = folded.replace(/<\s*\/?\s*conversacion\s*>/g, '‹conversacion›');
+  }
+  return out.replace(/secciones de la nota/gi, 'secciones');
 }
 
 /**
@@ -107,7 +129,10 @@ export function readDraft(input: {
       {
         section: key,
         title,
-        text: phrases.map((phrase) => phrase.text).join(' '),
+        text: phrases
+          .filter((phrase) => !phrase.unsaid)
+          .map((phrase) => phrase.text)
+          .join(' '),
         phrases,
         sources: sourcesOf(phrases),
       },
@@ -138,30 +163,45 @@ export interface StoredDraftSection {
   proposedAt: Date;
 }
 
+/** A section on screen, and what was accepted for it before, if anything. */
+export interface ShownSection<S> {
+  section: S;
+  /** The text of the latest proposal of this section accepted earlier: «Actualizar» swaps it. */
+  acceptedBefore: string | null;
+}
+
 /**
- * AS-090. What the screen shows: the sections of the latest finished draft,
- * not discarded, and not equal to one the physician already accepted or
- * discarded from an earlier draft — the same words three minutes later are
- * not a new proposal.
+ * AS-090. What the screen shows, section by section, among the drafts that
+ * finished: the newest proposal of each section — so a later draft that
+ * leaves a section out does not hide the one still waiting —, none when the
+ * newest was discarded, and none when it says what an earlier one the
+ * physician already decided said.
  */
 export function shownSections<S extends StoredDraftSection>(
   stored: readonly S[],
-  latestDraftId: string | null,
-): S[] {
-  if (latestDraftId === null) return [];
-  const decided = new Set(
-    stored
-      .filter(
-        (each) => each.draftId !== latestDraftId && each.status !== 'PROPOSED',
-      ) // prettier-ignore
-      .map((each) => `${each.section}\u0000${each.text}`),
-  );
-  return stored.filter(
-    (each) =>
-      each.draftId === latestDraftId &&
-      each.status !== 'DISCARDED' &&
-      !decided.has(`${each.section}\u0000${each.text}`),
-  );
+  doneDraftIds: ReadonlySet<string>,
+): ShownSection<S>[] {
+  const bySection = new Map<string, S[]>();
+  for (const each of stored) {
+    if (!doneDraftIds.has(each.draftId)) continue;
+    bySection.set(each.section, [...(bySection.get(each.section) ?? []), each]);
+  }
+  return [...bySection.values()].flatMap((all) => {
+    const ordered = [...all].sort(
+      (a, b) =>
+        b.proposedAt.getTime() - a.proposedAt.getTime() || b.id.localeCompare(a.id), // prettier-ignore
+    );
+    const [newest, ...earlier] = ordered;
+    if (!newest || newest.status === 'DISCARDED') return [];
+    const decided = earlier.filter((each) => each.status !== 'PROPOSED');
+    if (newest.status === 'PROPOSED' && decided.some((each) => each.text === newest.text)) {
+      return [];
+    } // prettier-ignore
+    const accepted = newest.status === 'PROPOSED'
+      ? (earlier.find((each) => each.status === 'ACCEPTED' || each.status === 'ACCEPTED_WITH_CHANGES') ?? null)
+      : null; // prettier-ignore
+    return [{ section: newest, acceptedBefore: accepted?.text ?? null }];
+  });
 }
 
 /** A marker the model was never given is not a citation (SigmAI `sourceRefOf`). */
@@ -209,7 +249,9 @@ function withoutLabel(text: string, title: string): string {
   const folded = (value: string) =>
     value.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
   const prefix = `${folded(title)}:`;
+  // Cut at the colon of the original, not at the folded length: folding
+  // changes the length of «ß» and of decomposed accents.
   return folded(text).trimStart().startsWith(prefix)
-    ? text.trimStart().slice(prefix.length).trim()
+    ? text.slice(text.indexOf(':') + 1).trim()
     : text.trim();
 }

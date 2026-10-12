@@ -19,6 +19,7 @@ import { LiveEventBus } from '../../../shared/events/live-event-bus';
 import {
   AssistantDraftFailedError,
   AssistantDraftInterruptedError,
+  AssistantDraftRetryLimitError,
   AssistantEncounterClosedError,
   AssistantEncounterNotFoundError,
   AssistantNoteNotOpenError,
@@ -58,8 +59,10 @@ export const NOTE_DRAFT_CLOCK = Symbol('NOTE_DRAFT_CLOCK');
 
 /** AS-093. The draft's own deadline: a physician is waiting for it. */
 export const DRAFT_LIMIT_MS = 60_000;
-/** AS-086. Drafts written at once in this installation (SigmAI R-02: one). */
+/** AS-086. Drafts written at once in this installation (SigmAI wrote one, for every attention: R-02). */
 export const DRAFTS_AT_ONCE = 4;
+/** AS-093. Times a stretch may be asked for: each one paid a call. */
+export const DRAFT_MAX_ATTEMPTS = 3;
 /** AS-092. The vocabulary is read again after an hour. */
 const VOCABULARY_TTL_MS = 3_600_000;
 
@@ -83,6 +86,8 @@ export interface DraftSectionView {
   text: string;
   phrases: DraftPhrase[];
   status: SuggestionStatus;
+  /** The text accepted earlier for this section: «Actualizar» swaps it instead of adding twice. */
+  acceptedBefore: string | null;
   /** AS-029, AS-099. Written by the demonstration's script, not by a model. */
   demo: boolean;
 }
@@ -197,13 +202,14 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     const note = await this.notes.consultationDraft(encounter.id);
     if (!note || note.id !== input.noteId)
       throw new AssistantNoteNotOpenError();
-    await this.sectionOf(encounter.id, input.suggestionId, requester);
+    await this.sectionOf(encounter, input.suggestionId, requester);
     // AS-022. The store reads the section from the note itself, in the
     // transaction that decides: what the caller says is not the saved value.
     await this.suggestions.accept(
       { suggestionId: input.suggestionId, recordId: note.id },
       writer(requester),
     );
+    this.announce(encounter.siteId, requester.userId);
     return this.overview(encounter.id, requester);
   }
 
@@ -213,8 +219,9 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     requester: DraftRequester,
   ): Promise<DraftOverview> {
     const encounter = await this.ownLiveEncounter(input.encounterId, requester);
-    await this.sectionOf(encounter.id, input.suggestionId, requester);
+    await this.sectionOf(encounter, input.suggestionId, requester);
     await this.suggestions.discard(input.suggestionId, writer(requester));
+    this.announce(encounter.siteId, requester.userId);
     return this.overview(encounter.id, requester);
   }
 
@@ -232,7 +239,7 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     this.quietly(encounterId, () => this.askForOwner(encounterId));
   }
 
-  /** Every draft this process is writing or has queued, settled. For tests and shutdown. */
+  /** Every draft this process is writing, has queued or was asked to ask for, settled. For tests. */
   async settled(): Promise<void> {
     while (this.inProgress.size > 0 || this.waiting.length > 0) {
       await Promise.allSettled([...this.inProgress]);
@@ -247,8 +254,11 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
   private async ask(
     encounter: CodingEncounter,
     userId: string,
+    again = true,
   ): Promise<StoredNoteDraft> {
-    if (!(await this.notes.consultationDraft(encounter.id))) {
+    const note = await this.notes.consultationDraft(encounter.id);
+    // A template without prose sections has nothing a draft could write.
+    if (!note || draftableSections(note.sections).length === 0) {
       throw new AssistantNoteNotOpenError();
     }
     const lines = await this.transcripts.transcript(encounter.id);
@@ -257,33 +267,44 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
 
     const existing = await this.drafts.ofStretch(encounter.id, upToMs);
     if (existing?.status === 'FAILED') {
-      const again = await this.drafts.requeue(
+      if (existing.attempts >= DRAFT_MAX_ATTEMPTS) {
+        throw new AssistantDraftRetryLimitError();
+      }
+      const requeued = await this.drafts.requeue(
         existing.id,
         userId,
         this.clock(),
+        DRAFT_MAX_ATTEMPTS,
       );
-      if (again) return this.enqueue(again);
+      if (requeued) return this.enqueue(requeued, encounter.siteId);
+      // Another stretch is in flight: this one waits behind it, below.
     } else if (existing) {
       return existing;
     }
+    // The wish is written down BEFORE looking at what is in flight: a draft
+    // that finishes in between still sees it and asks again (review I2).
+    this.again.set(encounter.id, userId);
     const inFlight = await this.drafts.inFlight(encounter.id);
-    if (inFlight) {
-      this.again.set(encounter.id, userId);
-      return inFlight;
-    }
+    if (inFlight) return inFlight;
+    this.again.delete(encounter.id);
     const queued = await this.drafts.queue({
       encounterId: encounter.id,
       upToMs,
       requestedBy: userId,
       at: this.clock(),
     });
-    if (queued) return this.enqueue(queued);
-    // Another request got there first: answer that one.
-    const taken =
-      (await this.drafts.ofStretch(encounter.id, upToMs)) ??
-      (await this.drafts.inFlight(encounter.id));
-    if (!taken) throw new AssistantDraftFailedError();
-    return taken;
+    if (queued) return this.enqueue(queued, encounter.siteId);
+    // Another request got there first.
+    const taken = await this.drafts.ofStretch(encounter.id, upToMs);
+    if (taken) return taken;
+    // Another stretch got the one place in flight: ask again behind it, or —
+    // if it already finished — once more now.
+    this.again.set(encounter.id, userId);
+    const behind = await this.drafts.inFlight(encounter.id);
+    if (behind) return behind;
+    this.again.delete(encounter.id);
+    if (again) return this.ask(encounter, userId, false);
+    throw new AssistantDraftFailedError();
   }
 
   /** AS-087. In the name of the attention's professional, only while it is live with its note open. */
@@ -291,6 +312,10 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     const encounter = await this.context.encounter(encounterId, 'all');
     if (!encounter || !acceptsNewContent(encounter.status)) return;
     if (!(await this.notes.consultationDraft(encounterId))) return;
+    // Only for the professional who listens: a listening started by someone
+    // else, or an attention handed over since, asks for nothing (review).
+    const listening = await this.transcripts.find(encounterId);
+    if (listening?.startedBy !== encounter.practitionerUserId) return;
     try {
       await this.ask(encounter, encounter.practitionerUserId);
     } catch (error) {
@@ -299,21 +324,36 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     }
   }
 
-  private enqueue(draft: StoredNoteDraft): StoredNoteDraft {
+  private enqueue(draft: StoredNoteDraft, siteId: string): StoredNoteDraft {
     this.waiting.push(draft);
     this.drain();
+    // AS-102. The screen learns it is being written, and reads until it is.
+    this.announce(siteId, draft.requestedBy);
     return draft;
+  }
+
+  /** AS-097. The fact of a change, to whoever it concerns; never its content. */
+  private announce(siteId: string, userId: string): void {
+    this.events.publish({ kind: 'assistant-draft', siteId, userIds: [userId] });
   }
 
   private drain(): void {
     while (this.running < DRAFTS_AT_ONCE && this.waiting.length > 0) {
       const draft = this.waiting.shift()!;
       this.running += 1;
-      const done: Promise<void> = this.write(draft).finally(() => {
-        this.running -= 1;
-        this.inProgress.delete(done);
-        this.drain();
-      });
+      const done: Promise<void> = this.write(draft)
+        // Nothing of a draft may bring the API down (review C1).
+        .catch((error: unknown) =>
+          this.logger.warn(
+            { encounter_id: draft.encounterId, error_code: codeOf(error) },
+            'assistant note draft could not be written',
+          ),
+        ) // prettier-ignore
+        .finally(() => {
+          this.running -= 1;
+          this.inProgress.delete(done);
+          this.drain();
+        });
       this.inProgress.add(done);
     }
   }
@@ -324,9 +364,9 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
    * are not touched.
    */
   private async write(draft: StoredNoteDraft): Promise<void> {
-    if (!(await this.drafts.start(draft.id, this.clock()))) return;
     let siteId: string | null = null;
     try {
+      if (!(await this.drafts.start(draft.id, this.clock()))) return;
       const encounter = await this.context.encounter(draft.encounterId, 'all');
       if (!encounter) throw new AssistantEncounterNotFoundError();
       siteId = encounter.siteId;
@@ -391,7 +431,11 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
           { userId: draft.requestedBy, sites: 'all' },
         );
       }
-      await this.drafts.succeed(draft.id, runId, this.clock());
+      if (!(await this.drafts.succeed(draft.id, runId, this.clock()))) {
+        // It was failed meanwhile (a restart elsewhere): its proposals are
+        // not shown, because only finished drafts are (AS-090).
+        this.logger.warn({ encounter_id: encounter.id }, 'a draft finished after it was failed');
+      } // prettier-ignore
       // AS-095. Counts only: no phrase, no section text reaches the log.
       this.logger.log(
         {
@@ -412,14 +456,7 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
         'assistant note draft failed',
       );
     } finally {
-      if (siteId !== null) {
-        // AS-097. The fact of a change, to whoever asked; never its content.
-        this.events.publish({
-          kind: 'assistant-draft',
-          siteId,
-          userIds: [draft.requestedBy],
-        });
-      }
+      if (siteId !== null) this.announce(siteId, draft.requestedBy);
       const waiting = this.again.get(draft.encounterId);
       if (waiting !== undefined) {
         this.again.delete(draft.encounterId);
@@ -432,14 +469,15 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     encounter: CodingEncounter,
     requester: DraftRequester,
   ): Promise<DraftOverview> {
-    const [latest, done, lines, stored] = await Promise.all([
+    const [latest, done, doneIds, lines, stored] = await Promise.all([
       this.drafts.latest(encounter.id),
       this.drafts.latestDone(encounter.id),
+      this.drafts.doneIds(encounter.id),
       this.transcripts.transcript(encounter.id),
       this.suggestions.ofEncounter(encounter.id, writer(requester), 'note-section'), // prettier-ignore
     ]);
     const views = new Map(stored.map((each) => [each.id, each]));
-    const shown = shownSections(stored.map(asStoredSection), done?.id ?? null);
+    const shown = shownSections(stored.map(asStoredSection), new Set(doneIds));
     return {
       draft: latest && {
         id: latest.id,
@@ -451,7 +489,7 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
       },
       coveredUpToMs: done?.upToMs ?? 0,
       transcriptUpToMs: lines.reduce((most, line) => Math.max(most, line.endMs), 0), // prettier-ignore
-      sections: shown.map((each) => sectionView(views.get(each.id)!)),
+      sections: shown.map((each) => sectionView(views.get(each.section.id)!, each.acceptedBefore)), // prettier-ignore
       demo: this.demo,
     };
   }
@@ -491,7 +529,11 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     });
   }
 
-  /** AS-096, AS-039. Its own professional, where they write. EN-121: absent and out of reach are one answer. */
+  /**
+   * AS-096, AS-039. Its own professional, where they write. Absent and out of
+   * reach are one answer (EN-121); another professional of the site is told
+   * it is not theirs, as the listening and the CIE-10 do (AS-039, AS-045).
+   */
   private async ownEncounter(
     encounterId: string,
     requester: DraftRequester,
@@ -516,26 +558,40 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     return encounter;
   }
 
-  /** The proposal, only when it is a section of this attention's draft. */
+  /**
+   * The proposal, only when it is a section of this attention's draft that
+   * the screen shows undecided: an older version, or one of a draft that did
+   * not finish, is not accepted by its id (review M4).
+   */
   private async sectionOf(
-    encounterId: string,
+    encounter: CodingEncounter,
     suggestionId: string,
     requester: DraftRequester,
   ): Promise<SuggestionView> {
-    const stored = await this.suggestions.ofEncounter(encounterId, writer(requester), 'note-section'); // prettier-ignore
-    const found = stored.find((each) => each.id === suggestionId);
-    if (!found) throw new SuggestionNotFoundError();
-    return found;
+    const [stored, doneIds] = await Promise.all([
+      this.suggestions.ofEncounter(encounter.id, writer(requester), 'note-section'), // prettier-ignore
+      this.drafts.doneIds(encounter.id),
+    ]);
+    const shown = shownSections(stored.map(asStoredSection), new Set(doneIds));
+    const found = shown.find(
+      (each) => each.section.id === suggestionId && each.section.status === 'PROPOSED', // prettier-ignore
+    );
+    const view = found && stored.find((each) => each.id === suggestionId);
+    if (!view) throw new SuggestionNotFoundError();
+    return view;
   }
 
   /** AS-087. What the listening asked for runs apart, and its failure stays in the log. */
   private quietly(encounterId: string, work: () => Promise<void>): void {
-    work().catch((error: unknown) => {
-      this.logger.warn(
-        { encounter_id: encounterId, error_code: codeOf(error) },
-        'the listening could not ask for a draft',
-      );
-    });
+    const done: Promise<void> = work()
+      .catch((error: unknown) => {
+        this.logger.warn(
+          { encounter_id: encounterId, error_code: codeOf(error) },
+          'the listening could not ask for a draft',
+        );
+      })
+      .finally(() => this.inProgress.delete(done));
+    this.inProgress.add(done);
   }
 }
 
@@ -562,7 +618,10 @@ function asStoredSection(view: SuggestionView): StoredDraftSection {
   };
 }
 
-function sectionView(view: SuggestionView): DraftSectionView {
+function sectionView(
+  view: SuggestionView,
+  acceptedBefore: string | null,
+): DraftSectionView {
   const proposal = view.proposal as unknown as SectionProposal;
   return {
     id: view.id,
@@ -571,6 +630,7 @@ function sectionView(view: SuggestionView): DraftSectionView {
     text: proposal.text,
     phrases: proposal.phrases,
     status: view.status,
+    acceptedBefore,
     demo: proposal.demo,
   };
 }

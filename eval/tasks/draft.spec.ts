@@ -4,6 +4,10 @@ import {
   DRAFT_INSTRUCTIONS,
   DRAFT_PURPOSE,
 } from '../../src/modules/assistant/application/note-draft.prompts.ts';
+import {
+  buildLexicon,
+  correctLine,
+} from '../../src/modules/assistant/domain/lexicon.ts';
 import { loadInventedCases } from '../cases.ts';
 import { loadCatalogues } from '../catalogue.ts';
 import type { Ask } from '../task.ts';
@@ -91,5 +95,28 @@ describe('draft task (AS-098)', () => {
       facts: null,
       judged: 0,
     });
+  });
+});
+
+describe('the lexicon against the real CNMB (AS-092)', () => {
+  const catalogues = loadCatalogues();
+  const lexicon = buildLexicon({
+    targets: catalogues.cnmb.map((medicine) => medicine.display),
+    protectedWords: [...catalogues.cie10.values()],
+  });
+
+  it('joins what whisper split: «para acetamol» is paracetamol (positive control)', () => {
+    expect(correctLine('solo para acetamol de 500 miligramos', lexicon).text).toBe('solo paracetamol de 500 miligramos'); // prettier-ignore
+  });
+
+  it.each([
+    'Le doy metamizol cada 8 horas.',
+    'Cefixima 400 mg al día.',
+    'Valaciclovir por siete días.',
+    'Tome un litro de agua al día.',
+    'Lo tío dice que es socio de la comida ácida.',
+    'Amoxicilna de quinientos.',
+  ])('never turns a word said into a drug nobody said: «%s»', (line) => {
+    expect(correctLine(line, lexicon)).toEqual({ text: line, changes: 0 });
   });
 });

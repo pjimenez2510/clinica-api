@@ -236,7 +236,14 @@ export class ListeningService {
         return stopped;
       }
       if (live) throw new ListeningNotOpenError();
-      return this.stopWritten(encounterId);
+      // AS-087. Paused first and stopped now (or after a cut): the last
+      // stretch is drafted as well (review I1).
+      const before = await this.store.find(encounterId);
+      const stopped = await this.stopWritten(encounterId);
+      if (before && before.state !== 'STOPPED') {
+        this.observer?.listeningStopped(encounterId);
+      }
+      return stopped;
     });
   }
 

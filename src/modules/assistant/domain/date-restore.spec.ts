@@ -20,6 +20,8 @@ describe('unshiftDates (AS-091)', () => {
     ['27-mar-2026', 12, '15-mar-2026'],
     ['FUM: 27/03', 12, 'FUM: 15/03'],
     ['05/01/2026', -20, '25/01/2026'],
+    ['FUM 2/4', 12, 'FUM 21/03'],
+    ['el 7 de enero del 2026', 18, 'el 20 de diciembre del 2025'],
   ])('moves «%s» back by %d days', (moved, shift, real) => {
     expect(unshiftDates(moved, shift)).toBe(real);
   });
@@ -53,5 +55,22 @@ describe('datesNotSaid (AS-089)', () => {
 
   it('a phrase without dates has none to check', () => {
     expect(datesNotSaid('Dolor de garganta.', said)).toEqual([]);
+  });
+
+  it('a date matches only as a whole: «5 de marzo» is not «15 de marzo», nor 1/03 is 11/03', () => {
+    const heard = 'Desde el 15 de marzo. Control el 11/03/2026.';
+    expect(datesNotSaid('Desde el 5 de marzo.', heard)).toEqual(['5 de marzo']);
+    expect(datesNotSaid('Control el 1/03/2026.', heard)).toEqual(['1/03/2026']);
+    // The same date written with or without zeros, or «del», was said.
+    expect(datesNotSaid('Control el 11/3/2026.', heard)).toEqual([]);
+    expect(datesNotSaid('Desde el 15 de marzo del 2026.', 'el 15 de marzo de 2026')).toEqual([]); // prettier-ignore
+  });
+
+  it('every form the pseudonymizer moves is checked: day and month, month and year', () => {
+    const heard = 'FUM: 10/2026 y FN 2/4';
+    expect(datesNotSaid('FUM: 01/2027.', heard)).toEqual(['01/2027']);
+    expect(datesNotSaid('FN 3/4.', heard)).toEqual(['3/4']);
+    expect(datesNotSaid('FUM: 10/2026.', heard)).toEqual([]);
+    expect(datesNotSaid('FN 2/4.', heard)).toEqual([]);
   });
 });

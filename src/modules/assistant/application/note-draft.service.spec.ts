@@ -19,6 +19,7 @@ import {
   AssistantEncounterNotFoundError,
   AssistantNoteNotOpenError,
   AssistantNotEncounterOwnerError,
+  AssistantDraftRetryLimitError,
   AssistantTranscriptEmptyError,
   LlmCallFailed,
   SuggestionNotFoundError,
@@ -123,8 +124,12 @@ class World {
     vocabulary: () => Promise.resolve({ principles: ['Paracetamol'], protectedWords: ['garganta'] }), // prettier-ignore
   };
 
+  /** Who opened the listening: the attention's professional unless a test says otherwise. */
+  listenedBy = DOCTOR;
+  startFails: Error | null = null;
   transcripts = {
     transcript: () => Promise.resolve(this.lines),
+    find: () => Promise.resolve({ startedBy: this.listenedBy }),
   } as unknown as ListeningStore;
 
   store: NoteDraftStore = {
@@ -140,6 +145,7 @@ class World {
         upToMs: input.upToMs,
         status: 'QUEUED',
         failureCode: null,
+        attempts: 1,
         requestedBy: input.requestedBy,
         aiRunId: null,
         requestedAt: input.at,
@@ -149,15 +155,15 @@ class World {
       this.drafts.push(draft);
       return Promise.resolve(draft);
     },
-    requeue: (id, requestedBy, at) => {
-      const draft = this.drafts.find(
-        (d) => d.id === id && d.status === 'FAILED',
-      );
+    doneIds: (e) => Promise.resolve(this.drafts.filter((d) => d.encounterId === e && d.status === 'DONE').map((d) => d.id)), // prettier-ignore
+    requeue: (id, requestedBy, at, max) => {
+      const draft = this.drafts.find((d) => d.id === id && d.status === 'FAILED' && d.attempts < max); // prettier-ignore
       if (!draft) return Promise.resolve(null);
-      Object.assign(draft, { status: 'QUEUED', failureCode: null, requestedBy, requestedAt: at, startedAt: null, finishedAt: null }); // prettier-ignore
+      Object.assign(draft, { status: 'QUEUED', failureCode: null, attempts: draft.attempts + 1, requestedBy, requestedAt: at, startedAt: null, finishedAt: null }); // prettier-ignore
       return Promise.resolve({ ...draft });
     },
     start: (id, at) => {
+      if (this.startFails) return Promise.reject(this.startFails);
       const draft = this.drafts.find(
         (d) => d.id === id && d.status === 'QUEUED',
       );
@@ -165,8 +171,10 @@ class World {
       return Promise.resolve(Boolean(draft));
     },
     succeed: (id, aiRunId, at) => {
-      Object.assign(this.drafts.find((d) => d.id === id)!, { status: 'DONE', aiRunId, finishedAt: at }); // prettier-ignore
-      return Promise.resolve();
+      const draft = this.drafts.find((d) => d.id === id && d.status === 'RUNNING'); // prettier-ignore
+      if (draft)
+        Object.assign(draft, { status: 'DONE', aiRunId, finishedAt: at });
+      return Promise.resolve(Boolean(draft));
     },
     fail: (id, failureCode, at) => {
       Object.assign(this.drafts.find((d) => d.id === id)!, { status: 'FAILED', failureCode, finishedAt: at }); // prettier-ignore
@@ -396,7 +404,8 @@ describe('NoteDraftService — the listening asks for it (AS-087)', () => {
     world.lines = [{ startMs: 0, endMs: 179_000, text: 'Una consulta larga.' }];
 
     service.transcriptGrew(ENCOUNTER, 179_000);
-    await vi.waitFor(() => expect(world.drafts).toHaveLength(0));
+    await service.settled();
+    expect(world.drafts).toHaveLength(0);
     world.lines = [{ startMs: 0, endMs: 181_000, text: 'Una consulta larga.' }];
     service.transcriptGrew(ENCOUNTER, 181_000);
 
@@ -438,7 +447,8 @@ describe('NoteDraftService — writing it (AS-088 to AS-093, AS-097)', () => {
     ]);
     expect(world.suggestions[1]!.proposal).toMatchObject({
       draftId: 'draft-1',
-      text: 'Odinofagia de tres días de evolución. Fiebre nocturna. Sin tos.',
+      // AS-089. «Sin tos» nobody said: shown in its phrases, never copied.
+      text: 'Odinofagia de tres días de evolución. Fiebre nocturna.',
       demo: false,
     });
     expect(world.suggestions[1]!.sources).toEqual([
@@ -527,6 +537,7 @@ describe('NoteDraftService — writing it (AS-088 to AS-093, AS-097)', () => {
       upToMs: 5_000,
       status: 'RUNNING',
       failureCode: null,
+      attempts: 1,
       requestedBy: DOCTOR,
       aiRunId: null,
       requestedAt: new Date(0),
@@ -545,7 +556,9 @@ describe('NoteDraftService — writing it (AS-088 to AS-093, AS-097)', () => {
     await service.request(ENCOUNTER, doctor);
     await service.settled();
 
+    // Once when it is queued (the screen says «Redactando…») and once when it ends.
     expect(world.events).toEqual([
+      { kind: 'assistant-draft', siteId: SITE, userIds: [DOCTOR] },
       { kind: 'assistant-draft', siteId: SITE, userIds: [DOCTOR] },
     ]);
   });
@@ -645,5 +658,114 @@ describe('NoteDraftService — privacy (AS-095)', () => {
     expect(trail).toContainEqual(['EXPORT', 'assistant_note_draft_reading']);
     expect(trail).toContainEqual(['READ', 'assistant_note_draft']);
     expect(world.audits.every((each) => each.userId === DOCTOR)).toBe(true);
+  });
+});
+
+describe('NoteDraftService — what the reviews found', () => {
+  it('C1 a database failure when the draft starts leaves nothing unhandled, and the attention can ask again', async () => {
+    const world = new World();
+    const service = world.service();
+    world.startFails = new Error('connection lost');
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+
+    await service.request(ENCOUNTER, doctor);
+    await service.settled();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(world.drafts[0]).toMatchObject({ status: 'FAILED', failureCode: 'ASSISTANT_DRAFT_FAILED' }); // prettier-ignore
+    world.startFails = null;
+    await service.request(ENCOUNTER, doctor);
+    await service.settled();
+    expect(world.drafts[0]).toMatchObject({ status: 'DONE', attempts: 2 });
+  });
+
+  it('AS-093 «Volver a pedir» a stretch that failed three times is refused without paying another call', async () => {
+    const world = new World();
+    const service = world.service();
+    world.llmFails = new LlmCallFailed('gemini', 'invalid-answer', { model: 'gemini-3.8-flash', raw: '' }); // prettier-ignore
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await service.request(ENCOUNTER, doctor);
+      await service.settled();
+    }
+    expect(world.prompts).toHaveLength(3);
+
+    await expect(service.request(ENCOUNTER, doctor)).rejects.toBeInstanceOf(
+      AssistantDraftRetryLimitError,
+    );
+    expect(world.prompts).toHaveLength(3);
+  });
+
+  it('I2 a stretch asked for while the one in flight finishes is still asked for after it', async () => {
+    const world = new World();
+    const service = world.service();
+    let release!: () => void;
+    world.gate = new Promise((resolve) => (release = resolve));
+    await service.request(ENCOUNTER, doctor);
+    world.lines = [...SAID, { startMs: 11_000, endMs: 15_000, text: 'Y me duele al tragar.' }]; // prettier-ignore
+    // The first finishes in the middle of the second request.
+    const inFlight = world.store.inFlight.bind(world.store);
+    world.store.inFlight = async (e) => {
+      const found = await inFlight(e);
+      world.store.inFlight = inFlight;
+      world.gate = null;
+      release();
+      await service.settled();
+      return found;
+    };
+
+    await service.request(ENCOUNTER, doctor);
+    await vi.waitFor(() => expect(world.drafts.map((d) => d.upToMs)).toEqual([11_000, 15_000])); // prettier-ignore
+    await service.settled();
+    expect(world.drafts.every((d) => d.status === 'DONE')).toBe(true);
+  });
+
+  it('AS-087 the listening asks only for the professional who listens', async () => {
+    const world = new World();
+    const service = world.service();
+    world.listenedBy = OTHER;
+
+    service.listeningStopped(ENCOUNTER);
+    await service.settled();
+
+    expect(world.drafts).toHaveLength(0);
+  });
+
+  it('AS-094 an older version of a section, no longer on screen, cannot be decided by its id', async () => {
+    const world = new World();
+    const service = world.service();
+    await service.request(ENCOUNTER, doctor);
+    await service.settled();
+    const old = (await service.overview(ENCOUNTER, doctor)).sections.find((each) => each.section === 'enfermedadActual')!; // prettier-ignore
+    world.lines = [...SAID, { startMs: 11_000, endMs: 15_000, text: 'Y me duele al tragar.' }]; // prettier-ignore
+    world.answer = { sections: [{ section: 'enfermedadActual', segments: [{ text: 'Odinofagia y disfagia', source: 'L3' }] }] }; // prettier-ignore
+    await service.request(ENCOUNTER, doctor);
+    await service.settled();
+
+    await expect(
+      service.discard({ encounterId: ENCOUNTER, suggestionId: old.id }, doctor),
+    ).rejects.toBeInstanceOf(SuggestionNotFoundError);
+    const shown = (await service.overview(ENCOUNTER, doctor)).sections;
+    // The section the newer draft left out is still there, waiting.
+    expect(shown.map((each) => each.section).sort()).toEqual(['enfermedadActual', 'motivoConsulta']); // prettier-ignore
+  });
+
+  it('AS-090 a newer version of an accepted section says what was accepted, so the screen swaps it', async () => {
+    const world = new World();
+    const service = world.service();
+    await service.request(ENCOUNTER, doctor);
+    await service.settled();
+    const first = (await service.overview(ENCOUNTER, doctor)).sections.find((each) => each.section === 'enfermedadActual')!; // prettier-ignore
+    world.noteContent.enfermedadActual = first.text;
+    await service.accept({ encounterId: ENCOUNTER, suggestionId: first.id, noteId: NOTE }, doctor); // prettier-ignore
+    world.lines = [...SAID, { startMs: 11_000, endMs: 15_000, text: 'Y me duele al tragar.' }]; // prettier-ignore
+    world.answer = { sections: [{ section: 'enfermedadActual', segments: [{ text: 'Odinofagia y disfagia', source: 'L3' }] }] }; // prettier-ignore
+    await service.request(ENCOUNTER, doctor);
+    await service.settled();
+
+    const newer = (await service.overview(ENCOUNTER, doctor)).sections.find((each) => each.section === 'enfermedadActual')!; // prettier-ignore
+    expect(newer).toMatchObject({ status: 'PROPOSED', acceptedBefore: first.text }); // prettier-ignore
   });
 });

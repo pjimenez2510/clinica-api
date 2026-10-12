@@ -433,4 +433,16 @@ describe('the command line', () => {
       ),
     ).resolves.toBeNull();
   });
+
+  it('AS-098 --tope-proveedor stops the run before an attempt that would pass it', async () => {
+    const lines: string[] = [];
+    const folder = await runFromArgs(
+      ['--', '--falso', '--tareas', 'borrador', '--casos', '2', '--tope-proveedor', '0.000001', '--salida', scratch('out')], // prettier-ignore
+      { env: {}, now: () => new Date(), print: (line) => lines.push(line), ledgerDir: scratch('ledger') }, // prettier-ignore
+    );
+
+    const result = JSON.parse(readFileSync(join(folder!, 'resultado.json'), 'utf8')) as { stopped: string | null; calls: { answered: boolean }[] }; // prettier-ignore
+    expect(result.stopped).not.toBeNull();
+    expect(result.calls.filter((call) => call.answered)).toHaveLength(0);
+  });
 });

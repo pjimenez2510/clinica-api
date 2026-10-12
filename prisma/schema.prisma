@@ -6340,6 +6340,8 @@ model NoteDraft {
   status      String    @db.VarChar(16)
   /// The error code of a failed draft, and only of one.
   failureCode String?   @map("failure_code") @db.VarChar(64)
+  /// AS-093. How many times this stretch was asked for, 1 to 3.
+  attempts    Int       @default(1) @db.SmallInt
   requestedBy String    @map("requested_by") @db.Uuid
   requester   User      @relation(fields: [requestedBy], references: [id], onDelete: Restrict)
   aiRunId     String?   @map("ai_run_id") @db.Uuid

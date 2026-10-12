@@ -614,6 +614,21 @@ describe('ListeningService', () => {
     expect(observer.stopped).toEqual([ENCOUNTER]);
   });
 
+  it('AS-087: a stop after a pause asks for the draft too', async () => {
+    const { service, observer } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await speak(service, ch.events, 0, 1_000);
+    await service.pause(ENCOUNTER, ch.events);
+
+    await service.stop(ENCOUNTER, ch.events);
+
+    expect(observer.stopped).toEqual([ENCOUNTER]);
+    // A second stop of what is already stopped asks for nothing more.
+    await service.stop(ENCOUNTER, ch.events);
+    expect(observer.stopped).toEqual([ENCOUNTER]);
+  });
+
   it('AS-087: the attention closing stops the listening without asking for a draft', async () => {
     const { service, observer } = setup();
     const ch = channel();
