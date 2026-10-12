@@ -135,8 +135,10 @@ function availability(
     const first = calls.filter((c) => c.requests > 1 || !c.answered).length;
     row(
       provider,
+      // The provider's own calls: the answer and, for a task measured as
+      // the product runs it, the follow-up (never the judge's).
       outcome.attempts.filter(
-        (a) => a.provider === provider && a.role === 'answer',
+        (a) => a.provider === provider && a.role !== 'judge',
       ),
       `${pct(calls.length === 0 ? Number.NaN : first / calls.length)} ${interval(wilson(first, calls.length))}`,
     );
@@ -161,14 +163,17 @@ function latencyAndCost(
     for (const provider of providers) {
       const attempts = outcome.attempts.filter(
         (a) =>
-          a.task === task.name &&
-          a.provider === provider &&
-          a.role === 'answer',
+          a.task === task.name && a.provider === provider && a.role !== 'judge',
       );
       if (attempts.length === 0) continue;
-      const latencies = attempts
-        .filter((a) => a.outcome === 'ok')
-        .map((a) => a.latencyMs);
+      // What the physician waits for: the calls of one case, one after the
+      // other, added (a follow-up comes after its answer).
+      const byCase = new Map<string, number>();
+      for (const a of attempts.filter((each) => each.outcome === 'ok')) {
+        const key = `${a.caseId}·${a.arm}`;
+        byCase.set(key, (byCase.get(key) ?? 0) + a.latencyMs);
+      }
+      const latencies = [...byCase.values()];
       const cost = attempts.reduce((total, a) => total + a.costUsd, 0);
       const answered = outcome.calls.filter(
         (c) => c.task === task.name && c.provider === provider && c.answered,

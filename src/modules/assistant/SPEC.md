@@ -180,6 +180,38 @@ error no lleva una palabra de la nota.
 **Cubre:** AS-030 a AS-034.
 **Solo servidor:** AS-030 a AS-034. Esta entrega no tiene pantalla.
 
+### E6 — La receta propuesta desde la consulta _(D2, 12-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §7 D2 y §3 («Receta»): con «Proponer la receta», el
+modelo lee la nota y dice qué se recetó tal como se escribió; el sistema lo
+busca en el CNMB con su forma y su concentración, el modelo elige entre lo que
+la búsqueda encontró y una barrera quita lo que el cuadro no tiene (P5). Las
+alergias se comparan **después del modelo y sin él**, con la misma regla que
+la emisión (PR-060, PR-065, PR-114), y si no se pueden comprobar la propuesta
+**falla cerrada** (P5, bug F-01 de SigmAI). Nada se escribe sin el médico:
+«Confirmar la receta» pone las líneas aceptadas en el borrador de siempre, que
+se guarda por su ruta con su `If-Match` (PR-100, PR-121), y **nunca lo emite**
+(P1).
+
+**Por qué va así:** SigmAI midió en E-072 un acierto del mapeo de 73,2 % con
+Sonnet, y 27 de sus 45 errores fueron abstenciones ante un nombre sin
+concentración; el CNMB trae forma y concentración por presentación (PR-115),
+que es lo que esta entrega añade. El bucle de herramientas y MCP no se traen
+(E-072: +4,2 puntos sin significancia, 4,6× la latencia).
+**Prueba independiente:** con el seudonimizador y el proveedor falsos, una
+nota que dice «Amoxicilina 500 mg, una tableta cada 8 horas por 7 días»
+propone `J01CA04` en su presentación de 500 mg con la cantidad 21 marcada
+«Nadie lo dijo»; con una alergia a la amoxicilina en la ficha la línea sale
+con el aviso y no se puede confirmar; con el lector de alergias caído no sale
+ninguna línea; confirmar devuelve las líneas sin escribir nada, y guardar el
+borrador las enlaza.
+**Cubre:** AS-063 a AS-082.
+**Solo servidor:** AS-078 (lo que no llega al log) y AS-079 (el arnés de
+evaluación, fuera del verify).
+**Solo interfaz:** AS-080 a AS-082. Son la tarjeta de la propuesta en la
+pestaña Receta y su paso al editor; la mitad del servidor es AS-063, AS-069,
+AS-070 y AS-073, que ya se prueban con esos números.
+
 ## Criterios de éxito
 
 - **SC-089** — Con `ASSISTANT_ALLOW_REMOTE` distinto de `true`, el número de
@@ -818,6 +850,213 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   detención; y DEBERÁ informar cuántas frases se dijeron, cuántos segmentos
   quedaron, cuántos se repiten y si están en orden.
 
+### 20. Leer la receta de la nota (D2, P2, P5)
+
+- **AS-063** — CUANDO el profesional de la atención pida «Proponer la receta»
+  en una atención viva, el sistema DEBERÁ comprobar primero que las alergias
+  del paciente se pueden leer (AS-070), seudonimizar la nota de consulta como
+  en AS-028, y pedir al modelo las líneas que la nota **receta**, cada una tal
+  como se escribió —nombre del medicamento, concentración, forma, dosis y su
+  unidad, vía, frecuencia, duración e indicaciones— con la frase literal de la
+  nota que la dice; lo que la nota no dice DEBERÁ quedar vacío. DEBERÁ
+  descartar toda línea cuya frase no esté en la nota con las reglas de AS-028
+  (palabras enteras, sin negación delante); y SI la nota no tiene texto,
+  ENTONCES DEBERÁ rechazarlo con `ASSISTANT_NOTE_EMPTY` sin llamar a nadie.
+  > Mientras no haya transcripción (C1), la fuente es la nota escrita. Un
+  > medicamento que la nota sólo menciona —lo que ya toma, una alergia, algo
+  > que se suspende— no es una línea. Las listas cerradas de la receta
+  > (PR-101, PR-102: forma, unidad, vía y frecuencia) van al modelo como
+  > catálogo del sistema (`withContext`): lo que no es de la lista queda vacío.
+  > Al modelo NO se le pide calcular nada (SigmAI `READING`). Lo que el
+  > modelo lee no se muestra como «dicho» sin que la frase lo respalde
+  > (revisión clínica del 12-10-2026, G2): un campo inventado vacío pide al
+  > médico que lo escriba; uno inventado lleno se firmaría. La forma vuelve
+  > como texto y se comprueba contra la lista: Gemini rechaza esa enumeración
+  > en el esquema.
+- **AS-064** — Para cada línea el sistema DEBERÁ buscar en el CNMB vigente en
+  la fecha clínica de la atención hasta **5** medicamentos por su principio
+  activo o su nombre (sin tildes ni mayúsculas), con sus presentaciones
+  declaradas (PR-115); DEBERÁ pedir al modelo que elija uno de esos
+  medicamentos y una de sus presentaciones, o ninguno; y DEBERÁ quedarse sólo
+  con una elección que esté entre los candidatos ofrecidos para esa línea. El
+  nombre que se muestra DEBERÁ ser el del cuadro.
+  > Buscar y elegir (P6, E-072). La búsqueda la hace el sistema; el modelo sólo
+  > elige de una lista numerada, y un id que no se le ofreció es un invento
+  > (SigmAI `mapToCatalogue`). Los candidatos son el catálogo público, no el
+  > texto del paciente: van con `withContext`.
+- **AS-065** — Una línea sin medicamento del CNMB elegido NO DEBERÁ mostrar
+  ningún nombre de medicamento que haya escrito el modelo: DEBERÁ mostrarse
+  sólo con la oración de la nota, como «no encontrada en el cuadro», y NO
+  DEBERÁ poder añadirse a la receta desde la propuesta.
+  > El médico la escribe en el editor como hoy (PR-009, PR-110). Así ningún
+  > medicamento fuera del CNMB sale de la propuesta (plan de la rama).
+- **AS-066** — La presentación DEBERÁ ser una de las declaradas por el
+  medicamento elegido; SI la nota escribió una concentración o una forma y la
+  presentación elegida no es compatible con ellas (PR-115, rangos incluidos),
+  ENTONCES la línea DEBERÁ quedar sin presentación, para que la elija el
+  médico.
+  > Una presentación que contradice la nota es un error del modelo, no una
+  > propuesta. Sin concentración escrita, la que elige el modelo se marca
+  > «Nadie lo dijo» (AS-067).
+- **AS-067** — Lo que la propuesta trae y la nota no dice DEBERÁ ir marcado,
+  campo por campo, «Nadie lo dijo»: la presentación elegida sin concentración
+  escrita; la vía tomada de la presentación del cuadro; la dosis de **una**
+  unidad cuando la concentración escrita es exactamente la de una presentación
+  de tableta, cápsula, supositorio, óvulo, parche o sobre; y la **cantidad
+  total**, calculada como dosis × tomas al día × días, sólo con esas unidades,
+  una frecuencia de la lista con intervalo fijo y una duración, redondeada hacia
+  arriba. Ningún otro campo DEBERÁ completarse.
+  > SigmAI E-053 (`course-of-treatment.ts`): la cantidad cuadra en el 91,9 % de
+  > las tabletas diarias y en 0 % de los líquidos, que van por frasco. Y
+  > `per-dose.ts`: «quinientos miligramos» de una tableta de 500 mg es una
+  > tableta; de 1 000 mg, nada. D-248 §3 y §4.
+- **AS-068** — El sistema NO DEBERÁ calcular ninguna dosis a partir del peso
+  ni de la superficie corporal (D-084 §5), ni leer el peso del paciente para
+  esta función: SI la nota escribe la dosis por peso («mg/kg», «por kilo»),
+  ENTONCES la línea DEBERÁ quedar sin dosis ni cantidad, con el motivo
+  `dose-by-weight` para que el médico la escriba; y SI la nota escribe una
+  dosis por peso en cualquier otra oración, ENTONCES ninguna dosis en
+  miligramos, microgramos, gramos, unidades o mililitros DEBERÁ tomarse de
+  ella.
+  > Las formas de escribirlo que se reconocen (revisión clínica G1): «mg/kg»,
+  > «mg/kilo», «mg x kg», «mg/kgr», «mg/k», «por kilo», «mg/m²», «m2sc» y
+  > «superficie corporal».
+  > Si el cálculo de dosis convierte el sistema en dispositivo médico ante
+  > ARCSA es D-084 §5, del asesor legal.
+
+### 21. Alergias, sin modelo y cerradas (P5, F-01)
+
+- **AS-069** — Cada línea con medicamento DEBERÁ compararse con las alergias
+  no refutadas de la ficha superviviente de la atención y de las que absorbió
+  —el mismo lector que la receta (PR-062, PR-118)— con la **misma** regla que
+  la emisión: coincidencia exacta por código, códigos sustituidos y principio
+  activo (PR-060, PR-114), y misma clase ATC (PR-065). Cada línea DEBERÁ decir
+  `exact`, `class` o `none`, y la propuesta DEBERÁ decir además si la ficha
+  tiene alergias registradas sólo como texto (`uncoded`) o si nadie afirmó
+  nunca que no tenga alergias (`not-asked`, EN-087). La comparación DEBERÁ
+  hacerse cada vez que se muestra la propuesta, no sólo al leerla.
+  > Una regla, no dos: la función pura es la de la receta, movida a
+  > `shared/clinical/` para que el asistente no la copie (ADR-011). Una alergia
+  > registrada después de la lectura tiene que verse en la tarjeta.
+- **AS-070** — SI las alergias del paciente no se pueden leer o comparar,
+  ENTONCES el sistema NO DEBERÁ decir de ninguna línea que no tiene conflicto:
+  «Proponer la receta» DEBERÁ fallar con `ASSISTANT_ALLERGY_CHECK_FAILED` antes
+  de llamar al modelo; al mostrar una propuesta cada línea DEBERÁ decir
+  `failed`; y «Confirmar la receta» DEBERÁ rechazarse con el mismo código.
+  > Es el bug F-01 de SigmAI, el peor que tuvo: un fallo del chequeo mostrado
+  > como «sin conflicto». Aquí el fallo nunca es una respuesta; es un estado
+  > que bloquea.
+- **AS-071** — Una línea con coincidencia **exacta** NO DEBERÁ poder añadirse
+  a la receta desde la propuesta; una de la misma **clase** DEBERÁ poder
+  añadirse con su aviso.
+  > Proporcionalidad de PR-067: la clase informa. La exacta, que en la emisión
+  > interrumpe (PR-060), aquí ni siquiera entra al borrador desde la propuesta;
+  > si el médico la quiere, la escribe él en el editor y la emisión decide
+  > (D-248 §1).
+
+### 22. Guardar, confirmar y enlazar (P1, D-243 §5)
+
+- **AS-072** — CUANDO el modelo responda, el sistema DEBERÁ guardar cada línea
+  respaldada como una propuesta de `ai_suggestion` de clase
+  `prescription-item`, en estado «propuesta», con el intento de `ai_run` que
+  la leyó, la frase, los campos, sus marcas «Nadie lo dijo» y la línea entera
+  en texto canónico (`text`), con la nota como fuente; y la lectura nueva
+  DEBERÁ sustituir en pantalla a las propuestas sin decidir de la anterior,
+  sin borrar ninguna (AS-036).
+  > D-243 §5, construida con su recomendación: la línea de receta no tiene
+  > identidad propia, así que la propuesta guarda la línea entera y se compara
+  > con la que quedó (AS-074). Una línea cuyo medicamento ya está en una receta
+  > no descartada de la atención se muestra como «Ya en la receta» y no se
+  > añade otra vez.
+- **AS-073** — CUANDO el profesional pida «Confirmar la receta» con las
+  propuestas que aceptó, el sistema DEBERÁ comprobar otra vez, en ese momento,
+  que cada una es de la última lectura y está sin decidir, tiene medicamento
+  del CNMB, no está ya en una receta de la atención y no tiene coincidencia
+  exacta de alergia ni chequeo fallido; y DEBERÁ devolver las líneas listas
+  para el borrador **sin escribir nada**. SI alguna no pasa, ENTONCES DEBERÁ
+  rechazarlo entero nombrando las líneas, con
+  `ASSISTANT_ALLERGY_CONTRAINDICATION` (409), `ASSISTANT_ALLERGY_CHECK_FAILED`
+  (503) o `ASSISTANT_PRESCRIPTION_LINE_NOT_READY` (422). El asistente NO
+  DEBERÁ componer, reescribir, emitir ni anular ninguna receta.
+  > El borrador lo escribe la pantalla por la ruta de siempre, con sus
+  > comprobaciones (PR-001 a PR-009, PR-101 a PR-104) y su `If-Match` (PR-121),
+  > y la emisión vuelve a comprobar las alergias dentro de su transacción
+  > (PR-060). La barrera de aquí es del camino del asistente, no la única.
+- **AS-074** — CUANDO el borrador se haya guardado con líneas que vienen de
+  propuestas, el sistema DEBERÁ enlazar cada propuesta a esa receta, que
+  DEBERÁ ser de la misma atención y no estar descartada, leyendo la línea
+  guardada por su número: «aceptada» si su texto canónico es el propuesto,
+  «aceptada con cambios» si no, con la distancia calculada por el sistema; y
+  SI la receta no es de la atención o la línea no existe, ENTONCES DEBERÁ
+  rechazarlo con `SUGGESTION_PRESCRIPTION_MISMATCH` (422).
+  > Lo guardado lo lee el servidor, no lo dice quien llama (AS-022): así la
+  > fase F mide lo que el médico corrigió. La línea DEBERÁ ser del
+  > medicamento de la propuesta, y todo se comprueba antes de escribir nada:
+  > una propuesta o una línea repetida (`SUGGESTION_INVALID`), una ya
+  > decidida o de otra lectura no enlazan ninguna. Si el enlace falla, la receta queda
+  > guardada (fue el acto del médico) y la tarjeta lo dice.
+- **AS-075** — CUANDO el profesional descarte una propuesta, el sistema DEBERÁ
+  dejarla «descartada» con quién y cuándo, y NO DEBERÁ volver a mostrarla.
+- **AS-076** — Proponer, confirmar, enlazar y descartar DEBERÁN exigir lo de
+  AS-039: el profesional de la atención, `assistant:use`, `record:write` y
+  `prescription:write` en su sede, la atención viva; una atención de otra sede DEBERÁ responderse como
+  inexistente. Ver la propuesta DEBERÁ exigir `record:read`.
+
+### 23. Fallos, privacidad y medida
+
+- **AS-077** — SI el seudonimizador o el proveedor fallan, se acaba el plazo
+  (90 s) o el techo de gasto no admite el intento, ENTONCES la lectura DEBERÁ
+  fallar con el código del error sin guardar nada ni tocar las propuestas que
+  había; DEBERÁ haber una lectura a la vez por atención
+  (`ASSISTANT_READING_IN_PROGRESS`) y seis por minuto; y SI la atención se
+  cerró mientras el modelo respondía, ENTONCES no se DEBERÁ guardar nada.
+- **AS-078** — Ninguna línea de log, fila de `ai_run` ni mensaje de error de
+  esta función DEBERÁ contener la nota, las frases ni el nombre de ningún
+  medicamento; la nota DEBERÁ ir al modelo delimitada como dato, con la
+  instrucción de no seguir órdenes que contenga; y leer la nota para mandarla
+  DEBERÁ dejar su fila `EXPORT` en la bitácora.
+  > PR-094: el nombre de un medicamento es un diagnóstico dicho de otra forma.
+  > El error de AS-073 nombra las líneas por su número, nunca por su nombre.
+  > La excepción es `ai_exchange`, sólo si se enciende (AS-014): guarda el
+  > prompt seudonimizado y la respuesta, medicamentos incluidos, y se purga
+  > a los 45 días (D-239 §3).
+- **AS-079** — El arnés de evaluación DEBERÁ medir, sobre un set propio de
+  notas inventadas con su receta esperada contra el CNMB, el **acierto del
+  mapeo** (medicamento y presentación del cuadro) del camino del producto
+  —leer, buscar, elegir y la barrera—, con su intervalo, los medicamentos de
+  más y cuántos medicamentos fuera del CNMB se habrían mostrado, que DEBERÁ ser
+  **cero**; la latencia sumando las dos llamadas de cada caso; fuera del
+  verify, con el modelo, las versiones de prompt y la del cuadro.
+  > Umbral para encender (P7): más de 73,2 % (E-072). Sólo casos inventados
+  > (EV-1). El F1 por campo (forma, vía, dosis, frecuencia, duración) lo mide
+  > la tarea `receta` de A6 sobre dictados con la receta entera esperada; el
+  > set de notas de esta tarea sólo trae el medicamento y la presentación
+  > esperados.
+
+### 24. En la pestaña Receta
+
+- **AS-080** — La pestaña Receta DEBERÁ mostrar, a quien tiene el permiso y
+  con el asistente encendido, «Proponer la receta» y, debajo de «Propuesta del
+  asistente» y «Revise cada medicamento antes de aceptarlo», cada línea con
+  borde punteado: la oración de la nota, el medicamento y la presentación del
+  cuadro, la dosis, la frecuencia, la duración y la cantidad, cada campo que
+  nadie dijo marcado «Nadie lo dijo», su aviso de alergia, y «Aceptar» y
+  «Descartar»; y «Confirmar la receta», que pasa las aceptadas al borrador
+  abierto —o a uno nuevo— y lo guarda, sin emitirlo. Sin el permiso o con el
+  asistente apagado NO DEBERÁ mostrar nada de esto; en modo demostración, cada
+  línea DEBERÁ decirlo.
+- **AS-081** — MIENTRAS la lectura está en curso la pestaña DEBERÁ decirlo y
+  seguir usable; SI falla, ENTONCES DEBERÁ decir el motivo con «Volver a
+  pedir» sin quitar lo que había; y una línea con coincidencia exacta, con el
+  chequeo fallido, sin medicamento del cuadro o ya en la receta DEBERÁ decir
+  por qué, sin «Aceptar».
+- **AS-082** — SI una línea aceptada no trae algo que la receta exige para
+  guardarse (forma, concentración, vía, dosis, frecuencia, duración o
+  cantidad), ENTONCES «Confirmar la receta» DEBERÁ dejarla en el editor sin
+  guardar, señalando lo que falta, y el enlace (AS-074) DEBERÁ hacerse cuando
+  el médico la guarde.
+  > Nada clínico viene relleno (PR-106): lo que falta lo escribe el médico.
+
 ---
 
 ## Códigos de error nuevos
@@ -841,6 +1080,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_LISTENING_UNAVAILABLE`    | `ExternalServiceError` | 503       | `clinica-ai` no puede escuchar: sin reconocedor, sin detector de voz o caído (AS-048) |
 | `ASSISTANT_LISTENING_NOT_OPEN`       | `ConflictError`        | 409       | Una orden de pausar o una trama sin escucha abierta en ese canal (AS-049) |
 | `ASSISTANT_LISTENING_FAILED`         | `ExternalServiceError` | 503       | Una orden de la escucha falló por algo que no es del médico: la base, un fallo (AS-058) |
+| `ASSISTANT_ALLERGY_CHECK_FAILED`     | `ExternalServiceError` | 503       | Las alergias del paciente no se pudieron leer o comparar: nada se propone ni se confirma (AS-070) |
+| `ASSISTANT_ALLERGY_CONTRAINDICATION` | `ConflictError`        | 409       | Una línea a confirmar coincide exactamente con una alergia (AS-071, AS-073)  |
+| `ASSISTANT_PRESCRIPTION_LINE_NOT_READY` | `ValidationError`   | 422       | Una línea a confirmar no es de la última lectura, ya se decidió, no tiene medicamento del CNMB o ya está en la receta (AS-073) |
+| `SUGGESTION_PRESCRIPTION_MISMATCH`   | `ValidationError`      | 422       | La receta con que se enlaza no es de la atención, está descartada o no tiene esa línea (AS-074) |
 
 ## Niveles de prueba
 
@@ -864,6 +1107,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-059, AS-060, AS-061 | Componente y composable; recorrido F-04 con el audio de prueba |
 | AS-062 | Guion contra la API y `clinica-ai` en marcha, fuera del verify |
 | AS-030 a AS-034                        | Unitario con `fetch` falso; AS-031 y AS-032 sobre `env.schema`; prueba manual contra `clinica-ai` en marcha |
+| AS-063 a AS-073, AS-077, AS-078 | Unitario con seudonimizador, proveedor y lector de alergias falsos |
+| AS-064, AS-069, AS-070, AS-072 a AS-076 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-079 | Arnés (`eval/`), fuera del verify |
+| AS-080 a AS-082 | Componente de la pestaña y recorrido F-05 |
 
 ## Preguntas abiertas
 

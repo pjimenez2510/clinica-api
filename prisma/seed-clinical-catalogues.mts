@@ -7,7 +7,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 
 import { readCnmb } from '../src/modules/catalogs/import/cnmb.ts';
 import { cutoverOf } from '../src/modules/catalogs/import/cutover.ts';
-import { substanceKeysOf } from '../src/modules/prescription/domain/allergy-check.ts';
+import { substanceKeysOf } from '../src/shared/clinical/allergy-match.ts';
 import {
   readTariffCsv,
   tariffConceptsOf,

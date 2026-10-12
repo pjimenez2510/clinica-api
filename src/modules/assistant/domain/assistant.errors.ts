@@ -1,5 +1,6 @@
 import {
   ConflictError,
+  type DomainFieldError,
   ExternalServiceError,
   ForbiddenError,
   NotFoundError,
@@ -279,6 +280,87 @@ export class AssistantReadingInProgressError extends ConflictError {
 
   constructor() {
     super('A reading of this encounter is already in progress');
+  }
+}
+
+/**
+ * AS-070 (P5, SigmAI F-01). The patient's allergies could not be read or
+ * compared: no line is said to be free of conflict, nothing is proposed and
+ * nothing is confirmed. Retryable: the reader was down, not the patient.
+ */
+export class AssistantAllergyCheckFailedError extends ExternalServiceError {
+  readonly code = 'ASSISTANT_ALLERGY_CHECK_FAILED';
+  readonly service = 'patient_allergy';
+  readonly isRetryable = true;
+  override readonly userTitle =
+    'No se pudieron comprobar las alergias del paciente: el asistente no propone medicamentos sin comprobarlas. Vuelva a intentarlo';
+
+  constructor() {
+    super('The allergies of the chart could not be read or compared');
+  }
+}
+
+/** One proposal named by a refusal: by its id and line, never by its medicine (PR-094). */
+function proposalErrors(
+  ids: readonly string[],
+  code: string,
+  message: string,
+): DomainFieldError[] {
+  return ids.map((id) => ({ field: `suggestions.${id}`, code, message }));
+}
+
+/**
+ * AS-071, AS-073. A line to confirm is the very substance of an allergy of
+ * the chart: it does not reach the draft from the proposal.
+ */
+export class AssistantAllergyContraindicationError extends ConflictError {
+  readonly code = 'ASSISTANT_ALLERGY_CONTRAINDICATION';
+  override readonly userTitle =
+    'La ficha registra una alergia a un medicamento propuesto: descártelo o escríbalo usted en la receta';
+  override readonly fieldErrors: readonly DomainFieldError[];
+
+  constructor(suggestionIds: readonly string[]) {
+    super('A proposed line matches an active allergy of the chart');
+    this.fieldErrors = proposalErrors(
+      suggestionIds,
+      this.code,
+      'La ficha registra alergia a este principio activo',
+    );
+  }
+}
+
+/**
+ * AS-073. A line to confirm is not of the latest reading, was decided
+ * already, has no medicine of the cuadro, is controlled or is already in the
+ * receta.
+ */
+export class AssistantPrescriptionLineNotReadyError extends ValidationError {
+  readonly code = 'ASSISTANT_PRESCRIPTION_LINE_NOT_READY';
+  override readonly userTitle =
+    'Alguna línea propuesta ya no se puede añadir a la receta. Recargue la propuesta';
+  override readonly fieldErrors: readonly DomainFieldError[];
+
+  constructor(suggestionIds: readonly string[]) {
+    super('A proposed line cannot go to the prescription');
+    this.fieldErrors = proposalErrors(
+      suggestionIds,
+      this.code,
+      'Esta línea no se puede añadir a la receta',
+    );
+  }
+}
+
+/**
+ * AS-074. The receta given to link a proposal is not of its attention, was
+ * discarded, or has no such line.
+ */
+export class SuggestionPrescriptionMismatchError extends ValidationError {
+  readonly code = 'SUGGESTION_PRESCRIPTION_MISMATCH';
+  override readonly userTitle =
+    'Esa receta no es de esta atención o no tiene esa línea. Recargue la atención';
+
+  constructor() {
+    super('The prescription line is not of the encounter of the suggestion');
   }
 }
 

@@ -64,9 +64,28 @@ export const noteCaseSchema = z.object({
     .min(1),
 });
 
+/**
+ * AS-079 (D2). The Plan of an invented note and the lines «Proponer la
+ * receta» must show: the CNMB code and the concentration as the cuadro writes
+ * it, or `null` when the written one is not in the cuadro and the line must
+ * stay without a presentation (AS-066). Distractors expect nothing.
+ */
+export const prescriptionNoteCaseSchema = z.object({
+  id: z.string().min(1),
+  origin: invented,
+  plan: z.string().min(1),
+  expected: z.array(
+    z.object({
+      cnmbCode: z.string().min(1),
+      concentration: z.string().min(1).nullable(),
+    }),
+  ),
+});
+
 const SCHEMAS = {
   cie10: cie10CaseSchema,
   prescription: prescriptionCaseSchema,
+  prescriptionNote: prescriptionNoteCaseSchema,
   note: noteCaseSchema,
 } as const;
 type Kind = keyof typeof SCHEMAS;
@@ -74,6 +93,7 @@ type Kind = keyof typeof SCHEMAS;
 export type Cie10Case = z.infer<typeof cie10CaseSchema>;
 export type PrescriptionCase = z.infer<typeof prescriptionCaseSchema>;
 export type NoteCase = z.infer<typeof noteCaseSchema>;
+export type PrescriptionNoteCase = z.infer<typeof prescriptionNoteCaseSchema>;
 
 export interface CaseSet<Case> {
   file: string;
@@ -111,11 +131,15 @@ export function loadCaseFile<K extends Kind>(
   };
 }
 
-/** The three invented sets the repository versions. */
+/** The invented sets the repository versions. */
 export function loadInventedCases(dir = CASES_DIR) {
   return {
     cie10: loadCaseFile(join(dir, 'cie10-propios.json'), 'cie10'),
     prescription: loadCaseFile(join(dir, 'receta.json'), 'prescription'),
+    prescriptionNote: loadCaseFile(
+      join(dir, 'receta-notas.json'),
+      'prescriptionNote',
+    ),
     note: loadCaseFile(join(dir, 'nota.json'), 'note'),
   };
 }

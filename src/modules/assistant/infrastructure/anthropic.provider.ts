@@ -84,9 +84,11 @@ export class AnthropicProvider implements LlmProvider {
           output_config: {
             format: {
               type: 'json_schema',
-              schema: strictJsonSchema(
-                z.toJSONSchema(request.answer, { io: 'output' }),
-              ).schema as Record<string, unknown>,
+              schema: anthropicSchema(
+                strictJsonSchema(
+                  z.toJSONSchema(request.answer, { io: 'output' }),
+                ).schema,
+              ) as Record<string, unknown>,
             },
           },
           ...(ANTHROPIC_THINKING_DISABLED[request.tier]
@@ -179,4 +181,42 @@ function failureOf(
     raw: null,
     ...(neverSent(cause) ? { neverSent: true } : {}),
   });
+}
+
+/**
+ * AS-003. The bounds Anthropic's structured outputs refuse with a 400
+ * («For 'array' type, property 'maxItems' is not supported», measured on
+ * 12-10-2026): numbers, lengths and item counts. They are left out of what
+ * the provider sees and the zod parse still holds the answer to them.
+ */
+const UNSUPPORTED = new Set([
+  'maxItems',
+  'minLength',
+  'maxLength',
+  'minimum',
+  'maximum',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+  'multipleOf',
+]);
+
+export function anthropicSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(anthropicSchema);
+  if (schema === null || typeof schema !== 'object') return schema;
+  return Object.fromEntries(
+    Object.entries(schema)
+      .filter(([key]) => !UNSUPPORTED.has(key))
+      .map(([key, value]) => [
+        key,
+        (key === 'properties' || key === '$defs') &&
+        value !== null &&
+        typeof value === 'object'
+          ? Object.fromEntries(
+              Object.entries(value as Record<string, unknown>).map(
+                ([name, inner]) => [name, anthropicSchema(inner)],
+              ),
+            )
+          : anthropicSchema(value),
+      ]),
+  );
 }

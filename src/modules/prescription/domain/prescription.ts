@@ -1,5 +1,6 @@
 /**
- * The closed vocabularies of a prescription, in a file with NO imports.
+ * The closed vocabularies of a prescription, importing only the shared
+ * vocabulary of the receta (`shared/clinical/`), which imports nothing.
  *
  * Upstream of everything else in this module, for the same reason
  * `encounter/domain/encounter.ts` is: the errors need the status union to label
@@ -11,6 +12,11 @@
  * created by `20260806022931_clinical_core`. This module does not invent a
  * state.
  */
+
+import {
+  MEDICATION_ROUTES,
+  type MedicationRoute,
+} from '../../../shared/clinical/prescription-vocabulary';
 
 /**
  * PR-003, PR-005. The life of one prescription.
@@ -59,46 +65,13 @@ export type PrescriptionStatus =
   /** Annulled (PR-010). Terminal, and the row is never deleted. */
   | 'CANCELLED';
 
-/**
- * PR-029. The route of administration, as the printed prescription names it.
- *
- * ═══════════════════════════════════════════════════════════════════════════
- * A CLOSED LIST, AND THE SPANISH LABEL IS PART OF THE REQUIREMENT
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * Art. 13 is literal that an electronic prescription is written «sin siglas o
- * abreviaturas», and «VO», «IM» and «SC» are exactly that. So the code is what
- * travels in the API and the SENTENCE is what the document carries: a free-text
- * field would produce «v.o.», «VO» and «vía oral» as three routes, and the one
- * the norm forbids is the one everybody types.
- *
- * ⚠️ **Falta esquema.** `prescription_item.route_code` is a bare `varchar(32)`
- * with no catalogue behind it, so this list is the only enumeration there is
- * and it lives here — where it can be checked — rather than in a comment. The
- * note is on PR-029.
- */
-export const MEDICATION_ROUTES = {
-  ORAL: 'Vía oral',
-  SUBLINGUAL: 'Vía sublingual',
-  INTRAVENOUS: 'Vía intravenosa',
-  INTRAMUSCULAR: 'Vía intramuscular',
-  SUBCUTANEOUS: 'Vía subcutánea',
-  TOPICAL: 'Vía tópica',
-  OPHTHALMIC: 'Vía oftálmica',
-  OTIC: 'Vía ótica',
-  NASAL: 'Vía nasal',
-  RECTAL: 'Vía rectal',
-  VAGINAL: 'Vía vaginal',
-  INHALATION: 'Vía inhalatoria',
-} as const;
-
-/** PR-029. One of the codes of `MEDICATION_ROUTES`. */
-export type MedicationRoute = keyof typeof MEDICATION_ROUTES;
-
-/** The routes, as a list, for a schema that has to enumerate them. */
-export const MEDICATION_ROUTE_CODES = Object.keys(
+// PR-029. The routes live with the rest of the receta's vocabulary in
+// `shared/clinical/` (D2: the assistant proposes in the same codes).
+export {
+  MEDICATION_ROUTE_CODES,
   MEDICATION_ROUTES,
-) as MedicationRoute[];
+  type MedicationRoute,
+} from '../../../shared/clinical/prescription-vocabulary';
 
 /** PR-029. The sentence the document prints, never the code. */
 export function routeLabel(route: MedicationRoute): string {

@@ -1,0 +1,2006 @@
+{
+  "label": "d2-receta-nota-gemini-final",
+  "ledger": "~/.clinica-eval/gasto",
+  "fake": false,
+  "startedAt": "2026-10-12 08:54:16",
+  "finishedAt": "2026-10-12 08:57:53",
+  "commit": "dfd523af",
+  "seed": 42,
+  "ceilingUsd": 0.81,
+  "providers": [
+    {
+      "name": "gemini",
+      "model": "gemini-3.8-flash"
+    }
+  ],
+  "withoutKey": [
+    "openai"
+  ],
+  "judge": null,
+  "tasks": [
+    {
+      "name": "receta-nota",
+      "promptVersions": {
+        "D": "d2-lines-1+d2-mapping-1"
+      }
+    }
+  ],
+  "catalogues": [
+    {
+      "file": "cie10-oms-deis-2026-08.xlsx",
+      "sha256": "0d5e19d5d68856aee9379cc91ec16ac931cbfb60dcd06575dec5089cc0a5a75a"
+    },
+    {
+      "file": "cnmb-2026.xlsx",
+      "sha256": "e968d14c9fa3896e7e5cfcb2eb9717b2cde25a7483387ce7f5ced3d62dbdf2e1"
+    },
+    {
+      "file": "llm-pricing.json",
+      "sha256": "9af59d090989ecccfb55aaf1e1d0682a2388e58c51ff0306be16caa4d5464557"
+    }
+  ],
+  "cases": [
+    {
+      "task": "receta-nota",
+      "source": "receta-notas.json",
+      "sha256": "5a905d504a6bc061de0d1ea186a594f8ed8a95b5803d85680c55f61b62ff80dd",
+      "n": 40
+    }
+  ],
+  "codiesp": null,
+  "stopped": null,
+  "calls": [
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-01",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01CA04",
+          "concentration": "500 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-02",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "N02BE01",
+          "concentration": "500 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-03",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "M01AE01",
+          "concentration": "400 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-04",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "C09CA01",
+          "concentration": "50 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-05",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "C09AA02",
+          "concentration": "10 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-06",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "A10BA02",
+          "concentration": "850 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-07",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "A02BC01",
+          "concentration": "20 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-08",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01FA10",
+          "concentration": "500 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-09",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "R06AX13",
+          "concentration": "10 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-10",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "R03AC02",
+          "concentration": "0,1 mg/dosis"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-11",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01DB01",
+          "concentration": "500 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-12",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01XE01",
+          "concentration": "100 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-13",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "P01AB01",
+          "concentration": "500 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-14",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "H02AB07",
+          "concentration": "20 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-15",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "C10AA05",
+          "concentration": "20 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-16",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "M01AB05",
+          "concentration": "50 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-17",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J02AC01",
+          "concentration": "150 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-18",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "H03AA01",
+          "concentration": "50 mcg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-19",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "C03CA01",
+          "concentration": "40 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-20",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "A03FA01",
+          "concentration": "10 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-21",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "A04AA01",
+          "concentration": "8 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-22",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01CR02",
+          "concentration": "500 mg + 125 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-23",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "N02BE01",
+          "concentration": "160 mg/5 mL"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-24",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "M01AE01",
+          "concentration": "200 mg/5 mL"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-25",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01CA04",
+          "concentration": null
+        }
+      ],
+      "scores": {
+        "mapping": 0,
+        "medicine": 1,
+        "all": 0,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-26",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "R06AX13",
+          "concentration": "5 mg/5 mL"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-27",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "D01AC01",
+          "concentration": "1%"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-28",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "G01AF01",
+          "concentration": "500 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-29",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "C09AA02",
+          "concentration": "20 mg"
+        },
+        {
+          "code": "N02BE01",
+          "concentration": "500 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-30",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "C09CA01",
+          "concentration": "100 mg"
+        },
+        {
+          "code": "C10AA05",
+          "concentration": "40 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-31",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "N02BE01",
+          "concentration": "500 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-32",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01FA10",
+          "concentration": "500 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-33",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [],
+      "scores": {
+        "mapping": null,
+        "medicine": null,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-34",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "A02BC01",
+          "concentration": "20 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-35",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "C09AA02",
+          "concentration": "5 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-36",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "H02AB07",
+          "concentration": "5 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-37",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01FA10",
+          "concentration": null
+        }
+      ],
+      "scores": {
+        "mapping": 0,
+        "medicine": 1,
+        "all": 0,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-38",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "J01CA04",
+          "concentration": "500 mg"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-39",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "N02BE01",
+          "concentration": null
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-40",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": [
+        {
+          "code": "R03AC02",
+          "concentration": "5 mg/mL"
+        }
+      ],
+      "scores": {
+        "mapping": 1,
+        "medicine": 1,
+        "all": 1,
+        "extra": 0,
+        "outsideCnmb": 0
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-01",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2915,
+      "costUsd": 0.001389,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-01",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2393,
+      "costUsd": 0.00046425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-02",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2476,
+      "costUsd": 0.00138075,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-02",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1946,
+      "costUsd": 0.0005715,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-03",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3808,
+      "costUsd": 0.00132225,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-03",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2062,
+      "costUsd": 0.00035775,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-04",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3203,
+      "costUsd": 0.001389,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-04",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2607,
+      "costUsd": 0.000744,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-05",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2697,
+      "costUsd": 0.00138975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-05",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3211,
+      "costUsd": 0.0008294999999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-06",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2249,
+      "costUsd": 0.00142275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-06",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3810,
+      "costUsd": 0.0007297499999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-07",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 12199,
+      "costUsd": 0.0013995000000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-07",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3048,
+      "costUsd": 0.0008489999999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-08",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3187,
+      "costUsd": 0.0015037499999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-08",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1673,
+      "costUsd": 0.00035099999999999997,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-09",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2398,
+      "costUsd": 0.0015,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-09",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3867,
+      "costUsd": 0.000768,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-10",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2313,
+      "costUsd": 0.001368,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-10",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3043,
+      "costUsd": 0.0008745000000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-11",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2094,
+      "costUsd": 0.00132225,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-11",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1538,
+      "costUsd": 0.00033749999999999996,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-12",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1759,
+      "costUsd": 0.00138975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-12",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2555,
+      "costUsd": 0.0009090000000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-13",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2391,
+      "costUsd": 0.0013177500000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-13",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3902,
+      "costUsd": 0.000957,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-14",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3690,
+      "costUsd": 0.0014954999999999999,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-14",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1357,
+      "costUsd": 0.00033224999999999997,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-15",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2285,
+      "costUsd": 0.0015202500000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-15",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1649,
+      "costUsd": 0.00034199999999999996,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-16",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2848,
+      "costUsd": 0.0015315,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-16",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3627,
+      "costUsd": 0.00082425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-17",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1996,
+      "costUsd": 0.001359,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-17",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2550,
+      "costUsd": 0.0007455,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-18",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2101,
+      "costUsd": 0.0013215000000000002,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-18",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1496,
+      "costUsd": 0.00032925,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-19",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2822,
+      "costUsd": 0.00138075,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-19",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2154,
+      "costUsd": 0.00073125,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-20",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1963,
+      "costUsd": 0.00142275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-20",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1698,
+      "costUsd": 0.00035775,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-21",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2537,
+      "costUsd": 0.00139725,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-21",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2427,
+      "costUsd": 0.0003765,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-22",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3492,
+      "costUsd": 0.00162225,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-22",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2270,
+      "costUsd": 0.00041999999999999996,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-23",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2513,
+      "costUsd": 0.00135075,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-23",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2459,
+      "costUsd": 0.00043125,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-24",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2439,
+      "costUsd": 0.001449,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-24",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2098,
+      "costUsd": 0.00036225,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-25",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2016,
+      "costUsd": 0.0013695,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-25",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2620,
+      "costUsd": 0.00102075,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-26",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2267,
+      "costUsd": 0.0013275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-26",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1775,
+      "costUsd": 0.00035625,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-27",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2328,
+      "costUsd": 0.0013395,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-27",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3068,
+      "costUsd": 0.00091875,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-28",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2664,
+      "costUsd": 0.00141675,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-28",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2144,
+      "costUsd": 0.00043875,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-29",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3345,
+      "costUsd": 0.00199425,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-29",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2643,
+      "costUsd": 0.000531,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-30",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3876,
+      "costUsd": 0.00198825,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-30",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2257,
+      "costUsd": 0.00048975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-31",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3260,
+      "costUsd": 0.001389,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-31",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2409,
+      "costUsd": 0.000609,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-32",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3104,
+      "costUsd": 0.00130875,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-32",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2281,
+      "costUsd": 0.00037349999999999997,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-33",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2411,
+      "costUsd": 0.00139725,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-34",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2997,
+      "costUsd": 0.002028,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-34",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1999,
+      "costUsd": 0.00042225,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-35",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2667,
+      "costUsd": 0.0012975,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-35",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2414,
+      "costUsd": 0.000858,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-36",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2057,
+      "costUsd": 0.001305,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-36",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2183,
+      "costUsd": 0.00035325,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-37",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 4558,
+      "costUsd": 0.00137025,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-37",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2116,
+      "costUsd": 0.00037799999999999997,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-38",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2753,
+      "costUsd": 0.0013515,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-38",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1905,
+      "costUsd": 0.0004635,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-39",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3189,
+      "costUsd": 0.0013245,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-39",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 7952,
+      "costUsd": 0.0040095,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-40",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2489,
+      "costUsd": 0.0014287500000000001,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "receta-nota",
+      "caseId": "receta-nota-40",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "follow-up",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 1615,
+      "costUsd": 0.000363,
+      "model": "gemini-3.8-flash"
+    }
+  ]
+}
