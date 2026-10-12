@@ -674,14 +674,17 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > otro vale —con el token renovado— y sigue sin perder nada (AS-060).
 - **AS-048** — CUANDO el médico inicie o reanude la escucha, el sistema DEBERÁ
   comprobar en `clinica-ai` que el reconocedor **y el detector de voz** están
-  instalados; SI falta alguno, el servicio no responde o ya escucha todas las
-  consultas que admite, ENTONCES DEBERÁ negarse con
-  `ASSISTANT_LISTENING_UNAVAILABLE` y su motivo (`no-recognizer`,
-  `no-voice-detection`, `unreachable`, `busy`), sin abrir nada.
+  instalados; SI falta alguno o el servicio no responde, ENTONCES DEBERÁ
+  negarse con `ASSISTANT_LISTENING_UNAVAILABLE` y su motivo (`no-recognizer`,
+  `no-voice-detection`, `unreachable`), sin abrir nada. SI
+  `clinica-ai` dice que está ocupado o sin reconocedor después de abrir su
+  canal, ENTONCES la escucha DEBERÁ quedar en pausa con `recognizer-failed`
+  (AS-055).
   > P3 y E-028: sin detector de voz, whisper escribe sobre el silencio frases
   > que nadie dijo («Gracias por ver el video») y entrarían en la nota.
   > `clinica-ai` lo usa sólo si está instalado (CAI-010); la obligación la pone
-  > este lado.
+  > este lado. Que está lleno sólo lo dice al aceptar el canal (`busy` y
+  > cierre 1013), así que se sabe ya con la escucha empezada.
 
 ### 17. Sin pérdida ni duplicados (E-031)
 
@@ -805,7 +808,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_PROPOSAL_NOT_KEPT`        | `ExternalServiceError` | 503       | El modelo respondió pero su intento no quedó en `ai_run` (AS-036, AS-040)    |
 | `ASSISTANT_READING_IN_PROGRESS`      | `ConflictError`        | 409       | Ya hay una lectura de esa atención en curso (AS-040)                         |
 | `ASSISTANT_PSEUDONYMIZER_FAILED`     | `ExternalServiceError` | 503 / 502 | `clinica-ai` no respondió (reintentable) o respondió fuera de contrato (AS-033) |
-| `ASSISTANT_LISTENING_UNAVAILABLE`    | `ExternalServiceError` | 503       | `clinica-ai` no puede escuchar: sin reconocedor, sin detector de voz, caído u ocupado (AS-048) |
+| `ASSISTANT_LISTENING_UNAVAILABLE`    | `ExternalServiceError` | 503       | `clinica-ai` no puede escuchar: sin reconocedor, sin detector de voz o caído (AS-048) |
 | `ASSISTANT_LISTENING_NOT_OPEN`       | `ConflictError`        | 409       | Una orden de pausar o una trama sin escucha abierta en ese canal (AS-049) |
 
 ## Niveles de prueba

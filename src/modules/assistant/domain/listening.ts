@@ -28,7 +28,7 @@ export type PauseReason = 'device-lost' | 'recognizer-failed' | 'store-failed';
  * a refusal of this side: without it whisper writes sentences nobody said.
  */
 export type UnavailableReason =
-  'no-recognizer' | 'no-voice-detection' | 'unreachable' | 'busy';
+  'no-recognizer' | 'no-voice-detection' | 'unreachable';
 
 export interface AudioFrame {
   /** Where the frame starts on the clock of the consultation, in ms. */

@@ -87,7 +87,7 @@ export const DOMAIN_ERROR_CODES = [
   // reintentable) o respondió fuera de contrato (502).
   'ASSISTANT_PSEUDONYMIZER_FAILED',
   // AS-048, AS-049 (C1): clinica-ai no puede escuchar —sin reconocedor, sin
-  // detector de voz, caído u ocupado— (503), y una orden o una trama en un
+  // detector de voz o caído— (503), y una orden o una trama en un
   // canal sin escucha abierta (409).
   'ASSISTANT_LISTENING_UNAVAILABLE',
   'ASSISTANT_LISTENING_NOT_OPEN',

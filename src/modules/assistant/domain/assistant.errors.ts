@@ -289,13 +289,12 @@ const UNAVAILABLE_TITLES: Record<UnavailableReason, string> = {
     'Falta el detector de voz del reconocimiento: sin él se escribirían frases que nadie dijo. La consulta sigue sin escucha',
   unreachable:
     'El reconocimiento de voz no responde. Vuelva a intentarlo en unos minutos o siga sin escucha',
-  busy: 'El reconocimiento de voz está ocupado con otras consultas. Vuelva a intentarlo en unos minutos',
 };
 
 /**
  * AS-048. `clinica-ai` cannot listen: it is not installed, it has no voice
- * detector (whisper would write sentences nobody said), it does not answer,
- * or it is listening to every consultation it admits. Nothing is opened.
+ * detector (whisper would write sentences nobody said), or it does not
+ * answer. Nothing is opened.
  */
 export class ListeningUnavailableError extends ExternalServiceError {
   readonly code = 'ASSISTANT_LISTENING_UNAVAILABLE';
@@ -305,7 +304,7 @@ export class ListeningUnavailableError extends ExternalServiceError {
 
   constructor(readonly reason: UnavailableReason) {
     super(`clinica-ai cannot listen: ${reason}`, { reason });
-    this.isRetryable = reason === 'unreachable' || reason === 'busy';
+    this.isRetryable = reason === 'unreachable';
     this.userTitle = UNAVAILABLE_TITLES[reason];
   }
 }

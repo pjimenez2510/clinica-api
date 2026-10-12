@@ -195,7 +195,6 @@ describe('assistant errors', () => {
     ['no-recognizer', /no está instalado/],
     ['no-voice-detection', /detector de voz/],
     ['unreachable', /no responde/],
-    ['busy', /ocupado/],
   ] as const)(
     'AS-048 says why %s cannot listen, and the reason is a code',
     (reason, title) => {
