@@ -12,6 +12,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
@@ -73,6 +74,9 @@ export class AssistantDiagnosisController {
   /** AS-028, AS-035, AS-036, AS-040. «Proponer por problema». */
   @Post('read')
   @RequirePermission('assistant:use', 'query')
+  // AS-040. Each reading pays one call per problem: six a minute is a
+  // physician asking again, not a loop draining the month's ceiling.
+  @Throttle({ long: { ttl: 60_000, limit: 6 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Proponer el CIE-10 por problema leyendo la nota' })
   @ApiOkResponse({ type: DiagnosisReadingDto })
@@ -82,7 +86,11 @@ export class AssistantDiagnosisController {
   ): Promise<DiagnosisReadingDto> {
     this.requireEnabled();
     const reading = await this.proposals.read(encounterId, this.requester(req));
-    return { ...toResponse(reading), dropped: reading.dropped };
+    return {
+      ...toResponse(reading),
+      found: reading.found,
+      dropped: reading.dropped,
+    };
   }
 
   /** AS-037. Links the proposal to the diagnosis recorded from it. */
@@ -131,16 +139,25 @@ export class AssistantDiagnosisController {
     if (!this.enabled) throw new NotFoundException();
   }
 
+  /**
+   * AS-026, AS-039. Where the requester may use the assistant AND read or
+   * write the history: `'query'` only checks `assistant:use` at some site, so
+   * a site where they write but have no assistant is cut here (A3's per-site
+   * switch will narrow the same list).
+   */
   private requester(req: Request): ProposalRequester {
     const principal = this.currentUser.requirePrincipal();
     const sites = (permission: Permission) => {
       const scope = principal.sitesFor(permission);
       return scope === ALL_SITES ? ('all' as const) : scope;
     };
+    const assistant = sites('assistant:use');
+    const within = (permission: Permission) =>
+      intersect(sites(permission), assistant);
     return {
       userId: this.currentUser.requireUserId(),
-      readSites: sites('record:read'),
-      writeSites: sites('record:write'),
+      readSites: within('record:read'),
+      writeSites: within('record:write'),
       ip: req.ip,
       userAgent: req.get('user-agent'),
     };
@@ -153,4 +170,14 @@ function toResponse(overview: DiagnosisOverview): DiagnosisOverviewDto {
     ...overview,
     readAt: overview.readAt?.toISOString() ?? null,
   };
+}
+
+/** Two site scopes, as one: what both admit. */
+function intersect(
+  a: 'all' | readonly string[],
+  b: 'all' | readonly string[],
+): 'all' | readonly string[] {
+  if (a === 'all') return b;
+  if (b === 'all') return a;
+  return a.filter((site) => b.includes(site));
 }

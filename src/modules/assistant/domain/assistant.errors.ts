@@ -269,3 +269,14 @@ export class PseudonymizerFailedError extends ExternalServiceError {
       : 'El asistente no pudo preparar el texto esta vez. Puede seguir escribiendo como siempre';
   }
 }
+
+/** AS-040. A reading of this attention is already out: one at a time. */
+export class AssistantReadingInProgressError extends ConflictError {
+  readonly code = 'ASSISTANT_READING_IN_PROGRESS';
+  override readonly userTitle =
+    'El asistente ya está leyendo esta nota. Espere su respuesta';
+
+  constructor() {
+    super('A reading of this encounter is already in progress');
+  }
+}

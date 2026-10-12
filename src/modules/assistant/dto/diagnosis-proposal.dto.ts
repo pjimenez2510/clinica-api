@@ -57,6 +57,8 @@ export class DiagnosisOverviewDto extends createZodDto(
 ) {}
 
 export const diagnosisReadingSchema = diagnosisOverviewSchema.extend({
+  /** AS-044. How many problems this reading proposed: 0 is said on screen. */
+  found: z.number().int(),
   /** Problems the model named whose phrase is not in the note: dropped. */
   dropped: z.number().int(),
 });

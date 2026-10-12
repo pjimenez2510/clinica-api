@@ -70,6 +70,7 @@ export interface ConsultationNote {
  * it never reaches a log, an `ai_run` row or an answer.
  */
 export interface CodingPeople {
+  /** The patient's names and those of their contacts (D-246 §2). */
   patient: string[];
   staff: string[];
 }
@@ -108,14 +109,17 @@ export interface CodingContextReader {
   diagnosisOf(
     encounterId: string,
     diagnosisId: string,
-  ): Promise<{ id: string; code: string } | null>;
+  ): Promise<{ id: string; code: string; recordedAt: Date } | null>;
   /**
-   * AS-027, PA-055. What this person was coded with in OTHER attentions, of
-   * every chart that is hers, most used first and the most recent on a tie.
+   * AS-027, PA-055, EN-184. What this person was coded with in OTHER
+   * attentions, of every chart that is hers and of the sites the requester
+   * may read — the same reach as EN-184's «subsecuente» —, most used first
+   * and the most recent on a tie.
    */
   patientHistory(
     patientId: string,
     exceptEncounterId: string,
+    sites: 'all' | readonly string[],
     limit: number,
   ): Promise<CodeUse[]>;
   /**

@@ -291,11 +291,6 @@ export const envSchema = z.object({
     z.coerce.number().positive().optional(),
   ),
   /**
-   * AS-014 (D-239 §3). Keeps the pseudonymized prompt and the raw answer of
-   * every attempt in `ai_exchange`, purged 45 days after the note is signed.
-   * Off unless declared.
-   */
-  /**
    * AS-026 (D-244 §3). Whether the assistant answers at all in this
    * installation. Off, every assistant route answers 404 as if it did not
    * exist. The per-site switch arrives with A3; until then, this and the
@@ -316,6 +311,11 @@ export const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+  /**
+   * AS-014 (D-239 §3). Keeps the pseudonymized prompt and the raw answer of
+   * every attempt in `ai_exchange`, purged 45 days after the note is signed.
+   * Off unless declared.
+   */
   ASSISTANT_EXCHANGE_LOG: z
     .enum(['true', 'false'])
     .default('false')
@@ -519,6 +519,8 @@ export function validateEnv(raw: Record<string, unknown>): Env {
             'ASSISTANT_ANTHROPIC_API_KEY',
           env.ASSISTANT_OPENAI_API_KEY !== undefined &&
             'ASSISTANT_OPENAI_API_KEY',
+          // The fake clears nothing but names: kept text would be the note.
+          env.ASSISTANT_EXCHANGE_LOG && 'ASSISTANT_EXCHANGE_LOG=true',
         ].filter((road): road is string => road !== false);
         if (roads.length > 0) {
           ctx.addIssue({

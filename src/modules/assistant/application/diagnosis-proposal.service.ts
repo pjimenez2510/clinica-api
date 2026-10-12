@@ -20,12 +20,16 @@ import {
   AssistantNoteEmptyError,
   AssistantNotEncounterOwnerError,
   AssistantProposalNotKeptError,
+  AssistantReadingInProgressError,
+  PseudonymizerFailedError,
   SuggestionDiagnosisMismatchError,
   SuggestionNotFoundError,
 } from '../domain/assistant.errors';
 import {
   backedProblems,
   baselineOf,
+  carriesAnIdentifier,
+  locateQuote,
   type BaselineCode,
   currentReading,
   type DiagnosisProposal,
@@ -72,6 +76,8 @@ const FROM_FREQUENCY = 10;
 
 /** The audit trail's name for what the overview reads (EN-047 reads the same). */
 const RESOURCE_TYPE = 'assistant_diagnosis';
+/** EN-122. The note of the attention sent, cleared, to a provider. */
+const READING_RESOURCE_TYPE = 'assistant_diagnosis_reading';
 
 export interface ProposalRequester {
   userId: string;
@@ -105,6 +111,8 @@ export interface DiagnosisOverview {
 }
 
 export interface ReadingResult extends DiagnosisOverview {
+  /** AS-044. How many problems THIS reading proposed; 0 says so on screen. */
+  found: number;
   /** How many problems the model named whose phrase is not in the note. */
   dropped: number;
 }
@@ -120,6 +128,9 @@ export interface ReadingResult extends DiagnosisOverview {
 @Injectable()
 export class DiagnosisProposalService {
   private readonly logger = new Logger(DiagnosisProposalService.name);
+
+  /** The attentions with a reading out right now (one API per clinic). */
+  private readonly reading = new Set<string>();
 
   constructor(
     @Inject(CODING_CONTEXT_READER) private readonly context: CodingContextReader, // prettier-ignore
@@ -138,10 +149,19 @@ export class DiagnosisProposalService {
     requester: ProposalRequester,
   ): Promise<DiagnosisOverview> {
     const encounter = await this.encounterFor(encounterId, requester.readSites);
-    const overview = await this.overviewOf(encounter, {
-      userId: requester.userId,
-      sites: requester.readSites,
-    });
+    const overview = await this.overviewOf(encounter, requester);
+    await this.trail(encounter, requester);
+    return overview;
+  }
+
+  /**
+   * EN-047, EN-122. Every answer that carries the history — the overview, and
+   * what accepting and discarding send back — leaves its read in the trail.
+   */
+  private async trail(
+    encounter: CodingEncounter,
+    requester: ProposalRequester,
+  ): Promise<void> {
     await this.audit.record({
       userId: requester.userId,
       resourceType: RESOURCE_TYPE,
@@ -150,34 +170,74 @@ export class DiagnosisProposalService {
       ip: requester.ip,
       userAgent: requester.userAgent,
     });
-    return overview;
   }
 
   /**
    * AS-028, AS-035, AS-036, AS-039, AS-040. Reads the problems out of the
    * note and keeps them as proposals. On any failure nothing is kept and
-   * nothing that was there is touched.
+   * nothing that was there is touched. One reading at a time per attention:
+   * a second click while the first is out would pay for the same answer.
    */
   async read(
     encounterId: string,
     requester: ProposalRequester,
   ): Promise<ReadingResult> {
     const encounter = await this.ownLiveEncounter(encounterId, requester);
+    if (this.reading.has(encounter.id)) {
+      throw new AssistantReadingInProgressError();
+    }
+    this.reading.add(encounter.id);
+    try {
+      return await this.readNote(encounter, requester);
+    } finally {
+      this.reading.delete(encounter.id);
+    }
+  }
+
+  private async readNote(
+    encounter: CodingEncounter,
+    requester: ProposalRequester,
+  ): Promise<ReadingResult> {
     const note = await this.context.consultationNote(encounter.id);
     if (!note || note.sections.length === 0)
       throw new AssistantNoteEmptyError();
+    // EN-122. The note leaves for a provider: who asked is in the trail first.
+    await this.audit.record({
+      userId: requester.userId,
+      resourceType: READING_RESOURCE_TYPE,
+      resourceId: encounter.id,
+      action: 'EXPORT',
+      ip: requester.ip,
+      userAgent: requester.userAgent,
+    });
 
-    const signal = AbortSignal.timeout(READING_LIMIT_MS);
+    // AS-040. The reading's own deadline, and the first failure stops the
+    // calls still out: nobody pays for answers that will be thrown away.
+    const stop = new AbortController();
+    const signal = AbortSignal.any([
+      AbortSignal.timeout(READING_LIMIT_MS),
+      stop.signal,
+    ]);
     const people = await this.context.people(encounter.id);
-    const cleared = await this.pseudonymizer.pseudonymize(
-      {
-        text: noteText(note.sections),
-        subject: encounter.patientId,
-        names: people.patient,
-        staff: people.staff,
-      },
-      signal,
-    );
+    const clear = async (text: string) => {
+      const cleared = await this.pseudonymizer.pseudonymize(
+        {
+          text,
+          subject: encounter.patientId,
+          names: people.patient,
+          staff: people.staff,
+        },
+        signal,
+      );
+      // AS-025 (P4). A national id, a phone, a mail or a chart number still
+      // in the cleared text means the pseudonymizer missed it: fail closed.
+      if (carriesAnIdentifier(cleared.cleared)) {
+        throw new PseudonymizerFailedError('invalid-answer');
+      }
+      return cleared;
+    };
+
+    const cleared = await clear(noteText(note.sections));
     const named = await this.llm.generate({
       tier: 'quality',
       purpose: PROBLEMS_PURPOSE,
@@ -191,38 +251,33 @@ export class DiagnosisProposalService {
     });
     if (named.runId === null) throw new AssistantProposalNotKeptError();
 
-    const restore = (text: string) =>
-      restorePlaceholders(text, cleared.replacements);
     const backed = backedProblems({
       named: named.value.problems.map((each) => ({ ...each, codes: [] })),
       cleared: cleared.cleared,
       sections: note.sections,
-      restore,
+      restore: (text) => restorePlaceholders(text, cleared.replacements),
     });
 
     const coded = await Promise.all(
       backed.kept.map(async (problem) => {
-        const line = await this.pseudonymizer.pseudonymize(
-          {
-            text: problemLine(problem.problem),
-            subject: encounter.patientId,
-            names: people.patient,
-            staff: people.staff,
-          },
-          signal,
-        );
-        const answer = await this.llm.generate({
-          tier: 'quality',
-          purpose: CODES_PURPOSE,
-          promptVersion: CODES_PROMPT_VERSION,
-          system: CODES_INSTRUCTIONS,
-          prompt: line.cleared,
-          answer: codesAnswer,
-          maxTokens: CODES_MAX_TOKENS,
-          signal,
-          encounterId: encounter.id,
-        });
-        return { problem, written: answer.value.codes.slice(0, PROPOSED) };
+        try {
+          const line = await clear(problemLine(problem.problem));
+          const answer = await this.llm.generate({
+            tier: 'quality',
+            purpose: CODES_PURPOSE,
+            promptVersion: CODES_PROMPT_VERSION,
+            system: CODES_INSTRUCTIONS,
+            prompt: line.cleared,
+            answer: codesAnswer,
+            maxTokens: CODES_MAX_TOKENS,
+            signal,
+            encounterId: encounter.id,
+          });
+          return { problem, written: answer.value.codes.slice(0, PROPOSED) };
+        } catch (error) {
+          stop.abort();
+          throw error;
+        }
       }),
     );
 
@@ -247,6 +302,9 @@ export class DiagnosisProposalService {
       return proposal;
     });
 
+    // AS-039. Up to 90 s went by: the attention may have been signed or
+    // closed meanwhile, in another tab. Nothing is kept on a closed one.
+    await this.ownLiveEncounter(encounter.id, requester);
     if (proposals.length > 0) {
       await this.suggestions.propose(
         proposals.map((proposal) => ({
@@ -263,39 +321,54 @@ export class DiagnosisProposalService {
     // AS-041. Counts only: no problem, no phrase, no code reaches the log.
     this.logger.log(
       {
-        problems: proposals.length,
-        problems_without_quote: backed.dropped,
-        codes_written: coded.reduce((sum, each) => sum + each.written.length, 0), // prettier-ignore
-        codes_shown: proposals.reduce((sum, each) => sum + each.codes.length, 0), // prettier-ignore
+        assistant_problems: proposals.length,
+        assistant_problems_without_quote: backed.dropped,
+        assistant_codes_written: coded.reduce((sum, each) => sum + each.written.length, 0), // prettier-ignore
+        assistant_codes_shown: proposals.reduce((sum, each) => sum + each.codes.length, 0), // prettier-ignore
       },
       'assistant problems read',
     );
 
     return {
-      ...(await this.overviewOf(encounter, writer(requester))),
+      ...(await this.overviewOf(encounter, requester)),
+      found: proposals.length,
       dropped: backed.dropped,
     };
   }
 
-  /** AS-037. Links a proposal to the diagnosis the physician recorded from it. */
+  /**
+   * AS-037. Links a proposal to the diagnosis the physician recorded FROM it:
+   * of this attention, recorded after the proposal, and not already the
+   * answer of another one — a code recorded before is not the proposal's
+   * doing, and two proposals on one diagnosis would count it twice.
+   */
   async accept(
     input: { encounterId: string; suggestionId: string; diagnosisId: string },
     requester: ProposalRequester,
   ): Promise<DiagnosisOverview> {
     const encounter = await this.ownLiveEncounter(input.encounterId, requester);
-    await this.proposalOf(encounter.id, input.suggestionId, requester);
+    const proposal = await this.proposalOf(encounter.id, input.suggestionId, requester); // prettier-ignore
     const diagnosis = await this.context.diagnosisOf(
       encounter.id,
       input.diagnosisId,
     );
-    if (!diagnosis) throw new SuggestionDiagnosisMismatchError();
+    const taken =
+      (await this.suggestions.ofEncounter(encounter.id, writer(requester), 'diagnosis')) // prettier-ignore
+        .some(
+          (each) =>
+            each.id !== proposal.id && each.record?.id === input.diagnosisId,
+        );
+    if (!diagnosis || diagnosis.recordedAt < proposal.proposedAt || taken) {
+      throw new SuggestionDiagnosisMismatchError();
+    }
     // AS-022. The store reads the code of the diagnosis itself, in the same
     // transaction that decides: nothing the caller says is the saved value.
     await this.suggestions.accept(
       { suggestionId: input.suggestionId, recordId: diagnosis.id },
       writer(requester),
     );
-    return this.overviewOf(encounter, writer(requester));
+    await this.trail(encounter, requester);
+    return this.overviewOf(encounter, requester);
   }
 
   /** AS-038. The physician says no to a proposal. */
@@ -306,16 +379,22 @@ export class DiagnosisProposalService {
     const encounter = await this.ownLiveEncounter(input.encounterId, requester);
     await this.proposalOf(encounter.id, input.suggestionId, requester);
     await this.suggestions.discard(input.suggestionId, writer(requester));
-    return this.overviewOf(encounter, writer(requester));
+    await this.trail(encounter, requester);
+    return this.overviewOf(encounter, requester);
   }
 
+  /**
+   * What the screen shows, read with the requester's `record:read` sites:
+   * the history of AS-027 has the reach of EN-184's «subsecuente».
+   */
   private async overviewOf(
     encounter: CodingEncounter,
-    reader: SuggestionRequester,
+    requester: ProposalRequester,
   ): Promise<DiagnosisOverview> {
+    const reader = { userId: requester.userId, sites: requester.readSites };
     const since = new Date(this.clock().getTime() - FREQUENCY_WINDOW_MS);
     const [history, frequency, recorded, stored] = await Promise.all([
-      this.context.patientHistory(encounter.patientId, encounter.id, FROM_HISTORY), // prettier-ignore
+      this.context.patientHistory(encounter.patientId, encounter.id, requester.readSites, FROM_HISTORY), // prettier-ignore
       this.context.clinicFrequency(since, FROM_FREQUENCY),
       this.context.recordedCodes(encounter.id),
       this.suggestions.ofEncounter(encounter.id, reader, 'diagnosis'),
@@ -331,7 +410,13 @@ export class DiagnosisProposalService {
         return entry && entry.code === code ? [[code, entry] as const] : [];
       }),
     );
-    const shown = currentReading(stored);
+    // AS-028 (P2). The note may have changed since the reading: a proposal
+    // whose sentence it no longer says is not shown.
+    const sections = (await this.context.consultationNote(encounter.id))?.sections ?? []; // prettier-ignore
+    const shown = currentReading(stored).filter((suggestion) => {
+      const { quote } = suggestion.proposal as { quote?: unknown };
+      return typeof quote === 'string' && locateQuote(quote, sections) !== null;
+    });
     const taken = new Set(recorded);
 
     return {

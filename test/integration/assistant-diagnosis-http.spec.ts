@@ -224,6 +224,8 @@ describe('el CIE-10 propuesto por HTTP (AS-025 a AS-040)', () => {
   }
 
   it('AS-026 asks for assistant:use, which the doctor carries and the nurse does not', async () => {
+    // On: the route exists and asks for a session (control of the 404 off).
+    await request(app.getHttpServer()).get(url(encounterId)).expect(401);
     await get(encounterId, nurseToken).expect(403);
     // Control: the doctor of the seed gets in by the same route.
     await get(encounterId, doctor.token).expect(200);
@@ -254,8 +256,9 @@ describe('el CIE-10 propuesto por HTTP (AS-025 a AS-040)', () => {
 
     const problems = (response.body as { problems: Problem[] }).problems;
     expect(problems.map(({ problem, quote }) => [problem, quote])).toEqual([
-      ['FARINGITIS AGUDA', 'odinofagia de tres días y fiebre de 38,5 °C'],
-      ['HIPERTENSIÓN ARTERIAL SIN DIAGNÓSTICO PREVIO', '150/95 en dos tomas'],
+      // The note's own sentence (D-245 §5), as written.
+      ['FARINGITIS AGUDA', 'Ana refiere odinofagia de tres días y fiebre de 38,5 °C.'], // prettier-ignore
+      ['HIPERTENSIÓN ARTERIAL SIN DIAGNÓSTICO PREVIO', 'Tensión 150/95 en dos tomas.'], // prettier-ignore
     ]);
     // J02.7, which the script writes on purpose, does not exist: not shown.
     expect(problems[0]!.candidates.map(({ code }) => code)).toEqual(['J02.9', 'J02.8', 'J03.9']); // prettier-ignore
@@ -358,5 +361,47 @@ describe('el CIE-10 propuesto por HTTP (AS-025 a AS-040)', () => {
       'ASSISTANT_NOTE_EMPTY',
     );
     expect(await prisma.aiRun.count()).toBe(0);
+  });
+
+  it('EN-122 AS-028 reading the note leaves who sent it in the trail, before anything else', async () => {
+    await post(encounterId, '/read', doctor.token).expect(200);
+
+    const rows = await prisma.accessAudit.findMany({
+      where: { resourceType: 'assistant_diagnosis_reading', resourceId: encounterId }, // prettier-ignore
+    });
+    expect(rows).toMatchObject([{ action: 'EXPORT', userId: doctor.userId }]);
+  });
+
+  it('AS-039 another doctor neither accepts nor discards, and a closed attention takes no reading', async () => {
+    const read = await post(encounterId, '/read', doctor.token).expect(200);
+    const [first] = (read.body as { problems: Problem[] }).problems;
+
+    const accept = await post(encounterId, `/${first!.id}/accept`, secondDoctor.token, { diagnosisId: first!.id }).expect(403); // prettier-ignore
+    expect((accept.body as { code: string }).code).toBe('ASSISTANT_NOT_ENCOUNTER_OWNER'); // prettier-ignore
+    await post(encounterId, `/${first!.id}/discard`, secondDoctor.token).expect(403); // prettier-ignore
+
+    await prisma.$executeRaw`UPDATE encounter SET status = 'DISCHARGED', ended_at = ${new Date()}, "dischargeCondition" = 'ALIVE' WHERE id = ${encounterId}::uuid`; // prettier-ignore
+    const closed = await post(encounterId, '/read', doctor.token).expect(409);
+    expect((closed.body as { code: string }).code).toBe('ASSISTANT_ENCOUNTER_CLOSED'); // prettier-ignore
+  });
+
+  it('AS-022 AS-037 a code the physician chose instead of the proposed ones is «aceptada con cambios», at distance 1', async () => {
+    const read = await post(encounterId, '/read', doctor.token).expect(200);
+    const pharyngitis = (read.body as { problems: Problem[] }).problems[0]!;
+    const recorded = await request(app.getHttpServer())
+      .post(`/api/v1/encounters/${encounterId}/diagnoses`)
+      .set('Authorization', `Bearer ${doctor.token}`)
+      .send({
+        conceptId: concepts['R03.0'],
+        certainty: 'PRESUMPTIVE',
+        occurrence: 'FIRST_TIME',
+      }) // prettier-ignore
+      .expect(201);
+
+    await post(encounterId, `/${pharyngitis.id}/accept`, doctor.token, { diagnosisId: (recorded.body as { id: string }).id }).expect(200); // prettier-ignore
+
+    const row = await prisma.aiSuggestion.findUniqueOrThrow({ where: { id: pharyngitis.id } }); // prettier-ignore
+    expect(row.status).toBe('ACCEPTED_WITH_CHANGES');
+    expect(Number(row.distance)).toBe(1);
   });
 });

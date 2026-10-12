@@ -208,7 +208,7 @@ describe('what the assistant reads of an attention (AS-027, AS-028, AS-039)', ()
     });
   });
 
-  it('AS-027 reads what the person was coded with in other attentions, absorbed chart included, without the annulled', async () => {
+  it('AS-027 reads what the person was coded with in other attentions, absorbed chart included, without the annulled, within the sites of the requester', async () => {
     const prisma = db();
     const reader = new PrismaCodingContextReader(prisma as unknown as PrismaService); // prettier-ignore
     const { site, practitioner, patient, encounter } =
@@ -239,7 +239,12 @@ describe('what the assistant reads of an attention (AS-027, AS-028, AS-039)', ()
         entered_in_error_at = ${new Date()}, entered_in_error_by_id = ${practitioner.userId}::uuid
       WHERE id = ${annulled.id}::uuid`;
 
-    const history = await reader.patientHistory(patient.id, encounter.id, 10);
+    const history = await reader.patientHistory(
+      patient.id,
+      encounter.id,
+      'all',
+      10,
+    );
 
     expect(history.map(({ code, times }) => ({ code, times }))).toEqual([
       { code: 'I10.X', times: 2 },
@@ -247,11 +252,20 @@ describe('what the assistant reads of an attention (AS-027, AS-028, AS-039)', ()
       { code: 'E11.9', times: 1 },
     ]);
     expect(history[0]!.lastUsedOn).toBe(clinicalDateOf(later.startedAt));
+    // EN-184's reach: an attention of a site the requester cannot read is not
+    // in the history; with that site, it is (control).
+    const elsewhere = await createSite(prisma, 'Sede Sur');
+    const there = await createEncounter(prisma, { siteId: elsewhere.id, practitionerId: practitioner.id, patientId: patient.id }); // prettier-ignore
+    await diagnose(prisma, there.id, asthma, 1);
+    const own = await reader.patientHistory(patient.id, encounter.id, [site.id], 10); // prettier-ignore
+    expect(own.map(({ code }) => code)).not.toContain('J45.9');
+    const both = await reader.patientHistory(patient.id, encounter.id, [site.id, elsewhere.id], 10); // prettier-ignore
+    expect(both.map(({ code }) => code)).toContain('J45.9');
     // Control: the codes recorded here are read by `recordedCodes`.
     expect(await reader.recordedCodes(encounter.id)).toEqual(['J45.9']);
     // AS-037. A diagnosis is read only through its own attention.
     const [mine] = await prisma.encounterDiagnosis.findMany({ where: { encounterId: encounter.id } }); // prettier-ignore
-    expect(await reader.diagnosisOf(encounter.id, mine!.id)).toEqual({ id: mine!.id, code: 'J45.9' }); // prettier-ignore
+    expect(await reader.diagnosisOf(encounter.id, mine!.id)).toEqual({ id: mine!.id, code: 'J45.9', recordedAt: mine!.recordedAt }); // prettier-ignore
     expect(await reader.diagnosisOf(later.id, mine!.id)).toBeNull();
   });
 

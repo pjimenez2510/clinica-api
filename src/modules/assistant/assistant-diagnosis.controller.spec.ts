@@ -20,7 +20,11 @@ function controller(enabled: boolean) {
   const currentUser = {
     requirePrincipal: () => ({
       sitesFor: (permission: string) =>
-        permission === 'record:read' ? ALL_SITES : ['site-1'],
+        permission === 'record:read'
+          ? ALL_SITES
+          : permission === 'assistant:use'
+            ? ['site-1', 'site-2']
+            : ['site-1', 'site-3'],
     }),
     requireUserId: () => 'user-1',
   } as unknown as CurrentUserService;
@@ -55,14 +59,16 @@ describe('AssistantDiagnosisController', () => {
     expect(proposals.read).not.toHaveBeenCalled();
   });
 
-  it('AS-026 AS-039 control: on, it asks with the record sites of each permission', async () => {
+  it('AS-026 AS-039 control: on, it asks with the record sites of each permission, cut to where the assistant is granted', async () => {
     const { controller: on, proposals, req } = controller(true);
 
     await on.read(ENCOUNTER, req);
 
     expect(proposals.read).toHaveBeenCalledWith(ENCOUNTER, {
       userId: 'user-1',
-      readSites: 'all',
+      // `record:read` everywhere, the assistant at 1 and 2: only 1 and 2.
+      readSites: ['site-1', 'site-2'],
+      // Writes at 1 and 3, the assistant at 1 and 2: only 1.
       writeSites: ['site-1'],
       ip: '127.0.0.1',
       userAgent: 'test',

@@ -110,10 +110,10 @@ export const ALLOWED_KEYS: ReadonlySet<string> = new Set([
    * the problems kept and dropped, and the codes the model wrote against the
    * ones the WHO barrier let through. Never a problem, a phrase or a code.
    */
-  'problems',
-  'problems_without_quote',
-  'codes_written',
-  'codes_shown',
+  'assistant_problems',
+  'assistant_problems_without_quote',
+  'assistant_codes_written',
+  'assistant_codes_shown',
 
   // Errors
   'type',

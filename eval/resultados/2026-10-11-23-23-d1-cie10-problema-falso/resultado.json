@@ -2,9 +2,9 @@
   "label": "d1-cie10-problema-falso",
   "ledger": "propio de la corrida falsa",
   "fake": true,
-  "startedAt": "2026-10-11 22:29:31",
-  "finishedAt": "2026-10-11 22:29:32",
-  "commit": "1122bd63+cambios",
+  "startedAt": "2026-10-11 23:23:15",
+  "finishedAt": "2026-10-11 23:23:16",
+  "commit": "696981ed+cambios",
   "seed": 42,
   "ceilingUsd": 100,
   "providers": [
@@ -27,8 +27,8 @@
     {
       "name": "cie10-problema",
       "promptVersions": {
-        "A": "d1-codes-1",
-        "D": "d1-codes-1"
+        "A": "d1-codes-2",
+        "D": "d1-codes-2"
       }
     }
   ],
@@ -71,12 +71,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -93,12 +93,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -115,12 +115,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -137,12 +137,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -159,12 +159,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -181,12 +181,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -203,12 +203,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -225,12 +225,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -247,12 +247,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -269,12 +269,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -291,12 +291,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -313,12 +313,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -336,12 +336,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -359,12 +359,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -382,12 +382,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -405,12 +405,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -428,12 +428,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -451,12 +451,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -474,12 +474,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -497,12 +497,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -520,12 +520,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -543,12 +543,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -566,12 +566,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -590,12 +590,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -614,12 +614,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -637,12 +637,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -660,12 +660,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -683,12 +683,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -706,12 +706,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -729,12 +729,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -752,12 +752,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -775,12 +775,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -798,12 +798,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -821,12 +821,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -844,12 +844,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -867,12 +867,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -891,12 +891,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -914,12 +914,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -937,12 +937,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -960,12 +960,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -983,12 +983,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1006,12 +1006,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1029,12 +1029,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1052,12 +1052,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1075,12 +1075,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1098,12 +1098,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1121,12 +1121,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1145,12 +1145,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -1168,12 +1168,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1191,12 +1191,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1214,12 +1214,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1237,12 +1237,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1260,12 +1260,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1283,12 +1283,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1305,12 +1305,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1328,12 +1328,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 0,
-        "invented": 0.5,
-        "inventedShown": 0.5
+        "baselineCategory5": null,
+        "invented": 0.5
       }
     },
     {
@@ -1350,12 +1350,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1372,12 +1372,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1394,12 +1394,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 0,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1417,12 +1417,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 0,
-        "invented": 0.5,
-        "inventedShown": 0.5
+        "baselineCategory5": null,
+        "invented": 0.5
       }
     },
     {
@@ -1441,12 +1441,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -1464,12 +1464,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1487,12 +1487,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1510,12 +1510,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1545,12 +1545,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1568,12 +1568,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1591,12 +1591,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1614,12 +1614,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1637,12 +1637,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1660,12 +1660,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1683,12 +1683,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1706,12 +1706,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1729,12 +1729,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1752,12 +1752,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1775,12 +1775,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1799,12 +1799,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -1822,12 +1822,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1845,12 +1845,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1868,12 +1868,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1891,12 +1891,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1915,12 +1915,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -1938,12 +1938,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1961,12 +1961,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -1985,12 +1985,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -2008,12 +2008,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2031,12 +2031,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2054,12 +2054,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2077,12 +2077,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2100,12 +2100,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2123,12 +2123,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2147,12 +2147,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -2170,12 +2170,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2193,12 +2193,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2216,12 +2216,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2239,12 +2239,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2262,12 +2262,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2285,12 +2285,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2308,12 +2308,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2331,12 +2331,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2354,12 +2354,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2377,12 +2377,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2400,12 +2400,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2423,12 +2423,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2446,12 +2446,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2481,12 +2481,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2504,12 +2504,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2527,12 +2527,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2550,12 +2550,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2574,12 +2574,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -2597,12 +2597,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2620,12 +2620,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2643,12 +2643,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2666,12 +2666,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2689,12 +2689,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2712,12 +2712,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2736,12 +2736,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -2759,12 +2759,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2782,12 +2782,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2805,12 +2805,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2828,12 +2828,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2851,12 +2851,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2874,12 +2874,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2897,12 +2897,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2920,12 +2920,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2943,12 +2943,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2966,12 +2966,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -2989,12 +2989,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3012,12 +3012,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3035,12 +3035,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3058,12 +3058,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3081,12 +3081,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 0,
-        "invented": 0.5,
-        "inventedShown": 0.5
+        "baselineCategory5": null,
+        "invented": 0.5
       }
     },
     {
@@ -3103,12 +3103,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3125,12 +3125,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3147,12 +3147,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3169,12 +3169,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3204,12 +3204,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3227,12 +3227,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3250,12 +3250,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3285,12 +3285,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3309,12 +3309,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -3332,12 +3332,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3355,12 +3355,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3379,12 +3379,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -3402,12 +3402,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3425,12 +3425,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3448,12 +3448,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3471,12 +3471,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3495,12 +3495,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -3518,12 +3518,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3541,12 +3541,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3564,12 +3564,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3587,12 +3587,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3610,12 +3610,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3633,12 +3633,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3657,12 +3657,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -3680,12 +3680,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3704,12 +3704,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -3727,12 +3727,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3750,12 +3750,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3773,12 +3773,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3796,12 +3796,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3819,12 +3819,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3842,12 +3842,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3865,12 +3865,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3888,12 +3888,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3911,12 +3911,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3935,12 +3935,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -3958,12 +3958,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -3981,12 +3981,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4004,12 +4004,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4027,12 +4027,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4050,12 +4050,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4073,12 +4073,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4096,12 +4096,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4119,12 +4119,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4143,12 +4143,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -4166,12 +4166,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4189,12 +4189,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4212,12 +4212,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4235,12 +4235,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4258,12 +4258,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4281,12 +4281,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4304,12 +4304,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4328,12 +4328,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -4351,12 +4351,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4374,12 +4374,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4397,12 +4397,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4420,12 +4420,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4442,12 +4442,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4464,12 +4464,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4487,12 +4487,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 0,
-        "invented": 0.5,
-        "inventedShown": 0.5
+        "baselineCategory5": null,
+        "invented": 0.5
       }
     },
     {
@@ -4509,12 +4509,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4531,12 +4531,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4553,12 +4553,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4576,12 +4576,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4599,12 +4599,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4622,12 +4622,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4645,12 +4645,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4668,12 +4668,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4691,12 +4691,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4714,12 +4714,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 0,
-        "invented": 0.5,
-        "inventedShown": 0.5
+        "baselineCategory5": null,
+        "invented": 0.5
       }
     },
     {
@@ -4736,12 +4736,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4759,12 +4759,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 0,
-        "invented": 0.5,
-        "inventedShown": 0.5
+        "baselineCategory5": null,
+        "invented": 0.5
       }
     },
     {
@@ -4781,12 +4781,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4803,12 +4803,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4825,12 +4825,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4848,12 +4848,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4872,12 +4872,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -4895,12 +4895,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4918,12 +4918,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4941,12 +4941,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4964,12 +4964,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -4986,12 +4986,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5008,12 +5008,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5030,12 +5030,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5052,12 +5052,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5075,12 +5075,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 0,
-        "invented": 0.5,
-        "inventedShown": 0.5
+        "baselineCategory5": null,
+        "invented": 0.5
       }
     },
     {
@@ -5097,12 +5097,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5120,12 +5120,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5143,12 +5143,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5166,12 +5166,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5189,12 +5189,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5212,12 +5212,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5235,12 +5235,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5259,12 +5259,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -5282,12 +5282,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5305,12 +5305,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5328,12 +5328,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5351,12 +5351,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5374,12 +5374,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5397,12 +5397,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5421,12 +5421,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -5444,12 +5444,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5467,12 +5467,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5490,12 +5490,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5513,12 +5513,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5536,12 +5536,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5559,12 +5559,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5582,12 +5582,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5605,12 +5605,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5628,12 +5628,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5651,12 +5651,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5674,12 +5674,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5697,12 +5697,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5720,12 +5720,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5743,12 +5743,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5766,12 +5766,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5789,12 +5789,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5812,12 +5812,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5835,12 +5835,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5858,12 +5858,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5881,12 +5881,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5904,12 +5904,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5927,12 +5927,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5950,12 +5950,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5973,12 +5973,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -5996,12 +5996,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -6019,12 +6019,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -6042,12 +6042,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -6066,12 +6066,12 @@
       ],
       "scores": {
         "recall5": 0,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 0,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 0,
         "category5": 1,
-        "invented": 0.3333333333333333,
-        "inventedShown": 0.3333333333333333
+        "baselineCategory5": null,
+        "invented": 0.3333333333333333
       }
     },
     {
@@ -6089,12 +6089,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -6112,12 +6112,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -6135,12 +6135,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -6158,12 +6158,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -6181,12 +6181,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     },
     {
@@ -6204,12 +6204,12 @@
       ],
       "scores": {
         "recall5": 1,
-        "baselineRecall5": 0,
-        "gainOverBaseline": 1,
+        "baselineRecall5": null,
+        "gainOverBaseline": null,
         "hit1": 1,
         "category5": 1,
-        "invented": 0,
-        "inventedShown": 0
+        "baselineCategory5": null,
+        "invented": 0
       }
     }
   ],
@@ -6315,7 +6315,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 9831,
-      "costUsd": 0.000784,
+      "costUsd": 0.000783,
       "model": "fake-anthropic"
     },
     {
@@ -6328,7 +6328,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 5056,
-      "costUsd": 0.000784,
+      "costUsd": 0.000783,
       "model": "fake-anthropic"
     },
     {
@@ -6341,7 +6341,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 6182,
-      "costUsd": 0.000784,
+      "costUsd": 0.000783,
       "model": "fake-openai"
     },
     {
@@ -6367,7 +6367,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 7854,
-      "costUsd": 0.000784,
+      "costUsd": 0.000783,
       "model": "fake-openai"
     },
     {
@@ -6380,7 +6380,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 2150,
-      "costUsd": 0.000784,
+      "costUsd": 0.000783,
       "model": "fake-gemini"
     },
     {
@@ -6406,7 +6406,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4583,
-      "costUsd": 0.000784,
+      "costUsd": 0.000783,
       "model": "fake-gemini"
     },
     {
@@ -6731,7 +6731,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 5016,
-      "costUsd": 0.000784,
+      "costUsd": 0.000783,
       "model": "fake-openai"
     },
     {
@@ -6744,7 +6744,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 8321,
-      "costUsd": 0.000784,
+      "costUsd": 0.000783,
       "model": "fake-openai"
     },
     {
@@ -6757,7 +6757,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3572,
-      "costUsd": 0.000784,
+      "costUsd": 0.000783,
       "model": "fake-gemini"
     },
     {
@@ -6783,7 +6783,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4950,
-      "costUsd": 0.000784,
+      "costUsd": 0.000783,
       "model": "fake-gemini"
     },
     {
@@ -6796,7 +6796,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 12673,
-      "costUsd": 0.000784,
+      "costUsd": 0.000783,
       "model": "fake-anthropic"
     },
     {
@@ -6809,7 +6809,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 8903,
-      "costUsd": 0.000784,
+      "costUsd": 0.000783,
       "model": "fake-anthropic"
     },
     {
@@ -6939,7 +6939,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 9417,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-anthropic"
     },
     {
@@ -6952,7 +6952,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 7428,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-anthropic"
     },
     {
@@ -6965,7 +6965,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 7016,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-openai"
     },
     {
@@ -6978,7 +6978,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 7170,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-openai"
     },
     {
@@ -6991,7 +6991,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3255,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-gemini"
     },
     {
@@ -7030,7 +7030,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 5651,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-gemini"
     },
     {
@@ -7316,7 +7316,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 6998,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-openai"
     },
     {
@@ -7329,7 +7329,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 5814,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-openai"
     },
     {
@@ -7342,7 +7342,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3328,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-gemini"
     },
     {
@@ -7355,7 +7355,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4018,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-gemini"
     },
     {
@@ -7368,7 +7368,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 9432,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-anthropic"
     },
     {
@@ -7381,7 +7381,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 5713,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-anthropic"
     },
     {
@@ -7407,7 +7407,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 5483,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-gemini"
     },
     {
@@ -7420,7 +7420,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 2395,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-gemini"
     },
     {
@@ -7433,7 +7433,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 7836,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-anthropic"
     },
     {
@@ -7446,7 +7446,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 9576,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-anthropic"
     },
     {
@@ -7459,7 +7459,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 7501,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-openai"
     },
     {
@@ -7472,7 +7472,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 6293,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-openai"
     },
     {
@@ -7810,7 +7810,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4006,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-openai"
     },
     {
@@ -7823,7 +7823,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 5252,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-openai"
     },
     {
@@ -7836,7 +7836,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4733,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-gemini"
     },
     {
@@ -7888,7 +7888,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 12493,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-anthropic"
     },
     {
@@ -7901,7 +7901,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 10145,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-anthropic"
     },
     {
@@ -8096,7 +8096,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4239,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-openai"
     },
     {
@@ -8109,7 +8109,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3810,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-openai"
     },
     {
@@ -8122,7 +8122,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4222,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-gemini"
     },
     {
@@ -8148,7 +8148,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 2199,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-gemini"
     },
     {
@@ -8161,7 +8161,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 7056,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-anthropic"
     },
     {
@@ -8174,7 +8174,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 10908,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-anthropic"
     },
     {
@@ -8499,7 +8499,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3873,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-gemini"
     },
     {
@@ -8512,7 +8512,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4859,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-gemini"
     },
     {
@@ -8525,7 +8525,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 11998,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-anthropic"
     },
     {
@@ -8538,7 +8538,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 12694,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-anthropic"
     },
     {
@@ -8564,7 +8564,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 6331,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-openai"
     },
     {
@@ -8577,7 +8577,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 6986,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-openai"
     },
     {
@@ -8590,7 +8590,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 13204,
-      "costUsd": 0.000781,
+      "costUsd": 0.00078,
       "model": "fake-anthropic"
     },
     {
@@ -8603,7 +8603,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 11801,
-      "costUsd": 0.000781,
+      "costUsd": 0.00078,
       "model": "fake-anthropic"
     },
     {
@@ -8616,7 +8616,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 8958,
-      "costUsd": 0.000781,
+      "costUsd": 0.00078,
       "model": "fake-openai"
     },
     {
@@ -8642,7 +8642,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 7657,
-      "costUsd": 0.000781,
+      "costUsd": 0.00078,
       "model": "fake-openai"
     },
     {
@@ -8655,7 +8655,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3815,
-      "costUsd": 0.000781,
+      "costUsd": 0.00078,
       "model": "fake-gemini"
     },
     {
@@ -8668,7 +8668,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3002,
-      "costUsd": 0.000781,
+      "costUsd": 0.00078,
       "model": "fake-gemini"
     },
     {
@@ -8850,7 +8850,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 10615,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-anthropic"
     },
     {
@@ -8863,7 +8863,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 9419,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-anthropic"
     },
     {
@@ -8876,7 +8876,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 7629,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-openai"
     },
     {
@@ -8902,7 +8902,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3000,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-openai"
     },
     {
@@ -8941,7 +8941,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3623,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-gemini"
     },
     {
@@ -8954,7 +8954,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 2793,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-gemini"
     },
     {
@@ -8967,7 +8967,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3299,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-openai"
     },
     {
@@ -8980,7 +8980,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 8106,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-openai"
     },
     {
@@ -8993,7 +8993,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4353,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-gemini"
     },
     {
@@ -9006,7 +9006,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 2778,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-gemini"
     },
     {
@@ -9019,7 +9019,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 11094,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-anthropic"
     },
     {
@@ -9032,7 +9032,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 12990,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-anthropic"
     },
     {
@@ -9045,7 +9045,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3353,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-gemini"
     },
     {
@@ -9058,7 +9058,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 5565,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-gemini"
     },
     {
@@ -9071,7 +9071,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 12683,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-anthropic"
     },
     {
@@ -9084,7 +9084,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 6600,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-anthropic"
     },
     {
@@ -9097,7 +9097,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 8896,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-openai"
     },
     {
@@ -9110,7 +9110,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3127,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-openai"
     },
     {
@@ -9123,7 +9123,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 13399,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-anthropic"
     },
     {
@@ -9136,7 +9136,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 6515,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-anthropic"
     },
     {
@@ -9149,7 +9149,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 6075,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-openai"
     },
     {
@@ -9162,7 +9162,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4727,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-openai"
     },
     {
@@ -9175,7 +9175,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3264,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-gemini"
     },
     {
@@ -9188,7 +9188,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3784,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-gemini"
     },
     {
@@ -9201,7 +9201,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 8399,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-openai"
     },
     {
@@ -9214,7 +9214,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 8331,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-openai"
     },
     {
@@ -9227,7 +9227,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3775,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-gemini"
     },
     {
@@ -9240,7 +9240,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4352,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-gemini"
     },
     {
@@ -9253,7 +9253,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 8179,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-anthropic"
     },
     {
@@ -9266,7 +9266,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 10891,
-      "costUsd": 0.000783,
+      "costUsd": 0.0007819999999999999,
       "model": "fake-anthropic"
     },
     {
@@ -9487,7 +9487,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 6146,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-openai"
     },
     {
@@ -9500,7 +9500,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3528,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-openai"
     },
     {
@@ -9526,7 +9526,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4145,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-gemini"
     },
     {
@@ -9539,7 +9539,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3487,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-gemini"
     },
     {
@@ -9552,7 +9552,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 12344,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-anthropic"
     },
     {
@@ -9565,7 +9565,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 9808,
-      "costUsd": 0.0007819999999999999,
+      "costUsd": 0.000781,
       "model": "fake-anthropic"
     },
     {
@@ -9942,7 +9942,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 7824,
-      "costUsd": 0.000779,
+      "costUsd": 0.0007779999999999999,
       "model": "fake-anthropic"
     },
     {
@@ -9955,7 +9955,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 12602,
-      "costUsd": 0.000779,
+      "costUsd": 0.0007779999999999999,
       "model": "fake-anthropic"
     },
     {
@@ -9968,7 +9968,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4233,
-      "costUsd": 0.000779,
+      "costUsd": 0.0007779999999999999,
       "model": "fake-openai"
     },
     {
@@ -10007,7 +10007,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 8697,
-      "costUsd": 0.000779,
+      "costUsd": 0.0007779999999999999,
       "model": "fake-openai"
     },
     {
@@ -10020,7 +10020,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3441,
-      "costUsd": 0.000779,
+      "costUsd": 0.0007779999999999999,
       "model": "fake-gemini"
     },
     {
@@ -10046,7 +10046,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4401,
-      "costUsd": 0.000779,
+      "costUsd": 0.0007779999999999999,
       "model": "fake-gemini"
     },
     {
@@ -10059,7 +10059,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3384,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-openai"
     },
     {
@@ -10072,7 +10072,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 6744,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-openai"
     },
     {
@@ -10085,7 +10085,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 2897,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-gemini"
     },
     {
@@ -10098,7 +10098,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 5755,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-gemini"
     },
     {
@@ -10111,7 +10111,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 9959,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-anthropic"
     },
     {
@@ -10124,7 +10124,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 8339,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-anthropic"
     },
     {
@@ -10137,7 +10137,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3716,
-      "costUsd": 0.000781,
+      "costUsd": 0.00078,
       "model": "fake-gemini"
     },
     {
@@ -10150,7 +10150,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 4490,
-      "costUsd": 0.000781,
+      "costUsd": 0.00078,
       "model": "fake-gemini"
     },
     {
@@ -10163,7 +10163,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 12402,
-      "costUsd": 0.000781,
+      "costUsd": 0.00078,
       "model": "fake-anthropic"
     },
     {
@@ -10176,7 +10176,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 11504,
-      "costUsd": 0.000781,
+      "costUsd": 0.00078,
       "model": "fake-anthropic"
     },
     {
@@ -10189,7 +10189,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 6919,
-      "costUsd": 0.000781,
+      "costUsd": 0.00078,
       "model": "fake-openai"
     },
     {
@@ -10202,7 +10202,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 8873,
-      "costUsd": 0.000781,
+      "costUsd": 0.00078,
       "model": "fake-openai"
     },
     {
@@ -10215,7 +10215,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 12816,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-anthropic"
     },
     {
@@ -10228,7 +10228,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 8969,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-anthropic"
     },
     {
@@ -10241,7 +10241,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 5959,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-openai"
     },
     {
@@ -10254,7 +10254,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 7343,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-openai"
     },
     {
@@ -10267,7 +10267,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 2247,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-gemini"
     },
     {
@@ -10280,7 +10280,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3840,
-      "costUsd": 0.00078,
+      "costUsd": 0.000779,
       "model": "fake-gemini"
     },
     {
@@ -10293,7 +10293,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 5209,
-      "costUsd": 0.0007849999999999999,
+      "costUsd": 0.000784,
       "model": "fake-openai"
     },
     {
@@ -10306,7 +10306,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3178,
-      "costUsd": 0.0007849999999999999,
+      "costUsd": 0.000784,
       "model": "fake-openai"
     },
     {
@@ -10319,7 +10319,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3029,
-      "costUsd": 0.0007849999999999999,
+      "costUsd": 0.000784,
       "model": "fake-gemini"
     },
     {
@@ -10358,7 +10358,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 3341,
-      "costUsd": 0.0007849999999999999,
+      "costUsd": 0.000784,
       "model": "fake-gemini"
     },
     {
@@ -10371,7 +10371,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 7207,
-      "costUsd": 0.0007849999999999999,
+      "costUsd": 0.000784,
       "model": "fake-anthropic"
     },
     {
@@ -10384,7 +10384,7 @@
       "outcome": "ok",
       "httpStatus": 200,
       "latencyMs": 11157,
-      "costUsd": 0.0007849999999999999,
+      "costUsd": 0.000784,
       "model": "fake-anthropic"
     }
   ]

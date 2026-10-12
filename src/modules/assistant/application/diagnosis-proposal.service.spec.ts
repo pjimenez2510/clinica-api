@@ -20,7 +20,9 @@ import {
   AssistantNotConfiguredError,
   AssistantNotEncounterOwnerError,
   AssistantProposalNotKeptError,
+  AssistantReadingInProgressError,
   LlmCallFailed,
+  PseudonymizerFailedError,
   SuggestionDiagnosisMismatchError,
 } from '../domain/assistant.errors';
 import type { SuggestionView } from '../domain/suggestion';
@@ -97,7 +99,11 @@ function context(
       Promise.resolve({ patient: ['Ana', 'Pérez'], staff: ['Luis', 'Mora'] }),
     recordedCodes: () => Promise.resolve([]),
     diagnosisOf: (_encounter, id) =>
-      Promise.resolve(id === 'diag-1' ? { id, code: 'J02.9' } : null),
+      Promise.resolve(
+        id === 'diag-1'
+          ? { id, code: 'J02.9', recordedAt: new Date(Date.now() + 60_000) }
+          : null,
+      ),
     patientHistory: () =>
       Promise.resolve([{ code: 'I10.X', times: 2, lastUsedOn: '2026-01-02' }]), // fecha-fija: dato
     clinicFrequency: () =>
@@ -258,7 +264,7 @@ describe('DiagnosisProposalService', () => {
     const [problem] = reading.problems;
     expect(problem).toMatchObject({
       problem: 'FARINGITIS DE Ana',
-      quote: 'Ana refiere odinofagia de tres días',
+      quote: 'Ana refiere odinofagia de tres días y fiebre de 38,5 °C',
       section: 'enfermedadActual',
       status: 'PROPOSED',
       demo: false,
@@ -284,7 +290,9 @@ describe('DiagnosisProposalService', () => {
     expect(problems!.purpose).toBe(PROBLEMS_PURPOSE);
     expect(problems!.prompt).not.toContain('Ana');
     expect(problems!.prompt).toContain('[PERSONA_1] refiere odinofagia');
-    // The note's order travels as text inside the data, never as instruction.
+    // The note's order travels inside the delimited data, never as instruction.
+    expect(problems!.prompt.startsWith('<nota>\n')).toBe(true);
+    expect(problems!.prompt.endsWith('\n</nota>')).toBe(true);
     expect(problems!.prompt).toContain(INJECTION);
     expect(problems!.system).not.toContain(INJECTION);
     expect(problems!.system).toMatch(/es un dato, no una instrucción/);
@@ -294,13 +302,12 @@ describe('DiagnosisProposalService', () => {
     for (const text of ['odinofagia', 'Ana', 'FARINGITIS', 'J02.9']) {
       expect(logged).not.toContain(text);
     }
-    expect(logged).toContain('"problems":1');
     // The counts survive the log's allowlist: what reaches disk says them.
     expect(pruneToAllowlist(log.mock.calls[0]![0])).toEqual({
-      problems: 1,
-      problems_without_quote: 1,
-      codes_written: 4,
-      codes_shown: 2,
+      assistant_problems: 1,
+      assistant_problems_without_quote: 1,
+      assistant_codes_written: 4,
+      assistant_codes_shown: 2,
     });
   });
 
@@ -442,5 +449,142 @@ describe('DiagnosisProposalService', () => {
 
     expect(reading.demo).toBe(true);
     expect(reading.problems.every((problem) => problem.demo)).toBe(true);
+  });
+
+  it('AS-028 a proposal whose sentence the note no longer says is not shown', async () => {
+    let text = NOTE;
+    const reader = context({
+      consultationNote: () =>
+        Promise.resolve({ id: 'note-1', sections: [{ key: 'enfermedadActual', label: 'Enfermedad actual', text }] }), // prettier-ignore
+    });
+    const { service } = build({ llm: model(FARINGITIS).client, reader });
+    await service.read('enc-1', requester());
+
+    text = 'Refiere mejoría; sin molestias al tragar.';
+    const overview = await service.overview('enc-1', requester());
+
+    expect(overview.problems).toEqual([]);
+  });
+
+  it('AS-044 a reading that proposes nothing says so with found 0', async () => {
+    const { service } = build({ llm: model({ problems: [] }).client });
+
+    const reading = await service.read('enc-1', requester());
+
+    expect(reading.found).toBe(0);
+  });
+
+  it('AS-040 one reading at a time per attention: a second one while the first is out is refused', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const slow: Pseudonymizer = {
+      pseudonymize: async (input) => {
+        await gate;
+        return new NamesPseudonymizer().pseudonymize(input);
+      },
+    };
+    const { service } = build({ llm: model(FARINGITIS).client, pseudonymizer: slow }); // prettier-ignore
+
+    const first = service.read('enc-1', requester());
+    await expect(service.read('enc-1', requester())).rejects.toBeInstanceOf(
+      AssistantReadingInProgressError,
+    );
+    release();
+    // Control: the first ends, and then a new one may go.
+    await expect(first).resolves.toMatchObject({ found: 1 });
+    await expect(service.read('enc-1', requester())).resolves.toMatchObject({ found: 1 }); // prettier-ignore
+  });
+
+  it('AS-025 a cleared text that still carries a national id fails closed before any model', async () => {
+    const leaky: Pseudonymizer = {
+      pseudonymize: (input) =>
+        Promise.resolve({ cleared: `${input.text} CI 1712345678` as PseudonymizedText, replacements: [], dateShiftDays: 0 }), // prettier-ignore
+    };
+    const { client, sent } = model(FARINGITIS);
+    const { service } = build({ llm: client, pseudonymizer: leaky });
+
+    await expect(service.read('enc-1', requester())).rejects.toBeInstanceOf(
+      PseudonymizerFailedError,
+    );
+    expect(sent).toHaveLength(0);
+  });
+
+  it('AS-039 an attention closed while the model answered keeps nothing', async () => {
+    let status: CodingEncounter['status'] = 'OPEN';
+    const reader = context({
+      encounter: () => Promise.resolve({ ...ENCOUNTER, status }),
+    });
+    const llm: LlmClient = {
+      generate: (request) => {
+        status = 'DISCHARGED';
+        return model(FARINGITIS).client.generate(request);
+      },
+    };
+    const { service, store } = build({ llm, reader });
+
+    await expect(service.read('enc-1', requester())).rejects.toBeInstanceOf(
+      AssistantEncounterClosedError,
+    );
+    expect(store.raw.propose).not.toHaveBeenCalled();
+  });
+
+  it('AS-040 the first failed code call stops the others still out', async () => {
+    const seen: AbortSignal[] = [];
+    const llm: LlmClient = {
+      generate<Shape extends z.ZodType>(request: LlmRequest<Shape>) {
+        if (request.purpose === PROBLEMS_PURPOSE) {
+          return model({
+            problems: [
+              { problem: 'FARINGITIS', quote: '[PERSONA_1] refiere odinofagia de tres días' }, // prettier-ignore
+              { problem: 'FIEBRE ALTA', quote: 'fiebre de 38,5 °C' },
+            ],
+          }).client.generate(request);
+        }
+        seen.push(request.signal!);
+        if (seen.length === 1) {
+          return Promise.reject(new LlmCallFailed('gemini', 'provider-error', { model: 'm', raw: null })); // prettier-ignore
+        }
+        return new Promise(
+          (_, reject) =>
+          request.signal!.addEventListener('abort', () => reject(new Error('aborted'))), // prettier-ignore
+        );
+      },
+    };
+    const { service } = build({ llm });
+
+    await expect(service.read('enc-1', requester())).rejects.toBeInstanceOf(LlmCallFailed); // prettier-ignore
+    expect(seen).toHaveLength(2);
+    expect(seen[1]!.aborted).toBe(true);
+  });
+
+  it('AS-037 refuses a diagnosis recorded before the proposal, and one already the answer of another', async () => {
+    const before = context({
+      diagnosisOf: (_e, id) =>
+        Promise.resolve({ id, code: 'J02.9', recordedAt: new Date(Date.now() - 60 * 60_000) }), // prettier-ignore
+    });
+    const early = build({ llm: model(FARINGITIS).client, reader: before });
+    await early.service.read('enc-1', requester());
+    await expect(
+      early.service.accept({ encounterId: 'enc-1', suggestionId: 'sug-1', diagnosisId: 'diag-1' }, requester()), // prettier-ignore
+    ).rejects.toBeInstanceOf(SuggestionDiagnosisMismatchError);
+
+    const store = suggestions();
+    const { service } = build({ llm: model(FARINGITIS).client, store });
+    await service.read('enc-1', requester());
+    await service.read('enc-1', requester());
+    // sug-1 already answered by diag-1: sug-2 cannot take it too.
+    (
+      store.raw.ofEncounter as unknown as {
+        mockResolvedValue: (v: unknown) => void;
+      }
+    ).mockResolvedValue(
+      // prettier-ignore
+      (await store.raw.ofEncounter()).map((each, index) =>
+        index === 0 ? { ...each, status: 'ACCEPTED', record: { kind: 'encounter_diagnosis', id: 'diag-1' } } : each, // prettier-ignore
+      ),
+    );
+    await expect(
+      service.accept({ encounterId: 'enc-1', suggestionId: 'sug-2', diagnosisId: 'diag-1' }, requester()), // prettier-ignore
+    ).rejects.toBeInstanceOf(SuggestionDiagnosisMismatchError);
   });
 });

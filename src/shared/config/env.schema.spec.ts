@@ -229,6 +229,20 @@ describe('validateEnv', () => {
       ).toThrow(/ASSISTANT_FAKE_PROVIDER/);
     });
 
+    it('AS-029 refuses the demonstration mode beside the exchange log, which would keep the note', () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          ASSISTANT_FAKE_PROVIDER: 'true',
+          ASSISTANT_EXCHANGE_LOG: 'true',
+        }),
+      ).toThrow(/ASSISTANT_FAKE_PROVIDER/);
+      // Control: the log alone, without the demonstration, is accepted.
+      expect(() =>
+        validateEnv({ ...base, ASSISTANT_EXCHANGE_LOG: 'true' }),
+      ).not.toThrow();
+    });
+
     it('AS-029 refuses the demonstration mode beside the remote switch', () => {
       expect(() =>
         validateEnv({

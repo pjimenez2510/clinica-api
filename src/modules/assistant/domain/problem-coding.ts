@@ -27,8 +27,33 @@ export interface BackedProblem {
   codes: readonly string[];
 }
 
-/** A phrase shorter than this matches anything: «sí», «no», «tos». */
-const SHORTEST_QUOTE = 4;
+/**
+ * A phrase shorter than this, or of one word, matches anything: «sí», «no»,
+ * «tos», «de la», «dolor» (review of 11-10-2026: four characters let «de l»
+ * through as the source of a problem).
+ */
+const SHORTEST_QUOTE = 8;
+const FEWEST_QUOTE_WORDS = 2;
+
+/**
+ * Words that, right before the phrase, say the note DENIES it: «Niega dolor
+ * torácico» quoted as «dolor torácico» backs nothing (D-245 §5). Folded, as
+ * `foldText` leaves them.
+ */
+const NEGATIONS = new Set([
+  'niega',
+  'niegan',
+  'sin',
+  'no',
+  'descarta',
+  'descartado',
+  'descartada',
+  'negativo',
+  'negativa',
+  'ausencia',
+]);
+/** How many words before the phrase a negation still governs it. */
+const NEGATION_REACH = 3;
 
 /**
  * The comparison form of a text: lowercase, without accents, every run of
@@ -45,11 +70,79 @@ export function foldText(text: string): string {
     .trim();
 }
 
+/** Where a phrase is in the note: its section and the sentence that holds it. */
+export interface LocatedQuote {
+  section: string;
+  /** The note's own sentence, as written: what the physician reads (P2). */
+  sentence: string;
+}
+
+const escapeRegExp = (text: string) =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * AS-028. The sentence of the note that holds the phrase as whole words, or
+ * null: not there, too short to mean anything, or right after a negation of
+ * the same sentence.
+ */
+export function locateQuote(
+  quote: string,
+  sections: readonly { key: string; text: string }[],
+): LocatedQuote | null {
+  const folded = foldText(quote);
+  if (
+    folded.length < SHORTEST_QUOTE ||
+    folded.split(' ').length < FEWEST_QUOTE_WORDS
+  ) {
+    return null;
+  }
+  const whole = new RegExp(
+    `(^|[^\\p{L}\\p{N}])${escapeRegExp(folded)}($|[^\\p{L}\\p{N}])`,
+    'u',
+  );
+  for (const section of sections) {
+    for (const sentence of section.text.split(/(?<=[.;!?\n])/)) {
+      const plain = foldText(sentence);
+      const match = whole.exec(plain);
+      if (!match) continue;
+      const before = plain
+        .slice(0, match.index + match[1]!.length)
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter(Boolean)
+        .slice(-NEGATION_REACH);
+      if (before.some((word) => NEGATIONS.has(word))) return null;
+      return { section: section.key, sentence: sentence.trim() };
+    }
+  }
+  return null;
+}
+
+/**
+ * AS-025 (P4). What a pseudonymizer must never let through, checked again on
+ * its answer: an e-mail, a RUC (13 digits), a mobile (09…), a cedula (10
+ * digits) or a chart number (HC and ten digits) — the patterns the log uses.
+ */
+const IDENTIFIERS = [
+  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/,
+  /\b\d{13}\b/,
+  /\b09\d{8}\b/,
+  /\b\d{10}\b/,
+  /\bHC\d{10}\b/i,
+];
+
+export function carriesAnIdentifier(text: string): boolean {
+  return IDENTIFIERS.some((pattern) => pattern.test(text));
+}
+
+/** A date in a problem's name was moved by the pseudonymizer: never shown. */
+const DATE_LIKE = /\d{1,4}\s*[/-]\s*\d{1,2}(\s*[/-]\s*\d{1,4})?/;
+
 /**
  * AS-028. Keeps the problems whose phrase is in the cleared text the model
- * read AND, with the placeholders put back, in the note itself, in the
- * section where it is. A problem without its phrase is a problem nobody
- * wrote: it is dropped, and counted.
+ * read AND, with the placeholders put back, in the note itself as whole
+ * words and not denied there. What is kept carries the note's own sentence.
+ * A problem without its phrase is a problem nobody wrote: it is dropped, and
+ * counted; so is one whose name carries a date the pseudonymizer moved.
  */
 export function backedProblems(input: {
   named: readonly NamedProblem[];
@@ -58,24 +151,18 @@ export function backedProblems(input: {
   restore: (text: string) => string;
 }): { kept: BackedProblem[]; dropped: number } {
   const cleared = foldText(input.cleared);
-  const sections = input.sections.map((section) => ({
-    key: section.key,
-    folded: foldText(section.text),
-  }));
   const kept: BackedProblem[] = [];
 
   for (const named of input.named) {
-    const asRead = foldText(named.quote);
-    if (asRead.length < SHORTEST_QUOTE || !cleared.includes(asRead)) continue;
-    const quote = input.restore(named.quote).trim();
-    const section = sections.find(({ folded }) =>
-      folded.includes(foldText(quote)),
-    );
-    if (!section) continue;
+    if (!cleared.includes(foldText(named.quote))) continue;
+    const problem = input.restore(named.problem).trim();
+    if (problem === '' || DATE_LIKE.test(problem)) continue;
+    const located = locateQuote(input.restore(named.quote).trim(), input.sections); // prettier-ignore
+    if (!located) continue;
     kept.push({
-      problem: input.restore(named.problem).trim(),
-      quote,
-      section: section.key,
+      problem,
+      quote: located.sentence,
+      section: located.section,
       codes: named.codes,
     });
   }

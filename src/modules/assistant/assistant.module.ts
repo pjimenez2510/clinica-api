@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import {
   Inject,
   Logger,
+  type MiddlewareConsumer,
   Module,
+  type NestModule,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
@@ -34,6 +36,7 @@ import {
   ASSISTANT_ENABLED,
   AssistantDiagnosisController,
 } from './assistant-diagnosis.controller';
+import { AssistantSwitchMiddleware } from './assistant-switch.middleware';
 import {
   SUGGESTION_CLOCK,
   SuggestionService,
@@ -103,11 +106,20 @@ const PURGE_EVERY_MS = 86_400_000;
   ],
   exports: [LLM_CLIENT, SuggestionService, PSEUDONYMIZER],
 })
-export class AssistantModule implements OnModuleInit, OnModuleDestroy {
+export class AssistantModule
+  implements NestModule, OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(AssistantModule.name);
   private timer: NodeJS.Timeout | undefined;
 
   constructor(@Inject(AI_RUN_STORE) private readonly store: AiRunStore) {}
+
+  /** AS-026. The switch answers before the session and the permission do. */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(AssistantSwitchMiddleware)
+      .forRoutes(AssistantDiagnosisController);
+  }
 
   /**
    * AS-015. The purge runs at boot and then once a day, whether the exchange

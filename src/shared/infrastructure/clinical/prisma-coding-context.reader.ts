@@ -9,7 +9,11 @@ import type {
 } from '../../clinical/coding-context.port';
 import { FORM_002_BUILT_IN_SECTIONS } from '../../clinical/form-002';
 import { clinicalDateOf } from '../../domain/clinic-time';
-import { chartScopeOfSurvivor } from '../prisma/patient-chart-scope';
+import {
+  chartScopeOfSurvivor,
+  chartScopeRows,
+  chartScopeSelect,
+} from '../prisma/patient-chart-scope';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** The consultation note: the one the assistant reads (AS-028). */
@@ -107,6 +111,9 @@ export class PrismaCodingContextReader implements CodingContextReader {
             secondGivenName: true,
             familyName: true,
             secondFamilyName: true,
+            // D-246 §2. Who comes with the patient is named in notes too —
+            // also the contacts of the charts this one absorbed (PA-055).
+            ...chartScopeSelect('contacts', { select: { fullName: true } }),
           },
         },
         practitioner: {
@@ -121,6 +128,7 @@ export class PrismaCodingContextReader implements CodingContextReader {
         patient.secondGivenName,
         patient.familyName,
         patient.secondFamilyName,
+        ...chartScopeRows<'contacts', { fullName: string }>(patient, 'contacts').map((contact) => contact.fullName), // prettier-ignore
       ].filter((name): name is string => Boolean(name)),
       staff: [practitioner.user.firstName, practitioner.user.lastName],
     };
@@ -137,17 +145,20 @@ export class PrismaCodingContextReader implements CodingContextReader {
   async diagnosisOf(
     encounterId: string,
     diagnosisId: string,
-  ): Promise<{ id: string; code: string } | null> {
+  ): Promise<{ id: string; code: string; recordedAt: Date } | null> {
     const row = await this.prisma.encounterDiagnosis.findFirst({
       where: { id: diagnosisId, encounterId },
-      select: { id: true, cie10Code: true },
+      select: { id: true, cie10Code: true, recordedAt: true },
     });
-    return row ? { id: row.id, code: row.cie10Code } : null;
+    return row
+      ? { id: row.id, code: row.cie10Code, recordedAt: row.recordedAt }
+      : null;
   }
 
   async patientHistory(
     patientId: string,
     exceptEncounterId: string,
+    sites: 'all' | readonly string[],
     limit: number,
   ): Promise<CodeUse[]> {
     const rows = await this.prisma.encounterDiagnosis.findMany({
@@ -156,6 +167,7 @@ export class PrismaCodingContextReader implements CodingContextReader {
           ...chartScopeOfSurvivor(patientId),
           id: { not: exceptEncounterId },
           status: { not: 'ENTERED_IN_ERROR' },
+          ...(sites === 'all' ? {} : { siteId: { in: [...sites] } }),
         },
       },
       select: { cie10Code: true, encounter: { select: { startedAt: true } } },

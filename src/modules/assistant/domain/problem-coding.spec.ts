@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   backedProblems,
+  locateQuote,
   baselineOf,
   currentReading,
   foldText,
@@ -34,7 +35,8 @@ describe('the phrase of a problem (AS-028)', () => {
     expect(kept).toEqual([
       {
         problem: 'Faringitis aguda',
-        quote: 'Odinofagia de tres dias',
+        // The note's own sentence, as written, and not the model's copy.
+        quote: 'Ana refiere odinofagia de tres  días y fiebre de 38,5 °C.',
         section: 'enfermedadActual',
         codes: ['J02.9'],
       },
@@ -70,7 +72,7 @@ describe('the phrase of a problem (AS-028)', () => {
 
     expect(kept[0]).toMatchObject({
       problem: 'Faringitis de Ana',
-      quote: 'Ana refiere odinofagia',
+      quote: 'Ana refiere odinofagia de tres  días y fiebre de 38,5 °C.',
     });
   });
 
@@ -84,6 +86,44 @@ const entry = (code: string): OfferedCode => ({
   conceptId: `c-${code}`,
   code,
   display: `Nombre de ${code}`,
+});
+
+describe('where a phrase is in the note (AS-028, D-245 §5)', () => {
+  const NOTE = [
+    {
+      key: 'enfermedadActual',
+      text: 'Niega dolor torácico. Refiere cefalea frontal de dos días; sin fiebre.',
+    },
+  ];
+
+  it('AS-028 a phrase the note denies backs nothing, and the same words asserted do', () => {
+    expect(locateQuote('dolor torácico', NOTE)).toBeNull();
+    expect(locateQuote('fiebre de dos', NOTE)).toBeNull();
+    // Control: what the note asserts is found, with its sentence.
+    expect(locateQuote('cefalea frontal', NOTE)).toEqual({
+      section: 'enfermedadActual',
+      sentence: 'Refiere cefalea frontal de dos días;',
+    });
+  });
+
+  it('AS-028 a phrase is matched as whole words, and one too short or of one word is not a phrase', () => {
+    expect(locateQuote('falea frontal', NOTE)).toBeNull();
+    expect(locateQuote('cefalea', NOTE)).toBeNull();
+    expect(locateQuote('de dos', NOTE)).toBeNull();
+    expect(locateQuote('cefalea frontal de dos días', NOTE)?.section).toBe('enfermedadActual'); // prettier-ignore
+  });
+
+  it('AS-028 a problem whose name carries a date is dropped: the pseudonymizer moved it', () => {
+    const { kept, dropped } = backedProblems({
+      named: [{ problem: 'Control del 14/03', quote: 'refiere odinofagia de tres días', codes: [] }], // prettier-ignore
+      cleared: CLEARED,
+      sections: SECTIONS,
+      restore,
+    });
+
+    expect(kept).toEqual([]);
+    expect(dropped).toBe(1);
+  });
 });
 
 describe('the baseline (AS-027)', () => {

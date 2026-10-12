@@ -32,7 +32,12 @@ type CodesAnswer = z.infer<typeof codesAnswer>;
  * measures; A6's arm D measures the catalogue without the repair.
  *
  * Arm A is the model's answer as written; arm D is what the screen shows.
- * `invented` counts what the model wrote in both; `inventedShown` must be 0.
+ * `invented` counts what the model wrote, in both. That nothing invented is
+ * SHOWN is the barrier's guarantee, tested against PostgreSQL (AS-035): here
+ * it would be 0 by construction, so it is not a metric (review 11-10-2026).
+ *
+ * What this measures is the coding step, with the expert's phrase as the
+ * problem; naming problems out of a note has no reference set yet (phase F).
  */
 export function cie10ByProblemTask(
   catalogues: Catalogues,
@@ -103,11 +108,9 @@ export function cie10ByProblemTask(
         lowerIsBetter: true,
       },
       {
-        key: 'inventedShown',
-        label: 'Códigos inexistentes mostrados (por caso)',
-        kind: 'mean',
-        lowerIsBetter: true,
-        primary: true,
+        key: 'baselineCategory5',
+        label: 'Categoría en las 5 de la línea base (3 caracteres)',
+        kind: 'binary',
       },
     ],
     request(item) {
@@ -130,30 +133,30 @@ export function cie10ByProblemTask(
           : written.map(formatCode);
       const right = new Set(item.codes);
       const categories = new Set(item.codes.map((code) => code.slice(0, 3)));
+      const inCategory = (codes: readonly string[]) =>
+        codes.some((code) => categories.has(code.slice(0, 3))) ? 1 : 0;
       const recall5 = shown.some((code) => right.has(code)) ? 1 : 0;
-      const baselineRecall5 = baselineOf(item).some((code) => right.has(code))
-        ? 1
-        : 0;
-      const missing = (codes: readonly string[]) =>
-        codes.length === 0
-          ? null
-          : codes.filter((code) => resolve(code) === null).length /
-            codes.length;
+      // The invented set has no history and each code once: no baseline.
+      const baseline = item.origin === 'invented' ? null : baselineOf(item);
+      const baselineRecall5 =
+        baseline === null ? null : baseline.some((code) => right.has(code)) ? 1 : 0; // prettier-ignore
       return Promise.resolve({
         shown,
         scores: {
           recall5,
           baselineRecall5,
-          gainOverBaseline: recall5 - baselineRecall5,
+          gainOverBaseline:
+            baselineRecall5 === null ? null : recall5 - baselineRecall5,
           hit1: shown[0] !== undefined && right.has(shown[0]) ? 1 : 0,
-          category5: shown.some((code) => categories.has(code.slice(0, 3)))
-            ? 1
-            : 0,
-          invented: missing(written),
-          inventedShown:
-            shown.length === 0
+          category5: inCategory(shown),
+          baselineCategory5: baseline === null ? null : inCategory(baseline),
+          // What the model WROTE that the WHO list does not have; that none
+          // of it is shown is AS-035's, proven against the database.
+          invented:
+            written.length === 0
               ? null
-              : shown.filter((code) => !cie10.has(code)).length / shown.length,
+              : written.filter((code) => resolve(code) === null).length /
+                written.length,
         },
       });
     },

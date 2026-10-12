@@ -389,7 +389,11 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   el permiso `assistant:use`, que el rol `MEDICO` trae de fábrica.
   > D-244 §3: el interruptor por sede llega con A3; hasta entonces la
   > instalación y la cuenta. Un 404 y no un 403 sin interruptor: la pantalla no
-  > debe enseñar nada de IA en una instalación que no lo encendió. C1 iba a
+  > debe enseñar nada de IA en una instalación que no lo encendió. El 404 lo
+  > da un middleware, ANTES de la sesión, el permiso y las pipes (revisión del
+  > 11-10-2026: un guarda llegaba tarde y el 401/403/400 delataba la ruta). Y
+  > `assistant:use` se cruza con las sedes de `record:read`/`record:write`: una
+  > sede donde se escribe sin el asistente no lo tiene. C1 iba a
   > traer el permiso; D1 llegó antes (D-244 §3 lo previó: «la primera entrega
   > que tenga rutas»).
 
@@ -410,7 +414,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 - **AS-027** — CUANDO alguien con `record:read` en la sede pida las propuestas
   de CIE-10 de una atención, el sistema DEBERÁ devolver hasta **5** códigos
   sin llamar a ningún modelo: primero los que ya se registraron a este paciente
-  en otras atenciones —su historia y las que absorbió (`chartScope`, PA-055)—,
+  en otras atenciones —su historia y las que absorbió (`chartScope`, PA-055),
+  en las sedes donde quien pide lee la historia, el alcance de EN-184—,
   de más usado a menos y, a igualdad, el más reciente; después los que la
   clínica más registra; sin los que esta atención ya tiene, y sólo los
   seleccionables (cuatro caracteres) vigentes en su fecha clínica. Cada uno
@@ -431,8 +436,18 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   sin llamar a nadie.
   > Mientras no haya transcripción (C1), la fuente es la nota escrita (plan de
   > la rama). La frase se compara con el texto seudonimizado y, devueltos los
-  > marcadores, con la nota, sin distinguir mayúsculas, tildes ni espacios: un
-  > problema sin frase es un problema que nadie escribió (RC-21 de SigmAI).
+  > marcadores, con la nota, sin distinguir mayúsculas, tildes ni espacios y
+  > como palabras enteras: un problema sin frase es un problema que nadie
+  > escribió (RC-21 de SigmAI). La frase tiene al menos dos palabras y ocho
+  > caracteres; una que la nota niega justo antes («niega dolor torácico»,
+  > «sin fiebre») no respalda nada (D-245 §5); se muestra la oración de la
+  > nota que la contiene, no la copia del modelo; y al mostrar las propuestas
+  > se vuelve a buscar en la nota de ahora: la que ya no está no se muestra.
+  > Un problema cuyo nombre lleva una fecha se descarta: el seudonimizador la
+  > desplazó. Al seudonimizador van los nombres del paciente, de sus contactos
+  > (D-246 §2) y del profesional; si lo que devuelve trae aún una cédula, un
+  > RUC, un móvil, un correo o un número de historia, la lectura falla
+  > cerrada.
   > Una frase con una fecha que el seudonimizador desplazó no está en la nota
   > y se descarta: nunca se muestra con la fecha cambiada.
 - **AS-035** — Para cada problema el modelo DEBERÁ escribir hasta 5 códigos
@@ -453,9 +468,11 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   su frase, sus códigos resueltos y su fuente (la sección de la nota); y la
   lectura nueva DEBERÁ sustituir en pantalla a las propuestas sin decidir de la
   anterior, sin borrar ninguna.
-  > AS-023 de A1: una propuesta no se borra. Las de una lectura vieja que nadie
-  > decidió quedan como estaban; se muestran las de la última lectura y las ya
-  > decididas.
+  > AS-023 de A1: una propuesta no se borra. Se muestran las de la última
+  > lectura que no se descartaron y cuya oración la nota aún dice; las de una
+  > lectura vieja quedan en la tabla como estaban y no se muestran (lo que se
+  > aceptó de ellas ya está en la lista de diagnósticos). Una lectura que no
+  > propone nada lo dice (`found: 0`) y deja las anteriores como estaban.
 
 ### 11. Aceptar y descartar (P1)
 
@@ -467,7 +484,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   registrar ningún diagnóstico por su cuenta.
   > El diagnóstico se registra por su ruta de siempre (EN-040…EN-049), con sus
   > marcas del RDACAA; aceptar sólo enlaza. Distancia (AS-022): 0 con un código
-  > propuesto, 1 con otro.
+  > propuesto, 1 con otro. «Desde ella» quiere decir registrado después de la
+  > propuesta y no enlazado ya a otra: un diagnóstico anterior no es obra de
+  > la propuesta, y dos propuestas sobre uno solo lo contarían dos veces.
 - **AS-038** — CUANDO el profesional descarte una propuesta, el sistema DEBERÁ
   dejarla «descartada» con quién y cuándo, y NO DEBERÁ volver a mostrarla.
 - **AS-039** — Proponer, aceptar y descartar DEBERÁN exigir que quien lo pide
@@ -486,13 +505,21 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   el código del error, sin guardar nada y sin tocar las propuestas que ya
   había, y la línea base DEBERÁ seguir respondiendo.
   > En pantalla, el motivo y «Volver a pedir» (AS-044). El plazo de la lectura
-  > es de 90 s, como en SigmAI (`NAMING_LIMIT_MS`).
+  > es de 90 s, como en SigmAI (`NAMING_LIMIT_MS`); el primer fallo corta las
+  > llamadas que siguen en vuelo. Una lectura a la vez por atención
+  > (`ASSISTANT_READING_IN_PROGRESS`) y seis por minuto: cada una paga una
+  > llamada por problema. Si la atención se cerró mientras el modelo
+  > respondía, no se guarda nada.
 - **AS-041** — Ninguna línea de log, fila de `ai_run` ni mensaje de error de
   esta función DEBERÁ contener la nota, los problemas ni sus frases; y el texto
   de la nota DEBERÁ ir al modelo delimitado como dato, con la instrucción de no
   seguir órdenes que contenga.
   > AS-018 sigue valiendo; aquí se prueba con una nota con un nombre y una
-  > orden dentro («ignora lo anterior…»).
+  > orden dentro («ignora lo anterior…»). La nota va entre `<nota>` y
+  > `</nota>`, con esas marcas rotas si la nota las escribía; el problema, en
+  > una línea entre «». Leer la nota para mandarla deja su fila en la
+  > bitácora (`EXPORT`, EN-122), y las respuestas que llevan la historia, la
+  > suya (`READ`).
 
 ### 13. Medir antes de encender (P7)
 
@@ -505,7 +532,14 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > CodiEsp (CC-BY 4.0) viene en CIE-10-CM, que extiende la de la OMS: su
   > código se compara truncado a la subcategoría de cuatro caracteres. Sus
   > casos clínicos son públicos y no son pacientes de la clínica: el arnés vive
-  > fuera de `src/` y no pasa por el seudonimizador.
+  > fuera de `src/` y no pasa por el seudonimizador. Lo que mide es el paso
+  > de los códigos —la frase del experto como problema—, con el prompt y la
+  > barrera del producto; nombrar los problemas desde una nota no tiene aún
+  > un set con referencia y queda para la fase F. La línea base de CodiEsp es
+  > la frecuencia de todo el corpus sin el artículo del caso; la del set
+  > propio no aplica (sin historia, cada código aparece una vez). Que no se
+  > muestre un código inexistente lo garantiza la barrera contra la base
+  > (AS-035, integración); el arnés cuenta lo que el modelo escribió.
 
 ### 14. En la pestaña Diagnósticos
 
@@ -571,6 +605,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_ENCOUNTER_NOT_FOUND`      | `NotFoundError`        | 404       | La atención no existe o es de una sede fuera del alcance (AS-039, EN-121)    |
 | `ASSISTANT_ENCOUNTER_CLOSED`         | `ConflictError`        | 409       | La atención ya no admite contenido clínico nuevo (AS-039)                    |
 | `ASSISTANT_PROPOSAL_NOT_KEPT`        | `ExternalServiceError` | 503       | El modelo respondió pero su intento no quedó en `ai_run` (AS-036, AS-040)    |
+| `ASSISTANT_READING_IN_PROGRESS`      | `ConflictError`        | 409       | Ya hay una lectura de esa atención en curso (AS-040)                         |
 | `ASSISTANT_PSEUDONYMIZER_FAILED`     | `ExternalServiceError` | 503 / 502 | `clinica-ai` no respondió (reintentable) o respondió fuera de contrato (AS-033) |
 
 ## Niveles de prueba

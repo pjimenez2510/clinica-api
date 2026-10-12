@@ -65,24 +65,19 @@ describe('cie10-problema (AS-042)', () => {
 
     expect(shown).toEqual(['I10.X']);
     expect(scores.recall5).toBe(1);
-    expect(scores.inventedShown).toBe(0);
     expect(scores.invented).toBeCloseTo(1 / 3);
-    // Control: without the barrier the invented code is shown.
+    // Control: without the barrier the invented code is shown as written.
     const raw = await task.evaluate(CASES[1]!, 'A', { codes: ['J02.7'] }, null);
-    expect(raw.scores.inventedShown).toBe(1);
+    expect(raw.shown).toEqual(['J02.7']);
   });
 
-  it('AS-027 AS-042 the baseline is the frequency of its own source, without the case itself', async () => {
+  it("AS-027 AS-042 the baseline is the frequency of the corpus without the case's article, and does not apply to the invented set", async () => {
     const task = cie10ByProblemTask(catalogues, CASES);
 
-    // b's own I10.X leaves one more I10.X (c): the baseline finds it.
+    // The invented set has no history: its baseline does not apply.
     const b = await task.evaluate(CASES[1]!, 'D', { codes: [] }, null);
-    expect(b.scores.baselineRecall5).toBe(1);
-    expect(b.scores.gainOverBaseline).toBe(-1);
-    // a is the only J02.9 of its source: the baseline cannot find it, the model can.
-    const a = await task.evaluate(CASES[0]!, 'D', { codes: ['J02.9'] }, null);
-    expect(a.scores.baselineRecall5).toBe(0);
-    expect(a.scores.gainOverBaseline).toBe(1);
+    expect(b.scores.baselineRecall5).toBeNull();
+    expect(b.scores.gainOverBaseline).toBeNull();
     // CodiEsp's baseline is its whole corpus less the case's own article.
     const d = await task.evaluate(CASES[3]!, 'D', { codes: [] }, null);
     expect(d.scores.baselineRecall5).toBe(0);

@@ -71,6 +71,7 @@ export const DOMAIN_ERROR_CODES = [
   'ASSISTANT_NOTE_EMPTY',
   'SUGGESTION_DIAGNOSIS_MISMATCH',
   'ASSISTANT_PROPOSAL_NOT_KEPT',
+  'ASSISTANT_READING_IN_PROGRESS',
   // AS-006, AS-007, AS-008, AS-017 (D-239): el asistente sin proveedor
   // configurado (502), ningún proveedor respondió o la respuesta no sirvió
   // (503 reintentable / 502), y el techo de gasto del mes (429).
