@@ -157,6 +157,8 @@ export function loadInventedCases(dir = CASES_DIR) {
     ),
     examNote: loadCaseFile(join(dir, 'examenes-notas.json'), 'examNote'),
     note: loadCaseFile(join(dir, 'nota.json'), 'note'),
+    /** SC-091. Consultations the draft's prompt was never tuned on. */
+    noteHeldOut: loadCaseFile(join(dir, 'nota-reservada.json'), 'note'),
   };
 }
 

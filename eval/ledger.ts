@@ -76,3 +76,49 @@ export class FileAiRunStore implements AiRunStore {
     return Promise.resolve(0);
   }
 }
+
+/** D-241. What each provider may have spent in the ledger, in total, before a real attempt. */
+export const EVAL_PROVIDER_CAP_USD = 2;
+
+/**
+ * AS-098, D-241. A provider's own cap on top of the month's ceiling: as much
+ * as the provider may have spent IN TOTAL in the shared ledger, counting the
+ * attempt about to be made (the author: 2 USD per provider across every
+ * delivery, 12-10-2026).
+ *
+ * The routing admits an attempt when `spentSince + worstCase ≤ ceiling`
+ * (AS-017). Answering the larger of the month's spending and this provider's
+ * total moved up by `ceiling − cap` makes it admit one only when BOTH fit:
+ * the month under its ceiling, and the provider under its cap. Nothing else
+ * of the routing changes.
+ */
+export class ProviderCapStore implements AiRunStore {
+  constructor(
+    private readonly inner: AiRunStore,
+    private readonly ledger: FileAiRunStore,
+    private readonly provider: string,
+    private readonly capUsd: number,
+    private readonly ceilingUsd: number,
+  ) {}
+
+  record(run: AiRunRecord, exchange: AiExchangeRecord | null): Promise<string> {
+    return this.inner.record(run, exchange);
+  }
+
+  /** What this provider has spent in the ledger, every run of every branch. */
+  spentByProvider(): number {
+    return this.ledger
+      .read()
+      .filter((row) => row.provider === this.provider)
+      .reduce((total, row) => total + (row.costUsd ?? row.worstCaseUsd), 0);
+  }
+
+  async spentSince(from: Date): Promise<number> {
+    const month = await this.inner.spentSince(from);
+    return Math.max(month, this.spentByProvider() + this.ceilingUsd - this.capUsd); // prettier-ignore
+  }
+
+  purgeExchanges(now: Date): Promise<number> {
+    return this.inner.purgeExchanges(now);
+  }
+}

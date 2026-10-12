@@ -156,18 +156,33 @@ function channel() {
   return { events, heard, paused, takenOver: () => takenOver };
 }
 
+/** AS-087. What the draft hears from the listening. */
+class FakeObserver {
+  readonly grew: { encounterId: string; upToMs: number }[] = [];
+  readonly stopped: string[] = [];
+  transcriptGrew(encounterId: string, upToMs: number): void {
+    this.grew.push({ encounterId, upToMs });
+  }
+  listeningStopped(encounterId: string): void {
+    this.stopped.push(encounterId);
+  }
+}
+
 function setup() {
   const recognizer = new FakeRecognizer();
   const store = new MemoryStore();
+  const observer = new FakeObserver();
   let clock = Date.parse('2026-10-12T15:00:00Z'); // fecha-fija: reloj falso inyectado
   const service = new ListeningService(
     recognizer,
     store,
     () => new Date(clock),
+    observer,
   );
   return {
     recognizer,
     store,
+    observer,
     service,
     now: () => new Date(clock),
     tick: (ms: number) => {
@@ -569,5 +584,57 @@ describe('ListeningService', () => {
     await expect(
       service.receive(ENCOUNTER, ch.events, frame(300)),
     ).rejects.toBeInstanceOf(ListeningNotOpenError);
+  });
+
+  it('AS-087: tells the draft how far the transcript goes each time segments are kept', async () => {
+    const { service, recognizer, observer } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await speak(service, ch.events, 0, 3_000);
+    recognizer.current.confirm();
+    await flush();
+    await flush();
+
+    expect(observer.grew).toEqual([{ encounterId: ENCOUNTER, upToMs: 3_000 }]);
+  });
+
+  it('AS-087: a stop tells the draft, and a pause does not', async () => {
+    const { service, observer } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await speak(service, ch.events, 0, 1_000);
+    await service.pause(ENCOUNTER, ch.events);
+
+    expect(observer.stopped).toEqual([]);
+
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await speak(service, ch.events, 1_000, 1_000);
+    await service.stop(ENCOUNTER, ch.events);
+
+    expect(observer.stopped).toEqual([ENCOUNTER]);
+  });
+
+  it('AS-087: a stop after a pause asks for the draft too', async () => {
+    const { service, observer } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await speak(service, ch.events, 0, 1_000);
+    await service.pause(ENCOUNTER, ch.events);
+
+    await service.stop(ENCOUNTER, ch.events);
+
+    expect(observer.stopped).toEqual([ENCOUNTER]);
+    // A second stop of what is already stopped asks for nothing more.
+    await service.stop(ENCOUNTER, ch.events);
+    expect(observer.stopped).toEqual([ENCOUNTER]);
+  });
+
+  it('AS-087: the attention closing stops the listening without asking for a draft', async () => {
+    const { service, observer } = setup();
+    const ch = channel();
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await service.close(ENCOUNTER);
+
+    expect(observer.stopped).toEqual([]);
   });
 });

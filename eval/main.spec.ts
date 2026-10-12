@@ -60,7 +60,7 @@ describe('a run of the harness', () => {
         { name: 'anthropic', model: 'fake-anthropic' },
         { name: 'openai', model: 'fake-openai' },
       ],
-      judge: { name: 'fake', promptVersion: 'juez-nota-v1' },
+      judge: { name: 'fake', promptVersion: 'juez-nota-v2' },
       tasks: [
         { name: 'cie10', promptVersions: { A: 'cie10-a-v1', D: 'cie10-d-v1' } },
         {
@@ -341,7 +341,7 @@ describe('the runner', () => {
       judge: {
         name: 'anthropic',
         model: 'fake-quality',
-        promptVersion: 'juez-nota-v1',
+        promptVersion: 'juez-nota-v2',
       },
       tasks: [],
       catalogues: [],
@@ -432,5 +432,17 @@ describe('the command line', () => {
         deps,
       ),
     ).resolves.toBeNull();
+  });
+
+  it('AS-098 --tope-proveedor stops the run before an attempt that would pass it', async () => {
+    const lines: string[] = [];
+    const folder = await runFromArgs(
+      ['--', '--falso', '--tareas', 'borrador', '--casos', '2', '--tope-proveedor', '0.000001', '--salida', scratch('out')], // prettier-ignore
+      { env: {}, now: () => new Date(), print: (line) => lines.push(line), ledgerDir: scratch('ledger') }, // prettier-ignore
+    );
+
+    const result = JSON.parse(readFileSync(join(folder!, 'resultado.json'), 'utf8')) as { stopped: string | null; calls: { answered: boolean }[] }; // prettier-ignore
+    expect(result.stopped).not.toBeNull();
+    expect(result.calls.filter((call) => call.answered)).toHaveLength(0);
   });
 });

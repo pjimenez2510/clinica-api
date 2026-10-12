@@ -1,0 +1,590 @@
+{
+  "label": "c2-borrador-revision",
+  "ledger": "~/.clinica-eval/gasto",
+  "fake": false,
+  "startedAt": "2026-10-12 14:35:23",
+  "finishedAt": "2026-10-12 14:36:32",
+  "commit": "ef7bbb63+cambios",
+  "seed": 42,
+  "ceilingUsd": 100,
+  "providers": [
+    {
+      "name": "gemini",
+      "model": "gemini-3.8-flash"
+    }
+  ],
+  "withoutKey": [
+    "openai"
+  ],
+  "judge": {
+    "name": "anthropic",
+    "model": "claude-sonnet-5",
+    "promptVersion": "juez-nota-v1"
+  },
+  "tasks": [
+    {
+      "name": "draft",
+      "promptVersions": {
+        "D": "c2-draft-2"
+      }
+    }
+  ],
+  "catalogues": [
+    {
+      "file": "cie10-oms-deis-2026-08.xlsx",
+      "sha256": "0d5e19d5d68856aee9379cc91ec16ac931cbfb60dcd06575dec5089cc0a5a75a"
+    },
+    {
+      "file": "cnmb-2026.xlsx",
+      "sha256": "e968d14c9fa3896e7e5cfcb2eb9717b2cde25a7483387ce7f5ced3d62dbdf2e1"
+    },
+    {
+      "file": "llm-pricing.json",
+      "sha256": "9af59d090989ecccfb55aaf1e1d0682a2388e58c51ff0306be16caa4d5464557"
+    }
+  ],
+  "cases": [
+    {
+      "task": "draft",
+      "source": "nota.json",
+      "sha256": "41ed1cabc1d5a5574147948ac57834b1bfae167262ed5a4f9c78612c054d7896",
+      "n": 10
+    }
+  ],
+  "codiesp": null,
+  "stopped": null,
+  "calls": [
+    {
+      "task": "draft",
+      "caseId": "nota-01",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": {
+        "sections": 6,
+        "invented": 0,
+        "phrases": 11,
+        "unsaid": 0,
+        "corrected": 0,
+        "facts": {
+          "present": 11,
+          "expected": 11
+        }
+      },
+      "scores": {
+        "invented": 0,
+        "facts": 1,
+        "unsaid": 0,
+        "judged": 1
+      }
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-02",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": {
+        "sections": 5,
+        "invented": 0,
+        "phrases": 11,
+        "unsaid": 0,
+        "corrected": 0,
+        "facts": {
+          "present": 11,
+          "expected": 11
+        }
+      },
+      "scores": {
+        "invented": 0,
+        "facts": 1,
+        "unsaid": 0,
+        "judged": 1
+      }
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-03",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": {
+        "sections": 4,
+        "invented": 0,
+        "phrases": 13,
+        "unsaid": 0,
+        "corrected": 0,
+        "facts": {
+          "present": 9,
+          "expected": 10
+        }
+      },
+      "scores": {
+        "invented": 0,
+        "facts": 0.9,
+        "unsaid": 0,
+        "judged": 1
+      }
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-04",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": {
+        "sections": 6,
+        "invented": 0,
+        "phrases": 11,
+        "unsaid": 0,
+        "corrected": 0,
+        "facts": {
+          "present": 11,
+          "expected": 11
+        }
+      },
+      "scores": {
+        "invented": 0,
+        "facts": 1,
+        "unsaid": 0,
+        "judged": 1
+      }
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-05",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": {
+        "sections": 5,
+        "invented": 0,
+        "phrases": 13,
+        "unsaid": 0,
+        "corrected": 0,
+        "facts": {
+          "present": 10,
+          "expected": 10
+        }
+      },
+      "scores": {
+        "invented": 0,
+        "facts": 1,
+        "unsaid": 0,
+        "judged": 1
+      }
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-06",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": {
+        "sections": 4,
+        "invented": 0,
+        "phrases": 10,
+        "unsaid": 0,
+        "corrected": 0,
+        "facts": {
+          "present": 8,
+          "expected": 11
+        }
+      },
+      "scores": {
+        "invented": 0,
+        "facts": 0.7272727272727273,
+        "unsaid": 0,
+        "judged": 1
+      }
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-07",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": {
+        "sections": 6,
+        "invented": 0,
+        "phrases": 12,
+        "unsaid": 0,
+        "corrected": 0,
+        "facts": {
+          "present": 11,
+          "expected": 11
+        }
+      },
+      "scores": {
+        "invented": 0,
+        "facts": 1,
+        "unsaid": 0,
+        "judged": 1
+      }
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-08",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": {
+        "sections": 5,
+        "invented": 0,
+        "phrases": 10,
+        "unsaid": 0,
+        "corrected": 0,
+        "facts": {
+          "present": 11,
+          "expected": 11
+        }
+      },
+      "scores": {
+        "invented": 0,
+        "facts": 1,
+        "unsaid": 0,
+        "judged": 1
+      }
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-09",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": {
+        "sections": 6,
+        "invented": 0,
+        "phrases": 10,
+        "unsaid": 0,
+        "corrected": 0,
+        "facts": {
+          "present": 10,
+          "expected": 10
+        }
+      },
+      "scores": {
+        "invented": 0,
+        "facts": 1,
+        "unsaid": 0,
+        "judged": 1
+      }
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-10",
+      "origin": "invented",
+      "provider": "gemini",
+      "arm": "D",
+      "answered": true,
+      "failure": null,
+      "requests": 1,
+      "shown": {
+        "sections": 5,
+        "invented": 0,
+        "phrases": 7,
+        "unsaid": 0,
+        "corrected": 0,
+        "facts": {
+          "present": 9,
+          "expected": 9
+        }
+      },
+      "scores": {
+        "invented": 0,
+        "facts": 1,
+        "unsaid": 0,
+        "judged": 1
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "task": "draft",
+      "caseId": "nota-01",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 4773,
+      "costUsd": 0.0018555,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-01",
+      "provider": "anthropic",
+      "arm": "D",
+      "role": "judge",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3008,
+      "costUsd": 0.0058519999999999996,
+      "model": "claude-sonnet-5"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-02",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 4745,
+      "costUsd": 0.00254925,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-02",
+      "provider": "anthropic",
+      "arm": "D",
+      "role": "judge",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2722,
+      "costUsd": 0.0059299999999999995,
+      "model": "claude-sonnet-5"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-03",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 4216,
+      "costUsd": 0.0019199999999999998,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-03",
+      "provider": "anthropic",
+      "arm": "D",
+      "role": "judge",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2799,
+      "costUsd": 0.006124,
+      "model": "claude-sonnet-5"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-04",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 5145,
+      "costUsd": 0.00257025,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-04",
+      "provider": "anthropic",
+      "arm": "D",
+      "role": "judge",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2669,
+      "costUsd": 0.005822,
+      "model": "claude-sonnet-5"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-05",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 4677,
+      "costUsd": 0.001878,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-05",
+      "provider": "anthropic",
+      "arm": "D",
+      "role": "judge",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2900,
+      "costUsd": 0.006054,
+      "model": "claude-sonnet-5"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-06",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3156,
+      "costUsd": 0.001728,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-06",
+      "provider": "anthropic",
+      "arm": "D",
+      "role": "judge",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2673,
+      "costUsd": 0.005704000000000001,
+      "model": "claude-sonnet-5"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-07",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 5068,
+      "costUsd": 0.00273225,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-07",
+      "provider": "anthropic",
+      "arm": "D",
+      "role": "judge",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2774,
+      "costUsd": 0.006056000000000001,
+      "model": "claude-sonnet-5"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-08",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3389,
+      "costUsd": 0.00178275,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-08",
+      "provider": "anthropic",
+      "arm": "D",
+      "role": "judge",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2477,
+      "costUsd": 0.005708,
+      "model": "claude-sonnet-5"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-09",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3901,
+      "costUsd": 0.00182775,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-09",
+      "provider": "anthropic",
+      "arm": "D",
+      "role": "judge",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2501,
+      "costUsd": 0.005526,
+      "model": "claude-sonnet-5"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-10",
+      "provider": "gemini",
+      "arm": "D",
+      "role": "answer",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 3651,
+      "costUsd": 0.0015765,
+      "model": "gemini-3.8-flash"
+    },
+    {
+      "task": "draft",
+      "caseId": "nota-10",
+      "provider": "anthropic",
+      "arm": "D",
+      "role": "judge",
+      "measured": "gemini",
+      "outcome": "ok",
+      "httpStatus": 200,
+      "latencyMs": 2070,
+      "costUsd": 0.004836,
+      "model": "claude-sonnet-5"
+    }
+  ]
+}

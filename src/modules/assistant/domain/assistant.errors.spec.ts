@@ -31,6 +31,11 @@ import {
   ListeningFailedError,
   ListeningNotOpenError,
   ListeningUnavailableError,
+  AssistantTranscriptEmptyError,
+  AssistantNoteNotOpenError,
+  AssistantDraftInterruptedError,
+  AssistantDraftFailedError,
+  AssistantDraftRetryLimitError,
 } from './assistant.errors';
 
 /**
@@ -184,6 +189,41 @@ describe('assistant errors', () => {
       'ASSISTANT_LISTENING_NOT_OPEN',
       ConflictError,
       /Escuchar/,
+    ],
+    [
+      'AS-086',
+      () => new AssistantTranscriptEmptyError(),
+      'ASSISTANT_TRANSCRIPT_EMPTY',
+      ValidationError,
+      /Escuchar/,
+    ],
+    [
+      'AS-086',
+      () => new AssistantNoteNotOpenError(),
+      'ASSISTANT_NOTE_NOT_OPEN',
+      ConflictError,
+      /Abrir nota clínica/,
+    ],
+    [
+      'AS-093',
+      () => new AssistantDraftInterruptedError(),
+      'ASSISTANT_DRAFT_INTERRUPTED',
+      ExternalServiceError,
+      /Vuelva a pedir/,
+    ],
+    [
+      'AS-093',
+      () => new AssistantDraftFailedError(),
+      'ASSISTANT_DRAFT_FAILED',
+      ExternalServiceError,
+      /Vuelva a pedirlo/,
+    ],
+    [
+      'AS-093',
+      () => new AssistantDraftRetryLimitError(),
+      'ASSISTANT_DRAFT_RETRY_LIMIT',
+      QuotaExceededError,
+      /falló tres veces/,
     ],
     [
       'AS-040',

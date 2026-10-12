@@ -35,7 +35,10 @@ Este módulo **posee**:
   quien decide, con el enlace a lo que se guardó (A1);
 - la **escucha** de la consulta (C1): el canal de audio del navegador, su reloj
   en `listening_session` y la transcripción en `transcript_segment`, con su
-  purga.
+  purga;
+- el **borrador de la nota** (C2): cada borrador pedido en `note_draft`, su
+  redacción desde la transcripción y sus secciones propuestas en
+  `ai_suggestion`.
 
 **Fuera de alcance:**
 
@@ -44,8 +47,11 @@ Este módulo **posee**:
   ninguno llama a un proveedor (AS-001).
 - **El interruptor por sede y el permiso `assistant:use`**: es A3. Este módulo
   no expone ninguna ruta HTTP; quien la exponga declara su permiso (REQ-118).
-- El borrador de la nota a partir de la transcripción (C2) y lo que pasa con
-  la escucha al firmar (E1).
+- Lo que pasa con la escucha y el borrador al firmar, y la distancia entre
+  el borrador y la nota firmada (E1); las preguntas «Para completar la nota»
+  (C3).
+- Escribir en la nota: la sección aceptada la guarda la pantalla por la ruta
+  de la nota, con su `If-Match` (EN-281); el asistente sólo enlaza (P1).
 - Distinguir la voz del médico de la del paciente (dato biométrico, plan §3).
 
 **Depende de:** la configuración (`shared/config`) y la base. Ningún módulo
@@ -212,6 +218,39 @@ evaluación, fuera del verify).
 pestaña Receta y su paso al editor; la mitad del servidor es AS-063, AS-069,
 AS-070 y AS-073, que ya se prueban con esos números.
 
+### E7 — El borrador de la nota con su fuente _(C2, 12-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §7 C2 y §3 («Redactor con procedencia»): mientras la
+consulta se escucha, el asistente redacta la nota en la plantilla con que se
+abrió —la de la especialidad del profesional (D-124)—, cada frase con el minuto
+de la conversación que la dice, y lo que nadie dijo marcado. Se rehace cada 3
+minutos de conversación y al detener la escucha. El médico lo compara lado a
+lado con lo que ya escribió y acepta o descarta cada sección; aceptar escribe en
+el borrador de la nota por su ruta de siempre, con `If-Match`, y **no firma**.
+Se trae de SigmAI el redactor medido (`note-writer.adapter.ts`, estilo
+`written`, respuesta por objetos: E-049, 0 secciones inventadas y 105/108
+hechos) y se corrige su R-02: un borrador a la vez **por atención**, no para
+todas.
+
+**Por qué va así:** P1 y P2. El error típico de un escriba es la omisión y la
+invención (UC Davis 2026: 18 % y 11,5 %); la procedencia por frase y «Nadie lo
+dijo» son lo que deja al médico revisar en segundos en vez de releer la
+consulta.
+**Prueba independiente:** con la transcripción de una consulta inventada, el
+seudonimizador y el proveedor falsos, el borrador trae «Enfermedad o problema
+actual» con cada frase en su minuto y una frase sin marcador marcada «Nadie lo
+dijo»; ninguna sección de lista ni fuera de la plantilla; aceptar «Motivo de
+consulta» con la nota guardada la deja «aceptada» enlazada a esa nota, que
+sigue en borrador y sin firma.
+**Cubre:** AS-086 a AS-102.
+**Solo servidor:** AS-087 (lo pide la escucha), AS-091, AS-092, AS-093, AS-095
+(lo que no llega al log) y AS-098 (el arnés, fuera del verify). La pantalla
+los ve como AS-096 y AS-100.
+**Solo interfaz:** AS-100, AS-101 y AS-102. Son el bloque «Borrador del
+asistente» en la pestaña Nota, aceptar escribiendo en la nota y releer al oír
+el evento; su mitad del servidor es AS-086, AS-094, AS-096 y AS-097, que ya se
+prueban con esos números.
+
 ### E8 — Los exámenes pedidos en la consulta _(D3, 12-10-2026)_
 
 `PLAN-ASISTENTE-IA.md` §7 D3: lo que el médico pide en la nota o en voz alta
@@ -246,6 +285,16 @@ AS-106, AS-108 y AS-109, que ya se prueban con esos números.
   peticiones de red a un proveedor es **cero**, haya o no claves.
 - **SC-090** — Ninguna fila de `ai_run`, línea de log ni mensaje de error del
   módulo contiene texto del prompt, de las instrucciones ni de la respuesta.
+- **SC-091** — En el set simulado (`eval/casos/nota.json`, 10 consultas
+  inventadas, 105 hechos) y en el reservado (`eval/casos/nota-reservada.json`,
+  8 consultas que no se usan para ajustar el prompt), el borrador del producto
+  trae **0 secciones inventadas** —ninguna fuera de la plantilla ni ninguna
+  cuyas frases sean todas «Nadie lo dijo»— y **≥ 95 %** de los hechos
+  esperados de las secciones que escribe (E-049: 105/108), con el proveedor
+  principal. Los hechos de diagnóstico se informan aparte: el borrador no
+  escribe diagnósticos (D-249 §2 y §10).
+- **SC-092** — En esa misma corrida, el **p90** de lo que tarda un borrador es
+  **≤ 15 s** (plan §5).
 
 ## Supuestos
 
@@ -1087,6 +1136,163 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   el médico la guarde.
   > Nada clínico viene relleno (PR-106): lo que falta lo escribe el médico.
 
+### 25. Pedir y rehacer el borrador (C2)
+
+- **AS-086** — CUANDO el profesional de la atención pida el borrador de una
+  atención viva cuya nota 002 está en borrador, el sistema DEBERÁ responder
+  enseguida (202) con el borrador del tramo transcrito hasta ese momento
+  (`upToMs`, el fin del último segmento) y redactarlo aparte; SI ese tramo ya
+  tiene un borrador listo o en curso, DEBERÁ responder ése sin pedir otro; SI
+  lo tiene fallido, DEBERÁ volver a ponerlo en cola («Volver a pedir»); SI la
+  transcripción está vacía, ENTONCES DEBERÁ rechazarlo con
+  `ASSISTANT_TRANSCRIPT_EMPTY`; SI la nota no está abierta en borrador, con
+  `ASSISTANT_NOTE_NOT_OPEN`; y quién, dónde y la atención viva, como AS-039.
+  La base DEBERÁ rechazar un segundo borrador en curso de la misma atención y
+  dos borradores del mismo tramo; la instalación DEBERÁ redactar como mucho
+  **4** a la vez; y SI el tramo ya falló **3** veces, ENTONCES DEBERÁ
+  rechazar volver a pedirlo con `ASSISTANT_DRAFT_RETRY_LIMIT` sin llamar a
+  nadie.
+  > SigmAI R-02: un solo trabajo a la vez para todas las consultas. Aquí, uno
+  > a la vez por atención —un proveedor lento no recibe dos veces las mismas
+  > palabras— y cuatro atenciones a la vez (D-249 §6). El tope de intentos
+  > cierra el bucle de «Volver a pedir» sobre un tramo que falla siempre: cada
+  > intento pagaba una llamada (auditoría del 12-10-2026).
+- **AS-087** — MIENTRAS se escucha, CUANDO lo transcrito pase en **3 minutos**
+  del reloj de la conversación el tramo del último borrador pedido, y CUANDO
+  el médico detenga la escucha —también tras una pausa—, el sistema DEBERÁ
+  pedir el borrador por su cuenta, a nombre del profesional y con las reglas
+  de AS-086; pausar NO DEBERÁ pedirlo; y sin nota abierta, o si quien abrió la
+  escucha no es el profesional de la atención, NO DEBERÁ pedir nada.
+  > Minutos de conversación, no de reloj de pared (D-249 §3). Un fallo al
+  > pedirlo no toca la escucha: se queda en el log, sin texto.
+
+### 26. Cómo se redacta (P2)
+
+- **AS-088** — El borrador DEBERÁ escribirse sólo en las secciones de texto
+  (`TEXT`) de la plantilla con que se abrió la nota (EN-204; la de serie si no
+  tiene), con su título y su ayuda como guía; SI la respuesta nombra otra
+  sección, ENTONCES el intento DEBERÁ fallar entero (`invalid-answer`); y una
+  sección de la que la conversación no habló NO DEBERÁ aparecer.
+  > La plantilla la escribe la clínica, no el paciente: va al modelo como
+  > contexto (`withContext`), con las instrucciones fijas. Lo que la ficha ya
+  > sabe no se copia (D-249 §1), ni un diagnóstico: va en Diagnósticos, y la
+  > transcripción no dice quién habla (D-249 §2).
+- **AS-089** — Cada frase DEBERÁ llevar el inicio de la línea de la
+  transcripción que la respalda, sólo de las que se dieron al modelo; SI una
+  frase no lleva marcador, lleva uno que no se le dio, o lleva una fecha que,
+  devuelta, no está en la transcripción, ENTONCES DEBERÁ guardarse marcada
+  «Nadie lo dijo» (`unsaid`), nunca con una fuente inventada; las fuentes de
+  la propuesta DEBERÁN ser los tramos (`fromMs`, `toMs`) de las líneas
+  citadas; y el texto que «Aceptar» copia en la nota DEBERÁ ser sólo el de las
+  frases que alguien dijo.
+  > SigmAI `sourceRefOf`: un marcador que no se dio no es una cita. La pantalla
+  > lo muestra marcado, no lo esconde; pero no se copia: una vez en la casilla
+  > perdía la marca antes de la firma (revisión clínica del 12-10-2026,
+  > D-249 §7). Una fecha cuenta como dicha sólo si es, entera, una de las
+  > fechas de lo dicho («5 de marzo» no es «15 de marzo»).
+- **AS-090** — CUANDO el modelo responda, el sistema DEBERÁ guardar cada
+  sección como una propuesta `note-section` de `ai_suggestion` con su intento,
+  su sección, su texto, sus frases con su fuente y el borrador al que
+  pertenece, y dejar el borrador listo; en pantalla DEBERÁ estar, por
+  sección, la propuesta más reciente de los borradores listos —un borrador
+  nuevo que omite una sección no esconde la que espera—, ninguna si la más
+  reciente se descartó, y ninguna si dice lo mismo que otra ya decidida; sin
+  borrar ninguna (AS-023). Una propuesta nueva de una sección aceptada antes
+  DEBERÁ decir qué texto se aceptó, para sustituirlo y no añadirlo dos veces.
+- **AS-091** — Antes de guardar, el sistema DEBERÁ devolver al texto los nombres
+  que el seudonimizador quitó y mover de vuelta las fechas que desplazó
+  (`dateShiftDays`); y NO DEBERÁ mandar al proveedor la fecha de la atención.
+  > Pendiente desde D1 (AS-025): una fecha desplazada no puede ser lo que el
+  > médico firma. La fecha de hoy delataría el desplazamiento (D-246 §4).
+- **AS-092** — Antes de seudonimizar, el sistema DEBERÁ corregir en el texto que
+  va al modelo una palabra que el reconocedor partió en dos cuando, unida, es
+  letra por letra un principio activo del CNMB («para acetamol» →
+  «paracetamol»), y sólo si la segunda mitad no es del vocabulario protegido
+  (las palabras de la CIE-10 y las que la clínica escribe en sus notas); NO
+  DEBERÁ cambiar ninguna otra palabra; y la transcripción guardada NO DEBERÁ
+  cambiar.
+  > SigmAI `lexicon.ts`; D-247 §4 y D-249 §5. SigmAI corregía además una
+  > palabra a una o dos ediciones de un principio: con el CNMB real eso volvía
+  > «metamizol» en «metimazol» y «un litro» en «un litio», y el borrador lo
+  > escribía como dicho (revisión clínica del 12-10-2026). Una palabra mal oída
+  > la lee y la corrige el médico; una bien oída cambiada, no.
+
+### 27. Fallos, aceptar y privacidad
+
+- **AS-093** — SI el seudonimizador o el proveedor fallan, se acaba el plazo
+  (**60 s**), el techo no admite el intento o la atención se cerró mientras se
+  redactaba, ENTONCES el borrador DEBERÁ quedar fallido con el código del
+  error, sin guardar ninguna propuesta ni tocar las anteriores; y CUANDO la API
+  arranque, un borrador que quedó en curso DEBERÁ quedar fallido con
+  `ASSISTANT_DRAFT_INTERRUPTED`.
+  > En pantalla, el motivo y «Volver a pedir» (AS-100). El respaldo de A4
+  > actúa antes (AS-007). Un fallo de la base al empezar a redactar deja el
+  > borrador fallido, nunca un rechazo sin capturar en el proceso.
+- **AS-094** — CUANDO el profesional acepte una sección con la nota en que la
+  guardó, el sistema DEBERÁ comprobar que es la nota 002 en borrador de esa
+  atención y enlazar la propuesta con la distancia leída de esa sección
+  (AS-022); el asistente NO DEBERÁ escribir en la nota, firmarla ni cambiar su
+  estado. Descartar DEBERÁ hacer lo de AS-038; y aceptar y descartar, exigir lo
+  de AS-039.
+  > La pantalla escribe la sección por la ruta de la nota, con `If-Match`
+  > (EN-281), y sólo después enlaza. Firmar sigue siendo el acto del médico
+  > con `record:sign` (EN-027).
+- **AS-095** — Ninguna línea de log, fila de `ai_run` o de `note_draft` ni
+  mensaje de error DEBERÁ contener la transcripción ni el borrador; la
+  transcripción DEBERÁ ir al modelo delimitada como dato, con la instrucción
+  de no seguir órdenes que contenga; mandarla DEBERÁ dejar su fila `EXPORT` en
+  la bitácora, y leer el borrador, su `READ`.
+  > Entre `<conversacion>` y `</conversacion>`, con esas marcas rotas si la
+  > transcripción las decía (AS-041).
+- **AS-096** — CUANDO el profesional pida ver el borrador, el sistema DEBERÁ
+  responder el estado del último —en cola, redactando, listo o fallido con su
+  código—, su tramo, cuánto de la transcripción queda sin redactar y las
+  secciones vigentes (AS-090) con sus frases, fuentes, marcas y si son de
+  demostración; a cualquier otro, lo de AS-039.
+- **AS-097** — CUANDO un borrador se ponga en cola o termine, listo o fallido,
+  y CUANDO se acepte o descarte una sección, el sistema DEBERÁ publicar
+  `assistant-draft` dirigido a quien lo pidió o decidió, sin contenido
+  (AU-055, AU-060).
+
+### 28. Medir y demostrar
+
+- **AS-098** — `pnpm eval -- --tareas borrador` DEBERÁ medir con el redactor
+  del producto, sobre `casos/nota.json` con sus líneas puestas en un reloj, las
+  secciones inventadas, los hechos esperados (juez sin validar), las frases
+  «Nadie lo dijo» y el p50 y el p90 de lo que tarda; DEBERÁ correr fuera del
+  verify y DEBERÁ detenerse antes de un intento que haga pasar a su proveedor
+  del tope de `--tope-proveedor` en el registro, que en una corrida real vale
+  2 USD si no se dice otro.
+  > D-241: 2 USD por proveedor en total en las pruebas, en el registro
+  > compartido del arnés. SC-091 y SC-092.
+- **AS-099** — DONDE `ASSISTANT_FAKE_PROVIDER` sea `true`, el proveedor de
+  demostración DEBERÁ redactar desde el guion —cada línea que contiene una
+  frase del guion va a su sección con su marcador, más una frase sin marcador
+  para que se vea «Nadie lo dijo»— y cada sección DEBERÁ decir que es de
+  demostración (AS-029).
+
+### 29. En la pestaña Nota
+
+- **AS-100** — MIENTRAS la cuenta pueda pedir el borrador (AS-086), la pestaña
+  Nota DEBERÁ mostrar «Borrador del asistente» con su estado —redactando,
+  hasta qué minuto cubre, cuánto falta, el motivo del fallo con «Volver a
+  pedir»— y «Pedir borrador»; cada sección con borde punteado y «Propuesta»,
+  lado a lado con lo que la nota tiene en esa sección, cada frase con su
+  minuto y las «Nadie lo dijo» marcadas, con «Nadie lo dijo, revise lo
+  marcado» una vez por sección; y «Aceptar» y «Descartar» por sección. SI el
+  borrador responde 404, ENTONCES NO DEBERÁ mostrar nada de esto.
+- **AS-101** — CUANDO el médico acepte una sección, la pantalla DEBERÁ escribir
+  su texto en esa sección de la nota —en una vacía, tal cual; en una que ya
+  tiene lo aceptado antes, en su lugar («Actualizar»); en una con texto del
+  médico, «Añadir» al final o «Reemplazar» tras confirmarlo—, guardarla con
+  `If-Match` y sólo después enlazar la propuesta; SI el guardado responde que
+  otra persona cambió la nota, ENTONCES NO DEBERÁ enlazarla y DEBERÁ decirlo
+  (EN-284); SI el guardado falla por otra causa, ENTONCES DEBERÁ devolver la
+  sección a lo que tenía; y SI lo que falla es el enlace, el siguiente
+  «Aceptar» DEBERÁ sólo enlazar, sin escribir el texto otra vez.
+- **AS-102** — CUANDO llegue `assistant-draft`, la pantalla DEBERÁ releer el
+  borrador sin recargar la página ni tocar lo que el médico está escribiendo.
+
 ### 30. Leer lo que la consulta pide (D3, P2, P5)
 
 - **AS-103** — CUANDO el profesional de la atención pida «Proponer exámenes»
@@ -1255,7 +1461,6 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   DEBERÁ enlazar la propuesta (AS-109) y mostrarla «Aceptada» con el examen;
   SI el enlace falla, ENTONCES DEBERÁ decir que la orden quedó guardada.
 
-
 ---
 
 ## Códigos de error nuevos
@@ -1285,6 +1490,12 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `SUGGESTION_PRESCRIPTION_MISMATCH`   | `ValidationError`      | 422       | La receta con que se enlaza no es de la atención, está descartada o no tiene esa línea (AS-074) |
 | `SUGGESTION_ORDER_MISMATCH`          | `ValidationError`      | 422       | La orden con que se enlaza no es de la atención, está descartada, no tiene ese examen o el examen no es un candidato de la propuesta (AS-109) |
 
+| `ASSISTANT_TRANSCRIPT_EMPTY`         | `ValidationError`      | 422       | No hay transcripción de la que redactar el borrador (AS-086) |
+| `ASSISTANT_NOTE_NOT_OPEN`            | `ConflictError`        | 409       | La atención no tiene la nota 002 abierta en borrador (AS-086, AS-094) |
+| `ASSISTANT_DRAFT_INTERRUPTED`        | `ExternalServiceError` | 503       | La API se reinició mientras redactaba el borrador (AS-093) |
+| `ASSISTANT_DRAFT_FAILED`             | `ExternalServiceError` | 503       | El borrador falló por algo que no es del médico: la base, un fallo (AS-093) |
+| `ASSISTANT_DRAFT_RETRY_LIMIT`        | `QuotaExceededError`   | 429       | «Volver a pedir» sobre un tramo que ya falló tres veces (AS-093) |
+
 ## Niveles de prueba
 
 | Requisito                              | Nivel                                                                |
@@ -1306,6 +1517,10 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-053 (el código) | Recorrido de los archivos de la escucha |
 | AS-059, AS-060, AS-061 | Componente y composable; recorrido F-04 con el audio de prueba |
 | AS-062 | Guion contra la API y `clinica-ai` en marcha, fuera del verify |
+| AS-086 (la base), AS-090, AS-094, AS-096, AS-097 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-087, AS-088, AS-089, AS-091, AS-092, AS-093, AS-095, AS-099 | Unitario con seudonimizador, proveedor, reloj y almacenes falsos |
+| AS-098 | Arnés (`eval/`), fuera del verify |
+| AS-100, AS-101, AS-102 | Componente y composable; recorrido F-04 con el audio de prueba |
 | AS-030 a AS-034                        | Unitario con `fetch` falso; AS-031 y AS-032 sobre `env.schema`; prueba manual contra `clinica-ai` en marcha |
 | AS-063 a AS-073, AS-077, AS-078 | Unitario con seudonimizador, proveedor y lector de alergias falsos |
 | AS-064, AS-069, AS-070, AS-072 a AS-076 | Integración HTTP contra PostgreSQL, con control positivo |
@@ -1327,7 +1542,9 @@ En **D-243**: si las propuestas salen en un derecho de acceso y cuánto se
 guarda la descartada. En **D-247**: escuchar sin la autorización de grabar
 hasta A3, el tope de 90 días de una transcripción sin firma, quién ve la
 transcripción, el léxico de la clínica y el estado de la escucha en una sola
-instancia de la API.
+instancia de la API. En **D-249**: la ficha fuera del borrador, dónde va un
+diagnóstico dicho, de qué reloj son los 3 minutos, el borrador con la nota
+abierta, el vocabulario protegido del léxico y la redacción en el proceso.
 En **D-250**: los procedimientos ordenables, lo que pide el paciente en la
 conversación, el umbral para encender, el catálogo entero en el prompt y la
 prioridad que nadie marca.

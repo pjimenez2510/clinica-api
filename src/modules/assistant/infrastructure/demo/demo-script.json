@@ -1,5 +1,5 @@
 {
-  "about": "AS-029. Guion del modo de demostración: lo que el proveedor falso contesta, sin modelo. Datos inventados. Cada problema se nombra si la nota contiene su frase; los códigos incluyen uno que no existe en la CIE-10 OMS (J02.7) para que se vea que la barrera no lo muestra. Receta (D2): cada medicamento se lee si la nota contiene su nombre; la concentración, la dosis, la frecuencia y la duración se toman de la propia frase. «Jarabe de miel con limón» no está en el CNMB, para que se vea que la barrera no muestra ningún nombre fuera del cuadro.",
+  "about": "AS-029. Guion del modo de demostración: lo que el proveedor falso contesta, sin modelo. Datos inventados. Cada problema se nombra si la nota contiene su frase; los códigos incluyen uno que no existe en la CIE-10 OMS (J02.7) para que se vea que la barrera no lo muestra. Receta (D2): cada medicamento se lee si la nota contiene su nombre; la concentración, la dosis, la frecuencia y la duración se toman de la propia frase. «Jarabe de miel con limón» no está en el CNMB, para que se vea que la barrera no muestra ningún nombre fuera del cuadro. El borrador de la nota (AS-099): cada línea de la conversación que contiene una frase va a su sección con su marcador; la frase de «unsaid» no lleva marcador, para que se vea «Nadie lo dijo».",
   "problems": [
     {
       "phrase": "odinofagia",
@@ -110,5 +110,47 @@
       "phrase": "jarabe de miel",
       "drug": "jarabe de miel con limón"
     }
-  ]
+  ],
+  "draft": {
+    "lines": [
+      {
+        "phrase": "me duele la garganta",
+        "section": "motivoConsulta",
+        "text": "Dolor de garganta."
+      },
+      {
+        "phrase": "tres días",
+        "section": "enfermedadActual",
+        "text": "Odinofagia de tres días de evolución, con fiebre."
+      },
+      {
+        "phrase": "paracetamol",
+        "section": "enfermedadActual",
+        "text": "Ha tomado paracetamol 500 mg cada 8 horas para la fiebre."
+      },
+      {
+        "phrase": "temperatura",
+        "section": "examenFisico",
+        "text": "Se revisa la garganta y se toma la temperatura."
+      },
+      {
+        "phrase": "control en",
+        "section": "planTratamiento",
+        "text": "Control en 15 días."
+      },
+      {
+        "phrase": "ardor al orinar",
+        "section": "motivoConsulta",
+        "text": "Ardor al orinar."
+      },
+      {
+        "phrase": "dolor lumbar",
+        "section": "enfermedadActual",
+        "text": "Dolor lumbar."
+      }
+    ],
+    "unsaid": {
+      "text": "Acudir antes si la fiebre no cede."
+    }
+  }
 }

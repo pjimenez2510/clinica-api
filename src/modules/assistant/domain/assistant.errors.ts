@@ -433,3 +433,68 @@ export class ListeningFailedError extends ExternalServiceError {
     super('A listening command failed');
   }
 }
+
+/** AS-086. Nothing was transcribed yet: there is nothing to draft from. */
+export class AssistantTranscriptEmptyError extends ValidationError {
+  readonly code = 'ASSISTANT_TRANSCRIPT_EMPTY';
+  override readonly userTitle =
+    'Todavía no hay nada transcrito. Use «Escuchar» y pida el borrador después';
+
+  constructor() {
+    super('The attention has no transcript to draft from');
+  }
+}
+
+/** AS-086, AS-094. The draft is written into the note, which is not open. */
+export class AssistantNoteNotOpenError extends ConflictError {
+  readonly code = 'ASSISTANT_NOTE_NOT_OPEN';
+  override readonly userTitle =
+    'La nota no está abierta en borrador. Use «Abrir nota clínica» y vuelva a pedirlo';
+
+  constructor() {
+    super('The attention has no consultation note in draft');
+  }
+}
+
+/** AS-093. The API restarted while the draft was being written. */
+export class AssistantDraftInterruptedError extends ExternalServiceError {
+  readonly code = 'ASSISTANT_DRAFT_INTERRUPTED';
+  readonly service = 'assistant-draft';
+  readonly isRetryable = true;
+  override readonly userTitle =
+    'El borrador se interrumpió al reiniciarse el sistema. Vuelva a pedirlo';
+
+  constructor() {
+    super('The draft was interrupted by a restart');
+  }
+}
+
+/**
+ * AS-093. The draft failed for something that is not the physician's to know
+ * (the database, a bug): the screen says so and offers «Volver a pedir».
+ */
+export class AssistantDraftFailedError extends ExternalServiceError {
+  readonly code = 'ASSISTANT_DRAFT_FAILED';
+  readonly service = 'assistant-draft';
+  readonly isRetryable = true;
+  override readonly userTitle =
+    'No se pudo redactar el borrador. Vuelva a pedirlo';
+
+  constructor() {
+    super('The draft could not be written');
+  }
+}
+
+/**
+ * AS-093. «Volver a pedir» on a stretch that already failed three times:
+ * each try paid a call. A new stretch, once the transcript grows, starts over.
+ */
+export class AssistantDraftRetryLimitError extends QuotaExceededError {
+  readonly code = 'ASSISTANT_DRAFT_RETRY_LIMIT';
+  override readonly userTitle =
+    'Este borrador falló tres veces. Siga escribiendo la nota; se volverá a pedir cuando haya más conversación';
+
+  constructor() {
+    super('The draft of this stretch failed too many times');
+  }
+}

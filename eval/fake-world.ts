@@ -154,6 +154,8 @@ export class FakeWorld {
         );
       case 'note':
         return answer(this.note(item as NoteCase, right));
+      case 'draft':
+        return answer(this.draft(item as NoteCase, right));
       case 'receta-nota':
         return answer(
           key.role === 'follow-up'
@@ -317,6 +319,35 @@ export class FakeWorld {
         section,
         segments,
       })),
+    };
+  }
+
+  /**
+   * AS-098. The draft in the product's template: each fact on the first line,
+   * and, when wrong, half of them and a section nobody said.
+   */
+  private draft(item: NoteCase, right: boolean) {
+    const into: Record<string, string> = {
+      motivo: 'motivoConsulta',
+      enfermedad_actual: 'enfermedadActual',
+      antecedentes: 'antecedentes',
+      examen_fisico: 'examenFisico',
+      diagnostico: 'planTratamiento',
+      plan: 'planTratamiento',
+    };
+    const kept = right
+      ? item.facts
+      : item.facts.slice(0, Math.ceil(item.facts.length / 2));
+    const sections = new Map<string, { text: string; source: string | null }[]>(); // prettier-ignore
+    for (const fact of kept) {
+      const key = into[fact.section] ?? 'planTratamiento';
+      sections.set(key, [...(sections.get(key) ?? []), { text: fact.fact, source: 'L1' }]); // prettier-ignore
+    }
+    if (!right) {
+      sections.set('revisionOrganosSistemas', [{ text: 'Sin otros síntomas', source: null }]); // prettier-ignore
+    }
+    return {
+      sections: [...sections].map(([section, segments]) => ({ section, segments })), // prettier-ignore
     };
   }
 

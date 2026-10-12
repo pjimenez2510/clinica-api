@@ -53,7 +53,8 @@ export interface EvalTask<Case extends EvalCase, Value> {
     | 'prescription'
     | 'receta-nota'
     | 'examenes-nota'
-    | 'note';
+    | 'note'
+    | 'draft';
   title: string;
   arms: readonly Arm[];
   /** EV-7. The version of each arm's prompt, stored with every result. */

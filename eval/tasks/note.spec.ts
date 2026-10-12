@@ -85,6 +85,12 @@ describe('note task', () => {
     expect(request.prompt).toContain(
       'Nota:\n1. [motivo] Odinofagia\n2. [plan] Amoxicilina',
     );
-    expect(request.promptVersion).toBe('juez-nota-v1');
+    expect(request.promptVersion).toBe('juez-nota-v2');
+  });
+
+  it('the judge counts only what the note says, never what it would infer from symptoms or treatment (SC-091 manual review)', () => {
+    expect(judgeRequest(item, note).system).toMatch(
+      /no lo deduzcas de los síntomas, del examen ni del tratamiento/,
+    );
   });
 });

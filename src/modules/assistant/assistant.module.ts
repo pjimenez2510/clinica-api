@@ -16,6 +16,7 @@ import { CurrentUserService } from '../../shared/authorisation/current-user.serv
 import { CIE10_LOOKUP } from '../../shared/clinical/cie10-lookup.port';
 import { ALLERGY_ABSENCE_READER } from '../../shared/clinical/allergy-absence.port';
 import { CODING_CONTEXT_READER } from '../../shared/clinical/coding-context.port';
+import { NOTE_DRAFT_CONTEXT_READER } from '../../shared/clinical/note-draft-context.port';
 import { SURVIVING_CHART_ALLERGY_READER } from '../../shared/clinical/patient-allergy.port';
 import { ORDERING_CONTEXT_READER } from '../../shared/clinical/ordering-context.port';
 import { PRESCRIBING_CONTEXT_READER } from '../../shared/clinical/prescribing-context.port';
@@ -24,6 +25,7 @@ import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/pri
 import { PrismaCie10Lookup } from '../../shared/infrastructure/clinical/prisma-cie10.lookup';
 import { PrismaActiveAllergyReader } from '../../shared/infrastructure/clinical/prisma-active-allergy.reader';
 import { PrismaCodingContextReader } from '../../shared/infrastructure/clinical/prisma-coding-context.reader';
+import { PrismaNoteDraftContextReader } from '../../shared/infrastructure/clinical/prisma-note-draft-context.reader';
 import { PrismaOrderingContextReader } from '../../shared/infrastructure/clinical/prisma-ordering-context.reader';
 import { PrismaPrescribingContextReader } from '../../shared/infrastructure/clinical/prisma-prescribing-context.reader';
 import { PrismaAllergyAbsenceReader } from '../../shared/infrastructure/clinical/standing-allergy-absence';
@@ -49,6 +51,14 @@ import { AssistantPrescriptionController } from './assistant-prescription.contro
 import { OrderProposalService } from './application/order-proposal.service';
 import { PrescriptionProposalService } from './application/prescription-proposal.service';
 import { AssistantListeningController } from './assistant-listening.controller';
+import { AssistantNoteDraftController } from './assistant-note-draft.controller';
+import {
+  NOTE_DRAFT_CLOCK,
+  NoteDraftService,
+} from './application/note-draft.service';
+import { NOTE_DRAFT_STORE } from './application/note-draft.store';
+import { TRANSCRIPT_OBSERVER } from './application/transcript-observer.port';
+import { PrismaNoteDraftStore } from './infrastructure/prisma-note-draft.store';
 import { AssistantSwitchMiddleware } from './assistant-switch.middleware';
 import { ListeningAccess } from './application/listening-access';
 import {
@@ -102,6 +112,7 @@ const PURGE_EVERY_MS = 86_400_000;
   controllers: [
     AssistantDiagnosisController,
     AssistantListeningController,
+    AssistantNoteDraftController,
     AssistantPrescriptionController,
     AssistantOrdersController,
   ],
@@ -171,6 +182,12 @@ const PURGE_EVERY_MS = 86_400_000;
     ListeningService,
     ListeningAccess,
     ListeningGateway,
+    // AS-086 to AS-097. The draft of the note (C2), told by the listening.
+    { provide: NOTE_DRAFT_STORE, useClass: PrismaNoteDraftStore },
+    { provide: NOTE_DRAFT_CONTEXT_READER, useClass: PrismaNoteDraftContextReader }, // prettier-ignore
+    { provide: NOTE_DRAFT_CLOCK, useValue: () => new Date() },
+    NoteDraftService,
+    { provide: TRANSCRIPT_OBSERVER, useExisting: NoteDraftService },
   ],
   exports: [LLM_CLIENT, SuggestionService, PSEUDONYMIZER],
 })
@@ -192,6 +209,7 @@ export class AssistantModule
       .forRoutes(
         AssistantDiagnosisController,
         AssistantListeningController,
+        AssistantNoteDraftController,
         AssistantPrescriptionController,
         AssistantOrdersController,
       );
