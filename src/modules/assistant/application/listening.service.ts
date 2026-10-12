@@ -272,6 +272,15 @@ export class ListeningService {
     await Promise.all(held.map((live) => this.suspend(live, 'device-lost')));
   }
 
+  /**
+   * AS-140. This process holds the capture of the attention now. The row
+   * alone would not do: one left `LISTENING` by a crash would keep the note
+   * from being signed for ever, and the capture lives here (D-247 §5).
+   */
+  capturing(encounterId: string): boolean {
+    return this.live.has(encounterId);
+  }
+
   /** AS-056. The listening as the screen shows it: what is live is fresher. */
   async sessionOf(
     encounterId: string,

@@ -655,7 +655,7 @@ function codeOf(error: unknown): string {
     : new AssistantDraftFailedError().code;
 }
 
-function asStoredSection(view: SuggestionView): StoredDraftSection {
+export function asStoredSection(view: SuggestionView): StoredDraftSection {
   const proposal = view.proposal as Partial<SectionProposal>;
   return {
     id: view.id,

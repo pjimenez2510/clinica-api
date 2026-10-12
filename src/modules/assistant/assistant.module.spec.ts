@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AiRunStore } from './application/ai-run.store';
 import type { ListeningStore } from './application/listening.store';
+import type { SigningReviewService } from './application/signing-review.service';
 import type { ConfigService } from '@nestjs/config';
 
 import type { Env } from '../../shared/config/env.schema';
@@ -50,6 +51,14 @@ function transcripts(purge: () => Promise<number> = () => Promise.resolve(0)) {
   return { store, purgeTranscripts };
 }
 
+function signing(sweep: () => Promise<number> = () => Promise.resolve(0)) {
+  const sweepSigned = vi.fn(sweep);
+  return {
+    service: { sweep: sweepSigned } as unknown as SigningReviewService,
+    sweepSigned,
+  };
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -59,7 +68,11 @@ describe('AssistantModule', () => {
   it('AS-015 purges the exchanges at boot and once a day after, until it is destroyed', async () => {
     vi.useFakeTimers();
     const { store, purgeExchanges } = storeWith(() => Promise.resolve(0));
-    const module = new AssistantModule(store, transcripts().store);
+    const module = new AssistantModule(
+      store,
+      transcripts().store,
+      signing().service,
+    );
 
     module.onModuleInit();
     await vi.advanceTimersByTimeAsync(2 * DAY_MS);
@@ -74,7 +87,11 @@ describe('AssistantModule', () => {
     const { store } = storeWith(() =>
       Promise.reject(new Error('DELETE … Persona_1 refiere dolor')),
     );
-    const module = new AssistantModule(store, transcripts().store);
+    const module = new AssistantModule(
+      store,
+      transcripts().store,
+      signing().service,
+    );
 
     expect(() => module.onModuleInit()).not.toThrow();
     await vi.waitFor(() => expect(warn).toHaveBeenCalled());
@@ -90,7 +107,7 @@ describe('the purge of transcripts (AS-057)', () => {
     vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const { store } = storeWith(() => Promise.reject(new Error('down')));
     const { store: listening, purgeTranscripts } = transcripts();
-    const module = new AssistantModule(store, listening);
+    const module = new AssistantModule(store, listening, signing().service);
 
     module.onModuleInit();
     await vi.advanceTimersByTimeAsync(DAY_MS);
@@ -105,13 +122,44 @@ describe('the purge of transcripts (AS-057)', () => {
     const { store: listening } = transcripts(() =>
       Promise.reject(new Error('DELETE … me duele la garganta')),
     );
-    const module = new AssistantModule(store, listening);
+    const module = new AssistantModule(store, listening, signing().service);
 
     expect(() => module.onModuleInit()).not.toThrow();
     await vi.waitFor(() => expect(warn).toHaveBeenCalled());
     module.onModuleDestroy();
 
     expect(JSON.stringify(warn.mock.calls)).not.toContain('garganta');
+  });
+});
+
+describe('the review of signed notes (AS-144)', () => {
+  it('AS-144 reviews what signatures left unreviewed at boot and once a day, even when a purge fails', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { store } = storeWith(() => Promise.reject(new Error('down')));
+    const { service, sweepSigned } = signing();
+    const module = new AssistantModule(store, transcripts().store, service);
+
+    module.onModuleInit();
+    await vi.advanceTimersByTimeAsync(DAY_MS);
+    module.onModuleDestroy();
+
+    expect(sweepSigned).toHaveBeenCalledTimes(2);
+  });
+
+  it('AS-144 AS-146 a failed review does not stop the API and logs no text', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined); // prettier-ignore
+    const { store } = storeWith(() => Promise.resolve(0));
+    const { service } = signing(() =>
+      Promise.reject(new Error('INSERT … Odinofagia de tres días')),
+    );
+    const module = new AssistantModule(store, transcripts().store, service);
+
+    expect(() => module.onModuleInit()).not.toThrow();
+    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+    module.onModuleDestroy();
+
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('Odinofagia');
   });
 });
 

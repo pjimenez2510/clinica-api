@@ -586,6 +586,20 @@ describe('ListeningService', () => {
     ).rejects.toBeInstanceOf(ListeningNotOpenError);
   });
 
+  it('AS-140: says it captures only while it holds the capture: not paused, not stopped', async () => {
+    const { service } = setup();
+    const ch = channel();
+    expect(service.capturing(ENCOUNTER)).toBe(false);
+
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    expect(service.capturing(ENCOUNTER)).toBe(true);
+    await service.pause(ENCOUNTER, ch.events);
+    expect(service.capturing(ENCOUNTER)).toBe(false);
+    await service.start(ENCOUNTER, USER, 'computador', ch.events);
+    await service.close(ENCOUNTER);
+    expect(service.capturing(ENCOUNTER)).toBe(false);
+  });
+
   it('AS-087: tells the draft how far the transcript goes each time segments are kept', async () => {
     const { service, recognizer, observer } = setup();
     const ch = channel();

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  Global,
   Inject,
   Logger,
   type MiddlewareConsumer,
@@ -15,6 +16,7 @@ import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { CIE10_LOOKUP } from '../../shared/clinical/cie10-lookup.port';
 import { ALLERGY_ABSENCE_READER } from '../../shared/clinical/allergy-absence.port';
+import { ASSISTANT_AT_SIGNING } from '../../shared/clinical/assistant-at-signing.port';
 import { CODING_CONTEXT_READER } from '../../shared/clinical/coding-context.port';
 import { NOTE_DRAFT_CONTEXT_READER } from '../../shared/clinical/note-draft-context.port';
 import { SURVIVING_CHART_ALLERGY_READER } from '../../shared/clinical/patient-allergy.port';
@@ -59,6 +61,12 @@ import {
 import { NOTE_DRAFT_STORE } from './application/note-draft.store';
 import { TRANSCRIPT_OBSERVER } from './application/transcript-observer.port';
 import { PrismaNoteDraftStore } from './infrastructure/prisma-note-draft.store';
+import {
+  SIGNING_REVIEW_CLOCK,
+  SigningReviewService,
+} from './application/signing-review.service';
+import { SUGGESTION_REVIEW_STORE } from './application/suggestion-review.store';
+import { PrismaSuggestionReviewStore } from './infrastructure/prisma-suggestion-review.store';
 import { AssistantSwitchMiddleware } from './assistant-switch.middleware';
 import { ListeningAccess } from './application/listening-access';
 import {
@@ -108,6 +116,12 @@ import { buildProviderChain } from './infrastructure/provider-chain';
 /** AS-015. Once a day: the retention is counted in days. */
 const PURGE_EVERY_MS = 86_400_000;
 
+/**
+ * `@Global` FOR ONE TOKEN, `ASSISTANT_AT_SIGNING` (E1): `encounter` asks it
+ * before a signature and tells it after, without importing this module — the
+ * shape `billing` gives `CONSULTATION_REPRICER`.
+ */
+@Global()
 @Module({
   controllers: [
     AssistantDiagnosisController,
@@ -188,8 +202,13 @@ const PURGE_EVERY_MS = 86_400_000;
     { provide: NOTE_DRAFT_CLOCK, useValue: () => new Date() },
     NoteDraftService,
     { provide: TRANSCRIPT_OBSERVER, useExisting: NoteDraftService },
+    // AS-140 to AS-146 (E1). What a signature asks and tells.
+    { provide: SUGGESTION_REVIEW_STORE, useClass: PrismaSuggestionReviewStore },
+    { provide: SIGNING_REVIEW_CLOCK, useValue: () => new Date() },
+    SigningReviewService,
+    { provide: ASSISTANT_AT_SIGNING, useExisting: SigningReviewService },
   ],
-  exports: [LLM_CLIENT, SuggestionService, PSEUDONYMIZER],
+  exports: [LLM_CLIENT, SuggestionService, PSEUDONYMIZER, ASSISTANT_AT_SIGNING],
 })
 export class AssistantModule
   implements NestModule, OnModuleInit, OnModuleDestroy
@@ -200,6 +219,7 @@ export class AssistantModule
   constructor(
     @Inject(AI_RUN_STORE) private readonly store: AiRunStore,
     @Inject(LISTENING_STORE) private readonly listening: ListeningStore,
+    private readonly signing: SigningReviewService,
   ) {}
 
   /** AS-026. The switch answers before the session and the permission do. */
@@ -237,6 +257,7 @@ export class AssistantModule
    */
   private async purge(): Promise<void> {
     await this.purgeTranscripts();
+    await this.reviewSigned();
     try {
       await this.store.purgeExchanges(new Date());
     } catch (error) {
@@ -246,6 +267,21 @@ export class AssistantModule
           error_code: error instanceof Error ? error.name : 'unknown',
         },
         'assistant exchange purge failed',
+      );
+    }
+  }
+
+  /** AS-144. What a signature could not review, reviewed now. */
+  private async reviewSigned(): Promise<void> {
+    try {
+      await this.signing.sweep();
+    } catch (error) {
+      this.logger.warn(
+        {
+          dependency: 'ai_suggestion_review',
+          error_code: error instanceof Error ? error.name : 'unknown',
+        },
+        'signed notes could not be reviewed',
       );
     }
   }
