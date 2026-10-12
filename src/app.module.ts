@@ -26,6 +26,7 @@ import { StaffModule } from './modules/staff/staff.module';
 import { validateEnv } from './shared/config/env.schema';
 import { TimeoutInterceptor } from './shared/http/interceptors/timeout.interceptor';
 import { ProblemDetailsFilter } from './shared/http/problem-details.filter';
+import { generalThrottlers } from './shared/http/rate-limit';
 import { SharedInfrastructureModule } from './shared/infrastructure/shared-infrastructure.module';
 import { LiveEventsModule } from './shared/events/live-events.module';
 import type { Env } from './shared/config/env.schema';
@@ -82,14 +83,13 @@ import { buildLoggerConfig } from './shared/observability/logger.config';
      * Rate limiting at the GUARD layer: it runs before anything expensive.
      * Three windows to tell a short burst apart from sustained abuse.
      */
-    ThrottlerModule.forRoot({
-      throttlers: [
-        // 10/s: the agenda's week view legitimately bursts 6 same-handler
-        // GETs (one per day); 5/s returned 429 on the sixth and blanked it.
-        { name: 'short', ttl: 1_000, limit: 10 },
-        { name: 'medium', ttl: 10_000, limit: 30 },
-        { name: 'long', ttl: 60_000, limit: 150 },
-      ],
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) => ({
+        throttlers: generalThrottlers(
+          config.get('RATE_LIMIT_SCALE', { infer: true }),
+        ),
+      }),
     }),
 
     SharedInfrastructureModule,
