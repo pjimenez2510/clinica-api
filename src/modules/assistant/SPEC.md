@@ -616,7 +616,12 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   texto como `PseudonymizedText` sólo si la respuesta cumple el contrato
   (`text`, `replacements[]` con `placeholder`, `original` y `kind`,
   `date_shift_days` entero) y no contiene ninguna palabra de tres letras o más
-  de los `names` enviados (sin mayúsculas ni acentos). Es el único sitio,
+  de los `names` enviados (sin mayúsculas ni acentos, separadas también por
+  guion, sin caracteres de formato), salvo los conectores que el servicio deja
+  («dos», «van»…) y el nombre de un mes dentro de una fecha («17 de julio de
+  2025»), que escribe el desplazamiento de fechas; y no contiene un correo ni
+  una tira de 10 o 13 dígitos (cédula, móvil, RUC). Sólo `names`: los
+  lugares y el personal no se comprueban aquí. Es el único sitio,
   además de `withContext`, que convierte un texto en `PseudonymizedText`
   (AS-001).
 - **AS-031** — SI `ASSISTANT_AI_SERVICE_SECRET` no está declarado, ENTONCES la

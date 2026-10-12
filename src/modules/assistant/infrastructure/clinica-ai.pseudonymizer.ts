@@ -98,7 +98,10 @@ export class ClinicaAiPseudonymizer implements Pseudonymizer {
 
     // Defence in depth: whatever answers on the port, a name the caller asked
     // to take out must not be in what comes back.
-    if (carriesAName(answer.data.text, input)) {
+    if (
+      carriesAName(answer.data.text, input) ||
+      carriesAnIdentifier(answer.data.text)
+    ) {
       throw new PseudonymizerFailedError('invalid-answer', response.status);
     }
 
@@ -114,11 +117,33 @@ function withTrailingSlash(url: string): string {
   return url.endsWith('/') ? url : `${url}/`;
 }
 
-/** Words that join a name and name nobody: «María de los Ángeles». */
-const CONNECTORS = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'e']);
+/**
+ * Words that join a name and name nobody: «María de los Ángeles», «Ana dos
+ * Santos». The same list as `CONNECTORS` in clinica-ai (`privacy/rules.py`):
+ * the service leaves these, so finding one is no sign of a leak.
+ */
+const CONNECTORS = new Set([
+  'de', 'del', 'la', 'las', 'los', 'y', 'e', 'da', 'do', 'dos', 'van', 'von',
+]); // prettier-ignore
+/**
+ * The date shift writes month names that were not in the note: a patient
+ * called Julio would otherwise have every shifted date refused (second
+ * review). Forgiven only inside a date: a «Julio» standing alone is the
+ * patient (third review).
+ */
+const MONTH = String.raw`(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)`;
+const DATE_IN_WORDS = new RegExp(
+  String.raw`\b(?:\d{1,2}\s+de\s+${MONTH}(?:\s+del?\s+\d{4})?|${MONTH}\s+del?\s+\d{4})\b`,
+  'gu',
+);
 
+/**
+ * Format characters and marks out first, as clinica-ai does: a word split by
+ * one of them is still the word (third review).
+ */
 function fold(value: string): string {
   return value
+    .replace(/[\p{Cf}\u180E]|\u034F|[\uFE00-\uFE0F]/gu, '')
     .normalize('NFD')
     .replace(/\p{Mn}/gu, '')
     .toLowerCase();
@@ -127,14 +152,29 @@ function fold(value: string): string {
 /**
  * AS-030. Every word of three letters or more of the names in the request,
  * the same words `clinica-ai` takes out, looked up as whole words in the
- * answer, without case or accents.
+ * answer, without case or accents, once the dates are set aside.
  */
 function carriesAName(cleared: string, input: PseudonymizeInput): boolean {
-  const answer = ` ${fold(cleared).replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
+  const withoutDates = fold(cleared).replace(DATE_IN_WORDS, ' ');
+  const answer = ` ${withoutDates.replace(/[^\p{L}\p{N}]+/gu, ' ')} `;
   return (input.names ?? [])
-    .flatMap((name) => fold(name).split(/\s+/))
+    .flatMap((name) => fold(name).split(/[^\p{L}\p{N}]+/u))
     .filter((word) => word.length >= 3 && !CONNECTORS.has(word))
     .some((word) => answer.includes(` ${word} `));
+}
+
+/**
+ * AS-030. What no cleared text may still hold, whatever answered on the port:
+ * an email, a cédula or a mobile (ten digits), a RUC (thirteen). The numbers of
+ * a consultation are shorter. The email is anchored at its start, or a long run
+ * of letters was tried from every position: twenty seconds of the event loop
+ * for 200 000 characters (fifth review).
+ */
+const IDENTIFIER =
+  /(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+|(?<!\d)(?:\d{13}|\d{10})(?!\d)/u;
+
+function carriesAnIdentifier(cleared: string): boolean {
+  return IDENTIFIER.test(cleared);
 }
 
 function parseJson(body: string): unknown {

@@ -70,8 +70,8 @@ import {
 import { DemoPseudonymizer } from './infrastructure/demo/demo.pseudonymizer';
 import { LLM_PRICES } from './infrastructure/llm-pricing';
 import { PrismaAiRunStore } from './infrastructure/prisma-ai-run.store';
-import { pseudonymizerFor } from './infrastructure/clinica-ai.pseudonymizer';
 import { PrismaSuggestionStore } from './infrastructure/prisma-suggestion.store';
+import { pseudonymizerFor } from './infrastructure/clinica-ai.pseudonymizer';
 import { buildProviderChain } from './infrastructure/provider-chain';
 
 /**
