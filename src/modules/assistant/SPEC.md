@@ -505,6 +505,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > propuesto, 1 con otro. «Desde ella» quiere decir registrado después de la
   > propuesta y no enlazado ya a otra: un diagnóstico anterior no es obra de
   > la propuesta, y dos propuestas sobre uno solo lo contarían dos veces.
+  > La base lo garantiza también: `ai_suggestion_one_per_diagnosis`, índice
+  > único parcial sobre el diagnóstico enlazado (sólo para esa clase).
 - **AS-038** — CUANDO el profesional descarte una propuesta, el sistema DEBERÁ
   dejarla «descartada» con quién y cuándo, y NO DEBERÁ volver a mostrarla.
 - **AS-039** — Proponer, aceptar y descartar DEBERÁN exigir que quien lo pide
@@ -527,7 +529,8 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > llamadas que siguen en vuelo. Una lectura a la vez por atención
   > (`ASSISTANT_READING_IN_PROGRESS`) y seis por minuto: cada una paga una
   > llamada por problema. Si la atención se cerró mientras el modelo
-  > respondía, no se guarda nada.
+  > respondía, no se guarda nada. El almacén lo comprueba con la atención bloqueada
+  > (`FOR UPDATE`) en la misma transacción que guarda.
 - **AS-041** — Ninguna línea de log, fila de `ai_run` ni mensaje de error de
   esta función DEBERÁ contener la nota, los problemas ni sus frases; y el texto
   de la nota DEBERÁ ir al modelo delimitado como dato, con la instrucción de no
