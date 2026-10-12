@@ -364,6 +364,15 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 
 ### 8. El seudonimizador local (A5)
 
+- **AS-025** — El sistema DEBERÁ obtener todo texto de un paciente que vaya a
+  un proveedor a través del puerto `Pseudonymizer`, que devuelve el texto como
+  `PseudonymizedText` junto con los reemplazos que hizo; y SI la instalación no
+  tiene seudonimizador, ENTONCES toda función que lo necesite DEBERÁ fallar con
+  `ASSISTANT_NOT_CONFIGURED` sin ninguna petición de red ni fila en `ai_run`.
+  > Declarado por D1 (`feat/ia-d1-cie10`), que trae el puerto; A5 lo copia
+  > igual porque trae el puerto con un cherry-pick. Al fusionar D1, queda una
+  > sola declaración.
+
 - **AS-030** — CUANDO se pida seudonimizar un texto, el adaptador DEBERÁ
   enviarlo a `POST /v1/privacy/pseudonymize` de `clinica-ai` con la cabecera
   `Authorization: Bearer <ASSISTANT_AI_SERVICE_SECRET>`, y DEBERÁ devolver el
