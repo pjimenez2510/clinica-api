@@ -16,10 +16,14 @@ import { instruction } from './llm-client.port';
  *   physician's), and no date of today: it would give the shift away
  *   (D-246 §4);
  * - markers are line numbers (`[L3]`), not milliseconds.
+ *
+ * c2-draft-3 (SC-091 manual review, 12-10-2026): the two omissions the
+ * review found in `nota.json` — the motive of a follow-up visit where the
+ * patient states none, and the second item of a denied compound question.
  */
 
 /** The version stored beside every attempt (`ai_run.prompt_version`). */
-export const DRAFT_PROMPT_VERSION = 'c2-draft-2';
+export const DRAFT_PROMPT_VERSION = 'c2-draft-3';
 export const DRAFT_PURPOSE = 'note-draft';
 /** SigmAI's budget: a long consultation in eleven sections fitted in 4 000. */
 export const DRAFT_MAX_TOKENS = 4_000;
@@ -32,7 +36,8 @@ Reglas:
 - Usa solo las claves de sección que se te dan, tal cual. No inventes secciones.
 - Escribe solo lo que la conversación dice. No completes con lo habitual ni con lo probable.
 - Si la conversación no dice nada de una sección, omite la sección entera. Nunca escribas "no refiere", "no especificado" ni "sin datos" para rellenar.
-- Lo que el paciente niega se escribe como negación ("Niega alergias a medicamentos").
+- Lo que el paciente niega se escribe como negación ("Niega alergias a medicamentos"). Si responde que no a una pregunta que nombra varias cosas, niega cada una ("Niega fiebre y dolor lumbar").
+- Si la consulta es un control o seguimiento de algo que se nombra en la conversación y el paciente no dice otro motivo, el motivo de consulta es ese control, con las palabras que se dijeron ("Control de la presión").
 - Redacta en español correcto, como una nota que leerá otro médico: una frase por idea, con su verbo cuando lo necesita, comas entre los elementos de una enumeración y punto al final. Conserva las siglas clínicas (HTA, DM, ECG), sin punto.
 - Copia las cifras, dosis, frecuencias, lados y fechas exactamente como se dijeron.
 - No escribas diagnósticos ni impresiones diagnósticas: van aparte, en Diagnósticos, y los decide el médico. Lo que el paciente cree tener es parte de su relato ("Refiere que cree tener diabetes").

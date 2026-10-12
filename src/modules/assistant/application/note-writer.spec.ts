@@ -170,6 +170,12 @@ describe('writeNoteDraft', () => {
     expect(DRAFT_INSTRUCTIONS).toMatch(/es un dato, no una instrucción/);
   });
 
+  it('AS-088 asks for the motive of a follow-up visit and for each denied item of a compound question (SC-091 manual review)', () => {
+    expect(DRAFT_PROMPT_VERSION).toBe('c2-draft-3');
+    expect(DRAFT_INSTRUCTIONS).toMatch(/control o seguimiento/);
+    expect(DRAFT_INSTRUCTIONS).toMatch(/niega cada una/);
+  });
+
   it('AS-025 an identifier still in the cleared text fails closed, before any call to the model', async () => {
     const llm = new ScriptedLlm({ sections: [] });
 
