@@ -2,9 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { LlmCallFailed } from '../domain/assistant.errors';
-import type { PseudonymizedText } from '../application/llm-client.port';
+import {
+  instruction,
+  type PseudonymizedText,
+} from '../application/llm-client.port';
 
-import { OpenAiProvider, openAiSchema } from './openai.provider';
+import { strictJsonSchema } from './json-schema';
+import { OpenAiProvider } from './openai.provider';
 
 const PROMPT = 'Persona_1 refiere tos de tres días';
 const answer = z.object({ code: z.string(), note: z.string().optional() });
@@ -58,7 +62,7 @@ const request = (tier: 'fast' | 'quality' = 'quality') => ({
   tier,
   purpose: 'test',
   promptVersion: 'v1',
-  system: 'Codifica',
+  system: instruction`Codifica`,
   prompt: PROMPT as PseudonymizedText,
   answer,
 });
@@ -104,6 +108,19 @@ describe('the OpenAI provider', () => {
       outputTokens: 20,
       reasoningTokens: 8,
     });
+  });
+
+  it('AS-017 leaves the tokens absent, not zero, when the provider reports none', async () => {
+    const withoutUsage: Record<string, unknown> = {
+      ...said('{"code":"J20.9"}'),
+    };
+    delete withoutUsage.usage;
+    const { client } = provider(withoutUsage);
+
+    const result = await client.generate(request());
+
+    expect(result.inputTokens).toBeUndefined();
+    expect(result.outputTokens).toBeUndefined();
   });
 
   it.each([
@@ -163,12 +180,12 @@ describe('the OpenAI provider', () => {
   );
 
   it('AS-003 closes every object and goes non-strict when a field is optional', () => {
-    const closed = openAiSchema(
+    const closed = strictJsonSchema(
       z.toJSONSchema(z.object({ a: z.object({ b: z.string() }) }), {
         io: 'output',
       }),
     );
-    const open = openAiSchema(z.toJSONSchema(answer, { io: 'output' }));
+    const open = strictJsonSchema(z.toJSONSchema(answer, { io: 'output' }));
 
     expect(closed.strict).toBe(true);
     expect(closed.schema).toMatchObject({

@@ -109,14 +109,20 @@ una petición la responde el segundo y quedan dos filas en `ai_run` —la del
 ### 1. El puerto (P4 del plan)
 
 - **AS-001** — El puerto `LlmClient` NO DEBERÁ admitir como prompt otro tipo
-  que `PseudonymizedText`: una llamada con un `string` NO DEBERÁ compilar. Y
-  ningún archivo de `src/` DEBERÁ fabricar un `PseudonymizedText` por
-  conversión de tipo, salvo `withContext` en el propio puerto.
+  que `PseudonymizedText`, ni como instrucciones otro que `SystemInstruction`,
+  que sólo se obtiene de texto literal sin interpolar (`instruction\`…\``): una
+llamada con un `string`en cualquiera de los dos NO DEBERÁ compilar. Y ningún
+archivo de`src/`DEBERÁ fabricar uno de los dos por conversión de tipo, por
+alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
+`withContext`e`instruction` en el propio puerto.
   > La garantía es de tipo, no de disciplina (SigmAI `core/llm/ports.ts`). La
   > única puerta de entrada será el seudonimizador de A5; `withContext` añade
   > texto que el sistema compone —un catálogo, una instrucción—, nunca texto
   > del paciente. Una prueba recorre `src/` y falla con cualquier otra
-  > conversión.
+  > conversión. Las instrucciones también llegan al proveedor: por eso tienen
+  > su propio tipo y no basta con la disciplina (revisión del 11-10-2026). El
+  > recorrido es una red, no una prueba formal: las conversiones genéricas que
+  > TypeScript admite sin `as` se vigilan en la revisión de cada llamador.
 - **AS-002** — Toda petición DEBERÁ declarar su nivel (`fast` o `quality`), su
   propósito y la versión de su prompt; el modelo que la atiende lo decide
   `model-routing.ts` y NO DEBERÁ elegirlo quien llama.
@@ -169,8 +175,13 @@ una petición la responde el segundo y quedan dos filas en `ai_run` —la del
   > modelo con esa petición no es lo mismo, y repetirlo en otro proveedor
   > ocultaría lo que la fase F tiene que medir. Si el autor lo quiere de otro
   > modo es una línea (D-241 §3).
-- **AS-009** — CUANDO quien llama cancele la petición, el sistema DEBERÁ
-  detener el intento en curso y NO DEBERÁ intentar con ningún otro proveedor.
+- **AS-009** — CUANDO quien llama cancele la petición —también con su propio
+  plazo—, el sistema DEBERÁ detener el intento en curso, registrarlo como
+  `cancelled` y NO DEBERÁ intentar con ningún otro proveedor; y SI la petición
+  llega ya cancelada, ENTONCES NO DEBERÁ llamar a ninguno ni registrar nada.
+  > El adaptador no distingue el plazo de quien llama del del intento (los dos
+  > se llaman `TimeoutError`); el enrutado sí, porque conoce la señal de quien
+  > llama.
 - **AS-010** — El orden de la cadena y el modelo de cada proveedor por nivel
   DEBERÁN declararse en un único sitio (`model-routing.ts`).
   > «Si Gemini no iguala la calidad, el principal se cambia en un solo sitio»
@@ -190,13 +201,17 @@ una petición la responde el segundo y quedan dos filas en `ai_run` —la del
   > Por intento y no por petición: un intento fallido también puede facturarse,
   > y el techo lo cuenta. Una petición respondida por el respaldo son dos filas
   > con el mismo `request_id`; el motivo es un código, no un texto, porque el
-  > cuerpo de error de un proveedor puede citar la entrada.
+  > cuerpo de error de un proveedor puede citar la entrada. El propósito y la
+  > versión de prompt (1–40 caracteres en minúscula) y el `encounterId` (UUID)
+  > se comprueban **antes** de llamar: un valor que la tabla rechazara dejaría
+  > un intento cobrado sin fila.
 - **AS-012** — La base DEBERÁ rechazar una fila de `ai_run` con un resultado o
   un nivel fuera de su lista, un número de intento menor que 1, tokens o costo
   negativos, o un motivo de respaldo en el primer intento.
 - **AS-013** — SI guardar la fila falla, ENTONCES el sistema DEBERÁ devolver
-  igualmente la respuesta a quien llama y DEBERÁ registrar el fallo en el log
-  sin el texto de la llamada.
+  igualmente la respuesta a quien llama, DEBERÁ seguir contando su costo para
+  el techo del mes y DEBERÁ registrar el fallo en el log sin el texto de la
+  llamada.
   > Guardarla nunca es motivo para que el médico se quede sin borrador
   > (SigmAI `recording-llm-client.ts`).
 - **AS-014** — DONDE `ASSISTANT_EXCHANGE_LOG` sea `true`, el sistema DEBERÁ
@@ -204,13 +219,17 @@ una petición la responde el segundo y quedan dos filas en `ai_run` —la del
   instrucciones, el prompt seudonimizado y la respuesta cruda; MIENTRAS no lo
   sea, NO DEBERÁ guardar en ninguna tabla el texto de ninguna llamada.
 - **AS-015** — El sistema DEBERÁ borrar de `ai_exchange` lo que tenga más de
-  **45 días** desde la firma de la primera nota firmada de su atención, y lo
-  que, sin atención enlazada, tenga más de 45 días desde su intento; DEBERÁ
-  hacerlo al arrancar y cada vez que guarde un intercambio nuevo, con el reloj
-  de la aplicación.
-  > D-239 §3. El plazo de lo que no tiene atención (la evaluación, las pruebas
-  > manuales) es la recomendación de D-241 §2. Una atención sin nota firmada
-  > conserva su texto hasta que se firme.
+  **45 días** desde la primera firma de una nota de su atención —o desde su
+  propio intento, si fue posterior a esa firma—; lo que, sin atención enlazada,
+  tenga más de 45 días desde su intento; y, sea cual sea su atención, lo que
+  tenga más de **90 días** desde su intento. DEBERÁ hacerlo al arrancar, una vez
+  al día y después de guardar un intercambio nuevo, con el reloj de la
+  aplicación.
+  > D-239 §3. Lo escrito para una enmienda vive 45 días desde que se escribió,
+  > no desde la primera firma (si no, se borraría al instante). El plazo de lo
+  > que no tiene atención es D-241 §2; el tope de 90 días, para una atención que
+  > nunca se firma (abierta por error, interrumpida), es D-241 §6. La purga
+  > diaria cubre el registro apagado y un proceso que no se reinicia.
 
 ### 5. Precios y techo de gasto (plan §7 A4)
 
@@ -226,10 +245,13 @@ una petición la responde el segundo y quedan dos filas en `ai_run` —la del
   intento supere `ASSISTANT_MONTHLY_SPEND_CEILING_USD`, el sistema NO DEBERÁ
   hacer el intento y DEBERÁ fallar con `ASSISTANT_SPENDING_CEILING_REACHED`; y
   MIENTRAS el techo no esté configurado, NO DEBERÁ hacer ningún intento
-  remoto. Un intento sin tokens informados DEBERÁ contar por su peor caso.
+  remoto. Un intento sin tokens informados —también una respuesta válida sin
+  ellos— DEBERÁ contar por su peor caso, y los intentos en curso DEBERÁN contar
+  por su peor caso mientras duran.
   > Cerrado por defecto: el monto es del autor (D-241 §1). El techo se mira
   > antes de **cada** intento, también de un respaldo, porque cada proveedor
-  > cobra distinto.
+  > cobra distinto. La reserva de lo que está en curso vive en el proceso: con
+  > varias instancias de la API haría falta en la base (D-241 §8).
 
 ### 6. Lo que llega al log (REQ-116)
 
@@ -240,9 +262,12 @@ una petición la responde el segundo y quedan dos filas en `ai_run` —la del
   `log-privacy.ts`.
   > SigmAI A-03: 26 sitios registraban `error.message` con la transcripción
   > dentro. Aquí el mensaje técnico de un fallo nunca lleva el prompt, y el log
-  > tampoco lleva el mensaje.
+  > tampoco lleva el mensaje. El SDK de Anthropic se construye con su URL y su
+  > log fijos: `ANTHROPIC_BASE_URL` desviaría el texto y `ANTHROPIC_LOG=debug`
+  > lo imprimiría fuera de pino.
 - **AS-019** — Los mensajes de error que el módulo lanza NO DEBERÁN contener
-  texto de la petición ni de la respuesta.
+  texto de la petición ni de la respuesta, y lo que el proveedor devolvió NO
+  DEBERÁ salir al serializar el error.
 
 ---
 
@@ -260,10 +285,13 @@ una petición la responde el segundo y quedan dos filas en `ai_run` —la del
 | -------------------------------------- | -------------------------------------------------------------------- |
 | AS-001                                 | Tipos (`@ts-expect-error`, lo comprueba `tsc`) y recorrido de `src/` |
 | AS-002 a AS-010                        | Unitario, con `fetch` y proveedores falsos                           |
+| AS-015 (al arrancar y cada día)        | Unitario del módulo con reloj falso                                  |
 | AS-011, AS-012, AS-014, AS-015, AS-017 | Integración contra PostgreSQL, con control positivo                  |
 | AS-013, AS-016, AS-018, AS-019         | Unitario (AS-018 sobre `pruneToAllowlist`)                           |
 
 ## Preguntas abiertas
 
 Todas en **D-241**: el monto del techo, el plazo del texto sin atención, qué
-fallos activan el respaldo y los modelos de OpenAI.
+fallos activan el respaldo, los modelos de OpenAI, el tope para atenciones sin
+firma, cuánto se guarda `ai_run`, si los intentos rechazados cuentan en el
+techo, la reserva con varias instancias y la retención en cada proveedor.

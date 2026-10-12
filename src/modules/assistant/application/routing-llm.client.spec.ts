@@ -12,15 +12,16 @@ import type { ModelTier, ProviderName } from '../domain/llm-outcome';
 import type { ModelPrice } from '../domain/pricing';
 
 import type { AiExchangeRecord, AiRunRecord, AiRunStore } from './ai-run.store';
-import type {
-  LlmProvider,
-  LlmRequest,
-  ProviderAnswer,
-  PseudonymizedText,
+import {
+  instruction,
+  type LlmProvider,
+  type LlmRequest,
+  type ProviderAnswer,
+  type PseudonymizedText,
 } from './llm-client.port';
 import { RoutingLlmClient } from './routing-llm.client';
 
-const SYSTEM = 'Redacta la nota con estas secciones';
+const SYSTEM = instruction`Redacta la nota con estas secciones`;
 const PROMPT = 'Persona_1 refiere dolor torácico opresivo desde ayer';
 const RAW = '{"summary":"Dolor torácico opresivo"}';
 const answer = z.object({ summary: z.string() });
@@ -138,7 +139,7 @@ function routing(
   return { client, store };
 }
 
-const request = (signal?: AbortSignal) => ({
+const request = (signal?: AbortSignal, overrides: object = {}) => ({
   tier: 'quality' as const,
   purpose: 'draft',
   promptVersion: 'draft-v1',
@@ -147,6 +148,7 @@ const request = (signal?: AbortSignal) => ({
   answer,
   maxTokens: 1_000,
   signal,
+  ...overrides,
 });
 
 async function failure<E extends Error>(
@@ -274,6 +276,103 @@ describe('RoutingLlmClient', () => {
     expect(store.runs.map((run) => run.outcome)).toEqual(['cancelled']);
   });
 
+  it('AS-009 a caller whose own deadline fires is cancelled, not passed down the chain as a slow provider', async () => {
+    const anthropic = new ScriptedProvider('anthropic', { kind: 'answer', text: RAW }); // prettier-ignore
+    const { client, store } = routing([
+      new ScriptedProvider('gemini', { kind: 'hang' }),
+      anthropic,
+    ]);
+
+    const error = await failure(client.generate(request(AbortSignal.timeout(20))), LlmCallFailed); // prettier-ignore
+
+    expect(error.outcome).toBe('cancelled');
+    expect(error.isRetryable).toBe(false);
+    expect(anthropic.calls).toHaveLength(0);
+    expect(store.runs.map((run) => run.outcome)).toEqual(['cancelled']);
+  });
+
+  it('AS-009 a request cancelled before it starts asks nobody and records nothing', async () => {
+    const gemini = new ScriptedProvider('gemini', {
+      kind: 'answer',
+      text: RAW,
+    });
+    const { client, store } = routing([gemini]);
+    const controller = new AbortController();
+    controller.abort();
+
+    const error = await failure(client.generate(request(controller.signal)), LlmCallFailed); // prettier-ignore
+
+    expect(error.outcome).toBe('cancelled');
+    expect(gemini.calls).toHaveLength(0);
+    expect(store.runs).toEqual([]);
+  });
+
+  it('AS-011 AS-017 refuses, before any call, a request whose identifiers ai_run could not keep', async () => {
+    const gemini = new ScriptedProvider('gemini', {
+      kind: 'answer',
+      text: RAW,
+    });
+    const { client } = routing([gemini]);
+
+    for (const overrides of [
+      { purpose: 'x'.repeat(41) },
+      { promptVersion: '' },
+      { encounterId: 'not-a-uuid' },
+    ]) {
+      await expect(client.generate(request(undefined, overrides))).rejects.toThrow(/assistant request/); // prettier-ignore
+    }
+    expect(gemini.calls).toHaveLength(0);
+  });
+
+  it('AS-017 counts the attempts in flight: two concurrent requests cannot both pass a ceiling that admits one', async () => {
+    const hold: { release?: () => void } = {};
+    class SlowProvider extends ScriptedProvider {
+      override async generate<S extends z.ZodType>(r: LlmRequest<S>) {
+        await new Promise<void>((resolve) => (hold.release = resolve));
+        return super.generate(r);
+      }
+    }
+    const slow = new SlowProvider('gemini', { kind: 'answer', text: RAW });
+    // One worst case (~0.005 USD) fits in what is left; two do not.
+    const { client } = routing([slow], {
+      store: new MemoryStore(0.04),
+      ceilingUsd: 0.05,
+    });
+
+    const first = client.generate(request());
+    await vi.waitFor(() => expect(hold.release).toBeDefined());
+    await expect(client.generate(request())).rejects.toBeInstanceOf(
+      AssistantSpendingCeilingReachedError,
+    );
+    hold.release!();
+
+    expect((await first).provider).toBe('gemini');
+  });
+
+  it('AS-013 AS-017 an attempt that could not be recorded still counts against the ceiling', async () => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const store = new MemoryStore(0.04);
+    store.failing = true;
+    const { client } = routing(
+      [new ScriptedProvider('gemini', { kind: 'answer', text: RAW })],
+      { store, ceilingUsd: 0.05 },
+    );
+
+    // Positive control: the first one fits and is answered, though not recorded.
+    expect((await client.generate(request())).provider).toBe('gemini');
+    // 0.04 + 0.0002 unrecorded + another worst case (~0.005) still fits…
+    await client.generate(request());
+    // …but the cost of the unrecorded ones keeps adding up until it does not.
+    let refused = false;
+    for (let i = 0; i < 100 && !refused; i++) {
+      refused = await client.generate(request()).then(
+        () => false,
+        (e: unknown) => e instanceof AssistantSpendingCeilingReachedError,
+      );
+    }
+    expect(refused).toBe(true);
+  });
+
   it('AS-013 a failure to record does not take the answer away, and the log says so without text', async () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined); // prettier-ignore
     const store = new MemoryStore();
@@ -356,6 +455,29 @@ describe('RoutingLlmClient', () => {
     expect(anthropic.calls).toHaveLength(0);
     expect(fallback.store.runs[0]).toMatchObject({ costUsd: null });
     expect(fallback.store.runs[0]!.worstCaseUsd).toBeGreaterThan(0);
+  });
+
+  it('AS-018 the lines for an unpriced model and an unrecorded attempt carry only allowed keys and no text', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined); // prettier-ignore
+    const store = new MemoryStore();
+    store.failing = true;
+    const { client } = routing(
+      [
+        new ScriptedProvider('gemini', { kind: 'answer', text: RAW }),
+        new ScriptedProvider('anthropic', { kind: 'answer', text: RAW }),
+      ],
+      { store, prices: pricesFor(['anthropic']) },
+    );
+
+    await client.generate(request());
+
+    expect(warn.mock.calls.length).toBeGreaterThanOrEqual(2);
+    for (const [fields, message] of warn.mock.calls) {
+      expect(pruneToAllowlist(fields)).toEqual(fields);
+      const line = JSON.stringify({ fields, message });
+      for (const text of [PROMPT, SYSTEM, RAW])
+        expect(line).not.toContain(text);
+    }
   });
 
   it('AS-018 logs a fallback with whitelisted keys only, and none of the text survives the allowlist', async () => {

@@ -41,6 +41,12 @@ describe('the price table', () => {
     ).toBe(gemini[1]);
   });
 
+  it('AS-017 refuses a price of zero, which would make a model free for the ceiling', () => {
+    expect(() =>
+      parseLlmPricing({ models: [{ ...LLM_PRICES[0], outputPerMillion: 0 }] }),
+    ).toThrow(/outputPerMillion/);
+  });
+
   it('AS-016 refuses a table without the day a price was read', () => {
     const withoutDay: Record<string, unknown> = { ...LLM_PRICES[0] };
     delete withoutDay.asOf;

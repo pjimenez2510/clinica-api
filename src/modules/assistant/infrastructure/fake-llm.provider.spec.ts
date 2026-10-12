@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import type { PseudonymizedText } from '../application/llm-client.port';
+import {
+  instruction,
+  type PseudonymizedText,
+} from '../application/llm-client.port';
 
 import { FakeLlmProvider } from './fake-llm.provider';
 
@@ -17,7 +20,7 @@ describe('FakeLlmProvider', () => {
       tier: 'fast',
       purpose: 'test',
       promptVersion: 'v1',
-      system: 'Resume',
+      system: instruction`Resume`,
       prompt: 'Persona_1' as PseudonymizedText,
       answer,
     });

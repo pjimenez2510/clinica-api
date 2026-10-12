@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { Inject, Logger, Module, type OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Logger,
+  Module,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import type { Env } from '../../shared/config/env.schema';
@@ -20,6 +26,9 @@ import { buildProviderChain } from './infrastructure/provider-chain';
  * No controller: nothing here answers HTTP yet. Whoever exposes a route
  * declares its permission (REQ-118, A3).
  */
+/** AS-015. Once a day: the retention is counted in days. */
+const PURGE_EVERY_MS = 86_400_000;
+
 @Module({
   providers: [
     { provide: AI_RUN_STORE, useClass: PrismaAiRunStore },
@@ -51,17 +60,29 @@ import { buildProviderChain } from './infrastructure/provider-chain';
   ],
   exports: [LLM_CLIENT],
 })
-export class AssistantModule implements OnModuleInit {
+export class AssistantModule implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AssistantModule.name);
+  private timer: NodeJS.Timeout | undefined;
 
   constructor(@Inject(AI_RUN_STORE) private readonly store: AiRunStore) {}
 
   /**
-   * AS-015. The purge also runs at boot, so text past its 45 days goes even
-   * when the exchange log was switched off and nothing new is written. A
-   * failure here does not stop the API: it says so, and the next write retries.
+   * AS-015. The purge runs at boot and then once a day, whether the exchange
+   * log is on or not: text past its days goes even when nothing new is written
+   * and the API is never restarted. A failure does not stop the API: it says
+   * so, and the next run retries.
    */
-  async onModuleInit(): Promise<void> {
+  onModuleInit(): void {
+    void this.purge();
+    this.timer = setInterval(() => void this.purge(), PURGE_EVERY_MS);
+    this.timer.unref();
+  }
+
+  onModuleDestroy(): void {
+    clearInterval(this.timer);
+  }
+
+  private async purge(): Promise<void> {
     try {
       await this.store.purgeExchanges(new Date());
     } catch (error) {
@@ -70,7 +91,7 @@ export class AssistantModule implements OnModuleInit {
           dependency: 'ai_exchange',
           error_code: error instanceof Error ? error.name : 'unknown',
         },
-        'assistant exchange purge failed at boot',
+        'assistant exchange purge failed',
       );
     }
   }

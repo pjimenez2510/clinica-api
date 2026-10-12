@@ -34,14 +34,19 @@ export const GEMINI_BASE_URL =
 export class GeminiProvider implements LlmProvider {
   readonly name = 'gemini' as const;
 
+  /** ECMAScript-private: an `inspect` or `console.log` of the provider does not print it. */
+  readonly #apiKey: string;
+
   constructor(
-    private readonly apiKey: string,
+    apiKey: string,
     private readonly fetcher: typeof fetch = fetch,
     private readonly baseUrl = GEMINI_BASE_URL,
     private readonly models: Readonly<
       Record<ModelTier, string>
     > = GEMINI_MODELS,
-  ) {}
+  ) {
+    this.#apiKey = apiKey;
+  }
 
   modelFor(tier: ModelTier): string {
     return this.models[tier];
@@ -73,7 +78,7 @@ export class GeminiProvider implements LlmProvider {
           method: 'POST',
           signal: request.signal,
           headers: {
-            'x-goog-api-key': this.apiKey,
+            'x-goog-api-key': this.#apiKey,
             'content-type': 'application/json',
           },
           body: JSON.stringify({
@@ -223,12 +228,13 @@ type Usage = z.infer<typeof usageSchema>;
  * is not charged twice. An absent count reads as zero: the provider omits
  * zeros.
  */
-function tokensOf(usage: Usage | undefined): TokenUsage {
-  if (usage === undefined) return { inputTokens: 0, outputTokens: 0 };
+function tokensOf(usage: Usage | undefined): Partial<TokenUsage> {
+  // Absent is not zero: the routing then counts the attempt at its worst case (AS-017).
+  if (usage === undefined) return {};
   const cached = usage.cachedContentTokenCount ?? 0;
   const thoughts = usage.thoughtsTokenCount ?? 0;
   return {
-    inputTokens: (usage.promptTokenCount ?? 0) - cached,
+    inputTokens: Math.max(0, (usage.promptTokenCount ?? 0) - cached),
     outputTokens: (usage.candidatesTokenCount ?? 0) + thoughts,
     cacheReadTokens: cached,
     reasoningTokens: thoughts,

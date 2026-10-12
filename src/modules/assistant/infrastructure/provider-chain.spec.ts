@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
-import type { PseudonymizedText } from '../application/llm-client.port';
+import {
+  instruction,
+  type PseudonymizedText,
+} from '../application/llm-client.port';
 import { RoutingLlmClient } from '../application/routing-llm.client';
 import { AssistantNotConfiguredError } from '../domain/assistant.errors';
 
@@ -34,7 +37,7 @@ describe('buildProviderChain', () => {
         tier: 'fast',
         purpose: 'test',
         promptVersion: 'v1',
-        system: 's',
+        system: instruction`s`,
         prompt: 'Persona_1' as PseudonymizedText,
         answer: z.object({}),
       }),

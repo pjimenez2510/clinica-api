@@ -68,5 +68,9 @@ describe('assistant errors', () => {
     expect(error.message).not.toContain(prompt);
     expect(error.userTitle).not.toContain(prompt);
     expect(JSON.stringify(error.params)).not.toContain(prompt);
+    // The raw answer stays reachable for the exchange log, but no serializer sees it.
+    expect(error.received.raw).toBe(prompt);
+    expect(Object.keys(error)).not.toContain('received');
+    expect(JSON.stringify(error)).not.toContain(prompt);
   });
 });

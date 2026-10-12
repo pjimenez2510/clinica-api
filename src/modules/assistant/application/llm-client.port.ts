@@ -36,6 +36,29 @@ export function withContext(
   return `${cleared}\n\n${context}` as PseudonymizedText;
 }
 
+/**
+ * AS-001. The instructions of a call: what the model is asked to do. They go
+ * to the provider too, so they get the same guarantee as the prompt — by type.
+ * The only way to make one is `instruction`, a tag that takes literal text and
+ * refuses any interpolation at compile time: nothing read from a record can
+ * reach the instructions without the pseudonymizer.
+ */
+export type SystemInstruction = string & {
+  readonly __instruction: unique symbol;
+};
+
+/**
+ * AS-001. `instruction\`Redacta la nota…\`` — literal text only. The rest parameter is
+ * `never[]`, so `${anything}` does not compile.
+ */
+export function instruction(
+  strings: TemplateStringsArray,
+  ...values: never[]
+): SystemInstruction {
+  // `values` is always empty: the type admits no interpolation.
+  return (strings.join('') + values.join('')) as SystemInstruction;
+}
+
 /** Large enough that an answer is never cut mid-thought; tasks write small documents. */
 export const DEFAULT_MAX_TOKENS = 16_000;
 
@@ -46,8 +69,8 @@ export interface LlmRequest<Shape extends z.ZodType> {
   purpose: string;
   /** The version of the prompt the caller built, stored beside every attempt. */
   promptVersion: string;
-  /** What the model is asked to do. Never carries patient text. */
-  system: string;
+  /** AS-001. What the model is asked to do: literal text, by type. */
+  system: SystemInstruction;
   prompt: PseudonymizedText;
   /** AS-003. The shape the answer must have; an answer outside it is refused. */
   answer: Shape;
@@ -64,8 +87,11 @@ export interface LlmRequest<Shape extends z.ZodType> {
   encounterId?: string;
 }
 
-/** What one provider answered, before the routing records it. */
-export interface ProviderAnswer<Value> extends TokenUsage {
+/**
+ * What one provider answered, before the routing records it. Token figures
+ * the provider did not report stay absent (AS-017).
+ */
+export interface ProviderAnswer<Value> extends Partial<TokenUsage> {
   value: Value;
   model: string;
   /** The answer as it arrived, kept only by the exchange log (AS-014). */

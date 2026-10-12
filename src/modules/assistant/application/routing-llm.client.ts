@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import {
   AssistantNotConfiguredError,
@@ -9,6 +9,7 @@ import {
 import {
   isAvailabilityFailure,
   type LlmOutcome,
+  type ProviderName,
   type TokenUsage,
 } from '../domain/llm-outcome';
 import {
@@ -51,6 +52,17 @@ interface Settled extends Partial<TokenUsage> {
 }
 
 /**
+ * AS-011. The identifiers `ai_run` keeps beside each attempt, checked before
+ * any call: a value its columns refuse would leave a billed attempt with no
+ * row, and the ceiling blind to it.
+ */
+const identifiersSchema = z.object({
+  purpose: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,39}$/),
+  promptVersion: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,39}$/),
+  encounterId: z.uuid().optional(),
+});
+
+/**
  * The one `LlmClient` the rest of the system sees (D-239 §5).
  *
  * It walks the chain: before each attempt it checks the price (AS-016) and the
@@ -62,6 +74,14 @@ interface Settled extends Partial<TokenUsage> {
  */
 export class RoutingLlmClient implements LlmClient {
   private readonly logger = new Logger('AssistantLlm');
+  /**
+   * AS-017. Spending the table does not show yet, by month: the worst case of
+   * every attempt in flight, and the cost of every attempt that could not be
+   * recorded. Checked and reserved without yielding, so two requests in this
+   * process cannot both take the last room under the ceiling. Per process:
+   * several API instances would need the reservation in the database (D-241).
+   */
+  private readonly unseen = new Map<number, number>();
 
   constructor(private readonly options: RoutingOptions) {}
 
@@ -69,6 +89,11 @@ export class RoutingLlmClient implements LlmClient {
     request: LlmRequest<Shape>,
   ): Promise<LlmAnswer<z.infer<Shape>>> {
     const { providers, prices, clock } = this.options;
+    if (!identifiersSchema.safeParse(request).success) {
+      throw new Error(
+        'assistant request: purpose and promptVersion must be 1-40 lowercase characters, encounterId a UUID',
+      );
+    }
     if (providers.length === 0) throw new AssistantNotConfiguredError();
 
     const requestId = this.options.newRequestId();
@@ -79,6 +104,9 @@ export class RoutingLlmClient implements LlmClient {
 
     for (const provider of providers) {
       const model = provider.modelFor(request.tier);
+      // AS-009. Whoever asked no longer wants the answer: nobody else is asked.
+      if (request.signal?.aborted) throw cancelled(provider.name, model);
+
       const startedAt = clock();
       const price = priceAt(prices, model, startedAt);
       if (price === null) {
@@ -93,7 +121,8 @@ export class RoutingLlmClient implements LlmClient {
         { system: request.system, prompt: request.prompt, maxTokens },
         price,
       );
-      await this.admit(worstCaseUsd, startedAt);
+      const month = spendingMonthStart(startedAt).getTime();
+      await this.admit(month, worstCaseUsd);
 
       attempt += 1;
       const signal = AbortSignal.any(
@@ -105,11 +134,12 @@ export class RoutingLlmClient implements LlmClient {
         this.keep(request, {
           requestId,
           attempt,
-          provider,
+          provider: provider.name,
           model,
           price,
           worstCaseUsd,
           startedAt,
+          month,
           previous,
           settled,
         });
@@ -119,10 +149,16 @@ export class RoutingLlmClient implements LlmClient {
         await keep({ outcome: 'ok', httpStatus: 200, ...answer });
         return { value: answer.value, provider: provider.name, model, requestId }; // prettier-ignore
       } catch (error) {
-        const failed =
+        let failed =
           error instanceof LlmCallFailed
             ? error
             : new LlmCallFailed(provider.name, 'provider-error', { model, raw: null }); // prettier-ignore
+        // AS-009. The caller's own deadline reads as `TimeoutError` to the
+        // adapter, which cannot tell it from the attempt's: only here is it
+        // known whose signal fired.
+        if (request.signal?.aborted && failed.outcome !== 'cancelled') {
+          failed = new LlmCallFailed(provider.name, 'cancelled', failed.received); // prettier-ignore
+        }
         await keep({
           ...failed.received,
           outcome: failed.outcome,
@@ -141,57 +177,77 @@ export class RoutingLlmClient implements LlmClient {
         );
         previous = failed.outcome;
         last = failed;
+      } finally {
+        this.release(month, worstCaseUsd);
       }
     }
 
     throw last ?? new AssistantNotConfiguredError();
   }
 
-  /** AS-017. Spent this month plus the worst this attempt can cost, against the ceiling. */
-  private async admit(worstCaseUsd: number, at: Date): Promise<void> {
+  /**
+   * AS-017. Recorded spending of the month, plus what is not in the table yet,
+   * plus the worst this attempt can cost, against the ceiling. The check and
+   * the reservation happen after the only `await`, with nothing in between.
+   */
+  private async admit(month: number, worstCaseUsd: number): Promise<void> {
     const ceiling = this.options.ceilingUsd;
     if (ceiling === undefined) throw new AssistantSpendingCeilingReachedError();
-    const spent = await this.options.store.spentSince(spendingMonthStart(at));
-    if (spent + worstCaseUsd > ceiling) {
+    const recorded = await this.options.store.spentSince(new Date(month));
+    const unseen = this.unseen.get(month) ?? 0;
+    if (recorded + unseen + worstCaseUsd > ceiling) {
       throw new AssistantSpendingCeilingReachedError();
     }
+    this.unseen.set(month, unseen + worstCaseUsd);
+  }
+
+  private release(month: number, amount: number): void {
+    const left = (this.unseen.get(month) ?? 0) - amount;
+    if (left > 1e-12) this.unseen.set(month, left);
+    else this.unseen.delete(month);
   }
 
   /**
-   * AS-011, AS-013, AS-014, AS-015. Records the attempt. Recording is never a
-   * reason for the answer not to arrive: a failure says so in the log, with
-   * the kind of error and nothing of its message — the statement that failed
-   * may carry the text.
+   * AS-011, AS-013, AS-014. Records the attempt. Recording is never a reason
+   * for the answer not to arrive: a failure says so in the log, with the kind
+   * of error and nothing of its message — the statement that failed may carry
+   * the text — and its cost stays counted in memory for the ceiling.
    */
   private async keep(
     request: LlmRequest<z.ZodType>,
     attempt: {
       requestId: string;
       attempt: number;
-      provider: LlmProvider;
+      provider: ProviderName;
       model: string;
       price: ModelPrice;
       worstCaseUsd: number;
       startedAt: Date;
+      month: number;
       previous: LlmOutcome | null;
       settled: Settled;
     },
   ): Promise<void> {
     const { settled } = attempt;
-    const reported =
-      settled.inputTokens !== undefined || settled.outputTokens !== undefined;
-    const usage: TokenUsage = {
-      inputTokens: settled.inputTokens ?? 0,
-      outputTokens: settled.outputTokens ?? 0,
-      cacheReadTokens: settled.cacheReadTokens,
-      cacheWriteTokens: settled.cacheWriteTokens,
-    };
+    // AS-017. Absent is not zero: an attempt with no figures costs its worst case.
+    const costUsd =
+      settled.inputTokens === undefined && settled.outputTokens === undefined
+        ? null
+        : costOf(
+            {
+              inputTokens: settled.inputTokens ?? 0,
+              outputTokens: settled.outputTokens ?? 0,
+              cacheReadTokens: settled.cacheReadTokens,
+              cacheWriteTokens: settled.cacheWriteTokens,
+            },
+            attempt.price,
+          );
     try {
       await this.options.store.record(
         {
           requestId: attempt.requestId,
           attempt: attempt.attempt,
-          provider: attempt.provider.name,
+          provider: attempt.provider,
           model: attempt.model,
           tier: request.tier,
           purpose: request.purpose,
@@ -203,7 +259,7 @@ export class RoutingLlmClient implements LlmClient {
           cacheReadTokens: settled.cacheReadTokens ?? null,
           cacheWriteTokens: settled.cacheWriteTokens ?? null,
           reasoningTokens: settled.reasoningTokens ?? null,
-          costUsd: reported ? costOf(usage, attempt.price) : null,
+          costUsd,
           worstCaseUsd: attempt.worstCaseUsd,
           priceValidFrom: attempt.price.validFrom,
           latencyMs:
@@ -216,10 +272,12 @@ export class RoutingLlmClient implements LlmClient {
           ? { system: request.system, prompt: request.prompt, raw: settled.raw }
           : null,
       );
-      if (this.options.exchangeLog) {
-        await this.options.store.purgeExchanges(this.options.clock());
-      }
     } catch (error) {
+      const unseen = this.unseen.get(attempt.month) ?? 0;
+      this.unseen.set(
+        attempt.month,
+        unseen + (costUsd ?? attempt.worstCaseUsd),
+      );
       this.logger.warn(
         {
           dependency: 'ai_run',
@@ -228,6 +286,28 @@ export class RoutingLlmClient implements LlmClient {
         },
         'assistant attempt not recorded',
       );
+      return;
+    }
+    // AS-015. After writing text, the old text goes — outside the answer's path.
+    if (this.options.exchangeLog) void this.purge();
+  }
+
+  /** AS-015. A failed purge says so and is retried by the next one. */
+  private async purge(): Promise<void> {
+    try {
+      await this.options.store.purgeExchanges(this.options.clock());
+    } catch (error) {
+      this.logger.warn(
+        {
+          dependency: 'ai_exchange',
+          error_code: error instanceof Error ? error.name : 'unknown',
+        },
+        'assistant exchange purge failed',
+      );
     }
   }
+}
+
+function cancelled(provider: ProviderName, model: string): LlmCallFailed {
+  return new LlmCallFailed(provider, 'cancelled', { model, raw: null });
 }

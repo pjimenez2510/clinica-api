@@ -11,8 +11,9 @@ const priceSchema = z.object({
   model: z.string().min(1),
   provider: z.enum(PROVIDER_NAMES),
   validFrom: day,
-  inputPerMillion: z.number().min(0),
-  outputPerMillion: z.number().min(0),
+  /** Never zero: a price mistyped as 0 would make the model free for the ceiling. */
+  inputPerMillion: z.number().positive(),
+  outputPerMillion: z.number().positive(),
   cacheReadPerMillion: z.number().min(0),
   cacheWritePerMillion: z.number().min(0),
   currency: z.literal('USD'),

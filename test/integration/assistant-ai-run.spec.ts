@@ -4,7 +4,10 @@ import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import type { PseudonymizedText } from '../../src/modules/assistant/application/llm-client.port';
+import {
+  instruction,
+  type PseudonymizedText,
+} from '../../src/modules/assistant/application/llm-client.port';
 import { RoutingLlmClient } from '../../src/modules/assistant/application/routing-llm.client';
 import { AssistantSpendingCeilingReachedError } from '../../src/modules/assistant/domain/assistant.errors';
 import { spendingMonthStart } from '../../src/modules/assistant/domain/spending';
@@ -33,7 +36,7 @@ import {
  */
 const db = useDatabase();
 
-const SYSTEM = 'Redacta la nota';
+const SYSTEM = instruction`Redacta la nota`;
 const PROMPT = 'Persona_1 refiere disnea de esfuerzo desde hace una semana';
 const RAW = '{"summary":"Disnea de esfuerzo"}';
 const answer = z.object({ summary: z.string() });
@@ -198,15 +201,16 @@ describe('ai_run and ai_exchange (assistant)', () => {
     }
   });
 
-  it('AS-015 purges the text 45 days after the first signed note, or after the attempt without an encounter', async () => {
+  it('AS-015 purges the text 45 days after the first signature, after the attempt for later text or no encounter, and at 90 days whatever happens', async () => {
     const prisma = db();
     const now = new Date();
-    const old = new Date(now.getTime() - 46 * DAY_MS);
-    const recent = new Date(now.getTime() - 44 * DAY_MS);
+    const daysAgo = (days: number) => new Date(now.getTime() - days * DAY_MS);
     const signedLongAgo = await anEncounter(prisma);
-    await signNote(prisma, signedLongAgo, old);
+    await signNote(prisma, signedLongAgo, daysAgo(46));
+    const amended = await anEncounter(prisma);
+    await signNote(prisma, amended, daysAgo(60));
     const signedRecently = await anEncounter(prisma);
-    await signNote(prisma, signedRecently, recent);
+    await signNote(prisma, signedRecently, daysAgo(44));
     const unsigned = await anEncounter(prisma);
 
     const withText = (
@@ -222,11 +226,16 @@ describe('ai_run and ai_exchange (assistant)', () => {
           exchange: { create: { system: SYSTEM, prompt: PROMPT, raw: RAW } },
         },
       });
-    await withText(old, signedLongAgo.encounterId, 'signed-long-ago');
-    await withText(old, signedRecently.encounterId, 'signed-recently');
-    await withText(old, unsigned.encounterId, 'unsigned');
-    await withText(old, null, 'no-encounter-old');
-    await withText(recent, null, 'no-encounter-recent');
+    await withText(daysAgo(50), signedLongAgo.encounterId, 'signed-long-ago');
+    // The first signature (60 days ago) starts the clock for what came before it…
+    await withText(daysAgo(61), amended.encounterId, 'amended-before');
+    // …and text written after it (for an amendment) counts from its own attempt.
+    await withText(daysAgo(12), amended.encounterId, 'amended-after');
+    await withText(daysAgo(50), signedRecently.encounterId, 'signed-recently');
+    await withText(daysAgo(46), unsigned.encounterId, 'unsigned-46');
+    await withText(daysAgo(91), unsigned.encounterId, 'unsigned-91');
+    await withText(daysAgo(46), null, 'no-encounter-46');
+    await withText(daysAgo(44), null, 'no-encounter-44');
 
     const purged = await storeOf(prisma).purgeExchanges(now);
 
@@ -235,14 +244,15 @@ describe('ai_run and ai_exchange (assistant)', () => {
       select: { purpose: true },
       orderBy: { purpose: 'asc' },
     });
-    expect(purged).toBe(2);
     expect(kept.map((run) => run.purpose)).toEqual([
-      'no-encounter-recent',
+      'amended-after',
+      'no-encounter-44',
       'signed-recently',
-      'unsigned',
+      'unsigned-46',
     ]);
+    expect(purged).toBe(4);
     // The rows of ai_run stay: only the text goes.
-    expect(await prisma.aiRun.count()).toBe(5);
+    expect(await prisma.aiRun.count()).toBe(8);
   });
 
   it('AS-017 counts the month in Guayaquil, an unknown cost at its worst case', async () => {

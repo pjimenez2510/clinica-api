@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { LlmCallFailed } from '../domain/assistant.errors';
-import type { PseudonymizedText } from '../application/llm-client.port';
+import {
+  instruction,
+  type PseudonymizedText,
+} from '../application/llm-client.port';
 
 import { GeminiProvider, geminiSchema } from './gemini.provider';
 
@@ -58,7 +61,7 @@ const request = (signal?: AbortSignal) => ({
   tier: 'quality' as const,
   purpose: 'test',
   promptVersion: 'v1',
-  system: 'redacta',
+  system: instruction`redacta`,
   prompt: PROMPT as PseudonymizedText,
   answer,
   maxTokens: 4_000,
@@ -120,6 +123,22 @@ describe('the Gemini provider', () => {
       outputTokens: 16,
       reasoningTokens: 6,
     });
+  });
+
+  it('AS-017 leaves the tokens absent, not zero, when the provider reports none', async () => {
+    const { client } = provider({
+      candidates: [
+        {
+          content: { parts: [{ text: '{"sections":[]}' }] },
+          finishReason: 'STOP',
+        },
+      ],
+    });
+
+    const result = await client.generate(request());
+
+    expect(result.inputTokens).toBeUndefined();
+    expect(result.outputTokens).toBeUndefined();
   });
 
   it('AS-003 refuses an answer outside the zod schema even when the provider let it through', async () => {

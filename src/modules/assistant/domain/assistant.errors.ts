@@ -72,19 +72,39 @@ export class LlmCallFailed extends ExternalServiceError {
   readonly service = 'llm';
   readonly isRetryable: boolean;
   override readonly userTitle: string;
+  /**
+   * What the provider sent back. NOT ENUMERABLE, and left out of `toJSON`:
+   * `raw` may hold the answer or an error body that quotes the input, and a
+   * `JSON.stringify(error)` or an error tracker must never carry it.
+   */
+  declare readonly received: FailedAttempt;
 
   constructor(
     readonly provider: ProviderName,
     readonly outcome: LlmFailure,
-    readonly received: FailedAttempt,
+    received: FailedAttempt,
   ) {
     super(
       `${provider} attempt ended in ${outcome}${received.status ? ` (HTTP ${received.status})` : ''}`,
       { provider, outcome },
     );
+    Object.defineProperty(this, 'received', {
+      value: received,
+      enumerable: false,
+    });
     this.isRetryable = isAvailabilityFailure(outcome);
     this.userTitle = this.isRetryable
       ? 'El asistente no está disponible en este momento. Vuelva a pedirlo en unos minutos o siga escribiendo como siempre'
       : 'El asistente no pudo dar una propuesta válida esta vez. Puede volver a pedirla o seguir escribiendo como siempre';
+  }
+
+  toJSON(): Record<string, unknown> {
+    return {
+      name: this.name,
+      code: this.code,
+      provider: this.provider,
+      outcome: this.outcome,
+      message: this.message,
+    };
   }
 }

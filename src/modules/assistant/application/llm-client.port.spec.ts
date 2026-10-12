@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import {
+  instruction,
   type LlmClient,
   type LlmRequest,
   type PseudonymizedText,
@@ -38,7 +39,7 @@ describe('LlmClient port', () => {
         tier: 'quality',
         purpose: 'test',
         promptVersion: 'v1',
-        system: 'Resume',
+        system: instruction`Resume`,
         // @ts-expect-error AS-001: a string is not PseudonymizedText.
         prompt,
         answer,
@@ -49,21 +50,42 @@ describe('LlmClient port', () => {
     expect(request(raw).prompt).toBe(raw);
   });
 
+  it('AS-001 does not compile instructions built from anything but literal text', () => {
+    const patientName = 'Juan Pérez';
+    // @ts-expect-error AS-001: an interpolation could carry patient text.
+    const leaked = instruction`Redacta la nota de ${patientName}`;
+    // @ts-expect-error AS-001: a plain string is not an instruction.
+    const plain: LlmRequest<typeof answer>['system'] = 'Redacta';
+
+    expect(instruction`Redacta la nota`).toBe('Redacta la nota');
+    expect([leaked, plain]).toHaveLength(2);
+  });
+
   it('AS-001 lets no production file mint PseudonymizedText by a cast, except withContext', () => {
     const offenders = productionSources()
       .map((path) => relative(process.cwd(), path))
       .filter((path) => path !== PORT_FILE)
-      .filter((path) =>
-        /(as\s+PseudonymizedText\b|<PseudonymizedText>)/.test(
-          readFileSync(join(process.cwd(), path), 'utf8'),
-        ),
-      );
+      .filter((path) => {
+        const source = readFileSync(join(process.cwd(), path), 'utf8');
+        return (
+          /(as\s+(PseudonymizedText|SystemInstruction)\b|<(PseudonymizedText|SystemInstruction)>)/.test(
+            source,
+          ) ||
+          // An alias would hide the cast from the line above.
+          /type\s+\w+\s*=\s*(PseudonymizedText|SystemInstruction)\b/.test(
+            source,
+          ) ||
+          // A file that speaks the port may not launder a value through never or any.
+          (/llm-client\.port/.test(source) &&
+            /\bas\s+(never|any)\b/.test(source))
+        );
+      });
 
     expect(offenders).toEqual([]);
     // Positive control: the scan does see the one sanctioned cast.
-    expect(readFileSync(join(process.cwd(), PORT_FILE), 'utf8')).toMatch(
-      /as PseudonymizedText/,
-    );
+    const port = readFileSync(join(process.cwd(), PORT_FILE), 'utf8');
+    expect(port).toMatch(/as PseudonymizedText/);
+    expect(port).toMatch(/as SystemInstruction/);
   });
 
   it('AS-001 withContext appends system-composed text to cleared text and keeps the brand', () => {

@@ -9,6 +9,7 @@ import {
   type ProviderAnswer,
 } from '../application/llm-client.port';
 
+import { strictJsonSchema } from './json-schema';
 import { OPENAI_MODELS, OPENAI_REASONING_EFFORT } from './model-routing';
 import {
   outcomeOfStatus,
@@ -31,14 +32,19 @@ export const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 export class OpenAiProvider implements LlmProvider {
   readonly name = 'openai' as const;
 
+  /** ECMAScript-private: an `inspect` or `console.log` of the provider does not print it. */
+  readonly #apiKey: string;
+
   constructor(
-    private readonly apiKey: string,
+    apiKey: string,
     private readonly fetcher: typeof fetch = fetch,
     private readonly baseUrl = OPENAI_BASE_URL,
     private readonly models: Readonly<
       Record<ModelTier, string>
     > = OPENAI_MODELS,
-  ) {}
+  ) {
+    this.#apiKey = apiKey;
+  }
 
   modelFor(tier: ModelTier): string {
     return this.models[tier];
@@ -60,7 +66,7 @@ export class OpenAiProvider implements LlmProvider {
         status,
         ...(usage ? tokensOf(usage) : {}),
       });
-    const { schema, strict } = openAiSchema(
+    const { schema, strict } = strictJsonSchema(
       z.toJSONSchema(request.answer, { io: 'output' }),
     );
 
@@ -71,7 +77,7 @@ export class OpenAiProvider implements LlmProvider {
         method: 'POST',
         signal: request.signal,
         headers: {
-          authorization: `Bearer ${this.apiKey}`,
+          authorization: `Bearer ${this.#apiKey}`,
           'content-type': 'application/json',
         },
         body: JSON.stringify({
@@ -130,57 +136,18 @@ export class OpenAiProvider implements LlmProvider {
   }
 }
 
-/**
- * AS-003. The schema as strict mode accepts it: every object closed with
- * `additionalProperties: false`, and `$schema` left out. Strict mode also
- * demands every property be `required`; a zod schema with an optional field
- * cannot say that, so then the schema goes non-strict and the zod parse is
- * the guarantee, as it always is.
- */
-export function openAiSchema(input: unknown): {
-  schema: unknown;
-  strict: boolean;
-} {
-  let strict = true;
-  const visit = (node: unknown): unknown => {
-    if (Array.isArray(node)) return node.map(visit);
-    if (node === null || typeof node !== 'object') return node;
-    const entries = Object.entries(node).filter(([key]) => key !== '$schema');
-    const out: Record<string, unknown> = Object.fromEntries(
-      entries.map(([key, value]) => [
-        key,
-        key === 'properties' && value !== null && typeof value === 'object'
-          ? Object.fromEntries(
-              Object.entries(value as Record<string, unknown>).map(
-                ([name, inner]) => [name, visit(inner)],
-              ),
-            )
-          : visit(value),
-      ]),
-    );
-    if (out.type === 'object') {
-      out.additionalProperties = false;
-      const names = Object.keys((out.properties as object | undefined) ?? {});
-      const required = (out.required as string[] | undefined) ?? [];
-      if (names.some((name) => !required.includes(name))) strict = false;
-    }
-    return out;
-  };
-  const schema = visit(input);
-  return { schema, strict };
-}
-
 type Usage = z.infer<typeof usageSchema>;
 
 /**
  * `input_tokens` includes the cached part, which is taken out so it is not
  * charged twice; `output_tokens` already includes reasoning.
  */
-function tokensOf(usage: Usage | undefined): TokenUsage {
-  if (usage === undefined) return { inputTokens: 0, outputTokens: 0 };
+function tokensOf(usage: Usage | undefined): Partial<TokenUsage> {
+  // Absent is not zero: the routing then counts the attempt at its worst case (AS-017).
+  if (usage === undefined) return {};
   const cached = usage.input_tokens_details?.cached_tokens ?? 0;
   return {
-    inputTokens: (usage.input_tokens ?? 0) - cached,
+    inputTokens: Math.max(0, (usage.input_tokens ?? 0) - cached),
     outputTokens: usage.output_tokens ?? 0,
     cacheReadTokens: cached,
     reasoningTokens: usage.output_tokens_details?.reasoning_tokens ?? 0,

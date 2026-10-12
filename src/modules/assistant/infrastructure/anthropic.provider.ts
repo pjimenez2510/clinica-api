@@ -1,9 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import { LlmCallFailed } from '../domain/assistant.errors';
-import type { ModelTier, TokenUsage } from '../domain/llm-outcome';
+import type { LlmFailure, ModelTier, TokenUsage } from '../domain/llm-outcome';
 import {
   DEFAULT_MAX_TOKENS,
   type LlmProvider,
@@ -12,35 +11,53 @@ import {
 } from '../application/llm-client.port';
 
 import { ANTHROPIC_MODELS, ANTHROPIC_THINKING_DISABLED } from './model-routing';
-import { abortOutcome, outcomeOfStatus } from './provider-outcome';
+import { strictJsonSchema } from './json-schema';
+import { abortOutcome, outcomeOfStatus, parseJson } from './provider-outcome';
+
+/** Where the provider lives. Fixed, so `ANTHROPIC_BASE_URL` cannot redirect the text. */
+const BASE_URL = 'https://api.anthropic.com';
 
 /**
  * The SDK's own retries are off: a failure passes to the next provider of the
- * chain at once (AS-007) instead of waiting out two retries here. Its own
- * clock is a backstop only; the deadline that matters is the routing's
- * signal.
+ * chain at once (AS-007). Its clock is a backstop; the deadline that matters
+ * is the routing's signal. Its log is off: `ANTHROPIC_LOG=debug` would print
+ * the request body — the prompt — to the console, outside pino's allowlist.
  */
-const SDK_OPTIONS = { timeout: 600_000, maxRetries: 0 } as const;
+const SDK_OPTIONS = {
+  baseURL: BASE_URL,
+  logLevel: 'off',
+  timeout: 600_000,
+  maxRetries: 0,
+} as const;
 
 /**
- * Anthropic through its official SDK, copied from SigmAI
- * (`anthropic.adapter.ts`) and adapted to the outcomes of AS-004. The key
- * goes in the SDK's header, never in a URL.
+ * Anthropic through its official SDK, adapted from SigmAI
+ * (`anthropic.adapter.ts`).
+ *
+ * `messages.create` and not `messages.parse`: `parse` validates the answer
+ * inside the SDK and throws its own error for a cut or malformed answer
+ * BEFORE `stop_reason` can be read — which this adapter would have read as a
+ * provider that cannot attend, passing a model's failure to the next provider
+ * (AS-008). Here the stop reason is read first and the answer parsed after,
+ * as the other adapters do (AS-003).
  */
 export class AnthropicProvider implements LlmProvider {
   readonly name = 'anthropic' as const;
 
   constructor(
-    private readonly client: Pick<Anthropic['messages'], 'parse'>,
+    private readonly client: Pick<Anthropic['messages'], 'create'>,
     private readonly models: Readonly<
       Record<ModelTier, string>
     > = ANTHROPIC_MODELS,
   ) {}
 
+  /** The SDK client, with nothing taken from the environment but the key given. */
+  static sdkFor(apiKey: string): Anthropic {
+    return new Anthropic({ apiKey, ...SDK_OPTIONS });
+  }
+
   static withKey(apiKey: string): AnthropicProvider {
-    return new AnthropicProvider(
-      new Anthropic({ apiKey, ...SDK_OPTIONS }).messages,
-    );
+    return new AnthropicProvider(AnthropicProvider.sdkFor(apiKey).messages);
   }
 
   modelFor(tier: ModelTier): string {
@@ -51,41 +68,47 @@ export class AnthropicProvider implements LlmProvider {
     request: LlmRequest<Shape>,
   ): Promise<ProviderAnswer<z.infer<Shape>>> {
     const model = this.modelFor(request.tier);
+    let response: Anthropic.Message;
     try {
-      const response = await this.client.parse(
+      response = await this.client.create(
         {
           model,
           max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
           system: systemOf(request),
           messages: [{ role: 'user', content: contentOf(request) }],
-          output_config: { format: zodOutputFormat(request.answer) },
+          output_config: {
+            format: {
+              type: 'json_schema',
+              schema: strictJsonSchema(
+                z.toJSONSchema(request.answer, { io: 'output' }),
+              ).schema as Record<string, unknown>,
+            },
+          },
           ...(ANTHROPIC_THINKING_DISABLED[request.tier]
             ? { thinking: { type: 'disabled' as const } }
             : {}),
         },
         { signal: request.signal },
       );
-      const raw = JSON.stringify({ ...response, parsed_output: undefined });
-      const usage = tokensOf(response.usage);
-      const received = { model, raw, status: 200, ...usage };
-      // A safety classifier can decline and still answer 200 with no content.
-      if (response.stop_reason === 'refusal') {
-        throw new LlmCallFailed(this.name, 'refused', received);
-      }
-      // The budget ran out before the answer was written: not the schema's fault.
-      if (response.stop_reason === 'max_tokens') {
-        throw new LlmCallFailed(this.name, 'cut-off', received);
-      }
-      // AS-003: the SDK parsed against the schema; parse again, as with the others.
-      const parsed = request.answer.safeParse(response.parsed_output);
-      if (response.parsed_output == null || !parsed.success) {
-        throw new LlmCallFailed(this.name, 'invalid-answer', received);
-      }
-      return { value: parsed.data, model, raw, ...usage };
     } catch (cause) {
-      if (cause instanceof LlmCallFailed) throw cause;
       throw failureOf(cause, model, request.signal);
     }
+
+    const raw = JSON.stringify(response);
+    const usage = tokensOf(response.usage);
+    const failed = (outcome: LlmFailure) =>
+      new LlmCallFailed(this.name, outcome, { model, raw, status: 200, ...usage }); // prettier-ignore
+    // A safety classifier can decline and still answer 200 with no content.
+    if (response.stop_reason === 'refusal') throw failed('refused');
+    // The budget ran out before the answer was written: not the schema's fault.
+    if (response.stop_reason === 'max_tokens') throw failed('cut-off');
+
+    const text = response.content
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .join('');
+    const parsed = request.answer.safeParse(parseJson(text));
+    if (text.trim() === '' || !parsed.success) throw failed('invalid-answer');
+    return { value: parsed.data, model, raw, ...usage };
   }
 }
 
@@ -94,13 +117,7 @@ function systemOf(
   request: LlmRequest<z.ZodType>,
 ): string | Anthropic.TextBlockParam[] {
   return request.cacheable === true
-    ? [
-        {
-          type: 'text',
-          text: request.system,
-          cache_control: { type: 'ephemeral' },
-        },
-      ]
+    ? [{ type: 'text', text: request.system, cache_control: { type: 'ephemeral' } }] // prettier-ignore
     : request.system;
 }
 
@@ -109,13 +126,7 @@ function contentOf(
   request: LlmRequest<z.ZodType>,
 ): string | Anthropic.ContentBlockParam[] {
   return request.cacheable === true
-    ? [
-        {
-          type: 'text',
-          text: request.prompt,
-          cache_control: { type: 'ephemeral' },
-        },
-      ]
+    ? [{ type: 'text', text: request.prompt, cache_control: { type: 'ephemeral' } }] // prettier-ignore
     : request.prompt;
 }
 
@@ -123,7 +134,8 @@ function contentOf(
  * `input_tokens` is the uncached remainder, so the prompt is the three input
  * figures added; `thinking_tokens` is a share of `output_tokens`.
  */
-function tokensOf(usage: Anthropic.Usage): TokenUsage {
+function tokensOf(usage: Anthropic.Usage | undefined): Partial<TokenUsage> {
+  if (!usage) return {};
   return {
     inputTokens: usage.input_tokens,
     outputTokens: usage.output_tokens,
@@ -143,10 +155,7 @@ function failureOf(
   signal: AbortSignal | undefined,
 ): LlmCallFailed {
   if (signal?.aborted) {
-    return new LlmCallFailed('anthropic', abortOutcome(signal), {
-      model,
-      raw: null,
-    });
+    return new LlmCallFailed('anthropic', abortOutcome(signal), { model, raw: null }); // prettier-ignore
   }
   if (cause instanceof Anthropic.APIConnectionTimeoutError) {
     return new LlmCallFailed('anthropic', 'timeout', { model, raw: null });

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
-import { exchangePurgeCutoff } from '../domain/exchange-retention';
+import { exchangePurgeCutoffs } from '../domain/exchange-retention';
 import type {
   AiExchangeRecord,
   AiRunRecord,
@@ -49,21 +49,29 @@ export class PrismaAiRunStore implements AiRunStore {
   }
 
   /**
-   * AS-015. The first signed note of the encounter starts the 45 days; an
-   * encounter with no signed note keeps its text until one is signed. With no
-   * encounter, the attempt itself starts them. The cutoff comes from the
-   * application's clock, never `now()`.
+   * AS-015. The 45 days start at the first signature of the encounter's
+   * notes, or at the attempt itself when it came after that signature (an
+   * amendment), or at the attempt when there is no encounter. Whatever the
+   * encounter, nothing outlives the maximum (D-241 §6). The cutoffs come from
+   * the application's clock, never `now()`.
    */
   purgeExchanges(now: Date): Promise<number> {
-    const cutoff = exchangePurgeCutoff(now);
+    const { retention, maximum } = exchangePurgeCutoffs(now);
     return this.prisma.$executeRaw`
       DELETE FROM "ai_exchange" AS e
       USING "ai_run" AS r
       WHERE e."ai_run_id" = r."id"
         AND (
-          (r."encounter_id" IS NULL AND r."started_at" <= ${cutoff})
-          OR (SELECT MIN(n."signed_at") FROM "clinical_note" AS n
-               WHERE n."encounter_id" = r."encounter_id") <= ${cutoff}
+          r."started_at" <= ${maximum}
+          OR (r."encounter_id" IS NULL AND r."started_at" <= ${retention})
+          OR (GREATEST(
+               (SELECT MIN(n."signed_at") FROM "clinical_note" AS n
+                 WHERE n."encounter_id" = r."encounter_id"),
+               r."started_at"
+             ) <= ${retention}
+             AND EXISTS (SELECT 1 FROM "clinical_note" AS n
+                          WHERE n."encounter_id" = r."encounter_id"
+                            AND n."signed_at" IS NOT NULL))
         )`;
   }
 }
