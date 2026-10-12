@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AiRunStore } from './application/ai-run.store';
+import type { ListeningStore } from './application/listening.store';
 import type { ConfigService } from '@nestjs/config';
 
 import type { Env } from '../../shared/config/env.schema';
@@ -36,6 +37,18 @@ function storeWith(purge: AiRunStore['purgeExchanges']) {
   return { store, purgeExchanges };
 }
 
+function transcripts(purge: () => Promise<number> = () => Promise.resolve(0)) {
+  const purgeTranscripts = vi.fn(purge);
+  const store: ListeningStore = {
+    find: vi.fn(),
+    save: vi.fn(),
+    append: vi.fn(),
+    transcript: vi.fn(),
+    purge: purgeTranscripts,
+  };
+  return { store, purgeTranscripts };
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -45,7 +58,7 @@ describe('AssistantModule', () => {
   it('AS-015 purges the exchanges at boot and once a day after, until it is destroyed', async () => {
     vi.useFakeTimers();
     const { store, purgeExchanges } = storeWith(() => Promise.resolve(0));
-    const module = new AssistantModule(store);
+    const module = new AssistantModule(store, transcripts().store);
 
     module.onModuleInit();
     await vi.advanceTimersByTimeAsync(2 * DAY_MS);
@@ -60,13 +73,44 @@ describe('AssistantModule', () => {
     const { store } = storeWith(() =>
       Promise.reject(new Error('DELETE … Persona_1 refiere dolor')),
     );
-    const module = new AssistantModule(store);
+    const module = new AssistantModule(store, transcripts().store);
 
     expect(() => module.onModuleInit()).not.toThrow();
     await vi.waitFor(() => expect(warn).toHaveBeenCalled());
     module.onModuleDestroy();
 
     expect(JSON.stringify(warn.mock.calls)).not.toContain('Persona_1');
+  });
+});
+
+describe('the purge of transcripts (AS-057)', () => {
+  it('AS-057 purges the transcripts at boot and once a day, even when the exchanges fail', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { store } = storeWith(() => Promise.reject(new Error('down')));
+    const { store: listening, purgeTranscripts } = transcripts();
+    const module = new AssistantModule(store, listening);
+
+    module.onModuleInit();
+    await vi.advanceTimersByTimeAsync(DAY_MS);
+    module.onModuleDestroy();
+
+    expect(purgeTranscripts).toHaveBeenCalledTimes(2);
+  });
+
+  it('AS-057 AS-058 a failed transcript purge does not stop the API and logs no text', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined); // prettier-ignore
+    const { store } = storeWith(() => Promise.resolve(0));
+    const { store: listening } = transcripts(() =>
+      Promise.reject(new Error('DELETE … me duele la garganta')),
+    );
+    const module = new AssistantModule(store, listening);
+
+    expect(() => module.onModuleInit()).not.toThrow();
+    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+    module.onModuleDestroy();
+
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('garganta');
   });
 });
 

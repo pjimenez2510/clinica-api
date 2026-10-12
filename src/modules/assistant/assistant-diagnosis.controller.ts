@@ -16,8 +16,6 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
-import type { Permission } from '../../shared/authorisation/permission.catalogue';
-import { ALL_SITES } from '../../shared/authorisation/principal';
 import { RequirePermission } from '../../shared/http/auth.decorators';
 
 import {
@@ -25,6 +23,7 @@ import {
   type DiagnosisOverview,
   type ProposalRequester,
 } from './application/diagnosis-proposal.service';
+import { withAssistant } from './assistant-sites';
 import {
   AcceptDiagnosisProposalDto,
   DiagnosisOverviewDto,
@@ -147,17 +146,10 @@ export class AssistantDiagnosisController {
    */
   private requester(req: Request): ProposalRequester {
     const principal = this.currentUser.requirePrincipal();
-    const sites = (permission: Permission) => {
-      const scope = principal.sitesFor(permission);
-      return scope === ALL_SITES ? ('all' as const) : scope;
-    };
-    const assistant = sites('assistant:use');
-    const within = (permission: Permission) =>
-      intersect(sites(permission), assistant);
     return {
       userId: this.currentUser.requireUserId(),
-      readSites: within('record:read'),
-      writeSites: within('record:write'),
+      readSites: withAssistant(principal, 'record:read'),
+      writeSites: withAssistant(principal, 'record:write'),
       ip: req.ip,
       userAgent: req.get('user-agent'),
     };
@@ -170,14 +162,4 @@ function toResponse(overview: DiagnosisOverview): DiagnosisOverviewDto {
     ...overview,
     readAt: overview.readAt?.toISOString() ?? null,
   };
-}
-
-/** Two site scopes, as one: what both admit. */
-function intersect(
-  a: 'all' | readonly string[],
-  b: 'all' | readonly string[],
-): 'all' | readonly string[] {
-  if (a === 'all') return b;
-  if (b === 'all') return a;
-  return a.filter((site) => b.includes(site));
 }
