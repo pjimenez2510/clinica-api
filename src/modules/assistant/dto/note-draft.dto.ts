@@ -29,6 +29,8 @@ const sectionSchema = z.object({
     'ACCEPTED_WITH_CHANGES',
     'DISCARDED',
   ]),
+  /** AS-090, AS-101. The text accepted earlier for this section: swapped, not added twice. */
+  acceptedBefore: z.string().nullable(),
   /** AS-029, AS-099. Written by the demonstration's script, not by a model. */
   demo: z.boolean(),
 });

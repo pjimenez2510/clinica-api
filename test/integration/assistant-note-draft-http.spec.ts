@@ -251,6 +251,7 @@ describe('el borrador de la nota por HTTP (AS-086 a AS-097)', () => {
     expect(overview.draft).toMatchObject({ status: 'DONE', upToMs: 24_018, failureCode: null }); // prettier-ignore
     expect(overview.coveredUpToMs).toBe(24_018);
     expect(overview.demo).toBe(true);
+    expect(overview.sections.every((each) => (each as { acceptedBefore?: unknown }).acceptedBefore === null)).toBe(true); // prettier-ignore
     expect(overview.sections.map((each) => each.section)).toEqual([
       'motivoConsulta',
       'enfermedadActual',
