@@ -71,3 +71,6 @@ arquitectura.mmd
 # and never goes into git. Only the invented sample does.
 /prisma/catastro/*
 !/prisma/catastro/sri-ruc-muestra.csv
+
+# Spending ledger of the evaluation harness (no text; per machine)
+/eval/.gasto/
