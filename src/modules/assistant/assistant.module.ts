@@ -17,12 +17,14 @@ import { CIE10_LOOKUP } from '../../shared/clinical/cie10-lookup.port';
 import { ALLERGY_ABSENCE_READER } from '../../shared/clinical/allergy-absence.port';
 import { CODING_CONTEXT_READER } from '../../shared/clinical/coding-context.port';
 import { SURVIVING_CHART_ALLERGY_READER } from '../../shared/clinical/patient-allergy.port';
+import { ORDERING_CONTEXT_READER } from '../../shared/clinical/ordering-context.port';
 import { PRESCRIBING_CONTEXT_READER } from '../../shared/clinical/prescribing-context.port';
 import type { Env } from '../../shared/config/env.schema';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 import { PrismaCie10Lookup } from '../../shared/infrastructure/clinical/prisma-cie10.lookup';
 import { PrismaActiveAllergyReader } from '../../shared/infrastructure/clinical/prisma-active-allergy.reader';
 import { PrismaCodingContextReader } from '../../shared/infrastructure/clinical/prisma-coding-context.reader';
+import { PrismaOrderingContextReader } from '../../shared/infrastructure/clinical/prisma-ordering-context.reader';
 import { PrismaPrescribingContextReader } from '../../shared/infrastructure/clinical/prisma-prescribing-context.reader';
 import { PrismaAllergyAbsenceReader } from '../../shared/infrastructure/clinical/standing-allergy-absence';
 
@@ -143,6 +145,9 @@ const PURGE_EVERY_MS = 86_400_000;
     { provide: SURVIVING_CHART_ALLERGY_READER, useClass: PrismaActiveAllergyReader }, // prettier-ignore
     { provide: ALLERGY_ABSENCE_READER, useClass: PrismaAllergyAbsenceReader },
     PrescriptionProposalService,
+    // AS-103 to AS-113 (D3). The exams: the clinic's orderable catalogue and
+    // the orders of the attention, read; the order is written by `orders`.
+    { provide: ORDERING_CONTEXT_READER, useClass: PrismaOrderingContextReader }, // prettier-ignore
     CurrentUserService,
     // AS-045 to AS-058. The listening (C1).
     { provide: LISTENING_STORE, useClass: PrismaListeningStore },
