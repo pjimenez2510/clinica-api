@@ -93,6 +93,9 @@ export const DOMAIN_ERROR_CODES = [
   'ASSISTANT_ALLERGY_CONTRAINDICATION',
   'ASSISTANT_PRESCRIPTION_LINE_NOT_READY',
   'SUGGESTION_PRESCRIPTION_MISMATCH',
+  // AS-109 (D3): la orden con que se enlaza un examen propuesto no es de la
+  // atención, no tiene ese examen o el examen no es un candidato (422).
+  'SUGGESTION_ORDER_MISMATCH',
   // AS-048, AS-049 (C1): clinica-ai no puede escuchar —sin reconocedor, sin
   // detector de voz o caído— (503), y una orden o una trama en un
   // canal sin escucha abierta (409).

@@ -364,6 +364,21 @@ export class SuggestionPrescriptionMismatchError extends ValidationError {
   }
 }
 
+/**
+ * AS-109. The order the proposal is linked to is not of its attention, is
+ * discarded, has no live line of that exam, or the exam is not one of the
+ * proposal's candidates.
+ */
+export class SuggestionOrderMismatchError extends ValidationError {
+  readonly code = 'SUGGESTION_ORDER_MISMATCH';
+  override readonly userTitle =
+    'Esa orden no es de esta atención o no tiene ese examen. Recargue la atención';
+
+  constructor() {
+    super('The order line is not of the encounter or of the suggestion');
+  }
+}
+
 const UNAVAILABLE_TITLES: Record<UnavailableReason, string> = {
   'no-recognizer':
     'El reconocimiento de voz no está instalado en este equipo. La consulta sigue sin escucha',
