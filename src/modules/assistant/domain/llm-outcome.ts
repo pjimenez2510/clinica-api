@@ -62,7 +62,8 @@ export function isAvailabilityFailure(outcome: LlmOutcome): boolean {
  *
  * Optional fields stay absent when the provider does not report them: absent
  * is not zero, and the ceiling counts an attempt with no figures at its worst
- * case (AS-017).
+ * case — unless the provider refused it or it never reached it (AS-017,
+ * D-241 §9: `notBilled` in the routing).
  */
 export interface TokenUsage {
   /** Input charged at full price; cached reads and writes are apart. */

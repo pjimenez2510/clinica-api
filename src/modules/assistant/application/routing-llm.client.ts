@@ -49,6 +49,7 @@ interface Settled extends Partial<TokenUsage> {
   outcome: LlmOutcome;
   httpStatus: number | null;
   raw: string | null;
+  neverSent?: boolean;
 }
 
 /**
@@ -317,11 +318,12 @@ function cancelled(provider: ProviderName, model: string): LlmCallFailed {
 
 /**
  * AS-017 (D-241 §9). An attempt the provider refused with an HTTP error, or
- * one that never reached it, was not billed: it counts 0. Only a deadline or a
- * cancel in the middle of an answer — which the provider may have started to
- * write and charge — counts its worst case when no figures came back.
+ * one that never reached it (`neverSent`: refused connection, unknown host,
+ * TLS), was not billed: it counts 0. Anything else without figures — the
+ * routing's deadline, a cancel or a connection cut after sending, an error
+ * nobody classified — may have been billed, and counts its worst case.
  */
 function notBilled(settled: Settled): boolean {
   if (settled.httpStatus !== null) return settled.httpStatus >= 400;
-  return settled.outcome === 'provider-error';
+  return settled.neverSent === true;
 }

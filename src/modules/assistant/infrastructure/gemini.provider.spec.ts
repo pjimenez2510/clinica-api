@@ -215,6 +215,33 @@ describe('the Gemini provider', () => {
     expect((await gone).outcome).toBe('cancelled');
   });
 
+  it('AS-017 marks as never sent only a connection that was refused before sending', async () => {
+    const refused = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }); // prettier-ignore
+    const before = vi.fn(() => Promise.reject(new TypeError('fetch failed', { cause: refused }))) as unknown as typeof fetch; // prettier-ignore
+    const after = vi.fn(() => Promise.reject(new TypeError('fetch failed', { cause: Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }) }))) as unknown as typeof fetch; // prettier-ignore
+
+    const notSent = await failure(new GeminiProvider('k', before, 'https://provider', MODELS).generate(request())); // prettier-ignore
+    const cut = await failure(new GeminiProvider('k', after, 'https://provider', MODELS).generate(request())); // prettier-ignore
+
+    expect(notSent.received.neverSent).toBe(true);
+    expect(cut.received.neverSent).toBeUndefined();
+    expect(cut.outcome).toBe('provider-error');
+  });
+
+  it('AS-017 a body cut while reading an answer keeps its status: the provider already answered', async () => {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.error(new TypeError('terminated'));
+      },
+    });
+    const fetcher = vi.fn(() => Promise.resolve(new Response(body, { status: 200 }))) as unknown as typeof fetch; // prettier-ignore
+
+    const error = await failure(new GeminiProvider('k', fetcher, 'https://provider', MODELS).generate(request())); // prettier-ignore
+
+    expect(error.received.status).toBe(200);
+    expect(error.received.neverSent).toBeUndefined();
+  });
+
   it('AS-004 treats a network failure as a provider that cannot attend', async () => {
     const fetcher = vi.fn(() =>
       Promise.reject(new TypeError('fetch failed')),

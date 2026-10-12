@@ -159,6 +159,20 @@ describe('the Anthropic provider', () => {
     },
   );
 
+  it('AS-017 marks as never sent only a refused connection', async () => {
+    const refused = new Anthropic.APIConnectionError({
+      message: 'Connection error.',
+      cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }), // prettier-ignore
+    });
+    const reset = new Anthropic.APIConnectionError({ message: 'reset' });
+
+    const notSent = await failure(providerAnswering(refused, true).provider.generate(request('fast'))); // prettier-ignore
+    const cut = await failure(providerAnswering(reset, true).provider.generate(request('fast'))); // prettier-ignore
+
+    expect(notSent.received.neverSent).toBe(true);
+    expect(cut.received.neverSent).toBeUndefined();
+  });
+
   it('AS-004 AS-009 reads a dropped connection, the SDK clock and a cancel', async () => {
     const lost = providerAnswering(new Anthropic.APIConnectionError({ message: 'reset' }), true); // prettier-ignore
     const slow = providerAnswering(new Anthropic.APIConnectionTimeoutError(), true); // prettier-ignore

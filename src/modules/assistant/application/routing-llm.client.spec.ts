@@ -457,6 +457,8 @@ describe('RoutingLlmClient', () => {
     ['503', { kind: 'status', status: 503 } as const, 'provider-error'],
     ['429', { kind: 'status', status: 429 } as const, 'rate-limited'],
     ['401', { kind: 'status', status: 401 } as const, 'provider-error'],
+    // D-241 §9 says «estado HTTP de error»: the provider's own 504 is one.
+    ['504', { kind: 'status', status: 504 } as const, 'provider-error'],
   ])(
     'AS-017 an attempt the provider rejected with %s counts nothing, and the fallback still fits',
     async (_status, reply, outcome) => {
@@ -479,24 +481,57 @@ describe('RoutingLlmClient', () => {
   it('AS-017 a provider that could not be reached counts nothing; a cancel mid-answer counts its worst case', async () => {
     class Unreachable extends ScriptedProvider {
       override generate(): never {
-        throw new LlmCallFailed('gemini', 'provider-error', { model: 'gemini-quality', raw: null }); // prettier-ignore
+        throw new LlmCallFailed('gemini', 'provider-error', { model: 'gemini-quality', raw: null, neverSent: true }); // prettier-ignore
       }
     }
     const unreachable = routing([
       new Unreachable('gemini', { kind: 'hang' }),
       new ScriptedProvider('anthropic', { kind: 'answer', text: RAW }),
     ]);
-    const cancelled = routing([new ScriptedProvider('gemini', { kind: 'hang' })]); // prettier-ignore
+    const cancelledProvider = new ScriptedProvider('gemini', { kind: 'hang' });
+    const cancelled = routing([cancelledProvider]);
     const controller = new AbortController();
 
     await unreachable.client.generate(request());
     const pending = cancelled.client.generate(request(controller.signal));
-    await vi.waitFor(() => expect(cancelled.store.runs).toHaveLength(0));
-    setTimeout(() => controller.abort(), 5);
+    // Mid-answer: the provider was already called when the cancel came.
+    await vi.waitFor(() => expect(cancelledProvider.calls).toHaveLength(1));
+    controller.abort();
     await failure(pending, LlmCallFailed);
 
     expect(unreachable.store.runs[0]).toMatchObject({ outcome: 'provider-error', httpStatus: null, costUsd: 0 }); // prettier-ignore
     expect(cancelled.store.runs[0]).toMatchObject({ outcome: 'cancelled', costUsd: null }); // prettier-ignore
+  });
+
+  it('AS-017 a connection cut after sending, an unclassified error and a 200 without figures count their worst case', async () => {
+    class CutAfterSending extends ScriptedProvider {
+      override generate(): never {
+        // A reset after the request went out: no `neverSent`, may be billed.
+        throw new LlmCallFailed('gemini', 'provider-error', { model: 'gemini-quality', raw: null }); // prettier-ignore
+      }
+    }
+    class Broken extends ScriptedProvider {
+      override generate(): never {
+        throw new TypeError('a bug after the answer arrived');
+      }
+    }
+    const cut = routing([new CutAfterSending('gemini', { kind: 'hang' })]);
+    const broken = routing([new Broken('gemini', { kind: 'hang' })]);
+    const noFigures = routing([
+      new ScriptedProvider(
+        'gemini',
+        { kind: 'answer', text: RAW },
+        {} as never,
+      ),
+    ]);
+
+    await failure(cut.client.generate(request()), LlmCallFailed);
+    await failure(broken.client.generate(request()), LlmCallFailed);
+    await noFigures.client.generate(request());
+
+    expect(cut.store.runs[0]).toMatchObject({ outcome: 'provider-error', costUsd: null }); // prettier-ignore
+    expect(broken.store.runs[0]).toMatchObject({ outcome: 'provider-error', costUsd: null }); // prettier-ignore
+    expect(noFigures.store.runs[0]).toMatchObject({ outcome: 'ok', httpStatus: 200, costUsd: null }); // prettier-ignore
   });
 
   it('AS-018 the lines for an unpriced model and an unrecorded attempt carry only allowed keys and no text', async () => {
