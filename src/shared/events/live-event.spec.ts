@@ -100,7 +100,7 @@ describe('el aviso en vivo', () => {
     ]);
     const heardBy = (principal: Principal, siteId: string) =>
       (Object.keys(LIVE_EVENT_PERMISSION) as LiveEventKind[]).filter((kind) =>
-        mayReceive(principal, { kind, siteId }),
+        mayReceive(principal, { kind, siteId } as LiveEvent),
       );
 
     expect(heardBy(room, SITE_A)).toEqual(['waiting-room']);
@@ -115,7 +115,9 @@ describe('el aviso en vivo', () => {
     ]);
     const kinds = (
       Object.keys(LIVE_EVENT_PERMISSION) as LiveEventKind[]
-    ).filter((kind) => mayReceive(cashier, { kind, siteId: SITE_A }));
+    ).filter((kind) =>
+      mayReceive(cashier, { kind, siteId: SITE_A } as LiveEvent),
+    );
     expect(kinds).toEqual(['billing', 'sri']);
   });
 
@@ -125,6 +127,7 @@ describe('el aviso en vivo', () => {
       'agenda:read',
       'billing:read',
       'record:read',
+      'record:write',
     ]);
   });
 
@@ -144,12 +147,56 @@ describe('el aviso en vivo', () => {
     expect(mayReceive(doctor, addressed)).toBe(true);
     expect(mayReceive(colleague, addressed)).toBe(false);
     expect(
-      mayReceive(doctor, { kind: 'emergency-alerts', siteId: SITE_A }),
+      mayReceive(doctor, {
+        kind: 'emergency-alerts',
+        siteId: SITE_A,
+      } as LiveEvent),
     ).toBe(false);
     // The addressees survive the trip through Redis, and only as uuids.
     expect(parseLiveEvent(JSON.stringify(addressed))).toEqual(addressed);
     expect(
       parseLiveEvent(JSON.stringify({ ...addressed, userIds: ['ana'] })),
     ).toBeNull();
+  });
+
+  it('AU-060: «borrador listo» y «propuesta lista» llegan sólo a sus destinatarios con `record:write` en la sede, y sin destinatarios a nadie', () => {
+    const doctor = new Principal('01990000-0000-7000-8000-0000000000d1', [
+      { roleCode: 'MEDICO', siteId: SITE_A, permissions: ['record:read', 'record:write'] }, // prettier-ignore
+    ]);
+    const colleague = new Principal('01990000-0000-7000-8000-0000000000d2', [
+      { roleCode: 'MEDICO', siteId: SITE_A, permissions: ['record:read', 'record:write'] }, // prettier-ignore
+    ]);
+    const readerOnly = new Principal('01990000-0000-7000-8000-0000000000d3', [
+      { roleCode: 'AUDITOR', siteId: SITE_A, permissions: ['record:read'] }, // prettier-ignore
+    ]);
+
+    for (const kind of ['assistant-draft', 'assistant-proposal'] as const) {
+      const toDoctor: LiveEvent = { kind, siteId: SITE_A, userIds: [doctor.userId] }; // prettier-ignore
+      expect(mayReceive(doctor, toDoctor)).toBe(true);
+      expect(mayReceive(colleague, toDoctor)).toBe(false);
+      expect(mayReceive(doctor, { ...toDoctor, siteId: SITE_B })).toBe(false);
+      expect(mayReceive(doctor, { kind, siteId: SITE_A } as LiveEvent)).toBe(
+        false,
+      );
+      expect(
+        mayReceive(readerOnly, { kind, siteId: SITE_A, userIds: [readerOnly.userId] }), // prettier-ignore
+      ).toBe(false);
+      // AU-055: the kind and the site, nothing of the draft.
+      expect(parseLiveEvent(JSON.stringify({ ...toDoctor, draftId: SITE_B }))).toBeNull(); // prettier-ignore
+    }
+  });
+
+  it('AU-060, AG-182: un aviso dirigido sin destinatarios no se acepta del cable; uno por sede sí', () => {
+    for (const kind of [
+      'emergency-alerts',
+      'assistant-draft',
+      'assistant-proposal',
+    ]) {
+      expect(
+        parseLiveEvent(JSON.stringify({ kind, siteId: SITE_A })),
+      ).toBeNull();
+    }
+    // Control positivo: the same shape, of a site kind.
+    expect(parseLiveEvent(JSON.stringify({ kind: 'agenda', siteId: SITE_A }))).toEqual({ kind: 'agenda', siteId: SITE_A }); // prettier-ignore
   });
 });

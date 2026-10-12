@@ -156,6 +156,19 @@ sesión: el canal se corta en el latido siguiente.
 
 **Solo servidor:** AU-054 a AU-058. La pantalla que lo usa es la de ORD-165.
 
+### A7 — Los avisos del asistente _(P1, 11-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §4 y §7 A2: el asistente trabaja en segundo plano y
+avisa a quien lo pidió cuando su borrador o su propuesta están listos. Este
+paso declara los dos avisos; quién los publica llega con el asistente.
+
+**Prueba independiente:** con el canal abierto por dos médicos de la misma
+sede y por recepción, publicar «borrador listo» dirigido al primero: llega
+sólo a él, con su tipo y su sede; sin destinatarios, no llega a nadie.
+**Cubre:** AU-060.
+
+**Solo servidor:** AU-060. La pantalla que lo escucha llega con el asistente.
+
 ---
 
 ## Requisitos
@@ -1097,6 +1110,23 @@ enlace que no sirve y con un correo que no sale.
   > *(Revisión clínica de la rama, G1: un canal abierto y sordo dejaba la
   > pantalla en el respaldo de 5 minutos sin saberlo; ahora lo sabe y vuelve
   > al minuto.)*
+- **AU-060** — CUANDO el asistente tenga listo un borrador
+  (`assistant-draft`) o una propuesta (`assistant-proposal`), el sistema
+  DEBERÁ entregar el aviso sólo a los flujos de las personas a quienes va
+  dirigido (`userIds`) y que tengan `record:write` en la sede del aviso; SI el
+  aviso no nombra destinatarios ENTONCES NO DEBERÁ poder publicarse ni llegar
+  a nadie. Como todo aviso (AU-055), DEBERÁ llevar sólo su tipo y su sede.
+  > Dirigido y no a la sede: un borrador es de quien lo pidió, y despertar las
+  > pantallas de todos los médicos de la sede sería ruido y, en una sede
+  > pequeña, decir quién está consultando. `record:write` porque lo que la
+  > pantalla relee al oírlo es contenido clínico por escribir; el permiso
+  > `assistant:use` llega con A3 (`PLAN-ASISTENTE-IA.md` §7), que decidirá si
+  > lo exige también aquí.
+  > Con `record:write` en `LIVE_EVENT_PERMISSION`, ese permiso solo ya abre
+  > el canal (AU-054 afinado). Con los roles de fábrica no cambia nada:
+  > quien lo tiene —`MEDICO`, `ADMIN`— tiene también `record:read`. Un rol
+  > propio con `record:write` y sin lectura abre el canal y oye sólo sus
+  > propios avisos del asistente (revisión de seguridad de la rama, B1).
 
 ## Códigos de error
 

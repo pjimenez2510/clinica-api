@@ -1,22 +1,20 @@
-import {
-  Injectable,
-  type OnApplicationBootstrap,
-  type OnApplicationShutdown,
-} from '@nestjs/common';
+import { Injectable, type OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
-import { PgBoss } from 'pg-boss';
+import { z } from 'zod';
 
 import type { Env } from '../../../shared/config/env.schema';
+import {
+  type JobQueue,
+  PgBossConnection,
+} from '../../../shared/infrastructure/queue/pg-boss.connection';
 import { VoucherDispatchService } from '../application/voucher-dispatch.service';
 import type { VoucherQueue } from '../domain/electronic-voucher.repository';
 import type { QueueStep } from '../domain/voucher-lifecycle';
 
 /**
- * SRI-040, SRI-057. The persistent queue: pg-boss, in the clinic's own
- * PostgreSQL (ADR-004), in schema `pgboss`, which pg-boss creates and migrates
- * itself — it is the library's state, not this system's model, and it is
- * deliberately outside `prisma/migrations`.
+ * SRI-040, SRI-057. The persistent queue: pg-boss, on the connection every
+ * module shares (`shared/infrastructure/queue`, SRI-105).
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * ONE QUEUE PER STEP, POLICY `stately`, THE ACCESS KEY AS `singletonKey`
@@ -40,70 +38,75 @@ export const QUEUE_NAMES: Record<QueueStep, string> = {
 const SWEEP_QUEUE = 'sri-sweep';
 const WORK_OPTIONS = { batchSize: 10, pollingIntervalSeconds: 1 } as const;
 
-interface StepJob {
-  voucherId: string;
+/** SRI-106. A step's job carries the voucher's id and nothing else. */
+const stepJob = z.strictObject({ voucherId: z.uuid() });
+type StepJob = z.infer<typeof stepJob>;
+/** The sweep's jobs come from its schedule and carry nothing. */
+const sweepJob = z.strictObject({}).nullish();
+
+interface SriQueueHandles {
+  steps: Record<QueueStep, JobQueue<StepJob>>;
+  sweep: JobQueue<z.infer<typeof sweepJob>>;
 }
 
-/** The pg-boss instance, started once and shared by the queue and the worker. */
+/**
+ * SRI-105, SRI-106. The SRI's queues on the shared connection, declared once
+ * for the sender and the worker, and the SRI's own switch:
+ * `SRI_QUEUE_ENABLED=false` stops these queues and no other module's.
+ *
+ * A declaration that fails —the database was down at start-up— is tried
+ * again on the next use; the queues already declared are kept, since the
+ * connection refuses a name twice.
+ */
 @Injectable()
-export class PgBossConnection implements OnApplicationShutdown {
-  private boss: PgBoss | null = null;
-  private starting: Promise<PgBoss> | null = null;
+export class SriQueues {
+  private readonly steps: Partial<Record<QueueStep, JobQueue<StepJob>>> = {};
+  private sweep: SriQueueHandles['sweep'] | null = null;
+  private ready: Promise<SriQueueHandles> | null = null;
 
   constructor(
+    private readonly connection: PgBossConnection,
     private readonly config: ConfigService<Env, true>,
-    private readonly logger: PinoLogger,
-  ) {
-    this.logger.setContext(PgBossConnection.name);
-  }
+  ) {}
 
   get enabled(): boolean {
     return this.config.get('SRI_QUEUE_ENABLED', { infer: true });
   }
 
-  async instance(): Promise<PgBoss> {
-    if (this.boss) return this.boss;
-    this.starting ??= (async () => {
-      const boss = new PgBoss({
-        connectionString: this.config.get('DATABASE_URL', { infer: true }),
-        schema: 'pgboss',
-      });
-      // pg-boss emits its own operational errors (a lost connection, a failed
-      // maintenance pass); unheard, they would crash the process.
-      boss.on('error', (error) =>
-        this.logger.error(
-          { err: error, error_code: 'SRI_QUEUE_ERROR' },
-          'the voucher queue reported an error',
-        ),
-      );
-      await boss.start();
-      for (const name of [...Object.values(QUEUE_NAMES), SWEEP_QUEUE]) {
-        if (!(await boss.getQueue(name))) {
-          await boss.createQueue(name, {
-            policy: name === SWEEP_QUEUE ? 'exclusive' : 'stately',
-            retryLimit: 3,
-            retryDelay: 30,
-            retryBackoff: true,
-          });
-        }
-      }
-      this.boss = boss;
-      return boss;
-    })();
-    return this.starting;
+  handles(): Promise<SriQueueHandles> {
+    this.ready ??= this.declare().catch((error: unknown) => {
+      this.ready = null;
+      throw error;
+    });
+    return this.ready;
   }
 
-  async onApplicationShutdown(): Promise<void> {
-    await this.boss?.stop({ graceful: true, timeout: 10_000 });
-    this.boss = null;
-    this.starting = null;
+  private async declare(): Promise<SriQueueHandles> {
+    const options = { retryLimit: 3, retryDelay: 30, retryBackoff: true };
+    for (const [step, name] of Object.entries(QUEUE_NAMES) as [
+      QueueStep,
+      string,
+    ][]) {
+      this.steps[step] ??= await this.connection.declareQueue(name, stepJob, {
+        ...options,
+        policy: 'stately',
+      });
+    }
+    this.sweep ??= await this.connection.declareQueue(SWEEP_QUEUE, sweepJob, {
+      ...options,
+      policy: 'exclusive',
+    });
+    return {
+      steps: this.steps as Record<QueueStep, JobQueue<StepJob>>,
+      sweep: this.sweep,
+    };
   }
 }
 
 @Injectable()
 export class PgBossVoucherQueue implements VoucherQueue {
   constructor(
-    private readonly connection: PgBossConnection,
+    private readonly queues: SriQueues,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(PgBossVoucherQueue.name);
@@ -115,11 +118,10 @@ export class PgBossVoucherQueue implements VoucherQueue {
     delaySeconds: number,
   ): Promise<void> {
     // Without a running queue the sweep is what picks the voucher up.
-    if (!this.connection.enabled) return;
-    const boss = await this.connection.instance();
-    await boss.send(
-      QUEUE_NAMES[step],
-      { voucherId: voucher.id } satisfies StepJob,
+    if (!this.queues.enabled) return;
+    const { steps } = await this.queues.handles();
+    await steps[step].send(
+      { voucherId: voucher.id },
       {
         singletonKey: voucher.accessKey,
         startAfter: Math.max(0, Math.round(delaySeconds)),
@@ -136,7 +138,7 @@ export class PgBossVoucherQueue implements VoucherQueue {
 @Injectable()
 export class SriQueueWorker implements OnApplicationBootstrap {
   constructor(
-    private readonly connection: PgBossConnection,
+    private readonly queues: SriQueues,
     private readonly dispatch: VoucherDispatchService,
     private readonly logger: PinoLogger,
   ) {
@@ -144,20 +146,20 @@ export class SriQueueWorker implements OnApplicationBootstrap {
   }
 
   async onApplicationBootstrap(): Promise<void> {
-    if (!this.connection.enabled) return;
+    if (!this.queues.enabled) return;
     await this.start();
   }
 
   async start(): Promise<void> {
-    const boss = await this.connection.instance();
-    for (const [step, name] of Object.entries(QUEUE_NAMES) as [
+    const { steps, sweep } = await this.queues.handles();
+    for (const [step, queue] of Object.entries(steps) as [
       QueueStep,
-      string,
+      JobQueue<StepJob>,
     ][]) {
       // Ten per fetch, polled every second: after an SRI outage the backlog
       // drains in batches instead of one job every two seconds (pg-boss's
       // default), and an idle queue costs one cheap query a second.
-      await boss.work<StepJob>(name, WORK_OPTIONS, async (jobs) => {
+      await queue.work(WORK_OPTIONS, async (jobs) => {
         for (const job of jobs) {
           // One job that throws must not fail the other nine of its batch.
           // Its voucher keeps its status, so the sweep queues it again
@@ -177,11 +179,11 @@ export class SriQueueWorker implements OnApplicationBootstrap {
         }
       });
     }
-    await boss.work(SWEEP_QUEUE, async () => {
+    await sweep.work({}, async () => {
       await this.dispatch.sweep();
     });
     // SRI-056. Every minute: the safety net under «the notice swallows».
-    await boss.schedule(SWEEP_QUEUE, '* * * * *');
+    await sweep.schedule('* * * * *');
     this.logger.info({}, 'SRI voucher queue started');
   }
 }

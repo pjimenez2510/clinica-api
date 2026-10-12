@@ -31,9 +31,9 @@ import { AesGcmCertificateCipher } from '../../src/modules/sri/infrastructure/ae
 import { EcSriXadesSigner } from '../../src/modules/sri/infrastructure/ec-sri-xades.signer';
 import { ForgePkcs12Inspector } from '../../src/modules/sri/infrastructure/forge-pkcs12.inspector';
 import {
-  PgBossConnection,
   PgBossVoucherQueue,
   QUEUE_NAMES,
+  SriQueues,
   SriQueueWorker,
 } from '../../src/modules/sri/infrastructure/pg-boss-voucher.queue';
 import { PrismaElectronicVoucherRepository } from '../../src/modules/sri/infrastructure/prisma-electronic-voucher.repository';
@@ -42,6 +42,7 @@ import { FetchSriWebService } from '../../src/modules/sri/infrastructure/sri-web
 import type { Env } from '../../src/shared/config/env.schema';
 import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import type { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
+import { PgBossConnection } from '../../src/shared/infrastructure/queue/pg-boss.connection';
 import {
   LONG_FAULT_DETAIL,
   LONG_FAULT_STRING,
@@ -83,6 +84,7 @@ let double: SriDouble;
 let prisma: PrismaClient;
 let config: ConfigService<Env, true>;
 let connection: PgBossConnection;
+let sriQueues: SriQueues;
 let preparation: VoucherPreparationService;
 let dispatch: VoucherDispatchService;
 /** The same dispatcher on another clock: SRI-091 needs «three days later». */
@@ -118,6 +120,7 @@ beforeAll(async () => {
     true
   >;
   connection = new PgBossConnection(config, silentLogger);
+  sriQueues = new SriQueues(connection, config);
 });
 
 afterAll(async () => {
@@ -135,7 +138,7 @@ beforeEach(async () => {
   const vouchers = new PrismaElectronicVoucherRepository(service);
   const certificateRows = new PrismaSigningCertificateRepository(service);
   const cipher = new AesGcmCertificateCipher(config);
-  const queue = new PgBossVoucherQueue(connection, silentLogger);
+  const queue = new PgBossVoucherQueue(sriQueues, silentLogger);
   const web = new FetchSriWebService(config);
   preparation = new VoucherPreparationService(
     vouchers,
@@ -951,7 +954,7 @@ describe('SRI-040, SRI-057 la cola persistente', () => {
   });
 
   it('SRI-040 SC-084 el worker real lleva el comprobante solo de firmado a autorizado y entregado', async () => {
-    const worker = new SriQueueWorker(connection, dispatch, silentLogger);
+    const worker = new SriQueueWorker(sriQueues, dispatch, silentLogger);
     await worker.start();
     const { invoice } = await aSignedVoucher();
 
@@ -978,9 +981,9 @@ describe('SRI-040, SRI-057 la cola persistente', () => {
       deliveryStatus: 'SENT',
     });
     expect((await invoiceRow(invoice.id)).status).toBe('AUTHORISED');
-    await (await connection.instance()).offWork(QUEUE_NAMES.SEND);
-    await (await connection.instance()).offWork(QUEUE_NAMES.AUTHORISE);
-    await (await connection.instance()).offWork(QUEUE_NAMES.DELIVER);
+    for (const queue of Object.values((await sriQueues.handles()).steps)) {
+      await queue.offWork();
+    }
   }, 40_000);
 });
 

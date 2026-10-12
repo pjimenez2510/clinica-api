@@ -39,14 +39,27 @@ export const LIVE_EVENT_PERMISSION = {
    * ADDRESSED: it reaches only the sessions of its recipients (`userIds`).
    */
   'emergency-alerts': 'agenda:read',
+  /**
+   * AU-060. The assistant finished a draft, or a proposal, that someone asked
+   * for. ADDRESSED to whoever asked: `assistant:use` arrives with A3.
+   */
+  'assistant-draft': 'record:write',
+  'assistant-proposal': 'record:write',
 } as const satisfies Record<string, Permission>;
 
 export type LiveEventKind = keyof typeof LIVE_EVENT_PERMISSION;
 
-/** AG-182. The kinds that are said to their recipients, never to a site. */
-const ADDRESSED_KINDS: ReadonlySet<LiveEventKind> = new Set([
+/** AG-182, AU-060. The kinds that are said to their recipients, never to a site. */
+const ADDRESSED = [
   'emergency-alerts',
-]);
+  'assistant-draft',
+  'assistant-proposal',
+] as const satisfies readonly LiveEventKind[];
+const ADDRESSED_KINDS: ReadonlySet<LiveEventKind> = new Set(ADDRESSED);
+
+export type AddressedLiveEventKind = (typeof ADDRESSED)[number];
+/** The kinds said to everybody at a site who holds their permission. */
+export type SiteLiveEventKind = Exclude<LiveEventKind, AddressedLiveEventKind>;
 
 /**
  * AU-054 (afinado). What a session must hold —any one of them, at some site—
@@ -66,18 +79,30 @@ const KINDS = Object.keys(LIVE_EVENT_PERMISSION) as [
  * The whole event. `strictObject` so a field added by mistake — a patient id,
  * a value — is refused on the way in from Redis instead of travelling on.
  */
-export const liveEventSchema = z.strictObject({
-  kind: z.enum(KINDS),
-  siteId: z.uuid(),
-  /**
-   * AG-182. For an addressed event, who may hear it. It travels between API
-   * instances and NEVER to a browser: the stream rebuilds each event as
-   * `{ kind, siteId }` (AU-055).
-   */
-  userIds: z.array(z.uuid()).min(1).max(50).optional(),
-});
+export const liveEventSchema = z
+  .strictObject({
+    kind: z.enum(KINDS),
+    siteId: z.uuid(),
+    /**
+     * AG-182. For an addressed event, who may hear it. It travels between API
+     * instances and NEVER to a browser: the stream rebuilds each event as
+     * `{ kind, siteId }` (AU-055).
+     */
+    userIds: z.array(z.uuid()).min(1).max(50).optional(),
+  })
+  // AU-060. An addressed kind without its addressees is not an event: refused
+  // on the wire, as the type below refuses it in the code.
+  .refine((event) => !ADDRESSED_KINDS.has(event.kind) || event.userIds, {
+    message: 'an addressed kind names its addressees',
+  });
 
-export type LiveEvent = z.infer<typeof liveEventSchema>;
+/**
+ * The event as the code writes it: an addressed kind cannot be spelled
+ * without `userIds` (AU-060), so «it reached nobody» cannot be a silent bug.
+ */
+export type LiveEvent =
+  | { kind: SiteLiveEventKind; siteId: string; userIds?: string[] }
+  | { kind: AddressedLiveEventKind; siteId: string; userIds: string[] };
 
 /**
  * Parses what arrived on the wire. `null` for anything that is not exactly an
@@ -91,7 +116,7 @@ export function parseLiveEvent(raw: string): LiveEvent | null {
     return null;
   }
   const parsed = liveEventSchema.safeParse(json);
-  return parsed.success ? parsed.data : null;
+  return parsed.success ? (parsed.data as LiveEvent) : null;
 }
 
 /**
