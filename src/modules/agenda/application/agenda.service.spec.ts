@@ -125,6 +125,19 @@ const RULE = {
 const EIGHT = new Date('2026-09-14T13:00:00Z');
 const EIGHT_TWENTY = new Date('2026-09-14T13:20:00Z');
 
+/**
+ * The service reads "now" with `new Date()` (the domain owns no clock), so a
+ * test that depends on it pins that clock instead of the host's real hour:
+ * otherwise the result changes with the day of the week or the year it runs.
+ */
+function pinClock(at: Date): void {
+  vi.useFakeTimers({ toFake: ['Date'], now: at });
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 function anEntry(overrides: Partial<AgendaEntryView> = {}): AgendaEntryView {
   return {
     id: 'entry-1',
@@ -745,8 +758,8 @@ describe('booking an appointment', () => {
       },
     });
 
-    // Relative to the real clock on purpose: the requirement is about the
-    // distance to "now", and a pinned instant would stop being close to it.
+    // Relative to "now": the requirement is about the distance to it.
+    pinClock(EIGHT);
     const soon = new Date(Date.now() + 5 * 60_000);
 
     const rejection = await service
@@ -761,9 +774,10 @@ describe('booking an appointment', () => {
     // With no row the minimum lead is zero, so the window lets this through
     // and the booking is refused further down for a reason that has nothing to
     // do with the window — which is what proves the fallback ran at all.
-    // No rules at all, so that reason is the same on every day of the week:
-    // with `RULE` in force, a Monday morning lands inside it and the booking
-    // fails on its zero duration instead.
+    // No rules at all, so that reason is "outside every rule": with `RULE` in
+    // force, a Monday morning lands inside it and the booking fails on its
+    // zero duration instead. The clock is pinned to that Monday morning.
+    pinClock(EIGHT);
     const { service } = serviceWith({
       siteParameters: null,
       context: {
@@ -2049,6 +2063,7 @@ describe('editing an appointment in place (D-127)', () => {
   it('AG-162 corrects the patient of an appointment whose hour already started, without judging it as a booking', async () => {
     // The site refuses bookings in the past by default: if the correction were
     // judged like one, the attention would go to the wrong chart.
+    pinClock(EIGHT);
     const { service, recorded } = serviceWith({
       siteParameters: null,
       entry: anEntry({ startsAt: new Date(Date.now() - 10 * 60_000) }),
@@ -2158,6 +2173,12 @@ describe('editing a block (AG-164)', () => {
 });
 
 describe('undoing a no-show (AG-163)', () => {
+  // "The same day" is the clinical day of the clock: pinned, so that a run
+  // across midnight in Guayaquil cannot split it.
+  beforeEach(() => {
+    pinClock(EIGHT);
+  });
+
   it('AG-163 takes the appointment back to the status it had, the same day', async () => {
     const now = new Date();
     const { service, recorded } = serviceWith({
@@ -2991,8 +3012,10 @@ describe('AG-080 la tasa de inasistencia', () => {
   });
 
   it('AG-081 cierra la ventana en el instante actual y lo dice en la respuesta', async () => {
+    // The clock inside the range: with the real one, the range stops reaching
+    // "now" once the year it names is over.
+    pinClock(EIGHT);
     const { service, recorded } = serviceWith();
-    const before = Date.now();
 
     // Un rango que llega hasta 2027: nada de eso ha podido faltar todavía.
     const report = await service.noShowRate({
@@ -3002,8 +3025,7 @@ describe('AG-080 la tasa de inasistencia', () => {
     });
 
     const countedUntil = report.countedUntil.getTime();
-    expect(countedUntil).toBeGreaterThanOrEqual(before);
-    expect(countedUntil).toBeLessThanOrEqual(Date.now());
+    expect(countedUntil).toBe(EIGHT.getTime());
     // Y es EL MISMO instante que se le pidió a la base: una segunda lectura
     // del reloj dejaría la cifra y su etiqueta describiendo periodos distintos.
     expect(recorded.noShowQueries[0]?.untilExclusive.getTime()).toBe(
