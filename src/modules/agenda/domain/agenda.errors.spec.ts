@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogue';
 import {
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+  WallClockTime,
+} from '../../../shared/domain/clinic-time';
+import {
   BusinessRuleViolation,
   ConflictError,
   ForbiddenError,
@@ -517,6 +523,23 @@ describe('the booking window errors (AG-031 to AG-033)', () => {
 
     expect(error.fieldErrors?.[0]?.message).toContain('y 2 más');
     expect(error.params.blockingCount).toBe(7);
+  });
+
+  it('AG-038 gives each hour its day when the appointments fall on more than one day', () => {
+    // A week of leave: «08:00, 09:00» would not say of which day.
+    const today = clinicalDateOf(new Date());
+    const error = new BlockOverlapsAppointmentsError([
+      { id: 'entry-a', startsAt: atWallClock(today, WallClockTime.parse('08:00')) }, // prettier-ignore
+      { id: 'entry-b', startsAt: atWallClock(addDays(today, 1), WallClockTime.parse('09:00')) }, // prettier-ignore
+    ]);
+
+    const message = error.fieldErrors?.[0]?.message ?? '';
+    const [, first, second] =
+      /^Hay 2 citas dentro de ese intervalo: (\S+ \d{2}\/\d{2}) 08:00, (\S+ \d{2}\/\d{2}) 09:00$/.exec(message) ?? []; // prettier-ignore
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(first).not.toBe(second);
+    expect(first).toContain(`${today.slice(8, 10)}/${today.slice(5, 7)}`);
   });
 
   it('AG-038 says «una cita» in the singular', () => {

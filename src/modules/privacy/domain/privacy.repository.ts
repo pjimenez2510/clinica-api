@@ -332,6 +332,11 @@ export interface DataExportDocument {
    * of what class, when, what and why (LOPDP arts. 12.10 and 13).
    */
   deliveries: readonly Readonly<Record<string, unknown>>[];
+  /**
+   * PD-076 (D-176 §3b). The current board note of each of the subject's
+   * appointments that has one: what was said about them, not who said it.
+   */
+  boardNotes: readonly Readonly<Record<string, unknown>>[];
   /** PD-048 (D-131.1). The saved versions of the subject's rows. */
   versions: readonly ExportedVersion[];
   omitted: readonly ExportOmission[];

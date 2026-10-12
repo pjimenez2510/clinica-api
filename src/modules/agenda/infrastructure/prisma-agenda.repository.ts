@@ -1174,15 +1174,13 @@ export class PrismaAgendaRepository implements AgendaRepository {
         releasedAt: null,
         startsAt: { lt: query.endsAt },
         endsAt: { gt: query.startsAt },
-        OR: [
-          // AG-038: the appointments of this site.
-          { siteId: query.siteId, blocksCalendar: true },
-          // AG-152 (D-085 §7): an overbooking of the practitioner AT ANY SITE.
-          // It occupies no calendar, so the EXCLUDE never sees it; without
-          // this the holidays land on top of a patient who comes anyway — the
-          // reverse of D-069.
-          { blocksCalendar: false },
-        ],
+        // AT ANY SITE, on the calendar or off it, and the site is never named
+        // (AG-107). AG-038 enmendado (D-207 §8): the practitioner `EXCLUDE`
+        // ignores the site, so a week of leave is refused by the
+        // appointments of every site, and without them here those came back
+        // as a bare `PRACTITIONER_SLOT_TAKEN`. AG-152 (D-085 §7): an
+        // overbooking occupies no calendar and the EXCLUDE never sees it;
+        // without it the holidays land on a patient who comes anyway.
       },
       orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
       select: { id: true, startsAt: true, endsAt: true },

@@ -22,7 +22,12 @@ import { RolePermissionRegistry } from '../../src/modules/auth/infrastructure/ro
 import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaClinicalNoteRepository } from '../../src/modules/encounter/infrastructure/prisma-clinical-note.repository';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
-import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
+import {
+  addDays,
+  atWallClock,
+  clinicalDateOf,
+  WallClockTime,
+} from '../../src/shared/domain/clinic-time';
 
 import { useDatabase } from './setup/database';
 import {
@@ -598,6 +603,117 @@ describe('las transiciones de estado de la cita por HTTP', () => {
    * LIBERAR Y NO BORRAR, por lo mismo que AG-050 en la reprogramación: la
    * fila es la prueba de que ese intervalo estuvo cerrado.
    */
+  /**
+   * AG-186, AG-038 (D-207 §8). Leave of several days: ONE block from the
+   * first day at 00:00 to the day after the last, and its refusal naming the
+   * appointments of any site with their day.
+   */
+  describe('el bloqueo de varios días (AG-186)', () => {
+    /** Monday of the week after the file's clock, in Guayaquil. */
+    const nextMonday = addDays(clinicalDateOf(ON_THE_DAY), 7);
+    const midnight = (offsetDays: number) =>
+      atWallClock(
+        addDays(nextMonday, offsetDays),
+        WallClockTime.parse('00:00'),
+      );
+    const slotsOn = async (from: number, to: number) =>
+      (
+        (
+          await request(app.getHttpServer())
+            .get(
+              `/api/v1/agenda/sites/${siteId}/availability?practitionerId=${practitionerId}&from=${addDays(nextMonday, from)}&to=${addDays(nextMonday, to)}`,
+            )
+            .set('Authorization', `Bearer ${token}`)
+            .expect(200)
+        ).body as { slots: { startsAt: string }[] }
+      ).slots.map((slot) => clinicalDateOf(new Date(slot.startsAt)));
+
+    beforeEach(async () => {
+      // Tuesday to Saturday too (Monday is the file's rule).
+      for (const weekday of [2, 3, 4, 5, 6]) {
+        await createScheduleRule(
+          prisma,
+          { practitionerId, siteId },
+          { weekday, startTime: '08:00', endTime: '12:00' },
+        );
+      }
+    });
+
+    it('AG-186 un solo bloqueo de lunes a viernes quita los cupos de los cinco días, deja el sábado, y se quita y se deshace entero', async () => {
+      // Control: before the block, the six days offer slots.
+      expect(new Set(await slotsOn(0, 5)).size).toBe(6);
+
+      const created = await block({
+        startsAt: midnight(0).toISOString(),
+        endsAt: midnight(5).toISOString(),
+        reason: 'Vacaciones',
+      }).expect(201);
+      const blockId = (created.body as EntryBody).id;
+
+      expect(new Set(await slotsOn(0, 5))).toEqual(
+        new Set([addDays(nextMonday, 5)]),
+      );
+      expect(
+        await prisma.agendaEntry.count({
+          where: { practitionerId, kind: 'BLOCK' },
+        }),
+      ).toBe(1);
+
+      await releaseBlock(blockId).expect(200);
+      expect(new Set(await slotsOn(0, 5)).size).toBe(6);
+      await restoreBlock(blockId).expect(200);
+      expect(new Set(await slotsOn(0, 5))).toEqual(
+        new Set([addDays(nextMonday, 5)]),
+      );
+    });
+
+    it('AG-038 la semana con citas en dos sedes se rechaza enumerándolas con su día, sin nombrar la otra sede', async () => {
+      await linkPractitionerToSite(prisma, practitionerId, otherSiteId);
+      await createScheduleRule(
+        prisma,
+        { practitionerId, siteId: otherSiteId },
+        { weekday: 3, startTime: '14:00', endTime: '18:00' },
+      );
+      const monday = atWallClock(nextMonday, WallClockTime.parse('08:00'));
+      await bookedEntry({
+        startsAt: monday.toISOString(),
+        endsAt: new Date(monday.getTime() + 20 * 60_000).toISOString(),
+      });
+      const wednesday = atWallClock(
+        addDays(nextMonday, 2),
+        WallClockTime.parse('15:00'),
+      );
+      await prisma.agendaEntry.create({
+        data: {
+          kind: 'APPOINTMENT',
+          siteId: otherSiteId,
+          practitionerId,
+          patientId: (await createPatient(prisma)).id,
+          startsAt: wednesday,
+          endsAt: new Date(wednesday.getTime() + 20 * 60_000),
+          status: 'BOOKED',
+          bookingChannel: 'PHONE',
+        },
+      });
+
+      const refused = await block({
+        startsAt: midnight(0).toISOString(),
+        endsAt: midnight(5).toISOString(),
+      }).expect(409);
+
+      const problem = refused.body as Problem;
+      expect(problem.code).toBe('BLOCK_OVERLAPS_APPOINTMENTS');
+      const message = problem.errors?.[0]?.message ?? '';
+      expect(message).toMatch(/^Hay 2 citas dentro de ese intervalo: \S+ \d{2}\/\d{2} 08:00, \S+ \d{2}\/\d{2} 15:00$/); // prettier-ignore
+      expect(message).not.toContain('Sede Sur');
+      // Control: a block of Thursday and Friday, with nothing inside, passes.
+      await block({
+        startsAt: midnight(3).toISOString(),
+        endsAt: midnight(5).toISOString(),
+      }).expect(201);
+    });
+  });
+
   describe('deshacer un bloqueo', () => {
     it('AG-114 libera el intervalo: el cupo vuelve a ser reservable y la fila sigue ahí', async () => {
       const blocked = await block().expect(201);

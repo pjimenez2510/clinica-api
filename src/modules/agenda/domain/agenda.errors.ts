@@ -1083,12 +1083,34 @@ export class BlockOverlapsAppointmentsError extends ConflictError {
           field: 'startsAt',
           code: 'BLOCK_OVERLAPS_APPOINTMENTS',
           message: describeBlockingAppointments(
-            blocking.map((entry) => wallClockOf(entry.startsAt, timeZone).toString()), // prettier-ignore
+            labelsOfBlocking(blocking.map((entry) => entry.startsAt), timeZone), // prettier-ignore
           ),
         },
       ],
     );
   }
+}
+
+const WEEKDAY_SHORT = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+
+/**
+ * AG-038 enmendado (D-207 §8). The wall-clock hour of each appointment, and,
+ * when they fall on more than one clinical day — a week of leave —, the day
+ * before it («lun 12/10 08:00»): «08:00, 09:00» would not say of which day.
+ */
+function labelsOfBlocking(
+  starts: readonly Date[],
+  timeZone?: string,
+): string[] {
+  const days = starts.map((start) => clinicalDateOf(start, timeZone));
+  const severalDays = new Set(days).size > 1;
+  return starts.map((start, index) => {
+    const clock = wallClockOf(start, timeZone).toString();
+    if (!severalDays) return clock;
+    const day = days[index]!;
+    const weekday = WEEKDAY_SHORT[new Date(`${day}T12:00:00Z`).getUTCDay()];
+    return `${weekday} ${day.slice(8, 10)}/${day.slice(5, 7)} ${clock}`;
+  });
 }
 
 /**
