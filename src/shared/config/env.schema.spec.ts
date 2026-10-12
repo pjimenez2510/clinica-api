@@ -279,12 +279,12 @@ describe('validateEnv', () => {
       ).toBe(SECRET);
     });
 
-    it('AS-032 accepts http only to this machine, and https anywhere', () => {
+    it('AS-032 accepts only this machine, over http or https', () => {
       for (const url of [
         'http://127.0.0.1:8100',
         'http://localhost:8100',
         'http://[::1]:8100',
-        'https://ia.clinica.lan',
+        'https://127.0.0.1:8443/ia/',
       ]) {
         expect(
           validateEnv({ ...base, ASSISTANT_AI_SERVICE_URL: url })
@@ -295,12 +295,31 @@ describe('validateEnv', () => {
         'http://192.168.1.20:8100',
         'http://ia.clinica.lan',
         'http://clinica.test:8100',
+        'https://ia.clinica.lan',
         'ftp://127.0.0.1/ia',
       ]) {
         expect(() =>
           validateEnv({ ...base, ASSISTANT_AI_SERVICE_URL: url }),
         ).toThrow(/ASSISTANT_AI_SERVICE_URL/);
       }
+    });
+
+    it('AS-032 reaches another machine only when told, and then only over https', () => {
+      const remote = { ...base, ASSISTANT_AI_SERVICE_ALLOW_REMOTE: 'true' };
+
+      expect(
+        validateEnv({
+          ...remote,
+          ASSISTANT_AI_SERVICE_URL: 'https://ia.clinica.lan',
+        }).ASSISTANT_AI_SERVICE_URL,
+      ).toBe('https://ia.clinica.lan');
+      expect(() =>
+        validateEnv({
+          ...remote,
+          ASSISTANT_AI_SERVICE_URL: 'http://ia.clinica.lan',
+        }),
+      ).toThrow(/ASSISTANT_AI_SERVICE_URL/);
+      expect(validateEnv(base).ASSISTANT_AI_SERVICE_ALLOW_REMOTE).toBe(false);
     });
   });
 

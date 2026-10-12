@@ -525,20 +525,24 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   `Authorization: Bearer <ASSISTANT_AI_SERVICE_SECRET>`, y DEBERÁ devolver el
   texto como `PseudonymizedText` sólo si la respuesta cumple el contrato
   (`text`, `replacements[]` con `placeholder`, `original` y `kind`,
-  `date_shift_days` entero). Es el único sitio, además de `withContext`, que
-  convierte un texto en `PseudonymizedText` (AS-001).
+  `date_shift_days` entero) y no contiene ninguna palabra de tres letras o más
+  de los `names` enviados (sin mayúsculas ni acentos). Es el único sitio,
+  además de `withContext`, que convierte un texto en `PseudonymizedText`
+  (AS-001).
 - **AS-031** — SI `ASSISTANT_AI_SERVICE_SECRET` no está declarado, ENTONCES la
   instalación DEBERÁ usar `MissingPseudonymizer` (AS-025), que rechaza sin
   ninguna petición de red; y SI está declarado con menos de 32 caracteres,
   ENTONCES la API NO DEBERÁ arrancar.
-- **AS-032** — SI `ASSISTANT_AI_SERVICE_URL` usa `http` hacia una máquina que
-  no es esta (`localhost`, `127.0.0.1`, `::1`), o no es `http`/`https`,
+- **AS-032** — SI `ASSISTANT_AI_SERVICE_URL` apunta a una máquina que no es
+  esta (`localhost`, `127.0.0.1`, `::1`) sin `ASSISTANT_AI_SERVICE_ALLOW_REMOTE=true`,
+  o a otra máquina por algo que no sea `https`, o no es `http`/`https`,
   ENTONCES la API NO DEBERÁ arrancar: el texto viaja sin seudonimizar.
 - **AS-033** — SI el servicio no responde en `ASSISTANT_AI_SERVICE_TIMEOUT_MS`,
   responde con un estado de error, o su respuesta no cumple el contrato,
   ENTONCES el adaptador DEBERÁ lanzar `ASSISTANT_PSEUDONYMIZER_FAILED`
   —reintentable sólo si el servicio no estaba disponible (red, plazo, 5xx)— y
-  NO DEBERÁ devolver el texto ni parte de él. CUANDO quien llama cancele, el
+  NO DEBERÁ devolver el texto ni parte de él. El adaptador NO DEBERÁ seguir
+  una redirección: un 3xx es un rechazo. CUANDO quien llama cancele, el
   adaptador DEBERÁ abandonar la petición.
 - **AS-034** — El mensaje, la serialización y el log de un fallo del adaptador
   NO DEBERÁN contener el texto enviado, los nombres, ni el mapa de
