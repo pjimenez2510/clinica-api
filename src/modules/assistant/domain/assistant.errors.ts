@@ -1,5 +1,7 @@
 import {
+  ConflictError,
   ExternalServiceError,
+  NotFoundError,
   QuotaExceededError,
 } from '../../../shared/domain/errors/domain-error';
 
@@ -24,6 +26,31 @@ export class AssistantNotConfiguredError extends ExternalServiceError {
 
   constructor() {
     super('No language model provider is configured or allowed');
+  }
+}
+
+/**
+ * AS-023. The proposal was already accepted or discarded: a decision is
+ * final, and what the doctor did with it is the trace of P1.
+ */
+export class SuggestionAlreadyDecidedError extends ConflictError {
+  readonly code = 'SUGGESTION_ALREADY_DECIDED';
+  override readonly userTitle =
+    'Esta propuesta ya se aceptó o se descartó. Recargue para ver lo que quedó';
+
+  constructor() {
+    super('The suggestion was already decided');
+  }
+}
+
+/** AS-023. The proposal does not exist. */
+export class SuggestionNotFoundError extends NotFoundError {
+  readonly code = 'SUGGESTION_NOT_FOUND';
+  override readonly userTitle =
+    'No se encontró la propuesta del asistente. Recargue la atención';
+
+  constructor() {
+    super('Suggestion not found');
   }
 }
 

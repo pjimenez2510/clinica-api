@@ -14,8 +14,14 @@ import type { Env } from '../../shared/config/env.schema';
 import { AI_RUN_STORE, type AiRunStore } from './application/ai-run.store';
 import { LLM_CLIENT, type LlmClient } from './application/llm-client.port';
 import { RoutingLlmClient } from './application/routing-llm.client';
+import {
+  SUGGESTION_CLOCK,
+  SuggestionService,
+} from './application/suggestion.service';
+import { SUGGESTION_STORE } from './application/suggestion.store';
 import { LLM_PRICES } from './infrastructure/llm-pricing';
 import { PrismaAiRunStore } from './infrastructure/prisma-ai-run.store';
+import { PrismaSuggestionStore } from './infrastructure/prisma-suggestion.store';
 import { buildProviderChain } from './infrastructure/provider-chain';
 
 /**
@@ -32,6 +38,10 @@ const PURGE_EVERY_MS = 86_400_000;
 @Module({
   providers: [
     { provide: AI_RUN_STORE, useClass: PrismaAiRunStore },
+    // AS-020 to AS-024. The provenance of each proposal.
+    { provide: SUGGESTION_STORE, useClass: PrismaSuggestionStore },
+    { provide: SUGGESTION_CLOCK, useValue: () => new Date() },
+    SuggestionService,
     {
       provide: LLM_CLIENT,
       inject: [ConfigService, AI_RUN_STORE],
@@ -58,7 +68,7 @@ const PURGE_EVERY_MS = 86_400_000;
         }),
     },
   ],
-  exports: [LLM_CLIENT],
+  exports: [LLM_CLIENT, SuggestionService],
 })
 export class AssistantModule implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AssistantModule.name);
