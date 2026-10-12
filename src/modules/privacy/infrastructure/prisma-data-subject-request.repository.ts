@@ -542,7 +542,7 @@ export class PrismaDataSubjectRequestRepository implements DataSubjectRequestRep
       // PD-076 (D-176 §3b). The note the board holds today about each of the
       // subject's appointments; earlier ones are not kept anywhere (AG-185).
       const boardNotes = await tx.agendaEntry.findMany({
-        where: { patientId: { in: ids }, boardNote: { not: null } },
+        where: { ...chartScope(rootId), boardNote: { not: null } },
         orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
         select: {
           patientId: true,
