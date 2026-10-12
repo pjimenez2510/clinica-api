@@ -194,6 +194,8 @@ export interface EmergencyAlertOnEntry {
   recipientName: string;
   alertedAt: Date;
   acknowledgedAt: Date | null;
+  /** AG-183 (G1). Had a schedule at the site when notified. */
+  onDuty: boolean;
 }
 
 /**

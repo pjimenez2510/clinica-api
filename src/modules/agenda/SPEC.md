@@ -2037,13 +2037,16 @@ reclame, esa fila es la diferencia entre un incidente y una imputación penal.
   >
   > **Enmendado el 11-10-2026 (D-170 §6, D-223, `feat/d223-agenda-recepcion`).**
   > La banda DEBERÁ enseñar sólo los avisos de citas aún `CHECKED_IN` o
-  > `IN_PROGRESS`; los demás sin «Enterado» —una cita ya cerrada, una
-  > corregida a «no» que siguió su curso, la de ayer— NO DEBERÁN salir en ella,
+  > `IN_PROGRESS` y todavía calificadas como emergencia; los demás sin
+  > «Enterado» —una cita ya cerrada, una corregida a «no», la de ayer— NO
+  > DEBERÁN salir en ella, y la salida de la cita o la corrección DEBERÁN
+  > avisar a esos destinatarios en el acto (AG-182),
   > y el detalle de la cita DEBERÁ seguir diciendo a quién se avisó y si lo
   > vio. Un aviso que ya no pide acción y no se va enseña a ignorar la banda.
 - **AG-183** — MIENTRAS una cita esté `CHECKED_IN` con la llegada calificada
-  como emergencia (AG-128) y ninguno de sus avisos (AG-129) esté marcado
-  «Enterado» —o no se escribió ninguno—, pasados **2 minutos** desde el primer
+  como emergencia (AG-128) y ninguno de sus avisos (AG-129) a quien tenía
+  horario en la sede al recibirlo (`agenda_emergency_alert.on_duty`) esté
+  marcado «Enterado» —o no se escribió ninguno—, pasados **2 minutos** desde el primer
   aviso —o, sin aviso, desde la calificación—, el tablero del día DEBERÁ marcar
   esa fila para avisar en persona, con el reloj de la aplicación; y la
   pantalla de llegada DEBERÁ decir, junto a quién se avisó, que el aviso en
@@ -2053,8 +2056,14 @@ reclame, esa fila es la diferencia entre un incidente y una imputación penal.
   > mira. La Ley 77 (art. 8) exige el traspaso en persona, y quien puede
   > hacerlo es el mostrador, que mira el tablero todo el día.
   >
-  > **Basta un «Enterado» de cualquiera de los avisados**: alguien con horario
-  > en la sede ya lo sabe. **Sólo en sala**: en `IN_PROGRESS` ya lo atiende un
+  > **Basta un «Enterado» de alguien con horario en la sede**: ése ya lo sabe
+  > y está ahí. El del profesional de la cita que no tiene horario en la sede
+  > (trabaja en otra, está de vacaciones) no cuenta: el aviso le llega, pero
+  > no es el traspaso en persona (revisión clínica G1; qué «Enterado» basta es
+  > D-242). El «Enterado» avisa al tablero de su sede en el acto (AG-182), y
+  > la pantalla enciende la marca sola al cumplirse el plazo, con su reloj
+  > corregido al del servidor: con el canal en vivo abierto nada relee el
+  > tablero sólo porque pasa el tiempo. **Sólo en sala**: en `IN_PROGRESS` ya lo atiende un
   > profesional, y después no queda a quién llevarlo (AG-174). Los 2 minutos
   > son la decisión, no un parámetro (§10): un aviso cuyo plazo se puede alargar
   > es el que el día del incidente estaba en diez. El servidor calcula la
@@ -2281,7 +2290,8 @@ pasó de hora.
   > de Guayaquil (AG-001), en el servidor; la pantalla sólo repite lo que él
   > dice en la fila.
 - **AG-185** — CUANDO se escriba la nota corta (AG-176) —también para
-  vaciarla—, el sistema DEBERÁ dejar una fila en `access_audit` con quién,
+  vaciarla, y también cuando la vacía corregir el paciente de la cita
+  (AG-162)—, el sistema DEBERÁ dejar una fila en `access_audit` con quién,
   cuándo y la cita, **sin el contenido**, en la misma transacción que la
   escritura; y la versión que archiva una edición de la cita (AG-051) NO
   DEBERÁ llevar la nota.

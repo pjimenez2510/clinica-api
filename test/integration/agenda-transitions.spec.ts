@@ -1583,6 +1583,7 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       weekday?: number;
       startTime: string;
       endTime: string;
+      validTo?: Date;
     }): Promise<{ id: string; userId: string }> {
       const other = await createPractitioner(prisma);
       await linkPractitionerToSite(prisma, other.id, rule.site);
@@ -1593,6 +1594,7 @@ describe('las transiciones de estado de la cita por HTTP', () => {
           weekday: rule.weekday ?? 1,
           startTime: rule.startTime,
           endTime: rule.endTime,
+          ...(rule.validTo ? { validTo: rule.validTo } : {}),
         },
       );
       return other;
@@ -1609,6 +1611,16 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       // The same rule as `onDuty`: the block over the instant is the only
       // difference, which is what makes `onDuty` this case's control.
       const onLeave = await colleague({ site: siteId, startTime: '08:00', endTime: '12:00' }); // prettier-ignore
+      // Another weekday, and a rule that ended yesterday (Guayaquil).
+      const tuesdays = await colleague({ site: siteId, weekday: 2, startTime: '08:00', endTime: '12:00' }); // prettier-ignore
+      const expired = await colleague({
+        site: siteId,
+        startTime: '08:00',
+        endTime: '12:00',
+        validTo: new Date(
+          `${addDays(clinicalDateOf(ON_THE_DAY), -1)}T00:00:00Z`,
+        ),
+      });
       await block({
         practitionerId: onLeave.id,
         startsAt: new Date(ON_THE_DAY.getTime() - 60 * 60_000).toISOString(),
@@ -1626,7 +1638,9 @@ describe('las transiciones de estado de la cita por HTTP', () => {
       );
       // One instant for all of them: the arrival's.
       expect(new Set(alerts.map((alert) => alert.alertedAt.getTime())).size).toBe(1); // prettier-ignore
-      for (const absent of [afternoon, elsewhere, onLeave]) {
+      // AG-183 (G1): both were on duty here.
+      expect(alerts.every((alert) => alert.onDuty)).toBe(true);
+      for (const absent of [afternoon, elsewhere, onLeave, tuesdays, expired]) {
         expect(alerts.some((alert) => alert.recipientId === absent.userId)).toBe(false); // prettier-ignore
       }
     });
@@ -1649,6 +1663,8 @@ describe('las transiciones de estado de la cita por HTTP', () => {
         where: { agendaEntryId: entryId },
       });
       expect(alerts.map((alert) => alert.recipientId)).toEqual([doctor.userId]);
+      // AG-183 (G1): told, but not on duty at the site.
+      expect(alerts[0]?.onDuty).toBe(false);
     });
 
     it('AG-173 la llegada en emergencia sobre la cita de mañana la mueve a hoy en el mismo acto, sin calendario y con su versión, aunque el profesional tenga otra cita a esa hora', async () => {
@@ -1729,6 +1745,72 @@ describe('las transiciones de estado de la cita por HTTP', () => {
              SET blocks_calendar = true, edited_by_id = ${userId}::uuid, edited_at = ${new Date(ON_THE_DAY.getTime() + 3000)}
            WHERE id = ${entryId}::uuid`,
       ).rejects.toThrow(/agenda_entry_overbooking_coherence/);
+    });
+
+    it('AG-175 la banda no trae el aviso de una emergencia corregida a «no» con el paciente aún en sala', async () => {
+      const corrected = await bookedEntry();
+      const still = await bookedEntry({
+        startsAt: PAST_SLOT.endsAt,
+        endsAt: new Date(Date.parse(PAST_SLOT.endsAt) + 20 * 60_000).toISOString(), // prettier-ignore
+      });
+      await transition(corrected, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      await transition(still, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+      await request(app.getHttpServer())
+        .patch(`/api/v1/agenda/sites/${siteId}/entries/${corrected}/emergency`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ emergency: false })
+        .expect(200);
+      const doctorToken = await signInAsThePractitioner();
+
+      const items = ((await mine(doctorToken).expect(200)).body as { items: { agendaEntryId: string }[] }).items; // prettier-ignore
+      // Control positivo: la que sigue calificada, sí.
+      expect(items.map((item) => item.agendaEntryId)).toEqual([still]);
+    });
+
+    it('AG-173 la cita movida por emergencia no gasta el tope de sobrecupos del día (AG-100)', async () => {
+      await createScheduleRule(
+        prisma,
+        { practitionerId, siteId },
+        { weekday: 2, startTime: '08:00', endTime: '12:00' },
+      );
+      await prisma.siteParameter.update({
+        where: { siteId },
+        data: { overbookingCap: 1 },
+      });
+      const tomorrow = new Date(Date.parse(PAST_SLOT.startsAt) + 24 * 60 * 60_000); // prettier-ignore
+      const moved = await bookedEntry({
+        startsAt: tomorrow.toISOString(),
+        endsAt: new Date(tomorrow.getTime() + 20 * 60_000).toISOString(),
+      });
+      await transition(moved, { to: 'CHECKED_IN', emergency: true }).expect(200); // prettier-ignore
+
+      // The one overbooking of the day still fits: the moved one did not count.
+      const authoriser = await prisma.user.create({
+        data: { email: `autoriza-${Date.now()}@clinica.ec`, firstName: 'Iván', lastName: 'Mora', passwordHash: 'not-a-real-hash' }, // prettier-ignore
+      });
+      const medico = await prisma.role.findUniqueOrThrow({ where: { code: 'MEDICO' } }); // prettier-ignore
+      await prisma.userRoleGrant.create({ data: { userId: authoriser.id, roleId: medico.id, siteId } }); // prettier-ignore
+      registry.invalidate();
+      const other = await createPatient(prisma);
+      const overbook = () =>
+        book({
+          patientId: other.id,
+          overbooking: true,
+          overbookingAuthorisedById: authoriser.id,
+          overbookingReason: 'Urgencia',
+        });
+      await overbook().expect(201);
+      // Control: the cap is real — a second one is refused.
+      const third = await createPatient(prisma);
+      const refused = await book({
+        patientId: third.id,
+        startsAt: PAST_SLOT.endsAt,
+        endsAt: new Date(Date.parse(PAST_SLOT.endsAt) + 20 * 60_000).toISOString(), // prettier-ignore
+        overbooking: true,
+        overbookingAuthorisedById: authoriser.id,
+        overbookingReason: 'Urgencia',
+      }).expect(409);
+      expect((refused.body as Problem).code).toBe('OVERBOOKING_LIMIT_REACHED');
     });
 
     it('AG-175 la banda no trae el aviso de una cita que ya salió de la sala; el detalle sigue diciendo a quién se avisó', async () => {

@@ -799,6 +799,30 @@ describe('el tablero del día por HTTP (E9)', () => {
       expect(JSON.stringify(trail, (_, value: unknown) => (typeof value === 'bigint' ? value.toString() : value))).not.toContain('hija'); // prettier-ignore
     });
 
+    it('AG-185 corregir el paciente vacía la nota y deja también su fila de bitácora', async () => {
+      const entry = await appointment(9 * 60);
+      await put(`/agenda/sites/${siteId}/entries/${entry.id}/board-note`, nurseToken, { boardNote: 'Espera a su hija' }).expect(200); // prettier-ignore
+      const other = await createPatient(prisma);
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/agenda/sites/${siteId}/entries/${entry.id}`)
+        .set('Authorization', `Bearer ${receptionToken}`)
+        .send({ patientId: other.id })
+        .expect(200);
+
+      const after = await prisma.agendaEntry.findUniqueOrThrow({ where: { id: entry.id } }); // prettier-ignore
+      expect(after.boardNote).toBeNull();
+      // One row for the nurse's note, one for the clearing by the correction.
+      expect(
+        await prisma.accessAudit.count({
+          where: {
+            resourceType: 'agenda_entry_board_note',
+            resourceId: entry.id,
+          },
+        }),
+      ).toBe(2);
+    });
+
     it('AG-185 la versión que archiva una edición de la cita no lleva la nota, y sí su sello', async () => {
       const entry = await appointment(9 * 60);
       await put(`/agenda/sites/${siteId}/entries/${entry.id}/board-note`, nurseToken, { boardNote: 'Espera a su hija' }).expect(200); // prettier-ignore
@@ -833,6 +857,8 @@ describe('el tablero del día por HTTP (E9)', () => {
       minutes: number,
       alertedMinutesAgo: number,
       acknowledged = false,
+      /** AG-183 (G1). Extra notice to someone NOT on duty here, acknowledged. */
+      offDutySaw = false,
     ) {
       const entry = await appointment(minutes, { status: 'CHECKED_IN' });
       const flaggedAt = new Date(Date.now() - (alertedMinutesAgo + 1) * MINUTE);
@@ -859,8 +885,23 @@ describe('el tablero del día por HTTP (E9)', () => {
           raisedById: assessor.id,
           alertedAt,
           acknowledgedAt: acknowledged ? alertedAt : null,
+          onDuty: true,
         },
       });
+      if (offDutySaw) {
+        const elsewhere = await createUser(prisma);
+        await prisma.agendaEmergencyAlert.create({
+          data: {
+            agendaEntryId: entry.id,
+            siteId,
+            recipientId: elsewhere.id,
+            raisedById: assessor.id,
+            alertedAt,
+            acknowledgedAt: alertedAt,
+            onDuty: false,
+          },
+        });
+      }
       return entry;
     }
 
@@ -868,6 +909,8 @@ describe('el tablero del día por HTTP (E9)', () => {
       const overdue = await emergency(9 * 60, 3);
       const recent = await emergency(10 * 60, 1);
       const seen = await emergency(11 * 60, 3, true);
+      // G1: only someone not on duty here saw it — the mark stays.
+      const seenElsewhere = await emergency(12 * 60, 3, false, true);
 
       const board = (await get(`/agenda/sites/${siteId}/board?date=${today}`, receptionToken).expect(200)).body as StaffBoard; // prettier-ignore
       const mark = Object.fromEntries(board.items.map((row) => [row.id, row.emergencyNeedsInPersonNotice])); // prettier-ignore
@@ -875,6 +918,7 @@ describe('el tablero del día por HTTP (E9)', () => {
       expect(mark[overdue.id]).toBe(true);
       expect(mark[recent.id]).toBe(false);
       expect(mark[seen.id]).toBe(false);
+      expect(mark[seenElsewhere.id]).toBe(true);
     });
   });
 

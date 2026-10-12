@@ -152,6 +152,7 @@ export const ENTRY_SELECT = {
     select: {
       alertedAt: true,
       acknowledgedAt: true,
+      onDuty: true,
       recipient: { select: { firstName: true, lastName: true } },
     },
   },
@@ -1408,6 +1409,21 @@ export class PrismaAgendaRepository implements AgendaRepository {
         throw new AgendaEntryNotEditableError(current.status);
       }
 
+      // AG-185. Correcting the patient cleared the board note above: that is
+      // a write of the note too, and it leaves its trail row, without the
+      // content, in this same transaction.
+      if (edit.patientId !== undefined && edit.patientId !== row.patientId) {
+        await tx.accessAudit.create({
+          data: {
+            occurredAt: command.at,
+            userId: command.editedById,
+            resourceType: 'agenda_entry_board_note',
+            resourceId: command.entryId,
+            action: 'UPDATE',
+          },
+        });
+      }
+
       if (edit.emergencyAlert) {
         await raiseEmergencyAlert(tx, command.entryId, edit.emergencyAlert);
       }
@@ -1712,7 +1728,11 @@ async function raiseEmergencyAlert(
             AND b.ends_at > ${raise.at}::timestamptz
        )`;
 
-  const recipients = new Set(onSchedule.map((row) => row.user_id));
+  // AG-183 (G1): who was on duty is kept on each row; the practitioner of
+  // the appointment is told even when not at the site, but their «Enterado»
+  // is not the in-person handover.
+  const onDuty = new Set(onSchedule.map((row) => row.user_id));
+  const recipients = new Set(onDuty);
   if (entry.practitioner.user.active) recipients.add(entry.practitioner.userId);
   if (recipients.size === 0) return;
 
@@ -1723,6 +1743,7 @@ async function raiseEmergencyAlert(
       recipientId,
       raisedById: raise.raisedById,
       alertedAt: raise.at,
+      onDuty: onDuty.has(recipientId),
     })),
   });
 }
@@ -1903,6 +1924,7 @@ export function toEntryView(row: {
   emergencyAlerts: {
     alertedAt: Date;
     acknowledgedAt: Date | null;
+    onDuty: boolean;
     recipient: { firstName: string; lastName: string };
   }[];
 }): AgendaEntryView {
@@ -1963,6 +1985,7 @@ export function toEntryView(row: {
         `${alert.recipient.firstName} ${alert.recipient.lastName}`.trim(),
       alertedAt: alert.alertedAt,
       acknowledgedAt: alert.acknowledgedAt,
+      onDuty: alert.onDuty,
     })),
   };
 }

@@ -61,6 +61,7 @@ export function toEntryResponse(entry: AgendaEntryView): AgendaEntryResponse {
       recipientName: alert.recipientName,
       alertedAt: alert.alertedAt.toISOString(),
       acknowledgedAt: alert.acknowledgedAt?.toISOString() ?? null,
+      onDuty: alert.onDuty,
     })),
   };
 }

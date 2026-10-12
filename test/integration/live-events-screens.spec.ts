@@ -322,7 +322,8 @@ describe('los avisos en vivo de agenda, tableros, sala y caja por HTTP', () => {
       'PANTALLA_SALA',
       siteA,
     );
-    const entryA = await appointment(siteA);
+    // Today's: the note is for today's board only (AG-184).
+    const entryA = await appointment(siteA, { today: true });
     const staff = await openStream(nurseA);
     const room = await openStream(roomA);
 
@@ -386,6 +387,7 @@ describe('los avisos en vivo de agenda, tableros, sala y caja por HTTP', () => {
       practitionerId: recipient.practitionerId,
     });
     const mine = await openStream(recipient.token);
+    // No schedule rule: not on duty at the site now, so not told (AG-129).
     const theirs = await openStream(colleague.token);
 
     await request(app.getHttpServer())
@@ -419,6 +421,40 @@ describe('los avisos en vivo de agenda, tableros, sala y caja por HTTP', () => {
     await until(() => ofKind(mine, 'emergency-alerts').length === 2);
     await settled(theirs);
     expect(ofKind(theirs, 'emergency-alerts')).toEqual([]);
+  });
+
+  it('AG-183: el «Enterado» avisa al tablero de recepción de su sede, para que la marca de avisar en persona se vaya sin esperar', async () => {
+    const recipient = await doctorAt(siteA, 'doctora.norte@clinica.ec');
+    const receptionA = await account('recepcion.norte@clinica.ec', 'RECEPCION', siteA); // prettier-ignore
+    const entryId = await appointment(siteA, {
+      today: true,
+      practitionerId: recipient.practitionerId,
+    });
+    await request(app.getHttpServer())
+      .post(`/api/v1/agenda/sites/${siteA}/entries/${entryId}/status`)
+      .set('Authorization', `Bearer ${receptionA}`)
+      .send({ to: 'CHECKED_IN', emergency: true })
+      .expect(200);
+    const pending = await request(app.getHttpServer())
+      .get('/api/v1/agenda/emergency-alerts/mine')
+      .set('Authorization', `Bearer ${recipient.token}`)
+      .expect(200);
+    const alertId = (pending.body as { items: { id: string }[] }).items[0]!.id;
+
+    // Opened after the arrival: what it hears is the «Enterado» alone.
+    const desk = await openStream(receptionA);
+    await settled(desk);
+    expect(ofKind(desk, 'agenda')).toEqual([]);
+    await request(app.getHttpServer())
+      .post(`/api/v1/agenda/emergency-alerts/${alertId}/acknowledgement`)
+      .set('Authorization', `Bearer ${recipient.token}`)
+      .expect(200);
+
+    await until(() => ofKind(desk, 'agenda').length === 1);
+    expect(JSON.parse(ofKind(desk, 'agenda')[0]!.data)).toEqual({
+      kind: 'agenda',
+      siteId: siteA,
+    });
   });
 
   it('AG-179: poner en pausa la atención («salió y vuelve») avisa al tablero y a la sala de su sede, no a la otra', async () => {

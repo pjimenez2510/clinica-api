@@ -555,6 +555,8 @@ export const agendaEntrySchema = z.object({
       recipientName: z.string(),
       alertedAt: z.iso.datetime(),
       acknowledgedAt: z.iso.datetime().nullable(),
+      /** AG-183. Tenía horario en la sede al recibirlo: sólo su «Enterado» quita la marca. */
+      onDuty: z.boolean(),
     }),
   ),
 });

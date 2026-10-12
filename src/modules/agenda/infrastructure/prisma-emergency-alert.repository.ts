@@ -27,7 +27,12 @@ export class PrismaEmergencyAlertRepository implements EmergencyAlertRepository 
         // waiting room or with a professional. A notice that asks for nothing
         // any more and does not go away teaches people to ignore the banner;
         // the detail of the appointment keeps saying whom it reached.
-        agendaEntry: { status: { in: ['CHECKED_IN', 'IN_PROGRESS'] } },
+        // And not once the call was corrected to «no»: the board's mark is
+        // off then too (code review, #5).
+        agendaEntry: {
+          status: { in: ['CHECKED_IN', 'IN_PROGRESS'] },
+          emergencyFlaggedAt: { not: null },
+        },
       },
       orderBy: { alertedAt: 'asc' },
       select: {

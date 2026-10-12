@@ -10,6 +10,12 @@
 --      a hoy SIN ocupar calendario y SIN ser un sobrecupo.
 --   2. AG-185 (D-176 §3b): la nota del tablero no se archiva en las versiones
 --      de la cita, tampoco en las ya archivadas.
+--
+-- TODO EN UNA TRANSACCIÓN EXPLÍCITA: Prisma no envuelve la migración, y entre
+-- el `DISABLE` y el `ENABLE` del disparador de sólo inserción de
+-- `record_version` no puede quedar nada a medias (fix/receta-migracion-relleno).
+
+BEGIN;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 1. AG-173. La cita movida por una llegada en emergencia
@@ -28,13 +34,13 @@
 -- `record_version`. Una corrección posterior de la calificación a «no»
 -- (AG-132) no la toca: la cita se movió porque así se calificó.
 ALTER TABLE "agenda_entry"
-  ADD COLUMN "emergency_moved_at" TIMESTAMPTZ(6);
+  ADD COLUMN IF NOT EXISTS "emergency_moved_at" TIMESTAMPTZ(6);
 
 COMMENT ON COLUMN "agenda_entry"."emergency_moved_at" IS
   'AG-173 (D-170 §5): instante en que una llegada calificada como emergencia movio a hoy la cita de otro dia; sin calendario y sin sobrecupo.';
 
 ALTER TABLE "agenda_entry"
-  DROP CONSTRAINT "agenda_entry_overbooking_coherence";
+  DROP CONSTRAINT IF EXISTS "agenda_entry_overbooking_coherence";
 ALTER TABLE "agenda_entry"
   ADD CONSTRAINT "agenda_entry_overbooking_coherence" CHECK (
     CASE
@@ -120,7 +126,7 @@ $$;
 -- El mismo `WHEN` que dejó `20261022000000_service_catalogue`; cambia sólo la
 -- lista de columnas que no se archivan. El sello de la nota (`board_note_by_id`,
 -- `board_note_at`) sí se archiva: dice que hubo nota, no qué decía.
-DROP TRIGGER "trg_agenda_entry_record_version" ON "agenda_entry";
+DROP TRIGGER IF EXISTS "trg_agenda_entry_record_version" ON "agenda_entry";
 CREATE TRIGGER "trg_agenda_entry_record_version"
   BEFORE UPDATE ON "agenda_entry"
   FOR EACH ROW
@@ -155,3 +161,46 @@ UPDATE "record_version"
  WHERE "resource_type" = 'agenda_entry'
    AND "data" ? 'board_note';
 ALTER TABLE "record_version" ENABLE TRIGGER "trg_record_version_insert_only";
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 3. AG-183 (revisión clínica, G1). Por qué se avisó a cada destinatario
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Desde D-170 §1 se avisa al profesional de la cita y a quien tiene horario en
+-- la sede en ese instante. El profesional de la cita puede no estar en la sede
+-- (otra sede, vacaciones): su «Enterado» no es el traspaso en persona que pide
+-- el art. 8, y no debe apagar la marca del tablero (AG-183). `on_duty` dice, al
+-- escribir el aviso, si el destinatario tenía horario en la sede en ese
+-- instante; como el resto del aviso, no se reescribe.
+ALTER TABLE "agenda_emergency_alert"
+  ADD COLUMN IF NOT EXISTS "on_duty" BOOLEAN NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN "agenda_emergency_alert"."on_duty" IS
+  'AG-129, AG-183: el destinatario tenia horario en la sede al escribirse el aviso; solo su Enterado quita la marca de avisar en persona.';
+
+CREATE OR REPLACE FUNCTION trg_agenda_emergency_alert_is_append_only()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'agenda_emergency_alert_is_append_only'
+      USING HINT = 'El aviso de emergencia no se borra.';
+  END IF;
+
+  IF NEW."agenda_entry_id" IS DISTINCT FROM OLD."agenda_entry_id"
+    OR NEW."site_id"       IS DISTINCT FROM OLD."site_id"
+    OR NEW."recipient_id"  IS DISTINCT FROM OLD."recipient_id"
+    OR NEW."raised_by_id"  IS DISTINCT FROM OLD."raised_by_id"
+    OR NEW."alerted_at"    IS DISTINCT FROM OLD."alerted_at"
+    OR NEW."on_duty"       IS DISTINCT FROM OLD."on_duty"
+    OR (OLD."acknowledged_at" IS NOT NULL
+        AND NEW."acknowledged_at" IS DISTINCT FROM OLD."acknowledged_at")
+  THEN
+    RAISE EXCEPTION 'agenda_emergency_alert_is_append_only'
+      USING HINT = 'Del aviso de emergencia sólo se registra, una vez, que se vio.';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMIT;

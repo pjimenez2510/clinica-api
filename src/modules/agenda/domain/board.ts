@@ -210,8 +210,10 @@ export const EMERGENCY_IN_PERSON_AFTER_MINUTES = 2;
  * AG-183. Whether the row must be marked for an in-person handover: an
  * emergency still in the waiting room, nobody notified has acknowledged it,
  * and two minutes have passed since the first notice — or, with none written
- * (no active account to tell), since the assessment. One «Enterado» from any
- * recipient is enough: someone on duty knows. `now` is the application's
+ * (no active account to tell), since the assessment. One «Enterado» from a
+ * recipient who had a schedule at the site is enough: someone there knows.
+ * The practitioner of the appointment, when not on duty there, does not count
+ * (revisión clínica G1; D-242). `now` is the application's
  * clock, never PostgreSQL's.
  */
 export function needsInPersonNotice(
@@ -221,6 +223,7 @@ export function needsInPersonNotice(
     emergencyAlerts: readonly {
       alertedAt: Date;
       acknowledgedAt: Date | null;
+      onDuty: boolean;
     }[];
   },
   now: Date,
@@ -228,7 +231,13 @@ export function needsInPersonNotice(
   if (row.status !== 'CHECKED_IN' || row.emergencyFlaggedAt === null) {
     return false;
   }
-  if (row.emergencyAlerts.some((alert) => alert.acknowledgedAt !== null)) {
+  // G1: only someone with a schedule at the site that instant is the
+  // handover; the practitioner of the appointment may be elsewhere.
+  if (
+    row.emergencyAlerts.some(
+      (alert) => alert.onDuty && alert.acknowledgedAt !== null,
+    )
+  ) {
     return false;
   }
   const since = row.emergencyAlerts.reduce(

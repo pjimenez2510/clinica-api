@@ -52,6 +52,9 @@ export class EmergencyAlertService {
       siteId: acknowledged.siteId,
       userIds: [recipientId],
     });
+    // AG-183. The site's boards read again: the in-person mark may be gone.
+    // Only the site and the kind, like every `agenda` event (AU-055).
+    this.liveEvents.publish({ kind: 'agenda', siteId: acknowledged.siteId });
 
     // AG-074. Stable codes only: whose emergency it was is health data.
     this.logger.info(

@@ -56,6 +56,16 @@ import {
 } from './dto/agenda.dto';
 
 /**
+ * AG-175 enmendado (D-170 §6). The targets after which the patient is no
+ * longer in the waiting room or with a professional.
+ */
+const LEAVES_THE_BUILDING: ReadonlySet<string> = new Set([
+  'FULFILLED',
+  'CANCELLED',
+  'LEFT_WITHOUT_BEING_SEEN',
+]);
+
+/**
  * The day's agenda of a site, and booking into it.
  *
  * EVERY ROUTE DECLARES ITS PERMISSION, and every route is SITE-SCOPED through
@@ -413,8 +423,16 @@ export class AgendaController {
       { userId: this.currentUser.requireUserId() },
     );
 
-    // AG-182. An arrival called an emergency raised its notice (AG-129).
-    if (dto.to === 'CHECKED_IN' && dto.emergency === true) {
+    /**
+     * AG-182. An arrival called an emergency raised its notice (AG-129); and
+     * an appointment leaving the building takes its pending notices off
+     * every recipient's banner (AG-175 enmendado), so they read `mine` again
+     * instead of waiting for their fallback poll.
+     */
+    if (
+      (dto.to === 'CHECKED_IN' && dto.emergency === true) ||
+      LEAVES_THE_BUILDING.has(dto.to)
+    ) {
       await this.emergencyAlerts.announcePendingOf(entryId);
     }
 
@@ -530,10 +548,9 @@ export class AgendaController {
       },
       { userId: this.currentUser.requireUserId() },
     );
-    // AG-182. Corrected to an emergency, it may have raised a notice.
-    if (dto.emergency === true) {
-      await this.emergencyAlerts.announcePendingOf(entryId);
-    }
+    // AG-182. Corrected to an emergency it may have raised a notice; to «no»,
+    // its pending notices leave the banners (AG-175 enmendado).
+    await this.emergencyAlerts.announcePendingOf(entryId);
     return toEntryResponse(entry);
   }
 

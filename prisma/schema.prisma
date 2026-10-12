@@ -1015,6 +1015,9 @@ model AgendaEmergencyAlert {
   /// The application's clock: the screen compares it.
   alertedAt      DateTime  @map("alerted_at") @db.Timestamptz(6)
   acknowledgedAt DateTime? @map("acknowledged_at") @db.Timestamptz(6)
+  /// AG-183 (G1). The recipient had a schedule at the site when notified;
+  /// only such an «Enterado» clears the board's in-person mark.
+  onDuty         Boolean   @default(false) @map("on_duty")
 
   @@index([agendaEntryId, alertedAt], map: "agenda_emergency_alert_by_entry")
   @@map("agenda_emergency_alert")

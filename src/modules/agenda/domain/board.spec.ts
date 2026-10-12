@@ -279,7 +279,9 @@ describe('AG-183 la emergencia sin «Enterado» a los 2 minutos', () => {
   ) => ({
     status: 'CHECKED_IN' as const,
     emergencyFlaggedAt: minutesBefore(5),
-    emergencyAlerts: [{ alertedAt: minutesBefore(2), acknowledgedAt: null }],
+    emergencyAlerts: [
+      { alertedAt: minutesBefore(2), acknowledgedAt: null, onDuty: true },
+    ],
     ...overrides,
   });
 
@@ -290,7 +292,9 @@ describe('AG-183 la emergencia sin «Enterado» a los 2 minutos', () => {
     expect(
       needsInPersonNotice(
         flagged({
-          emergencyAlerts: [{ alertedAt: justBefore, acknowledgedAt: null }],
+          emergencyAlerts: [
+            { alertedAt: justBefore, acknowledgedAt: null, onDuty: true },
+          ],
         }),
         NOW,
       ),
@@ -302,13 +306,35 @@ describe('AG-183 la emergencia sin «Enterado» a los 2 minutos', () => {
       needsInPersonNotice(
         flagged({
           emergencyAlerts: [
-            { alertedAt: minutesBefore(3), acknowledgedAt: null },
-            { alertedAt: minutesBefore(3), acknowledgedAt: minutesBefore(1) },
+            { alertedAt: minutesBefore(3), acknowledgedAt: null, onDuty: true },
+            {
+              alertedAt: minutesBefore(3),
+              acknowledgedAt: minutesBefore(1),
+              onDuty: true,
+            },
           ],
         }),
         NOW,
       ),
     ).toBe(false);
+  });
+
+  it('AG-183 (G1) the «Enterado» of someone not on duty at the site does not clear it', () => {
+    expect(
+      needsInPersonNotice(
+        flagged({
+          emergencyAlerts: [
+            { alertedAt: minutesBefore(3), acknowledgedAt: null, onDuty: true },
+            {
+              alertedAt: minutesBefore(3),
+              acknowledgedAt: minutesBefore(1),
+              onDuty: false,
+            },
+          ],
+        }),
+        NOW,
+      ),
+    ).toBe(true);
   });
 
   it('AG-183 with no notice written, it counts from the assessment', () => {
