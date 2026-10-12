@@ -401,8 +401,8 @@ describe('DiagnosisProposalService', () => {
     );
 
     expect(store.raw.accept).toHaveBeenCalledWith(
-      { suggestionId: 'sug-1', recordId: 'diag-1', saved: 'J02.9' },
-      DOCTOR,
+      { suggestionId: 'sug-1', recordId: 'diag-1' },
+      { userId: DOCTOR, sites: 'all' },
     );
   });
 
@@ -421,7 +421,10 @@ describe('DiagnosisProposalService', () => {
       requester(),
     );
 
-    expect(store.raw.discard).toHaveBeenCalledWith('sug-1', DOCTOR);
+    expect(store.raw.discard).toHaveBeenCalledWith('sug-1', {
+      userId: DOCTOR,
+      sites: 'all',
+    });
   });
 
   it('AS-029 marks every proposal of the demonstration mode', async () => {

@@ -54,7 +54,10 @@ import {
   type Pseudonymizer,
   restorePlaceholders,
 } from './pseudonymizer.port';
-import { SuggestionService } from './suggestion.service';
+import {
+  type SuggestionRequester,
+  SuggestionService,
+} from './suggestion.service';
 
 export const DIAGNOSIS_PROPOSAL_CLOCK = Symbol('DIAGNOSIS_PROPOSAL_CLOCK');
 /** AS-029. Whether the chain is the fake of the demonstration mode. */
@@ -135,7 +138,10 @@ export class DiagnosisProposalService {
     requester: ProposalRequester,
   ): Promise<DiagnosisOverview> {
     const encounter = await this.encounterFor(encounterId, requester.readSites);
-    const overview = await this.overviewOf(encounter);
+    const overview = await this.overviewOf(encounter, {
+      userId: requester.userId,
+      sites: requester.readSites,
+    });
     await this.audit.record({
       userId: requester.userId,
       resourceType: RESOURCE_TYPE,
@@ -250,6 +256,7 @@ export class DiagnosisProposalService {
           proposal: { ...proposal },
           sources: [{ kind: 'chart', table: 'clinical_note', id: note.id }],
         })),
+        writer(requester),
       );
     }
 
@@ -264,7 +271,10 @@ export class DiagnosisProposalService {
       'assistant problems read',
     );
 
-    return { ...(await this.overviewOf(encounter)), dropped: backed.dropped };
+    return {
+      ...(await this.overviewOf(encounter, writer(requester))),
+      dropped: backed.dropped,
+    };
   }
 
   /** AS-037. Links a proposal to the diagnosis the physician recorded from it. */
@@ -273,21 +283,19 @@ export class DiagnosisProposalService {
     requester: ProposalRequester,
   ): Promise<DiagnosisOverview> {
     const encounter = await this.ownLiveEncounter(input.encounterId, requester);
-    await this.proposalOf(encounter.id, input.suggestionId);
+    await this.proposalOf(encounter.id, input.suggestionId, requester);
     const diagnosis = await this.context.diagnosisOf(
       encounter.id,
       input.diagnosisId,
     );
     if (!diagnosis) throw new SuggestionDiagnosisMismatchError();
+    // AS-022. The store reads the code of the diagnosis itself, in the same
+    // transaction that decides: nothing the caller says is the saved value.
     await this.suggestions.accept(
-      {
-        suggestionId: input.suggestionId,
-        recordId: diagnosis.id,
-        saved: diagnosis.code,
-      },
-      requester.userId,
+      { suggestionId: input.suggestionId, recordId: diagnosis.id },
+      writer(requester),
     );
-    return this.overviewOf(encounter);
+    return this.overviewOf(encounter, writer(requester));
   }
 
   /** AS-038. The physician says no to a proposal. */
@@ -296,20 +304,21 @@ export class DiagnosisProposalService {
     requester: ProposalRequester,
   ): Promise<DiagnosisOverview> {
     const encounter = await this.ownLiveEncounter(input.encounterId, requester);
-    await this.proposalOf(encounter.id, input.suggestionId);
-    await this.suggestions.discard(input.suggestionId, requester.userId);
-    return this.overviewOf(encounter);
+    await this.proposalOf(encounter.id, input.suggestionId, requester);
+    await this.suggestions.discard(input.suggestionId, writer(requester));
+    return this.overviewOf(encounter, writer(requester));
   }
 
   private async overviewOf(
     encounter: CodingEncounter,
+    reader: SuggestionRequester,
   ): Promise<DiagnosisOverview> {
     const since = new Date(this.clock().getTime() - FREQUENCY_WINDOW_MS);
     const [history, frequency, recorded, stored] = await Promise.all([
       this.context.patientHistory(encounter.patientId, encounter.id, FROM_HISTORY), // prettier-ignore
       this.context.clinicFrequency(since, FROM_FREQUENCY),
       this.context.recordedCodes(encounter.id),
-      this.suggestions.ofEncounter(encounter.id, 'diagnosis'),
+      this.suggestions.ofEncounter(encounter.id, reader, 'diagnosis'),
     ]);
     const codes = [...new Set([...history, ...frequency].map(({ code }) => code))]; // prettier-ignore
     const entries = await this.catalogue.resolveWritten(
@@ -362,12 +371,22 @@ export class DiagnosisProposalService {
   private async proposalOf(
     encounterId: string,
     suggestionId: string,
+    requester: ProposalRequester,
   ): Promise<SuggestionView> {
-    const stored = await this.suggestions.ofEncounter(encounterId, 'diagnosis');
+    const stored = await this.suggestions.ofEncounter(
+      encounterId,
+      writer(requester),
+      'diagnosis',
+    );
     const found = stored.find((each) => each.id === suggestionId);
     if (!found) throw new SuggestionNotFoundError();
     return found;
   }
+}
+
+/** Who decides, with the sites where they write the history (AS-039). */
+function writer(requester: ProposalRequester): SuggestionRequester {
+  return { userId: requester.userId, sites: requester.writeSites };
 }
 
 function isEntry<T>(value: T | null | undefined): value is T {

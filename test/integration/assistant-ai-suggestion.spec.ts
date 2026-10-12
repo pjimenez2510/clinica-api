@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { SuggestionService } from '../../src/modules/assistant/application/suggestion.service';
 import {
   SuggestionAlreadyDecidedError,
+  SuggestionInvalidError,
   SuggestionNotFoundError,
 } from '../../src/modules/assistant/domain/assistant.errors';
 import { GEMINI_MODELS } from '../../src/modules/assistant/infrastructure/model-routing';
@@ -67,8 +68,32 @@ async function anEncounterWithNote(prisma: PrismaClient) {
       encounterId: encounter.id,
     },
   });
-  return { encounter, note, run };
+  return { encounter, note, run, practitioner };
 }
+
+/** An attempt of the assistant on `encounterId`, with its outcome. */
+const anotherRun = (
+  prisma: PrismaClient,
+  encounterId: string | null,
+  outcome = 'ok',
+) =>
+  prisma.aiRun.create({
+    data: {
+      requestId: randomUUID(),
+      attempt: 1,
+      provider: 'gemini',
+      model: GEMINI_MODELS.quality,
+      tier: 'quality',
+      purpose: 'draft',
+      promptVersion: 'v1',
+      outcome,
+      worstCaseUsd: 0.01,
+      priceValidFrom: new Date(),
+      latencyMs: 30,
+      startedAt: new Date(),
+      encounterId,
+    },
+  });
 
 const PROPOSAL = { section: 'motivoConsulta', text: 'Cefalea de tres días' };
 const SOURCES = [{ kind: 'transcript' as const, fromMs: 12_000, toMs: 18_500 }];
@@ -334,51 +359,117 @@ describe('SuggestionService over PostgreSQL (AS-020 to AS-023)', () => {
       new PrismaSuggestionStore(prisma as unknown as PrismaService),
       clock,
     );
+  const as = (userId: string, sites: 'all' | string[] = 'all') => ({
+    userId,
+    sites,
+  });
 
   it('AS-020 proposes every proposal of one answer at the instant of the app clock, and lists them by kind', async () => {
     const prisma = db();
     const { encounter, run } = await anEncounterWithNote(prisma);
+    const user = await createUser(prisma);
     const at = new Date();
     const service = serviceOf(prisma, () => at);
 
-    const kept = await service.propose([
-      { encounterId: encounter.id, aiRunId: run.id, kind: 'note-section', proposal: PROPOSAL, sources: SOURCES }, // prettier-ignore
-      { encounterId: encounter.id, aiRunId: run.id, kind: 'diagnosis', proposal: { problem: 'Cefalea', codes: ['R51'] }, sources: [] }, // prettier-ignore
-    ]);
+    const kept = await service.propose(
+      [
+        { encounterId: encounter.id, aiRunId: run.id, kind: 'note-section', proposal: PROPOSAL, sources: SOURCES }, // prettier-ignore
+        { encounterId: encounter.id, aiRunId: run.id, kind: 'diagnosis', proposal: { problem: 'Cefalea', codes: ['R51'] }, sources: [] }, // prettier-ignore
+      ],
+      as(user.id),
+    );
     expect(kept.map((each) => each.status)).toEqual(['PROPOSED', 'PROPOSED']);
     expect(kept[0]!.proposedAt.getTime()).toBe(at.getTime());
 
-    const diagnoses = await service.ofEncounter(encounter.id, 'diagnosis');
+    const diagnoses = await service.ofEncounter(encounter.id, as(user.id), 'diagnosis'); // prettier-ignore
     expect(diagnoses).toHaveLength(1);
     expect(diagnoses[0]).toMatchObject({ kind: 'diagnosis', record: null });
-    expect(await service.ofEncounter(encounter.id)).toHaveLength(2);
+    expect(await service.ofEncounter(encounter.id, as(user.id))).toHaveLength(2); // prettier-ignore
   });
 
   it('AS-020 one bad proposal leaves none: all or nothing', async () => {
     const prisma = db();
     const { encounter, run } = await anEncounterWithNote(prisma);
+    const user = await createUser(prisma);
 
     await expect(
-      serviceOf(prisma).propose([
-        { encounterId: encounter.id, aiRunId: run.id, kind: 'note-section', proposal: PROPOSAL, sources: SOURCES }, // prettier-ignore
-        { encounterId: encounter.id, aiRunId: randomUUID(), kind: 'note-section', proposal: PROPOSAL, sources: SOURCES }, // prettier-ignore
-      ]),
+      serviceOf(prisma).propose(
+        [
+          { encounterId: encounter.id, aiRunId: run.id, kind: 'note-section', proposal: PROPOSAL, sources: SOURCES }, // prettier-ignore
+          { encounterId: encounter.id, aiRunId: randomUUID(), kind: 'note-section', proposal: PROPOSAL, sources: SOURCES }, // prettier-ignore
+        ],
+        as(user.id),
+      ),
     ).rejects.toThrow();
     expect(await prisma.aiSuggestion.count()).toBe(0);
   });
 
-  it('AS-021 AS-022 accepting a changed section links the saved note, with its distance, who and when', async () => {
+  it('AS-020 the base refuses a proposal from an attempt of another attention, without one, or that did not answer', async () => {
+    const prisma = db();
+    const own = await anEncounterWithNote(prisma);
+    const other = await anEncounterWithNote(prisma);
+    const propose = (aiRunId: string) =>
+      prisma.aiSuggestion.create({
+        data: { encounterId: own.encounter.id, aiRunId, kind: 'note-section', proposal: PROPOSAL, sources: SOURCES, proposedAt: new Date() }, // prettier-ignore
+      });
+
+    for (const run of [
+      other.run,
+      await anotherRun(prisma, null),
+      await anotherRun(prisma, own.encounter.id, 'timeout'),
+    ]) {
+      await expect(propose(run.id)).rejects.toThrow(
+        /ai_suggestion_run_of_its_encounter/,
+      );
+    }
+    // Control positivo.
+    await expect(propose(own.run.id)).resolves.toMatchObject({ status: 'PROPOSED' }); // prettier-ignore
+  });
+
+  it('AS-020 sources that are not a known place are refused before anything is written', async () => {
+    const prisma = db();
+    const { encounter, run } = await anEncounterWithNote(prisma);
+    const user = await createUser(prisma);
+    const service = serviceOf(prisma);
+
+    for (const sources of [
+      [{ kind: 'chart', table: 'app_user', id: randomUUID() }],
+      [{ kind: 'chart', table: 'patient_allergy', id: 'x' }],
+      [{ kind: 'transcript', fromMs: 9_000, toMs: 1_000 }],
+      [{ kind: 'transcript', fromMs: -1, toMs: 1_000 }],
+      [{ kind: 'transcript', fromMs: 0, toMs: 1_000, text: 'dicho' }],
+    ]) {
+      await expect(
+        service.propose(
+          [{ encounterId: encounter.id, aiRunId: run.id, kind: 'note-section', proposal: PROPOSAL, sources: sources as never }], // prettier-ignore
+          as(user.id),
+        ),
+      ).rejects.toBeInstanceOf(SuggestionInvalidError);
+    }
+    expect(await prisma.aiSuggestion.count()).toBe(0);
+    // Control positivo: a datum of the chart in a known table.
+    await expect(
+      service.propose(
+        [{ encounterId: encounter.id, aiRunId: run.id, kind: 'note-section', proposal: PROPOSAL, sources: [{ kind: 'chart', table: 'patient_allergy', id: randomUUID() }] }], // prettier-ignore
+        as(user.id),
+      ),
+    ).resolves.toHaveLength(1);
+  });
+
+  it('AS-022 the distance comes from what the note holds, not from what the caller says', async () => {
     const prisma = db();
     const { encounter, note, run } = await anEncounterWithNote(prisma);
     const decider = await createUser(prisma);
     const service = serviceOf(prisma);
-    const [suggestion] = await service.propose([
-      { encounterId: encounter.id, aiRunId: run.id, kind: 'note-section', proposal: PROPOSAL, sources: SOURCES }, // prettier-ignore
-    ]);
+    const [suggestion] = await service.propose(
+      [{ encounterId: encounter.id, aiRunId: run.id, kind: 'note-section', proposal: PROPOSAL, sources: SOURCES }], // prettier-ignore
+      as(decider.id),
+    );
 
+    // The note says «Cefalea»; the caller claims it kept the proposal as is.
     const accepted = await service.accept(
-      { suggestionId: suggestion!.id, recordId: note.id, saved: 'Cefalea de dos días' }, // prettier-ignore
-      decider.id,
+      { suggestionId: suggestion!.id, recordId: note.id, saved: PROPOSAL.text },
+      as(decider.id),
     );
 
     expect(accepted).toMatchObject({
@@ -394,7 +485,7 @@ describe('SuggestionService over PostgreSQL (AS-020 to AS-023)', () => {
     ).toBe(1);
   });
 
-  it('AS-022 a diagnosis accepted with one of its codes is ACCEPTED with distance 0', async () => {
+  it('AS-022 a diagnosis accepted with one of its codes is ACCEPTED with distance 0, read from the diagnosis', async () => {
     const prisma = db();
     const { encounter, run } = await anEncounterWithNote(prisma);
     await createDiagnosis(prisma, encounter.id, 'R51');
@@ -403,14 +494,15 @@ describe('SuggestionService over PostgreSQL (AS-020 to AS-023)', () => {
     });
     const decider = await createUser(prisma);
     const service = serviceOf(prisma);
-    const [suggestion] = await service.propose([
-      { encounterId: encounter.id, aiRunId: run.id, kind: 'diagnosis', proposal: { problem: 'Cefalea', codes: ['R51', 'G44.2'] }, sources: [] }, // prettier-ignore
-    ]);
+    const [suggestion] = await service.propose(
+      [{ encounterId: encounter.id, aiRunId: run.id, kind: 'diagnosis', proposal: { problem: 'Cefalea', codes: ['R51', 'G44.2'] }, sources: [] }], // prettier-ignore
+      as(decider.id),
+    );
 
     await expect(
       service.accept(
-        { suggestionId: suggestion!.id, recordId: diagnosis.id, saved: 'R51' },
-        decider.id,
+        { suggestionId: suggestion!.id, recordId: diagnosis.id },
+        as(decider.id),
       ),
     ).resolves.toMatchObject({
       status: 'ACCEPTED',
@@ -419,18 +511,63 @@ describe('SuggestionService over PostgreSQL (AS-020 to AS-023)', () => {
     });
   });
 
+  it('AS-021 EN-180 an accepted diagnosis can still be removed, and the proposal keeps pointing at its retraction', async () => {
+    const prisma = db();
+    const { encounter, run } = await anEncounterWithNote(prisma);
+    await createDiagnosis(prisma, encounter.id, 'R51');
+    const diagnosis = await prisma.encounterDiagnosis.findFirstOrThrow({
+      where: { encounterId: encounter.id },
+    });
+    const decider = await createUser(prisma);
+    const service = serviceOf(prisma);
+    const [suggestion] = await service.propose(
+      [{ encounterId: encounter.id, aiRunId: run.id, kind: 'diagnosis', proposal: { codes: ['R51'] }, sources: [] }], // prettier-ignore
+      as(decider.id),
+    );
+    await service.accept(
+      { suggestionId: suggestion!.id, recordId: diagnosis.id },
+      as(decider.id),
+    );
+
+    // EN-180 as the coding adapter does it: archived, then deleted.
+    await prisma.$transaction([
+      prisma.$executeRaw`
+        INSERT INTO "encounter_diagnosis_retraction"
+          ("id", "encounter_id", "concept_id", "cie10_code", "cie10_display",
+           "certainty", "occurrence", "rank", "notifiable", "note",
+           "recorded_at", "retracted_by_id", "reason",
+           "edited_by_id", "edited_at", "edit_reason")
+        SELECT "id", "encounter_id", "concept_id", "cie10_code", "cie10_display",
+               "certainty", "occurrence", "rank", "notifiable", "note",
+               "recorded_at", ${decider.id}::uuid, NULL,
+               "edited_by_id", "edited_at", "edit_reason"
+          FROM "encounter_diagnosis" WHERE "id" = ${diagnosis.id}::uuid`,
+      prisma.encounterDiagnosis.delete({ where: { id: diagnosis.id } }),
+    ]);
+
+    expect(await prisma.encounterDiagnosis.count({ where: { id: diagnosis.id } })).toBe(0); // prettier-ignore
+    const [kept] = await service.ofEncounter(encounter.id, as(decider.id));
+    expect(kept!.record).toEqual({ kind: 'encounter_diagnosis', id: diagnosis.id }); // prettier-ignore
+    expect(
+      await prisma.encounterDiagnosisRetraction.count({
+        where: { id: diagnosis.id },
+      }),
+    ).toBe(1);
+  });
+
   it('AS-023 of two decisions at once exactly one wins, the other is told it was decided; an unknown one is not found', async () => {
     const prisma = db();
     const { encounter, run } = await anEncounterWithNote(prisma);
     const decider = await createUser(prisma);
     const service = serviceOf(prisma);
-    const [suggestion] = await service.propose([
-      { encounterId: encounter.id, aiRunId: run.id, kind: 'note-section', proposal: PROPOSAL, sources: SOURCES }, // prettier-ignore
-    ]);
+    const [suggestion] = await service.propose(
+      [{ encounterId: encounter.id, aiRunId: run.id, kind: 'note-section', proposal: PROPOSAL, sources: SOURCES }], // prettier-ignore
+      as(decider.id),
+    );
 
     const outcomes = await Promise.allSettled([
-      service.discard(suggestion!.id, decider.id),
-      service.discard(suggestion!.id, decider.id),
+      service.discard(suggestion!.id, as(decider.id)),
+      service.discard(suggestion!.id, as(decider.id)),
     ]);
     expect(outcomes.filter((each) => each.status === 'fulfilled')).toHaveLength(1); // prettier-ignore
     const lost = outcomes.find((each) => each.status === 'rejected');
@@ -439,7 +576,31 @@ describe('SuggestionService over PostgreSQL (AS-020 to AS-023)', () => {
     );
 
     await expect(
-      service.discard(randomUUID(), decider.id),
+      service.discard(randomUUID(), as(decider.id)),
     ).rejects.toBeInstanceOf(SuggestionNotFoundError);
+  });
+
+  it("AS-021 out of the caller's sites a proposal is neither proposed, listed nor decided — it is not found", async () => {
+    const prisma = db();
+    const { encounter, run } = await anEncounterWithNote(prisma);
+    const elsewhere = await createSite(prisma, 'Sede Norte');
+    const user = await createUser(prisma);
+    const service = serviceOf(prisma);
+    const outside = as(user.id, [elsewhere.id]);
+    const one = [{ encounterId: encounter.id, aiRunId: run.id, kind: 'note-section' as const, proposal: PROPOSAL, sources: SOURCES }]; // prettier-ignore
+
+    await expect(service.propose(one, outside)).rejects.toBeInstanceOf(
+      SuggestionNotFoundError,
+    );
+    // Control positivo: with the attention's site, it is proposed.
+    const [suggestion] = await service.propose(one, as(user.id, [encounter.siteId])); // prettier-ignore
+
+    expect(await service.ofEncounter(encounter.id, outside)).toEqual([]);
+    await expect(
+      service.discard(suggestion!.id, outside),
+    ).rejects.toBeInstanceOf(SuggestionNotFoundError);
+    await expect(
+      service.discard(suggestion!.id, as(user.id, [encounter.siteId])),
+    ).resolves.toMatchObject({ status: 'DISCARDED' });
   });
 });

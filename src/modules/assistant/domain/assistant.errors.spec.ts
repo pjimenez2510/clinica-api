@@ -21,6 +21,7 @@ import {
   SuggestionDiagnosisMismatchError,
   LlmCallFailed,
   SuggestionAlreadyDecidedError,
+  SuggestionInvalidError,
   SuggestionNotFoundError,
 } from './assistant.errors';
 
@@ -88,6 +89,17 @@ describe('assistant errors', () => {
     expect(error).toBeInstanceOf(NotFoundError);
     expect(error.userTitle).toBe(
       'No se encontró la propuesta del asistente. Recargue la atención',
+    );
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AS-020 answers SUGGESTION_INVALID as a 422 that says what to do, without the content', () => {
+    const error = new SuggestionInvalidError('source');
+
+    expect(error.code).toBe('SUGGESTION_INVALID');
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.userTitle).toBe(
+      'La propuesta del asistente no se pudo guardar. Vuelva a pedirla',
     );
     expect(DOMAIN_ERROR_CODES).toContain(error.code);
   });

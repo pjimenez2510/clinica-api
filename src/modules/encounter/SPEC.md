@@ -616,6 +616,21 @@ un selector con sus marcas.
 EN-280 (leen `GET /patients/:id/vitals` tal como llega). **Solo servidor:**
 ninguno (EN-275 y EN-276 se ven en EN-278).
 
+### H18 — La nota que dos pestañas no pisan _(P1)_
+
+Fase A del asistente (A1, `PLAN-ASISTENTE-IA.md` §7). Hoy la última escritura
+del borrador pisa a la otra (`clinical-note.controller.ts`, el `PATCH`): la
+nota abierta en dos pestañas —o la que el asistente escriba mañana mientras el
+médico teclea— pierde texto sin que nadie lo vea. Cada escritura dice sobre qué
+revisión se hizo, y la que llega tarde se rechaza.
+**Prueba independiente:** como médico, abrir la misma nota en dos pestañas,
+escribir en la primera y esperar a que guarde; escribir en la segunda → «Otra
+persona cambió esto; recargue», y la nota deja de guardarse sola; «Recargar»
+trae lo de la primera. Firmar desde la pestaña vieja tampoco firma.
+
+**Cubre:** EN-281 a EN-284. **Solo interfaz:** EN-284. **Solo servidor:**
+EN-283 (la base sube la revisión: se ve en EN-281).
+
 ### Fuera de las nueve
 
 **EN-148 a EN-150** —el triaje— tampoco pertenecen a ninguna entrega, y por otro
@@ -5085,6 +5100,35 @@ anterior guardada, y se quita archivándolo, nunca borrándolo._
   > selector se ven todas a la vez con su estado, y la que pide atención lo
   > dice con palabra.
 
+## 34. La nota que dos pestañas no pisan (A1, REQ-175)
+
+- **EN-281** — CUANDO se edite el borrador de una nota (EN-023), la petición
+  DEBERÁ traer en `If-Match` la revisión de la nota que leyó quien escribe
+  (`"<revision>"`). SI la revisión es otra, el sistema DEBERÁ rechazarla con
+  `RECORD_CHANGED` (412) sin escribir nada; SI falta o no es una revisión, con
+  `REVISION_REQUIRED` (428). La nota que se devuelve DEBERÁ traer su
+  `revision`, y toda nota servida también.
+  > RFC 9110 §13.1.1 y RFC 6585 §3. El autor eligió 412 y 428 en lugar de 409
+  > (11-10-2026). La comparación va en el mismo `UPDATE … WHERE` que ya
+  > condiciona por `DRAFT`, así que no hay hueco entre leer y escribir.
+- **EN-282** — CUANDO se firme una nota (EN-027), la petición DEBERÁ traer en
+  `If-Match` la revisión que vio quien firma; SI es otra, el sistema DEBERÁ
+  rechazarla con `RECORD_CHANGED` sin firmar ni dar el alta.
+  > La firma sella el contenido DEL SERVIDOR (EN-027). Si otra pestaña lo
+  > cambió, quien firma pondría su nombre bajo un texto que no leyó.
+- **EN-283** — CADA VEZ que se actualice una nota en borrador, la base DEBERÁ
+  poner su `revision` en la anterior más uno, sea cual sea el valor que mande
+  quien escribe; la de una nota que ya no es borrador NO DEBERÁ cambiar.
+  > En la base y no en la aplicación: un `psql`, una importación o el
+  > asistente también invalidan lo que otra pestaña leyó. Lo firmado lo
+  > congelan sus propios disparadores, y la revisión no los toca.
+- **EN-284** — CUANDO guardar o firmar la nota responda `RECORD_CHANGED`, la
+  pantalla DEBERÁ dejar de guardar sola y decir «Otra persona cambió esto;
+  recargue» con un botón «Recargar», que DEBERÁ traer la nota del servidor.
+  > Seguir guardando cada segundo y medio repetiría el mismo rechazo con cada
+  > frase. Recargar pierde lo escrito en esta pestaña después del último
+  > guardado: es lo que el aviso pide, y lo otro sería pisar a la otra.
+
 ---
 
 ## Códigos de error nuevos
@@ -5094,6 +5138,8 @@ contrato —`code`, estado y mensaje—, salvo los que se indican.
 
 | Código | HTTP | Cuándo | Requisito |
 | --- | --- | --- | --- |
+| `RECORD_CHANGED` | 412 | Se guardó o firmó la nota sobre una revisión que ya no es la vigente: otra pestaña o persona la cambió. **Declarado en `shared/`**: la receta y la orden lo lanzan también, y un código lo declara una sola clase | EN-281, EN-282 |
+| `REVISION_REQUIRED` | 428 | Falta `If-Match` o no es una revisión (`"<n>"`). En `shared/http`, junto a quien lee la cabecera | EN-281 |
 | `ENCOUNTER_NOT_FOUND` | 404 | La atención no existe o es de una sede fuera del alcance. **El mismo para ambas**: distinguirlas confirmaría atenciones ajenas a quien adivina identificadores | EN-121 |
 | `PATIENT_CHART_NOT_OPEN` | 409 | Se intentó abrir una atención de una ficha inexistente o absorbida por una fusión | EN-001 |
 | `ENCOUNTER_APPOINTMENT_MISMATCH` | 422 | La cita nombrada es de otro paciente | EN-004 |
