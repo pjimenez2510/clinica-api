@@ -201,7 +201,9 @@ export class NoteQuestionService {
         written: note.written,
         discarded: stored
           .filter((each) => each.status === 'DISCARDED')
-          .map((each) => String(each.proposal.text ?? '')),
+          .flatMap(({ proposal }) =>
+            typeof proposal.text === 'string' ? [proposal.text] : [],
+          ),
         encounterId: encounter.id,
         signal: AbortSignal.timeout(QUESTIONS_LIMIT_MS),
       },

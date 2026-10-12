@@ -35,87 +35,54 @@
     }
   ],
   "codes": {
-    "FARINGITIS AGUDA": [
-      "J02.9",
-      "J02.7",
-      "J02.8",
-      "J03.9"
-    ],
-    "HIPERTENSIÓN ARTERIAL SIN DIAGNÓSTICO PREVIO": [
-      "I10",
-      "R03.0"
-    ],
-    "INFECCIÓN DE VÍAS URINARIAS": [
-      "N39.0",
-      "N30.0"
-    ],
-    "LUMBALGIA": [
-      "M54.5"
-    ],
-    "HIPERGLUCEMIA": [
-      "R73.9",
-      "E11.9"
-    ]
+    "FARINGITIS AGUDA": ["J02.9", "J02.7", "J02.8", "J03.9"],
+    "HIPERTENSIÓN ARTERIAL SIN DIAGNÓSTICO PREVIO": ["I10", "R03.0"],
+    "INFECCIÓN DE VÍAS URINARIAS": ["N39.0", "N30.0"],
+    "LUMBALGIA": ["M54.5"],
+    "HIPERGLUCEMIA": ["R73.9", "E11.9"]
   },
   "aboutExams": "Exámenes (D3, AS-103): cada examen se pide si la nota o la conversación contiene su frase, citada hasta el final de su oración; sus candidatos son nombres del catálogo de la clínica, en este orden, y el guion contesta su número en la lista que recibió. «Perfil tiroideo» no está en el catálogo sembrado, para que se vea que sale sólo con su frase; la biometría pide además un número que no se ofreció (999), y la barrera no lo muestra.",
   "exams": [
     {
       "phrase": "biometría",
       "requested": "biometría hemática",
-      "names": [
-        "Biometría hemática completa"
-      ],
+      "names": ["Biometría hemática completa"],
       "invented": 999
     },
     {
       "phrase": "hemograma",
       "requested": "hemograma",
-      "names": [
-        "Biometría hemática completa"
-      ]
+      "names": ["Biometría hemática completa"]
     },
     {
       "phrase": "glucosa",
       "requested": "glucosa en ayunas",
-      "names": [
-        "Glucosa en ayunas",
-        "Biometría hemática completa"
-      ]
+      "names": ["Glucosa en ayunas", "Biometría hemática completa"]
     },
     {
       "phrase": "emo",
       "requested": "examen de orina",
-      "names": [
-        "Elemental y microscópico de orina (EMO)"
-      ]
+      "names": ["Elemental y microscópico de orina (EMO)"]
     },
     {
       "phrase": "examen de orina",
       "requested": "examen de orina",
-      "names": [
-        "Elemental y microscópico de orina (EMO)"
-      ]
+      "names": ["Elemental y microscópico de orina (EMO)"]
     },
     {
       "phrase": "radiografía de tórax",
       "requested": "radiografía de tórax",
-      "names": [
-        "Radiografía de tórax (PA y lateral)"
-      ]
+      "names": ["Radiografía de tórax (PA y lateral)"]
     },
     {
       "phrase": "ecografía abdominal",
       "requested": "ecografía abdominal",
-      "names": [
-        "Ecografía abdominal"
-      ]
+      "names": ["Ecografía abdominal"]
     },
     {
       "phrase": "perfil tiroideo",
       "requested": "perfil tiroideo",
-      "names": [
-        "Perfil tiroideo (TSH, T4 libre)"
-      ]
+      "names": ["Perfil tiroideo (TSH, T4 libre)"]
     }
   ],
   "medicines": [
@@ -192,42 +159,25 @@
       "phrase": "tengo fiebre",
       "text": "¿Hasta qué temperatura llegó la fiebre?",
       "section": "enfermedadActual",
-      "answeredBy": [
-        "°",
-        "grados",
-        "38",
-        "39",
-        "40"
-      ]
+      "answeredBy": ["°", "grados", "38", "39", "40"]
     },
     {
       "phrase": "me duele la garganta",
       "text": "¿Tiene tos o le cuesta tragar?",
       "section": "revisionOrganosSistemas",
-      "answeredBy": [
-        "tos",
-        "tragar",
-        "disfagia"
-      ]
+      "answeredBy": ["tos", "tragar", "disfagia"]
     },
     {
       "phrase": "acetamol",
       "text": "¿Toma algún otro medicamento?",
       "section": "enfermedadActual",
-      "answeredBy": [
-        "otro medicamento",
-        "otros medicamentos",
-        "no toma"
-      ]
+      "answeredBy": ["otro medicamento", "otros medicamentos", "no toma"]
     },
     {
       "phrase": null,
       "text": "¿Fuma?",
       "section": null,
-      "answeredBy": [
-        "fuma",
-        "tabaco"
-      ]
+      "answeredBy": ["fuma", "tabaco"]
     }
   ]
 }

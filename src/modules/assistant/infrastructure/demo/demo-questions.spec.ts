@@ -54,7 +54,9 @@ describe('the demonstration questions (AS-127)', () => {
   });
 
   it('AS-123 AS-127 a question whose answer the note already writes is not asked again', async () => {
-    const { kept } = await ask({ enfermedadActual: 'Fiebre de hasta 38,5 °C.' });
+    const { kept } = await ask({
+      enfermedadActual: 'Fiebre de hasta 38,5 °C.',
+    });
 
     expect(kept.map((each) => each.text)).not.toContain('¿Hasta qué temperatura llegó la fiebre?'); // prettier-ignore
     expect(kept).toHaveLength(2);

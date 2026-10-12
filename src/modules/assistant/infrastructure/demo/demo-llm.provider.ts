@@ -167,7 +167,15 @@ function questionsOf(prompt: string) {
     text: match[2]!.toLowerCase(),
   }));
   const written = noteOf(prompt).toLowerCase();
-  return (script.questions as { phrase: string | null; text: string; section: string | null; answeredBy: string[] }[]).flatMap( // prettier-ignore
+  return (
+    script.questions as {
+      phrase: string | null;
+      text: string;
+      section: string | null;
+      answeredBy: string[];
+    }[]
+  ).flatMap(
+    // prettier-ignore
     ({ phrase, text, section, answeredBy }) => {
       if (answeredBy.some((words) => written.includes(words))) return [];
       if (phrase === null) return [{ text, source: 'L99', section }];
