@@ -152,6 +152,19 @@ export interface ChosenPresentation {
 const RANGE = /\d\s*\S*\s+-\s+\d/;
 
 /**
+ * AS-066. A combination as it is written in Ecuador, «500/125 mg», as the
+ * cuadro writes it, «500 mg + 125 mg» (measured 12-10-2026 with Gemini).
+ * Only figures over figures before ONE unit: «250 mg/5 mL» is a strength per
+ * volume and stays as it is.
+ */
+export function cuadroStrength(written: string): string {
+  const combined = /^\s*(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)\s*(mg|mcg|g)\s*$/i.exec(written); // prettier-ignore
+  if (!combined) return written;
+  const [, first, second, unit] = combined;
+  return `${first} ${unit!.toLowerCase()} + ${second} ${unit!.toLowerCase()}`;
+}
+
+/**
  * AS-066. The presentation the model chose, when it is compatible with what
  * the note wrote — its form among those the presentation admits, its
  * strength the declared one or inside its range (PR-115) — and null when it
@@ -163,13 +176,14 @@ export function presentationFor(
   said: { form: DosageForm | null; strength: string | null },
 ): ChosenPresentation | null {
   if (!presentation) return null;
+  const strength = said.strength === null ? null : cuadroStrength(said.strength); // prettier-ignore
   const admitted = presentation.forms ?? [presentation.form];
   if (said.form !== null && !admitted.includes(said.form)) return null;
   const form = (said.form ?? presentation.form) as DosageForm;
   if (!(form in DOSAGE_FORMS)) return null;
   if (
-    said.strength !== null &&
-    matchingPresentations([presentation], form, said.strength).length === 0
+    strength !== null &&
+    matchingPresentations([presentation], form, strength).length === 0
   ) {
     return null;
   }
@@ -178,7 +192,7 @@ export function presentationFor(
     form,
     // PR-115. The cuadro's own figure; a range copied to the line would
     // print «1 mg - 5 mg», so a range takes the figure the note wrote.
-    concentration: range ? said.strength : presentation.concentration,
+    concentration: range ? strength : presentation.concentration,
     route: presentation.route ?? null,
   };
 }

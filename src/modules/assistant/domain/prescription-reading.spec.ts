@@ -6,6 +6,7 @@ import {
   blockOf,
   canonicalLine,
   cnmbSearchName,
+  cuadroStrength,
   knownCodes,
   presentationFor,
   proposedFields,
@@ -271,5 +272,18 @@ describe('the name the cuadro is searched by (AS-064)', () => {
     expect(cnmbSearchName('sulfametoxazol/trimetoprima')).toBe('sulfametoxazol + trimetoprima'); // prettier-ignore
     // Control: a plain name is searched as written.
     expect(cnmbSearchName('Amoxicilina')).toBe('Amoxicilina');
+  });
+});
+
+describe('a combination’s strength as the cuadro writes it (AS-066)', () => {
+  it('AS-066 «500/125 mg» is «500 mg + 125 mg»; a strength per volume is left alone', () => {
+    expect(cuadroStrength('500/125 mg')).toBe('500 mg + 125 mg');
+    expect(cuadroStrength('875/125 MG')).toBe('875 mg + 125 mg');
+    expect(cuadroStrength('250 mg/5 mL')).toBe('250 mg/5 mL');
+    expect(cuadroStrength('500 mg')).toBe('500 mg');
+    const combination = { form: 'TABLET', concentration: '500 mg + 125 mg' };
+    expect(presentationFor(combination, { form: null, strength: '500/125 mg' })?.concentration).toBe('500 mg + 125 mg'); // prettier-ignore
+    // Control: another combination is still not this one.
+    expect(presentationFor(combination, { form: null, strength: '875/125 mg' })).toBeNull(); // prettier-ignore
   });
 });
