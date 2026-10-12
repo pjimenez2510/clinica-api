@@ -199,10 +199,13 @@ describe('what the assistant reads of an attention (AS-027, AS-028, AS-039)', ()
       },
     });
 
-    expect(await reader.noteSections(encounter.id)).toEqual([
-      { key: 'motivoConsulta', label: 'Motivo de consulta', text: 'Dolor de garganta' }, // prettier-ignore
-      { key: 'enfermedadActual', label: 'Enfermedad o problema actual', text: 'Odinofagia de tres días' }, // prettier-ignore
-    ]);
+    expect(await reader.consultationNote(encounter.id)).toEqual({
+      id,
+      sections: [
+        { key: 'motivoConsulta', label: 'Motivo de consulta', text: 'Dolor de garganta' }, // prettier-ignore
+        { key: 'enfermedadActual', label: 'Enfermedad o problema actual', text: 'Odinofagia de tres días' }, // prettier-ignore
+      ],
+    });
   });
 
   it('AS-027 reads what the person was coded with in other attentions, absorbed chart included, without the annulled', async () => {
@@ -246,6 +249,10 @@ describe('what the assistant reads of an attention (AS-027, AS-028, AS-039)', ()
     expect(history[0]!.lastUsedOn).toBe(clinicalDateOf(later.startedAt));
     // Control: the codes recorded here are read by `recordedCodes`.
     expect(await reader.recordedCodes(encounter.id)).toEqual(['J45.9']);
+    // AS-037. A diagnosis is read only through its own attention.
+    const [mine] = await prisma.encounterDiagnosis.findMany({ where: { encounterId: encounter.id } }); // prettier-ignore
+    expect(await reader.diagnosisOf(encounter.id, mine!.id)).toEqual({ id: mine!.id, code: 'J45.9' }); // prettier-ignore
+    expect(await reader.diagnosisOf(later.id, mine!.id)).toBeNull();
   });
 
   it('AS-027 the clinic frequency counts since the date it is given, most recorded first', async () => {

@@ -5,7 +5,7 @@ import type {
   CodingContextReader,
   CodingEncounter,
   CodingPeople,
-  NoteSectionText,
+  ConsultationNote,
 } from '../../clinical/coding-context.port';
 import { FORM_002_BUILT_IN_SECTIONS } from '../../clinical/form-002';
 import { clinicalDateOf } from '../../domain/clinic-time';
@@ -57,7 +57,9 @@ export class PrismaCodingContextReader implements CodingContextReader {
     };
   }
 
-  async noteSections(encounterId: string): Promise<NoteSectionText[]> {
+  async consultationNote(
+    encounterId: string,
+  ): Promise<ConsultationNote | null> {
     const note = await this.prisma.clinicalNote.findFirst({
       where: {
         encounterId,
@@ -65,9 +67,13 @@ export class PrismaCodingContextReader implements CodingContextReader {
         status: { in: ['DRAFT', 'SIGNED'] },
       },
       orderBy: { version: 'desc' },
-      select: { content: true, template: { select: { sections: true } } },
+      select: {
+        id: true,
+        content: true,
+        template: { select: { sections: true } },
+      },
     });
-    if (!note) return [];
+    if (!note) return null;
 
     const declared = (
       (note.template?.sections as
@@ -82,12 +88,13 @@ export class PrismaCodingContextReader implements CodingContextReader {
       ),
     ];
 
-    return order.flatMap((key) => {
+    const sections = order.flatMap((key) => {
       const value = content[key];
       if (typeof value !== 'string' || value.trim() === '') return [];
       const label = declared.find((section) => section.key === key)?.title;
       return [{ key, label: label ?? key, text: value }];
     });
+    return { id: note.id, sections };
   }
 
   async people(encounterId: string): Promise<CodingPeople> {
@@ -125,6 +132,17 @@ export class PrismaCodingContextReader implements CodingContextReader {
       select: { cie10Code: true },
     });
     return rows.map((row) => row.cie10Code);
+  }
+
+  async diagnosisOf(
+    encounterId: string,
+    diagnosisId: string,
+  ): Promise<{ id: string; code: string } | null> {
+    const row = await this.prisma.encounterDiagnosis.findFirst({
+      where: { id: diagnosisId, encounterId },
+      select: { id: true, cie10Code: true },
+    });
+    return row ? { id: row.id, code: row.cie10Code } : null;
   }
 
   async patientHistory(

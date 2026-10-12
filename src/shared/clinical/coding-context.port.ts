@@ -60,6 +60,11 @@ export interface NoteSectionText {
   text: string;
 }
 
+export interface ConsultationNote {
+  id: string;
+  sections: NoteSectionText[];
+}
+
 /**
  * AS-025. Who the text may name, for the pseudonymizer only. Clinical data:
  * it never reaches a log, an `ai_run` row or an answer.
@@ -90,12 +95,20 @@ export interface CodingContextReader {
     encounterId: string,
     sites: 'all' | readonly string[],
   ): Promise<CodingEncounter | null>;
-  /** AS-028. The text of the attention's consultation note (002), by section. */
-  noteSections(encounterId: string): Promise<NoteSectionText[]>;
+  /**
+   * AS-028. The attention's consultation note (002): its id, which a proposal
+   * cites as its source (P2), and its text by section; null without a note.
+   */
+  consultationNote(encounterId: string): Promise<ConsultationNote | null>;
   /** AS-025. The names the note may carry. */
   people(encounterId: string): Promise<CodingPeople>;
   /** AS-027. The codes this attention already has. */
   recordedCodes(encounterId: string): Promise<string[]>;
+  /** AS-037. A diagnosis of THIS attention, or null when it is of another or gone. */
+  diagnosisOf(
+    encounterId: string,
+    diagnosisId: string,
+  ): Promise<{ id: string; code: string } | null>;
   /**
    * AS-027, PA-055. What this person was coded with in OTHER attentions, of
    * every chart that is hers, most used first and the most recent on a tie.

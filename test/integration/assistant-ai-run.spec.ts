@@ -182,16 +182,21 @@ describe('ai_run and ai_exchange (assistant)', () => {
     expect(run?.exchange).toMatchObject({ system: SYSTEM, prompt: PROMPT, raw: RAW }); // prettier-ignore
   });
 
-  it('AS-012 refuses a row of ai_run that breaks its lists or its numbers', async () => {
+  it('AS-012 AS-029 refuses a row of ai_run that breaks its lists or its numbers, and a fake that is not the script', async () => {
     const prisma = db();
     // Positive control: the valid row, and a valid fallback, go in.
     await prisma.aiRun.create({ data: aRun() });
     await prisma.aiRun.create({ data: aRun({ attempt: 2, fallbackFrom: 'rate-limited' }) }); // prettier-ignore
+    // AS-029. And the demonstration's own row.
+    await prisma.aiRun.create({ data: aRun({ provider: 'fake', model: 'guion-de-demostracion', costUsd: 0, worstCaseUsd: 0 }) }); // prettier-ignore
 
     const broken: [string, Record<string, unknown>][] = [
       ['ai_run_outcome_known', { outcome: 'maybe' }],
       ['ai_run_tier_known', { tier: 'slow' }],
-      ['ai_run_provider_known', { provider: 'fake' }],
+      ['ai_run_provider_known', { provider: 'nvidia' }],
+      // AS-029. `fake` is only the demonstration script, at no cost.
+      ['ai_run_fake_is_the_demonstration', { provider: 'fake' }],
+      ['ai_run_fake_is_the_demonstration', { provider: 'fake', model: 'guion-de-demostracion', costUsd: 0.01, worstCaseUsd: 0 }], // prettier-ignore
       ['ai_run_attempt_positive', { attempt: 0 }],
       ['ai_run_figures_not_negative', { inputTokens: -1 }],
       ['ai_run_figures_not_negative', { costUsd: -0.01 }],

@@ -1,8 +1,10 @@
 import {
   ConflictError,
   ExternalServiceError,
+  ForbiddenError,
   NotFoundError,
   QuotaExceededError,
+  ValidationError,
 } from '../../../shared/domain/errors/domain-error';
 
 import {
@@ -140,5 +142,81 @@ export class LlmCallFailed extends ExternalServiceError {
       outcome: this.outcome,
       message: this.message,
     };
+  }
+}
+
+/**
+ * AS-039, EN-121. The attention does not exist or is of a site the requester
+ * cannot reach: one answer for both. Its own code because `encounter`'s
+ * belongs to that module, which this one does not import.
+ */
+export class AssistantEncounterNotFoundError extends NotFoundError {
+  readonly code = 'ASSISTANT_ENCOUNTER_NOT_FOUND';
+  override readonly userTitle =
+    'Esa atención no existe en las sedes a las que usted tiene acceso. Actualice la lista';
+
+  constructor() {
+    super('Encounter not found within the caller site scope');
+  }
+}
+
+/** AS-039 (M-02). Only the attention's own professional asks the assistant. */
+export class AssistantNotEncounterOwnerError extends ForbiddenError {
+  readonly code = 'ASSISTANT_NOT_ENCOUNTER_OWNER';
+  override readonly userTitle =
+    'Sólo el profesional de la atención puede pedir y decidir las propuestas del asistente';
+
+  constructor() {
+    super('The requester is not the practitioner of the encounter');
+  }
+}
+
+/** AS-039. The attention no longer takes new clinical content. */
+export class AssistantEncounterClosedError extends ConflictError {
+  readonly code = 'ASSISTANT_ENCOUNTER_CLOSED';
+  override readonly userTitle =
+    'La atención ya no admite propuestas nuevas del asistente';
+
+  constructor() {
+    super('The encounter does not accept new clinical content');
+  }
+}
+
+/** AS-028. There is nothing in the note to read the problems from. */
+export class AssistantNoteEmptyError extends ValidationError {
+  readonly code = 'ASSISTANT_NOTE_EMPTY';
+  override readonly userTitle =
+    'La nota todavía no dice nada: escriba la consulta y vuelva a pedir la propuesta';
+
+  constructor() {
+    super('The consultation note has no text');
+  }
+}
+
+/** AS-037. The diagnosis given to accept a proposal is not of its attention. */
+export class SuggestionDiagnosisMismatchError extends ValidationError {
+  readonly code = 'SUGGESTION_DIAGNOSIS_MISMATCH';
+  override readonly userTitle =
+    'Ese diagnóstico no está registrado en esta atención. Recargue la atención';
+
+  constructor() {
+    super('The diagnosis is not recorded in the encounter of the suggestion');
+  }
+}
+
+/**
+ * AS-036, AS-040. The model answered but its attempt could not be recorded,
+ * so the proposal would have no provenance (P2): it is not kept, and asking
+ * again may work.
+ */
+export class AssistantProposalNotKeptError extends ExternalServiceError {
+  readonly code = 'ASSISTANT_PROPOSAL_NOT_KEPT';
+  readonly service = 'ai_run';
+  readonly isRetryable = true;
+  override readonly userTitle =
+    'No se pudo guardar la propuesta del asistente. Vuelva a pedirla';
+
+  constructor() {
+    super('The attempt that answered could not be recorded');
   }
 }

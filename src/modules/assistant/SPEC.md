@@ -465,6 +465,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_NOTE_EMPTY`               | `ValidationError`      | 422       | La nota de la atención no tiene texto del que leer problemas (AS-028)        |
 | `ASSISTANT_NOT_ENCOUNTER_OWNER`      | `ForbiddenError`       | 403       | Quien pide no es el profesional de la atención (AS-039)                      |
 | `SUGGESTION_DIAGNOSIS_MISMATCH`      | `ValidationError`      | 422       | El diagnóstico con que se acepta no es de esa atención o no está (AS-037)   |
+| `ASSISTANT_ENCOUNTER_NOT_FOUND`      | `NotFoundError`        | 404       | La atención no existe o es de una sede fuera del alcance (AS-039, EN-121)    |
+| `ASSISTANT_ENCOUNTER_CLOSED`         | `ConflictError`        | 409       | La atención ya no admite contenido clínico nuevo (AS-039)                    |
+| `ASSISTANT_PROPOSAL_NOT_KEPT`        | `ExternalServiceError` | 503       | El modelo respondió pero su intento no quedó en `ai_run` (AS-036, AS-040)    |
 
 ## Niveles de prueba
 
