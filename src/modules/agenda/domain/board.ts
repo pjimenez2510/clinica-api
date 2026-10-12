@@ -4,7 +4,13 @@ import {
   isBoardField,
 } from '../../../shared/domain/board-fields';
 
-import type { AgendaEntryStatus, PatientSubjectStatus } from './agenda-entry';
+import { clinicalDateOf } from '../../../shared/domain/clinic-time';
+
+import type {
+  AgendaEntryKind,
+  AgendaEntryStatus,
+  PatientSubjectStatus,
+} from './agenda-entry';
 
 /**
  * AG-133 to AG-138. What the day board derives from a row, PURE: the instant
@@ -190,4 +196,73 @@ export const BOARD_NOTE_MAX = 120;
 export function normaliseBoardNote(raw: string | null): string | null {
   const trimmed = raw?.trim() ?? '';
   return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * AG-183 (D-170 §4). Minutes an emergency notice may go unacknowledged before
+ * the board asks reception to tell someone in person. THE DECISION, NOT A
+ * PARAMETER (SPEC §10): a deadline a site can stretch is the one that, the day
+ * of the incident, was set to ten.
+ */
+export const EMERGENCY_IN_PERSON_AFTER_MINUTES = 2;
+
+/**
+ * AG-183. Whether the row must be marked for an in-person handover: an
+ * emergency still in the waiting room, nobody notified has acknowledged it,
+ * and two minutes have passed since the first notice — or, with none written
+ * (no active account to tell), since the assessment. One «Enterado» from any
+ * recipient is enough: someone on duty knows. `now` is the application's
+ * clock, never PostgreSQL's.
+ */
+export function needsInPersonNotice(
+  row: {
+    status: AgendaEntryStatus;
+    emergencyFlaggedAt: Date | null;
+    emergencyAlerts: readonly {
+      alertedAt: Date;
+      acknowledgedAt: Date | null;
+    }[];
+  },
+  now: Date,
+): boolean {
+  if (row.status !== 'CHECKED_IN' || row.emergencyFlaggedAt === null) {
+    return false;
+  }
+  if (row.emergencyAlerts.some((alert) => alert.acknowledgedAt !== null)) {
+    return false;
+  }
+  const since = row.emergencyAlerts.reduce(
+    (earliest, alert) => Math.min(earliest, alert.alertedAt.getTime()),
+    row.emergencyAlerts.length > 0
+      ? Number.POSITIVE_INFINITY
+      : row.emergencyFlaggedAt.getTime(),
+  );
+  return now.getTime() - since >= EMERGENCY_IN_PERSON_AFTER_MINUTES * 60_000;
+}
+
+/** AG-184. The statuses whose board note can still be written. */
+export const BOARD_NOTE_OPEN_STATUSES = [
+  'BOOKED',
+  'CONFIRMED',
+  'CHECKED_IN',
+  'IN_PROGRESS',
+] as const satisfies readonly AgendaEntryStatus[];
+const NOTE_OPEN_STATUSES: ReadonlySet<AgendaEntryStatus> = new Set(
+  BOARD_NOTE_OPEN_STATUSES,
+);
+
+/**
+ * AG-184 (D-176 §3c). The note is for today's board: an appointment of today's
+ * clinical day in Guayaquil (AG-001) that is not closed. Never a block
+ * (AG-176).
+ */
+export function boardNoteEditable(
+  row: { kind: AgendaEntryKind; status: AgendaEntryStatus; startsAt: Date },
+  now: Date,
+): boolean {
+  return (
+    row.kind === 'APPOINTMENT' &&
+    NOTE_OPEN_STATUSES.has(row.status) &&
+    clinicalDateOf(row.startsAt) === clinicalDateOf(now)
+  );
 }

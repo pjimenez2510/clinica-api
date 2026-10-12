@@ -52,6 +52,8 @@ export const DOMAIN_ERROR_CODES = [
   'NO_SHOW_UNDO_EXPIRED',
   // AG-176: la nota del tablero es de una cita con paciente.
   'BOARD_NOTE_NEEDS_A_PATIENT',
+  // AG-184: la nota del tablero, sólo en citas de hoy y abiertas.
+  'BOARD_NOTE_NOT_TODAY',
   // AG-138: la vista del tablero de un rol que no existe.
   'BOARD_VIEW_ROLE_NOT_FOUND',
   // AG-063: la cita que salió de la lista de espera no cambia de paciente.

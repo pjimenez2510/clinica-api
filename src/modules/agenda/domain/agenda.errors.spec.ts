@@ -23,6 +23,7 @@ import {
   InvalidBookingChannelError,
   InvalidSlotDurationError,
   BoardNoteNeedsAPatientError,
+  BoardNoteNotTodayError,
   BoardViewRoleNotFoundError,
   NoShowUndoExpiredError,
   AppointmentFromWaitlistError,
@@ -241,6 +242,15 @@ describe('the transition errors (E2)', () => {
     expect(error.code).toBe('BOARD_NOTE_NEEDS_A_PATIENT');
     expect(error).toBeInstanceOf(ConflictError); // 409
     expect(error.userTitle).toContain('no de un bloqueo');
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AG-184 BOARD_NOTE_NOT_TODAY is a 409 that says where the note can go', () => {
+    const error = new BoardNoteNotTodayError();
+
+    expect(error.code).toBe('BOARD_NOTE_NOT_TODAY');
+    expect(error).toBeInstanceOf(ConflictError); // 409
+    expect(error.userTitle).toContain('citas de hoy');
     expect(DOMAIN_ERROR_CODES).toContain(error.code);
   });
 

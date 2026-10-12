@@ -59,7 +59,9 @@ export type BoardNoteOutcome =
       boardNoteStamp: { byName: string; at: Date };
     }
   | { kind: 'NOT_FOUND' }
-  | { kind: 'BLOCK' };
+  | { kind: 'BLOCK' }
+  /** AG-184. Of another day, or closed. */
+  | { kind: 'NOT_TODAY' };
 
 export interface BoardRepository {
   /** AG-133, AG-134. Appointments only, released included, by instant. */
@@ -82,13 +84,21 @@ export interface BoardRepository {
     changedById: string;
     at: Date;
   }): Promise<{ before: BoardField[]; after: BoardField[] } | null>;
-  /** AG-176. Writes the note and nothing else of the entry. */
+  /**
+   * AG-176, AG-184, AG-185. Writes the note and nothing else of the entry —
+   * only on an open appointment starting inside `today` — and, in the same
+   * transaction, one `access_audit` row without the content.
+   */
   setBoardNote(input: {
     siteId: string;
     entryId: string;
     boardNote: string | null;
     writtenById: string;
     at: Date;
+    /** Today's clinical day in Guayaquil, as instants. */
+    today: { from: Date; untilExclusive: Date };
+    ip?: string;
+    userAgent?: string;
   }): Promise<BoardNoteOutcome>;
 }
 

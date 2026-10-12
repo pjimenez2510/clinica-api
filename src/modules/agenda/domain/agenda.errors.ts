@@ -480,6 +480,21 @@ export class WaitlistContactChangedError extends ConflictError {
 }
 
 /**
+ * AG-184 (D-176 §3c). A board note on an appointment of another day, or on one
+ * already closed: the note is for today's board, and written there it is
+ * free text about a person that nobody it would help ever reads.
+ */
+export class BoardNoteNotTodayError extends ConflictError {
+  readonly code = 'BOARD_NOTE_NOT_TODAY';
+  override readonly userTitle =
+    'La nota del tablero sólo se escribe en citas de hoy que siguen abiertas';
+
+  constructor() {
+    super('Board note requested on an appointment not of today or closed');
+  }
+}
+
+/**
  * AG-176. A board note on a block: the board is a list of people, and a
  * blocked stretch of a practitioner's day has nobody to leave a note about.
  */

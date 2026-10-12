@@ -5,7 +5,7 @@ import {
   type BoardField,
 } from '../../../shared/domain/board-fields';
 import { PrismaService } from '../../../shared/infrastructure/prisma/prisma.service';
-import type { BoardViewRow } from '../domain/board';
+import { BOARD_NOTE_OPEN_STATUSES, type BoardViewRow } from '../domain/board';
 import type {
   BoardNoteOutcome,
   BoardQuery,
@@ -232,31 +232,61 @@ export class PrismaBoardRepository implements BoardRepository {
     boardNote: string | null;
     writtenById: string;
     at: Date;
+    today: { from: Date; untilExclusive: Date };
+    ip?: string;
+    userAgent?: string;
   }): Promise<BoardNoteOutcome> {
-    const updated = await this.prisma.agendaEntry.updateMany({
-      where: { id: input.entryId, siteId: input.siteId, kind: 'APPOINTMENT' },
-      data: {
-        boardNote: input.boardNote,
-        boardNoteById: input.writtenById,
-        boardNoteAt: input.at,
-      },
-    });
-    if (updated.count === 1) {
-      const writer = await this.prisma.user.findUniqueOrThrow({
-        where: { id: input.writtenById },
-        select: { firstName: true, lastName: true },
+    return this.prisma.$transaction(async (tx) => {
+      // AG-184: conditioned on today and open IN THE WRITE, so a note racing
+      // the appointment's closure loses instead of landing on a closed row.
+      const updated = await tx.agendaEntry.updateMany({
+        where: {
+          id: input.entryId,
+          siteId: input.siteId,
+          kind: 'APPOINTMENT',
+          status: { in: [...BOARD_NOTE_OPEN_STATUSES] },
+          startsAt: { gte: input.today.from, lt: input.today.untilExclusive },
+        },
+        data: {
+          boardNote: input.boardNote,
+          boardNoteById: input.writtenById,
+          boardNoteAt: input.at,
+        },
       });
-      return {
-        kind: 'UPDATED',
-        boardNote: input.boardNote,
-        boardNoteStamp: { byName: fullName(writer), at: input.at },
-      };
-    }
+      if (updated.count === 1) {
+        // AG-185 (D-176 §3b): who wrote on this appointment's note and when,
+        // never what. Same transaction: a note that cannot be traced is not
+        // written.
+        await tx.accessAudit.create({
+          data: {
+            occurredAt: input.at,
+            userId: input.writtenById,
+            resourceType: 'agenda_entry_board_note',
+            resourceId: input.entryId,
+            action: 'UPDATE',
+            ip: input.ip,
+            userAgent: input.userAgent?.slice(0, 512),
+          },
+        });
+        const writer = await tx.user.findUniqueOrThrow({
+          where: { id: input.writtenById },
+          select: { firstName: true, lastName: true },
+        });
+        return {
+          kind: 'UPDATED' as const,
+          boardNote: input.boardNote,
+          boardNoteStamp: { byName: fullName(writer), at: input.at },
+        };
+      }
 
-    const existing = await this.prisma.agendaEntry.findFirst({
-      where: { id: input.entryId, siteId: input.siteId },
-      select: { kind: true },
+      const existing = await tx.agendaEntry.findFirst({
+        where: { id: input.entryId, siteId: input.siteId },
+        select: { kind: true },
+      });
+      if (!existing) return { kind: 'NOT_FOUND' as const };
+      return existing.kind === 'BLOCK'
+        ? { kind: 'BLOCK' as const }
+        : { kind: 'NOT_TODAY' as const };
     });
-    return existing ? { kind: 'BLOCK' } : { kind: 'NOT_FOUND' };
   }
 }

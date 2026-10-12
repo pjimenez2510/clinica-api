@@ -4,7 +4,10 @@ import { BOARD_FIELDS } from '../../../shared/domain/board-fields';
 
 import {
   type BoardSubject,
+  boardNoteEditable,
+  EMERGENCY_IN_PERSON_AFTER_MINUTES,
   isPresentToday,
+  needsInPersonNotice,
   latenessMinutes,
   minutesInState,
   normaliseBoardNote,
@@ -263,5 +266,112 @@ describe('AG-138 qué roles dan forma al tablero de una sede', () => {
 
   it('AG-137 sin nombre no queda un espacio delante de la inicial', () => {
     expect(publicIdentification('', 'Andrade')).toBe('A.');
+  });
+});
+
+/**
+ * AG-183 (D-170 §4). Nobody acknowledged the emergency in two minutes: the
+ * board marks the row so reception tells someone in person.
+ */
+describe('AG-183 la emergencia sin «Enterado» a los 2 minutos', () => {
+  const flagged = (
+    overrides: Partial<Parameters<typeof needsInPersonNotice>[0]> = {},
+  ) => ({
+    status: 'CHECKED_IN' as const,
+    emergencyFlaggedAt: minutesBefore(5),
+    emergencyAlerts: [{ alertedAt: minutesBefore(2), acknowledgedAt: null }],
+    ...overrides,
+  });
+
+  it('AG-183 marks the row at two minutes from the first notice, and not a second before', () => {
+    expect(EMERGENCY_IN_PERSON_AFTER_MINUTES).toBe(2);
+    expect(needsInPersonNotice(flagged(), NOW)).toBe(true);
+    const justBefore = new Date(NOW.getTime() - 2 * 60_000 + 1000);
+    expect(
+      needsInPersonNotice(
+        flagged({
+          emergencyAlerts: [{ alertedAt: justBefore, acknowledgedAt: null }],
+        }),
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
+  it('AG-183 one «Enterado» from anyone notified is enough', () => {
+    expect(
+      needsInPersonNotice(
+        flagged({
+          emergencyAlerts: [
+            { alertedAt: minutesBefore(3), acknowledgedAt: null },
+            { alertedAt: minutesBefore(3), acknowledgedAt: minutesBefore(1) },
+          ],
+        }),
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
+  it('AG-183 with no notice written, it counts from the assessment', () => {
+    expect(needsInPersonNotice(flagged({ emergencyAlerts: [] }), NOW)).toBe(
+      true,
+    );
+    expect(
+      needsInPersonNotice(
+        flagged({ emergencyAlerts: [], emergencyFlaggedAt: minutesBefore(1) }),
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
+  it('AG-183 only in the waiting room, and only for an emergency', () => {
+    expect(needsInPersonNotice(flagged({ status: 'IN_PROGRESS' }), NOW)).toBe(
+      false,
+    );
+    expect(
+      needsInPersonNotice(flagged({ emergencyFlaggedAt: null }), NOW),
+    ).toBe(false);
+  });
+});
+
+/** AG-184 (D-176 §3c). The note only on today's open appointments. */
+describe('AG-184 la nota del tablero sólo hoy y en citas abiertas', () => {
+  it("AG-184 is writable on today's open appointment and not on yesterday's", () => {
+    const today = {
+      kind: 'APPOINTMENT' as const,
+      status: 'CHECKED_IN' as const,
+      startsAt: NOW,
+    };
+    expect(boardNoteEditable(today, NOW)).toBe(true);
+    expect(
+      boardNoteEditable(
+        { ...today, startsAt: new Date(NOW.getTime() - 24 * 60 * 60_000) },
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
+  it('AG-184 is not writable once the appointment is closed, nor on a block', () => {
+    for (const status of [
+      'FULFILLED',
+      'CANCELLED',
+      'NO_SHOW',
+      'LEFT_WITHOUT_BEING_SEEN',
+      'ENTERED_IN_ERROR',
+    ] as const) {
+      expect(
+        boardNoteEditable({ kind: 'APPOINTMENT', status, startsAt: NOW }, NOW),
+      ).toBe(false);
+    }
+    for (const status of ['BOOKED', 'CONFIRMED', 'IN_PROGRESS'] as const) {
+      expect(
+        boardNoteEditable({ kind: 'APPOINTMENT', status, startsAt: NOW }, NOW),
+      ).toBe(true);
+    }
+    expect(
+      boardNoteEditable(
+        { kind: 'BLOCK', status: 'BLOCKED', startsAt: NOW },
+        NOW,
+      ),
+    ).toBe(false);
   });
 });
