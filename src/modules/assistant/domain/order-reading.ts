@@ -196,3 +196,20 @@ export interface OrderProposal {
   /** AS-029. Written by the fake of the demonstration mode, not by a model. */
   demo: boolean;
 }
+
+/**
+ * AS-106. Whether the sentence of a proposal is still said: in the note as
+ * it is now, or in the conversation. The rule of AS-103, at showing time.
+ */
+export function stillSaid(
+  quote: string,
+  sections: readonly { key: string; text: string }[],
+  transcript: readonly SpokenSegment[],
+): boolean {
+  const spoken = transcript.map((each) => each.text.trim()).join(' ');
+  const talk = spoken === '' ? [] : [{ key: 'transcript', text: spoken }];
+  return (
+    locateQuote(quote, sections, NOT_ASKED) !== null ||
+    locateQuote(quote, talk, NOT_ASKED) !== null
+  );
+}

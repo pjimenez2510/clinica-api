@@ -1162,8 +1162,17 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   DEBERÁ rechazarlo con `SUGGESTION_ORDER_MISMATCH` (422) sin enlazar ninguna;
   una propuesta o una línea repetida en la misma petición, con
   `SUGGESTION_INVALID`; una ya decidida, con `SUGGESTION_ALREADY_DECIDED`.
+  La base DEBERÁ guardar el código del examen aceptado (`accepted_code`)
+  exactamente en una propuesta de examen aceptada
+  (`ai_suggestion_accepted_code_of_an_accepted_exam`) y NO DEBERÁ admitir dos
+  propuestas aceptadas con el mismo examen en la misma orden
+  (`ai_suggestion_one_per_ordered_exam`).
   > Todo se comprueba antes de escribir nada. Si el enlace falla, la orden
-  > queda guardada (fue el acto del médico) y la tarjeta lo dice.
+  > queda guardada (fue el acto del médico) y la tarjeta lo dice. Cualquier
+  > candidato es «tal cual»: sin `accepted_code` nada diría qué línea es obra
+  > de la propuesta, y dos líneas de una misma frase («biometría y glucosa»)
+  > con candidatos en común contarían la misma línea dos veces (migración
+  > `20261025001400`).
 - **AS-110** — CUANDO el profesional descarte una propuesta, el sistema DEBERÁ
   dejarla «descartada» con quién y cuándo, y NO DEBERÁ volver a mostrarla.
 - **AS-111** — Proponer, enlazar y descartar DEBERÁN exigir lo de AS-039: el
@@ -1276,6 +1285,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-080 a AS-082 | Componente de la pestaña y recorrido F-05 |
 | AS-103 a AS-108, AS-110, AS-112, AS-113 | Unitario con seudonimizador, proveedor y catálogo falsos |
 | AS-104, AS-106, AS-107, AS-109 a AS-111 | Integración HTTP contra PostgreSQL, con control positivo |
+| AS-109 (la base) | Integración contra PostgreSQL, con control positivo |
 | AS-114 | Arnés (`eval/`), fuera del verify |
 | AS-115 a AS-117 | Componente de la pestaña y recorrido F-05 |
 

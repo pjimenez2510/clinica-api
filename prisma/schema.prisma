@@ -6275,6 +6275,10 @@ model AiSuggestion {
   prescription         Prescription? @relation(fields: [prescriptionId], references: [id], onDelete: Restrict)
   serviceOrderId       String?       @map("service_order_id") @db.Uuid
   serviceOrder         ServiceOrder? @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  /// AS-109. The service code an accepted exam was chosen as: exactly on an
+  /// accepted `order-item` (`ai_suggestion_accepted_code_of_an_accepted_exam`),
+  /// and one proposal per exam of an order (`ai_suggestion_one_per_ordered_exam`).
+  acceptedCode         String?       @map("accepted_code") @db.VarChar(32)
 
   /// The application's clock, never `now()`.
   proposedAt DateTime  @map("proposed_at") @db.Timestamptz(6)

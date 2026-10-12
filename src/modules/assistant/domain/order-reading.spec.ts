@@ -173,8 +173,8 @@ describe('the distance of an accepted exam (AS-109, AS-022)', () => {
     decidedAt: null,
   };
 
-  it('AS-109 choosing any of the candidates is «tal cual» (0); an exam that was not proposed is «con cambios» (1)', () => {
-    expect(decisionOf(suggestion, { outcome: 'accept', recordId: 'o1', saved: 'LAB-GLUCOSA-AYUNAS' })).toEqual({ status: 'ACCEPTED', distance: 0, record: { kind: 'service_order', id: 'o1' } }); // prettier-ignore
+  it('AS-109 choosing any of the candidates is «tal cual» (0) and keeps which one; an exam that was not proposed is «con cambios» (1)', () => {
+    expect(decisionOf(suggestion, { outcome: 'accept', recordId: 'o1', saved: 'LAB-GLUCOSA-AYUNAS' })).toEqual({ status: 'ACCEPTED', distance: 0, record: { kind: 'service_order', id: 'o1' }, acceptedCode: 'LAB-GLUCOSA-AYUNAS' }); // prettier-ignore
     expect(decisionOf(suggestion, { outcome: 'accept', recordId: 'o1', saved: 'LAB-EMO' }).distance).toBe(1); // prettier-ignore
   });
 });

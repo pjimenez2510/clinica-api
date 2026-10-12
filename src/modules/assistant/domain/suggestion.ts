@@ -96,6 +96,8 @@ export interface SuggestionView {
   status: SuggestionStatus;
   distance: number | null;
   record: SuggestionRecord | null;
+  /** AS-109. The exam an accepted `order-item` was chosen as. */
+  acceptedCode?: string | null;
   proposedAt: Date;
   decidedBy: string | null;
   decidedAt: Date | null;
@@ -115,6 +117,11 @@ export interface SuggestionDecision {
   status: Exclude<SuggestionStatus, 'PROPOSED'>;
   distance: number | null;
   record: SuggestionRecord | null;
+  /**
+   * AS-109. Which candidate an exam was accepted as: any of them is «tal
+   * cual», so only this says which line of the order is the proposal's.
+   */
+  acceptedCode?: string;
 }
 
 const RECORD_OF: Readonly<Record<SuggestionKind, SuggestionRecord['kind']>> = {
@@ -144,6 +151,9 @@ export function decisionOf(
     status: distance === 0 ? 'ACCEPTED' : 'ACCEPTED_WITH_CHANGES',
     distance,
     record: { kind: RECORD_OF[suggestion.kind], id: verdict.recordId },
+    ...(suggestion.kind === 'order-item'
+      ? { acceptedCode: verdict.saved.trim() }
+      : {}),
   };
 }
 
