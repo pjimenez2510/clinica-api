@@ -247,7 +247,8 @@ model User {
   paymentsReversed Payment[]     @relation("PaymentReverser")
   cashSessions     CashSession[] @relation("CashSessionOwner")
 
-  aiSuggestionsDecided AiSuggestion[] @relation("AiSuggestionDecidedBy")
+  aiSuggestionsDecided AiSuggestion[]     @relation("AiSuggestionDecidedBy")
+  listeningsStarted    ListeningSession[]
 
   @@index([email])
   @@map("app_user")
@@ -2829,6 +2830,8 @@ model Encounter {
   /// AS-011. The calls to a language model made for this encounter.
   aiRuns              AiRun[]
   aiSuggestions       AiSuggestion[]
+  listeningSession    ListeningSession?
+  transcriptSegments  TranscriptSegment[]
 
   /// `encounter_still_open_by_practitioner` is NOT here and cannot be: it is
   /// PARTIAL (`WHERE status IN ('OPEN','ON_HOLD')`), which is what keeps it
@@ -6282,4 +6285,40 @@ model AiSuggestion {
   @@index([encounterId])
   @@index([aiRunId])
   @@map("ai_suggestion")
+}
+
+/// C1. The listening of a consultation: its clock and state, one per
+/// attention (AS-049). The audio is stored nowhere (AS-053).
+model ListeningSession {
+  encounterId String    @id @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  /// `LISTENING`, `PAUSED`, `STOPPED`.
+  state       String    @db.VarChar(16)
+  offsetMs    Int       @default(0) @map("offset_ms")
+  /// A code (`device-lost`, `recognizer-failed`, `store-failed`), only when paused by the system.
+  reason      String?   @db.VarChar(32)
+  device      String    @db.VarChar(80)
+  startedBy   String    @map("started_by") @db.Uuid
+  starter     User      @relation(fields: [startedBy], references: [id], onDelete: Restrict)
+  /// The application's clock, never `now()`.
+  startedAt   DateTime  @map("started_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @map("updated_at") @db.Timestamptz(6)
+
+  @@map("listening_session")
+}
+
+/// C1. What the recogniser confirmed, once per start (AS-052), purged 45 days
+/// after the note is signed (AS-057).
+model TranscriptSegment {
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  encounterId String    @map("encounter_id") @db.Uuid
+  encounter   Encounter @relation(fields: [encounterId], references: [id], onDelete: Restrict)
+  startMs     Int       @map("start_ms")
+  endMs       Int       @map("end_ms")
+  text        String
+  createdAt   DateTime  @map("created_at") @db.Timestamptz(6)
+
+  @@unique([encounterId, startMs], map: "transcript_segment_once")
+  @@index([createdAt])
+  @@map("transcript_segment")
 }
