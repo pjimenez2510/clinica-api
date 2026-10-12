@@ -82,10 +82,24 @@ export const prescriptionNoteCaseSchema = z.object({
   ),
 });
 
+/**
+ * AS-114 (D3). The Plan of an invented note —and, in some, what was said
+ * aloud— and the exams «Proponer exámenes» must offer, by their code in the
+ * invented catalogue (`catalogo-examenes.json`). Distractors expect nothing.
+ */
+export const examNoteCaseSchema = z.object({
+  id: z.string().min(1),
+  origin: invented,
+  plan: z.string().min(1),
+  conversation: z.array(z.string().min(1)).optional(),
+  expected: z.array(z.string().min(1)),
+});
+
 const SCHEMAS = {
   cie10: cie10CaseSchema,
   prescription: prescriptionCaseSchema,
   prescriptionNote: prescriptionNoteCaseSchema,
+  examNote: examNoteCaseSchema,
   note: noteCaseSchema,
 } as const;
 type Kind = keyof typeof SCHEMAS;
@@ -94,6 +108,7 @@ export type Cie10Case = z.infer<typeof cie10CaseSchema>;
 export type PrescriptionCase = z.infer<typeof prescriptionCaseSchema>;
 export type NoteCase = z.infer<typeof noteCaseSchema>;
 export type PrescriptionNoteCase = z.infer<typeof prescriptionNoteCaseSchema>;
+export type ExamNoteCase = z.infer<typeof examNoteCaseSchema>;
 
 export interface CaseSet<Case> {
   file: string;
@@ -140,7 +155,38 @@ export function loadInventedCases(dir = CASES_DIR) {
       join(dir, 'receta-notas.json'),
       'prescriptionNote',
     ),
+    examNote: loadCaseFile(join(dir, 'examenes-notas.json'), 'examNote'),
     note: loadCaseFile(join(dir, 'nota.json'), 'note'),
+  };
+}
+
+const examCatalogueSchema = z.object({
+  exams: z
+    .array(
+      z.object({
+        code: z.string().min(1),
+        name: z.string().min(1),
+        category: z.enum(['LABORATORY', 'IMAGING']),
+      }),
+    )
+    .min(1),
+});
+
+/**
+ * AS-114 (D3). The invented catalogue of a clinic the exams are offered
+ * from, with its version (EV-7): no row of any database.
+ */
+export function loadExamCatalogue(dir = CASES_DIR) {
+  const file = join(dir, 'catalogo-examenes.json');
+  const content = readFileSync(file, 'utf8');
+  const { exams } = examCatalogueSchema.parse(JSON.parse(content));
+  if (new Set(exams.map((each) => each.code)).size !== exams.length) {
+    throw new Error(`Exámenes con código repetido en ${file}`);
+  }
+  return {
+    file,
+    sha256: sha256(content),
+    exams: exams.map((exam) => ({ serviceId: exam.code, ...exam })),
   };
 }
 

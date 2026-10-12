@@ -1,0 +1,395 @@
+{
+  "description": "Notas de consulta inventadas para medir «Proponer exámenes» (D3, AS-114): la sección Plan (y, en algunas, lo dicho en la consulta) con los exámenes pedidos, y los códigos que la propuesta debe ofrecer contra `catalogo-examenes.json`. Incluye distractores: resultados que el paciente trae, exámenes previos, «no requiere», lo que se pedirá en otro control y exámenes que el catálogo no tiene (resonancia, electrocardiograma). Ningún paciente; debe confirmarlas un médico antes de decidir con ellas.",
+  "cases": [
+    {
+      "id": "examenes-nota-01",
+      "origin": "invented",
+      "plan": "Se solicita biometría hemática y glucosa en ayunas.",
+      "expected": [
+        "LAB-BH",
+        "LAB-GLUCOSA-AYUNAS"
+      ]
+    },
+    {
+      "id": "examenes-nota-02",
+      "origin": "invented",
+      "plan": "Pido BH, EMO y urocultivo.",
+      "expected": [
+        "LAB-BH",
+        "LAB-EMO",
+        "LAB-UROCULTIVO"
+      ]
+    },
+    {
+      "id": "examenes-nota-03",
+      "origin": "invented",
+      "plan": "Radiografía de tórax PA y lateral.",
+      "expected": [
+        "IMG-RX-TORAX"
+      ]
+    },
+    {
+      "id": "examenes-nota-04",
+      "origin": "invented",
+      "plan": "Eco abdominal para valorar vesícula.",
+      "expected": [
+        "IMG-ECO-ABDOMINAL"
+      ]
+    },
+    {
+      "id": "examenes-nota-05",
+      "origin": "invented",
+      "plan": "Hemograma completo y PCR.",
+      "expected": [
+        "LAB-BH",
+        "LAB-PCR"
+      ]
+    },
+    {
+      "id": "examenes-nota-06",
+      "origin": "invented",
+      "plan": "Solicito perfil lipídico, glucosa en ayunas y hemoglobina glicosilada.",
+      "expected": [
+        "LAB-PERFIL-LIP",
+        "LAB-GLUCOSA-AYUNAS",
+        "LAB-HBA1C"
+      ]
+    },
+    {
+      "id": "examenes-nota-07",
+      "origin": "invented",
+      "plan": "Control de función tiroidea: TSH y T4 libre.",
+      "expected": [
+        "LAB-TSH",
+        "LAB-T4L"
+      ]
+    },
+    {
+      "id": "examenes-nota-08",
+      "origin": "invented",
+      "plan": "Ecografía obstétrica y grupo sanguíneo con factor Rh.",
+      "expected": [
+        "IMG-ECO-OBST",
+        "LAB-GRUPO"
+      ]
+    },
+    {
+      "id": "examenes-nota-09",
+      "origin": "invented",
+      "plan": "Se piden VIH, VDRL y hepatitis B como parte del control prenatal.",
+      "expected": [
+        "LAB-VIH",
+        "LAB-VDRL",
+        "LAB-HBSAG"
+      ]
+    },
+    {
+      "id": "examenes-nota-10",
+      "origin": "invented",
+      "plan": "Rx de columna lumbosacra.",
+      "expected": [
+        "IMG-RX-COLUMNA-LUMBAR"
+      ]
+    },
+    {
+      "id": "examenes-nota-11",
+      "origin": "invented",
+      "plan": "Trae biometría hemática de hace una semana: normal. Se solicita EMO.",
+      "expected": [
+        "LAB-EMO"
+      ]
+    },
+    {
+      "id": "examenes-nota-12",
+      "origin": "invented",
+      "plan": "Resultados de glucosa en ayunas de 126 mg/dL. Se pide hemoglobina glicosilada.",
+      "expected": [
+        "LAB-HBA1C"
+      ]
+    },
+    {
+      "id": "examenes-nota-13",
+      "origin": "invented",
+      "plan": "Ecografía abdominal previa sin hallazgos. No requiere nuevos exámenes.",
+      "expected": []
+    },
+    {
+      "id": "examenes-nota-14",
+      "origin": "invented",
+      "plan": "Paciente ya tiene radiografía de tórax de ayer, normal. Continuar tratamiento.",
+      "expected": []
+    },
+    {
+      "id": "examenes-nota-15",
+      "origin": "invented",
+      "plan": "Se solicita coproparasitario y sangre oculta en heces.",
+      "expected": [
+        "LAB-COPRO",
+        "LAB-SANGRE-OCULTA"
+      ]
+    },
+    {
+      "id": "examenes-nota-16",
+      "origin": "invented",
+      "plan": "Antígeno de Helicobacter pylori en heces.",
+      "expected": [
+        "LAB-H-PYLORI"
+      ]
+    },
+    {
+      "id": "examenes-nota-17",
+      "origin": "invented",
+      "plan": "Pido creatinina, urea y microalbuminuria por su diabetes.",
+      "expected": [
+        "LAB-CREAT",
+        "LAB-UREA",
+        "LAB-MICROALB"
+      ]
+    },
+    {
+      "id": "examenes-nota-18",
+      "origin": "invented",
+      "plan": "Transaminasas y bilirrubinas.",
+      "expected": [
+        "LAB-TGO-TGP",
+        "LAB-BILIRR"
+      ]
+    },
+    {
+      "id": "examenes-nota-19",
+      "origin": "invented",
+      "plan": "Amilasa y lipasa urgentes por dolor epigástrico.",
+      "expected": [
+        "LAB-AMILASA",
+        "LAB-LIPASA"
+      ]
+    },
+    {
+      "id": "examenes-nota-20",
+      "origin": "invented",
+      "plan": "Se solicita ecografía de tiroides.",
+      "expected": [
+        "IMG-ECO-TIROIDES"
+      ]
+    },
+    {
+      "id": "examenes-nota-21",
+      "origin": "invented",
+      "plan": "Mamografía bilateral de tamizaje.",
+      "expected": [
+        "IMG-MAMOGRAFIA"
+      ]
+    },
+    {
+      "id": "examenes-nota-22",
+      "origin": "invented",
+      "plan": "PSA total.",
+      "expected": [
+        "LAB-PSA"
+      ]
+    },
+    {
+      "id": "examenes-nota-23",
+      "origin": "invented",
+      "plan": "Ecografía prostática y PSA.",
+      "expected": [
+        "IMG-ECO-PROSTATA",
+        "LAB-PSA"
+      ]
+    },
+    {
+      "id": "examenes-nota-24",
+      "origin": "invented",
+      "plan": "Beta HCG cuantitativa por retraso menstrual.",
+      "expected": [
+        "LAB-BHCG"
+      ]
+    },
+    {
+      "id": "examenes-nota-25",
+      "origin": "invented",
+      "plan": "Ecografía transvaginal.",
+      "expected": [
+        "IMG-ECO-TRANSV"
+      ]
+    },
+    {
+      "id": "examenes-nota-26",
+      "origin": "invented",
+      "plan": "Dengue NS1 e IgM, y biometría hemática con plaquetas.",
+      "expected": [
+        "LAB-DENGUE",
+        "LAB-BH"
+      ]
+    },
+    {
+      "id": "examenes-nota-27",
+      "origin": "invented",
+      "plan": "Gota gruesa por fiebre tras viaje a la Amazonía.",
+      "expected": [
+        "LAB-GOTA-GRUESA"
+      ]
+    },
+    {
+      "id": "examenes-nota-28",
+      "origin": "invented",
+      "plan": "Baciloscopía de esputo seriada.",
+      "expected": [
+        "LAB-BACILOSCOPIA"
+      ]
+    },
+    {
+      "id": "examenes-nota-29",
+      "origin": "invented",
+      "plan": "Cultivo de secreción faríngea y ASTO.",
+      "expected": [
+        "LAB-CULTIVO-FARINGEO",
+        "LAB-ASTO"
+      ]
+    },
+    {
+      "id": "examenes-nota-30",
+      "origin": "invented",
+      "plan": "Ferritina, hierro sérico y vitamina B12 por anemia.",
+      "expected": [
+        "LAB-FERRITINA",
+        "LAB-HIERRO",
+        "LAB-B12"
+      ]
+    },
+    {
+      "id": "examenes-nota-31",
+      "origin": "invented",
+      "plan": "Radiografía de rodilla derecha AP y lateral.",
+      "expected": [
+        "IMG-RX-RODILLA"
+      ]
+    },
+    {
+      "id": "examenes-nota-32",
+      "origin": "invented",
+      "plan": "Eco Doppler venoso de miembro inferior izquierdo.",
+      "expected": [
+        "IMG-DOPPLER-MMII"
+      ]
+    },
+    {
+      "id": "examenes-nota-33",
+      "origin": "invented",
+      "plan": "Tomografía simple de cráneo por cefalea con signos de alarma.",
+      "expected": [
+        "IMG-TAC-CRANEO"
+      ]
+    },
+    {
+      "id": "examenes-nota-34",
+      "origin": "invented",
+      "plan": "Resonancia magnética de rodilla y electrocardiograma.",
+      "expected": []
+    },
+    {
+      "id": "examenes-nota-35",
+      "origin": "invented",
+      "plan": "En el próximo control se pedirá perfil lipídico. Por ahora, dieta.",
+      "expected": []
+    },
+    {
+      "id": "examenes-nota-36",
+      "origin": "invented",
+      "plan": "Electrolitos y calcio sérico.",
+      "expected": [
+        "LAB-ELECTROLITOS",
+        "LAB-CALCIO"
+      ]
+    },
+    {
+      "id": "examenes-nota-37",
+      "origin": "invented",
+      "plan": "Ácido úrico y factor reumatoideo.",
+      "expected": [
+        "LAB-AC-URICO",
+        "LAB-FR"
+      ]
+    },
+    {
+      "id": "examenes-nota-38",
+      "origin": "invented",
+      "plan": "Tiempos de coagulación antes del procedimiento.",
+      "expected": [
+        "LAB-TP-TTP"
+      ]
+    },
+    {
+      "id": "examenes-nota-39",
+      "origin": "invented",
+      "plan": "Control en un mes con resultados.",
+      "expected": [
+        "LAB-BH"
+      ],
+      "conversation": [
+        "Doctor, ¿me va a mandar exámenes?",
+        "Sí, le voy a pedir una biometría hemática para controlar la anemia."
+      ]
+    },
+    {
+      "id": "examenes-nota-40",
+      "origin": "invented",
+      "plan": "Se explican signos de alarma.",
+      "expected": [
+        "IMG-ECO-RENAL"
+      ],
+      "conversation": [
+        "Por el dolor en el costado le pido una ecografía renal.",
+        "Y tome bastante agua."
+      ]
+    },
+    {
+      "id": "examenes-nota-41",
+      "origin": "invented",
+      "plan": "Reposo relativo.",
+      "expected": [
+        "IMG-RX-TOBILLO"
+      ],
+      "conversation": [
+        "Vamos a sacar una radiografía del tobillo para descartar fractura."
+      ]
+    },
+    {
+      "id": "examenes-nota-42",
+      "origin": "invented",
+      "plan": "Plan acordado con la paciente.",
+      "expected": [
+        "IMG-ECO-MAMARIA"
+      ],
+      "conversation": [
+        "El nódulo hay que verlo con una ecografía de mama.",
+        "La mamografía del año pasado salió normal."
+      ]
+    },
+    {
+      "id": "examenes-nota-43",
+      "origin": "invented",
+      "plan": "Vitamina D y calcio.",
+      "expected": [
+        "LAB-VITD",
+        "LAB-CALCIO"
+      ]
+    },
+    {
+      "id": "examenes-nota-44",
+      "origin": "invented",
+      "plan": "Rx de senos paranasales. Trae VSG previa elevada.",
+      "expected": [
+        "IMG-RX-SENOS"
+      ]
+    },
+    {
+      "id": "examenes-nota-45",
+      "origin": "invented",
+      "plan": "Curva de tolerancia a la glucosa en la semana 24.",
+      "expected": [
+        "LAB-CTOG"
+      ]
+    }
+  ]
+}
