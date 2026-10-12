@@ -167,7 +167,7 @@ describe('la receta propuesta por HTTP (AS-063 a AS-077)', () => {
         systemId: dpa.id,
         code: '1701',
         display: 'Quito',
-        validFrom: new Date('2010-01-01'),
+        validFrom: new Date('2010-01-01'), // fecha-fija: vigente desde siempre
       }, // fecha-fija: vigente desde siempre
     });
     const parish = await prisma.catalogConcept.create({
@@ -176,7 +176,7 @@ describe('la receta propuesta por HTTP (AS-063 a AS-077)', () => {
         code: '170150',
         display: 'Iñaquito',
         parentId: canton.id,
-        validFrom: new Date('2010-01-01'),
+        validFrom: new Date('2010-01-01'), // fecha-fija: vigente desde siempre
       }, // fecha-fija: vigente desde siempre
     });
     const site = await createSite(prisma);
