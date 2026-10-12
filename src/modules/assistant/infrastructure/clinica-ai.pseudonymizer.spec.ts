@@ -262,6 +262,115 @@ describe('ClinicaAiPseudonymizer, after the review', () => {
   });
 });
 
+describe('ClinicaAiPseudonymizer, second review', () => {
+  it('AS-030 does not refuse a month the date shift wrote, nor a connector of a name', async () => {
+    const cases: [string[], string][] = [
+      [
+        ['Julio Quishpe'],
+        '[NOMBRE_1] [NOMBRE_2] control el 17 de julio de 2025',
+      ],
+      [['Ana dos Santos'], '[NOMBRE_1] dos [NOMBRE_2] toma dos tabletas'],
+      [['Mayo Van Berg'], '[NOMBRE_1] van [NOMBRE_2] desde mayo de 2026'],
+    ];
+
+    for (const [names, text] of cases) {
+      const result = await adapter(
+        answering(200, { ...ANSWER, text }),
+      ).pseudonymize({
+        ...INPUT,
+        names,
+      });
+
+      expect(result.cleared).toBe(text);
+    }
+  });
+
+  it('AS-030 sees each half of a hyphenated surname', async () => {
+    const error = await failure(
+      adapter(
+        answering(200, { ...ANSWER, text: 'Paciente Toapanta refiere' }),
+      ).pseudonymize({ ...INPUT, names: ['Pérez-Toapanta'] }),
+    );
+
+    expect((error as PseudonymizerFailedError).outcome).toBe('invalid-answer');
+  });
+});
+
+describe('ClinicaAiPseudonymizer, third review', () => {
+  it('AS-030 refuses a patient called Julio left as a person, and forgives only the month of a date', async () => {
+    for (const text of [
+      'Paciente Julio [NOMBRE_1] acude',
+      'Paciente Ju\u034Flio [NOMBRE_1] acude',
+      'Paciente Ju\u200Blio [NOMBRE_1] acude',
+    ]) {
+      const error = await failure(
+        adapter(answering(200, { ...ANSWER, text })).pseudonymize({
+          ...INPUT,
+          names: ['Julio Quishpe'],
+        }),
+      );
+
+      expect((error as PseudonymizerFailedError).outcome).toBe(
+        'invalid-answer',
+      );
+    }
+
+    const dated =
+      '[NOMBRE_1] [NOMBRE_2] control el 17 de julio de 2025 y en julio de 2026';
+    const result = await adapter(
+      answering(200, { ...ANSWER, text: dated }),
+    ).pseudonymize({
+      ...INPUT,
+      names: ['Julio Quishpe'],
+    });
+    expect(result.cleared).toBe(dated);
+  });
+});
+
+describe('ClinicaAiPseudonymizer, fourth review', () => {
+  it('AS-030 refuses an answer that still carries an id, a telephone or an email', async () => {
+    for (const text of [
+      'Paciente [NOMBRE_1], cédula 1714567893, refiere',
+      'Paciente [NOMBRE_1], RUC 1714567893001',
+      'Llamar al 0987654321',
+      'Escribir a alguien@ejemplo.test',
+    ]) {
+      const error = await failure(
+        adapter(answering(200, { ...ANSWER, text })).pseudonymize(INPUT),
+      );
+
+      expect((error as PseudonymizerFailedError).outcome).toBe(
+        'invalid-answer',
+      );
+    }
+  });
+
+  it('AS-030 lets the numbers of a consultation through', async () => {
+    const text =
+      'Plaquetas 250000, leucocitos 12500, TA 120/80, [TELEFONO_1], [ID_1]';
+
+    const result = await adapter(
+      answering(200, { ...ANSWER, text }),
+    ).pseudonymize(INPUT);
+
+    expect(result.cleared).toBe(text);
+  });
+});
+
+describe('ClinicaAiPseudonymizer, fifth review', () => {
+  it('AS-030 checks a long answer in linear time', async () => {
+    const text = 'a'.repeat(200_000);
+    const started = performance.now();
+
+    const result = await adapter(
+      answering(200, { ...ANSWER, text }),
+    ).pseudonymize(INPUT);
+
+    expect(result.cleared).toBe(text);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+});
+
 describe('pseudonymizerFor', () => {
   it('AS-031 without a secret it is the missing one, which refuses before any request', async () => {
     const fetcher = vi.fn();
