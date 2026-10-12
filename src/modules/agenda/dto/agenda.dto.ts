@@ -544,6 +544,11 @@ export const agendaEntrySchema = z.object({
   lateAdmission: z
     .object({ byName: z.string(), at: z.iso.datetime() })
     .nullable(),
+  /**
+   * AG-173 (D-170 §5). Cuándo una llegada en emergencia la trajo de otro día
+   * a hoy; sin calendario por eso y no por sobrecupo. `null` si no.
+   */
+  emergencyMovedAt: z.iso.datetime().nullable(),
   /** AG-129, AG-175. A quién avisó la calificación de emergencia, y si lo vio. */
   emergencyAlerts: z.array(
     z.object({

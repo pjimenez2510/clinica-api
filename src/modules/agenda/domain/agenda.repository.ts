@@ -177,6 +177,12 @@ export interface AgendaEntryView {
    */
   lateAdmission: { byName: string; at: Date } | null;
   /**
+   * AG-173 (D-170 §5). When an emergency arrival moved it from another day
+   * to today; `null` otherwise. Off the calendar for that reason, NOT an
+   * overbooking.
+   */
+  emergencyMovedAt: Date | null;
+  /**
    * AG-129. Whom its emergency call notified, and whether they saw it,
    * oldest first. Empty when the call was «no».
    */
@@ -418,6 +424,8 @@ export interface TransitionRead {
   kind: AgendaEntryKind;
   status: AgendaEntryStatus;
   startsAt: Date;
+  /** AG-173. The length an emergency moved to today keeps. */
+  endsAt: Date;
   releasedAt: Date | null;
   /** AG-163. When the no-show was marked, to judge «el mismo día». */
   noShowAt: Date | null;
@@ -544,6 +552,19 @@ export interface TransitionEffects {
    */
   lateAdmissionById?: string;
   lateAdmissionAt?: Date;
+  /**
+   * AG-173 enmendado (D-170 §5). The emergency that moves another day's
+   * appointment to today: the new interval, off the calendar, with no
+   * overbooking, its instant and the edit stamp that archives the version.
+   */
+  startsAt?: Date;
+  endsAt?: Date;
+  blocksCalendar?: boolean;
+  overbookingAuthorisedById?: null;
+  overbookingReason?: null;
+  emergencyMovedAt?: Date;
+  editedById?: string;
+  editedAt?: Date;
 }
 
 /**
@@ -566,8 +587,9 @@ export interface StatusChange {
 
 /**
  * AG-129. A notice of an emergency arrival, raised in the transaction of the
- * call. Whom it reaches is the adapter's to resolve (D-170.1: until the
- * clinic decides, the practitioner of the appointment), one row each.
+ * call. Whom it reaches is the adapter's to resolve (D-170 §1: the
+ * practitioner of the appointment and everyone with a schedule at the site at
+ * `at`), one row each.
  */
 export interface EmergencyAlertRaise {
   raisedById: string;

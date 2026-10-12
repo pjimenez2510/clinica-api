@@ -17,11 +17,17 @@ export class PrismaEmergencyAlertRepository implements EmergencyAlertRepository 
    * otherwise never see the emergency that was sent to them.
    */
   async pendingFor(recipientId: string): Promise<PendingEmergencyAlert[]> {
-    // `agenda_emergency_alert_pending_by_recipient` is exactly this predicate.
+    // `agenda_emergency_alert_pending_by_recipient` narrows to these rows;
+    // the status of the appointment is read through the join.
     const rows = await this.prisma.agendaEmergencyAlert.findMany({
       where: {
         recipientId,
         acknowledgedAt: null,
+        // AG-175 enmendado (D-170 §6): only while the patient is still in the
+        // waiting room or with a professional. A notice that asks for nothing
+        // any more and does not go away teaches people to ignore the banner;
+        // the detail of the appointment keeps saying whom it reached.
+        agendaEntry: { status: { in: ['CHECKED_IN', 'IN_PROGRESS'] } },
       },
       orderBy: { alertedAt: 'asc' },
       select: {

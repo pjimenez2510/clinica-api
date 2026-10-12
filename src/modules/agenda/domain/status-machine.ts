@@ -243,6 +243,42 @@ export function assertArrivalOnAppointmentDay(startsAt: Date, now: Date): void {
 }
 
 /**
+ * AG-173 enmendado (D-170 §5). Where an arrival lands when the appointment is
+ * of another clinical day: refused when ordinary, MOVED TO TODAY when called
+ * an emergency — the same row, starting on the minute of the arrival, with its
+ * length, off the calendar and with no overbooking to authorise. `null` when
+ * the appointment is already today's and nothing moves.
+ *
+ * OFF THE CALENDAR because the patient is received now whoever the doctor is
+ * with (Ley 77, art. 8), and the `EXCLUDE` would refuse it exactly then. The
+ * authoriser is cleared because an overbooking moved this way is no longer
+ * one (`agenda_entry_overbooking_coherence`). The edit stamp is what makes
+ * `trg_agenda_entry_record_version` keep the row as it was (AG-051).
+ */
+export function planArrivalDay(
+  read: { startsAt: Date; endsAt: Date },
+  now: Date,
+  emergency: boolean,
+  movedById: string,
+): TransitionEffects | null {
+  if (clinicalDateOf(read.startsAt) === clinicalDateOf(now)) return null;
+  if (!emergency) throw new ArrivalNotOnAppointmentDayError();
+  const startsAt = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
+  return {
+    startsAt,
+    endsAt: new Date(
+      startsAt.getTime() + (read.endsAt.getTime() - read.startsAt.getTime()),
+    ),
+    blocksCalendar: false,
+    overbookingAuthorisedById: null,
+    overbookingReason: null,
+    emergencyMovedAt: now,
+    editedById: movedById,
+    editedAt: now,
+  };
+}
+
+/**
  * AG-041, AG-042, AG-044, AG-116, AG-117, AG-127. What each arrival stamps,
  * all at the same instant.
  *

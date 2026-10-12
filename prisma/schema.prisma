@@ -2441,6 +2441,11 @@ model AgendaEntry {
   boardNoteById String?   @map("board_note_by_id") @db.Uuid
   boardNoteBy   User?     @relation("BoardNoteWriter", fields: [boardNoteById], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "agenda_entry_board_note_by_fk")
   boardNoteAt   DateTime? @map("board_note_at") @db.Timestamptz(6)
+  /// AG-173 (D-170 §5). When an arrival called an emergency moved this
+  /// appointment from another day to today. The one other reason, besides an
+  /// authorised overbooking, for a row not to occupy the calendar
+  /// (`agenda_entry_overbooking_coherence`). Who moved it is `editedById`.
+  emergencyMovedAt DateTime? @map("emergency_moved_at") @db.Timestamptz(6)
 
   subjectStatusHistory AgendaSubjectStatusHistory[]
   /// AG-129. Whom its emergency call notified.

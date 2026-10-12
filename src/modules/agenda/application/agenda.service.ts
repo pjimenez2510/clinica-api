@@ -35,7 +35,7 @@ import { ConsultationNotFoundError } from '../../../shared/domain/errors/master-
 import { resolveDuration } from '../../../shared/domain/duration-resolution';
 import {
   type AgendaTransitionTarget,
-  assertArrivalOnAppointmentDay,
+  planArrivalDay,
   assertNoShowNotBeforeStart,
   assertTransition,
   effectsOf,
@@ -1430,10 +1430,21 @@ export class AgendaService {
         if (request.to === 'NO_SHOW') {
           assertNoShowNotBeforeStart(read.startsAt, now);
         }
-        // AG-173 (D-153.6): the arrival lands on the appointment's own day.
-        if (request.to === 'CHECKED_IN') {
-          assertArrivalOnAppointmentDay(read.startsAt, now);
-        }
+        /**
+         * AG-173 (D-153.6): the arrival lands on the appointment's own day —
+         * and, called an emergency, moves another day's appointment to
+         * today in this same write (D-170 §5): the arrival, the assessment,
+         * the move, its version and the notice are one transaction.
+         */
+        const emergencyMove =
+          request.to === 'CHECKED_IN'
+            ? planArrivalDay(
+                read,
+                now,
+                request.emergency === true,
+                requester.userId,
+              )
+            : null;
         /**
          * AG-045, AG-148: a documented attention outweighs the agenda. A live
          * attention forbids annulling, the no-show and the retraction; it
@@ -1496,6 +1507,7 @@ export class AgendaService {
             ...(admittedLate && !read.alreadyAdmittedLate
               ? { lateAdmissionById: requester.userId, lateAdmissionAt: now }
               : {}),
+            ...(emergencyMove ?? {}),
           },
           // AG-044: the reason lands on the entry only when it is annulled.
           // AG-117 does NOT borrow this column — see `effectsOf`.
