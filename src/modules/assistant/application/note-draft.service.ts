@@ -28,7 +28,6 @@ import {
   AssistantTranscriptEmptyError,
   SuggestionNotFoundError,
 } from '../domain/assistant.errors';
-import { buildLexicon, type Lexicon } from '../domain/lexicon';
 import {
   type DraftPhrase,
   draftDue,
@@ -40,6 +39,7 @@ import {
 import type { SuggestionStatus, SuggestionView } from '../domain/suggestion';
 
 import { ASSISTANT_DEMO } from './diagnosis-proposal.service';
+import { LexiconCache } from './lexicon-cache';
 import { LISTENING_STORE, type ListeningStore } from './listening.store';
 import { LLM_CLIENT, type LlmClient } from './llm-client.port';
 import {
@@ -63,8 +63,6 @@ export const DRAFT_LIMIT_MS = 60_000;
 export const DRAFTS_AT_ONCE = 4;
 /** AS-093. Times a stretch may be asked for: each one paid a call. */
 export const DRAFT_MAX_ATTEMPTS = 3;
-/** AS-092. The vocabulary is read again after an hour. */
-const VOCABULARY_TTL_MS = 3_600_000;
 
 /** The audit trail's names (EN-122): the transcript sent, the draft read. */
 const EXPORT_RESOURCE = 'assistant_note_draft_reading';
@@ -141,7 +139,7 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
   private readonly inProgress = new Set<Promise<void>>();
   /** AS-087. Asked for while another was in flight: asked again after it. */
   private readonly again = new Map<string, string>();
-  private lexicon: { value: Lexicon | null; readAt: number } | null = null;
+  private readonly lexicon: LexiconCache;
 
   constructor(
     @Inject(CODING_CONTEXT_READER) private readonly context: CodingContextReader, // prettier-ignore
@@ -155,7 +153,9 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
     private readonly events: LiveEventBus,
     @Inject(NOTE_DRAFT_CLOCK) private readonly clock: () => Date,
     @Inject(ASSISTANT_DEMO) private readonly demo: boolean,
-  ) {}
+  ) {
+    this.lexicon = new LexiconCache(notes, clock, this.logger, codeOf);
+  }
 
   /** AS-093. What a previous process left in flight did not finish. */
   async onModuleInit(): Promise<void> {
@@ -393,7 +393,7 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
         {
           pseudonymizer: this.pseudonymizer,
           llm: this.llm,
-          lexicon: await this.vocabulary(),
+          lexicon: await this.lexicon.get(),
         },
         {
           subject: encounter.patientId,
@@ -492,25 +492,6 @@ export class NoteDraftService implements TranscriptObserver, OnModuleInit {
       sections: shown.map((each) => sectionView(views.get(each.section.id)!, each.acceptedBefore)), // prettier-ignore
       demo: this.demo,
     };
-  }
-
-  /** AS-092. The vocabulary, read once an hour; without it nothing is corrected. */
-  private async vocabulary(): Promise<Lexicon | null> {
-    const now = this.clock().getTime();
-    if (this.lexicon && now - this.lexicon.readAt < VOCABULARY_TTL_MS) {
-      return this.lexicon.value;
-    }
-    try {
-      const { principles, protectedWords } = await this.notes.vocabulary();
-      this.lexicon = {
-        value: buildLexicon({ targets: principles, protectedWords }),
-        readAt: now,
-      };
-    } catch (error) {
-      this.logger.warn({ error_code: codeOf(error) }, 'the lexicon could not be read'); // prettier-ignore
-      this.lexicon = { value: null, readAt: now };
-    }
-    return this.lexicon.value;
   }
 
   private async trail(

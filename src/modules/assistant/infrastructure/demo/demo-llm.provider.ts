@@ -6,6 +6,7 @@ import type {
   ProviderAnswer,
 } from '../../application/llm-client.port';
 import { DRAFT_PURPOSE } from '../../application/note-draft.prompts';
+import { QUESTIONS_PURPOSE } from '../../application/note-questions.prompts';
 import { EXAMS_PURPOSE } from '../../application/order-reading.prompts';
 import {
   LINES_PURPOSE,
@@ -99,6 +100,7 @@ export class DemoLlmProvider implements LlmProvider {
     if (purpose === LINES_PURPOSE) return { lines: linesIn(noteOf(prompt)) };
     if (purpose === MAPPING_PURPOSE) return { choices: choicesIn(prompt) };
     if (purpose === EXAMS_PURPOSE) return { exams: examsIn(prompt) };
+    if (purpose === QUESTIONS_PURPOSE) return { questions: questionsOf(prompt) }; // prettier-ignore
     return {};
   }
 }
@@ -151,6 +153,28 @@ function draftOf(prompt: string): DraftAnswer[] {
     sections.get(home)!.push({ text: script.draft.unsaid.text, source: null });
   }
   return [...sections].map(([section, segments]) => ({ section, segments }));
+}
+
+/**
+ * AS-127. The questions of the script: each one whose phrase a line of the
+ * conversation says, with that line's marker, unless what the note has
+ * written already holds one of its answers; and one with a marker it was
+ * never given, so the screen shows the barrier keeps it out.
+ */
+function questionsOf(prompt: string) {
+  const said = [...prompt.matchAll(/^\[(L\d+)\] (.*)$/gm)].map((match) => ({
+    marker: match[1]!,
+    text: match[2]!.toLowerCase(),
+  }));
+  const written = noteOf(prompt).toLowerCase();
+  return (script.questions as { phrase: string | null; text: string; section: string | null; answeredBy: string[] }[]).flatMap( // prettier-ignore
+    ({ phrase, text, section, answeredBy }) => {
+      if (answeredBy.some((words) => written.includes(words))) return [];
+      if (phrase === null) return [{ text, source: 'L99', section }];
+      const line = said.find((each) => each.text.includes(phrase));
+      return line ? [{ text, source: line.marker, section }] : [];
+    },
+  );
 }
 
 /** The note of a prompt: what is between <nota> and </nota>, not the lists after it. */

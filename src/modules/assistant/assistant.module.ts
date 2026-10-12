@@ -52,13 +52,17 @@ import { OrderProposalService } from './application/order-proposal.service';
 import { PrescriptionProposalService } from './application/prescription-proposal.service';
 import { AssistantListeningController } from './assistant-listening.controller';
 import { AssistantNoteDraftController } from './assistant-note-draft.controller';
+import { AssistantNoteQuestionsController } from './assistant-note-questions.controller';
 import {
   NOTE_DRAFT_CLOCK,
   NoteDraftService,
 } from './application/note-draft.service';
 import { NOTE_DRAFT_STORE } from './application/note-draft.store';
+import { NOTE_QUESTION_CHECK_STORE } from './application/note-question-check.store';
+import { NoteQuestionService } from './application/note-question.service';
 import { TRANSCRIPT_OBSERVER } from './application/transcript-observer.port';
 import { PrismaNoteDraftStore } from './infrastructure/prisma-note-draft.store';
+import { PrismaNoteQuestionCheckStore } from './infrastructure/prisma-note-question-check.store';
 import { AssistantSwitchMiddleware } from './assistant-switch.middleware';
 import { ListeningAccess } from './application/listening-access';
 import {
@@ -113,6 +117,7 @@ const PURGE_EVERY_MS = 86_400_000;
     AssistantDiagnosisController,
     AssistantListeningController,
     AssistantNoteDraftController,
+    AssistantNoteQuestionsController,
     AssistantPrescriptionController,
     AssistantOrdersController,
   ],
@@ -188,6 +193,8 @@ const PURGE_EVERY_MS = 86_400_000;
     { provide: NOTE_DRAFT_CLOCK, useValue: () => new Date() },
     NoteDraftService,
     { provide: TRANSCRIPT_OBSERVER, useExisting: NoteDraftService },
+    { provide: NOTE_QUESTION_CHECK_STORE, useClass: PrismaNoteQuestionCheckStore }, // prettier-ignore
+    NoteQuestionService,
   ],
   exports: [LLM_CLIENT, SuggestionService, PSEUDONYMIZER],
 })
@@ -210,6 +217,7 @@ export class AssistantModule
         AssistantDiagnosisController,
         AssistantListeningController,
         AssistantNoteDraftController,
+        AssistantNoteQuestionsController,
         AssistantPrescriptionController,
         AssistantOrdersController,
       );

@@ -26,7 +26,7 @@ export class PrismaNoteDraftContextReader implements NoteDraftContextReader {
     const note = await this.prisma.clinicalNote.findFirst({
       where: { encounterId, formCode: CONSULTATION_FORM, status: 'DRAFT' },
       orderBy: { version: 'desc' },
-      select: { id: true, template: { select: { sections: true } } },
+      select: { id: true, content: true, template: { select: { sections: true } } },
     });
     if (!note) return null;
     // EN-204. The template the note was opened with; the built-in one when
@@ -34,8 +34,16 @@ export class PrismaNoteDraftContextReader implements NoteDraftContextReader {
     const declared =
       (note.template?.sections as Partial<DraftNoteSection>[] | undefined) ??
       FORM_002_BUILT_IN_SECTIONS.map((section) => ({ ...section, kind: 'TEXT' as const })); // prettier-ignore
+    const content = (note.content ?? {}) as Record<string, unknown>;
     return {
       id: note.id,
+      // AS-119. Only text: a list's value, the background snapshot or a
+      // flag are not prose the questions read.
+      written: Object.fromEntries(
+        Object.entries(content).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
+      ),
       sections: declared.map((section) => ({
         key: String(section.key),
         title: String(section.title ?? section.key),
