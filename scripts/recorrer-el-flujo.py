@@ -39,10 +39,13 @@ import urllib.error
 import urllib.request
 
 API=None; TOK=None
-def call(m,p,b=None):
+def call(m,p,b=None,revision=None):
     r=urllib.request.Request(API+p,method=m,data=json.dumps(b).encode() if b is not None else None)
     r.add_header('content-type','application/json')
     if TOK: r.add_header('authorization','Bearer '+TOK)
+    # EN-281, PR-121, ORD-181: escribir, firmar o emitir un borrador dice qué
+    # revisión se leyó; sin ella responde 428.
+    if revision is not None: r.add_header('if-match',f'"{revision}"')
     try:
         with urllib.request.urlopen(r) as x: return x.status, json.loads(x.read() or b'null')
     except urllib.error.HTTPError as e:
@@ -146,7 +149,7 @@ if meds:
     if alerts:
         print(f"   ⚠️ {len(alerts)} aviso(s) de alergia")
     if isinstance(body,dict) and body.get('id'):
-        st,d=call('POST',f"/prescriptions/{body['id']}/issue")
+        st,d=call('POST',f"/prescriptions/{body['id']}/issue",revision=body.get('revision'))
         show("7. emitir la receta",st,d,('status','verificationCode'))
         st,doc=call('GET',f"/prescriptions/{body['id']}")
         if st==200 and isinstance(doc,dict):
@@ -173,9 +176,9 @@ else:
     print("  (sin exámenes o sin tarifario: orden omitida)")
 
 if isinstance(note,dict) and note.get('id'):
-    st,d=call('POST',f"/encounters/{eid}/notes/{note['id']}/sign",{"dischargeCondition":"ALIVE"})
+    st,d=call('POST',f"/encounters/{eid}/notes/{note['id']}/sign",{"dischargeCondition":"ALIVE"},revision=note.get('revision'))
     show("9. firmar la nota (el 002 da el alta)",st,d,('status',))
-    st,d=call('PATCH',f"/encounters/{eid}/notes/{note['id']}",{"content":{"motivoConsulta":"otra cosa"}})
+    st,d=call('PATCH',f"/encounters/{eid}/notes/{note['id']}",{"content":{"motivoConsulta":"otra cosa"}},revision=(d or {}).get('revision') if isinstance(d,dict) else None)
     show("10. editar la nota firmada",st,d,expect_refusal=True)
 
 st,d=call('POST',f"/encounters/{eid}/close",{"dischargeCondition":"ALIVE"})

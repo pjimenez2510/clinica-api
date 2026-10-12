@@ -410,6 +410,35 @@ async function everyVersionedRowOf(
     },
   });
 
+  // AS-024. A proposal of the assistant on the attention, from its attempt.
+  const run = await prisma.aiRun.create({
+    data: {
+      requestId: randomUUID(),
+      attempt: 1,
+      provider: 'gemini',
+      model: 'gemini-test',
+      tier: 'quality',
+      purpose: 'draft',
+      promptVersion: 'v1',
+      outcome: 'ok',
+      worstCaseUsd: 0.01,
+      priceValidFrom: new Date(),
+      latencyMs: 30,
+      startedAt: new Date(),
+      encounterId,
+    },
+  });
+  const suggestion = await prisma.aiSuggestion.create({
+    data: {
+      encounterId,
+      aiRunId: run.id,
+      kind: 'note-section',
+      proposal: { text: 'Cefalea' },
+      sources: [],
+      proposedAt: new Date(),
+    },
+  });
+
   const versioned: Record<string, string> = {
     encounter: encounterId,
     // Vitals are one row per attention, archived by `encounter_id`.
@@ -434,6 +463,7 @@ async function everyVersionedRowOf(
     patient_account: account.id,
     invoice: invoice.id,
     waitlist_contact_attempt: call.id,
+    ai_suggestion: suggestion.id,
     // BI-303, BI-304: reached through what the archived row names.
     credit_note: randomUUID(),
     credit_note_line: randomUUID(),

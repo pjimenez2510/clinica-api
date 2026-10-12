@@ -16,6 +16,7 @@ import { enableBigIntSerialisation } from '../../src/shared/bigint-json';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
+import { withReadRevision } from './setup/read-revision';
 import { createDiagnosis, createPatient, createSite } from './setup/fixtures';
 import { closeApp, listenForTests } from './setup/http-server';
 
@@ -236,7 +237,12 @@ describe('el tamizaje de violencia por HTTP, con sesiones reales (EN-070 a EN-07
     const call = request(app!.getHttpServer())
       [method](`/api/v1${path}`)
       .set('Authorization', `Bearer ${token}`);
-    return body === undefined ? call : call.send(body);
+    // EN-281. A write on a draft carries the revision just read.
+    return withReadRevision(
+      prisma,
+      path,
+      body === undefined ? call : call.send(body),
+    );
   };
 
   async function openEncounter(): Promise<string> {

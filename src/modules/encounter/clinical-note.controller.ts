@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -21,6 +22,7 @@ import type { Request } from 'express';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { ALL_SITES } from '../../shared/authorisation/principal';
 import { RequirePermission } from '../../shared/http/auth.decorators';
+import { ApiIfMatch, revisionFrom } from '../../shared/http/if-match';
 import type { Permission } from '../../shared/authorisation/permission.catalogue';
 
 import { ClinicalNoteService } from './application/clinical-note.service';
@@ -141,15 +143,19 @@ export class ClinicalNoteController {
   @Patch(':noteId')
   @RequirePermission('record:write', 'query')
   @ApiOperation({ summary: 'Editar el borrador de una nota clínica' })
+  @ApiIfMatch()
   @ApiOkResponse({ type: ClinicalNoteDto })
   async update(
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Param('noteId', ParseUUIDPipe) noteId: string,
     @Body() dto: UpdateNoteDto,
+    @Headers('if-match') ifMatch: string | undefined,
     @Req() req: Request,
   ): Promise<ClinicalNoteResponse> {
+    // EN-281. Read before anything else: a write without it is refused whole.
+    const revision = revisionFrom(ifMatch);
     const note = await this.notes.updateDraft(
-      { encounterId, noteId, content: dto.content },
+      { encounterId, noteId, content: dto.content, revision },
       this.requester(req, 'record:write'),
     );
     return toNoteResponse(note);
@@ -173,17 +179,22 @@ export class ClinicalNoteController {
   @RequirePermission('record:sign', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Firmar una nota clínica' })
+  @ApiIfMatch()
   @ApiOkResponse({ type: ClinicalNoteDto })
   async sign(
     @Param('encounterId', ParseUUIDPipe) encounterId: string,
     @Param('noteId', ParseUUIDPipe) noteId: string,
     @Body() dto: SignNoteDto,
+    @Headers('if-match') ifMatch: string | undefined,
     @Req() req: Request,
   ): Promise<ClinicalNoteResponse> {
+    // EN-282. The signature seals the server's content: the signer says which.
+    const revision = revisionFrom(ifMatch);
     const note = await this.notes.sign(
       {
         encounterId,
         noteId,
+        revision,
         dischargeCondition: dto.dischargeCondition,
       },
       this.requester(req, 'record:sign'),
@@ -279,6 +290,7 @@ function toNoteResponse(note: NoteWithTemplate): ClinicalNoteResponse {
     encounterId: note.encounterId,
     chainId: note.chainId,
     version: note.version,
+    revision: note.revision,
     formCode: note.formCode,
     formVersion: note.formVersion,
     status: note.status,

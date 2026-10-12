@@ -9,6 +9,7 @@ import {
   type AnnulledDocumentArchiver,
   type DocumentArchived,
 } from '../../../shared/documents/annulled-document.port';
+import { assertRevision } from '../../../shared/domain/errors/record-changed.error';
 import {
   ACCESS_AUDIT_RECORDER,
   type AccessAuditRecorder,
@@ -94,6 +95,8 @@ export interface ComposePrescriptionRequest {
 /** PR-100. What rewriting a draft needs to be told. */
 export interface RewritePrescriptionRequest {
   prescriptionId: string;
+  /** PR-121. The revision the writer read (`If-Match`). */
+  revision: number;
   warningSigns?: string | null;
   nonPharmacologicalAdvice?: string | null;
   items: readonly WrittenItem[];
@@ -298,6 +301,7 @@ export class PrescriptionService {
     const prescription = await this.prescriptions.rewriteDraft({
       prescriptionId: request.prescriptionId,
       prescriberId: prescriber.practitionerId,
+      revision: request.revision,
       warningSigns: request.warningSigns ?? null,
       nonPharmacologicalAdvice: request.nonPharmacologicalAdvice ?? null,
       items: request.items.map(writeItem),
@@ -347,6 +351,8 @@ export class PrescriptionService {
    */
   async issue(
     prescriptionId: string,
+    /** PR-121. The revision the issuer saw (`If-Match`). */
+    revision: number,
     requester: Requester,
   ): Promise<PrescriptionView> {
     const now = new Date();
@@ -362,6 +368,8 @@ export class PrescriptionService {
         // PR-005. A prescription that is not a draft is not issuable, and the
         // answer names the state it is in.
         assertDraft(snapshot.status);
+        // PR-121. Nobody issues lines they did not see.
+        assertRevision(snapshot.revision, revision);
 
         /**
          * PR-034. Art. 5.d.ii prints the ACESS registration ON the document, so

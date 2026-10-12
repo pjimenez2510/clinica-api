@@ -203,7 +203,11 @@ export async function placeIssued(
   order: NewServiceOrder,
 ): Promise<ServiceOrderView> {
   const draft = await orders.compose(order);
-  return orders.issue({ orderId: draft.id, sites: order.sites });
+  return orders.issue({
+    orderId: draft.id,
+    revision: draft.revision,
+    sites: order.sites,
+  });
 }
 
 /**

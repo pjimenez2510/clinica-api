@@ -1,5 +1,8 @@
 import {
+  ConflictError,
   ExternalServiceError,
+  NotFoundError,
+  ValidationError,
   QuotaExceededError,
 } from '../../../shared/domain/errors/domain-error';
 
@@ -24,6 +27,46 @@ export class AssistantNotConfiguredError extends ExternalServiceError {
 
   constructor() {
     super('No language model provider is configured or allowed');
+  }
+}
+
+/**
+ * AS-020. A proposal whose sources are not a list of known places (a stretch
+ * of the conversation, or a datum of the chart in a known table), or an
+ * acceptance with nothing saved to compare it with.
+ */
+export class SuggestionInvalidError extends ValidationError {
+  readonly code = 'SUGGESTION_INVALID';
+  override readonly userTitle =
+    'La propuesta del asistente no se pudo guardar. Vuelva a pedirla';
+
+  constructor(reason: string) {
+    super(`Invalid suggestion: ${reason}`);
+  }
+}
+
+/** AS-023. The proposal does not exist, or is of an attention out of scope. */
+export class SuggestionNotFoundError extends NotFoundError {
+  readonly code = 'SUGGESTION_NOT_FOUND';
+  override readonly userTitle =
+    'No se encontró la propuesta del asistente. Recargue la atención';
+
+  constructor() {
+    super('Suggestion not found');
+  }
+}
+
+/**
+ * AS-023. The proposal was already accepted or discarded: a decision is
+ * final, and what the doctor did with it is the trace of P1.
+ */
+export class SuggestionAlreadyDecidedError extends ConflictError {
+  readonly code = 'SUGGESTION_ALREADY_DECIDED';
+  override readonly userTitle =
+    'Esta propuesta ya se aceptó o se descartó. Recargue para ver lo que quedó';
+
+  constructor() {
+    super('The suggestion was already decided');
   }
 }
 

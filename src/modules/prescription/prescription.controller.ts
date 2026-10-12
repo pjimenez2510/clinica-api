@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -17,6 +18,7 @@ import type { Request } from 'express';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { ALL_SITES } from '../../shared/authorisation/principal';
 import { RequirePermission } from '../../shared/http/auth.decorators';
+import { ApiIfMatch, revisionFrom } from '../../shared/http/if-match';
 import type { Permission } from '../../shared/authorisation/permission.catalogue';
 
 import { PrescriptionService } from './application/prescription.service';
@@ -107,15 +109,20 @@ export class PrescriptionController {
   @Put(':prescriptionId')
   @RequirePermission('prescription:write', 'query')
   @ApiOperation({ summary: 'Corregir un borrador de receta' })
+  @ApiIfMatch()
   @ApiOkResponse({ type: ComposedPrescriptionDto })
   async rewrite(
     @Param('prescriptionId', ParseUUIDPipe) prescriptionId: string,
     @Body() dto: RewritePrescriptionDto,
+    @Headers('if-match') ifMatch: string | undefined,
     @Req() req: Request,
   ): Promise<ComposedPrescriptionResponse> {
+    // PR-121. Read before anything else: a write without it is refused whole.
+    const revision = revisionFrom(ifMatch);
     const rewritten = await this.prescriptions.rewrite(
       {
         prescriptionId,
+        revision,
         warningSigns: dto.warningSigns ?? null,
         nonPharmacologicalAdvice: dto.nonPharmacologicalAdvice ?? null,
         items: dto.items.map(toWrittenItem),
@@ -161,13 +168,18 @@ export class PrescriptionController {
   @RequirePermission('prescription:write', 'query')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Emitir la receta' })
+  @ApiIfMatch()
   @ApiOkResponse({ type: PrescriptionDto })
   async issue(
     @Param('prescriptionId', ParseUUIDPipe) prescriptionId: string,
+    @Headers('if-match') ifMatch: string | undefined,
     @Req() req: Request,
   ): Promise<PrescriptionResponse> {
+    // PR-121. Issuing seals the server's draft: the issuer says which one.
+    const revision = revisionFrom(ifMatch);
     const issued = await this.prescriptions.issue(
       prescriptionId,
+      revision,
       this.requester(req, 'prescription:write'),
     );
     return toPrescriptionResponse(issued);

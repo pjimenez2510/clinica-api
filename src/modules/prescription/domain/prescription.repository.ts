@@ -136,6 +136,8 @@ export interface DraftRewrite {
   prescriptionId: string;
   /** PR-100. Only the draft's own prescriber may rewrite it. */
   prescriberId: string;
+  /** PR-121. The revision the writer read (`If-Match`). */
+  revision: number;
   warningSigns: string | null;
   nonPharmacologicalAdvice: string | null;
   items: readonly NewPrescriptionItem[];
@@ -185,6 +187,8 @@ export interface PrescriptionView {
   encounterId: string;
   prescriberId: string;
   status: PrescriptionStatus;
+  /** PR-121, PR-122. Raised by the database on every write of the draft. */
+  revision: number;
   issuedAt: Date | null;
   /**
    * PR-020. The short code a pharmacy checks the prescription with, WITHOUT
@@ -248,6 +252,8 @@ export interface PrescriptionView {
  */
 export interface IssueSnapshot {
   status: PrescriptionStatus;
+  /** PR-121. Read under the attention's lock, like everything else here. */
+  revision: number;
   /** PR-038, PR-039. The indications of art. 5.e, judged with the lines. */
   warningSigns: string | null;
   nonPharmacologicalAdvice: string | null;

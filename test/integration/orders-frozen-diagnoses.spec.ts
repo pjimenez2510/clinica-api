@@ -7,6 +7,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { aScene } from './orders-fixtures';
 import { useDatabase } from './setup/database';
+import { revisionNow } from './setup/read-revision';
 import { createDiagnosis, createUser } from './setup/fixtures';
 
 /**
@@ -68,7 +69,11 @@ describe('ORD-121 la orden congela sus diagnósticos al emitirse', () => {
     const { draft } = await aDraftOrder(prisma);
 
     expect(await frozenOf(prisma, draft.id)).toBeNull();
-    await adapters(prisma).orders.issue({ orderId: draft.id, sites: 'all' });
+    await adapters(prisma).orders.issue({
+      orderId: draft.id,
+      revision: await revisionNow(prisma, 'service_order', draft.id),
+      sites: 'all',
+    });
     expect(await frozenOf(prisma, draft.id)).toEqual(FROZEN);
 
     await expect(
@@ -82,7 +87,11 @@ describe('ORD-121 la orden congela sus diagnósticos al emitirse', () => {
   it('ORD-121 EN-182 con exámenes vivos ya se quita y se edita el diagnóstico —con el motivo de un papel entregado—, y la orden sigue diciendo el que tenía', async () => {
     const prisma = db();
     const { scene, draft } = await aDraftOrder(prisma);
-    await adapters(prisma).orders.issue({ orderId: draft.id, sites: 'all' });
+    await adapters(prisma).orders.issue({
+      orderId: draft.id,
+      revision: await revisionNow(prisma, 'service_order', draft.id),
+      sites: 'all',
+    });
     const remover = await createUser(prisma);
     const [principal, second] = await prisma.encounterDiagnosis.findMany({
       where: { encounterId: scene.encounter.id },
@@ -137,7 +146,11 @@ describe('ORD-121 la orden congela sus diagnósticos al emitirse', () => {
     const prisma = db();
     const { scene, draft } = await aDraftOrder(prisma);
     const { orders } = adapters(prisma);
-    await orders.issue({ orderId: draft.id, sites: 'all' });
+    await orders.issue({
+      orderId: draft.id,
+      revision: await revisionNow(prisma, 'service_order', draft.id),
+      sites: 'all',
+    });
 
     await createDiagnosis(prisma, scene.encounter.id, 'R51', 'Cefalea');
     expect(await frozenOf(prisma, draft.id)).toEqual(FROZEN);
@@ -150,7 +163,11 @@ describe('ORD-121 la orden congela sus diagnósticos al emitirse', () => {
       lines: [{ serviceId: scene.bh.id }],
       sites: 'all',
     });
-    await orders.issue({ orderId: next.id, sites: 'all' });
+    await orders.issue({
+      orderId: next.id,
+      revision: await revisionNow(prisma, 'service_order', next.id),
+      sites: 'all',
+    });
     expect(await frozenOf(prisma, next.id)).toEqual([
       ...FROZEN,
       { code: 'R51', display: 'Cefalea' },
@@ -171,7 +188,11 @@ describe('ORD-121 la orden congela sus diagnósticos al emitirse', () => {
     expect(await frozenOf(prisma, draft.id)).toBeNull();
 
     // Positive control: issued, the copy is there and is a list.
-    await adapters(prisma).orders.issue({ orderId: draft.id, sites: 'all' });
+    await adapters(prisma).orders.issue({
+      orderId: draft.id,
+      revision: await revisionNow(prisma, 'service_order', draft.id),
+      sites: 'all',
+    });
     expect(await frozenOf(prisma, draft.id)).toEqual(FROZEN);
   });
 });

@@ -91,6 +91,7 @@ const examBh: OrderableExamView = {
 
 const anOrder = (): ServiceOrderView => ({
   id: ORDER,
+  revision: 1,
   encounterId: 'encounter-1',
   siteId: SITE,
   patientId: 'chart-1',

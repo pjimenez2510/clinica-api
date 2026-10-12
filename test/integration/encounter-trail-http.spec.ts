@@ -17,6 +17,7 @@ import { clinicalDateOf } from '../../src/shared/domain/clinic-time';
 import { PrismaService } from '../../src/shared/infrastructure/prisma/prisma.service';
 
 import { useDatabase } from './setup/database';
+import { withReadRevision } from './setup/read-revision';
 import {
   createDiagnosis,
   createEncounter,
@@ -174,15 +175,23 @@ describe('la atención por HTTP: su historial, su lugar y su conservación', () 
   });
 
   const post = (path: string, token: string, body?: object) =>
-    request(app.getHttpServer())
-      .post(`/api/v1${path}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send(body ?? {});
+    withReadRevision(
+      prisma,
+      path,
+      request(app.getHttpServer())
+        .post(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body ?? {}),
+    );
   const patch = (path: string, token: string, body: object) =>
-    request(app.getHttpServer())
-      .patch(`/api/v1${path}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send(body);
+    withReadRevision(
+      prisma,
+      path,
+      request(app.getHttpServer())
+        .patch(`/api/v1${path}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body),
+    );
   const get = (path: string, token: string) =>
     request(app.getHttpServer())
       .get(`/api/v1${path}`)

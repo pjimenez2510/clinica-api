@@ -15,6 +15,7 @@ import type { PrismaService } from '../../src/shared/infrastructure/prisma/prism
 
 import { aScene, placeIssued } from './orders-fixtures';
 import { useDatabase } from './setup/database';
+import { revisionNow } from './setup/read-revision';
 import { createPatient, createUser } from './setup/fixtures';
 import { InProcessLiveEventBus } from '../../src/shared/events/live-event-bus';
 
@@ -91,7 +92,11 @@ describe('ORD-158 la orden congela el sexo de la ficha al emitirse', () => {
     const { draft } = await aDraftOrder(prisma);
 
     expect(await frozenSexOf(prisma, draft.id)).toBeNull();
-    await adapters(prisma).orders.issue({ orderId: draft.id, sites: 'all' });
+    await adapters(prisma).orders.issue({
+      orderId: draft.id,
+      revision: await revisionNow(prisma, 'service_order', draft.id),
+      sites: 'all',
+    });
     expect(await frozenSexOf(prisma, draft.id)).toBe('FEMALE');
 
     await expect(
@@ -157,7 +162,11 @@ describe('ORD-158 la orden congela el sexo de la ficha al emitirse', () => {
     const prisma = db();
     const { scene, draft } = await aDraftOrder(prisma);
     const { orders } = adapters(prisma);
-    await orders.issue({ orderId: draft.id, sites: 'all' });
+    await orders.issue({
+      orderId: draft.id,
+      revision: await revisionNow(prisma, 'service_order', draft.id),
+      sites: 'all',
+    });
 
     await correctChartToMale(prisma, scene.patient.id);
 
@@ -178,7 +187,11 @@ describe('ORD-159 la cabecera de la orden dice el sexo congelado', () => {
     const prisma = db();
     const { scene, draft } = await aDraftOrder(prisma);
     const { orders, documents } = adapters(prisma);
-    await orders.issue({ orderId: draft.id, sites: 'all' });
+    await orders.issue({
+      orderId: draft.id,
+      revision: await revisionNow(prisma, 'service_order', draft.id),
+      sites: 'all',
+    });
     await correctChartToMale(prisma, scene.patient.id);
 
     const subject = await documents.findSubject({
@@ -198,7 +211,11 @@ describe('ORD-159 la cabecera de la orden dice el sexo congelado', () => {
     const { orders } = adapters(prisma);
     expect(draft.patientSex).toBeNull();
 
-    await orders.issue({ orderId: draft.id, sites: 'all' });
+    await orders.issue({
+      orderId: draft.id,
+      revision: await revisionNow(prisma, 'service_order', draft.id),
+      sites: 'all',
+    });
     await correctChartToMale(prisma, scene.patient.id);
 
     const issued = await orders.byId({ orderId: draft.id, sites: 'all' });
@@ -211,7 +228,11 @@ describe('ORD-036 el rango sigue el sexo de la ficha, no el que la orden congel√
     const prisma = db();
     const { scene, draft } = await aDraftOrder(prisma);
     const { orders, reports } = adapters(prisma);
-    await orders.issue({ orderId: draft.id, sites: 'all' });
+    await orders.issue({
+      orderId: draft.id,
+      revision: await revisionNow(prisma, 'service_order', draft.id),
+      sites: 'all',
+    });
     const second = await placeIssued(orders, {
       encounterId: scene.encounter.id,
       category: 'LABORATORY',
@@ -276,7 +297,11 @@ describe('ORD-161 la orden nombra la ficha vigente al emitirse, con su sexo, y n
       data: { familyName: 'Pilco', givenName: 'Rosa' },
     });
     const { orders, documents } = adapters(prisma);
-    const beforeMerge = await orders.issue({ orderId: draft.id, sites: 'all' });
+    const beforeMerge = await orders.issue({
+      orderId: draft.id,
+      revision: await revisionNow(prisma, 'service_order', draft.id),
+      sites: 'all',
+    });
     const survivor = await createPatient(prisma, { sex: 'MALE' });
     await prisma.patient.update({
       where: { id: survivor.id },
