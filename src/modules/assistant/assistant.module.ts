@@ -13,9 +13,11 @@ import type { Env } from '../../shared/config/env.schema';
 
 import { AI_RUN_STORE, type AiRunStore } from './application/ai-run.store';
 import { LLM_CLIENT, type LlmClient } from './application/llm-client.port';
+import { PSEUDONYMIZER } from './application/pseudonymizer.port';
 import { RoutingLlmClient } from './application/routing-llm.client';
 import { LLM_PRICES } from './infrastructure/llm-pricing';
 import { PrismaAiRunStore } from './infrastructure/prisma-ai-run.store';
+import { pseudonymizerFor } from './infrastructure/clinica-ai.pseudonymizer';
 import { buildProviderChain } from './infrastructure/provider-chain';
 
 /**
@@ -57,8 +59,19 @@ const PURGE_EVERY_MS = 86_400_000;
           newRequestId: randomUUID,
         }),
     },
+    {
+      // AS-031. Without the shared secret, MissingPseudonymizer: fails closed.
+      provide: PSEUDONYMIZER,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) =>
+        pseudonymizerFor({
+          url: config.get('ASSISTANT_AI_SERVICE_URL', { infer: true }),
+          secret: config.get('ASSISTANT_AI_SERVICE_SECRET', { infer: true }),
+          timeoutMs: config.get('ASSISTANT_AI_SERVICE_TIMEOUT_MS', { infer: true }), // prettier-ignore
+        }),
+    },
   ],
-  exports: [LLM_CLIENT],
+  exports: [LLM_CLIENT, PSEUDONYMIZER],
 })
 export class AssistantModule implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AssistantModule.name);

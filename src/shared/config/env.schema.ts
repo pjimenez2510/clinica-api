@@ -299,6 +299,27 @@ export const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+  /**
+   * AS-032. Where the local pseudonymizer, `clinica-ai`, answers. It receives
+   * clinical text before it is cleared, so in clear (`http`) only to this
+   * machine; anywhere else, only over TLS.
+   */
+  ASSISTANT_AI_SERVICE_URL: z.url().default('http://127.0.0.1:8100'),
+  /**
+   * AS-031. The secret `clinica-ai` holds as `CLINICA_AI_SHARED_SECRET`.
+   * Without it there is no pseudonymizer and the assistant fails closed.
+   */
+  ASSISTANT_AI_SERVICE_SECRET: z.preprocess(
+    emptyAsUndefined,
+    z.string().min(32).optional(),
+  ),
+  /** AS-033. How long one call to `clinica-ai` may take. */
+  ASSISTANT_AI_SERVICE_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(120_000)
+    .default(10_000),
 
   /** Default site timezone. `Pacific/Galapagos` for the Galapagos islands. */
   DEFAULT_TIMEZONE: z
@@ -361,6 +382,11 @@ export function isLocalUrl(value: string): boolean {
   );
 }
 
+/** AS-032. This machine and nothing else: no `.test` or `.localhost` names. */
+function isLoopbackUrl(url: URL): boolean {
+  return ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+}
+
 /**
  * Validates and returns the configuration. Throws with a readable message when
  * it fails: a raw `ZodError` is unreadable at 3am during a deployment.
@@ -418,6 +444,20 @@ export function validateEnv(raw: Record<string, unknown>): Env {
             message: `es el servidor del ambiente ${environmentOfHost} y SRI_ENVIRONMENT dice ${env.SRI_ENVIRONMENT}: los comprobantes de un ambiente no se autorizan en el otro`,
           });
         }
+      }
+      // AS-032. Clinical text not yet pseudonymized travels to clinica-ai: in
+      // clear only to this machine.
+      const service = new URL(env.ASSISTANT_AI_SERVICE_URL);
+      if (
+        !['http:', 'https:'].includes(service.protocol) ||
+        (service.protocol === 'http:' && !isLoopbackUrl(service))
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['ASSISTANT_AI_SERVICE_URL'],
+          message:
+            'el seudonimizador recibe la nota sin seudonimizar: por http sólo en esta máquina (localhost, 127.0.0.1, ::1); en otra, por https',
+        });
       }
       // IL-008. No process reaches a remote identity provider by accident,
       // and none reaches it in clear.

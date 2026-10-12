@@ -115,3 +115,37 @@ export class LlmCallFailed extends ExternalServiceError {
     };
   }
 }
+
+/** AS-033. How a call to the local pseudonymizer ended without a cleared text. */
+export type PseudonymizerFailure =
+  'unavailable' | 'refused' | 'invalid-answer' | 'cancelled';
+
+/**
+ * AS-033, AS-034. `clinica-ai` did not clear the text: it was down or slow
+ * (retryable), it refused the request, or it answered outside its contract.
+ * Nothing is sent to a provider without it.
+ *
+ * The message names the outcome and the status and nothing else: what went
+ * in is a note before it is pseudonymized, and what came back may hold the map
+ * from each placeholder to a real name.
+ */
+export class PseudonymizerFailedError extends ExternalServiceError {
+  readonly code = 'ASSISTANT_PSEUDONYMIZER_FAILED';
+  readonly service = 'clinica-ai';
+  readonly isRetryable: boolean;
+  override readonly userTitle: string;
+
+  constructor(
+    readonly outcome: PseudonymizerFailure,
+    status?: number,
+  ) {
+    super(
+      `clinica-ai pseudonymization ended in ${outcome}${status ? ` (HTTP ${status})` : ''}`,
+      { outcome },
+    );
+    this.isRetryable = outcome === 'unavailable';
+    this.userTitle = this.isRetryable
+      ? 'El asistente no está disponible en este momento. Vuelva a pedirlo en unos minutos o siga escribiendo como siempre'
+      : 'El asistente no pudo preparar el texto esta vez. Puede seguir escribiendo como siempre';
+  }
+}

@@ -87,6 +87,21 @@ una petición la responde el segundo y quedan dos filas en `ai_run` —la del
 **Cubre:** AS-001 a AS-019.
 **Solo servidor:** AS-001 a AS-019. Esta entrega no tiene pantalla.
 
+### E5 — El seudonimizador local, `clinica-ai` _(A5, 11-10-2026)_
+
+P4 del plan: al proveedor sólo va texto seudonimizado, y el seudonimizador corre
+en la máquina de la clínica (`clinica-ai`, su `SPEC.md` con `CAI-###`). Aquí,
+el adaptador HTTP que implementa el puerto `Pseudonymizer` (AS-025) con el
+secreto compartido. Hasta esta entrega el puerto sólo tenía
+`MissingPseudonymizer`, que falla cerrado.
+
+**Prueba independiente:** con un `fetch` falso que responde como `clinica-ai`,
+una nota sale como `PseudonymizedText` con su mapa; sin secreto, con una URL
+que no es de esta máquina por `http`, o con el servicio caído, nada sale y el
+error no lleva una palabra de la nota.
+**Cubre:** AS-030 a AS-034.
+**Solo servidor:** AS-030 a AS-034. Esta entrega no tiene pantalla.
+
 ## Criterios de éxito
 
 - **SC-089** — Con `ASSISTANT_ALLOW_REMOTE` distinto de `true`, el número de
@@ -275,6 +290,35 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   texto de la petición ni de la respuesta, y lo que el proveedor devolvió NO
   DEBERÁ salir al serializar el error.
 
+### 7. El seudonimizador local (A5)
+
+- **AS-030** — CUANDO se pida seudonimizar un texto, el adaptador DEBERÁ
+  enviarlo a `POST /v1/privacy/pseudonymize` de `clinica-ai` con la cabecera
+  `Authorization: Bearer <ASSISTANT_AI_SERVICE_SECRET>`, y DEBERÁ devolver el
+  texto como `PseudonymizedText` sólo si la respuesta cumple el contrato
+  (`text`, `replacements[]` con `placeholder`, `original` y `kind`,
+  `date_shift_days` entero). Es el único sitio, además de `withContext`, que
+  convierte un texto en `PseudonymizedText` (AS-001).
+- **AS-031** — SI `ASSISTANT_AI_SERVICE_SECRET` no está declarado, ENTONCES la
+  instalación DEBERÁ usar `MissingPseudonymizer` (AS-025), que rechaza sin
+  ninguna petición de red; y SI está declarado con menos de 32 caracteres,
+  ENTONCES la API NO DEBERÁ arrancar.
+- **AS-032** — SI `ASSISTANT_AI_SERVICE_URL` usa `http` hacia una máquina que
+  no es esta (`localhost`, `127.0.0.1`, `::1`), o no es `http`/`https`,
+  ENTONCES la API NO DEBERÁ arrancar: el texto viaja sin seudonimizar.
+- **AS-033** — SI el servicio no responde en `ASSISTANT_AI_SERVICE_TIMEOUT_MS`,
+  responde con un estado de error, o su respuesta no cumple el contrato,
+  ENTONCES el adaptador DEBERÁ lanzar `ASSISTANT_PSEUDONYMIZER_FAILED`
+  —reintentable sólo si el servicio no estaba disponible (red, plazo, 5xx)— y
+  NO DEBERÁ devolver el texto ni parte de él. CUANDO quien llama cancele, el
+  adaptador DEBERÁ abandonar la petición.
+- **AS-034** — El mensaje, la serialización y el log de un fallo del adaptador
+  NO DEBERÁN contener el texto enviado, los nombres, ni el mapa de
+  sustituciones ni el cuerpo que devolvió el servicio.
+  > SigmAI A-03 (26 sitios registraban la transcripción en `error.message`).
+  > El mapa es lo más sensible que existe aquí: dice qué nombre hay detrás de
+  > cada marcador.
+
 ---
 
 ## Códigos de error nuevos
@@ -284,6 +328,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_NOT_CONFIGURED`           | `ExternalServiceError` | 502       | La cadena está vacía (AS-006)                                                |
 | `ASSISTANT_PROVIDER_FAILED`          | `ExternalServiceError` | 503 / 502 | Ningún proveedor respondió (reintentable, AS-007) o el modelo falló (AS-008) |
 | `ASSISTANT_SPENDING_CEILING_REACHED` | `QuotaExceededError`   | 429       | El techo del mes no admite el intento, o no hay techo (AS-017)               |
+| `ASSISTANT_PSEUDONYMIZER_FAILED`     | `ExternalServiceError` | 503 / 502 | `clinica-ai` no respondió (reintentable) o respondió fuera de contrato (AS-033) |
 
 ## Niveles de prueba
 
@@ -294,6 +339,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-015 (al arrancar y cada día)        | Unitario del módulo con reloj falso                                  |
 | AS-011, AS-012, AS-014, AS-015, AS-017 | Integración contra PostgreSQL, con control positivo                  |
 | AS-013, AS-016, AS-018, AS-019         | Unitario (AS-018 sobre `pruneToAllowlist`)                           |
+| AS-030 a AS-034                        | Unitario con `fetch` falso; AS-031 y AS-032 sobre `env.schema`; prueba manual contra `clinica-ai` en marcha |
 
 ## Preguntas abiertas
 

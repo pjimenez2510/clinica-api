@@ -14,6 +14,8 @@ import {
 
 const SOURCE_ROOT = join(process.cwd(), 'src');
 const PORT_FILE = 'src/modules/assistant/application/llm-client.port.ts';
+const PSEUDONYMIZER_FILE =
+  'src/modules/assistant/infrastructure/clinica-ai.pseudonymizer.ts';
 
 /** Every production `.ts` file under `src/`: specs mint test values freely. */
 function productionSources(directory = SOURCE_ROOT): string[] {
@@ -61,10 +63,10 @@ describe('LlmClient port', () => {
     expect([leaked, plain]).toHaveLength(2);
   });
 
-  it('AS-001 lets no production file mint PseudonymizedText by a cast, except withContext', () => {
+  it('AS-001 AS-030 lets no production file mint PseudonymizedText by a cast, except withContext and the clinica-ai adapter', () => {
     const offenders = productionSources()
       .map((path) => relative(process.cwd(), path))
-      .filter((path) => path !== PORT_FILE)
+      .filter((path) => path !== PORT_FILE && path !== PSEUDONYMIZER_FILE)
       .filter((path) => {
         const source = readFileSync(join(process.cwd(), path), 'utf8');
         return (
@@ -86,6 +88,16 @@ describe('LlmClient port', () => {
     const port = readFileSync(join(process.cwd(), PORT_FILE), 'utf8');
     expect(port).toMatch(/as PseudonymizedText/);
     expect(port).toMatch(/as SystemInstruction/);
+    // AS-030. The adapter casts only the text that came back from clinica-ai
+    // in the shape of its contract, and nothing else.
+    const adapter = readFileSync(
+      join(process.cwd(), PSEUDONYMIZER_FILE),
+      'utf8',
+    );
+    expect(adapter.match(/as PseudonymizedText/g)).toEqual([
+      'as PseudonymizedText',
+    ]);
+    expect(adapter).toMatch(/cleared: answer\.data\.text as PseudonymizedText/);
   });
 
   it('AS-001 withContext appends system-composed text to cleared text and keeps the brand', () => {
