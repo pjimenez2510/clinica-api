@@ -77,6 +77,9 @@ export const DOMAIN_ERROR_CODES = [
   'ASSISTANT_NOT_CONFIGURED',
   'ASSISTANT_PROVIDER_FAILED',
   'ASSISTANT_SPENDING_CEILING_REACHED',
+  // AS-033: el seudonimizador local (clinica-ai) no respondió (503
+  // reintentable) o respondió fuera de contrato (502).
+  'ASSISTANT_PSEUDONYMIZER_FAILED',
   'INVALID_AGENDA_TRANSITION',
   'NO_SHOW_BEFORE_START',
   // Agenda, E8 (AG-116, AG-117, AG-122, AG-125, AG-127, AG-128). Los

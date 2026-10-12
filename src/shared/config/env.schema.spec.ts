@@ -254,6 +254,56 @@ describe('validateEnv', () => {
     });
   });
 
+  describe('AS-031 AS-032 the local pseudonymizer, clinica-ai', () => {
+    const SECRET = 'a'.repeat(64);
+
+    it('AS-031 is born without it: no secret, no service', () => {
+      const env = validateEnv(base);
+
+      expect(env.ASSISTANT_AI_SERVICE_SECRET).toBeUndefined();
+      expect(env.ASSISTANT_AI_SERVICE_URL).toBe('http://127.0.0.1:8100');
+      expect(env.ASSISTANT_AI_SERVICE_TIMEOUT_MS).toBe(10_000);
+      expect(
+        validateEnv({ ...base, ASSISTANT_AI_SERVICE_SECRET: '' })
+          .ASSISTANT_AI_SERVICE_SECRET,
+      ).toBeUndefined();
+    });
+
+    it('AS-031 refuses to start with a secret shorter than 32 characters', () => {
+      expect(() =>
+        validateEnv({ ...base, ASSISTANT_AI_SERVICE_SECRET: 'corto' }),
+      ).toThrow(/ASSISTANT_AI_SERVICE_SECRET/);
+      expect(
+        validateEnv({ ...base, ASSISTANT_AI_SERVICE_SECRET: SECRET })
+          .ASSISTANT_AI_SERVICE_SECRET,
+      ).toBe(SECRET);
+    });
+
+    it('AS-032 accepts http only to this machine, and https anywhere', () => {
+      for (const url of [
+        'http://127.0.0.1:8100',
+        'http://localhost:8100',
+        'http://[::1]:8100',
+        'https://ia.clinica.lan',
+      ]) {
+        expect(
+          validateEnv({ ...base, ASSISTANT_AI_SERVICE_URL: url })
+            .ASSISTANT_AI_SERVICE_URL,
+        ).toBe(url);
+      }
+      for (const url of [
+        'http://192.168.1.20:8100',
+        'http://ia.clinica.lan',
+        'http://clinica.test:8100',
+        'ftp://127.0.0.1/ia',
+      ]) {
+        expect(() =>
+          validateEnv({ ...base, ASSISTANT_AI_SERVICE_URL: url }),
+        ).toThrow(/ASSISTANT_AI_SERVICE_URL/);
+      }
+    });
+  });
+
   describe('IL-008 the identity provider', () => {
     const REMOTE = 'https://provider.example.com/v3/database-validation/';
 

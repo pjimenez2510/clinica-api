@@ -26,7 +26,6 @@ import {
 } from './application/diagnosis-proposal.service';
 import { LLM_CLIENT, type LlmClient } from './application/llm-client.port';
 import {
-  MissingPseudonymizer,
   PSEUDONYMIZER,
   type Pseudonymizer,
 } from './application/pseudonymizer.port';
@@ -47,6 +46,7 @@ import {
 import { DemoPseudonymizer } from './infrastructure/demo/demo.pseudonymizer';
 import { LLM_PRICES } from './infrastructure/llm-pricing';
 import { PrismaAiRunStore } from './infrastructure/prisma-ai-run.store';
+import { pseudonymizerFor } from './infrastructure/clinica-ai.pseudonymizer';
 import { PrismaSuggestionStore } from './infrastructure/prisma-suggestion.store';
 import { buildProviderChain } from './infrastructure/provider-chain';
 
@@ -74,8 +74,8 @@ const PURGE_EVERY_MS = 86_400_000;
       inject: [ConfigService, AI_RUN_STORE],
       useFactory: buildLlmClient,
     },
-    // AS-025, AS-029. Until A5, production has no pseudonymizer: the
-    // assistant fails closed. The demonstration mode has its fake.
+    // AS-025, AS-029, AS-031. clinica-ai with its shared secret; without it,
+    // MissingPseudonymizer: fails closed. The demonstration mode has its fake.
     {
       provide: PSEUDONYMIZER,
       inject: [ConfigService],
@@ -101,7 +101,7 @@ const PURGE_EVERY_MS = 86_400_000;
     DiagnosisProposalService,
     CurrentUserService,
   ],
-  exports: [LLM_CLIENT, SuggestionService],
+  exports: [LLM_CLIENT, SuggestionService, PSEUDONYMIZER],
 })
 export class AssistantModule implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AssistantModule.name);
@@ -172,9 +172,16 @@ export function buildLlmClient(config: Config, store: AiRunStore): LlmClient {
   });
 }
 
-/** AS-025, AS-029. A5 replaces `MissingPseudonymizer` with its adapter. */
+/**
+ * AS-025, AS-029, AS-031. The demonstration's fake, or clinica-ai —
+ * `MissingPseudonymizer` while it has no shared secret.
+ */
 export function buildPseudonymizer(config: Config): Pseudonymizer {
   return config.get('ASSISTANT_FAKE_PROVIDER', { infer: true })
     ? new DemoPseudonymizer()
-    : new MissingPseudonymizer();
+    : pseudonymizerFor({
+        url: config.get('ASSISTANT_AI_SERVICE_URL', { infer: true }),
+        secret: config.get('ASSISTANT_AI_SERVICE_SECRET', { infer: true }),
+        timeoutMs: config.get('ASSISTANT_AI_SERVICE_TIMEOUT_MS', { infer: true }), // prettier-ignore
+      });
 }
