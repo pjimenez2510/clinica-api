@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   bootstrapMean,
+  cohenKappa,
   median,
   pairedDifference,
   quantile,
@@ -79,5 +80,19 @@ describe('statistics of the harness', () => {
     expect(interval?.low).toBeLessThanOrEqual(4.5);
     expect(interval?.high).toBeGreaterThanOrEqual(4.5);
     expect(signTestInterval([1, 2, 3])).toBeNull();
+  });
+
+  it("Cohen's kappa: 1 when the judge agrees, 0 when it agrees only by chance", () => {
+    const truth = [true, true, false, false];
+    expect(cohenKappa(truth.map((t) => ({ judged: t, truth: t })))).toBe(1);
+    // 20 yes/yes, 5 yes/no, 10 no/yes, 15 no/no: po = 0.7, pe = 0.5 → κ = 0.4.
+    const pairs = [
+      ...Array.from({ length: 20 }, () => ({ judged: true, truth: true })),
+      ...Array.from({ length: 5 }, () => ({ judged: true, truth: false })),
+      ...Array.from({ length: 10 }, () => ({ judged: false, truth: true })),
+      ...Array.from({ length: 15 }, () => ({ judged: false, truth: false })),
+    ];
+    expect(cohenKappa(pairs)).toBeCloseTo(0.4, 10);
+    expect(Number.isNaN(cohenKappa([]))).toBe(true);
   });
 });

@@ -142,3 +142,20 @@ export function signTestInterval(
         coverage: chosen.coverage,
       };
 }
+
+/**
+ * Cohen's kappa of two binary labellings of the same items (SigmAI
+ * `relevance-judge.ts`): how the judge agrees with physicians beyond chance,
+ * once a reviewed subsample exists (PLAN-ASISTENTE-IA §5).
+ */
+export function cohenKappa(
+  pairs: readonly { judged: boolean; truth: boolean }[],
+): number {
+  const n = pairs.length;
+  if (n === 0) return Number.NaN;
+  const agree = pairs.filter((pair) => pair.judged === pair.truth).length / n;
+  const judgedYes = pairs.filter((pair) => pair.judged).length / n;
+  const truthYes = pairs.filter((pair) => pair.truth).length / n;
+  const chance = judgedYes * truthYes + (1 - judgedYes) * (1 - truthYes);
+  return chance === 1 ? 1 : (agree - chance) / (1 - chance);
+}
