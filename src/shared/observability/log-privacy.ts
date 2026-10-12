@@ -114,6 +114,11 @@ export const ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'assistant_problems_without_quote',
   'assistant_codes_written',
   'assistant_codes_shown',
+  // AS-078 (D2): how many lines the receta reading kept, dropped and found in
+  // the cuadro. Counts: never a medicine, never a phrase.
+  'assistant_lines',
+  'assistant_lines_without_quote',
+  'assistant_lines_in_cnmb',
 
   // Errors
   'type',

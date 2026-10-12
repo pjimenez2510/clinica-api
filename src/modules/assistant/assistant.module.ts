@@ -14,11 +14,17 @@ import { ConfigService } from '@nestjs/config';
 import { ACCESS_AUDIT_RECORDER } from '../../shared/audit/access-audit.port';
 import { CurrentUserService } from '../../shared/authorisation/current-user.service';
 import { CIE10_LOOKUP } from '../../shared/clinical/cie10-lookup.port';
+import { ALLERGY_ABSENCE_READER } from '../../shared/clinical/allergy-absence.port';
 import { CODING_CONTEXT_READER } from '../../shared/clinical/coding-context.port';
+import { SURVIVING_CHART_ALLERGY_READER } from '../../shared/clinical/patient-allergy.port';
+import { PRESCRIBING_CONTEXT_READER } from '../../shared/clinical/prescribing-context.port';
 import type { Env } from '../../shared/config/env.schema';
 import { PrismaAccessAuditRecorder } from '../../shared/infrastructure/audit/prisma-access-audit.recorder';
 import { PrismaCie10Lookup } from '../../shared/infrastructure/clinical/prisma-cie10.lookup';
+import { PrismaActiveAllergyReader } from '../../shared/infrastructure/clinical/prisma-active-allergy.reader';
 import { PrismaCodingContextReader } from '../../shared/infrastructure/clinical/prisma-coding-context.reader';
+import { PrismaPrescribingContextReader } from '../../shared/infrastructure/clinical/prisma-prescribing-context.reader';
+import { PrismaAllergyAbsenceReader } from '../../shared/infrastructure/clinical/standing-allergy-absence';
 
 import { AI_RUN_STORE, type AiRunStore } from './application/ai-run.store';
 import {
@@ -36,7 +42,9 @@ import {
   ASSISTANT_ENABLED,
   AssistantDiagnosisController,
 } from './assistant-diagnosis.controller';
+import { AssistantPrescriptionController } from './assistant-prescription.controller';
 import { AssistantSwitchMiddleware } from './assistant-switch.middleware';
+import { PrescriptionProposalService } from './application/prescription-proposal.service';
 import {
   SUGGESTION_CLOCK,
   SuggestionService,
@@ -58,14 +66,15 @@ import { buildProviderChain } from './infrastructure/provider-chain';
  * language model: configuration decides which providers exist (AS-006), the
  * routing walks them (D-239 §5), and `ai_run` keeps every attempt.
  *
- * Its one controller is the CIE-10 of Diagnósticos (D1), behind
+ * Its controllers are the CIE-10 of Diagnósticos (D1) and the receta of
+ * Receta (D2), behind
  * `ASSISTANT_ENABLED` and `assistant:use` (AS-026, D-244 §3).
  */
 /** AS-015. Once a day: the retention is counted in days. */
 const PURGE_EVERY_MS = 86_400_000;
 
 @Module({
-  controllers: [AssistantDiagnosisController],
+  controllers: [AssistantDiagnosisController, AssistantPrescriptionController],
   providers: [
     { provide: AI_RUN_STORE, useClass: PrismaAiRunStore },
     // AS-020 to AS-024. The provenance of each proposal.
@@ -102,6 +111,13 @@ const PURGE_EVERY_MS = 86_400_000;
         config.get('ASSISTANT_ENABLED', { infer: true }) === true,
     },
     DiagnosisProposalService,
+    // AS-063 to AS-078 (D2). The receta: the cuadro and the receta of the
+    // attention, and the allergies through the SAME reader the receta checks
+    // with (PR-062, PR-118), so the two cannot disagree.
+    { provide: PRESCRIBING_CONTEXT_READER, useClass: PrismaPrescribingContextReader }, // prettier-ignore
+    { provide: SURVIVING_CHART_ALLERGY_READER, useClass: PrismaActiveAllergyReader }, // prettier-ignore
+    { provide: ALLERGY_ABSENCE_READER, useClass: PrismaAllergyAbsenceReader },
+    PrescriptionProposalService,
     CurrentUserService,
   ],
   exports: [LLM_CLIENT, SuggestionService, PSEUDONYMIZER],
@@ -118,7 +134,7 @@ export class AssistantModule
   configure(consumer: MiddlewareConsumer): void {
     consumer
       .apply(AssistantSwitchMiddleware)
-      .forRoutes(AssistantDiagnosisController);
+      .forRoutes(AssistantDiagnosisController, AssistantPrescriptionController);
   }
 
   /**

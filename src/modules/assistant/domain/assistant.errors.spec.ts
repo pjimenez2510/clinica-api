@@ -11,6 +11,10 @@ import {
 import { DOMAIN_ERROR_CODES } from '../../../shared/domain/errors/error-catalogue';
 
 import {
+  AssistantAllergyCheckFailedError,
+  AssistantAllergyContraindicationError,
+  AssistantPrescriptionLineNotReadyError,
+  SuggestionPrescriptionMismatchError,
   AssistantEncounterClosedError,
   AssistantEncounterNotFoundError,
   AssistantNoteEmptyError,
@@ -177,5 +181,41 @@ describe('assistant errors', () => {
 
   it('AS-040 a proposal that could not be kept may be asked for again', () => {
     expect(new AssistantProposalNotKeptError().isRetryable).toBe(true);
+  });
+
+  it('AS-070 answers ASSISTANT_ALLERGY_CHECK_FAILED as a retryable 503 that says nothing was proposed', () => {
+    const error = new AssistantAllergyCheckFailedError();
+
+    expect(error.code).toBe('ASSISTANT_ALLERGY_CHECK_FAILED');
+    expect(error).toBeInstanceOf(ExternalServiceError);
+    expect(error.isRetryable).toBe(true);
+    expect(error.userTitle).toMatch(/alergias/);
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AS-071 AS-073 answers ASSISTANT_ALLERGY_CONTRAINDICATION as a 409 naming the lines by id, no medicine', () => {
+    const error = new AssistantAllergyContraindicationError(['s-1', 's-2']);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(error.code).toBe('ASSISTANT_ALLERGY_CONTRAINDICATION');
+    expect(error.fieldErrors?.map((each) => each.field)).toEqual(['suggestions.s-1', 'suggestions.s-2']); // prettier-ignore
+    expect(JSON.stringify(error)).not.toMatch(/amoxi|penici/i);
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AS-073 answers ASSISTANT_PRESCRIPTION_LINE_NOT_READY as a 422 naming the lines', () => {
+    const error = new AssistantPrescriptionLineNotReadyError(['s-9']);
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.fieldErrors?.[0]?.field).toBe('suggestions.s-9');
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
+  });
+
+  it('AS-074 answers SUGGESTION_PRESCRIPTION_MISMATCH as a 422', () => {
+    const error = new SuggestionPrescriptionMismatchError();
+
+    expect(error).toBeInstanceOf(ValidationError);
+    expect(error.code).toBe('SUGGESTION_PRESCRIPTION_MISMATCH');
+    expect(DOMAIN_ERROR_CODES).toContain(error.code);
   });
 });
