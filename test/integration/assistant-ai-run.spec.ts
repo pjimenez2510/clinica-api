@@ -137,7 +137,7 @@ async function signNote(
 }
 
 describe('ai_run and ai_exchange (assistant)', () => {
-  it('AS-007 AS-011 with the principal answering 503, the fallback answers and ai_run keeps both attempts without text', async () => {
+  it('AS-007 AS-011 AS-036 with the principal answering 503, the fallback answers, ai_run keeps both attempts without text and the answer names its row', async () => {
     const prisma = db();
 
     const result = await routing(prisma, [
@@ -149,13 +149,16 @@ describe('ai_run and ai_exchange (assistant)', () => {
     const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
       SELECT row_to_json(r)::text AS line, r.attempt, r.provider, r.outcome,
              r.fallback_from, r.http_status, r.request_id::text AS request_id,
-             r.cost_usd::text AS cost_usd
+             r.cost_usd::text AS cost_usd, r.id::text AS id
       FROM ai_run r ORDER BY r.attempt`;
     expect(rows).toMatchObject([
       { attempt: 1, provider: 'gemini', outcome: 'provider-error', fallback_from: null, http_status: 503 }, // prettier-ignore
       { attempt: 2, provider: 'anthropic', outcome: 'ok', fallback_from: 'provider-error', request_id: result.requestId }, // prettier-ignore
     ]);
     expect(rows[0]!.request_id).toBe(result.requestId);
+    // AS-036: the id is the row of the attempt that answered, not the 503 one.
+    expect(result.runId).toBe(rows[1]!.id);
+    expect(result.runId).not.toBe(rows[0]!.id);
     // AS-017 (D-241 §9): the rejected attempt is kept at 0; the answered one at its cost.
     expect(Number(rows[0]!.cost_usd)).toBe(0);
     expect(Number(rows[1]!.cost_usd)).toBeGreaterThan(0);
