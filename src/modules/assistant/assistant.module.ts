@@ -43,8 +43,29 @@ import {
   AssistantDiagnosisController,
 } from './assistant-diagnosis.controller';
 import { AssistantPrescriptionController } from './assistant-prescription.controller';
-import { AssistantSwitchMiddleware } from './assistant-switch.middleware';
 import { PrescriptionProposalService } from './application/prescription-proposal.service';
+import { AssistantListeningController } from './assistant-listening.controller';
+import { AssistantSwitchMiddleware } from './assistant-switch.middleware';
+import { ListeningAccess } from './application/listening-access';
+import {
+  LISTENING_CLOCK,
+  ListeningService,
+} from './application/listening.service';
+import {
+  LISTENING_STORE,
+  type ListeningStore,
+} from './application/listening.store';
+import {
+  SPEECH_RECOGNIZER,
+  type SpeechRecognizer,
+} from './application/speech-recognizer.port';
+import { ListeningUnavailableError } from './domain/assistant.errors';
+import { ClinicaAiSpeechRecognizer } from './infrastructure/clinica-ai.speech-recognizer';
+import {
+  LISTENING_GATEWAY_OPTIONS,
+  ListeningGateway,
+} from './infrastructure/listening.gateway';
+import { PrismaListeningStore } from './infrastructure/prisma-listening.store';
 import {
   SUGGESTION_CLOCK,
   SuggestionService,
@@ -74,7 +95,11 @@ import { buildProviderChain } from './infrastructure/provider-chain';
 const PURGE_EVERY_MS = 86_400_000;
 
 @Module({
-  controllers: [AssistantDiagnosisController, AssistantPrescriptionController],
+  controllers: [
+    AssistantDiagnosisController,
+    AssistantListeningController,
+    AssistantPrescriptionController,
+  ],
   providers: [
     { provide: AI_RUN_STORE, useClass: PrismaAiRunStore },
     // AS-020 to AS-024. The provenance of each proposal.
@@ -119,6 +144,24 @@ const PURGE_EVERY_MS = 86_400_000;
     { provide: ALLERGY_ABSENCE_READER, useClass: PrismaAllergyAbsenceReader },
     PrescriptionProposalService,
     CurrentUserService,
+    // AS-045 to AS-058. The listening (C1).
+    { provide: LISTENING_STORE, useClass: PrismaListeningStore },
+    { provide: LISTENING_CLOCK, useValue: () => new Date() },
+    {
+      provide: SPEECH_RECOGNIZER,
+      inject: [ConfigService],
+      useFactory: buildSpeechRecognizer,
+    },
+    {
+      provide: LISTENING_GATEWAY_OPTIONS,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) => ({
+        origins: config.get('CORS_ORIGINS', { infer: true }),
+      }),
+    },
+    ListeningService,
+    ListeningAccess,
+    ListeningGateway,
   ],
   exports: [LLM_CLIENT, SuggestionService, PSEUDONYMIZER],
 })
@@ -128,13 +171,20 @@ export class AssistantModule
   private readonly logger = new Logger(AssistantModule.name);
   private timer: NodeJS.Timeout | undefined;
 
-  constructor(@Inject(AI_RUN_STORE) private readonly store: AiRunStore) {}
+  constructor(
+    @Inject(AI_RUN_STORE) private readonly store: AiRunStore,
+    @Inject(LISTENING_STORE) private readonly listening: ListeningStore,
+  ) {}
 
   /** AS-026. The switch answers before the session and the permission do. */
   configure(consumer: MiddlewareConsumer): void {
     consumer
       .apply(AssistantSwitchMiddleware)
-      .forRoutes(AssistantDiagnosisController, AssistantPrescriptionController);
+      .forRoutes(
+        AssistantDiagnosisController,
+        AssistantListeningController,
+        AssistantPrescriptionController,
+      );
   }
 
   /**
@@ -153,7 +203,12 @@ export class AssistantModule
     clearInterval(this.timer);
   }
 
+  /**
+   * AS-015, AS-057. The text of the exchanges and the transcripts past their
+   * days, each on its own: one failing does not keep the other.
+   */
   private async purge(): Promise<void> {
+    await this.purgeTranscripts();
     try {
       await this.store.purgeExchanges(new Date());
     } catch (error) {
@@ -166,9 +221,41 @@ export class AssistantModule
       );
     }
   }
+
+  private async purgeTranscripts(): Promise<void> {
+    try {
+      await this.listening.purge(new Date());
+    } catch (error) {
+      this.logger.warn(
+        {
+          dependency: 'transcript_segment',
+          error_code: error instanceof Error ? error.name : 'unknown',
+        },
+        'transcript purge failed',
+      );
+    }
+  }
 }
 
 type Config = ConfigService<Env, true>;
+
+/**
+ * AS-048. `clinica-ai`'s recogniser with the shared secret; without the
+ * secret nothing can listen, and saying so is the answer to «Escuchar».
+ */
+export function buildSpeechRecognizer(config: Config): SpeechRecognizer {
+  const secret = config.get('ASSISTANT_AI_SERVICE_SECRET', { infer: true });
+  if (!secret) {
+    return {
+      open: () => Promise.reject(new ListeningUnavailableError('unreachable')),
+    };
+  }
+  return new ClinicaAiSpeechRecognizer({
+    baseUrl: config.get('ASSISTANT_AI_SERVICE_URL', { infer: true }),
+    secret,
+    timeoutMs: config.get('ASSISTANT_AI_SERVICE_TIMEOUT_MS', { infer: true }),
+  });
+}
 
 /**
  * AS-006, AS-029. The one door to a model. In the demonstration mode the only

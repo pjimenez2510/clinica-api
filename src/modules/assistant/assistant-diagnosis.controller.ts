@@ -23,7 +23,7 @@ import {
   type DiagnosisOverview,
   type ProposalRequester,
 } from './application/diagnosis-proposal.service';
-import { assistantRequester } from './assistant-requester';
+import { withAssistant } from './assistant-sites';
 import {
   AcceptDiagnosisProposalDto,
   DiagnosisOverviewDto,
@@ -139,7 +139,14 @@ export class AssistantDiagnosisController {
   }
 
   private requester(req: Request): ProposalRequester {
-    return assistantRequester(this.currentUser, req);
+    const principal = this.currentUser.requirePrincipal();
+    return {
+      userId: this.currentUser.requireUserId(),
+      readSites: withAssistant(principal, 'record:read'),
+      writeSites: withAssistant(principal, 'record:write'),
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    };
   }
 }
 

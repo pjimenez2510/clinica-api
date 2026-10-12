@@ -32,7 +32,10 @@ Este módulo **posee**:
 - las tablas `ai_run` (una fila por intento, sin texto) y `ai_exchange` (el
   texto seudonimizado, sólo si se enciende), con la purga de la segunda;
 - la tabla `ai_suggestion`: cada propuesta, de dónde sale y qué hizo con ella
-  quien decide, con el enlace a lo que se guardó (A1).
+  quien decide, con el enlace a lo que se guardó (A1);
+- la **escucha** de la consulta (C1): el canal de audio del navegador, su reloj
+  en `listening_session` y la transcripción en `transcript_segment`, con su
+  purga.
 
 **Fuera de alcance:**
 
@@ -41,7 +44,9 @@ Este módulo **posee**:
   ninguno llama a un proveedor (AS-001).
 - **El interruptor por sede y el permiso `assistant:use`**: es A3. Este módulo
   no expone ninguna ruta HTTP; quien la exponga declara su permiso (REQ-118).
-- La purga de transcripciones (E3) y cualquier pantalla.
+- El borrador de la nota a partir de la transcripción (C2) y lo que pasa con
+  la escucha al firmar (E1).
+- Distinguir la voz del médico de la del paciente (dato biométrico, plan §3).
 
 **Depende de:** la configuración (`shared/config`) y la base. Ningún módulo
 depende de éste todavía.
@@ -132,6 +137,34 @@ diagnóstico registrado.
 **Solo interfaz:** AS-043, AS-044. Son la tarjeta de la propuesta y su fallo
 en la pestaña Diagnósticos; la mitad del servidor es AS-027, AS-028, AS-035 y
 AS-040, que ya se prueban con esos números.
+### E4 — La escucha de la consulta _(C1, 12-10-2026)_
+
+`PLAN-ASISTENTE-IA.md` §7 C1 y §3 («Escucha»): el médico inicia, pausa y
+detiene la escucha desde la consulta y ve la transcripción mientras habla. El
+audio va del navegador a `clinica-api` y de ahí a `clinica-ai` (whisper.cpp con
+detector de voz, en esta máquina), y **no se escribe en ningún sitio**: queda el
+texto, que se borra 45 días después de firmar (D-239 §3). Se trae de SigmAI la
+lógica medida —reloj de la sesión, pausa y detención que esperan al reconocedor,
+reconexión (E-031: 6/6 frases, 0 duplicadas)— y se corrigen sus dos fallos:
+cualquier médico podía escuchar la atención de otro (M-02) y el token viajaba en
+la URL.
+
+**Por qué va así:** el borrador (C2) se escribe desde esta transcripción; sin
+una escucha que no pierda ni repita frases, el borrador omite o inventa.
+**Prueba independiente:** con un reconocedor falso que confirma cada ventana,
+una escucha de seis frases con una pausa, un corte del canal a mitad de frase,
+una reconexión y una detención deja seis segmentos, en orden y sin repetir; un
+segundo médico de la misma sede recibe 403 al pedir el vale; ninguna tabla de
+la escucha tiene una columna binaria.
+**Cubre:** AS-045 a AS-062.
+**Solo servidor:** AS-047, AS-049, AS-050, AS-052, AS-053, AS-055, AS-057,
+AS-058 y AS-062 (el guion de medición, fuera del verify). La pantalla los ve
+como AS-059 y AS-060.
+**Solo interfaz:** AS-059, AS-060 y AS-061. Son el control y la transcripción
+en la consulta, la reconexión del navegador y el audio de prueba; su mitad del
+servidor es AS-045, AS-046, AS-051 y AS-056, que ya se prueban con esos
+números.
+
 ### E5 — El seudonimizador local, `clinica-ai` _(A5, 11-10-2026)_
 
 P4 del plan: al proveedor sólo va texto seudonimizado, y el seudonimizador corre
@@ -645,7 +678,179 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > El mapa es lo más sensible que existe aquí: dice qué nombre hay detrás de
   > cada marcador.
 
-### 16. Leer la receta de la nota (D2, P2, P5)
+### 16. Quién escucha (M-02, REQ-178)
+
+- **AS-045** — CUANDO alguien pida abrir la escucha de una atención, el sistema
+  DEBERÁ darle un vale de un solo uso, que caduca a los **30 s**, atado a su
+  cuenta y a esa atención, sólo si tiene `assistant:use` y `record:write` en la
+  sede de la atención, es el usuario del profesional de la atención y la
+  atención admite contenido nuevo (`OPEN` u `ON_HOLD`). SI es otro usuario,
+  ENTONCES DEBERÁ rechazarlo con `ASSISTANT_NOT_ENCOUNTER_OWNER` (403); SI la
+  atención no existe o es de una sede fuera de su alcance, con
+  `ASSISTANT_ENCOUNTER_NOT_FOUND` (404); y SI ya no admite contenido, con
+  `ASSISTANT_ENCOUNTER_CLOSED` (409). DEBERÁ preguntarlo otra vez al iniciar o
+  reanudar y, mientras el canal está abierto, al menos cada **5 s**; y SI la
+  atención deja de admitir contenido —firmada con su alta, anulada,
+  interrumpida— con la escucha abierta, ENTONCES DEBERÁ detenerla, decírselo
+  al canal (`stopped` con el código) y cerrarlo con **4409**, sin guardar nada
+  más en ella.
+  > Revisión del 12-10-2026 (grave): firmar el alta con la escucha abierta la
+  > dejaba grabando, sin control en pantalla, en la atención cerrada — lo que
+  > dijera el siguiente paciente habría quedado en la historia del anterior
+  > (D-247 §7).
+  > SigmAI M-02: cualquier médico escuchaba la consulta de otro. El vale se
+  > pide por HTTP para que decidan los guardas de siempre (sesión, permiso,
+  > sede, interruptor) y no una copia de ellos en el canal de audio. La misma
+  > regla que D-245 §1 para el CIE-10.
+- **AS-046** — El canal de audio NO DEBERÁ llevar ninguna credencial en la URL:
+  el vale DEBERÁ llegar en el primer mensaje. SI no llega en **5 s**, es
+  desconocido, caducó o ya se usó, ENTONCES el sistema DEBERÁ cerrar el canal
+  con el código **4401** sin haber atendido nada. SI el navegador declara un
+  `Origin` que no está en `CORS_ORIGINS`, ENTONCES DEBERÁ rechazar la apertura
+  con 403; MIENTRAS `ASSISTANT_ENABLED` no sea `true`, DEBERÁ responder a la
+  apertura con 404, como a una ruta que no existe; y DEBERÁ responder 404 y
+  cerrar la apertura de cualquier otra ruta, y 429 a más de **20** canales sin
+  vale de una misma dirección.
+  > Con un oyente de `upgrade`, Node deja de cerrar las aperturas que nadie
+  > atiende: quedaban abiertas para siempre (auditoría del 12-10-2026).
+  > SigmAI ponía el token en la URL (`?token=`), que acaba en los registros de
+  > acceso de cualquier proxy. Un navegador no puede poner cabeceras en un
+  > WebSocket; el vale de un solo uso, pedido con la cabecera
+  > `Authorization` de siempre, lo resuelve sin un segundo camino de entrada.
+- **AS-047** — CUANDO caduque el token de acceso con que se pidió el vale, o
+  pasen **15 min** desde que se abrió el canal, lo que llegue antes, el
+  sistema DEBERÁ cerrarlo con **4401**, igual que un corte (AS-051).
+  > Una sesión revocada o un permiso retirado dejan de escuchar en lo que dura
+  > un token, sin que el canal tenga que preguntar a `auth`. La pantalla pide
+  > otro vale —con el token renovado— y sigue sin perder nada (AS-060).
+- **AS-048** — CUANDO el médico inicie o reanude la escucha, el sistema DEBERÁ
+  comprobar en `clinica-ai` que el reconocedor **y el detector de voz** están
+  instalados; SI falta alguno o el servicio no responde, ENTONCES DEBERÁ
+  negarse con `ASSISTANT_LISTENING_UNAVAILABLE` y su motivo (`no-recognizer`,
+  `no-voice-detection`, `unreachable`), sin abrir nada. SI
+  `clinica-ai` dice que está ocupado o sin reconocedor después de abrir su
+  canal, ENTONCES la escucha DEBERÁ quedar en pausa con `recognizer-failed`
+  (AS-055).
+  > P3 y E-028: sin detector de voz, whisper escribe sobre el silencio frases
+  > que nadie dijo («Gracias por ver el video») y entrarían en la nota.
+  > `clinica-ai` lo usa sólo si está instalado (CAI-010); la obligación la pone
+  > este lado. Que está lleno sólo lo dice al aceptar el canal (`busy` y
+  > cierre 1013), así que se sabe ya con la escucha empezada.
+
+### 17. Sin pérdida ni duplicados (E-031)
+
+- **AS-049** — La escucha de una atención DEBERÁ tener un reloj propio en
+  milisegundos, guardado en `listening_session`; iniciar o reanudar DEBERÁ
+  responder el reloj donde quedó y NO DEBERÁ volver a cero; cada trama DEBERÁ
+  llevar su inicio en ese reloj. CUANDO llegue una trama, el sistema DEBERÁ
+  descartar la parte que ya había recibido —la que acaba en el reloj o antes— y
+  reenviar a `clinica-ai` sólo lo nuevo; DEBERÁ descartar una trama que empiece
+  más de **2 s** por delante del reloj, y el audio que pase en más de **75 s**
+  al tiempo transcurrido desde que la captura empezó o se reanudó; y DEBERÁ
+  guardar el reloj al menos cada **5 s** de audio, sin pisar una pausa ya
+  escrita.
+  > Una trama muy adelantada movería el reloj por delante de todo lo real que
+  > viene después; el audio más rápido que el habla sólo haría cola en whisper
+  > para todas las consultas. Los 75 s cubren lo que la pantalla guarda
+  > mientras reconecta (AS-060).
+  > El reloj es de la consulta, no de la conexión (SigmAI RC-09). Que la parte
+  > repetida se descarte es lo que deja a la pantalla reenviar sin miedo lo que
+  > no sabe si llegó (AS-060).
+- **AS-050** — CUANDO el médico pause o detenga, el sistema DEBERÁ pedir a
+  `clinica-ai` lo que aún tiene, esperar a que termine (como mucho **90 s**),
+  guardar cada segmento y sólo después responder con el reloj. Detener DEBERÁ
+  dejar la sesión `STOPPED`; iniciar después DEBERÁ seguir con el mismo reloj.
+  > SigmAI RC-11: la última frase de la consulta era la que siempre se perdía.
+- **AS-051** — CUANDO el canal del navegador se cierre sin pausar ni detener,
+  el sistema DEBERÁ hacer lo mismo que al pausar y dejar la sesión `PAUSED` con
+  el motivo `device-lost`; y CUANDO el navegador vuelva y reanude, DEBERÁ seguir
+  desde ese reloj, de modo que lo dicho antes, durante y después del corte quede
+  **una vez y en orden**.
+  > E-031: la frase que estaba dentro del reconocedor cuando se cortó el canal
+  > sobrevive porque se le pide antes de marcar la pausa.
+- **AS-052** — La base DEBERÁ rechazar dos segmentos de la misma atención con
+  el mismo inicio, un segmento cuyo fin no sea mayor que su inicio, uno con el
+  texto vacío y cualquier cambio a un segmento guardado; y el sistema DEBERÁ
+  guardar sólo los segmentos que el reconocedor confirmó, sin repetir uno que ya
+  está.
+  > Antes de E-031, reanudar en SigmAI reescribía la primera mitad de la
+  > consulta. Aquí lo impide la base, no la disciplina.
+- **AS-053** — El sistema NO DEBERÁ escribir el audio en disco, en la base, en
+  un log ni en una cola: cada trama se reenvía y se suelta. Ninguna tabla de la
+  escucha DEBERÁ tener una columna binaria, y ningún archivo de la escucha
+  DEBERÁ importar el sistema de archivos. SI una trama trae más de **1 s** de
+  audio, ENTONCES el sistema DEBERÁ cerrar el canal con **1009**.
+  > P3 y SigmAI RF-E09. El tope es el de `clinica-ai` (CAI-015): una trama más
+  > larga no la aceptaría el reconocedor, y aquí se corta antes de reservar
+  > memoria para ella.
+- **AS-054** — MIENTRAS una atención se escucha desde un canal, CUANDO otro
+  canal del mismo profesional la inicie, el sistema DEBERÁ pasarle la captura,
+  avisar al anterior (`taken-over`) e ignorar desde entonces sus tramas.
+  > Dos micrófonos en la misma sala mandarían las mismas palabras dos veces
+  > con dos relojes (SigmAI RC-10). Es lo que pasa al recargar la página o al
+  > pasar del computador al teléfono.
+- **AS-055** — SI `clinica-ai` falla, cierra el canal sin terminar o no termina
+  en 90 s, ENTONCES el sistema DEBERÁ dejar la sesión `PAUSED` con el motivo
+  `recognizer-failed` y decírselo al navegador, también cuando escribir la
+  pausa falle; SI lo cierra por su tope de duración o de inactividad (1001)
+  mientras se escucha, ENTONCES DEBERÁ abrir otro con la siguiente trama, con el
+  mismo reloj y sin pausar; y SI guardar segmentos falla **3** veces seguidas,
+  ENTONCES DEBERÁ pausar con el motivo `store-failed` en vez de seguir
+  acumulando, y lo que no pudo guardar DEBERÁ intentarlo otra vez al pausar o
+  detener.
+  > Reabrir sólo con audio: un canal mudo no ocupa una de las 16 escuchas de
+  > `clinica-ai` (auditoría del 12-10-2026).
+
+### 18. La transcripción y su purga (D-239 §3)
+
+- **AS-056** — CUANDO el profesional de la atención pida la escucha de su
+  atención, el sistema DEBERÁ responder el estado de la sesión —estado, reloj,
+  motivo de la pausa y si un canal está capturando— y los segmentos en orden de
+  inicio; a cualquier otro, lo mismo que AS-045.
+  > La transcripción es texto clínico y sólo la ve quien escucha (D-247 §3).
+- **AS-057** — El sistema DEBERÁ borrar los segmentos de una atención **45
+  días** después de la primera firma de su nota, y, firmada o no, los que
+  tengan más de **90 días** desde que se guardaron; al arrancar y una vez al
+  día, con el reloj de la aplicación.
+  > D-239 §3; el tope de 90 días para una atención que nunca se firma es la
+  > misma recomendación que D-241 §6, pendiente del autor (D-247 §2).
+- **AS-058** — Ninguna línea de log, mensaje de error ni fila fuera de
+  `transcript_segment` DEBERÁ contener texto de la transcripción ni audio: los
+  motivos son códigos, y el canal sólo manda la transcripción al profesional
+  que escucha.
+  > SigmAI A-03 (26 sitios registraban la transcripción en `error.message`).
+
+### 19. En la consulta
+
+- **AS-059** — MIENTRAS la cuenta tenga `assistant:use`, sea la del profesional
+  de la atención y la atención admita contenido nuevo, la consulta DEBERÁ
+  ofrecer «Escuchar»; con la escucha abierta, DEBERÁ mostrar su estado
+  —«Escuchando» con el tiempo, «En pausa» con su motivo—, «Pausar»,
+  «Reanudar» y «Detener», y la transcripción en la pestaña Nota a medida que
+  llega cada línea. SI la escucha responde 404, ENTONCES NO DEBERÁ mostrar nada
+  de ella.
+- **AS-060** — CUANDO el canal se corte sin que el médico lo pida, la pantalla
+  DEBERÁ seguir capturando en memoria —como mucho **60 s**—, pedir un vale
+  nuevo, reconectar y mandar lo capturado desde el reloj que responde el
+  servidor; y SI no lo logra en ese tiempo, ENTONCES DEBERÁ soltar el
+  micrófono y decir que la escucha quedó en pausa por la conexión, con
+  «Reanudar».
+  > Lo que el servidor ya tenía lo descarta él (AS-049), así que reenviar de
+  > más no duplica; lo que se dijo durante el corte no se pierde.
+- **AS-061** — DONDE la interfaz se arranque con
+  `NUXT_PUBLIC_LISTENING_TEST_AUDIO`, la escucha DEBERÁ tomar ese audio
+  inventado en vez del micrófono, al ritmo real, y DEBERÁ decir «Audio de
+  prueba» junto al control; sin la variable, sólo el micrófono.
+  > Para probar la escucha sin micrófono (recorridos y la prueba del autor).
+  > El audio es una consulta inventada, generada con la voz sintética del
+  > sistema: ningún dato de un paciente.
+- **AS-062** — El guion `pnpm listening:measure` DEBERÁ reproducir E-031 contra
+  la API en marcha: seis frases inventadas al ritmo real, una pausa, un corte
+  del canal con la última frase dentro del reconocedor, la reconexión y la
+  detención; y DEBERÁ informar cuántas frases se dijeron, cuántos segmentos
+  quedaron, cuántos se repiten y si están en orden.
+
+### 20. Leer la receta de la nota (D2, P2, P5)
 
 - **AS-063** — CUANDO el profesional de la atención pida «Proponer la receta»
   en una atención viva, el sistema DEBERÁ comprobar primero que las alergias
@@ -719,7 +924,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > Si el cálculo de dosis convierte el sistema en dispositivo médico ante
   > ARCSA es D-084 §5, del asesor legal.
 
-### 17. Alergias, sin modelo y cerradas (P5, F-01)
+### 21. Alergias, sin modelo y cerradas (P5, F-01)
 
 - **AS-069** — Cada línea con medicamento DEBERÁ compararse con las alergias
   no refutadas de la ficha superviviente de la atención y de las que absorbió
@@ -749,7 +954,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > si el médico la quiere, la escribe él en el editor y la emisión decide
   > (D-248 §1).
 
-### 18. Guardar, confirmar y enlazar (P1, D-243 §5)
+### 22. Guardar, confirmar y enlazar (P1, D-243 §5)
 
 - **AS-072** — CUANDO el modelo responda, el sistema DEBERÁ guardar cada línea
   respaldada como una propuesta de `ai_suggestion` de clase
@@ -797,7 +1002,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   `prescription:write` en su sede, la atención viva; una atención de otra sede DEBERÁ responderse como
   inexistente. Ver la propuesta DEBERÁ exigir `record:read`.
 
-### 19. Fallos, privacidad y medida
+### 23. Fallos, privacidad y medida
 
 - **AS-077** — SI el seudonimizador o el proveedor fallan, se acaba el plazo
   (90 s) o el techo de gasto no admite el intento, ENTONCES la lectura DEBERÁ
@@ -828,7 +1033,7 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
   > set de notas de esta tarea sólo trae el medicamento y la presentación
   > esperados.
 
-### 20. En la pestaña Receta
+### 24. En la pestaña Receta
 
 - **AS-080** — La pestaña Receta DEBERÁ mostrar, a quien tiene el permiso y
   con el asistente encendido, «Proponer la receta» y, debajo de «Propuesta del
@@ -872,6 +1077,9 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | `ASSISTANT_PROPOSAL_NOT_KEPT`        | `ExternalServiceError` | 503       | El modelo respondió pero su intento no quedó en `ai_run` (AS-036, AS-040)    |
 | `ASSISTANT_READING_IN_PROGRESS`      | `ConflictError`        | 409       | Ya hay una lectura de esa atención en curso (AS-040)                         |
 | `ASSISTANT_PSEUDONYMIZER_FAILED`     | `ExternalServiceError` | 503 / 502 | `clinica-ai` no respondió (reintentable) o respondió fuera de contrato (AS-033) |
+| `ASSISTANT_LISTENING_UNAVAILABLE`    | `ExternalServiceError` | 503       | `clinica-ai` no puede escuchar: sin reconocedor, sin detector de voz o caído (AS-048) |
+| `ASSISTANT_LISTENING_NOT_OPEN`       | `ConflictError`        | 409       | Una orden de pausar o una trama sin escucha abierta en ese canal (AS-049) |
+| `ASSISTANT_LISTENING_FAILED`         | `ExternalServiceError` | 503       | Una orden de la escucha falló por algo que no es del médico: la base, un fallo (AS-058) |
 | `ASSISTANT_ALLERGY_CHECK_FAILED`     | `ExternalServiceError` | 503       | Las alergias del paciente no se pudieron leer o comparar: nada se propone ni se confirma (AS-070) |
 | `ASSISTANT_ALLERGY_CONTRAINDICATION` | `ConflictError`        | 409       | Una línea a confirmar coincide exactamente con una alergia (AS-071, AS-073)  |
 | `ASSISTANT_PRESCRIPTION_LINE_NOT_READY` | `ValidationError`   | 422       | Una línea a confirmar no es de la última lectura, ya se decidió, no tiene medicamento del CNMB o ya está en la receta (AS-073) |
@@ -892,6 +1100,12 @@ alias, ni pasar un valor del puerto por`as never`o`as any`, salvo
 | AS-026, AS-027, AS-036, AS-037, AS-038 | Integración HTTP contra PostgreSQL, con control positivo |
 | AS-042 | Arnés (`eval/`), fuera del verify |
 | AS-043, AS-044 | Componente de la pestaña y recorrido F-04 |
+| AS-045, AS-046, AS-047, AS-056 | Integración HTTP y del canal contra PostgreSQL, con control positivo |
+| AS-048, AS-049, AS-050, AS-051, AS-054, AS-055, AS-058 | Unitario con reconocedor y reloj falsos; AS-051 también de punta a punta en la integración |
+| AS-052, AS-053 (la base), AS-057 | Integración contra PostgreSQL, con control positivo |
+| AS-053 (el código) | Recorrido de los archivos de la escucha |
+| AS-059, AS-060, AS-061 | Componente y composable; recorrido F-04 con el audio de prueba |
+| AS-062 | Guion contra la API y `clinica-ai` en marcha, fuera del verify |
 | AS-030 a AS-034                        | Unitario con `fetch` falso; AS-031 y AS-032 sobre `env.schema`; prueba manual contra `clinica-ai` en marcha |
 | AS-063 a AS-073, AS-077, AS-078 | Unitario con seudonimizador, proveedor y lector de alergias falsos |
 | AS-064, AS-069, AS-070, AS-072 a AS-076 | Integración HTTP contra PostgreSQL, con control positivo |
@@ -905,4 +1119,7 @@ fallos activan el respaldo, los modelos de OpenAI, el tope para atenciones sin
 firma, cuánto se guarda `ai_run`, si los intentos rechazados cuentan en el
 techo, la reserva con varias instancias y la retención en cada proveedor.
 En **D-243**: si las propuestas salen en un derecho de acceso y cuánto se
-guarda la descartada.
+guarda la descartada. En **D-247**: escuchar sin la autorización de grabar
+hasta A3, el tope de 90 días de una transcripción sin firma, quién ve la
+transcripción, el léxico de la clínica y el estado de la escucha en una sola
+instancia de la API.
