@@ -7,6 +7,7 @@ import {
   ValidationError,
 } from '../../../shared/domain/errors/domain-error';
 
+import type { UnavailableReason } from './listening';
 import {
   isAvailabilityFailure,
   type LlmFailure,
@@ -278,5 +279,60 @@ export class AssistantReadingInProgressError extends ConflictError {
 
   constructor() {
     super('A reading of this encounter is already in progress');
+  }
+}
+
+const UNAVAILABLE_TITLES: Record<UnavailableReason, string> = {
+  'no-recognizer':
+    'El reconocimiento de voz no está instalado en este equipo. La consulta sigue sin escucha',
+  'no-voice-detection':
+    'Falta el detector de voz del reconocimiento: sin él se escribirían frases que nadie dijo. La consulta sigue sin escucha',
+  unreachable:
+    'El reconocimiento de voz no responde. Vuelva a intentarlo en unos minutos o siga sin escucha',
+};
+
+/**
+ * AS-048. `clinica-ai` cannot listen: it is not installed, it has no voice
+ * detector (whisper would write sentences nobody said), or it does not
+ * answer. Nothing is opened.
+ */
+export class ListeningUnavailableError extends ExternalServiceError {
+  readonly code = 'ASSISTANT_LISTENING_UNAVAILABLE';
+  readonly service = 'clinica-ai';
+  readonly isRetryable: boolean;
+  override readonly userTitle: string;
+
+  constructor(readonly reason: UnavailableReason) {
+    super(`clinica-ai cannot listen: ${reason}`, { reason });
+    this.isRetryable = reason === 'unreachable';
+    this.userTitle = UNAVAILABLE_TITLES[reason];
+  }
+}
+
+/** AS-049. A pause, or a frame, on a channel that is not listening. */
+export class ListeningNotOpenError extends ConflictError {
+  readonly code = 'ASSISTANT_LISTENING_NOT_OPEN';
+  override readonly userTitle =
+    'La escucha no está abierta en esta pantalla. Pulse «Escuchar»';
+
+  constructor() {
+    super('No listening is open on this channel');
+  }
+}
+
+/**
+ * AS-058. A command of the listening failed for a reason that is not the
+ * physician's to know (the database, a bug): the screen says it could not,
+ * and the log keeps the error's name, never what was said.
+ */
+export class ListeningFailedError extends ExternalServiceError {
+  readonly code = 'ASSISTANT_LISTENING_FAILED';
+  readonly service = 'listening';
+  readonly isRetryable = true;
+  override readonly userTitle =
+    'No se pudo usar la escucha. Vuelva a intentarlo';
+
+  constructor() {
+    super('A listening command failed');
   }
 }
