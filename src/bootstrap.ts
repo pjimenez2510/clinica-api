@@ -68,6 +68,9 @@ export function configureApp(app: NestExpressApplication): void {
       'Content-Type',
       'Authorization',
       'Idempotency-Key',
+      // EN-281, PR-121, ORD-181: the revision a draft was read at. Without it
+      // here the browser's preflight refuses every save of a note.
+      'If-Match',
       'Accept-Language',
       'traceparent',
       'X-Request-Id',

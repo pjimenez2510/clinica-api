@@ -1403,6 +1403,19 @@ describe('la atención por HTTP', () => {
       expect(stored.revision).toBe(2);
     });
 
+    it('EN-281 el navegador puede mandar If-Match: el preflight CORS lo admite', async () => {
+      // Found by the walk, not by this suite: without it the browser refused
+      // every save of the note before it left, and the API never saw one.
+      const preflight = await request(app.getHttpServer())
+        .options('/api/v1/encounters/x/notes/y')
+        .set('Origin', 'http://localhost:3001')
+        .set('Access-Control-Request-Method', 'PATCH')
+        .set('Access-Control-Request-Headers', 'if-match,authorization');
+      expect(
+        (preflight.headers['access-control-allow-headers'] ?? '').toLowerCase(),
+      ).toContain('if-match');
+    });
+
     it('EN-281 sin If-Match, o con uno que no es una revisión, 428 REVISION_REQUIRED sin escribir', async () => {
       const { note, path } = await aDraft();
 
